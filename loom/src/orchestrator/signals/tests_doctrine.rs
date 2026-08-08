@@ -87,12 +87,17 @@ const BLOCK_A: &str = "VERIFICATION IS THE MAIN AGENT'S JOB - NOT YOURS:
 const BLOCK_B: &str = "1. ORCHESTRATION IS ALWAYS OPUS. Every stage's main agent is opus. The
    orchestrator does NOT implement — it decomposes the work, hands each
    subagent full context, then verifies and commits. That is all.
-2. IMPLEMENTATION IS ALWAYS DELEGATED, to as FEW subagents as the work allows. Routine
-   implementation goes to loom-codex-forwarder (gpt-5.6-luna, xhigh) when the stage lists codex
-   in implementers, else to sonnet (loom-software-engineer); haiku stays rare and trivial.
-   Genuinely challenging work stays opus. A stage MIXES lanes freely: choose the lane PER
-   SUBAGENT by what that piece of work needs, never once for the whole stage. Verification
-   NEVER delegates - the opus orchestrator verifies and commits. Spawn BY AGENT TYPE.
+2. IMPLEMENTATION IS ALWAYS DELEGATED, to as FEW subagents as the work allows. Pick the
+   tier PER SUBAGENT by what that piece of work needs, never once for the whole stage:
+   FABLE for major bugs, visual/UI design, and extremely challenging algorithmic
+   design; OPUS for mainstream architecture and algorithm implementation; SONNET
+   (loom-software-engineer) or codex gpt-5.6-terra for common implementation and
+   integration tests; codex gpt-5.6-luna for boilerplate, scaffolding, and simple
+   unit tests. Codex tiers (effort xhigh, via loom-codex-forwarder) exist only on
+   stages listing codex in implementers AND when the codex CLI + plugin are
+   installed; otherwise that work goes to sonnet (loom warns at startup when a
+   stage lists codex it cannot use). Verification NEVER delegates - the opus
+   orchestrator verifies and commits. Spawn BY AGENT TYPE.
 3. DEBUGGING OR REPEATED FAILURE → spawn a `loom-advisor` (fable) subagent:
    narrow scope, full detail supplied by the orchestrator, advice returned.
    Do not let an implementer thrash on the same failure twice.";
@@ -113,6 +118,8 @@ const RETIRED_PHRASES: &[&str] = &[
     concat!("verifies its ", "subtree"),
     concat!("Test as ", "you go"),
     concat!("Zero IDE ", "diagnostics"),
+    concat!("haiku stays rare", " and trivial"),
+    concat!("haiku (rare, trivial ", "mechanical edits)"),
 ];
 
 /// Every static guidance surface pasted into a subagent prompt, as (label, text).
@@ -169,10 +176,16 @@ fn block_b_agrees_across_every_surface() {
     // codex.rs would leave every surface agreeing on a RETIRED model and this
     // test still green. Pin the prose to the constants the signal interpolates.
     assert!(
-        BLOCK_B.contains(crate::codex::CODEX_IMPLEMENTER_MODEL),
-        "BLOCK-B must name CODEX_IMPLEMENTER_MODEL ({}); update every surface \
+        BLOCK_B.contains(crate::codex::CODEX_IMPLEMENTER_MODEL_TERRA),
+        "BLOCK-B must name CODEX_IMPLEMENTER_MODEL_TERRA ({}); update every surface \
          when the constant changes",
-        crate::codex::CODEX_IMPLEMENTER_MODEL
+        crate::codex::CODEX_IMPLEMENTER_MODEL_TERRA
+    );
+    assert!(
+        BLOCK_B.contains(crate::codex::CODEX_IMPLEMENTER_MODEL_LUNA),
+        "BLOCK-B must name CODEX_IMPLEMENTER_MODEL_LUNA ({}); update every surface \
+         when the constant changes",
+        crate::codex::CODEX_IMPLEMENTER_MODEL_LUNA
     );
     assert!(
         BLOCK_B.contains(crate::codex::CODEX_IMPLEMENTER_EFFORT),

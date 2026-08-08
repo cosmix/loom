@@ -1,4 +1,7 @@
-use crate::codex::{CODEX_FORWARD_SENTINEL, CODEX_IMPLEMENTER_EFFORT, CODEX_IMPLEMENTER_MODEL};
+use crate::codex::{
+    CODEX_FORWARD_SENTINEL, CODEX_IMPLEMENTER_EFFORT, CODEX_IMPLEMENTER_MODEL_LUNA,
+    CODEX_IMPLEMENTER_MODEL_TERRA,
+};
 use crate::handoff::git_handoff::{format_git_history_markdown, GitHistory};
 use crate::models::session::Session;
 use crate::models::stage::{Implementers, Stage, StageType};
@@ -368,6 +371,7 @@ pub(super) fn format_semi_stable_section(
     if embedded_context.implementers.includes_codex() {
         content.push_str(&format_codex_implementers_section(
             &embedded_context.implementers,
+            embedded_context.codex_available,
         ));
     }
 
@@ -396,7 +400,17 @@ pub(super) fn format_semi_stable_section(
         content.push_str(
             "the main agent runs acceptance criteria and commits. Do not exceed the stage's\n",
         );
-        content.push_str("scope just because orchestration is available.\n\n");
+        content.push_str("scope just because orchestration is available.\n");
+        content.push_str(
+            "Workflow fan-out spawns CLAUDE subagents only: the codex lane (gpt-5.6-terra /\n",
+        );
+        content.push_str(
+            "gpt-5.6-luna) is NOT addressable from a Workflow script. On a stage licensed for\n",
+        );
+        content.push_str(
+            "both, codex work goes through normal `loom-codex-forwarder` Agent spawns, outside\n",
+        );
+        content.push_str("the Workflow.\n\n");
     }
 
     // Embed sandbox restrictions (semi-stable - based on stage config)
@@ -807,13 +821,37 @@ pub(super) fn format_recitation_section(
 /// gated on [`Implementers::includes_codex`], NOT on codex being the preferred
 /// lane. A stage that spawns even one codex subagent needs the blast-radius
 /// rules below, so a mixed stage carries them exactly as a codex-first stage
-/// does. The model and effort are interpolated from [`CODEX_IMPLEMENTER_MODEL`]
-/// / [`CODEX_IMPLEMENTER_EFFORT`] rather than repeated as literals — one source
-/// of truth for the lane's settings.
-pub(crate) fn format_codex_implementers_section(implementers: &Implementers) -> String {
+/// does. The models and effort are interpolated from [`CODEX_IMPLEMENTER_MODEL_TERRA`],
+/// [`CODEX_IMPLEMENTER_MODEL_LUNA`], and [`CODEX_IMPLEMENTER_EFFORT`] rather than
+/// repeated as literals — one source of truth for the lane's settings.
+///
+/// `codex_available` is [`crate::codex::codex_lane_available`] evaluated by the
+/// caller: when the codex CLI or its plugin's companion runtime is missing on
+/// this machine, the full doctrine below is replaced by a short fallback block
+/// that forbids spawning `loom-codex-forwarder` and routes the codex tiers'
+/// work to sonnet instead - the lane being licensed in the plan does not mean
+/// it is installed on the machine actually running it.
+pub(crate) fn format_codex_implementers_section(
+    implementers: &Implementers,
+    codex_available: bool,
+) -> String {
     let mut content = String::new();
 
     content.push_str("## Codex Implementers\n\n");
+
+    if !codex_available {
+        content.push_str(&format!(
+            "This stage lists codex in `implementers`, but the codex lane is UNAVAILABLE on this\n\
+             machine - the codex CLI or its plugin's companion runtime is not installed. Do NOT\n\
+             spawn `loom-codex-forwarder`. Route the codex tiers' work to sonnet\n\
+             (`loom-software-engineer`) instead: {CODEX_IMPLEMENTER_MODEL_TERRA}'s tier (common\n\
+             implementation, integration tests) and {CODEX_IMPLEMENTER_MODEL_LUNA}'s tier\n\
+             (boilerplate, scaffolding, simple unit tests) alike. Every other rule of this signal\n\
+             is unchanged.\n"
+        ));
+        return content;
+    }
+
     content.push_str(&format!(
         "Implementation lanes licensed for this stage: {implementers}.\n"
     ));
@@ -824,16 +862,17 @@ pub(crate) fn format_codex_implementers_section(implementers: &Implementers) -> 
     if implementers.is_mixed() {
         content.push_str(&format!(
             "This stage MIXES lanes. Choose the lane PER SUBAGENT, not once for the whole stage:\n\
-             reach for {} first on routine implementation, and use the other lane wherever the work\n\
-             calls for it. A single stage spawning codex implementers for one file set and\n\
-             loom-software-engineer (sonnet) subagents for another is the intended shape, not a\n\
-             contradiction.\n",
+             reach for {} first on its tiers' work (terra: common implementation and integration\n\
+             tests; luna: boilerplate, scaffolding, simple unit tests), and use the other lane\n\
+             wherever the work calls for it. A single stage spawning codex implementers for one\n\
+             file set and loom-software-engineer (sonnet) subagents for another is the intended\n\
+             shape, not a contradiction.\n",
             implementers.preferred()
         ));
     } else {
         content.push_str(
-            "Codex is the lane for this stage's routine implementation. The Claude escalation paths\n\
-             below still apply - they are not implementation lanes and never needed listing.\n",
+            "Codex is the lane for this stage's terra- and luna-tier work. The Claude escalation\n\
+             paths below still apply - they are not implementation lanes and never needed listing.\n",
         );
     }
     content.push_str(
@@ -853,7 +892,9 @@ pub(crate) fn format_codex_implementers_section(implementers: &Implementers) -> 
          of forwarding. Never put the token in a prompt for any other lane.\n"
     ));
     content.push_str(&format!(
-        "- State the model and effort IN THE PROMPT TEXT, e.g. \"--model {CODEX_IMPLEMENTER_MODEL} --effort {CODEX_IMPLEMENTER_EFFORT} <task>\".\n"
+        "- State the model and effort IN THE PROMPT TEXT: \"--model {CODEX_IMPLEMENTER_MODEL_TERRA} --effort {CODEX_IMPLEMENTER_EFFORT} <task>\"\n\
+         for common implementation and integration tests, or \"--model {CODEX_IMPLEMENTER_MODEL_LUNA} --effort {CODEX_IMPLEMENTER_EFFORT} <task>\"\n\
+         for boilerplate, scaffolding, and simple unit tests.\n"
     ));
     content.push_str("  The wrapper forwards --model/--effort ONLY when the request names them.\n");
     content.push_str("- STATE AN EXPLICIT BASH TIMEOUT IN THE PROMPT TEXT, e.g. \"make your single Bash call with an\n");
@@ -877,7 +918,7 @@ pub(crate) fn format_codex_implementers_section(implementers: &Implementers) -> 
     content.push_str("- THEREFORE YOU MUST FORCE-FEED IT. Forbidding exploration only works if you REPLACE what the\n");
     content.push_str("  exploration would have found - otherwise you have traded a slow agent for an ignorant one. It is\n");
     content.push_str(&format!(
-        "  {CODEX_IMPLEMENTER_MODEL}, not an opus orchestrator: it will not infer your conventions, notice an\n"
+        "  {CODEX_IMPLEMENTER_MODEL_TERRA} or {CODEX_IMPLEMENTER_MODEL_LUNA}, not an opus orchestrator: it will not infer your conventions, notice an\n"
     ));
     content.push_str("  adjacent helper it should reuse, or work out the shape you had in mind. Every codex prompt carries,\n");
     content.push_str("  inline and in full:\n");
@@ -927,13 +968,14 @@ pub(crate) fn format_codex_implementers_section(implementers: &Implementers) -> 
     content.push_str("      run git at all, and check `git status --short` after each run: anything staged, committed\n");
     content.push_str("      or touched outside that agent's assigned file set is YOUR problem to find, because no\n");
     content.push_str("      hook will.\n");
-    content.push_str("- WHAT CODEX IS FOR: routine implementation - the work sonnet/haiku would otherwise take. It does\n");
-    content.push_str("  NOT take opus work (architecture, algorithms, cross-cutting refactors, security-sensitive code),\n");
-    content.push_str("  loom-advisor (fable) on a second failure on the same task, or fable's visual/design work. Route\n");
-    content.push_str("  each piece of work by what the work needs; the lane list says what is available, not what is\n");
-    content.push_str("  mandatory. Sending a task to codex because the stage lists codex - rather than because the task\n");
-    content
-        .push_str("  is routine implementation - is the misread this section exists to prevent.\n");
+    content.push_str("- WHAT CODEX IS FOR: terra takes common implementation and integration tests (the sonnet\n");
+    content.push_str("  tier); luna takes boilerplate, scaffolding, and simple unit tests. It does NOT take opus work\n");
+    content.push_str("  (mainstream architecture, algorithm implementation, cross-cutting refactors, security-sensitive\n");
+    content.push_str("  code), fable work (major bugs, visual/UI design, extremely challenging algorithmic design), or\n");
+    content.push_str("  loom-advisor's role on a second failure. Route each piece of work by what the work needs; the\n");
+    content.push_str("  lane list says what is available, not what is mandatory. Sending a task to codex because the\n");
+    content.push_str("  stage lists codex - rather than because the task fits a codex tier - is the misread this\n");
+    content.push_str("  section exists to prevent.\n");
     content.push_str("- ACCEPT A CODEX REPORT ONLY WITH EVIDENCE. A genuine forward returns codex stdout followed by a\n");
     content.push_str("  \"--- LOOM-CODEX-EVIDENCE ---\" trailer listing companion state jobs/*.json paths. Verify the\n");
     content.push_str("  newest record for THIS worktree exists and its \"phase\" is \"done\". A report with no trailer -\n");

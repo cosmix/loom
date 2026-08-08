@@ -86,6 +86,9 @@ pub fn execute_background(
         crate::remote_control::run_startup_preflight(&claude_path, work_dir.root());
     }
 
+    // Advisory Codex lane preflight — never aborts startup.
+    checks::advisory_codex_lane_preflight(work_dir.root());
+
     // Mark plan as in-progress when starting execution
     plan_lifecycle::mark_plan_in_progress(&work_dir)?;
 

@@ -233,6 +233,7 @@ fn test_format_signal_content_with_embedded_context() {
         wiring_checklist: None,
         ultracode: false,
         implementers: Implementers::default(),
+        codex_available: false,
         subagent_timeout_secs: None,
     };
 

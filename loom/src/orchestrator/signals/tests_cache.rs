@@ -3,11 +3,15 @@
 use std::fs;
 use tempfile::TempDir;
 
-use crate::codex::CODEX_IMPLEMENTER_MODEL;
+use crate::codex::{
+    CODEX_FORWARD_SENTINEL, CODEX_IMPLEMENTER_MODEL_LUNA, CODEX_IMPLEMENTER_MODEL_TERRA,
+};
 use crate::models::stage::{Implementer, Implementers, StageType};
 
 use super::super::cache::{compute_hash, generate_stable_prefix, SignalMetrics};
-use super::super::format::{format_signal_content, format_signal_with_metrics};
+use super::super::format::{
+    format_codex_implementers_section, format_signal_content, format_signal_with_metrics,
+};
 use super::super::generate::generate_signal_with_metrics;
 use super::super::types::EmbeddedContext;
 use super::{create_test_session, create_test_stage, create_test_worktree};
@@ -367,49 +371,67 @@ fn test_signal_codex_implementers_section_gated() {
     .unwrap();
     let content = fs::read_to_string(&signal_path).unwrap();
     assert!(content.contains("## Codex Implementers"));
-    assert!(content.contains("subagent_type: \"loom-codex-forwarder\""));
-    // The sentinel the codex-forward-guard hook keys on must be mandated here,
-    // interpolated from the same constant the hook is pinned against.
-    assert!(content.contains(crate::codex::CODEX_FORWARD_SENTINEL));
-    // A report is only accepted with the companion-job evidence trailer.
-    assert!(content.contains("LOOM-CODEX-EVIDENCE"));
-    // Model comes from the shared constant, not a second literal
-    assert!(content.contains(CODEX_IMPLEMENTER_MODEL));
+    // From here on the section body depends on whether codex is actually
+    // installed on the machine running the tests: the pipeline resolves
+    // availability at context-build time, and generate_signal_with_metrics
+    // offers no injection point. Both branch BODIES are pinned
+    // deterministically by the direct-call tests; this pipeline test asserts
+    // the branch matching this machine is the one that was routed to.
+    if crate::codex::codex_lane_available() {
+        assert!(content.contains("subagent_type: \"loom-codex-forwarder\""));
+        // The sentinel the codex-forward-guard hook keys on must be mandated here,
+        // interpolated from the same constant the hook is pinned against.
+        assert!(content.contains(crate::codex::CODEX_FORWARD_SENTINEL));
+        // A report is only accepted with the companion-job evidence trailer.
+        assert!(content.contains("LOOM-CODEX-EVIDENCE"));
+        // Models come from the shared constants, not a second literal
+        assert!(content.contains(CODEX_IMPLEMENTER_MODEL_TERRA));
+        assert!(content.contains(CODEX_IMPLEMENTER_MODEL_LUNA));
 
-    // Blast-radius restrictions. Codex runs workspace-write with approval
-    // policy "never", so these two are the only thing standing between it and
-    // shared state: `.work/` is a symlink out of the worktree, and loom's
-    // hooks never see commands codex runs inside its own session.
-    assert!(
-        content.contains(".work/"),
-        "the codex block must warn off .work/ - a write through that symlink \
-         escapes worktree isolation into state shared with every stage"
-    );
-    assert!(
-        content.contains("git status --short"),
-        "the codex block must tell the orchestrator to diff-check after each \
-         run; no hook covers codex's own shell commands"
-    );
+        // Blast-radius restrictions. Codex runs workspace-write with approval
+        // policy "never", so these two are the only thing standing between it and
+        // shared state: `.work/` is a symlink out of the worktree, and loom's
+        // hooks never see commands codex runs inside its own session.
+        assert!(
+            content.contains(".work/"),
+            "the codex block must warn off .work/ - a write through that symlink \
+             escapes worktree isolation into state shared with every stage"
+        );
+        assert!(
+            content.contains("git status --short"),
+            "the codex block must tell the orchestrator to diff-check after each \
+             run; no hook covers codex's own shell commands"
+        );
 
-    // Two operational failure modes measured against the real plugin. Both are
-    // silent: the run still "works", it just costs minutes or strands its
-    // result, so nothing surfaces them except this doctrine.
-    assert!(
-        content.contains("900000"),
-        "the codex block must tell the orchestrator to state an explicit Bash \
-         timeout; the wrapper never raises the 120s default and the harness \
-         then backgrounds the run"
-    );
-    assert!(
-        content.contains("status\n  --all") || content.contains("status --all"),
-        "the codex block must name the recovery path for a backgrounded run - \
-         the id the wrapper returns is a Claude Code task id, not a codex job id"
-    );
-    assert!(
-        content.contains("doc/loom/knowledge/"),
-        "the codex block must tell the orchestrator to forbid the knowledge \
-         sweep: a shell-only agent pages the whole base before starting"
-    );
+        // Two operational failure modes measured against the real plugin. Both are
+        // silent: the run still "works", it just costs minutes or strands its
+        // result, so nothing surfaces them except this doctrine.
+        assert!(
+            content.contains("900000"),
+            "the codex block must tell the orchestrator to state an explicit Bash \
+             timeout; the wrapper never raises the 120s default and the harness \
+             then backgrounds the run"
+        );
+        assert!(
+            content.contains("status\n  --all") || content.contains("status --all"),
+            "the codex block must name the recovery path for a backgrounded run - \
+             the id the wrapper returns is a Claude Code task id, not a codex job id"
+        );
+        assert!(
+            content.contains("doc/loom/knowledge/"),
+            "the codex block must tell the orchestrator to forbid the knowledge \
+             sweep: a shell-only agent pages the whole base before starting"
+        );
+    } else {
+        assert!(
+            content.contains("UNAVAILABLE"),
+            "without codex installed the pipeline must emit the fallback block"
+        );
+        assert!(
+            !content.contains(crate::codex::CODEX_FORWARD_SENTINEL),
+            "the fallback block must not license spawning loom-codex-forwarder"
+        );
+    }
 
     // Mixed stage: codex is licensed but NOT preferred. The doctrine must still
     // appear — this is the case an `implementer == Codex` equality gate silently
@@ -435,18 +457,49 @@ fn test_signal_codex_implementers_section_gated() {
         content.contains("## Codex Implementers"),
         "a mixed stage must carry the codex doctrine even when codex is secondary"
     );
+    if crate::codex::codex_lane_available() {
+        assert!(
+            content.contains("claude, codex"),
+            "the block must name every licensed lane, in preference order"
+        );
+        assert!(
+            content.contains("PER SUBAGENT"),
+            "a mixed stage must be told the lane is a per-subagent choice, not a \
+             whole-stage mode"
+        );
+        assert!(
+            content.contains("MIXED FAN-OUT"),
+            "a mixed stage must get the cross-lane file-ownership rule"
+        );
+    } else {
+        assert!(
+            content.contains("UNAVAILABLE"),
+            "without codex installed a mixed stage must get the fallback block too"
+        );
+    }
+}
+
+#[test]
+fn test_codex_implementers_section_unavailable_falls_back_to_sonnet() {
+    // Unit-tests the `codex_available: bool` branch directly rather than
+    // through the full signal pipeline, whose call sites resolve availability
+    // from the machine's actual codex install - keeping this test independent
+    // of whether codex happens to be installed where it runs.
+    let implementers = Implementers::new(vec![Implementer::Codex]);
+    let content = format_codex_implementers_section(&implementers, false);
+
+    assert!(content.contains("## Codex Implementers"));
     assert!(
-        content.contains("claude, codex"),
-        "the block must name every licensed lane, in preference order"
+        content.contains("UNAVAILABLE"),
+        "the fallback block must say the lane is unavailable on this machine"
     );
     assert!(
-        content.contains("PER SUBAGENT"),
-        "a mixed stage must be told the lane is a per-subagent choice, not a \
-         whole-stage mode"
+        content.contains("loom-software-engineer"),
+        "the fallback block must route codex-tier work to sonnet instead"
     );
     assert!(
-        content.contains("MIXED FAN-OUT"),
-        "a mixed stage must get the cross-lane file-ownership rule"
+        !content.contains(CODEX_FORWARD_SENTINEL),
+        "the fallback block must not license spawning loom-codex-forwarder"
     );
 }
 
@@ -587,7 +640,12 @@ fn test_recovery_signal_carries_codex_implementers_section() {
         None,
         1,
     );
-    let embedded = EmbeddedContext::default();
+    // The formatter is pure: availability arrives via EmbeddedContext, so this
+    // test pins the full-doctrine branch regardless of the machine's install.
+    let embedded = EmbeddedContext {
+        codex_available: true,
+        ..EmbeddedContext::default()
+    };
 
     // Default (claude) stage: no codex doctrine, exactly as before this lane existed.
     let stage = create_test_stage();
@@ -607,7 +665,8 @@ fn test_recovery_signal_carries_codex_implementers_section() {
     assert!(signal.contains("subagent_type: \"loom-codex-forwarder\""));
     assert!(signal.contains(crate::codex::CODEX_FORWARD_SENTINEL));
     assert!(signal.contains("FOREGROUND"));
-    assert!(signal.contains(CODEX_IMPLEMENTER_MODEL));
+    assert!(signal.contains(CODEX_IMPLEMENTER_MODEL_TERRA));
+    assert!(signal.contains(CODEX_IMPLEMENTER_MODEL_LUNA));
 
     // A MIXED stage recovers with the doctrine too. The gate is "codex is
     // licensed", not "codex is preferred" — a stage that reaches for sonnet

@@ -35,11 +35,13 @@ impl StageType {
     ///
     /// Under the model playbook, every stage's MAIN AGENT is an opus orchestrator:
     /// it reads context, plans the work, and delegates implementation to subagents
-    /// (sonnet workers for well-scoped execution, opus workers only where judgment
-    /// is required). Model choice for the actual implementation work happens at
-    /// the subagent level, not here — so the main-agent default is opus across
-    /// every stage type, regardless of how "lightweight" that stage type used to
-    /// look in isolation.
+    /// (sonnet or codex terra workers for common implementation and integration
+    /// tests, codex luna workers for boilerplate/scaffolding/simple unit tests,
+    /// opus workers only where architecture or algorithm judgment is required).
+    /// Model choice for the actual implementation work happens at the subagent
+    /// level, not here — so the main-agent default is opus across every stage
+    /// type, regardless of how "lightweight" that stage type used to look in
+    /// isolation.
     pub fn default_model(&self) -> &'static str {
         match self {
             // Knowledge stages: the main agent orchestrates exploration and
@@ -140,8 +142,10 @@ impl PermissionMode {
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum Implementer {
-    /// The Claude subagent lane (sonnet/haiku for routine work, opus for
-    /// judgment, fable for advisory and design).
+    /// The Claude subagent lane (sonnet for common implementation and
+    /// integration tests, opus for architecture and algorithm implementation,
+    /// fable for major bugs, visual/UI design, and extremely challenging
+    /// algorithmic design).
     #[default]
     Claude,
     /// The codex implementation lane: spawned as `loom-codex-forwarder`, a
@@ -729,7 +733,7 @@ pub struct Stage {
     /// Regression test requirement (required when bug_fix is true)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub regression_test: Option<RegressionTest>,
-    /// Model override for this stage (e.g., "sonnet", "opus", "haiku")
+    /// Model override for this stage (e.g., "opus", "sonnet")
     /// When set, Claude Code sessions for this stage use this model
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,

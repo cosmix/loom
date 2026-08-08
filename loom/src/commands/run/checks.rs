@@ -28,6 +28,34 @@ pub fn prepare_repo_for_run(repo_root: &Path) -> Result<()> {
     check_for_uncommitted_changes(repo_root)
 }
 
+/// Advisory Codex lane preflight — never aborts startup.
+///
+/// When any stage licenses the codex lane but the codex CLI or its plugin's
+/// companion runtime is missing on this machine, print ONE warning naming the
+/// stages. The stage signals independently route codex-tier work to sonnet
+/// (the fallback branch of `format_codex_implementers_section`), so this is
+/// notice, not enforcement.
+pub fn advisory_codex_lane_preflight(repo_root: &Path) {
+    let Ok(stages) = crate::verify::transitions::list_all_stages(repo_root) else {
+        return;
+    };
+    let codex_stage_ids: Vec<&str> = stages
+        .iter()
+        .filter(|s| s.implementers.includes_codex())
+        .map(|s| s.id.as_str())
+        .collect();
+    if codex_stage_ids.is_empty() {
+        return;
+    }
+    if let Err(reason) = crate::codex::codex_lane_status() {
+        eprintln!(
+            "codex lane licensed for stage(s) {} but unavailable ({reason}) - \
+             terra/luna-tier work will fall back to sonnet.",
+            codex_stage_ids.join(", ")
+        );
+    }
+}
+
 fn print_repo_bootstrap(result: crate::git::RepoBootstrapResult) {
     if !result.changed() {
         return;

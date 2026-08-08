@@ -49,6 +49,11 @@ pub struct EmbeddedContext {
     pub ultracode: bool,
     /// Which agent lanes this stage may spawn subagents from, in preference order
     pub implementers: Implementers,
+    /// Whether the codex CLI and its plugin's companion runtime are installed
+    /// on this machine, resolved once at context-build time. Gates the Codex
+    /// Implementers section between the full doctrine and the route-to-sonnet
+    /// fallback; the formatters never probe the machine themselves.
+    pub codex_available: bool,
     /// Per-subagent response budget in seconds, when the stage sets one
     /// explicitly. `None` leaves the built-in default in force and emits
     /// nothing — the signal only spends tokens on a budget the plan chose.

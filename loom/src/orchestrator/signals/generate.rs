@@ -244,7 +244,12 @@ pub fn build_embedded_context_with_stage_and_session(
     handoff_file: Option<&str>,
     stage_id: Option<&str>,
 ) -> EmbeddedContext {
-    let mut context = EmbeddedContext::default();
+    // Availability is resolved here, not in the formatters, so the formatting
+    // path stays pure and tests can pin both branches deterministically.
+    let mut context = EmbeddedContext {
+        codex_available: crate::codex::codex_lane_available(),
+        ..EmbeddedContext::default()
+    };
 
     // Read handoff content if specified
     if let Some(handoff_name) = handoff_file {

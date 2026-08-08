@@ -90,6 +90,9 @@ fn execute_foreground(
 
     let (graph, plan_sandbox) = build_execution_graph(work_dir)?;
 
+    // Advisory Codex lane preflight — never aborts startup.
+    super::checks::advisory_codex_lane_preflight(work_dir.root());
+
     // Parse config.toml to extract base_branch
     let base_branch = crate::fs::parse_base_branch_from_config(work_dir.root())?;
 

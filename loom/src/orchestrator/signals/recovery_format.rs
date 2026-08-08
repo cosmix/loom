@@ -81,7 +81,10 @@ pub fn format_recovery_signal(
     // section that is not present and loses foreground-only fan-out, the
     // concurrency cap, and "verification stays with you".
     if stage.implementers.includes_codex() {
-        signal.push_str(&format_codex_implementers_section(&stage.implementers));
+        signal.push_str(&format_codex_implementers_section(
+            &stage.implementers,
+            embedded_context.codex_available,
+        ));
     }
 
     // Same reasoning for the response budget: it is a gated SEMI-STABLE block, so
