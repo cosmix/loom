@@ -6,11 +6,11 @@ use std::time::Duration;
 
 use super::checks::prepare_repo_for_run;
 use super::graph_loader::build_execution_graph;
+use super::resolve_backend_flag;
 use crate::commands::status::render::print_completion_summary;
-use crate::daemon::{collect_completion_summary, DaemonServer};
+use crate::daemon::collect_completion_summary;
 use crate::fs::plan_lifecycle;
-use crate::fs::work_dir::{read_terminal_config, write_terminal_config, WorkDir};
-use crate::models::session::{SessionBackendKind, TerminalConfig};
+use crate::fs::work_dir::WorkDir;
 use crate::orchestrator::{Orchestrator, OrchestratorConfig, OrchestratorResult};
 
 /// Execute plan stages in foreground (for --foreground flag)
@@ -29,43 +29,7 @@ pub fn execute(
     let work_dir = WorkDir::new(".")?;
     work_dir.load()?;
 
-    // Resolve --backend: persist an explicit selection, guarding against
-    // desync with an already-running daemon (its backend is fixed at
-    // construction, so a config flip alone cannot reach it). `loom run`
-    // never prompts — only `loom init` does.
-    if let Some(value) = backend {
-        let requested = match value.as_str() {
-            "native" => SessionBackendKind::Native,
-            "tmux" => SessionBackendKind::Tmux,
-            other => bail!("Invalid terminal backend: {other}"),
-        };
-
-        let persisted = read_terminal_config(work_dir.root())?.backend;
-
-        if DaemonServer::is_running(work_dir.root()) && requested != persisted {
-            println!(
-                "{} backend change requires a restart: run `loom stop`, then `loom run --backend {}`",
-                "─".dimmed(),
-                value
-            );
-        } else {
-            if requested == SessionBackendKind::Tmux {
-                // An explicit re-selection is a request to retry tmux.
-                crate::orchestrator::terminal::backend::clear_fallback_marker(work_dir.root());
-            }
-            write_terminal_config(work_dir.root(), &TerminalConfig { backend: requested })?;
-        }
-    }
-
-    // Advisory tmux preflight — never aborts startup.
-    if read_terminal_config(work_dir.root())?.backend == SessionBackendKind::Tmux
-        && which::which("tmux").is_err()
-    {
-        eprintln!(
-            "tmux backend selected but tmux not found - sessions will fail to spawn until tmux is \
-             installed or the backend is set back to native"
-        );
-    }
+    resolve_backend_flag(&work_dir, backend, "loom run --foreground")?;
 
     // Mark plan as in-progress when starting execution
     plan_lifecycle::mark_plan_in_progress(&work_dir)?;
