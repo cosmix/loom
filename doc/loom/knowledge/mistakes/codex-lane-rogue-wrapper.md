@@ -45,3 +45,21 @@ only the delegated runtime could have produced, and verify it from the orchestra
 [Codex Plugin](../architecture/codex-plugin.md) for the full forwarder protocol and
 [Verification Harness](verification-harness.md) — "silent subagents are failed delegations" is
 the same lesson one level up.
+
+## Sandbox blocks codex-companion's own job-log write (2026-08-08)
+
+**What happened:** A `loom-codex-forwarder` (gpt-5.6-terra) call's first attempt failed: the
+sandboxed Bash call could not write codex-companion's own job-state file under
+`~/.claude/plugins/data/codex-openai-codex/state/<worktree>-*/jobs/*.json` — that path isn't in
+the write allowlist. The forwarder retried the identical call with the sandbox disabled and it
+completed cleanly, repo edits included.
+
+**Why:** The write-sandbox allowlist covers the repo and a few known tool-state directories; a
+plugin's own per-job log directory under `~/.claude/plugins/data/` isn't one of them by default,
+so codex-companion's internal bookkeeping write gets blocked even though the actual `--write`
+repo edits are unaffected.
+
+**Prevention:** Not a code fix — an operational note. If a `loom-codex-forwarder` call reports an
+EPERM/permission-denied writing under `~/.claude/plugins/data/codex-openai-codex/`, that's the
+job-log write, not the repo edit; a sandbox-disabled retry of the same forward is the expected
+recovery, not a sign the forward itself is unsafe.
