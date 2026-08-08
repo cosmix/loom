@@ -72,10 +72,10 @@ Changes per **stage type**, not per session. Key sub-sections:
 - **Knowledge reference box** (lines 22-32): `loom knowledge show` commands if knowledge exists
 - **Stage-type-aware reminder box** (lines 35-140): Knowledge/IV/KnowledgeDistill → "KNOWLEDGE UPDATES REQUIRED"; Standard → "SESSION MEMORY REQUIRED"
 - **Knowledge management section** (lines 142-290): If knowledge empty → 4-step exploration order; if present → "Extend as you work"
-- **Delegation Choices** (lines 319-345): Subagents vs. Hierarchy vs. Agent Teams decision
-- **Ultracode License** (lines 347-362): Gated on `embedded_context.ultracode`
-- **Sandbox Restrictions** (lines 365-368): Sandbox summary if present
-- **Skill Recommendations** (lines 370-374): Skill index matches
+- **Delegation Choices** (lines 339-386): Subagents vs. Hierarchy vs. Agent Teams decision
+- **Ultracode License** (lines 388-413): Gated on `embedded_context.ultracode`; now also states the Claude-only Workflow-fan-out rule — the codex lane (`gpt-5.6-terra`/`gpt-5.6-luna`) is not addressable from a Workflow script, so on a stage licensed for both, codex-tier work goes through normal `loom-codex-forwarder` Agent spawns outside the Workflow
+- **Sandbox Restrictions** (lines 417-419): Sandbox summary if present
+- **Skill Recommendations** (lines 421-426): Skill index matches
 
 ### Dynamic Section (format/sections.rs:382-661)
 
@@ -85,7 +85,7 @@ Per-session content. Includes Target (session/stage/plan IDs, working_dir, execu
 
 End of signal for maximum attention. Includes: Compaction Imminent warning (≥75% usage), Context Budget Warning, Immediate Tasks, Stage Memory (with PROMINENT WARNING if empty).
 
-### EmbeddedContext Struct (types.rs:24-50)
+### EmbeddedContext Struct (types.rs:25-61)
 
 Single container flowing through all 4 sections:
 
@@ -103,6 +103,9 @@ pub struct EmbeddedContext {
     pub cross_stage_summary: Option<String>,  // IV/KnowledgeDistill only
     pub wiring_checklist: Option<String>,     // IV/KnowledgeDistill only
     pub ultracode: bool,
+    pub implementers: Implementers,           // Licensed lanes, in preference order
+    pub codex_available: bool,                // codex CLI + plugin installed; resolved once at build time
+    pub subagent_timeout_secs: Option<u64>,   // Per-stage override; None emits nothing
 }
 ```
 

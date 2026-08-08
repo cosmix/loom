@@ -5,8 +5,8 @@
 ## Fan-out cap: 6 (a doctrine number, not a code constant)
 
 **`CODEX_MAX_PARALLEL` is NOT a symbol in this codebase.** It was the spike's variable name and it
-survives only in these knowledge files. `loom/src/codex.rs` defines just `CODEX_IMPLEMENTER_MODEL`
-and `CODEX_IMPLEMENTER_EFFORT`; the cap of 6 is a hardcoded literal inside the signal prose emitted
+survives only in these knowledge files. `loom/src/codex.rs` defines `CODEX_IMPLEMENTER_MODEL_TERRA`,
+`CODEX_IMPLEMENTER_MODEL_LUNA`, and `CODEX_IMPLEMENTER_EFFORT`; the cap of 6 is a hardcoded literal inside the signal prose emitted
 by `format_codex_implementers_section` (`orchestrator/signals/format/sections.rs:821`). Do not go
 looking for a constant to tune — if the cap ever needs to be tunable, add `CODEX_MAX_PARALLEL` to
 `codex.rs` and interpolate it there the way the model and effort already are.

@@ -59,7 +59,7 @@ Loom treats what agents learn as a first-class artifact with a pipeline, not a s
 Loom's savings come from **delegation, not downgrade**:
 
 - **Orchestration is always Opus at `xhigh` effort.** Every stage's main agent plans, decomposes, verifies, and commits — the judgment-heavy work that is worst to economize on.
-- **Implementation is always delegated** to the cheapest subagent that can do the job (Haiku for trivial mechanical edits, Sonnet for the common case, Opus only for genuinely hard work), spawned by agent type so the choice is explicit rather than inherited.
+- **Implementation is always delegated**, spawned by agent type so the choice is explicit rather than inherited: Fable for major bugs, visual/UI design, and extremely challenging algorithmic design (no agent type pins it — the model override is stated explicitly at spawn); Opus for mainstream architecture and algorithm implementation; Sonnet or Codex GPT-5.6 Terra for common implementation and integration tests; Codex GPT-5.6 Luna for boilerplate, scaffolding, and simple unit tests. The codex tiers are licensed only on stages listing codex in `implementers`, and additionally require the `codex` CLI and its plugin to be installed — when either is missing, `loom run` prints an advisory warning at startup (it never aborts) and terra-/luna-tier work falls back to Sonnet.
 - **Signals are built for cache reuse.** Each signal is a four-section layout with a per-stage-type stable prefix that is byte-identical across sessions, so the large doctrine block is a cache hit rather than a re-read.
 - **Context budgets prevent compaction**, which is the expensive failure: an uncached re-read that costs more and produces worse work.
 - **Tiered knowledge and a skill index** keep the working set small — at most 5 matched skills are injected per stage, out of 61 installed.
@@ -473,12 +473,17 @@ Every stage's main agent is an **orchestrator**, and orchestration is never econ
 
 The orchestrator decomposes the work, hands each subagent full context, then verifies and commits. It does not implement. Implementation is delegated to as few subagents as the work allows, each spawned **by agent type** so the model choice is explicit:
 
-| Agent                           | Model  | Use for                                                                    |
-| ------------------------------- | ------ | -------------------------------------------------------------------------- |
-| `loom-software-engineer`        | Sonnet | The common case: implementation to detailed instructions, tests, refactors |
-| `loom-senior-software-engineer` | Opus   | Architecture, complex debugging, security-sensitive or cross-cutting work  |
-| `loom-code-reviewer`            | Opus   | Read-only code, security, and architecture review                          |
-| `loom-advisor`                  | Fable  | Diagnosis after a repeated failure — advice returned, nothing written      |
+| Agent                            | Model                          | Use for                                                                                                                                |
+| -------------------------------- | ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `loom-software-engineer`         | Sonnet                          | Common implementation and integration tests to detailed instructions                                                                   |
+| `loom-codex-forwarder`           | Codex GPT-5.6 Terra or Luna     | Codex lane, licensed only on stages listing codex in `implementers`: Terra for common implementation/integration tests, Luna for boilerplate, scaffolding, and simple unit tests |
+| `loom-senior-software-engineer`  | Opus                            | Mainstream architecture and algorithm implementation, complex debugging, security-sensitive or cross-cutting work                       |
+| `loom-code-reviewer`             | Opus                            | Read-only code, security, and architecture review                                                                                       |
+| `loom-advisor`                   | Fable                           | Diagnosis after a repeated failure — advice returned, nothing written                                                                   |
+
+Fable-tier implementation — major bugs, visual/UI design, extremely challenging algorithmic design — has no dedicated agent type; it is spawned with an explicit model override rather than relying on inheritance.
+
+The `loom-codex-forwarder` row additionally depends on the `codex` CLI and its plugin's companion runtime being installed. `loom run` checks this at startup and prints an advisory warning if either is missing — it never blocks the run — and terra-/luna-tier work falls back to Sonnet for the duration; the stage signal states the fallback explicitly and does not spawn `loom-codex-forwarder`.
 
 This is why savings come from delegation rather than downgrade: an untyped subagent silently inherits the stage's Opus model, making every worker expensive. Two failures on the same task should produce a `loom-advisor` diagnosis, not a blind retry at a larger model.
 

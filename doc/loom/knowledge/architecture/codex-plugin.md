@@ -90,6 +90,30 @@ sentinel constant to the hook script and the agent definition, and requires CLAU
 and the plan-writer SKILL to name the forwarder; `tests_cache.rs` pins the generated section to
 carry the sentinel, the trailer name, and the `loom-codex-forwarder` spawn line.
 
+## Availability fallback: codex CLI/plugin not installed (2026-08-08)
+
+Stage licensing (`implementers` listing `codex`) says a stage MAY use the lane; it says nothing
+about whether the lane is actually reachable on this machine. `loom/src/codex.rs` adds a second,
+independent gate for that: `codex_lane_status()` does the real check (codex CLI resolvable via
+`find_codex_path()`, and the plugin's companion runtime present at
+`~/.claude/plugins/cache/openai-codex/codex/*/scripts/codex-companion.mjs`), and a memoized
+`codex_lane_available()` wraps it as a cheap per-spawn boolean — the same
+capability/preflight/resolve shape as [Remote Control](remote-control.md)'s `preflight()` /
+`resolve()`.
+
+- **`commands/run/`** runs the check once at startup and prints an advisory warning when the lane
+  is unavailable, mirroring `run_startup_preflight` for Remote Control: informative, never a hard
+  failure — a missing codex install must not block a run that never intended to use codex on most
+  of its stages.
+- **Signal doctrine.** When the lane is unavailable, `format_codex_implementers_section` emits a
+  fallback note in place of the normal codex doctrine block: terra-/luna-tier work routes to
+  sonnet for the run, and the orchestrator must NOT spawn `loom-codex-forwarder` — spawning it
+  against a missing companion runtime would just fail the one Bash call the forwarder is allowed
+  to make.
+- **Scope.** The check does not mutate `implementers` or stage state; it only changes what the
+  signal tells the orchestrator to do at spawn time, the same way Remote Control's `resolve()`
+  gates the `--remote-control` flag without touching `.work/config.toml`.
+
 ## Hooks (hooks/hooks.json)
 
 | Event | Script | Timeout |
@@ -138,16 +162,18 @@ Three moving parts:
    (regenerated per stage), NOT the stable prefix — the stable prefix only forward-references it
    (`cache.rs`). The recovery path emits it too (`recovery_format.rs`), which was a real gap fixed
    by `d1530e0c`; without it a recovered or retried codex stage loses its whole doctrine block.
-   Model/effort are interpolated from `CODEX_IMPLEMENTER_MODEL = "gpt-5.6-luna"` and
-   `CODEX_IMPLEMENTER_EFFORT = "xhigh"` (`loom/src/codex.rs:7,10`) rather than hardcoded, and
-   `tests_doctrine.rs` asserts BLOCK-B contains both — so changing `codex.rs` without updating the
-   prose surfaces fails the build.
+   Model/effort are interpolated from `CODEX_IMPLEMENTER_MODEL_TERRA = "gpt-5.6-terra"`,
+   `CODEX_IMPLEMENTER_MODEL_LUNA = "gpt-5.6-luna"`, and `CODEX_IMPLEMENTER_EFFORT = "xhigh"`
+   (`loom/src/codex.rs`) rather than hardcoded, and `tests_doctrine.rs` asserts BLOCK-B contains
+   all three — so changing `codex.rs` without updating the prose surfaces fails the build. Terra is
+   the tier for common implementation and integration tests; luna is for boilerplate, scaffolding,
+   and simple unit tests.
 4. **Settings carry-forward.** `PRESERVED_SETTINGS_KEYS` / `preserve_unowned_keys`
    (`sandbox/settings.rs:580,587`) — see the scope section below.
 
-Do NOT confuse `gpt-5.6-luna` (`codex.rs:7`, the implementer lane) with `gpt-5.6-sol`
-(`commands/pressure/mod.rs:245`, the `loom pressure` review driver). Two features, two models, both
-correct; a grep for `gpt-5` returns both.
+Do NOT confuse the two implementer-lane tiers — `gpt-5.6-terra` and `gpt-5.6-luna` (both
+`codex.rs`) — with `gpt-5.6-sol` (`commands/pressure/mod.rs:245`, the `loom pressure` review
+driver). Three models, three purposes; a grep for `gpt-5` returns all three.
 
 ## Install scope: user or project, not local
 

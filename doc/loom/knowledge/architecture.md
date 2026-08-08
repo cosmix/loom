@@ -391,8 +391,10 @@ rogue-wrapper incident) and its flag-forwarding contract, `codex-companion.mjs` 
 and what loom shipped to drive it — the per-stage `implementers` LIST (licensed lanes in preference
 order, default `["claude"]`; membership licenses a lane, order picks the routine-work default, and a
 stage mixes lanes per subagent), the `## Codex Implementers` signal section gated on codex
-MEMBERSHIP on both the normal and recovery paths, and the two-key settings carry-forward that lets a
-plugin install survive loom's per-worktree settings rebuild.
+MEMBERSHIP on both the normal and recovery paths, the two-key settings carry-forward that lets a
+plugin install survive loom's per-worktree settings rebuild, and the availability fallback that
+routes terra-/luna-tier work to sonnet with an advisory `loom run` startup warning (never a hard
+failure) when the codex CLI or plugin is not installed.
 
 → [Codex Plugin](architecture/codex-plugin.md)
 
