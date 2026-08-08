@@ -901,7 +901,7 @@ loom:
         - "src/commands/init/cleanup.rs"
         - "src/commands/run/mod.rs"
         - "src/commands/run/foreground.rs"
-        - "src/commands/clean.rs"
+        - "src/commands/clean/sessions.rs"
         - "src/cli/types.rs"
       # NOTE ON WIRING SEMANTICS (verified in src/verify/goal_backward/wiring.rs):
       # `pattern` is a REGEX matched against the WHOLE FILE, comments included.
@@ -923,10 +923,18 @@ loom:
         - source: "src/commands/run/mod.rs"
           pattern: 'write_terminal_config\('
           description: "run --backend persists the choice before the daemon forks"
+        # integration-verify deduplicated the two verbatim copies of the
+        # --backend block into run/mod.rs::resolve_backend_flag, so foreground
+        # no longer calls write_terminal_config itself. Asserting the call to
+        # the shared resolver is STRICTER than the old pattern: it proves both
+        # spawn paths take the same route, which is what the original check was
+        # really guarding (a fix landing in one copy and not the other).
         - source: "src/commands/run/foreground.rs"
-          pattern: 'write_terminal_config\('
+          pattern: 'resolve_backend_flag\('
           description: "foreground run honours --backend too (the commonly-missed second spawn path)"
-        - source: "src/commands/clean.rs"
+        # clean.rs was split into clean/{mod,sessions,worktrees}.rs to stay
+        # under the file-size cap; the sweep itself is unchanged.
+        - source: "src/commands/clean/sessions.rs"
           pattern: 'list_loom_sockets\('
           description: "clean reaps ORPHANED loom tmux servers"
         - source: "src/commands/init/cleanup.rs"
