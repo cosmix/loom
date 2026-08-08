@@ -139,3 +139,46 @@ forward, a seeded `env` key and an arbitrary unknown key are both dropped.
 wholesale into a new worktree *before* the rebuild, so a main-repo local-scope key appears to
 propagate — then loses everything outside the allowlist on the first stage spawn. The copy is not
 evidence that the key survives.
+
+## A Plan's `allow_write` Cannot Grant a Subprocess OS-Level Write Access (2026-08-08)
+
+**What happened:** the tmux work needed `tmux` to `mkdir` its own socket directory, and reached for a
+plan-level sandbox `filesystem.allow_write` entry to permit it. It has no effect on a subprocess, by
+design — and the reason is not obvious from the plan schema.
+
+**Why — it is inert on both layers:**
+
+1. **OS layer.** `sandbox/settings.rs:338-344` *deliberately never emits* `allowWrite` into
+   `sandbox.filesystem`. Emitting it makes macOS `sandbox-exec` become over-restrictive about
+   **reads**, blocking `~/.gitconfig` (breaks git) and `~/.claude/shell-snapshots/` (breaks zsh). Plan
+   `allow_write` paths are emitted **only** as `permissions.allow Write()` entries.
+2. **Tool layer.** Per `concerns.md` ("Per-Stage Sandbox `Write(path)` Rules Are Inert"), Claude Code's
+   file permission check consults **only** `Edit(path)`; a `Write(path)` rule parses, prints a startup
+   warning, and is then ignored.
+
+So `allow_write` is expressed in the one tool-permission form Claude Code ignores, and is absent from
+the OS sandbox entirely.
+
+**Prevention:** to give a **subprocess** (tmux, git, any non-Claude-tool binary) write access to a
+path, plan `allow_write` is the wrong lever. The OS-sandbox write set is fixed by `sandbox/settings.rs`
+— either keep the subprocess inside an already-permitted root (the worktree, `/tmp/claude`, `$TMPDIR`)
+or accept that the work cannot run sandboxed. Note the same deny-leak asymmetry documented above:
+`denyWrite` *does* leak into the OS sandbox, `allowWrite` is withheld from it.
+
+## `excludedCommands` Does Not Reliably Bypass the OS Sandbox for Compound Commands (2026-08-08)
+
+`excludedCommands` entries (`tmux:*`, `cargo:*`) in `.claude/settings.local.json` only take effect when
+the command **literally starts with** the excluded token. A script beginning with a variable
+assignment before `tmux ...` still runs sandboxed, and tmux's own `mkdir` for its socket dir then fails
+with `Operation not permitted` outside the `allowOnly` paths. Full `cargo test ...` invocations do
+bypass it reliably.
+
+**Consequence for tmux work specifically:** you cannot smoke-test tmux from a Bash tool call inside a
+loom worktree without `dangerouslyDisableSandbox`. The sandbox allows unix sockets only under
+`/tmp/tmux-*/**` and writes only under `/tmp/claude`, `$TMPDIR` and the worktree — but `/tmp/tmux-<uid>`
+does not exist and `mkdir` on `/tmp` is denied, so every socket dir you *can* create is one tmux
+*cannot* bind in. Validate tmux behaviour through `cargo test` (the e2e suite works around it per-test
+via `tests/e2e/tmux_backend.rs`'s `TmuxTmpDirGuard`), not raw shell tmux.
+
+**Detection:** `couldn't create directory /private/tmp/tmux-<uid> (Operation not permitted)` means
+sandbox, not a tmux bug.

@@ -8,13 +8,13 @@
 
 | File | Description | Lines |
 | --- | --- | --- |
-| [architecture.md](architecture.md) | High-level component relationships, data flow, module dependencies | 411 |
-| [entry-points.md](entry-points.md) | Key files agents should read first | 488 |
-| [patterns.md](patterns.md) | Architectural patterns discovered in the codebase | 557 |
+| [architecture.md](architecture.md) | High-level component relationships, data flow, module dependencies | 427 |
+| [entry-points.md](entry-points.md) | Key files agents should read first | 531 |
+| [patterns.md](patterns.md) | Architectural patterns discovered in the codebase | 618 |
 | [conventions.md](conventions.md) | Coding conventions discovered in the codebase | 391 |
-| [mistakes.md](mistakes.md) | Mistakes made and lessons learned - what to avoid | 447 |
-| [stack.md](stack.md) | Dependencies, frameworks, and tooling used in the project | 61 |
-| [concerns.md](concerns.md) | Technical debt, warnings, and issues to address | 407 |
+| [mistakes.md](mistakes.md) | Mistakes made and lessons learned - what to avoid | 505 |
+| [stack.md](stack.md) | Dependencies, frameworks, and tooling used in the project | 70 |
+| [concerns.md](concerns.md) | Technical debt, warnings, and issues to address | 494 |
 
 ## Tier 2 — Topics
 
@@ -30,6 +30,7 @@
 | [architecture/knowledge-hierarchy.md](architecture/knowledge-hierarchy.md) | Knowledge Hierarchy | Tier-1/tier-2 knowledge mechanics: layout predicate, target parsing, INDEX.md generation, audit link rules, coverage blast radius, opt-in migration, lock ordering. | 122 |
 | [architecture/remote-control.md](architecture/remote-control.md) | Remote Control | Capability detection, preflight, resolution, and per-kind session naming for driving external agent binaries. | 64 |
 | [architecture/signal-generation.md](architecture/signal-generation.md) | Signal Generation | How a stage signal is assembled: stable-prefix cache, shared append_* helpers, per-stage-type prefixes, soft signals. | 160 |
+| [architecture/terminal-backends.md](architecture/terminal-backends.md) | Terminal Backends | Topic notes for the architecture knowledge area. | 143 |
 ### entry-points
 
 | Topic | Title | Blurb | Lines |
@@ -54,10 +55,12 @@
 | [mistakes/knowledge-cli-invariants.md](mistakes/knowledge-cli-invariants.md) | Knowledge Cli Invariants | Invariants belong in the fs constructor, not the CLI handler; lock ordering for sibling refreshes; update appends. | 67 |
 | [mistakes/phantom-merges.md](mistakes/phantom-merges.md) | Phantom Merges | Six lessons on writing merged=true without verifying git ancestry — the costliest recurring failure class in loom. | 93 |
 | [mistakes/refactor-stragglers.md](mistakes/refactor-stragglers.md) | Refactor Stragglers | What a large removal or rename leaves behind: straggler initializers, stale comments, stale docs, duplicate modules. | 62 |
-| [mistakes/sandbox-and-settings.md](mistakes/sandbox-and-settings.md) | Sandbox And Settings | Sandbox path rules, permission sync, excludedCommands matching, and settings env leaking between main repo and worktrees. | 141 |
-| [mistakes/sessions-and-liveness.md](mistakes/sessions-and-liveness.md) | Sessions And Liveness | Session identity, liveness routing, spawn-site coverage, and the blast radius of adding a session field. | 55 |
+| [mistakes/sandbox-and-settings.md](mistakes/sandbox-and-settings.md) | Sandbox And Settings | Sandbox path rules, permission sync, excludedCommands matching, and settings env leaking between main repo and worktrees. | 184 |
+| [mistakes/sessions-and-liveness.md](mistakes/sessions-and-liveness.md) | Sessions And Liveness | Session identity, liveness routing, spawn-site coverage, and the blast radius of adding a session field. | 71 |
 | [mistakes/shell-command-matchers.md](mistakes/shell-command-matchers.md) | Shell Command Matchers | Separators that never become tokens, forgeable glob lookups, env leakage in hook tests, and three Bash traps. | 124 |
 | [mistakes/testing-and-lint.md](mistakes/testing-and-lint.md) | Testing And Lint | Lint and test discipline: --all-targets, ambient git config in shelling tests, the stub checker, and reviewer claims. | 64 |
+| [mistakes/tests-that-cannot-fail.md](mistakes/tests-that-cannot-fail.md) | Tests That Cannot Fail | Topic notes for the mistakes knowledge area. | 37 |
+| [mistakes/tmux-backend.md](mistakes/tmux-backend.md) | Tmux Backend | Topic notes for the mistakes knowledge area. | 62 |
 | [mistakes/verification-harness.md](mistakes/verification-harness.md) | Verification Harness | When every check fails at once, suspect the harness; the PATH binary is not your build; silent subagents are failed delegations. | 48 |
 ### concerns
 

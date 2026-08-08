@@ -1,0 +1,143 @@
+# Terminal Backends
+
+> Topic notes for the architecture knowledge area.
+
+## Two Lanes Behind One Dispatcher
+
+`SessionBackend` (`orchestrator/terminal/backend.rs`) is the single type every spawn/kill/liveness
+call goes through. It wraps two concrete lanes:
+
+| Lane | Type | Where sessions run |
+| --- | --- | --- |
+| `Native` (default) | `NativeBackend` (`terminal/native/`) | a host terminal emulator window |
+| `Tmux` (opt-in) | `TmuxBackend` (`terminal/tmux/`) | a detached tmux server, no GUI required |
+
+`SessionBackend::from_config(work_dir)` **always succeeds** as long as the config parses — it does not
+construct either lane eagerly. That matters: `NativeBackend::new` runs `detect_terminal()` subprocess
+probes and *fails* on a headless box, which is exactly where the tmux lane is wanted.
+
+The native lane is therefore built lazily and memoized in a `OnceLock<Result<NativeBackend, String>>`
+— **including the failure**. `OnceLock` (not `RefCell`/`Mutex`) because the orchestrator holds
+`SessionBackend` behind an `Arc` and the monitor thread calls it via `&self`, so it must stay
+`Send + Sync`. The error is stored as `String` because `anyhow::Error` is not `Clone` and callers only
+render it as text. Terminal availability is fixed for the life of the daemon, so memoizing the failure
+is free — before this, a post-fallback `is_session_alive` re-ran `detect_terminal()` once per session
+per 5s monitor tick.
+
+## Configuration and Lane Resolution
+
+- **Config:** `[terminal]` / `backend = "native" | "tmux"` in `.work/config.toml`.
+  `TerminalConfig` (`models/session/types.rs:85-89`) holds one `SessionBackendKind`
+  (`types.rs:62-70`, `#[serde(rename_all = "lowercase")]`, `#[default] Native`).
+  Helpers `read_terminal_config` / `write_terminal_config` (`fs/work_dir.rs:509-516`); a missing
+  section yields the default. Written at init by `commands/init/plan_setup.rs:179-182`.
+- **CLI:** `--backend <native|tmux>` on both `loom init` (skips the interactive prompt) and
+  `loom run` / `loom run --foreground` (persists to `[terminal]`). `loom run`'s
+  `resolve_backend_flag` (`commands/run/mod.rs:118-158`) is shared by both run paths.
+- **Per-spawn resolution** — `SessionBackend::resolve_lane` (`backend.rs:125-128`) picks `Native` if
+  the fallback marker exists, else the configured kind if `which tmux` succeeds, else `Native`.
+
+## Session-Recorded Backend Dispatch
+
+`Session.backend: SessionBackendKind` (`#[serde(default)]`, `models/session/types.rs:119-123`) records
+the lane **actually used**, and is persisted to `.work/sessions/<id>.md`.
+
+This is the load-bearing part: sessions are reconstructed from disk after a daemon restart, so
+kill/liveness must route on the *session's* recorded backend, never on the currently-configured one.
+`SessionBackend::is_session_alive` and `kill_session` dispatch on `session.backend`, so a run that
+flipped config (or fell back) still kills and monitors older sessions through the lane that spawned
+them.
+
+## One tmux Server Per Session — Crash Containment
+
+The tmux lane deliberately does **not** use one shared server with many windows. Each session gets its
+own server on its own socket:
+
+- socket name — `format!("loom-{}", session.id)` (`tmux/mod.rs:41-43`)
+- socket dir — `$TMUX_TMPDIR` else literal `/tmp`, joined with `tmux-<uid>` (`tmux/socket.rs:23-30`)
+- tmux session name inside that server — `session.tracking_key` (`models/session/methods.rs:75-78`),
+  so merge/knowledge/base-conflict prefixes resolve correctly
+
+**Why per-session:** a wedged or killed server takes down exactly one stage. A shared server is a
+single point of failure for every parallel stage at once.
+
+**Why keyed on `session.id`, not `stage_id`:** `sun_path` is capped at 104 bytes on macOS; plan stage
+ids run up to 128 chars and would silently blow the limit. See `mistakes/tmux-backend.md`.
+
+## Liveness Never Asks tmux — And That Is the Point
+
+`TmuxBackend::is_session_alive` (and `SessionBackend`'s native-degrade path) consult **PID-file layers
+only**. There is deliberately **no `tmux has-session` call**.
+
+A tmux server whose pane process has died but which has not yet reaped itself still answers
+`has-session` with exit 0. Consulting it would make the monitor report a dead `claude` as alive, and
+the crash would never be filed or retried — defeating the containment property the backend exists for.
+PID liveness is the same evidence the native lane uses, so both lanes degrade identically.
+
+The PID layers themselves were deduped into `native/pid_guard.rs` during this work (six copies → one).
+
+## Spawn Path and the Silent-Failure Guard
+
+`spawn_in_tmux` cannot trust `new-session`'s exit code — tmux can print an error to stderr and still
+exit 0. Two checks follow the spawn:
+
+1. `evaluate_new_session(socket, status_success, stderr)` — a **pure** decision fn (no tmux, no
+   filesystem) so the rule is unit-testable; it treats any stderr with exit 0 as failure.
+2. an authoritative `tmux has-session` probe against the socket.
+
+Every error path *after* the server may exist routes through teardown — killing the socket server and
+calling `native::cleanup_stage_files` to drop the PID/wrapper files — before returning `Err`. Skipping
+either leaks a live agent (see `mistakes/tmux-backend.md`).
+
+## Fallback Marker: `.work/terminal-backend-fallback`
+
+A **sticky** marker that forces every subsequent spawn onto the native lane.
+
+- **Written** (`backend.rs:192` after a tmux spawn failure; `backend.rs:218` when configured tmux is
+  unavailable) — but **only when a native lane is actually constructible**. With no native lane loom
+  writes nothing and surfaces the original tmux error, rather than degrading to a retry that cannot
+  succeed and a marker that permanently disables the one backend that works headless.
+- **Read** by `resolve_lane` (`backend.rs:125`) — present ⇒ `Native`, unconditionally.
+- **Cleared** by `clear_fallback_marker` (`backend.rs:67-69`), whose only production caller is
+  `loom run --backend tmux` (`run/mod.rs:141`). `loom clean --state` / `--all` clears it only as a side
+  effect of deleting `.work/` wholesale. Nothing else clears it — it survives daemon restarts.
+
+Fallback is announced with an `eprintln!` warning naming the re-enable command; in daemon mode that
+goes to the daemon's stderr, not the user's shell.
+
+## `loom attach` — Overview and Direct
+
+`commands/attach/` discovers sessions with `backend == Tmux`, status `Running | Spawning`, a live PID
+and a resolvable tmux session name, sorted oldest-first by `(created_at, id)`.
+
+- **No argument** ⇒ a tiled **overview**: a per-repo *viewer* server on socket
+  `loom-view-<sha256(canonical repo root)[..8]>`, session `loom-overview`, created detached at
+  220x50, `remain-on-exit on` set **before** the splits, one pane per live session, re-tiled after
+  **each** split.
+- **With a stage id** ⇒ direct `exec` of `tmux -L loom-<session.id> attach-session -t <tracking_key>`,
+  newest session wins if several match.
+
+Each overview pane nests into an inner server by running `unset TMUX; exec tmux -L <sock>
+attach-session -t <key>` — passed as **separate `sh -c` argv words**, not one string, so the shell is
+guaranteed POSIX (see `mistakes/tmux-backend.md`). `build_overview_argv` is a pure builder taking the
+viewer socket and `(session_socket, tracking_key)` pairs as parameters, so it is testable without
+tmux; socket derivation stays in `tmux::socket_name` and `viewer_socket_name`.
+
+`loom attach` requires a TTY (`require_tty`), so its `exec` paths are unreachable from a non-TTY
+harness — but the empty-set, unknown-stage and multi-match messages are emitted *before* the TTY check
+and are testable.
+
+## Socket Reaping at init/clean
+
+`cleanup_orphaned_sessions` reaps only sockets **positively attributed to this work dir** — never
+"every `loom-*` socket with no matching session file", because the socket dir is per-user and would
+match another checkout's live servers.
+
+`SessionReapMode` distinguishes the two callers: `OrphansOnly` (normal path, skips live sessions) vs
+`IncludeLiveBeforeClean`. `loom init --clean` deletes `.work/` immediately afterwards, and `.work/` is
+the *only* thing that makes attribution possible — so a live session left running through `--clean`
+would become permanently unattributable and leak forever. `--clean` therefore reaps attributed sockets
+even when alive; the normal path stays conservative.
+
+`list_loom_sockets` skips names starting `loom-view-` so the overview viewer is not reported as
+unattributable. Nothing currently reaps that viewer socket (see `concerns.md`).

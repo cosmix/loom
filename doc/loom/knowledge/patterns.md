@@ -555,3 +555,64 @@ require the `codex` CLI and plugin to be installed; when either is missing, `loo
 startup (never aborts) and the same terra-/luna-to-sonnet fallback applies for the run — see
 [Codex Plugin](architecture/codex-plugin.md). A knowledge stage runs on opus and delegates its
 code spot-reads to sonnet; the two facts are easy to conflate.
+
+## CORRECTION (2026-08-08): Session Spawning and Liveness Now Route Through `SessionBackend`
+
+**Supersedes the "Session Spawning Pattern" and "Liveness Pattern" sections above, which describe an
+`Arc<NativeBackend>` that the orchestrator no longer holds.**
+
+`NativeBackend` is no longer the single concrete spawn type. The orchestrator holds
+`Arc<SessionBackend>` (`orchestrator/core/orchestrator.rs:91`, constructed at `:148` via
+`SessionBackend::from_config`), and shares that same `Arc` with the `LivenessService`
+(`orchestrator/liveness.rs:17,32`):
+
+```rust
+let backend = Arc::new(SessionBackend::from_config(config.work_dir.clone())?);
+let liveness = LivenessService::new(Arc::clone(&backend));
+```
+
+`SessionBackend` dispatches each call to the `Native` or `Tmux` lane. Two rules follow:
+
+- **Spawn** resolves the lane per call (config + tmux availability + fallback marker), then records the
+  lane actually used on `Session.backend`.
+- **Kill and liveness** dispatch on `session.backend` — the lane that *spawned* it — never on the
+  currently-configured backend, so sessions survive a config change or a daemon restart.
+
+Every spawn site uses the shared handle; the other `SessionBackend::from_config` callers are
+`orchestrator/continuation/mod.rs:89`, `commands/sessions.rs:130`, `commands/stage/state.rs:57`,
+`commands/stage/merge_resolver.rs:72` and `commands/stage/skip_retry.rs:254`.
+
+`LivenessService::fixed_for_tests(bool)` still returns a fixed value without constructing a backend.
+
+→ [Terminal Backends](architecture/terminal-backends.md)
+
+## Extract the Decision When the Failure Mode Is Not Reproducible in CI (2026-08-08)
+
+**Problem shape:** a rule guards an OS failure that no CI runner can produce. The test written against
+the real command passes *for the wrong reason* and would still pass with the rule deleted.
+
+Concretely: the e2e case meant to pin tmux's "exit 0 but stderr non-empty is a failure" rule used an
+unwritable socket parent — which makes tmux exit **1**, so the plain exit-code check alone satisfied
+it. The genuine condition needs the socket dir to exist while socket *creation* is denied.
+
+**Pattern:** split the rule into a pure decision fn over already-gathered inputs
+(`evaluate_new_session(socket, status_success, stderr)`) and unit-test *that*. The impure caller keeps
+only the gathering. Applied again in `build_overview_argv`, which takes the viewer socket and
+`(socket, tracking_key)` pairs as parameters rather than deriving them, so the whole argv sequence is
+assertable without tmux.
+
+**Rule:** when an OS failure mode is not reproducible in CI, extract the decision and test it directly.
+Never settle for a test that passes for the wrong reason — see `mistakes/tests-that-cannot-fail.md`.
+
+## Fail-Safe Direction for Destructive Sweeps (2026-08-08)
+
+Any sweep that kills or deletes must resolve *uncertainty* toward inaction:
+
+- **Cannot read the evidence ⇒ do not destroy.** `tmux/socket.rs`'s `socket_session_is_alive` returns
+  `false` for an absent session file but **`true`** for one that exists and cannot be parsed — a file
+  caught mid-write must not be read as "dead".
+- **Cannot positively attribute ⇒ do not destroy.** Reap only resources provably owned by *this* work
+  dir. Shared per-user namespaces (the tmux socket dir) make "no matching state file" match other
+  checkouts' live resources.
+- **Report what you skipped.** Unattributable resources are surfaced to the user, never silently
+  killed and never silently ignored.

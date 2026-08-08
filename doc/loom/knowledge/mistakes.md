@@ -445,3 +445,61 @@ sonnet instead of forwarding — plugin agents' `tools:` field is ignored by des
 agents DO enforce it), `loom_is_subagent()` returns false for in-process subagents, and the
 report was indistinguishable from a real forward. Now pinned by `hooks/codex-forward-guard.sh` + the `loom-codex-forwarder` agent + the
 evidence-trailer acceptance rule. Full detail: [Codex Lane Rogue Wrapper](mistakes/codex-lane-rogue-wrapper.md).
+
+## tmux Backend: Silent Spawn Failures and Layout Traps (2026-08-08) [DETAILED]
+
+`tmux new-session` can print an error to stderr and **still exit 0**, so exit status alone is never
+evidence a server exists — assert on the resource. The same topic collects the rest of the tmux lane's
+traps: a spawn helper that cleaned up on only one of its error paths and so left a live agent behind
+(two `claude` processes in one worktree), a retry that reused a session id and adopted the previous
+attempt's PID from a non-truncated PID file, a sticky fallback marker written before proving the
+fallback target was usable, the 104-byte `sun_path` budget, `kill-server` not unlinking its socket,
+"cannot read the evidence" having to mean "do not destroy" in a reaping sweep, and the tmux 3.7b
+layout/option facts (re-tile after *every* split; `remain-on-exit` is a window option to set *before*
+splitting; a single-string pane command runs under the user's login shell).
+
+→ [tmux Backend](mistakes/tmux-backend.md)
+
+## Tests That Cannot Fail (2026-08-08) [DETAILED]
+
+Three tests in one plan asserted nothing that could fail — a test whose *name* states a property is
+not evidence the property is pinned. Two-part detection rule: (1) for each test ask "if I delete the
+production line this covers, does it fail?" and actually delete it; (2) every negative assertion needs
+a **positive control asserted at the same moment**. The topic also covers why a shell-injection PoC
+must trigger via `$(...)` rather than a trailing `;` command (and must have balanced quotes), and how
+macOS/APFS returning `read_dir` entries already sorted by filename silently satisfied a `sort_by`
+assertion.
+
+→ [Tests That Cannot Fail](mistakes/tests-that-cannot-fail.md)
+
+## `rg -r` Is `--replace`, Not `--recursive` (2026-08-08)
+
+`rg -rn PATTERN` is **not** `rg -n --recursive`. `rg` has no `-r` shorthand for recursive, so `-r`
+consumes the `n` as a `--replace` value and every match prints as the literal `n` — output looks like
+a mangled source file (e.g. `pub n(work_dir: &Path)`) rather than an error, so it reads as a corrupt
+file. `rg` is recursive by default; never pass `-r` unless you mean `--replace`.
+
+## `pub(crate)` Is Invisible to `tests/` (2026-08-08)
+
+`tests/e2e/*` is an **external test crate**, so it can only reach `pub` items. A stage description that
+names a helper both `pub(crate)` *and* "the e2e test seam" is self-contradictory. Before marking a
+helper `pub(crate)`, check whether anything under `tests/` calls it — `src/` unit tests can reach it,
+integration targets cannot.
+
+Related: when changing a fn signature under `src/commands/`, the call-site inventory must include the
+sibling `#[cfg(test)]` module. `src/commands/init/tests.rs` held a fifth `cleanup_orphaned_sessions()`
+call site beyond the four an `rg` for the primary feature symbol surfaced. `rg` the **exact fn name**
+across `src/` *and* `tests/` before writing a subagent's step list.
+
+## Bash Tool CWD Persists — Never Bare-`cd` Into a Subdirectory Crate (2026-08-08)
+
+**Two stages of one plan hit this.** The Bash tool's working directory persists across calls, and this
+repo's crate root is the `loom/` subdirectory — so a single `cd loom` silently retargets every later
+relative path, **including calls issued in the same parallel message block**.
+
+**Why it keeps recurring:** the failure presents as `No such file or directory`, i.e. as a *missing
+file*, not as a wrong-directory error. It reads as "that file doesn't exist" and sends you looking for
+the wrong bug. The other tell is `git status` printing `loom/src/...` prefixes instead of `src/...`.
+
+**Prevention:** never bare-`cd`. Prefix every command with its own `cd <dir> && ` so each call is
+self-contained and order-independent.

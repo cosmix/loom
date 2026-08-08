@@ -405,3 +405,90 @@ means threading the effective timeout through that call site AND the render path
 subsystem change with its own test surface, unrelated to the codex lane. Fix if picked up later:
 pass `Stage::effective_subagent_timeout_secs()` into `determine_activity_status` and the activity
 renderer instead of the constant.
+
+## tmux Lane Runs Unbounded `Command::output()` on the Orchestrator Poll Thread (2026-08-08)
+
+**Pre-existing rule, newly violated.** `mistakes.md`'s "Diagnostics: Restart Destroys the Evidence"
+records the 10-hour daemon-freeze lesson: **every external command issued from the poll loop goes
+through `process::run_bounded`**. The native lane complies (`native/window_ops.rs:30` uses
+`WINDOW_OP_TIMEOUT`). The tmux lane never did.
+
+Four unbounded calls: `spawn_in_tmux`'s `new-session`, `has-session` and `set-option`
+(`terminal/tmux/mod.rs`), and `kill_socket_server` (`terminal/tmux/socket.rs:133`). Any one of them
+hanging wedges the orchestrator poll thread.
+
+**Follow-up:** route all four through `run_bounded` with a `TMUX_OP_TIMEOUT` constant.
+
+## `evaluate_new_session` Fails a Working Spawn on a Benign `~/.tmux.conf` Warning (2026-08-08)
+
+The rule "any stderr with exit 0 is a failure" is a plan mandate, pinned by unit tests and carried by
+an explicit stage decision — so it was **deliberately left as-is**. But tmux prints `~/.tmux.conf`
+deprecation warnings to stderr *while creating the session fine*, so one benign warning now: fails the
+spawn, kills a **working** server via the abort path, and writes the sticky
+`.work/terminal-backend-fallback` marker — disabling tmux for the whole repo until someone runs
+`loom run --backend tmux`.
+
+The `has-session` probe that immediately follows is the authoritative signal and would distinguish the
+two cases. Gating the stderr rule on that probe is a design call for the plan owner, not an
+integration-verify defect.
+
+## PID Recycling Can Still Route a SIGTERM to a Stranger (2026-08-08)
+
+**Pre-existing, deliberately preserved through the `pid_guard.rs` dedup** (which reproduced all four
+call sites' behaviour exactly, as instructed).
+
+Sequence: the PID file holds `(P, startT)`; `P` is recycled; `pid_matches_entry` is false so
+`StalePidFiles::Reap` **deletes** the PID file; liveness layer 3 then reports alive because
+`session.pid == P` is alive (layer 3 has no start-time check); a later `kill_session` finds **no** PID
+file and falls back to `session.pid == P` — signalling the stranger that layer 2 had just vetoed.
+
+Root cause is layer 3's unguarded `is_process_alive(session.pid)`, not the reap. Fix would be to
+start-time-verify `session.pid` in layer 3, or have `Reap` remove only the wrapper script.
+
+Related detection rule: any *reaping* liveness probe must **persist** its dead verdict (the monitor
+does, via `Crashed`) rather than re-probe. The list-then-kill CLI sites (`commands/sessions.rs`,
+`commands/stage/state.rs`) can still reach the `None => session.pid` branch of `resolve_kill_target`
+on a second invocation.
+
+## `loom attach` Overview Panes Are Live, Writable Agent Terminals (2026-08-08)
+
+The overview's panes are full interactive attach clients (no `-r`), so a stray keystroke goes into a
+live autonomous agent's input, and `C-b x` kills the **stage's** pane — the inner servers have no
+`remain-on-exit`, only the viewer window does.
+
+Left as-is deliberately: the plan mandates the exact pane string. If the overview is meant to be a
+*viewer* rather than N live terminals, adding `-r` to `attach-session` on the **overview path only**
+(never on `loom attach <stage-id>`, which is the intentionally interactive path) is a one-word change.
+
+## Nothing Reaps the Overview Viewer Socket (2026-08-08)
+
+`list_loom_sockets` skips `loom-view-<8hex>` by name so `clean`/`init` do not report it as
+unattributable, and the skip comment concedes "Nothing currently reaps this socket". After
+`loom attach` the viewer server and its nested clients outlive the operator's detach, and
+`loom init --clean` now kills every attributed *session* server while stranding the viewer.
+
+It is the one socket whose name is a pure function of the repo root, so reaping it carries no
+cross-checkout risk — roughly two lines in `cleanup_orphaned_sessions` and `clean::sessions` once
+`viewer_socket_name` is crate-visible.
+
+## Dead Code: `NativeBackend::spawn_base_conflict_session` (2026-08-08)
+
+`spawn_base_conflict_session` (`orchestrator/terminal/native/mod.rs:235-241`) has **zero callers
+repo-wide** — `rg` across `loom/src` and `loom/tests` matches only the definition itself. `SessionBackend`
+exposes `spawn_session`, `spawn_merge_session` and `spawn_knowledge_session` but no base-conflict
+variant, so the tmux lane has no counterpart either.
+
+Pre-existing; left untouched per CLAUDE.md principle C (remove only what your change orphaned).
+Recorded, not deleted — do not "clean it up" in a passing stage.
+
+## `loom knowledge` Still Cannot Correct an Entry In Place (2026-08-08)
+
+Concrete instance of the "No Delete-Section Verb" gap above: this plan found two tier-1/tier-2 sections
+that had become factually **wrong** (a "~15-20 struct literal breakages" count that is now 3, and a
+"Session Spawning Pattern" describing an `Arc<NativeBackend>` the orchestrator no longer holds).
+Because `loom knowledge update` only appends, the distill stage could only append `CORRECTION (...)
+supersedes ...` sections beneath them.
+
+**Cost:** the wrong text stays in the file and still greps, so a future agent reading top-down hits the
+stale claim first. An `update --replace-section <heading>` verb would let distillation actually retire
+a stale entry instead of layering over it.
