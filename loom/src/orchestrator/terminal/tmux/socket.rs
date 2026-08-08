@@ -11,6 +11,8 @@ use std::process::Command;
 
 use crate::models::session::Session;
 
+use super::native::{pid_only_is_alive, StalePidFiles};
+
 /// The tmux socket directory tmux itself would use: `$TMUX_TMPDIR` if set,
 /// else `/tmp`, joined with `tmux-<uid>`.
 ///
@@ -102,6 +104,11 @@ pub fn list_loom_sockets(work_dir: &Path) -> Vec<LoomSocket> {
 /// authorize killing a LIVE session of this very repo whose file merely
 /// happened to be mid-write or momentarily unreadable. Never destroy on
 /// evidence you could not actually read.
+///
+/// The PID layers themselves are shared with the backends, but with
+/// [`StalePidFiles::Leave`]: unlike a backend liveness poll, this is a
+/// read-only judgment its caller is about to act on destructively, so it must
+/// not delete the very tracking files it just reported on.
 pub fn socket_session_is_alive(work_dir: &Path, session_id: &str) -> bool {
     let session_path = work_dir.join("sessions").join(format!("{session_id}.md"));
     if !session_path.exists() {
@@ -116,22 +123,7 @@ pub fn socket_session_is_alive(work_dir: &Path, session_id: &str) -> bool {
         return true;
     };
 
-    let resolved = super::native::NativeBackend::window_title_and_pid_key(&session);
-    if let Some((_, pid_key)) = &resolved {
-        if let Some(entry) = super::native::read_pid_entry(work_dir, pid_key) {
-            if super::native::pid_matches_entry(&entry) {
-                return true;
-            }
-        }
-    }
-
-    if let Some(pid) = session.pid {
-        if crate::process::is_process_alive(pid) {
-            return true;
-        }
-    }
-
-    false
+    pid_only_is_alive(work_dir, &session, StalePidFiles::Leave)
 }
 
 /// Best-effort `tmux -S <socket_path> kill-server`. Returns whether the
@@ -146,7 +138,7 @@ pub fn kill_socket_server(socket_path: &Path) -> bool {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use serial_test::serial;
     use tempfile::TempDir;
@@ -155,12 +147,17 @@ mod tests {
     /// test and restores it on drop — `loom_socket_dir()` honors the env var,
     /// so this makes `list_loom_sockets` deterministic without a real tmux
     /// server. `#[serial]` on callers avoids racing other TMUX_TMPDIR tests.
-    struct TmuxTmpDirGuard {
+    ///
+    /// `pub(crate)` because `tmux::tests` needs the same pin: any test that
+    /// touches `socket_path_for` is reading the same process-global env var
+    /// these tests write, so a second private copy of this guard would be one
+    /// more thing to keep in sync for no benefit.
+    pub(crate) struct TmuxTmpDirGuard {
         original: Option<std::ffi::OsString>,
     }
 
     impl TmuxTmpDirGuard {
-        fn set(dir: &Path) -> Self {
+        pub(crate) fn set(dir: &Path) -> Self {
             let original = std::env::var_os("TMUX_TMPDIR");
             std::env::set_var("TMUX_TMPDIR", dir);
             Self { original }
@@ -250,14 +247,54 @@ mod tests {
         // unattributable session socket.
         std::fs::write(tmux_socket_dir.join("loom-view-deadbeef"), "").unwrap();
 
+        // POSITIVE CONTROL. Asserting only "nothing came back" cannot tell
+        // "the viewer socket was skipped" apart from "listing is broken and
+        // returns nothing at all" — a `continue` moved one line too far, or a
+        // wrong socket dir, would pass the empty assertion happily. A real
+        // session socket sitting in the same directory forces the test to
+        // prove the skip is SELECTIVE.
+        let real_session_id = "session-abcd1234-1111111111";
+        std::fs::write(tmux_socket_dir.join(format!("loom-{real_session_id}")), "").unwrap();
+
         let work_dir = TempDir::new().unwrap();
         std::fs::create_dir_all(work_dir.path().join("sessions")).unwrap();
 
         let sockets = list_loom_sockets(work_dir.path());
 
+        assert_eq!(
+            sockets.len(),
+            1,
+            "exactly the real session socket must come back, not the viewer socket"
+        );
+        assert_eq!(sockets[0].session_id, real_session_id);
+    }
+
+    #[test]
+    fn socket_session_is_alive_never_deletes_the_evidence_it_reports_on() {
+        // `loom clean` / `loom init` reap on `attributed && !alive`, so this
+        // probe runs BEFORE a destructive decision, on files the caller may
+        // still need. Passing `StalePidFiles::Reap` here would delete the PID
+        // file mid-judgment; nothing else in the codebase would notice, which
+        // is exactly why the wiring (not just the enum) needs pinning.
+        let work = TempDir::new().unwrap();
+        let mut session = crate::models::session::Session::new();
+        session.assign_to_stage("reaped-stage".to_string());
+        session.pid = Some(999_999_999);
+        crate::fs::session_files::save_session(&session, work.path()).unwrap();
+
+        let (_, pid_key) =
+            super::super::native::NativeBackend::window_title_and_pid_key(&session).unwrap();
+        std::fs::create_dir_all(work.path().join("pids")).unwrap();
+        let pid_file = work.path().join("pids").join(format!("{pid_key}.pid"));
+        std::fs::write(&pid_file, "999999999\n").unwrap();
+
         assert!(
-            sockets.is_empty(),
-            "the overview viewer socket must be skipped, not reported as unattributed"
+            !socket_session_is_alive(work.path(), &session.id),
+            "a dead PID with a dead PID file must report dead"
+        );
+        assert!(
+            pid_file.exists(),
+            "the probe must be side-effect free — it must not reap the PID file it just read"
         );
     }
 

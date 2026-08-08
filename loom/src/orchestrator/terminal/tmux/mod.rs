@@ -147,6 +147,35 @@ pub fn await_tmux_session_pid(
     native::await_session_pid(work_dir, pid_key, cwd, session_id, None)
 }
 
+/// Tear down the tmux server owned by `socket` and unlink its socket file.
+///
+/// Both steps are needed and neither implies the other: verified that
+/// `kill-server` does not always unlink its own socket (the stale file can
+/// linger with no process behind it), while removing the file without killing
+/// the server would strand the server AND lose the only handle to it.
+///
+/// Best-effort by design — this runs on teardown and error paths where there
+/// is nothing useful to do with a failure.
+fn teardown_socket(socket: &str) {
+    let socket_path = socket_path_for(socket);
+    let _ = kill_socket_server(&socket_path);
+    let _ = std::fs::remove_file(&socket_path);
+}
+
+/// Undo a partially-completed tmux spawn: kill whatever server came up, then
+/// delete the PID file and wrapper script this attempt created.
+///
+/// Split out of [`TmuxBackend::spawn`]'s error paths so the teardown itself is
+/// unit-testable without a tmux server or a claude process — the ordering is
+/// load-bearing (kill the process BEFORE removing the PID file it writes to,
+/// or a slow wrapper can recreate the file behind us) and so is the file
+/// removal (see `TmuxBackend::spawn`'s docs: a surviving PID file makes the
+/// native retry adopt the tmux attempt's PID).
+fn abort_tmux_spawn(work_dir: &Path, socket: &str, pid_key: &str) {
+    teardown_socket(socket);
+    native::cleanup_stage_files(work_dir, pid_key);
+}
+
 /// Tmux terminal backend — spawns sessions in headless tmux servers.
 pub struct TmuxBackend {
     /// The `.work` directory path, for PID tracking and session lookups.
@@ -163,6 +192,26 @@ impl TmuxBackend {
 
     /// Unified spawn for every tmux session type, mirroring
     /// `NativeBackend::spawn`.
+    ///
+    /// # Every post-preparation failure MUST clean up
+    ///
+    /// Once `prepare_session_launch` returns, a wrapper script and a PID-file
+    /// slot exist; once `spawn_in_tmux` starts talking to tmux, a server and a
+    /// real claude process may exist even on the failure paths — `has-session`
+    /// can fail after `new-session` created the session, and
+    /// [`evaluate_new_session`] rejects an exit-0 spawn whose stderr carried
+    /// nothing worse than a `~/.tmux.conf` warning.
+    ///
+    /// Returning without tearing that down is not a leak of a stray process,
+    /// it is a CORRECTNESS bug: `SessionBackend::dispatch_spawn` retries on the
+    /// native lane, so the stage ends up with TWO claude agents editing the
+    /// same worktree. The stale PID file is the second half of the same bug —
+    /// `await_session_pid` returns the first live PID it reads under this
+    /// session's `pid_key`, which would be the orphaned tmux claude, so the
+    /// native retry would adopt it while stamping `backend = Native`.
+    ///
+    /// Hence one `abort` closure ([`abort_tmux_spawn`]), used by every error
+    /// path below.
     fn spawn(
         &self,
         kind: SessionType,
@@ -176,13 +225,17 @@ impl TmuxBackend {
             native::prepare_session_launch(&self.work_dir, kind, stage, session, signal_path, cwd)?;
 
         let socket = socket_name(&session);
-        spawn_in_tmux(&socket, &title, cwd, &wrapper_path)?;
+        let abort = || abort_tmux_spawn(&self.work_dir, &socket, &pid_key);
+
+        if let Err(err) = spawn_in_tmux(&socket, &title, cwd, &wrapper_path) {
+            abort();
+            return Err(err);
+        }
 
         let pid = match await_tmux_session_pid(&self.work_dir, &pid_key, cwd, &session.id) {
             Ok(pid) => pid,
             Err(err) => {
-                // Do not strand a server whose wrapper never came up.
-                let _ = kill_socket_server(&socket_path_for(&socket));
+                abort();
                 return Err(err);
             }
         };
@@ -191,7 +244,10 @@ impl TmuxBackend {
             session.set_worktree_path(cwd.to_path_buf());
         }
         session.set_pid(pid);
-        session.try_mark_running()?;
+        if let Err(err) = session.try_mark_running() {
+            abort();
+            return Err(err);
+        }
 
         Ok(session)
     }
@@ -248,40 +304,17 @@ impl TmuxBackend {
     }
 
     pub fn kill_session(&self, session: &Session) -> Result<()> {
-        // Best-effort: tear down this session's tmux server first. Verified:
-        // `kill-server` does not always unlink its own socket file (the
-        // stale file can linger with no process behind it), so remove it
-        // explicitly — this is the ONE place that knows the exact path at
-        // clean-teardown time; the socket-housekeeping sweep in `socket.rs`
-        // exists for sockets orphaned by an unclean death, not this path.
-        let socket_path = socket_path_for(&socket_name(session));
-        let _ = kill_socket_server(&socket_path);
-        let _ = std::fs::remove_file(&socket_path);
+        // Best-effort: tear down this session's tmux server first. This is the
+        // ONE place that knows the exact socket path at clean-teardown time;
+        // the socket-housekeeping sweep in `socket.rs` exists for sockets
+        // orphaned by an unclean death, not this path.
+        teardown_socket(&socket_name(session));
 
-        // Then the guarded PID branch, mirroring NativeBackend::kill_session:
-        // only signal when a PID-file entry positively matches (never SIGTERM
-        // a recycled PID); fall back to `session.pid` only when there is no
+        // Then the guarded PID branch, shared with the native lane: only
+        // signal when a PID-file entry positively matches (never SIGTERM a
+        // recycled PID); fall back to `session.pid` only when there is no
         // PID-file evidence at all.
-        let resolved = native::NativeBackend::window_title_and_pid_key(session);
-        let pid_to_kill = match resolved.as_ref() {
-            Some((_, pid_key)) => match native::read_pid_entry(&self.work_dir, pid_key) {
-                Some(entry) if native::pid_matches_entry(&entry) => Some(entry.pid),
-                Some(_) => None,
-                None => session.pid,
-            },
-            None => session.pid,
-        };
-
-        if let Some(pid) = pid_to_kill {
-            crate::process::terminate(pid)
-                .with_context(|| format!("Failed to terminate session process {pid}"))?;
-        }
-
-        if let Some((_, pid_key)) = &resolved {
-            native::cleanup_stage_files(&self.work_dir, pid_key);
-        }
-
-        Ok(())
+        native::pid_only_terminate(&self.work_dir, session)
     }
 
     /// Whether `session` is alive, using ONLY the PID layers — never
@@ -292,26 +325,15 @@ impl TmuxBackend {
     /// liveness source would make the monitor report a dead claude as ALIVE,
     /// never file the crash, and never retry — defeating the containment
     /// property this backend exists to deliver. PID-file evidence (with
-    /// start-time verification against reuse) is the only source of truth.
+    /// start-time verification against reuse) is the only source of truth,
+    /// which is precisely what [`native::pid_only_is_alive`] implements; this
+    /// lane simply adds NOTHING on top of it.
     pub fn is_session_alive(&self, session: &Session) -> Result<bool> {
-        let resolved = native::NativeBackend::window_title_and_pid_key(session);
-
-        if let Some((_, pid_key)) = &resolved {
-            if let Some(entry) = native::read_pid_entry(&self.work_dir, pid_key) {
-                if native::pid_matches_entry(&entry) {
-                    return Ok(true);
-                }
-                native::cleanup_stage_files(&self.work_dir, pid_key);
-            }
-        }
-
-        if let Some(pid) = session.pid {
-            if crate::process::is_process_alive(pid) {
-                return Ok(true);
-            }
-        }
-
-        Ok(false)
+        Ok(native::pid_only_is_alive(
+            &self.work_dir,
+            session,
+            native::StalePidFiles::Reap,
+        ))
     }
 }
 
