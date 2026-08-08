@@ -18,6 +18,26 @@ use crate::models::stage::Stage;
 
 use super::pid_tracking;
 
+/// Derive the Remote Control session name for a spawn, prefixed by kind.
+///
+/// Base is `stage.name` (required by the plan schema); falls back to
+/// `stage.id` when `stage.name` is empty after trimming (hand-built stages
+/// with no name set).
+fn remote_control_session_name(kind: SessionType, stage: &Stage) -> String {
+    let trimmed = stage.name.trim();
+    let base = if trimmed.is_empty() {
+        stage.id.as_str()
+    } else {
+        trimmed
+    };
+    match kind {
+        SessionType::Stage => base.to_string(),
+        SessionType::Merge => format!("Merge: {base}"),
+        SessionType::BaseConflict => format!("Base conflict: {base}"),
+        SessionType::Knowledge => format!("Knowledge: {base}"),
+    }
+}
+
 /// Prepare everything needed to launch a session, short of actually starting
 /// the terminal/tmux process.
 ///
@@ -122,13 +142,14 @@ pub(crate) fn prepare_session_launch(
     // Find claude's absolute path (needed for macOS where terminals don't inherit PATH).
     // build_claude_command shell-escapes the path, model, effort, and mode (S-3).
     let claude_path = find_claude_path()?;
-    let remote_control_enabled = crate::remote_control::resolve(work_dir);
+    let rc_name = remote_control_session_name(kind, stage);
+    let remote_control = crate::remote_control::resolve_invocation(work_dir, &rc_name);
     let claude_cmd = super::build_claude_command(
         &claude_path.display().to_string(),
         model,
         effort,
         permission_mode.as_settings_value(),
-        remote_control_enabled,
+        &remote_control,
         &escaped_prompt,
     );
 
@@ -149,4 +170,71 @@ pub(crate) fn prepare_session_launch(
     let wrapper_path_abs = wrapper_path.canonicalize().unwrap_or(wrapper_path);
 
     Ok((session, title, pid_key, wrapper_path_abs))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn stage_named(id: &str, name: &str) -> Stage {
+        Stage {
+            id: id.to_string(),
+            name: name.to_string(),
+            ..Stage::default()
+        }
+    }
+
+    #[test]
+    fn remote_control_session_name_stage_uses_bare_name() {
+        let stage = stage_named("my-stage", "My Stage");
+        assert_eq!(
+            remote_control_session_name(SessionType::Stage, &stage),
+            "My Stage"
+        );
+    }
+
+    #[test]
+    fn remote_control_session_name_merge_is_prefixed() {
+        let stage = stage_named("my-stage", "My Stage");
+        assert_eq!(
+            remote_control_session_name(SessionType::Merge, &stage),
+            "Merge: My Stage"
+        );
+    }
+
+    #[test]
+    fn remote_control_session_name_base_conflict_is_prefixed() {
+        let stage = stage_named("my-stage", "My Stage");
+        assert_eq!(
+            remote_control_session_name(SessionType::BaseConflict, &stage),
+            "Base conflict: My Stage"
+        );
+    }
+
+    #[test]
+    fn remote_control_session_name_knowledge_is_prefixed() {
+        let stage = stage_named("my-stage", "My Stage");
+        assert_eq!(
+            remote_control_session_name(SessionType::Knowledge, &stage),
+            "Knowledge: My Stage"
+        );
+    }
+
+    #[test]
+    fn remote_control_session_name_falls_back_to_stage_id_when_name_empty() {
+        let stage = stage_named("my-stage", "   ");
+        assert_eq!(
+            remote_control_session_name(SessionType::Stage, &stage),
+            "my-stage"
+        );
+    }
+
+    #[test]
+    fn remote_control_session_name_handles_fully_empty_stage() {
+        let stage = Stage::default();
+        assert_eq!(
+            remote_control_session_name(SessionType::Merge, &stage),
+            "Merge: "
+        );
+    }
 }

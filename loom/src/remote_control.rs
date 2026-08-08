@@ -11,10 +11,15 @@
 //!     carries the operator-facing on/off switch (`mode = auto | off`).
 //!   * `preflight()` combines a version probe with an auth-eligibility
 //!     heuristic and yields a `RemoteControlStatus`.
-//!   * `resolve()` is the per-spawn gate: it returns `false` when the mode is
-//!     `off`, when a `.work/remote_control-unsupported` marker exists, or when
-//!     the preflight is not satisfied. The marker lets the crash handler
-//!     disable Remote Control mid-run after a fast-fail crash.
+//!   * `resolve()` is the mode/marker/preflight gate: it returns `false` when
+//!     the mode is `off`, when a `.work/remote_control-unsupported` marker
+//!     exists, or when the preflight is not satisfied. The marker lets the
+//!     crash handler disable Remote Control mid-run after a fast-fail crash.
+//!     Its only remaining caller is the crash handler's fast-fail check.
+//!   * `resolve_invocation()` is the actual per-spawn decision point: it
+//!     layers a memoized `--help` capability probe over `resolve()` to decide
+//!     between `RemoteControlInvocation::Disabled`, `Bare` (older claude, no
+//!     optional-name support), and `Named(session_name)`.
 
 use crate::claude::find_claude_path;
 use crate::fs::work_dir::read_remote_control_config;
@@ -77,6 +82,19 @@ impl RemoteControlStatus {
     }
 }
 
+/// The concrete `--remote-control` invocation to emit for a spawn, decided by
+/// [`resolve_invocation`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RemoteControlInvocation {
+    /// Omit the flag entirely.
+    Disabled,
+    /// Pass `--remote-control` with no argument (older claude versions that
+    /// accept the flag but not the optional name argument).
+    Bare,
+    /// Pass `--remote-control <name>`.
+    Named(String),
+}
+
 /// Parse a semver triple (`major.minor.patch`) out of arbitrary text.
 ///
 /// Tolerates surrounding noise (e.g. `"2.1.51 (Claude Code)"`). Returns `None`
@@ -119,6 +137,26 @@ fn probe_claude_version(claude_path: &Path) -> Option<(u64, u64, u64)> {
     }
     let stdout = String::from_utf8_lossy(&output.stdout);
     parse_version(&stdout)
+}
+
+/// Whether `claude --help` output documents the optional `[name]` argument to
+/// `--remote-control`.
+fn help_indicates_named_arg(help_text: &str) -> bool {
+    help_text.contains("--remote-control [name]")
+}
+
+/// Whether `<claude_path> --help` documents the optional `[name]` argument to
+/// `--remote-control`. Exec failure or non-zero exit fails closed (`false`,
+/// i.e. fall back to the bare flag).
+fn probe_named_arg_support(claude_path: &Path) -> bool {
+    let Ok(output) = Command::new(claude_path).arg("--help").output() else {
+        return false;
+    };
+    if !output.status.success() {
+        return false;
+    }
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    help_indicates_named_arg(&stdout)
 }
 
 /// Whether the claude binary at `claude_path` supports `--remote-control`.
@@ -307,6 +345,40 @@ pub fn resolve(work_dir: &Path) -> bool {
     }
 }
 
+/// Memoized named-argument capability probe, keyed by nothing — `claude
+/// --help` output is invariant for the daemon's lifetime. Separate from the
+/// version-preflight cache in [`cached_preflight_enabled`].
+fn cached_named_arg_supported(claude_path: &Path) -> bool {
+    static CACHE: OnceLock<bool> = OnceLock::new();
+    *CACHE.get_or_init(|| probe_named_arg_support(claude_path))
+}
+
+/// Resolve the concrete `--remote-control` invocation for a spawn against
+/// `work_dir`, naming the session `session_name` when the installed claude
+/// supports the optional name argument.
+///
+/// The config and unsupported-marker are re-read on every call (via
+/// [`resolve`], cheap); the `--help` capability probe runs at most once per
+/// process (memoized in [`cached_named_arg_supported`]). [`resolve`] itself is
+/// UNCHANGED — the crash handler keeps calling it directly and this function
+/// does not alter its `bool` contract.
+pub fn resolve_invocation(work_dir: &Path, session_name: &str) -> RemoteControlInvocation {
+    if !resolve(work_dir) {
+        return RemoteControlInvocation::Disabled;
+    }
+
+    match find_claude_path() {
+        Err(_) => RemoteControlInvocation::Disabled,
+        Ok(path) => {
+            if cached_named_arg_supported(&path) {
+                RemoteControlInvocation::Named(session_name.to_string())
+            } else {
+                RemoteControlInvocation::Bare
+            }
+        }
+    }
+}
+
 /// Run the Remote Control preflight once at orchestrator startup and print an
 /// advisory warning to stderr if it is disabled.
 ///
@@ -463,6 +535,47 @@ mod tests {
         assert!(
             !args.contains(&"-w"),
             "must never pass -w: it prints the secret to stdout"
+        );
+    }
+
+    #[test]
+    fn help_indicates_named_arg_detects_optional_name() {
+        let help = "Usage: claude [options] [prompt]\n\
+                    \x20 --permission-mode <mode>  Permission mode\n\
+                    \x20 --remote-control [name]   Enable remote control\n";
+        assert!(help_indicates_named_arg(help));
+    }
+
+    #[test]
+    fn help_indicates_named_arg_false_without_optional_name() {
+        // Older claude: the flag exists but takes no argument.
+        let help = "  --remote-control        Enable remote control\n";
+        assert!(!help_indicates_named_arg(help));
+    }
+
+    #[test]
+    fn probe_named_arg_support_false_for_missing_binary() {
+        // A path that does not exist must fail closed (bare flag).
+        assert!(!probe_named_arg_support(Path::new(
+            "/nonexistent/claude-binary-xyz"
+        )));
+    }
+
+    #[test]
+    #[serial]
+    fn resolve_invocation_disabled_when_mode_off() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let work_dir = temp.path();
+        crate::fs::work_dir::write_remote_control_config(
+            work_dir,
+            &RemoteControlConfig {
+                mode: RemoteControlMode::Off,
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            resolve_invocation(work_dir, "anything"),
+            RemoteControlInvocation::Disabled
         );
     }
 

