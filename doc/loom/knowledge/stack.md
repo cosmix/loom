@@ -59,3 +59,12 @@
 
 - `codex` CLI — required at runtime by `loom pressure` for the Codex review rounds. Resolved by `loom/src/codex.rs::find_codex_path` (`which::which`, then `~/.bun/bin`, `~/.local/bin`, `~/.npm-global/bin`, `~/.cargo/bin`, `/usr/local/bin`, `/opt/homebrew/bin`). Typically installed via bun/npm.
 - `claude` CLI — likewise required by `loom pressure` (resolved by `find_claude_path`).
+
+- `tmux` — **optional** runtime dependency, required only when the terminal backend is set to `tmux`
+  (`[terminal] backend = "tmux"` in `.work/config.toml`, or `loom run --backend tmux`). No new Rust
+  crates were needed for the backend: it shells out to the `tmux` binary and reuses `which` (PATH
+  probe), `libc` (`getuid()` for the `tmux-<uid>` socket dir) and `sha2` (the per-repo overview viewer
+  socket name), all already in `loom/Cargo.toml`. Availability is probed with `which::which("tmux")` at
+  `loom init`, at `loom run` startup and again per spawn; a missing binary is always **advisory** —
+  loom warns and falls back to the native lane, never aborts. Version note: the overview's nested-attach
+  and layout behaviour was verified against tmux 3.7b.

@@ -88,6 +88,7 @@ Thirteen stage states make "needs a person" a first-class outcome rather than a 
 - Linux: primary development and full CI test runs
 - macOS: supported for build/terminal integration, CI does build-only verification
 - Windows: not supported (WSL may work but is best-effort)
+- Headless (SSH, no terminal emulator): supported via the tmux backend — see [Terminal Backends](#terminal-backends)
 
 ## Quick Start
 
@@ -185,8 +186,8 @@ Everything else is an explicit, inspectable outcome rather than a hang:
 ### Primary Commands
 
 ```bash
-loom init <plan-path> [--clean]
-loom run [--manual] [--max-parallel N] [--foreground] [--watch] [--no-merge]
+loom init <plan-path> [--clean] [--backend native|tmux]
+loom run [--manual] [--max-parallel N] [--foreground] [--watch] [--no-merge] [--backend native|tmux]
 loom status [--live] [--compact] [--verbose]
 loom stop
 loom resume <stage-id>
@@ -262,6 +263,7 @@ See [Knowledge System](#knowledge-system) for how these fit together.
 
 ```bash
 loom review [--ai-summary]                                                   # Generate a code-review doc from stage memories; --ai-summary uses headless `claude -p` (see Billing note)
+loom attach [stage-id]                                                       # tmux backend only; omit the id for a tiled overview
 loom sessions list
 loom sessions kill <session-id...> | --stage <stage-id>
 loom worktree list
@@ -545,7 +547,7 @@ Claude Code's `--remote-control` flag lets the loom orchestrator drive spawned C
 **Prerequisites (preflight check):**
 
 - **Claude version** ≥ 2.1.51
-- **Auth**: claude.ai login — `~/.claude/.credentials.json` must be present and none of these env vars may be set: `ANTHROPIC_API_KEY`, `CLAUDE_CODE_OAUTH_TOKEN`, `CLAUDE_CODE_USE_BEDROCK`, `CLAUDE_CODE_USE_VERTEX`, `CLAUDE_CODE_USE_FOUNDRY`
+- **Auth**: claude.ai login — loom accepts **either** credential store: `~/.claude/.credentials.json`, **or** (on macOS) a `Claude Code-credentials` entry in the **Keychain**, which is where Claude Code stores credentials on macOS instead of the file. Additionally, none of these env vars may be set: `ANTHROPIC_API_KEY`, `CLAUDE_CODE_OAUTH_TOKEN`, `CLAUDE_CODE_USE_BEDROCK`, `CLAUDE_CODE_USE_VERTEX`, `CLAUDE_CODE_USE_FOUNDRY`
 
 The flag exits non-zero when its prerequisites are not met, so loom never passes it blindly. When preflight fails, loom falls back silently to standard mode and prints a one-line advisory at orchestrator startup (e.g. `⚠ Remote Control disabled: <reason>`).
 
@@ -563,6 +565,90 @@ Toggling `mode` takes effect on the next session spawn — no daemon restart nee
 **Mid-run fallback** — if a session crashes within 15 seconds of spawn while Remote Control is active, loom writes a `.work/remote_control-unsupported` marker, then respawns and omits the flag for the rest of the run.
 
 **Session naming** — every spawned session is named after its stage in the Remote Control UI: the stage name for stage sessions, and `Merge: <stage name>`, `Base conflict: <stage name>`, `Knowledge: <stage name>` for merge, base-conflict, and knowledge sessions respectively. Claude binaries whose `--remote-control` flag doesn't accept a name argument automatically fall back to the bare flag — detected via a one-time `claude --help` capability check, no configuration needed.
+
+## Terminal Backends
+
+Loom spawns each stage's Claude Code session through a terminal backend. Two are available.
+
+| Backend            | Default | Sessions run in                     | Needs a GUI? |
+| ------------------ | ------- | ----------------------------------- | ------------ |
+| `native`           | ✅ yes  | a host terminal emulator window     | yes          |
+| `tmux`             | opt-in  | a detached tmux server (no window)  | no           |
+
+The `native` backend opens a real terminal window per session — you watch stages run in your own
+terminal emulator. It requires a detectable emulator, so it cannot run headless.
+
+The `tmux` backend spawns each session into a detached tmux server instead, which makes loom usable
+over SSH, on a headless Linux box, or anywhere no terminal emulator exists. **tmux must be installed
+and on `PATH`.**
+
+### Selecting a backend
+
+```toml
+# .work/config.toml
+[terminal]
+backend = "tmux"   # or "native" (default)
+```
+
+Or from the CLI:
+
+```bash
+loom init <plan> --backend tmux   # skips the interactive backend prompt
+loom run --backend tmux           # persists the choice to [terminal]
+```
+
+`loom init` prompts for a backend when run interactively; with no TTY it defaults to `native`.
+Changing the backend while the daemon is running is refused with a hint — `loom stop` first, then
+re-run with `--backend`. Selecting a backend takes effect on the next spawn.
+
+If tmux is selected but not installed, loom prints an advisory warning at `loom init` and at
+`loom run` startup and **never aborts** — sessions fall back to the native lane.
+
+### One tmux server per session
+
+Loom does **not** put every stage in one shared tmux server. Each session gets its own server on its
+own socket, named `loom-<session-id>` under `$TMUX_TMPDIR` (else `/tmp`).
+
+This is deliberate: a wedged or killed server takes down exactly one stage, instead of every stage
+running in parallel. Liveness is tracked from PID files rather than by asking tmux, because a tmux
+server whose agent process has died still reports the session as existing — which would hide the
+crash from loom's monitor and prevent the retry.
+
+### Attaching
+
+```bash
+loom attach              # tiled overview of every live session
+loom attach <stage-id>   # attach directly to one stage's session
+```
+
+With no argument, `loom attach` builds a per-repo viewer window with one pane per live session, tiled.
+With a stage id it attaches straight to that stage. Both require a real terminal (a TTY), and both
+work only for sessions spawned by the tmux backend — with the native backend it tells you so.
+
+Panes in the overview are **live, writable terminals**, not read-only views: keystrokes go to the
+agent, and `C-b x` closes that stage's pane. Detach the normal way with `C-b d`.
+
+### Fallback marker
+
+If a tmux spawn fails — or tmux is configured but unavailable — loom retries on the native backend and
+writes a marker file:
+
+```text
+.work/terminal-backend-fallback
+```
+
+While that marker exists, **every** subsequent spawn uses the native backend, and it survives daemon
+restarts. Loom only writes it when the native backend is actually usable; on a headless box, where the
+native lane cannot be built, loom keeps tmux selected and reports the real tmux error instead of
+silently disabling the one backend that works there.
+
+Clear it by explicitly re-selecting tmux:
+
+```bash
+loom run --backend tmux
+```
+
+`loom clean --state` (or `--all`) also removes it, as a side effect of deleting `.work/` entirely.
 
 ## Agent Teams (Experimental)
 

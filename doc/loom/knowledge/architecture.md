@@ -409,3 +409,19 @@ code**. The page also records what execution did NOT prove: no stage has yet run
 in `implementers`.
 
 → [Codex Concurrency](architecture/codex-concurrency.md)
+
+## Terminal Backends: SessionBackend / TmuxBackend [DETAILED]
+
+`SessionBackend` (`orchestrator/terminal/backend.rs`) is the one dispatcher every spawn, kill and
+liveness call routes through, wrapping a `Native` lane (host terminal window, the default) and an
+opt-in `Tmux` lane (detached tmux server, headless-capable). It selects `[terminal] backend` from
+`.work/config.toml` per spawn, builds the native lane lazily in a `OnceLock` that memoizes even the
+failure, and records the lane actually used on `Session.backend` so kill/liveness stay correct across
+daemon restarts. The tmux lane runs **one server per session** (socket `loom-<session.id>`, keyed on
+session id for the 104-byte `sun_path` limit) for crash containment, and its liveness deliberately
+**never calls `tmux has-session`** — a server whose pane died still answers 0, which would mask the
+crash. The topic covers the spawn-time `has-session` probe and the `new-session exits 0 on failure`
+trap, the sticky `.work/terminal-backend-fallback` marker and every path that writes/reads/clears it,
+`loom attach`'s overview and direct modes, and the positive-attribution rule for socket reaping.
+
+→ [Terminal Backends](architecture/terminal-backends.md)

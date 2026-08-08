@@ -53,3 +53,19 @@
 
 **Mistake:** `test_loom_terminal_env_var_takes_precedence` uses `std::env::set_var` without `serial_test`.
 **Fix:** Use `#[serial]` attribute on tests that modify environment variables.
+
+## CORRECTION (2026-08-08): "Adding Session Fields: ~15-20 Struct Literal Breakages" Is Now Wrong
+
+**Supersedes the "~15-20 Struct Literal Breakages" section above — treat that count as obsolete.**
+
+Adding `Session.backend` during the tmux-backend plan broke exactly **3** struct-literal sites, not
+15-20: `src/commands/handoff/create.rs:98`, and `src/commands/stage/tests/session.rs` at `:52` and
+`:146`. `Session` construction has migrated almost entirely to `Session::new()` / `new_merge()` /
+`new_knowledge()` plus field mutation, so bare struct literals are now rare.
+
+**What still holds, and is the part worth keeping:** `cargo build` alone does not surface breakages in
+`tests/` — use `cargo test --all-targets --no-run`.
+
+**Meta-lesson:** a knowledge entry that carries a *count* is a decaying asset. Two stages sized their
+work off this number before anyone checked it. Blast-radius numbers should be re-measured, not
+inherited — and when you measure one, correct the entry in the same stage.
