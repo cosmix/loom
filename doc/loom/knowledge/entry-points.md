@@ -172,7 +172,7 @@ Three files to add a new subcommand:
 
 ## Remote Control Module
 
-- `loom/src/remote_control.rs` - `resolve(work_dir)` per-spawn gate, `preflight(path)`, `write_unsupported_marker(work_dir)`, `run_startup_preflight(path, work_dir)`, `RemoteControlConfig` / `RemoteControlMode` types
+- `loom/src/remote_control.rs` - `resolve_invocation(work_dir, name)` per-spawn gate (layers a `--help` probe over `resolve()`, now called only by the crash handler), `preflight(path)`, `write_unsupported_marker(work_dir)`, `run_startup_preflight(path, work_dir)`, `RemoteControlInvocation` / `RemoteControlConfig` / `RemoteControlMode` types
 
 ## Other Modules
 

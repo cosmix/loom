@@ -562,6 +562,8 @@ Toggling `mode` takes effect on the next session spawn — no daemon restart nee
 
 **Mid-run fallback** — if a session crashes within 15 seconds of spawn while Remote Control is active, loom writes a `.work/remote_control-unsupported` marker, then respawns and omits the flag for the rest of the run.
 
+**Session naming** — every spawned session is named after its stage in the Remote Control UI: the stage name for stage sessions, and `Merge: <stage name>`, `Base conflict: <stage name>`, `Knowledge: <stage name>` for merge, base-conflict, and knowledge sessions respectively. Claude binaries whose `--remote-control` flag doesn't accept a name argument automatically fall back to the bare flag — detected via a one-time `claude --help` capability check, no configuration needed.
+
 ## Agent Teams (Experimental)
 
 Loom enables agent teams in spawned sessions (`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`) and injects team-usage guidance into stage signals.

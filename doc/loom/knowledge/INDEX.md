@@ -28,21 +28,21 @@
 | [architecture/directory-structure.md](architecture/directory-structure.md) | Directory Structure | Full loom/src module tree, the .work/ state layout, and the repo-root asset directories. | 48 |
 | [architecture/hook-system.md](architecture/hook-system.md) | Hook System | Hook embedding and install, the SessionStart hookSpecificOutput contract, and the two subagent enforcement hooks. | 110 |
 | [architecture/knowledge-hierarchy.md](architecture/knowledge-hierarchy.md) | Knowledge Hierarchy | Tier-1/tier-2 knowledge mechanics: layout predicate, target parsing, INDEX.md generation, audit link rules, coverage blast radius, opt-in migration, lock ordering. | 122 |
-| [architecture/remote-control.md](architecture/remote-control.md) | Remote Control | Capability detection, preflight and resolution for driving external agent binaries. | 42 |
+| [architecture/remote-control.md](architecture/remote-control.md) | Remote Control | Capability detection, preflight, resolution, and per-kind session naming for driving external agent binaries. | 64 |
 | [architecture/signal-generation.md](architecture/signal-generation.md) | Signal Generation | How a stage signal is assembled: stable-prefix cache, shared append_* helpers, per-stage-type prefixes, soft signals. | 160 |
 ### entry-points
 
 | Topic | Title | Blurb | Lines |
 | --- | --- | --- | --- |
 | [entry-points/hooks.md](entry-points/hooks.md) | Hooks | Every hook script and the event it binds to, _common.sh's seven helpers, and the registration sites a new hook needs. | 95 |
-| [entry-points/remote-control.md](entry-points/remote-control.md) | Remote Control | Files and call sites for remote-control capability detection and permission-mode resolution. | 96 |
+| [entry-points/remote-control.md](entry-points/remote-control.md) | Remote Control | Files and call sites for remote-control capability detection and permission-mode resolution. | 97 |
 ### patterns
 
 | Topic | Title | Blurb | Lines |
 | --- | --- | --- | --- |
 | [patterns/doctrine-cross-surface.md](patterns/doctrine-cross-surface.md) | Doctrine Cross Surface | Pinning multi-surface guidance with equality tests, ambiguity-equals-fail-safe privilege lookups, and token-based shell classification. | 67 |
 | [patterns/hook-content-stripping.md](patterns/hook-content-stripping.md) | Hook Content Stripping | Stripping heredoc bodies and -m text before matching, the full hook inventory, and the limits of that stripping. | 62 |
-| [patterns/remote-control.md](patterns/remote-control.md) | Remote Control | The detect-capability, preflight, resolve-invocation shape for external agent binaries. | 46 |
+| [patterns/remote-control.md](patterns/remote-control.md) | Remote Control | The detect-capability, preflight, resolve-invocation shape for external agent binaries. | 50 |
 | [patterns/subagent-hierarchy.md](patterns/subagent-hierarchy.md) | Subagent Hierarchy | Flat fan-out vs 2-level coordinator hierarchy vs agent teams: when to use each, model mix, file exclusivity. | 62 |
 ### mistakes
 
