@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 
 use super::cleanup::{
     cleanup_orphaned_sessions, cleanup_work_directory, cleanup_worktrees_directory,
-    prune_stale_worktrees, remove_work_directory_on_failure,
+    prune_stale_worktrees, remove_work_directory_on_failure, SessionReapMode,
 };
 use super::plan_setup::initialize_with_plan;
 
@@ -77,7 +77,17 @@ pub fn execute(plan_path: Option<PathBuf>, clean: bool, backend: Option<String>)
     println!("{}", "─".repeat(40).dimmed());
 
     prune_stale_worktrees(&repo_root)?;
-    cleanup_orphaned_sessions(&repo_root)?;
+    // `--clean` is about to delete `.work/` below, which destroys the ONLY
+    // record (`.work/sessions/<id>.md`) that lets a tmux socket ever be
+    // attributed to this work dir again. Reap attributed sockets EVEN IF
+    // their session is still alive in that case; otherwise stay
+    // conservative and only reap truly-dead sessions.
+    let session_reap_mode = if clean {
+        SessionReapMode::IncludeLiveBeforeClean
+    } else {
+        SessionReapMode::OrphansOnly
+    };
+    cleanup_orphaned_sessions(&repo_root, session_reap_mode)?;
 
     if clean {
         cleanup_work_directory(&repo_root)?;

@@ -8,7 +8,7 @@ use std::path::Path;
 use crate::git::branch::branch_name_for_stage;
 use crate::git::runner::run_git;
 use crate::orchestrator::terminal::tmux::{
-    kill_socket_server, list_loom_sockets, socket_session_is_alive,
+    kill_socket_server, list_loom_sockets, socket_session_is_alive, LoomSocket,
 };
 
 /// Prune stale git worktrees that have been deleted but are still registered
@@ -39,43 +39,120 @@ pub fn prune_stale_worktrees(repo_root: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Kill any orphaned loom tmux sessions from previous runs.
+/// Controls which attributed sockets [`cleanup_orphaned_sessions`] is
+/// allowed to reap. Named explicitly (rather than a bare `bool`) so call
+/// sites read as a decision, not a magic flag.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SessionReapMode {
+    /// The conservative default: reap only sockets whose session is no
+    /// longer alive. A LIVE session is left running — it still has a
+    /// visible window (or, for tmux, an attachable session) somewhere.
+    OrphansOnly,
+    /// `loom init --clean` is about to delete `.work/`, which is the ONLY
+    /// thing that makes socket attribution possible (a socket is attributed
+    /// when `.work/sessions/<id>.md` exists). Reap every socket attributed
+    /// to this work dir — alive or not — before that attribution is
+    /// destroyed, or a live tmux-hosted session leaks forever with no way to
+    /// find it again. Unattributed sockets are still never touched in this
+    /// mode either.
+    IncludeLiveBeforeClean,
+}
+
+/// Outcome of [`handle_socket`] deciding what to do with a single socket.
+enum SocketOutcome {
+    /// Not attributed to this work dir — never touched.
+    Unattributed,
+    /// Attributed but left alone (an `OrphansOnly` sweep skipping a live one).
+    Kept,
+    /// Attributed and reaped; `was_alive` distinguishes a genuinely dead
+    /// (orphaned) session from a live one reaped early by
+    /// `IncludeLiveBeforeClean`.
+    Reaped { was_alive: bool },
+}
+
+/// Decide what to do with one socket found by `list_loom_sockets`, and act on
+/// that decision. Split out of [`cleanup_orphaned_sessions`] so the
+/// sweep/report loop there stays under the line-count cap; this owns the
+/// per-socket policy.
 ///
-/// A socket is "orphaned" when it is attributed to THIS work dir (a matching
-/// `.work/sessions/<id>.md` exists) but its session is no longer alive.
+/// If `kill_socket_server` fails while the session still appeared alive, the
+/// socket is still removed (a failed kill against an already-dead socket is
+/// the COMMON case for a genuinely orphaned session, so unconditional removal
+/// is what actually reaps stale sockets) but the operator is warned, since
+/// discarding the file in that specific case may be the only handle to a
+/// server that is genuinely still running.
+fn handle_socket(work_dir: &Path, socket: &LoomSocket, mode: SessionReapMode) -> SocketOutcome {
+    if !socket.attributed {
+        return SocketOutcome::Unattributed;
+    }
+
+    let alive = socket_session_is_alive(work_dir, &socket.session_id);
+    if alive && mode == SessionReapMode::OrphansOnly {
+        return SocketOutcome::Kept;
+    }
+
+    let killed = kill_socket_server(&socket.path);
+    if alive && !killed {
+        println!(
+            "  {} kill-server failed for session {} while its process still appears alive; \
+             removing the socket anyway — it may leak. Try `tmux -S {} kill-server` manually.",
+            "⚠".yellow().bold(),
+            socket.session_id,
+            socket.path.display()
+        );
+    }
+    let _ = fs::remove_file(&socket.path);
+    SocketOutcome::Reaped { was_alive: alive }
+}
+
+/// Kill loom tmux sessions attributed to this work dir, per `mode`.
+///
 /// Sockets that cannot be attributed to this work dir are reported but never
-/// touched — the tmux socket directory is per-user, not per-repository, so an
-/// unattributed socket may belong to a colleague's, or another checkout's,
-/// live session.
-pub fn cleanup_orphaned_sessions(repo_root: &Path) -> Result<()> {
+/// touched, in EITHER mode — the tmux socket directory is per-user, not
+/// per-repository, so an unattributed socket may belong to a colleague's, or
+/// another checkout's, live session.
+///
+/// With [`SessionReapMode::OrphansOnly`], an attributed socket is reaped only
+/// when its session is no longer alive. With
+/// [`SessionReapMode::IncludeLiveBeforeClean`], an attributed socket is
+/// reaped regardless of liveness — intended to run immediately before
+/// `.work/` is deleted, since deletion is what destroys the ability to ever
+/// attribute (and thus find) that socket again.
+pub fn cleanup_orphaned_sessions(repo_root: &Path, mode: SessionReapMode) -> Result<()> {
     let work_dir = repo_root.join(".work");
 
-    let mut reaped = 0;
+    let mut orphaned_reaped = 0;
+    let mut live_reaped = 0;
     let mut unattributed = 0;
 
     for socket in list_loom_sockets(&work_dir) {
-        if !socket.attributed {
-            unattributed += 1;
-            continue;
+        match handle_socket(&work_dir, &socket, mode) {
+            SocketOutcome::Unattributed => unattributed += 1,
+            SocketOutcome::Kept => {}
+            SocketOutcome::Reaped { was_alive: true } => live_reaped += 1,
+            SocketOutcome::Reaped { was_alive: false } => orphaned_reaped += 1,
         }
-
-        if socket_session_is_alive(&work_dir, &socket.session_id) {
-            continue;
-        }
-
-        kill_socket_server(&socket.path);
-        let _ = fs::remove_file(&socket.path);
-        reaped += 1;
     }
 
-    if reaped == 0 {
+    let total_reaped = orphaned_reaped + live_reaped;
+    if total_reaped == 0 {
         println!("  {} No orphaned sessions to clean", "✓".green().bold());
-    } else {
+    } else if live_reaped == 0 {
         println!(
             "  {} Reaped {} orphaned tmux session{}",
             "✓".green().bold(),
-            reaped,
-            if reaped == 1 { "" } else { "s" }
+            orphaned_reaped,
+            if orphaned_reaped == 1 { "" } else { "s" }
+        );
+    } else {
+        println!(
+            "  {} Reaped {} tmux session{} ({} orphaned, {} still live — about to be \
+             orphaned by --clean)",
+            "✓".green().bold(),
+            total_reaped,
+            if total_reaped == 1 { "" } else { "s" },
+            orphaned_reaped,
+            live_reaped
         );
     }
 

@@ -1,5 +1,8 @@
-//! Clean command for loom resource cleanup
-//! Usage: loom clean [--all] [--worktrees] [--sessions] [--state]
+//! Worktree- and branch-cleanup helpers for `loom clean`.
+//!
+//! Split out of `commands::clean` to keep that module's file under the
+//! 400-line cap: this owns everything that touches git worktrees and
+//! `loom/*` branches, while `sessions.rs` owns tmux session reaping.
 
 use anyhow::{Context, Result};
 use colored::Colorize;
@@ -11,95 +14,12 @@ use crate::git::branch::{commits_ahead_of, list_loom_branches, resolve_target_br
 use crate::git::cleanup::{
     cleanup_all_base_branches, cleanup_multiple_stages, prune_worktrees, CleanupConfig,
 };
-use crate::orchestrator::terminal::tmux::{
-    kill_socket_server, list_loom_sockets, socket_session_is_alive,
-};
-
-/// Statistics for cleanup operations
-#[derive(Default)]
-struct CleanStats {
-    worktrees_removed: usize,
-    branches_removed: usize,
-    sessions_killed: usize,
-    state_removed: bool,
-}
-
-/// Execute the clean command
-///
-/// # Arguments
-/// * `all` - Remove all loom resources
-/// * `worktrees` - Remove only worktrees
-/// * `sessions` - Kill only sessions
-/// * `state` - Remove only .work/ state directory
-///
-/// Bare `loom clean` (no flags) is intentionally NON-destructive: it only
-/// prunes stale git worktree references and prints help. The destructive path
-/// (deleting worktrees, `loom/*` branches, and `.work/`) requires an explicit
-/// flag — `--all`, `--worktrees`, or `--state`. Before any `loom/*` branch with
-/// unmerged commits is deleted, the user is shown the commits-ahead counts and
-/// asked to confirm (skip the prompt with `LOOM_CLEAN_YES=1`).
-pub fn execute(all: bool, worktrees: bool, sessions: bool, state: bool) -> Result<()> {
-    let repo_root = std::env::current_dir()?;
-
-    // Print header
-    print_header();
-
-    // Bare invocation with no flags: do NOT treat as --all. Prune-only + help.
-    if !all && !worktrees && !sessions && !state {
-        return run_bare_clean(&repo_root);
-    }
-
-    let clean_all = all;
-
-    // If we are about to delete worktree branches, surface any unmerged work and
-    // require confirmation. This guards a user who typed `loom clean --all`
-    // mid-plan from silently losing committed-but-unmerged branches.
-    if (clean_all || worktrees) && !confirm_branch_deletion(&repo_root)? {
-        println!();
-        println!("{} Aborted — nothing was deleted.", "✗".red().bold());
-        return Ok(());
-    }
-
-    let mut stats = CleanStats::default();
-
-    // Clean worktrees
-    if clean_all || worktrees {
-        println!("\n{}", "Worktrees".bold());
-        println!("{}", "─".repeat(40).dimmed());
-        let (wt_count, br_count) = clean_worktrees(&repo_root)?;
-        stats.worktrees_removed = wt_count;
-        stats.branches_removed = br_count;
-    }
-
-    // Clean sessions
-    if clean_all || sessions {
-        println!("\n{}", "Sessions".bold());
-        println!("{}", "─".repeat(40).dimmed());
-        stats.sessions_killed = clean_sessions(&repo_root)?;
-    }
-
-    // Clean state directory
-    if clean_all || state {
-        println!("\n{}", "State".bold());
-        println!("{}", "─".repeat(40).dimmed());
-        stats.state_removed = clean_state_directory(&repo_root)?;
-    }
-
-    print_summary(&stats);
-
-    Ok(())
-}
-
-/// Print the loom clean header
-fn print_header() {
-    crate::utils::print_logo_header("Cleaning...");
-}
 
 /// Non-destructive default for a flagless `loom clean`.
 ///
 /// Only prunes stale git worktree references (which cannot lose committed
 /// work) and prints the explicit flags needed for the destructive paths.
-fn run_bare_clean(repo_root: &Path) -> Result<()> {
+pub(super) fn run_bare_clean(repo_root: &Path) -> Result<()> {
     println!("\n{}", "Prune".bold());
     println!("{}", "─".repeat(40).dimmed());
     match prune_worktrees(repo_root) {
@@ -146,7 +66,7 @@ fn run_bare_clean(repo_root: &Path) -> Result<()> {
 ///
 /// Returns `Ok(false)` to abort (user declined, or non-interactive stdin with
 /// unmerged work and no `LOOM_CLEAN_YES`).
-fn confirm_branch_deletion(repo_root: &Path) -> Result<bool> {
+pub(super) fn confirm_branch_deletion(repo_root: &Path) -> Result<bool> {
     // Resolve the merge target so commits-ahead is measured against the right base.
     let work_dir = repo_root.join(".work");
     let config_branch = crate::fs::work_dir::load_config(&work_dir)
@@ -220,64 +140,10 @@ fn confirm_branch_deletion(repo_root: &Path) -> Result<bool> {
     Ok(response.trim().eq_ignore_ascii_case("y"))
 }
 
-/// Print the final summary
-fn print_summary(stats: &CleanStats) {
-    println!();
-    println!("{}", "═".repeat(40).dimmed());
-
-    let has_cleanup = stats.worktrees_removed > 0
-        || stats.branches_removed > 0
-        || stats.sessions_killed > 0
-        || stats.state_removed;
-
-    if has_cleanup {
-        println!("{} Cleanup complete", "✓".green().bold());
-
-        let mut items: Vec<String> = Vec::new();
-        if stats.worktrees_removed > 0 {
-            items.push(format!(
-                "{} worktree{}",
-                stats.worktrees_removed,
-                if stats.worktrees_removed == 1 {
-                    ""
-                } else {
-                    "s"
-                }
-            ));
-        }
-        if stats.branches_removed > 0 {
-            items.push(format!(
-                "{} branch{}",
-                stats.branches_removed,
-                if stats.branches_removed == 1 {
-                    ""
-                } else {
-                    "es"
-                }
-            ));
-        }
-        if stats.sessions_killed > 0 {
-            items.push(format!(
-                "{} session{}",
-                stats.sessions_killed,
-                if stats.sessions_killed == 1 { "" } else { "s" }
-            ));
-        }
-        if stats.state_removed {
-            items.push("state directory".to_string());
-        }
-
-        println!("  Removed: {}", items.join(", ").dimmed());
-    } else {
-        println!("{} Nothing to clean", "✓".green().bold());
-    }
-    println!();
-}
-
 /// Clean up all loom worktrees and their branches
 ///
 /// Returns (worktrees_removed, branches_removed) counts
-fn clean_worktrees(repo_root: &Path) -> Result<(usize, usize)> {
+pub(super) fn clean_worktrees(repo_root: &Path) -> Result<(usize, usize)> {
     let worktrees_dir = repo_root.join(".worktrees");
 
     // First, always prune stale git worktrees
@@ -388,111 +254,11 @@ fn clean_worktrees(repo_root: &Path) -> Result<(usize, usize)> {
     Ok((worktrees_removed, branches_removed))
 }
 
-/// Reaps orphaned loom tmux sessions for the `--sessions` flag.
-///
-/// LIVE session termination is now handled exclusively by `loom sessions
-/// kill` — this deliberately does NOT touch running sessions. It only reaps
-/// orphaned tmux sockets attributed to THIS repo's work dir whose session is
-/// no longer alive; unattributable sockets (which may belong to another
-/// checkout or user) are reported but left untouched. See
-/// `commands::init::cleanup::cleanup_orphaned_sessions` for the same
-/// orphan-only, this-repo-only sweep run at `loom init`.
-fn clean_sessions(repo_root: &Path) -> Result<usize> {
-    println!(
-        "  {} --sessions no longer terminates sessions; use 'loom sessions kill'",
-        "─".dimmed()
-    );
-
-    let work_dir = repo_root.join(".work");
-    let mut reaped = 0;
-    let mut unattributed = 0;
-
-    for socket in list_loom_sockets(&work_dir) {
-        if !socket.attributed {
-            unattributed += 1;
-            continue;
-        }
-
-        if socket_session_is_alive(&work_dir, &socket.session_id) {
-            continue;
-        }
-
-        kill_socket_server(&socket.path);
-        let _ = fs::remove_file(&socket.path);
-        reaped += 1;
-    }
-
-    if reaped > 0 {
-        println!(
-            "  {} Reaped {} orphaned tmux session{}",
-            "✓".green().bold(),
-            reaped,
-            if reaped == 1 { "" } else { "s" }
-        );
-    }
-
-    if unattributed > 0 {
-        println!(
-            "  {} {} unattributable tmux socket{} left untouched",
-            "─".dimmed(),
-            unattributed,
-            if unattributed == 1 { "" } else { "s" }
-        );
-    }
-
-    Ok(reaped)
-}
-
-/// Remove the .work/ state directory
-///
-/// Returns true if the directory was removed
-fn clean_state_directory(repo_root: &Path) -> Result<bool> {
-    let work_dir = repo_root.join(".work");
-
-    if !work_dir.exists() {
-        println!("  {} No {} directory", "─".dimmed(), ".work/".dimmed());
-        return Ok(false);
-    }
-
-    fs::remove_dir_all(&work_dir).with_context(|| {
-        format!(
-            "Failed to remove .work/ directory at {}",
-            work_dir.display()
-        )
-    })?;
-    println!("  {} Removed {}", "✓".green().bold(), ".work/".dimmed());
-
-    Ok(true)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::fs;
     use std::process::Command;
     use tempfile::TempDir;
-
-    #[test]
-    fn test_clean_state_directory_when_exists() {
-        let temp_dir = TempDir::new().unwrap();
-        let work_dir = temp_dir.path().join(".work");
-        fs::create_dir(&work_dir).unwrap();
-        fs::write(work_dir.join("test.txt"), "test").unwrap();
-
-        let result = clean_state_directory(temp_dir.path());
-        assert!(result.is_ok());
-        assert!(result.unwrap());
-        assert!(!work_dir.exists());
-    }
-
-    #[test]
-    fn test_clean_state_directory_when_not_exists() {
-        let temp_dir = TempDir::new().unwrap();
-
-        let result = clean_state_directory(temp_dir.path());
-        assert!(result.is_ok());
-        assert!(!result.unwrap());
-    }
 
     #[test]
     fn test_clean_worktrees_when_no_directory() {
