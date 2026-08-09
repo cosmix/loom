@@ -82,7 +82,10 @@ pub(super) fn reconcile_attributed_stage_record(
         prior_status = Some(stage.status.clone());
         match stage.status {
             StageStatus::Completed => {
-                stage.status = StageStatus::MergeConflict;
+                stage.force_status_with_reason(
+                    StageStatus::MergeConflict,
+                    "phantom-merge revert: completed stage's merge commit is no longer an ancestor of the target branch",
+                );
                 stage.merged = false;
                 stage.merge_conflict = true;
                 status_mutated = true;
@@ -336,7 +339,7 @@ mod tests {
     use std::process::Command;
     use tempfile::TempDir;
 
-    fn run_git(args: &[&str], cwd: &Path) {
+    fn run_git(args: &[&str], cwd: &Path) -> std::process::Output {
         let out = Command::new("git")
             .args(args)
             .current_dir(cwd)
@@ -347,6 +350,7 @@ mod tests {
             "git {args:?} failed: {}",
             String::from_utf8_lossy(&out.stderr)
         );
+        out
     }
 
     fn init_repo() -> TempDir {
@@ -475,7 +479,9 @@ mod tests {
         std::fs::write(root.join("c.txt"), "branch\n").unwrap();
         run_git(&["add", "c.txt"], root);
         run_git(&["commit", "-m", "c"], root);
-        let stranded_sha = run_git_output(&["rev-parse", "HEAD"], root);
+        let stranded_sha = String::from_utf8_lossy(&run_git(&["rev-parse", "HEAD"], root).stdout)
+            .trim()
+            .to_string();
 
         run_git(&["checkout", "main"], root);
         std::fs::write(root.join("c.txt"), "main\n").unwrap();
@@ -533,19 +539,5 @@ mod tests {
             MergeAttribution::GlobalUnattributed(_) => {}
             other => panic!("expected GlobalUnattributed (BaseConflict carve-out), got {other:?}"),
         }
-    }
-
-    fn run_git_output(args: &[&str], cwd: &Path) -> String {
-        let out = Command::new("git")
-            .args(args)
-            .current_dir(cwd)
-            .output()
-            .unwrap();
-        assert!(
-            out.status.success(),
-            "git {args:?} failed: {}",
-            String::from_utf8_lossy(&out.stderr)
-        );
-        String::from_utf8_lossy(&out.stdout).trim().to_string()
     }
 }
