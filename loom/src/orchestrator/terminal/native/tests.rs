@@ -50,6 +50,44 @@ fn kill_session_with_pid_only_identity_refuses_signal_without_error() {
 }
 
 #[test]
+fn kill_session_after_verified_kill_is_an_idempotent_noop() {
+    let work_dir = TempDir::new().unwrap();
+    let backend = test_backend(work_dir.path());
+    let session = stage_session("verified-then-missing");
+    let (_, pid_key) = NativeBackend::window_title_and_pid_key(&session).unwrap();
+
+    let mut child = std::process::Command::new("sleep")
+        .arg("60")
+        .spawn()
+        .unwrap();
+    let start_time = crate::process::process_start_time(child.id());
+    assert!(
+        start_time.is_some(),
+        "test needs a verifiable child identity"
+    );
+    pid_tracking::write_pid_entry(
+        work_dir.path(),
+        &pid_key,
+        crate::process::ProcessIdentity {
+            pid: child.id(),
+            start_time,
+        },
+    )
+    .unwrap();
+
+    // First kill: VerifiedAlive -> signaled and tracking entry cleaned up.
+    backend.kill_session(&session).unwrap();
+    assert!(
+        pid_tracking::read_pid_entry(work_dir.path(), &pid_key).is_none(),
+        "a verified kill must clean up its tracking entry"
+    );
+    let _ = child.wait();
+
+    // Second kill: entry now Missing -> must stay an idempotent no-op.
+    backend.kill_session(&session).unwrap();
+}
+
+#[test]
 fn test_native_backend_creation() {
     // May fail if no terminal is available; we only assert that when a
     // terminal *is* available, construction succeeds.

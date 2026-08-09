@@ -398,10 +398,9 @@ fn default_deny_read() -> Vec<String> {
 }
 
 fn default_deny_write() -> Vec<String> {
-    ["../../**", "doc/loom/knowledge/**"]
-        .into_iter()
-        .map(str::to_string)
-        .collect()
+    // Worktree escape prevention - block writes to parent directories.
+    // Knowledge files are protected by default; knowledge stages get an explicit allow.
+    vec!["../../**".to_string(), "doc/loom/knowledge/**".to_string()]
 }
 
 /// Enhanced truth check with extended success criteria beyond exit code.

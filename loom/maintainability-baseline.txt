@@ -37,7 +37,7 @@ file src/git/worktree/base.rs 543
 file src/git/worktree/settings.rs 1096
 file src/hooks/tests.rs 481
 file src/models/stage/methods.rs 806
-file src/models/stage/types.rs 1172
+file src/models/stage/types.rs 1171
 file src/orchestrator/adjudication/mod.rs 695
 file src/orchestrator/adjudication/prompt.rs 491
 file src/orchestrator/core/event_handler.rs 468
@@ -57,7 +57,6 @@ file src/orchestrator/signals/tests_cache.rs 687
 file src/orchestrator/terminal/emulator.rs 611
 file src/orchestrator/terminal/native/pid_tracking.rs 754
 file src/orchestrator/terminal/native/window_ops.rs 575
-file src/orchestrator/terminal/tmux/tests.rs 413
 file src/plan/amendment.rs 1193
 file src/plan/parser/extraction.rs 410
 file src/plan/schema/tests/validation_tests.rs 621
@@ -291,7 +290,7 @@ function src/orchestrator/terminal/native/detection.rs detect_terminal#1 56
 function src/orchestrator/terminal/native/detection.rs detect_terminal#2 65
 function src/orchestrator/terminal/native/launch.rs prepare_session_launch 123
 function src/orchestrator/terminal/native/pid_tracking.rs create_wrapper_script 146
-function src/orchestrator/terminal/tmux/tests.rs a_failed_spawn_aborts_and_leaves_no_pid_file_for_the_native_retry_to_adopt 97
+function src/orchestrator/terminal/tmux/tests_spawn.rs a_failed_spawn_aborts_and_leaves_no_pid_file_for_the_native_retry_to_adopt 97
 function src/plan/amendment.rs apply_amendment 270
 function src/plan/amendment.rs read_audit_rows 69
 function src/plan/amendment.rs verify_plan_versions_consistency 152

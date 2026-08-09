@@ -370,3 +370,5 @@ impl TmuxBackend {
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tests_spawn;
