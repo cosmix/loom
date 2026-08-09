@@ -9,7 +9,7 @@
 ## Paths: working_dir Mismatch (Recurring)
 
 **Mistake:** Acceptance criteria, artifact paths, and file checks used absolute paths like `loom/src/...` when `working_dir` was already `loom`, producing double-paths like `loom/loom/src/...`. Occurred in 5+ separate plans.
-**Fix:** ALL paths in acceptance/artifacts/truths/wiring are relative to `working_dir`. If `working_dir: "loom"`, use `src/file.rs` not `loom/src/file.rs`. Set `working_dir` to where `Cargo.toml`/`package.json` lives.
+**Fix:** ALL paths in acceptance/artifacts/wiring/wiring_tests are relative to `working_dir`. If `working_dir: "loom"`, use `src/file.rs` not `loom/src/file.rs`. Set `working_dir` to where `Cargo.toml`/`package.json` lives.
 
 ## Stages: Marked Complete Without Implementation (Recurring)
 
@@ -79,7 +79,7 @@ files in your assignment.
 Nine lessons on sandbox path rules, permission sync, `excludedCommands` matching, `defaultMode`
 being silently ignored, settings env leaking between the main repo and its worktrees, and the
 whole-object rebuild of `.claude/settings.local.json` that silently drops any top-level key loom
-does not emit. Recurring root cause: settings are *merged* from several sources, so a rule is only
+does not emit. Recurring root cause: settings are _merged_ from several sources, so a rule is only
 as good as the last writer.
 
 → [Sandbox & Settings](mistakes/sandbox-and-settings.md)
@@ -110,7 +110,7 @@ reviewer's behaviour claim must be checked against the diff before acting on it.
 ## loom check: Negation Patterns are Literal
 
 **Mistake:** Wiring check for `!Merge` was a false positive -- `!` is literal, not negation.
-**Fix:** Use positive patterns in wiring checks. Use `truths` with shell commands for absence checks.
+**Fix:** Use positive patterns in wiring checks. Use `acceptance` shell commands for absence checks.
 
 ## Subagent File Overlap Causes Lost Work
 
@@ -127,6 +127,12 @@ reviewer's behaviour claim must be checked against the diff before acting on it.
 **Mistake:** Skill files referenced old schema state after fields were added/removed.
 **Fix:** Update skill files and feature code together when changing schemas.
 
+## Repair Must Propagate Skill-Index Failures (Resolved 2026-08-08)
+
+**Mistake:** Hook repair rebuilt the skill index but discarded a rebuild error, so the action could be counted as fixed without producing a usable index.
+**Prevention:** A composite repair step must return the first failed sub-operation; never increment the repaired count after a required side effect fails.
+**Fix:** `fix_hooks_with` now returns the skill-index rebuild result, and `hook_repair_propagates_skill_index_write_failure` pins the failure path.
+
 ## loom merge Command Removal
 
 **Lesson:** `loom merge` duplicated `loom stage complete` functionality with 5 bugs. Removed entirely rather than fixing. When a command duplicates existing functionality and has multiple bugs, removal is better than repair.
@@ -140,9 +146,9 @@ reviewer's behaviour claim must be checked against the diff before acting on it.
 
 **What happened:** truths and truth_checks were separate fields on StageDefinition/Stage that overlapped with acceptance criteria. Unified into AcceptanceCriterion enum (Simple|Extended).
 
-**Gotcha:** Old plans with truths: field parse without error (serde ignores unknown fields) but the data is silently dropped. If old plan relied ONLY on truths for goal-backward verification (no artifacts/wiring), validation now fails.
+**Gotcha:** Old plans with a top-level `truths:` field are now rejected as unknown instead of silently dropping the checks. Migrate those commands to `acceptance`; `before_stage` and `after_stage` remain valid delta-proof fields.
 
-**How to avoid:** When removing fields from serde structs, consider adding deprecation warnings via custom deserializer for at least one release cycle. Not done here because project CLAUDE.md says no backwards compatibility needed.
+**How to avoid:** Keep plan structs strict with `deny_unknown_fields` so removed or misspelled policy cannot false-pass. When compatibility is required, use an explicit migration path rather than permissive deserialization.
 
 ## gawk vs POSIX awk (2026-03-31)
 
@@ -207,14 +213,14 @@ persisted and read back through the shared service.
 
 **What happened:** `TerminalEmulator::Ghostty` detection succeeded on macOS via a `/Applications/Ghostty.app` path-existence fallback (detection.rs:190-191), but spawn called `Command::new("ghostty")` and failed with "Failed to spawn terminal 'ghostty'. Is it installed?" The Ghostty CLI binary lives inside the bundle at `/Applications/Ghostty.app/Contents/MacOS/ghostty` and is not added to PATH (ghostty-org/ghostty#2483). Detection picked the terminal; spawn couldn't launch it.
 
-**Misleading signal:** `which::which("ghostty")` failing was *handled* by an explicit `.app` existence check that succeeded. The fallback proved the GUI app was installed, not that its CLI was reachable from a child `Command`. Two-binary detection (`which` OR `.app exists`) silently expanded the set of "detected" terminals beyond the set of "spawnable via PATH" terminals.
+**Misleading signal:** `which::which("ghostty")` failing was _handled_ by an explicit `.app` existence check that succeeded. The fallback proved the GUI app was installed, not that its CLI was reachable from a child `Command`. Two-binary detection (`which` OR `.app exists`) silently expanded the set of "detected" terminals beyond the set of "spawnable via PATH" terminals.
 
 **Why it broke:** Detection logic and spawn logic relied on different existence proofs. Detection accepted "the .app exists" as sufficient; spawn assumed the binary was on PATH. The asymmetry produced a guaranteed runtime failure for any macOS user without a manual PATH shim.
 
 **Prevention:**
 
 - For any `TerminalEmulator` variant whose detection has a path-based fallback (anything beyond `which::which(binary())` succeeding), the corresponding `build_command()` arm MUST use a launch path that does not depend on PATH — typically `open -na <AppName> --args ...` (see patterns.md "macOS GUI App Launch Pattern") or AppleScript via `osascript`. Treat any macOS `.app`-bundled tool as PATH-unreachable by default.
-- When adding a new terminal emulator: check that detection and spawn agree about *how* the binary is reachable. If detection falls back to `.app` existence, spawn must NOT call `Command::new(binary())` directly on macOS.
+- When adding a new terminal emulator: check that detection and spawn agree about _how_ the binary is reachable. If detection falls back to `.app` existence, spawn must NOT call `Command::new(binary())` directly on macOS.
 
 **Fix:** `Self::Ghostty` arm in `emulator.rs:build_command()` is now cfg-gated; macOS reassigns `command = Command::new("open")` and uses `open -na Ghostty --args --working-directory=... --title=... -e bash -c CMD`. Linux behavior unchanged. `binary()` still returns `"ghostty"` (correct for Linux PATH lookup and for any macOS user with a manual shim). Tests `test_ghostty_build_command_macos` and `test_ghostty_build_command_linux` are cfg-gated so each runs on its target platform.
 
@@ -230,13 +236,13 @@ persisted and read back through the shared service.
 
 ## Stage-File Lost Updates: Whole-Stage Save Reverts Concurrent Writers (A-5, 2026-06-09)
 
-**What happened:** `locked_read`/`locked_write` make individual reads/writes atomic, but every stage flow is load → mutate → `save_stage`, and `save_stage` serializes the ENTIRE `Stage`. Three writer classes race on the same stage file — the orchestrator main loop, the daemon dispute IPC thread (`daemon/server/dispute.rs`), and agent-run CLI (`commands/stage/{complete,merge,check_acceptance}.rs`, `plan/amendment.rs`). The lock is released between load and save, so a writer that loaded the stage minutes earlier (e.g. `loom stage complete` across a multi-minute acceptance run) saves a STALE whole `Stage` and reverts the fields a concurrent writer changed in the gap: `status` (`NeedsAdjudication` → stale), `dispute_count`, `retry_count`, `fix_attempts`, `close_reason`, `session`, amended `acceptance`/`wiring`.
+**What happened:** `locked_read`/`locked_write` make individual reads/writes atomic, but load → mutate → whole-record save releases the lock between read and write. Three writer classes race on the same stage file — the orchestrator main loop, daemon IPC handlers, and agent-run CLI commands. A writer that loaded a stage minutes earlier can therefore revert status, counters, close reason, session identity, or amended verification policy written in the gap.
 
 **Misleading signal:** patterns.md claimed a "daemon single-writer model" and "no explicit file locking." Both were false — `fs/locking.rs` exists, and the daemon, its dispute thread, and CLI agents all write stage files concurrently. "Each save is locked" hid that locked atomic saves of a STALE whole object still lose updates.
 
 **Why:** per-operation locking serializes the WRITE but not the read→write transaction. Two transactions that both `load(); mutate_field_A_or_B(); save_whole_stage()` interleave as load-A, load-B, save-A, save-B → B's save reverts A's field.
 
-**Prevention — use `verify::transitions::update_stage(id, work_dir, |s| …)` for stage mutations, never load + mutate + `save_stage` when another writer can touch the file.** It re-reads the on-disk stage under the `stages/` directory lock, applies the closure, and writes — all in one critical section. In the closure, mutate ONLY the fields the operation owns; leave others at their on-disk value (decide ownership per operation — this is the judgment call). For LONG operations, run the slow work (git merge under `MergeLock`, acceptance subprocesses) OUTSIDE the lock, then apply owned fields in a SHORT `update_stage` closure. `save_stage` remains correct ONLY for stage CREATION (new file) and the single-threaded-in-tick orchestrator loop. See patterns.md "Locked Stage Read-Modify-Write Pattern (A-5)" for the full field-ownership table.
+**Prevention — use `verify::transitions::update_stage(id, work_dir, |s| …)` for every existing-stage mutation, never load + mutate + whole-record save.** It re-reads under the stages-directory lock, applies the closure, and writes in one critical section. Mutate only operation-owned fields. Run slow Git, terminal, network, and verification work outside the lock, then apply a short delta. Whole-record persistence is for actual creation only; the orchestrator loop is not exempt because daemon and CLI writers remain concurrent.
 
 **Detection rule:** any `load_stage(); …; save_stage()` pair where the `…` can run while the daemon/dispute-thread/another-CLI is live is a lost-update candidate. Especially when `…` contains a multi-minute step (acceptance, verification, git merge) or increments a counter read from the in-memory stage (`fix_attempts += 1`, `dispute_count += 1`).
 
@@ -277,7 +283,7 @@ persisted and read back through the shared service.
 ## Interactive Claude cannot be captured or made to auto-exit without risking API billing
 
 **What happened:** A first cut of the `loom pressure` fixes assumed `claude -p` (or capturing Claude's stdout to a log) was the way to make Claude run one slash command and exit so the driver could proceed. Both are wrong for a subscription user.
-**Why:** (1) `claude --help` states Claude runs in non-interactive mode "via -p, or when stdout is not a TTY, e.g. piped or redirected output" — so redirecting/capturing Claude's stdout flips it into the `-p` path, which can bill against pay-per-token API credits instead of the claude.ai subscription (known bug anthropics/claude-code#43333). (2) Feeding EOF on stdin (`< /dev/null`) does NOT let the task finish then exit — the REPL quits *before* the agentic work completes (data loss), and an empirically-tested run also hit a workspace-trust dialog that `--permission-mode auto` did not skip. (3) There is no `--max-turns`/exit-when-done flag for interactive mode.
+**Why:** (1) `claude --help` states Claude runs in non-interactive mode "via -p, or when stdout is not a TTY, e.g. piped or redirected output" — so redirecting/capturing Claude's stdout flips it into the `-p` path, which can bill against pay-per-token API credits instead of the claude.ai subscription (known bug anthropics/claude-code#43333). (2) Feeding EOF on stdin (`< /dev/null`) does NOT let the task finish then exit — the REPL quits _before_ the agentic work completes (data loss), and an empirically-tested run also hit a workspace-trust dialog that `--permission-mode auto` did not skip. (3) There is no `--max-turns`/exit-when-done flag for interactive mode.
 **Prevention:** For anything that must keep subscription billing, Claude's stdout MUST stay a real TTY (foreground, uncaptured). Do not reach for `-p` or output redirection to "automate" it. Only ONE process can own the foreground TTY, so anything running concurrently (e.g. Codex) must be backgrounded with captured output.
 **Fix:** Mirror the loom daemon's own model — the daemon never relies on Claude self-exiting; it SIGTERMs the session (`event_handler.rs` → `NativeBackend::kill_session`) once the agent signals completion via `loom stage complete`. `loom pressure` does the analog: inject a "`touch <marker>` as your final action" instruction via `--append-system-prompt`, poll for the marker, then SIGTERM the idle foreground session (manual exit as fallback).
 
@@ -332,19 +338,19 @@ persisted and read back through the shared service.
 
 ## Delta-Proof `before_stage` Gate Re-Run on Every Re-Spawn Deadlocks the Stage (2026-07-27)
 
-**What happened:** `start_stage` ran a stage's `before_stage` truth checks on *every* spawn attempt. Those checks are delta-proofs — they assert the feature does NOT exist yet. After a session was interrupted mid-stage (leaving its implementation in the worktree/branch), orphan recovery re-queued the stage, the checks re-ran, found the feature present, and marked the stage `Blocked` with `FailureType::TestFailure` **before spawning any session**. Since no session ever ran, nothing could finish or commit the work, and `loom stage retry` / the next `loom run` reproduced the identical failure forever. The stage could not self-heal.
+**What happened:** `start_stage` ran a stage's `before_stage` truth checks on _every_ spawn attempt. Those checks are delta-proofs — they assert the feature does NOT exist yet. After a session was interrupted mid-stage (leaving its implementation in the worktree/branch), orphan recovery re-queued the stage, the checks re-ran, found the feature present, and marked the stage `Blocked` with `FailureType::TestFailure` **before spawning any session**. Since no session ever ran, nothing could finish or commit the work, and `loom stage retry` / the next `loom run` reproduced the identical failure forever. The stage could not self-heal.
 
-**Misleading signal:** the failure output is a genuine, correctly-computed check result — "this command exited 0 but the plan says it should exit 1" — so the block looks like a real pre-condition violation rather than the orchestrator tripping over its own prior progress. The comment on the call site ("verify pre-conditions in fresh worktree") described an assumption — a *fresh* worktree — that `get_or_create_worktree` stops honoring the moment a stage is retried.
+**Misleading signal:** the failure output is a genuine, correctly-computed check result — "this command exited 0 but the plan says it should exit 1" — so the block looks like a real pre-condition violation rather than the orchestrator tripping over its own prior progress. The comment on the call site ("verify pre-conditions in fresh worktree") described an assumption — a _fresh_ worktree — that `get_or_create_worktree` stops honoring the moment a stage is retried.
 
 **Why:** a one-shot gate was placed on a path that runs many times. Every re-entry route into `start_stage` (orphan recovery → Queued, `loom stage retry`, crash auto-retry) reuses the same worktree and the same `loom/<stage-id>` branch, so the "before" state the check asserts is by construction no longer true after the first attempt.
 
-**Prevention — detection rule:** any check whose *expected* outcome changes once the stage does its work (delta-proofs, "feature absent" assertions, baseline captures) must be gated on evidence that no work exists yet — not merely placed before the spawn. Before adding a blocking check to a spawn path, ask what it does on attempt #2. And a blocking transition that happens *before* a session is spawned deserves extra scrutiny: nothing downstream can clear it, so a wrong block is permanent, not merely slow.
+**Prevention — detection rule:** any check whose _expected_ outcome changes once the stage does its work (delta-proofs, "feature absent" assertions, baseline captures) must be gated on evidence that no work exists yet — not merely placed before the spawn. Before adding a blocking check to a spawn path, ask what it does on attempt #2. And a blocking transition that happens _before_ a session is spawned deserves extra scrutiny: nothing downstream can clear it, so a wrong block is permanent, not merely slow.
 
 **Fix:** `stage_executor.rs::before_stage_gate_passed` calls `verify::before_after::find_prior_stage_work` first and skips the checks (logging the evidence) when the stage branch has commits beyond its resolved base or the worktree has non-scaffold changes. Loom's own worktree scaffolding (`.work`, `.claude/`, root `CLAUDE.md`) is discounted via `git::worktree::is_worktree_scaffold_path` — otherwise, in a repo that doesn't gitignore those, the very first spawn would look "dirty" and silently disable the gate. Note `git::has_uncommitted_changes` excludes untracked files and was useless here (a brand-new module is untracked); `list_working_tree_changes` was added for the "has anyone worked here?" question.
 
 ## Hooks: Shell Command Matchers (2026-07-28)
 
-Token-based Bash matchers repeatedly shipped with bypasses because separators that are *glued*
+Token-based Bash matchers repeatedly shipped with bypasses because separators that are _glued_
 to a neighbour never become tokens. Also: forgeable `glob | head -1` privilege lookups, env
 leakage into simulated process trees, and three Bash traps (`&` in `${//}` replacements,
 `errexit` under `||`, ERE `\b`).
@@ -355,7 +361,7 @@ leakage into simulated process trees, and three Bash traps (`&` in `${//}` repla
 
 A grep for one phrase proves presence, never agreement — the lesson behind a doctrine block that
 silently drifted across three surfaces while every criterion passed. Also: exceptions must live
-in the block that gets *copied*, sweep for retired phrasing, and never make a stage read
+in the block that gets _copied_, sweep for retired phrasing, and never make a stage read
 canonical text out of `doc/plans/`.
 
 → [Doctrine & Acceptance](mistakes/doctrine-and-acceptance.md)
@@ -395,12 +401,12 @@ followed by parallel subagents over disjoint files.
 
 **Why:** "B imports A" is a COMPILE-ORDER dependency, and one stage resolves it for free by writing
 A first — that is a foundation step, not a stage boundary. Only a MERGE-ORDER dependency is a real
-boundary: the dependent work must run against *merged, gate-passed* code. Each extra stage costs a
+boundary: the dependent work must run against _merged, gate-passed_ code. Each extra stage costs a
 worktree, a session, a merge, and a FULL re-run of the acceptance gate.
 
 **Prevention (detection rule):** if a plan has one stage per architectural layer of a single feature
 and their `files:` sets are DISJOINT, it is fragmented — merge them. Disjoint file sets are evidence
-*for* merging (parallel subagents can own them), not against it. `/loom-plan-writer` now enforces
+_for_ merging (parallel subagents can own them), not against it. `/loom-plan-writer` now enforces
 this: the Stage Necessity Test (`skills/loom-plan-writer/SKILL.md:388`) requires every non-bookend
 stage to name which of Q1-Q4 forced it, the validation checklist re-checks that at `:825`, and
 `:771` states outright that a compile-order dependency is a foundation step, not a stage split. A
@@ -455,14 +461,14 @@ traps: a spawn helper that cleaned up on only one of its error paths and so left
 attempt's PID from a non-truncated PID file, a sticky fallback marker written before proving the
 fallback target was usable, the 104-byte `sun_path` budget, `kill-server` not unlinking its socket,
 "cannot read the evidence" having to mean "do not destroy" in a reaping sweep, and the tmux 3.7b
-layout/option facts (re-tile after *every* split; `remain-on-exit` is a window option to set *before*
+layout/option facts (re-tile after _every_ split; `remain-on-exit` is a window option to set _before_
 splitting; a single-string pane command runs under the user's login shell).
 
 → [tmux Backend](mistakes/tmux-backend.md)
 
 ## Tests That Cannot Fail (2026-08-08) [DETAILED]
 
-Three tests in one plan asserted nothing that could fail — a test whose *name* states a property is
+Three tests in one plan asserted nothing that could fail — a test whose _name_ states a property is
 not evidence the property is pinned. Two-part detection rule: (1) for each test ask "if I delete the
 production line this covers, does it fail?" and actually delete it; (2) every negative assertion needs
 a **positive control asserted at the same moment**. The topic also covers why a shell-injection PoC
@@ -482,14 +488,14 @@ file. `rg` is recursive by default; never pass `-r` unless you mean `--replace`.
 ## `pub(crate)` Is Invisible to `tests/` (2026-08-08)
 
 `tests/e2e/*` is an **external test crate**, so it can only reach `pub` items. A stage description that
-names a helper both `pub(crate)` *and* "the e2e test seam" is self-contradictory. Before marking a
+names a helper both `pub(crate)` _and_ "the e2e test seam" is self-contradictory. Before marking a
 helper `pub(crate)`, check whether anything under `tests/` calls it — `src/` unit tests can reach it,
 integration targets cannot.
 
 Related: when changing a fn signature under `src/commands/`, the call-site inventory must include the
 sibling `#[cfg(test)]` module. `src/commands/init/tests.rs` held a fifth `cleanup_orphaned_sessions()`
 call site beyond the four an `rg` for the primary feature symbol surfaced. `rg` the **exact fn name**
-across `src/` *and* `tests/` before writing a subagent's step list.
+across `src/` _and_ `tests/` before writing a subagent's step list.
 
 ## Bash Tool CWD Persists — Never Bare-`cd` Into a Subdirectory Crate (2026-08-08)
 
@@ -497,8 +503,8 @@ across `src/` *and* `tests/` before writing a subagent's step list.
 repo's crate root is the `loom/` subdirectory — so a single `cd loom` silently retargets every later
 relative path, **including calls issued in the same parallel message block**.
 
-**Why it keeps recurring:** the failure presents as `No such file or directory`, i.e. as a *missing
-file*, not as a wrong-directory error. It reads as "that file doesn't exist" and sends you looking for
+**Why it keeps recurring:** the failure presents as `No such file or directory`, i.e. as a _missing
+file_, not as a wrong-directory error. It reads as "that file doesn't exist" and sends you looking for
 the wrong bug. The other tell is `git status` printing `loom/src/...` prefixes instead of `src/...`.
 
 **Prevention:** never bare-`cd`. Prefix every command with its own `cd <dir> && ` so each call is

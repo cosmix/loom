@@ -8,13 +8,13 @@
 
 | File | Description | Lines |
 | --- | --- | --- |
-| [architecture.md](architecture.md) | High-level component relationships, data flow, module dependencies | 427 |
-| [entry-points.md](entry-points.md) | Key files agents should read first | 531 |
-| [patterns.md](patterns.md) | Architectural patterns discovered in the codebase | 618 |
-| [conventions.md](conventions.md) | Coding conventions discovered in the codebase | 391 |
-| [mistakes.md](mistakes.md) | Mistakes made and lessons learned - what to avoid | 505 |
-| [stack.md](stack.md) | Dependencies, frameworks, and tooling used in the project | 70 |
-| [concerns.md](concerns.md) | Technical debt, warnings, and issues to address | 494 |
+| [architecture.md](architecture.md) | High-level component relationships, data flow, module dependencies | 426 |
+| [entry-points.md](entry-points.md) | Key files agents should read first | 512 |
+| [patterns.md](patterns.md) | Architectural patterns discovered in the codebase | 614 |
+| [conventions.md](conventions.md) | Coding conventions discovered in the codebase | 402 |
+| [mistakes.md](mistakes.md) | Mistakes made and lessons learned - what to avoid | 511 |
+| [stack.md](stack.md) | Dependencies, frameworks, and tooling used in the project | 71 |
+| [concerns.md](concerns.md) | Technical debt, warnings, and issues to address | 503 |
 
 ## Tier 2 — Topics
 
@@ -23,19 +23,19 @@
 | Topic | Title | Blurb | Lines |
 | --- | --- | --- | --- |
 | [architecture/codex-concurrency.md](architecture/codex-concurrency.md) | Codex Concurrency | Topic notes for the architecture knowledge area. | 102 |
-| [architecture/codex-plugin.md](architecture/codex-plugin.md) | Codex Plugin | Topic notes for the architecture knowledge area. | 196 |
-| [architecture/core-abstractions.md](architecture/core-abstractions.md) | Core Abstractions | ExecutionGraph, Stage, Session, Orchestrator, TerminalBackend — plus data flow and .work/ file ownership. | 82 |
-| [architecture/directory-structure.md](architecture/directory-structure.md) | Directory Structure | Full loom/src module tree, the .work/ state layout, and the repo-root asset directories. | 48 |
+| [architecture/codex-plugin.md](architecture/codex-plugin.md) | Codex Plugin | Topic notes for the architecture knowledge area. | 197 |
+| [architecture/core-abstractions.md](architecture/core-abstractions.md) | Core Abstractions | ExecutionGraph, Stage, Session, Orchestrator, TerminalBackend — plus data flow and .work/ file ownership. | 93 |
+| [architecture/directory-structure.md](architecture/directory-structure.md) | Directory Structure | Full loom/src module tree, the .work/ state layout, and the repo-root asset directories. | 49 |
 | [architecture/hook-system.md](architecture/hook-system.md) | Hook System | Hook embedding and install, the SessionStart hookSpecificOutput contract, and the two subagent enforcement hooks. | 110 |
 | [architecture/knowledge-hierarchy.md](architecture/knowledge-hierarchy.md) | Knowledge Hierarchy | Tier-1/tier-2 knowledge mechanics: layout predicate, target parsing, INDEX.md generation, audit link rules, coverage blast radius, opt-in migration, lock ordering. | 122 |
 | [architecture/remote-control.md](architecture/remote-control.md) | Remote Control | Capability detection, preflight, resolution, and per-kind session naming for driving external agent binaries. | 64 |
-| [architecture/signal-generation.md](architecture/signal-generation.md) | Signal Generation | How a stage signal is assembled: stable-prefix cache, shared append_* helpers, per-stage-type prefixes, soft signals. | 160 |
-| [architecture/terminal-backends.md](architecture/terminal-backends.md) | Terminal Backends | Topic notes for the architecture knowledge area. | 143 |
+| [architecture/signal-generation.md](architecture/signal-generation.md) | Signal Generation | How a stage signal is assembled: stable-prefix cache, shared append_* helpers, per-stage-type prefixes, soft signals. | 167 |
+| [architecture/terminal-backends.md](architecture/terminal-backends.md) | Terminal Backends | Topic notes for the architecture knowledge area. | 146 |
 ### entry-points
 
 | Topic | Title | Blurb | Lines |
 | --- | --- | --- | --- |
-| [entry-points/hooks.md](entry-points/hooks.md) | Hooks | Every hook script and the event it binds to, _common.sh's seven helpers, and the registration sites a new hook needs. | 95 |
+| [entry-points/hooks.md](entry-points/hooks.md) | Hooks | Every hook script and the event it binds to, _common.sh's seven helpers, and the registration sites a new hook needs. | 96 |
 | [entry-points/remote-control.md](entry-points/remote-control.md) | Remote Control | Files and call sites for remote-control capability detection and permission-mode resolution. | 97 |
 ### patterns
 
@@ -66,4 +66,4 @@
 
 | Topic | Title | Blurb | Lines |
 | --- | --- | --- | --- |
-| [concerns/daemon-singleton.md](concerns/daemon-singleton.md) | Daemon Singleton | Nothing enforces one daemon: a second loom run attaches to the same .work/ and both poll, spawn and merge. | 86 |
+| [concerns/daemon-singleton.md](concerns/daemon-singleton.md) | Daemon Singleton (Resolved 2026-08-08) | Historical incident: two daemons once attached to the same `.work/`. Startup now holds an | 98 |

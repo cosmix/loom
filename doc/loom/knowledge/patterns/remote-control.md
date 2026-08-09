@@ -8,12 +8,12 @@
 
 **Function split:**
 
-| Function | What it does | When to call |
-|----------|-------------|--------------|
-| `preflight(path)` | Runs `claude --version` + auth eligibility check | Startup advisory only |
-| `resolve(work_dir)` | Mode/marker/preflight gate (unchanged `bool` contract) | Called ONLY by the crash handler's fast-fail check |
+| Function                                     | What it does                                                         | When to call                                              |
+| -------------------------------------------- | -------------------------------------------------------------------- | --------------------------------------------------------- |
+| `preflight(path)`                            | Runs `claude --version` + auth eligibility check                     | Startup advisory only                                     |
+| `resolve(work_dir)`                          | Mode/marker/preflight gate (unchanged `bool` contract)               | Called ONLY by the crash handler's fast-fail check        |
 | `resolve_invocation(work_dir, session_name)` | Per-spawn gate: layers the `--help` named-arg probe over `resolve()` | Called at every spawn site (via `prepare_session_launch`) |
-| `write_unsupported_marker(work_dir)` | Writes `.work/remote_control-unsupported` | Called by crash_handler on fast-fail |
+| `write_unsupported_marker(work_dir)`         | Writes `.work/remote_control-unsupported`                            | Called by crash_handler on fast-fail                      |
 
 **`resolve_invocation()` check order (all cheap except the two probes, each memoized):**
 

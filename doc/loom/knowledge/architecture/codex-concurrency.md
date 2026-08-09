@@ -25,12 +25,12 @@ The real constraint is on **background** mode, not on parallelism — see Doctri
 2026-08-06, plugin 1.0.6, `--write --model gpt-5.6-luna --effort xhigh`, throwaway git repo, each task
 assigned a **different** file (disjoint sets — the case that matters for subagent fan-out).
 
-| Concurrency | Runs | File edits | Wrong file touched | Foreground stdout | `state.json` job records |
-|---|---|---|---|---|---|
-| 1 | 2 | all correct | none | intact | intact — all 18 fields, `logFile` present |
-| 2 | 2 | all correct | none | intact | field loss on 1 of 2 records |
-| 3 | 2 | all correct | none | intact | field loss on 2-3 of 3 records |
-| 6 | 2 | all correct | none | intact | all 6 records present, field loss on 5 of 6 |
+| Concurrency | Runs | File edits  | Wrong file touched | Foreground stdout | `state.json` job records                    |
+| ----------- | ---- | ----------- | ------------------ | ----------------- | ------------------------------------------- |
+| 1           | 2    | all correct | none               | intact            | intact — all 18 fields, `logFile` present   |
+| 2           | 2    | all correct | none               | intact            | field loss on 1 of 2 records                |
+| 3           | 2    | all correct | none               | intact            | field loss on 2-3 of 3 records              |
+| 6           | 2    | all correct | none               | intact            | all 6 records present, field loss on 5 of 6 |
 
 **Edits and results were correct at every concurrency tested.** The only casualty is the plugin's job
 bookkeeping.
@@ -52,7 +52,7 @@ bookkeeping.
 Observed damage is **field-level loss, not record loss**: an `upsertJob` merge onto a stale in-memory base
 overwrites fields a sibling already committed. Worst case seen (concurrency 2) reduced a record to
 `["createdAt","updatedAt","id","phase"]`. `logFile` is the most frequent casualty. The record/log
-*deletion* path above is real code but never fired in a successful run. The concurrency-1 control — same
+_deletion_ path above is real code but never fired in a successful run. The concurrency-1 control — same
 script, same repo, one process, every field intact — is what proves this is caused by concurrency and not
 by the test harness.
 

@@ -125,7 +125,7 @@ loom init doc/plans/PLAN-my-feature.md
 | "triple backticks in YAML" | Code fences inside description | Use plain indented text instead of fences |
 | "bypass-permissions is not allowed" | `permission_mode: bypass-permissions` | Use `auto` (default), `accept-edits`, `plan`, or `default`. Note: `loom plan verify` misses this; only `loom init` catches it |
 
-> ⚠️ **`truths` was removed as a standalone field.** Behavioral checks now go in `acceptance` (Simple string / Extended object); the goal-backward layers are `artifacts`, `wiring`, `wiring_tests`, `dead_code_check`. A leftover top-level `truths:` in an old plan is silently ignored (no error, no check) — migrate it.
+> ⚠️ **`truths` was removed as a standalone field.** Behavioral checks now go in `acceptance` (Simple string / Extended object); the goal-backward layers are `artifacts`, `wiring`, `wiring_tests`, `dead_code_check`. Plan parsing rejects `truths` and every other unknown field, so migrate retired fields before initialization or verification.
 
 ### Re-Initialization
 
@@ -267,8 +267,8 @@ loom diagnose <stage-id>
 The stage's acceptance commands returned non-zero.
 
 ```bash
-# Dry-run acceptance to see detailed results
-loom stage verify <stage-id> --dry-run
+# Re-run acceptance and goal-backward checks without changing stage state
+loom check <stage-id>
 
 # After fixing issues, retry
 loom stage retry <stage-id>
@@ -662,7 +662,7 @@ loom run                                 # Git branches preserve prior work
 - **`fix_attempts` caps at 3 by default.** After repeated acceptance failures a stage stops auto-retrying and escalates (Blocked / NeedsHumanReview). Don't loop `loom stage retry` blindly — read the block reason and fix root cause, or `loom stage dispute-criteria` if the criteria themselves are wrong.
 - **All four stage types default to `permission_mode: auto`** (resolves stage > plan > stage-type default). Loom stages run unattended, so the agent auto-accepts actions its heuristics deem safe; the sandbox deny/allow rules are the real boundary. Override to `accept-edits`/`plan` at plan or stage level to tighten.
 - **`loom plan verify` checks STRUCTURE only** — valid YAML/DAG/bookends. It does NOT run acceptance, prove claims, or (currently) catch `bypass-permissions`. A plan can pass `plan verify` yet fail `loom init` or produce a non-working feature.
-- **`loom check` runs goal-backward layers** (`artifacts`, `wiring`, `wiring_tests`, `dead_code_check`) — NOT `acceptance`. Use `loom stage verify <id> --dry-run` to test acceptance without changing state.
+- **`loom check` runs acceptance and every goal-backward layer** (`artifacts`, `wiring`, `wiring_tests`, `dead_code_check`) without changing stage state. `loom stage complete` runs acceptance before transitioning the stage.
 
 ## Anti-Patterns
 
@@ -707,9 +707,8 @@ loom stage skip <id> --reason "..."  # Skip intentionally
 
 ```bash
 loom status --verbose                # Detailed failure info
-loom check <id> --suggest            # Goal-backward + fix suggestions
+loom check <id> --suggest            # Acceptance + goal-backward + suggestions
 loom diagnose <id>                   # Spawn diagnostic session
-loom stage verify <id> --dry-run     # Test acceptance without state change
 loom graph                           # Visualize execution DAG
 ```
 

@@ -10,14 +10,14 @@ its command ever ran** and all 13 criteria reported FAIL while the underlying co
 fine. The overall pipeline still exited 0, because the failure was swallowed by a `tail` pipe.
 
 **Prevention:** use `${TMPDIR:?}` in any harness script, never `/tmp`. **Detection:** when
-*every* check in a suite fails at once, suspect the harness before the code — a real regression
+_every_ check in a suite fails at once, suspect the harness before the code — a real regression
 is rarely uniform. This is Rule 13 (exit 0 is not success) in its most expensive form.
 
 ## The Installed PATH Binary Does Not Contain Your Plan's Changes (2026-07-28)
 
 **What happened:** the `loom` on PATH had no `knowledge index` subcommand, because the dev
 install had not been re-run since the stage that added it merged. Functional verification of a
-new subcommand through the PATH binary verifies the *old* code and calls it green.
+new subcommand through the PATH binary verifies the _old_ code and calls it green.
 
 **Why the confusion:** CLAUDE.md Rule 11 ("always use `loom` from PATH, never `target/debug`")
 is about not corrupting real `.work/` state with a dev binary. It does **not** mean the PATH
@@ -41,7 +41,7 @@ A pending subagent must never become a reason to defer the main agent's own veri
 
 ## `rg -r` Is `--replace`, Not Recursive (2026-07-28)
 
-**What happened:** `rg -rn <pattern> <path>` rewrote every match in the *output*, producing text
+**What happened:** `rg -rn <pattern> <path>` rewrote every match in the _output_, producing text
 that reads as though the codebase actually contains the mangled string.
 
 **Prevention:** `rg` recurses by default — never pass `-r` for recursion. If output looks

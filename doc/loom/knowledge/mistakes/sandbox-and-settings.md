@@ -40,19 +40,19 @@ These stale entries would have misled future agents into using `permission_mode:
 
 - `"loom:*"` → **prefix** → matches `loom` AND `loom <anything>`
 - `"loom *"` → **wildcard** → matches `loom <anything>` (NOT bare `loom`)
-- `"loom"`   → **exact** → matches ONLY the literal command line `loom` with zero args
+- `"loom"` → **exact** → matches ONLY the literal command line `loom` with zero args
 
-`generate_settings_json` emitted bare `"loom"`, classified as **exact**, so `loom stage complete <id>` never matched and ran *inside* the sandbox → EROFS. This regression surfaced on Linux once Claude Code (v2.1.150) enforced the native bubblewrap sandbox; the code's macOS-era comment misattributed it to "excludedCommands does NOT bypass OS-level filesystem restrictions."
+`generate_settings_json` emitted bare `"loom"`, classified as **exact**, so `loom stage complete <id>` never matched and ran _inside_ the sandbox → EROFS. This regression surfaced on Linux once Claude Code (v2.1.150) enforced the native bubblewrap sandbox; the code's macOS-era comment misattributed it to "excludedCommands does NOT bypass OS-level filesystem restrictions."
 
-**Prevention:** `sandbox.excludedCommands` entries must use the prefix form `"<cmd>:*"` (or a `*` wildcard) to exempt a command's subcommands. A bare program name only exempts the argument-less invocation. Verify sandbox-matcher assumptions against the actual Claude Code binary (`rg -a` the unstripped ELF at `~/.local/share/claude/versions/<ver>`), not docs alone — the exact-match rule is undocumented.
+**Prevention:** Never repair this by broadening an entry to `"<cmd>:*"`: prefix-wide exclusions move extensible CLI, VCS, interpreter, and build behavior outside the host sandbox. Treat every matcher assumption as a security boundary and verify it against the actual runtime.
 
-**Fix:** Added `to_exclude_pattern()` in `sandbox/settings.rs` that appends `:*` to any entry lacking a glob/`:*`, applied when emitting `sandbox.excludedCommands`. `permissions.allow` `Bash(loom *)` entries use a different matcher and were already correct.
+**Current resolution (2026-08-08):** Plan-configurable `excluded_commands` are rejected and generated stage settings do not emit broad exemptions. Required orchestration operations need a narrow, structured control-plane boundary; they must not regain access by excluding the Loom CLI. `permissions.allow` entries control prompting only and do not provide an OS-sandbox escape.
 
 ## Worktree-Isolation Hooks Gated on LOOM_STAGE_ID, Which Leaks Into Plain Sessions (2026-05-28)
 
-**What happened:** `worktree-isolation.sh` (and `worktree-file-guard.sh`) decided "are we in a loom worktree?" solely via `if [[ -z "${LOOM_STAGE_ID:-}" ]]; then exit 0; fi`. `LOOM_STAGE_ID` is exported into the worktree session's shell (pid_tracking.rs) and persists in the user's interactive shell environment afterward. A normal Claude Code session in the **main** repo on `main` then had `LOOM_STAGE_ID` still set, so the hook activated and blocked ordinary commands — e.g. any Bash command line merely *containing* the substring `.worktrees/` (like an `rg`/`ls` that references another stage's dir) was rejected as "cross-worktree access," even though the session was nowhere near a worktree.
+**What happened:** `worktree-isolation.sh` (and `worktree-file-guard.sh`) decided "are we in a loom worktree?" solely via `if [[ -z "${LOOM_STAGE_ID:-}" ]]; then exit 0; fi`. `LOOM_STAGE_ID` is exported into the worktree session's shell (pid_tracking.rs) and persists in the user's interactive shell environment afterward. A normal Claude Code session in the **main** repo on `main` then had `LOOM_STAGE_ID` still set, so the hook activated and blocked ordinary commands — e.g. any Bash command line merely _containing_ the substring `.worktrees/` (like an `rg`/`ls` that references another stage's dir) was rejected as "cross-worktree access," even though the session was nowhere near a worktree.
 
-**Misleading signal:** `LOOM_STAGE_ID` being set *looks* like proof you're executing a stage. It isn't — env vars outlive the process that set them. The hook even had a comment acknowledging `LOOM_STAGE_ID` "can be stale" but still used it as the activation gate.
+**Misleading signal:** `LOOM_STAGE_ID` being set _looks_ like proof you're executing a stage. It isn't — env vars outlive the process that set them. The hook even had a comment acknowledging `LOOM_STAGE_ID` "can be stale" but still used it as the activation gate.
 
 **Why:** Worktree membership is a property of **location** (`<repo>/.worktrees/<stage-id>/`), not of an env var. Gating on an env var that leaks conflates "a loom run happened in this shell once" with "this command is running inside a worktree right now."
 
@@ -64,23 +64,23 @@ These stale entries would have misled future agents into using `permission_mode:
 
 **What happened:** The default sandbox config (`default_deny_read`/`default_deny_write` in `plan/schema/types.rs`) bakes in worktree-escape rules — `../../**` and `../.worktrees/**`. The **worktree** settings generator, `sandbox::write_settings(config, target)`, was being pointed at the **main repo root** by two callers: `commands/repair.rs::fix_sandbox_settings` (`loom repair --fix`) and `orchestrator/core/stage_executor.rs:438` (knowledge-stage spawns, which run in the main checkout). At a worktree (`.worktrees/<stage>/`) `../..` is the repo root — the intended isolation boundary — but at the repo root `../..` is the repo's **parent**, typically `$HOME`. So `Read(../../**)` denied all of `$HOME` (including `~/.gitconfig` → git lost its identity → commits failed) and `Write(../../**)` denied writes across the whole home dir.
 
-**Misleading signal:** The bug is invisible inside worktrees, because there the exact same string is *correct*. It only bites when Claude runs at the repo root (interactive sessions, knowledge stages). A prior partial fix made `generate_settings_json` filter `Read(../…)` (because it also leaks into the macOS OS sandbox), which silenced the git-read symptom — but the **Write side was never filtered** (a comment called it "harmless," true only in a worktree), so `Write(../../**)` survived and kept denying `$HOME` writes. Three fossils prove an old file was written by an older binary: tilde-*expanded* creds (`Read(/home/u/.ssh/**)`), the un-filtered `Read(../../**)`, and bare `excludedCommands: ["loom"]`.
+**Misleading signal:** The bug is invisible inside worktrees, because there the exact same string is _correct_. It only bites when Claude runs at the repo root (interactive sessions, knowledge stages). A prior partial fix made `generate_settings_json` filter `Read(../…)` (because it also leaks into the macOS OS sandbox), which silenced the git-read symptom — but the **Write side was never filtered** (a comment called it "harmless," true only in a worktree), so `Write(../../**)` survived and kept denying `$HOME` writes. Three fossils prove an old file was written by an older binary: tilde-_expanded_ creds (`Read(/home/u/.ssh/**)`), the un-filtered `Read(../../**)`, and bare `excludedCommands: ["loom"]`.
 
-**Why:** Path-traversal rules are *relative to wherever `settings.local.json` lives*. They are meaningful only in a worktree. Reusing the worktree-shaped generator for the main repo writes rules that resolve to a completely different (and dangerous) location. Worktree-ness is a property of **location**, not something the generator should assume — same root lesson as the `LOOM_STAGE_ID` hook bug above.
+**Why:** Path-traversal rules are _relative to wherever `settings.local.json` lives_. They are meaningful only in a worktree. Reusing the worktree-shaped generator for the main repo writes rules that resolve to a completely different (and dangerous) location. Worktree-ness is a property of **location**, not something the generator should assume — same root lesson as the `LOOM_STAGE_ID` hook bug above.
 
-**Prevention:** Before writing path-traversal deny/allow rules, ask "relative to *which* directory will Claude Code resolve these?" Never emit `../`-based rules into a settings file that can live at the repo root. A worktree never *depends* on inheriting these from main — it regenerates them relative to itself at spawn (`write_settings(worktree.path)`), the create-time copy + refresh union only *adds*, and the worktree hooks enforce isolation independently. So stripping them from the main repo is safe.
+**Prevention:** Before writing path-traversal deny/allow rules, ask "relative to _which_ directory will Claude Code resolve these?" Never emit `../`-based rules into a settings file that can live at the repo root. A worktree never _depends_ on inheriting these from main — it regenerates them relative to itself at spawn (`write_settings(worktree.path)`), the create-time copy + refresh union only _adds_, and the worktree hooks enforce isolation independently. So stripping them from the main repo is safe.
 
-**Fix:** `sandbox/settings.rs::write_settings` now computes `target_is_worktree(path)` (a `.worktrees` path component, or a symlinked `.work`) and calls `strip_worktree_escape_denies(&mut config)` for non-worktree targets, so the rules are emitted *only* where `../..` means the repo root. This guards every main-repo caller at once. `merge_existing_permissions(.., is_worktree)` also scrubs stale `Write(../…)`/`.worktrees` entries from an already-polluted main file (the Read-side filter was already unconditional). The fold-back path (`fs/permissions/sync.rs`) already drops `../`/`.worktrees` via `transform_worktree_path`, so it needed no change.
+**Fix:** `sandbox/settings.rs::write_settings` now computes `target_is_worktree(path)` (a `.worktrees` path component, or a symlinked `.work`) and calls `strip_worktree_escape_denies(&mut config)` for non-worktree targets, so the rules are emitted _only_ where `../..` means the repo root. This guards every main-repo caller at once. `merge_existing_permissions(.., is_worktree)` also scrubs stale `Write(../…)`/`.worktrees` entries from an already-polluted main file (the Read-side filter was already unconditional). The fold-back path (`fs/permissions/sync.rs`) already drops `../`/`.worktrees` via `transform_worktree_path`, so it needed no change.
 
 ## settings.local.json `defaultMode: "auto"` is silently ignored — must pass `--permission-mode` on the CLI (2026-07-01)
 
 **What happened:** Every loom stage was supposed to start in `auto` permission mode (the default for all four stage types), but sessions actually started in `default` mode and prompted for every action — defeating autonomous execution. Loom set the mode ONLY by writing `permissions.defaultMode: "auto"` into each worktree's `.claude/settings.local.json` (via `generate_settings_json` / `apply_default_mode`, and again via the hooks generator). Nothing passed `--permission-mode` on the `claude` command line.
 
-**Misleading signal:** The value `"auto"` is correct — `claude --help` lists it among `--permission-mode` choices (`acceptEdits`, `auto`, `bypassPermissions`, `default`, `dontAsk`, `plan`), and `apply_default_mode` emitted the right camelCase string. Loom's own tests asserted `defaultMode: "auto"` was present in the generated JSON, so the settings file *looked* correct. The bug was the DELIVERY MECHANISM, not the value.
+**Misleading signal:** The value `"auto"` is correct — `claude --help` lists it among `--permission-mode` choices (`acceptEdits`, `auto`, `bypassPermissions`, `default`, `dontAsk`, `plan`), and `apply_default_mode` emitted the right camelCase string. Loom's own tests asserted `defaultMode: "auto"` was present in the generated JSON, so the settings file _looked_ correct. The bug was the DELIVERY MECHANISM, not the value.
 
 **Why it broke:** Claude Code v2.1.142+ **deliberately ignores `permissions.defaultMode: "auto"` when it comes from project or local settings** (`.claude/settings.json` / `.claude/settings.local.json`) — a security measure so a checked-in repo cannot grant itself auto mode. Auto from those files is dropped silently (no error), and the session falls back to `default`. `auto` is honored ONLY from the `--permission-mode` CLI startup flag, `~/.claude/settings.json` (user settings), or managed settings. (This gating is specific to `auto`; `acceptEdits`/`plan`/`default` ARE honored from local settings, which is why the bug hid — only auto was affected.) Confirmed against the installed binary (v2.1.197) and the official docs (code.claude.com/docs/en/permission-modes).
 
-**Prevention:** To make a loom-spawned session START in a given permission mode, pass `--permission-mode <mode>` on the `claude` CLI (done in `build_claude_command`, resolved in the unified `spawn()` from `merge_config(read_plan_sandbox, stage.sandbox, stage.stage_type)`). Do NOT rely on `settings.local.json` `defaultMode` for `auto`. When a Claude Code setting "isn't taking effect," check the docs for file-scope gating (project/local vs user/managed) before assuming loom emits it wrong — the value can be right while the *source file* is ignored. Note `auto` also has account/model/provider requirements (Opus 4.6+/Sonnet 4.6+, enabled on the account); an unsupported account falls back regardless of how the mode is requested.
+**Prevention:** To make a loom-spawned session START in a given permission mode, pass `--permission-mode <mode>` on the `claude` CLI (done in `build_claude_command`, resolved in the unified `spawn()` from `merge_config(read_plan_sandbox, stage.sandbox, stage.stage_type)`). Do NOT rely on `settings.local.json` `defaultMode` for `auto`. When a Claude Code setting "isn't taking effect," check the docs for file-scope gating (project/local vs user/managed) before assuming loom emits it wrong — the value can be right while the _source file_ is ignored. Note `auto` also has account/model/provider requirements (Opus 4.6+/Sonnet 4.6+, enabled on the account); an unsupported account falls back regardless of how the mode is requested.
 
 **Fix:** `build_claude_command` now emits `--permission-mode {mode}` (before the positional prompt) using the resolved mode; `settings.local.json` still carries `defaultMode` (harmless, honored for non-auto modes). Unit test `build_claude_command_passes_permission_mode_before_prompt`.
 
@@ -113,7 +113,7 @@ Claude Code feature wrote there — is silently dropped. This happens in worktre
 repo root (`stage_executor.rs:373` and `:584`, `commands/repair.rs:879`).
 
 **Why:** the rebuild is deliberate — loom owns the sandbox and permission blocks and must not
-inherit drift from a previous run. But it makes the file hostile to every *other* writer, and it
+inherit drift from a previous run. But it makes the file hostile to every _other_ writer, and it
 fails silently: no warning, no diff, the key is simply gone on the next stage spawn.
 
 **Prevention (detection rule):** when a Claude Code feature configured through settings works in the
@@ -136,7 +136,7 @@ used to smuggle privileges past loom's own sandbox/permission blocks. Negative-c
 forward, a seeded `env` key and an arbitrary unknown key are both dropped.
 
 **Related trap:** `git/worktree/settings.rs:97-104` copies the main repo's `.claude/settings.local.json`
-wholesale into a new worktree *before* the rebuild, so a main-repo local-scope key appears to
+wholesale into a new worktree _before_ the rebuild, so a main-repo local-scope key appears to
 propagate — then loses everything outside the allowlist on the first stage spawn. The copy is not
 evidence that the key survives.
 
@@ -148,7 +148,7 @@ design — and the reason is not obvious from the plan schema.
 
 **Why — it is inert on both layers:**
 
-1. **OS layer.** `sandbox/settings.rs:338-344` *deliberately never emits* `allowWrite` into
+1. **OS layer.** `sandbox/settings.rs:338-344` _deliberately never emits_ `allowWrite` into
    `sandbox.filesystem`. Emitting it makes macOS `sandbox-exec` become over-restrictive about
    **reads**, blocking `~/.gitconfig` (breaks git) and `~/.claude/shell-snapshots/` (breaks zsh). Plan
    `allow_write` paths are emitted **only** as `permissions.allow Write()` entries.
@@ -163,7 +163,7 @@ the OS sandbox entirely.
 path, plan `allow_write` is the wrong lever. The OS-sandbox write set is fixed by `sandbox/settings.rs`
 — either keep the subprocess inside an already-permitted root (the worktree, `/tmp/claude`, `$TMPDIR`)
 or accept that the work cannot run sandboxed. Note the same deny-leak asymmetry documented above:
-`denyWrite` *does* leak into the OS sandbox, `allowWrite` is withheld from it.
+`denyWrite` _does_ leak into the OS sandbox, `allowWrite` is withheld from it.
 
 ## `excludedCommands` Does Not Reliably Bypass the OS Sandbox for Compound Commands (2026-08-08)
 
@@ -176,8 +176,8 @@ bypass it reliably.
 **Consequence for tmux work specifically:** you cannot smoke-test tmux from a Bash tool call inside a
 loom worktree without `dangerouslyDisableSandbox`. The sandbox allows unix sockets only under
 `/tmp/tmux-*/**` and writes only under `/tmp/claude`, `$TMPDIR` and the worktree — but `/tmp/tmux-<uid>`
-does not exist and `mkdir` on `/tmp` is denied, so every socket dir you *can* create is one tmux
-*cannot* bind in. Validate tmux behaviour through `cargo test` (the e2e suite works around it per-test
+does not exist and `mkdir` on `/tmp` is denied, so every socket dir you _can_ create is one tmux
+_cannot_ bind in. Validate tmux behaviour through `cargo test` (the e2e suite works around it per-test
 via `tests/e2e/tmux_backend.rs`'s `TmuxTmpDirGuard`), not raw shell tmux.
 
 **Detection:** `couldn't create directory /private/tmp/tmux-<uid> (Operation not permitted)` means

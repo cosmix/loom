@@ -1,6 +1,18 @@
-# Daemon Singleton
+# Daemon Singleton (Resolved 2026-08-08)
 
-> Nothing enforces one daemon: a second loom run attaches to the same .work/ and both poll, spawn and merge.
+> Historical incident: two daemons once attached to the same `.work/`. Startup now holds an
+> authoritative stable-file `flock` for the full daemon lifetime and refuses a second owner.
+
+## Resolution
+
+`daemon/server/lock.rs` opens `orchestrator.lock` with `O_NOFOLLOW`, acquires a non-blocking
+exclusive `flock`, records PID plus process start time, and keeps the same file description alive
+until shutdown. A free lock is definitive evidence that no daemon owns the state; a held lock is
+authoritative even if PID metadata is missing or stale. Startup does not unlink or bind the socket
+until it owns this lock, and failed contenders cannot remove the winning daemon's control files.
+
+Shutdown and forced-stop paths verify the recorded process identity before signaling. PID-only
+legacy records never authorize termination, and there is no raw-PID or SIGKILL fallback.
 
 ## Daemon Singleton Not Enforced: Two `loom run` Processes Alive Concurrently (2026-05-13)
 
@@ -13,12 +25,12 @@
 
 State files in `.work/`:
 
-| File | State |
-|------|-------|
-| `orchestrator.sock` | **MISSING** |
-| `orchestrator.pid` | **MISSING** |
-| `orchestrator.lock` | Present, contains `1038911` (no newline), mtime 16:13:18 UTC |
-| `orchestrator.log` | Actively growing; first dated entry is 16:13:18 UTC (matches lock mtime), no startup banner for the 06:30 daemon survives in the file |
+| File                | State                                                                                                                                 |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `orchestrator.sock` | **MISSING**                                                                                                                           |
+| `orchestrator.pid`  | **MISSING**                                                                                                                           |
+| `orchestrator.lock` | Present, contains `1038911` (no newline), mtime 16:13:18 UTC                                                                          |
+| `orchestrator.log`  | Actively growing; first dated entry is 16:13:18 UTC (matches lock mtime), no startup banner for the 06:30 daemon survives in the file |
 
 `loom status` (static) thinks the daemon is down because it talks to `orchestrator.sock`, which no longer exists. `loom status --live` in another terminal was bound earlier and is still rendering stale state; new clients can't connect.
 
@@ -32,7 +44,7 @@ State files in `.work/`:
 
 Result: two competing daemons sharing the same `.work/` state, the older one inert or only partially functional, the newer one doing most of the work. The socket file went missing later (a third event we have no log evidence for — possibly `loom stop` was issued against the new daemon, removing the socket but leaving both processes alive because `loom stop` over a since-disconnected socket is a no-op or because both daemons trapped the signal and ignored it).
 
-**What's needed:**
+**Original remediation requirements (retained as incident history):**
 
 1. **`loom run` must enforce singleton invariant at startup.** Before claiming the lock or binding the socket, walk these in order: (a) read `orchestrator.pid` if present, (b) `kill -0 <pid>` to test liveness, (c) if alive AND its argv matches `loom run`, refuse to start with a clear `error: daemon already running (pid N)` message and exit non-zero. Do NOT delete state files in this path.
 2. **PID file must be written on every successful startup and removed on clean shutdown.** Current state shows `orchestrator.pid` missing despite an active daemon — either it was never written, or it was deleted by a parallel/cleanup path. Both bugs deserve their own probe.

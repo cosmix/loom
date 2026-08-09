@@ -42,7 +42,7 @@ Subagent detection is a live process-tree ancestry check, not a PPID comparison.
 - **`dead_code_check`** — command output patterns catching code that exists but is never called
 - **`before_stage` / `after_stage`** — pre-spawn and post-acceptance gates; a failed pre-check blocks the stage before a session is even spawned
 
-The escape hatches (`--no-verify`, `--force-unsafe`, `--assume-merged`) require the daemon's `.work/admin.token`, which the generated sandbox explicitly denies agents read access to. An agent cannot authorize its own bypass.
+The escape hatches (`--no-verify`, `--force-unsafe`, `--assume-merged`) require a one-time operator proof bound to the project, stage, action, and exact flag set. The operator supplies the daemon secret only while minting the proof; the target command cannot fetch that credential for its caller or reuse the proof for another action.
 
 ### Knowledge capture and distillation
 
@@ -204,7 +204,7 @@ loom pressure <plan-path> [--rounds N] [--dry-run]
 loom plan verify <plan-path> [--strict] [--json] [--no-color]
 ```
 
-`loom plan verify` validates a plan file without touching `.work/` or requiring a git repo. It runs the same fatal validation as `loom init` (schema errors, duplicate IDs, unknown dependencies, path safety) plus advisory warnings (structural issues, missing knowledge-bootstrap stage, sandbox gaps). Exits 0 on success, non-zero on fatal errors; `--strict` promotes warnings to errors.
+`loom plan verify` validates a plan file without touching `.work/` or requiring a git repo. It runs the same fatal validation as `loom init` (schema errors, unknown or retired fields at every nested policy layer, duplicate IDs, unknown dependencies, path safety) plus advisory warnings (structural issues, missing knowledge-bootstrap stage, sandbox gaps). A retired top-level `truths` block is rejected; move behavioral commands to `acceptance`. Exits 0 on success, non-zero on fatal errors; `--strict` promotes warnings to errors.
 
 ### Stage Commands
 
@@ -219,7 +219,6 @@ loom stage release <stage-id>
 loom stage skip <stage-id> [--reason <text>]
 loom stage retry <stage-id> [--force] [--context <message>]
 loom stage merge [stage-id] [--resolved]
-loom stage verify <stage-id> [--no-reload] [--dry-run]
 loom stage human-review <stage-id> [--approve|--force-complete|--reject <reason>]
 loom stage dispute-criteria <stage-id> --criterion-index N --reason <text> [--evidence-commit <sha>] [--failure-output <path>]
 ```
@@ -390,7 +389,15 @@ For `standard` and `integration-verify` stages, acceptance criteria or at least 
 
 Artifact verification treats a stub as a failure: a file that exists but contains `TODO`, `FIXME`, `unimplemented!`, `todo!`, a bare `pass`, or `raise NotImplementedError` does not count as delivered.
 
-The three bypass flags — `--no-verify`, `--force-unsafe`, `--assume-merged` — are gated on the daemon's admin capability, which requires reading `.work/admin.token`. The generated sandbox settings deny agents read access to that file, so an agent cannot authorize its own bypass; a human operating outside the sandbox can.
+Normal stage completion crosses a narrow control boundary. The stage runs one exact pinned
+`loom stage complete <stage-id>` command; a PostToolUse bridge accepts only the matching stage and
+session, requires Loom's verification marker, and sends a non-extensible `CompleteStage` request to
+the daemon. The request cannot carry commands, paths, or bypass flags.
+
+The three bypass flags — `--no-verify`, `--force-unsafe`, `--assume-merged` — require a one-time
+operator proof supplied through `LOOM_ADMIN_PROOF`. Proofs are bound to the project, stage, action,
+and exact flag set, and are consumed on first use. Minting requires the operator to supply the daemon
+secret through `LOOM_ADMIN_TOKEN`; the target command never fetches that credential for its caller.
 
 An agent that genuinely believes a criterion is wrong or impossible has a sanctioned path — `loom stage dispute-criteria` — rather than an incentive to weaken it.
 
@@ -501,7 +508,6 @@ loom:
   sandbox:
     enabled: true
     auto_allow: true
-    excluded_commands: ["loom"]
     filesystem:
       deny_read:
         - "~/.ssh/**"
@@ -520,7 +526,7 @@ loom:
       allow_unix_sockets: []
 ```
 
-Note: knowledge file writes are intentionally protected by sandbox defaults; knowledge updates should be done via `loom knowledge ...` commands.
+Note: knowledge file writes are intentionally protected by sandbox defaults; knowledge updates should be done via `loom knowledge ...` commands. Plan-configured `excluded_commands` are rejected because broad executable exemptions bypass the host sandbox. When sandboxing is enabled, generated settings use host `denyRead` rules for sensitive paths and `failIfUnavailable: true`; failure to write those settings blocks session spawn. Unit tests pin the generated policy and blocked-spawn behavior. A credentialed Claude host-runtime canary across Bash, interpreters, build scripts, symlinks, and file tools remains a manual release check.
 
 ### Permission Mode
 

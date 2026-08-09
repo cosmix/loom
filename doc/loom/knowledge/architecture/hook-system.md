@@ -10,7 +10,7 @@ The `hooks/` module provides Claude Code hooks integration for session lifecycle
 
 **Global vs session hooks distinction:**
 
-- **Global hooks** (commit-filter.sh, git-add-guard.sh, worktree-isolation.sh, prefer-modern-tools.sh): written once by `loom init` into the main repo's `.claude/settings.local.json` via `fs/permissions.rs`. Persist across all sessions.
+- **Global hooks** include commit filtering, Git-add protection, Bash isolation, the canonical five-tool file guard, plan-path protection, and the forwarding guard. They are installed under `~/.claude/hooks/loom/` and registered by `fs/permissions/hooks.rs`, so they persist across sessions.
 - **Session hooks** (session-start.sh, post-tool-use.sh, pre-compact.sh, session-end.sh, learning-validator.sh): generated fresh per-session by `hooks/generator.rs:generate_hooks_settings()`. Merged into worktree's `settings.local.json` with duplicate detection.
 
 ## Hook System — Session-Start Behavior and hookSpecificOutput Pattern
@@ -60,14 +60,14 @@ Used by hooks to inject context into Claude's next turn:
 
 Set by wrapper script (pid_tracking.rs:463-479) before `exec claude`:
 
-| Variable | Purpose |
-|----------|---------|
-| `LOOM_SESSION_ID` | Current session ID |
-| `LOOM_STAGE_ID` | Current stage ID |
-| `LOOM_WORK_DIR` | Absolute path to `.work/` |
-| `LOOM_MAIN_AGENT_PID` | Process PID (set dynamically, NOT in settings.json) |
-| `LOOM_WORKTREE_PATH` | Absolute worktree path (worktree sessions only) |
-| `LOOM_MERGE_SESSION=1` | Set for merge resolution sessions only |
+| Variable               | Purpose                                             |
+| ---------------------- | --------------------------------------------------- |
+| `LOOM_SESSION_ID`      | Current session ID                                  |
+| `LOOM_STAGE_ID`        | Current stage ID                                    |
+| `LOOM_WORK_DIR`        | Absolute path to `.work/`                           |
+| `LOOM_MAIN_AGENT_PID`  | Process PID (set dynamically, NOT in settings.json) |
+| `LOOM_WORKTREE_PATH`   | Absolute worktree path (worktree sessions only)     |
+| `LOOM_MERGE_SESSION=1` | Set for merge resolution sessions only              |
 
 **Per-session identity gotcha (LOOM_MAIN_AGENT_PID, LOOM_STAGE_ID, LOOM_SESSION_ID):** Must NOT be in ANY settings-file env block — settings `env` overrides the process environment, so a persisted value from an earlier session shadows the wrapper's fresh exports (wrong-stage `loom memory` entries, heartbeats for the wrong session, commit-filter misidentifying the main agent). The wrapper script is the ONLY writer; `fs/permissions/settings.rs::scrub_session_identity_env()` strips these keys wherever settings are generated, copied, or merged (`generate_hooks_settings`, `create_worktree_settings`, worktree settings.local.json copy, `refresh_worktree_settings_local`, `ensure_loom_hooks_local`). Only the stable `LOOM_WORK_DIR` is persisted in settings env. `refresh_worktree_settings_local` merges main-repo permissions INTO the worktree's own settings (worktree base wins for env/hooks/defaultMode). **Claude Code applies the MAIN repo's settings env to sessions in linked worktrees** (observed v2.1.217), so worktree-side scrubbing alone is insufficient — the run path heals the main files too: `scrub_main_repo_settings_identity()` at `loom run` startup (`prepare_repo_for_run`) and `scrub_session_identity_env()` inside the sync fold-back (`merge_permissions_with_lock`), which rewrites the main settings.local.json on every stage completion (see mistakes.md 2026-07-23).
 
@@ -93,18 +93,18 @@ So: **16 Claude Code hooks + 1 shared library + 1 git-side hook = 18 scripts** (
 
 Three-layer defense: documentation (CLAUDE.md Rule 5), signal injection (cache.rs prefix), and hook enforcement — which is now **two** hooks, not one:
 
-| Hook | Enforces |
-| --- | --- |
-| `commit-filter.sh` | subagents may not run git operations; blocks AI attribution in commit messages |
+| Hook                       | Enforces                                                                                                                                                                                                                |
+| -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `commit-filter.sh`         | subagents may not run git operations; blocks AI attribution in commit messages                                                                                                                                          |
 | `subagent-verify-guard.sh` | subagents may not run project-wide build/test/lint/typecheck suites — at most one narrowly-scoped check. `integration-verify` stages are carved out and may run the full suite. Deliberately has **no opt-out env var** |
 
 **Detection is not a PPID comparison.** Both hooks gate on `loom_is_subagent()` in
 `hooks/_common.sh`, which requires `LOOM_MAIN_AGENT_PID` to be a **live ancestor** of the current
-process *and* at least one intervening Claude process between them. A 2-level claude chain is
+process _and_ at least one intervening Claude process between them. A 2-level claude chain is
 classified MAIN AGENT; a 3-level chain is a SUBAGENT (verified empirically with
 `COMMIT_FILTER_DEBUG=1`).
 
-**Consequence worth knowing:** agent-team *teammates* are not in the main agent's process tree,
+**Consequence worth knowing:** agent-team _teammates_ are not in the main agent's process tree,
 so `LOOM_MAIN_AGENT_PID` is set but is not a live ancestor and `loom_is_subagent` returns false
 for them. Hooks gated on it therefore do **not** fire inside teammates. Task-tool subagents are
 in-tree and detect correctly.

@@ -29,9 +29,9 @@ All four public `spawn_*` methods funnel through the single unified `spawn()` in
 
 - **`--remote-control[=name]`** — `build_claude_command` takes `remote_control: &RemoteControlInvocation` (not a bool). `prepare_session_launch` computes the name via `remote_control_session_name(kind, stage)` (kind-prefixed table in architecture/remote-control.md), then calls `crate::remote_control::resolve_invocation(work_dir, &rc_name)` to get the `Disabled`/`Bare`/`Named(rc_name)` to pass in. `Named` is joined to the flag with `=`, not a space — see architecture/remote-control.md's known-limitations note on why (optional-argument flag-reparsing risk).
 - **`--permission-mode {mode}`** is resolved inside `prepare_session_launch()` via `merge_config(read_plan_sandbox(work_dir), stage.sandbox, stage.stage_type).permission_mode` → `.as_settings_value()`. Reads the SAME `[plan_sandbox]` snapshot that `OrchestratorConfig.sandbox_config` loads from, so the CLI flag and the generated settings file never disagree. `validate_config` rejects `bypass-permissions`, so it never reaches the flag.
-- Model/effort policy: `spawn_session` / `spawn_knowledge_session` use `stage.effective_model()` + `stage.effective_reasoning_effort()`; `spawn_merge_session` / `spawn_base_conflict_session` hardcode `opus` / `xhigh`.
+- Model/effort policy: `spawn_session` / `spawn_knowledge_session` use `stage.effective_model()` + `stage.effective_reasoning_effort()`; `spawn_merge_session` uses `opus` / `xhigh`. `SessionType::BaseConflict` remains readable for historical session attribution, but there is no public base-conflict spawn path.
 
-All four call `pid_tracking::create_wrapper_script()` before `spawn_in_terminal()`.
+All three spawn operations use the shared `prepare_session_launch()` path, which creates the PID-tracking wrapper before dispatching to the selected native or tmux terminal lane.
 
 ### 4. Wrapper script — PID tracking template
 
@@ -49,14 +49,14 @@ All four call `pid_tracking::create_wrapper_script()` before `spawn_in_terminal(
 
 `loom/src/fs/work_dir.rs` (block starting at line 328):
 
-| Function | Lines | Notes |
-|----------|-------|-------|
-| `read_config(work_dir)` | 356–366 | Returns `toml_edit::DocumentMut` (preserves comments) |
-| `write_config(work_dir, doc)` | 370–381 | Writes doc back; caller must hold any lock |
-| `read_section<T>()` (private) | 383–402 | Reads a named `[section]` as typed `T: DeserializeOwned` |
-| `write_section<T>()` (private) | 404–429 | Writes typed value into named section, preserving rest |
-| `read_plan_sandbox(work_dir)` | 435–437 | Public: reads `[plan_sandbox]` → `Option<SandboxConfig>` |
-| `write_plan_sandbox(work_dir, sandbox)` | 440–442 | Public: writes `[plan_sandbox]` |
+| Function                                | Lines   | Notes                                                    |
+| --------------------------------------- | ------- | -------------------------------------------------------- |
+| `read_config(work_dir)`                 | 356–366 | Returns `toml_edit::DocumentMut` (preserves comments)    |
+| `write_config(work_dir, doc)`           | 370–381 | Writes doc back; caller must hold any lock               |
+| `read_section<T>()` (private)           | 383–402 | Reads a named `[section]` as typed `T: DeserializeOwned` |
+| `write_section<T>()` (private)          | 404–429 | Writes typed value into named section, preserving rest   |
+| `read_plan_sandbox(work_dir)`           | 435–437 | Public: reads `[plan_sandbox]` → `Option<SandboxConfig>` |
+| `write_plan_sandbox(work_dir, sandbox)` | 440–442 | Public: writes `[plan_sandbox]`                          |
 
 **Pattern to mirror for new sections:** add a `const SECTION_NAME: &str = "my_section"` at the top, then two public functions calling `read_section` / `write_section`.
 

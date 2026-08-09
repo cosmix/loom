@@ -116,11 +116,11 @@ capability/preflight/resolve shape as [Remote Control](remote-control.md)'s `pre
 
 ## Hooks (hooks/hooks.json)
 
-| Event | Script | Timeout |
-|--------------|-------------------------------|---------|
-| SessionStart | `session-lifecycle-hook.mjs`  | 5s      |
-| SessionEnd   | `session-lifecycle-hook.mjs`  | 5s      |
-| Stop         | `stop-review-gate-hook.mjs`   | 900s    |
+| Event        | Script                       | Timeout |
+| ------------ | ---------------------------- | ------- |
+| SessionStart | `session-lifecycle-hook.mjs` | 5s      |
+| SessionEnd   | `session-lifecycle-hook.mjs` | 5s      |
+| Stop         | `stop-review-gate-hook.mjs`  | 900s    |
 
 The Stop gate is **OPT-IN**: `main()` returns early unless `config.stopReviewGate` is set
 (`stop-review-gate-hook.mjs:154-156`; `defaultState()` sets it `false`), and
@@ -146,7 +146,7 @@ Three moving parts:
    - `preferred()` (first element) = the lane routine implementation reaches for.
    - `includes_codex()` = whether the codex safety doctrine must be emitted.
 
-   Gating doctrine on the *preference* rather than on *membership* is a real bug: a stage listing
+   Gating doctrine on the _preference_ rather than on _membership_ is a real bug: a stage listing
    `["claude", "codex"]` may still spawn a codex subagent, and would then run with none of the
    blast-radius rules. That is exactly the hole the original `implementer == Codex` equality check
    left, and `tests_cache.rs` now pins both the mixed-signal and mixed-recovery cases against it.
@@ -154,6 +154,7 @@ Three moving parts:
    Validation (`plan/schema/validation.rs`) REJECTS an empty list and a repeated lane (order would
    be ambiguous), and WARNS when codex is listed on a knowledge, knowledge-distill, or
    integration-verify stage — on membership, not preference, for the same reason.
+
 3. **The gated signal block.** `format_codex_implementers_section(&Implementers)`
    (`orchestrator/signals/format/sections.rs`) emits `## Codex Implementers`, gated on
    `includes_codex()`. It names every licensed lane, and on a mixed stage tells the orchestrator to

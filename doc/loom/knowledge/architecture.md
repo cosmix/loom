@@ -26,7 +26,7 @@ file-ownership rules that say which process may write which `.work/` file.
 ## Worktree Isolation (4-Layer Defense)
 
 1. **Git layer** -- Separate worktrees at `.worktrees/<stage-id>/` with branch `loom/<stage-id>`. Symlinks: `.work` -> shared state, `.claude/CLAUDE.md` -> instructions, root `CLAUDE.md` -> project guidance.
-2. **Sandbox layer** -- MergedSandboxConfig (sandbox/config.rs) generates `settings.local.json` with filesystem deny/allow, network domains, excluded commands. Knowledge writes via `loom knowledge update` CLI only.
+2. **Sandbox layer** -- `MergedSandboxConfig` (`sandbox/config.rs`) generates `settings.local.json` with filesystem deny/allow policy, network domains, and fail-closed sandbox availability. Plan-configured `excluded_commands` are rejected; generated settings do not grant broad executable exemptions. Knowledge writes use the narrow Loom control path rather than direct file edits.
 3. **Signal layer** -- Four stage-type-specific stable prefix generators in cache.rs (standard, knowledge, integration-verify, knowledge-distill). Include isolation rules and subagent restrictions.
 4. **Hook layer** -- commit-guard.sh blocks exit without commit. commit-filter.sh blocks subagent git operations and subagent-verify-guard.sh blocks subagent full-suite verification, both gated on `loom_is_subagent()` (live-ancestor `LOOM_MAIN_AGENT_PID` plus an intervening Claude process — not a PPID comparison).
 
@@ -103,7 +103,7 @@ KnowledgeFile enum: Architecture, EntryPoints, Patterns, Conventions, Mistakes, 
 1. Add to StageDefinition (plan/schema/types.rs) with serde defaults
 2. Add validation in validation.rs
 3. Add to Stage model (models/stage/types.rs) with serde defaults
-4. Copy in create_stage_from_definition() (commands/init/plan_setup.rs)
+4. Copy in the canonical `Stage::from_definition()` builder (`models/stage/methods.rs`); init delegates to it
 5. If goal-check: update has_any_goal_checks() in BOTH StageDefinition and Stage
 6. If verification: add verify function in verify/goal_backward/ and call from run_goal_backward_verification()
 7. Check ALL test files constructing Stage directly (src/ AND tests/ directories)
@@ -142,7 +142,7 @@ After worktree creation, `.claude/settings.local.json` is appended (idempotently
 
 ## Claude Code Worktree Isolation Disabled in Generated Settings
 
-Loom owns the per-stage git worktree, so it disables Claude Code's *own* worktree
+Loom owns the per-stage git worktree, so it disables Claude Code's _own_ worktree
 isolation (`worktree.bgIsolation`) in every settings file it generates. Claude
 Code's default (`"worktree"`) blocks Edit/Write in the checkout until
 `EnterWorktree`, which would push subagents into nested worktrees on top of loom's
@@ -190,7 +190,10 @@ Full file list:
 5. `detection.detect_heartbeat_events()` — hung detection via `HeartbeatWatcher`
 6. Return `Vec<MonitorEvent>`
 
-**LivenessService injection:** `Monitor::set_liveness(liveness: LivenessService)` is called by the orchestrator after `NativeBackend` construction. Until set, session-alive checks fall back to legacy host-PID probe (`kill -0`).
+**LivenessService injection:** `Monitor::set_liveness(liveness: LivenessService)` is called by the
+orchestrator after the shared `SessionBackend` is constructed. Backend liveness uses the lane recorded
+on `Session.backend` and verified process identity; missing identity is unverifiable, not permission to
+fall back to a raw PID signal.
 
 ## Status Command Architecture (commands/status/)
 
@@ -228,7 +231,7 @@ Main loop at `orchestrator/core/orchestrator.rs:258-376` — 5s poll cycle (100m
 9. monitor.poll() → handle_events()          [event_handler.rs]  — completion/crash events
 ```
 
-**Corrected 2026-07-30.** This section previously carried a plan-authoring note — `*** INSERT: check_pending_disputes() + apply_pending_verdicts() HERE ***` — proposing an insertion point *after* merge resolution. The adjudicator hooks shipped and sit **before** merge resolution (steps 4-6), not after. The ordering property that matters is unchanged and still holds: verdicts are applied before `start_ready_stages()`, so a stage re-queued by a verdict is picked up in the same cycle.
+**Corrected 2026-07-30.** This section previously carried a plan-authoring note — `*** INSERT: check_pending_disputes() + apply_pending_verdicts() HERE ***` — proposing an insertion point _after_ merge resolution. The adjudicator hooks shipped and sit **before** merge resolution (steps 4-6), not after. The ordering property that matters is unchanged and still holds: verdicts are applied before `start_ready_stages()`, so a stage re-queued by a verdict is picked up in the same cycle.
 
 The same three calls also run once during startup init, after `refresh_ready_status()` / `sync_queued_status_to_files()`. All three are idempotent and cheap no-ops when no disputes exist on disk.
 
@@ -259,12 +262,12 @@ Transitions FROM `NeedsAdjudication` (`transitions.rs`) — note it can loop to 
 
 `.work/disputes/<stage_id>/<n>/` — per-dispute directory (numbered from 1):
 
-| File | Authority | Contents |
-|------|-----------|----------|
-| `request.md` | Agent-writable (via daemon RPC) | id, stage_id, criterion_index, reason, evidence_commit, failure_output, fix_attempts_at_dispute, created_at |
-| `verdict.md` | Daemon-only (worker thread writes) | verdict, citations, reasoning, plan_patch, adjudicator_attempt_count, model |
-| `applied.marker` | Daemon-only (zero-byte, idempotency) | — |
-| `.inflight` | Daemon-only (staleness guard) | timestamp + worker ID; >10min → re-fire |
+| File             | Authority                            | Contents                                                                                                    |
+| ---------------- | ------------------------------------ | ----------------------------------------------------------------------------------------------------------- |
+| `request.md`     | Agent-writable (via daemon RPC)      | id, stage_id, criterion_index, reason, evidence_commit, failure_output, fix_attempts_at_dispute, created_at |
+| `verdict.md`     | Daemon-only (worker thread writes)   | verdict, citations, reasoning, plan_patch, adjudicator_attempt_count, model                                 |
+| `applied.marker` | Daemon-only (zero-byte, idempotency) | —                                                                                                           |
+| `.inflight`      | Daemon-only (staleness guard)        | timestamp + worker ID; >10min → re-fire                                                                     |
 
 Request.md is written by the daemon handler on behalf of the agent's RPC call. Trust boundary: same pattern as `loom memory note`.
 
@@ -282,11 +285,11 @@ The proposed value is deserialized into the **real** `AcceptanceCriterion` / `Wi
 
 **Recovery** — `verify_plan_versions_consistency()`, called from orchestrator startup, handles three divergences:
 
-| On disk | Action |
-| --- | --- |
-| Snapshot written, audit row missing | Orphaned snapshot — removed so the next amendment can claim the id |
-| Audit row appended, plan file still old | Re-apply the snapshot to plan + stage file (catch-up commit) |
-| Plan + audit in sync, stage file stale | Re-apply just the stage-file update |
+| On disk                                 | Action                                                             |
+| --------------------------------------- | ------------------------------------------------------------------ |
+| Snapshot written, audit row missing     | Orphaned snapshot — removed so the next amendment can claim the id |
+| Audit row appended, plan file still old | Re-apply the snapshot to plan + stage file (catch-up commit)       |
+| Plan + audit in sync, stage file stale  | Re-apply just the stage-file update                                |
 
 ## Plan Immutability Invariant (Narrowed, Not Removed)
 
@@ -312,11 +315,11 @@ running stage changes.
 
 **Status as of 2026-06-15 (verified against stage_executor.rs:219-256, plan/schema/types.rs:261, and orchestrator/signals/generate.rs):**
 
-| Field | Schema Type | Stored on Stage | Executed | Where |
-|-------|-------------|-----------------|----------|-------|
-| `before_stage` | `Vec<TruthCheck>` | ✅ Yes (plan_setup.rs:280) | ✅ Yes | stage_executor.rs:220-256 (pre-spawn) |
-| `after_stage` | `Vec<TruthCheck>` | ✅ Yes (plan_setup.rs:281) | ✅ Yes | commands/stage/complete.rs:847-866 |
-| `code_review` | `Option<CodeReviewConfig>` | ❌ NOT on Stage struct | ✅ Partial | signals/generate.rs reads from plan for IV signal |
+| Field          | Schema Type                | Stored on Stage            | Executed   | Where                                             |
+| -------------- | -------------------------- | -------------------------- | ---------- | ------------------------------------------------- |
+| `before_stage` | `Vec<TruthCheck>`          | ✅ Yes (plan_setup.rs:280) | ✅ Yes     | stage_executor.rs:220-256 (pre-spawn)             |
+| `after_stage`  | `Vec<TruthCheck>`          | ✅ Yes (plan_setup.rs:281) | ✅ Yes     | commands/stage/complete.rs:847-866                |
+| `code_review`  | `Option<CodeReviewConfig>` | ✅ Yes                    | ✅ Signal  | signals/generate.rs renders it for IV signals     |
 
 **`before_stage` execution (`stage_executor.rs::before_stage_gate_passed`):**
 
@@ -333,38 +336,34 @@ running stage changes.
 - Runs during `loom stage complete`, AFTER acceptance criteria pass
 - On failure: stage stays Executing, no merge, agent must fix and re-run
 
-**`code_review` — WIRED FOR SIGNAL GENERATION ONLY (as of PLAN-anti-slop-thoroughness):**
+**`code_review` — PERSISTED AND WIRED FOR SIGNAL GENERATION:**
 
-- Parsed by serde at schema level (`plan/schema/types.rs:261`)
-- NOT copied in `create_stage_from_definition()` — Stage struct has NO `code_review` field
-- `load_code_review_for_stage(stage_id, plan_path)` in `orchestrator/signals/generate.rs` reads it directly from the plan file via `parse_plan()` — used ONLY for IntegrationVerify signal generation
+- Parsed by serde at schema level and copied by `Stage::from_definition()` onto the runtime `Stage`
+- `orchestrator/signals/generate.rs` reads the persisted runtime field; it does not reparse the plan
 - `render_review_dimensions()` emits a `## Review Dimensions` checkbox section in IV signals, honoring `require_all`
-- Still NOT consumed during acceptance, completion, or goal-backward verification
-- `plan/schema/mod.rs` re-exports `CodeReviewConfig` for use in generate.rs
+- It remains agent guidance rather than an acceptance or goal-backward verification primitive
 
 ## load_stage_definition_from_plan — Centralized Plan Lookup
 
 Centralized in `plan/parser/mod.rs` (re-exported via `plan/mod.rs`). Previously lived in `commands/verify.rs`.
 
-**Signature:** `load_stage_definition_from_plan(work_dir, stage_id) -> Result<StageDefinition>`
+**Signature:** `load_stage_definition_from_plan(stage_id, work_dir) -> Result<Option<StageDefinition>>`
 
 Reads `.work/config.toml` for plan path, calls `resolve_source_path()`, calls `parse_plan()`, finds stage by ID. Used by:
 
-- `commands/stage/complete.rs` — after_stage execution
-- `commands/stage/verify.rs` — goal-backward verification
-- `orchestrator/signals/generate.rs` — code_review lookup for IV signal generation
+- `commands/stage/complete.rs` — after-stage execution
 
-**Why plan/ layer:** both commands/ and orchestrator/ already depend on plan/; moving here eliminated a code_review re-inline in generate.rs without adding any new dependency edge. orchestrator/ -> commands/ would have been a layering violation.
+**Why plan/ layer:** completion needs the authoritative plan definition for checks that are intentionally evaluated from the active plan. Runtime policy copied onto `Stage` should not reparse the plan at its consumers.
 
 ## `loom pressure` Command (Plan Pressure-Testing Driver)
 
 `loom pressure <plan> [--rounds N=2] [--dry-run]` (loom/src/commands/pressure/mod.rs) is a standalone, **synchronous foreground** driver that hardens a plan by combining two external agents. It is a second execution model distinct from the daemon/worktree orchestrator: it runs in the user's repo — NOT a worktree, NOT a background daemon, NOT a terminal-spawn.
 
-Per round (default 2): delete the codex report → run **Claude `/pressure` (foreground) and Codex `$pressure` (background) CONCURRENTLY** → once both finish, run Claude `/address <plan>` (folds Codex's written review back into the plan). One final report deletion after all rounds. Because the two pressure-tests run in parallel, Codex reviews the *pre-edit* plan while Claude edits it — a more independent perspective; `/address` reconciles both afterward.
+Per round (default 2): delete the codex report → run **Claude `/pressure` (foreground) and Codex `$pressure` (background) CONCURRENTLY** → once both finish, run Claude `/address <plan>` (folds Codex's written review back into the plan). One final report deletion after all rounds. Because the two pressure-tests run in parallel, Codex reviews the _pre-edit_ plan while Claude edits it — a more independent perspective; `/address` reconciles both afterward.
 
 **Billing/TTY constraint (load-bearing):** Claude Code enters its non-interactive `-p` path — which can bill against pay-per-token API credits instead of the claude.ai subscription — whenever **stdout is not a TTY** (piped/redirected), even without `-p` (confirmed in `claude --help`). So Claude's stdout MUST stay the real terminal: `/pressure` and `/address` run in the **foreground** (interactive, subscription-billed, visible), and CANNOT be captured/backgrounded. Codex — which has separate auth and floods stdout with a verbose event stream — is the one backgrounded, with stdout+stderr captured to a temp log (`$TMPDIR/loom-pressure-codex-<pid>.log`); its tail is printed on non-clean exit.
 
-**Auto-exit without `-p` (mirrors the daemon):** interactive Claude never exits on its own after a slash command, and EOF on stdin makes the REPL quit *before* the work finishes. So the driver replicates how the daemon ends a session (`event_handler.rs` → `NativeBackend::kill_session` → SIGTERM once the stage completes): it injects a completion instruction via `--append-system-prompt` telling the agent to `touch <marker>` as its FINAL action, polls for that marker file, then SIGTERMs (escalating to SIGKILL after a grace period) the now-idle foreground session. If the marker never appears the user can still exit manually (graceful fallback = old behavior). Codex is non-interactive and exits on its own.
+**Auto-exit without `-p` (mirrors the daemon):** interactive Claude never exits on its own after a slash command, and EOF on stdin makes the REPL quit _before_ the work finishes. So the driver replicates how the daemon ends a session (`event_handler.rs` → `NativeBackend::kill_session` → SIGTERM once the stage completes): it injects a completion instruction via `--append-system-prompt` telling the agent to `touch <marker>` as its FINAL action, polls for that marker file, then SIGTERMs (escalating to SIGKILL after a grace period) the now-idle foreground session. If the marker never appears the user can still exit manually (graceful fallback = old behavior). Codex is non-interactive and exits on its own.
 
 Children run with `current_dir(repo_root)` (resolved via `git rev-parse --show-toplevel`), so the plan argument handed to them is **repo-relative** (e.g. `doc/plans/PLAN-foo.md`), never cwd-relative. Claude argv: `--permission-mode auto --model opus --append-system-prompt <marker-instruction> <slash>` with `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` and stdin/stdout/stderr inherited. Codex argv: `exec --sandbox workspace-write -m gpt-5.6-sol -c model_reasoning_effort=xhigh -C <repo_root> <skill>` with stdin `/dev/null` and stdout/stderr → the log file (model/effort pinned via `CODEX_MODEL`/`CODEX_REASONING_EFFORT` consts in pressure/mod.rs — codex has no dedicated effort flag, hence the `-c` config override). NOTE: Codex has been observed printing a non-fatal `worker transport error / authorization required` warning at startup even while logged in and continuing to work — it is codex-side, not a loom bug; the captured log now keeps it off the terminal. Because codex is otherwise invisible (no output; the spinner shows only when codex outlives Claude; the report is deleted as final cleanup), the driver prints status lines: `→ codex review started in background (log: …)` at spawn, and `✓ codex review written → <report>` (or a warning if codex exited cleanly without writing the report) after it finishes — without these, a codex run that finished before Claude was repeatedly mistaken for never having started (see mistakes.md).
 
@@ -403,7 +402,7 @@ failure) when the codex CLI or plugin is not installed.
 Empirical spike on running several codex-companion tasks at once in one workspace: **foreground fan-out
 over disjoint file sets is verified safe to 6** — edits and results were correct at every concurrency
 tested. Only the plugin's unlocked shared `state.json` degrades, which costs observability
-(`/codex:status`, `/codex:result`) and rules out *background* fan-out. Note the cap of 6 is a doctrine
+(`/codex:status`, `/codex:result`) and rules out _background_ fan-out. Note the cap of 6 is a doctrine
 number carried as a literal in the signal prose; there is **no `CODEX_MAX_PARALLEL` constant in the
 code**. The page also records what execution did NOT prove: no stage has yet run with codex listed
 in `implementers`.

@@ -11,13 +11,16 @@ DAG of stages with dependency tracking. `get_ready()` returns stages with all de
 ### Stage State Machine (models/stage/)
 
 ```text
-WaitingForDeps --> Queued --> Executing --> Completed --> Verified
+WaitingForDeps --> Queued --> Executing --> Completed
                      |            |
                      v            +--> Blocked, NeedsHandoff, WaitingForInput,
-                  Skipped              MergeConflict, CompletedWithFailures, MergeBlocked, NeedsHumanReview
+                  Skipped              MergeConflict, CompletedWithFailures, MergeBlocked,
+                                       NeedsHumanReview, NeedsAdjudication
 ```
 
-12 variants total. Terminal states: Completed, Skipped. Transitions validated in transitions.rs. See [patterns.md -- State Machine Pattern](patterns.md#state-machine-pattern).
+13 variants total, including `NeedsAdjudication`. `verified` is only a deserialization alias for
+`Completed`, not a separate runtime state. Terminal states: Completed, Skipped. Transitions are
+validated in transitions.rs. See [patterns.md -- State Machine Pattern](../patterns.md#state-machine-pattern).
 
 **Documented state-machine bypasses:** Two paths intentionally bypass `try_transition`:
 
@@ -37,13 +40,16 @@ Signal generation has 4 stable prefix generators in cache.rs (standard, knowledg
 
 States: Spawning -> Running -> Completed | Crashed | ContextExhausted | Paused. Tracks PID, terminal window ID, context usage %, timestamps.
 
-### NativeBackend (orchestrator/terminal/)
+### SessionBackend (orchestrator/terminal/)
 
-Concrete type for spawning Claude Code in terminal windows.
+`SessionBackend` is the shared dispatcher for every spawn, kill, and liveness operation. It selects
+the native host-terminal lane or the opt-in tmux lane per spawn and persists the lane on
+`Session.backend`. Later kill and liveness calls dispatch by that recorded value, so configuration
+changes and daemon restarts cannot route an existing session through the wrong backend.
 
-- **NativeBackend** (`orchestrator/terminal/native/`) — spawns Claude Code in a host terminal. Supports 11+ emulators via `TerminalEmulator` enum. PID tracking via wrapper scripts writing to `.work/pids/`.
-
-**LivenessService** (`orchestrator/liveness.rs`) — replaces scattered `kill -0` checks. Delegates to `NativeBackend::is_session_alive()` for session liveness probes.
+`LivenessService` wraps the same shared `Arc<SessionBackend>`. Process checks use verified PID plus
+start-time identity; a missing or mismatched identity fails closed instead of falling back to raw
+`kill -0` signaling.
 
 ## Data Flow
 
@@ -65,9 +71,14 @@ Concrete type for spawning Claude Code in terminal windows.
 5. Progressive merge into main branch (dependency order)
 ```
 
-### IPC Protocol (daemon/server/protocol.rs)
+### IPC Protocol (`daemon/protocol.rs`, `daemon/wire.rs`)
 
-Unix socket at `.work/orchestrator.sock`. Messages: Status, Stop, Subscribe. Length-prefixed JSON (4-byte big-endian, max 10MB). Daemon polls status every 1 second for subscribers.
+Unix socket at `.work/orchestrator.sock`. A fixed capability-and-credential preface is authenticated
+before the length-prefixed JSON body is allocated. Requests are capped at 64 KiB, responses at
+2 MiB, and absolute read deadlines plus bounded workers, queue slots, subscriber counts, and
+in-flight bytes prevent slow or oversized clients from exhausting the daemon. User requests cover
+status/log subscriptions, Ping, Unsubscribe, and DisputeCriteria; Stop requires a one-time operator
+proof.
 
 ## File Ownership
 

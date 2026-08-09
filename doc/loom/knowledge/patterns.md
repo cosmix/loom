@@ -12,19 +12,19 @@ table of contents goes stale the moment a topic is added.
 
 ## State Machine Pattern
 
-Stage has 12 states: WaitingForDeps -> Queued -> Executing -> Completed (terminal). From Executing: Blocked, NeedsHandoff, WaitingForInput, MergeConflict, CompletedWithFailures, MergeBlocked, NeedsHumanReview. Skipped is terminal. **Critical invariant**: dependents become Queued only when deps have `status == Completed AND merged == true`. Session has 6 states: Spawning -> Running -> Completed/Crashed/ContextExhausted, plus Paused<->Running. All transitions validated via `try_transition()`.
+Stage has 13 states: WaitingForDeps -> Queued -> Executing -> Completed (terminal). From Executing: Blocked, NeedsHandoff, WaitingForInput, MergeConflict, CompletedWithFailures, MergeBlocked, NeedsHumanReview, and NeedsAdjudication. Skipped is terminal. **Critical invariant**: dependents become Queued only when deps have `status == Completed AND merged == true`. Session has 6 states: Spawning -> Running -> Completed/Crashed/ContextExhausted, plus Paused<->Running. All transitions validated via `try_transition()`.
 
 ## File-Based State Pattern
 
 All state persisted to `.work/` as markdown with YAML frontmatter. Benefits: git-friendly diffing, human-readable, crash recovery via file re-read. Stage files named with topological depth prefix (e.g., `01-knowledge-bootstrap.md`).
 
-**Concurrency is NOT single-writer.** Three writer classes mutate stage files concurrently: the orchestrator main loop (`orchestrator/core/persistence.rs::save_stage`), the daemon dispute IPC thread (`daemon/server/dispute.rs`), and agent-run CLI commands (`commands/stage/{complete,merge,check_acceptance,skip_retry}.rs`). All stage-file reads/writes go through `fs/locking.rs` advisory `flock`s on the **parent directory** inode (`stages/`), and writes are crash-atomic (temp-file + `rename`). See the Locked Stage Read-Modify-Write Pattern below — the old "no explicit file locking; single-writer model" assumption was false and produced the A-5 lost-update class.
+**Concurrency is NOT single-writer.** The orchestrator loop, daemon IPC handlers, and agent-run CLI commands all mutate stage files. Existing-record changes must use the canonical locked `update_stage` transaction; crash-atomic replacement alone does not prevent stale logical writes. See the Locked Stage Read-Modify-Write Pattern below.
 
 ## Locked Stage Read-Modify-Write Pattern (A-5)
 
-`locked_read`/`locked_write` serialize *individual* reads/writes, but the load → mutate → save flow releases the lock between load and save. Each `save_stage` serializes the **entire** `Stage`, so a writer that loaded the stage minutes earlier (e.g. `loom stage complete` holding a stage across a multi-minute acceptance run) reverts any field a concurrent writer changed in the gap — a lost update (status reverted, `dispute_count`/`retry_count`/`close_reason`/`session`/amended `acceptance` clobbered).
+`locked_read`/`locked_write` serialize _individual_ reads/writes, but the load → mutate → save flow releases the lock between load and save. Each `save_stage` serializes the **entire** `Stage`, so a writer that loaded the stage minutes earlier (e.g. `loom stage complete` holding a stage across a multi-minute acceptance run) reverts any field a concurrent writer changed in the gap — a lost update (status reverted, `dispute_count`/`retry_count`/`close_reason`/`session`/amended `acceptance` clobbered).
 
-**Fix — `verify::transitions::update_stage(stage_id, work_dir, |s| { ... })`:** holds the `stages/` directory lock across a *fresh* on-disk read, the closure, and the crash-atomic write. The closure mutates the **current** persisted `Stage`, so it only touches the fields the operation owns; a concurrent writer's other fields survive. Returns the written `Stage`. The file must already exist (creation still uses `save_stage`). A closure `Err` leaves the file untouched.
+**Fix — `verify::transitions::update_stage(stage_id, work_dir, |s| { ... })`:** holds the `stages/` directory lock across a _fresh_ on-disk read, the closure, and the crash-atomic write. The closure mutates the **current** persisted `Stage`, so it only touches the fields the operation owns; a concurrent writer's other fields survive. Returns the written `Stage`. The file must already exist; creation uses `create_stage` (`save_stage` is a creation-only compatibility alias and refuses overwrites). A closure `Err` leaves the file untouched.
 
 ```rust
 // Re-read under the lock, apply only the operation-owned delta:
@@ -34,15 +34,15 @@ update_stage(stage_id, work_dir, |s| {
 })?;
 ```
 
-Underlying primitives (`fs/locking.rs`): `locked_dir_update(dir, f)` locks a directory inode for the duration of `f` (for find-read-write when the file's exact prefixed path is unknown); `atomic_write_locked(path, content)` is the temp+rename write used *inside* a held lock.
+Underlying primitives (`fs/locking.rs`): `locked_dir_update(dir, f)` locks a directory inode for the duration of `f` (for find-read-write when the file's exact prefixed path is unknown); `atomic_write_locked(path, content)` is the temp+rename write used _inside_ a held lock.
 
-**Field-ownership rule (the judgment-heavy part):** for a LONG operation, re-apply ONLY the fields that operation owns and leave every other field at its on-disk value. Ownership as migrated: progressive-merge completion owns `completed_commit`/`merged`/`merge_conflict`/status (`progressive_complete.rs`); `loom stage merge` owns `fix_attempts` + the merge-completion transition (`merge.rs`); `check_acceptance` owns only `fix_attempts`; the dispute handler owns `dispute_count`/`evidence_rounds`/status (`dispute.rs`); the adjudicator verdict owns status/`review_reason`/`evidence_rounds`/`amendments_applied`/`acceptance`/`wiring` (`adjudication/mod.rs`); plan amendment owns only `acceptance`/`wiring` (`plan/amendment.rs`, per the Adjudicator Scope Convention).
+**Field-ownership rule (the judgment-heavy part):** for a long operation, re-apply only the fields that operation owns and leave every other field at its freshly read on-disk value. Progressive merge owns completed commit/merge/status fields; merge retry owns `fix_attempts` and its merge transition; dispute/adjudication owns its review counters, status, and amendment fields; plan amendment owns only the amendable verification policy.
 
 **Long-op shape:** run the slow work (git merge under its own `MergeLock`, acceptance commands) OUTSIDE the stages-dir lock, then apply the owned fields in a SHORT `update_stage` closure — never hold the stages-dir lock across git/subprocess work.
 
 **Invariants preserved:** never write `merged=true` without ancestry verification (the `merged=true` writes in `merge.rs`/`merge.rs --resolved` follow a real merge or a `verify_or_derive_completed_commit` ancestry check, both done before the closure); `route_complete_for_conflicts` stays a pure read-only seam (no early whole-`Stage` save before its decision); status transitions still go through `try_*`/`force_status_with_reason`.
 
-**Not migrated (deliberate):** orchestrator main-loop `save_stage` sites in `recovery.rs`/`merge_handler.rs`/`event_handler.rs`/`stage_executor.rs`. They operate on a stage freshly read into the graph in the same tick (`sync_graph_with_stage_files` re-reads disk every tick), the loop is single-threaded, and they do not overlap the dispute/adjudication field set. Migrating all ~40 would be a large blast radius across the merge/recovery lifecycle for no realized-lost-update benefit.
+**No orchestrator exemption:** although the scheduler loop is single-threaded, daemon IPC and CLI writers are concurrent. Recovery, merge, crash, completion, and event handlers therefore apply the same short locked deltas as commands. Whole-record persistence is reserved for actual stage creation.
 
 ## Signal Generation Pattern
 
@@ -55,7 +55,7 @@ Uses Manus KV-cache optimization with four sections:
 
 Four stage-type-specific prefix generators: standard, knowledge, integration-verify, knowledge-distill. Six signal types: Regular, Knowledge, Recovery, Merge, MergeConflict, BaseConflict. Signals are self-contained via `EmbeddedContext` struct.
 
-KnowledgeDistill prefix: focuses on memory reading and knowledge curation; includes `loom memory show --all` and `loom knowledge update` guidance. The stage itself runs on **opus** (every `StageType` defaults to opus); it is the *spot-read subagents* the prefix tells the main agent to delegate to that are sonnet.
+KnowledgeDistill prefix: focuses on memory reading and knowledge curation; includes `loom memory show --all` and `loom knowledge update` guidance. The stage itself runs on **opus** (every `StageType` defaults to opus); it is the _spot-read subagents_ the prefix tells the main agent to delegate to that are sonnet.
 
 **Data flow:** Stage Ready -> start_stage() -> create worktree -> Session.new() -> build_signal_context() -> format_signal_content() -> write_signal_file() -> spawn Claude Code.
 
@@ -65,7 +65,17 @@ Dependencies merged to main before dependent stages execute: `Stage A completes 
 
 ## Daemon IPC Pattern
 
-Unix socket with 4-byte big-endian length-prefixed JSON (max 10MB). Supports SubscribeStatus (streaming 1s), Stop, Ping. Socket at `.work/orchestrator.sock`, mode 0o600, max 100 connections. Graceful shutdown: Stop -> shutdown_flag -> wait threads -> cleanup socket/PID. Drop ensures cleanup on panic.
+Unix socket at `.work/orchestrator.sock`, created mode 0o600 under a mode-0700 `.work/` directory.
+Each request starts with a fixed authentication preface, so invalid credentials are rejected before
+allocating the JSON body. Requests are capped at 64 KiB, responses at 2 MiB, and reads use an
+absolute five-second deadline. Admission is bounded by 8 workers, a 16-request queue, a 512 KiB
+global in-flight request budget, and 32 subscribers per stream. User capabilities cover Ping,
+status/log subscriptions, Unsubscribe, DisputeCriteria, and the data-only `CompleteStage` request.
+Completion is accepted only for the exact active stage/session identity and remains under the
+sessions-directory lock through the stage transition; replay and cross-stage/session requests fail
+without mutating state. Stop requires a one-time action-bound operator proof. A stable-file `flock`
+is authoritative for daemon ownership and is held for the server lifetime. Graceful shutdown sets
+the shutdown flag, joins bounded workers, and removes only the control files owned by that daemon.
 
 ## Polling Orchestration Pattern
 
@@ -81,7 +91,7 @@ Hooks receive data via **stdin JSON**. Read with `timeout 1 cat`. Response: exit
 
 **Key hooks**: commit-guard.sh (Stop) blocks exit without commit; commit-filter.sh (PreToolUse:Bash) blocks subagent commits; subagent-verify-guard.sh (PreToolUse:Bash) blocks subagent full-suite verification; plans-path-guard.sh (PreToolUse:Edit/Write) blocks plan writes outside `doc/plans/`; prefer-modern-tools.sh blocks grep/find; post-tool-use.sh updates heartbeat; pre-compact.sh triggers handoff; session-start/end.sh handle lifecycle.
 
-**Subagent detection**: Wrapper script exports `LOOM_MAIN_AGENT_PID`. Hook compares `$PPID`. Subagents blocked from: git commit, git add -A/., loom stage complete.
+**Subagent detection**: Wrapper script exports `LOOM_MAIN_AGENT_PID`. `loom_is_subagent()` requires that PID to be a live ancestor with an intervening Claude process; it is not a `$PPID` comparison. Subagents are blocked from git mutation and stage completion.
 
 Hook installation: scripts embedded via `include_str!()` in constants.rs, installed to `~/.claude/hooks/loom/`, config in `.claude/settings.local.json`.
 
@@ -93,11 +103,11 @@ Two modes: **static** (one-time print) and **live** (real-time via daemon socket
 
 Three systems, in ascending order of permanence:
 
-| System | Location | Lifetime | Written by |
-| --- | --- | --- | --- |
-| **Memory** | `.work/memory/{session}.md` | The run | `loom memory note\|decision\|change\|question` |
-| **Stage outputs** | `outputs: Vec<StageOutput>` on the stage file (key / value / description) | The run; read by dependent stages | `loom stage output set` |
-| **Knowledge** | `doc/loom/knowledge/` (tiered) | Permanent | `loom knowledge update` (stage execution) or direct Write/Edit (interactive) |
+| System            | Location                                                                  | Lifetime                          | Written by                                                                   |
+| ----------------- | ------------------------------------------------------------------------- | --------------------------------- | ---------------------------------------------------------------------------- |
+| **Memory**        | `.work/memory/{session}.md`                                               | The run                           | `loom memory note\|decision\|change\|question`                               |
+| **Stage outputs** | `outputs: Vec<StageOutput>` on the stage file (key / value / description) | The run; read by dependent stages | `loom stage output set`                                                      |
+| **Knowledge**     | `doc/loom/knowledge/` (tiered)                                            | Permanent                         | `loom knowledge update` (stage execution) or direct Write/Edit (interactive) |
 
 Memory is placed in the signal's recitation section for maximum LLM attention. The promotion path from memory to knowledge is the **`knowledge-distill` stage**, which reads `loom memory show --all` and curates — there is no `loom memory promote` command.
 
@@ -111,7 +121,13 @@ Memory is placed in the signal's recitation section for maximum LLM attention. T
 
 ## Error Handling Pattern
 
-`anyhow::Result<T>` throughout. Context via `.context()` and `.with_context()`. **Graceful degradation**: skill loading with warning fallback, `if let Ok()` for stage loading, `unwrap_or(false)` for liveness checks. Zero `unwrap()`/`expect()` in main code.
+Application and orchestration boundaries use `anyhow::Result<T>` with `.context()` or
+`.with_context()`. Domain operations use typed errors when a caller must distinguish outcomes, such
+as `BaseBranchError`, `MergeProbeError`, and `ProcessTimeoutError`; adapters such as Clap validators
+may return strings because their interface requires display text. Do not stringify a domain error
+before a caller has finished matching it, and do not add a second general-purpose error framework.
+Graceful degradation is explicit and limited to operations whose callers do not require recovery
+semantics, such as optional skill discovery or best-effort notification.
 
 ## Security Patterns
 
@@ -119,7 +135,7 @@ Memory is placed in the signal's recitation section for maximum LLM attention. T
 
 ## Process Management Pattern
 
-**Wrapper script** (pid_tracking.rs): Creates `.work/wrappers/{stage_id}-wrapper.sh`, sets env vars, writes PID, then `exec claude`. **PID discovery**: file read first, then `/proc` scan (Linux) or `ps aux`/`lsof` (macOS). **Liveness**: PID file -> kill -0 -> session.pid -> window by title. **Zombie prevention**: `spawn_reaper_thread()` calls `wait()`.
+**Wrapper script** (`pid_tracking.rs`): creates `.work/wrappers/{stage_id}-wrapper.sh`, starts from `env -i`, reconstructs a minimal locale/terminal allowlist plus explicit Loom variables, records PID and process start time, then `exec`s the agent. **Liveness/signaling** uses `process::ProcessIdentity`; start-time mismatch is dead and missing identity is unverifiable. Raw PID fallback is forbidden. **Zombie prevention:** `spawn_reaper_thread()` calls `wait()`.
 
 ## Merge Anti-Respawn Pattern
 
@@ -131,7 +147,7 @@ Three-component: path transformation (absolute->relative, parent traversal resol
 
 ## Sandbox Config Merging
 
-Plan-level SandboxConfig merges with stage-level. Stage overrides plan. excluded_commands concatenate. Output: settings.local.json with sandbox.enabled, autoAllowBashIfSandboxed, network allowlist, permissions.
+Plan-level `SandboxConfig` merges with stage-level policy, with stage values overriding plan values. Plan-configured `excluded_commands` are rejected outright; sandbox disablement and unsandboxed escape require explicit policy acknowledgement or are rejected. Generated settings emit OS-level `denyRead` for sensitive paths and set `failIfUnavailable: true` whenever the sandbox is enabled. A settings-write failure blocks the stage before spawn. Loom, Git, interpreters, build tools, and package managers are never granted prefix-wide unsandboxed Bash access.
 
 ## Directory Hierarchy Pattern
 
@@ -145,13 +161,13 @@ New agent guidance should be reinforced at: (1) Skill file (depth), (2) CLAUDE.m
 
 Every code-producing stage must end with a MANDATORY mini adversarial code review across six fixed dimensions: **code quality & architecture (SOLID), idiomatic code, security, wiring, dead & unnecessary code, no duplication (DRY across the whole codebase)**. The doctrine is reinforced across six surfaces that MUST stay consistent when the dimensions change:
 
-| Surface | Where |
-| --- | --- |
+| Surface                    | Where                                                                                                                                                                                 |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Runtime signal (canonical) | `orchestrator/signals/cache.rs::append_adversarial_review()` — injected into Standard + IntegrationVerify stable prefixes (via `stable_prefix_for`, so the recovery path gets it too) |
-| Authority | `CLAUDE.md.template` — Stage Completion Checklist "MINI ADVERSARIAL CODE REVIEW" block |
-| Implementer agents | `agents/loom-software-engineer.md`, `agents/loom-senior-software-engineer.md` — "Self-Review Before Returning" |
-| Reviewer agent | `agents/loom-code-reviewer.md` — Capabilities aligned to the six dimensions |
-| Plan authoring | `skills/loom-plan-writer/SKILL.md` — note under stage_type table (auto-injected; don't restate in descriptions) |
+| Authority                  | `CLAUDE.md.template` — Stage Completion Checklist "MINI ADVERSARIAL CODE REVIEW" block                                                                                                |
+| Implementer agents         | `agents/loom-software-engineer.md`, `agents/loom-senior-software-engineer.md` — "Self-Review Before Returning"                                                                        |
+| Reviewer agent             | `agents/loom-code-reviewer.md` — Capabilities aligned to the six dimensions                                                                                                           |
+| Plan authoring             | `skills/loom-plan-writer/SKILL.md` — note under stage_type table (auto-injected; don't restate in descriptions)                                                                       |
 
 Scope rule: code stages ONLY. Documentation stages (`knowledge`, `knowledge-distill`) emit only markdown and deliberately omit it; cache + recovery tests negative-assert its absence there. Silent-failure detection is a SEPARATE concern (Standard has its own block; IV has `SILENT FAILURE DETECTION`) — not part of the six dimensions.
 
@@ -160,7 +176,7 @@ Scope rule: code stages ONLY. Documentation stages (`knowledge`, `knowledge-dist
 Before creating ANY stage beyond the bookends, it must answer YES to one of four questions
 (`skills/loom-plan-writer/SKILL.md:388`) and the plan prose must NAME which one:
 
-- **Q1** — does another stage need this stage's code *merged* before it can start? Only a
+- **Q1** — does another stage need this stage's code _merged_ before it can start? Only a
   MERGE-ORDER dependency counts. "B imports A" is compile-order → foundation step in ONE stage.
 - **Q2** — does another stage write files this stage also writes? (file conflict)
 - **Q3** — does later work need a verification checkpoint on this first? Name what would go
@@ -204,7 +220,7 @@ Serde tries variants in order: strings match Simple first, objects fail Simple t
 ## Hook Content-Stripping Pattern
 
 How hooks strip heredoc bodies and `-m` message text before pattern-matching a command, so a
-rule that merely *mentions* a forbidden flag is not blocked — plus the known limits of that
+rule that merely _mentions_ a forbidden flag is not blocked — plus the known limits of that
 stripping.
 
 → [Hook Content-Stripping](patterns/hook-content-stripping.md)
@@ -314,41 +330,24 @@ pub enum AcceptanceCriterion {
 
 **Why untagged**: avoids requiring a `type: simple` / `type: extended` discriminator in user-authored YAML. The trade-off is that serde error messages on malformed input are less precise.
 
-## Session Spawning Pattern
+## Session Spawning and Liveness Pattern
 
-`NativeBackend` (`orchestrator/terminal/native/`) is the single concrete type
-for spawning Claude Code sessions in host terminal windows. It exposes
-`spawn_session`, `spawn_merge_session`, `spawn_base_conflict_session`,
-`spawn_knowledge_session`, `kill_session`, and `is_session_alive`. The
-orchestrator holds it as `Arc<NativeBackend>` and shares it with the
-`LivenessService`; every spawn site (main loop, foreground spawner,
-merge_handler, continuation, auto_merge) uses the same `Arc<NativeBackend>`.
-
-```rust
-let native = Arc::new(NativeBackend::new(work_dir)?);
-let liveness = LivenessService::new(Arc::clone(&native));
-// All spawn/kill/alive calls go through `native`.
-```
-
-## Liveness Pattern
-
-Use `LivenessService::is_alive(session)` rather than calling `kill -0` directly.
-This routes through `NativeBackend::is_session_alive`, keyed on the session's
-`tracking_key` so prefixed merge/knowledge/base-conflict sessions resolve
-correctly.
-
-For tests: `LivenessService::fixed_for_tests(bool)` — returns a fixed value without constructing a backend.
+The orchestrator holds one `Arc<SessionBackend>` and shares it with `LivenessService`. Spawn resolves
+the native or tmux lane per call and records the chosen lane on `Session.backend`; kill and liveness
+dispatch by that persisted lane. Use `LivenessService::is_alive(session)` rather than raw PID probes.
+Process identity is PID plus kernel start time, and destructive signaling fails closed when identity
+cannot be verified. For tests, `LivenessService::fixed_for_tests(bool)` avoids constructing a backend.
 
 ## Sandbox permission_mode Resolution
 
 `permission_mode` resolves: stage-level > plan-level > stage-type default.
 
-| Stage type | Default permission_mode |
-| --- | --- |
-| Standard | `auto` |
-| IntegrationVerify | `auto` |
-| Knowledge | `auto` |
-| KnowledgeDistill | `auto` |
+| Stage type        | Default permission_mode |
+| ----------------- | ----------------------- |
+| Standard          | `auto`                  |
+| IntegrationVerify | `auto`                  |
+| Knowledge         | `auto`                  |
+| KnowledgeDistill  | `auto`                  |
 
 All four stage types default to `auto` as of 2026-07-01 (previously `accept-edits`). Loom stages execute autonomously with no human at the terminal, so the agent auto-accepts actions its heuristics deem safe; the sandbox filesystem deny/allow rules and hooks are the safety boundary. Override at plan or stage level with a stricter `permission_mode` (e.g. `accept-edits`, `plan`) if needed.
 
@@ -374,7 +373,7 @@ All writes to `.work/config.toml` go through `fs/work_dir.rs` using `toml_edit` 
 
 - `validate_structural_preflight(&stages, repo_root)` — warnings for double-path prefixes, weak wiring patterns, missing build config files, before/after check imbalance
 - `check_knowledge_recommendations(&stages)` — warns if plan has no knowledge-bootstrap stage
-- `check_sandbox_recommendations(&metadata)` — warns if `loom` not in `excluded_commands`, or `allow_unsandboxed_escape` is true
+- `check_sandbox_recommendations(&metadata)` — rejects command-prefix exclusions and flags other unsafe sandbox expansion such as `allow_unsandboxed_escape`
 - All return `Vec<String>`; init prints them and continues
 
 **`loom plan verify` contract:** run `parse_plan()` first (auto-runs Tier 1); if it returns `Err`, report fatal errors and exit non-zero. If it succeeds, run the three Tier 2 functions, print their warnings, exit 0 (advisory only).
@@ -387,9 +386,9 @@ All writes to `.work/config.toml` go through `fs/work_dir.rs` using `toml_edit` 
 
 Every field group on `Session` that represents a runtime resource identity requires a matching setter AND clearer method.
 
-| Field group | Setter | Called after |
-|---|---|---|
-| `pid` | `set_pid()` | Session spawned |
+| Field group | Setter      | Called after    |
+| ----------- | ----------- | --------------- |
+| `pid`       | `set_pid()` | Session spawned |
 
 **Rule:** Any caller that releases a runtime resource must call the matching clearer before persisting the session file.
 
@@ -448,11 +447,11 @@ Worker crashes leave no verdict file; staleness detection: `.inflight` marker wi
 
 Three-file trust boundary to prevent self-approval attacks:
 
-| File | Writer | Content | Rationale |
-|------|--------|---------|-----------|
-| `request.md` | Daemon (on agent's behalf via RPC) | Agent's evidence payload | Agent can read but never write directly |
-| `verdict.md` | Daemon worker thread only | Verdict + citations | Stage agents never write here — daemon-authored only |
-| `applied.marker` | Daemon only (zero-byte) | Idempotency guard | Prevents re-application on restart |
+| File             | Writer                             | Content                  | Rationale                                            |
+| ---------------- | ---------------------------------- | ------------------------ | ---------------------------------------------------- |
+| `request.md`     | Daemon (on agent's behalf via RPC) | Agent's evidence payload | Agent can read but never write directly              |
+| `verdict.md`     | Daemon worker thread only          | Verdict + citations      | Stage agents never write here — daemon-authored only |
+| `applied.marker` | Daemon only (zero-byte)            | Idempotency guard        | Prevents re-application on restart                   |
 
 If the agent could write both request and verdict, it could pre-fill `verdict: Accept` and self-approve. The split enforces the trust boundary at the filesystem level.
 
@@ -556,12 +555,9 @@ startup (never aborts) and the same terra-/luna-to-sonnet fallback applies for t
 [Codex Plugin](architecture/codex-plugin.md). A knowledge stage runs on opus and delegates its
 code spot-reads to sonnet; the two facts are easy to conflate.
 
-## CORRECTION (2026-08-08): Session Spawning and Liveness Now Route Through `SessionBackend`
+## Session Backend Dispatch Details
 
-**Supersedes the "Session Spawning Pattern" and "Liveness Pattern" sections above, which describe an
-`Arc<NativeBackend>` that the orchestrator no longer holds.**
-
-`NativeBackend` is no longer the single concrete spawn type. The orchestrator holds
+The orchestrator holds
 `Arc<SessionBackend>` (`orchestrator/core/orchestrator.rs:91`, constructed at `:148` via
 `SessionBackend::from_config`), and shares that same `Arc` with the `LivenessService`
 (`orchestrator/liveness.rs:17,32`):
@@ -575,7 +571,7 @@ let liveness = LivenessService::new(Arc::clone(&backend));
 
 - **Spawn** resolves the lane per call (config + tmux availability + fallback marker), then records the
   lane actually used on `Session.backend`.
-- **Kill and liveness** dispatch on `session.backend` — the lane that *spawned* it — never on the
+- **Kill and liveness** dispatch on `session.backend` — the lane that _spawned_ it — never on the
   currently-configured backend, so sessions survive a config change or a daemon restart.
 
 Every spawn site uses the shared handle; the other `SessionBackend::from_config` callers are
@@ -589,14 +585,14 @@ Every spawn site uses the shared handle; the other `SessionBackend::from_config`
 ## Extract the Decision When the Failure Mode Is Not Reproducible in CI (2026-08-08)
 
 **Problem shape:** a rule guards an OS failure that no CI runner can produce. The test written against
-the real command passes *for the wrong reason* and would still pass with the rule deleted.
+the real command passes _for the wrong reason_ and would still pass with the rule deleted.
 
 Concretely: the e2e case meant to pin tmux's "exit 0 but stderr non-empty is a failure" rule used an
 unwritable socket parent — which makes tmux exit **1**, so the plain exit-code check alone satisfied
-it. The genuine condition needs the socket dir to exist while socket *creation* is denied.
+it. The genuine condition needs the socket dir to exist while socket _creation_ is denied.
 
 **Pattern:** split the rule into a pure decision fn over already-gathered inputs
-(`evaluate_new_session(socket, status_success, stderr)`) and unit-test *that*. The impure caller keeps
+(`evaluate_new_session(socket, status_success, stderr)`) and unit-test _that_. The impure caller keeps
 only the gathering. Applied again in `build_overview_argv`, which takes the viewer socket and
 `(socket, tracking_key)` pairs as parameters rather than deriving them, so the whole argv sequence is
 assertable without tmux.
@@ -606,12 +602,12 @@ Never settle for a test that passes for the wrong reason — see `mistakes/tests
 
 ## Fail-Safe Direction for Destructive Sweeps (2026-08-08)
 
-Any sweep that kills or deletes must resolve *uncertainty* toward inaction:
+Any sweep that kills or deletes must resolve _uncertainty_ toward inaction:
 
 - **Cannot read the evidence ⇒ do not destroy.** `tmux/socket.rs`'s `socket_session_is_alive` returns
   `false` for an absent session file but **`true`** for one that exists and cannot be parsed — a file
   caught mid-write must not be read as "dead".
-- **Cannot positively attribute ⇒ do not destroy.** Reap only resources provably owned by *this* work
+- **Cannot positively attribute ⇒ do not destroy.** Reap only resources provably owned by _this_ work
   dir. Shared per-user namespaces (the tmux socket dir) make "no matching state file" match other
   checkouts' live resources.
 - **Report what you skipped.** Unattributable resources are surfaced to the user, never silently

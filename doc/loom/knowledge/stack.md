@@ -11,7 +11,8 @@
 - **Async Runtime:** tokio (daemon, socket handling)
 - **CLI Framework:** clap with `#[derive(Parser)]`
 - **Serialization:** serde, serde_yaml, toml
-- **Error Handling:** anyhow with context chaining
+- **Error Handling:** `anyhow` at application/orchestration boundaries with context chaining; typed
+  domain errors where callers branch on outcomes
 
 ## Key Dependencies (Cargo.toml)
 
@@ -20,7 +21,7 @@
 | clap        | CLI argument parsing               |
 | serde       | Serialization framework            |
 | serde_yaml  | YAML parsing for frontmatter       |
-| anyhow      | Error handling with context        |
+| anyhow      | Application errors and context     |
 | tokio       | Async runtime (daemon)             |
 | toml        | Config file parsing                |
 | chrono      | Timestamps                         |

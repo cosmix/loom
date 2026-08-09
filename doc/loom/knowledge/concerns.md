@@ -32,6 +32,15 @@ The real defect is an **asset-name mismatch**: self-update fetches the digests f
 
 ## Code Quality Concerns
 
+### Oversized Rust Units Remain Controlled Debt (2026-08-09)
+
+The maintainability gate does not yet prove that every production Rust file is at most 400 lines or
+every function at most 50 lines. Existing violations are recorded by exact identity and size in
+`loom/maintainability-baseline.txt`; `loom/tests/maintainability.rs` rejects new entries, growth of an
+existing entry, or a stale baseline entry. CI runs that gate, so the exception set can only stay flat
+or shrink. Treat this as controlled decomposition debt, not as completed decomposition, and remove
+an entry whenever its unit is brought under the limit.
+
 ### Code Consolidation Needed
 
 > **Full details:** See [conventions.md § Code Consolidation Opportunities](conventions.md#code-consolidation-opportunities-2026-01-29)
@@ -144,7 +153,7 @@ The heartbeat JSON written by `post-tool-use.sh` always records `"context_percen
 
 **Observed:** `loom stage retry --force --context "..."` correctly set `integration-verify` to `Queued`, but on the next daemon poll the orphan-recovery routine in `orchestrator/core/recovery.rs:638-705` saw the (now-stale) session_id, found commits-ahead-of-base on the worktree branch, and immediately re-routed the stage to `NeedsHandoff` (commits_ahead path at `recovery.rs:668`). To the user, the stage looked stuck — they typed `retry`, it was ready for a second, then back to a handoff state with no agent activity.
 
-This is a logically defensible design (commits exist, don't burn tokens redoing them), but the user-visible interaction is confusing. The "fix" — using `retry --force` a *second* time after acknowledging the handoff — is undocumented in the recovery flow.
+This is a logically defensible design (commits exist, don't burn tokens redoing them), but the user-visible interaction is confusing. The "fix" — using `retry --force` a _second_ time after acknowledging the handoff — is undocumented in the recovery flow.
 
 **What's needed (pick one or both):**
 
@@ -168,12 +177,13 @@ This is a logically defensible design (commits exist, don't burn tokens redoing 
 - `orchestrator/core/stage_executor.rs:291-293` (`begin_attempt(Utc::now())` is already called here — confirm it's the only writer of `started_at` and that it's reached on retry).
 - The "stale" indicator emitter — likely in `commands/graph/indicators.rs` or a dashboard renderer.
 
-## Daemon Singleton Not Enforced: Two `loom run` Processes Alive Concurrently (2026-05-13)
+## ~~Daemon Singleton Not Enforced~~ (RESOLVED 2026-08-08)
 
-Nothing enforces a single daemon: a second `loom run` attaches to the same `.work/` and both
-poll, spawn, and merge. Full reproduction, impact analysis, and the proposed pidfile fix.
+The daemon now holds an authoritative stable-file `flock` for its full lifetime. Startup refuses a
+second owner before socket/control-file mutation, and shutdown signals only a matching PID/start-time
+identity. The original incident and its evidence remain preserved for regression context.
 
-→ [Daemon Singleton Not Enforced](concerns/daemon-singleton.md)
+→ [Daemon Singleton Incident](concerns/daemon-singleton.md)
 
 ## loom plan verify: Missing bypass-permissions Sandbox Validation (2026-05-14)
 
@@ -181,24 +191,9 @@ poll, spawn, and merge. Full reproduction, impact analysis, and the proposed pid
 
 **Recommended fix:** Thread `validate_config` into `commands/plan/verify.rs` so the same validation that blocks `loom init` is surfaced early at plan-authoring time.
 
-## code_review Schema Field — Wired for Signal Generation Only (updated 2026-06-15)
+## ~~code_review Persistence Gap~~ (RESOLVED 2026-08-08)
 
-> An empty duplicate heading, "code_review Schema Field — TRULY DORMANT", sat directly above this one and was removed on 2026-07-30. "Truly dormant" was superseded the same day it was written — the field reaches IV signals. This section is the accurate one.
-
-`StageDefinition.code_review` (`plan/schema/types.rs:261`) is parsed by serde and now surfaced to integration-verify agent signals, but **still not stored on the Stage struct and not consumed by acceptance, completion, or goal-backward verification**.
-
-**Current state (after PLAN-anti-slop-thoroughness):**
-
-- `load_code_review_for_stage(stage_id, plan_path)` in `orchestrator/signals/generate.rs` reads `code_review` directly from the plan file (via `parse_plan()`) for IntegrationVerify spawns
-- `render_review_dimensions()` emits a `## Review Dimensions` checkbox section in IV signals, honoring `require_all` (all-checkboxes vs any-checkbox framing)
-- `plan/schema/mod.rs` re-exports `CodeReviewConfig` so generate.rs can import it
-- `create_stage_from_definition()` (`commands/init/plan_setup.rs`) still does NOT copy code_review to Stage — Stage struct has no `code_review` field
-
-**What's still needed to fully wire it:**
-
-1. Add `code_review: Option<CodeReviewConfig>` to Stage struct (`models/stage/types.rs`)
-2. Copy field in `create_stage_from_definition()` (`plan_setup.rs`)
-3. Consider consuming during acceptance or completion (currently not enforced)
+`Stage` now persists `code_review`, and the single `Stage::from_definition` conversion copies it with all other execution and verification policy. Initialization delegates to that canonical conversion, preventing schema-to-runtime field drift.
 
 ## before_stage Already Wired — Plan PLAN-anti-slop-thoroughness Was Wrong
 
@@ -256,7 +251,7 @@ remaining N-1 headings with an external script. A `loom knowledge drop-section` 
 ## Tier-2 Topic Blurbs Cannot Be Set From the CLI (2026-07-28)
 
 A new topic is seeded with a fixed scaffold — a title derived from the slug and the blurb
-"Topic notes for the `<category>` knowledge area" — and user content is appended *after* it.
+"Topic notes for the `<category>` knowledge area" — and user content is appended _after_ it.
 `scan_topics` harvests the **first** `#` and `>` lines for the INDEX.md table, so the generic
 seeded blurb always wins and every topic reads identically in the index unless the file is edited
 afterwards. The index's Blurb column is its main routing signal, so this directly costs
@@ -370,8 +365,8 @@ is only the fallback for a session whose stage cannot be resolved by id.
 
 **`MonitorEvent::SessionHung` is ADVISORY ONLY.** One emit site (`monitor/detection.rs:505-511`),
 one match arm (`orchestrator/core/event_handler.rs:187-209`) that is a `clear_status_line()` plus a
-single `eprintln!` — the code carries the comment *"ADVISORY ONLY: nothing is killed and nothing is
-retried."* It warns ONCE per session (dedupe set `reported_hung_sessions`, `detection.rs:48`,
+single `eprintln!` — the code carries the comment _"ADVISORY ONLY: nothing is killed and nothing is
+retried."_ It warns ONCE per session (dedupe set `reported_hung_sessions`, `detection.rs:48`,
 cleared on a fresh beat at `:456-457` and on `Healthy` at `:521`). Contrast the siblings that DO
 act: `SessionCrashed` (`event_handler.rs:153`), `SessionNeedsHandoff` (kills + re-queues, `:110`),
 `BudgetExceeded` (`:218`). Nothing kills, retries, or transitions a stage on SessionHung — the
@@ -406,24 +401,38 @@ subsystem change with its own test surface, unrelated to the codex lane. Fix if 
 pass `Stage::effective_subagent_timeout_secs()` into `determine_activity_status` and the activity
 renderer instead of the constant.
 
-## tmux Lane Runs Unbounded `Command::output()` on the Orchestrator Poll Thread (2026-08-08)
+## ~~Orchestrator Control Subprocesses Were Unbounded~~ (RESOLVED 2026-08-08)
 
-**Pre-existing rule, newly violated.** `mistakes.md`'s "Diagnostics: Restart Destroys the Evidence"
-records the 10-hour daemon-freeze lesson: **every external command issued from the poll loop goes
-through `process::run_bounded`**. The native lane complies (`native/window_ops.rs:30` uses
-`WINDOW_OP_TIMEOUT`). The tmux lane never did.
+`mistakes.md`'s "Diagnostics: Restart Destroys the Evidence" records the 10-hour daemon-freeze
+lesson: every external command issued from the poll loop must have a wall-clock deadline.
 
-Four unbounded calls: `spawn_in_tmux`'s `new-session`, `has-session` and `set-option`
-(`terminal/tmux/mod.rs`), and `kill_socket_server` (`terminal/tmux/socket.rs:133`). Any one of them
-hanging wedges the orchestrator poll thread.
+tmux spawn/probe/teardown operations now use `process::run_bounded_output` with 20s/5s/5s
+deadlines. Native terminal detection and process discovery use 2s deadlines, while desktop
+notifications use 2s (`notify-send`) or 3s (`osascript`). A timeout kills and reaps the child process
+group and returns an error or an unavailable probe result instead of wedging the scheduler.
 
-**Follow-up:** route all four through `run_bounded` with a `TMUX_OP_TIMEOUT` constant.
+## ~~Sandbox Secret Denials Could Fail Open~~ (RESOLVED IN CODE 2026-08-08)
+
+Generated settings now carry sensitive read restrictions into the host sandbox's `denyRead`, add
+resolved `.work/admin.token` and `.work/user.token` paths, and set `failIfUnavailable: true` whenever
+the sandbox is enabled. Stage startup treats a required settings-write failure as an infrastructure
+block and does not spawn the session, so the configured boundary cannot silently disappear.
+
+Unit and flow tests cover the generated policy and settings-write failure. A true Claude runtime
+canary remains manual release validation: CI has no callable credentialed Claude sandbox runtime, so
+it cannot prove Bash, interpreter, build-script, symlink, and file-tool denial end to end.
+
+## ~~Repair Counted a Failed Skill-Index Rebuild as Fixed~~ (RESOLVED 2026-08-08)
+
+Hook repair now propagates `skill_index::execute()` failure through `fix_hooks_with` instead of
+discarding it. `hook_repair_propagates_skill_index_write_failure` supplies regression coverage for
+the previously silent write-failure path.
 
 ## `evaluate_new_session` Fails a Working Spawn on a Benign `~/.tmux.conf` Warning (2026-08-08)
 
 The rule "any stderr with exit 0 is a failure" is a plan mandate, pinned by unit tests and carried by
 an explicit stage decision — so it was **deliberately left as-is**. But tmux prints `~/.tmux.conf`
-deprecation warnings to stderr *while creating the session fine*, so one benign warning now: fails the
+deprecation warnings to stderr _while creating the session fine_, so one benign warning now: fails the
 spawn, kills a **working** server via the abort path, and writes the sticky
 `.work/terminal-backend-fallback` marker — disabling tmux for the whole repo until someone runs
 `loom run --backend tmux`.
@@ -432,23 +441,14 @@ The `has-session` probe that immediately follows is the authoritative signal and
 two cases. Gating the stderr rule on that probe is a design call for the plan owner, not an
 integration-verify defect.
 
-## PID Recycling Can Still Route a SIGTERM to a Stranger (2026-08-08)
+## ~~PID Recycling Could Route a SIGTERM to a Stranger~~ (RESOLVED 2026-08-09)
 
-**Pre-existing, deliberately preserved through the `pid_guard.rs` dedup** (which reproduced all four
-call sites' behaviour exactly, as instructed).
+All backend and daemon signaling now routes through `process::ProcessIdentity` (PID plus kernel start
+time). A start-time mismatch is definitive death, and missing start-time evidence is `Unverifiable`;
+`terminate_verified` refuses destructive signaling in both cases. Native and tmux PID-file checks use
+the same identity service, and daemon stop additionally requires the singleton lock to be held.
 
-Sequence: the PID file holds `(P, startT)`; `P` is recycled; `pid_matches_entry` is false so
-`StalePidFiles::Reap` **deletes** the PID file; liveness layer 3 then reports alive because
-`session.pid == P` is alive (layer 3 has no start-time check); a later `kill_session` finds **no** PID
-file and falls back to `session.pid == P` — signalling the stranger that layer 2 had just vetoed.
-
-Root cause is layer 3's unguarded `is_process_alive(session.pid)`, not the reap. Fix would be to
-start-time-verify `session.pid` in layer 3, or have `Reap` remove only the wrapper script.
-
-Related detection rule: any *reaping* liveness probe must **persist** its dead verdict (the monitor
-does, via `Crashed`) rather than re-probe. The list-then-kill CLI sites (`commands/sessions.rs`,
-`commands/stage/state.rs`) can still reach the `None => session.pid` branch of `resolve_kill_target`
-on a second invocation.
+The durable rule is fail closed: never discard failed identity evidence and then re-probe the raw PID.
 
 ## `loom attach` Overview Panes Are Live, Writable Agent Terminals (2026-08-08)
 
@@ -457,7 +457,7 @@ live autonomous agent's input, and `C-b x` kills the **stage's** pane — the in
 `remain-on-exit`, only the viewer window does.
 
 Left as-is deliberately: the plan mandates the exact pane string. If the overview is meant to be a
-*viewer* rather than N live terminals, adding `-r` to `attach-session` on the **overview path only**
+_viewer_ rather than N live terminals, adding `-r` to `attach-session` on the **overview path only**
 (never on `loom attach <stage-id>`, which is the intentionally interactive path) is a one-word change.
 
 ## Nothing Reaps the Overview Viewer Socket (2026-08-08)
@@ -465,21 +465,17 @@ Left as-is deliberately: the plan mandates the exact pane string. If the overvie
 `list_loom_sockets` skips `loom-view-<8hex>` by name so `clean`/`init` do not report it as
 unattributable, and the skip comment concedes "Nothing currently reaps this socket". After
 `loom attach` the viewer server and its nested clients outlive the operator's detach, and
-`loom init --clean` now kills every attributed *session* server while stranding the viewer.
+`loom init --clean` now kills every attributed _session_ server while stranding the viewer.
 
 It is the one socket whose name is a pure function of the repo root, so reaping it carries no
 cross-checkout risk — roughly two lines in `cleanup_orphaned_sessions` and `clean::sessions` once
 `viewer_socket_name` is crate-visible.
 
-## Dead Code: `NativeBackend::spawn_base_conflict_session` (2026-08-08)
+## ~~Dead `NativeBackend::spawn_base_conflict_session` Surface~~ (RESOLVED 2026-08-09)
 
-`spawn_base_conflict_session` (`orchestrator/terminal/native/mod.rs:235-241`) has **zero callers
-repo-wide** — `rg` across `loom/src` and `loom/tests` matches only the definition itself. `SessionBackend`
-exposes `spawn_session`, `spawn_merge_session` and `spawn_knowledge_session` but no base-conflict
-variant, so the tmux lane has no counterpart either.
-
-Pre-existing; left untouched per CLAUDE.md principle C (remove only what your change orphaned).
-Recorded, not deleted — do not "clean it up" in a passing stage.
+The uncalled spawn method and `signals/base_conflict.rs` were removed. `SessionType::BaseConflict`
+remains only where persisted historical records and main-repository merge attribution must still be
+understood; it is no longer exposed as a production spawn route.
 
 ## `loom knowledge` Still Cannot Correct an Entry In Place (2026-08-08)
 
@@ -492,3 +488,16 @@ supersedes ...` sections beneath them.
 **Cost:** the wrong text stays in the file and still greps, so a future agent reading top-down hits the
 stale claim first. An `update --replace-section <heading>` verb would let distillation actually retire
 a stale entry instead of layering over it.
+
+## PreToolUse File Guards Cannot Eliminate Path-Swap Races (2026-08-08)
+
+The canonical `worktree-file-guard.sh` now covers Read, Write, Edit, Glob, and Grep; canonicalizes
+paths; compares path components; and rejects both leaf and parent symlinks. This closes the concrete
+absolute-path, common-prefix, and final-symlink escapes found in the security review.
+
+The guard is still a check before a separate built-in tool performs the real open. A hostile process
+can replace a parent path after the hook returns, so the guard cannot bind its decision to the inode
+the tool later uses. Treat it as defense in depth; the host OS sandbox remains the authoritative
+boundary. A race-free design requires a dedicated file-operation broker that performs traversal and
+the actual open relative to an already-open worktree directory using no-follow semantics. Do not
+describe the current hook boundary as TOCTOU-free.

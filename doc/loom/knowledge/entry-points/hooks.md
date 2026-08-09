@@ -25,14 +25,14 @@
 
 **6 hook events:**
 
-| Event | Script | Purpose |
-| --- | --- | --- |
-| `SessionStart` | `session-start.sh` | Initial heartbeat |
-| `PostToolUse` | `post-tool-use.sh` | Heartbeat update after every tool call |
-| `PreCompact` | `pre-compact.sh` | Trigger handoff before context compaction |
-| `SessionEnd` | `session-end.sh` | Cleanup on normal exit |
-| `Stop` | `learning-validator.sh` | Memory usage check on stop |
-| `PreferModernTools` | `prefer-modern-tools.sh` | Suggest fd/rg over find/grep in Bash |
+| Event               | Script                   | Purpose                                   |
+| ------------------- | ------------------------ | ----------------------------------------- |
+| `SessionStart`      | `session-start.sh`       | Initial heartbeat                         |
+| `PostToolUse`       | `post-tool-use.sh`       | Heartbeat update after every tool call    |
+| `PreCompact`        | `pre-compact.sh`         | Trigger handoff before context compaction |
+| `SessionEnd`        | `session-end.sh`         | Cleanup on normal exit                    |
+| `Stop`              | `learning-validator.sh`  | Memory usage check on stop                |
+| `PreferModernTools` | `prefer-modern-tools.sh` | Suggest fd/rg over find/grep in Bash      |
 
 **Settings placement:** Session hooks → `<worktree>/.claude/settings.local.json`. Global hooks (commit-filter, git-add-guard, worktree-isolation) configured via `fs/permissions.rs:configure_loom_hooks()`.
 
@@ -48,37 +48,38 @@
 
 ## Hook Scripts — What Each Does
 
-| Script | Hook Type | Key Behavior |
-|--------|-----------|-------------|
-| `session-start.sh` | SessionStart | Writes initial heartbeat; captures stdin and parses `.source` field; on `source == "compact"` or `"resume"` emits `hookSpecificOutput.additionalContext` JSON re-anchor pointer |
-| `post-tool-use.sh` | PostToolUse | Updates heartbeat; logs to `.work/tool-events.jsonl`; no longer checks compaction-recovery markers (removed) |
-| `pre-compact.sh` | PreCompact | Block-then-allow: first call exits 2 (blocks) + creates pending flag + calls `loom handoff`; second call exits 0 (allows); does NOT create a recovery marker file |
-| `session-end.sh` | SessionEnd | Creates handoff if stage not completed |
-| `learning-validator.sh` | Stop | Advisory check for session memory usage |
-| `commit-guard.sh` | Stop (global) | Blocks exit if uncommitted changes or stage still Executing |
-| `prefer-modern-tools.sh` | PreToolUse:Bash | Emits `hookSpecificOutput.additionalContext` JSON warning to use `rg`/`fd` instead |
-| `commit-filter.sh` | PreToolUse:Bash | Blocks subagent git commits via `loom_is_subagent()` process-tree check; blocks Claude attribution |
-| `subagent-verify-guard.sh` | PreToolUse:Bash | Blocks **subagents** from running project-wide build/test/lint/typecheck suites; at most one narrowly-scoped check allowed; `integration-verify` stages carved out; unmatched commands are allowed (a false block strands a subagent); no opt-out env var |
-| `git-add-guard.sh` | PreToolUse:Bash | Blocks the all-files staging forms and staging of `.work` |
-| `worktree-isolation.sh` | PreToolUse:Bash/Edit/Write | Blocks cross-worktree ops and path traversal |
-| `worktree-file-guard.sh` | PreToolUse:Read/Glob/Grep | Blocks file tool paths outside worktree |
-| `plans-path-guard.sh` | PreToolUse:Edit/Write | **Unconditional** (fires in interactive sessions too) — blocks plan writes under `.claude/plans/` or `.claude/projects/*/plans/`, redirecting to `doc/plans/PLAN-*.md` |
-| `codex-forward-guard.sh` | PreToolUse:Bash/Edit/Write/Read/Task/Agent | Pins codex forwarders to forwarding: when payload `agent_type` is `loom-codex-forwarder`/`codex:codex-rescue` (or, fallback, the subagent transcript carries `LOOM-CODEX-FORWARD-ONLY`), only a Bash call containing `codex-companion.mjs` is allowed. Fail-open for everyone else; does NOT use `loom_is_subagent` (false for in-process subagents) |
-| `git-pre-commit-hook.sh` | git `pre-commit` | Blocks commits containing `.work` or `.worktrees`; appended to `.git/hooks/pre-commit` by `loom init`, not installed to `~/.claude/hooks/loom/` |
-| `skill-trigger.sh` | UserPromptSubmit | Scores keywords, emits skill suggestions as `hookSpecificOutput.additionalContext` |
-| `ask-user-pre.sh` | PreToolUse:AskUserQuestion | Marks stage WaitingForInput |
-| `ask-user-post.sh` | PostToolUse:AskUserQuestion | Resumes stage |
-| `_common.sh` | Utility (sourced, not registered) | Exports 7 helpers — see below |
+| Script                     | Hook Type                                  | Key Behavior                                                                                                                                                                                                                                              |
+| -------------------------- | ------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `session-start.sh`         | SessionStart                               | Writes initial heartbeat; captures stdin and parses `.source` field; on `source == "compact"` or `"resume"` emits `hookSpecificOutput.additionalContext` JSON re-anchor pointer                                                                           |
+| `post-tool-use.sh`         | PostToolUse                                | Updates private heartbeat metadata only; never persists tool commands or output                                                                                                                                                                           |
+| `pre-compact.sh`           | PreCompact                                 | Block-then-allow: first call exits 2 (blocks) + creates pending flag + calls `loom handoff`; second call exits 0 (allows); does NOT create a recovery marker file                                                                                         |
+| `session-end.sh`           | SessionEnd                                 | Creates handoff if stage not completed                                                                                                                                                                                                                    |
+| `learning-validator.sh`    | Stop                                       | Advisory check for session memory usage                                                                                                                                                                                                                   |
+| `commit-guard.sh`          | Stop (global)                              | Blocks exit if uncommitted changes or stage still Executing                                                                                                                                                                                               |
+| `prefer-modern-tools.sh`   | PreToolUse:Bash                            | Emits `hookSpecificOutput.additionalContext` JSON warning to use `rg`/`fd` instead                                                                                                                                                                        |
+| `commit-filter.sh`         | PreToolUse:Bash                            | Blocks subagent git commits via `loom_is_subagent()` process-tree check; blocks Claude attribution                                                                                                                                                        |
+| `subagent-verify-guard.sh` | PreToolUse:Bash                            | Blocks **subagents** from running project-wide build/test/lint/typecheck suites; at most one narrowly-scoped check allowed; `integration-verify` stages carved out; unmatched commands are allowed (a false block strands a subagent); no opt-out env var |
+| `git-add-guard.sh`         | PreToolUse:Bash                            | Blocks the all-files staging forms and staging of `.work`                                                                                                                                                                                                 |
+| `worktree-isolation.sh`    | PreToolUse:Bash                            | Blocks unsafe shell operations across the worktree boundary                                                                                                                                                                                               |
+| `worktree-file-guard.sh`   | PreToolUse:Read/Write/Edit/Glob/Grep       | Canonical component-aware file boundary; blocks host paths, credentials, leaf symlinks, prefix siblings, and direct protected-state writes                                                                                                                |
+| `plans-path-guard.sh`      | PreToolUse:Edit/Write                      | **Unconditional** (fires in interactive sessions too) — blocks plan writes under `.claude/plans/` or `.claude/projects/*/plans/`, redirecting to `doc/plans/PLAN-*.md`                                                                                    |
+| `codex-forward-guard.sh`   | PreToolUse:Bash/Edit/Write/Read/Task/Agent | Pins forwarding agents to one exact, shell-parsed invocation of `codex-forward.sh`; rejects operators and missing classification metadata                                                                                                                 |
+| `codex-forward.sh`         | Trusted forwarding executable              | Resolves the installed companion internally and invokes it with fixed argv, validated model/effort, and the task as one argument                                                                                                                          |
+| `git-pre-commit-hook.sh`   | git `pre-commit`                           | Blocks commits containing `.work` or `.worktrees`; appended to `.git/hooks/pre-commit` by `loom init`, not installed to `~/.claude/hooks/loom/`                                                                                                           |
+| `skill-trigger.sh`         | UserPromptSubmit                           | Scores keywords, emits skill suggestions as `hookSpecificOutput.additionalContext`                                                                                                                                                                        |
+| `ask-user-pre.sh`          | PreToolUse:AskUserQuestion                 | Marks stage WaitingForInput                                                                                                                                                                                                                               |
+| `ask-user-post.sh`         | PostToolUse:AskUserQuestion                | Resumes stage                                                                                                                                                                                                                                             |
+| `_common.sh`               | Utility (sourced, not registered)          | Exports 7 helpers — see below                                                                                                                                                                                                                             |
 
 ### `hooks/_common.sh` Helpers
 
-| Function | Role |
-| --- | --- |
-| `strip_embedded_content()` | Strips heredoc bodies and `-m`/`--message` text before matching, so a *mention* is not a match. **Known limit:** cannot strip a multi-line `-m` body |
-| `loom_is_subagent()` | **The subagent gate.** True only when `LOOM_MAIN_AGENT_PID` is a *live ancestor* AND at least one Claude process sits between it and the caller. Returns false inside agent-team teammates (not in the main agent's tree) |
-| `loom_current_worktree()` | Worktree detection by directory, NOT just the env var |
-| `loom_debug()` | Gated debug logging |
-| `is_ancestor()`, `find_nearest_claude_ancestor()`, `count_claude_processes_between()` | Internal helpers for `loom_is_subagent` — documented as internal; hooks should call `loom_is_subagent`, never these |
+| Function                                                                              | Role                                                                                                                                                                                                                      |
+| ------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `strip_embedded_content()`                                                            | Strips heredoc bodies and `-m`/`--message` text before matching, so a _mention_ is not a match. **Known limit:** cannot strip a multi-line `-m` body                                                                      |
+| `loom_is_subagent()`                                                                  | **The subagent gate.** True only when `LOOM_MAIN_AGENT_PID` is a _live ancestor_ AND at least one Claude process sits between it and the caller. Returns false inside agent-team teammates (not in the main agent's tree) |
+| `loom_current_worktree()`                                                             | Worktree detection by directory, NOT just the env var                                                                                                                                                                     |
+| `loom_debug()`                                                                        | Gated debug logging                                                                                                                                                                                                       |
+| `is_ancestor()`, `find_nearest_claude_ancestor()`, `count_claude_processes_between()` | Internal helpers for `loom_is_subagent` — documented as internal; hooks should call `loom_is_subagent`, never these                                                                                                       |
 
 ### Registration Sites for a New Hook
 

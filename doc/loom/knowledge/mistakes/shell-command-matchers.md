@@ -8,19 +8,19 @@
 into tokens and deciding whether a "runner" token sits in command position. Three separate
 bypass classes shipped and were fixed across two stages, each the same root cause.
 
-**Why:** IFS word-splitting only breaks on whitespace, so anything *glued* to a neighbour never
+**Why:** IFS word-splitting only breaks on whitespace, so anything _glued_ to a neighbour never
 becomes its own token.
 
-| Bypass class | Example that slipped through | Why |
-| --- | --- | --- |
-| Redirection read as an argument | `cargo test 2>&1 \| tail -50` | `2>&1` hit the positional arm and looked like a test *filter*, making a project-wide run look scoped |
-| Newlines eaten by splitting | `cd loom` + newline + `cargo test` | the newline never became a token, so command position never reset and every line after the first was unreachable |
-| Glued metacharacters (13 confirmed) | `echo hi; cargo test`, `echo hi&&cargo test`, `true\|\|cargo build`, `{ cargo test; }`, every `if`/`while`/`for` body | a separator with no surrounding space is absorbed into the adjacent token (`test;` is not `test`) |
+| Bypass class                        | Example that slipped through                                                                                          | Why                                                                                                              |
+| ----------------------------------- | --------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| Redirection read as an argument     | `cargo test 2>&1 \| tail -50`                                                                                         | `2>&1` hit the positional arm and looked like a test _filter_, making a project-wide run look scoped             |
+| Newlines eaten by splitting         | `cd loom` + newline + `cargo test`                                                                                    | the newline never became a token, so command position never reset and every line after the first was unreachable |
+| Glued metacharacters (13 confirmed) | `echo hi; cargo test`, `echo hi&&cargo test`, `true\|\|cargo build`, `{ cargo test; }`, every `if`/`while`/`for` body | a separator with no surrounding space is absorbed into the adjacent token (`test;` is not `test`)                |
 
 **Prevention:** the fix for one of these is not the fix for the others, and a half-applied
 normalizer looks correct. For any hook that classifies shell commands by tokenising:
 
-1. Normalise newlines to ` ; ` *before* splitting.
+1. Normalise newlines to `;` _before_ splitting.
 2. Pad `;`, `|`, `(`, `)` and the **pair** `&&` — never a lone `&`, which would split `2>&1`
    into `2>` and `1` and reopen the redirection bypass.
 3. Skip redirection tokens explicitly; they are not positional arguments.
@@ -40,7 +40,7 @@ are table-driven in `loom/tests/integration/hooks_subagent_verify_guard_cases.rs
 lexicographically and granted a full-suite carve-out to an ordinary stage. Reproduced: exit 0
 where it must be 2.
 
-**Why:** `head -1` silently *picks a winner* among duplicates instead of reporting ambiguity.
+**Why:** `head -1` silently _picks a winner_ among duplicates instead of reporting ambiguity.
 
 **Prevention:** the obvious fix — prefer the file whose `id:` field agrees — does **not** work,
 because whoever plants the decoy also writes its `id:`. The durable rule for any hook that
@@ -52,7 +52,7 @@ safe and do not grant the relaxation.** Consult the file only when exactly one m
 
 ## A Fail-Safe Fix Needs a Test That Asserts the REFUSAL (2026-07-28)
 
-**What happened:** the carve-out above shipped with a test for the *granted* direction only.
+**What happened:** the carve-out above shipped with a test for the _granted_ direction only.
 Reverting the ambiguity check from `-eq 1` back to `-ge 1` left the entire suite green.
 
 **Prevention:** when a fix is "we made this fail safe", a happy-path test proves nothing. The
@@ -107,7 +107,7 @@ period, which in ERE is not a word boundary at end-of-string — so the dot form
 current directory escapes that check while the flag form matches.
 
 **Status:** pre-existing; `git-add-guard.sh` blocks the pattern independently, so protection
-holds. **Detection:** exercise a hook regex with *every literal variant*, not just one.
+holds. **Detection:** exercise a hook regex with _every literal variant_, not just one.
 
 ## `strip_embedded_content` Cannot Strip a Multi-Line `-m` Body (PRE-EXISTING)
 
@@ -115,8 +115,8 @@ holds. **Detection:** exercise a hook regex with *every literal variant*, not ju
 pattern for `-m` followed by a quoted run, so a quoted body spanning newlines never matches and
 survives into the "stripped" string. `git-add-guard.sh` Pattern 1 then matches the staging verb
 followed by an unanchored `.*` spanning the whole line — wrongly blocking a legitimate
-"stage one file && commit with a multi-line message that merely *mentions* those flags". It is
-not limited to git: it blocked a plain `loom memory note` whose *text* quoted the all-files flags.
+"stage one file && commit with a multi-line message that merely _mentions_ those flags". It is
+not limited to git: it blocked a plain `loom memory note` whose _text_ quoted the all-files flags.
 
 **Workaround:** split staging and committing into separate Bash calls, and keep the all-files
 flag spellings out of message and note text.

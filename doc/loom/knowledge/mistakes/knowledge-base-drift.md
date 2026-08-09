@@ -12,19 +12,19 @@ rewrite — every one had survived multiple `knowledge-distill` stages.
 `*** INSERT: check_pending_disputes() + apply_pending_verdicts() HERE ***` marker in the
 orchestrator tick sequence, plus sections headed "Dispute Directory Structure (New, Stage 2+)"
 and "Plan Versioning (New, Stage 3+)". All three features had shipped. Worse, the note proposed
-inserting the adjudicator hooks *after* merge resolution; they actually landed *before* it. An
+inserting the adjudicator hooks _after_ merge resolution; they actually landed _before_ it. An
 agent trusting that section would have had both the status and the ordering wrong.
 
-**Why:** A knowledge stage recorded what the plan *intended to build*, in the plan's own
-forward-looking voice, instead of what the tree *contains*. Nothing later revisited the tense.
+**Why:** A knowledge stage recorded what the plan _intended to build_, in the plan's own
+forward-looking voice, instead of what the tree _contains_. Nothing later revisited the tense.
 
 **Prevention:** Treat these as smells and verify against the tree, never trust the text:
 
-| Smell in a knowledge file | Verify with |
-| --- | --- |
-| `(New, Stage N+)`, `(to be added)`, `Stage 2 replaces this` | `rg <symbol> loom/src/` — does it exist? |
-| `*** INSERT ... HERE ***`, `Insertion point for ...` | Read the actual call site |
-| `CURRENTLY ENFORCED; X Relaxes It` | Is X shipped? Then the invariant is already narrowed |
+| Smell in a knowledge file                                   | Verify with                                          |
+| ----------------------------------------------------------- | ---------------------------------------------------- |
+| `(New, Stage N+)`, `(to be added)`, `Stage 2 replaces this` | `rg <symbol> loom/src/` — does it exist?             |
+| `*** INSERT ... HERE ***`, `Insertion point for ...`        | Read the actual call site                            |
+| `CURRENTLY ENFORCED; X Relaxes It`                          | Is X shipped? Then the invariant is already narrowed |
 
 **Fix:** Record shipped state in the present tense with a file reference. When a section
 documents something that landed differently than planned, say so explicitly — the correction is
@@ -68,7 +68,7 @@ otherwise the next agent re-adds it from the same stale source.
 (`commands/check.rs`). None of the three exist — no such commands, no such files. The table also
 undercounted the real commands.
 
-**Why:** The table was written from the module layout and from what the commands *ought* to be
+**Why:** The table was written from the module layout and from what the commands _ought_ to be
 called, not from `cli/dispatch.rs`. `commands/verify.rs` does exist, which makes `loom verify`
 feel real — but it is the implementation behind `loom check`.
 

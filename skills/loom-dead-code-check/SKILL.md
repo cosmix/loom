@@ -30,7 +30,7 @@ triggers:
 
 Dead code — written but never called, imported, or used — is a direct signal of incomplete integration: a function nothing calls means the feature isn't wired up. In loom it serves two roles: **wiring verification** (catch implemented-but-unintegrated code) and **code quality** (cleanup). Most valuable in **integration-verify** stages as a final gate over all implementation stages.
 
-> ⚠️ **`truths` is GONE** as a standalone field. Put dead-code checks in the first-class **`dead_code_check`** field (a goal-backward layer, run by `loom check`) or in **`acceptance`** (a build/lint command that exits non-zero on findings). A top-level `truths:` block is silently ignored and false-passes.
+> ⚠️ **`truths` is GONE** as a standalone field. Put dead-code checks in the first-class **`dead_code_check`** field (a goal-backward layer, run by `loom check`) or in **`acceptance`** (a build/lint command that exits non-zero on findings). A top-level `truths:` block is rejected as an unknown field.
 
 If dead code survives implementation it usually means: feature not wired (command unregistered, route unmounted), test code never run, refactor leftovers, or an incomplete implementation.
 
@@ -79,7 +79,7 @@ Use `dead_code_check` when you want dead code counted as goal-backward proof; us
 | Go | `staticcheck ./...` | `is unused`, `U1000`, `U1001` | `go install honnef.co/go/tools/cmd/staticcheck@latest`. `U1000`=unused code, `U1001`=unused field |
 | JS | `bunx unimported` (unused files + unresolved imports) | `unused file`, `unresolved import` | `bun add --dev unimported` |
 
-⚠ **Tools ship NO deps in a fresh loom worktree** (`node_modules`, cargo tool binaries, `staticcheck`). Add install to `knowledge-bootstrap`, the sandbox `excluded_commands`, or accept the tool must be preinstalled — else the command errors and the check silently "passes" on empty output or fails opaquely. Rust's compiler-based check has no such dependency; prefer it.
+⚠ **Tools ship NO deps in a fresh loom worktree** (`node_modules`, cargo tool binaries, `staticcheck`). Install or vendor them in `knowledge-bootstrap`, or require them as preinstalled prerequisites; never bypass the host sandbox with `excluded_commands`. Otherwise the command errors and the check silently "passes" on empty output or fails opaquely. Rust's compiler-based check has no such dependency; prefer it.
 
 ### Rust example — both forms
 

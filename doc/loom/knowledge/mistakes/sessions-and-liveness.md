@@ -14,15 +14,15 @@
 
 **Mistake:** Monitoring thread reads the PID from the session file and calls `kill -0 <pid>` directly.
 
-**Prevention:** Always route session liveness through `LivenessService::is_alive(session)`. Never `kill -0` directly in the monitor.
+**Prevention:** Always route session liveness through `LivenessService::is_alive(session)` and destructive actions through verified `ProcessIdentity`. Numeric PID liveness alone is not identity and must never authorize a signal.
 
-**Fix:** `LivenessService` added in `orchestrator/liveness.rs`, wrapping `Arc<NativeBackend>`. The monitor thread holds the `LivenessService`, not a raw backend handle.
+**Fix:** `LivenessService` wraps the shared `Arc<SessionBackend>`, while `process::identity` verifies PID plus recorded start time. A mismatch is definitive death; missing evidence is unverifiable and fails closed.
 
 ## Run-Path Coverage: All Spawn Sites Must Use the Shared Backend
 
 **Mistake:** Wiring a session-spawning change into the main orchestrator loop but forgetting the other spawn paths: foreground mode, daemon startup, merge resolver spawner, continuation (handoff) spawner, auto-merge spawner.
 
-**Why:** Sessions are spawned from multiple entry points beyond the main orchestrator. Each missed path drifts from the shared `Arc<NativeBackend>` the orchestrator holds.
+**Why:** Sessions are spawned from multiple entry points beyond the main orchestrator. Each missed path drifts from the shared `Arc<SessionBackend>` the orchestrator holds.
 
 **Prevention:** When changing session spawning, `rg` for all `spawn_session\|spawn_merge_session\|spawn_knowledge_session` call sites before considering the work done. Typically 5+ sites: orchestrator main loop, foreground spawner, merge_handler, continuation, auto_merge.
 
@@ -66,6 +66,6 @@ Adding `Session.backend` during the tmux-backend plan broke exactly **3** struct
 **What still holds, and is the part worth keeping:** `cargo build` alone does not surface breakages in
 `tests/` — use `cargo test --all-targets --no-run`.
 
-**Meta-lesson:** a knowledge entry that carries a *count* is a decaying asset. Two stages sized their
+**Meta-lesson:** a knowledge entry that carries a _count_ is a decaying asset. Two stages sized their
 work off this number before anyone checked it. Blast-radius numbers should be re-measured, not
 inherited — and when you measure one, correct the entry in the same stage.

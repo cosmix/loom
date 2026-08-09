@@ -7,14 +7,16 @@
 `SessionBackend` (`orchestrator/terminal/backend.rs`) is the single type every spawn/kill/liveness
 call goes through. It wraps two concrete lanes:
 
-| Lane | Type | Where sessions run |
-| --- | --- | --- |
-| `Native` (default) | `NativeBackend` (`terminal/native/`) | a host terminal emulator window |
-| `Tmux` (opt-in) | `TmuxBackend` (`terminal/tmux/`) | a detached tmux server, no GUI required |
+| Lane               | Type                                 | Where sessions run                      |
+| ------------------ | ------------------------------------ | --------------------------------------- |
+| `Native` (default) | `NativeBackend` (`terminal/native/`) | a host terminal emulator window         |
+| `Tmux` (opt-in)    | `TmuxBackend` (`terminal/tmux/`)     | a detached tmux server, no GUI required |
 
 `SessionBackend::from_config(work_dir)` **always succeeds** as long as the config parses — it does not
 construct either lane eagerly. That matters: `NativeBackend::new` runs `detect_terminal()` subprocess
-probes and *fails* on a headless box, which is exactly where the tmux lane is wanted.
+probes and _fails_ on a headless box, which is exactly where the tmux lane is wanted. Each native
+detection/process-discovery probe has a two-second deadline, so terminal discovery cannot stall the
+single scheduler loop.
 
 The native lane is therefore built lazily and memoized in a `OnceLock<Result<NativeBackend, String>>`
 — **including the failure**. `OnceLock` (not `RefCell`/`Mutex`) because the orchestrator holds
@@ -43,7 +45,7 @@ per 5s monitor tick.
 the lane **actually used**, and is persisted to `.work/sessions/<id>.md`.
 
 This is the load-bearing part: sessions are reconstructed from disk after a daemon restart, so
-kill/liveness must route on the *session's* recorded backend, never on the currently-configured one.
+kill/liveness must route on the _session's_ recorded backend, never on the currently-configured one.
 `SessionBackend::is_session_alive` and `kill_session` dispatch on `session.backend`, so a run that
 flipped config (or fell back) still kills and monitors older sessions through the lane that spawned
 them.
@@ -64,17 +66,18 @@ single point of failure for every parallel stage at once.
 **Why keyed on `session.id`, not `stage_id`:** `sun_path` is capped at 104 bytes on macOS; plan stage
 ids run up to 128 chars and would silently blow the limit. See `mistakes/tmux-backend.md`.
 
-## Liveness Never Asks tmux — And That Is the Point
+## Liveness Uses Verified Process Identity, Not tmux
 
-`TmuxBackend::is_session_alive` (and `SessionBackend`'s native-degrade path) consult **PID-file layers
-only**. There is deliberately **no `tmux has-session` call**.
+`TmuxBackend::is_session_alive` and the native/headless lanes consult the shared
+`process::ProcessIdentity { pid, start_time }` service. There is deliberately no `tmux has-session`
+fallback for liveness and no raw `session.pid` fallback for signaling.
 
 A tmux server whose pane process has died but which has not yet reaped itself still answers
 `has-session` with exit 0. Consulting it would make the monitor report a dead `claude` as alive, and
 the crash would never be filed or retried — defeating the containment property the backend exists for.
-PID liveness is the same evidence the native lane uses, so both lanes degrade identically.
-
-The PID layers themselves were deduped into `native/pid_guard.rs` during this work (six copies → one).
+The recorded start time is mandatory identity evidence. A mismatch means the recorded process is
+dead; missing or unreadable evidence is `Unverifiable`. Neither outcome may signal the numeric PID.
+The shared identity service gives native, tmux, headless, and daemon integrations the same fail-closed rule.
 
 ## Spawn Path and the Silent-Failure Guard
 
@@ -85,7 +88,7 @@ exit 0. Two checks follow the spawn:
    filesystem) so the rule is unit-testable; it treats any stderr with exit 0 as failure.
 2. an authoritative `tmux has-session` probe against the socket.
 
-Every error path *after* the server may exist routes through teardown — killing the socket server and
+Every error path _after_ the server may exist routes through teardown — killing the socket server and
 calling `native::cleanup_stage_files` to drop the PID/wrapper files — before returning `Err`. Skipping
 either leaks a live agent (see `mistakes/tmux-backend.md`).
 
@@ -110,7 +113,7 @@ goes to the daemon's stderr, not the user's shell.
 `commands/attach/` discovers sessions with `backend == Tmux`, status `Running | Spawning`, a live PID
 and a resolvable tmux session name, sorted oldest-first by `(created_at, id)`.
 
-- **No argument** ⇒ a tiled **overview**: a per-repo *viewer* server on socket
+- **No argument** ⇒ a tiled **overview**: a per-repo _viewer_ server on socket
   `loom-view-<sha256(canonical repo root)[..8]>`, session `loom-overview`, created detached at
   220x50, `remain-on-exit on` set **before** the splits, one pane per live session, re-tiled after
   **each** split.
@@ -124,7 +127,7 @@ viewer socket and `(session_socket, tracking_key)` pairs as parameters, so it is
 tmux; socket derivation stays in `tmux::socket_name` and `viewer_socket_name`.
 
 `loom attach` requires a TTY (`require_tty`), so its `exec` paths are unreachable from a non-TTY
-harness — but the empty-set, unknown-stage and multi-match messages are emitted *before* the TTY check
+harness — but the empty-set, unknown-stage and multi-match messages are emitted _before_ the TTY check
 and are testable.
 
 ## Socket Reaping at init/clean
@@ -135,7 +138,7 @@ match another checkout's live servers.
 
 `SessionReapMode` distinguishes the two callers: `OrphansOnly` (normal path, skips live sessions) vs
 `IncludeLiveBeforeClean`. `loom init --clean` deletes `.work/` immediately afterwards, and `.work/` is
-the *only* thing that makes attribution possible — so a live session left running through `--clean`
+the _only_ thing that makes attribution possible — so a live session left running through `--clean`
 would become permanently unattributable and leak forever. `--clean` therefore reaps attributed sockets
 even when alive; the normal path stays conservative.
 

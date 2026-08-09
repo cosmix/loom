@@ -11,32 +11,32 @@
 
 ## Command Dispatch (cli/types.rs)
 
-| Command       | Entry File                    | Purpose                                      |
-| ------------- | ----------------------------- | -------------------------------------------- |
-| `init`        | `commands/init/execute.rs`    | Initialize `.work/` from plan                |
-| `run`         | `commands/run/mod.rs`         | Start orchestrator daemon                    |
-| `status`      | `commands/status.rs`          | Dashboard with stage/session info            |
-| `stop`        | `commands/stop.rs`            | Shutdown daemon                              |
-| `resume`      | `commands/resume.rs`          | Resume work on a stage                       |
-| `sessions`    | `commands/sessions.rs`        | List/kill active sessions                    |
-| `worktree`    | `commands/worktree_cmd.rs`    | List/clean/remove worktrees                  |
-| `graph`       | `commands/graph/mod.rs`       | Show execution graph                         |
-| `stage`       | `commands/stage/`             | Stage lifecycle (15+ subcommands)            |
-| `handoff`     | `commands/handoff/create.rs`  | Create handoff files                         |
-| `knowledge`   | `commands/knowledge/mod.rs`   | Manage codebase knowledge                    |
-| `memory`      | `commands/memory/handlers.rs` | Session memory journal                       |
-| `review`      | `commands/review/mod.rs`      | Generate review docs from memories           |
-| `self-update` | `commands/self_update/mod.rs` | Update loom binary                           |
-| `clean`       | `commands/clean.rs`           | Clean up resources                           |
-| `repair`      | `commands/repair.rs`          | Fix workspace issues                         |
-| `map`         | `commands/map.rs`             | Codebase structure analysis                  |
-| `pressure`    | `commands/pressure/mod.rs`    | Plan pressure-testing driver (Claude + Codex) |
-| `diagnose`    | `commands/diagnose.rs`        | Stage failure diagnosis                      |
-| `plan verify` | `commands/plan/verify.rs`     | Validate plan file without side effects      |
+| Command       | Entry File                    | Purpose                                        |
+| ------------- | ----------------------------- | ---------------------------------------------- |
+| `init`        | `commands/init/execute.rs`    | Initialize `.work/` from plan                  |
+| `run`         | `commands/run/mod.rs`         | Start orchestrator daemon                      |
+| `status`      | `commands/status.rs`          | Dashboard with stage/session info              |
+| `stop`        | `commands/stop.rs`            | Shutdown daemon                                |
+| `resume`      | `commands/resume.rs`          | Resume work on a stage                         |
+| `sessions`    | `commands/sessions.rs`        | List/kill active sessions                      |
+| `worktree`    | `commands/worktree_cmd.rs`    | List/clean/remove worktrees                    |
+| `graph`       | `commands/graph/mod.rs`       | Show execution graph                           |
+| `stage`       | `commands/stage/`             | Stage lifecycle (15+ subcommands)              |
+| `handoff`     | `commands/handoff/create.rs`  | Create handoff files                           |
+| `knowledge`   | `commands/knowledge/mod.rs`   | Manage codebase knowledge                      |
+| `memory`      | `commands/memory/handlers.rs` | Session memory journal                         |
+| `review`      | `commands/review/mod.rs`      | Generate review docs from memories             |
+| `self-update` | `commands/self_update/mod.rs` | Update loom binary                             |
+| `clean`       | `commands/clean.rs`           | Clean up resources                             |
+| `repair`      | `commands/repair.rs`          | Fix workspace issues                           |
+| `map`         | `commands/map.rs`             | Codebase structure analysis                    |
+| `pressure`    | `commands/pressure/mod.rs`    | Plan pressure-testing driver (Claude + Codex)  |
+| `diagnose`    | `commands/diagnose.rs`        | Stage failure diagnosis                        |
+| `plan verify` | `commands/plan/verify.rs`     | Validate plan file without side effects        |
 | `check`       | `commands/verify.rs`          | Goal-backward verification (`verify::execute`) |
-| `skill-index` | `commands/skill_index.rs`     | Build skill keyword index for skill-trigger  |
-| `completions` | `commands/completions/mod.rs` | Shell completions (custom scripts + dynamic) |
-| `complete`    | Hidden (dynamic completions)  | Backend for shell tab completions            |
+| `skill-index` | `commands/skill_index.rs`     | Build skill keyword index for skill-trigger    |
+| `completions` | `commands/completions/mod.rs` | Shell completions (custom scripts + dynamic)   |
+| `complete`    | Hidden (dynamic completions)  | Backend for shell tab completions              |
 
 Total: 23 visible commands + 1 hidden (`complete`, for dynamic completions). Dispatch: `cli/dispatch.rs` match-based, two-level for nested commands.
 
@@ -44,7 +44,7 @@ Total: 23 visible commands + 1 hidden (`complete`, for dynamic completions). Dis
 
 - `loom hooks` — there is no `commands/hooks.rs`. Hook install lives in `fs/permissions/hooks.rs` and runs as part of `loom init` / `loom repair --fix`.
 - `loom sandbox` — there is no `commands/sandbox/`. Sandbox config generation lives in `sandbox/config.rs` + `sandbox/settings.rs`, driven by the plan.
-- `loom verify` — there is no top-level `verify` command and no `commands/check.rs`. `commands/verify.rs::execute` is the shared implementation reached via `loom check`; `loom stage verify` and `loom plan verify` are separate subcommands.
+- `loom verify` — there is no top-level `verify` command and no `commands/check.rs`. `commands/verify.rs::execute` is reached via `loom check`; `loom plan verify` is the only separate verify subcommand. The unsafe `loom stage verify` completion pipeline was removed.
 
 ## Orchestrator Core
 
@@ -58,7 +58,7 @@ Total: 23 visible commands + 1 hidden (`complete`, for dynamic completions). Dis
 
 ## Data Models
 
-- `models/stage/types.rs` - Stage struct, StageStatus enum (12 states)
+- `models/stage/types.rs` - Stage struct, StageStatus enum (13 states, including NeedsAdjudication)
 - `models/stage/transitions.rs` - State transition validation
 - `models/stage/methods.rs` - Stage operations (try_mark_executing, try_complete, timing)
 - `models/session/types.rs` - Session struct, SessionStatus enum (6 states)
@@ -78,7 +78,7 @@ Total: 23 visible commands + 1 hidden (`complete`, for dynamic completions). Dis
 - `git/worktree/settings.rs` - Worktree symlinks (.work, .claude/CLAUDE.md, CLAUDE.md)
 - `git/merge/mod.rs` - Merge automation, conflict handling; `require_no_active_merge` guard
 - `git/merge/in_progress.rs` - Single source of truth for `MERGE_HEAD` detection (handles `.git`-as-file, relative gitdirs, octopus merges)
-- `git/merge/lock.rs` - File-based merge lock to serialize concurrent merges
+- `git/merge/lock.rs` - Stable-inode OS lock that serializes concurrent merges without stale-file reclamation races
 - `git/merge/status.rs` - `check_merge_state` (Merged | Pending | Conflict | BranchMissing | Unknown)
 - `git/branch.rs` - Branch creation, deletion, ancestry checks
 
@@ -93,9 +93,13 @@ Total: 23 visible commands + 1 hidden (`complete`, for dynamic completions). Dis
 
 ## Daemon
 
-- `daemon/server/core.rs` - DaemonServer struct, socket binding
-- `daemon/server/lifecycle.rs` - Daemonization, accept loop, shutdown
-- `daemon/protocol.rs` - IPC messages (Request/Response enums, 4-byte length-prefixed JSON)
+- `daemon/server/core.rs` - `DaemonServer` state and bounded-client constants
+- `daemon/server/lifecycle.rs` - Daemonization, authoritative singleton-lock lifetime, socket binding, accept loop, and shutdown
+- `daemon/protocol.rs` - IPC request/response and capability types
+- `daemon/wire.rs` - Fixed authentication preface plus bounded JSON framing (64 KiB requests, 2 MiB responses)
+- `daemon/server/admission.rs` - Absolute-deadline reads and the global in-flight byte budget
+- `daemon/server/pool.rs` - Fixed worker pool and bounded admission queue
+- `daemon/server/storage.rs` - No-follow, mode-0600 control-file publication under the mode-0700 `.work/` directory
 - `daemon/server/broadcast.rs` - Status/log streaming to clients
 
 ## Monitor Subsystem
@@ -129,13 +133,14 @@ Total: 23 visible commands + 1 hidden (`complete`, for dynamic completions). Dis
 
 ## Terminal Backend
 
-- `orchestrator/terminal/mod.rs` - terminal module root; re-exports `TerminalEmulator`
+- `orchestrator/terminal/backend.rs` - `SessionBackend` dispatcher for native/tmux spawn, kill, and liveness
+- `orchestrator/terminal/mod.rs` - terminal module root; re-exports backend and emulator types
 - `orchestrator/terminal/native/mod.rs` - NativeBackend (spawn/kill/alive)
 - `orchestrator/terminal/native/spawner.rs` - Claude Code session spawning (native)
 - `orchestrator/terminal/emulator.rs` - 11 terminal emulator configs
 - `orchestrator/terminal/native/detection.rs` - Auto-detect terminal
 - `orchestrator/terminal/native/pid_tracking.rs` - Wrapper script, PID tracking, env vars
-- `orchestrator/liveness.rs` - LivenessService: wraps NativeBackend for monitor thread; fixed_for_tests() stub for unit tests
+- `orchestrator/liveness.rs` - LivenessService: wraps the shared SessionBackend; fixed_for_tests() stub for unit tests
 
 ## Handoff System
 
@@ -160,7 +165,8 @@ The full hook roster — every script in `hooks/`, the event it binds to, what i
 
 - `plan/schema/types.rs` - StageDefinition (YAML input); SandboxConfig + StageSandboxConfig with `permission_mode: Option<PermissionMode>`
 - `models/stage/types.rs` - Stage (runtime model)
-- `commands/init/plan_setup.rs` - create_stage_from_definition(), detect_stage_type()
+- `models/stage/methods.rs` - canonical `Stage::from_definition()` conversion
+- `commands/init/plan_setup.rs` - delegates stage creation to the canonical conversion
 
 ## CLI Subcommand Registration Pattern
 
@@ -184,7 +190,9 @@ Three files to add a new subcommand:
 - `completions/install.rs` - Auto-install and migration for shell completions
 - `commands/status/ui/tui.rs` - TUI dashboard entry (run_tui)
 - `commands/self_update/mod.rs` - Installation, update, skill download
-- `process/mod.rs` - PID liveness check (libc::kill(pid, 0))
+- `process/mod.rs` - bounded subprocess execution and structured timeout errors
+- `process/identity.rs` - PID plus start-time identity verification and fail-closed signaling
+- `process/environment.rs` - minimal allowlisted environment reconstruction for stage processes
 - `skills/` - SkillIndex, SkillMatch, SkillMetadata (index.rs, matcher.rs, types.rs)
 - `diagnosis/signal.rs` - generate_diagnosis_signal(), DiagnosisContext
 - `map/analyzer.rs` - analyze_codebase(root, deep, focus)
@@ -252,54 +260,30 @@ Internal modules: `extraction.rs` (YAML block extraction, plan name), `validatio
 
 **3 display modes:**
 
-| Mode | Flag | Behavior |
-| --- | --- | --- |
-| Static (default) | none | Snapshot: logo → plan name → daemon indicator → progress bar → stage graph → merge status |
-| Compact | `--compact` | Single-line scripting output via `render_compact()` |
-| Live | `--live` | TUI subscribed to daemon IPC; requires daemon running (`DaemonServer::is_running()`) |
+| Mode             | Flag        | Behavior                                                                                  |
+| ---------------- | ----------- | ----------------------------------------------------------------------------------------- |
+| Static (default) | none        | Snapshot: logo → plan name → daemon indicator → progress bar → stage graph → merge status |
+| Compact          | `--compact` | Single-line scripting output via `render_compact()`                                       |
+| Live             | `--live`    | TUI subscribed to daemon IPC; requires daemon running (`DaemonServer::is_running()`)      |
 
 **Verbose mode (`--verbose`):** Shows `render_attention()` — detailed failure information for blocked/failed stages.
 
-## Tool Event Log
+## Post-Tool Heartbeat
 
-`.work/tool-events.jsonl` — written by `hooks/post-tool-use.sh` on every tool call. Used by the monitor subsystem for stuck-session detection.
+`hooks/post-tool-use.sh` writes only private heartbeat metadata under `.work/heartbeat/`. It does not persist tool names, commands, output, byte counts, or previews. This prevents credentials and private source printed by tools from becoming durable shared state.
 
-**Writer:** `hooks/post-tool-use.sh` lines 74-107 (TOOL EVENT LOGGING section). Requires `jq` to be available — the block is guarded by `command -v jq` so heartbeat writes are never blocked.
-
-**Reader / Rust struct:** `loom/src/hooks/events.rs::ToolEvent` (line 190) — `read_tool_events(work_dir)` and `tail_tool_events(work_dir, n)`.
-
-**ToolEvent fields:**
-
-```rust
-pub struct ToolEvent {
-    pub ts: String,            // ISO 8601 timestamp
-    pub tool: String,          // Tool name (e.g. "Bash", "Read")
-    pub is_error: bool,
-    pub session_id: String,
-    pub stage_id: String,
-    pub exit: Option<i32>,         // Bash tool exit code, null for others
-    pub output_bytes: Option<u64>, // printf '%s' | wc -c (no trailing newline)
-    pub output_head: Option<String>, // First ~200 bytes
-    pub output_tail: Option<String>, // Last ~200 bytes
-}
-```
-
-**Note:** `output_bytes` uses `printf '%s' | wc -c` (not `echo | wc -c`) so empty output is 0, not 1. This was a bug fixed in integration-verify — the old `echo` appended a newline making empty output record `output_bytes=1`, breaking the failure heuristic in `tool_analysis.rs:101`.
-
-**Distinct from** `.work/hooks/events.jsonl` (HookEventLog struct in the same file) — that file logs session lifecycle hook events (SessionStart, PreCompact, SessionEnd, Stop). Both types live in `loom/src/hooks/events.rs`.
-
-**Consumer:** `orchestrator/monitor/tool_analysis::analyze_session(work_dir, session_id)` reads the last 50 events for a session and computes `ToolAnalysis` (stuck detection). See `architecture.md § Soft Signals` for the full pipeline.
+The legacy `ToolEvent` reader remains able to consume an older `.work/tool-events.jsonl`, but no production hook creates or appends that file. New stuck detection therefore relies on heartbeat/session liveness rather than tool-output heuristics. If event observability is restored, it must use a bounded no-follow Rust writer and metadata-only records.
 
 ## Orchestrator Core Recovery Functions (Exact Locations)
 
-| Function | File | Lines | Called From |
-|----------|------|-------|-------------|
-| `sync_graph_with_stage_files()` | `orchestrator/core/recovery.rs` | 179-567 | orchestrator.rs main loop (tick 2) |
-| `sync_queued_status_to_files()` | `orchestrator/core/recovery.rs` | 569-593 | orchestrator.rs main loop (tick 3) |
-| `recover_orphaned_sessions()` | `orchestrator/core/recovery.rs` | 595-791 | startup init only |
-| `reconcile_and_update_graph()` | `orchestrator/core/recovery.rs` | 149-177 | orchestrator.rs (tick 1 + startup) |
-| `spawn_merge_resolution_sessions()` | `orchestrator/core/merge_handler.rs` | 637-758 | orchestrator.rs (tick 4) |
-| `start_ready_stages()` | `orchestrator/core/stage_executor.rs` | 64-86 | orchestrator.rs (tick 6) |
+| Function                            | File                                  | Lines   | Called From                        |
+| ----------------------------------- | ------------------------------------- | ------- | ---------------------------------- |
+| `sync_graph_with_stage_files()`     | `orchestrator/core/recovery.rs`       | 179-567 | orchestrator.rs main loop (tick 2) |
+| `sync_queued_status_to_files()`     | `orchestrator/core/recovery.rs`       | 569-593 | orchestrator.rs main loop (tick 3) |
+| `recover_orphaned_sessions()`       | `orchestrator/core/recovery.rs`       | 595-791 | startup init only                  |
+| `reconcile_and_update_graph()`      | `orchestrator/core/recovery.rs`       | 149-177 | orchestrator.rs (tick 1 + startup) |
+| `spawn_merge_resolution_sessions()` | `orchestrator/core/merge_handler.rs`  | 637-758 | orchestrator.rs (tick 4)           |
+| `start_ready_stages()`              | `orchestrator/core/stage_executor.rs` | 64-86   | orchestrator.rs (tick 6)           |
 
 ## Plan Graph Loader — Stage File Preference (Critical)
 
@@ -307,7 +291,7 @@ pub struct ToolEvent {
 
 - **Lines 60-86**: Prefers `.work/stages/` over plan file. If stages_dir exists with .md files → load from `fs::load_stages_from_work_dir()` + recover sandbox from `.work/config.toml [plan_sandbox]`. Falls back to parsing plan file only if stages_dir is empty/missing.
 - This means plan-file edits are NOT automatically reflected until stages_dir is absent (i.e., fresh init).
-- **`plan/amendment.rs` honors this** — a runtime amendment rewrites the plan file **and** the target stage's `.work/stages/<n>-<id>.md` under the same lock. This is a shipped guarantee, not an outstanding requirement (an earlier version of this bullet read as a TODO for a future "plan-amendment stage"). Any *other* code path that edits a plan file at runtime must do the same, or the daemon keeps serving the old criteria.
+- **`plan/amendment.rs` honors this** — a runtime amendment rewrites the plan file **and** the target stage's `.work/stages/<n>-<id>.md` under the same lock. This is a shipped guarantee, not an outstanding requirement (an earlier version of this bullet read as a TODO for a future "plan-amendment stage"). Any _other_ code path that edits a plan file at runtime must do the same, or the daemon keeps serving the old criteria.
 
 ## Plan Schema — StageDefinition Amendable Fields
 
@@ -351,26 +335,24 @@ pub struct ToolEvent {
 
 Adjudicator HTTP client should mirror this pattern with `user_agent("loom-adjudicator")` and longer timeout (~120s for Claude API latency).
 
-## Admin Token Write Location
+## Daemon Credentials and Operator Proofs
 
-`daemon/server/lifecycle.rs:176-182`:
+Daemon startup generates independent user and admin secrets. Both are published with no-follow,
+mode-0600 creation beneath the mode-0700 `.work/` directory. The user secret authenticates Ping,
+status/log subscriptions, Unsubscribe, and DisputeCriteria. Authentication is checked from a fixed,
+allocation-free request preface before the bounded JSON body is accepted.
 
-- Generates 32-byte (256-bit) hex token
-- Writes to `<work_dir>/admin.token` (`.work/admin.token`)
-- Mode 0o600 (owner-only rw)
+Privileged actions do not treat the mere presence of `.work/admin.token` as authorization. The
+operator supplies that secret only to the proof-minting process through `LOOM_ADMIN_TOKEN`; the
+target command receives an action-bound proof through `LOOM_ADMIN_PROOF` and never reads the token.
+Proofs are HMAC-SHA256-bound to the project, action, stage (when applicable), and privileged flag
+set, then consumed through a private atomic replay marker. The integrated shutdown flow is
+`loom stage admin-proof --daemon-stop`, followed by `loom stop` with the minted proof in
+`LOOM_ADMIN_PROOF`.
 
-## Daemon Capability Surface (client.rs)
-
-`daemon/server/client.rs` — `verify_for_capability(work_dir, token, Capability) -> bool`:
-
-- Routes to USER_TOKEN_FILE or ADMIN_TOKEN_FILE via `token_path_for()`
-- Missing file → returns false (fails closed)
-- Constant-time comparison via `ct_eq()`
-
-`daemon/protocol.rs:83-97` — `Capability` enum:
-
-- `User` — Ping, Subscribe, Unsubscribe
-- `Admin` — Stop; all `--no-verify`, `--force-unsafe`, `--assume-merged` paths also gate on `Admin`
+`daemon/server/client.rs` verifies the preface in constant time and fails closed on missing or
+malformed credentials. `commands/stage/admin_proof.rs` owns minting, exact-request verification,
+and replay protection.
 
 ## Dispute Criteria — Current Implementation
 
@@ -400,7 +382,7 @@ pub fn dispute_criteria(
 
 `models/stage/types.rs:254` — `fix_attempts: u32` field:
 
-- Incremented: `commands/stage/check_acceptance.rs:110` when criteria fail
+- Incremented: `commands/stage/merge.rs` for an actual merge retry, using locked `update_stage`
 - Reset to 0: `commands/stage/human_review.rs:87` on human approve
 - Default max: 3 (via `get_effective_max_fix_attempts()` in methods.rs)
 - Warning printed when limit reached with hint to `loom stage dispute-criteria`
@@ -416,36 +398,36 @@ resolution, with line references.
 
 ## Signal Generation — Key Files and Line References
 
-| File | Purpose | Key Lines |
-|------|---------|-----------|
-| `orchestrator/signals/generate.rs` | Entry point: `generate_signal_with_skills()`, `build_signal_context()`, `build_embedded_context_with_stage_and_session()` | 137-536 |
-| `orchestrator/signals/cache.rs` | 4 stable-prefix generators + 8 `append_*` helpers + SignalMetrics SHA-256 | helpers:51-169, standard:174-310, IV:313-444, KnowledgeDistill:447-524, Knowledge:527-633 |
-| `orchestrator/signals/format/mod.rs` | `format_signal_with_metrics()` — selects stable prefix by stage type, assembles 4 sections | 62-78 |
-| `orchestrator/signals/format/sections.rs` | Semi-stable (15-378), Dynamic (382-661), Recitation (665-765) | see per-section notes |
-| `orchestrator/signals/types.rs` | `EmbeddedContext` struct (24-50), `DependencyStatus`, `SandboxSummary` | 24-50 |
-| `orchestrator/signals/knowledge.rs` | Knowledge-stage signal path: `generate_knowledge_signal()`, `format_knowledge_signal_content()` | 23-135 |
-| `orchestrator/signals/recovery.rs` | Recovery signal: recovery context header, last known state, recovery actions | — |
-| `orchestrator/signals/recovery_format.rs` | `format_recovery_signal()` if exists as separate file | — |
-| `orchestrator/signals/helpers.rs` | `write_signal_file()` disk I/O | 17+ |
-| `orchestrator/signals/crud.rs` | Signal file CRUD | — |
+| File                                      | Purpose                                                                                                                   | Key Lines                                                                                 |
+| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| `orchestrator/signals/generate.rs`        | Entry point: `generate_signal_with_skills()`, `build_signal_context()`, `build_embedded_context_with_stage_and_session()` | 137-536                                                                                   |
+| `orchestrator/signals/cache.rs`           | 4 stable-prefix generators + 8 `append_*` helpers + SignalMetrics SHA-256                                                 | helpers:51-169, standard:174-310, IV:313-444, KnowledgeDistill:447-524, Knowledge:527-633 |
+| `orchestrator/signals/format/mod.rs`      | `format_signal_with_metrics()` — selects stable prefix by stage type, assembles 4 sections                                | 62-78                                                                                     |
+| `orchestrator/signals/format/sections.rs` | Semi-stable (15-378), Dynamic (382-661), Recitation (665-765)                                                             | see per-section notes                                                                     |
+| `orchestrator/signals/types.rs`           | `EmbeddedContext` struct (24-50), `DependencyStatus`, `SandboxSummary`                                                    | 24-50                                                                                     |
+| `orchestrator/signals/knowledge.rs`       | Knowledge-stage signal path: `generate_knowledge_signal()`, `format_knowledge_signal_content()`                           | 23-135                                                                                    |
+| `orchestrator/signals/recovery.rs`        | Recovery signal: recovery context header, last known state, recovery actions                                              | —                                                                                         |
+| `orchestrator/signals/recovery_format.rs` | `format_recovery_signal()` if exists as separate file                                                                     | —                                                                                         |
+| `orchestrator/signals/helpers.rs`         | `write_signal_file()` disk I/O                                                                                            | 17+                                                                                       |
+| `orchestrator/signals/crud.rs`            | Signal file CRUD                                                                                                          | —                                                                                         |
 
 **Insertion point for new shared helper:** `cache.rs` lines 51-169 (the "Shared content blocks" cluster). Call it from each of the 4 generator functions.
 
 ## TruthCheck / before_stage / after_stage / code_review
 
-| Location | Purpose |
-|----------|---------|
-| `models/stage/types.rs:280-303` | `TruthCheck` struct: `command`, `stdout_contains`, `stdout_not_contains`, `stderr_empty`, `exit_code`, `description` |
-| `plan/schema/types.rs:100-261` | `StageDefinition`: `before_stage: Vec<TruthCheck>` (221), `after_stage: Vec<TruthCheck>` (226), `code_review: Option<CodeReviewConfig>` (261) |
-| `plan/schema/types.rs:100-111` | `CodeReviewConfig`: `dimensions: Vec<String>`, `require_all: bool` |
-| `commands/init/plan_setup.rs:280-281` | Copies before_stage + after_stage to Stage; does NOT copy code_review |
+| Location                                                        | Purpose                                                                                                                                                          |
+| --------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `models/stage/types.rs:280-303`                                 | `TruthCheck` struct: `command`, `stdout_contains`, `stdout_not_contains`, `stderr_empty`, `exit_code`, `description`                                             |
+| `plan/schema/types.rs:100-261`                                  | `StageDefinition`: `before_stage: Vec<TruthCheck>` (221), `after_stage: Vec<TruthCheck>` (226), `code_review: Option<CodeReviewConfig>` (261)                    |
+| `plan/schema/types.rs:100-111`                                  | `CodeReviewConfig`: `dimensions: Vec<String>`, `require_all: bool`                                                                                               |
+| `models/stage/methods.rs::Stage::from_definition`               | Canonically copies before/after checks, `code_review`, sandbox, and all execution policy into persisted Stage state                                              |
 | `orchestrator/core/stage_executor.rs::before_stage_gate_passed` | Executes before_stage checks BEFORE session spawn; failure → stage Blocked. Skips the checks when `find_prior_stage_work` shows the workspace already holds work |
-| `verify/before_after.rs::find_prior_stage_work` | Pristine-workspace probe: commits on `loom/<id>` beyond base, or non-scaffold worktree changes → `Some(evidence)` (skip the gate) |
-| `git/branch/status.rs::list_working_tree_changes` | `git status --porcelain` paths INCLUDING untracked (`has_uncommitted_changes` excludes them) |
-| `git/worktree/settings.rs::is_worktree_scaffold_path` | Discounts loom-planted `.work` / `.claude/` / `CLAUDE.md` when judging whether a worktree holds agent work |
-| `commands/stage/complete.rs:847-866` | Executes after_stage checks AFTER acceptance criteria; failure → stage stays Executing |
-| `verify/before_after.rs` | `run_before_stage_checks()` + `run_after_stage_checks()` — both delegate to `verify_truth_checks()` |
-| `verify/goal_backward/truths.rs:16-134` | `verify_truth_checks(checks, working_dir)` → `Vec<VerificationGap>`, 30s timeout per check |
+| `verify/before_after.rs::find_prior_stage_work`                 | Pristine-workspace probe: commits on `loom/<id>` beyond base, or non-scaffold worktree changes → `Some(evidence)` (skip the gate)                                |
+| `git/branch/status.rs::list_working_tree_changes`               | `git status --porcelain` paths INCLUDING untracked (`has_uncommitted_changes` excludes them)                                                                     |
+| `git/worktree/settings.rs::is_worktree_scaffold_path`           | Discounts loom-planted `.work` / `.claude/` / `CLAUDE.md` when judging whether a worktree holds agent work                                                       |
+| `commands/stage/complete.rs:847-866`                            | Executes after_stage checks AFTER acceptance criteria; failure → stage stays Executing                                                                           |
+| `verify/before_after.rs`                                        | `run_before_stage_checks()` + `run_after_stage_checks()` — both delegate to `verify_truth_checks()`                                                              |
+| `verify/goal_backward/truths.rs:16-134`                         | `verify_truth_checks(checks, working_dir)` → `Vec<VerificationGap>`, 30s timeout per check                                                                       |
 
 ## `loom pressure` — Plan Pressure-Testing Files
 
@@ -458,16 +440,16 @@ resolution, with line references.
 
 ## Tiered Knowledge Base (2026-07-28)
 
-| Path | Role |
-| --- | --- |
-| `loom/src/fs/knowledge/types.rs` | `KnowledgeFile`, `KnowledgeTarget`, `KnowledgeLayout`, tier-1 alias table |
-| `loom/src/fs/knowledge/dir.rs` | `KnowledgeDir` — initialize, append, replace-section, layout detection |
-| `loom/src/fs/knowledge/index.rs` | `scan_topics`, `generate_index`, `write_index` |
-| `loom/src/fs/knowledge/gc.rs` | audit metrics, oversized sections, orphan and broken-link detection, thresholds |
-| `loom/src/fs/knowledge/summary.rs`, `templates.rs` | signal summary; tier-1/tier-2 scaffolds |
-| `loom/src/commands/knowledge/mod.rs` | subcommand dispatch — `show`, `update`, `replace-section`, `init`, `list`, `check`, `audit`, `gc`, `bootstrap`, **`index`** |
-| `loom/src/commands/knowledge/check.rs` | `architecture_coverage_text()` — folds tier-2 `architecture/` topics into `src/` coverage |
-| `loom/src/cli/types_memory.rs` | clap definitions for the knowledge subcommands |
+| Path                                               | Role                                                                                                                        |
+| -------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `loom/src/fs/knowledge/types.rs`                   | `KnowledgeFile`, `KnowledgeTarget`, `KnowledgeLayout`, tier-1 alias table                                                   |
+| `loom/src/fs/knowledge/dir.rs`                     | `KnowledgeDir` — initialize, append, replace-section, layout detection                                                      |
+| `loom/src/fs/knowledge/index.rs`                   | `scan_topics`, `generate_index`, `write_index`                                                                              |
+| `loom/src/fs/knowledge/gc.rs`                      | audit metrics, oversized sections, orphan and broken-link detection, thresholds                                             |
+| `loom/src/fs/knowledge/summary.rs`, `templates.rs` | signal summary; tier-1/tier-2 scaffolds                                                                                     |
+| `loom/src/commands/knowledge/mod.rs`               | subcommand dispatch — `show`, `update`, `replace-section`, `init`, `list`, `check`, `audit`, `gc`, `bootstrap`, **`index`** |
+| `loom/src/commands/knowledge/check.rs`             | `architecture_coverage_text()` — folds tier-2 `architecture/` topics into `src/` coverage                                   |
+| `loom/src/cli/types_memory.rs`                     | clap definitions for the knowledge subcommands                                                                              |
 
 `loom knowledge index` regenerates `INDEX.md` and, on a flat directory, creates it — which is
 what flips the layout to hierarchical. See
@@ -475,14 +457,14 @@ what flips the layout to hierarchical. See
 
 ## Subagent Verification Guard (2026-07-28)
 
-| Path | Role |
-| --- | --- |
-| `hooks/subagent-verify-guard.sh` | PreToolUse:Bash guard — blocks project-wide verification for subagents (400 lines, at the Rule 17 cap) |
-| `hooks/_common.sh` | `loom_is_subagent()` — the shared detection gate |
-| `loom/src/orchestrator/signals/tests_doctrine.rs` | pins the doctrine blocks byte-for-byte across signal, template, and hook |
-| `loom/tests/integration/hooks_subagent_verify_guard.rs` | harness: process-tree construction, env scrubbing, payload building |
-| `loom/tests/integration/hooks_subagent_verify_guard_cases.rs` | `BLOCK_CASES` / `ALLOW_CASES` table data |
-| `loom/tests/integration/hooks_subagent_verify_guard_carveout.rs` | integration-verify carve-out **refusal** directions (decoy, wrong type, missing) |
+| Path                                                             | Role                                                                                                   |
+| ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| `hooks/subagent-verify-guard.sh`                                 | PreToolUse:Bash guard — blocks project-wide verification for subagents (400 lines, at the Rule 17 cap) |
+| `hooks/_common.sh`                                               | `loom_is_subagent()` — the shared detection gate                                                       |
+| `loom/src/orchestrator/signals/tests_doctrine.rs`                | pins the doctrine blocks byte-for-byte across signal, template, and hook                               |
+| `loom/tests/integration/hooks_subagent_verify_guard.rs`          | harness: process-tree construction, env scrubbing, payload building                                    |
+| `loom/tests/integration/hooks_subagent_verify_guard_cases.rs`    | `BLOCK_CASES` / `ALLOW_CASES` table data                                                               |
+| `loom/tests/integration/hooks_subagent_verify_guard_carveout.rs` | integration-verify carve-out **refusal** directions (decoy, wrong type, missing)                       |
 
 Split into three files because they grow for different reasons; wired with `#[path]` submodules
 so the children reach the parent's private helpers via `use super::*` without widening visibility.
@@ -496,8 +478,7 @@ so the children reach the parent's private helpers via `use super::*` without wi
   lane. Tests in `terminal/backend/tests.rs`.
 - `loom/src/orchestrator/terminal/tmux/mod.rs` — `TmuxBackend`, `socket_name` (`:41-43`),
   `spawn_in_tmux`, `evaluate_new_session`, `kill_session`.
-- `loom/src/orchestrator/terminal/tmux/socket.rs` — `loom_socket_dir` (`:23-30`), `socket_path_for`,
-  `list_loom_sockets`, `socket_session_is_alive`, `kill_socket_server`.
+- `loom/src/orchestrator/terminal/tmux/socket.rs` — `loom_socket_dir` (`:23-30`), `socket_path_for`, `list_loom_sockets`, `socket_session_is_alive`, `kill_socket_server`.
 - `loom/src/orchestrator/terminal/native/pid_guard.rs` — the deduped PID-file liveness layers shared by
   both lanes (six former copies).
 - `loom/tests/e2e/tmux_backend.rs` — external e2e; `TmuxTmpDirGuard` works around the sandbox. Note

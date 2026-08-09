@@ -18,9 +18,14 @@
 
 ## Error Handling
 
-- All fallible functions return `anyhow::Result<T>`
-- Chain context at each layer: `.with_context(|| format!("Failed to read: {}", path.display()))?`
-- Git errors must include: command, directory, exit code, stdout, stderr
+- Application and orchestration code returns `anyhow::Result<T>` and adds actionable context when
+  crossing a layer or performing an operation whose raw error does not identify the target.
+- Use a typed error only when callers must distinguish domain outcomes by variant; do not erase that
+  structure merely for visual uniformity.
+- Preserve native adapter errors at their natural boundary, including `io::Result`, serde errors,
+  `FromStr::Err`, and Clap validator strings. Convert them when application code consumes them.
+- Git errors must include the command, directory, exit code, stdout, and stderr.
+- Do not add a second general error framework without a concrete caller-facing API need.
 
 ## Serialization
 
@@ -135,6 +140,10 @@ Body sections: Overview, When to Use, Instructions.
 
 File: 400 lines | Function: 50 lines | Struct impl: 300 lines | Exceed = refactor immediately
 
+`cargo test --test maintainability` enforces the file and function limits in CI. Legacy production
+exceptions are recorded in `loom/maintainability-baseline.txt` and may only shrink: a new exception
+or an increase above the recorded size fails the gate.
+
 ## Dependency Management
 
 Never hand-edit manifests. Use: `cargo add`, `bun add`, `uv add`, `go get`
@@ -173,7 +182,9 @@ Two forms in YAML:
 `has_any_goal_checks()` checks ONLY: artifacts, wiring, wiring_tests, dead_code_check.
 Validation requires: acceptance OR goal-backward checks for standard/integration-verify stages.
 
-Old truths/truth_checks fields removed from StageDefinition. Serde silently ignores them in old plans (no deny_unknown_fields). before_stage/after_stage fields retained, still use TruthCheck.
+Old `truths`/`truth_checks` fields were removed from `StageDefinition` and are now rejected by strict deserialization. `before_stage`/`after_stage` remain supported and still use `TruthCheck`.
+
+Plan deserialization is strict at every policy-bearing layer: the metadata root, `LoomConfig`, `StageDefinition`, and nested sandbox, filesystem, network, Linux, adjudication, code-review, truth-check, wiring-test, and dead-code structures use `deny_unknown_fields`. A typo or retired field must fail parsing with an actionable unknown-field error; it must never disappear before validation. In particular, top-level `truths` is rejected.
 
 ## Hook Output Contract
 
@@ -189,7 +200,7 @@ Claude Code hooks communicate with the host process via stdin/stdout and exit co
 To issue a warning without blocking (exit 0 with advisory), write a JSON object to stdout with a `hookSpecificOutput` field. Claude Code appends this to the tool result as additional context. Example:
 
 ```json
-{"hookSpecificOutput": "LOOM_HOOK_WARN: consider using rg instead of grep"}
+{ "hookSpecificOutput": "LOOM_HOOK_WARN: consider using rg instead of grep" }
 ```
 
 The `LOOM_HOOK_WARN:` prefix is recognized by the loom hook system and surfaced as a warning in output.
@@ -278,7 +289,7 @@ Agent guidance lives in the channel that delivers it closest to the decision poi
 When adding new guidance, pick the channel first; the template is the channel of last resort.
 
 **Hook versus prose — how to choose (2026-07-28).** Prose is advice an agent may reason its way
-around; a hook is a wall. Escalate a rule to a hook when *all* of these hold:
+around; a hook is a wall. Escalate a rule to a hook when _all_ of these hold:
 
 1. The violation is **cheap to detect mechanically** — a command shape, a path, a file state.
 2. The violation is **expensive or irreversible** once it happens (lost work, corrupted state,
@@ -337,7 +348,7 @@ regeneration:
 const PRESERVED_SETTINGS_KEYS: [&str; 2] = ["enabledPlugins", "extraKnownMarketplaces"];
 ```
 
-Plugin enablement at local scope therefore *survives* — verified by driving the real `write_settings`
+Plugin enablement at local scope therefore _survives_ — verified by driving the real `write_settings`
 over a seeded file twice. The user/project rule still stands, for a different reason than before:
 the carve-out is exactly two keys, so local scope is safe **only** for plugins and **only** by
 special case. Everything else you put in that file (`env`, custom `hooks`, ...) is still dropped on
@@ -350,11 +361,11 @@ rg -n "enabledPlugins" .claude/settings.local.json
 claude plugin list --json
 ```
 
-## Additive Schema Fields: `#[serde(default)]`, Never a Migration (2026-08-07)
+## Additive Schema Fields: Prefer `#[serde(default)]` Over Bespoke Migration (2026-08-07)
 
-Loom is pre-release: **no backwards-compatibility shims and no migration routines.** A new stage
-field is added additively, and `#[serde(default)]` alone carries every existing plan file and every
-in-flight `.work/stages/*.md` — there is no version stamp and no upgrade pass. The shape as shipped
+For a new additive stage field, `#[serde(default)]` carries existing plan files and in-flight
+`.work/stages/*.md` without a bespoke upgrade pass. This compatibility rule does not make removed or
+misspelled plan fields permissive: strict plan structs still reject unknown fields. The shape used
 for `implementers` and `subagent_timeout_secs`:
 
 - Plan schema `StageDefinition` (`plan/schema/types.rs`) — `#[serde(default)]`; add
@@ -363,10 +374,10 @@ for `implementers` and `subagent_timeout_secs`:
   before the field existed still loads mid-run.
 - Prefer a **closed enum over a string**: `Implementer` (`models/stage/types.rs:135`) derives
   `Default` + `#[serde(rename_all = "kebab-case")]`, so a typo is a parse ERROR (`unknown variant
-  'bogus-lane', expected 'claude' or 'codex'`), never a silent fallback. Pin `Display` to the serde
+'bogus-lane', expected 'claude' or 'codex'`), never a silent fallback. Pin `Display` to the serde
   spelling with a test (`plan/schema/tests/implementer_tests.rs`).
 - Propagate along the existing chain — see [Adding New Plan Fields Checklist](architecture.md):
-  plan → `create_stage_from_definition` (`commands/init/plan_setup.rs`) → signal
+  plan → canonical `Stage::from_definition` (`models/stage/methods.rs`) → signal
   `EmbeddedContext` (`orchestrator/signals/generate.rs`).
 
 **Model a per-stage capability as a SET, not a scalar, when more than one value can be true at

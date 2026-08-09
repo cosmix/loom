@@ -31,12 +31,12 @@ Knowledge stages use a SEPARATE path: `generate_knowledge_signal()` [knowledge.r
 
 All generators are composed from shared `append_*` helpers and produce immutable KV-cached text.
 
-| Generator | Function | Line | Stage Type |
-|-----------|----------|------|------------|
-| Standard | `generate_stable_prefix()` | 174 | `StageType::Standard` |
-| Integration-Verify | `generate_integration_verify_stable_prefix()` | 313 | `StageType::IntegrationVerify` |
-| Knowledge-Distill | `generate_knowledge_distill_stable_prefix()` | 447 | `StageType::KnowledgeDistill` |
-| Knowledge | `generate_knowledge_stable_prefix()` | 527 | `StageType::Knowledge` |
+| Generator          | Function                                      | Line | Stage Type                     |
+| ------------------ | --------------------------------------------- | ---- | ------------------------------ |
+| Standard           | `generate_stable_prefix()`                    | 174  | `StageType::Standard`          |
+| Integration-Verify | `generate_integration_verify_stable_prefix()` | 313  | `StageType::IntegrationVerify` |
+| Knowledge-Distill  | `generate_knowledge_distill_stable_prefix()`  | 447  | `StageType::KnowledgeDistill`  |
+| Knowledge          | `generate_knowledge_stable_prefix()`          | 527  | `StageType::Knowledge`         |
 
 **Standard prefix section order (approx lines 174-310):**
 
@@ -115,18 +115,18 @@ SHA-256 of stable prefix text → first 16 hex chars → `SignalMetrics::stable_
 
 ## Shared append_* Helpers (cache.rs:51-~180)
 
-| Helper | Lines | Content | Used By |
-|--------|-------|---------|---------|
-| `append_path_boundaries()` | 54-63 | ALLOWED/FORBIDDEN paths table | Standard, IV, KnowledgeDistill |
-| `append_subagent_restrictions()` | 66-93 | NO git/loom/add-A rules; memory recording guide | Standard (233), IV (424) |
-| `append_completion_rules()` | 96-102 | Acceptance, handoff, no retry rules | Standard (254), IV (433), KnowledgeDistill (515) |
-| `append_isolation_boundaries_simple()` | 108-113 | 2-bullet version | IV (408), KnowledgeDistill (508) |
-| `append_execution_rules_intro()` | 119-124 | "Follow CLAUDE.md" short header | IV (412), KnowledgeDistill (512), Knowledge (594) |
-| `append_common_footer()` | 127-142 | Binary usage, state files, context recovery | ALL 4 prefixes |
-| `append_git_staging_full()` | 145-160 | Full staging rules + danger box | Standard only |
-| `append_git_staging_rules()` | 162-169 | Shorter version | IV, KnowledgeDistill |
-| `append_anti_slop_guidance()` | ~171+ | ZERO TOLERANCE anti-slop rules box | ALL 4 prefixes (after exec-rules intro, before Delegation) |
-| `append_adversarial_review()` | ~104-122 | Mini adversarial code review — 6 dimensions (quality/architecture·SOLID, idiomatic, security, wiring, dead code, DRY across whole codebase) + a closing "tests actually exercise the change" check | Standard (replaces old "Self-Review" block), IV (after Mission). **Code-producing prefixes ONLY** — NOT knowledge or knowledge-distill (both emit only markdown). NOTE: silent-failure detection is NOT in this helper — Standard has its own dedicated block right after the call; IV has its own `SILENT FAILURE DETECTION` section |
+| Helper                                 | Lines    | Content                                                                                                                                                                                            | Used By                                                                                                                                                                                                                                                                                                                               |
+| -------------------------------------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `append_path_boundaries()`             | 54-63    | ALLOWED/FORBIDDEN paths table                                                                                                                                                                      | Standard, IV, KnowledgeDistill                                                                                                                                                                                                                                                                                                        |
+| `append_subagent_restrictions()`       | 66-93    | NO git/loom/add-A rules; memory recording guide                                                                                                                                                    | Standard (233), IV (424)                                                                                                                                                                                                                                                                                                              |
+| `append_completion_rules()`            | 96-102   | Acceptance, handoff, no retry rules                                                                                                                                                                | Standard (254), IV (433), KnowledgeDistill (515)                                                                                                                                                                                                                                                                                      |
+| `append_isolation_boundaries_simple()` | 108-113  | 2-bullet version                                                                                                                                                                                   | IV (408), KnowledgeDistill (508)                                                                                                                                                                                                                                                                                                      |
+| `append_execution_rules_intro()`       | 119-124  | "Follow CLAUDE.md" short header                                                                                                                                                                    | IV (412), KnowledgeDistill (512), Knowledge (594)                                                                                                                                                                                                                                                                                     |
+| `append_common_footer()`               | 127-142  | Binary usage, state files, context recovery                                                                                                                                                        | ALL 4 prefixes                                                                                                                                                                                                                                                                                                                        |
+| `append_git_staging_full()`            | 145-160  | Full staging rules + danger box                                                                                                                                                                    | Standard only                                                                                                                                                                                                                                                                                                                         |
+| `append_git_staging_rules()`           | 162-169  | Shorter version                                                                                                                                                                                    | IV, KnowledgeDistill                                                                                                                                                                                                                                                                                                                  |
+| `append_anti_slop_guidance()`          | ~171+    | ZERO TOLERANCE anti-slop rules box                                                                                                                                                                 | ALL 4 prefixes (after exec-rules intro, before Delegation)                                                                                                                                                                                                                                                                            |
+| `append_adversarial_review()`          | ~104-122 | Mini adversarial code review — 6 dimensions (quality/architecture·SOLID, idiomatic, security, wiring, dead code, DRY across whole codebase) + a closing "tests actually exercise the change" check | Standard (replaces old "Self-Review" block), IV (after Mission). **Code-producing prefixes ONLY** — NOT knowledge or knowledge-distill (both emit only markdown). NOTE: silent-failure detection is NOT in this helper — Standard has its own dedicated block right after the call; IV has its own `SILENT FAILURE DETECTION` section |
 
 **Adding a new helper:** Follow same `fn append_xxx(content: &mut String)` pattern. Place in the "Shared content blocks" cluster (lines 51-~180). Call it explicitly from each generator where wanted — it's NOT auto-injected.
 
@@ -143,18 +143,25 @@ Soft signals are advisory per-session notices persisted to disk so that dedup su
 **Schema (single variant today):**
 
 ```json
-{"kind":"possibly_stuck","session_id":"s1","stage_id":"my-stage","recent_events":10,"failure_count":9,"failure_ratio":0.9,"emitted_at":"<RFC3339>","expires_at":"<RFC3339>"}
+{
+  "kind": "possibly_stuck",
+  "session_id": "s1",
+  "stage_id": "my-stage",
+  "recent_events": 10,
+  "failure_count": 9,
+  "failure_ratio": 0.9,
+  "emitted_at": "<RFC3339>",
+  "expires_at": "<RFC3339>"
+}
 ```
 
 **Decay window:** `DECAY_WINDOW_SECS = 120` — signals expire 120 seconds after they are written. `read_active(work_dir, now)` filters out expired signals. `read_active_for_session(work_dir, now, session_id)` further filters by session.
 
 **Detection pipeline:**
 
-1. `post-tool-use.sh` appends rows to `.work/tool-events.jsonl` on every tool call.
-2. `orchestrator/monitor/tool_analysis::analyze_session()` reads the last 50 events for a session and computes `ToolAnalysis`.
-3. Stuck criteria: `recent_failure_count >= 5 (STUCK_MIN_EVENTS)` AND `failure_ratio >= 0.80 (STUCK_FAILURE_RATIO)` within a 60-second rolling window (`STUCK_WINDOW_SECS`). Failure-shaped events: `is_error == true` OR `output_bytes == Some(0)`.
-4. On detection, monitor emits `MonitorEvent::PossiblyStuck`; the event handler calls `soft_signals::append(work_dir, &signal)`.
-5. `daemon/server/status.rs::collect_status()` calls `soft_signals::read_active_for_session()` to derive `Stage.is_possibly_stuck` at read time (never persisted to stage files — `#[serde(skip)]`).
-6. Static `loom status` reads via `commands/status/data.rs::collect_status_data()` using the same helper.
+1. `post-tool-use.sh` updates a private per-session heartbeat and persists no tool output.
+2. Heartbeat and session liveness drive hung-session reporting. The legacy `tool_analysis` reader can consume older `.work/tool-events.jsonl` data, but no production hook writes new records.
+3. Soft signals remain bounded, advisory state. `daemon/server/status.rs::collect_status()` calls `soft_signals::read_active_for_session()` to derive `Stage.is_possibly_stuck` at read time; the field is never persisted to stage files (`#[serde(skip)]`).
+4. Static `loom status` reads through the same helper.
 
 **Key files:** `orchestrator/monitor/soft_signals.rs` (schema + I/O), `orchestrator/monitor/tool_analysis.rs` (analysis), `orchestrator/monitor/detection.rs` (event emission), `daemon/server/status.rs` (status derivation).

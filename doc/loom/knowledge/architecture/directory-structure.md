@@ -14,8 +14,9 @@ loom/src/
     core.rs, lifecycle.rs, protocol.rs, status.rs, client.rs, orchestrator.rs
   orchestrator/             # Core engine (~4K lines)
     core/                   # Main loop, stage executor, persistence, recovery
-    terminal/               # NativeBackend — host OS terminal spawning
+    terminal/               # SessionBackend dispatcher
       native/               # Host OS terminal spawning (11+ emulators)
+      tmux/                 # Detached, per-session tmux servers
     monitor/                # Session health, heartbeat, failure tracking
     liveness.rs             # LivenessService — session liveness probe
     signals/                # Signal generation (Manus format, cache, CRUD)
@@ -40,7 +41,7 @@ loom/src/
   parser/frontmatter.rs     # Canonical YAML frontmatter extraction
   validation.rs             # Input validation (IDs, names)
   completions/              # Shell completion (custom scripts + dynamic engine + install)
-  process/                  # PID liveness checking
+  process/                  # Bounded subprocesses, minimal environments, PID identity
 
 .work/                      # Runtime state (gitignored)
   config.toml, stages/*.md, sessions/*.md, signals/*.md,

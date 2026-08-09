@@ -28,7 +28,7 @@ triggers:
 
 A **delta-proof** proves a stage *caused* a change, not merely that the end state is valid. Capture what is true BEFORE implementation and what must be true AFTER; the pair distinguishes "my stage made it work" from "it already worked" (and "my fix resolved it" from "already fixed"). Without it, a green `acceptance` can pass on code that was already correct — proving nothing.
 
-> ⚠️ **`truths` is GONE** as a standalone field. Behavioral "after state" commands now go in **`acceptance`** (Simple string, or Extended object for output matching). The explicit, automated delta-proof mechanism is the **`before_stage`** / **`after_stage`** fields — unchanged, still `Vec<TruthCheck>`. A top-level `truths:` block is silently ignored and false-passes.
+> ⚠️ **`truths` is GONE** as a standalone field. Behavioral "after state" commands now go in **`acceptance`** (Simple string, or Extended object for output matching). The explicit, automated delta-proof mechanism is the **`before_stage`** / **`after_stage`** fields — unchanged, still `Vec<TruthCheck>`. A top-level `truths:` block is rejected as an unknown field.
 
 ## The delta pattern
 

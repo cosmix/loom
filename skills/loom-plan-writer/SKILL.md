@@ -400,7 +400,9 @@ Consequences for how you write a plan:
 3. Existing patterns to follow — specific `file:line` ranges to read and replicate. **"Mirror X exactly" caveat:** name the property the new code must NOT copy and why. Mirroring is wrong the moment the new thing differs from X in a property X's code depends on (an auth-scoped cache reset, a store/provider the assertion needs, an ARIA role) — a literal executor copies the mismatch.
 4. Step-by-step subtasks as instructions, not goals ("add field X to struct at line Y").
 5. Integration wiring — which `mod.rs`/registry/route/test to update.
-6. Error-handling approach — which error type, how to propagate, what to log.
+6. Error-handling approach — follow the target project's established stack; name which typed error
+   callers match, where application-boundary context is added, and what is logged. Do not introduce a
+   second general-purpose error framework for local convenience.
 
 **If you cannot write that level of detail, that is usually a planning gap — go back and ground the seam (Section 1), then write it.** The orchestrator's own judgment can absorb some ambiguity a directly-executing subagent could not, but an underspecified stage still costs more in orchestrator decomposition time and subagent rework than the planning effort saves.
 
@@ -499,7 +501,7 @@ Every stage description MUST include the line **`Use parallel subagents and skil
 
 ## 6. Verification Fields (loom's core value)
 
-> ⛔ Every `standard` and `integration-verify` stage MUST define `acceptance` OR at least ONE goal-backward check (`artifacts`, `wiring`, `wiring_tests`, `dead_code_check`). `loom plan verify` and `loom init` REJECT plans with neither. Knowledge stages are exempt. (`truths` was REMOVED as a standalone field — behavioral commands now live in `acceptance`; a leftover `truths:` block is silently ignored.)
+> ⛔ Every `standard` and `integration-verify` stage MUST define `acceptance` OR at least ONE goal-backward check (`artifacts`, `wiring`, `wiring_tests`, `dead_code_check`). `loom plan verify` and `loom init` REJECT plans with neither. Knowledge stages are exempt. (`truths` was REMOVED as a standalone field — behavioral commands now live in `acceptance`; a leftover `truths:` block is rejected as an unknown field.)
 
 These catch the "tests pass but the feature is never wired up" failure loom exists to prevent.
 
@@ -641,7 +643,6 @@ loom:
   sandbox:
     enabled: true
     auto_allow: true
-    excluded_commands: ["loom"]
     filesystem:
       deny_read: ["~/.ssh/**", "~/.aws/**", "~/.config/gcloud/**", "~/.gnupg/**"]
       deny_write: [".work/stages/**", "doc/loom/knowledge/**"]

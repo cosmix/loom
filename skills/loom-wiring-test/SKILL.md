@@ -28,19 +28,19 @@ triggers:
 
 Tests pass and code compiles, yet the feature is never wired up — command not registered, endpoint not mounted, module not imported, component never rendered. This is the exact failure loom's goal-backward verification exists to catch. Use this skill to write strong verification fields for a stage.
 
-> ⚠️ **`truths` is GONE.** It was removed as a standalone field. Behavioral commands now live in `acceptance`; the goal-backward layers are `artifacts`, `wiring`, `wiring_tests`, `dead_code_check`. Any plan still using a top-level `truths:` block is stale — serde silently ignores it, so the "check" runs NOTHING and false-passes.
+> ⚠️ **`truths` is GONE.** It was removed as a standalone field. Behavioral commands now live in `acceptance`; the goal-backward layers are `artifacts`, `wiring`, `wiring_tests`, `dead_code_check`. Plan parsing rejects `truths` and every other unknown field, so migrate retired fields before initialization or verification.
 
 ## The five verification fields
 
 | Field | Type | Proves | Timeout |
 | ----- | ---- | ------ | ------- |
-| `acceptance` | `Vec<AcceptanceCriterion>` | Build/test/lint AND observable behavior (the old `truths` commands) | 5 min (Simple) / 30 s (Extended) |
+| `acceptance` | `Vec<AcceptanceCriterion>` | Build/test/lint and observable behavior | 5 min (Simple) / 30 s (Extended) |
 | `artifacts` | `Vec<String>` (globs) | Files exist with real implementation | — |
 | `wiring` | `Vec<WiringCheck>` | Static connection point present (regex in a file) | — |
 | `wiring_tests` | `Vec<WiringTest>` | Runtime integration: command output matches criteria | — |
 | `dead_code_check` | `Option<DeadCodeCheck>` | No orphaned code (see `/loom-dead-code-check`) | — |
 
-`loom check <stage-id> [--suggest]` runs the goal-backward layers (`artifacts`, `wiring`, `wiring_tests`, `dead_code_check`). `acceptance` runs during `loom stage complete` / `loom stage verify`.
+`loom check <stage-id> [--suggest]` runs `acceptance` and the goal-backward layers (`artifacts`, `wiring`, `wiring_tests`, `dead_code_check`) without changing stage state. `loom stage complete` also runs acceptance before transitioning the stage.
 
 **Requirement (enforced by `loom init` and `loom plan verify`):** every `standard` and `integration-verify` stage must define `acceptance` OR at least one goal-backward check. Knowledge stages are exempt.
 
@@ -207,7 +207,7 @@ A check that passes while asserting nothing is worse than none — it reads as "
 
 ## Final checklist
 
-- [ ] No stale top-level `truths:` block anywhere (removed field — silently ignored, false-passes)
+- [ ] No stale top-level `truths:` block anywhere (removed field — plan parsing rejects it)
 - [ ] Every `wiring` targets a CONSUMER site (call/mount/render/dispatch), not a declaration/export/import
 - [ ] `wiring` patterns are valid regex, metacharacters escaped, `pub.*fn` for visibility; no `!`-negation assumed
 - [ ] `artifacts` are specific implementation files that contain no stub text and aren't markdown-exempt where you needed stub detection

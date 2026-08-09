@@ -7,14 +7,14 @@
 Split by concern when the tiering work pushed `dir.rs` past the 400-line cap; every public
 method signature was kept stable so no caller changed.
 
-| File | Owns |
-| --- | --- |
-| `types.rs` | `KnowledgeFile`, `KnowledgeTarget`, `KnowledgeLayout`, `INDEX_FILENAME`, the tier-1 alias table |
-| `dir.rs` | `KnowledgeDir` — `initialize`, `append_target`, `replace_section_target`, `splice_section`, layout detection |
-| `index.rs` | `scan_topics`, `generate_index`, `write_index` |
-| `gc.rs` | `analyze_gc_metrics`, `find_oversized_sections`, orphan and broken-link detection, thresholds |
-| `summary.rs` | signal-facing knowledge summary |
-| `templates.rs` | tier-1 and tier-2 file scaffolds |
+| File           | Owns                                                                                                         |
+| -------------- | ------------------------------------------------------------------------------------------------------------ |
+| `types.rs`     | `KnowledgeFile`, `KnowledgeTarget`, `KnowledgeLayout`, `INDEX_FILENAME`, the tier-1 alias table              |
+| `dir.rs`       | `KnowledgeDir` — `initialize`, `append_target`, `replace_section_target`, `splice_section`, layout detection |
+| `index.rs`     | `scan_topics`, `generate_index`, `write_index`                                                               |
+| `gc.rs`        | `analyze_gc_metrics`, `find_oversized_sections`, orphan and broken-link detection, thresholds                |
+| `summary.rs`   | signal-facing knowledge summary                                                                              |
+| `templates.rs` | tier-1 and tier-2 file scaffolds                                                                             |
 
 The alias table lives in `types.rs`, not the CLI layer: `commands/knowledge/mod.rs::parse_file_type`
 delegates to `KnowledgeFile::parse` so the data layer and the CLI cannot drift.
@@ -59,7 +59,7 @@ written.
 
 - **Orphan detection** (`gc.rs`): a topic is an orphan unless its relative path
   (`architecture/foo.md`) appears as a **plain substring** in one of the **seven tier-1 files**.
-  `INDEX.md` is *not* in that set — a topic linked only from the generated index is still an
+  `INDEX.md` is _not_ in that set — a topic linked only from the generated index is still an
   orphan. The `.md` extension is required.
 - **Broken-link detection** (`gc.rs`): a stricter regex that only matches the **inline markdown
   form** `](category/slug.md)` with a literal `)` immediately after `.md`. A leading `./` or a
@@ -70,21 +70,21 @@ written.
 relative, no `./`, with `.md`, no anchor, written in a tier-1 file.**
 
 Index staleness is a third, separate check: `INDEX.md` must textually contain every tier-1
-filename and every topic path. Line counts in the index are *not* compared, so stale numbers are
+filename and every topic path. Line counts in the index are _not_ compared, so stale numbers are
 never flagged.
 
 ## Thresholds
 
-| Constant | Value | Meaning |
-| --- | --- | --- |
-| `SECTION_EXTRACT_THRESHOLD` | 40 | a tier-1 `##` section with **more than** 40 body lines is flagged for extraction |
-| `DEFAULT_MAX_TIER1_LINES` | 250 | per tier-1 file (`--max-file-lines`) |
-| `DEFAULT_MAX_TOPIC_LINES` | 500 | per tier-2 topic (`--max-topic-lines`) |
-| `DEFAULT_MAX_PROMOTED_BLOCKS` | 3 | `## Promoted from Memory` blocks per file |
+| Constant                      | Value | Meaning                                                                          |
+| ----------------------------- | ----- | -------------------------------------------------------------------------------- |
+| `SECTION_EXTRACT_THRESHOLD`   | 40    | a tier-1 `##` section with **more than** 40 body lines is flagged for extraction |
+| `DEFAULT_MAX_TIER1_LINES`     | 250   | per tier-1 file (`--max-file-lines`)                                             |
+| `DEFAULT_MAX_TOPIC_LINES`     | 500   | per tier-2 topic (`--max-topic-lines`)                                           |
+| `DEFAULT_MAX_PROMOTED_BLOCKS` | 3     | `## Promoted from Memory` blocks per file                                        |
 
 **There is deliberately no aggregate line cap.** Total lines are computed and printed for
 information only. A total budget punishes a growing codebase for recording what it learned; the
-per-file and per-section limits shape *structure* instead, which is the thing that actually
+per-file and per-section limits shape _structure_ instead, which is the thing that actually
 degrades retrieval.
 
 ## Coverage Blast Radius (`commands/knowledge/check.rs`)
