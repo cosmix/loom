@@ -336,18 +336,15 @@ impl TmuxBackend {
     }
 
     pub fn kill_session(&self, session: &Session) -> Result<()> {
-        match native::session_process_status(&self.work_dir, session) {
-            native::SessionProcessStatus::Dead => return Ok(()),
-            native::SessionProcessStatus::Missing | native::SessionProcessStatus::Unverifiable => {
-                return native::pid_only_terminate(&self.work_dir, session);
-            }
-            native::SessionProcessStatus::VerifiedAlive => {}
-        }
-
         // First use the guarded PID branch shared with the native lane: only
         // signal when PID and start-time both match. `session.pid` is never a
-        // destructive fallback.
-        native::pid_only_terminate(&self.work_dir, session)?;
+        // destructive fallback. A failed graceful signal must not skip socket
+        // teardown, which is positively attributed by this session's ID.
+        if native::session_process_status(&self.work_dir, session)
+            == native::SessionProcessStatus::VerifiedAlive
+        {
+            let _ = native::pid_only_terminate(&self.work_dir, session);
+        }
 
         // Then tear down this session's tmux server. This is the one place
         // that knows the exact socket path at clean-teardown time.

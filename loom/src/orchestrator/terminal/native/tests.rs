@@ -3,7 +3,51 @@
 //! `backend/tests.rs`.
 
 use super::*;
+use crate::orchestrator::terminal::emulator::TerminalEmulator;
 use tempfile::TempDir;
+
+fn test_backend(work_dir: &std::path::Path) -> NativeBackend {
+    NativeBackend::with_terminal(TerminalEmulator::XTerm, work_dir.to_path_buf())
+}
+
+fn stage_session(stage_id: &str) -> Session {
+    let mut session = Session::new();
+    session.assign_to_stage(stage_id.to_string());
+    session
+}
+
+#[test]
+fn kill_session_without_pid_identity_is_an_idempotent_noop() {
+    let work_dir = TempDir::new().unwrap();
+    let backend = test_backend(work_dir.path());
+    let session = stage_session("missing-pid");
+
+    backend.kill_session(&session).unwrap();
+    backend.kill_session(&session).unwrap();
+}
+
+#[test]
+fn kill_session_with_pid_only_identity_refuses_signal_without_error() {
+    let work_dir = TempDir::new().unwrap();
+    let backend = test_backend(work_dir.path());
+    let session = stage_session("pid-only");
+    let (_, pid_key) = NativeBackend::window_title_and_pid_key(&session).unwrap();
+    pid_tracking::write_pid_entry(
+        work_dir.path(),
+        &pid_key,
+        crate::process::ProcessIdentity {
+            pid: std::process::id(),
+            start_time: None,
+        },
+    )
+    .unwrap();
+
+    backend.kill_session(&session).unwrap();
+    assert!(
+        crate::process::is_process_alive(std::process::id()),
+        "an unverifiable PID entry must not signal this test process"
+    );
+}
 
 #[test]
 fn test_native_backend_creation() {

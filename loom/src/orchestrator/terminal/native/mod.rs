@@ -307,14 +307,6 @@ impl NativeBackend {
     }
 
     pub fn kill_session(&self, session: &Session) -> Result<()> {
-        match session_process_status(&self.work_dir, session) {
-            SessionProcessStatus::Dead => return Ok(()),
-            SessionProcessStatus::Missing | SessionProcessStatus::Unverifiable => {
-                return pid_only_terminate(&self.work_dir, session);
-            }
-            SessionProcessStatus::VerifiedAlive => {}
-        }
-
         // First, try to close the window by title (more reliable for all terminals).
         // This approach works correctly even for terminal emulators like gnome-terminal
         // that use a server process, where killing by PID would kill all windows.
@@ -328,12 +320,23 @@ impl NativeBackend {
             }
         }
 
-        // Fallback to PID-based killing for terminals where window title closing
-        // didn't work (e.g., no wmctrl/xdotool installed, or window already closed).
-        // This works correctly for terminals like kitty/alacritty where each window
-        // has its own process. The guarded PID layers (never signal a recycled
-        // PID, always clean up tracking files) are shared with every other lane.
-        pid_only_terminate(&self.work_dir, session)
+        // Window teardown is title-keyed and does not require process identity.
+        // PID signaling remains fail-closed: an absent or unverifiable identity
+        // must not turn an idempotent cleanup request into an error.
+        match session_process_status(&self.work_dir, session) {
+            SessionProcessStatus::VerifiedAlive => pid_only_terminate(&self.work_dir, session),
+            // Keep dead identity evidence as a tombstone for liveness semantics;
+            // `loom clean` reaps it once the corresponding session is terminal.
+            SessionProcessStatus::Dead => Ok(()),
+            SessionProcessStatus::Missing => {
+                tracing::warn!(session_id = %session.id, "no PID identity evidence while killing session; window close was attempted");
+                Ok(())
+            }
+            SessionProcessStatus::Unverifiable => {
+                tracing::warn!(session_id = %session.id, "refusing unverified signal for session; window close was attempted");
+                Ok(())
+            }
+        }
     }
 
     pub fn is_session_alive(&self, session: &Session) -> Result<bool> {

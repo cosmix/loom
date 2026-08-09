@@ -128,27 +128,35 @@ fn is_session_alive_is_false_for_a_dead_pid_with_no_server() {
 
 #[test]
 #[serial]
+fn kill_session_with_dead_process_still_tears_down_its_socket() {
+    let socket_dir = tempfile::TempDir::new().unwrap();
+    let _tmux_tmpdir = TmuxTmpDirGuard::set(socket_dir.path());
+    let work_dir = tempfile::TempDir::new().unwrap();
+    let backend = TmuxBackend::new(work_dir.path().to_path_buf());
+
+    let mut session = Session::new();
+    session.assign_to_stage("dead-socket".to_string());
+    native::write_test_pid_identity(work_dir.path(), &session, 999_999_999).unwrap();
+
+    let socket = socket_path_for(&socket_name(&session));
+    std::fs::create_dir_all(socket.parent().unwrap()).unwrap();
+    std::fs::write(&socket, "").unwrap();
+
+    backend.kill_session(&session).unwrap();
+    assert!(
+        !socket.exists(),
+        "a dead PID tombstone must not prevent this session's attributed socket teardown"
+    );
+}
+
+#[test]
+#[serial]
 fn aborting_a_spawn_removes_the_pid_file_and_wrapper_it_created() {
-    // `abort_tmux_spawn` resolves the socket through `socket_path_for`, which
-    // reads the process-global `$TMUX_TMPDIR`, then `remove_file`s the result.
-    // Two hazards, one guard each: `#[serial]`, because socket.rs's
-    // `TmuxTmpDirGuard` tests rewrite that var and `#[serial]` only serialises
-    // against OTHER `#[serial]` tests; and the pin, because an ambient value
-    // (or the `/tmp` default) aims that removal at `tmux-<uid>`, where every
-    // loom checkout on this box keeps its live session sockets.
+    // Pin the process-global socket parent and serialize tests that alter it.
     let socket_dir = tempfile::TempDir::new().unwrap();
     let _tmux_tmpdir = TmuxTmpDirGuard::set(socket_dir.path());
 
-    // THE REGRESSION THIS PINS: without this cleanup, a tmux spawn that failed
-    // AFTER the wrapper ran leaves `.work/pids/<pid_key>.pid` behind. The
-    // native retry reuses the same `Session`, so `prepare_session_launch`
-    // derives the SAME pid_key, `create_wrapper_script` does not truncate the
-    // file, and `await_session_pid` returns the first LIVE pid it reads there
-    // — the orphaned tmux claude — while stamping `backend = Native`.
-    //
-    // No tmux server is needed: `kill_socket_server` against an absent socket
-    // is a harmless no-op, so the file half of the teardown is what is under
-    // test here. (The server half is covered end-to-end in tests/e2e.)
+    // A failed tmux spawn must not leave files that a native retry can adopt.
     let work = tempfile::TempDir::new().unwrap();
     let pid_key = "loom-abort-stage-session-abcd1234-1111111111";
     native::create_wrapper_script(
@@ -179,16 +187,7 @@ fn aborting_a_spawn_removes_the_pid_file_and_wrapper_it_created() {
     );
 }
 
-/// Strips write permission from a directory so tmux cannot create its
-/// `tmux-<uid>` socket directory inside it — the condition
-/// `tests/e2e/tmux_backend.rs` case 2 verified makes tmux exit 1 with
-/// `couldn't create directory ... (Permission denied)`. Mirrors that file's
-/// own permission guard; the two cannot be shared across the lib/integration
-/// crate boundary without exporting a test-only item from the library.
-///
-/// Restores the original mode on drop, on EVERY exit path including a
-/// panicking assertion: a directory left at 0o500 cannot be emptied, so its
-/// `TempDir` would fail to clean itself up and leak into `$TMPDIR`.
+/// Makes a tmux socket parent unwritable and restores its mode on drop.
 struct UnwritableDirGuard {
     dir: PathBuf,
     original: std::fs::Permissions,
