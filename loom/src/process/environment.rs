@@ -25,6 +25,14 @@ const STAGE_HOST_ENV_ALLOWLIST: &[&str] = &[
     "TMUX",
     "TMUX_PANE",
     "TMPDIR",
+    "HTTP_PROXY",
+    "HTTPS_PROXY",
+    "NO_PROXY",
+    "ALL_PROXY",
+    "http_proxy",
+    "https_proxy",
+    "no_proxy",
+    "all_proxy",
 ];
 
 /// Clear ambient process state and restore only the documented host allowlist.
@@ -63,6 +71,7 @@ mod tests {
             ("HOME", "/safe/home"),
             ("PATH", "/usr/bin:/bin"),
             ("TERM", "xterm-256color"),
+            ("HTTPS_PROXY", "http://proxy.example:8443"),
             ("GITHUB_TOKEN", "ambient-secret-canary"),
             ("AWS_SECRET_ACCESS_KEY", "ambient-secret-canary"),
         ];
@@ -73,6 +82,7 @@ mod tests {
         let environment = String::from_utf8(output.stdout).unwrap();
         assert!(environment.contains("HOME=/safe/home"));
         assert!(environment.contains("TERM=xterm-256color"));
+        assert!(environment.contains("HTTPS_PROXY=http://proxy.example:8443"));
         assert!(!environment.contains("ambient-secret-canary"));
         assert!(!environment.contains("GITHUB_TOKEN"));
     }
