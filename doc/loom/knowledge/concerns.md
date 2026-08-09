@@ -501,3 +501,18 @@ the tool later uses. Treat it as defense in depth; the host OS sandbox remains t
 boundary. A race-free design requires a dedicated file-operation broker that performs traversal and
 the actual open relative to an already-open worktree directory using no-follow semantics. Do not
 describe the current hook boundary as TOCTOU-free.
+
+## Completion Broker: Nonce Burn After Transition Can Return Err for a Landed Completion (2026-08-09)
+
+`daemon/server/control_complete.rs::handle_complete_stage` consumes the replay nonce AFTER
+`update_stage(...).try_complete(...)`. This ordering is deliberate: a daemon crash between the
+transition and the burn is benign — a replay of the same nonce is rejected by
+`validate_active_identity` because the stage is no longer `Executing`, so no completion can be
+duplicated, and (unlike the old burn-first ordering) none can be lost to a pre-effect burn.
+
+The residual edge introduced by the reorder: a genuine IO failure on the replay-marker directory
+(disk full, permissions) occurring after the transition makes the handler return `Err` for a
+completion that durably landed. Self-healing in practice — the stage file is `Completed` on disk
+and the daemon reads state from disk — but the caller observes a false negative for a succeeded
+operation. If this is ever observed in the wild, split the response so callers can distinguish
+"completed, replay marker failed" from "not completed".
