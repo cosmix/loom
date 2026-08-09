@@ -1,7 +1,3 @@
-//! Unit tests for `attach/mod.rs`, split out to keep the module under the
-//! 400-line ceiling (CLAUDE.md Rule 17) — mirrors how
-//! `orchestrator/terminal/tmux/tests.rs` was split out for the same reason.
-
 use super::*;
 use chrono::{DateTime, Utc};
 use tempfile::TempDir;
@@ -346,6 +342,8 @@ fn write_test_session(work_dir: &Path, fixture: SessionFixture) {
         crate::fs::session_files::session_to_markdown(&session),
     )
     .unwrap();
+    crate::orchestrator::terminal::native::write_test_pid_identity(work_dir, &session, fixture.pid)
+        .unwrap();
 }
 
 /// An in-memory session for the selection tests, which never
@@ -533,6 +531,8 @@ fn write_test_session_with_filename(work_dir: &Path, filename: &str, fixture: Se
         crate::fs::session_files::session_to_markdown(&session),
     )
     .unwrap();
+    crate::orchestrator::terminal::native::write_test_pid_identity(work_dir, &session, fixture.pid)
+        .unwrap();
 }
 
 #[test]

@@ -144,6 +144,28 @@ mod tests {
     }
 
     #[test]
+    fn sandbox_settings_write_failure_is_fatal_to_spawn_setup() {
+        let target = tempfile::tempdir().unwrap();
+        std::fs::write(target.path().join(".claude"), "not a directory").unwrap();
+        let config = crate::sandbox::merge_config(
+            &SandboxConfig::default(),
+            &StageSandboxConfig::default(),
+            crate::plan::schema::StageType::Standard,
+        );
+
+        let error = stage_executor::write_required_sandbox_settings(
+            &config,
+            target.path(),
+            "sandbox-failure",
+        )
+        .expect_err("sandbox settings failure must abort spawn setup");
+
+        assert!(error
+            .to_string()
+            .contains("Failed to enforce sandbox settings"));
+    }
+
+    #[test]
     #[ignore] // Requires a terminal emulator - skipped in CI
     fn test_running_session_count() {
         let config = create_test_config();

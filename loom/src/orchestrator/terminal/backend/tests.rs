@@ -299,6 +299,8 @@ fn a_native_session_degrades_to_pid_only_when_no_terminal_exists() {
     session.assign_to_stage("headless-stage".to_string());
     session.backend = SessionBackendKind::Native;
     session.pid = Some(999_999_999);
+    super::super::native::write_test_pid_identity(temp.path(), &session, session.pid.unwrap())
+        .unwrap();
 
     assert!(
         !backend.is_session_alive(&session).unwrap(),

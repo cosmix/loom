@@ -210,8 +210,7 @@ mod tests {
     fn test_clean_sessions_reaps_live_only_when_destroying_state() {
         let tmux_tmpdir = TempDir::new().unwrap();
         let _guard = TmuxTmpDirGuard::set(tmux_tmpdir.path());
-        // Mirrors `orchestrator::terminal::tmux::socket::loom_socket_dir()`:
-        // `$TMUX_TMPDIR/tmux-<uid>`.
+        // SAFETY: `getuid` has no preconditions and cannot fail.
         let uid = unsafe { libc::getuid() };
         let socket_dir = tmux_tmpdir.path().join(format!("tmux-{uid}"));
         fs::create_dir_all(&socket_dir).unwrap();
@@ -220,25 +219,27 @@ mod tests {
         let sessions_dir = repo_root.path().join(".work").join("sessions");
         fs::create_dir_all(&sessions_dir).unwrap();
 
-        // Attributed + LIVE session: pid is this test process, which is
-        // guaranteed to be alive for the duration of the test.
         let mut live_session = Session::new();
         live_session.id = "session-cleanlive000".to_string();
+        live_session.assign_to_stage("stage-cleanlive000".to_string());
         live_session.pid = Some(std::process::id());
         fs::write(
             sessions_dir.join(format!("{}.md", live_session.id)),
             session_to_markdown(&live_session),
         )
         .unwrap();
+        crate::orchestrator::terminal::native::write_test_pid_identity(
+            &repo_root.path().join(".work"),
+            &live_session,
+            std::process::id(),
+        )
+        .unwrap();
         let live_socket = socket_dir.join(format!("loom-{}", live_session.id));
         fs::write(&live_socket, "").unwrap();
 
-        // Unattributed socket: no session file anywhere claims this id.
         let unattributed_socket = socket_dir.join("loom-session-strangercase1");
         fs::write(&unattributed_socket, "").unwrap();
 
-        // `.work/` is NOT being destroyed: a live attributed session must
-        // survive, and the unattributed socket is always left alone.
         clean_sessions(repo_root.path(), SessionReapMode::OrphansOnly).unwrap();
         assert!(
             live_socket.exists(),
@@ -249,9 +250,6 @@ mod tests {
             "an unattributed socket must never be touched"
         );
 
-        // `.work/` IS about to be destroyed: the live session is reaped
-        // because attribution is about to be lost; the unattributed socket
-        // is still left alone.
         clean_sessions(repo_root.path(), SessionReapMode::IncludeLiveBeforeClean).unwrap();
         assert!(
             !live_socket.exists(),

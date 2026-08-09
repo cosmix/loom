@@ -12,6 +12,8 @@ pub enum SessionType {
     /// Merge conflict resolution session (post-completion merge to target branch)
     Merge,
     /// Base branch conflict resolution session (pre-stage multi-dep merge)
+    /// Legacy persisted session kind from the removed base-branch merge flow.
+    /// Retained only so older session files remain deserializable.
     BaseConflict,
     /// Knowledge-gathering session (runs in main repo, no worktree).
     /// Tracking key: `loom-knowledge-{stage_id}`.

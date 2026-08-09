@@ -47,7 +47,9 @@ fn window_title_and_pid_key_for_knowledge_session() {
 
 #[test]
 fn window_title_and_pid_key_for_base_conflict_session() {
-    let mut session = Session::new_base_conflict("loom/_base/feature".to_string());
+    let mut session = Session::new();
+    session.session_type = SessionType::BaseConflict;
+    session.merge_target_branch = Some("loom/_base/feature".to_string());
     session.assign_to_stage("feature".to_string());
     let (title, pid_key) = NativeBackend::window_title_and_pid_key(&session).unwrap();
     assert_eq!(title, "loom-base-conflict-feature");

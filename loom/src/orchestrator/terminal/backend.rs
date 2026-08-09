@@ -7,7 +7,7 @@
 //! Choosing `tmux` in `.work/config.toml` must never abort orchestration —
 //! [`SessionBackend::from_config`] always succeeds as long as the config
 //! itself reads cleanly, even when tmux is not installed. Availability is
-//! resolved lazily, per spawn, by [`SessionBackend::resolve_lane`]: a
+//! resolved lazily, per spawn, by `SessionBackend::resolve_lane`: a
 //! missing tmux, or a fallback already recorded from an earlier failure,
 //! degrades to the native lane rather than erroring. This mirrors
 //! `remote_control`'s `remote_control-unsupported` marker (see
@@ -308,11 +308,7 @@ impl SessionBackend {
                 Ok(native) => native.is_session_alive(session),
                 // Headless: only the window-existence layer is unavailable,
                 // and the PID layers are the authoritative ones anyway.
-                Err(_) => Ok(super::native::pid_only_is_alive(
-                    &self.work_dir,
-                    session,
-                    super::native::StalePidFiles::Reap,
-                )),
+                Err(_) => Ok(super::native::pid_only_is_alive(&self.work_dir, session)),
             },
         }
     }

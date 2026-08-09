@@ -5,7 +5,6 @@
 
 mod checks;
 mod foreground;
-mod frontmatter;
 mod graph_loader;
 
 #[cfg(test)]
@@ -28,11 +27,10 @@ pub use foreground::execute;
 pub use crate::fs::plan_lifecycle::mark_plan_done_if_all_merged;
 
 /// Execute orchestrator in background (daemon mode)
-/// Usage: loom run [--manual] [--max-parallel <n>] [--watch] [--no-merge] [--backend <native|tmux>]
+/// Usage: `loom run [--manual] [--max-parallel <n>] [--no-merge] [--backend <native|tmux>]`
 pub fn execute_background(
     manual: bool,
     max_parallel: Option<usize>,
-    _watch: bool, // Daemon always runs in watch mode; CLI flag is accepted but ignored
     auto_merge: bool,
     backend: Option<String>,
 ) -> Result<()> {
@@ -77,7 +75,7 @@ pub fn execute_background(
     let daemon_config = DaemonConfig {
         manual_mode: manual,
         max_parallel,
-        watch_mode: true, // Daemon always runs in watch mode (ignores CLI flag)
+        watch_mode: true, // Background daemon mode continuously watches by design.
         auto_merge,
     };
 

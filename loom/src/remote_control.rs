@@ -23,6 +23,7 @@
 
 use crate::claude::find_claude_path;
 use crate::fs::work_dir::read_remote_control_config;
+use anyhow::{bail, Result};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 use std::process::Command;
@@ -162,7 +163,7 @@ fn probe_named_arg_support(claude_path: &Path) -> bool {
 /// Whether the claude binary at `claude_path` supports `--remote-control`.
 ///
 /// Runs `claude --version` and compares against
-/// [`MIN_REMOTE_CONTROL_VERSION`]. Exec failure or parse failure yields
+/// `MIN_REMOTE_CONTROL_VERSION`. Exec failure or parse failure yields
 /// `false` (fail closed).
 pub fn claude_supports_remote_control(claude_path: &Path) -> bool {
     match probe_claude_version(claude_path) {
@@ -185,12 +186,10 @@ pub fn claude_supports_remote_control(claude_path: &Path) -> bool {
 /// entry is present and no disqualifying env var is set. On macOS, Claude
 /// Code stores credentials in the Keychain instead of the file, so both
 /// locations must be checked.
-pub fn remote_control_eligible() -> Result<(), String> {
+pub fn remote_control_eligible() -> Result<()> {
     for var in DISQUALIFYING_ENV_VARS {
         if std::env::var_os(var).is_some() {
-            return Err(format!(
-                "{var} is set (Remote Control requires claude.ai login auth)"
-            ));
+            bail!("{var} is set (Remote Control requires claude.ai login auth)");
         }
     }
 
@@ -201,9 +200,8 @@ pub fn remote_control_eligible() -> Result<(), String> {
     if credentials_present || macos_keychain_has_credentials() {
         Ok(())
     } else {
-        Err(
+        bail!(
             "claude.ai login not found (no ~/.claude/.credentials.json and no macOS Keychain entry)"
-                .to_string(),
         )
     }
 }
@@ -278,7 +276,9 @@ pub fn preflight(claude_path: &Path) -> RemoteControlStatus {
     }
 
     if let Err(reason) = remote_control_eligible() {
-        return RemoteControlStatus::Disabled { reason };
+        return RemoteControlStatus::Disabled {
+            reason: reason.to_string(),
+        };
     }
 
     RemoteControlStatus::Enabled
@@ -359,7 +359,7 @@ fn cached_named_arg_supported(claude_path: &Path) -> bool {
 ///
 /// The config and unsupported-marker are re-read on every call (via
 /// [`resolve`], cheap); the `--help` capability probe runs at most once per
-/// process (memoized in [`cached_named_arg_supported`]). [`resolve`] itself is
+/// process (memoized in `cached_named_arg_supported`). [`resolve`] itself is
 /// UNCHANGED — the crash handler keeps calling it directly and this function
 /// does not alter its `bool` contract.
 pub fn resolve_invocation(work_dir: &Path, session_name: &str) -> RemoteControlInvocation {
@@ -485,21 +485,28 @@ mod tests {
             .map(|v| (*v, std::env::var_os(v)))
             .collect();
         for (var, _) in &saved {
+            // SAFETY: this `#[serial]` test exclusively owns these environment
+            // variables and restores them before returning.
             unsafe { std::env::remove_var(var) };
         }
 
+        // SAFETY: the test is serialized and restores the original value below.
         unsafe { std::env::set_var("ANTHROPIC_API_KEY", "super-secret-value") };
         let result = remote_control_eligible();
 
         // Restore environment before asserting.
         for (var, value) in &saved {
             match value {
+                // SAFETY: the serialized test is restoring its saved value.
                 Some(v) => unsafe { std::env::set_var(var, v) },
+                // SAFETY: the serialized test is restoring the variable's absence.
                 None => unsafe { std::env::remove_var(var) },
             }
         }
 
-        let err = result.expect_err("disqualifying env var must produce Err");
+        let err = result
+            .expect_err("disqualifying env var must produce Err")
+            .to_string();
         assert!(
             err.contains("ANTHROPIC_API_KEY"),
             "reason must name the var: {err}"

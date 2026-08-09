@@ -14,7 +14,7 @@ use crate::fs::work_dir::WorkDir;
 use crate::orchestrator::{Orchestrator, OrchestratorConfig, OrchestratorResult};
 
 /// Execute plan stages in foreground (for --foreground flag)
-/// Usage: loom run --foreground [--manual] [--max-parallel <n>] [--watch] [--no-merge] [--backend <native|tmux>]
+/// Usage: `loom run --foreground [--manual] [--max-parallel <n>] [--watch] [--no-merge] [--backend <native|tmux>]`
 pub fn execute(
     manual: bool,
     max_parallel: Option<usize>,

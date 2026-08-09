@@ -80,14 +80,41 @@ fn new_session_argv_escapes_dollar_and_semicolon() {
 }
 
 #[test]
+fn new_session_argv_keeps_command_substitution_and_newline_inert() {
+    let cmd = PathBuf::from("/tmp/loom $(printf injected);wrapper\nnext.sh");
+    let argv = new_session_argv("sock", "sess", Path::new("/tmp"), &cmd);
+    assert_eq!(
+        shell_round_trip(argv.last().unwrap()),
+        cmd.to_string_lossy()
+    );
+}
+
+#[test]
+fn tmux_control_runner_returns_structured_timeout() {
+    let mut command = Command::new("sh");
+    command.args(["-c", "sleep 60"]);
+    let error = run_tmux_command(
+        &mut command,
+        std::time::Duration::from_millis(100),
+        "tmux deterministic timeout",
+    )
+    .expect_err("fake tmux command must exceed its deadline");
+
+    let timeout = error
+        .downcast_ref::<crate::process::ProcessTimeoutError>()
+        .expect("tmux timeout must stay machine-identifiable");
+    assert_eq!(timeout.operation(), "tmux deterministic timeout");
+}
+
+#[test]
 fn is_session_alive_is_false_for_a_dead_pid_with_no_server() {
     // Scope note, so this test is not mistaken for the containment proof it
     // is NOT: no tmux server exists for this socket, so it cannot show that
     // `is_session_alive` ignores a RUNNING server whose pane died — it would
     // pass unchanged even if the implementation did call `has-session`. What
-    // it does pin is the base case: with no PID-file evidence and a bogus
-    // `session.pid`, the answer is false rather than an error or a default
-    // "alive". The real containment test starts an actual server and lives in
+    // it does pin is the base case: with no PID identity evidence, the answer
+    // is false rather than an error or a default "alive". The real containment
+    // test starts an actual server and lives in
     // `tests/e2e/tmux_backend.rs`.
     let temp = tempfile::TempDir::new().unwrap();
     let backend = TmuxBackend::new(temp.path().to_path_buf());

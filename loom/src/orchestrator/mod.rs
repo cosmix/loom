@@ -34,8 +34,7 @@ pub use monitor::{
 };
 pub use notify::{notify_needs_human_review, send_desktop_notification};
 pub use progressive_merge::{
-    get_merge_point, merge_completed_stage, merge_completed_stage_with_timeout, MergeLock,
-    ProgressiveMergeResult,
+    get_merge_point, merge_completed_stage, MergeLock, ProgressiveMergeResult,
 };
 pub use signals::{
     generate_recovery_signal, generate_signal, list_signals, read_recovery_signal, read_signal,

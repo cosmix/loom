@@ -7,11 +7,10 @@
 //! caller's own `.work` directory — see [`LoomSocket::attributed`].
 
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 use crate::models::session::Session;
 
-use super::native::{pid_only_is_alive, StalePidFiles};
+use super::native::pid_only_is_alive;
 
 /// The tmux socket directory tmux itself would use: `$TMUX_TMPDIR` if set,
 /// else `/tmp`, joined with `tmux-<uid>`.
@@ -105,10 +104,8 @@ pub fn list_loom_sockets(work_dir: &Path) -> Vec<LoomSocket> {
 /// happened to be mid-write or momentarily unreadable. Never destroy on
 /// evidence you could not actually read.
 ///
-/// The PID layers themselves are shared with the backends, but with
-/// [`StalePidFiles::Leave`]: unlike a backend liveness poll, this is a
-/// read-only judgment its caller is about to act on destructively, so it must
-/// not delete the very tracking files it just reported on.
+/// The PID identity service is shared with the backends and is side-effect
+/// free: this probe never deletes the evidence it just reported on.
 pub fn socket_session_is_alive(work_dir: &Path, session_id: &str) -> bool {
     let session_path = work_dir.join("sessions").join(format!("{session_id}.md"));
     if !session_path.exists() {
@@ -123,18 +120,20 @@ pub fn socket_session_is_alive(work_dir: &Path, session_id: &str) -> bool {
         return true;
     };
 
-    pid_only_is_alive(work_dir, &session, StalePidFiles::Leave)
+    pid_only_is_alive(work_dir, &session)
 }
 
 /// Best-effort `tmux -S <socket_path> kill-server`. Returns whether the
 /// command exited successfully; a socket that no longer exists is not
 /// treated specially by the caller (best-effort teardown either way).
 pub fn kill_socket_server(socket_path: &Path) -> bool {
-    Command::new("tmux")
-        .args(["-S", &socket_path.to_string_lossy(), "kill-server"])
-        .output()
-        .map(|output| output.status.success())
-        .unwrap_or(false)
+    super::run_tmux_control(
+        &["-S", &socket_path.to_string_lossy(), "kill-server"],
+        super::TMUX_TEARDOWN_TIMEOUT,
+        format!("tmux kill-server ({})", socket_path.display()),
+    )
+    .map(|output| output.status.success())
+    .unwrap_or(false)
 }
 
 #[cfg(test)]
@@ -273,9 +272,8 @@ pub(crate) mod tests {
     fn socket_session_is_alive_never_deletes_the_evidence_it_reports_on() {
         // `loom clean` / `loom init` reap on `attributed && !alive`, so this
         // probe runs BEFORE a destructive decision, on files the caller may
-        // still need. Passing `StalePidFiles::Reap` here would delete the PID
-        // file mid-judgment; nothing else in the codebase would notice, which
-        // is exactly why the wiring (not just the enum) needs pinning.
+        // still need. Deleting the PID file mid-judgment would erase the
+        // identity evidence the destructive caller relies on.
         let work = TempDir::new().unwrap();
         let mut session = crate::models::session::Session::new();
         session.assign_to_stage("reaped-stage".to_string());

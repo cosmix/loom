@@ -7,11 +7,24 @@ use anyhow::bail;
 use anyhow::Result;
 
 use std::process::Command;
+use std::time::Duration;
 
 #[cfg(target_os = "macos")]
 use std::path::Path;
 
 use super::super::emulator::TerminalEmulator;
+
+const TERMINAL_PROBE_TIMEOUT: Duration = Duration::from_secs(2);
+
+fn run_terminal_probe(
+    program: &str,
+    args: &[&str],
+    operation: &str,
+) -> Option<std::process::Output> {
+    let mut command = Command::new(program);
+    command.args(args);
+    crate::process::run_bounded_output(&mut command, TERMINAL_PROBE_TIMEOUT, operation).ok()
+}
 
 /// Detect the available terminal emulator (Linux)
 ///
@@ -83,14 +96,15 @@ pub fn detect_terminal() -> Result<TerminalEmulator> {
 #[cfg(target_os = "linux")]
 fn get_gsettings_terminal() -> Option<String> {
     // Try org.gnome.desktop.default-applications.terminal (standard GNOME)
-    if let Ok(output) = Command::new("gsettings")
-        .args([
+    if let Some(output) = run_terminal_probe(
+        "gsettings",
+        &[
             "get",
             "org.gnome.desktop.default-applications.terminal",
             "exec",
-        ])
-        .output()
-    {
+        ],
+        "gsettings terminal detection",
+    ) {
         if output.status.success() {
             let terminal = String::from_utf8_lossy(&output.stdout)
                 .trim()
@@ -103,10 +117,11 @@ fn get_gsettings_terminal() -> Option<String> {
     }
 
     // Try cosmic settings via dconf (Cosmic DE)
-    if let Ok(output) = Command::new("dconf")
-        .args(["read", "/com/system76/cosmic/default-terminal"])
-        .output()
-    {
+    if let Some(output) = run_terminal_probe(
+        "dconf",
+        &["read", "/com/system76/cosmic/default-terminal"],
+        "dconf terminal detection",
+    ) {
         if output.status.success() {
             let terminal = String::from_utf8_lossy(&output.stdout)
                 .trim()
@@ -185,8 +200,6 @@ pub fn detect_terminal() -> Result<TerminalEmulator> {
         }
     }
 
-    // 4. Check for installed macOS native terminals
-    // Prefer Ghostty and iTerm2 if installed, otherwise fall back to Terminal.app
     if Path::new("/Applications/Ghostty.app").exists() {
         return Ok(TerminalEmulator::Ghostty);
     }
@@ -195,7 +208,6 @@ pub fn detect_terminal() -> Result<TerminalEmulator> {
         return Ok(TerminalEmulator::ITerm2);
     }
 
-    // Terminal.app is always present on macOS
     Ok(TerminalEmulator::TerminalApp)
 }
 
@@ -204,11 +216,12 @@ pub fn detect_terminal() -> Result<TerminalEmulator> {
 /// This checks if we're running inside a terminal by examining parent processes.
 #[cfg(target_os = "macos")]
 fn detect_parent_terminal() -> Option<TerminalEmulator> {
-    // Get parent process info using ps
-    let output = Command::new("ps")
-        .args(["-o", "ppid=,comm=", "-p", &std::process::id().to_string()])
-        .output()
-        .ok()?;
+    let own_pid = std::process::id().to_string();
+    let output = run_terminal_probe(
+        "ps",
+        &["-o", "ppid=,comm=", "-p", &own_pid],
+        "parent terminal root probe",
+    )?;
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let parts: Vec<&str> = stdout.split_whitespace().collect();
@@ -218,19 +231,18 @@ fn detect_parent_terminal() -> Option<TerminalEmulator> {
 
     let ppid: u32 = parts[0].parse().ok()?;
 
-    // Walk up the process tree looking for a terminal
     let mut current_pid = ppid;
     for _ in 0..10 {
-        // Limit depth to avoid infinite loops
         if current_pid <= 1 {
             break;
         }
 
-        // Get process info for current_pid
-        let output = Command::new("ps")
-            .args(["-o", "ppid=,comm=", "-p", &current_pid.to_string()])
-            .output()
-            .ok()?;
+        let current_pid_arg = current_pid.to_string();
+        let output = run_terminal_probe(
+            "ps",
+            &["-o", "ppid=,comm=", "-p", &current_pid_arg],
+            "parent terminal ancestry probe",
+        )?;
 
         let stdout = String::from_utf8_lossy(&output.stdout);
         let line = stdout.trim();
@@ -245,7 +257,6 @@ fn detect_parent_terminal() -> Option<TerminalEmulator> {
 
         let comm = parts[1];
 
-        // Check if this process is a known terminal
         if let Some(terminal) = match_process_to_terminal(comm) {
             return Some(terminal);
         }
@@ -275,22 +286,13 @@ mod tests {
     use super::*;
     use serial_test::serial;
 
-    // LOOM_TERMINAL / TERMINAL / TERM_PROGRAM are process-global, but cargo runs
-    // the tests in this binary on parallel threads. Every test below either
-    // mutates or reads them through `detect_terminal`, so they must not overlap:
-    // without `#[serial]`, `test_term_program_env_var_detection` can remove
-    // LOOM_TERMINAL and set TERM_PROGRAM=iTerm.app in the window between another
-    // test's `set_var("LOOM_TERMINAL", ...)` and its `detect_terminal()` call,
-    // which then falls through to the TERM_PROGRAM branch and returns the wrong
-    // emulator (observed: expected Ghostty, got ITerm2).
+    // These process-global environment variables are read and mutated by all
+    // detection tests, so serial execution prevents cross-test interference.
 
     #[test]
     #[serial]
     fn test_detect_terminal_finds_something() {
-        // This test may fail in minimal environments without any terminal
-        // but should pass on most development machines
         let result = detect_terminal();
-        // We just check it doesn't panic - actual result depends on system
         if let Ok(terminal) = result {
             assert!(!terminal.binary().is_empty());
         }
@@ -322,8 +324,6 @@ mod tests {
     #[test]
     #[serial]
     fn test_loom_terminal_env_var_takes_precedence() {
-        // Test that LOOM_TERMINAL environment variable takes precedence over all other detection
-        // Save and clear any existing LOOM_TERMINAL
         let original = std::env::var("LOOM_TERMINAL").ok();
 
         std::env::set_var("LOOM_TERMINAL", "Ghostty");
@@ -331,13 +331,11 @@ mod tests {
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), TerminalEmulator::Ghostty);
 
-        // Test with iTerm2
         std::env::set_var("LOOM_TERMINAL", "iTerm2");
         let result = detect_terminal();
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), TerminalEmulator::ITerm2);
 
-        // Test with kitty
         std::env::set_var("LOOM_TERMINAL", "kitty");
         let result = detect_terminal();
         assert!(result.is_ok());
@@ -355,7 +353,6 @@ mod tests {
     #[test]
     #[serial]
     fn test_term_program_env_var_detection() {
-        // Save existing env vars
         let original_loom = std::env::var("LOOM_TERMINAL").ok();
         let original_terminal = std::env::var("TERMINAL").ok();
         let original_term_program = std::env::var("TERM_PROGRAM").ok();
@@ -364,13 +361,11 @@ mod tests {
         std::env::remove_var("LOOM_TERMINAL");
         std::env::remove_var("TERMINAL");
 
-        // Test Apple_Terminal (what Terminal.app sets)
         std::env::set_var("TERM_PROGRAM", "Apple_Terminal");
         let result = detect_terminal();
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), TerminalEmulator::TerminalApp);
 
-        // Test iTerm.app (what iTerm2 sets)
         std::env::set_var("TERM_PROGRAM", "iTerm.app");
         let result = detect_terminal();
         assert!(result.is_ok());

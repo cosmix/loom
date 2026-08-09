@@ -39,7 +39,7 @@ fn spawn_reaper_thread(mut child: std::process::Child) {
 /// * `terminal` - The terminal emulator to use
 /// * `title` - Window title for the terminal
 /// * `workdir` - Working directory for the command
-/// * `cmd` - The command to execute
+/// * `wrapper_path` - The executable wrapper to launch as one argv element
 /// * `work_dir` - Optional .work directory for PID tracking
 /// * `pid_key` - Optional per-session PID-file key (tracking_key + session.id)
 /// * `session_id` - Optional LOOM_SESSION_ID marker for `/proc`-based discovery
@@ -52,12 +52,13 @@ pub fn spawn_in_terminal(
     terminal: &TerminalEmulator,
     title: &str,
     workdir: &Path,
-    cmd: &str,
+    wrapper_path: &Path,
     work_dir: Option<&Path>,
     pid_key: Option<&str>,
     session_id: Option<&str>,
 ) -> Result<u32> {
-    let mut command = terminal.build_command(title, workdir, cmd);
+    let mut command = terminal.build_command(title, workdir, wrapper_path);
+    crate::process::apply_stage_environment(&mut command);
 
     let child = command.spawn().with_context(|| {
         format!(
@@ -79,6 +80,31 @@ pub fn spawn_in_terminal(
     }
 
     Ok(terminal_pid)
+}
+
+fn finalize_pid_identity(work_dir: &Path, pid_key: &str, pid: u32) -> Result<u32> {
+    let Some(start_time) = crate::process::process_start_time(pid) else {
+        // Unsupported platforms retain PID-only evidence. Informational
+        // liveness remains conservative, while destructive PID signaling
+        // continues to fail closed.
+        return Ok(pid);
+    };
+    let identity = crate::process::ProcessIdentity {
+        pid,
+        start_time: Some(start_time),
+    };
+    anyhow::ensure!(
+        crate::process::verify_process_identity(identity)
+            == crate::process::IdentityStatus::VerifiedAlive,
+        "process {pid} exited or was replaced while recording its identity"
+    );
+    pid_tracking::write_pid_entry(work_dir, pid_key, identity)?;
+    anyhow::ensure!(
+        crate::process::verify_process_identity(identity)
+            == crate::process::IdentityStatus::VerifiedAlive,
+        "process {pid} exited or was replaced after recording its identity"
+    );
+    Ok(pid)
 }
 
 /// Wait for the process a wrapper script `exec`s into to become discoverable,
@@ -114,10 +140,13 @@ pub(crate) fn await_session_pid(
     // Try to read the PID from the PID file with retries.
     // The wrapper script may take time to execute and write the PID.
     for retry in 0..PID_FILE_MAX_RETRIES {
-        if let Some(claude_pid) = pid_tracking::read_pid_file(work_dir, pid_key) {
-            // Verify the PID is actually alive
-            if crate::process::is_process_alive(claude_pid) {
-                return Ok(claude_pid);
+        if let Some(identity) = pid_tracking::read_pid_entry(work_dir, pid_key) {
+            match crate::process::verify_process_identity(identity) {
+                crate::process::IdentityStatus::VerifiedAlive
+                | crate::process::IdentityStatus::Unverifiable => {
+                    return finalize_pid_identity(work_dir, pid_key, identity.pid);
+                }
+                crate::process::IdentityStatus::Dead => {}
             }
         }
 
@@ -134,7 +163,7 @@ pub(crate) fn await_session_pid(
         session_id,
         Duration::from_secs(PID_DISCOVERY_TIMEOUT_SECS),
     ) {
-        return Ok(claude_pid);
+        return finalize_pid_identity(work_dir, pid_key, claude_pid);
     }
 
     fallback_pid.ok_or_else(|| anyhow::anyhow!("No PID discovered for session (pid_key={pid_key})"))

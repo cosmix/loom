@@ -37,17 +37,6 @@ impl Session {
         session
     }
 
-    /// Create a new base branch conflict resolution session
-    ///
-    /// Used when merging multiple dependency branches into a base branch
-    /// (loom/_base/{stage_id}) fails due to conflicts.
-    pub fn new_base_conflict(target_branch: String) -> Self {
-        let mut session = Self::new();
-        session.session_type = SessionType::BaseConflict;
-        session.merge_target_branch = Some(target_branch);
-        session
-    }
-
     /// Create a new knowledge-gathering session.
     ///
     /// Knowledge sessions run in the main repository (no worktree) and
@@ -82,11 +71,6 @@ impl Session {
     /// Check if this is a merge resolution session
     pub fn is_merge_session(&self) -> bool {
         self.session_type == SessionType::Merge
-    }
-
-    /// Check if this is a base conflict resolution session
-    pub fn is_base_conflict_session(&self) -> bool {
-        self.session_type == SessionType::BaseConflict
     }
 
     fn generate_id() -> String {

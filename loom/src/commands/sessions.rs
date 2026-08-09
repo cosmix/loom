@@ -1,5 +1,5 @@
 //! Session management commands
-//! Usage: loom sessions [list|kill <id>...]
+//! Usage: `loom sessions [list|kill <id>...]`
 
 use anyhow::{bail, Context, Result};
 

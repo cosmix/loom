@@ -2,6 +2,8 @@
 //!
 //! Defines supported terminal emulators and their command-line interfaces.
 
+use shell_escape::escape;
+use std::borrow::Cow;
 use std::path::Path;
 use std::process::Command;
 
@@ -14,19 +16,15 @@ use std::process::Command;
 /// This prevents injection attacks where malicious stage IDs or commands
 /// could break out of the AppleScript string context.
 pub fn escape_applescript_string(s: &str) -> String {
-    s.replace('\\', "\\\\").replace('"', "\\\"")
+    s.replace('\\', "\\\\")
+        .replace('"', "\\\"")
+        .replace('\r', "\\r")
+        .replace('\n', "\\n")
 }
 
-/// Escape a string for use in single-quoted shell strings.
-///
-/// In shell single quotes, the only character that needs special handling
-/// is the single quote itself, which cannot be escaped inside single quotes.
-/// The standard approach is to end the single-quoted string, add an escaped
-/// single quote, and start a new single-quoted string: ' → '\''
-///
-/// This prevents command injection when embedding untrusted input in shell commands.
-fn escape_shell_single_quote(s: &str) -> String {
-    s.replace('\'', "'\\''")
+/// Quote one executable path for APIs that accept shell text rather than argv.
+fn shell_path(path: &Path) -> String {
+    escape(Cow::Owned(path.to_string_lossy().into_owned())).into_owned()
 }
 
 /// Supported terminal emulators
@@ -106,11 +104,11 @@ impl TerminalEmulator {
     /// # Arguments
     /// * `title` - Window title for the terminal
     /// * `workdir` - Working directory for the command
-    /// * `cmd` - The shell command to execute
+    /// * `wrapper_path` - The executable wrapper path to run
     ///
     /// # Returns
     /// A configured Command ready to spawn
-    pub fn build_command(&self, title: &str, workdir: &Path, cmd: &str) -> Command {
+    pub fn build_command(&self, title: &str, workdir: &Path, wrapper_path: &Path) -> Command {
         let mut command = Command::new(self.binary());
 
         match self {
@@ -119,9 +117,7 @@ impl TerminalEmulator {
                     .arg(format!("--title={title}"))
                     .arg(format!("--dir={}", workdir.display()))
                     .arg("--")
-                    .arg("bash")
-                    .arg("-c")
-                    .arg(cmd);
+                    .arg(wrapper_path);
             }
             Self::Kitty => {
                 command
@@ -129,9 +125,7 @@ impl TerminalEmulator {
                     .arg(title)
                     .arg("--directory")
                     .arg(workdir)
-                    .arg("bash")
-                    .arg("-c")
-                    .arg(cmd);
+                    .arg(wrapper_path);
             }
             Self::Alacritty => {
                 command
@@ -140,9 +134,7 @@ impl TerminalEmulator {
                     .arg("--working-directory")
                     .arg(workdir)
                     .arg("-e")
-                    .arg("bash")
-                    .arg("-c")
-                    .arg(cmd);
+                    .arg(wrapper_path);
             }
             Self::Foot => {
                 command
@@ -150,9 +142,7 @@ impl TerminalEmulator {
                     .arg(title)
                     .arg("--working-directory")
                     .arg(workdir)
-                    .arg("bash")
-                    .arg("-c")
-                    .arg(cmd);
+                    .arg(wrapper_path);
             }
             Self::Wezterm => {
                 command
@@ -160,9 +150,7 @@ impl TerminalEmulator {
                     .arg("--cwd")
                     .arg(workdir)
                     .arg("--")
-                    .arg("bash")
-                    .arg("-c")
-                    .arg(cmd);
+                    .arg(wrapper_path);
             }
             Self::GnomeTerminal => {
                 command
@@ -171,18 +159,14 @@ impl TerminalEmulator {
                     .arg("--working-directory")
                     .arg(workdir)
                     .arg("--")
-                    .arg("bash")
-                    .arg("-c")
-                    .arg(cmd);
+                    .arg(wrapper_path);
             }
             Self::Konsole => {
                 command
                     .arg("--workdir")
                     .arg(workdir)
                     .arg("-e")
-                    .arg("bash")
-                    .arg("-c")
-                    .arg(cmd);
+                    .arg(wrapper_path);
             }
             Self::Xfce4Terminal => {
                 command
@@ -191,36 +175,19 @@ impl TerminalEmulator {
                     .arg("--working-directory")
                     .arg(workdir)
                     .arg("-x")
-                    .arg("bash")
-                    .arg("-c")
-                    .arg(cmd);
+                    .arg(wrapper_path);
             }
             Self::MateTerminal => {
-                // SECURITY: Escape single quotes in cmd to prevent shell injection
-                let escaped_cmd = escape_shell_single_quote(cmd);
                 command
                     .arg("--title")
                     .arg(title)
                     .arg("--working-directory")
                     .arg(workdir)
                     .arg("-e")
-                    .arg(format!("bash -c '{escaped_cmd}'"));
+                    .arg(shell_path(wrapper_path));
             }
             Self::XTerm => {
-                // SECURITY: Escape both workdir and cmd to prevent shell injection
-                // Use single quotes around both and escape any single quotes in them
-                let escaped_workdir = escape_shell_single_quote(&workdir.display().to_string());
-                let escaped_cmd = escape_shell_single_quote(cmd);
-                command
-                    .arg("-title")
-                    .arg(title)
-                    .arg("-e")
-                    .arg("bash")
-                    .arg("-c")
-                    .arg(format!(
-                        "cd '{}' && bash -c '{}'",
-                        escaped_workdir, escaped_cmd
-                    ));
+                command.arg("-title").arg(title).arg("-e").arg(wrapper_path);
             }
             Self::Urxvt => {
                 command
@@ -229,9 +196,7 @@ impl TerminalEmulator {
                     .arg("-cd")
                     .arg(workdir)
                     .arg("-e")
-                    .arg("bash")
-                    .arg("-c")
-                    .arg(cmd);
+                    .arg(wrapper_path);
             }
             Self::TerminalApp => {
                 // macOS Terminal.app uses AppleScript via osascript
@@ -240,7 +205,7 @@ impl TerminalEmulator {
                 // trying to cd in AppleScript, which can race with shell startup.
                 //
                 // SECURITY: Escape cmd and title to prevent AppleScript injection
-                let escaped_cmd = escape_applescript_string(cmd);
+                let escaped_cmd = escape_applescript_string(&shell_path(wrapper_path));
                 let escaped_title = escape_applescript_string(title);
                 let script = format!(
                     r#"tell application "Terminal"
@@ -259,7 +224,7 @@ end tell"#
                 // even if there's a delay the directory change will happen.
                 //
                 // SECURITY: Escape cmd to prevent AppleScript injection
-                let escaped_cmd = escape_applescript_string(cmd);
+                let escaped_cmd = escape_applescript_string(&shell_path(wrapper_path));
                 let script = format!(
                     r#"tell application "iTerm"
     activate
@@ -287,9 +252,7 @@ end tell"#
                         .arg(format!("--working-directory={}", workdir.display()))
                         .arg(format!("--title={}", title))
                         .arg("-e")
-                        .arg("bash")
-                        .arg("-c")
-                        .arg(cmd);
+                        .arg(wrapper_path);
                 }
                 #[cfg(not(target_os = "macos"))]
                 {
@@ -299,9 +262,7 @@ end tell"#
                         .arg("--working-directory")
                         .arg(workdir)
                         .arg("-e")
-                        .arg("bash")
-                        .arg("-c")
-                        .arg(cmd);
+                        .arg(wrapper_path);
                 }
             }
         }
@@ -435,7 +396,7 @@ mod tests {
     fn test_terminal_app_build_command() {
         let emulator = TerminalEmulator::TerminalApp;
         let workdir = Path::new("/tmp/test");
-        let cmd = emulator.build_command("Test Title", workdir, "echo hello");
+        let cmd = emulator.build_command("Test Title", workdir, Path::new("/tmp/wrapper.sh"));
 
         // Verify osascript is used
         assert_eq!(cmd.get_program(), "osascript");
@@ -448,7 +409,7 @@ mod tests {
         let script = args[1].to_str().unwrap();
         assert!(script.contains("tell application \"Terminal\""));
         // Note: workdir is no longer in the AppleScript - it's handled by the wrapper script
-        assert!(script.contains("echo hello"));
+        assert!(script.contains("/tmp/wrapper.sh"));
         assert!(script.contains("Test Title"));
     }
 
@@ -456,7 +417,7 @@ mod tests {
     fn test_iterm2_build_command() {
         let emulator = TerminalEmulator::ITerm2;
         let workdir = Path::new("/tmp/test");
-        let cmd = emulator.build_command("Test Title", workdir, "echo hello");
+        let cmd = emulator.build_command("Test Title", workdir, Path::new("/tmp/wrapper.sh"));
 
         // Verify osascript is used
         assert_eq!(cmd.get_program(), "osascript");
@@ -470,7 +431,7 @@ mod tests {
         assert!(script.contains("tell application \"iTerm\""));
         assert!(script.contains("create window with default profile"));
         // Note: workdir is no longer in the AppleScript - it's handled by the wrapper script
-        assert!(script.contains("echo hello"));
+        assert!(script.contains("/tmp/wrapper.sh"));
     }
 
     #[test]
@@ -501,6 +462,7 @@ mod tests {
         // The quotes should be escaped, preventing breakout
         assert!(escaped.contains(r#"\""#));
         assert!(!escaped.contains(r#"" do"#)); // No unescaped quote followed by space
+        assert_eq!(escape_applescript_string("one\ntwo"), "one\\ntwo");
     }
 
     #[test]
@@ -509,12 +471,12 @@ mod tests {
         let workdir = Path::new("/tmp");
 
         // Test with command containing quotes
-        let cmd = emulator.build_command("Test", workdir, r#"echo "hello""#);
+        let cmd = emulator.build_command("Test", workdir, Path::new(r#"/tmp/echo "hello""#));
         let args: Vec<_> = cmd.get_args().collect();
         let script = args[1].to_str().unwrap();
 
         // The quotes in the command should be escaped
-        assert!(script.contains(r#"echo \"hello\""#));
+        assert!(script.contains(r#"/tmp/echo \"hello\""#));
     }
 
     #[test]
@@ -523,7 +485,7 @@ mod tests {
         let workdir = Path::new("/tmp");
 
         // Test with title containing quotes (potential injection)
-        let cmd = emulator.build_command(r#"Stage "test""#, workdir, "echo hi");
+        let cmd = emulator.build_command(r#"Stage "test""#, workdir, Path::new("/tmp/wrapper.sh"));
         let args: Vec<_> = cmd.get_args().collect();
         let script = args[1].to_str().unwrap();
 
@@ -537,34 +499,29 @@ mod tests {
         let workdir = Path::new("/tmp");
 
         // Test with command containing backslashes and quotes
-        let cmd = emulator.build_command("Test", workdir, r#"echo "path\to\file""#);
+        let cmd = emulator.build_command("Test", workdir, Path::new(r#"/tmp/echo "path\to\file""#));
         let args: Vec<_> = cmd.get_args().collect();
         let script = args[1].to_str().unwrap();
 
         // Both quotes and backslashes should be escaped
-        assert!(script.contains(r#"echo \"path\\to\\file\""#));
+        assert!(script.contains(r#"/tmp/echo \"path\\to\\file\""#));
     }
 
     #[test]
-    fn test_escape_shell_single_quote() {
-        use super::escape_shell_single_quote;
+    fn shell_boundary_preserves_adversarial_wrapper_path_as_one_word() {
+        let raw = "/tmp/wrapper ' spaced;$(printf injected)\nnext";
+        let quoted = shell_path(Path::new(raw));
+        let script = format!("set -- {quoted}; printf '%s' \"$#:$1\"");
+        let output = Command::new("sh")
+            .args(["-c", &script])
+            .output()
+            .expect("shell parser should run");
 
-        // Test no escaping needed
-        assert_eq!(escape_shell_single_quote("hello"), "hello");
-
-        // Test single quote escaping
-        assert_eq!(escape_shell_single_quote("it's"), "it'\\''s");
-
-        // Test multiple single quotes
-        assert_eq!(escape_shell_single_quote("'test'"), "'\\''test'\\''");
-
-        // Test potential injection attempt
-        // Input: '; rm -rf /; echo '
-        // Each ' becomes '\'' (end quote, escaped quote, start quote)
-        let malicious = "'; rm -rf /; echo '";
-        let escaped = escape_shell_single_quote(malicious);
-        // Expected: '\''  +  ; rm -rf /; echo   +  '\''
-        assert_eq!(escaped, "'\\''; rm -rf /; echo '\\''");
+        assert!(output.status.success());
+        assert_eq!(
+            String::from_utf8(output.stdout).unwrap(),
+            format!("1:{raw}")
+        );
     }
 
     #[test]
@@ -573,14 +530,13 @@ mod tests {
         let workdir = Path::new("/tmp");
 
         // Test with command containing single quotes (potential injection)
-        let cmd = emulator.build_command("Test", workdir, "echo 'hello'");
+        let cmd = emulator.build_command("Test", workdir, Path::new("/tmp/it's wrapper"));
         let args: Vec<_> = cmd.get_args().collect();
         let last_arg = args.last().unwrap().to_str().unwrap();
 
         // The single quotes should be escaped to prevent injection
         assert!(last_arg.contains("'\\''"));
-        // Should still be wrapped in single quotes for bash -c
-        assert!(last_arg.starts_with("bash -c '"));
+        assert!(last_arg.starts_with('\''));
     }
 
     #[test]
@@ -588,14 +544,12 @@ mod tests {
         let emulator = TerminalEmulator::XTerm;
         // Test with workdir containing single quote (potential injection)
         let workdir = Path::new("/tmp/test's dir");
-        let cmd = emulator.build_command("Test", workdir, "echo hello");
+        let wrapper = Path::new("/tmp/wrapper with spaces;$(touch nope)\n.sh");
+        let cmd = emulator.build_command("Test", workdir, wrapper);
         let args: Vec<_> = cmd.get_args().collect();
         let last_arg = args.last().unwrap().to_str().unwrap();
 
-        // The workdir should be single-quoted with escaping
-        assert!(last_arg.contains("cd '"));
-        // The single quote in the path should be escaped
-        assert!(last_arg.contains("'\\''"));
+        assert_eq!(Path::new(last_arg), wrapper);
     }
 
     #[test]
@@ -603,13 +557,11 @@ mod tests {
         let emulator = TerminalEmulator::XTerm;
         let workdir = Path::new("/tmp");
         // Command with shell metacharacters that could be injection vectors
-        let cmd = emulator.build_command("Test", workdir, "echo 'hello'; rm -rf /");
+        let wrapper = Path::new("/tmp/'hello'; rm -rf $(pwd)\nwrapper");
+        let cmd = emulator.build_command("Test", workdir, wrapper);
         let args: Vec<_> = cmd.get_args().collect();
         let last_arg = args.last().unwrap().to_str().unwrap();
-        // The single quotes in the command should be escaped
-        assert!(last_arg.contains("'\\''"));
-        // Should contain bash -c wrapper
-        assert!(last_arg.contains("bash -c '"));
+        assert_eq!(Path::new(last_arg), wrapper);
     }
 
     #[cfg(target_os = "macos")]
@@ -617,7 +569,7 @@ mod tests {
     fn test_ghostty_build_command_macos() {
         let emulator = TerminalEmulator::Ghostty;
         let workdir = Path::new("/tmp/test");
-        let cmd = emulator.build_command("Test Title", workdir, "echo hello");
+        let cmd = emulator.build_command("Test Title", workdir, Path::new("/tmp/wrapper.sh"));
 
         // On macOS, Ghostty is launched via `open -na` to avoid PATH issues
         assert_eq!(cmd.get_program(), "open");
@@ -633,9 +585,9 @@ mod tests {
             .iter()
             .any(|a| a.to_str().unwrap().starts_with("--title=")));
         assert!(args.iter().any(|a| a.to_str().unwrap() == "-e"));
-        assert!(args.iter().any(|a| a.to_str().unwrap() == "bash"));
-        assert!(args.iter().any(|a| a.to_str().unwrap() == "-c"));
-        assert!(args.iter().any(|a| a.to_str().unwrap() == "echo hello"));
+        assert!(args
+            .iter()
+            .any(|a| a.to_str().unwrap() == "/tmp/wrapper.sh"));
     }
 
     #[cfg(not(target_os = "macos"))]
@@ -643,7 +595,7 @@ mod tests {
     fn test_ghostty_build_command_linux() {
         let emulator = TerminalEmulator::Ghostty;
         let workdir = Path::new("/tmp/test");
-        let cmd = emulator.build_command("Test Title", workdir, "echo hello");
+        let cmd = emulator.build_command("Test Title", workdir, Path::new("/tmp/wrapper.sh"));
 
         // On Linux, Ghostty is invoked directly
         assert_eq!(cmd.get_program(), "ghostty");
@@ -654,8 +606,6 @@ mod tests {
         assert_eq!(args[2].to_str().unwrap(), "--working-directory");
         assert_eq!(args[3].to_str().unwrap(), "/tmp/test");
         assert_eq!(args[4].to_str().unwrap(), "-e");
-        assert_eq!(args[5].to_str().unwrap(), "bash");
-        assert_eq!(args[6].to_str().unwrap(), "-c");
-        assert_eq!(args[7].to_str().unwrap(), "echo hello");
+        assert_eq!(args[5].to_str().unwrap(), "/tmp/wrapper.sh");
     }
 }

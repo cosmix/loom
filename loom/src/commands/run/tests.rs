@@ -1,7 +1,7 @@
 //! Tests for the run command module.
 
-use super::frontmatter::{extract_stage_definition, load_stages_from_work_dir};
 use super::graph_loader::build_execution_graph;
+use crate::fs::stage_loading::{extract_stage_definition, load_stages_from_work_dir};
 use crate::fs::work_dir::WorkDir;
 use crate::orchestrator::OrchestratorResult;
 use crate::plan::schema::{

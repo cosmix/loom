@@ -1,7 +1,4 @@
-//! PID tracking for native terminal sessions
-//!
-//! Provides reliable PID tracking by using PID files and process discovery
-//! instead of relying on the terminal emulator's PID.
+//! Reliable native-session PID tracking and process discovery.
 
 use anyhow::{Context, Result};
 use shell_escape::escape;
@@ -12,24 +9,35 @@ use std::process::Command;
 use std::thread;
 use std::time::{Duration, Instant};
 
-/// Get the path to the pids directory
+#[cfg(target_os = "macos")]
+const PROCESS_DISCOVERY_PROBE_TIMEOUT: Duration = Duration::from_secs(2);
+
+#[cfg(target_os = "macos")]
+fn run_process_discovery_probe(
+    program: &str,
+    args: &[&str],
+    operation: impl Into<String>,
+) -> Option<std::process::Output> {
+    let mut command = Command::new(program);
+    command.args(args);
+    crate::process::run_bounded_output(&mut command, PROCESS_DISCOVERY_PROBE_TIMEOUT, operation)
+        .ok()
+}
+
 pub fn pids_dir(work_dir: &Path) -> PathBuf {
     work_dir.join("pids")
 }
 
-/// Get the path to the wrappers directory
 pub fn wrappers_dir(work_dir: &Path) -> PathBuf {
     work_dir.join("wrappers")
 }
 
-/// Create the pids directory if it doesn't exist
 pub fn create_pid_dir(work_dir: &Path) -> Result<()> {
     let dir = pids_dir(work_dir);
     fs::create_dir_all(&dir)
         .with_context(|| format!("Failed to create pids directory: {}", dir.display()))
 }
 
-/// Create the wrappers directory if it doesn't exist
 pub fn create_wrappers_dir(work_dir: &Path) -> Result<()> {
     let dir = wrappers_dir(work_dir);
     fs::create_dir_all(&dir)
@@ -50,18 +58,7 @@ pub fn wrapper_script_path(work_dir: &Path, pid_key: &str) -> PathBuf {
     wrappers_dir(work_dir).join(format!("{pid_key}-wrapper.sh"))
 }
 
-/// A PID together with the process start-time recorded when it was written.
-///
-/// The start-time defeats PID reuse: a recycled OS PID belongs to a different
-/// process with a different start-time, so a stale PID file no longer reports
-/// an unrelated process as "our session, still alive".
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct PidEntry {
-    pub pid: u32,
-    /// Process start-time in kernel clock ticks since boot (Linux). `None` when
-    /// the wrapper could not record it (e.g. macOS, where the field is absent).
-    pub start_time: Option<u64>,
-}
+pub type PidEntry = crate::process::ProcessIdentity;
 
 /// Read the PID (and optional start-time) from a PID file.
 ///
@@ -79,66 +76,29 @@ pub fn read_pid_entry(work_dir: &Path, pid_key: &str) -> Option<PidEntry> {
     Some(PidEntry { pid, start_time })
 }
 
-/// Read just the PID from a PID file (convenience wrapper around
-/// [`read_pid_entry`] for call sites that don't verify start-time).
-pub fn read_pid_file(work_dir: &Path, pid_key: &str) -> Option<u32> {
-    read_pid_entry(work_dir, pid_key).map(|e| e.pid)
-}
-
-/// Read the current start-time of a live process, in kernel clock ticks since
-/// boot (Linux). Returns `None` on other platforms or if the process is gone /
-/// `/proc` is unreadable.
-///
-/// Parsing note: `/proc/<pid>/stat` field 2 (`comm`) is parenthesized and may
-/// itself contain spaces and parentheses, so we split *after* the last `)` and
-/// then index by whitespace. `starttime` is field 22 overall, i.e. index 19 of
-/// the post-`comm` remainder (fields 3..N map to indices 0..N-3).
-#[cfg(target_os = "linux")]
-pub fn process_start_time(pid: u32) -> Option<u64> {
-    let stat = fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
-    let after_comm = stat.rsplit_once(')').map(|(_, rest)| rest)?;
-    // After the closing paren, the fields are: state (3), ppid (4), ... The
-    // first whitespace-separated token is `state` = field 3, so `starttime`
-    // (field 22) is at index 22 - 3 = 19.
-    after_comm.split_whitespace().nth(19)?.parse::<u64>().ok()
-}
-
-/// macOS has no `/proc`; start-time verification is skipped there. Returning
-/// `None` makes [`pid_matches_entry`] fall back to a plain liveness check.
-#[cfg(not(target_os = "linux"))]
-pub fn process_start_time(_pid: u32) -> Option<u64> {
-    None
-}
-
-/// Decide whether a recorded [`PidEntry`] still refers to the original process.
-///
-/// When a start-time was recorded, the live process's current start-time must
-/// match it — otherwise the PID was recycled by an unrelated process and we
-/// must treat our session as dead. When no start-time was recorded (older
-/// wrapper / macOS), fall back to a plain liveness probe.
-pub fn pid_matches_entry(entry: &PidEntry) -> bool {
-    if !crate::process::is_process_alive(entry.pid) {
-        return false;
+/// Crash-atomically persist the complete process identity observed by Loom.
+pub fn write_pid_entry(work_dir: &Path, pid_key: &str, entry: PidEntry) -> Result<()> {
+    create_pid_dir(work_dir)?;
+    let mut contents = format!("{}\n", entry.pid);
+    if let Some(start_time) = entry.start_time {
+        contents.push_str(&format!("{start_time}\n"));
     }
-    match entry.start_time {
-        Some(recorded) => process_start_time(entry.pid) == Some(recorded),
-        None => true,
-    }
+
+    let path = pid_file_path(work_dir, pid_key);
+    crate::fs::locking::locked_write(&path, &contents)
+        .with_context(|| format!("Failed to persist PID identity: {}", path.display()))
 }
 
-/// Remove the PID file for a tracking key
 pub fn remove_pid_file(work_dir: &Path, pid_key: &str) {
     let path = pid_file_path(work_dir, pid_key);
     let _ = fs::remove_file(path);
 }
 
-/// Remove the wrapper script for a tracking key
 pub fn remove_wrapper_script(work_dir: &Path, pid_key: &str) {
     let path = wrapper_script_path(work_dir, pid_key);
     let _ = fs::remove_file(path);
 }
 
-/// Clean up all session-related files (PID file and wrapper script)
 pub fn cleanup_stage_files(work_dir: &Path, pid_key: &str) {
     remove_pid_file(work_dir, pid_key);
     remove_wrapper_script(work_dir, pid_key);
@@ -282,14 +242,16 @@ pub fn discover_claude_pid(
 #[cfg(target_os = "macos")]
 fn process_has_session_marker(pid: u32, session_id: &str) -> bool {
     let needle = format!("LOOM_SESSION_ID={session_id}");
-    match Command::new("ps")
-        .args(["-E", "-ww", "-p", &pid.to_string()])
-        .output()
-    {
-        Ok(out) => String::from_utf8_lossy(&out.stdout)
+    let pid_arg = pid.to_string();
+    match run_process_discovery_probe(
+        "ps",
+        &["-E", "-ww", "-p", &pid_arg],
+        format!("session environment probe for PID {pid}"),
+    ) {
+        Some(out) => String::from_utf8_lossy(&out.stdout)
             .split_whitespace()
             .any(|tok| tok == needle),
-        Err(_) => false,
+        None => false,
     }
 }
 
@@ -300,7 +262,7 @@ fn process_has_session_marker(pid: u32, session_id: &str) -> bool {
 #[cfg(target_os = "macos")]
 fn find_claude_process(worktree_path: &Path, session_id: &str) -> Option<u32> {
     // Run ps aux to list all processes
-    let output = Command::new("ps").arg("aux").output().ok()?;
+    let output = run_process_discovery_probe("ps", &["aux"], "Claude process listing")?;
 
     let stdout = String::from_utf8_lossy(&output.stdout);
 
@@ -345,10 +307,12 @@ fn find_claude_process(worktree_path: &Path, session_id: &str) -> Option<u32> {
 /// Get the current working directory of a process using lsof (macOS)
 #[cfg(target_os = "macos")]
 fn get_process_cwd_macos(pid: u32) -> Option<PathBuf> {
-    let output = Command::new("lsof")
-        .args(["-p", &pid.to_string()])
-        .output()
-        .ok()?;
+    let pid_arg = pid.to_string();
+    let output = run_process_discovery_probe(
+        "lsof",
+        &["-p", &pid_arg],
+        format!("process cwd probe for PID {pid}"),
+    )?;
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     for line in stdout.lines() {
@@ -425,58 +389,48 @@ pub fn create_wrapper_script(
 
     // Build the cd command. Canonicalize the host directory (important for
     // macOS where terminals can't reliably set cwd before spawning).
-    let (cd_section, worktree_path_export) = match working_dir {
+    let cd_section = match working_dir {
         Some(dir) => {
             let dir_abs = dir.canonicalize().unwrap_or_else(|_| dir.to_path_buf());
             let dir_escaped = escape(dir_abs.display().to_string().into());
-            (
-                format!(
-                    r#"# Change to working directory
+            format!(
+                r#"# Change to working directory
 cd {dir_escaped} || {{ echo "Failed to cd to working directory"; exit 1; }}
 
 "#,
-                ),
-                format!(
-                    r#"# Worktree boundary for file isolation hooks
-export LOOM_WORKTREE_PATH={dir_escaped}
-"#,
-                ),
             )
         }
-        None => (String::new(), String::new()),
+        None => String::new(),
     };
 
-    // Export LOOM_MERGE_SESSION for merge resolution sessions so hooks can detect them
-    let merge_session_export = if stage_id.starts_with("merge-") {
-        "# Merge session: exempt from commit-guard hook requirements\nexport LOOM_MERGE_SESSION=1\n"
-            .to_string()
+    const CONTINUATION: &str = "\\\n";
+    let merge_session_env = if stage_id.starts_with("merge-") {
+        format!("    LOOM_MERGE_SESSION=1 {CONTINUATION}")
     } else {
         String::new()
     };
 
-    // Shell-escape all interpolated values to prevent command injection
-    let stage_id_escaped = escape(stage_id.into());
-    let session_id_escaped = escape(session_id.into());
-    let work_dir_escaped = escape(work_dir_for_script.display().to_string().into());
+    let worktree_path_env = match working_dir {
+        Some(dir) => {
+            let dir_abs = dir.canonicalize().unwrap_or_else(|_| dir.to_path_buf());
+            let assignment = format!("LOOM_WORKTREE_PATH={}", dir_abs.display());
+            let assignment = escape(assignment.into());
+            format!("    {assignment} {CONTINUATION}")
+        }
+        None => String::new(),
+    };
+
+    // Shell-escape complete NAME=value words so quotes never nest incorrectly.
+    let session_env = escape(format!("LOOM_SESSION_ID={session_id}").into());
+    let stage_env = escape(format!("LOOM_STAGE_ID={stage_id}").into());
+    let work_dir_env = escape(format!("LOOM_WORK_DIR={}", work_dir_for_script.display()).into());
     let pid_file_escaped = escape(pid_file_for_script.display().to_string().into());
 
     let script = format!(
         r#"#!/bin/bash
-# Loom wrapper script for stage: {stage_id}
+# Loom stage wrapper
 # Writes PID to file before exec'ing claude
 
-# Set loom environment variables for hooks and memory commands
-export LOOM_SESSION_ID={session_id}
-export LOOM_STAGE_ID={stage_id}
-export LOOM_WORK_DIR={work_dir}
-# CRITICAL: LOOM_MAIN_AGENT_PID allows hooks to detect subagents
-# Subagents inherit this var but have different $PPID - hooks can compare
-export LOOM_MAIN_AGENT_PID=$$
-# Enable agent teams for coordinated multi-agent work
-export CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1
-# Namespace Remote Control session names under "loom" (inert when RC is off)
-export CLAUDE_REMOTE_CONTROL_SESSION_NAME_PREFIX=loom
-{merge_session_export}{worktree_path_export}
 {cd_section}# Write our PID, then (best-effort, Linux) the process start-time on
 # line 2 so liveness probes can detect PID reuse. exec preserves the PID and
 # start-time, so these identify the claude process after exec replaces us.
@@ -492,17 +446,39 @@ if [ -r "/proc/$$/stat" ]; then
     fi
 fi
 
-# Replace this process with claude
-exec {claude_cmd}
+# Reconstruct the stage environment from a minimal host allowlist. In
+# particular, ambient credentials and token-shaped variables are not inherited.
+_loom_env=(
+    "HOME=${{HOME:-}}"
+    "PATH=${{PATH:-/usr/bin:/bin}}"
+)
+for _loom_name in LANG LC_ALL LC_CTYPE TERM COLORTERM TERM_PROGRAM SHELL DISPLAY \
+    WAYLAND_DISPLAY XAUTHORITY DBUS_SESSION_BUS_ADDRESS XDG_RUNTIME_DIR \
+    TMUX_TMPDIR TMUX TMUX_PANE TMPDIR; do
+    _loom_value="${{!_loom_name}}"
+    if [ -n "$_loom_value" ]; then
+        _loom_env+=("$_loom_name=$_loom_value")
+    fi
+done
+
+# Replace this process with claude under only the explicit stage contract.
+exec env -i "${{_loom_env[@]}}" \
+    {session_env} \
+    {stage_env} \
+    {work_dir_env} \
+    "LOOM_MAIN_AGENT_PID=$$" \
+    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1" \
+    "CLAUDE_REMOTE_CONTROL_SESSION_NAME_PREFIX=loom" \
+{merge_session_env}{worktree_path_env}    {claude_cmd}
 "#,
-        stage_id = stage_id_escaped,
-        session_id = session_id_escaped,
-        work_dir = work_dir_escaped,
-        merge_session_export = merge_session_export,
-        worktree_path_export = worktree_path_export,
+        session_env = session_env,
+        stage_env = stage_env,
+        work_dir_env = work_dir_env,
         cd_section = cd_section,
         pid_file = pid_file_escaped,
-        claude_cmd = claude_cmd
+        claude_cmd = claude_cmd,
+        merge_session_env = merge_session_env,
+        worktree_path_env = worktree_path_env,
     );
 
     fs::write(&wrapper_path, &script)
@@ -541,32 +517,24 @@ mod tests {
             create_wrapper_script(work_dir, pid_key, stage_id, session_id, claude_cmd, None)
                 .unwrap();
 
-        // Check file exists
         assert!(wrapper_path.exists());
-
-        // Check content
         let content = fs::read_to_string(&wrapper_path).unwrap();
         assert!(content.contains("#!/bin/bash"));
         assert!(content.contains("echo $$"));
         assert!(content.contains(claude_cmd));
-        // Check env vars are set
         assert!(content.contains("LOOM_SESSION_ID"));
         assert!(content.contains(session_id));
         assert!(content.contains("LOOM_STAGE_ID"));
         assert!(content.contains(stage_id));
         assert!(content.contains("LOOM_WORK_DIR"));
-        // Check main agent PID tracking for subagent detection
         assert!(content.contains("LOOM_MAIN_AGENT_PID"));
         assert!(content.contains("CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS"));
-        // Remote Control session-name namespacing is exported unconditionally
         assert!(content.contains("CLAUDE_REMOTE_CONTROL_SESSION_NAME_PREFIX=loom"));
-
-        // Check executable
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
             let perms = fs::metadata(&wrapper_path).unwrap().permissions();
-            assert!(perms.mode() & 0o111 != 0); // Has some execute bit
+            assert!(perms.mode() & 0o111 != 0);
         }
     }
 
@@ -590,16 +558,12 @@ mod tests {
         )
         .unwrap();
 
-        // Check file exists
         assert!(wrapper_path.exists());
-
-        // Check content includes the cd command
         let content = fs::read_to_string(&wrapper_path).unwrap();
         assert!(content.contains("#!/bin/bash"));
         assert!(content.contains("cd /tmp/test-worktree"));
         assert!(content.contains("echo $$"));
         assert!(content.contains(claude_cmd));
-        // Check worktree path is exported for file isolation hooks
         assert!(content.contains("LOOM_WORKTREE_PATH"));
         assert!(content.contains("/tmp/test-worktree"));
         assert!(content.contains("CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS"));
@@ -613,7 +577,6 @@ mod tests {
         let session_id = "session-cleanup-1234567890";
         let pid_key = "loom-test-stage-session-cleanup-1234567890";
 
-        // Create wrapper script
         create_wrapper_script(
             work_dir,
             pid_key,
@@ -624,13 +587,8 @@ mod tests {
         )
         .unwrap();
 
-        // Verify it exists
         assert!(wrapper_script_path(work_dir, pid_key).exists());
-
-        // Cleanup
         cleanup_stage_files(work_dir, pid_key);
-
-        // Verify it's gone
         assert!(!wrapper_script_path(work_dir, pid_key).exists());
     }
 
@@ -647,14 +605,10 @@ mod tests {
             create_wrapper_script(work_dir, pid_key, stage_id, session_id, claude_cmd, None)
                 .unwrap();
 
-        // Check file exists
         assert!(wrapper_path.exists());
-
-        // Check content includes LOOM_MERGE_SESSION
         let content = fs::read_to_string(&wrapper_path).unwrap();
         assert!(content.contains("#!/bin/bash"));
         assert!(content.contains("LOOM_MERGE_SESSION=1"));
-        assert!(content.contains("Merge session: exempt from commit-guard hook requirements"));
         assert!(content.contains("echo $$"));
         assert!(content.contains(claude_cmd));
 
@@ -674,9 +628,39 @@ mod tests {
 
         let regular_content = fs::read_to_string(&regular_wrapper_path).unwrap();
         assert!(!regular_content.contains("LOOM_MERGE_SESSION"));
-        assert!(
-            !regular_content.contains("Merge session: exempt from commit-guard hook requirements")
-        );
+    }
+
+    #[test]
+    fn wrapper_executes_with_minimal_environment_and_no_ambient_secret() {
+        let temp_dir = TempDir::new().unwrap();
+        let output_path = temp_dir.path().join("stage-environment.txt");
+        let output_arg = escape(output_path.display().to_string().into());
+        let command = format!("env > {output_arg}");
+        let wrapper = create_wrapper_script(
+            temp_dir.path(),
+            "loom-env-stage-session-1",
+            "env-stage",
+            "session-env-1",
+            &command,
+            None,
+        )
+        .unwrap();
+
+        let status = std::process::Command::new(&wrapper)
+            .env("ANTHROPIC_API_KEY", "ambient-secret-canary")
+            .env("GITHUB_TOKEN", "ambient-secret-canary")
+            .status()
+            .unwrap();
+        assert!(status.success());
+
+        let environment = fs::read_to_string(output_path).unwrap();
+        assert!(environment.contains("LOOM_SESSION_ID=session-env-1"));
+        assert!(environment.contains("LOOM_STAGE_ID=env-stage"));
+        assert!(environment.contains("HOME="));
+        assert!(environment.contains("PATH="));
+        assert!(!environment.contains("ambient-secret-canary"));
+        assert!(!environment.contains("ANTHROPIC_API_KEY"));
+        assert!(!environment.contains("GITHUB_TOKEN"));
     }
 
     #[test]
@@ -690,8 +674,6 @@ mod tests {
         let entry = read_pid_entry(work_dir, pid_key).unwrap();
         assert_eq!(entry.pid, 12345);
         assert_eq!(entry.start_time, None);
-        // Plain read_pid_file still returns just the PID.
-        assert_eq!(read_pid_file(work_dir, pid_key), Some(12345));
     }
 
     #[test]
@@ -714,35 +696,43 @@ mod tests {
     }
 
     #[test]
-    fn test_pid_matches_entry_dead_pid() {
+    fn test_verify_pid_entry_dead_pid() {
         // A PID that does not exist must never match, regardless of start_time.
         let entry = PidEntry {
             pid: 999_999_999,
             start_time: Some(123),
         };
-        assert!(!pid_matches_entry(&entry));
+        assert_eq!(
+            crate::process::verify_process_identity(entry),
+            crate::process::IdentityStatus::Dead
+        );
     }
 
     #[test]
-    fn test_pid_matches_entry_live_no_start_time_falls_back_to_liveness() {
-        // With no recorded start_time, a live PID matches (plain liveness).
+    fn test_verify_pid_entry_live_no_start_time_is_unverifiable() {
         let entry = PidEntry {
             pid: std::process::id(),
             start_time: None,
         };
-        assert!(pid_matches_entry(&entry));
+        assert_eq!(
+            crate::process::verify_process_identity(entry),
+            crate::process::IdentityStatus::Unverifiable
+        );
     }
 
     #[cfg(target_os = "linux")]
     #[test]
-    fn test_pid_matches_entry_start_time_mismatch_is_reuse() {
+    fn test_verify_pid_entry_start_time_mismatch_is_reuse() {
         // Our own PID is alive, but a bogus recorded start_time means the PID
         // was "recycled" — so the entry must NOT match.
         let entry = PidEntry {
             pid: std::process::id(),
             start_time: Some(1), // never the real start-time
         };
-        assert!(!pid_matches_entry(&entry));
+        assert_eq!(
+            crate::process::verify_process_identity(entry),
+            crate::process::IdentityStatus::Dead
+        );
     }
 
     #[cfg(target_os = "linux")]
@@ -750,11 +740,15 @@ mod tests {
     fn test_process_start_time_self_then_matches() {
         // The real recorded start-time of our own process matches on probe.
         let pid = std::process::id();
-        let start = process_start_time(pid).expect("own start-time readable on Linux");
+        let start =
+            crate::process::process_start_time(pid).expect("own start-time readable on Linux");
         let entry = PidEntry {
             pid,
             start_time: Some(start),
         };
-        assert!(pid_matches_entry(&entry));
+        assert_eq!(
+            crate::process::verify_process_identity(entry),
+            crate::process::IdentityStatus::VerifiedAlive
+        );
     }
 }

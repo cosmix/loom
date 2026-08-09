@@ -7,7 +7,7 @@
 //!
 //! Session-launch preparation (prompt, model/effort policy, permission mode,
 //! wrapper script) is shared with the native lane via
-//! [`super::native::prepare_session_launch`] — this module only owns the
+//! `super::native::prepare_session_launch` — this module only owns the
 //! tmux-specific spawn/kill/liveness mechanics.
 //!
 //! Liveness is PID-based ONLY, never `tmux has-session` — see
@@ -20,6 +20,7 @@ use anyhow::{Context, Result};
 use shell_escape::escape;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::time::Duration;
 
 use crate::models::session::{Session, SessionType};
 use crate::models::stage::Stage;
@@ -31,13 +32,36 @@ pub use socket::{
     kill_socket_server, list_loom_sockets, socket_path_for, socket_session_is_alive, LoomSocket,
 };
 
+const TMUX_SPAWN_TIMEOUT: Duration = Duration::from_secs(20);
+const TMUX_PROBE_TIMEOUT: Duration = Duration::from_secs(5);
+const TMUX_TEARDOWN_TIMEOUT: Duration = Duration::from_secs(5);
+
+fn run_tmux_command(
+    command: &mut Command,
+    timeout: Duration,
+    operation: impl Into<String>,
+) -> Result<std::process::Output> {
+    crate::process::apply_stage_environment(command);
+    crate::process::run_bounded_output(command, timeout, operation)
+}
+
+pub(super) fn run_tmux_control(
+    args: &[&str],
+    timeout: Duration,
+    operation: impl Into<String>,
+) -> Result<std::process::Output> {
+    let mut command = Command::new("tmux");
+    command.args(args);
+    run_tmux_command(&mut command, timeout, operation)
+}
+
 /// Per-session tmux socket name.
 ///
 /// Keyed on `session.id` (~25 chars, `session-<uuid8>-<unixts>`), NOT on the
 /// stage id: plan stage ids run up to 128 chars and would risk exceeding the
 /// 104-byte `AF_UNIX sun_path` limit once joined with the socket directory.
 /// Windows/panes are still named with `session.tracking_key` for human
-/// listing (see [`TmuxBackend::spawn`]).
+/// listing (see `TmuxBackend::spawn`).
 pub fn socket_name(session: &Session) -> String {
     format!("loom-{}", session.id)
 }
@@ -103,20 +127,26 @@ pub(crate) fn evaluate_new_session(socket: &str, status_success: bool, stderr: &
 /// source (see [`TmuxBackend::is_session_alive`]).
 pub fn spawn_in_tmux(socket: &str, session_name: &str, cwd: &Path, command: &Path) -> Result<()> {
     let argv = new_session_argv(socket, session_name, cwd, command);
-    let output = Command::new("tmux")
-        .args(&argv)
-        .output()
-        .with_context(|| format!("Failed to spawn tmux new-session on socket '{socket}'"))?;
+    let mut command = Command::new("tmux");
+    command.args(&argv);
+    let output = run_tmux_command(
+        &mut command,
+        TMUX_SPAWN_TIMEOUT,
+        format!("tmux new-session ({socket})"),
+    )
+    .with_context(|| format!("Failed to spawn tmux new-session on socket '{socket}'"))?;
 
     let stderr = String::from_utf8_lossy(&output.stderr);
     evaluate_new_session(socket, output.status.success(), &stderr)?;
 
-    let probe = Command::new("tmux")
-        .args(["-L", socket, "has-session", "-t", session_name])
-        .output()
-        .with_context(|| {
-            format!("Failed to probe tmux session '{session_name}' on socket '{socket}'")
-        })?;
+    let probe = run_tmux_control(
+        &["-L", socket, "has-session", "-t", session_name],
+        TMUX_PROBE_TIMEOUT,
+        format!("tmux has-session ({socket})"),
+    )
+    .with_context(|| {
+        format!("Failed to probe tmux session '{session_name}' on socket '{socket}'")
+    })?;
     if !probe.status.success() {
         let probe_stderr = String::from_utf8_lossy(&probe.stderr);
         anyhow::bail!(
@@ -125,9 +155,11 @@ pub fn spawn_in_tmux(socket: &str, session_name: &str, cwd: &Path, command: &Pat
     }
 
     // Best-effort: hide the status bar. Cosmetic only — never fails the spawn.
-    let _ = Command::new("tmux")
-        .args(["-L", socket, "set-option", "-g", "status", "off"])
-        .output();
+    let _ = run_tmux_control(
+        &["-L", socket, "set-option", "-g", "status", "off"],
+        TMUX_PROBE_TIMEOUT,
+        format!("tmux set-option ({socket})"),
+    );
 
     Ok(())
 }
@@ -304,17 +336,23 @@ impl TmuxBackend {
     }
 
     pub fn kill_session(&self, session: &Session) -> Result<()> {
-        // Best-effort: tear down this session's tmux server first. This is the
-        // ONE place that knows the exact socket path at clean-teardown time;
-        // the socket-housekeeping sweep in `socket.rs` exists for sockets
-        // orphaned by an unclean death, not this path.
-        teardown_socket(&socket_name(session));
+        match native::session_process_status(&self.work_dir, session) {
+            native::SessionProcessStatus::Dead => return Ok(()),
+            native::SessionProcessStatus::Missing | native::SessionProcessStatus::Unverifiable => {
+                return native::pid_only_terminate(&self.work_dir, session);
+            }
+            native::SessionProcessStatus::VerifiedAlive => {}
+        }
 
-        // Then the guarded PID branch, shared with the native lane: only
-        // signal when a PID-file entry positively matches (never SIGTERM a
-        // recycled PID); fall back to `session.pid` only when there is no
-        // PID-file evidence at all.
-        native::pid_only_terminate(&self.work_dir, session)
+        // First use the guarded PID branch shared with the native lane: only
+        // signal when PID and start-time both match. `session.pid` is never a
+        // destructive fallback.
+        native::pid_only_terminate(&self.work_dir, session)?;
+
+        // Then tear down this session's tmux server. This is the one place
+        // that knows the exact socket path at clean-teardown time.
+        teardown_socket(&socket_name(session));
+        Ok(())
     }
 
     /// Whether `session` is alive, using ONLY the PID layers — never
@@ -326,14 +364,10 @@ impl TmuxBackend {
     /// never file the crash, and never retry — defeating the containment
     /// property this backend exists to deliver. PID-file evidence (with
     /// start-time verification against reuse) is the only source of truth,
-    /// which is precisely what [`native::pid_only_is_alive`] implements; this
+    /// which is precisely what `native::pid_only_is_alive` implements; this
     /// lane simply adds NOTHING on top of it.
     pub fn is_session_alive(&self, session: &Session) -> Result<bool> {
-        Ok(native::pid_only_is_alive(
-            &self.work_dir,
-            session,
-            native::StalePidFiles::Reap,
-        ))
+        Ok(native::pid_only_is_alive(&self.work_dir, session))
     }
 }
 

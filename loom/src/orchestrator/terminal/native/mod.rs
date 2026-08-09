@@ -22,10 +22,11 @@ use crate::remote_control::RemoteControlInvocation;
 
 pub use detection::detect_terminal;
 pub(crate) use launch::prepare_session_launch;
-pub(crate) use pid_guard::{pid_only_is_alive, pid_only_terminate, StalePidFiles};
+pub(crate) use pid_guard::{
+    pid_only_is_alive, pid_only_terminate, session_process_status, SessionProcessStatus,
+};
 pub use pid_tracking::{
-    cleanup_stage_files, create_wrapper_script, discover_claude_pid, pid_matches_entry,
-    read_pid_entry, read_pid_file,
+    cleanup_stage_files, create_wrapper_script, discover_claude_pid, read_pid_entry,
 };
 pub(crate) use spawner::await_session_pid;
 pub use spawner::spawn_in_terminal;
@@ -232,23 +233,6 @@ impl NativeBackend {
         )
     }
 
-    pub fn spawn_base_conflict_session(
-        &self,
-        stage: &Stage,
-        session: Session,
-        signal_path: &Path,
-        repo_root: &Path,
-    ) -> Result<Session> {
-        self.spawn(
-            SessionType::BaseConflict,
-            stage,
-            session,
-            signal_path,
-            repo_root,
-            false,
-        )
-    }
-
     pub fn spawn_knowledge_session(
         &self,
         stage: &Stage,
@@ -300,15 +284,13 @@ impl NativeBackend {
         // silently diverge on prompt/model/permission-mode/wrapper behavior.
         let (mut session, title, pid_key, wrapper_path_abs) =
             launch::prepare_session_launch(&self.work_dir, kind, stage, session, signal_path, cwd)?;
-        let wrapper_cmd = wrapper_path_abs.to_string_lossy();
-
         // Spawn the terminal with PID tracking constrained by this session's
         // LOOM_SESSION_ID marker (O-14).
         let pid = spawn_in_terminal(
             &self.terminal,
             &title,
             Path::new(cwd_str),
-            &wrapper_cmd,
+            &wrapper_path_abs,
             Some(&self.work_dir),
             Some(&pid_key),
             Some(&session.id),
@@ -325,6 +307,14 @@ impl NativeBackend {
     }
 
     pub fn kill_session(&self, session: &Session) -> Result<()> {
+        match session_process_status(&self.work_dir, session) {
+            SessionProcessStatus::Dead => return Ok(()),
+            SessionProcessStatus::Missing | SessionProcessStatus::Unverifiable => {
+                return pid_only_terminate(&self.work_dir, session);
+            }
+            SessionProcessStatus::VerifiedAlive => {}
+        }
+
         // First, try to close the window by title (more reliable for all terminals).
         // This approach works correctly even for terminal emulators like gnome-terminal
         // that use a server process, where killing by PID would kill all windows.
@@ -347,16 +337,16 @@ impl NativeBackend {
     }
 
     pub fn is_session_alive(&self, session: &Session) -> Result<bool> {
-        // Layered approach to checking if session is alive:
-        // 1. Try reading from PID file (most current)
-        // 2. Check if that PID is alive
-        // 3. Fallback to stored session.pid
-        // 4. Fallback to window existence check
-        //
-        // Layers 1-3 are the lane-independent PID evidence; only layer 4 is
-        // native-specific, because only this lane has a window to look for.
-        if pid_only_is_alive(&self.work_dir, session, StalePidFiles::Reap) {
-            return Ok(true);
+        match session_process_status(&self.work_dir, session) {
+            SessionProcessStatus::VerifiedAlive => return Ok(true),
+            // A live PID whose start time cannot be verified is safe to treat
+            // as alive (avoids duplicate launches), but teardown still refuses
+            // to signal it.
+            SessionProcessStatus::Unverifiable => return Ok(true),
+            // A vanished PID or start-time mismatch is definitive. Never let
+            // a stale window title overturn that identity verdict.
+            SessionProcessStatus::Dead => return Ok(false),
+            SessionProcessStatus::Missing => {}
         }
 
         if let Some((title, _)) = Self::window_title_and_pid_key(session) {
@@ -367,6 +357,17 @@ impl NativeBackend {
 
         Ok(false)
     }
+}
+
+#[cfg(test)]
+pub(crate) fn write_test_pid_identity(work_dir: &Path, session: &Session, pid: u32) -> Result<()> {
+    let (_, pid_key) = NativeBackend::window_title_and_pid_key(session)
+        .ok_or_else(|| anyhow::anyhow!("test session has no process tracking key"))?;
+    let identity = crate::process::ProcessIdentity {
+        pid,
+        start_time: crate::process::process_start_time(pid),
+    };
+    pid_tracking::write_pid_entry(work_dir, &pid_key, identity)
 }
 
 #[cfg(test)]

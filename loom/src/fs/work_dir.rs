@@ -1,5 +1,8 @@
 use anyhow::{bail, Context, Result};
 use std::fs;
+use std::os::unix::fs::DirBuilderExt;
+#[cfg(test)]
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use toml_edit::DocumentMut;
 
@@ -131,7 +134,11 @@ impl WorkDir {
             bail!(".work directory already exists");
         }
 
-        fs::create_dir_all(&self.root).context("Failed to create .work directory")?;
+        let mut root_builder = fs::DirBuilder::new();
+        root_builder.recursive(true).mode(0o700);
+        root_builder
+            .create(&self.root)
+            .context("Failed to create .work directory")?;
 
         // Includes `memory`, `wrappers`, `pids` — session wrapper scripts,
         // PID tracking files, and the memory journal all live under these.
@@ -142,7 +149,10 @@ impl WorkDir {
 
         for subdir in &subdirs {
             let path = self.root.join(subdir);
-            fs::create_dir(&path)
+            let mut builder = fs::DirBuilder::new();
+            builder.mode(0o700);
+            builder
+                .create(&path)
                 .with_context(|| format!("Failed to create {subdir} directory"))?;
         }
 
@@ -632,6 +642,19 @@ mod tests {
             .expect("open_or_initialize must be idempotent on existing .work");
         // Structure still intact
         assert!(project_root.join(".work").join("stages").is_dir());
+    }
+
+    #[test]
+    fn initialize_creates_private_control_directories() {
+        let temp = TempDir::new().unwrap();
+        let work_dir = WorkDir::new(temp.path()).unwrap();
+
+        work_dir.initialize().unwrap();
+
+        for path in [work_dir.root().to_path_buf(), work_dir.root().join("pids")] {
+            let mode = fs::metadata(path).unwrap().permissions().mode() & 0o777;
+            assert_eq!(mode, 0o700);
+        }
     }
 
     #[test]

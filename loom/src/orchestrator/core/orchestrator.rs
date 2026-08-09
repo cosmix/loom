@@ -137,6 +137,10 @@ pub struct Orchestrator {
 impl Orchestrator {
     /// Create a new orchestrator from config and execution graph
     pub fn new(config: OrchestratorConfig, graph: ExecutionGraph) -> Result<Self> {
+        anyhow::ensure!(
+            config.max_parallel_sessions > 0,
+            "max_parallel_sessions must be at least 1"
+        );
         let monitor_config = MonitorConfig {
             poll_interval: config.poll_interval,
             work_dir: config.work_dir.clone(),
