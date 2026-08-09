@@ -821,9 +821,7 @@ impl Orchestrator {
         if !stages_dir.exists() {
             return Ok(0);
         }
-
         let mut spawned = 0;
-
         // Read all stage files
         for entry in std::fs::read_dir(&stages_dir)? {
             let entry = entry?;
@@ -916,11 +914,12 @@ impl Orchestrator {
             // kept signal file is NOT a respawn guard (it was just deleted by
             // find_live_merge_session_for_stage when its PID was found dead), so
             // without a cap this loop respawns a fresh resolver every poll cycle.
-            // Count attempts; after MAX_MERGE_RESOLVER_ATTEMPTS, escalate to
-            // NeedsHumanReview instead of spawning yet another resolver.
-            let attempts = self.next_merge_resolver_attempt(&stage_id);
-            if attempts > MAX_MERGE_RESOLVER_ATTEMPTS {
-                self.escalate_merge_resolver_exhausted(&stage_id, attempts - 1);
+            // Count only successfully spawned resolvers. Probe and spawn
+            // failures are transient operational errors, not failed resolver
+            // sessions, so they must leave the retry budget intact.
+            let attempts = self.merge_resolver_attempts(&stage_id);
+            if attempts >= MAX_MERGE_RESOLVER_ATTEMPTS {
+                self.escalate_merge_resolver_exhausted(&stage_id, attempts);
                 continue;
             }
 
@@ -947,20 +946,21 @@ impl Orchestrator {
         self.config.work_dir.join("merge-resolver-attempts")
     }
 
-    /// Increment and return the merge-resolver attempt count for `stage_id`.
-    ///
-    /// The returned value is the count INCLUDING the attempt about to be made
-    /// (1 for the first spawn). On any I/O error the attempt is allowed to
-    /// proceed (returns 1) rather than blocking resolution — failing open here
-    /// is safe because the cap is a backstop against runaway loops, not a
-    /// correctness invariant.
+    fn merge_resolver_attempts(&self, stage_id: &str) -> u32 {
+        std::fs::read_to_string(
+            self.merge_resolver_attempts_dir()
+                .join(format!("{stage_id}.count")),
+        )
+        .ok()
+        .and_then(|count| count.trim().parse::<u32>().ok())
+        .unwrap_or(0)
+    }
+
+    /// Record a resolver only after its session successfully spawned.
     fn next_merge_resolver_attempt(&self, stage_id: &str) -> u32 {
         let dir = self.merge_resolver_attempts_dir();
         let path = dir.join(format!("{stage_id}.count"));
-        let current = std::fs::read_to_string(&path)
-            .ok()
-            .and_then(|s| s.trim().parse::<u32>().ok())
-            .unwrap_or(0);
+        let current = self.merge_resolver_attempts(stage_id);
         let next = current.saturating_add(1);
         if let Err(e) = std::fs::create_dir_all(&dir) {
             tracing::warn!(
@@ -1059,7 +1059,6 @@ impl Orchestrator {
     ) -> Result<()> {
         let source_branch = branch_name_for_stage(&stage.id);
 
-        // Get target branch
         let target_branch = crate::git::branch::resolve_target_branch(
             &self.config.base_branch,
             &self.config.repo_root,
@@ -1083,7 +1082,6 @@ impl Orchestrator {
             }
         };
 
-        // Create a merge session.
         let session = Session::new_merge(source_branch.clone(), target_branch.clone());
 
         // Detect any active merge in the main repo so the signal can branch
@@ -1101,7 +1099,6 @@ impl Orchestrator {
             conflicting_files
         };
 
-        // Generate merge signal
         let signal_path = generate_merge_signal(
             &session,
             stage,
@@ -1113,11 +1110,12 @@ impl Orchestrator {
         )
         .context("Failed to generate merge signal")?;
 
-        // Spawn the merge resolution session.
         let spawned_session = self
             .backend
             .spawn_merge_session(stage, session, &signal_path, &self.config.repo_root)
             .context("Failed to spawn merge resolution session")?;
+
+        self.next_merge_resolver_attempt(&stage.id);
 
         clear_status_line();
         eprintln!(
@@ -1132,11 +1130,9 @@ impl Orchestrator {
             }
         }
 
-        // Track the session
         self.active_sessions
             .insert(stage.id.clone(), spawned_session.clone());
 
-        // Save the session file
         self.save_session(&spawned_session)?;
 
         Ok(())
@@ -1183,6 +1179,10 @@ fn cleanup_merged_stage_resources(stage_id: &str, repo_root: &Path) {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "merge_handler_attempt_tests.rs"]
+mod merge_handler_attempt_tests;
 
 #[cfg(test)]
 mod tests {
