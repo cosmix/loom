@@ -266,7 +266,7 @@ fn codex_args(repo_root: &Path, skill: &str) -> Vec<String> {
 
 /// Render the exact commands `--dry-run` would execute.
 ///
-/// Uses the same [`claude_args`]/[`codex_args`] builders as the real spawns, so
+/// Uses the same `claude_args`/`codex_args` builders as the real spawns, so
 /// the preview can never diverge from what actually runs.
 pub fn render_dry_run(
     rounds: u32,

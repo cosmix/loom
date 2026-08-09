@@ -2,6 +2,9 @@
 //!
 //! This module provides common process management functions used across the codebase.
 
+mod environment;
+mod identity;
+
 use anyhow::{Context, Result};
 use nix::errno::Errno;
 use nix::sys::signal::{kill, Signal};
@@ -9,6 +12,44 @@ use nix::unistd::Pid;
 use std::process::{Command, Output, Stdio};
 use std::time::Duration;
 use wait_timeout::ChildExt;
+
+pub use environment::apply_stage_environment;
+pub use identity::{
+    process_start_time, terminate_verified, verify_process_identity, IdentityStatus,
+    ProcessIdentity, UnverifiedProcessIdentity,
+};
+
+/// Structured wall-clock timeout returned by bounded command helpers.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProcessTimeoutError {
+    operation: String,
+    timeout: Duration,
+}
+
+impl ProcessTimeoutError {
+    pub fn new(operation: impl Into<String>, timeout: Duration) -> Self {
+        Self {
+            operation: operation.into(),
+            timeout,
+        }
+    }
+
+    pub fn operation(&self) -> &str {
+        &self.operation
+    }
+
+    pub fn timeout(&self) -> Duration {
+        self.timeout
+    }
+}
+
+impl std::fmt::Display for ProcessTimeoutError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} timed out after {:?}", self.operation, self.timeout)
+    }
+}
+
+impl std::error::Error for ProcessTimeoutError {}
 
 /// Outcome of a subprocess run under a wall-clock bound.
 #[derive(Debug)]
@@ -60,6 +101,12 @@ impl BoundedOutput {
 /// helper is for control commands with negligible output. Use
 /// `verify::criteria::executor` for commands whose output matters.
 pub fn run_bounded(command: &mut Command, timeout: Duration) -> Result<BoundedOutput> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        command.process_group(0);
+    }
+
     let mut child = command
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -77,12 +124,30 @@ pub fn run_bounded(command: &mut Command, timeout: Duration) -> Result<BoundedOu
             Ok(BoundedOutput::Completed(output))
         }
         None => {
-            // Deadline elapsed. Kill and reap so the child does not linger as
-            // a zombie for the lifetime of the daemon.
+            // Kill the whole child process group so a control command cannot
+            // leave descendants behind after its direct child times out.
+            #[cfg(unix)]
+            if let Ok(pid) = i32::try_from(child.id()) {
+                let _ = kill(Pid::from_raw(-pid), Signal::SIGKILL);
+            }
+            #[cfg(not(unix))]
             let _ = child.kill();
             let _ = child.wait();
             Ok(BoundedOutput::TimedOut)
         }
+    }
+}
+
+/// Run a command under a deadline and turn expiry into a typed error.
+pub fn run_bounded_output(
+    command: &mut Command,
+    timeout: Duration,
+    operation: impl Into<String>,
+) -> Result<Output> {
+    let operation = operation.into();
+    match run_bounded(command, timeout)? {
+        BoundedOutput::Completed(output) => Ok(output),
+        BoundedOutput::TimedOut => Err(ProcessTimeoutError::new(operation, timeout).into()),
     }
 }
 
@@ -236,6 +301,47 @@ mod tests {
             "run_bounded returned after {:?}; it must not wait for the child",
             started.elapsed()
         );
+    }
+
+    #[test]
+    fn bounded_output_returns_structured_timeout() {
+        let mut cmd = Command::new("sleep");
+        cmd.arg("60");
+
+        let error = run_bounded_output(&mut cmd, Duration::from_millis(100), "git status")
+            .expect_err("sleep must exceed the deadline");
+        let timeout = error
+            .downcast_ref::<ProcessTimeoutError>()
+            .expect("timeout must be machine-identifiable");
+        assert_eq!(timeout.operation(), "git status");
+        assert_eq!(timeout.timeout(), Duration::from_millis(100));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn timeout_kills_descendants_in_the_child_process_group() {
+        let temp = tempfile::tempdir().unwrap();
+        let pid_path = temp.path().join("descendant.pid");
+        let pid_arg = shell_escape::escape(pid_path.display().to_string().into());
+        let script = format!("sleep 60 & printf '%s' $! > {pid_arg}; wait");
+        let mut cmd = Command::new("sh");
+        cmd.args(["-c", &script]);
+
+        let outcome = run_bounded(&mut cmd, Duration::from_millis(200)).unwrap();
+        assert!(matches!(outcome, BoundedOutput::TimedOut));
+        let descendant_pid: u32 = std::fs::read_to_string(pid_path)
+            .unwrap()
+            .trim()
+            .parse()
+            .unwrap();
+
+        for _ in 0..40 {
+            if !is_process_alive(descendant_pid) {
+                return;
+            }
+            std::thread::sleep(Duration::from_millis(25));
+        }
+        panic!("timed-out command left descendant PID {descendant_pid} alive");
     }
 
     #[test]

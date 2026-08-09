@@ -4,9 +4,11 @@ use super::*;
 
 fn sandbox_json(allow_writes: bool) -> serde_json::Value {
     let temp = tempfile::tempdir().expect("Failed to create temp dir");
-    write_knowledge_sandbox(temp.path(), allow_writes).expect("Failed to write sandbox settings");
+    let mut guard = KnowledgeSandboxGuard::install(temp.path(), allow_writes)
+        .expect("Failed to write sandbox settings");
     let raw = std::fs::read_to_string(temp.path().join(".claude/settings.local.json"))
         .expect("Failed to read settings.local.json");
+    guard.restore().expect("Failed to restore settings");
     serde_json::from_str(&raw).expect("Settings are not valid JSON")
 }
 
@@ -68,9 +70,20 @@ fn test_no_write_rules_are_emitted() {
 #[test]
 fn test_secret_reads_stay_denied_in_both_modes() {
     for allow_writes in [true, false] {
-        let deny = rules(&sandbox_json(allow_writes), "deny");
+        let settings = sandbox_json(allow_writes);
+        let deny = rules(&settings, "deny");
         assert!(deny.contains(&"Read(~/.ssh/**)".to_string()));
         assert!(deny.contains(&"Read(~/.aws/**)".to_string()));
+        assert!(deny.contains(&"Read(~/.claude/.credentials.json)".to_string()));
+        let os_deny = settings["sandbox"]["filesystem"]["denyRead"]
+            .as_array()
+            .unwrap();
+        assert!(os_deny.iter().any(|path| path == "~/.ssh/**"));
+        assert!(os_deny
+            .iter()
+            .any(|path| path == "~/.claude/.credentials.json"));
+        assert!(settings["sandbox"]["autoAllowBashIfSandboxed"].is_null());
+        assert!(settings["sandbox"]["excludedCommands"].is_null());
     }
 }
 
@@ -79,10 +92,10 @@ fn test_restore_removes_settings_when_there_was_no_backup() {
     let temp = tempfile::tempdir().expect("Failed to create temp dir");
     let settings_path = temp.path().join(".claude/settings.local.json");
 
-    write_knowledge_sandbox(temp.path(), false).expect("Failed to write sandbox settings");
+    let mut guard =
+        KnowledgeSandboxGuard::install(temp.path(), false).expect("Failed to write settings");
     assert!(settings_path.exists());
-
-    restore_sandbox_settings(temp.path(), None).expect("Failed to restore");
+    guard.restore().expect("Failed to restore");
     assert!(!settings_path.exists());
 }
 
@@ -95,16 +108,59 @@ fn test_restore_puts_back_the_callers_settings() {
     let original = r#"{"permissions":{"allow":["Bash(cargo test)"]}}"#;
     std::fs::write(&settings_path, original).expect("Failed to seed settings");
 
-    let backup = write_knowledge_sandbox(temp.path(), false).expect("Failed to write sandbox");
-    assert_eq!(backup.as_deref(), Some(original));
+    let mut guard =
+        KnowledgeSandboxGuard::install(temp.path(), false).expect("Failed to write sandbox");
     assert_ne!(
         std::fs::read_to_string(&settings_path).expect("Failed to read"),
         original
     );
 
-    restore_sandbox_settings(temp.path(), backup).expect("Failed to restore");
+    guard.restore().expect("Failed to restore");
     assert_eq!(
         std::fs::read_to_string(&settings_path).expect("Failed to read"),
         original
     );
+}
+
+#[test]
+fn concurrent_knowledge_sessions_are_rejected() {
+    let temp = tempfile::tempdir().expect("Failed to create temp dir");
+    let mut first = KnowledgeSandboxGuard::install(temp.path(), false).unwrap();
+
+    let second = KnowledgeSandboxGuard::install(temp.path(), true);
+    assert!(second.is_err());
+
+    first.restore().unwrap();
+    drop(first);
+    let mut third = KnowledgeSandboxGuard::install(temp.path(), true).unwrap();
+    third.restore().unwrap();
+}
+
+#[test]
+fn dropping_guard_restores_original_settings() {
+    let temp = tempfile::tempdir().expect("Failed to create temp dir");
+    let claude_dir = temp.path().join(".claude");
+    std::fs::create_dir_all(&claude_dir).unwrap();
+    let settings_path = claude_dir.join("settings.local.json");
+    let original = r#"{"permissions":{"deny":["Read(secret)"]}}"#;
+    std::fs::write(&settings_path, original).unwrap();
+
+    {
+        let _guard = KnowledgeSandboxGuard::install(temp.path(), false).unwrap();
+        assert_ne!(std::fs::read_to_string(&settings_path).unwrap(), original);
+    }
+
+    assert_eq!(std::fs::read_to_string(&settings_path).unwrap(), original);
+}
+
+#[test]
+fn restoration_refuses_to_clobber_concurrent_edits() {
+    let temp = tempfile::tempdir().expect("Failed to create temp dir");
+    let mut guard = KnowledgeSandboxGuard::install(temp.path(), false).unwrap();
+    let settings_path = temp.path().join(".claude/settings.local.json");
+    let concurrent = r#"{"changed":"by-user"}"#;
+    std::fs::write(&settings_path, concurrent).unwrap();
+
+    assert!(guard.restore().is_err());
+    assert_eq!(std::fs::read_to_string(settings_path).unwrap(), concurrent);
 }

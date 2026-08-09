@@ -53,8 +53,8 @@ pub fn gc(model: Option<String>, dry_run: bool, quick: bool) -> Result<()> {
     let initial_prompt = build_gc_initial_prompt(&effective_model, dry_run, is_legacy);
 
     // Sandbox: in dry-run, deny all writes.
-    let settings_backup = super::spawn::write_knowledge_sandbox(&project_root, !dry_run)?;
-    super::spawn::arm_sandbox_restore(&project_root, settings_backup.clone());
+    let mut sandbox_guard = super::spawn::KnowledgeSandboxGuard::install(&project_root, !dry_run)?;
+    super::spawn::arm_sandbox_restore(&sandbox_guard)?;
 
     let mode_label = if dry_run { "dry-run" } else { "restructuring" };
     println!(
@@ -118,9 +118,8 @@ pub fn gc(model: Option<String>, dry_run: bool, quick: bool) -> Result<()> {
     cmd.stdout(std::process::Stdio::inherit());
     cmd.stderr(std::process::Stdio::inherit());
 
-    let status = cmd.status().context("Failed to spawn Claude session")?;
-
-    super::spawn::restore_sandbox_settings(&project_root, settings_backup)?;
+    let status_result = cmd.status().context("Failed to spawn Claude session");
+    let status = super::spawn::restore_after(&mut sandbox_guard, status_result)?;
 
     if !status.success() {
         let code = status.code().unwrap_or(-1);

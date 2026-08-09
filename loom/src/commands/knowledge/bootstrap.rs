@@ -46,8 +46,8 @@ pub fn execute(model: Option<String>, skip_map: bool, quick: bool) -> Result<()>
     let initial_prompt = build_initial_prompt(&effective_model);
 
     // Write sandbox settings to restrict Claude's access
-    let settings_backup = super::spawn::write_knowledge_sandbox(&project_root, true)?;
-    super::spawn::arm_sandbox_restore(&project_root, settings_backup.clone());
+    let mut sandbox_guard = super::spawn::KnowledgeSandboxGuard::install(&project_root, true)?;
+    super::spawn::arm_sandbox_restore(&sandbox_guard)?;
 
     println!(
         "\n{} Spawning Claude session for knowledge exploration...\n",
@@ -78,10 +78,8 @@ pub fn execute(model: Option<String>, skip_map: bool, quick: bool) -> Result<()>
     cmd.stdout(std::process::Stdio::inherit());
     cmd.stderr(std::process::Stdio::inherit());
 
-    let status = cmd.status().context("Failed to spawn Claude session")?;
-
-    // Restore original settings
-    super::spawn::restore_sandbox_settings(&project_root, settings_backup)?;
+    let status_result = cmd.status().context("Failed to spawn Claude session");
+    let status = super::spawn::restore_after(&mut sandbox_guard, status_result)?;
 
     if !status.success() {
         let code = status.code().unwrap_or(-1);
