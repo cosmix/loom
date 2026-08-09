@@ -7,121 +7,15 @@ use std::os::unix::fs::PermissionsExt;
 
 use super::constants::LOOM_HOOKS;
 
+#[path = "hooks/config.rs"]
+mod config;
+
 /// Generate global hooks configuration for a specific hooks directory.
 ///
 /// Internal helper used by [`loom_hooks_config`] to build the hook table
 /// against the host hooks directory.
 fn loom_hooks_config_for_dir(hooks_dir: &str) -> Value {
-    json!({
-        "PreToolUse": [
-            {
-                "matcher": "AskUserQuestion",
-                "hooks": [{"type": "command", "command": format!("{hooks_dir}/ask-user-pre.sh")}]
-            },
-            {
-                "matcher": "Bash",
-                "hooks": [{"type": "command", "command": format!("{hooks_dir}/prefer-modern-tools.sh")}]
-            },
-            {
-                "matcher": "Bash",
-                "hooks": [{"type": "command", "command": format!("{hooks_dir}/commit-filter.sh")}]
-            },
-            {
-                "matcher": "Bash",
-                "hooks": [{"type": "command", "command": format!("{hooks_dir}/subagent-verify-guard.sh")}]
-            },
-            {
-                "matcher": "Bash",
-                "hooks": [{"type": "command", "command": format!("{hooks_dir}/git-add-guard.sh")}]
-            },
-            {
-                "matcher": "Bash",
-                "hooks": [{"type": "command", "command": format!("{hooks_dir}/worktree-isolation.sh")}]
-            },
-            {
-                "matcher": "Edit",
-                "hooks": [{"type": "command", "command": format!("{hooks_dir}/worktree-isolation.sh")}]
-            },
-            {
-                "matcher": "Write",
-                "hooks": [{"type": "command", "command": format!("{hooks_dir}/worktree-isolation.sh")}]
-            },
-            {
-                "matcher": "Edit",
-                "hooks": [{"type": "command", "command": format!("{hooks_dir}/plans-path-guard.sh")}]
-            },
-            {
-                "matcher": "Write",
-                "hooks": [{"type": "command", "command": format!("{hooks_dir}/plans-path-guard.sh")}]
-            },
-            {
-                "matcher": "Read",
-                "hooks": [{"type": "command", "command": format!("{hooks_dir}/worktree-file-guard.sh")}]
-            },
-            {
-                "matcher": "Glob",
-                "hooks": [{"type": "command", "command": format!("{hooks_dir}/worktree-file-guard.sh")}]
-            },
-            {
-                "matcher": "Grep",
-                "hooks": [{"type": "command", "command": format!("{hooks_dir}/worktree-file-guard.sh")}]
-            },
-            {
-                "matcher": "Bash",
-                "hooks": [{"type": "command", "command": format!("{hooks_dir}/no-preexisting-failures.sh")}]
-            },
-            {
-                "matcher": "Write",
-                "hooks": [{"type": "command", "command": format!("{hooks_dir}/no-preexisting-failures.sh")}]
-            },
-            {
-                "matcher": "Edit",
-                "hooks": [{"type": "command", "command": format!("{hooks_dir}/no-preexisting-failures.sh")}]
-            },
-            {
-                "matcher": "Bash",
-                "hooks": [{"type": "command", "command": format!("{hooks_dir}/codex-forward-guard.sh")}]
-            },
-            {
-                "matcher": "Edit",
-                "hooks": [{"type": "command", "command": format!("{hooks_dir}/codex-forward-guard.sh")}]
-            },
-            {
-                "matcher": "Write",
-                "hooks": [{"type": "command", "command": format!("{hooks_dir}/codex-forward-guard.sh")}]
-            },
-            {
-                "matcher": "Read",
-                "hooks": [{"type": "command", "command": format!("{hooks_dir}/codex-forward-guard.sh")}]
-            },
-            {
-                "matcher": "Task",
-                "hooks": [{"type": "command", "command": format!("{hooks_dir}/codex-forward-guard.sh")}]
-            },
-            {
-                "matcher": "Agent",
-                "hooks": [{"type": "command", "command": format!("{hooks_dir}/codex-forward-guard.sh")}]
-            }
-        ],
-        "PostToolUse": [
-            {
-                "matcher": "AskUserQuestion",
-                "hooks": [{"type": "command", "command": format!("{hooks_dir}/ask-user-post.sh")}]
-            }
-        ],
-        "Stop": [
-            {
-                "matcher": "*",
-                "hooks": [{"type": "command", "command": format!("{hooks_dir}/commit-guard.sh")}]
-            }
-        ],
-        "UserPromptSubmit": [
-            {
-                "matcher": "*",
-                "hooks": [{"type": "command", "command": format!("{hooks_dir}/skill-trigger.sh")}]
-            }
-        ]
-    })
+    config::build(hooks_dir)
 }
 
 /// Generate global hooks configuration for loom
@@ -466,7 +360,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_worktree_file_guard_registered_for_read_glob_grep() {
+    fn test_worktree_file_guard_registered_for_every_file_tool() {
         let config = loom_hooks_config();
         let pre_tool_use = config
             .get("PreToolUse")
@@ -490,8 +384,8 @@ mod tests {
             })
             .collect();
 
-        // Verify worktree-file-guard.sh is registered for Read, Glob, and Grep
-        for tool in ["Read", "Glob", "Grep"] {
+        // One canonical guard owns every file-tool path decision.
+        for tool in ["Read", "Write", "Edit", "Glob", "Grep"] {
             let found = entries.iter().any(|(matcher, command)| {
                 matcher == tool && command.contains("worktree-file-guard.sh")
             });
@@ -528,4 +422,26 @@ mod tests {
             );
         }
     }
+
+    #[test]
+    fn test_completion_control_hook_registered_before_and_after_bash_only() {
+        let config = loom_hooks_config();
+        for phase in ["PreToolUse", "PostToolUse"] {
+            let entries = config[phase].as_array().unwrap();
+            let matches: Vec<_> = entries
+                .iter()
+                .filter(|entry| {
+                    entry["hooks"][0]["command"]
+                        .as_str()
+                        .is_some_and(|command| command.contains("loom-control-complete.sh"))
+                })
+                .collect();
+            assert_eq!(matches.len(), 1, "unexpected {phase} registration count");
+            assert_eq!(matches[0]["matcher"], "Bash");
+        }
+    }
 }
+
+#[cfg(all(test, unix))]
+#[path = "hooks/policy_tests.rs"]
+mod policy_tests;

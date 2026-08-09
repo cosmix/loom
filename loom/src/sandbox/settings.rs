@@ -1,11 +1,12 @@
 use super::config::MergedSandboxConfig;
-use crate::language::{detect_project_languages, DetectedLanguage};
 use crate::plan::schema::PermissionMode;
 use anyhow::{Context, Result};
 use serde_json::{json, Value};
 use std::collections::HashSet;
 use std::fs;
 use std::path::Path;
+
+mod policy;
 
 /// Write Claude Code's `permissions.defaultMode` into a settings JSON value.
 ///
@@ -75,6 +76,7 @@ fn strip_worktree_escape_denies(config: &mut MergedSandboxConfig) {
 
 /// Write Claude Code settings.local.json to worktree .claude/ directory
 pub fn write_settings(config: &MergedSandboxConfig, worktree_path: &Path) -> Result<()> {
+    policy::validate_emittable(config)?;
     let claude_dir = worktree_path.join(".claude");
 
     // Create .claude/ directory if it doesn't exist
@@ -106,16 +108,6 @@ pub fn write_settings(config: &MergedSandboxConfig, worktree_path: &Path) -> Res
         strip_worktree_escape_denies(&mut config);
     }
 
-    // Auto-detect project build tools and add them to excluded commands
-    let detected_languages = detect_project_languages(worktree_path);
-    let build_commands = build_tool_commands(&detected_languages);
-    let existing: HashSet<String> = config.excluded_commands.iter().cloned().collect();
-    for cmd in build_commands {
-        if !existing.contains(&cmd) {
-            config.excluded_commands.push(cmd);
-        }
-    }
-
     // Generate new sandbox settings
     let mut settings_json = generate_settings_json(&config);
 
@@ -132,11 +124,9 @@ pub fn write_settings(config: &MergedSandboxConfig, worktree_path: &Path) -> Res
     // privilege escalation across the daemon's RPC trust boundary. We now:
     //   1. emit explicit `deny` rules for the resolved-absolute token paths
     //      *before* the allow (the relative forms come from default_deny_read);
-    //   2. narrow the broad allow from `/**` down to only the subdirs an agent
-    //      legitimately touches (signals/, handoffs/, disputes/, memory/, and
-    //      config.toml). This preserves the EROFS write exemption for exactly
-    //      those paths while no longer granting blanket read/write over the
-    //      tokens (or anything else) under the resolved .work root.
+    //   2. narrow the broad allow from `/**` down to read-only orchestration
+    //      state plus handoff writes. Memory and dispute state are daemon-owned,
+    //      so direct file-tool writes must never be authorized.
     //
     // IMPORTANT: Claude Code requires the // prefix for absolute filesystem paths.
     // A single / means "relative to project root", NOT absolute. See:
@@ -144,7 +134,20 @@ pub fn write_settings(config: &MergedSandboxConfig, worktree_path: &Path) -> Res
     let work_link = worktree_path.join(".work");
     if work_link.exists() || work_link.is_symlink() {
         if let Ok(resolved) = work_link.canonicalize() {
-            let resolved_str = resolved.to_string_lossy();
+            let resolved_str = resolved
+                .to_str()
+                .context("Resolved .work path is not valid UTF-8")?;
+            if let Some(deny_read) = settings_json
+                .pointer_mut("/sandbox/filesystem/denyRead")
+                .and_then(Value::as_array_mut)
+            {
+                for token in ["admin.token", "user.token"] {
+                    let deny_path = format!("/{resolved_str}/{token}");
+                    if !deny_read.iter().any(|value| value == &deny_path) {
+                        deny_read.push(json!(deny_path));
+                    }
+                }
+            }
             if let Some(permissions) = settings_json.get_mut("permissions") {
                 // Deny the resolved-absolute token paths first so deny wins over
                 // any (current or future) allow that might match the .work root.
@@ -160,18 +163,17 @@ pub fn write_settings(config: &MergedSandboxConfig, worktree_path: &Path) -> Res
                 }
                 if let Some(allow) = permissions.get_mut("allow") {
                     if let Some(allow_arr) = allow.as_array_mut() {
-                        // Narrowed allow: only the subdirs/files agents need.
-                        // `config.toml` is read-only; the rest get both read and
-                        // write (handoffs/disputes/memory are agent-written; the
-                        // write grant is what supplies the EROFS exemption).
+                        // Narrowed allow: config and orchestration state are
+                        // read-only. Handoffs are the sole direct write root;
+                        // memory and disputes are written through daemon RPCs.
                         let mut perms = vec![
                             format!("Read(/{}/config.toml)", resolved_str),
                             format!("Read(/{}/signals/**)", resolved_str),
                         ];
-                        for sub in ["signals", "handoffs", "disputes", "memory"] {
+                        for sub in ["handoffs", "disputes", "memory"] {
                             perms.push(format!("Read(/{}/{}/**)", resolved_str, sub));
-                            perms.push(format!("Write(/{}/{}/**)", resolved_str, sub));
                         }
+                        perms.push(format!("Write(/{}/handoffs/**)", resolved_str));
                         for perm in perms {
                             if !allow_arr.iter().any(|v| v.as_str() == Some(&perm)) {
                                 allow_arr.push(json!(perm));
@@ -200,171 +202,11 @@ pub fn write_settings(config: &MergedSandboxConfig, worktree_path: &Path) -> Res
     Ok(())
 }
 
-/// Return build tool commands that should be excluded from sandboxing for detected languages
-fn build_tool_commands(detected_languages: &[DetectedLanguage]) -> Vec<String> {
-    let mut commands = Vec::new();
-    for lang in detected_languages {
-        match lang {
-            DetectedLanguage::Rust => {
-                commands.push("cargo".to_string());
-            }
-            DetectedLanguage::TypeScript => {
-                commands.push("bun".to_string());
-                commands.push("npm".to_string());
-                commands.push("npx".to_string());
-            }
-            DetectedLanguage::Python => {
-                commands.push("uv".to_string());
-                commands.push("pip".to_string());
-                commands.push("python".to_string());
-            }
-            DetectedLanguage::Go => {
-                commands.push("go".to_string());
-            }
-        }
-    }
-    commands
-}
-
-/// Normalize a sandbox `excludedCommands` entry into a prefix pattern.
-///
-/// Claude Code matches a bare program name *exactly* (the whole command line
-/// must equal it), so `loom` would not exempt `loom stage complete <id>`.
-/// Appending `:*` produces a prefix match that covers the command and every
-/// subcommand/argument. Entries that already contain a glob (`*`) or a prefix
-/// suffix (`:*`) are returned unchanged so caller-supplied patterns are honored.
-fn to_exclude_pattern(cmd: &str) -> String {
-    let trimmed = cmd.trim();
-    if trimmed.ends_with(":*") || trimmed.contains('*') {
-        trimmed.to_string()
-    } else {
-        format!("{trimmed}:*")
-    }
-}
-
 /// Generate Claude Code settings JSON from sandbox config
 pub fn generate_settings_json(config: &MergedSandboxConfig) -> Value {
     let mut settings = json!({});
-
-    // Build sandbox block with native sandbox configuration.
-    let sandbox_enabled = config.enabled;
-    let mut sandbox = json!({
-        "enabled": sandbox_enabled
-    });
-
-    // Add autoAllowBashIfSandboxed if enabled
-    if config.auto_allow {
-        sandbox["autoAllowBashIfSandboxed"] = json!(true);
-    }
-
-    // Add excluded commands if any.
-    //
-    // Claude Code classifies each excludedCommands entry (sandbox matcher):
-    //   "loom:*"  -> prefix  -> matches `loom` AND `loom <anything>`
-    //   "loom *"  -> wildcard -> matches `loom <anything>` (NOT bare `loom`)
-    //   "loom"    -> exact    -> matches ONLY the literal command `loom`
-    // A bare program name is therefore matched *exactly*: `loom stage complete
-    // <id>` would NOT match "loom" and would run sandboxed, so its writes to the
-    // `.work` symlink (which resolves outside the worktree) fail with EROFS.
-    // Emit the prefix form ("loom:*") so the command and all its subcommands run
-    // unsandboxed. Entries that already carry a glob (`*`) or prefix (`:*`) are
-    // left untouched so plan-authored patterns are honored.
-    if !config.excluded_commands.is_empty() {
-        let patterns: Vec<String> = config
-            .excluded_commands
-            .iter()
-            .map(|c| c.trim())
-            .filter(|c| !c.is_empty())
-            .map(to_exclude_pattern)
-            .collect();
-        if !patterns.is_empty() {
-            sandbox["excludedCommands"] = json!(patterns);
-        }
-    }
-
-    // Add allowUnsandboxedCommands if enabled
-    if config.allow_unsandboxed_escape {
-        sandbox["allowUnsandboxedCommands"] = json!(true);
-    }
-
-    // Network configuration.
-    {
-        let mut network = json!({});
-        let mut domains = config.network.allowed_domains.clone();
-        domains.extend(config.network.additional_domains.clone());
-        if !domains.is_empty() {
-            network["allowedDomains"] = json!(domains);
-        }
-        if config.network.allow_local_binding {
-            network["allowLocalBinding"] = json!(true);
-        }
-        if !config.network.allow_unix_sockets.is_empty() {
-            network["allowUnixSockets"] = json!(config.network.allow_unix_sockets);
-        }
-        if config.network.allow_all_unix_sockets {
-            network["allowAllUnixSockets"] = json!(true);
-        }
-        // Only add network block if it has content
-        if network.as_object().is_some_and(|o| !o.is_empty()) {
-            sandbox["network"] = network;
-        }
-    }
-
-    // Add filesystem configuration for OS-level sandbox enforcement
-    //
-    // IMPORTANT: Do NOT emit denyRead in sandbox.filesystem.
-    // Claude Code's OS-level sandbox (macOS sandbox-exec) becomes overly
-    // restrictive when denyRead is present, blocking access to files like
-    // ~/.gitconfig (breaks git) and ~/.claude/shell-snapshots/ (breaks zsh).
-    // Read restrictions are enforced via permissions.deny Read() entries
-    // which work at the tool level without affecting the OS sandbox.
-    //
-    // IMPORTANT: Do NOT emit parent-traversal paths (../) in denyWrite.
-    // macOS sandbox-exec resolves these relative to the project root,
-    // causing overly broad restrictions. For example, "../../**" from a
-    // worktree at .worktrees/<stage>/ resolves to the project root,
-    // blocking writes to the worktree's OWN files. From the main project,
-    // it resolves to the home directory, blocking ~/.claude/shell-snapshots/
-    // and breaking loom CLI (getcwd fails). Parent-traversal write
-    // restrictions are enforced via permissions.deny Write() entries instead.
-    //
-    // IMPORTANT: Do NOT emit doc/loom/knowledge/** in denyWrite.
-    // The `loom knowledge update` CLI command needs to write to this path.
-    // A denyWrite entry leaks into the OS-level sandbox, so it would block the
-    // loom binary's own writes regardless of excludedCommands. Knowledge writes
-    // are protected via permissions.deny Write() entries instead, which
-    // block Claude Code's Write/Edit tools but not CLI commands.
-    //
-    // IMPORTANT: Do NOT emit allowWrite in sandbox.filesystem.
-    // Claude Code already constrains writes to the project root by default.
-    // Adding explicit allowWrite causes the OS sandbox (macOS sandbox-exec)
-    // to become overly restrictive about reads, blocking access to
-    // ~/.gitconfig (breaks git) and ~/.claude/shell-snapshots/ (breaks zsh).
-    // Plan-specified allow_write paths are still emitted as permissions.allow
-    // Write() entries for tool-level enforcement.
-    let mut fs_sandbox = json!({});
-    if !config.filesystem.deny_write.is_empty() {
-        let safe_deny_write: Vec<&str> = config
-            .filesystem
-            .deny_write
-            .iter()
-            .filter(|p| !p.contains("../") && !p.starts_with("doc/loom/knowledge"))
-            .map(|s| s.as_str())
-            .collect();
-        if !safe_deny_write.is_empty() {
-            fs_sandbox["denyWrite"] = json!(safe_deny_write);
-        }
-    }
-    if fs_sandbox.as_object().is_some_and(|o| !o.is_empty()) {
-        sandbox["filesystem"] = fs_sandbox;
-    }
-
-    // Add Linux-specific settings if configured
-    if config.linux.enable_weaker_nested {
-        sandbox["enableWeakerNestedSandbox"] = json!(true);
-    }
-
-    settings["sandbox"] = sandbox;
+    let deny_read = policy::deny_read_patterns(config);
+    settings["sandbox"] = policy::sandbox_settings(config);
 
     // Build permissions block for file tool restrictions (Read/Write/Edit prompting)
     // These still work for prompting even though they don't provide OS-level isolation
@@ -382,10 +224,7 @@ pub fn generate_settings_json(config: &MergedSandboxConfig) -> Value {
     // This breaks git (~/.gitconfig) and zsh (~/.claude/shell-snapshots/).
     // Write-side parent-traversal in permissions.deny is harmless because
     // the write sandbox already uses allowOnly with a narrow list.
-    for path in &config.filesystem.deny_read {
-        if path.contains("../") {
-            continue;
-        }
+    for path in &deny_read {
         deny.push(json!(format!("Read({})", path)));
     }
 
@@ -399,17 +238,6 @@ pub fn generate_settings_json(config: &MergedSandboxConfig) -> Value {
         allow.push(json!(format!("Write({})", path)));
     }
 
-    // Add Bash permissions for excluded commands.
-    // This complements sandbox.excludedCommands (which exempts from OS-level sandbox)
-    // by also auto-approving the permission prompt for these commands.
-    for cmd in &config.excluded_commands {
-        let cmd_trimmed = cmd.trim();
-        if cmd_trimmed.is_empty() {
-            continue;
-        }
-        allow.push(json!(format!("Bash({} *)", cmd_trimmed)));
-    }
-
     // Add narrow Read/Write permissions for orchestration state files agents
     // need. These are the *relative* forms; `write_settings` adds matching
     // resolved-absolute forms because `.work` is a symlink that Claude Code
@@ -421,9 +249,7 @@ pub fn generate_settings_json(config: &MergedSandboxConfig) -> Value {
     allow.push(json!("Read(.work/handoffs/**)"));
     allow.push(json!("Write(.work/handoffs/**)"));
     allow.push(json!("Read(.work/disputes/**)"));
-    allow.push(json!("Write(.work/disputes/**)"));
     allow.push(json!("Read(.work/memory/**)"));
-    allow.push(json!("Write(.work/memory/**)"));
 
     if !allow.is_empty() {
         permissions["allow"] = json!(allow);
@@ -604,7 +430,7 @@ fn preserve_unowned_keys(new_settings: &mut Value, existing: &Value) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::plan::schema::{FilesystemConfig, LinuxConfig, NetworkConfig};
+    use crate::plan::schema::{FilesystemConfig, LinuxConfig, NetworkConfig, SandboxConfig};
 
     #[test]
     fn test_apply_default_mode_matrix() {
@@ -745,40 +571,42 @@ mod tests {
         };
 
         let json = generate_settings_json(&config);
-        // Sandbox enabled in sandbox block
-        assert_eq!(json["sandbox"]["enabled"], true);
-        assert_eq!(json["sandbox"]["autoAllowBashIfSandboxed"], true);
+        assert_filesystem_sandbox(&json);
 
         // Permissions for file tool restrictions
         // Parent-traversal deny_read paths (../../**) are filtered out because
         // Claude Code leaks them into the OS sandbox where they resolve too broadly
         let deny = json["permissions"]["deny"].as_array().unwrap();
-        assert_eq!(deny.len(), 2);
+        assert_eq!(deny.len(), 3);
         assert_eq!(deny[0], "Read(~/.ssh/**)");
-        assert_eq!(deny[1], "Write(.work/**)");
+        assert_eq!(deny[1], "Read(~/.claude/.credentials.json)");
+        assert_eq!(deny[2], "Write(.work/**)");
 
         // allow_write paths come first, then the narrowly-scoped .work/ state
         // permissions agents need (signals/handoffs/disputes/memory). The set is
         // deliberately scoped to subdirs an agent touches — never bare `.work/**`,
         // which would also expose `.work/admin.token` / `.work/user.token` (S-1).
         let allow = json["permissions"]["allow"].as_array().unwrap();
-        assert_eq!(allow.len(), 9);
+        assert_eq!(allow.len(), 7);
         assert_eq!(allow[0], "Write(src/**)");
         assert_eq!(allow[1], "Read(.work/config.toml)");
         assert_eq!(allow[2], "Read(.work/signals/**)");
         assert_eq!(allow[3], "Read(.work/handoffs/**)");
         assert_eq!(allow[4], "Write(.work/handoffs/**)");
         assert_eq!(allow[5], "Read(.work/disputes/**)");
-        assert_eq!(allow[6], "Write(.work/disputes/**)");
-        assert_eq!(allow[7], "Read(.work/memory/**)");
-        assert_eq!(allow[8], "Write(.work/memory/**)");
+        assert_eq!(allow[6], "Read(.work/memory/**)");
+    }
 
-        // Sandbox filesystem block: NO denyRead, NO allowWrite (OS sandbox breaks with both)
+    fn assert_filesystem_sandbox(json: &Value) {
+        assert_eq!(json["sandbox"]["enabled"], true);
+        assert_eq!(json["sandbox"]["failIfUnavailable"], true);
+        assert_eq!(json["sandbox"]["autoAllowBashIfSandboxed"], true);
         let fs_block = &json["sandbox"]["filesystem"];
-        assert!(
-            fs_block["denyRead"].is_null(),
-            "denyRead must NOT be in sandbox.filesystem (breaks OS sandbox)"
-        );
+        let deny_read = fs_block["denyRead"].as_array().unwrap();
+        assert!(deny_read.iter().any(|value| value == "~/.ssh/**"));
+        assert!(deny_read
+            .iter()
+            .any(|value| value == "~/.claude/.credentials.json"));
         assert!(
             fs_block["allowWrite"].is_null(),
             "allowWrite must NOT be in sandbox.filesystem (causes OS sandbox to block reads)"
@@ -841,7 +669,7 @@ mod tests {
     }
 
     #[test]
-    fn test_generate_settings_with_excluded_commands() {
+    fn test_generate_settings_never_emits_excluded_commands() {
         let config = MergedSandboxConfig {
             enabled: true,
             auto_allow: true,
@@ -854,26 +682,20 @@ mod tests {
         };
 
         let json = generate_settings_json(&config);
-        // Excluded commands are emitted as prefix patterns (":*") so the command
-        // and all its subcommands/arguments are exempted from the sandbox. A bare
-        // name would only match the argument-less invocation (exact match).
-        let excluded = json["sandbox"]["excludedCommands"].as_array().unwrap();
-        assert_eq!(excluded.len(), 2);
-        assert_eq!(excluded[0], "loom:*");
-        assert_eq!(excluded[1], "git:*");
+        assert!(json["sandbox"]["excludedCommands"].is_null());
+
+        let temp = tempfile::TempDir::new().unwrap();
+        let error = write_settings(&config, temp.path())
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("excluded_commands"));
+        assert!(!temp.path().join(".claude/settings.local.json").exists());
     }
 
     #[test]
-    fn test_exclude_pattern_normalization() {
-        // Bare names get the ":*" prefix suffix so subcommands match.
-        assert_eq!(to_exclude_pattern("loom"), "loom:*");
-        assert_eq!(to_exclude_pattern("npm run"), "npm run:*");
-        // Already-patterned entries are left untouched.
-        assert_eq!(to_exclude_pattern("loom:*"), "loom:*");
-        assert_eq!(to_exclude_pattern("docker *"), "docker *");
-        assert_eq!(to_exclude_pattern("npm run *"), "npm run *");
-        // Whitespace is trimmed.
-        assert_eq!(to_exclude_pattern("  cargo  "), "cargo:*");
+    fn test_default_sandbox_has_no_command_exclusions() {
+        let config = SandboxConfig::default();
+        assert!(config.excluded_commands.is_empty());
     }
 
     #[test]
@@ -895,7 +717,7 @@ mod tests {
     }
 
     #[test]
-    fn test_generate_settings_excluded_commands_get_bash_allow() {
+    fn test_generate_settings_exclusions_never_get_bash_allow() {
         let config = MergedSandboxConfig {
             enabled: true,
             auto_allow: true,
@@ -910,18 +732,11 @@ mod tests {
         let json = generate_settings_json(&config);
         let allow = json["permissions"]["allow"].as_array().unwrap();
 
-        // Should have Bash(loom *) and Bash(git *) in allow
         let allow_strs: Vec<&str> = allow.iter().map(|v| v.as_str().unwrap()).collect();
-        assert!(
-            allow_strs.contains(&"Bash(loom *)"),
-            "Should have Bash(loom *) in allow, got: {:?}",
-            allow_strs
-        );
-        assert!(
-            allow_strs.contains(&"Bash(git *)"),
-            "Should have Bash(git *) in allow, got: {:?}",
-            allow_strs
-        );
+        assert!(!allow_strs
+            .iter()
+            .any(|entry| entry.starts_with("Bash(loom")));
+        assert!(!allow_strs.iter().any(|entry| entry.starts_with("Bash(git")));
     }
 
     #[test]
@@ -959,7 +774,7 @@ mod tests {
     }
 
     #[test]
-    fn test_generate_settings_no_filesystem_when_empty() {
+    fn test_generate_settings_keeps_mandatory_credential_deny_when_empty() {
         let config = MergedSandboxConfig {
             enabled: true,
             auto_allow: true,
@@ -976,11 +791,9 @@ mod tests {
         };
 
         let json = generate_settings_json(&config);
-        // No filesystem block when there are no deny_write paths to emit
-        // (allowWrite is never emitted to avoid OS sandbox read-blocking)
-        assert!(
-            json["sandbox"]["filesystem"].is_null(),
-            "filesystem block should not exist when empty"
+        assert_eq!(
+            json["sandbox"]["filesystem"]["denyRead"],
+            json!(["~/.claude/.credentials.json"])
         );
     }
 
@@ -1008,15 +821,7 @@ mod tests {
     }
 
     #[test]
-    fn test_deny_read_not_in_os_sandbox() {
-        // deny_read paths must NEVER appear in sandbox.filesystem.denyRead because
-        // Claude Code's OS sandbox (macOS sandbox-exec) becomes overly restrictive
-        // when denyRead is present, blocking ~/.gitconfig and shell initialization.
-        // deny_read paths are enforced via permissions.deny Read() entries instead.
-        // Parent-traversal paths (../) must also be filtered from permissions.deny
-        // because Claude Code leaks these into the OS sandbox, where sandbox-exec
-        // resolves them relative to the project root (e.g. ../../** from
-        // /Users/foo/src/project → /Users/foo/**, blocking the entire home dir).
+    fn test_deny_read_is_enforced_in_os_sandbox() {
         let config = MergedSandboxConfig {
             enabled: true,
             auto_allow: true,
@@ -1038,11 +843,14 @@ mod tests {
 
         let json = generate_settings_json(&config);
 
-        // No filesystem block at all (no deny_write, no allowWrite)
-        assert!(
-            json["sandbox"]["filesystem"].is_null(),
-            "filesystem block should not exist when no deny_write paths"
-        );
+        let os_deny = json["sandbox"]["filesystem"]["denyRead"]
+            .as_array()
+            .unwrap();
+        let os_deny_strs: Vec<&str> = os_deny.iter().filter_map(|v| v.as_str()).collect();
+        assert!(os_deny_strs.contains(&"~/.ssh/**"));
+        assert!(os_deny_strs.contains(&"~/.claude/.credentials.json"));
+        assert!(!os_deny_strs.contains(&"../../**"));
+        assert!(!os_deny_strs.contains(&"../.worktrees/**"));
 
         // permissions.deny should have non-traversal paths only
         let deny = json["permissions"]["deny"].as_array().unwrap();
@@ -1089,14 +897,10 @@ mod tests {
         // Both are filtered: parent-traversal resolves too broadly in sandbox-exec,
         // and knowledge paths block `loom knowledge update` CLI (excludedCommands
         // doesn't bypass OS-level filesystem restrictions).
-        assert!(
-            json["sandbox"]["filesystem"].is_null(),
-            "filesystem block should not exist when all deny_write paths are filtered"
-        );
+        assert!(json["sandbox"]["filesystem"]["denyWrite"].is_null());
         // allowWrite must NOT be present (causes OS sandbox to block reads)
         assert!(
-            json["sandbox"]["filesystem"].is_null()
-                || json["sandbox"]["filesystem"]["allowWrite"].is_null(),
+            json["sandbox"]["filesystem"]["allowWrite"].is_null(),
             "allowWrite must NOT be in sandbox.filesystem"
         );
 
@@ -1380,11 +1184,14 @@ mod tests {
         // Parent-traversal paths filtered out (leaked into OS sandbox otherwise)
         assert!(!deny_strs.contains(&"Read(../../**)"));
 
-        // Sandbox filesystem should NOT have denyRead or allowWrite
-        assert!(
-            result["sandbox"]["filesystem"].is_null(),
-            "filesystem block should not exist when no project-relative deny_write paths"
-        );
+        let os_deny = result["sandbox"]["filesystem"]["denyRead"]
+            .as_array()
+            .unwrap();
+        assert!(os_deny.iter().any(|value| value == "~/.ssh/**"));
+        assert!(os_deny
+            .iter()
+            .any(|value| value == "~/.claude/.credentials.json"));
+        assert!(result["sandbox"]["filesystem"]["allowWrite"].is_null());
     }
 
     #[cfg(unix)]
@@ -1474,6 +1281,13 @@ mod tests {
             "user.token must be denied (resolved-absolute), got: {:?}",
             deny_strs
         );
+        let os_deny = result["sandbox"]["filesystem"]["denyRead"]
+            .as_array()
+            .unwrap();
+        let os_admin = format!("/{resolved_str}/admin.token");
+        let os_user = format!("/{resolved_str}/user.token");
+        assert!(os_deny.iter().any(|value| value == &os_admin));
+        assert!(os_deny.iter().any(|value| value == &os_user));
 
         // Should also still have the relative permissions
         assert!(allow_strs.contains(&"Read(.work/signals/**)"));

@@ -17,12 +17,8 @@
 # The DURABLE boundary is the OS sandbox `Write` deny on parent paths; this hook
 # is defense-in-depth that raises the cost of the obvious bypasses.
 #
-# For Edit/Write tools:
-#   - Block paths outside worktree bounds
-#   - Block writes to `.work/stages/` and `.work/sessions/`
-#
 # Input: JSON from stdin (Claude Code passes tool info via stdin)
-#   {"tool_name": "Bash|Edit|Write", "tool_input": {...}, ...}
+#   {"tool_name": "Bash", "tool_input": {...}, ...}
 #
 # Exit codes:
 #   0 - Allow the operation
@@ -179,95 +175,6 @@ EOF
     return 0
 }
 
-# === EDIT/WRITE VALIDATION ===
-validate_file_path() {
-    local file_path="$1"
-
-    # Block absolute paths to .work/stages/ or .work/sessions/
-    if echo "$file_path" | grep -qE '\.work/(stages|sessions)/'; then
-        cat >&2 <<'EOF'
-
-============================================================
-  LOOM: BLOCKED - Protected state file access
-============================================================
-
-You tried to: Write to .work/stages/ or .work/sessions/
-
-This is FORBIDDEN because:
-  - Stage and session files are managed by loom CLI
-  - Direct edits corrupt orchestrator state
-  - This causes phantom completions and lost work
-
-Instead, you should:
-  - Use `loom stage complete` to complete a stage
-  - Use `loom memory` to record insights
-  - NEVER manually edit .work/ state files
-
-Use loom CLI commands to manage state.
-============================================================
-
-EOF
-        return 1
-    fi
-
-    # Block writes to other worktrees
-    if echo "$file_path" | grep -qE '\.worktrees/' && \
-       ! echo "$file_path" | grep -qE "\.worktrees/${CURRENT_STAGE}/"; then
-        cat >&2 <<EOF
-
-============================================================
-  LOOM: BLOCKED - Cross-worktree file write
-============================================================
-
-You tried to: Write to another stage's worktree
-
-This is FORBIDDEN because:
-  - Each stage owns its worktree exclusively
-  - Writing to other worktrees causes conflicts
-  - You may overwrite another agent's work
-
-Instead, you should:
-  - Write only to files in YOUR worktree
-  - Your worktree: .worktrees/${CURRENT_STAGE}/
-  - Files are merged after stage completion
-
-Stay in your assigned worktree.
-============================================================
-
-EOF
-        return 1
-    fi
-
-    # Block path traversal in file paths
-    if echo "$file_path" | grep -qE '\.\./\.\.' || echo "$file_path" | grep -qE '\.\.[\\/]\.\.'; then
-        cat >&2 <<'EOF'
-
-============================================================
-  LOOM: BLOCKED - Path traversal in file path
-============================================================
-
-You tried to: Use ../../ in a file path to escape the worktree
-
-This is FORBIDDEN because:
-  - You must stay within your worktree
-  - Path traversal could access main repo or other worktrees
-  - This breaks isolation guarantees
-
-Instead, you should:
-  - Use relative paths within the worktree
-  - Or use paths starting with ./ for current directory
-  - All needed files are in your worktree
-
-Use paths relative to the worktree root.
-============================================================
-
-EOF
-        return 1
-    fi
-
-    return 0
-}
-
 # === MAIN DISPATCH ===
 case "$TOOL_NAME" in
     Bash)
@@ -275,26 +182,6 @@ case "$TOOL_NAME" in
         if [[ -n "$COMMAND" ]]; then
             if ! validate_bash_command "$COMMAND"; then
                 debug "BLOCKED: Bash command failed validation"
-                exit 2
-            fi
-        fi
-        ;;
-
-    Edit)
-        FILE_PATH=$(echo "$TOOL_INPUT" | jq -r '.file_path // empty' 2>/dev/null || true)
-        if [[ -n "$FILE_PATH" ]]; then
-            if ! validate_file_path "$FILE_PATH"; then
-                debug "BLOCKED: Edit path failed validation: $FILE_PATH"
-                exit 2
-            fi
-        fi
-        ;;
-
-    Write)
-        FILE_PATH=$(echo "$TOOL_INPUT" | jq -r '.file_path // empty' 2>/dev/null || true)
-        if [[ -n "$FILE_PATH" ]]; then
-            if ! validate_file_path "$FILE_PATH"; then
-                debug "BLOCKED: Write path failed validation: $FILE_PATH"
                 exit 2
             fi
         fi

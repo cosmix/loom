@@ -1,158 +1,64 @@
-//! Tests for hooks configuration
+//! Tests for hooks configuration.
 
 use crate::fs::permissions::hooks::loom_hooks_config;
+use serde_json::Value;
 
 #[test]
 fn test_hooks_config_structure() {
     let hooks = loom_hooks_config();
-    let hooks_obj = hooks.as_object().unwrap();
-
-    // Check PreToolUse hooks:
-    // 1. AskUserQuestion: ask-user-pre.sh
-    // 2. Bash: prefer-modern-tools.sh
-    // 3. Bash: commit-filter.sh
-    // 4. Bash: subagent-verify-guard.sh
-    // 5. Bash: git-add-guard.sh
-    // 6. Bash: worktree-isolation.sh
-    // 7. Edit: worktree-isolation.sh
-    // 8. Write: worktree-isolation.sh
-    // 9. Edit: plans-path-guard.sh
-    // 10. Write: plans-path-guard.sh
-    // 11. Read: worktree-file-guard.sh
-    // 12. Glob: worktree-file-guard.sh
-    // 13. Grep: worktree-file-guard.sh
-    // Appended last so the positional assertions below stay stable:
-    // 14. Bash: no-preexisting-failures.sh
-    // 15. Write: no-preexisting-failures.sh
-    // 16. Edit: no-preexisting-failures.sh
-    // 17-22. Bash/Edit/Write/Read/Task/Agent: codex-forward-guard.sh
-    let pre_tool = hooks_obj.get("PreToolUse").unwrap().as_array().unwrap();
-    assert_eq!(pre_tool.len(), 22);
-    // First hook: AskUserQuestion matcher with ask-user-pre.sh
-    assert_eq!(pre_tool[0]["matcher"], "AskUserQuestion");
-    assert!(pre_tool[0]["hooks"][0]["command"]
-        .as_str()
-        .unwrap()
-        .contains("ask-user-pre.sh"));
-    // Second hook: Bash matcher with prefer-modern-tools.sh
-    assert_eq!(pre_tool[1]["matcher"], "Bash");
-    assert!(pre_tool[1]["hooks"][0]["command"]
-        .as_str()
-        .unwrap()
-        .contains("prefer-modern-tools.sh"));
-    // Third hook: Bash matcher with commit-filter.sh
-    assert_eq!(pre_tool[2]["matcher"], "Bash");
-    assert!(pre_tool[2]["hooks"][0]["command"]
-        .as_str()
-        .unwrap()
-        .contains("commit-filter.sh"));
-    // Fourth hook: Bash matcher with subagent-verify-guard.sh
-    assert_eq!(pre_tool[3]["matcher"], "Bash");
-    assert!(pre_tool[3]["hooks"][0]["command"]
-        .as_str()
-        .unwrap()
-        .contains("subagent-verify-guard.sh"));
-    // Fifth hook: Bash matcher with git-add-guard.sh
-    assert_eq!(pre_tool[4]["matcher"], "Bash");
-    assert!(pre_tool[4]["hooks"][0]["command"]
-        .as_str()
-        .unwrap()
-        .contains("git-add-guard.sh"));
-    // Sixth hook: Bash matcher with worktree-isolation.sh
-    assert_eq!(pre_tool[5]["matcher"], "Bash");
-    assert!(pre_tool[5]["hooks"][0]["command"]
-        .as_str()
-        .unwrap()
-        .contains("worktree-isolation.sh"));
-    // Seventh hook: Edit matcher with worktree-isolation.sh
-    assert_eq!(pre_tool[6]["matcher"], "Edit");
-    assert!(pre_tool[6]["hooks"][0]["command"]
-        .as_str()
-        .unwrap()
-        .contains("worktree-isolation.sh"));
-    // Eighth hook: Write matcher with worktree-isolation.sh
-    assert_eq!(pre_tool[7]["matcher"], "Write");
-    assert!(pre_tool[7]["hooks"][0]["command"]
-        .as_str()
-        .unwrap()
-        .contains("worktree-isolation.sh"));
-    // Ninth hook: Edit matcher with plans-path-guard.sh
-    assert_eq!(pre_tool[8]["matcher"], "Edit");
-    assert!(pre_tool[8]["hooks"][0]["command"]
-        .as_str()
-        .unwrap()
-        .contains("plans-path-guard.sh"));
-    // Tenth hook: Write matcher with plans-path-guard.sh
-    assert_eq!(pre_tool[9]["matcher"], "Write");
-    assert!(pre_tool[9]["hooks"][0]["command"]
-        .as_str()
-        .unwrap()
-        .contains("plans-path-guard.sh"));
-    // Eleventh hook: Read matcher with worktree-file-guard.sh
-    assert_eq!(pre_tool[10]["matcher"], "Read");
-    assert!(pre_tool[10]["hooks"][0]["command"]
-        .as_str()
-        .unwrap()
-        .contains("worktree-file-guard.sh"));
-    // Twelfth hook: Glob matcher with worktree-file-guard.sh
-    assert_eq!(pre_tool[11]["matcher"], "Glob");
-    assert!(pre_tool[11]["hooks"][0]["command"]
-        .as_str()
-        .unwrap()
-        .contains("worktree-file-guard.sh"));
-    // Thirteenth hook: Grep matcher with worktree-file-guard.sh
-    assert_eq!(pre_tool[12]["matcher"], "Grep");
-    assert!(pre_tool[12]["hooks"][0]["command"]
-        .as_str()
-        .unwrap()
-        .contains("worktree-file-guard.sh"));
-
-    // codex-forward-guard.sh must cover every tool a rogue forwarder reached
-    // for (Read/Edit and non-companion Bash on 2026-08-07) plus Write and both
-    // subagent-spawn tool names. Registration is asserted by matcher rather
-    // than position so the earlier positional pins stay stable.
-    for tool in ["Bash", "Edit", "Write", "Read", "Task", "Agent"] {
-        let found = pre_tool.iter().any(|entry| {
-            entry["matcher"] == *tool
-                && entry["hooks"][0]["command"]
-                    .as_str()
-                    .is_some_and(|c| c.contains("codex-forward-guard.sh"))
-        });
-        assert!(
-            found,
-            "codex-forward-guard.sh not registered as PreToolUse hook for matcher '{tool}'"
-        );
+    let pre_tool = hooks["PreToolUse"].as_array().unwrap();
+    let expected_prefix = [
+        ("AskUserQuestion", "ask-user-pre.sh"),
+        ("Bash", "prefer-modern-tools.sh"),
+        ("Bash", "commit-filter.sh"),
+        ("Bash", "subagent-verify-guard.sh"),
+        ("Bash", "git-add-guard.sh"),
+        ("Bash", "worktree-isolation.sh"),
+        ("Edit", "worktree-file-guard.sh"),
+        ("Write", "worktree-file-guard.sh"),
+        ("Edit", "plans-path-guard.sh"),
+        ("Write", "plans-path-guard.sh"),
+        ("Read", "worktree-file-guard.sh"),
+        ("Glob", "worktree-file-guard.sh"),
+        ("Grep", "worktree-file-guard.sh"),
+    ];
+    assert_eq!(pre_tool.len(), 23);
+    for (entry, (matcher, script)) in pre_tool.iter().zip(expected_prefix) {
+        assert_hook(entry, matcher, script);
     }
+    for matcher in ["Bash", "Edit", "Write", "Read", "Task", "Agent"] {
+        assert!(contains_hook(pre_tool, matcher, "codex-forward-guard.sh"));
+    }
+    assert!(contains_hook(pre_tool, "Bash", "loom-control-complete.sh"));
+    assert_lifecycle_hooks(&hooks);
+}
 
-    // Check PostToolUse hooks (only AskUserQuestion for resume in global config)
-    // Session-specific post-tool-use.sh (Bash) is merged at worktree creation
-    let post_tool = hooks_obj.get("PostToolUse").unwrap().as_array().unwrap();
-    assert_eq!(post_tool.len(), 1);
-    // Only hook: AskUserQuestion matcher with ask-user-post.sh (stage resume)
-    assert_eq!(post_tool[0]["matcher"], "AskUserQuestion");
-    assert!(post_tool[0]["hooks"][0]["command"]
-        .as_str()
-        .unwrap()
-        .contains("ask-user-post.sh"));
+fn assert_lifecycle_hooks(hooks: &Value) {
+    let post_tool = hooks["PostToolUse"].as_array().unwrap();
+    assert_eq!(post_tool.len(), 2);
+    assert_hook(&post_tool[0], "AskUserQuestion", "ask-user-post.sh");
+    assert_hook(&post_tool[1], "Bash", "loom-control-complete.sh");
 
-    // Check Stop hook
-    let stop = hooks_obj.get("Stop").unwrap().as_array().unwrap();
+    let stop = hooks["Stop"].as_array().unwrap();
     assert_eq!(stop.len(), 1);
-    assert!(stop[0]["hooks"][0]["command"]
-        .as_str()
-        .unwrap()
-        .contains("commit-guard.sh"));
+    assert_hook(&stop[0], "*", "commit-guard.sh");
 
-    // Check UserPromptSubmit hook (skill suggestions)
-    let user_prompt = hooks_obj
-        .get("UserPromptSubmit")
-        .unwrap()
-        .as_array()
-        .unwrap();
-    assert_eq!(user_prompt.len(), 1);
-    assert_eq!(user_prompt[0]["matcher"], "*");
-    assert!(user_prompt[0]["hooks"][0]["command"]
-        .as_str()
-        .unwrap()
-        .contains("skill-trigger.sh"));
+    let prompt = hooks["UserPromptSubmit"].as_array().unwrap();
+    assert_eq!(prompt.len(), 1);
+    assert_hook(&prompt[0], "*", "skill-trigger.sh");
+}
+
+fn contains_hook(entries: &[Value], matcher: &str, script: &str) -> bool {
+    entries
+        .iter()
+        .any(|entry| entry["matcher"] == matcher && hook_command(entry).contains(script))
+}
+
+fn assert_hook(entry: &Value, matcher: &str, script: &str) {
+    assert_eq!(entry["matcher"], matcher);
+    assert!(hook_command(entry).contains(script));
+}
+
+fn hook_command(entry: &Value) -> &str {
+    entry["hooks"][0]["command"].as_str().unwrap()
 }

@@ -36,10 +36,10 @@ const WORKTREE_PATH_PATTERNS: &[&str] = &["../", ".worktrees/"];
 /// 7. Propagates the updated permissions to all other existing worktrees
 ///
 /// # Arguments
-/// * `worktree_path` - The root path of the worktree (.worktrees/<stage-id>)
+/// * `worktree_path` - The root path of the worktree (`.worktrees/<stage-id>`)
 /// * `main_repo_path` - The root path of the main repository
 /// * `working_dir` - Optional working directory where Claude Code session ran
-///   (e.g., <worktree>/loom for Rust projects). Claude Code writes permissions
+///   (e.g., `<worktree>/loom` for Rust projects). Claude Code writes permissions
 ///   to .claude/settings.local.json relative to the cwd, so we need to check
 ///   both the worktree root and the working directory for permissions.
 pub fn sync_worktree_permissions(

@@ -13,6 +13,10 @@ pub const HOOK_COMMIT_GUARD: &str = include_str!("../../../../hooks/commit-guard
 /// PostToolUse hook - updates heartbeat after each tool use
 pub const HOOK_POST_TOOL_USE: &str = include_str!("../../../../hooks/post-tool-use.sh");
 
+/// Trusted PostToolUse bridge from sandboxed verification to a narrow daemon transition.
+pub const HOOK_LOOM_CONTROL_COMPLETE: &str =
+    include_str!("../../../../hooks/loom-control-complete.sh");
+
 /// SessionStart hook - initializes heartbeat when session starts
 pub const HOOK_SESSION_START: &str = include_str!("../../../../hooks/session-start.sh");
 
@@ -65,11 +69,12 @@ pub const HOOK_NO_PREEXISTING_FAILURES: &str =
 /// Fires in ALL sessions (plan mode runs interactively); redirects to doc/plans/
 pub const HOOK_PLANS_PATH_GUARD: &str = include_str!("../../../../hooks/plans-path-guard.sh");
 
-/// CodexForwardGuard hook - pins a codex forwarder subagent (transcript carries
-/// the LOOM-CODEX-FORWARD-ONLY sentinel) to its single codex-companion.mjs Bash
-/// call; blocks every other tool call so the wrapper cannot implement the task
-/// itself. Fail-open for every other agent.
+/// CodexForwardGuard hook - pins a codex forwarder subagent to the trusted
+/// forwarding wrapper and blocks every other tool call.
 pub const HOOK_CODEX_FORWARD_GUARD: &str = include_str!("../../../../hooks/codex-forward-guard.sh");
+
+/// Trusted argv boundary used by codex forwarders.
+pub const HOOK_CODEX_FORWARD: &str = include_str!("../../../../hooks/codex-forward.sh");
 
 /// All loom hook scripts with their filenames (installed to ~/.claude/hooks/loom/)
 /// All hooks are installed to the loom/ subdirectory to keep them separate from user hooks.
@@ -78,6 +83,7 @@ pub const LOOM_HOOKS: &[(&str, &str)] = &[
     ("_common.sh", HOOK_COMMON),
     // Session lifecycle hooks
     ("post-tool-use.sh", HOOK_POST_TOOL_USE),
+    ("loom-control-complete.sh", HOOK_LOOM_CONTROL_COMPLETE),
     ("session-start.sh", HOOK_SESSION_START),
     ("pre-compact.sh", HOOK_PRE_COMPACT),
     ("session-end.sh", HOOK_SESSION_END),
@@ -95,6 +101,7 @@ pub const LOOM_HOOKS: &[(&str, &str)] = &[
     ("plans-path-guard.sh", HOOK_PLANS_PATH_GUARD),
     ("no-preexisting-failures.sh", HOOK_NO_PREEXISTING_FAILURES),
     ("codex-forward-guard.sh", HOOK_CODEX_FORWARD_GUARD),
+    ("codex-forward.sh", HOOK_CODEX_FORWARD),
     // Skill suggestion hooks
     ("skill-trigger.sh", HOOK_SKILL_TRIGGER),
 ];

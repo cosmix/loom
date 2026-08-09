@@ -1,271 +1,231 @@
 #!/usr/bin/env bash
-# worktree-file-guard.sh - PreToolUse hook to enforce file tool isolation
+# worktree-file-guard.sh - canonical PreToolUse guard for every file tool
 #
-# This hook intercepts file tool calls (Read, Write, Edit, Glob, Grep) and
-# validates that target paths are within the worktree boundary.
-#
-# This provides defense-in-depth because Claude Code's sandbox only isolates
-# Bash commands at the OS level. The Read/Write/Edit tools use permissions.deny
-# which prompts but may not block in orchestrated (headless) mode.
+# Read, Write, Edit, Glob, and Grep all pass through this guard. Paths are
+# resolved component-by-component against the canonical worktree root so an
+# absolute host path, a symlink leaf, or a sibling sharing the worktree's
+# string prefix cannot cross the boundary.
 #
 # Input: JSON from stdin (Claude Code passes tool info via stdin)
-#   {"tool_name": "Read|Write|Edit|Glob|Grep", "tool_input": {...}, ...}
-#
-# Exit codes:
-#   0 - Allow the operation
-#   2 - Block with guidance message
-#
-# Environment:
-#   LOOM_STAGE_ID - Current stage ID (set by loom)
-#   LOOM_WORKTREE_PATH - Absolute path to current worktree
-#   LOOM_DEBUG - Set to 1 to enable debug logging (optional)
+# Exit codes: 0 = allow, 2 = block
 
 set -euo pipefail
 source "$(dirname "$0")/_common.sh"
 
-# Debug logging helper - only writes if LOOM_DEBUG=1
-# Uses user-specific log file to avoid multi-user security issues
-DEBUG_LOG="${TMPDIR:-/tmp}/worktree-file-guard-debug-$(id -u).log"
-debug_log() {
-    if [[ "${LOOM_DEBUG:-}" == "1" ]]; then
-        echo "$@" >>"$DEBUG_LOG" 2>&1
-    fi
-}
-
-# Read JSON input from stdin
 if command -v gtimeout &>/dev/null; then
-    INPUT_JSON=$(gtimeout 1 cat 2>/dev/null || true)
+	INPUT_JSON=$(gtimeout 1 cat 2>/dev/null || true)
 elif command -v timeout &>/dev/null; then
-    INPUT_JSON=$(timeout 1 cat 2>/dev/null || true)
+	INPUT_JSON=$(timeout 1 cat 2>/dev/null || true)
 else
-    INPUT_JSON=$(cat 2>/dev/null || true)
+	INPUT_JSON=$(cat 2>/dev/null || true)
 fi
 
-debug_log "=== $(date) worktree-file-guard ==="
-debug_log "INPUT_JSON: $INPUT_JSON"
-debug_log "LOOM_STAGE_ID: ${LOOM_STAGE_ID:-unset}"
-debug_log "LOOM_WORKTREE_PATH: ${LOOM_WORKTREE_PATH:-unset}"
-debug_log "PWD: $(pwd)"
+TOOL_NAME=$(printf '%s' "$INPUT_JSON" | jq -r '.tool_name // empty' 2>/dev/null || true)
 
-# Parse tool_name and tool_input from JSON
-TOOL_NAME=$(echo "$INPUT_JSON" | jq -r '.tool_name // empty' 2>/dev/null || true)
-TOOL_INPUT=$(echo "$INPUT_JSON" | jq -r '.tool_input // empty' 2>/dev/null || true)
-
-debug_log "TOOL_NAME: $TOOL_NAME"
-debug_log "TOOL_INPUT: $TOOL_INPUT"
-
-# Only enforce inside a genuine loom worktree. Membership is decided by
-# location, NOT by LOOM_STAGE_ID: that variable leaks into plain Claude Code
-# sessions (e.g. a prior loom run exported it), so gating on it alone would make
-# this hook wrongly fire on ordinary branches like main. If we are not inside a
-# loom worktree, stay inert.
-WORKTREE_PATH=$(loom_current_worktree) || {
-    debug_log "Not inside a loom worktree; allowing"
-    exit 0
-}
-
-# Canonicalize worktree path if it exists
-if [[ -d "$WORKTREE_PATH" ]]; then
-    WORKTREE_PATH=$(cd "$WORKTREE_PATH" && pwd -P)
-fi
-
-debug_log "Resolved WORKTREE_PATH: $WORKTREE_PATH"
-
-# === PATH VALIDATION ===
-# Check if a path is within allowed boundaries
-validate_path() {
-    local target_path="$1"
-    local original_path="$target_path"
-
-    # Empty path is allowed (some tools may have optional path)
-    if [[ -z "$target_path" ]]; then
-        return 0
-    fi
-
-    # Always allow ~/.claude/ for config access
-    if [[ "$target_path" =~ ^~/\.claude/ ]] || [[ "$target_path" =~ ^"$HOME"/.claude/ ]]; then
-        debug_log "Allowing ~/.claude/ path"
-        return 0
-    fi
-
-    # Block explicit path traversal patterns (../../)
-    if [[ "$target_path" =~ \.\./\.\. ]] || [[ "$target_path" =~ \.\.[\\/]\.\. ]]; then
-        cat >&2 <<'EOF'
-
-============================================================
-  LOOM: BLOCKED - Path traversal detected in file operation
-============================================================
-
-You tried to: Use ../../ in a file path to escape the worktree
-
-This is FORBIDDEN in loom worktrees because:
-  - You are CONFINED to this worktree
-  - Accessing parent directories breaks isolation
-  - Other worktrees/stages may be affected
-
-Instead, you should:
-  - Use relative paths WITHIN this worktree
-  - All files you need are in the worktree
-  - Context is in your signal file (.work/signals/)
-
-Stay within your worktree boundaries.
-============================================================
-
-EOF
-        return 1
-    fi
-
-    # Convert relative path to absolute
-    if [[ ! "$target_path" = /* ]]; then
-        # Relative path - resolve from current directory
-        if [[ -e "$target_path" ]]; then
-            target_path=$(cd "$(dirname "$target_path")" 2>/dev/null && pwd -P)/$(basename "$target_path")
-        else
-            # Path doesn't exist yet, resolve parent if possible
-            local parent_dir
-            parent_dir=$(dirname "$target_path")
-            if [[ -d "$parent_dir" ]]; then
-                target_path=$(cd "$parent_dir" 2>/dev/null && pwd -P)/$(basename "$target_path")
-            else
-                # Try current directory as base
-                target_path="$(pwd)/$target_path"
-            fi
-        fi
-    fi
-
-    # Canonicalize the path (resolve symlinks)
-    if [[ -e "$target_path" ]]; then
-        target_path=$(cd "$(dirname "$target_path")" 2>/dev/null && pwd -P)/$(basename "$target_path")
-    fi
-
-    debug_log "Validating: original='$original_path' resolved='$target_path'"
-
-    # Allow access to .work directory (shared state via symlink)
-    # .work/ should be a symlink to ../../.work in worktrees
-    if [[ "$target_path" =~ /\.work/ ]] || [[ "$target_path" =~ ^\.work/ ]]; then
-        debug_log "Allowing .work/ path"
-        return 0
-    fi
-
-    # Allow background task output files (Read tool only) - these live outside the
-    # worktree but are produced by the agent's own background tasks.
-    # Path shape: /tmp/claude-<uid>/<repo-tag>/<uuid>/tasks/<task-id>.output
-    if [[ "$TOOL_NAME" == "Read" ]]; then
-        if [[ "$target_path" == /tmp/claude-*/*/*/tasks/*.output ]]; then
-            # Canonicalize and reject symlinks
-            local canonical_path
-            if command -v readlink &>/dev/null && readlink -f "$target_path" &>/dev/null 2>&1; then
-                canonical_path=$(readlink -f "$target_path")
-            elif command -v realpath &>/dev/null; then
-                canonical_path=$(realpath "$target_path" 2>/dev/null || echo "")
-            else
-                canonical_path="$target_path"
-            fi
-
-            # Reject if canonicalization moved the path out of /tmp/
-            if [[ "$canonical_path" != /tmp/* ]]; then
-                debug_log "Rejecting background task output: canonical path left /tmp/: $canonical_path"
-                return 1
-            fi
-
-            # Reject if the file is not owned by the current UID
-            local file_uid
-            file_uid=$(stat -c '%u' "$canonical_path" 2>/dev/null || stat -f '%u' "$canonical_path" 2>/dev/null || echo "")
-            if [[ -z "$file_uid" ]] || [[ "$file_uid" != "$(id -u)" ]]; then
-                debug_log "Rejecting background task output: file not owned by current UID (owner=$file_uid, current=$(id -u))"
-                return 1
-            fi
-
-            debug_log "Allowing background task output: $canonical_path"
-            return 0
-        fi
-    fi
-
-    # Check if path is within worktree boundary
-    if [[ "$target_path" = "$WORKTREE_PATH"* ]]; then
-        debug_log "Path within worktree boundary"
-        return 0
-    fi
-
-    # Block access outside worktree
-    cat >&2 <<EOF
-
-============================================================
-  LOOM: BLOCKED - File access outside worktree boundary
-============================================================
-
-You tried to access: $original_path
-Resolved to: $target_path
-Worktree boundary: $WORKTREE_PATH
-
-This is FORBIDDEN in loom worktrees because:
-  - You are CONFINED to this worktree
-  - Accessing files outside the worktree breaks isolation
-  - Other stages may be affected
-
-Instead, you should:
-  - Use paths relative to your worktree root
-  - All files you need are in the worktree
-  - Context is embedded in your signal file
-
-ALLOWED PATHS:
-  - ./ (current worktree directory)
-  - .work/ (shared orchestration state)
-  - ~/.claude/ (Claude configuration)
-
-Stay within your worktree boundaries.
-============================================================
-
-EOF
-    return 1
-}
-
-# Extract path from tool input based on tool type
-extract_path() {
-    local tool_name="$1"
-    local tool_input="$2"
-
-    case "$tool_name" in
-        Read)
-            echo "$tool_input" | jq -r '.file_path // empty' 2>/dev/null || true
-            ;;
-        Write)
-            echo "$tool_input" | jq -r '.file_path // empty' 2>/dev/null || true
-            ;;
-        Edit)
-            echo "$tool_input" | jq -r '.file_path // empty' 2>/dev/null || true
-            ;;
-        Glob)
-            # Glob has a path parameter (directory to search in)
-            echo "$tool_input" | jq -r '.path // empty' 2>/dev/null || true
-            ;;
-        Grep)
-            # Grep has a path parameter (file or directory to search in)
-            echo "$tool_input" | jq -r '.path // empty' 2>/dev/null || true
-            ;;
-        *)
-            # Unknown tool, return empty
-            true
-            ;;
-    esac
-}
-
-# === MAIN DISPATCH ===
 case "$TOOL_NAME" in
-    Read|Write|Edit|Glob|Grep)
-        FILE_PATH=$(extract_path "$TOOL_NAME" "$TOOL_INPUT")
-        if [[ -n "$FILE_PATH" ]]; then
-            if ! validate_path "$FILE_PATH"; then
-                debug_log "BLOCKED: $TOOL_NAME path failed validation: $FILE_PATH"
-                exit 2
-            fi
-        fi
-        ;;
-
-    *)
-        # Not a file tool we validate
-        ;;
+Read | Write | Edit | Glob | Grep) ;;
+*) exit 0 ;;
 esac
 
-debug_log "Allowing operation"
-exit 0
+WORKTREE_PATH=$(loom_current_worktree) || exit 0
+WORKTREE_PATH=$(cd "$WORKTREE_PATH" 2>/dev/null && pwd -P) || exit 2
+
+is_within() {
+	local target="$1"
+	local root="$2"
+	[[ "$target" == "$root" || "$target" == "$root/"* ]]
+}
+
+canonical_existing() {
+	local path="$1"
+	if command -v realpath &>/dev/null; then
+		realpath "$path" 2>/dev/null
+		return
+	fi
+	if command -v readlink &>/dev/null; then
+		local resolved
+		resolved=$(readlink -f "$path" 2>/dev/null || true)
+		if [[ -n "$resolved" ]]; then
+			printf '%s' "$resolved"
+			return 0
+		fi
+	fi
+
+	if [[ -d "$path" ]]; then
+		(cd "$path" 2>/dev/null && pwd -P)
+	else
+		local parent leaf
+		parent=$(dirname "$path")
+		leaf=$(basename "$path")
+		parent=$(cd "$parent" 2>/dev/null && pwd -P) || return 1
+		printf '%s/%s' "$parent" "$leaf"
+	fi
+}
+
+# Resolve an existing target completely. For a not-yet-created Write target,
+# resolve the nearest existing ancestor and retain only plain child components.
+canonical_target() {
+	local path="$1"
+	if [[ -e "$path" || -L "$path" ]]; then
+		canonical_existing "$path"
+		return
+	fi
+
+	local ancestor="$path"
+	local suffix=""
+	local parent leaf
+	while [[ ! -e "$ancestor" && ! -L "$ancestor" ]]; do
+		parent=$(dirname "$ancestor")
+		leaf=$(basename "$ancestor")
+		[[ "$leaf" != "." && "$leaf" != ".." && -n "$leaf" ]] || return 1
+		if [[ -n "$suffix" ]]; then
+			suffix="$leaf/$suffix"
+		else
+			suffix="$leaf"
+		fi
+		[[ "$parent" != "$ancestor" ]] || return 1
+		ancestor="$parent"
+	done
+
+	local resolved
+	resolved=$(canonical_existing "$ancestor") || return 1
+	if [[ -n "$suffix" ]]; then
+		printf '%s/%s' "$resolved" "$suffix"
+	else
+		printf '%s' "$resolved"
+	fi
+}
+
+block_path() {
+	local original="$1"
+	local reason="$2"
+	cat >&2 <<EOF
+
+============================================================
+  LOOM: BLOCKED - File operation crossed the worktree policy
+============================================================
+
+Tool: $TOOL_NAME
+Path: $original
+Reason: $reason
+
+Use a path inside the current worktree. Shared orchestration state is
+read-only to file tools, except for the explicit handoff write root.
+============================================================
+
+EOF
+}
+
+extract_path() {
+	case "$TOOL_NAME" in
+	Read | Write | Edit)
+		printf '%s' "$INPUT_JSON" | jq -r '.tool_input.file_path // empty' 2>/dev/null || true
+		;;
+	Glob | Grep)
+		printf '%s' "$INPUT_JSON" | jq -r '.tool_input.path // "."' 2>/dev/null || true
+		;;
+	esac
+}
+
+allow_background_output() {
+	local lexical="$1"
+	[[ "$TOOL_NAME" == "Read" ]] || return 1
+	[[ "$lexical" =~ ^/tmp/claude-[^/]+/[^/]+/[^/]+/tasks/[^/]+\.output$ ]] || return 1
+	[[ -f "$lexical" && ! -L "$lexical" ]] || return 1
+
+	local resolved owner
+	resolved=$(canonical_existing "$lexical") || return 1
+	[[ "$resolved" =~ ^/tmp/claude-[^/]+/[^/]+/[^/]+/tasks/[^/]+\.output$ ]] || return 1
+	owner=$(stat -c '%u' "$resolved" 2>/dev/null || stat -f '%u' "$resolved" 2>/dev/null || true)
+	[[ -n "$owner" && "$owner" == "$(id -u)" ]]
+}
+
+FILE_PATH=$(extract_path)
+if [[ -z "$FILE_PATH" ]]; then
+	case "$TOOL_NAME" in
+	Glob | Grep) FILE_PATH="." ;;
+	*) block_path "<missing>" "required file_path metadata is missing"; exit 2 ;;
+	esac
+fi
+
+if [[ "$FILE_PATH" == *$'\n'* || "$FILE_PATH" == *$'\r'* ]]; then
+	block_path "$FILE_PATH" "control characters are not valid in guarded paths"
+	exit 2
+fi
+
+# Reject every parent component. This deliberately fails closed even when a
+# lexical `..` would normalize back into the worktree.
+case "/$FILE_PATH/" in
+*/../*) block_path "$FILE_PATH" "parent-directory components are forbidden"; exit 2 ;;
+esac
+
+if [[ "$FILE_PATH" == /* ]]; then
+	LEXICAL_PATH="$FILE_PATH"
+elif [[ "$FILE_PATH" == "~" ]]; then
+	[[ -n "${HOME:-}" ]] || { block_path "$FILE_PATH" "HOME is unavailable for tilde expansion"; exit 2; }
+	LEXICAL_PATH="$HOME"
+elif [[ "$FILE_PATH" == "~/"* ]]; then
+	[[ -n "${HOME:-}" ]] || { block_path "$FILE_PATH" "HOME is unavailable for tilde expansion"; exit 2; }
+	LEXICAL_PATH="$HOME/${FILE_PATH#\~/}"
+elif [[ "$FILE_PATH" == "~"* ]]; then
+	block_path "$FILE_PATH" "named-user tilde expansion is not supported safely"
+	exit 2
+else
+	CURRENT_DIR=$(pwd -P) || exit 2
+	LEXICAL_PATH="$CURRENT_DIR/$FILE_PATH"
+fi
+
+if allow_background_output "$LEXICAL_PATH"; then
+	exit 0
+fi
+
+WORK_LINK="$WORKTREE_PATH/.work"
+WORK_SHARED=""
+if [[ -e "$WORK_LINK" || -L "$WORK_LINK" ]]; then
+	WORK_SHARED=$(canonical_existing "$WORK_LINK" 2>/dev/null || true)
+fi
+
+# A caller-provided symlink leaf is never followed. The one exception is the
+# exact loom-owned `.work` link when used as an explicit trusted read root.
+LEAF_PATH="${LEXICAL_PATH%/}"
+if [[ -L "$LEAF_PATH" ]]; then
+	if [[ "$LEAF_PATH" == "$WORK_LINK" && "$TOOL_NAME" =~ ^(Read|Glob|Grep)$ && -n "$WORK_SHARED" ]]; then
+		exit 0
+	fi
+	block_path "$FILE_PATH" "symlink leaf targets are forbidden"
+	exit 2
+fi
+
+RESOLVED_PATH=$(canonical_target "$LEXICAL_PATH" 2>/dev/null || true)
+if [[ -z "$RESOLVED_PATH" ]]; then
+	block_path "$FILE_PATH" "path could not be resolved safely"
+	exit 2
+fi
+
+if is_within "$RESOLVED_PATH" "$WORKTREE_PATH"; then
+	exit 0
+fi
+
+if [[ -n "$WORK_SHARED" ]] && is_within "$RESOLVED_PATH" "$WORK_SHARED"; then
+	RELATIVE_WORK_PATH="${RESOLVED_PATH#"$WORK_SHARED"}"
+	case "$RELATIVE_WORK_PATH" in
+	/admin.token | /user.token)
+		block_path "$FILE_PATH" "orchestrator capability tokens are not readable by stages"
+		exit 2
+		;;
+	esac
+
+	case "$TOOL_NAME" in
+	Read | Glob | Grep) exit 0 ;;
+	Write | Edit)
+		if [[ "$RELATIVE_WORK_PATH" == /handoffs/* ]]; then
+			exit 0
+		fi
+		block_path "$FILE_PATH" "shared orchestration state is not writable by file tools"
+		exit 2
+		;;
+	esac
+fi
+
+block_path "$FILE_PATH" "resolved path is outside the current worktree"
+exit 2
