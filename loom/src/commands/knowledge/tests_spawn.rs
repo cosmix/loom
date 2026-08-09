@@ -159,8 +159,24 @@ fn restoration_refuses_to_clobber_concurrent_edits() {
     let mut guard = KnowledgeSandboxGuard::install(temp.path(), false).unwrap();
     let settings_path = temp.path().join(".claude/settings.local.json");
     let concurrent = r#"{"changed":"by-user"}"#;
-    std::fs::write(&settings_path, concurrent).unwrap();
+    let claude_dir = temp.path().join(".claude");
+    let (writer_ready_tx, writer_ready_rx) = std::sync::mpsc::channel();
+    let (release_writer_tx, release_writer_rx) = std::sync::mpsc::channel();
+    let writer_path = settings_path.clone();
+    let writer = std::thread::spawn(move || {
+        crate::fs::locking::locked_dir_update(&claude_dir, || {
+            std::fs::write(&writer_path, concurrent).unwrap();
+            writer_ready_tx.send(()).unwrap();
+            release_writer_rx.recv().unwrap();
+            Ok(())
+        })
+    });
 
-    assert!(guard.restore().is_err());
+    writer_ready_rx.recv().unwrap();
+    let restore = std::thread::spawn(move || guard.restore());
+    release_writer_tx.send(()).unwrap();
+    writer.join().unwrap().unwrap();
+
+    assert!(restore.join().unwrap().is_err());
     assert_eq!(std::fs::read_to_string(settings_path).unwrap(), concurrent);
 }

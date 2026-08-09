@@ -179,27 +179,25 @@ fn knowledge_sandbox_content(allow_writes: bool) -> Result<String> {
 }
 
 fn restore_snapshot(settings_path: &Path, backup: Option<&str>, expected: &str) -> Result<()> {
-    let current = std::fs::read_to_string(settings_path)
-        .context("Failed to read temporary settings before restoration")?;
-    if current != expected {
-        bail!(
-            "Refusing to overwrite settings.local.json because it changed during the knowledge session"
-        );
-    }
-
-    match backup {
-        Some(original) => crate::fs::locking::locked_write(settings_path, original)
-            .context("Failed to restore original settings.local.json"),
-        None => {
-            let parent = settings_path
-                .parent()
-                .context("Knowledge settings path has no parent")?;
-            crate::fs::locking::locked_dir_update(parent, || {
-                std::fs::remove_file(settings_path)
-                    .context("Failed to remove temporary settings.local.json")
-            })
+    let parent = settings_path
+        .parent()
+        .context("Knowledge settings path has no parent")?;
+    crate::fs::locking::locked_dir_update(parent, || {
+        let current = std::fs::read_to_string(settings_path)
+            .context("Failed to read temporary settings before restoration")?;
+        if current != expected {
+            bail!(
+                "Refusing to overwrite settings.local.json because it changed during the knowledge session"
+            );
         }
-    }
+
+        match backup {
+            Some(original) => crate::fs::locking::atomic_write_locked(settings_path, original)
+                .context("Failed to restore original settings.local.json"),
+            None => std::fs::remove_file(settings_path)
+                .context("Failed to remove temporary settings.local.json"),
+        }
+    })
 }
 
 /// Restore the caller's settings if the foreground process receives Ctrl-C.
