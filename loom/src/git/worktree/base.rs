@@ -18,17 +18,6 @@ use crate::plan::graph::ExecutionGraph;
 /// silently reclassify a handled condition into a propagated error.
 #[derive(Debug)]
 pub enum BaseBranchError {
-    /// Merging dependency branches into the base produced a conflict; the
-    /// stage should be marked Blocked (a resolver is needed).
-    ///
-    /// Reserved for the multi-dependency `loom/_base/<stage>` merge path: the
-    /// current progressive-merge architecture merges every dependency into the
-    /// target branch *before* a dependent is scheduled, so `resolve_base_branch`
-    /// does not itself merge. The executor still routes this variant to Blocked
-    /// so re-introducing a base merge (or surfacing one from `git/merge`, owned
-    /// by another cluster) needs no executor change.
-    #[allow(dead_code)]
-    MergeConflict(String),
     /// Dependencies are not yet ready (not completed/merged) — a transient
     /// condition that should be retried on the next poll cycle, not an error.
     SchedulingNotReady(String),
@@ -40,7 +29,6 @@ pub enum BaseBranchError {
 impl fmt::Display for BaseBranchError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            BaseBranchError::MergeConflict(msg) => write!(f, "{msg}"),
             BaseBranchError::SchedulingNotReady(msg) => write!(f, "{msg}"),
             BaseBranchError::Other(e) => write!(f, "{e}"),
         }
@@ -98,8 +86,8 @@ impl ResolvedBase {
 /// # Returns
 ///
 /// * `Ok(ResolvedBase)` - The resolved base branch to use
-/// * `Err(BaseBranchError)` - A typed failure: `MergeConflict` (mark Blocked),
-///   `SchedulingNotReady` (retry next cycle), or `Other` (propagate).
+/// * `Err(BaseBranchError)` - A typed failure: `SchedulingNotReady` (retry
+///   next cycle), or `Other` (propagate).
 pub fn resolve_base_branch(
     stage_id: &str,
     dependencies: &[String],

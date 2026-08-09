@@ -16,7 +16,7 @@ pub struct CleanupConfig {
 impl Default for CleanupConfig {
     fn default() -> Self {
         Self {
-            force_worktree_removal: true,
+            force_worktree_removal: false,
             force_branch_deletion: false,
             prune_worktrees: true,
             verbose: true,

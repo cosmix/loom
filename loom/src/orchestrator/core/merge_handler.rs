@@ -7,7 +7,9 @@ use anyhow::{Context, Result};
 use crate::git::branch::branch_name_for_stage;
 use crate::git::cleanup::{cleanup_after_merge, needs_cleanup, CleanupConfig};
 use crate::git::merge::{check_merge_state, MergeState};
-use crate::git::merge::{get_conflicting_files_from_status, verify_merge_succeeded};
+use crate::git::merge::{
+    get_conflicting_files_from_status, verify_merge_succeeded, MergeProbeOutcome,
+};
 use crate::models::session::{Session, SessionType};
 use crate::models::stage::StageStatus;
 use crate::orchestrator::auto_merge::{attempt_auto_merge, is_auto_merge_enabled, AutoMergeResult};
@@ -90,13 +92,16 @@ impl Orchestrator {
                 "Merge session ended with merged=true but ancestry verification failed; \
                  falling through to verify_and_finalize_merge to revert."
             );
-            stage.merged = false;
-            if let Err(e) = self.save_stage(&stage) {
-                tracing::warn!(
+            match self.update_stage(stage_id, |current| {
+                current.merged = false;
+                Ok(())
+            }) {
+                Ok(updated) => stage = updated,
+                Err(error) => tracing::warn!(
                     stage_id = %stage_id,
-                    error = %e,
+                    %error,
                     "Failed to revert merged=true after failed verification"
-                );
+                ),
             }
             // Fall through to the verify_and_finalize logic below.
         }
@@ -267,26 +272,44 @@ impl Orchestrator {
             }
         }
 
-        stage.merged = true;
-        stage.merge_conflict = false;
-
-        if stage.status == StageStatus::MergeConflict || stage.status == StageStatus::MergeBlocked {
-            // MergeConflict->Completed and MergeBlocked->Completed are legal edges.
-            if let Err(e) = stage.try_transition(StageStatus::Completed) {
-                tracing::warn!(
-                    stage_id = %stage_id,
-                    error = %e,
-                    "Failed to transition stage to Completed after merge resolution"
-                );
-                stage.force_status_with_reason(
-                    StageStatus::Completed,
-                    "merge resolved but transition to Completed was illegal",
+        let updated = self.update_stage(stage_id, |current| {
+            if !matches!(
+                current.status,
+                StageStatus::MergeConflict | StageStatus::MergeBlocked | StageStatus::Completed
+            ) {
+                anyhow::bail!(
+                    "stage status changed to {} during merge verification",
+                    current.status
                 );
             }
-        }
-
-        if let Err(e) = self.save_stage(stage) {
-            eprintln!("Warning: Failed to save stage after merge resolution: {e}");
+            match current.completed_commit.as_deref() {
+                Some(fresh) if fresh != completed_commit => {
+                    anyhow::bail!("completed_commit changed during merge verification")
+                }
+                None => current.completed_commit = Some(completed_commit.clone()),
+                Some(_) => {}
+            }
+            current.merged = true;
+            current.merge_conflict = false;
+            if matches!(
+                current.status,
+                StageStatus::MergeConflict | StageStatus::MergeBlocked
+            ) {
+                if let Err(error) = current.try_transition(StageStatus::Completed) {
+                    current.force_status_with_reason(
+                        StageStatus::Completed,
+                        &format!("merge resolved but transition was illegal: {error}"),
+                    );
+                }
+            }
+            Ok(())
+        });
+        match updated {
+            Ok(updated) => *stage = updated,
+            Err(error) => {
+                tracing::warn!(stage_id = %stage_id, %error, "Failed to persist merge resolution");
+                return false;
+            }
         }
 
         self.graph.set_node_merged(stage_id, true);
@@ -325,59 +348,26 @@ impl Orchestrator {
         stage_id: &str,
         target_branch: &str,
     ) -> bool {
-        // If stage has no completed_commit, try to derive it from the branch HEAD.
-        // If we can derive one, save the stage and fall through to the ancestry check.
-        // If we can't, leave the stage as Completed + !merged (phantom-merge prevention).
-        if stage.completed_commit.is_none() {
-            let branch_name = branch_name_for_stage(stage_id);
-            match crate::git::get_branch_head(&branch_name, &self.config.repo_root) {
-                Ok(head) => {
-                    stage.completed_commit = Some(head);
-                    if let Err(e) = self.save_stage(stage) {
-                        tracing::warn!(
-                            stage_id = %stage_id,
-                            error = %e,
-                            "Failed to save derived completed_commit"
-                        );
-                    }
-                }
-                Err(_) => {
-                    // Branch is missing and no commit recorded - we cannot verify the
-                    // merge. Do NOT write merged=true. Leave the stage as Completed +
-                    // !merged; spawn_merge_resolution_sessions will not pick it up
-                    // (it acts only on MergeConflict | MergeBlocked), so no respawn.
-                    clear_status_line();
-                    tracing::error!(
-                        stage_id = %stage_id,
-                        branch = %branch_name,
-                        "Cannot verify merge: stage has no completed_commit and branch is missing; \
-                         leaving stage as Completed + !merged"
-                    );
-                    return false;
-                }
+        let branch_name = branch_name_for_stage(stage_id);
+        let completed_commit = match stage
+            .completed_commit
+            .clone()
+            .or_else(|| crate::git::get_branch_head(&branch_name, &self.config.repo_root).ok())
+        {
+            Some(commit) => commit,
+            None => {
+                tracing::error!(
+                    stage_id = %stage_id,
+                    branch = %branch_name,
+                    "Cannot verify merge without completed_commit or branch HEAD"
+                );
+                return false;
             }
-        }
+        };
 
-        // Safe to unwrap: just ensured Some above.
-        let completed_commit = stage.completed_commit.clone().unwrap();
         match verify_merge_succeeded(&completed_commit, target_branch, &self.config.repo_root) {
-            Ok(true) => {
-                // Verification passed - mark as merged
-                stage.merged = true;
-                if let Err(e) = self.save_stage(stage) {
-                    tracing::warn!(
-                        stage_id = %stage_id,
-                        error = %e,
-                        "Failed to save stage after merge"
-                    );
-                }
-                true
-            }
+            Ok(true) => self.persist_verified_merge(stage, stage_id, &completed_commit),
             Ok(false) => {
-                // If stage is already Completed (terminal state), we cannot safely
-                // transition to MergeBlocked. The old code force-wrote merged=true
-                // here, which is exactly the phantom-merge bug. Leave as
-                // Completed + !merged instead.
                 if stage.status == StageStatus::Completed {
                     clear_status_line();
                     tracing::error!(
@@ -391,47 +381,19 @@ impl Orchestrator {
                     );
                     return false;
                 }
-                // Non-Completed path: transition to MergeBlocked as before.
-                clear_status_line();
-                tracing::error!(
-                    stage_id = %stage_id,
-                    "merge verification failed: commit not in target branch"
+                self.persist_merge_blocked(
+                    stage,
+                    stage_id,
+                    "merge verification failed but transition was illegal",
                 );
-                if let Err(e) = stage.try_mark_merge_blocked() {
-                    tracing::warn!(
-                        stage_id = %stage_id,
-                        error = %e,
-                        "Failed to transition to MergeBlocked"
-                    );
-                    stage.force_status_with_reason(
-                        StageStatus::MergeBlocked,
-                        "merge verification failed but transition to MergeBlocked was illegal",
-                    );
-                }
-                if let Err(e) = self.save_stage(stage) {
-                    tracing::warn!(
-                        stage_id = %stage_id,
-                        error = %e,
-                        "Failed to save stage"
-                    );
-                }
-                if let Err(e) = self.graph.mark_status(stage_id, StageStatus::MergeBlocked) {
-                    tracing::warn!(
-                        stage_id = %stage_id,
-                        error = %e,
-                        "Failed to mark stage as merge blocked in graph"
-                    );
-                }
                 false
             }
-            Err(e) => {
-                // Same logic as Ok(false): if Completed, leave alone; otherwise
-                // transition to MergeBlocked.
+            Err(error) => {
                 if stage.status == StageStatus::Completed {
                     clear_status_line();
                     tracing::error!(
                         stage_id = %stage_id,
-                        error = %e,
+                        %error,
                         "Merge verification error for completed stage. \
                          Leaving stage as Completed + !merged (will NOT auto-respawn); \
                          run `loom stage merge {}` manually.",
@@ -439,39 +401,72 @@ impl Orchestrator {
                     );
                     return false;
                 }
-                clear_status_line();
-                tracing::error!(
-                    stage_id = %stage_id,
-                    error = %e,
-                    "merge verification error"
+                self.persist_merge_blocked(
+                    stage,
+                    stage_id,
+                    "merge verification errored but transition was illegal",
                 );
-                if let Err(e) = stage.try_mark_merge_blocked() {
-                    tracing::warn!(
-                        stage_id = %stage_id,
-                        error = %e,
-                        "Failed to transition to MergeBlocked"
-                    );
-                    stage.force_status_with_reason(
-                        StageStatus::MergeBlocked,
-                        "merge verification errored but transition to MergeBlocked was illegal",
-                    );
-                }
-                if let Err(e) = self.save_stage(stage) {
-                    tracing::warn!(
-                        stage_id = %stage_id,
-                        error = %e,
-                        "Failed to save stage"
-                    );
-                }
-                if let Err(e) = self.graph.mark_status(stage_id, StageStatus::MergeBlocked) {
-                    tracing::warn!(
-                        stage_id = %stage_id,
-                        error = %e,
-                        "Failed to mark stage as merge blocked in graph"
-                    );
-                }
                 false
             }
+        }
+    }
+
+    fn persist_verified_merge(
+        &mut self,
+        stage: &mut crate::models::stage::Stage,
+        stage_id: &str,
+        completed_commit: &str,
+    ) -> bool {
+        let updated = self.update_stage(stage_id, |current| {
+            match current.completed_commit.as_deref() {
+                Some(fresh) if fresh != completed_commit => {
+                    anyhow::bail!("completed_commit changed during merge verification")
+                }
+                None => current.completed_commit = Some(completed_commit.to_string()),
+                Some(_) => {}
+            }
+            current.merged = true;
+            Ok(())
+        });
+        match updated {
+            Ok(updated) => {
+                *stage = updated;
+                true
+            }
+            Err(error) => {
+                tracing::warn!(stage_id = %stage_id, %error, "Failed to persist verified merge");
+                false
+            }
+        }
+    }
+
+    fn persist_merge_blocked(
+        &mut self,
+        stage: &mut crate::models::stage::Stage,
+        stage_id: &str,
+        force_reason: &str,
+    ) {
+        let updated = self.update_stage(stage_id, |current| {
+            if current.status == StageStatus::Completed {
+                return Ok(());
+            }
+            if let Err(error) = current.try_mark_merge_blocked() {
+                current.force_status_with_reason(
+                    StageStatus::MergeBlocked,
+                    &format!("{force_reason}: {error}"),
+                );
+            }
+            Ok(())
+        });
+        match updated {
+            Ok(updated) => *stage = updated,
+            Err(error) => {
+                tracing::warn!(stage_id = %stage_id, %error, "Failed to persist MergeBlocked");
+                return;
+            }
+        }
+        if stage.status == StageStatus::MergeBlocked {
+            let _ = self.graph.mark_status(stage_id, StageStatus::MergeBlocked);
         }
     }
 
@@ -593,9 +588,16 @@ impl Orchestrator {
         if stage.completed_commit.is_none() {
             let branch_name = branch_name_for_stage(stage_id);
             if let Ok(head) = crate::git::get_branch_head(&branch_name, &self.config.repo_root) {
-                stage.completed_commit = Some(head);
-                if let Err(e) = self.save_stage(&stage) {
-                    eprintln!("Warning: Failed to save completed_commit: {e}");
+                match self.update_stage(stage_id, |current| {
+                    if current.completed_commit.is_none() {
+                        current.completed_commit = Some(head);
+                    }
+                    Ok(())
+                }) {
+                    Ok(updated) => stage = updated,
+                    Err(error) => {
+                        eprintln!("Warning: Failed to save completed_commit: {error}")
+                    }
                 }
             }
         }
@@ -647,26 +649,34 @@ impl Orchestrator {
             }) => {
                 // CRITICAL: Transition stage to MergeConflict status to prevent dependent stages
                 // from starting before conflicts are resolved
-                stage.merge_conflict = true;
-                if let Err(e) = stage.try_mark_merge_conflict() {
-                    tracing::warn!(
-                        stage_id = %stage_id,
-                        error = %e,
-                        "Failed to transition stage to MergeConflict status"
-                    );
-                    stage.force_status_with_reason(
-                        StageStatus::MergeConflict,
-                        "auto-merge spawned a conflict resolver but transition to \
-                         MergeConflict was illegal",
-                    );
-                }
-                if let Err(e) = self.save_stage(&stage) {
-                    eprintln!("Warning: Failed to save stage merge conflict status: {e}");
-                }
+                let updated = self.update_stage(stage_id, |current| {
+                    if let Err(error) = current.try_mark_merge_conflict() {
+                        current.force_status_with_reason(
+                            StageStatus::MergeConflict,
+                            &format!(
+                                "auto-merge spawned a conflict resolver but transition was \
+                                 illegal: {error}"
+                            ),
+                        );
+                    }
+                    Ok(())
+                });
+                let persisted = match updated {
+                    Ok(updated) => Some(updated),
+                    Err(error) => {
+                        eprintln!("Warning: Failed to save stage merge conflict status: {error}");
+                        None
+                    }
+                };
 
                 // Also update the graph to reflect MergeConflict status
-                if let Err(e) = self.graph.mark_status(stage_id, StageStatus::MergeConflict) {
-                    eprintln!("Warning: Failed to mark stage as merge conflict in graph: {e}");
+                if persisted
+                    .as_ref()
+                    .is_some_and(|stage| stage.status == StageStatus::MergeConflict)
+                {
+                    if let Err(e) = self.graph.mark_status(stage_id, StageStatus::MergeConflict) {
+                        eprintln!("Warning: Failed to mark stage as merge conflict in graph: {e}");
+                    }
                 }
 
                 // Track the merge session so the monitor can detect its lifecycle
@@ -716,32 +726,11 @@ impl Orchestrator {
                     );
                     return false;
                 }
-                // On error, transition to MergeBlocked status
-                if let Err(transition_err) = stage.try_mark_merge_blocked() {
-                    tracing::warn!(
-                        stage_id = %stage_id,
-                        error = %transition_err,
-                        "Failed to transition stage to MergeBlocked status"
-                    );
-                    stage.force_status_with_reason(
-                        StageStatus::MergeBlocked,
-                        "auto-merge errored but transition to MergeBlocked was illegal",
-                    );
-                }
-                if let Err(e) = self.save_stage(&stage) {
-                    tracing::warn!(
-                        stage_id = %stage_id,
-                        error = %e,
-                        "Failed to save stage after merge error"
-                    );
-                }
-                if let Err(e) = self.graph.mark_status(stage_id, StageStatus::MergeBlocked) {
-                    tracing::warn!(
-                        stage_id = %stage_id,
-                        error = %e,
-                        "Failed to mark stage as merge blocked in graph"
-                    );
-                }
+                self.persist_merge_blocked(
+                    &mut stage,
+                    stage_id,
+                    "auto-merge errored but transition was illegal",
+                );
                 // Return false - merge failed, stage should not be marked Completed
                 false
             }
@@ -1018,18 +1007,6 @@ impl Orchestrator {
     /// stage is no longer in MergeConflict/MergeBlocked, so the spawn loop stops
     /// considering it and respawning ceases.
     fn escalate_merge_resolver_exhausted(&mut self, stage_id: &str, failed_attempts: u32) {
-        let mut stage = match self.load_stage(stage_id) {
-            Ok(s) => s,
-            Err(e) => {
-                tracing::error!(
-                    stage_id = %stage_id,
-                    error = %e,
-                    "Merge-resolver budget exhausted but failed to load stage for escalation"
-                );
-                return;
-            }
-        };
-
         let reason = format!(
             "merge resolution failed after {failed_attempts} resolver attempt(s); \
              escalating to human review. Resolve manually with `loom stage merge {stage_id}`."
@@ -1039,17 +1016,18 @@ impl Orchestrator {
             failed_attempts = %failed_attempts,
             "Merge-resolver attempt cap reached; routing stage to NeedsHumanReview"
         );
-        // Illegal edge from MergeConflict/MergeBlocked — forced assignment is the
-        // sanctioned bypass and logs at error level.
-        stage.force_status_with_reason(StageStatus::NeedsHumanReview, &reason);
-        stage.review_reason = Some(reason);
-
-        if let Err(e) = self.save_stage(&stage) {
+        let updated = self.update_stage(stage_id, |stage| {
+            stage.force_status_with_reason(StageStatus::NeedsHumanReview, &reason);
+            stage.review_reason = Some(reason.clone());
+            Ok(())
+        });
+        if let Err(error) = updated {
             tracing::warn!(
                 stage_id = %stage_id,
-                error = %e,
+                %error,
                 "Failed to save stage after merge-resolver escalation"
             );
+            return;
         }
         if let Err(e) = self
             .graph
@@ -1091,18 +1069,19 @@ impl Orchestrator {
         // get_conflicting_files_from_status refuses (helper-level guard) — in
         // that case we fall back to reading the active merge's unmerged paths
         // directly. Only run the probe merge when there is NO active merge.
-        let conflicting_files =
-            if crate::git::merge::merge_head_exists(&self.config.repo_root).unwrap_or(false) {
-                Vec::new()
-            } else {
-                get_conflicting_files_from_status(
-                    &source_branch,
-                    &target_branch,
-                    &self.config.repo_root,
-                    &self.config.work_dir,
-                )
-                .unwrap_or_default()
-            };
+        let conflicting_files = if crate::git::merge::merge_head_exists(&self.config.repo_root)? {
+            Vec::new()
+        } else {
+            match get_conflicting_files_from_status(
+                &source_branch,
+                &target_branch,
+                &self.config.repo_root,
+                &self.config.work_dir,
+            )? {
+                MergeProbeOutcome::Clean => Vec::new(),
+                MergeProbeOutcome::Conflicts(files) => files,
+            }
+        };
 
         // Create a merge session.
         let session = Session::new_merge(source_branch.clone(), target_branch.clone());
@@ -1112,9 +1091,7 @@ impl Orchestrator {
         // If MERGE_HEAD is set, get_conflicting_files_from_status will refuse
         // (helper-level guard); fall back to reading the active merge's
         // unmerged paths directly.
-        let in_progress = crate::git::merge::detect_in_progress_merge_at(&self.config.repo_root)
-            .ok()
-            .flatten();
+        let in_progress = crate::git::merge::detect_in_progress_merge_at(&self.config.repo_root)?;
         let conflicting_files = if conflicting_files.is_empty() {
             match in_progress.as_ref().map(|m| &m.state) {
                 Some(crate::git::merge::ActiveMergeState::HasUnmergedPaths(paths)) => paths.clone(),

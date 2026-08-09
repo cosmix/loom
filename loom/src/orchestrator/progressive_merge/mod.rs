@@ -11,7 +11,7 @@ pub mod execution;
 
 pub use crate::fs::get_merge_point;
 pub use crate::git::merge::lock::MergeLock;
-pub use execution::{merge_completed_stage, merge_completed_stage_with_timeout};
+pub use execution::merge_completed_stage;
 
 /// Result of a progressive merge attempt
 #[derive(Debug, Clone)]

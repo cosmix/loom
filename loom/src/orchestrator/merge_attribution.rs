@@ -17,7 +17,7 @@ use crate::git::merge::{
 use crate::models::session::{Session, SessionType};
 use crate::models::stage::{Stage, StageStatus};
 use crate::parser::frontmatter::parse_from_markdown;
-use crate::verify::transitions::{list_all_stages, load_stage, save_stage};
+use crate::verify::transitions::{list_all_stages, update_stage};
 
 /// How attribution was reached for an active main-repo merge.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -65,6 +65,38 @@ pub enum ReconciliationOutcome {
         stage_id: String,
         status: StageStatus,
     },
+}
+
+/// Apply the merge-attribution-owned delta to the current canonical record.
+///
+/// Attribution and Git inspection happen before this call. The closure only
+/// revalidates the fresh status and updates merge fields while holding the stage
+/// lock, so unrelated concurrent fields survive.
+pub(super) fn reconcile_attributed_stage_record(
+    stage_id: &str,
+    work_dir: &Path,
+) -> Result<(StageStatus, Stage, bool)> {
+    let mut prior_status = None;
+    let mut status_mutated = false;
+    let stage = update_stage(stage_id, work_dir, |stage| {
+        prior_status = Some(stage.status.clone());
+        match stage.status {
+            StageStatus::Completed => {
+                stage.status = StageStatus::MergeConflict;
+                stage.merged = false;
+                stage.merge_conflict = true;
+                status_mutated = true;
+            }
+            StageStatus::MergeConflict | StageStatus::MergeBlocked => {
+                stage.merge_conflict = true;
+            }
+            _ => {}
+        }
+        Ok(())
+    })?;
+    let prior_status = prior_status
+        .ok_or_else(|| anyhow::anyhow!("Attribution update did not inspect stage '{stage_id}'"))?;
+    Ok((prior_status, stage, status_mutated))
 }
 
 /// Read all sessions from `.work/sessions/`, returning a Vec.
@@ -246,19 +278,17 @@ pub fn reconcile_main_repo_active_merge(
             Ok(ReconciliationOutcome::UnattributedLogged)
         }
         MergeAttribution::Attributed { stage_id, .. } => {
-            let mut stage = load_stage(&stage_id, work_dir).with_context(|| {
-                format!("Failed to load attributed stage '{stage_id}' for reconciliation")
-            })?;
-            let prior_status = stage.status.clone();
-
-            let safe_to_mutate = matches!(
-                stage.status,
+            let (prior_status, stage, status_mutated) =
+                reconcile_attributed_stage_record(&stage_id, work_dir).with_context(|| {
+                    format!("Failed to update attributed stage '{stage_id}' for reconciliation")
+                })?;
+            if !matches!(
+                prior_status,
                 StageStatus::Completed | StageStatus::MergeConflict | StageStatus::MergeBlocked
-            );
-            if !safe_to_mutate {
+            ) {
                 tracing::warn!(
                     stage_id = %stage_id,
-                    status = ?stage.status,
+                    status = ?prior_status,
                     "Active merge attributed to stage in non-merge-related status; \
                      leaving stage unchanged"
                 );
@@ -268,11 +298,7 @@ pub fn reconcile_main_repo_active_merge(
                 });
             }
 
-            if stage.status == StageStatus::Completed {
-                stage.status = StageStatus::MergeConflict;
-                stage.merged = false;
-                stage.merge_conflict = true;
-                save_stage(&stage, work_dir)?;
+            if status_mutated {
                 tracing::error!(
                     stage_id = %stage_id,
                     "Detected active merge for Completed stage; reverting to \
@@ -285,14 +311,9 @@ pub fn reconcile_main_repo_active_merge(
                 });
             }
 
-            // Already MergeConflict or MergeBlocked: ensure merge_conflict flag is set.
-            if !stage.merge_conflict {
-                stage.merge_conflict = true;
-                save_stage(&stage, work_dir)?;
-            }
             Ok(ReconciliationOutcome::AttributedNoOp {
                 stage_id,
-                status: prior_status,
+                status: stage.status,
             })
         }
     }

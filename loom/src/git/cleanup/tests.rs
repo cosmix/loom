@@ -1,6 +1,6 @@
 //! Tests for cleanup operations
 
-use crate::git::cleanup::worktree::remove_worktree_symlinks;
+use crate::git::cleanup::worktree::remove_worktree_scaffold;
 use crate::git::cleanup::{
     cleanup_after_merge, cleanup_branch, cleanup_worktree, needs_cleanup, prune_worktrees,
     CleanupConfig, CleanupResult,
@@ -47,7 +47,7 @@ fn setup_git_repo() -> TempDir {
 #[test]
 fn test_cleanup_config_default() {
     let config = CleanupConfig::default();
-    assert!(config.force_worktree_removal);
+    assert!(!config.force_worktree_removal);
     assert!(!config.force_branch_deletion);
     assert!(config.prune_worktrees);
     assert!(config.verbose);
@@ -94,6 +94,23 @@ fn test_cleanup_worktree_nonexistent() {
     let result = cleanup_worktree("nonexistent", temp_dir.path(), false);
     assert!(result.is_ok());
     assert!(!result.unwrap());
+}
+
+#[cfg(unix)]
+#[test]
+fn test_cleanup_worktree_rejects_symlink_path() {
+    let temp_dir = setup_git_repo();
+    let outside = temp_dir.path().join("user-data");
+    fs::create_dir_all(&outside).unwrap();
+    fs::write(outside.join("keep.txt"), "keep").unwrap();
+    let worktrees = temp_dir.path().join(".worktrees");
+    fs::create_dir_all(&worktrees).unwrap();
+    std::os::unix::fs::symlink(&outside, worktrees.join("linked")).unwrap();
+
+    let result = cleanup_worktree("linked", temp_dir.path(), true);
+
+    assert!(result.is_err());
+    assert!(outside.join("keep.txt").exists());
 }
 
 #[test]
@@ -165,17 +182,43 @@ fn test_cleanup_multiple_stages_empty() {
 }
 
 #[test]
-fn test_remove_worktree_symlinks() {
+fn test_remove_worktree_scaffold() {
     let temp_dir = TempDir::new().unwrap();
     let worktree_path = temp_dir.path().join("worktree");
     fs::create_dir_all(&worktree_path).unwrap();
 
-    // Create .claude directory with symlinks (simulated as files for testing)
+    // Create the generated regular settings file.
     let claude_dir = worktree_path.join(".claude");
     fs::create_dir_all(&claude_dir).unwrap();
-    fs::write(claude_dir.join("CLAUDE.md"), "test").unwrap();
     fs::write(claude_dir.join("settings.local.json"), "{}").unwrap();
 
-    let result = remove_worktree_symlinks(&worktree_path);
+    let result = remove_worktree_scaffold(&worktree_path);
     assert!(result.is_ok());
+    assert!(!claude_dir.exists());
+}
+
+#[test]
+fn test_remove_worktree_scaffold_preserves_unknown_claude_content() {
+    let temp_dir = TempDir::new().unwrap();
+    let worktree_path = temp_dir.path().join("worktree");
+    let claude_dir = worktree_path.join(".claude");
+    fs::create_dir_all(&claude_dir).unwrap();
+    fs::write(claude_dir.join("notes.md"), "keep").unwrap();
+
+    let result = remove_worktree_scaffold(&worktree_path);
+    assert!(result.is_err());
+    assert!(claude_dir.join("notes.md").exists());
+}
+
+#[test]
+fn test_remove_worktree_scaffold_preserves_regular_claude_instructions() {
+    let temp_dir = TempDir::new().unwrap();
+    let worktree_path = temp_dir.path().join("worktree");
+    let claude_dir = worktree_path.join(".claude");
+    fs::create_dir_all(&claude_dir).unwrap();
+    fs::write(claude_dir.join("CLAUDE.md"), "user instructions").unwrap();
+
+    let result = remove_worktree_scaffold(&worktree_path);
+    assert!(result.is_err());
+    assert!(claude_dir.join("CLAUDE.md").exists());
 }

@@ -28,81 +28,39 @@ pub fn cleanup_after_merge(
     repo_root: &Path,
     config: &CleanupConfig,
 ) -> Result<CleanupResult> {
-    let mut result = CleanupResult::default();
     let branch_name = branch_name_for_stage(stage_id);
-
-    // Phase 1: Remove the worktree
-    if config.verbose {
-        println!("Cleaning up worktree for stage '{stage_id}'...");
-    }
-
-    match cleanup_worktree(stage_id, repo_root, config.force_worktree_removal) {
-        Ok(removed) => {
-            result.worktree_removed = removed;
-            if config.verbose && removed {
-                println!("  Removed worktree: .worktrees/{stage_id}");
-            }
-        }
-        Err(e) => {
-            let msg = format!("Failed to remove worktree: {e}");
-            if config.verbose {
-                eprintln!("  Warning: {msg}");
-            }
-            result.warnings.push(msg);
-        }
-    }
-
-    // Phase 2: Delete the branch
-    if config.verbose {
-        println!("Cleaning up branch '{branch_name}'...");
-    }
-
-    match cleanup_branch(stage_id, repo_root, config.force_branch_deletion) {
-        Ok(deleted) => {
-            result.branch_deleted = deleted;
-            if config.verbose && deleted {
-                println!("  Deleted branch: {branch_name}");
-            }
-        }
-        Err(e) => {
-            let msg = format!("Failed to delete branch: {e}");
-            if config.verbose {
-                eprintln!("  Warning: {msg}");
-            }
-            result.warnings.push(msg);
-        }
-    }
-
-    // Phase 3: Delete the base branch (if it exists)
-    let base_branch_name = format!("loom/_base/{stage_id}");
-    match cleanup_base_branch(stage_id, repo_root) {
-        Ok(deleted) => {
-            result.base_branch_deleted = deleted;
-            if config.verbose && deleted {
-                println!("  Deleted base branch: {base_branch_name}");
-            }
-        }
-        Err(e) => {
-            let msg = format!("Failed to delete base branch: {e}");
-            if config.verbose {
-                eprintln!("  Warning: {msg}");
-            }
-            result.warnings.push(msg);
-        }
-    }
-
-    // Phase 4: Prune stale worktree references
+    let worktree_removed = cleanup_worktree(stage_id, repo_root, config.force_worktree_removal)
+        .with_context(|| format!("Failed to remove worktree for stage '{stage_id}'"))?;
+    let branch_deleted = cleanup_branch(stage_id, repo_root, config.force_branch_deletion)
+        .with_context(|| format!("Failed to delete branch '{branch_name}'"))?;
+    let base_branch_deleted = cleanup_base_branch(stage_id, repo_root)
+        .with_context(|| format!("Failed to delete base branch for stage '{stage_id}'"))?;
     if config.prune_worktrees {
-        if let Err(e) = prune_worktrees(repo_root) {
-            let msg = format!("Failed to prune worktrees: {e}");
-            if config.verbose {
-                eprintln!("  Warning: {msg}");
-            }
-            result.warnings.push(msg);
-        }
+        prune_worktrees(repo_root).context("Failed to prune worktree metadata")?;
     }
 
+    let result = CleanupResult {
+        worktree_removed,
+        branch_deleted,
+        base_branch_deleted,
+        warnings: Vec::new(),
+    };
+    if config.verbose {
+        report_cleanup(stage_id, &branch_name, &result);
+    }
     Ok(result)
+}
+
+fn report_cleanup(stage_id: &str, branch_name: &str, result: &CleanupResult) {
+    if result.worktree_removed {
+        println!("  Removed worktree: .worktrees/{stage_id}");
+    }
+    if result.branch_deleted {
+        println!("  Deleted branch: {branch_name}");
+    }
+    if result.base_branch_deleted {
+        println!("  Deleted base branch: loom/_base/{stage_id}");
+    }
 }
 
 /// Prune stale worktree references

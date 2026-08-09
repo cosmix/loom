@@ -11,6 +11,7 @@ fn create_test_stage(id: &str, auto_merge: Option<bool>) -> Stage {
         id: id.to_string(),
         name: format!("Test Stage {id}"),
         description: None,
+        code_review: None,
         status: StageStatus::Completed,
         dependencies: vec![],
         parallel_group: None,

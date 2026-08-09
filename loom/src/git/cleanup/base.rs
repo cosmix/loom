@@ -8,7 +8,7 @@ use anyhow::Result;
 use std::path::Path;
 
 use crate::git::branch::delete_branch;
-use crate::git::runner::{run_git_bool, run_git_checked};
+use crate::git::runner::{run_git, run_git_checked};
 
 /// Clean up the base branch for a stage
 ///
@@ -25,8 +25,7 @@ pub fn cleanup_base_branch(stage_id: &str, repo_root: &Path) -> Result<bool> {
     let branch_name = format!("loom/_base/{stage_id}");
 
     // Check if branch exists first
-    let ref_path = format!("refs/heads/{branch_name}");
-    if !run_git_bool(&["rev-parse", "--verify", &ref_path], repo_root) {
+    if !base_branch_exists(stage_id, repo_root)? {
         // Branch doesn't exist
         return Ok(false);
     }
@@ -59,9 +58,8 @@ pub fn cleanup_all_base_branches(repo_root: &Path) -> Result<Vec<String>> {
 
     let mut deleted = Vec::new();
     for branch in branches {
-        if delete_branch(&branch, true, repo_root).is_ok() {
-            deleted.push(branch);
-        }
+        delete_branch(&branch, true, repo_root)?;
+        deleted.push(branch);
     }
 
     Ok(deleted)
@@ -78,10 +76,17 @@ pub fn cleanup_all_base_branches(repo_root: &Path) -> Result<Vec<String>> {
 pub fn base_branch_exists(stage_id: &str, repo_root: &Path) -> Result<bool> {
     let branch_name = format!("loom/_base/{stage_id}");
     let ref_path = format!("refs/heads/{branch_name}");
-    Ok(run_git_bool(
-        &["rev-parse", "--verify", &ref_path],
-        repo_root,
-    ))
+    let output = run_git(&["show-ref", "--verify", "--quiet", &ref_path], repo_root)?;
+    match output.status.code() {
+        Some(0) => Ok(true),
+        Some(1) => Ok(false),
+        code => anyhow::bail!(
+            "git show-ref failed while checking '{branch_name}' (exit {}): {}",
+            code.map(|value| value.to_string())
+                .unwrap_or_else(|| "signal".to_string()),
+            String::from_utf8_lossy(&output.stderr).trim()
+        ),
+    }
 }
 
 #[cfg(test)]

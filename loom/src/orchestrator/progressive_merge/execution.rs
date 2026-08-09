@@ -2,7 +2,6 @@
 
 use anyhow::{Context, Result};
 use std::path::Path;
-use std::time::Duration;
 
 use crate::git::branch::{branch_exists, branch_name_for_stage};
 use crate::git::merge::{merge_stage, MergeResult};
@@ -34,19 +33,6 @@ pub fn merge_completed_stage(
     stage: &Stage,
     repo_root: &Path,
     merge_point: &str,
-) -> Result<ProgressiveMergeResult> {
-    merge_completed_stage_with_timeout(stage, repo_root, merge_point, Duration::from_secs(30))
-}
-
-/// Attempt to merge with a custom lock timeout
-///
-/// Note: The lock_timeout parameter is now ignored. The merge_stage function
-/// handles locking internally with a fixed 30-second timeout.
-pub fn merge_completed_stage_with_timeout(
-    stage: &Stage,
-    repo_root: &Path,
-    merge_point: &str,
-    _lock_timeout: Duration,
 ) -> Result<ProgressiveMergeResult> {
     let branch_name = branch_name_for_stage(&stage.id);
 

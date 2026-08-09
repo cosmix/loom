@@ -6,6 +6,42 @@
 use anyhow::{bail, Context, Result};
 use std::path::Path;
 use std::process::{Command, Output};
+use std::time::Duration;
+
+const GIT_READ_TIMEOUT: Duration = Duration::from_secs(15);
+const GIT_MUTATION_TIMEOUT: Duration = Duration::from_secs(120);
+const GIT_NETWORK_TIMEOUT: Duration = Duration::from_secs(300);
+
+fn git_timeout(args: &[&str]) -> Duration {
+    match args.first().copied() {
+        Some("clone" | "fetch" | "pull" | "push") => GIT_NETWORK_TIMEOUT,
+        Some(
+            "checkout" | "commit" | "merge" | "rebase" | "reset" | "restore" | "switch"
+            | "worktree",
+        ) => GIT_MUTATION_TIMEOUT,
+        _ => GIT_READ_TIMEOUT,
+    }
+}
+
+fn run_git_program(
+    program: &str,
+    args: &[&str],
+    repo_root: &Path,
+    timeout: Duration,
+) -> Result<Output> {
+    let mut command = Command::new(program);
+    command
+        .args(args)
+        .env("LC_ALL", "C")
+        .env("LANG", "C")
+        .current_dir(repo_root);
+    crate::process::run_bounded_output(
+        &mut command,
+        timeout,
+        format!("git {}", args.first().unwrap_or(&"command")),
+    )
+    .with_context(|| format!("Failed to execute: git {}", args.join(" ")))
+}
 
 /// Run a git command and return the raw Output.
 ///
@@ -20,13 +56,7 @@ use std::process::{Command, Output};
 /// * `args` - Git command arguments (e.g., `&["branch", "-v"]`)
 /// * `repo_root` - Working directory for the git command
 pub fn run_git(args: &[&str], repo_root: &Path) -> Result<Output> {
-    Command::new("git")
-        .args(args)
-        .env("LC_ALL", "C")
-        .env("LANG", "C")
-        .current_dir(repo_root)
-        .output()
-        .with_context(|| format!("Failed to execute: git {}", args.join(" ")))
+    run_git_program("git", args, repo_root, git_timeout(args))
 }
 
 /// Run a git command, check for success, and return stdout as a trimmed String.
@@ -83,4 +113,35 @@ pub fn run_git_bool(args: &[&str], repo_root: &Path) -> bool {
     run_git(args, repo_root)
         .map(|output| output.status.success())
         .unwrap_or(false)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn git_deadlines_are_operation_specific() {
+        assert_eq!(git_timeout(&["status"]), GIT_READ_TIMEOUT);
+        assert_eq!(git_timeout(&["merge"]), GIT_MUTATION_TIMEOUT);
+        assert_eq!(git_timeout(&["fetch"]), GIT_NETWORK_TIMEOUT);
+        assert!(GIT_READ_TIMEOUT < GIT_MUTATION_TIMEOUT);
+        assert!(GIT_MUTATION_TIMEOUT < GIT_NETWORK_TIMEOUT);
+    }
+
+    #[test]
+    fn git_runner_returns_structured_timeout() {
+        let repo = tempfile::tempdir().unwrap();
+        let error = run_git_program(
+            "sh",
+            &["-c", "sleep 60"],
+            repo.path(),
+            Duration::from_millis(100),
+        )
+        .expect_err("fake git command must time out");
+
+        let timeout = error
+            .downcast_ref::<crate::process::ProcessTimeoutError>()
+            .expect("caller must be able to classify a timeout");
+        assert_eq!(timeout.operation(), "git -c");
+    }
 }

@@ -208,12 +208,7 @@ pub fn complete_with_merge(stage: &mut Stage, repo_root: &Path, work_dir: &Path)
             println!("Stage '{}' completed!", stage.id);
 
             // Trigger dependent stages
-            let target_branch = crate::fs::work_dir::load_config(work_dir)
-                .ok()
-                .flatten()
-                .and_then(|c| c.base_branch());
-            let target_branch =
-                crate::git::branch::resolve_target_branch(&target_branch, repo_root);
+            let target_branch = crate::fs::resolve_target_branch_from_config(work_dir, repo_root)?;
             let triggered = crate::verify::transitions::trigger_dependents(
                 &stage.id,
                 work_dir,

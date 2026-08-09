@@ -106,7 +106,8 @@ pub fn create_worktree(
                         "branch '{branch_name}' has {ahead} unmerged commit(s) ahead of \
                          '{base}'; refusing to delete it. Tried to reuse the existing branch \
                          but `git worktree add` failed: {reuse_stderr}. \
-                         Resolve via `loom stage merge {stage_id}` or `loom stage verify`."
+                         Resolve via `loom stage merge {stage_id}` or retry canonical completion \
+                         with `loom stage complete {stage_id}`."
                     );
                 }
             }

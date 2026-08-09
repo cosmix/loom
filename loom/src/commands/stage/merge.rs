@@ -8,7 +8,7 @@ use anyhow::{bail, Context, Result};
 use std::path::Path;
 
 use crate::commands::common::detect_stage_id;
-use crate::git::branch::{branch_name_for_stage, resolve_target_branch};
+use crate::git::branch::branch_name_for_stage;
 use crate::git::merge::merge_head_exists;
 use crate::git::{get_conflicting_files, merge_stage, MergeResult};
 use crate::models::stage::StageStatus;
@@ -83,10 +83,7 @@ fn merge_resolved(stage_id: Option<String>) -> Result<()> {
     // commit is in the target branch's history. Without this guard,
     // `--resolved` could be invoked after a partial resolution and silently
     // satisfy downstream dependency checks even though the commit never landed.
-    let target_branch = resolve_target_branch(
-        &crate::fs::parse_base_branch_from_config(work_dir).unwrap_or(None),
-        &repo_root,
-    );
+    let target_branch = crate::fs::resolve_target_branch_from_config(work_dir, &repo_root)?;
     let verified = crate::commands::stage::merge_verify::verify_or_derive_completed_commit(
         &stage,
         &target_branch,
@@ -112,8 +109,7 @@ fn merge_resolved(stage_id: Option<String>) -> Result<()> {
     println!("  Status: Completed (merged: true)");
 
     // Trigger dependent stages
-    let base_branch = crate::fs::parse_base_branch_from_config(work_dir).unwrap_or(None);
-    let target_branch = resolve_target_branch(&base_branch, &repo_root);
+    let target_branch = crate::fs::resolve_target_branch_from_config(work_dir, &repo_root)?;
     let triggered = trigger_dependents(&stage_id, work_dir, &repo_root, &target_branch)
         .context("Failed to trigger dependent stages")?;
 
@@ -252,8 +248,7 @@ fn merge_retry(stage_id: Option<String>) -> Result<()> {
     println!("Retrying merge for stage '{stage_id}' (attempt {attempts}/{max_attempts})");
 
     // Determine target branch, respecting configured base_branch over repo default
-    let base_branch = crate::fs::parse_base_branch_from_config(work_dir).unwrap_or(None);
-    let target_branch = resolve_target_branch(&base_branch, &repo_root);
+    let target_branch = crate::fs::resolve_target_branch_from_config(work_dir, &repo_root)?;
 
     let branch_name = branch_name_for_stage(&stage_id);
     println!("Merging {branch_name} into {target_branch}...");

@@ -2,6 +2,7 @@
 
 pub mod in_progress;
 pub mod lock;
+mod probe;
 mod status;
 
 use anyhow::{bail, Result};
@@ -16,6 +17,9 @@ use lock::MergeLock;
 pub use in_progress::{
     detect_in_progress_merge_at, detect_in_progress_merge_at_worktree, detect_in_progress_merges,
     git_dir_for_repo_path, merge_head_exists, ActiveMergeState, InProgressMerge, MergeLocation,
+};
+pub use probe::{
+    get_conflicting_files_from_status, MergeProbeError, MergeProbeOutcome, MergeProbeResult,
 };
 pub use status::{build_merge_report, check_merge_state, MergeState, MergeStatusReport};
 
@@ -223,58 +227,6 @@ pub fn get_conflicting_files(repo_root: &Path) -> Result<Vec<String>> {
     Ok(files)
 }
 
-/// Get list of files that would conflict if we merged a branch.
-///
-/// This uses `git merge --no-commit` to test the merge, then aborts.
-/// Returns the list of conflicting files, or empty if merge would succeed.
-///
-/// Acquires the merge lock to prevent concurrent merge operations that could
-/// interfere with the test merge.
-pub fn get_conflicting_files_from_status(
-    source_branch: &str,
-    target_branch: &str,
-    repo_root: &Path,
-    work_dir: &Path,
-) -> Result<Vec<String>> {
-    // Acquire merge lock to prevent concurrent merge operations
-    let _lock = MergeLock::acquire(work_dir, Duration::from_secs(30)).map_err(|e| {
-        anyhow::anyhow!(
-            "Could not acquire merge lock: {}. Another merge may be in progress.",
-            e
-        )
-    })?;
-
-    // Refuse if MERGE_HEAD already exists — running a probe merge here would
-    // `git merge --abort` the active resolution and corrupt state.
-    require_no_active_merge(repo_root)?;
-
-    // Save current branch
-    let original_branch = current_branch(repo_root)?;
-
-    // Checkout target branch
-    checkout_branch(target_branch, repo_root)?;
-
-    // Try merge with --no-commit to test for conflicts
-    let output = run_git(
-        &["merge", "--no-commit", "--no-ff", source_branch],
-        repo_root,
-    )?;
-
-    // C-8: Detect conflicts structurally via MERGE_HEAD + unmerged files
-    // rather than locale-sensitive "CONFLICT" text matching.
-    let conflicts = if !output.status.success() && merge_head_exists(repo_root).unwrap_or(false) {
-        get_conflicting_files(repo_root).unwrap_or_default()
-    } else {
-        Vec::new()
-    };
-
-    // Always abort the test merge and restore original branch
-    abort_merge(repo_root).ok();
-    checkout_branch(&original_branch, repo_root).ok();
-
-    Ok(conflicts)
-}
-
 /// Abort a merge in progress
 pub fn abort_merge(repo_root: &Path) -> Result<()> {
     let output = run_git(&["merge", "--abort"], repo_root)?;
@@ -398,163 +350,4 @@ pub fn verify_merge_succeeded(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// Run `git` in `root` with ambient global/system config neutralized.
-    ///
-    /// CI runners (and dev machines) may carry global git config that breaks a
-    /// fresh-repo commit or merge — `commit.gpgsign=true` with no key being the
-    /// classic case. Pinning `GIT_CONFIG_GLOBAL`/`GIT_CONFIG_SYSTEM` to
-    /// nonexistent paths and disabling system config makes these tests depend
-    /// only on the repo's own local config, so they behave identically
-    /// everywhere. Returns the raw output; callers decide whether non-zero is
-    /// expected (a conflicting merge exits non-zero by design).
-    fn isolated_git(root: &Path, args: &[&str]) -> std::process::Output {
-        std::process::Command::new("git")
-            .args(args)
-            .current_dir(root)
-            .env("GIT_CONFIG_GLOBAL", root.join(".loom-test-no-global"))
-            .env("GIT_CONFIG_SYSTEM", root.join(".loom-test-no-system"))
-            .env("GIT_CONFIG_NOSYSTEM", "1")
-            .output()
-            .unwrap()
-    }
-
-    /// Run a setup `git` command and assert it succeeded, surfacing stderr on
-    /// failure. Without this, a failed setup step is swallowed and only
-    /// manifests later as a confusing `MERGE_HEAD` assertion several lines down.
-    fn git_ok(root: &Path, args: &[&str]) {
-        let out = isolated_git(root, args);
-        assert!(
-            out.status.success(),
-            "git {args:?} failed: {}",
-            String::from_utf8_lossy(&out.stderr)
-        );
-    }
-
-    #[test]
-    fn test_parse_merge_stats() {
-        let output = " 3 files changed, 10 insertions(+), 5 deletions(-)\n";
-        let (files, ins, del) = parse_merge_stats(output);
-        assert_eq!(files, 3);
-        assert_eq!(ins, 10);
-        assert_eq!(del, 5);
-    }
-
-    #[test]
-    fn test_parse_merge_stats_single_file() {
-        let output = " 1 file changed, 2 insertions(+)\n";
-        let (files, ins, del) = parse_merge_stats(output);
-        assert_eq!(files, 1);
-        assert_eq!(ins, 2);
-        assert_eq!(del, 0);
-    }
-
-    #[test]
-    fn merge_stage_refuses_when_merge_head_set() {
-        use tempfile::TempDir;
-
-        // Build a repo with two diverging branches and an in-progress merge.
-        let tmp = TempDir::new().unwrap();
-        let root = tmp.path();
-
-        git_ok(root, &["init", "-b", "main"]);
-        git_ok(root, &["config", "user.email", "t@t.com"]);
-        git_ok(root, &["config", "user.name", "t"]);
-        std::fs::write(root.join("a.txt"), "seed").unwrap();
-        git_ok(root, &["add", "a.txt"]);
-        git_ok(root, &["commit", "-m", "seed"]);
-
-        git_ok(root, &["checkout", "-b", "loom/blockee"]);
-        std::fs::write(root.join("a.txt"), "branch").unwrap();
-        git_ok(root, &["add", "a.txt"]);
-        git_ok(root, &["commit", "-m", "branch"]);
-
-        git_ok(root, &["checkout", "main"]);
-        std::fs::write(root.join("a.txt"), "main").unwrap();
-        git_ok(root, &["add", "a.txt"]);
-        git_ok(root, &["commit", "-m", "main"]);
-
-        // Manually start a merge to populate MERGE_HEAD. The conflicting merge
-        // exits non-zero by design, so don't assert success — assert the
-        // observable outcome (MERGE_HEAD) and dump merge output if it's absent.
-        let merge = isolated_git(root, &["merge", "--no-ff", "loom/blockee"]);
-        assert!(
-            merge_head_exists(root).unwrap(),
-            "MERGE_HEAD must be set after conflicting merge; stdout={}, stderr={}",
-            String::from_utf8_lossy(&merge.stdout),
-            String::from_utf8_lossy(&merge.stderr),
-        );
-
-        // Now merge_stage MUST refuse — and crucially must NOT abort the
-        // existing merge.
-        let work_dir = root.join(".work");
-        std::fs::create_dir_all(&work_dir).unwrap();
-        let result = merge_stage("blockee", "main", root, &work_dir);
-        assert!(result.is_err());
-        // The MERGE_HEAD file must still be there — guard must not abort.
-        assert!(
-            merge_head_exists(root).unwrap(),
-            "merge_stage must NOT abort the existing merge when refusing"
-        );
-    }
-
-    #[test]
-    fn get_conflicting_files_from_status_refuses_when_merge_head_set() {
-        use tempfile::TempDir;
-
-        let tmp = TempDir::new().unwrap();
-        let root = tmp.path();
-
-        git_ok(root, &["init", "-b", "main"]);
-        git_ok(root, &["config", "user.email", "t@t.com"]);
-        git_ok(root, &["config", "user.name", "t"]);
-        std::fs::write(root.join("a.txt"), "seed").unwrap();
-        git_ok(root, &["add", "a.txt"]);
-        git_ok(root, &["commit", "-m", "seed"]);
-
-        git_ok(root, &["checkout", "-b", "loom/x"]);
-        std::fs::write(root.join("a.txt"), "x").unwrap();
-        git_ok(root, &["add", "a.txt"]);
-        git_ok(root, &["commit", "-m", "x"]);
-
-        git_ok(root, &["checkout", "main"]);
-        std::fs::write(root.join("a.txt"), "y").unwrap();
-        git_ok(root, &["add", "a.txt"]);
-        git_ok(root, &["commit", "-m", "y"]);
-
-        let merge = isolated_git(root, &["merge", "--no-ff", "loom/x"]);
-        assert!(
-            merge_head_exists(root).unwrap(),
-            "MERGE_HEAD must be set after conflicting merge; stdout={}, stderr={}",
-            String::from_utf8_lossy(&merge.stdout),
-            String::from_utf8_lossy(&merge.stderr),
-        );
-
-        let work_dir = root.join(".work");
-        std::fs::create_dir_all(&work_dir).unwrap();
-        let result = get_conflicting_files_from_status("loom/x", "main", root, &work_dir);
-        assert!(result.is_err());
-        assert!(
-            merge_head_exists(root).unwrap(),
-            "get_conflicting_files_from_status must NOT abort the existing merge"
-        );
-    }
-
-    #[test]
-    fn test_conflict_resolution_instructions() {
-        let instructions = conflict_resolution_instructions(
-            "stage-1",
-            "main",
-            &["src/lib.rs".to_string(), "Cargo.toml".to_string()],
-        );
-
-        assert!(instructions.contains("loom/stage-1"));
-        assert!(instructions.contains("src/lib.rs"));
-        assert!(instructions.contains("Cargo.toml"));
-        // Should reference worktree remove for cleanup, not loom merge
-        assert!(instructions.contains("loom worktree remove stage-1"));
-        assert!(!instructions.contains("loom merge stage-1"));
-    }
-}
+mod tests;

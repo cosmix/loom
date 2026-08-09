@@ -32,30 +32,43 @@ impl RepoBootstrapResult {
 /// If the directory is not yet a git repo, this runs `git init`. If the repo
 /// has no commits, it creates a bootstrap commit containing only `README.md`.
 pub fn ensure_repo_ready_for_worktrees(repo_root: &Path) -> Result<RepoBootstrapResult> {
+    ensure_repo_ready_with_config(repo_root, &[])
+}
+
+fn ensure_repo_ready_with_config(
+    repo_root: &Path,
+    git_config_args: &[&str],
+) -> Result<RepoBootstrapResult> {
     check_git_available()?;
 
     let mut result = RepoBootstrapResult::default();
 
-    if !is_git_repository(repo_root)? {
-        initialize_repo(repo_root)?;
+    if !is_git_repository(repo_root, git_config_args)? {
+        initialize_repo(repo_root, git_config_args)?;
         result.initialized_repo = true;
     }
 
-    if !has_head_commit(repo_root) {
-        create_bootstrap_commit(repo_root)?;
+    if !has_head_commit(repo_root, git_config_args) {
+        create_bootstrap_commit(repo_root, git_config_args)?;
         result.created_initial_commit = true;
     }
 
     Ok(result)
 }
 
-fn is_git_repository(repo_root: &Path) -> Result<bool> {
-    let output = run_git(&["rev-parse", "--is-inside-work-tree"], repo_root)?;
+fn configured_args<'a>(git_config_args: &[&'a str], args: &[&'a str]) -> Vec<&'a str> {
+    git_config_args.iter().chain(args.iter()).copied().collect()
+}
+
+fn is_git_repository(repo_root: &Path, git_config_args: &[&str]) -> Result<bool> {
+    let args = configured_args(git_config_args, &["rev-parse", "--is-inside-work-tree"]);
+    let output = run_git(&args, repo_root)?;
     Ok(output.status.success())
 }
 
-fn initialize_repo(repo_root: &Path) -> Result<()> {
-    run_git_checked(&["init"], repo_root).with_context(|| {
+fn initialize_repo(repo_root: &Path, git_config_args: &[&str]) -> Result<()> {
+    let args = configured_args(git_config_args, &["init"]);
+    run_git_checked(&args, repo_root).with_context(|| {
         format!(
             "Failed to initialize git repository at {}",
             repo_root.display()
@@ -64,16 +77,19 @@ fn initialize_repo(repo_root: &Path) -> Result<()> {
     Ok(())
 }
 
-fn has_head_commit(repo_root: &Path) -> bool {
-    run_git_bool(&["rev-parse", "--verify", "HEAD"], repo_root)
+fn has_head_commit(repo_root: &Path, git_config_args: &[&str]) -> bool {
+    let args = configured_args(git_config_args, &["rev-parse", "--verify", "HEAD"]);
+    run_git_bool(&args, repo_root)
 }
 
-fn create_bootstrap_commit(repo_root: &Path) -> Result<()> {
-    ensure_git_identity(repo_root)?;
+fn create_bootstrap_commit(repo_root: &Path, git_config_args: &[&str]) -> Result<()> {
+    ensure_git_identity(repo_root, git_config_args)?;
     ensure_bootstrap_readme(repo_root)?;
-    run_git_checked(&["add", "--", BOOTSTRAP_README], repo_root)
+    let add_args = configured_args(git_config_args, &["add", "--", BOOTSTRAP_README]);
+    run_git_checked(&add_args, repo_root)
         .context("Failed to stage README.md for Loom bootstrap commit")?;
-    run_git_checked(
+    let commit_args = configured_args(
+        git_config_args,
         &[
             "commit",
             "-m",
@@ -81,9 +97,8 @@ fn create_bootstrap_commit(repo_root: &Path) -> Result<()> {
             "--",
             BOOTSTRAP_README,
         ],
-        repo_root,
-    )
-    .context("Failed to create Loom bootstrap commit")?;
+    );
+    run_git_checked(&commit_args, repo_root).context("Failed to create Loom bootstrap commit")?;
 
     Ok(())
 }
@@ -97,14 +112,15 @@ fn ensure_bootstrap_readme(repo_root: &Path) -> Result<()> {
     Ok(())
 }
 
-fn ensure_git_identity(repo_root: &Path) -> Result<()> {
-    read_git_config(repo_root, "user.name")?;
-    read_git_config(repo_root, "user.email")?;
+fn ensure_git_identity(repo_root: &Path, git_config_args: &[&str]) -> Result<()> {
+    read_git_config(repo_root, git_config_args, "user.name")?;
+    read_git_config(repo_root, git_config_args, "user.email")?;
     Ok(())
 }
 
-fn read_git_config(repo_root: &Path, key: &str) -> Result<String> {
-    let output = run_git(&["config", "--get", key], repo_root)?;
+fn read_git_config(repo_root: &Path, git_config_args: &[&str], key: &str) -> Result<String> {
+    let args = configured_args(git_config_args, &["config", "--get", key]);
+    let output = run_git(&args, repo_root)?;
 
     if output.status.success() {
         let value = String::from_utf8_lossy(&output.stdout).trim().to_string();
@@ -123,39 +139,17 @@ Set it with:\n  git config --global user.name \"Your Name\"\n  git config --glob
 mod tests {
     use super::*;
     use crate::git::runner::run_git_checked;
-    use serial_test::serial;
-    use std::env;
     use std::fs;
-    use std::path::PathBuf;
     use std::process::Command;
     use tempfile::TempDir;
 
-    struct GlobalGitConfigGuard {
-        previous: Option<std::ffi::OsString>,
-    }
-
-    impl GlobalGitConfigGuard {
-        fn set(path: &Path) -> Self {
-            let previous = env::var_os("GIT_CONFIG_GLOBAL");
-            unsafe {
-                env::set_var("GIT_CONFIG_GLOBAL", path);
-            }
-            Self { previous }
-        }
-    }
-
-    impl Drop for GlobalGitConfigGuard {
-        fn drop(&mut self) {
-            match &self.previous {
-                Some(value) => unsafe {
-                    env::set_var("GIT_CONFIG_GLOBAL", value);
-                },
-                None => unsafe {
-                    env::remove_var("GIT_CONFIG_GLOBAL");
-                },
-            }
-        }
-    }
+    const TEST_IDENTITY: &[&str] = &[
+        "-c",
+        "user.name=Test User",
+        "-c",
+        "user.email=test@example.com",
+    ];
+    const EMPTY_IDENTITY: &[&str] = &["-c", "user.name=", "-c", "user.email="];
 
     fn init_repo_without_commits(path: &Path) {
         Command::new("git")
@@ -165,37 +159,13 @@ mod tests {
             .unwrap();
     }
 
-    fn write_global_git_config(dir: &TempDir) -> PathBuf {
-        let config_path = dir.path().join("gitconfig");
-
-        Command::new("git")
-            .args(["config", "--file"])
-            .arg(&config_path)
-            .args(["user.name", "Test User"])
-            .output()
-            .unwrap();
-
-        Command::new("git")
-            .args(["config", "--file"])
-            .arg(&config_path)
-            .args(["user.email", "test@example.com"])
-            .output()
-            .unwrap();
-
-        config_path
-    }
-
     #[test]
-    #[serial]
     fn bootstraps_missing_repository() {
         let temp_dir = TempDir::new().unwrap();
-        let config_dir = TempDir::new().unwrap();
-        let config_path = write_global_git_config(&config_dir);
-        let _guard = GlobalGitConfigGuard::set(&config_path);
         let repo_root = temp_dir.path();
         fs::write(repo_root.join("README.md"), "# temp\n").unwrap();
 
-        let result = ensure_repo_ready_for_worktrees(repo_root).unwrap();
+        let result = ensure_repo_ready_with_config(repo_root, TEST_IDENTITY).unwrap();
 
         assert_eq!(
             result,
@@ -220,16 +190,12 @@ mod tests {
     }
 
     #[test]
-    #[serial]
     fn bootstraps_repo_without_commits() {
         let temp_dir = TempDir::new().unwrap();
-        let config_dir = TempDir::new().unwrap();
-        let config_path = write_global_git_config(&config_dir);
-        let _guard = GlobalGitConfigGuard::set(&config_path);
         let repo_root = temp_dir.path();
         init_repo_without_commits(repo_root);
 
-        let result = ensure_repo_ready_for_worktrees(repo_root).unwrap();
+        let result = ensure_repo_ready_with_config(repo_root, TEST_IDENTITY).unwrap();
 
         assert_eq!(
             result,
@@ -252,19 +218,15 @@ mod tests {
     }
 
     #[test]
-    #[serial]
     fn preserves_staged_changes_in_unborn_repo() {
         let temp_dir = TempDir::new().unwrap();
-        let config_dir = TempDir::new().unwrap();
-        let config_path = write_global_git_config(&config_dir);
-        let _guard = GlobalGitConfigGuard::set(&config_path);
         let repo_root = temp_dir.path();
         init_repo_without_commits(repo_root);
 
         fs::write(repo_root.join("tracked.txt"), "tracked\n").unwrap();
         run_git_checked(&["add", "tracked.txt"], repo_root).unwrap();
 
-        let result = ensure_repo_ready_for_worktrees(repo_root).unwrap();
+        let result = ensure_repo_ready_with_config(repo_root, TEST_IDENTITY).unwrap();
 
         assert!(result.created_initial_commit);
         assert!(repo_root.join("README.md").exists());
@@ -274,17 +236,12 @@ mod tests {
     }
 
     #[test]
-    #[serial]
     fn fails_without_git_identity() {
         let temp_dir = TempDir::new().unwrap();
-        let config_dir = TempDir::new().unwrap();
-        let config_path = config_dir.path().join("gitconfig");
-        fs::write(&config_path, "").unwrap();
-        let _guard = GlobalGitConfigGuard::set(&config_path);
         let repo_root = temp_dir.path();
         init_repo_without_commits(repo_root);
 
-        let result = ensure_repo_ready_for_worktrees(repo_root);
+        let result = ensure_repo_ready_with_config(repo_root, EMPTY_IDENTITY);
 
         assert!(result.is_err());
         let error = result.unwrap_err().to_string();
@@ -294,7 +251,6 @@ mod tests {
     }
 
     #[test]
-    #[serial]
     fn noops_for_repo_with_existing_head() {
         let temp_dir = TempDir::new().unwrap();
         let repo_root = temp_dir.path();

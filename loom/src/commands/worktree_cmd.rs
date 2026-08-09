@@ -1,18 +1,19 @@
 //! Worktree management commands
-//! Usage: loom worktree [list|remove <stage-id>]
+//! Usage: `loom worktree [list|remove <stage-id>]`
 
 use anyhow::{bail, Context, Result};
 use colored::Colorize;
 use std::path::{Path, PathBuf};
 
-use crate::fs::stage_files::find_stage_file;
-use crate::git::branch::{
-    branch_name_for_stage, commits_ahead_of, is_ancestor_of, resolve_target_branch,
+use crate::git::branch::{branch_name_for_stage, default_branch};
+use crate::git::cleanup::{
+    cleanup_destructive_stage, cleanup_orphaned_worktrees, cleanup_verified_stage, CleanupResult,
 };
-use crate::git::cleanup::{cleanup_after_merge, prune_worktrees, CleanupConfig};
+use crate::git::merge::lock::MergeLock;
 use crate::git::worktree::find_worktree_by_prefix;
 use crate::models::stage::{Stage, StageStatus};
-use crate::verify::transitions::{load_stage, parse_stage_from_markdown, save_stage};
+use crate::verify::transitions::{load_stage, update_stage};
+use std::time::Duration;
 
 /// List all worktrees
 pub fn list() -> Result<()> {
@@ -44,286 +45,10 @@ pub fn list() -> Result<()> {
     Ok(())
 }
 
-/// Clean orphaned worktrees
-///
-/// Deletion safety policy (a worktree's branch may hold unmerged committed
-/// work, so we never delete on a guess):
-/// - **Active** (kept): every non-terminal state. Terminal means only
-///   `Completed + merged == true` or `Skipped`. States like `Blocked`,
-///   `CompletedWithFailures`, `MergeBlocked`, `MergeConflict`,
-///   `NeedsHumanReview`, `NeedsAdjudication` all hold committed-but-unmerged
-///   work and are treated as active.
-/// - **Terminal** (`Completed + merged`, `Skipped`): only cleaned once the
-///   branch is proven safe — its `completed_commit` is an ancestor of the
-///   target branch, or it has zero commits ahead of the target. If neither can
-///   be proven (or git errors), the worktree is kept.
-/// - **Unparseable / unreadable stage files**: kept — never auto-deleted.
-/// - **No stage file at all**: only cleaned when the branch has zero commits
-///   ahead of the target (truly nothing to lose); otherwise kept.
+/// Clean worktrees whose branch history is proven to be retained by the target.
 pub fn clean() -> Result<()> {
-    println!("Cleaning orphaned worktrees...");
-    println!("{}", "─".repeat(50).dimmed());
-
     let repo_root = std::env::current_dir()?;
-    let worktrees_dir = repo_root.join(".worktrees");
-    let work_dir = repo_root.join(".work");
-    let stages_dir = work_dir.join("stages");
-
-    if !worktrees_dir.exists() {
-        println!("No .worktrees/ directory to clean");
-        return Ok(());
-    }
-
-    // Collect worktree stage IDs
-    let mut worktree_ids: Vec<String> = Vec::new();
-    if let Ok(entries) = std::fs::read_dir(&worktrees_dir) {
-        for entry in entries.flatten() {
-            if entry.path().is_dir() {
-                let name = entry.file_name();
-                worktree_ids.push(name.to_string_lossy().to_string());
-            }
-        }
-    }
-
-    if worktree_ids.is_empty() {
-        println!("No worktrees found");
-        prune_worktrees(&repo_root)?;
-        println!("{} Pruned stale worktree references", "✓".green().bold());
-        return Ok(());
-    }
-
-    println!(
-        "Found {} worktree(s): {}",
-        worktree_ids.len(),
-        worktree_ids.join(", ").dimmed()
-    );
-    println!();
-
-    // Resolve the merge target branch once (config base_branch, else repo default).
-    let config_branch = crate::fs::work_dir::load_config(&work_dir)
-        .ok()
-        .flatten()
-        .and_then(|c| c.base_branch());
-    let target_branch = resolve_target_branch(&config_branch, &repo_root);
-
-    // Check each worktree for orphan status
-    let mut orphaned: Vec<String> = Vec::new();
-    let mut active: Vec<String> = Vec::new();
-
-    for stage_id in &worktree_ids {
-        let is_orphan = match find_stage_file(&stages_dir, stage_id)? {
-            None => {
-                // No stage file — only safe to clean if the branch has no
-                // commits ahead of the target (nothing committed to lose).
-                if branch_has_no_unmerged_work(stage_id, &target_branch, &repo_root) {
-                    println!(
-                        "  {} {} (no stage file, branch fully merged)",
-                        "orphan:".yellow(),
-                        stage_id.cyan()
-                    );
-                    true
-                } else {
-                    println!(
-                        "  {} {} (no stage file, branch holds unmerged commits — keeping)",
-                        "keep:".green(),
-                        stage_id.cyan()
-                    );
-                    false
-                }
-            }
-            Some(stage_path) => {
-                // Parse stage file to check status
-                match std::fs::read_to_string(&stage_path) {
-                    Ok(content) => match parse_stage_from_markdown(&content) {
-                        Ok(stage) => classify_stage(stage_id, &stage, &target_branch, &repo_root),
-                        Err(_) => {
-                            // Can't parse stage — NEVER auto-delete (the file may
-                            // be crash-corrupted and the branch may hold work).
-                            println!(
-                                "  {} {} (unparseable stage file — keeping)",
-                                "keep:".green(),
-                                stage_id.cyan()
-                            );
-                            false
-                        }
-                    },
-                    Err(_) => {
-                        // Can't read stage file — NEVER auto-delete.
-                        println!(
-                            "  {} {} (unreadable stage file — keeping)",
-                            "keep:".green(),
-                            stage_id.cyan()
-                        );
-                        false
-                    }
-                }
-            }
-        };
-
-        if is_orphan {
-            orphaned.push(stage_id.clone());
-        } else {
-            active.push(stage_id.clone());
-        }
-    }
-
-    println!();
-
-    if orphaned.is_empty() {
-        println!(
-            "{} No orphaned worktrees to clean ({} active)",
-            "✓".green().bold(),
-            active.len()
-        );
-    } else {
-        println!(
-            "Cleaning {} orphaned worktree(s)...",
-            orphaned.len().to_string().yellow()
-        );
-
-        let config = CleanupConfig {
-            force_worktree_removal: true,
-            force_branch_deletion: true,
-            prune_worktrees: false, // We'll prune at the end
-            verbose: false,
-        };
-
-        for stage_id in &orphaned {
-            match cleanup_after_merge(stage_id, &repo_root, &config) {
-                Ok(result) => {
-                    let mut actions = Vec::new();
-                    if result.worktree_removed {
-                        actions.push("worktree");
-                    }
-                    if result.branch_deleted {
-                        actions.push("branch");
-                    }
-                    if result.base_branch_deleted {
-                        actions.push("base branch");
-                    }
-
-                    if actions.is_empty() {
-                        println!("  {} {} (already clean)", "─".dimmed(), stage_id);
-                    } else {
-                        println!(
-                            "  {} {} (removed: {})",
-                            "✓".green().bold(),
-                            stage_id,
-                            actions.join(", ")
-                        );
-                    }
-
-                    for warning in &result.warnings {
-                        println!("    {} {}", "⚠".yellow(), warning.dimmed());
-                    }
-                }
-                Err(e) => {
-                    println!("  {} {} ({})", "✗".red().bold(), stage_id, e);
-                }
-            }
-        }
-    }
-
-    // Always prune stale worktree references
-    println!();
-    prune_worktrees(&repo_root)?;
-    println!("{} Pruned stale worktree references", "✓".green().bold());
-
-    println!();
-    println!("{} Cleanup complete!", "✓".green().bold());
-
-    Ok(())
-}
-
-/// Decide whether a worktree backed by a parsed stage is safe to clean.
-///
-/// Returns `true` only when the stage is in a terminal resting state
-/// (`Completed + merged`, or `Skipped`) AND its branch is proven to hold no
-/// unmerged work. Every other state — including the failure/review states that
-/// hold committed-but-unmerged work — keeps the worktree. Prints the decision.
-fn classify_stage(stage_id: &str, stage: &Stage, target_branch: &str, repo_root: &Path) -> bool {
-    let status = &stage.status;
-
-    // Terminal resting states: only these are even eligible for cleanup.
-    let terminal = matches!(status, StageStatus::Skipped)
-        || (matches!(status, StageStatus::Completed) && stage.merged);
-
-    if !terminal {
-        println!(
-            "  {} {} ({})",
-            "active:".green(),
-            stage_id.cyan(),
-            format!("{status}").dimmed()
-        );
-        return false;
-    }
-
-    // Eligible — but still prove the branch carries no unmerged work before
-    // deleting. Prefer the recorded completed_commit ancestry check; fall back
-    // to a commits-ahead count. Either proof of "fully merged" is enough.
-    let proven_merged = match &stage.completed_commit {
-        Some(commit) => is_ancestor_of(commit, target_branch, repo_root).unwrap_or(false),
-        None => false,
-    } || branch_has_no_unmerged_work(stage_id, target_branch, repo_root);
-
-    if proven_merged {
-        println!(
-            "  {} {} ({}, merged)",
-            "orphan:".yellow(),
-            stage_id.cyan(),
-            format!("{status}").dimmed()
-        );
-        true
-    } else {
-        println!(
-            "  {} {} ({}, unverified merge — keeping)",
-            "keep:".green(),
-            stage_id.cyan(),
-            format!("{status}").dimmed()
-        );
-        false
-    }
-}
-
-/// Return `true` iff the stage's `loom/<stage-id>` branch is provably free of
-/// unmerged work — zero commits ahead of `target_branch`.
-///
-/// Fails closed: if `commits_ahead_of` errors (e.g. a git failure surfaced per
-/// C-9), returns `false` so the caller keeps the worktree rather than risk
-/// deleting committed work.
-fn branch_has_no_unmerged_work(stage_id: &str, target_branch: &str, repo_root: &Path) -> bool {
-    let branch_name = branch_name_for_stage(stage_id);
-    matches!(
-        commits_ahead_of(&branch_name, target_branch, repo_root),
-        Ok(0)
-    )
-}
-
-/// Update stage status to Completed and mark as merged after successful merge
-fn mark_stage_merged(stage_id: &str, work_dir: &std::path::Path) -> Result<()> {
-    let stages_dir = work_dir.join("stages");
-
-    // Only update if stage file exists
-    if find_stage_file(&stages_dir, stage_id)?.is_none() {
-        return Ok(());
-    }
-
-    let mut stage = load_stage(stage_id, work_dir)?;
-
-    if stage.status != StageStatus::Completed {
-        crate::verify::transitions::transition_stage(stage_id, StageStatus::Completed, work_dir)
-            .with_context(|| format!("Failed to update stage status for: {stage_id}"))?;
-        stage = load_stage(stage_id, work_dir)?;
-        println!("Updated stage status to Completed");
-    }
-
-    if !stage.merged {
-        stage.merged = true;
-        save_stage(&stage, work_dir)?;
-        println!("Marked stage as merged");
-    }
-
-    Ok(())
+    cleanup_orphaned_worktrees(&repo_root)
 }
 
 /// Get the base worktrees directory
@@ -335,19 +60,19 @@ pub fn worktrees_dir() -> PathBuf {
 
 /// Remove a specific worktree and its branch after merge conflict resolution
 ///
-/// This command is used after resolving merge conflicts manually (or via Claude Code).
+/// This command is used after resolving merge conflicts manually or in a resolver session.
 /// It cleans up the worktree and branch WITHOUT attempting another merge.
 ///
 /// # Use Case
 /// When auto-merge encounters conflicts:
-/// 1. A CC session is spawned to resolve conflicts
-/// 2. CC runs `git merge loom/<stage>` → resolves → `git add` → `git commit`
+/// 1. A resolver session is spawned to resolve conflicts
+/// 2. The resolver merges `loom/<stage>`, resolves conflicts, and commits
 /// 3. The merge is complete but worktree/branch still exist
 /// 4. Run `loom worktree remove <stage>` to clean up
 ///
 /// Supports prefix matching: `loom worktree remove pref` will match `prefix-matching`
 /// if it's the only worktree starting with "pref".
-pub fn remove(stage_id: String) -> Result<()> {
+pub fn remove(stage_id: String, force: bool, confirmation: Option<String>) -> Result<()> {
     let repo_root = std::env::current_dir()?;
     let work_dir = repo_root.join(".work");
 
@@ -355,111 +80,114 @@ pub fn remove(stage_id: String) -> Result<()> {
         bail!(".work/ directory not found. Run 'loom init' first.");
     }
 
-    // Resolve stage_id using prefix matching
-    let (worktree_path, actual_stage_id) = match find_worktree_by_prefix(&repo_root, &stage_id)? {
-        Some(path) => {
-            let actual_id = path
-                .file_name()
-                .and_then(|s| s.to_str())
-                .unwrap_or(&stage_id)
-                .to_string();
-            (path, actual_id)
-        }
-        None => {
-            // No worktree found, but branch might still exist
-            // Fall back to the provided stage_id
-            (
-                repo_root.join(".worktrees").join(&stage_id),
-                stage_id.clone(),
-            )
-        }
-    };
+    let actual_stage_id = resolve_stage_id(&repo_root, &stage_id)?;
+    print_removal_header(&actual_stage_id, force);
+    let _lock = MergeLock::acquire(&work_dir, Duration::from_secs(30))
+        .context("Could not acquire merge lock for worktree removal")?;
 
-    println!();
-    println!(
-        "{} {} {}",
-        "Cleaning up".cyan().bold(),
-        "stage:".dimmed(),
-        actual_stage_id.cyan()
-    );
-    println!("{}", "─".repeat(50).dimmed());
-
-    let branch_name = branch_name_for_stage(&actual_stage_id);
-
-    let worktree_exists = worktree_path.exists();
-    let branch_exists = std::process::Command::new("git")
-        .args(["rev-parse", "--verify", &branch_name])
-        .current_dir(&repo_root)
-        .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false);
-
-    if !worktree_exists && !branch_exists {
-        println!(
-            "  {} Stage '{}' is already cleaned up",
-            "✓".green().bold(),
-            actual_stage_id
-        );
-        println!("    {} Worktree not found", "─".dimmed());
-        println!(
-            "    {} Branch '{}' does not exist",
-            "─".dimmed(),
-            branch_name
-        );
-
-        // Still mark as merged in case stage status wasn't updated
-        mark_stage_merged(&actual_stage_id, &work_dir)?;
-        println!();
+    if force {
+        let result = cleanup_destructive_stage(
+            &actual_stage_id,
+            confirmation.as_deref().unwrap_or_default(),
+            &repo_root,
+        )?;
+        print_cleanup_result(&actual_stage_id, &result);
+        println!("  Stage state left unchanged; destructive removal does not prove a merge.");
         return Ok(());
     }
 
-    // Perform cleanup
-    let config = CleanupConfig {
-        force_worktree_removal: true,
-        force_branch_deletion: true, // Force delete since merge is complete
-        prune_worktrees: true,
-        verbose: false,
+    let stage = load_stage(&actual_stage_id, &work_dir)
+        .with_context(|| format!("Cannot verify safe removal for stage '{actual_stage_id}'"))?;
+    let completed_commit = validate_completed_stage(&stage)?.to_string();
+    let target_branch = removal_target_branch(&work_dir, &repo_root)?;
+    let result = cleanup_verified_stage(
+        &actual_stage_id,
+        &completed_commit,
+        &target_branch,
+        &repo_root,
+    )?;
+    mark_verified_merge(&actual_stage_id, &completed_commit, &work_dir)?;
+    print_cleanup_result(&actual_stage_id, &result);
+    println!(
+        "  {} Stage marked as merged after ancestry verification",
+        "✓".green()
+    );
+    Ok(())
+}
+
+fn resolve_stage_id(repo_root: &Path, requested: &str) -> Result<String> {
+    crate::validation::validate_id(requested).context("Invalid worktree stage ID or prefix")?;
+    let Some(path) = find_worktree_by_prefix(repo_root, requested)? else {
+        return Ok(requested.to_string());
     };
+    path.file_name()
+        .and_then(|name| name.to_str())
+        .map(str::to_string)
+        .ok_or_else(|| anyhow::anyhow!("Worktree path has no valid stage ID: {}", path.display()))
+}
 
-    let result = cleanup_after_merge(&actual_stage_id, &repo_root, &config)?;
-
-    // Report results
-    if result.worktree_removed {
-        println!(
-            "  {} Removed worktree: {}",
-            "✓".green().bold(),
-            format!(".worktrees/{actual_stage_id}").dimmed()
+fn validate_completed_stage(stage: &Stage) -> Result<&str> {
+    if stage.status != StageStatus::Completed {
+        bail!(
+            "Stage '{}' is {}; normal removal requires Completed status",
+            stage.id,
+            stage.status
         );
-    } else if worktree_exists {
-        println!("  {} Worktree not found (already removed)", "─".dimmed());
     }
+    stage
+        .completed_commit
+        .as_deref()
+        .filter(|commit| !commit.trim().is_empty())
+        .ok_or_else(|| anyhow::anyhow!("Stage '{}' has no retained completed commit", stage.id))
+}
 
+fn removal_target_branch(work_dir: &Path, repo_root: &Path) -> Result<String> {
+    let configured = crate::fs::work_dir::load_config(work_dir)
+        .context("Failed to load Loom configuration for removal verification")?
+        .and_then(|config| config.base_branch());
+    match configured {
+        Some(branch) => Ok(branch),
+        None => default_branch(repo_root).context("Failed to resolve removal target branch"),
+    }
+}
+
+fn mark_verified_merge(stage_id: &str, completed_commit: &str, work_dir: &Path) -> Result<()> {
+    update_stage(stage_id, work_dir, |stage| {
+        if stage.status != StageStatus::Completed {
+            bail!("Stage changed status during cleanup; refusing merge-state update");
+        }
+        if stage.completed_commit.as_deref() != Some(completed_commit) {
+            bail!("Stage completed commit changed during cleanup; refusing merge-state update");
+        }
+        stage.merged = true;
+        Ok(())
+    })?;
+    Ok(())
+}
+
+fn print_removal_header(stage_id: &str, force: bool) {
+    let mode = if force {
+        "destructively removing"
+    } else {
+        "safely cleaning"
+    };
+    println!();
+    println!("{} {}", mode.cyan().bold(), stage_id.cyan());
+    println!("{}", "─".repeat(50).dimmed());
+}
+
+fn print_cleanup_result(stage_id: &str, result: &CleanupResult) {
+    if result.worktree_removed {
+        println!("  {} Removed .worktrees/{stage_id}", "✓".green().bold());
+    }
     if result.branch_deleted {
         println!(
-            "  {} Deleted branch: {}",
+            "  {} Deleted {}",
             "✓".green().bold(),
-            branch_name.dimmed()
+            branch_name_for_stage(stage_id).dimmed()
         );
-    } else if branch_exists {
-        println!("  {} Branch not found (already deleted)", "─".dimmed());
     }
-
-    // Report any warnings
-    for warning in &result.warnings {
-        println!("  {} {}", "⚠".yellow().bold(), warning.dimmed());
+    if result.base_branch_deleted {
+        println!("  {} Deleted loom/_base/{stage_id}", "✓".green().bold());
     }
-
-    // Mark stage as merged
-    mark_stage_merged(&actual_stage_id, &work_dir)?;
-    println!(
-        "  {} Stage '{}' marked as merged",
-        "✓".green().bold(),
-        actual_stage_id
-    );
-
-    println!();
-    println!("{} Cleanup complete!", "✓".green().bold());
-    println!();
-
-    Ok(())
 }

@@ -5,8 +5,18 @@
 
 use super::helpers::complete_stage;
 use loom::models::stage::{Stage, StageStatus, StageType};
-use loom::verify::transitions::{load_stage, save_stage, transition_stage, trigger_dependents};
+use loom::verify::transitions::{
+    load_stage, save_stage, transition_stage, trigger_dependents, update_stage,
+};
 use tempfile::TempDir;
+
+fn set_parallel_group(work_dir: &std::path::Path, stage_id: &str, group: Option<&str>) {
+    update_stage(stage_id, work_dir, |stage| {
+        stage.parallel_group = group.map(str::to_string);
+        Ok(())
+    })
+    .unwrap();
+}
 
 #[test]
 fn test_parallel_stages_triggered_together() {
@@ -319,17 +329,13 @@ fn test_parallel_group_assignment() {
     assert_eq!(loaded_c.parallel_group, None);
 
     // Test updating parallel_group
-    let mut stage_a = loaded_a;
-    stage_a.parallel_group = Some("new-group".to_string());
-    save_stage(&stage_a, work_dir).unwrap();
+    set_parallel_group(work_dir, "stage-a", Some("new-group"));
 
     let reloaded_a = load_stage("stage-a", work_dir).unwrap();
     assert_eq!(reloaded_a.parallel_group, Some("new-group".to_string()));
 
     // Test clearing parallel_group
-    let mut stage_b = loaded_b;
-    stage_b.parallel_group = None;
-    save_stage(&stage_b, work_dir).unwrap();
+    set_parallel_group(work_dir, "stage-b", None);
 
     let reloaded_b = load_stage("stage-b", work_dir).unwrap();
     assert_eq!(reloaded_b.parallel_group, None);

@@ -2,7 +2,7 @@
 
 use anyhow::{Context, Result};
 use loom::models::stage::{Stage, StageStatus, StageType};
-use loom::verify::transitions::transition_stage;
+use loom::verify::transitions::{transition_stage, update_stage};
 use std::path::Path;
 use std::thread;
 use std::time::{Duration, Instant};
@@ -17,24 +17,22 @@ use std::time::{Duration, Instant};
 /// Real-git regression tests for ancestry verification live separately.
 /// Returns the completed stage.
 pub fn complete_stage(stage_id: &str, work_dir: &Path) -> Result<Stage> {
-    use loom::verify::transitions::save_stage;
-
     // First transition to Executing (required before Completed)
     transition_stage(stage_id, StageStatus::Executing, work_dir)
         .with_context(|| format!("Failed to transition {stage_id} to Executing"))?;
 
     // Then transition to Completed
-    let mut stage = transition_stage(stage_id, StageStatus::Completed, work_dir)
+    transition_stage(stage_id, StageStatus::Completed, work_dir)
         .with_context(|| format!("Failed to transition {stage_id} to Completed"))?;
 
     // Set merged = true (required for dependents to be satisfied).
     // Set stage_type = Knowledge so the git ancestry check is bypassed.
-    stage.merged = true;
-    stage.stage_type = StageType::Knowledge;
-    save_stage(&stage, work_dir)
-        .with_context(|| format!("Failed to save stage {stage_id} with merged=true"))?;
-
-    Ok(stage)
+    update_stage(stage_id, work_dir, |stage| {
+        stage.merged = true;
+        stage.stage_type = StageType::Knowledge;
+        Ok(())
+    })
+    .with_context(|| format!("Failed to mark stage {stage_id} as merged"))
 }
 
 /// Polls a predicate function until it returns true or timeout is reached
