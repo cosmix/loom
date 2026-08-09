@@ -28,6 +28,7 @@ run_test "post-tool-use: heartbeat only, no tool event" "$SCRIPT_DIR/post-tool-u
 run_test "post-tool-use does not persist tool output" "$SCRIPT_DIR/post-tool-use-empty-output.sh"
 run_test "loom-control-complete: exact verified route only" "$SCRIPT_DIR/loom-control-complete.sh"
 run_test "session-start: compact source emits re-anchor" "$SCRIPT_DIR/session-start-compact.sh"
+run_test "worktree-file-guard: malformed non-empty input is blocked" "$SCRIPT_DIR/worktree-file-guard-truncated-input.sh"
 run_test "plans-path-guard: blocks ~/.claude/plans write" "$SCRIPT_DIR/plans-path-guard-blocks-claude-plans.sh"
 run_test "plans-path-guard: blocks ~/.claude/projects/*/plans edit" "$SCRIPT_DIR/plans-path-guard-blocks-project-plans.sh"
 run_test "plans-path-guard: allows doc/plans and other .claude paths" "$SCRIPT_DIR/plans-path-guard-allows-doc-plans.sh"

@@ -13,14 +13,30 @@ set -euo pipefail
 source "$(dirname "$0")/_common.sh"
 
 if command -v gtimeout &>/dev/null; then
-	INPUT_JSON=$(gtimeout 1 cat 2>/dev/null || true)
+	INPUT_JSON=$(gtimeout 5 cat 2>/dev/null || true)
 elif command -v timeout &>/dev/null; then
-	INPUT_JSON=$(timeout 1 cat 2>/dev/null || true)
+	INPUT_JSON=$(timeout 5 cat 2>/dev/null || true)
 else
 	INPUT_JSON=$(cat 2>/dev/null || true)
 fi
 
 TOOL_NAME=$(printf '%s' "$INPUT_JSON" | jq -r '.tool_name // empty' 2>/dev/null || true)
+
+if [[ -n "$INPUT_JSON" && -z "$TOOL_NAME" ]]; then
+	cat >&2 <<EOF
+
+============================================================
+  LOOM: BLOCKED - File operation metadata could not be parsed
+============================================================
+
+Reason: received non-empty tool input that did not contain a valid tool name.
+
+Retry the file operation so the worktree policy can validate its path.
+============================================================
+
+EOF
+	exit 2
+fi
 
 case "$TOOL_NAME" in
 Read | Write | Edit | Glob | Grep) ;;
