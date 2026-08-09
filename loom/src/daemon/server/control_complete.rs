@@ -35,7 +35,6 @@ pub(super) fn handle_complete_stage(
         // a crash/completion update cannot invalidate the authorization fact
         // between validation and mutation.
         validate_active_identity(work_dir, stage_id, session_id)?;
-        consume_nonce(work_dir, nonce)?;
         update_stage(stage_id, work_dir, |stage| {
             if stage.status != StageStatus::Executing {
                 bail!("stage is no longer executing");
@@ -45,6 +44,7 @@ pub(super) fn handle_complete_stage(
             }
             stage.try_complete(None)
         })?;
+        consume_nonce(work_dir, nonce)?;
         Ok(())
     })?;
     Ok(Response::Ok)
