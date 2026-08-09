@@ -34,25 +34,7 @@ pub fn execute_background(
     auto_merge: bool,
     backend: Option<String>,
 ) -> Result<()> {
-    // Ensure git worktree prerequisites are met before starting.
-    let repo_root = std::env::current_dir()?;
-    prepare_repo_for_run(&repo_root)?;
-
-    let work_dir = WorkDir::new(".")?;
-    work_dir.load()?;
-
-    resolve_backend_flag(&work_dir, backend, "loom run")?;
-
-    // Advisory Remote Control preflight — never aborts startup.
-    if let Ok(claude_path) = crate::claude::find_claude_path() {
-        crate::remote_control::run_startup_preflight(&claude_path, work_dir.root());
-    }
-
-    // Advisory Codex lane preflight — never aborts startup.
-    checks::advisory_codex_lane_preflight(work_dir.root());
-
-    // Mark plan as in-progress when starting execution
-    plan_lifecycle::mark_plan_in_progress(&work_dir)?;
+    let work_dir = prepare_background_run(backend)?;
 
     crate::utils::print_logo_header("Run");
 
@@ -60,7 +42,7 @@ pub fn execute_background(
         println!("{} Daemon is already running", "─".dimmed());
         println!();
         println!("  {}  Check status", "loom status".cyan());
-        println!("  {}  Stop daemon", "loom stop".cyan());
+        print_stop_guidance();
         return Ok(());
     }
 
@@ -88,9 +70,44 @@ pub fn execute_background(
     }
     println!();
     println!("  {}  Monitor progress", "loom status".cyan());
-    println!("  {}  Stop daemon", "loom stop".cyan());
+    print_stop_guidance();
 
     Ok(())
+}
+
+fn prepare_background_run(backend: Option<String>) -> Result<WorkDir> {
+    // Ensure git worktree prerequisites are met before starting.
+    let repo_root = std::env::current_dir()?;
+    prepare_repo_for_run(&repo_root)?;
+
+    let work_dir = WorkDir::new(".")?;
+    work_dir.load()?;
+
+    resolve_backend_flag(&work_dir, backend, "loom run")?;
+
+    // Advisory Remote Control preflight — never aborts startup.
+    if let Ok(claude_path) = crate::claude::find_claude_path() {
+        crate::remote_control::run_startup_preflight(&claude_path, work_dir.root());
+    }
+
+    // Advisory Codex lane preflight — never aborts startup.
+    checks::advisory_codex_lane_preflight(work_dir.root());
+
+    // Mark plan as in-progress when starting execution
+    plan_lifecycle::mark_plan_in_progress(&work_dir)?;
+
+    Ok(work_dir)
+}
+
+fn print_stop_guidance() {
+    println!(
+        "  {}  Mint stop proof",
+        "LOOM_ADMIN_TOKEN=<daemon-admin-token> loom stage admin-proof --daemon-stop".cyan()
+    );
+    println!(
+        "  {}  Stop daemon",
+        "LOOM_ADMIN_PROOF=<printed-proof> loom stop".cyan()
+    );
 }
 
 /// Resolve `--backend`, persisting an explicit selection, then run the
@@ -162,7 +179,7 @@ fn resolve_backend_flag(
 /// why the branch that calls this is not).
 fn backend_restart_hint(invocation: &str, value: &str) -> String {
     format!(
-        "backend change requires a restart: run `loom stop`, then `{invocation} --backend {value}`"
+        "backend change requires an admin proof: run `LOOM_ADMIN_TOKEN=<daemon-admin-token> loom stage admin-proof --daemon-stop`, then `LOOM_ADMIN_PROOF=<printed-proof> loom stop`, then `{invocation} --backend {value}`"
     )
 }
 
@@ -282,11 +299,11 @@ mod backend_flag_tests {
         // --backend <x>`, not `loom run --backend <x>`.
         assert_eq!(
             super::backend_restart_hint("loom run", "tmux"),
-            "backend change requires a restart: run `loom stop`, then `loom run --backend tmux`"
+            "backend change requires an admin proof: run `LOOM_ADMIN_TOKEN=<daemon-admin-token> loom stage admin-proof --daemon-stop`, then `LOOM_ADMIN_PROOF=<printed-proof> loom stop`, then `loom run --backend tmux`"
         );
         assert_eq!(
             super::backend_restart_hint("loom run --foreground", "native"),
-            "backend change requires a restart: run `loom stop`, then `loom run --foreground \
+            "backend change requires an admin proof: run `LOOM_ADMIN_TOKEN=<daemon-admin-token> loom stage admin-proof --daemon-stop`, then `LOOM_ADMIN_PROOF=<printed-proof> loom stop`, then `loom run --foreground \
              --backend native`"
         );
     }

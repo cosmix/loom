@@ -170,22 +170,8 @@ pub fn alerts(work_dir: &Path, daemon_running: bool) -> Vec<Alert> {
 
     let now = Utc::now();
 
-    if let Ok(Some(tick)) = crate::orchestrator::tick::read(work_dir) {
-        if tick.is_stalled(now) {
-            let phase = tick
-                .phase
-                .map(|p| format!(", stuck in {}", p.as_str()))
-                .unwrap_or_default();
-            alerts.push(Alert {
-                severity: Severity::Critical,
-                text: format!(
-                    "orchestrator loop stalled: no tick for {}s{} — \
-                     restart with `loom stop && loom run`",
-                    tick.age_secs(now),
-                    phase
-                ),
-            });
-        }
+    if let Some(alert) = stalled_alert(work_dir, now) {
+        alerts.push(alert);
     }
 
     let Ok(Some(report)) = read(work_dir) else {
@@ -214,6 +200,28 @@ pub fn alerts(work_dir: &Path, daemon_running: bool) -> Vec<Alert> {
     }
 
     alerts
+}
+
+fn stalled_alert(work_dir: &Path, now: DateTime<Utc>) -> Option<Alert> {
+    let tick = crate::orchestrator::tick::read(work_dir).ok().flatten()?;
+    if !tick.is_stalled(now) {
+        return None;
+    }
+
+    let phase = tick
+        .phase
+        .map(|p| format!(", stuck in {}", p.as_str()))
+        .unwrap_or_default();
+    Some(Alert {
+        severity: Severity::Critical,
+        text: format!(
+            "orchestrator loop stalled: no tick for {}s{} — restart with \
+             `LOOM_ADMIN_TOKEN=<daemon-admin-token> loom stage admin-proof --daemon-stop`, \
+             then `LOOM_ADMIN_PROOF=<printed-proof> loom stop`, then `loom run`",
+            tick.age_secs(now),
+            phase
+        ),
+    })
 }
 
 #[cfg(test)]

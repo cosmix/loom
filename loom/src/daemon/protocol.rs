@@ -53,9 +53,9 @@ pub struct CompletionSummary {
 /// matching the CLI flags available with `loom run`.
 ///
 /// Note: Configuration is set when the daemon starts and cannot be
-/// changed at runtime. To change configuration, stop the daemon
-/// with `loom stop` and restart it with `loom run` using the
-/// desired flags.
+/// changed at runtime. To change configuration, first mint a proof with
+/// `LOOM_ADMIN_TOKEN=<daemon-admin-token> loom stage admin-proof --daemon-stop`, then stop with
+/// `LOOM_ADMIN_PROOF=<printed-proof> loom stop` and restart with `loom run` using the desired flags.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DaemonConfig {
     /// Manual mode - don't auto-start stages (maps to --manual)

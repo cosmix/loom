@@ -44,7 +44,7 @@ pub fn execute_with_force(force: bool) -> Result<()> {
 
     let operator_proof = take_admin_proof_from_env().map_err(|_| {
         anyhow::anyhow!(
-            "daemon stop requires an action-bound one-time operator proof in LOOM_ADMIN_PROOF"
+            "daemon stop requires an action-bound one-time operator proof in LOOM_ADMIN_PROOF; mint one with `LOOM_ADMIN_TOKEN=<daemon-admin-token> loom stage admin-proof --daemon-stop`, then run `LOOM_ADMIN_PROOF=<printed-proof> loom stop`"
         )
     })?;
 
