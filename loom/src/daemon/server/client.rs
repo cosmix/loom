@@ -29,8 +29,8 @@ const SUBSCRIBER_WRITE_TIMEOUT: Duration = Duration::from_secs(5);
 ///
 /// A client that connects but never sends a complete request — or dribbles bytes
 /// to keep the connection nominally alive — otherwise pins its handler thread and
-/// a slot in the [`MAX_CONNECTIONS`](super::core::MAX_CONNECTIONS) cap forever,
-/// eventually starving legitimate clients (including `Stop`). 30s is generous for
+/// a slot in the `CLIENT_WORKERS`/`CLIENT_QUEUE_CAPACITY` admission limits forever,
+/// eventually starving legitimate clients (including `Stop`). Five seconds is generous for
 /// any real request: the CLI sends one immediately on connect.
 const CLIENT_READ_TIMEOUT: Duration = Duration::from_secs(5);
 
@@ -72,7 +72,7 @@ pub fn read_user_token(work_dir: &Path) -> Option<String> {
 ///
 /// Kept on the public surface because TUI code reads it for `Ping` /
 /// `SubscribeStatus`. Never use this for `Stop`; that path must call
-/// a user-tier credential.
+/// the admin-proof verifier.
 pub fn read_auth_token(work_dir: &Path) -> Option<String> {
     read_user_token(work_dir)
 }
