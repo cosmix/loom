@@ -1,6 +1,7 @@
 //! Shared utilities for loading stage definitions from .work/stages/ files.
 //!
-//! On-disk `.work/stages/*.md` files carry a full serialized [`Stage`] in their
+//! On-disk `.work/stages/*.md` files carry a full serialized
+//! [`Stage`](crate::models::stage::Stage) in their
 //! YAML frontmatter (written by `serialize_stage_to_markdown`). A
 //! [`StageDefinition`] is a strict subset of those fields, so we deserialize the
 //! frontmatter *directly* into a `StageDefinition` — serde ignores the runtime-only

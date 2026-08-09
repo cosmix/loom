@@ -239,7 +239,7 @@ fn portable_open_walk(
 /// Open a file under `dirfd` with the requested flags/mode, refusing every
 /// symlink along the path. Tries `openat2` first; falls back to the portable
 /// openat-walk if unsupported.
-fn open_safely(dirfd: RawFd, relpath: &Path, flags: i32, mode: u32) -> Result<OwnedFd> {
+pub(crate) fn open_safely(dirfd: RawFd, relpath: &Path, flags: i32, mode: u32) -> Result<OwnedFd> {
     let components = validate_relpath(relpath)?;
 
     // Linux fast path: single syscall, kernel-enforced.
@@ -335,12 +335,14 @@ pub fn safe_locked_write_in_workdir(dirfd: RawFd, relpath: &Path, content: &[u8]
     let fd = open_safely(dirfd, relpath, libc::O_WRONLY | libc::O_CREAT, 0o600)?;
     flock_exclusive(&fd)?;
     // Truncate AFTER the lock (TOCTOU prevention — see fs/locking.rs:88).
+    // SAFETY: `fd` is a live, exclusively locked descriptor opened for writing.
     if unsafe { libc::ftruncate(fd.as_raw_fd(), 0) } < 0 {
         return Err(io::Error::last_os_error())
             .with_context(|| format!("safe_fs: ftruncate failed on {}", relpath.display()));
     }
     write_all_at(&fd, content, relpath)?;
     // fsync to ensure data hits disk before flock releases.
+    // SAFETY: `fd` remains live and owned for the duration of the call.
     if unsafe { libc::fsync(fd.as_raw_fd()) } < 0 {
         return Err(io::Error::last_os_error())
             .with_context(|| format!("safe_fs: fsync failed on {}", relpath.display()));
@@ -444,6 +446,8 @@ fn parent_dirfd_for(dirfd: RawFd, components: &[Vec<u8>]) -> Result<OwnedFd> {
         if dup < 0 {
             return Err(io::Error::last_os_error()).context("safe_fs: dup dirfd failed");
         }
+        // SAFETY: successful `dup` returned a fresh descriptor whose ownership
+        // is transferred exactly once to `OwnedFd`.
         return Ok(unsafe { OwnedFd::from_raw_fd(dup) });
     }
     let parent_components = &components[..components.len() - 1];
@@ -618,16 +622,19 @@ pub fn safe_write_with_mode_in_workdir(
     let mode_u32: u32 = mode.into();
     let fd = open_safely(dirfd, relpath, libc::O_WRONLY | libc::O_CREAT, mode_u32)?;
     flock_exclusive(&fd)?;
+    // SAFETY: `fd` is a live, exclusively locked descriptor opened for writing.
     if unsafe { libc::ftruncate(fd.as_raw_fd(), 0) } < 0 {
         return Err(io::Error::last_os_error())
             .with_context(|| format!("safe_fs: ftruncate failed on {}", relpath.display()));
     }
     write_all_at(&fd, content, relpath)?;
     // Force the requested mode regardless of umask.
+    // SAFETY: `fd` is live and `mode` is a platform `mode_t` supplied by the caller.
     if unsafe { libc::fchmod(fd.as_raw_fd(), mode) } < 0 {
         return Err(io::Error::last_os_error())
             .with_context(|| format!("safe_fs: fchmod failed on {}", relpath.display()));
     }
+    // SAFETY: `fd` remains live and owned for the duration of the call.
     if unsafe { libc::fsync(fd.as_raw_fd()) } < 0 {
         return Err(io::Error::last_os_error())
             .with_context(|| format!("safe_fs: fsync failed on {}", relpath.display()));
@@ -651,6 +658,8 @@ pub fn safe_remove_in_workdir(dirfd: RawFd, relpath: &Path) -> Result<()> {
         if dup < 0 {
             return Err(io::Error::last_os_error()).context("safe_fs: dup dirfd failed");
         }
+        // SAFETY: successful `dup` returned a fresh descriptor whose ownership
+        // is transferred exactly once to `OwnedFd`.
         unsafe { OwnedFd::from_raw_fd(dup) }
     } else {
         open_dir_safely(dirfd, Path::new(&parent))?

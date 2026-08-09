@@ -29,7 +29,7 @@ impl Orchestrator {
 
             // A corrupt/unparseable stage file must not abort the whole daemon
             // (O-4). Log and skip this crash; other stages keep running.
-            let mut stage = match self.load_stage(&sid) {
+            let stage = match self.load_stage(&sid) {
                 Ok(stage) => stage,
                 Err(e) => {
                     let path = crate::fs::stage_files::find_stage_file(
@@ -97,39 +97,6 @@ impl Orchestrator {
                 .map(|p| format!("Session crashed - see crash report at {}", p.display()))
                 .unwrap_or_else(|| classification_reason.to_string());
 
-            // Accumulate execution time before updating retry count
-            stage.accumulate_attempt_time(Utc::now());
-
-            // Update failure information
-            stage.failure_info = Some(FailureInfo {
-                failure_type: failure_type.clone(),
-                detected_at: Utc::now(),
-                evidence: vec![reason.clone()],
-            });
-            stage.last_failure_at = Some(Utc::now());
-            stage.retry_count += 1;
-            stage.close_reason = Some(reason);
-
-            // Check if auto-retry is eligible (default max_retries = 3)
-            let max = stage.max_retries.unwrap_or(3);
-            if should_auto_retry(&failure_type, stage.retry_count, max) {
-                let backoff = calculate_backoff(stage.retry_count, 30, 300);
-                clear_status_line();
-                eprintln!(
-                    "Stage '{}' crashed (attempt {}/{}). Will retry in {}s...",
-                    sid,
-                    stage.retry_count,
-                    max,
-                    backoff.as_secs()
-                );
-            } else if stage.retry_count >= max {
-                clear_status_line();
-                eprintln!(
-                    "Stage '{}' failed after {} attempts. Run `loom diagnose {}` for help.",
-                    sid, stage.retry_count, sid
-                );
-            }
-
             if let Some(path) = crash_report_path {
                 eprintln!("Crash report generated: {}", path.display());
             }
@@ -159,33 +126,64 @@ impl Orchestrator {
                 }
             }
 
-            // Transition to Blocked status with validation
-            // Only persist state if transition succeeds to avoid inconsistent state
-            match stage.try_mark_blocked() {
-                Ok(()) => {
-                    if let Err(e) = self.save_stage(&stage) {
-                        tracing::error!(
-                            stage_id = %sid,
-                            error = %e,
-                            "Failed to persist Blocked stage after crash; skipping (will retry next tick)"
-                        );
-                        return Ok(());
-                    }
-                    if let Err(e) = self.graph.mark_status(&sid, StageStatus::Blocked) {
-                        tracing::warn!(
-                            stage_id = %sid,
-                            error = %e,
-                            "Failed to sync graph status to Blocked after crash"
-                        );
-                    }
+            let detected_at = Utc::now();
+            let mut became_terminal = false;
+            let updated = self.update_stage(&sid, |current| {
+                if current.status == StageStatus::Completed {
+                    became_terminal = true;
+                    return Ok(());
                 }
+                current.accumulate_attempt_time(detected_at);
+                current.failure_info = Some(FailureInfo {
+                    failure_type: failure_type.clone(),
+                    detected_at,
+                    evidence: vec![reason.clone()],
+                });
+                current.last_failure_at = Some(detected_at);
+                current.retry_count += 1;
+                current.close_reason = Some(reason);
+                current.try_mark_blocked()
+            });
+            let updated = match updated {
+                Ok(updated) => updated,
                 Err(e) => {
-                    eprintln!("Warning: Failed to transition stage to Blocked: {e}");
-                    eprintln!(
-                        "Current status: {:?} - not persisting to avoid inconsistent state",
-                        stage.status
+                    tracing::error!(
+                        stage_id = %sid,
+                        error = %e,
+                        "Failed to persist Blocked stage after crash; skipping (will retry next tick)"
                     );
+                    return Ok(());
                 }
+            };
+            if became_terminal {
+                return Ok(());
+            }
+
+            let max = updated.max_retries.unwrap_or(3);
+            if should_auto_retry(&failure_type, updated.retry_count, max) {
+                let backoff = calculate_backoff(updated.retry_count, 30, 300);
+                clear_status_line();
+                eprintln!(
+                    "Stage '{}' crashed (attempt {}/{}). Will retry in {}s...",
+                    sid,
+                    updated.retry_count,
+                    max,
+                    backoff.as_secs()
+                );
+            } else if updated.retry_count >= max {
+                clear_status_line();
+                eprintln!(
+                    "Stage '{}' failed after {} attempts. Run `loom diagnose {}` for help.",
+                    sid, updated.retry_count, sid
+                );
+            }
+
+            if let Err(e) = self.graph.mark_status(&sid, StageStatus::Blocked) {
+                tracing::warn!(
+                    stage_id = %sid,
+                    error = %e,
+                    "Failed to sync graph status to Blocked after crash"
+                );
             }
         } else {
             clear_status_line();

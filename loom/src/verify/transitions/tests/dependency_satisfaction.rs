@@ -10,7 +10,7 @@
 use tempfile::TempDir;
 
 use crate::models::stage::{StageStatus, StageType};
-use crate::verify::transitions::{are_all_dependencies_satisfied, save_stage};
+use crate::verify::transitions::{are_all_dependencies_satisfied, save_stage, update_stage};
 
 use super::create_test_stage;
 
@@ -90,8 +90,11 @@ fn are_all_dependencies_satisfied_requires_merged_flag() {
     );
 
     // Now set merged = true
-    dep_stage.merged = true;
-    save_stage(&dep_stage, work_dir).expect("Should save dep stage with merged=true");
+    update_stage("dep-stage", work_dir, |stage| {
+        stage.merged = true;
+        Ok(())
+    })
+    .expect("Should save dep stage with merged=true");
 
     // Should return true: Completed AND merged (knowledge stages skip ancestry check)
     let satisfied = are_all_dependencies_satisfied(&dependent_stage, work_dir, work_dir, "main")

@@ -10,7 +10,7 @@
 use tempfile::TempDir;
 
 use crate::models::stage::{StageStatus, StageType};
-use crate::verify::transitions::{load_stage, save_stage, trigger_dependents};
+use crate::verify::transitions::{load_stage, save_stage, trigger_dependents, update_stage};
 
 use super::create_test_stage;
 
@@ -60,10 +60,13 @@ fn test_trigger_dependents_multiple_dependencies() {
         .expect("Should trigger dependents");
     assert_eq!(triggered.len(), 0);
 
-    let mut stage2_completed = create_test_stage("stage-2", "Stage 2", StageStatus::Completed);
-    stage2_completed.stage_type = StageType::Knowledge; // Bypass git ancestry check
-    stage2_completed.merged = true; // Dependency must be merged to satisfy
-    save_stage(&stage2_completed, work_dir).expect("Should save stage 2");
+    update_stage("stage-2", work_dir, |stage| {
+        stage.status = StageStatus::Completed;
+        stage.stage_type = StageType::Knowledge; // Bypass git ancestry check
+        stage.merged = true; // Dependency must be merged to satisfy
+        Ok(())
+    })
+    .expect("Should save stage 2");
 
     let triggered = trigger_dependents("stage-2", work_dir, work_dir, "main")
         .expect("Should trigger dependents");

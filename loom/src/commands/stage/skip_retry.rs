@@ -10,7 +10,7 @@ use crate::orchestrator::signals::{
     generate_recovery_signal, RecoveryReason, RecoverySignalContent,
 };
 use crate::orchestrator::skip::skip_stage;
-use crate::verify::transitions::{load_stage, save_stage};
+use crate::verify::transitions::{load_stage, update_stage};
 
 use super::recover::{
     determine_recovery_reason, extract_context_percent, find_crash_report,
@@ -40,6 +40,7 @@ pub fn retry(stage_id: String, force: bool, context: Option<String>) -> Result<(
     let work_dir = Path::new(".work");
 
     let mut stage = load_stage(&stage_id, work_dir)?;
+    let original_status = stage.status.clone();
 
     // Defense-in-depth: refuse to spawn a parallel session only if the recorded
     // session is genuinely still alive. A stale session *file* left behind by a
@@ -201,7 +202,7 @@ pub fn retry(stage_id: String, force: bool, context: Option<String>) -> Result<(
         };
         stage.updated_at = chrono::Utc::now();
 
-        save_stage(&stage, work_dir)?;
+        persist_retry_delta(&stage_id, work_dir, &stage, &original_status, force)?;
 
         println!("Recovery initiated for stage '{stage_id}'");
         println!("  Previous session: {previous_session_id}");
@@ -223,7 +224,7 @@ pub fn retry(stage_id: String, force: bool, context: Option<String>) -> Result<(
         // session's ID for a live/recovery one (C-22).
         stage.session = None;
         stage.updated_at = chrono::Utc::now();
-        save_stage(&stage, work_dir)?;
+        persist_retry_delta(&stage_id, work_dir, &stage, &original_status, force)?;
 
         println!("Stage '{stage_id}' queued for retry.");
         if force {
@@ -231,6 +232,53 @@ pub fn retry(stage_id: String, force: bool, context: Option<String>) -> Result<(
         }
     }
 
+    Ok(())
+}
+
+fn persist_retry_delta(
+    stage_id: &str,
+    work_dir: &Path,
+    planned: &crate::models::stage::Stage,
+    original_status: &StageStatus,
+    force: bool,
+) -> Result<()> {
+    update_stage(stage_id, work_dir, |current| {
+        if &current.status != original_status {
+            bail!(
+                "Stage '{}' changed from {} to {} while retry was being prepared; retry again",
+                stage_id,
+                original_status,
+                current.status
+            );
+        }
+
+        let max = current.max_retries.unwrap_or(3);
+        if !force && current.retry_count >= max {
+            bail!(
+                "Stage '{}' has exceeded retry limit ({}/{}). Use --force to override.",
+                stage_id,
+                current.retry_count,
+                max
+            );
+        }
+        if force {
+            current.retry_count = 0;
+            current.failure_info = None;
+        } else {
+            current.retry_count += 1;
+        }
+        current.last_failure_at = None;
+        current.started_at = None;
+        current.attempt_started_at = None;
+        if current.status == StageStatus::Executing {
+            current.try_mark_blocked()?;
+        }
+        current.try_mark_queued()?;
+        current.session = planned.session.clone();
+        current.close_reason = planned.close_reason.clone();
+        current.updated_at = chrono::Utc::now();
+        Ok(())
+    })?;
     Ok(())
 }
 

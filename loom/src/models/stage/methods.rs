@@ -2,6 +2,7 @@ use anyhow::Result;
 use chrono::{DateTime, Utc};
 
 use crate::orchestrator::monitor::heartbeat::DEFAULT_HUNG_TIMEOUT_SECS;
+use crate::plan::schema::{detect_stage_type, StageDefinition};
 
 use super::types::{AcceptanceCriterion, Implementers, Stage, StageOutput, StageStatus, StageType};
 
@@ -72,11 +73,54 @@ impl Stage {
             regression_test: None,
             model: None,
             reasoning_effort: None,
+            code_review: None,
             is_possibly_stuck: false,
             ultracode: false,
             implementers: Implementers::default(),
             subagent_timeout_secs: None,
         }
+    }
+
+    /// Build the canonical runtime record for a parsed plan stage.
+    ///
+    /// Runtime-only fields retain [`Stage::new`] defaults. Every plan field
+    /// represented by `Stage` is copied here so initialization and any recovery
+    /// path cannot silently diverge as policy fields are added.
+    pub fn from_definition(definition: &StageDefinition, plan_id: &str) -> Self {
+        let mut stage = Self::new(definition.name.clone(), definition.description.clone());
+        stage.id = definition.id.clone();
+        stage.status = if definition.dependencies.is_empty() {
+            StageStatus::Queued
+        } else {
+            StageStatus::WaitingForDeps
+        };
+        stage.dependencies = definition.dependencies.clone();
+        stage.parallel_group = definition.parallel_group.clone();
+        stage.acceptance = definition.acceptance.clone();
+        stage.setup = definition.setup.clone();
+        stage.files = definition.files.clone();
+        stage.stage_type = detect_stage_type(definition);
+        stage.plan_id = Some(plan_id.to_string());
+        stage.auto_merge = definition.auto_merge;
+        stage.working_dir = Some(definition.working_dir.clone());
+        stage.context_budget = definition.context_budget;
+        stage.artifacts = definition.artifacts.clone();
+        stage.wiring = definition.wiring.clone();
+        stage.wiring_tests = definition.wiring_tests.clone();
+        stage.dead_code_check = definition.dead_code_check.clone();
+        stage.before_stage = definition.before_stage.clone();
+        stage.after_stage = definition.after_stage.clone();
+        stage.sandbox = definition.sandbox.clone();
+        stage.execution_mode = definition.execution_mode;
+        stage.bug_fix = definition.bug_fix;
+        stage.regression_test = definition.regression_test.clone();
+        stage.model = definition.model.clone();
+        stage.reasoning_effort = definition.reasoning_effort.clone();
+        stage.code_review = definition.code_review.clone();
+        stage.ultracode = definition.ultracode;
+        stage.implementers = definition.implementers.clone();
+        stage.subagent_timeout_secs = definition.subagent_timeout_secs;
+        stage
     }
 
     /// Returns the effective model for this stage.
@@ -564,7 +608,134 @@ impl Stage {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::models::stage::{
+        DeadCodeCheck, ExecutionMode, Implementer, PermissionMode, RegressionTest,
+        StageSandboxConfig, SuccessCriteria, TruthCheck, WiringCheck, WiringTest,
+    };
+    use crate::plan::schema::CodeReviewConfig;
     use chrono::{Duration, Utc};
+
+    #[test]
+    fn from_definition_copies_all_runtime_policy_fields() {
+        let definition = StageDefinition {
+            id: "policy-stage".to_string(),
+            name: "Policy Stage".to_string(),
+            description: Some("full conversion".to_string()),
+            dependencies: vec!["bootstrap".to_string()],
+            parallel_group: Some("policy".to_string()),
+            acceptance: vec![AcceptanceCriterion::Simple("cargo test".to_string())],
+            setup: vec!["cargo build".to_string()],
+            files: vec!["src/policy.rs".to_string()],
+            auto_merge: Some(true),
+            working_dir: "loom".to_string(),
+            stage_type: StageType::IntegrationVerify,
+            artifacts: vec!["target/policy".to_string()],
+            wiring: vec![WiringCheck {
+                source: "src/lib.rs".to_string(),
+                pattern: "policy".to_string(),
+                description: "policy is exported".to_string(),
+            }],
+            wiring_tests: vec![WiringTest {
+                name: "runtime policy".to_string(),
+                command: "cargo test policy".to_string(),
+                success_criteria: SuccessCriteria {
+                    exit_code: Some(0),
+                    ..SuccessCriteria::default()
+                },
+                description: Some("runtime wiring".to_string()),
+            }],
+            dead_code_check: Some(DeadCodeCheck {
+                command: "cargo check".to_string(),
+                fail_patterns: vec!["unused".to_string()],
+                ignore_patterns: vec!["fixture".to_string()],
+            }),
+            before_stage: vec![TruthCheck {
+                command: "test ! -e target/policy".to_string(),
+                stdout_contains: vec![],
+                stdout_not_contains: vec![],
+                stderr_empty: Some(true),
+                exit_code: Some(0),
+                description: Some("absent before".to_string()),
+            }],
+            after_stage: vec![TruthCheck {
+                command: "test -e target/policy".to_string(),
+                stdout_contains: vec![],
+                stdout_not_contains: vec![],
+                stderr_empty: Some(true),
+                exit_code: Some(0),
+                description: Some("present after".to_string()),
+            }],
+            context_budget: Some(71),
+            sandbox: StageSandboxConfig {
+                enabled: Some(true),
+                auto_allow: Some(false),
+                allow_unsandboxed_escape: Some(false),
+                excluded_commands: vec!["danger".to_string()],
+                filesystem: None,
+                network: None,
+                linux: None,
+                permission_mode: Some(PermissionMode::Plan),
+            },
+            execution_mode: Some(ExecutionMode::Team),
+            bug_fix: Some(true),
+            regression_test: Some(RegressionTest {
+                file: "tests/policy.rs".to_string(),
+                must_contain: vec!["regression".to_string()],
+            }),
+            model: Some("opus".to_string()),
+            reasoning_effort: Some("xhigh".to_string()),
+            code_review: Some(CodeReviewConfig {
+                dimensions: vec!["security".to_string(), "wiring".to_string()],
+                require_all: true,
+            }),
+            ultracode: true,
+            implementers: Implementers::new(vec![Implementer::Codex, Implementer::Claude]),
+            subagent_timeout_secs: Some(900),
+        };
+
+        let stage = Stage::from_definition(&definition, "plan-policy");
+
+        assert_eq!(stage.id, definition.id);
+        assert_eq!(stage.name, definition.name);
+        assert_eq!(stage.description, definition.description);
+        assert_eq!(stage.status, StageStatus::WaitingForDeps);
+        assert_eq!(stage.dependencies, definition.dependencies);
+        assert_eq!(stage.parallel_group, definition.parallel_group);
+        assert_eq!(stage.acceptance, definition.acceptance);
+        assert_eq!(stage.setup, definition.setup);
+        assert_eq!(stage.files, definition.files);
+        assert_eq!(stage.stage_type, StageType::IntegrationVerify);
+        assert_eq!(stage.plan_id.as_deref(), Some("plan-policy"));
+        assert_eq!(stage.auto_merge, Some(true));
+        assert_eq!(stage.working_dir.as_deref(), Some("loom"));
+        assert_eq!(stage.context_budget, Some(71));
+        assert_eq!(stage.artifacts, definition.artifacts);
+        assert_eq!(stage.wiring[0].source, "src/lib.rs");
+        assert_eq!(stage.wiring_tests[0].command, "cargo test policy");
+        assert_eq!(
+            stage.dead_code_check.as_ref().unwrap().command,
+            "cargo check"
+        );
+        assert_eq!(stage.before_stage[0].exit_code, Some(0));
+        assert_eq!(stage.after_stage[0].exit_code, Some(0));
+        assert_eq!(stage.sandbox.enabled, Some(true));
+        assert_eq!(stage.sandbox.permission_mode, Some(PermissionMode::Plan));
+        assert_eq!(stage.execution_mode, Some(ExecutionMode::Team));
+        assert_eq!(stage.bug_fix, Some(true));
+        assert_eq!(
+            stage.regression_test.as_ref().unwrap().file,
+            "tests/policy.rs"
+        );
+        assert_eq!(stage.model.as_deref(), Some("opus"));
+        assert_eq!(stage.reasoning_effort.as_deref(), Some("xhigh"));
+        assert_eq!(
+            stage.code_review.as_ref().unwrap().dimensions,
+            vec!["security".to_string(), "wiring".to_string()]
+        );
+        assert!(stage.ultracode);
+        assert_eq!(stage.implementers.preferred(), Implementer::Codex);
+        assert_eq!(stage.subagent_timeout_secs, Some(900));
+    }
 
     #[test]
     fn test_begin_attempt_initializes_execution_secs() {

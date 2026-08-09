@@ -13,7 +13,7 @@ use std::time::{Duration, Instant, SystemTime};
 use crate::git::branch::is_ancestor_of;
 use crate::models::stage::{Stage, StageStatus, StageType};
 
-use super::persistence::{list_all_stages, load_stage, save_stage};
+use super::persistence::{list_all_stages, load_stage, update_stage};
 
 /// How long a cached dependency-satisfaction result stays valid before the
 /// (potentially expensive) git-ancestry check is re-run, even if no dependency
@@ -83,22 +83,16 @@ fn dependency_mtime_fingerprint(stage: &Stage, work_dir: &Path) -> Vec<Option<Sy
 /// - The transition is invalid (e.g., `Verified` -> `Pending`)
 /// - The stage cannot be saved
 pub fn transition_stage(stage_id: &str, new_status: StageStatus, work_dir: &Path) -> Result<Stage> {
-    let mut stage = load_stage(stage_id, work_dir)
-        .with_context(|| format!("Failed to load stage: {stage_id}"))?;
+    update_stage(stage_id, work_dir, |stage| {
+        stage
+            .try_transition(new_status.clone())
+            .with_context(|| format!("Invalid transition for stage {stage_id}"))?;
 
-    // Validate and perform the transition
-    stage
-        .try_transition(new_status.clone())
-        .with_context(|| format!("Invalid transition for stage {stage_id}"))?;
-
-    // Handle special case for Completed which sets additional fields
-    if new_status == StageStatus::Completed {
-        stage.completed_at = Some(chrono::Utc::now());
-    }
-
-    save_stage(&stage, work_dir).with_context(|| format!("Failed to save stage: {stage_id}"))?;
-
-    Ok(stage)
+        if new_status == StageStatus::Completed {
+            stage.completed_at = Some(chrono::Utc::now());
+        }
+        Ok(())
+    })
 }
 
 /// Trigger dependent stages when a stage is completed
@@ -128,7 +122,7 @@ pub fn trigger_dependents(
     let all_stages = list_all_stages(work_dir)?;
     let mut triggered = Vec::new();
 
-    for mut stage in all_stages {
+    for stage in all_stages {
         if !stage.dependencies.contains(&completed_stage_id.to_string()) {
             continue;
         }
@@ -139,17 +133,31 @@ pub fn trigger_dependents(
         }
 
         if are_all_dependencies_satisfied(&stage, work_dir, repo_root, target_branch)? {
-            // Use validated transition - Pending -> Ready is always valid
-            stage.try_mark_queued().with_context(|| {
-                format!(
-                    "Failed to transition stage {} from {:?} to Ready",
-                    stage.id, stage.status
-                )
-            })?;
-            let stage_id = &stage.id;
-            save_stage(&stage, work_dir)
-                .with_context(|| format!("Failed to save triggered stage: {stage_id}"))?;
-            triggered.push(stage.id.clone());
+            let stage_id = stage.id.clone();
+            let expected_dependencies = stage.dependencies.clone();
+            let mut transitioned = false;
+            update_stage(&stage_id, work_dir, |current| {
+                // A concurrent amendment or scheduler may have changed the
+                // record after the dependency probe. Only apply the exact
+                // transition we evaluated; otherwise the next poll rechecks.
+                if current.status != StageStatus::WaitingForDeps
+                    || current.dependencies != expected_dependencies
+                {
+                    return Ok(());
+                }
+                current.try_mark_queued().with_context(|| {
+                    format!(
+                        "Failed to transition stage {} from {:?} to Ready",
+                        current.id, current.status
+                    )
+                })?;
+                transitioned = true;
+                Ok(())
+            })
+            .with_context(|| format!("Failed to update triggered stage: {stage_id}"))?;
+            if transitioned {
+                triggered.push(stage_id);
+            }
         }
     }
 
@@ -373,7 +381,7 @@ pub fn are_all_dependencies_satisfied(
 /// This wrapper memoizes the *boolean* result per stage and only re-runs the
 /// expensive check when either:
 ///   - a dependency stage file's mtime changed (a dep advanced, e.g. merged), or
-///   - more than [`DEP_CHECK_RECHECK_INTERVAL`] elapsed since the last real run
+///   - more than `DEP_CHECK_RECHECK_INTERVAL` elapsed since the last real run
 ///     (bounds staleness against out-of-band git history changes).
 ///
 /// Errors are never cached: a transient git failure returns `Err` and leaves the

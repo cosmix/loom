@@ -15,27 +15,23 @@ impl Orchestrator {
     pub(super) fn handle_stage_completed(&mut self, stage_id: &str) -> Result<()> {
         // Accumulate execution time for the final attempt. A-4: a corrupt
         // stage file must be logged (with its path), not silently skipped.
-        match self.load_stage(stage_id) {
-            Ok(mut stage) => {
-                stage.accumulate_attempt_time(Utc::now());
-                if let Err(e) = self.save_stage(&stage) {
-                    eprintln!("Warning: failed to save execution time for stage '{stage_id}': {e}");
-                }
-            }
-            Err(e) => {
-                let path = crate::fs::stage_files::find_stage_file(
-                    &self.config.work_dir.join("stages"),
-                    stage_id,
-                )
-                .ok()
-                .flatten();
-                tracing::error!(
-                    stage_id = %stage_id,
-                    path = ?path,
-                    error = %e,
-                    "Failed to load stage while recording completion time; continuing (corrupt stage file?)"
-                );
-            }
+        let completed_at = Utc::now();
+        if let Err(e) = self.update_stage(stage_id, |stage| {
+            stage.accumulate_attempt_time(completed_at);
+            Ok(())
+        }) {
+            let path = crate::fs::stage_files::find_stage_file(
+                &self.config.work_dir.join("stages"),
+                stage_id,
+            )
+            .ok()
+            .flatten();
+            tracing::error!(
+                stage_id = %stage_id,
+                path = ?path,
+                error = %e,
+                "Failed to update stage while recording completion time; continuing (corrupt stage file?)"
+            );
         }
 
         // Clean up session first.

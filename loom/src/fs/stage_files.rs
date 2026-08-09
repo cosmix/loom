@@ -15,6 +15,18 @@ use anyhow::{Context, Result};
 use std::fs;
 use std::path::{Path, PathBuf};
 
+fn strip_depth_prefix(stem: &str) -> Option<&str> {
+    let digit_bytes = stem
+        .as_bytes()
+        .iter()
+        .take_while(|byte| byte.is_ascii_digit())
+        .count();
+    if digit_bytes == 0 {
+        return None;
+    }
+    stem[digit_bytes..].strip_prefix('-')
+}
+
 /// Find a stage file by stage ID, regardless of its depth prefix.
 ///
 /// Searches for files matching the pattern `*-{stage_id}.md` or `{stage_id}.md`
@@ -53,15 +65,9 @@ pub fn find_stage_file(stages_dir: &Path, stage_id: &str) -> Result<Option<PathB
                 return Ok(Some(path));
             }
 
-            // Check for prefixed match: XX-{stage_id} where XX is digits
-            if let Some(suffix) = stem.strip_prefix(|c: char| c.is_ascii_digit()) {
-                if let Some(suffix) = suffix.strip_prefix(|c: char| c.is_ascii_digit()) {
-                    if let Some(id) = suffix.strip_prefix('-') {
-                        if id == stage_id {
-                            return Ok(Some(path));
-                        }
-                    }
-                }
+            // Check for a prefixed match with an arbitrary-width numeric depth.
+            if strip_depth_prefix(stem) == Some(stage_id) {
+                return Ok(Some(path));
             }
         }
     }
@@ -81,13 +87,9 @@ pub fn find_stage_file(stages_dir: &Path, stage_id: &str) -> Result<Option<PathB
 pub fn extract_stage_id(filename: &str) -> Option<String> {
     let stem = Path::new(filename).file_stem().and_then(|s| s.to_str())?;
 
-    // Check for prefixed format: XX-{stage_id}
-    if let Some(suffix) = stem.strip_prefix(|c: char| c.is_ascii_digit()) {
-        if let Some(suffix) = suffix.strip_prefix(|c: char| c.is_ascii_digit()) {
-            if let Some(id) = suffix.strip_prefix('-') {
-                return Some(id.to_string());
-            }
-        }
+    // Check for a prefixed format with an arbitrary-width numeric depth.
+    if let Some(id) = strip_depth_prefix(stem) {
+        return Some(id.to_string());
     }
 
     // Non-prefixed format
@@ -151,6 +153,10 @@ mod tests {
         let result = find_stage_file(stages_dir, "math-core").unwrap();
         assert!(result.is_some());
         assert!(result.unwrap().ends_with("02-math-core.md"));
+
+        fs::write(stages_dir.join("100-deep-stage.md"), "content").unwrap();
+        let result = find_stage_file(stages_dir, "deep-stage").unwrap();
+        assert!(result.unwrap().ends_with("100-deep-stage.md"));
     }
 
     #[test]
@@ -187,6 +193,10 @@ mod tests {
             extract_stage_id("12-some-stage.md"),
             Some("some-stage".to_string())
         );
+        assert_eq!(
+            extract_stage_id("100-very-deep-stage.md"),
+            Some("very-deep-stage".to_string())
+        );
     }
 
     #[test]
@@ -203,6 +213,7 @@ mod tests {
         assert_eq!(stage_filename(0, "core-arch"), "01-core-arch.md");
         assert_eq!(stage_filename(1, "math-core"), "02-math-core.md");
         assert_eq!(stage_filename(9, "final-stage"), "10-final-stage.md");
+        assert_eq!(stage_filename(99, "deep-stage"), "100-deep-stage.md");
     }
 
     #[test]

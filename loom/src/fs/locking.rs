@@ -135,7 +135,7 @@ fn atomic_write(path: &Path, content: &str) -> Result<()> {
 /// read/write of those files. Within `f`, perform the actual file replacement via
 /// [`atomic_write_locked`] so the write stays crash-atomic.
 ///
-/// The directory is created if it does not exist (mirroring [`lock_parent_dir`]).
+/// The directory is created if it does not exist (mirroring `lock_parent_dir`).
 pub fn locked_dir_update<T, F>(dir: &Path, f: F) -> Result<T>
 where
     F: FnOnce() -> Result<T>,

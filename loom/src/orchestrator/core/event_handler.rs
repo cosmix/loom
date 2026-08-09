@@ -1,16 +1,26 @@
 //! Event handling - processing monitor events and session lifecycle
 
 use anyhow::Result;
+use chrono::{DateTime, Utc};
 use colored::Colorize;
 use std::path::PathBuf;
 
-use crate::models::stage::StageStatus;
+use crate::models::stage::{Stage, StageStatus};
 use crate::orchestrator::monitor::MonitorEvent;
 use crate::orchestrator::signals::remove_signal;
 
 use super::clear_status_line;
 use super::persistence::Persistence;
 use super::Orchestrator;
+
+fn mark_needs_handoff(stage: &mut Stage, now: DateTime<Utc>) -> Result<()> {
+    stage.accumulate_attempt_time(now);
+    stage.try_mark_needs_handoff()
+}
+
+fn requeue_after_handoff(stage: &mut Stage) -> Result<()> {
+    stage.try_mark_queued()
+}
 
 /// Trait for handling monitor events
 pub(super) trait EventHandler: Persistence {
@@ -77,10 +87,8 @@ impl EventHandler for Orchestrator {
         clear_status_line();
         eprintln!("Session '{session_id}' needs handoff for stage '{stage_id}'");
 
-        let mut stage = self.load_stage(stage_id)?;
-        stage.accumulate_attempt_time(chrono::Utc::now());
-        stage.try_mark_needs_handoff()?;
-        self.save_stage(&stage)?;
+        let handoff_at = Utc::now();
+        self.update_stage(stage_id, |stage| mark_needs_handoff(stage, handoff_at))?;
 
         // Kill old session if still tracked
         if let Some(session) = self.active_sessions.get(stage_id) {
@@ -96,8 +104,7 @@ impl EventHandler for Orchestrator {
         self.active_sessions.remove(stage_id);
 
         // Re-queue the stage so the next poll cycle picks it up
-        stage.try_mark_queued()?;
-        self.save_stage(&stage)?;
+        self.update_stage(stage_id, requeue_after_handoff)?;
         self.graph.mark_queued(stage_id)?;
 
         eprintln!("Stage '{stage_id}' re-queued for continuation after handoff");
@@ -288,7 +295,7 @@ impl Orchestrator {
         );
 
         // Load the stage
-        let mut stage = self.load_stage(stage_id)?;
+        let stage = self.load_stage(stage_id)?;
 
         // Get session from active sessions for handoff generation
         if let Some(session) = self.active_sessions.get(stage_id) {
@@ -313,19 +320,14 @@ impl Orchestrator {
             self.save_session(&session_to_save)?;
         }
 
-        // Accumulate execution time before transitioning
-        stage.accumulate_attempt_time(chrono::Utc::now());
-
-        // Transition stage to NeedsHandoff
-        stage.try_mark_needs_handoff()?;
-        self.save_stage(&stage)?;
+        let handoff_at = Utc::now();
+        self.update_stage(stage_id, |stage| mark_needs_handoff(stage, handoff_at))?;
 
         // Remove from active sessions
         self.active_sessions.remove(stage_id);
 
         // Re-queue the stage so the next poll cycle picks it up
-        stage.try_mark_queued()?;
-        self.save_stage(&stage)?;
+        self.update_stage(stage_id, requeue_after_handoff)?;
         self.graph.mark_queued(stage_id)?;
 
         eprintln!("Stage '{stage_id}' re-queued for continuation after budget exceeded");
@@ -340,6 +342,7 @@ mod tests {
     use crate::models::stage::{Implementers, Stage, StageStatus};
     use crate::plan::schema::{StageDefinition, StageSandboxConfig};
     use crate::plan::ExecutionGraph;
+    use crate::verify::transitions::{create_stage, load_stage, update_stage};
 
     fn create_test_graph() -> ExecutionGraph {
         let stages = vec![StageDefinition {
@@ -436,5 +439,48 @@ mod tests {
         // Re-queue for continuation
         stage.try_mark_queued().unwrap();
         assert_eq!(stage.status, StageStatus::Queued);
+    }
+
+    #[test]
+    fn handoff_requeue_preserves_concurrent_unrelated_field() {
+        use std::sync::{Arc, Barrier};
+
+        let temp = tempfile::tempdir().unwrap();
+        let work_dir = temp.path().to_path_buf();
+        let stage = Stage {
+            id: "event-race".to_string(),
+            name: "Event race".to_string(),
+            status: StageStatus::Executing,
+            ..Stage::default()
+        };
+        create_stage(&stage, &work_dir).unwrap();
+
+        let handoff_marked = Arc::new(Barrier::new(2));
+        let concurrent_done = Arc::new(Barrier::new(2));
+        let event_dir = work_dir.clone();
+        let event_marked = Arc::clone(&handoff_marked);
+        let event_done = Arc::clone(&concurrent_done);
+        let event = std::thread::spawn(move || {
+            update_stage("event-race", &event_dir, |stage| {
+                mark_needs_handoff(stage, Utc::now())
+            })
+            .unwrap();
+            event_marked.wait();
+            event_done.wait();
+            update_stage("event-race", &event_dir, requeue_after_handoff).unwrap();
+        });
+
+        handoff_marked.wait();
+        update_stage("event-race", &work_dir, |stage| {
+            stage.dispute_count = 9;
+            Ok(())
+        })
+        .unwrap();
+        concurrent_done.wait();
+        event.join().unwrap();
+
+        let stage = load_stage("event-race", &work_dir).unwrap();
+        assert_eq!(stage.status, StageStatus::Queued);
+        assert_eq!(stage.dispute_count, 9);
     }
 }

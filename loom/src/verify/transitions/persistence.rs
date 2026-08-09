@@ -7,7 +7,7 @@ use anyhow::{Context, Result};
 use std::fs;
 use std::path::Path;
 
-use crate::fs::locking::{atomic_write_locked, locked_dir_update, locked_read, locked_write};
+use crate::fs::locking::{atomic_write_locked, locked_dir_update, locked_read};
 use crate::fs::stage_files::{find_stage_file, stage_file_path};
 use crate::models::stage::Stage;
 use crate::plan::graph::levels::compute_all_levels;
@@ -37,47 +37,38 @@ pub fn load_stage(stage_id: &str, work_dir: &Path) -> Result<Stage> {
         .with_context(|| format!("Failed to parse stage from: {}", stage_path.display()))
 }
 
-/// Save a stage to disk
+/// Compatibility name for creation-only stage persistence.
 ///
-/// Serializes the stage to YAML frontmatter + markdown body and writes
-/// to `.work/stages/`. Uses depth-prefixed filenames (e.g., `01-stage-id.md`)
-/// for topological ordering visibility.
-///
-/// If the stage file already exists (with any prefix), updates it in place.
-/// For new stages, computes the topological depth based on dependencies.
-///
-/// # Arguments
-/// * `stage` - The stage to save
-/// * `work_dir` - Path to the `.work` directory
-///
-/// # Returns
-/// Ok(()) on success
+/// This function deliberately refuses to overwrite an existing stage. Live
+/// records must be changed through [`update_stage`] so concurrent fields cannot
+/// be lost. New code should prefer [`create_stage`] for clarity.
 pub fn save_stage(stage: &Stage, work_dir: &Path) -> Result<()> {
+    create_stage(stage, work_dir)
+}
+
+/// Create a new stage record and refuse to overwrite an existing stage.
+///
+/// Initialization paths should use this API instead of a whole-record save.
+/// The existence check and atomic write share the stages-directory lock, so two
+/// creators cannot both claim the same stage ID.
+pub fn create_stage(stage: &Stage, work_dir: &Path) -> Result<()> {
     let stages_dir = work_dir.join("stages");
-    if !stages_dir.exists() {
-        fs::create_dir_all(&stages_dir).with_context(|| {
-            format!(
-                "Failed to create stages directory: {}",
-                stages_dir.display()
-            )
-        })?;
-    }
-
-    // Check if a file already exists for this stage (with any prefix)
-    let stage_path = if let Some(existing_path) = find_stage_file(&stages_dir, &stage.id)? {
-        // Update existing file in place
-        existing_path
-    } else {
-        // New stage - compute depth and create with prefix
-        let depth = compute_stage_depth(stage, work_dir)?;
-        stage_file_path(&stages_dir, depth, &stage.id)
-    };
-
+    fs::create_dir_all(&stages_dir).with_context(|| {
+        format!(
+            "Failed to create stages directory: {}",
+            stages_dir.display()
+        )
+    })?;
+    let depth = compute_stage_depth(stage, work_dir)?;
+    let stage_path = stage_file_path(&stages_dir, depth, &stage.id);
     let content = serialize_stage_to_markdown(stage)?;
 
-    locked_write(&stage_path, &content)?;
-
-    Ok(())
+    locked_dir_update(&stages_dir, || {
+        if find_stage_file(&stages_dir, &stage.id)?.is_some() {
+            anyhow::bail!("Stage already exists: {}", stage.id);
+        }
+        atomic_write_locked(&stage_path, &content)
+    })
 }
 
 /// Atomically read-modify-write a stage file under a single exclusive lock.
@@ -102,7 +93,7 @@ pub fn save_stage(stage: &Stage, work_dir: &Path) -> Result<()> {
 /// writes — across processes, since these are advisory `flock`s.
 ///
 /// The stage file MUST already exist; a missing file is an error (this API is for
-/// mutating live stages, not creating them — use [`save_stage`] for creation).
+/// mutating live stages, not creating them — use [`create_stage`] for creation).
 ///
 /// # Arguments
 /// * `stage_id` - The ID of the stage to update
@@ -125,20 +116,58 @@ where
         let stage_path = find_stage_file(&stages_dir, stage_id)?
             .ok_or_else(|| anyhow::anyhow!("Stage file not found for update: {stage_id}"))?;
 
-        let content = std::fs::read_to_string(&stage_path)
-            .with_context(|| format!("Failed to read stage file: {}", stage_path.display()))?;
-        let mut stage = parse_stage_from_markdown(&content)
-            .with_context(|| format!("Failed to parse stage from: {}", stage_path.display()))?;
-
-        // Apply the operation-owned delta to the fresh state. A closure error
-        // (e.g. a refused transition) leaves the file untouched.
-        modify(&mut stage)?;
-
-        let new_content = serialize_stage_to_markdown(&stage)?;
-        atomic_write_locked(&stage_path, &new_content)?;
-
-        Ok(stage)
+        update_stage_file_locked(stage_id, &stage_path, modify)
     })
+}
+
+/// Update an already-enumerated canonical stage path without rescanning `stages/`.
+///
+/// Recovery builds one path index per pass to avoid an O(stages²) directory scan.
+/// This variant retains the exact locking and fail-closed parsing guarantees of
+/// [`update_stage`], while also verifying that the indexed path still contains
+/// the requested stage record before applying the delta.
+pub(crate) fn update_stage_at_path<F>(
+    stage_id: &str,
+    stage_path: &Path,
+    work_dir: &Path,
+    modify: F,
+) -> Result<Stage>
+where
+    F: FnOnce(&mut Stage) -> Result<()>,
+{
+    let stages_dir = work_dir.join("stages");
+    if stage_path.parent() != Some(stages_dir.as_path()) {
+        anyhow::bail!(
+            "Stage path is outside canonical stages directory: {}",
+            stage_path.display()
+        );
+    }
+
+    locked_dir_update(&stages_dir, || {
+        update_stage_file_locked(stage_id, stage_path, modify)
+    })
+}
+
+fn update_stage_file_locked<F>(stage_id: &str, stage_path: &Path, modify: F) -> Result<Stage>
+where
+    F: FnOnce(&mut Stage) -> Result<()>,
+{
+    let content = std::fs::read_to_string(stage_path)
+        .with_context(|| format!("Failed to read stage file: {}", stage_path.display()))?;
+    let mut stage = parse_stage_from_markdown(&content)
+        .with_context(|| format!("Failed to parse stage from: {}", stage_path.display()))?;
+    if stage.id != stage_id {
+        anyhow::bail!(
+            "Stage identity mismatch at {}: expected '{stage_id}', found '{}'",
+            stage_path.display(),
+            stage.id
+        );
+    }
+
+    modify(&mut stage)?;
+    let new_content = serialize_stage_to_markdown(&stage)?;
+    atomic_write_locked(stage_path, &new_content)?;
+    Ok(stage)
 }
 
 /// Compute the topological depth for a single stage based on its dependencies
@@ -218,128 +247,5 @@ fn load_stage_from_path(path: &Path) -> Result<Stage> {
 }
 
 #[cfg(test)]
-mod update_stage_tests {
-    use super::*;
-    use crate::models::stage::{Stage, StageStatus};
-
-    fn seed_stage(work_dir: &Path, id: &str) -> Stage {
-        let stage = Stage {
-            id: id.to_string(),
-            name: format!("Stage {id}"),
-            status: StageStatus::Executing,
-            ..Stage::default()
-        };
-        save_stage(&stage, work_dir).unwrap();
-        stage
-    }
-
-    #[test]
-    fn update_stage_applies_delta_and_returns_written_stage() {
-        let temp = tempfile::tempdir().unwrap();
-        let work_dir = temp.path();
-        seed_stage(work_dir, "s1");
-
-        let written = update_stage("s1", work_dir, |s| {
-            s.dispute_count += 1;
-            Ok(())
-        })
-        .unwrap();
-        assert_eq!(written.dispute_count, 1);
-
-        let reloaded = load_stage("s1", work_dir).unwrap();
-        assert_eq!(reloaded.dispute_count, 1);
-    }
-
-    #[test]
-    fn update_stage_preserves_concurrent_field_written_after_load() {
-        // Models the A-5 lost-update class: a long-running op loads the stage,
-        // then a *different* writer commits a change to another field; the
-        // long-running op must NOT revert that field. update_stage re-reads the
-        // current on-disk state inside the lock, so it only touches its own
-        // field and preserves the concurrent writer's change.
-        let temp = tempfile::tempdir().unwrap();
-        let work_dir = temp.path();
-        let stale = seed_stage(work_dir, "s2");
-
-        // Concurrent writer (e.g. dispute thread) bumps dispute_count on disk.
-        update_stage("s2", work_dir, |s| {
-            s.dispute_count = 5;
-            Ok(())
-        })
-        .unwrap();
-
-        // The "long-running op" still holds `stale` (dispute_count == 0). It
-        // applies its own owned field via update_stage, which re-reads disk.
-        assert_eq!(stale.dispute_count, 0);
-        update_stage("s2", work_dir, |s| {
-            s.retry_count += 1;
-            Ok(())
-        })
-        .unwrap();
-
-        let reloaded = load_stage("s2", work_dir).unwrap();
-        // Concurrent writer's field survived...
-        assert_eq!(reloaded.dispute_count, 5);
-        // ...and our owned field was applied.
-        assert_eq!(reloaded.retry_count, 1);
-    }
-
-    #[test]
-    fn update_stage_leaves_file_untouched_on_closure_error() {
-        let temp = tempfile::tempdir().unwrap();
-        let work_dir = temp.path();
-        seed_stage(work_dir, "s3");
-        update_stage("s3", work_dir, |s| {
-            s.dispute_count = 9;
-            Ok(())
-        })
-        .unwrap();
-
-        let err = update_stage("s3", work_dir, |s| {
-            s.dispute_count = 99; // mutated, but the closure then fails
-            anyhow::bail!("closure failed")
-        });
-        assert!(err.is_err());
-
-        // The failed update must not have written the mutation.
-        let reloaded = load_stage("s3", work_dir).unwrap();
-        assert_eq!(reloaded.dispute_count, 9);
-    }
-
-    #[test]
-    fn update_stage_errors_when_file_missing() {
-        let temp = tempfile::tempdir().unwrap();
-        let work_dir = temp.path();
-        std::fs::create_dir_all(work_dir.join("stages")).unwrap();
-        let res = update_stage("does-not-exist", work_dir, |_s| Ok(()));
-        assert!(res.is_err());
-    }
-
-    #[test]
-    fn update_stage_concurrent_increments_have_no_lost_updates() {
-        use std::thread;
-        let temp = tempfile::tempdir().unwrap();
-        let work_dir = temp.path().to_path_buf();
-        seed_stage(&work_dir, "s4");
-
-        let handles: Vec<_> = (0..10)
-            .map(|_| {
-                let work_dir = work_dir.clone();
-                thread::spawn(move || {
-                    update_stage("s4", &work_dir, |s| {
-                        s.dispute_count += 1;
-                        Ok(())
-                    })
-                    .unwrap();
-                })
-            })
-            .collect();
-        for h in handles {
-            h.join().unwrap();
-        }
-
-        let reloaded = load_stage("s4", &work_dir).unwrap();
-        // All 10 increments landed — the exclusive lock serializes the RMW.
-        assert_eq!(reloaded.dispute_count, 10);
-    }
-}
+#[path = "tests/update_stage.rs"]
+mod update_stage_tests;

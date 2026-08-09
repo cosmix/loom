@@ -7,7 +7,7 @@ use serde_json::Value;
 use std::path::Path;
 
 use crate::models::stage::StageOutput;
-use crate::verify::transitions::{load_stage, save_stage};
+use crate::verify::transitions::{load_stage, update_stage};
 
 /// Set an output for a stage.
 ///
@@ -40,8 +40,6 @@ pub fn set(
         bail!("Output key must be 1-64 characters");
     }
 
-    let mut stage = load_stage(&stage_id, work_dir)?;
-
     // Parse value as JSON if possible, otherwise use as string
     let json_value = parse_value(&value);
 
@@ -51,8 +49,11 @@ pub fn set(
         description: description.unwrap_or_else(|| format!("Output: {key}")),
     };
 
-    let was_new = stage.set_output(output);
-    save_stage(&stage, work_dir)?;
+    let mut was_new = false;
+    update_stage(&stage_id, work_dir, |stage| {
+        was_new = stage.set_output(output);
+        Ok(())
+    })?;
 
     let action = if was_new { "added" } else { "updated" };
     println!("Output '{key}' {action} for stage '{stage_id}'");
@@ -107,15 +108,14 @@ pub fn get(stage_id: String, key: String) -> Result<()> {
 pub fn remove(stage_id: String, key: String) -> Result<()> {
     let work_dir = Path::new(".work");
 
-    let mut stage = load_stage(&stage_id, work_dir)?;
-
-    if stage.remove_output(&key) {
-        save_stage(&stage, work_dir)?;
-        println!("Output '{key}' removed from stage '{stage_id}'");
+    update_stage(&stage_id, work_dir, |stage| {
+        if !stage.remove_output(&key) {
+            bail!("Output '{key}' not found for stage '{stage_id}'");
+        }
         Ok(())
-    } else {
-        bail!("Output '{key}' not found for stage '{stage_id}'")
-    }
+    })?;
+    println!("Output '{key}' removed from stage '{stage_id}'");
+    Ok(())
 }
 
 /// Parse a string value into JSON Value.
