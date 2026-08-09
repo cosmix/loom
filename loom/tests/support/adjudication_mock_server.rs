@@ -45,7 +45,10 @@ impl Drop for MockServer {
     fn drop(&mut self) {
         self.shutdown.store(true, Ordering::Release);
         if let Some(handle) = self.thread.take() {
-            handle.join().unwrap();
+            // A panicked server thread must not double-panic during test
+            // unwind (that aborts the whole binary before it can report);
+            // the test's own assertions surface the failure.
+            let _ = handle.join();
         }
     }
 }
@@ -53,7 +56,14 @@ impl Drop for MockServer {
 fn serve(listener: TcpListener, body: Arc<Mutex<Option<String>>>, shutdown: Arc<AtomicBool>) {
     while !shutdown.load(Ordering::Acquire) {
         match listener.accept() {
-            Ok((stream, _)) => serve_response(stream, &body),
+            // A slow or aborted client (e.g. under machine load its request
+            // exceeds the 2s read timeout) must not kill the accept loop —
+            // the client retries, and later requests still need serving.
+            Ok((stream, _)) => {
+                if let Err(error) = serve_response(stream, &body) {
+                    eprintln!("adjudication mock server dropped a connection: {error}");
+                }
+            }
             Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
                 thread::sleep(Duration::from_millis(2));
             }
@@ -62,11 +72,9 @@ fn serve(listener: TcpListener, body: Arc<Mutex<Option<String>>>, shutdown: Arc<
     }
 }
 
-fn serve_response(mut stream: TcpStream, body: &Mutex<Option<String>>) {
-    stream
-        .set_read_timeout(Some(Duration::from_secs(2)))
-        .unwrap();
-    let request = read_request(&mut stream).unwrap();
+fn serve_response(mut stream: TcpStream, body: &Mutex<Option<String>>) -> std::io::Result<()> {
+    stream.set_read_timeout(Some(Duration::from_secs(2)))?;
+    let request = read_request(&mut stream)?;
     let request = String::from_utf8_lossy(&request);
     let valid = request.starts_with("POST /v1/messages HTTP/");
     let configured = body.lock().unwrap().clone();
@@ -79,7 +87,8 @@ fn serve_response(mut stream: TcpStream, body: &Mutex<Option<String>>) {
         "HTTP/1.1 {status}\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{response_body}",
         response_body.len()
     );
-    stream.write_all(response.as_bytes()).unwrap();
+    stream.write_all(response.as_bytes())?;
+    Ok(())
 }
 
 fn read_request(stream: &mut TcpStream) -> std::io::Result<Vec<u8>> {
