@@ -501,53 +501,25 @@ fn test_render_review_dimensions_empty_is_none() {
     assert!(render_review_dimensions(&config).is_none());
 }
 
-/// Write a plan file with an integration-verify stage carrying `code_review`
-/// dimensions, plus a `config.toml` whose `source_path` points at it. Mirrors
-/// the on-disk layout the daemon reads at spawn time.
-fn write_plan_with_code_review(project_root: &std::path::Path, work_dir: &std::path::Path) {
-    let plan_path = project_root.join("PLAN-review-dims.md");
-    let plan_content = r#"# PLAN: Review Dimensions Test
-
----
-
-<!-- loom METADATA - Do not edit manually -->
-
-```yaml
-loom:
-  version: 1
-  stages:
-    - id: iv-stage
-      name: "Integration Verify"
-      dependencies: []
-      working_dir: "."
-      acceptance:
-        - "true"
-      code_review:
-        dimensions: ["security", "architecture", "testing"]
-        require_all: true
-```
-
-<!-- END loom METADATA -->
-"#;
-    fs::write(&plan_path, plan_content).unwrap();
-
-    let config_content = format!("[plan]\nsource_path = \"{}\"\n", plan_path.display());
-    fs::write(work_dir.join("config.toml"), config_content).unwrap();
-}
-
 #[test]
 fn test_generate_signal_renders_code_review_for_integration_verify() {
     let temp_dir = TempDir::new().unwrap();
     let project_root = temp_dir.path();
     let work_dir = project_root.join(".work");
     fs::create_dir_all(&work_dir).unwrap();
-    write_plan_with_code_review(project_root, &work_dir);
-
     let mut session = create_test_session();
     session.assign_to_stage("iv-stage".to_string());
     let mut stage = create_test_stage();
     stage.id = "iv-stage".to_string();
     stage.stage_type = StageType::IntegrationVerify;
+    stage.code_review = Some(CodeReviewConfig {
+        dimensions: vec![
+            "security".to_string(),
+            "architecture".to_string(),
+            "testing".to_string(),
+        ],
+        require_all: true,
+    });
     let worktree = create_test_worktree();
 
     let signal_path =
@@ -570,15 +542,16 @@ fn test_generate_signal_skips_code_review_for_standard_stage() {
     let project_root = temp_dir.path();
     let work_dir = project_root.join(".work");
     fs::create_dir_all(&work_dir).unwrap();
-    write_plan_with_code_review(project_root, &work_dir);
-
-    // Same plan on disk, but a Standard runtime stage must NOT render the
-    // review-dimensions section — the section is gated to integration-verify.
+    // A Standard runtime stage must NOT render the review-dimensions section.
     let mut session = create_test_session();
     session.assign_to_stage("iv-stage".to_string());
     let mut stage = create_test_stage();
     stage.id = "iv-stage".to_string();
     stage.stage_type = StageType::Standard;
+    stage.code_review = Some(CodeReviewConfig {
+        dimensions: vec!["security".to_string()],
+        require_all: true,
+    });
     let worktree = create_test_worktree();
 
     let signal_path =

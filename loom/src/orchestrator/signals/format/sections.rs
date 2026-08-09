@@ -896,9 +896,10 @@ pub(crate) fn format_codex_implementers_section(
          for common implementation and integration tests, or \"--model {CODEX_IMPLEMENTER_MODEL_LUNA} --effort {CODEX_IMPLEMENTER_EFFORT} <task>\"\n\
          for boilerplate, scaffolding, and simple unit tests.\n"
     ));
-    content.push_str("  The wrapper forwards --model/--effort ONLY when the request names them.\n");
+    content.push_str("  The forwarder invokes only `~/.claude/hooks/loom/codex-forward.sh task '<task>' --model\n");
+    content.push_str("  <model> --effort <effort> --write`; it single-quotes the task so shell operators remain data.\n");
     content.push_str("- STATE AN EXPLICIT BASH TIMEOUT IN THE PROMPT TEXT, e.g. \"make your single Bash call with an\n");
-    content.push_str("  explicit timeout of 900000 ms\". The wrapper makes ONE Bash call and never raises the tool's\n");
+    content.push_str("  explicit timeout of 900000 ms\". The forwarder makes ONE Bash call and never raises the tool's\n");
     content.push_str("  120s default, so any longer codex run is backgrounded by the harness. When that happens the id\n");
     content.push_str("  the wrapper hands back is a CLAUDE CODE task id, not a codex job id - `codex-companion.mjs\n");
     content.push_str("  result <that id>` will not resolve it. Recover a stranded run with `codex-companion.mjs status\n");

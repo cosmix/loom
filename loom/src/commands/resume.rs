@@ -5,7 +5,7 @@ use crate::handoff::{
 };
 use crate::models::stage::StageStatus;
 use crate::models::worktree::Worktree;
-use crate::verify::transitions::{load_stage, save_stage};
+use crate::verify::transitions::{load_stage, update_stage};
 use anyhow::{bail, Context, Result};
 use std::io::{stdin, stdout, Write};
 
@@ -15,7 +15,7 @@ pub fn execute(stage_id: String) -> Result<()> {
     let work_dir = WorkDir::new(".")?;
     work_dir.load()?;
 
-    let mut stage = load_stage(&stage_id, work_dir.root())?;
+    let stage = load_stage(&stage_id, work_dir.root())?;
 
     if !matches!(
         stage.status,
@@ -83,9 +83,9 @@ pub fn execute(stage_id: String) -> Result<()> {
         )
         .context("Failed to spawn continuation session")?;
 
-        // Update stage status to Executing
-        stage.try_mark_executing()?;
-        save_stage(&stage, work_dir.root())?;
+        update_stage(&stage_id, work_dir.root(), |current| {
+            current.try_mark_executing()
+        })?;
 
         println!("\n✓ Stage status updated to Executing");
         println!("✓ Spawned session: {}", session.id);
@@ -95,8 +95,9 @@ pub fn execute(stage_id: String) -> Result<()> {
         }
     } else {
         // No worktree assigned - just update the status
-        stage.try_mark_executing()?;
-        save_stage(&stage, work_dir.root())?;
+        update_stage(&stage_id, work_dir.root(), |current| {
+            current.try_mark_executing()
+        })?;
 
         println!("\n✓ Stage status updated to Executing");
         println!("\n⚠️  No worktree assigned to this stage.");

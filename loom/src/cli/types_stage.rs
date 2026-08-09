@@ -1,11 +1,12 @@
 //! Stage-related CLI command types
 
+use crate::validation::{clap_description_validator, clap_id_validator};
 use clap::Subcommand;
-use loom::validation::{clap_description_validator, clap_id_validator};
 
 #[derive(Subcommand)]
 pub enum StageCommands {
-    /// Mark a stage as complete (runs acceptance criteria by default)
+    /// Mark a stage as complete (runs acceptance criteria by default).
+    /// Privileged flags require a one-time proof in LOOM_ADMIN_PROOF.
     Complete {
         /// Stage ID (alphanumeric, dash, underscore only; max 128 characters)
         #[arg(value_parser = clap_id_validator)]
@@ -27,6 +28,37 @@ pub enum StageCommands {
         /// When using --force-unsafe, also mark stage as merged (assumes manual merge was done).
         /// Without this, dependent stages will NOT be triggered.
         #[arg(long = "assume-merged", requires = "force_unsafe")]
+        assume_merged: bool,
+    },
+
+    /// Mint a one-time proof for privileged completion flags.
+    /// Supply the daemon token through LOOM_ADMIN_TOKEN; only the proof is printed.
+    AdminProof {
+        /// Stage ID the proof authorizes
+        #[arg(required_unless_present = "daemon_stop", value_parser = clap_id_validator)]
+        stage_id: Option<String>,
+
+        /// Authorize one daemon shutdown instead of a stage completion
+        #[arg(
+            long = "daemon-stop",
+            conflicts_with_all = ["stage_id", "no_verify", "force_unsafe", "assume_merged"]
+        )]
+        daemon_stop: bool,
+
+        /// Authorize --no-verify for this stage completion
+        #[arg(long, conflicts_with = "daemon_stop")]
+        no_verify: bool,
+
+        /// Authorize --force-unsafe for this stage completion
+        #[arg(long = "force-unsafe", conflicts_with = "daemon_stop")]
+        force_unsafe: bool,
+
+        /// Authorize --assume-merged together with --force-unsafe
+        #[arg(
+            long = "assume-merged",
+            requires = "force_unsafe",
+            conflicts_with = "daemon_stop"
+        )]
         assume_merged: bool,
     },
 
@@ -128,27 +160,6 @@ pub enum StageCommands {
         /// (validates clean git state before completing)
         #[arg(long)]
         resolved: bool,
-    },
-
-    /// Re-run acceptance criteria and complete a stage that previously failed
-    ///
-    /// Use this to re-verify a stage in CompletedWithFailures or Executing state.
-    /// Reloads acceptance criteria from the plan file (unless --no-reload),
-    /// runs them, and if they pass, completes the stage with merge.
-    ///
-    /// Use --dry-run to check criteria without changing stage status.
-    Verify {
-        /// Stage ID (alphanumeric, dash, underscore only; max 128 characters)
-        #[arg(value_parser = clap_id_validator)]
-        stage_id: String,
-
-        /// Skip reloading acceptance criteria from plan file
-        #[arg(long)]
-        no_reload: bool,
-
-        /// Check criteria without changing stage status (shows detailed results)
-        #[arg(long)]
-        dry_run: bool,
     },
 
     /// Respond to a stage flagged for human review

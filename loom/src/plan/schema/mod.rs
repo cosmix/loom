@@ -1,6 +1,7 @@
 //! Plan YAML schema definitions and validation
 
 mod detect;
+mod sandbox_policy;
 mod types;
 mod validation;
 
@@ -8,6 +9,7 @@ mod validation;
 mod tests;
 
 pub use detect::{detect_stage_type, detect_stage_type_from_id_name};
+pub use sandbox_policy::unsafe_plan_reasons;
 pub use types::{
     AcceptanceCriterion, AdjudicationConfig, ChangeImpactConfig, ChangeImpactPolicy,
     CodeReviewConfig, DeadCodeCheck, FilesystemConfig, Implementer, Implementers, LinuxConfig,

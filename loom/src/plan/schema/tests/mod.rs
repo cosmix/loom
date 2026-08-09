@@ -6,6 +6,7 @@ mod implementer_tests;
 mod knowledge_recommendations_tests;
 mod reasoning_effort_tests;
 mod regression_test_tests;
+mod security_policy_tests;
 mod stage_id_tests;
 mod subagent_timeout_tests;
 mod ultracode_tests;

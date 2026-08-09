@@ -7,7 +7,7 @@ use anyhow::{bail, Result};
 use std::path::Path;
 
 use crate::models::stage::StageStatus;
-use crate::verify::transitions::{load_stage, save_stage};
+use crate::verify::transitions::update_stage;
 
 /// Skip a stage that is blocked, waiting for dependencies, or queued.
 ///
@@ -39,22 +39,15 @@ use crate::verify::transitions::{load_stage, save_stage};
 /// # Ok::<(), anyhow::Error>(())
 /// ```
 pub fn skip_stage(stage_id: &str, reason: Option<String>, work_dir: &Path) -> Result<()> {
-    let mut stage = load_stage(stage_id, work_dir)?;
-
-    // Validate stage is in a skippable status
-    match stage.status {
-        StageStatus::Blocked | StageStatus::WaitingForDeps | StageStatus::Queued => {
-            // Valid statuses for skipping
-        }
-        _ => {
+    update_stage(stage_id, work_dir, |stage| {
+        if !matches!(
+            stage.status,
+            StageStatus::Blocked | StageStatus::WaitingForDeps | StageStatus::Queued
+        ) {
             bail!("Cannot skip stage in status: {}", stage.status);
         }
-    }
-
-    // Use the try_skip helper which validates transition and sets close_reason
-    stage.try_skip(reason)?;
-
-    save_stage(&stage, work_dir)?;
+        stage.try_skip(reason)
+    })?;
 
     Ok(())
 }
@@ -63,6 +56,7 @@ pub fn skip_stage(stage_id: &str, reason: Option<String>, work_dir: &Path) -> Re
 mod tests {
     use super::*;
     use crate::models::stage::Stage;
+    use crate::verify::transitions::{create_stage, load_stage};
     use tempfile::TempDir;
 
     fn create_test_stage(id: &str, name: &str, status: StageStatus) -> Stage {
@@ -78,7 +72,7 @@ mod tests {
         let work_dir = temp_dir.path();
 
         let stage = create_test_stage("stage-1", "Test Stage", StageStatus::Blocked);
-        save_stage(&stage, work_dir).expect("Should save stage");
+        create_stage(&stage, work_dir).expect("Should create stage");
 
         let result = skip_stage("stage-1", Some("Not needed".to_string()), work_dir);
         assert!(result.is_ok(), "Should skip blocked stage");
@@ -94,7 +88,7 @@ mod tests {
         let work_dir = temp_dir.path();
 
         let stage = create_test_stage("stage-1", "Test Stage", StageStatus::WaitingForDeps);
-        save_stage(&stage, work_dir).expect("Should save stage");
+        create_stage(&stage, work_dir).expect("Should create stage");
 
         let result = skip_stage("stage-1", Some("Dependency failed".to_string()), work_dir);
         assert!(result.is_ok(), "Should skip waiting stage");
@@ -110,7 +104,7 @@ mod tests {
         let work_dir = temp_dir.path();
 
         let stage = create_test_stage("stage-1", "Test Stage", StageStatus::Queued);
-        save_stage(&stage, work_dir).expect("Should save stage");
+        create_stage(&stage, work_dir).expect("Should create stage");
 
         let result = skip_stage("stage-1", None, work_dir);
         assert!(result.is_ok(), "Should skip queued stage");
@@ -126,7 +120,7 @@ mod tests {
         let work_dir = temp_dir.path();
 
         let stage = create_test_stage("stage-1", "Test Stage", StageStatus::Executing);
-        save_stage(&stage, work_dir).expect("Should save stage");
+        create_stage(&stage, work_dir).expect("Should create stage");
 
         let result = skip_stage("stage-1", Some("Should fail".to_string()), work_dir);
         assert!(result.is_err(), "Should not skip executing stage");
@@ -144,7 +138,7 @@ mod tests {
         let work_dir = temp_dir.path();
 
         let stage = create_test_stage("stage-1", "Test Stage", StageStatus::Completed);
-        save_stage(&stage, work_dir).expect("Should save stage");
+        create_stage(&stage, work_dir).expect("Should create stage");
 
         let result = skip_stage("stage-1", Some("Should fail".to_string()), work_dir);
         assert!(result.is_err(), "Should not skip completed stage");
@@ -156,7 +150,7 @@ mod tests {
         let work_dir = temp_dir.path();
 
         let stage = create_test_stage("stage-1", "Test Stage", StageStatus::Blocked);
-        save_stage(&stage, work_dir).expect("Should save stage");
+        create_stage(&stage, work_dir).expect("Should create stage");
 
         let original = load_stage("stage-1", work_dir).expect("Should load stage");
         let original_updated_at = original.updated_at;

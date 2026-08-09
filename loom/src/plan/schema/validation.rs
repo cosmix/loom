@@ -2,6 +2,7 @@
 
 use crate::validation::validate_id;
 
+use super::sandbox_policy::validate_excluded_commands;
 use super::types::{
     FilesystemConfig, Implementer, LoomMetadata, NetworkConfig, SandboxConfig, StageSandboxConfig,
     ValidationError,
@@ -148,6 +149,7 @@ fn validate_sandbox_config(sandbox: &SandboxConfig, errors: &mut Vec<ValidationE
 
     // Validate domain patterns
     validate_network_config(&sandbox.network, errors, None);
+    validate_excluded_commands(&sandbox.excluded_commands, errors, None);
 }
 
 /// Validate sandbox configuration at stage level
@@ -165,6 +167,7 @@ fn validate_stage_sandbox_config(
     if let Some(net) = &sandbox.network {
         validate_network_config(net, errors, Some(stage_id));
     }
+    validate_excluded_commands(&sandbox.excluded_commands, errors, Some(stage_id));
 }
 
 /// Validate the loom metadata
@@ -968,15 +971,9 @@ pub fn check_knowledge_recommendations(stages: &[super::types::StageDefinition])
 pub fn check_sandbox_recommendations(metadata: &LoomMetadata) -> Vec<String> {
     let mut warnings = Vec::new();
 
-    // Warn if "loom" is not in excluded_commands
-    if !metadata
-        .loom
-        .sandbox
-        .excluded_commands
-        .contains(&"loom".to_string())
-    {
+    if !metadata.loom.sandbox.enabled {
         warnings.push(
-            "Consider adding 'loom' to sandbox.excluded_commands to allow agents to use loom CLI"
+            "Warning: sandbox.enabled=false disables host filesystem and network isolation."
                 .to_string(),
         );
     }

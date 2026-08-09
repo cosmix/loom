@@ -4,17 +4,16 @@ use crate::fs::stage_files::stage_file_path;
 use crate::fs::work_dir::{self, WorkDir};
 use crate::git::branch::current_branch;
 use crate::models::session::{SessionBackendKind, TerminalConfig};
-use crate::models::stage::{Stage, StageStatus};
+use crate::models::stage::Stage;
 use crate::plan::graph::levels::compute_all_levels;
 use crate::plan::parser::parse_plan;
 use crate::plan::schema::{
     check_knowledge_recommendations, check_sandbox_recommendations, detect_stage_type,
-    validate_structural_preflight, StageDefinition,
+    unsafe_plan_reasons, validate_structural_preflight, StageDefinition,
 };
 use crate::sandbox::{merge_config as merge_sandbox_config, validate_config as validate_sandbox};
 use crate::verify::serialize_stage_to_markdown;
 use anyhow::{Context, Result};
-use chrono::Utc;
 use colored::Colorize;
 use std::fs;
 use std::path::Path;
@@ -23,12 +22,13 @@ use toml_edit::{value, Item, Table};
 // Plan / config writes go through the centralized `fs::work_dir` API using
 // `toml_edit`, which preserves comments and unknown keys across edits.
 
-/// Initialize with a plan file
-/// Returns the number of stages created
-pub fn initialize_with_plan(
+/// Initialize from a plan, allowing an operator to explicitly acknowledge
+/// sandbox disablement or unsandboxed escape in that plan.
+pub fn initialize_with_plan_acknowledgement(
     work_dir: &WorkDir,
     plan_path: &Path,
     terminal_backend: SessionBackendKind,
+    allow_unsafe_plan: bool,
 ) -> Result<usize> {
     if !plan_path.exists() {
         anyhow::bail!("Plan file does not exist: {}", plan_path.display());
@@ -38,9 +38,13 @@ pub fn initialize_with_plan(
     let canonical_path = plan_path
         .canonicalize()
         .with_context(|| format!("Failed to canonicalize plan path: {}", plan_path.display()))?;
+    require_utf8_plan_path(&canonical_path)?;
 
     let parsed_plan = parse_plan(&canonical_path)
         .with_context(|| format!("Failed to parse plan file: {}", canonical_path.display()))?;
+
+    let unsafe_reasons = unsafe_plan_reasons(&parsed_plan.metadata);
+    require_unsafe_plan_acknowledgement(&unsafe_reasons, allow_unsafe_plan)?;
 
     println!(
         "  {} Plan parsed: {}",
@@ -153,7 +157,7 @@ pub fn initialize_with_plan(
     }
 
     let mut plan_table = Table::new();
-    plan_table["source_path"] = value(relative_source_path.display().to_string());
+    plan_table["source_path"] = value(require_utf8_plan_path(relative_source_path)?.to_string());
     plan_table["plan_id"] = value(parsed_plan.id.clone());
     plan_table["plan_name"] = value(parsed_plan.name.clone());
     plan_table["base_branch"] = value(base_branch.clone());
@@ -236,79 +240,52 @@ pub fn initialize_with_plan(
     Ok(stage_count)
 }
 
+fn require_utf8_plan_path(path: &Path) -> Result<&str> {
+    path.to_str().ok_or_else(|| {
+        anyhow::anyhow!(
+            "Plan path is not valid UTF-8 and cannot be persisted safely: {:?}",
+            path
+        )
+    })
+}
+
+fn require_unsafe_plan_acknowledgement(reasons: &[String], acknowledged: bool) -> Result<()> {
+    if !reasons.is_empty() && !acknowledged {
+        anyhow::bail!(
+            "Plan expands the sandbox policy and requires explicit operator acknowledgement:\n  - {}\n\
+             Re-run initialization with --allow-unsafe-plan after reviewing this policy diff.",
+            reasons.join("\n  - ")
+        );
+    }
+    Ok(())
+}
+
 /// Create a Stage from a StageDefinition
 pub(crate) fn create_stage_from_definition(stage_def: &StageDefinition, plan_id: &str) -> Stage {
-    let now = Utc::now();
+    Stage::from_definition(stage_def, plan_id)
+}
 
-    let status = if stage_def.dependencies.is_empty() {
-        StageStatus::Queued
-    } else {
-        StageStatus::WaitingForDeps
-    };
+#[cfg(all(test, unix))]
+mod tests {
+    use super::{require_unsafe_plan_acknowledgement, require_utf8_plan_path};
+    use std::ffi::OsString;
+    use std::os::unix::ffi::OsStringExt;
+    use std::path::PathBuf;
 
-    let stage_type = detect_stage_type(stage_def);
+    #[test]
+    fn rejects_non_utf8_plan_path_before_persistence() {
+        let path = PathBuf::from(OsString::from_vec(b"doc/plans/PLAN-\xFF.md".to_vec()));
+        let error = require_utf8_plan_path(&path).unwrap_err().to_string();
+        assert!(error.contains("not valid UTF-8"));
+    }
 
-    Stage {
-        id: stage_def.id.clone(),
-        name: stage_def.name.clone(),
-        description: stage_def.description.clone(),
-        status,
-        dependencies: stage_def.dependencies.clone(),
-        parallel_group: stage_def.parallel_group.clone(),
-        acceptance: stage_def.acceptance.clone(),
-        setup: stage_def.setup.clone(),
-        files: stage_def.files.clone(),
-        stage_type,
-        plan_id: Some(plan_id.to_string()),
-        worktree: None,
-        session: None,
-        held: false,
-        parent_stage: None,
-        child_stages: Vec::new(),
-        created_at: now,
-        updated_at: now,
-        completed_at: None,
-        started_at: None,
-        duration_secs: None,
-        execution_secs: None,
-        attempt_started_at: None,
-        close_reason: None,
-        auto_merge: stage_def.auto_merge,
-        working_dir: Some(stage_def.working_dir.clone()),
-        retry_count: 0,
-        max_retries: None,
-        last_failure_at: None,
-        failure_info: None,
-        resolved_base: None,
-        base_branch: None,
-        base_merged_from: Vec::new(),
-        outputs: Vec::new(),
-        completed_commit: None,
-        merged: false,
-        merge_conflict: false,
-        verification_status: Default::default(),
-        context_budget: stage_def.context_budget,
-        artifacts: stage_def.artifacts.clone(),
-        wiring: stage_def.wiring.clone(),
-        wiring_tests: stage_def.wiring_tests.clone(),
-        dead_code_check: stage_def.dead_code_check.clone(),
-        before_stage: stage_def.before_stage.clone(),
-        after_stage: stage_def.after_stage.clone(),
-        fix_attempts: 0,
-        dispute_count: 0,
-        evidence_rounds: 0,
-        amendments_applied: 0,
-        sandbox: stage_def.sandbox.clone(),
-        execution_mode: stage_def.execution_mode,
-        max_fix_attempts: None,
-        review_reason: None,
-        bug_fix: stage_def.bug_fix,
-        regression_test: stage_def.regression_test.clone(),
-        model: stage_def.model.clone(),
-        reasoning_effort: stage_def.reasoning_effort.clone(),
-        is_possibly_stuck: false,
-        ultracode: stage_def.ultracode,
-        implementers: stage_def.implementers.clone(),
-        subagent_timeout_secs: stage_def.subagent_timeout_secs,
+    #[test]
+    fn unsafe_plan_requires_explicit_acknowledgement() {
+        let reasons = vec!["plan sandbox.enabled is false".to_string()];
+        let error = require_unsafe_plan_acknowledgement(&reasons, false)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("--allow-unsafe-plan"));
+        assert!(require_unsafe_plan_acknowledgement(&reasons, true).is_ok());
     }
 }

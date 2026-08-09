@@ -240,11 +240,11 @@ loom:
 }
 
 #[test]
-fn test_old_plan_with_truths_field_parses() {
-    // Old plans had a truths: Vec<String> field that no longer exists.
-    // Since StageDefinition does NOT use deny_unknown_fields, serde should
-    // silently ignore the unknown truths field.
-    let yaml = r#"
+fn test_retired_truth_fields_are_rejected() {
+    // Retired verification fields must fail loudly instead of disappearing.
+    for field in ["truths", "truth_checks"] {
+        let yaml = format!(
+            r#"
 loom:
   version: 1
   stages:
@@ -254,26 +254,18 @@ loom:
       stage_type: standard
       acceptance:
         - "echo ok"
-      truths:
+      {field}:
         - "echo hello"
-      truth_checks:
-        - command: "echo world"
-          stdout_contains: ["world"]
       artifacts:
         - "README.md"
-"#;
-    let result: Result<crate::plan::schema::types::LoomMetadata, _> = serde_yaml::from_str(yaml);
-    assert!(
-        result.is_ok(),
-        "Old plan with truths/truth_checks should parse: {:?}",
-        result.err()
-    );
-    let metadata = result.unwrap();
-    let stage = &metadata.loom.stages[0];
-    // truths field should be silently dropped since it no longer exists on StageDefinition
-    assert_eq!(stage.acceptance.len(), 1);
-    assert_eq!(
-        stage.acceptance[0],
-        AcceptanceCriterion::Simple("echo ok".to_string())
-    );
+"#
+        );
+        let result: Result<crate::plan::schema::types::LoomMetadata, _> =
+            serde_yaml::from_str(&yaml);
+        let error = result.unwrap_err().to_string();
+        assert!(
+            error.contains(&format!("unknown field `{field}`")),
+            "{error}"
+        );
+    }
 }

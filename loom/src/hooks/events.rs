@@ -21,7 +21,7 @@ const TAIL_SCAN_BYTES: u64 = 256 * 1024;
 
 /// Size threshold above which [`enforce_tool_events_retention`] truncates
 /// `tool-events.jsonl` (and siblings) down to their trailing
-/// [`RETENTION_KEEP_BYTES`]. 8 MiB keeps weeks of single-session activity
+/// `RETENTION_KEEP_BYTES`. 8 MiB keeps weeks of single-session activity
 /// well below the unbounded-growth failure mode while leaving ample history.
 const RETENTION_MAX_BYTES: u64 = 8 * 1024 * 1024;
 
@@ -263,7 +263,7 @@ pub fn read_tool_events(work_dir: &Path) -> std::io::Result<Vec<ToolEvent>> {
 ///
 /// This is a **true tail**: rather than reading and parsing the entire
 /// (unbounded, append-only) file, it `seek`s to at most the last
-/// [`TAIL_SCAN_BYTES`] and parses only the complete lines found there. This
+/// `TAIL_SCAN_BYTES` and parses only the complete lines found there. This
 /// keeps the per-tick monitor cost bounded regardless of how large the file
 /// has grown. The seek-to-end technique mirrors the daemon log tailer in
 /// `daemon/server/broadcast.rs`.
@@ -273,7 +273,7 @@ pub fn read_tool_events(work_dir: &Path) -> std::io::Result<Vec<ToolEvent>> {
 /// NOTE: the tail spans ALL sessions interleaved in the file, so callers that
 /// want the last `n` events for a *single* session
 /// (e.g. [`crate::orchestrator::monitor::tool_analysis::analyze_session`])
-/// see a window diluted by concurrent sessions. [`TAIL_SCAN_BYTES`] is sized
+/// see a window diluted by concurrent sessions. `TAIL_SCAN_BYTES` is sized
 /// large enough that the per-session slice remains useful in practice; reading
 /// strictly `n` events *per session* would require either a per-session file
 /// or a full scan, neither of which is worth the cost on the 5s tick path.
@@ -332,8 +332,8 @@ pub fn tail_tool_events(work_dir: &Path, n: usize) -> std::io::Result<Vec<ToolEv
 /// Enforce a size-based retention policy on the append-only tool-events
 /// telemetry files under `work_dir`.
 ///
-/// For each retained file that exceeds [`RETENTION_MAX_BYTES`], the trailing
-/// [`RETENTION_KEEP_BYTES`] are preserved (aligned to the next line boundary so
+/// For each retained file that exceeds `RETENTION_MAX_BYTES`, the trailing
+/// `RETENTION_KEEP_BYTES` are preserved (aligned to the next line boundary so
 /// no partial row survives) and the rest is discarded by rewriting the file.
 /// Intended to be called once at daemon startup; cheap and idempotent when the
 /// files are already small. Errors on individual files are logged and skipped

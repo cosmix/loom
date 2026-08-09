@@ -1,4 +1,5 @@
 use anyhow::{anyhow, Context, Result};
+use std::borrow::Cow;
 use std::path::{Path, PathBuf};
 
 /// Detect the user's shell from $SHELL environment variable
@@ -15,7 +16,7 @@ pub fn detect_shell() -> Result<super::generator::Shell> {
 }
 
 fn home_dir() -> Result<PathBuf> {
-    std::env::var("HOME")
+    std::env::var_os("HOME")
         .map(PathBuf::from)
         .context("Could not determine home directory: $HOME not set")
 }
@@ -26,16 +27,18 @@ pub fn install_path(shell: super::generator::Shell) -> Result<PathBuf> {
 
     match shell {
         Shell::Bash => {
-            let data_dir = std::env::var("XDG_DATA_HOME")
-                .map(PathBuf::from)
-                .unwrap_or_else(|_| home_dir().unwrap_or_default().join(".local/share"));
+            let data_dir = match std::env::var_os("XDG_DATA_HOME") {
+                Some(path) => PathBuf::from(path),
+                None => home_dir()?.join(".local/share"),
+            };
             Ok(data_dir.join("bash-completion/completions/loom"))
         }
         Shell::Zsh => zsh_install_path(),
         Shell::Fish => {
-            let config_dir = std::env::var("XDG_CONFIG_HOME")
-                .map(PathBuf::from)
-                .unwrap_or_else(|_| home_dir().unwrap_or_default().join(".config"));
+            let config_dir = match std::env::var_os("XDG_CONFIG_HOME") {
+                Some(path) => PathBuf::from(path),
+                None => home_dir()?.join(".config"),
+            };
             Ok(config_dir.join("fish/completions/loom.fish"))
         }
     }
@@ -75,6 +78,12 @@ pub fn install(shell: super::generator::Shell) -> Result<()> {
     use super::generator::Shell;
 
     let path = install_path(shell)?;
+    // Resolve every prerequisite before creating or writing any file. Bash and
+    // zsh may need to update an rc file after the completion is installed.
+    let home = match shell {
+        Shell::Bash | Shell::Zsh => Some(home_dir()?),
+        Shell::Fish => None,
+    };
 
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)
@@ -96,15 +105,19 @@ pub fn install(shell: super::generator::Shell) -> Result<()> {
         path.display()
     );
 
-    let home = home_dir()?;
     match shell {
         Shell::Zsh => {
+            let home = home.as_deref().context("zsh installation requires $HOME")?;
             if path.starts_with(home.join(".zfunc")) {
-                ensure_zshrc_fpath(&home)?;
+                ensure_zshrc_fpath(home)?;
             }
         }
         Shell::Bash => {
-            ensure_bashrc_completion(&home, &path)?;
+            ensure_bashrc_completion(
+                home.as_deref()
+                    .context("bash installation requires $HOME")?,
+                &path,
+            )?;
         }
         Shell::Fish => {}
     }
@@ -115,6 +128,13 @@ pub fn install(shell: super::generator::Shell) -> Result<()> {
 }
 
 const RC_MARKER: &str = "# loom completions";
+
+fn quote_bash_path(path: &Path) -> Result<String> {
+    let path = path
+        .to_str()
+        .with_context(|| format!("Completion path is not valid UTF-8: {}", path.display()))?;
+    Ok(shell_escape::escape(Cow::Borrowed(path)).into_owned())
+}
 
 /// Ensure ~/.bashrc sources the completion file if bash-completion isn't auto-loading it.
 fn ensure_bashrc_completion(home: &Path, completion_path: &Path) -> Result<()> {
@@ -136,11 +156,8 @@ fn ensure_bashrc_completion(home: &Path, completion_path: &Path) -> Result<()> {
         return Ok(());
     }
 
-    let snippet = format!(
-        "\n{RC_MARKER}\n[ -f {} ] && source {}\n",
-        completion_path.display(),
-        completion_path.display()
-    );
+    let quoted_path = quote_bash_path(completion_path)?;
+    let snippet = format!("\n{RC_MARKER}\n[ -f {quoted_path} ] && source {quoted_path}\n");
 
     let updated = format!("{existing}{snippet}");
     std::fs::write(&bashrc, updated)
@@ -334,4 +351,22 @@ fn completion_file_paths(home: &Path) -> Vec<PathBuf> {
         home.join(".zfunc/_loom"),
         home.join(".config/fish/completions/loom.fish"),
     ]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    #[test]
+    fn bash_rc_uses_shell_quoted_completion_path() {
+        let home = TempDir::new().unwrap();
+        let completion_path = home.path().join("dir with spaces/loom;touch-pwned");
+
+        ensure_bashrc_completion(home.path(), &completion_path).unwrap();
+
+        let bashrc = std::fs::read_to_string(home.path().join(".bashrc")).unwrap();
+        let quoted = quote_bash_path(&completion_path).unwrap();
+        assert!(bashrc.contains(&format!("[ -f {quoted} ] && source {quoted}")));
+    }
 }

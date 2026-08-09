@@ -1,4 +1,3 @@
-mod base_conflict;
 mod cache;
 mod crud;
 mod format;
@@ -23,12 +22,11 @@ pub use recovery::generate_recovery_signal;
 pub use recovery_parsing::read_recovery_signal;
 pub use recovery_types::{LastHeartbeatInfo, RecoveryReason, RecoverySignalContent};
 pub use types::{
-    BaseConflictSignalContent, DependencyStatus, EmbeddedContext, MergeConflictSignalContent,
-    MergeSignalContent, SignalContent, SignalUpdates,
+    DependencyStatus, EmbeddedContext, MergeConflictSignalContent, MergeSignalContent,
+    SignalContent, SignalUpdates,
 };
 
 // Re-export public functions
-pub use base_conflict::{generate_base_conflict_signal, read_base_conflict_signal};
 pub use cache::compute_hash;
 pub use crud::{list_signals, read_signal, remove_signal, update_signal};
 pub use format::{

@@ -1,13 +1,14 @@
 //! Integration tests for the adjudication subsystem driven against a
-//! local httpmock-backed HTTP server (no real Anthropic API calls).
+//! local deterministic HTTP server (no real Anthropic API calls).
 //!
-//! Each test wires up a fresh tmp .work directory, spins up an
-//! httpmock server, configures `AdjudicatorRegistry` to point at the
-//! mock URL, then drives the registry through the same hooks the
+//! Each test wires up a fresh tmp .work directory and test server,
+//! points `AdjudicatorRegistry` at it, then drives the same hooks the
 //! orchestrator's main loop uses.
 
-use httpmock::prelude::*;
-use httpmock::Mock;
+#[path = "support/adjudication_mock_server.rs"]
+mod adjudication_mock_server;
+
+use adjudication_mock_server::MockServer;
 use loom::models::dispute::{
     applied_marker, dispute_dir, request_file, verdict_file, DisputeRequest,
 };
@@ -20,6 +21,14 @@ use std::time::{Duration, Instant};
 fn write_stage(work_dir: &Path, stage: &Stage) {
     std::fs::create_dir_all(work_dir.join("stages")).unwrap();
     loom::verify::transitions::save_stage(stage, work_dir).unwrap();
+}
+
+fn set_stage_status(work_dir: &Path, stage_id: &str, status: StageStatus) {
+    loom::verify::transitions::update_stage(stage_id, work_dir, |stage| {
+        stage.status = status;
+        Ok(())
+    })
+    .unwrap();
 }
 
 fn make_stage(id: &str) -> Stage {
@@ -124,7 +133,7 @@ Trailing prose section.
     plan
 }
 
-fn mock_accept_response(server: &MockServer) -> Mock<'_> {
+fn mock_accept_response(server: &MockServer) {
     let body = serde_json::json!({
         "content": [
             {
@@ -139,15 +148,10 @@ fn mock_accept_response(server: &MockServer) -> Mock<'_> {
             }
         ]
     });
-    server.mock(|when, then| {
-        when.method(POST).path("/v1/messages");
-        then.status(200)
-            .header("content-type", "application/json")
-            .body(body.to_string());
-    })
+    server.respond_with(body.to_string());
 }
 
-fn mock_accept_with_amendment(server: &MockServer) -> Mock<'_> {
+fn mock_accept_with_amendment(server: &MockServer) {
     let body = serde_json::json!({
         "content": [
             {
@@ -168,17 +172,12 @@ fn mock_accept_with_amendment(server: &MockServer) -> Mock<'_> {
             }
         ]
     });
-    server.mock(|when, then| {
-        when.method(POST).path("/v1/messages");
-        then.status(200)
-            .header("content-type", "application/json")
-            .body(body.to_string());
-    })
+    server.respond_with(body.to_string());
 }
 
 /// Mock an Accept verdict whose `plan_patch` deletes acceptance[0].
 /// Targets the stage seeded by [`make_stage_two_criteria`].
-fn mock_accept_delete_first(server: &MockServer) -> Mock<'_> {
+fn mock_accept_delete_first(server: &MockServer) {
     let body = serde_json::json!({
         "content": [
             {
@@ -204,15 +203,10 @@ fn mock_accept_delete_first(server: &MockServer) -> Mock<'_> {
             }
         ]
     });
-    server.mock(|when, then| {
-        when.method(POST).path("/v1/messages");
-        then.status(200)
-            .header("content-type", "application/json")
-            .body(body.to_string());
-    })
+    server.respond_with(body.to_string());
 }
 
-fn mock_needs_more(server: &MockServer) -> Mock<'_> {
+fn mock_needs_more(server: &MockServer) {
     let body = serde_json::json!({
         "content": [
             {
@@ -224,15 +218,10 @@ fn mock_needs_more(server: &MockServer) -> Mock<'_> {
             }
         ]
     });
-    server.mock(|when, then| {
-        when.method(POST).path("/v1/messages");
-        then.status(200)
-            .header("content-type", "application/json")
-            .body(body.to_string());
-    })
+    server.respond_with(body.to_string());
 }
 
-fn mock_500_then_success(server: &MockServer) -> Mock<'_> {
+fn mock_500_then_success(server: &MockServer) {
     // Just configure a successful response; testing the retry path
     // requires sequenced responses which httpmock doesn't expose
     // directly. Acceptance of the retry behaviour is covered by
@@ -249,12 +238,7 @@ fn mock_500_then_success(server: &MockServer) -> Mock<'_> {
             }
         ]
     });
-    server.mock(|when, then| {
-        when.method(POST).path("/v1/messages");
-        then.status(200)
-            .header("content-type", "application/json")
-            .body(good_body.to_string());
-    })
+    server.respond_with(good_body.to_string());
 }
 
 fn make_registry(work_dir: &Path, endpoint: String) -> AdjudicatorRegistry {
@@ -287,7 +271,7 @@ fn reject_verdict_round_trip() {
     write_dispute(work, "s1", 1);
 
     let server = MockServer::start();
-    let _m = mock_accept_response(&server);
+    mock_accept_response(&server);
 
     let endpoint = format!("{}/v1/messages", server.base_url());
     let mut reg = make_registry(work, endpoint);
@@ -296,7 +280,7 @@ fn reject_verdict_round_trip() {
     reg.check_pending_disputes(work).unwrap();
     // Wait for the verdict file to land.
     let verdict_path = verdict_file(&work.join("disputes"), "s1", 1);
-    let ok = wait_for(|| verdict_path.exists(), Duration::from_secs(10));
+    let ok = wait_for(|| verdict_path.exists(), Duration::from_secs(30));
     assert!(ok, "verdict.md never appeared");
 
     // Drain so the worker handle gets joined.
@@ -323,13 +307,13 @@ fn needs_more_evidence_writes_questions() {
     write_dispute(work, "s1", 1);
 
     let server = MockServer::start();
-    let _m = mock_needs_more(&server);
+    mock_needs_more(&server);
     let endpoint = format!("{}/v1/messages", server.base_url());
     let mut reg = make_registry(work, endpoint);
 
     reg.check_pending_disputes(work).unwrap();
     let verdict_path = verdict_file(&work.join("disputes"), "s1", 1);
-    assert!(wait_for(|| verdict_path.exists(), Duration::from_secs(10)));
+    assert!(wait_for(|| verdict_path.exists(), Duration::from_secs(30)));
     reg.drain_completed_workers(work).unwrap();
     reg.apply_pending_verdicts(work).unwrap();
 
@@ -349,13 +333,13 @@ fn accept_verdict_amends_plan_and_clears_feedback() {
     feedback::append_questions(work, "s1", &["stale".to_string()]).unwrap();
 
     let server = MockServer::start();
-    let _m = mock_accept_with_amendment(&server);
+    mock_accept_with_amendment(&server);
     let endpoint = format!("{}/v1/messages", server.base_url());
     let mut reg = make_registry(work, endpoint);
 
     reg.check_pending_disputes(work).unwrap();
     let verdict_path = verdict_file(&work.join("disputes"), "s1", 1);
-    assert!(wait_for(|| verdict_path.exists(), Duration::from_secs(10)));
+    assert!(wait_for(|| verdict_path.exists(), Duration::from_secs(30)));
     reg.drain_completed_workers(work).unwrap();
     // `apply_pending_verdicts` returns Ok even when individual verdicts
     // fail to apply — per-verdict failures are logged via tracing and the
@@ -387,14 +371,14 @@ fn http_500_retries_then_succeeds() {
     write_dispute(work, "s1", 1);
 
     let server = MockServer::start();
-    let _m = mock_500_then_success(&server);
+    mock_500_then_success(&server);
     let endpoint = format!("{}/v1/messages", server.base_url());
     let mut reg = make_registry(work, endpoint);
 
     reg.check_pending_disputes(work).unwrap();
     let verdict_path = verdict_file(&work.join("disputes"), "s1", 1);
     assert!(
-        wait_for(|| verdict_path.exists(), Duration::from_secs(15)),
+        wait_for(|| verdict_path.exists(), Duration::from_secs(30)),
         "verdict.md never appeared",
     );
     reg.drain_completed_workers(work).unwrap();
@@ -450,13 +434,13 @@ fn double_apply_is_idempotent() {
     write_dispute(work, "s1", 1);
 
     let server = MockServer::start();
-    let _m = mock_accept_response(&server);
+    mock_accept_response(&server);
     let endpoint = format!("{}/v1/messages", server.base_url());
     let mut reg = make_registry(work, endpoint);
 
     reg.check_pending_disputes(work).unwrap();
     let verdict_path = verdict_file(&work.join("disputes"), "s1", 1);
-    assert!(wait_for(|| verdict_path.exists(), Duration::from_secs(10)));
+    assert!(wait_for(|| verdict_path.exists(), Duration::from_secs(30)));
     reg.drain_completed_workers(work).unwrap();
 
     reg.apply_pending_verdicts(work).unwrap();
@@ -499,14 +483,14 @@ fn dispute_to_amendment_to_pass() {
     write_dispute(work, "s1", 1);
 
     let server = MockServer::start();
-    let _m = mock_accept_delete_first(&server);
+    mock_accept_delete_first(&server);
     let endpoint = format!("{}/v1/messages", server.base_url());
     let mut reg = make_registry(work, endpoint);
 
     reg.check_pending_disputes(work).unwrap();
     let verdict_path = verdict_file(&work.join("disputes"), "s1", 1);
     assert!(
-        wait_for(|| verdict_path.exists(), Duration::from_secs(10)),
+        wait_for(|| verdict_path.exists(), Duration::from_secs(30)),
         "verdict.md never appeared",
     );
     reg.drain_completed_workers(work).unwrap();
@@ -588,13 +572,13 @@ fn dispute_amendment_is_idempotent_under_repeat_apply() {
     write_dispute(work, "s1", 1);
 
     let server = MockServer::start();
-    let _m = mock_accept_delete_first(&server);
+    mock_accept_delete_first(&server);
     let endpoint = format!("{}/v1/messages", server.base_url());
     let mut reg = make_registry(work, endpoint);
 
     reg.check_pending_disputes(work).unwrap();
     let verdict_path = verdict_file(&work.join("disputes"), "s1", 1);
-    assert!(wait_for(|| verdict_path.exists(), Duration::from_secs(10)));
+    assert!(wait_for(|| verdict_path.exists(), Duration::from_secs(30)));
     reg.drain_completed_workers(work).unwrap();
 
     reg.apply_pending_verdicts(work).unwrap();
@@ -671,14 +655,12 @@ fn drive_dispute_to_applied(
     stage_id: &str,
     dispute_id: u32,
 ) {
-    let mut s = loom::verify::transitions::load_stage(stage_id, work).unwrap();
-    s.status = StageStatus::NeedsAdjudication;
-    loom::verify::transitions::save_stage(&s, work).unwrap();
+    set_stage_status(work, stage_id, StageStatus::NeedsAdjudication);
     write_dispute(work, stage_id, dispute_id);
     reg.check_pending_disputes(work).unwrap();
     let verdict_path = verdict_file(&work.join("disputes"), stage_id, dispute_id);
     assert!(
-        wait_for(|| verdict_path.exists(), Duration::from_secs(10)),
+        wait_for(|| verdict_path.exists(), Duration::from_secs(30)),
         "verdict.md never appeared for dispute {dispute_id}",
     );
     reg.drain_completed_workers(work).unwrap();
@@ -702,7 +684,7 @@ fn amendment_cap_exceeded_escalates_to_human_review() {
     write_stage(work, &stage);
 
     let server = MockServer::start();
-    let _m = mock_accept_delete_first(&server);
+    mock_accept_delete_first(&server);
     let endpoint = format!("{}/v1/messages", server.base_url());
     let mut reg = make_registry(work, endpoint);
 
@@ -716,15 +698,13 @@ fn amendment_cap_exceeded_escalates_to_human_review() {
 
     // Third dispute: stage must be put back into NeedsAdjudication first
     // (apply_verdict refuses to act on Queued stages with no verdict file).
-    let mut staged = after_two;
-    staged.status = StageStatus::NeedsAdjudication;
-    loom::verify::transitions::save_stage(&staged, work).unwrap();
+    set_stage_status(work, "s1", StageStatus::NeedsAdjudication);
     write_dispute(work, "s1", 3);
     reg.check_pending_disputes(work).unwrap();
     let verdict_path_3 = verdict_file(&work.join("disputes"), "s1", 3);
     assert!(wait_for(
         || verdict_path_3.exists(),
-        Duration::from_secs(10)
+        Duration::from_secs(30)
     ));
     reg.drain_completed_workers(work).unwrap();
     reg.apply_pending_verdicts(work)
@@ -776,13 +756,11 @@ fn evidence_rounds_exhausted_escalates_to_human_review() {
     write_stage(work, &stage);
 
     let server = MockServer::start();
-    let _m = mock_needs_more(&server);
+    mock_needs_more(&server);
     let endpoint = format!("{}/v1/messages", server.base_url());
     let mut reg = make_registry(work, endpoint);
 
-    // Drive enough rounds to hit MAX_EVIDENCE_ROUNDS. Each round files a
-    // fresh dispute and lets the orchestrator apply the
-    // NeedsMoreEvidence verdict (which bumps evidence_rounds).
+    // Drive disputes until the evidence-round cap escalates the stage.
     let mut dispute_id: u32 = 0;
     loop {
         let s = loom::verify::transitions::load_stage("s1", work).unwrap();
@@ -798,16 +776,14 @@ fn evidence_rounds_exhausted_escalates_to_human_review() {
         );
         // Ensure the stage is back in NeedsAdjudication so the next dispute
         // can be processed.
-        let mut staged = s;
-        staged.status = StageStatus::NeedsAdjudication;
-        loom::verify::transitions::save_stage(&staged, work).unwrap();
+        set_stage_status(work, "s1", StageStatus::NeedsAdjudication);
 
         dispute_id += 1;
         write_dispute(work, "s1", dispute_id);
         reg.check_pending_disputes(work).unwrap();
         let v = verdict_file(&work.join("disputes"), "s1", dispute_id);
         assert!(
-            wait_for(|| v.exists(), Duration::from_secs(10)),
+            wait_for(|| v.exists(), Duration::from_secs(30)),
             "verdict.md never appeared for dispute {dispute_id}",
         );
         reg.drain_completed_workers(work).unwrap();

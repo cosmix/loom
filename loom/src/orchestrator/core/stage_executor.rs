@@ -20,6 +20,24 @@ use super::persistence::Persistence;
 use super::Orchestrator;
 
 impl Orchestrator {
+    fn persist_blocked_stage(
+        &self,
+        stage_id: &str,
+        failure_type: FailureType,
+        evidence: Vec<String>,
+    ) -> Result<()> {
+        self.update_stage(stage_id, |current| {
+            current.try_mark_blocked()?;
+            current.failure_info = Some(FailureInfo {
+                failure_type,
+                detected_at: Utc::now(),
+                evidence,
+            });
+            Ok(())
+        })?;
+        Ok(())
+    }
+
     /// Publish the current tick's "why isn't this stage running" snapshot to
     /// `.work/scheduling.json` for the dashboards to read.
     ///
@@ -45,6 +63,15 @@ impl Orchestrator {
     }
 }
 
+pub(super) fn write_required_sandbox_settings(
+    config: &crate::sandbox::MergedSandboxConfig,
+    target: &std::path::Path,
+    stage_id: &str,
+) -> Result<()> {
+    crate::sandbox::write_settings(config, target)
+        .with_context(|| format!("Failed to enforce sandbox settings for stage '{stage_id}'"))
+}
+
 /// Trait for stage execution operations
 pub(super) trait StageExecutor: Persistence {
     /// Start ready stages (create worktrees, spawn sessions)
@@ -59,6 +86,11 @@ pub(super) trait StageExecutor: Persistence {
 
 impl StageExecutor for Orchestrator {
     fn start_ready_stages(&mut self) -> Result<usize> {
+        // Privileged completion capabilities are command-scoped and must never
+        // cross into an agent runtime, even if the daemon itself was launched
+        // from a shell that happened to carry them.
+        crate::commands::stage::complete::strip_privileged_env_for_runtime();
+
         let running = self.active_sessions.len();
         let available_slots = self.config.max_parallel_sessions.saturating_sub(running);
 
@@ -139,20 +171,8 @@ impl StageExecutor for Orchestrator {
             return Ok(());
         }
 
-        // Defense-in-depth: refuse to spawn if dependencies aren't truly satisfied,
-        // even if the graph thinks they are. This prevents phantom-merge propagation
-        // where a dep's `merged` flag is set but its commit is not actually in the
-        // target branch. See PLAN-fix-phantom-merge.md Fix 10.
-        //
-        // Per the plan, we do NOT transition the stage to Blocked here — the
-        // dependent hasn't been attempted, and Queued -> Blocked is technically
-        // valid but semantically wrong. Skip silently; the next poll cycle
-        // re-evaluates once the upstream dependency stage is fixed.
-        //
-        // The check is memoized per stage (P-6): the underlying per-dep
-        // `git merge-base --is-ancestor` work only re-runs when a dependency
-        // stage file changes or the recheck interval elapses, so a stuck
-        // dependent does not shell out to git every poll cycle.
+        // Refuse phantom-merge propagation without blocking an unattempted stage.
+        // The cached check avoids repeated git work while dependencies are unchanged.
         let target_branch = crate::git::branch::resolve_target_branch(
             &self.config.base_branch,
             &self.config.repo_root,
@@ -220,15 +240,16 @@ impl StageExecutor for Orchestrator {
 
         // Transition through Queued if currently WaitingForDeps to reduce race window
         if stage.status == StageStatus::WaitingForDeps {
-            stage.try_mark_queued()?;
-            self.save_stage(&stage)?;
+            stage = self.update_stage(stage_id, |current| current.try_mark_queued())?;
         }
 
         // Knowledge stages run in main repo without a worktree - mark executing immediately
         if stage.stage_type == StageType::Knowledge {
-            stage.try_mark_executing()?;
-            stage.begin_attempt(Utc::now());
-            self.save_stage(&stage)?;
+            stage = self.update_stage(stage_id, |current| {
+                current.try_mark_executing()?;
+                current.begin_attempt(Utc::now());
+                Ok(())
+            })?;
             self.graph
                 .mark_executing(stage_id)
                 .context("Failed to mark stage as executing in graph")?;
@@ -240,16 +261,15 @@ impl StageExecutor for Orchestrator {
             if let Err(spawn_err) = self.start_knowledge_stage(stage) {
                 let err_msg = format!("{spawn_err:#}");
                 eprintln!("Knowledge stage '{stage_id}' spawn failed: {err_msg}");
-                if let Ok(mut reloaded) = self.load_stage(stage_id) {
-                    if reloaded.try_mark_blocked().is_ok() {
-                        reloaded.failure_info = Some(FailureInfo {
-                            failure_type: FailureType::InfrastructureError,
-                            detected_at: Utc::now(),
-                            evidence: vec![err_msg],
-                        });
-                        let _ = self.save_stage(&reloaded);
-                        let _ = self.graph.mark_status(stage_id, StageStatus::Blocked);
-                    }
+                if self
+                    .persist_blocked_stage(
+                        stage_id,
+                        FailureType::InfrastructureError,
+                        vec![err_msg],
+                    )
+                    .is_ok()
+                {
+                    let _ = self.graph.mark_status(stage_id, StageStatus::Blocked);
                 }
             }
             return Ok(());
@@ -272,15 +292,6 @@ impl StageExecutor for Orchestrator {
             self.config.base_branch.as_deref(),
         ) {
             Ok(resolved) => resolved,
-            Err(BaseBranchError::MergeConflict(msg)) => {
-                // Mark stage as Blocked — a resolver is needed.
-                // Stage is in Queued state here, can transition directly to Blocked.
-                eprintln!("Stage '{stage_id}' blocked due to merge conflict: {msg}");
-                if stage.try_mark_blocked().is_ok() {
-                    self.save_stage(&stage)?;
-                }
-                return Ok(());
-            }
             Err(BaseBranchError::SchedulingNotReady(msg)) => {
                 // Transient — skip this cycle, retry on the next poll.
                 //
@@ -318,31 +329,29 @@ impl StageExecutor for Orchestrator {
                 let err_msg = format!("{e:#}");
                 eprintln!("Stage '{stage_id}' blocked due to worktree error: {err_msg}");
 
-                // Mark stage as blocked with failure info
-                // Stage is in Queued state here, can transition directly to Blocked
-                if stage.try_mark_blocked().is_ok() {
-                    stage.failure_info = Some(FailureInfo {
-                        failure_type: FailureType::InfrastructureError,
-                        detected_at: Utc::now(),
-                        evidence: vec![err_msg],
-                    });
-                    self.save_stage(&stage)?;
-                }
+                // Stage is Queued here and may transition directly to Blocked.
+                let _ = self.persist_blocked_stage(
+                    stage_id,
+                    FailureType::InfrastructureError,
+                    vec![err_msg],
+                );
                 return Ok(());
             }
         };
 
         // Run before-stage checks if configured (verify pre-conditions in a
         // pristine worktree). Blocks the stage when they fail.
-        if !self.before_stage_gate_passed(&mut stage, &worktree.path, resolved.branch_name())? {
+        if !self.before_stage_gate_passed(&stage, &worktree.path, resolved.branch_name())? {
             return Ok(());
         }
 
         // Worktree created successfully - NOW mark as Executing
         // This ensures we only reach Executing state after infrastructure is ready
-        stage.try_mark_executing()?;
-        stage.begin_attempt(Utc::now());
-        self.save_stage(&stage)?;
+        stage = self.update_stage(stage_id, |current| {
+            current.try_mark_executing()?;
+            current.begin_attempt(Utc::now());
+            Ok(())
+        })?;
         self.graph
             .mark_executing(stage_id)
             .context("Failed to mark stage as executing in graph")?;
@@ -359,20 +368,19 @@ impl StageExecutor for Orchestrator {
         if let Err(e) = crate::sandbox::validate_config(&merged_sandbox) {
             let err_msg = format!("{e:#}");
             eprintln!("Stage '{stage_id}' blocked: invalid sandbox config at spawn: {err_msg}");
-            if stage.try_mark_blocked().is_ok() {
-                stage.failure_info = Some(FailureInfo {
-                    failure_type: FailureType::InfrastructureError,
-                    detected_at: Utc::now(),
-                    evidence: vec![err_msg],
-                });
-                self.save_stage(&stage)?;
-            }
+            let _ = self.persist_blocked_stage(
+                stage_id,
+                FailureType::InfrastructureError,
+                vec![err_msg],
+            );
             return Ok(());
         }
         crate::sandbox::expand_paths(&mut merged_sandbox);
-        if let Err(e) = crate::sandbox::write_settings(&merged_sandbox, &worktree.path) {
-            eprintln!("Warning: Failed to write sandbox settings for stage '{stage_id}': {e}");
-            // Continue anyway - sandbox is optional enhancement
+        if let Err(error) =
+            write_required_sandbox_settings(&merged_sandbox, &worktree.path, stage_id)
+        {
+            self.block_stranded_stage(stage_id, format!("{error:#}"));
+            return Ok(());
         }
 
         // Honor a pending recovery signal (C-5). `loom stage retry --context`
@@ -475,16 +483,15 @@ impl StageExecutor for Orchestrator {
                     // it from the correct base.
                     let branch = git::branch_name_for_stage(stage_id);
                     let _ = git::delete_branch(&branch, true, &self.config.repo_root);
-                    if let Ok(mut reloaded) = self.load_stage(stage_id) {
-                        if reloaded.try_mark_blocked().is_ok() {
-                            reloaded.failure_info = Some(FailureInfo {
-                                failure_type: FailureType::InfrastructureError,
-                                detected_at: Utc::now(),
-                                evidence: vec![err_msg],
-                            });
-                            let _ = self.save_stage(&reloaded);
-                            let _ = self.graph.mark_status(stage_id, StageStatus::Blocked);
-                        }
+                    if self
+                        .persist_blocked_stage(
+                            stage_id,
+                            FailureType::InfrastructureError,
+                            vec![err_msg],
+                        )
+                        .is_ok()
+                    {
+                        let _ = self.graph.mark_status(stage_id, StageStatus::Blocked);
                     }
                     return Ok(());
                 }
@@ -530,16 +537,17 @@ impl StageExecutor for Orchestrator {
             return Ok(());
         }
 
-        // Update the stage with session/worktree/resolved_base. Reload from disk
-        // first and merge only these executor-owned fields, so a concurrent CLI
-        // update (e.g. `loom stage` editing the same file during the slow spawn)
-        // is not clobbered by a stale in-memory copy (O-22). The spawn-error
-        // path already reloads; this mirrors it on the success path.
-        let mut updated_stage = self.load_stage(stage_id).unwrap_or(stage);
-        updated_stage.assign_session(spawned_session.id.clone());
-        updated_stage.set_worktree(Some(worktree.id.clone()));
-        updated_stage.set_resolved_base(Some(resolved.branch_name().to_string()));
-        if let Err(e) = self.save_stage(&updated_stage) {
+        // Merge only executor-owned fields into the fresh record under lock, so
+        // the slow spawn cannot clobber a concurrent CLI update (O-22).
+        let session_id = spawned_session.id.clone();
+        let worktree_id = worktree.id.clone();
+        let resolved_base = resolved.branch_name().to_string();
+        if let Err(e) = self.update_stage(stage_id, |current| {
+            current.assign_session(session_id);
+            current.set_worktree(Some(worktree_id));
+            current.set_resolved_base(Some(resolved_base));
+            Ok(())
+        }) {
             let err_msg = format!("Failed to save stage after spawn for {stage_id}: {e:#}");
             self.block_stranded_stage(stage_id, err_msg);
             return Ok(());
@@ -552,7 +560,7 @@ impl StageExecutor for Orchestrator {
         Ok(())
     }
 
-    fn start_knowledge_stage(&mut self, mut stage: Stage) -> Result<()> {
+    fn start_knowledge_stage(&mut self, stage: Stage) -> Result<()> {
         let stage_id = stage.id.clone();
 
         // Generate and write sandbox settings to main repo
@@ -567,26 +575,18 @@ impl StageExecutor for Orchestrator {
             eprintln!(
                 "Knowledge stage '{stage_id}' blocked: invalid sandbox config at spawn: {err_msg}"
             );
-            if stage.try_mark_blocked().is_ok() {
-                stage.failure_info = Some(FailureInfo {
-                    failure_type: FailureType::InfrastructureError,
-                    detected_at: Utc::now(),
-                    evidence: vec![err_msg],
-                });
-                self.save_stage(&stage)?;
-            }
+            let _ = self.persist_blocked_stage(
+                &stage_id,
+                FailureType::InfrastructureError,
+                vec![err_msg],
+            );
             return Ok(());
         }
         crate::sandbox::expand_paths(&mut merged_sandbox);
         // Knowledge stages share the host's main-repo `.claude/settings.local.json`
         // (the agent runs on the host directly), so the sandbox/permissions settings
         // must be written there.
-        if let Err(e) = crate::sandbox::write_settings(&merged_sandbox, &self.config.repo_root) {
-            eprintln!(
-                "Warning: Failed to write sandbox settings for knowledge stage '{stage_id}': {e}"
-            );
-            // Continue anyway - sandbox is optional enhancement
-        }
+        write_required_sandbox_settings(&merged_sandbox, &self.config.repo_root, &stage_id)?;
 
         let session = Session::new();
 
@@ -680,13 +680,15 @@ impl StageExecutor for Orchestrator {
 
         self.save_session(&spawned_session)?;
 
-        // Update stage with session info (already marked Executing earlier)
-        let mut updated_stage = stage;
-        updated_stage.assign_session(spawned_session.id.clone());
-        // Knowledge stages don't have a worktree
-        updated_stage.set_worktree(None);
-        updated_stage.set_resolved_base(None);
-        self.save_stage(&updated_stage)?;
+        // Knowledge stages don't have a worktree; update only executor-owned
+        // runtime fields on the fresh record.
+        let session_id = spawned_session.id.clone();
+        self.update_stage(&stage_id, |current| {
+            current.assign_session(session_id);
+            current.set_worktree(None);
+            current.set_resolved_base(None);
+            Ok(())
+        })?;
 
         // Add to active sessions but NOT to active_worktrees (no worktree for knowledge stages)
         self.active_sessions.insert(stage_id, spawned_session);
@@ -709,15 +711,13 @@ impl Orchestrator {
     /// transition + persist; failures here are logged, not propagated.
     fn block_stranded_stage(&mut self, stage_id: &str, err_msg: String) {
         eprintln!("Stage '{stage_id}' blocked due to spawn-setup failure: {err_msg}");
-        if let Ok(mut reloaded) = self.load_stage(stage_id) {
-            if reloaded.try_mark_blocked().is_ok() {
-                reloaded.failure_info = Some(FailureInfo {
-                    failure_type: FailureType::InfrastructureError,
-                    detected_at: Utc::now(),
-                    evidence: vec![err_msg],
-                });
-                let _ = self.save_stage(&reloaded);
+        match self.persist_blocked_stage(stage_id, FailureType::InfrastructureError, vec![err_msg])
+        {
+            Ok(()) => {
                 let _ = self.graph.mark_status(stage_id, StageStatus::Blocked);
+            }
+            Err(error) => {
+                eprintln!("Failed to persist Blocked state for '{stage_id}': {error:#}");
             }
         }
     }
@@ -737,7 +737,7 @@ impl Orchestrator {
     /// `Blocked` because a pre-condition did not hold.
     fn before_stage_gate_passed(
         &mut self,
-        stage: &mut Stage,
+        stage: &Stage,
         worktree_path: &std::path::Path,
         base_branch: &str,
     ) -> Result<bool> {
@@ -779,14 +779,11 @@ impl Orchestrator {
                     "Before-stage verification failed for '{stage_id}' - pre-conditions not met"
                 );
 
-                if stage.try_mark_blocked().is_ok() {
-                    stage.failure_info = Some(FailureInfo {
-                        failure_type: FailureType::TestFailure,
-                        detected_at: Utc::now(),
-                        evidence: gaps.iter().map(|g| g.description.clone()).collect(),
-                    });
-                    self.save_stage(stage)?;
-                }
+                let _ = self.persist_blocked_stage(
+                    &stage_id,
+                    FailureType::TestFailure,
+                    gaps.iter().map(|gap| gap.description.clone()).collect(),
+                );
                 Ok(false)
             }
             Ok(_) => {

@@ -3,7 +3,7 @@
 //!
 //! The contract this module enforces is the bridge between an
 //! unreliable string-shaped LLM output and the strict on-disk verdict
-//! record consumed by [`crate::orchestrator::adjudication::mod`].
+//! record consumed by the [`crate::orchestrator::adjudication`] module.
 //! Robustness rules:
 //!
 //! - Unparseable JSON → coerce to `NeedsMoreEvidence` with one question

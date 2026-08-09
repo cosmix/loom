@@ -1,8 +1,7 @@
 //! Wiring verification - connections between components
 
-use anyhow::{bail, Result};
+use anyhow::Result;
 use regex::RegexBuilder;
-use std::fs;
 use std::path::Path;
 
 use super::result::{GapType, VerificationGap};
@@ -40,31 +39,11 @@ pub fn verify_wiring(wiring: &[WiringCheck], working_dir: &Path) -> Result<Vec<V
             continue;
         }
 
-        // Check file size to prevent DoS on large files
-        let metadata = match fs::metadata(&source_path) {
-            Ok(m) => m,
-            Err(e) => {
-                gaps.push(VerificationGap::new(
-                    GapType::WiringBroken,
-                    format!(
-                        "Cannot read wiring source metadata: {} - {}",
-                        check.source, e
-                    ),
-                    "Ensure file exists and is accessible".to_string(),
-                ));
-                continue;
-            }
-        };
-
-        if metadata.len() > 10 * 1024 * 1024 {
-            bail!(
-                "Source file {} exceeds 10MB limit for wiring verification",
-                source_path.display()
-            );
-        }
-
-        // Read file content
-        let content = match fs::read_to_string(&source_path) {
+        let content = match crate::fs::safe_read::read_to_string_bounded(
+            working_dir,
+            Path::new(&check.source),
+            10 * 1024 * 1024,
+        ) {
             Ok(c) => c,
             Err(e) => {
                 gaps.push(VerificationGap::new(
@@ -105,4 +84,27 @@ pub fn verify_wiring(wiring: &[WiringCheck], working_dir: &Path) -> Result<Vec<V
     }
 
     Ok(gaps)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn wiring_verification_rejects_outbound_symlink() {
+        let root = tempfile::tempdir().unwrap();
+        let outside = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(outside.path(), "fn registered() {}").unwrap();
+        std::os::unix::fs::symlink(outside.path(), root.path().join("source.rs")).unwrap();
+        let check = WiringCheck {
+            source: "source.rs".to_string(),
+            pattern: "registered".to_string(),
+            description: "registration".to_string(),
+        };
+
+        let gaps = verify_wiring(&[check], root.path()).unwrap();
+
+        assert_eq!(gaps.len(), 1);
+        assert!(matches!(gaps[0].gap_type, GapType::WiringBroken));
+    }
 }

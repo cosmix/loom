@@ -14,9 +14,7 @@ use crate::parser::frontmatter::extract_frontmatter_raw as canonical_extract_fro
 
 /// YAML frontmatter structure for SKILL.md files
 #[derive(Deserialize, Default)]
-#[allow(dead_code)]
 struct SkillFrontmatter {
-    name: Option<String>,
     description: Option<String>,
     #[serde(default)]
     triggers: Option<Vec<String>>,
@@ -43,6 +41,10 @@ const STOPWORDS: &[&str] = &[
 /// Execute the skill-index command
 pub fn execute() -> Result<()> {
     let home = dirs::home_dir().context("Cannot determine home directory")?;
+    execute_in_home(&home)
+}
+
+fn execute_in_home(home: &Path) -> Result<()> {
     let skills_dir = home.join(".claude/skills");
     let output_dir = home.join(".claude/hooks/loom");
     let output_file = output_dir.join("skill-keywords.json");
@@ -52,14 +54,27 @@ pub fn execute() -> Result<()> {
         return Ok(());
     }
 
-    // Build stopword lookup set
-    let stopwords: HashSet<&str> = STOPWORDS.iter().copied().collect();
+    let (index, skill_count) = build_index(&skills_dir)?;
 
-    // keyword -> set of skill names (BTreeMap for sorted JSON output)
+    fs::create_dir_all(&output_dir)
+        .with_context(|| format!("Failed to create {}", output_dir.display()))?;
+    let json = serde_json::to_string_pretty(&index).context("Failed to serialize index to JSON")?;
+    fs::write(&output_file, &json)
+        .with_context(|| format!("Failed to write {}", output_file.display()))?;
+
+    println!(
+        "Built skill keyword index: {} keywords from {} skills",
+        index.len(),
+        skill_count
+    );
+    Ok(())
+}
+
+fn build_index(skills_dir: &Path) -> Result<(BTreeMap<String, Vec<String>>, usize)> {
+    let stopwords: HashSet<&str> = STOPWORDS.iter().copied().collect();
     let mut index: BTreeMap<String, Vec<String>> = BTreeMap::new();
     let mut skill_count: usize = 0;
-
-    let entries = fs::read_dir(&skills_dir)
+    let entries = fs::read_dir(skills_dir)
         .with_context(|| format!("Failed to read {}", skills_dir.display()))?;
 
     for entry in entries.flatten() {
@@ -78,48 +93,35 @@ pub fn execute() -> Result<()> {
         match parse_skill_triggers(&skill_file) {
             Ok(triggers) => {
                 skill_count += 1;
-                for keyword in triggers {
-                    let normalized = normalize_keyword(&keyword);
-                    if normalized.is_empty() {
-                        continue;
-                    }
-                    // A stopword is dropped unless it *names* this skill —
-                    // e.g. "test" is normally too generic, but it is also
-                    // how a user refers to loom-testing, so we keep it when
-                    // it would boost to a name-match hit at lookup time.
-                    if is_stopword(&normalized, &stopwords)
-                        && !is_skill_name_match(&normalized, &skill_name)
-                    {
-                        continue;
-                    }
-                    let skills = index.entry(normalized).or_default();
-                    if !skills.contains(&skill_name) {
-                        skills.push(skill_name.clone());
-                    }
-                }
+                add_triggers(&mut index, &stopwords, &skill_name, triggers);
             }
             Err(e) => {
                 eprintln!("Warning: Failed to parse {}: {}", skill_file.display(), e);
             }
         }
     }
+    Ok((index, skill_count))
+}
 
-    // Ensure output directory exists
-    fs::create_dir_all(&output_dir)
-        .with_context(|| format!("Failed to create {}", output_dir.display()))?;
-
-    // Serialize and write
-    let json = serde_json::to_string_pretty(&index).context("Failed to serialize index to JSON")?;
-    fs::write(&output_file, &json)
-        .with_context(|| format!("Failed to write {}", output_file.display()))?;
-
-    println!(
-        "Built skill keyword index: {} keywords from {} skills",
-        index.len(),
-        skill_count
-    );
-
-    Ok(())
+fn add_triggers(
+    index: &mut BTreeMap<String, Vec<String>>,
+    stopwords: &HashSet<&str>,
+    skill_name: &str,
+    triggers: Vec<String>,
+) {
+    for keyword in triggers {
+        let normalized = normalize_keyword(&keyword);
+        if normalized.is_empty()
+            || (is_stopword(&normalized, stopwords)
+                && !is_skill_name_match(&normalized, skill_name))
+        {
+            continue;
+        }
+        let skills = index.entry(normalized).or_default();
+        if !skills.iter().any(|skill| skill == skill_name) {
+            skills.push(skill_name.to_string());
+        }
+    }
 }
 
 /// Parse a SKILL.md file and extract trigger keywords from all sources.
@@ -272,7 +274,9 @@ fn normalize_keyword(keyword: &str) -> String {
 /// Strip surrounding quotes from a string
 fn strip_quotes(s: &str) -> String {
     let s = s.trim();
-    if (s.starts_with('"') && s.ends_with('"')) || (s.starts_with('\'') && s.ends_with('\'')) {
+    if s.len() >= 2
+        && ((s.starts_with('"') && s.ends_with('"')) || (s.starts_with('\'') && s.ends_with('\'')))
+    {
         s[1..s.len() - 1].to_string()
     } else {
         s.to_string()
@@ -366,100 +370,5 @@ fn find_sentence_boundary(text: &str) -> usize {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use std::io::Write;
-    use tempfile::NamedTempFile;
-
-    fn write_skill(content: &str) -> NamedTempFile {
-        let mut f = NamedTempFile::new().unwrap();
-        f.write_all(content.as_bytes()).unwrap();
-        f
-    }
-
-    #[test]
-    fn name_match_strips_loom_prefix() {
-        assert!(is_skill_name_match("rust", "loom-rust"));
-        assert!(is_skill_name_match("refactor", "loom-refactoring"));
-        assert!(is_skill_name_match("testing", "loom-testing"));
-        assert!(is_skill_name_match("test", "loom-testing"));
-        assert!(is_skill_name_match("debug", "loom-debugging"));
-        assert!(is_skill_name_match("plan", "loom-plan-writer"));
-        assert!(is_skill_name_match("security", "loom-security-audit"));
-        // Unrelated skill — no match
-        assert!(!is_skill_name_match("rust", "loom-auth"));
-        // Keyword shorter than 4 chars and not an exact match — no match
-        assert!(!is_skill_name_match("cd", "loom-argocd"));
-        assert!(!is_skill_name_match("re", "loom-react"));
-    }
-
-    #[test]
-    fn parses_plain_keywords_field() {
-        let skill = write_skill(concat!(
-            "---\n",
-            "name: loom-feature-flags\n",
-            "description: Feature flag patterns.\n",
-            "keywords: feature flag, feature toggle, LaunchDarkly, A/B test\n",
-            "---\n",
-            "\nBody.\n",
-        ));
-        let triggers = parse_skill_triggers(skill.path()).unwrap();
-        assert!(triggers.iter().any(|t| t == "feature flag"));
-        assert!(triggers.iter().any(|t| t == "feature toggle"));
-        assert!(triggers.iter().any(|t| t == "LaunchDarkly"));
-    }
-
-    #[test]
-    fn keywords_augment_existing_triggers_list() {
-        let skill = write_skill(concat!(
-            "---\n",
-            "name: loom-example\n",
-            "triggers:\n",
-            "  - foo\n",
-            "  - bar\n",
-            "keywords: baz, qux\n",
-            "---\n",
-        ));
-        let triggers = parse_skill_triggers(skill.path()).unwrap();
-        for expected in ["foo", "bar", "baz", "qux"] {
-            assert!(
-                triggers.iter().any(|t| t == expected),
-                "missing {expected}: {triggers:?}"
-            );
-        }
-    }
-
-    #[test]
-    fn description_marker_variants_are_recognized() {
-        // "Triggers for this skill -" is used by loom-logging-observability.
-        let skill = write_skill(concat!(
-            "---\n",
-            "name: loom-logging-observability\n",
-            "description: |\n",
-            "  Comprehensive logging. Triggers for this skill - log, logging, OpenTelemetry, OTEL.\n",
-            "---\n",
-        ));
-        let triggers = parse_skill_triggers(skill.path()).unwrap();
-        for expected in ["log", "logging", "OpenTelemetry", "OTEL"] {
-            assert!(
-                triggers.iter().any(|t| t == expected),
-                "missing {expected}: {triggers:?}"
-            );
-        }
-    }
-
-    #[test]
-    fn is_stopword_respects_name_match_exemption() {
-        let stopwords: HashSet<&str> = STOPWORDS.iter().copied().collect();
-        // "test" is a stopword generally ...
-        assert!(is_stopword("test", &stopwords));
-        // ... but it name-matches loom-testing, so callers should keep it.
-        assert!(is_skill_name_match("test", "loom-testing"));
-        // "debug" name-matches loom-debugging.
-        assert!(is_stopword("debug", &stopwords));
-        assert!(is_skill_name_match("debug", "loom-debugging"));
-        // "build" is a stopword and doesn't identify any specific skill.
-        assert!(is_stopword("build", &stopwords));
-        assert!(!is_skill_name_match("build", "loom-auth"));
-    }
-}
+#[path = "skill_index/tests.rs"]
+mod tests;

@@ -1,8 +1,6 @@
-mod cli;
-
 use anyhow::Result;
 use clap::Parser;
-use cli::{dispatch, Cli};
+use loom::cli::{dispatch, Cli};
 use tracing_subscriber::{fmt, EnvFilter};
 
 fn main() -> Result<()> {

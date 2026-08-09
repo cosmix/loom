@@ -2,10 +2,11 @@
 
 use anyhow::{Context, Result};
 use glob::glob;
-use std::fs;
 use std::path::Path;
 
 use super::result::{GapType, VerificationGap};
+
+const MAX_VERIFICATION_FILE_BYTES: usize = 10 * 1024 * 1024;
 
 /// Patterns that indicate a file is a stub
 const STUB_PATTERNS: &[&str] = &[
@@ -62,27 +63,36 @@ pub fn verify_artifacts(artifacts: &[String], working_dir: &Path) -> Result<Vec<
                 ext_lower == "md" || ext_lower == "mdx" || ext_lower == "markdown"
             });
 
-            if let Ok(content) = fs::read_to_string(&path) {
-                // Check for empty files
-                if content.trim().is_empty() {
-                    gaps.push(VerificationGap::new(
-                        GapType::ArtifactEmpty,
-                        format!("Artifact is empty: {}", path.display()),
-                        "Add implementation to the file".to_string(),
-                    ));
-                    continue;
-                }
+            let relative = path.strip_prefix(working_dir).with_context(|| {
+                format!(
+                    "Artifact match escaped working directory: {}",
+                    path.display()
+                )
+            })?;
+            let bytes = crate::fs::safe_read::read_bounded(
+                working_dir,
+                relative,
+                MAX_VERIFICATION_FILE_BYTES,
+            )?;
+            let content = String::from_utf8_lossy(&bytes);
 
-                // Check for stub patterns (skip for markdown files)
-                for stub in STUB_PATTERNS {
-                    if !is_markdown && content.contains(stub) {
-                        gaps.push(VerificationGap::new(
-                            GapType::ArtifactStub,
-                            format!("Artifact contains stub '{}': {}", stub, path.display()),
-                            format!("Replace '{stub}' with actual implementation"),
-                        ));
-                        break; // One gap per file
-                    }
+            if content.trim().is_empty() {
+                gaps.push(VerificationGap::new(
+                    GapType::ArtifactEmpty,
+                    format!("Artifact is empty: {}", path.display()),
+                    "Add implementation to the file".to_string(),
+                ));
+                continue;
+            }
+
+            for stub in STUB_PATTERNS {
+                if !is_markdown && content.contains(stub) {
+                    gaps.push(VerificationGap::new(
+                        GapType::ArtifactStub,
+                        format!("Artifact contains stub '{}': {}", stub, path.display()),
+                        format!("Replace '{stub}' with actual implementation"),
+                    ));
+                    break;
                 }
             }
         }
@@ -117,7 +127,12 @@ pub fn verify_regression_test(
         return Ok(gaps);
     }
 
-    let content = fs::read_to_string(&file_path).with_context(|| {
+    let content = crate::fs::safe_read::read_to_string_bounded(
+        working_dir,
+        Path::new(&regression_test.file),
+        MAX_VERIFICATION_FILE_BYTES,
+    )
+    .with_context(|| {
         format!(
             "Failed to read regression test file: {}",
             file_path.display()
@@ -225,5 +240,31 @@ mod tests {
         };
         let gaps = verify_regression_test(&rt, dir.path()).unwrap();
         assert!(gaps.is_empty()); // No patterns to check = pass
+    }
+
+    #[test]
+    fn artifact_verification_rejects_outbound_symlink() {
+        let root = TempDir::new().unwrap();
+        let outside = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(outside.path(), "real implementation").unwrap();
+        std::os::unix::fs::symlink(outside.path(), root.path().join("artifact.rs")).unwrap();
+
+        let result = verify_artifacts(&["artifact.rs".to_string()], root.path());
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn regression_verification_rejects_outbound_symlink() {
+        let root = TempDir::new().unwrap();
+        let outside = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(outside.path(), "regression").unwrap();
+        std::os::unix::fs::symlink(outside.path(), root.path().join("test.rs")).unwrap();
+        let requirement = RegressionTest {
+            file: "test.rs".to_string(),
+            must_contain: vec!["regression".to_string()],
+        };
+
+        assert!(verify_regression_test(&requirement, root.path()).is_err());
     }
 }

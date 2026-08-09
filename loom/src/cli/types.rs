@@ -1,5 +1,5 @@
+use crate::validation::clap_id_validator;
 use clap::{Parser, Subcommand};
-use loom::validation::clap_id_validator;
 
 pub use super::types_memory::{KnowledgeCommands, MemoryCommands};
 pub use super::types_stage::{OutputCommands, StageCommands};
@@ -14,6 +14,16 @@ const HELP_TEMPLATE: &str = "
 {usage-heading} {usage}
 
 {all-args}{after-help}";
+
+fn positive_usize(value: &str) -> Result<usize, String> {
+    let parsed = value
+        .parse::<usize>()
+        .map_err(|_| format!("'{value}' is not a valid positive integer"))?;
+    if parsed == 0 {
+        return Err("value must be at least 1".to_string());
+    }
+    Ok(parsed)
+}
 
 #[derive(Parser)]
 #[command(name = "loom")]
@@ -41,6 +51,10 @@ pub enum Commands {
         /// Terminal backend for sessions (native|tmux); skips the interactive prompt
         #[arg(long, value_parser = ["native", "tmux"])]
         backend: Option<String>,
+
+        /// Acknowledge and allow a plan that expands the default sandbox policy
+        #[arg(long)]
+        allow_unsafe_plan: bool,
     },
 
     /// Run stages from a plan (starts orchestrator in background)
@@ -50,7 +64,7 @@ pub enum Commands {
         manual: bool,
 
         /// Maximum number of parallel sessions (default: 4)
-        #[arg(short = 'p', long)]
+        #[arg(short = 'p', long, value_parser = positive_usize)]
         max_parallel: Option<usize>,
 
         /// Run orchestrator in foreground (not recommended)
@@ -58,7 +72,7 @@ pub enum Commands {
         foreground: bool,
 
         /// Watch mode: continuously spawn ready stages until all are terminal
-        #[arg(short, long)]
+        #[arg(short, long, requires = "foreground")]
         watch: bool,
 
         /// Disable auto-merge of completed stages (merge is enabled by default)
@@ -328,11 +342,68 @@ pub enum WorktreeCommands {
 
     /// Remove a specific worktree and branch after merge conflict resolution
     ///
-    /// Use this command after resolving merge conflicts (manually or via Claude Code).
+    /// Use this command after resolving merge conflicts manually or in a resolver session.
     /// It cleans up the worktree and branch WITHOUT attempting another merge.
     Remove {
         /// Stage ID to clean up (alphanumeric, dash, underscore only; max 128 characters)
         #[arg(value_parser = clap_id_validator)]
         stage_id: String,
+
+        /// Allow removal when unmerged work is detected
+        #[arg(long)]
+        force: bool,
+
+        /// Exact confirmation phrase required with --force
+        #[arg(long = "confirm", requires = "force", value_name = "PHRASE")]
+        confirmation: Option<String>,
     },
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn run_rejects_zero_parallelism() {
+        let result = Cli::try_parse_from(["loom", "run", "--max-parallel", "0"]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn watch_requires_foreground_mode() {
+        let result = Cli::try_parse_from(["loom", "run", "--watch"]);
+        assert!(result.is_err());
+        assert!(Cli::try_parse_from(["loom", "run", "--foreground", "--watch"]).is_ok());
+    }
+
+    #[test]
+    fn init_exposes_explicit_unsafe_plan_acknowledgement() {
+        let parsed =
+            Cli::try_parse_from(["loom", "init", "plan.md", "--allow-unsafe-plan"]).unwrap();
+
+        let Commands::Init {
+            allow_unsafe_plan, ..
+        } = parsed.command
+        else {
+            panic!("expected init command");
+        };
+        assert!(allow_unsafe_plan);
+    }
+
+    #[test]
+    fn admin_proof_daemon_stop_is_an_exclusive_mint_mode() {
+        assert!(Cli::try_parse_from(["loom", "stage", "admin-proof", "--daemon-stop"]).is_ok());
+        assert!(
+            Cli::try_parse_from(["loom", "stage", "admin-proof", "stage-a", "--daemon-stop"])
+                .is_err()
+        );
+        assert!(Cli::try_parse_from([
+            "loom",
+            "stage",
+            "admin-proof",
+            "--daemon-stop",
+            "--no-verify"
+        ])
+        .is_err());
+    }
 }

@@ -312,6 +312,7 @@ mod tests {
             id: id.to_string(),
             name: id.to_string(),
             description: None,
+            code_review: None,
             status,
             dependencies: vec![],
             parallel_group: None,

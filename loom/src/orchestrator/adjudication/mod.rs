@@ -14,7 +14,8 @@
 //!   completion messages off the mpsc channel and joins their handles
 //!   so dropped sessions don't leak threads.
 //!
-//! The registry is owned by the [`Orchestrator`] and lives for the
+//! The registry is owned by the
+//! [`Orchestrator`](crate::orchestrator::Orchestrator) and lives for the
 //! entire daemon run. When `ANTHROPIC_API_KEY` is unset the registry
 //! goes into "disabled" mode: workers are never spawned and any
 //! pending disputes route directly to `NeedsHumanReview`.

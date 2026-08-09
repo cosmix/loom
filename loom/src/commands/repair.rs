@@ -23,7 +23,7 @@ use crate::git::{
 };
 use crate::models::stage::StageType;
 use crate::sandbox;
-use crate::verify::transitions::{list_all_stages, load_stage, save_stage};
+use crate::verify::transitions::{list_all_stages, update_stage};
 
 /// Loom-specific skill names referenced in settings.json that may need prefix migration.
 const LOOM_SKILL_NAMES: &[&str] = &[
@@ -850,10 +850,24 @@ fn fix_gitignore_work(repo_root: &Path) -> Result<()> {
 /// Install Claude Code hooks, configure permissions, and rebuild the skill keyword index
 fn fix_hooks(repo_root: &Path) -> Result<()> {
     use crate::fs::permissions::{ensure_loom_permissions, install_loom_hooks};
-    install_loom_hooks()?;
-    ensure_loom_permissions(repo_root)?;
-    rebuild_skill_index()?;
+    fix_hooks_with(
+        repo_root,
+        || install_loom_hooks().map(|_| ()),
+        ensure_loom_permissions,
+        rebuild_skill_index,
+    )?;
     Ok(())
+}
+
+fn fix_hooks_with<I, P, R>(repo_root: &Path, install: I, permissions: P, rebuild: R) -> Result<()>
+where
+    I: FnOnce() -> Result<()>,
+    P: FnOnce(&Path) -> Result<()>,
+    R: FnOnce() -> Result<()>,
+{
+    install()?;
+    permissions(repo_root)?;
+    rebuild()
 }
 
 /// Configure hooks and env in settings.local.json
@@ -865,8 +879,7 @@ fn fix_hooks_local(repo_root: &Path) -> Result<()> {
 
 /// Rebuild the skill keyword index using the built-in skill_index command
 fn rebuild_skill_index() -> Result<()> {
-    super::skill_index::execute().ok();
-    Ok(())
+    super::skill_index::execute()
 }
 
 /// Apply default sandbox settings
@@ -961,14 +974,11 @@ fn fix_phantom_merge(repo_root: &Path, description: &str) -> Result<()> {
         .with_context(|| format!("Cannot parse stage ID from: {description}"))?;
 
     let work_dir = repo_root.join(".work");
-    let mut stage = load_stage(stage_id, &work_dir)
-        .with_context(|| format!("Failed to load stage '{stage_id}' for phantom merge fix"))?;
-
-    stage.merged = false;
-
-    save_stage(&stage, &work_dir).with_context(|| {
-        format!("Failed to save stage '{stage_id}' after reverting merged flag")
-    })?;
+    update_stage(stage_id, &work_dir, |stage| {
+        stage.merged = false;
+        Ok(())
+    })
+    .with_context(|| format!("Failed to save stage '{stage_id}' after reverting merged flag"))?;
 
     Ok(())
 }
@@ -995,31 +1005,4 @@ fn fix_settings_skill_refs() -> Result<()> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn loom_run_cmdline_matches_plain_and_pathed() {
-        assert!(is_loom_run_cmdline("loom run"));
-        assert!(is_loom_run_cmdline("loom run --watch --max-parallel 4"));
-        assert!(is_loom_run_cmdline("/usr/local/bin/loom run"));
-        assert!(is_loom_run_cmdline(
-            "/home/u/.cargo/bin/loom run --no-merge"
-        ));
-    }
-
-    #[test]
-    fn loom_run_cmdline_rejects_non_run_and_unrelated() {
-        // Other loom subcommands are not the daemon.
-        assert!(!is_loom_run_cmdline("loom status"));
-        assert!(!is_loom_run_cmdline("loom stop"));
-        // A bare `loom` with no subcommand.
-        assert!(!is_loom_run_cmdline("loom"));
-        // Unrelated commands that merely mention the words.
-        assert!(!is_loom_run_cmdline("vim loom/src/commands/run/mod.rs"));
-        assert!(!is_loom_run_cmdline("cargo run -- loom"));
-        // A program named like loom but not exactly loom.
-        assert!(!is_loom_run_cmdline("loomx run"));
-        assert!(!is_loom_run_cmdline(""));
-    }
-}
+mod tests;

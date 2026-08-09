@@ -71,22 +71,6 @@ fn test_complete_dynamic_stage_retry() {
 }
 
 #[test]
-fn test_complete_dynamic_stage_verify() {
-    let temp_dir = setup_test_workspace();
-    let root = temp_dir.path();
-
-    let ctx = CompletionContext {
-        cwd: root.to_string_lossy().to_string(),
-        shell: "bash".to_string(),
-        cmdline: "loom stage verify".to_string(),
-        current_word: "".to_string(),
-        prev_word: "verify".to_string(),
-    };
-
-    assert!(complete_dynamic(&ctx).is_ok());
-}
-
-#[test]
 fn test_complete_dynamic_stage_merge() {
     let temp_dir = setup_test_workspace();
     let root = temp_dir.path();

@@ -1,10 +1,10 @@
-use anyhow::Result;
-use loom::commands::{
+use crate::commands::{
     attach, clean, diagnose, graph, handoff, init, knowledge, map, memory, plan, pressure, repair,
     resume, review, run, self_update, sessions, skill_index, stage, status, stop, verify,
     worktree_cmd,
 };
-use loom::completions::{complete_dynamic, generate_completions, CompletionContext, Shell};
+use crate::completions::{complete_dynamic, generate_completions, CompletionContext, Shell};
+use anyhow::Result;
 use std::path::PathBuf;
 use std::str::FromStr;
 
@@ -19,7 +19,13 @@ pub fn dispatch(command: Commands) -> Result<()> {
             plan_path,
             clean,
             backend,
-        } => init::execute(Some(PathBuf::from(plan_path)), clean, backend),
+            allow_unsafe_plan,
+        } => init::execute(
+            Some(PathBuf::from(plan_path)),
+            clean,
+            backend,
+            allow_unsafe_plan,
+        ),
         Commands::Run {
             manual,
             max_parallel,
@@ -32,7 +38,7 @@ pub fn dispatch(command: Commands) -> Result<()> {
             if foreground {
                 run::execute(manual, max_parallel, watch, auto_merge, backend)
             } else {
-                run::execute_background(manual, max_parallel, watch, auto_merge, backend)
+                run::execute_background(manual, max_parallel, auto_merge, backend)
             }
         }
         Commands::Status {
@@ -48,7 +54,11 @@ pub fn dispatch(command: Commands) -> Result<()> {
         Commands::Attach { stage_id } => attach::execute(stage_id),
         Commands::Worktree { command } => match command {
             WorktreeCommands::List => worktree_cmd::list(),
-            WorktreeCommands::Remove { stage_id } => worktree_cmd::remove(stage_id),
+            WorktreeCommands::Remove {
+                stage_id,
+                force,
+                confirmation,
+            } => worktree_cmd::remove(stage_id, force, confirmation),
         },
         Commands::Graph => graph::show(),
         Commands::Handoff {
@@ -64,7 +74,46 @@ pub fn dispatch(command: Commands) -> Result<()> {
                 no_verify,
                 force_unsafe,
                 assume_merged,
-            } => stage::complete(stage_id, session, no_verify, force_unsafe, assume_merged),
+            } => {
+                let admin_proof = if no_verify || force_unsafe || assume_merged {
+                    Some(stage::complete::take_admin_proof_from_env()?)
+                } else {
+                    None
+                };
+                stage::complete(
+                    stage_id,
+                    session,
+                    no_verify,
+                    force_unsafe,
+                    assume_merged,
+                    admin_proof,
+                )
+            }
+            StageCommands::AdminProof {
+                stage_id,
+                daemon_stop,
+                no_verify,
+                force_unsafe,
+                assume_merged,
+            } => {
+                if daemon_stop {
+                    let proof = stage::admin_proof::mint_daemon_stop_proof_from_env()?;
+                    println!("{proof}");
+                    return Ok(());
+                }
+                if !no_verify && !force_unsafe && !assume_merged {
+                    anyhow::bail!("admin-proof requires at least one privileged completion flag");
+                }
+                let stage_id = stage_id.expect("clap requires stage_id without --daemon-stop");
+                let proof = stage::complete::mint_completion_proof_from_env(
+                    &stage_id,
+                    no_verify,
+                    force_unsafe,
+                    assume_merged,
+                )?;
+                println!("{proof}");
+                Ok(())
+            }
             StageCommands::Block { stage_id, reason } => stage::block(stage_id, reason),
             StageCommands::Reset {
                 stage_id,
@@ -82,17 +131,6 @@ pub fn dispatch(command: Commands) -> Result<()> {
                 context,
             } => stage::retry(stage_id, force, context),
             StageCommands::Merge { stage_id, resolved } => stage::merge(stage_id, resolved),
-            StageCommands::Verify {
-                stage_id,
-                no_reload,
-                dry_run,
-            } => {
-                if dry_run {
-                    stage::check_acceptance(stage_id)
-                } else {
-                    stage::verify(stage_id, no_reload)
-                }
-            }
             StageCommands::HumanReview {
                 stage_id,
                 approve,
@@ -206,15 +244,15 @@ pub fn dispatch(command: Commands) -> Result<()> {
             migrate,
         } => {
             if migrate {
-                return loom::completions::install::check_migration();
+                return crate::completions::install::check_migration();
             }
 
             if install {
                 let shell = match shell {
                     Some(s) => Shell::from_str(&s)?,
-                    None => loom::completions::install::detect_shell()?,
+                    None => crate::completions::install::detect_shell()?,
                 };
-                return loom::completions::install::install(shell);
+                return crate::completions::install::install(shell);
             }
 
             let shell = shell.ok_or_else(|| {

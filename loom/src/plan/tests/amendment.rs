@@ -14,7 +14,7 @@ use crate::plan::amendment::{
     verify_plan_versions_consistency, AmendmentField, AmendmentPatch, AmendmentRequest,
 };
 use crate::plan::schema::AcceptanceCriterion;
-use crate::verify::transitions::{load_stage, save_stage};
+use crate::verify::transitions::{load_stage, save_stage, update_stage};
 
 const PLAN_CONTENT: &str = "# PLAN: Amendment Test\n\n\
 Human-readable section with **prose**, lists:\n\
@@ -528,9 +528,6 @@ fn recovery_replays_plan_when_audit_ahead() {
     assert_eq!(read_plan(&env), snap);
 }
 
-// --------------------------------------------------------------------------
-// 14. Recovery — plan swapped, stage file stale
-// --------------------------------------------------------------------------
 #[test]
 fn recovery_replays_stage_when_only_stage_file_is_stale() {
     let env = setup_env();
@@ -546,9 +543,12 @@ fn recovery_replays_stage_when_only_stage_file_is_stale() {
     };
     apply_amendment(&env.plan_path, &env.work_dir, req).unwrap();
 
-    // Roll the stage file back to its ORIGINAL content (simulates a crash
-    // between safe_replace_outside_workdir and save_stage at step 10).
-    save_stage(&make_stage("stage-a"), &env.work_dir).unwrap();
+    // Simulate a crash between the plan swap and stage-file update.
+    update_stage("stage-a", &env.work_dir, |stage| {
+        *stage = make_stage("stage-a");
+        Ok(())
+    })
+    .unwrap();
     let cur = load_stage("stage-a", &env.work_dir).unwrap();
     assert_eq!(cur.acceptance[0].command(), "cargo test");
 

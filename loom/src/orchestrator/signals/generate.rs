@@ -126,15 +126,13 @@ pub fn generate_signal_with_skills(
         }
     }
 
-    // Surface the plan's structured code-review dimensions to integration-verify
-    // agents as an actionable checklist. `code_review` lives only on the plan's
-    // `StageDefinition` (not the runtime `Stage`), so we read it back from the
-    // plan here — the same source the after-stage checks use at completion time.
-    // Gated to integration-verify so the plan is only re-parsed for the (rare)
-    // review-gate spawns, never on every stage spawn.
+    // Surface the runtime stage's structured code-review dimensions to
+    // integration-verify agents as an actionable checklist.
     if matches!(stage.stage_type, StageType::IntegrationVerify) {
-        if let Some(section) = load_code_review_for_stage(work_dir, &stage.id)
-            .and_then(|c| render_review_dimensions(&c))
+        if let Some(section) = stage
+            .code_review
+            .as_ref()
+            .and_then(render_review_dimensions)
         {
             content.push_str(&section);
             if !content.ends_with('\n') {
@@ -144,21 +142,6 @@ pub fn generate_signal_with_skills(
     }
 
     super::helpers::write_signal_file(&session.id, &content, work_dir)
-}
-
-/// Load the `code_review` configuration for `stage_id` from the active plan.
-///
-/// The runtime [`Stage`] model does not carry `code_review` — it lives only on
-/// the plan's `StageDefinition`. We read it back via the canonical plan loader
-/// ([`load_stage_definition_from_plan`](crate::plan::load_stage_definition_from_plan)),
-/// the same helper after-stage checks use at completion time. Returns `None` on
-/// any failure (no plan configured, parse error, stage not found, or no
-/// `code_review` set); a missing review config is never fatal to signal generation.
-fn load_code_review_for_stage(work_dir: &Path, stage_id: &str) -> Option<CodeReviewConfig> {
-    crate::plan::load_stage_definition_from_plan(stage_id, work_dir)
-        .ok()
-        .flatten()
-        .and_then(|s| s.code_review)
 }
 
 /// Render the "## Review Dimensions" section for an integration-verify signal.

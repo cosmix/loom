@@ -1,10 +1,9 @@
 //! Stage state manipulation
-//! Usage: loom stage <id> [complete|block|reset|merge|retry|verify|...]
+//! Usage: `loom stage <id> [complete|block|reset|merge|retry|...]`
 
 pub(crate) mod acceptance_runner;
-mod check_acceptance;
+pub(crate) mod admin_proof;
 pub mod complete;
-mod criteria_runner;
 mod dispute_criteria;
 mod human_review;
 mod knowledge_complete;
@@ -17,13 +16,11 @@ pub(crate) mod recover;
 pub(crate) mod session;
 mod skip_retry;
 mod state;
-mod verify;
 
 #[cfg(test)]
 mod tests;
 
 // Re-export public API
-pub use check_acceptance::check_acceptance;
 pub use complete::complete;
 pub use dispute_criteria::dispute_criteria;
 pub use human_review::human_review;
@@ -33,4 +30,3 @@ pub use output::{
 };
 pub use skip_retry::{retry, skip};
 pub use state::{block, hold, release, reset, resume_from_waiting, waiting};
-pub use verify::verify;

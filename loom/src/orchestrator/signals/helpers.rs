@@ -1,7 +1,7 @@
 //! Shared helpers for signal generation, formatting, and parsing.
 //!
 //! This module consolidates duplicated patterns across the 7 signal types
-//! (standard, merge, base_conflict, merge_conflict, knowledge, recovery, metrics).
+//! (standard, merge, merge-conflict, knowledge, recovery, and metrics).
 
 use anyhow::{Context, Result};
 use std::collections::HashMap;
@@ -35,7 +35,7 @@ pub(super) fn write_signal_file(
 
 /// Format the "## Target" markdown section for conflict-type signals.
 ///
-/// Shared across merge, base_conflict, and merge_conflict signal generators.
+/// Shared across merge and merge-conflict signal generators.
 /// Standard stage signals have a more complex target section (with working_dir,
 /// execution path, etc.) and use their own formatter in `format/sections.rs`.
 pub(super) fn format_target_section(
@@ -62,7 +62,6 @@ pub(super) fn format_target_section(
 ///
 /// The `preserve_intent` parameter controls the wording:
 /// - `"BOTH branches"` for merge and merge_conflict signals
-/// - `"ALL branches"` for base_conflict signals (multiple dependency branches)
 pub(super) fn format_execution_rules_section(preserve_intent: &str) -> String {
     let mut content = String::new();
 
@@ -81,7 +80,7 @@ pub(super) fn format_execution_rules_section(preserve_intent: &str) -> String {
 /// Format the "## Stage Context" section showing stage name and description.
 ///
 /// Returns an empty string if the stage has no description.
-/// Shared across merge and base_conflict signal generators.
+/// Shared across merge signal generators.
 pub(super) fn format_stage_context_section(stage: &Stage) -> String {
     if let Some(desc) = &stage.description {
         format!("## Stage Context\n\n**{}**: {}\n\n", stage.name, desc)
@@ -93,7 +92,7 @@ pub(super) fn format_stage_context_section(stage: &Stage) -> String {
 /// Format the "## Conflicting Files" section as a bullet list of backtick-wrapped paths.
 ///
 /// Shows a fallback message when no files are listed.
-/// Shared across merge, base_conflict, and merge_conflict signal generators.
+/// Shared across merge and merge-conflict signal generators.
 pub(super) fn format_conflicting_files_section(files: &[String]) -> String {
     let mut content = String::new();
 
@@ -142,7 +141,7 @@ pub(super) fn format_knowledge_target_section(
 /// Lines before the first `## ` header are stored under the empty string key.
 ///
 /// Replaces the 3 near-identical section-parsing loops in merge.rs,
-/// base_conflict.rs, and merge_conflict.rs.
+/// and merge_conflict.rs.
 pub(super) fn parse_signal_sections(content: &str) -> HashMap<String, Vec<String>> {
     let mut sections: HashMap<String, Vec<String>> = HashMap::new();
     let mut current_section = String::new();

@@ -136,7 +136,7 @@ pub fn analyze_structure(root: &Path, deep: bool) -> Result<String> {
     let mut structure = Vec::new();
     let max_depth = if deep { 3 } else { 2 };
 
-    structure.push("```".to_string());
+    structure.push("```text".to_string());
     analyze_dir_recursive(root, root, 0, max_depth, &mut structure)?;
     structure.push("```".to_string());
 
@@ -180,8 +180,12 @@ fn analyze_dir_recursive(
     for entry in entries.iter().take(15) {
         let name = entry.file_name().to_string_lossy().to_string();
         let path = entry.path();
+        let file_type = entry.file_type()?;
 
-        if path.is_dir() {
+        if file_type.is_symlink() {
+            continue;
+        }
+        if file_type.is_dir() {
             output.push(format!("{indent}{name}/"));
             analyze_dir_recursive(_base, &path, depth + 1, max_depth, output)?;
         } else if depth == 0 {
@@ -283,7 +287,8 @@ fn count_pattern_in_source(root: &Path, pattern: &str) -> Result<usize> {
     let extensions = ["rs", "ts", "js", "py", "go", "java", "rb"];
 
     fn walk_dir(dir: &Path, pattern: &str, extensions: &[&str], count: &mut usize) -> Result<()> {
-        if !dir.is_dir() {
+        let metadata = fs::symlink_metadata(dir)?;
+        if metadata.file_type().is_symlink() || !metadata.is_dir() {
             return Ok(());
         }
 
@@ -301,8 +306,12 @@ fn count_pattern_in_source(root: &Path, pattern: &str) -> Result<usize> {
             let entry = entry?;
             let path = entry.path();
             let name = entry.file_name().to_string_lossy().to_string();
+            let file_type = entry.file_type()?;
 
-            if path.is_dir() {
+            if file_type.is_symlink() {
+                continue;
+            }
+            if file_type.is_dir() {
                 if !skip_dirs.contains(&name.as_str()) && !name.starts_with('.') {
                     walk_dir(&path, pattern, extensions, count)?;
                 }
@@ -322,48 +331,4 @@ fn count_pattern_in_source(root: &Path, pattern: &str) -> Result<usize> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use std::fs;
-    use tempfile::TempDir;
-
-    #[test]
-    fn test_detect_rust_project() {
-        let temp = TempDir::new().unwrap();
-        fs::write(temp.path().join("Cargo.toml"), "[package]").unwrap();
-
-        let result = detect_project_type(temp.path()).unwrap();
-        assert!(result.contains("Rust"));
-    }
-
-    #[test]
-    fn test_detect_node_project() {
-        let temp = TempDir::new().unwrap();
-        fs::write(temp.path().join("package.json"), "{}").unwrap();
-
-        let result = detect_project_type(temp.path()).unwrap();
-        assert!(result.contains("Node.js"));
-    }
-
-    #[test]
-    fn test_find_entry_points() {
-        let temp = TempDir::new().unwrap();
-        let src = temp.path().join("src");
-        fs::create_dir_all(&src).unwrap();
-        fs::write(src.join("main.rs"), "fn main() {}").unwrap();
-
-        let result = find_entry_points(temp.path(), None).unwrap();
-        assert!(result.contains("main.rs"));
-    }
-
-    #[test]
-    fn test_count_todos() {
-        let temp = TempDir::new().unwrap();
-        let src = temp.path().join("src");
-        fs::create_dir_all(&src).unwrap();
-        fs::write(src.join("lib.rs"), "// TODO: fix this\n// TODO: and this").unwrap();
-
-        let count = count_pattern_in_source(temp.path(), "TODO").unwrap();
-        assert_eq!(count, 2);
-    }
-}
+mod tests;

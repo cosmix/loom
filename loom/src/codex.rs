@@ -79,14 +79,13 @@ fn codex_companion_installed() -> bool {
 /// human-readable reason naming what is missing, for the advisory startup
 /// warning and the stage-signal fallback text - this never signals a hard
 /// failure, only that the codex lanes are unavailable on this machine.
-pub fn codex_lane_status() -> Result<(), String> {
+pub fn codex_lane_status() -> Result<()> {
     if find_codex_path().is_err() {
-        return Err("codex CLI not found in PATH or common install locations".to_string());
+        bail!("codex CLI not found in PATH or common install locations");
     }
     if !codex_companion_installed() {
-        return Err(
+        bail!(
             "codex plugin companion runtime not found under ~/.claude/plugins/cache/openai-codex/"
-                .to_string(),
         );
     }
     Ok(())

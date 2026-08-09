@@ -9,6 +9,7 @@ fn make_stage(id: &str, deps: Vec<&str>, status: StageStatus) -> Stage {
         id: id.to_string(),
         name: id.to_string(),
         description: None,
+        code_review: None,
         status,
         dependencies: deps.into_iter().map(String::from).collect(),
         parallel_group: None,

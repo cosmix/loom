@@ -7,6 +7,7 @@ use tempfile::TempDir;
 // Submodules
 mod tests_commands;
 mod tests_other;
+mod tests_parser;
 mod tests_stage;
 
 pub fn setup_test_workspace() -> TempDir {
@@ -271,6 +272,20 @@ fn test_complete_dynamic_stage_complete() {
     };
 
     assert!(complete_dynamic(&ctx).is_ok());
+}
+
+#[test]
+fn test_removed_stage_verify_has_no_dynamic_route() {
+    let temp_dir = setup_test_workspace();
+    let stage_path = temp_dir.path().join(".work/stages/01-core-architecture.md");
+    fs::write(stage_path, "---\nstatus: executing\n---\n").unwrap();
+
+    let results = complete_after_subcommand(temp_dir.path(), "", "stage", "verify").unwrap();
+
+    assert!(
+        results.is_empty(),
+        "removed stage verify must not suggest IDs"
+    );
 }
 
 #[test]

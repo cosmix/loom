@@ -1,4 +1,8 @@
+#![deny(unsafe_op_in_unsafe_fn)]
+#![deny(clippy::undocumented_unsafe_blocks)]
+
 pub mod claude;
+pub mod cli;
 pub mod codex;
 pub mod commands;
 pub mod completions;

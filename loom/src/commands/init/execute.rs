@@ -14,7 +14,7 @@ use super::cleanup::{
     cleanup_orphaned_sessions, cleanup_work_directory, cleanup_worktrees_directory,
     prune_stale_worktrees, remove_work_directory_on_failure, SessionReapMode,
 };
-use super::plan_setup::initialize_with_plan;
+use super::plan_setup::initialize_with_plan_acknowledgement;
 
 /// RAII guard that cleans up .work directory on drop unless disarmed.
 /// This ensures cleanup happens on ANY failure path, not just plan parsing.
@@ -62,7 +62,12 @@ impl Drop for InitGuard {
 /// * `clean` - If true, clean up stale resources before initialization
 /// * `backend` - Terminal backend for sessions (native|tmux); `None` prompts
 ///   interactively on a TTY, or defaults to native otherwise
-pub fn execute(plan_path: Option<PathBuf>, clean: bool, backend: Option<String>) -> Result<()> {
+pub fn execute(
+    plan_path: Option<PathBuf>,
+    clean: bool,
+    backend: Option<String>,
+    allow_unsafe_plan: bool,
+) -> Result<()> {
     let repo_root = std::env::current_dir()?;
     let repo_bootstrap = crate::git::ensure_repo_ready_for_worktrees(&repo_root)?;
 
@@ -163,7 +168,12 @@ pub fn execute(plan_path: Option<PathBuf>, clean: bool, backend: Option<String>)
 
     if let Some(path) = plan_path {
         let terminal_backend = resolve_backend_choice(backend)?;
-        let stage_count = initialize_with_plan(&work_dir, &path, terminal_backend)?;
+        let stage_count = initialize_with_plan_acknowledgement(
+            &work_dir,
+            &path,
+            terminal_backend,
+            allow_unsafe_plan,
+        )?;
         print_summary(Some(&path), stage_count);
     } else {
         print_summary(None, 0);

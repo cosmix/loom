@@ -136,8 +136,7 @@ fn print_goal_result(result: &GoalBackwardResult, suggest: bool) {
 ///
 /// This helper encapsulates the common pattern used across:
 /// - `loom stage complete` (with verification)
-/// - `loom stage verify` (re-verification after fixes)
-/// - `loom verify` (standalone verification command)
+/// - `loom check` (standalone verification command)
 ///
 /// Returns Ok(result) on successful verification run, Err if plan/stage not found.
 pub fn run_and_verify_stage_goal(

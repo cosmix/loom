@@ -8,7 +8,7 @@ use std::path::Path;
 
 use crate::git::worktree::find_repo_root_from_cwd;
 use crate::models::stage::StageStatus;
-use crate::verify::transitions::{load_stage, save_stage};
+use crate::verify::transitions::{load_stage, update_stage};
 
 /// Handle human review response for a stage.
 ///
@@ -22,7 +22,7 @@ pub fn human_review(
 ) -> Result<()> {
     let work_dir = Path::new(".work");
 
-    let mut stage = load_stage(&stage_id, work_dir)?;
+    let stage = load_stage(&stage_id, work_dir)?;
 
     // If no action flag is provided, show current status
     if !approve && !force_complete && reject_reason.is_none() {
@@ -39,11 +39,11 @@ pub fn human_review(
     }
 
     if approve {
-        handle_approve(&mut stage, &stage_id, work_dir)
+        handle_approve(&stage_id, work_dir)
     } else if force_complete {
-        handle_force_complete(&mut stage, &stage_id, work_dir)
+        handle_force_complete(&stage_id, work_dir)
     } else if let Some(reason) = reject_reason {
-        handle_reject(&mut stage, &stage_id, &reason, work_dir)
+        handle_reject(&stage_id, &reason, work_dir)
     } else {
         unreachable!()
     }
@@ -78,14 +78,12 @@ fn show_review_status(stage_id: &str, stage: &crate::models::stage::Stage) -> Re
 }
 
 /// Approve the review: resume execution with fresh fix attempts.
-fn handle_approve(
-    stage: &mut crate::models::stage::Stage,
-    stage_id: &str,
-    work_dir: &Path,
-) -> Result<()> {
-    stage.try_approve_review()?;
-    stage.fix_attempts = 0;
-    save_stage(stage, work_dir)?;
+fn handle_approve(stage_id: &str, work_dir: &Path) -> Result<()> {
+    update_stage(stage_id, work_dir, |stage| {
+        stage.try_approve_review()?;
+        stage.fix_attempts = 0;
+        Ok(())
+    })?;
 
     println!("Stage '{stage_id}' approved. Agent can continue with fresh fix attempts.");
 
@@ -98,11 +96,7 @@ fn handle_approve(
 /// occurs, the stage can move to MergeConflict/MergeBlocked via the valid
 /// Executing→MergeConflict/MergeBlocked edges instead of the illegal
 /// Completed→MergeConflict path.
-fn handle_force_complete(
-    stage: &mut crate::models::stage::Stage,
-    stage_id: &str,
-    work_dir: &Path,
-) -> Result<()> {
+fn handle_force_complete(stage_id: &str, work_dir: &Path) -> Result<()> {
     eprintln!(
         "WARNING: Force-completing stage '{stage_id}' without acceptance criteria verification."
     );
@@ -110,7 +104,7 @@ fn handle_force_complete(
     // Transition to Executing first so all merge-outcome transitions are legal:
     //   Executing → MergeConflict | MergeBlocked | Completed
     // complete_with_merge handles Completed via try_complete(None) internally.
-    stage.try_approve_review()?;
+    let mut stage = update_stage(stage_id, work_dir, |stage| stage.try_approve_review())?;
 
     let cwd = std::env::current_dir().context("Failed to get current directory")?;
     let repo_root = find_repo_root_from_cwd(&cwd).unwrap_or_else(|| cwd.clone());
@@ -118,30 +112,22 @@ fn handle_force_complete(
     // Attempt progressive merge + completion. On Success, complete_with_merge
     // transitions Executing → Completed and triggers dependents. On
     // Conflict/Blocked it transitions to the appropriate merge state and saves.
-    match super::progressive_complete::complete_with_merge(stage, &repo_root, work_dir) {
-        Ok(_) => {
-            println!("Stage '{stage_id}' force-completed and merged successfully.");
-        }
-        Err(e) => {
-            // complete_with_merge bails on Conflict/Blocked after saving the stage
-            // in the appropriate terminal state — the session should exit.
-            println!("Stage '{stage_id}' force-complete: merge encountered an issue — {e}");
-        }
-    }
+    // Conflict and blocked outcomes are persisted by `complete_with_merge`, but
+    // remain command failures so callers and automation cannot mistake them for
+    // a successful force-completion.
+    super::progressive_complete::complete_with_merge(&mut stage, &repo_root, work_dir)?;
+    println!("Stage '{stage_id}' force-completed and merged successfully.");
 
     Ok(())
 }
 
 /// Reject the review: block the stage with a reason.
-fn handle_reject(
-    stage: &mut crate::models::stage::Stage,
-    stage_id: &str,
-    reason: &str,
-    work_dir: &Path,
-) -> Result<()> {
-    stage.try_reject_review(reason.to_string())?;
-    stage.close_reason = Some(reason.to_string());
-    save_stage(stage, work_dir)?;
+fn handle_reject(stage_id: &str, reason: &str, work_dir: &Path) -> Result<()> {
+    update_stage(stage_id, work_dir, |stage| {
+        stage.try_reject_review(reason.to_string())?;
+        stage.close_reason = Some(reason.to_string());
+        Ok(())
+    })?;
 
     println!("Stage '{stage_id}' rejected and blocked.");
     println!("Reason: {reason}");

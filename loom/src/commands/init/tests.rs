@@ -1,7 +1,7 @@
 //! Tests for loom init command.
 
 use super::cleanup::{cleanup_work_directory, prune_stale_worktrees};
-use super::plan_setup::{create_stage_from_definition, initialize_with_plan};
+use super::plan_setup::{create_stage_from_definition, initialize_with_plan_acknowledgement};
 use crate::fs::work_dir::WorkDir;
 use crate::models::session::SessionBackendKind;
 use crate::models::stage::{
@@ -176,6 +176,7 @@ fn test_serialize_stage_to_markdown_minimal() {
         id: "test-stage".to_string(),
         name: "Test Stage".to_string(),
         description: None,
+        code_review: None,
         status: StageStatus::Queued,
         dependencies: vec![],
         parallel_group: None,
@@ -249,6 +250,7 @@ fn test_serialize_stage_to_markdown_with_all_fields() {
         id: "full-stage".to_string(),
         name: "Full Stage".to_string(),
         description: Some("Detailed description".to_string()),
+        code_review: None,
         status: StageStatus::Executing,
         dependencies: vec!["dep1".to_string(), "dep2".to_string()],
         parallel_group: Some("group1".to_string()),
@@ -333,7 +335,12 @@ fn test_initialize_with_plan_nonexistent_file() {
 
     let nonexistent_path = temp_dir.path().join("nonexistent.md");
 
-    let result = initialize_with_plan(&work_dir, &nonexistent_path, SessionBackendKind::Native);
+    let result = initialize_with_plan_acknowledgement(
+        &work_dir,
+        &nonexistent_path,
+        SessionBackendKind::Native,
+        false,
+    );
 
     assert!(result.is_err());
     assert!(result.unwrap_err().to_string().contains("does not exist"));
@@ -379,7 +386,12 @@ fn test_initialize_with_plan_creates_config() {
 
     let plan_path = create_test_plan(temp_dir.path(), vec![stage_def]);
 
-    let result = initialize_with_plan(&work_dir, &plan_path, SessionBackendKind::Native);
+    let result = initialize_with_plan_acknowledgement(
+        &work_dir,
+        &plan_path,
+        SessionBackendKind::Native,
+        false,
+    );
 
     assert!(result.is_ok());
 
@@ -463,7 +475,12 @@ fn test_initialize_with_plan_creates_stage_files() {
 
     let plan_path = create_test_plan(temp_dir.path(), stages);
 
-    let result = initialize_with_plan(&work_dir, &plan_path, SessionBackendKind::Native);
+    let result = initialize_with_plan_acknowledgement(
+        &work_dir,
+        &plan_path,
+        SessionBackendKind::Native,
+        false,
+    );
 
     assert!(result.is_ok());
 
@@ -520,7 +537,12 @@ fn test_initialize_with_plan_invalid_yaml() {
     )
     .unwrap();
 
-    let result = initialize_with_plan(&work_dir, &invalid_plan, SessionBackendKind::Native);
+    let result = initialize_with_plan_acknowledgement(
+        &work_dir,
+        &invalid_plan,
+        SessionBackendKind::Native,
+        false,
+    );
 
     assert!(result.is_err());
     assert!(result.unwrap_err().to_string().contains("parse"));
@@ -560,13 +582,6 @@ fn test_cleanup_orphaned_sessions_reaps_live_only_in_clean_mode() {
     use crate::fs::session_files::session_to_markdown;
     use crate::models::session::Session;
 
-    // Points `TMUX_TMPDIR` at an isolated directory for the duration of the
-    // test and restores it on drop, mirroring
-    // `orchestrator::terminal::tmux::socket`'s own test guard. That guard is
-    // `pub(crate)`, but its parent module (`tmux::socket`) is private and
-    // re-exports only the socket API, so the guard is unreachable from here —
-    // hence a copy rather than an import. Widening `mod socket` for a
-    // test-only helper would be the wrong trade.
     struct TmuxTmpDirGuard {
         original: Option<std::ffi::OsString>,
     }
@@ -588,8 +603,7 @@ fn test_cleanup_orphaned_sessions_reaps_live_only_in_clean_mode() {
 
     let tmux_tmpdir = TempDir::new().unwrap();
     let _guard = TmuxTmpDirGuard::set(tmux_tmpdir.path());
-    // Mirrors `orchestrator::terminal::tmux::socket::loom_socket_dir()`:
-    // `$TMUX_TMPDIR/tmux-<uid>`.
+    // SAFETY: `getuid` has no preconditions and cannot fail.
     let uid = unsafe { libc::getuid() };
     let socket_dir = tmux_tmpdir.path().join(format!("tmux-{uid}"));
     fs::create_dir_all(&socket_dir).unwrap();
@@ -598,25 +612,27 @@ fn test_cleanup_orphaned_sessions_reaps_live_only_in_clean_mode() {
     let sessions_dir = repo_root.path().join(".work").join("sessions");
     fs::create_dir_all(&sessions_dir).unwrap();
 
-    // Attributed + LIVE session: pid is this test process, which is
-    // guaranteed to be alive for the duration of the test.
     let mut live_session = Session::new();
     live_session.id = "session-livecase00".to_string();
+    live_session.assign_to_stage("stage-livecase00".to_string());
     live_session.pid = Some(std::process::id());
     fs::write(
         sessions_dir.join(format!("{}.md", live_session.id)),
         session_to_markdown(&live_session),
     )
     .unwrap();
+    crate::orchestrator::terminal::native::write_test_pid_identity(
+        &repo_root.path().join(".work"),
+        &live_session,
+        std::process::id(),
+    )
+    .unwrap();
     let live_socket = socket_dir.join(format!("loom-{}", live_session.id));
     fs::write(&live_socket, "").unwrap();
 
-    // Unattributed socket: no session file anywhere claims this id.
     let unattributed_socket = socket_dir.join("loom-session-strangercase0");
     fs::write(&unattributed_socket, "").unwrap();
 
-    // Normal mode: a live attributed session must survive; the unattributed
-    // socket is always left alone.
     cleanup_orphaned_sessions(repo_root.path(), SessionReapMode::OrphansOnly).unwrap();
     assert!(
         live_socket.exists(),
@@ -627,9 +643,6 @@ fn test_cleanup_orphaned_sessions_reaps_live_only_in_clean_mode() {
         "an unattributed socket must never be touched"
     );
 
-    // Clean mode: the live session is reaped because `.work/` (and thus
-    // attribution) is about to be destroyed; the unattributed socket is
-    // still left alone.
     cleanup_orphaned_sessions(repo_root.path(), SessionReapMode::IncludeLiveBeforeClean).unwrap();
     assert!(
         !live_socket.exists(),

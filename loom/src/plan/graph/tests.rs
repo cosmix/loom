@@ -273,6 +273,26 @@ fn test_mark_queued_accepts_completed_and_merged_dependency() {
 }
 
 #[test]
+fn ready_stages_have_stable_depth_then_id_order() {
+    let stages = vec![
+        make_stage("z-root", vec![], None),
+        make_stage("b-root", vec![], None),
+        make_stage("a-child", vec!["z-root"], None),
+    ];
+    let mut graph = ExecutionGraph::build(stages).unwrap();
+    for id in ["z-root", "b-root", "a-child"] {
+        graph.nodes.get_mut(id).unwrap().status = StageStatus::Queued;
+    }
+
+    let ids: Vec<&str> = graph
+        .ready_stages()
+        .into_iter()
+        .map(|stage| stage.id.as_str())
+        .collect();
+    assert_eq!(ids, ["b-root", "z-root", "a-child"]);
+}
+
+#[test]
 fn test_leaf_stages_all_independent() {
     // All independent stages (no dependencies) - all are leaves
     let stages = vec![

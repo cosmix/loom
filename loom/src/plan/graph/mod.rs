@@ -118,10 +118,26 @@ impl ExecutionGraph {
 
     /// Get all stages that are ready to execute
     pub fn ready_stages(&self) -> Vec<&StageNode> {
-        self.nodes
+        let nodes: Vec<&StageNode> = self.nodes.values().collect();
+        let levels = levels::compute_all_levels(
+            &nodes,
+            |node| node.id.as_str(),
+            |node| node.dependencies.as_slice(),
+        );
+        let mut ready: Vec<&StageNode> = self
+            .nodes
             .values()
             .filter(|n| n.status == StageStatus::Queued)
-            .collect()
+            .collect();
+        ready.sort_by(|left, right| {
+            levels
+                .get(&left.id)
+                .copied()
+                .unwrap_or(usize::MAX)
+                .cmp(&levels.get(&right.id).copied().unwrap_or(usize::MAX))
+                .then_with(|| left.id.cmp(&right.id))
+        });
+        ready
     }
 
     /// Get stages in a specific parallel group
@@ -219,7 +235,7 @@ impl ExecutionGraph {
     /// Used to reset orphaned/blocked stages back to queued state.
     /// Only succeeds if all dependencies are completed AND merged.
     ///
-    /// The `merged` requirement matches [`scheduling::update_ready_status`]
+    /// The `merged` requirement matches `scheduling::update_ready_status`
     /// exactly, and must stay matched. When it did not, a stage file that said
     /// `Queued` (written out-of-process by `loom stage complete`'s
     /// `trigger_dependents`) could push a node into `Queued` here while a

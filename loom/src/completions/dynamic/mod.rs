@@ -15,6 +15,7 @@ mod stages;
 mod tests;
 
 use anyhow::Result;
+use clap::{Arg, Command, CommandFactory};
 use std::path::Path;
 
 pub use commands::{
@@ -62,7 +63,8 @@ impl CompletionContext {
 
 /// Parse the command line into words, stripping the leading "loom" if present.
 fn parse_cmdline_words(cmdline: &str) -> Vec<String> {
-    let words: Vec<String> = cmdline.split_whitespace().map(String::from).collect();
+    let words = shell_words::split(cmdline)
+        .unwrap_or_else(|_| cmdline.split_whitespace().map(String::from).collect());
     if words.first().map(|w| w.as_str()) == Some("loom") {
         words[1..].to_vec()
     } else {
@@ -70,15 +72,71 @@ fn parse_cmdline_words(cmdline: &str) -> Vec<String> {
     }
 }
 
-/// Extract the command path (non-flag words) from parsed words,
-/// excluding the current word being completed.
-fn extract_command_path<'a>(words: &'a [String], current_word: &str) -> Vec<&'a str> {
-    words
-        .iter()
-        .filter(|w| !w.starts_with('-'))
-        .filter(|w| w.as_str() != current_word || current_word.is_empty())
-        .map(|w| w.as_str())
-        .collect()
+fn argument_for_long<'a>(command: &'a Command, name: &str) -> Option<&'a Arg> {
+    command
+        .get_arguments()
+        .find(|argument| argument.get_long() == Some(name))
+}
+
+fn argument_for_short(command: &Command, name: char) -> Option<&Arg> {
+    command
+        .get_arguments()
+        .find(|argument| argument.get_short() == Some(name))
+}
+
+fn option_consumes_next(argument: Option<&Arg>) -> bool {
+    argument.is_some_and(|argument| argument.get_action().takes_values())
+}
+
+fn matching_subcommand<'a>(command: &'a Command, word: &str) -> Option<&'a Command> {
+    command.get_subcommands().find(|subcommand| {
+        subcommand.get_name() == word || subcommand.get_all_aliases().any(|alias| alias == word)
+    })
+}
+
+/// Extract only actual Clap subcommands, skipping positional arguments and
+/// values consumed by options. The current partial word is excluded once, at
+/// the end, instead of removing every equal token.
+fn extract_command_path(words: &[String], current_word: &str) -> Vec<String> {
+    let mut complete_words = words;
+    if !current_word.is_empty() && words.last().map(String::as_str) == Some(current_word) {
+        complete_words = &words[..words.len() - 1];
+    }
+
+    let root = crate::cli::Cli::command();
+    let mut command = &root;
+    let mut path = Vec::new();
+    let mut consume_value = false;
+
+    for word in complete_words {
+        if consume_value {
+            consume_value = false;
+            continue;
+        }
+        if word == "--" {
+            break;
+        }
+        if let Some(long) = word.strip_prefix("--") {
+            let (name, inline_value) = long
+                .split_once('=')
+                .map_or((long, false), |(name, _)| (name, true));
+            consume_value = !inline_value && option_consumes_next(argument_for_long(command, name));
+            continue;
+        }
+        if let Some(shorts) = word.strip_prefix('-').filter(|shorts| !shorts.is_empty()) {
+            if let Some(short) = shorts.chars().next() {
+                consume_value = shorts.len() == short.len_utf8()
+                    && option_consumes_next(argument_for_short(command, short));
+            }
+            continue;
+        }
+        if let Some(subcommand) = matching_subcommand(command, word) {
+            path.push(subcommand.get_name().to_string());
+            command = subcommand;
+        }
+    }
+
+    path
 }
 
 /// Main entry point for dynamic completions.
@@ -88,7 +146,8 @@ pub fn complete_dynamic(ctx: &CompletionContext) -> Result<()> {
     let cwd = Path::new(&ctx.cwd);
     let prefix = &ctx.current_word;
     let words = parse_cmdline_words(&ctx.cmdline);
-    let cmd_path = extract_command_path(&words, prefix);
+    let command_path = extract_command_path(&words, prefix);
+    let cmd_path: Vec<&str> = command_path.iter().map(String::as_str).collect();
 
     let completions = route_completion(cwd, prefix, &ctx.prev_word, &cmd_path, &ctx.cmdline)?;
 
@@ -211,9 +270,6 @@ fn complete_after_subcommand(
                 "needs-handoff",
             ],
         ),
-        ("stage", "verify") => {
-            complete_stage_ids_filtered(cwd, prefix, &["completed-with-failures", "executing"])
-        }
         ("stage", "human-review" | "dispute-criteria") => complete_stage_ids(cwd, prefix),
         ("stage", "block" | "hold" | "release" | "skip" | "waiting" | "resume") => {
             complete_stage_ids(cwd, prefix)

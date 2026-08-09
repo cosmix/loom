@@ -103,6 +103,7 @@ pub fn stage_info_to_stage(info: &StageInfo) -> Stage {
         id: info.id.clone(),
         name: info.name.clone(),
         description: None,
+        code_review: None,
         status: info.status.clone(),
         dependencies: info.dependencies.clone(),
         parallel_group: None,

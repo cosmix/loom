@@ -217,11 +217,7 @@ fn codex_forward_sentinel_agrees_across_surfaces() {
             "agents/loom-codex-forwarder.md must exist - the signal doctrine \
              spawns codex work by that agent type",
         );
-    for needle in [
-        CODEX_FORWARD_SENTINEL,
-        "codex-companion.mjs",
-        "LOOM-CODEX-EVIDENCE",
-    ] {
+    for needle in [CODEX_FORWARD_SENTINEL, "codex-forward.sh"] {
         assert!(
             forwarder.contains(needle),
             "agents/loom-codex-forwarder.md must mention {needle:?} - the \

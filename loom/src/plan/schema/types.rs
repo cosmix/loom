@@ -10,6 +10,7 @@ pub use crate::models::stage::PermissionMode;
 
 /// Plan-level sandbox configuration (defaults for all stages)
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct SandboxConfig {
     /// Whether sandboxing is enabled (default: true)
     #[serde(default = "default_sandbox_enabled")]
@@ -94,13 +95,14 @@ fn default_auto_allow() -> bool {
 }
 
 fn default_excluded_commands() -> Vec<String> {
-    vec!["loom".to_string(), "git".to_string()]
+    Vec::new()
 }
 
 /// Configuration for structured code review in integration-verify stages.
 ///
 /// Declares review dimensions that integration-verify agents must address.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct CodeReviewConfig {
     /// Review dimensions to cover (e.g., "security", "architecture", "testing", "wiring")
     #[serde(default)]
@@ -128,12 +130,14 @@ pub use crate::models::stage::ExecutionMode;
 
 /// Root structure of the loom metadata block
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct LoomMetadata {
     pub loom: LoomConfig,
 }
 
 /// Main loom configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct LoomConfig {
     pub version: u32,
     #[serde(default)]
@@ -158,6 +162,7 @@ pub struct LoomConfig {
 /// once `amendments_applied >= max_amendments_per_stage`, further
 /// amendments are rejected by [`crate::plan::amendment::apply_amendment`].
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub struct AdjudicationConfig {
     /// Absolute cap on amendments per stage. Default 3.
     #[serde(default = "default_max_amendments_per_stage")]
@@ -178,6 +183,7 @@ fn default_max_amendments_per_stage() -> u32 {
 
 /// Stage definition from plan metadata
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct StageDefinition {
     pub id: String,
     pub name: String,
@@ -356,6 +362,7 @@ pub enum ChangeImpactPolicy {
 ///
 /// Compares before/after states to detect unintended changes.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ChangeImpactConfig {
     /// Command to generate baseline (run before changes)
     pub baseline_command: String,

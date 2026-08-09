@@ -1,8 +1,8 @@
 //! Memory and knowledge CLI command types
 
+use crate::fs::knowledge::{DEFAULT_MAX_TIER1_LINES, DEFAULT_MAX_TOPIC_LINES};
+use crate::validation::{clap_id_validator, clap_knowledge_content_validator};
 use clap::Subcommand;
-use loom::fs::knowledge::{DEFAULT_MAX_TIER1_LINES, DEFAULT_MAX_TOPIC_LINES};
-use loom::validation::{clap_id_validator, clap_knowledge_content_validator};
 
 #[derive(Subcommand)]
 pub enum KnowledgeCommands {
