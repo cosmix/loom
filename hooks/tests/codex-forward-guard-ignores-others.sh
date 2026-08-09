@@ -32,15 +32,15 @@ if [[ $CODE -ne 0 ]]; then
     exit 1
 fi
 
-# No transcript_path in the payload: fail open
+# No classification metadata in the payload: fail closed
 INPUT='{"tool_name":"Edit","tool_input":{"file_path":"/tmp/x.rs"}}'
 set +e
 echo "$INPUT" | bash "$HOOK" 2>/dev/null
 CODE=$?
 set -e
-if [[ $CODE -eq 0 ]]; then
+if [[ $CODE -eq 2 ]]; then
     echo "PASS"
 else
-    echo "FAIL: expected exit 0 with no transcript_path, got exit $CODE"
+    echo "FAIL: expected exit 2 with no agent_type or transcript_path, got exit $CODE"
     exit 1
 fi

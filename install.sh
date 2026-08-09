@@ -230,6 +230,8 @@ install_hooks_remote() {
 		"plans-path-guard.sh"
 		"no-preexisting-failures.sh"
 		"codex-forward-guard.sh"
+		"codex-forward.sh"
+		"loom-control-complete.sh"
 	)
 
 	for hook in "${all_hooks[@]}"; do
@@ -419,6 +421,8 @@ install_hooks() {
 		"plans-path-guard.sh"
 		"no-preexisting-failures.sh"
 		"codex-forward-guard.sh"
+		"codex-forward.sh"
+		"loom-control-complete.sh"
 	)
 
 	if [[ -d "$SCRIPT_DIR/hooks" ]]; then

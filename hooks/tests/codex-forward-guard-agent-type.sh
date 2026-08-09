@@ -5,7 +5,7 @@ HOOK="$(dirname "$0")/../codex-forward-guard.sh"
 # agent_type identifies the forwarder even with no transcript_path at all
 INPUT='{"tool_name":"Edit","tool_input":{"file_path":"/tmp/x.rs"},"agent_type":"loom-codex-forwarder"}'
 set +e
-echo "$INPUT" | bash "$HOOK" 2>/dev/null
+echo "$INPUT" | HOME=/home/u bash "$HOOK" 2>/dev/null
 CODE=$?
 set -e
 if [[ $CODE -ne 2 ]]; then
@@ -16,7 +16,7 @@ fi
 # The plugin wrapper is pinned too - a direct spawn must still forward
 INPUT='{"tool_name":"Bash","tool_input":{"command":"cargo check --lib"},"agent_type":"codex:codex-rescue"}'
 set +e
-echo "$INPUT" | bash "$HOOK" 2>/dev/null
+echo "$INPUT" | HOME=/home/u bash "$HOOK" 2>/dev/null
 CODE=$?
 set -e
 if [[ $CODE -ne 2 ]]; then
@@ -25,9 +25,9 @@ if [[ $CODE -ne 2 ]]; then
 fi
 
 # The companion call itself passes the primary gate
-INPUT='{"tool_name":"Bash","tool_input":{"command":"node /x/scripts/codex-companion.mjs task hello --write"},"agent_type":"codex:codex-rescue"}'
+INPUT='{"tool_name":"Bash","tool_input":{"command":"~/.claude/hooks/loom/codex-forward.sh task hello --model gpt-5.6-terra --effort xhigh --write"},"agent_type":"codex:codex-rescue"}'
 set +e
-echo "$INPUT" | bash "$HOOK" 2>/dev/null
+echo "$INPUT" | HOME=/home/u bash "$HOOK" 2>/dev/null
 CODE=$?
 set -e
 if [[ $CODE -ne 0 ]]; then

@@ -1,50 +1,20 @@
 #!/usr/bin/env bash
-# codex-forward-guard.sh - PreToolUse hook pinning codex forwarders to forwarding
+# codex-forward-guard.sh - pin codex forwarding shims to one companion call
 #
-# The codex lane spawns a wrapper subagent (loom-codex-forwarder) whose ONLY job
-# is one Bash call handing the task to codex-companion.mjs. A wrapper with a
-# full toolset can instead implement the task itself - observed 2026-08-07: a
-# wrapper received a codex prompt and made 26 Edit calls directly, silently
-# replacing the gpt-5.6-luna lane with unreviewed sonnet output. Two gaps made
-# that possible: PLUGIN agents' `tools:` frontmatter is ignored BY DESIGN
-# (code.claude.com/docs/en/sub-agents#available-tools), so the plugin wrapper
-# ran with a full toolset; and `loom_is_subagent` (process-tree based) returns
-# false for in-process subagents, so the existing guards never engaged. The
-# loom-owned forwarder's `tools: Bash` IS hard-enforced (user-scope agent);
-# this hook backstops that against a Bash-shaped escape (sed -i, tee, git)
-# and pins a direct plugin spawn, which has no tool restriction at all.
-#
-# DETECTION, two layers, payload-based not process-based:
-#   1. PRIMARY - agent_type. When a hook fires inside a subagent the payload
-#      carries `agent_type` (and `agent_id`) per the hooks documentation.
-#      "loom-codex-forwarder" and the plugin's "codex:codex-rescue" are both
-#      forwarding shims - enforce for either, so even a direct plugin spawn
-#      (which doctrine forbids) is still pinned to forwarding.
-#   2. FALLBACK - sentinel. On harness builds that do not set agent_type, a
-#      transcript_path matching */subagents/agent-*.jsonl whose opening bytes
-#      carry the LOOM-CODEX-FORWARD-ONLY sentinel identifies a codex-lane
-#      subagent (signal doctrine puts the sentinel on the FIRST LINE of every
-#      codex prompt and forbids it in any other lane's prompt). A main
-#      session's transcript never matches the path shape, so the sentinel
-#      embedded in the orchestrator's own Agent tool_use cannot self-block.
-# The sentinel literal must agree with CODEX_FORWARD_SENTINEL in
-# loom/src/codex.rs - tests_doctrine.rs pins the two together.
-#
-# FAIL-OPEN by design: no agent_type, no transcript_path, an unreadable file,
-# or a missing sentinel all allow the call. On a harness exposing neither
-# field this hook is a no-op and the doctrinal layers (agent definition,
-# signal prose, orchestrator evidence check) still apply - it only ever
-# raises the cost, mirroring subagent-verify-guard's philosophy.
+# A recognized forwarder may make only a direct invocation of Loom's installed
+# argv-aware forwarding wrapper. The command is accepted only when its parsed
+# argument shape is exact and it contains no unquoted shell operators.
+# Missing classification metadata is rejected rather than silently disabling
+# the policy.
 #
 # Input: JSON from stdin - {"tool_name": ..., "tool_input": ...,
 #        "agent_type": ..., "transcript_path": ...}
-# Exit codes: 0 = allow, 2 = block with guidance on stderr
+# Exit codes: 0 = allow, 2 = block
 
 set -euo pipefail
 
 source "$(dirname "$0")/_common.sh"
 
-# Read stdin under gtimeout (macOS+coreutils), timeout (Linux), or bare cat
 if command -v gtimeout &>/dev/null; then
 	INPUT_JSON=$(gtimeout 1 cat 2>/dev/null || true)
 elif command -v timeout &>/dev/null; then
@@ -53,56 +23,128 @@ else
 	INPUT_JSON=$(cat 2>/dev/null || true)
 fi
 
-TOOL_NAME=$(echo "$INPUT_JSON" | jq -r '.tool_name // empty' 2>/dev/null || true)
-AGENT_TYPE=$(echo "$INPUT_JSON" | jq -r '.agent_type // empty' 2>/dev/null || true)
-TRANSCRIPT_PATH=$(echo "$INPUT_JSON" | jq -r '.transcript_path // empty' 2>/dev/null || true)
+TOOL_NAME=$(printf '%s' "$INPUT_JSON" | jq -r '.tool_name // empty' 2>/dev/null || true)
+AGENT_TYPE=$(printf '%s' "$INPUT_JSON" | jq -r '.agent_type // empty' 2>/dev/null || true)
+TRANSCRIPT_PATH=$(printf '%s' "$INPUT_JSON" | jq -r '.transcript_path // empty' 2>/dev/null || true)
 
-[[ -n "$TOOL_NAME" ]] || exit 0
+block_forwarder() {
+	local reason="$1"
+	loom_debug "DEBUG: BLOCKED codex forwarder tool=$TOOL_NAME reason=$reason"
+	cat >&2 <<EOF
+⛔ BLOCKED: codex forwarding policy could not authorize this tool call.
 
-# enforce - allow only the single codex-companion.mjs Bash call; block the rest.
-enforce() {
-	if [[ "$TOOL_NAME" == "Bash" ]]; then
-		local command
-		command=$(echo "$INPUT_JSON" | jq -r '.tool_input.command // empty' 2>/dev/null || true)
-		case "$command" in
-		*codex-companion.mjs*) exit 0 ;;
-		esac
-	fi
-	loom_debug "DEBUG: BLOCKED codex forwarder tool=$TOOL_NAME agent_type=$AGENT_TYPE transcript=$TRANSCRIPT_PATH"
-	cat >&2 <<'EOF'
-⛔ BLOCKED: You are a codex FORWARDING SHIM (your prompt carries LOOM-CODEX-FORWARD-ONLY).
+Reason: $reason
 
-FORWARD, DO NOT IMPLEMENT:
-- Your ONLY permitted tool call is ONE Bash call invoking codex-companion.mjs task ...
-- Do NOT read files, search the repo, edit anything, or implement any part of the
-  task yourself. The task was routed to the codex lane so Codex writes the code.
-- If your forward attempt failed, return the complete error output verbatim,
-  prefixed LOOM-CODEX-FORWARD-ERROR, and stop. A failed forward is a reportable
-  failure, not a license to implement.
+The forwarding shim may make one direct Bash call of this form:
+  ~/.claude/hooks/loom/codex-forward.sh task '<prompt>' --model gpt-5.6-terra --effort xhigh --write
+
+Shell operators, pipelines, redirections, command substitution, and any other
+tool are forbidden. If forwarding fails, report the error and stop.
 EOF
 	exit 2
 }
 
-# === PRIMARY GATE: the calling agent IS a forwarding shim by type ===
+[[ -n "$TOOL_NAME" ]] || block_forwarder "tool_name metadata is missing"
+
+parse_shell_words() {
+	local input="$1" state=plain word="" char="" started=0 i
+	PARSED_WORDS=()
+
+	for ((i = 0; i < ${#input}; i++)); do
+		char=${input:i:1}
+		case "$state" in
+		plain)
+			case "$char" in
+			' ')
+				if [[ $started -eq 1 ]]; then
+					PARSED_WORDS+=("$word")
+					word=""
+					started=0
+				fi
+				;;
+			"'") state=single; started=1 ;;
+			'"') state=double; started=1 ;;
+			'\\') state=escape; started=1 ;;
+			$'\n' | $'\r' | $'\t' | $'\v' | $'\f' | ';' | '|' | '&' | '<' | '>' | '`' | '$' | '(' | ')' | '#' | '*' | '?' | '[' | ']' | '{' | '}') return 1 ;;
+			*) word+="$char"; started=1 ;;
+			esac
+			;;
+		single)
+			if [[ "$char" == "'" ]]; then state=plain; else word+="$char"; fi
+			;;
+		double)
+			case "$char" in
+			'"') state=plain ;;
+			'\\') state=double_escape ;;
+			$'\n' | $'\r' | $'\t' | $'\v' | $'\f' | '$' | '`') return 1 ;;
+			*) word+="$char" ;;
+			esac
+			;;
+		escape)
+			case "$char" in $'\n' | $'\r' | $'\t' | $'\v' | $'\f') return 1 ;; esac
+			word+="$char"
+			state=plain
+			;;
+		double_escape)
+			case "$char" in
+			'"' | '\\') word+="$char"; state=double ;;
+			*) return 1 ;;
+			esac
+			;;
+		esac
+	done
+
+	[[ "$state" == plain ]] || return 1
+	if [[ $started -eq 1 ]]; then PARSED_WORDS+=("$word"); fi
+}
+
+is_exact_forward_command() {
+	parse_shell_words "$1" || return 1
+	[[ ${#PARSED_WORDS[@]} -eq 8 ]] || return 1
+	[[ "${PARSED_WORDS[0]}" == "~/.claude/hooks/loom/codex-forward.sh" ]] || return 1
+	[[ "${PARSED_WORDS[1]}" == task && -n "${PARSED_WORDS[2]}" ]] || return 1
+	[[ "${PARSED_WORDS[3]}" == --model ]] || return 1
+	case "${PARSED_WORDS[4]}" in gpt-5.6-terra | gpt-5.6-luna) ;; *) return 1 ;; esac
+	[[ "${PARSED_WORDS[5]}" == --effort ]] || return 1
+	case "${PARSED_WORDS[6]}" in low | medium | high | xhigh | max | ultra) ;; *) return 1 ;; esac
+	[[ "${PARSED_WORDS[7]}" == --write ]]
+}
+
+enforce_forwarder() {
+	[[ "$TOOL_NAME" == "Bash" ]] || block_forwarder "forwarders may use Bash only"
+	local command
+	command=$(printf '%s' "$INPUT_JSON" | jq -r '.tool_input.command // empty' 2>/dev/null || true)
+	[[ -n "$command" ]] || block_forwarder "Bash command metadata is missing"
+	is_exact_forward_command "$command" || block_forwarder "command is not an exact forwarding-wrapper invocation"
+	exit 0
+}
+
 case "$AGENT_TYPE" in
-loom-codex-forwarder | codex:codex-rescue) enforce ;;
+loom-codex-forwarder | codex:codex-rescue) enforce_forwarder ;;
 esac
 
-# === FALLBACK GATE: sentinel in the subagent's own transcript ===
-[[ -n "$TRANSCRIPT_PATH" ]] || exit 0
+# A hook payload without either authoritative agent type or transcript metadata
+# cannot establish that the caller is not a forwarder.
+if [[ -z "$AGENT_TYPE" && -z "$TRANSCRIPT_PATH" ]]; then
+	block_forwarder "agent_type and transcript_path metadata are both missing"
+fi
 
-# Only a subagent's OWN transcript qualifies. The main session's transcript
-# also contains the sentinel (inside the Agent tool_use that spawned the
-# forwarder), so matching on content alone would throttle the orchestrator.
+# A known non-forwarder type is authoritative and needs no transcript fallback.
+if [[ -n "$AGENT_TYPE" ]]; then
+	exit 0
+fi
+
+# Only subagent transcripts carry the sentinel fallback. Main-session paths do
+# not qualify because they also contain the sentinel in Agent tool payloads.
 case "$TRANSCRIPT_PATH" in
 */subagents/agent-*.jsonl) ;;
 *) exit 0 ;;
 esac
 
-[[ -r "$TRANSCRIPT_PATH" ]] || exit 0
+[[ -f "$TRANSCRIPT_PATH" && -r "$TRANSCRIPT_PATH" && ! -L "$TRANSCRIPT_PATH" ]] || block_forwarder "subagent transcript metadata is unreadable or unsafe"
 
-# The prompt is in the transcript's opening bytes; 200KB covers any signal-
-# sized prompt without paying to scan a long transcript on every tool call.
-head -c 200000 "$TRANSCRIPT_PATH" 2>/dev/null | grep -qF 'LOOM-CODEX-FORWARD-ONLY' || exit 0
+if LC_ALL=C dd if="$TRANSCRIPT_PATH" bs=200000 count=1 2>/dev/null | grep -qF 'LOOM-CODEX-FORWARD-ONLY'; then
+	enforce_forwarder
+fi
 
-enforce
+exit 0

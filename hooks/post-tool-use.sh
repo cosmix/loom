@@ -17,6 +17,7 @@
 #   2. After git commits in loom stages, reminds Claude to update knowledge/memory
 
 set -euo pipefail
+umask 077
 
 # Read JSON input from stdin (Claude Code passes tool info via stdin)
 # Cross-platform timeout: gtimeout (macOS+coreutils), timeout (Linux), or plain cat
@@ -45,6 +46,10 @@ if [[ -z "${LOOM_STAGE_ID:-}" ]] || [[ -z "${LOOM_SESSION_ID:-}" ]] || [[ -z "${
 	exit 0
 fi
 
+case "$LOOM_STAGE_ID" in
+*[!A-Za-z0-9._-]* | "") exit 0 ;;
+esac
+
 # Validate work directory exists and is accessible
 if [[ ! -d "${LOOM_WORK_DIR}" ]]; then
 	# Silently exit - work dir may have been cleaned up
@@ -53,7 +58,8 @@ fi
 
 # Ensure heartbeat directory exists
 HEARTBEAT_DIR="${LOOM_WORK_DIR}/heartbeat"
-mkdir -p "$HEARTBEAT_DIR" 2>/dev/null || exit 0
+mkdir -p -m 700 "$HEARTBEAT_DIR" 2>/dev/null || exit 0
+chmod 700 "$HEARTBEAT_DIR" 2>/dev/null || exit 0
 
 # Get timestamp
 TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%S.000Z")
@@ -64,6 +70,7 @@ TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%S.000Z")
 # jq is unavailable — the heartbeat must never be broken by a missing dependency,
 # and these values are loom-controlled.
 HEARTBEAT_FILE="${HEARTBEAT_DIR}/${LOOM_STAGE_ID}.json"
+[[ ! -L "$HEARTBEAT_FILE" ]] || exit 0
 HEARTBEAT_JSON=""
 if command -v jq &>/dev/null; then
 	HEARTBEAT_JSON=$(jq -n \
@@ -89,41 +96,12 @@ else
 }
 EOF
 fi
+chmod 600 "$HEARTBEAT_FILE" 2>/dev/null || true
 
-# === TOOL EVENT LOGGING ===
-# Append a structured row to tool-events.jsonl for observability.
-# Entire section guarded by jq availability — heartbeat must never be broken.
-if command -v jq &>/dev/null; then
-	IS_ERROR=$(echo "$INPUT_JSON" | jq -r '(.tool_result.is_error // .tool_response.is_error) // false' 2>/dev/null || echo "false")
-	OUTPUT_TEXT=$(echo "$INPUT_JSON" | jq -r '(.tool_result.output // .tool_result.content // .tool_response.output // .tool_response.content) // ""' 2>/dev/null || echo "")
-	EXIT_CODE=$(echo "$INPUT_JSON" | jq -c '(.tool_result.exit_code // .tool_response.exit_code // null)' 2>/dev/null || echo "null")
-	OUTPUT_BYTES=$(printf '%s' "$OUTPUT_TEXT" | wc -c | tr -d ' ')
-
-	if command -v iconv &>/dev/null; then
-		OUTPUT_HEAD=$(printf '%s' "$OUTPUT_TEXT" | head -c 200 | iconv -c -t UTF-8 2>/dev/null || printf '%s' "$OUTPUT_TEXT" | head -c 200)
-		OUTPUT_TAIL=$(printf '%s' "$OUTPUT_TEXT" | tail -c 200 | iconv -c -t UTF-8 2>/dev/null || printf '%s' "$OUTPUT_TEXT" | tail -c 200)
-	else
-		OUTPUT_HEAD=$(printf '%s' "$OUTPUT_TEXT" | head -c 200)
-		OUTPUT_TAIL=$(printf '%s' "$OUTPUT_TEXT" | tail -c 200)
-	fi
-
-	JSONL_ROW=$(jq -nc \
-		--arg ts "$TIMESTAMP" \
-		--arg tool "$TOOL_NAME" \
-		--argjson is_error "$IS_ERROR" \
-		--arg session_id "$LOOM_SESSION_ID" \
-		--arg stage_id "$LOOM_STAGE_ID" \
-		--argjson exit_code "$EXIT_CODE" \
-		--arg output_bytes "$OUTPUT_BYTES" \
-		--arg output_head "$OUTPUT_HEAD" \
-		--arg output_tail "$OUTPUT_TAIL" \
-		'{ts: $ts, tool: $tool, is_error: $is_error, session_id: $session_id, stage_id: $stage_id, exit: $exit_code, output_bytes: ($output_bytes | tonumber), output_head: (if $output_head == "" then null else $output_head end), output_tail: (if $output_tail == "" then null else $output_tail end)}' \
-		2>/dev/null)
-
-	if [[ -n "$JSONL_ROW" ]]; then
-		echo "$JSONL_ROW" >> "${LOOM_WORK_DIR}/tool-events.jsonl"
-	fi
-fi
+# Tool results are intentionally not persisted here. A shell hook cannot append
+# to a shared path with a race-free no-follow guarantee, and even redacted
+# previews risk retaining credentials or private source. The heartbeat above is
+# the complete post-tool observability record.
 
 # === POST-COMMIT KNOWLEDGE/MEMORY REMINDER ===
 # After a git commit in a loom stage, remind Claude to update knowledge/memory

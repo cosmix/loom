@@ -19,22 +19,11 @@ if [[ ! -f "$HEARTBEAT" ]]; then
     exit 1
 fi
 
-# Check tool-events.jsonl was created and is valid JSON
+# Tool results are not persisted because a shell append cannot provide a
+# race-free no-follow guarantee on the shared path.
 EVENTS="$TMPDIR_TEST/tool-events.jsonl"
-if [[ ! -f "$EVENTS" ]]; then
-    echo "FAIL: tool-events.jsonl not created"
-    exit 1
-fi
-
-# Check the event row is valid JSON
-if ! jq -e . "$EVENTS" > /dev/null 2>&1; then
-    echo "FAIL: tool-events.jsonl is not valid JSON"
-    exit 1
-fi
-
-# Check required fields exist
-if ! jq -e '.ts and .tool and (.is_error != null) and .session_id and .stage_id' "$EVENTS" > /dev/null 2>&1; then
-    echo "FAIL: tool-events.jsonl missing required fields"
+if [[ -e "$EVENTS" || -L "$EVENTS" ]]; then
+    echo "FAIL: tool-events.jsonl must not be created"
     exit 1
 fi
 

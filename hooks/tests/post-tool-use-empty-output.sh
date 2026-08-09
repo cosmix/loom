@@ -1,7 +1,5 @@
 #!/usr/bin/env bash
-# Regression: empty tool output must record output_bytes=0, not 1.
-# Previously `echo "$OUTPUT_TEXT" | wc -c` added a trailing newline, silently
-# breaking the failure-shape heuristic in tool_analysis::analyze_session.
+# Regression: even an empty tool result must not create a shared output log.
 set -euo pipefail
 HOOK="$(dirname "$0")/../post-tool-use.sh"
 TMPDIR_TEST=$(mktemp -d)
@@ -16,9 +14,14 @@ INPUT='{"tool_name":"Bash","tool_input":{"command":"true"},"tool_result":{"outpu
 bash "$HOOK" <<< "$INPUT"
 
 EVENTS="$TMPDIR_TEST/tool-events.jsonl"
-OUTPUT_BYTES=$(jq -r '.output_bytes' "$EVENTS")
-if [[ "$OUTPUT_BYTES" != "0" ]]; then
-    echo "FAIL: empty output recorded as output_bytes=$OUTPUT_BYTES (expected 0)"
+if [[ -e "$EVENTS" || -L "$EVENTS" ]]; then
+    echo "FAIL: empty tool output created tool-events.jsonl"
+    exit 1
+fi
+
+HEARTBEAT="$TMPDIR_TEST/heartbeat/test-stage.json"
+if [[ ! -f "$HEARTBEAT" ]]; then
+    echo "FAIL: heartbeat file not created"
     exit 1
 fi
 
