@@ -1,16 +1,24 @@
 //! Daemon server lifecycle methods: start, stop, run.
 
-use super::super::protocol::{read_message, write_message, Request, Response};
+use super::admission::ByteBudget;
 use super::broadcast::{spawn_log_tailer, spawn_status_broadcaster};
-use super::client::{admin_token_path, handle_client_connection, USER_TOKEN_FILE};
-use super::core::{DaemonServer, MAX_CONNECTIONS};
+use super::client::{handle_client_connection, ADMIN_TOKEN_FILE, USER_TOKEN_FILE};
+use super::core::{
+    DaemonServer, CLIENT_QUEUE_CAPACITY, CLIENT_WORKERS, MAX_IN_FLIGHT_REQUEST_BYTES,
+};
+use super::environment::DaemonEnvironment;
+use super::lock::{current_identity, format_identity, read_recorded_lock_identity, PID_FILE};
 use super::orchestrator::spawn_orchestrator;
-use anyhow::{bail, Context, Result};
+use super::pool::WorkerPool;
+use super::storage::{
+    ensure_private_control_dir, open_private_output, publish_private_file, remove_control_file,
+};
+use anyhow::{Context, Result};
 use nix::unistd::{close, fork, pipe, setsid, ForkResult};
 use std::fs::{self, File, Permissions};
 use std::os::unix::fs::PermissionsExt;
 use std::os::unix::io::AsRawFd;
-use std::os::unix::net::{UnixListener, UnixStream};
+use std::os::unix::net::UnixListener;
 use std::path::Path;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
@@ -35,82 +43,23 @@ fn generate_token_hex() -> Result<String> {
 }
 
 impl DaemonServer {
-    /// Stop a running daemon by sending a stop request via socket.
-    ///
-    /// # Arguments
-    /// * `work_dir` - The .work/ directory path
-    ///
-    /// # Returns
-    /// `Ok(())` on success, error if daemon is not running or communication fails
-    pub fn stop(work_dir: &Path) -> Result<()> {
-        let socket_path = work_dir.join("orchestrator.sock");
-
-        if !Self::is_running(work_dir) {
-            bail!("Daemon is not running");
-        }
-
-        // Stop is a privileged operation — only the admin token (mode 0o600)
-        // authenticates this request. The admin token lives at
-        // `<work_dir>/admin.token`.
-        let token_path = admin_token_path(work_dir);
-        let auth_token = fs::read_to_string(&token_path)
-            .with_context(|| {
-                format!(
-                    "Failed to read admin token at {} (Stop requires admin capability)",
-                    token_path.display()
-                )
-            })?
-            .trim()
-            .to_string();
-
-        let mut stream =
-            UnixStream::connect(&socket_path).context("Failed to connect to daemon socket")?;
-
-        stream
-            .set_read_timeout(Some(Duration::from_secs(5)))
-            .context("Failed to set read timeout")?;
-
-        write_message(&mut stream, &Request::Stop { auth_token })
-            .context("Failed to send stop request")?;
-
-        let response: Response = match read_message(&mut stream) {
-            Ok(resp) => resp,
-            Err(e) => {
-                if let Some(io_err) = e.downcast_ref::<std::io::Error>() {
-                    if io_err.kind() == std::io::ErrorKind::WouldBlock
-                        || io_err.kind() == std::io::ErrorKind::TimedOut
-                    {
-                        bail!(
-                            "Daemon did not respond within 5 seconds. \
-                             It may be frozen. Try: kill $(cat {})",
-                            work_dir.join("orchestrator.pid").display()
-                        );
-                    }
-                }
-                return Err(e).context("Failed to read stop response");
-            }
-        };
-
-        match response {
-            Response::Ok => Ok(()),
-            Response::AuthenticationFailed => bail!("Authentication failed - invalid token"),
-            Response::Error { message } => bail!("Daemon returned error: {message}"),
-            _ => bail!("Unexpected response from daemon"),
-        }
-    }
-
     /// Start the daemon (daemonize process).
     ///
     /// # Returns
     /// `Ok(())` on success, error if daemon fails to start
     pub fn start(&self) -> Result<()> {
+        ensure_private_control_dir(&self.work_dir)?;
+        let daemon_environment = DaemonEnvironment::capture();
+
         // Create pipe for error propagation from grandchild to original parent.
         // The success byte is written by `run_server` only AFTER the socket is
         // bound (see A-1/O-7), so the parent's `loom run` exits 0 only when the
         // daemon is genuinely listening.
         let (read_fd, write_fd) = pipe().context("Failed to create pipe")?;
 
-        // First fork - parent exits, child continues
+        // First fork - parent exits, child continues.
+        // SAFETY: daemonization occurs before Loom starts worker threads; both
+        // branches immediately follow the constrained parent/child path below.
         match unsafe { fork() }.context("First fork failed")? {
             ForkResult::Parent { .. } => {
                 // Close write end in parent
@@ -142,7 +91,9 @@ impl DaemonServer {
         // Create new session (detach from controlling terminal)
         setsid().context("setsid failed")?;
 
-        // Second fork - prevents acquiring a controlling terminal
+        // Second fork - prevents acquiring a controlling terminal.
+        // SAFETY: this is still the single-threaded daemonization path, and the
+        // intermediate parent exits without returning to shared application state.
         match unsafe { fork() }.context("Second fork failed")? {
             ForkResult::Parent { .. } => {
                 // Intermediate parent exits
@@ -152,6 +103,8 @@ impl DaemonServer {
                 // Grandchild continues as daemon
             }
         }
+
+        daemon_environment.apply();
 
         // CRITICAL (A-1/O-7): Acquire the singleton flock BEFORE any destructive
         // op (socket unlink, PID overwrite, token regeneration, log truncation).
@@ -172,19 +125,16 @@ impl DaemonServer {
         // From here on we hold the singleton lock; destructive setup is safe.
 
         // Remove stale socket if it exists (ignore NotFound to avoid TOCTOU race)
-        if let Err(e) = fs::remove_file(&self.socket_path) {
-            if e.kind() != std::io::ErrorKind::NotFound {
-                return Err(e).context("Failed to remove stale socket file");
-            }
-        }
+        remove_control_file(&self.work_dir, Path::new("orchestrator.sock"))
+            .context("Failed to remove stale socket file")?;
 
-        // Write PID file
-        fs::write(&self.pid_path, format!("{}", std::process::id()))
-            .context("Failed to write PID file")?;
-
-        // Restrict PID file to owner-only access to prevent tampering
-        fs::set_permissions(&self.pid_path, Permissions::from_mode(0o600))
-            .context("Failed to set PID file permissions")?;
+        let identity = current_identity();
+        publish_private_file(
+            &self.work_dir,
+            Path::new(PID_FILE),
+            format_identity(identity).as_bytes(),
+        )
+        .context("Failed to publish PID identity file")?;
 
         // Generate admin + user tokens and write to separate files. Both live
         // under the per-project `.work/` directory.
@@ -201,20 +151,18 @@ impl DaemonServer {
         let admin_token = generate_token_hex()?;
         let user_token = generate_token_hex()?;
 
-        let admin_path = admin_token_path(&self.work_dir);
-        fs::write(&admin_path, &admin_token).with_context(|| {
-            format!(
-                "Failed to write admin token file at {}",
-                admin_path.display()
-            )
-        })?;
-        fs::set_permissions(&admin_path, Permissions::from_mode(0o600))
-            .context("Failed to set admin token file permissions")?;
-
-        let user_path = self.work_dir.join(USER_TOKEN_FILE);
-        fs::write(&user_path, &user_token).context("Failed to write user token file")?;
-        fs::set_permissions(&user_path, Permissions::from_mode(0o600))
-            .context("Failed to set user token file permissions")?;
+        publish_private_file(
+            &self.work_dir,
+            Path::new(ADMIN_TOKEN_FILE),
+            admin_token.as_bytes(),
+        )
+        .context("Failed to publish admin token file")?;
+        publish_private_file(
+            &self.work_dir,
+            Path::new(USER_TOKEN_FILE),
+            user_token.as_bytes(),
+        )
+        .context("Failed to publish user token file")?;
 
         // Redirect stdout and stderr to log file.
         //
@@ -223,8 +171,9 @@ impl DaemonServer {
         // destroys the only record of *why* it got stuck at exactly the moment
         // an operator goes looking for it. Keeping one generation costs one
         // rename and bounds growth at two files.
-        rotate_log(&self.log_path);
-        let log_file = File::create(&self.log_path).context("Failed to create log file")?;
+        rotate_log(&self.work_dir);
+        let log_file = open_private_output(&self.work_dir, Path::new("orchestrator.log"))
+            .context("Failed to create log file")?;
 
         // Close stdin and redirect stdout/stderr to log file
         close(0).ok();
@@ -238,102 +187,6 @@ impl DaemonServer {
         // Run the server. The success byte is signaled to the original parent
         // from inside `run_server`, immediately after the socket bind succeeds.
         self.run_server(lock_guard, Some(write_fd))
-    }
-
-    /// Run the daemon in foreground (for testing).
-    ///
-    /// # Returns
-    /// `Ok(())` on success, error if server fails to start
-    pub fn run_foreground(&self) -> Result<()> {
-        // Acquire the singleton lock BEFORE any destructive op (A-1/O-7). If a
-        // daemon is already running this fails and we touch nothing; `was_running`
-        // stays false so Drop cleanup is a no-op and the live daemon's files are
-        // preserved.
-        let lock_guard = self
-            .acquire_exclusive_lock()
-            .context("Failed to acquire daemon lock")?;
-
-        // Write PID file manually
-        fs::write(&self.pid_path, format!("{}", std::process::id()))
-            .context("Failed to write PID file")?;
-
-        // Restrict PID file to owner-only access to prevent tampering
-        fs::set_permissions(&self.pid_path, Permissions::from_mode(0o600))
-            .context("Failed to set PID file permissions")?;
-
-        // Remove stale socket if it exists (ignore NotFound to avoid TOCTOU race)
-        if let Err(e) = fs::remove_file(&self.socket_path) {
-            if e.kind() != std::io::ErrorKind::NotFound {
-                return Err(e).context("Failed to remove stale socket file");
-            }
-        }
-
-        self.run_server(lock_guard, None)
-    }
-
-    /// Acquire an exclusive flock on orchestrator.lock to prevent multiple daemons.
-    ///
-    /// Returns the held File handle. The lock is released when the handle is dropped
-    /// (including on process exit or SIGKILL).
-    pub(super) fn acquire_exclusive_lock(&self) -> Result<File> {
-        use std::io::{Seek, Write};
-
-        let lock_path = self.work_dir.join("orchestrator.lock");
-        let lock_file = std::fs::OpenOptions::new()
-            .create(true)
-            .truncate(false)
-            .read(true)
-            .write(true)
-            .open(&lock_path)
-            .context("Failed to open orchestrator lock file")?;
-
-        let ret = unsafe { libc::flock(lock_file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) };
-        if ret != 0 {
-            // Lock held by another daemon — read its PID (file was NOT truncated)
-            let existing_pid = fs::read_to_string(&lock_path)
-                .ok()
-                .and_then(|s| s.trim().parse::<u32>().ok());
-            if let Some(pid) = existing_pid {
-                bail!(
-                    "Another daemon instance is already running (PID {pid}). \
-                     Use 'loom stop' or 'kill {pid}' to stop it."
-                );
-            } else {
-                bail!("Another daemon instance is already running (lock held)");
-            }
-        }
-
-        // Lock acquired — truncate and write our PID
-        let mut lf = &lock_file;
-        lf.set_len(0).ok();
-        lf.seek(std::io::SeekFrom::Start(0)).ok();
-        let _ = lf.write_all(format!("{}", std::process::id()).as_bytes());
-        let _ = lf.flush();
-
-        Ok(lock_file)
-    }
-
-    /// Check if the orchestrator lock is currently held by a live process.
-    ///
-    /// Returns `Some(pid)` if a daemon holds the lock, `None` otherwise.
-    pub fn check_lock(work_dir: &Path) -> Option<u32> {
-        let lock_path = work_dir.join("orchestrator.lock");
-        let lock_file = match File::open(&lock_path) {
-            Ok(f) => f,
-            Err(_) => return None,
-        };
-
-        let ret = unsafe { libc::flock(lock_file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) };
-        if ret == 0 {
-            // We acquired the lock — no daemon running. Release immediately.
-            unsafe { libc::flock(lock_file.as_raw_fd(), libc::LOCK_UN) };
-            None
-        } else {
-            // Lock held by another process — read the PID
-            fs::read_to_string(&lock_path)
-                .ok()
-                .and_then(|s| s.trim().parse::<u32>().ok())
-        }
     }
 
     /// Main server loop (listens on socket and accepts connections).
@@ -356,10 +209,13 @@ impl DaemonServer {
         // Set restrictive umask before socket bind to close TOCTOU window
         // between bind() and chmod(). The socket is created with permissions
         // determined by umask, so setting 0o077 ensures it's created as 0o600.
+        // SAFETY: this daemon grandchild has not started worker threads, and it
+        // restores the process-wide umask immediately after the single bind.
         let old_umask = unsafe { libc::umask(0o077) };
         let listener =
             UnixListener::bind(&self.socket_path).context("Failed to bind Unix socket")?;
-        // Restore original umask immediately after bind
+        // Restore original umask immediately after bind.
+        // SAFETY: paired with the single-threaded `umask(0o077)` call above.
         unsafe {
             libc::umask(old_umask);
         }
@@ -398,40 +254,32 @@ impl DaemonServer {
 
         // Spawn status broadcasting thread
         let status_broadcast_handle = spawn_status_broadcaster(self);
+        let client_pool = WorkerPool::new(CLIENT_WORKERS, CLIENT_QUEUE_CAPACITY);
+        let byte_budget = ByteBudget::new(MAX_IN_FLIGHT_REQUEST_BYTES);
 
         while !self.shutdown_flag.load(Ordering::SeqCst) {
             match listener.accept() {
                 Ok((stream, _addr)) => {
-                    // Atomically increment connection count and check limit
-                    let previous = self.connection_count.fetch_add(1, Ordering::SeqCst);
-                    if previous >= MAX_CONNECTIONS {
-                        // Over limit - decrement and reject
-                        self.connection_count.fetch_sub(1, Ordering::SeqCst);
-                        eprintln!("Connection limit reached ({MAX_CONNECTIONS}), rejecting");
-                        drop(stream); // Close the connection immediately
-                        continue;
-                    }
-
                     let shutdown_flag = Arc::clone(&self.shutdown_flag);
                     let status_subscribers = Arc::clone(&self.status_subscribers);
                     let log_subscribers = Arc::clone(&self.log_subscribers);
-                    let connection_count = Arc::clone(&self.connection_count);
                     let work_dir = self.work_dir.clone();
-
-                    thread::spawn(move || {
+                    let request_budget = Arc::clone(&byte_budget);
+                    if !client_pool.try_execute(move || {
                         let result = handle_client_connection(
                             stream,
                             shutdown_flag,
                             status_subscribers,
                             log_subscribers,
                             &work_dir,
+                            request_budget,
                         );
-                        // Decrement connection count when thread exits
-                        connection_count.fetch_sub(1, Ordering::SeqCst);
                         if let Err(e) = result {
                             eprintln!("Client handler error: {e}");
                         }
-                    });
+                    }) {
+                        eprintln!("Daemon client capacity is exhausted; rejecting connection");
+                    }
                 }
                 Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
                     // No connection available, sleep briefly but check shutdown frequently
@@ -443,6 +291,8 @@ impl DaemonServer {
                 }
             }
         }
+
+        drop(client_pool);
 
         // Wait for threads to finish with timeout (5 seconds)
         let join_timeout = Duration::from_secs(5);
@@ -487,50 +337,21 @@ impl DaemonServer {
             // We never became the live daemon — touch nothing.
             return Ok(());
         }
-        // Defense-in-depth: only clean up if the lock file still records OUR PID.
-        // If another daemon has since claimed the lock and overwritten the PID,
-        // refuse to delete its files.
-        let lock_path = self.work_dir.join("orchestrator.lock");
-        if let Ok(contents) = fs::read_to_string(&lock_path) {
-            if let Ok(lock_pid) = contents.trim().parse::<u32>() {
-                if lock_pid != std::process::id() {
-                    return Ok(());
-                }
-            }
+        if read_recorded_lock_identity(&self.work_dir).map(|identity| identity.pid)
+            != Some(std::process::id())
+        {
+            return Ok(());
         }
 
-        // Remove files directly, ignoring NotFound to avoid TOCTOU race
-        if let Err(e) = fs::remove_file(&self.socket_path) {
-            if e.kind() != std::io::ErrorKind::NotFound {
-                return Err(e).context("Failed to remove socket file");
-            }
-        }
-        if let Err(e) = fs::remove_file(&self.pid_path) {
-            if e.kind() != std::io::ErrorKind::NotFound {
-                return Err(e).context("Failed to remove PID file");
-            }
-        }
-        // Clean up token files. Both user.token and admin.token live in .work/.
-        let user_token_path = self.work_dir.join(USER_TOKEN_FILE);
-        if let Err(e) = fs::remove_file(&user_token_path) {
-            if e.kind() != std::io::ErrorKind::NotFound {
-                return Err(e).context("Failed to remove user.token file");
-            }
-        }
-        let admin_path = admin_token_path(&self.work_dir);
-        if let Err(e) = fs::remove_file(&admin_path) {
-            if e.kind() != std::io::ErrorKind::NotFound {
-                return Err(e).with_context(|| {
-                    format!("Failed to remove admin token at {}", admin_path.display())
-                });
-            }
-        }
-        // Clean up completion marker file
-        let completion_marker = self.work_dir.join("orchestrator.complete");
-        if let Err(e) = fs::remove_file(&completion_marker) {
-            if e.kind() != std::io::ErrorKind::NotFound {
-                return Err(e).context("Failed to remove completion marker file");
-            }
+        for relative in [
+            "orchestrator.sock",
+            PID_FILE,
+            USER_TOKEN_FILE,
+            ADMIN_TOKEN_FILE,
+            "orchestrator.complete",
+        ] {
+            remove_control_file(&self.work_dir, Path::new(relative))
+                .with_context(|| format!("Failed to remove daemon control file {relative}"))?;
         }
         Ok(())
     }
@@ -542,13 +363,15 @@ impl DaemonServer {
 /// Best-effort: if the rename fails the caller still truncates and starts a
 /// fresh log, which is the pre-existing behaviour. Losing history is a
 /// diagnostic regression, not a reason to refuse to start the daemon.
-fn rotate_log(log_path: &Path) {
-    if !log_path.exists() {
+fn rotate_log(work_dir: &Path) {
+    let Ok(directory) = crate::fs::safe_fs::safe_open_dirfd(work_dir) else {
         return;
-    }
-
-    let previous = log_path.with_extension("log.prev");
-    let _ = fs::rename(log_path, previous);
+    };
+    let _ = crate::fs::safe_fs::safe_rename_in_workdir(
+        directory.as_raw_fd(),
+        Path::new("orchestrator.log"),
+        Path::new("orchestrator.log.prev"),
+    );
 }
 
 impl Drop for DaemonServer {

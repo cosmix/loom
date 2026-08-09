@@ -87,6 +87,8 @@ pub fn handle_dispute_criteria(
         .write(true)
         .open(&lock_path)?;
     let lock_fd = lock_file.as_raw_fd();
+    // SAFETY: `lock_fd` belongs to the live `lock_file`, and `LOCK_EX` is a
+    // valid flock operation for the duration of this call.
     let rc = unsafe { libc::flock(lock_fd, libc::LOCK_EX) };
     if rc != 0 {
         bail!("Failed to acquire dispute lock at {}", lock_path.display());
@@ -251,6 +253,8 @@ fn truncate_to_byte_limit(s: &str, max_bytes: usize) -> String {
 fn open_dir_fd(path: &Path) -> Result<OwnedFd> {
     use std::os::fd::FromRawFd;
     let c_path = std::ffi::CString::new(path.as_os_str().as_encoded_bytes())?;
+    // SAFETY: `c_path` is NUL-terminated and the flags request a read-only
+    // directory descriptor without transferring any Rust-owned pointer.
     let fd = unsafe { libc::open(c_path.as_ptr(), libc::O_DIRECTORY | libc::O_RDONLY) };
     if fd < 0 {
         bail!(
@@ -259,6 +263,8 @@ fn open_dir_fd(path: &Path) -> Result<OwnedFd> {
             std::io::Error::last_os_error()
         );
     }
+    // SAFETY: a non-negative `open` result is a fresh descriptor whose
+    // ownership is transferred exactly once to `OwnedFd`.
     Ok(unsafe { OwnedFd::from_raw_fd(fd) })
 }
 
@@ -268,7 +274,7 @@ mod tests {
     use crate::fs::work_dir::WorkDir;
     use crate::models::stage::{Stage, StageStatus};
     use crate::plan::schema::AcceptanceCriterion;
-    use crate::verify::transitions::save_stage;
+    use crate::verify::transitions::{save_stage, update_stage};
     use tempfile::TempDir;
 
     fn setup(stage_status: StageStatus, acceptance_len: usize) -> (TempDir, std::path::PathBuf) {
@@ -335,9 +341,11 @@ mod tests {
     #[test]
     fn dispute_rejects_when_budget_exhausted() {
         let (_tmp, work_dir) = setup(StageStatus::Executing, 1);
-        let mut stage = crate::verify::transitions::load_stage("stage-disp", &work_dir).unwrap();
-        stage.dispute_count = 3;
-        save_stage(&stage, &work_dir).unwrap();
+        update_stage("stage-disp", &work_dir, |stage| {
+            stage.dispute_count = 3;
+            Ok(())
+        })
+        .unwrap();
         let resp = handle_dispute_criteria(&work_dir, "stage-disp", 0, "x".to_string(), None, None)
             .unwrap();
         match resp {
@@ -474,17 +482,15 @@ mod tests {
 
     #[test]
     fn concurrent_disputes_allocate_distinct_ids_under_flock() {
-        // Sequential simulation: file two disputes in quick succession.
         let (_tmp, work_dir) = setup(StageStatus::Executing, 5);
         let r1 = handle_dispute_criteria(&work_dir, "stage-disp", 0, "a".to_string(), None, None)
             .unwrap();
-        // The first dispute moves the stage to NeedsAdjudication. To
-        // file a second, the stage must be back in a state that
-        // permits dispute. Reset it to Executing for the second
-        // attempt (this models the orchestrator's accept-verdict path).
-        let mut stage = crate::verify::transitions::load_stage("stage-disp", &work_dir).unwrap();
-        stage.status = StageStatus::Executing;
-        save_stage(&stage, &work_dir).unwrap();
+        // Model the orchestrator's accept-verdict path before filing again.
+        update_stage("stage-disp", &work_dir, |stage| {
+            stage.status = StageStatus::Executing;
+            Ok(())
+        })
+        .unwrap();
 
         let r2 = handle_dispute_criteria(&work_dir, "stage-disp", 1, "b".to_string(), None, None)
             .unwrap();

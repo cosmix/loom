@@ -1,7 +1,7 @@
 //! Tests for daemon server module.
 
 use super::super::protocol::Response;
-use super::core::DaemonServer;
+use super::core::{DaemonServer, DaemonStatus};
 use super::status::{collect_status, detect_worktree_status, is_manually_merged};
 use crate::models::worktree::WorktreeStatus;
 use std::fs;
@@ -16,7 +16,6 @@ fn test_new_daemon_server() {
     let server = DaemonServer::new(work_dir);
 
     assert_eq!(server.socket_path, work_dir.join("orchestrator.sock"));
-    assert_eq!(server.pid_path, work_dir.join("orchestrator.pid"));
     assert_eq!(server.log_path, work_dir.join("orchestrator.log"));
 }
 
@@ -26,6 +25,32 @@ fn test_is_running_no_pid_file() {
     let work_dir = temp_dir.path();
 
     assert!(!DaemonServer::is_running(work_dir));
+}
+
+#[test]
+fn free_lock_overrides_live_legacy_pid_and_cleans_stale_state() {
+    let temp_dir = TempDir::new().expect("Failed to create temp dir");
+    let work_dir = temp_dir.path();
+    fs::write(
+        work_dir.join("orchestrator.lock"),
+        std::process::id().to_string(),
+    )
+    .unwrap();
+    fs::write(
+        work_dir.join("orchestrator.pid"),
+        std::process::id().to_string(),
+    )
+    .unwrap();
+    fs::write(work_dir.join("orchestrator.sock"), b"stale").unwrap();
+    fs::write(work_dir.join("admin.token"), b"stale").unwrap();
+
+    assert_eq!(
+        DaemonServer::check_status(work_dir),
+        DaemonStatus::NotRunning
+    );
+    assert!(!work_dir.join("orchestrator.pid").exists());
+    assert!(!work_dir.join("orchestrator.sock").exists());
+    assert!(!work_dir.join("admin.token").exists());
 }
 
 #[test]

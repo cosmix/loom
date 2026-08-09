@@ -8,7 +8,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use crate::git::branch::{branch_name_for_stage, resolve_target_branch};
+use crate::git::branch::branch_name_for_stage;
 use crate::models::stage::{Stage, StatusBucket};
 use crate::models::worktree::WorktreeStatus;
 use crate::parser::frontmatter::{extract_yaml_frontmatter, parse_from_markdown};
@@ -27,8 +27,7 @@ pub fn collect_status(work_dir: &Path) -> Result<Response> {
     // P-1(c): resolve the target branch ONCE per collection. `is_manually_merged`
     // previously re-read config.toml and ran `git symbolic-ref` for every stage;
     // the result is invariant across a single collection pass.
-    let base_branch = crate::fs::parse_base_branch_from_config(work_dir).unwrap_or(None);
-    let target_branch = resolve_target_branch(&base_branch, &repo_root);
+    let target_branch = crate::fs::resolve_target_branch_from_config(work_dir, &repo_root)?;
 
     // P-5: read soft-signals ONCE per collection rather than full-scanning the
     // append-only JSONL file for every stage. Build the set of session IDs that
@@ -141,7 +140,7 @@ pub fn detect_worktree_status(
     // delegate. `collect_status` instead calls the `_with_target` variant with a
     // once-per-pass target branch (P-1(c)).
     let base_branch = crate::fs::parse_base_branch_from_config(work_dir).unwrap_or(None);
-    let target_branch = resolve_target_branch(&base_branch, repo_root);
+    let target_branch = crate::git::branch::resolve_target_branch(&base_branch, repo_root);
     detect_worktree_status_with_target(stage_id, repo_root, &target_branch)
 }
 
@@ -193,7 +192,7 @@ fn detect_worktree_status_with_target(
 pub fn is_manually_merged(stage_id: &str, repo_root: &Path, work_dir: &Path) -> bool {
     // Resolve target branch from config (respects base_branch setting)
     let base_branch = crate::fs::parse_base_branch_from_config(work_dir).unwrap_or(None);
-    let target_branch = resolve_target_branch(&base_branch, repo_root);
+    let target_branch = crate::git::branch::resolve_target_branch(&base_branch, repo_root);
     is_manually_merged_into(stage_id, repo_root, &target_branch)
 }
 

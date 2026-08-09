@@ -1,14 +1,17 @@
 //! Core DaemonServer struct and constructors.
 
 use super::super::protocol::DaemonConfig;
+use super::lock::{inspect_lock, read_persisted_identity, LockState};
+use super::storage::remove_control_file;
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-/// Maximum number of concurrent client connections allowed.
-pub(super) const MAX_CONNECTIONS: usize = 100;
+pub(super) const CLIENT_WORKERS: usize = 8;
+pub(super) const CLIENT_QUEUE_CAPACITY: usize = 16;
+pub(super) const MAX_IN_FLIGHT_REQUEST_BYTES: usize = 512 * 1024;
 
 /// Daemon status indicating process and socket state.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -24,12 +27,10 @@ pub enum DaemonStatus {
 /// Daemon server that listens on a Unix domain socket.
 pub struct DaemonServer {
     pub(super) socket_path: PathBuf,
-    pub(super) pid_path: PathBuf,
     pub(super) log_path: PathBuf,
     pub(super) work_dir: PathBuf,
     pub(super) config: DaemonConfig,
     pub(super) shutdown_flag: Arc<AtomicBool>,
-    pub(super) connection_count: Arc<AtomicUsize>,
     pub(super) status_subscribers: Arc<Mutex<Vec<UnixStream>>>,
     pub(super) log_subscribers: Arc<Mutex<Vec<UnixStream>>>,
     /// Set to `true` only after this process has acquired the singleton flock
@@ -62,12 +63,10 @@ impl DaemonServer {
     pub fn with_config(work_dir: &Path, config: DaemonConfig) -> Self {
         Self {
             socket_path: work_dir.join("orchestrator.sock"),
-            pid_path: work_dir.join("orchestrator.pid"),
             log_path: work_dir.join("orchestrator.log"),
             work_dir: work_dir.to_path_buf(),
             config,
             shutdown_flag: Arc::new(AtomicBool::new(false)),
-            connection_count: Arc::new(AtomicUsize::new(0)),
             status_subscribers: Arc::new(Mutex::new(Vec::new())),
             log_subscribers: Arc::new(Mutex::new(Vec::new())),
             was_running: Arc::new(AtomicBool::new(false)),
@@ -86,57 +85,23 @@ impl DaemonServer {
     /// # Returns
     /// `DaemonStatus` indicating whether the daemon is running and responsive
     pub fn check_status(work_dir: &Path) -> DaemonStatus {
-        let pid_path = work_dir.join("orchestrator.pid");
         let socket_path = work_dir.join("orchestrator.sock");
-
-        // Primary check: flock on orchestrator.lock
-        // This is immune to PID-file races and socket-file deletion
-        if let Some(lock_pid) = Self::check_lock(work_dir) {
-            if crate::process::is_process_alive(lock_pid) {
-                // A daemon holds the lock. Check socket connectivity.
-                if socket_path.exists() {
-                    match UnixStream::connect(&socket_path) {
-                        Ok(stream) => {
-                            let _ = stream.set_read_timeout(Some(Duration::from_millis(100)));
-                            return DaemonStatus::Running;
-                        }
-                        Err(_) => return DaemonStatus::ProcessOnly,
-                    }
-                }
-                return DaemonStatus::ProcessOnly;
-            }
-        }
-
-        // Fallback: check PID file + socket (for daemons started before the flock fix)
-        if !socket_path.exists() {
-            if pid_path.exists() {
-                if let Some(pid) = Self::read_pid(work_dir) {
-                    if crate::process::is_process_alive(pid) {
-                        return DaemonStatus::ProcessOnly;
-                    }
-                    let _ = std::fs::remove_file(&pid_path);
-                }
-            }
-            return DaemonStatus::NotRunning;
-        }
-
-        if let Some(pid) = Self::read_pid(work_dir) {
-            if !crate::process::is_process_alive(pid) {
-                let _ = std::fs::remove_file(&pid_path);
-                let _ = std::fs::remove_file(&socket_path);
-                return DaemonStatus::NotRunning;
-            }
-
-            match UnixStream::connect(&socket_path) {
+        match inspect_lock(work_dir) {
+            LockState::Held(_) => match UnixStream::connect(socket_path) {
                 Ok(stream) => {
                     let _ = stream.set_read_timeout(Some(Duration::from_millis(100)));
                     DaemonStatus::Running
                 }
                 Err(_) => DaemonStatus::ProcessOnly,
+            },
+            LockState::Free(guard) => {
+                if let Some(guard) = guard {
+                    cleanup_stale_control_files(work_dir);
+                    drop(guard);
+                }
+                DaemonStatus::NotRunning
             }
-        } else {
-            let _ = std::fs::remove_file(&socket_path);
-            DaemonStatus::NotRunning
+            LockState::Indeterminate => DaemonStatus::ProcessOnly,
         }
     }
 
@@ -162,14 +127,28 @@ impl DaemonServer {
     /// # Returns
     /// `Some(pid)` if the file exists and contains a valid PID, `None` otherwise
     pub fn read_pid(work_dir: &Path) -> Option<u32> {
-        let pid_path = work_dir.join("orchestrator.pid");
-        std::fs::read_to_string(pid_path)
-            .ok()
-            .and_then(|s| s.trim().parse::<u32>().ok())
+        Self::read_identity(work_dir).map(|identity| identity.pid)
+    }
+
+    /// Read the persisted PID and process start-time evidence.
+    pub fn read_identity(work_dir: &Path) -> Option<crate::process::ProcessIdentity> {
+        read_persisted_identity(work_dir)
     }
 
     /// Request graceful shutdown of the daemon.
     pub fn shutdown(&self) {
         self.shutdown_flag.store(true, Ordering::SeqCst);
+    }
+}
+
+fn cleanup_stale_control_files(work_dir: &Path) {
+    for relative in [
+        "orchestrator.sock",
+        "orchestrator.pid",
+        "admin.token",
+        "user.token",
+        "orchestrator.complete",
+    ] {
+        let _ = remove_control_file(work_dir, Path::new(relative));
     }
 }

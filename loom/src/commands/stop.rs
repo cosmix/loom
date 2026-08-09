@@ -1,20 +1,21 @@
 //! Stop command - gracefully shuts down the daemon
 //!
-//! Stop is a **privileged** operation that requires the admin token. The
-//! ordering of side effects has been hardened:
+//! Stop is a **privileged** operation that requires an action-bound one-time
+//! operator proof. The target command never reads the admin token itself.
 //!
-//!   1. Read `admin.token` FIRST. If unreadable, abort with a clear error.
-//!   2. Send `Request::Stop` to the daemon and wait for ack.
+//!   1. Take the proof from `LOOM_ADMIN_PROOF` and remove it from the environment.
+//!   2. Send `Request::Stop` to the daemon and wait for acknowledgement.
 //!
-//! PID fallback (SIGTERM/SIGKILL to the daemon process) is reserved for the
-//! socket-hang case and requires `--force` to opt in.
+//! Verified SIGTERM fallback is reserved for an unreachable daemon socket and
+//! requires `--force`; raw-PID SIGKILL is never attempted.
 
-use crate::daemon::{read_admin_token, DaemonServer};
+use crate::commands::stage::admin_proof::{
+    take_admin_proof_from_env, verify_and_consume_admin_proof, AdminProofRequest,
+};
+use crate::daemon::{DaemonServer, DaemonStatus, DaemonUnavailable};
 use crate::fs::work_dir::WorkDir;
-use anyhow::{bail, Context, Result};
+use anyhow::{bail, Result};
 use colored::Colorize;
-use nix::sys::signal::{kill, Signal};
-use nix::unistd::Pid;
 use std::thread;
 use std::time::Duration;
 
@@ -22,8 +23,8 @@ use std::time::Duration;
 ///
 /// Order of operations:
 ///   1. Verify daemon is running.
-///   2. Read `admin.token`. If unreadable → abort.
-///   3. Send `Stop` (via [`DaemonServer::stop`]). If auth fails → abort.
+///   2. Consume the external action-bound proof.
+///   3. Send `Stop` (via [`DaemonServer::stop`]). If proof verification fails → abort.
 ///
 /// PID fallback only triggers when `force` is true AND the socket is
 /// unreachable; never on `AuthenticationFailed`.
@@ -36,100 +37,82 @@ pub fn execute() -> Result<()> {
 pub fn execute_with_force(force: bool) -> Result<()> {
     let work_dir = WorkDir::new(".")?;
 
-    if !DaemonServer::is_running(work_dir.root()) {
+    if DaemonServer::check_status(work_dir.root()) == DaemonStatus::NotRunning {
         println!("{} Daemon is not running", "─".dimmed());
         return Ok(());
     }
 
-    // Step 1: Read admin token FIRST. Stop requires Capability::Admin and we
-    // refuse to perform any side effects without it.
-    if read_admin_token(work_dir.root()).is_none() {
-        bail!(
-            "{} Cannot stop daemon: admin.token unreadable or missing.\n  \
-             admin.token is created by the daemon at startup with mode 0o600 \
-             and only the host user that started the daemon can read it.",
-            "✗".red().bold()
-        );
-    }
+    let operator_proof = take_admin_proof_from_env().map_err(|_| {
+        anyhow::anyhow!(
+            "daemon stop requires an action-bound one-time operator proof in LOOM_ADMIN_PROOF"
+        )
+    })?;
 
     println!("{} Stopping daemon...", "→".cyan().bold());
 
-    // Step 2: Send the Stop request. DaemonServer::stop reads admin.token
-    // again internally and sends it on the wire.
-    match DaemonServer::stop(work_dir.root()) {
+    match DaemonServer::stop(work_dir.root(), &operator_proof) {
         Ok(()) => {
             println!("{} Daemon stopped", "✓".green().bold());
             Ok(())
         }
         Err(e) => {
-            // Distinguish auth failure from socket-hang.
-            let msg = format!("{e:#}");
-            if msg.contains("Authentication failed") {
+            if e.downcast_ref::<DaemonUnavailable>().is_none() {
                 bail!(
-                    "{} {} — refusing to fall back to PID kill (auth was rejected, not stuck)",
-                    "✗".red().bold(),
-                    msg
-                );
-            }
-
-            if !force {
-                bail!(
-                    "{} Daemon did not respond cleanly: {e}\n  \
-                     Re-run with --force to send SIGTERM/SIGKILL to the daemon PID.\n  \
-                     (Only use --force if you have already verified the daemon is hung.)",
+                    "{} Daemon refused or did not acknowledge stop: {e}",
                     "✗".red().bold()
                 );
             }
-
-            // --force path: only used when the socket is unreachable AND the
-            // operator has explicitly opted in.
-            let pid = DaemonServer::read_pid(work_dir.root())
-                .or_else(|| DaemonServer::check_lock(work_dir.root()));
-            if let Some(pid) = pid {
-                kill_daemon_pid(pid, work_dir.root())
-            } else {
-                Err(e).context("Daemon not responding (process not found)")
+            if !force {
+                bail!(
+                    "{} Daemon did not respond cleanly: {e}\n  \
+                     Re-run with --force and a fresh one-time operator proof to request \
+                     verified SIGTERM of the recorded daemon identity.",
+                    "✗".red().bold()
+                );
             }
+            verify_and_consume_admin_proof(
+                work_dir.root(),
+                AdminProofRequest::daemon_stop(),
+                Some(&operator_proof),
+            )?;
+            terminate_daemon_identity(work_dir.root())
         }
     }
 }
 
-fn kill_daemon_pid(pid: u32, work_root: &std::path::Path) -> Result<()> {
+fn terminate_daemon_identity(work_root: &std::path::Path) -> Result<()> {
+    let identity = DaemonServer::read_identity(work_root)
+        .ok_or_else(|| anyhow::anyhow!("daemon identity file is missing or invalid"))?;
+    let locked_identity = DaemonServer::held_identity(work_root)?
+        .ok_or_else(|| anyhow::anyhow!("daemon singleton lock is free; refusing to signal"))?;
+    if identity != locked_identity {
+        bail!("daemon lock and PID identity evidence do not match; refusing to signal");
+    }
     println!(
-        "{} Daemon not responding, sending SIGTERM to PID {pid}...",
-        "!".yellow().bold()
+        "{} Daemon not responding, sending verified SIGTERM to PID {}...",
+        "!".yellow().bold(),
+        identity.pid
     );
+    crate::process::terminate_verified(identity)?;
 
-    if let Err(kill_err) = kill(Pid::from_raw(pid as i32), Signal::SIGTERM) {
-        eprintln!("{} Failed to send SIGTERM: {}", "✗".red().bold(), kill_err);
-        anyhow::bail!("Failed to stop daemon (PID {pid}): {kill_err}");
-    }
-
-    let mut attempts = 0;
-    let max_attempts = 30; // 3 seconds total
-    while attempts < max_attempts {
+    for _ in 0..30 {
         thread::sleep(Duration::from_millis(100));
-        if !crate::process::is_process_alive(pid) {
-            break;
+        match crate::process::verify_process_identity(identity) {
+            crate::process::IdentityStatus::Dead => {
+                let _ = DaemonServer::check_status(work_root);
+                println!("{} Daemon terminated", "✓".green().bold());
+                return Ok(());
+            }
+            crate::process::IdentityStatus::VerifiedAlive => {}
+            crate::process::IdentityStatus::Unverifiable => {
+                bail!("daemon identity became unverifiable after SIGTERM")
+            }
         }
-        attempts += 1;
     }
-
-    if crate::process::is_process_alive(pid) {
-        println!(
-            "{} Process {pid} did not exit after SIGTERM, sending SIGKILL...",
-            "!".yellow().bold()
-        );
-        let _ = kill(Pid::from_raw(pid as i32), Signal::SIGKILL);
-        thread::sleep(Duration::from_millis(200));
-    }
-
-    // Clean up stale files
-    let _ = std::fs::remove_file(work_root.join("orchestrator.sock"));
-    let _ = std::fs::remove_file(work_root.join("orchestrator.pid"));
-
-    println!("{} Daemon terminated", "✓".green().bold());
-    Ok(())
+    bail!(
+        "verified daemon PID {} did not exit after SIGTERM; refusing an unverified SIGKILL",
+        identity.pid
+    )
 }
 
 #[cfg(test)]
@@ -137,6 +120,7 @@ mod tests {
     use super::*;
     use serial_test::serial;
     use std::fs;
+    use std::os::fd::AsRawFd;
     use tempfile::TempDir;
 
     #[test]
@@ -182,5 +166,42 @@ mod tests {
         // Should succeed - daemon simply reports "not running"
         // WorkDir::new succeeds even without .work, and is_running returns false
         assert!(result.is_ok());
+    }
+
+    #[test]
+    #[serial]
+    fn readable_admin_token_cannot_self_authorize_stop() {
+        let temp_dir = TempDir::new().unwrap();
+        let work_dir = temp_dir.path().join(".work");
+        fs::create_dir(&work_dir).unwrap();
+        fs::write(work_dir.join("admin.token"), "readable-secret").unwrap();
+        fs::write(
+            work_dir.join("orchestrator.lock"),
+            format!("{} -\n", std::process::id()),
+        )
+        .unwrap();
+        let lock = fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(work_dir.join("orchestrator.lock"))
+            .unwrap();
+        assert_eq!(
+            // SAFETY: `lock` owns a live descriptor and the flags form a valid
+            // non-blocking exclusive flock used only by this serial test.
+            unsafe { libc::flock(lock.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) },
+            0
+        );
+        let original_dir = std::env::current_dir().unwrap();
+        let original_proof = std::env::var_os("LOOM_ADMIN_PROOF");
+        std::env::remove_var("LOOM_ADMIN_PROOF");
+        std::env::set_current_dir(temp_dir.path()).unwrap();
+
+        let error = execute().unwrap_err();
+
+        std::env::set_current_dir(original_dir).unwrap();
+        if let Some(proof) = original_proof {
+            std::env::set_var("LOOM_ADMIN_PROOF", proof);
+        }
+        assert!(error.to_string().contains("one-time operator proof"));
     }
 }

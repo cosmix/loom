@@ -1,5 +1,6 @@
 //! Tests for complete command
 
+use super::super::admin_proof::{mint_admin_proof, AdminProofRequest};
 use super::super::complete::{complete, require_admin_capability};
 use super::{create_test_stage, save_test_stage, setup_work_dir};
 use crate::models::stage::{StageStatus, StageType};
@@ -15,6 +16,20 @@ fn write_admin_token(work_dir: &Path, content: &str) {
     std::fs::write(work_dir.join("admin.token"), content).unwrap();
 }
 
+fn completion_proof(
+    stage_id: &str,
+    no_verify: bool,
+    force_unsafe: bool,
+    assume_merged: bool,
+    nonce: &str,
+) -> String {
+    mint_admin_proof(
+        "admin-secret-token",
+        AdminProofRequest::completion(stage_id, no_verify, force_unsafe, assume_merged),
+        nonce,
+    )
+}
+
 #[test]
 #[serial]
 fn test_complete_with_passing_acceptance() {
@@ -28,7 +43,7 @@ fn test_complete_with_passing_acceptance() {
     let original_dir = std::env::current_dir().unwrap();
     std::env::set_current_dir(temp_dir.path()).unwrap();
 
-    let result = complete("test-stage".to_string(), None, false, false, false);
+    let result = complete("test-stage".to_string(), None, false, false, false, None);
 
     std::env::set_current_dir(original_dir).unwrap();
 
@@ -98,7 +113,15 @@ fn test_complete_no_verify_refuses_zero_commits_ahead() {
     let original_dir = std::env::current_dir().unwrap();
     std::env::set_current_dir(repo).unwrap();
 
-    let result = complete("test-stage".to_string(), None, true, false, false);
+    let proof = completion_proof("test-stage", true, false, false, "zero-commits-0001");
+    let result = complete(
+        "test-stage".to_string(),
+        None,
+        true,
+        false,
+        false,
+        Some(proof),
+    );
 
     std::env::set_current_dir(original_dir).unwrap();
 
@@ -143,7 +166,15 @@ fn test_complete_with_no_verify_flag() {
     let original_dir = std::env::current_dir().unwrap();
     std::env::set_current_dir(temp_dir.path()).unwrap();
 
-    let result = complete("test-stage".to_string(), None, true, false, false);
+    let proof = completion_proof("test-stage", true, false, false, "no-verify-test-01");
+    let result = complete(
+        "test-stage".to_string(),
+        None,
+        true,
+        false,
+        false,
+        Some(proof),
+    );
 
     std::env::set_current_dir(original_dir).unwrap();
 
@@ -167,7 +198,14 @@ fn test_complete_knowledge_stage_sets_merged_true() {
     let original_dir = std::env::current_dir().unwrap();
     std::env::set_current_dir(temp_dir.path()).unwrap();
 
-    let result = complete("knowledge-stage".to_string(), None, false, false, false);
+    let result = complete(
+        "knowledge-stage".to_string(),
+        None,
+        false,
+        false,
+        false,
+        None,
+    );
 
     std::env::set_current_dir(original_dir).unwrap();
 
@@ -197,7 +235,14 @@ fn test_complete_knowledge_stage_with_passing_acceptance() {
     let original_dir = std::env::current_dir().unwrap();
     std::env::set_current_dir(temp_dir.path()).unwrap();
 
-    let result = complete("knowledge-stage".to_string(), None, false, false, false);
+    let result = complete(
+        "knowledge-stage".to_string(),
+        None,
+        false,
+        false,
+        false,
+        None,
+    );
 
     std::env::set_current_dir(original_dir).unwrap();
 
@@ -223,7 +268,14 @@ fn test_complete_knowledge_stage_with_failing_acceptance() {
     let original_dir = std::env::current_dir().unwrap();
     std::env::set_current_dir(temp_dir.path()).unwrap();
 
-    let result = complete("knowledge-stage".to_string(), None, false, false, false);
+    let result = complete(
+        "knowledge-stage".to_string(),
+        None,
+        false,
+        false,
+        false,
+        None,
+    );
 
     std::env::set_current_dir(original_dir).unwrap();
 
@@ -259,7 +311,14 @@ fn test_complete_knowledge_stage_triggers_dependents() {
     let original_dir = std::env::current_dir().unwrap();
     std::env::set_current_dir(temp_dir.path()).unwrap();
 
-    let result = complete("knowledge-stage".to_string(), None, false, false, false);
+    let result = complete(
+        "knowledge-stage".to_string(),
+        None,
+        false,
+        false,
+        false,
+        None,
+    );
 
     std::env::set_current_dir(original_dir).unwrap();
 
@@ -281,15 +340,14 @@ fn test_complete_knowledge_stage_triggers_dependents() {
 
 #[test]
 #[serial]
-fn no_verify_succeeds_with_admin_token_present() {
-    // When `<work_dir>/admin.token` exists, require_admin_capability must
-    // succeed. This guards the gate's pass-through for legitimate
-    // host-operator use of --no-verify / --force-unsafe / --assume-merged.
+fn no_verify_succeeds_with_matching_one_time_proof() {
     let tmp = TempDir::new().unwrap();
     let work_dir = tmp.path().join(".work");
     write_admin_token(&work_dir, "admin-secret-token");
 
-    let result = require_admin_capability(&work_dir);
+    let proof = completion_proof("test-stage", true, false, false, "admin-gate-test1");
+    let result =
+        require_admin_capability(&work_dir, "test-stage", true, false, false, Some(&proof));
 
     assert!(
         result.is_ok(),
@@ -300,70 +358,63 @@ fn no_verify_succeeds_with_admin_token_present() {
 
 #[test]
 #[serial]
-fn no_verify_rejected_when_admin_token_absent() {
-    // When --no-verify is requested but admin.token is missing,
-    // require_admin_capability must fail closed with a clear error
-    // mentioning the admin token. This is the structural guarantee that
-    // stage-confined agents cannot bypass acceptance.
+fn no_verify_rejected_when_operator_proof_absent() {
     let tmp = TempDir::new().unwrap();
     let work_dir = tmp.path().join(".work");
     std::fs::create_dir_all(&work_dir).unwrap();
     // No admin.token written.
 
-    let result = require_admin_capability(&work_dir);
+    let result = require_admin_capability(&work_dir, "test-stage", true, false, false, None);
 
     assert!(
         result.is_err(),
-        "require_admin_capability must fail when admin.token is absent"
+        "require_admin_capability must fail when its caller supplies no proof"
     );
     let err = format!("{:#}", result.unwrap_err());
     assert!(
-        err.contains("admin token") || err.contains("admin.token"),
-        "expected error mentioning admin token, got: {err}"
+        err.contains("operator proof") || err.contains("LOOM_ADMIN_PROOF"),
+        "expected error mentioning the operator proof, got: {err}"
     );
 }
 
 #[test]
 #[serial]
-fn force_unsafe_rejected_when_admin_token_absent() {
-    // --force-unsafe path exercises the same gate. (The gate is flag-agnostic
-    // at the check site — the caller in complete() decides when to call it
-    // based on flag combinations. We assert the gate's behaviour here.)
+fn force_unsafe_rejected_when_operator_proof_absent() {
     let tmp = TempDir::new().unwrap();
     let work_dir = tmp.path().join(".work");
     std::fs::create_dir_all(&work_dir).unwrap();
 
-    let result = require_admin_capability(&work_dir);
+    let result = require_admin_capability(&work_dir, "test-stage", false, true, false, None);
 
     assert!(
         result.is_err(),
-        "force_unsafe path must reject when admin.token is absent"
+        "force_unsafe path must reject when the proof is absent"
     );
     let err = format!("{:#}", result.unwrap_err());
     assert!(
-        err.contains("admin token") || err.contains("admin.token"),
-        "expected error mentioning admin token, got: {err}"
+        err.contains("operator proof") || err.contains("LOOM_ADMIN_PROOF"),
+        "expected error mentioning the operator proof, got: {err}"
     );
 }
 
 #[test]
 #[serial]
-fn assume_merged_rejected_when_admin_token_absent() {
+fn assume_merged_rejected_when_operator_proof_absent() {
     // --assume-merged path exercises the same gate.
     let tmp = TempDir::new().unwrap();
     let work_dir = tmp.path().join(".work");
     std::fs::create_dir_all(&work_dir).unwrap();
 
-    let result = require_admin_capability(&work_dir);
+    let result = require_admin_capability(&work_dir, "test-stage", false, true, true, None);
 
     assert!(
         result.is_err(),
-        "assume_merged path must reject when admin.token is absent"
+        "assume_merged path must reject when the proof is absent"
     );
     let err = format!("{:#}", result.unwrap_err());
     assert!(
-        err.contains("admin token") || err.contains("admin.token"),
-        "expected error mentioning admin token, got: {err}"
+        err.contains("operator proof") || err.contains("LOOM_ADMIN_PROOF"),
+        "expected error mentioning the operator proof, got: {err}"
     );
 }
 
@@ -392,6 +443,7 @@ fn verify_path_succeeds_without_admin_token() {
         false, // no_verify
         false, // force_unsafe
         false, // assume_merged
+        None,  // admin_proof
     );
 
     std::env::set_current_dir(original_dir).unwrap();
@@ -410,25 +462,22 @@ fn verify_path_succeeds_without_admin_token() {
 
 #[test]
 #[serial]
-fn cli_without_admin_token_fails_admin_check() {
-    // The work dir exists but no admin.token is present. The admin gate
-    // must refuse the bypass flags. This is the structural defence against
-    // an agent invoking --no-verify without daemon authority.
+fn cli_without_operator_proof_fails_admin_check() {
     let tmp = TempDir::new().unwrap();
     let work_dir = tmp.path().join(".work");
     std::fs::create_dir_all(&work_dir).unwrap();
     // Deliberately do NOT write admin.token.
 
-    let result = require_admin_capability(&work_dir);
+    let result = require_admin_capability(&work_dir, "test-stage", true, false, false, None);
 
     assert!(
         result.is_err(),
-        "missing admin token must fail the admin gate"
+        "missing caller proof must fail the admin gate"
     );
     let err = format!("{:#}", result.unwrap_err());
     assert!(
-        err.contains("admin token") || err.contains("admin.token"),
-        "expected error mentioning admin token, got: {err}"
+        err.contains("operator proof") || err.contains("LOOM_ADMIN_PROOF"),
+        "expected error mentioning the operator proof, got: {err}"
     );
 }
 
@@ -448,7 +497,14 @@ fn test_complete_standard_stage_not_routed_to_knowledge() {
     let original_dir = std::env::current_dir().unwrap();
     std::env::set_current_dir(temp_dir.path()).unwrap();
 
-    let result = complete("standard-stage".to_string(), None, false, false, false);
+    let result = complete(
+        "standard-stage".to_string(),
+        None,
+        false,
+        false,
+        false,
+        None,
+    );
 
     std::env::set_current_dir(original_dir).unwrap();
 

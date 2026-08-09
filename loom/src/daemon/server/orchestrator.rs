@@ -50,20 +50,12 @@ fn run_orchestrator(
     let repo_root_for_plan = repo_root.clone();
 
     // Parse base_branch from config.toml
-    let base_branch = match parse_base_branch_from_config(work_dir) {
-        Ok(branch) => {
-            if let Some(ref b) = branch {
-                eprintln!("Loaded base_branch from config: {b}");
-            } else {
-                eprintln!("Warning: No base_branch in config.toml, will use default_branch()");
-            }
-            branch
-        }
-        Err(e) => {
-            eprintln!("Warning: Failed to parse base_branch from config.toml: {e}");
-            None
-        }
-    };
+    let base_branch = parse_base_branch_from_config(work_dir)?;
+    if let Some(ref branch) = base_branch {
+        eprintln!("Loaded base_branch from config: {branch}");
+    } else {
+        eprintln!("No base_branch in config.toml; using the repository default branch");
+    }
 
     // Configure orchestrator using daemon config
     let config = OrchestratorConfig {

@@ -1,7 +1,6 @@
-use anyhow::{bail, Context, Result};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use std::io::{Read, Write};
+use std::fmt;
 
 use crate::models::stage::StageStatus;
 use crate::models::worktree::WorktreeStatus;
@@ -83,11 +82,13 @@ impl Default for DaemonConfig {
 /// Authorization capability required by a request.
 ///
 /// `User` requests are unprivileged RPCs (Ping, SubscribeStatus,
-/// SubscribeLogs, Unsubscribe, DisputeCriteria). They use the user token.
+/// SubscribeLogs, Unsubscribe, DisputeCriteria, CompleteStage). They use the
+/// user token. CompleteStage is accepted only for the exact active
+/// stage/session pair and carries no command, path, or privileged flags.
 ///
 /// `Admin` requests are privileged host-only operations (Stop). They require
-/// the admin token, which is mode-0600 and only readable by the host user
-/// who started the daemon.
+/// an action-bound, one-time operator proof minted from the mode-0600 admin
+/// secret by a trusted host process.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Capability {
     User,
@@ -95,7 +96,7 @@ pub enum Capability {
 }
 
 /// Client request to daemon
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub enum Request {
     /// Subscribe to live status updates (Capability::User)
     SubscribeStatus { auth_token: String },
@@ -118,6 +119,17 @@ pub enum Request {
         evidence_commit: Option<String>,
         failure_output: Option<String>, // pre-truncated to 4KB by the CLI
     },
+    /// Apply the narrow post-verification completion transition.
+    ///
+    /// Acceptance/build commands run in the calling session's host sandbox.
+    /// A trusted PostToolUse hook sends this data-only request only after that
+    /// exact sandboxed command reports successful verification.
+    CompleteStage {
+        auth_token: String,
+        stage_id: String,
+        session_id: String,
+        nonce: String,
+    },
 }
 
 impl Request {
@@ -132,7 +144,67 @@ impl Request {
             | Request::SubscribeStatus { .. }
             | Request::SubscribeLogs { .. }
             | Request::Unsubscribe { .. }
-            | Request::DisputeCriteria { .. } => Capability::User,
+            | Request::DisputeCriteria { .. }
+            | Request::CompleteStage { .. } => Capability::User,
+        }
+    }
+
+    /// Credential carried by this request.
+    ///
+    /// Callers must never include the returned value in logs or diagnostics.
+    pub fn credential(&self) -> &str {
+        match self {
+            Request::SubscribeStatus { auth_token }
+            | Request::SubscribeLogs { auth_token }
+            | Request::Stop { auth_token }
+            | Request::Unsubscribe { auth_token }
+            | Request::Ping { auth_token }
+            | Request::DisputeCriteria { auth_token, .. }
+            | Request::CompleteStage { auth_token, .. } => auth_token,
+        }
+    }
+}
+
+impl fmt::Debug for Request {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Request::SubscribeStatus { .. } => {
+                formatter.write_str("SubscribeStatus { auth_token: [REDACTED] }")
+            }
+            Request::SubscribeLogs { .. } => {
+                formatter.write_str("SubscribeLogs { auth_token: [REDACTED] }")
+            }
+            Request::Stop { .. } => formatter.write_str("Stop { auth_token: [REDACTED] }"),
+            Request::Unsubscribe { .. } => {
+                formatter.write_str("Unsubscribe { auth_token: [REDACTED] }")
+            }
+            Request::Ping { .. } => formatter.write_str("Ping { auth_token: [REDACTED] }"),
+            Request::DisputeCriteria {
+                stage_id,
+                criterion_index,
+                evidence_commit,
+                ..
+            } => formatter
+                .debug_struct("DisputeCriteria")
+                .field("auth_token", &"[REDACTED]")
+                .field("stage_id", stage_id)
+                .field("criterion_index", criterion_index)
+                .field("reason", &"[REDACTED]")
+                .field("evidence_commit", evidence_commit)
+                .field("failure_output", &"[REDACTED]")
+                .finish(),
+            Request::CompleteStage {
+                stage_id,
+                session_id,
+                nonce,
+                ..
+            } => formatter
+                .debug_struct("CompleteStage")
+                .field("auth_token", &"[REDACTED]")
+                .field("stage_id", stage_id)
+                .field("session_id", session_id)
+                .field("nonce", nonce)
+                .finish(),
         }
     }
 }
@@ -189,245 +261,7 @@ pub struct StageInfo {
     pub is_possibly_stuck: bool,
 }
 
-/// Write a length-prefixed JSON message to a stream.
-///
-/// Format: 4-byte big-endian length prefix + JSON data
-///
-/// # Arguments
-/// * `stream` - The stream to write to
-/// * `message` - The message to serialize and write
-///
-/// # Returns
-/// `Ok(())` on success, error if serialization or write fails
-pub fn write_message<T: Serialize, W: Write>(stream: &mut W, message: &T) -> Result<()> {
-    let json = serde_json::to_vec(message).context("Failed to serialize message")?;
-    let len = json.len() as u32;
-    let len_bytes = len.to_be_bytes();
-
-    stream
-        .write_all(&len_bytes)
-        .context("Failed to write message length")?;
-    stream
-        .write_all(&json)
-        .context("Failed to write message body")?;
-    stream.flush().context("Failed to flush stream")?;
-
-    Ok(())
-}
-
-/// Read a length-prefixed JSON message from a stream.
-///
-/// Format: 4-byte big-endian length prefix + JSON data
-///
-/// # Arguments
-/// * `stream` - The stream to read from
-///
-/// # Returns
-/// `Ok(T)` with the deserialized message on success, error if read or deserialization fails
-pub fn read_message<T: for<'de> Deserialize<'de>, R: Read>(stream: &mut R) -> Result<T> {
-    let mut len_bytes = [0u8; 4];
-    stream
-        .read_exact(&mut len_bytes)
-        .context("Failed to read message length")?;
-    let len = u32::from_be_bytes(len_bytes) as usize;
-
-    // Sanity check: prevent DOS via huge length claim (max 10 MB)
-    if len > 10 * 1024 * 1024 {
-        bail!("Message too large: {len} bytes");
-    }
-
-    let mut json_bytes = vec![0u8; len];
-    stream
-        .read_exact(&mut json_bytes)
-        .context("Failed to read message body")?;
-
-    serde_json::from_slice(&json_bytes).context("Failed to deserialize message")
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::models::stage::StageStatus;
-    use crate::models::worktree::WorktreeStatus;
-    use std::io::Cursor;
-
-    #[test]
-    fn test_write_and_read_request() {
-        let mut buffer = Vec::new();
-        let request = Request::Ping {
-            auth_token: "test-token".to_string(),
-        };
-
-        write_message(&mut buffer, &request).expect("Failed to write message");
-
-        let mut cursor = Cursor::new(buffer);
-        let decoded: Request = read_message(&mut cursor).expect("Failed to read message");
-
-        match decoded {
-            Request::Ping { auth_token } => {
-                assert_eq!(auth_token, "test-token");
-            }
-            _ => panic!("Expected Ping request"),
-        }
-    }
-
-    #[test]
-    fn test_write_and_read_response() {
-        let mut buffer = Vec::new();
-        let response = Response::Pong;
-
-        write_message(&mut buffer, &response).expect("Failed to write message");
-
-        let mut cursor = Cursor::new(buffer);
-        let decoded: Response = read_message(&mut cursor).expect("Failed to read message");
-
-        match decoded {
-            Response::Pong => {}
-            _ => panic!("Expected Pong response"),
-        }
-    }
-
-    #[test]
-    fn test_write_and_read_status_update() {
-        let mut buffer = Vec::new();
-        let now = Utc::now();
-        let response = Response::StatusUpdate {
-            stages_executing: vec![StageInfo {
-                id: "stage-1".to_string(),
-                name: "Test Stage".to_string(),
-                session_pid: Some(12345),
-                started_at: now,
-                completed_at: None,
-                worktree_status: Some(WorktreeStatus::Active),
-                status: StageStatus::Executing,
-                merged: false,
-                dependencies: vec!["stage-0".to_string()],
-                model: "opus".to_string(),
-                is_possibly_stuck: false,
-            }],
-            stages_pending: vec![StageInfo {
-                id: "stage-2".to_string(),
-                name: "Pending Stage".to_string(),
-                session_pid: None,
-                started_at: now,
-                completed_at: None,
-                worktree_status: None,
-                status: StageStatus::WaitingForDeps,
-                merged: false,
-                dependencies: vec!["stage-1".to_string()],
-                model: "sonnet".to_string(),
-                is_possibly_stuck: false,
-            }],
-            stages_completed: vec![StageInfo {
-                id: "stage-0".to_string(),
-                name: "Completed Stage".to_string(),
-                session_pid: None,
-                started_at: now,
-                completed_at: Some(now),
-                worktree_status: None,
-                status: StageStatus::Completed,
-                merged: true,
-                dependencies: vec![],
-                model: "opus".to_string(),
-                is_possibly_stuck: false,
-            }],
-            stages_blocked: vec![],
-        };
-
-        write_message(&mut buffer, &response).expect("Failed to write message");
-
-        let mut cursor = Cursor::new(buffer);
-        let decoded: Response = read_message(&mut cursor).expect("Failed to read message");
-
-        match decoded {
-            Response::StatusUpdate {
-                stages_executing, ..
-            } => {
-                assert_eq!(stages_executing.len(), 1);
-                assert_eq!(stages_executing[0].id, "stage-1");
-            }
-            _ => panic!("Expected StatusUpdate response"),
-        }
-    }
-
-    #[test]
-    fn test_read_message_too_large() {
-        let mut buffer = Vec::new();
-        let len: u32 = 20 * 1024 * 1024; // 20 MB (exceeds 10 MB limit)
-        buffer.extend_from_slice(&len.to_be_bytes());
-
-        let mut cursor = Cursor::new(buffer);
-        let result: Result<Request> = read_message(&mut cursor);
-
-        assert!(result.is_err());
-        let err = result.unwrap_err();
-        assert!(err.to_string().contains("too large"));
-    }
-
-    #[test]
-    fn test_daemon_config_default() {
-        let config = DaemonConfig::default();
-
-        assert!(!config.manual_mode);
-        assert!(config.max_parallel.is_none());
-        assert!(config.watch_mode);
-        assert!(config.auto_merge);
-    }
-
-    #[test]
-    fn test_write_and_read_orchestration_complete() {
-        use super::{CompletionSummary, StageCompletionInfo};
-
-        let mut buffer = Vec::new();
-        let response = Response::OrchestrationComplete {
-            summary: CompletionSummary {
-                total_duration_secs: 120,
-                stages: vec![
-                    StageCompletionInfo {
-                        id: "stage-1".to_string(),
-                        name: "First Stage".to_string(),
-                        status: StageStatus::Completed,
-                        duration_secs: Some(60),
-                        execution_secs: None,
-                        retry_count: 0,
-                        merged: true,
-                        dependencies: vec![],
-                    },
-                    StageCompletionInfo {
-                        id: "stage-2".to_string(),
-                        name: "Second Stage".to_string(),
-                        status: StageStatus::Blocked,
-                        duration_secs: Some(45),
-                        execution_secs: None,
-                        retry_count: 0,
-                        merged: false,
-                        dependencies: vec!["stage-1".to_string()],
-                    },
-                ],
-                success_count: 1,
-                failure_count: 1,
-                plan_path: "doc/plans/PLAN-test.md".to_string(),
-            },
-        };
-
-        write_message(&mut buffer, &response).expect("Failed to write message");
-
-        let mut cursor = Cursor::new(buffer);
-        let decoded: Response = read_message(&mut cursor).expect("Failed to read message");
-
-        match decoded {
-            Response::OrchestrationComplete { summary } => {
-                assert_eq!(summary.total_duration_secs, 120);
-                assert_eq!(summary.stages.len(), 2);
-                assert_eq!(summary.stages[0].id, "stage-1");
-                assert_eq!(summary.stages[0].status, StageStatus::Completed);
-                assert_eq!(summary.stages[1].id, "stage-2");
-                assert_eq!(summary.stages[1].status, StageStatus::Blocked);
-                assert_eq!(summary.success_count, 1);
-                assert_eq!(summary.failure_count, 1);
-                assert_eq!(summary.plan_path, "doc/plans/PLAN-test.md");
-            }
-            _ => panic!("Expected OrchestrationComplete response"),
-        }
-    }
-}
+pub use super::wire::{
+    read_message, read_request_body, read_request_length, read_request_preface, write_message,
+    RequestPreface, WireMessage,
+};

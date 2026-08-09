@@ -1,12 +1,19 @@
 //! Client connection handling.
 
-use super::super::protocol::{read_message, write_message, Capability, Request, Response};
+use super::super::protocol::{
+    read_request_body, read_request_length, read_request_preface, write_message, Capability,
+    Request, RequestPreface, Response,
+};
+use super::admission::{ByteBudget, DeadlineReader};
 use anyhow::Result;
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
+
+#[path = "control_complete.rs"]
+mod control_complete;
 
 /// Write timeout applied to each subscriber stream clone at subscription time.
 ///
@@ -25,9 +32,13 @@ const SUBSCRIBER_WRITE_TIMEOUT: Duration = Duration::from_secs(5);
 /// a slot in the [`MAX_CONNECTIONS`](super::core::MAX_CONNECTIONS) cap forever,
 /// eventually starving legitimate clients (including `Stop`). 30s is generous for
 /// any real request: the CLI sends one immediately on connect.
-const CLIENT_READ_TIMEOUT: Duration = Duration::from_secs(30);
+const CLIENT_READ_TIMEOUT: Duration = Duration::from_secs(5);
 
-/// Filename for the user-readable token (mode 0o644, lives under `.work/`).
+/// Per-stream subscriber cap. Subscriber clones outlive their short request
+/// handlers, so they need an explicit bound in addition to the worker queue.
+const MAX_SUBSCRIBERS_PER_STREAM: usize = 32;
+
+/// Filename for the user-tier token (mode 0o600, lives under `.work/`).
 pub(super) const USER_TOKEN_FILE: &str = "user.token";
 
 /// Filename for the admin token (mode 0o600). Lives under the per-project
@@ -46,44 +57,24 @@ pub fn admin_token_path(work_dir: &Path) -> PathBuf {
     work_dir.join(ADMIN_TOKEN_FILE)
 }
 
-fn read_token_file(path: &Path) -> Option<String> {
-    std::fs::read_to_string(path)
+fn read_token_file(work_dir: &Path, relative: &Path) -> Option<String> {
+    crate::fs::safe_read::read_to_string_bounded(work_dir, relative, 4096)
         .ok()
         .map(|s| s.trim().to_string())
 }
 
 /// Read the user-tier auth token (Ping / Subscribe / Unsubscribe).
 pub fn read_user_token(work_dir: &Path) -> Option<String> {
-    read_token_file(&work_dir.join(USER_TOKEN_FILE))
-}
-
-/// Read the admin-tier auth token (Stop).
-///
-/// Returns `None` if `admin.token` is missing or unreadable; callers must
-/// treat that as an authentication failure rather than falling back to a
-/// less-privileged token.
-pub fn read_admin_token(work_dir: &Path) -> Option<String> {
-    read_token_file(&admin_token_path(work_dir))
+    read_token_file(work_dir, Path::new(USER_TOKEN_FILE))
 }
 
 /// Back-compat shim used by status UI helpers — returns the user token.
 ///
 /// Kept on the public surface because TUI code reads it for `Ping` /
 /// `SubscribeStatus`. Never use this for `Stop`; that path must call
-/// [`read_admin_token`] directly.
+/// a user-tier credential.
 pub fn read_auth_token(work_dir: &Path) -> Option<String> {
     read_user_token(work_dir)
-}
-
-/// Path to the token file backing a given capability.
-///
-/// Both tokens live under the per-project `.work/` tree: `user.token`
-/// (mode 0o644) and `admin.token` (mode 0o600).
-fn token_path_for(work_dir: &Path, capability: Capability) -> PathBuf {
-    match capability {
-        Capability::User => work_dir.join(USER_TOKEN_FILE),
-        Capability::Admin => admin_token_path(work_dir),
-    }
 }
 
 /// Constant-time comparison of two strings.
@@ -96,20 +87,23 @@ fn ct_eq(a: &str, b: &str) -> bool {
             == 0
 }
 
-/// Verify that `provided_token` matches the token file for `capability`.
-///
-/// A `Stop` request must match `admin.token` exactly; matching `user.token`
-/// when admin is required returns `false`. Missing token file → `false`.
-pub fn verify_for_capability(
-    work_dir: &Path,
-    provided_token: &str,
-    capability: Capability,
-) -> bool {
-    let path = token_path_for(work_dir, capability);
-    let Some(expected) = read_token_file(&path) else {
+fn verify_user_token(work_dir: &Path, provided_token: &str) -> bool {
+    let Some(expected) = read_user_token(work_dir) else {
         return false;
     };
     ct_eq(&expected, provided_token)
+}
+
+fn authorize_preface(work_dir: &Path, preface: &RequestPreface) -> bool {
+    match preface.capability() {
+        Capability::User => verify_user_token(work_dir, preface.credential()),
+        Capability::Admin => crate::commands::stage::admin_proof::verify_and_consume_admin_proof(
+            work_dir,
+            crate::commands::stage::admin_proof::AdminProofRequest::daemon_stop(),
+            Some(preface.credential()),
+        )
+        .is_ok(),
+    }
 }
 
 /// Clone a client stream for use as a broadcast subscriber, applying a write
@@ -134,51 +128,50 @@ pub fn handle_client_connection(
     status_subscribers: Arc<Mutex<Vec<UnixStream>>>,
     log_subscribers: Arc<Mutex<Vec<UnixStream>>>,
     work_dir: &Path,
+    byte_budget: Arc<ByteBudget>,
 ) -> Result<()> {
     // Ensure stream is in blocking mode - on macOS, accepted streams from
     // a non-blocking listener may inherit non-blocking mode, causing
     // read_message to fail with WouldBlock immediately.
     stream.set_nonblocking(false)?;
 
-    // Apply a read timeout so an idle or dribbling client cannot pin this thread
-    // (and a slot in the 100-connection cap) indefinitely (O-21). A request that
-    // does not arrive within the window causes `read_message` to error, ending
-    // the handler. A subscriber that has already registered its broadcast clone
-    // keeps receiving updates even after its handler thread exits, because the
-    // clone is an independent fd held by the broadcaster.
-    stream.set_read_timeout(Some(CLIENT_READ_TIMEOUT))?;
+    stream.set_write_timeout(Some(CLIENT_READ_TIMEOUT))?;
 
     loop {
-        let request: Request = match read_message(&mut stream) {
-            Ok(req) => req,
-            Err(_) => {
-                // Client disconnected or error reading
-                break;
-            }
+        let mut reader = DeadlineReader::new(&stream, CLIENT_READ_TIMEOUT);
+        let preface = match read_request_preface(&mut reader) {
+            Ok(preface) => preface,
+            Err(_) => break,
         };
-
-        // Extract the auth token and human-readable request label for logging.
-        let (auth_token, request_type) = match &request {
-            Request::Ping { auth_token } => (auth_token, "Ping"),
-            Request::Stop { auth_token } => (auth_token, "Stop"),
-            Request::SubscribeStatus { auth_token } => (auth_token, "SubscribeStatus"),
-            Request::SubscribeLogs { auth_token } => (auth_token, "SubscribeLogs"),
-            Request::Unsubscribe { auth_token } => (auth_token, "Unsubscribe"),
-            Request::DisputeCriteria { auth_token, .. } => (auth_token, "DisputeCriteria"),
-        };
-
-        // Tag every request with the capability required to execute it, and
-        // verify against the matching token file. Stop requires the admin
-        // token; a Stop request bearing only the user token must fail closed.
-        let required = request.required_capability();
-        if !verify_for_capability(work_dir, auth_token, required) {
+        if !authorize_preface(work_dir, &preface) {
             eprintln!(
-                "Authentication failed for {} request (required capability: {:?})",
-                request_type, required
+                "Daemon request authentication failed (capability: {:?})",
+                preface.capability()
             );
             write_message(&mut stream, &Response::AuthenticationFailed)?;
             break;
         }
+        let length = match read_request_length(&mut reader) {
+            Ok(length) => length,
+            Err(_) => break,
+        };
+        let Some(_permit) = byte_budget.try_reserve(length) else {
+            write_message(
+                &mut stream,
+                &Response::Error {
+                    message: "Daemon request capacity is exhausted".to_string(),
+                },
+            )?;
+            break;
+        };
+        let request = match read_request_body(&mut reader, length) {
+            Ok(request) if preface.matches(&request) => request,
+            Ok(_) => {
+                write_message(&mut stream, &Response::AuthenticationFailed)?;
+                break;
+            }
+            Err(_) => break,
+        };
 
         match request {
             Request::Ping { .. } => {
@@ -191,52 +184,10 @@ pub fn handle_client_connection(
                 break;
             }
             Request::SubscribeStatus { .. } => {
-                match prepare_subscriber_clone(&stream) {
-                    Ok(stream_clone) => {
-                        // Acquire lock, add subscriber, release lock before I/O
-                        let lock_result = status_subscribers.lock().map(|mut subs| {
-                            subs.push(stream_clone);
-                        });
-                        // Write response AFTER releasing the lock
-                        if lock_result.is_ok() {
-                            write_message(&mut stream, &Response::Ok)?;
-                        } else {
-                            write_message(
-                                &mut stream,
-                                &Response::Error {
-                                    message: "Failed to acquire subscriber lock".to_string(),
-                                },
-                            )?;
-                        }
-                    }
-                    Err(message) => {
-                        write_message(&mut stream, &Response::Error { message })?;
-                    }
-                }
+                subscribe(&mut stream, &status_subscribers, "Status")?;
             }
             Request::SubscribeLogs { .. } => {
-                match prepare_subscriber_clone(&stream) {
-                    Ok(stream_clone) => {
-                        // Acquire lock, add subscriber, release lock before I/O
-                        let lock_result = log_subscribers.lock().map(|mut subs| {
-                            subs.push(stream_clone);
-                        });
-                        // Write response AFTER releasing the lock
-                        if lock_result.is_ok() {
-                            write_message(&mut stream, &Response::Ok)?;
-                        } else {
-                            write_message(
-                                &mut stream,
-                                &Response::Error {
-                                    message: "Failed to acquire subscriber lock".to_string(),
-                                },
-                            )?;
-                        }
-                    }
-                    Err(message) => {
-                        write_message(&mut stream, &Response::Error { message })?;
-                    }
-                }
+                subscribe(&mut stream, &log_subscribers, "Log")?;
             }
             Request::Unsubscribe { .. } => {
                 write_message(&mut stream, &Response::Ok)?;
@@ -271,88 +222,58 @@ pub fn handle_client_connection(
                 write_message(&mut stream, &response)?;
                 break;
             }
+            Request::CompleteStage {
+                stage_id,
+                session_id,
+                nonce,
+                ..
+            } => {
+                let response = match control_complete::handle_complete_stage(
+                    work_dir,
+                    &stage_id,
+                    &session_id,
+                    &nonce,
+                ) {
+                    Ok(response) => response,
+                    Err(error) => Response::Error {
+                        message: format!("Completion transition refused: {error:#}"),
+                    },
+                };
+                write_message(&mut stream, &response)?;
+                break;
+            }
         }
     }
 
     Ok(())
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use tempfile::TempDir;
-
-    #[test]
-    fn user_token_rejects_admin_request() {
-        let tmp = TempDir::new().unwrap();
-        // Both tokens live under the per-project work dir.
-        std::fs::write(admin_token_path(tmp.path()), "admin-secret").unwrap();
-        std::fs::write(tmp.path().join(USER_TOKEN_FILE), "user-secret").unwrap();
-
-        // The user token must NOT satisfy Capability::Admin.
-        assert!(!verify_for_capability(
-            tmp.path(),
-            "user-secret",
-            Capability::Admin
-        ));
-        // Admin token does satisfy Admin.
-        assert!(verify_for_capability(
-            tmp.path(),
-            "admin-secret",
-            Capability::Admin
-        ));
-        // User token satisfies User.
-        assert!(verify_for_capability(
-            tmp.path(),
-            "user-secret",
-            Capability::User
-        ));
-        // Admin token does NOT satisfy User (different files).
-        assert!(!verify_for_capability(
-            tmp.path(),
-            "admin-secret",
-            Capability::User
-        ));
-    }
-
-    #[test]
-    fn missing_token_file_fails_closed() {
-        let tmp = TempDir::new().unwrap();
-
-        // No token files written.
-        assert!(!verify_for_capability(
-            tmp.path(),
-            "anything",
-            Capability::User
-        ));
-        assert!(!verify_for_capability(
-            tmp.path(),
-            "anything",
-            Capability::Admin
-        ));
-    }
-
-    #[test]
-    fn empty_provided_token_fails() {
-        let tmp = TempDir::new().unwrap();
-        std::fs::write(admin_token_path(tmp.path()), "admin-secret").unwrap();
-
-        assert!(!verify_for_capability(tmp.path(), "", Capability::Admin));
-    }
-
-    #[test]
-    fn stop_request_required_capability_is_admin() {
-        let req = Request::Stop {
-            auth_token: "ignored".to_string(),
-        };
-        assert_eq!(req.required_capability(), Capability::Admin);
-    }
-
-    #[test]
-    fn ping_request_required_capability_is_user() {
-        let req = Request::Ping {
-            auth_token: "ignored".to_string(),
-        };
-        assert_eq!(req.required_capability(), Capability::User);
-    }
+fn subscribe(
+    stream: &mut UnixStream,
+    subscribers: &Mutex<Vec<UnixStream>>,
+    label: &str,
+) -> Result<()> {
+    let stream_clone = match prepare_subscriber_clone(stream) {
+        Ok(clone) => clone,
+        Err(message) => return write_message(stream, &Response::Error { message }),
+    };
+    let added = subscribers.lock().map(|mut subscribers| {
+        if subscribers.len() >= MAX_SUBSCRIBERS_PER_STREAM {
+            return false;
+        }
+        subscribers.push(stream_clone);
+        true
+    });
+    let response = if matches!(added, Ok(true)) {
+        Response::Ok
+    } else {
+        Response::Error {
+            message: format!("{label} subscriber capacity is exhausted"),
+        }
+    };
+    write_message(stream, &response)
 }
+
+#[cfg(test)]
+#[path = "client_tests.rs"]
+mod tests;

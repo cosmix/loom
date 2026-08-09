@@ -13,7 +13,7 @@
 use loom::models::stage::{Stage, StageStatus, StageType};
 use loom::plan::schema::AcceptanceCriterion;
 use loom::verify::transitions::{
-    are_all_dependencies_satisfied, load_stage, save_stage, trigger_dependents,
+    are_all_dependencies_satisfied, load_stage, save_stage, trigger_dependents, update_stage,
 };
 use tempfile::TempDir;
 
@@ -39,19 +39,16 @@ fn test_completion_requires_merged_dependencies() {
     let temp_dir = TempDir::new().unwrap();
     let work_dir = temp_dir.path();
 
-    // Create parent stage: Completed but NOT merged
     let mut parent = create_test_stage("parent-stage", "Parent Stage", StageStatus::Executing);
     parent.try_complete(Some("Work done".to_string())).unwrap();
     // Explicitly set merged = false (this is the default but being explicit)
     parent.merged = false;
     save_stage(&parent, work_dir).expect("Should save parent stage");
 
-    // Create child stage depending on parent
     let mut child = create_test_stage("child-stage", "Child Stage", StageStatus::WaitingForDeps);
     child.add_dependency("parent-stage".to_string());
     save_stage(&child, work_dir).expect("Should save child stage");
 
-    // Assert: Child dependencies NOT satisfied because parent.merged = false
     let satisfied = are_all_dependencies_satisfied(&child, work_dir, work_dir, "main")
         .expect("Should check dependencies");
     assert!(
@@ -76,9 +73,11 @@ fn test_completion_requires_merged_dependencies() {
     );
 
     // Now set parent.merged = true and try again
-    let mut parent = load_stage("parent-stage", work_dir).expect("Should load parent");
-    parent.merged = true;
-    save_stage(&parent, work_dir).expect("Should save parent with merged=true");
+    update_stage("parent-stage", work_dir, |parent| {
+        parent.merged = true;
+        Ok(())
+    })
+    .expect("Should save parent with merged=true");
 
     // Assert: Child dependencies NOW satisfied
     let child = load_stage("child-stage", work_dir).expect("Should reload child");
@@ -131,11 +130,10 @@ fn test_acceptance_failure_creates_correct_status() {
     save_stage(&dependent, work_dir).expect("Should save dependent stage");
 
     // Simulate acceptance failure by calling try_complete_with_failures
-    let mut stage = load_stage("test-stage", work_dir).expect("Should load test stage");
-    stage
-        .try_complete_with_failures()
-        .expect("Should transition to CompletedWithFailures");
-    save_stage(&stage, work_dir).expect("Should save stage with CompletedWithFailures");
+    update_stage("test-stage", work_dir, |stage| {
+        stage.try_complete_with_failures()
+    })
+    .expect("Should save stage with CompletedWithFailures");
 
     // Assert: Stage status is CompletedWithFailures
     let stage = load_stage("test-stage", work_dir).expect("Should reload test stage");
@@ -169,10 +167,8 @@ fn test_acceptance_failure_creates_correct_status() {
         "CompletedWithFailures should be retryable to Executing"
     );
 
-    stage
-        .try_mark_executing()
-        .expect("Should transition to Executing for retry");
-    save_stage(&stage, work_dir).expect("Should save stage after retry");
+    stage = update_stage("test-stage", work_dir, |stage| stage.try_mark_executing())
+        .expect("Should save stage after retry");
     assert_eq!(
         stage.status,
         StageStatus::Executing,
@@ -198,12 +194,12 @@ fn test_successful_completion_flow() {
     save_stage(&child, work_dir).expect("Should save child stage");
 
     // Simulate successful completion (acceptance passed, merge succeeded)
-    let mut parent = load_stage("parent-stage", work_dir).expect("Should load parent");
-    parent
-        .try_complete(Some("Success!".to_string()))
-        .expect("Should complete");
-    parent.merged = true; // Merge succeeded
-    save_stage(&parent, work_dir).expect("Should save completed parent");
+    update_stage("parent-stage", work_dir, |parent| {
+        parent.try_complete(Some("Success!".to_string()))?;
+        parent.merged = true; // Merge succeeded
+        Ok(())
+    })
+    .expect("Should save completed parent");
 
     // Assert: Stage status is Completed
     let parent = load_stage("parent-stage", work_dir).expect("Should reload parent");

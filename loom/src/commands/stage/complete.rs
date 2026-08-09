@@ -6,7 +6,6 @@ use std::path::{Path, PathBuf};
 use crate::daemon::DaemonServer;
 use crate::fs::permissions::sync_worktree_permissions_with_working_dir;
 use crate::fs::session_files::find_session_for_stage;
-use crate::fs::work_dir::load_config;
 use crate::git::merge::{
     detect_in_progress_merge_at_worktree, ActiveMergeState, InProgressMerge, MergeLocation,
 };
@@ -14,71 +13,38 @@ use crate::git::worktree::find_repo_root_from_cwd;
 use crate::models::session::Session;
 use crate::models::stage::{Stage, StageStatus, StageType};
 use crate::orchestrator::merge_attribution::{attribute_main_repo_merge, MergeAttribution};
-use crate::plan::parser::{load_stage_definition_from_plan, parse_plan, ParsedPlan};
-use crate::plan::schema::{ChangeImpactConfig, ChangeImpactPolicy};
-use crate::verify::baseline::compare_to_baseline;
-use crate::verify::duplicate_detection::detect_duplicate_symbols;
 use crate::verify::transitions::{list_all_stages, load_stage, trigger_dependents, update_stage};
-use crate::verify::wiring_detection::detect_unwired_files;
 
 use super::acceptance_runner::{
     resolve_stage_execution_paths, run_acceptance_with_display, AcceptanceDisplayOptions,
 };
+use super::admin_proof::{verify_and_consume_admin_proof, AdminProofRequest};
 use super::knowledge_complete::complete_knowledge_stage;
 use super::merge_resolver::{spawn_merge_resolver, MergeResolverResult};
 use super::merge_verify::verify_or_derive_completed_commit;
 use super::progressive_complete::complete_with_merge;
 use super::session::cleanup_session_resources;
 
-/// Verify the admin token is readable before allowing verification-bypass
-/// flags (`--no-verify`, `--force-unsafe`, `--assume-merged`).
-///
-/// The admin token lives at `<work_dir>/admin.token` and is owner-only
-/// (0o600).
-pub fn require_admin_capability(work_dir: &Path) -> Result<()> {
-    let path = crate::daemon::admin_token_path(work_dir);
-    match std::fs::read_to_string(&path) {
-        Ok(s) if !s.trim().is_empty() => Ok(()),
-        _ => bail!(
-            "--no-verify, --force-unsafe, and --assume-merged require the admin \
-             token written by the daemon (expected: {}). \
-             Use `loom stage dispute-criteria` to request a criterion change.",
-            path.display()
-        ),
-    }
-}
+#[path = "complete_verification.rs"]
+mod complete_verification;
+#[path = "control_complete.rs"]
+mod control_complete;
 
-/// Load the full parsed plan from config
-fn load_parsed_plan(work_dir: &Path) -> Result<Option<ParsedPlan>> {
-    let source_path = match crate::fs::resolve_source_path(work_dir)? {
-        Some(path) => path,
-        None => return Ok(None),
-    };
+pub(crate) use super::admin_proof::{
+    mint_completion_proof_from_env, strip_privileged_env_for_runtime, take_admin_proof_from_env,
+};
 
-    // Parse the plan
-    let parsed_plan = parse_plan(&source_path)
-        .with_context(|| format!("Failed to parse plan: {}", source_path.display()))?;
-
-    Ok(Some(parsed_plan))
-}
-
-/// Resolve the base branch from config, falling back to "main"
-fn resolve_base_branch(work_dir: &Path) -> String {
-    load_config(work_dir)
-        .ok()
-        .flatten()
-        .and_then(|c| c.base_branch())
-        .unwrap_or_else(|| "main".to_string())
-}
-
-/// Load change impact config from the active plan
-fn load_change_impact_config(work_dir: &Path) -> Result<Option<ChangeImpactConfig>> {
-    let parsed_plan = match load_parsed_plan(work_dir)? {
-        Some(plan) => plan,
-        None => return Ok(None),
-    };
-
-    Ok(parsed_plan.metadata.loom.change_impact)
+/// Verify and consume the caller-supplied proof for an exact completion request.
+pub fn require_admin_capability(
+    work_dir: &Path,
+    stage_id: &str,
+    no_verify: bool,
+    force_unsafe: bool,
+    assume_merged: bool,
+    proof: Option<&str>,
+) -> Result<()> {
+    let request = AdminProofRequest::completion(stage_id, no_verify, force_unsafe, assume_merged);
+    verify_and_consume_admin_proof(work_dir, request, proof)
 }
 
 /// Where `complete()` should dispatch after the active-merge / status / force
@@ -199,10 +165,7 @@ pub fn route_complete_for_conflicts(
     // Rule 5: --force-unsafe --assume-merged dominates the status reroute so
     // verified force-completes still work on MergeConflict stages.
     if force_unsafe && assume_merged {
-        let target_branch = crate::git::branch::resolve_target_branch(
-            &Some(resolve_base_branch(work_dir)),
-            repo_root,
-        );
+        let target_branch = crate::fs::resolve_target_branch_from_config(work_dir, repo_root)?;
         let verified = verify_or_derive_completed_commit(stage, &target_branch, repo_root)
             .map_err(|e| anyhow::anyhow!("--assume-merged refused: {e}"));
         return match verified {
@@ -247,10 +210,7 @@ pub fn route_complete_for_conflicts(
                 stage_id: stage.id.clone(),
             });
         }
-        let target_branch = crate::git::branch::resolve_target_branch(
-            &Some(resolve_base_branch(work_dir)),
-            repo_root,
-        );
+        let target_branch = crate::fs::resolve_target_branch_from_config(work_dir, repo_root)?;
         let conflicting_files = match attributed_merge.map(|m| &m.state) {
             Some(ActiveMergeState::HasUnmergedPaths(paths)) => paths.clone(),
             _ => Vec::new(),
@@ -273,10 +233,7 @@ pub fn route_complete_for_conflicts(
         let merge = attributed_merge
             .cloned()
             .expect("attributed_to_this_stage implies merge");
-        let target_branch = crate::git::branch::resolve_target_branch(
-            &Some(resolve_base_branch(work_dir)),
-            repo_root,
-        );
+        let target_branch = crate::fs::resolve_target_branch_from_config(work_dir, repo_root)?;
         let conflicting_files = match &merge.state {
             ActiveMergeState::HasUnmergedPaths(paths) => paths.clone(),
             ActiveMergeState::ResolvedButUncommitted => Vec::new(),
@@ -340,43 +297,51 @@ pub fn complete(
     no_verify: bool,
     force_unsafe: bool,
     assume_merged: bool,
+    admin_proof: Option<String>,
 ) -> Result<()> {
     let work_dir = Path::new(".work");
-
-    // Admin capability gate: --no-verify, --force-unsafe, and --assume-merged
-    // are verification-bypass flags. They require the host admin.token. The
-    // gate runs FIRST so it precedes force-unsafe handling and the regular
-    // acceptance pipeline.
-    if no_verify || force_unsafe || assume_merged {
-        require_admin_capability(work_dir)?;
+    if handle_broker_request(
+        &stage_id,
+        session_id.as_deref(),
+        no_verify || force_unsafe || assume_merged,
+        work_dir,
+    )? {
+        return Ok(());
     }
+    authorize_privileged_completion(
+        &stage_id,
+        no_verify,
+        force_unsafe,
+        assume_merged,
+        admin_proof.as_deref(),
+        work_dir,
+    )?;
 
     let mut stage = load_stage(&stage_id, work_dir)?;
+
+    let control_session =
+        sandbox_control_session(&stage, &stage_id, session_id.as_deref(), work_dir)?;
 
     // Route knowledge stages to specialized completion (no merge required).
     // Knowledge stages have no branch and no merge state, so the conflict
     // router is irrelevant.
     if stage.stage_type == StageType::Knowledge {
+        if control_session.is_some() {
+            bail!("sandboxed completion supports worktree stages only");
+        }
         return complete_knowledge_stage(&stage_id, session_id.as_deref(), no_verify, force_unsafe);
     }
 
-    // Determine routing based on git/state inspection.
-    let cwd = std::env::current_dir().context("Failed to get current directory")?;
-    let repo_root = find_repo_root_from_cwd(&cwd).unwrap_or_else(|| cwd.clone());
-    let daemon_running = DaemonServer::is_running(work_dir);
-    let sessions = load_all_sessions_for_router(work_dir);
-    let all_stages = list_all_stages(work_dir).unwrap_or_default();
+    let (route, repo_root) =
+        resolve_completion_route(&stage, force_unsafe, assume_merged, work_dir)?;
 
-    let route = route_complete_for_conflicts(
-        &stage,
-        &sessions,
-        &all_stages,
-        &repo_root,
-        work_dir,
-        daemon_running,
-        force_unsafe,
-        assume_merged,
-    )?;
+    // A sandboxed wrapper may perform verification only. Resolver spawning,
+    // phantom-merge repair, and administrative completion all mutate trusted
+    // state before the verification marker and therefore belong to the host
+    // orchestrator, not this route.
+    if control_session.is_some() && !matches!(&route, CompleteConflictRoute::Proceed) {
+        bail!("sandboxed completion cannot perform conflict or recovery operations");
+    }
 
     match route {
         CompleteConflictRoute::Proceed => {
@@ -472,34 +437,147 @@ pub fn complete(
     let working_dir: Option<PathBuf> = execution_paths.worktree_root;
     let acceptance_dir: Option<PathBuf> = execution_paths.acceptance_dir;
 
-    // Sync worktree permissions before running acceptance criteria
-    sync_worktree_permissions(&working_dir, &acceptance_dir);
+    // Permission fold-back writes the main repository and sibling worktrees.
+    // Keep that host-side behavior for ordinary completion, but never perform
+    // it from a sandboxed wrapper whose only authority is verification.
+    if control_session.is_none() {
+        sync_worktree_permissions(&working_dir, &acceptance_dir);
+    }
 
     // Run acceptance criteria phase
     let acceptance_result =
         run_acceptance_phase(&stage, &stage_id, no_verify, acceptance_dir.as_deref())?;
 
-    // Handle acceptance failure - keep stage in Executing, agent can fix and retry
-    // Do NOT transition state - stage stays Executing so agent can fix and re-run
-    // Do NOT clean up session - agent is still alive
-    if acceptance_result == Some(false) {
-        eprintln!("Acceptance criteria FAILED for stage '{stage_id}'");
-        eprintln!("  Fix the issues and run 'loom stage complete {stage_id}' again");
-        anyhow::bail!("Acceptance criteria failed for stage '{stage_id}'");
-    }
+    ensure_acceptance_passed(acceptance_result, &stage_id)?;
 
     // Run verification and merge phase
-    run_verification_phase(
-        &mut stage,
-        &stage_id,
+    run_verification_phase(VerificationPhase {
+        stage: &mut stage,
+        stage_id: &stage_id,
         no_verify,
-        &acceptance_dir,
-        &working_dir,
-        session_id.as_deref(),
+        acceptance_dir: &acceptance_dir,
+        worktree_root: &working_dir,
+        session_id: session_id.as_deref(),
+        control_session: control_session.as_deref(),
         work_dir,
-    )?;
+    })?;
 
     Ok(())
+}
+
+fn handle_broker_request(
+    stage_id: &str,
+    session_id: Option<&str>,
+    has_privileged_flags: bool,
+    work_dir: &Path,
+) -> Result<bool> {
+    if !control_complete::broker_requested() {
+        return Ok(false);
+    }
+    if has_privileged_flags {
+        bail!("trusted completion broker does not accept privileged flags");
+    }
+    let session_id = session_id.context("trusted completion broker requires --session")?;
+    require_wrapper_identity(stage_id, session_id)?;
+    control_complete::send_completion(stage_id, session_id, work_dir)?;
+    Ok(true)
+}
+
+fn ensure_acceptance_passed(result: Option<bool>, stage_id: &str) -> Result<()> {
+    if result == Some(false) {
+        eprintln!("Acceptance criteria FAILED for stage '{stage_id}'");
+        eprintln!("  Fix the issues and run 'loom stage complete {stage_id}' again");
+        bail!("Acceptance criteria failed for stage '{stage_id}'");
+    }
+    Ok(())
+}
+
+fn authorize_privileged_completion(
+    stage_id: &str,
+    no_verify: bool,
+    force_unsafe: bool,
+    assume_merged: bool,
+    proof: Option<&str>,
+    work_dir: &Path,
+) -> Result<()> {
+    if no_verify || force_unsafe || assume_merged {
+        require_admin_capability(
+            work_dir,
+            stage_id,
+            no_verify,
+            force_unsafe,
+            assume_merged,
+            proof,
+        )?;
+    }
+    Ok(())
+}
+
+fn resolve_completion_route(
+    stage: &Stage,
+    force_unsafe: bool,
+    assume_merged: bool,
+    work_dir: &Path,
+) -> Result<(CompleteConflictRoute, PathBuf)> {
+    let cwd = std::env::current_dir().context("Failed to get current directory")?;
+    let repo_root = find_repo_root_from_cwd(&cwd).unwrap_or_else(|| cwd.clone());
+    let sessions = load_all_sessions_for_router(work_dir);
+    let all_stages = list_all_stages(work_dir).unwrap_or_default();
+    let route = route_complete_for_conflicts(
+        stage,
+        &sessions,
+        &all_stages,
+        &repo_root,
+        work_dir,
+        DaemonServer::is_running(work_dir),
+        force_unsafe,
+        assume_merged,
+    )?;
+    Ok((route, repo_root))
+}
+
+fn require_wrapper_identity(stage_id: &str, session_id: &str) -> Result<()> {
+    let env_stage = std::env::var("LOOM_STAGE_ID").context("LOOM_STAGE_ID is missing")?;
+    let env_session = std::env::var("LOOM_SESSION_ID").context("LOOM_SESSION_ID is missing")?;
+    if env_stage != stage_id || env_session != session_id {
+        bail!("trusted completion broker identity does not match wrapper identity");
+    }
+    Ok(())
+}
+
+fn sandbox_control_session(
+    stage: &Stage,
+    stage_id: &str,
+    requested_session: Option<&str>,
+    work_dir: &Path,
+) -> Result<Option<String>> {
+    let (Ok(env_stage), Ok(env_session), Ok(worktree)) = (
+        std::env::var("LOOM_STAGE_ID"),
+        std::env::var("LOOM_SESSION_ID"),
+        std::env::var("LOOM_WORKTREE_PATH"),
+    ) else {
+        return Ok(None);
+    };
+    if env_stage != stage_id || stage.session.as_deref() != Some(env_session.as_str()) {
+        bail!("completion request does not match the active wrapper stage/session");
+    }
+    if requested_session.is_some_and(|requested| requested != env_session) {
+        bail!("--session does not match the active wrapper session");
+    }
+    let cwd = std::env::current_dir().context("failed to resolve completion working directory")?;
+    let worktree = PathBuf::from(worktree)
+        .canonicalize()
+        .context("failed to resolve LOOM_WORKTREE_PATH")?;
+    let cwd = cwd
+        .canonicalize()
+        .context("failed to resolve current directory")?;
+    if !cwd.starts_with(&worktree) {
+        bail!("wrapper completion must run inside its assigned worktree");
+    }
+    if !DaemonServer::is_running(work_dir) {
+        bail!("sandboxed worktree completion requires the loom daemon to be running");
+    }
+    Ok(Some(env_session))
 }
 
 /// Best-effort load of all sessions for the router. Routing must not fail on
@@ -612,9 +690,7 @@ fn handle_force_unsafe_completion(
     if stage.merged {
         let cwd = std::env::current_dir().context("Failed to get current directory")?;
         let repo_root = find_repo_root_from_cwd(&cwd).unwrap_or_else(|| cwd.clone());
-        let target_branch = resolve_base_branch(work_dir);
-        let target_branch =
-            crate::git::branch::resolve_target_branch(&Some(target_branch), &repo_root);
+        let target_branch = crate::fs::resolve_target_branch_from_config(work_dir, &repo_root)?;
         let triggered = trigger_dependents(stage_id, work_dir, &repo_root, &target_branch)
             .context("Failed to trigger dependent stages")?;
 
@@ -668,123 +744,6 @@ fn sync_worktree_permissions(working_dir: &Option<PathBuf>, acceptance_dir: &Opt
     }
 }
 
-/// Check if a stage has downstream dependents (other stages that depend on it)
-fn has_downstream_dependents(stage_id: &str, work_dir: &Path) -> bool {
-    // Load all stages and check if any depend on this one
-    match crate::verify::transitions::list_all_stages(work_dir) {
-        Ok(stages) => stages
-            .iter()
-            .any(|s| s.dependencies.contains(&stage_id.to_string())),
-        Err(_) => false, // Conservative: assume no dependents
-    }
-}
-
-/// Check if memory entries mention unwired files
-fn check_memory_covers_unwired(
-    stage_id: &str,
-    unwired_files: &[crate::verify::wiring_detection::UnwiredFile],
-    work_dir: &Path,
-) -> bool {
-    let memory_path = work_dir.join("memory").join(format!("{stage_id}.md"));
-    let memory_content = match std::fs::read_to_string(&memory_path) {
-        Ok(content) => content.to_lowercase(),
-        Err(_) => return false,
-    };
-
-    // Check for general wiring-related terms in memory
-    let wiring_keywords = [
-        "wire",
-        "wiring",
-        "register",
-        "mount",
-        "import",
-        "downstream",
-        "integrate",
-    ];
-    let has_wiring_context = wiring_keywords.iter().any(|kw| memory_content.contains(kw));
-
-    // Check if memory mentions any of the unwired files by name or path
-    let mentions_any_file = unwired_files.iter().any(|uf| {
-        let name = uf.importable_name.to_lowercase();
-        let path = uf.path.to_lowercase();
-        memory_content.contains(&name) || memory_content.contains(&path)
-    });
-
-    has_wiring_context || mentions_any_file
-}
-
-/// Run aggregated wiring re-verification across all completed stages
-///
-/// When completing an integration-verify stage, re-runs all wiring checks
-/// from all prior stages on the merged codebase.
-fn run_aggregated_wiring_reverification(
-    _stage_id: &str,
-    worktree_root: &Path,
-    work_dir: &Path,
-) -> Result<()> {
-    // Load all stages
-    let stages = crate::verify::transitions::list_all_stages(work_dir)?;
-
-    // Load plan to get stage definitions with wiring checks
-    let parsed_plan = load_parsed_plan(work_dir)?;
-    let plan = match parsed_plan {
-        Some(plan) => plan,
-        None => {
-            eprintln!("Warning: Could not load plan for aggregated wiring verification");
-            return Ok(());
-        }
-    };
-
-    let mut all_gaps = Vec::new();
-
-    for stage in &stages {
-        // Skip non-completed stages and stages without wiring checks in the plan
-        if stage.status != StageStatus::Completed {
-            continue;
-        }
-
-        // Find the stage definition in the plan
-        if let Some(stage_def) = plan.metadata.loom.stages.iter().find(|s| s.id == stage.id) {
-            // Re-run wiring checks from this stage on the merged codebase.
-            // Wiring source paths are authored relative to the originating
-            // stage's working_dir, NOT the integration-verify stage's
-            // working_dir — resolve against `worktree_root + working_dir`.
-            if !stage_def.wiring.is_empty() {
-                println!("  Re-verifying wiring from stage '{}'...", stage.id);
-                let stage_working_dir = if stage_def.working_dir == "." {
-                    worktree_root.to_path_buf()
-                } else {
-                    worktree_root.join(&stage_def.working_dir)
-                };
-                let gaps = crate::verify::goal_backward::verify_wiring(
-                    &stage_def.wiring,
-                    &stage_working_dir,
-                )?;
-                if !gaps.is_empty() {
-                    for gap in &gaps {
-                        eprintln!("    ✗ {}: {}", stage.id, gap.description);
-                    }
-                }
-                all_gaps.extend(gaps);
-            }
-        }
-    }
-
-    if all_gaps.is_empty() {
-        println!("Aggregated wiring re-verification passed!");
-    } else {
-        eprintln!();
-        eprintln!(
-            "Aggregated wiring re-verification found {} issue(s)",
-            all_gaps.len()
-        );
-        eprintln!("Fix wiring issues in the merged codebase before completing integration-verify.");
-        anyhow::bail!("Aggregated wiring re-verification failed");
-    }
-
-    Ok(())
-}
-
 /// Run acceptance criteria phase
 ///
 /// Returns Some(true) if criteria passed, Some(false) if failed, None if skipped.
@@ -816,240 +775,46 @@ fn run_acceptance_phase(
 /// Run verification phase (goal-backward verification and change impact comparison)
 ///
 /// If verifications pass, performs progressive merge. If --no-verify is used, skips all checks.
-fn run_verification_phase(
-    stage: &mut crate::models::stage::Stage,
-    stage_id: &str,
+struct VerificationPhase<'a> {
+    stage: &'a mut Stage,
+    stage_id: &'a str,
     no_verify: bool,
-    acceptance_dir: &Option<PathBuf>,
-    worktree_root: &Option<PathBuf>,
-    session_id: Option<&str>,
-    work_dir: &Path,
-) -> Result<()> {
+    acceptance_dir: &'a Option<PathBuf>,
+    worktree_root: &'a Option<PathBuf>,
+    session_id: Option<&'a str>,
+    control_session: Option<&'a str>,
+    work_dir: &'a Path,
+}
+
+fn run_verification_phase(phase: VerificationPhase<'_>) -> Result<()> {
+    let VerificationPhase {
+        stage,
+        stage_id,
+        no_verify,
+        acceptance_dir,
+        worktree_root,
+        session_id,
+        control_session,
+        work_dir,
+    } = phase;
     if !no_verify {
-        // Resolve the base branch once for all detection calls
-        let base_branch = resolve_base_branch(work_dir);
+        complete_verification::run(&complete_verification::VerificationChecks {
+            stage,
+            stage_id,
+            acceptance_dir: acceptance_dir.as_deref(),
+            worktree_root: worktree_root.as_deref(),
+            control_session,
+            work_dir,
+        })?;
 
-        // Load stage definition once for verification checks
-        let stage_def = load_stage_definition_from_plan(stage_id, work_dir)?;
-
-        // Run goal-backward verification (artifacts, wiring, wiring_tests, dead_code)
-        if let Some(ref stage_def) = stage_def {
-            if stage_def.has_any_goal_checks() {
-                println!("Running goal-backward verification...");
-                let verification_dir = acceptance_dir.as_deref().unwrap_or(Path::new("."));
-
-                // Use shared helper for verification
-                let goal_result = crate::commands::verify::run_and_verify_stage_goal(
-                    stage_id,
-                    verification_dir,
-                    work_dir,
-                )?;
-
-                if !goal_result.is_passed() {
-                    // Print gaps
-                    for gap in goal_result.gaps() {
-                        eprintln!("  ✗ {:?}: {}", gap.gap_type, gap.description);
-                        eprintln!("    → {}", gap.suggestion);
-                    }
-
-                    eprintln!();
-                    eprintln!("Goal-backward verification FAILED for stage '{stage_id}'");
-                    eprintln!("  Fix the issues and run 'loom stage complete {stage_id}' again");
-                    anyhow::bail!("Goal-backward verification failed for stage '{stage_id}'");
-                }
-                println!("Goal-backward verification passed!");
-            }
-        }
-
-        // Run after-stage verification (post-condition checks)
-        if let Some(ref stage_def) = stage_def {
-            if !stage_def.after_stage.is_empty() {
-                println!("Running after-stage verification...");
-                let verification_dir = acceptance_dir.as_deref().unwrap_or(Path::new("."));
-                let after_gaps = crate::verify::before_after::run_after_stage_checks(
-                    &stage_def.after_stage,
-                    verification_dir,
-                )?;
-
-                if !after_gaps.is_empty() {
-                    for gap in &after_gaps {
-                        eprintln!("  ✗ After-stage: {}", gap.description);
-                        eprintln!("    → {}", gap.suggestion);
-                    }
-
-                    eprintln!();
-                    eprintln!("After-stage verification FAILED for stage '{stage_id}'");
-                    eprintln!("  Fix the issues and run 'loom stage complete {stage_id}' again");
-                    anyhow::bail!("After-stage verification failed for stage '{stage_id}'");
-                }
-                println!("After-stage verification passed!");
-            }
-        }
-
-        // Unwired file detection (2a + 2b)
-        if let Some(ref verification_dir) = *acceptance_dir {
-            match detect_unwired_files(verification_dir, &base_branch) {
-                Ok(result) => {
-                    if !result.unwired_files.is_empty() {
-                        // Check if this stage has downstream dependents
-                        let has_dependents = has_downstream_dependents(stage_id, work_dir);
-
-                        if has_dependents {
-                            // Warning + memory check (2b)
-                            eprintln!(
-                                "Warning: {} potentially unwired file(s):",
-                                result.unwired_files.len()
-                            );
-                            for uf in &result.unwired_files {
-                                eprintln!(
-                                    "  - {} (importable as '{}')",
-                                    uf.path, uf.importable_name
-                                );
-                            }
-
-                            // Check if memory entries mention the unwired files
-                            let has_memory_coverage = check_memory_covers_unwired(
-                                stage_id,
-                                &result.unwired_files,
-                                work_dir,
-                            );
-
-                            if !has_memory_coverage {
-                                eprintln!();
-                                eprintln!(
-                                    "New files not yet wired and no memory notes explain downstream wiring."
-                                );
-                                eprintln!("Record memory notes explaining what needs to happen:");
-                                for uf in &result.unwired_files {
-                                    eprintln!(
-                                        "  loom memory note \"{} needs to be wired in by downstream stage\"",
-                                        uf.path
-                                    );
-                                }
-                                anyhow::bail!(
-                                    "Unwired files detected with no memory notes for downstream wiring. \
-                                     Record memory notes explaining the wiring plan."
-                                );
-                            }
-                            println!("Unwired files found but memory notes cover downstream wiring plan.");
-                        } else {
-                            // No downstream dependents = leaf stage = ERROR (blocking)
-                            eprintln!(
-                                "ERROR: Unwired files in leaf stage (no downstream dependents):"
-                            );
-                            for uf in &result.unwired_files {
-                                eprintln!(
-                                    "  - {} (importable as '{}')",
-                                    uf.path, uf.importable_name
-                                );
-                            }
-                            eprintln!();
-                            eprintln!(
-                                "Leaf stages must wire all new files. Import/register them or remove them."
-                            );
-                            anyhow::bail!(
-                                "Unwired files detected in leaf stage '{}'. Wire them or remove them.",
-                                stage_id
-                            );
-                        }
-                    }
-                }
-                Err(e) => {
-                    // Non-fatal - detection is best-effort
-                    eprintln!("Warning: Wiring detection skipped: {e}");
-                }
-            }
-        }
-
-        // Duplicate symbol detection (2c - advisory only)
-        if let Some(ref verification_dir) = *acceptance_dir {
-            match detect_duplicate_symbols(verification_dir, &base_branch) {
-                Ok(duplicates) => {
-                    if !duplicates.is_empty() {
-                        println!("Potential duplicate symbols detected:");
-                        for dup in &duplicates {
-                            println!(
-                                "  Warning: New {} '{}' in {}:{} may duplicate existing '{}' in {}:{}",
-                                dup.symbol_type,
-                                dup.symbol_name,
-                                dup.new_file,
-                                dup.new_line,
-                                dup.symbol_name,
-                                dup.existing_file,
-                                dup.existing_line
-                            );
-                        }
-                        println!("  (These are advisory warnings - verify they are intentional)");
-                    }
-                }
-                Err(e) => {
-                    eprintln!("Warning: Duplicate detection skipped: {e}");
-                }
-            }
-        }
-
-        // Aggregated wiring re-verification for integration-verify stages (3d)
-        if stage.stage_type == StageType::IntegrationVerify {
-            if let Some(ref root) = *worktree_root {
-                println!("Running aggregated wiring re-verification...");
-                run_aggregated_wiring_reverification(stage_id, root, work_dir)?;
-            }
-        }
-
-        // Run change impact comparison if configured
-        if let Some(change_impact_config) = load_change_impact_config(work_dir)? {
-            if change_impact_config.policy != ChangeImpactPolicy::Skip {
-                println!("Running change impact comparison...");
-                let comparison_dir = acceptance_dir.as_deref();
-
-                match compare_to_baseline(stage_id, &change_impact_config, comparison_dir, work_dir)
-                {
-                    Ok(impact) => {
-                        if !impact.comparison_succeeded {
-                            eprintln!(
-                                "Warning: Change impact comparison failed to run, continuing anyway"
-                            );
-                        } else {
-                            // Print summary
-                            println!("  {}", impact.summary());
-
-                            // Print details if there are new failures
-                            if impact.has_new_failures() {
-                                println!("  New failures detected:");
-                                for failure in &impact.new_failures {
-                                    println!("    - {}", failure);
-                                }
-                            }
-
-                            if !impact.fixed_failures.is_empty() {
-                                println!("  Fixed failures:");
-                                for fixed in &impact.fixed_failures {
-                                    println!("    + {}", fixed);
-                                }
-                            }
-
-                            // Check policy and fail if necessary
-                            if impact.has_new_failures()
-                                && change_impact_config.policy == ChangeImpactPolicy::Fail
-                            {
-                                eprintln!("Change impact check FAILED for stage '{stage_id}' - new failures introduced");
-                                eprintln!("  Fix the issues and run 'loom stage complete {stage_id}' again");
-                                anyhow::bail!("Change impact check failed for stage '{stage_id}' - new failures introduced");
-                            }
-
-                            if impact.has_new_failures()
-                                && change_impact_config.policy == ChangeImpactPolicy::Warn
-                            {
-                                eprintln!("⚠️  Warning: New failures introduced, but continuing due to 'warn' policy");
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        // No baseline exists or comparison failed - just warn and continue
-                        eprintln!("Warning: Change impact comparison skipped: {e}");
-                    }
-                }
-            }
+        if let Some(control_session) = control_session {
+            println!(
+                "{} stage={} session={}",
+                control_complete::VERIFIED_MARKER,
+                stage_id,
+                control_session
+            );
+            return Ok(());
         }
 
         // All verifications passed - NOW clean up session resources
@@ -1075,10 +840,7 @@ fn run_verification_phase(
         // — but knowledge stages are routed earlier in complete().
         let cwd = std::env::current_dir().context("Failed to get current directory")?;
         let repo_root = find_repo_root_from_cwd(&cwd).unwrap_or_else(|| cwd.clone());
-        let target_branch = crate::git::branch::resolve_target_branch(
-            &Some(resolve_base_branch(work_dir)),
-            &repo_root,
-        );
+        let target_branch = crate::fs::resolve_target_branch_from_config(work_dir, &repo_root)?;
         // Skip the guard if the branch doesn't exist on the host — the shape
         // that shape unit tests (no real git repo) take. The phantom-merge
         // class of bug requires an EXISTING empty branch: attempt_auto_merge

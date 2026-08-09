@@ -1,0 +1,129 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT=$(cd "$(dirname "$0")/../.." && pwd)
+HOOK="$ROOT/hooks/loom-control-complete.sh"
+TMP=$(mktemp -d)
+trap 'rm -rf "$TMP"' EXIT
+mkdir -p "$TMP/bin" "$TMP/worktree"
+LOG="$TMP/broker.log"
+
+cat >"$TMP/bin/loom" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >>"$BROKER_LOG"
+SH
+chmod +x "$TMP/bin/loom"
+
+invoke_hook() {
+	local payload=$1
+	local test_bin=${LOOM_CONTROL_TEST_BIN_OVERRIDE:-$TMP/bin/loom}
+	printf '%s' "$payload" |
+		env PATH="$TMP/bin:/usr/bin:/bin" \
+		BROKER_LOG="$LOG" LOOM_CONTROL_TESTING=1 LOOM_CONTROL_TEST_BIN="$test_bin" \
+		LOOM_STAGE_ID="build-api" LOOM_SESSION_ID="session-123" \
+		LOOM_WORKTREE_PATH="$TMP/worktree" bash "$HOOK" >/dev/null
+}
+
+post_case() {
+	local command=$1 output=$2 is_error=$3 payload
+	payload=$(jq -n \
+		--arg command "$command" --arg output "$output" --argjson is_error "$is_error" \
+		'{tool_name:"Bash",tool_input:{command:$command},tool_result:{output:$output,is_error:$is_error}}')
+	invoke_hook "$payload"
+}
+
+pre_case() {
+	local command=$1 payload
+	jq -n \
+		--arg command "$command" \
+		'{tool_name:"Bash",tool_input:{command:$command}}'
+}
+
+MARKER='LOOM_CONTROL_VERIFICATION_PASSED stage=build-api session=session-123'
+invalid_commands=(
+	'loom stage complete build-api --no-verify'
+	'loom stage complete build-api extra'
+	'loom stage complete build-api > result.txt'
+	'loom stage complete build-api < input.txt'
+	'loom stage complete build-api 2>&1'
+	'loom stage complete $(id)'
+	'loom stage complete `id`'
+	'loom stage complete build-api; id'
+	'loom stage complete build-api && id'
+	'loom stage complete build-api || id'
+	'loom stage complete build-api | id'
+	'loom stage complete build-api &'
+	$'loom stage complete build-api\nid'
+	$'loom\tstage\tcomplete\tbuild-api'
+	'loom  stage  complete  build-api'
+	$'loom stage \\\n+complete build-api'
+	'$LOOM_BIN stage complete build-api'
+	'/tmp/loom stage complete build-api'
+)
+for command in "${invalid_commands[@]}"; do
+	payload=$(pre_case "$command")
+	if invoke_hook "$payload" 2>/dev/null; then
+		echo "invalid command was not blocked: $command" >&2
+		exit 1
+	fi
+done
+[[ ! -e "$LOG" ]] || { echo "invalid command reached broker" >&2; exit 1; }
+
+relative_payload=$(pre_case 'loom stage complete build-api')
+if invoke_hook "$relative_payload" 2>/dev/null; then
+	echo "relative PATH-resolved command was not blocked" >&2
+	exit 1
+fi
+[[ ! -e "$LOG" ]] || { echo "PATH-controlled loom was invoked" >&2; exit 1; }
+
+PINNED="$TMP/bin/loom stage complete build-api"
+valid_payload=$(pre_case "$PINNED")
+invoke_hook "$valid_payload"
+[[ ! -e "$LOG" ]] || { echo "PreToolUse invoked the broker" >&2; exit 1; }
+
+for command in \
+	"function $TMP/bin/loom { printf forge; }; $PINNED" \
+	"alias loom='$TMP/bin/loom'; $PINNED"; do
+	payload=$(pre_case "$command")
+	if invoke_hook "$payload" 2>/dev/null; then
+		echo "function or alias command was not blocked: $command" >&2
+		exit 1
+	fi
+done
+[[ ! -e "$LOG" ]] || { echo "function or alias reached broker" >&2; exit 1; }
+
+symlink_bin="$TMP/bin/loom-link"
+ln -s "$TMP/bin/loom" "$symlink_bin"
+symlink_payload=$(pre_case "$symlink_bin stage complete build-api")
+if LOOM_CONTROL_TEST_BIN_OVERRIDE="$symlink_bin" invoke_hook "$symlink_payload" 2>/dev/null; then
+	echo "symlink trusted-binary override was not blocked" >&2
+	exit 1
+fi
+
+production_hook="$TMP/installed/loom-control-complete.sh"
+mkdir -p "$(dirname "$production_hook")"
+cp "$HOOK" "$production_hook"
+production_payload=$(pre_case "$PINNED")
+if printf '%s' "$production_payload" | env PATH="/usr/bin:/bin" HOME="$TMP/empty-home" \
+	LOOM_CONTROL_TESTING=1 LOOM_CONTROL_TEST_BIN="$TMP/bin/loom" \
+	LOOM_STAGE_ID=build-api LOOM_SESSION_ID=session-123 \
+	LOOM_WORKTREE_PATH="$TMP/worktree" bash "$production_hook" >/dev/null 2>&1; then
+	echo "test override was accepted outside the repository test harness" >&2
+	exit 1
+fi
+
+post_case "$PINNED" "$MARKER" true
+post_case "$PINNED" 'verification failed' false
+[[ ! -e "$LOG" ]] || { echo "failed verification reached broker" >&2; exit 1; }
+
+for command in 'loom stage complete build-api' '/tmp/loom stage complete build-api'; do
+	if post_case "$command" "$MARKER" false 2>/dev/null; then
+		echo "invalid PostToolUse command was not rejected: $command" >&2
+		exit 1
+	fi
+done
+[[ ! -e "$LOG" ]] || { echo "invalid PostToolUse command reached broker" >&2; exit 1; }
+
+post_case "$PINNED" "$MARKER" false
+[[ "$(wc -l <"$LOG" | tr -d ' ')" == 1 ]] || { echo "valid route did not run once" >&2; exit 1; }
+rg -q '^stage complete build-api --session session-123$' "$LOG"
