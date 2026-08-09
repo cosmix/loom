@@ -23,13 +23,6 @@ pub struct Monitor {
 
 impl Monitor {
     pub fn new(config: MonitorConfig) -> Self {
-        // Compact the append-only soft-signals log once at startup, dropping
-        // expired rows so per-tick readers don't re-parse stale history.
-        if let Err(e) = super::soft_signals::compact(&config.work_dir, std::time::SystemTime::now())
-        {
-            tracing::warn!("Failed to compact soft-signals.jsonl at startup: {e}");
-        }
-
         // The staleness threshold lives on the stage, not the watcher —
         // `config.hung_timeout` is only the fallback for a session whose stage
         // cannot be resolved, and detection.rs applies it there.
