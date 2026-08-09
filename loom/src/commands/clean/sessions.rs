@@ -9,6 +9,8 @@ use colored::Colorize;
 use std::fs;
 use std::path::Path;
 
+use crate::models::stage::StageStatus;
+use crate::orchestrator::terminal::native::{cleanup_stage_files, NativeBackend};
 use crate::orchestrator::terminal::tmux::{
     kill_socket_server, list_loom_sockets, socket_session_is_alive, LoomSocket,
 };
@@ -110,8 +112,74 @@ pub(super) fn clean_sessions(repo_root: &Path, mode: SessionReapMode) -> Result<
         }
     }
 
+    cleanup_terminal_tombstones(&work_dir, mode)?;
+
     print_sessions_summary(orphaned_reaped, live_reaped, unattributed);
     Ok(orphaned_reaped + live_reaped)
+}
+
+/// Remove PID and wrapper tombstones only when a session record positively
+/// attributes them to a finished stage (or when `loom clean` will remove that
+/// record together with `.work/`). Never scan the PID or wrapper directories:
+/// an unparseable or otherwise unattributed entry is evidence we must retain.
+fn cleanup_terminal_tombstones(work_dir: &Path, mode: SessionReapMode) -> Result<()> {
+    let sessions_dir = work_dir.join("sessions");
+    if !sessions_dir.exists() {
+        return Ok(());
+    }
+
+    for entry in fs::read_dir(&sessions_dir)? {
+        let path = entry?.path();
+        if path.extension().and_then(|extension| extension.to_str()) != Some("md") {
+            continue;
+        }
+
+        let Some(session) = read_session_for_tombstone_cleanup(&path) else {
+            continue;
+        };
+
+        if mode != SessionReapMode::IncludeLiveBeforeClean && !stage_is_terminal(&session, work_dir)
+        {
+            continue;
+        }
+
+        if let Some((_, pid_key)) = NativeBackend::window_title_and_pid_key(&session) {
+            cleanup_stage_files(work_dir, &pid_key);
+        }
+    }
+
+    Ok(())
+}
+
+fn read_session_for_tombstone_cleanup(path: &Path) -> Option<crate::models::session::Session> {
+    let content = match fs::read_to_string(path) {
+        Ok(content) => content,
+        Err(error) => {
+            tracing::warn!(path = %path.display(), %error, "unable to read session record while reaping terminal tombstones");
+            return None;
+        }
+    };
+    match crate::parser::frontmatter::parse_from_markdown(&content, "Session") {
+        Ok(session) => Some(session),
+        Err(error) => {
+            tracing::warn!(path = %path.display(), %error, "unable to parse session record while reaping terminal tombstones");
+            None
+        }
+    }
+}
+
+/// A session's tombstones are eligible for cleanup only after its assigned
+/// stage is permanently complete. A missing or unreadable stage is not proof
+/// of completion and must leave the attributed files intact.
+fn stage_is_terminal(session: &crate::models::session::Session, work_dir: &Path) -> bool {
+    let Some(stage_id) = session.stage_id.as_deref() else {
+        return false;
+    };
+    let Ok(stage) = crate::verify::transitions::load_stage(stage_id, work_dir) else {
+        return false;
+    };
+
+    (stage.status == StageStatus::Completed && stage.merged) || stage.status == StageStatus::Skipped
 }
 
 /// Explains, before the sweep runs, why this invocation may reap a LIVE
@@ -170,6 +238,7 @@ mod tests {
     use super::*;
     use crate::fs::session_files::session_to_markdown;
     use crate::models::session::Session;
+    use crate::models::stage::{Stage, StageStatus};
     use serial_test::serial;
     use tempfile::TempDir;
 
@@ -260,5 +329,72 @@ mod tests {
             "an unattributed socket must never be touched, even when .work/ is about to be \
              destroyed"
         );
+    }
+
+    fn write_session_tombstones(work_dir: &Path, sessions_dir: &Path, session: &Session) {
+        fs::write(
+            sessions_dir.join(format!("{}.md", session.id)),
+            session_to_markdown(session),
+        )
+        .unwrap();
+        let (_, pid_key) = NativeBackend::window_title_and_pid_key(session).unwrap();
+        crate::orchestrator::terminal::native::create_wrapper_script(
+            work_dir,
+            &pid_key,
+            session.stage_id.as_deref().unwrap(),
+            &session.id,
+            "claude 'prompt'",
+            None,
+        )
+        .unwrap();
+        fs::create_dir_all(work_dir.join("pids")).unwrap();
+        fs::write(
+            work_dir.join("pids").join(format!("{pid_key}.pid")),
+            "999999999\n1\n",
+        )
+        .unwrap();
+    }
+
+    fn tombstones_exist(work_dir: &Path, session: &Session) -> (bool, bool) {
+        let (_, pid_key) = NativeBackend::window_title_and_pid_key(session).unwrap();
+        (
+            work_dir
+                .join("pids")
+                .join(format!("{pid_key}.pid"))
+                .exists(),
+            work_dir
+                .join("wrappers")
+                .join(format!("{pid_key}-wrapper.sh"))
+                .exists(),
+        )
+    }
+
+    #[test]
+    #[serial]
+    fn clean_sessions_reaps_only_tombstones_attributed_to_finished_sessions() {
+        let tmux_tmpdir = TempDir::new().unwrap();
+        let _guard = TmuxTmpDirGuard::set(tmux_tmpdir.path());
+        let repo_root = TempDir::new().unwrap();
+        let work_dir = repo_root.path().join(".work");
+        let sessions_dir = work_dir.join("sessions");
+        fs::create_dir_all(&sessions_dir).unwrap();
+        let mut finished_stage = Stage::new("finished-stage".to_string(), None);
+        finished_stage.id = "finished-stage".to_string();
+        finished_stage.status = StageStatus::Skipped;
+        crate::verify::transitions::save_stage(&finished_stage, &work_dir).unwrap();
+
+        let mut finished_session = Session::new();
+        finished_session.assign_to_stage(finished_stage.id.clone());
+        let mut running_session = Session::new();
+        running_session.assign_to_stage("running-stage".to_string());
+        write_session_tombstones(&work_dir, &sessions_dir, &finished_session);
+        write_session_tombstones(&work_dir, &sessions_dir, &running_session);
+        clean_sessions(repo_root.path(), SessionReapMode::OrphansOnly).unwrap();
+
+        assert_eq!(
+            tombstones_exist(&work_dir, &finished_session),
+            (false, false)
+        );
+        assert_eq!(tombstones_exist(&work_dir, &running_session), (true, true));
     }
 }
