@@ -293,7 +293,6 @@ mod tests {
             merged: false,
             dependencies: vec![],
             model: String::new(),
-            is_possibly_stuck: false,
         }];
         status.completed = vec![StageInfo {
             id: "b".to_string(),
@@ -306,7 +305,6 @@ mod tests {
             merged: true,
             dependencies: vec![],
             model: String::new(),
-            is_possibly_stuck: false,
         }];
 
         assert_eq!(status.total(), 2);
@@ -329,7 +327,6 @@ mod tests {
                     merged: false,
                     dependencies: vec![],
                     model: String::new(),
-                    is_possibly_stuck: false,
                 },
                 StageInfo {
                     id: "b".to_string(),
@@ -342,7 +339,6 @@ mod tests {
                     merged: false,
                     dependencies: vec!["a".to_string()],
                     model: String::new(),
-                    is_possibly_stuck: false,
                 },
                 StageInfo {
                     id: "c".to_string(),
@@ -355,7 +351,6 @@ mod tests {
                     merged: false,
                     dependencies: vec!["a".to_string(), "b".to_string()],
                     model: String::new(),
-                    is_possibly_stuck: false,
                 },
             ],
             completed: vec![],

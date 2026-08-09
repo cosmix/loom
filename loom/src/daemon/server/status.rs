@@ -3,7 +3,6 @@
 use super::super::protocol::{CompletionSummary, Response, StageCompletionInfo, StageInfo};
 use anyhow::Result;
 use chrono::{DateTime, Utc};
-use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -29,11 +28,6 @@ pub fn collect_status(work_dir: &Path) -> Result<Response> {
     // the result is invariant across a single collection pass.
     let target_branch = crate::fs::resolve_target_branch_from_config(work_dir, &repo_root)?;
 
-    // P-5: read soft-signals ONCE per collection rather than full-scanning the
-    // append-only JSONL file for every stage. Build the set of session IDs that
-    // currently have an active `PossiblyStuck` signal.
-    let stuck_sessions = active_stuck_sessions(work_dir);
-
     let mut stages_executing = Vec::new();
     let mut stages_pending = Vec::new();
     let mut stages_completed = Vec::new();
@@ -58,11 +52,6 @@ pub fn collect_status(work_dir: &Path) -> Result<Response> {
                             );
 
                             let model = stage.effective_model().to_string();
-                            let is_possibly_stuck = stage
-                                .session
-                                .as_deref()
-                                .map(|sid| stuck_sessions.contains(sid))
-                                .unwrap_or(false);
                             let bucket = stage.status.bucket();
                             let stage_info = StageInfo {
                                 id: stage.id,
@@ -75,7 +64,6 @@ pub fn collect_status(work_dir: &Path) -> Result<Response> {
                                 merged: stage.merged,
                                 dependencies: stage.dependencies,
                                 model,
-                                is_possibly_stuck,
                             };
 
                             // D-5: categorize via the canonical StageStatus::bucket()
@@ -100,23 +88,6 @@ pub fn collect_status(work_dir: &Path) -> Result<Response> {
         stages_completed,
         stages_blocked,
     })
-}
-
-/// Collect the set of session IDs that currently have an active `PossiblyStuck`
-/// soft signal, reading the soft-signals file exactly once (P-5).
-///
-/// Mirrors the per-session check in `commands::status::data::collector` so
-/// static, compact, and live status modes render the same `[stuck?]` flag.
-fn active_stuck_sessions(work_dir: &Path) -> HashSet<String> {
-    use crate::orchestrator::monitor::soft_signals::{read_active, SoftSignal};
-    let now = std::time::SystemTime::now();
-    read_active(work_dir, now)
-        .unwrap_or_default()
-        .into_iter()
-        .map(|s| match s {
-            SoftSignal::PossiblyStuck { session_id, .. } => session_id,
-        })
-        .collect()
 }
 
 /// Detect the worktree status for a stage.
@@ -405,86 +376,6 @@ mod tests {
         } else {
             panic!("Expected StatusUpdate response");
         }
-    }
-
-    #[test]
-    fn test_is_possibly_stuck_derived_from_soft_signals() {
-        use crate::orchestrator::monitor::soft_signals::{append, SoftSignal, DECAY_WINDOW_SECS};
-
-        let temp = tempfile::tempdir().unwrap();
-        let work_dir = temp.path();
-        let stages_dir = work_dir.join("stages");
-        std::fs::create_dir_all(&stages_dir).unwrap();
-
-        let mut stage = Stage::new("Stuck Stage".to_string(), None);
-        stage.id = "stuck-stage".to_string();
-        stage.status = StageStatus::Executing;
-        stage.session = Some("session-abc".to_string());
-        write_stage_file(&stages_dir, &stage);
-
-        // Before any soft signal: flag is false.
-        let response = collect_status(work_dir).unwrap();
-        if let Response::StatusUpdate {
-            stages_executing, ..
-        } = &response
-        {
-            let info = stages_executing
-                .iter()
-                .find(|s| s.id == "stuck-stage")
-                .unwrap();
-            assert!(
-                !info.is_possibly_stuck,
-                "is_possibly_stuck must be false until a soft signal is emitted"
-            );
-        } else {
-            panic!("Expected StatusUpdate");
-        }
-
-        // Emit a PossiblyStuck soft signal matching the session.
-        let now = chrono::Utc::now();
-        let sig = SoftSignal::PossiblyStuck {
-            session_id: "session-abc".to_string(),
-            stage_id: "stuck-stage".to_string(),
-            recent_events: 6,
-            failure_count: 6,
-            failure_ratio: 1.0,
-            emitted_at: now.to_rfc3339(),
-            expires_at: (now + chrono::Duration::seconds(DECAY_WINDOW_SECS as i64)).to_rfc3339(),
-        };
-        append(work_dir, &sig).unwrap();
-
-        // After signal: flag is true.
-        let response = collect_status(work_dir).unwrap();
-        if let Response::StatusUpdate {
-            stages_executing, ..
-        } = response
-        {
-            let info = stages_executing
-                .iter()
-                .find(|s| s.id == "stuck-stage")
-                .unwrap();
-            assert!(
-                info.is_possibly_stuck,
-                "is_possibly_stuck must reflect the soft signal in the daemon path"
-            );
-        } else {
-            panic!("Expected StatusUpdate");
-        }
-    }
-
-    #[test]
-    fn test_is_possibly_stuck_never_persisted_to_stage_yaml() {
-        // The field must be derived at read time, not stored on disk. If a
-        // future serde attribute regression caused it to be persisted, every
-        // post-flag save would lie about the session being stuck even after
-        // the signal expired.
-        let mut stage = Stage::new("Field Persistence".to_string(), None);
-        stage.is_possibly_stuck = true;
-        let yaml = serialize_stage_to_markdown(&stage).unwrap();
-        assert!(
-            !yaml.contains("is_possibly_stuck"),
-            "is_possibly_stuck must NOT appear in the serialized stage markdown; got:\n{yaml}"
-        );
     }
 
     #[test]

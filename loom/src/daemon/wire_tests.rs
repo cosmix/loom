@@ -75,7 +75,6 @@ fn stage_info(id: &str, status: StageStatus, now: chrono::DateTime<Utc>) -> Stag
         merged: false,
         dependencies: vec![],
         model: "test".to_string(),
-        is_possibly_stuck: false,
     }
 }
 

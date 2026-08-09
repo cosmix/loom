@@ -235,15 +235,14 @@ fn post_tool_hook_persists_only_a_private_heartbeat() {
         fs::metadata(&heartbeat).unwrap().permissions().mode() & 0o777,
         0o600
     );
-    assert!(!fixture.work_dir.join("tool-events.jsonl").exists());
-
-    let victim = fixture._temp.path().join("victim");
-    fs::write(&victim, "unchanged").unwrap();
-    let events = fixture.work_dir.join("tool-events.jsonl");
-    symlink(&victim, &events).unwrap();
+    let legacy_events = fixture.work_dir.join("tool-events.jsonl");
+    fs::write(&legacy_events, "legacy telemetry remains untouched").unwrap();
     assert!(run_hook(&script, &fixture.worktree, &envs, &payload)
         .status
         .success());
-    assert_eq!(fs::read_to_string(victim).unwrap(), "unchanged");
+    assert_eq!(
+        fs::read_to_string(legacy_events).unwrap(),
+        "legacy telemetry remains untouched"
+    );
     assert!(!HOOK_WORKTREE_FILE_GUARD.contains("worktree-file-guard-debug"));
 }

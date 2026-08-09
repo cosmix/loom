@@ -1,6 +1,6 @@
 //! Persistent soft signals for the monitor.
 //!
-//! Soft signals are advisory notices (e.g. "possibly stuck") that the
+//! Soft signals are advisory notices that the
 //! orchestrator persists to disk so that dedup can survive daemon restarts.
 //! Each signal has an `expires_at` timestamp; expired signals are ignored on
 //! read. Writers append one JSON line per signal; there is no compaction.
@@ -13,28 +13,16 @@ use std::time::SystemTime;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-/// How long (in seconds) a soft signal remains active before it expires.
-pub const DECAY_WINDOW_SECS: u64 = 120;
-
 /// A single soft advisory signal.
 ///
-/// The `kind` tag is embedded in the serialized JSON, allowing new variants to
-/// be added without breaking existing readers (unknown kinds are silently
-/// skipped via the malformed-line filter in `read_active`).
+/// The `kind` field is embedded in the serialized JSON so future advisory
+/// signals can be added without changing the on-disk envelope.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(tag = "kind", rename_all = "snake_case")]
-pub enum SoftSignal {
-    PossiblyStuck {
-        session_id: String,
-        stage_id: String,
-        recent_events: usize,
-        failure_count: u32,
-        failure_ratio: f32,
-        /// RFC3339 timestamp of when the signal was emitted.
-        emitted_at: String,
-        /// RFC3339 timestamp after which the signal should be considered expired.
-        expires_at: String,
-    },
+pub struct SoftSignal {
+    /// Signal kind, reserved for future advisory signals.
+    pub kind: String,
+    /// RFC3339 timestamp after which the signal should be considered expired.
+    pub expires_at: String,
 }
 
 fn signals_path(work_dir: &Path) -> std::path::PathBuf {
@@ -86,9 +74,7 @@ pub fn read_active(work_dir: &Path, now: SystemTime) -> io::Result<Vec<SoftSigna
             }
         };
         // Keep only non-expired signals.
-        let expires_str = match &sig {
-            SoftSignal::PossiblyStuck { expires_at, .. } => expires_at.as_str(),
-        };
+        let expires_str = sig.expires_at.as_str();
         match DateTime::parse_from_rfc3339(expires_str) {
             Ok(expires_dt) => {
                 if now_dt < expires_dt {
@@ -105,39 +91,6 @@ pub fn read_active(work_dir: &Path, now: SystemTime) -> io::Result<Vec<SoftSigna
     }
 
     Ok(active)
-}
-
-/// Read all non-expired soft signals for a specific session.
-pub fn read_active_for_session(
-    work_dir: &Path,
-    now: SystemTime,
-    session_id: &str,
-) -> io::Result<Vec<SoftSignal>> {
-    let all = read_active(work_dir, now)?;
-    Ok(all
-        .into_iter()
-        .filter(|s| match s {
-            SoftSignal::PossiblyStuck {
-                session_id: sid, ..
-            } => sid == session_id,
-        })
-        .collect())
-}
-
-/// Filter a [`SoftSignal`] slice down to those belonging to `session_id`.
-///
-/// Used by callers that have already loaded the active signals once for the
-/// current tick (see the per-tick cache in `detection.rs`) and want the
-/// per-session view without re-reading the file.
-pub fn filter_for_session<'a>(signals: &'a [SoftSignal], session_id: &str) -> Vec<&'a SoftSignal> {
-    signals
-        .iter()
-        .filter(|s| match s {
-            SoftSignal::PossiblyStuck {
-                session_id: sid, ..
-            } => sid == session_id,
-        })
-        .collect()
 }
 
 /// Compact `soft-signals.jsonl` in place, keeping only non-expired rows.
@@ -183,17 +136,11 @@ mod tests {
     use super::*;
     use tempfile::TempDir;
 
-    fn make_signal(session_id: &str, stage_id: &str, expires_offset_secs: i64) -> SoftSignal {
+    fn make_signal(expires_offset_secs: i64) -> SoftSignal {
         let now = Utc::now();
-        let emitted_at = now.to_rfc3339();
         let expires_at = (now + chrono::Duration::seconds(expires_offset_secs)).to_rfc3339();
-        SoftSignal::PossiblyStuck {
-            session_id: session_id.to_string(),
-            stage_id: stage_id.to_string(),
-            recent_events: 10,
-            failure_count: 9,
-            failure_ratio: 0.9,
-            emitted_at,
+        SoftSignal {
+            kind: "test".to_string(),
             expires_at,
         }
     }
@@ -205,7 +152,7 @@ mod tests {
     fn append_and_read_round_trip() {
         let dir = TempDir::new().unwrap();
         // expires in 200 seconds → should be active
-        let sig = make_signal("sess-1", "stage-1", 200);
+        let sig = make_signal(200);
         append(dir.path(), &sig).unwrap();
 
         let active = read_active(dir.path(), SystemTime::now()).unwrap();
@@ -220,7 +167,7 @@ mod tests {
     fn decay_filtering() {
         let dir = TempDir::new().unwrap();
         // expires 1 second in the past → should be filtered
-        let sig = make_signal("sess-2", "stage-2", -1);
+        let sig = make_signal(-1);
         append(dir.path(), &sig).unwrap();
 
         let active = read_active(dir.path(), SystemTime::now()).unwrap();
@@ -248,7 +195,7 @@ mod tests {
         let monitor_dir = dir.path().join("monitor");
         fs::create_dir_all(&monitor_dir).unwrap();
         let path = monitor_dir.join("soft-signals.jsonl");
-        let valid_sig = make_signal("sess-3", "stage-3", 200);
+        let valid_sig = make_signal(200);
         let valid_json = serde_json::to_string(&valid_sig).unwrap();
 
         let mut f = fs::File::create(&path).unwrap();
@@ -267,18 +214,16 @@ mod tests {
     fn compact_drops_expired_keeps_active() {
         let dir = TempDir::new().unwrap();
         // Two expired, one active.
-        append(dir.path(), &make_signal("s1", "st1", -10)).unwrap();
-        append(dir.path(), &make_signal("s2", "st2", 200)).unwrap();
-        append(dir.path(), &make_signal("s3", "st3", -5)).unwrap();
+        append(dir.path(), &make_signal(-10)).unwrap();
+        append(dir.path(), &make_signal(200)).unwrap();
+        append(dir.path(), &make_signal(-5)).unwrap();
 
         compact(dir.path(), SystemTime::now()).unwrap();
 
         // After compaction only the active signal remains on disk.
         let active = read_active(dir.path(), SystemTime::now()).unwrap();
         assert_eq!(active.len(), 1);
-        match &active[0] {
-            SoftSignal::PossiblyStuck { session_id, .. } => assert_eq!(session_id, "s2"),
-        }
+        assert_eq!(active[0].kind, "test");
 
         // Verify the file physically shrank to a single row.
         let path = signals_path(dir.path());
@@ -294,21 +239,5 @@ mod tests {
         let dir = TempDir::new().unwrap();
         compact(dir.path(), SystemTime::now()).unwrap();
         assert!(!signals_path(dir.path()).exists());
-    }
-
-    // -----------------------------------------------------------------------
-    // Test 7: filter_for_session narrows to the requested session
-    // -----------------------------------------------------------------------
-    #[test]
-    fn filter_for_session_narrows() {
-        let signals = vec![
-            make_signal("s1", "st1", 200),
-            make_signal("s2", "st2", 200),
-            make_signal("s1", "st3", 200),
-        ];
-        let for_s1 = filter_for_session(&signals, "s1");
-        assert_eq!(for_s1.len(), 2);
-        let for_missing = filter_for_session(&signals, "nope");
-        assert!(for_missing.is_empty());
     }
 }

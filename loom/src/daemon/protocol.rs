@@ -256,9 +256,6 @@ pub struct StageInfo {
     /// Effective model name for this stage (explicit override or stage-type default)
     #[serde(default)]
     pub model: String,
-    /// Whether the monitor has flagged this session as possibly stuck
-    #[serde(default)]
-    pub is_possibly_stuck: bool,
 }
 
 pub use super::wire::{

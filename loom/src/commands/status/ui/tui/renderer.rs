@@ -164,7 +164,6 @@ pub fn stage_info_to_stage(info: &StageInfo) -> Stage {
             Some(info.model.clone())
         },
         reasoning_effort: None,
-        is_possibly_stuck: info.is_possibly_stuck,
         ultracode: false,
         implementers: Implementers::default(),
         subagent_timeout_secs: None,
@@ -396,7 +395,6 @@ mod tests {
             merged: true,
             dependencies: vec!["dep1".to_string(), "dep2".to_string()],
             model: "opus".to_string(),
-            is_possibly_stuck: false,
         };
 
         let stage = stage_info_to_stage(&info);

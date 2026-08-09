@@ -763,11 +763,6 @@ pub struct Stage {
         deserialize_with = "deserialize_persisted_reasoning_effort"
     )]
     pub reasoning_effort: Option<String>,
-    /// Whether the monitor has flagged this stage's session as possibly stuck.
-    /// Derived at read time from `.work/monitor/soft-signals.jsonl`; never persisted
-    /// to stage files (and never read back from them).
-    #[serde(skip)]
-    pub is_possibly_stuck: bool,
     /// License this stage's session for ultracode Workflow orchestration
     /// (multi-agent fan-out). Copied from the plan's StageDefinition.
     #[serde(default)]
@@ -1164,7 +1159,6 @@ impl Default for Stage {
             regression_test: None,
             model: None,
             reasoning_effort: None,
-            is_possibly_stuck: false,
             ultracode: false,
             implementers: Implementers::default(),
             subagent_timeout_secs: None,

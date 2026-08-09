@@ -64,7 +64,6 @@ fn make_stage(id: &str, deps: Vec<&str>, status: StageStatus) -> Stage {
         regression_test: None,
         model: None,
         reasoning_effort: None,
-        is_possibly_stuck: false,
         ultracode: false,
         implementers: Implementers::default(),
         subagent_timeout_secs: None,

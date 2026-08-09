@@ -149,7 +149,6 @@ mod tests {
             model: None,
             reasoning_effort: None,
             code_review: None,
-            is_possibly_stuck: false,
             ultracode: false,
             implementers: Implementers::default(),
             subagent_timeout_secs: None,
