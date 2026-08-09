@@ -430,7 +430,23 @@ fn preserve_unowned_keys(new_settings: &mut Value, existing: &Value) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::plan::schema::{FilesystemConfig, LinuxConfig, NetworkConfig, SandboxConfig};
+    use crate::plan::schema::{
+        FilesystemConfig, LinuxConfig, NetworkConfig, SandboxConfig, StageSandboxConfig, StageType,
+    };
+    use crate::sandbox::merge_config;
+
+    fn default_config() -> MergedSandboxConfig {
+        MergedSandboxConfig {
+            enabled: true,
+            auto_allow: true,
+            allow_unsandboxed_escape: false,
+            excluded_commands: vec![],
+            filesystem: FilesystemConfig::default(),
+            network: NetworkConfig::default(),
+            linux: LinuxConfig::default(),
+            permission_mode: PermissionMode::Auto,
+        }
+    }
 
     #[test]
     fn test_apply_default_mode_matrix() {
@@ -520,16 +536,7 @@ mod tests {
     fn test_generate_settings_disables_worktree_isolation() {
         // Loom owns the worktree, so Claude Code's bgIsolation must be "none"
         // to keep subagents from spawning nested worktrees/branches.
-        let config = MergedSandboxConfig {
-            enabled: true,
-            auto_allow: true,
-            allow_unsandboxed_escape: false,
-            excluded_commands: vec![],
-            filesystem: FilesystemConfig::default(),
-            network: NetworkConfig::default(),
-            linux: LinuxConfig::default(),
-            permission_mode: PermissionMode::Auto,
-        };
+        let config = default_config();
 
         let json = generate_settings_json(&config);
         assert_eq!(json["worktree"]["bgIsolation"], json!("none"));
@@ -537,16 +544,8 @@ mod tests {
 
     #[test]
     fn test_generate_settings_disabled() {
-        let config = MergedSandboxConfig {
-            enabled: false,
-            auto_allow: true,
-            allow_unsandboxed_escape: false,
-            excluded_commands: vec![],
-            filesystem: FilesystemConfig::default(),
-            network: NetworkConfig::default(),
-            linux: LinuxConfig::default(),
-            permission_mode: PermissionMode::Auto,
-        };
+        let mut config = default_config();
+        config.enabled = false;
 
         let json = generate_settings_json(&config);
         // Sandbox block should have enabled: false
@@ -651,18 +650,8 @@ mod tests {
 
     #[test]
     fn test_generate_settings_with_linux_config() {
-        let config = MergedSandboxConfig {
-            enabled: true,
-            auto_allow: true,
-            allow_unsandboxed_escape: false,
-            excluded_commands: vec![],
-            filesystem: FilesystemConfig::default(),
-            network: NetworkConfig::default(),
-            linux: LinuxConfig {
-                enable_weaker_nested: true,
-            },
-            permission_mode: PermissionMode::Auto,
-        };
+        let mut config = default_config();
+        config.linux.enable_weaker_nested = true;
 
         let json = generate_settings_json(&config);
         assert_eq!(json["sandbox"]["enableWeakerNestedSandbox"], true);
@@ -699,17 +688,21 @@ mod tests {
     }
 
     #[test]
+    fn generated_stage_settings_deny_unix_sockets_for_completion_broker_integrity() {
+        let plan = SandboxConfig::default();
+        let stage = StageSandboxConfig::default();
+        let config = merge_config(&plan, &stage, StageType::Standard);
+
+        let json = generate_settings_json(&config);
+        let network = &json["sandbox"]["network"];
+        assert!(network["allowUnixSockets"].is_null());
+        assert!(network["allowAllUnixSockets"].is_null());
+    }
+
+    #[test]
     fn test_generate_settings_with_unsandboxed_escape() {
-        let config = MergedSandboxConfig {
-            enabled: true,
-            auto_allow: true,
-            allow_unsandboxed_escape: true,
-            excluded_commands: vec![],
-            filesystem: FilesystemConfig::default(),
-            network: NetworkConfig::default(),
-            linux: LinuxConfig::default(),
-            permission_mode: PermissionMode::Auto,
-        };
+        let mut config = default_config();
+        config.allow_unsandboxed_escape = true;
 
         let json = generate_settings_json(&config);
         // allowUnsandboxedCommands is now in sandbox block

@@ -297,8 +297,7 @@ pub struct FilesystemConfig {
     #[serde(default = "default_deny_write")]
     pub deny_write: Vec<String>,
 
-    /// Additional paths agents are allowed to write (glob patterns)
-    /// Use this to grant exceptions to deny rules
+    /// Additional paths agents are allowed to write (glob patterns) as exceptions to deny rules
     #[serde(default)]
     pub allow_write: Vec<String>,
 }
@@ -308,7 +307,7 @@ impl Default for FilesystemConfig {
         Self {
             deny_read: default_deny_read(),
             deny_write: default_deny_write(),
-            allow_write: Vec::new(),
+            allow_write: vec![],
         }
     }
 }
@@ -317,8 +316,7 @@ impl Default for FilesystemConfig {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct NetworkConfig {
-    /// Allowed network domains (glob patterns)
-    /// Empty means no network access allowed
+    /// Allowed network domains (glob patterns); empty means no network access allowed
     #[serde(default)]
     pub allowed_domains: Vec<String>,
 
@@ -400,17 +398,14 @@ fn default_deny_read() -> Vec<String> {
 }
 
 fn default_deny_write() -> Vec<String> {
-    vec![
-        // Worktree escape prevention - block writes to parent directories
-        "../../**".to_string(),
-        // Knowledge files - protected by default, knowledge stages get explicit allow
-        "doc/loom/knowledge/**".to_string(),
-    ]
+    ["../../**", "doc/loom/knowledge/**"]
+        .into_iter()
+        .map(str::to_string)
+        .collect()
 }
 
-/// Enhanced truth check with extended success criteria.
+/// Enhanced truth check with extended success criteria beyond exit code.
 ///
-/// TruthCheck allows verifying observable behaviors with more than just exit code.
 /// All extended fields are optional for backward compatibility.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -1163,5 +1158,15 @@ impl Default for Stage {
             implementers: Implementers::default(),
             subagent_timeout_secs: None,
         }
+    }
+}
+
+#[cfg(test)]
+mod network_config_tests {
+    use super::NetworkConfig;
+    #[test]
+    fn default_network_config_denies_unix_sockets_for_completion_broker_integrity() {
+        assert!(NetworkConfig::default().allow_unix_sockets.is_empty());
+        assert!(!NetworkConfig::default().allow_all_unix_sockets);
     }
 }
