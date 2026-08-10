@@ -86,9 +86,11 @@ as good as the last writer.
 
 ## Test Code: Struct Init Without Default
 
-Lint and test-discipline lessons: `--all-targets` is required to lint test modules, ambient git
-config leaks into shelling tests, `TODO` in a string literal trips the stub checker, and a
-reviewer's behaviour claim must be checked against the diff before acting on it.
+Lint and test-discipline lessons: `--all-targets` is required to lint test modules, `cargo test`
+aborts at the first failing TARGET so a green tail is not a green suite, headless CI has no terminal
+emulator, ambient git config leaks into shelling tests, an inherited descriptor holds an flock past
+release, the maintainability ledger rejects a grown function, `TODO` in a string literal trips the
+stub checker, and a reviewer's behaviour claim must be checked against the diff before acting on it.
 
 → [Testing & Lint](mistakes/testing-and-lint.md)
 
