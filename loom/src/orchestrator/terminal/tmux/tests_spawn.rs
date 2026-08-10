@@ -3,8 +3,24 @@
 
 use super::socket::tests::TmuxTmpDirGuard;
 use super::*;
+use crate::models::session::SessionType;
 use serial_test::serial;
 use std::path::PathBuf;
+
+/// Stands in for a wrapper script an attempted spawn already wrote, so the
+/// abort path has something to clean up.
+fn wrapper_left_by_an_attempted_spawn(work: &Path, pid_key: &str) {
+    native::create_wrapper_script(
+        work,
+        pid_key,
+        "abort-stage",
+        "session-abcd1234-1111111111",
+        "claude 'prompt'",
+        None,
+        SessionType::Stage,
+    )
+    .unwrap();
+}
 
 #[test]
 #[serial]
@@ -31,15 +47,7 @@ fn aborting_a_spawn_removes_the_pid_file_and_wrapper_it_created() {
     // test here. (The server half is covered end-to-end in tests/e2e.)
     let work = tempfile::TempDir::new().unwrap();
     let pid_key = "loom-abort-stage-session-abcd1234-1111111111";
-    native::create_wrapper_script(
-        work.path(),
-        pid_key,
-        "abort-stage",
-        "session-abcd1234-1111111111",
-        "claude 'prompt'",
-        None,
-    )
-    .unwrap();
+    wrapper_left_by_an_attempted_spawn(work.path(), pid_key);
     let pid_file = work.path().join("pids").join(format!("{pid_key}.pid"));
     std::fs::write(&pid_file, "424242\n").unwrap();
 

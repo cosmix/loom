@@ -20,7 +20,7 @@
 //! exceed the 104-byte `AF_UNIX sun_path` limit — an environment-specific
 //! path-length failure that has nothing to do with the code under test.
 
-use loom::models::session::Session;
+use loom::models::session::{Session, SessionType};
 use loom::orchestrator::terminal::native::create_wrapper_script;
 use loom::orchestrator::terminal::tmux::{
     await_tmux_session_pid, kill_socket_server, socket_name, socket_path_for, spawn_in_tmux,
@@ -34,6 +34,24 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{Duration, Instant};
 use tempfile::TempDir;
+
+/// A stage-session wrapper script that `exec`s `command` in `dir`.
+///
+/// `create_wrapper_script` `exec`s an arbitrary command, so the PID it records
+/// is that command's, not a shell's — which is what lets these tests stand up
+/// a real, killable process without a real claude.
+fn stage_wrapper(work_dir: &Path, pid_key: &str, stage_id: &str, session_id: &str) -> PathBuf {
+    create_wrapper_script(
+        work_dir,
+        pid_key,
+        stage_id,
+        session_id,
+        "sleep 30",
+        Some(work_dir),
+        SessionType::Stage,
+    )
+    .expect("wrapper script creation does not depend on TMUX_TMPDIR and must succeed")
+}
 
 /// Restores a process env var to its previous value on drop, on EVERY exit
 /// path including a panic -- so overriding a process-global var (like
@@ -169,17 +187,7 @@ fn tmux_spawn_lifecycle_reaches_a_live_pid_and_teardown_clears_it() {
     // binary, so the exact format is replicated here instead.
     let pid_key = format!("{}-{}", session.tracking_key, session.id);
 
-    // create_wrapper_script `exec`s an arbitrary command, so the PID it
-    // records is `sleep`'s, not a shell's.
-    let wrapper_path = create_wrapper_script(
-        work_dir_path,
-        &pid_key,
-        "e2e-tmux-stage",
-        &session.id,
-        "sleep 30",
-        Some(work_dir_path),
-    )
-    .expect("wrapper script should be created");
+    let wrapper_path = stage_wrapper(work_dir_path, &pid_key, "e2e-tmux-stage", &session.id);
 
     let tmux_session_name = "e2e-tmux-session";
     spawn_in_tmux(&socket, tmux_session_name, work_dir_path, &wrapper_path)
@@ -288,15 +296,12 @@ fn spawn_in_tmux_errs_when_socket_dir_is_unwritable() {
     // Wrapper creation is independent of the tmux spawn and must succeed on
     // its own; asserting on a combined `Result` here would let a wrapper
     // failure satisfy `is_err()` without `spawn_in_tmux` ever running.
-    let wrapper = create_wrapper_script(
+    let wrapper = stage_wrapper(
         work_dir.path(),
         &pid_key,
         "e2e-tmux-fail-stage",
         &session.id,
-        "sleep 30",
-        Some(work_dir.path()),
-    )
-    .expect("wrapper script creation does not depend on TMUX_TMPDIR and must succeed");
+    );
 
     let result = spawn_in_tmux(&socket, "e2e-tmux-fail-session", work_dir.path(), &wrapper);
 
@@ -341,15 +346,7 @@ fn tmux_liveness_ignores_running_server_when_pid_is_dead() {
     // binary, so the exact format is replicated here instead.
     let pid_key = format!("{}-{}", session.tracking_key, session.id);
 
-    let wrapper_path = create_wrapper_script(
-        work_dir_path,
-        &pid_key,
-        "e2e-liveness-stage",
-        &session.id,
-        "sleep 30",
-        Some(work_dir_path),
-    )
-    .expect("wrapper script should be created");
+    let wrapper_path = stage_wrapper(work_dir_path, &pid_key, "e2e-liveness-stage", &session.id);
 
     let tmux_session_name = "e2e-liveness-session";
     spawn_in_tmux(&socket, tmux_session_name, work_dir_path, &wrapper_path)

@@ -18,7 +18,7 @@ file src/commands/repair.rs 979
 file src/commands/review/generate.rs 473
 file src/commands/self_update/mod.rs 438
 file src/commands/self_update/tests.rs 490
-file src/commands/stage/complete.rs 887
+file src/commands/stage/complete.rs 829
 file src/commands/stage/merge.rs 583
 file src/commands/stage/tests/complete.rs 528
 file src/commands/status/data/collector.rs 501
@@ -55,7 +55,7 @@ file src/orchestrator/signals/generate.rs 707
 file src/orchestrator/signals/tests.rs 562
 file src/orchestrator/signals/tests_cache.rs 687
 file src/orchestrator/terminal/emulator.rs 611
-file src/orchestrator/terminal/native/pid_tracking.rs 754
+file src/orchestrator/terminal/native/pid_tracking.rs 451
 file src/orchestrator/terminal/native/window_ops.rs 575
 file src/plan/amendment.rs 1193
 file src/plan/parser/extraction.rs 410
@@ -70,7 +70,7 @@ file src/skills/index.rs 564
 file src/verify/duplicate_detection.rs 551
 file src/verify/transitions/state.rs 433
 file tests/adjudication_e2e.rs 821
-file tests/e2e/tmux_backend.rs 434
+file tests/e2e/tmux_backend.rs 431
 file tests/failure_resume.rs 468
 file tests/integration/merge_conflict_recovery.rs 412
 file tests/integration/plan_verify.rs 771
@@ -288,7 +288,6 @@ function src/orchestrator/terminal/native/detection.rs detect_parent_terminal 51
 function src/orchestrator/terminal/native/detection.rs detect_terminal#1 56
 function src/orchestrator/terminal/native/detection.rs detect_terminal#2 65
 function src/orchestrator/terminal/native/launch.rs prepare_session_launch 123
-function src/orchestrator/terminal/native/pid_tracking.rs create_wrapper_script 146
 function src/orchestrator/terminal/tmux/tests_spawn.rs a_failed_spawn_aborts_and_leaves_no_pid_file_for_the_native_retry_to_adopt 97
 function src/plan/amendment.rs apply_amendment 270
 function src/plan/amendment.rs read_audit_rows 69
@@ -342,8 +341,8 @@ function tests/e2e/parallel.rs test_parallel_stages_triggered_together 57
 function tests/e2e/sequential.rs test_dependency_chain_respected 81
 function tests/e2e/sequential.rs test_sequential_plan_full_completion 64
 function tests/e2e/sequential.rs test_sequential_plan_stage_order 56
-function tests/e2e/tmux_backend.rs tmux_liveness_ignores_running_server_when_pid_is_dead 109
-function tests/e2e/tmux_backend.rs tmux_spawn_lifecycle_reaches_a_live_pid_and_teardown_clears_it 104
+function tests/e2e/tmux_backend.rs tmux_liveness_ignores_running_server_when_pid_is_dead 101
+function tests/e2e/tmux_backend.rs tmux_spawn_lifecycle_reaches_a_live_pid_and_teardown_clears_it 94
 function tests/integration/dependency_conflict.rs test_retry_after_manual_conflict_resolution 89
 function tests/integration/dependency_multi.rs test_diamond_pattern_all_merged 102
 function tests/integration/dependency_multi.rs test_multiple_deps_all_merged_uses_main 58

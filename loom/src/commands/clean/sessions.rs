@@ -345,9 +345,9 @@ mod tests {
             &session.id,
             "claude 'prompt'",
             None,
+            session.session_type,
         )
-        .unwrap();
-        fs::create_dir_all(work_dir.join("pids")).unwrap();
+        .unwrap(); // also creates `pids/`
         fs::write(
             work_dir.join("pids").join(format!("{pid_key}.pid")),
             "999999999\n1\n",
