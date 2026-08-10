@@ -343,12 +343,28 @@ fn check_all_issues(repo_root: &Path) -> Vec<RepairIssue> {
                 description: "Settings not found (.claude/settings.local.json)".to_string(),
                 fix_description: "Apply default sandbox settings and hooks".to_string(),
             });
-        } else if !settings_local_has_hooks(repo_root) {
-            issues.push(RepairIssue {
-                severity: Severity::Info,
-                description: "Hooks/env missing from .claude/settings.local.json".to_string(),
-                fix_description: "Configure hooks and env in settings.local.json".to_string(),
-            });
+        } else {
+            if !settings_local_has_hooks(repo_root) {
+                issues.push(RepairIssue {
+                    severity: Severity::Info,
+                    description: "Hooks/env missing from .claude/settings.local.json".to_string(),
+                    fix_description: "Configure hooks and env in settings.local.json".to_string(),
+                });
+            }
+            // Checked separately from hooks/env: a settings file written before
+            // the codex lane had sandbox allowances is otherwise complete, so
+            // nothing else here flags it and `--fix` would leave codex blocked.
+            if !crate::fs::permissions::settings_local_has_codex_sandbox(repo_root) {
+                issues.push(RepairIssue {
+                    severity: Severity::Warning,
+                    description:
+                        "Codex sandbox allowances missing from .claude/settings.local.json"
+                            .to_string(),
+                    fix_description:
+                        "Grant the codex lane write access to its state dirs in settings.local.json"
+                            .to_string(),
+                });
+            }
         }
     }
 
@@ -756,6 +772,9 @@ fn fix_issue(repo_root: &Path, issue: &RepairIssue) -> Result<bool> {
     } else if issue
         .description
         .contains("Hooks/env missing from .claude/settings.local.json")
+        || issue
+            .description
+            .contains("Codex sandbox allowances missing from .claude/settings.local.json")
     {
         fix_hooks_local(repo_root)?;
         Ok(true)

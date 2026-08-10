@@ -286,8 +286,15 @@ pub fn ensure_loom_hooks_local(repo_root: &Path) -> Result<()> {
         false
     };
 
+    let codex_configured = merge_codex_sandbox_allowances(settings_obj);
+
     // Write back if we made any changes
-    if hooks_configured || env_configured || worktree_configured || stale_env_removed {
+    if hooks_configured
+        || env_configured
+        || worktree_configured
+        || stale_env_removed
+        || codex_configured
+    {
         let content = serde_json::to_string_pretty(&settings)
             .context("Failed to serialize settings.local.json to JSON")?;
 
@@ -303,6 +310,11 @@ pub fn ensure_loom_hooks_local(repo_root: &Path) -> Result<()> {
         if worktree_configured {
             println!("  Disabled Claude Code worktree isolation in .claude/settings.local.json");
         }
+        if codex_configured {
+            println!(
+                "  Granted the codex lane sandbox write access in .claude/settings.local.json"
+            );
+        }
         if stale_env_removed {
             println!("  Removed stale session env vars from .claude/settings.local.json");
         }
@@ -311,6 +323,64 @@ pub fn ensure_loom_hooks_local(repo_root: &Path) -> Result<()> {
     }
 
     Ok(())
+}
+
+/// Ensure the codex lane's sandbox allowances are present in a settings document.
+///
+/// `loom init` only writes hooks, env and permission rules — it never runs the
+/// sandbox settings generator — so without this a freshly-initialised repo has
+/// no OS-level write access to codex's state dirs and every codex run in an
+/// interactive session dies before the model call. Stage spawns and
+/// `loom repair --fix` get the same entries from `sandbox::write_settings`,
+/// which rebuilds this file and re-emits them, so the two paths agree.
+///
+/// Entries are merged, never replaced: a user or plan that already widened
+/// these arrays keeps what it had. Returns `true` if anything was added.
+fn merge_codex_sandbox_allowances(settings_obj: &mut serde_json::Map<String, Value>) -> bool {
+    let mut changed = false;
+    let sandbox = settings_obj
+        .entry("sandbox")
+        .or_insert_with(|| json!({}))
+        .as_object_mut();
+    let Some(sandbox) = sandbox else {
+        return false;
+    };
+
+    for (section, key, values) in [
+        (
+            "filesystem",
+            "allowWrite",
+            crate::codex::CODEX_SANDBOX_WRITE_PATHS.as_slice(),
+        ),
+        (
+            "network",
+            "allowedDomains",
+            crate::codex::CODEX_SANDBOX_DOMAINS.as_slice(),
+        ),
+    ] {
+        let Some(section_obj) = sandbox
+            .entry(section)
+            .or_insert_with(|| json!({}))
+            .as_object_mut()
+        else {
+            continue;
+        };
+        let Some(entries) = section_obj
+            .entry(key)
+            .or_insert_with(|| json!([]))
+            .as_array_mut()
+        else {
+            continue;
+        };
+        for value in values {
+            if !entries.iter().any(|existing| existing == value) {
+                entries.push(json!(value));
+                changed = true;
+            }
+        }
+    }
+
+    changed
 }
 
 /// Migrate hooks and env from settings.json to settings.local.json
@@ -366,6 +436,40 @@ pub fn settings_json_has_hooks(repo_root: &Path) -> bool {
     };
 
     settings.get("hooks").is_some()
+}
+
+/// Whether `.claude/settings.local.json` already grants the codex lane the
+/// sandbox access it needs (see [`merge_codex_sandbox_allowances`]).
+///
+/// `loom repair` needs this as a distinct check: repair is issue-driven, and a
+/// repo whose settings file merely predates these entries reports no other
+/// problem — so without it `--fix` inspects a codex-blocked repo and does
+/// nothing, which is exactly how this went unfixed.
+pub fn settings_local_has_codex_sandbox(repo_root: &Path) -> bool {
+    let settings_local_path = repo_root.join(".claude/settings.local.json");
+    let Ok(content) = fs::read_to_string(&settings_local_path) else {
+        return false;
+    };
+    let Ok(settings) = serde_json::from_str::<Value>(&content) else {
+        return false;
+    };
+
+    let covers = |pointer: &str, required: &[&str]| {
+        let Some(entries) = settings.pointer(pointer).and_then(Value::as_array) else {
+            return false;
+        };
+        required
+            .iter()
+            .all(|value| entries.iter().any(|entry| entry == value))
+    };
+
+    covers(
+        "/sandbox/filesystem/allowWrite",
+        crate::codex::CODEX_SANDBOX_WRITE_PATHS.as_slice(),
+    ) && covers(
+        "/sandbox/network/allowedDomains",
+        crate::codex::CODEX_SANDBOX_DOMAINS.as_slice(),
+    )
 }
 
 /// Check if settings.local.json has hooks and env configured
@@ -470,6 +574,99 @@ mod tests {
         let content = fs::read_to_string(&settings_local_path).unwrap();
         let settings: Value = serde_json::from_str(&content).unwrap();
         assert_eq!(settings["worktree"]["bgIsolation"], "none");
+    }
+
+    #[test]
+    fn test_ensure_loom_grants_codex_sandbox_allowances() {
+        let temp_dir = TempDir::new().unwrap();
+        let repo_root = temp_dir.path();
+        let hooks_dir = temp_dir.path().join("hooks");
+
+        // A pre-existing widening must survive; loom only appends what's missing.
+        let claude_dir = repo_root.join(".claude");
+        fs::create_dir_all(&claude_dir).unwrap();
+        fs::write(
+            claude_dir.join("settings.local.json"),
+            serde_json::to_string_pretty(&json!({
+                "sandbox": { "filesystem": { "allowWrite": ["~/.cache/project"] } }
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+
+        ensure_loom_permissions_to(repo_root, Some(&hooks_dir)).unwrap();
+
+        let content = fs::read_to_string(claude_dir.join("settings.local.json")).unwrap();
+        let settings: Value = serde_json::from_str(&content).unwrap();
+        let allow_write = settings["sandbox"]["filesystem"]["allowWrite"]
+            .as_array()
+            .unwrap();
+        assert!(allow_write.iter().any(|p| p == "~/.cache/project"));
+        for path in crate::codex::CODEX_SANDBOX_WRITE_PATHS {
+            assert!(allow_write.iter().any(|p| p == path), "missing {path}");
+        }
+        let domains = settings["sandbox"]["network"]["allowedDomains"]
+            .as_array()
+            .unwrap();
+        for domain in crate::codex::CODEX_SANDBOX_DOMAINS {
+            assert!(domains.iter().any(|d| d == domain), "missing {domain}");
+        }
+
+        // Idempotent: a second run adds nothing.
+        ensure_loom_permissions_to(repo_root, Some(&hooks_dir)).unwrap();
+        let content = fs::read_to_string(claude_dir.join("settings.local.json")).unwrap();
+        let settings: Value = serde_json::from_str(&content).unwrap();
+        assert_eq!(
+            settings["sandbox"]["filesystem"]["allowWrite"]
+                .as_array()
+                .unwrap()
+                .len(),
+            1 + crate::codex::CODEX_SANDBOX_WRITE_PATHS.len()
+        );
+    }
+
+    #[test]
+    fn test_settings_local_has_codex_sandbox_detects_a_stale_file() {
+        let temp_dir = TempDir::new().unwrap();
+        let repo_root = temp_dir.path();
+        let claude_dir = repo_root.join(".claude");
+        fs::create_dir_all(&claude_dir).unwrap();
+
+        // Missing file
+        assert!(!settings_local_has_codex_sandbox(repo_root));
+
+        // A complete-looking settings file written before the codex allowances
+        // existed: hooks and env present, sandbox block present, but no grant.
+        // This is the shape `loom repair --fix` used to walk straight past.
+        fs::write(
+            claude_dir.join("settings.local.json"),
+            serde_json::to_string_pretty(&json!({
+                "hooks": { "PreToolUse": [] },
+                "env": { "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1" },
+                "sandbox": { "filesystem": { "denyRead": ["~/.ssh/**"] } }
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        assert!(!settings_local_has_codex_sandbox(repo_root));
+
+        // Partial coverage is still a miss — one path is as blocked as none.
+        fs::write(
+            claude_dir.join("settings.local.json"),
+            serde_json::to_string_pretty(&json!({
+                "sandbox": {
+                    "filesystem": { "allowWrite": [crate::codex::CODEX_SANDBOX_WRITE_PATHS[0]] },
+                    "network": { "allowedDomains": crate::codex::CODEX_SANDBOX_DOMAINS }
+                }
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        assert!(!settings_local_has_codex_sandbox(repo_root));
+
+        // After the repair path runs, the check passes.
+        ensure_loom_hooks_local(repo_root).unwrap();
+        assert!(settings_local_has_codex_sandbox(repo_root));
     }
 
     #[test]

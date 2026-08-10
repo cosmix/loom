@@ -16,6 +16,48 @@ fn hook_repair_propagates_skill_index_write_failure() {
         .contains("simulated skill-index write failure"));
 }
 
+/// A repo whose `.claude/settings.local.json` predates the codex sandbox
+/// allowances is otherwise healthy, so `--fix` used to walk right past it and
+/// leave every codex run blocked. Drive the real check-then-fix path.
+#[test]
+fn repair_fixes_a_settings_file_missing_the_codex_allowances() {
+    let root = tempfile::tempdir().unwrap();
+    let claude_dir = root.path().join(".claude");
+    fs::create_dir_all(&claude_dir).unwrap();
+    fs::write(
+        claude_dir.join("settings.local.json"),
+        serde_json::json!({
+            "hooks": { "PreToolUse": [] },
+            "env": { "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1" },
+            "sandbox": { "filesystem": { "denyRead": ["~/.ssh/**"] } }
+        })
+        .to_string(),
+    )
+    .unwrap();
+
+    let issue = check_all_issues(root.path())
+        .into_iter()
+        .find(|issue| {
+            issue
+                .description
+                .contains("Codex sandbox allowances missing")
+        })
+        .expect("a stale settings file must be reported as an issue");
+
+    assert!(
+        fix_issue(root.path(), &issue).unwrap(),
+        "the codex issue must be claimed by a fix branch, not silently skipped"
+    );
+    assert!(crate::fs::permissions::settings_local_has_codex_sandbox(
+        root.path()
+    ));
+
+    // And the repo is then clean on a re-check.
+    assert!(!check_all_issues(root.path()).iter().any(|issue| issue
+        .description
+        .contains("Codex sandbox allowances missing")));
+}
+
 #[test]
 fn loom_run_cmdline_matches_plain_and_pathed() {
     assert!(is_loom_run_cmdline("loom run"));
