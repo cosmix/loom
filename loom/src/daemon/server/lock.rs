@@ -184,13 +184,44 @@ mod tests {
         );
     }
 
+    /// Poll until the lock reads `Free`, returning the last state seen.
+    ///
+    /// Releasing is not always observable on the very next probe: any process
+    /// this test binary forks concurrently (every other test that spawns a
+    /// command) inherits the lock descriptor for the window between fork and
+    /// exec, and an inherited copy holds the flock alive even after the owner
+    /// closes its own descriptor — `O_CLOEXEC` drops it at exec, not at fork.
+    /// The release is still correct; it just is not instantaneous under load.
+    fn poll_until_free(work_dir: &Path) -> &'static str {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+        loop {
+            match inspect_lock(work_dir) {
+                LockState::Free(_) => return "free",
+                state => {
+                    if std::time::Instant::now() >= deadline {
+                        return match state {
+                            LockState::Held(_) => "held",
+                            LockState::Indeterminate => "indeterminate",
+                            LockState::Free(_) => "free",
+                        };
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(10));
+                }
+            }
+        }
+    }
+
     #[test]
     fn held_and_free_lock_states_are_distinct() {
         let work_dir = tempfile::tempdir().unwrap();
         let guard = acquire_lock(work_dir.path()).unwrap();
         assert!(matches!(inspect_lock(work_dir.path()), LockState::Held(_)));
         drop(guard);
-        assert!(matches!(inspect_lock(work_dir.path()), LockState::Free(_)));
+        assert_eq!(
+            poll_until_free(work_dir.path()),
+            "free",
+            "lock never reported Free within 2s of the guard being dropped"
+        );
     }
 
     #[test]
