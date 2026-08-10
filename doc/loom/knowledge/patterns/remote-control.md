@@ -41,7 +41,7 @@ pub(crate) fn build_claude_command(
 ) -> String
 ```
 
-Appends the flag AFTER the prompt positional (required — `--remote-control [name]` is an optional argument, so before the prompt it would swallow the prompt as the name). `Disabled` omits it; `Bare` appends ` --remote-control`; `Named(name)` appends ` --remote-control={escaped name}` — joined with `=`, not a space, so a name beginning with `-` cannot be reparsed as a separate flag by claude's own CLI parser (shell-escaping alone doesn't neutralize a leading `-`, since it's in `shell_escape`'s safe/unquoted charset).
+Appends the flag AFTER the prompt positional (required — `--remote-control [name]` is an optional argument, so before the prompt it would swallow the prompt as the name). `Disabled` omits it; `Bare` appends `--remote-control`; `Named(name)` appends `--remote-control={escaped name}` — joined with `=`, not a space, so a name beginning with `-` cannot be reparsed as a separate flag by claude's own CLI parser (shell-escaping alone doesn't neutralize a leading `-`, since it's in `shell_escape`'s safe/unquoted charset).
 
 **OnceLock memoization note:**
 

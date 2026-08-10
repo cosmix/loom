@@ -461,6 +461,7 @@ Each stage costs a worktree, a session, a merge, and a FULL re-run of the accept
 EVERY non-bookend stage MUST name, in the plan prose, which of Q1-Q4 forced it into existence. A stage that cannot cite one is fragmentation — merge it. Write that justification AS you add the stage, not afterwards; a stage graph rationalised at the end always reads as necessary.
 
 Classic mistakes:
+
 - 4 stages each editing an independent config file → 1 stage with as few subagents as the file territories require.
 - A cohesive feature split BY LAYER (schema / runtime / doctrine, or model / service / controller) because each layer imports the one before it. Every one of those is a compile-order dependency, so they all answer NO to Q1: one stage, a foundation step for the shared contract, then parallel subagents over disjoint files. This is the most common fragmentation there is, because "B imports A" feels like a stage boundary when it is only a compile ordering.
 
