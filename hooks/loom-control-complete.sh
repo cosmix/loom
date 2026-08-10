@@ -48,6 +48,11 @@ STAGE_ID=${LOOM_STAGE_ID:-}
 SESSION_ID=${LOOM_SESSION_ID:-}
 WORKTREE_PATH=${LOOM_WORKTREE_PATH:-}
 [[ -n "$STAGE_ID" && -n "$SESSION_ID" && -n "$WORKTREE_PATH" ]] || exit 0
+# Membership, not presence (same rule as loom_current_worktree in _common.sh).
+# A loom worktree is `<repo>/.worktrees/<stage-id>`; main-repo sessions
+# (knowledge, merge, base-conflict) own no worktree and complete in-process, so
+# this bridge must stay out of their way rather than pin their command.
+[[ "$WORKTREE_PATH" =~ /\.worktrees/[^/]+ ]] || exit 0
 case "$STAGE_ID" in *[!A-Za-z0-9_-]* | '') fail_closed "invalid wrapper stage identity" ;; esac
 case "$SESSION_ID" in *[!A-Za-z0-9_-]* | '') fail_closed "invalid wrapper session identity" ;; esac
 

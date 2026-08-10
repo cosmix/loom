@@ -29,6 +29,10 @@ use super::session::cleanup_session_resources;
 mod complete_verification;
 #[path = "control_complete.rs"]
 mod control_complete;
+#[path = "control_session.rs"]
+mod control_session;
+
+use control_session::{handle_broker_request, sandbox_control_session};
 
 pub(crate) use super::admin_proof::{
     mint_completion_proof_from_env, strip_privileged_env_for_runtime, take_admin_proof_from_env,
@@ -465,24 +469,6 @@ pub fn complete(
     Ok(())
 }
 
-fn handle_broker_request(
-    stage_id: &str,
-    session_id: Option<&str>,
-    has_privileged_flags: bool,
-    work_dir: &Path,
-) -> Result<bool> {
-    if !control_complete::broker_requested() {
-        return Ok(false);
-    }
-    if has_privileged_flags {
-        bail!("trusted completion broker does not accept privileged flags");
-    }
-    let session_id = session_id.context("trusted completion broker requires --session")?;
-    require_wrapper_identity(stage_id, session_id)?;
-    control_complete::send_completion(stage_id, session_id, work_dir)?;
-    Ok(true)
-}
-
 fn ensure_acceptance_passed(result: Option<bool>, stage_id: &str) -> Result<()> {
     if result == Some(false) {
         eprintln!("Acceptance criteria FAILED for stage '{stage_id}'");
@@ -534,50 +520,6 @@ fn resolve_completion_route(
         assume_merged,
     )?;
     Ok((route, repo_root))
-}
-
-fn require_wrapper_identity(stage_id: &str, session_id: &str) -> Result<()> {
-    let env_stage = std::env::var("LOOM_STAGE_ID").context("LOOM_STAGE_ID is missing")?;
-    let env_session = std::env::var("LOOM_SESSION_ID").context("LOOM_SESSION_ID is missing")?;
-    if env_stage != stage_id || env_session != session_id {
-        bail!("trusted completion broker identity does not match wrapper identity");
-    }
-    Ok(())
-}
-
-fn sandbox_control_session(
-    stage: &Stage,
-    stage_id: &str,
-    requested_session: Option<&str>,
-    work_dir: &Path,
-) -> Result<Option<String>> {
-    let (Ok(env_stage), Ok(env_session), Ok(worktree)) = (
-        std::env::var("LOOM_STAGE_ID"),
-        std::env::var("LOOM_SESSION_ID"),
-        std::env::var("LOOM_WORKTREE_PATH"),
-    ) else {
-        return Ok(None);
-    };
-    if env_stage != stage_id || stage.session.as_deref() != Some(env_session.as_str()) {
-        bail!("completion request does not match the active wrapper stage/session");
-    }
-    if requested_session.is_some_and(|requested| requested != env_session) {
-        bail!("--session does not match the active wrapper session");
-    }
-    let cwd = std::env::current_dir().context("failed to resolve completion working directory")?;
-    let worktree = PathBuf::from(worktree)
-        .canonicalize()
-        .context("failed to resolve LOOM_WORKTREE_PATH")?;
-    let cwd = cwd
-        .canonicalize()
-        .context("failed to resolve current directory")?;
-    if !cwd.starts_with(&worktree) {
-        bail!("wrapper completion must run inside its assigned worktree");
-    }
-    if !DaemonServer::is_running(work_dir) {
-        bail!("sandboxed worktree completion requires the loom daemon to be running");
-    }
-    Ok(Some(env_session))
 }
 
 /// Best-effort load of all sessions for the router. Routing must not fail on

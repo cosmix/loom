@@ -5,7 +5,11 @@ ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 HOOK="$ROOT/hooks/loom-control-complete.sh"
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
-mkdir -p "$TMP/bin" "$TMP/worktree"
+# A real loom worktree path: the hook engages on `<repo>/.worktrees/<stage-id>`
+# and must stay out of the way of main-repo sessions.
+WORKTREE="$TMP/repo/.worktrees/build-api"
+MAIN_REPO="$TMP/repo"
+mkdir -p "$TMP/bin" "$WORKTREE"
 LOG="$TMP/broker.log"
 
 cat >"$TMP/bin/loom" <<'SH'
@@ -17,11 +21,12 @@ chmod +x "$TMP/bin/loom"
 invoke_hook() {
 	local payload=$1
 	local test_bin=${LOOM_CONTROL_TEST_BIN_OVERRIDE:-$TMP/bin/loom}
+	local worktree=${LOOM_CONTROL_TEST_WORKTREE:-$WORKTREE}
 	printf '%s' "$payload" |
 		env PATH="$TMP/bin:/usr/bin:/bin" \
 		BROKER_LOG="$LOG" LOOM_CONTROL_TESTING=1 LOOM_CONTROL_TEST_BIN="$test_bin" \
 		LOOM_STAGE_ID="build-api" LOOM_SESSION_ID="session-123" \
-		LOOM_WORKTREE_PATH="$TMP/worktree" bash "$HOOK" >/dev/null
+		LOOM_WORKTREE_PATH="$worktree" bash "$HOOK" >/dev/null
 }
 
 post_case() {
@@ -107,10 +112,23 @@ production_payload=$(pre_case "$PINNED")
 if printf '%s' "$production_payload" | env PATH="/usr/bin:/bin" HOME="$TMP/empty-home" \
 	LOOM_CONTROL_TESTING=1 LOOM_CONTROL_TEST_BIN="$TMP/bin/loom" \
 	LOOM_STAGE_ID=build-api LOOM_SESSION_ID=session-123 \
-	LOOM_WORKTREE_PATH="$TMP/worktree" bash "$production_hook" >/dev/null 2>&1; then
+	LOOM_WORKTREE_PATH="$WORKTREE" bash "$production_hook" >/dev/null 2>&1; then
 	echo "test override was accepted outside the repository test harness" >&2
 	exit 1
 fi
+
+# Main-repo sessions (knowledge, merge, base-conflict) own no worktree. They
+# complete in-process, so the bridge must DISENGAGE rather than pin their
+# command — pinning it used to hand a knowledge stage a stage id that does not
+# exist and block the only command that could complete the stage.
+for non_worktree in "$MAIN_REPO" "$MAIN_REPO/.worktrees" "$TMP/repo-worktrees-backup"; do
+	pass_through=$(pre_case 'loom stage complete build-api')
+	if ! LOOM_CONTROL_TEST_WORKTREE="$non_worktree" invoke_hook "$pass_through" 2>/dev/null; then
+		echo "main-repo session was blocked by the worktree bridge: $non_worktree" >&2
+		exit 1
+	fi
+done
+[[ ! -e "$LOG" ]] || { echo "main-repo session reached broker" >&2; exit 1; }
 
 post_case "$PINNED" "$MARKER" true
 post_case "$PINNED" 'verification failed' false
