@@ -318,55 +318,8 @@ fn check_all_issues(repo_root: &Path) -> Vec<RepairIssue> {
         }
     }
 
-    // Check 5b: .claude/settings.json should NOT contain hooks (they belong in settings.local.json)
-    {
-        use crate::fs::permissions::settings_json_has_hooks;
-        if settings_json_has_hooks(repo_root) {
-            issues.push(RepairIssue {
-                severity: Severity::Warning,
-                description:
-                    "Hooks found in .claude/settings.json (should be in settings.local.json)"
-                        .to_string(),
-                fix_description: "Migrate hooks from settings.json to settings.local.json"
-                    .to_string(),
-            });
-        }
-    }
-
-    // Check 6: settings.local.json has hooks and env configured
-    {
-        use crate::fs::permissions::settings_local_has_hooks;
-        let settings_local = repo_root.join(".claude/settings.local.json");
-        if !settings_local.exists() {
-            issues.push(RepairIssue {
-                severity: Severity::Info,
-                description: "Settings not found (.claude/settings.local.json)".to_string(),
-                fix_description: "Apply default sandbox settings and hooks".to_string(),
-            });
-        } else {
-            if !settings_local_has_hooks(repo_root) {
-                issues.push(RepairIssue {
-                    severity: Severity::Info,
-                    description: "Hooks/env missing from .claude/settings.local.json".to_string(),
-                    fix_description: "Configure hooks and env in settings.local.json".to_string(),
-                });
-            }
-            // Checked separately from hooks/env: a settings file written before
-            // the codex lane had sandbox allowances is otherwise complete, so
-            // nothing else here flags it and `--fix` would leave codex blocked.
-            if !crate::fs::permissions::settings_local_has_codex_sandbox(repo_root) {
-                issues.push(RepairIssue {
-                    severity: Severity::Warning,
-                    description:
-                        "Codex sandbox allowances missing from .claude/settings.local.json"
-                            .to_string(),
-                    fix_description:
-                        "Grant the codex lane write access to its state dirs in settings.local.json"
-                            .to_string(),
-                });
-            }
-        }
-    }
+    // Checks 5b and 6: the two .claude settings files
+    issues.extend(settings_checks::check(repo_root));
 
     // Check 7: Old unprefixed skills that have a loom- counterpart
     if let Some(home) = dirs::home_dir() {
@@ -769,13 +722,10 @@ fn fix_issue(repo_root: &Path, issue: &RepairIssue) -> Result<bool> {
         fix_sandbox_settings(repo_root)?;
         fix_hooks_local(repo_root)?;
         Ok(true)
-    } else if issue
-        .description
-        .contains("Hooks/env missing from .claude/settings.local.json")
-        || issue
-            .description
-            .contains("Codex sandbox allowances missing from .claude/settings.local.json")
-    {
+    } else if issue.description.contains(".claude/settings.local.json") {
+        // Everything else that names this file — missing hooks/env, missing
+        // codex sandbox allowances — is repaired by rewriting it. The
+        // file-absent case is claimed by the arm above, which runs first.
         fix_hooks_local(repo_root)?;
         Ok(true)
     } else if issue.description.contains("Old unprefixed skill") {
@@ -1022,6 +972,8 @@ fn fix_settings_skill_refs() -> Result<()> {
         .with_context(|| format!("Failed to write {}", settings_path.display()))?;
     Ok(())
 }
+
+mod settings_checks;
 
 #[cfg(test)]
 mod tests;

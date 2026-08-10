@@ -14,7 +14,7 @@ file src/commands/graph/tests.rs 425
 file src/commands/init/tests.rs 684
 file src/commands/plan/verify.rs 573
 file src/commands/pressure/mod.rs 596
-file src/commands/repair.rs 1008
+file src/commands/repair.rs 979
 file src/commands/review/generate.rs 473
 file src/commands/self_update/mod.rs 438
 file src/commands/self_update/tests.rs 490
@@ -65,7 +65,7 @@ file src/plan/schema/validation.rs 1002
 file src/plan/tests/amendment.rs 628
 file src/remote_control.rs 599
 file src/sandbox/config.rs 710
-file src/sandbox/settings.rs 1619
+file src/sandbox/settings.rs 1618
 file src/skills/index.rs 564
 file src/verify/duplicate_detection.rs 551
 file src/verify/transitions/state.rs 433
@@ -110,7 +110,7 @@ function src/commands/memory/handlers.rs show 61
 function src/commands/plan/verify.rs execute 246
 function src/commands/plan/verify.rs print_human 110
 function src/commands/pressure/mod.rs execute 86
-function src/commands/repair.rs check_all_issues 396
+function src/commands/repair.rs check_all_issues 365
 function src/commands/repair.rs execute 99
 function src/commands/repair.rs fix_issue 77
 function src/commands/resume.rs execute 99
@@ -305,7 +305,6 @@ function src/sandbox/settings.rs merge_existing_permissions 106
 function src/sandbox/settings.rs test_write_settings_adds_resolved_work_symlink_permissions 96
 function src/sandbox/settings.rs test_write_settings_deduplicates 62
 function src/sandbox/settings.rs test_write_settings_main_repo_drops_stale_escape_from_existing 57
-function src/sandbox/settings.rs test_write_settings_no_existing_file 51
 function src/sandbox/settings.rs test_write_settings_preserves_existing_permissions 64
 function src/sandbox/settings.rs test_write_settings_round_trip_preserves_enabled_plugins 53
 function src/sandbox/settings.rs write_settings 126

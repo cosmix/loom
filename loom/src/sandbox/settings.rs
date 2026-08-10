@@ -430,6 +430,7 @@ fn preserve_unowned_keys(new_settings: &mut Value, existing: &Value) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::codex::{CODEX_SANDBOX_DOMAINS, CODEX_SANDBOX_WRITE_PATHS};
     use crate::plan::schema::{
         FilesystemConfig, LinuxConfig, NetworkConfig, SandboxConfig, StageSandboxConfig, StageType,
     };
@@ -606,11 +607,8 @@ mod tests {
         assert!(deny_read
             .iter()
             .any(|value| value == "~/.claude/.credentials.json"));
-        assert_eq!(
-            fs_block["allowWrite"],
-            json!(crate::codex::CODEX_SANDBOX_WRITE_PATHS),
-            "the codex lane's state dirs are the only OS-level write widening loom emits"
-        );
+        // The codex lane's state dirs are the only write widening loom emits.
+        assert_eq!(fs_block["allowWrite"], json!(CODEX_SANDBOX_WRITE_PATHS));
         let deny_write = fs_block["denyWrite"].as_array().unwrap();
         assert_eq!(deny_write.len(), 1);
         assert_eq!(deny_write[0], ".work/**");
@@ -641,7 +639,7 @@ mod tests {
         let network = &json["sandbox"]["network"];
         let domains = network["allowedDomains"].as_array().unwrap();
         // Plan domains, plus the codex lane's own hosts appended by the generator.
-        assert_eq!(domains.len(), 2 + crate::codex::CODEX_SANDBOX_DOMAINS.len());
+        assert_eq!(domains.len(), 2 + CODEX_SANDBOX_DOMAINS.len());
         assert!(domains.iter().any(|d| d == "*.github.com"));
         assert!(domains.iter().any(|d| d == "api.example.com"));
         assert!(domains.iter().any(|d| d == "chatgpt.com"));
@@ -894,12 +892,9 @@ mod tests {
         // and knowledge paths block `loom knowledge update` CLI (excludedCommands
         // doesn't bypass OS-level filesystem restrictions).
         assert!(json["sandbox"]["filesystem"]["denyWrite"].is_null());
-        // A plan's own allow_write still does NOT reach the OS layer; the only
-        // allowWrite entries loom emits are the codex lane's state dirs.
-        assert_eq!(
-            json["sandbox"]["filesystem"]["allowWrite"],
-            json!(crate::codex::CODEX_SANDBOX_WRITE_PATHS)
-        );
+        // A plan's own allow_write still does NOT reach the OS layer.
+        let fs_block = &json["sandbox"]["filesystem"];
+        assert_eq!(fs_block["allowWrite"], json!(CODEX_SANDBOX_WRITE_PATHS));
 
         // permissions.deny should have ALL paths (including parent-traversal)
         let deny = json["permissions"]["deny"].as_array().unwrap();
@@ -948,7 +943,7 @@ mod tests {
         let domains = network["allowedDomains"]
             .as_array()
             .expect("allowedDomains must be present");
-        assert_eq!(domains.len(), 2 + crate::codex::CODEX_SANDBOX_DOMAINS.len());
+        assert_eq!(domains.len(), 2 + CODEX_SANDBOX_DOMAINS.len());
         assert!(domains.iter().any(|d| d == "github.com"));
         assert!(domains.iter().any(|d| d == "api.openai.com"));
         assert_eq!(network["allowLocalBinding"], true);
@@ -1189,10 +1184,6 @@ mod tests {
         assert!(os_deny
             .iter()
             .any(|value| value == "~/.claude/.credentials.json"));
-        assert_eq!(
-            result["sandbox"]["filesystem"]["allowWrite"],
-            json!(crate::codex::CODEX_SANDBOX_WRITE_PATHS)
-        );
     }
 
     #[cfg(unix)]
