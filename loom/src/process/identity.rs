@@ -60,9 +60,30 @@ pub fn process_start_time(pid: u32) -> Option<u64> {
     after_comm.split_whitespace().nth(19)?.parse().ok()
 }
 
-/// Read the kernel's process start timestamp with microsecond precision.
+/// Whether `pid` has exited but not yet been reaped by its parent.
+///
+/// A zombie keeps its PID entry — and its start-time token — until the parent
+/// waits on it, so `kill(pid, 0)` and [`process_start_time`] both still answer
+/// as though it were running. It cannot execute anything, so every liveness
+/// question loom asks about it ("is this session still working?") must answer
+/// no. A pane process killed under tmux's `remain-on-exit`, or a session whose
+/// terminal emulator is slow to reap, otherwise reads as alive indefinitely.
+#[cfg(target_os = "linux")]
+pub fn process_is_zombie(pid: u32) -> bool {
+    let Ok(stat) = std::fs::read_to_string(format!("/proc/{pid}/stat")) else {
+        return false;
+    };
+    // The comm field is parenthesised and may itself contain spaces and
+    // parens, so the state character is the first field after the LAST ") ".
+    stat.rsplit_once(") ")
+        .and_then(|(_, after_comm)| after_comm.split_whitespace().next())
+        .is_some_and(|state| state == "Z")
+}
+
+/// Fetch the BSD process info block backing both the start-time token and the
+/// zombie check below.
 #[cfg(target_os = "macos")]
-pub fn process_start_time(pid: u32) -> Option<u64> {
+fn bsd_info(pid: u32) -> Option<libc::proc_bsdinfo> {
     let pid = libc::c_int::try_from(pid).ok()?;
     let size = std::mem::size_of::<libc::proc_bsdinfo>();
     let buffer_size = libc::c_int::try_from(size).ok()?;
@@ -87,10 +108,22 @@ pub fn process_start_time(pid: u32) -> Option<u64> {
 
     // SAFETY: the exact-size return above is the API contract that the output
     // buffer contains a fully initialized `proc_bsdinfo`.
-    let info = unsafe { info.assume_init() };
+    Some(unsafe { info.assume_init() })
+}
+
+/// Read the kernel's process start timestamp with microsecond precision.
+#[cfg(target_os = "macos")]
+pub fn process_start_time(pid: u32) -> Option<u64> {
+    let info = bsd_info(pid)?;
     info.pbi_start_tvsec
         .checked_mul(1_000_000)?
         .checked_add(info.pbi_start_tvusec)
+}
+
+/// Whether `pid` has exited but not yet been reaped by its parent.
+#[cfg(target_os = "macos")]
+pub fn process_is_zombie(pid: u32) -> bool {
+    bsd_info(pid).is_some_and(|info| info.pbi_status == libc::SZOMB)
 }
 
 /// No trustworthy, portable start-time token is currently implemented here.
@@ -98,6 +131,14 @@ pub fn process_start_time(pid: u32) -> Option<u64> {
 #[cfg(not(any(target_os = "linux", target_os = "macos")))]
 pub fn process_start_time(_pid: u32) -> Option<u64> {
     None
+}
+
+/// Without a per-platform probe, a process is never assumed to be a zombie —
+/// liveness then degrades to the `kill(pid, 0)` answer, as it did everywhere
+/// before this check existed.
+#[cfg(not(any(target_os = "linux", target_os = "macos")))]
+pub fn process_is_zombie(_pid: u32) -> bool {
+    false
 }
 
 /// Verify a persisted identity against the currently running process.
