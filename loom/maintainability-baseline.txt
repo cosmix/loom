@@ -46,7 +46,7 @@ file src/orchestrator/core/recovery.rs 1621
 file src/orchestrator/core/stage_executor.rs 894
 file src/orchestrator/merge_attribution.rs 543
 file src/orchestrator/monitor/heartbeat.rs 413
-file src/orchestrator/monitor/tests.rs 673
+file src/orchestrator/monitor/tests.rs 737
 file src/orchestrator/signals/cache.rs 1128
 file src/orchestrator/signals/format/sections.rs 1197
 file src/orchestrator/signals/generate.rs 707
@@ -219,7 +219,7 @@ function src/orchestrator/adjudication/prompt.rs build_user_prompt 73
 function src/orchestrator/adjudication/worker.rs run 51
 function src/orchestrator/auto_merge.rs attempt_auto_merge 92
 function src/orchestrator/core/completion_handler.rs handle_stage_completed 78
-function src/orchestrator/core/crash_handler.rs handle_session_crashed 159
+function src/orchestrator/core/crash_handler.rs handle_session_crashed 156
 function src/orchestrator/core/event_handler.rs handle_budget_exceeded 56
 function src/orchestrator/core/event_handler.rs handle_one_event 117
 function src/orchestrator/core/merge_handler.rs finalize_merge_resolution 97

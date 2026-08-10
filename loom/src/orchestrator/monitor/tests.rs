@@ -671,3 +671,67 @@ fn test_hung_detection_honors_per_stage_subagent_timeout() {
         .expect("a stage on the built-in default must be flagged after 400s of silence");
     assert_eq!(reported, DEFAULT_HUNG_TIMEOUT_SECS);
 }
+
+/// Build a stage whose active session is `active_session_id`.
+fn stage_owned_by(stage_id: &str, active_session_id: &str) -> Stage {
+    Stage {
+        id: stage_id.to_string(),
+        session: Some(active_session_id.to_string()),
+        ..Stage::default()
+    }
+}
+
+/// Build a session that names `stage_id` without necessarily owning it.
+fn session_naming_stage(session_id: &str, stage_id: &str) -> Session {
+    let mut session = Session::new();
+    session.id = session_id.to_string();
+    session.stage_id = Some(stage_id.to_string());
+    session
+}
+
+#[test]
+fn a_dead_sessions_cleanup_cannot_delete_the_live_sessions_heartbeat() {
+    // Heartbeat files are keyed by STAGE, so every session a stage has ever
+    // had shares one path while only one owns it. A stage that crashed and
+    // retried leaves each corpse on disk with `stage_id` still set, so
+    // without the ownership guard the terminal handling of an OLD session
+    // deletes the CURRENT session's heartbeat — freezing its `last_active` at
+    // spawn and making a healthy long-running session look like it died
+    // instantly, precisely on the repeat-failing stages worth debugging.
+    let work = tempfile::TempDir::new().unwrap();
+    let work_dir = work.path();
+
+    let heartbeat = crate::orchestrator::monitor::heartbeat::Heartbeat::new(
+        "flaky-stage".to_string(),
+        "session-live".to_string(),
+    );
+    crate::orchestrator::monitor::heartbeat::write_heartbeat(work_dir, &heartbeat).unwrap();
+    let path = crate::orchestrator::monitor::heartbeat::heartbeat_path(work_dir, "flaky-stage");
+    assert!(
+        path.exists(),
+        "fixture heartbeat must exist to be deletable"
+    );
+
+    // The stage has moved on: `session-live` owns it, `session-dead` does not.
+    let stages = vec![stage_owned_by("flaky-stage", "session-live")];
+    let dead = session_naming_stage("session-dead", "flaky-stage");
+
+    crate::orchestrator::monitor::session_events::cleanup_heartbeat_for_session(
+        work_dir, &dead, &stages,
+    );
+    assert!(
+        path.exists(),
+        "a session the stage no longer points at must not delete the live heartbeat"
+    );
+
+    // POSITIVE CONTROL. Without this, the assertion above would also pass if
+    // cleanup were broken outright and never deleted anything.
+    let live = session_naming_stage("session-live", "flaky-stage");
+    crate::orchestrator::monitor::session_events::cleanup_heartbeat_for_session(
+        work_dir, &live, &stages,
+    );
+    assert!(
+        !path.exists(),
+        "the stage's own current session must still clean its heartbeat up"
+    );
+}

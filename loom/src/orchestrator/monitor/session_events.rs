@@ -21,16 +21,43 @@ use super::heartbeat::remove_heartbeat;
 /// stage ID, so leaving a dead session's heartbeat behind lets it later flag a
 /// fresh session that reuses the same stage as hung. Best-effort: a failure to
 /// remove is logged but never blocks detection.
-pub(super) fn cleanup_heartbeat_for_session(work_dir: &Path, session: &Session) {
-    if let Some(stage_id) = &session.stage_id {
-        if let Err(e) = remove_heartbeat(work_dir, stage_id) {
-            tracing::warn!(
-                "Failed to remove heartbeat for stage '{}' (session '{}'): {}",
-                stage_id,
-                session.id,
-                e
-            );
-        }
+///
+/// # Only the stage's CURRENT session may delete it
+///
+/// The file is keyed by stage, so every session a stage has ever had shares
+/// one path — but only one of them owns it at a time. Session files
+/// accumulate, and a stage that crashed and retried leaves each corpse on disk
+/// with `stage_id` still set, so without this guard the terminal handling of a
+/// PREVIOUS session deletes the LIVE session's heartbeat. The live session
+/// then reports no activity since spawn: `last_active` freezes, hung detection
+/// reads `NoHeartbeat` and does nothing, and every duration derived from it is
+/// wrong — silently, and specifically for the repeat-failing stages whose
+/// history makes them the ones worth debugging. Observed 2026-08-11, where it
+/// made healthy multi-minute sessions look like they had died on spawn and
+/// sent two separate investigations after the wrong cause.
+///
+/// Same rule, and for the same reason, as `stage_answerable_for_crash` in
+/// `core/crash_handler.rs`: naming a stage is far weaker than being the
+/// session that stage currently points at.
+pub(super) fn cleanup_heartbeat_for_session(work_dir: &Path, session: &Session, stages: &[Stage]) {
+    let Some(stage_id) = &session.stage_id else {
+        return;
+    };
+    if !is_stage_active_session(session, stages) {
+        tracing::debug!(
+            stage_id = %stage_id,
+            session_id = %session.id,
+            "Not removing heartbeat: the stage has moved on to another session"
+        );
+        return;
+    }
+    if let Err(e) = remove_heartbeat(work_dir, stage_id) {
+        tracing::warn!(
+            "Failed to remove heartbeat for stage '{}' (session '{}'): {}",
+            stage_id,
+            session.id,
+            e
+        );
     }
 }
 
@@ -181,15 +208,16 @@ impl Detection {
         if !matches!(handlers.check_session_alive(session), Ok(Some(false))) {
             return None;
         }
-        self.finished_merge_session(session, handlers)
+        self.finished_merge_session(session, stages, handlers)
             .or_else(|| self.exited_after_stage_finished(session, stages, handlers))
-            .or_else(|| Some(self.record_crash(session, handlers)))
+            .or_else(|| Some(self.record_crash(session, stages, handlers)))
     }
 
     /// A merge session whose process exited has completed its resolution.
     fn finished_merge_session(
         &mut self,
         session: &Session,
+        stages: &[Stage],
         handlers: &Handlers,
     ) -> Option<SessionStatusEvents> {
         if !handlers.is_merge_session(&session.id) {
@@ -200,7 +228,7 @@ impl Detection {
             session_id: session.id.clone(),
             stage_id: stage_id.clone(),
         }];
-        self.mark_finished(session, handlers);
+        self.mark_finished(session, stages, handlers);
         Some(SessionStatusEvents::terminal(events))
     }
 
@@ -220,20 +248,25 @@ impl Detection {
         ) {
             return None;
         }
-        self.mark_finished(session, handlers);
+        self.mark_finished(session, stages, handlers);
         Some(SessionStatusEvents::terminal(Vec::new()))
     }
 
     /// Persist a normal completion and drop the session's heartbeat.
-    fn mark_finished(&mut self, session: &Session, handlers: &Handlers) {
+    fn mark_finished(&mut self, session: &Session, stages: &[Stage], handlers: &Handlers) {
         handlers.persist_session_status(session, SessionStatus::Completed);
-        cleanup_heartbeat_for_session(handlers.work_dir(), session);
+        cleanup_heartbeat_for_session(handlers.work_dir(), session, stages);
         self.last_session_states
             .insert(session.id.clone(), SessionStatus::Completed);
     }
 
     /// The process is gone with no benign explanation: file a crash.
-    fn record_crash(&mut self, session: &Session, handlers: &Handlers) -> SessionStatusEvents {
+    fn record_crash(
+        &mut self,
+        session: &Session,
+        stages: &[Stage],
+        handlers: &Handlers,
+    ) -> SessionStatusEvents {
         let reason = if session.pid.is_some() {
             "Process no longer running"
         } else {
@@ -243,7 +276,7 @@ impl Detection {
         handlers.persist_session_status(session, SessionStatus::Crashed);
         // Remove the now-dead session's heartbeat so it can't later flag a
         // fresh session reusing this stage as hung.
-        cleanup_heartbeat_for_session(handlers.work_dir(), session);
+        cleanup_heartbeat_for_session(handlers.work_dir(), session, stages);
         self.last_session_states
             .insert(session.id.clone(), SessionStatus::Crashed);
         SessionStatusEvents::terminal(vec![MonitorEvent::SessionCrashed {
