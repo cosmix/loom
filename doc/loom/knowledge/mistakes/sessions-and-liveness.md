@@ -69,3 +69,27 @@ Adding `Session.backend` during the tmux-backend plan broke exactly **3** struct
 **Meta-lesson:** a knowledge entry that carries a _count_ is a decaying asset. Two stages sized their
 work off this number before anyone checked it. Blast-radius numbers should be re-measured, not
 inherited — and when you measure one, correct the entry in the same stage.
+
+## `kill(pid, 0)` Reports an Unreaped Zombie as Alive (2026-08-10)
+
+**What happened:** `tmux_liveness_ignores_running_server_when_pid_is_dead` failed in CI after
+SIGKILLing a pane process, at a `wait_until(!is_process_alive(pid), 5s)` precondition. Not a slow
+runner: the process had already exited, and the kernel keeps a zombie's PID entry (and its
+`/proc/<pid>/stat` start-time) until the parent reaps it, so both halves of loom's liveness evidence
+kept answering as though it were running.
+
+**Why it mattered beyond the test:** `is_session_alive` → `pid_only_is_alive` →
+`verify_process_identity` → `is_process_alive`. For a zombie the null signal succeeded AND the
+recorded start-time still matched, producing `VerifiedAlive` — so a session whose process had died
+read as healthy for as long as its parent went unreaped. Under tmux `remain-on-exit` (or any
+terminal emulator slow to reap) that is indefinite: a dead session the orchestrator waits on forever.
+
+**Prevention:** liveness must ask "can this process still run?", not "does this PID exist?". Signal
+existence alone is not liveness. `is_process_alive` now consults `process_is_zombie` — `/proc/<pid>/stat`
+state `Z` on Linux, `pbi_status == SZOMB` via `proc_pidinfo` on macOS — and answers false for a zombie.
+
+**Detection rule:** a test that kills a process it did not fork and then polls for the death to be
+observable is testing the _parent's_ reaping behaviour, not the kill. If the parent is tmux, a
+terminal, or anything you do not control, expect the zombie window and assert on state rather than
+existence. Demonstrated with a 20-line C harness: `kill(pid,0)` returns ALIVE with `/proc` state `Z`
+between the SIGKILL and the parent's `waitpid`.
