@@ -168,6 +168,13 @@ reviewer's behaviour claim must be checked against the diff before acting on it.
 **Why:** macOS doesn't have `timeout` by default; GNU coreutils provides it as `gtimeout`.
 **How to avoid:** All hooks reading stdin MUST use the three-way cascade: `gtimeout` → `timeout` → `cat`.
 
+## `${#arr[@]-0}` Is Not a Portable Empty-Array Guard (2026-08-10)
+
+**What happened:** A macOS fix for `set -u` empty-array expansion (commit `f63f14e0`) also rewrote the *length* checks in `install.sh` as `${#found[@]-0}` / `${#backups[@]-0}`. Bash 5 (Linux) rejects that outright — `install.sh: line 280: ${#found[@]-0}: bad substitution` — so `dev-install.sh` was fixed on macOS and broken on Linux.
+**Why:** `${#param}` is the *length* expansion and accepts no `-default` / `:-default` modifier; the two forms cannot be combined. The macOS bug was never in the length check — bash 3.2 aborts on the *value* expansion `"${arr[@]}"` of an empty array, and the original crash report proves it (it died in the `for item in "${found_other[@]}"` loop, which is only reached *after* both `${#...[@]}` checks evaluated cleanly).
+**Prevention:** `${#arr[@]}` is safe under `set -u` in every bash including 3.2 — leave length checks alone. Guard only value expansions, with `${arr[@]+"${arr[@]}"}`. Any `${#...[@]}` with a modifier attached is a syntax error, not a portability guard.
+**Fix:** Reverted both length checks to `${#arr[@]}`, kept the `+`-guarded loops, and left a comment at the loop naming both halves. Verify shell installer changes on both platforms — a bash 3.2-only fix can be a bash 5 syntax error.
+
 ## Knowledge Commands: CWD Resolution (2026-04-16)
 
 **What happened:** Knowledge commands used `main_project_root()` which followed `.work` symlinks to resolve to the main repo root. In worktree contexts (e.g., integration-verify stages), `loom knowledge update` wrote to the main repo instead of the worktree, causing cross-worktree state pollution.
