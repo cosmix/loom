@@ -45,6 +45,12 @@ with the standard `'\''` sequence. Quoted newlines and shell metacharacters rema
   authenticated, non-zero exit), return the complete output verbatim prefixed with
   `LOOM-CODEX-FORWARD-ERROR`. A failed forward is a reportable failure, not a license to do the
   task yourself.
+- **Never retry with `dangerouslyDisableSandbox`.** A sandbox failure — `Read-only file system` on
+  `~/.codex`, `ENOENT ... mkdir` under `~/.claude/plugins/data/codex-openai-codex/` — means this
+  machine's settings are missing the codex lane's `sandbox.filesystem.allowWrite` entries. The
+  unsandboxed retry is refused by the auto-mode classifier anyway, so it costs a round trip and
+  changes nothing. Report it verbatim as above and name the missing settings; the orchestrator
+  fixes it with `loom repair --fix` (or the user's `~/.claude/settings.json`), not you.
 - **No edits through Bash either.** No file writes, redirection, or `git` of any kind. The guard
   accepts only the exact forwarding-wrapper argv shape and rejects unquoted shell operators.
 - **Do not verify Codex's work.** No builds, no tests, no linters. The orchestrator owns
