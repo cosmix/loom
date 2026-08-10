@@ -606,9 +606,10 @@ mod tests {
         assert!(deny_read
             .iter()
             .any(|value| value == "~/.claude/.credentials.json"));
-        assert!(
-            fs_block["allowWrite"].is_null(),
-            "allowWrite must NOT be in sandbox.filesystem (causes OS sandbox to block reads)"
+        assert_eq!(
+            fs_block["allowWrite"],
+            json!(crate::codex::CODEX_SANDBOX_WRITE_PATHS),
+            "the codex lane's state dirs are the only OS-level write widening loom emits"
         );
         let deny_write = fs_block["denyWrite"].as_array().unwrap();
         assert_eq!(deny_write.len(), 1);
@@ -639,9 +640,11 @@ mod tests {
         // Network config is now in sandbox.network block
         let network = &json["sandbox"]["network"];
         let domains = network["allowedDomains"].as_array().unwrap();
-        assert_eq!(domains.len(), 2);
+        // Plan domains, plus the codex lane's own hosts appended by the generator.
+        assert_eq!(domains.len(), 2 + crate::codex::CODEX_SANDBOX_DOMAINS.len());
         assert!(domains.iter().any(|d| d == "*.github.com"));
         assert!(domains.iter().any(|d| d == "api.example.com"));
+        assert!(domains.iter().any(|d| d == "chatgpt.com"));
         assert_eq!(network["allowLocalBinding"], true);
         let sockets = network["allowUnixSockets"].as_array().unwrap();
         assert_eq!(sockets.len(), 1);
@@ -891,10 +894,11 @@ mod tests {
         // and knowledge paths block `loom knowledge update` CLI (excludedCommands
         // doesn't bypass OS-level filesystem restrictions).
         assert!(json["sandbox"]["filesystem"]["denyWrite"].is_null());
-        // allowWrite must NOT be present (causes OS sandbox to block reads)
-        assert!(
-            json["sandbox"]["filesystem"]["allowWrite"].is_null(),
-            "allowWrite must NOT be in sandbox.filesystem"
+        // A plan's own allow_write still does NOT reach the OS layer; the only
+        // allowWrite entries loom emits are the codex lane's state dirs.
+        assert_eq!(
+            json["sandbox"]["filesystem"]["allowWrite"],
+            json!(crate::codex::CODEX_SANDBOX_WRITE_PATHS)
         );
 
         // permissions.deny should have ALL paths (including parent-traversal)
@@ -944,8 +948,9 @@ mod tests {
         let domains = network["allowedDomains"]
             .as_array()
             .expect("allowedDomains must be present");
-        assert_eq!(domains.len(), 2);
+        assert_eq!(domains.len(), 2 + crate::codex::CODEX_SANDBOX_DOMAINS.len());
         assert!(domains.iter().any(|d| d == "github.com"));
+        assert!(domains.iter().any(|d| d == "api.openai.com"));
         assert_eq!(network["allowLocalBinding"], true);
 
         // Filesystem deny entries are emitted alongside the network block.
@@ -1184,7 +1189,10 @@ mod tests {
         assert!(os_deny
             .iter()
             .any(|value| value == "~/.claude/.credentials.json"));
-        assert!(result["sandbox"]["filesystem"]["allowWrite"].is_null());
+        assert_eq!(
+            result["sandbox"]["filesystem"]["allowWrite"],
+            json!(crate::codex::CODEX_SANDBOX_WRITE_PATHS)
+        );
     }
 
     #[cfg(unix)]

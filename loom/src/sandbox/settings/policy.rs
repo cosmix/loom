@@ -1,5 +1,6 @@
 //! Security policy helpers for Claude settings generation.
 
+use crate::codex::{CODEX_SANDBOX_DOMAINS, CODEX_SANDBOX_WRITE_PATHS};
 use crate::sandbox::MergedSandboxConfig;
 use anyhow::{bail, Result};
 use serde_json::{json, Value};
@@ -73,6 +74,14 @@ fn network_settings(config: &MergedSandboxConfig) -> Option<Value> {
     let mut network = json!({});
     let mut domains = config.network.allowed_domains.clone();
     domains.extend(config.network.additional_domains.clone());
+    // The codex lane's own hosts. Pre-allowing costs nothing when the lane is
+    // unused (an allowlist entry is not an outbound connection) and spares a
+    // licensed stage a mid-run domain decision it cannot answer.
+    for domain in CODEX_SANDBOX_DOMAINS {
+        if !domains.iter().any(|existing| existing == domain) {
+            domains.push(domain.to_string());
+        }
+    }
     if !domains.is_empty() {
         network["allowedDomains"] = json!(domains);
     }
@@ -107,6 +116,13 @@ fn filesystem_settings(config: &MergedSandboxConfig) -> Option<Value> {
     if !deny_write.is_empty() {
         filesystem["denyWrite"] = json!(deny_write);
     }
+    // The codex lane's state directories, always. `allowWrite` is additive, so
+    // this widens the write set by exactly these two paths and nothing else;
+    // they exist only where the codex plugin does, and a stage that never
+    // spawns a forwarder never touches them. Emitting them unconditionally is
+    // what makes `loom repair --fix` a real repair for a codex-blocked repo.
+    // See CODEX_SANDBOX_WRITE_PATHS for why nothing else can grant this.
+    filesystem["allowWrite"] = json!(CODEX_SANDBOX_WRITE_PATHS);
     filesystem
         .as_object()
         .is_some_and(|value| !value.is_empty())
@@ -143,6 +159,44 @@ mod tests {
     fn adds_mandatory_credentials_and_filters_parent_traversal() {
         let paths = deny_read_patterns(&config());
         assert_eq!(paths, vec!["~/.ssh/**", "~/.claude/.credentials.json"]);
+    }
+
+    #[test]
+    fn grants_the_codex_lane_its_state_dirs() {
+        // Without these the first forward dies on `Read-only file system` /
+        // `ENOENT: ... mkdir` before any model call, and the escape hatch the
+        // agent reaches for next is refused by the auto-mode classifier.
+        let sandbox = sandbox_settings(&config());
+        assert_eq!(
+            sandbox["filesystem"]["allowWrite"],
+            json!(CODEX_SANDBOX_WRITE_PATHS)
+        );
+        let domains = sandbox["network"]["allowedDomains"].as_array().unwrap();
+        for expected in CODEX_SANDBOX_DOMAINS {
+            assert!(
+                domains.iter().any(|domain| domain == expected),
+                "missing codex domain {expected}"
+            );
+        }
+    }
+
+    #[test]
+    fn keeps_plan_domains_and_does_not_duplicate_codex_ones() {
+        let mut config = config();
+        config.network.allowed_domains = vec!["crates.io".to_string(), "chatgpt.com".to_string()];
+        let network = network_settings(&config).unwrap();
+        let domains: Vec<&str> = network["allowedDomains"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(Value::as_str)
+            .collect();
+        assert!(domains.contains(&"crates.io"));
+        assert_eq!(
+            domains.iter().filter(|d| **d == "chatgpt.com").count(),
+            1,
+            "a plan that already lists a codex domain must not get it twice"
+        );
     }
 
     #[test]

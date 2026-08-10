@@ -12,6 +12,40 @@ pub const CODEX_IMPLEMENTER_MODEL_LUNA: &str = "gpt-5.6-luna";
 /// Reasoning effort used for Codex implementation runs.
 pub const CODEX_IMPLEMENTER_EFFORT: &str = "xhigh";
 
+/// Paths the codex lane must be able to WRITE from inside the Bash sandbox.
+///
+/// Codex is a subprocess, not a Claude tool, and it keeps its state outside the
+/// worktree: the CLI initialises a sqlite state runtime plus session logs under
+/// `~/.codex`, and the plugin's companion runtime records each job under
+/// `~/.claude/plugins/data/codex-openai-codex/state/<cwd>-<hash>/jobs/`. The
+/// sandbox's write set is otherwise the working directory and the session temp
+/// dir only, so without these two entries every forward dies before the model
+/// is ever reached — `Read-only file system (os error 30)` from codex, `ENOENT:
+/// ... mkdir` from the companion. This bit on Linux first: the native
+/// bubblewrap sandbox enforces the write allowlist that macOS Seatbelt let pass.
+///
+/// This is emitted as `sandbox.filesystem.allowWrite`, which is ADDITIVE
+/// ("additional paths to allow writing within the sandbox") and OS-enforced for
+/// child processes — the one lever that reaches a subprocess. Do NOT "fix" a
+/// blocked codex run with `dangerouslyDisableSandbox` instead: that retry goes
+/// back through the permission gate, and the auto-mode classifier refuses it, so
+/// the lane ends up unusable rather than merely sandboxed.
+pub const CODEX_SANDBOX_WRITE_PATHS: [&str; 2] =
+    ["~/.codex", "~/.claude/plugins/data/codex-openai-codex"];
+
+/// Domains the codex CLI reaches to run a task (ChatGPT-login and API auth).
+///
+/// The sandbox pre-allows no domains at all, so an unlisted host raises a
+/// permission decision mid-run — which in a headless stage lands on the same
+/// auto-mode classifier that blocks the sandbox escape. Pre-allowing them keeps
+/// a codex forward from stalling on its first network call.
+pub const CODEX_SANDBOX_DOMAINS: [&str; 4] = [
+    "chatgpt.com",
+    "*.chatgpt.com",
+    "api.openai.com",
+    "auth.openai.com",
+];
+
 /// Sentinel that MUST be the first line of every codex-lane subagent prompt.
 ///
 /// `hooks/codex-forward-guard.sh` greps the calling subagent's transcript for
