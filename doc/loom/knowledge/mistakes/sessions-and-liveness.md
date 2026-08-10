@@ -93,3 +93,44 @@ observable is testing the _parent's_ reaping behaviour, not the kill. If the par
 terminal, or anything you do not control, expect the zombie window and assert on state rather than
 existence. Demonstrated with a 20-line C harness: `kill(pid,0)` returns ALIVE with `/proc` state `Z`
 between the SIGKILL and the parent's `waitpid`.
+
+## In-Memory Dedup Makes Every Daemon Restart Replay Old Crashes (2026-08-10)
+
+**What happened:** a live run in a sibling repo ended with TWO agents writing the same worktree. The
+daemon was restarted (a `dev-install.sh` install does `pkill -x loom`); on its first poll it declared
+a session that had died 25 minutes earlier crashed, charged that to the stage's retry budget, blocked
+the stage, and auto-retried it — spawning a second agent into `.worktrees/weather-cache` while the
+stage's real session was still alive and working there. The same restart also wrote a crash report
+for `knowledge-bootstrap`, a stage already `completed` + `merged: true`.
+
+**Why:** two `Detection`/`Orchestrator` fields that read as "we already handled this" are
+**in-memory only** — `last_session_states` and `reported_crashes`. On startup both are empty, so
+every session file on disk is a _first observation_. `detect_session_changes` tested
+`previous_status != Some(current_status)`; with `previous_status == None`, a file already persisted
+as `Crashed` looks exactly like a fresh Running→Crashed transition. Nothing downstream caught it:
+`handle_session_crashed` loaded the stage named by the crashed session and acted on it **without
+ever checking that the crashed session was the stage's current session**.
+
+Session files accumulate forever — a stage that crashed and retried keeps every previous session on
+disk with `stage_id` still set — so "this session names stage X" is a much weaker claim than "stage X
+is being executed by this session". Only the second licenses a session to speak for its stage.
+
+**Prevention:**
+
+- A session may only speak for its stage when `stage.session == Some(session.id)`. Both the emitter
+  (`monitor/session_events.rs`) and the authority that mutates the stage
+  (`core/crash_handler.rs::stage_answerable_for_crash`) now enforce it — the emitter because the
+  crash _report_ is written there, before any handler guard runs.
+- Distinguish "first observation" from "transition". `previous.is_none()` is not a change. The
+  correct rule is not "seed silently" either: a first observation that IS the stage's active session
+  must still fire, or a stage stranded by a daemon that died between the crash and handling it sits
+  `Executing` forever. Membership decides, not recency.
+- **Detection rule:** any `HashSet`/`HashMap` on `Detection` or `Orchestrator` used as "already
+  reported" is reconstructed empty on restart. Before relying on one, ask what the first poll after a
+  restart observes; if the on-disk state alone can be misread as an event, the guard must be a fact
+  about the data (identity), not a memory of having seen it.
+
+**Symptom to recognise:** `loom attach` showing more panes than `loom status` shows stages, or a
+stage `Blocked` while its tmux pane looks alive. The blocked-but-alive pane is usually the _reverse_
+case — an un-reaped tmux server holding a dead pane (see the `kill(pid, 0)` note above and
+`architecture/terminal-backends.md`); confirm with `/proc/<pid>`, never with `tmux has-session`.
