@@ -71,6 +71,26 @@ Do not trust verbal descriptions of what a commit does — always compare before
 
 **Prevention:** verify with `cargo test --no-fail-fast` so every target runs, and count the `Running tests/...` lines against the target list rather than reading the tail. The pre-push hook uses plain `cargo test`, so it stops early too — a hook that passes only proves the targets before the first failure. Never report a suite green off a run that aborted.
 
+**Recurrence (2026-08-10, same day):** it happened again, in an interactive session, in the shape this note predicts exactly. The agent ran `cargo test --all-targets`, saw the two sandboxed tmux e2e failures, verified they were pre-existing by stashing, and reported the suite green apart from them — never noticing that `maintainability` and seven other targets had not run at all. The push then failed on `maintainability`, whose four violations the same change had introduced. Knowing the rule did not help, because the environmental failure supplied a ready-made reason to stop looking.
+
+**Detection rule (mechanical, use this instead of judgement):** `error: test failed, to rerun pass --test <name>` in the output means the run is INCOMPLETE, regardless of how many `test result: ok` lines precede it and regardless of whether that failure is yours. Treat it as a hard stop: re-run with `--no-fail-fast` and read every `test result` line before saying anything about the suite. "Pre-existing and environmental" justifies ignoring a _failure_; it never justifies ignoring the _truncation_ that failure caused.
+
+## The Pre-Commit Markdown Lint Silently Skips Itself Under the Bash Sandbox (2026-08-10)
+
+**What happened:** every commit printed `Linting markdown files...` and succeeded, yet the markdown was never linted or auto-fixed. The pre-push hook then lints for real and rejected the push over four `MD049/emphasis-style` errors (asterisk emphasis where this repo enforces underscore).
+
+**Why:** `.githooks/pre-commit` runs `xargs bunx markdownlint-cli2 --fix 2>/dev/null || true`. Under the sandbox `bunx` dies with `bun is unable to write files to tempdir: ReadOnlyFileSystem` — bun wants `/tmp`, which is outside the write allowlist — and both the error and the exit code are discarded by design, so the step is indistinguishable from a clean pass. Exit 0 is not success (CLAUDE.md Rule 13); a hook that swallows stderr can only ever look green.
+
+**Prevention:** lint markdown explicitly before pushing, redirecting bun's cache to a writable dir so it actually runs:
+
+```bash
+export TMPDIR="$TMPDIR" BUN_INSTALL_CACHE_DIR="$TMPDIR/bun-cache"
+git ls-files '*.md' | rg -v '^doc/plans/' | rg -v '^loom/tests/fixtures/' \
+  | xargs bunx markdownlint-cli2
+```
+
+Expect `Summary: 0 issues`. `.markdownlint.json` disables MD013/MD033/MD036/MD041/MD060, so long lines are fine — but emphasis style, heading spacing and list style are all enforced. Running `markdownlint-cli2.mjs` straight from the bun cache with `node` does NOT work: that directory has no `node_modules`, so it fails on `Cannot find package 'globby'`.
+
 ## Headless CI Has No Terminal Emulator — Pin `LOOM_TERMINAL` in Tests That Build an Orchestrator (2026-08-10)
 
 **What happened:** `merge_handler_attempt_tests::merge_probe_failure_does_not_consume_resolver_attempt_budget` passed on every dev box and failed in CI with `No terminal emulator found. Set TERMINAL environment variable or install one of: kitty, alacritty, ...`.
@@ -96,5 +116,7 @@ Do not trust verbal descriptions of what a commit does — always compare before
 **What happened:** A five-line fix inside `generate_index` (`src/fs/knowledge/index.rs`) pushed it from 53 to 58 lines and failed `cargo test --test maintainability`, blocking the push.
 
 **Why:** `maintainability-baseline.txt` records exact line counts for every function already over the 50-line limit. The ledger is a debt list, not a budget — entries may shrink but never grow, and an entry that no longer corresponds to a violation is rejected as stale.
+
+**Also check the FILE entry, not just the function.** The ledger records both, so a change that keeps every function small can still fail on the file total — and four of them can fail at once, as the codex sandbox work did (`repair.rs`, `fs/permissions/settings.rs`, `sandbox/settings.rs`, plus three functions). The move that satisfies the ledger honestly is extraction: lift the new code into a new module (`fs/permissions/codex_sandbox.rs`, `commands/repair/settings_checks.rs`), which carries no entry at all while it stays under 400 lines, then lower the now-smaller entries to their measured values. Growth is never recordable; shrinkage must be recorded.
 
 **Prevention:** before adding lines to a function, `rg '<fn name>' loom/maintainability-baseline.txt`. If it is listed, refactor rather than extend — and when the refactor drops it under the limit, DELETE the entry rather than lowering it. Prove behaviour is unchanged by regenerating the artifact and diffing (for INDEX.md: `loom knowledge index` then `git status --porcelain`, expecting no change).
