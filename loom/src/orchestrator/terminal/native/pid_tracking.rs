@@ -1,7 +1,6 @@
 //! Reliable native-session PID tracking and process discovery.
 
 use anyhow::{Context, Result};
-use shell_escape::escape;
 use std::fs;
 use std::path::{Path, PathBuf};
 #[cfg(target_os = "macos")]
@@ -328,262 +327,27 @@ fn get_process_cwd_macos(pid: u32) -> Option<PathBuf> {
     None
 }
 
-/// Create a wrapper script that writes its PID before exec'ing claude
-///
-/// The wrapper script:
-/// 1. Sets loom environment variables (LOOM_SESSION_ID, LOOM_STAGE_ID, LOOM_WORK_DIR)
-/// 2. Changes to the working directory (important for macOS where terminals
-///    can't reliably set cwd before spawning)
-/// 3. Creates the pids directory if needed
-/// 4. Writes its own PID ($$) — and, on Linux, its start-time — to the PID file
-/// 5. exec's the claude command (replacing the shell process)
-///
-/// # Arguments
-/// * `work_dir` - The .work directory path
-/// * `pid_key` - The per-session tracking key naming the PID file / wrapper
-///   script (the session's stage-key + `session.id`). Distinct from `stage_id`
-///   so two consecutive sessions for the same stage never share a PID file.
-/// * `stage_id` - The value exported as `LOOM_STAGE_ID`. For non-stage sessions
-///   this is the prefixed stage-key (`merge-…`, `knowledge-…`,
-///   `base-conflict-…`), preserved verbatim so hook behavior is unchanged.
-/// * `session_id` - The session identifier (for LOOM_SESSION_ID env var)
-/// * `claude_cmd` - The claude command to execute (e.g., "claude 'prompt here'")
-/// * `working_dir` - The working directory to cd into before running claude
-///
-/// # Returns
-/// The path to the created wrapper script
-pub fn create_wrapper_script(
-    work_dir: &Path,
-    pid_key: &str,
-    stage_id: &str,
-    session_id: &str,
-    claude_cmd: &str,
-    working_dir: Option<&Path>,
-) -> Result<PathBuf> {
-    create_wrappers_dir(work_dir)?;
-    create_pid_dir(work_dir)?;
-
-    let wrapper_path = wrapper_script_path(work_dir, pid_key);
-    let host_pid_file = pid_file_path(work_dir, pid_key);
-
-    // Convert paths to absolute - important because the script may cd elsewhere
-    let pid_file_for_script = host_pid_file
-        .canonicalize()
-        .or_else(|_| {
-            if let (Some(parent), Some(filename)) =
-                (host_pid_file.parent(), host_pid_file.file_name())
-            {
-                parent.canonicalize().map(|p| p.join(filename))
-            } else {
-                Err(std::io::Error::new(
-                    std::io::ErrorKind::NotFound,
-                    "Cannot canonicalize",
-                ))
-            }
-        })
-        .unwrap_or_else(|_| host_pid_file.clone());
-
-    let work_dir_for_script = work_dir
-        .canonicalize()
-        .unwrap_or_else(|_| work_dir.to_path_buf());
-
-    // Build the cd command. Canonicalize the host directory (important for
-    // macOS where terminals can't reliably set cwd before spawning).
-    let cd_section = match working_dir {
-        Some(dir) => {
-            let dir_abs = dir.canonicalize().unwrap_or_else(|_| dir.to_path_buf());
-            let dir_escaped = escape(dir_abs.display().to_string().into());
-            format!(
-                r#"# Change to working directory
-cd {dir_escaped} || {{ echo "Failed to cd to working directory"; exit 1; }}
-
-"#,
-            )
-        }
-        None => String::new(),
-    };
-
-    const CONTINUATION: &str = "\\\n";
-    let merge_session_env = if stage_id.starts_with("merge-") {
-        format!("    LOOM_MERGE_SESSION=1 {CONTINUATION}")
-    } else {
-        String::new()
-    };
-
-    let worktree_path_env = match working_dir {
-        Some(dir) => {
-            let dir_abs = dir.canonicalize().unwrap_or_else(|_| dir.to_path_buf());
-            let assignment = format!("LOOM_WORKTREE_PATH={}", dir_abs.display());
-            let assignment = escape(assignment.into());
-            format!("    {assignment} {CONTINUATION}")
-        }
-        None => String::new(),
-    };
-
-    // Shell-escape complete NAME=value words so quotes never nest incorrectly.
-    let session_env = escape(format!("LOOM_SESSION_ID={session_id}").into());
-    let stage_env = escape(format!("LOOM_STAGE_ID={stage_id}").into());
-    let work_dir_env = escape(format!("LOOM_WORK_DIR={}", work_dir_for_script.display()).into());
-    let pid_file_escaped = escape(pid_file_for_script.display().to_string().into());
-
-    let script = format!(
-        r#"#!/bin/bash
-# Loom stage wrapper
-# Writes PID to file before exec'ing claude
-
-{cd_section}# Write our PID, then (best-effort, Linux) the process start-time on
-# line 2 so liveness probes can detect PID reuse. exec preserves the PID and
-# start-time, so these identify the claude process after exec replaces us.
-echo $$ > {pid_file}
-if [ -r "/proc/$$/stat" ]; then
-    # Field 22 of /proc/<pid>/stat is starttime. The comm field (2) is wrapped
-    # in parens and may contain spaces, so strip through the last ')' first.
-    _loom_stat=$(cat "/proc/$$/stat" 2>/dev/null)
-    _loom_after=${{_loom_stat##*) }}
-    _loom_start=$(echo "$_loom_after" | awk '{{print $20}}')
-    if [ -n "$_loom_start" ]; then
-        echo "$_loom_start" >> {pid_file}
-    fi
-fi
-
-# Reconstruct the stage environment from a minimal host allowlist. In
-# particular, ambient credentials and token-shaped variables are not inherited.
-_loom_env=(
-    "HOME=${{HOME:-}}"
-    "PATH=${{PATH:-/usr/bin:/bin}}"
-)
-for _loom_name in LANG LC_ALL LC_CTYPE TERM COLORTERM TERM_PROGRAM SHELL DISPLAY \
-    WAYLAND_DISPLAY XAUTHORITY DBUS_SESSION_BUS_ADDRESS XDG_RUNTIME_DIR \
-    TMUX_TMPDIR TMUX TMUX_PANE TMPDIR; do
-    _loom_value="${{!_loom_name}}"
-    if [ -n "$_loom_value" ]; then
-        _loom_env+=("$_loom_name=$_loom_value")
-    fi
-done
-
-# Replace this process with claude under only the explicit stage contract.
-exec env -i "${{_loom_env[@]}}" \
-    {session_env} \
-    {stage_env} \
-    {work_dir_env} \
-    "LOOM_MAIN_AGENT_PID=$$" \
-    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1" \
-    "CLAUDE_REMOTE_CONTROL_SESSION_NAME_PREFIX=loom" \
-{merge_session_env}{worktree_path_env}    {claude_cmd}
-"#,
-        session_env = session_env,
-        stage_env = stage_env,
-        work_dir_env = work_dir_env,
-        cd_section = cd_section,
-        pid_file = pid_file_escaped,
-        claude_cmd = claude_cmd,
-        merge_session_env = merge_session_env,
-        worktree_path_env = worktree_path_env,
-    );
-
-    fs::write(&wrapper_path, &script)
-        .with_context(|| format!("Failed to write wrapper script: {}", wrapper_path.display()))?;
-
-    // Make the script executable
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let mut perms = fs::metadata(&wrapper_path)?.permissions();
-        // Owner-only execute: wrapper scripts are run by the same user, no need for
-        // group/other execute permissions. This prevents other users from reading
-        // or executing the script, which contains session IDs and paths.
-        perms.set_mode(0o700);
-        fs::set_permissions(&wrapper_path, perms)?;
-    }
-
-    Ok(wrapper_path)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use tempfile::TempDir;
 
     #[test]
-    fn test_wrapper_script_creation() {
-        let temp_dir = TempDir::new().unwrap();
-        let work_dir = temp_dir.path();
-        let stage_id = "test-stage";
-        let session_id = "session-abc123-1234567890";
-        let pid_key = "loom-test-stage-session-abc123-1234567890";
-        let claude_cmd = "claude 'test prompt'";
-
-        let wrapper_path =
-            create_wrapper_script(work_dir, pid_key, stage_id, session_id, claude_cmd, None)
-                .unwrap();
-
-        assert!(wrapper_path.exists());
-        let content = fs::read_to_string(&wrapper_path).unwrap();
-        assert!(content.contains("#!/bin/bash"));
-        assert!(content.contains("echo $$"));
-        assert!(content.contains(claude_cmd));
-        assert!(content.contains("LOOM_SESSION_ID"));
-        assert!(content.contains(session_id));
-        assert!(content.contains("LOOM_STAGE_ID"));
-        assert!(content.contains(stage_id));
-        assert!(content.contains("LOOM_WORK_DIR"));
-        assert!(content.contains("LOOM_MAIN_AGENT_PID"));
-        assert!(content.contains("CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS"));
-        assert!(content.contains("CLAUDE_REMOTE_CONTROL_SESSION_NAME_PREFIX=loom"));
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            let perms = fs::metadata(&wrapper_path).unwrap().permissions();
-            assert!(perms.mode() & 0o111 != 0);
-        }
-    }
-
-    #[test]
-    fn test_wrapper_script_with_working_dir() {
-        let temp_dir = TempDir::new().unwrap();
-        let work_dir = temp_dir.path();
-        let stage_id = "test-stage-cwd";
-        let session_id = "session-def456-9876543210";
-        let pid_key = "loom-test-stage-cwd-session-def456-9876543210";
-        let claude_cmd = "claude 'test prompt'";
-        let working_dir = Path::new("/tmp/test-worktree");
-
-        let wrapper_path = create_wrapper_script(
-            work_dir,
-            pid_key,
-            stage_id,
-            session_id,
-            claude_cmd,
-            Some(working_dir),
-        )
-        .unwrap();
-
-        assert!(wrapper_path.exists());
-        let content = fs::read_to_string(&wrapper_path).unwrap();
-        assert!(content.contains("#!/bin/bash"));
-        assert!(content.contains("cd /tmp/test-worktree"));
-        assert!(content.contains("echo $$"));
-        assert!(content.contains(claude_cmd));
-        assert!(content.contains("LOOM_WORKTREE_PATH"));
-        assert!(content.contains("/tmp/test-worktree"));
-        assert!(content.contains("CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS"));
-    }
-
-    #[test]
     fn test_cleanup_stage_files() {
+        use crate::models::session::SessionType;
+
         let temp_dir = TempDir::new().unwrap();
         let work_dir = temp_dir.path();
-        let stage_id = "test-stage";
-        let session_id = "session-cleanup-1234567890";
         let pid_key = "loom-test-stage-session-cleanup-1234567890";
 
-        create_wrapper_script(
+        super::super::wrapper::create_wrapper_script(
             work_dir,
             pid_key,
-            stage_id,
-            session_id,
+            "test-stage",
+            "session-cleanup-1234567890",
             "claude 'test'",
             None,
+            SessionType::Stage,
         )
         .unwrap();
 
@@ -592,76 +356,9 @@ mod tests {
         assert!(!wrapper_script_path(work_dir, pid_key).exists());
     }
 
-    #[test]
-    fn test_wrapper_script_merge_session() {
-        let temp_dir = TempDir::new().unwrap();
-        let work_dir = temp_dir.path();
-        let stage_id = "merge-test-stage";
-        let session_id = "session-merge-1234567890";
-        let pid_key = "loom-merge-test-stage-session-merge-1234567890";
-        let claude_cmd = "claude 'resolve merge conflict'";
-
-        let wrapper_path =
-            create_wrapper_script(work_dir, pid_key, stage_id, session_id, claude_cmd, None)
-                .unwrap();
-
-        assert!(wrapper_path.exists());
-        let content = fs::read_to_string(&wrapper_path).unwrap();
-        assert!(content.contains("#!/bin/bash"));
-        assert!(content.contains("LOOM_MERGE_SESSION=1"));
-        assert!(content.contains("echo $$"));
-        assert!(content.contains(claude_cmd));
-
-        // Also verify that a regular stage does NOT contain LOOM_MERGE_SESSION
-        let regular_stage_id = "regular-stage";
-        let regular_session_id = "session-regular-1234567890";
-        let regular_pid_key = "loom-regular-stage-session-regular-1234567890";
-        let regular_wrapper_path = create_wrapper_script(
-            work_dir,
-            regular_pid_key,
-            regular_stage_id,
-            regular_session_id,
-            claude_cmd,
-            None,
-        )
-        .unwrap();
-
-        let regular_content = fs::read_to_string(&regular_wrapper_path).unwrap();
-        assert!(!regular_content.contains("LOOM_MERGE_SESSION"));
-    }
-
-    #[test]
-    fn wrapper_executes_with_minimal_environment_and_no_ambient_secret() {
-        let temp_dir = TempDir::new().unwrap();
-        let output_path = temp_dir.path().join("stage-environment.txt");
-        let output_arg = escape(output_path.display().to_string().into());
-        let command = format!("env > {output_arg}");
-        let wrapper = create_wrapper_script(
-            temp_dir.path(),
-            "loom-env-stage-session-1",
-            "env-stage",
-            "session-env-1",
-            &command,
-            None,
-        )
-        .unwrap();
-
-        let status = std::process::Command::new(&wrapper)
-            .env("ANTHROPIC_API_KEY", "ambient-secret-canary")
-            .env("GITHUB_TOKEN", "ambient-secret-canary")
-            .status()
-            .unwrap();
-        assert!(status.success());
-
-        let environment = fs::read_to_string(output_path).unwrap();
-        assert!(environment.contains("LOOM_SESSION_ID=session-env-1"));
-        assert!(environment.contains("LOOM_STAGE_ID=env-stage"));
-        assert!(environment.contains("HOME="));
-        assert!(environment.contains("PATH="));
-        assert!(!environment.contains("ambient-secret-canary"));
-        assert!(!environment.contains("ANTHROPIC_API_KEY"));
-        assert!(!environment.contains("GITHUB_TOKEN"));
-    }
+    /// `LOOM_MERGE_SESSION` follows the session KIND, not a `merge-` prefix on
+    /// the stage id. The stage id handed to the wrapper is now the plain plan
+    /// stage id for every kind, so a prefix sniff would both miss real merge
 
     #[test]
     fn test_read_pid_entry_pid_only() {

@@ -9,6 +9,7 @@ mod pid_guard;
 mod pid_tracking;
 mod spawner;
 mod window_ops;
+mod wrapper;
 
 use anyhow::Result;
 use shell_escape::escape;
@@ -25,14 +26,13 @@ pub(crate) use launch::prepare_session_launch;
 pub(crate) use pid_guard::{
     pid_only_is_alive, pid_only_terminate, session_process_status, SessionProcessStatus,
 };
-pub use pid_tracking::{
-    cleanup_stage_files, create_wrapper_script, discover_claude_pid, read_pid_entry,
-};
+pub use pid_tracking::{cleanup_stage_files, discover_claude_pid, read_pid_entry};
 pub(crate) use spawner::await_session_pid;
 pub use spawner::spawn_in_terminal;
 pub use window_ops::{close_window_by_title, window_exists_by_title};
 #[cfg(target_os = "macos")]
 pub use window_ops::{close_window_by_title_for_terminal, window_exists_by_title_for_terminal};
+pub use wrapper::create_wrapper_script;
 
 fn close_window_for_terminal(title: &str, terminal: &super::emulator::TerminalEmulator) -> bool {
     #[cfg(target_os = "macos")]

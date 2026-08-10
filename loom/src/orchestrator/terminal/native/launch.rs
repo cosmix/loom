@@ -16,8 +16,6 @@ use crate::claude::find_claude_path;
 use crate::models::session::{Session, SessionType};
 use crate::models::stage::Stage;
 
-use super::pid_tracking;
-
 /// Derive the Remote Control session name for a spawn, prefixed by kind.
 ///
 /// Base is `stage.name` (required by the plan schema); falls back to
@@ -64,11 +62,10 @@ pub(crate) fn prepare_session_launch(
     session.session_type = kind;
     session.assign_to_stage(stage.id.clone());
 
-    // Window title and the stage-key portion of the wrapper's LOOM_STAGE_ID.
-    // `tracking_key` is `loom-[<kind>-]<stage-id>`; stripping `loom-` yields
-    // the value passed historically as the wrapper's stage id.
+    // Window title. `tracking_key` is `loom-[<kind>-]<stage-id>`; the kind
+    // prefix namespaces OS resources and stops there — it must never reach
+    // `LOOM_STAGE_ID`, which is why `stage.id` is passed below (see wrapper.rs).
     let title = session.tracking_key.clone();
-    let wrapper_stage_id = title.strip_prefix("loom-").unwrap_or(&title).to_string();
 
     // Per-session PID-file key (tracking_key + session.id) so two
     // consecutive sessions for the same stage never share a PID file (O-14).
@@ -154,15 +151,16 @@ pub(crate) fn prepare_session_launch(
     );
 
     // Create the wrapper script (writes PID + start-time before exec'ing
-    // claude). `wrapper_stage_id` sets LOOM_STAGE_ID; `pid_key` names the
-    // per-session PID file. Pass cwd so the script can cd there (macOS).
-    let wrapper_path = pid_tracking::create_wrapper_script(
+    // claude). `stage.id` sets LOOM_STAGE_ID; `pid_key` names the per-session
+    // PID file. Pass cwd so the script can cd there (macOS).
+    let wrapper_path = super::wrapper::create_wrapper_script(
         work_dir,
         &pid_key,
-        &wrapper_stage_id,
+        &stage.id,
         &session.id,
         &claude_cmd,
         Some(cwd),
+        kind,
     )?;
 
     // Build the command that runs the wrapper script.
