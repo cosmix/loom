@@ -276,13 +276,15 @@ confirm_overwrites() {
 	local found_other=()
 	[[ -d "$CODEX_DIR/skills/pressure" ]] && found_other+=("~/.codex/skills/pressure")
 
-	# bash 3.2 (macOS) treats empty-array expansion as unbound under `set -u`
-	if [[ ${#found[@]-0} -eq 0 ]] && [[ ${#found_other[@]-0} -eq 0 ]]; then
+	if [[ ${#found[@]} -eq 0 ]] && [[ ${#found_other[@]} -eq 0 ]]; then
 		return 0
 	fi
 
 	echo ""
 	warn "existing loom files may be updated:"
+	# `${a[@]+"${a[@]}"}` guard: bash 3.2 (macOS) treats an empty array as unset
+	# under `set -u`, so a bare "${a[@]}" aborts. Never write `${#a[@]-0}` here —
+	# the length form takes no default and bash 5 rejects it as bad substitution.
 	for item in ${found[@]+"${found[@]}"}; do
 		echo -e "     ${D}~/.claude/$item${N}"
 	done
@@ -566,8 +568,7 @@ cleanup_backups() {
 		backups+=("$file")
 	done < <(find "$CLAUDE_DIR" -maxdepth 2 -name "*.bak.${TIMESTAMP}" -print0 2>/dev/null)
 
-	# bash 3.2 (macOS) treats empty-array expansion as unbound under `set -u`
-	if [[ ${#backups[@]-0} -eq 0 ]]; then
+	if [[ ${#backups[@]} -eq 0 ]]; then
 		return 0
 	fi
 
