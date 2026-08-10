@@ -90,6 +90,33 @@ sentinel constant to the hook script and the agent definition, and requires CLAU
 and the plan-writer SKILL to name the forwarder; `tests_cache.rs` pins the generated section to
 carry the sentinel, the trailer name, and the `loom-codex-forwarder` spawn line.
 
+## The sandbox must grant codex its state dirs (2026-08-10)
+
+Codex is a subprocess, so the Bash sandbox — not Claude Code's tool permissions — decides whether it
+can run at all. Its write set is the working directory plus the session temp dir, and codex needs two
+directories outside both:
+
+| Path                                       | Written by            | Failure when denied                            |
+| ------------------------------------------ | --------------------- | ---------------------------------------------- |
+| `~/.codex`                                 | codex CLI (sqlite state runtime, sessions, logs) | `failed to initialize state runtime`, `Read-only file system (os error 30)` |
+| `~/.claude/plugins/data/codex-openai-codex` | codex-companion (per-job state) | `ENOENT: no such file or directory, mkdir '.../state/<cwd>-<hash>/jobs'` |
+
+Both are declared once as `CODEX_SANDBOX_WRITE_PATHS` (`loom/src/codex.rs`) and emitted as
+`sandbox.filesystem.allowWrite` — additive, OS-enforced for child processes, and the mechanism the
+settings schema names for exactly this. `CODEX_SANDBOX_DOMAINS` does the same for the hosts codex
+reaches (no domain is pre-allowed by default, and an unlisted host raises a mid-run permission
+decision). Emitted from two places, deliberately: `sandbox/settings/policy.rs` (every stage worktree
+and `loom repair --fix`) and `fs/permissions/settings.rs::ensure_loom_hooks_local` (`loom init`,
+which never runs the sandbox generator). Sessions outside a loom repo need the same block in
+`~/.claude/settings.json` — loom does not own that file.
+
+**This is Linux-specific in origin, not in fix.** macOS Seatbelt let these writes through, so the
+lane looked healthy there; the native bubblewrap sandbox enforces the allowlist and broke it.
+
+**Never route around it with `dangerouslyDisableSandbox`.** That retry re-enters the permission gate
+and the auto-mode classifier denies it, which is how the lane went from "sandboxed" to "unusable" —
+see [Codex Lane Rogue Wrapper](../mistakes/codex-lane-rogue-wrapper.md).
+
 ## Availability fallback: codex CLI/plugin not installed (2026-08-08)
 
 Stage licensing (`implementers` listing `codex`) says a stage MAY use the lane; it says nothing

@@ -334,6 +334,13 @@ it means reworking the core stage sandbox model and updating many exact-string t
 narrower `Edit(<dir>/**)` allow — the deny wins and blocks the directory the session needs. Scope
 blanket denies to read-only modes only.
 
+**Related follow-up (2026-08-10):** the same rework should carry a plan's sandbox
+`filesystem.allow_write` through to `sandbox.filesystem.allowWrite`, which is the OS-enforced,
+additive form that actually reaches a subprocess. The generator now emits that key (for the codex
+lane's state dirs — `CODEX_SANDBOX_WRITE_PATHS`), so the mechanism is present and proven; plan
+`allow_write` is simply not routed into it, and still lands only in the ignored `Write(...)` form.
+Until it is, a plan author asking for subprocess write access gets silence, not an error.
+
 ## GC Flags Tier-1 Files for Section Extraction With No Oversized Sections (2026-07-31)
 
 `analyze_gc_metrics` flags a tier-1 file whenever its **total** exceeds `DEFAULT_MAX_TIER1_LINES`

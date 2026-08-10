@@ -46,20 +46,34 @@ only the delegated runtime could have produced, and verify it from the orchestra
 [Verification Harness](verification-harness.md) — "silent subagents are failed delegations" is
 the same lesson one level up.
 
-## Sandbox blocks codex-companion's own job-log write (2026-08-08)
+## The sandbox blocks codex's own state dirs, and the escape hatch is not an escape (2026-08-10)
 
-**What happened:** A `loom-codex-forwarder` (gpt-5.6-terra) call's first attempt failed: the
-sandboxed Bash call could not write codex-companion's own job-state file under
-`~/.claude/plugins/data/codex-openai-codex/state/<worktree>-*/jobs/*.json` — that path isn't in
-the write allowlist. The forwarder retried the identical call with the sandbox disabled and it
-completed cleanly, repo edits included.
+**What happened:** on Linux, every codex invocation failed — in loom stages and in plain
+interactive sessions alike. The sandboxed Bash call could not create codex-companion's job-state
+directory (`ENOENT: ... mkdir '~/.claude/plugins/data/codex-openai-codex/state/<cwd>-<hash>/jobs'`)
+and the codex CLI could not initialise its sqlite state runtime under `~/.codex`
+(`Read-only file system (os error 30)`). The agent then did the documented thing — retried with
+`dangerouslyDisableSandbox: true` — and the **auto-mode classifier refused it**. So there was no
+path to a working codex at all: sandboxed it cannot write, unsandboxed it cannot run.
 
-**Why:** The write-sandbox allowlist covers the repo and a few known tool-state directories; a
-plugin's own per-job log directory under `~/.claude/plugins/data/` isn't one of them by default,
-so codex-companion's internal bookkeeping write gets blocked even though the actual `--write`
-repo edits are unaffected.
+**Why:** the sandbox's write set is the working directory and the session temp dir, full stop.
+Codex is a *subprocess*, not a Claude tool, and it keeps state in two dirs outside both. The
+earlier note here blamed only the companion's job log and called a sandbox-disabled retry "the
+expected recovery" — wrong on both counts: `~/.codex` is the bigger blocker, and the retry is a
+permission decision the classifier is entitled to (and does) deny. It looked macOS-clean because
+Seatbelt let those writes pass; Linux's bubblewrap sandbox enforces the allowlist.
 
-**Prevention:** Not a code fix — an operational note. If a `loom-codex-forwarder` call reports an
-EPERM/permission-denied writing under `~/.claude/plugins/data/codex-openai-codex/`, that's the
-job-log write, not the repo edit; a sandbox-disabled retry of the same forward is the expected
-recovery, not a sign the forward itself is unsafe.
+**Prevention:** grant the two dirs at the OS layer instead of trying to leave the sandbox.
+`sandbox.filesystem.allowWrite` is additive and enforced for child processes — the only lever that
+reaches a subprocess. Loom emits `CODEX_SANDBOX_WRITE_PATHS` (`loom/src/codex.rs`) from the sandbox
+settings generator and from `loom init`, so stage worktrees, `loom repair --fix` and freshly-
+initialised repos all carry it; sessions outside a loom repo need the same block in
+`~/.claude/settings.json`. See [Codex Plugin](../architecture/codex-plugin.md).
+
+**Detection:** `Read-only file system` / `EROFS` naming `~/.codex`, or `ENOENT`/`EPERM` naming
+`~/.claude/plugins/data/codex-openai-codex/`, is this — not a codex auth problem and not a reason
+to distrust the forward. `codex-companion setup --json` reporting `loggedIn: false` while the same
+command outside the sandbox reports `loggedIn: true` is the same cause wearing a misleading label:
+the auth probe fails because codex cannot write its state runtime, not because the login expired.
+
+**Fix:** never answer this with `dangerouslyDisableSandbox`. Report it, and fix the settings.

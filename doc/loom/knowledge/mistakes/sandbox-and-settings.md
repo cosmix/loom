@@ -148,22 +148,31 @@ design — and the reason is not obvious from the plan schema.
 
 **Why — it is inert on both layers:**
 
-1. **OS layer.** `sandbox/settings.rs:338-344` _deliberately never emits_ `allowWrite` into
-   `sandbox.filesystem`. Emitting it makes macOS `sandbox-exec` become over-restrictive about
-   **reads**, blocking `~/.gitconfig` (breaks git) and `~/.claude/shell-snapshots/` (breaks zsh). Plan
-   `allow_write` paths are emitted **only** as `permissions.allow Write()` entries.
+1. **OS layer.** `sandbox/settings/policy.rs` emits `sandbox.filesystem.allowWrite`, but only ever
+   with loom's own fixed entries (`CODEX_SANDBOX_WRITE_PATHS`) — a plan's `allow_write` is never
+   copied into it.
 2. **Tool layer.** Per `concerns.md` ("Per-Stage Sandbox `Write(path)` Rules Are Inert"), Claude Code's
    file permission check consults **only** `Edit(path)`; a `Write(path)` rule parses, prints a startup
    warning, and is then ignored.
 
-So `allow_write` is expressed in the one tool-permission form Claude Code ignores, and is absent from
-the OS sandbox entirely.
+So `allow_write` is expressed in the one tool-permission form Claude Code ignores, and never reaches
+the OS sandbox.
 
-**Prevention:** to give a **subprocess** (tmux, git, any non-Claude-tool binary) write access to a
-path, plan `allow_write` is the wrong lever. The OS-sandbox write set is fixed by `sandbox/settings.rs`
-— either keep the subprocess inside an already-permitted root (the worktree, `/tmp/claude`, `$TMPDIR`)
-or accept that the work cannot run sandboxed. Note the same deny-leak asymmetry documented above:
-`denyWrite` _does_ leak into the OS sandbox, `allowWrite` is withheld from it.
+**Amended 2026-08-10 — the reason given here for withholding `allowWrite` was wrong.** This note
+claimed emitting `allowWrite` makes macOS `sandbox-exec` over-restrictive about **reads**, blocking
+`~/.gitconfig` and `~/.claude/shell-snapshots/`. That is the signature of the _deny-leak_ bug
+documented above ("A Worktree-Only Escape Rule Applied at the Repo Root"), which was fixed
+separately by filtering `Read(../…)`/`Write(../…)`; the blame was misattributed. The settings schema
+is explicit that `allowWrite` means "additional paths to allow writing within the sandbox, merged
+with paths from `Edit(...)` allow rules" — additive, and OS-enforced for child processes. It is the
+documented, recommended lever for exactly this, preferred over `excludedCommands`.
+
+**Prevention:** to give a **subprocess** (codex, tmux, any non-Claude-tool binary) write access to a
+path outside the worktree, `sandbox.filesystem.allowWrite` is the lever — plan `allow_write` still is
+not, because nothing copies it there. Wiring plan `allow_write` through to the OS layer is a live
+follow-up (see `concerns.md`); until then, adding a path means adding it to the generator, as the
+codex lane does. Note the deny-leak asymmetry documented above still holds: `denyWrite` leaks into
+the OS sandbox from `permissions.deny` as well.
 
 ## `excludedCommands` Does Not Reliably Bypass the OS Sandbox for Compound Commands (2026-08-08)
 
