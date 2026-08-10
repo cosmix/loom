@@ -394,10 +394,19 @@ Normal stage completion crosses a narrow control boundary. The stage runs one ex
 session, requires Loom's verification marker, and sends a non-extensible `CompleteStage` request to
 the daemon. The request cannot carry commands, paths, or bypass flags.
 
-The three bypass flags — `--no-verify`, `--force-unsafe`, `--assume-merged` — require a one-time
-operator proof supplied through `LOOM_ADMIN_PROOF`. Proofs are bound to the project, stage, action,
-and exact flag set, and are consumed on first use. Minting requires the operator to supply the daemon
-secret through `LOOM_ADMIN_TOKEN`; the target command never fetches that credential for its caller.
+The three bypass flags — `--no-verify`, `--force-unsafe`, `--assume-merged` — are the operator's, and
+cost the operator nothing: `loom stage complete <stage> --no-verify` just works from your shell. It
+authorizes itself against `.work/admin.token`, which you can already read and a sandboxed agent
+cannot (the sandbox binds the whole process tree, so a `loom` an agent spawns is denied the same
+read). The proof is still bound to the project, stage, action, and exact flag set, and consumed on
+first use — you simply never handle it.
+
+The same applies to `loom stop`. Nothing asks a human to mint a credential they already hold; making
+them carry an HMAC between two commands added ceremony, not security.
+
+`loom stage admin-proof` remains for the case it was actually built for: a trusted broker minting a
+narrowly-scoped capability for another process. It takes the secret through `LOOM_ADMIN_TOKEN` and
+never reads the token file, so a caller that can invoke loom but cannot read that file gains nothing.
 
 An agent that genuinely believes a criterion is wrong or impossible has a sanctioned path — `loom stage dispute-criteria` — rather than an incentive to weaken it.
 

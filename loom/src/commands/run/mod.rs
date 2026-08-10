@@ -100,14 +100,7 @@ fn prepare_background_run(backend: Option<String>) -> Result<WorkDir> {
 }
 
 fn print_stop_guidance() {
-    println!(
-        "  {}  Mint stop proof",
-        "LOOM_ADMIN_TOKEN=<daemon-admin-token> loom stage admin-proof --daemon-stop".cyan()
-    );
-    println!(
-        "  {}  Stop daemon",
-        "LOOM_ADMIN_PROOF=<printed-proof> loom stop".cyan()
-    );
+    println!("  {}  Stop daemon", "loom stop".cyan());
 }
 
 /// Resolve `--backend`, persisting an explicit selection, then run the
@@ -179,7 +172,7 @@ fn resolve_backend_flag(
 /// why the branch that calls this is not).
 fn backend_restart_hint(invocation: &str, value: &str) -> String {
     format!(
-        "backend change requires an admin proof: run `LOOM_ADMIN_TOKEN=<daemon-admin-token> loom stage admin-proof --daemon-stop`, then `LOOM_ADMIN_PROOF=<printed-proof> loom stop`, then `{invocation} --backend {value}`"
+        "backend change requires a daemon restart: run `loom stop`, then `{invocation} --backend {value}`"
     )
 }
 
@@ -299,11 +292,11 @@ mod backend_flag_tests {
         // --backend <x>`, not `loom run --backend <x>`.
         assert_eq!(
             super::backend_restart_hint("loom run", "tmux"),
-            "backend change requires an admin proof: run `LOOM_ADMIN_TOKEN=<daemon-admin-token> loom stage admin-proof --daemon-stop`, then `LOOM_ADMIN_PROOF=<printed-proof> loom stop`, then `loom run --backend tmux`"
+            "backend change requires a daemon restart: run `loom stop`, then `loom run --backend tmux`"
         );
         assert_eq!(
             super::backend_restart_hint("loom run --foreground", "native"),
-            "backend change requires an admin proof: run `LOOM_ADMIN_TOKEN=<daemon-admin-token> loom stage admin-proof --daemon-stop`, then `LOOM_ADMIN_PROOF=<printed-proof> loom stop`, then `loom run --foreground \
+            "backend change requires a daemon restart: run `loom stop`, then `loom run --foreground \
              --backend native`"
         );
     }

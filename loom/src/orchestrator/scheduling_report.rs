@@ -216,8 +216,7 @@ fn stalled_alert(work_dir: &Path, now: DateTime<Utc>) -> Option<Alert> {
         severity: Severity::Critical,
         text: format!(
             "orchestrator loop stalled: no tick for {}s{} — restart with \
-             `LOOM_ADMIN_TOKEN=<daemon-admin-token> loom stage admin-proof --daemon-stop`, \
-             then `LOOM_ADMIN_PROOF=<printed-proof> loom stop`, then `loom run`",
+             `loom stop`, then `loom run`",
             tick.age_secs(now),
             phase
         ),

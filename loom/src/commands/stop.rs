@@ -9,9 +9,7 @@
 //! Verified SIGTERM fallback is reserved for an unreachable daemon socket and
 //! requires `--force`; raw-PID SIGKILL is never attempted.
 
-use crate::commands::stage::admin_proof::{
-    take_admin_proof_from_env, verify_and_consume_admin_proof, AdminProofRequest,
-};
+use crate::commands::stage::admin_proof::{verify_and_consume_admin_proof, AdminProofRequest};
 use crate::daemon::{DaemonServer, DaemonStatus, DaemonUnavailable};
 use crate::fs::work_dir::WorkDir;
 use anyhow::{bail, Result};
@@ -42,11 +40,13 @@ pub fn execute_with_force(force: bool) -> Result<()> {
         return Ok(());
     }
 
-    let operator_proof = take_admin_proof_from_env().map_err(|_| {
-        anyhow::anyhow!(
-            "daemon stop requires an action-bound one-time operator proof in LOOM_ADMIN_PROOF; mint one with `LOOM_ADMIN_TOKEN=<daemon-admin-token> loom stage admin-proof --daemon-stop`, then run `LOOM_ADMIN_PROOF=<printed-proof> loom stop`"
-        )
-    })?;
+    // Authorizes itself from the daemon token an operator can already read.
+    // Requiring a human to mint an HMAC and carry it between two commands
+    // never added security — they held the credential the entire time.
+    let operator_proof = crate::commands::stage::admin_proof::authorize(
+        work_dir.root(),
+        crate::commands::stage::admin_proof::AdminProofRequest::daemon_stop(),
+    )?;
 
     println!("{} Stopping daemon...", "→".cyan().bold());
 

@@ -35,7 +35,7 @@ mod control_session;
 use control_session::{handle_broker_request, sandbox_control_session};
 
 pub(crate) use super::admin_proof::{
-    mint_completion_proof_from_env, strip_privileged_env_for_runtime, take_admin_proof_from_env,
+    mint_completion_proof_from_env, strip_privileged_env_for_runtime,
 };
 
 /// Verify and consume the caller-supplied proof for an exact completion request.

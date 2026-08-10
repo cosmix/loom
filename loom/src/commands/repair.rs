@@ -559,7 +559,7 @@ fn check_all_issues(repo_root: &Path) -> Vec<RepairIssue> {
                                 "Daemon lock held (PID {lock_pid}) but orchestrator.pid is missing"
                             ),
                             fix_description:
-                                "Restart the daemon: `LOOM_ADMIN_TOKEN=<daemon-admin-token> loom stage admin-proof --daemon-stop`, then `LOOM_ADMIN_PROOF=<printed-proof> loom stop`, then `loom run` (PID file was lost)"
+                                "Restart the daemon: `loom stop`, then `loom run` (PID file was lost)"
                                     .to_string(),
                         });
                     }
@@ -583,7 +583,7 @@ fn check_all_issues(repo_root: &Path) -> Vec<RepairIssue> {
                     severity: Severity::Warning,
                     description: "Daemon process appears alive but its socket is unreachable"
                         .to_string(),
-                    fix_description: "Restart the daemon: `LOOM_ADMIN_TOKEN=<daemon-admin-token> loom stage admin-proof --daemon-stop`, then `LOOM_ADMIN_PROOF=<printed-proof> loom stop`, then `loom run`".to_string(),
+                    fix_description: "Restart the daemon: `loom stop`, then `loom run`".to_string(),
                 });
             }
         }

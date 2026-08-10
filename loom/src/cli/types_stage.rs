@@ -6,7 +6,8 @@ use clap::Subcommand;
 #[derive(Subcommand)]
 pub enum StageCommands {
     /// Mark a stage as complete (runs acceptance criteria by default).
-    /// Privileged flags require a one-time proof in LOOM_ADMIN_PROOF.
+    /// Privileged flags authorize themselves from the daemon token, which
+    /// only an operator shell can read.
     Complete {
         /// Stage ID (alphanumeric, dash, underscore only; max 128 characters)
         #[arg(value_parser = clap_id_validator)]
@@ -20,12 +21,6 @@ pub enum StageCommands {
         #[arg(long)]
         no_verify: bool,
 
-        /// Authorize this run's privileged flags yourself, by reading
-        /// .work/admin.token directly. Sandboxed stage agents are denied that
-        /// read, so this succeeds only from an operator shell.
-        #[arg(long)]
-        operator: bool,
-
         /// UNSAFE: Force completion from any state, bypassing state machine validation.
         /// WARNING: This can corrupt dependency tracking. Use only for recovery.
         #[arg(long = "force-unsafe")]
@@ -37,7 +32,8 @@ pub enum StageCommands {
         assume_merged: bool,
     },
 
-    /// Mint a one-time proof for privileged completion flags.
+    /// Mint a one-time proof for a trusted broker to hand to another process.
+    /// Operators do not need this: privileged commands authorize themselves.
     /// Supply the daemon token through LOOM_ADMIN_TOKEN; only the proof is printed.
     AdminProof {
         /// Stage ID the proof authorizes

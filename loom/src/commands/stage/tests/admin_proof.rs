@@ -146,7 +146,7 @@ fn operator_env_mints_daemon_stop_proof_without_retaining_secret() {
 
 #[test]
 #[serial]
-fn operator_mint_round_trips_and_stays_bound_to_its_flag_set() {
+fn self_authorization_round_trips_and_stays_bound_to_its_flag_set() {
     // The `--operator` path mints from `.work/admin.token` directly instead of
     // taking a hand-carried proof. It must produce a proof that verifies for
     // the flags it was asked for and for NO other flag set — otherwise the
@@ -154,8 +154,11 @@ fn operator_mint_round_trips_and_stays_bound_to_its_flag_set() {
     let temp = setup();
     std::env::remove_var("LOOM_SESSION_ID");
 
-    let proof =
-        mint_completion_proof_as_operator(temp.path(), "stage-a", true, false, false).unwrap();
+    let proof = authorize(
+        temp.path(),
+        AdminProofRequest::completion("stage-a", true, false, false),
+    )
+    .unwrap();
 
     let wrong = setup();
     let error = verify_and_consume_admin_proof(
@@ -179,26 +182,55 @@ fn operator_mint_round_trips_and_stays_bound_to_its_flag_set() {
 
 #[test]
 #[serial]
-fn operator_mint_is_refused_from_inside_a_loom_session() {
+fn self_authorization_is_refused_from_inside_a_loom_session() {
     // Guard rail, not boundary — the sandbox denying `.work/admin.token` is
     // what actually stops an agent. This keeps the EASY path closed: without
-    // it, an agent that would never assemble the two-command mint dance has a
-    // single documented flag inviting it to self-authorize. The token here is
-    // readable on purpose, so the refusal is proven to come from the session
-    // check rather than from a failed read.
+    // it, self-authorization being the default hands an agent the same thing
+    // in one word. The token here is readable on purpose, so the refusal is
+    // proven to come from the session check rather than from a failed read.
     let temp = setup();
     std::env::set_var("LOOM_SESSION_ID", "session-abc-123");
 
-    let error =
-        mint_completion_proof_as_operator(temp.path(), "stage-a", true, false, false).unwrap_err();
+    std::env::remove_var("LOOM_ADMIN_PROOF");
+    let error = authorize(
+        temp.path(),
+        AdminProofRequest::completion("stage-a", true, false, false),
+    )
+    .unwrap_err();
     std::env::remove_var("LOOM_SESSION_ID");
 
     assert!(
-        error.to_string().contains("operator shell"),
+        error.to_string().contains("authorized by the human"),
         "the refusal must name the reason, got: {error}"
     );
     assert!(
         error.to_string().contains("session-abc-123"),
         "the refusal must identify the session it detected, got: {error}"
+    );
+}
+
+#[test]
+#[serial]
+fn a_broker_supplied_proof_takes_precedence_over_self_authorization() {
+    // `authorize` mints its own proof only when no broker handed one over.
+    // Reversing that would silently widen a narrowly-scoped capability into
+    // whatever the current command line happens to ask for.
+    let temp = setup();
+    std::env::remove_var("LOOM_SESSION_ID");
+    std::env::set_var("LOOM_ADMIN_PROOF", "v1:0123456789abcdef:aa");
+
+    let proof = authorize(
+        temp.path(),
+        AdminProofRequest::completion("stage-a", true, false, false),
+    )
+    .unwrap();
+
+    assert_eq!(
+        proof, "v1:0123456789abcdef:aa",
+        "a proof already in the environment must be used verbatim, not replaced"
+    );
+    assert!(
+        std::env::var_os("LOOM_ADMIN_PROOF").is_none(),
+        "the one-time proof must be taken out of the environment so children cannot inherit it"
     );
 }

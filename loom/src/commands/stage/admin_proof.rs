@@ -272,76 +272,67 @@ pub fn mint_completion_proof_from_env(
     Ok(mint_admin_proof(&secret, request, &nonce))
 }
 
-/// Mint a completion proof for an operator who can read the daemon token.
-///
-/// This backs `loom stage complete --operator`, which collapses the two-command
-/// mint-and-hand-back dance into one invocation.
-///
-/// # Why reading the token here is not a credential oracle
-///
-/// [`mint_completion_proof_from_env`] deliberately never touches
-/// `admin.token`, so that a caller who can invoke loom but cannot read the
-/// token gains nothing. That reasoning does not extend to this path, because
-/// the sandbox — not loom — is what separates the two callers.
-/// `sandbox/settings.rs` emits `denyRead` for `.work/admin.token` in every
-/// worktree agent's settings (S-1), and Claude Code's filesystem sandbox binds
-/// the whole process tree, not just the agent's own file tools. A `loom` that a
-/// sandboxed agent spawns therefore cannot read the token either — the same
-/// mechanism that makes the completion broker's `user.token` read fail inside a
-/// worktree. An operator's unsandboxed shell can.
-///
-/// So the boundary is unchanged and only the ergonomics move: the agent is
-/// refused by the sandbox at the read, and the operator stops hand-carrying an
-/// HMAC through their environment to authorize an action they were always
-/// entitled to take.
 /// Environment variable every loom-spawned session's wrapper exports, for all
 /// session kinds. Its presence is what [`refuse_operator_inside_a_session`]
 /// keys on.
 const SESSION_ID_ENV: &str = "LOOM_SESSION_ID";
 
-/// Refuse `--operator` from inside any loom-spawned session.
+/// Refuse operator self-authorization from inside any loom-spawned session.
 ///
 /// # This is a guard rail, not the boundary
 ///
 /// The boundary is the sandbox denying `.work/admin.token`; an agent could
 /// clear this variable, so nothing here withstands a caller that is actually
-/// trying. It exists because `--operator` changes the AFFORDANCE even though
-/// it leaves enforcement identical: the two-command mint dance reads as a wall
-/// to an agent that considers it, whereas a single documented flag saying
-/// "authorize this yourself" reads as an invitation. An agent that would never
-/// have assembled `LOOM_ADMIN_TOKEN=... loom stage admin-proof ...` may well
-/// try one flag.
-///
-/// So the easy path fails closed and says why, and defeating it takes a
-/// deliberate act that no longer looks like ordinary use.
+/// trying. It exists because self-authorization is now the DEFAULT rather than
+/// something a human opts into, which is right for the operator and would
+/// otherwise hand an agent a one-word path to the same thing. The easy path
+/// fails closed and says what to do instead.
 fn refuse_operator_inside_a_session() -> Result<()> {
     if let Some(session) = std::env::var_os(SESSION_ID_ENV) {
         bail!(
-            "--operator is for an operator shell, and this is loom session {}. \
-             Privileged completion is authorized by the human running loom, not by the \
-             agent executing the stage. If the stage genuinely cannot pass its acceptance \
-             criteria, use `loom stage dispute-criteria`",
+            "privileged operations are authorized by the human running loom, not by the \
+             agent executing a stage — and this is loom session {}. If the stage genuinely \
+             cannot pass its acceptance criteria, use `loom stage dispute-criteria`",
             session.to_string_lossy()
         );
     }
     Ok(())
 }
 
-pub fn mint_completion_proof_as_operator(
-    work_dir: &Path,
-    stage_id: &str,
-    no_verify: bool,
-    force_unsafe: bool,
-    assume_merged: bool,
-) -> Result<String> {
+/// Obtain the proof for a privileged operation, however this caller is
+/// entitled to obtain one.
+///
+/// # An operator is never asked to mint anything
+///
+/// There is exactly one way to hold this capability — being able to read
+/// `.work/admin.token` — and an operator shell already can. Making them carry
+/// an HMAC from one command to another added no security whatsoever; the
+/// person doing it had the credential the whole time. So the ceremony is gone:
+/// a privileged command mints its own proof and proceeds.
+///
+/// `LOOM_ADMIN_PROOF` still wins when present, because a trusted broker minting
+/// out of band is a real case (`loom stage admin-proof`) and its proof is
+/// bound more narrowly than what this function would produce.
+///
+/// # What still stops an agent
+///
+/// The same two things as before, both checked below and neither of them a
+/// flag the caller chooses: `sandbox/settings.rs` denies `.work/admin.token`
+/// to every stage agent (S-1), and Claude Code's sandbox binds the whole
+/// process tree, so a `loom` an agent spawns cannot read it either. On top of
+/// that, [`refuse_operator_inside_a_session`] closes the easy path before the
+/// read is even attempted.
+pub fn authorize(work_dir: &Path, request: AdminProofRequest<'_>) -> Result<String> {
+    if std::env::var_os(ADMIN_PROOF_ENV).is_some() {
+        return take_admin_proof_from_env();
+    }
     refuse_operator_inside_a_session()?;
     let resolved = resolve_work_dir(work_dir)?;
     let secret = read_admin_secret(&resolved).context(
-        "--operator could not read .work/admin.token. Inside a sandboxed stage worktree that \
-         read is denied by design: privileged completion is the operator's to authorize, not \
-         the agent's. From an operator shell, this means the daemon is not running",
+        "this operation is the operator's to authorize, and the daemon credential \
+         could not be read. Inside a sandboxed stage worktree that read is denied by \
+         design; from an operator shell it means the daemon is not running",
     )?;
-    let request = AdminProofRequest::completion(stage_id, no_verify, force_unsafe, assume_merged);
     let nonce = uuid::Uuid::new_v4().simple().to_string();
     Ok(mint_admin_proof(&secret, request, &nonce))
 }

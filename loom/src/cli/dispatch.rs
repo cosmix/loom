@@ -15,41 +15,30 @@ use super::types::{
 
 /// The admin proof a `loom stage complete` invocation needs, if any.
 ///
-/// Two ways to hold the capability, and only two:
-///
-/// * `--operator` — mint it here from `.work/admin.token`. The sandbox denies
-///   that read to stage agents, so this succeeds only from an operator shell
-///   (see `stage::admin_proof::mint_completion_proof_as_operator`).
-/// * otherwise — a trusted broker supplies a one-time proof through
-///   `LOOM_ADMIN_PROOF`, minted out of band by `loom stage admin-proof`.
-///
-/// An unprivileged completion needs neither and gets `None`.
+/// An unprivileged completion needs none. A privileged one authorizes itself
+/// through `admin_proof::authorize`, which uses a broker's `LOOM_ADMIN_PROOF`
+/// when one is present and otherwise mints from the daemon token the operator
+/// can already read. No flag, and nothing for a human to carry between
+/// commands.
 fn resolve_completion_proof(
     stage_id: &str,
     no_verify: bool,
-    operator: bool,
     force_unsafe: bool,
     assume_merged: bool,
 ) -> anyhow::Result<Option<String>> {
-    let privileged = no_verify || force_unsafe || assume_merged;
-    if operator && !privileged {
-        anyhow::bail!(
-            "--operator authorizes privileged completion flags; pass it with \
-             --no-verify, --force-unsafe, or --assume-merged"
-        );
+    if !(no_verify || force_unsafe || assume_merged) {
+        return Ok(None);
     }
-    match (privileged, operator) {
-        (false, _) => Ok(None),
-        (true, true) => stage::admin_proof::mint_completion_proof_as_operator(
-            std::path::Path::new(".work"),
+    stage::admin_proof::authorize(
+        std::path::Path::new(".work"),
+        stage::admin_proof::AdminProofRequest::completion(
             stage_id,
             no_verify,
             force_unsafe,
             assume_merged,
-        )
-        .map(Some),
-        (true, false) => stage::complete::take_admin_proof_from_env().map(Some),
-    }
+        ),
+    )
+    .map(Some)
 }
 
 /// `loom stage admin-proof` — mint one capability and print it, nothing else.
@@ -57,9 +46,8 @@ fn resolve_completion_proof(
 /// The secret arrives in `LOOM_ADMIN_TOKEN` and is never read from disk here,
 /// so a caller that can invoke loom but cannot read `.work/admin.token` gains
 /// nothing: a wrong secret simply mints a proof that verification rejects.
-/// That is the difference between this command and `--operator`, which reads
-/// the token and therefore relies on the sandbox to separate operator from
-/// agent.
+/// That is what separates this command from `admin_proof::authorize`, which
+/// reads the token and therefore relies on the sandbox to keep an agent out.
 fn print_minted_proof(
     stage_id: Option<String>,
     daemon_stop: bool,
@@ -146,17 +134,11 @@ pub fn dispatch(command: Commands) -> Result<()> {
                 stage_id,
                 session,
                 no_verify,
-                operator,
                 force_unsafe,
                 assume_merged,
             } => {
-                let admin_proof = resolve_completion_proof(
-                    &stage_id,
-                    no_verify,
-                    operator,
-                    force_unsafe,
-                    assume_merged,
-                )?;
+                let admin_proof =
+                    resolve_completion_proof(&stage_id, no_verify, force_unsafe, assume_merged)?;
                 stage::complete(
                     stage_id,
                     session,
