@@ -8,12 +8,16 @@
 //!
 //! Native-backend sessions are out of scope: they already own a visible OS
 //! terminal window, so there is nothing for this command to attach to.
+//!
+//! Both paths apply one precondition the rest of loom deliberately does not:
+//! the target's tmux server must be accepting clients *now*. That is a
+//! strictly additional attach-time check, never a liveness source — see
+//! [`tmux_endpoint_ready`].
 
-use anyhow::{bail, Context, Result};
-use sha2::{Digest, Sha256};
-use std::borrow::Cow;
+mod overview;
+
+use anyhow::{bail, Result};
 use std::io::IsTerminal;
-use std::os::unix::ffi::OsStrExt;
 use std::os::unix::process::CommandExt;
 use std::path::Path;
 use std::process::Command;
@@ -21,46 +25,9 @@ use std::process::Command;
 use crate::commands::common::find_work_dir;
 use crate::models::session::{Session, SessionBackendKind, SessionStatus};
 use crate::orchestrator::terminal::native::NativeBackend;
-use crate::orchestrator::terminal::tmux::{socket_name, TmuxBackend};
+use crate::orchestrator::terminal::tmux::{socket_name, socket_path_for, TmuxBackend};
 use crate::parser::frontmatter::parse_from_markdown;
-
-/// tmux session name of the tiled viewer. Fixed; the SOCKET is what varies per repo.
-const OVERVIEW_SESSION: &str = "loom-overview";
-
-/// Viewer creation flags: detached, with a fixed initial geometry the real
-/// client resizes on attach. Hoisted out of [`build_overview_argv`] only so
-/// rustfmt's vertical expansion does not bloat that function.
-const NEW_SESSION_FLAGS: &[&str] = &[
-    "new-session",
-    "-d",
-    "-s",
-    OVERVIEW_SESSION,
-    "-x",
-    "220",
-    "-y",
-    "50",
-];
-
-/// Window option that keeps a pane visible after its attach client exits,
-/// so a dead inner server shows a dead-pane message instead of collapsing
-/// the tiled layout.
-///
-/// Emitted right after `new-session`, NOT after the splits: `remain-on-exit`
-/// is a WINDOW option, so it governs every pane in the window including ones
-/// created later — setting it early also protects a pane that dies DURING
-/// the build itself (the realistic race is a loom session ending between the
-/// liveness scan and its own split). Pane 0 is still briefly unprotected
-/// between `new-session` and this step; if it dies there, the follow-up
-/// `has-session` probe in [`run_overview_step`] reports the failure instead
-/// of the command proceeding blindly.
-const REMAIN_ON_EXIT_FLAGS: &[&str] = &[
-    "set-option",
-    "-w",
-    "-t",
-    OVERVIEW_SESSION,
-    "remain-on-exit",
-    "on",
-];
+use overview::run_overview;
 
 /// Entry point. `stage_id == None` => tiled overview of every live tmux
 /// session; `Some(id)` => attach straight into that stage's session.
@@ -154,189 +121,38 @@ fn tmux_session_name(session: &Session) -> Option<String> {
     NativeBackend::window_title_and_pid_key(session).map(|(title, _)| title)
 }
 
-/// Per-REPOSITORY viewer socket name, `loom-view-<8 hex>`. The tmux socket
-/// directory is per-USER, not per-repo, so a fixed global name would make two
-/// checkouts collide — and the overview's own best-effort `kill-session`
-/// would then tear down the other repo's viewer.
-fn viewer_socket_name(work_dir: &Path) -> String {
-    // `.work` is a SYMLINK to the main repo's `.work` in a worktree, so
-    // canonicalizing gives the same path from every worktree of the repo.
-    let canonical = work_dir
-        .canonicalize()
-        .unwrap_or_else(|_| work_dir.to_path_buf());
-    let repo_root = canonical.parent().unwrap_or(&canonical);
-
-    let mut hasher = Sha256::new();
-    hasher.update(repo_root.as_os_str().as_bytes());
-    let digest = hasher.finalize();
-    let hex = hex::encode(digest);
-
-    // `/tmp/tmux-<uid>/loom-view-xxxxxxxx` is ~31 bytes, far inside the
-    // 104-byte AF_UNIX `sun_path` limit.
-    format!("loom-view-{}", &hex[..8])
-}
-
-/// Identity for loom's alphanumeric/dash ids; defence in depth because the
-/// result is handed to `/bin/sh -c`.
-fn escape_arg(s: &str) -> String {
-    shell_escape::escape(Cow::Borrowed(s)).into_owned()
-}
-
-/// A nested attach client into one session's own tmux server. `unset TMUX`
-/// first: the pane inherits `$TMUX` from the viewer server and tmux refuses a
-/// nested attach otherwise. `exec` so pane death stays meaningful under
-/// remain-on-exit.
+/// Whether `session`'s OWN tmux server will accept an attach client right now.
 ///
-/// This string is always the `-c` payload of an EXPLICIT `sh -c` (see
-/// [`build_overview_argv`]), never handed to tmux's own `default-shell`.
-/// `unset` is not portable: under `default-shell=/bin/csh` (verified on tmux
-/// 3.7b) `unset` clears a shell variable, never the environment, so the
-/// nested attach still sees `$TMUX` and refuses it; fish has no `unset` at
-/// all. A guaranteed POSIX `sh` sidesteps the operator's login shell
-/// entirely, and makes `escape_arg`'s `sh`-flavoured quoting provably
-/// correct rather than accidentally so.
-fn pane_command(session_socket: &str, tmux_session: &str) -> String {
-    format!(
-        "unset TMUX; exec tmux -L {} attach-session -t {}",
-        escape_arg(session_socket),
-        escape_arg(tmux_session)
-    )
-}
-
-/// Pure builder for the overview's tmux invocations, in order (argv AFTER the
-/// `tmux` binary), kept free of tmux/filesystem/session-model so the exact
-/// sequence is unit-testable. `panes` is `(session_socket, tmux_session)`.
-/// Empty `panes` returns an empty vec; the caller guarantees non-empty.
+/// # This is not liveness and must never become liveness
 ///
-/// Every pane command runs under an EXPLICIT `sh -c` (three separate argv
-/// words), never tmux's own `default-shell`: that option is the OPERATOR's
-/// login shell, not a guaranteed POSIX `/bin/sh` — see [`pane_command`]'s
-/// doc comment for the csh/fish evidence.
-fn build_overview_argv(viewer_socket: &str, panes: &[(String, String)]) -> Vec<Vec<String>> {
-    if panes.is_empty() {
-        return Vec::new();
+/// Liveness is PID-only, deliberately — `architecture/terminal-backends.md`
+/// ("Liveness Uses Verified Process Identity, Not tmux") and
+/// [`crate::orchestrator::terminal::tmux::TmuxBackend::is_session_alive`] both
+/// spell out why: a server whose pane process died but which has not reaped
+/// itself still answers `has-session` with exit 0, so consulting it there
+/// would report a dead agent as alive, and the crash would never be filed or
+/// retried.
+///
+/// Attaching asks a different question, and the two answers genuinely
+/// disagree in BOTH directions. A session mid-spawn has a live wrapper PID
+/// before its server accepts clients; a session whose server was just torn
+/// down can keep a live claude PID for a moment after. Either way a pane
+/// running `attach-session` against it exits instantly — which is precisely
+/// what took the whole viewer down before [`overview::VIEWER_HARDENING`]
+/// existed.
+///
+/// So this is an ADDITIONAL precondition on the attach path only. It never
+/// substitutes for `is_session_alive`, and nothing outside this module may
+/// call it.
+fn tmux_endpoint_ready(session: &Session, tmux_session: &str) -> bool {
+    let socket = socket_name(session);
+    if !socket_path_for(&socket).exists() {
+        return false;
     }
-
-    // Every step shares the `-L <viewer_socket>` prefix; `pane`, when given,
-    // appends `"sh", "-c", <pane command>` as three separate argv words so
-    // tmux runs it under a guaranteed shell instead of `default-shell`.
-    let step = |rest: &[&str], pane: Option<&(String, String)>| -> Vec<String> {
-        let mut argv = vec!["-L".to_string(), viewer_socket.to_string()];
-        argv.extend(rest.iter().map(|s| s.to_string()));
-        if let Some((socket, tmux_session)) = pane {
-            argv.push("sh".to_string());
-            argv.push("-c".to_string());
-            argv.push(pane_command(socket, tmux_session));
-        }
-        argv
-    };
-
-    let mut steps = vec![
-        // (a) Best-effort teardown of this repo's previous overview.
-        step(&["kill-session", "-t", OVERVIEW_SESSION], None),
-        // (b) Create the viewer, first pane already running an attach client.
-        step(NEW_SESSION_FLAGS, Some(&panes[0])),
-        // (c) Set EARLY (window option, see REMAIN_ON_EXIT_FLAGS docs):
-        // protects every pane created below, including one that dies
-        // mid-build.
-        step(REMAIN_ON_EXIT_FLAGS, None),
-    ];
-
-    // (d) One more pane per remaining session, RE-TILED AFTER EVERY SPLIT.
-    // `split-window -t <session>` always targets the session's CURRENT pane
-    // — the one the previous split just created — so heights halve on each
-    // split. Verified on tmux 3.7b: left untiled, a detached 220x50 window
-    // runs out of room on the SIXTH live session (50 -> 25 -> 12 -> 5 -> 2,
-    // then the next split fails with "no space for a new pane"). Re-tiling
-    // after every split keeps each pane large enough for the next split.
-    for pane in &panes[1..] {
-        steps.push(step(&["split-window", "-t", OVERVIEW_SESSION], Some(pane)));
-        steps.push(step(
-            &["select-layout", "-t", OVERVIEW_SESSION, "tiled"],
-            None,
-        ));
-    }
-
-    steps
-}
-
-/// Build the tiled viewer, then exec into it.
-fn run_overview(work_dir: &Path, sessions: &[Session]) -> Result<()> {
-    // Do not build a viewer we could not then attach to.
-    require_tty()?;
-
-    let viewer_socket = viewer_socket_name(work_dir);
-
-    // Discovery already filtered out sessions with no resolvable tmux
-    // session name, so `unwrap_or_default` here never actually fires.
-    let panes: Vec<(String, String)> = sessions
-        .iter()
-        .map(|s| (socket_name(s), tmux_session_name(s).unwrap_or_default()))
-        .collect();
-
-    let steps = build_overview_argv(&viewer_socket, &panes);
-    for argv in &steps {
-        run_overview_step(&viewer_socket, argv)?;
-    }
-
-    println!("Tiling {} live session(s) in the overview", panes.len());
-
-    exec_tmux(&[
-        "-L",
-        &viewer_socket,
-        "attach-session",
-        "-t",
-        OVERVIEW_SESSION,
-    ])
-}
-
-/// Execute one step of the overview build sequence, dispatching on the VERB
-/// (`argv[2]`) rather than on position — keeps the executor decoupled from
-/// the exact ordering `build_overview_argv` chooses.
-fn run_overview_step(viewer_socket: &str, argv: &[String]) -> Result<()> {
-    let verb = argv.get(2).map(String::as_str);
-
-    let output = Command::new("tmux")
-        .args(argv)
+    Command::new("tmux")
+        .args(["-L", &socket, "has-session", "-t", tmux_session])
         .output()
-        .with_context(|| format!("Failed to run tmux {}", argv.join(" ")))?;
-
-    match verb {
-        // Best-effort: there may be no previous overview to tear down.
-        Some("kill-session") => Ok(()),
-        Some("new-session") => {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            // `new-session` exits 0 EVEN WHEN THE SERVER COULD NOT BE
-            // CREATED (it prints to stderr). We must never `exec` onto an
-            // unverified server, because `exec` replaces the loom process
-            // and makes any later failure unreportable. This exact
-            // exit-0-with-stderr rule is shared with the per-session spawn
-            // lane and pinned by tests there — reuse it rather than
-            // re-implementing an untested copy — then verify with a
-            // follow-up `has-session` before trusting this step.
-            crate::orchestrator::terminal::tmux::evaluate_new_session(
-                viewer_socket,
-                output.status.success(),
-                &stderr,
-            )?;
-            let probe = Command::new("tmux")
-                .args(["-L", viewer_socket, "has-session", "-t", OVERVIEW_SESSION])
-                .output()
-                .with_context(|| "Failed to probe viewer overview session")?;
-            if !probe.status.success() {
-                let probe_stderr = String::from_utf8_lossy(&probe.stderr);
-                bail!("tmux has-session failed for viewer '{viewer_socket}': {probe_stderr}");
-            }
-            Ok(())
-        }
-        _ => {
-            if !output.status.success() {
-                let stderr = String::from_utf8_lossy(&output.stderr);
-                bail!("tmux {} failed: {stderr}", argv.join(" "));
-            }
-            Ok(())
-        }
-    }
+        .is_ok_and(|probe| probe.status.success())
 }
 
 /// Every live session assigned to `stage_id`. Split out of `attach_direct`
@@ -358,23 +174,31 @@ fn pick_newest<'a>(candidates: &[&'a Session]) -> Option<&'a Session> {
     candidates.iter().copied().max_by_key(|s| s.created_at)
 }
 
+/// Name every stage that DOES have a live session, so an unknown or misspelled
+/// stage id is answered with the choices rather than a bare refusal.
+fn live_stage_ids(sessions: &[Session]) -> String {
+    let mut live_ids: Vec<&str> = sessions
+        .iter()
+        .filter_map(|s| s.stage_id.as_deref())
+        .collect();
+    live_ids.sort_unstable();
+    live_ids.dedup();
+    if live_ids.is_empty() {
+        "(none)".to_string()
+    } else {
+        live_ids.join(", ")
+    }
+}
+
 /// Attach straight into the session hosting `stage_id`.
 fn attach_direct(sessions: &[Session], stage_id: &str) -> Result<()> {
     let matches = matches_for_stage(sessions, stage_id);
 
     let Some(target) = pick_newest(&matches) else {
-        let mut live_ids: Vec<&str> = sessions
-            .iter()
-            .filter_map(|s| s.stage_id.as_deref())
-            .collect();
-        live_ids.sort_unstable();
-        live_ids.dedup();
-        let ids_display = if live_ids.is_empty() {
-            "(none)".to_string()
-        } else {
-            live_ids.join(", ")
-        };
-        bail!("No live tmux session for stage '{stage_id}'. Live stage ids: {ids_display}");
+        bail!(
+            "No live tmux session for stage '{stage_id}'. Live stage ids: {}",
+            live_stage_ids(sessions)
+        );
     };
 
     if matches.len() > 1 {
@@ -385,12 +209,26 @@ fn attach_direct(sessions: &[Session], stage_id: &str) -> Result<()> {
         );
     }
 
+    // Discovery already guaranteed `Some` for every session here.
+    let tmux_session = tmux_session_name(target).unwrap_or_default();
+
+    // Same precondition the overview applies, for the same reason and with
+    // the same both-directions caveat — see `tmux_endpoint_ready`. Reported
+    // before the TTY check so it reads as a diagnostic rather than as the
+    // `exec` failing: without it, `exec` replaces this process and tmux's own
+    // "no server running on ..." becomes the only thing the operator sees.
+    if !tmux_endpoint_ready(target, &tmux_session) {
+        bail!(
+            "Stage '{stage_id}' has a live session ({}) whose tmux server is not accepting \
+             clients — it is still spawning, or has just ended. Re-run in a moment.",
+            target.id
+        );
+    }
+
     // Not `find_session_for_stage`: it returns the FIRST session file in
     // filesystem order without checking liveness. The live set above is correct.
     require_tty()?;
 
-    // Discovery already guaranteed `Some` for every session here.
-    let tmux_session = tmux_session_name(target).unwrap_or_default();
     exec_tmux(&[
         "-L",
         &socket_name(target),

@@ -8,8 +8,7 @@
 # refactor it back. New violations must be refactored or explicitly recorded.
 
 file src/cli/types.rs 409
-file src/commands/attach/mod.rs 439
-file src/commands/attach/tests.rs 628
+file src/commands/attach/tests/overview.rs 454
 file src/commands/graph/tests.rs 425
 file src/commands/init/tests.rs 684
 file src/commands/plan/verify.rs 573
@@ -74,9 +73,8 @@ file tests/failure_resume.rs 468
 file tests/integration/merge_conflict_recovery.rs 412
 file tests/integration/plan_verify.rs 771
 function src/cli/dispatch.rs dispatch 255
-function src/commands/attach/tests.rs build_overview_argv_applies_tiled_layout_after_every_split 52
 function src/commands/attach/tests.rs live_tmux_sessions_orders_by_created_at_then_id 60
-function src/commands/attach/tests.rs pane_command_neutralises_hostile_session_ids 70
+function src/commands/attach/tests/overview.rs pane_command_neutralises_hostile_session_ids 70
 function src/commands/clean/mod.rs print_summary 52
 function src/commands/clean/sessions.rs test_clean_sessions_reaps_live_only_when_destroying_state 54
 function src/commands/clean/worktrees.rs clean_worktrees 110
