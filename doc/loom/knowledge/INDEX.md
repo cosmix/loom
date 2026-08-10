@@ -12,7 +12,7 @@
 | [entry-points.md](entry-points.md) | Key files agents should read first | 512 |
 | [patterns.md](patterns.md) | Architectural patterns discovered in the codebase | 614 |
 | [conventions.md](conventions.md) | Coding conventions discovered in the codebase | 402 |
-| [mistakes.md](mistakes.md) | Mistakes made and lessons learned - what to avoid | 518 |
+| [mistakes.md](mistakes.md) | Mistakes made and lessons learned - what to avoid | 536 |
 | [stack.md](stack.md) | Dependencies, frameworks, and tooling used in the project | 71 |
 | [concerns.md](concerns.md) | Technical debt, warnings, and issues to address | 518 |
 
@@ -31,12 +31,14 @@
 | [architecture/remote-control.md](architecture/remote-control.md) | Remote Control | Capability detection, preflight, resolution, and per-kind session naming for driving external agent binaries. | 64 |
 | [architecture/signal-generation.md](architecture/signal-generation.md) | Signal Generation | How a stage signal is assembled: stable-prefix cache, shared append_* helpers, per-stage-type prefixes, soft signals. | 167 |
 | [architecture/terminal-backends.md](architecture/terminal-backends.md) | Terminal Backends | Topic notes for the architecture knowledge area. | 146 |
+
 ### entry-points
 
 | Topic | Title | Blurb | Lines |
 | --- | --- | --- | --- |
 | [entry-points/hooks.md](entry-points/hooks.md) | Hooks | Every hook script and the event it binds to, _common.sh's seven helpers, and the registration sites a new hook needs. | 96 |
 | [entry-points/remote-control.md](entry-points/remote-control.md) | Remote Control | Files and call sites for remote-control capability detection and permission-mode resolution. | 97 |
+
 ### patterns
 
 | Topic | Title | Blurb | Lines |
@@ -45,6 +47,7 @@
 | [patterns/hook-content-stripping.md](patterns/hook-content-stripping.md) | Hook Content Stripping | Stripping heredoc bodies and -m text before matching, the full hook inventory, and the limits of that stripping. | 62 |
 | [patterns/remote-control.md](patterns/remote-control.md) | Remote Control | The detect-capability, preflight, resolve-invocation shape for external agent binaries. | 50 |
 | [patterns/subagent-hierarchy.md](patterns/subagent-hierarchy.md) | Subagent Hierarchy | Flat fan-out vs 2-level coordinator hierarchy vs agent teams: when to use each, model mix, file exclusivity. | 62 |
+
 ### mistakes
 
 | Topic | Title | Blurb | Lines |
@@ -62,6 +65,7 @@
 | [mistakes/tests-that-cannot-fail.md](mistakes/tests-that-cannot-fail.md) | Tests That Cannot Fail | Topic notes for the mistakes knowledge area. | 37 |
 | [mistakes/tmux-backend.md](mistakes/tmux-backend.md) | Tmux Backend | Topic notes for the mistakes knowledge area. | 62 |
 | [mistakes/verification-harness.md](mistakes/verification-harness.md) | Verification Harness | When every check fails at once, suspect the harness; the PATH binary is not your build; silent subagents are failed delegations. | 48 |
+
 ### concerns
 
 | Topic | Title | Blurb | Lines |

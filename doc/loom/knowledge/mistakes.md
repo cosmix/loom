@@ -170,8 +170,8 @@ reviewer's behaviour claim must be checked against the diff before acting on it.
 
 ## `${#arr[@]-0}` Is Not a Portable Empty-Array Guard (2026-08-10)
 
-**What happened:** A macOS fix for `set -u` empty-array expansion (commit `f63f14e0`) also rewrote the *length* checks in `install.sh` as `${#found[@]-0}` / `${#backups[@]-0}`. Bash 5 (Linux) rejects that outright — `install.sh: line 280: ${#found[@]-0}: bad substitution` — so `dev-install.sh` was fixed on macOS and broken on Linux.
-**Why:** `${#param}` is the *length* expansion and accepts no `-default` / `:-default` modifier; the two forms cannot be combined. The macOS bug was never in the length check — bash 3.2 aborts on the *value* expansion `"${arr[@]}"` of an empty array, and the original crash report proves it (it died in the `for item in "${found_other[@]}"` loop, which is only reached *after* both `${#...[@]}` checks evaluated cleanly).
+**What happened:** A macOS fix for `set -u` empty-array expansion (commit `f63f14e0`) also rewrote the _length_ checks in `install.sh` as `${#found[@]-0}` / `${#backups[@]-0}`. Bash 5 (Linux) rejects that outright — `install.sh: line 280: ${#found[@]-0}: bad substitution` — so `dev-install.sh` was fixed on macOS and broken on Linux.
+**Why:** `${#param}` is the _length_ expansion and accepts no `-default` / `:-default` modifier; the two forms cannot be combined. The macOS bug was never in the length check — bash 3.2 aborts on the _value_ expansion `"${arr[@]}"` of an empty array, and the original crash report proves it (it died in the `for item in "${found_other[@]}"` loop, which is only reached _after_ both `${#...[@]}` checks evaluated cleanly).
 **Prevention:** `${#arr[@]}` is safe under `set -u` in every bash including 3.2 — leave length checks alone. Guard only value expansions, with `${arr[@]+"${arr[@]}"}`. Any `${#...[@]}` with a modifier attached is a syntax error, not a portability guard.
 **Fix:** Reverted both length checks to `${#arr[@]}`, kept the `+`-guarded loops, and left a comment at the loop naming both halves. Verify shell installer changes on both platforms — a bash 3.2-only fix can be a bash 5 syntax error.
 
@@ -514,5 +514,23 @@ relative path, **including calls issued in the same parallel message block**.
 file_, not as a wrong-directory error. It reads as "that file doesn't exist" and sends you looking for
 the wrong bug. The other tell is `git status` printing `loom/src/...` prefixes instead of `src/...`.
 
-**Prevention:** never bare-`cd`. Prefix every command with its own `cd <dir> && ` so each call is
+**Prevention:** never bare-`cd`. Prefix every command with its own `cd <dir> &&` so each call is
 self-contained and order-independent.
+
+## `libc::mode_t` Width Differs by Platform — `.into()` Is a Clippy Error on Linux (2026-08-10)
+
+`libc::mode_t` is `u32` on Linux and `u16` on macOS, while the std APIs we call
+(`DirBuilderExt::mode`, `PermissionsExt::from_mode`, our own `safe_fs::open_safely`) all take `u32`
+unconditionally. So `const MODE: libc::mode_t = 0o700; builder.mode(MODE.into())` compiles on macOS
+and fails on Linux with `useless_conversion`, which `-D warnings` promotes to an error — it blocked
+`git push` (`loom/src/daemon/server/storage.rs:14`). The same trap applies to any
+platform-width alias: `c_int`, `off_t`, `nlink_t`, `time_t`.
+
+**Prevention:** declare permission constants as `u32` (the type every Rust-side API wants) and cast
+at the raw-libc boundary only: `libc::fchmod(fd, MODE as libc::mode_t)`. A cast to an alias is exempt
+from `unnecessary_cast`, so it is lint-clean on both platforms, whereas `.into()`/`u32::from()` is
+lint-clean on exactly one.
+
+**Also:** the pre-push hook runs Clippy, the pre-commit hook does not. A lint-broken commit lands
+locally and only surfaces at push time. Run `cargo clippy --all-targets -- -D warnings` before
+committing, not after.
