@@ -6,12 +6,12 @@ use std::os::fd::{AsRawFd, OwnedFd};
 use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
 use std::path::Path;
 
-const PRIVATE_DIRECTORY_MODE: libc::mode_t = 0o700;
+const PRIVATE_DIRECTORY_MODE: u32 = 0o700;
 const PRIVATE_FILE_MODE: u32 = 0o600;
 
 pub(super) fn ensure_private_control_dir(work_dir: &Path) -> Result<()> {
     let mut builder = fs::DirBuilder::new();
-    builder.mode(PRIVATE_DIRECTORY_MODE.into());
+    builder.mode(PRIVATE_DIRECTORY_MODE);
     match builder.create(work_dir) {
         Ok(()) => {}
         Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
@@ -22,7 +22,13 @@ pub(super) fn ensure_private_control_dir(work_dir: &Path) -> Result<()> {
         .context("daemon control directory must be a real directory")?;
     // SAFETY: `directory` is a live descriptor opened without following the
     // final component, and the mode is a fixed owner-only mask.
-    if unsafe { libc::fchmod(directory.as_raw_fd(), PRIVATE_DIRECTORY_MODE) } < 0 {
+    if unsafe {
+        libc::fchmod(
+            directory.as_raw_fd(),
+            PRIVATE_DIRECTORY_MODE as libc::mode_t,
+        )
+    } < 0
+    {
         return Err(std::io::Error::last_os_error())
             .context("failed to restrict daemon control directory permissions");
     }
