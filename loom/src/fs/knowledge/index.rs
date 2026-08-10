@@ -169,6 +169,11 @@ pub fn generate_index(root: &Path) -> Result<String> {
         let mut current_category: Option<KnowledgeFile> = None;
         for topic in &topics {
             if current_category != Some(topic.category) {
+                // Blank line between the previous category's table and this heading:
+                // markdownlint (MD022/MD058) rejects a heading or table without one.
+                if current_category.is_some() {
+                    out.push('\n');
+                }
                 out.push_str(&format!("### {}\n\n", topic.category.dir_name()));
                 out.push_str("| Topic | Title | Blurb | Lines |\n");
                 out.push_str("| --- | --- | --- | --- |\n");
@@ -260,6 +265,33 @@ mod tests {
         assert!(content.contains("architecture.md"));
         assert!(content.contains("architecture/merge-flow.md"));
         assert!(content.contains("Merge Flow"));
+    }
+
+    #[test]
+    fn test_generate_index_separates_category_sections_with_blank_lines() {
+        let temp = TempDir::new().unwrap();
+        let knowledge = KnowledgeDir::new(temp.path());
+        knowledge.initialize().unwrap();
+
+        for (category, slug) in [("architecture", "merge-flow"), ("mistakes", "phantom")] {
+            let dir = knowledge.root().join(category);
+            fs::create_dir_all(&dir).unwrap();
+            fs::write(dir.join(format!("{slug}.md")), "# Title\n\n> Blurb.\n").unwrap();
+        }
+
+        let content = generate_index(knowledge.root()).unwrap();
+        // markdownlint MD022/MD058: a heading that follows a table row directly
+        // fails the pre-push markdown lint.
+        let lines: Vec<&str> = content.lines().collect();
+        for (index, line) in lines.iter().enumerate() {
+            if line.starts_with("###") {
+                assert_eq!(
+                    lines[index - 1],
+                    "",
+                    "heading {line} must be preceded by a blank line"
+                );
+            }
+        }
     }
 
     #[test]
