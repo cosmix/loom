@@ -32,6 +32,23 @@ pub use socket::{
     kill_socket_server, list_loom_sockets, socket_path_for, socket_session_is_alive, LoomSocket,
 };
 
+/// Server options loom forces on every stage server it creates, applied
+/// best-effort after the spawn.
+///
+/// `status off` is cosmetic. `mouse off` is not. tmux reads the operator's
+/// `~/.tmux.conf` at `start-server`, so a server loom creates inherits
+/// whatever that file sets — and `set -g mouse on` is a common setting. With
+/// mouse capture on, a drag inside an agent's pane is consumed by tmux (which
+/// enters copy-mode) instead of reaching the terminal emulator, so the
+/// operator cannot select an agent's output with the mouse at all. Off also
+/// matches how these panes are used: a surface for reading and copying, not
+/// an interactive tmux workspace.
+///
+/// Inheriting the operator's whole config is the general hazard; this
+/// neutralises the one setting known to break reading agent output. The
+/// viewer applies the same override — see `commands/attach/overview.rs`.
+const PRESENTATION_OPTIONS: &[(&str, &str)] = &[("status", "off"), ("mouse", "off")];
+
 const TMUX_SPAWN_TIMEOUT: Duration = Duration::from_secs(20);
 const TMUX_PROBE_TIMEOUT: Duration = Duration::from_secs(5);
 const TMUX_TEARDOWN_TIMEOUT: Duration = Duration::from_secs(5);
@@ -154,12 +171,14 @@ pub fn spawn_in_tmux(socket: &str, session_name: &str, cwd: &Path, command: &Pat
         );
     }
 
-    // Best-effort: hide the status bar. Cosmetic only — never fails the spawn.
-    let _ = run_tmux_control(
-        &["-L", socket, "set-option", "-g", "status", "off"],
-        TMUX_PROBE_TIMEOUT,
-        format!("tmux set-option ({socket})"),
-    );
+    // Best-effort presentation. Never fails the spawn.
+    for (option, value) in PRESENTATION_OPTIONS {
+        let _ = run_tmux_control(
+            &["-L", socket, "set-option", "-g", option, value],
+            TMUX_PROBE_TIMEOUT,
+            format!("tmux set-option {option} ({socket})"),
+        );
+    }
 
     Ok(())
 }

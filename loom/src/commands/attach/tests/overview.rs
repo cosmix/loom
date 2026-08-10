@@ -269,6 +269,18 @@ fn viewer_hardening_is_ordered_most_important_first() {
     let remain_on_exit = position("remain-on-exit");
     let format = position("remain-on-exit-format");
 
+    // `mouse off` overrides the operator's `~/.tmux.conf`, which tmux reads at
+    // `start-server`: with capture on, a drag in a pane is eaten by tmux
+    // instead of reaching the terminal, so agent output cannot be selected.
+    // Asserted by value, not presence — `mouse on` here would be worse than
+    // omitting it, since it would force capture on for operators who had it off.
+    let mouse = position("mouse");
+    assert_eq!(
+        harden.get(mouse + 1).map(String::as_str),
+        Some("off"),
+        "the viewer must turn mouse capture OFF, never on"
+    );
+
     assert_eq!(
         harden.get(exit_empty + 1).map(String::as_str),
         Some("off"),

@@ -82,6 +82,16 @@ const REMAIN_ON_EXIT_FLAGS: &[&str] = &[
 /// abort. `remain-on-exit-format` is last because it is purely cosmetic and
 /// the one entry whose availability varies across tmux builds.
 ///
+/// # `mouse off`
+///
+/// Not cosmetic, and not about the viewer's own behaviour. tmux reads the
+/// operator's `~/.tmux.conf` at `start-server`, so `set -g mouse on` — a
+/// common setting — is in force in every server loom creates. Mouse capture
+/// then consumes drags inside a pane (tmux enters copy-mode) instead of
+/// letting them reach the terminal emulator, so the operator cannot select an
+/// agent's output at all. The same override is applied to stage servers in
+/// `orchestrator/terminal/tmux/mod.rs`.
+///
 /// # Cost
 ///
 /// `exit-empty off` means this repo's viewer server outlives its last pane,
@@ -103,6 +113,11 @@ const VIEWER_HARDENING: &[&str] = &[
     "-w",
     "remain-on-exit",
     "on",
+    ";",
+    "set-option",
+    "-g",
+    "mouse",
+    "off",
     ";",
     "set-option",
     "-g",

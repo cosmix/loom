@@ -194,3 +194,25 @@ fn new_session_nonzero_exit_is_a_failure() {
     );
     assert!(err.to_string().contains("loom-abc"));
 }
+
+#[test]
+fn stage_servers_force_mouse_capture_off() {
+    // tmux reads the operator's `~/.tmux.conf` at `start-server`, so whatever
+    // it sets is live inside every agent pane loom creates. `set -g mouse on`
+    // is common, and with capture on a drag is eaten by tmux's copy-mode
+    // instead of reaching the terminal emulator — the operator cannot select
+    // an agent's output at all.
+    //
+    // Asserted by VALUE, not presence. The failure mode worth pinning is not
+    // a missing entry but an inverted one: `("mouse", "on")` would force
+    // capture on for operators who had deliberately turned it off, taking
+    // their selection away rather than giving it back.
+    let mouse = PRESENTATION_OPTIONS
+        .iter()
+        .find(|(option, _)| *option == "mouse")
+        .expect("stage servers must pin the mouse option, not inherit it");
+    assert_eq!(
+        mouse.1, "off",
+        "mouse capture must be forced OFF on servers loom creates"
+    );
+}
