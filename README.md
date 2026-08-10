@@ -634,24 +634,26 @@ work only for sessions spawned by the tmux backend — with the native backend i
 Panes in the overview are **live, writable terminals**, not read-only views: keystrokes go to the
 agent, and `C-b x` closes that stage's pane. Detach the normal way with `C-b d`.
 
-> **⚠️ Mouse mode: selecting text in a pane can kill the stage.**
+> **⚠️ Your `~/.tmux.conf` is live inside agent panes.**
 >
-> tmux reads your `~/.tmux.conf` when it starts a server, so a global `set -g mouse on` is in force
-> inside loom's servers too. With mouse capture on, a click, drag or double-click in a pane is
-> delivered to tmux and the nested session instead of to your terminal — and a stray selection can
-> take the pane down with it, killing the agent mid-stage. Loom then records a crash and retries,
-> so the symptom reads as "sessions keep crashing seconds after spawn" with nothing wrong in the
-> logs.
+> tmux reads it when it starts a server, so everything it sets globally — options and key bindings
+> alike — is in force inside the servers loom creates. Panes here are live, writable terminals, so a
+> binding that closes or kills a pane will do exactly that to a running agent.
 >
-> Turn mouse capture off on loom's servers:
+> Loom now forces `mouse off` on the servers it creates. With capture on, a click or drag in a pane
+> is delivered to tmux instead of your terminal, so you cannot select an agent's output at all;
+> with it off, selection falls back to your terminal emulator. If a server was started by an older
+> loom, turn it off by hand:
 >
 > ```bash
 > for s in "${TMUX_TMPDIR:-/tmp}"/tmux-$(id -u)/loom-*; do tmux -S "$s" set -g mouse off; done
 > ```
 >
-> Selection then falls back to your terminal emulator, which is usually what you wanted anyway.
-> The same applies to any other binding your `~/.tmux.conf` sets globally: it is live inside agent
-> panes.
+> Two related traps. `set-clipboard off` in your config means a tmux copy lands in a tmux buffer and
+> never reaches your system clipboard — use `tmux -S <socket> capture-pane -p -S -` to get text out
+> instead. And before hand-killing any session with `kill-server`, install a loom containing
+> `89c4f350`: older daemons read a manual kill as a stage crash and spend the stage's retry budget
+> on it.
 
 ### Fallback marker
 

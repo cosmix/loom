@@ -84,3 +84,15 @@ Verified on tmux 3.7b: after `kill-server` exits 0 the socket file persists with
 **Prevention:** when reusing a predicate, check that it answers _your_ question. "Alive" and "attachable" are different questions about the same session.
 
 **Fix:** `tmux_endpoint_ready` (`commands/attach/mod.rs`) adds socket-exists plus an authoritative `has-session` probe, on the attach path ONLY. Both call sites report the wait explicitly instead of letting tmux's own error surface. This is why `has-session` appears in `attach/` while being forbidden in the monitor — annotate any such use, or the next reader will "fix" the inconsistency in the wrong direction.
+
+## Servers loom Creates Inherit the Operator's `~/.tmux.conf` (2026-08-11)
+
+**What happened:** an operator could not select text in any agent pane, and a peer investigation attributed four "sessions crashing seconds after spawn" to stray mouse selections killing agents.
+
+**Why:** tmux reads `~/.tmux.conf` at `start-server`, so every server loom creates inherits it. The operator's config had `set -g mouse on`; loom overrode only `status off`. With capture on, tmux consumes drags into copy-mode instead of letting them reach the terminal emulator, so mouse selection of agent output is impossible.
+
+**What was NOT established:** that a selection can kill a stage. `mouse on` alone enters copy-mode; it does not kill a pane or its process. The config in question contained no `bind` directives at all — nothing destructive to trigger. Crashes "seconds after spawn" also do not fit a human clicking, and a competing explanation existed at the same time (the `user.token` completion deadlock, which hard-fails a stage). Treat the crash attribution as unexplained correlation until a mechanism is demonstrated.
+
+**Prevention:** when a config file the tool does not own is read into the tool's runtime, enumerate what it can change and pin the settings that matter. Do not promote a correlation to a documented mechanism in user-facing docs — a wrong cause in a README sends every future reader chasing their mouse instead of the real bug.
+
+**Fix:** `PRESENTATION_OPTIONS` (`orchestrator/terminal/tmux/mod.rs`) forces `status off` and `mouse off` on stage servers; `VIEWER_HARDENING` (`commands/attach/overview.rs`) does the same for the viewer. Both tests assert the VALUE, not mere presence: `("mouse", "on")` would be worse than omitting the entry, since it would force capture on for an operator who had turned it off.

@@ -64,7 +64,7 @@
 | [mistakes/shell-command-matchers.md](mistakes/shell-command-matchers.md) | Shell Command Matchers | Separators that never become tokens, forgeable glob lookups, env leakage in hook tests, and three Bash traps. | 124 |
 | [mistakes/testing-and-lint.md](mistakes/testing-and-lint.md) | Testing And Lint | Lint and test discipline: --all-targets, --no-fail-fast, headless CI, ambient git config and inherited descriptors in tests, the stub checker, the maintainability ledger, and reviewer claims. | 122 |
 | [mistakes/tests-that-cannot-fail.md](mistakes/tests-that-cannot-fail.md) | Tests That Cannot Fail | Topic notes for the mistakes knowledge area. | 37 |
-| [mistakes/tmux-backend.md](mistakes/tmux-backend.md) | Tmux Backend | Topic notes for the mistakes knowledge area. | 86 |
+| [mistakes/tmux-backend.md](mistakes/tmux-backend.md) | Tmux Backend | Topic notes for the mistakes knowledge area. | 98 |
 | [mistakes/verification-harness.md](mistakes/verification-harness.md) | Verification Harness | When every check fails at once, suspect the harness; the PATH binary is not your build; silent subagents are failed delegations. | 48 |
 
 ### concerns
