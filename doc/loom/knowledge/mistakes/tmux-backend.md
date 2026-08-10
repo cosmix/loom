@@ -60,3 +60,27 @@ Verified on tmux 3.7b: after `kill-server` exits 0 the socket file persists with
 - **`remain-on-exit` must be set BEFORE the splits, not after.** It is a **window** option, so it governs every pane regardless of creation order. Setting it early additionally protects panes that die _during_ the build — the realistic race, when a loom session ends between the liveness scan and its split. Setting it late leaves every pane unprotected for the whole build.
 - **A single-string pane command runs under `default-shell`, i.e. the user's LOGIN shell** (verified: `show-options -g default-shell` = `/bin/zsh`), not `/bin/sh`. So `unset TMUX; exec tmux ...` as one string only clears `$TMUX` under sh/bash/zsh: under csh the pane env still has `TMUX=` (csh needs `unsetenv`), and fish has no `unset` builtin at all — the nested attach is refused. **Fix:** pass `sh` `-c` `<string>` as **separate argv words**; tmux `execvp`s when `argc > 1`, guaranteeing POSIX sh. Detection: a pane that dies instantly with `sessions should be nested with care` is a shell problem, not a tmux-flag problem.
 - **`list-clients` on the INNER socket is the only proof a nested attach worked.** Pane count and `pane_current_command=tmux` look identical whether the attach succeeded or was refused.
+
+## `remain-on-exit` Cannot Protect Pane 0, Because Pane 0 Predates It (2026-08-11)
+
+**What happened:** `loom attach` failed outright with `Error: tmux new-session failed for socket 'loom-view-f8a5e1db': server exited unexpectedly`. Retrying a minute later worked. Separately, and from the same underlying event, a _later_ pane showed `[server exited unexpectedly]` over `Pane is dead (status 1, ...)` and the viewer survived.
+
+**Why:** both are one event — a per-session tmux server exiting — hitting the viewer in two places. `new-session` creates pane 0 with `exec tmux -L <session-socket> attach-session` _already running in it_. If that inner server is gone, the client exits instantly. `remain-on-exit` is applied on the NEXT step, so pane 0 dies unprotected: dead pane → dead window → dead session → and under the default `exit-empty on`, the viewer server exits too. Panes 1+ are created after `remain-on-exit` lands, so the identical event only leaves a labelled corpse there. The old note above ("set it BEFORE the splits") is correct and still insufficient: before the splits is still _after_ pane 0.
+
+**Prevention:** a window option cannot retroactively protect a pane created by the same command that created its window. When a pane is born running something that can fail immediately, the protection must be a GLOBAL option set on the server before that command runs.
+
+**Fix:** `VIEWER_HARDENING` (`commands/attach/overview.rs`) runs `start-server ; set -g exit-empty off ; set -gw remain-on-exit on ; set -g remain-on-exit-format ...` as ONE `;`-separated sequence before `new-session`. Three traps in that one line:
+
+- **`start-server` alone is a no-op.** It brings up a server with no sessions, which `exit-empty on` reaps before a second `tmux` process could connect to configure it. Only a single command sequence gets `exit-empty off` in first. tmux's own manual documents the `tmux start \; show -g` idiom for exactly this.
+- **tmux abandons the rest of a sequence when one command errors.** Order entries so each sits after everything that must not be able to abort it — cosmetic and version-varying settings last.
+- **`exit-empty off` leaks an idle server per repo.** Accepted: a server that reaps itself cannot be configured before pane 0 exists. The viewer socket already had no reaper.
+
+## PID Liveness Answers "Is the Agent Alive", Not "Can I Attach" (2026-08-11)
+
+**What happened:** the viewer built panes for sessions that were alive by every existing filter but whose tmux server was not accepting clients — a session mid-spawn (discovery admits `Spawning`), or one whose server had just been torn down while its `claude` PID lingered. Each such pane exited on contact.
+
+**Why:** `loom attach` reused `is_session_alive`, which is PID-only by deliberate design (see `architecture/terminal-backends.md`). That is the right liveness rule and must not change — but attaching needs the SERVER, and the two disagree in both directions.
+
+**Prevention:** when reusing a predicate, check that it answers _your_ question. "Alive" and "attachable" are different questions about the same session.
+
+**Fix:** `tmux_endpoint_ready` (`commands/attach/mod.rs`) adds socket-exists plus an authoritative `has-session` probe, on the attach path ONLY. Both call sites report the wait explicitly instead of letting tmux's own error surface. This is why `has-session` appears in `attach/` while being forbidden in the monitor — annotate any such use, or the next reader will "fix" the inconsistency in the wrong direction.

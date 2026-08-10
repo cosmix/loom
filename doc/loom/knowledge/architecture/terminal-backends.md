@@ -111,12 +111,26 @@ goes to the daemon's stderr, not the user's shell.
 ## `loom attach` — Overview and Direct
 
 `commands/attach/` discovers sessions with `backend == Tmux`, status `Running | Spawning`, a live PID
-and a resolvable tmux session name, sorted oldest-first by `(created_at, id)`.
+and a resolvable tmux session name, sorted oldest-first by `(created_at, id)`. `mod.rs` owns
+discovery and direct attach; `overview.rs` owns the viewer server.
+
+Both paths then apply one further precondition: `tmux_endpoint_ready` — the session's socket exists
+AND `has-session` succeeds on it. This is the ONE place `has-session` is legitimate, and it is not a
+contradiction of the liveness rule above: PID liveness answers "is the agent alive", attaching needs
+"is the server accepting clients", and the two disagree in both directions (a `Spawning` session has
+a live wrapper PID before its server is up; a torn-down server can outlive its `claude` PID by a
+moment). Both call sites report "still spawning, or just ended — re-run in a moment" rather than
+letting tmux's error surface.
 
 - **No argument** ⇒ a tiled **overview**: a per-repo _viewer_ server on socket
   `loom-view-<sha256(canonical repo root)[..8]>`, session `loom-overview`, created detached at
-  220x50, `remain-on-exit on` set **before** the splits, one pane per live session, re-tiled after
-  **each** split.
+  220x50, one pane per attachable session, re-tiled after **each** split.
+  - `VIEWER_HARDENING` runs **before** `new-session`, as one `;`-separated sequence:
+    `start-server ; set -g exit-empty off ; set -gw remain-on-exit on ; set -g remain-on-exit-format`.
+    Pane 0 is born already running an attach client, so only a GLOBAL option can protect it — the
+    targeted `remain-on-exit` step after `new-session` is a belt-and-braces re-assertion. The
+    sequence is best-effort: a tmux rejecting part of it degrades to the pre-hardening behaviour
+    rather than failing the attach. See `mistakes/tmux-backend.md`.
 - **With a stage id** ⇒ direct `exec` of `tmux -L loom-<session.id> attach-session -t <tracking_key>`,
   newest session wins if several match.
 
