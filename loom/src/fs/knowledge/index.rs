@@ -145,6 +145,14 @@ pub fn generate_index(root: &Path) -> Result<String> {
          summaries with links out; tier-2 files hold the full detail.\n\n",
     );
 
+    append_tier1_table(&mut out, root)?;
+    append_topic_tables(&mut out, &topics);
+
+    Ok(out)
+}
+
+/// One row per tier-1 summary file that exists on disk.
+fn append_tier1_table(out: &mut String, root: &Path) -> Result<()> {
     out.push_str("## Tier 1 — Summaries\n\n");
     out.push_str("| File | Description | Lines |\n");
     out.push_str("| --- | --- | --- |\n");
@@ -163,33 +171,36 @@ pub fn generate_index(root: &Path) -> Result<String> {
             desc = file_type.description(),
         ));
     }
+    Ok(())
+}
 
-    if !topics.is_empty() {
-        out.push_str("\n## Tier 2 — Topics\n\n");
-        let mut current_category: Option<KnowledgeFile> = None;
-        for topic in &topics {
-            if current_category != Some(topic.category) {
-                // Blank line between the previous category's table and this heading:
-                // markdownlint (MD022/MD058) rejects a heading or table without one.
-                if current_category.is_some() {
-                    out.push('\n');
-                }
-                out.push_str(&format!("### {}\n\n", topic.category.dir_name()));
-                out.push_str("| Topic | Title | Blurb | Lines |\n");
-                out.push_str("| --- | --- | --- | --- |\n");
-                current_category = Some(topic.category);
-            }
-            let rel = topic.relative_path().display().to_string();
-            out.push_str(&format!(
-                "| [{rel}]({rel}) | {} | {} | {} |\n",
-                escape_cell(&topic.title),
-                escape_cell(&topic.blurb),
-                topic.line_count
-            ));
-        }
+/// One table per category, in the order `scan_topics` returned them.
+fn append_topic_tables(out: &mut String, topics: &[TopicEntry]) {
+    if topics.is_empty() {
+        return;
     }
-
-    Ok(out)
+    out.push_str("\n## Tier 2 — Topics\n\n");
+    let mut current_category: Option<KnowledgeFile> = None;
+    for topic in topics {
+        if current_category != Some(topic.category) {
+            // Blank line between the previous category's table and this heading:
+            // markdownlint (MD022/MD058) rejects a heading or table without one.
+            if current_category.is_some() {
+                out.push('\n');
+            }
+            out.push_str(&format!("### {}\n\n", topic.category.dir_name()));
+            out.push_str("| Topic | Title | Blurb | Lines |\n");
+            out.push_str("| --- | --- | --- | --- |\n");
+            current_category = Some(topic.category);
+        }
+        let rel = topic.relative_path().display().to_string();
+        out.push_str(&format!(
+            "| [{rel}]({rel}) | {} | {} | {} |\n",
+            escape_cell(&topic.title),
+            escape_cell(&topic.blurb),
+            topic.line_count
+        ));
+    }
 }
 
 /// Crash-atomically write `<root>/INDEX.md`.
