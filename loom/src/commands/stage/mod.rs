@@ -2,6 +2,7 @@
 //! Usage: `loom stage <id> [complete|block|reset|merge|retry|...]`
 
 pub(crate) mod acceptance_runner;
+pub(crate) mod admin_hmac;
 pub(crate) mod admin_proof;
 pub mod complete;
 mod dispute_criteria;

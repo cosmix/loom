@@ -13,6 +13,80 @@ use super::types::{
     StageCommands, WorktreeCommands,
 };
 
+/// The admin proof a `loom stage complete` invocation needs, if any.
+///
+/// Two ways to hold the capability, and only two:
+///
+/// * `--operator` — mint it here from `.work/admin.token`. The sandbox denies
+///   that read to stage agents, so this succeeds only from an operator shell
+///   (see `stage::admin_proof::mint_completion_proof_as_operator`).
+/// * otherwise — a trusted broker supplies a one-time proof through
+///   `LOOM_ADMIN_PROOF`, minted out of band by `loom stage admin-proof`.
+///
+/// An unprivileged completion needs neither and gets `None`.
+fn resolve_completion_proof(
+    stage_id: &str,
+    no_verify: bool,
+    operator: bool,
+    force_unsafe: bool,
+    assume_merged: bool,
+) -> anyhow::Result<Option<String>> {
+    let privileged = no_verify || force_unsafe || assume_merged;
+    if operator && !privileged {
+        anyhow::bail!(
+            "--operator authorizes privileged completion flags; pass it with \
+             --no-verify, --force-unsafe, or --assume-merged"
+        );
+    }
+    match (privileged, operator) {
+        (false, _) => Ok(None),
+        (true, true) => stage::admin_proof::mint_completion_proof_as_operator(
+            std::path::Path::new(".work"),
+            stage_id,
+            no_verify,
+            force_unsafe,
+            assume_merged,
+        )
+        .map(Some),
+        (true, false) => stage::complete::take_admin_proof_from_env().map(Some),
+    }
+}
+
+/// `loom stage admin-proof` — mint one capability and print it, nothing else.
+///
+/// The secret arrives in `LOOM_ADMIN_TOKEN` and is never read from disk here,
+/// so a caller that can invoke loom but cannot read `.work/admin.token` gains
+/// nothing: a wrong secret simply mints a proof that verification rejects.
+/// That is the difference between this command and `--operator`, which reads
+/// the token and therefore relies on the sandbox to separate operator from
+/// agent.
+fn print_minted_proof(
+    stage_id: Option<String>,
+    daemon_stop: bool,
+    no_verify: bool,
+    force_unsafe: bool,
+    assume_merged: bool,
+) -> Result<()> {
+    if daemon_stop {
+        println!("{}", stage::admin_proof::mint_daemon_stop_proof_from_env()?);
+        return Ok(());
+    }
+    if !no_verify && !force_unsafe && !assume_merged {
+        anyhow::bail!("admin-proof requires at least one privileged completion flag");
+    }
+    let stage_id = stage_id.expect("clap requires stage_id without --daemon-stop");
+    println!(
+        "{}",
+        stage::complete::mint_completion_proof_from_env(
+            &stage_id,
+            no_verify,
+            force_unsafe,
+            assume_merged,
+        )?
+    );
+    Ok(())
+}
+
 pub fn dispatch(command: Commands) -> Result<()> {
     match command {
         Commands::Init {
@@ -72,14 +146,17 @@ pub fn dispatch(command: Commands) -> Result<()> {
                 stage_id,
                 session,
                 no_verify,
+                operator,
                 force_unsafe,
                 assume_merged,
             } => {
-                let admin_proof = if no_verify || force_unsafe || assume_merged {
-                    Some(stage::complete::take_admin_proof_from_env()?)
-                } else {
-                    None
-                };
+                let admin_proof = resolve_completion_proof(
+                    &stage_id,
+                    no_verify,
+                    operator,
+                    force_unsafe,
+                    assume_merged,
+                )?;
                 stage::complete(
                     stage_id,
                     session,
@@ -95,25 +172,13 @@ pub fn dispatch(command: Commands) -> Result<()> {
                 no_verify,
                 force_unsafe,
                 assume_merged,
-            } => {
-                if daemon_stop {
-                    let proof = stage::admin_proof::mint_daemon_stop_proof_from_env()?;
-                    println!("{proof}");
-                    return Ok(());
-                }
-                if !no_verify && !force_unsafe && !assume_merged {
-                    anyhow::bail!("admin-proof requires at least one privileged completion flag");
-                }
-                let stage_id = stage_id.expect("clap requires stage_id without --daemon-stop");
-                let proof = stage::complete::mint_completion_proof_from_env(
-                    &stage_id,
-                    no_verify,
-                    force_unsafe,
-                    assume_merged,
-                )?;
-                println!("{proof}");
-                Ok(())
-            }
+            } => print_minted_proof(
+                stage_id,
+                daemon_stop,
+                no_verify,
+                force_unsafe,
+                assume_merged,
+            ),
             StageCommands::Block { stage_id, reason } => stage::block(stage_id, reason),
             StageCommands::Reset {
                 stage_id,

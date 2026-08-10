@@ -20,6 +20,12 @@ pub enum StageCommands {
         #[arg(long)]
         no_verify: bool,
 
+        /// Authorize this run's privileged flags yourself, by reading
+        /// .work/admin.token directly. Sandboxed stage agents are denied that
+        /// read, so this succeeds only from an operator shell.
+        #[arg(long)]
+        operator: bool,
+
         /// UNSAFE: Force completion from any state, bypassing state machine validation.
         /// WARNING: This can corrupt dependency tracking. Use only for recovery.
         #[arg(long = "force-unsafe")]

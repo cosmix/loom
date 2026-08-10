@@ -143,3 +143,62 @@ fn operator_env_mints_daemon_stop_proof_without_retaining_secret() {
     verify_and_consume_admin_proof(temp.path(), AdminProofRequest::daemon_stop(), Some(&proof))
         .unwrap();
 }
+
+#[test]
+#[serial]
+fn operator_mint_round_trips_and_stays_bound_to_its_flag_set() {
+    // The `--operator` path mints from `.work/admin.token` directly instead of
+    // taking a hand-carried proof. It must produce a proof that verifies for
+    // the flags it was asked for and for NO other flag set — otherwise the
+    // ergonomic shortcut would quietly become a wildcard.
+    let temp = setup();
+    std::env::remove_var("LOOM_SESSION_ID");
+
+    let proof =
+        mint_completion_proof_as_operator(temp.path(), "stage-a", true, false, false).unwrap();
+
+    let wrong = setup();
+    let error = verify_and_consume_admin_proof(
+        wrong.path(),
+        AdminProofRequest::completion("stage-a", true, true, false),
+        Some(&proof),
+    )
+    .unwrap_err();
+    assert!(
+        error.to_string().contains("invalid"),
+        "an operator proof must not authorize a flag set it was not minted for, got: {error}"
+    );
+
+    verify_and_consume_admin_proof(
+        temp.path(),
+        AdminProofRequest::completion("stage-a", true, false, false),
+        Some(&proof),
+    )
+    .expect("the operator's own proof must verify for the exact flags it was minted for");
+}
+
+#[test]
+#[serial]
+fn operator_mint_is_refused_from_inside_a_loom_session() {
+    // Guard rail, not boundary — the sandbox denying `.work/admin.token` is
+    // what actually stops an agent. This keeps the EASY path closed: without
+    // it, an agent that would never assemble the two-command mint dance has a
+    // single documented flag inviting it to self-authorize. The token here is
+    // readable on purpose, so the refusal is proven to come from the session
+    // check rather than from a failed read.
+    let temp = setup();
+    std::env::set_var("LOOM_SESSION_ID", "session-abc-123");
+
+    let error =
+        mint_completion_proof_as_operator(temp.path(), "stage-a", true, false, false).unwrap_err();
+    std::env::remove_var("LOOM_SESSION_ID");
+
+    assert!(
+        error.to_string().contains("operator shell"),
+        "the refusal must name the reason, got: {error}"
+    );
+    assert!(
+        error.to_string().contains("session-abc-123"),
+        "the refusal must identify the session it detected, got: {error}"
+    );
+}

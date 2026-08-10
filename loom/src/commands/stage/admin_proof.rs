@@ -2,6 +2,8 @@
 
 use anyhow::{bail, Context, Result};
 use sha2::{Digest, Sha256};
+
+use super::admin_hmac::{constant_time_eq, hmac_sha256};
 use std::os::fd::AsRawFd;
 use std::path::{Path, PathBuf};
 
@@ -20,8 +22,6 @@ const COMPLETION_ACTION: &str = "stage.complete";
 const DAEMON_STOP_ACTION: &str = "daemon.stop";
 const DAEMON_TARGET: &str = "daemon";
 const REPLAY_DIR: &str = "admin-proof-replays";
-const SHA256_LEN: usize = 32;
-const SHA256_BLOCK_LEN: usize = 64;
 
 /// The privileged operation authorized by an admin proof.
 #[derive(Debug, Clone, Copy)]
@@ -197,42 +197,6 @@ fn resolve_work_dir(work_dir: &Path) -> Result<PathBuf> {
     })
 }
 
-fn hmac_sha256(key: &[u8], message: &[u8]) -> [u8; SHA256_LEN] {
-    let mut key_block = [0u8; SHA256_BLOCK_LEN];
-    if key.len() > SHA256_BLOCK_LEN {
-        let digest = Sha256::digest(key);
-        key_block[..SHA256_LEN].copy_from_slice(&digest);
-    } else {
-        key_block[..key.len()].copy_from_slice(key);
-    }
-
-    let mut inner_pad = [0x36u8; SHA256_BLOCK_LEN];
-    let mut outer_pad = [0x5cu8; SHA256_BLOCK_LEN];
-    for index in 0..SHA256_BLOCK_LEN {
-        inner_pad[index] ^= key_block[index];
-        outer_pad[index] ^= key_block[index];
-    }
-
-    let mut inner = Sha256::new();
-    inner.update(inner_pad);
-    inner.update(message);
-    let inner_digest = inner.finalize();
-
-    let mut outer = Sha256::new();
-    outer.update(outer_pad);
-    outer.update(inner_digest);
-    outer.finalize().into()
-}
-
-fn constant_time_eq(expected: &[u8; SHA256_LEN], supplied: &[u8]) -> bool {
-    let mut difference = supplied.len() ^ SHA256_LEN;
-    for (index, expected_byte) in expected.iter().enumerate() {
-        let supplied_byte = supplied.get(index).copied().unwrap_or(0);
-        difference |= usize::from(expected_byte ^ supplied_byte);
-    }
-    difference == 0
-}
-
 fn consume_replay_marker(work_dir: &Path, message: &str, proof: &str) -> Result<()> {
     let replay_dir = Path::new(REPLAY_DIR);
     crate::fs::safe_fs::safe_create_dir_all(work_dir, replay_dir, 0o700)
@@ -303,6 +267,80 @@ pub fn mint_completion_proof_from_env(
     assume_merged: bool,
 ) -> Result<String> {
     let secret = take_admin_secret_from_env()?;
+    let request = AdminProofRequest::completion(stage_id, no_verify, force_unsafe, assume_merged);
+    let nonce = uuid::Uuid::new_v4().simple().to_string();
+    Ok(mint_admin_proof(&secret, request, &nonce))
+}
+
+/// Mint a completion proof for an operator who can read the daemon token.
+///
+/// This backs `loom stage complete --operator`, which collapses the two-command
+/// mint-and-hand-back dance into one invocation.
+///
+/// # Why reading the token here is not a credential oracle
+///
+/// [`mint_completion_proof_from_env`] deliberately never touches
+/// `admin.token`, so that a caller who can invoke loom but cannot read the
+/// token gains nothing. That reasoning does not extend to this path, because
+/// the sandbox — not loom — is what separates the two callers.
+/// `sandbox/settings.rs` emits `denyRead` for `.work/admin.token` in every
+/// worktree agent's settings (S-1), and Claude Code's filesystem sandbox binds
+/// the whole process tree, not just the agent's own file tools. A `loom` that a
+/// sandboxed agent spawns therefore cannot read the token either — the same
+/// mechanism that makes the completion broker's `user.token` read fail inside a
+/// worktree. An operator's unsandboxed shell can.
+///
+/// So the boundary is unchanged and only the ergonomics move: the agent is
+/// refused by the sandbox at the read, and the operator stops hand-carrying an
+/// HMAC through their environment to authorize an action they were always
+/// entitled to take.
+/// Environment variable every loom-spawned session's wrapper exports, for all
+/// session kinds. Its presence is what [`refuse_operator_inside_a_session`]
+/// keys on.
+const SESSION_ID_ENV: &str = "LOOM_SESSION_ID";
+
+/// Refuse `--operator` from inside any loom-spawned session.
+///
+/// # This is a guard rail, not the boundary
+///
+/// The boundary is the sandbox denying `.work/admin.token`; an agent could
+/// clear this variable, so nothing here withstands a caller that is actually
+/// trying. It exists because `--operator` changes the AFFORDANCE even though
+/// it leaves enforcement identical: the two-command mint dance reads as a wall
+/// to an agent that considers it, whereas a single documented flag saying
+/// "authorize this yourself" reads as an invitation. An agent that would never
+/// have assembled `LOOM_ADMIN_TOKEN=... loom stage admin-proof ...` may well
+/// try one flag.
+///
+/// So the easy path fails closed and says why, and defeating it takes a
+/// deliberate act that no longer looks like ordinary use.
+fn refuse_operator_inside_a_session() -> Result<()> {
+    if let Some(session) = std::env::var_os(SESSION_ID_ENV) {
+        bail!(
+            "--operator is for an operator shell, and this is loom session {}. \
+             Privileged completion is authorized by the human running loom, not by the \
+             agent executing the stage. If the stage genuinely cannot pass its acceptance \
+             criteria, use `loom stage dispute-criteria`",
+            session.to_string_lossy()
+        );
+    }
+    Ok(())
+}
+
+pub fn mint_completion_proof_as_operator(
+    work_dir: &Path,
+    stage_id: &str,
+    no_verify: bool,
+    force_unsafe: bool,
+    assume_merged: bool,
+) -> Result<String> {
+    refuse_operator_inside_a_session()?;
+    let resolved = resolve_work_dir(work_dir)?;
+    let secret = read_admin_secret(&resolved).context(
+        "--operator could not read .work/admin.token. Inside a sandboxed stage worktree that \
+         read is denied by design: privileged completion is the operator's to authorize, not \
+         the agent's. From an operator shell, this means the daemon is not running",
+    )?;
     let request = AdminProofRequest::completion(stage_id, no_verify, force_unsafe, assume_merged);
     let nonce = uuid::Uuid::new_v4().simple().to_string();
     Ok(mint_admin_proof(&secret, request, &nonce))
