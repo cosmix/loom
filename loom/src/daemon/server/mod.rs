@@ -9,6 +9,7 @@ mod environment;
 mod lifecycle;
 mod lock;
 mod orchestrator;
+mod peer_identity;
 mod pool;
 mod shutdown;
 mod status;

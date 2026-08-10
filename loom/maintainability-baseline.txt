@@ -161,7 +161,7 @@ function src/commands/verify.rs execute 90
 function src/completions/dynamic/mod.rs complete_after_subcommand 56
 function src/completions/install.rs install 52
 function src/daemon/server/broadcast.rs run_status_broadcaster 80
-function src/daemon/server/client.rs handle_client_connection 125
+function src/daemon/server/client.rs handle_client_connection 124
 function src/daemon/server/dispute.rs handle_dispute_criteria 176
 function src/daemon/server/lifecycle.rs run_server 125
 function src/daemon/server/lifecycle.rs start 141

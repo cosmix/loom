@@ -14,8 +14,14 @@ pub(super) fn broker_requested() -> bool {
 }
 
 pub(super) fn send_completion(stage_id: &str, session_id: &str, work_dir: &Path) -> Result<()> {
-    let auth_token = read_user_token(work_dir)
-        .context("trusted completion broker could not read .work/user.token")?;
+    // Absent is normal, not an error. A sandboxed worktree agent is denied
+    // this read on purpose (S-1) — the token authorizes every User RPC, not
+    // just this one — so requiring it here made the only sanctioned completion
+    // path depend on a file the sandbox generator forbade. The daemon falls
+    // back to identifying the caller by its socket peer credentials, which are
+    // scoped to exactly this session's own completion. From an unsandboxed
+    // host the token is present and still used.
+    let auth_token = read_user_token(work_dir).unwrap_or_default();
     let request = Request::CompleteStage {
         auth_token,
         stage_id: stage_id.to_string(),

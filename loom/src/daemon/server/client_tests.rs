@@ -6,6 +6,12 @@ use std::sync::atomic::AtomicBool;
 use std::thread;
 use tempfile::TempDir;
 
+/// Every existing caller of this alias tests an ADMIN request, whose failed
+/// credential is still a flat refusal. A failed USER credential is now
+/// `PendingPeerIdentity` instead — see
+/// `a_bad_user_token_defers_rather_than_denying`.
+const DENIED: Authorization = Authorization::Denied;
+
 fn request_preface(request: &Request) -> RequestPreface {
     let mut bytes = Vec::new();
     write_message(&mut bytes, request).unwrap();
@@ -22,7 +28,7 @@ fn user_token_is_scoped_to_user_requests() {
     let stop = request_preface(&Request::Stop {
         auth_token: "user-secret".to_string(),
     });
-    assert!(!authorize_preface(tmp.path(), &stop));
+    assert_eq!(DENIED, authorize_preface(tmp.path(), &stop));
 }
 
 #[test]
@@ -34,8 +40,11 @@ fn daemon_stop_requires_an_action_bound_one_time_proof() {
     let proof = mint_admin_proof(SECRET, AdminProofRequest::daemon_stop(), NONCE);
     let preface = request_preface(&Request::Stop { auth_token: proof });
 
-    assert!(authorize_preface(tmp.path(), &preface));
-    assert!(!authorize_preface(tmp.path(), &preface));
+    assert_eq!(
+        Authorization::Granted,
+        authorize_preface(tmp.path(), &preface)
+    );
+    assert_eq!(DENIED, authorize_preface(tmp.path(), &preface));
 }
 
 #[test]
@@ -46,7 +55,7 @@ fn missing_token_file_fails_closed() {
     let stop = request_preface(&Request::Stop {
         auth_token: "v1:0123456789abcdef:00".to_string(),
     });
-    assert!(!authorize_preface(tmp.path(), &stop));
+    assert_eq!(DENIED, authorize_preface(tmp.path(), &stop));
 }
 
 #[test]
@@ -139,4 +148,48 @@ fn valid_stop_proof_is_verified_before_request_and_shuts_down() {
     assert!(matches!(response, Response::Ok));
     handler.join().unwrap().unwrap();
     assert!(shutdown.load(Ordering::SeqCst));
+}
+
+#[test]
+fn a_bad_user_token_defers_to_peer_identity_rather_than_denying() {
+    // The deadlock this resolves: a sandboxed agent cannot read
+    // `.work/user.token` (it authorizes every User RPC), yet completing its
+    // own stage is the one thing it must be able to do. A failed User
+    // credential therefore defers instead of refusing — but the deferral is
+    // worthless on its own, since `handle_client_connection` admits it for
+    // `CompleteStage` alone and then requires the caller to actually BE the
+    // session it names.
+    let tmp = TempDir::new().unwrap();
+    std::fs::write(tmp.path().join(USER_TOKEN_FILE), "user-secret").unwrap();
+
+    let ping = request_preface(&Request::Ping {
+        auth_token: "wrong".to_string(),
+    });
+    assert_eq!(
+        Authorization::PendingPeerIdentity,
+        authorize_preface(tmp.path(), &ping),
+        "a User request with a bad token defers; the request-type gate refuses it later"
+    );
+
+    let good = request_preface(&Request::Ping {
+        auth_token: "user-secret".to_string(),
+    });
+    assert_eq!(
+        Authorization::Granted,
+        authorize_preface(tmp.path(), &good),
+        "a valid user token must still be granted outright"
+    );
+}
+
+#[test]
+fn a_failed_admin_credential_is_never_deferred() {
+    // Admin has no peer-identity path and must never acquire one: deferring
+    // it would turn a failed daemon-stop proof into an authorization attempt
+    // against the process tree.
+    let tmp = TempDir::new().unwrap();
+    std::fs::write(admin_token_path(tmp.path()), "admin-secret").unwrap();
+    let stop = request_preface(&Request::Stop {
+        auth_token: "v1:0123456789abcdef:00".to_string(),
+    });
+    assert_eq!(Authorization::Denied, authorize_preface(tmp.path(), &stop));
 }

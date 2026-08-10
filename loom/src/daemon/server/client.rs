@@ -94,15 +94,100 @@ fn verify_user_token(work_dir: &Path, provided_token: &str) -> bool {
     ct_eq(&expected, provided_token)
 }
 
-fn authorize_preface(work_dir: &Path, preface: &RequestPreface) -> bool {
+/// Outcome of checking a request's credential, before its body is read.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Authorization {
+    /// The credential is valid for the capability claimed.
+    Granted,
+    /// No valid credential, but the peer may still be entitled to complete its
+    /// OWN stage. Only [`Request::CompleteStage`] may proceed on this, and only
+    /// after `peer_identity::caller_is_inside_session` confirms the caller is
+    /// running inside the session it names — which needs the body, so the
+    /// decision cannot be finished here.
+    PendingPeerIdentity,
+    Denied,
+}
+
+/// Authorize from the preface alone, which is all that has been read yet.
+///
+/// The `PendingPeerIdentity` outcome exists because a sandboxed stage agent
+/// cannot read `.work/user.token` — deliberately, since that one credential
+/// authorizes every User RPC — yet completing its own stage is precisely what
+/// it is supposed to do. Deferring the decision lets the caller be identified
+/// by the connection instead of by a secret, without widening anything else:
+/// every other User request still needs the token.
+fn authorize_preface(work_dir: &Path, preface: &RequestPreface) -> Authorization {
     match preface.capability() {
-        Capability::User => verify_user_token(work_dir, preface.credential()),
-        Capability::Admin => crate::commands::stage::admin_proof::verify_and_consume_admin_proof(
-            work_dir,
-            crate::commands::stage::admin_proof::AdminProofRequest::daemon_stop(),
-            Some(preface.credential()),
-        )
-        .is_ok(),
+        Capability::User => {
+            if verify_user_token(work_dir, preface.credential()) {
+                Authorization::Granted
+            } else {
+                Authorization::PendingPeerIdentity
+            }
+        }
+        Capability::Admin => {
+            if crate::commands::stage::admin_proof::verify_and_consume_admin_proof(
+                work_dir,
+                crate::commands::stage::admin_proof::AdminProofRequest::daemon_stop(),
+                Some(preface.credential()),
+            )
+            .is_ok()
+            {
+                Authorization::Granted
+            } else {
+                Authorization::Denied
+            }
+        }
+    }
+}
+
+/// Refusal for a request whose declared length the daemon has no budget for.
+fn capacity_exhausted() -> Response {
+    Response::Error {
+        message: "Daemon request capacity is exhausted".to_string(),
+    }
+}
+
+/// Report and refuse a request whose credential did not carry it.
+///
+/// Shared by both refusal points — the flat `Denied` before the body is read,
+/// and a deferred `PendingPeerIdentity` on any request other than
+/// `CompleteStage` — so the two can never drift into reporting differently.
+fn refuse_unauthenticated(stream: &mut UnixStream, preface: &RequestPreface) -> Result<()> {
+    eprintln!(
+        "Daemon request authentication failed (capability: {:?})",
+        preface.capability()
+    );
+    write_message(stream, &Response::AuthenticationFailed)
+}
+
+/// Serve one `CompleteStage`, finishing the authorization the preface deferred.
+///
+/// A caller that presented no valid token must BE the session it names.
+/// `peer_pid` comes from the kernel at `connect(2)`, so a request body claiming
+/// someone else's session fails the ancestry check — the cross-stage
+/// escalation that would otherwise replace the token requirement with nothing.
+fn serve_complete_stage(
+    stream: &UnixStream,
+    work_dir: &Path,
+    authorization: Authorization,
+    stage_id: &str,
+    session_id: &str,
+    nonce: &str,
+) -> Response {
+    if authorization == Authorization::PendingPeerIdentity
+        && !super::peer_identity::peer_pid(stream).is_some_and(|caller| {
+            super::peer_identity::caller_is_inside_session(work_dir, session_id, caller)
+        })
+    {
+        eprintln!("Completion refused: caller is not inside session '{session_id}'");
+        return Response::AuthenticationFailed;
+    }
+    match control_complete::handle_complete_stage(work_dir, stage_id, session_id, nonce) {
+        Ok(response) => response,
+        Err(error) => Response::Error {
+            message: format!("Completion transition refused: {error:#}"),
+        },
     }
 }
 
@@ -143,12 +228,9 @@ pub fn handle_client_connection(
             Ok(preface) => preface,
             Err(_) => break,
         };
-        if !authorize_preface(work_dir, &preface) {
-            eprintln!(
-                "Daemon request authentication failed (capability: {:?})",
-                preface.capability()
-            );
-            write_message(&mut stream, &Response::AuthenticationFailed)?;
+        let authorization = authorize_preface(work_dir, &preface);
+        if authorization == Authorization::Denied {
+            refuse_unauthenticated(&mut stream, &preface)?;
             break;
         }
         let length = match read_request_length(&mut reader) {
@@ -156,12 +238,7 @@ pub fn handle_client_connection(
             Err(_) => break,
         };
         let Some(_permit) = byte_budget.try_reserve(length) else {
-            write_message(
-                &mut stream,
-                &Response::Error {
-                    message: "Daemon request capacity is exhausted".to_string(),
-                },
-            )?;
+            write_message(&mut stream, &capacity_exhausted())?;
             break;
         };
         let request = match read_request_body(&mut reader, length) {
@@ -172,6 +249,18 @@ pub fn handle_client_connection(
             }
             Err(_) => break,
         };
+
+        // A request that never presented a valid token gets exactly one
+        // opportunity, and only the one an agent is entitled to. Listing the
+        // exception here rather than inside each arm means a NEW User request
+        // added later is refused by default instead of silently inheriting the
+        // peer-identity path.
+        if authorization == Authorization::PendingPeerIdentity
+            && !matches!(request, Request::CompleteStage { .. })
+        {
+            refuse_unauthenticated(&mut stream, &preface)?;
+            break;
+        }
 
         match request {
             Request::Ping { .. } => {
@@ -206,19 +295,17 @@ pub fn handle_client_connection(
                 // user.token capability check above guards entry; the
                 // handler additionally validates criterion_index and the
                 // dispute budget.
-                let response = match super::dispute::handle_dispute_criteria(
+                let response = super::dispute::handle_dispute_criteria(
                     work_dir,
                     &stage_id,
                     criterion_index,
                     reason,
                     evidence_commit,
                     failure_output,
-                ) {
-                    Ok(resp) => resp,
-                    Err(e) => Response::Error {
-                        message: format!("Dispute persistence failed: {e:#}"),
-                    },
-                };
+                )
+                .unwrap_or_else(|e| Response::Error {
+                    message: format!("Dispute persistence failed: {e:#}"),
+                });
                 write_message(&mut stream, &response)?;
                 break;
             }
@@ -228,17 +315,14 @@ pub fn handle_client_connection(
                 nonce,
                 ..
             } => {
-                let response = match control_complete::handle_complete_stage(
+                let response = serve_complete_stage(
+                    &stream,
                     work_dir,
+                    authorization,
                     &stage_id,
                     &session_id,
                     &nonce,
-                ) {
-                    Ok(response) => response,
-                    Err(error) => Response::Error {
-                        message: format!("Completion transition refused: {error:#}"),
-                    },
-                };
+                );
                 write_message(&mut stream, &response)?;
                 break;
             }
