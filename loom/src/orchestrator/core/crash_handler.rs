@@ -12,6 +12,69 @@ use super::persistence::Persistence;
 use super::{clear_status_line, Orchestrator};
 
 impl Orchestrator {
+    /// The stage this crash may act on, or `None` when it must be ignored.
+    ///
+    /// Three refusals, in order:
+    ///
+    /// 1. A corrupt/unparseable stage file must not abort the whole daemon
+    ///    (O-4) — log and skip; other stages keep running.
+    /// 2. A stage that already reached `Completed` keeps its terminal state;
+    ///    the session may simply have died after finishing its work.
+    /// 3. **The crash must come from the stage's CURRENT session.** Session
+    ///    files accumulate — a stage that crashed and retried leaves the old
+    ///    corpse on disk forever — and `reported_crashes` is in-memory, so a
+    ///    daemon restart re-observes every historical crash as new. Without
+    ///    this those replays are charged to the stage's retry budget and can
+    ///    auto-retry a stage whose real session is alive and working, putting
+    ///    TWO agents in one worktree: the precise failure `abort_tmux_spawn`
+    ///    exists to prevent, arrived by another road. Observed 2026-08-10 in a
+    ///    live run, where a session dead for 25 minutes blocked and re-spawned
+    ///    a healthy stage the moment the daemon was restarted.
+    ///
+    /// A crash whose session IS the active one still passes after a restart,
+    /// which is what lets a genuinely stranded stage recover.
+    fn stage_answerable_for_crash(
+        &self,
+        sid: &str,
+        session_id: &str,
+    ) -> Option<crate::models::stage::Stage> {
+        let stage = match self.load_stage(sid) {
+            Ok(stage) => stage,
+            Err(e) => {
+                let path = crate::fs::stage_files::find_stage_file(
+                    &self.config.work_dir.join("stages"),
+                    sid,
+                )
+                .ok()
+                .flatten();
+                clear_status_line();
+                tracing::error!(
+                    stage_id = %sid,
+                    path = ?path,
+                    error = %e,
+                    "Failed to load stage during crash handling; skipping (corrupt stage file?)"
+                );
+                return None;
+            }
+        };
+
+        if matches!(stage.status, StageStatus::Completed) {
+            return None;
+        }
+
+        if stage.session.as_deref() != Some(session_id) {
+            tracing::debug!(
+                stage_id = %sid,
+                crashed_session = %session_id,
+                active_session = ?stage.session,
+                "Ignoring crash from a session that is not the stage's active session"
+            );
+            return None;
+        }
+
+        Some(stage)
+    }
+
     pub(super) fn handle_session_crashed(
         &mut self,
         session_id: &str,
@@ -27,33 +90,9 @@ impl Orchestrator {
         if let Some(sid) = stage_id {
             let crashed_session = self.active_sessions.remove(&sid);
 
-            // A corrupt/unparseable stage file must not abort the whole daemon
-            // (O-4). Log and skip this crash; other stages keep running.
-            let stage = match self.load_stage(&sid) {
-                Ok(stage) => stage,
-                Err(e) => {
-                    let path = crate::fs::stage_files::find_stage_file(
-                        &self.config.work_dir.join("stages"),
-                        &sid,
-                    )
-                    .ok()
-                    .flatten();
-                    clear_status_line();
-                    tracing::error!(
-                        stage_id = %sid,
-                        path = ?path,
-                        error = %e,
-                        "Failed to load stage during crash handling; skipping (corrupt stage file?)"
-                    );
-                    return Ok(());
-                }
-            };
-
-            // Don't override terminal states - stage may have completed before session died
-            if matches!(stage.status, StageStatus::Completed) {
-                // Stage already completed successfully, just clean up
+            let Some(stage) = self.stage_answerable_for_crash(&sid, session_id) else {
                 return Ok(());
-            }
+            };
 
             // Remote Control fast-fail fallback: `claude --remote-control` exits
             // non-zero when its prerequisites are unmet. If Remote Control is
@@ -196,3 +235,7 @@ impl Orchestrator {
         Ok(())
     }
 }
+
+#[cfg(test)]
+#[path = "crash_handler_identity_tests.rs"]
+mod crash_handler_identity_tests;
