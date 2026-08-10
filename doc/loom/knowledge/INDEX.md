@@ -12,9 +12,9 @@
 | [entry-points.md](entry-points.md) | Key files agents should read first | 512 |
 | [patterns.md](patterns.md) | Architectural patterns discovered in the codebase | 614 |
 | [conventions.md](conventions.md) | Coding conventions discovered in the codebase | 402 |
-| [mistakes.md](mistakes.md) | Mistakes made and lessons learned - what to avoid | 538 |
+| [mistakes.md](mistakes.md) | Mistakes made and lessons learned - what to avoid | 550 |
 | [stack.md](stack.md) | Dependencies, frameworks, and tooling used in the project | 71 |
-| [concerns.md](concerns.md) | Technical debt, warnings, and issues to address | 518 |
+| [concerns.md](concerns.md) | Technical debt, warnings, and issues to address | 525 |
 
 ## Tier 2 — Topics
 
@@ -23,7 +23,7 @@
 | Topic | Title | Blurb | Lines |
 | --- | --- | --- | --- |
 | [architecture/codex-concurrency.md](architecture/codex-concurrency.md) | Codex Concurrency | Topic notes for the architecture knowledge area. | 102 |
-| [architecture/codex-plugin.md](architecture/codex-plugin.md) | Codex Plugin | Topic notes for the architecture knowledge area. | 197 |
+| [architecture/codex-plugin.md](architecture/codex-plugin.md) | Codex Plugin | Topic notes for the architecture knowledge area. | 224 |
 | [architecture/core-abstractions.md](architecture/core-abstractions.md) | Core Abstractions | ExecutionGraph, Stage, Session, Orchestrator, TerminalBackend — plus data flow and .work/ file ownership. | 93 |
 | [architecture/directory-structure.md](architecture/directory-structure.md) | Directory Structure | Full loom/src module tree, the .work/ state layout, and the repo-root asset directories. | 49 |
 | [architecture/hook-system.md](architecture/hook-system.md) | Hook System | Hook embedding and install, the SessionStart hookSpecificOutput contract, and the two subagent enforcement hooks. | 110 |
@@ -52,16 +52,17 @@
 
 | Topic | Title | Blurb | Lines |
 | --- | --- | --- | --- |
-| [mistakes/codex-lane-rogue-wrapper.md](mistakes/codex-lane-rogue-wrapper.md) | Codex Lane Rogue Wrapper | Topic notes for the mistakes knowledge area. | 65 |
+| [mistakes/codex-lane-rogue-wrapper.md](mistakes/codex-lane-rogue-wrapper.md) | Codex Lane Rogue Wrapper | Topic notes for the mistakes knowledge area. | 79 |
 | [mistakes/doctrine-and-acceptance.md](mistakes/doctrine-and-acceptance.md) | Doctrine And Acceptance | Why a one-phrase grep proves presence but never agreement, and how doctrine drifts across surfaces unnoticed. | 77 |
 | [mistakes/knowledge-base-drift.md](mistakes/knowledge-base-drift.md) | Knowledge Base Drift | How the knowledge base itself goes stale: plan-authoring notes frozen as architecture facts, `[UPDATED]` duplicates, and invented CLI surface. | 100 |
 | [mistakes/knowledge-cli-invariants.md](mistakes/knowledge-cli-invariants.md) | Knowledge Cli Invariants | Invariants belong in the fs constructor, not the CLI handler; lock ordering for sibling refreshes; update appends. | 67 |
 | [mistakes/phantom-merges.md](mistakes/phantom-merges.md) | Phantom Merges | Six lessons on writing merged=true without verifying git ancestry — the costliest recurring failure class in loom. | 93 |
 | [mistakes/refactor-stragglers.md](mistakes/refactor-stragglers.md) | Refactor Stragglers | What a large removal or rename leaves behind: straggler initializers, stale comments, stale docs, duplicate modules. | 62 |
-| [mistakes/sandbox-and-settings.md](mistakes/sandbox-and-settings.md) | Sandbox And Settings | Sandbox path rules, permission sync, excludedCommands matching, and settings env leaking between main repo and worktrees. | 184 |
+| [mistakes/sandbox-and-settings.md](mistakes/sandbox-and-settings.md) | Sandbox And Settings | Sandbox path rules, permission sync, excludedCommands matching, and settings env leaking between main repo and worktrees. | 193 |
+| [mistakes/session-identity-env.md](mistakes/session-identity-env.md) | Session Identity Env | The wrapper script's `LOOM_*` exports are a contract read by hooks, the CLI and the daemon. Two long-standing defects in that contract made knowledge stages impossible to complete. | 83 |
 | [mistakes/sessions-and-liveness.md](mistakes/sessions-and-liveness.md) | Sessions And Liveness | Session identity, liveness routing, spawn-site coverage, and the blast radius of adding a session field. | 95 |
 | [mistakes/shell-command-matchers.md](mistakes/shell-command-matchers.md) | Shell Command Matchers | Separators that never become tokens, forgeable glob lookups, env leakage in hook tests, and three Bash traps. | 124 |
-| [mistakes/testing-and-lint.md](mistakes/testing-and-lint.md) | Testing And Lint | Lint and test discipline: --all-targets, --no-fail-fast, headless CI, ambient git config and inherited descriptors in tests, the stub checker, the maintainability ledger, and reviewer claims. | 100 |
+| [mistakes/testing-and-lint.md](mistakes/testing-and-lint.md) | Testing And Lint | Lint and test discipline: --all-targets, --no-fail-fast, headless CI, ambient git config and inherited descriptors in tests, the stub checker, the maintainability ledger, and reviewer claims. | 122 |
 | [mistakes/tests-that-cannot-fail.md](mistakes/tests-that-cannot-fail.md) | Tests That Cannot Fail | Topic notes for the mistakes knowledge area. | 37 |
 | [mistakes/tmux-backend.md](mistakes/tmux-backend.md) | Tmux Backend | Topic notes for the mistakes knowledge area. | 62 |
 | [mistakes/verification-harness.md](mistakes/verification-harness.md) | Verification Harness | When every check fails at once, suspect the harness; the PATH binary is not your build; silent subagents are failed delegations. | 48 |

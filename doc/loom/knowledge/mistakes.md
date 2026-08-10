@@ -536,3 +536,15 @@ lint-clean on exactly one.
 **Also:** the pre-push hook runs Clippy, the pre-commit hook does not. A lint-broken commit lands
 locally and only surfaces at push time. Run `cargo clippy --all-targets -- -D warnings` before
 committing, not after.
+
+## Session Identity Env Vars: Prefixed Ids and Presence Gates (2026-08-10) [DETAILED]
+
+Two long-standing defects in the wrapper script's `LOOM_*` contract made knowledge stages
+impossible to complete: `LOOM_STAGE_ID` carried the session-kind prefix meant for OS resource
+naming (`knowledge-knowledge-bootstrap`), and `LOOM_WORKTREE_PATH` was exported for every session
+kind including the three that run in the main repo — so a presence test misread them as sandboxed
+worktree agents. Both walls had to fall; each alone leaves the stage stuck. Also covers the wide
+blast radius of the prefixed id (heartbeats, memory, handoffs, hook globs) and why routing
+knowledge completion through the daemon broker is not the fix.
+
+→ [Session Identity Env](mistakes/session-identity-env.md)
