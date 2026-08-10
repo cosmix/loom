@@ -12,7 +12,7 @@
 use crate::commands::stage::admin_proof::{verify_and_consume_admin_proof, AdminProofRequest};
 use crate::daemon::{DaemonServer, DaemonStatus, DaemonUnavailable};
 use crate::fs::work_dir::WorkDir;
-use anyhow::{bail, Result};
+use anyhow::{bail, Context, Result};
 use colored::Colorize;
 use std::thread;
 use std::time::Duration;
@@ -43,10 +43,13 @@ pub fn execute_with_force(force: bool) -> Result<()> {
     // Authorizes itself from the daemon token an operator can already read.
     // Requiring a human to mint an HMAC and carry it between two commands
     // never added security — they held the credential the entire time.
+    // Unwrapped safely: this runs only after the daemon was found alive, and a
+    // live daemon always has published its credential.
     let operator_proof = crate::commands::stage::admin_proof::authorize(
         work_dir.root(),
         crate::commands::stage::admin_proof::AdminProofRequest::daemon_stop(),
-    )?;
+    )?
+    .context("daemon is running but its credential is missing; restart it")?;
 
     println!("{} Stopping daemon...", "→".cyan().bold());
 

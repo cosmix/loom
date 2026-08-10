@@ -1,7 +1,7 @@
 //! Tests for complete command
 
 use super::super::admin_proof::{mint_admin_proof, AdminProofRequest};
-use super::super::complete::{complete, require_admin_capability};
+use super::super::complete::{complete, complete_authorization::require_admin_capability};
 use super::{create_test_stage, save_test_stage, setup_work_dir};
 use crate::models::stage::{StageStatus, StageType};
 use crate::plan::schema::AcceptanceCriterion;

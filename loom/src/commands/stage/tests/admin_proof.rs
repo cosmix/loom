@@ -158,7 +158,8 @@ fn self_authorization_round_trips_and_stays_bound_to_its_flag_set() {
         temp.path(),
         AdminProofRequest::completion("stage-a", true, false, false),
     )
-    .unwrap();
+    .unwrap()
+    .expect("a live daemon credential must yield a proof");
 
     let wrong = setup();
     let error = verify_and_consume_admin_proof(
@@ -223,7 +224,8 @@ fn a_broker_supplied_proof_takes_precedence_over_self_authorization() {
         temp.path(),
         AdminProofRequest::completion("stage-a", true, false, false),
     )
-    .unwrap();
+    .unwrap()
+    .expect("a live daemon credential must yield a proof");
 
     assert_eq!(
         proof, "v1:0123456789abcdef:aa",

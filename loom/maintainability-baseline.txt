@@ -17,7 +17,7 @@ file src/commands/repair.rs 979
 file src/commands/review/generate.rs 473
 file src/commands/self_update/mod.rs 438
 file src/commands/self_update/tests.rs 490
-file src/commands/stage/complete.rs 829
+file src/commands/stage/complete.rs 797
 file src/commands/stage/merge.rs 583
 file src/commands/stage/tests/complete.rs 528
 file src/commands/status/data/collector.rs 501

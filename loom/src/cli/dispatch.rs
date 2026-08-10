@@ -38,7 +38,6 @@ fn resolve_completion_proof(
             assume_merged,
         ),
     )
-    .map(Some)
 }
 
 /// `loom stage admin-proof` — mint one capability and print it, nothing else.

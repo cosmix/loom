@@ -18,13 +18,14 @@ use crate::verify::transitions::{list_all_stages, load_stage, trigger_dependents
 use super::acceptance_runner::{
     resolve_stage_execution_paths, run_acceptance_with_display, AcceptanceDisplayOptions,
 };
-use super::admin_proof::{verify_and_consume_admin_proof, AdminProofRequest};
 use super::knowledge_complete::complete_knowledge_stage;
 use super::merge_resolver::{spawn_merge_resolver, MergeResolverResult};
 use super::merge_verify::verify_or_derive_completed_commit;
 use super::progressive_complete::complete_with_merge;
 use super::session::cleanup_session_resources;
 
+#[path = "complete_authorization.rs"]
+pub(super) mod complete_authorization;
 #[path = "complete_verification.rs"]
 mod complete_verification;
 #[path = "control_complete.rs"]
@@ -32,24 +33,12 @@ mod control_complete;
 #[path = "control_session.rs"]
 mod control_session;
 
+use complete_authorization::authorize_privileged_completion;
 use control_session::{handle_broker_request, sandbox_control_session};
 
 pub(crate) use super::admin_proof::{
     mint_completion_proof_from_env, strip_privileged_env_for_runtime,
 };
-
-/// Verify and consume the caller-supplied proof for an exact completion request.
-pub fn require_admin_capability(
-    work_dir: &Path,
-    stage_id: &str,
-    no_verify: bool,
-    force_unsafe: bool,
-    assume_merged: bool,
-    proof: Option<&str>,
-) -> Result<()> {
-    let request = AdminProofRequest::completion(stage_id, no_verify, force_unsafe, assume_merged);
-    verify_and_consume_admin_proof(work_dir, request, proof)
-}
 
 /// Where `complete()` should dispatch after the active-merge / status / force
 /// rules have been applied.
@@ -474,27 +463,6 @@ fn ensure_acceptance_passed(result: Option<bool>, stage_id: &str) -> Result<()> 
         eprintln!("Acceptance criteria FAILED for stage '{stage_id}'");
         eprintln!("  Fix the issues and run 'loom stage complete {stage_id}' again");
         bail!("Acceptance criteria failed for stage '{stage_id}'");
-    }
-    Ok(())
-}
-
-fn authorize_privileged_completion(
-    stage_id: &str,
-    no_verify: bool,
-    force_unsafe: bool,
-    assume_merged: bool,
-    proof: Option<&str>,
-    work_dir: &Path,
-) -> Result<()> {
-    if no_verify || force_unsafe || assume_merged {
-        require_admin_capability(
-            work_dir,
-            stage_id,
-            no_verify,
-            force_unsafe,
-            assume_merged,
-            proof,
-        )?;
     }
     Ok(())
 }

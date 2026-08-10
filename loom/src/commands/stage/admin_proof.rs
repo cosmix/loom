@@ -322,19 +322,34 @@ fn refuse_operator_inside_a_session() -> Result<()> {
 /// process tree, so a `loom` an agent spawns cannot read it either. On top of
 /// that, [`refuse_operator_inside_a_session`] closes the easy path before the
 /// read is even attempted.
-pub fn authorize(work_dir: &Path, request: AdminProofRequest<'_>) -> Result<String> {
+pub fn authorize(work_dir: &Path, request: AdminProofRequest<'_>) -> Result<Option<String>> {
     if std::env::var_os(ADMIN_PROOF_ENV).is_some() {
-        return take_admin_proof_from_env();
+        return take_admin_proof_from_env().map(Some);
     }
     refuse_operator_inside_a_session()?;
-    let resolved = resolve_work_dir(work_dir)?;
+    let Ok(resolved) = resolve_work_dir(work_dir) else {
+        return Ok(None);
+    };
+    if !admin_credential_exists(&resolved) {
+        return Ok(None);
+    }
     let secret = read_admin_secret(&resolved).context(
-        "this operation is the operator's to authorize, and the daemon credential \
-         could not be read. Inside a sandboxed stage worktree that read is denied by \
-         design; from an operator shell it means the daemon is not running",
+        "this operation is the operator's to authorize, but the daemon credential \
+         could not be read. Inside a sandboxed stage worktree that read is denied by design",
     )?;
     let nonce = uuid::Uuid::new_v4().simple().to_string();
-    Ok(mint_admin_proof(&secret, request, &nonce))
+    Ok(Some(mint_admin_proof(&secret, request, &nonce)))
+}
+
+/// Whether a daemon credential exists at all.
+///
+/// `admin.token` is written when the daemon starts and removed when it is not
+/// running, so its absence means there is no verifier and no proof is
+/// obtainable — by anyone, operator included. Callers treat that as "no proof
+/// required" rather than as a refusal; see
+/// `complete::authorize_privileged_completion` for why that is safe.
+pub fn admin_credential_exists(work_dir: &Path) -> bool {
+    work_dir.join("admin.token").exists()
 }
 
 /// Mint a one-time proof authorizing daemon shutdown for this work directory.

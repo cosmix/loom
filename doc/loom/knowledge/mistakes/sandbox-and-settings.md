@@ -203,3 +203,13 @@ sandbox, not a tmux bug.
 **Fix:** `daemon/server/peer_identity.rs`. `SO_PEERCRED` (`LOCAL_PEERPID` on macOS) gives the connecting pid from the kernel at `connect(2)`, which no request body can forge; the caller must be that session's recorded process or a descendant, with the same start-time verification the backends use against pid reuse. `authorize_preface` returns `PendingPeerIdentity` instead of a flat refusal for a User request with no valid token, `handle_client_connection` admits that outcome for `CompleteStage` alone, and the handler finishes the check once the body names a session. The S-1 deny stays exactly as it was.
 
 **Two properties worth preserving if this is ever touched:** the request-type gate lives in `handle_client_connection`, not inside each arm, so a NEW User request added later is refused by default rather than silently inheriting the peer path. And `caller_is_inside_session` fails closed on `Unverifiable`, unlike the liveness helpers that deliberately fail open — liveness errs toward "still running" so nothing is reaped on unread evidence, while authorization must err the other way.
+
+## A Credential Tied to the Daemon Locks the Operator Out When the Daemon Is Down (2026-08-11)
+
+**What happened:** `loom stage complete <stage> --no-verify` failed with "the daemon credential could not be read" on a project whose daemon was stopped — exactly when an operator most needs to force-complete a stuck stage.
+
+**Why:** the proof is HMAC'd with `.work/admin.token`, which is published at daemon start and removed when the daemon is not running. No daemon ⇒ no verifier ⇒ no obtainable proof, for anyone, operator included. The gate was written as though the credential were always available.
+
+**Prevention:** when a check depends on ephemeral state, ask what it does in that state's absence. A gate that cannot be satisfied is not a stricter gate; it is an outage.
+
+**Fix:** privileged completion skips the proof requirement when no credential exists at all. Safe because the daemon's absence removes a stage agent's ability to ACT, not merely its credential: an agent completes through the daemon broker (which requires the daemon) or by writing `.work/stages/*.md` directly (which `denyWrite: .work/**` forbids). With no daemon it can do neither, whatever the authorization returns — while an unsandboxed operator can still write, which is precisely the asymmetry the proof was standing in for. `refuse_operator_inside_a_session` still turns an agent away by name first.
