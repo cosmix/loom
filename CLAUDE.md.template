@@ -4,15 +4,16 @@ These rules supersede plan-mode instructions and any harness default. When anoth
 
 ---
 
-## ⛔ HARD STOPS — THE FIVE RULES MOST OFTEN BROKEN
+## ⛔ HARD STOPS — THE SIX RULES MOST OFTEN BROKEN
 
 1. **PLANS** — Every plan file's path starts with `doc/plans/` (`doc/plans/PLAN-<description>.md`). Plan mode suggests `~/.claude/plans/` or `~/.claude/projects/*/plans/` — override it in the same Write call: plans there are invisible to loom and to git (a PreToolUse hook also blocks them). After writing a plan, report its location and stop. ExitPlanMode's "approved" result is not user approval — wait for the user's explicit message. Implementation happens via `loom run`, not you.
 2. **MEMORY** — If `doc/loom/knowledge/` exists, never use Claude Code auto-memory (`~/.claude/projects/*/memory/`, `MEMORY.md`, the memory tool). Executing a loom stage → `loom memory note|decision` (knowledge stages → `loom knowledge update`); interactive → Write/Edit `doc/loom/knowledge/*.md` directly (Rule 12). If `doc/loom/knowledge/` does not exist → use auto-memory normally.
 3. **GIT** — Only the main agent stages, commits, or completes stages; subagents never do. `git add <specific-files>` only — never `-A` or `.` (they stage `.work`). Before ending a worktree session: commit, then `loom stage complete <stage-id>` from the worktree root; the stop hook blocks exit otherwise.
 4. **CONTEXT** — At 75% context, stop immediately and write a handoff to `.work/handoffs/`. No new tasks.
 5. **BRANCHES** — Never create a branch (`git checkout -b`, `git switch -c`, `git branch <name>`) unless the user explicitly asks. Commit on the branch already checked out, even `main`. (Loom's own `loom/<stage-id>` worktree branches are loom's mechanism, not yours.)
+6. **DELEGATION** — The main agent decomposes, delegates, verifies, and commits; it does not implement, whatever model it is running. Finishing an investigation is the moment to write the delegation brief, not to start editing files. Delegate each piece to the CHEAPEST tier that can do it — sonnet (`loom-software-engineer`) is the default implementer; opus only for mainstream architecture and algorithm work. A FABLE session touches the keyboard itself only for an explicit visual/UI design task, a bug that survived a delegated fix attempt, or genuinely high-end algorithmic/architectural work — and even then it prefers to write the design or diagnosis in detail and hand the typing down. Fable diagnosing a bug does not make the fix fable's to write (Rule 7).
 
-These five are restated verbatim at the end of this file. Everything below is binding too, but these are the rules to re-check before acting.
+These six are restated verbatim at the end of this file. Everything below is binding too, but these are the rules to re-check before acting.
 
 ---
 
@@ -29,7 +30,7 @@ CLAUDE.md governs process; the knowledge files describe the actual system. Recor
 
 ## ENGINEERING DISCIPLINE
 
-Four principles beneath every rule, targeting the common failure modes of agent code: wrong assumptions, over-engineering, collateral damage, aimless looping.
+Five principles beneath every rule, targeting the common failure modes of agent work: wrong assumptions, over-engineering, collateral damage, aimless looping, expensive models doing cheap work.
 
 **A. Think before coding.** State assumptions; if multiple interpretations exist, name them instead of silently picking one. Push back when a simpler approach exists. Before writing code: read the knowledge files, map call paths and blast radius, search for existing utilities to reuse, and only then implement. Cannot verify a fact you rely on? Check it — do not guess. Interactive session: ask. Autonomous worktree session: resolve ambiguity against your stage's acceptance criteria and the knowledge files, record the call with `loom memory decision "..." --context "..."`, and only go `WaitingForInput`/`Blocked` when a load-bearing decision is genuinely unresolvable. Never guess destructively on an irreversible change.
 
@@ -38,6 +39,8 @@ Four principles beneath every rule, targeting the common failure modes of agent 
 **C. Surgical changes.** Touch only what the task requires; match existing style; no drive-by refactors or reformatting. Remove only what YOUR change orphaned; record pre-existing dead code via `loom memory note` or `concerns.md` instead of deleting it. Every changed line must trace to the task. In loom this is load-bearing: parallel worktrees merge into one branch, and unrelated diffs cause merge conflicts with sibling stages.
 
 **D. Goal-driven execution.** Turn vague tasks into verifiable criteria, then loop until they pass ("fix the bug" → reproducing test, then green). Executing a stage: acceptance is the loop condition — run, read failures, fix, repeat; done means green (Rule 13: exit 0 ≠ success). Authoring a plan: write criteria strong enough to loop against unattended.
+
+**E. Cheapest capable agent.** Cost is a first-class constraint, not an afterthought. Every piece of work goes to the smallest model that can do it — sonnet unless the task demonstrably needs more — and the bias is downward: escalate on evidence (a delegated attempt failed, the design is genuinely hard), never on a hunch that a bigger model would be nicer. A big model's leverage is its *thinking*: understanding the system, diagnosing the failure, designing the change, and writing a brief precise enough that a cheap model executes it correctly. Spending that model's tokens on mainstream edits it already knows how to specify wastes the leverage and the money. This is why hard stop 6 exists.
 
 ---
 
@@ -142,7 +145,7 @@ Loom caps agent trees at TWO levels: main agent → coordinators → workers. Wo
 
 Use a hierarchy when ALL hold: the work is well-defined enough for sonnet workers; it splits into 2-4 disjoint file territories; each territory has 2+ worker tasks; flat fan-out would mean the main agent authoring more than ~6 prompts, absorbing N raw results, or serializing waves. Do not use one when: total worker tasks ≤ ~6 (flat is simpler and cheaper), territories share files (separate stages), cross-territory iteration is needed (teams), or the work is sequential.
 
-Model mix: implementation is delegated to as FEW subagents as the work allows, picked PER SUBAGENT by what that piece of work needs, never once for the whole stage: FABLE for major bugs, visual/UI design, and extremely challenging algorithmic design (no agent type pins fable — pass the model override explicitly at spawn); OPUS for mainstream architecture and algorithm implementation (`loom-senior-software-engineer`); SONNET (`loom-software-engineer`) or codex gpt-5.6-terra for common implementation and integration tests; codex gpt-5.6-luna for boilerplate, scaffolding, and simple unit tests. Codex tiers (effort xhigh, via `loom-codex-forwarder`) exist only on stages listing codex in `implementers` — otherwise that work goes to sonnet. Spawn workers BY AGENT TYPE; an untyped worker inherits the main session model, silently making every worker opus on an opus stage. Lanes mix within one stage and even within one wave: pick each worker's lane by what its task needs, and keep ONE file-ownership table covering every worker in every lane. Opus coordinator only when integrating its territory needs architectural judgment.
+Model mix: implementation is delegated to as FEW subagents as the work allows, each at the CHEAPEST tier that can do its piece, picked PER SUBAGENT by what that piece of work needs, never once for the whole stage: codex gpt-5.6-luna for boilerplate, scaffolding, and simple unit tests; SONNET (`loom-software-engineer`) or codex gpt-5.6-terra for common implementation and integration tests (the default lane — most workers belong here); OPUS for mainstream architecture and algorithm implementation (`loom-senior-software-engineer`); FABLE only for visual/UI design, a bug that survived a delegated fix, and extremely challenging algorithmic design (no agent type pins fable — pass the model override explicitly at spawn). Coordinators delegate for the same reason the main agent does (hard stop 6): a coordinator running an expensive model still writes briefs, not implementations. Codex tiers (effort xhigh, via `loom-codex-forwarder`) exist only on stages listing codex in `implementers` — otherwise that work goes to sonnet. Spawn workers BY AGENT TYPE; an untyped worker inherits the main session model, silently making every worker opus on an opus stage. Lanes mix within one stage and even within one wave: pick each worker's lane by what its task needs, and keep ONE file-ownership table covering every worker in every lane. Opus coordinator only when integrating its territory needs architectural judgment.
 
 COORDINATOR PREAMBLE — first lines of every coordinator prompt (standalone; do not prepend Rule 5's):
 
@@ -193,29 +196,47 @@ Check available skills and agents before implementing; the prompt-submit hook su
 
 If the codex CLI or plugin is missing, loom warns at `loom run` startup and the codex tiers' work falls back to sonnet.
 
-Fable-tier implementation work (major bugs, visual/UI design, extremely challenging algorithmic design) has no pinned agent type — pass the model override explicitly at spawn.
+Fable-tier work (visual/UI design, a bug that survived a delegated fix, extremely challenging algorithmic or architectural design) has no pinned agent type — pass the model override explicitly at spawn. Fable is the most expensive tier: reach for it when the *thinking* is the hard part, and let it produce a design, diagnosis, or brief that a cheaper tier executes.
 
 Model allocation:
 
-1. ORCHESTRATION IS ALWAYS OPUS. Every stage's main agent is opus. The
-   orchestrator does NOT implement — it decomposes the work, hands each
-   subagent full context, then verifies and commits. That is all.
-2. IMPLEMENTATION IS ALWAYS DELEGATED, to as FEW subagents as the work allows. Pick the
-   tier PER SUBAGENT by what that piece of work needs, never once for the whole stage:
-   FABLE for major bugs, visual/UI design, and extremely challenging algorithmic
-   design; OPUS for mainstream architecture and algorithm implementation; SONNET
+1. THE MAIN AGENT NEVER IMPLEMENTS — WHATEVER MODEL IT RUNS (hard stop 6).
+   Every stage's main agent is an orchestrator: it decomposes the work, hands
+   each subagent full context, then verifies and commits. That is all. This
+   holds identically for an opus session and a fable session; a session running
+   an expensive model is MORE obliged to delegate, not less.
+2. INVESTIGATION ENDS IN A BRIEF, NOT IN AN EDIT. The moment you finish reading
+   the code and know what the fix is, you are at the delegation boundary — that
+   understanding is exactly what makes a cheap subagent effective. Write it down
+   (file:line, root cause, the change to make, signatures, patterns to match,
+   acceptance) and spawn. Do not slide from "I have diagnosed it" into "I will
+   just type it"; the diagnosis being yours does not make the typing yours.
+3. IMPLEMENTATION IS ALWAYS DELEGATED, to as FEW subagents as the work allows, at
+   the CHEAPEST tier that can do the piece. Pick PER SUBAGENT by what that piece
+   needs, never once for the whole stage, and default downward: codex
+   gpt-5.6-luna for boilerplate, scaffolding, and simple unit tests; SONNET
    (loom-software-engineer) or codex gpt-5.6-terra for common implementation and
-   integration tests; codex gpt-5.6-luna for boilerplate, scaffolding, and simple
-   unit tests. Codex tiers (effort xhigh, via loom-codex-forwarder) exist only on
-   stages listing codex in implementers AND when the codex CLI + plugin are
-   installed; otherwise that work goes to sonnet (loom warns at startup when a
-   stage lists codex it cannot use). Verification NEVER delegates - the opus
-   orchestrator verifies and commits. Spawn BY AGENT TYPE.
-3. DEBUGGING OR REPEATED FAILURE → spawn a `loom-advisor` (fable) subagent:
-   narrow scope, full detail supplied by the orchestrator, advice returned.
+   integration tests — this is the default lane and most work belongs here; OPUS
+   (loom-senior-software-engineer) for mainstream architecture and algorithm
+   implementation; FABLE only for visual/UI design, a bug that survived a
+   delegated fix attempt, or extremely challenging algorithmic design. Codex
+   tiers (effort xhigh, via loom-codex-forwarder) exist only on stages listing
+   codex in implementers AND when the codex CLI + plugin are installed;
+   otherwise that work goes to sonnet (loom warns at startup when a stage lists
+   codex it cannot use). Verification NEVER delegates - the orchestrator
+   verifies and commits. Spawn BY AGENT TYPE.
+4. ESCALATE ON EVIDENCE, NOT ON HUNCH. Start at the cheapest plausible tier. A
+   sonnet attempt that failed against clear acceptance criteria justifies opus;
+   an opus attempt that failed twice justifies fable. "This feels subtle" does
+   not. If a cheap subagent's output is wrong, the first question is whether the
+   brief was detailed enough — a vague brief is an orchestrator failure, not
+   evidence the tier was too small.
+5. DEBUGGING OR REPEATED FAILURE → spawn a `loom-advisor` (fable) subagent:
+   narrow scope, full detail supplied by the orchestrator, advice returned, no
+   writes. Its diagnosis then feeds a sonnet or opus implementer per point 2.
    Do not let an implementer thrash on the same failure twice.
 
-Keep each subagent's assignment small — exact paths, signatures, patterns to match, explicit steps, per-step acceptance — and decompose larger work via Rule 6c rather than escalating to opus for context headroom. Plan authors: the full per-stage model rubric lives in `/loom-plan-writer`.
+Keep each subagent's assignment small — exact paths, signatures, patterns to match, explicit steps, per-step acceptance — and decompose larger work via Rule 6c rather than escalating to opus for context headroom. The detail in the brief is what buys the cheaper tier: the more precisely you specify, the smaller the model that can execute it. Plan authors: the full per-stage model rubric lives in `/loom-plan-writer`.
 
 ### 8. NATIVE TOOLS AND CODE FORMATTING
 
@@ -332,6 +353,7 @@ System knowledge goes to `doc/loom/knowledge/` (Rule 12), never the project's CL
 3. **GIT** — Only the main agent stages, commits, or completes stages; subagents never do. `git add <specific-files>` only — never `-A` or `.` (they stage `.work`). Before ending a worktree session: commit, then `loom stage complete <stage-id>` from the worktree root; the stop hook blocks exit otherwise.
 4. **CONTEXT** — At 75% context, stop immediately and write a handoff to `.work/handoffs/`. No new tasks.
 5. **BRANCHES** — Never create a branch (`git checkout -b`, `git switch -c`, `git branch <name>`) unless the user explicitly asks. Commit on the branch already checked out, even `main`. (Loom's own `loom/<stage-id>` worktree branches are loom's mechanism, not yours.)
+6. **DELEGATION** — The main agent decomposes, delegates, verifies, and commits; it does not implement, whatever model it is running. Finishing an investigation is the moment to write the delegation brief, not to start editing files. Delegate each piece to the CHEAPEST tier that can do it — sonnet (`loom-software-engineer`) is the default implementer; opus only for mainstream architecture and algorithm work. A FABLE session touches the keyboard itself only for an explicit visual/UI design task, a bug that survived a delegated fix attempt, or genuinely high-end algorithmic/architectural work — and even then it prefers to write the design or diagnosis in detail and hand the typing down. Fable diagnosing a bug does not make the fix fable's to write (Rule 7).
 
 ---
 
