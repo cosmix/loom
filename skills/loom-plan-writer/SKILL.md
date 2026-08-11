@@ -140,6 +140,16 @@ For test-infra and migration plans, the ZEROTH claim is **"does it even import a
 - Before writing a build/test command into `acceptance`, confirm it EXISTS and does what you think (does `build` type-check, or only bundle?). Read the actual `package.json` scripts / Makefile / cargo aliases.
 - Apply any gotcha you cite to the plan's OWN mechanics and to EVERY case family touching the same resolver.
 
+#### JS/TS projects: provision worktree dependencies first
+
+A fresh worktree has no `node_modules` (ignored files are not checked out), so node module
+resolution walks up into the MAIN repo's `node_modules`, and any in-session test run then writes
+its caches there (vite: `node_modules/.vite-temp`) — denied by the sandbox with EROFS, and it
+would corrupt state shared across parallel stages if allowed. Any stage that runs JS/TS tests
+in-session must make its FIRST task an explicit dependency install in the worktree
+(`bun install`). The `setup:` field does not cover this: it only prefixes acceptance commands,
+which run on the host during verification, not inside the session.
+
 ### Cross-Plan Contract Protocol (sibling plans in doc/plans/)
 
 When the plan is part of a multi-plan program (sibling `PLAN-*` / `IN_PROGRESS-*` / `DONE-*` files sharing one tree), cross-plan claims are a top logged failure class: plans modelled their siblings from their own assumptions instead of the siblings' real text and committed code. Before writing any claim that touches another plan:
