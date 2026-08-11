@@ -643,25 +643,38 @@ work only for sessions spawned by the tmux backend — with the native backend i
 Panes in the overview are **live, writable terminals**, not read-only views: keystrokes go to the
 agent, and `C-b x` closes that stage's pane. Detach the normal way with `C-b d`.
 
-> **⚠️ With `mouse on`, interacting with a pane can kill the agent.**
+> **⚠️ Mouse interaction with a pane could kill the agent (fixed; mechanism below).**
 >
-> tmux reads your `~/.tmux.conf` when it starts a server, so a global `set -g mouse on` is in force
-> inside loom's servers too — and mouse capture is what arms tmux's **default** root-table bindings.
-> No custom binding is needed: `MouseDown3Pane` opens a menu whose entries include
-> `Kill → kill-pane`. In the overview each pane hosts a stage's own tmux server running a single
-> agent, so killing that pane ends the session, the server exits, and the agent dies with it. The
-> signature is `[server exited unexpectedly]` followed by `Pane is dead (status 1)`. Loom then
-> records a crash and retries, so it reads as a stage dying on its own.
+> Two independent paths led from the mouse to a dead stage, both ending in
+> `[server exited unexpectedly]` over `Pane is dead (status 1)`, a filed crash, and a retry:
 >
-> Loom now forces `mouse off` on the servers it creates, which both disarms that menu and hands
-> selection back to your terminal emulator. **Servers started by an older loom keep mouse capture** —
-> fix them in place:
+> 1. **With `mouse on`** (inherited from `~/.tmux.conf`), tmux's **default** root-table bindings are
+>    armed — no custom binding needed. `MouseDown3Pane` opens a menu whose entries include
+>    `Kill → kill-pane`; each overview pane hosts a stage's own server running one agent, so that
+>    kill ends the stage.
+> 2. **Even with `mouse off`**, the agent itself enables all-motion mouse tracking, tmux mirrors that
+>    mode out to your terminal, and forwards the resulting drag events back into the agent. The agent
+>    treats the drag as a TUI text selection and copies it by running `tmux load-buffer -w -` against
+>    its stage server — and tmux 3.6a **crashes** serving `load-buffer -w` with a client attached
+>    (reproducible with `printf x | tmux load-buffer -w -` inside any pane while attached). The
+>    server dies, the agent gets SIGHUP, and the stage reads as crashing on its own. This is also why
+>    mouse selection appeared not to work at all: your drag was consumed as app mouse events.
+>
+> Loom now forces `mouse off` **and** deletes the `kmous` capability
+> (`terminal-overrides[99]` = `*:kmous@`) on every server it creates. The first disarms tmux's own
+> mouse bindings; the second stops any loom server from ever putting your terminal into mouse mode,
+> so drags stay ordinary terminal-emulator selection and no mouse event reaches the agent.
+> **Servers started by an older loom keep the old behaviour** — fix them in place:
 >
 > ```bash
 > for s in "${TMUX_TMPDIR:-/tmp}"/tmux-$(id -u)/loom-*; do
->   tmux -S "$s" has-session 2>/dev/null && tmux -S "$s" set -g mouse off
+>   tmux -S "$s" has-session 2>/dev/null &&
+>     tmux -S "$s" set -g mouse off \; set -g 'terminal-overrides[99]' '*:kmous@'
 > done
 > ```
+>
+> (Then detach and re-attach: a terminal already switched into mouse mode stays there until the
+> client reconnects.)
 >
 > Two related traps. `set-clipboard off` in your config means a tmux copy lands in a tmux buffer and
 > never reaches your system clipboard — use `tmux -S <socket> capture-pane -p -S -` to get text out

@@ -92,6 +92,13 @@ Every error path _after_ the server may exist routes through teardown — killin
 calling `native::cleanup_stage_files` to drop the PID/wrapper files — before returning `Err`. Skipping
 either leaks a live agent (see `mistakes/tmux-backend.md`).
 
+After a successful spawn, `PRESENTATION_OPTIONS` is applied best-effort: `status off`, `mouse off`,
+and `terminal-overrides[99]` = `*:kmous@`. The last one is load-bearing: it deletes the `kmous`
+capability for every client TERM so the server can never put an attached terminal into mouse mode —
+otherwise claude's own all-motion mouse tracking is mirrored out to the operator's terminal, drags
+are forwarded back into the agent, and claude's clipboard copy (`tmux load-buffer -w -`) crashes
+tmux 3.6a. Full chain in `mistakes/tmux-backend.md`.
+
 ## Fallback Marker: `.work/terminal-backend-fallback`
 
 A **sticky** marker that forces every subsequent spawn onto the native lane.
@@ -126,7 +133,10 @@ letting tmux's error surface.
   `loom-view-<sha256(canonical repo root)[..8]>`, session `loom-overview`, created detached at
   220x50, one pane per attachable session, re-tiled after **each** split.
   - `VIEWER_HARDENING` runs **before** `new-session`, as one `;`-separated sequence:
-    `start-server ; set -g exit-empty off ; set -gw remain-on-exit on ; set -g remain-on-exit-format`.
+    `start-server ; set -g exit-empty off ; set -gw remain-on-exit on ; set -g mouse off ;
+    set -g terminal-overrides[99] '*:kmous@' ; set -g remain-on-exit-format`. The indexed
+    `kmous@` entry is idempotent on purpose — this sequence re-runs against the same long-lived
+    viewer server on every `loom attach`.
     Pane 0 is born already running an attach client, so only a GLOBAL option can protect it — the
     targeted `remain-on-exit` step after `new-session` is a belt-and-braces re-assertion. The
     sequence is best-effort: a tmux rejecting part of it degrades to the pre-hardening behaviour
