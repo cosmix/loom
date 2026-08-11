@@ -84,23 +84,44 @@ const BLOCK_A: &str = "VERIFICATION IS THE MAIN AGENT'S JOB - NOT YOURS:
   The MAIN AGENT compiles, tests, lints, and fixes.";
 
 /// BLOCK-B - the model playbook, verbatim.
-const BLOCK_B: &str = "1. ORCHESTRATION IS ALWAYS OPUS. Every stage's main agent is opus. The
-   orchestrator does NOT implement — it decomposes the work, hands each
-   subagent full context, then verifies and commits. That is all.
-2. IMPLEMENTATION IS ALWAYS DELEGATED, to as FEW subagents as the work allows. Pick the
-   tier PER SUBAGENT by what that piece of work needs, never once for the whole stage:
-   FABLE for major bugs, visual/UI design, and extremely challenging algorithmic
-   design; OPUS for mainstream architecture and algorithm implementation; SONNET
+///
+/// A raw literal: the block quotes the phrases an orchestrator uses to talk
+/// itself into implementing ("I have diagnosed it"), so it carries `"` inside.
+const BLOCK_B: &str = r#"1. THE MAIN AGENT NEVER IMPLEMENTS — WHATEVER MODEL IT RUNS (hard stop 6).
+   Every stage's main agent is an orchestrator: it decomposes the work, hands
+   each subagent full context, then verifies and commits. That is all. This
+   holds identically for an opus session and a fable session; a session running
+   an expensive model is MORE obliged to delegate, not less.
+2. INVESTIGATION ENDS IN A BRIEF, NOT IN AN EDIT. The moment you finish reading
+   the code and know what the fix is, you are at the delegation boundary — that
+   understanding is exactly what makes a cheap subagent effective. Write it down
+   (file:line, root cause, the change to make, signatures, patterns to match,
+   acceptance) and spawn. Do not slide from "I have diagnosed it" into "I will
+   just type it"; the diagnosis being yours does not make the typing yours.
+3. IMPLEMENTATION IS ALWAYS DELEGATED, to as FEW subagents as the work allows, at
+   the CHEAPEST tier that can do the piece. Pick PER SUBAGENT by what that piece
+   needs, never once for the whole stage, and default downward: codex
+   gpt-5.6-luna for boilerplate, scaffolding, and simple unit tests; SONNET
    (loom-software-engineer) or codex gpt-5.6-terra for common implementation and
-   integration tests; codex gpt-5.6-luna for boilerplate, scaffolding, and simple
-   unit tests. Codex tiers (effort xhigh, via loom-codex-forwarder) exist only on
-   stages listing codex in implementers AND when the codex CLI + plugin are
-   installed; otherwise that work goes to sonnet (loom warns at startup when a
-   stage lists codex it cannot use). Verification NEVER delegates - the opus
-   orchestrator verifies and commits. Spawn BY AGENT TYPE.
-3. DEBUGGING OR REPEATED FAILURE → spawn a `loom-advisor` (fable) subagent:
-   narrow scope, full detail supplied by the orchestrator, advice returned.
-   Do not let an implementer thrash on the same failure twice.";
+   integration tests — this is the default lane and most work belongs here; OPUS
+   (loom-senior-software-engineer) for mainstream architecture and algorithm
+   implementation; FABLE only for visual/UI design, a bug that survived a
+   delegated fix attempt, or extremely challenging algorithmic design. Codex
+   tiers (effort xhigh, via loom-codex-forwarder) exist only on stages listing
+   codex in implementers AND when the codex CLI + plugin are installed;
+   otherwise that work goes to sonnet (loom warns at startup when a stage lists
+   codex it cannot use). Verification NEVER delegates - the orchestrator
+   verifies and commits. Spawn BY AGENT TYPE.
+4. ESCALATE ON EVIDENCE, NOT ON HUNCH. Start at the cheapest plausible tier. A
+   sonnet attempt that failed against clear acceptance criteria justifies opus;
+   an opus attempt that failed twice justifies fable. "This feels subtle" does
+   not. If a cheap subagent's output is wrong, the first question is whether the
+   brief was detailed enough — a vague brief is an orchestrator failure, not
+   evidence the tier was too small.
+5. DEBUGGING OR REPEATED FAILURE → spawn a `loom-advisor` (fable) subagent:
+   narrow scope, full detail supplied by the orchestrator, advice returned, no
+   writes. Its diagnosis then feeds a sonnet or opus implementer per point 2.
+   Do not let an implementer thrash on the same failure twice."#;
 
 /// Phrasing the no-verify rule RETIRED. Acceptance criteria only grep for the
 /// wording a doctrine INTRODUCES, so they cannot catch a surface that still

@@ -270,30 +270,44 @@ Full YAML for all three bookends is in the canonical template (Section 10).
 BLOCK-B — model allocation playbook:
 
 ```text
-1. ORCHESTRATION IS ALWAYS OPUS. Every stage's main agent is opus. The
-   orchestrator does NOT implement — it decomposes the work, hands each
-   subagent full context, then verifies and commits. That is all.
-2. IMPLEMENTATION IS ALWAYS DELEGATED, to as FEW subagents as the work allows. Pick the
-   tier PER SUBAGENT by what that piece of work needs, never once for the whole stage:
-   FABLE for major bugs, visual/UI design, and extremely challenging algorithmic
-   design; OPUS for mainstream architecture and algorithm implementation; SONNET
+1. THE MAIN AGENT NEVER IMPLEMENTS — WHATEVER MODEL IT RUNS (hard stop 6).
+   Every stage's main agent is an orchestrator: it decomposes the work, hands
+   each subagent full context, then verifies and commits. That is all. This
+   holds identically for an opus session and a fable session; a session running
+   an expensive model is MORE obliged to delegate, not less.
+2. INVESTIGATION ENDS IN A BRIEF, NOT IN AN EDIT. The moment you finish reading
+   the code and know what the fix is, you are at the delegation boundary — that
+   understanding is exactly what makes a cheap subagent effective. Write it down
+   (file:line, root cause, the change to make, signatures, patterns to match,
+   acceptance) and spawn. Do not slide from "I have diagnosed it" into "I will
+   just type it"; the diagnosis being yours does not make the typing yours.
+3. IMPLEMENTATION IS ALWAYS DELEGATED, to as FEW subagents as the work allows, at
+   the CHEAPEST tier that can do the piece. Pick PER SUBAGENT by what that piece
+   needs, never once for the whole stage, and default downward: codex
+   gpt-5.6-luna for boilerplate, scaffolding, and simple unit tests; SONNET
    (loom-software-engineer) or codex gpt-5.6-terra for common implementation and
-   integration tests; codex gpt-5.6-luna for boilerplate, scaffolding, and simple
-   unit tests. Codex tiers (effort xhigh, via loom-codex-forwarder) exist only on
-   stages listing codex in implementers AND when the codex CLI + plugin are
-   installed; otherwise that work goes to sonnet (loom warns at startup when a
-   stage lists codex it cannot use). Verification NEVER delegates - the opus
-   orchestrator verifies and commits. Spawn BY AGENT TYPE.
-3. DEBUGGING OR REPEATED FAILURE → spawn a `loom-advisor` (fable) subagent:
-   narrow scope, full detail supplied by the orchestrator, advice returned.
+   integration tests — this is the default lane and most work belongs here; OPUS
+   (loom-senior-software-engineer) for mainstream architecture and algorithm
+   implementation; FABLE only for visual/UI design, a bug that survived a
+   delegated fix attempt, or extremely challenging algorithmic design. Codex
+   tiers (effort xhigh, via loom-codex-forwarder) exist only on stages listing
+   codex in implementers AND when the codex CLI + plugin are installed;
+   otherwise that work goes to sonnet (loom warns at startup when a stage lists
+   codex it cannot use). Verification NEVER delegates - the orchestrator
+   verifies and commits. Spawn BY AGENT TYPE.
+4. ESCALATE ON EVIDENCE, NOT ON HUNCH. Start at the cheapest plausible tier. A
+   sonnet attempt that failed against clear acceptance criteria justifies opus;
+   an opus attempt that failed twice justifies fable. "This feels subtle" does
+   not. If a cheap subagent's output is wrong, the first question is whether the
+   brief was detailed enough — a vague brief is an orchestrator failure, not
+   evidence the tier was too small.
+5. DEBUGGING OR REPEATED FAILURE → spawn a `loom-advisor` (fable) subagent:
+   narrow scope, full detail supplied by the orchestrator, advice returned, no
+   writes. Its diagnosis then feeds a sonnet or opus implementer per point 2.
    Do not let an implementer thrash on the same failure twice.
-4. FABLE-TIER MECHANICS. Fable-tier work (major bugs, visual/UI design, and
-   extremely challenging algorithmic design, per rule 2) has no loom agent
-   type pinning fable for implementation — pass the model override
-   explicitly at spawn. Routine UI wiring to an existing design stays
-   sonnet per rule 2; fable is for work where design judgment or extreme
-   difficulty is the point, not for plumbing.
 ```
+
+**Fable-tier mechanics.** No loom agent type pins fable for implementation — pass the model override explicitly at spawn. Routine UI wiring to an existing design stays sonnet per rule 3; fable is for work where design judgment or extreme difficulty is the point, not for plumbing.
 
 ### Codex Implementers (ASK THE USER)
 
@@ -399,7 +413,7 @@ how long an agent may sit blocked on one check.
 Consequences for how you write a plan:
 
 - **EVERY stage sets `model: "opus"` in its YAML.** There is no per-stage subagent-model choice any more — the stage's main agent is always an opus orchestrator.
-- **The fable/opus/sonnet-or-codex-terra/codex-luna decision MOVES DOWN to the subagent level**, made by the orchestrator AT SPAWN TIME — not by the plan author in YAML. The orchestrator picks per subagent assignment: fable for major bugs, visual/UI design, and extremely challenging algorithmic design; opus for mainstream architecture and algorithm implementation; sonnet (or codex gpt-5.6-terra) for common implementation and integration tests; codex gpt-5.6-luna for boilerplate, scaffolding, and simple unit tests (BLOCK-B rule 2; fable mechanics at rule 4).
+- **The fable/opus/sonnet-or-codex-terra/codex-luna decision MOVES DOWN to the subagent level**, made by the orchestrator AT SPAWN TIME — not by the plan author in YAML. The orchestrator picks per subagent assignment, cheapest tier first: codex gpt-5.6-luna for boilerplate, scaffolding, and simple unit tests; sonnet (or codex gpt-5.6-terra) for common implementation and integration tests — the default lane; opus for mainstream architecture and algorithm implementation; fable only for visual/UI design, a bug that survived a delegated fix attempt, or extremely challenging algorithmic design (BLOCK-B rule 3; fable mechanics follow the block).
 - **"Keep sonnet stages small" becomes "keep each subagent's assignment small."** A stage can be as large as the work genuinely requires; what must stay small is each individual subagent's task — that is what earns it a cheap model and keeps it inside its own context budget.
 - **ESCALATION RULE: two failures on the same task ⇒ spawn a `loom-advisor` (fable) subagent, NOT a blind retry.** This replaces any earlier guidance to retry a failing subagent with a bigger model — diagnose first (narrow scope, full detail, advice returned), then re-dispatch with whatever the advisor recommends.
 
@@ -499,7 +513,7 @@ Match agent type to work: execution → `loom-software-engineer` (pins sonnet); 
 
 ### Hierarchies, teams, ultracode
 
-- **2-level hierarchy** (main → coordinators → workers; workers NEVER spawn subagents) — for >~6 well-defined tasks in 2–4 DISJOINT file territories. Use an `EXECUTION PLAN - HIERARCHICAL` block: coordinator territories, nested worker file lists, an OPTIONAL per-coordinator `Verify:` line — AT MOST ONE narrowly-scoped check over the files that coordinator's workers wrote, run ONCE, skipped if the coordinator is unsure; it is not a substitute for real verification, which stays the stage's main agent's job (full compile/test/lint) — plus the statements "Territories are DISJOINT" and "Workers NEVER spawn subagents." Coordinator and worker model follows BLOCK-B (fable for major bugs, visual/UI design, and extremely challenging algorithmic design; opus for mainstream architecture and algorithm implementation; sonnet or codex terra for common implementation and integration tests; codex luna for boilerplate, scaffolding, and simple unit tests) picked per task — not a blanket sonnet default that skips that judgment call. Spawn workers BY AGENT TYPE or an untyped worker inherits the (now always opus) main model. On a larger or harder territory, an opus coordinator orchestrating sonnet workers is a common shape (judgment at the seam, cheap execution at the leaves), chosen per task rather than by rote. Mechanics/preambles: CLAUDE.md Rule 6c.
+- **2-level hierarchy** (main → coordinators → workers; workers NEVER spawn subagents) — for >~6 well-defined tasks in 2–4 DISJOINT file territories. Use an `EXECUTION PLAN - HIERARCHICAL` block: coordinator territories, nested worker file lists, an OPTIONAL per-coordinator `Verify:` line — AT MOST ONE narrowly-scoped check over the files that coordinator's workers wrote, run ONCE, skipped if the coordinator is unsure; it is not a substitute for real verification, which stays the stage's main agent's job (full compile/test/lint) — plus the statements "Territories are DISJOINT" and "Workers NEVER spawn subagents." Coordinator and worker model follows BLOCK-B (codex luna for boilerplate, scaffolding, and simple unit tests; sonnet or codex terra for common implementation and integration tests; opus for mainstream architecture and algorithm implementation; fable only for visual/UI design, a bug that survived a delegated fix attempt, or extremely challenging algorithmic design) picked per task — not a blanket sonnet default that skips that judgment call. Spawn workers BY AGENT TYPE or an untyped worker inherits the (now always opus) main model. On a larger or harder territory, an opus coordinator orchestrating sonnet workers is a common shape (judgment at the seam, cheap execution at the leaves), chosen per task rather than by rote. Mechanics/preambles: CLAUDE.md Rule 6c.
 - **Ultracode** (`ultracode: true`) — licenses the stage's session for Workflow orchestration: scripted fan-out/verify over tens of agents inside ONE session, zero cross-stage merges. Reach for it whenever a stage — or a would-be GROUP of sibling stages — matches any of: ≳10 homogeneous work units (files to migrate, modules to audit, endpoints to cover); breadth-first exploration or research whose total coverage exceeds one context window; a high-stakes verification gate wanting multi-perspective adversarial review (N independent skeptics / judge panels, not one reviewer); or generating competing implementations and selecting the best. Check every candidate group of parallel stages against this list before defaulting to more stages — don't wait for it to become obvious.
 - **Stage-collapse rule.** Prefer ONE ultracode stage over 3+ parallel sibling stages that perform the SAME operation on different file sets — every extra stage costs a worktree, a session spin-up, a branch merge, and merge-conflict risk with its siblings, where a Workflow runs the identical fan-out inside one session with no cross-stage merge at all. Heuristic: siblings differing only in WHICH files they touch → collapse into one ultracode stage; siblings differing in WHAT they do → keep them as separate stages.
 - **Cost/latency discipline — stay judicious.** Multi-agent orchestration runs roughly an order of magnitude more tokens than a single session (published measurements land around 15×), and wall-clock stretches once fan-out queues past the runtime's concurrency ceiling (~16 agents run concurrently; the rest wait). License it PER STAGE with the existing MANDATORY one-sentence justification in the description — never as a plan-wide default. Do NOT ultracode ordinary implementation, small scope (below ~10 units), or tightly coupled/sequential work — multi-agent measurably underperforms on tightly interdependent coding. Run the Workflow's worker agents at the cheapest adequate tier (sonnet) so the multiplier lands on the cheap rate, not the expensive one.

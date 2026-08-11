@@ -146,8 +146,8 @@ impl PermissionMode {
 pub enum Implementer {
     /// The Claude subagent lane (sonnet for common implementation and
     /// integration tests, opus for architecture and algorithm implementation,
-    /// fable for major bugs, visual/UI design, and extremely challenging
-    /// algorithmic design).
+    /// fable only for visual/UI design, a bug that survived a delegated fix
+    /// attempt, or extremely challenging algorithmic design).
     #[default]
     Claude,
     /// The codex implementation lane: spawned as `loom-codex-forwarder`, a

@@ -972,7 +972,7 @@ pub(crate) fn format_codex_implementers_section(
     content.push_str("- WHAT CODEX IS FOR: terra takes common implementation and integration tests (the sonnet\n");
     content.push_str("  tier); luna takes boilerplate, scaffolding, and simple unit tests. It does NOT take opus work\n");
     content.push_str("  (mainstream architecture, algorithm implementation, cross-cutting refactors, security-sensitive\n");
-    content.push_str("  code), fable work (major bugs, visual/UI design, extremely challenging algorithmic design), or\n");
+    content.push_str("  code), fable work (visual/UI design, a bug that survived a delegated fix attempt, extremely challenging algorithmic design), or\n");
     content.push_str("  loom-advisor's role on a second failure. Route each piece of work by what the work needs; the\n");
     content.push_str("  lane list says what is available, not what is mandatory. Sending a task to codex because the\n");
     content.push_str("  stage lists codex - rather than because the task fits a codex tier - is the misread this\n");
