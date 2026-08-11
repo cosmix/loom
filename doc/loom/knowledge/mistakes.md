@@ -595,3 +595,15 @@ capable agent) and a rewritten Rule 7 Model allocation: the rule is now stated m
 ("the main agent never implements — whatever model it runs"), investigation is defined as ending
 in a brief, the fable exception is narrowed from "major bugs" to "a bug that survived a delegated
 fix attempt", and escalation requires evidence (a failed attempt), not a hunch.
+
+**Follow-on (same day):** that template-only edit left every OTHER copy of the doctrine stale, and
+the copies are not equivalent in how loudly they complain. `tests_doctrine.rs` pins BLOCK-A and
+BLOCK-B byte-for-byte across `CLAUDE.md.template` and `skills/loom-plan-writer/SKILL.md`, so those
+two failed the build immediately. The copies that say the same thing in DIFFERENT words are pinned
+by nothing: the runtime signal prose in `orchestrator/signals/cache.rs` and
+`signals/format/sections.rs`, the `Implementer::Claude` doc comment, and the knowledge summaries in
+`patterns.md`. Those still told every spawning orchestrator "fable (major bugs, …)" — the exact
+exception the change existed to close, on the surface an agent actually reads at run time. Editing a
+doctrine block means `rg` for a distinctive phrase of the OLD wording across `loom/src`, `skills/`,
+`agents/`, `hooks/` and `doc/loom/knowledge/` before committing; a green `tests_doctrine` proves the
+two pinned surfaces agree, not that the doctrine is consistent.

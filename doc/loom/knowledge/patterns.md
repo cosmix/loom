@@ -543,9 +543,9 @@ heavy orchestration work — planning, distillation, review, verification — is
 save tokens.
 
 Savings come from **delegation, not downgrade**: an opus main agent spawns implementation
-subagents by agent type across four tiers — fable (major bugs, visual/UI design, extremely
-challenging algorithmic design; no agent type pins it, so the model override is explicit at
-spawn), opus (`loom-senior-software-engineer`, mainstream architecture and algorithm
+subagents by agent type across four tiers — fable (visual/UI design, a bug that survived a
+delegated fix attempt, extremely challenging algorithmic design; no agent type pins it, so the
+model override is explicit at spawn), opus (`loom-senior-software-engineer`, mainstream architecture and algorithm
 implementation), sonnet or GPT-5.6 Terra (`loom-software-engineer` or the `loom-codex-forwarder`
 codex lane, common implementation and integration tests), and GPT-5.6 Luna (codex lane,
 boilerplate, scaffolding, simple unit tests). The codex tiers are licensed only on stages listing
