@@ -618,3 +618,26 @@ designed fallback must be traced end-to-end through every framing layer, and "ab
 explicit non-empty wire encoding.
 
 → [Completion Broker Credential](mistakes/completion-broker-credential.md)
+
+## `find_repo_root_from_cwd` Returns `Some(cwd)` Outside Any Repo (2026-08-11)
+
+**What happened:** `get_or_create_work_dir` in `commands/memory/handlers.rs` needed "am I inside a
+git repo?" before it would create a `.work` directory. `find_repo_root_from_cwd` returns
+`Option<PathBuf>`, so `None` reads as "not in a repo" — but it is not. After walking to the
+filesystem root without finding a `.git`, it ends at
+`git/worktree/paths.rs:84-85` with an explicit *"Fallback: return the original cwd if nothing else
+works"* → `cwd.canonicalize().ok()`. Outside any repo it therefore returns `Some(cwd)`.
+
+**Why it matters:** the name says *find repo root* and the `Option` implies a search that can
+fail, so `if let Some(root)` looks like a repo check and compiles clean. Here it would have
+scattered a `.work` directory into any directory the command was ever run from.
+
+**Prevention:** treat `find_repo_root_from_cwd` as *"the best base path to use"*, never as a repo
+predicate. When you need the predicate, confirm it yourself:
+`find_repo_root_from_cwd(&cwd).filter(|root| root.join(".git").exists())`.
+
+**Detection:** the giveaway is an `Option` whose `None` arm you cannot trigger in a test. If you
+cannot write the failing case, the function probably never returns `None` — read its tail before
+relying on it. Existing callers are unaffected only because they all pair it with
+`.unwrap_or_else(|| cwd)`, which wants exactly the fallback; that idiom hides the trap from anyone
+reading call sites to infer semantics.

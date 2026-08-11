@@ -523,3 +523,55 @@ completion that durably landed. Self-healing in practice — the stage file is `
 and the daemon reads state from disk — but the caller observes a false negative for a succeeded
 operation. If this is ever observed in the wild, split the response so callers can distinguish
 "completed, replay marker failed" from "not completed".
+
+## Four Hooks Still Regex Raw Command Strings (2026-08-11)
+
+`git-add-guard.sh` was converted to a token scan (see
+`mistakes/shell-command-matchers.md`) because regexing the raw command string cannot tell an
+argument's *value* from an argument's *mention*. That bug class is not specific to it. These
+still match against raw strings and share it:
+
+| Hook                        | Shared helper used            |
+| --------------------------- | ----------------------------- |
+| `commit-filter.sh`          | `strip_embedded_content`      |
+| `prefer-modern-tools.sh`    | `strip_embedded_content`      |
+| `worktree-isolation.sh`     | `strip_embedded_content`      |
+| `subagent-verify-guard.sh`  | `strip_embedded_content`      |
+
+`strip_embedded_content` in `hooks/_common.sh` was deliberately left unchanged during that fix:
+all four depend on its current contract, and it has a Rust twin at
+`loom/src/hooks/validators/bash.rs:71` that would have to move in lockstep. Widening the fix was
+out of scope for a two-bug repair, not a judgement that these are safe.
+
+Expect both directions of the same defect in each: a false positive when a quoted argument merely
+mentions a matched form, and quieter false negatives where a quote character sits exactly where
+the pattern expects a boundary. The migration path is ready — `loom_tokenize_command` is in
+`_common.sh`, is permissive by design, and is not coupled to git-add-guard. Convert a hook when
+it next misfires, add its cases to `hooks/tests/`, and keep its old regex as the
+unterminated-quote fallback, exactly as `git-add-guard.sh` does.
+
+## `loom memory` Is Unusable Without an Initialised `.work` (2026-08-11)
+
+`loom memory note` exits non-zero with `.work directory not found. Run 'loom init' first.`
+(`commands/memory/handlers.rs:45`), and even past that gate the recording handlers require a
+stage id from `--stage` or `LOOM_STAGE_ID` (e.g. `note()` at handlers.rs:64-66). Neither holds in
+an interactive or ad-hoc session.
+
+This collides head-on with doctrine: the mandatory subagent preamble orders every subagent to
+record mistakes and decisions via `loom memory`, while auto-memory is prohibited whenever
+`doc/loom/knowledge/` exists — which it does here. Agents are therefore ordered to record and
+given no working way to do it, and the failure is silent from the orchestrator's point of view.
+Three agents lost insights to this in a single session before it was noticed.
+
+**Fixed in-tree 2026-08-11** (`commands/memory/handlers.rs`): the four recording commands
+(`note`, `decision`, `change`, `question`) now create `<repo_root>/.work/memory/` when cwd is
+inside a git repo, and default the stage to the sentinel `ad-hoc`; `query`/`list`/`show` degrade
+to exit 0 without creating anything. Outside a git repo the original error stands, so `.work` is
+never scattered into arbitrary directories — see
+[`find_repo_root_from_cwd` Returns `Some(cwd)` Outside Any Repo](../mistakes.md) for the trap that
+guard exists to dodge.
+
+**Still true until the built binary is installed:** a `loom` on PATH from before this change keeps
+the old behaviour. When delegating outside a loom run against an older binary, tell subagents
+explicitly that `loom memory` will fail, that auto-memory is still forbidden, and that they must
+return insights in their final report for the orchestrator to record by hand.

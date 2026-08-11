@@ -120,5 +120,68 @@ not limited to git: it blocked a plain `loom memory note` whose _text_ quoted th
 
 **Workaround:** split staging and committing into separate Bash calls, and keep the all-files
 flag spellings out of message and note text.
-**Real fix (open):** anchor Pattern 1 to the staging command's own argument list instead of the
-whole line, and make `strip_embedded_content` quote-state aware across newlines.
+**Real fix (LANDED 2026-08-11):** see the next section — the raw-string scan was replaced by a
+token scan, so the workaround is no longer needed for `git-add-guard.sh`.
+
+## Regexing a Raw Command String Matches Prose Inside Quoted Arguments (2026-08-11)
+
+**What happened:** `git-add-guard.sh` stripped heredoc and `-m` bodies and then ran its three
+patterns over the **raw command string**. Quoted argument bodies were never stripped, so a
+command that merely _mentioned_ the forbidden forms inside a quoted argument was blocked with no
+git invocation anywhere in it. Confirmed: `echo 'Never run git add -A or git add . because it
+stages .work'` was blocked. This is the section above one level out — same class, wider blast
+radius: `echo`, Write-via-shell, subagent prompt forwarding, and any doc or prompt text about
+staging hygiene all tripped it. It blocked real work in this repo, including a probe command
+written to _test_ the guard.
+
+**Why:** a regex over a command string cannot tell an argument's **value** from an argument's
+**mention**. Stripping more kinds of body is a treadmill; the string is the wrong unit.
+
+**The tempting wrong fix:** blank the interiors of quoted spans before matching. It fixes the
+false positive and opens a real hole — bash quoting does not change an argument's value, so
+`git add '-A'` and `git add ".work"` start passing. Verified against the pre-fix hook: those two
+were **already** allowed, along with `echo $(git add -A)` (Pattern 1's boundary class omitted
+`)`). Three silent false negatives sat behind the false positive nobody could miss.
+
+**Prevention:** scan **tokens, not text**. Tokenize with quote/escape state, emit a sentinel at
+each command boundary, then check tokens that are genuinely arguments of the invocation you care
+about. A quoted mention is one token belonging to `echo`; a quoted real flag keeps its value and
+is still caught. When a guard has a loud false positive, look for the quiet false negatives of
+the same root cause before fixing only the loud one.
+
+**Fix:** `loom_tokenize_command` in `hooks/_common.sh` (permissive: tolerates any shell text,
+returns non-zero only on an unterminated quote) plus `scan_git_add_tokens` in
+`hooks/git-add-guard.sh`; the old regex block is retained solely as the unterminated-quote
+fallback so protection never drops below its previous level. Cases in
+`hooks/tests/git-add-guard-quoting.sh`.
+
+**Deliberately NOT swept:** `strip_embedded_content` itself is unchanged, because
+`commit-filter.sh`, `prefer-modern-tools.sh`, `worktree-isolation.sh` and
+`subagent-verify-guard.sh` all depend on its current contract, and it has a Rust twin at
+`loom/src/hooks/validators/bash.rs:71`. Those four still regex raw strings and still carry this
+bug class — see `concerns.md`.
+
+## Bash: `'\\'` in a `case` Pattern Never Matches a Lone Backslash (2026-08-11)
+
+**What happened:** `parse_shell_words` in `hooks/codex-forward-guard.sh` used `'\\')` as the
+`case` arm meant to catch a backslash, in three places. In a `case` pattern a quoted string has
+its metacharacters disabled, so `'\\'` is the literal **two-character** string `\\` and can never
+match the single backslash the parser iterates over. Both the `escape` and `double_escape` states
+were therefore unreachable dead code.
+
+**Why it mattered:** a backslash fell through to `*)`, was appended as a literal, and left the
+parser in `plain`. The standard `'\''` idiom for embedding an apostrophe then knocked the state
+machine out of phase, so the rest of the argument was scanned in `plain` where spaces split words
+and `( ) $ * { }` hard-reject. Net effect: **any prompt containing an ASCII apostrophe was
+unforwardable**, which silently disabled the whole codex implementation lane. The symptom looked
+like a backtick or quoting problem in the prompt, not a dead `case` arm.
+
+**Prevention:** to match a lone backslash in a `case` pattern use `'\'` or unquoted `\\` — both
+verified. More generally: an unreachable `case` arm in a state machine is invisible, because the
+fall-through arm produces plausible output. When adding a state, assert the state is actually
+entered (parse a known input and check the **parsed words**, not just the exit code) — a
+pass/fail exit code cannot distinguish "handled correctly" from "never reached".
+
+**Fix:** three patterns in `hooks/codex-forward-guard.sh`; round-trip cases (apostrophe idiom,
+`\$`, `\"`, `\\`, trailing lone backslash) in `hooks/tests/codex-forward-guard-quoting.sh`, which
+asserts the parsed word content, not merely the hook's exit code.
