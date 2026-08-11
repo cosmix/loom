@@ -72,8 +72,6 @@ file tests/failure_resume.rs 468
 file tests/integration/merge_conflict_recovery.rs 412
 file tests/integration/plan_verify.rs 771
 function src/cli/dispatch.rs dispatch 240
-function src/commands/attach/tests.rs live_tmux_sessions_orders_by_created_at_then_id 60
-function src/commands/attach/tests/overview.rs pane_command_neutralises_hostile_session_ids 70
 function src/commands/clean/mod.rs print_summary 52
 function src/commands/clean/sessions.rs test_clean_sessions_reaps_live_only_when_destroying_state 54
 function src/commands/clean/worktrees.rs clean_worktrees 110
@@ -284,7 +282,9 @@ function src/orchestrator/terminal/native/detection.rs detect_parent_terminal 51
 function src/orchestrator/terminal/native/detection.rs detect_terminal#1 56
 function src/orchestrator/terminal/native/detection.rs detect_terminal#2 65
 function src/orchestrator/terminal/native/launch.rs prepare_session_launch 123
+function src/orchestrator/terminal/tmux/tests_discovery.rs live_tmux_sessions_orders_by_created_at_then_id 60
 function src/orchestrator/terminal/tmux/tests_spawn.rs a_failed_spawn_aborts_and_leaves_no_pid_file_for_the_native_retry_to_adopt 97
+function src/orchestrator/terminal/tmux/tests_viewer.rs pane_command_neutralises_hostile_session_ids 70
 function src/plan/amendment.rs apply_amendment 270
 function src/plan/amendment.rs read_audit_rows 69
 function src/plan/amendment.rs verify_plan_versions_consistency 152

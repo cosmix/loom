@@ -65,7 +65,7 @@ pub fn list_loom_sockets(work_dir: &Path) -> Vec<LoomSocket> {
             continue;
         };
         // The per-repo overview viewer socket (see
-        // `commands::attach::viewer_socket_name`, `loom-view-<8 hex>`) is not
+        // `super::viewer::viewer_socket_name`, `loom-view-<8 hex>`) is not
         // a session socket at all, so it can never be session-attributed.
         // Without this skip it decodes to session id `view-<hex>`, which
         // never has a session file, so `loom clean`/`loom init` would report

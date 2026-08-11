@@ -64,6 +64,18 @@ impl Monitor {
             &self.handlers,
         ));
 
+        // Keep an attached `loom attach` overview in sync with the session
+        // reality this poll just observed: ended stages lose their pane, new
+        // ones gain one, without the operator detaching and re-attaching.
+        // Costs a single `stat` when nobody is attached (the common case).
+        // Best-effort — a viewer that cannot be reconciled must never fail
+        // the poll (O-4).
+        if let Err(error) =
+            crate::orchestrator::terminal::tmux::refresh_attached_viewer(&self.config.work_dir)
+        {
+            tracing::debug!(error = %error, "Overview viewer reconcile skipped");
+        }
+
         Ok(events)
     }
 

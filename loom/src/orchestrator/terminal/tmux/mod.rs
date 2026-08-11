@@ -13,8 +13,20 @@
 //! Liveness is PID-based ONLY, never `tmux has-session` — see
 //! [`TmuxBackend::is_session_alive`] for why a tmux-server-alive check would
 //! silently defeat crash detection.
+//!
+//! Two submodules serve `loom attach`'s tiled overview rather than the spawn
+//! lane: `viewer` owns the viewer's identity and the "which sessions are
+//! attachable" filter, and `reconcile` uses them to keep an already-built
+//! viewer in sync with session reality on every scheduler tick. They live here,
+//! not under `commands/attach`, because the daemon must not depend on a command
+//! module — and because one shared definition is what stops the one-shot build
+//! and the live reconciler from disagreeing about who is attachable.
 
+mod reconcile;
 mod socket;
+/// `pub(crate)` rather than re-exported piecemeal: `commands/attach` consumes
+/// most of this module, and its tests share `viewer::tests::stub_session`.
+pub(crate) mod viewer;
 
 use anyhow::{Context, Result};
 use shell_escape::escape;
@@ -29,6 +41,11 @@ use super::native;
 pub use socket::{
     kill_socket_server, list_loom_sockets, socket_path_for, socket_session_is_alive, LoomSocket,
 };
+
+/// The daemon's one entry point into overview maintenance. Re-exported here so
+/// the scheduler loop names the tmux backend rather than reaching into a
+/// submodule for what is, from its side, a single best-effort call.
+pub(crate) use reconcile::refresh_attached_viewer;
 
 /// Server options loom forces on every stage server it creates, applied
 /// best-effort after the spawn.

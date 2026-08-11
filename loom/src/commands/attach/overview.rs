@@ -5,20 +5,21 @@
 //! with its own lifecycle rules, distinct from the discovery and direct-attach
 //! logic that surrounds it: it must be created, hardened against its own panes
 //! dying, populated, and only then attached to.
+//!
+//! The viewer's identity (socket name, session name, pane command) and the
+//! attachability filter now live in `orchestrator::terminal::tmux::viewer`,
+//! shared with the daemon-side reconciler that keeps an attached overview in
+//! sync; this module owns only the one-shot build sequence.
 
 use anyhow::{bail, Context, Result};
-use sha2::{Digest, Sha256};
-use std::borrow::Cow;
-use std::os::unix::ffi::OsStrExt;
 use std::path::Path;
 use std::process::{Command, Output};
 
-use super::{exec_tmux, require_tty, tmux_endpoint_ready, tmux_session_name};
+use super::{exec_tmux, require_tty};
 use crate::models::session::Session;
-use crate::orchestrator::terminal::tmux::socket_name;
-
-/// tmux session name of the tiled viewer. Fixed; the SOCKET is what varies per repo.
-const OVERVIEW_SESSION: &str = "loom-overview";
+use crate::orchestrator::terminal::tmux::viewer::{
+    attachable_panes, endpoint_ready, pane_command, viewer_socket_name, OVERVIEW_SESSION,
+};
 
 /// Viewer creation flags: detached, with a fixed initial geometry the real
 /// client resizes on attach. Hoisted out of [`build_overview_argv`] only so
@@ -144,57 +145,8 @@ const VIEWER_HARDENING: &[&str] = &[
     "set-option",
     "-g",
     "remain-on-exit-format",
-    "loom: session ended (exit #{pane_dead_status}) - detach with prefix+d, then re-run loom attach",
+    "loom: session ended (exit #{pane_dead_status}) - new sessions appear automatically while loom runs",
 ];
-
-/// Per-REPOSITORY viewer socket name, `loom-view-<8 hex>`. The tmux socket
-/// directory is per-USER, not per-repo, so a fixed global name would make two
-/// checkouts collide — and the overview's own best-effort `kill-session`
-/// would then tear down the other repo's viewer.
-fn viewer_socket_name(work_dir: &Path) -> String {
-    // `.work` is a SYMLINK to the main repo's `.work` in a worktree, so
-    // canonicalizing gives the same path from every worktree of the repo.
-    let canonical = work_dir
-        .canonicalize()
-        .unwrap_or_else(|_| work_dir.to_path_buf());
-    let repo_root = canonical.parent().unwrap_or(&canonical);
-
-    let mut hasher = Sha256::new();
-    hasher.update(repo_root.as_os_str().as_bytes());
-    let digest = hasher.finalize();
-    let hex = hex::encode(digest);
-
-    // `/tmp/tmux-<uid>/loom-view-xxxxxxxx` is ~31 bytes, far inside the
-    // 104-byte AF_UNIX `sun_path` limit.
-    format!("loom-view-{}", &hex[..8])
-}
-
-/// Identity for loom's alphanumeric/dash ids; defence in depth because the
-/// result is handed to `/bin/sh -c`.
-fn escape_arg(s: &str) -> String {
-    shell_escape::escape(Cow::Borrowed(s)).into_owned()
-}
-
-/// A nested attach client into one session's own tmux server. `unset TMUX`
-/// first: the pane inherits `$TMUX` from the viewer server and tmux refuses a
-/// nested attach otherwise. `exec` so pane death stays meaningful under
-/// remain-on-exit.
-///
-/// This string is always the `-c` payload of an EXPLICIT `sh -c` (see
-/// [`build_overview_argv`]), never handed to tmux's own `default-shell`.
-/// `unset` is not portable: under `default-shell=/bin/csh` (verified on tmux
-/// 3.7b) `unset` clears a shell variable, never the environment, so the
-/// nested attach still sees `$TMUX` and refuses it; fish has no `unset` at
-/// all. A guaranteed POSIX `sh` sidesteps the operator's login shell
-/// entirely, and makes `escape_arg`'s `sh`-flavoured quoting provably
-/// correct rather than accidentally so.
-fn pane_command(session_socket: &str, tmux_session: &str) -> String {
-    format!(
-        "unset TMUX; exec tmux -L {} attach-session -t {}",
-        escape_arg(session_socket),
-        escape_arg(tmux_session)
-    )
-}
 
 /// One step's argv, sharing the `-L <viewer_socket>` prefix every invocation
 /// needs. `pane`, when given, appends `"sh", "-c", <pane command>` as three
@@ -263,32 +215,9 @@ fn build_overview_argv(viewer_socket: &str, panes: &[(String, String)]) -> Vec<V
     steps
 }
 
-/// `(session_socket, tmux_session)` for every session that can actually be
-/// attached to, in discovery order.
-///
-/// `ready` is injected so the selection rule is testable without a tmux
-/// server — the same split
-/// [`crate::orchestrator::terminal::tmux::evaluate_new_session`] uses to keep
-/// an untestable decision out of an untestable context. Production always
-/// passes [`tmux_endpoint_ready`].
-fn attachable_panes(
-    sessions: &[Session],
-    ready: impl Fn(&Session, &str) -> bool,
-) -> Vec<(String, String)> {
-    sessions
-        .iter()
-        .filter_map(|session| {
-            // Discovery already guaranteed a resolvable name for every
-            // session here, so this `?` never actually fires.
-            let tmux_session = tmux_session_name(session)?;
-            ready(session, &tmux_session).then(|| (socket_name(session), tmux_session))
-        })
-        .collect()
-}
-
 /// Build the tiled viewer, then exec into it.
 pub(super) fn run_overview(work_dir: &Path, sessions: &[Session]) -> Result<()> {
-    let panes = attachable_panes(sessions, tmux_endpoint_ready);
+    let panes = attachable_panes(sessions, endpoint_ready);
 
     // Reported BEFORE the TTY check, like every other diagnostic this command
     // emits: a session that is alive but not yet attachable is the single most
