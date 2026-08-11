@@ -121,13 +121,19 @@ goes to the daemon's stderr, not the user's shell.
 and a resolvable tmux session name, sorted oldest-first by `(created_at, id)`. `mod.rs` owns
 discovery and direct attach; `overview.rs` owns the viewer server.
 
-Both paths then apply one further precondition: `tmux_endpoint_ready` — the session's socket exists
-AND `has-session` succeeds on it. This is the ONE place `has-session` is legitimate, and it is not a
-contradiction of the liveness rule above: PID liveness answers "is the agent alive", attaching needs
-"is the server accepting clients", and the two disagree in both directions (a `Spawning` session has
-a live wrapper PID before its server is up; a torn-down server can outlive its `claude` PID by a
-moment). Both call sites report "still spawning, or just ended — re-run in a moment" rather than
-letting tmux's error surface.
+Both paths then apply one further precondition: `endpoint_ready`
+(`orchestrator/terminal/tmux/viewer.rs`) — the session's socket exists AND `has-session` succeeds on
+it. Attach and the viewer reconciler (below) are the only legitimate `has-session` callers, and it
+is not a contradiction of the liveness rule above: PID liveness answers "is the agent alive",
+attaching needs "is the server accepting clients", and the two disagree in both directions (a
+`Spawning` session has a live wrapper PID before its server is up; a torn-down server can outlive
+its `claude` PID by a moment). Attach's call sites report "still spawning, or just ended — re-run in
+a moment" rather than letting tmux's error surface.
+
+Viewer identity (socket name, `loom-overview` session name, the nested-attach pane command) and
+attachability discovery live in `orchestrator/terminal/tmux/viewer.rs`, shared by attach's one-shot
+build and the reconciler so the two can never disagree; `commands/attach/overview.rs` keeps only the
+build sequence (`build_overview_argv`, `VIEWER_HARDENING`).
 
 - **No argument** ⇒ a tiled **overview**: a per-repo _viewer_ server on socket
   `loom-view-<sha256(canonical repo root)[..8]>`, session `loom-overview`, created detached at
@@ -143,6 +149,26 @@ letting tmux's error surface.
     rather than failing the attach. See `mistakes/tmux-backend.md`.
 - **With a stage id** ⇒ direct `exec` of `tmux -L loom-<session.id> attach-session -t <tracking_key>`,
   newest session wins if several match.
+
+## Live Overview Reconciliation (Daemon-Side)
+
+The overview is no longer a one-shot snapshot. `Monitor::poll` calls
+`tmux::refresh_attached_viewer` (`orchestrator/terminal/tmux/reconcile.rs`) once per scheduler tick,
+best-effort (an error is logged at debug and never fails the poll). The daemon never CREATES the
+viewer — only `loom attach` does — it maintains one the operator already built. Gate order keeps the
+common case free: viewer-socket `stat` (no subprocess, no session reads when nobody is attached) →
+bounded `has-session` (skip while absent or mid-`loom attach` rebuild) → `list-panes -F` → pure diff
+(`reconcile_steps`) → apply.
+
+Panes are attributed by parsing the inner socket out of `#{pane_start_command}` (survives for
+`new-session` and `split-window` panes; verified tmux 3.6a) with a `loom-` prefix requirement, so an
+operator's own splits — including a manual `tmux attach-session` — are `None`-attributed and never
+touched. Diff rules: missing attachable session ⇒ `split-window` re-tiled after EVERY split (the 6+
+pane trap); dead pane whose server still lives ⇒ `respawn-pane`; dead pane whose session is gone ⇒
+`kill-pane`, but never the last pane (a killed last pane collapses window and session despite
+`exit-empty off`); duplicate panes for one socket (attach-rebuild race) collapse to one keeper; all
+adds before all kills. Every tmux call is bounded (`run_tmux_control` + probe timeout) because it
+runs on the single scheduler loop.
 
 Each overview pane nests into an inner server by running `unset TMUX; exec tmux -L <sock>
 attach-session -t <key>` — passed as **separate `sh -c` argv words**, not one string, so the shell is

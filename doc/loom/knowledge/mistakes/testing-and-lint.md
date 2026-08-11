@@ -121,6 +121,16 @@ Expect `Summary: 0 issues`. `.markdownlint.json` disables MD013/MD033/MD036/MD04
 
 **Prevention:** before adding lines to a function, `rg '<fn name>' loom/maintainability-baseline.txt`. If it is listed, refactor rather than extend — and when the refactor drops it under the limit, DELETE the entry rather than lowering it. Prove behaviour is unchanged by regenerating the artifact and diffing (for INDEX.md: `loom knowledge index` then `git status --porcelain`, expecting no change).
 
+**Two more shapes, from wiring the viewer reconciler (2026-08-11):** (1) a cross-cutting per-tick
+call could not live in `orchestrator.rs` (file ledgered at 564) NOR in `event_handler.rs` (468) —
+even a one-line addition to a ledgered FILE fails the gate, so a new hook must find an unledgered
+host with headroom (`Monitor::poll` in `monitor/core.rs`, 128 lines, same per-tick semantics).
+Check the file ledger BEFORE choosing a call site, not after the test fails. (2) MOVING a
+grandfathered over-limit function is fine: the ledger accepts deleting the entry at the old path
+and re-adding it, same measured size, at the new path (alphabetical within the `function` group).
+Relocated debt is not new debt — but only new-code violations must be refactored instead of
+ledgered.
+
 ## A `[`link`]` to a Private Item Fails CI's Docs Job, Which No Local Gate Runs (2026-08-11)
 
 **What happened:** CI's `Documentation` job failed on main while build, test, clippy, fmt, maintainability, audit and deny were all green. Two module doc comments used intra-doc link syntax for private functions — `` [`tmux_endpoint_ready`] `` in `src/commands/attach/mod.rs` and `` [`kind_env`] `` in `src/orchestrator/terminal/native/wrapper.rs`. Both targets are private `fn`s referenced from public docs.

@@ -607,3 +607,14 @@ exception the change existed to close, on the surface an agent actually reads at
 doctrine block means `rg` for a distinctive phrase of the OLD wording across `loom/src`, `skills/`,
 `agents/`, `hooks/` and `doc/loom/knowledge/` before committing; a green `tests_doctrine` proves the
 two pinned surfaces agree, not that the doctrine is consistent.
+
+## Completion Broker: a Server-Side Fallback the Client Could Never Reach (2026-08-11)
+
+No worktree stage could complete through the trusted PostToolUse broker: the client sent an EMPTY
+credential when `user.token` was unreadable (which is always, on that path), trusting a daemon
+peer-identity fallback — but the wire preface refuses to frame an empty credential, so the request
+never left the process. Fixed with a non-empty placeholder that routes into the fallback. Rule: a
+designed fallback must be traced end-to-end through every framing layer, and "absent" needs an
+explicit non-empty wire encoding.
+
+→ [Completion Broker Credential](mistakes/completion-broker-credential.md)
