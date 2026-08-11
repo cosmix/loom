@@ -99,8 +99,6 @@ function src/commands/knowledge/gc.rs gc 144
 function src/commands/knowledge/mod.rs list 70
 function src/commands/knowledge/tests.rs test_knowledge_update_in_worktree_writes_to_worktree 68
 function src/commands/knowledge/tests.rs test_parse_file_type 70
-function src/commands/memory/handlers.rs list 70
-function src/commands/memory/handlers.rs show 61
 function src/commands/plan/verify.rs execute 246
 function src/commands/plan/verify.rs print_human 110
 function src/commands/pressure/mod.rs execute 86
