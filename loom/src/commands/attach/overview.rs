@@ -383,3 +383,6 @@ fn verify_viewer_session(viewer_socket: &str, output: &Output) -> Result<()> {
 #[cfg(test)]
 #[path = "tests/overview.rs"]
 mod tests;
+#[cfg(test)]
+#[path = "tests/overview_hardening.rs"]
+mod tests_hardening;

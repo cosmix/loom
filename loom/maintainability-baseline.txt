@@ -8,7 +8,6 @@
 # refactor it back. New violations must be refactored or explicitly recorded.
 
 file src/cli/types.rs 409
-file src/commands/attach/tests/overview.rs 466
 file src/commands/graph/tests.rs 425
 file src/commands/init/tests.rs 684
 file src/commands/plan/verify.rs 573
