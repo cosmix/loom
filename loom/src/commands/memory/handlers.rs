@@ -5,12 +5,18 @@ use colored::Colorize;
 use std::env;
 
 use crate::fs::memory::{
-    append_entry, list_journals, query_entries, read_journal, validate_content, MemoryEntry,
-    MemoryEntryType,
+    append_entry, init_memory_dir, list_journals, query_entries, read_journal, validate_content,
+    MemoryEntry, MemoryEntryType,
 };
 use crate::git::worktree::{find_repo_root_from_cwd, find_worktree_root_from_cwd};
 
 use super::formatters::{format_entry_compact, format_entry_full, format_record_success};
+
+/// Sentinel stage ID used by the four recording commands (`note`, `decision`,
+/// `change`, `question`) when neither `--stage` nor `LOOM_STAGE_ID` supplies
+/// one. Lets ad-hoc/interactive sessions (no active loom plan) still record
+/// insights instead of erroring outright.
+const AD_HOC_STAGE_ID: &str = "ad-hoc";
 
 /// Get the .work directory, handling worktree symlinks
 ///
@@ -45,6 +51,59 @@ fn get_work_dir() -> Result<std::path::PathBuf> {
     bail!(".work directory not found. Run 'loom init' first.");
 }
 
+/// Get the .work directory for RECORDING commands, creating it if necessary.
+///
+/// Tries the existing `get_work_dir` search first, unchanged. If nothing is
+/// found and cwd is inside a git repo, creates `<repo_root>/.work/memory/`
+/// (via `init_memory_dir`) so `note`/`decision`/`change`/`question` still
+/// work from an ad-hoc session with no active loom plan. `find_repo_root_from_cwd`
+/// already resolves to the main repo root even when cwd is inside a
+/// `.worktrees/<stage>` checkout, so this never creates a second `.work`
+/// alongside a worktree's `.work` symlink. Read-only commands (`query`,
+/// `list`, `show`) must NOT call this — they degrade instead of creating
+/// anything.
+///
+/// Still fails with the original message when cwd is not inside a git repo.
+fn get_or_create_work_dir() -> Result<std::path::PathBuf> {
+    if let Ok(work_dir) = get_work_dir() {
+        return Ok(work_dir);
+    }
+
+    let cwd = env::current_dir().context("Failed to get current directory")?;
+    // `find_repo_root_from_cwd` falls back to returning `cwd` itself when it
+    // walks all the way to the filesystem root without finding a `.git`, so
+    // `Some` alone doesn't mean "inside a git repo" - confirm the candidate
+    // root actually has a `.git` entry before trusting it.
+    let repo_root = find_repo_root_from_cwd(&cwd).filter(|root| root.join(".git").exists());
+    let Some(repo_root) = repo_root else {
+        bail!(".work directory not found. Run 'loom init' first.");
+    };
+
+    let work_dir = repo_root.join(".work");
+    init_memory_dir(&work_dir)?;
+
+    eprintln!(
+        "{} No .work directory found; recording to {} (stage '{}')",
+        "ℹ".blue(),
+        work_dir.display(),
+        AD_HOC_STAGE_ID
+    );
+
+    Ok(work_dir)
+}
+
+/// Get the .work directory for READ-ONLY commands (`query`, `list`, `show`).
+///
+/// Returns `None` instead of erroring when no `.work` exists, so these
+/// commands degrade gracefully rather than failing. This matters because
+/// `loom memory list` is the first step of the post-compaction recovery flow
+/// (see CLAUDE.md Rule 3b) - a hard failure there would derail recovery
+/// before it starts. Unlike `get_or_create_work_dir`, this never creates
+/// anything.
+fn get_work_dir_readonly() -> Option<std::path::PathBuf> {
+    get_work_dir().ok()
+}
+
 /// Validate stage ID to prevent path traversal attacks
 fn validate_stage_id(id: &str) -> Result<()> {
     if id.contains('/') || id.contains("..") || id.contains('\\') {
@@ -60,10 +119,10 @@ pub fn note(text: String, stage_id: Option<String>) -> Result<()> {
         validate_stage_id(id)?;
     }
 
-    let work_dir = get_work_dir()?;
+    let work_dir = get_or_create_work_dir()?;
     let stage = stage_id
         .or_else(|| std::env::var("LOOM_STAGE_ID").ok())
-        .ok_or_else(|| anyhow::anyhow!("No stage ID provided or detected. Use --stage <id>"))?;
+        .unwrap_or_else(|| AD_HOC_STAGE_ID.to_string());
 
     let entry = MemoryEntry::new(MemoryEntryType::Note, text.clone());
     append_entry(&work_dir, &stage, &entry)?;
@@ -86,10 +145,10 @@ pub fn decision(text: String, context: Option<String>, stage_id: Option<String>)
         validate_stage_id(id)?;
     }
 
-    let work_dir = get_work_dir()?;
+    let work_dir = get_or_create_work_dir()?;
     let stage = stage_id
         .or_else(|| std::env::var("LOOM_STAGE_ID").ok())
-        .ok_or_else(|| anyhow::anyhow!("No stage ID provided or detected. Use --stage <id>"))?;
+        .unwrap_or_else(|| AD_HOC_STAGE_ID.to_string());
 
     let entry = match context {
         Some(ctx) => MemoryEntry::with_context(MemoryEntryType::Decision, text.clone(), ctx),
@@ -112,10 +171,10 @@ pub fn change(text: String, stage_id: Option<String>) -> Result<()> {
         validate_stage_id(id)?;
     }
 
-    let work_dir = get_work_dir()?;
+    let work_dir = get_or_create_work_dir()?;
     let stage = stage_id
         .or_else(|| std::env::var("LOOM_STAGE_ID").ok())
-        .ok_or_else(|| anyhow::anyhow!("No stage ID provided or detected. Use --stage <id>"))?;
+        .unwrap_or_else(|| AD_HOC_STAGE_ID.to_string());
 
     let entry = MemoryEntry::new(MemoryEntryType::Change, text.clone());
     append_entry(&work_dir, &stage, &entry)?;
@@ -135,10 +194,10 @@ pub fn question(text: String, stage_id: Option<String>) -> Result<()> {
         validate_stage_id(id)?;
     }
 
-    let work_dir = get_work_dir()?;
+    let work_dir = get_or_create_work_dir()?;
     let stage = stage_id
         .or_else(|| std::env::var("LOOM_STAGE_ID").ok())
-        .ok_or_else(|| anyhow::anyhow!("No stage ID provided or detected. Use --stage <id>"))?;
+        .unwrap_or_else(|| AD_HOC_STAGE_ID.to_string());
 
     let entry = MemoryEntry::new(MemoryEntryType::Question, text.clone());
     append_entry(&work_dir, &stage, &entry)?;
@@ -157,7 +216,13 @@ pub fn query(search: String, stage_id: Option<String>) -> Result<()> {
         validate_stage_id(id)?;
     }
 
-    let work_dir = get_work_dir()?;
+    let Some(work_dir) = get_work_dir_readonly() else {
+        println!(
+            "{} No memory recorded yet (no .work directory found)",
+            "ℹ".blue()
+        );
+        return Ok(());
+    };
 
     let stages_to_search: Vec<String> = match stage_id {
         Some(id) => vec![id],
@@ -259,7 +324,13 @@ pub fn list(stage_id: Option<String>, entry_type: Option<String>) -> Result<()> 
         validate_stage_id(id)?;
     }
 
-    let work_dir = get_work_dir()?;
+    let Some(work_dir) = get_work_dir_readonly() else {
+        println!(
+            "{} No memory recorded yet (no .work directory found)",
+            "ℹ".blue()
+        );
+        return Ok(());
+    };
     let type_filter: Option<MemoryEntryType> = entry_type.map(|t| t.parse()).transpose()?;
 
     // Explicit stage: scope to that single journal.
@@ -331,7 +402,13 @@ pub fn show(stage_id: Option<String>, all: bool) -> Result<()> {
         validate_stage_id(id)?;
     }
 
-    let work_dir = get_work_dir()?;
+    let Some(work_dir) = get_work_dir_readonly() else {
+        println!(
+            "{} No memory recorded yet (no .work directory found)",
+            "ℹ".blue()
+        );
+        return Ok(());
+    };
 
     if all {
         let journals = list_journals(&work_dir)?;
@@ -386,4 +463,163 @@ pub fn show(stage_id: Option<String>, all: bool) -> Result<()> {
     println!("\n{}", "═".repeat(60));
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serial_test::serial;
+    use std::process::Command;
+    use tempfile::TempDir;
+
+    /// Create a temp dir with a real `git init`-ed repo. Required because
+    /// `get_or_create_work_dir`/`find_repo_root_from_cwd` only trust a
+    /// candidate root that actually has a `.git` entry.
+    fn init_git_repo() -> TempDir {
+        let temp_dir = TempDir::new().unwrap();
+        let run_git = |args: &[&str]| {
+            Command::new("git")
+                .args(args)
+                .current_dir(temp_dir.path())
+                .output()
+                .unwrap()
+        };
+        run_git(&["init", "--initial-branch=main"]);
+        run_git(&["config", "user.email", "test@test.com"]);
+        run_git(&["config", "user.name", "Test"]);
+        temp_dir
+    }
+
+    /// Restores cwd and `LOOM_STAGE_ID` on drop. Tests mutate process-global
+    /// state (cwd, env vars) so `#[serial]` plus this guard keep them isolated.
+    struct EnvGuard {
+        original_dir: std::path::PathBuf,
+        original_stage_id: Option<String>,
+    }
+
+    impl EnvGuard {
+        fn new() -> Self {
+            Self {
+                original_dir: env::current_dir().unwrap(),
+                original_stage_id: env::var("LOOM_STAGE_ID").ok(),
+            }
+        }
+    }
+
+    impl Drop for EnvGuard {
+        fn drop(&mut self) {
+            env::set_current_dir(&self.original_dir).unwrap();
+            match &self.original_stage_id {
+                Some(v) => env::set_var("LOOM_STAGE_ID", v),
+                None => env::remove_var("LOOM_STAGE_ID"),
+            }
+        }
+    }
+
+    #[test]
+    #[serial]
+    fn note_creates_work_dir_when_missing_using_ad_hoc_stage() {
+        let _guard = EnvGuard::new();
+        env::remove_var("LOOM_STAGE_ID");
+        let repo = init_git_repo();
+        env::set_current_dir(repo.path()).unwrap();
+        assert!(!repo.path().join(".work").exists());
+
+        note("probe text".to_string(), None).unwrap();
+
+        let journal_path = repo.path().join(".work/memory/ad-hoc.md");
+        assert!(
+            journal_path.exists(),
+            ".work/memory/ad-hoc.md should be auto-created"
+        );
+        let content = std::fs::read_to_string(&journal_path).unwrap();
+        assert!(content.contains("probe text"));
+    }
+
+    #[test]
+    #[serial]
+    fn note_uses_loom_stage_id_env_var_over_sentinel() {
+        let _guard = EnvGuard::new();
+        let repo = init_git_repo();
+        env::set_current_dir(repo.path()).unwrap();
+        env::set_var("LOOM_STAGE_ID", "env-stage");
+
+        note("from env".to_string(), None).unwrap();
+
+        assert!(repo.path().join(".work/memory/env-stage.md").exists());
+        assert!(!repo.path().join(".work/memory/ad-hoc.md").exists());
+    }
+
+    #[test]
+    #[serial]
+    fn note_explicit_stage_overrides_env_var() {
+        let _guard = EnvGuard::new();
+        let repo = init_git_repo();
+        env::set_current_dir(repo.path()).unwrap();
+        env::set_var("LOOM_STAGE_ID", "env-stage");
+
+        note("explicit wins".to_string(), Some("cli-stage".to_string())).unwrap();
+
+        assert!(repo.path().join(".work/memory/cli-stage.md").exists());
+        assert!(!repo.path().join(".work/memory/env-stage.md").exists());
+    }
+
+    #[test]
+    #[serial]
+    fn note_outside_git_repo_still_fails() {
+        let _guard = EnvGuard::new();
+        env::remove_var("LOOM_STAGE_ID");
+        // A plain temp dir (no `git init`) has no `.git` anywhere in its
+        // ancestry, so this must fail exactly like the pre-existing behavior.
+        let plain_dir = TempDir::new().unwrap();
+        env::set_current_dir(plain_dir.path()).unwrap();
+
+        let result = note("should not be recorded".to_string(), None);
+
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains(".work directory not found"));
+        assert!(!plain_dir.path().join(".work").exists());
+    }
+
+    #[test]
+    #[serial]
+    fn list_and_show_degrade_without_creating_work_dir() {
+        let _guard = EnvGuard::new();
+        let repo = init_git_repo();
+        env::set_current_dir(repo.path()).unwrap();
+
+        assert!(list(None, None).is_ok());
+        assert!(
+            !repo.path().join(".work").exists(),
+            "list must not create .work"
+        );
+
+        assert!(show(None, true).is_ok());
+        assert!(
+            !repo.path().join(".work").exists(),
+            "show --all must not create .work"
+        );
+    }
+
+    #[test]
+    #[serial]
+    fn note_reuses_existing_work_dir_without_recreating() {
+        let _guard = EnvGuard::new();
+        env::remove_var("LOOM_STAGE_ID");
+        let repo = init_git_repo();
+        env::set_current_dir(repo.path()).unwrap();
+        // Pre-existing `.work` (as a real loom plan would leave behind) must
+        // be found by `get_work_dir()` and reused, not recreated.
+        std::fs::create_dir_all(repo.path().join(".work")).unwrap();
+
+        note("reuse me".to_string(), None).unwrap();
+
+        let journal_path = repo.path().join(".work/memory/ad-hoc.md");
+        assert!(journal_path.exists());
+        let content = std::fs::read_to_string(&journal_path).unwrap();
+        assert!(content.contains("reuse me"));
+    }
 }
