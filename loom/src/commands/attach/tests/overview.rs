@@ -281,6 +281,30 @@ fn viewer_hardening_is_ordered_most_important_first() {
         "the viewer must turn mouse capture OFF, never on"
     );
 
+    // `kmous@` closes the hole `mouse off` leaves: claude's own mouse-mode
+    // request would otherwise be mirrored out to the operator's terminal, and
+    // every drag forwarded back into the agent — where claude's clipboard
+    // copy (`tmux load-buffer -w -`) crashes the tmux 3.6a stage server.
+    // Asserted by value: the entry must DELETE the capability for every TERM,
+    // in an indexed slot so re-running the hardening on the same long-lived
+    // viewer server stays idempotent.
+    let kmous = position("terminal-overrides[99]");
+    assert_eq!(
+        harden.get(kmous + 1).map(String::as_str),
+        Some("*:kmous@"),
+        "the viewer must delete the kmous capability for every client TERM"
+    );
+    assert!(
+        mouse < kmous,
+        "the kmous override's indexed-array syntax is the likelier rejection \
+         on an old tmux; it must not be able to abort `mouse off`"
+    );
+    assert!(
+        kmous < format,
+        "the cosmetic format string must stay last so a tmux that rejects it \
+         cannot abort the kmous override"
+    );
+
     assert_eq!(
         harden.get(exit_empty + 1).map(String::as_str),
         Some("off"),

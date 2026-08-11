@@ -216,3 +216,29 @@ fn stage_servers_force_mouse_capture_off() {
         "mouse capture must be forced OFF on servers loom creates"
     );
 }
+
+#[test]
+fn stage_servers_delete_the_kmous_capability() {
+    // `mouse off` is not enough on its own: claude enables all-motion mouse
+    // tracking in its pane, tmux mirrors that mode out to any attached
+    // client's terminal whenever that terminal has the `kmous` capability,
+    // and with `mouse off` incoming client mouse input is forwarded straight
+    // into the pane app. A drag then becomes app mouse events inside claude,
+    // claude copies its "selection" with `tmux load-buffer -w -`, and tmux
+    // 3.6a crashes serving that with a client attached — the
+    // `server exited unexpectedly` stage deaths. Deleting `kmous` for every
+    // client TERM stops mouse mode from ever reaching the terminal, so drags
+    // stay native emulator selection and no event reaches the agent.
+    //
+    // Asserted by VALUE. The entry must delete the capability (`@`) for every
+    // TERM (`*`), and must use an indexed slot so re-application is
+    // idempotent and the operator's own override entries survive.
+    let along = PRESENTATION_OPTIONS
+        .iter()
+        .find(|(option, _)| *option == "terminal-overrides[99]")
+        .expect("stage servers must pin an indexed terminal-overrides entry");
+    assert_eq!(
+        along.1, "*:kmous@",
+        "the override must delete kmous for every client TERM"
+    );
+}

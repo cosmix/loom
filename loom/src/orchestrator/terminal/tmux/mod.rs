@@ -35,19 +35,37 @@ pub use socket::{
 /// Server options loom forces on every stage server it creates, applied
 /// best-effort after the spawn.
 ///
-/// `status off` is cosmetic. `mouse off` is not. tmux reads the operator's
-/// `~/.tmux.conf` at `start-server`, so a server loom creates inherits
-/// whatever that file sets — and `set -g mouse on` is a common setting. With
-/// mouse capture on, a drag inside an agent's pane is consumed by tmux (which
-/// enters copy-mode) instead of reaching the terminal emulator, so the
-/// operator cannot select an agent's output with the mouse at all. Off also
-/// matches how these panes are used: a surface for reading and copying, not
-/// an interactive tmux workspace.
+/// `status off` is cosmetic. The other two are not:
 ///
-/// Inheriting the operator's whole config is the general hazard; this
-/// neutralises the one setting known to break reading agent output. The
-/// viewer applies the same override — see `commands/attach/overview.rs`.
-const PRESENTATION_OPTIONS: &[(&str, &str)] = &[("status", "off"), ("mouse", "off")];
+/// - `mouse off` — tmux reads the operator's `~/.tmux.conf` at
+///   `start-server`, and `set -g mouse on` is a common setting. With capture
+///   on, tmux's own root-table mouse bindings are armed inside agent panes
+///   (including the right-click menu whose `Kill` entry ends the pane).
+///
+/// - `terminal-overrides[99] *:kmous@` — `mouse off` alone is NOT enough.
+///   claude enables all-motion mouse tracking (1003+1006) in its pane, and
+///   tmux mirrors the active pane's mouse mode out to the attached client's
+///   terminal — mouse option regardless — whenever that terminal has the
+///   `kmous` capability (verified in tmux 3.6a `tty.c`; and with `mouse off`,
+///   incoming client mouse input is forwarded straight into the pane app,
+///   bypassing key tables entirely). So the operator's drag is consumed as
+///   app mouse events instead of selecting text, claude treats it as a TUI
+///   selection and copies it by running `tmux load-buffer -w -` against this
+///   server — and tmux 3.6a CRASHES serving `load-buffer -w` with an attached
+///   client, killing the server, SIGHUP-ing claude, and presenting as
+///   `server exited unexpectedly` plus a filed stage crash. Deleting `kmous`
+///   for every client TERM (`*`) means no loom server ever puts a terminal
+///   into mouse mode: drags stay in the emulator as native selection and no
+///   event ever reaches the agent. Index 99 makes re-application idempotent
+///   and leaves the operator's own override entries (e.g. truecolor) intact.
+///   See `doc/loom/knowledge/mistakes/tmux-backend.md`.
+///
+/// The viewer applies the same overrides — see `commands/attach/overview.rs`.
+const PRESENTATION_OPTIONS: &[(&str, &str)] = &[
+    ("status", "off"),
+    ("mouse", "off"),
+    ("terminal-overrides[99]", "*:kmous@"),
+];
 
 const TMUX_SPAWN_TIMEOUT: Duration = Duration::from_secs(20);
 const TMUX_PROBE_TIMEOUT: Duration = Duration::from_secs(5);

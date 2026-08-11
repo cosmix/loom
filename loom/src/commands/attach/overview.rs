@@ -79,18 +79,35 @@ const REMAIN_ON_EXIT_FLAGS: &[&str] = &[
 ///
 /// Most important first: tmux abandons the REST of a sequence when one command
 /// errors, so each entry is placed after everything it must not be able to
-/// abort. `remain-on-exit-format` is last because it is purely cosmetic and
-/// the one entry whose availability varies across tmux builds.
+/// abort. The `kmous@` override sits after `mouse off` because its indexed
+/// array syntax is the more likely of the two to be rejected by an old tmux,
+/// and a rejection must not take `mouse off` with it. `remain-on-exit-format`
+/// is last because it is purely cosmetic and the one entry whose availability
+/// varies across tmux builds.
 ///
-/// # `mouse off`
+/// # `mouse off` and `terminal-overrides[99] *:kmous@`
 ///
 /// Not cosmetic, and not about the viewer's own behaviour. tmux reads the
 /// operator's `~/.tmux.conf` at `start-server`, so `set -g mouse on` — a
-/// common setting — is in force in every server loom creates. Mouse capture
-/// then consumes drags inside a pane (tmux enters copy-mode) instead of
-/// letting them reach the terminal emulator, so the operator cannot select an
-/// agent's output at all. The same override is applied to stage servers in
-/// `orchestrator/terminal/tmux/mod.rs`.
+/// common setting — is in force in every server loom creates; `mouse off`
+/// disarms tmux's own mouse bindings (menus, copy-mode) inside the viewer.
+///
+/// The `kmous@` override closes the hole `mouse off` leaves open: claude
+/// enables all-motion mouse tracking in its pane, the inner server mirrors
+/// that to its client (the viewer pane), and the viewer would mirror it again
+/// to the operator's real terminal — which then reports every drag as app
+/// mouse events instead of selecting text. Those events are forwarded inward
+/// to claude (with `mouse off` tmux forwards client mouse input straight to
+/// the pane app), claude copies the "selection" via `tmux load-buffer -w -`,
+/// and tmux 3.6a crashes serving that — the `server exited unexpectedly`
+/// stage deaths. Deleting the `kmous` capability for every client TERM stops
+/// tmux from ever enabling mouse mode on the operator's terminal, so drags
+/// stay native emulator selection. The indexed form (`[99]`) is idempotent —
+/// this sequence re-runs on every `loom attach` against the same long-lived
+/// server — and preserves the operator's own override entries. The same
+/// override is applied to stage servers in `orchestrator/terminal/tmux/mod.rs`,
+/// which breaks the chain at its source; this one is defence in depth for the
+/// operator-facing terminal.
 ///
 /// # Cost
 ///
@@ -118,6 +135,11 @@ const VIEWER_HARDENING: &[&str] = &[
     "-g",
     "mouse",
     "off",
+    ";",
+    "set-option",
+    "-g",
+    "terminal-overrides[99]",
+    "*:kmous@",
     ";",
     "set-option",
     "-g",
