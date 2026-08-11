@@ -4,6 +4,8 @@
 use super::socket::tests::TmuxTmpDirGuard;
 use super::*;
 use crate::models::session::SessionType;
+use crate::models::stage::Stage;
+use crate::models::worktree::Worktree;
 use serial_test::serial;
 use std::path::PathBuf;
 
