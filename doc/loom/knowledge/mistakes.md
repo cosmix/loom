@@ -580,7 +580,7 @@ itself instead of delegating — mainstream Rust edits at the most expensive tie
 
 **Why:** the delegation rule was framed as "ORCHESTRATION IS ALWAYS OPUS / the orchestrator does
 NOT implement." A fable session does not read itself as "the opus orchestrator," so the sentence
-that should have bound it appeared to describe someone else. The fable *implementer* tier also
+that should have bound it appeared to describe someone else. The fable _implementer_ tier also
 listed "major bugs", and an agent that has just diagnosed a bug will classify it as major — the
 exception swallowed the rule at exactly the moment the rule mattered.
 
