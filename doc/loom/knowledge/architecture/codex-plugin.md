@@ -117,6 +117,36 @@ lane looked healthy there; the native bubblewrap sandbox enforces the allowlist 
 and the auto-mode classifier denies it, which is how the lane went from "sandboxed" to "unusable" —
 see [Codex Lane Rogue Wrapper](../mistakes/codex-lane-rogue-wrapper.md).
 
+## Codex's own sandbox must exclude /tmp (2026-08-11)
+
+`allowWrite` was necessary but not sufficient: codex (0.147+) wraps every exec in its OWN nested
+bubblewrap sandbox. In `workspace-write` mode its default writable roots are the cwd, `/tmp`, and
+`$TMPDIR`, and it masks `.git` under every writable root (`codex-rs/linux-sandbox/src/bwrap.rs`).
+`/tmp/.git` does not exist, so bwrap must create that mountpoint — and the outer stage sandbox
+keeps `/tmp` read-only (only `/tmp/claude` and `$TMPDIR` are writable), so every codex exec dies at
+namespace setup with `bwrap: Can't mkdir /tmp/.git: Read-only file system` before the model runs a
+single command. Reproduce and verify without a model call:
+
+```bash
+codex sandbox -c sandbox_mode="workspace-write" -- echo hi            # bwrap: Can't mkdir /tmp/.git
+codex sandbox -c sandbox_mode="workspace-write" \
+  -c sandbox_workspace_write.exclude_slash_tmp=true -- echo hi        # hi
+```
+
+The fix is `[sandbox_workspace_write] exclude_slash_tmp = true` in `~/.codex/config.toml` — the only
+channel loom controls, because the companion spawns `codex app-server` itself and no `-c` override
+can be threaded through a forward. `loom/src/codex.rs` owns detection
+(`codex_config_excludes_slash_tmp`) and the comment-preserving edit
+(`ensure_codex_config_excludes_slash_tmp`, `toml_edit`); `loom repair --fix` applies it and
+`advisory_codex_lane_preflight` (`commands/run/checks.rs`) warns at `loom run` startup when the lane
+is licensed but the key is missing. Both are Linux-gated: macOS Seatbelt needs no mountpoint mkdir,
+so there the default roots are harmless and the exclusion would only shrink codex's capability
+outside loom.
+
+Do NOT "fix" this by adding `/tmp` to the outer sandbox's `allowWrite` instead: bwrap's mountpoint
+mkdir writes through to the host, and a stray `/tmp/.git` makes git discovery under any `/tmp`
+directory find a phantom repository.
+
 ## Availability fallback: codex CLI/plugin not installed (2026-08-08)
 
 Stage licensing (`implementers` listing `codex`) says a stage MAY use the lane; it says nothing

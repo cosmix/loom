@@ -548,3 +548,49 @@ blast radius of the prefixed id (heartbeats, memory, handoffs, hook globs) and w
 knowledge completion through the daemon broker is not the fix.
 
 → [Session Identity Env](mistakes/session-identity-env.md)
+
+## Worktree Test Runs Resolve node_modules From the MAIN Repo When the Worktree Has None (2026-08-11)
+
+**What happened:** in a JS-project worktree stage (cartolyth `city-detail-popup`), codex's proof
+command `bunx vitest run …` failed with EROFS writing `node_modules/.vite-temp`, with no test
+assertions executed — while the file edits themselves landed fine.
+
+**Why:** a fresh git worktree has no `node_modules` (ignored files are not part of the checkout).
+Node module resolution walks UP from the worktree — `.worktrees/<stage>/` → `.worktrees/` → the
+MAIN repo's `node_modules/` — so test runners load dependencies from the main checkout and write
+their caches there too (vite writes `node_modules/.vite-temp/` while loading config). Both the
+codex nested sandbox and the stage sandbox refuse that write, correctly: it lands outside the
+worktree, in shared mutable state that parallel stages and the operator's checkout depend on.
+Proof it really happens: `node_modules/.vite-temp` exists in cartolyth's MAIN repo, created by a
+later unsandboxed run.
+
+**Prevention:** a plan whose stages run JS/TS tests in-session MUST provision dependencies inside
+the worktree before the first test run — an explicit first task (`bun install` from the worktree
+root) in the stage description. `setup:` does NOT cover this: it only prefixes acceptance
+commands, which `loom check` runs on the host after the session's work, not inside the session.
+
+**Fix:** never widen a sandbox toward the main repo's `node_modules` — the denial is the system
+working. Install dependencies in the worktree, then re-run the tests.
+
+## A Fable Session Implemented the Fix It Had Just Diagnosed (2026-08-11)
+
+**What happened:** a fable main agent investigated a bug, understood it, and then wrote the fix
+itself instead of delegating — mainstream Rust edits at the most expensive tier available.
+
+**Why:** the delegation rule was framed as "ORCHESTRATION IS ALWAYS OPUS / the orchestrator does
+NOT implement." A fable session does not read itself as "the opus orchestrator," so the sentence
+that should have bound it appeared to describe someone else. The fable *implementer* tier also
+listed "major bugs", and an agent that has just diagnosed a bug will classify it as major — the
+exception swallowed the rule at exactly the moment the rule mattered.
+
+**Prevention:** watch for the transition from "I now understand the bug" to the first Edit call.
+That boundary is the delegation point, not a continuation of the investigation. Understanding the
+fix is what makes a cheap subagent viable, so the cheaper the fix could now be, the stronger the
+pull to type it yourself. Scope guidance to the SESSION's model, never to a model name assumed
+from the role.
+
+**Fix:** `CLAUDE.md.template` hard stop 6 (DELEGATION) plus Engineering Discipline E (Cheapest
+capable agent) and a rewritten Rule 7 Model allocation: the rule is now stated model-independently
+("the main agent never implements — whatever model it runs"), investigation is defined as ending
+in a brief, the fable exception is narrowed from "major bugs" to "a bug that survived a delegated
+fix attempt", and escalation requires evidence (a failed attempt), not a hunch.
