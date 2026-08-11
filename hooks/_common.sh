@@ -81,6 +81,189 @@ BEGIN { inside = 0; marker = "" }
     printf '%s' "$phase2"
 }
 
+# loom_tokenize_command - Permissively tokenize a shell command string into
+# argv-shaped words, populating the global array LOOM_TOKENS.
+#
+# Unlike the strict parser in codex-forward-guard.sh (which must REJECT any
+# command containing an operator), this walks the string with a plain /
+# single / double quote state machine and tolerates arbitrary shell text -
+# it reports structure, it does not validate or reject shell syntax.
+#
+# Alongside real argv words, LOOM_TOKENS carries the literal sentinel token
+# "%%SEP%%" at every point a new command position begins: after `;` `&` `|`
+# a newline, `<`, `>`, `(`, `)`, a backtick, or the two-character opener
+# `$(` (in `double` state only the substitution openers - backtick and `$(`
+# - count; the rest are literal there, as in real bash). Runs of separators
+# collapse to ONE sentinel, so `&&` does not yield two. A token that came
+# from quoted text is stored with its quotes removed and its escapes
+# resolved, exactly as bash would pass it in argv - the sentinel is never
+# tagged onto a real token, and a real token is never mistaken for one
+# because "%%SEP%%" is pushed only from the separator-handling branches
+# below, never appended to `token`.
+#
+# Arguments:
+#   $1 - The command string to tokenize
+#
+# Output:
+#   Populates the global array LOOM_TOKENS on stdout as a side effect (no
+#   stdout output of its own). Returns 0 on a clean parse (ended back in the
+#   `plain` state). Returns 1 if the string ends inside an unterminated
+#   quote - callers should treat that as "could not tokenize" and fall back
+#   to a more conservative check rather than trust a partial LOOM_TOKENS.
+#
+# Bash 3.2+ compatible: no associative arrays, no `${arr[-1]}` negative
+# indexing, no `declare -n` namerefs.
+loom_tokenize_command() {
+    local input="$1"
+    local state=plain
+    local token=""
+    local started=0
+    local last_was_sep=0
+    local length=${#input}
+    local i char next
+
+    LOOM_TOKENS=()
+
+    for ((i = 0; i < length; i++)); do
+        char="${input:$i:1}"
+        case "$state" in
+        plain)
+            case "$char" in
+            ' ' | $'\t')
+                if [[ $started -eq 1 ]]; then
+                    LOOM_TOKENS+=("$token")
+                    token=""
+                    started=0
+                    last_was_sep=0
+                fi
+                ;;
+            $'\n' | ';' | '&' | '|' | '<' | '>' | '(' | ')' | '`')
+                if [[ $started -eq 1 ]]; then
+                    LOOM_TOKENS+=("$token")
+                    token=""
+                    started=0
+                    last_was_sep=0
+                fi
+                if [[ $last_was_sep -eq 0 ]]; then
+                    LOOM_TOKENS+=("%%SEP%%")
+                    last_was_sep=1
+                fi
+                ;;
+            "'")
+                state=single
+                started=1
+                ;;
+            '"')
+                state=double
+                started=1
+                ;;
+            '\')
+                if ((i + 1 < length)); then
+                    i=$((i + 1))
+                    token+="${input:$i:1}"
+                else
+                    token+='\'
+                fi
+                started=1
+                ;;
+            '$')
+                if [[ "${input:$((i + 1)):1}" == "(" ]]; then
+                    if [[ $started -eq 1 ]]; then
+                        LOOM_TOKENS+=("$token")
+                        token=""
+                        started=0
+                        last_was_sep=0
+                    fi
+                    if [[ $last_was_sep -eq 0 ]]; then
+                        LOOM_TOKENS+=("%%SEP%%")
+                        last_was_sep=1
+                    fi
+                    i=$((i + 1))
+                else
+                    token+="$char"
+                    started=1
+                fi
+                ;;
+            *)
+                token+="$char"
+                started=1
+                ;;
+            esac
+            ;;
+        single)
+            if [[ "$char" == "'" ]]; then
+                state=plain
+            else
+                token+="$char"
+            fi
+            ;;
+        double)
+            case "$char" in
+            '"')
+                state=plain
+                ;;
+            '\')
+                if ((i + 1 < length)); then
+                    next="${input:$((i + 1)):1}"
+                    case "$next" in
+                    '"' | '\' | '$' | '`')
+                        token+="$next"
+                        i=$((i + 1))
+                        ;;
+                    *)
+                        token+='\'
+                        ;;
+                    esac
+                else
+                    token+='\'
+                fi
+                ;;
+            '`')
+                if [[ $started -eq 1 ]]; then
+                    LOOM_TOKENS+=("$token")
+                    token=""
+                    started=0
+                    last_was_sep=0
+                fi
+                if [[ $last_was_sep -eq 0 ]]; then
+                    LOOM_TOKENS+=("%%SEP%%")
+                    last_was_sep=1
+                fi
+                state=plain
+                ;;
+            '$')
+                if [[ "${input:$((i + 1)):1}" == "(" ]]; then
+                    if [[ $started -eq 1 ]]; then
+                        LOOM_TOKENS+=("$token")
+                        token=""
+                        started=0
+                        last_was_sep=0
+                    fi
+                    if [[ $last_was_sep -eq 0 ]]; then
+                        LOOM_TOKENS+=("%%SEP%%")
+                        last_was_sep=1
+                    fi
+                    i=$((i + 1))
+                    state=plain
+                else
+                    token+="$char"
+                fi
+                ;;
+            *)
+                token+="$char"
+                ;;
+            esac
+            ;;
+        esac
+    done
+
+    if [[ $started -eq 1 ]]; then
+        LOOM_TOKENS+=("$token")
+    fi
+
+    [[ "$state" == plain ]]
+}
+
 # loom_debug - Emit a debug line to stderr when LOOM_HOOK_DEBUG=1 (or the
 # legacy COMMIT_FILTER_DEBUG=1). Defined here rather than relying on the
 # caller's own `debug`, so every hook that sources this file can call it.

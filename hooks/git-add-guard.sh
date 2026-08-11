@@ -26,6 +26,20 @@
 #     git add .workdir       (.work is substring)
 #     git add doc/foo.md     (no .work at all)
 #     git add network.md     (no .work at all)
+#
+# Test cases for quoting (the command is tokenized with loom_tokenize_command
+# before scanning, so quoting changes ARGUMENT VALUES, not what gets matched):
+#   SHOULD BLOCK:
+#     git add '-A'            (quoted real argument - value is still -A)
+#     git add ".work"         (quoted real argument - value is still .work)
+#     cargo build && git add -A   (git add reached through a separator)
+#     echo $(git add -A)          (git add inside a command substitution)
+#   SHOULD ALLOW:
+#     echo 'Never run git add -A or git add . because it stages .work'
+#         (prose INSIDE a quoted argument - no git invocation exists here)
+#     the same prose inside double quotes
+#     a multi-line `git commit -m "...Co-Authored-By: ..."` body (the
+#         message text is one quoted argument to -m, never a git-add argument)
 
 set -euo pipefail
 
@@ -60,13 +74,143 @@ if [[ "$TOOL_NAME" != "Bash" ]] || [[ -z "$COMMAND" ]]; then
     exit 0
 fi
 
+# scan_git_add_tokens - Walk a tokenized command (as produced by
+# loom_tokenize_command: real argv tokens plus "%%SEP%%" command-boundary
+# sentinels) looking for a `git add` invocation whose arguments would stage
+# everything or stage .work.
+#
+# A token is at a COMMAND POSITION when it is index 0 or immediately follows
+# a "%%SEP%%" sentinel - that is how `foo && git add -A` is still caught,
+# and how `git add -A` inside `$( )` is still caught (loom_tokenize_command
+# pushes a sentinel at the `$(` opener). Leading VAR=value environment
+# assignments at a command position are skipped before looking for `git`.
+#
+# Once `git` is found, this looks at the tokens that follow for the `add`
+# subcommand, skipping git's own global options: `-C <dir>` and `-c <cfg>`
+# take a separate argument and both are skipped; any other `-`-prefixed
+# token is assumed to take no argument and is skipped on its own. This is
+# deliberately modest - it is not a full git CLI parser.
+#
+# Returns 1 (block) if a dangerous `git add` invocation is found, 0 (allow)
+# otherwise.
+scan_git_add_tokens() {
+    local -a tokens=("$@")
+    local n=${#tokens[@]}
+    local i=0
+    local at_cmd_pos=1
+    local tok gt at
+    local found_add seen_dashdash
+
+    while ((i < n)); do
+        tok="${tokens[$i]}"
+
+        if [[ "$tok" == "%%SEP%%" ]]; then
+            at_cmd_pos=1
+            i=$((i + 1))
+            continue
+        fi
+
+        if [[ $at_cmd_pos -eq 1 ]]; then
+            # Skip leading VAR=value environment assignments
+            while ((i < n)) && [[ "${tokens[$i]}" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]]; do
+                i=$((i + 1))
+            done
+            if ((i >= n)); then
+                break
+            fi
+            tok="${tokens[$i]}"
+
+            if [[ "$tok" == "git" || "$tok" == */git ]]; then
+                i=$((i + 1))
+                found_add=0
+                while ((i < n)); do
+                    gt="${tokens[$i]}"
+                    [[ "$gt" == "%%SEP%%" ]] && break
+                    if [[ "$gt" == "-C" || "$gt" == "-c" ]]; then
+                        i=$((i + 2))
+                        continue
+                    fi
+                    if [[ "$gt" == "add" ]]; then
+                        found_add=1
+                        i=$((i + 1))
+                        break
+                    fi
+                    if [[ "$gt" == -* ]]; then
+                        i=$((i + 1))
+                        continue
+                    fi
+                    # Some other git subcommand, not `add` - leave i pointing
+                    # at it and stop looking.
+                    break
+                done
+
+                if [[ $found_add -eq 1 ]]; then
+                    seen_dashdash=0
+                    while ((i < n)); do
+                        at="${tokens[$i]}"
+                        [[ "$at" == "%%SEP%%" ]] && break
+                        if [[ $seen_dashdash -eq 0 && "$at" == "--" ]]; then
+                            seen_dashdash=1
+                            i=$((i + 1))
+                            continue
+                        fi
+                        if [[ $seen_dashdash -eq 0 ]]; then
+                            if [[ "$at" == "--all" ]]; then
+                                debug "BLOCKED by token scan: git add --all"
+                                return 1
+                            fi
+                            if [[ "$at" =~ ^-[a-zA-Z]*A[a-zA-Z]*$ ]]; then
+                                debug "BLOCKED by token scan: git add $at"
+                                return 1
+                            fi
+                        fi
+                        if [[ "$at" == "." ]]; then
+                            debug "BLOCKED by token scan: git add ."
+                            return 1
+                        fi
+                        if [[ "$at" == ".work" || "$at" == .work/* ]]; then
+                            debug "BLOCKED by token scan: git add $at"
+                            return 1
+                        fi
+                        i=$((i + 1))
+                    done
+                    at_cmd_pos=0
+                    continue
+                fi
+            fi
+        fi
+
+        at_cmd_pos=0
+        i=$((i + 1))
+    done
+
+    return 0
+}
+
 # Check for dangerous git add patterns
 check_dangerous_patterns() {
     local cmd="$1"
 
-    # Strip heredoc bodies and -m/--message content to avoid false positives
+    # Strip heredoc bodies and -m/--message content to avoid false positives.
+    # A heredoc body is not quoted, so its words would otherwise tokenize as
+    # real command tokens.
     local stripped
     stripped=$(strip_embedded_content "$cmd")
+
+    if loom_tokenize_command "$stripped"; then
+        debug "Tokenized into ${#LOOM_TOKENS[@]} token(s): ${LOOM_TOKENS[*]}"
+        if ! scan_git_add_tokens "${LOOM_TOKENS[@]}"; then
+            return 1
+        fi
+        debug "ALLOWED: token scan found no dangerous git add pattern"
+        return 0
+    fi
+
+    # Fallback: the command has an unterminated quote, so it is not valid
+    # bash anyway and loom_tokenize_command could not produce a trustworthy
+    # token list. Fall back to the regex patterns this hook used before
+    # tokenizing existed, so today's protection is never weaker than it was.
+    debug "Tokenizer reported an unterminated quote - falling back to the regex scan"
 
     # Normalize the stripped version: remove extra whitespace
     local normalized
