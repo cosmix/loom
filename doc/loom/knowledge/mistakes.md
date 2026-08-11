@@ -625,14 +625,14 @@ explicit non-empty wire encoding.
 git repo?" before it would create a `.work` directory. `find_repo_root_from_cwd` returns
 `Option<PathBuf>`, so `None` reads as "not in a repo" — but it is not. After walking to the
 filesystem root without finding a `.git`, it ends at
-`git/worktree/paths.rs:84-85` with an explicit *"Fallback: return the original cwd if nothing else
-works"* → `cwd.canonicalize().ok()`. Outside any repo it therefore returns `Some(cwd)`.
+`git/worktree/paths.rs:84-85` with an explicit _"Fallback: return the original cwd if nothing else
+works"_ → `cwd.canonicalize().ok()`. Outside any repo it therefore returns `Some(cwd)`.
 
-**Why it matters:** the name says *find repo root* and the `Option` implies a search that can
+**Why it matters:** the name says _find repo root_ and the `Option` implies a search that can
 fail, so `if let Some(root)` looks like a repo check and compiles clean. Here it would have
 scattered a `.work` directory into any directory the command was ever run from.
 
-**Prevention:** treat `find_repo_root_from_cwd` as *"the best base path to use"*, never as a repo
+**Prevention:** treat `find_repo_root_from_cwd` as _"the best base path to use"_, never as a repo
 predicate. When you need the predicate, confirm it yourself:
 `find_repo_root_from_cwd(&cwd).filter(|root| root.join(".git").exists())`.
 

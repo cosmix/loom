@@ -528,7 +528,7 @@ operation. If this is ever observed in the wild, split the response so callers c
 
 `git-add-guard.sh` was converted to a token scan (see
 `mistakes/shell-command-matchers.md`) because regexing the raw command string cannot tell an
-argument's *value* from an argument's *mention*. That bug class is not specific to it. These
+argument's _value_ from an argument's _mention_. That bug class is not specific to it. These
 still match against raw strings and share it:
 
 | Hook                        | Shared helper used            |
