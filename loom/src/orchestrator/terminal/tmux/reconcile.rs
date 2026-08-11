@@ -54,16 +54,22 @@ struct PaneInfo {
 /// 2. Split on whitespace and find the first `-L` token; take the token
 ///    right after it. No `-L`, or nothing after it, means this is not a
 ///    loom pane.
-/// 3. Strip any surrounding `"` or `'` from that token.
-/// 4. The result must start with `loom-` (session sockets are
-///    `loom-<session.id>`, see `super::socket_name`).
+/// 3. The token must be quote-SYMMETRIC — quoted at both ends or neither.
+///    A quoted value containing whitespace splits at step 2, handing back a
+///    one-sided fragment like `'loom-a`; misattributing it would make Rule 1
+///    re-add the "missing" real socket on every tick, growing the viewer by
+///    one pane per tick until `split-window` runs out of room.
+/// 4. Strip any surrounding `"` or `'` from that token.
+/// 5. The result must start with `loom-` and contain only `[A-Za-z0-9_-]`
+///    (the id charset `validate_id` enforces, and session sockets are
+///    `loom-<session.id>` — see `super::socket_name`).
 ///
-/// Rule 4 is a deliberate SAFETY TIGHTENING, not decoration. Without it, an
+/// Rule 5 is a deliberate SAFETY TIGHTENING, not decoration. Without it, an
 /// operator who split their own pane and ran a plain `tmux attach-session`
-/// there would be attributed as a loom pane by rules 1-3 and then killed by
-/// [`reconcile_steps`]'s duplicate/removal logic. Loom session ids
+/// there would be attributed as a loom pane by the earlier rules and then
+/// killed by [`reconcile_steps`]'s duplicate/removal logic. Loom session ids
 /// (`session-<uuid8>-<unixts>`, `[A-Za-z0-9-]` only) need no unescaping, so
-/// the stripped token is unambiguous once rule 4 passes.
+/// the stripped token is unambiguous once rule 5 passes.
 fn parse_pane_socket(start_command: &str) -> Option<String> {
     if !start_command.contains("attach-session") {
         return None;
@@ -71,8 +77,14 @@ fn parse_pane_socket(start_command: &str) -> Option<String> {
     let tokens: Vec<&str> = start_command.split_whitespace().collect();
     let position = tokens.iter().position(|&token| token == "-L")?;
     let raw = tokens.get(position + 1)?;
+    if raw.starts_with(['"', '\'']) != raw.ends_with(['"', '\'']) {
+        return None; // Rule 3: a fragment of a quoted value, not a socket.
+    }
     let socket = raw.trim_matches(|c| c == '"' || c == '\'');
-    if socket.starts_with("loom-") {
+    let is_identifier = socket
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_');
+    if socket.starts_with("loom-") && is_identifier {
         Some(socket.to_string())
     } else {
         None

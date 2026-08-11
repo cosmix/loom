@@ -69,6 +69,23 @@ fn parse_pane_socket_strips_surrounding_quotes_from_the_socket_token() {
 }
 
 #[test]
+fn parse_pane_socket_rejects_a_one_sided_quote_fragment_and_a_non_identifier() {
+    // A quoted socket containing whitespace splits at tokenization, handing
+    // back the fragment `'loom-a` — attributing it would make Rule 1 re-add
+    // the real socket on EVERY tick (unbounded pane growth). Rule 3 rejects
+    // the asymmetric fragment; rule 5's charset check rejects anything that
+    // is not a plain loom identifier even when the quoting is intact.
+    assert_eq!(
+        parse_pane_socket("tmux -L 'loom-a b' attach-session -t k"),
+        None
+    );
+    assert_eq!(
+        parse_pane_socket(r#"tmux -L "loom-x;rm" attach-session -t k"#),
+        None
+    );
+}
+
+#[test]
 fn parse_pane_socket_rejects_a_non_loom_socket() {
     // OPERATOR-PANE PROTECTION: if the operator splits their own pane and
     // runs a plain `tmux attach-session` against THEIR OWN socket, rules 1-3
