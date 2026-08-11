@@ -120,3 +120,20 @@ Expect `Summary: 0 issues`. `.markdownlint.json` disables MD013/MD033/MD036/MD04
 **Also check the FILE entry, not just the function.** The ledger records both, so a change that keeps every function small can still fail on the file total — and four of them can fail at once, as the codex sandbox work did (`repair.rs`, `fs/permissions/settings.rs`, `sandbox/settings.rs`, plus three functions). The move that satisfies the ledger honestly is extraction: lift the new code into a new module (`fs/permissions/codex_sandbox.rs`, `commands/repair/settings_checks.rs`), which carries no entry at all while it stays under 400 lines, then lower the now-smaller entries to their measured values. Growth is never recordable; shrinkage must be recorded.
 
 **Prevention:** before adding lines to a function, `rg '<fn name>' loom/maintainability-baseline.txt`. If it is listed, refactor rather than extend — and when the refactor drops it under the limit, DELETE the entry rather than lowering it. Prove behaviour is unchanged by regenerating the artifact and diffing (for INDEX.md: `loom knowledge index` then `git status --porcelain`, expecting no change).
+
+## A `[`link`]` to a Private Item Fails CI's Docs Job, Which No Local Gate Runs (2026-08-11)
+
+**What happened:** CI's `Documentation` job failed on main while build, test, clippy, fmt, maintainability, audit and deny were all green. Two module doc comments used intra-doc link syntax for private functions — `` [`tmux_endpoint_ready`] `` in `src/commands/attach/mod.rs` and `` [`kind_env`] `` in `src/orchestrator/terminal/native/wrapper.rs`. Both targets are private `fn`s referenced from public docs.
+
+**Why:** the job runs `cargo doc --workspace --all-features --no-deps` under `RUSTDOCFLAGS: -D warnings`, which promotes `rustdoc::private_intra_doc_links` to an error. That lint is a rustdoc lint — `cargo build`, `cargo clippy` and `cargo test` never evaluate it, so the usual pre-push loop cannot see it. Prose that merely _mentions_ a private helper is the common way to trip it.
+
+**Prevention:** if the local check before a push does not include `RUSTDOCFLAGS="-D warnings" cargo doc --workspace --all-features --no-deps`, the docs gate is untested. Run it after editing any `//!` or `///` block. When pointing prose at a private helper, use a plain code span (`` `kind_env` ``) — brackets promise a resolvable link, and only `--document-private-items` (which CI does not pass) would make it one.
+
+**Reading a CI failure without admin rights:** `gh run view <id> --log-failed` returns `HTTP 403: Must have admin rights` on this repo. The annotations endpoint does not require admin and carries both the failing step's error and every runner warning:
+
+```bash
+gh api repos/<owner>/<repo>/actions/runs/<run-id>/jobs --jq '.jobs[] | "\(.name)\t\(.conclusion)"'
+for id in $(gh api repos/<owner>/<repo>/actions/runs/<run-id>/jobs --jq '.jobs[].id'); do
+  gh api repos/<owner>/<repo>/check-runs/$id/annotations --jq '.[] | "\(.annotation_level): \(.message)"'
+done | sort -u
+```
