@@ -43,7 +43,7 @@ const CONTINUATION: &str = "\\\n";
 /// * `claude_cmd` - The claude command to execute (e.g., "claude 'prompt here'")
 /// * `working_dir` - The working directory to cd into before running claude
 /// * `kind` - The session kind. Drives the two env vars that are NOT derivable
-///   from `stage_id`; see [`kind_env`].
+///   from `stage_id`; see `kind_env`.
 ///
 /// # Returns
 /// The path to the created wrapper script

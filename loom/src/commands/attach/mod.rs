@@ -12,7 +12,7 @@
 //! Both paths apply one precondition the rest of loom deliberately does not:
 //! the target's tmux server must be accepting clients *now*. That is a
 //! strictly additional attach-time check, never a liveness source — see
-//! [`tmux_endpoint_ready`].
+//! `tmux_endpoint_ready`.
 
 mod overview;
 
