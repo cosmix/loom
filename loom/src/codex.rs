@@ -1,7 +1,7 @@
 //! Shared Codex binary resolution utilities.
 
-use anyhow::{bail, Result};
-use std::path::PathBuf;
+use anyhow::{bail, Context, Result};
+use std::path::{Path, PathBuf};
 
 /// Codex model for common implementation and integration tests (sonnet's peer tier).
 pub const CODEX_IMPLEMENTER_MODEL_TERRA: &str = "gpt-5.6-terra";
@@ -45,6 +45,82 @@ pub const CODEX_SANDBOX_DOMAINS: [&str; 4] = [
     "api.openai.com",
     "auth.openai.com",
 ];
+
+/// `~/.codex/config.toml` — the codex CLI's user configuration file.
+///
+/// This is the only sandbox-configuration channel loom controls for the lane:
+/// the forwarder's one Bash call goes through the plugin's companion runtime,
+/// which spawns `codex app-server` itself, so no `-c` CLI override can be
+/// threaded through a forward.
+pub fn codex_config_path() -> Option<PathBuf> {
+    dirs::home_dir().map(|home| home.join(".codex/config.toml"))
+}
+
+/// Whether codex's own `workspace-write` sandbox excludes `/tmp`.
+///
+/// Codex is not just sandboxed BY the Bash sandbox — it brings its own nested
+/// bubblewrap sandbox, and by default `workspace-write` claims `/tmp` as a
+/// writable root and masks `.git` under every writable root. `/tmp/.git` does
+/// not exist, so bwrap must create that mountpoint; the outer sandbox keeps
+/// `/tmp` read-only (only `/tmp/claude` and `$TMPDIR` are writable), so every
+/// sandboxed codex exec dies at namespace setup with `bwrap: Can't mkdir
+/// /tmp/.git: Read-only file system` before the model runs a single command.
+///
+/// `sandbox_workspace_write.exclude_slash_tmp = true` removes `/tmp` from the
+/// writable roots (the session `$TMPDIR` remains, and IS writable in the outer
+/// sandbox), which is the whole fix — verified empirically with
+/// `codex sandbox -c sandbox_mode="workspace-write" -- echo hi` inside a stage
+/// sandbox. Widening the outer sandbox with `allowWrite: /tmp` instead would
+/// be both broader than needed and actively hazardous: bwrap's mountpoint
+/// mkdir writes through to the host, and a stray `/tmp/.git` makes git
+/// discovery under any `/tmp` directory find a phantom repository.
+pub fn codex_config_excludes_slash_tmp(config_path: &Path) -> bool {
+    let Ok(content) = std::fs::read_to_string(config_path) else {
+        return false;
+    };
+    let Ok(doc) = content.parse::<toml_edit::DocumentMut>() else {
+        return false;
+    };
+    doc.get("sandbox_workspace_write")
+        .and_then(|table| table.get("exclude_slash_tmp"))
+        .and_then(|item| item.as_bool())
+        .unwrap_or(false)
+}
+
+/// Set `sandbox_workspace_write.exclude_slash_tmp = true` in codex's config.
+///
+/// Returns `Ok(true)` when the file was changed, `Ok(false)` when it already
+/// carried the exclusion. Comments and unrelated keys are preserved
+/// (`toml_edit`); an unparseable file is an error, never rewritten.
+pub fn ensure_codex_config_excludes_slash_tmp(config_path: &Path) -> Result<bool> {
+    if codex_config_excludes_slash_tmp(config_path) {
+        return Ok(false);
+    }
+    let content = match std::fs::read_to_string(config_path) {
+        Ok(content) => content,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => String::new(),
+        Err(err) => {
+            return Err(err).with_context(|| format!("failed to read {}", config_path.display()));
+        }
+    };
+    let mut doc = content.parse::<toml_edit::DocumentMut>().with_context(|| {
+        format!(
+            "refusing to rewrite unparseable codex config at {}",
+            config_path.display()
+        )
+    })?;
+    let table = doc
+        .entry("sandbox_workspace_write")
+        .or_insert(toml_edit::table());
+    table["exclude_slash_tmp"] = toml_edit::value(true);
+    if let Some(parent) = config_path.parent() {
+        std::fs::create_dir_all(parent)
+            .with_context(|| format!("failed to create {}", parent.display()))?;
+    }
+    std::fs::write(config_path, doc.to_string())
+        .with_context(|| format!("failed to write {}", config_path.display()))?;
+    Ok(true)
+}
 
 /// Sentinel that MUST be the first line of every codex-lane subagent prompt.
 ///
@@ -133,4 +209,67 @@ pub fn codex_lane_status() -> Result<()> {
 pub fn codex_lane_available() -> bool {
     static CACHE: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *CACHE.get_or_init(|| codex_lane_status().is_ok())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn missing_config_lacks_exclusion_and_ensure_creates_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        assert!(!codex_config_excludes_slash_tmp(&path));
+        assert!(ensure_codex_config_excludes_slash_tmp(&path).unwrap());
+        assert!(codex_config_excludes_slash_tmp(&path));
+        // Idempotent: a second ensure changes nothing.
+        assert!(!ensure_codex_config_excludes_slash_tmp(&path).unwrap());
+    }
+
+    #[test]
+    fn ensure_preserves_comments_and_unrelated_keys() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        std::fs::write(
+            &path,
+            "# user comment\nmodel = \"gpt-5.6-sol\"\n\n[mcp_servers.vnkt]\nurl = \"https://vnkt.org/mcp\"\n",
+        )
+        .unwrap();
+        assert!(ensure_codex_config_excludes_slash_tmp(&path).unwrap());
+        let written = std::fs::read_to_string(&path).unwrap();
+        assert!(written.contains("# user comment"));
+        assert!(written.contains("model = \"gpt-5.6-sol\""));
+        assert!(written.contains("[mcp_servers.vnkt]"));
+        assert!(codex_config_excludes_slash_tmp(&path));
+    }
+
+    #[test]
+    fn explicit_false_is_detected_and_flipped() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        std::fs::write(
+            &path,
+            "[sandbox_workspace_write]\nnetwork_access = true\nexclude_slash_tmp = false\n",
+        )
+        .unwrap();
+        assert!(!codex_config_excludes_slash_tmp(&path));
+        assert!(ensure_codex_config_excludes_slash_tmp(&path).unwrap());
+        let written = std::fs::read_to_string(&path).unwrap();
+        assert!(written.contains("network_access = true"));
+        assert!(codex_config_excludes_slash_tmp(&path));
+    }
+
+    #[test]
+    fn unparseable_config_is_never_rewritten() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        std::fs::write(&path, "not [ valid toml").unwrap();
+        let err = ensure_codex_config_excludes_slash_tmp(&path).unwrap_err();
+        assert!(err.to_string().contains("unparseable"));
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            "not [ valid toml",
+            "a file loom cannot parse must be left untouched"
+        );
+    }
 }

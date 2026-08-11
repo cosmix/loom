@@ -13,7 +13,7 @@ file src/commands/graph/tests.rs 425
 file src/commands/init/tests.rs 684
 file src/commands/plan/verify.rs 573
 file src/commands/pressure/mod.rs 596
-file src/commands/repair.rs 979
+file src/commands/repair.rs 973
 file src/commands/review/generate.rs 473
 file src/commands/self_update/mod.rs 438
 file src/commands/self_update/tests.rs 490
@@ -109,7 +109,7 @@ function src/commands/plan/verify.rs print_human 110
 function src/commands/pressure/mod.rs execute 86
 function src/commands/repair.rs check_all_issues 365
 function src/commands/repair.rs execute 99
-function src/commands/repair.rs fix_issue 77
+function src/commands/repair.rs fix_issue 71
 function src/commands/resume.rs execute 99
 function src/commands/review/generate.rs execute 162
 function src/commands/review/generate.rs load_stage_infos 59

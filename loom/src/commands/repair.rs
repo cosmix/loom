@@ -318,7 +318,7 @@ fn check_all_issues(repo_root: &Path) -> Vec<RepairIssue> {
         }
     }
 
-    // Checks 5b and 6: the two .claude settings files
+    // Checks 5b and 6: the .claude settings files and ~/.codex/config.toml
     issues.extend(settings_checks::check(repo_root));
 
     // Check 7: Old unprefixed skills that have a loom- counterpart
@@ -740,6 +740,8 @@ fn fix_issue(repo_root: &Path, issue: &RepairIssue) -> Result<bool> {
     {
         fix_settings_skill_refs()?;
         Ok(true)
+    } else if issue.description.contains("exclude_slash_tmp") {
+        settings_checks::fix_codex_slash_tmp()
     } else if issue.description.starts_with("Phantom merge:") {
         // Revert the spurious merged=true flag so the orchestrator knows the stage's work
         // has NOT landed in the target branch. We do NOT attempt a re-merge here because
@@ -747,19 +749,11 @@ fn fix_issue(repo_root: &Path, issue: &RepairIssue) -> Result<bool> {
         // cherry-pick from the stranded branch, resolve conflicts with later stages).
         fix_phantom_merge(repo_root, &issue.description)?;
         Ok(true)
-    } else if issue
-        .description
-        .contains("marked merged but has no completed_commit")
-    {
-        // No commit SHA means we cannot verify or re-merge programmatically.
-        // Return false so the dispatcher prints "Skipped" and the user knows to investigate.
-        Ok(false)
-    } else if issue.description.starts_with("Stale:") {
-        // Branch is gone without a merge record. We cannot recover the branch,
-        // and we cannot confirm a manual merge happened. Return false so the user
-        // is prompted to verify manually.
-        Ok(false)
     } else {
+        // Everything else — "marked merged but has no completed_commit" (no SHA
+        // to verify or re-merge against), "Stale:" (branch gone without a merge
+        // record), and any unknown issue — returns false so the dispatcher
+        // prints "Skipped" and the user knows to investigate manually.
         Ok(false)
     }
 }

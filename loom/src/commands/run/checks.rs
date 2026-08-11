@@ -53,6 +53,25 @@ pub fn advisory_codex_lane_preflight(repo_root: &Path) {
              terra/luna-tier work will fall back to sonnet.",
             codex_stage_ids.join(", ")
         );
+        return;
+    }
+    // Lane installed — but on Linux codex's own workspace-write sandbox must
+    // exclude /tmp: it masks `.git` under every writable root, and inside the
+    // stage sandbox (read-only /tmp) bwrap cannot create the missing
+    // /tmp/.git mountpoint, so every forward dies before the model runs a
+    // single command.
+    if cfg!(target_os = "linux") {
+        if let Some(config_path) = crate::codex::codex_config_path() {
+            if !crate::codex::codex_config_excludes_slash_tmp(&config_path) {
+                eprintln!(
+                    "codex lane licensed for stage(s) {} but ~/.codex/config.toml does not set \
+                     sandbox_workspace_write.exclude_slash_tmp - inside the stage sandbox every \
+                     codex exec fails with `bwrap: Can't mkdir /tmp/.git: Read-only file system`. \
+                     Run `loom repair --fix` to set it.",
+                    codex_stage_ids.join(", ")
+                );
+            }
+        }
     }
 }
 
