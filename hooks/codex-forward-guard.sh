@@ -37,6 +37,10 @@ Reason: $reason
 
 The forwarding shim may make one direct Bash call of this form:
   ~/.claude/hooks/loom/codex-forward.sh task '<prompt>' --model gpt-5.6-terra --effort xhigh --write
+The wrapper path may instead be written out in full as
+  $HOME/.claude/hooks/loom/codex-forward.sh
+Write that path expanded, exactly as shown - a literal \$HOME is rejected,
+because an unquoted \$ is a forbidden shell metacharacter.
 
 Shell operators, pipelines, redirections, command substitution, and any other
 tool are forbidden. If forwarding fails, report the error and stop.
@@ -64,7 +68,7 @@ parse_shell_words() {
 				;;
 			"'") state=single; started=1 ;;
 			'"') state=double; started=1 ;;
-			'\\') state=escape; started=1 ;;
+			'\') state=escape; started=1 ;;
 			$'\n' | $'\r' | $'\t' | $'\v' | $'\f' | ';' | '|' | '&' | '<' | '>' | '`' | '$' | '(' | ')' | '#' | '*' | '?' | '[' | ']' | '{' | '}') return 1 ;;
 			*) word+="$char"; started=1 ;;
 			esac
@@ -75,7 +79,7 @@ parse_shell_words() {
 		double)
 			case "$char" in
 			'"') state=plain ;;
-			'\\') state=double_escape ;;
+			'\') state=double_escape ;;
 			$'\n' | $'\r' | $'\t' | $'\v' | $'\f' | '$' | '`') return 1 ;;
 			*) word+="$char" ;;
 			esac
@@ -87,7 +91,7 @@ parse_shell_words() {
 			;;
 		double_escape)
 			case "$char" in
-			'"' | '\\') word+="$char"; state=double ;;
+			'"' | '\') word+="$char"; state=double ;;
 			*) return 1 ;;
 			esac
 			;;
@@ -101,7 +105,11 @@ parse_shell_words() {
 is_exact_forward_command() {
 	parse_shell_words "$1" || return 1
 	[[ ${#PARSED_WORDS[@]} -eq 8 ]] || return 1
-	[[ "${PARSED_WORDS[0]}" == "~/.claude/hooks/loom/codex-forward.sh" ]] || return 1
+	if [[ -n "${HOME:-}" ]]; then
+		[[ "${PARSED_WORDS[0]}" == "~/.claude/hooks/loom/codex-forward.sh" || "${PARSED_WORDS[0]}" == "${HOME}/.claude/hooks/loom/codex-forward.sh" ]] || return 1
+	else
+		[[ "${PARSED_WORDS[0]}" == "~/.claude/hooks/loom/codex-forward.sh" ]] || return 1
+	fi
 	[[ "${PARSED_WORDS[1]}" == task && -n "${PARSED_WORDS[2]}" ]] || return 1
 	[[ "${PARSED_WORDS[3]}" == --model ]] || return 1
 	case "${PARSED_WORDS[4]}" in gpt-5.6-terra | gpt-5.6-luna) ;; *) return 1 ;; esac
