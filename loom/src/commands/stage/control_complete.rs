@@ -13,15 +13,35 @@ pub(super) fn broker_requested() -> bool {
     std::env::var_os(BROKER_ENV).as_deref() == Some(std::ffi::OsStr::new("1"))
 }
 
+/// Fixed non-empty stand-in used when no readable `user.token` exists.
+///
+/// It authorizes nothing by itself — see [`completion_credential`].
+const PEER_IDENTITY_CREDENTIAL: &str = "peer-identity";
+
+/// Credential for the `CompleteStage` request.
+///
+/// A sandboxed worktree agent is denied the `user.token` read on purpose
+/// (S-1) — the token authorizes every User RPC, not just this one. The
+/// broker itself can't read it either when run from inside a worktree:
+/// `.work` there is a symlink, and `safe_open_dirfd` opens the work-dir root
+/// with `O_NOFOLLOW`, so the read fails by construction. Either way, absence
+/// is the normal case on this path, not an error.
+///
+/// The wire preface (`wire.rs`) refuses to frame an empty credential, so "no
+/// token" still has to be a non-empty string. Any credential that doesn't
+/// match `user.token` routes the daemon into its `Authorization::PendingPeerIdentity`
+/// fallback, which authorizes exactly one thing: a caller completing the
+/// session it is actually running inside, verified via socket peer
+/// credentials (`peer_identity::caller_is_inside_session`). The placeholder
+/// is just what makes that fallback reachable — it grants nothing on its own.
+fn completion_credential(work_dir: &Path) -> String {
+    read_user_token(work_dir)
+        .filter(|token| !token.is_empty())
+        .unwrap_or_else(|| PEER_IDENTITY_CREDENTIAL.to_string())
+}
+
 pub(super) fn send_completion(stage_id: &str, session_id: &str, work_dir: &Path) -> Result<()> {
-    // Absent is normal, not an error. A sandboxed worktree agent is denied
-    // this read on purpose (S-1) — the token authorizes every User RPC, not
-    // just this one — so requiring it here made the only sanctioned completion
-    // path depend on a file the sandbox generator forbade. The daemon falls
-    // back to identifying the caller by its socket peer credentials, which are
-    // scoped to exactly this session's own completion. From an unsandboxed
-    // host the token is present and still used.
-    let auth_token = read_user_token(work_dir).unwrap_or_default();
+    let auth_token = completion_credential(work_dir);
     let request = Request::CompleteStage {
         auth_token,
         stage_id: stage_id.to_string(),
@@ -43,3 +63,7 @@ pub(super) fn send_completion(stage_id: &str, session_id: &str, work_dir: &Path)
         other => bail!("unexpected completion broker response: {other:?}"),
     }
 }
+
+#[cfg(test)]
+#[path = "tests/control_complete.rs"]
+mod tests;
