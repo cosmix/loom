@@ -284,7 +284,7 @@ Agent guidance lives in the channel that delivers it closest to the decision poi
 - **Hooks** (`hooks/*.sh`) — rules that must never be violated (plans path, all-files staging, commit/complete, worktree isolation, subagent verification). Deterministic; the exit-2 message re-injects the rule at the exact moment of violation.
 - **Stage signals** (`orchestrator/signals/`) — stage-execution mechanics (completion checklist, adversarial review dimensions). Delivered per-stage at execution time.
 - **Skills** (`skills/*/SKILL.md`) — task-scoped expertise loaded on demand (`loom-plan-writer` owns ALL plan-authoring mechanics: YAML, working_dir, acceptance design, model selection, parallelization).
-- **CLAUDE.md.template** — only cross-cutting rules and the 5-item hard-stop tier (stated verbatim at top AND bottom; middle of a long file is a retrieval dead zone). Do not restate what a hook, signal, or skill already delivers — duplicated guidance drifts and dilutes.
+- **CLAUDE.md.template** — only cross-cutting rules and the 6-item hard-stop tier (stated verbatim at top AND bottom; middle of a long file is a retrieval dead zone). Do not restate what a hook, signal, or skill already delivers — duplicated guidance drifts and dilutes.
 
 When adding new guidance, pick the channel first; the template is the channel of last resort.
 
