@@ -37,6 +37,10 @@ fn pre_tool_hooks(hooks_dir: &str) -> Vec<Value> {
         ("Read", "codex-forward-guard.sh"),
         ("Task", "codex-forward-guard.sh"),
         ("Agent", "codex-forward-guard.sh"),
+        ("Write", "stage-terminal-guard.sh"),
+        ("Edit", "stage-terminal-guard.sh"),
+        ("Task", "stage-terminal-guard.sh"),
+        ("Agent", "stage-terminal-guard.sh"),
     ];
     HOOKS
         .iter()

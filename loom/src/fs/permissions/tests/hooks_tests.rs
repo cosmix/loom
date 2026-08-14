@@ -22,7 +22,7 @@ fn test_hooks_config_structure() {
         ("Glob", "worktree-file-guard.sh"),
         ("Grep", "worktree-file-guard.sh"),
     ];
-    assert_eq!(pre_tool.len(), 23);
+    assert_eq!(pre_tool.len(), 27);
     for (entry, (matcher, script)) in pre_tool.iter().zip(expected_prefix) {
         assert_hook(entry, matcher, script);
     }
@@ -30,6 +30,9 @@ fn test_hooks_config_structure() {
         assert!(contains_hook(pre_tool, matcher, "codex-forward-guard.sh"));
     }
     assert!(contains_hook(pre_tool, "Bash", "loom-control-complete.sh"));
+    for matcher in ["Write", "Edit", "Task", "Agent"] {
+        assert!(contains_hook(pre_tool, matcher, "stage-terminal-guard.sh"));
+    }
     assert_lifecycle_hooks(&hooks);
 }
 

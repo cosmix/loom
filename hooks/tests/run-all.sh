@@ -39,6 +39,7 @@ run_test "codex-forward-guard: plain subagents, main sessions, no-path all untou
 run_test "codex-forward: wrapper preserves task argv" "$SCRIPT_DIR/codex-forward-wrapper.sh"
 run_test "codex-forward-guard: quoted and escaped prompts round-trip" "$SCRIPT_DIR/codex-forward-guard-quoting.sh"
 run_test "git-add-guard: quoted prose allowed, real args blocked" "$SCRIPT_DIR/git-add-guard-quoting.sh"
+run_test "stage-terminal-guard: blocks completed/verified, allows others" "$SCRIPT_DIR/stage-terminal-guard.sh"
 
 echo ""
 echo "Results: $PASS passed, $FAIL failed"

@@ -29,7 +29,7 @@ fn test_install_loom_hooks_creates_hook_files() {
     assert!(commit_guard_path.exists());
     let content = fs::read_to_string(&commit_guard_path).unwrap();
     assert!(content.contains("detect_loom_worktree"));
-    assert!(content.contains("LOOM WORKTREE EXIT BLOCKED"));
+    assert!(content.contains("LOOM WORKTREE COMPLETION CHECKLIST"));
 
     // Check worktree hooks exist
     assert!(hooks_dir.join("post-tool-use.sh").exists());

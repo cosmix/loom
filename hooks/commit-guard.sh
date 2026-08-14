@@ -502,7 +502,7 @@ main() {
 	debug_log "Found ${#issues[@]} issue(s), will block stop"
 
 	# Build error message with detailed context
-	local message="LOOM WORKTREE EXIT BLOCKED for stage '$STAGE_ID':"
+	local message="LOOM WORKTREE COMPLETION CHECKLIST for stage '$STAGE_ID' (advisory):"
 	message+="\n\nChecked: worktree=$(pwd), project_root=$project_root"
 
 	if [[ $has_uncommitted -eq 1 ]]; then
@@ -530,12 +530,19 @@ main() {
 			blocking_status=$(get_stage_status "$stage_file")
 		fi
 
-		message+="\n\n${step_num}. Stage is still in '$blocking_status' status. After committing, run:\n   loom stage complete $STAGE_ID"
+		message+="\n\n${step_num}. Stage is still in '$blocking_status' status. Once the stage is SETTLED and committed, run:\n   loom stage complete $STAGE_ID"
 
 		if [[ -n "$stage_file" ]]; then
 			message+="\n   (Stage file: $stage_file)"
 		fi
 	fi
+
+	message+="\n\nIMPORTANT: this is a checklist, NOT an instruction to complete right now."
+	message+="\nThis reminder can fire while subagents are still running. If subagents are still"
+	message+="\nout, results unabsorbed, or defects unfixed, KEEP WORKING: absorb every subagent"
+	message+="\nresult, fix every defect, commit - and only THEN run loom stage complete."
+	message+="\nloom stage complete is the LAST act of the session. Complete only a SETTLED stage,"
+	message+="\nand run NOTHING after it - post-completion work is lost work."
 
 	message+="\n\nDo NOT end this session until all steps are complete."
 

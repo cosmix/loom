@@ -76,6 +76,13 @@ pub const HOOK_CODEX_FORWARD_GUARD: &str = include_str!("../../../../hooks/codex
 /// Trusted argv boundary used by codex forwarders.
 pub const HOOK_CODEX_FORWARD: &str = include_str!("../../../../hooks/codex-forward.sh");
 
+/// StageTerminalGuard hook - blocks Write/Edit/Task/Agent once a stage's own
+/// status file says it is already completed/verified. Hard enforcement that
+/// `loom stage complete` is the session's LAST act (commit-guard.sh is only
+/// advisory).
+pub const HOOK_STAGE_TERMINAL_GUARD: &str =
+    include_str!("../../../../hooks/stage-terminal-guard.sh");
+
 /// All loom hook scripts with their filenames (installed to ~/.claude/hooks/loom/)
 /// All hooks are installed to the loom/ subdirectory to keep them separate from user hooks.
 pub const LOOM_HOOKS: &[(&str, &str)] = &[
@@ -102,6 +109,7 @@ pub const LOOM_HOOKS: &[(&str, &str)] = &[
     ("no-preexisting-failures.sh", HOOK_NO_PREEXISTING_FAILURES),
     ("codex-forward-guard.sh", HOOK_CODEX_FORWARD_GUARD),
     ("codex-forward.sh", HOOK_CODEX_FORWARD),
+    ("stage-terminal-guard.sh", HOOK_STAGE_TERMINAL_GUARD),
     // Skill suggestion hooks
     ("skill-trigger.sh", HOOK_SKILL_TRIGGER),
 ];

@@ -232,6 +232,7 @@ install_hooks_remote() {
 		"codex-forward-guard.sh"
 		"codex-forward.sh"
 		"loom-control-complete.sh"
+		"stage-terminal-guard.sh"
 	)
 
 	for hook in "${all_hooks[@]}"; do
@@ -425,6 +426,7 @@ install_hooks() {
 		"codex-forward-guard.sh"
 		"codex-forward.sh"
 		"loom-control-complete.sh"
+		"stage-terminal-guard.sh"
 	)
 
 	if [[ -d "$SCRIPT_DIR/hooks" ]]; then
