@@ -641,3 +641,22 @@ cannot write the failing case, the function probably never returns `None` — re
 relying on it. Existing callers are unaffected only because they all pair it with
 `.unwrap_or_else(|| cwd)`, which wants exactly the fallback; that idiom hides the trap from anyone
 reading call sites to infer semantics.
+
+## Premature Stage Completion and Deadline Takeovers (2026-08-14)
+
+**What happened:** Stages ran `loom stage complete` while subagents were still out or defects
+unfixed, then kept working past completion — post-completion edits are lost because the merge
+starts from the completed commit. Separately, orchestrators treated the 300s bounded-check
+cadence as a deadline on subagent work and took over or re-spawned live subagents, duplicating
+work already paid for.
+**Why:** The Stop hook (commit-guard.sh) fires during subagent waits and read as "commit and
+complete NOW"; CLAUDE.md Rule 6 said "on the deadline branch: take the work over"; no surface
+said completion requires a settled stage or that completion is terminal.
+**Prevention:** `hooks/stage-terminal-guard.sh` blocks Write/Edit/Task/Agent in a worktree whose
+stage is already completed/verified. Settled-state completion doctrine lives in
+CLAUDE.md.template (hard stop 3, Rule 4, Rule 6), `append_completion_rules()` in
+`signals/cache.rs`, the budget-exceeded recitation box, and the commit-guard message; retired
+takeover phrases are pinned in `tests_doctrine.rs::RETIRED_PHRASES`.
+**Fix:** Complete only a settled stage (subagents absorbed, defects fixed, tree clean) and run
+nothing after `loom stage complete`; re-arm bounded checks on live subagents and take over only
+on positive evidence of death.

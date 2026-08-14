@@ -19,15 +19,30 @@ pub(crate) fn format_subagent_timeout_section(timeout_secs: u64) -> String {
 
     content.push_str("## Subagent Response Budget\n\n");
     content.push_str(&format!(
-        "Every subagent you spawn must report back within {timeout_secs}s. Do not sit waiting on a\n"
+        "This stage's heartbeat budget is {timeout_secs}s: the orchestrator warns when the session goes\n"
     ));
     content.push_str(
-        "silent one past that: re-assign its file set to a fresh subagent or take the work over\n",
+        "that long with no tool activity. The warning is ADVISORY - it never kills or retries anything.\n",
     );
     content.push_str(
-        "yourself. The orchestrator watches the same budget from the outside, but its check is\n",
+        "Treat the budget as a check-in cadence for your bounded liveness checks, NOT as a deadline on\n",
     );
-    content.push_str("ADVISORY - it prints a warning and never kills or retries anything, so recovery is yours.\n\n");
+    content.push_str(
+        "any subagent's work. When a check fires and the subagent is still alive (task running, files\n",
+    );
+    content.push_str(
+        "changing, output growing), re-arm the check and keep waiting - slow is not dead. Take over or\n",
+    );
+    content.push_str(
+        "re-assign ONLY on positive evidence of death: the task failed or was killed, or several\n",
+    );
+    content.push_str(
+        "consecutive checks show zero liveness AND no result. Elapsed time alone is NEVER that evidence.\n",
+    );
+    content.push_str(
+        "Restarting live work forfeits the tokens it already spent and risks two agents writing the same\n",
+    );
+    content.push_str("files. Never complete the stage while any subagent is still out.\n\n");
 
     content
 }

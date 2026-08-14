@@ -141,6 +141,9 @@ const RETIRED_PHRASES: &[&str] = &[
     concat!("Zero IDE ", "diagnostics"),
     concat!("haiku stays rare", " and trivial"),
     concat!("haiku (rare, trivial ", "mechanical edits)"),
+    concat!("take the work ", "over"),
+    concat!("report back ", "within"),
+    concat!("hard ceiling on any", " single check"),
 ];
 
 /// Every static guidance surface pasted into a subagent prompt, as (label, text).

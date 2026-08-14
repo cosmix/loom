@@ -549,6 +549,24 @@ fn test_signal_subagent_timeout_section_gated() {
         "the block must say the orchestrator side never kills or retries, or the \
          agent will assume something else handles a silent subagent"
     );
+    assert!(
+        content.contains("NOT as a deadline"),
+        "the block must say the budget is a check-in cadence, not a deadline on \
+         any subagent's work"
+    );
+    assert!(
+        content.contains("positive evidence of death"),
+        "the block must require positive evidence before a takeover, not elapsed \
+         time alone"
+    );
+    assert!(
+        !content.contains("report back within"),
+        "the retired takeover doctrine must not resurface in the emitted block"
+    );
+    assert!(
+        !content.contains("take the work over"),
+        "the retired takeover doctrine must not resurface in the emitted block"
+    );
 }
 
 #[test]

@@ -396,19 +396,22 @@ If the user picks Codex:
 
 Optional, seconds, default **300**. It is how long a stage may go without a heartbeat before the
 orchestrator flags it, and the same number is written into the stage's signal so the session knows
-the budget it is being held to.
+the cadence it is being measured against.
 
 Set it from how long the work legitimately goes quiet, not from how long you hope it takes. A wide
 mechanical sweep, a large test run, or a FOREGROUND codex run is one long tool call that emits
 nothing while it works — codex stages in particular should raise it, since a foreground run posts no
 intermediate output at all. A stage of small edits should leave it alone.
 
-Two things it does NOT do. It never kills or retries anything — the check is advisory, it prints a
-warning and recovery stays with the orchestrating agent. And it does not license an open-ended wait:
-whatever the budget, **a single watcher or poll check must still have a deadline of 300s or less**
-and must terminate on both the success and the deadline branch (CLAUDE.md Rule 6). Re-arm to wait
-longer. Raising this field widens the budget the orchestrator measures against; it does not widen
-how long an agent may sit blocked on one check.
+Three things it does NOT do. It never kills or retries anything — the check is advisory, it prints a
+warning and recovery stays with the orchestrating agent. It is NOT a deadline on any subagent's work:
+a live subagent may run past it indefinitely — the orchestrator re-arms its bounded checks and keeps
+waiting, and takes over or re-assigns only on positive evidence of death (task failed or killed, or
+several consecutive checks with zero liveness and no result), never on elapsed time alone. And it
+does not license an open-ended wait: whatever the budget, **a single watcher or poll check must still
+have a deadline of 300s or less** and must terminate on both branches (CLAUDE.md Rule 6). Re-arm to
+wait longer. Raising this field widens the budget the orchestrator measures against; it does not
+widen how long an agent may sit blocked on one check.
 
 Consequences for how you write a plan:
 
@@ -585,7 +588,7 @@ loom:
       model: "opus"                 # REQUIRED — every stage is an opus orchestrator now; subagent model choice happens at spawn time (Section 4)
       reasoning_effort: "xhigh"    # REQUIRED on every stage
       implementers: ["codex", "claude"]  # OPTIONAL - licensed lanes, first = preferred for routine work (default ["claude"])
-      subagent_timeout_secs: 900   # OPTIONAL - per-subagent response budget (default 300 if omitted)
+      subagent_timeout_secs: 900   # OPTIONAL - advisory heartbeat budget (default 300); a cadence, not a per-subagent deadline
       description: |               # full task spec; NO triple backticks inside
         What this stage accomplishes.
         Use parallel subagents and skills to maximize performance.

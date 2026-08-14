@@ -746,11 +746,16 @@ pub(super) fn format_recitation_section(
 
             if usage >= budget {
                 content.push_str("```\n");
-                content.push_str("┌─────────────────────────────────────────────────┐\n");
-                content.push_str("│  🛑 BUDGET EXCEEDED - HANDOFF REQUIRED         │\n");
-                content.push_str("│  Run: loom memory list (verify insights captured)  │\n");
-                content.push_str("│  Then: loom stage complete <stage-id>           │\n");
-                content.push_str("└─────────────────────────────────────────────────┘\n");
+                content.push_str("┌──────────────────────────────────────────────────────────┐\n");
+                content.push_str("│  🛑 BUDGET EXCEEDED - WRAP UP NOW                        │\n");
+                content.push_str("│  1. loom memory list (verify insights captured)          │\n");
+                content.push_str("│  2. Stage SETTLED (subagents returned, defects fixed,    │\n");
+                content.push_str("│     everything committed)?                               │\n");
+                content.push_str("│     YES -> loom stage complete <stage-id>                │\n");
+                content
+                    .push_str("│     NO  -> loom handoff --message \"<state>\" and STOP.    │\n");
+                content.push_str("│            Do NOT complete an unsettled stage.           │\n");
+                content.push_str("└──────────────────────────────────────────────────────────┘\n");
                 content.push_str("```\n");
             } else {
                 content.push_str("**Approaching budget limit.** Prepare for handoff:\n");

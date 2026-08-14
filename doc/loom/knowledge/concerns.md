@@ -380,8 +380,11 @@ act: `SessionCrashed` (`event_handler.rs:153`), `SessionNeedsHandoff` (kills + r
 warning is noise, not damage.
 
 **Mitigation is doctrine, not a monitor change.** Keep each codex task bounded, and set
-`subagent_timeout_secs` on stages that legitimately block for longer. CLAUDE.md Rule 6 now caps any
-single bounded check at 300s and tells the orchestrator to re-arm rather than wait open-endedly.
+`subagent_timeout_secs` on stages that legitimately block for longer. CLAUDE.md Rule 6 caps any
+single bounded check at 300s and tells the orchestrator to re-arm while the subagent shows
+liveness — takeover or re-assignment needs positive evidence of death, never elapsed time alone
+(revised 2026-08-14; the earlier wording told orchestrators to take work over at the deadline,
+which duplicated live work).
 
 **Deliberately OUT OF SCOPE: raising `MonitorConfig::hung_timeout`.** A global raise would blind the
 monitor to genuinely dead sessions on every other stage in order to silence a cosmetic warning on
