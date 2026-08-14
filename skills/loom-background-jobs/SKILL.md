@@ -42,23 +42,34 @@ For pub/sub, event sourcing, CQRS, sagas, and streaming brokers (Kafka/Pulsar), 
 
 ## The two invariants everything hangs off
 
-1. **At-least-once is the default. Design every handler to be idempotent.** Redis-backed queues (Sidekiq, BullMQ, Celery+Redis), SQS standard, and any queue that retries on crash *will* deliver a job more than once. "Exactly-once delivery" does not exist over an unreliable network; the achievable goal is exactly-once *effect* = at-least-once delivery + idempotent handler.
+1. **At-least-once is the default. Design every handler to be idempotent.** Redis-backed queues (Sidekiq, BullMQ, Celery+Redis), SQS standard, and a queue retrying after a crash can deliver work more than once. FIFO producer deduplication does not make a consumer's external side effect exactly once. The achievable goal is exactly-once *effect* = durable idempotency at the sink plus retry-safe handling.
 2. **Ack after success, never before.** The job must stay owned by the worker until the side effect is durably committed. Ack-then-process = at-most-once = silent data loss on crash. Process-then-ack = at-least-once = duplicates you dedup away. Always choose the latter.
 
 ### Idempotency: the non-negotiable pattern
 
-Derive a stable key from the job's *business identity* (not a random UUID per enqueue), and gate the side effect on it.
+Derive a stable key from the job's *business identity* (not a random UUID per enqueue), and make the **durable sink** reject duplicates. A separate “done” flag cannot atomically cover an external side effect and a crash.
 
 ```python
 def handle(job):
-    key = job["idempotency_key"]          # e.g. f"charge:{order_id}"
-    if store.setnx(f"done:{key}", "1", ex=7*86400):   # first time → claim
-        do_side_effect(job)               # charge card, send email, insert row
-    # else: already done → no-op, safe to return success
+    key = job["idempotency_key"]          # e.g. f"receipt:{order_id}"
+    # One transaction: UNIQUE(key) makes duplicate deliveries a successful no-op.
+    with db.transaction():
+        inserted = db.execute(
+            "INSERT INTO receipts (idempotency_key, order_id) VALUES (?, ?) "
+            "ON CONFLICT (idempotency_key) DO NOTHING",
+            [key, job["order_id"]],
+        ).rowcount == 1
+        if inserted:
+            db.execute(
+                "INSERT INTO outbox (idempotency_key, kind, aggregate_id) "
+                "VALUES (?, 'send-receipt', ?)",
+                [key, job["order_id"]],
+            )
+    # The outbox makes the intent durable; the email sender must deduplicate by key too.
 ```
 
-- ⚠ **Claim *before* the effect, but only mark "done" after it commits** — if you set the flag first and then crash, the retry sees "done" and skips a side effect that never happened. Best: idempotent write at the sink (unique constraint / upsert / conditional put) rather than a separate flag. The DB unique index is the most reliable dedup store.
-- The processed-marker TTL must exceed max retry window + queue retention, or a late redelivery re-runs the job.
+- ⚠ Do not set a “done” marker before the effect: a crash after the claim loses work. Do not mark it only after a non-idempotent external effect either: a crash can repeat that effect. Prefer an idempotency facility at the external provider; otherwise persist an intent/outbox transactionally and make the downstream consumer idempotent.
+- If a provider or store uses a processed-marker TTL, keep it longer than the max retry window plus queue retention, or a late redelivery can re-run the effect.
 - Idempotency covers **duplicate delivery**; it does not cover **concurrent** duplicate execution (two workers at once). For that you need a lock or an atomic conditional write — see visibility-timeout races below.
 
 ## Delivery guarantees & broker selection
@@ -66,7 +77,7 @@ def handle(job):
 | Broker / lib | Model | Reliability caveat | Use when |
 | --- | --- | --- | --- |
 | **SQS standard** | at-least-once, unordered | Visibility timeout only; no ordering | Cloud-native, want managed durability + native DLQ (redrive) |
-| **SQS FIFO** | exactly-once *delivery* within 5-min dedup window, ordered per group | 300 msg/s (3000 batched) cap; ordering serializes a group | Ordering/dedup matters more than throughput |
+| **SQS FIFO** | ordered per message group; producer deduplication within its 5-min window | A received message can reappear after its visibility timeout; consumers remain idempotent. Non-high-throughput quotas are per partition (300 API actions/s, 3,000 messages/s batched); high-throughput FIFO changes the limit model. | Ordering and producer-retry dedup matter; use multiple groups/high-throughput configuration when throughput permits. |
 | **Sidekiq (OSS)** | at-least-once | Basic fetch (`BRPOP`) **loses in-flight jobs if the worker is killed** — job left Redis when fetched. Pro `super_fetch` (RPOPLPUSH) recovers them | Ruby, Redis already present, jobs are idempotent |
 | **BullMQ (Node)** | at-least-once | Uses a `lockDuration`; a stalled job (lock expired) is re-added — long jobs get double-run unless they renew the lock | Node, Redis, need rate limiting/flows |
 | **Celery + Redis** | at-least-once | **`visibility_timeout` (default 3600s)**: a task running longer than it is redelivered to another worker → concurrent double-run. No true broker ack | Python, small/medium scale |
@@ -170,7 +181,7 @@ Duplicates start at the *producer* too: a retried HTTP request or an at-least-on
 
 ## Claim-check: don't put big payloads on the queue
 
-Store the large blob (file, image, dataset row batch) in object storage / DB and enqueue only a **reference + integrity hash**. Queues (SQS 256KB limit, Redis memory) are for coordination, not bulk data.
+Store the large blob (file, image, dataset row batch) in object storage / DB and enqueue only a **reference + integrity hash**. Queues (SQS supports messages up to 1 MiB; verify the configured queue/quota, and Redis consumes memory) are for coordination, not bulk data.
 
 ```json
 { "job": "transcode", "s3_key": "uploads/abc.mov", "sha256": "…", "size": 734003200 }
@@ -289,7 +300,7 @@ app.conf.update(
 
 **Sidekiq (Ruby)** — at-least-once, idempotent handlers mandatory. OSS basic fetch loses in-flight jobs on hard kill; **Pro `super_fetch`** recovers them. `sidekiq_options retry:`, `dead:`; `death_handlers` for DLQ hooks.
 
-**SQS** — managed, durable, native DLQ via `RedrivePolicy`. Standard = at-least-once/unordered; FIFO = ordered + dedup. Tune visibility timeout to job length; 256KB payload cap → claim-check.
+**SQS** — managed, durable, native DLQ via `RedrivePolicy`. Standard = at-least-once/unordered; FIFO = ordered + producer dedup. Tune visibility timeout to job length; messages are up to 1 MiB (verify queue/quota) → use claim-check for larger payloads.
 
 ## Anti-patterns
 
@@ -300,7 +311,7 @@ app.conf.update(
 - **Unbounded retries / no DLQ** → poison pills clog the queue forever.
 - **No overlap lock on cron** → same scheduled run fires on every replica.
 - **Local-time schedules** → DST double/skip.
-- **Big payloads in the queue** → broker bloat, 256KB SQS rejections; use claim-check.
+- **Big payloads in the queue** → broker bloat or SQS size-limit rejections (up to 1 MiB; verify queue/quota); use claim-check.
 - **Shared queue for fast + slow work** → head-of-line blocking; separate by workload class.
 - **`git add`-ing the whole `.work`** — n/a here, but analogously: don't retain unbounded completed/failed sets; they exhaust Redis.
 - **Storing job state only in worker memory** → lost on restart; persist checkpoints.

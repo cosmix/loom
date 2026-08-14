@@ -629,7 +629,7 @@ spec:
 # argocd-repo-server: add a CMP sidecar
 containers:
   - name: avp
-    image: my-avp-image:latest
+    image: my-avp-image@sha256:<reviewed-digest>
     command: [/var/run/argocd/argocd-cmp-server]
     volumeMounts:
       - { name: var-files, mountPath: /var/run/argocd }

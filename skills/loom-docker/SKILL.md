@@ -421,20 +421,21 @@ buildx + metadata-action for tagging + gha cache + trivy scan → SARIF upload:
 jobs:
   build:
     runs-on: ubuntu-latest
-    permissions: { contents: read, packages: write }
+    permissions: { contents: read, packages: write, security-events: write } # upload-sarif needs security-events
     steps:
-      - uses: actions/checkout@v4
-      - uses: docker/setup-buildx-action@v3
-      - uses: docker/login-action@v3
+      - uses: actions/checkout@<full-commit-sha> # v4
+      - uses: docker/setup-buildx-action@<full-commit-sha> # v3
+      - uses: docker/login-action@<full-commit-sha> # v3
         with: { registry: ghcr.io, username: "${{ github.actor }}", password: "${{ secrets.GITHUB_TOKEN }}" }
       - id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@<full-commit-sha> # v5
         with:
           images: ghcr.io/${{ github.repository }}
           tags: |
             type=semver,pattern={{version}}
             type=sha
-      - uses: docker/build-push-action@v5
+      - id: build
+        uses: docker/build-push-action@<full-commit-sha> # v6
         with:
           context: .
           platforms: linux/amd64,linux/arm64
@@ -442,9 +443,12 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-      - uses: aquasecurity/trivy-action@master
-        with: { image-ref: "${{ steps.meta.outputs.tags }}", format: sarif, output: trivy-results.sarif }
-      - uses: github/codeql-action/upload-sarif@v3
+          sbom: true
+          provenance: mode=max
+      # Resolve and pin the action to a reviewed full commit SHA; @master is mutable.
+      - uses: aquasecurity/trivy-action@<full-commit-sha>
+        with: { image-ref: "ghcr.io/${{ github.repository }}@${{ steps.build.outputs.digest }}", format: sarif, output: trivy-results.sarif }
+      - uses: github/codeql-action/upload-sarif@<full-commit-sha> # v3
         with: { sarif_file: trivy-results.sarif }
 ```
 

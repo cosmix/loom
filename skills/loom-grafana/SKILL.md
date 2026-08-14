@@ -1,7 +1,6 @@
 ---
 name: loom-grafana
-description: Observability visualization with Grafana and the LGTM stack. Use for creating dashboards, configuring panels, writing LogQL/TraceQL queries, setting up data sources, dashboard variables/templates, and Grafana alerts. Do not use for PromQL (see loom-prometheus).
-when_to_use: Grafana dashboards, panel configuration, LogQL or TraceQL queries, Loki/Tempo/Mimir data sources, dashboard templating.
+description: Observability visualization with Grafana and the LGTM stack. Use for creating dashboards, configuring panels, writing LogQL/TraceQL queries, provisioning data sources and alerts, and dashboard variables/templates. Do not use for PromQL rule design (see loom-prometheus).
 allowed-tools:
   - Read
   - Grep

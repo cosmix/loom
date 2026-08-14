@@ -129,16 +129,24 @@ Set nonzero exit → fail the job. ⚠ `npm audit ... || true` never fails CI (s
 # GitHub Actions
 jobs:
   security:
+    permissions: { contents: read }
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      # Resolve and pin every action to a reviewed full commit SHA. Tags/branches,
+      # including @main and @master, are mutable and are not production pins.
+      - uses: actions/checkout@<full-commit-sha>
         with: { fetch-depth: 0 }          # full history for secret scan
-      - uses: trufflesecurity/trufflehog@main
+      - uses: trufflesecurity/trufflehog@<full-commit-sha>
         with: { extra_args: --only-verified }
-      - uses: returntocorp/semgrep-action@v1
-        with: { config: p/security-audit p/secrets }
-      - uses: aquasecurity/trivy-action@master
-        with: { scan-type: fs, severity: HIGH,CRITICAL, exit-code: 1 }
+      # semgrep-action is archived. Use the maintained image pinned by digest;
+      # `semgrep ci` is the Semgrep App platform mode, while this is CE mode.
+      - name: Semgrep Community Edition
+        run: >-
+          docker run --rm -v "$GITHUB_WORKSPACE:/src" -w /src
+          semgrep/semgrep@sha256:<reviewed-digest>
+          semgrep scan --error --config=p/security-audit --config=p/secrets
+      - uses: aquasecurity/trivy-action@<full-commit-sha>
+        with: { scan-type: fs, severity: "HIGH,CRITICAL", exit-code: 1 }
 ```
 
 ```yaml
@@ -170,6 +178,7 @@ Common false positives — triage, don't blindly suppress: test fixtures / examp
 - [ ] Container scan targets the deployed **digest**; Dockerfile linted (hadolint + trivy config)
 - [ ] SAST run with a security ruleset (not just style)
 - [ ] CI steps **fail** on Critical/High (no stray `|| true`); pre-commit blocks secrets locally
+- [ ] CI grants minimal `GITHUB_TOKEN` permissions and pins every third-party action to a reviewed full commit SHA
 - [ ] Findings triaged: confirmed / false-positive / accepted-risk, each with owner + justification
 - [ ] Critical/complex/architecture findings escalated → `loom-security-audit`
 

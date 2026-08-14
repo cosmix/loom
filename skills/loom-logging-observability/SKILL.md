@@ -117,7 +117,7 @@ reqLog.info({ orderId, total }, "order processed");  // object first, message se
 - **Structured over interpolated** — attach IDs as fields, not baked into the message string, or you can't filter/aggregate by them.
 - **Don't log in hot paths synchronously.** A blocking log write per iteration in a tight loop or per-row is a latency cliff. Use async/non-blocking appenders (`QueueHandler` in Python, pino's async transport) and log the summary, not each item.
 - **Sample high-volume logs.** For chatty success paths, emit 1-in-N (keep 100% of WARN/ERROR). Reduces cost without losing the signal.
-- **Consistent field names across services** — always `correlation_id`, never sometimes `request_id`. Cross-service queries depend on it.
+- **Consistent field names across services** — adopt OpenTelemetry semantic conventions for resource and signal attributes; keep any application correlation field stable across services. Cross-service queries depend on it.
 - **Emit to stdout as JSON; let the platform collect it.** Don't manage log files/rotation inside the app in a containerized environment — the agent/sidecar (Promtail, Fluent Bit, Datadog agent) tails stdout.
 
 ## Distributed Tracing
@@ -135,7 +135,9 @@ from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExport
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 
 provider = TracerProvider(resource=Resource.create({"service.name": "order-service"}))
-provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter(endpoint="http://otel-collector:4317")))
+# OTLP/gRPC accepts an endpoint URL. `insecure=True` is appropriate only for a
+# trusted in-cluster plaintext collector; configure TLS explicitly for remote use.
+provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter(endpoint="http://otel-collector:4317", insecure=True)))
 trace.set_tracer_provider(provider)
 tracer = trace.get_tracer(__name__)
 
