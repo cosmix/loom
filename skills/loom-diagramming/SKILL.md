@@ -14,7 +14,6 @@ triggers:
   - architecture diagram
   - ERD
   - entity relationship
-  - entity-relationship
   - C4
   - C4 model
   - system context

@@ -10,14 +10,12 @@ allowed-tools:
   - Bash
 triggers:
   - dead code
-  - dead-code
   - dead_code_check
   - unused code
   - unused imports
   - unused functions
   - orphaned code
   - dead code detection
-  - dead code check
   - code cleanup
   - unused variables
   - unreachable code

@@ -17,7 +17,7 @@ triggers:
   - graceful degradation
   - circuit breaker
   - error boundary
-  - 500
+  - "500"
   - 4xx
   - 5xx
   - thiserror

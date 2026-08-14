@@ -11,7 +11,6 @@ allowed-tools:
 triggers:
   - wiring
   - wiring-test
-  - wiring test
   - wiring_tests
   - integration test
   - integration verification

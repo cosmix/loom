@@ -24,7 +24,6 @@ triggers:
   - goroutine
   - spawn
   - Arc
-  - Mutex
   - RwLock
   - mpsc
   - select

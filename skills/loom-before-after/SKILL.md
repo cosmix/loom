@@ -9,7 +9,6 @@ allowed-tools:
   - Write
   - Bash
 triggers:
-  - before after
   - before-after
   - before_stage
   - after_stage

@@ -11,7 +11,6 @@ triggers:
   - push notification
   - signature verification
   - HMAC
-  - hmac
   - crypto signature
   - retry
   - exponential backoff

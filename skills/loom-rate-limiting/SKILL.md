@@ -11,7 +11,7 @@ triggers:
   - sliding window
   - fixed window
   - quota
-  - 429
+  - "429"
   - too many requests
   - DDoS
   - abuse prevention
