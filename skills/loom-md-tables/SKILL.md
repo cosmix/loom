@@ -55,7 +55,7 @@ python fix-md-tables.py document.md -i
 | auto_merge | false   | Enable auto merging   |
 ```
 
-**Right-aligned numbers** (script preserves the `---:` marker but left-pads the cell *text* — GFM still renders these right-aligned when displayed):
+**Right-aligned numbers** (script preserves the `---:` marker but left-aligns and right-pads the cell *text* — GFM still renders these right-aligned when displayed):
 
 ```markdown
 | Item  | Count | Total |
@@ -67,9 +67,10 @@ python fix-md-tables.py document.md -i
 ## Features
 
 - Aligns each column to its widest cell (separators get a minimum width of 3)
-- Single-space padding; cell **content is always left-padded** (`ljust`) regardless of the alignment marker
+- Single-space padding; cell **content is always left-aligned and right-padded** (`ljust`) regardless of the alignment marker
 - Preserves the alignment marker in the separator row (`:---`, `:---:`, `---:`), so GFM rendering still honors it
-- Pads ragged rows to the table's max column count (short rows gain empty trailing cells)
+- Uses the header's column count: short body rows gain empty trailing cells and excess body cells are dropped, matching GFM rendering
+- Preserves a shared zero-to-three-space Markdown indent and recognizes GFM one-cell body rows without a pipe
 - Inserts a blank line before and after each table when missing
 
 ## Invocation
@@ -81,7 +82,7 @@ python /path/to/skills/loom-md-tables/fix-md-tables.py FILE.md      # preview to
 python /path/to/skills/loom-md-tables/fix-md-tables.py FILE.md -i   # -i or --in-place: rewrite
 ```
 
-⚠ Only lines that both start and end with `|` are treated as table rows — indented tables and rows missing an outer pipe are skipped. It normalizes whitespace/widths only; it does not validate column-count mismatches beyond padding them.
+⚠ A pipe-separated header must be immediately followed by a valid GFM delimiter row with the same number of cells and indent. The utility preserves escaped `\|` inside cells and ignores fenced code, raw HTML blocks, four-space indented code, and lines starting another block such as a blockquote or list item. Pipe-looking prose without a delimiter row is left unchanged. Leading/trailing pipes are optional under GFM; the normalized output uses them for readability. Preview the diff when a table sits inside a complex nested container.
 
 ## Alignment Markers
 
@@ -96,4 +97,4 @@ python /path/to/skills/loom-md-tables/fix-md-tables.py FILE.md -i   # -i or --in
 
 - [ ] Ran preview (no `-i`) first and eyeballed the diff before rewriting in place.
 - [ ] Separator markers (`:---`, `---:`, `:---:`) survived; alignment intent intact.
-- [ ] Tables that didn't get touched actually start and end with `|` (indented/loose tables are skipped by design).
+- [ ] Header and delimiter counts/indents match; pipe-looking prose plus fenced/raw-HTML examples were intentionally left unchanged.
