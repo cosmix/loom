@@ -196,6 +196,40 @@ pub(super) fn extract_backtick_items(lines: &[String]) -> Vec<String> {
         .collect()
 }
 
+/// Append the shared "settled stage" completion doctrine: `loom stage
+/// complete` is the session's LAST act, run only once the stage is SETTLED,
+/// plus the "verify acceptance criteria" line shared by both callers.
+///
+/// Duplicated verbatim between `append_completion_rules` (standard and
+/// integration-verify prefixes) and `generate_knowledge_stable_prefix`
+/// (`cache.rs`) - extracted here so the doctrine text lives in exactly one
+/// place.
+pub(super) fn append_settled_completion_rules(content: &mut String) {
+    content.push_str(
+        "- **`loom stage complete` is the LAST act of your session.** Run it ONLY when the stage is SETTLED:\n",
+    );
+    content.push_str(
+        "  - every subagent/team/Workflow you spawned has returned and its result is absorbed - nothing is still running or expected to report\n",
+    );
+    content.push_str(
+        "  - every defect found by review or verification is fixed and re-verified - nothing is left open or merely \"reported\"\n",
+    );
+    content.push_str("  - all work is committed (`git status` clean)\n");
+    content.push_str(
+        "- **After `loom stage complete` succeeds: STOP and end the session.** No further edits, spawns, or checks - post-completion work is LOST WORK (the merge starts from the completed commit)\n",
+    );
+    content.push_str("- **Verify acceptance criteria** before marking stage complete\n");
+}
+
+/// Append completion rules shared between standard and integration-verify prefixes
+pub(super) fn append_completion_rules(content: &mut String) {
+    append_settled_completion_rules(content);
+    content.push_str("- **Create handoff** if context exceeds 75%\n");
+    content.push_str("- **IMPORTANT: Before running `loom stage complete`, ensure you are at the worktree root directory**\n");
+    content.push_str("- **If acceptance criteria fail**: Fix the issues and run `loom stage complete <stage-id>` again\n");
+    content.push_str("- **NEVER use `loom stage retry` from an active session** — it creates a parallel session\n\n");
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

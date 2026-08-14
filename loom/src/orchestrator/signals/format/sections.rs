@@ -10,8 +10,8 @@ use crate::skills::SkillMatch;
 
 use super::super::types::{DependencyStatus, EmbeddedContext, SandboxSummary};
 use super::helpers::{
-    extract_tasks_from_stage, format_dependency_outputs, format_dependency_table,
-    format_structured_handoff,
+    append_budget_exceeded_box, extract_tasks_from_stage, format_dependency_outputs,
+    format_dependency_table, format_structured_handoff,
 };
 
 /// SEMI-STABLE section: Changes per stage, not per session
@@ -745,18 +745,7 @@ pub(super) fn format_recitation_section(
             ));
 
             if usage >= budget {
-                content.push_str("```\n");
-                content.push_str("┌──────────────────────────────────────────────────────────┐\n");
-                content.push_str("│  🛑 BUDGET EXCEEDED - WRAP UP NOW                        │\n");
-                content.push_str("│  1. loom memory list (verify insights captured)          │\n");
-                content.push_str("│  2. Stage SETTLED (subagents returned, defects fixed,    │\n");
-                content.push_str("│     everything committed)?                               │\n");
-                content.push_str("│     YES -> loom stage complete <stage-id>                │\n");
-                content
-                    .push_str("│     NO  -> loom handoff --message \"<state>\" and STOP.    │\n");
-                content.push_str("│            Do NOT complete an unsettled stage.           │\n");
-                content.push_str("└──────────────────────────────────────────────────────────┘\n");
-                content.push_str("```\n");
+                append_budget_exceeded_box(&mut content);
             } else {
                 content.push_str("**Approaching budget limit.** Prepare for handoff:\n");
                 content.push_str("- `loom memory note` to record remaining observations\n");

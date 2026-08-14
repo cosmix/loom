@@ -1,5 +1,7 @@
 use sha2::{Digest, Sha256};
 
+use super::helpers::{append_completion_rules, append_settled_completion_rules};
+
 /// Metrics about a generated signal for debugging and optimization
 #[derive(Debug, Clone, Default)]
 pub struct SignalMetrics {
@@ -98,28 +100,6 @@ fn append_subagent_restrictions(content: &mut String, agents_role: &str) {
     content.push_str("- Report instead: files changed, assumptions made, anything unresolved.\n");
     content.push_str("  The MAIN AGENT compiles, tests, lints, and fixes.\n\n");
     content.push_str(agents_role);
-}
-
-/// Append completion rules shared between standard and integration-verify prefixes
-fn append_completion_rules(content: &mut String) {
-    content.push_str(
-        "- **`loom stage complete` is the LAST act of your session.** Run it ONLY when the stage is SETTLED:\n",
-    );
-    content.push_str(
-        "  - every subagent/team/Workflow you spawned has returned and its result is absorbed - nothing is still running or expected to report\n",
-    );
-    content.push_str(
-        "  - every defect found by review or verification is fixed and re-verified - nothing is left open or merely \"reported\"\n",
-    );
-    content.push_str("  - all work is committed (`git status` clean)\n");
-    content.push_str(
-        "- **After `loom stage complete` succeeds: STOP and end the session.** No further edits, spawns, or checks - post-completion work is LOST WORK (the merge starts from the completed commit)\n",
-    );
-    content.push_str("- **Verify acceptance criteria** before marking stage complete\n");
-    content.push_str("- **Create handoff** if context exceeds 75%\n");
-    content.push_str("- **IMPORTANT: Before running `loom stage complete`, ensure you are at the worktree root directory**\n");
-    content.push_str("- **If acceptance criteria fail**: Fix the issues and run `loom stage complete <stage-id>` again\n");
-    content.push_str("- **NEVER use `loom stage retry` from an active session** — it creates a parallel session\n\n");
 }
 
 /// Append the mandatory mini adversarial code review block.
@@ -776,20 +756,7 @@ pub fn generate_knowledge_stable_prefix() -> String {
         "- Skills: /loom-auth, /loom-testing, /loom-ci-cd, /loom-logging-observability\n\n",
     );
     content.push_str("**Completion:**\n");
-    content.push_str(
-        "- **`loom stage complete` is the LAST act of your session.** Run it ONLY when the stage is SETTLED:\n",
-    );
-    content.push_str(
-        "  - every subagent/team/Workflow you spawned has returned and its result is absorbed - nothing is still running or expected to report\n",
-    );
-    content.push_str(
-        "  - every defect found by review or verification is fixed and re-verified - nothing is left open or merely \"reported\"\n",
-    );
-    content.push_str("  - all work is committed (`git status` clean)\n");
-    content.push_str(
-        "- **After `loom stage complete` succeeds: STOP and end the session.** No further edits, spawns, or checks - post-completion work is LOST WORK (the merge starts from the completed commit)\n",
-    );
-    content.push_str("- **Verify acceptance criteria** before marking stage complete\n");
+    append_settled_completion_rules(&mut content);
     content.push_str("- **Commit knowledge changes**: `git add doc/loom/knowledge/ && git commit -m 'docs(knowledge): populate codebase knowledge'`\n");
     content.push_str("- **Create handoff** if context exceeds 75%\n");
     content.push_str("- **Run `loom stage complete <stage-id>`** when done (from the repo root)\n");
@@ -954,10 +921,6 @@ mod tests {
         // append_subagent_restrictions body and every implementation subagent is
         // now wrongly told to run full build/test/lint suites.
         assert!(!prefix.contains("INTEGRATION-VERIFY OVERRIDE"));
-        // `loom stage complete` must be framed as the session's LAST act, run
-        // only once the stage is settled - not a checkpoint you can keep working past.
-        assert!(prefix.contains("is the LAST act of your session"));
-        assert!(prefix.contains("post-completion work is LOST WORK"));
     }
 
     #[test]
@@ -1008,10 +971,6 @@ mod tests {
         // Pins the fact that this prefix never calls append_subagent_restrictions,
         // so it must not carry the implementation-stage no-verify rule.
         assert!(!prefix.contains("VERIFICATION IS THE MAIN AGENT'S JOB"));
-        // `loom stage complete` must be framed as the session's LAST act, run
-        // only once the stage is settled - not a checkpoint you can keep working past.
-        assert!(prefix.contains("is the LAST act of your session"));
-        assert!(prefix.contains("post-completion work is LOST WORK"));
     }
 
     #[test]
@@ -1100,10 +1059,6 @@ mod tests {
         assert!(prefix.contains("INTEGRATION-VERIFY OVERRIDE"));
         assert!(prefix.contains("does NOT apply here"));
         assert!(prefix.contains("cargo clippy -- -D warnings"));
-        // `loom stage complete` must be framed as the session's LAST act, run
-        // only once the stage is settled - not a checkpoint you can keep working past.
-        assert!(prefix.contains("is the LAST act of your session"));
-        assert!(prefix.contains("post-completion work is LOST WORK"));
     }
 
     #[test]
@@ -1152,10 +1107,6 @@ mod tests {
         // Pins the fact that this prefix never calls append_subagent_restrictions,
         // so it must not carry the implementation-stage no-verify rule.
         assert!(!prefix.contains("VERIFICATION IS THE MAIN AGENT'S JOB"));
-        // `loom stage complete` must be framed as the session's LAST act, run
-        // only once the stage is settled - not a checkpoint you can keep working past.
-        assert!(prefix.contains("is the LAST act of your session"));
-        assert!(prefix.contains("post-completion work is LOST WORK"));
     }
 
     #[test]

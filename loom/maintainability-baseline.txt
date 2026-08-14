@@ -46,8 +46,8 @@ file src/orchestrator/core/stage_executor.rs 894
 file src/orchestrator/merge_attribution.rs 543
 file src/orchestrator/monitor/heartbeat.rs 413
 file src/orchestrator/monitor/tests.rs 737
-file src/orchestrator/signals/cache.rs 1128
-file src/orchestrator/signals/format/sections.rs 1197
+file src/orchestrator/signals/cache.rs 1121
+file src/orchestrator/signals/format/sections.rs 1191
 file src/orchestrator/signals/generate.rs 707
 file src/orchestrator/signals/tests.rs 562
 file src/orchestrator/signals/tests_cache.rs 687
@@ -258,7 +258,7 @@ function src/orchestrator/signals/crud.rs update_signal 69
 function src/orchestrator/signals/format/helpers.rs format_structured_handoff 107
 function src/orchestrator/signals/format/sections.rs format_codex_implementers_section 164
 function src/orchestrator/signals/format/sections.rs format_dynamic_section 280
-function src/orchestrator/signals/format/sections.rs format_recitation_section 101
+function src/orchestrator/signals/format/sections.rs format_recitation_section 95
 function src/orchestrator/signals/format/sections.rs format_sandbox_section 66
 function src/orchestrator/signals/format/sections.rs format_semi_stable_section 411
 function src/orchestrator/signals/format/sections.rs format_skill_recommendations 64

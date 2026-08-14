@@ -26,7 +26,14 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use super::super::cache::{generate_integration_verify_stable_prefix, generate_stable_prefix};
+use tempfile::TempDir;
+
+use super::super::cache::{
+    generate_integration_verify_stable_prefix, generate_knowledge_distill_stable_prefix,
+    generate_knowledge_stable_prefix, generate_stable_prefix,
+};
+use super::super::generate::generate_signal_with_metrics;
+use super::{create_test_session, create_test_stage, create_test_worktree};
 use crate::fs::permissions::constants::HOOK_SUBAGENT_VERIFY_GUARD;
 
 const CLAUDE_MD_TEMPLATE: &str = include_str!("../../../../CLAUDE.md.template");
@@ -285,5 +292,88 @@ fn no_guidance_surface_still_tells_a_subagent_to_verify() {
          subagent obeying them would be blocked by hooks/subagent-verify-guard.sh \
          with no allowed alternative:\n  {}",
         leftovers.join("\n  ")
+    );
+}
+
+/// A stable-prefix generator, named for its failure message.
+type PrefixGenerator = fn() -> String;
+
+/// The "settled stage" completion doctrine (`is the LAST act of your
+/// session` / `post-completion work is LOST WORK`) must reach every stable
+/// prefix, not just the two surfaces `cache.rs`'s own unit tests happen to
+/// pin - a fourth generator added later gets no coverage from those two.
+#[test]
+fn settled_completion_doctrine_present_in_all_stable_prefixes() {
+    let generators: [(&str, PrefixGenerator); 4] = [
+        ("generate_stable_prefix", generate_stable_prefix),
+        (
+            "generate_integration_verify_stable_prefix",
+            generate_integration_verify_stable_prefix,
+        ),
+        (
+            "generate_knowledge_distill_stable_prefix",
+            generate_knowledge_distill_stable_prefix,
+        ),
+        (
+            "generate_knowledge_stable_prefix",
+            generate_knowledge_stable_prefix,
+        ),
+    ];
+
+    for (name, generator) in generators {
+        let prefix = generator();
+        assert!(
+            prefix.contains("is the LAST act of your session"),
+            "{name} must frame `loom stage complete` as the session's LAST act"
+        );
+        assert!(
+            prefix.contains("post-completion work is LOST WORK"),
+            "{name} must warn that post-completion work is LOST WORK"
+        );
+    }
+}
+
+/// The subagent-response-budget block must frame the timeout as a check-in
+/// cadence, not a deadline that licenses taking over a live subagent's work.
+#[test]
+fn subagent_budget_is_cadence_not_deadline_in_emitted_signal() {
+    let temp_dir = TempDir::new().unwrap();
+    let work_dir = temp_dir.path().join(".work");
+    fs::create_dir_all(&work_dir).unwrap();
+
+    let session = create_test_session();
+    let worktree = create_test_worktree();
+    let mut budgeted_stage = create_test_stage();
+    budgeted_stage.subagent_timeout_secs = Some(900);
+
+    let (signal_path, _) = generate_signal_with_metrics(
+        &session,
+        &budgeted_stage,
+        &worktree,
+        &[],
+        None,
+        None,
+        &work_dir,
+    )
+    .unwrap();
+    let content = fs::read_to_string(&signal_path).unwrap();
+
+    assert!(
+        content.contains("NOT as a deadline"),
+        "the block must say the budget is a check-in cadence, not a deadline on \
+         any subagent's work"
+    );
+    assert!(
+        content.contains("positive evidence of death"),
+        "the block must require positive evidence before a takeover, not elapsed \
+         time alone"
+    );
+    assert!(
+        !content.contains("report back within"),
+        "the retired takeover doctrine must not resurface in the emitted block"
+    );
+    assert!(
+        !content.contains("take the work over"),
+        "the retired takeover doctrine must not resurface in the emitted block"
     );
 }
