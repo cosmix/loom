@@ -38,11 +38,11 @@ How much to test, at what altitude, and in what order — balancing signal again
 
 Push tests **down** to the cheapest altitude that still exercises the risk. Each layer up costs more to write, run, and debug, and fails for more unrelated reasons.
 
-| Layer | Share | Scope | Speed | Signal on failure |
+| Layer | Typical emphasis | Scope | Speed | Signal on failure |
 | ----- | ----- | ----- | ----- | ----------------- |
-| Unit | 65-80% | one function/branch, no I/O | ms | precise — points at the defect |
-| Integration | 15-25% | real boundary (DB, HTTP, queue) | 10ms-1s | wiring/contract broke |
-| E2E | 5-10% | full user journey in a browser | seconds | *something* broke, somewhere |
+| Unit | most behavior that can run without I/O | one function/branch, no I/O | ms | precise — points at the defect |
+| Integration | boundaries and contracts | real boundary (DB, HTTP, queue) | 10ms-1s | wiring/contract broke |
+| E2E | a small set of critical journeys | full user journey in a browser | seconds | *something* broke, somewhere |
 
 ⚠ **Ice-cream cone anti-pattern:** inverted pyramid — many slow E2E tests, few unit tests. Symptoms: hours-long CI, chronic flakiness, "just re-run it" culture, hours to localize a failure. Cause: E2E is easy to *start* (record-and-play) but the suite becomes unmaintainable. Fix: for every E2E failure, ask "what unit/integration test *should* have caught this?" and push it down.
 

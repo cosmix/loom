@@ -26,8 +26,8 @@ triggers:
   - bearer
   - authorization header
   - auth header
-  - 401
-  - 403
+  - "401"
+  - "403"
   - forbidden
   - unauthorized
   - RBAC
@@ -60,7 +60,7 @@ Authentication proves *who* you are; authorization decides *what* you may touch.
 
 ## When to Use
 
-Auth is security-critical; default to Opus (`loom-senior-software-engineer`) for design, token/session lifecycle, access-control model choice, and anything touching production credentials. Delegate to Sonnet only for well-scoped execution against an existing pattern: unit tests for auth code, boilerplate middleware, scaffolding from a concrete plan. Never ship auth code that a senior hasn't adversarially reviewed against the checklist below.
+Auth is security-critical. Subject designs, token/session lifecycle changes, access-control model changes, and any code handling production credentials to adversarial review against the checklist below. Treat a framework's defaults as untrusted until its documented behavior and configured version are verified.
 
 Scope boundary: this skill is *mechanisms*. For vuln scanning use `loom-security-scan`; deep audit `loom-security-audit`; architecture threats `loom-threat-model`.
 

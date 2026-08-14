@@ -82,7 +82,7 @@ Grouped by how you catch it. Full spec at w3.org/WAI/WCAG21/quickref; these are 
 | Error id | 3.3.1 (A) | Errors identified in text (not color) and tied to the field. |
 | Lang | 3.1.1 (A) | `<html lang="…">` set (and `lang` on inline language switches). |
 
-**WCAG 2.2 adds** (AA): 2.4.11 Focus Not Obscured (sticky headers must not fully cover the focused element), 2.5.8 Target Size ≥ 24×24px, 3.3.7 Redundant Entry, 3.3.8 Accessible Authentication (no cognitive-test-only auth, allow paste into OTP).
+**WCAG 2.2 adds:** at **AA**, 2.4.11 Focus Not Obscured (sticky headers must not fully cover the focused element), 2.5.7 Dragging Movements, 2.5.8 Target Size ≥ 24×24px, and 3.3.8 Accessible Authentication (no cognitive-test-only auth; allow password managers and paste into OTP). At **A**, also meet 3.2.6 Consistent Help and 3.3.7 Redundant Entry. WCAG 2.2 also makes 4.1.1 Parsing obsolete and removed; do not use it as a conformance criterion.
 
 ## Semantic HTML
 

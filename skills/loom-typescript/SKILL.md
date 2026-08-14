@@ -712,9 +712,9 @@ Import assertions using the withdrawn `assert` keyword were superseded by import
 import config from "./config.json" with { type: "json" };
 ```
 
-#### TS 6.0 deprecates / TS 7.0 (Go compiler) removes `es5` target, `baseUrl`, node10 resolution
+#### Compiler migrations: inspect the installed release notes
 
-TS 6.0 is the LAST JavaScript-based release; it DEPRECATES, and the Go-rewritten TS 7.0 REMOVES: `--target es3`/`es5` (ES2015 becomes the minimum), `--baseUrl` (migrate path aliases to the Node-native `package.json#imports` map, supported by both Node and TS without a build step), and `moduleResolution: node10`/classic. Down-leveling for ancient targets belongs in Babel/esbuild, not `tsc`. The deprecations land in 6.0; the removals in 7.0 — do not conflate the two.
+Compiler defaults and deprecated module-resolution modes change across TypeScript releases. Before changing `target`, `moduleResolution`, `baseUrl`, or path aliases, inspect the release notes for the **installed and target** compiler, then test the emitted package from a consumer. Prefer standards-based package `exports`/`imports` maps for new Node aliases, but do not mechanically replace an established bundler alias without confirming runtime and test-runner support.
 
 ```json
 { "imports": { "#utils/*": "./src/utils/*.js", "#models/*": "./src/models/*.js" } }

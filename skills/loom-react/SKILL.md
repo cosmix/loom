@@ -1,6 +1,6 @@
 ---
 name: loom-react
-description: Modern React development patterns. Use for building React 19+ applications with components, hooks, Jotai state, React Router v7, server components, accessibility, performance optimization, and testing. Covers client-side routing, composition, and async data loading.
+description: Modern client-side React development patterns. Use for React 19+ SPAs with components, Hooks, Jotai state, React Router v7, accessibility, performance optimization, and testing. Covers client-side routing, composition, and async data loading; not framework-specific SSR or Server Components.
 triggers:
   - react
   - jsx
@@ -25,10 +25,7 @@ triggers:
   - jotai
   - vite
   - bun
-  - Next.js
-  - Remix
   - client-side routing
-  - server components
   - accessibility
   - a11y
   - ARIA

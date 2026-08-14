@@ -57,8 +57,6 @@ pub enum ParseError {
     Syntax { line: usize, column: usize, message: String },
     #[error("unexpected token: expected {expected}, found {found}")]
     Unexpected { expected: String, found: String },
-    #[error(transparent)] // wrap another error without adding a layer
-    Other(#[from] anyhow::Error),
 }
 ```
 

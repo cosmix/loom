@@ -210,6 +210,7 @@ Reversibility is a design requirement, not an afterthought.
 - **Rollback point before each phase:** record git sha, DB migration version, config/flag snapshot. The fastest rollback is flipping the flag to 0% — design for that first.
 - **Auto-rollback:** watch health (error rate, latency, business metric); trip back to the last good point past a threshold. Never fully automate a destructive DB rollback — page a human.
 - **DB is the hard part:** code rolls back instantly; data does not. Expand–contract is what makes DB rollback possible — as long as you're pre-contract, the old column/table still exists, so reverting code is safe. Once you `DROP`, rollback means restore-from-backup. Delay contract until you're certain.
+- **Contract only after compatibility is proven:** before dropping a field or endpoint, verify that no deployed version, asynchronous worker, replay job, or supported external client can still read or write it. A successful backfill alone does not prove this.
 
 ## Framework-specific gotchas
 

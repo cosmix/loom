@@ -188,7 +188,7 @@ Non-self-describing formats (bincode/postcard) can't drive internally/adjacently
 
 - **Cost order (Rust, rough):** bincode/postcard < protobuf ≈ MessagePack/CBOR < JSON ≪ YAML. Binary saves parse time *and* bytes.
 - **Amortize setup:** reuse encoders/decoders and, for protobufjs/Ajv-style libs, load/compile the schema once — recompiling per message dominates cost.
-- **Stream large payloads** with JSON Lines (`{...}\n{...}`) or length-delimited protobuf instead of one giant document — bounds memory and enables backpressure. Skip malformed JSONL lines rather than failing the whole stream.
+- **Stream large payloads** with JSON Lines (`{...}\n{...}`) or length-delimited protobuf instead of one giant document — bounds memory and enables backpressure. Define malformed-record policy explicitly: reject the batch, or quarantine/dead-letter each bad record with its position and error. Never silently skip records.
 - **Compress at the transport, not per-field** (gzip/zstd over the response); mining bytes by hand-shortening keys hurts readability for marginal gain vs a binary format.
 - Measure with representative payloads — small-object microbenchmarks mislead; allocation/GC pressure often dominates raw encode time.
 

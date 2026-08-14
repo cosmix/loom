@@ -142,7 +142,7 @@ Use when the contract must be shared across languages or stored as data (OpenAPI
 ```typescript
 import Ajv from "ajv";
 import addFormats from "ajv-formats";
-const ajv = new Ajv({ allErrors: true, removeAdditional: true, coerceTypes: true, useDefaults: true });
+const ajv = new Ajv({ allErrors: true, strict: true });
 addFormats(ajv);
 const validate = ajv.compile(schema); // compile ONCE at startup, reuse; compiling per-request is a major perf cliff
 if (!validate(data)) console.log(validate.errors); // {instancePath, keyword, params, message}
@@ -150,9 +150,8 @@ if (!validate(data)) console.log(validate.errors); // {instancePath, keyword, pa
 
 ⚠ Gotchas:
 
-- **`additionalProperties: false` is not inherited** and does not apply across `allOf`/`anyOf`/`$ref` composition — unknown keys can slip through combined schemas. Set it explicitly on each object.
-- `coerceTypes: true` mutates input (`"5" → 5`, `"" → 0` for numbers) — same empty-string trap as JS.
-- `removeAdditional`/`useDefaults` **mutate** the validated object in place; clone first if you need the original.
+- **`additionalProperties: false` is local to the schema object** and can be awkward with `allOf`/`anyOf`/`$ref`. In Draft 2019-09/2020-12 schemas, prefer `unevaluatedProperties: false` at the composed-object boundary; verify that the selected validator and OpenAPI dialect support it.
+- Do not enable `coerceTypes`, `removeAdditional`, or `useDefaults` for untrusted API input by default: they mutate input and can silently turn malformed input into accepted data. Parse/normalize explicitly after validation when the contract intentionally permits coercion or defaults.
 - `format` (email, uri, date-time) requires `ajv-formats`; unknown formats are ignored silently unless `strict: true`.
 
 ## Type coercion pitfalls (cross-cutting)

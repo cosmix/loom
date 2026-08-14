@@ -46,7 +46,7 @@ For auth, crypto, payments, deserialization, or anything touching a trust bounda
 
 ## Severity taxonomy
 
-Label every comment. Only the first two gate the merge.
+Label every comment. BLOCKER, SILENT_FAILURE, and CRITICAL gate the merge.
 
 | Severity           | Gate? | Meaning                                                                            |
 | ------------------ | ----- | --------------------------------------------------------------------------------- |
@@ -56,7 +56,7 @@ Label every comment. Only the first two gate the merge.
 | **MAJOR**          | ❌     | Maintainability, tech debt, missing test for a real path. Fix soon.               |
 | **MINOR / nit**    | ❌     | Style, naming, micro-optimization. Prefix with `nit:` so the author can skip it.  |
 
-**Approve-with-comments discipline:** if nothing is BLOCKER/CRITICAL, approve and leave the MAJOR/MINOR notes as non-blocking. Don't hold a PR hostage over nits or personal style. Blocking on taste is the top reviewer anti-pattern — it trains authors to ignore you.
+**Approve-with-comments discipline:** if nothing is BLOCKER/SILENT_FAILURE/CRITICAL, approve and leave the MAJOR/MINOR notes as non-blocking. Don't hold a PR hostage over nits or personal style. Blocking on taste is the top reviewer anti-pattern — it trains authors to ignore you.
 
 ## Method
 

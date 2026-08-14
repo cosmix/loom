@@ -45,7 +45,7 @@ Change the internal structure of code without changing its observable behavior. 
 Corollaries an expert never violates:
 
 1. **Tests are the safety net.** Run them before you touch anything (establish green). If there are none for the code you're changing, write **characterization tests** first (below) — do not refactor untested legacy blind.
-2. **Tiny reversible steps.** One mechanical move at a time; re-run tests after each. When something breaks you know exactly which step did it and can `git checkout` a single step, not an hour of work.
+2. **Tiny reversible steps.** One mechanical move at a time; re-run tests after each. When something breaks, inspect the small current diff and use the repository's approved recovery workflow rather than discarding unrelated work.
 3. **Separate refactor commits from behavior-change commits.** A `refactor:` commit must be a no-op at runtime — reviewers can trust the diff without re-verifying logic. Mixing a bug fix into a rename hides the fix and poisons `git bisect`. (Commit mechanics: `/loom-git-workflow`.)
 4. **Don't change tests and production code in the same step.** If a refactor "requires" editing a test's assertions, behavior changed — stop and reconsider.
 
@@ -82,7 +82,7 @@ Refactoring is not "make it nicer" — identify a specific smell and apply its c
 1. Green baseline   → run the full suite; if red, stop (fix or characterize first)
 2. Name the smell   → pick ONE move from the table
 3. Apply one step   → smallest mechanical edit; prefer IDE/tool rename over hand-edit
-4. Re-run tests     → green? commit. red? git checkout -- <files> and rethink
+4. Re-run tests     → green? commit. red? inspect the current small diff and rethink
 5. Repeat           → next step
 6. Final gate       → full suite + lint + build green; diff is behavior-neutral
 ```

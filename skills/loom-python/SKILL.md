@@ -37,9 +37,9 @@ Idiomatic, production-grade Python: modern typing, async, packaging, and the web
 
 ## Tooling (uv / ruff / mypy)
 
-Modern Python has consolidated onto two Rust tools. Reach for them by default.
+Ruff is a strong default for linting and formatting. `uv` is a capable project and environment manager, but preserve the repository's existing package manager and lockfile unless a migration is explicitly requested.
 
-**`uv`** — one binary replacing pip + pip-tools + virtualenv + pyenv + pipx + (mostly) poetry; resolves/installs 10–100× faster.
+**`uv`** — a single tool for project environments, locking, Python installation, and pip-compatible workflows. Use it for new work or repositories that already use it; do not treat it as an implicit replacement for Poetry or another established workflow.
 
 | Task | Command |
 | --- | --- |
@@ -52,7 +52,7 @@ Modern Python has consolidated onto two Rust tools. Reach for them by default.
 | Ephemeral tool | `uvx ruff check` (= `uv tool run`) |
 | pip shim | `uv pip install ...` (drop-in, no project file) |
 
-- `uv add` edits the manifest for you — never hand-edit `[project.dependencies]`. `uv.lock` is the committed lockfile; `uv sync --frozen` in CI to fail on drift.
+- In a uv-managed project, use `uv add`/`uv remove` so the manifest and `uv.lock` stay in sync; use `uv sync --frozen` in CI to fail on drift.
 
 **`ruff`** — single linter+formatter replacing flake8, isort, pyupgrade, pydocstyle, autoflake, and much of bandit.
 
