@@ -32,4 +32,18 @@ if [ -n "$STAGED_FILES" ]; then
     done
 fi
 
+# Maintainability ledger gate: catches growth of ledgered files/functions at
+# commit time instead of push time. Fast when the build is warm.
+cd "$REPO_ROOT/loom" || exit 1
+echo "Checking maintainability limits..."
+if ! cargo test --quiet --test maintainability 2>&1; then
+    echo ""
+    echo "ERROR: maintainability gate failed - a ledgered file or function grew,"
+    echo "or a new file/function exceeds the limits."
+    echo "Refactor (extract into a new module) instead of growing ledgered code;"
+    echo "growth is never recordable in loom/maintainability-baseline.txt."
+    echo ""
+    exit 1
+fi
+
 echo "Pre-commit formatting complete."

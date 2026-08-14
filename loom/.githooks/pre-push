@@ -33,9 +33,19 @@ fi
 cd "$REPO_ROOT/loom" || exit 1
 
 # Run clippy with warnings as errors
-if ! cargo clippy -- -D warnings 2>&1; then
+if ! cargo clippy --all-targets -- -D warnings 2>&1; then
     echo ""
     echo "ERROR: Clippy found issues."
+    echo "Fix the warnings above before pushing."
+    echo ""
+    exit 1
+fi
+
+# Check rustdoc (CI's Documentation job runs the same; rustdoc lints are
+# invisible to build/clippy/test)
+if ! RUSTDOCFLAGS="-D warnings" cargo doc --workspace --all-features --no-deps 2>&1; then
+    echo ""
+    echo "ERROR: rustdoc found issues (private intra-doc links, etc.)."
     echo "Fix the warnings above before pushing."
     echo ""
     exit 1
@@ -52,10 +62,11 @@ fi
 
 # Run tests
 # Unset git env vars to prevent interference with test repo creation
-if ! env -u GIT_INDEX_FILE -u GIT_DIR -u GIT_WORK_TREE cargo test 2>&1; then
+if ! env -u GIT_INDEX_FILE -u GIT_DIR -u GIT_WORK_TREE cargo test --all-targets --no-fail-fast 2>&1; then
     echo ""
     echo "ERROR: Tests failed."
-    echo "Fix the failing tests before pushing."
+    echo "This run does NOT stop at the first failure - every failure above"
+    echo "must be fixed before pushing."
     echo ""
     exit 1
 fi
