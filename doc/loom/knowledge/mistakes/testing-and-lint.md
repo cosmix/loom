@@ -69,7 +69,7 @@ Do not trust verbal descriptions of what a commit does — always compare before
 
 **Why it is easy to miss:** the output ends with a plausible `test result: ok` line from the last target that _did_ run, and the `error: test failed, to rerun pass --test e2e` line scrolls past. Nothing announces the nine targets that were skipped. It compounds when the aborting failure is environmental (a sandboxed run cannot create `TMUX_TMPDIR`), because that failure looks ignorable — and ignoring it silently discards the rest of the suite.
 
-**Prevention:** verify with `cargo test --no-fail-fast` so every target runs, and count the `Running tests/...` lines against the target list rather than reading the tail. The pre-push hook uses plain `cargo test`, so it stops early too — a hook that passes only proves the targets before the first failure. Never report a suite green off a run that aborted.
+**Prevention:** verify with `cargo test --no-fail-fast` so every target runs, and count the `Running tests/...` lines against the target list rather than reading the tail. The pre-push hook used plain `cargo test` and stopped early too — fixed 2026-08-14: it now runs `cargo test --all-targets --no-fail-fast`, so a passing hook proves every target and a failing one reports every failure at once. Never report a suite green off a run that aborted.
 
 **Recurrence (2026-08-10, same day):** it happened again, in an interactive session, in the shape this note predicts exactly. The agent ran `cargo test --all-targets`, saw the two sandboxed tmux e2e failures, verified they were pre-existing by stashing, and reported the suite green apart from them — never noticing that `maintainability` and seven other targets had not run at all. The push then failed on `maintainability`, whose four violations the same change had introduced. Knowing the rule did not help, because the environmental failure supplied a ready-made reason to stop looking.
 
@@ -131,13 +131,24 @@ and re-adding it, same measured size, at the new path (alphabetical within the `
 Relocated debt is not new debt — but only new-code violations must be refactored instead of
 ledgered.
 
+## Ledger Growth Reached Push Time Again — Gates Moved Earlier (2026-08-14)
+
+**What happened:** the maintainability failure class recurred a third time: a guidance commit (`deecb23e`) duplicated a 13-line block into two ledgered `signals/` functions and grew four tests, and the breakage was only discovered when the pre-push hook ran the suite. The truncated-`cargo test` trap above is exactly how it went unnoticed at commit time.
+
+**Fix (mechanical, both hooks in `loom/.githooks/`):**
+
+- `pre-commit` now runs `cargo test --quiet --test maintainability` after formatting — ledger growth blocks the commit itself, not the eventual push. Fast when the build is warm; the first commit in a cold worktree pays a compile.
+- `pre-push` now mirrors CI: `cargo clippy --all-targets -- -D warnings`, the rustdoc gate, and `cargo test --all-targets --no-fail-fast`.
+
+**Prevention:** when a failure class recurs at push time, the fix is to move its cheapest sufficient check to commit time, not to write another reminder. The ledger fix itself followed the standard shape: extract the duplicated block into an unledgered module (`signals/helpers.rs::append_settled_completion_rules`), never raise a ledger entry.
+
 ## A `[`link`]` to a Private Item Fails CI's Docs Job, Which No Local Gate Runs (2026-08-11)
 
 **What happened:** CI's `Documentation` job failed on main while build, test, clippy, fmt, maintainability, audit and deny were all green. Two module doc comments used intra-doc link syntax for private functions — `` [`tmux_endpoint_ready`] `` in `src/commands/attach/mod.rs` and `` [`kind_env`] `` in `src/orchestrator/terminal/native/wrapper.rs`. Both targets are private `fn`s referenced from public docs.
 
 **Why:** the job runs `cargo doc --workspace --all-features --no-deps` under `RUSTDOCFLAGS: -D warnings`, which promotes `rustdoc::private_intra_doc_links` to an error. That lint is a rustdoc lint — `cargo build`, `cargo clippy` and `cargo test` never evaluate it, so the usual pre-push loop cannot see it. Prose that merely _mentions_ a private helper is the common way to trip it.
 
-**Prevention:** if the local check before a push does not include `RUSTDOCFLAGS="-D warnings" cargo doc --workspace --all-features --no-deps`, the docs gate is untested. Run it after editing any `//!` or `///` block. When pointing prose at a private helper, use a plain code span (`` `kind_env` ``) — brackets promise a resolvable link, and only `--document-private-items` (which CI does not pass) would make it one.
+**Prevention:** if the local check before a push does not include `RUSTDOCFLAGS="-D warnings" cargo doc --workspace --all-features --no-deps`, the docs gate is untested. Fixed 2026-08-14: the pre-push hook now runs exactly that command between clippy and cargo-audit. Still run it directly after editing any `//!` or `///` block to catch issues before push time. When pointing prose at a private helper, use a plain code span (`` `kind_env` ``) — brackets promise a resolvable link, and only `--document-private-items` (which CI does not pass) would make it one.
 
 **Reading a CI failure without admin rights:** `gh run view <id> --log-failed` returns `HTTP 403: Must have admin rights` on this repo. The annotations endpoint does not require admin and carries both the failing step's error and every runner warning:
 
