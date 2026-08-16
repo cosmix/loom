@@ -35,6 +35,9 @@ logs/
 # Rust build artifacts
 target/
 
+# loom derived context cache (rebuildable from doc/loom/knowledge/)
+.loom/cache/
+
 # loom plan artifacts (completed and review copies)
 doc/plans/DONE-*
 doc/plans/REVIEW-*
