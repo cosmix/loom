@@ -71,7 +71,7 @@ file tests/e2e/tmux_backend.rs 431
 file tests/failure_resume.rs 468
 file tests/integration/merge_conflict_recovery.rs 412
 file tests/integration/plan_verify.rs 771
-function src/cli/dispatch.rs dispatch 240
+function src/cli/dispatch.rs dispatch 209
 function src/commands/clean/mod.rs print_summary 52
 function src/commands/clean/sessions.rs test_clean_sessions_reaps_live_only_when_destroying_state 54
 function src/commands/clean/worktrees.rs clean_worktrees 110
