@@ -1,6 +1,7 @@
+use crate::models::stage::Implementers;
 use crate::plan::schema::{
-    FilesystemConfig, LinuxConfig, NetworkConfig, PermissionMode, SandboxConfig,
-    StageSandboxConfig, StageType,
+    CommandConfinement, FilesystemConfig, LinuxConfig, NetworkConfig, PermissionMode,
+    SandboxConfig, StageSandboxConfig, StageType,
 };
 use anyhow::{bail, Result};
 use std::env;
@@ -35,6 +36,12 @@ pub struct MergedSandboxConfig {
     pub linux: LinuxConfig,
     /// Resolved Claude Code permission mode (stage > plan > stage-type default).
     pub permission_mode: PermissionMode,
+    /// Agent lanes this stage may spawn implementers from. Drives lane-specific
+    /// sandbox grants (the codex lane's domains and state dirs) so a
+    /// claude-only stage is not widened for a lane it never uses.
+    pub implementers: Implementers,
+    /// Resolved confinement level for plan-authored commands.
+    pub command_confinement: CommandConfinement,
 }
 
 /// Resolve the default `PermissionMode` for a stage type when no explicit
@@ -61,6 +68,7 @@ pub fn merge_config(
     plan_config: &SandboxConfig,
     stage_config: &StageSandboxConfig,
     stage_type: StageType,
+    implementers: &Implementers,
 ) -> MergedSandboxConfig {
     let permission_mode = stage_config
         .permission_mode
@@ -91,6 +99,10 @@ pub fn merge_config(
             .clone()
             .unwrap_or_else(|| plan_config.linux.clone()),
         permission_mode,
+        implementers: implementers.clone(),
+        command_confinement: stage_config
+            .command_confinement
+            .unwrap_or(plan_config.command_confinement),
     }
 }
 
@@ -378,6 +390,7 @@ mod tests {
             network: NetworkConfig::default(),
             linux: LinuxConfig::default(),
             permission_mode: None,
+            command_confinement: CommandConfinement::default(),
         };
 
         let stage = StageSandboxConfig {
@@ -389,9 +402,10 @@ mod tests {
             network: None,
             linux: None,
             permission_mode: None,
+            command_confinement: None,
         };
 
-        let merged = merge_config(&plan, &stage, StageType::Standard);
+        let merged = merge_config(&plan, &stage, StageType::Standard, &Implementers::default());
 
         assert!(!merged.enabled); // Overridden
         assert!(merged.auto_allow); // From plan
@@ -414,11 +428,17 @@ mod tests {
             network: NetworkConfig::default(),
             linux: LinuxConfig::default(),
             permission_mode: Some(PermissionMode::Auto),
+            command_confinement: CommandConfinement::default(),
         };
 
         let stage = StageSandboxConfig::default();
 
-        let merged = merge_config(&plan, &stage, StageType::Knowledge);
+        let merged = merge_config(
+            &plan,
+            &stage,
+            StageType::Knowledge,
+            &Implementers::default(),
+        );
 
         // Knowledge stage should NOT have doc/loom/knowledge/** in allow_write
         // (knowledge stages use `loom knowledge update` CLI which runs outside sandbox)
@@ -439,11 +459,17 @@ mod tests {
             network: NetworkConfig::default(),
             linux: LinuxConfig::default(),
             permission_mode: Some(PermissionMode::Auto),
+            command_confinement: CommandConfinement::default(),
         };
 
         let stage = StageSandboxConfig::default();
 
-        let merged = merge_config(&plan, &stage, StageType::IntegrationVerify);
+        let merged = merge_config(
+            &plan,
+            &stage,
+            StageType::IntegrationVerify,
+            &Implementers::default(),
+        );
 
         // IntegrationVerify stage should NOT have doc/loom/knowledge/** in allow_write
         // (uses `loom knowledge update` CLI which runs outside sandbox)
@@ -483,11 +509,21 @@ mod tests {
             permission_mode: Some(PermissionMode::AcceptEdits),
             ..StageSandboxConfig::default()
         };
-        let merged = merge_config(&plan, &stage_override, StageType::Standard);
+        let merged = merge_config(
+            &plan,
+            &stage_override,
+            StageType::Standard,
+            &Implementers::default(),
+        );
         assert_eq!(merged.permission_mode, PermissionMode::AcceptEdits);
 
         // No stage override: plan wins over default
-        let merged = merge_config(&plan, &StageSandboxConfig::default(), StageType::Standard);
+        let merged = merge_config(
+            &plan,
+            &StageSandboxConfig::default(),
+            StageType::Standard,
+            &Implementers::default(),
+        );
         assert_eq!(merged.permission_mode, PermissionMode::Plan);
 
         // No plan / no stage override: stage type default
@@ -496,6 +532,7 @@ mod tests {
             &plan_default,
             &StageSandboxConfig::default(),
             StageType::Standard,
+            &Implementers::default(),
         );
         assert_eq!(merged.permission_mode, PermissionMode::Auto);
 
@@ -503,6 +540,7 @@ mod tests {
             &plan_default,
             &StageSandboxConfig::default(),
             StageType::Knowledge,
+            &Implementers::default(),
         );
         assert_eq!(merged.permission_mode, PermissionMode::Auto);
     }
@@ -533,6 +571,8 @@ mod tests {
             network: NetworkConfig::default(),
             linux: LinuxConfig::default(),
             permission_mode: mode,
+            implementers: Implementers::default(),
+            command_confinement: CommandConfinement::default(),
         };
 
         // Every non-bypass mode is accepted.
@@ -683,6 +723,8 @@ mod tests {
             network: NetworkConfig::default(),
             linux: LinuxConfig::default(),
             permission_mode: PermissionMode::Auto,
+            implementers: Implementers::default(),
+            command_confinement: CommandConfinement::default(),
         };
 
         let escapes = validate_paths(&config);
@@ -704,6 +746,7 @@ mod tests {
             &SandboxConfig::default(),
             &StageSandboxConfig::default(),
             StageType::Standard,
+            &Implementers::default(),
         );
         assert!(merged.enabled, "Merged config should have sandbox enabled");
     }
