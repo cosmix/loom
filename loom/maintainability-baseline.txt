@@ -10,13 +10,13 @@
 file src/cli/types.rs 409
 file src/commands/graph/tests.rs 425
 file src/commands/init/tests.rs 684
-file src/commands/plan/verify.rs 573
+file src/commands/plan/verify.rs 599
 file src/commands/pressure/mod.rs 596
-file src/commands/repair.rs 973
+file src/commands/repair.rs 979
 file src/commands/review/generate.rs 473
 file src/commands/self_update/mod.rs 438
 file src/commands/self_update/tests.rs 490
-file src/commands/stage/complete.rs 797
+file src/commands/stage/complete.rs 804
 file src/commands/stage/merge.rs 583
 file src/commands/stage/tests/complete.rs 528
 file src/commands/status/data/collector.rs 501
@@ -32,17 +32,17 @@ file src/fs/plan_lifecycle.rs 609
 file src/fs/safe_fs.rs 1019
 file src/fs/work_dir.rs 874
 file src/git/worktree/base.rs 543
-file src/git/worktree/settings.rs 1096
+file src/git/worktree/settings.rs 1105
 file src/hooks/tests.rs 481
-file src/models/stage/methods.rs 806
-file src/models/stage/types.rs 1171
+file src/models/stage/methods.rs 811
+file src/models/stage/types.rs 1201
 file src/orchestrator/adjudication/mod.rs 695
 file src/orchestrator/adjudication/prompt.rs 491
 file src/orchestrator/core/event_handler.rs 468
 file src/orchestrator/core/merge_handler.rs 1430
 file src/orchestrator/core/orchestrator.rs 564
 file src/orchestrator/core/recovery.rs 1621
-file src/orchestrator/core/stage_executor.rs 894
+file src/orchestrator/core/stage_executor.rs 933
 file src/orchestrator/merge_attribution.rs 543
 file src/orchestrator/monitor/heartbeat.rs 413
 file src/orchestrator/monitor/tests.rs 737
@@ -52,17 +52,19 @@ file src/orchestrator/signals/generate.rs 707
 file src/orchestrator/signals/tests.rs 562
 file src/orchestrator/signals/tests_cache.rs 687
 file src/orchestrator/terminal/emulator.rs 611
+file src/orchestrator/terminal/native/mod.rs 497
 file src/orchestrator/terminal/native/pid_tracking.rs 451
+file src/orchestrator/terminal/native/tests.rs 520
 file src/orchestrator/terminal/native/window_ops.rs 575
 file src/plan/amendment.rs 1193
 file src/plan/parser/extraction.rs 410
 file src/plan/schema/tests/validation_tests.rs 621
-file src/plan/schema/types.rs 429
-file src/plan/schema/validation.rs 1002
+file src/plan/schema/types.rs 450
+file src/plan/schema/validation.rs 1074
 file src/plan/tests/amendment.rs 628
 file src/remote_control.rs 599
-file src/sandbox/config.rs 710
-file src/sandbox/settings.rs 1618
+file src/sandbox/config.rs 753
+file src/sandbox/settings.rs 1983
 file src/skills/index.rs 564
 file src/verify/duplicate_detection.rs 551
 file src/verify/transitions/state.rs 433
@@ -70,7 +72,7 @@ file tests/adjudication_e2e.rs 821
 file tests/e2e/tmux_backend.rs 431
 file tests/failure_resume.rs 468
 file tests/integration/merge_conflict_recovery.rs 412
-file tests/integration/plan_verify.rs 771
+file tests/integration/plan_verify.rs 878
 function src/cli/dispatch.rs dispatch 240
 function src/commands/clean/mod.rs print_summary 52
 function src/commands/clean/sessions.rs test_clean_sessions_reaps_live_only_when_destroying_state 54
@@ -83,7 +85,7 @@ function src/commands/graph/tests.rs test_build_graph_display_shows_all_deps 70
 function src/commands/graph/tree.rs build_tree_display 57
 function src/commands/handoff/create.rs execute 100
 function src/commands/init/execute.rs execute 122
-function src/commands/init/plan_setup.rs initialize_with_plan_acknowledgement 215
+function src/commands/init/plan_setup.rs initialize_with_plan_acknowledgement 226
 function src/commands/init/tests.rs test_cleanup_orphaned_sessions_reaps_live_only_in_clean_mode 76
 function src/commands/init/tests.rs test_create_stage_from_definition_no_dependencies 86
 function src/commands/init/tests.rs test_initialize_with_plan_creates_config 54
@@ -99,7 +101,7 @@ function src/commands/knowledge/gc.rs gc 144
 function src/commands/knowledge/mod.rs list 70
 function src/commands/knowledge/tests.rs test_knowledge_update_in_worktree_writes_to_worktree 68
 function src/commands/knowledge/tests.rs test_parse_file_type 70
-function src/commands/plan/verify.rs execute 246
+function src/commands/plan/verify.rs execute 272
 function src/commands/plan/verify.rs print_human 110
 function src/commands/pressure/mod.rs execute 86
 function src/commands/repair.rs check_all_issues 365
@@ -120,12 +122,12 @@ function src/commands/sessions.rs kill 54
 function src/commands/sessions.rs kill_single_session 51
 function src/commands/skill_index.rs parse_skill_triggers 80
 function src/commands/stage/acceptance_runner.rs resolve_acceptance_dir 60
-function src/commands/stage/complete.rs complete 173
+function src/commands/stage/complete.rs complete 178
 function src/commands/stage/complete.rs handle_force_unsafe_completion 83
 function src/commands/stage/complete.rs route_complete_for_conflicts 159
 function src/commands/stage/complete.rs run_verification_phase 99
 function src/commands/stage/dispute_criteria.rs dispute_criteria 60
-function src/commands/stage/knowledge_complete.rs complete_knowledge_stage 120
+function src/commands/stage/knowledge_complete.rs complete_knowledge_stage 121
 function src/commands/stage/merge.rs merge_resolved 92
 function src/commands/stage/merge.rs merge_retry 253
 function src/commands/stage/merge_resolver.rs spawn_merge_resolver 64
@@ -142,7 +144,7 @@ function src/commands/status/render/attention.rs render_problem_stage 53
 function src/commands/status/render/compact.rs render_compact 70
 function src/commands/status/render/completion.rs render_completion_lines 55
 function src/commands/status/render/completion.rs render_completion_screen 84
-function src/commands/status/render/graph.rs format_stage_annotations 91
+function src/commands/status/render/graph.rs format_stage_annotations 92
 function src/commands/status/render/graph.rs render_graph 73
 function src/commands/status/ui/tree_widget.rs build_lines 193
 function src/commands/status/ui/tree_widget_tests.rs make_stage 65
@@ -152,7 +154,7 @@ function src/commands/status/ui/tui/renderer.rs render_completion 128
 function src/commands/status/ui/tui/renderer.rs stage_info_to_stage 73
 function src/commands/status/ui/tui/state.rs test_live_status_compute_levels 51
 function src/commands/status/ui/tui/state.rs update 57
-function src/commands/verify.rs execute 90
+function src/commands/verify.rs execute 91
 function src/completions/dynamic/mod.rs complete_after_subcommand 56
 function src/completions/install.rs install 52
 function src/daemon/server/broadcast.rs run_status_broadcaster 80
@@ -190,7 +192,7 @@ function src/git/merge/status.rs make_test_stage 65
 function src/git/worktree/base.rs resolve_base_branch 92
 function src/git/worktree/discovery.rs find_worktree_by_prefix 55
 function src/git/worktree/operations.rs create_worktree 118
-function src/git/worktree/settings.rs create_worktree_settings 93
+function src/git/worktree/settings.rs create_worktree_settings 102
 function src/git/worktree/settings.rs refresh_worktree_settings_local 57
 function src/git/worktree/settings.rs test_create_worktree_settings_adds_resolved_work_permissions 82
 function src/git/worktree/settings.rs test_refresh_preserves_worktree_env_hooks_and_mode 59
@@ -201,7 +203,7 @@ function src/hooks/generator.rs test_generate_hooks_settings_includes_global_hoo
 function src/hooks/tests.rs test_generate_hooks_merges_with_global_hooks 75
 function src/map/analyzer.rs analyze_codebase 55
 function src/map/detectors.rs analyze_dir_recursive 58
-function src/models/stage/methods.rs from_definition_copies_all_runtime_policy_fields 120
+function src/models/stage/methods.rs from_definition_copies_all_runtime_policy_fields 125
 function src/models/stage/methods.rs new 68
 function src/models/stage/transitions.rs can_transition_to 75
 function src/models/stage/transitions.rs valid_transitions 59
@@ -235,9 +237,9 @@ function src/orchestrator/core/recovery.rs sync_graph_with_stage_files 516
 function src/orchestrator/core/recovery.rs sync_queued_status_to_files 60
 function src/orchestrator/core/recovery.rs verify_merged_true_or_revert 56
 function src/orchestrator/core/stage_executor.rs before_stage_gate_passed 62
-function src/orchestrator/core/stage_executor.rs start_knowledge_stage 135
+function src/orchestrator/core/stage_executor.rs start_knowledge_stage 143
 function src/orchestrator/core/stage_executor.rs start_ready_stages 67
-function src/orchestrator/core/stage_executor.rs start_stage 406
+function src/orchestrator/core/stage_executor.rs start_stage 411
 function src/orchestrator/merge_attribution.rs attribute_main_repo_merge 101
 function src/orchestrator/merge_attribution.rs reconcile_main_repo_active_merge 64
 function src/orchestrator/monitor/detection.rs detect_heartbeat_events 99
@@ -279,7 +281,7 @@ function src/orchestrator/terminal/emulator.rs build_command 161
 function src/orchestrator/terminal/native/detection.rs detect_parent_terminal 51
 function src/orchestrator/terminal/native/detection.rs detect_terminal#1 56
 function src/orchestrator/terminal/native/detection.rs detect_terminal#2 65
-function src/orchestrator/terminal/native/launch.rs prepare_session_launch 123
+function src/orchestrator/terminal/native/launch.rs prepare_session_launch 130
 function src/orchestrator/terminal/tmux/tests_discovery.rs live_tmux_sessions_orders_by_created_at_then_id 60
 function src/orchestrator/terminal/tmux/tests_spawn.rs a_failed_spawn_aborts_and_leaves_no_pid_file_for_the_native_retry_to_adopt 97
 function src/orchestrator/terminal/tmux/tests_viewer.rs pane_command_neutralises_hostile_session_ids 70
@@ -290,28 +292,30 @@ function src/plan/graph/mod.rs build 57
 function src/plan/parser/extraction.rs extract_yaml_metadata_with_ranges 51
 function src/plan/parser/mod.rs test_parse_plan_with_all_fields 74
 function src/plan/schema/tests/security_policy_tests.rs rejects_misspelled_nested_sandbox_fields 58
-function src/plan/schema/validation.rs check_cross_stage_wiring_coverage 64
-function src/plan/schema/validation.rs validate 382
-function src/plan/schema/validation.rs validate_structural_preflight 212
-function src/sandbox/settings.rs generate_settings_json 76
-function src/sandbox/settings.rs merge_existing_permissions 106
-function src/sandbox/settings.rs test_write_settings_adds_resolved_work_symlink_permissions 96
-function src/sandbox/settings.rs test_write_settings_deduplicates 62
-function src/sandbox/settings.rs test_write_settings_main_repo_drops_stale_escape_from_existing 57
-function src/sandbox/settings.rs test_write_settings_preserves_existing_permissions 64
-function src/sandbox/settings.rs test_write_settings_round_trip_preserves_enabled_plugins 53
-function src/sandbox/settings.rs write_settings 126
+function src/plan/schema/validation.rs check_cross_stage_wiring_coverage 66
+function src/plan/schema/validation.rs validate 387
+function src/plan/schema/validation.rs validate_structural_preflight 217
+function src/sandbox/settings.rs generate_settings_json 101
+function src/sandbox/settings.rs merge_existing_permissions 72
+function src/sandbox/settings.rs test_deny_write_parent_traversal_not_in_os_sandbox 60
+function src/sandbox/settings.rs test_generate_settings_emits_network_block 53
+function src/sandbox/settings.rs test_write_settings_adds_resolved_work_symlink_permissions 100
+function src/sandbox/settings.rs test_write_settings_does_not_carry_forward_existing_allow 82
+function src/sandbox/settings.rs test_write_settings_main_repo_drops_stale_escape_from_existing 59
+function src/sandbox/settings.rs test_write_settings_no_existing_file 52
+function src/sandbox/settings.rs test_write_settings_preserves_existing_deny_but_not_allow 72
+function src/sandbox/settings.rs test_write_settings_worktree_drops_escape_write_deny_from_edit_rule 51
+function src/sandbox/settings.rs write_settings 132
 function src/skills/matcher.rs match_skills 62
-function src/verify/baseline/compare.rs compare_to_baseline 80
-function src/verify/criteria/executor.rs run_single_criterion_with_timeout 90
-function src/verify/criteria/runner.rs run_acceptance_with_config 147
+function src/verify/baseline/compare.rs compare_to_baseline 79
+function src/verify/criteria/runner.rs run_acceptance_with_config 106
 function src/verify/duplicate_detection.rs find_symbol_in_codebase 77
 function src/verify/goal_backward/artifacts.rs verify_artifacts 67
 function src/verify/goal_backward/artifacts.rs verify_regression_test 52
-function src/verify/goal_backward/dead_code.rs run_dead_code_check 65
-function src/verify/goal_backward/truths.rs verify_truth_checks 119
+function src/verify/goal_backward/dead_code.rs run_dead_code_check 66
+function src/verify/goal_backward/truths.rs verify_truth_checks 117
 function src/verify/goal_backward/wiring.rs verify_wiring 65
-function src/verify/goal_backward/wiring_tests.rs verify_wiring_tests 112
+function src/verify/goal_backward/wiring_tests.rs verify_wiring_tests 111
 function src/verify/transitions/state.rs are_all_dependencies_satisfied 67
 function src/verify/transitions/state.rs describe_dependency_block 95
 function src/verify/wiring_detection.rs collect_added_source_files 56
