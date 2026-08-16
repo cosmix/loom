@@ -104,6 +104,45 @@ pub enum KnowledgeCommands {
         #[arg(long)]
         quick: bool,
     },
+
+    /// Retrieve a token-budgeted context pack for a query (deterministic, offline)
+    Context {
+        /// Query text to retrieve context for
+        #[arg(long)]
+        query: String,
+        /// Maximum estimated tokens the pack may contain
+        #[arg(long, default_value_t = 2000)]
+        budget_tokens: usize,
+        /// Retrieval channels to search: knowledge, source, or all
+        #[arg(long, default_value = "all")]
+        scope: String,
+        /// Chunk id that must be included; repeatable
+        #[arg(long = "require-id")]
+        require_id: Vec<String>,
+        /// Show per-item scores and selection reasons
+        #[arg(long)]
+        explain: bool,
+        /// Machine-readable JSON output (suppresses human text)
+        #[arg(long)]
+        json: bool,
+    },
+
+    /// Show knowledge catalog freshness, size, and reported issues
+    Status {
+        /// Machine-readable JSON output (suppresses human text)
+        #[arg(long)]
+        json: bool,
+    },
+
+    /// Rebuild derived context artifacts when the knowledge tree has changed
+    Sync {
+        /// Rebuild only the structural (catalog) layer
+        #[arg(long)]
+        structural_only: bool,
+        /// Machine-readable JSON output (suppresses human text)
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand)]

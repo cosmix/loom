@@ -2,8 +2,11 @@
 pub mod audit;
 pub mod bootstrap;
 pub mod check;
+pub mod context;
 pub mod gc;
 pub mod spawn;
+pub mod status;
+pub mod sync;
 
 use crate::fs::knowledge::{KnowledgeDir, KnowledgeFile, KnowledgeLayout, KnowledgeTarget};
 use crate::fs::work_dir::WorkDir;

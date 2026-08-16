@@ -49,3 +49,26 @@ pub fn complete_knowledge_files(prefix: &str) -> Result<Vec<String>> {
     results.sort();
     Ok(results)
 }
+
+/// Valid `--scope` values for `loom knowledge context`.
+const KNOWLEDGE_SCOPES: &[&str] = &["all", "knowledge", "source"];
+
+/// Complete `--scope` values for `loom knowledge context`.
+///
+/// # Arguments
+///
+/// * `prefix` - Partial scope value prefix to filter results
+///
+/// # Returns
+///
+/// Sorted list of matching scope values ("all", "knowledge", "source").
+pub fn complete_knowledge_scopes(prefix: &str) -> Result<Vec<String>> {
+    let mut results: Vec<String> = KNOWLEDGE_SCOPES
+        .iter()
+        .filter(|scope| prefix.is_empty() || scope.starts_with(prefix))
+        .map(|s| s.to_string())
+        .collect();
+
+    results.sort();
+    Ok(results)
+}
