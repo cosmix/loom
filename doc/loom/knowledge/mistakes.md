@@ -19,8 +19,9 @@
 ## Phantom Merges: merged=true Without Verification
 
 `merged=true` is a contract with the dependency scheduler — every phantom-merge incident came
-from writing it without verifying git ancestry. Six related lessons (defensive "assume merged"
-branches, `--force-unsafe`, helpers that abort active merges, merge-conflict session lifecycle).
+from writing it without verifying git ancestry. Seven related lessons (defensive "assume merged"
+branches, `--force-unsafe`, helpers that abort active merges, merge-probe preflight counting
+untracked files as dirty, merge-conflict session lifecycle).
 
 → [Phantom Merges](mistakes/phantom-merges.md)
 

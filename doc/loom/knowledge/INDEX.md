@@ -12,7 +12,7 @@
 | [entry-points.md](entry-points.md) | Key files agents should read first | 512 |
 | [patterns.md](patterns.md) | Architectural patterns discovered in the codebase | 614 |
 | [conventions.md](conventions.md) | Coding conventions discovered in the codebase | 402 |
-| [mistakes.md](mistakes.md) | Mistakes made and lessons learned - what to avoid | 662 |
+| [mistakes.md](mistakes.md) | Mistakes made and lessons learned - what to avoid | 663 |
 | [stack.md](stack.md) | Dependencies, frameworks, and tooling used in the project | 71 |
 | [concerns.md](concerns.md) | Technical debt, warnings, and issues to address | 580 |
 
@@ -57,7 +57,7 @@
 | [mistakes/doctrine-and-acceptance.md](mistakes/doctrine-and-acceptance.md) | Doctrine And Acceptance | Why a one-phrase grep proves presence but never agreement, and how doctrine drifts across surfaces unnoticed. | 77 |
 | [mistakes/knowledge-base-drift.md](mistakes/knowledge-base-drift.md) | Knowledge Base Drift | How the knowledge base itself goes stale: plan-authoring notes frozen as architecture facts, `[UPDATED]` duplicates, and invented CLI surface. | 100 |
 | [mistakes/knowledge-cli-invariants.md](mistakes/knowledge-cli-invariants.md) | Knowledge Cli Invariants | Invariants belong in the fs constructor, not the CLI handler; lock ordering for sibling refreshes; update appends. | 67 |
-| [mistakes/phantom-merges.md](mistakes/phantom-merges.md) | Phantom Merges | Six lessons on writing merged=true without verifying git ancestry — the costliest recurring failure class in loom. | 93 |
+| [mistakes/phantom-merges.md](mistakes/phantom-merges.md) | Phantom Merges | Seven lessons on loom's merge machinery — writing merged=true without verifying git ancestry (the costliest recurring failure class in loom), plus the preflight guards and session lifecycle around it. | 112 |
 | [mistakes/refactor-stragglers.md](mistakes/refactor-stragglers.md) | Refactor Stragglers | What a large removal or rename leaves behind: straggler initializers, stale comments, stale docs, duplicate modules. | 62 |
 | [mistakes/sandbox-and-settings.md](mistakes/sandbox-and-settings.md) | Sandbox And Settings | Sandbox path rules, permission sync, excludedCommands matching, and settings env leaking between main repo and worktrees. | 215 |
 | [mistakes/session-identity-env.md](mistakes/session-identity-env.md) | Session Identity Env | The wrapper script's `LOOM_*` exports are a contract read by hooks, the CLI and the daemon. Two long-standing defects in that contract made knowledge stages impossible to complete. | 83 |
