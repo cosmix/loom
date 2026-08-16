@@ -7,7 +7,7 @@ use crate::git;
 use crate::git::worktree::setup_worktree_hooks;
 use crate::git::BaseBranchError;
 use crate::handoff::find_latest_handoff;
-use crate::hooks::{find_hooks_dir, setup_hooks_for_worktree, HooksConfig};
+use crate::hooks::find_hooks_dir;
 use crate::models::failure::{FailureInfo, FailureType};
 use crate::models::session::Session;
 use crate::models::stage::{Stage, StageStatus, StageType};
@@ -70,6 +70,32 @@ pub(super) fn write_required_sandbox_settings(
 ) -> Result<()> {
     crate::sandbox::write_settings(config, target)
         .with_context(|| format!("Failed to enforce sandbox settings for stage '{stage_id}'"))
+}
+
+/// Install the stage's Claude Code hooks, or fail.
+///
+/// Hooks are the stage's security boundary — the commit filter, git-add guard,
+/// worktree file guard and subagent verify guard all arrive this way — not an
+/// optional enhancement. A missing hooks directory is therefore an error, not a
+/// silent skip: spawning without them would run the agent unguarded.
+///
+/// `worktree_path` is the target that receives `.claude/settings.local.json`:
+/// a stage worktree for standard stages, or the main repo root for knowledge
+/// stages (which run on the host directly rather than in a worktree).
+pub(super) fn install_required_hooks(
+    hooks_dir: Option<std::path::PathBuf>,
+    worktree_path: &std::path::Path,
+    work_dir: &std::path::Path,
+    permission_mode: crate::plan::schema::PermissionMode,
+    stage_id: &str,
+) -> Result<()> {
+    let hooks_dir = hooks_dir.ok_or_else(|| {
+        anyhow::anyhow!(
+            "Claude Code hooks directory not found; refusing to spawn an unhooked session for stage '{stage_id}'"
+        )
+    })?;
+    setup_worktree_hooks(worktree_path, work_dir, &hooks_dir, permission_mode)
+        .with_context(|| format!("Failed to install Claude Code hooks for stage '{stage_id}'"))
 }
 
 /// Trait for stage execution operations
@@ -361,6 +387,7 @@ impl StageExecutor for Orchestrator {
             &self.config.sandbox_config,
             &stage.sandbox,
             stage.stage_type,
+            &stage.implementers,
         );
         // Defense-in-depth: re-validate at spawn time. `loom init` already
         // rejects incompatible configs; refuse to spawn rather than silently
@@ -396,22 +423,26 @@ impl StageExecutor for Orchestrator {
             session.id = recovery_session_id.clone();
         }
 
-        // Set up Claude Code hooks for this session. A failure here must not
-        // strand the stage as Executing+session:None (O-11): the daemon would
-        // exit (via per-tick error propagation) and orphan recovery, which
-        // iterates session files only, would never see the stage. Hooks are an
-        // optional enhancement, so we only warn — but the same containment
-        // applies to the fatal `?`-propagating steps below.
-        if let Some(hooks_dir) = find_hooks_dir() {
-            if let Err(e) = setup_worktree_hooks(
-                &worktree.path,
-                &self.config.work_dir,
-                &hooks_dir,
-                merged_sandbox.permission_mode,
-            ) {
-                eprintln!("Warning: Failed to set up hooks for stage '{stage_id}': {e}");
-                // Continue anyway - hooks are optional enhancement
-            }
+        // Claude Code hooks are the stage's security boundary, not an optional
+        // enhancement: a session is never spawned without them. Contain a
+        // setup failure as Blocked rather than propagating it, which would kill
+        // the daemon while the stage sits Executing with no session (O-11).
+        if let Err(e) = install_required_hooks(
+            find_hooks_dir(),
+            &worktree.path,
+            &self.config.work_dir,
+            merged_sandbox.permission_mode,
+            stage_id,
+        ) {
+            let err_msg = format!("Stage '{stage_id}' blocked: {e:#}");
+            eprintln!("{err_msg}");
+            let _ = self.persist_blocked_stage(
+                stage_id,
+                FailureType::SandboxSetupFailure,
+                vec![err_msg],
+            );
+            let _ = self.graph.mark_status(stage_id, StageStatus::Blocked);
+            return Ok(());
         }
 
         let signal_path = if let Some((_, recovery_path)) = recovery_signal {
@@ -568,6 +599,7 @@ impl StageExecutor for Orchestrator {
             &self.config.sandbox_config,
             &stage.sandbox,
             stage.stage_type,
+            &stage.implementers,
         );
         // Defense-in-depth: re-validate at spawn time even for knowledge stages.
         if let Err(e) = crate::sandbox::validate_config(&merged_sandbox) {
@@ -596,21 +628,28 @@ impl StageExecutor for Orchestrator {
         // file is shared by every main-repo session (later knowledge stages,
         // interactive user sessions), so persisted stage/session IDs would go
         // stale and shadow the wrapper script's fresh exports.
-        if let Some(hooks_dir) = find_hooks_dir() {
-            // Canonicalize work_dir to absolute path
-            let absolute_work_dir = self
-                .config
-                .work_dir
-                .canonicalize()
-                .unwrap_or_else(|_| self.config.work_dir.clone());
-
-            let config =
-                HooksConfig::new(hooks_dir, absolute_work_dir, merged_sandbox.permission_mode);
-
-            if let Err(e) = setup_hooks_for_worktree(&self.config.repo_root, &config) {
-                eprintln!("Warning: Failed to set up hooks for knowledge stage '{stage_id}': {e}");
-                // Continue anyway - hooks are optional enhancement
-            }
+        // Claude Code hooks are the knowledge stage's security boundary, not
+        // an optional enhancement: a session is never spawned without them.
+        // Contain a setup failure as Blocked rather than propagating it, which
+        // would kill the daemon while the stage sits Executing with no session.
+        // Knowledge stages have no worktree of their own: the main repo root is
+        // the install target that receives `.claude/settings.json`.
+        if let Err(e) = install_required_hooks(
+            find_hooks_dir(),
+            &self.config.repo_root,
+            &self.config.work_dir,
+            merged_sandbox.permission_mode,
+            &stage_id,
+        ) {
+            let err_msg = format!("Knowledge stage '{stage_id}' blocked: {e:#}");
+            eprintln!("{err_msg}");
+            let _ = self.persist_blocked_stage(
+                &stage_id,
+                FailureType::SandboxSetupFailure,
+                vec![err_msg],
+            );
+            let _ = self.graph.mark_status(&stage_id, StageStatus::Blocked);
+            return Ok(());
         }
 
         // Exclude .claude/settings.local.json from the main repo's gitignore so knowledge-stage
