@@ -116,9 +116,18 @@ fn run_probe(source_branch: &str, target_branch: &str, repo_root: &Path) -> Merg
     }
 }
 
+/// Reject the probe only for uncommitted changes to tracked files.
+///
+/// Untracked files are excluded on purpose: `run_probe` only performs a
+/// `checkout_branch(target)` followed by `git merge --no-commit --no-ff`,
+/// neither of which touches untracked paths. If the merge would actually
+/// overwrite an untracked file, git itself refuses the checkout or merge,
+/// and that failure already surfaces through `run_probe`'s existing error
+/// path as an `Infrastructure` failure carrying git's stderr - no extra
+/// handling is needed here for that case.
 fn require_clean_repository(repo_root: &Path) -> std::result::Result<(), MergeProbeError> {
     let status = run_git_checked(
-        &["status", "--porcelain=v1", "--untracked-files=all"],
+        &["status", "--porcelain=v1", "--untracked-files=no"],
         repo_root,
     )
     .map_err(|error| infrastructure("cleanliness check", error))?;
@@ -127,7 +136,7 @@ fn require_clean_repository(repo_root: &Path) -> std::result::Result<(), MergePr
     } else {
         Err(MergeProbeError::Infrastructure {
             operation: "cleanliness check",
-            details: format!("repository has uncommitted changes:\n{status}"),
+            details: format!("repository has uncommitted tracked changes:\n{status}"),
         })
     }
 }

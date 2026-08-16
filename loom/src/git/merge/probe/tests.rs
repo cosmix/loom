@@ -85,7 +85,7 @@ fn dirty_repository_is_an_infrastructure_failure_without_mutation() {
     let temp = init_repo();
     let root = temp.path();
     create_branch(root, "feature", "feature\n");
-    fs::write(root.join("dirty.txt"), "uncommitted\n").unwrap();
+    fs::write(root.join("file.txt"), "uncommitted\n").unwrap();
 
     let result = get_conflicting_files_from_status("feature", "main", root, &root.join(".work"));
     assert!(matches!(
@@ -96,7 +96,28 @@ fn dirty_repository_is_an_infrastructure_failure_without_mutation() {
         })
     ));
     assert_eq!(checkout_reference(root).unwrap(), "main");
-    assert!(root.join("dirty.txt").exists());
+    assert_eq!(
+        fs::read_to_string(root.join("file.txt")).unwrap(),
+        "uncommitted\n"
+    );
+}
+
+#[test]
+fn untracked_files_do_not_block_the_probe() {
+    let temp = init_repo();
+    let root = temp.path();
+    git_ok(root, &["checkout", "-b", "feature"]);
+    fs::write(root.join("new.txt"), "feature\n").unwrap();
+    git_ok(root, &["add", "new.txt"]);
+    git_ok(root, &["commit", "-m", "feature"]);
+    git_ok(root, &["checkout", "main"]);
+    fs::write(root.join("scratch-notes.md"), "not tracked\n").unwrap();
+
+    let result = get_conflicting_files_from_status("feature", "main", root, &root.join(".work"));
+    assert_eq!(result.unwrap(), MergeProbeOutcome::Clean);
+    assert!(root.join("scratch-notes.md").exists());
+    assert_eq!(checkout_reference(root).unwrap(), "main");
+    assert!(!merge_head_exists_strict(root).unwrap());
 }
 
 #[test]
