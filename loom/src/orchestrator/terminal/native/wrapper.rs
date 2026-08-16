@@ -222,6 +222,9 @@ fn build_wrapper_script(
 
 {cd_section}{pid_capture}
 {ENV_ALLOWLIST}
+# Loom stages record knowledge through `loom memory` / `loom knowledge`; Claude
+# Code auto-memory writes to a location invisible to orchestration, so disable
+# it at the process boundary rather than by instruction alone.
 # Replace this process with claude under only the explicit stage contract.
 exec env -i "${{_loom_env[@]}}" \
     {session_env} \
@@ -229,6 +232,7 @@ exec env -i "${{_loom_env[@]}}" \
     {work_dir_env} \
     "LOOM_MAIN_AGENT_PID=$$" \
     "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1" \
+    "CLAUDE_CODE_DISABLE_AUTO_MEMORY=1" \
     "CLAUDE_REMOTE_CONTROL_SESSION_NAME_PREFIX=loom" \
 {merge_session_env}{worktree_path_env}    {claude_cmd}
 "#
