@@ -3,16 +3,16 @@
 use anyhow::{Context, Result};
 use std::io::Read;
 use std::path::Path;
-use std::process::{Child, Command, Stdio};
+use std::process::Child;
 use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, Instant};
 use wait_timeout::ChildExt;
 
-#[cfg(unix)]
-use std::os::unix::process::CommandExt;
+use crate::models::stage::CommandConfinement;
 
 use super::config::DEFAULT_COMMAND_TIMEOUT;
+use super::confine::{self, CommandSpec};
 use super::result::CriterionResult;
 
 /// Timeout for collecting output from child process pipes
@@ -39,82 +39,63 @@ pub fn run_single_criterion(command: &str, working_dir: Option<&Path>) -> Result
 /// The command will be terminated if it exceeds the specified `timeout` duration.
 /// When this happens, the result will have `timed_out` set to true and `success`
 /// set to false.
+///
+/// The command runs at the default confinement level
+/// ([`CommandConfinement::Confined`]); callers that know the stage's resolved
+/// level use [`run_spec_with_timeout`] instead.
 pub fn run_single_criterion_with_timeout(
     command: &str,
     working_dir: Option<&Path>,
     timeout: Duration,
 ) -> Result<CriterionResult> {
+    run_spec_with_timeout(
+        &CommandSpec::shell(command),
+        working_dir,
+        timeout,
+        CommandConfinement::default(),
+    )
+}
+
+/// Run one command spec with a timeout and a confinement level.
+///
+/// This is the single implementation of the run loop: spawn, drain both pipes
+/// concurrently, wait with a timeout, and kill the whole process group if the
+/// deadline passes. Everything else in this module funnels into it.
+pub fn run_spec_with_timeout(
+    spec: &CommandSpec,
+    working_dir: Option<&Path>,
+    timeout: Duration,
+    confinement: CommandConfinement,
+) -> Result<CriterionResult> {
     let start = Instant::now();
 
-    // Spawn the child process using the appropriate shell
-    let mut child = spawn_shell_command(command, working_dir)?;
+    let mut child = confine::spawn_confined(spec, working_dir, confinement)?;
+    let output = OutputReaders::spawn(&mut child);
 
-    // IMPORTANT: Start reading output BEFORE waiting for exit.
-    // If we wait first, the child may block on write() when the pipe buffer
-    // fills up (~64KB on Linux), causing a deadlock. We must drain the pipes
-    // concurrently with waiting for the process to exit.
-    let stdout_handle = child.stdout.take();
-    let stderr_handle = child.stderr.take();
-
-    // Spawn threads to read stdout/stderr concurrently
-    let (stdout_tx, stdout_rx) = mpsc::channel();
-    let (stderr_tx, stderr_rx) = mpsc::channel();
-
-    if let Some(stdout) = stdout_handle {
-        thread::spawn(move || {
-            let result = read_stream_to_string(stdout);
-            let _ = stdout_tx.send(result);
-        });
-    } else {
-        let _ = stdout_tx.send(String::new());
-    }
-
-    if let Some(stderr) = stderr_handle {
-        thread::spawn(move || {
-            let result = read_stream_to_string(stderr);
-            let _ = stderr_tx.send(result);
-        });
-    } else {
-        let _ = stderr_tx.send(String::new());
-    }
-
-    // Now wait for completion with timeout
     let wait_result = child
         .wait_timeout(timeout)
-        .with_context(|| format!("Failed to wait for command: {command}"))?;
+        .with_context(|| format!("Failed to wait for command: {spec}"))?;
 
     let duration = start.elapsed();
-
-    // Collect output from reader threads (they should complete quickly after process exits)
-    let stdout = stdout_rx
-        .recv_timeout(OUTPUT_COLLECTION_TIMEOUT)
-        .unwrap_or_else(|_| "[output collection timed out]".to_string());
-    let stderr = stderr_rx
-        .recv_timeout(OUTPUT_COLLECTION_TIMEOUT)
-        .unwrap_or_else(|_| "[output collection timed out]".to_string());
+    let (stdout, stderr) = output.collect();
 
     match wait_result {
-        Some(status) => {
-            // Command completed within timeout
-            let success = status.success();
-            let exit_code = status.code();
-
-            Ok(CriterionResult::new(
-                command.to_string(),
-                success,
-                stdout,
-                stderr,
-                exit_code,
-                duration,
-                false, // not timed out
-            ))
-        }
+        // Command completed within timeout
+        Some(status) => Ok(CriterionResult::new(
+            spec.to_string(),
+            status.success(),
+            stdout,
+            stderr,
+            status.code(),
+            duration,
+            false, // not timed out
+        )),
         None => {
             // Command timed out - kill the process
             kill_child_process(&mut child);
 
             Ok(CriterionResult::new(
-                command.to_string(),
+                spec.to_string(),
                 false, // failed due to timeout
                 stdout,
                 format!(
@@ -130,51 +111,51 @@ pub fn run_single_criterion_with_timeout(
     }
 }
 
-/// Spawn a shell command as a child process
+/// Concurrent readers draining a child's piped stdout and stderr.
 ///
-/// Uses `sh -c` on Unix and `cmd /C` on Windows to execute the command.
-/// The command string is passed as a single argument to avoid shell injection
-/// through improper argument splitting.
-///
-/// On Unix the child is placed in its own process group (pgid == child pid) so
-/// that a timeout kill can reach grandchildren (e.g. `cargo test` in `a && b`).
-pub(crate) fn spawn_shell_command(command: &str, working_dir: Option<&Path>) -> Result<Child> {
-    #[cfg(unix)]
-    {
-        let mut cmd = Command::new("sh");
-        cmd.arg("-c").arg(command);
-        // Place the child in its own process group so kill(-pgid, SIGKILL) on
-        // timeout kills the entire subtree including grandchildren.
-        // Safety: setpgid(0,0) is async-signal-safe per POSIX.
-        unsafe {
-            cmd.pre_exec(|| {
-                nix::unistd::setpgid(nix::unistd::Pid::from_raw(0), nix::unistd::Pid::from_raw(0))
-                    .map_err(|e| std::io::Error::from_raw_os_error(e as i32))
-            });
+/// IMPORTANT: the pipes must be drained BEFORE waiting for exit. If we wait
+/// first, the child may block on write() once the pipe buffer fills up (~64KB
+/// on Linux) and never exit, deadlocking the wait.
+struct OutputReaders {
+    stdout: mpsc::Receiver<String>,
+    stderr: mpsc::Receiver<String>,
+}
+
+impl OutputReaders {
+    /// Take both pipes off `child` and start draining them on their own threads.
+    fn spawn(child: &mut Child) -> Self {
+        Self {
+            stdout: spawn_reader(child.stdout.take()),
+            stderr: spawn_reader(child.stderr.take()),
         }
-        cmd.stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped());
-        if let Some(dir) = working_dir {
-            cmd.current_dir(dir);
-        }
-        cmd.spawn()
-            .with_context(|| format!("Failed to spawn command: {command}"))
     }
 
-    #[cfg(not(unix))]
-    {
-        let mut cmd = Command::new("cmd");
-        cmd.arg("/C").arg(command);
-        cmd.stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped());
-        if let Some(dir) = working_dir {
-            cmd.current_dir(dir);
-        }
-        cmd.spawn()
-            .with_context(|| format!("Failed to spawn command: {command}"))
+    /// Collect (stdout, stderr). The reader threads should finish promptly once
+    /// the process exits; a stalled one yields a marker rather than hanging.
+    fn collect(self) -> (String, String) {
+        (collect_stream(self.stdout), collect_stream(self.stderr))
     }
+}
+
+fn spawn_reader<R: Read + Send + 'static>(stream: Option<R>) -> mpsc::Receiver<String> {
+    let (tx, rx) = mpsc::channel();
+    match stream {
+        Some(stream) => {
+            thread::spawn(move || {
+                let _ = tx.send(read_stream_to_string(stream));
+            });
+        }
+        None => {
+            let _ = tx.send(String::new());
+        }
+    }
+    rx
+}
+
+fn collect_stream(stream: mpsc::Receiver<String>) -> String {
+    stream
+        .recv_timeout(OUTPUT_COLLECTION_TIMEOUT)
+        .unwrap_or_else(|_| "[output collection timed out]".to_string())
 }
 
 /// Read a stream to string, handling errors gracefully

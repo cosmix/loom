@@ -18,14 +18,18 @@ pub use truths::verify_truth_checks;
 pub use wiring::verify_wiring;
 pub use wiring_tests::verify_wiring_tests;
 
-use crate::plan::schema::StageDefinition;
+use crate::plan::schema::{CommandConfinement, StageDefinition};
 use anyhow::Result;
 use std::path::Path;
 
 /// Run complete goal-backward verification for a stage
+///
+/// `confinement` is the stage's resolved level for the plan-authored commands
+/// this runs (truth checks, wiring tests, dead-code checks).
 pub fn run_goal_backward_verification(
     stage_def: &StageDefinition,
     working_dir: &Path,
+    confinement: CommandConfinement,
 ) -> Result<GoalBackwardResult> {
     let mut gaps = Vec::new();
 
@@ -41,12 +45,20 @@ pub fn run_goal_backward_verification(
 
     // 3. Verify wiring tests (command-based integration verification)
     if !stage_def.wiring_tests.is_empty() {
-        gaps.extend(verify_wiring_tests(&stage_def.wiring_tests, working_dir)?);
+        gaps.extend(verify_wiring_tests(
+            &stage_def.wiring_tests,
+            working_dir,
+            confinement,
+        )?);
     }
 
     // 4. Run dead code check if configured
     if let Some(dead_code_check) = &stage_def.dead_code_check {
-        gaps.extend(run_dead_code_check(dead_code_check, working_dir)?);
+        gaps.extend(run_dead_code_check(
+            dead_code_check,
+            working_dir,
+            confinement,
+        )?);
     }
 
     // 5. Verify regression test (for bug-fix stages)

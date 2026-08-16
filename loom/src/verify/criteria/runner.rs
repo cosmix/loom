@@ -2,12 +2,14 @@
 
 use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use super::config::CriteriaConfig;
-use super::executor::run_single_criterion_with_timeout;
-use super::result::AcceptanceResult;
+use super::confine::{resolve_confinement, CommandSpec};
+use super::executor::run_spec_with_timeout;
+use super::result::{AcceptanceResult, CriterionResult};
 use crate::models::stage::Stage;
-use crate::plan::schema::AcceptanceCriterion;
+use crate::plan::schema::{AcceptanceCriterion, TruthCheck};
 use crate::verify::context::CriteriaContext;
 
 /// Run all acceptance criteria for a stage with default configuration
@@ -34,6 +36,10 @@ pub fn run_acceptance(stage: &Stage, working_dir: Option<&Path>) -> Result<Accep
 ///
 /// Each command is subject to the timeout specified in `config`. Commands that
 /// exceed the timeout are terminated and marked as failed.
+///
+/// Criteria and setup commands run at the stage's confinement level: the
+/// stage's own `sandbox.command_confinement` override wins over the plan-level
+/// default carried in `config`, and with neither set they are `Confined`.
 pub fn run_acceptance_with_config(
     stage: &Stage,
     working_dir: Option<&Path>,
@@ -44,6 +50,9 @@ pub fn run_acceptance_with_config(
             results: Vec::new(),
         });
     }
+
+    let confinement =
+        resolve_confinement(stage.sandbox.command_confinement, config.plan_confinement);
 
     // Build context for variable expansion
     let default_dir = PathBuf::from(".");
@@ -67,7 +76,7 @@ pub fn run_acceptance_with_config(
 
         // Extended criteria use shorter timeout (30s) vs simple (config default 5min)
         let timeout = if criterion.is_extended() {
-            std::time::Duration::from_secs(30)
+            Duration::from_secs(30)
         } else {
             config.command_timeout
         };
@@ -78,7 +87,8 @@ pub fn run_acceptance_with_config(
             None => expanded_command,
         };
 
-        let result = run_single_criterion_with_timeout(&full_command, working_dir, timeout)
+        let spec = CommandSpec::shell(full_command);
+        let result = run_spec_with_timeout(&spec, working_dir, timeout, confinement)
             .with_context(|| format!("Failed to execute criterion: {command_str}"))?;
 
         // Check success based on criterion type
@@ -101,53 +111,8 @@ pub fn run_acceptance_with_config(
                 }
             }
             AcceptanceCriterion::Extended(truth_check) => {
-                let mut criterion_failures = Vec::new();
-
-                if result.timed_out {
-                    criterion_failures.push(format!(
-                        "Command '{}' timed out after {}s",
-                        command_str,
-                        timeout.as_secs()
-                    ));
-                } else {
-                    // Check exit code
-                    let expected_exit = truth_check.exit_code.unwrap_or(0);
-                    let actual_exit = result.exit_code.unwrap_or(-1);
-                    if actual_exit != expected_exit {
-                        criterion_failures.push(format!(
-                            "Command '{}': expected exit code {}, got {}",
-                            command_str, expected_exit, actual_exit
-                        ));
-                    }
-
-                    // Check stdout_contains
-                    for pattern in &truth_check.stdout_contains {
-                        if !result.stdout.contains(pattern.as_str()) {
-                            criterion_failures.push(format!(
-                                "Command '{}': stdout missing expected pattern '{}'",
-                                command_str, pattern
-                            ));
-                        }
-                    }
-
-                    // Check stdout_not_contains
-                    for pattern in &truth_check.stdout_not_contains {
-                        if result.stdout.contains(pattern.as_str()) {
-                            criterion_failures.push(format!(
-                                "Command '{}': stdout contains forbidden pattern '{}'",
-                                command_str, pattern
-                            ));
-                        }
-                    }
-
-                    // Check stderr_empty
-                    if let Some(true) = truth_check.stderr_empty {
-                        if !result.stderr.is_empty() {
-                            criterion_failures
-                                .push(format!("Command '{}': stderr was not empty", command_str));
-                        }
-                    }
-                }
+                let criterion_failures =
+                    check_extended_criterion(truth_check, &result, command_str, timeout);
 
                 // C-10: reflect actual pass/fail in result.success so display is consistent.
                 // Raw exit code is preserved in result.exit_code for diagnostics.
@@ -182,10 +147,61 @@ pub fn run_acceptance_with_config(
     }
 }
 
+/// Evaluate an extended criterion's success criteria against what its command
+/// actually did, returning one message per unmet expectation.
+///
+/// A timed-out command is reported as the single failure: its output is
+/// truncated at the kill, so pattern checks against it would be misleading.
+fn check_extended_criterion(
+    truth_check: &TruthCheck,
+    result: &CriterionResult,
+    command_str: &str,
+    timeout: Duration,
+) -> Vec<String> {
+    if result.timed_out {
+        let seconds = timeout.as_secs();
+        return vec![format!(
+            "Command '{command_str}' timed out after {seconds}s"
+        )];
+    }
+
+    let mut failures = Vec::new();
+
+    let expected_exit = truth_check.exit_code.unwrap_or(0);
+    let actual_exit = result.exit_code.unwrap_or(-1);
+    if actual_exit != expected_exit {
+        failures.push(format!(
+            "Command '{command_str}': expected exit code {expected_exit}, got {actual_exit}"
+        ));
+    }
+
+    for pattern in &truth_check.stdout_contains {
+        if !result.stdout.contains(pattern.as_str()) {
+            failures.push(format!(
+                "Command '{command_str}': stdout missing expected pattern '{pattern}'"
+            ));
+        }
+    }
+
+    for pattern in &truth_check.stdout_not_contains {
+        if result.stdout.contains(pattern.as_str()) {
+            failures.push(format!(
+                "Command '{command_str}': stdout contains forbidden pattern '{pattern}'"
+            ));
+        }
+    }
+
+    if truth_check.stderr_empty == Some(true) && !result.stderr.is_empty() {
+        failures.push(format!("Command '{command_str}': stderr was not empty"));
+    }
+
+    failures
+}
+
 /// Detect suspicious patterns in stderr that may indicate silent failures.
 /// Only checks results that reported success (exit code 0).
 /// Returns a list of warning messages for each suspicious pattern found.
-fn detect_stderr_warnings(result: &super::result::CriterionResult) -> Vec<String> {
+fn detect_stderr_warnings(result: &CriterionResult) -> Vec<String> {
     if !result.success || result.stderr.is_empty() {
         return Vec::new();
     }
@@ -220,9 +236,7 @@ fn detect_stderr_warnings(result: &super::result::CriterionResult) -> Vec<String
 
 #[cfg(test)]
 mod tests {
-    use super::super::result::CriterionResult;
     use super::*;
-    use std::time::Duration;
 
     fn make_result(success: bool, stderr: &str) -> CriterionResult {
         CriterionResult::new(

@@ -5,26 +5,26 @@ use std::path::Path;
 use std::time::Duration;
 
 use super::result::{GapType, VerificationGap};
-use crate::plan::schema::TruthCheck;
+use crate::plan::schema::{CommandConfinement, TruthCheck};
 use crate::utils::truncate;
-use crate::verify::criteria::run_single_criterion_with_timeout;
+use crate::verify::criteria::{run_spec_with_timeout, CommandSpec};
 
 /// Default timeout for truth commands (30 seconds)
 const TRUTH_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Verify enhanced truth checks with extended success criteria
+///
+/// `confinement` is the stage's resolved level for plan-authored commands.
 pub fn verify_truth_checks(
     truth_checks: &[TruthCheck],
     working_dir: &Path,
+    confinement: CommandConfinement,
 ) -> Result<Vec<VerificationGap>> {
     let mut gaps = Vec::new();
 
     for truth_check in truth_checks {
-        let result = run_single_criterion_with_timeout(
-            &truth_check.command,
-            Some(working_dir),
-            TRUTH_TIMEOUT,
-        )?;
+        let spec = CommandSpec::shell(truth_check.command.as_str());
+        let result = run_spec_with_timeout(&spec, Some(working_dir), TRUTH_TIMEOUT, confinement)?;
 
         // Check if timed out
         if result.timed_out {
@@ -150,7 +150,8 @@ mod tests {
         }];
 
         let working_dir = env::temp_dir();
-        let result = verify_truth_checks(&checks, &working_dir).unwrap();
+        let result =
+            verify_truth_checks(&checks, &working_dir, CommandConfinement::default()).unwrap();
         assert!(result.is_empty(), "Expected no gaps for successful check");
     }
 
@@ -166,7 +167,8 @@ mod tests {
         }];
 
         let working_dir = env::temp_dir();
-        let result = verify_truth_checks(&checks, &working_dir).unwrap();
+        let result =
+            verify_truth_checks(&checks, &working_dir, CommandConfinement::default()).unwrap();
         assert_eq!(result.len(), 1, "Expected one gap for failed exit code");
         assert!(result[0].description.contains("Truth check failed"));
     }
@@ -183,7 +185,8 @@ mod tests {
         }];
 
         let working_dir = env::temp_dir();
-        let result = verify_truth_checks(&checks, &working_dir).unwrap();
+        let result =
+            verify_truth_checks(&checks, &working_dir, CommandConfinement::default()).unwrap();
         assert!(
             result.is_empty(),
             "Expected no gaps when stdout contains patterns"
@@ -202,7 +205,8 @@ mod tests {
         }];
 
         let working_dir = env::temp_dir();
-        let result = verify_truth_checks(&checks, &working_dir).unwrap();
+        let result =
+            verify_truth_checks(&checks, &working_dir, CommandConfinement::default()).unwrap();
         assert_eq!(result.len(), 1, "Expected one gap for missing pattern");
         assert!(result[0].description.contains("missing expected pattern"));
     }
@@ -219,7 +223,8 @@ mod tests {
         }];
 
         let working_dir = env::temp_dir();
-        let result = verify_truth_checks(&checks, &working_dir).unwrap();
+        let result =
+            verify_truth_checks(&checks, &working_dir, CommandConfinement::default()).unwrap();
         assert!(
             result.is_empty(),
             "Expected no gaps when stdout doesn't contain forbidden patterns"
@@ -238,7 +243,8 @@ mod tests {
         }];
 
         let working_dir = env::temp_dir();
-        let result = verify_truth_checks(&checks, &working_dir).unwrap();
+        let result =
+            verify_truth_checks(&checks, &working_dir, CommandConfinement::default()).unwrap();
         assert_eq!(result.len(), 1, "Expected one gap for forbidden pattern");
         assert!(result[0].description.contains("forbidden pattern"));
     }
@@ -255,7 +261,8 @@ mod tests {
         }];
 
         let working_dir = env::temp_dir();
-        let result = verify_truth_checks(&checks, &working_dir).unwrap();
+        let result =
+            verify_truth_checks(&checks, &working_dir, CommandConfinement::default()).unwrap();
         assert!(result.is_empty(), "Expected no gaps when stderr is empty");
     }
 
@@ -271,7 +278,8 @@ mod tests {
         }];
 
         let working_dir = env::temp_dir();
-        let result = verify_truth_checks(&checks, &working_dir).unwrap();
+        let result =
+            verify_truth_checks(&checks, &working_dir, CommandConfinement::default()).unwrap();
         assert_eq!(result.len(), 1, "Expected one gap for non-empty stderr");
         assert!(result[0].description.contains("stderr was not empty"));
     }
@@ -288,7 +296,8 @@ mod tests {
         }];
 
         let working_dir = env::temp_dir();
-        let result = verify_truth_checks(&checks, &working_dir).unwrap();
+        let result =
+            verify_truth_checks(&checks, &working_dir, CommandConfinement::default()).unwrap();
         assert!(result.is_empty(), "Expected no gaps when all criteria pass");
     }
 

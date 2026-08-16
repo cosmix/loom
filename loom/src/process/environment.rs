@@ -6,9 +6,20 @@ use std::process::Command;
 /// Host values required for executable lookup, locale handling, and terminal
 /// attachment. Authentication tokens and arbitrary ambient variables are not
 /// inherited; Loom-specific values are supplied explicitly by the wrapper.
+///
+/// This list also governs plan-authored commands (see
+/// [`crate::verify::criteria::spawn_confined`]), so it must carry enough for a
+/// build toolchain to find itself — an acceptance criterion that cannot run
+/// `cargo` fails the stage just as loudly as a real defect.
 const STAGE_HOST_ENV_ALLOWLIST: &[&str] = &[
     "HOME",
     "PATH",
+    // Rust toolchain locations. Both default to paths under HOME, so they are
+    // usually absent — but installs that relocate them (CI images commonly set
+    // CARGO_HOME=/usr/local/cargo) leave `cargo` unable to find its registry
+    // and toolchains without them. Locations, not credentials.
+    "CARGO_HOME",
+    "RUSTUP_HOME",
     "LANG",
     "LC_ALL",
     "LC_CTYPE",
@@ -33,6 +44,18 @@ const STAGE_HOST_ENV_ALLOWLIST: &[&str] = &[
     "https_proxy",
     "no_proxy",
     "all_proxy",
+    // CA bundle LOCATIONS, not credentials — pair with the proxy variables
+    // above. A host behind a corporate MITM proxy (the case HTTPS_PROXY
+    // exists to serve) typically also needs a custom CA bundle for the TLS
+    // handshake to succeed; forwarding one without the other leaves `cargo`
+    // and other TLS clients unable to complete a fetch through that proxy.
+    "SSL_CERT_FILE",
+    "SSL_CERT_DIR",
+    "NIX_SSL_CERT_FILE",
+    // SSH_AUTH_SOCK is deliberately WITHHELD: it is a live credential-agent
+    // socket, not a location. An acceptance criterion needing SSH auth
+    // (`git fetch` over SSH, a git-SSH cargo dependency) fails by design
+    // rather than silently inheriting host agent access.
 ];
 
 /// Clear ambient process state and restore only the documented host allowlist.

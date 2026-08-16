@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 
 use crate::git::worktree::{find_repo_root_from_cwd, find_worktree_root_from_cwd};
 use crate::models::stage::Stage;
-use crate::verify::criteria::run_acceptance;
+use crate::verify::criteria::{plan_confinement, run_acceptance_with_config, CriteriaConfig};
 
 /// Resolved execution paths for a standard stage.
 #[derive(Debug, Clone)]
@@ -149,11 +149,15 @@ pub(crate) fn resolve_knowledge_acceptance_dir(stage: &Stage) -> Result<Option<P
 
 /// Run acceptance criteria and print standardized output.
 ///
+/// `work_dir` is the `.work` directory, used to pick up the plan-level
+/// command confinement default; the stage's own override still wins over it.
+///
 /// Returns `true` when all criteria pass, `false` otherwise.
 pub(crate) fn run_acceptance_with_display(
     stage: &Stage,
     stage_id: &str,
     acceptance_dir: Option<&Path>,
+    work_dir: &Path,
     options: AcceptanceDisplayOptions<'_>,
 ) -> Result<bool> {
     if stage.acceptance.is_empty() {
@@ -170,8 +174,9 @@ pub(crate) fn run_acceptance_with_display(
         println!("  (working directory: {})", dir.display());
     }
 
-    let result =
-        run_acceptance(stage, acceptance_dir).context("Failed to run acceptance criteria")?;
+    let config = CriteriaConfig::default().with_plan_confinement(plan_confinement(work_dir));
+    let result = run_acceptance_with_config(stage, acceptance_dir, &config)
+        .context("Failed to run acceptance criteria")?;
 
     for criterion_result in result.results() {
         if criterion_result.success {

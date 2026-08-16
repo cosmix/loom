@@ -1,6 +1,7 @@
 //! Tests for acceptance criteria execution
 
 mod config_tests;
+mod confine_tests;
 mod executor_tests;
 mod result_tests;
 mod runner_tests;
