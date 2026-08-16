@@ -18,7 +18,7 @@ fn test_validate_valid_metadata() {
 fn test_validate_unsupported_version() {
     // Use Knowledge stages to avoid goal-backward check errors
     let mut stage = make_stage("stage-1", "Stage One");
-    stage.stage_type = StageType::Knowledge;
+    stage.stage_type = Some(StageType::Knowledge);
 
     let metadata = LoomMetadata {
         loom: LoomConfig {
@@ -340,7 +340,7 @@ fn test_validate_working_dir_valid_subdirectory() {
 #[test]
 fn test_integration_verify_requires_goal_backward() {
     let mut stage = make_stage("integration-verify", "Integration Verify");
-    stage.stage_type = StageType::IntegrationVerify;
+    stage.stage_type = Some(StageType::IntegrationVerify);
     // No acceptance, artifacts, wiring, or wiring_tests - should fail
 
     let metadata = LoomMetadata {
@@ -365,7 +365,7 @@ fn test_integration_verify_requires_goal_backward() {
 #[test]
 fn test_integration_verify_with_artifacts_passes() {
     let mut stage = make_stage("integration-verify", "Integration Verify");
-    stage.stage_type = StageType::IntegrationVerify;
+    stage.stage_type = Some(StageType::IntegrationVerify);
     stage.artifacts = vec!["src/main.rs".to_string()];
 
     let metadata = LoomMetadata {
@@ -385,7 +385,7 @@ fn test_integration_verify_with_artifacts_passes() {
 #[test]
 fn test_integration_verify_with_wiring_tests_passes() {
     let mut stage = make_stage("integration-verify", "Integration Verify");
-    stage.stage_type = StageType::IntegrationVerify;
+    stage.stage_type = Some(StageType::IntegrationVerify);
     stage.wiring_tests = vec![WiringTest {
         name: "API endpoint test".to_string(),
         command: "curl -f localhost:8080/health".to_string(),
@@ -410,7 +410,7 @@ fn test_integration_verify_with_wiring_tests_passes() {
 #[test]
 fn test_integration_verify_with_wiring_passes() {
     let mut stage = make_stage("integration-verify", "Integration Verify");
-    stage.stage_type = StageType::IntegrationVerify;
+    stage.stage_type = Some(StageType::IntegrationVerify);
     stage.wiring = vec![WiringCheck {
         source: "src/main.rs".to_string(),
         pattern: "feature_function".to_string(),
@@ -434,7 +434,7 @@ fn test_integration_verify_with_wiring_passes() {
 #[test]
 fn test_knowledge_stage_exempt_from_goal_backward() {
     let mut stage = make_stage("knowledge-bootstrap", "Knowledge Bootstrap");
-    stage.stage_type = StageType::Knowledge;
+    stage.stage_type = Some(StageType::Knowledge);
     // No acceptance/artifacts/wiring - should pass because Knowledge is exempt
 
     let metadata = LoomMetadata {
@@ -572,7 +572,7 @@ fn test_knowledge_distill_exempt_from_goal_backward() {
     // A knowledge-distill stage with no artifacts/wiring should pass validation
     // (it is exempt from the goal-backward checks that Standard/IV stages require)
     let mut stage = make_stage("knowledge-distill", "Knowledge Distillation");
-    stage.stage_type = StageType::KnowledgeDistill;
+    stage.stage_type = Some(StageType::KnowledgeDistill);
     // No acceptance criteria, no artifacts, no wiring — should still pass
 
     let metadata = LoomMetadata {
@@ -598,7 +598,7 @@ fn test_knowledge_distill_exempt_from_goal_backward() {
 fn test_knowledge_distill_with_acceptance_passes() {
     // A knowledge-distill stage with acceptance criteria should also pass
     let mut stage = make_stage("knowledge-distill", "Knowledge Distillation");
-    stage.stage_type = StageType::KnowledgeDistill;
+    stage.stage_type = Some(StageType::KnowledgeDistill);
     stage.acceptance = vec![AcceptanceCriterion::Simple("cargo test".to_string())];
 
     let metadata = LoomMetadata {

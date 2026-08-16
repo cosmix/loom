@@ -431,6 +431,32 @@ pub fn execute(path: &Path, strict: bool, json: bool, no_color: bool) -> Result<
             }
         }
         Ok(()) => {
+            // Sandbox policy hard errors: run the SAME merge + validation that
+            // `loom init` and stage spawn use (crate::sandbox::merge_config /
+            // validate_config / validate_emittable), so a plan `loom init`
+            // would refuse is not reported clean here. These are errors, not
+            // warnings — init already rejects these plans outright.
+            for stage in &loom_metadata.loom.stages {
+                let merged = crate::sandbox::merge_config(
+                    &loom_metadata.loom.sandbox,
+                    &stage.sandbox,
+                    detect_stage_type(stage),
+                    &stage.implementers,
+                );
+                if let Err(e) = crate::sandbox::validate_config(&merged) {
+                    hard_errors.push(JsonError {
+                        stage_id: Some(stage.id.clone()),
+                        message: e.to_string(),
+                    });
+                }
+                if let Err(e) = crate::sandbox::validate_emittable(&merged) {
+                    hard_errors.push(JsonError {
+                        stage_id: Some(stage.id.clone()),
+                        message: e.to_string(),
+                    });
+                }
+            }
+
             // Soft checks (only when schema validation passes)
             let repo_root_opt = find_repo_root(path);
             soft_warnings = JsonWarnings {

@@ -608,8 +608,8 @@ impl Stage {
 mod tests {
     use super::*;
     use crate::models::stage::{
-        DeadCodeCheck, ExecutionMode, Implementer, PermissionMode, RegressionTest,
-        StageSandboxConfig, SuccessCriteria, TruthCheck, WiringCheck, WiringTest,
+        CommandConfinement, DeadCodeCheck, ExecutionMode, Implementer, PermissionMode,
+        RegressionTest, StageSandboxConfig, SuccessCriteria, TruthCheck, WiringCheck, WiringTest,
     };
     use crate::plan::schema::CodeReviewConfig;
     use chrono::{Duration, Utc};
@@ -627,7 +627,7 @@ mod tests {
             files: vec!["src/policy.rs".to_string()],
             auto_merge: Some(true),
             working_dir: "loom".to_string(),
-            stage_type: StageType::IntegrationVerify,
+            stage_type: Some(StageType::IntegrationVerify),
             artifacts: vec!["target/policy".to_string()],
             wiring: vec![WiringCheck {
                 source: "src/lib.rs".to_string(),
@@ -674,6 +674,7 @@ mod tests {
                 network: None,
                 linux: None,
                 permission_mode: Some(PermissionMode::Plan),
+                command_confinement: Some(CommandConfinement::Inherit),
             },
             execution_mode: Some(ExecutionMode::Team),
             bug_fix: Some(true),
@@ -719,6 +720,10 @@ mod tests {
         assert_eq!(stage.after_stage[0].exit_code, Some(0));
         assert_eq!(stage.sandbox.enabled, Some(true));
         assert_eq!(stage.sandbox.permission_mode, Some(PermissionMode::Plan));
+        assert_eq!(
+            stage.sandbox.command_confinement,
+            Some(CommandConfinement::Inherit)
+        );
         assert_eq!(stage.execution_mode, Some(ExecutionMode::Team));
         assert_eq!(stage.bug_fix, Some(true));
         assert_eq!(

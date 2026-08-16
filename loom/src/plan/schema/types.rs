@@ -44,6 +44,12 @@ pub struct SandboxConfig {
     /// When unset, the stage type's default applies.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub permission_mode: Option<PermissionMode>,
+
+    /// How plan-authored commands (acceptance, setup, truth checks, wiring
+    /// tests, dead-code checks, baseline commands) are confined when loom
+    /// executes them. Default: `confined`.
+    #[serde(default)]
+    pub command_confinement: CommandConfinement,
 }
 
 impl Default for SandboxConfig {
@@ -57,6 +63,7 @@ impl Default for SandboxConfig {
             network: NetworkConfig::default(),
             linux: LinuxConfig::default(),
             permission_mode: None,
+            command_confinement: CommandConfinement::default(),
         }
     }
 }
@@ -84,6 +91,12 @@ pub use crate::models::stage::NetworkConfig;
 /// Re-exported from models::stage for backward compatibility.
 /// The canonical definition is in crate::models::stage::LinuxConfig.
 pub use crate::models::stage::LinuxConfig;
+
+/// Confinement level for plan-authored commands.
+///
+/// Re-exported from models::stage for backward compatibility.
+/// The canonical definition is in crate::models::stage::CommandConfinement.
+pub use crate::models::stage::CommandConfinement;
 
 // Default value functions for serde (used by SandboxConfig below)
 fn default_sandbox_enabled() -> bool {
@@ -205,9 +218,17 @@ pub struct StageDefinition {
     /// REQUIRED field - forces explicit choice of execution directory.
     /// Use "." for worktree root, or a subdirectory like "loom".
     pub working_dir: String,
-    /// Type of stage for specialized handling (e.g., knowledge vs standard)
-    #[serde(default)]
-    pub stage_type: StageType,
+    /// Type of stage for specialized handling (e.g., knowledge vs standard).
+    /// `None` means the field was omitted from the plan — [`detect_stage_type`]
+    /// then falls back to the id/name heuristic. `Some(_)` is the plan
+    /// author's explicit, final answer: it is never second-guessed by the
+    /// heuristic, even when the value written is `standard` (the heuristic's
+    /// own eventual default) and the id/name would otherwise suggest
+    /// something else.
+    ///
+    /// [`detect_stage_type`]: super::detect_stage_type
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stage_type: Option<StageType>,
     /// Files that must exist with real implementation (not stubs)
     /// Supports glob patterns like "src/auth/*.rs"
     #[serde(default)]

@@ -8,13 +8,14 @@ mod reasoning_effort_tests;
 mod regression_test_tests;
 mod security_policy_tests;
 mod stage_id_tests;
+mod stage_type_tests;
 mod subagent_timeout_tests;
 mod ultracode_tests;
 mod validation_tests;
 
 use super::types::{
     AcceptanceCriterion, Implementers, LoomConfig, LoomMetadata, SandboxConfig, StageDefinition,
-    StageSandboxConfig, StageType,
+    StageSandboxConfig,
 };
 
 /// Create a minimal StageDefinition for tests with only required fields
@@ -31,7 +32,7 @@ pub(crate) fn make_stage(id: &str, name: &str) -> StageDefinition {
         files: vec![],
         auto_merge: None,
         working_dir: ".".to_string(),
-        stage_type: StageType::default(),
+        stage_type: None,
         artifacts: vec![],
         wiring: vec![],
         wiring_tests: vec![],

@@ -144,6 +144,60 @@ loom:
 "#
 }
 
+/// Plan whose stage sets `permission_mode: bypass-permissions`. `loom init`
+/// refuses this via `crate::sandbox::validate_config`; `plan verify` must
+/// reject it too instead of reporting 0 errors on a plan `loom init` would
+/// bounce.
+fn bypass_permissions_plan() -> &'static str {
+    r#"# Bypass Permissions Plan
+
+<!-- loom METADATA -->
+
+```yaml
+loom:
+  version: 1
+  stages:
+    - id: stage-one
+      name: "Stage One"
+      stage_type: standard
+      working_dir: "."
+      acceptance:
+        - "true"
+      sandbox:
+        permission_mode: bypass-permissions
+```
+
+<!-- END loom METADATA -->
+"#
+}
+
+/// Plan whose stage lists `sandbox.excluded_commands`. Command-prefix
+/// exclusions run outside the host sandbox and are rejected everywhere else
+/// (schema `validate()` and `crate::sandbox::settings::policy::validate_emittable`);
+/// `plan verify` must reject it too.
+fn excluded_commands_plan() -> &'static str {
+    r#"# Excluded Commands Plan
+
+<!-- loom METADATA -->
+
+```yaml
+loom:
+  version: 1
+  stages:
+    - id: stage-one
+      name: "Stage One"
+      stage_type: standard
+      working_dir: "."
+      acceptance:
+        - "true"
+      sandbox:
+        excluded_commands: ["git"]
+```
+
+<!-- END loom METADATA -->
+"#
+}
+
 /// Plan that triggers a knowledge-recommendation warning (no knowledge-bootstrap stage).
 /// Same shape as `minimal_valid_plan` — emits the "Consider adding a 'knowledge-bootstrap'
 /// stage" warning under the knowledge category.
@@ -670,6 +724,59 @@ loom:
     assert!(
         joined.contains("allow_unsandboxed_escape"),
         "sandbox warning must mention allow_unsandboxed_escape, got: {joined}"
+    );
+}
+
+#[test]
+fn test_bypass_permissions_rejected_as_hard_error() {
+    // `loom init` refuses this plan via `crate::sandbox::validate_config`;
+    // `plan verify` must exit non-zero and report it as an error, not stay
+    // silent about a policy that spawn will refuse.
+    let temp = TempDir::new().unwrap();
+    let plan = write_plan(temp.path(), "PLAN-bypass.md", bypass_permissions_plan());
+    let out = run_verify(&plan, &["--json"]);
+    assert!(
+        !out.status.success(),
+        "expected exit 1 for bypass-permissions"
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let val: serde_json::Value = serde_json::from_str(&stdout).expect("stdout must be valid JSON");
+    assert_eq!(val["valid"], serde_json::Value::Bool(false));
+    let errs = val["errors"].as_array().expect("errors must be an array");
+    assert!(!errs.is_empty(), "errors must be non-empty");
+    let joined: String = errs
+        .iter()
+        .filter_map(|e| e["message"].as_str())
+        .collect::<Vec<_>>()
+        .join(" ");
+    assert!(
+        joined.contains("bypass-permissions"),
+        "expected a bypass-permissions error, got: {joined}"
+    );
+}
+
+#[test]
+fn test_excluded_commands_rejected_as_hard_error() {
+    let temp = TempDir::new().unwrap();
+    let plan = write_plan(temp.path(), "PLAN-excluded.md", excluded_commands_plan());
+    let out = run_verify(&plan, &["--json"]);
+    assert!(
+        !out.status.success(),
+        "expected exit 1 for sandbox.excluded_commands"
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let val: serde_json::Value = serde_json::from_str(&stdout).expect("stdout must be valid JSON");
+    assert_eq!(val["valid"], serde_json::Value::Bool(false));
+    let errs = val["errors"].as_array().expect("errors must be an array");
+    assert!(!errs.is_empty(), "errors must be non-empty");
+    let joined: String = errs
+        .iter()
+        .filter_map(|e| e["message"].as_str())
+        .collect::<Vec<_>>()
+        .join(" ");
+    assert!(
+        joined.contains("excluded_commands"),
+        "expected an excluded_commands error, got: {joined}"
     );
 }
 

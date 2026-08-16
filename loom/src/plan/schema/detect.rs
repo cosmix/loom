@@ -4,14 +4,17 @@ use super::types::{StageDefinition, StageType};
 
 /// Detect the stage type from a definition.
 ///
-/// Uses explicit `stage_type` field if set, otherwise falls back to
+/// `StageDefinition::stage_type` is `Option<StageType>`. Consults it first:
+/// `Some(_)` is the plan author's final answer and is returned as-is, even
+/// when it is `standard` and the id/name would otherwise match a heuristic
+/// below. Only `stage_type.is_none()` (the field was omitted) falls back to
 /// detecting stage type based on ID or name patterns (case-insensitive):
 /// - "knowledge-distill" -> KnowledgeDistill (checked first)
 /// - "knowledge" -> Knowledge
 /// - "integration-verify" or "integration verify" -> IntegrationVerify
 pub fn detect_stage_type(stage_def: &StageDefinition) -> StageType {
-    if stage_def.stage_type != StageType::Standard {
-        return stage_def.stage_type;
+    if let Some(explicit) = stage_def.stage_type {
+        return explicit;
     }
 
     detect_stage_type_from_id_name(&stage_def.id, &stage_def.name)

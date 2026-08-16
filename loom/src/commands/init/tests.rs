@@ -9,7 +9,7 @@ use crate::models::stage::{
 };
 use crate::plan::schema::{
     AcceptanceCriterion, LoomConfig, LoomMetadata, SandboxConfig, StageDefinition,
-    StageSandboxConfig, StageType,
+    StageSandboxConfig,
 };
 use crate::verify::serialize_stage_to_markdown;
 use chrono::Utc;
@@ -54,7 +54,7 @@ fn test_create_stage_from_definition_no_dependencies() {
         files: vec!["src/*.rs".to_string()],
         auto_merge: None,
         working_dir: ".".to_string(),
-        stage_type: StageType::default(),
+        stage_type: None,
         artifacts: vec![],
         wiring: vec![],
         wiring_tests: vec![],
@@ -142,7 +142,7 @@ fn test_create_stage_from_definition_with_dependencies() {
         files: vec![],
         auto_merge: None,
         working_dir: ".".to_string(),
-        stage_type: StageType::default(),
+        stage_type: None,
         artifacts: vec![],
         wiring: vec![],
         wiring_tests: vec![],
@@ -362,7 +362,7 @@ fn test_initialize_with_plan_creates_config() {
         files: vec![],
         auto_merge: None,
         working_dir: ".".to_string(),
-        stage_type: StageType::default(),
+        stage_type: None,
         artifacts: vec![],
         wiring: vec![],
         wiring_tests: vec![],
@@ -420,7 +420,7 @@ fn test_initialize_with_plan_creates_stage_files() {
             files: vec![],
             auto_merge: None,
             working_dir: ".".to_string(),
-            stage_type: StageType::default(),
+            stage_type: None,
             artifacts: vec![],
             wiring: vec![],
             wiring_tests: vec![],
@@ -450,7 +450,7 @@ fn test_initialize_with_plan_creates_stage_files() {
             files: vec![],
             auto_merge: None,
             working_dir: ".".to_string(),
-            stage_type: StageType::default(),
+            stage_type: None,
             artifacts: vec![],
             wiring: vec![],
             wiring_tests: vec![],
