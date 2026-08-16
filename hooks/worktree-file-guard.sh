@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # worktree-file-guard.sh - canonical PreToolUse guard for every file tool
 #
-# Read, Write, Edit, Glob, and Grep all pass through this guard. Paths are
-# resolved component-by-component against the canonical worktree root so an
-# absolute host path, a symlink leaf, or a sibling sharing the worktree's
-# string prefix cannot cross the boundary.
+# Read, Write, Edit, Glob, Grep, and NotebookEdit all pass through this
+# guard. Paths are resolved component-by-component against the canonical
+# worktree root so an absolute host path, a symlink leaf, or a sibling
+# sharing the worktree's string prefix cannot cross the boundary.
 #
 # Input: JSON from stdin (Claude Code passes tool info via stdin)
 # Exit codes: 0 = allow, 2 = block
@@ -39,7 +39,7 @@ EOF
 fi
 
 case "$TOOL_NAME" in
-Read | Write | Edit | Glob | Grep) ;;
+Read | Write | Edit | Glob | Grep | NotebookEdit) ;;
 *) exit 0 ;;
 esac
 
@@ -137,6 +137,11 @@ extract_path() {
 	Read | Write | Edit)
 		printf '%s' "$INPUT_JSON" | jq -r '.tool_input.file_path // empty' 2>/dev/null || true
 		;;
+	NotebookEdit)
+		# NotebookEdit's tool input field is `notebook_path`, not `file_path`.
+		# Fall back to `file_path` too so a future field rename still resolves.
+		printf '%s' "$INPUT_JSON" | jq -r '.tool_input.notebook_path // .tool_input.file_path // empty' 2>/dev/null || true
+		;;
 	Glob | Grep)
 		printf '%s' "$INPUT_JSON" | jq -r '.tool_input.path // "."' 2>/dev/null || true
 		;;
@@ -233,7 +238,7 @@ if [[ -n "$WORK_SHARED" ]] && is_within "$RESOLVED_PATH" "$WORK_SHARED"; then
 
 	case "$TOOL_NAME" in
 	Read | Glob | Grep) exit 0 ;;
-	Write | Edit)
+	Write | Edit | NotebookEdit)
 		if [[ "$RELATIVE_WORK_PATH" == /handoffs/* ]]; then
 			exit 0
 		fi
