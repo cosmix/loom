@@ -22,7 +22,7 @@ pub use commands::{
     complete_commands, complete_flags, complete_model_names, complete_shell_types,
     complete_subcommands, complete_trigger_types,
 };
-pub use knowledge::complete_knowledge_files;
+pub use knowledge::{complete_knowledge_files, complete_knowledge_scopes};
 pub use memory::complete_memory_entry_types;
 pub use plans::complete_plan_files;
 pub use sessions::{complete_session_ids, complete_stage_or_session_ids};
@@ -209,6 +209,10 @@ fn complete_flag_value(
         }
         "--trigger" => {
             let results = complete_trigger_types(prefix)?;
+            Ok(Some(results))
+        }
+        "--scope" => {
+            let results = complete_knowledge_scopes(prefix)?;
             Ok(Some(results))
         }
         "--session" => {

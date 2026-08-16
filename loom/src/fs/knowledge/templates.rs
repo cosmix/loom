@@ -13,12 +13,17 @@ pub fn default_scaffold(target: &KnowledgeTarget) -> String {
         KnowledgeTarget::Tier1(file_type) => default_content(*file_type),
         KnowledgeTarget::Topic { category, slug } => {
             let title = index::title_case(slug);
-            format!(
-                "# {title}\n\n> Topic notes for the {} knowledge area.\n",
-                category.dir_name()
-            )
+            format!("# {title}\n\n> {}\n", scaffold_blurb(category.dir_name()))
         }
     }
+}
+
+/// The generic placeholder sentence stamped into a freshly scaffolded topic
+/// file. Shared with `crate::fs::knowledge::catalog`'s `GenericBlurb`
+/// detector, which flags a topic that still has this exact sentence — the two
+/// must never drift out of sync.
+pub fn scaffold_blurb(category: &str) -> String {
+    format!("Topic notes for the {category} knowledge area.")
 }
 
 /// Get default content for a knowledge file type

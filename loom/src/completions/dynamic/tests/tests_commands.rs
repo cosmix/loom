@@ -1,6 +1,7 @@
 //! Tests for command, subcommand, and flag completions
 
 use crate::completions::dynamic::commands::*;
+use crate::completions::dynamic::complete_knowledge_scopes;
 
 #[test]
 fn test_complete_commands_all() {
@@ -269,4 +270,36 @@ fn test_plan_verify_positional_completes_plan_files() {
 
     let results = complete_plan_files(root, "").unwrap();
     assert!(results.iter().any(|r| r.contains("PLAN-foo.md")));
+}
+
+#[test]
+fn test_complete_subcommands_knowledge_includes_context_commands() {
+    let results = complete_subcommands("knowledge", "").unwrap();
+    assert!(results.contains(&"context".to_string()));
+    assert!(results.contains(&"status".to_string()));
+    assert!(results.contains(&"sync".to_string()));
+}
+
+#[test]
+fn test_complete_flags_knowledge_context() {
+    let results = complete_flags(&["knowledge", "context"], "").unwrap();
+    assert!(results.contains(&"--query".to_string()));
+    assert!(results.contains(&"--budget-tokens".to_string()));
+    assert!(results.contains(&"--explain".to_string()));
+    assert!(results.contains(&"--json".to_string()));
+    assert!(results.contains(&"--scope".to_string()));
+    assert!(results.contains(&"--require-id".to_string()));
+}
+
+#[test]
+fn test_complete_knowledge_scopes_all() {
+    let results = complete_knowledge_scopes("").unwrap();
+    assert_eq!(
+        results,
+        vec![
+            "all".to_string(),
+            "knowledge".to_string(),
+            "source".to_string()
+        ]
+    );
 }

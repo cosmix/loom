@@ -1,0 +1,318 @@
+//! Build a deterministic catalog over the whole knowledge tree.
+
+use crate::fs::knowledge::chunker::{chunk_file, KnowledgeChunk};
+use anyhow::Context;
+use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
+use std::collections::BTreeMap;
+use std::fs;
+use std::io::ErrorKind;
+use std::path::{Path, PathBuf};
+
+/// A problem found in the knowledge base. REPORTED, never repaired: this
+/// subsystem does not modify one byte of the knowledge tree.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum CatalogIssue {
+    /// A normalized H2 heading occurs more than once in one file.
+    DuplicateHeading {
+        /// The relative knowledge file containing the duplicate.
+        file: PathBuf,
+        /// The duplicated normalized heading.
+        heading: String,
+        /// Number of occurrences in the file.
+        occurrences: usize,
+    },
+    /// A topic still has the generated scaffold blurb.
+    GenericBlurb {
+        /// The relative knowledge file containing the blurb.
+        file: PathBuf,
+        /// The unmodified offending blurb.
+        blurb: String,
+    },
+    /// A markdown link points at no file within the knowledge root.
+    BrokenLink {
+        /// The relative knowledge file containing the link.
+        file: PathBuf,
+        /// The unresolved markdown target.
+        target: String,
+    },
+    /// A backticked repository source path does not exist.
+    MissingSourceRef {
+        /// The relative knowledge file containing the source reference.
+        file: PathBuf,
+        /// The missing source path, relative to the project root.
+        source_path: String,
+    },
+}
+
+/// Deterministic retrieval data and non-mutating knowledge-base diagnostics.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Catalog {
+    /// Hash over the catalog's chunk identities and content hashes.
+    pub revision: String,
+    /// All chunks, in relative-path order.
+    pub chunks: Vec<KnowledgeChunk>,
+    /// Diagnostics, sorted deterministically.
+    pub issues: Vec<CatalogIssue>,
+}
+
+/// Update heading occurrence counts and collect any broken-link or
+/// missing-source-ref issues for one chunk of an already-read file.
+fn collect_chunk_issues(
+    root: &Path,
+    relative_path: &Path,
+    project_root: Option<&Path>,
+    chunk: &KnowledgeChunk,
+    heading_counts: &mut BTreeMap<PathBuf, BTreeMap<String, usize>>,
+    issues: &mut Vec<CatalogIssue>,
+) -> anyhow::Result<()> {
+    if !chunk.heading.is_empty() {
+        *heading_counts
+            .entry(relative_path.to_path_buf())
+            .or_default()
+            .entry(chunk.anchor.clone())
+            .or_default() += 1;
+    }
+    for (_, target) in &chunk.links {
+        let target_path = root
+            .join(relative_path.parent().unwrap_or(Path::new("")))
+            .join(target);
+        if !path_exists(&target_path)? {
+            issues.push(CatalogIssue::BrokenLink {
+                file: relative_path.to_path_buf(),
+                target: target.clone(),
+            });
+        }
+    }
+    if let Some(project_root) = project_root {
+        for source_path in &chunk.source_paths {
+            if looks_like_repository_path(source_path)
+                && !path_exists(&project_root.join(source_path))?
+            {
+                issues.push(CatalogIssue::MissingSourceRef {
+                    file: relative_path.to_path_buf(),
+                    source_path: source_path.clone(),
+                });
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Chunk one knowledge file and collect any generic-blurb, broken-link, or
+/// missing-source-ref issues it produces into `issues`. Heading occurrence
+/// counts feed `heading_counts`, which the caller uses for a separate
+/// duplicate-heading pass once every file has been processed.
+fn process_file(
+    root: &Path,
+    relative_path: &Path,
+    project_root: Option<&Path>,
+    heading_counts: &mut BTreeMap<PathBuf, BTreeMap<String, usize>>,
+    issues: &mut Vec<CatalogIssue>,
+) -> anyhow::Result<Vec<KnowledgeChunk>> {
+    let absolute_path = root.join(relative_path);
+    let bytes = fs::read(&absolute_path)
+        .with_context(|| format!("Failed to read knowledge file: {}", absolute_path.display()))?;
+    let content = String::from_utf8_lossy(&bytes);
+    let file_chunks = chunk_file(relative_path, &bytes)?;
+
+    if let Some(blurb) = generic_blurb(&content, relative_path) {
+        issues.push(CatalogIssue::GenericBlurb {
+            file: relative_path.to_path_buf(),
+            blurb,
+        });
+    }
+
+    for chunk in &file_chunks {
+        collect_chunk_issues(
+            root,
+            relative_path,
+            project_root,
+            chunk,
+            heading_counts,
+            issues,
+        )?;
+    }
+
+    Ok(file_chunks)
+}
+
+/// Build a deterministic catalog rooted at a knowledge directory.
+pub fn build(root: &Path) -> anyhow::Result<Catalog> {
+    let files = markdown_files(root)?;
+    let project_root = project_root(root);
+    let mut chunks = Vec::new();
+    let mut issues = Vec::new();
+    let mut heading_counts: BTreeMap<PathBuf, BTreeMap<String, usize>> = BTreeMap::new();
+
+    for relative_path in files {
+        let file_chunks = process_file(
+            root,
+            &relative_path,
+            project_root.as_deref(),
+            &mut heading_counts,
+            &mut issues,
+        )?;
+        chunks.extend(file_chunks);
+    }
+
+    for (file, counts) in heading_counts {
+        for (heading, occurrences) in counts {
+            if occurrences > 1 {
+                issues.push(CatalogIssue::DuplicateHeading {
+                    file: file.clone(),
+                    heading,
+                    occurrences,
+                });
+            }
+        }
+    }
+
+    issues.sort_by(compare_issues);
+    Ok(Catalog {
+        revision: revision_for(&chunks),
+        chunks,
+        issues,
+    })
+}
+
+fn markdown_files(root: &Path) -> anyhow::Result<Vec<PathBuf>> {
+    match fs::metadata(root) {
+        Ok(metadata) if metadata.is_dir() => {}
+        Ok(_) => return Ok(Vec::new()),
+        Err(error) if error.kind() == ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(error) => {
+            return Err(error)
+                .with_context(|| format!("Failed to inspect knowledge root: {}", root.display()))
+        }
+    }
+
+    let mut files = Vec::new();
+    collect_markdown_files(root, root, &mut files)?;
+    files.sort_by_key(|path| display_path(path));
+    Ok(files)
+}
+
+fn collect_markdown_files(
+    root: &Path,
+    directory: &Path,
+    files: &mut Vec<PathBuf>,
+) -> anyhow::Result<()> {
+    let entries = fs::read_dir(directory).with_context(|| {
+        format!(
+            "Failed to read knowledge directory: {}",
+            directory.display()
+        )
+    })?;
+    for entry in entries {
+        let entry =
+            entry.with_context(|| format!("Failed to read entry in {}", directory.display()))?;
+        let path = entry.path();
+        let file_name = entry.file_name();
+        let file_name = file_name.to_string_lossy();
+        if file_name.starts_with('.') {
+            continue;
+        }
+        let file_type = entry
+            .file_type()
+            .with_context(|| format!("Failed to inspect knowledge entry: {}", path.display()))?;
+        if file_type.is_dir() {
+            collect_markdown_files(root, &path, files)?;
+        } else if file_type.is_file() && file_name.ends_with(".md") && file_name != "INDEX.md" {
+            let relative = path.strip_prefix(root).with_context(|| {
+                format!("Failed to relativize knowledge path: {}", path.display())
+            })?;
+            files.push(relative.to_path_buf());
+        }
+    }
+    Ok(())
+}
+
+fn revision_for(chunks: &[KnowledgeChunk]) -> String {
+    let mut lines: Vec<_> = chunks
+        .iter()
+        .map(|chunk| format!("{}:{}\n", chunk.id, chunk.content_hash))
+        .collect();
+    lines.sort();
+    hex::encode(Sha256::digest(lines.concat().as_bytes()))
+}
+
+fn generic_blurb(content: &str, relative_path: &Path) -> Option<String> {
+    let category = relative_path.parent()?.file_name()?.to_str()?;
+    let blurb = content
+        .lines()
+        .find_map(|line| line.strip_prefix("> "))?
+        .trim()
+        .to_string();
+    let scaffold = crate::fs::knowledge::templates::scaffold_blurb(category);
+    (blurb == scaffold).then_some(blurb)
+}
+
+fn project_root(root: &Path) -> Option<PathBuf> {
+    let loom = root.parent()?;
+    let doc = loom.parent()?;
+    let project = doc.parent()?;
+    (root.file_name()? == "knowledge" && loom.file_name()? == "loom" && doc.file_name()? == "doc")
+        .then(|| project.to_path_buf())
+}
+
+fn path_exists(path: &Path) -> anyhow::Result<bool> {
+    match fs::metadata(path) {
+        Ok(_) => Ok(true),
+        Err(error) if error.kind() == ErrorKind::NotFound => Ok(false),
+        Err(error) => {
+            Err(error).with_context(|| format!("Failed to inspect path: {}", path.display()))
+        }
+    }
+}
+
+fn looks_like_repository_path(source_path: &str) -> bool {
+    let path = Path::new(source_path);
+    !source_path.starts_with("//")
+        && !path.is_absolute()
+        && !path
+            .components()
+            .any(|component| matches!(component, std::path::Component::ParentDir))
+}
+
+fn compare_issues(left: &CatalogIssue, right: &CatalogIssue) -> std::cmp::Ordering {
+    issue_file(left)
+        .cmp(issue_file(right))
+        .then_with(|| issue_kind(left).cmp(&issue_kind(right)))
+        .then_with(|| issue_payload(left).cmp(&issue_payload(right)))
+}
+
+fn issue_file(issue: &CatalogIssue) -> &Path {
+    match issue {
+        CatalogIssue::DuplicateHeading { file, .. }
+        | CatalogIssue::GenericBlurb { file, .. }
+        | CatalogIssue::BrokenLink { file, .. }
+        | CatalogIssue::MissingSourceRef { file, .. } => file,
+    }
+}
+
+fn issue_kind(issue: &CatalogIssue) -> u8 {
+    match issue {
+        CatalogIssue::DuplicateHeading { .. } => 0,
+        CatalogIssue::GenericBlurb { .. } => 1,
+        CatalogIssue::BrokenLink { .. } => 2,
+        CatalogIssue::MissingSourceRef { .. } => 3,
+    }
+}
+
+fn issue_payload(issue: &CatalogIssue) -> String {
+    match issue {
+        CatalogIssue::DuplicateHeading {
+            heading,
+            occurrences,
+            ..
+        } => format!("{heading}:{occurrences}"),
+        CatalogIssue::GenericBlurb { blurb, .. } => blurb.clone(),
+        CatalogIssue::BrokenLink { target, .. } => target.clone(),
+        CatalogIssue::MissingSourceRef { source_path, .. } => source_path.clone(),
+    }
+}
+
+fn display_path(path: &Path) -> String {
+    path.to_string_lossy().replace('\\', "/")
+}

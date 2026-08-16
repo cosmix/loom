@@ -1,0 +1,70 @@
+//! Tests for `commands/knowledge/context.rs`.
+
+use super::*;
+use crate::context::schema::{KnowledgeChunk, LifecycleState};
+use std::path::PathBuf;
+
+/// A minimal chunk with only the id populated — enough to exercise
+/// `reject_unknown_require_ids`, which only looks at `chunk.id`.
+fn chunk_with_id(id: &str) -> KnowledgeChunk {
+    KnowledgeChunk {
+        id: id.to_string(),
+        file: PathBuf::from(format!("{id}.md")),
+        anchor: String::new(),
+        heading: String::new(),
+        body: String::new(),
+        content_hash: String::new(),
+        estimated_tokens: 0,
+        aliases: Vec::new(),
+        category: None,
+        source_paths: Vec::new(),
+        symbols: Vec::new(),
+        links: Vec::new(),
+        state: LifecycleState::Active,
+    }
+}
+
+fn catalog_with_ids(ids: &[&str]) -> Catalog {
+    Catalog {
+        revision: "test-revision".to_string(),
+        chunks: ids.iter().map(|id| chunk_with_id(id)).collect(),
+        issues: Vec::new(),
+    }
+}
+
+#[test]
+fn reject_unknown_require_ids_allows_every_id_present() {
+    let catalog = catalog_with_ids(&["a", "b"]);
+    let result = reject_unknown_require_ids(&catalog, &["a".to_string(), "b".to_string()]);
+    assert!(result.is_ok());
+}
+
+#[test]
+fn reject_unknown_require_ids_allows_an_empty_list() {
+    let catalog = catalog_with_ids(&["a"]);
+    let result = reject_unknown_require_ids(&catalog, &[]);
+    assert!(result.is_ok());
+}
+
+#[test]
+fn reject_unknown_require_ids_fails_on_one_unknown_id() {
+    let catalog = catalog_with_ids(&["a"]);
+    let error = reject_unknown_require_ids(&catalog, &["missing".to_string()]).unwrap_err();
+    assert!(error.to_string().contains("missing"));
+}
+
+#[test]
+fn reject_unknown_require_ids_names_every_unknown_id_in_a_single_error() {
+    let catalog = catalog_with_ids(&["a"]);
+    let error = reject_unknown_require_ids(
+        &catalog,
+        &["first-missing".to_string(), "second-missing".to_string()],
+    )
+    .unwrap_err();
+
+    let message = error.to_string();
+    assert!(
+        message.contains("first-missing") && message.contains("second-missing"),
+        "expected a single error naming both unknown ids, got: {message}"
+    );
+}

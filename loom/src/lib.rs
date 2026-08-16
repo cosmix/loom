@@ -6,6 +6,7 @@ pub mod cli;
 pub mod codex;
 pub mod commands;
 pub mod completions;
+pub mod context;
 pub mod daemon;
 pub mod diagnosis;
 pub mod fs;

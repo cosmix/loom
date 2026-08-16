@@ -9,12 +9,17 @@
 //! (tier 2, e.g. `architecture/merge-flow.md`). Directories created before the
 //! hierarchy existed stay flat and keep working — see [`types::KnowledgeLayout`].
 
+pub mod catalog;
+pub mod chunker;
 pub mod dir;
 pub mod gc;
 pub mod index;
 pub mod summary;
 pub mod templates;
 pub mod types;
+
+#[cfg(test)]
+mod tests;
 
 // Re-export commonly used types
 pub use dir::KnowledgeDir;
