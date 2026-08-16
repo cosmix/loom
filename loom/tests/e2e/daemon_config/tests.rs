@@ -69,7 +69,7 @@ fn test_auto_merge_config_cascade() {
         auto_merge: Some(true), // Stage-level override
         working_dir: ".".to_string(),
         sandbox: Default::default(),
-        stage_type: loom::plan::schema::StageType::default(),
+        stage_type: None,
         artifacts: vec![],
         wiring: vec![],
         wiring_tests: vec![],
@@ -103,7 +103,7 @@ fn test_auto_merge_config_cascade() {
         auto_merge: None, // Uses plan default
         working_dir: ".".to_string(),
         sandbox: Default::default(),
-        stage_type: loom::plan::schema::StageType::default(),
+        stage_type: None,
         artifacts: vec![],
         wiring: vec![],
         wiring_tests: vec![],

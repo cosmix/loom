@@ -11,4 +11,5 @@ pub use config::{
     is_legitimate_work_access, merge_config, validate_config, validate_paths, MergedSandboxConfig,
     PathEscapeAttempt,
 };
+pub(crate) use settings::validate_emittable;
 pub use settings::{apply_default_mode, generate_settings_json, write_settings};

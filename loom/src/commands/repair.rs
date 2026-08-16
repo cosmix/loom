@@ -847,10 +847,16 @@ fn rebuild_skill_index() -> Result<()> {
 
 /// Apply default sandbox settings
 fn fix_sandbox_settings(repo_root: &Path) -> Result<()> {
+    use crate::models::stage::Implementers;
     use crate::plan::schema::{SandboxConfig, StageSandboxConfig, StageType};
     let config = SandboxConfig::default();
     let stage_config = StageSandboxConfig::default();
-    let mut merged = sandbox::merge_config(&config, &stage_config, StageType::Standard);
+    let mut merged = sandbox::merge_config(
+        &config,
+        &stage_config,
+        StageType::Standard,
+        &Implementers::default(),
+    );
     sandbox::expand_paths(&mut merged);
     sandbox::write_settings(&merged, repo_root)?;
     Ok(())
