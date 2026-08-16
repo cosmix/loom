@@ -11,7 +11,9 @@ use crate::plan::schema::{
     check_knowledge_recommendations, check_sandbox_recommendations, detect_stage_type,
     unsafe_plan_reasons, validate_structural_preflight, StageDefinition,
 };
-use crate::sandbox::{merge_config as merge_sandbox_config, validate_config as validate_sandbox};
+use crate::sandbox::{
+    merge_config as merge_sandbox_config, validate_config as validate_sandbox, validate_emittable,
+};
 use crate::verify::serialize_stage_to_markdown;
 use anyhow::{Context, Result};
 use colored::Colorize;
@@ -121,10 +123,21 @@ pub fn initialize_with_plan_acknowledgement(
     let plan_sandbox = &parsed_plan.metadata.loom.sandbox;
     for stage_def in &stages {
         let stage_type = detect_stage_type(stage_def);
-        let merged = merge_sandbox_config(plan_sandbox, &stage_def.sandbox, stage_type);
+        let merged = merge_sandbox_config(
+            plan_sandbox,
+            &stage_def.sandbox,
+            stage_type,
+            &stage_def.implementers,
+        );
         validate_sandbox(&merged).with_context(|| {
             format!(
                 "Stage '{}' has an incompatible sandbox configuration",
+                stage_def.id
+            )
+        })?;
+        validate_emittable(&merged).with_context(|| {
+            format!(
+                "Stage '{}' has a sandbox policy that cannot be enforced",
                 stage_def.id
             )
         })?;

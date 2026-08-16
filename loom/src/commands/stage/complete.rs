@@ -438,8 +438,13 @@ pub fn complete(
     }
 
     // Run acceptance criteria phase
-    let acceptance_result =
-        run_acceptance_phase(&stage, &stage_id, no_verify, acceptance_dir.as_deref())?;
+    let acceptance_result = run_acceptance_phase(
+        &stage,
+        &stage_id,
+        no_verify,
+        acceptance_dir.as_deref(),
+        work_dir,
+    )?;
 
     ensure_acceptance_passed(acceptance_result, &stage_id)?;
 
@@ -662,6 +667,7 @@ fn run_acceptance_phase(
     stage_id: &str,
     no_verify: bool,
     acceptance_dir: Option<&Path>,
+    work_dir: &Path,
 ) -> Result<Option<bool>> {
     // Track whether acceptance criteria passed (None = skipped via --no-verify)
     let acceptance_result: Option<bool> = if no_verify {
@@ -672,6 +678,7 @@ fn run_acceptance_phase(
             stage,
             stage_id,
             acceptance_dir,
+            work_dir,
             AcceptanceDisplayOptions {
                 stage_label: Some("stage"),
                 show_empty_message: false,

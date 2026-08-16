@@ -68,7 +68,7 @@ mod tests {
             files: vec![],
             auto_merge: None,
             working_dir: ".".to_string(),
-            stage_type: crate::plan::schema::StageType::default(),
+            stage_type: None,
             artifacts: vec![],
             wiring: vec![],
             wiring_tests: vec![],
@@ -151,6 +151,7 @@ mod tests {
             &SandboxConfig::default(),
             &StageSandboxConfig::default(),
             crate::plan::schema::StageType::Standard,
+            &Implementers::default(),
         );
 
         let error = stage_executor::write_required_sandbox_settings(
@@ -163,6 +164,46 @@ mod tests {
         assert!(error
             .to_string()
             .contains("Failed to enforce sandbox settings"));
+    }
+
+    #[test]
+    fn install_required_hooks_rejects_missing_hooks_dir() {
+        let target = tempfile::tempdir().unwrap();
+        let work_dir = tempfile::tempdir().unwrap();
+
+        let error = stage_executor::install_required_hooks(
+            None,
+            target.path(),
+            work_dir.path(),
+            crate::plan::schema::PermissionMode::Default,
+            "missing-hooks",
+        )
+        .expect_err("missing hooks directory must abort spawn setup");
+
+        assert!(error.to_string().contains("hooks directory not found"));
+    }
+
+    #[test]
+    fn install_required_hooks_failure_is_fatal_to_spawn_setup() {
+        let target = tempfile::tempdir().unwrap();
+        let work_dir = tempfile::tempdir().unwrap();
+        // Block `.claude` directory creation the same way the sandbox-settings
+        // test above blocks `write_settings`: put a file where a directory
+        // needs to go.
+        std::fs::write(target.path().join(".claude"), "not a directory").unwrap();
+
+        let error = stage_executor::install_required_hooks(
+            Some(PathBuf::from("/nonexistent/hooks/dir")),
+            target.path(),
+            work_dir.path(),
+            crate::plan::schema::PermissionMode::Default,
+            "hook-install-failure",
+        )
+        .expect_err("hook installation failure must abort spawn setup");
+
+        assert!(error
+            .to_string()
+            .contains("Failed to install Claude Code hooks"));
     }
 
     #[test]

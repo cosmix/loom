@@ -6,7 +6,6 @@ use crate::fs::work_dir::WorkDir;
 use crate::orchestrator::OrchestratorResult;
 use crate::plan::schema::{
     Implementers, LoomConfig, LoomMetadata, SandboxConfig, StageDefinition, StageSandboxConfig,
-    StageType,
 };
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -51,7 +50,7 @@ fn setup_work_dir_with_plan(temp_dir: &TempDir) -> (PathBuf, WorkDir) {
         files: vec![],
         auto_merge: None,
         working_dir: ".".to_string(),
-        stage_type: StageType::default(),
+        stage_type: None,
         artifacts: vec![],
         wiring: vec![],
         wiring_tests: vec![],
@@ -174,7 +173,7 @@ sandbox:
 
     assert_eq!(
         def.stage_type,
-        StageType::Knowledge,
+        Some(StageType::Knowledge),
         "stage_type must survive"
     );
     assert_eq!(def.auto_merge, Some(false), "auto_merge must survive");

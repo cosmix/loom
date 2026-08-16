@@ -100,6 +100,7 @@ fn format_stage_annotations(stage: &StageSummary) -> String {
                 FailureType::UserBlocked => "user",
                 FailureType::MergeConflict => "merge",
                 FailureType::InfrastructureError => "infra",
+                FailureType::SandboxSetupFailure => "sandbox",
                 FailureType::Unknown => "error",
             })
             .unwrap_or("error");

@@ -9,8 +9,8 @@ use std::path::Path;
 use std::time::Duration;
 
 use super::types::TestBaseline;
-use crate::plan::schema::ChangeImpactConfig;
-use crate::verify::criteria::run_single_criterion_with_timeout;
+use crate::plan::schema::{ChangeImpactConfig, CommandConfinement};
+use crate::verify::criteria::{run_spec_with_timeout, CommandSpec};
 use crate::verify::utils::extract_matching_lines;
 
 /// Default timeout for baseline commands (5 minutes)
@@ -23,6 +23,7 @@ const BASELINE_COMMAND_TIMEOUT: Duration = Duration::from_secs(300);
 /// * `stage_id` - The stage ID this baseline is for
 /// * `config` - Change impact configuration with command and patterns
 /// * `working_dir` - Directory to run the command from
+/// * `confinement` - The stage's resolved level for plan-authored commands
 ///
 /// # Returns
 /// A TestBaseline containing the captured state
@@ -30,18 +31,12 @@ pub fn capture_baseline(
     stage_id: &str,
     config: &ChangeImpactConfig,
     working_dir: Option<&Path>,
+    confinement: CommandConfinement,
 ) -> Result<TestBaseline> {
-    let result = run_single_criterion_with_timeout(
-        &config.baseline_command,
-        working_dir,
-        BASELINE_COMMAND_TIMEOUT,
-    )
-    .with_context(|| {
-        format!(
-            "Failed to run baseline command: {}",
-            config.baseline_command
-        )
-    })?;
+    let command = config.baseline_command.as_str();
+    let spec = CommandSpec::shell(command);
+    let result = run_spec_with_timeout(&spec, working_dir, BASELINE_COMMAND_TIMEOUT, confinement)
+        .with_context(|| format!("Failed to run baseline command: {command}"))?;
 
     // Combine stdout and stderr for pattern matching
     let combined_output = format!("{}\n{}", result.stdout, result.stderr);

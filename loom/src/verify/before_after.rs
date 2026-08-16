@@ -14,18 +14,21 @@
 use anyhow::Result;
 use std::path::Path;
 
-use crate::plan::schema::TruthCheck;
+use crate::plan::schema::{CommandConfinement, TruthCheck};
 use crate::verify::goal_backward::{verify_truth_checks, VerificationGap};
 
 /// Run before-stage checks to verify pre-conditions.
 ///
 /// Executes TruthChecks that describe the expected state BEFORE implementation.
 /// If any check fails, the pre-conditions are not met and the stage should not proceed.
+///
+/// These run at the default (`Confined`) level: the orchestrator invokes them
+/// before a stage is spawned, where no resolved sandbox config is in hand.
 pub fn run_before_stage_checks(
     checks: &[TruthCheck],
     working_dir: &Path,
 ) -> Result<Vec<VerificationGap>> {
-    verify_truth_checks(checks, working_dir)
+    verify_truth_checks(checks, working_dir, CommandConfinement::default())
 }
 
 /// Look for work a previous attempt at this stage already produced.
@@ -106,11 +109,14 @@ pub fn find_prior_stage_work(
 ///
 /// Executes TruthChecks that describe the expected state AFTER implementation.
 /// If any check fails, the post-conditions are not met and the stage completion should fail.
+///
+/// `confinement` is the stage's resolved level for plan-authored commands.
 pub fn run_after_stage_checks(
     checks: &[TruthCheck],
     working_dir: &Path,
+    confinement: CommandConfinement,
 ) -> Result<Vec<VerificationGap>> {
-    verify_truth_checks(checks, working_dir)
+    verify_truth_checks(checks, working_dir, confinement)
 }
 
 #[cfg(test)]
@@ -172,7 +178,9 @@ mod tests {
         }];
 
         let working_dir = env::temp_dir();
-        let gaps = run_after_stage_checks(&after_checks, &working_dir).unwrap();
+        let gaps =
+            run_after_stage_checks(&after_checks, &working_dir, CommandConfinement::default())
+                .unwrap();
         assert!(
             gaps.is_empty(),
             "After-stage checks should pass when post-conditions match"
@@ -192,7 +200,9 @@ mod tests {
         }];
 
         let working_dir = env::temp_dir();
-        let gaps = run_after_stage_checks(&after_checks, &working_dir).unwrap();
+        let gaps =
+            run_after_stage_checks(&after_checks, &working_dir, CommandConfinement::default())
+                .unwrap();
         assert_eq!(
             gaps.len(),
             1,
@@ -210,7 +220,8 @@ mod tests {
             "Empty before checks should produce no gaps"
         );
 
-        let gaps = run_after_stage_checks(&[], &working_dir).unwrap();
+        let gaps =
+            run_after_stage_checks(&[], &working_dir, CommandConfinement::default()).unwrap();
         assert!(gaps.is_empty(), "Empty after checks should produce no gaps");
     }
 
@@ -256,7 +267,8 @@ mod tests {
         ];
 
         let working_dir = env::temp_dir();
-        let gaps = run_after_stage_checks(&checks, &working_dir).unwrap();
+        let gaps =
+            run_after_stage_checks(&checks, &working_dir, CommandConfinement::default()).unwrap();
         assert!(gaps.is_empty(), "All after-stage checks should pass");
     }
 }

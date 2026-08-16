@@ -187,7 +187,7 @@ loom:
 #[test]
 fn codex_lane_on_knowledge_stage_warns_in_preflight() {
     let mut stage = make_stage("explore", "Explore Codebase");
-    stage.stage_type = StageType::Knowledge;
+    stage.stage_type = Some(StageType::Knowledge);
     stage.implementers = Implementers::new(vec![Implementer::Codex]);
 
     let warnings = validate_structural_preflight(&[stage], None);
@@ -205,7 +205,7 @@ fn codex_warns_on_knowledge_stage_even_when_only_secondary() {
     // curation, not about which lane is preferred — a knowledge stage that
     // merely lists codex can still misroute its work to it.
     let mut stage = make_stage("explore", "Explore Codebase");
-    stage.stage_type = StageType::Knowledge;
+    stage.stage_type = Some(StageType::Knowledge);
     stage.implementers = Implementers::new(vec![Implementer::Claude, Implementer::Codex]);
 
     let warnings = validate_structural_preflight(&[stage], None);

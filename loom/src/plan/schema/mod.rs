@@ -1,7 +1,6 @@
 //! Plan YAML schema definitions and validation
 
 mod detect;
-mod sandbox_policy;
 mod types;
 mod validation;
 
@@ -9,15 +8,14 @@ mod validation;
 mod tests;
 
 pub use detect::{detect_stage_type, detect_stage_type_from_id_name};
-pub use sandbox_policy::unsafe_plan_reasons;
 pub use types::{
     AcceptanceCriterion, AdjudicationConfig, ChangeImpactConfig, ChangeImpactPolicy,
-    CodeReviewConfig, DeadCodeCheck, FilesystemConfig, Implementer, Implementers, LinuxConfig,
-    LoomConfig, LoomMetadata, NetworkConfig, PermissionMode, RegressionTest, SandboxConfig,
-    StageDefinition, StageSandboxConfig, StageType, SuccessCriteria, TruthCheck, ValidationError,
-    WiringCheck, WiringTest, ALLOWED_REASONING_EFFORTS,
+    CodeReviewConfig, CommandConfinement, DeadCodeCheck, FilesystemConfig, Implementer,
+    Implementers, LinuxConfig, LoomConfig, LoomMetadata, NetworkConfig, PermissionMode,
+    RegressionTest, SandboxConfig, StageDefinition, StageSandboxConfig, StageType, SuccessCriteria,
+    TruthCheck, ValidationError, WiringCheck, WiringTest, ALLOWED_REASONING_EFFORTS,
 };
 pub use validation::{
-    check_knowledge_recommendations, check_sandbox_recommendations, validate,
+    check_knowledge_recommendations, check_sandbox_recommendations, unsafe_plan_reasons, validate,
     validate_structural_preflight,
 };

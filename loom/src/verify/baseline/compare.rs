@@ -10,8 +10,8 @@ use std::time::Duration;
 
 use super::capture::{load_baseline, save_baseline};
 use super::types::ChangeImpact;
-use crate::plan::schema::ChangeImpactConfig;
-use crate::verify::criteria::run_single_criterion_with_timeout;
+use crate::plan::schema::{ChangeImpactConfig, CommandConfinement};
+use crate::verify::criteria::{run_spec_with_timeout, CommandSpec};
 use crate::verify::utils::extract_matching_lines;
 
 /// Default timeout for comparison commands (5 minutes)
@@ -27,6 +27,7 @@ const COMPARE_COMMAND_TIMEOUT: Duration = Duration::from_secs(300);
 /// * `config` - Change impact configuration
 /// * `working_dir` - Directory to run commands from
 /// * `work_dir` - Path to .work directory (for loading baseline)
+/// * `confinement` - The stage's resolved level for plan-authored commands
 ///
 /// # Returns
 /// ChangeImpact describing what changed, or error if comparison fails
@@ -35,6 +36,7 @@ pub fn compare_to_baseline(
     config: &ChangeImpactConfig,
     working_dir: Option<&Path>,
     work_dir: &Path,
+    confinement: CommandConfinement,
 ) -> Result<ChangeImpact> {
     // Load the stored baseline
     let baseline = load_baseline(stage_id, work_dir)?
@@ -46,17 +48,15 @@ pub fn compare_to_baseline(
         .as_deref()
         .unwrap_or(&config.baseline_command);
 
-    let result = match run_single_criterion_with_timeout(
-        compare_command,
-        working_dir,
-        COMPARE_COMMAND_TIMEOUT,
-    ) {
-        Ok(result) => result,
-        Err(e) => {
-            eprintln!("Warning: Comparison command failed to run: {e}");
-            return Ok(ChangeImpact::failed());
-        }
-    };
+    let spec = CommandSpec::shell(compare_command);
+    let result =
+        match run_spec_with_timeout(&spec, working_dir, COMPARE_COMMAND_TIMEOUT, confinement) {
+            Ok(result) => result,
+            Err(e) => {
+                eprintln!("Warning: Comparison command failed to run: {e}");
+                return Ok(ChangeImpact::failed());
+            }
+        };
 
     // Combine stdout and stderr for pattern matching
     let combined_output = format!("{}\n{}", result.stdout, result.stderr);
@@ -121,11 +121,13 @@ pub fn compare_to_baseline(
 /// * `config` - Change impact configuration
 /// * `working_dir` - Directory to run commands from
 /// * `work_dir` - Path to .work directory
+/// * `confinement` - The stage's resolved level for plan-authored commands
 pub fn ensure_baseline_captured(
     stage_id: &str,
     config: &ChangeImpactConfig,
     working_dir: Option<&Path>,
     work_dir: &Path,
+    confinement: CommandConfinement,
 ) -> Result<()> {
     // Check if baseline already exists
     if load_baseline(stage_id, work_dir)?.is_some() {
@@ -134,7 +136,7 @@ pub fn ensure_baseline_captured(
 
     // Capture new baseline
     println!("Capturing baseline for change impact analysis...");
-    let baseline = super::capture::capture_baseline(stage_id, config, working_dir)?;
+    let baseline = super::capture::capture_baseline(stage_id, config, working_dir, confinement)?;
 
     println!(
         "  Baseline captured: {} failure(s), {} warning(s)",
@@ -228,7 +230,13 @@ mod tests {
             policy: crate::plan::schema::ChangeImpactPolicy::Fail,
         };
 
-        let result = ensure_baseline_captured("test-stage", &config, None, work_dir);
+        let result = ensure_baseline_captured(
+            "test-stage",
+            &config,
+            None,
+            work_dir,
+            CommandConfinement::default(),
+        );
         assert!(result.is_ok());
     }
 }

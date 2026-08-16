@@ -99,6 +99,7 @@ pub fn complete_knowledge_stage(
             &stage,
             stage_id,
             acceptance_dir.as_deref(),
+            work_dir,
             AcceptanceDisplayOptions {
                 stage_label: Some("knowledge stage"),
                 show_empty_message: false,

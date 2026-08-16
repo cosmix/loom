@@ -15,9 +15,9 @@ pub use baseline::{
 pub use before_after::{run_after_stage_checks, run_before_stage_checks};
 pub use context::CriteriaContext;
 pub use criteria::{
-    run_acceptance, run_acceptance_with_config, run_single_criterion,
-    run_single_criterion_with_timeout, AcceptanceResult, CriteriaConfig, CriterionResult,
-    DEFAULT_COMMAND_TIMEOUT,
+    plan_confinement, resolve_confinement, run_acceptance, run_acceptance_with_config,
+    run_single_criterion, run_single_criterion_with_timeout, run_spec_with_timeout, spawn_confined,
+    AcceptanceResult, CommandSpec, CriteriaConfig, CriterionResult, DEFAULT_COMMAND_TIMEOUT,
 };
 pub use duplicate_detection::{detect_duplicate_symbols, DuplicateSymbol};
 pub use goal_backward::{

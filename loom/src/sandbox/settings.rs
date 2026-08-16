@@ -7,6 +7,7 @@ use std::fs;
 use std::path::Path;
 
 mod policy;
+pub(crate) use policy::validate_emittable;
 
 /// Write Claude Code's `permissions.defaultMode` into a settings JSON value.
 ///
@@ -118,7 +119,7 @@ pub fn write_settings(config: &MergedSandboxConfig, worktree_path: &Path) -> Res
     // path (which is outside the worktree boundary). Adding the resolved
     // absolute paths ensures reads/writes are auto-allowed without prompting.
     //
-    // SECURITY (S-1): the broad `Read(/{resolved}/**)` + `Write(/{resolved}/**)`
+    // SECURITY (S-1): the broad `Read(/{resolved}/**)` + `Edit(/{resolved}/**)`
     // allow used to expose `.work/admin.token` (Admin RPC capability) and
     // `.work/user.token` (User capability) to a sandboxed worktree agent —
     // privilege escalation across the daemon's RPC trust boundary. We now:
@@ -173,7 +174,11 @@ pub fn write_settings(config: &MergedSandboxConfig, worktree_path: &Path) -> Res
                         for sub in ["handoffs", "disputes", "memory"] {
                             perms.push(format!("Read(/{}/{}/**)", resolved_str, sub));
                         }
-                        perms.push(format!("Write(/{}/handoffs/**)", resolved_str));
+                        // NOTE: Claude Code's file permission check consults only
+                        // `Edit(path)` rules — a `Write(path)` rule parses but is
+                        // silently ignored (see doc/loom/knowledge/concerns.md
+                        // "Per-Stage Sandbox `Write(path)` Rules Are Inert").
+                        perms.push(format!("Edit(/{}/handoffs/**)", resolved_str));
                         for perm in perms {
                             if !allow_arr.iter().any(|v| v.as_str() == Some(&perm)) {
                                 allow_arr.push(json!(perm));
@@ -190,7 +195,9 @@ pub fn write_settings(config: &MergedSandboxConfig, worktree_path: &Path) -> Res
 
     // Carry forward top-level keys loom doesn't own (e.g. plugin enablement)
     // that would otherwise be discarded by the from-scratch regeneration above.
-    preserve_unowned_keys(&mut settings_json, &existing_settings);
+    // Gated on the codex lane, but only for worktree targets (see
+    // `preserve_unowned_keys` doc comment).
+    preserve_unowned_keys(&mut settings_json, &existing_settings, &config, is_worktree);
 
     // Write settings file with pretty formatting
     let settings_string = serde_json::to_string_pretty(&settings_json)
@@ -228,17 +235,42 @@ pub fn generate_settings_json(config: &MergedSandboxConfig) -> Value {
         deny.push(json!(format!("Read({})", path)));
     }
 
-    // Add deny_write paths (prompts before allowing Write/Edit tools on these)
+    // Add deny_write paths (prompts before allowing Write/Edit tools on these).
+    //
+    // IMPORTANT: emitted as `Edit(...)`, not `Write(...)`. Claude Code's file
+    // permission check consults only `Edit(path)` rules — `Write(path)` parses,
+    // prints a startup warning, and is then silently ignored, so a `Write(...)`
+    // deny here would permit exactly what it was written to block. See
+    // doc/loom/knowledge/concerns.md § "Per-Stage Sandbox `Write(path)` Rules
+    // Are Inert". A blanket `Edit(**)` deny must NEVER be added here alongside
+    // a narrower `Edit(<dir>/**)` allow below — deny wins, so it would block the
+    // very directory the allow was meant to open.
+    //
+    // IMPORTANT: filter out parent-traversal paths (../), same as deny_read
+    // above. Permission patterns resolve relative to the settings file's own
+    // directory — inside a worktree that's `.worktrees/<stage-id>/`, so
+    // `../../**` resolves to an ancestor (the repo root or `.worktrees/`), and
+    // Claude Code's `**` crosses path separators, so the pattern matches the
+    // worktree's OWN files (e.g. `<repo>/.worktrees/<stage>/loom/src/foo.rs`).
+    // A `../`-relative deny is therefore effectively blanket and must never be
+    // emitted as an enforceable `Edit` rule — deny wins over allow, so it would
+    // refuse the agent's very first edit to its own source tree. Dropping it
+    // here loses no protection: worktree write-escape is enforced independently
+    // by the OS sandbox's `allowOnly` list, `hooks/worktree-file-guard.sh`, and
+    // `hooks/worktree-isolation.sh`.
     for path in &config.filesystem.deny_write {
-        deny.push(json!(format!("Write({})", path)));
+        if path.contains("../") {
+            continue;
+        }
+        deny.push(json!(format!("Edit({})", path)));
     }
 
-    // Add allow_write paths as exceptions
+    // Add allow_write paths as exceptions (same Write->Edit reasoning as above).
     for path in &config.filesystem.allow_write {
-        allow.push(json!(format!("Write({})", path)));
+        allow.push(json!(format!("Edit({})", path)));
     }
 
-    // Add narrow Read/Write permissions for orchestration state files agents
+    // Add narrow Read/Edit permissions for orchestration state files agents
     // need. These are the *relative* forms; `write_settings` adds matching
     // resolved-absolute forms because `.work` is a symlink that Claude Code
     // resolves before matching. The set is deliberately scoped to the subdirs
@@ -247,7 +279,7 @@ pub fn generate_settings_json(config: &MergedSandboxConfig) -> Value {
     allow.push(json!("Read(.work/config.toml)"));
     allow.push(json!("Read(.work/signals/**)"));
     allow.push(json!("Read(.work/handoffs/**)"));
-    allow.push(json!("Write(.work/handoffs/**)"));
+    allow.push(json!("Edit(.work/handoffs/**)"));
     allow.push(json!("Read(.work/disputes/**)"));
     allow.push(json!("Read(.work/memory/**)"));
 
@@ -282,9 +314,28 @@ pub fn generate_settings_json(config: &MergedSandboxConfig) -> Value {
 
 /// Merge existing permissions from an old settings file into new settings
 ///
-/// This preserves user-approved permissions that were granted in a previous settings file,
-/// while still applying sandbox-generated permissions. Only `permissions.allow` and
-/// `permissions.deny` are merged - sandbox/network/linux config always comes from the generator.
+/// Only `permissions.deny` is merged forward from the existing file -
+/// `permissions.allow` is intentionally NOT carried forward; it is always
+/// regenerated purely from `config` (see `generate_settings_json`).
+/// sandbox/network/linux config also always comes from the generator.
+///
+/// SECURITY: `permissions.allow` used to be merged the same way `deny` is
+/// here (union + dedup with the existing file). That was a self-granted,
+/// persistent permission escalation: `.claude/settings.local.json` lives
+/// inside the worktree the stage agent is writing to, and worktrees are
+/// REUSED across respawn / retry / crash recovery
+/// (`orchestrator/core/stage_executor.rs` via `git::get_or_create_worktree`).
+/// An agent could append an `Edit(...)` (or, before the Write->Edit fix,
+/// `Write(...)`) entry to its own `allow` list and have it survive into its
+/// next session, granting itself a permission loom never authorized. There is
+/// no reliable way to tell a legitimately user-approved entry apart from a
+/// self-inserted lookalike from the file's contents alone, so the safe fix is
+/// to stop trusting `allow` from disk at all: it is deterministically rebuilt
+/// from `config` on every write. This does mean a permission a human manually
+/// approves mid-session is NOT preserved across the next respawn - an accepted
+/// tradeoff for closing the escalation path. `deny` carry-forward is safe to
+/// keep because widening `deny` can only narrow what the agent can do, never
+/// grant it anything.
 ///
 /// Uses HashSet for deduplication to avoid duplicate permissions in the merged result.
 ///
@@ -303,16 +354,6 @@ fn merge_existing_permissions(
     if existing_permissions.is_none() || existing_permissions.unwrap().is_null() {
         return; // No permissions to merge
     }
-
-    let existing_allow = existing_permissions
-        .and_then(|p| p.get("allow"))
-        .and_then(|a| a.as_array())
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|v| v.as_str().map(String::from))
-                .collect::<Vec<String>>()
-        })
-        .unwrap_or_default();
 
     let existing_deny = existing_permissions
         .and_then(|p| p.get("deny"))
@@ -335,30 +376,6 @@ fn merge_existing_permissions(
     }
 
     let new_permissions = new_permissions.unwrap();
-
-    // Merge allow permissions
-    if !existing_allow.is_empty() {
-        let new_allow = new_permissions
-            .entry("allow")
-            .or_insert_with(|| json!([]))
-            .as_array_mut();
-
-        if let Some(new_allow_arr) = new_allow {
-            // Collect all permissions into a HashSet for deduplication
-            let mut all_allow: HashSet<String> = new_allow_arr
-                .iter()
-                .filter_map(|v| v.as_str().map(String::from))
-                .collect();
-
-            // Add existing permissions
-            for perm in existing_allow {
-                all_allow.insert(perm);
-            }
-
-            // Replace array with deduplicated permissions
-            *new_allow_arr = all_allow.into_iter().map(|s| json!(s)).collect();
-        }
-    }
 
     // Merge deny permissions
     if !existing_deny.is_empty() {
@@ -410,7 +427,40 @@ const PRESERVED_SETTINGS_KEYS: [&str; 2] = ["enabledPlugins", "extraKnownMarketp
 /// `generate_settings_json` rebuilds the file from scratch, so any
 /// key it does not emit is lost. Plugin enablement lives in
 /// `enabledPlugins` / `extraKnownMarketplaces` and must survive.
-fn preserve_unowned_keys(new_settings: &mut Value, existing: &Value) {
+///
+/// SECURITY: the escalation this guards against is a stage AGENT writing its
+/// own `enabledPlugins` entry into its own (agent-writable, respawn-reused)
+/// worktree settings file and having loom carry that self-grant into the
+/// next session - the same self-granted-persistence hole
+/// `merge_existing_permissions` had for `permissions.allow` (see its doc
+/// comment). That hole exists ONLY for worktree targets: the settings file is
+/// not agent-writable at the MAIN repo root. Both writers that target it
+/// hardcode or discourage the codex lane rather than run whatever a worktree
+/// agent chose - `loom repair --fix` (`commands/repair.rs::fix_sandbox_settings`)
+/// passes `&Implementers::default()` (claude-only) unconditionally, and the
+/// knowledge-stage spawn path (`stage_executor.rs::start_knowledge_stage`)
+/// writes the stage's own implementers, which plan validation warns against
+/// setting to codex in the first place - so there is no self-grant to defend
+/// against there, and the codex-license gate must not apply. Applying it
+/// anyway silently DELETES a legitimate main-repo plugin install (e.g. the
+/// codex marketplace) on every `loom repair --fix`, because `write_settings`
+/// regenerates the whole file from scratch.
+///
+/// So: preserve these keys UNCONDITIONALLY for a non-worktree target, and
+/// gate on `config.implementers.includes_codex()` only when `is_worktree` is
+/// true - a claude-only WORKTREE stage has no legitimate reason to carry
+/// either key, so there is nothing for it to self-grant. `generated always
+/// wins` still holds - the loop below only fills in keys `new_settings`
+/// doesn't already contain.
+fn preserve_unowned_keys(
+    new_settings: &mut Value,
+    existing: &Value,
+    config: &MergedSandboxConfig,
+    is_worktree: bool,
+) {
+    if is_worktree && !config.implementers.includes_codex() {
+        return;
+    }
     let Some(existing_obj) = existing.as_object() else {
         return;
     };
@@ -430,9 +480,10 @@ fn preserve_unowned_keys(new_settings: &mut Value, existing: &Value) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::codex::{CODEX_SANDBOX_DOMAINS, CODEX_SANDBOX_WRITE_PATHS};
+    use crate::models::stage::{Implementer, Implementers};
     use crate::plan::schema::{
-        FilesystemConfig, LinuxConfig, NetworkConfig, SandboxConfig, StageSandboxConfig, StageType,
+        CommandConfinement, FilesystemConfig, LinuxConfig, NetworkConfig, SandboxConfig,
+        StageSandboxConfig, StageType,
     };
     use crate::sandbox::merge_config;
 
@@ -446,7 +497,18 @@ mod tests {
             network: NetworkConfig::default(),
             linux: LinuxConfig::default(),
             permission_mode: PermissionMode::Auto,
+            implementers: Implementers::default(),
+            command_confinement: CommandConfinement::default(),
         }
+    }
+
+    /// A stage config that licenses the codex lane - the gate
+    /// `preserve_unowned_keys` needs before it will carry `enabledPlugins` /
+    /// `extraKnownMarketplaces` forward from an existing settings file.
+    fn codex_licensed_config() -> MergedSandboxConfig {
+        let mut config = default_config();
+        config.implementers = Implementers::new(vec![Implementer::Codex]);
+        config
     }
 
     #[test]
@@ -523,6 +585,8 @@ mod tests {
                 network: NetworkConfig::default(),
                 linux: LinuxConfig::default(),
                 permission_mode: mode,
+                implementers: Implementers::default(),
+                command_confinement: CommandConfinement::default(),
             };
             let json = generate_settings_json(&config);
             assert_eq!(
@@ -568,6 +632,8 @@ mod tests {
             network: NetworkConfig::default(),
             linux: LinuxConfig::default(),
             permission_mode: PermissionMode::Auto,
+            implementers: Implementers::default(),
+            command_confinement: CommandConfinement::default(),
         };
 
         let json = generate_settings_json(&config);
@@ -580,7 +646,7 @@ mod tests {
         assert_eq!(deny.len(), 3);
         assert_eq!(deny[0], "Read(~/.ssh/**)");
         assert_eq!(deny[1], "Read(~/.claude/.credentials.json)");
-        assert_eq!(deny[2], "Write(.work/**)");
+        assert_eq!(deny[2], "Edit(.work/**)");
 
         // allow_write paths come first, then the narrowly-scoped .work/ state
         // permissions agents need (signals/handoffs/disputes/memory). The set is
@@ -588,11 +654,11 @@ mod tests {
         // which would also expose `.work/admin.token` / `.work/user.token` (S-1).
         let allow = json["permissions"]["allow"].as_array().unwrap();
         assert_eq!(allow.len(), 7);
-        assert_eq!(allow[0], "Write(src/**)");
+        assert_eq!(allow[0], "Edit(src/**)");
         assert_eq!(allow[1], "Read(.work/config.toml)");
         assert_eq!(allow[2], "Read(.work/signals/**)");
         assert_eq!(allow[3], "Read(.work/handoffs/**)");
-        assert_eq!(allow[4], "Write(.work/handoffs/**)");
+        assert_eq!(allow[4], "Edit(.work/handoffs/**)");
         assert_eq!(allow[5], "Read(.work/disputes/**)");
         assert_eq!(allow[6], "Read(.work/memory/**)");
     }
@@ -607,8 +673,9 @@ mod tests {
         assert!(deny_read
             .iter()
             .any(|value| value == "~/.claude/.credentials.json"));
-        // The codex lane's state dirs are the only write widening loom emits.
-        assert_eq!(fs_block["allowWrite"], json!(CODEX_SANDBOX_WRITE_PATHS));
+        // The plan's own allow_write reaches the OS-enforced allowWrite grant.
+        // This config is claude-only, so no codex state paths are appended.
+        assert_eq!(fs_block["allowWrite"], json!(["src/**"]));
         let deny_write = fs_block["denyWrite"].as_array().unwrap();
         assert_eq!(deny_write.len(), 1);
         assert_eq!(deny_write[0], ".work/**");
@@ -631,6 +698,8 @@ mod tests {
             },
             linux: LinuxConfig::default(),
             permission_mode: PermissionMode::Auto,
+            implementers: Implementers::default(),
+            command_confinement: CommandConfinement::default(),
         };
 
         let json = generate_settings_json(&config);
@@ -638,11 +707,15 @@ mod tests {
         // Network config is now in sandbox.network block
         let network = &json["sandbox"]["network"];
         let domains = network["allowedDomains"].as_array().unwrap();
-        // Plan domains, plus the codex lane's own hosts appended by the generator.
-        assert_eq!(domains.len(), 2 + CODEX_SANDBOX_DOMAINS.len());
+        // Claude-only stage: exactly the plan's own domains, no codex lane hosts.
+        assert_eq!(domains.len(), 2);
         assert!(domains.iter().any(|d| d == "*.github.com"));
         assert!(domains.iter().any(|d| d == "api.example.com"));
-        assert!(domains.iter().any(|d| d == "chatgpt.com"));
+        assert!(
+            !domains.iter().any(|d| d == "chatgpt.com"),
+            "claude-only stage must not receive codex domains, got: {:?}",
+            domains
+        );
         assert_eq!(network["allowLocalBinding"], true);
         let sockets = network["allowUnixSockets"].as_array().unwrap();
         assert_eq!(sockets.len(), 1);
@@ -669,6 +742,8 @@ mod tests {
             network: NetworkConfig::default(),
             linux: LinuxConfig::default(),
             permission_mode: PermissionMode::Auto,
+            implementers: Implementers::default(),
+            command_confinement: CommandConfinement::default(),
         };
 
         let json = generate_settings_json(&config);
@@ -692,7 +767,7 @@ mod tests {
     fn generated_stage_settings_deny_unix_sockets_for_completion_broker_integrity() {
         let plan = SandboxConfig::default();
         let stage = StageSandboxConfig::default();
-        let config = merge_config(&plan, &stage, StageType::Standard);
+        let config = merge_config(&plan, &stage, StageType::Standard, &Implementers::default());
 
         let json = generate_settings_json(&config);
         let network = &json["sandbox"]["network"];
@@ -721,6 +796,8 @@ mod tests {
             network: NetworkConfig::default(),
             linux: LinuxConfig::default(),
             permission_mode: PermissionMode::Auto,
+            implementers: Implementers::default(),
+            command_confinement: CommandConfinement::default(),
         };
 
         let json = generate_settings_json(&config);
@@ -744,6 +821,8 @@ mod tests {
             network: NetworkConfig::default(),
             linux: LinuxConfig::default(),
             permission_mode: PermissionMode::Auto,
+            implementers: Implementers::default(),
+            command_confinement: CommandConfinement::default(),
         };
 
         let json = generate_settings_json(&config);
@@ -782,6 +861,8 @@ mod tests {
             network: NetworkConfig::default(),
             linux: LinuxConfig::default(),
             permission_mode: PermissionMode::Auto,
+            implementers: Implementers::default(),
+            command_confinement: CommandConfinement::default(),
         };
 
         let json = generate_settings_json(&config);
@@ -808,6 +889,8 @@ mod tests {
             },
             linux: LinuxConfig::default(),
             permission_mode: PermissionMode::Auto,
+            implementers: Implementers::default(),
+            command_confinement: CommandConfinement::default(),
         };
 
         let json = generate_settings_json(&config);
@@ -833,6 +916,8 @@ mod tests {
             network: NetworkConfig::default(),
             linux: LinuxConfig::default(),
             permission_mode: PermissionMode::Auto,
+            implementers: Implementers::default(),
+            command_confinement: CommandConfinement::default(),
         };
 
         let json = generate_settings_json(&config);
@@ -865,11 +950,18 @@ mod tests {
     #[test]
     fn test_deny_write_parent_traversal_not_in_os_sandbox() {
         // Parent-traversal paths (../) in deny_write must NOT appear in
-        // sandbox.filesystem.denyWrite. macOS sandbox-exec resolves them
-        // relative to the project root, causing overly broad restrictions:
-        // - From worktrees: "../../**" blocks the worktree's own files
-        // - From main project: "../../**" blocks the entire home directory
-        // These are enforced via permissions.deny Write() entries instead.
+        // sandbox.filesystem.denyWrite OR in permissions.deny Edit(...).
+        // Both layers resolve `../` relative to the project root, causing
+        // overly broad restrictions:
+        // - From worktrees: "../../**" resolves to an ancestor and, because
+        //   `**` crosses separators, matches the worktree's OWN files —
+        //   an enforceable `Edit(../../**)` deny would refuse the agent's
+        //   first edit to its own source tree.
+        // - From the main repo root: "../../**" is $HOME.
+        // Worktree write-escape is enforced independently (OS sandbox
+        // allowOnly list + worktree hooks), so dropping the tool-layer rule
+        // loses no protection. Non-traversal paths (e.g. the knowledge dir)
+        // still need to reach permissions.deny to be enforceable at all.
         let config = MergedSandboxConfig {
             enabled: true,
             auto_allow: true,
@@ -883,6 +975,8 @@ mod tests {
             network: NetworkConfig::default(),
             linux: LinuxConfig::default(),
             permission_mode: PermissionMode::Auto,
+            implementers: Implementers::default(),
+            command_confinement: CommandConfinement::default(),
         };
 
         let json = generate_settings_json(&config);
@@ -892,27 +986,68 @@ mod tests {
         // and knowledge paths block `loom knowledge update` CLI (excludedCommands
         // doesn't bypass OS-level filesystem restrictions).
         assert!(json["sandbox"]["filesystem"]["denyWrite"].is_null());
-        // A plan's own allow_write still does NOT reach the OS layer.
+        // This config's allow_write is empty and the stage is claude-only, so
+        // there is nothing to grant: `allowWrite` is omitted entirely (see
+        // `test_generate_settings_plan_allow_write_reaches_os_sandbox_claude_only`
+        // for the case where a plan's allow_write DOES reach the OS layer).
         let fs_block = &json["sandbox"]["filesystem"];
-        assert_eq!(fs_block["allowWrite"], json!(CODEX_SANDBOX_WRITE_PATHS));
+        assert!(fs_block["allowWrite"].is_null());
 
-        // permissions.deny should have ALL paths (including parent-traversal)
+        // permissions.deny should have the non-traversal path only; the
+        // parent-traversal entry must be filtered, or it would deny-match the
+        // worktree's own files once Claude Code enforces `Edit(...)` rules.
         let deny = json["permissions"]["deny"].as_array().unwrap();
         let deny_strs: Vec<&str> = deny.iter().filter_map(|v| v.as_str()).collect();
         assert!(
-            deny_strs.contains(&"Write(../../**)"),
-            "Parent-traversal should be in permissions.deny"
+            !deny_strs.contains(&"Edit(../../**)"),
+            "Parent-traversal must NOT be in permissions.deny \
+             (matches the worktree's own files, deny wins over allow)"
         );
         assert!(
-            deny_strs.contains(&"Write(doc/loom/knowledge/**)"),
-            "Project-relative should also be in permissions.deny"
+            deny_strs.contains(&"Edit(doc/loom/knowledge/**)"),
+            "Project-relative should still be in permissions.deny"
+        );
+    }
+
+    #[test]
+    fn test_generate_settings_plan_allow_write_reaches_os_sandbox_claude_only() {
+        // This is the end-to-end proof for the previously-inert lever: a plan's
+        // `filesystem.allow_write` now reaches `sandbox.filesystem.allowWrite`
+        // (the OS-enforced grant), even for a claude-only stage that never
+        // licenses the codex lane. See doc/loom/knowledge/mistakes/sandbox-and-settings.md
+        // § "A Plan's `allow_write` Cannot Grant a Subprocess OS-Level Write Access".
+        let config = MergedSandboxConfig {
+            enabled: true,
+            auto_allow: true,
+            allow_unsandboxed_escape: false,
+            excluded_commands: vec![],
+            filesystem: FilesystemConfig {
+                deny_read: vec![],
+                deny_write: vec![],
+                allow_write: vec!["tmp/tmux-sockets/**".to_string()],
+            },
+            network: NetworkConfig::default(),
+            linux: LinuxConfig::default(),
+            permission_mode: PermissionMode::Auto,
+            implementers: Implementers::default(), // claude-only
+            command_confinement: CommandConfinement::default(),
+        };
+        assert!(!config.implementers.includes_codex());
+
+        let json = generate_settings_json(&config);
+
+        assert_eq!(
+            json["sandbox"]["filesystem"]["allowWrite"],
+            json!(["tmp/tmux-sockets/**"]),
+            "a claude-only stage's own allow_write must reach the OS sandbox, \
+             with no codex state paths appended, got: {json:?}"
         );
     }
 
     #[test]
     fn test_generate_settings_emits_network_block() {
         // The native backend emits the sandbox.network block whenever the
-        // sandbox config carries network policy.
+        // sandbox is enabled (strictAllowlist), regardless of domain content.
         let config = MergedSandboxConfig {
             enabled: true,
             auto_allow: true,
@@ -932,6 +1067,8 @@ mod tests {
             },
             linux: LinuxConfig::default(),
             permission_mode: PermissionMode::Auto,
+            implementers: Implementers::default(),
+            command_confinement: CommandConfinement::default(),
         };
 
         let json = generate_settings_json(&config);
@@ -943,17 +1080,23 @@ mod tests {
         let domains = network["allowedDomains"]
             .as_array()
             .expect("allowedDomains must be present");
-        assert_eq!(domains.len(), 2 + CODEX_SANDBOX_DOMAINS.len());
+        // Claude-only stage: exactly the plan's own domains, no codex lane hosts.
+        assert_eq!(domains.len(), 2);
         assert!(domains.iter().any(|d| d == "github.com"));
-        assert!(domains.iter().any(|d| d == "api.openai.com"));
+        assert!(
+            !domains.iter().any(|d| d == "api.openai.com"),
+            "claude-only stage must not receive codex domains, got: {:?}",
+            domains
+        );
         assert_eq!(network["allowLocalBinding"], true);
+        assert_eq!(network["strictAllowlist"], json!(true));
 
         // Filesystem deny entries are emitted alongside the network block.
         let deny = json["permissions"]["deny"]
             .as_array()
             .expect("filesystem deny entries should be present");
         let deny_strs: Vec<&str> = deny.iter().filter_map(|v| v.as_str()).collect();
-        assert!(deny_strs.contains(&"Write(doc/loom/knowledge/**)"));
+        assert!(deny_strs.contains(&"Edit(doc/loom/knowledge/**)"));
     }
 
     #[test]
@@ -970,7 +1113,7 @@ mod tests {
         ] {
             let plan = SandboxConfig::default();
             let stage = StageSandboxConfig::default();
-            let merged = merge_config(&plan, &stage, stage_type);
+            let merged = merge_config(&plan, &stage, stage_type, &Implementers::default());
             let json = generate_settings_json(&merged);
 
             let permissions = &json["permissions"];
@@ -1005,13 +1148,13 @@ mod tests {
     }
 
     #[test]
-    fn test_write_settings_preserves_existing_permissions() {
+    fn test_write_settings_preserves_existing_deny_but_not_allow() {
         use tempfile::TempDir;
 
         let temp_dir = TempDir::new().unwrap();
         let worktree_path = temp_dir.path();
 
-        // Create existing settings.local.json with user-approved permissions
+        // Create existing settings.local.json with permissions from a prior session.
         let claude_dir = worktree_path.join(".claude");
         fs::create_dir_all(&claude_dir).unwrap();
         let settings_path = claude_dir.join("settings.local.json");
@@ -1047,6 +1190,8 @@ mod tests {
             network: NetworkConfig::default(),
             linux: LinuxConfig::default(),
             permission_mode: PermissionMode::Auto,
+            implementers: Implementers::default(),
+            command_confinement: CommandConfinement::default(),
         };
 
         write_settings(&config, worktree_path).unwrap();
@@ -1058,26 +1203,38 @@ mod tests {
         // Verify sandbox-generated permissions are present
         let allow = result["permissions"]["allow"].as_array().unwrap();
         let allow_strs: Vec<&str> = allow.iter().filter_map(|v| v.as_str()).collect();
-        assert!(allow_strs.contains(&"Write(src/**)"));
+        assert!(allow_strs.contains(&"Edit(src/**)"));
         assert!(allow_strs.contains(&"Read(.work/signals/**)"));
 
-        // Verify existing permissions are preserved
-        assert!(allow_strs.contains(&"Read(~/.ssh/config)"));
-        assert!(allow_strs.contains(&"Bash(docker:*)"));
+        // SECURITY: existing `allow` entries are NOT carried forward. Allow is
+        // regenerated purely from config on every write - that is what stops a
+        // stage agent from self-granting a persistent permission by writing it
+        // into its own (agent-writable, respawn-reused) settings.local.json.
+        assert!(!allow_strs.contains(&"Read(~/.ssh/config)"));
+        assert!(!allow_strs.contains(&"Bash(docker:*)"));
 
+        // `deny` is still merged forward - widening deny can only narrow what
+        // the agent can do, never grant it anything, so carrying it forward
+        // is safe (unlike `allow`).
         let deny = result["permissions"]["deny"].as_array().unwrap();
         let deny_strs: Vec<&str> = deny.iter().filter_map(|v| v.as_str()).collect();
         assert!(deny_strs.contains(&"Write(~/.bashrc)"));
     }
 
     #[test]
-    fn test_write_settings_deduplicates() {
+    fn test_write_settings_does_not_carry_forward_existing_allow() {
         use tempfile::TempDir;
 
+        // SECURITY regression test: `.claude/settings.local.json` lives inside
+        // the agent-writable worktree, and worktrees are REUSED across respawn
+        // / retry / crash recovery (`orchestrator/core/stage_executor.rs` via
+        // `git::get_or_create_worktree`). If `permissions.allow` were merged
+        // forward the way `deny` is, a stage agent could append an entry to its
+        // own file and have it survive into its next session - including an
+        // entry that widens what it can write.
         let temp_dir = TempDir::new().unwrap();
         let worktree_path = temp_dir.path();
 
-        // Create existing settings.local.json with overlapping permissions
         let claude_dir = worktree_path.join(".claude");
         fs::create_dir_all(&claude_dir).unwrap();
         let settings_path = claude_dir.join("settings.local.json");
@@ -1085,8 +1242,9 @@ mod tests {
         let existing_settings = json!({
             "permissions": {
                 "allow": [
-                    "Read(.work/signals/**)",  // This will also be generated by sandbox
-                    "Read(custom/path/**)"
+                    "Read(.work/signals/**)",  // overlaps a generated entry
+                    "Read(custom/path/**)",    // an innocuous-looking extra grant
+                    "Edit(../../**)"           // the escalation this test guards against
                 ]
             }
         });
@@ -1106,6 +1264,8 @@ mod tests {
             network: NetworkConfig::default(),
             linux: LinuxConfig::default(),
             permission_mode: PermissionMode::Auto,
+            implementers: Implementers::default(),
+            command_confinement: CommandConfinement::default(),
         };
 
         write_settings(&config, worktree_path).unwrap();
@@ -1120,7 +1280,8 @@ mod tests {
             .filter_map(|v| v.as_str().map(String::from))
             .collect();
 
-        // Count occurrences of the overlapping permission
+        // The generated entry appears exactly once - regeneration never
+        // duplicates its own output.
         let signal_count = allow_strs
             .iter()
             .filter(|s| *s == "Read(.work/signals/**)")
@@ -1130,8 +1291,18 @@ mod tests {
             "Read(.work/signals/**) should appear exactly once"
         );
 
-        // Verify custom permission is preserved
-        assert!(allow_strs.contains(&"Read(custom/path/**)".to_string()));
+        // Neither an innocuous-looking nor an escalating existing allow entry
+        // survives regeneration.
+        assert!(
+            !allow_strs.contains(&"Read(custom/path/**)".to_string()),
+            "existing allow entries must not be carried forward, got: {:?}",
+            allow_strs
+        );
+        assert!(
+            !allow_strs.contains(&"Edit(../../**)".to_string()),
+            "a self-granted escalating allow entry must not survive, got: {:?}",
+            allow_strs
+        );
     }
 
     #[test]
@@ -1155,6 +1326,8 @@ mod tests {
             network: NetworkConfig::default(),
             linux: LinuxConfig::default(),
             permission_mode: PermissionMode::Auto,
+            implementers: Implementers::default(),
+            command_confinement: CommandConfinement::default(),
         };
 
         write_settings(&config, worktree_path).unwrap();
@@ -1167,7 +1340,7 @@ mod tests {
         // Verify expected permissions (same as before, no existing to merge)
         let allow = result["permissions"]["allow"].as_array().unwrap();
         let allow_strs: Vec<&str> = allow.iter().filter_map(|v| v.as_str()).collect();
-        assert!(allow_strs.contains(&"Write(src/**)"));
+        assert!(allow_strs.contains(&"Edit(src/**)"));
         assert!(allow_strs.contains(&"Read(.work/signals/**)"));
 
         // permissions.deny includes non-traversal deny_read paths
@@ -1214,6 +1387,8 @@ mod tests {
             network: NetworkConfig::default(),
             linux: LinuxConfig::default(),
             permission_mode: PermissionMode::Auto,
+            implementers: Implementers::default(),
+            command_confinement: CommandConfinement::default(),
         };
 
         write_settings(&config, &worktree_path).unwrap();
@@ -1231,30 +1406,32 @@ mod tests {
         // S-1: the broad `**` allow over the resolved .work root is GONE — it
         // would have exposed the daemon tokens. Narrowed subdir grants remain.
         let broad_read = format!("Read(/{}/**)", resolved_str);
-        let broad_write = format!("Write(/{}/**)", resolved_str);
+        let broad_edit = format!("Edit(/{}/**)", resolved_str);
         assert!(
             !allow_strs.contains(&broad_read.as_str()),
             "broad Read(/.work/**) must NOT be granted, got: {:?}",
             allow_strs
         );
         assert!(
-            !allow_strs.contains(&broad_write.as_str()),
-            "broad Write(/.work/**) must NOT be granted, got: {:?}",
+            !allow_strs.contains(&broad_edit.as_str()),
+            "broad Edit(/.work/**) must NOT be granted, got: {:?}",
             allow_strs
         );
 
         // Narrowed resolved-absolute grants for the subdirs agents need
         // (signals/ supplies reads; handoffs/ supplies the EROFS write exemption).
+        // Emitted as `Edit(...)`, not `Write(...)` — Claude Code's file
+        // permission check only consults `Edit(path)` rules.
         let expected_read_signals = format!("Read(/{}/signals/**)", resolved_str);
-        let expected_write_handoffs = format!("Write(/{}/handoffs/**)", resolved_str);
+        let expected_edit_handoffs = format!("Edit(/{}/handoffs/**)", resolved_str);
         assert!(
             allow_strs.contains(&expected_read_signals.as_str()),
             "Should have resolved .work/signals read permission, got: {:?}",
             allow_strs
         );
         assert!(
-            allow_strs.contains(&expected_write_handoffs.as_str()),
-            "Should have resolved .work/handoffs write permission (EROFS exemption), got: {:?}",
+            allow_strs.contains(&expected_edit_handoffs.as_str()),
+            "Should have resolved .work/handoffs edit permission (EROFS exemption), got: {:?}",
             allow_strs
         );
 
@@ -1307,6 +1484,8 @@ mod tests {
             network: NetworkConfig::default(),
             linux: LinuxConfig::default(),
             permission_mode: PermissionMode::Auto,
+            implementers: Implementers::default(),
+            command_confinement: CommandConfinement::default(),
         };
 
         let mut new_settings = generate_settings_json(&config);
@@ -1376,6 +1555,8 @@ mod tests {
             network: NetworkConfig::default(),
             linux: LinuxConfig::default(),
             permission_mode: PermissionMode::Auto,
+            implementers: Implementers::default(),
+            command_confinement: CommandConfinement::default(),
         };
 
         write_settings(&config, repo_root).unwrap();
@@ -1397,17 +1578,25 @@ mod tests {
         );
         // Non-traversal protections survive.
         assert!(deny_strs.contains(&"Read(~/.ssh/**)"));
-        assert!(deny_strs.contains(&"Write(doc/loom/knowledge/**)"));
+        assert!(deny_strs.contains(&"Edit(doc/loom/knowledge/**)"));
     }
 
     #[test]
-    fn test_write_settings_worktree_keeps_escape_write_deny() {
+    fn test_write_settings_worktree_drops_escape_write_deny_from_edit_rule() {
         use tempfile::TempDir;
 
-        // Inside a real worktree (path under .worktrees/<stage>/), `../..` is the
-        // repo root — the intended isolation boundary — so the write-side escape
-        // rule is kept. (Read-side `../` is filtered by generate_settings_json
-        // regardless, because it leaks into the OS sandbox.)
+        // Even inside a real worktree (path under .worktrees/<stage>/), a
+        // `../`-relative deny_write entry must NEVER be emitted as an
+        // enforceable `Edit(...)` permission rule: `.worktrees/<stage>/../..`
+        // resolves to an ancestor of the worktree, and Claude Code's `**`
+        // crosses path separators, so `Edit(../../**)` matches the worktree's
+        // OWN files (e.g. `<repo>/.worktrees/<stage>/loom/src/foo.rs`) and
+        // deny wins over allow — refusing the agent's very first edit. This
+        // WORKTREE-shaped config's `deny_write` (via `FilesystemConfig::default()`
+        // -> `default_deny_write()`) contains both `../../**` and the
+        // non-traversal `doc/loom/knowledge/**`: only the traversal entry is
+        // dropped. Worktree write-escape is still enforced independently by
+        // the OS sandbox's `allowOnly` list and the worktree hooks.
         let temp_dir = TempDir::new().unwrap();
         let worktree_path = temp_dir.path().join(".worktrees").join("my-stage");
         fs::create_dir_all(&worktree_path).unwrap();
@@ -1421,6 +1610,8 @@ mod tests {
             network: NetworkConfig::default(),
             linux: LinuxConfig::default(),
             permission_mode: PermissionMode::Auto,
+            implementers: Implementers::default(),
+            command_confinement: CommandConfinement::default(),
         };
 
         write_settings(&config, &worktree_path).unwrap();
@@ -1433,8 +1624,13 @@ mod tests {
         let deny_strs: Vec<&str> = deny.iter().filter_map(|v| v.as_str()).collect();
 
         assert!(
-            deny_strs.contains(&"Write(../../**)"),
-            "worktree deny must keep Write(../../**), got: {deny_strs:?}"
+            !deny_strs.iter().any(|p| p.contains("../")),
+            "worktree permissions.deny must not contain any parent-traversal \
+             Edit(...) rule, got: {deny_strs:?}"
+        );
+        assert!(
+            deny_strs.contains(&"Edit(doc/loom/knowledge/**)"),
+            "the non-traversal deny_write entry must still be emitted, got: {deny_strs:?}"
         );
     }
 
@@ -1476,6 +1672,8 @@ mod tests {
             network: NetworkConfig::default(),
             linux: LinuxConfig::default(),
             permission_mode: PermissionMode::Auto,
+            implementers: Implementers::default(),
+            command_confinement: CommandConfinement::default(),
         };
 
         write_settings(&config, repo_root).unwrap();
@@ -1498,7 +1696,9 @@ mod tests {
     }
 
     #[test]
-    fn test_preserve_unowned_keys_carries_enabled_plugins() {
+    fn test_preserve_unowned_keys_carries_enabled_plugins_when_codex_licensed() {
+        // Worktree-scoped: the codex-license gate applies here.
+        let config = codex_licensed_config();
         let existing = json!({
             "enabledPlugins": { "codex": true }
         });
@@ -1506,13 +1706,15 @@ mod tests {
             "sandbox": { "enabled": true }
         });
 
-        preserve_unowned_keys(&mut new_settings, &existing);
+        preserve_unowned_keys(&mut new_settings, &existing, &config, true);
 
         assert_eq!(new_settings["enabledPlugins"], json!({ "codex": true }));
     }
 
     #[test]
-    fn test_preserve_unowned_keys_carries_extra_known_marketplaces() {
+    fn test_preserve_unowned_keys_carries_extra_known_marketplaces_when_codex_licensed() {
+        // Worktree-scoped: the codex-license gate applies here.
+        let config = codex_licensed_config();
         let existing = json!({
             "extraKnownMarketplaces": { "codex-marketplace": "https://example.com" }
         });
@@ -1520,7 +1722,7 @@ mod tests {
             "sandbox": { "enabled": true }
         });
 
-        preserve_unowned_keys(&mut new_settings, &existing);
+        preserve_unowned_keys(&mut new_settings, &existing, &config, true);
 
         assert_eq!(
             new_settings["extraKnownMarketplaces"],
@@ -1529,7 +1731,70 @@ mod tests {
     }
 
     #[test]
+    fn test_preserve_unowned_keys_claude_only_worktree_does_not_carry_enabled_plugins() {
+        // SECURITY: `.claude/settings.local.json` lives inside the
+        // agent-writable, respawn-reused WORKTREE, so carrying these keys
+        // forward unconditionally would let a stage agent write its own
+        // `enabledPlugins` entry and have loom carry it into the next
+        // session. A claude-only worktree stage has no legitimate reason to
+        // need either key, so the gate must block the carry-forward
+        // entirely. See the non-worktree negative control below, where the
+        // same claude-only config must NOT be gated.
+        let config = default_config(); // Implementers::default() is claude-only.
+        assert!(!config.implementers.includes_codex());
+
+        let existing = json!({
+            "enabledPlugins": { "codex": true },
+            "extraKnownMarketplaces": { "codex-marketplace": "https://example.com" }
+        });
+        let mut new_settings = json!({
+            "sandbox": { "enabled": true }
+        });
+
+        preserve_unowned_keys(&mut new_settings, &existing, &config, true);
+
+        assert!(new_settings.get("enabledPlugins").is_none());
+        assert!(new_settings.get("extraKnownMarketplaces").is_none());
+    }
+
+    #[test]
+    fn test_preserve_unowned_keys_claude_only_non_worktree_carries_enabled_plugins() {
+        // SECURITY (the flip side of the worktree test above): the main repo
+        // root's settings.local.json is NOT agent-writable, so there is no
+        // self-grant to defend against there, and the codex-license gate
+        // must NOT apply. `loom repair --fix` writes the main repo as
+        // claude-only (`Implementers::default()`) unconditionally
+        // (`commands/repair.rs::fix_sandbox_settings`); before this fix that
+        // deleted a pre-existing codex plugin install on every run.
+        let config = default_config(); // Implementers::default() is claude-only.
+        assert!(!config.implementers.includes_codex());
+
+        let existing = json!({
+            "enabledPlugins": { "codex": true },
+            "extraKnownMarketplaces": { "codex-marketplace": "https://example.com" }
+        });
+        let mut new_settings = json!({
+            "sandbox": { "enabled": true }
+        });
+
+        preserve_unowned_keys(&mut new_settings, &existing, &config, false);
+
+        assert_eq!(
+            new_settings["enabledPlugins"],
+            json!({ "codex": true }),
+            "a non-worktree target must preserve enabledPlugins even for a \
+             claude-only config, got: {new_settings:?}"
+        );
+        assert_eq!(
+            new_settings["extraKnownMarketplaces"],
+            json!({ "codex-marketplace": "https://example.com" }),
+            "got: {new_settings:?}"
+        );
+    }
+
+    #[test]
     fn test_preserve_unowned_keys_noop_when_absent() {
+        let config = codex_licensed_config();
         let existing = json!({
             "sandbox": { "enabled": false }
         });
@@ -1537,7 +1802,7 @@ mod tests {
             "sandbox": { "enabled": true }
         });
 
-        preserve_unowned_keys(&mut new_settings, &existing);
+        preserve_unowned_keys(&mut new_settings, &existing, &config, true);
 
         assert!(new_settings.get("enabledPlugins").is_none());
         assert!(new_settings.get("extraKnownMarketplaces").is_none());
@@ -1548,7 +1813,9 @@ mod tests {
     fn test_preserve_unowned_keys_does_not_override_generated_keys() {
         // A stale/user `sandbox` key in the existing file must never clobber
         // the freshly generated one - only keys ABSENT from new_settings are
-        // carried over.
+        // carried over. Codex-licensed so the gate itself isn't what's under
+        // test here.
+        let config = codex_licensed_config();
         let existing = json!({
             "sandbox": { "enabled": false }
         });
@@ -1556,20 +1823,25 @@ mod tests {
             "sandbox": { "enabled": true }
         });
 
-        preserve_unowned_keys(&mut new_settings, &existing);
+        preserve_unowned_keys(&mut new_settings, &existing, &config, true);
 
         assert_eq!(new_settings["sandbox"]["enabled"], true);
     }
 
     #[test]
-    fn test_write_settings_round_trip_preserves_enabled_plugins() {
+    fn test_write_settings_round_trip_worktree_codex_licensed_preserves_enabled_plugins() {
         use tempfile::TempDir;
 
         // The bug this guards against: write_settings regenerates the whole
         // file from scratch, so a plugin enabled at local scope (enabledPlugins)
-        // used to vanish from every worktree on the next regeneration.
+        // used to vanish from every worktree on the next regeneration. Fixed by
+        // carrying it forward - for a WORKTREE target, only for a stage that
+        // licenses the codex lane, which is the only lane that needs it (see
+        // the claude-only worktree negative-control test below, and the
+        // non-worktree tests further down for the other half of the gate).
         let temp_dir = TempDir::new().unwrap();
-        let worktree_path = temp_dir.path();
+        let worktree_path = temp_dir.path().join(".worktrees").join("my-stage");
+        fs::create_dir_all(&worktree_path).unwrap();
 
         let claude_dir = worktree_path.join(".claude");
         fs::create_dir_all(&claude_dir).unwrap();
@@ -1588,18 +1860,9 @@ mod tests {
         )
         .unwrap();
 
-        let config = MergedSandboxConfig {
-            enabled: true,
-            auto_allow: true,
-            allow_unsandboxed_escape: false,
-            excluded_commands: vec![],
-            filesystem: FilesystemConfig::default(),
-            network: NetworkConfig::default(),
-            linux: LinuxConfig::default(),
-            permission_mode: PermissionMode::Auto,
-        };
+        let config = codex_licensed_config();
 
-        write_settings(&config, worktree_path).unwrap();
+        write_settings(&config, &worktree_path).unwrap();
 
         let result: Value =
             serde_json::from_str(&fs::read_to_string(&settings_path).unwrap()).unwrap();
@@ -1613,6 +1876,108 @@ mod tests {
             result["extraKnownMarketplaces"],
             json!({ "codex-marketplace": "https://example.com" }),
             "extraKnownMarketplaces must survive settings regeneration, got: {result:?}"
+        );
+    }
+
+    #[test]
+    fn test_write_settings_round_trip_claude_only_worktree_drops_enabled_plugins() {
+        use tempfile::TempDir;
+
+        // SECURITY: a claude-only WORKTREE stage must NOT carry
+        // `enabledPlugins` / `extraKnownMarketplaces` forward. Both keys live
+        // in a file the stage agent itself can write, and worktrees are
+        // reused across respawn / retry / crash recovery - an unconditional
+        // carry-forward would let a claude-only stage agent self-grant
+        // plugin enablement it was never licensed for. This is worktree-
+        // scoped on purpose: the gate must NOT apply to a non-worktree
+        // target (see the negative control immediately below), because that
+        // target is not agent-writable and has nothing to self-grant.
+        let temp_dir = TempDir::new().unwrap();
+        let worktree_path = temp_dir.path().join(".worktrees").join("my-stage");
+        fs::create_dir_all(&worktree_path).unwrap();
+
+        let claude_dir = worktree_path.join(".claude");
+        fs::create_dir_all(&claude_dir).unwrap();
+        let settings_path = claude_dir.join("settings.local.json");
+
+        let existing_settings = json!({
+            "enabledPlugins": { "codex": true },
+            "extraKnownMarketplaces": { "codex-marketplace": "https://example.com" }
+        });
+        fs::write(
+            &settings_path,
+            serde_json::to_string_pretty(&existing_settings).unwrap(),
+        )
+        .unwrap();
+
+        let config = default_config(); // Implementers::default() is claude-only.
+        assert!(!config.implementers.includes_codex());
+
+        write_settings(&config, &worktree_path).unwrap();
+
+        let result: Value =
+            serde_json::from_str(&fs::read_to_string(&settings_path).unwrap()).unwrap();
+
+        assert!(
+            result.get("enabledPlugins").is_none(),
+            "claude-only worktree stage must not carry enabledPlugins forward, got: {result:?}"
+        );
+        assert!(
+            result.get("extraKnownMarketplaces").is_none(),
+            "claude-only worktree stage must not carry extraKnownMarketplaces forward, \
+             got: {result:?}"
+        );
+    }
+
+    #[test]
+    fn test_write_settings_round_trip_claude_only_non_worktree_preserves_enabled_plugins() {
+        use tempfile::TempDir;
+
+        // SECURITY (CRITICAL regression): the codex-license gate must apply
+        // ONLY to worktree targets. `loom repair --fix`
+        // (`commands/repair.rs::fix_sandbox_settings`) writes the MAIN repo's
+        // settings.local.json unconditionally as claude-only
+        // (`Implementers::default()`). Before this fix, gating the
+        // carry-forward on `includes_codex()` regardless of target meant
+        // `loom repair --fix` silently DELETED a legitimate codex plugin
+        // install from the main repo on every run - because write_settings
+        // regenerates the whole file from scratch. The main repo root is not
+        // agent-writable, so there is no self-grant to defend against here.
+        let temp_dir = TempDir::new().unwrap();
+        let repo_root = temp_dir.path(); // not under .worktrees - the main repo root.
+
+        let claude_dir = repo_root.join(".claude");
+        fs::create_dir_all(&claude_dir).unwrap();
+        let settings_path = claude_dir.join("settings.local.json");
+
+        let existing_settings = json!({
+            "enabledPlugins": { "codex": true },
+            "extraKnownMarketplaces": { "codex-marketplace": "https://example.com" }
+        });
+        fs::write(
+            &settings_path,
+            serde_json::to_string_pretty(&existing_settings).unwrap(),
+        )
+        .unwrap();
+
+        let config = default_config(); // Implementers::default() is claude-only.
+        assert!(!config.implementers.includes_codex());
+
+        write_settings(&config, repo_root).unwrap();
+
+        let result: Value =
+            serde_json::from_str(&fs::read_to_string(&settings_path).unwrap()).unwrap();
+
+        assert_eq!(
+            result["enabledPlugins"],
+            json!({ "codex": true }),
+            "a claude-only write to the MAIN repo must preserve a pre-existing \
+             codex plugin install (e.g. `loom repair --fix`), got: {result:?}"
+        );
+        assert_eq!(
+            result["extraKnownMarketplaces"],
+            json!({ "codex-marketplace": "https://example.com" }),
+            "got: {result:?}"
         );
     }
 }

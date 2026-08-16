@@ -2,11 +2,71 @@
 
 use crate::validation::validate_id;
 
-use super::sandbox_policy::validate_excluded_commands;
+use super::detect::detect_stage_type;
 use super::types::{
     FilesystemConfig, Implementer, LoomMetadata, NetworkConfig, SandboxConfig, StageSandboxConfig,
     ValidationError,
 };
+
+/// Reject commands listed in `excluded_commands`: command-prefix exclusions run
+/// outside the host sandbox and cannot safely authorize extensible executors,
+/// VCS, build tools, package managers, or the loom CLI. This is the single
+/// definition shared by plan-level and stage-level sandbox validation below —
+/// it used to live in a separate `sandbox_policy` module, but that let it
+/// diverge from `crate::sandbox::settings::policy::validate_emittable`'s own
+/// (fatal, non-plan-time) rejection of the same setting. `loom plan verify`
+/// now calls `validate_emittable` directly (see `commands/plan/verify.rs`) so
+/// there is exactly one place this policy is expressed for the sandbox side;
+/// this function only turns it into a `ValidationError` for schema-time
+/// reporting.
+fn validate_excluded_commands(
+    commands: &[String],
+    errors: &mut Vec<ValidationError>,
+    stage_id: Option<&str>,
+) {
+    if commands.is_empty() {
+        return;
+    }
+
+    errors.push(ValidationError {
+        message: format!(
+            "sandbox.excluded_commands is not supported because command-prefix exclusions run \
+             outside the host sandbox; remove these entries and use a trusted exact-argv broker: {}",
+            commands.join(", ")
+        ),
+        stage_id: stage_id.map(str::to_string),
+    });
+}
+
+/// Render policy changes that require an operator acknowledgement at init.
+///
+/// Command exclusions are rejected outright; acknowledgement applies only to
+/// explicit sandbox disablement and unsandboxed escape.
+pub fn unsafe_plan_reasons(metadata: &LoomMetadata) -> Vec<String> {
+    let mut reasons = Vec::new();
+    let plan_sandbox = &metadata.loom.sandbox;
+
+    if !plan_sandbox.enabled {
+        reasons.push("plan sandbox.enabled is false".to_string());
+    }
+    if plan_sandbox.allow_unsandboxed_escape {
+        reasons.push("plan sandbox.allow_unsandboxed_escape is true".to_string());
+    }
+
+    for stage in &metadata.loom.stages {
+        if stage.sandbox.enabled == Some(false) {
+            reasons.push(format!("stage '{}' disables the sandbox", stage.id));
+        }
+        if stage.sandbox.allow_unsandboxed_escape == Some(true) {
+            reasons.push(format!(
+                "stage '{}' enables allow_unsandboxed_escape",
+                stage.id
+            ));
+        }
+    }
+
+    reasons
+}
 
 /// Validate a single acceptance criterion
 ///
@@ -435,9 +495,14 @@ pub fn validate(metadata: &LoomMetadata) -> Result<(), Vec<ValidationError>> {
         }
 
         // Require goal-backward checks for Standard and IntegrationVerify stages
-        // Knowledge and KnowledgeDistill stages are exempt (different purposes)
+        // Knowledge and KnowledgeDistill stages are exempt (different purposes).
+        // Resolved via detect_stage_type so a stage that omits `stage_type` is
+        // still classified by the id/name heuristic here, matching what the
+        // runtime Stage ends up with (Stage::from_definition resolves the same
+        // way) instead of being read as the raw, possibly-absent field.
+        let resolved_type = detect_stage_type(stage);
         let requires_goal_backward = matches!(
-            stage.stage_type,
+            resolved_type,
             super::types::StageType::Standard | super::types::StageType::IntegrationVerify
         );
 
@@ -449,7 +514,7 @@ pub fn validate(metadata: &LoomMetadata) -> Result<(), Vec<ValidationError>> {
             let has_goal_checks = stage.has_any_goal_checks();
 
             if !has_acceptance && !has_goal_checks {
-                let stage_type_desc = match stage.stage_type {
+                let stage_type_desc = match resolved_type {
                     super::types::StageType::IntegrationVerify => "IntegrationVerify",
                     _ => "Standard",
                 };
@@ -465,7 +530,7 @@ pub fn validate(metadata: &LoomMetadata) -> Result<(), Vec<ValidationError>> {
 
             // Leaf stage error: Standard stage with artifacts but no wiring verification
             // is risky when it is a leaf because nothing downstream can catch missing wiring.
-            if matches!(stage.stage_type, super::types::StageType::Standard)
+            if matches!(resolved_type, super::types::StageType::Standard)
                 && !stage.artifacts.is_empty()
                 && stage.wiring.is_empty()
                 && stage.wiring_tests.is_empty()
@@ -478,7 +543,7 @@ pub fn validate(metadata: &LoomMetadata) -> Result<(), Vec<ValidationError>> {
 
                 // Also check if any integration-verify stage provides wiring coverage
                 let any_iv_has_wiring = metadata.loom.stages.iter().any(|other| {
-                    other.stage_type == super::types::StageType::IntegrationVerify
+                    detect_stage_type(other) == super::types::StageType::IntegrationVerify
                         && (!other.wiring.is_empty() || !other.wiring_tests.is_empty())
                 });
 
@@ -596,6 +661,11 @@ pub fn validate_structural_preflight(
     let mut warnings = Vec::new();
 
     for stage in stages {
+        // Resolved via detect_stage_type: a stage that omits `stage_type`
+        // still gets the id/name heuristic's classification here, the same
+        // way the runtime Stage does.
+        let resolved_type = detect_stage_type(stage);
+
         // Check for working_dir prefix redundancy in acceptance criteria
         if !stage.working_dir.is_empty() && stage.working_dir != "." {
             for (idx, criterion) in stage.acceptance.iter().enumerate() {
@@ -648,7 +718,7 @@ pub fn validate_structural_preflight(
 
         // Recommend before/after checks for feature stages that have artifacts and acceptance
         // criteria but no before_stage/after_stage checks.
-        if matches!(stage.stage_type, super::types::StageType::Standard)
+        if matches!(resolved_type, super::types::StageType::Standard)
             && !stage.artifacts.is_empty()
             && !stage.acceptance.is_empty()
             && stage.before_stage.is_empty()
@@ -665,7 +735,7 @@ pub fn validate_structural_preflight(
         // ultracode on knowledge-type stages is likely unintended: those stages
         // explore/curate rather than fan out over many homogeneous work units.
         if stage.ultracode {
-            let type_name = match stage.stage_type {
+            let type_name = match resolved_type {
                 super::types::StageType::Knowledge => Some("knowledge"),
                 super::types::StageType::KnowledgeDistill => Some("knowledge-distill"),
                 _ => None,
@@ -686,7 +756,7 @@ pub fn validate_structural_preflight(
         // implementation. Warn on the lane being licensed at all, not just preferred —
         // an available lane on such a stage is an invitation to misroute the work.
         if stage.implementers.includes_codex() {
-            let type_name = match stage.stage_type {
+            let type_name = match resolved_type {
                 super::types::StageType::Knowledge => Some("knowledge"),
                 super::types::StageType::KnowledgeDistill => Some("knowledge-distill"),
                 super::types::StageType::IntegrationVerify => Some("integration-verify"),
@@ -884,12 +954,14 @@ pub fn check_cross_stage_wiring_coverage(stages: &[super::types::StageDefinition
 
     // Check if any integration-verify stage has wiring checks
     let any_iv_has_wiring = stages.iter().any(|s| {
-        matches!(s.stage_type, super::types::StageType::IntegrationVerify)
-            && (!s.wiring.is_empty() || !s.wiring_tests.is_empty())
+        matches!(
+            detect_stage_type(s),
+            super::types::StageType::IntegrationVerify
+        ) && (!s.wiring.is_empty() || !s.wiring_tests.is_empty())
     });
 
     for stage in stages {
-        if !matches!(stage.stage_type, super::types::StageType::Standard) {
+        if !matches!(detect_stage_type(stage), super::types::StageType::Standard) {
             continue;
         }
         if stage.artifacts.is_empty() {

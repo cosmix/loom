@@ -3,8 +3,11 @@
 use crate::git::worktree::find_repo_root_from_cwd;
 use crate::models::stage::{Stage, StageStatus, StageType};
 use crate::plan::parser::{load_stage_definition_from_plan, parse_plan, ParsedPlan};
-use crate::plan::schema::{ChangeImpactConfig, ChangeImpactPolicy, StageDefinition};
+use crate::plan::schema::{
+    ChangeImpactConfig, ChangeImpactPolicy, CommandConfinement, StageDefinition,
+};
 use crate::verify::baseline::{compare_to_baseline, ChangeImpact};
+use crate::verify::criteria::{plan_confinement, resolve_confinement};
 use crate::verify::duplicate_detection::detect_duplicate_symbols;
 use crate::verify::wiring_detection::{detect_unwired_files, UnwiredFile};
 use anyhow::{bail, Context, Result};
@@ -17,6 +20,17 @@ pub(super) struct VerificationChecks<'a> {
     pub worktree_root: Option<&'a Path>,
     pub control_session: Option<&'a str>,
     pub work_dir: &'a Path,
+}
+
+impl VerificationChecks<'_> {
+    /// Confinement level for the plan-authored commands these checks run:
+    /// the stage's own override, else the plan-level default, else `Confined`.
+    fn command_confinement(&self) -> CommandConfinement {
+        resolve_confinement(
+            self.stage.sandbox.command_confinement,
+            plan_confinement(self.work_dir),
+        )
+    }
 }
 
 pub(super) fn run(checks: &VerificationChecks<'_>) -> Result<()> {
@@ -74,6 +88,7 @@ fn run_after_checks(
     let gaps = crate::verify::before_after::run_after_stage_checks(
         &stage_def.after_stage,
         verification_dir,
+        checks.command_confinement(),
     )?;
     if gaps.is_empty() {
         println!("After-stage verification passed!");
@@ -242,6 +257,7 @@ fn run_change_impact(checks: &VerificationChecks<'_>) -> Result<()> {
         &config,
         checks.acceptance_dir,
         checks.work_dir,
+        checks.command_confinement(),
     ) {
         Ok(impact) => impact,
         Err(error) => {

@@ -100,7 +100,7 @@ pub fn build_test_graph(stages: Vec<(&str, Vec<&str>)>) -> ExecutionGraph {
             auto_merge: None,
             working_dir: ".".to_string(),
             sandbox: Default::default(),
-            stage_type: loom::plan::schema::StageType::default(),
+            stage_type: None,
             artifacts: vec![],
             wiring: vec![],
             wiring_tests: vec![],

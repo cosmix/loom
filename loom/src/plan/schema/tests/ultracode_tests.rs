@@ -43,7 +43,7 @@ loom:
 #[test]
 fn ultracode_on_knowledge_stage_warns_in_preflight() {
     let mut stage = make_stage("explore", "Explore Codebase");
-    stage.stage_type = StageType::Knowledge;
+    stage.stage_type = Some(StageType::Knowledge);
     stage.ultracode = true;
 
     let warnings = validate_structural_preflight(&[stage], None);

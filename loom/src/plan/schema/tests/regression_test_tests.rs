@@ -242,7 +242,7 @@ fn test_preflight_warns_regression_test_working_dir_prefix() {
         must_contain: vec!["test_bug_fixed".to_string()],
     });
     // Use Knowledge stage to skip goal-backward verification requirement
-    stage.stage_type = StageType::Knowledge;
+    stage.stage_type = Some(StageType::Knowledge);
 
     let dir = tempfile::TempDir::new().unwrap();
     let warnings = validate_structural_preflight(&[stage], Some(dir.path()));

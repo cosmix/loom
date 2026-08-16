@@ -12,6 +12,7 @@ use crate::commands::stage::acceptance_runner::{
     resolve_stage_execution_paths, run_acceptance_with_display, AcceptanceDisplayOptions,
 };
 use crate::plan::parser::parse_plan;
+use crate::verify::criteria::resolve_confinement;
 use crate::verify::goal_backward::{run_goal_backward_verification, GoalBackwardResult};
 use crate::verify::transitions::load_stage;
 
@@ -58,6 +59,7 @@ pub fn execute(stage_id: &str, suggest: bool) -> Result<()> {
         &stage,
         stage_id,
         acceptance_dir.as_deref(),
+        work_dir,
         AcceptanceDisplayOptions {
             stage_label: None,
             show_empty_message: false,
@@ -157,6 +159,13 @@ pub fn run_and_verify_stage_goal(
         .find(|s| s.id == stage_id)
         .with_context(|| format!("Stage '{stage_id}' not found in plan"))?;
 
+    // Goal checks are plan-authored commands: run them at the stage's resolved
+    // confinement level (stage override over plan default).
+    let confinement = resolve_confinement(
+        stage_def.sandbox.command_confinement,
+        Some(plan.metadata.loom.sandbox.command_confinement),
+    );
+
     // Run goal-backward verification
-    run_goal_backward_verification(stage_def, verification_dir)
+    run_goal_backward_verification(stage_def, verification_dir, confinement)
 }

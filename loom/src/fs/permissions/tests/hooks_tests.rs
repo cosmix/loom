@@ -16,13 +16,14 @@ fn test_hooks_config_structure() {
         ("Bash", "worktree-isolation.sh"),
         ("Edit", "worktree-file-guard.sh"),
         ("Write", "worktree-file-guard.sh"),
+        ("NotebookEdit", "worktree-file-guard.sh"),
         ("Edit", "plans-path-guard.sh"),
         ("Write", "plans-path-guard.sh"),
         ("Read", "worktree-file-guard.sh"),
         ("Glob", "worktree-file-guard.sh"),
         ("Grep", "worktree-file-guard.sh"),
     ];
-    assert_eq!(pre_tool.len(), 27);
+    assert_eq!(pre_tool.len(), 30);
     for (entry, (matcher, script)) in pre_tool.iter().zip(expected_prefix) {
         assert_hook(entry, matcher, script);
     }
@@ -33,7 +34,36 @@ fn test_hooks_config_structure() {
     for matcher in ["Write", "Edit", "Task", "Agent"] {
         assert!(contains_hook(pre_tool, matcher, "stage-terminal-guard.sh"));
     }
+    assert_notebook_edit_hooks(pre_tool);
     assert_lifecycle_hooks(&hooks);
+}
+
+fn assert_notebook_edit_hooks(pre_tool: &[Value]) {
+    // NotebookEdit is registered against all three guards that gate file
+    // mutation / agent-spawn tools; `worktree-file-guard.sh`'s NotebookEdit
+    // entry is already checked positionally above, so this focuses on the
+    // three guards together for direct coverage of the new registrations.
+    for script in [
+        "worktree-file-guard.sh",
+        "codex-forward-guard.sh",
+        "stage-terminal-guard.sh",
+    ] {
+        assert!(contains_hook(pre_tool, "NotebookEdit", script));
+    }
+    // `plans-path-guard.sh` and `no-preexisting-failures.sh` are NOT
+    // registered for NotebookEdit: both extract `.tool_input.file_path` /
+    // `.tool_input.content` and only act on Write/Edit tool calls, so wiring
+    // them to NotebookEdit would be a no-op that never fires.
+    assert!(!contains_hook(
+        pre_tool,
+        "NotebookEdit",
+        "plans-path-guard.sh"
+    ));
+    assert!(!contains_hook(
+        pre_tool,
+        "NotebookEdit",
+        "no-preexisting-failures.sh"
+    ));
 }
 
 fn assert_lifecycle_hooks(hooks: &Value) {

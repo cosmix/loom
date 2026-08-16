@@ -37,6 +37,11 @@ pub enum FailureType {
     /// Infrastructure error (git, worktree, filesystem issues)
     InfrastructureError,
 
+    /// The stage's security boundary could not be installed (sandbox settings
+    /// or Claude Code hooks). Never retried: spawning without the boundary
+    /// would run the agent unconfined.
+    SandboxSetupFailure,
+
     /// Unknown or unclassified failure
     Unknown,
 }

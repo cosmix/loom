@@ -132,8 +132,13 @@ pub(crate) fn prepare_session_launch(
             .ok()
             .flatten()
             .unwrap_or_default();
-        crate::sandbox::merge_config(&plan_sandbox, &stage.sandbox, stage.stage_type)
-            .permission_mode
+        crate::sandbox::merge_config(
+            &plan_sandbox,
+            &stage.sandbox,
+            stage.stage_type,
+            &stage.implementers,
+        )
+        .permission_mode
     };
 
     // Find claude's absolute path (needed for macOS where terminals don't inherit PATH).
@@ -141,11 +146,13 @@ pub(crate) fn prepare_session_launch(
     let claude_path = find_claude_path()?;
     let rc_name = remote_control_session_name(kind, stage);
     let remote_control = crate::remote_control::resolve_invocation(work_dir, &rc_name);
+    let capsule = super::session_capsule(&claude_path, cwd);
     let claude_cmd = super::build_claude_command(
         &claude_path.display().to_string(),
         model,
         effort,
         permission_mode.as_settings_value(),
+        &capsule,
         &remote_control,
         &escaped_prompt,
     );

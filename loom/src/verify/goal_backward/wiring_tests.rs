@@ -5,9 +5,9 @@ use std::path::Path;
 use std::time::Duration;
 
 use super::result::{GapType, VerificationGap};
-use crate::plan::schema::WiringTest;
+use crate::plan::schema::{CommandConfinement, WiringTest};
 use crate::utils::truncate;
-use crate::verify::criteria::run_single_criterion_with_timeout;
+use crate::verify::criteria::{run_spec_with_timeout, CommandSpec};
 
 /// Default timeout for wiring test commands (30 seconds)
 const WIRING_TEST_TIMEOUT: Duration = Duration::from_secs(30);
@@ -16,19 +16,20 @@ const WIRING_TEST_TIMEOUT: Duration = Duration::from_secs(30);
 ///
 /// Runs each test command and validates the output against the defined success criteria.
 /// Returns a VerificationGap for each failed validation.
+///
+/// `confinement` is the stage's resolved level for plan-authored commands.
 pub fn verify_wiring_tests(
     wiring_tests: &[WiringTest],
     working_dir: &Path,
+    confinement: CommandConfinement,
 ) -> Result<Vec<VerificationGap>> {
     let mut gaps = Vec::new();
 
     for test in wiring_tests {
         // Run the test command
-        let result = run_single_criterion_with_timeout(
-            &test.command,
-            Some(working_dir),
-            WIRING_TEST_TIMEOUT,
-        )?;
+        let spec = CommandSpec::shell(test.command.as_str());
+        let result =
+            run_spec_with_timeout(&spec, Some(working_dir), WIRING_TEST_TIMEOUT, confinement)?;
 
         // Check if timed out
         if result.timed_out {
@@ -150,7 +151,8 @@ mod tests {
         };
 
         let working_dir = std::env::current_dir().unwrap();
-        let gaps = verify_wiring_tests(&[test], &working_dir).unwrap();
+        let gaps =
+            verify_wiring_tests(&[test], &working_dir, CommandConfinement::default()).unwrap();
 
         assert!(
             gaps.is_empty(),
@@ -172,7 +174,8 @@ mod tests {
         };
 
         let working_dir = std::env::current_dir().unwrap();
-        let gaps = verify_wiring_tests(&[test], &working_dir).unwrap();
+        let gaps =
+            verify_wiring_tests(&[test], &working_dir, CommandConfinement::default()).unwrap();
 
         assert_eq!(gaps.len(), 1);
         assert!(gaps[0].description.contains("exit code"));
@@ -193,7 +196,8 @@ mod tests {
         };
 
         let working_dir = std::env::current_dir().unwrap();
-        let gaps = verify_wiring_tests(&[test], &working_dir).unwrap();
+        let gaps =
+            verify_wiring_tests(&[test], &working_dir, CommandConfinement::default()).unwrap();
 
         assert_eq!(gaps.len(), 1);
         assert!(gaps[0].description.contains("stdout missing 'goodbye'"));
@@ -213,7 +217,8 @@ mod tests {
         };
 
         let working_dir = std::env::current_dir().unwrap();
-        let gaps = verify_wiring_tests(&[test], &working_dir).unwrap();
+        let gaps =
+            verify_wiring_tests(&[test], &working_dir, CommandConfinement::default()).unwrap();
 
         assert_eq!(gaps.len(), 1);
         assert!(gaps[0]
@@ -235,7 +240,8 @@ mod tests {
         };
 
         let working_dir = std::env::current_dir().unwrap();
-        let gaps = verify_wiring_tests(&[test], &working_dir).unwrap();
+        let gaps =
+            verify_wiring_tests(&[test], &working_dir, CommandConfinement::default()).unwrap();
 
         assert_eq!(gaps.len(), 1);
         assert!(gaps[0].description.contains("stderr not empty"));

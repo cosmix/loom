@@ -3,6 +3,7 @@
 //! These tests verify end-to-end behavior of loom's orchestration features
 //! including dependency inheritance, worktree management, and conflict resolution.
 
+pub mod capsule;
 pub mod context_catalog;
 pub mod dependency_cleanup;
 pub mod dependency_conflict;

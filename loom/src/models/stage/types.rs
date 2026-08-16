@@ -245,6 +245,23 @@ impl std::fmt::Display for Implementers {
     }
 }
 
+/// How far loom confines a plan-authored command when it executes it.
+///
+/// Plan YAML is a trusted artifact, but it is not daemon-authority code:
+/// acceptance criteria, setup commands, truth checks, wiring tests, dead-code
+/// checks and baseline commands all run as child processes of loom itself.
+/// `Confined` (the default) rebuilds a minimal environment for those children
+/// instead of handing them the daemon's ambient one.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum CommandConfinement {
+    /// Minimal, allowlisted child environment (default).
+    #[default]
+    Confined,
+    /// Inherit loom's own ambient environment. Explicit plan opt-in only.
+    Inherit,
+}
+
 /// Per-stage sandbox configuration (overrides plan-level defaults)
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -281,6 +298,11 @@ pub struct StageSandboxConfig {
     /// When unset, the plan-level override (or stage type default) applies.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub permission_mode: Option<PermissionMode>,
+
+    /// Per-stage override for how plan-authored commands are confined.
+    /// When unset, the plan-level value applies.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub command_confinement: Option<CommandConfinement>,
 }
 
 /// Filesystem access configuration
@@ -399,7 +421,15 @@ fn default_deny_read() -> Vec<String> {
 
 fn default_deny_write() -> Vec<String> {
     // Worktree escape prevention - block writes to parent directories.
-    // Knowledge files are protected by default; knowledge stages get an explicit allow.
+    // Knowledge files are protected by default; there is no explicit allow
+    // carve-out for knowledge stages (see `sandbox/config.rs`'s
+    // `test_merge_config_knowledge_stage`, which pins that
+    // `doc/loom/knowledge/**` is absent from `allow_write` even there).
+    // Knowledge writes go through the `loom knowledge` CLI, a Bash
+    // subprocess, so this Edit/Write tool-permission deny never applies to
+    // them regardless; `sandbox/settings/policy.rs`'s `filesystem_settings`
+    // separately strips this path from the OS-level `denyWrite` so the CLI
+    // subprocess itself isn't blocked either.
     vec!["../../**".to_string(), "doc/loom/knowledge/**".to_string()]
 }
 

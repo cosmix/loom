@@ -16,7 +16,7 @@ mod stage_id;
 mod structure;
 
 use loom::plan::schema::{
-    AcceptanceCriterion, Implementers, LoomConfig, LoomMetadata, StageDefinition, StageType,
+    AcceptanceCriterion, Implementers, LoomConfig, LoomMetadata, StageDefinition,
 };
 
 /// Helper to create a minimal valid stage definition
@@ -33,7 +33,7 @@ pub(crate) fn create_valid_stage(id: &str, name: &str) -> StageDefinition {
         auto_merge: None,
         working_dir: ".".to_string(),
         sandbox: Default::default(),
-        stage_type: StageType::default(),
+        stage_type: None,
         artifacts: vec![],
         wiring: vec![],
         wiring_tests: vec![],
