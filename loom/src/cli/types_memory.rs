@@ -1,18 +1,10 @@
 //! Memory and knowledge CLI command types
 
-use crate::fs::knowledge::{DEFAULT_MAX_TIER1_LINES, DEFAULT_MAX_TOPIC_LINES};
 use crate::validation::{clap_id_validator, clap_knowledge_content_validator};
 use clap::Subcommand;
 
 #[derive(Subcommand)]
 pub enum KnowledgeCommands {
-    /// Show knowledge summary or a specific file
-    Show {
-        /// File to show (entry-points, patterns, conventions)
-        #[arg(value_name = "FILE")]
-        file: Option<String>,
-    },
-
     /// Update (append to) a knowledge file
     Update {
         /// File to update (entry-points, patterns, conventions)
@@ -21,88 +13,6 @@ pub enum KnowledgeCommands {
         /// Content to append (markdown format). Omit or use "-" to read from stdin.
         #[arg(value_parser = clap_knowledge_content_validator)]
         content: Option<String>,
-    },
-
-    /// Replace a section in a knowledge file by heading
-    ReplaceSection {
-        /// File to update (entry-points, patterns, conventions, mistakes, etc.)
-        file: String,
-
-        /// Section heading to find and replace (e.g., "Merge Recovery Flow")
-        heading: String,
-
-        /// New content for the section. Omit or use "-" to read from stdin.
-        #[arg(value_parser = clap_knowledge_content_validator)]
-        content: Option<String>,
-    },
-
-    /// Initialize the knowledge directory
-    Init,
-
-    /// List all knowledge files
-    List,
-
-    /// Regenerate the knowledge INDEX.md (creates it on a flat knowledge dir)
-    Index,
-
-    /// Check knowledge completeness and src/ coverage
-    Check {
-        /// Minimum coverage percentage required (default: 50)
-        #[arg(long, default_value = "50")]
-        min_coverage: u8,
-
-        /// Path to src/ directory to check (default: auto-detect)
-        #[arg(long)]
-        src_path: Option<String>,
-
-        /// Quiet mode - only output errors
-        #[arg(short, long)]
-        quiet: bool,
-    },
-
-    /// Analyze knowledge files for size, duplicates, and curated blocks
-    Audit {
-        /// Max lines per tier-1 summary file before compaction is recommended
-        #[arg(long, default_value_t = DEFAULT_MAX_TIER1_LINES)]
-        max_file_lines: usize,
-
-        /// Max lines per tier-2 topic file before compaction is recommended
-        #[arg(long, default_value_t = DEFAULT_MAX_TOPIC_LINES)]
-        max_topic_lines: usize,
-
-        /// Only show metrics, skip compaction instructions
-        #[arg(short, long)]
-        quiet: bool,
-    },
-
-    /// Spawn Claude session to compact knowledge files (dedupe, summarize, drop stale)
-    Gc {
-        /// Model for the Claude session (default: "opus" — GC is judgement-heavy)
-        #[arg(long)]
-        model: Option<String>,
-
-        /// Preview proposed changes without writing
-        #[arg(long)]
-        dry_run: bool,
-
-        /// Run in non-interactive mode (no terminal UI)
-        #[arg(long)]
-        quick: bool,
-    },
-
-    /// Spawn Claude session to explore and populate knowledge files
-    Bootstrap {
-        /// Model for the Claude session (default: "opus" — bootstrap is judgement-heavy)
-        #[arg(long)]
-        model: Option<String>,
-
-        /// Skip running codebase map before bootstrapping
-        #[arg(long)]
-        skip_map: bool,
-
-        /// Run in non-interactive mode (no terminal UI)
-        #[arg(long)]
-        quick: bool,
     },
 
     /// Retrieve a token-budgeted context pack for a query (deterministic, offline)
@@ -130,14 +40,7 @@ pub enum KnowledgeCommands {
         json: bool,
     },
 
-    /// Show knowledge catalog freshness, size, and reported issues
-    Status {
-        /// Machine-readable JSON output (suppresses human text)
-        #[arg(long)]
-        json: bool,
-    },
-
-    /// Rebuild derived context artifacts when the knowledge tree has changed
+    /// Rebuild derived context artifacts, and upgrade a flat knowledge dir (creates INDEX.md)
     Sync {
         /// Rebuild only the structural (catalog) layer
         #[arg(long)]

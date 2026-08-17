@@ -1,7 +1,7 @@
 //! Tests for `commands/knowledge/mod.rs`.
 
 use super::*;
-use crate::fs::knowledge::INDEX_FILENAME;
+use crate::fs::knowledge::{KnowledgeFile, INDEX_FILENAME};
 use serial_test::serial;
 use std::fs;
 use tempfile::TempDir;
@@ -93,48 +93,15 @@ fn test_parse_file_type() {
 
 #[test]
 #[serial]
-fn test_knowledge_init() {
-    let (_temp_dir, test_dir) = setup_test_env();
-
-    let original_dir = std::env::current_dir().expect("Failed to get current dir");
-    std::env::set_current_dir(&test_dir).expect("Failed to change dir");
-
-    let result = init();
-    assert!(result.is_ok());
-
-    let knowledge_dir = test_dir.join("doc/loom/knowledge");
-    assert!(knowledge_dir.exists());
-    assert!(knowledge_dir.join("entry-points.md").exists());
-    assert!(knowledge_dir.join("patterns.md").exists());
-    assert!(knowledge_dir.join("conventions.md").exists());
-
-    std::env::set_current_dir(original_dir).expect("Failed to restore dir");
-}
-
-#[test]
-#[serial]
-fn test_init_creates_index() {
-    let (_temp_dir, test_dir) = setup_test_env();
-    let original_dir = std::env::current_dir().expect("Failed to get current dir");
-    std::env::set_current_dir(&test_dir).expect("Failed to change dir");
-
-    init().expect("Failed to init knowledge");
-
-    let index_path = test_dir.join("doc/loom/knowledge").join(INDEX_FILENAME);
-    assert!(index_path.exists(), "init() must create INDEX.md");
-
-    std::env::set_current_dir(original_dir).expect("Failed to restore dir");
-}
-
-#[test]
-#[serial]
 fn test_knowledge_update() {
     let (_temp_dir, test_dir) = setup_test_env();
 
     let original_dir = std::env::current_dir().expect("Failed to get current dir");
     std::env::set_current_dir(&test_dir).expect("Failed to change dir");
 
-    init().expect("Failed to init knowledge");
+    KnowledgeDir::new(".")
+        .initialize()
+        .expect("Failed to initialize knowledge");
 
     let result = update(
         "entry-points".to_string(),
@@ -189,8 +156,9 @@ fn test_knowledge_update_in_worktree_writes_to_worktree() {
     let original_dir = std::env::current_dir().expect("Failed to get current dir");
     std::env::set_current_dir(&worktree).expect("Failed to change dir to worktree");
 
-    let result = init();
-    assert!(result.is_ok(), "init() failed: {result:?}");
+    KnowledgeDir::new(".")
+        .initialize()
+        .expect("Failed to initialize knowledge");
 
     let main_knowledge_dir = main_repo.join("doc/loom/knowledge");
     let worktree_knowledge_dir = worktree.join("doc/loom/knowledge");
@@ -228,7 +196,9 @@ fn test_update_with_explicit_content() {
     let original_dir = std::env::current_dir().expect("Failed to get current dir");
     std::env::set_current_dir(&test_dir).expect("Failed to change dir");
 
-    init().expect("Failed to init knowledge");
+    KnowledgeDir::new(".")
+        .initialize()
+        .expect("Failed to initialize knowledge");
 
     let result = update(
         "patterns".to_string(),
@@ -245,55 +215,25 @@ fn test_update_with_explicit_content() {
 
 #[test]
 #[serial]
-fn test_list_with_topics_does_not_crash() {
+fn test_sync_upgrades_legacy_dir() {
     let (_temp_dir, test_dir) = setup_test_env();
     let original_dir = std::env::current_dir().expect("Failed to get current dir");
     std::env::set_current_dir(&test_dir).expect("Failed to change dir");
 
-    init().expect("Failed to init knowledge");
-    update(
-        "architecture/merge-flow".to_string(),
-        Some("## Merge Flow\n\nDetails".to_string()),
-    )
-    .expect("update() failed");
-
-    let result = list();
-    assert!(result.is_ok());
-
-    std::env::set_current_dir(original_dir).expect("Failed to restore dir");
-}
-
-#[test]
-#[serial]
-fn test_index_upgrades_legacy_dir() {
-    let (_temp_dir, test_dir) = setup_test_env();
-    let original_dir = std::env::current_dir().expect("Failed to get current dir");
-    std::env::set_current_dir(&test_dir).expect("Failed to change dir");
-
-    init().expect("Failed to init knowledge");
+    KnowledgeDir::new(".")
+        .initialize()
+        .expect("Failed to initialize knowledge");
     make_legacy(&test_dir);
 
-    let result = index();
-    assert!(result.is_ok());
-
+    let result = sync::sync(false, false);
     let index_path = test_dir.join("doc/loom/knowledge").join(INDEX_FILENAME);
+    let created = index_path.exists();
+
+    std::env::set_current_dir(original_dir).expect("Failed to restore dir");
+
+    assert!(result.is_ok(), "sync() failed: {result:?}");
     assert!(
-        index_path.exists(),
-        "index() must create INDEX.md on a legacy dir"
+        created,
+        "loom knowledge sync must create INDEX.md on a legacy dir"
     );
-
-    std::env::set_current_dir(original_dir).expect("Failed to restore dir");
-}
-
-#[test]
-#[serial]
-fn test_index_errors_when_knowledge_dir_missing() {
-    let (_temp_dir, test_dir) = setup_test_env();
-    let original_dir = std::env::current_dir().expect("Failed to get current dir");
-    std::env::set_current_dir(&test_dir).expect("Failed to change dir");
-
-    let result = index();
-    assert!(result.is_err());
-
-    std::env::set_current_dir(original_dir).expect("Failed to restore dir");
 }
