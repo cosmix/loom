@@ -3,7 +3,7 @@
 //! [`evaluate`] answers "is the cached catalog current?" without touching
 //! disk beyond a read. [`refresh`] acts on that answer: it rebuilds and
 //! persists the structural layer when stale, and is a no-op otherwise. The
-//! semantic (source-graph) layer lives in [`source_graph`].
+//! semantic (source-graph) layer lives in `source_graph`.
 
 use anyhow::Result;
 use chrono::Utc;
@@ -136,7 +136,7 @@ pub fn evaluate(store: &ContextStore, knowledge_root: &Path) -> Result<StoreStat
 
 /// Rebuild the structural layer when it is stale; persist catalog and state.
 /// `structural_only` distinguishes catalog-only from also best-effort
-/// reconciling the semantic layer (see [`source_graph::reconcile_semantic_best_effort`]).
+/// reconciling the semantic layer (see `source_graph::reconcile_semantic_best_effort`).
 pub fn refresh(
     store: &ContextStore,
     knowledge_root: &Path,

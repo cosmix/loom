@@ -7,7 +7,7 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 /// Re-exported so callers (and this module's own tests) can tokenize text the
-/// same way [`rank`] does without reaching into [`crate::context::lexical`].
+/// same way [`rank`] does without reaching into `crate::context::lexical`.
 pub use crate::context::lexical::tokenize;
 
 /// BM25 term-frequency saturation parameter.

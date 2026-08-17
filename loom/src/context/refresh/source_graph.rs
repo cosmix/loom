@@ -338,7 +338,7 @@ fn persist_semantic_freshness(store: &ContextStore, revision: String) -> Result<
     Ok(freshness)
 }
 
-/// Mark the semantic layer stale with `reason`. [`ContextStore::update_state`]
+/// Mark the semantic layer stale with `reason`. `ContextStore::update_state`
 /// degrades a missing, unreadable, or malformed `state.json` to
 /// [`crate::context::store::StoreState::default`] rather than erroring;
 /// callers log and continue rather than propagate the `Result` — both

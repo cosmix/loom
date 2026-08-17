@@ -3,7 +3,7 @@
 //! The sections written here are DERIVED from the codebase, not authored by
 //! hand: re-running the analysis and writing it back must converge on the
 //! same file content, never grow it. Each `## <heading>` section in an
-//! [`AnalysisResult`](crate::map::AnalysisResult) blob is spliced into its
+//! [`AnalysisResult`] blob is spliced into its
 //! tier-1 file in place, so a second run with the same findings leaves the
 //! file byte-identical to the first.
 
