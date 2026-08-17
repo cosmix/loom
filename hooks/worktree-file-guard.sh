@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # worktree-file-guard.sh - canonical PreToolUse guard for every file tool
 #
-# Read, Write, Edit, Glob, Grep, and NotebookEdit all pass through this
-# guard. Paths are resolved component-by-component against the canonical
+# Read, Write, Edit, MultiEdit, Glob, Grep, and NotebookEdit all pass through
+# this guard. Paths are resolved component-by-component against the canonical
 # worktree root so an absolute host path, a symlink leaf, or a sibling
 # sharing the worktree's string prefix cannot cross the boundary.
 #
@@ -39,7 +39,7 @@ EOF
 fi
 
 case "$TOOL_NAME" in
-Read | Write | Edit | Glob | Grep | NotebookEdit) ;;
+Read | Write | Edit | MultiEdit | Glob | Grep | NotebookEdit) ;;
 *) exit 0 ;;
 esac
 
@@ -134,7 +134,9 @@ EOF
 
 extract_path() {
 	case "$TOOL_NAME" in
-	Read | Write | Edit)
+	Read | Write | Edit | MultiEdit)
+		# MultiEdit's per-edit list hangs off one `file_path`, the same field
+		# Read/Write/Edit use, so it needs no extraction of its own.
 		printf '%s' "$INPUT_JSON" | jq -r '.tool_input.file_path // empty' 2>/dev/null || true
 		;;
 	NotebookEdit)
@@ -238,7 +240,7 @@ if [[ -n "$WORK_SHARED" ]] && is_within "$RESOLVED_PATH" "$WORK_SHARED"; then
 
 	case "$TOOL_NAME" in
 	Read | Glob | Grep) exit 0 ;;
-	Write | Edit | NotebookEdit)
+	Write | Edit | MultiEdit | NotebookEdit)
 		if [[ "$RELATIVE_WORK_PATH" == /handoffs/* ]]; then
 			exit 0
 		fi

@@ -19,10 +19,19 @@
 //!                    rank ──> fuse ──> pack ──> ContextPack
 //! ```
 //!
-//! [`rank`] scores each channel independently, [`fuse`] merges the per-channel
-//! rank lists by reciprocal rank fusion, and [`pack`] walks the fused list in
-//! order taking whole chunks until the budget is spent. The packer never exceeds
-//! its budget and always reports what it left out.
+//! [`rank`] scores each requested channel independently, [`fuse`] merges the
+//! per-channel rank lists by reciprocal rank fusion, and [`pack`] walks the
+//! fused list in order taking whole chunks until the budget is spent. The
+//! packer never exceeds its budget and always reports what it left out.
+//!
+//! Only the knowledge-chunk channel actually contributes candidates today.
+//! [`schema::Channel::Source`] is a real variant and [`source_graph`] builds a
+//! real graph of source nodes and edges, but the two are not yet connected:
+//! [`rank`] still only accepts `&[KnowledgeChunk]`, so ranking the source
+//! channel over the same catalog would double-count the knowledge chunks.
+//! `rank_channels` in [`retrieve`] therefore ranks `Source` over an empty
+//! slice — the channel is present in the API and consumed by nothing; bridging
+//! the graph's nodes into the ranker is separate, unbuilt work.
 //!
 //! ## One entry point
 //!
@@ -49,6 +58,7 @@ pub mod retrieve;
 pub mod schema;
 pub mod source_graph;
 pub mod store;
+pub(crate) mod untrusted;
 
 pub use coverage::CoverageReport;
 pub use resolve::{impact, resolve_graph, ImpactHit, ResolutionStats, SymbolIndex};

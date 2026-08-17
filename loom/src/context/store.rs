@@ -137,6 +137,51 @@ impl ContextStore {
         crate::fs::locking::locked_write(&path, &content)
             .with_context(|| format!("Failed to write context state: {}", path.display()))
     }
+
+    /// Read-modify-write `state.json` as one critical section (see
+    /// doc/loom/knowledge/patterns.md § A-5, "Locked Stage Read-Modify-Write
+    /// Pattern"): the directory lock is held from before the read to after
+    /// the write, so `mutate` sees the value as it is *right now*, not a
+    /// snapshot a caller took earlier. `mutate` can therefore only ever
+    /// clobber the field(s) it explicitly assigns — every other field keeps
+    /// whatever a concurrent writer already put there. Loading outside the
+    /// lock (or writing back a whole `StoreState` captured before it) is the
+    /// lost update this exists to prevent.
+    ///
+    /// `mutate` MUST be fast and touch only `state.json`: the lock is
+    /// exclusive and not reentrant — `fs2`'s `flock` is scoped to the open
+    /// file description, not the process, so a nested lock attempt on this
+    /// same directory (e.g. calling [`Self::save_state`] from inside
+    /// `mutate`) blocks forever on itself. Slow work (`ingest`, a repo scan,
+    /// ...) belongs BEFORE the call; only its result is assigned in `mutate`.
+    ///
+    /// A `state.json` that is missing, unreadable, or malformed degrades to
+    /// [`StoreState::default`] rather than failing the call, so a broken
+    /// cache can never block the write that would otherwise repair it. The
+    /// fallback is not silent: it is logged via `tracing::warn!` with the
+    /// path and the error before `mutate` runs, so this reads as "tolerated
+    /// and reported", not "tolerated and hidden".
+    pub(crate) fn update_state<F>(&self, mutate: F) -> Result<()>
+    where
+        F: FnOnce(&mut StoreState),
+    {
+        self.ensure()?;
+        let path = self.state_path();
+        crate::fs::locking::locked_dir_update(&self.root, || {
+            let mut state = self.load_state().unwrap_or_else(|error| {
+                tracing::warn!(
+                    path = %path.display(),
+                    %error,
+                    "context state.json unreadable; falling back to a default and repairing it"
+                );
+                StoreState::default()
+            });
+            mutate(&mut state);
+            let content = canonical_json(&state)?;
+            crate::fs::locking::atomic_write_locked(&path, &content)
+                .with_context(|| format!("Failed to write context state: {}", path.display()))
+        })
+    }
 }
 
 /// Serialize deterministically: identical input values produce byte-identical output.

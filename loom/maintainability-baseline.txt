@@ -21,10 +21,11 @@ file src/commands/stage/tests/complete.rs 528
 file src/commands/status/data/collector.rs 501
 file src/commands/status/ui/tui/app.rs 409
 file src/commands/status/ui/tui/renderer.rs 410
+file src/context/refresh/tests_source_graph.rs 476
 file src/daemon/server/dispute.rs 508
 file src/daemon/server/status.rs 412
 file src/fs/locking.rs 499
-file src/fs/permissions/hooks.rs 447
+file src/fs/permissions/hooks.rs 448
 file src/fs/permissions/settings.rs 684
 file src/fs/permissions/sync.rs 647
 file src/fs/plan_lifecycle.rs 609
@@ -61,12 +62,12 @@ file src/plan/schema/validation.rs 1074
 file src/plan/tests/amendment.rs 628
 file src/remote_control.rs 599
 file src/sandbox/config.rs 753
-file src/sandbox/settings.rs 1983
+file src/sandbox/settings.rs 2048
 file src/skills/index.rs 564
 file src/verify/duplicate_detection.rs 551
 file src/verify/transitions/state.rs 433
 file tests/adjudication_e2e.rs 821
-file tests/e2e/tmux_backend.rs 431
+file tests/e2e/tmux_backend.rs 506
 file tests/failure_resume.rs 468
 file tests/integration/merge_conflict_recovery.rs 412
 file tests/integration/plan_verify.rs 878
@@ -291,7 +292,7 @@ function src/plan/schema/tests/security_policy_tests.rs rejects_misspelled_neste
 function src/plan/schema/validation.rs check_cross_stage_wiring_coverage 66
 function src/plan/schema/validation.rs validate 387
 function src/plan/schema/validation.rs validate_structural_preflight 217
-function src/sandbox/settings.rs generate_settings_json 101
+function src/sandbox/settings.rs generate_settings_json 99
 function src/sandbox/settings.rs merge_existing_permissions 72
 function src/sandbox/settings.rs test_deny_write_parent_traversal_not_in_os_sandbox 60
 function src/sandbox/settings.rs test_generate_settings_emits_network_block 53

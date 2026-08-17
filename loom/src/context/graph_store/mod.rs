@@ -19,8 +19,8 @@
 //!
 //! Nothing here builds a graph — `crate::context::refresh` does that — and
 //! nothing here decides *when* to write one; that is
-//! `crate::context::reconcile`'s job. This module owns only the layout, the
-//! layering rule, and canonical serialization.
+//! `crate::context::refresh::source_graph::reconcile_source_graph`'s job. This
+//! module owns only the layout, the layering rule, and canonical serialization.
 
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
@@ -219,18 +219,26 @@ impl GraphStore {
         write_layer(&self.overlay_path(plan, stage), layer)
     }
 
-    /// Delete a stage's overlay directory. Idempotent.
+    /// Delete a stage's overlay layer file. Idempotent.
     ///
     /// Called after the stage's work is merged and folded into a new base
-    /// layer, at which point the overlay describes a revision nobody reads.
+    /// layer, at which point the overlay layer describes a revision nobody
+    /// reads. Removes only [`LAYER_FILE`] — never the overlay directory — because
+    /// that directory is a shared namespace, not this module's alone:
+    /// `crate::commands::context::record_edit` keeps `dirty-paths.json` there,
+    /// and `crate::context::delivery` keeps `session-retrieval/*.json` there,
+    /// and both outlive the graph layer and are read by other stages after
+    /// this one merges. A `remove_dir_all` here would delete those out from
+    /// under their owners on a schedule this module does not control; `.work/`
+    /// is removed wholesale when the plan finishes, so the leftover directory
+    /// does not accumulate across plans.
     pub fn discard_overlay(&self, plan: &str, stage: &str) -> Result<()> {
-        let dir = self.overlay_dir(plan, stage);
-        match fs::remove_dir_all(&dir) {
+        let path = self.overlay_path(plan, stage);
+        match fs::remove_file(&path) {
             Ok(()) => Ok(()),
             Err(error) if error.kind() == ErrorKind::NotFound => Ok(()),
-            Err(error) => {
-                Err(error).with_context(|| format!("Failed to remove overlay: {}", dir.display()))
-            }
+            Err(error) => Err(error)
+                .with_context(|| format!("Failed to remove overlay layer: {}", path.display())),
         }
     }
 

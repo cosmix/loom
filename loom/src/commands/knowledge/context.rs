@@ -9,6 +9,7 @@
 use crate::context::delivery::dependency_chunk_ids;
 use crate::context::retrieve::{resolve_roots, retrieve_for_stage, StageQuery};
 use crate::context::store::ContextStore;
+use crate::context::untrusted::inline_safe;
 use crate::context::{
     Channel, Confidence, ContextItem, ContextPack, Freshness, OmissionSummary, SelectionReason,
 };
@@ -34,6 +35,24 @@ fn parse_scope(scope: &str) -> Result<Vec<Channel>> {
         "source" => Ok(vec![Channel::Source]),
         "all" => Ok(Channel::all().to_vec()),
         other => bail!("Invalid --scope '{other}': expected one of knowledge, source, all"),
+    }
+}
+
+/// The stderr notice printed when `channels` includes the source channel.
+///
+/// `Channel::Source` is a real, accepted `--scope` value, but
+/// `crate::context::rank` only ranks `&[KnowledgeChunk]`: the retrieval
+/// pipeline ranks the source channel over an empty slice, so no source item
+/// can ever match. Without this notice, `--scope source` and `--scope all`
+/// both render "No items matched." indistinguishably from a query that
+/// legitimately found nothing — the silent-failure class this project guards
+/// against — so an agent has no way to tell "not implemented yet" from "your
+/// query found nothing" and stops asking.
+fn inert_source_notice(channels: &[Channel]) -> Option<&'static str> {
+    if channels.contains(&Channel::Source) {
+        Some("note: the source channel is not yet wired into ranking; no source items can match")
+    } else {
+        None
     }
 }
 
@@ -93,6 +112,9 @@ pub fn context(
     if json {
         println!("{}", serde_json::to_string_pretty(&context_pack)?);
     } else {
+        if let Some(notice) = inert_source_notice(&stage_query.scope) {
+            eprintln!("{notice}");
+        }
         print_human(&context_pack, explain);
     }
 
@@ -135,20 +157,34 @@ fn print_freshness_line(label: &str, freshness: &Freshness) {
     }
 }
 
-fn print_item(item: &ContextItem, explain: bool) {
+/// Render one item's summary line, with every untrusted field flattened.
+///
+/// The id, path, anchor and summary are all untrusted: `fs::knowledge::chunker`
+/// takes a chunk's id and heading verbatim from a file's unvalidated YAML
+/// frontmatter (see `orchestrator::signals::format::brief`), and a path can
+/// legally contain a backtick. Rendered raw, a newline in any of them would
+/// let the rest of the value render as a new line of this command's own
+/// output — including one shaped like a heading or an instruction — so each
+/// goes through [`inline_safe`] before it reaches stdout. `item.score` is a
+/// typed float, not free text, so it is left alone.
+fn format_item_line(item: &ContextItem) -> String {
     let anchor = if item.pointer.anchor.is_empty() {
         String::new()
     } else {
-        format!("#{}", item.pointer.anchor)
+        format!("#{}", inline_safe(&item.pointer.anchor))
     };
-    println!(
+    format!(
         "  {:>6.2}  {}  {}{}  {}",
         item.score,
-        item.id,
-        item.pointer.path.display(),
+        inline_safe(item.id.as_str()),
+        inline_safe(&item.pointer.path.display().to_string()),
         anchor,
-        item.summary
-    );
+        inline_safe(&item.summary)
+    )
+}
+
+fn print_item(item: &ContextItem, explain: bool) {
+    println!("{}", format_item_line(item));
     if explain {
         let reasons = item
             .reasons

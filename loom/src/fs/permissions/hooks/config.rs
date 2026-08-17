@@ -15,6 +15,10 @@ pub(super) fn build(hooks_dir: &str) -> Value {
     })
 }
 
+/// Matchers are exact tool names, so every write-tool guard must name each
+/// write tool explicitly. `MultiEdit` mutates files exactly as `Edit` does and
+/// carries the same `tool_input.file_path`, so it is registered alongside every
+/// `Edit` entry below - an unpaired `Edit` entry is a guard MultiEdit bypasses.
 fn pre_tool_hooks(hooks_dir: &str) -> Vec<Value> {
     const HOOKS: &[(&str, &str)] = &[
         ("AskUserQuestion", "ask-user-pre.sh"),
@@ -24,9 +28,11 @@ fn pre_tool_hooks(hooks_dir: &str) -> Vec<Value> {
         ("Bash", "git-add-guard.sh"),
         ("Bash", "worktree-isolation.sh"),
         ("Edit", "worktree-file-guard.sh"),
+        ("MultiEdit", "worktree-file-guard.sh"),
         ("Write", "worktree-file-guard.sh"),
         ("NotebookEdit", "worktree-file-guard.sh"),
         ("Edit", "plans-path-guard.sh"),
+        ("MultiEdit", "plans-path-guard.sh"),
         ("Write", "plans-path-guard.sh"),
         ("Read", "worktree-file-guard.sh"),
         ("Glob", "worktree-file-guard.sh"),
@@ -34,9 +40,11 @@ fn pre_tool_hooks(hooks_dir: &str) -> Vec<Value> {
         ("Bash", "no-preexisting-failures.sh"),
         ("Write", "no-preexisting-failures.sh"),
         ("Edit", "no-preexisting-failures.sh"),
+        ("MultiEdit", "no-preexisting-failures.sh"),
         ("Bash", "codex-forward-guard.sh"),
         ("Bash", "loom-control-complete.sh"),
         ("Edit", "codex-forward-guard.sh"),
+        ("MultiEdit", "codex-forward-guard.sh"),
         ("Write", "codex-forward-guard.sh"),
         ("NotebookEdit", "codex-forward-guard.sh"),
         ("Read", "codex-forward-guard.sh"),
@@ -44,6 +52,7 @@ fn pre_tool_hooks(hooks_dir: &str) -> Vec<Value> {
         ("Agent", "codex-forward-guard.sh"),
         ("Write", "stage-terminal-guard.sh"),
         ("Edit", "stage-terminal-guard.sh"),
+        ("MultiEdit", "stage-terminal-guard.sh"),
         ("NotebookEdit", "stage-terminal-guard.sh"),
         ("Task", "stage-terminal-guard.sh"),
         ("Agent", "stage-terminal-guard.sh"),

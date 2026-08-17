@@ -384,8 +384,9 @@ mod tests {
             })
             .collect();
 
-        // One canonical guard owns every file-tool path decision.
-        for tool in ["Read", "Write", "Edit", "Glob", "Grep"] {
+        // One canonical guard owns every file-tool path decision. MultiEdit is
+        // a distinct matcher from Edit, so it needs its own registration.
+        for tool in ["Read", "Write", "Edit", "MultiEdit", "Glob", "Grep"] {
             let found = entries.iter().any(|(matcher, command)| {
                 matcher == tool && command.contains("worktree-file-guard.sh")
             });
@@ -397,7 +398,7 @@ mod tests {
     }
 
     #[test]
-    fn test_plans_path_guard_registered_for_write_edit() {
+    fn test_plans_path_guard_registered_for_every_write_tool() {
         let config = loom_hooks_config();
         let pre_tool_use = config
             .get("PreToolUse")
@@ -405,7 +406,7 @@ mod tests {
             .as_array()
             .expect("PreToolUse must be an array");
 
-        for tool in ["Write", "Edit"] {
+        for tool in ["Write", "Edit", "MultiEdit"] {
             let found = pre_tool_use.iter().any(|entry| {
                 let matcher = entry.get("matcher").and_then(|m| m.as_str());
                 let command = entry

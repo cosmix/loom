@@ -12,13 +12,18 @@
 //! throwaway directory under `/tmp` for its duration, and is `#[serial]`
 //! because they mutate process-global env state.
 //!
-//! `/tmp` (not [`std::env::temp_dir`]) deliberately, for the same reason
-//! `loom_socket_dir()` in `src/orchestrator/terminal/tmux/socket.rs` avoids
+//! `/tmp` is preferred over [`std::env::temp_dir`], for the same reason
+//! `loom_socket_dir()` in `src/orchestrator/terminal/tmux/socket.rs` prefers
 //! it: on macOS, `std::env::temp_dir()` resolves to a long per-process
 //! `$TMPDIR` under `/var/folders/...`. Once tmux appends its own
 //! `tmux-<uid>/loom-<session-id>` beneath that, the full socket path can
 //! exceed the 104-byte `AF_UNIX sun_path` limit — an environment-specific
 //! path-length failure that has nothing to do with the code under test.
+//! `TmuxTmpDirGuard` therefore only falls back to `std::env::temp_dir()`
+//! when `/tmp` itself turns out not to be writable (e.g. inside a sandbox
+//! that mounts it read-only), and even then only after checking that the
+//! projected socket path still fits `sun_path` — see
+//! `create_isolated_tmux_tmpdir()`.
 
 use loom::models::session::{Session, SessionType};
 use loom::orchestrator::terminal::native::create_wrapper_script;
@@ -79,6 +84,77 @@ impl Drop for EnvVarGuard {
     }
 }
 
+/// The stricter of the two platform `AF_UNIX sun_path` limits (104 bytes on
+/// macOS/BSD, 108 on Linux) -- used so a length check passing here holds on
+/// every platform this suite runs on.
+const SUN_PATH_LIMIT: usize = 104;
+
+/// Bytes reserved for the socket's own final path component,
+/// `loom-<session-id>`. Real session ids look like
+/// `session-6d4cf60c-1786963954`, so this leaves headroom for the `loom-`
+/// prefix plus a realistic id rather than measuring one exactly.
+const SOCKET_NAME_BUDGET: usize = 40;
+
+/// Creates and returns the isolated per-test directory to use as
+/// `TMUX_TMPDIR`, picking the first candidate base -- `/tmp`, then
+/// [`std::env::temp_dir`] -- under which it can actually be created. `/tmp`
+/// is preferred for its short path and because it matches tmux's own
+/// convention (see the module docs); the fallback exists for exactly the
+/// case where `/tmp` is not writable -- e.g. inside a sandbox that mounts it
+/// read-only.
+///
+/// A candidate is usable only if BOTH hold: the per-test directory can
+/// actually be created there (rejects a read-only `/tmp`), and the socket
+/// path tmux will build beneath it -- `<dir>/tmux-<uid>/loom-<session-id>`,
+/// per `loom_socket_dir()` in `src/orchestrator/terminal/tmux/socket.rs` --
+/// projects under the `sun_path` limit. Skipping the second check would
+/// trade one environment-specific failure (an unwritable `/tmp`) for
+/// another, further down the stack in `tmux` itself, where the fallback's
+/// long per-process path (e.g. macOS's `/var/folders/...`) can silently
+/// blow the socket path budget.
+///
+/// Panics naming every rejected candidate and why if none qualifies -- a
+/// skipped test is a test that can never fail, so this never skips.
+fn create_isolated_tmux_tmpdir() -> PathBuf {
+    // SAFETY: getuid() is always safe to call and cannot fail. Matches
+    // `loom_socket_dir()` in `src/orchestrator/terminal/tmux/socket.rs`,
+    // which builds the real socket path the same way.
+    let uid = unsafe { libc::getuid() };
+    let mut rejected = Vec::new();
+    let mut tried = Vec::new();
+
+    for base in [PathBuf::from("/tmp"), std::env::temp_dir()] {
+        let dir = base.join(format!("loom-e2e-tmux-{}", std::process::id()));
+        // `std::env::temp_dir()` falls back to `/tmp` when `$TMPDIR` is
+        // unset, so the two candidates can coincide -- skip a repeat rather
+        // than re-trying (and re-reporting) the identical path.
+        if tried.contains(&dir) {
+            continue;
+        }
+        tried.push(dir.clone());
+
+        if let Err(err) = std::fs::create_dir_all(&dir) {
+            rejected.push(format!("{} (unwritable: {err})", dir.display()));
+            continue;
+        }
+
+        let projected_len =
+            dir.display().to_string().len() + format!("/tmux-{uid}/").len() + SOCKET_NAME_BUDGET;
+        if projected_len > SUN_PATH_LIMIT {
+            rejected.push(format!(
+                "{} (projected socket path {projected_len} bytes exceeds sun_path limit {SUN_PATH_LIMIT})",
+                dir.display()
+            ));
+            let _ = std::fs::remove_dir_all(&dir);
+            continue;
+        }
+
+        return dir;
+    }
+
+    panic!("no usable TMUX_TMPDIR base found; rejected candidates: {rejected:?}");
+}
+
 /// Redirects `TMUX_TMPDIR` to an isolated per-test directory for the
 /// duration of the guard, additionally removing the directory on drop -- on
 /// EVERY exit path, including a panic mid-test.
@@ -89,8 +165,7 @@ struct TmuxTmpDirGuard {
 
 impl TmuxTmpDirGuard {
     fn new() -> Self {
-        let dir = PathBuf::from("/tmp").join(format!("loom-e2e-tmux-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).expect("create isolated TMUX_TMPDIR");
+        let dir = create_isolated_tmux_tmpdir();
         let _env = EnvVarGuard::set("TMUX_TMPDIR", &dir);
         Self { _env, dir }
     }
