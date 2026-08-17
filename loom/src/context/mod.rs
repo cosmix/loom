@@ -50,6 +50,7 @@ pub mod fuse;
 pub mod graph_store;
 pub mod ingest;
 mod lexical;
+pub mod local_overlay;
 pub mod pack;
 pub mod rank;
 pub mod refresh;
