@@ -117,6 +117,9 @@ pub struct Orchestrator {
     /// the logs when a dependent stage cannot start because of a phantom
     /// merge. Used by `stage_executor.rs::start_stage`.
     pub(super) spawn_skip_logged: HashSet<String>,
+    /// Stages whose spool drain has already been reported as failing.
+    /// Prevents the 5-second poll loop from flooding the logs.
+    pub(super) spool_drain_error_logged: HashSet<String>,
     /// Adjudicator registry — owns worker threads + completion channel.
     /// Disabled (workers never spawn) when `ANTHROPIC_API_KEY` is unset.
     pub(super) adjudicators: AdjudicatorRegistry,
@@ -210,6 +213,7 @@ impl Orchestrator {
             merge_retry_attempted: HashSet::new(),
             verified_merged: HashSet::new(),
             spawn_skip_logged: HashSet::new(),
+            spool_drain_error_logged: HashSet::new(),
             adjudicators,
             spawn_blocks: HashMap::new(),
             queued_since: HashMap::new(),
@@ -353,6 +357,12 @@ impl Orchestrator {
                 .spawn_merge_resolution_sessions()
                 .context("Failed to spawn merge resolution sessions")?;
             total_sessions_spawned += merge_sessions_spawned;
+
+            // Drain sandboxed-worktree memory spools (see spool_drain.rs).
+            // Placed after the graph sync above and outside the manual-mode
+            // gate below, so `loom run --manual` still drains; never
+            // returns Err, so a spool problem can't abort this loop (O-4).
+            self.drain_stage_spools();
 
             tick::record(&self.config.work_dir, tick::Phase::Spawning);
 

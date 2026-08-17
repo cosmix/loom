@@ -40,7 +40,7 @@ file src/orchestrator/adjudication/mod.rs 695
 file src/orchestrator/adjudication/prompt.rs 491
 file src/orchestrator/core/event_handler.rs 468
 file src/orchestrator/core/merge_handler.rs 1300
-file src/orchestrator/core/orchestrator.rs 564
+file src/orchestrator/core/orchestrator.rs 574
 file src/orchestrator/core/recovery.rs 1621
 file src/orchestrator/core/stage_executor.rs 953
 file src/orchestrator/merge_attribution.rs 543
@@ -225,8 +225,8 @@ function src/orchestrator/core/merge_handler.rs spawn_merge_resolution_session 8
 function src/orchestrator/core/merge_handler.rs spawn_merge_resolution_sessions 120
 function src/orchestrator/core/merge_handler.rs try_auto_merge 258
 function src/orchestrator/core/merge_handler.rs verify_and_finalize_merge 68
-function src/orchestrator/core/orchestrator.rs new 79
-function src/orchestrator/core/orchestrator.rs run 247
+function src/orchestrator/core/orchestrator.rs new 80
+function src/orchestrator/core/orchestrator.rs run 253
 function src/orchestrator/core/recovery.rs all_stages_terminal 62
 function src/orchestrator/core/recovery.rs orphan_with_commits_ahead_signals_handoff_input 64
 function src/orchestrator/core/recovery.rs recover_orphaned_sessions 180

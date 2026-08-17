@@ -16,6 +16,7 @@ mod merge_handler;
 mod orchestrator;
 mod persistence;
 mod recovery;
+mod spool_drain;
 mod stage_executor;
 mod stage_telemetry;
 

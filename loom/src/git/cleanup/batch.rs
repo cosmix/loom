@@ -9,6 +9,7 @@ use super::branch::cleanup_branch;
 use super::config::{CleanupConfig, CleanupResult};
 use super::worktree::cleanup_worktree;
 use crate::git::branch::branch_name_for_stage;
+use crate::models::worktree::Worktree;
 
 /// Perform full cleanup after a successful merge
 ///
@@ -29,6 +30,7 @@ pub fn cleanup_after_merge(
     config: &CleanupConfig,
 ) -> Result<CleanupResult> {
     let branch_name = branch_name_for_stage(stage_id);
+    drain_spool_before_removal(stage_id, repo_root);
     let worktree_removed = cleanup_worktree(stage_id, repo_root, config.force_worktree_removal)
         .with_context(|| format!("Failed to remove worktree for stage '{stage_id}'"))?;
     let branch_deleted = cleanup_branch(stage_id, repo_root, config.force_branch_deletion)
@@ -49,6 +51,45 @@ pub fn cleanup_after_merge(
         report_cleanup(stage_id, &branch_name, &result);
     }
     Ok(result)
+}
+
+/// Drain a stage's memory spool one last time before its worktree is
+/// removed - the spool file lives inside the worktree, so anything still
+/// pending when the worktree is deleted is lost for good.
+///
+/// Best-effort and NEVER fails the cleanup: a stage whose memory could not
+/// be drained must still have its worktree and branches removed, otherwise a
+/// spool problem would wedge the merge pipeline, which is far worse than
+/// losing a note. On success with entries drained, log at `info`; on
+/// failure, log at `warn` and continue - the daemon's own per-tick drain
+/// (`orchestrator::core::spool_drain`) will have already caught most
+/// entries, so this is a last-chance sweep, not the primary path.
+fn drain_spool_before_removal(stage_id: &str, repo_root: &Path) {
+    let worktree_root = Worktree::worktree_path(repo_root, stage_id);
+    if !worktree_root.exists() {
+        return;
+    }
+    let work_dir = repo_root.join(".work");
+    match crate::fs::memory::drain_into_journal(&work_dir, stage_id, &worktree_root) {
+        Ok(outcome) if outcome.drained > 0 || outcome.skipped_malformed > 0 => {
+            tracing::info!(
+                stage_id = %stage_id,
+                drained = outcome.drained,
+                skipped_malformed = outcome.skipped_malformed,
+                "Drained memory spool before worktree removal"
+            );
+        }
+        Ok(_) => {}
+        Err(e) => {
+            tracing::warn!(
+                stage_id = %stage_id,
+                worktree_root = %worktree_root.display(),
+                error = %e,
+                "Failed to drain memory spool before worktree removal; any pending \
+                 entries will be lost with the worktree"
+            );
+        }
+    }
 }
 
 fn report_cleanup(stage_id: &str, branch_name: &str, result: &CleanupResult) {
