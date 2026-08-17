@@ -106,6 +106,38 @@ fn discarding_an_absent_overlay_succeeds() {
 }
 
 #[test]
+fn discarding_an_overlay_leaves_sibling_records_in_the_shared_directory() {
+    let temp = TempDir::new().unwrap();
+    let store = store(&temp);
+
+    let overlay = GraphLayer::default();
+    store.save_overlay("plan", "stage", &overlay).unwrap();
+
+    let dir = store.overlay_dir("plan", "stage");
+    let session_retrieval_dir = dir.join("session-retrieval");
+    std::fs::create_dir_all(&session_retrieval_dir).unwrap();
+    let dirty_paths = dir.join("dirty-paths.json");
+    std::fs::write(&dirty_paths, "{}").unwrap();
+    let delivery_record = session_retrieval_dir.join("some-stage.json");
+    std::fs::write(&delivery_record, "{}").unwrap();
+
+    store.discard_overlay("plan", "stage").unwrap();
+
+    assert!(
+        !store.overlay_path("plan", "stage").exists(),
+        "the graph layer file must be removed"
+    );
+    assert!(
+        dirty_paths.exists(),
+        "the edit recorder's file must survive discard_overlay"
+    );
+    assert!(
+        delivery_record.exists(),
+        "the delivery record must survive discard_overlay"
+    );
+}
+
+#[test]
 fn a_missing_base_resolves_to_an_overlay_only_view() {
     let temp = TempDir::new().unwrap();
     let store = store(&temp);
