@@ -414,7 +414,7 @@ where a non-defaulted field breaks a running plan.
 - **Filter by the real module path.** Tests under a `tests` submodule need it spelled out:
   `context::tests::delivery`, not `context::delivery`, which matches nothing.
 - **`rustfmt`'s `fn_call_width = 60` is what forces a call vertical, not `max_width = 100`.**
-  Sum the argument names including `, ` separators; over 60 and rustfmt goes one-arg-per-line,
+  Sum the argument names including `,` separators; over 60 and rustfmt goes one-arg-per-line,
   which can explode a match arm and trip the 50-line function gate. Renaming in the pattern
   (`budget_tokens: budget`) is a legitimate way back under the limit.
 

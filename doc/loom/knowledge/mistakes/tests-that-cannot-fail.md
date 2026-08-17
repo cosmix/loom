@@ -50,7 +50,7 @@ recognising on sight.
 inert — and both of its pinned acceptance greps still passed.
 
 **The misleading signal is specific and worth memorising:** "ships DISABLED by
-default" makes an always-`None` resolver look like *correct behaviour* rather than a
+default" makes an always-`None` resolver look like _correct behaviour_ rather than a
 dead path. Disabled-by-default means the flag defaults off, NOT that the enabled
 branch can never work.
 

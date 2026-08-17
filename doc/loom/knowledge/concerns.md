@@ -725,7 +725,7 @@ two agree over a shared fixture list — not more tests on either side.
 ## `loom knowledge` Cannot Rename a Section Heading (2026-08-17)
 
 `loom knowledge replace-section <file> <heading>` replaces a section's **body** and keeps the
-existing heading line. So content passed with its own `## ` heading produces a DUPLICATE
+existing heading line. So content passed with its own `##` heading produces a DUPLICATE
 heading, and marking an entry resolved in the repo's `~~strikethrough~~ (RESOLVED date)`
 convention is not expressible through the CLI at all.
 
