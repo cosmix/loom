@@ -6,6 +6,12 @@ use anyhow::{bail, Result};
 use colored::Colorize;
 use std::path::Path;
 
+use crate::context::graph_store::GraphStore;
+use crate::context::local_overlay::local_overlay_key;
+use crate::context::refresh::{reconcile_source_graph, SourceGraphScope, SOURCE_GRAPH_PREFIX};
+use crate::context::store::ContextStore;
+use crate::fs::work_dir::WorkDir;
+use crate::git::runner::run_git_checked;
 use crate::git::{get_uncommitted_changes_summary, has_uncommitted_changes};
 
 /// Ensure the repository is ready for Loom's git worktree operations.
@@ -73,6 +79,121 @@ pub fn advisory_codex_lane_preflight(repo_root: &Path) {
             }
         }
     }
+}
+
+/// Advisory source-graph preflight - never aborts startup.
+///
+/// Publishes the immutable base source-graph layer for HEAD when none exists
+/// yet, so the graph is there before the first stage session is ever briefed
+/// rather than only after the first merge. SILENT on the common path (a base
+/// for HEAD already exists); every failure degrades to one advisory line.
+///
+/// `allow_overlay_fallback` decides what happens when the base publish is
+/// refused because the tracked tree is dirty. Both `loom run` paths pass
+/// false: they have already bailed on a dirty tree, and a run needs a base.
+/// `loom init` passes true - it is commonly the first command run in a dirty
+/// checkout, where publishing nothing would leave it with no graph at all - and
+/// falls back to the working-tree overlay at the address `local_overlay_key`
+/// owns, which is the same address retrieval reads by default.
+///
+/// The [`SOURCE_GRAPH_PREFIX`] on every advisory line here is a convention
+/// introduced with this function (shared with `loom knowledge sync`), because
+/// this codebase had no shared advisory marker: `advisory_codex_lane_preflight`
+/// prints bare text and `foreground.rs` uses a literal "Warning: ".
+pub fn advisory_source_graph_preflight(
+    repo_root: &Path,
+    work_dir: &WorkDir,
+    allow_overlay_fallback: bool,
+) {
+    if let Err(error) = publish_source_graph(repo_root, work_dir, allow_overlay_fallback) {
+        eprintln!("{SOURCE_GRAPH_PREFIX}not published ({error:#})");
+    }
+}
+
+/// The fallible half of [`advisory_source_graph_preflight`]. Every error is
+/// swallowed by the caller; nothing here may abort startup.
+fn publish_source_graph(
+    repo_root: &Path,
+    work_dir: &WorkDir,
+    allow_overlay_fallback: bool,
+) -> Result<()> {
+    let store = ContextStore::open(work_dir)?;
+    // Idempotent, and required: without it the very first publish on a fresh
+    // checkout fails on a missing cache directory.
+    store.ensure()?;
+    let graph_store = GraphStore::new(store.root(), work_dir.root());
+    let head = run_git_checked(&["rev-parse", "HEAD"], repo_root)?;
+
+    if graph_store.load_base(&head)?.is_some() {
+        return Ok(());
+    }
+
+    let base = reconcile_source_graph(
+        &store,
+        &graph_store,
+        repo_root,
+        SourceGraphScope::Base {
+            revision: head.clone(),
+        },
+    )?;
+    // `reconcile_source_graph` degrades rather than erroring: a refusal comes
+    // back as a stale, zero-count freshness carrying the reason.
+    if !base.freshness.stale {
+        println!(
+            "{} Source graph published for {}",
+            "✓".green().bold(),
+            head.get(..8).unwrap_or(&head)
+        );
+        return Ok(());
+    }
+
+    let refusal = base
+        .freshness
+        .detail
+        .unwrap_or_else(|| "unknown reason".to_string());
+    if !allow_overlay_fallback {
+        eprintln!("{SOURCE_GRAPH_PREFIX}base not published - {refusal}");
+        return Ok(());
+    }
+
+    publish_source_graph_overlay(&store, &graph_store, repo_root, work_dir, &refusal)
+}
+
+fn publish_source_graph_overlay(
+    store: &ContextStore,
+    graph_store: &GraphStore,
+    repo_root: &Path,
+    work_dir: &WorkDir,
+    refusal: &str,
+) -> Result<()> {
+    // The overlay address is keyed on the project root's final path component
+    // (see `local_overlay_stage_name`), so it depends on how the path is
+    // SPELLED, not on which directory it identifies: an absolute repo_root and
+    // a relative "." name the same directory but key to different addresses.
+    // Every reader (`loom map`, `loom knowledge sync`/`context`) builds its
+    // `WorkDir` from "." and derives the address from `WorkDir::project_root()`
+    // - a relative ".". The writer must derive the same address the same way,
+    // or it publishes to a location no reader ever looks at. Do not
+    // "simplify" this back to `repo_root`.
+    let project_root = work_dir.project_root().unwrap_or(repo_root);
+    let (plan, stage) = local_overlay_key(project_root);
+    let overlay = reconcile_source_graph(
+        store,
+        graph_store,
+        repo_root,
+        SourceGraphScope::Overlay {
+            plan: plan.clone(),
+            stage: stage.clone(),
+        },
+    )?;
+    println!(
+        "{} Source graph written to working-tree overlay {plan}/{stage} ({} files, {} nodes)",
+        "✓".green().bold(),
+        overlay.files_extracted,
+        overlay.nodes
+    );
+    eprintln!("{SOURCE_GRAPH_PREFIX}base not published - {refusal}");
+    Ok(())
 }
 
 fn print_repo_bootstrap(result: crate::git::RepoBootstrapResult) {
