@@ -3,6 +3,7 @@
 //! Spawns sessions in native terminal windows (kitty, alacritty, etc.)
 //! using xdg-terminal-exec or fallback detection.
 
+mod capsule;
 mod detection;
 mod launch;
 mod pid_guard;
@@ -15,13 +16,14 @@ use anyhow::Result;
 use shell_escape::escape;
 use std::borrow::Cow;
 use std::path::{Path, PathBuf};
-use std::sync::OnceLock;
 
 use crate::models::session::{Session, SessionType};
 use crate::models::stage::Stage;
 use crate::models::worktree::Worktree;
 use crate::remote_control::RemoteControlInvocation;
 
+// Re-exported so `super::session_capsule(...)` keeps resolving from `launch`.
+pub(crate) use capsule::{session_capsule, SessionCapsule};
 pub use detection::detect_terminal;
 pub(crate) use launch::prepare_session_launch;
 pub(crate) use pid_guard::{
@@ -34,108 +36,6 @@ pub use window_ops::{close_window_by_title, window_exists_by_title};
 #[cfg(target_os = "macos")]
 pub use window_ops::{close_window_by_title_for_terminal, window_exists_by_title_for_terminal};
 pub use wrapper::create_wrapper_script;
-
-/// The configuration a loom-spawned session is pinned to, expressed as
-/// `claude` CLI flags rather than trusted to ambient settings discovery.
-///
-/// `user,project` drops only the `local` scope: Claude Code applies the main
-/// repository's `.claude/settings.local.json` to sessions running in linked
-/// worktrees, which is the actual cross-repository leak. Pinning loom's
-/// generated local file explicitly via `--settings` and dropping `local`
-/// closes that leak while keeping the repository's committed
-/// `.claude/settings.json` policy in force.
-///
-/// `user` is deliberately RETAINED, not dropped alongside `local`:
-/// `--setting-sources project` alone would also silence
-/// `~/.claude/settings.json`, which breaks a user-scope codex plugin install
-/// (`doc/loom/knowledge/architecture/codex-plugin.md` recommends `--scope
-/// user`, and its documented install command defaults to it) and
-/// `apiKeyHelper`-based authentication, plus any user `env`, model
-/// selection, statusline, or user-authored hooks. None of that is loom's to
-/// take away.
-#[derive(Debug, Default, Clone, PartialEq, Eq)]
-pub(crate) struct SessionCapsule {
-    /// `--settings <path>`: the settings file loom generated for this session.
-    pub settings_path: Option<String>,
-    /// `--setting-sources <list>`: which settings scopes may load at all.
-    pub setting_sources: Option<String>,
-    /// `--strict-mcp-config`: load no MCP servers other than those passed on
-    /// the command line (loom passes none).
-    pub strict_mcp_config: bool,
-}
-
-fn probed_capsule_support(claude_path: &Path) -> (bool, bool, bool) {
-    static CACHE: OnceLock<(bool, bool, bool)> = OnceLock::new();
-    *CACHE.get_or_init(|| {
-        let output = match std::process::Command::new(claude_path)
-            .arg("--help")
-            .output()
-        {
-            Ok(output) if output.status.success() => output,
-            Ok(_) | Err(_) => return (false, false, false),
-        };
-        let help = String::from_utf8_lossy(&output.stdout);
-        (
-            help.contains("--settings"),
-            help.contains("--setting-sources"),
-            help.contains("--strict-mcp-config"),
-        )
-    })
-}
-
-/// Assemble a [`SessionCapsule`] from already-resolved probe/filesystem
-/// facts. Pure and total, so the security-critical interlock below is
-/// directly unit-testable without a subprocess `--help` probe or a real
-/// filesystem (see `native/tests.rs`).
-///
-/// The interlock: `setting_sources` is `Some` ONLY when `settings_path` is
-/// also `Some`. Emitting `--setting-sources` without `--settings` would
-/// strip the session's entire sandbox block, permission rules and hooks —
-/// `--setting-sources user,project` on its own says nothing about WHICH
-/// file loom generated, so the settings-scoped flag must never be emitted
-/// unless the settings-path flag is emitted alongside it.
-fn capsule_from(
-    settings_supported: bool,
-    sources_supported: bool,
-    strict_supported: bool,
-    settings_file: Option<String>,
-) -> SessionCapsule {
-    let settings_path = settings_file.filter(|_| settings_supported);
-
-    // `user,project` drops only the local scope, which leaks the main
-    // repository's settings.local.json into linked worktrees. `user` is
-    // deliberately retained (see the `SessionCapsule` doc comment). Narrowing
-    // is safe only when `--settings` explicitly pins loom's generated local
-    // file; otherwise it would strip the sandbox block, permission rules,
-    // and hooks entirely.
-    let setting_sources =
-        (sources_supported && settings_path.is_some()).then(|| "user,project".to_string());
-
-    SessionCapsule {
-        settings_path,
-        setting_sources,
-        strict_mcp_config: strict_supported,
-    }
-}
-
-/// Build the capsule for a session whose working directory is `cwd`.
-pub(crate) fn session_capsule(claude_path: &Path, cwd: &Path) -> SessionCapsule {
-    let (settings_supported, setting_sources_supported, strict_mcp_supported) =
-        probed_capsule_support(claude_path);
-
-    let settings_file = cwd.join(".claude").join("settings.local.json");
-    let settings_file = settings_file
-        .is_file()
-        .then(|| settings_file.to_str().map(str::to_owned))
-        .flatten();
-
-    capsule_from(
-        settings_supported,
-        setting_sources_supported,
-        strict_mcp_supported,
-        settings_file,
-    )
-}
 
 fn close_window_for_terminal(title: &str, terminal: &super::emulator::TerminalEmulator) -> bool {
     #[cfg(target_os = "macos")]
@@ -241,6 +141,12 @@ pub(crate) fn build_claude_command(
     }
     if capsule.strict_mcp_config {
         capsule_flags.push_str(" --strict-mcp-config");
+    }
+    if let Some(path) = &capsule.append_system_prompt_file {
+        capsule_flags.push_str(&format!(
+            " --append-system-prompt-file {}",
+            escape(Cow::Borrowed(path.as_str()))
+        ));
     }
     let remote_control_flag = match remote_control {
         RemoteControlInvocation::Disabled => String::new(),
@@ -483,15 +389,10 @@ impl NativeBackend {
 }
 
 #[cfg(test)]
-pub(crate) fn write_test_pid_identity(work_dir: &Path, session: &Session, pid: u32) -> Result<()> {
-    let (_, pid_key) = NativeBackend::window_title_and_pid_key(session)
-        .ok_or_else(|| anyhow::anyhow!("test session has no process tracking key"))?;
-    let identity = crate::process::ProcessIdentity {
-        pid,
-        start_time: crate::process::process_start_time(pid),
-    };
-    pid_tracking::write_pid_entry(work_dir, &pid_key, identity)
-}
-
-#[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tests_capsule;
+// Sibling test modules across the crate reach this helper as
+// `native::write_test_pid_identity`; the re-export keeps that path stable.
+#[cfg(test)]
+pub(crate) use tests::write_test_pid_identity;

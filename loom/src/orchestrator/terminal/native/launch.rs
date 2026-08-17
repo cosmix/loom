@@ -36,6 +36,54 @@ fn remote_control_session_name(kind: SessionType, stage: &Stage) -> String {
     }
 }
 
+/// Whether `.work/config.toml`'s `[context]` table has `prompt_cache_split =
+/// true`. Defaults to `false`: the split ships DISABLED by default (no env
+/// var, no heuristic) — only this explicit config key turns it on.
+fn prompt_cache_split_enabled(work_dir: &Path) -> bool {
+    let Ok(Some(mut config)) = crate::fs::work_dir::load_config(work_dir) else {
+        return false;
+    };
+    config
+        .as_toml_mut()
+        .get("context")
+        .and_then(|table| table.get("prompt_cache_split"))
+        .and_then(|value| value.as_bool())
+        .unwrap_or(false)
+}
+
+/// Resolve the path to hand `claude` via `--append-system-prompt-file`, or
+/// `None` when the split is off (the default) or the prefix file could not be
+/// written.
+///
+/// Enabled, this writes the stage's stable prefix
+/// ([`crate::orchestrator::signals::stable_prefix_for`]) to
+/// `<work_dir>/signals/prefix/<stage-id>.md` and returns that path, so the
+/// immutable half of the signal is handed over as its own cacheable unit
+/// instead of being re-sent behind the volatile half on every turn. The file
+/// carries the Rule 5 subagent-safety preamble verbatim — it is the same
+/// string the signal's stable section renders, never an approximation of it.
+///
+/// Every failure degrades to `None`, which produces exactly the command line
+/// the split-off default produces: this is an optimisation, and a failed
+/// optimisation must never fail the spawn.
+fn resolve_prompt_cache_split_prefix_file(work_dir: &Path, stage: &Stage) -> Option<String> {
+    if !prompt_cache_split_enabled(work_dir) {
+        return None;
+    }
+    let prefix_dir = work_dir.join("signals").join("prefix");
+    if let Err(error) = std::fs::create_dir_all(&prefix_dir) {
+        tracing::debug!(stage_id = %stage.id, %error, "could not create the prefix directory; launching without the prompt-cache split");
+        return None;
+    }
+    let prefix_file = prefix_dir.join(format!("{}.md", stage.id));
+    let prefix = crate::orchestrator::signals::stable_prefix_for(stage.stage_type);
+    if let Err(error) = crate::fs::locking::locked_write(&prefix_file, &prefix) {
+        tracing::debug!(stage_id = %stage.id, %error, "could not write the stable prefix; launching without the prompt-cache split");
+        return None;
+    }
+    Some(prefix_file.to_str()?.to_string())
+}
+
 /// Prepare everything needed to launch a session, short of actually starting
 /// the terminal/tmux process.
 ///
@@ -140,13 +188,13 @@ pub(crate) fn prepare_session_launch(
         )
         .permission_mode
     };
-
     // Find claude's absolute path (needed for macOS where terminals don't inherit PATH).
     // build_claude_command shell-escapes the path, model, effort, and mode (S-3).
     let claude_path = find_claude_path()?;
     let rc_name = remote_control_session_name(kind, stage);
     let remote_control = crate::remote_control::resolve_invocation(work_dir, &rc_name);
-    let capsule = super::session_capsule(&claude_path, cwd);
+    let append_system_prompt_file = resolve_prompt_cache_split_prefix_file(work_dir, stage);
+    let capsule = super::session_capsule(&claude_path, cwd, append_system_prompt_file);
     let claude_cmd = super::build_claude_command(
         &claude_path.display().to_string(),
         model,
@@ -178,68 +226,5 @@ pub(crate) fn prepare_session_launch(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn stage_named(id: &str, name: &str) -> Stage {
-        Stage {
-            id: id.to_string(),
-            name: name.to_string(),
-            ..Stage::default()
-        }
-    }
-
-    #[test]
-    fn remote_control_session_name_stage_uses_bare_name() {
-        let stage = stage_named("my-stage", "My Stage");
-        assert_eq!(
-            remote_control_session_name(SessionType::Stage, &stage),
-            "My Stage"
-        );
-    }
-
-    #[test]
-    fn remote_control_session_name_merge_is_prefixed() {
-        let stage = stage_named("my-stage", "My Stage");
-        assert_eq!(
-            remote_control_session_name(SessionType::Merge, &stage),
-            "Merge: My Stage"
-        );
-    }
-
-    #[test]
-    fn remote_control_session_name_base_conflict_is_prefixed() {
-        let stage = stage_named("my-stage", "My Stage");
-        assert_eq!(
-            remote_control_session_name(SessionType::BaseConflict, &stage),
-            "Base conflict: My Stage"
-        );
-    }
-
-    #[test]
-    fn remote_control_session_name_knowledge_is_prefixed() {
-        let stage = stage_named("my-stage", "My Stage");
-        assert_eq!(
-            remote_control_session_name(SessionType::Knowledge, &stage),
-            "Knowledge: My Stage"
-        );
-    }
-
-    #[test]
-    fn remote_control_session_name_falls_back_to_stage_id_when_name_empty() {
-        let stage = stage_named("my-stage", "   ");
-        assert_eq!(
-            remote_control_session_name(SessionType::Stage, &stage),
-            "my-stage"
-        );
-    }
-
-    #[test]
-    fn remote_control_session_name_handles_fully_empty_stage() {
-        let stage = Stage::default();
-        assert_eq!(
-            remote_control_session_name(SessionType::Merge, &stage),
-            "Merge: "
-        );
-    }
-}
+#[path = "tests_launch.rs"]
+mod tests;
