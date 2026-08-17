@@ -181,11 +181,11 @@ fn pack_at_200_tokens_never_exceeds_200() -> anyhow::Result<()> {
     let ranked = rank(&query, &catalog.chunks, Channel::Knowledge);
     let fused = fuse(&[ranked]);
 
-    let packed = pack(&pack_request("locking", 200), &fused, &catalog.chunks);
+    let packed = pack(&pack_request("locking", 200), &fused, &catalog.chunks, None);
     assert!(packed.estimated_tokens <= 200);
     assert!(packed.within_budget());
 
-    let empty = pack(&pack_request("locking", 0), &fused, &catalog.chunks);
+    let empty = pack(&pack_request("locking", 0), &fused, &catalog.chunks, None);
     assert!(empty.items.is_empty());
     Ok(())
 }
@@ -201,7 +201,12 @@ fn every_pack_reports_omissions_and_coverage() -> anyhow::Result<()> {
     let fused = fuse(&[ranked]);
 
     for budget in [0, 50, 200, 100_000] {
-        let packed = pack(&pack_request("locking", budget), &fused, &catalog.chunks);
+        let packed = pack(
+            &pack_request("locking", budget),
+            &fused,
+            &catalog.chunks,
+            None,
+        );
         assert_eq!(
             packed.omitted.coverage.included + packed.omitted.omitted,
             packed.omitted.coverage.candidates
