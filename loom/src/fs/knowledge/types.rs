@@ -11,8 +11,8 @@ pub const INDEX_FILENAME: &str = "INDEX.md";
 /// `Legacy` is the flat layout every existing loom project already has on disk:
 /// the seven tier-1 files and nothing else. `Hierarchical` adds the generated
 /// `INDEX.md` (tier 0) and per-category tier-2 topic directories. Legacy
-/// directories keep working unchanged — migration is opt-in via
-/// `loom knowledge index` or `loom knowledge gc`.
+/// directories keep working unchanged — migration is opt-in via `loom
+/// knowledge sync`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum KnowledgeLayout {
     /// Flat: tier-1 files only, no generated `INDEX.md`.

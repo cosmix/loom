@@ -1,6 +1,5 @@
 //! Knowledge directory manager.
 
-use super::gc::{analyze_gc_metrics, GcMetrics};
 use super::index::{self, TopicEntry};
 use super::summary;
 use super::templates;
@@ -20,6 +19,16 @@ impl KnowledgeDir {
     pub fn new<P: AsRef<Path>>(project_root: P) -> Self {
         Self {
             root: project_root.as_ref().join("doc/loom/knowledge"),
+        }
+    }
+
+    /// Wrap an existing knowledge directory (the path [`KnowledgeDir::root`]
+    /// returns), rather than deriving it from a project root. Callers that have
+    /// already resolved the tree — `loom knowledge sync`, retrieval — must not
+    /// have to re-derive `doc/loom/knowledge` and risk disagreeing about it.
+    pub fn from_root<P: Into<PathBuf>>(knowledge_root: P) -> Self {
+        Self {
+            root: knowledge_root.into(),
         }
     }
 
@@ -69,8 +78,8 @@ impl KnowledgeDir {
     /// A directory created here starts **hierarchical**: `INDEX.md` is written
     /// so new projects get the tiered layout from `loom init` onward. An
     /// existing directory is never given an index — a flat knowledge dir that
-    /// predates the hierarchy stays flat until the user opts in with
-    /// `loom knowledge index` or `loom knowledge gc`.
+    /// predates the hierarchy stays flat until the user opts in with `loom
+    /// knowledge sync`.
     pub fn initialize(&self) -> Result<()> {
         let fresh = !self.root.exists();
         if fresh {
@@ -265,12 +274,13 @@ impl KnowledgeDir {
     /// already committed, so returning an error here would make a successful
     /// `loom knowledge update` exit non-zero, and an agent's natural response —
     /// re-running the command — would append the same block twice. The index is
-    /// derived state; `loom knowledge index` rebuilds it.
+    /// derived state; the next knowledge write, or `loom knowledge sync`,
+    /// rebuilds it.
     fn refresh_index_if_hierarchical(&self) {
         if self.layout() == KnowledgeLayout::Hierarchical {
             if let Err(e) = self.write_index() {
                 eprintln!("warning: failed to refresh {INDEX_FILENAME}: {e:#}");
-                eprintln!("         the content was written; run `loom knowledge index` to rebuild the index");
+                eprintln!("         the content was written; the next knowledge write, or `loom knowledge sync`, rebuilds the index");
             }
         }
     }
@@ -290,15 +300,6 @@ impl KnowledgeDir {
             }
         }
         Ok(files)
-    }
-
-    /// Analyze GC metrics for knowledge files
-    pub fn analyze_gc_metrics(
-        &self,
-        max_tier1_lines: usize,
-        max_topic_lines: usize,
-    ) -> Result<GcMetrics> {
-        analyze_gc_metrics(&self.root, max_tier1_lines, max_topic_lines)
     }
 }
 

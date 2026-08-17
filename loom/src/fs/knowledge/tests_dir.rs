@@ -251,9 +251,8 @@ fn test_append_target_refreshes_index_only_when_hierarchical() {
 #[test]
 fn test_initialize_creates_index_for_fresh_dir() {
     // A brand-new knowledge dir starts hierarchical, so every entry point that
-    // calls initialize() (`loom init`, `loom map`, bootstrap, implicit init on
-    // `knowledge update`) produces the tiered layout — not just
-    // `loom knowledge init`.
+    // calls initialize() (`loom init`, and the implicit init on
+    // `loom knowledge update`) produces the tiered layout.
     let temp = TempDir::new().unwrap();
     let knowledge = KnowledgeDir::new(temp.path());
     knowledge.initialize().unwrap();

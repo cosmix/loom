@@ -610,10 +610,10 @@ fn test_preflight_warns_on_loom_knowledge_context_acceptance() {
 }
 
 #[test]
-fn test_preflight_no_warning_for_loom_knowledge_check_acceptance() {
+fn test_preflight_no_warning_for_loom_knowledge_sync_acceptance() {
     let mut stage = make_stage("stage-1", "Stage One");
     stage.acceptance = vec![AcceptanceCriterion::Simple(
-        "loom knowledge check --min-coverage 50".to_string(),
+        "loom knowledge sync --json".to_string(),
     )];
     stage.artifacts = vec!["README.md".to_string()];
 
