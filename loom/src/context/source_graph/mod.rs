@@ -1,8 +1,12 @@
-//! Types for the derived source graph — the second retrieval channel.
+//! Types for the derived source graph.
 //!
-//! The source-graph extractors populate these; `crate::context` retrieval only
-//! ever reads them. They live here rather than in [`crate::context::schema`]
-//! because the graph is a distinct domain from the knowledge corpus.
+//! The source-graph extractors populate these, and `crate::commands::map`
+//! consumes them (via `crate::context::graph_store`) to render `loom map`.
+//! The retrieval pipeline does not read them yet: `Channel::Source` exists in
+//! the ranker's channel enum but ranks over an empty slice, because bridging
+//! the graph's nodes into `rank` is a separate piece of work that has not been
+//! built. They live here rather than in [`crate::context::schema`] because the
+//! graph is a distinct domain from the knowledge corpus.
 //!
 //! [`crate::context::schema`] re-exports the public names, so callers may reach
 //! them through either path.
