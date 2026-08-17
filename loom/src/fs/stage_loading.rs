@@ -1,13 +1,13 @@
 //! Shared utilities for loading stage definitions from .work/stages/ files.
 //!
 //! On-disk `.work/stages/*.md` files carry a full serialized
-//! [`Stage`](crate::models::stage::Stage) in their YAML frontmatter (written by
+//! [`Stage`] in their YAML frontmatter (written by
 //! `serialize_stage_to_markdown`), including runtime-only keys `StageDefinition`
 //! does not declare (`status`, `created_at`, `merged`, `fix_attempts`,
 //! `resolved_base`, `session`, `worktree`, …). `StageDefinition` is
 //! `#[serde(deny_unknown_fields)]`, so it cannot deserialize that frontmatter
 //! directly — we parse it as a `Stage` instead and project it down to a
-//! `StageDefinition` via [`definition_from_stage`], the exact inverse of
+//! `StageDefinition` via `definition_from_stage`, the exact inverse of
 //! [`Stage::from_definition`](crate::models::stage::Stage::from_definition).
 //! `StageDefinition` keeps `deny_unknown_fields` for parsing *plan* YAML, where
 //! an unknown key is almost always a typo the plan author should see at
@@ -30,7 +30,7 @@ use crate::validation::validate_id;
 ///
 /// Stage files hold a full serialized [`Stage`], not a `StageDefinition`, so
 /// the frontmatter is parsed as a `Stage` first and then projected down via
-/// [`definition_from_stage`].
+/// `definition_from_stage`.
 pub fn extract_stage_definition(content: &str) -> Result<StageDefinition> {
     let stage: Stage = parse_from_markdown(content, "Stage")?;
     Ok(definition_from_stage(&stage))
