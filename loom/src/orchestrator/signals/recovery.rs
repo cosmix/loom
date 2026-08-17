@@ -23,14 +23,29 @@ pub fn generate_recovery_signal(
 ) -> Result<PathBuf> {
     // Build embedded context including any available handoff
     let handoff_file = find_latest_handoff_for_stage(work_dir, &content.stage_id);
-    let embedded_context = build_embedded_context_with_stage(
+    let mut embedded_context = build_embedded_context_with_stage(
         work_dir,
         handoff_file.as_deref(),
         Some(&content.stage_id),
     );
 
+    // The shared context builder takes a stage ID, not a `Stage`, so it cannot
+    // build the retrieval query and leaves `context_pack` empty. Populate it
+    // HERE, the one place on this path that holds the `Stage` — without it the
+    // brief's `if let Some(pack)` in `format_recovery_signal` is dead code and
+    // every recovery signal tells the agent to "read the Knowledge Brief first"
+    // while carrying no brief at all. Retrieval still degrades to `None` on
+    // failure: a retry must never fail because a brief could not be built.
+    embedded_context.context_pack = super::helpers::retrieve_stage_pack(work_dir, stage);
+    embedded_context.knowledge_tree_empty = super::helpers::knowledge_tree_is_empty(work_dir);
+
     let signal_content = format_recovery_signal(content, stage, &embedded_context);
 
+    // Same contract as both fresh-spawn paths (`generate.rs`): the delivery
+    // record goes down BEFORE the signal that quotes it, so a resumed session
+    // that WAS briefed is never reported as `ContextUnavailable` and the prompt
+    // hook does not re-deliver what this signal already carries.
+    super::helpers::persist_delivery(work_dir, stage, &content.session_id, &embedded_context);
     super::helpers::write_signal_file(&content.session_id, &signal_content, work_dir)
 }
 

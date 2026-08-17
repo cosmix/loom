@@ -29,8 +29,20 @@ pub struct EmbeddedContext {
     pub parsed_handoff: Option<HandoffV2>,
     /// Plan overview extracted from the plan file
     pub plan_overview: Option<String>,
-    /// Whether the knowledge directory has meaningful content
-    pub knowledge_has_content: bool,
+    /// The retrieved brief for this stage, when retrieval succeeded and selected
+    /// anything. `None` means the signal carries no brief — never a silent empty
+    /// section.
+    pub context_pack: Option<crate::context::schema::ContextPack>,
+    /// Whether the project's `doc/loom/knowledge/` tree holds no real content,
+    /// resolved once where the context is built.
+    ///
+    /// Deliberately distinct from `context_pack`: a `None` pack only says THIS
+    /// stage's retrieval selected nothing, which also happens when retrieval
+    /// merely degrades, so it can never gate the "KNOWLEDGE BASE IS EMPTY" box
+    /// without telling an agent with a fully populated tree to go document a
+    /// codebase that is already documented. Defaults to `false` — never claim
+    /// emptiness that was not established.
+    pub knowledge_tree_empty: bool,
     /// Recent memory entries for recitation (Manus pattern - keeps context in attention)
     pub memory_content: Option<String>,
     /// Skill recommendations based on stage description matching

@@ -10,8 +10,9 @@ use crate::models::session::Session;
 use crate::models::stage::Stage;
 
 use super::cache::generate_knowledge_stable_prefix;
-use super::format::extract_tasks_from_description;
+use super::format::{extract_tasks_from_description, format_knowledge_brief};
 use super::generate::build_embedded_context_for_stage;
+use super::retrieval::STAGE_QUERY_INPUTS;
 use super::types::DependencyStatus;
 
 /// Generate a signal file for a knowledge stage
@@ -29,7 +30,14 @@ pub fn generate_knowledge_signal(
     handoff_file: Option<&str>,
 ) -> Result<PathBuf> {
     // Build embedded context
-    let embedded_context = build_embedded_context_for_stage(work_dir, handoff_file, &stage.id);
+    let mut embedded_context = build_embedded_context_for_stage(work_dir, handoff_file, &stage.id);
+
+    // A knowledge stage is the one stage told to BACKFILL gaps and retire stale
+    // entries, so what the tree already holds is exactly its input — and its
+    // stable prefix promises a Knowledge Brief like every other prefix. Retrieve
+    // it here (an empty tree simply selects nothing and emits no section).
+    embedded_context.context_pack = super::helpers::retrieve_stage_pack(work_dir, stage);
+    embedded_context.knowledge_tree_empty = super::helpers::knowledge_tree_is_empty(work_dir);
 
     let content = format_knowledge_signal_content(
         session,
@@ -39,6 +47,9 @@ pub fn generate_knowledge_signal(
         &embedded_context,
     );
 
+    // Record before writing, as both spawn paths in `generate.rs` do: a session
+    // that was briefed must never read back as having received nothing.
+    super::helpers::persist_delivery(work_dir, stage, &session.id, &embedded_context);
     super::helpers::write_signal_file(&session.id, &content, work_dir)
 }
 
@@ -57,6 +68,13 @@ fn format_knowledge_signal_content(
 
     // Knowledge-specific stable prefix
     content.push_str(&generate_knowledge_stable_prefix());
+
+    // The brief the prefix just promised ("your signal carries a Knowledge
+    // Brief — read it first"). Placed directly after the prefix so it sits
+    // where the semi-stable section puts it on every other signal path.
+    if let Some(pack) = &embedded_context.context_pack {
+        content.push_str(&format_knowledge_brief(pack, &stage.id, STAGE_QUERY_INPUTS));
+    }
 
     // Target section
     content.push_str(&super::helpers::format_knowledge_target_section(
@@ -91,7 +109,39 @@ fn format_knowledge_signal_content(
         content.push('\n');
     }
 
-    // Acceptance Criteria
+    // Acceptance Criteria and Files to Explore
+    content.push_str(&format_knowledge_criteria_and_files(stage));
+
+    // Immediate tasks
+    content.push_str("## Immediate Tasks\n\n");
+    let tasks = extract_tasks_from_stage(stage);
+    if tasks.is_empty() {
+        content.push_str("1. Explore the codebase starting from entry points\n");
+        content
+            .push_str("2. Document key architectural patterns in doc/loom/knowledge/patterns.md\n");
+        content.push_str("3. Document coding conventions in doc/loom/knowledge/conventions.md\n");
+        content.push_str("4. Verify acceptance criteria are met\n");
+        content.push_str(&format!("5. Run `loom stage complete {}`\n", stage.id));
+    } else {
+        for (i, task) in tasks.iter().enumerate() {
+            content.push_str(&format!("{}. {task}\n", i + 1));
+        }
+    }
+    content.push('\n');
+
+    content
+}
+
+/// Format the "## Acceptance Criteria" and "## Files to Explore" sections
+/// shared by knowledge-stage signals.
+///
+/// Extracted out of `format_knowledge_signal_content` to keep that function
+/// under the file's line budget: the two sections are always emitted
+/// together, right after Dependencies Status, so they read as one cohesive
+/// unit rather than two unrelated pieces split apart for their own sake.
+fn format_knowledge_criteria_and_files(stage: &Stage) -> String {
+    let mut content = String::new();
+
     content.push_str("## Acceptance Criteria\n\n");
     if stage.acceptance.is_empty() {
         content.push_str("- [ ] Knowledge files populated in doc/loom/knowledge/\n");
@@ -113,23 +163,6 @@ fn format_knowledge_signal_content(
         }
         content.push('\n');
     }
-
-    // Immediate tasks
-    content.push_str("## Immediate Tasks\n\n");
-    let tasks = extract_tasks_from_stage(stage);
-    if tasks.is_empty() {
-        content.push_str("1. Explore the codebase starting from entry points\n");
-        content
-            .push_str("2. Document key architectural patterns in doc/loom/knowledge/patterns.md\n");
-        content.push_str("3. Document coding conventions in doc/loom/knowledge/conventions.md\n");
-        content.push_str("4. Verify acceptance criteria are met\n");
-        content.push_str(&format!("5. Run `loom stage complete {}`\n", stage.id));
-    } else {
-        for (i, task) in tasks.iter().enumerate() {
-            content.push_str(&format!("{}. {task}\n", i + 1));
-        }
-    }
-    content.push('\n');
 
     content
 }

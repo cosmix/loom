@@ -8,7 +8,51 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use crate::models::stage::Stage;
+// Retrieval/delivery glue (knowledge-brief lookup and its persistence record)
+// lives in the `retrieval` sibling module; re-exported here so every existing
+// `helpers::` call site keeps working unchanged.
+pub(super) use super::retrieval::{
+    ensure_trailing_newline, knowledge_tree_is_empty, persist_delivery, retrieve_stage_pack,
+};
+
+// Markdown section formatters (Target / Execution Rules / Stage Context /
+// Conflicting Files / knowledge Target) live in the `section_formatters`
+// sibling module - a cohesive cluster of "render one outgoing signal
+// section" functions, split out to keep this grab-bag file under the line
+// budget. Re-exported here so every existing `helpers::format_*_section`
+// call site (merge.rs, merge_conflict.rs, knowledge.rs) keeps working
+// unchanged.
+pub(super) use super::section_formatters::{
+    format_conflicting_files_section, format_execution_rules_section,
+    format_knowledge_target_section, format_stage_context_section, format_target_section,
+};
+
+/// Render `body` as one complete markdown list item opened by `marker`.
+///
+/// Every line after the first is indented to the list's continuation column
+/// (the width of `marker`), so the item's later paragraphs stay INSIDE the
+/// item. Left at column 0 they close the list, and a following `2. ` then reads
+/// as lazy continuation text of that paragraph rather than as the second item —
+/// the ladder silently loses the numbering an agent is told to follow in order.
+///
+/// The item is blank-line terminated, so whatever the caller appends next
+/// starts a new item rather than continuing this one. Blank lines are emitted
+/// empty rather than as runs of trailing spaces.
+pub(super) fn as_list_item(marker: &str, body: &str) -> String {
+    let indent = " ".repeat(marker.chars().count());
+    let mut out = String::new();
+    for (index, line) in body.lines().enumerate() {
+        if index == 0 {
+            out.push_str(marker);
+        } else if !line.is_empty() {
+            out.push_str(&indent);
+        }
+        out.push_str(line);
+        out.push('\n');
+    }
+    out.push('\n');
+    out
+}
 
 /// Write a signal file to the signals directory, creating it if needed.
 ///
@@ -31,108 +75,6 @@ pub(super) fn write_signal_file(
         .with_context(|| format!("Failed to write signal file: {}", signal_path.display()))?;
 
     Ok(signal_path)
-}
-
-/// Format the "## Target" markdown section for conflict-type signals.
-///
-/// Shared across merge and merge-conflict signal generators.
-/// Standard stage signals have a more complex target section (with working_dir,
-/// execution path, etc.) and use their own formatter in `format/sections.rs`.
-pub(super) fn format_target_section(
-    session_id: &str,
-    stage_id: &str,
-    source_branch: Option<&str>,
-    target_branch: &str,
-) -> String {
-    let mut content = String::new();
-
-    content.push_str("## Target\n\n");
-    content.push_str(&format!("- **Session**: {session_id}\n"));
-    content.push_str(&format!("- **Stage**: {stage_id}\n"));
-    if let Some(branch) = source_branch {
-        content.push_str(&format!("- **Source Branch**: {branch}\n"));
-    }
-    content.push_str(&format!("- **Target Branch**: {target_branch}\n"));
-    content.push('\n');
-
-    content
-}
-
-/// Format the "## Execution Rules" section for conflict resolution signals.
-///
-/// The `preserve_intent` parameter controls the wording:
-/// - `"BOTH branches"` for merge and merge_conflict signals
-pub(super) fn format_execution_rules_section(preserve_intent: &str) -> String {
-    let mut content = String::new();
-
-    content.push_str("## Execution Rules\n\n");
-    content.push_str("Follow your `~/.claude/CLAUDE.md` rules. Key reminders:\n");
-    content.push_str("- **Do NOT modify code** beyond what's needed for conflict resolution\n");
-    content.push_str(&format!(
-        "- **Preserve intent from {preserve_intent}** where possible\n"
-    ));
-    content.push_str("- **Ask the user** if unclear how to resolve a conflict\n");
-    content.push_str("- **Use TodoWrite** to track resolution progress\n\n");
-
-    content
-}
-
-/// Format the "## Stage Context" section showing stage name and description.
-///
-/// Returns an empty string if the stage has no description.
-/// Shared across merge signal generators.
-pub(super) fn format_stage_context_section(stage: &Stage) -> String {
-    if let Some(desc) = &stage.description {
-        format!("## Stage Context\n\n**{}**: {}\n\n", stage.name, desc)
-    } else {
-        String::new()
-    }
-}
-
-/// Format the "## Conflicting Files" section as a bullet list of backtick-wrapped paths.
-///
-/// Shows a fallback message when no files are listed.
-/// Shared across merge and merge-conflict signal generators.
-pub(super) fn format_conflicting_files_section(files: &[String]) -> String {
-    let mut content = String::new();
-
-    content.push_str("## Conflicting Files\n\n");
-    if files.is_empty() {
-        content
-            .push_str("_No specific files listed - run `git status` to see current conflicts_\n");
-    } else {
-        for file in files {
-            content.push_str(&format!("- `{file}`\n"));
-        }
-    }
-    content.push('\n');
-
-    content
-}
-
-/// Format the "## Target" markdown section for knowledge stage signals.
-///
-/// Knowledge stages run in the main repo (no worktree / no source branch), so
-/// their Target section uses Type and Directory fields instead of branches.
-pub(super) fn format_knowledge_target_section(
-    session_id: &str,
-    stage_id: &str,
-    plan_id: Option<&str>,
-    repo_root: &str,
-) -> String {
-    let mut content = String::new();
-
-    content.push_str("## Target\n\n");
-    content.push_str(&format!("- **Session**: {session_id}\n"));
-    content.push_str(&format!("- **Stage**: {stage_id}\n"));
-    content.push_str("- **Type**: Knowledge (no worktree)\n");
-    if let Some(plan) = plan_id {
-        content.push_str(&format!("- **Plan**: {plan}\n"));
-    }
-    content.push_str(&format!("- **Directory**: {repo_root}\n"));
-    content.push('\n');
-
-    content
 }
 
 /// Parse markdown content into sections keyed by `## ` headers.
@@ -235,6 +177,23 @@ mod tests {
     use super::*;
 
     #[test]
+    fn as_list_item_indents_continuation_paragraphs_to_the_marker_width() {
+        let body = "First line.\n\nSecond paragraph.\n\n    indented code\n";
+        let rendered = as_list_item("1. ", body);
+
+        assert_eq!(
+            rendered,
+            "1. First line.\n\n   Second paragraph.\n\n       indented code\n\n"
+        );
+        // A following `2. ` must be the only line at column 0, or the list ends.
+        let stray = rendered
+            .lines()
+            .skip(1)
+            .find(|line| !line.is_empty() && !line.starts_with("   "));
+        assert!(stray.is_none(), "unindented continuation line: {stray:?}");
+    }
+
+    #[test]
     fn test_write_signal_file() {
         let tmp = tempfile::TempDir::new().unwrap();
         let work_dir = tmp.path();
@@ -254,68 +213,6 @@ mod tests {
 
         write_signal_file("session-456", "content", work_dir).unwrap();
         assert!(signals_dir.exists());
-    }
-
-    #[test]
-    fn test_format_target_section_with_source() {
-        let section = format_target_section("session-1", "stage-1", Some("loom/stage-1"), "main");
-        assert!(section.contains("## Target"));
-        assert!(section.contains("- **Session**: session-1"));
-        assert!(section.contains("- **Stage**: stage-1"));
-        assert!(section.contains("- **Source Branch**: loom/stage-1"));
-        assert!(section.contains("- **Target Branch**: main"));
-    }
-
-    #[test]
-    fn test_format_target_section_without_source() {
-        let section = format_target_section("session-1", "stage-1", None, "loom/_base/stage-1");
-        assert!(!section.contains("Source Branch"));
-        assert!(section.contains("- **Target Branch**: loom/_base/stage-1"));
-    }
-
-    #[test]
-    fn test_format_execution_rules_both() {
-        let rules = format_execution_rules_section("BOTH branches");
-        assert!(rules.contains("Preserve intent from BOTH branches"));
-        assert!(rules.contains("Do NOT modify code"));
-    }
-
-    #[test]
-    fn test_format_execution_rules_all() {
-        let rules = format_execution_rules_section("ALL branches");
-        assert!(rules.contains("Preserve intent from ALL branches"));
-    }
-
-    #[test]
-    fn test_format_stage_context_with_description() {
-        let mut stage = Stage::new("My Stage".to_string(), Some("Description here".to_string()));
-        stage.id = "my-stage".to_string();
-        let section = format_stage_context_section(&stage);
-        assert!(section.contains("## Stage Context"));
-        assert!(section.contains("**My Stage**: Description here"));
-    }
-
-    #[test]
-    fn test_format_stage_context_no_description() {
-        let mut stage = Stage::new("My Stage".to_string(), None);
-        stage.id = "my-stage".to_string();
-        let section = format_stage_context_section(&stage);
-        assert!(section.is_empty());
-    }
-
-    #[test]
-    fn test_format_conflicting_files() {
-        let files = vec!["src/main.rs".to_string(), "src/lib.rs".to_string()];
-        let section = format_conflicting_files_section(&files);
-        assert!(section.contains("## Conflicting Files"));
-        assert!(section.contains("- `src/main.rs`"));
-        assert!(section.contains("- `src/lib.rs`"));
-    }
-
-    #[test]
-    fn test_format_conflicting_files_empty() {
-        let section = format_conflicting_files_section(&[]);
-        assert!(section.contains("_No specific files listed"));
     }
 
     #[test]

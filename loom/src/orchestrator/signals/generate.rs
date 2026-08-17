@@ -2,7 +2,6 @@ use anyhow::Result;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use crate::fs::knowledge::KnowledgeDir;
 use crate::fs::memory::format_memory_for_signal;
 use crate::handoff::git_handoff::GitHistory;
 use crate::handoff::schema::ParsedHandoff;
@@ -120,9 +119,7 @@ pub fn generate_signal_with_skills(
         {
             content.push_str("\n## Adjudicator Feedback (from your prior dispute)\n\n");
             content.push_str(&text);
-            if !content.ends_with('\n') {
-                content.push('\n');
-            }
+            super::helpers::ensure_trailing_newline(&mut content);
         }
     }
 
@@ -135,12 +132,11 @@ pub fn generate_signal_with_skills(
             .and_then(render_review_dimensions)
         {
             content.push_str(&section);
-            if !content.ends_with('\n') {
-                content.push('\n');
-            }
+            super::helpers::ensure_trailing_newline(&mut content);
         }
     }
 
+    super::helpers::persist_delivery(work_dir, stage, &session.id, &embedded_context);
     super::helpers::write_signal_file(&session.id, &content, work_dir)
 }
 
@@ -257,11 +253,6 @@ pub fn build_embedded_context_with_stage_and_session(
 
     // Read plan overview from config.toml and the plan file
     context.plan_overview = read_plan_overview(work_dir);
-
-    // Check if knowledge directory has meaningful content
-    let project_root = work_dir.parent().unwrap_or(work_dir);
-    let knowledge = KnowledgeDir::new(project_root);
-    context.knowledge_has_content = knowledge.has_content();
 
     // Read recent memory entries for recitation (Manus pattern - last 10 entries)
     // This keeps important stage context in the attention window
@@ -386,6 +377,7 @@ pub fn generate_signal_with_metrics(
         &embedded_context,
     );
 
+    super::helpers::persist_delivery(work_dir, stage, &session.id, &embedded_context);
     let signal_path = super::helpers::write_signal_file(&session.id, &formatted.content, work_dir)?;
 
     Ok((signal_path, formatted.metrics))
@@ -585,12 +577,11 @@ fn build_signal_context(
         .or(Some(crate::models::constants::DEFAULT_CONTEXT_BUDGET));
 
     // Populate current context usage from session
-    let usage_pct = if session.context_limit > 0 {
+    embedded_context.context_usage = Some(if session.context_limit > 0 {
         (session.context_tokens as f32 / session.context_limit as f32) * 100.0
     } else {
         0.0
-    };
-    embedded_context.context_usage = Some(usage_pct);
+    });
 
     // Populate sandbox summary from stage config
     embedded_context.sandbox_summary = Some(build_sandbox_summary(stage));
@@ -616,6 +607,8 @@ fn build_signal_context(
         embedded_context.wiring_checklist = build_wiring_checklist(work_dir, stage);
     }
 
+    embedded_context.context_pack = super::helpers::retrieve_stage_pack(work_dir, stage);
+    embedded_context.knowledge_tree_empty = super::helpers::knowledge_tree_is_empty(work_dir);
     embedded_context
 }
 
