@@ -237,3 +237,112 @@ fn test_orchestrator_result_with_handoffs() {
 
     assert!(!result.is_success());
 }
+
+/// Run one git setup command with ambient global/system config neutralized, so
+/// a developer's or CI runner's `~/.gitconfig` cannot change test behaviour.
+fn run_git(root: &Path, args: &[&str]) {
+    let out = std::process::Command::new("git")
+        .args(args)
+        .current_dir(root)
+        .env("GIT_CONFIG_GLOBAL", root.join(".loom-test-no-global"))
+        .env("GIT_CONFIG_SYSTEM", root.join(".loom-test-no-system"))
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "git {args:?} failed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
+/// A temp git repo with one committed file and an initialised `.work/`, as the
+/// preflight expects to find.
+fn init_preflight_repo() -> TempDir {
+    let temp = TempDir::new().unwrap();
+    let root = temp.path();
+    run_git(root, &["init", "-b", "main"]);
+    run_git(root, &["config", "user.email", "t@t.com"]);
+    run_git(root, &["config", "user.name", "t"]);
+    fs::write(root.join("src.rs"), "fn main() {}\n").unwrap();
+    run_git(root, &["add", "src.rs"]);
+    run_git(root, &["commit", "-m", "seed"]);
+    fs::create_dir_all(root.join(".work")).unwrap();
+    temp
+}
+
+#[test]
+fn test_preflight_silent_when_base_exists() {
+    use crate::context::graph_store::{GraphLayer, GraphStore};
+    use crate::context::store::ContextStore;
+
+    let temp = init_preflight_repo();
+    let root = temp.path();
+    let work_dir = WorkDir::new(root).unwrap();
+    let store = ContextStore::open(&work_dir).unwrap();
+    store.ensure().unwrap();
+    let graph_store = GraphStore::new(store.root(), work_dir.root());
+
+    let head = String::from_utf8_lossy(
+        &std::process::Command::new("git")
+            .args(["rev-parse", "HEAD"])
+            .current_dir(root)
+            .output()
+            .unwrap()
+            .stdout,
+    )
+    .trim()
+    .to_string();
+
+    // A base already published for HEAD, plus a sentinel semantic revision in
+    // the store's state. A reconcile would overwrite that revision with HEAD
+    // (`persist_semantic_freshness`), so the sentinel surviving is what proves
+    // the preflight short-circuited instead of walking the tree.
+    graph_store
+        .publish_base(
+            &head,
+            &GraphLayer {
+                revision: head.clone(),
+                built_at: None,
+                files: Default::default(),
+            },
+        )
+        .unwrap();
+    store
+        .update_state(|state| state.semantic.revision = "sentinel-not-reconciled".to_string())
+        .unwrap();
+
+    super::checks::advisory_source_graph_preflight(root, &work_dir, false);
+
+    assert_eq!(
+        store.load_state().unwrap().semantic.revision,
+        "sentinel-not-reconciled",
+        "a base already published for HEAD must make the preflight a no-op; it reconciled instead"
+    );
+}
+
+/// STRUCTURAL guard, not an integration test, and deliberately so: both
+/// insertion points are free functions with side effects and no injectable
+/// seam, so the ordering cannot be observed at runtime without inventing one.
+/// Rather than write a test whose name claims an ordering it cannot check,
+/// this reads the two sources and pins the ordering textually.
+#[test]
+fn preflight_is_called_before_the_plan_rename_in_both_run_paths() {
+    for (label, source) in [
+        ("run/mod.rs", include_str!("mod.rs")),
+        ("run/foreground.rs", include_str!("foreground.rs")),
+    ] {
+        let preflight = source
+            .find("advisory_source_graph_preflight(")
+            .unwrap_or_else(|| panic!("{label} must call advisory_source_graph_preflight"));
+        let rename = source
+            .find("mark_plan_in_progress(")
+            .unwrap_or_else(|| panic!("{label} must call mark_plan_in_progress"));
+        assert!(
+            preflight < rename,
+            "{label}: the source-graph preflight must run BEFORE mark_plan_in_progress - the \
+             plan rename dirties a tracked file, and a base layer is refused on any dirty tree, \
+             so a publish after the rename is refused every time"
+        );
+    }
+}

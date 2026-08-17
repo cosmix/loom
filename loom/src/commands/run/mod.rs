@@ -3,7 +3,7 @@
 //! This module provides commands for running loom plans either in foreground
 //! (debugging) or background (daemon) mode.
 
-mod checks;
+pub(crate) mod checks;
 mod foreground;
 mod graph_loader;
 
@@ -92,6 +92,13 @@ fn prepare_background_run(backend: Option<String>) -> Result<WorkDir> {
 
     // Advisory Codex lane preflight — never aborts startup.
     checks::advisory_codex_lane_preflight(work_dir.root());
+
+    // Advisory source-graph preflight - never aborts startup. MUST stay above
+    // `mark_plan_in_progress`: that rename dirties a tracked file, and a base
+    // layer is refused on any dirty tree, so publishing after it never works.
+    // No overlay fallback here - `prepare_repo_for_run` already proved the tree
+    // is clean, and a run needs the base layer.
+    checks::advisory_source_graph_preflight(&repo_root, &work_dir, false);
 
     // Mark plan as in-progress when starting execution
     plan_lifecycle::mark_plan_in_progress(&work_dir)?;

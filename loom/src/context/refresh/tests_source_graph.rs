@@ -474,3 +474,188 @@ fn update_state_leaves_fields_the_closure_does_not_assign_untouched() {
         "update_state must not disturb a field the closure did not assign"
     );
 }
+
+/// [`init_repo`] plus the `doc/loom/knowledge/` tree `refresh` requires: it
+/// derives the project root by walking three ancestors up from the knowledge
+/// root and refuses to guess when that layout does not match.
+fn init_repo_with_knowledge() -> TempDir {
+    let temp = init_repo();
+    let root = temp.path();
+    let knowledge = root.join("doc").join("loom").join("knowledge");
+    std::fs::create_dir_all(&knowledge).unwrap();
+    std::fs::write(
+        knowledge.join("architecture.md"),
+        "# Architecture\n\nOne section, so the catalog has something to ingest.\n",
+    )
+    .unwrap();
+    git_ok(root, &["add", "doc/loom/knowledge/architecture.md"]);
+    git_ok(root, &["commit", "-m", "knowledge"]);
+    // `refresh` resolves the graph store through `WorkDir::new(project_root)`,
+    // which yields `<root>/.work` once that directory exists. Creating it here
+    // pins the layer location instead of letting the upward search find some
+    // ancestor's `.work`.
+    std::fs::create_dir_all(root.join(".work")).unwrap();
+    temp
+}
+
+/// The store and graph store `refresh` itself will construct for `root`, so a
+/// test reads back the layer that the real call actually wrote.
+fn refresh_stores(root: &Path) -> (ContextStore, GraphStore) {
+    let store = ContextStore::with_root(root.join("cache"));
+    store.ensure().unwrap();
+    let graph_store = GraphStore::new(store.root(), &root.join(".work"));
+    (store, graph_store)
+}
+
+#[test]
+fn test_clean_tree_publishes_base() {
+    let temp = init_repo_with_knowledge();
+    let root = temp.path();
+    let (store, graph_store) = refresh_stores(root);
+
+    let outcome = crate::context::refresh::refresh(
+        &store,
+        &root.join("doc").join("loom").join("knowledge"),
+        false,
+    )
+    .unwrap();
+
+    let head = head_sha(root);
+    match &outcome.semantic.layer {
+        crate::context::refresh::SemanticLayer::Base { revision } => assert_eq!(*revision, head),
+        other => panic!("a clean tree must publish a base layer, got {other:?}"),
+    }
+    assert!(
+        outcome.semantic.files_extracted > 0 && outcome.semantic.nodes > 0,
+        "a base publish must report the layer it actually built, got {:?}",
+        outcome.semantic
+    );
+    assert!(
+        graph_store.load_base(&head).unwrap().is_some(),
+        "the base layer must be readable back at the revision it was published for"
+    );
+    assert!(
+        std::fs::read_dir(graph_store.base_dir())
+            .unwrap()
+            .next()
+            .is_some(),
+        "a base publish must leave a layer file under graph/base/"
+    );
+}
+
+#[test]
+fn test_dirty_tree_falls_back_to_local_overlay() {
+    let temp = init_repo_with_knowledge();
+    let root = temp.path();
+    let (store, _graph_store) = refresh_stores(root);
+
+    // Modify a TRACKED file: `dirty_tree_reason` runs with
+    // `--untracked-files=no`, so an untracked scratch file would not refuse.
+    std::fs::write(root.join("src.rs"), "fn main() { let x = 1; }\n").unwrap();
+
+    let outcome = crate::context::refresh::refresh(
+        &store,
+        &root.join("doc").join("loom").join("knowledge"),
+        false,
+    )
+    .unwrap();
+
+    let (expected_plan, expected_stage) = crate::context::local_overlay::local_overlay_key(root);
+    match &outcome.semantic.layer {
+        crate::context::refresh::SemanticLayer::LocalOverlay {
+            plan,
+            stage,
+            refusal,
+        } => {
+            assert_eq!(*plan, expected_plan);
+            assert_eq!(*stage, expected_stage);
+            assert!(
+                !refusal.is_empty(),
+                "the fallback must name why the base was refused"
+            );
+        }
+        other => panic!("a dirty tree must fall back to the working-tree overlay, got {other:?}"),
+    }
+    assert!(
+        outcome.semantic.files_extracted > 0 && outcome.semantic.nodes > 0,
+        "the fallback must report the overlay it really built, not a silent zero-count \
+         degraded outcome: {:?}",
+        outcome.semantic
+    );
+}
+
+#[test]
+fn test_dirty_tree_overlay_is_readable_through_local_scope() {
+    // THE REGRESSION GUARD FOR THE WHOLE FALLBACK. Writing an overlay nobody
+    // can read is indistinguishable from writing nothing, so this resolves the
+    // graph the way retrieval does - through `local_overlay_key` - and proves
+    // the address the writer used is the address the reader looks at.
+    let temp = init_repo_with_knowledge();
+    let root = temp.path();
+    let (store, graph_store) = refresh_stores(root);
+
+    std::fs::write(root.join("src.rs"), "fn main() { let x = 1; }\n").unwrap();
+
+    let outcome = crate::context::refresh::refresh(
+        &store,
+        &root.join("doc").join("loom").join("knowledge"),
+        false,
+    )
+    .unwrap();
+
+    assert!(
+        graph_store.load_base(&head_sha(root)).unwrap().is_none(),
+        "no base was ever published here, so anything readable below comes from the overlay"
+    );
+
+    let (plan, stage) = crate::context::local_overlay::local_overlay_key(root);
+    let resolved = graph_store
+        .resolved(
+            &outcome.semantic.freshness.revision,
+            Some((plan.as_str(), stage.as_str())),
+        )
+        .unwrap();
+
+    assert!(
+        !resolved.files.is_empty(),
+        "the overlay the dirty-tree fallback wrote must be readable through the local scope"
+    );
+    assert!(
+        resolved.nodes().count() > 0,
+        "a readable overlay with no nodes would still leave retrieval with nothing"
+    );
+}
+
+#[test]
+fn test_structural_only_skips_semantic_layer() {
+    let temp = init_repo_with_knowledge();
+    let root = temp.path();
+    let (store, graph_store) = refresh_stores(root);
+
+    let outcome = crate::context::refresh::refresh(
+        &store,
+        &root.join("doc").join("loom").join("knowledge"),
+        true,
+    )
+    .unwrap();
+
+    match &outcome.semantic.layer {
+        crate::context::refresh::SemanticLayer::Skipped { reason } => assert!(
+            reason.contains("structural-only"),
+            "the skip must name the flag that caused it, got {reason:?}"
+        ),
+        other => panic!("--structural-only must not touch the semantic layer, got {other:?}"),
+    }
+    assert_eq!(outcome.semantic.files_extracted, 0);
+    assert_eq!(outcome.semantic.nodes, 0);
+
+    let (plan, stage) = crate::context::local_overlay::local_overlay_key(root);
+    assert!(
+        graph_store.load_base(&head_sha(root)).unwrap().is_none(),
+        "--structural-only must publish no base layer"
+    );
+    assert!(
+        graph_store.load_overlay(&plan, &stage).unwrap().is_none(),
+        "--structural-only must write no overlay either"
+    );
+}

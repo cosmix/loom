@@ -31,6 +31,13 @@ pub fn execute(
 
     resolve_backend_flag(&work_dir, backend, "loom run --foreground")?;
 
+    // Advisory source-graph preflight - never aborts startup. MUST stay above
+    // `mark_plan_in_progress`: that rename dirties a tracked file, and a base
+    // layer is refused on any dirty tree, so publishing after it never works.
+    // No overlay fallback here - `prepare_repo_for_run` already proved the tree
+    // is clean, and a run needs the base layer.
+    super::checks::advisory_source_graph_preflight(&repo_root, &work_dir, false);
+
     // Mark plan as in-progress when starting execution
     plan_lifecycle::mark_plan_in_progress(&work_dir)?;
 

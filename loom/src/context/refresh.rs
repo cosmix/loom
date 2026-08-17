@@ -15,8 +15,10 @@ use crate::context::ingest::{ingest, IngestReport};
 use crate::context::schema::Freshness;
 use crate::context::store::{ContextStore, StoreState};
 
+mod semantic;
 mod source_graph;
 
+pub use semantic::{SemanticLayer, SemanticOutcome, SOURCE_GRAPH_PREFIX};
 pub use source_graph::{
     mark_semantic_stale, reconcile_source_graph, SourceGraphOutcome, SourceGraphScope,
 };
@@ -54,8 +56,9 @@ pub struct RefreshOutcome {
     pub rebuilt: bool,
     /// Structural (catalog) freshness after this call.
     pub structural: Freshness,
-    /// Semantic (source graph) freshness after this call.
-    pub semantic: Freshness,
+    /// What the semantic (source graph) half of this call did - which layer it
+    /// wrote, how big it is, and how fresh it now is.
+    pub semantic: SemanticOutcome,
     /// Present only when a rebuild happened.
     pub report: Option<IngestReport>,
 }
@@ -134,6 +137,9 @@ pub fn evaluate(store: &ContextStore, knowledge_root: &Path) -> Result<StoreStat
     })
 }
 
+/// Why the semantic layer was skipped when the caller asked for the catalog only.
+const STRUCTURAL_ONLY_REASON: &str = "--structural-only";
+
 /// Rebuild the structural layer when it is stale; persist catalog and state.
 /// `structural_only` distinguishes catalog-only from also best-effort
 /// reconciling the semantic layer (see `source_graph::reconcile_semantic_best_effort`).
@@ -146,9 +152,9 @@ pub fn refresh(
 
     if !evaluated.structural.stale {
         let semantic = if structural_only {
-            evaluated.semantic
+            SemanticOutcome::skipped(evaluated.semantic, STRUCTURAL_ONLY_REASON)
         } else {
-            source_graph::reconcile_semantic_best_effort(store, knowledge_root, evaluated.semantic)
+            semantic::reconcile_semantic_best_effort(store, knowledge_root, evaluated.semantic)
         };
         return Ok(RefreshOutcome {
             rebuilt: false,
@@ -160,8 +166,8 @@ pub fn refresh(
 
     let mut outcome = rebuild_and_persist(store, knowledge_root, evaluated.semantic)?;
     if !structural_only {
-        outcome.semantic =
-            source_graph::reconcile_semantic_best_effort(store, knowledge_root, outcome.semantic);
+        let current = outcome.semantic.freshness.clone();
+        outcome.semantic = semantic::reconcile_semantic_best_effort(store, knowledge_root, current);
     }
     Ok(outcome)
 }
@@ -206,7 +212,7 @@ fn rebuild_and_persist(
     Ok(RefreshOutcome {
         rebuilt: true,
         structural,
-        semantic,
+        semantic: SemanticOutcome::skipped(semantic, STRUCTURAL_ONLY_REASON),
         report: Some(report),
     })
 }
