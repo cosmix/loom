@@ -10,7 +10,6 @@
 //! four-bytes-per-token approximation is sufficient and keeps the crate free of
 //! a tokenizer dependency.
 
-use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::path::PathBuf;
@@ -29,6 +28,16 @@ pub const BYTES_PER_TOKEN_ESTIMATE: usize = 4;
 pub fn estimate_tokens(text: &str) -> usize {
     text.len() / BYTES_PER_TOKEN_ESTIMATE
 }
+
+/// Hard ceiling on one item's quoted excerpt, in estimated tokens.
+///
+/// Independent of the retrieval budget: the budget decides *which* units are
+/// worth paying for, this decides how much of one unit is worth quoting inline
+/// rather than pointing at.
+pub const EXCERPT_MAX_TOKENS: usize = 400;
+
+/// Appended on its own line when an excerpt was cut short.
+pub const EXCERPT_TRUNCATION_MARKER: &str = "[… truncated — open the pointer above for the rest]";
 
 /// A retrieval channel a [`ContextItem`] can come from.
 ///
@@ -221,40 +230,9 @@ impl fmt::Display for LifecycleState {
     }
 }
 
-/// How current a derived layer is relative to the bytes it was built from.
-///
-/// A pack carries two: `structural` (the chunk catalog vs the markdown on disk)
-/// and `semantic` (the source graph vs the tracked source tree). They move
-/// independently — editing a `.rs` file staleness the semantic layer while the
-/// knowledge catalog stays perfectly fresh.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Freshness {
-    /// Content revision the layer was built from (hex sha256, or empty if never built).
-    #[serde(default)]
-    pub revision: String,
-    /// When the layer was last rebuilt.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub computed_at: Option<DateTime<Utc>>,
-    /// True when the on-disk inputs no longer match `revision`.
-    #[serde(default)]
-    pub stale: bool,
-    /// Human-readable cause when `stale` is true.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub detail: Option<String>,
-}
-
-impl Freshness {
-    /// A layer that has never been built. Reported as stale so callers never
-    /// mistake "no data" for "up to date".
-    pub fn never_built(detail: impl Into<String>) -> Self {
-        Freshness {
-            revision: String::new(),
-            computed_at: None,
-            stale: true,
-            detail: Some(detail.into()),
-        }
-    }
-}
+// Derived-layer currency is its own small domain and lives in a sibling module;
+// re-exported here so the shared contract still names every retrieval type.
+pub use crate::context::freshness::Freshness;
 
 /// What fraction of the candidate set made it into the pack.
 ///
@@ -312,6 +290,20 @@ pub struct ContextItem {
     pub reasons: Vec<SelectionReason>,
     pub confidence: Confidence,
     pub state: LifecycleState,
+    /// `sha256:<hex>` over the backing chunk body, copied from
+    /// [`KnowledgeChunk::content_hash`]. Empty when the backing unit has no hash.
+    ///
+    /// Carried on the item so a delivery record can be written, and a repeat
+    /// delivery suppressed, without a second lookup into the catalog.
+    #[serde(default)]
+    pub content_hash: String,
+    /// Bounded verbatim text of the backing unit, ready to quote.
+    ///
+    /// `None` when the packer had no body to copy. Truncated to
+    /// [`EXCERPT_MAX_TOKENS`]; when truncated the string ends with
+    /// [`EXCERPT_TRUNCATION_MARKER`] on its own line.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub excerpt: Option<String>,
 }
 
 /// The result of one retrieval: what was selected, what was not, and how stale

@@ -2,8 +2,9 @@
 
 use crate::context::rank::RankedCandidate;
 use crate::context::schema::{
-    Channel, Confidence, ContextItem, ContextPack, Coverage, Freshness, ItemKind, KnowledgeChunk,
-    OmissionSummary, SourcePointer,
+    estimate_tokens, Channel, Confidence, ContextItem, ContextPack, Coverage, Freshness, ItemKind,
+    KnowledgeChunk, OmissionSummary, SourcePointer, BYTES_PER_TOKEN_ESTIMATE, EXCERPT_MAX_TOKENS,
+    EXCERPT_TRUNCATION_MARKER,
 };
 use std::collections::BTreeMap;
 
@@ -37,6 +38,34 @@ fn summary(chunk: &KnowledgeChunk) -> String {
     line.chars().take(120).collect()
 }
 
+/// Copy `body` verbatim, cut to at most [`EXCERPT_MAX_TOKENS`].
+///
+/// This bound is independent of the retrieval budget — the item's `token_count`
+/// still describes the whole chunk — and exists only so one very long section
+/// cannot dominate a rendered brief.
+///
+/// The cut walks back twice: first to a character boundary, because slicing a
+/// `&str` mid-scalar panics, and then to the preceding newline, so a quoted
+/// excerpt never ends mid-line and misrepresents the source. A body with no
+/// newline inside the limit keeps the character-boundary cut.
+fn bounded_excerpt(body: &str) -> String {
+    if estimate_tokens(body) <= EXCERPT_MAX_TOKENS {
+        return body.to_string();
+    }
+
+    let mut end = (EXCERPT_MAX_TOKENS * BYTES_PER_TOKEN_ESTIMATE).min(body.len());
+    while end > 0 && !body.is_char_boundary(end) {
+        end -= 1;
+    }
+
+    let head = &body[..end];
+    let head = match head.rfind('\n') {
+        Some(newline) => &head[..newline],
+        None => head,
+    };
+    format!("{head}\n{EXCERPT_TRUNCATION_MARKER}")
+}
+
 /// Build one `ContextItem` from a ranked candidate and its backing chunk.
 fn build_item(candidate: &RankedCandidate, chunk: &KnowledgeChunk) -> ContextItem {
     ContextItem {
@@ -55,6 +84,8 @@ fn build_item(candidate: &RankedCandidate, chunk: &KnowledgeChunk) -> ContextIte
         reasons: candidate.reasons.clone(),
         confidence: Confidence::from_reasons(&candidate.reasons),
         state: chunk.state,
+        content_hash: chunk.content_hash.clone(),
+        excerpt: Some(bounded_excerpt(&chunk.body)),
     }
 }
 
