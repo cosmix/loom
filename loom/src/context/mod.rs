@@ -30,21 +30,29 @@
 //! the `loom knowledge context` / `status` / `sync` commands; signal generation
 //! is untouched.
 
+pub mod coverage;
+pub mod extract;
 pub mod fingerprint;
 pub mod fuse;
+pub mod graph_store;
 pub mod ingest;
 mod lexical;
 pub mod pack;
 pub mod rank;
 pub mod refresh;
+pub mod resolve;
 pub mod schema;
 pub mod source_graph;
 pub mod store;
 
+pub use coverage::CoverageReport;
+pub use resolve::{impact, resolve_graph, ImpactHit, ResolutionStats, SymbolIndex};
+
 pub use schema::{
-    estimate_tokens, Channel, ChunkId, Confidence, ContextItem, ContextPack, Coverage, Freshness,
-    ItemKind, KnowledgeChunk, LifecycleState, OmissionSummary, SelectionReason, SourceEdge,
-    SourceEdgeKind, SourceNode, SourcePointer, BYTES_PER_TOKEN_ESTIMATE,
+    estimate_tokens, Channel, ChunkId, Confidence, ContextItem, ContextPack, Coverage,
+    EdgeProvenance, FileCoverage, Freshness, ItemKind, KnowledgeChunk, LifecycleState,
+    NodeLanguage, OmissionSummary, SelectionReason, SourceEdge, SourceEdgeKind, SourceNode,
+    SourceNodeKind, SourcePointer, Span, BYTES_PER_TOKEN_ESTIMATE,
 };
 
 #[cfg(test)]
