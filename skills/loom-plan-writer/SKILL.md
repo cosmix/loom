@@ -233,13 +233,13 @@ graph LR
 
 ### knowledge-bootstrap (first)
 
-Captures codebase understanding before implementation. `stage_type: knowledge`, model opus (`reasoning_effort: xhigh`) — may write `doc/loom/knowledge/**`. It should: run `loom knowledge check`; if coverage < 50% or architecture incomplete, run `loom map --deep` (structural baseline without burning context); then spawn parallel `Explore` subagents for entry-points, patterns, conventions, each returning `loom knowledge update <file> "..."` commands (tier routing below). Review existing `mistakes.md` before completing. **Use `loom knowledge` CLI, never Write/Edit on knowledge files.**
+Captures codebase understanding before implementation. `stage_type: knowledge`, model opus (`reasoning_effort: xhigh`) — may write `doc/loom/knowledge/**`. It should: run `loom knowledge sync` to rebuild the derived retrieval artifacts and perform any one-time flat-to-hierarchical upgrade; the knowledge directory scaffold and source graph are created automatically at `loom init` and at run startup, so this stage exists to write CONTENT, never to create the directory or seed it from static analysis; then spawn parallel `Explore` subagents for entry-points, patterns, conventions, each returning `loom knowledge update <file> "..."` commands (tier routing below). Review existing `mistakes.md` before completing. **Use `loom knowledge` CLI, never Write/Edit on knowledge files.**
 
-**Skip ONLY if** `doc/loom/knowledge/` is already populated AND `loom knowledge check` shows coverage ≥ 50%.
+**Skip ONLY if** `doc/loom/knowledge/` is already populated with real content (the tier-1 files carry `## ` sections describing this codebase, not just the scaffold) AND `loom knowledge sync` runs clean.
 
 ### Knowledge tier routing (bootstrap & distill)
 
-`doc/loom/knowledge/` may be FLAT (tier-1 files only) or HIERARCHICAL (tier-1 summaries plus tier-2 topic files under per-category directories, e.g. `architecture/signal-generation.md`, `mistakes/phantom-merges.md`). Detect which with ONE predicate: hierarchical iff `doc/loom/knowledge/INDEX.md` exists at the root. Route every finding by size: something that fits in roughly 40 lines or fewer goes INLINE into the tier-1 file (`architecture.md`, `entry-points.md`, `patterns.md`, `conventions.md`, `mistakes.md`, `stack.md`, `concerns.md`); anything larger goes to `loom knowledge update <category>/<slug>`, leaving a 2-4 line summary plus a link in the tier-1 file. `loom knowledge index` (regenerates `INDEX.md`) is ALWAYS the mandatory final step after any knowledge write, in both layouts. **This does not change the boilerplate acceptance criterion `rg -q "## " doc/loom/knowledge/architecture.md`** — it still works under BOTH layouts because a tier-1 summary file keeps its `##` headings even when it links out to tier-2 detail. Do not "fix" that criterion to look for `INDEX.md` instead.
+`doc/loom/knowledge/` may be FLAT (tier-1 files only) or HIERARCHICAL (tier-1 summaries plus tier-2 topic files under per-category directories, e.g. `architecture/signal-generation.md`, `mistakes/phantom-merges.md`). Detect which with ONE predicate: hierarchical iff `doc/loom/knowledge/INDEX.md` exists at the root. Route every finding by size: something that fits in roughly 40 lines or fewer goes INLINE into the tier-1 file (`architecture.md`, `entry-points.md`, `patterns.md`, `conventions.md`, `mistakes.md`, `stack.md`, `concerns.md`); anything larger goes to `loom knowledge update <category>/<slug>`, leaving a 2-4 line summary plus a link in the tier-1 file. `INDEX.md` regenerates automatically on every knowledge write; there is no index command or final index step. **This does not change the boilerplate acceptance criterion `rg -q "## " doc/loom/knowledge/architecture.md`** — it still works under BOTH layouts because a tier-1 summary file keeps its `##` headings even when it links out to tier-2 detail. Do not "fix" that criterion to look for `INDEX.md` instead.
 
 ### integration-verify (second-to-last)
 
@@ -254,7 +254,7 @@ Captures codebase understanding before implementation. `stage_type: knowledge`, 
 
 ### knowledge-distill (last)
 
-`stage_type: knowledge-distill`, model opus (`reasoning_effort: xhigh`). Curates all stage memories into permanent knowledge and updates user-facing docs. Reads the plan, `loom memory show --all`, and current knowledge; synthesizes mistakes as actionable prevention rules, patterns, decisions, conventions via `loom knowledge update`, following the same tier-routing rule as knowledge-bootstrap (above); runs `loom knowledge index` last, then `loom review` to prune stale entries; updates README/CONTRIBUTING for changed behavior (only relevant sections). **Context discipline (200k window):** on a large plan, delegate memory/diff gathering to read-only subagents that return compact summaries; stay the sole writer of knowledge files. **Skip ONLY if** the plan produces no new knowledge worth preserving (rare).
+`stage_type: knowledge-distill`, model opus (`reasoning_effort: xhigh`). Curates all stage memories into permanent knowledge and updates user-facing docs. Reads the plan, `loom memory show --all`, and current knowledge; synthesizes mistakes as actionable prevention rules, patterns, decisions, conventions via `loom knowledge update`, following the same tier-routing rule as knowledge-bootstrap (above); `INDEX.md` regenerates on each knowledge write, so then run `loom review` to prune stale entries; updates README/CONTRIBUTING for changed behavior (only relevant sections). **Context discipline (200k window):** on a large plan, delegate memory/diff gathering to read-only subagents that return compact summaries; stay the sole writer of knowledge files. **Skip ONLY if** the plan produces no new knowledge worth preserving (rare).
 
 Full YAML for all three bookends is in the canonical template (Section 10).
 
@@ -746,7 +746,8 @@ Four ungrantable classes, each logged:
 Loom's OWN CLI earns its own line: **never put a `loom` subcommand that opens shared state into a
 worktree stage's acceptance.** `loom map`, anything touching `.work/` or `.loom/`, and the
 memory/knowledge journal all write state shared with every sibling stage. The read-only
-`loom knowledge show` / `loom knowledge check` family is the exception.
+`loom map --outline` / `--find-all` / `--impact` views are source-graph queries, but keep them
+out of worktree acceptance because the derived graph is shared state.
 
 ---
 
@@ -817,17 +818,21 @@ loom:
       description: |
         Explore codebase and populate doc/loom/knowledge/.
         Use parallel subagents and skills to maximize performance.
-        Run loom knowledge check; if coverage <50% run loom map --deep.
+        Run loom knowledge sync to rebuild derived retrieval artifacts and perform
+        any one-time flat-to-hierarchical upgrade. The knowledge directory scaffold
+        and source graph are created automatically at loom init and at run startup,
+        so this stage exists to write CONTENT, never to create the directory or seed
+        it from static analysis.
         Spawn parallel Explore subagents (entry-points, patterns, conventions),
         each returning loom knowledge update commands. Review mistakes.md first.
         TIER ROUTING: findings ~40 lines or fewer go inline in the tier-1 file;
         larger findings go via loom knowledge update <category>/<slug> with a
         2-4 line tier-1 summary + link. Detect layout via INDEX.md at the
-        knowledge root (present = hierarchical). Run loom knowledge index LAST.
+        knowledge root (present = hierarchical). INDEX.md regenerates automatically
+        on every knowledge write; there is no final index step.
         Use loom knowledge CLI, NOT Write/Edit. NEVER Claude Code auto-memory.
       dependencies: []
       acceptance:
-        - "loom knowledge check --min-coverage 50"
         # works under both flat and hierarchical layouts — tier-1 files keep ## headings
         - 'rg -q "## " doc/loom/knowledge/architecture.md'
         - 'rg -q "## " doc/loom/knowledge/entry-points.md'
@@ -918,8 +923,9 @@ loom:
         Curate mistakes (prevention rules), patterns, decisions, conventions via
         loom knowledge update. TIER ROUTING: findings ~40 lines or fewer go
         inline in the tier-1 file; larger findings go via loom knowledge update
-        <category>/<slug> with a 2-4 line tier-1 summary + link. Run
-        loom knowledge index LAST, then loom review to prune stale entries.
+        <category>/<slug> with a 2-4 line tier-1 summary + link. INDEX.md
+        regenerates automatically on every knowledge write; then loom review prunes
+        stale entries.
         Update README/CONTRIBUTING for changed behavior (relevant sections only);
         if nothing user-facing changed, skip but record WHY in memory.
       dependencies: ["integration-verify"]

@@ -398,17 +398,16 @@ loom stage output get <dependency-stage-id> api_port
 
 ### During Knowledge-Bootstrap Stages
 
+Knowledge has a collapsed command surface: `loom knowledge sync` is the one user-facing verb. It rebuilds derived retrieval artifacts after knowledge-tree changes and performs the one-time flat-to-hierarchical upgrade. `loom knowledge context --query <text> [--budget-tokens N] [--scope knowledge|source|all]` is deterministic offline retrieval and the same entry point that builds every stage signal's Knowledge Brief. `loom knowledge update <target> [content]` is the only write path; `<target>` is a tier-1 file name or `<category>/<slug>` for a tier-2 topic. `loom map --outline <PATH>`, `--find-all <SYMBOL>`, and `--impact <SYMBOL_OR_PATH>` are read-only views over the derived source graph. `INDEX.md` regenerates automatically on every knowledge write; there is no index command or final index step.
+
 ```bash
-# Initialize knowledge directory
-loom knowledge init
+# Rebuild derived retrieval artifacts and upgrade a legacy flat tree if needed
+loom knowledge sync
 
-# Run automated analysis
-loom map --deep
+# Retrieve targeted, deterministic context (also used for every stage Knowledge Brief)
+loom knowledge context --query "authentication flow" --budget-tokens 1200 --scope all
 
-# Check coverage
-loom knowledge check
-
-# Populate knowledge (append-only)
+# Populate knowledge — the only write path
 loom knowledge update architecture "## New Section\n\nContent here"
 
 # Long content via heredoc
@@ -418,6 +417,11 @@ loom knowledge update patterns - <<'EOF'
 Uses JWT with refresh token rotation.
 Key files: src/auth/jwt.ts:15-80
 EOF
+
+# Read-only views over the derived source graph
+loom map --outline src/auth
+loom map --find-all authenticate
+loom map --impact src/auth/jwt.ts
 
 # Record session insights
 loom memory note "Found that auth uses middleware pattern"
@@ -719,7 +723,10 @@ loom memory note "..."               # Record insight
 loom memory decision "..." --context "..."  # Record decision
 loom memory list                     # Review entries
 loom memory show --all               # All stage memories
-loom knowledge check                 # Coverage report
-loom knowledge update <file> "..."   # Append to knowledge
-loom map --deep                      # Automated analysis
+loom knowledge sync                  # Rebuild derived retrieval artifacts
+loom knowledge context --query "..." # Deterministic offline retrieval
+loom knowledge update <target> [content] # The only knowledge write path
+loom map --outline <path>            # Read-only source-graph outline
+loom map --find-all <symbol>         # Read-only source-graph symbol lookup
+loom map --impact <symbol-or-path>   # Read-only source-graph impact view
 ```
