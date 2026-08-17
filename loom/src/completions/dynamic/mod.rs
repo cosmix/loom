@@ -290,7 +290,7 @@ fn complete_after_subcommand(
         ("worktree", "remove") => complete_stage_ids(cwd, prefix),
 
         // Knowledge subcommands
-        ("knowledge", "show" | "update") => complete_knowledge_files(prefix),
+        ("knowledge", "update") => complete_knowledge_files(prefix),
 
         // Plan subcommands
         ("plan", "verify") => complete_plan_files(cwd, prefix),

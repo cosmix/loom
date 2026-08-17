@@ -50,28 +50,29 @@ fn test_complete_subcommands_stage_prefix() {
 #[test]
 fn test_complete_subcommands_knowledge() {
     let results = complete_subcommands("knowledge", "").unwrap();
-    assert!(results.contains(&"show".to_string()));
-    assert!(results.contains(&"update".to_string()));
-    assert!(results.contains(&"bootstrap".to_string()));
-    assert!(results.contains(&"check".to_string()));
-    assert!(results.contains(&"gc".to_string()));
-    assert!(results.contains(&"index".to_string()));
-}
-
-#[test]
-fn test_complete_subcommands_knowledge_index_prefix() {
-    let results = complete_subcommands("knowledge", "in").unwrap();
-    assert!(results.contains(&"index".to_string()));
-    assert!(results.contains(&"init".to_string()));
-}
-
-#[test]
-fn test_complete_flags_knowledge_audit() {
-    let results = complete_flags(&["knowledge", "audit"], "").unwrap();
-    assert!(results.contains(&"--max-file-lines".to_string()));
-    assert!(results.contains(&"--max-topic-lines".to_string()));
-    assert!(results.contains(&"--quiet".to_string()));
-    assert!(!results.contains(&"--max-total-lines".to_string()));
+    for present in ["update", "context", "sync"] {
+        assert!(
+            results.contains(&present.to_string()),
+            "knowledge must still complete `{present}`"
+        );
+    }
+    for gone in [
+        "show",
+        "init",
+        "index",
+        "list",
+        "check",
+        "audit",
+        "gc",
+        "bootstrap",
+        "status",
+        "replace-section",
+    ] {
+        assert!(
+            !results.contains(&gone.to_string()),
+            "knowledge must not complete the deleted `{gone}`"
+        );
+    }
 }
 
 #[test]
@@ -270,14 +271,6 @@ fn test_plan_verify_positional_completes_plan_files() {
 
     let results = complete_plan_files(root, "").unwrap();
     assert!(results.iter().any(|r| r.contains("PLAN-foo.md")));
-}
-
-#[test]
-fn test_complete_subcommands_knowledge_includes_context_commands() {
-    let results = complete_subcommands("knowledge", "").unwrap();
-    assert!(results.contains(&"context".to_string()));
-    assert!(results.contains(&"status".to_string()));
-    assert!(results.contains(&"sync".to_string()));
 }
 
 #[test]
