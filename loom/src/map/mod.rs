@@ -1,16 +1,6 @@
-//! Codebase mapping and analysis module.
+//! Codebase mapping module.
 //!
-//! Provides automated codebase analysis including:
-//! - Project type detection (Rust, Node, Go, Python, etc.)
-//! - Dependency analysis from manifest files
-//! - Entry point discovery
-//! - Directory structure mapping
-//! - Convention detection
-//! - Concern identification (TODOs, FIXMEs, security issues)
+//! Read-only views over the derived source graph: file outlines, symbol
+//! lookup, and impact analysis.
 
-pub mod analyzer;
-pub mod detectors;
-pub mod knowledge_sync;
 pub mod views;
-
-pub use analyzer::{analyze_codebase, AnalysisResult};
