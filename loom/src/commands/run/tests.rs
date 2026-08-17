@@ -1,15 +1,29 @@
 //! Tests for the run command module.
 
 use super::graph_loader::build_execution_graph;
-use crate::fs::stage_loading::{extract_stage_definition, load_stages_from_work_dir};
+use crate::fs::stage_loading::load_stages_from_work_dir;
 use crate::fs::work_dir::WorkDir;
+use crate::models::stage::Stage;
 use crate::orchestrator::OrchestratorResult;
 use crate::plan::schema::{
     Implementers, LoomConfig, LoomMetadata, SandboxConfig, StageDefinition, StageSandboxConfig,
 };
+use crate::verify::serialize_stage_to_markdown;
 use std::fs;
 use std::path::{Path, PathBuf};
 use tempfile::TempDir;
+
+/// Build markdown+frontmatter for a stage file the way `serialize_stage_to_markdown`
+/// writes a real `.work/stages/*.md` file: a fully-populated [`Stage`] (every
+/// runtime field present, e.g. `status`, `created_at`) with the given id/name.
+/// `load_stages_from_work_dir` parses this shape, not a bare `StageDefinition`,
+/// so fixtures here must be built this way rather than hand-writing plan-style
+/// partial YAML.
+fn stage_markdown(id: &str, name: &str) -> String {
+    let mut stage = Stage::new(name.to_string(), None);
+    stage.id = id.to_string();
+    serialize_stage_to_markdown(&stage).unwrap()
+}
 
 fn create_test_plan(dir: &Path, stages: Vec<StageDefinition>) -> PathBuf {
     let metadata = LoomMetadata {
@@ -82,144 +96,6 @@ fn setup_work_dir_with_plan(temp_dir: &TempDir) -> (PathBuf, WorkDir) {
 }
 
 #[test]
-fn test_extract_stage_definition_valid() {
-    let content = r#"---
-id: stage-1
-name: Test Stage
-working_dir: "."
-dependencies: []
-acceptance: []
-setup: []
-files: []
----
-
-# Stage: Test Stage
-
-Content here
-"#;
-
-    let result = extract_stage_definition(content);
-
-    assert!(result.is_ok());
-    let def = result.unwrap();
-    assert_eq!(def.id, "stage-1");
-    assert_eq!(def.name, "Test Stage");
-    assert_eq!(def.dependencies.len(), 0);
-}
-
-#[test]
-fn test_extract_stage_definition_with_fields() {
-    let content = r#"---
-id: stage-2
-name: Complex Stage
-description: A complex stage
-working_dir: "loom"
-dependencies:
-  - stage-1
-parallel_group: core
-acceptance:
-  - cargo test
-setup:
-  - cargo build
-files:
-  - src/*.rs
----
-
-# Stage
-"#;
-
-    let result = extract_stage_definition(content);
-
-    assert!(result.is_ok());
-    let def = result.unwrap();
-    assert_eq!(def.id, "stage-2");
-    assert_eq!(def.description, Some("A complex stage".to_string()));
-    assert_eq!(def.working_dir, "loom");
-    assert_eq!(def.dependencies, vec!["stage-1".to_string()]);
-    assert_eq!(def.parallel_group, Some("core".to_string()));
-    assert_eq!(def.acceptance.len(), 1);
-    assert_eq!(def.setup.len(), 1);
-    assert_eq!(def.files.len(), 1);
-}
-
-/// Regression test for A-10: the old `StageFrontmatter` intermediate struct
-/// hardcoded `stage_type`, `auto_merge`, `sandbox`, `context_budget`, and
-/// `before_stage`/`after_stage` to defaults, silently dropping them on every
-/// daemon restart (the loader prefers stage files over the plan). Deserializing
-/// `StageDefinition` directly must preserve all of them.
-#[test]
-fn test_extract_stage_definition_preserves_previously_dropped_fields() {
-    use crate::models::stage::StageType;
-
-    let content = r#"---
-id: kn-stage
-name: Knowledge Stage
-working_dir: "."
-stage_type: knowledge
-auto_merge: false
-context_budget: 50
-before_stage:
-  - command: "echo pre"
-after_stage:
-  - command: "echo post"
-sandbox:
-  enabled: false
----
-
-# Stage
-"#;
-
-    let def = extract_stage_definition(content).expect("should deserialize");
-
-    assert_eq!(
-        def.stage_type,
-        Some(StageType::Knowledge),
-        "stage_type must survive"
-    );
-    assert_eq!(def.auto_merge, Some(false), "auto_merge must survive");
-    assert_eq!(def.context_budget, Some(50), "context_budget must survive");
-    assert_eq!(def.before_stage.len(), 1, "before_stage must survive");
-    assert_eq!(def.after_stage.len(), 1, "after_stage must survive");
-    assert_eq!(
-        def.sandbox.enabled,
-        Some(false),
-        "sandbox override must survive"
-    );
-}
-
-#[test]
-fn test_extract_stage_definition_no_delimiter() {
-    let content = "No frontmatter here";
-
-    let result = extract_stage_definition(content);
-
-    assert!(result.is_err());
-    assert!(result.unwrap_err().to_string().contains("frontmatter"));
-}
-
-#[test]
-fn test_extract_stage_definition_not_closed() {
-    let content = "---\nid: test\nname: Test\n\nNo closing delimiter";
-
-    let result = extract_stage_definition(content);
-
-    assert!(result.is_err());
-    assert!(result
-        .unwrap_err()
-        .to_string()
-        .contains("not properly closed"));
-}
-
-#[test]
-fn test_extract_stage_definition_invalid_yaml() {
-    let content = "---\ninvalid: yaml: content:\n---\n";
-
-    let result = extract_stage_definition(content);
-
-    assert!(result.is_err());
-}
-
-#[test]
 fn test_build_execution_graph_no_config() {
     let temp_dir = TempDir::new().unwrap();
     let work_dir = WorkDir::new(temp_dir.path()).unwrap();
@@ -276,18 +152,7 @@ fn test_load_stages_from_work_dir_with_stages() {
     let stages_dir = temp_dir.path().join("stages");
     fs::create_dir(&stages_dir).unwrap();
 
-    let stage_content = r#"---
-id: stage-1
-name: Test Stage
-working_dir: "."
-dependencies: []
-acceptance: []
-setup: []
-files: []
----
-
-# Stage: Test Stage
-"#;
+    let stage_content = stage_markdown("stage-1", "Test Stage");
 
     fs::write(stages_dir.join("0-stage-1.md"), stage_content).unwrap();
 
@@ -319,13 +184,7 @@ fn test_load_stages_from_work_dir_skips_invalid() {
     let stages_dir = temp_dir.path().join("stages");
     fs::create_dir(&stages_dir).unwrap();
 
-    let valid_stage = r#"---
-id: valid
-name: Valid
-working_dir: "."
-dependencies: []
----
-"#;
+    let valid_stage = stage_markdown("valid", "Valid");
     fs::write(stages_dir.join("valid.md"), valid_stage).unwrap();
     fs::write(stages_dir.join("invalid.md"), "Invalid content").unwrap();
 
