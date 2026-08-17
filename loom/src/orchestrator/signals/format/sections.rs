@@ -234,10 +234,7 @@ pub(super) fn format_semi_stable_section(
             content.push_str("| Architectural pattern | `loom knowledge update patterns \"## Pattern Name\\n\\n- How it works\"` |\n");
             content.push_str("| Coding convention | `loom knowledge update conventions \"## Convention\\n\\n- Details\"` |\n");
             content.push_str("| Mistake/lesson | `loom knowledge update mistakes \"## What happened\\n\\n- Details\"` |\n");
-            content.push_str("| Detail too long for a tier-1 file | `loom knowledge update <category>/<slug> \"## Section\\n\\n- Details\"` |\n");
-            content.push_str(
-                "| Regenerate the index (always run last) | `loom knowledge index` |\n\n",
-            );
+            content.push_str("| Detail too long for a tier-1 file | `loom knowledge update <category>/<slug> \"## Section\\n\\n- Details\"` |\n\n");
             content.push_str(
                 "**For long content, use stdin:** `loom knowledge update <file> - <<'EOF'`\n\n",
             );

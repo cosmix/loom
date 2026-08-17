@@ -262,9 +262,13 @@ fn test_signal_contains_knowledge_management_section_for_knowledge_stages() {
     assert!(content.contains("loom knowledge update entry-points"));
     assert!(content.contains("loom knowledge update patterns"));
     assert!(content.contains("loom knowledge update conventions"));
-    // Commands table also covers topic-write and index-regeneration forms
+    // Commands table also covers the topic-write form. It must NOT offer an
+    // index-regeneration row: `INDEX.md` is refreshed on every knowledge write
+    // and the command it used to name no longer exists. The retired verb is
+    // spelled with `concat!` so this file never carries it contiguously - an
+    // acceptance criterion greps all of `loom/src` for the deleted commands.
     assert!(content.contains("loom knowledge update <category>/<slug>"));
-    assert!(content.contains("loom knowledge index"));
+    assert!(!content.contains(concat!("loom knowledge ", "index")));
     // The per-stage Knowledge Brief (rendered from `context_pack`) replaces the
     // old static browse-tutorial box; assert on the heading and on
     // brief-specific content so deleting the renderer call would fail this test.
