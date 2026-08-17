@@ -4,6 +4,7 @@
 pub(crate) mod acceptance_runner;
 pub(crate) mod admin_hmac;
 pub(crate) mod admin_proof;
+mod amend;
 pub mod complete;
 mod dispute_criteria;
 mod human_review;
@@ -22,6 +23,7 @@ mod state;
 mod tests;
 
 // Re-export public API
+pub use amend::amend;
 pub use complete::complete;
 pub use dispute_criteria::dispute_criteria;
 pub use human_review::human_review;

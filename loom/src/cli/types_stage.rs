@@ -1,7 +1,61 @@
 //! Stage-related CLI command types
 
+use crate::plan::{AmendmentField, AmendmentPatch};
 use crate::validation::{clap_description_validator, clap_id_validator};
-use clap::Subcommand;
+use anyhow::{bail, Result};
+use clap::{Subcommand, ValueEnum};
+
+/// Which array on a stage `loom stage amend` mutates.
+///
+/// Mirrors `crate::plan::AmendmentField` one-for-one; kept as a separate,
+/// clap-level mirror of `crate::plan::AmendmentField`; [`AmendField::to_field`]
+/// maps it across so `cli::dispatch` stays a thin routing layer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum AmendField {
+    /// Mutate the `acceptance` array.
+    Acceptance,
+    /// Mutate the `wiring` array.
+    Wiring,
+}
+
+/// What to do at `--index` within the field targeted by `loom stage amend`.
+///
+/// Mirrors `crate::plan::AmendmentPatch`'s variants (minus their payloads),
+/// which [`AmendOp::to_patch`] reconstructs from `op` + `index` + `value`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum AmendOp {
+    /// Replace the element at `--index` with `--value`.
+    Replace,
+    /// Insert `--value` at `--index`, shifting existing elements right.
+    Insert,
+    /// Remove the element at `--index`.
+    Delete,
+}
+
+impl AmendField {
+    /// Map to the plan-level field selector.
+    pub fn to_field(self) -> AmendmentField {
+        match self {
+            AmendField::Acceptance => AmendmentField::Acceptance,
+            AmendField::Wiring => AmendmentField::Wiring,
+        }
+    }
+}
+
+impl AmendOp {
+    /// Build the plan-level patch, enforcing the value/op pairing that clap
+    /// cannot express: `replace`/`insert` need `--value`, `delete` refuses it.
+    pub fn to_patch(self, index: usize, value: Option<String>) -> Result<AmendmentPatch> {
+        match (self, value) {
+            (AmendOp::Replace, Some(value)) => Ok(AmendmentPatch::Replace { index, value }),
+            (AmendOp::Insert, Some(value)) => Ok(AmendmentPatch::Insert { index, value }),
+            (AmendOp::Delete, None) => Ok(AmendmentPatch::Delete { index }),
+            (AmendOp::Replace, None) => bail!("--value is required for --op replace"),
+            (AmendOp::Insert, None) => bail!("--value is required for --op insert"),
+            (AmendOp::Delete, Some(_)) => bail!("--value is not accepted with --op delete"),
+        }
+    }
+}
 
 #[derive(Subcommand)]
 pub enum StageCommands {
@@ -210,6 +264,40 @@ pub enum StageCommands {
         /// Optional path to a captured failure-output file (truncated to 4KB).
         #[arg(long = "failure-output")]
         failure_output: Option<std::path::PathBuf>,
+    },
+
+    /// Amend a stage's acceptance or wiring array in place (operator repair).
+    ///
+    /// Routes through the audited plan-amendment path: writes a numbered
+    /// snapshot under .work/plan_versions/, appends an audit row, and
+    /// rewrites both the plan file and the stage file. Use when a criterion
+    /// is impossible rather than merely failing -- an agent inside a stage
+    /// should file `loom stage dispute-criteria` instead.
+    Amend {
+        /// Stage ID (alphanumeric, dash, underscore only; max 128 characters)
+        #[arg(value_parser = clap_id_validator)]
+        stage_id: String,
+
+        /// Which array to mutate.
+        #[arg(long)]
+        field: AmendField,
+
+        /// What to do at `--index`.
+        #[arg(long)]
+        op: AmendOp,
+
+        /// 0-based index into the array.
+        #[arg(long)]
+        index: usize,
+
+        /// YAML body for the new element. Required for replace/insert,
+        /// rejected for delete.
+        #[arg(long)]
+        value: Option<String>,
+
+        /// Reason recorded in the audit log.
+        #[arg(long, value_parser = clap_description_validator)]
+        reason: Option<String>,
     },
 
     /// Manage stage outputs (structured values passed to dependent stages)
