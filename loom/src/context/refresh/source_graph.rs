@@ -277,17 +277,20 @@ fn unreadable_entry(error: std::io::Error) -> FileEntry {
 
 /// Whether a cached entry's nodes still match the extractor build that would
 /// claim `path` today — an entry with no nodes (e.g. an unreadable-file
-/// placeholder) is always considered current. A grammar or query bump changes
-/// `parser_version`, which invalidates every unchanged file's stale nodes.
+/// placeholder) is always considered current. When no extractor claims
+/// `path` today, a node already stamped [`extract::lexical::LEXICAL_PARSER_VERSION`]
+/// took the lexical fallback and would again, so it stays current; any other
+/// version came from an extractor that is no longer registered and is stale.
+/// A grammar or query bump changes `parser_version`, invalidating every
+/// unchanged file's stale nodes.
 fn parser_version_matches(entry: &FileEntry, extractors: &[BoxedExtractor], path: &Path) -> bool {
     let Some(node) = entry.nodes.first() else {
         return true;
     };
-    let current = extractors
-        .iter()
-        .find(|extractor| extractor.supports(path))
-        .map(|extractor| extractor.cache_identity().to_parser_version());
-    current.as_ref() == Some(&node.parser_version)
+    match extractors.iter().find(|extractor| extractor.supports(path)) {
+        Some(extractor) => extractor.cache_identity().to_parser_version() == node.parser_version,
+        None => node.parser_version == extract::lexical::LEXICAL_PARSER_VERSION,
+    }
 }
 
 /// Persist `layer`: an overlay is pruned to a delta against `base` and
@@ -331,22 +334,20 @@ fn persist_semantic_freshness(store: &ContextStore, revision: String) -> Result<
         computed_at: Some(Utc::now()),
         ..Default::default()
     };
-    store.ensure()?;
-    let mut state = store.load_state()?;
-    state.semantic = freshness.clone();
-    store.save_state(&state)?;
+    store.update_state(|state| state.semantic = freshness.clone())?;
     Ok(freshness)
 }
 
-/// Mark the semantic layer stale with `reason`. A load failure yields [`crate::context::store::StoreState::default`];
-/// callers log and continue rather than propagate the `Result` — both deliberate, so a corrupt
-/// or unwritable cache can never block a merge.
+/// Mark the semantic layer stale with `reason`. [`ContextStore::update_state`]
+/// degrades a missing, unreadable, or malformed `state.json` to
+/// [`crate::context::store::StoreState::default`] rather than erroring;
+/// callers log and continue rather than propagate the `Result` — both
+/// deliberate, so a corrupt or unwritable cache can never block a merge.
 pub fn mark_semantic_stale(store: &ContextStore, reason: &str) -> Result<()> {
-    let mut state = store.load_state().unwrap_or_default();
-    state.semantic.stale = true;
-    state.semantic.detail = Some(reason.to_string());
-    store.ensure()?;
-    store.save_state(&state)
+    store.update_state(|state| {
+        state.semantic.stale = true;
+        state.semantic.detail = Some(reason.to_string());
+    })
 }
 
 /// Best-effort semantic reconciliation folded into `refresh`'s result: any failure below
