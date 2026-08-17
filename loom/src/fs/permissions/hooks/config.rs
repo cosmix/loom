@@ -8,7 +8,10 @@ pub(super) fn build(hooks_dir: &str) -> Value {
             hook(hooks_dir, "Bash", "loom-control-complete.sh"),
         ],
         "Stop": [hook(hooks_dir, "*", "commit-guard.sh")],
-        "UserPromptSubmit": [hook(hooks_dir, "*", "skill-trigger.sh")],
+        "UserPromptSubmit": [
+            hook(hooks_dir, "*", "skill-trigger.sh"),
+            hook(hooks_dir, "*", "user-prompt-context.sh"),
+        ],
     })
 }
 

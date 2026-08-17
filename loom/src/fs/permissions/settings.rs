@@ -22,12 +22,20 @@
 //! Created/updated by `loom init`. Worktrees merge this with session-specific hooks at creation time.
 
 use anyhow::{Context, Result};
-use serde_json::{json, Value};
+use serde_json::{json, Map, Value};
 use std::fs;
 use std::path::Path;
 
 use super::constants::LOOM_PERMISSIONS;
 use super::hooks::{configure_loom_hooks, install_loom_hooks, install_loom_hooks_to};
+use crate::fs::locking::locked_write;
+
+/// Borrow a JSON value as a mutable object map, or error with a labeled message.
+fn require_object<'a>(value: &'a mut Value, label: &str) -> Result<&'a mut Map<String, Value>> {
+    value
+        .as_object_mut()
+        .ok_or_else(|| anyhow::anyhow!("{label} must be a JSON object"))
+}
 
 /// Per-session identity env vars that must NEVER be persisted in settings files.
 ///
@@ -82,7 +90,7 @@ pub fn scrub_main_repo_settings_identity(repo_root: &Path) -> Vec<std::path::Pat
         let Ok(updated) = serde_json::to_string_pretty(&settings) else {
             continue;
         };
-        if fs::write(&path, updated).is_ok() {
+        if locked_write(&path, &updated).is_ok() {
             healed.push(path);
         }
     }
@@ -141,18 +149,14 @@ pub fn ensure_loom_permissions_to(repo_root: &Path, hooks_dir: Option<&Path>) ->
     };
 
     // Ensure settings is an object
-    let settings_obj = settings
-        .as_object_mut()
-        .ok_or_else(|| anyhow::anyhow!("settings.json must be a JSON object"))?;
+    let settings_obj = require_object(&mut settings, "settings.json")?;
 
     // Get or create permissions object
     let permissions = settings_obj
         .entry("permissions")
         .or_insert_with(|| json!({}));
 
-    let permissions_obj = permissions
-        .as_object_mut()
-        .ok_or_else(|| anyhow::anyhow!("permissions must be a JSON object"))?;
+    let permissions_obj = require_object(permissions, "permissions")?;
 
     // Get or create allow array
     let allow = permissions_obj.entry("allow").or_insert_with(|| json!([]));
@@ -184,7 +188,7 @@ pub fn ensure_loom_permissions_to(repo_root: &Path, hooks_dir: Option<&Path>) ->
         let content = serde_json::to_string_pretty(&settings)
             .context("Failed to serialize settings to JSON")?;
 
-        fs::write(&settings_path, content)
+        locked_write(&settings_path, &content)
             .with_context(|| format!("Failed to write {}", settings_path.display()))?;
 
         if added_permissions > 0 {
@@ -237,18 +241,14 @@ pub fn ensure_loom_hooks_local(repo_root: &Path) -> Result<()> {
     };
 
     // Ensure settings is an object
-    let settings_obj = settings
-        .as_object_mut()
-        .ok_or_else(|| anyhow::anyhow!("settings.local.json must be a JSON object"))?;
+    let settings_obj = require_object(&mut settings, "settings.local.json")?;
 
     // Configure hooks
     let hooks_configured = configure_loom_hooks(settings_obj)?;
 
     // Configure agent teams environment variable
     let env_obj = settings_obj.entry("env").or_insert_with(|| json!({}));
-    let env_map = env_obj
-        .as_object_mut()
-        .ok_or_else(|| anyhow::anyhow!("env must be a JSON object"))?;
+    let env_map = require_object(env_obj, "env")?;
     let env_configured = if !env_map.contains_key("CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS") {
         env_map.insert(
             "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS".to_string(),
@@ -263,9 +263,7 @@ pub fn ensure_loom_hooks_local(repo_root: &Path) -> Result<()> {
     // versions (they used to be written here by knowledge-stage spawns and
     // would shadow the wrapper script's fresh exports in every later session).
     let stale_env_removed = scrub_session_identity_env(&mut settings);
-    let settings_obj = settings
-        .as_object_mut()
-        .ok_or_else(|| anyhow::anyhow!("settings.local.json must be a JSON object"))?;
+    let settings_obj = require_object(&mut settings, "settings.local.json")?;
 
     // Disable Claude Code's worktree isolation for subagents in the main repo.
     //
@@ -276,9 +274,7 @@ pub fn ensure_loom_hooks_local(repo_root: &Path) -> Result<()> {
     // directly. Worktree stage sessions get the same setting via the sandbox
     // settings generator. (Claude Code v2.1.143+; older versions ignore it.)
     let worktree_obj = settings_obj.entry("worktree").or_insert_with(|| json!({}));
-    let worktree_map = worktree_obj
-        .as_object_mut()
-        .ok_or_else(|| anyhow::anyhow!("worktree must be a JSON object"))?;
+    let worktree_map = require_object(worktree_obj, "worktree")?;
     let worktree_configured = if worktree_map.get("bgIsolation") != Some(&json!("none")) {
         worktree_map.insert("bgIsolation".to_string(), json!("none"));
         true
@@ -300,7 +296,7 @@ pub fn ensure_loom_hooks_local(repo_root: &Path) -> Result<()> {
         let content = serde_json::to_string_pretty(&settings)
             .context("Failed to serialize settings.local.json to JSON")?;
 
-        fs::write(&settings_local_path, content)
+        locked_write(&settings_local_path, &content)
             .with_context(|| format!("Failed to write {}", settings_local_path.display()))?;
 
         for (_, change) in changes.iter().filter(|(changed, _)| *changed) {

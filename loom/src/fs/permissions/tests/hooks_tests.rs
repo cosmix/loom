@@ -1,7 +1,9 @@
 //! Tests for hooks configuration.
 
 use crate::fs::permissions::hooks::loom_hooks_config;
-use serde_json::Value;
+use crate::fs::permissions::settings::ensure_loom_permissions_to;
+use serde_json::{json, Value};
+use tempfile::TempDir;
 
 #[test]
 fn test_hooks_config_structure() {
@@ -77,8 +79,9 @@ fn assert_lifecycle_hooks(hooks: &Value) {
     assert_hook(&stop[0], "*", "commit-guard.sh");
 
     let prompt = hooks["UserPromptSubmit"].as_array().unwrap();
-    assert_eq!(prompt.len(), 1);
+    assert_eq!(prompt.len(), 2);
     assert_hook(&prompt[0], "*", "skill-trigger.sh");
+    assert_hook(&prompt[1], "*", "user-prompt-context.sh");
 }
 
 fn contains_hook(entries: &[Value], matcher: &str, script: &str) -> bool {
@@ -94,4 +97,92 @@ fn assert_hook(entry: &Value, matcher: &str, script: &str) {
 
 fn hook_command(entry: &Value) -> &str {
     entry["hooks"][0]["command"].as_str().unwrap()
+}
+
+const FOREIGN_COMMAND: &str = "/home/user/.claude/hooks/my-custom-hook.sh";
+const STALE_LOOM_COMMAND: &str = "/home/user/.claude/hooks/loom/skill-trigger.sh";
+
+/// Shared fixture for the two tests below: seed `.claude/settings.local.json`
+/// with two duplicate pre-existing loom `UserPromptSubmit` hooks and one
+/// FOREIGN (non-loom-path) hook, run the loom hooks merge (`hooks.rs`:
+/// remove-all-loom-then-reappend, keyed on script basename), and return the
+/// resulting `UserPromptSubmit` hook commands in order.
+///
+/// A fail-safe merge tested only in its happy direction (loom hooks get
+/// added) proves nothing about whether a user's own hook survives it, so
+/// this fixture backs one test per direction instead of a single test that
+/// only reports which assertion tripped without saying which guarantee broke.
+fn merge_polluted_user_prompt_submit_hooks() -> Vec<String> {
+    let temp_dir = TempDir::new().unwrap();
+    let repo_root = temp_dir.path();
+    let hooks_dir = temp_dir.path().join("hooks");
+    let claude_dir = repo_root.join(".claude");
+    std::fs::create_dir_all(&claude_dir).unwrap();
+
+    let existing = json!({
+        "hooks": {
+            "UserPromptSubmit": [
+                {"matcher": "*", "hooks": [{"type": "command", "command": STALE_LOOM_COMMAND}]},
+                {"matcher": "*", "hooks": [{"type": "command", "command": STALE_LOOM_COMMAND}]},
+                {"matcher": "*", "hooks": [{"type": "command", "command": FOREIGN_COMMAND}]},
+            ]
+        }
+    });
+    std::fs::write(
+        claude_dir.join("settings.local.json"),
+        serde_json::to_string_pretty(&existing).unwrap(),
+    )
+    .unwrap();
+
+    ensure_loom_permissions_to(repo_root, Some(&hooks_dir)).unwrap();
+
+    let content = std::fs::read_to_string(claude_dir.join("settings.local.json")).unwrap();
+    let settings: Value = serde_json::from_str(&content).unwrap();
+    settings["hooks"]["UserPromptSubmit"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|entry| entry["hooks"][0]["command"].as_str().unwrap().to_string())
+        .collect()
+}
+
+/// Duplicate loom `UserPromptSubmit` entries must collapse to exactly one of
+/// each of loom's current hooks — not accumulate across `loom init` reruns.
+#[test]
+fn user_prompt_submit_merge_collapses_duplicates() {
+    let commands = merge_polluted_user_prompt_submit_hooks();
+
+    assert_eq!(
+        commands
+            .iter()
+            .filter(|c| c.ends_with("skill-trigger.sh"))
+            .count(),
+        1,
+        "duplicate loom entries were not collapsed: {commands:?}"
+    );
+    assert_eq!(
+        commands
+            .iter()
+            .filter(|c| c.ends_with("user-prompt-context.sh"))
+            .count(),
+        1,
+        "the new loom hook was not added: {commands:?}"
+    );
+}
+
+/// A FOREIGN (non-loom-path) `UserPromptSubmit` entry must survive the
+/// remove-all-loom-then-reappend merge untouched.
+#[test]
+fn user_prompt_submit_merge_preserves_foreign_entry() {
+    let commands = merge_polluted_user_prompt_submit_hooks();
+
+    assert!(
+        commands.iter().any(|c| c == FOREIGN_COMMAND),
+        "foreign UserPromptSubmit entry was dropped by the loom merge: {commands:?}"
+    );
+    assert_eq!(
+        commands.len(),
+        3,
+        "expected 2 loom entries + 1 preserved foreign entry: {commands:?}"
+    );
 }

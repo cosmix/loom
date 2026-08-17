@@ -83,6 +83,10 @@ pub const HOOK_CODEX_FORWARD: &str = include_str!("../../../../hooks/codex-forwa
 pub const HOOK_STAGE_TERMINAL_GUARD: &str =
     include_str!("../../../../hooks/stage-terminal-guard.sh");
 
+/// UserPromptContext hook - delegates retrieval-backed context injection to
+/// `loom hook user-prompt`; contains no retrieval logic of its own.
+pub const HOOK_USER_PROMPT_CONTEXT: &str = include_str!("../../../../hooks/user-prompt-context.sh");
+
 /// All loom hook scripts with their filenames (installed to ~/.claude/hooks/loom/)
 /// All hooks are installed to the loom/ subdirectory to keep them separate from user hooks.
 pub const LOOM_HOOKS: &[(&str, &str)] = &[
@@ -112,6 +116,7 @@ pub const LOOM_HOOKS: &[(&str, &str)] = &[
     ("stage-terminal-guard.sh", HOOK_STAGE_TERMINAL_GUARD),
     // Skill suggestion hooks
     ("skill-trigger.sh", HOOK_SKILL_TRIGGER),
+    ("user-prompt-context.sh", HOOK_USER_PROMPT_CONTEXT),
 ];
 
 /// Loom permissions for the MAIN REPO context

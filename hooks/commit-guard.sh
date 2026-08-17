@@ -334,7 +334,7 @@ remind_memory_usage() {
 		printf '%s\n' "" >&2
 		printf '%s\n' "  loom memory decision \"choice\" --context \"why\"" >&2
 		printf '%s\n' "  loom memory note \"observation\"" >&2
-		printf '%s\n' "  loom memory promote all mistakes  # Transfer to knowledge" >&2
+		printf '%s\n' "  loom memory show --all  # Reviewed by the knowledge-distill stage" >&2
 		printf '%s\n' "------------------------------------------------------------" >&2
 	fi
 }
