@@ -247,3 +247,43 @@ explicitly; an absolute-only fixture proves nothing about the production path.
 `claude` argv itself failing, not the agent. Read the generated wrapper in
 `.work/wrappers/*-wrapper.sh` and run its `exec` line by hand from the worktree — the flag
 error surfaces immediately, where the crash report only says `Process no longer running`.
+
+## `loom memory` Was Unwritable in Every Sandboxed Stage (2026-08-18)
+
+**What happened:** `loom memory note` failed with `Read-only file system (os error 30)` in
+every worktree stage, for as long as the sandbox has been enforced. Stages fell back to
+writing prose into `.work/handoffs/`, so the loss looked like agents choosing not to record
+rather than being unable to.
+
+**Why:** three things compounded. `.work` in a worktree is a symlink to the main repo, so
+the write target is outside the worktree boundary. `sandbox/settings.rs` grants
+`Read(.work/memory/**)` but no matching `Edit` — only `.work/handoffs/**` gets a write
+grant. And the loom binary is **not** exempt from the sandbox: `validate_emittable` rejects
+`excluded_commands` outright. So `record.rs`'s direct `append_entry` hit the kernel and lost.
+
+**Misleading signal:** the comment in `sandbox/settings.rs` asserted that "memory and dispute
+state are daemon-owned, so direct file-tool writes must never be authorized" — describing an
+RPC that **does not exist**. `daemon/protocol.rs` has `CompleteStage` and `DisputeCriteria`
+and nothing for memory. The comment read as deliberate design, so the missing write grant
+looked intentional rather than like a gap. A second fossil pointed the same wrong way:
+`fs/permissions/constants.rs` still declares `LOOM_PERMISSIONS_WORKTREE` with
+`Write(.work/**)` and `Bash(loom *)`, which reads like a blanket grant but has no consumers
+outside its own unit test — and `Write(path)` rules are inert anyway.
+
+**Prevention:** when a comment says state is written "through the daemon", verify the RPC
+exists in `daemon/protocol.rs` before treating a missing write grant as intentional. An
+architecture note describing an unbuilt mechanism is indistinguishable from one describing a
+real one. More generally: after removing a sandbox escape (here, the 2026-08-08
+`excluded_commands` rejection), audit every operation that depended on it — `loom stage
+complete` was given a broker, `loom memory` was not, and nothing failed loudly enough to
+notice.
+
+**Fix:** spool + drain. The sandboxed CLI appends to `<worktree>/.loom/memory-spool.jsonl`
+(inside the worktree, no new grant needed) and the daemon drains it. Attribution is by
+worktree location, not by any claim in the payload. See
+[architecture/memory-spool.md](../architecture/memory-spool.md).
+
+**Found alongside:** `validate_stage_id` rejects path separators but not a sibling stage's
+id, so `loom memory note --stage <other>` could write another stage's journal — and journals
+are injected into other stages' prompts (`orchestrator/signals/generate.rs`). Now refused
+whenever `LOOM_STAGE_ID` is set and disagrees.

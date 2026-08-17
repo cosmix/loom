@@ -481,6 +481,18 @@ network restriction exists anywhere in loom.
 What is and is not guaranteed, the allowlist, and the `Edit(path)`-vs-`Write(path)`
 rule: [architecture/execution-containment.md](architecture/execution-containment.md).
 
+## Memory Spool and Drain (`fs/memory/spool.rs`, `orchestrator/core/spool_drain.rs`) [DETAILED]
+
+A sandboxed stage cannot write `.work/memory/<stage>.md` — `.work` is a symlink out of the
+worktree and the sandbox grants no `Edit` there — so `loom memory` appends to
+`<worktree>/.loom/memory-spool.jsonl` instead and the daemon drains it each tick, plus once
+more in `cleanup_after_merge` before the worktree is destroyed. The payload carries **no
+stage id**: attribution comes from which worktree an entry was drained from, which an agent
+cannot forge.
+
+Why the allowlist could not simply be widened, the drain invariants that are easy to break,
+and the read-path merge: [architecture/memory-spool.md](architecture/memory-spool.md).
+
 ## Telemetry (`loom/src/telemetry/`)
 
 One append-only JSON-lines file, `.work/telemetry/events.jsonl`, recording

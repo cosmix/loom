@@ -749,3 +749,14 @@ left the documented "stage files instead of the plan" recovery path silently dea
 adding a strictness attribute, enumerate every call site deserializing INTO the type; when a
 loop skips EVERY item, fail loudly.
 → [Schema Reuse and Silent Skips](mistakes/schema-reuse-and-silent-skips.md)
+
+## A Comment Described an RPC That Was Never Built
+
+`loom memory note` failed with EROFS in every sandboxed stage: `.work` is a symlink out of
+the worktree and the sandbox grants `Read(.work/memory/**)` with no matching `Edit`. It read
+as intentional because the comment beside the grant said memory is "written through daemon
+RPCs" — and `daemon/protocol.rs` has no such RPC. `loom stage complete` got a broker when
+the `excluded_commands` escape was removed; `loom memory` did not, and nothing failed loudly.
+Verify an RPC exists before treating a missing write grant as deliberate, and after removing
+a sandbox escape, audit every operation that relied on it.
+→ [Sandbox And Settings](mistakes/sandbox-and-settings.md)

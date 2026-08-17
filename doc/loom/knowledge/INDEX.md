@@ -8,11 +8,11 @@
 
 | File | Description | Lines |
 | --- | --- | --- |
-| [architecture.md](architecture.md) | High-level component relationships, data flow, module dependencies | 497 |
+| [architecture.md](architecture.md) | High-level component relationships, data flow, module dependencies | 509 |
 | [entry-points.md](entry-points.md) | Key files agents should read first | 574 |
 | [patterns.md](patterns.md) | Architectural patterns discovered in the codebase | 697 |
 | [conventions.md](conventions.md) | Coding conventions discovered in the codebase | 471 |
-| [mistakes.md](mistakes.md) | Mistakes made and lessons learned - what to avoid | 751 |
+| [mistakes.md](mistakes.md) | Mistakes made and lessons learned - what to avoid | 762 |
 | [stack.md](stack.md) | Dependencies, frameworks, and tooling used in the project | 97 |
 | [concerns.md](concerns.md) | Technical debt, warnings, and issues to address | 743 |
 
@@ -30,6 +30,7 @@
 | [architecture/execution-containment.md](architecture/execution-containment.md) | Execution Containment | Topic notes for the architecture knowledge area. | 165 |
 | [architecture/hook-system.md](architecture/hook-system.md) | Hook System | Hook embedding and install, the SessionStart hookSpecificOutput contract, and the two subagent enforcement hooks. | 110 |
 | [architecture/knowledge-hierarchy.md](architecture/knowledge-hierarchy.md) | Knowledge Hierarchy | Tier-1/tier-2 knowledge mechanics: layout predicate, target parsing, INDEX.md generation, audit link rules, coverage blast radius, opt-in migration, lock ordering. | 122 |
+| [architecture/memory-spool.md](architecture/memory-spool.md) | Memory Spool and Drain | Topic notes for the architecture knowledge area. | 105 |
 | [architecture/remote-control.md](architecture/remote-control.md) | Remote Control | Capability detection, preflight, resolution, and per-kind session naming for driving external agent binaries. | 64 |
 | [architecture/signal-generation.md](architecture/signal-generation.md) | Signal Generation | How a stage signal is assembled: stable-prefix cache, shared append_* helpers, per-stage-type prefixes, soft signals. | 168 |
 | [architecture/source-graph.md](architecture/source-graph.md) | Source Graph | Topic notes for the architecture knowledge area. | 184 |
@@ -57,7 +58,7 @@
 | --- | --- | --- | --- |
 | [mistakes/codex-lane-rogue-wrapper.md](mistakes/codex-lane-rogue-wrapper.md) | Codex Lane Rogue Wrapper | Topic notes for the mistakes knowledge area. | 79 |
 | [mistakes/completion-broker-credential.md](mistakes/completion-broker-credential.md) | Completion Broker Credential | Topic notes for the mistakes knowledge area. | 57 |
-| [mistakes/doctrine-and-acceptance.md](mistakes/doctrine-and-acceptance.md) | Doctrine And Acceptance | Why a one-phrase grep proves presence but never agreement, and how doctrine drifts across surfaces unnoticed. | 77 |
+| [mistakes/doctrine-and-acceptance.md](mistakes/doctrine-and-acceptance.md) | Doctrine And Acceptance | Why a one-phrase grep proves presence but never agreement, and how doctrine drifts across surfaces unnoticed. | 110 |
 | [mistakes/knowledge-base-drift.md](mistakes/knowledge-base-drift.md) | Knowledge Base Drift | How the knowledge base itself goes stale: plan-authoring notes frozen as architecture facts, `[UPDATED]` duplicates, and invented CLI surface. | 100 |
 | [mistakes/knowledge-cli-invariants.md](mistakes/knowledge-cli-invariants.md) | Knowledge Cli Invariants | Invariants belong in the fs constructor, not the CLI handler; lock ordering for sibling refreshes; update appends. | 67 |
 | [mistakes/merge-cleanup-boundary.md](mistakes/merge-cleanup-boundary.md) | Merge Cleanup Boundary | Topic notes for the mistakes knowledge area. | 75 |
@@ -65,7 +66,7 @@
 | [mistakes/phantom-merges.md](mistakes/phantom-merges.md) | Phantom Merges | Seven lessons on loom's merge machinery — writing merged=true without verifying git ancestry (the costliest recurring failure class in loom), plus the preflight guards and session lifecycle around it. | 131 |
 | [mistakes/pinned-literals-ledgers-and-wiring.md](mistakes/pinned-literals-ledgers-and-wiring.md) | Pinned Literals Ledgers And Wiring | Topic notes for the mistakes knowledge area. | 110 |
 | [mistakes/refactor-stragglers.md](mistakes/refactor-stragglers.md) | Refactor Stragglers | What a large removal or rename leaves behind: straggler initializers, stale comments, stale docs, duplicate modules. | 62 |
-| [mistakes/sandbox-and-settings.md](mistakes/sandbox-and-settings.md) | Sandbox And Settings | Sandbox path rules, permission sync, excludedCommands matching, and settings env leaking between main repo and worktrees. | 249 |
+| [mistakes/sandbox-and-settings.md](mistakes/sandbox-and-settings.md) | Sandbox And Settings | Sandbox path rules, permission sync, excludedCommands matching, and settings env leaking between main repo and worktrees. | 289 |
 | [mistakes/schema-reuse-and-silent-skips.md](mistakes/schema-reuse-and-silent-skips.md) | Schema Reuse And Silent Skips | Topic notes for the mistakes knowledge area. | 56 |
 | [mistakes/session-identity-env.md](mistakes/session-identity-env.md) | Session Identity Env | The wrapper script's `LOOM_*` exports are a contract read by hooks, the CLI and the daemon. Two long-standing defects in that contract made knowledge stages impossible to complete. | 83 |
 | [mistakes/sessions-and-liveness.md](mistakes/sessions-and-liveness.md) | Sessions And Liveness | Session identity, liveness routing, spawn-site coverage, and the blast radius of adding a session field. | 136 |
