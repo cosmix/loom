@@ -185,11 +185,18 @@ identity. The original incident and its evidence remain preserved for regression
 
 → [Daemon Singleton Incident](concerns/daemon-singleton.md)
 
-## loom plan verify: Missing bypass-permissions Sandbox Validation (2026-05-14)
+## ~~loom plan verify: Missing bypass-permissions Sandbox Validation~~ (RESOLVED 2026-08-17)
 
-`loom plan verify` does not call `sandbox::config::validate_config`, so a plan with `sandbox.permission_mode=bypass-permissions` reports 0 errors from `plan verify` but fails at `loom init`. The validation exists in `commands/init/plan_setup.rs` and at spawn time, but not in the verify path (`commands/plan/verify.rs`).
+`commands/plan/verify.rs:439-458` now runs the SAME merge plus validation that
+`loom init` and stage spawn use — `sandbox::merge_config`, then
+`sandbox::validate_config` and `sandbox::validate_emittable`, per stage — and
+pushes any failure into `hard_errors` rather than warnings, because `loom init`
+already rejects those plans outright. A plan that `loom init` would refuse is no
+longer reported clean by `plan verify`.
 
-**Recommended fix:** Thread `validate_config` into `commands/plan/verify.rs` so the same validation that blocks `loom init` is surfaced early at plan-authoring time.
+Note the scope of the fix: it wires the two validators that were always the
+authoritative gate. `sandbox::config::validate_paths` remains uncalled in
+production — see the separate concern on uncalled path-escape validators.
 
 ## ~~code_review Persistence Gap~~ (RESOLVED 2026-08-08)
 
@@ -308,38 +315,16 @@ both forms render identically and the staleness check only looks for substrings.
 Until then, prefer the linted form: let the pre-commit hook be the last writer, and do not
 re-run `loom knowledge index` after committing unless topics actually changed.
 
-## Per-Stage Sandbox `Write(path)` Rules Are Inert (2026-07-31)
+## Sandbox `Write(path)` Rules Are Inert — Generated Settings Fixed, Repo Config Open (2026-07-31, split 2026-08-17)
 
-Claude Code's file permission check consults **only** `Edit(path)` rules. A `Write(path)` rule
-parses, prints a startup warning, and is then ignored — so a `Write(**)` deny permits every write
-it was written to block. The warning is easy to miss because it scrolls past during session
-startup:
+Claude Code's file permission check consults **only** `Edit(path)`; a `Write(path)` rule parses,
+warns at startup, and is then ignored. Loom's GENERATED stage settings are now clean —
+`sandbox/settings.rs` emits `Edit(...)` throughout — but the repository's own committed
+`.claude/settings.json` still carries three inert `Write(.work/**)` deny rules and no `Edit(`
+rule at all, so the "agents never edit `.work` directly" rule is documented and unenforced.
 
-```text
-Permission deny rule (.claude/settings.local.json): Write(**) is not matched by file
-permission checks — only Edit(path) rules are. Use Edit(**) instead.
-```
-
-`sandbox/settings.rs` builds the sandbox for **every worktree stage session** and emits `Write(...)`
-in both its allow and deny lists, so per-stage write restrictions likely do not enforce what they
-claim. The repo's own committed `.claude/settings.json` carries `Write(.work/**)` for the same
-reason and warns on every session start. The knowledge spawn path was fixed in
-`commands/knowledge/spawn.rs` (2026-07-31); `sandbox/settings.rs` was left alone deliberately —
-it means reworking the core stage sandbox model and updating many exact-string test assertions.
-
-**Detection:** grep for `Write(` in generated settings. Any rule meant to gate file access must be
-`Edit(...)`; `Edit` covers all file-editing tools, `Write` covers none of them.
-
-**Caution when fixing:** deny beats allow, so a blanket `Edit(**)` deny cannot be paired with a
-narrower `Edit(<dir>/**)` allow — the deny wins and blocks the directory the session needs. Scope
-blanket denies to read-only modes only.
-
-**Related follow-up (2026-08-10):** the same rework should carry a plan's sandbox
-`filesystem.allow_write` through to `sandbox.filesystem.allowWrite`, which is the OS-enforced,
-additive form that actually reaches a subprocess. The generator now emits that key (for the codex
-lane's state dirs — `CODEX_SANDBOX_WRITE_PATHS`), so the mechanism is present and proven; plan
-`allow_write` is simply not routed into it, and still lands only in the ignored `Write(...)` form.
-Until it is, a plan author asking for subprocess write access gets silence, not an error.
+→ [Sandbox Write Rules Inert](concerns/sandbox-write-rules-inert.md) for both halves, the
+deliberate carry-forward of user-authored rules, and the deny-beats-allow caution before fixing.
 
 ## GC Flags Tier-1 Files for Section Extraction With No Oversized Sections (2026-07-31)
 
@@ -546,12 +531,15 @@ all four depend on its current contract, and it has a Rust twin at
 `loom/src/hooks/validators/bash.rs:71` that would have to move in lockstep. Widening the fix was
 out of scope for a two-bug repair, not a judgement that these are safe.
 
-Expect both directions of the same defect in each: a false positive when a quoted argument merely
-mentions a matched form, and quieter false negatives where a quote character sits exactly where
-the pattern expects a boundary. The migration path is ready — `loom_tokenize_command` is in
-`_common.sh`, is permissive by design, and is not coupled to git-add-guard. Convert a hook when
-it next misfires, add its cases to `hooks/tests/`, and keep its old regex as the
-unterminated-quote fallback, exactly as `git-add-guard.sh` does.
+**Update 2026-08-17.** The stage-finalize bridge hook was converted to the same
+token scan and is therefore no longer in this list — but its unterminated-quote
+FALLBACK still uses the raw-string glob, on purpose, so that the gate is never
+weaker than before the conversion. That fallback fires on ordinary English prose
+containing an apostrophe, which makes it a live false-positive source for any
+command that feeds prose through a heredoc. Mechanism, matched-pair reproduction
+and the correct workaround: `patterns/hook-content-stripping.md`. Note the general
+shape — converting a matcher to tokens does not retire the raw-string class while a
+raw-string fallback remains reachable.
 
 ## `loom memory` Is Unusable Without an Initialised `.work` (2026-08-11)
 
@@ -578,3 +566,173 @@ guard exists to dodge.
 the old behaviour. When delegating outside a loom run against an older binary, tell subagents
 explicitly that `loom memory` will fail, that auto-memory is still forbidden, and that they must
 return insights in their final report for the orchestrator to record by hand.
+
+## Knowledge Brief Advertises a `--stage` Flag That Does Not Exist (2026-08-17)
+
+`brief.rs:46` tells every stage to run
+`loom knowledge context --stage <id> --query ...`, but that command has no `--stage` flag and
+exits with `error: unexpected argument '--stage' found`. The one call-to-action in every
+Knowledge Brief fails. The test at `brief.rs:200` asserts the footer equals that literal string,
+so it pins the defect rather than catching it.
+
+→ [Brief Footer Stage Flag](concerns/brief-footer-stage-flag.md) for the real flag set, the fix,
+and the rule about testing advertised commands by parsing them.
+
+## Two Diverging Copies of the Stage Environment Allowlist (2026-08-17)
+
+The host env allowlist exists twice, and the copies have **already** diverged:
+
+| Copy | Form | Consumer |
+| --- | --- | --- |
+| `process/environment.rs:14-59` `STAGE_HOST_ENV_ALLOWLIST` | Rust `&[&str]` | `spawn_confined`, i.e. plan-authored commands |
+| `orchestrator/terminal/native/wrapper.rs:181-195` `ENV_ALLOWLIST` | embedded shell loop | the native terminal wrapper, i.e. stage agent sessions |
+
+The shell copy omits `CARGO_HOME`, `RUSTUP_HOME`, all eight proxy variables
+(`HTTP_PROXY`/`HTTPS_PROXY`/`NO_PROXY`/`ALL_PROXY` and their lowercase twins) and
+all three CA-bundle locations (`SSL_CERT_FILE`, `SSL_CERT_DIR`,
+`NIX_SSL_CERT_FILE`). Verified by reading both.
+
+**Concrete failure mode, not hypothetical:** on a host behind a corporate proxy, a
+plan-authored acceptance command can fetch and a stage agent session cannot — and
+the symptom is a mysterious network failure inside the agent, with no error
+pointing at an env allowlist. The same divergence hides a relocated
+`CARGO_HOME`.
+
+**Fix:** derive the shell loop from the Rust constant (generate the variable-name
+list at build time or render it into the wrapper from the same slice), and add a
+test asserting the two agree. Two tables encoding one real-world fact will drift;
+the test that matters pins them to each other, not more tests on either side.
+
+## Confined Commands Still Reach a Live Credential Bus (2026-08-17)
+
+`process/environment.rs` withholds `SSH_AUTH_SOCK` with an explicit rationale — it
+is a live credential-agent socket, not a location — while forwarding
+`DBUS_SESSION_BUS_ADDRESS` (`:33`) and `XAUTHORITY` (`:32`). A session bus address
+reaches `org.freedesktop.secrets`, which is a live credential surface by exactly
+the argument used to withhold the SSH socket.
+
+**Root cause worth recording:** one allowlist serves two consumers with different
+needs. The terminal spawner genuinely needs display and session variables to attach
+a window; `spawn_confined` does not need either. **Fix:** split the list into a
+common base plus a terminal-only extension, and let `spawn_confined` take only the
+base. Doing that also removes the reason the second copy above exists.
+
+See `architecture/execution-containment.md` for the honest statement of what
+confinement does and does not guarantee.
+
+## Telemetry Under-Reports the Failures It Exists to Measure (2026-08-17)
+
+`orchestrator/core/stage_telemetry.rs:25` calls `.ok()` on
+`load_deliveries`, collapsing a genuine I/O error into the same
+`ContextUnavailable { reason: "no delivery record for this session" }` as a real
+miss. The file exists to measure how often stages spawn without a context brief, so
+folding read failures into "no record" under-reports precisely the failures it is
+for. **Fix:** give the error branch its own reason string.
+
+Related, and deliberate rather than broken: `telemetry::read_events` has **no
+production caller**, and `.work/` is removed when a plan finishes, so every event
+written today goes unread. The intended reader is a future `loom status`/`loom map`
+diagnostic. Keep it or delete it consciously — do not assume the data is being used.
+
+## Source-Graph Overlay Cannot Express a Deletion (2026-08-17)
+
+`GraphStore::resolved` computes `overlay ∪ base`, so a file a stage DELETED keeps
+its base entry and a view over the resolved graph — `loom map --outline
+<deleted-file>` — still prints the stale outline. Fixing it needs a tombstone
+concept in `graph_store`, which `refresh/source_graph.rs` explicitly does not own
+(its docstring records the gap at `:10-16`).
+
+## `Channel::Source` Is Accepted Everywhere and Consulted Nowhere (2026-08-17)
+
+`--scope source` parses, is advertised in `--help`, is threaded into
+`PackRequest.scope`, is serialized into every `ContextPack`, and is included by
+`Channel::all()` in the DEFAULT path — while `rank_channels` ranks it over an empty
+slice. Every emitted pack therefore names a scope it never searched. The
+verification stage added an honest stderr notice rather than removing the value,
+because rejecting a currently-accepted flag is a breaking change.
+
+The trail of individually-defensible dead shapes left by shipping the store without
+the consumer — `ItemKind::SourceNode` never constructed, `ResolvedGraph::node()`
+with zero callers, `ContextItem.excerpt`'s unreachable `None` arm — is catalogued in
+`mistakes/store-without-consumer.md`. Cheap detection for each new public item:
+**name the production caller**, rather than asking whether the compiler warns.
+
+## Uncalled Path-Escape Validators Read As Protection (2026-08-17)
+
+`sandbox/config.rs` ships three `pub` path-escape validators that **nothing in production
+calls**: `detect_path_escape` (`:192`), `validate_paths` (`:276`) and
+`is_legitimate_work_access` (`:297`). They are re-exported from `sandbox/mod.rs:10-11`, and
+`rg` over `loom/src` finds their only callers are their own tests at `:636-730`.
+
+`test_validate_paths_detects_escape_in_allow_write` (`:711`) asserts `validate_paths` flags an
+escape in `allow_write` — but `loom init` runs `validate_sandbox` and `validate_emittable` per
+stage, never `validate_paths`, so that escape was in fact emitted unchecked. A green test
+standing in for an absent control (`mistakes/tests-that-cannot-fail.md`).
+
+Two things make it invisible: the items are `pub` and re-exported, so `dead_code` never fires
+(a fresh build emits ZERO warnings), and the test name reads like coverage of a live
+guarantee.
+
+Deliberately not wired in when found: turning `validate_paths` on at plan-validation time
+would start REJECTING plans that load fine today, a behaviour change a verification stage
+should not make. The hole it describes is now closed **at the point of use** by the
+parent-traversal filter in `sandbox/settings.rs`.
+
+**Owner should pick one:** wire it into `loom init` and `plan verify` as a fail-fast check
+(preferred — a clear error beats a silently dropped entry), or delete all three and their
+tests. **Leaving `pub`-but-uncalled validators is the worst of the three, because it reads as
+protection.**
+
+## Sandbox-Widening Fields Need No Author Acknowledgement (2026-08-17)
+
+`plan/schema/validation.rs:45-69` `unsafe_plan_reasons` gates only `enabled: false` and
+`allow_unsandboxed_escape`. So `allow_write`, `allow_all_unix_sockets`,
+`allow_local_binding` and `linux.enable_weaker_nested` each widen the sandbox with no
+acknowledgement required from the plan author. Reviewer-reported and not independently
+confirmed — read the code before acting.
+
+## Duplicated Extension-to-Language Table (2026-08-17)
+
+The same real-world fact is encoded twice and nothing pins the copies together:
+`language.rs:117-129` maps a `str` to `Option<DetectedLanguage>`, and
+`context/extract/lexical.rs:22-36` maps a `Path` to `NodeLanguage`. Both cover `rs`;
+`ts,tsx,mts,cts`; `py,pyi`; `go`.
+
+**Failure mode is a silently narrowing capability, not a crash.** Add `.jsx` to one and not
+the other and the stage skill recommender classifies a file as TypeScript while the
+source-graph tagger labels it `Other` and gives it lexical-only coverage — so
+`loom map --outline` shows no symbols for a language loom otherwise claims to support, with no
+error anywhere.
+
+**Fix:** have `extract::lexical::language_for_path` delegate to `language::language_for_path`
+(make it `pub(crate)`) rather than re-encoding the mapping. The test that matters asserts the
+two agree over a shared fixture list — not more tests on either side.
+
+## Low-Severity Cleanups Deferred From the Verification Gate (2026-08-17)
+
+- `refresh/source_graph.rs:111` is a bare `let _ = mark_semantic_stale(..)` while that
+  function's own doc (`:341-343`) says callers log and continue. The sibling caller in
+  `merge_lifecycle` does log; this one does not.
+- `delivery::plan_key` falls back to a `default` namespace when a stage file lacks `plan_id`,
+  while `commands/context/record_edit::active_plan` and `MergeLifecycle::plan_id` both read
+  `config.plan_id()`. They agree today, but a legacy stage file without `plan_id` would file
+  delivery records under a different namespace than the graph overlay and dirty paths. Route
+  all three through one derivation.
+- `print_freshness_line` is duplicated between `commands/knowledge/status.rs:154-164` and
+  `commands/knowledge/context.rs:126-136`, differing only by a two-space indent. Both live in
+  the same module; hoist one.
+
+## `loom knowledge` Cannot Rename a Section Heading (2026-08-17)
+
+`loom knowledge replace-section <file> <heading>` replaces a section's **body** and keeps the
+existing heading line. So content passed with its own `## ` heading produces a DUPLICATE
+heading, and marking an entry resolved in the repo's `~~strikethrough~~ (RESOLVED date)`
+convention is not expressible through the CLI at all.
+
+Encountered while closing out this plan: two concerns entries needed their headings rewritten,
+which required a direct file edit despite the "use the CLI during loom execution" rule.
+
+**Workaround:** pass body-only content to `replace-section`, and treat a heading rename as a
+separate manual edit. **Fix:** either accept content whose first line is a heading and replace
+the heading too, or add a `--heading <new>` flag. Related to the existing entries on the
+missing delete-section verb and correcting an entry in place.
