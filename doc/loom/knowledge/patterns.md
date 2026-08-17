@@ -612,3 +612,86 @@ Any sweep that kills or deletes must resolve _uncertainty_ toward inaction:
   checkouts' live resources.
 - **Report what you skipped.** Unattributable resources are surfaced to the user, never silently
   killed and never silently ignored.
+
+## One Flattener for an Untrusted Value Rendered on Many Surfaces
+
+`context/untrusted.rs::inline_safe` is the single definition both agent-facing renderers
+call — the Knowledge Brief (`signals/format/brief.rs`) and `loom knowledge context`'s stdout
+(`commands/knowledge/context.rs`). Its docstring states outright that a second copy would
+duplicate a security rule that must never drift.
+
+The generalisable shape: when the same escaping or fencing rule must hold on N surfaces,
+put it in one function that all N import, and say so in the docstring — because the failure
+mode is not a wrong implementation, it is a second implementation. And remember the surface
+set is larger than it looks: a brief whose footer advertises a command extends the boundary
+to that command's output. See `mistakes/untrusted-value-boundaries.md`.
+
+## Confidence Ceilings as Named Constants
+
+When a component's view is structurally narrower than the claim it is asked to make, encode
+the gap as a numeric ceiling in a named constant whose docstring carries the reasoning —
+not as a comment at the call site. The source graph does this with
+`MAX_INFERRED_CONFIDENCE = 0.5` (an extractor sees one file), `MAX_RESOLVED_INFERRED_CONFIDENCE = 0.9`
+(whole-graph uniqueness is evidence, but not a parse) and `1.0` reserved for `Parser`
+provenance alone.
+
+Two properties make it work: a widening is a **new constructor** encoding the wider bound
+(`SourceEdge::resolve_to`), never a raw field write; and path-level aggregation takes the
+**MINIMUM** edge confidence along a path, never a product — a product punishes long
+fully-parsed chains for their length (`1.0 × 1.0 × 1.0` stays `1.0`, but `0.9^5` reads as a
+guess). `resolve.rs`'s `Trust::extend` only lowers the running minimum, carrying the weakest
+edge's provenance and kind with it.
+
+## Base Layer Plus Per-Stage Overlay, Shadowing Wholesale
+
+The pattern that lets parallel worktrees share derived state safely: an immutable base keyed
+by the revision it was built from, plus a per-stage overlay holding only what that stage
+changed, read as `overlay ∪ (base − overlay's files)`. An overlay entry shadows its base
+counterpart **wholesale, never merges with it** — a partial merge produces a view describing
+no revision that ever existed.
+
+Reusable rules that come with it: the layout module owns layering and serialization only,
+never building or write-timing; and the layering cannot express a DELETION without a
+tombstone concept, so plan for one if deletions matter.
+→ [architecture/context-retrieval.md](architecture/context-retrieval.md)
+
+## Best-Effort By Contract, Stated In the Docstring
+
+`telemetry` and `context::delivery` are both declared optimisations that may never fail the
+operation they observe: `emit` discards its own error, `read_events` skips a malformed line
+rather than failing the file, a missing delivery directory reads as "nothing delivered".
+Writing that contract into the module docstring is what stops a later author "fixing" the
+swallowed error into a propagated one.
+
+The corollary is the failure budget rule: **the durable result and the derived artifact have
+different budgets — never let the cheaper one veto the expensive one.** A reconcile failure
+marks derived state stale and leaves a good merge intact.
+
+## One Door for an Irreversible Operation
+
+`MergeLifecycle::cleanup` is the only path by which any caller may reach
+`cleanup_after_merge`, and it refuses unless the stage branch is provably contained in the
+target. Removing a side effect from a function is only durable if that side effect gains a
+single owner — otherwise the next caller re-adds it locally. Pair it with the rule that a
+destructive step which cannot verify its own precondition must decline rather than proceed.
+→ [mistakes/merge-cleanup-boundary.md](mistakes/merge-cleanup-boundary.md)
+
+## Matched Positive and Negative Controls for a Boundary Test
+
+`verify/criteria/tests/confine_tests.rs` ships
+`confined_shell_command_does_not_see_ambient_secret` **and**
+`inherited_shell_command_does_see_ambient_secret`. The pair distinguishes "the scrub works"
+from "the canary was never set", which a single negative assertion cannot. `process/environment.rs:92`
+does the same at unit level by exec'ing `/usr/bin/env` and asserting the canary is absent
+from real child output rather than inspecting a `Command` struct.
+
+**A boundary test needs the allow case asserted alongside the deny case, or it cannot fail
+when the boundary silently stops applying.** This is the positive form of
+`mistakes/tests-that-cannot-fail.md`.
+
+## Degraded Modes Are Reported, Never Silent
+
+`FileCoverage` gives every file a node even when it could not be parsed — `LexicalOnly`,
+`Oversized`, `ParseError` — so a consumer can tell "no symbols here" from "not analysed".
+When adding a new extractor or analyser, the degraded paths are the ones to test: the happy
+path fails loudly, the degraded paths fail silently.

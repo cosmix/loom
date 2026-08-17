@@ -34,12 +34,36 @@ file-ownership rules that say which process may write which `.work/` file.
 
 Correct dependency direction: commands/ -> orchestrator/ -> models/ (top), daemon/ / git/ / plan/ (middle), fs/ (bottom).
 
-Known violations:
+Known violations (all four are pre-existing, none introduced by the context work):
 
 - daemon imports commands (mark_plan_done_if_all_merged) -- fix: move to fs/plan_lifecycle.rs
 - orchestrator imports commands (check_merge_state) -- fix: move to git/merge/status.rs
 - git/worktree imports orchestrator (hook config) -- fix: extract hooks/ as top-level
 - models imports plan/schema (WiringCheck, StageType) -- fix: move types to models/
+
+### The newer modules are clean (verified 2026-08-17)
+
+The list above predates `context/`, `telemetry/` and `process/`, so its silence about them was
+ambiguous rather than reassuring. Verified with
+`rg '^use crate::[a-z_]+' loom/src/context`:
+
+- **`context`** imports only `crate::context`, `crate::fs`, `crate::language`, `crate::models`
+  and `crate::git`. **No upward edge** to `orchestrator`, `commands` or `daemon`. The single
+  `git` edge is deliberate — `git::runner::run_git_checked` at
+  `context/refresh/source_graph.rs:30`, needed to list tracked files and judge tree
+  cleanliness — and it points downward, so it is not a violation. Record it rather than
+  rediscovering it.
+- **`telemetry`** is a leaf: one module, no `crate::` imports beyond its own serde types. The
+  orchestrator calls into it (`orchestrator/core/stage_telemetry.rs`), never the reverse.
+- **`process`** holds the env allowlist and is consumed by both `verify` and the terminal
+  spawner without importing either.
+
+The rule to preserve: the orchestrator calls into `context`, never the other way around. A
+`use crate::orchestrator` appearing anywhere under `loom/src/context/` is a regression, and the
+one-line check above is the way to catch it.
+
+(Note that a match for `crate::external` under `context/extract/rust.rs:132` is inside a golden
+test fixture string, not a real import.)
 
 ## Context Budget Enforcement
 
@@ -424,3 +448,50 @@ trap, the sticky `.work/terminal-backend-fallback` marker and every path that wr
 `loom attach`'s overview and direct modes, and the positive-attribution rule for socket reaping.
 
 → [Terminal Backends](architecture/terminal-backends.md)
+
+## Context Retrieval (`loom/src/context/`)
+
+Deterministic, model-free, network-free retrieval over the curated knowledge
+hierarchy: chunk the prose, rank per channel, fuse by reciprocal rank fusion,
+pack to a token budget. One entry point — `context::retrieve_for_stage` — serves
+the `loom knowledge context` command, signal generation and the prompt hook
+alike. Two graphs exist but only the knowledge-chunk one is wired into ranking.
+
+Full detail, including the base/overlay layering rule and what is derived versus
+durable: [architecture/context-retrieval.md](architecture/context-retrieval.md).
+
+## Source Graph (`loom/src/context/source_graph/`, `context/extract/`)
+
+A derived tree-sitter graph of the repo's own source, consumed today only by
+`loom map`. Its defining property is an explicit honesty contract: every edge
+carries provenance and a confidence ceiling, and no file is ever silently
+omitted — a degraded file is reported as degraded.
+
+Extractor trait, cache identity, coverage contract and the exact grammar pins:
+[architecture/source-graph.md](architecture/source-graph.md).
+
+## Execution Containment (`loom/src/verify/criteria/confine.rs`)
+
+Plan-authored commands (acceptance, setup, truth checks, wiring tests, dead-code
+checks, change-impact) run through the single primitive `spawn_confined`, which
+rebuilds the child environment from an allowlist. **That is the whole boundary:
+environment scrubbing, not isolation.** No namespaces, seccomp, landlock, or
+network restriction exists anywhere in loom.
+
+What is and is not guaranteed, the allowlist, and the `Edit(path)`-vs-`Write(path)`
+rule: [architecture/execution-containment.md](architecture/execution-containment.md).
+
+## Telemetry (`loom/src/telemetry/`)
+
+One append-only JSON-lines file, `.work/telemetry/events.jsonl`, recording
+whether a spawned session received a context brief (`ContextDelivered` /
+`ContextUnavailable`). Best-effort by contract: `emit` may never fail a spawn and
+`read_events` skips a malformed line rather than failing the file. Every count is
+an item count, never a token saving.
+
+Written only by `orchestrator/core/stage_telemetry.rs` (called from
+`stage_executor.rs:570`), which derives its fields from the `DeliveryRecord`
+signal generation already wrote — no second retrieval. `read_events` has **no
+production caller** today, and `.work/` is removed when the plan finishes, so
+events currently go unread; the intended reader is a future `loom status`/`loom map`
+diagnostic.

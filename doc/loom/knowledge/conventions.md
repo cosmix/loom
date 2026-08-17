@@ -400,3 +400,72 @@ for any new field (`loom/tests/integration/implementer_defaults.rs`):
 
 Schema-only tests are not enough: they never touch the state files already on disk, which is exactly
 where a non-defaulted field breaks a running plan.
+
+## Formatting and Test Invocation in a Shared Worktree
+
+- **Never run `cargo fmt` while sibling subagents are live.** `cargo fmt -- <path>`
+  **IGNORES its path arguments** and formats the ENTIRE crate, silently reformatting files
+  another agent owns — which shows up in `git status` as an ownership violation and can
+  collide with an in-flight edit. Use `rustfmt --edition 2021 <file>` for your own files.
+  Only the main agent runs repo-wide `cargo fmt`, and only after every subagent has landed.
+- **`cargo test` accepts exactly ONE testname filter.** Extra filters are rejected with
+  "unexpected argument" BEFORE compiling, so zero tests run. Use one common prefix
+  (`cargo test --lib context::`) or separate invocations chained with `&&`.
+- **Filter by the real module path.** Tests under a `tests` submodule need it spelled out:
+  `context::tests::delivery`, not `context::delivery`, which matches nothing.
+- **`rustfmt`'s `fn_call_width = 60` is what forces a call vertical, not `max_width = 100`.**
+  Sum the argument names including `, ` separators; over 60 and rustfmt goes one-arg-per-line,
+  which can explode a match arm and trip the 50-line function gate. Renaming in the pattern
+  (`budget_tokens: budget`) is a legitimate way back under the limit.
+
+## Dependency Pins for Native-Grammar Crates
+
+Exact-pin (`=x.y.z`) any dependency whose generated output is cached, and collapse a family
+of optional deps behind ONE feature rather than letting `cargo add` mint an implicit feature
+per dep — otherwise a host can disable half a family and leave a registry inconsistent. See
+`architecture/source-graph.md` for the worked example.
+
+**After any `cargo add` that pulls a new crate, run `cargo fetch` ONCE with the sandbox
+disabled.** The Bash sandbox makes `~/.cargo/registry/cache` read-only, so a later
+`cargo build` dies with `failed to open .../<crate>.crate: Read-only file system (os error 30)`
+— which reads like a corrupt registry rather than a permissions problem. Every build after
+that fetch works inside the sandbox because the `.crate` files are present.
+
+## Splitting a File
+
+Use the edition-2021 layout `<name>.rs` plus a `<name>/` subdirectory (as
+`context/graph_store.rs` + `graph_store/` do). **Never `<name>/mod.rs`** — it deletes the
+path that a stage's artifacts and wiring lists pin. Check the ledger and the wiring patterns
+first; see `mistakes/pinned-literals-ledgers-and-wiring.md`.
+
+Two visibility details that bite when splitting:
+
+- Re-export across a module boundary explicitly: an item marked `pub(crate)` is unreachable
+  if any module on its path is declared without `pub`.
+- Moving a `#[cfg(test)]` fixture DEEPER breaks an existing `pub(super)` re-export (E0364).
+  Give the moved item `pub(in crate::path::to::original::scope)` to match its original
+  effective visibility exactly, rather than `pub(super)`.
+
+## Docstring Honesty
+
+State the current wiring, not the intended one. If a consumer is unbuilt, say so — the house
+style to copy is `commands/context/record_edit.rs:12-14`, which states outright that it is
+consumed by nothing and is pure input for a consumer that has not been built. Prefer intra-doc
+links (`` [`crate::context::refresh`] ``) over plain backticks for module cross-references, so
+a wrong path becomes a rustdoc warning instead of a permanent lie that survives
+`clippy -D warnings`.
+
+## Deliberately-Invalid Test Fixtures
+
+`tests/maintainability/scanner.rs` parses EVERY `.rs` file under the crate, `tests/fixtures/`
+included, and errors on unbalanced braces. An intentionally-unparseable fixture must therefore
+**not carry a real `.rs` extension** — name it `<name>.rs.broken` and pass a virtual `.rs`
+dispatch path to whatever must still treat it as that language.
+
+## Working Directory
+
+The Bash tool keeps its working directory ACROSS calls in this harness, so one `cd` silently
+redirects every later relative command. Prefix verification commands with an explicit absolute
+`cd`, or pass absolute paths. **If EVERY independent check fails at once — fmt and clippy and
+build and an unrelated gate — suspect the working directory before the code**; a real
+regression almost never breaks all of them in the same instant.

@@ -46,3 +46,34 @@ that reads as though the codebase actually contains the mangled string.
 
 **Prevention:** `rg` recurses by default — never pass `-r` for recursion. If output looks
 textually mangled, suspect `-r`.
+
+## The PATH Binary Can Lag `main` MID-PLAN, Not Just Behind Your Build
+
+Rule 11 says always use `loom` from PATH, never `target/debug/loom`. That is right for
+avoiding state corruption, but it makes `--help` an unreliable source of truth for
+documenting the tree you are working in.
+
+**Observed at the end of the context-retrieval plan**, from one installed binary:
+
+```text
+loom knowledge context --help   -> works, full new flag set
+loom map --help                 -> shows only --deep --focus --overwrite
+loom context record-edit --help -> error: unrecognized subcommand 'context'
+loom hook user-prompt --help    -> error: unrecognized subcommand 'hook'
+```
+
+All four commands exist in the source. The binary had been reinstalled after the
+`context-core` stage merged and before `source-graph` and `delivery` merged, so it carried
+exactly the first stage's surface. Nothing about the output says "stale" — a missing
+subcommand looks identical to a subcommand that was never written.
+
+**Prevention:**
+
+- When documenting or verifying a CLI surface, read the clap definitions
+  (`loom/src/cli/types.rs`, `cli/types_ops.rs`, the command's own `Args` struct), and treat
+  `--help` as corroboration only.
+- An "unrecognized subcommand" for something you can see in the source means a version
+  mismatch, not a missing feature. Check `git log` for when it merged versus when the binary
+  was installed.
+- This is the same family as the existing entry about a PATH binary not being your build; the
+  new part is that a MID-PLAN reinstall makes the mismatch partial and therefore convincing.

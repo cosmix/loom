@@ -69,3 +69,29 @@
   `loom init`, at `loom run` startup and again per spawn; a missing binary is always **advisory** —
   loom warns and falls back to the native lane, never aborts. Version note: the overview's nested-attach
   and layout behaviour was verified against tmux 3.7b.
+
+## Tree-sitter Source Extraction (2026-08-17)
+
+Six optional dependencies behind ONE default-on cargo feature, `source-graph`
+(`loom/Cargo.toml:41-46`, `:63-77`), all exact-pinned with `=`:
+
+| Crate | Pin |
+| --- | --- |
+| `tree-sitter` | `=0.26.12` |
+| `tree-sitter-rust` | `=0.24.2` |
+| `tree-sitter-typescript` | `=0.23.2` |
+| `tree-sitter-python` | `=0.25.0` |
+| `tree-sitter-go` | `=0.25.0` |
+| `streaming-iterator` | `=0.1.9` |
+
+`streaming-iterator` is required, not incidental: tree-sitter 0.26's
+`QueryCursor::matches` returns a `StreamingIterator`, not a plain `Iterator`.
+
+`--no-default-features` is the only supported degraded mode and it **builds** — extraction
+falls back to file-level lexical nodes rather than failing — so a host without a C
+toolchain can still build loom. The deps are collapsed into one feature deliberately, so a
+host cannot disable half the grammars and leave the extractor registry inconsistent.
+
+Exact pins matter here because a grammar version participates in the extraction cache
+identity (`ExtractorIdentity.grammar_version`); a floating pin would silently invalidate or,
+worse, silently reuse cached extractions. See `architecture/source-graph.md`.

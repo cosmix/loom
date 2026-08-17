@@ -110,3 +110,22 @@
 - `commit-guard.sh`: Changed MergeConflict case to allow session exit (no longer sets stage_incomplete)
 - `merge_handler.rs`: Added `kill_session()` call for stale Stage sessions before spawning merge resolver
 - `merge.rs`: Added "Inherited Responsibilities" section to merge signal explaining resolver owns the stage
+
+## Cleanup Inside "Merge" Destroyed the Evidence (2026-08-17)
+
+A new route into this same failure class, worth reading in full because the fix is
+structural rather than another check: `attempt_auto_merge` performed worktree and
+branch cleanup inside its own success arms, so it deleted the branch that its caller
+uses to derive a missing `completed_commit`. Nothing wrote a false `merged: true` —
+the code simply removed the ability to verify, which is the same class arrived at
+from the opposite side.
+
+The repair introduced `orchestrator/merge_lifecycle.rs` as the single door to
+post-merge cleanup, made `attempt_auto_merge` return an UNCLEANED outcome, and pinned
+the order: overlay reconcile, merge, **verify merged ancestry**, base reconcile, mark
+state and release dependents, then cleanup. Cleanup now refuses outright unless the
+stage branch is provably contained in the target.
+
+Full detail, including the detection rule ("after this returns, what can no longer be
+verified?") and the two subsidiary rules about live-cwd deferral and derived-state
+failure budgets: `mistakes/merge-cleanup-boundary.md`.
