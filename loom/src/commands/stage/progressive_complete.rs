@@ -7,9 +7,10 @@ use anyhow::{bail, Context, Result};
 use std::path::Path;
 
 use crate::git::branch::branch_name_for_stage;
-use crate::git::cleanup::{cleanup_after_merge, CleanupConfig};
+use crate::git::cleanup::CleanupConfig;
 use crate::git::get_branch_head;
 use crate::models::stage::Stage;
+use crate::orchestrator::merge_lifecycle::{CleanupOutcome, MergeLifecycle};
 use crate::orchestrator::{get_merge_point, merge_completed_stage, ProgressiveMergeResult};
 use crate::verify::transitions::update_stage;
 
@@ -160,26 +161,14 @@ pub fn attempt_progressive_merge(
 }
 
 /// Whether worktree cleanup for `stage_id` must be deferred rather than run
-/// now.
-///
-/// Removing `repo_root/.worktrees/<stage_id>` while `cwd` is inside it
-/// deletes the current process's (and its parent Claude session's) live
-/// working directory, which breaks any hooks the session fires afterward —
-/// they spawn a shell with a cwd that no longer exists. When that's the
-/// case, the caller must skip immediate cleanup and leave it for the
-/// orchestrator (which cleans up after killing the session).
+/// now. See `merge_lifecycle::should_defer_cleanup` for the real
+/// implementation; production code now reaches it only via
+/// `MergeLifecycle::cleanup`. This delegation stays test-only (`cfg(test)`)
+/// so `tests/progressive_complete.rs`'s regression coverage for the
+/// deferral gate keeps compiling without leaving a dead production symbol.
+#[cfg(test)]
 pub(super) fn should_defer_cleanup(cwd: &Path, repo_root: &Path, stage_id: &str) -> bool {
-    let expected = repo_root.join(".worktrees").join(stage_id);
-    let expected = match expected.canonicalize() {
-        Ok(p) => p,
-        // Worktree doesn't exist on disk - cleanup would be a no-op anyway.
-        Err(_) => return false,
-    };
-    match cwd.canonicalize() {
-        Ok(cwd) => cwd.starts_with(&expected),
-        // Can't verify cwd is safe - assume the worst and defer.
-        Err(_) => true,
-    }
+    crate::orchestrator::merge_lifecycle::should_defer_cleanup(cwd, repo_root, stage_id)
 }
 
 /// Complete a stage with merge, triggering dependents on success.
@@ -187,6 +176,8 @@ pub(super) fn should_defer_cleanup(cwd: &Path, repo_root: &Path, stage_id: &str)
 /// This is the standard completion path for stages after acceptance criteria pass.
 /// It attempts progressive merge and marks the stage as completed.
 pub fn complete_with_merge(stage: &mut Stage, repo_root: &Path, work_dir: &Path) -> Result<bool> {
+    MergeLifecycle::new(&stage.id, repo_root, work_dir).reconcile_overlay();
+
     match attempt_progressive_merge(stage, repo_root, work_dir)? {
         MergeOutcome::Success => {
             // Mark stage as completed - only after merge succeeds.
@@ -207,8 +198,10 @@ pub fn complete_with_merge(stage: &mut Stage, repo_root: &Path, work_dir: &Path)
 
             println!("Stage '{}' completed!", stage.id);
 
-            // Trigger dependent stages
             let target_branch = crate::fs::resolve_target_branch_from_config(work_dir, repo_root)?;
+            MergeLifecycle::new(&stage.id, repo_root, work_dir).reconcile_base(&target_branch);
+
+            // Trigger dependent stages
             let triggered = crate::verify::transitions::trigger_dependents(
                 &stage.id,
                 work_dir,
@@ -224,54 +217,21 @@ pub fn complete_with_merge(stage: &mut Stage, repo_root: &Path, work_dir: &Path)
                 }
             }
 
-            // Clean up worktree and branch after successful merge - unless
-            // this session is running from inside the worktree being removed
-            // (see should_defer_cleanup).
-            let defer_cleanup = match std::env::current_dir() {
-                Ok(cwd) => should_defer_cleanup(&cwd, repo_root, &stage.id),
-                Err(_) => true,
+            // Clean up worktree, branch and source-graph overlay after a
+            // verified merge (see `MergeLifecycle::cleanup`); it honours the
+            // in-worktree deferral itself. `verbose: false` because
+            // `print_cleanup_outcome` below is the single place that reports
+            // what cleanup did — `cleanup_after_merge` would otherwise print
+            // the same "Removed worktree"/"Deleted branch" lines itself.
+            let cleanup_config = CleanupConfig {
+                verbose: false,
+                force_worktree_removal: false,
+                force_branch_deletion: false,
+                prune_worktrees: true,
             };
-
-            if defer_cleanup {
-                println!(
-                    "  Worktree cleanup deferred to the orchestrator (session is running inside the worktree)"
-                );
-                println!(
-                    "  If no daemon is running, clean up manually with: loom worktree remove {}",
-                    stage.id
-                );
-            } else {
-                let cleanup_config = CleanupConfig {
-                    verbose: true,
-                    force_worktree_removal: false,
-                    force_branch_deletion: false,
-                    prune_worktrees: true,
-                };
-
-                match cleanup_after_merge(&stage.id, repo_root, &cleanup_config) {
-                    Ok(result) => {
-                        if result.worktree_removed {
-                            println!("  Removed worktree: .worktrees/{}", stage.id);
-                        }
-                        if result.branch_deleted {
-                            println!("  Deleted branch: {}", branch_name_for_stage(&stage.id));
-                        }
-                        if !result.warnings.is_empty() {
-                            for warning in &result.warnings {
-                                eprintln!("  Warning: {warning}");
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        // Cleanup failure is not fatal - stage is already completed
-                        eprintln!("  Warning: Failed to clean up stage resources: {e}");
-                        eprintln!(
-                            "  You can manually clean up with: loom worktree remove {}",
-                            stage.id
-                        );
-                    }
-                }
-            }
+            let outcome = MergeLifecycle::new(&stage.id, repo_root, work_dir)
+                .cleanup(&target_branch, &cleanup_config);
+            print_cleanup_outcome(&stage.id, outcome);
 
             Ok(true)
         }
@@ -292,6 +252,42 @@ pub fn complete_with_merge(stage: &mut Stage, repo_root: &Path, work_dir: &Path)
                 stage.id,
                 stage.id
             );
+        }
+    }
+}
+
+/// Print `complete_with_merge`'s post-merge cleanup summary for `outcome`,
+/// matching the pre-refactor `cleanup_after_merge` output.
+fn print_cleanup_outcome(stage_id: &str, outcome: CleanupOutcome) {
+    match outcome {
+        CleanupOutcome::NothingToDo => {}
+        CleanupOutcome::Deferred => {
+            println!(
+                "  Worktree cleanup deferred to the orchestrator (session is running inside the worktree)"
+            );
+            println!(
+                "  If no daemon is running, clean up manually with: loom worktree remove {stage_id}"
+            );
+        }
+        CleanupOutcome::Refused { reason } => {
+            eprintln!("  Warning: Cleanup refused: {reason}");
+            eprintln!("  You can manually clean up with: loom worktree remove {stage_id}");
+        }
+        // `result.warnings` is not surfaced: `MergeLifecycle::cleanup` reaches
+        // `Done` only via `cleanup_after_merge`, which always builds an empty
+        // `warnings` vec on its `Ok` path (only `cleanup_multiple_stages`
+        // ever populates it) — dead on this path.
+        CleanupOutcome::Done(result) => {
+            if result.worktree_removed {
+                println!("  Removed worktree: .worktrees/{stage_id}");
+            }
+            if result.branch_deleted {
+                println!("  Deleted branch: {}", branch_name_for_stage(stage_id));
+            }
+        }
+        CleanupOutcome::Failed(e) => {
+            eprintln!("  Warning: Failed to clean up stage resources: {e}");
+            eprintln!("  You can manually clean up with: loom worktree remove {stage_id}");
         }
     }
 }

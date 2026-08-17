@@ -5,8 +5,8 @@ use colored::Colorize;
 use std::process::Command;
 
 use crate::claude::find_claude_path;
-use crate::fs::knowledge::{KnowledgeDir, KnowledgeFile};
-use crate::map::{analyze_codebase, AnalysisResult};
+use crate::fs::knowledge::KnowledgeDir;
+use crate::map::analyze_codebase;
 
 /// Execute the knowledge bootstrap command
 pub fn execute(model: Option<String>, skip_map: bool, quick: bool) -> Result<()> {
@@ -27,7 +27,7 @@ pub fn execute(model: Option<String>, skip_map: bool, quick: bool) -> Result<()>
     if !skip_map {
         println!("  {} Running codebase analysis...", "→".cyan());
         let result = analyze_codebase(&project_root, true, None)?;
-        write_map_results(&knowledge, &result)?;
+        crate::map::knowledge_sync::write_analysis(&knowledge, &result, false)?;
         println!("  {} Codebase mapped", "✓".green());
     }
 
@@ -161,23 +161,6 @@ fn build_initial_prompt(model: &str) -> String {
          to confirm no major area was left unmapped and cross-cutting concerns are captured. \
          The mandatory final step is `loom knowledge index`.",
     )
-}
-
-/// Write map analysis results directly into knowledge files.
-fn write_map_results(knowledge: &KnowledgeDir, result: &AnalysisResult) -> Result<()> {
-    if !result.architecture.is_empty() {
-        knowledge.append(KnowledgeFile::Architecture, &result.architecture)?;
-    }
-    if !result.stack.is_empty() {
-        knowledge.append(KnowledgeFile::Stack, &result.stack)?;
-    }
-    if !result.conventions.is_empty() {
-        knowledge.append(KnowledgeFile::Conventions, &result.conventions)?;
-    }
-    if !result.concerns.is_empty() {
-        knowledge.append(KnowledgeFile::Concerns, &result.concerns)?;
-    }
-    Ok(())
 }
 
 /// Print a summary of knowledge file line counts after the session completes.

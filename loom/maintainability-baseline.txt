@@ -7,7 +7,6 @@
 # Every value is exact. If code shrinks, lower or remove its entry; if it grows,
 # refactor it back. New violations must be refactored or explicitly recorded.
 
-file src/cli/types.rs 409
 file src/commands/graph/tests.rs 425
 file src/commands/init/tests.rs 684
 file src/commands/plan/verify.rs 599
@@ -17,7 +16,7 @@ file src/commands/review/generate.rs 473
 file src/commands/self_update/mod.rs 438
 file src/commands/self_update/tests.rs 490
 file src/commands/stage/complete.rs 804
-file src/commands/stage/merge.rs 583
+file src/commands/stage/merge.rs 544
 file src/commands/stage/tests/complete.rs 528
 file src/commands/status/data/collector.rs 501
 file src/commands/status/ui/tui/app.rs 409
@@ -39,7 +38,7 @@ file src/models/stage/types.rs 1201
 file src/orchestrator/adjudication/mod.rs 695
 file src/orchestrator/adjudication/prompt.rs 491
 file src/orchestrator/core/event_handler.rs 468
-file src/orchestrator/core/merge_handler.rs 1430
+file src/orchestrator/core/merge_handler.rs 1300
 file src/orchestrator/core/orchestrator.rs 564
 file src/orchestrator/core/recovery.rs 1621
 file src/orchestrator/core/stage_executor.rs 933
@@ -73,7 +72,7 @@ file tests/e2e/tmux_backend.rs 431
 file tests/failure_resume.rs 468
 file tests/integration/merge_conflict_recovery.rs 412
 file tests/integration/plan_verify.rs 878
-function src/cli/dispatch.rs dispatch 209
+function src/cli/dispatch.rs dispatch 205
 function src/commands/clean/mod.rs print_summary 52
 function src/commands/clean/sessions.rs test_clean_sessions_reaps_live_only_when_destroying_state 54
 function src/commands/clean/worktrees.rs clean_worktrees 110
@@ -128,11 +127,11 @@ function src/commands/stage/complete.rs route_complete_for_conflicts 159
 function src/commands/stage/complete.rs run_verification_phase 99
 function src/commands/stage/dispute_criteria.rs dispute_criteria 60
 function src/commands/stage/knowledge_complete.rs complete_knowledge_stage 121
-function src/commands/stage/merge.rs merge_resolved 92
-function src/commands/stage/merge.rs merge_retry 253
+function src/commands/stage/merge.rs merge_resolved 87
+function src/commands/stage/merge.rs merge_retry 198
 function src/commands/stage/merge_resolver.rs spawn_merge_resolver 64
 function src/commands/stage/progressive_complete.rs attempt_progressive_merge 113
-function src/commands/stage/progressive_complete.rs complete_with_merge 109
+function src/commands/stage/progressive_complete.rs complete_with_merge 80
 function src/commands/stage/recover.rs test_determine_recovery_reason 86
 function src/commands/stage/skip_retry.rs retry 198
 function src/commands/stage/state.rs reset 61
@@ -214,7 +213,7 @@ function src/orchestrator/adjudication/mod.rs apply_verdict_inner 78
 function src/orchestrator/adjudication/mod.rs check_pending_disputes 107
 function src/orchestrator/adjudication/prompt.rs build_user_prompt 73
 function src/orchestrator/adjudication/worker.rs run 51
-function src/orchestrator/auto_merge.rs attempt_auto_merge 92
+function src/orchestrator/auto_merge.rs attempt_auto_merge 63
 function src/orchestrator/core/completion_handler.rs handle_stage_completed 78
 function src/orchestrator/core/crash_handler.rs handle_session_crashed 156
 function src/orchestrator/core/event_handler.rs handle_budget_exceeded 56
@@ -224,8 +223,7 @@ function src/orchestrator/core/merge_handler.rs handle_merge_session_completed 1
 function src/orchestrator/core/merge_handler.rs read_plan_level_auto_merge 61
 function src/orchestrator/core/merge_handler.rs spawn_merge_resolution_session 84
 function src/orchestrator/core/merge_handler.rs spawn_merge_resolution_sessions 120
-function src/orchestrator/core/merge_handler.rs test_cleanup_merged_stage_resources_removes_worktree_and_branch 56
-function src/orchestrator/core/merge_handler.rs try_auto_merge 262
+function src/orchestrator/core/merge_handler.rs try_auto_merge 258
 function src/orchestrator/core/merge_handler.rs verify_and_finalize_merge 68
 function src/orchestrator/core/orchestrator.rs new 79
 function src/orchestrator/core/orchestrator.rs run 247

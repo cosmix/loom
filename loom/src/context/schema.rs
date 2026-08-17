@@ -344,7 +344,10 @@ impl ContextPack {
 
 // The derived source graph is its own domain and lives in a sibling module;
 // re-exported here so the shared contract still names every retrieval type.
-pub use crate::context::source_graph::{SourceEdge, SourceEdgeKind, SourceNode};
+pub use crate::context::source_graph::{
+    EdgeProvenance, FileCoverage, NodeLanguage, SourceEdge, SourceEdgeKind, SourceNode,
+    SourceNodeKind, Span,
+};
 
 /// One `##` section of a knowledge markdown file — the atom of retrieval.
 ///

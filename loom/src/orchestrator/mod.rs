@@ -4,6 +4,7 @@ pub mod continuation;
 pub mod core;
 pub mod liveness;
 pub mod merge_attribution;
+pub mod merge_lifecycle;
 pub mod monitor;
 pub mod notify;
 pub mod progressive_merge;

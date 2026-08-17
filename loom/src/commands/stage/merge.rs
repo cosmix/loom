@@ -12,7 +12,13 @@ use crate::git::branch::branch_name_for_stage;
 use crate::git::merge::merge_head_exists;
 use crate::git::{get_conflicting_files, merge_stage, MergeResult};
 use crate::models::stage::StageStatus;
+use crate::orchestrator::merge_lifecycle::CleanupOutcome;
 use crate::verify::transitions::{load_stage, trigger_dependents, update_stage};
+
+mod finish;
+mod preflight;
+use finish::finish_merge_and_report;
+use preflight::{retry_preflight, RetryPreflight};
 
 /// Unified merge command entry point.
 ///
@@ -39,15 +45,7 @@ fn merge_resolved(stage_id: Option<String>) -> Result<()> {
     let work_dir = Path::new(".work");
 
     // Resolve stage ID: use provided or detect from current worktree branch
-    let stage_id = match stage_id {
-        Some(id) => id,
-        None => detect_stage_id().ok_or_else(|| {
-            anyhow::anyhow!(
-                "Could not detect stage ID from current branch.\n\
-                 Please provide the stage ID explicitly: loom stage merge --resolved <stage-id>"
-            )
-        })?,
-    };
+    let stage_id = resolve_stage_id(stage_id, "merge --resolved <stage-id>")?;
 
     let stage = load_stage(&stage_id, work_dir)?;
 
@@ -109,7 +107,6 @@ fn merge_resolved(stage_id: Option<String>) -> Result<()> {
     println!("  Status: Completed (merged: true)");
 
     // Trigger dependent stages
-    let target_branch = crate::fs::resolve_target_branch_from_config(work_dir, &repo_root)?;
     let triggered = trigger_dependents(&stage_id, work_dir, &repo_root, &target_branch)
         .context("Failed to trigger dependent stages")?;
 
@@ -120,10 +117,14 @@ fn merge_resolved(stage_id: Option<String>) -> Result<()> {
         }
     }
 
-    // Suggest cleanup
-    println!();
-    println!("Consider cleaning up the worktree:");
-    println!("  loom worktree remove {stage_id}");
+    let cleanup_root = find_repo_root(&repo_root).unwrap_or_else(|_| repo_root.clone()); // not cwd
+    let outcome = finish_merge_and_report(&stage_id, &cleanup_root, work_dir, &target_branch);
+    if !matches!(
+        outcome,
+        CleanupOutcome::Done(_) | CleanupOutcome::NothingToDo
+    ) {
+        println!("\nConsider cleaning up the worktree:\n  loom worktree remove {stage_id}");
+    }
 
     Ok(())
 }
@@ -141,76 +142,15 @@ fn merge_resolved(stage_id: Option<String>) -> Result<()> {
 fn merge_retry(stage_id: Option<String>) -> Result<()> {
     let work_dir = Path::new(".work");
 
-    // Resolve stage ID: use provided or detect from current worktree branch
-    let stage_id = match stage_id {
-        Some(id) => id,
-        None => detect_stage_id().ok_or_else(|| {
-            anyhow::anyhow!(
-                "Could not detect stage ID from current branch.\n\
-                 Please provide the stage ID explicitly: loom stage merge <stage-id>"
-            )
-        })?,
-    };
-
-    let mut stage = load_stage(&stage_id, work_dir)?;
-
-    // Verify stage is in a merge-failed state
-    let is_merge_state = matches!(
-        stage.status,
-        StageStatus::MergeConflict | StageStatus::MergeBlocked
-    );
-
-    if !is_merge_state {
-        bail!(
-            "Stage '{}' is in '{}' status. Only MergeConflict or MergeBlocked stages can use merge.\n\
-             \n\
-             Current status: {}\n\
-             \n\
-             For other failure states, use:\n\
-             - loom stage retry {stage_id}       (for Blocked or CompletedWithFailures)\n\
-             - loom stage merge {stage_id} --resolved (after manually resolving conflicts)",
-            stage_id,
-            stage.status,
-            stage.status,
-        );
-    }
-
-    // Verify we're in a worktree (cwd should contain .worktrees in its path)
-    let cwd = std::env::current_dir().context("Failed to get current directory")?;
-    let cwd_str = cwd.to_string_lossy();
-    if !cwd_str.contains(".worktrees") {
-        bail!(
-            "merge must be run from within a worktree.\n\
-             \n\
-             Current directory: {}\n\
-             \n\
-             Navigate to the worktree first:\n\
-             - cd .worktrees/{stage_id}",
-            cwd.display(),
-        );
-    }
-
-    // Find repo root (parent of .worktrees)
-    let repo_root = find_repo_root(&cwd)?;
-
-    // Resolve worktree root from cwd. `git rev-parse --show-toplevel` returns
-    // the top of the working tree, which for a worktree is its root.
-    let worktree_root = crate::git::run_git_checked(&["rev-parse", "--show-toplevel"], &cwd)
-        .map(std::path::PathBuf::from)
-        .unwrap_or_else(|_| cwd.clone());
-
-    // Refuse if either main repo or the worktree has an active merge — running
-    // a programmatic merge over an in-progress resolution would clobber the
-    // user's work. Run BEFORE incrementing fix_attempts so a refused retry
-    // does not burn an attempt.
-    let main_active = merge_head_exists(&repo_root)?;
-    let worktree_active = merge_head_exists(&worktree_root)?;
-    if main_active || worktree_active {
-        bail!(
-            "Cannot retry merge: a merge is already in progress (main: {main_active}, \
-             worktree: {worktree_active}). Resolve or abort it first.",
-        );
-    }
+    // Resolve stage ID, load and validate the stage, confirm we're running
+    // from a worktree, and refuse an in-progress merge — all before spending
+    // a fix attempt on this run.
+    let RetryPreflight {
+        stage_id,
+        mut stage,
+        repo_root,
+        worktree_root: _worktree_root,
+    } = retry_preflight(stage_id, work_dir)?;
 
     let max_attempts = stage.get_effective_max_fix_attempts();
 
@@ -287,9 +227,11 @@ fn merge_retry(stage_id: Option<String>) -> Result<()> {
                 }
             }
 
-            println!();
-            println!("Next: run 'loom stage complete {stage_id}' if not already done,");
-            println!("or clean up the worktree: loom worktree remove {stage_id}");
+            let outcome = finish_merge_and_report(&stage_id, &repo_root, work_dir, &target_branch);
+            if !matches!(outcome, CleanupOutcome::Done(_)) {
+                println!("\nNext: run 'loom stage complete {stage_id}' if not already done,");
+                println!("or clean up the worktree: loom worktree remove {stage_id}");
+            }
         }
 
         Ok(MergeResult::FastForward) => {
@@ -311,8 +253,10 @@ fn merge_retry(stage_id: Option<String>) -> Result<()> {
                 }
             }
 
-            println!();
-            println!("Consider cleaning up: loom worktree remove {stage_id}");
+            let outcome = finish_merge_and_report(&stage_id, &repo_root, work_dir, &target_branch);
+            if !matches!(outcome, CleanupOutcome::Done(_)) {
+                println!("\nConsider cleaning up: loom worktree remove {stage_id}");
+            }
         }
 
         Ok(MergeResult::AlreadyUpToDate) => {
@@ -333,6 +277,8 @@ fn merge_retry(stage_id: Option<String>) -> Result<()> {
                     println!("  -> {dep_id}");
                 }
             }
+
+            finish_merge_and_report(&stage_id, &repo_root, work_dir, &target_branch);
         }
 
         Ok(MergeResult::Conflict { conflicting_files }) => {
@@ -390,6 +336,21 @@ fn merge_retry(stage_id: Option<String>) -> Result<()> {
     }
 
     Ok(())
+}
+
+/// Resolve a stage ID: use the one provided, or detect it from the current
+/// worktree branch. `usage` names the command line to show in the error hint
+/// if detection fails, e.g. "merge <stage-id>" or "merge --resolved <stage-id>".
+fn resolve_stage_id(stage_id: Option<String>, usage: &str) -> Result<String> {
+    match stage_id {
+        Some(id) => Ok(id),
+        None => detect_stage_id().ok_or_else(|| {
+            anyhow::anyhow!(
+                "Could not detect stage ID from current branch.\n\
+                 Please provide the stage ID explicitly: loom stage {usage}"
+            )
+        }),
+    }
 }
 
 /// Walk up from the current directory to find the repo root (parent of .worktrees).
