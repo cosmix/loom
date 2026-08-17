@@ -661,3 +661,80 @@ takeover phrases are pinned in `tests_doctrine.rs::RETIRED_PHRASES`.
 **Fix:** Complete only a settled stage (subagents absorbed, defects fixed, tree clean) and run
 nothing after `loom stage complete`; re-arm bounded checks on live subagents and take over only
 on positive evidence of death.
+
+## Tests That Cannot Fail — Now the Repo's Most Recurrent Class
+
+Five fresh instances landed in one plan across three stages: a feature-flag suite that
+only drove the OFF path (so "disabled" was indistinguishable from "structurally broken"),
+a formatter test that hand-built its own input while no producer ever populated it, a
+root-only path fixture that could not tell a resolver from string equality, a ranking
+heuristic only ever tested on tidy fixtures, and an equality assertion pinning a CLI
+string that does not work. Four of the five passed because the test constructed its own
+input, so test and production path never met.
+
+The deletion question catches all of them: **delete the production line — does it go red?**
+→ [Tests That Cannot Fail](mistakes/tests-that-cannot-fail.md)
+
+## Pinned Literals: the Maintainability Ledger and Wiring Checks
+
+`maintainability-baseline.txt` is an EXACT-match ledger — it fails on shrinkage as loudly
+as on growth — and goal-backward wiring checks pin a literal PATTERN to a literal PATH, so
+a genuinely better refactor reports a phantom wiring gap. Three stages hit the ledger, two
+hit the wiring pins. `rg` your target paths against both BEFORE fanning out, and re-check
+the wiring patterns after every refactor round.
+→ [Pinned Literals, Ledgers and Wiring](mistakes/pinned-literals-ledgers-and-wiring.md)
+
+## Parallel Worktrees Share Derived State
+
+One question catches the class: **was this path resolved through `main_project_root` or the
+`.work` symlink?** If so it is shared with every sibling stage and the main repo. Four
+defects trace to it, including a discard routine that deleted a shared directory instead of
+its own layer, and two cache files under independent locks that could disagree.
+→ [Parallel Worktree Shared State](mistakes/parallel-worktree-shared-state.md)
+
+## A Missing Subagent Report Is Not a Missing Result
+
+Seven subagents in one session edited files correctly and never reported; a later stage got
+zero reports from six gatherers. Verify the WORK (run the gate, `stat` the files), never
+wait on reports alone. Liveness is **mtime moved, never size moved** — a worker rewriting a
+function in place holds `wc -l` steady for many minutes. And file exclusivity is a property
+of ALL live agents: asking a finished agent for one more thing makes it live again.
+→ [Subagent Orchestration](mistakes/subagent-orchestration.md)
+
+## Visibility Is Capped by Path Reachability
+
+`pub(crate)` on an item means nothing if a module on its path is private. Two workers hit
+the same `E0603` in one round and each failed quietly and differently — one shipped an
+inert feature, one duplicated a security-critical renderer. Also here: sweeping for the
+wrapper struct instead of the struct itself, a field name that names the wrong domain
+object, an `Option` that is `None` for two reasons, an infallible predicate that hides
+every failure as "no", and why a well-reasoned constructor bypass is a design escalation.
+→ [Visibility and Reachability](mistakes/visibility-and-reachability.md)
+
+## Auditing an Untrusted-Value Boundary
+
+Two audit failures with one root cause: enumerate every PRODUCER of a rendered field, not
+every field — one `unwrap_or` upstream takes the normalizer you just read off the path. And
+containment at one render site is only as good as the set of surfaces: a fenced brief whose
+footer advertises a second command extends the trust boundary to that command's output.
+Classify by DESTINATION, not origin — anything rendered into agent-facing prose is
+untrusted.
+→ [Untrusted Value Boundaries](mistakes/untrusted-value-boundaries.md)
+
+## Cleanup Inside "Merge" Destroyed the Evidence
+
+`attempt_auto_merge` deleted the worktree and branch inside its own success arms — the same
+branch its caller uses to derive the stage commit. A new route into the phantom-merge class:
+nothing wrote a false `merged: true`, the code removed the ability to verify. Ask of any
+function with irreversible side effects: **after this returns, what can no longer be
+verified?**
+→ [Merge Cleanup Boundary](mistakes/merge-cleanup-boundary.md)
+
+## Shipping the Store Without the Consumer
+
+A deliberately-deferred consumer left a trail of `pub` enum variants, methods, fields and
+CLI values that all look wired and compile clean — plus three module docstrings written in
+the present tense about an unbuilt end state, which later agents then mined as fact. For
+every new `pub` item, **name the production caller**; do not ask whether the compiler warns,
+because for `pub` items it never will.
+→ [Store Without Consumer](mistakes/store-without-consumer.md)

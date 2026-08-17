@@ -1,0 +1,112 @@
+# Subagent Orchestration
+
+> Topic notes for the mistakes knowledge area.
+
+## A Missing Report Is Not a Missing Result
+
+**The single most expensive orchestration belief in this repo.**
+
+In one source-graph session, five worker subagents and two `loom-code-reviewer`
+subagents all EDITED FILES CORRECTLY and **never delivered a final report** — no task
+notification arrived for over 90 minutes for the first batch. One worker demonstrably
+acted on a `SendMessage` (it fixed the exact function named, 9 seconds before the next
+`stat`) yet still sent no reply. The knowledge-distillation stage of the same plan then
+spawned six read-only gatherers and received zero reports from any of them.
+
+**Prevention:** do not treat a missing report as a missing result. **Verify the WORK
+directly** — run the gate, `stat` the files, read the diff — and absorb the outcome from
+the tree. An orchestrator that waits on reports alone will hang forever here: budget one
+real blocking wait, then verify and move on.
+
+**Corollary for read-only agents.** A gatherer whose entire deliverable IS its report
+has no work to verify, so this failure mode destroys its output entirely. When the task
+is "read this and summarise", prefer doing it yourself, or have the agent write its
+findings to a file inside the worktree that you can read regardless of whether it
+reports.
+
+## Liveness Is mtime, Never Size
+
+File LINE COUNTS are a **false negative** for liveness: a worker rewriting a function in
+place holds `wc -l` steady for many minutes while working hard, which reads exactly like
+a dead agent. One session almost took over five live workers' files after roughly ten
+consecutive stable-line-count checks; a `stat` showed the newest write had landed 9
+seconds earlier.
+
+**Rule: liveness = mtime moved, never size moved.** Use `stat -c %y <files>` or
+`fd --changed-within 5min`. Restarting live work forfeits every token it has spent and
+sets two agents writing the same files.
+
+## File Exclusivity Is a Property of ALL Live Agents, Not of One Wave
+
+A second subagent was spawned whose file set overlapped a still-running one: the
+orchestrator asked a fixer for one extra test file, then — before it reported — spawned a
+refactorer whose brief also covered `commands/knowledge/context.rs`. The fixer was wiring
+a test module into that file while the refactorer extracted a helper out of it; whichever
+wrote last would silently drop the other edit.
+
+**The misleading signal:** the fixer LOOKED finished, because its seven earlier fixes had
+been verified on disk and its earlier report had arrived — but it had just been handed
+more work, so it was live again.
+
+**Prevention:** before spawning any agent, list every agent that has not reported SINCE
+ITS LATEST assignment and diff the file sets. **Asking a finished agent for one more thing
+makes it live again and re-arms the conflict.** Detection used: grep the specific wiring
+line the earlier agent added, both before AND after the later agent finishes.
+
+## Never Hand Over a Proving Command You Have Not Run
+
+`cargo test --lib a:: b:: c::` was written into a subagent brief. **Cargo accepts exactly
+ONE testname filter** and rejects the extras with "unexpected argument" BEFORE compiling,
+so zero tests ran. The error mentions the argument, not the arity, so it reads like a typo
+in a test path. This bit both the orchestrator and a subagent in the same session.
+
+**Rule:** any proving command handed to a subagent must be one you have actually run
+yourself — a subagent that cannot run it reports "no tests ran" and you learn nothing
+about its slice. Use ONE common prefix (`cargo test --lib context::`) or separate
+invocations chained with `&&`.
+
+Related: test module paths are part of the filter. The delivery unit tests live at
+`context::tests::delivery`, so `cargo test --lib -- context::delivery` matches ZERO tests.
+
+## "I Wrote My Own Because I Could Not Reach Yours" Is a Defect Report
+
+When a worker says it reimplemented something rather than calling it, that is a
+duplication defect to fix at integration — **never a resolved decision**. In one round it
+produced a second copy of a security-critical untrusted-content fence renderer, which is
+exactly the rule that must not drift between surfaces. See
+`mistakes/visibility-and-reachability.md` for why the worker could not reach the original.
+
+## Verify a Delegation Before Rejecting It
+
+The installed `codex-forward.sh` did not emit the evidence trailer the codex doctrine says
+to require, and treating that absence as proof the wrapper self-implemented would have been
+wrong. Confirm a forward two other ways: the stdout carries the codex thread transcript
+(`[codex] Starting Codex task thread.`, `[codex] Applying N file change(s).`), and a job
+record exists under `~/.claude/plugins/data/codex-openai-codex/state/<worktree>-<hash>/jobs/*.json`
+with a recent mtime. A forwarder that refuses to invent a trailer it never saw is behaving
+correctly.
+
+**And read what codex touched.** A codex forward that edits a small list-style file can
+mangle it: `loom/tests/integration/mod.rs` came back with four lines spuriously indented
+and the new entry out of alphabetical order. `cargo fmt` does NOT fix a mod list's
+indentation or ordering, so it survives the format gate and only shows up in review.
+"Check what it touched" means READ the diff of any small structural file (`mod.rs`,
+`Cargo.toml`, a registration list) — whitespace damage passes every automated gate.
+
+## Apply the Cheapest-Capable Rule to UNPLANNED Spawns Too
+
+Mid-stage integration tasks (test-expectation fixes, a module split) were defaulted to
+sonnet without deliberation on a stage that licensed codex, because the plan's EXECUTION
+PLAN named codex for the PLANNED workers and lane choice felt already decided. Unplanned
+work silently inherited the session default instead of getting its own lane decision. The
+user called it out.
+
+**Test to apply per spawn:** if you can name the exact files, the exact target shape, and
+every signature that must survive, it is codex terra work. If the task needs open-ended
+repo exploration, it is sonnet — codex has no Read tool and pages files through the shell
+in ~160-line chunks (measured 9m45s unscoped versus 54s scoped).
+
+## Related
+
+- `mistakes/verification-harness.md` — when every check fails at once, suspect the harness.
+- `patterns/subagent-hierarchy.md` — choosing flat fan-out, a coordinator hierarchy, or a team.
