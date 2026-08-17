@@ -738,3 +738,14 @@ the present tense about an unbuilt end state, which later agents then mined as f
 every new `pub` item, **name the production caller**; do not ask whether the compiler warns,
 because for `pub` items it never will.
 → [Store Without Consumer](mistakes/store-without-consumer.md)
+
+## A Strict Schema Attribute Broke a Second, Unnoticed Reader
+
+`deny_unknown_fields` added to `StageDefinition` to catch typo'd PLAN keys also governed a
+second deserialization source — stage files, whose frontmatter is a full serialized `Stage`
+— so every `.work/stages/*.md` failed to parse. `load_stages_from_work_dir` then warned and
+`continue`d per file, returning `Ok(vec![])`: a total failure wearing a success type, which
+left the documented "stage files instead of the plan" recovery path silently dead. Before
+adding a strictness attribute, enumerate every call site deserializing INTO the type; when a
+loop skips EVERY item, fail loudly.
+→ [Schema Reuse and Silent Skips](mistakes/schema-reuse-and-silent-skips.md)

@@ -110,3 +110,36 @@ in ~160-line chunks (measured 9m45s unscoped versus 54s scoped).
 
 - `mistakes/verification-harness.md` — when every check fails at once, suspect the harness.
 - `patterns/subagent-hierarchy.md` — choosing flat fan-out, a coordinator hierarchy, or a team.
+
+## Before Its First Write, an Agent Has NO Liveness Signal At All (2026-08-17)
+
+The mtime rule above assumes the agent has already written something. Between spawn and
+first write there is **no negative evidence available** — not an empty `git status`, not
+an absent file, not `ListAgents`. An interactive session re-dispatched a second agent
+onto a live one's file set on exactly that reasoning ("no changes on disk, and
+`ListAgents` reports nothing reachable, so it must be dead"). It was mid-investigation
+and had simply not typed yet. The two agents then wrote competing test layouts, a third
+was sent in on a stale snapshot, and at the worst moment one was deleting another's files
+while the suite sat at 5 red. Roughly 20 minutes and three agents of work were burned;
+the production fixes had been correct the whole time.
+
+**`ListAgents` returning "No reachable agents" is NOT evidence of death.** It went on
+returning that while three spawned agents were actively editing files, and it said it
+about agents that had already delivered final reports minutes earlier. Treat it as
+"cannot tell", never as "gone".
+
+**Prevention:** the only positive evidence of death is the harness reporting the task
+failed or killed. Absent that, WAIT — a subagent gets as long as its task takes, and a
+silent one is the normal case, not a failure (see "A Missing Report Is Not a Missing
+Result"). If a takeover ever does look necessary, `TaskStop` the original FIRST, confirm
+it stopped, and only then dispatch a replacement — never leave two writers pointed at one
+file set. Recovery from a collision is the same discipline: hard-stop every agent, take
+one snapshot of the frozen tree, decide the target layout yourself, then send exactly one
+agent to converge it.
+
+**Corollary — a stale brief is worse than no brief.** Each replacement was briefed from a
+snapshot that had already moved, so it was told to create files that already existed and
+to fix problems already fixed. When dispatching into a tree others have touched, re-read
+the state immediately before writing the brief, and tell the agent to STOP and report if
+what it finds contradicts the brief. The one agent that did exactly that is the only one
+that cost nothing.

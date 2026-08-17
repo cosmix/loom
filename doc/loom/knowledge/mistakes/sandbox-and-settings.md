@@ -213,3 +213,37 @@ sandbox, not a tmux bug.
 **Prevention:** when a check depends on ephemeral state, ask what it does in that state's absence. A gate that cannot be satisfied is not a stricter gate; it is an outage.
 
 **Fix:** privileged completion skips the proof requirement when no credential exists at all. Safe because the daemon's absence removes a stage agent's ability to ACT, not merely its credential: an agent completes through the daemon broker (which requires the daemon) or by writing `.work/stages/*.md` directly (which `denyWrite: .work/**` forbids). With no daemon it can do neither, whatever the authorization returns — while an unsandboxed operator can still write, which is precisely the asymmetry the proof was standing in for. `refuse_operator_inside_a_session` still turns an agent away by name first.
+
+## A `--settings` Path Must Survive the Wrapper's `cd`, and the Existence Guard Must Resolve Where the CONSUMER Will (2026-08-17)
+
+**What happened:** every spawned stage session died within ~15s with no log output,
+surfacing only as `Process no longer running` in the crash report, then retry, then
+`Blocked`. The wrapper script `cd`s into the worktree before `exec`ing claude, but
+`native/capsule.rs` built `--settings` from a `cwd` that arrives RELATIVE
+(`./.worktrees/<stage>`, derived from `Stage::worktree_path`). After the `cd` the flag
+resolved to `<worktree>/.worktrees/<stage>/.claude/settings.local.json`, and claude exited
+before startup with `Error: Settings file not found`.
+
+**Why it hid:** the `is_file()` guard in front of the flag PASSED. A relative path is
+resolved against the _daemon's_ cwd — the main repo — where the file genuinely exists. So
+the guard confirmed a file the spawned process would never open: the checker and the
+consumer resolved the same string against two different roots. `wrapper.rs` had an
+`absolute()` helper doing exactly the right thing for the `cd` line, with a doc comment
+reading "Paths are absolutized because the script may `cd` elsewhere" — the capsule simply
+never used it.
+
+**Why tests missed it:** the capsule unit tests only ever passed an already-absolute path
+(`/w/.claude/settings.local.json`), so the relative case — the only case production
+produces — was never exercised.
+
+**Prevention:** any path handed to a process that will `cd` must be absolutized at the
+point it is built, through the SAME helper the `cd` target uses, so both resolve to one
+root. Absolutize BEFORE the existence check, never after — a guard that resolves against a
+different cwd than its consumer is worse than no guard, because it reports success. When a
+value crosses into a subprocess with a different cwd, unit-test the relative input
+explicitly; an absolute-only fixture proves nothing about the production path.
+
+**Detection:** a session that dies inside ~15s with an empty log is almost always the
+`claude` argv itself failing, not the agent. Read the generated wrapper in
+`.work/wrappers/*-wrapper.sh` and run its `exec` line by hand from the worktree — the flag
+error surfaces immediately, where the crash report only says `Process no longer running`.
