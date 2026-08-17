@@ -46,11 +46,11 @@ file src/orchestrator/core/stage_executor.rs 953
 file src/orchestrator/merge_attribution.rs 543
 file src/orchestrator/monitor/heartbeat.rs 413
 file src/orchestrator/monitor/tests.rs 737
-file src/orchestrator/signals/cache.rs 1121
-file src/orchestrator/signals/format/sections.rs 1176
+file src/orchestrator/signals/cache.rs 1132
+file src/orchestrator/signals/format/sections.rs 1173
 file src/orchestrator/signals/generate.rs 700
 file src/orchestrator/signals/tests.rs 551
-file src/orchestrator/signals/tests_cache.rs 687
+file src/orchestrator/signals/tests_cache.rs 691
 file src/orchestrator/terminal/emulator.rs 611
 file src/orchestrator/terminal/native/pid_tracking.rs 451
 file src/orchestrator/terminal/native/window_ops.rs 575
@@ -91,14 +91,7 @@ function src/commands/init/tests.rs test_initialize_with_plan_creates_config 54
 function src/commands/init/tests.rs test_initialize_with_plan_creates_stage_files 90
 function src/commands/init/tests.rs test_serialize_stage_to_markdown_minimal 71
 function src/commands/init/tests.rs test_serialize_stage_to_markdown_with_all_fields 80
-function src/commands/knowledge/audit.rs audit 133
-function src/commands/knowledge/bootstrap.rs execute 91
-function src/commands/knowledge/check.rs check 86
-function src/commands/knowledge/check.rs print_check_results 67
-function src/commands/knowledge/gc.rs build_gc_system_prompt 118
-function src/commands/knowledge/gc.rs gc 144
-function src/commands/knowledge/mod.rs list 70
-function src/commands/knowledge/tests.rs test_knowledge_update_in_worktree_writes_to_worktree 68
+function src/commands/knowledge/tests.rs test_knowledge_update_in_worktree_writes_to_worktree 69
 function src/commands/knowledge/tests.rs test_parse_file_type 70
 function src/commands/plan/verify.rs execute 272
 function src/commands/plan/verify.rs print_human 110
@@ -167,7 +160,6 @@ function src/daemon/server/status.rs collect_status 76
 function src/daemon/server/tests.rs test_collect_status_with_stages 77
 function src/diagnosis/signal.rs generate_diagnosis_signal 124
 function src/fs/knowledge/dir.rs splice_section 52
-function src/fs/knowledge/gc.rs analyze_gc_metrics_with_promoted 174
 function src/fs/knowledge/templates.rs default_content 62
 function src/fs/memory/export.rs format_memory_for_handoff 91
 function src/fs/memory/export.rs format_memory_for_signal 92
@@ -200,8 +192,6 @@ function src/hooks/config.rs to_settings_hooks 68
 function src/hooks/generator.rs generate_hooks_settings 128
 function src/hooks/generator.rs test_generate_hooks_settings_includes_global_hooks 56
 function src/hooks/tests.rs test_generate_hooks_merges_with_global_hooks 75
-function src/map/analyzer.rs analyze_codebase 55
-function src/map/detectors.rs analyze_dir_recursive 58
 function src/models/stage/methods.rs from_definition_copies_all_runtime_policy_fields 125
 function src/models/stage/methods.rs new 68
 function src/models/stage/transitions.rs can_transition_to 75
@@ -260,7 +250,7 @@ function src/orchestrator/signals/format/sections.rs format_codex_implementers_s
 function src/orchestrator/signals/format/sections.rs format_dynamic_section 280
 function src/orchestrator/signals/format/sections.rs format_recitation_section 95
 function src/orchestrator/signals/format/sections.rs format_sandbox_section 66
-function src/orchestrator/signals/format/sections.rs format_semi_stable_section 395
+function src/orchestrator/signals/format/sections.rs format_semi_stable_section 392
 function src/orchestrator/signals/format/sections.rs format_skill_recommendations 64
 function src/orchestrator/signals/generate.rs build_cross_stage_summary 78
 function src/orchestrator/signals/generate.rs build_wiring_checklist 66
