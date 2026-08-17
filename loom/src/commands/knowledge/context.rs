@@ -7,6 +7,7 @@
 //! call and no network access anywhere in this path.
 
 use crate::context::delivery::dependency_chunk_ids;
+use crate::context::local_overlay::OverlayScope;
 use crate::context::retrieve::{resolve_roots, retrieve_for_stage, StageQuery};
 use crate::context::store::ContextStore;
 use crate::context::untrusted::inline_safe;
@@ -35,24 +36,6 @@ fn parse_scope(scope: &str) -> Result<Vec<Channel>> {
         "source" => Ok(vec![Channel::Source]),
         "all" => Ok(Channel::all().to_vec()),
         other => bail!("Invalid --scope '{other}': expected one of knowledge, source, all"),
-    }
-}
-
-/// The stderr notice printed when `channels` includes the source channel.
-///
-/// `Channel::Source` is a real, accepted `--scope` value, but
-/// `crate::context::rank` only ranks `&[KnowledgeChunk]`: the retrieval
-/// pipeline ranks the source channel over an empty slice, so no source item
-/// can ever match. Without this notice, `--scope source` and `--scope all`
-/// both render "No items matched." indistinguishably from a query that
-/// legitimately found nothing — the silent-failure class this project guards
-/// against — so an agent has no way to tell "not implemented yet" from "your
-/// query found nothing" and stops asking.
-fn inert_source_notice(channels: &[Channel]) -> Option<&'static str> {
-    if channels.contains(&Channel::Source) {
-        Some("note: the source channel is not yet wired into ranking; no source items can match")
-    } else {
-        None
     }
 }
 
@@ -106,15 +89,15 @@ pub fn context(
         required_ids: require_id,
         stage_dependency_ids: stage_dependencies,
         scope: channels,
+        // The CLI asks about the tree in front of the user, so it reads that
+        // checkout's working-tree overlay — not the last clean base revision.
+        overlay: OverlayScope::Local,
     };
     let context_pack = retrieve_for_stage(&stage_query, budget_tokens)?;
 
     if json {
         println!("{}", serde_json::to_string_pretty(&context_pack)?);
     } else {
-        if let Some(notice) = inert_source_notice(&stage_query.scope) {
-            eprintln!("{notice}");
-        }
         print_human(&context_pack, explain);
     }
 
