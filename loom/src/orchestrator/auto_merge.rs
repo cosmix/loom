@@ -8,14 +8,17 @@ use anyhow::{Context, Result};
 use std::path::Path;
 
 use crate::git::branch::branch_name_for_stage;
-use crate::git::cleanup::{cleanup_after_merge, CleanupConfig, CleanupResult};
 use crate::git::merge::{merge_stage, MergeResult};
 use crate::models::session::Session;
 use crate::models::stage::Stage;
 use crate::orchestrator::signals::generate_merge_signal;
 use crate::orchestrator::terminal::backend::SessionBackend;
 
-/// Result of an auto-merge attempt
+/// Result of an auto-merge attempt.
+///
+/// No variant carries a cleanup result: `attempt_auto_merge` merges and
+/// reports, and cleanup belongs to the caller via
+/// `crate::orchestrator::merge_lifecycle`, after ancestry has been verified.
 #[derive(Debug)]
 pub enum AutoMergeResult {
     /// Merge completed successfully
@@ -23,12 +26,11 @@ pub enum AutoMergeResult {
         files_changed: u32,
         insertions: u32,
         deletions: u32,
-        cleanup: CleanupResult,
     },
     /// Fast-forward merge completed
-    FastForward { cleanup: CleanupResult },
+    FastForward,
     /// Already up to date (no changes needed)
-    AlreadyUpToDate { cleanup: CleanupResult },
+    AlreadyUpToDate,
     /// Conflicts detected, spawned resolution session.
     /// Boxed to keep the enum compact — `Session` carries runtime-identity
     /// fields (`tracking_key`) and dwarfs other variants.
@@ -62,8 +64,15 @@ pub fn is_auto_merge_enabled(
 /// This function:
 /// 1. Checks if the stage has a worktree
 /// 2. Attempts to merge the stage branch to the target branch
-/// 3. On success: cleans up the worktree and branch
+/// 3. On success: reports the merge statistics and stops there
 /// 4. On conflict: spawns a Claude Code session for resolution
+///
+/// Cleanup is deliberately NOT done here. It belongs to the caller, via
+/// `crate::orchestrator::merge_lifecycle`, and runs only after the merge has
+/// been verified by git ancestry. Removing the worktree and branch inside this
+/// function destroyed the very evidence the caller needs: the daemon derives a
+/// missing `completed_commit` from the stage branch HEAD, which cleanup had
+/// already deleted.
 ///
 /// Note: This function does not print any output. The caller is responsible
 /// for logging or displaying results based on the returned `AutoMergeResult`.
@@ -89,44 +98,15 @@ pub fn attempt_auto_merge(
             files_changed,
             insertions,
             deletions,
-        } => {
-            // Clean up worktree and branch — cleanup failure should not
-            // turn a successful merge into an error (Bug: cleanup errors
-            // were propagated via `?`, causing the caller to mark the stage
-            // as MergeBlocked even though the merge itself succeeded).
-            let cleanup = cleanup_after_merge(&stage.id, repo_root, &CleanupConfig::quiet())
-                .unwrap_or_else(|e| {
-                    eprintln!("Warning: Post-merge cleanup failed for '{}': {e}", stage.id);
-                    CleanupResult::default()
-                });
+        } => Ok(AutoMergeResult::Success {
+            files_changed,
+            insertions,
+            deletions,
+        }),
 
-            Ok(AutoMergeResult::Success {
-                files_changed,
-                insertions,
-                deletions,
-                cleanup,
-            })
-        }
+        MergeResult::FastForward => Ok(AutoMergeResult::FastForward),
 
-        MergeResult::FastForward => {
-            let cleanup = cleanup_after_merge(&stage.id, repo_root, &CleanupConfig::quiet())
-                .unwrap_or_else(|e| {
-                    eprintln!("Warning: Post-merge cleanup failed for '{}': {e}", stage.id);
-                    CleanupResult::default()
-                });
-
-            Ok(AutoMergeResult::FastForward { cleanup })
-        }
-
-        MergeResult::AlreadyUpToDate => {
-            let cleanup = cleanup_after_merge(&stage.id, repo_root, &CleanupConfig::quiet())
-                .unwrap_or_else(|e| {
-                    eprintln!("Warning: Post-merge cleanup failed for '{}': {e}", stage.id);
-                    CleanupResult::default()
-                });
-
-            Ok(AutoMergeResult::AlreadyUpToDate { cleanup })
-        }
+        MergeResult::AlreadyUpToDate => Ok(AutoMergeResult::AlreadyUpToDate),
 
         MergeResult::Conflict { conflicting_files } => {
             // Create a merge session to resolve conflicts

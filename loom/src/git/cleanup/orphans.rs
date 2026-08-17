@@ -1,10 +1,11 @@
 //! Conservative discovery and cleanup of orphaned stage worktrees.
 
 use super::branch::branch_exists_strict;
-use super::{cleanup_after_merge, prune_worktrees, CleanupConfig, CleanupResult};
+use super::{prune_worktrees, CleanupConfig, CleanupResult};
 use crate::fs::stage_files::find_stage_file;
 use crate::git::branch::{branch_name_for_stage, commits_ahead_of, default_branch, is_ancestor_of};
 use crate::models::stage::{Stage, StageStatus};
+use crate::orchestrator::merge_lifecycle::{CleanupOutcome, MergeLifecycle};
 use crate::verify::transitions::parse_stage_from_markdown;
 use anyhow::{Context, Result};
 use colored::Colorize;
@@ -33,7 +34,7 @@ pub fn cleanup_orphaned_worktrees(repo_root: &Path) -> Result<()> {
     let work_dir = repo_root.join(".work");
     let target = target_branch(&work_dir, repo_root)?;
     let (orphaned, active) = partition_worktrees(&worktree_ids, &target, repo_root, &work_dir)?;
-    clean_partition(&orphaned, active, repo_root)?;
+    clean_partition(&orphaned, active, repo_root, &target, &work_dir)?;
     finish_cleanup(repo_root)
 }
 
@@ -170,7 +171,13 @@ fn branch_has_no_unmerged_work(stage_id: &str, target: &str, repo_root: &Path) -
         && matches!(commits_ahead_of(&branch, target, repo_root), Ok(0))
 }
 
-fn clean_partition(orphaned: &[String], active: usize, repo_root: &Path) -> Result<()> {
+fn clean_partition(
+    orphaned: &[String],
+    active: usize,
+    repo_root: &Path,
+    target: &str,
+    work_dir: &Path,
+) -> Result<()> {
     println!();
     if orphaned.is_empty() {
         println!(
@@ -191,13 +198,8 @@ fn clean_partition(orphaned: &[String], active: usize, repo_root: &Path) -> Resu
     };
     let mut failures = Vec::new();
     for stage_id in orphaned {
-        match cleanup_after_merge(stage_id, repo_root, &config) {
-            Ok(result) => print_cleanup_result(stage_id, &result),
-            Err(error) => {
-                println!("  {} {} ({error})", "✗".red().bold(), stage_id);
-                failures.push(format!("{stage_id}: {error}"));
-            }
-        }
+        let outcome = MergeLifecycle::new(stage_id, repo_root, work_dir).cleanup(target, &config);
+        report_orphan_cleanup(stage_id, outcome, &mut failures);
     }
     if failures.is_empty() {
         Ok(())
@@ -206,6 +208,29 @@ fn clean_partition(orphaned: &[String], active: usize, repo_root: &Path) -> Resu
             "Failed to clean orphaned worktrees: {}",
             failures.join("; ")
         )
+    }
+}
+
+/// Dispatch one orphan's `CleanupOutcome` to the existing per-stage output,
+/// accumulating a real failure into `failures`. `Deferred`/`Refused` are
+/// deliberate refusals, not errors: the orphan partition already proved
+/// safety (ancestry + zero unmerged commits) before reaching here, so a
+/// refusal just means the primitive could not independently confirm it —
+/// skip the stage rather than fail the whole batch.
+fn report_orphan_cleanup(stage_id: &str, outcome: CleanupOutcome, failures: &mut Vec<String>) {
+    match outcome {
+        CleanupOutcome::Done(result) => print_cleanup_result(stage_id, &result),
+        CleanupOutcome::NothingToDo => {}
+        CleanupOutcome::Deferred => {
+            println!("  {} {} (cleanup deferred)", "─".dimmed(), stage_id);
+        }
+        CleanupOutcome::Refused { reason } => {
+            println!("  {} {} (skipped: {reason})", "─".dimmed(), stage_id);
+        }
+        CleanupOutcome::Failed(error) => {
+            println!("  {} {} ({error})", "✗".red().bold(), stage_id);
+            failures.push(format!("{stage_id}: {error}"));
+        }
     }
 }
 
