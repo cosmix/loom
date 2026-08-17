@@ -48,6 +48,7 @@ fn rule_25_packer_looks_up_chunks_by_their_string_ids() {
         &request(1),
         &[candidate("a", Channel::Knowledge, 1.0, 1)],
         &chunks,
+        None,
     );
     assert_eq!(packed.items[0].pointer.path, PathBuf::from("a.md"));
 }
@@ -58,6 +59,7 @@ fn rule_26_missing_candidates_are_skipped_and_omitted() {
         &request(10),
         &[candidate("missing", Channel::Knowledge, 1.0, 4)],
         &[],
+        None,
     );
     assert!(packed.items.is_empty());
     assert_eq!(packed.omitted.omitted, 1);
@@ -73,6 +75,7 @@ fn rule_27_nonfitting_chunks_are_skipped_while_later_ones_can_fit() {
             candidate("small", Channel::Knowledge, 1.0, 3),
         ],
         &chunks,
+        None,
     );
     assert_eq!(packed.items[0].id.as_str(), "small");
     assert_eq!(packed.omitted.omitted, 1);
@@ -84,13 +87,18 @@ fn rule_28_chunk_larger_than_the_total_budget_is_omitted() {
         &request(5),
         &[candidate("large", Channel::Knowledge, 1.0, 6)],
         &[chunk("large", "body", 6)],
+        None,
     );
     assert!(packed.items.is_empty());
     assert_eq!(packed.omitted.omitted, 1);
 }
 
+/// A `Channel::Knowledge` candidate dispatches to a knowledge chunk item —
+/// `line_start` stays `None` and the pointer carries the chunk's heading
+/// anchor rather than a line range. The `Channel::Source` counterpart lives in
+/// `pack_source.rs`.
 #[test]
-fn rule_29_included_candidates_become_fully_mapped_context_items() {
+fn rule_29_knowledge_candidates_still_become_knowledge_chunk_items() {
     let mut source = chunk("a", &"é".repeat(121), 4);
     source.heading.clear();
     source.anchor = "where".into();
@@ -98,12 +106,12 @@ fn rule_29_included_candidates_become_fully_mapped_context_items() {
     source.state = LifecycleState::Draft;
     let ranked = RankedCandidate {
         id: ChunkId::from("a"),
-        channel: Channel::Source,
+        channel: Channel::Knowledge,
         score: 2.5,
         reasons: vec![SelectionReason::ExactPath],
         token_count: 4,
     };
-    let packed = pack(&request(4), &[ranked], &[source]);
+    let packed = pack(&request(4), &[ranked], &[source], None);
     let item = &packed.items[0];
     assert_eq!(item.id.as_str(), "a");
     assert_eq!(item.kind, ItemKind::KnowledgeChunk);
@@ -112,7 +120,7 @@ fn rule_29_included_candidates_become_fully_mapped_context_items() {
     assert_eq!(item.pointer.line_start, None);
     assert_eq!(item.pointer.line_end, None);
     assert_eq!(item.summary.chars().count(), 120);
-    assert_eq!(item.source, Channel::Source);
+    assert_eq!(item.source, Channel::Knowledge);
     assert_eq!(item.token_count, 4);
     assert!((item.score - 2.5).abs() < 1e-4, "got {}", item.score);
     assert_eq!(item.reasons, vec![SelectionReason::ExactPath]);
@@ -130,6 +138,7 @@ fn rule_30_estimated_tokens_is_the_included_sum_and_within_budget() {
             candidate("b", Channel::Knowledge, 1.0, 4),
         ],
         &chunks,
+        None,
     );
     assert_eq!(packed.estimated_tokens, 7);
     assert!(packed.within_budget());
@@ -145,6 +154,7 @@ fn rule_31_every_unincluded_ranked_candidate_is_counted() {
             candidate("fits", Channel::Knowledge, 1.0, 1),
         ],
         &[chunk("large", "body", 2), chunk("fits", "body", 1)],
+        None,
     );
     assert_eq!(packed.items.len(), 1);
     assert_eq!(packed.omitted.omitted, 2);
@@ -159,9 +169,10 @@ fn rule_32_weakest_included_score_is_the_minimum_or_zero() {
             candidate("b", Channel::Knowledge, 0.4, 2),
         ],
         &[chunk("a", "body", 2), chunk("b", "body", 2)],
+        None,
     );
     assert!((packed.omitted.weakest_included_score - 0.4).abs() < 1e-4);
-    let empty = pack(&request(0), &[], &[]);
+    let empty = pack(&request(0), &[], &[], None);
     assert_eq!(empty.omitted.weakest_included_score, 0.0);
 }
 
@@ -179,6 +190,7 @@ fn rule_33_coverage_reports_all_and_included_candidate_tokens() {
             chunk("b", "body", 7),
             chunk("c", "body", 3),
         ],
+        None,
     );
     assert_eq!(packed.omitted.coverage.candidates, 3);
     assert_eq!(packed.omitted.coverage.included, 2);
@@ -195,6 +207,7 @@ fn rule_34_zero_budget_returns_an_empty_pack_with_coverage() {
             candidate("costly", Channel::Knowledge, 1.0, 1),
         ],
         &[chunk("free", "body", 0), chunk("costly", "body", 1)],
+        None,
     );
     assert!(packed.items.is_empty());
     assert_eq!(packed.omitted.omitted, 2);
@@ -212,6 +225,7 @@ fn item_for_body(body: &str) -> ContextItem {
         &request(1),
         &[candidate("a", Channel::Knowledge, 1.0, 1)],
         &[source],
+        None,
     );
     packed.items.into_iter().next().expect("chunk should fit")
 }
@@ -295,7 +309,7 @@ fn property_pack_never_exceeds_budget() {
                 tokens,
             ));
         }
-        let packed = pack(&request(budget), &ranked, &chunks);
+        let packed = pack(&request(budget), &ranked, &chunks, None);
         assert!(packed.estimated_tokens <= packed.budget_tokens);
         assert!(packed.within_budget());
         assert_eq!(

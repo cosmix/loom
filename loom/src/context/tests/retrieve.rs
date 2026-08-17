@@ -16,7 +16,10 @@ fn write_file(root: &Path, relative: &str, contents: &str) {
 /// A project tree `retrieve_for_stage` can run against end to end: a `.work/`
 /// directory for [`crate::fs::work_dir::WorkDir`] to find, and a knowledge tree
 /// under `doc/loom/knowledge/` for the chunker to ingest.
-fn project_with_knowledge() -> TempDir {
+///
+/// `pub(super)` so sibling test modules under `context::tests` (e.g.
+/// `retrieve_source`) can reuse it instead of duplicating a fixture project.
+pub(super) fn project_with_knowledge() -> TempDir {
     let temp = TempDir::new().unwrap();
     let root = temp.path();
     fs::create_dir_all(root.join(".work")).unwrap();
@@ -103,6 +106,11 @@ fn stage_query_new_covers_every_channel() {
     assert_eq!(query.scope, Channel::all().to_vec());
     assert!(query.required_ids.is_empty());
     assert!(query.stage_dependency_ids.is_empty());
+    assert_eq!(
+        query.overlay,
+        crate::context::local_overlay::OverlayScope::Local,
+        "a query naming no stage must default to reading the working-tree overlay"
+    );
 }
 
 #[test]
