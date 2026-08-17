@@ -18,6 +18,7 @@ mod export;
 mod parser;
 mod persistence;
 mod query;
+mod spool;
 mod storage;
 mod types;
 
@@ -38,6 +39,12 @@ pub use export::{format_memory_for_handoff, format_memory_for_signal};
 
 // Re-export persistence functions
 pub use persistence::{extract_key_notes, list_journals, preserve_for_crash, validate_content};
+
+// Re-export spool functions (sandboxed-worktree write fallback; see spool.rs)
+pub use spool::{
+    append_to_spool, drain_into_journal, drain_spool, read_pending, spool_path, DrainOutcome,
+    SPOOL_MAX_BYTES, SPOOL_RELPATH,
+};
 
 #[cfg(test)]
 mod tests {

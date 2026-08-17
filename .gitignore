@@ -38,6 +38,9 @@ target/
 # loom derived context cache (rebuildable from doc/loom/knowledge/)
 .loom/cache/
 
+# per-worktree memory spool (drained into .work/memory/<stage>.md by the daemon)
+.loom/memory-spool.jsonl
+
 # loom plan artifacts (completed and review copies)
 doc/plans/DONE-*
 doc/plans/REVIEW-*
