@@ -209,6 +209,28 @@ pub fn write_settings(config: &MergedSandboxConfig, worktree_path: &Path) -> Res
     Ok(())
 }
 
+/// Filters plan `allow_write` paths into `Edit(...)` permission rules and
+/// appends them to `allow`, deduping against what's already there.
+///
+/// Filters `../` and dedupes: this `Edit(...)` rule merges into the
+/// OS-enforced `allowWrite` grant emitted by `sandbox.filesystem.allowWrite`
+/// in settings/policy.rs, so an unfiltered entry would grant write outside
+/// the worktree, bypassing that sibling emitter's filter.
+fn push_allow_write_rules(allow: &mut Vec<Value>, config: &MergedSandboxConfig) {
+    for path in config
+        .filesystem
+        .allow_write
+        .iter()
+        .map(|p| p.trim())
+        .filter(|p| !p.is_empty() && !p.contains("../"))
+    {
+        let rule = json!(format!("Edit({path})"));
+        if !allow.contains(&rule) {
+            allow.push(rule);
+        }
+    }
+}
+
 /// Generate Claude Code settings JSON from sandbox config
 pub fn generate_settings_json(config: &MergedSandboxConfig) -> Value {
     let mut settings = json!({});
@@ -266,9 +288,7 @@ pub fn generate_settings_json(config: &MergedSandboxConfig) -> Value {
     }
 
     // Add allow_write paths as exceptions (same Write->Edit reasoning as above).
-    for path in &config.filesystem.allow_write {
-        allow.push(json!(format!("Edit({})", path)));
-    }
+    push_allow_write_rules(&mut allow, config);
 
     // Add narrow Read/Edit permissions for orchestration state files agents
     // need. These are the *relative* forms; `write_settings` adds matching
@@ -1042,6 +1062,51 @@ mod tests {
             "a claude-only stage's own allow_write must reach the OS sandbox, \
              with no codex state paths appended, got: {json:?}"
         );
+    }
+
+    #[test]
+    fn test_allow_write_parent_traversal_filtered_but_normal_entry_kept() {
+        // A `../` allow_write entry must never reach permissions.allow as an
+        // `Edit(...)` rule - it merges into the OS-enforced allowWrite grant
+        // and would open write outside the worktree. The sibling ordinary
+        // entry proves the loop still works, not just drops everything.
+        let config = MergedSandboxConfig {
+            filesystem: FilesystemConfig {
+                allow_write: vec!["../../escape/**".to_string(), "loom/src/**".to_string()],
+                ..Default::default()
+            },
+            ..default_config()
+        };
+
+        let json = generate_settings_json(&config);
+        let allow = json["permissions"]["allow"].as_array().unwrap();
+        let allow_strs: Vec<&str> = allow.iter().filter_map(|v| v.as_str()).collect();
+
+        assert!(
+            !allow_strs.iter().any(|rule| rule.contains("../")),
+            "parent-traversal allow_write must not reach permissions.allow, got: {allow_strs:?}"
+        );
+        assert_eq!(allow[0], "Edit(loom/src/**)");
+    }
+
+    #[test]
+    fn test_allow_write_trims_whitespace_and_drops_empty() {
+        let config = MergedSandboxConfig {
+            filesystem: FilesystemConfig {
+                allow_write: vec!["  loom/src/**  ".to_string(), "   ".to_string()],
+                ..Default::default()
+            },
+            ..default_config()
+        };
+
+        let json = generate_settings_json(&config);
+        let allow = json["permissions"]["allow"].as_array().unwrap();
+
+        // The padded entry is trimmed and emitted; the whitespace-only entry
+        // contributes nothing - allow.len() is 1 (allow_write) + 6 (.work/
+        // state permissions), same as a single ordinary entry would produce.
+        assert_eq!(allow.len(), 7, "got: {allow:?}");
+        assert_eq!(allow[0], "Edit(loom/src/**)");
     }
 
     #[test]
