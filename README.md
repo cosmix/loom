@@ -77,7 +77,7 @@ All orchestration state is plain files in `.work/`, so nothing is lost when a pr
 
 ### Sandboxing and plan hardening
 
-Plan-level defaults and per-stage overrides control filesystem reads/writes, network domains, and permission mode ([Sandbox Configuration](#sandbox-configuration)). Before you spend anything, `loom plan verify` validates a plan with no side effects, and `loom pressure` hardens it through adversarial review rounds run by two different model families.
+Plan-level defaults and per-stage overrides control filesystem reads/writes, network domains, and permission mode for the agent session, and commands loom runs from your plan get a rebuilt, allowlisted environment so they cannot read ambient credentials ([Sandbox Configuration](#sandbox-configuration)). Before you spend anything, `loom plan verify` validates a plan with no side effects — running the same sandbox validation that would otherwise only fail at `loom init` — and `loom pressure` hardens it through adversarial review rounds run by two different model families.
 
 ### Human-in-the-loop where it matters
 
@@ -247,6 +247,11 @@ loom knowledge audit [--max-file-lines N] [--max-topic-lines N] [--quiet]   # Re
 loom knowledge gc [--model NAME] [--dry-run] [--quick]                       # Spawn Claude to restructure (extract, dedupe, relink)
 loom knowledge bootstrap [--model <name>] [--skip-map] [--quick]             # --quick uses headless `claude -p` (see Billing note)
 
+# Retrieval over the knowledge base — deterministic, offline, no model call
+loom knowledge context --query <text> [--budget-tokens N] [--scope knowledge|source|all] [--require-id <id>] [--explain] [--json]
+loom knowledge status [--json]                                               # Catalog freshness, size, reported issues
+loom knowledge sync [--structural-only] [--json]                             # Rebuild derived context artifacts after editing knowledge
+
 loom memory note <text> [--stage <id>]
 loom memory decision <text> [--context <why>] [--stage <id>]
 loom memory change <text> [--stage <id>]
@@ -269,6 +274,11 @@ loom worktree list
 loom worktree remove <stage-id>
 loom graph
 loom map [--deep] [--focus <area>] [--overwrite]
+loom map --outline <path>                                                    # Indexed symbols of one file, in source order
+loom map --find-all <symbol>                                                 # Every indexed node whose name matches
+loom map --impact <symbol-or-path>                                           # What reaches a symbol or file, with path confidence
+loom context record-edit --stage <id> --path <path> [--path <path>...]       # Keep a stage's context overlay current
+loom hook user-prompt                                                        # UserPromptSubmit entry point; invoked by loom's hooks
 loom repair [--fix]
 loom clean [--all|--worktrees|--sessions|--state]
 loom self-update
@@ -463,6 +473,20 @@ Knowledge lives in `doc/loom/knowledge/` and is **tiered**: a generated `INDEX.m
 
 There is **no aggregate line budget** across the knowledge base — `loom knowledge audit` prints the total for information only. The limits that matter are per-file (`--max-file-lines`, default 250) and per-topic (`--max-topic-lines`, default 500), because structure is what degrades retrieval, not size.
 
+**Retrieval is deterministic and offline.** `loom knowledge context --query <text>` returns a token-budgeted *context pack*: the tool chunks the curated prose, scores each chunk, fuses the per-channel rankings, and takes whole chunks in order until the budget is spent, always reporting what it left out. There is **no embedding model, no network call and no randomness** — a pack is a pure function of the bytes on disk and the query string, so the same query returns the same pack.
+
+```bash
+loom knowledge context --query "how does merge cleanup order work" --budget-tokens 3000
+loom knowledge context --query "source graph coverage" --explain   # per-item scores and why each was selected
+loom knowledge context --query "sandbox rules" --json              # machine-readable
+```
+
+Stage sessions do not have to ask. Signal generation embeds a per-stage **Knowledge Brief** built through the same single entry point, so what a stage receives at spawn and what you get from the CLI are produced identically. Loom records what each recipient was given, so a second retrieval in the same session skips what the first already quoted rather than repeating it.
+
+`--scope` selects which channels to search. Only the `knowledge` channel contributes results today: the source graph that backs `loom map` is a separate store that the ranker does not yet read, so `--scope source` searches nothing. It is accepted for forward compatibility and says so on stderr.
+
+Run `loom knowledge sync` after editing knowledge outside the CLI; `loom knowledge status` reports whether the derived artifacts are current.
+
 ### Bootstrapping and maintenance
 
 | Command                    | Role                                                                                            |
@@ -536,6 +560,31 @@ loom:
 ```
 
 Note: knowledge file writes are intentionally protected by sandbox defaults; knowledge updates should be done via `loom knowledge ...` commands. Plan-configured `excluded_commands` are rejected because broad executable exemptions bypass the host sandbox. When sandboxing is enabled, generated settings use host `denyRead` rules for sensitive paths and `failIfUnavailable: true`; failure to write those settings blocks session spawn. Unit tests pin the generated policy and blocked-spawn behavior. A credentialed Claude host-runtime canary across Bash, interpreters, build scripts, symlinks, and file tools remains a manual release check.
+
+### Command Confinement
+
+The `sandbox:` block above bounds the **agent session**. A separate control bounds the commands **loom itself runs from your plan** — every acceptance criterion, setup command, truth check, wiring test, dead-code check and change-impact command:
+
+```yaml
+loom:
+  version: 1
+  sandbox:
+    command_confinement: confined # plan-level default; `inherit` to opt out
+
+  stages:
+    - id: build
+      sandbox:
+        command_confinement: inherit # per-stage override
+```
+
+| Level | Behavior |
+| ---------- | ------------------------------------------------------------------------------------ |
+| `confined` | **Default.** The child process environment is cleared and rebuilt from a fixed allowlist |
+| `inherit`  | The child inherits loom's ambient environment                                          |
+
+Plans are trusted artifacts, but trusted is not privileged: under `confined`, a plan line cannot read `GITHUB_TOKEN`, `AWS_*` or `ANTHROPIC_API_KEY` merely because you started loom from a shell that had them. The allowlist carries what a build toolchain needs to find itself — `HOME`, `PATH`, `CARGO_HOME`, `RUSTUP_HOME`, locale and terminal variables, `TMPDIR`, the proxy variables and the CA-bundle *locations* (`SSL_CERT_FILE`, `SSL_CERT_DIR`, `NIX_SSL_CERT_FILE`). `SSH_AUTH_SOCK` is deliberately withheld, so an acceptance criterion that needs SSH auth fails by design rather than silently borrowing your agent.
+
+> **What confinement is not.** It is environment scrubbing — least-privilege hygiene, not a security boundary. Loom applies **no** namespace, seccomp, landlock, cgroup or network isolation to the commands it spawns: a confined command shares your network namespace, can read and write any path your user can, and can reach any Unix socket on the host. The `network:` settings above are emitted into the *agent session's* sandbox and do not restrict plan-authored commands. Use `confined` to keep ambient credentials out of plan commands; do not use it to run code you would not run yourself.
 
 ### Permission Mode
 

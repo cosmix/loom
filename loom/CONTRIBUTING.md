@@ -17,6 +17,8 @@ cargo check                                    # Compilation
 cargo test                                     # All tests pass
 cargo clippy --all-targets -- -D warnings      # No lint warnings
 cargo audit                                    # No security vulnerabilities
+cargo test --test maintainability              # Size limits and the debt ledger
+cargo build --no-default-features              # Builds without the tree-sitter grammars
 ```
 
 > **Who runs these:** you, or the main agent of a loom session. When loom is driving, these are
@@ -30,6 +32,43 @@ cargo audit                                    # No security vulnerabilities
 - **File size limit:** 400 lines max
 - **Function size limit:** 50 lines max
 - **No `unwrap()` in production code** - use proper error handling with `anyhow`
+
+### The maintainability ledger
+
+`maintainability-baseline.txt` records the files and functions that already exceed those
+limits, and `cargo test --test maintainability` enforces it as an **exact match, not a
+ceiling** — it fails on shrinkage just as loudly as on growth. Practical consequences:
+
+- A file recorded at its exact line count cannot take even one more line, so check the ledger
+  *before* you start: `rg <your-file> maintainability-baseline.txt`.
+- If you legitimately shrink a ledgered entry, **lower its recorded number** in the same change.
+- The two size limits can fight: extracting a helper to get a function under 50 lines can push
+  the file over 400. Prefer extracting into an unledgered sibling module.
+- When splitting a file, use the edition-2021 layout `<name>.rs` plus a `<name>/` directory.
+  Avoid `<name>/mod.rs` — it changes the path, and loom plans pin verification patterns to
+  exact file paths.
+
+The scanner parses every `.rs` file under the crate, `tests/fixtures/` included, and errors on
+unbalanced braces. A deliberately-unparseable fixture must therefore not carry a real `.rs`
+extension — name it `<name>.rs.broken`.
+
+### Optional grammars
+
+Tree-sitter source extraction sits behind the default-on `source-graph` feature, with every
+grammar exact-pinned (`=x.y.z`). Keep `cargo build --no-default-features` green: without the
+feature, extraction must degrade to file-level lexical nodes rather than fail to build, so a
+host with no C toolchain can still build loom. If you change a grammar pin, the embedded query,
+or the shape of the tree-sitter walk, bump `ExtractorIdentity` — otherwise cached extractions
+from the previous build are silently reused.
+
+### Working in a loom worktree
+
+- **Do not run `cargo fmt` while sibling agents are working.** It ignores path arguments and
+  formats the whole crate, clobbering files another agent owns. Use
+  `rustfmt --edition 2021 <file>` on your own files.
+- `cargo test` accepts exactly **one** testname filter; extra filters make it run zero tests.
+- Derived context state under `.loom/cache/` and paths reached through the `.work` symlink
+  resolve to the **main** project root, shared across worktrees. Treat them as shared state.
 
 ## Release Process
 
