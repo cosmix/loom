@@ -6,6 +6,7 @@ use crate::models::worktree::Worktree;
 use super::cache::{stable_prefix_for, SignalMetrics};
 use super::types::{DependencyStatus, EmbeddedContext};
 
+mod brief;
 mod helpers;
 mod sections;
 
@@ -13,7 +14,9 @@ mod sections;
 pub use helpers::format_dependency_table;
 pub use sections::format_skill_recommendations;
 // The recovery signal is built outside the semi-stable path but still needs the
-// codex lane's rules and the stage's response budget; see recovery_format.rs.
+// codex lane's rules, the stage's response budget, and the knowledge brief; see
+// recovery_format.rs.
+pub(crate) use brief::format_knowledge_brief;
 pub(crate) use helpers::format_subagent_timeout_section;
 pub(crate) use sections::format_codex_implementers_section;
 
@@ -71,7 +74,8 @@ pub fn format_signal_with_metrics(
     let header = format!("# Signal: {}\n\n", session.id);
     // Select stable prefix based on stage type (shared with the recovery path)
     let stable_prefix = stable_prefix_for(stage.stage_type);
-    let semi_stable = sections::format_semi_stable_section(embedded_context, stage.stage_type);
+    let semi_stable =
+        sections::format_semi_stable_section(embedded_context, stage.stage_type, &stage.id);
     let dynamic = sections::format_dynamic_section(
         session,
         stage,

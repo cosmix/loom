@@ -8,42 +8,27 @@ use crate::models::stage::{Implementers, Stage, StageType};
 use crate::models::worktree::Worktree;
 use crate::skills::SkillMatch;
 
+use super::super::retrieval::STAGE_QUERY_INPUTS;
 use super::super::types::{DependencyStatus, EmbeddedContext, SandboxSummary};
+use super::brief::format_knowledge_brief;
 use super::helpers::{
     append_budget_exceeded_box, extract_tasks_from_stage, format_dependency_outputs,
     format_dependency_table, format_structured_handoff,
 };
 
-/// SEMI-STABLE section: Changes per stage, not per session
-/// Contains knowledge map references and facts
+/// SEMI-STABLE section: per-stage content (brief, facts), never per-session
 pub(super) fn format_semi_stable_section(
     embedded_context: &EmbeddedContext,
     stage_type: StageType,
+    stage_id: &str,
 ) -> String {
     let mut content = String::new();
 
-    // Knowledge reference via CLI (not embedded to save context tokens)
-    if embedded_context.knowledge_has_content {
-        content.push_str("## Knowledge Base\n\n");
-        content.push_str("**Curated knowledge is available.** Read it BEFORE starting work. The knowledge base is either flat (tier-1 files only) or hierarchical (an `INDEX.md` map plus per-category tier-2 topic files) — check which layout applies:\n\n");
-        content.push_str("- **`doc/loom/knowledge/INDEX.md` exists (hierarchical)**: run `loom knowledge show` for the index first, then read the tier-1 file for your area, then drill into `category/topic` files ONLY for what you actually touch.\n");
-        content.push_str(
-            "- **`INDEX.md` absent (flat)**: read the tier-1 files below directly — this is today's behavior.\n\n",
-        );
-        content.push_str("```bash\n");
-        content.push_str(
-            "loom knowledge show                    # Show all knowledge (or the INDEX, if hierarchical)\n",
-        );
-        content
-            .push_str("loom knowledge show architecture       # Architecture overview (tier-1)\n");
-        content.push_str("loom knowledge show entry-points       # Key entry points (tier-1)\n");
-        content
-            .push_str("loom knowledge show patterns           # Architectural patterns (tier-1)\n");
-        content.push_str("loom knowledge show conventions        # Coding conventions (tier-1)\n");
-        content.push_str("loom knowledge show mistakes           # Lessons learned (tier-1)\n");
-        content
-            .push_str("loom knowledge show <category>/<slug>  # Drill into a tier-2 topic file\n");
-        content.push_str("```\n\n");
+    // Per-stage `## Knowledge Brief`, gated on retrieval having selected
+    // anything. Labelled with the query's INPUT FIELDS, never `pack.query`
+    // itself: that is the whole stage description, re-embedded a second time.
+    if let Some(pack) = &embedded_context.context_pack {
+        content.push_str(&format_knowledge_brief(pack, stage_id, STAGE_QUERY_INPUTS));
     }
 
     // Stage-type-aware reminder boxes
@@ -129,7 +114,7 @@ pub(super) fn format_semi_stable_section(
                 "│  ⚠️  NEVER use 'loom knowledge' in implementation stages           │\n",
             );
             content.push_str(
-                "│      Memory gets curated into knowledge by integration-verify      │\n",
+                "│      Memory gets curated into knowledge by knowledge-distill       │\n",
             );
             content.push_str(
                 "│                                                                    │\n",
@@ -158,8 +143,8 @@ pub(super) fn format_semi_stable_section(
         StageType::Knowledge | StageType::IntegrationVerify | StageType::KnowledgeDistill => {
             content.push_str("## Knowledge Management\n\n");
 
-            if !embedded_context.knowledge_has_content {
-                // CRITICAL warning for missing/empty knowledge
+            if embedded_context.knowledge_tree_empty {
+                // CRITICAL warning for a knowledge tree with no content at all
                 content.push_str("```\n");
                 content.push_str(
                     "┌────────────────────────────────────────────────────────────────────┐\n",
@@ -311,7 +296,7 @@ pub(super) fn format_semi_stable_section(
             // Standard implementation stages: Show MEMORY guidance instead
             content.push_str("## Stage Memory\n\n");
             content.push_str(
-                "**Record insights AS THEY HAPPEN** — not at stage end. Curated later by integration-verify.\n\n",
+                "**Record insights AS THEY HAPPEN** — not at stage end. Curated later by the knowledge-distill stage.\n\n",
             );
             content.push_str("**Record IMMEDIATELY when:**\n\n");
             content.push_str("- You make a mistake or hit an error and fix it\n");

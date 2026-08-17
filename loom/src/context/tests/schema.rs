@@ -54,6 +54,35 @@ fn lifecycle_state_defaults_to_active_and_round_trips() {
     assert_eq!(back, LifecycleState::Superseded);
 }
 
+/// `content_hash` and `excerpt` were added to `ContextItem` after packs were
+/// already being serialized, so a document written without them must still
+/// deserialize — both fields are `#[serde(default)]` precisely for this.
+#[test]
+fn context_item_reads_a_document_written_before_the_new_fields_existed() {
+    let legacy = r#"{
+        "id": "architecture.md#pipeline#0",
+        "kind": "knowledge-chunk",
+        "pointer": { "path": "architecture.md", "anchor": "pipeline" },
+        "summary": "Pipeline",
+        "source": "knowledge",
+        "token_count": 12,
+        "score": 1.5,
+        "reasons": ["lexical"],
+        "confidence": "low",
+        "state": "active"
+    }"#;
+
+    let item: ContextItem = serde_json::from_str(legacy).unwrap();
+    assert_eq!(item.content_hash, "");
+    assert_eq!(item.excerpt, None);
+
+    // And what we write back is itself readable — the absent excerpt is skipped
+    // rather than serialized as an explicit null.
+    let json = serde_json::to_string(&item).unwrap();
+    assert!(!json.contains("excerpt"), "got {json}");
+    assert_eq!(serde_json::from_str::<ContextItem>(&json).unwrap(), item);
+}
+
 #[test]
 fn chunk_id_is_transparent_in_json() {
     let id = ChunkId::new("architecture/hook-system.md#hooks#0");

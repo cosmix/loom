@@ -320,7 +320,6 @@ impl StageExecutor for Orchestrator {
             Ok(resolved) => resolved,
             Err(BaseBranchError::SchedulingNotReady(msg)) => {
                 // Transient — skip this cycle, retry on the next poll.
-                //
                 // Logged once per stage per daemon run: this fires on every
                 // 5-second poll for as long as the condition holds, and an
                 // unbounded print here buries the log (and the operator) under
@@ -568,6 +567,7 @@ impl StageExecutor for Orchestrator {
             return Ok(());
         }
 
+        super::stage_telemetry::record_context_telemetry(self, &stage, &spawned_session.id);
         // Merge only executor-owned fields into the fresh record under lock, so
         // the slow spawn cannot clobber a concurrent CLI update (O-22).
         let session_id = spawned_session.id.clone();

@@ -3,9 +3,78 @@
 use crate::models::stage::Stage;
 
 use super::cache::stable_prefix_for;
-use super::format::{format_codex_implementers_section, format_subagent_timeout_section};
-use super::recovery_types::RecoverySignalContent;
+use super::format::{
+    format_codex_implementers_section, format_knowledge_brief, format_subagent_timeout_section,
+};
+use super::recovery_types::{LastHeartbeatInfo, RecoverySignalContent};
+use super::retrieval::STAGE_QUERY_INPUTS;
 use super::types::EmbeddedContext;
+
+/// Render the "### Last Known State" block from the previous session's last
+/// heartbeat, split out of [`format_recovery_header`] to keep it short.
+fn format_last_known_state(hb: &LastHeartbeatInfo) -> String {
+    let mut section = String::from("### Last Known State\n\n");
+    section.push_str(&format!(
+        "- **Timestamp**: {}\n",
+        hb.timestamp.format("%Y-%m-%d %H:%M:%S UTC")
+    ));
+    if let Some(pct) = hb.context_percent {
+        section.push_str(&format!("- **Context Usage**: {pct:.1}%\n"));
+    }
+    if let Some(ref tool) = hb.last_tool {
+        section.push_str(&format!("- **Last Tool**: {tool}\n"));
+    }
+    if let Some(ref activity) = hb.activity {
+        section.push_str(&format!("- **Activity**: {activity}\n"));
+    }
+    section.push('\n');
+    section
+}
+
+/// Render the "## Recovery Context" / "### Last Known State" / "### Recovery
+/// Actions" block: what triggered this recovery, the previous session's last
+/// heartbeat, and the suggested next actions.
+///
+/// Extracted from [`format_recovery_signal`] so that function stays under its
+/// line-count ceiling as new sections are added.
+fn format_recovery_header(content: &RecoverySignalContent) -> String {
+    let mut header = String::new();
+
+    header.push_str("## Recovery Context\n\n");
+    header
+        .push_str("**This is a RECOVERY session.** The previous session encountered an issue.\n\n");
+    header.push_str(&format!("- **Reason**: {}\n", content.reason));
+    header.push_str(&format!(
+        "- **Previous Session**: {}\n",
+        content.previous_session_id
+    ));
+    header.push_str(&format!(
+        "- **Recovery Attempt**: #{}\n",
+        content.recovery_attempt
+    ));
+    header.push_str(&format!(
+        "- **Detected At**: {}\n",
+        content.detected_at.format("%Y-%m-%d %H:%M:%S UTC")
+    ));
+
+    if let Some(ref crash_path) = content.crash_report_path {
+        header.push_str(&format!("- **Crash Report**: {}\n", crash_path.display()));
+    }
+
+    header.push('\n');
+
+    if let Some(ref hb) = content.last_heartbeat {
+        header.push_str(&format_last_known_state(hb));
+    }
+
+    header.push_str("### Recovery Actions\n\n");
+    for (i, action) in content.recovery_actions.iter().enumerate() {
+        header.push_str(&format!("{}. {action}\n", i + 1));
+    }
+    header.push('\n');
+
+    header
+}
 
 /// Format a recovery signal as markdown
 pub fn format_recovery_signal(
@@ -18,55 +87,7 @@ pub fn format_recovery_signal(
     // Header
     signal.push_str(&format!("# Recovery Signal: {}\n\n", content.session_id));
 
-    // Recovery context
-    signal.push_str("## Recovery Context\n\n");
-    signal
-        .push_str("**This is a RECOVERY session.** The previous session encountered an issue.\n\n");
-    signal.push_str(&format!("- **Reason**: {}\n", content.reason));
-    signal.push_str(&format!(
-        "- **Previous Session**: {}\n",
-        content.previous_session_id
-    ));
-    signal.push_str(&format!(
-        "- **Recovery Attempt**: #{}\n",
-        content.recovery_attempt
-    ));
-    signal.push_str(&format!(
-        "- **Detected At**: {}\n",
-        content.detected_at.format("%Y-%m-%d %H:%M:%S UTC")
-    ));
-
-    if let Some(ref crash_path) = content.crash_report_path {
-        signal.push_str(&format!("- **Crash Report**: {}\n", crash_path.display()));
-    }
-
-    signal.push('\n');
-
-    // Last heartbeat info
-    if let Some(ref hb) = content.last_heartbeat {
-        signal.push_str("### Last Known State\n\n");
-        signal.push_str(&format!(
-            "- **Timestamp**: {}\n",
-            hb.timestamp.format("%Y-%m-%d %H:%M:%S UTC")
-        ));
-        if let Some(pct) = hb.context_percent {
-            signal.push_str(&format!("- **Context Usage**: {pct:.1}%\n"));
-        }
-        if let Some(ref tool) = hb.last_tool {
-            signal.push_str(&format!("- **Last Tool**: {tool}\n"));
-        }
-        if let Some(ref activity) = hb.activity {
-            signal.push_str(&format!("- **Activity**: {activity}\n"));
-        }
-        signal.push('\n');
-    }
-
-    // Recovery actions
-    signal.push_str("### Recovery Actions\n\n");
-    for (i, action) in content.recovery_actions.iter().enumerate() {
-        signal.push_str(&format!("{}. {action}\n", i + 1));
-    }
-    signal.push('\n');
+    signal.push_str(&format_recovery_header(content));
 
     // Full stable prefix for this stage type: worktree context, isolation, execution
     // rules, subagent restrictions, git-staging, anti-slop, completion rules, and —
@@ -92,6 +113,14 @@ pub fn format_recovery_signal(
     // while the orchestrator keeps measuring it against exactly that budget.
     if let Some(timeout_secs) = stage.subagent_timeout_secs {
         signal.push_str(&format_subagent_timeout_section(timeout_secs));
+    }
+
+    // The `## Knowledge Brief` section is also SEMI-STABLE and this signal does
+    // not embed it either — without this a resumed stage silently loses the
+    // brief it was spawned with, even though the SAME retrieval ran again to
+    // build `embedded_context`.
+    if let Some(pack) = &embedded_context.context_pack {
+        signal.push_str(&format_knowledge_brief(pack, &stage.id, STAGE_QUERY_INPUTS));
     }
 
     // Target information

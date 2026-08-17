@@ -1,41 +1,30 @@
 //! `loom knowledge context` — deterministic, offline context retrieval.
 //!
-//! Resolves a token-budgeted [`ContextPack`] for a query by ranking the
-//! knowledge catalog (and, once it exists, the source graph), fusing the
-//! per-channel rank lists, and packing them into the requested budget. There
-//! is no model call and no network access anywhere in this path.
+//! Presentation only. The retrieval itself lives in
+//! [`crate::context::retrieve::retrieve_for_stage`], which every other consumer
+//! of context also calls; this module turns a CLI invocation into a
+//! [`StageQuery`] and renders the resulting [`ContextPack`]. There is no model
+//! call and no network access anywhere in this path.
 
-use crate::context::fuse::fuse;
-use crate::context::ingest::ingest;
-use crate::context::pack::{pack, PackRequest};
-use crate::context::rank::{rank, RankQuery};
-use crate::context::refresh::{evaluate, refresh};
+use crate::context::delivery::dependency_chunk_ids;
+use crate::context::retrieve::{resolve_roots, retrieve_for_stage, StageQuery};
 use crate::context::store::ContextStore;
 use crate::context::{
     Channel, Confidence, ContextItem, ContextPack, Freshness, OmissionSummary, SelectionReason,
 };
-use crate::fs::knowledge::catalog::Catalog;
-use crate::fs::knowledge::KnowledgeDir;
 use crate::fs::work_dir::WorkDir;
+use crate::verify::transitions::load_stage;
 use anyhow::{bail, Context, Result};
 use colored::Colorize;
 use std::path::{Path, PathBuf};
 
+/// The directory the CLI resolves `.work/` and the knowledge tree from.
+const WORK_DIR_HINT: &str = ".";
+
 /// Resolve the knowledge root and the derived-artifact store together, so the
 /// three context commands can never disagree about which tree or cache they use.
 pub(super) fn resolve() -> Result<(PathBuf, ContextStore)> {
-    let work_dir = WorkDir::new(".")?;
-    let project_root = work_dir
-        .project_root()
-        .context("Could not determine project root")?;
-    let knowledge = KnowledgeDir::new(project_root);
-
-    if !knowledge.exists() {
-        bail!("Knowledge directory not found. Run 'loom knowledge init' to create it.");
-    }
-
-    let store = ContextStore::open(&work_dir)?;
-    Ok((knowledge.root().to_path_buf(), store))
+    resolve_roots(Path::new(WORK_DIR_HINT))
 }
 
 /// Parse `--scope` into the channels it names.
@@ -48,76 +37,35 @@ fn parse_scope(scope: &str) -> Result<Vec<Channel>> {
     }
 }
 
-/// Bring the catalog current and return it. A read-only query must never die
-/// because the cache is unwritable: a `refresh` failure is downgraded to a
-/// warning and the catalog is built in memory instead.
-fn resolve_catalog(store: &ContextStore, knowledge_root: &Path) -> Result<Catalog> {
-    if let Err(error) = refresh(store, knowledge_root, true) {
-        eprintln!(
-            "warning: failed to refresh the context cache ({error}); using an in-memory catalog for this query"
-        );
-        let (catalog, _report) = ingest(knowledge_root)?;
-        return Ok(catalog);
-    }
-
-    match store.load_catalog()? {
-        Some(catalog) => Ok(catalog),
-        None => {
-            let (catalog, _report) = ingest(knowledge_root)?;
-            Ok(catalog)
-        }
-    }
-}
-
-/// Fail loudly when `--require-id` names a chunk id absent from the catalog.
+/// Chunk ids `--stage` contributes to the query: those already delivered to
+/// the stages it depends on.
 ///
-/// Without this check the flag silently does nothing on a typo: the id never
-/// matches, ranking proceeds as if it were never passed, and the command
-/// exits 0 with no signal that the requested chunk was never included.
-fn reject_unknown_require_ids(catalog: &Catalog, require_id: &[String]) -> Result<()> {
-    if require_id.is_empty() {
-        return Ok(());
-    }
-    let known_ids: std::collections::BTreeSet<&str> = catalog
-        .chunks
-        .iter()
-        .map(|chunk| chunk.id.as_str())
-        .collect();
-    let unknown: Vec<&str> = require_id
-        .iter()
-        .map(String::as_str)
-        .filter(|id| !known_ids.contains(id))
-        .collect();
-    if !unknown.is_empty() {
-        let ids = unknown.join(", ");
-        bail!(
-            "Unknown --require-id value(s): {ids}. No chunk with that id exists in the \
-             catalog; run 'loom knowledge context' without --require-id to see available ids."
-        );
-    }
-    Ok(())
-}
-
-/// Rank the catalog once per requested channel, producing one candidate list
-/// per channel. The source channel has no nodes until the source-graph stage
-/// lands; ranking it over the knowledge chunks would double-count them, so it
-/// always ranks an empty candidate slice.
-fn rank_channels(
-    channels: &[Channel],
-    rank_query: &RankQuery,
-    catalog: &Catalog,
-) -> Vec<Vec<crate::context::rank::RankedCandidate>> {
-    channels
-        .iter()
-        .map(|channel| match channel {
-            Channel::Knowledge => rank(rank_query, &catalog.chunks, Channel::Knowledge),
-            Channel::Source => rank(rank_query, &[], Channel::Source),
-        })
-        .collect()
+/// A stage's dependencies are the work it was written to build on, so the
+/// chunk ids already delivered to them are the strongest structural hint
+/// available about what this stage's retrieval should favour. [`RankQuery`]'s
+/// `stage_dependency_ids` is matched against chunk ids
+/// (`crate::context::rank`), not stage ids, so the dependency *stage ids*
+/// themselves would never match anything.
+///
+/// [`RankQuery`]: crate::context::rank::RankQuery
+fn stage_dependency_ids(stage_id: &str) -> Result<Vec<String>> {
+    let work_dir = WorkDir::new(WORK_DIR_HINT)?;
+    let stage = load_stage(stage_id, work_dir.root())
+        .with_context(|| format!("Failed to load stage '{stage_id}' named by --stage"))?;
+    // A stage record predating plan-id tracking, or one loaded outside any
+    // plan, falls back to the same "default" plan id `persist_delivery` (see
+    // `orchestrator/signals/helpers.rs`) uses when recording its deliveries.
+    let plan_id = crate::context::delivery::plan_key(&stage);
+    Ok(dependency_chunk_ids(
+        work_dir.root(),
+        plan_id,
+        &stage.dependencies,
+    ))
 }
 
 /// Retrieve a token-budgeted context pack for `query`.
 pub fn context(
+    stage: Option<String>,
     query: String,
     budget_tokens: usize,
     scope: String,
@@ -125,31 +73,22 @@ pub fn context(
     explain: bool,
     json: bool,
 ) -> Result<()> {
+    // Validate the flags that cost nothing before touching the filesystem, so a
+    // typo in --scope still reports itself rather than a stage-loading failure.
     let channels = parse_scope(&scope)?;
-    let (knowledge_root, store) = resolve()?;
+    let stage_dependencies = match stage.as_deref() {
+        Some(stage_id) => stage_dependency_ids(stage_id)?,
+        None => Vec::new(),
+    };
 
-    let catalog = resolve_catalog(&store, &knowledge_root)?;
-    let state = evaluate(&store, &knowledge_root)?;
-
-    reject_unknown_require_ids(&catalog, &require_id)?;
-
-    let rank_query = RankQuery {
-        text: query.clone(),
+    let stage_query = StageQuery {
+        work_dir_hint: PathBuf::from(WORK_DIR_HINT),
+        text: query,
         required_ids: require_id,
-        stage_dependency_ids: Vec::new(),
-    };
-
-    let lists = rank_channels(&channels, &rank_query, &catalog);
-    let fused = fuse(&lists);
-
-    let request = PackRequest {
-        query,
+        stage_dependency_ids: stage_dependencies,
         scope: channels,
-        budget_tokens,
-        structural_freshness: state.structural,
-        semantic_freshness: state.semantic,
     };
-    let context_pack = pack(&request, &fused, &catalog.chunks);
+    let context_pack = retrieve_for_stage(&stage_query, budget_tokens)?;
 
     if json {
         println!("{}", serde_json::to_string_pretty(&context_pack)?);

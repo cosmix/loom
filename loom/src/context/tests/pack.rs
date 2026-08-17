@@ -204,6 +204,73 @@ fn rule_34_zero_budget_returns_an_empty_pack_with_coverage() {
     assert_eq!(packed.omitted.coverage.included_tokens, 0);
 }
 
+/// Pack a single chunk whose body is `body`, returning the item it produced.
+fn item_for_body(body: &str) -> ContextItem {
+    let mut source = chunk("a", body, 1);
+    source.content_hash = "sha256:deadbeef".to_string();
+    let packed = pack(
+        &request(1),
+        &[candidate("a", Channel::Knowledge, 1.0, 1)],
+        &[source],
+    );
+    packed.items.into_iter().next().expect("chunk should fit")
+}
+
+/// The verbatim text a truncated excerpt quotes, with the marker line removed.
+/// Panics unless the marker really does sit alone on the final line.
+fn quoted_prefix(excerpt: &str) -> &str {
+    excerpt
+        .strip_suffix(EXCERPT_TRUNCATION_MARKER)
+        .expect("a truncated excerpt must announce itself with the marker")
+        .strip_suffix('\n')
+        .expect("the truncation marker must sit on its own line")
+}
+
+#[test]
+fn packed_items_carry_the_backing_chunks_content_hash() {
+    assert_eq!(item_for_body("body").content_hash, "sha256:deadbeef");
+}
+
+#[test]
+fn a_body_within_the_excerpt_bound_is_quoted_unchanged() {
+    let body = "## Heading\n\nA short section body.\n";
+    let item = item_for_body(body);
+    assert_eq!(item.excerpt.as_deref(), Some(body));
+}
+
+#[test]
+fn a_body_over_the_excerpt_bound_is_cut_at_a_line_and_marked() {
+    let line = "a line of prose that says something\n";
+    let body = line.repeat(200);
+    assert!(estimate_tokens(&body) > EXCERPT_MAX_TOKENS);
+
+    let excerpt = item_for_body(&body).excerpt.expect("excerpt");
+    assert!(excerpt.len() < body.len());
+    let quoted = quoted_prefix(&excerpt);
+    assert!(body.starts_with(quoted), "the excerpt must quote verbatim");
+    // Cut back to a line boundary, so no quoted line is half a source line.
+    assert!(quoted.ends_with("prose that says something"));
+}
+
+#[test]
+fn an_excerpt_cut_landing_inside_a_multi_byte_character_does_not_panic() {
+    // The byte limit is 1600, which is not a multiple of 3, so the naive cut
+    // lands inside a '→'. Slicing a `&str` there panics; the packer walks back.
+    let body = "→".repeat(700);
+    let excerpt = item_for_body(&body).excerpt.expect("excerpt");
+    let quoted = quoted_prefix(&excerpt);
+    assert!(body.starts_with(quoted));
+    assert_eq!(quoted.chars().count(), 533, "cut to the last whole '→'");
+
+    // The same trap with a 2-byte character pushed off alignment by a 1-byte
+    // prefix, so the limit lands mid-character from the other parity.
+    let body = format!("a{}", "é".repeat(900));
+    let excerpt = item_for_body(&body).excerpt.expect("excerpt");
+    let quoted = quoted_prefix(&excerpt);
+    assert!(body.starts_with(quoted));
+    assert_eq!(quoted.chars().count(), 800, "'a' plus 799 whole 'é'");
+}
+
 #[test]
 fn property_pack_never_exceeds_budget() {
     fn next(seed: &mut u32) -> u32 {

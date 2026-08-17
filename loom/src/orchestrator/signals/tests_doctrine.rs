@@ -30,7 +30,7 @@ use tempfile::TempDir;
 
 use super::super::cache::{
     generate_integration_verify_stable_prefix, generate_knowledge_distill_stable_prefix,
-    generate_knowledge_stable_prefix, generate_stable_prefix,
+    generate_knowledge_stable_prefix, generate_stable_prefix, KNOWLEDGE_CONSUMPTION_CONTRACT,
 };
 use super::super::generate::generate_signal_with_metrics;
 use super::{create_test_session, create_test_stage, create_test_worktree};
@@ -377,3 +377,24 @@ fn subagent_budget_is_cadence_not_deadline_in_emitted_signal() {
         "the retired takeover doctrine must not resurface in the emitted block"
     );
 }
+
+/// A grep proves presence, never agreement - pin `KNOWLEDGE_CONSUMPTION_CONTRACT`
+/// byte-for-byte against `CLAUDE.md.template`'s `## KNOWLEDGE-FIRST` section.
+#[test]
+fn knowledge_consumption_contract_agrees_with_claude_md_template() {
+    let heading = "## KNOWLEDGE-FIRST";
+    let start = CLAUDE_MD_TEMPLATE
+        .find(heading)
+        .expect("template needs a ## KNOWLEDGE-FIRST section")
+        + heading.len();
+    let rest = &CLAUDE_MD_TEMPLATE[start..];
+    let end = rest
+        .find("\n---")
+        .expect("## KNOWLEDGE-FIRST must be followed by ---");
+    let block = rest[..end].trim();
+    assert_eq!(block, KNOWLEDGE_CONSUMPTION_CONTRACT.trim(), "CLAUDE.md.template's ## KNOWLEDGE-FIRST body must match cache::KNOWLEDGE_CONSUMPTION_CONTRACT byte-for-byte (see doc/loom/knowledge/mistakes/doctrine-and-acceptance.md)");
+}
+
+// The "both renderers emit the brief" tests live in tests_brief.rs, beside
+// `sample_context_pack` - this file already sits near its own line budget and
+// those tests are about the brief pipeline, not cross-surface doctrine.

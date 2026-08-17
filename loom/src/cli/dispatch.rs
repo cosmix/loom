@@ -1,7 +1,7 @@
 use crate::commands::{
-    attach, clean, diagnose, graph, handoff, init, knowledge, map, memory, plan, pressure, repair,
-    resume, review, run, self_update, sessions, skill_index, stage, status, stop, verify,
-    worktree_cmd,
+    attach, clean, context, diagnose, graph, handoff, hook, init, knowledge, map, memory, plan,
+    pressure, repair, resume, review, run, self_update, sessions, skill_index, stage, status, stop,
+    verify, worktree_cmd,
 };
 use crate::completions::{complete_dynamic, generate_completions, CompletionContext, Shell};
 use anyhow::Result;
@@ -9,8 +9,8 @@ use std::path::PathBuf;
 use std::str::FromStr;
 
 use super::types::{
-    Commands, KnowledgeCommands, MemoryCommands, OutputCommands, PlanCommands, SessionsCommands,
-    StageCommands, WorktreeCommands,
+    Commands, ContextCommands, HookCommands, KnowledgeCommands, MemoryCommands, OutputCommands,
+    PlanCommands, SessionsCommands, StageCommands, WorktreeCommands,
 };
 
 /// The admin proof a `loom stage complete` invocation needs, if any.
@@ -110,19 +110,60 @@ fn dispatch_knowledge(command: KnowledgeCommands) -> Result<()> {
             heading,
             content,
         } => knowledge::replace_section(file, heading, content),
+        // `budget` is bound short so the seven-argument call stays one line.
         KnowledgeCommands::Context {
+            stage,
             query,
-            budget_tokens,
+            budget_tokens: budget,
             scope,
             require_id,
             explain,
             json,
-        } => knowledge::context::context(query, budget_tokens, scope, require_id, explain, json),
+        } => knowledge::context::context(stage, query, budget, scope, require_id, explain, json),
         KnowledgeCommands::Status { json } => knowledge::status::status(json),
         KnowledgeCommands::Sync {
             structural_only,
             json,
         } => knowledge::sync::sync(structural_only, json),
+    }
+}
+
+/// `loom plan <subcommand>` dispatch.
+///
+/// Broken out for the same reason as `dispatch_knowledge`: the top-level match
+/// sits at its line ceiling, so every new top-level arm has to buy its line back
+/// from an existing one.
+fn dispatch_plan(command: PlanCommands) -> Result<()> {
+    match command {
+        PlanCommands::Verify {
+            path,
+            strict,
+            json,
+            no_color,
+        } => plan::verify::execute(&path, strict, json, no_color),
+    }
+}
+
+/// `loom context <subcommand>` dispatch.
+///
+/// These are hook-facing entry points: they run on every agent edit, so they
+/// stay quiet on the happy path and degrade instead of failing the tool call
+/// that invoked them.
+fn dispatch_context(command: ContextCommands) -> Result<()> {
+    match command {
+        ContextCommands::RecordEdit { stage, paths } => {
+            context::record_edit::record_edit(&stage, &paths)
+        }
+    }
+}
+
+/// `loom hook <subcommand>` dispatch.
+///
+/// The deterministic side of loom's shell hooks: pure filesystem and string
+/// work, never a model call and never a network call.
+fn dispatch_hook(command: HookCommands) -> Result<()> {
+    match command {
+        HookCommands::UserPrompt => hook::user_prompt::user_prompt(),
     }
 }
 
@@ -291,14 +332,7 @@ pub fn dispatch(command: Commands) -> Result<()> {
         } => pressure::execute(plan, rounds, dry_run),
         Commands::Stop => stop::execute(),
         Commands::Diagnose { stage_id } => diagnose::execute(&stage_id),
-        Commands::Plan { command } => match command {
-            PlanCommands::Verify {
-                path,
-                strict,
-                json,
-                no_color,
-            } => plan::verify::execute(&path, strict, json, no_color),
-        },
+        Commands::Plan { command } => dispatch_plan(command),
         Commands::Check { stage_id, suggest } => verify::execute(&stage_id, suggest),
         Commands::SkillIndex => skill_index::execute(),
         Commands::Completions {
@@ -325,6 +359,8 @@ pub fn dispatch(command: Commands) -> Result<()> {
             generate_completions(shell);
             Ok(())
         }
+        Commands::Context { command } => dispatch_context(command),
+        Commands::Hook { command } => dispatch_hook(command),
         Commands::Complete { shell, args } => {
             let ctx = CompletionContext::from_args(&shell, &args);
             complete_dynamic(&ctx)

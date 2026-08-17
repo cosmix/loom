@@ -25,7 +25,7 @@ file src/daemon/server/dispute.rs 508
 file src/daemon/server/status.rs 412
 file src/fs/locking.rs 499
 file src/fs/permissions/hooks.rs 447
-file src/fs/permissions/settings.rs 688
+file src/fs/permissions/settings.rs 684
 file src/fs/permissions/sync.rs 647
 file src/fs/plan_lifecycle.rs 609
 file src/fs/safe_fs.rs 1019
@@ -46,14 +46,12 @@ file src/orchestrator/merge_attribution.rs 543
 file src/orchestrator/monitor/heartbeat.rs 413
 file src/orchestrator/monitor/tests.rs 737
 file src/orchestrator/signals/cache.rs 1121
-file src/orchestrator/signals/format/sections.rs 1191
-file src/orchestrator/signals/generate.rs 707
-file src/orchestrator/signals/tests.rs 562
+file src/orchestrator/signals/format/sections.rs 1176
+file src/orchestrator/signals/generate.rs 700
+file src/orchestrator/signals/tests.rs 551
 file src/orchestrator/signals/tests_cache.rs 687
 file src/orchestrator/terminal/emulator.rs 611
-file src/orchestrator/terminal/native/mod.rs 497
 file src/orchestrator/terminal/native/pid_tracking.rs 451
-file src/orchestrator/terminal/native/tests.rs 520
 file src/orchestrator/terminal/native/window_ops.rs 575
 file src/plan/amendment.rs 1193
 file src/plan/parser/extraction.rs 410
@@ -72,7 +70,7 @@ file tests/e2e/tmux_backend.rs 431
 file tests/failure_resume.rs 468
 file tests/integration/merge_conflict_recovery.rs 412
 file tests/integration/plan_verify.rs 878
-function src/cli/dispatch.rs dispatch 205
+function src/cli/dispatch.rs dispatch 200
 function src/commands/clean/mod.rs print_summary 52
 function src/commands/clean/sessions.rs test_clean_sessions_reaps_live_only_when_destroying_state 54
 function src/commands/clean/worktrees.rs clean_worktrees 110
@@ -174,8 +172,8 @@ function src/fs/memory/export.rs format_memory_for_signal 92
 function src/fs/memory/parser.rs parse_journal 108
 function src/fs/memory/query.rs generate_summary 52
 function src/fs/permissions/hooks.rs migrate_old_hook_paths 84
-function src/fs/permissions/settings.rs ensure_loom_hooks_local 101
-function src/fs/permissions/settings.rs ensure_loom_permissions_to 98
+function src/fs/permissions/settings.rs ensure_loom_hooks_local 93
+function src/fs/permissions/settings.rs ensure_loom_permissions_to 94
 function src/fs/permissions/sync.rs merge_permissions_with_lock 68
 function src/fs/permissions/sync.rs sync_worktree_permissions_with_working_dir 95
 function src/fs/permissions/sync.rs transform_worktree_path 65
@@ -248,9 +246,9 @@ function src/orchestrator/monitor/tests.rs test_budget_exceeded_fires_without_he
 function src/orchestrator/monitor/tests.rs test_hung_detection_honors_per_stage_subagent_timeout 68
 function src/orchestrator/retry.rs classify_failure 64
 function src/orchestrator/retry.rs test_classify_failure 85
-function src/orchestrator/signals/cache.rs generate_integration_verify_stable_prefix 146
+function src/orchestrator/signals/cache.rs generate_integration_verify_stable_prefix 145
 function src/orchestrator/signals/cache.rs generate_knowledge_distill_stable_prefix 174
-function src/orchestrator/signals/cache.rs generate_knowledge_stable_prefix 108
+function src/orchestrator/signals/cache.rs generate_knowledge_stable_prefix 106
 function src/orchestrator/signals/cache.rs generate_stable_prefix 135
 function src/orchestrator/signals/cache.rs test_generate_stable_prefix_contains_required_sections 77
 function src/orchestrator/signals/cache.rs test_integration_verify_stable_prefix_contains_required_sections 76
@@ -260,17 +258,17 @@ function src/orchestrator/signals/format/sections.rs format_codex_implementers_s
 function src/orchestrator/signals/format/sections.rs format_dynamic_section 280
 function src/orchestrator/signals/format/sections.rs format_recitation_section 95
 function src/orchestrator/signals/format/sections.rs format_sandbox_section 66
-function src/orchestrator/signals/format/sections.rs format_semi_stable_section 411
+function src/orchestrator/signals/format/sections.rs format_semi_stable_section 395
 function src/orchestrator/signals/format/sections.rs format_skill_recommendations 64
 function src/orchestrator/signals/generate.rs build_cross_stage_summary 78
 function src/orchestrator/signals/generate.rs build_wiring_checklist 66
 function src/orchestrator/signals/generate.rs extract_plan_overview 63
-function src/orchestrator/signals/generate.rs generate_signal_with_skills 93
-function src/orchestrator/signals/knowledge.rs format_knowledge_signal_content 90
+function src/orchestrator/signals/generate.rs generate_signal_with_skills 90
+function src/orchestrator/signals/knowledge.rs format_knowledge_signal_content 77
 function src/orchestrator/signals/merge.rs format_merge_signal_content 122
 function src/orchestrator/signals/merge_conflict.rs format_merge_conflict_signal_content 67
 function src/orchestrator/signals/parse.rs parse_signal_content 113
-function src/orchestrator/signals/recovery_format.rs format_recovery_signal 142
+function src/orchestrator/signals/recovery_format.rs format_recovery_signal 102
 function src/orchestrator/signals/recovery_parsing.rs read_recovery_signal 67
 function src/orchestrator/signals/tests_cache.rs test_recovery_signal_carries_codex_implementers_section 56
 function src/orchestrator/signals/tests_cache.rs test_signal_codex_implementers_section_gated 141

@@ -2,6 +2,9 @@ use crate::validation::clap_id_validator;
 use clap::{Parser, Subcommand};
 
 pub use super::types_memory::{KnowledgeCommands, MemoryCommands};
+pub use super::types_ops::{
+    ContextCommands, HookCommands, PlanCommands, SessionsCommands, WorktreeCommands,
+};
 pub use super::types_stage::{OutputCommands, StageCommands};
 
 const HELP_TEMPLATE: &str = "
@@ -277,6 +280,18 @@ pub enum Commands {
         migrate: bool,
     },
 
+    /// Record and inspect per-stage retrieval context
+    Context {
+        #[command(subcommand)]
+        command: ContextCommands,
+    },
+
+    /// Deterministic hook entry points invoked by loom's shell hooks
+    Hook {
+        #[command(subcommand)]
+        command: HookCommands,
+    },
+
     /// Internal: Dynamic completion helper (invoked by shell)
     #[command(hide = true)]
     Complete {
@@ -285,68 +300,6 @@ pub enum Commands {
         /// Command line arguments being completed
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
-    },
-}
-
-#[derive(Subcommand)]
-pub enum PlanCommands {
-    /// Verify a plan file without side effects (no .work/, no git repo required)
-    Verify {
-        /// Path to the plan file to validate
-        path: std::path::PathBuf,
-
-        /// Promote warnings to errors
-        #[arg(long)]
-        strict: bool,
-
-        /// Machine-readable JSON output (suppresses human text)
-        #[arg(long)]
-        json: bool,
-
-        /// Disable ANSI color codes
-        #[arg(long)]
-        no_color: bool,
-    },
-}
-
-#[derive(Subcommand)]
-pub enum SessionsCommands {
-    /// List all active sessions
-    List,
-
-    /// Kill one or more sessions
-    Kill {
-        /// Session IDs to kill (alphanumeric, dash, underscore only; max 128 characters)
-        #[arg(num_args = 1.., required_unless_present = "stage", value_parser = clap_id_validator)]
-        session_ids: Vec<String>,
-
-        /// Kill all sessions for a stage
-        #[arg(long, conflicts_with = "session_ids", value_parser = clap_id_validator)]
-        stage: Option<String>,
-    },
-}
-
-#[derive(Subcommand)]
-pub enum WorktreeCommands {
-    /// List all worktrees
-    List,
-
-    /// Remove a specific worktree and branch after merge conflict resolution
-    ///
-    /// Use this command after resolving merge conflicts manually or in a resolver session.
-    /// It cleans up the worktree and branch WITHOUT attempting another merge.
-    Remove {
-        /// Stage ID to clean up (alphanumeric, dash, underscore only; max 128 characters)
-        #[arg(value_parser = clap_id_validator)]
-        stage_id: String,
-
-        /// Allow removal when unmerged work is detected
-        #[arg(long)]
-        force: bool,
-
-        /// Exact confirmation phrase required with --force
-        #[arg(long = "confirm", requires = "force", value_name = "PHRASE")]
-        confirmation: Option<String>,
     },
 }
 

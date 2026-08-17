@@ -1,7 +1,12 @@
 //! Tests for `commands/knowledge/context.rs`.
 
 use super::*;
+// `reject_unknown_require_ids` moved into the shared retrieval pipeline when
+// this command was refactored onto it; the flag it guards is still this
+// command's, so its tests stay here.
+use crate::context::retrieve::reject_unknown_require_ids;
 use crate::context::schema::{KnowledgeChunk, LifecycleState};
+use crate::fs::knowledge::catalog::Catalog;
 use std::path::PathBuf;
 
 /// A minimal chunk with only the id populated — enough to exercise
@@ -30,6 +35,22 @@ fn catalog_with_ids(ids: &[&str]) -> Catalog {
         chunks: ids.iter().map(|id| chunk_with_id(id)).collect(),
         issues: Vec::new(),
     }
+}
+
+#[test]
+fn parse_scope_is_case_insensitive_and_names_every_channel() {
+    assert_eq!(parse_scope("knowledge").unwrap(), vec![Channel::Knowledge]);
+    assert_eq!(parse_scope("SOURCE").unwrap(), vec![Channel::Source]);
+    assert_eq!(parse_scope("all").unwrap(), Channel::all().to_vec());
+}
+
+#[test]
+fn parse_scope_rejects_an_unknown_channel_by_name() {
+    let error = parse_scope("everything").unwrap_err();
+    assert!(
+        error.to_string().contains("everything"),
+        "the error should name the rejected scope, got: {error}"
+    );
 }
 
 #[test]

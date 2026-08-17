@@ -24,15 +24,19 @@
 //! order taking whole chunks until the budget is spent. The packer never exceeds
 //! its budget and always reports what it left out.
 //!
-//! ## Shadow mode
+//! ## One entry point
 //!
-//! Nothing here changes what an agent sees. Selection is reachable only through
-//! the `loom knowledge context` / `status` / `sync` commands; signal generation
-//! is untouched.
+//! [`retrieve::retrieve_for_stage`] runs that whole pipeline and is the only way
+//! in: the `loom knowledge context` command, signal generation and the prompt
+//! hook all call it, so a brief rendered at spawn time and a brief pulled by
+//! hand are built the same way. [`delivery`] then records what a recipient was
+//! actually given, so the next retrieval in the same generation can skip it.
 
 pub mod coverage;
+pub mod delivery;
 pub mod extract;
 pub mod fingerprint;
+pub mod freshness;
 pub mod fuse;
 pub mod graph_store;
 pub mod ingest;
@@ -41,18 +45,21 @@ pub mod pack;
 pub mod rank;
 pub mod refresh;
 pub mod resolve;
+pub mod retrieve;
 pub mod schema;
 pub mod source_graph;
 pub mod store;
 
 pub use coverage::CoverageReport;
 pub use resolve::{impact, resolve_graph, ImpactHit, ResolutionStats, SymbolIndex};
+pub use retrieve::{retrieve_for_stage, StageQuery};
 
 pub use schema::{
     estimate_tokens, Channel, ChunkId, Confidence, ContextItem, ContextPack, Coverage,
     EdgeProvenance, FileCoverage, Freshness, ItemKind, KnowledgeChunk, LifecycleState,
     NodeLanguage, OmissionSummary, SelectionReason, SourceEdge, SourceEdgeKind, SourceNode,
-    SourceNodeKind, SourcePointer, Span, BYTES_PER_TOKEN_ESTIMATE,
+    SourceNodeKind, SourcePointer, Span, BYTES_PER_TOKEN_ESTIMATE, EXCERPT_MAX_TOKENS,
+    EXCERPT_TRUNCATION_MARKER,
 };
 
 #[cfg(test)]

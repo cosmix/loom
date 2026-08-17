@@ -1,9 +1,8 @@
-use std::fs;
-use std::path::PathBuf;
+use std::{fs, path::PathBuf};
 use tempfile::TempDir;
 
 use crate::models::session::Session;
-use crate::models::stage::{Implementers, Stage, StageStatus, StageType};
+use crate::models::stage::{Stage, StageStatus, StageType};
 use crate::models::worktree::Worktree;
 use crate::plan::schema::{AcceptanceCriterion, CodeReviewConfig};
 
@@ -13,6 +12,8 @@ use super::generate::{extract_plan_overview, generate_signal, render_review_dime
 use super::types::{DependencyStatus, EmbeddedContext, SignalUpdates};
 
 // Submodules with additional tests
+#[path = "tests_brief.rs"]
+mod tests_brief;
 #[path = "tests_cache.rs"]
 mod tests_cache;
 #[path = "tests_doctrine.rs"]
@@ -221,20 +222,8 @@ fn test_format_signal_content_with_embedded_context() {
     let worktree = create_test_worktree();
     let embedded_context = EmbeddedContext {
         handoff_content: Some("# Handoff\nPrevious session completed tasks A and B.".to_string()),
-        parsed_handoff: None,
         plan_overview: Some("# Plan Title\n\n## Overview\nThis plan does X.".to_string()),
-        knowledge_has_content: false,
-        memory_content: None,
-        skill_recommendations: Vec::new(),
-        context_budget: None,
-        context_usage: None,
-        sandbox_summary: None,
-        cross_stage_summary: None,
-        wiring_checklist: None,
-        ultracode: false,
-        implementers: Implementers::default(),
-        codex_available: false,
-        subagent_timeout_secs: None,
+        ..Default::default()
     };
 
     let content = format_signal_content(

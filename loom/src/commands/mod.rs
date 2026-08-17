@@ -1,9 +1,11 @@
 pub mod attach;
 pub mod clean;
 pub mod common;
+pub mod context;
 pub mod diagnose;
 pub mod graph;
 pub mod handoff;
+pub mod hook;
 pub mod init;
 pub mod knowledge;
 pub mod map;

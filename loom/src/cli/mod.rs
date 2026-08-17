@@ -1,6 +1,7 @@
 mod dispatch;
 mod types;
 mod types_memory;
+mod types_ops;
 mod types_stage;
 
 pub use dispatch::dispatch;

@@ -1,0 +1,199 @@
+use crate::context::retrieve::*;
+use crate::context::schema::*;
+use std::fs;
+use std::path::Path;
+use tempfile::TempDir;
+
+/// Write `contents` to `root/relative`, creating parent directories as needed.
+fn write_file(root: &Path, relative: &str, contents: &str) {
+    let path = root.join(relative);
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).unwrap();
+    }
+    fs::write(path, contents).unwrap();
+}
+
+/// A project tree `retrieve_for_stage` can run against end to end: a `.work/`
+/// directory for [`crate::fs::work_dir::WorkDir`] to find, and a knowledge tree
+/// under `doc/loom/knowledge/` for the chunker to ingest.
+fn project_with_knowledge() -> TempDir {
+    let temp = TempDir::new().unwrap();
+    let root = temp.path();
+    fs::create_dir_all(root.join(".work")).unwrap();
+    write_file(
+        root,
+        "doc/loom/knowledge/architecture.md",
+        "# Architecture\n\n\
+         ## Orchestrator loop\n\n\
+         The orchestrator polls stage files and spawns ready stages.\n\n\
+         ## Signal generation\n\n\
+         Signals carry the stage assignment into a session.\n",
+    );
+    write_file(
+        root,
+        "doc/loom/knowledge/conventions.md",
+        "# Conventions\n\n\
+         ## Commit style\n\n\
+         Commits follow conventional commits.\n",
+    );
+    temp
+}
+
+/// A pack carrying only the two revisions `context_epoch` reads.
+fn pack_with_revisions(structural: &str, semantic: &str) -> ContextPack {
+    ContextPack {
+        query: "query".to_string(),
+        scope: vec![Channel::Knowledge],
+        budget_tokens: 100,
+        estimated_tokens: 0,
+        structural_freshness: Freshness {
+            revision: structural.to_string(),
+            ..Freshness::default()
+        },
+        semantic_freshness: Freshness {
+            revision: semantic.to_string(),
+            ..Freshness::default()
+        },
+        items: Vec::new(),
+        omitted: OmissionSummary::default(),
+    }
+}
+
+#[test]
+fn context_epoch_is_stable_across_two_calls_on_one_pack() {
+    let pack = pack_with_revisions("structural-rev", "semantic-rev");
+    let first = context_epoch(&pack);
+    assert_eq!(first, context_epoch(&pack));
+    assert_eq!(first.len(), 16, "16 hex chars, got {first}");
+    assert!(first.chars().all(|c| c.is_ascii_hexdigit()));
+}
+
+#[test]
+fn context_epoch_changes_when_either_revision_changes() {
+    let base = context_epoch(&pack_with_revisions("structural-rev", "semantic-rev"));
+
+    // Rebuilding only the structural layer is enough to re-open delivery.
+    let structural_only = context_epoch(&pack_with_revisions("rebuilt", "semantic-rev"));
+    assert_ne!(base, structural_only);
+
+    let semantic_only = context_epoch(&pack_with_revisions("structural-rev", "rebuilt"));
+    assert_ne!(base, semantic_only);
+    assert_ne!(structural_only, semantic_only);
+}
+
+#[test]
+fn context_epoch_separates_the_two_revisions() {
+    // Without a separator, ("ab", "c") and ("a", "bc") would hash identically
+    // and two different derived generations would claim one epoch.
+    assert_ne!(
+        context_epoch(&pack_with_revisions("ab", "c")),
+        context_epoch(&pack_with_revisions("a", "bc"))
+    );
+}
+
+#[test]
+fn context_epoch_is_defined_when_no_layer_was_ever_built() {
+    let epoch = context_epoch(&pack_with_revisions("", ""));
+    assert_eq!(epoch.len(), 16);
+}
+
+#[test]
+fn stage_query_new_covers_every_channel() {
+    let query = StageQuery::new("/tmp/somewhere", "how does the orchestrator spawn stages?");
+    assert_eq!(query.scope, Channel::all().to_vec());
+    assert!(query.required_ids.is_empty());
+    assert!(query.stage_dependency_ids.is_empty());
+}
+
+#[test]
+fn retrieve_for_stage_packs_the_knowledge_tree_within_budget() {
+    let temp = project_with_knowledge();
+    let query = StageQuery::new(temp.path(), "orchestrator loop spawns ready stages");
+
+    let pack = retrieve_for_stage(&query, 500).unwrap();
+
+    assert!(pack.within_budget());
+    assert!(!pack.items.is_empty(), "the catalog should match the query");
+    for item in &pack.items {
+        assert!(
+            !item.content_hash.is_empty(),
+            "{} carries no content hash",
+            item.id
+        );
+        assert!(item.excerpt.is_some(), "{} carries no excerpt", item.id);
+    }
+}
+
+#[test]
+fn retrieve_for_stage_is_deterministic_over_the_same_bytes() {
+    let temp = project_with_knowledge();
+    let query = StageQuery::new(temp.path(), "signal generation");
+
+    let first = retrieve_for_stage(&query, 500).unwrap();
+    let second = retrieve_for_stage(&query, 500).unwrap();
+
+    assert_eq!(first, second);
+    assert_eq!(context_epoch(&first), context_epoch(&second));
+}
+
+#[test]
+fn retrieve_for_stage_refuses_a_required_id_the_catalog_does_not_hold() {
+    let temp = project_with_knowledge();
+    let mut query = StageQuery::new(temp.path(), "anything");
+    query.required_ids = vec!["no-such-chunk".to_string()];
+
+    let error = retrieve_for_stage(&query, 500).unwrap_err();
+    assert!(
+        error.to_string().contains("no-such-chunk"),
+        "the error must name the unknown id, got: {error}"
+    );
+}
+
+#[test]
+fn retrieve_for_stage_boosts_a_chunk_named_by_stage_dependency_ids() {
+    let temp = project_with_knowledge();
+
+    // Learn a real chunk id from the fixture catalog with an ordinary lexical
+    // query, the way a caller would learn one from a prior pack or a delivery
+    // record.
+    let discovery = StageQuery::new(temp.path(), "signal generation");
+    let discovered = retrieve_for_stage(&discovery, 500).unwrap();
+    let dependency_chunk_id = discovered.items[0].id.as_str().to_string();
+
+    // Free text that matches nothing lexically in the fixture, so the only
+    // way the dependency chunk can appear in the pack — and the only reason
+    // it can carry — is the stage-dependency boost itself.
+    let mut query = StageQuery::new(temp.path(), "zzqx wobbleflorp unmatched terms");
+    query.stage_dependency_ids = vec![dependency_chunk_id.clone()];
+
+    let pack = retrieve_for_stage(&query, 500).unwrap();
+
+    let boosted = pack
+        .items
+        .iter()
+        .find(|item| item.id.as_str() == dependency_chunk_id)
+        .unwrap_or_else(|| {
+            panic!(
+                "expected {dependency_chunk_id} in the pack, got {:?}",
+                pack.items.iter().map(|i| i.id.as_str()).collect::<Vec<_>>()
+            )
+        });
+    assert_eq!(
+        boosted.reasons,
+        vec![SelectionReason::StageDependency],
+        "the boost must fire on its own, with no lexical match to piggyback on"
+    );
+}
+
+#[test]
+fn retrieve_for_stage_fails_when_there_is_no_knowledge_tree() {
+    let temp = TempDir::new().unwrap();
+    fs::create_dir_all(temp.path().join(".work")).unwrap();
+    let query = StageQuery::new(temp.path(), "anything");
+
+    let error = retrieve_for_stage(&query, 500).unwrap_err();
+    assert!(
+        error.to_string().contains("Knowledge directory not found"),
+        "got: {error}"
+    );
+}

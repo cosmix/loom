@@ -69,23 +69,28 @@ TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%S.000Z")
 # TOOL_NAME) can never produce malformed JSON. Fall back to the heredoc only when
 # jq is unavailable — the heartbeat must never be broken by a missing dependency,
 # and these values are loom-controlled.
+#
+# A symlinked heartbeat path is refused - the target must never be written
+# through - but that refusal must only skip the heartbeat write itself. It is
+# NOT a whole-script exit: the matcher blocks below (post-commit reminder,
+# edit recording) are unrelated to the heartbeat and must still run.
 HEARTBEAT_FILE="${HEARTBEAT_DIR}/${LOOM_STAGE_ID}.json"
-[[ ! -L "$HEARTBEAT_FILE" ]] || exit 0
-HEARTBEAT_JSON=""
-if command -v jq &>/dev/null; then
-	HEARTBEAT_JSON=$(jq -n \
-		--arg stage_id "$LOOM_STAGE_ID" \
-		--arg session_id "$LOOM_SESSION_ID" \
-		--arg timestamp "$TIMESTAMP" \
-		--arg last_tool "$TOOL_NAME" \
-		'{stage_id: $stage_id, session_id: $session_id, timestamp: $timestamp, context_percent: null, last_tool: $last_tool, activity: ("Tool executed: " + $last_tool)}' \
-		2>/dev/null || true)
-fi
+if [[ ! -L "$HEARTBEAT_FILE" ]]; then
+	HEARTBEAT_JSON=""
+	if command -v jq &>/dev/null; then
+		HEARTBEAT_JSON=$(jq -n \
+			--arg stage_id "$LOOM_STAGE_ID" \
+			--arg session_id "$LOOM_SESSION_ID" \
+			--arg timestamp "$TIMESTAMP" \
+			--arg last_tool "$TOOL_NAME" \
+			'{stage_id: $stage_id, session_id: $session_id, timestamp: $timestamp, context_percent: null, last_tool: $last_tool, activity: ("Tool executed: " + $last_tool)}' \
+			2>/dev/null || true)
+	fi
 
-if [[ -n "$HEARTBEAT_JSON" ]]; then
-	printf '%s\n' "$HEARTBEAT_JSON" >"$HEARTBEAT_FILE"
-else
-	cat >"$HEARTBEAT_FILE" <<EOF
+	if [[ -n "$HEARTBEAT_JSON" ]]; then
+		printf '%s\n' "$HEARTBEAT_JSON" >"$HEARTBEAT_FILE"
+	else
+		cat >"$HEARTBEAT_FILE" <<EOF
 {
   "stage_id": "${LOOM_STAGE_ID}",
   "session_id": "${LOOM_SESSION_ID}",
@@ -95,8 +100,9 @@ else
   "activity": "Tool executed: ${TOOL_NAME}"
 }
 EOF
+	fi
+	chmod 600 "$HEARTBEAT_FILE" 2>/dev/null || true
 fi
-chmod 600 "$HEARTBEAT_FILE" 2>/dev/null || true
 
 # Tool results are intentionally not persisted here. A shell hook cannot append
 # to a shared path with a race-free no-follow guarantee, and even redacted
@@ -127,10 +133,10 @@ remind_knowledge_update() {
 │     loom memory note "discovered X about Y"                        │
 │     loom memory decision "chose X because Y" --context "details"   │
 │                                                                    │
-│  3. Before stage complete, PROMOTE valuable insights:              │
-│     loom memory list                    # Review entries           │
-│     loom memory promote all mistakes    # Promote to knowledge     │
-│     loom memory promote decision patterns                          │
+│  3. Memory becomes knowledge via the knowledge-distill stage:      │
+│     loom memory show --all              # Review entries           │
+│     (the knowledge-distill stage reads this output and curates     │
+│     what belongs into doc/loom/knowledge/ - see commands/distill.md)│
 │                                                                    │
 │  Knowledge persists across sessions - future agents will thank you!│
 └────────────────────────────────────────────────────────────────────┘
@@ -143,6 +149,37 @@ if [[ "$TOOL_NAME" == "Bash" ]] && [[ -n "$COMMAND" ]]; then
 	# Detect git commit (matches: git commit, git -C path commit, etc.)
 	if echo "$COMMAND" | grep -qiE 'git\s+(-C\s+\S+\s+)?commit'; then
 		remind_knowledge_update
+	fi
+fi
+
+# === EDIT RECORDING (Write/Edit/MultiEdit/NotebookEdit tool calls) ===
+# Delegate to the Rust binary, which owns the shared .work write under a lock.
+# This script only extracts the edited path and forwards it - it must never
+# write shared state itself, and a failed/slow record must never fail the
+# edit (every call below is suffixed with `|| true`).
+#
+# MultiEdit carries its target at `.file_path`, the same position Write/Edit
+# use - confirmed against Claude Code's published PostToolUse examples, which
+# match "Write|Edit|MultiEdit" and read `.tool_input.file_path` for all three.
+# NotebookEdit does NOT: its field is `.notebook_path`, confirmed against
+# `worktree-file-guard.sh`'s `extract_path()`, which already special-cases the
+# same tool for the same reason. Falling back to `.file_path` only guards
+# against a future field rename, matching that guard's fallback.
+if [[ "$TOOL_NAME" == "Write" || "$TOOL_NAME" == "Edit" || "$TOOL_NAME" == "MultiEdit" || "$TOOL_NAME" == "NotebookEdit" ]] \
+	&& command -v loom &>/dev/null && command -v jq &>/dev/null; then
+	if [[ "$TOOL_NAME" == "NotebookEdit" ]]; then
+		EDIT_PATH=$(echo "$TOOL_INPUT" | jq -r '.notebook_path // .file_path // empty' 2>/dev/null || true)
+	else
+		EDIT_PATH=$(echo "$TOOL_INPUT" | jq -r '.file_path // empty' 2>/dev/null || true)
+	fi
+	if [[ -n "$EDIT_PATH" ]]; then
+		if command -v gtimeout &>/dev/null; then
+			gtimeout 3 loom context record-edit --stage "$LOOM_STAGE_ID" --path "$EDIT_PATH" >/dev/null 2>&1 || true
+		elif command -v timeout &>/dev/null; then
+			timeout 3 loom context record-edit --stage "$LOOM_STAGE_ID" --path "$EDIT_PATH" >/dev/null 2>&1 || true
+		else
+			loom context record-edit --stage "$LOOM_STAGE_ID" --path "$EDIT_PATH" >/dev/null 2>&1 || true
+		fi
 	fi
 fi
 

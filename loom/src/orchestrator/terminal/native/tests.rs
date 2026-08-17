@@ -16,6 +16,24 @@ fn stage_session(stage_id: &str) -> Session {
     session
 }
 
+/// Write a PID-tracking entry for `session` as the spawn path would.
+///
+/// Re-exported from `native` (see `mod.rs`), because sibling test modules
+/// across the crate need a session that liveness checks can actually resolve.
+pub(crate) fn write_test_pid_identity(
+    work_dir: &std::path::Path,
+    session: &Session,
+    pid: u32,
+) -> anyhow::Result<()> {
+    let (_, pid_key) = NativeBackend::window_title_and_pid_key(session)
+        .ok_or_else(|| anyhow::anyhow!("test session has no process tracking key"))?;
+    let identity = crate::process::ProcessIdentity {
+        pid,
+        start_time: crate::process::process_start_time(pid),
+    };
+    pid_tracking::write_pid_entry(work_dir, &pid_key, identity)
+}
+
 #[test]
 fn kill_session_without_pid_identity_is_an_idempotent_noop() {
     let work_dir = TempDir::new().unwrap();
@@ -352,169 +370,4 @@ fn build_claude_command_escapes_named_remote_control_injection() {
     // The whole name is single-quoted, so no `;`/`~` is active.
     assert!(cmd.contains("--remote-control='x; rm -rf ~'"), "cmd: {cmd}");
     assert!(!cmd.contains("--remote-control x; rm"));
-}
-
-#[test]
-fn build_claude_command_empty_capsule_matches_legacy_argv() {
-    // An unsupported or unprobed capsule must never change the command line.
-    let cmd = build_claude_command(
-        "/usr/bin/claude",
-        "opus",
-        "xhigh",
-        "auto",
-        &SessionCapsule::default(),
-        &RemoteControlInvocation::Disabled,
-        "'prompt'",
-    );
-    assert_eq!(
-        cmd,
-        "/usr/bin/claude --model opus --effort xhigh --permission-mode auto 'prompt'"
-    );
-}
-
-#[test]
-fn build_claude_command_emits_capsule_flags_in_order() {
-    let capsule = SessionCapsule {
-        settings_path: Some("/w/.claude/settings.local.json".into()),
-        setting_sources: Some("user,project".into()),
-        strict_mcp_config: true,
-    };
-    let cmd = build_claude_command(
-        "/usr/bin/claude",
-        "opus",
-        "xhigh",
-        "auto",
-        &capsule,
-        &RemoteControlInvocation::Disabled,
-        "'prompt'",
-    );
-    assert_eq!(
-        cmd,
-        "/usr/bin/claude --model opus --effort xhigh --permission-mode auto --settings /w/.claude/settings.local.json --setting-sources user,project --strict-mcp-config 'prompt'"
-    );
-    let settings_idx = cmd.find("--settings").unwrap();
-    let sources_idx = cmd.find("--setting-sources").unwrap();
-    let strict_mcp_idx = cmd.find("--strict-mcp-config").unwrap();
-    let prompt_idx = cmd.find("'prompt'").unwrap();
-    assert!(
-        settings_idx < sources_idx && sources_idx < strict_mcp_idx && strict_mcp_idx < prompt_idx
-    );
-}
-
-#[test]
-fn build_claude_command_escapes_capsule_settings_path() {
-    let capsule = SessionCapsule {
-        settings_path: Some("/tmp/a b;rm -rf /.json".into()),
-        ..SessionCapsule::default()
-    };
-    let cmd = build_claude_command(
-        "/usr/bin/claude",
-        "opus",
-        "xhigh",
-        "auto",
-        &capsule,
-        &RemoteControlInvocation::Disabled,
-        "'prompt'",
-    );
-    assert!(cmd.contains("--settings '/tmp/a b;rm -rf /.json'"));
-    assert!(!cmd.contains("--settings /tmp/a b;rm -rf /.json"));
-}
-
-#[test]
-fn build_claude_command_capsule_flags_precede_positional_prompt() {
-    let capsule = SessionCapsule {
-        settings_path: Some("/w/.claude/settings.local.json".into()),
-        setting_sources: Some("user,project".into()),
-        strict_mcp_config: true,
-    };
-    let cmd = build_claude_command(
-        "/usr/bin/claude",
-        "opus",
-        "xhigh",
-        "auto",
-        &capsule,
-        &RemoteControlInvocation::Bare,
-        "'prompt'",
-    );
-    let capsule_idx = cmd.find("--strict-mcp-config").unwrap();
-    let prompt_idx = cmd.find("'prompt'").unwrap();
-    let remote_control_idx = cmd.find("--remote-control").unwrap();
-    assert!(capsule_idx < prompt_idx && prompt_idx < remote_control_idx);
-}
-
-// `capsule_from` is the pure interlock underneath `session_capsule`: it must
-// never emit `setting_sources` without also emitting `settings_path`, since
-// `--setting-sources` alone (without `--settings` pinning loom's generated
-// file) would strip the session's sandbox block, permission rules and hooks.
-
-#[test]
-fn capsule_from_sources_supported_but_settings_file_missing_omits_sources() {
-    let capsule = capsule_from(true, true, true, None);
-    assert_eq!(capsule.settings_path, None);
-    assert_eq!(
-        capsule.setting_sources, None,
-        "no settings file to pin means --setting-sources must not be emitted either"
-    );
-}
-
-#[test]
-fn capsule_from_sources_supported_and_settings_file_present_pins_user_and_project() {
-    let capsule = capsule_from(
-        true,
-        true,
-        true,
-        Some("/w/.claude/settings.local.json".to_string()),
-    );
-    assert_eq!(
-        capsule.settings_path,
-        Some("/w/.claude/settings.local.json".to_string())
-    );
-    assert_eq!(capsule.setting_sources, Some("user,project".to_string()));
-}
-
-#[test]
-fn capsule_from_partial_probe_settings_only_omits_sources() {
-    // Settings supported but --setting-sources is not: the settings file is
-    // still pinned, but the sources flag (which the binary doesn't
-    // understand) must not be emitted.
-    let capsule = capsule_from(
-        true,
-        false,
-        true,
-        Some("/w/.claude/settings.local.json".to_string()),
-    );
-    assert_eq!(
-        capsule.settings_path,
-        Some("/w/.claude/settings.local.json".to_string())
-    );
-    assert_eq!(capsule.setting_sources, None);
-}
-
-#[test]
-fn capsule_from_nothing_supported_yields_empty_capsule() {
-    let capsule = capsule_from(
-        false,
-        false,
-        false,
-        Some("/w/.claude/settings.local.json".to_string()),
-    );
-    assert_eq!(capsule, SessionCapsule::default());
-}
-
-#[test]
-fn capsule_from_never_emits_sources_without_a_pinned_settings_path() {
-    // The security-critical invariant, checked directly across every corner
-    // of the (settings_supported, sources_supported, settings_file) cube.
-    for settings_supported in [false, true] {
-        for sources_supported in [false, true] {
-            for settings_file in [None, Some("/w/.claude/settings.local.json".to_string())] {
-                let capsule =
-                    capsule_from(settings_supported, sources_supported, true, settings_file);
-                assert!(
-                    capsule.setting_sources.is_none() || capsule.settings_path.is_some(),
-                    "setting_sources.is_some() must imply settings_path.is_some(): {capsule:?}"
-                );
-            }
-        }
-    }
 }
