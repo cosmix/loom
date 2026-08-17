@@ -11,9 +11,12 @@
 //! bytes on disk and the [`StageQuery`].
 
 use crate::context::fuse::fuse;
+use crate::context::graph_store::{GraphStore, ResolvedGraph};
 use crate::context::ingest::ingest;
+use crate::context::local_overlay::OverlayScope;
 use crate::context::pack::{pack, PackRequest};
 use crate::context::rank::{rank, RankQuery, RankedCandidate};
+use crate::context::rank_source::rank_source;
 use crate::context::refresh::{evaluate, refresh};
 use crate::context::schema::{Channel, ContextPack};
 use crate::context::store::ContextStore;
@@ -38,6 +41,13 @@ pub struct StageQuery {
     pub stage_dependency_ids: Vec<String>,
     /// Channels to rank. Use `Channel::all().to_vec()` unless narrowing.
     pub scope: Vec<Channel>,
+    /// Which source-graph overlay to read on top of the base layer.
+    ///
+    /// Defaults to [`OverlayScope::Local`] in [`StageQuery::new`], not to a
+    /// base-only read: a query that names no stage means "the tree in front of
+    /// me", and on a dirty tree there is no base layer for HEAD — the
+    /// working-tree overlay is the only thing describing it.
+    pub overlay: OverlayScope,
 }
 
 impl StageQuery {
@@ -49,6 +59,7 @@ impl StageQuery {
             required_ids: Vec::new(),
             stage_dependency_ids: Vec::new(),
             scope: Channel::all().to_vec(),
+            overlay: OverlayScope::Local,
         }
     }
 }
@@ -91,20 +102,37 @@ fn resolve_catalog(store: &ContextStore, knowledge_root: &Path) -> Result<Catalo
     }
 }
 
-/// Fail loudly when a caller demands a chunk id absent from the catalog.
+/// Fail loudly when a caller demands a chunk or source-node id absent from
+/// this query's scope.
 ///
-/// Without this check the demand silently does nothing on a typo: the id never
-/// matches, ranking proceeds as if it were never passed, and the caller gets a
-/// successful pack with no signal that the requested chunk was never included.
-pub(crate) fn reject_unknown_require_ids(catalog: &Catalog, require_id: &[String]) -> Result<()> {
+/// Without this check the demand silently does nothing on a typo: the id
+/// never matches, ranking proceeds as if it were never passed, and the caller
+/// gets a successful pack with no signal that the requested id was never
+/// included.
+///
+/// `graph` is consulted only when the caller passes `Some` — which
+/// `retrieve_for_stage` does only when `Channel::Source` is in the query's
+/// scope. A source-node id accepted while the source channel is out of scope
+/// would pass this check and then never be ranked (`rank_source` is the only
+/// reader of `graph`, and it never runs for a channel outside `scope`): the
+/// exact silent no-op this function exists to prevent, just moved one step
+/// later.
+pub(crate) fn reject_unknown_require_ids(
+    catalog: &Catalog,
+    graph: Option<&ResolvedGraph>,
+    require_id: &[String],
+) -> Result<()> {
     if require_id.is_empty() {
         return Ok(());
     }
-    let known_ids: BTreeSet<&str> = catalog
+    let mut known_ids: BTreeSet<&str> = catalog
         .chunks
         .iter()
         .map(|chunk| chunk.id.as_str())
         .collect();
+    if let Some(graph) = graph {
+        known_ids.extend(graph.nodes().map(|node| node.id.as_str()));
+    }
     let unknown: Vec<&str> = require_id
         .iter()
         .map(String::as_str)
@@ -113,8 +141,9 @@ pub(crate) fn reject_unknown_require_ids(catalog: &Catalog, require_id: &[String
     if !unknown.is_empty() {
         let ids = unknown.join(", ");
         bail!(
-            "Unknown --require-id value(s): {ids}. No chunk with that id exists in the \
-             catalog; run 'loom knowledge context' without --require-id to see available ids."
+            "Unknown --require-id value(s): {ids}. No chunk or source node with that id \
+             exists in scope; run 'loom knowledge context' without --require-id to see \
+             available ids."
         );
     }
     Ok(())
@@ -123,22 +152,66 @@ pub(crate) fn reject_unknown_require_ids(catalog: &Catalog, require_id: &[String
 /// Rank the catalog once per requested channel, producing one candidate list
 /// per channel.
 ///
-/// The source graph exists, but [`rank`] still only accepts `&[KnowledgeChunk]`,
-/// so the source channel contributes no candidates: ranking it over the
-/// knowledge chunks would double-count them. Bridging the graph's nodes into the
-/// ranker is a separate piece of work.
+/// Each channel is ranked over its own corpus: the knowledge channel over the
+/// catalog's chunks via [`rank`], the source channel over `graph`'s nodes via
+/// [`rank_source`]. `graph` is `None` when the source graph was never built or
+/// could not be read for this query — that is a degraded pack, not an error,
+/// so the source channel simply contributes no candidates rather than failing
+/// the whole retrieval.
 fn rank_channels(
     channels: &[Channel],
     rank_query: &RankQuery,
     catalog: &Catalog,
+    graph: Option<&ResolvedGraph>,
 ) -> Vec<Vec<RankedCandidate>> {
     channels
         .iter()
         .map(|channel| match channel {
             Channel::Knowledge => rank(rank_query, &catalog.chunks, Channel::Knowledge),
-            Channel::Source => rank(rank_query, &[], Channel::Source),
+            Channel::Source => graph
+                .map(|g| rank_source(rank_query, g))
+                .unwrap_or_default(),
         })
         .collect()
+}
+
+/// Load the resolved source graph for `query`'s overlay, degrading to `None`
+/// on any error.
+///
+/// `overlay.resolve` always yields a `(plan, stage)` pair, so this always asks
+/// [`GraphStore::resolved`] for the overlay-applied view — never `None` for
+/// the stage. That distinction matters on its own: with `None`, `resolved`
+/// reads only the base layer, and a base miss there becomes an *empty* graph
+/// rather than a missing one, silently dropping an overlay the query should
+/// have read. [`OverlayScope::Local`] resolves to the `(plan, stage)` address
+/// `local_overlay_key` computes and `loom map` writes (`commands/map.rs`) —
+/// the only production writer of that overlay today — so a `Local`-scoped
+/// query is what lets a caller see a working tree that no merge has
+/// published a base for.
+///
+/// Retrieval itself never builds or refreshes this graph: [`resolve_catalog`]
+/// calls [`refresh`] with `structural_only = true`, which skips the semantic
+/// reconcile on every call this pipeline makes. So this function only ever
+/// reads what a prior `loom map` run, or a merge, already wrote for
+/// `semantic_revision`. **Real, currently-reachable degraded mode:** on a
+/// checkout where `loom map` has never run and no merge has published a base
+/// for `semantic_revision`, neither layer exists — `resolved` still returns
+/// an empty graph rather than an error, so this degrades silently, and the
+/// source channel contributes nothing to the pack with no signal to the
+/// caller that anything is missing.
+fn load_resolved_graph(
+    work_dir_hint: &Path,
+    store: &ContextStore,
+    semantic_revision: &str,
+    overlay: &OverlayScope,
+) -> Option<ResolvedGraph> {
+    let work_dir = WorkDir::new(work_dir_hint).ok()?;
+    let project_root = work_dir.project_root()?;
+    let (plan, stage) = overlay.resolve(project_root);
+    let graph_store = GraphStore::new(store.root(), work_dir.root());
+    graph_store
+        .resolved(semantic_revision, Some((&plan, &stage)))
+        .ok()
 }
 
 /// Retrieve a token-budgeted pack for `query`.
@@ -156,7 +229,24 @@ pub fn retrieve_for_stage(query: &StageQuery, budget_tokens: usize) -> Result<Co
     let catalog = resolve_catalog(&store, &knowledge_root)?;
     let state = evaluate(&store, &knowledge_root)?;
 
-    reject_unknown_require_ids(&catalog, &query.required_ids)?;
+    // The source graph is keyed by the semantic revision, not the structural
+    // one — they are different hash domains over different subjects (see the
+    // comment at `refresh.rs:177-182`), and the graph is semantic-derived data.
+    let graph = load_resolved_graph(
+        &query.work_dir_hint,
+        &store,
+        &state.semantic.revision,
+        &query.overlay,
+    );
+
+    // A required id can only ever name a source node when the source channel
+    // is actually in scope; see `reject_unknown_require_ids`'s doc comment.
+    let source_graph_for_require_ids = query
+        .scope
+        .contains(&Channel::Source)
+        .then_some(graph.as_ref())
+        .flatten();
+    reject_unknown_require_ids(&catalog, source_graph_for_require_ids, &query.required_ids)?;
 
     let rank_query = RankQuery {
         text: query.text.clone(),
@@ -164,7 +254,7 @@ pub fn retrieve_for_stage(query: &StageQuery, budget_tokens: usize) -> Result<Co
         stage_dependency_ids: query.stage_dependency_ids.clone(),
     };
 
-    let lists = rank_channels(&query.scope, &rank_query, &catalog);
+    let lists = rank_channels(&query.scope, &rank_query, &catalog, graph.as_ref());
     let fused = fuse(&lists);
 
     let request = PackRequest {
@@ -174,7 +264,7 @@ pub fn retrieve_for_stage(query: &StageQuery, budget_tokens: usize) -> Result<Co
         structural_freshness: state.structural,
         semantic_freshness: state.semantic,
     };
-    Ok(pack(&request, &fused, &catalog.chunks))
+    Ok(pack(&request, &fused, &catalog.chunks, graph.as_ref()))
 }
 
 /// Identity of the derived-data generation a pack was built from.

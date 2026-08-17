@@ -95,14 +95,32 @@ fn render_item_line(item: &ContextItem) -> String {
     )
 }
 
-/// `<path>` plus `#<anchor>` when the anchor is non-empty.
+/// `<path>`, plus the line span and the `#<anchor>` each when present.
+///
+/// The span is what makes a source item worth quoting at all: a bare
+/// `loom/src/context/rank.rs` costs a reader the whole file to find what
+/// matched, `loom/src/context/rank.rs:41-58` costs it nothing. `loom knowledge
+/// context` already shows the span (it renders `item.summary`, which
+/// `context/pack.rs` builds with the range in it); dropping it here made the two
+/// surfaces disagree about the same pack.
+///
+/// Span and anchor are exclusive in practice but not by type — `pack.rs` leaves
+/// `line_start` unset for a knowledge chunk and the anchor empty for a source
+/// node — so both render when both are set rather than one silently winning. A
+/// start with no end renders as `<path>:<line_start>`: the start is the half
+/// that locates the item, and inventing an end would be a fabrication.
 fn render_pointer(item: &ContextItem) -> String {
-    let path = item.pointer.path.display();
-    if item.pointer.anchor.is_empty() {
-        path.to_string()
-    } else {
-        format!("{path}#{}", item.pointer.anchor)
+    let mut rendered = item.pointer.path.display().to_string();
+    if let Some(start) = item.pointer.line_start {
+        rendered.push_str(&format!(":{start}"));
+        if let Some(end) = item.pointer.line_end {
+            rendered.push_str(&format!("-{end}"));
+        }
     }
+    if !item.pointer.anchor.is_empty() {
+        rendered.push_str(&format!("#{}", item.pointer.anchor));
+    }
+    rendered
 }
 
 /// The untrusted-data sentence plus a fenced, escape-proof excerpt block.
@@ -234,6 +252,53 @@ mod tests {
         assert!(rendered.contains("- `chunk-1`"));
         assert!(!rendered.contains(REFERENCE_DATA_SENTENCE));
         assert!(!rendered.contains("```text"));
+    }
+
+    /// A source-channel item: a node of the derived source graph, which points
+    /// at a line range of a real file instead of at a heading anchor.
+    fn source_item(line_start: Option<usize>, line_end: Option<usize>) -> ContextItem {
+        ContextItem {
+            kind: ItemKind::SourceNode,
+            source: Channel::Source,
+            pointer: SourcePointer {
+                path: PathBuf::from("loom/src/context/rank.rs"),
+                anchor: String::new(),
+                line_start,
+                line_end,
+            },
+            ..item("loom/src/context/rank.rs::rank", None)
+        }
+    }
+
+    #[test]
+    fn a_source_item_renders_the_line_span_that_locates_it() {
+        let pack = pack(vec![source_item(Some(41), Some(58))], 0);
+        let rendered = format_knowledge_brief(&pack, "stage-1", "q");
+
+        assert!(
+            rendered.contains("— `loom/src/context/rank.rs:41-58`"),
+            "a source item reaches the brief without its span otherwise: {rendered}"
+        );
+    }
+
+    #[test]
+    fn a_span_with_no_end_renders_its_start_alone_and_keeps_any_anchor() {
+        let open_ended = pack(vec![source_item(Some(41), None)], 0);
+        let rendered = format_knowledge_brief(&open_ended, "stage-1", "q");
+        assert!(
+            rendered.contains("— `loom/src/context/rank.rs:41`"),
+            "{rendered}"
+        );
+
+        // Span and anchor are exclusive in practice, never by type: an item
+        // carrying both must lose neither.
+        let mut both = source_item(Some(41), Some(58));
+        both.pointer.anchor = "rank".to_string();
+        let rendered = format_knowledge_brief(&pack(vec![both], 0), "stage-1", "q");
+        assert!(
+            rendered.contains("— `loom/src/context/rank.rs:41-58#rank`"),
+            "{rendered}"
+        );
     }
 
     #[test]

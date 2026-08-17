@@ -32,10 +32,11 @@ pub fn local_overlay_key(project_root: &Path) -> (String, String) {
     )
 }
 
-/// Which overlay a retrieval should read on top of the base layer. Not yet
-/// constructed by any production caller — this is the shared address type
-/// upcoming context-retrieval work is expected to consume instead of each
-/// building its own `(plan, stage)` resolution logic.
+/// Which overlay a retrieval should read on top of the base layer.
+/// Constructed by every production caller of `retrieve_for_stage`
+/// (`context::retrieve::StageQuery::new`, `commands/knowledge/context.rs`,
+/// `orchestrator/signals/retrieval.rs`) — the shared address type that spares
+/// each from building its own `(plan, stage)` resolution logic.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum OverlayScope {
     /// The working tree in front of the user right now — a CLI or hook query

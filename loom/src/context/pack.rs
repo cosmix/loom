@@ -1,10 +1,11 @@
 //! Budget-constrained construction of context packs.
 
+use crate::context::graph_store::ResolvedGraph;
 use crate::context::rank::RankedCandidate;
 use crate::context::schema::{
-    estimate_tokens, Channel, Confidence, ContextItem, ContextPack, Coverage, Freshness, ItemKind,
-    KnowledgeChunk, OmissionSummary, SourcePointer, BYTES_PER_TOKEN_ESTIMATE, EXCERPT_MAX_TOKENS,
-    EXCERPT_TRUNCATION_MARKER,
+    estimate_tokens, Channel, ChunkId, Confidence, ContextItem, ContextPack, Coverage, Freshness,
+    ItemKind, KnowledgeChunk, LifecycleState, OmissionSummary, SourceNode, SourcePointer,
+    BYTES_PER_TOKEN_ESTIMATE, EXCERPT_MAX_TOKENS, EXCERPT_TRUNCATION_MARKER,
 };
 use std::collections::BTreeMap;
 
@@ -67,7 +68,7 @@ fn bounded_excerpt(body: &str) -> String {
 }
 
 /// Build one `ContextItem` from a ranked candidate and its backing chunk.
-fn build_item(candidate: &RankedCandidate, chunk: &KnowledgeChunk) -> ContextItem {
+fn build_chunk_item(candidate: &RankedCandidate, chunk: &KnowledgeChunk) -> ContextItem {
     ContextItem {
         id: candidate.id.clone(),
         kind: ItemKind::KnowledgeChunk,
@@ -86,6 +87,59 @@ fn build_item(candidate: &RankedCandidate, chunk: &KnowledgeChunk) -> ContextIte
         state: chunk.state,
         content_hash: chunk.content_hash.clone(),
         excerpt: Some(bounded_excerpt(&chunk.body)),
+    }
+}
+
+/// Build one `ContextItem` from a ranked candidate and its backing source node.
+///
+/// `state` is always [`LifecycleState::Active`]: a source node has no curation
+/// lifecycle (draft/deprecated/superseded) the way a hand-written knowledge
+/// chunk does — it is simply whatever the code on disk currently says. Do not
+/// try to derive one from `node.coverage`; that describes extraction quality,
+/// not trustworthiness.
+///
+/// `content_hash` is `node.body_hash`, already `sha256:<hex>` over this node's
+/// exact source bytes — strictly more precise than the owning file's hash for
+/// the delivery-record suppression `ContextItem::content_hash` feeds, since it
+/// changes only when this node's own bytes do.
+///
+/// `excerpt` goes through [`bounded_excerpt`], never
+/// `crate::utils::truncate_for_display`: `bounded_excerpt` is what enforces the
+/// documented contract on `ContextItem::excerpt` (bounded by
+/// [`EXCERPT_MAX_TOKENS`], truncated text ends with
+/// [`EXCERPT_TRUNCATION_MARKER`] on its own line). A signature is short, so
+/// this is nearly always a no-op, but using the other helper would silently
+/// make source items the only ones in the corpus violating that contract.
+///
+/// No file reads here or anywhere else in the packer: retrieval is a pure
+/// function of bytes already loaded into the `SourceNode`, not of the working
+/// tree at query time.
+fn build_source_item(candidate: &RankedCandidate, node: &SourceNode) -> ContextItem {
+    ContextItem {
+        id: ChunkId::from(node.id.as_str()),
+        kind: ItemKind::SourceNode,
+        pointer: SourcePointer {
+            path: node.path.clone(),
+            anchor: String::new(),
+            line_start: Some(node.span.line_start),
+            line_end: Some(node.span.line_end),
+        },
+        summary: format!(
+            "{} {} - {}:{}-{}",
+            node.kind.as_str(),
+            node.scope.join("::"),
+            node.path.display(),
+            node.span.line_start,
+            node.span.line_end
+        ),
+        source: Channel::Source,
+        token_count: candidate.token_count,
+        score: candidate.score,
+        reasons: candidate.reasons.clone(),
+        confidence: Confidence::from_reasons(&candidate.reasons),
+        state: LifecycleState::Active,
+        content_hash: node.body_hash.clone(),
+        excerpt: Some(bounded_excerpt(&node.signature)),
     }
 }
 
@@ -115,24 +169,60 @@ fn build_omission_summary(
     }
 }
 
-/// Walk the fused list in order, taking whole chunks while they fit the budget.
+/// Build the `ContextItem` for one candidate, dispatching on its channel.
 ///
-/// Every ranked candidate not included is counted as an omission.
+/// Dispatch is on `candidate.channel`, never on which lookup map hits first —
+/// a channel is authoritative about what its own ids mean. Knowledge chunk
+/// ids have the form `<path>#<heading>#<occurrence>`; source node ids have
+/// the form `<path>#<kind>:<scope>`. Those are disjoint id spaces today, so
+/// trying both maps and taking whichever hits would not currently misfire.
+/// But `fuse` keys its accumulator by `ChunkId` across channels, so if a
+/// future change ever let the two channels produce a colliding id, a
+/// both-maps dispatch would silently consult whichever map happened to hit
+/// first instead of the one `candidate.channel` actually names, and hide the
+/// bug behind a plausible-looking item. Keying off `channel` makes that class
+/// of mistake unreachable rather than merely untested.
+fn build_item(
+    candidate: &RankedCandidate,
+    chunks: &BTreeMap<&str, &KnowledgeChunk>,
+    nodes: &BTreeMap<&str, &SourceNode>,
+) -> Option<ContextItem> {
+    match candidate.channel {
+        Channel::Knowledge => chunks
+            .get(candidate.id.as_str())
+            .map(|chunk| build_chunk_item(candidate, chunk)),
+        Channel::Source => nodes
+            .get(candidate.id.as_str())
+            .map(|node| build_source_item(candidate, node)),
+    }
+}
+
+/// Walk the fused list in order, taking whole items while they fit the budget.
+///
+/// Every ranked candidate not included is counted as an omission, whether
+/// because it fell outside `chunks`/`graph` or because it did not fit the
+/// remaining budget.
 pub fn pack(
     request: &PackRequest,
     ranked: &[RankedCandidate],
     chunks: &[KnowledgeChunk],
+    graph: Option<&ResolvedGraph>,
 ) -> ContextPack {
-    let lookup: BTreeMap<&str, &KnowledgeChunk> = chunks
+    let chunk_lookup: BTreeMap<&str, &KnowledgeChunk> = chunks
         .iter()
         .map(|chunk| (chunk.id.as_str(), chunk))
+        .collect();
+    let node_lookup: BTreeMap<&str, &SourceNode> = graph
+        .into_iter()
+        .flat_map(|graph| graph.nodes())
+        .map(|node| (node.id.as_str(), node))
         .collect();
     let mut items = Vec::new();
     let mut estimated_tokens = 0;
     let mut omitted = 0;
 
     for candidate in ranked {
-        let Some(chunk) = lookup.get(candidate.id.as_str()) else {
+        let Some(item) = build_item(candidate, &chunk_lookup, &node_lookup) else {
             omitted += 1;
             continue;
         };
@@ -142,7 +232,7 @@ pub fn pack(
             continue;
         }
         estimated_tokens += candidate.token_count;
-        items.push(build_item(candidate, chunk));
+        items.push(item);
     }
 
     let omitted_summary = build_omission_summary(ranked, &items, omitted);
