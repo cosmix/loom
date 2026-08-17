@@ -1,4 +1,6 @@
+use super::read::{read_journal_with_pending, spool_only_stage_with_pending};
 use super::{list, note, show};
+use crate::fs::memory::{append_to_spool, MemoryEntry, MemoryEntryType};
 use serial_test::serial;
 use std::env;
 use std::process::Command;
@@ -82,18 +84,47 @@ fn note_uses_loom_stage_id_env_var_over_sentinel() {
     assert!(!repo.path().join(".work/memory/ad-hoc.md").exists());
 }
 
+/// A stage that can write `.work` directly (no sandbox, e.g. a main-repo
+/// knowledge stage) must be refused just as firmly as the spool path when
+/// its explicit `--stage` disagrees with `LOOM_STAGE_ID` - attribution must
+/// not be spoofable via CLI flag regardless of which write path a call
+/// takes. This replaces the old "explicit stage silently overrides env"
+/// behavior, which was exactly the forged-attribution hole this closes.
 #[test]
 #[serial]
-fn note_explicit_stage_overrides_env_var() {
+fn note_explicit_stage_mismatch_is_refused_direct_path() {
     let _guard = EnvGuard::new();
     let repo = init_git_repo();
     env::set_current_dir(repo.path()).unwrap();
     env::set_var("LOOM_STAGE_ID", "env-stage");
 
+    let result = note(
+        "attempted forgery".to_string(),
+        Some("cli-stage".to_string()),
+    );
+
+    assert!(result.is_err());
+    let message = result.unwrap_err().to_string();
+    assert!(message.contains("does not match"), "{message}");
+    assert!(message.contains("NOT recorded"), "{message}");
+    assert!(!repo.path().join(".work/memory/cli-stage.md").exists());
+    assert!(!repo.path().join(".work/memory/env-stage.md").exists());
+}
+
+/// With no `LOOM_STAGE_ID` (ad-hoc/interactive/operator use), there is no
+/// session identity to forge, so `--stage` must remain freely usable - the
+/// forgery guard is a no-op here by design.
+#[test]
+#[serial]
+fn note_explicit_stage_allowed_when_loom_stage_id_unset() {
+    let _guard = EnvGuard::new();
+    env::remove_var("LOOM_STAGE_ID");
+    let repo = init_git_repo();
+    env::set_current_dir(repo.path()).unwrap();
+
     note("explicit wins".to_string(), Some("cli-stage".to_string())).unwrap();
 
     assert!(repo.path().join(".work/memory/cli-stage.md").exists());
-    assert!(!repo.path().join(".work/memory/env-stage.md").exists());
 }
 
 #[test]
@@ -153,4 +184,157 @@ fn note_reuses_existing_work_dir_without_recreating() {
     assert!(journal_path.exists());
     let content = std::fs::read_to_string(&journal_path).unwrap();
     assert!(content.contains("reuse me"));
+}
+
+#[test]
+#[serial]
+fn note_success_takes_direct_path_and_writes_no_spool_file() {
+    let _guard = EnvGuard::new();
+    env::remove_var("LOOM_STAGE_ID");
+    let repo = init_git_repo();
+    env::set_current_dir(repo.path()).unwrap();
+
+    note("direct path works".to_string(), None).unwrap();
+
+    assert!(repo.path().join(".work/memory/ad-hoc.md").exists());
+    assert!(
+        !repo.path().join(".loom/memory-spool.jsonl").exists(),
+        "a successful direct write must not fall back to the spool"
+    );
+}
+
+/// The same forgery guard, exercised from inside a worktree, confirms it
+/// fires before `get_or_create_work_dir`/`append_entry` are even reached -
+/// no write-denial simulation needed, since the check now runs up front
+/// regardless of which write path a call would otherwise take.
+#[test]
+#[serial]
+fn note_explicit_stage_mismatch_is_refused_inside_worktree() {
+    let _guard = EnvGuard::new();
+    let repo = init_git_repo();
+    let worktree_stage = "real-stage";
+    let worktree_root = repo.path().join(".worktrees").join(worktree_stage);
+    std::fs::create_dir_all(&worktree_root).unwrap();
+
+    env::set_current_dir(&worktree_root).unwrap();
+    env::set_var("LOOM_STAGE_ID", worktree_stage);
+
+    let result = note(
+        "attempted forgery".to_string(),
+        Some("fake-stage".to_string()),
+    );
+
+    assert!(result.is_err());
+    let message = result.unwrap_err().to_string();
+    assert!(message.contains("does not match"), "{message}");
+    assert!(message.contains("NOT recorded"), "{message}");
+    assert!(
+        !worktree_root.join(".loom/memory-spool.jsonl").exists(),
+        "a refused forged stage claim must not spool anything"
+    );
+    assert!(
+        !worktree_root.join(".work").exists(),
+        "the guard must fire before any work_dir resolution/creation is attempted"
+    );
+}
+
+#[test]
+#[serial]
+fn read_journal_with_pending_surfaces_a_pending_entry() {
+    let _guard = EnvGuard::new();
+    let repo = init_git_repo();
+    let stage = "pending-stage";
+    let worktree_root = repo.path().join(".worktrees").join(stage);
+    let work_dir = worktree_root.join(".work");
+    std::fs::create_dir_all(&work_dir).unwrap();
+    env::set_current_dir(&worktree_root).unwrap();
+    env::set_var("LOOM_STAGE_ID", stage);
+
+    // Seed the spool directly, standing in for an entry the daemon hasn't
+    // drained into the journal file yet.
+    append_to_spool(
+        &worktree_root,
+        &MemoryEntry::new(MemoryEntryType::Note, "still pending".to_string()),
+    )
+    .unwrap();
+
+    let journal = read_journal_with_pending(&work_dir, stage).unwrap();
+
+    assert_eq!(journal.entries.len(), 1);
+    assert_eq!(journal.entries[0].content, "still pending");
+}
+
+/// `show --all` must surface a stage whose only entries are still in the
+/// spool - `list_journals` enumerates journal *files*, so a stage that has
+/// never had a direct write succeed (every entry so far spooled) would
+/// otherwise never appear in the aggregate listing.
+///
+/// `show`/`list` print directly to stdout with no return value to inspect,
+/// and this crate has no stdout-capture test tooling, so this asserts
+/// against `spool_only_stage_with_pending` - the exact function
+/// `show_all_journals` calls to decide whether to fold a stage into the
+/// listing - rather than parsing captured output. The `show(None, true)`
+/// call alongside it is a smoke test that the same scenario doesn't error
+/// end-to-end.
+#[test]
+#[serial]
+fn show_all_surfaces_a_spool_only_stage() {
+    let _guard = EnvGuard::new();
+    let repo = init_git_repo();
+    let stage = "spool-only-stage";
+    let worktree_root = repo.path().join(".worktrees").join(stage);
+    let work_dir = worktree_root.join(".work");
+    std::fs::create_dir_all(&work_dir).unwrap();
+    env::set_current_dir(&worktree_root).unwrap();
+    env::set_var("LOOM_STAGE_ID", stage);
+
+    // No journal file for `stage` exists at all - only a spooled entry.
+    append_to_spool(
+        &worktree_root,
+        &MemoryEntry::new(MemoryEntryType::Note, "spool only".to_string()),
+    )
+    .unwrap();
+    assert!(!work_dir.join("memory").join(format!("{stage}.md")).exists());
+
+    let journals: Vec<String> = Vec::new();
+    let surfaced = spool_only_stage_with_pending(&journals);
+    assert_eq!(surfaced, Some(stage.to_string()));
+
+    assert!(show(None, true).is_ok());
+}
+
+/// `loom memory list` (no `--stage`) is the command CLAUDE.md's post-compaction
+/// recovery flow actually names, so this is the most important instance of
+/// the three list_journals-only-enumerates-files gaps: a stage whose only
+/// entries are still spooled must not be invisible to a plain `loom memory
+/// list` right after recording. Same stdout-capture limitation as
+/// `show_all_surfaces_a_spool_only_stage` applies, so this asserts against
+/// `spool_only_stage_with_pending` plus a `list(None, None).is_ok()` smoke
+/// test rather than parsed output.
+#[test]
+#[serial]
+fn list_surfaces_a_spool_only_stage() {
+    let _guard = EnvGuard::new();
+    let repo = init_git_repo();
+    let stage = "spool-only-list-stage";
+    let worktree_root = repo.path().join(".worktrees").join(stage);
+    let work_dir = worktree_root.join(".work");
+    std::fs::create_dir_all(&work_dir).unwrap();
+    env::set_current_dir(&worktree_root).unwrap();
+    env::set_var("LOOM_STAGE_ID", stage);
+
+    append_to_spool(
+        &worktree_root,
+        &MemoryEntry::new(MemoryEntryType::Note, "spool only, list path".to_string()),
+    )
+    .unwrap();
+    assert!(!work_dir.join("memory").join(format!("{stage}.md")).exists());
+
+    let journals: Vec<String> = Vec::new();
+    assert_eq!(
+        spool_only_stage_with_pending(&journals),
+        Some(stage.to_string())
+    );
+
+    assert!(list(None, None).is_ok());
 }
