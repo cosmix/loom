@@ -23,6 +23,7 @@ pub mod process;
 pub mod remote_control;
 pub mod sandbox;
 pub mod skills;
+pub mod telemetry;
 pub mod utils;
 pub mod validation;
 pub mod verify;

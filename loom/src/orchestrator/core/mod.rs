@@ -17,6 +17,7 @@ mod orchestrator;
 mod persistence;
 mod recovery;
 mod stage_executor;
+mod stage_telemetry;
 
 pub use orchestrator::{Orchestrator, OrchestratorConfig, OrchestratorResult};
 
