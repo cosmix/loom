@@ -1,4 +1,4 @@
-use std::io::{self, Write};
+use std::io::{self, IsTerminal, Write};
 use std::path::{Path, PathBuf};
 use std::sync::{Once, OnceLock};
 
@@ -25,6 +25,7 @@ static TUI_MARKER_PATH: OnceLock<PathBuf> = OnceLock::new();
 const CURSOR_SHOW: &str = "\x1B[?25h";
 const ATTR_RESET: &str = "\x1B[0m";
 const CLEAR_LINE: &str = "\r\x1B[K";
+const MOUSE_DISABLE: &[u8] = b"\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l";
 
 static PANIC_HOOK_INSTALLED: Once = Once::new();
 
@@ -126,29 +127,31 @@ pub fn recover_terminal_if_needed() {
     }
 }
 
-/// Restore terminal to a clean state.
+/// Restore terminal to a clean state: clear the current line (removing partial
+/// output from `\r` updates), show the cursor, reset text attributes, and land
+/// on a new line.
 ///
-/// This function:
-/// - Shows the cursor (if hidden)
-/// - Resets text attributes (colors, bold, etc.)
-/// - Clears the current line (removes partial output from \r updates)
-/// - Moves cursor to a new line
-/// - Flushes stdout to ensure all escape codes are written
-///
-/// Call this before exiting to prevent leaving terminal in a weird state.
+/// Call this before exiting to prevent leaving the terminal in a weird state.
+/// Writes nothing at all when stdout is not a terminal.
 pub fn cleanup_terminal() {
-    let mut stdout = io::stdout();
-
-    // Build cleanup sequence:
-    // 1. Clear current line (in case of \r-based status updates)
-    // 2. Show cursor
-    // 3. Reset attributes
-    // 4. Ensure we're on a new line
     let cleanup = format!("{CLEAR_LINE}{CURSOR_SHOW}{ATTR_RESET}\n");
+    let mut stdout = io::stdout();
+    let is_terminal = stdout.is_terminal();
+    write_terminal_sequence(&mut stdout, is_terminal, cleanup.as_bytes());
+}
 
-    // Ignore errors - we're cleaning up, best effort
-    let _ = stdout.write_all(cleanup.as_bytes());
-    let _ = stdout.flush();
+/// Write `sequence` to `out`, but only when `out` really is a terminal.
+///
+/// Control bytes on a redirected stdout are not display state, they are payload:
+/// `loom hook user-prompt` prints a JSON object that Claude Code injects into an
+/// agent's context, so an escape sequence there is text the agent reads. Errors
+/// are ignored — every caller is cleaning up, often on a panic path.
+fn write_terminal_sequence(out: &mut impl Write, out_is_terminal: bool, sequence: &[u8]) {
+    if !out_is_terminal {
+        return;
+    }
+    let _ = out.write_all(sequence);
+    let _ = out.flush();
 }
 
 /// Install a panic hook that restores terminal state before panicking.
@@ -185,15 +188,17 @@ pub fn cleanup_terminal_crossterm() {
         terminal::{disable_raw_mode, LeaveAlternateScreen},
     };
 
-    // Ignore errors - best effort cleanup
+    // Best effort, and deliberately outside the terminal gate: raw mode is state
+    // on the controlling terminal, not bytes written to stdout.
     let _ = disable_raw_mode();
-    let mut stdout = std::io::stdout();
-    let _ = execute!(stdout, DisableMouseCapture, LeaveAlternateScreen, Show);
 
-    // Belt-and-suspenders: raw escape sequences for mouse disable
-    // in case crossterm state tracking is confused
-    let _ = stdout.write_all(b"\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l");
-    let _ = stdout.flush();
+    let mut stdout = std::io::stdout();
+    if stdout.is_terminal() {
+        let _ = execute!(stdout, DisableMouseCapture, LeaveAlternateScreen, Show);
+        // Belt-and-suspenders raw mouse-disable, in case crossterm's own state
+        // tracking is confused.
+        write_terminal_sequence(&mut stdout, true, MOUSE_DISABLE);
+    }
 
     // Also do basic cleanup
     cleanup_terminal();
@@ -288,6 +293,17 @@ pub fn truncate_for_display(s: &str, max_len: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn control_sequences_are_withheld_from_a_stdout_that_is_not_a_terminal() {
+        let mut redirected = Vec::new();
+        write_terminal_sequence(&mut redirected, false, ATTR_RESET.as_bytes());
+        assert!(redirected.is_empty(), "a redirected stdout carries payload");
+
+        let mut terminal = Vec::new();
+        write_terminal_sequence(&mut terminal, true, ATTR_RESET.as_bytes());
+        assert_eq!(terminal, ATTR_RESET.as_bytes());
+    }
 
     #[test]
     fn test_format_elapsed_seconds() {
