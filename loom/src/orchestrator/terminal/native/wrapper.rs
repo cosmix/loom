@@ -90,7 +90,12 @@ pub fn create_wrapper_script(
 
 /// Absolute form of `path`, falling back to the input when it cannot be
 /// resolved. Paths are absolutized because the script may `cd` elsewhere.
-fn absolute(path: &Path) -> PathBuf {
+///
+/// Shared with `native::capsule`: the `--settings` path it resolves and the
+/// `cd` target built here must resolve to the same root, or the wrapper's
+/// `cd` moves the process to a directory the `--settings` path was never
+/// made relative to.
+pub(super) fn absolute(path: &Path) -> PathBuf {
     path.canonicalize().unwrap_or_else(|_| path.to_path_buf())
 }
 

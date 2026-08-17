@@ -108,6 +108,25 @@ pub(super) fn capsule_from(
     }
 }
 
+/// The absolute path of the session-local settings file under `cwd`, or
+/// `None` when it does not exist.
+///
+/// The path MUST be absolute: the wrapper script `cd`s into the working
+/// directory before `exec`ing claude, so a relative `--settings` value
+/// would resolve against the working directory instead of the daemon's
+/// cwd and claude would exit with "Settings file not found". Absolutizing
+/// also fixes the existence guard, which otherwise probes a different file
+/// than the one the spawned process will open.
+pub(super) fn resolved_settings_file(cwd: &Path) -> Option<String> {
+    let settings_file = super::wrapper::absolute(cwd)
+        .join(".claude")
+        .join("settings.local.json");
+    settings_file
+        .is_file()
+        .then(|| settings_file.to_str().map(str::to_owned))
+        .flatten()
+}
+
 /// Build the capsule for a session whose working directory is `cwd`.
 ///
 /// `append_system_prompt_file` is the stable-prefix file path already
@@ -126,11 +145,7 @@ pub(crate) fn session_capsule(
         append_system_prompt_file_supported,
     ) = probed_capsule_support(claude_path);
 
-    let settings_file = cwd.join(".claude").join("settings.local.json");
-    let settings_file = settings_file
-        .is_file()
-        .then(|| settings_file.to_str().map(str::to_owned))
-        .flatten();
+    let settings_file = resolved_settings_file(cwd);
 
     capsule_from(
         settings_supported,

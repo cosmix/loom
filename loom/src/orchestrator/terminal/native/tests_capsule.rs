@@ -3,7 +3,10 @@
 //! under the 400-line ceiling (CLAUDE.md Rule 17).
 
 use super::*;
-use crate::orchestrator::terminal::native::capsule::capsule_from;
+use crate::orchestrator::terminal::native::capsule::{capsule_from, resolved_settings_file};
+use serial_test::serial;
+use std::path::Path;
+use tempfile::TempDir;
 
 #[test]
 fn build_claude_command_empty_capsule_matches_legacy_argv() {
@@ -258,4 +261,52 @@ fn capsule_from_append_system_prompt_file_requires_support_and_a_resolved_path()
         Some("/w/signals/prefix/my-stage.md".to_string()),
     );
     assert_eq!(resolved_but_unsupported.append_system_prompt_file, None);
+}
+
+// `resolved_settings_file` is what `session_capsule` calls to build the
+// `--settings` path. It must absolutize `cwd` before probing for and
+// returning the settings file: the wrapper script `cd`s into the working
+// directory before `exec`ing claude (see `wrapper::absolute`'s doc comment),
+// so a relative `--settings` value would resolve against that directory
+// instead of the daemon's cwd, and claude would exit with "Settings file
+// not found" even though the file exists. `set_current_dir` is
+// process-global, so both tests run `#[serial]` and restore the original
+// cwd afterward.
+
+#[test]
+#[serial]
+fn resolved_settings_file_absolutizes_a_relative_cwd() {
+    let temp = TempDir::new().unwrap();
+    let worktree = temp.path().join("wt");
+    std::fs::create_dir_all(worktree.join(".claude")).unwrap();
+    let settings_path = worktree.join(".claude").join("settings.local.json");
+    std::fs::write(&settings_path, "{}").unwrap();
+
+    let original_cwd = std::env::current_dir().unwrap();
+    std::env::set_current_dir(temp.path()).unwrap();
+    let result = resolved_settings_file(Path::new("./wt"));
+    std::env::set_current_dir(&original_cwd).unwrap();
+
+    let resolved = result.expect("settings file exists and must be found");
+    let resolved_path = Path::new(&resolved);
+    assert!(resolved_path.is_absolute(), "must be absolute: {resolved}");
+    assert_eq!(
+        resolved_path.canonicalize().unwrap(),
+        settings_path.canonicalize().unwrap()
+    );
+}
+
+#[test]
+#[serial]
+fn resolved_settings_file_missing_file_yields_none() {
+    let temp = TempDir::new().unwrap();
+    let worktree = temp.path().join("wt");
+    std::fs::create_dir_all(&worktree).unwrap();
+
+    let original_cwd = std::env::current_dir().unwrap();
+    std::env::set_current_dir(temp.path()).unwrap();
+    let result = resolved_settings_file(Path::new("./wt"));
+    std::env::set_current_dir(&original_cwd).unwrap();
+
+    assert_eq!(result, None);
 }
