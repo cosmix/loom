@@ -107,6 +107,9 @@ pub enum KnowledgeCommands {
 
     /// Retrieve a token-budgeted context pack for a query (deterministic, offline)
     Context {
+        /// Seed the query from this stage's dependencies, and name it in output
+        #[arg(long)]
+        stage: Option<String>,
         /// Query text to retrieve context for
         #[arg(long)]
         query: String,
