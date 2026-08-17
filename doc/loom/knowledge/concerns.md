@@ -736,3 +736,8 @@ which required a direct file edit despite the "use the CLI during loom execution
 separate manual edit. **Fix:** either accept content whose first line is a heading and replace
 the heading too, or add a `--heading <new>` flag. Related to the existing entries on the
 missing delete-section verb and correcting an entry in place.
+
+## Potential Concerns
+
+- **18 TODO comments** found in source files
+- **7 FIXME comments** found in source files
