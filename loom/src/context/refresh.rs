@@ -193,10 +193,14 @@ fn rebuild_and_persist(
         detail: None,
     };
 
-    store.save_state(&StoreState {
-        structural: structural.clone(),
-        semantic: semantic.clone(),
-        catalog_revision: catalog.revision.clone(),
+    // `update_state` re-reads `state.json` under the lock rather than reusing
+    // the `semantic` snapshot `evaluate` took before `ingest` ran above: a
+    // concurrent writer may have changed `semantic` in that gap, and writing
+    // the stale snapshot back would revert it. Only assign the fields owned
+    // here; `semantic` stays at its on-disk value.
+    store.update_state(|state| {
+        state.structural = structural.clone();
+        state.catalog_revision = catalog.revision.clone();
     })?;
 
     Ok(RefreshOutcome {
