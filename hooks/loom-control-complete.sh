@@ -2,6 +2,8 @@
 # Trusted PostToolUse bridge for one exact sandboxed completion command.
 
 set -euo pipefail
+# loom_tokenize_command: the shared argv tokenizer git-add-guard.sh scans with.
+source "$(dirname "$0")/_common.sh"
 
 read_input() {
 	if command -v gtimeout &>/dev/null; then
@@ -40,6 +42,104 @@ resolve_trusted_loom() {
 	return 1
 }
 
+lower() { printf '%s' "$1" | tr '[:upper:]' '[:lower:]'; }
+
+# is_completion_attempt - Walk a tokenized command (as produced by
+# loom_tokenize_command: real argv tokens plus "%%SEP%%" command-boundary
+# sentinels) looking for a `loom stage complete` invocation.
+#
+# A token is at a COMMAND POSITION when it is index 0 or immediately follows a
+# "%%SEP%%" sentinel - that is how `id && loom stage complete x` and a
+# completion inside `$( )` are still seen. Leading VAR=value environment
+# assignments at a command position are skipped first, exactly as
+# git-add-guard.sh does.
+#
+# Matching is on argv VALUES, so quoting can neither forge nor evade it:
+# `loom stage "complete" x` and `loom stage comple"te" x` both yield the token
+# `complete`, while those same words inside ONE quoted argument - as in
+# `loom memory note "...complete..."` - stay a single token that never lands in
+# the subcommand position.
+#
+# Two of the three positions are deliberately loose, each for a case the suite
+# pins, and both in the fail-safe direction:
+#   argv[0] - basename merely CONTAINS `loom`, or the token contains a `$`. A
+#             renamed symlink (`loom-link`) and an unexpanded `$LOOM_BIN` both
+#             run the real binary, and neither can be ruled out from here.
+#   argv[2] - merely CONTAINS `complete`, so an obfuscation the tokenizer
+#             cannot normalise (a `\` line-continuation splicing `+complete`)
+#             still reaches the pin instead of running unguarded.
+# A match only subjects the command to the pin below, which accepts exactly one
+# string - so being loose here costs a rejection, never an unguarded completion.
+#
+# Returns 0 when the command may be a completion attempt, 1 otherwise.
+is_completion_attempt() {
+	local -a tokens=("$@")
+	local n=${#tokens[@]}
+	local i=0
+	local at_cmd_pos=1
+	local bin sub verb
+
+	while ((i < n)); do
+		if [[ "${tokens[$i]}" == "%%SEP%%" ]]; then
+			at_cmd_pos=1
+			i=$((i + 1))
+			continue
+		fi
+
+		if [[ $at_cmd_pos -eq 1 ]]; then
+			while ((i < n)) && [[ "${tokens[$i]}" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]]; do
+				i=$((i + 1))
+			done
+			# Fewer than three tokens remain anywhere, so no command position
+			# left in this list can carry `<loom> stage complete`.
+			((i + 2 < n)) || break
+
+			bin=$(lower "${tokens[$i]##*/}")
+			sub=$(lower "${tokens[$((i + 1))]}")
+			verb=$(lower "${tokens[$((i + 2))]}")
+			if [[ "$bin" == *loom* || "${tokens[$i]}" == *'$'* ]] &&
+				[[ "$sub" == stage && "$verb" == *complete* ]]; then
+				return 0
+			fi
+		fi
+
+		at_cmd_pos=0
+		i=$((i + 1))
+	done
+
+	return 1
+}
+
+# is_completion_command - Pre-filter: could this Bash command finalise the
+# stage? Only what passes here is held to the exact pinned form below.
+#
+# Tokenizing, rather than globbing the raw command string as this did before,
+# closes a forgery: `loom stage comple"te" x` contains no literal `complete`,
+# so the glob skipped this entire bridge - the trusted-binary resolution, the
+# session binding, the marker check and the broker call - while bash still
+# assembled the argv and finalised the stage. It also stops matching the words
+# inside quoted prose and path arguments, which blocked unrelated commands.
+is_completion_command() {
+	local cmd="$1" lowered
+
+	if loom_tokenize_command "$cmd"; then
+		# Guards the expansion below on bash 3.2, where "${arr[@]}" on an empty
+		# array trips `set -u`; a completion needs three tokens regardless.
+		((${#LOOM_TOKENS[@]} >= 3)) || return 1
+		if is_completion_attempt "${LOOM_TOKENS[@]}"; then
+			return 0
+		fi
+		return 1
+	fi
+
+	# Unterminated quote: the token list is untrustworthy (and bash would refuse
+	# to run the command at all). Fall back to the raw substring glob used
+	# before tokenizing, so this gate is never weaker than it was.
+	lowered=$(lower "$cmd")
+	case "$lowered" in *loom*complete*) return 0 ;; esac
+	return 1
+}
+
 INPUT_JSON=$(read_input)
 [[ -n "$INPUT_JSON" ]] || exit 0
 [[ "$(printf '%s' "$INPUT_JSON" | jq -r '.tool_name // empty')" == Bash ]] || exit 0
@@ -57,8 +157,9 @@ case "$STAGE_ID" in *[!A-Za-z0-9_-]* | '') fail_closed "invalid wrapper stage id
 case "$SESSION_ID" in *[!A-Za-z0-9_-]* | '') fail_closed "invalid wrapper session identity" ;; esac
 
 COMMAND=$(printf '%s' "$INPUT_JSON" | jq -r '.tool_input.command // empty')
-LOWER_COMMAND=$(printf '%s' "$COMMAND" | tr '[:upper:]' '[:lower:]')
-case "$LOWER_COMMAND" in *loom*complete*) ;; *) exit 0 ;; esac
+if ! is_completion_command "$COMMAND"; then
+	exit 0
+fi
 
 LOOM_BIN=$(resolve_trusted_loom) || fail_closed "no fixed trusted loom installation was found"
 PINNED_COMMAND="$LOOM_BIN stage complete $STAGE_ID"

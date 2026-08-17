@@ -3,8 +3,9 @@
 #
 # Claude Code's plan mode suggests saving plans under ~/.claude/plans/ or
 # ~/.claude/projects/<project>/plans/. Files there are invisible to loom and
-# to git, so the plan is effectively lost. This hook intercepts Write/Edit
-# calls targeting any such path and redirects to doc/plans/PLAN-<description>.md.
+# to git, so the plan is effectively lost. This hook intercepts Write/Edit/
+# MultiEdit calls targeting any such path and redirects to
+# doc/plans/PLAN-<description>.md.
 #
 # Unlike worktree-file-guard.sh this hook is unconditional: it fires in
 # interactive sessions too, because that is where plan mode runs.
@@ -32,8 +33,15 @@ fi
 TOOL_NAME=$(echo "$INPUT_JSON" | jq -r '.tool_name // empty' 2>/dev/null || true)
 FILE_PATH=$(echo "$INPUT_JSON" | jq -r '.tool_input.file_path // empty' 2>/dev/null || true)
 
-# Only Write/Edit carry a file_path we need to validate
-if [[ "$TOOL_NAME" != "Write" && "$TOOL_NAME" != "Edit" ]] || [[ -z "$FILE_PATH" ]]; then
+# Only Write/Edit/MultiEdit carry a file_path we need to validate. MultiEdit
+# writes a file exactly as Edit does and names its target at the same
+# `.tool_input.file_path`, so leaving it out would let a plan through.
+case "$TOOL_NAME" in
+Write | Edit | MultiEdit) ;;
+*) exit 0 ;;
+esac
+
+if [[ -z "$FILE_PATH" ]]; then
     exit 0
 fi
 

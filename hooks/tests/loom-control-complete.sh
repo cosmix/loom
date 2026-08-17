@@ -108,6 +108,9 @@ fi
 production_hook="$TMP/installed/loom-control-complete.sh"
 mkdir -p "$(dirname "$production_hook")"
 cp "$HOOK" "$production_hook"
+# install.sh ships _common.sh into the same hooks dir; without it the copy dies
+# on its `source` and this case would pass for the wrong reason.
+cp "$ROOT/hooks/_common.sh" "$(dirname "$production_hook")/_common.sh"
 production_payload=$(pre_case "$PINNED")
 if printf '%s' "$production_payload" | env PATH="/usr/bin:/bin" HOME="$TMP/empty-home" \
 	LOOM_CONTROL_TESTING=1 LOOM_CONTROL_TEST_BIN="$TMP/bin/loom" \

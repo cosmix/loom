@@ -17,15 +17,17 @@ fn test_hooks_config_structure() {
         ("Bash", "git-add-guard.sh"),
         ("Bash", "worktree-isolation.sh"),
         ("Edit", "worktree-file-guard.sh"),
+        ("MultiEdit", "worktree-file-guard.sh"),
         ("Write", "worktree-file-guard.sh"),
         ("NotebookEdit", "worktree-file-guard.sh"),
         ("Edit", "plans-path-guard.sh"),
+        ("MultiEdit", "plans-path-guard.sh"),
         ("Write", "plans-path-guard.sh"),
         ("Read", "worktree-file-guard.sh"),
         ("Glob", "worktree-file-guard.sh"),
         ("Grep", "worktree-file-guard.sh"),
     ];
-    assert_eq!(pre_tool.len(), 30);
+    assert_eq!(pre_tool.len(), 35);
     for (entry, (matcher, script)) in pre_tool.iter().zip(expected_prefix) {
         assert_hook(entry, matcher, script);
     }
@@ -37,7 +39,34 @@ fn test_hooks_config_structure() {
         assert!(contains_hook(pre_tool, matcher, "stage-terminal-guard.sh"));
     }
     assert_notebook_edit_hooks(pre_tool);
+    assert_multi_edit_hooks(pre_tool);
     assert_lifecycle_hooks(&hooks);
+}
+
+/// Matchers are exact tool names, so a guard registered only for `Edit` does
+/// not see `MultiEdit` - which mutates files identically and carries the same
+/// `tool_input.file_path`. Every guard wired to `Edit` must therefore also be
+/// wired to `MultiEdit`, or that guard is bypassable by choosing the other
+/// tool. This asserts the pairing as an invariant over the whole list rather
+/// than a fixed set of names, so a guard added for `Edit` later cannot quietly
+/// reopen the gap.
+fn assert_multi_edit_hooks(pre_tool: &[Value]) {
+    let edit_scripts: Vec<&str> = pre_tool
+        .iter()
+        .filter(|entry| entry["matcher"] == "Edit")
+        .map(hook_command)
+        .collect();
+    assert!(
+        !edit_scripts.is_empty(),
+        "no Edit-matched hooks found - the pairing invariant would be vacuous"
+    );
+    for command in edit_scripts {
+        let script = command.rsplit('/').next().unwrap();
+        assert!(
+            contains_hook(pre_tool, "MultiEdit", script),
+            "{script} is registered for Edit but not for MultiEdit - MultiEdit bypasses it"
+        );
+    }
 }
 
 fn assert_notebook_edit_hooks(pre_tool: &[Value]) {
