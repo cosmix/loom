@@ -147,8 +147,10 @@ resolution walks up into the MAIN repo's `node_modules`, and any in-session test
 its caches there (vite: `node_modules/.vite-temp`) — denied by the sandbox with EROFS, and it
 would corrupt state shared across parallel stages if allowed. Any stage that runs JS/TS tests
 in-session must make its FIRST task an explicit dependency install in the worktree
-(`bun install`). The `setup:` field does not cover this: it only prefixes acceptance commands,
-which run on the host during verification, not inside the session.
+(`bun install`). The `setup:` field does not cover this: it only prefixes acceptance commands, so
+it never runs as part of the session's own task work — and an acceptance command is NOT reliably a
+host-side command either. It runs wherever it is invoked from: the daemon verifies on the host, and
+`loom stage complete` runs the same list from inside the sandboxed session (Section 8).
 
 ### Cross-Plan Contract Protocol (sibling plans in doc/plans/)
 
@@ -569,6 +571,33 @@ Pair every `wiring` entry with a behavioral `acceptance` command (or a `wiring_t
 
 **Per-stage gate coverage — the producing stage gets its own signal.** Each stage's `acceptance` must include every repo-wide gate (lint, typecheck, FULL test suite, build/bundle budget) that would catch defects in the files THAT stage writes; deferring lint/typecheck to a downstream dependent stage means the defect surfaces where it wasn't written (a logged #1 recurring failure). If a stage edits file X, its acceptance runs the command that exercises X — a spike that edits a shared test file runs the full test command, not only its own subsystem's. **Copy the repo's FULL canonical gate VERBATIM** — read the real scripts (`package.json` / Makefile / cargo aliases) and use them: frozen-lockfile install, typecheck across ALL configs, lint with warnings-as-errors, format-check, full tests, build. Scoped subsets (`eslint src/foo`, a single-config `tsc --noEmit`, lint without `--max-warnings=0`, skipping `format:check`) under-cover the stage's own files — a logged repeat failure across four plans.
 
+**Every gate must be GREEN at BASELINE, in the environment that will run it.** "Copy the full
+canonical gate" is a floor on COVERAGE, never a licence to ship a command the plan's author has
+never watched pass. Acceptance is what `loom stage complete` runs, so a criterion that is red for
+reasons the stage's diff cannot touch does not report a problem — it STRANDS a finished,
+committed stage, and the agent cannot wave it through (`--no-verify` needs a one-time operator
+proof derived from `.work/admin.token`, which the session sandbox denies by design). Before any
+command enters `acceptance`:
+
+1. **Run it, at HEAD, before the plan exists.** Not "it is the repo's standard command" — RUN it.
+   Record the observed baseline in the plan prose (`cargo test --all-targets` at HEAD: N passed,
+   0 failed) so a stage agent inheriting a red gate can tell your evidence from your assumption.
+2. **Run it where the STAGE will run it** — from a worktree, under the stage's own sandbox — not
+   from your main checkout with your own permissions (Section 8).
+3. **A red baseline is a fork in the plan, never a footnote.** Either the plan OWNS the repair (a
+   first stage that fixes or guards the failing target, with that repair as its own acceptance),
+   or the gate EXCLUDES the known-red target by an explicit narrow filter (`--skip <name>`,
+   `-E 'not test(...)'`, a self-skip guard on the test itself) plus a one-line note naming the
+   coverage given up and why. Inheriting someone else's red gate makes EVERY stage in the plan
+   un-completable, and the failure surfaces at the worst possible moment: after the work is
+   finished and committed.
+4. **Environment-dependent tests are the usual culprit** — anything needing a daemon, a socket, a
+   display, a container, or the network. A test that cannot pass in the environment the gate runs
+   in belongs behind a self-skip guard, not inside a stage's acceptance list. (In this repo the
+   tmux e2e suite cannot create an `AF_UNIX` socket under a session sandbox, and says so in its
+   own file header — which is exactly the kind of header a plan author must read before writing
+   `--all-targets` into a gate.)
+
 ---
 
 ## 7. YAML & Acceptance Mechanics
@@ -662,7 +691,7 @@ Every stage description should carry a short MEMORY block reminding agents to re
 
 ---
 
-## 8. Sandbox Configuration
+## 8. Sandbox & Execution Environment
 
 Ask the user: (1) network access + which domains? (2) sensitive paths to protect? (3) build tools/package managers agents need? Then run `loom repair`, merge with suggestions, and add a `sandbox` block. `knowledge`, `integration-verify`, and `knowledge-distill` stages auto-get write access to `doc/loom/knowledge/**`.
 
@@ -683,13 +712,57 @@ loom:
 
 Per-stage `sandbox:` overrides are allowed (e.g. `enabled: false`, or extra `allow_write`).
 
-**Walk the writes.** For every acceptance command in every stage, list the paths it writes and confirm each is inside `allow_write`: build outputs (`dist/**`, `.vite/**`, `target/**`), caches, and the lockfile by its REAL name — read the repo, don't assume (`bun.lock` vs `bun.lockb` bit three logged plans). A blocked write can exit 0 (Section 9) — the stage "passes" while nothing landed.
+**Walk the writes.** For every acceptance command in every stage, list the paths it writes and confirm each is inside `allow_write`: build outputs (`dist/**`, `.vite/**`, `target/**`), caches, and the lockfile by its REAL name — read the repo, don't assume (`bun.lock` vs `bun.lockb` bit three logged plans). A blocked write can exit 0 (Section 9) — the stage "passes" while nothing landed. **And a path you cannot get INTO `allow_write` disqualifies the command — see below.**
+
+### Acceptance runs INSIDE the stage's sandbox — verify it THERE
+
+`loom stage complete` runs the acceptance list itself, from the agent's own process inside the
+worktree session. Every criterion therefore inherits that session's sandbox and that worktree's
+filesystem layout — NOT your main checkout, and not the host shell you tried it in. The daemon's
+host-side verification does not inherit them, which is why the same list can look green from an
+operator shell and be impossible from inside. **A command you confirmed by hand at the repo root
+has been confirmed in the wrong environment.**
+
+**The ungrantable-resource rule: if a command needs something the stage's sandbox cannot be
+configured to grant, it is NOT an acceptance criterion — however well it would prove the
+feature.** Prove the behavior another way (a test that INJECTS the root/handle instead of
+resolving it, a read-only/`--dry-run` flag, an `artifacts` check on something the code already
+wrote) and state in the prose what was traded away. Proving that a write can never be granted is
+the moment to DROP the command — not to write the finding down as a known limitation and keep it.
+Four ungrantable classes, each logged:
+
+- **Writes that escape the worktree.** Anything resolved through `main_project_root` or through
+  the `.work` symlink — in this repo `ContextStore::open` (so `loom map --outline`,
+  `loom knowledge context`, and every command that opens the context store), `.loom/cache/**`,
+  `.work/context/**`, `.git/info/exclude`. Both settings emitters filter out every `../` entry
+  (`sandbox/settings/policy.rs`, `sandbox/settings.rs`), so **no `allow_write` line can express
+  those paths at all.** See `doc/loom/knowledge/mistakes/parallel-worktree-shared-state.md`.
+- **Host daemons and OS resources** — tmux and `AF_UNIX` sockets, Docker, an X11 display, a
+  listening port.
+- **Network beyond `allowed_domains`** — including the registry fetch a "cheap" build step makes
+  on a cold worktree.
+- **The user's real HOME** — credentials, `~/.claude`, a global toolchain config.
+
+Loom's OWN CLI earns its own line: **never put a `loom` subcommand that opens shared state into a
+worktree stage's acceptance.** `loom map`, anything touching `.work/` or `.loom/`, and the
+memory/knowledge journal all write state shared with every sibling stage. The read-only
+`loom knowledge show` / `loom knowledge check` family is the exception.
 
 ---
 
 ## 9. Silent-Failure Awareness
 
 `loom plan verify` passing means STRUCTURE is valid — never that claims are TRUE (Section 2). Exit code 0 ≠ success: sandbox blocks, dep-fetch failures, and write denials can all exit 0. When you (or a stage's acceptance) run a command, read stderr — "blocked", "denied", "connection refused", "failed to download" mean investigate, not proceed.
+
+The mirror image costs just as much: a criterion that FAILS for a reason the stage's diff cannot
+touch is a PLANNING defect, not a code defect, and it is discovered at the last possible moment —
+by a finished stage that has already committed its work and cannot authorize its own bypass. A
+stage agent facing one is correct to stop and report rather than weaken the check — its sanctioned
+move is `loom stage dispute-criteria <stage-id> --criterion-index <n> --reason "..."`, which routes
+to adjudication and can amend the criterion through the audited amendment path; operator-side the
+same machinery is `loom stage amend`. Both are for IMPOSSIBLE criteria, never merely red ones. The
+plan is still where this outcome is prevented (Section 6 baseline rule, Section 8
+ungrantable-resource rule); a dispute is the recovery, not the design.
 
 ---
 
@@ -922,6 +995,8 @@ description: |
 □ Every codex subagent prompt states an explicit Bash timeout (900000 ms) alongside the tier-appropriate model — `--model gpt-5.6-terra` (common implementation, integration tests) or `--model gpt-5.6-luna` (boilerplate, scaffolding, simple unit tests) — always `--effort xhigh`; without it the wrapper's single Bash call hits the 120s default and the harness backgrounds the run
 □ Standard/IV stages: acceptance OR ≥1 goal-backward check (artifacts/wiring/wiring_tests/dead_code_check); wiring targets the CONSUMER; no leftover `truths:` block
 □ Every stage's acceptance carries the repo's FULL canonical gate covering its OWN files (not a scoped subset, not deferred downstream)
+□ Every acceptance command was RUN at HEAD, from a worktree under the stage's own sandbox, and OBSERVED green — the baseline is recorded in the plan prose; any red target is either repaired by a stage of this plan or excluded by a narrow, noted filter
+□ No acceptance command depends on an ungrantable resource (a write escaping the worktree via main_project_root or the .work symlink, a host daemon/socket, un-allowed network, real HOME); no `loom` subcommand that opens shared .work/.loom state appears in a worktree stage's acceptance
 □ Every prescribed check is realizable (expressible · executes the code · right strength · selected · grounded); no gate claims to prove what its inputs don't exercise
 □ Engines/drivers have a stage owning the composition-root call site; ≤1 stage owns each pre-existing integration file; lifecycle decisions settled in the plan
 □ Every stage description is SMALL + detailed (paths/signatures/patterns/wiring) enough for the opus orchestrator to decompose into subagent assignments, or explicitly decomposed via hierarchy (Section 5)

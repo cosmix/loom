@@ -75,3 +75,36 @@ message blocks, doctrine — **must be inlined into the stage description itself
 referenced by plan path. **Detection (for executing agents):** if the assignment says "copy
 EXACTLY" and the text is not in your signal, you are already blocked — say so rather than
 reconstructing.
+
+## Acceptance Runs in the Stage's Sandbox, So a Gate Verified on the Host Strands a Finished Stage (2026-08-17)
+
+**What happened:** `01-overlay-contract` finished its work, passed its own review, committed —
+and then could not complete. Two of its acceptance criteria were unpassable inside a worktree
+session and always had been. `cargo test --all-targets --no-fail-fast` pulls in the tmux e2e
+suite, which cannot create an `AF_UNIX` socket under a session sandbox. And
+`./target/debug/loom map --outline src/main.rs` opens `ContextStore`, which resolves its cache
+under the MAIN project root — read-only from a worktree. Neither has anything to do with the
+stage's diff.
+
+**Why:** `loom stage complete` runs the acceptance list from the agent's own process, so every
+criterion inherits the session sandbox. The daemon's host-side verification does not, which is
+why the same list looks green from an operator shell. The plan author had confirmed the
+`loom map` criterion by running it — in the main checkout, unsandboxed — and had written into
+the same plan, correctly, that no `allow_write` line can grant those paths. The finding was
+recorded as a caveat instead of disqualifying the command.
+
+**Prevention:** run every acceptance command from a worktree under the stage's own sandbox
+before it enters a plan, and record the observed baseline in the plan prose. Treat "this write
+can never be granted" as a disqualification of the command, never a caveat to note beside it.
+Environment-dependent tests get a self-skip guard rather than a place in any stage's gate.
+Detection: a stage whose acceptance fails on files its diff never touched.
+
+**Fix:** the agent cannot force completion and should not try — `--no-verify` needs a one-time
+operator proof from `.work/admin.token`, which the sandbox denies by design. But stopping is not
+the whole move: **a stage agent that judges a criterion impossible rather than merely failing
+should file `loom stage dispute-criteria <stage-id> --criterion-index <n> --reason "..."`**, which
+routes through the daemon to adjudication and can amend the criterion via the audited
+`apply_amendment` path. Operator-side, `loom stage amend <stage-id> --field acceptance --op
+replace --index <n> --value '<cmd>'` reaches the same machinery directly for a stage that is not
+currently executing. Reserve both for impossible criteria — a criterion that is merely red is a
+defect to fix, not to amend away.
