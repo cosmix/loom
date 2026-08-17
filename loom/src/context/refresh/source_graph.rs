@@ -125,7 +125,7 @@ fn degraded_outcome(store: &ContextStore, detail: String) -> SourceGraphOutcome 
 /// so an untracked scratch file cannot poison the layer, and the production
 /// caller (`MergeLifecycle::reconcile_base`) runs against the main repo root
 /// right after a merge, where untracked files are the norm.
-fn dirty_tree_reason(project_root: &Path, revision: &str) -> Option<String> {
+pub(super) fn dirty_tree_reason(project_root: &Path, revision: &str) -> Option<String> {
     let args = &["status", "--porcelain=v1", "--untracked-files=no"];
     match run_git_checked(args, project_root) {
         Ok(status) if status.is_empty() => None,
@@ -348,49 +348,6 @@ pub fn mark_semantic_stale(store: &ContextStore, reason: &str) -> Result<()> {
         state.semantic.stale = true;
         state.semantic.detail = Some(reason.to_string());
     })
-}
-
-/// Best-effort semantic reconciliation folded into `refresh`'s result: any failure below
-/// degrades to a stale [`Freshness`] naming it; an unresolvable project root leaves `current` as is.
-pub(super) fn reconcile_semantic_best_effort(
-    store: &ContextStore,
-    knowledge_root: &Path,
-    current: Freshness,
-) -> Freshness {
-    let Some(project_root) = derive_project_root(knowledge_root) else {
-        return current;
-    };
-
-    match try_reconcile_semantic(store, project_root) {
-        Ok(freshness) => freshness,
-        Err(error) => Freshness {
-            stale: true,
-            detail: Some(format!("semantic reconciliation skipped: {error}")),
-            ..current
-        },
-    }
-}
-
-/// Derive the project root from `knowledge_root` (`<root>/doc/loom/knowledge`),
-/// refusing to guess when the layout does not match — an unvalidated ancestor
-/// would point `WorkDir`, `GraphStore` and `rev-parse` at the wrong tree.
-fn derive_project_root(knowledge_root: &Path) -> Option<&Path> {
-    let candidate = knowledge_root.ancestors().nth(3)?;
-    let derived = candidate.join("doc/loom/knowledge");
-    let matches = match (derived.canonicalize(), knowledge_root.canonicalize()) {
-        (Ok(derived), Ok(actual)) => derived == actual,
-        _ => derived == knowledge_root,
-    };
-    matches.then_some(candidate)
-}
-
-/// The fallible half of `reconcile_semantic_best_effort`; any error becomes a named staleness reason.
-fn try_reconcile_semantic(store: &ContextStore, project_root: &Path) -> Result<Freshness> {
-    let work_dir = crate::fs::work_dir::WorkDir::new(project_root)?;
-    let graph_store = GraphStore::new(store.root(), work_dir.root());
-    let revision = run_git_checked(&["rev-parse", "HEAD"], project_root)?;
-    let scope = SourceGraphScope::Base { revision };
-    Ok(reconcile_source_graph(store, &graph_store, project_root, scope)?.freshness)
 }
 
 #[cfg(test)]
