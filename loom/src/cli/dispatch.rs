@@ -283,11 +283,7 @@ pub fn dispatch(command: Commands) -> Result<()> {
             state,
         } => clean::execute(all, worktrees, sessions, state),
         Commands::Repair { fix } => repair::execute(fix),
-        Commands::Map {
-            deep,
-            focus,
-            overwrite,
-        } => map::execute(deep, focus, overwrite),
+        Commands::Map { args } => map::execute(args),
         Commands::Pressure {
             plan,
             rounds,

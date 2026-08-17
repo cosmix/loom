@@ -10,5 +10,7 @@
 
 pub mod analyzer;
 pub mod detectors;
+pub mod knowledge_sync;
+pub mod views;
 
 pub use analyzer::{analyze_codebase, AnalysisResult};

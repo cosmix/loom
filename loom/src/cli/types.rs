@@ -206,19 +206,10 @@ pub enum Commands {
         fix: bool,
     },
 
-    /// Map codebase structure to knowledge files
+    /// Map codebase structure to knowledge files, or query the source graph
     Map {
-        /// Deep analysis (more thorough, slower)
-        #[arg(short, long)]
-        deep: bool,
-
-        /// Focus on specific area (e.g., "auth", "api", "db")
-        #[arg(short, long)]
-        focus: Option<String>,
-
-        /// Overwrite existing knowledge (default: append)
-        #[arg(long)]
-        overwrite: bool,
+        #[command(flatten)]
+        args: crate::commands::map::MapArgs,
     },
 
     /// Pressure-test a plan with alternating Claude and Codex review rounds

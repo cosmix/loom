@@ -1,0 +1,285 @@
+//! Read-only CLI views over an already-resolved source graph.
+//!
+//! Every view splits into a pure `render_*` function that returns the exact
+//! `String` printed, and a thin `pub fn` wrapper that prints it — so the
+//! honesty contract below is something a test can assert on, not just eyeball
+//! from a terminal.
+//!
+//! None of these views fail on an empty result — a view that finds nothing
+//! still renders a plain sentence saying so, because "the graph has no
+//! answer" is not an error condition for a CLI query.
+//!
+//! Confidence and provenance are never flattened away: every row that comes
+//! from `crate::context::impact` renders its own confidence, provenance, and
+//! edge kind rather than collapsing them into a single generic line. And
+//! reachability is never overclaimed: an empty reverse-impact result names
+//! what was left untraversed (unresolved edges, symbol-less files) instead of
+//! reading as "provably nothing depends on this".
+
+use std::path::{Path, PathBuf};
+
+use colored::Colorize;
+
+use crate::context::graph_store::ResolvedGraph;
+use crate::context::resolve::node_names;
+use crate::context::source_graph::{file_node_id, FileCoverage, SourceNode, SourceNodeKind};
+use crate::context::{CoverageReport, ResolutionStats, SymbolIndex};
+
+/// Maximum traversal depth for `impact`.
+const IMPACT_MAX_DEPTH: usize = 3;
+/// Maximum number of ambiguous start definitions `impact` will expand.
+const IMPACT_MAX_STARTS: usize = 5;
+/// Maximum number of rows `find_all` prints before suppressing the rest.
+const FIND_ALL_CAP: usize = 200;
+/// Signature column is collapsed to single spaces and capped at this many
+/// characters (including the trailing ellipsis) so an outline stays readable.
+const SIGNATURE_MAX_LEN: usize = 80;
+
+/// Turn a user-supplied path into the forward-slashed, project-root-relative
+/// form the graph keys on. Resolves against the CURRENT DIRECTORY first, so a
+/// path the user can `cat` is a path `--outline` accepts.
+pub(crate) fn project_relative(project_root: &Path, arg: &str) -> Option<String> {
+    let candidate = if Path::new(arg).is_absolute() {
+        Some(PathBuf::from(arg))
+    } else {
+        std::env::current_dir().ok().map(|dir| dir.join(arg))
+    };
+
+    if let Some(candidate) = candidate {
+        if let (Ok(candidate), Ok(root)) = (candidate.canonicalize(), project_root.canonicalize()) {
+            if let Ok(relative) = candidate.strip_prefix(&root) {
+                return Some(file_node_id(relative));
+            }
+        }
+    }
+
+    // The candidate could not be resolved and canonicalized (most commonly:
+    // the path does not exist yet, or the cwd could not be read) - fall back
+    // to normalizing the argument itself; it may already be graph-relative.
+    let normalized = arg.replace('\\', "/");
+    let normalized = normalized.strip_prefix("./").unwrap_or(&normalized);
+    Some(normalized.to_string())
+}
+
+/// Print every indexed node of one file, in source order.
+pub fn outline(graph: &ResolvedGraph, project_root: &Path, arg: &str) {
+    println!("{}", render_outline(graph, project_root, arg));
+}
+
+pub(crate) fn render_outline(graph: &ResolvedGraph, project_root: &Path, arg: &str) -> String {
+    let rel = project_relative(project_root, arg).unwrap_or_else(|| arg.to_string());
+
+    let Some(entry) = graph.files.get(&rel) else {
+        return format!("no indexed file at {rel}\n{}", CoverageReport::of(graph));
+    };
+
+    let mut lines = vec![format!("{} Outline: {}", "→".cyan().bold(), rel)];
+    let mut nodes: Vec<&SourceNode> = entry
+        .nodes
+        .iter()
+        .filter(|node| node.kind != SourceNodeKind::File)
+        .collect();
+    nodes.sort_by_key(|node| node.span.start_byte);
+    lines.extend(
+        nodes
+            .iter()
+            .map(|node| format!("  {}", format_node_line(node))),
+    );
+    lines.push(file_coverage_line(&entry.coverage));
+    lines.push(CoverageReport::of(graph).to_string());
+    lines.join("\n")
+}
+
+/// Format one outline row: line range, kind, scope path, signature.
+fn format_node_line(node: &SourceNode) -> String {
+    let range = format!("L{}-L{}", node.span.line_start, node.span.line_end);
+    let scope = node.scope.join("::");
+    let collapsed = node
+        .signature
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+    let signature = crate::utils::truncate_for_display(&collapsed, SIGNATURE_MAX_LEN);
+    format!(
+        "{:<11} {:<11} {:<30} {}",
+        range,
+        node.kind.as_str(),
+        scope,
+        signature
+    )
+}
+
+/// A file's own coverage status, with the detail that explains a degraded
+/// status — a file with no symbols must say why.
+fn file_coverage_line(coverage: &FileCoverage) -> String {
+    let status = coverage.status();
+    match coverage {
+        FileCoverage::Full => format!("coverage: {status}"),
+        FileCoverage::Partial { detail } | FileCoverage::LexicalOnly { detail } => {
+            format!("coverage: {status} - {detail}")
+        }
+        FileCoverage::Oversized { bytes, limit } => {
+            format!("coverage: {status} - {bytes} bytes (limit {limit})")
+        }
+        FileCoverage::ParseError { detail, .. } => format!("coverage: {status} - {detail}"),
+    }
+}
+
+/// Print every indexed node whose name matches `symbol`: an exact,
+/// case-sensitive match first, falling back to a case-insensitive substring
+/// match only when the exact pass finds nothing.
+pub fn find_all(graph: &ResolvedGraph, symbol: &str) {
+    println!("{}", render_find_all(graph, symbol));
+}
+
+pub(crate) fn render_find_all(graph: &ResolvedGraph, symbol: &str) -> String {
+    let exact: Vec<&SourceNode> = graph
+        .nodes()
+        .filter(|node| node_names(node).iter().any(|name| name == symbol))
+        .collect();
+
+    let (mut hits, label) = if exact.is_empty() {
+        let needle = symbol.to_lowercase();
+        let substring = graph
+            .nodes()
+            .filter(|node| {
+                node_names(node)
+                    .iter()
+                    .any(|name| name.to_lowercase().contains(&needle))
+            })
+            .collect::<Vec<_>>();
+        (substring, " (substring matches)")
+    } else {
+        (exact, "")
+    };
+
+    if hits.is_empty() {
+        return format!("no nodes match {symbol}\n{}", CoverageReport::of(graph));
+    }
+
+    hits.sort_by(|a, b| (&a.path, a.span.line_start).cmp(&(&b.path, b.span.line_start)));
+    let mut lines = vec![format!(
+        "{} {} - {} matches{}",
+        "→".cyan().bold(),
+        symbol,
+        hits.len(),
+        label
+    )];
+    lines.extend(
+        hits.iter()
+            .take(FIND_ALL_CAP)
+            .map(|node| find_all_row(node)),
+    );
+    if hits.len() > FIND_ALL_CAP {
+        lines.push(format!(
+            "  ... {} more suppressed",
+            hits.len() - FIND_ALL_CAP
+        ));
+    }
+    lines.push(CoverageReport::of(graph).to_string());
+    lines.join("\n")
+}
+
+/// One `find_all` row: location, kind, name, and — whenever the owning file's
+/// coverage is not `full` — the coverage status, so a hit inside a degraded
+/// file never renders identically to one from a fully-parsed file.
+fn find_all_row(node: &SourceNode) -> String {
+    let location = format!("{}:{}", node.path.display(), node.span.line_start);
+    let name = node_names(node).into_iter().next().unwrap_or_default();
+    let mut row = format!("  {:<36} {:<10} {}", location, node.kind.as_str(), name);
+    if node.coverage.status() != "full" {
+        row.push_str(&format!(" [{}]", node.coverage.status()));
+    }
+    row
+}
+
+/// Print what reaches a symbol or file, with per-edge confidence and
+/// provenance, then the resolution and coverage summary lines.
+pub fn impact(graph: &ResolvedGraph, project_root: &Path, arg: &str, stats: &ResolutionStats) {
+    println!("{}", render_impact(graph, project_root, arg, stats));
+}
+
+pub(crate) fn render_impact(
+    graph: &ResolvedGraph,
+    project_root: &Path,
+    arg: &str,
+    stats: &ResolutionStats,
+) -> String {
+    let file_start =
+        project_relative(project_root, arg).filter(|rel| graph.files.contains_key(rel));
+    let symbol_matches = SymbolIndex::build(graph).lookup(arg).to_vec();
+
+    let starts = match &file_start {
+        Some(rel) => vec![rel.clone()],
+        None => symbol_matches.clone(),
+    };
+
+    if starts.is_empty() {
+        return format!("no indexed node named {arg}\n{}", CoverageReport::of(graph));
+    }
+
+    let mut lines = Vec::new();
+    if file_start.is_some() && !symbol_matches.is_empty() {
+        lines.push(format!(
+            "note: {arg} also matches {} symbol definition(s); showing the file's impact only",
+            symbol_matches.len()
+        ));
+    } else if starts.len() > 1 {
+        lines.push(format!(
+            "{} {} definitions match {arg}; showing impact for each",
+            "→".cyan().bold(),
+            starts.len()
+        ));
+    }
+
+    let shown = starts.len().min(IMPACT_MAX_STARTS);
+    for start_id in starts.iter().take(IMPACT_MAX_STARTS) {
+        lines.push(render_impact_for(graph, start_id, stats));
+    }
+    if starts.len() > shown {
+        lines.push(format!("  ... {} more suppressed", starts.len() - shown));
+    }
+
+    lines.push(format!(
+        "resolution: {} retargeted, {} ambiguous (left unresolved), {} unresolved",
+        stats.retargeted, stats.ambiguous, stats.unresolved
+    ));
+    lines.push(CoverageReport::of(graph).to_string());
+    lines.join("\n")
+}
+
+/// Render one start node's impact heading and its reverse-reachability rows.
+fn render_impact_for(graph: &ResolvedGraph, start_id: &str, stats: &ResolutionStats) -> String {
+    let heading = format!(
+        "{} Impact of {start_id} (depth <= {IMPACT_MAX_DEPTH}, reverse edges)",
+        "→".cyan().bold(),
+    );
+    let hits = crate::context::impact(graph, start_id, IMPACT_MAX_DEPTH);
+    if hits.is_empty() {
+        return format!("{heading}\n  {}", untraversed_summary(graph, stats));
+    }
+    let mut lines = vec![heading];
+    for hit in &hits {
+        lines.push(format!(
+            "  d{}  {:.2}  {}  {}  {}",
+            hit.depth, hit.min_confidence, hit.weakest_provenance, hit.weakest_kind, hit.id
+        ));
+    }
+    lines.join("\n")
+}
+
+/// Explain an empty reverse-impact result honestly: the traversal only walks
+/// RESOLVED edges, so it never proves nothing depends on a node — it can only
+/// report what it did not (and could not) traverse.
+fn untraversed_summary(graph: &ResolvedGraph, stats: &ResolutionStats) -> String {
+    let coverage = CoverageReport::of(graph);
+    let untraversed_files = coverage.files.saturating_sub(coverage.symbol_level_files);
+    format!(
+        "no resolved edge reaches this node ({} unresolved edges and {untraversed_files} \
+         files without symbol coverage were not traversed)",
+        stats.unresolved
+    )
+}
+
+#[cfg(test)]
+mod tests;
