@@ -11,6 +11,7 @@ use crate::hooks::find_hooks_dir;
 use crate::models::failure::{FailureInfo, FailureType};
 use crate::models::session::Session;
 use crate::models::stage::{Stage, StageStatus, StageType};
+use crate::orchestrator::merge_lifecycle::MergeLifecycle;
 use crate::orchestrator::scheduling_report::{self, BlockReason, BlockedStage, SchedulingReport};
 use crate::orchestrator::signals::{
     generate_knowledge_signal, generate_signal_with_skills, DependencyStatus,
@@ -408,6 +409,25 @@ impl StageExecutor for Orchestrator {
             self.block_stranded_stage(stage_id, format!("{error:#}"));
             return Ok(());
         }
+
+        // Refresh the stage's source-graph overlay BEFORE the signal is
+        // generated below: the Knowledge Brief embedded in the signal is
+        // built from the overlay, so a stale overlay would brief the agent
+        // from the pre-stage tree. This mirrors the reconcile
+        // `merge_handler.rs` already does before a merge.
+        //
+        // `start_knowledge_stage` (above) deliberately does not get this
+        // call: it runs in the main repo with no worktree, so
+        // `reconcile_overlay` would early-return at merge_lifecycle.rs:76-79
+        // anyway - adding it there would just add a pointless full walk of
+        // the main repo on every knowledge stage.
+        //
+        // `reconcile_source_graph` is incremental (it reuses a cached entry
+        // whenever `body_hash` matches, see refresh/source_graph.rs:212-245),
+        // so steady-state cost is proportional to changed files; only the
+        // first call on a fresh worktree pays a full walk.
+        MergeLifecycle::new(stage_id, &self.config.repo_root, &self.config.work_dir)
+            .reconcile_overlay();
 
         // Honor a pending recovery signal (C-5). `loom stage retry --context`
         // (and crash/hung auto-recovery) writes a `recovery-<...>` signal file

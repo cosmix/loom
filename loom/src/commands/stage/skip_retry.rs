@@ -3,8 +3,10 @@
 use anyhow::{bail, Context, Result};
 use std::path::Path;
 
+use crate::git::worktree::find_repo_root_from_cwd;
 use crate::hooks::read_stage_events;
 use crate::models::stage::StageStatus;
+use crate::orchestrator::merge_lifecycle::MergeLifecycle;
 use crate::orchestrator::monitor::failure_tracking::FailureTracker;
 use crate::orchestrator::signals::{
     generate_recovery_signal, RecoveryReason, RecoverySignalContent,
@@ -188,6 +190,19 @@ pub fn retry(stage_id: String, force: bool, context: Option<String>) -> Result<(
                 recovery_attempt,
             ),
         };
+
+        // The retrieval pack is embedded into `signal_content` at
+        // signal-WRITE time here, not at the next spawn - unlike a fresh
+        // spawn, `start_stage` reuses these bytes verbatim from disk and
+        // never regenerates them. So the overlay must be current NOW, or
+        // this retry (and crash/hang auto-recovery, which share this path)
+        // briefs the agent from the pre-crash tree. `reconcile_overlay`
+        // already early-returns when the worktree is missing
+        // (merge_lifecycle.rs:76-79), which is correct here: a stage whose
+        // worktree was cleaned up has nothing to reconcile.
+        let cwd = std::env::current_dir().context("Failed to get current directory")?;
+        let repo_root = find_repo_root_from_cwd(&cwd).unwrap_or_else(|| cwd.clone());
+        MergeLifecycle::new(&stage_id, &repo_root, work_dir).reconcile_overlay();
 
         generate_recovery_signal(&signal_content, &stage, work_dir)
             .context("Failed to generate recovery signal")?;
