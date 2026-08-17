@@ -24,6 +24,22 @@
 //! that mounts it read-only), and even then only after checking that the
 //! projected socket path still fits `sun_path` — see
 //! `create_isolated_tmux_tmpdir()`.
+//!
+//! Writability is not bindability, and `create_isolated_tmux_tmpdir()` only
+//! checks the former. A directory can pass both of its checks and still
+//! refuse an `AF_UNIX` **bind**: `mkdir` succeeds, `tmux new-session -d`
+//! prints `error creating ... (Operation not permitted)` to stderr and
+//! still **exits 0**, and the follow-up `has-session` probe then fails --
+//! see `doc/loom/knowledge/mistakes/tmux-backend.md` for the confirmed
+//! reproduction. The two tests below that start a real tmux server
+//! therefore call `skip_unless_tmux_can_bind()` first, which binds a
+//! throwaway socket in the isolated `TMUX_TMPDIR` via
+//! `tmux_bind_supported()` and skips loudly (a marked `SKIP ...` line on
+//! stderr, never a silent pass) when the bind itself is denied -- that is
+//! an environment limitation, not a defect in the code under test. The
+//! skip is narrow: only a failed bind probe triggers it, nothing else. Set
+//! `LOOM_E2E_REQUIRE_TMUX=1` to turn that skip back into a panic, so CI can
+//! assert the tests really ran against a live tmux server.
 
 use loom::models::session::{Session, SessionType};
 use loom::orchestrator::terminal::native::create_wrapper_script;
@@ -155,6 +171,52 @@ fn create_isolated_tmux_tmpdir() -> PathBuf {
     panic!("no usable TMUX_TMPDIR base found; rejected candidates: {rejected:?}");
 }
 
+/// Probes whether `dir` can actually host an `AF_UNIX` socket, which is
+/// strictly stronger than being writable: a sandbox can permit `mkdir`
+/// and still deny `bind(2)`. See
+/// `doc/loom/knowledge/mistakes/tmux-backend.md` -- under exactly that
+/// condition `tmux new-session -d` prints an error and still exits 0.
+/// Binds and immediately unlinks a throwaway socket; returns the OS error
+/// string on failure.
+fn tmux_bind_supported(dir: &Path) -> Result<(), String> {
+    // Short name: the whole point of the surrounding sun_path budget is that
+    // the final path component stays small, and a probe socket is no
+    // exception.
+    let probe_path = dir.join("p.sock");
+    let _ = std::fs::remove_file(&probe_path);
+    let result = std::os::unix::net::UnixListener::bind(&probe_path)
+        .map(|_listener| ())
+        .map_err(|err| err.to_string());
+    let _ = std::fs::remove_file(&probe_path);
+    result
+}
+
+/// Returns true if the caller should skip: the environment cannot host an
+/// `AF_UNIX` socket, so a tmux server cannot start for reasons that have
+/// nothing to do with the code under test. Prints a loud `SKIP` line naming
+/// the probe error. Panics instead of skipping when
+/// `LOOM_E2E_REQUIRE_TMUX=1`, so CI can demand a real run.
+fn skip_unless_tmux_can_bind(dir: &Path, test_name: &str) -> bool {
+    match tmux_bind_supported(dir) {
+        Ok(()) => false,
+        Err(err) => {
+            if std::env::var("LOOM_E2E_REQUIRE_TMUX").as_deref() == Ok("1") {
+                panic!(
+                    "{test_name}: this environment cannot bind an AF_UNIX socket under {}: \
+                     {err} (LOOM_E2E_REQUIRE_TMUX=1 demands a real run)",
+                    dir.display()
+                );
+            }
+            eprintln!(
+                "SKIP {test_name}: this environment cannot bind an AF_UNIX socket under {}: \
+                 {err} (set LOOM_E2E_REQUIRE_TMUX=1 to fail instead)",
+                dir.display()
+            );
+            true
+        }
+    }
+}
+
 /// Redirects `TMUX_TMPDIR` to an isolated per-test directory for the
 /// duration of the guard, additionally removing the directory on drop -- on
 /// EVERY exit path, including a panic mid-test.
@@ -168,6 +230,12 @@ impl TmuxTmpDirGuard {
         let dir = create_isolated_tmux_tmpdir();
         let _env = EnvVarGuard::set("TMUX_TMPDIR", &dir);
         Self { _env, dir }
+    }
+
+    /// The isolated `TMUX_TMPDIR` this guard set, e.g. for a bind probe
+    /// before starting a real tmux server against it.
+    fn dir(&self) -> &Path {
+        &self.dir
     }
 }
 
@@ -243,6 +311,12 @@ fn wait_until(mut cond: impl FnMut() -> bool, timeout: Duration) -> bool {
 #[serial]
 fn tmux_spawn_lifecycle_reaches_a_live_pid_and_teardown_clears_it() {
     let _tmux_tmpdir = TmuxTmpDirGuard::new();
+    if skip_unless_tmux_can_bind(
+        _tmux_tmpdir.dir(),
+        "tmux_spawn_lifecycle_reaches_a_live_pid_and_teardown_clears_it",
+    ) {
+        return;
+    }
 
     let work_dir = TempDir::new().unwrap();
     let work_dir_path = work_dir.path();
@@ -405,6 +479,12 @@ fn spawn_in_tmux_errs_when_socket_dir_is_unwritable() {
 #[serial]
 fn tmux_liveness_ignores_running_server_when_pid_is_dead() {
     let _tmux_tmpdir = TmuxTmpDirGuard::new();
+    if skip_unless_tmux_can_bind(
+        _tmux_tmpdir.dir(),
+        "tmux_liveness_ignores_running_server_when_pid_is_dead",
+    ) {
+        return;
+    }
 
     let work_dir = TempDir::new().unwrap();
     let work_dir_path = work_dir.path();
