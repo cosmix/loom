@@ -644,6 +644,58 @@ fn criterion_uses_build_tool(criterion: &str, tool_cmd: &str) -> bool {
     false
 }
 
+/// Check whether an acceptance criterion invokes a resource that a worktree
+/// session's sandboxed acceptance run cannot grant.
+///
+/// `loom map` and `loom knowledge context` both open `ContextStore`, which
+/// resolves its cache under the main project root — read-only from a
+/// worktree, and unreachable via `allow_write` since both settings emitters
+/// filter out `../` paths. `tmux`/`docker` are host daemons the sandbox does
+/// not expose. Returns the matched invocation for use in the warning
+/// message, or `None` if the criterion is clean.
+fn criterion_needs_ungrantable_resource(cmd: &str) -> Option<&'static str> {
+    if cmd.contains("loom map") {
+        return Some("loom map");
+    }
+    if cmd.contains("loom knowledge context") {
+        return Some("loom knowledge context");
+    }
+    for token in cmd.split_whitespace() {
+        if token == "tmux" || token.ends_with("/tmux") {
+            return Some("tmux");
+        }
+        if token == "docker" || token.ends_with("/docker") {
+            return Some("docker");
+        }
+    }
+    None
+}
+
+/// Warn about acceptance criteria needing a resource the worktree sandbox
+/// cannot grant.
+///
+/// `loom map` / `loom knowledge context` resolve the shared context-store
+/// cache under the main project root (reached through the `.work` symlink,
+/// which no `allow_write` entry can cover), and tmux/docker are host daemons
+/// the sandbox does not expose. `loom stage complete` runs acceptance from
+/// inside the session, so these fail for reasons the stage's diff can never
+/// fix — stranding a finished stage rather than reporting a defect.
+fn warn_ungrantable_acceptance(stage: &super::types::StageDefinition, warnings: &mut Vec<String>) {
+    for (idx, criterion) in stage.acceptance.iter().enumerate() {
+        if let Some(what) = criterion_needs_ungrantable_resource(criterion.command()) {
+            warnings.push(format!(
+                "Stage '{}': Acceptance criterion #{} invokes '{}', which needs a resource \
+                 the stage sandbox cannot grant (shared .work/.loom state reached through \
+                 the worktree symlink, or a host daemon). Prove the behavior with a test \
+                 that injects the root/handle, or with an artifacts/wiring check instead.",
+                stage.id,
+                idx + 1,
+                what
+            ));
+        }
+    }
+}
+
 /// Validate structural aspects of the plan before execution (pre-flight checks).
 ///
 /// Returns a list of warning messages for issues that don't prevent execution but
@@ -654,6 +706,8 @@ fn criterion_uses_build_tool(criterion: &str, tool_cmd: &str) -> bool {
 /// - Overly broad patterns in wiring checks
 /// - Build tool config file mismatches
 /// - Double-path artifacts and wiring sources
+/// - Acceptance criteria invoking resources the worktree sandbox cannot grant
+///   (`loom map`, `loom knowledge context`, or a host daemon like tmux/docker)
 pub fn validate_structural_preflight(
     stages: &[super::types::StageDefinition],
     repo_root: Option<&std::path::Path>,
@@ -686,6 +740,8 @@ pub fn validate_structural_preflight(
                 }
             }
         }
+
+        warn_ungrantable_acceptance(stage, &mut warnings);
 
         // Check for weak wiring patterns
         for (idx, wiring) in stage.wiring.iter().enumerate() {

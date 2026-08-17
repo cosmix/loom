@@ -568,6 +568,88 @@ fn test_preflight_no_warning_for_specific_pattern() {
 }
 
 #[test]
+fn test_preflight_warns_on_loom_map_acceptance() {
+    let mut stage = make_stage("stage-1", "Stage One");
+    stage.acceptance = vec![AcceptanceCriterion::Simple(
+        "loom map --outline src/main.rs".to_string(),
+    )];
+    stage.artifacts = vec!["README.md".to_string()];
+
+    let warnings = validate_structural_preflight(&[stage], None);
+    assert!(warnings
+        .iter()
+        .any(|w| w.contains("Acceptance criterion #1") && w.contains("loom map")));
+}
+
+#[test]
+fn test_preflight_warns_on_loom_map_binary_path_acceptance() {
+    let mut stage = make_stage("stage-1", "Stage One");
+    stage.acceptance = vec![AcceptanceCriterion::Simple(
+        "./target/debug/loom map --outline src/main.rs".to_string(),
+    )];
+    stage.artifacts = vec!["README.md".to_string()];
+
+    let warnings = validate_structural_preflight(&[stage], None);
+    assert!(warnings
+        .iter()
+        .any(|w| w.contains("Acceptance criterion #1") && w.contains("loom map")));
+}
+
+#[test]
+fn test_preflight_warns_on_loom_knowledge_context_acceptance() {
+    let mut stage = make_stage("stage-1", "Stage One");
+    stage.acceptance = vec![AcceptanceCriterion::Simple(
+        "loom knowledge context --stage x".to_string(),
+    )];
+    stage.artifacts = vec!["README.md".to_string()];
+
+    let warnings = validate_structural_preflight(&[stage], None);
+    assert!(warnings
+        .iter()
+        .any(|w| w.contains("Acceptance criterion #1") && w.contains("loom knowledge context")));
+}
+
+#[test]
+fn test_preflight_no_warning_for_loom_knowledge_check_acceptance() {
+    let mut stage = make_stage("stage-1", "Stage One");
+    stage.acceptance = vec![AcceptanceCriterion::Simple(
+        "loom knowledge check --min-coverage 50".to_string(),
+    )];
+    stage.artifacts = vec!["README.md".to_string()];
+
+    let warnings = validate_structural_preflight(&[stage], None);
+    assert!(warnings
+        .iter()
+        .all(|w| !w.contains("Acceptance criterion #1") || !w.contains("stage sandbox cannot")));
+}
+
+#[test]
+fn test_preflight_no_warning_for_tmux_substring_in_test_name() {
+    let mut stage = make_stage("stage-1", "Stage One");
+    stage.acceptance = vec![AcceptanceCriterion::Simple(
+        "cargo test --test tmux_backend".to_string(),
+    )];
+    stage.artifacts = vec!["README.md".to_string()];
+
+    let warnings = validate_structural_preflight(&[stage], None);
+    assert!(warnings
+        .iter()
+        .all(|w| !w.contains("Acceptance criterion #1") || !w.contains("stage sandbox cannot")));
+}
+
+#[test]
+fn test_preflight_warns_on_tmux_token_acceptance() {
+    let mut stage = make_stage("stage-1", "Stage One");
+    stage.acceptance = vec![AcceptanceCriterion::Simple("tmux kill-server".to_string())];
+    stage.artifacts = vec!["README.md".to_string()];
+
+    let warnings = validate_structural_preflight(&[stage], None);
+    assert!(warnings
+        .iter()
+        .any(|w| w.contains("Acceptance criterion #1") && w.contains("'tmux'")));
+}
+
+#[test]
 fn test_knowledge_distill_exempt_from_goal_backward() {
     // A knowledge-distill stage with no artifacts/wiring should pass validation
     // (it is exempt from the goal-backward checks that Standard/IV stages require)
