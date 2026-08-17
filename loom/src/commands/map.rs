@@ -7,16 +7,13 @@ use anyhow::{Context, Result};
 use colored::Colorize;
 
 use crate::context::graph_store::{GraphStore, ResolvedGraph};
+use crate::context::local_overlay::local_overlay_key;
 use crate::context::refresh::{reconcile_source_graph, SourceGraphScope};
 use crate::context::store::ContextStore;
 use crate::context::{resolve_graph, ResolutionStats};
 use crate::fs::knowledge::KnowledgeDir;
 use crate::fs::work_dir::WorkDir;
 use crate::map::{analyze_codebase, knowledge_sync};
-
-/// Plan name for the graph overlay the CLI views build for the working tree.
-/// Not a real stage: the underscore prefix keeps it out of any plan's namespace.
-const LOCAL_PLAN: &str = "_local";
 
 /// Arguments for `loom map`. Lives here rather than in the CLI enum so the
 /// command owns its own surface.
@@ -123,38 +120,26 @@ fn run_views(project_root: &Path, work_dir: &WorkDir, args: &MapArgs) -> Result<
     Ok(())
 }
 
-/// Stage name for the CLI views' graph overlay, keyed by the working tree's
-/// own directory name.
-///
-/// `.work` is a symlink to the main repository in every worktree, so a fixed
-/// stage name would make every worktree's `loom map` read and clobber the
-/// SAME overlay file. Keying by the project root's final path component keeps
-/// each worktree's working-tree view private to it.
-fn local_stage_name(project_root: &Path) -> String {
-    match project_root.file_name() {
-        Some(name) => format!("map-{}", name.to_string_lossy()),
-        None => "map".to_string(),
-    }
-}
-
 /// Build (or reconcile) the working-tree source graph and resolve it against
 /// its overlay. Works even when the graph has never been built before.
 fn load_graph(project_root: &Path, work_dir: &WorkDir) -> Result<(ResolvedGraph, ResolutionStats)> {
     let store = ContextStore::open(work_dir)?;
     store.ensure()?;
     let graph_store = GraphStore::new(store.root(), work_dir.root());
-    let stage = local_stage_name(project_root);
+    let (plan, stage) = local_overlay_key(project_root);
     let outcome = reconcile_source_graph(
         &store,
         &graph_store,
         project_root,
         SourceGraphScope::Overlay {
-            plan: LOCAL_PLAN.to_string(),
+            plan: plan.clone(),
             stage: stage.clone(),
         },
     )?;
-    let mut graph =
-        graph_store.resolved(&outcome.freshness.revision, Some((LOCAL_PLAN, &stage)))?;
+    let mut graph = graph_store.resolved(
+        &outcome.freshness.revision,
+        Some((plan.as_str(), stage.as_str())),
+    )?;
     let stats = resolve_graph(&mut graph);
     Ok((graph, stats))
 }
