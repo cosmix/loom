@@ -24,14 +24,12 @@
 //! fused list in order taking whole chunks until the budget is spent. The
 //! packer never exceeds its budget and always reports what it left out.
 //!
-//! Only the knowledge-chunk channel actually contributes candidates today.
-//! [`schema::Channel::Source`] is a real variant and [`source_graph`] builds a
-//! real graph of source nodes and edges, but the two are not yet connected:
-//! [`rank`] still only accepts `&[KnowledgeChunk]`, so ranking the source
-//! channel over the same catalog would double-count the knowledge chunks.
-//! `rank_channels` in [`retrieve`] therefore ranks `Source` over an empty
-//! slice — the channel is present in the API and consumed by nothing; bridging
-//! the graph's nodes into the ranker is separate, unbuilt work.
+//! Both channels contribute candidates. [`rank`] scores the knowledge chunks of
+//! the catalog; [`rank_source::rank_source`] scores the nodes [`source_graph`]
+//! extracted, read back through [`graph_store`] as a resolved base-plus-overlay
+//! view. The two rank lists are fused by reciprocal rank, so a source node and
+//! a knowledge chunk compete on rank alone — a source item points into the
+//! code, while the prose is the part that cannot be re-derived from it.
 //!
 //! ## One entry point
 //!
@@ -53,6 +51,7 @@ mod lexical;
 pub mod local_overlay;
 pub mod pack;
 pub mod rank;
+pub mod rank_source;
 pub mod refresh;
 pub mod resolve;
 pub mod retrieve;
@@ -62,6 +61,7 @@ pub mod store;
 pub(crate) mod untrusted;
 
 pub use coverage::CoverageReport;
+pub use rank_source::rank_source;
 pub use resolve::{impact, resolve_graph, ImpactHit, ResolutionStats, SymbolIndex};
 pub use retrieve::{retrieve_for_stage, StageQuery};
 

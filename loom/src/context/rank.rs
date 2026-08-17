@@ -1,4 +1,6 @@
-//! Deterministic BM25 ranking for knowledge chunks.
+//! Deterministic BM25 ranking for knowledge chunks, plus the document-agnostic
+//! corpus machinery ([`LexicalCorpus`], [`prepare_lexical`], [`score_bm25`])
+//! that [`crate::context::rank_source`] scores source-graph nodes through.
 
 use crate::context::lexical::{contains_whole_term, field_tokens, link_target_matches};
 use crate::context::schema::{Channel, ChunkId, KnowledgeChunk, SelectionReason};
@@ -104,10 +106,10 @@ fn score_exact_match_ladder(
     (score, reasons)
 }
 
-/// BM25 lexical score for the chunk at `index`, summed across query terms.
+/// BM25 lexical score for the document at `index`, summed across query terms.
 /// Returns the score and whether any term matched at all.
 #[allow(clippy::too_many_arguments)]
-fn score_bm25(
+pub(crate) fn score_bm25(
     query_terms: &[String],
     document_frequencies: &BTreeMap<String, usize>,
     documents: &[Vec<(String, f32)>],
@@ -143,26 +145,78 @@ fn score_bm25(
     (lexical_score, has_lexical_match)
 }
 
-/// Query-dependent corpus statistics shared by every chunk scored in one
-/// [`rank`] call: tokenized query terms, per-chunk weighted field tokens and
-/// lengths, the chunks named by `required_ids`, and per-term document
-/// frequencies.
-struct Corpus<'a> {
-    query_terms: Vec<String>,
+/// Query-dependent corpus statistics that do not depend on what a document
+/// *is*: tokenized query terms, per-document weighted tokens and lengths, the
+/// corpus average length, and per-term document frequencies.
+///
+/// Nothing here knows whether a document was built from a knowledge chunk or
+/// from a source-graph node, which is the point: every channel builds its own
+/// `(term, weight)` documents and then scores through the same statistics, so
+/// the rankers cannot drift apart in how they weigh a term.
+pub(crate) struct LexicalCorpus {
+    /// Tokenized query terms, in query order.
+    pub(crate) query_terms: Vec<String>,
+    /// Weighted `(term, weight)` pairs per document, parallel to the input.
+    pub(crate) documents: Vec<Vec<(String, f32)>>,
+    /// Token count per document, parallel to `documents`.
+    pub(crate) lengths: Vec<usize>,
+    /// Mean document length; `0.0` for an empty corpus.
+    pub(crate) average_length: f32,
+    /// How many documents contain each query term.
+    pub(crate) document_frequencies: BTreeMap<String, usize>,
+}
+
+/// Assemble the loop-invariant statistics for one ranking pass.
+///
+/// Every query term gets a `document_frequencies` entry, including terms no
+/// document contains at all: [`score_bm25`] indexes that map directly, so a
+/// missing key panics instead of scoring zero.
+pub(crate) fn prepare_lexical(
+    query_terms: &[String],
     documents: Vec<Vec<(String, f32)>>,
-    lengths: Vec<usize>,
-    average_length: f32,
+) -> LexicalCorpus {
+    let lengths: Vec<usize> = documents.iter().map(Vec::len).collect();
+    let average_length = if documents.is_empty() {
+        0.0
+    } else {
+        lengths.iter().sum::<usize>() as f32 / documents.len() as f32
+    };
+
+    // Document frequency per query term is loop-invariant: it scans every
+    // document but does not depend on which document is currently being
+    // scored. Computed once here instead of inside the per-document loop.
+    let mut document_frequencies: BTreeMap<String, usize> = BTreeMap::new();
+    for term in query_terms {
+        document_frequencies.entry(term.clone()).or_insert_with(|| {
+            documents
+                .iter()
+                .filter(|document| document.iter().any(|(value, _)| value == term))
+                .count()
+        });
+    }
+
+    LexicalCorpus {
+        query_terms: query_terms.to_vec(),
+        documents,
+        lengths,
+        average_length,
+        document_frequencies,
+    }
+}
+
+/// The knowledge channel's corpus: the shared [`LexicalCorpus`] plus the two
+/// chunk-specific sets the exact-match ladder needs — the chunks named by
+/// `required_ids` and the files they live in.
+struct Corpus<'a> {
+    lexical: LexicalCorpus,
     explicit_chunks: Vec<&'a KnowledgeChunk>,
     explicit_files: Vec<&'a PathBuf>,
-    document_frequencies: BTreeMap<String, usize>,
 }
 
 impl<'a> Corpus<'a> {
     fn prepare(query: &RankQuery, chunks: &'a [KnowledgeChunk]) -> Self {
         let query_terms = tokenize(&query.text);
         let documents: Vec<Vec<(String, f32)>> = chunks.iter().map(field_tokens).collect();
-        let lengths: Vec<usize> = documents.iter().map(Vec::len).collect();
-        let average_length = lengths.iter().sum::<usize>() as f32 / chunks.len() as f32;
         let explicit_chunks: Vec<&KnowledgeChunk> = chunks
             .iter()
             .filter(|chunk| query.required_ids.iter().any(|id| id == &chunk.id))
@@ -170,27 +224,10 @@ impl<'a> Corpus<'a> {
         let explicit_files: Vec<&PathBuf> =
             explicit_chunks.iter().map(|chunk| &chunk.file).collect();
 
-        // Document frequency per query term is loop-invariant: it scans every
-        // document but does not depend on which chunk is currently being
-        // scored. Computed once here instead of inside the per-chunk loop.
-        let mut document_frequencies: BTreeMap<String, usize> = BTreeMap::new();
-        for term in &query_terms {
-            document_frequencies.entry(term.clone()).or_insert_with(|| {
-                documents
-                    .iter()
-                    .filter(|document| document.iter().any(|(value, _)| value == term))
-                    .count()
-            });
-        }
-
         Self {
-            query_terms,
-            documents,
-            lengths,
-            average_length,
+            lexical: prepare_lexical(&query_terms, documents),
             explicit_chunks,
             explicit_files,
-            document_frequencies,
         }
     }
 }
@@ -218,11 +255,11 @@ pub fn rank(
             &corpus.explicit_files,
         );
         let (lexical_score, has_lexical_match) = score_bm25(
-            &corpus.query_terms,
-            &corpus.document_frequencies,
-            &corpus.documents,
-            &corpus.lengths,
-            corpus.average_length,
+            &corpus.lexical.query_terms,
+            &corpus.lexical.document_frequencies,
+            &corpus.lexical.documents,
+            &corpus.lexical.lengths,
+            corpus.lexical.average_length,
             corpus_size,
             index,
         );
