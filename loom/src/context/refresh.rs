@@ -2,7 +2,8 @@
 //!
 //! [`evaluate`] answers "is the cached catalog current?" without touching
 //! disk beyond a read. [`refresh`] acts on that answer: it rebuilds and
-//! persists the structural layer when stale, and is a no-op otherwise.
+//! persists the structural layer when stale, and is a no-op otherwise. The
+//! semantic (source-graph) layer lives in [`source_graph`].
 
 use anyhow::Result;
 use chrono::Utc;
@@ -13,6 +14,38 @@ use crate::context::fingerprint::{fingerprint_tree, tree_revision};
 use crate::context::ingest::{ingest, IngestReport};
 use crate::context::schema::Freshness;
 use crate::context::store::{ContextStore, StoreState};
+
+mod source_graph;
+
+pub use source_graph::{
+    mark_semantic_stale, reconcile_source_graph, SourceGraphOutcome, SourceGraphScope,
+};
+
+/// One entry of the extractor registry the semantic refresh drives.
+///
+/// Named here rather than in `context::extract` because the boxing is the
+/// refresh driver's requirement, not the trait's: the driver builds the whole
+/// registry once and hands slices of it down its own call chain, which needs
+/// `Send + Sync` for no reason a single extractor implementation cares about.
+pub(crate) type BoxedExtractor =
+    Box<dyn crate::context::extract::SourceGraphExtractor + Send + Sync>;
+
+/// The revision a reconcile builds against, plus its two reuse sources: the
+/// stage's own overlay and the published base at that revision, either of
+/// which may be absent on a first build.
+type ScopeLayers = (
+    String,
+    Option<crate::context::graph_store::GraphLayer>,
+    Option<crate::context::graph_store::GraphLayer>,
+);
+
+/// [`ScopeLayers`] preceded by the tracked-file list to walk.
+type ReconcileInputs = (
+    Vec<String>,
+    String,
+    Option<crate::context::graph_store::GraphLayer>,
+    Option<crate::context::graph_store::GraphLayer>,
+);
 
 /// What a refresh actually did.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -102,34 +135,35 @@ pub fn evaluate(store: &ContextStore, knowledge_root: &Path) -> Result<StoreStat
 }
 
 /// Rebuild the structural layer when it is stale; persist catalog and state.
-///
-/// `structural_only` distinguishes "rebuild only the catalog" from "also
-/// refresh the layers downstream of it". The semantic layer is owned by the
-/// source-graph stage, which will hook in here once it exists; until then
-/// there is nothing semantic to build in either mode, so both leave the
-/// semantic [`Freshness`] exactly as [`evaluate`] returned it.
+/// `structural_only` distinguishes catalog-only from also best-effort
+/// reconciling the semantic layer (see [`source_graph::reconcile_semantic_best_effort`]).
 pub fn refresh(
     store: &ContextStore,
     knowledge_root: &Path,
     structural_only: bool,
 ) -> Result<RefreshOutcome> {
-    // Reserved for the source-graph stage: `structural_only == false` will
-    // also refresh the semantic layer here once that stage lands. See the doc
-    // comment above.
-    let _ = structural_only;
-
     let evaluated = evaluate(store, knowledge_root)?;
 
     if !evaluated.structural.stale {
+        let semantic = if structural_only {
+            evaluated.semantic
+        } else {
+            source_graph::reconcile_semantic_best_effort(store, knowledge_root, evaluated.semantic)
+        };
         return Ok(RefreshOutcome {
             rebuilt: false,
             structural: evaluated.structural,
-            semantic: evaluated.semantic,
+            semantic,
             report: None,
         });
     }
 
-    rebuild_and_persist(store, knowledge_root, evaluated.semantic)
+    let mut outcome = rebuild_and_persist(store, knowledge_root, evaluated.semantic)?;
+    if !structural_only {
+        outcome.semantic =
+            source_graph::reconcile_semantic_best_effort(store, knowledge_root, outcome.semantic);
+    }
+    Ok(outcome)
 }
 
 /// Rebuild the catalog from `knowledge_root`, persist it and the derived
