@@ -85,10 +85,7 @@ impl Orchestrator {
         let work_dir = self.config.work_dir.clone();
         let result = memory::drain_into_journal(&work_dir, stage_id, worktree_root);
 
-        // `drain_into_journal` already folds validation rejects into
-        // `skipped_malformed`, so there is nothing left for this layer to
-        // track separately.
-        self.record_drain_result(stage_id, worktree_root, result, 0)
+        self.record_drain_result(stage_id, worktree_root, result)
     }
 
     /// Log and account for the outcome of one stage's drain pass.
@@ -97,7 +94,6 @@ impl Orchestrator {
         stage_id: &str,
         worktree_root: &Path,
         result: anyhow::Result<DrainOutcome>,
-        skipped_invalid: usize,
     ) -> DrainOutcome {
         match result {
             Ok(outcome) => {
@@ -107,8 +103,7 @@ impl Orchestrator {
                 if outcome.drained > 0 || outcome.skipped_malformed > 0 {
                     tracing::info!(
                         stage_id = %stage_id,
-                        appended = outcome.drained.saturating_sub(skipped_invalid),
-                        skipped_invalid,
+                        appended = outcome.drained,
                         skipped_malformed = outcome.skipped_malformed,
                         "Drained memory spool"
                     );

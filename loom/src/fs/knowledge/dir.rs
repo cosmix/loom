@@ -1,7 +1,6 @@
 //! Knowledge directory manager.
 
 use super::index::{self, TopicEntry};
-use super::summary;
 use super::templates;
 use super::types::{KnowledgeFile, KnowledgeLayout, KnowledgeTarget, INDEX_FILENAME};
 use anyhow::{Context, Result};
@@ -122,20 +121,6 @@ impl KnowledgeDir {
         let path = self.file_path(file_type);
         fs::read_to_string(&path)
             .with_context(|| format!("Failed to read {}", file_type.filename()))
-    }
-
-    /// Read all knowledge files and return as a map
-    pub fn read_all(&self) -> Result<Vec<(KnowledgeFile, String)>> {
-        let mut results = Vec::new();
-        for file_type in KnowledgeFile::all() {
-            let path = self.file_path(*file_type);
-            if path.exists() {
-                let content = fs::read_to_string(&path)
-                    .with_context(|| format!("Failed to read {}", file_type.filename()))?;
-                results.push((*file_type, content));
-            }
-        }
-        Ok(results)
     }
 
     /// Append content to a knowledge file (knowledge files are append-only)
@@ -283,23 +268,6 @@ impl KnowledgeDir {
                 eprintln!("         the content was written; the next knowledge write, or `loom knowledge sync`, rebuilds the index");
             }
         }
-    }
-
-    /// Generate a compact summary of all knowledge for embedding in signals
-    pub fn generate_summary(&self) -> Result<String> {
-        summary::generate_summary(&self.root)
-    }
-
-    /// List all knowledge files that exist
-    pub fn list_files(&self) -> Result<Vec<(KnowledgeFile, PathBuf)>> {
-        let mut files = Vec::new();
-        for file_type in KnowledgeFile::all() {
-            let path = self.file_path(*file_type);
-            if path.exists() {
-                files.push((*file_type, path));
-            }
-        }
-        Ok(files)
     }
 }
 

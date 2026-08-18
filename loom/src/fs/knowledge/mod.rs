@@ -13,7 +13,6 @@ pub mod catalog;
 pub mod chunker;
 pub mod dir;
 pub mod index;
-pub mod summary;
 pub mod templates;
 pub mod types;
 

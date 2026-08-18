@@ -44,27 +44,6 @@ fn test_knowledge_append() {
 }
 
 #[test]
-fn test_generate_summary() {
-    let temp = TempDir::new().unwrap();
-    let project_root = temp.path();
-
-    let knowledge = KnowledgeDir::new(project_root);
-    knowledge.initialize().unwrap();
-
-    // Add some content
-    knowledge
-        .append(
-            KnowledgeFile::EntryPoints,
-            "## CLI Entry Point\n\n- main.rs - CLI definition",
-        )
-        .unwrap();
-
-    let summary = knowledge.generate_summary().unwrap();
-    assert!(summary.contains("Knowledge Summary"));
-    assert!(summary.contains("CLI Entry Point"));
-}
-
-#[test]
 fn test_initialize_idempotent() {
     let temp = TempDir::new().unwrap();
     let project_root = temp.path();
