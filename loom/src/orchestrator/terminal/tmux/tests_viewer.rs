@@ -116,6 +116,62 @@ fn pane_command_targets_the_sessions_own_socket() {
     );
 }
 
+/// A PATH whose first entry holds a no-op `tmux` stub, so a shell command
+/// that `exec`s `tmux` off this PATH can never reach a real tmux and can
+/// never leave a socket behind in the operator's own socket dir. Returns
+/// the backing `TempDir` too — the caller must keep it alive at least until
+/// the shell process using this PATH has exited, or the stub is deleted out
+/// from under it.
+///
+/// `pane_command_neutralises_hostile_session_ids` (below) actually runs
+/// `exec tmux -L <socket> attach-session ...` through a real shell, and a
+/// REAL `tmux` on PATH resolves `-L` against the OPERATOR'S OWN socket dir
+/// (`loom_socket_dir()` in `socket.rs` — `$TMUX_TMPDIR` else `/tmp`, joined
+/// with `tmux-<uid>`), so an unguarded run there previously left a stray
+/// socket behind in that directory. Prepending a stub-only directory
+/// shadows `tmux` so `exec tmux ...` finds the stub and exits immediately
+/// instead of touching a real socket.
+///
+/// This does NOT weaken that test's injection check: only `tmux` is
+/// shadowed, the rest of PATH stays intact behind the stub, so `touch`/`id`
+/// (what the hostile `$(...)`/backtick payload actually invokes) still
+/// resolve normally. The command substitution that creates the probe file
+/// fires during word expansion of the `exec tmux ...` command, before
+/// `exec` ever runs, so it is completely unaffected by what `tmux` resolves
+/// to (or whether it resolves at all) — if `escape_arg` ever stopped
+/// escaping, the probe would still be created exactly as before this stub
+/// existed.
+fn stub_tmux_path() -> (TempDir, String) {
+    let stub_bin = TempDir::new().unwrap();
+    let fake_tmux = stub_bin.path().join("tmux");
+    std::fs::write(&fake_tmux, "#!/bin/sh\nexit 0\n").unwrap();
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&fake_tmux, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    let path = format!(
+        "{}:{}",
+        stub_bin.path().display(),
+        std::env::var("PATH").unwrap_or_default()
+    );
+    (stub_bin, path)
+}
+
+/// Runs `cmd` through a real shell exactly as `loom attach` would, with
+/// `tmux` shadowed by [`stub_tmux_path`]'s no-op stub so the run can never
+/// reach a real tmux server or leave a real socket behind. `.output()`
+/// blocks until the child (and anything it `exec`s) has exited, so the
+/// stub's `TempDir` is safe to drop the moment this returns.
+fn run_shell_with_stub_tmux(cmd: &str) -> std::process::Output {
+    let (_stub_bin, no_real_tmux_path) = stub_tmux_path();
+    Command::new("sh")
+        .arg("-c")
+        .arg(cmd)
+        .env("PATH", no_real_tmux_path)
+        .output()
+        .unwrap()
+}
+
 #[test]
 fn pane_command_neutralises_hostile_session_ids() {
     // `socket_name()`/`tracking_key` are read VERBATIM out of
@@ -163,8 +219,11 @@ fn pane_command_neutralises_hostile_session_ids() {
     // `touch`: whether or not the subsequent `exec tmux` itself
     // succeeds is irrelevant to the injection check, so this holds
     // regardless of whether tmux is installed in the test environment.
+    // `run_shell_with_stub_tmux` keeps that `exec tmux` from ever reaching
+    // a real tmux server — see its doc comment for why that doesn't weaken
+    // this check.
     let cmd = pane_command("loom-test-neutralises-hostile-ids", &hostile);
-    let _ = Command::new("sh").arg("-c").arg(&cmd).output().unwrap();
+    let _ = run_shell_with_stub_tmux(&cmd);
     assert!(
         !probe.exists(),
         "a hostile session id must never execute an injected shell command"
@@ -177,11 +236,7 @@ fn pane_command_neutralises_hostile_session_ids() {
     // `.work/sessions/*.md` read path — equally attacker-controlled, and
     // would slip through untested if only `tmux_session` were ever fuzzed.
     let cmd_socket = pane_command(&hostile, "loom-test-neutralises-hostile-ids");
-    let _ = Command::new("sh")
-        .arg("-c")
-        .arg(&cmd_socket)
-        .output()
-        .unwrap();
+    let _ = run_shell_with_stub_tmux(&cmd_socket);
     assert!(
         !probe.exists(),
         "a hostile session_socket must never execute an injected shell command"
