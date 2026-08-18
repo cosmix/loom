@@ -8,11 +8,16 @@
 //! the only coverage that retrieval-through-signal wiring stays connected on
 //! every spawn path (fresh spawn, crash recovery, and knowledge stages).
 
+use std::collections::BTreeMap;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use tempfile::TempDir;
 
 use crate::context::delivery::{delivery_dir, load_deliveries, plan_key};
+use crate::context::graph_store::{FileEntry, GraphLayer, GraphStore};
+use crate::context::schema::{FileCoverage, NodeLanguage, SourceNode, SourceNodeKind, Span};
+use crate::context::store::ContextStore;
+use crate::fs::work_dir::WorkDir;
 use crate::models::stage::StageType;
 use crate::orchestrator::signals::generate::generate_signal;
 use crate::orchestrator::signals::knowledge::generate_knowledge_signal;
@@ -200,6 +205,104 @@ fn knowledge_stage_signal_carries_the_brief_its_prefix_promises() {
     // And the same record contract as every other briefed session.
     let records = load_deliveries(&work_dir, plan_key(&stage), &stage.id).unwrap();
     assert!(records.iter().any(|r| r.recipient_id == session.id));
+}
+
+/// A source node whose PATH exactly equals one of `create_test_stage()`'s
+/// declared file patterns (`src/orchestrator/signals.rs`), so `rank_source`'s
+/// `ExactPath` rung fires it through the real ranking path — no hand-built
+/// candidate, no `required_ids` override.
+fn span_target_node() -> SourceNode {
+    SourceNode {
+        id: "src/orchestrator/signals.rs#function:GenerateSignalFile".to_string(),
+        kind: SourceNodeKind::Function,
+        path: PathBuf::from("src/orchestrator/signals.rs"),
+        scope: vec!["GenerateSignalFile".to_string()],
+        span: Span {
+            start_byte: 900,
+            end_byte: 1400,
+            line_start: 41,
+            line_end: 58,
+        },
+        signature: "pub fn generate_signal_file()".to_string(),
+        body_hash: "sha256:span-target".to_string(),
+        language: NodeLanguage::Rust,
+        parser_version: "test+v1".to_string(),
+        coverage: FileCoverage::Full,
+    }
+}
+
+/// Write `node` into the overlay a stage's brief actually reads:
+/// `stage_overlay_scope` (`retrieval.rs`) resolves a stage naming no plan —
+/// exactly what `create_test_stage()` builds — to `("default", stage.id)`,
+/// never `local_overlay_key`. Uses the same production API
+/// (`GraphStore::save_overlay`) the real writer (`MergeLifecycle`) uses.
+fn write_stage_overlay(root: &Path, stage_id: &str, node: &SourceNode) {
+    let work_dir = WorkDir::new(root).unwrap();
+    let store = ContextStore::open(&work_dir).unwrap();
+    let graph_store = GraphStore::new(store.root(), work_dir.root());
+
+    let mut files = BTreeMap::new();
+    files.insert(
+        node.path.to_string_lossy().into_owned(),
+        FileEntry {
+            content_hash: "sha256:span-target-file".to_string(),
+            nodes: vec![node.clone()],
+            edges: Vec::new(),
+            coverage: FileCoverage::Full,
+        },
+    );
+    let layer = GraphLayer {
+        revision: "test-revision".to_string(),
+        built_at: None,
+        files,
+    };
+    graph_store
+        .save_overlay("default", stage_id, &layer)
+        .unwrap();
+}
+
+/// END TO END through the SOURCE channel, not the formatter: `brief.rs`'s own
+/// unit test (`a_source_item_renders_the_line_span_that_locates_it`)
+/// hand-builds its `ContextItem` via a private `source_item()` helper —
+/// `pack` is never called and no signal is ever generated, so it would stay
+/// green even if nothing on the real retrieval path ever populated a source
+/// item's span. This writes a real overlay (`GraphStore::save_overlay`) at
+/// the address `stage_overlay_scope` resolves for `create_test_stage()`,
+/// drives `generate_signal` for real, and checks the rendered brief text for
+/// the `<path>:<line_start>-<line_end>` pointer `render_pointer` builds from
+/// the node's own `Span` — failing if the span stops being rendered OR if no
+/// source item ever reaches the pack.
+#[test]
+fn a_source_item_reaches_the_signal_carrying_its_line_span() {
+    let temp = project_with_matching_knowledge();
+    let root = temp.path();
+    let work_dir = root.join(".work");
+
+    let stage = create_test_stage();
+    let node = span_target_node();
+    write_stage_overlay(root, &stage.id, &node);
+
+    let session = create_test_session();
+    let worktree = create_test_worktree();
+
+    let path = generate_signal(&session, &stage, &worktree, &[], None, None, &work_dir).unwrap();
+    let signal = fs::read_to_string(&path).unwrap();
+
+    assert!(
+        signal.contains("## Knowledge Brief"),
+        "the fixture (knowledge tree + source overlay) must still produce a \
+         brief: {signal}"
+    );
+    assert!(
+        signal.contains(&format!("`{}`", node.id)),
+        "the source node itself must reach the pack, not just the knowledge \
+         items: {signal}"
+    );
+    assert!(
+        signal.contains("— `src/orchestrator/signals.rs:41-58`"),
+        "a source item must carry the line span that locates it in the file, \
+         not just its bare path: {signal}"
+    );
 }
 
 /// `Selected from:` names the query's INPUT FIELDS. Passing `pack.query` there

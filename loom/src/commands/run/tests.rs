@@ -321,6 +321,117 @@ fn test_preflight_silent_when_base_exists() {
     );
 }
 
+/// The headline behaviour of `advisory_source_graph_preflight`: on a clean
+/// tree with no base published for HEAD yet, it publishes one, and that
+/// layer describes real files rather than a zero-count degraded outcome
+/// (`reconcile_source_graph` degrades silently on refusal — see
+/// `context/refresh/source_graph.rs` — so "a base layer exists" alone is not
+/// enough). This is the `allow_overlay_fallback=false` branch both `loom run`
+/// paths take.
+#[test]
+fn test_preflight_publishes_a_base_layer_with_real_files_on_a_clean_tree() {
+    use crate::context::graph_store::GraphStore;
+    use crate::context::store::ContextStore;
+
+    let temp = init_preflight_repo();
+    let root = temp.path();
+    let work_dir = WorkDir::new(root).unwrap();
+    let store = ContextStore::open(&work_dir).unwrap();
+    let graph_store = GraphStore::new(store.root(), work_dir.root());
+
+    let head = String::from_utf8_lossy(
+        &std::process::Command::new("git")
+            .args(["rev-parse", "HEAD"])
+            .current_dir(root)
+            .output()
+            .unwrap()
+            .stdout,
+    )
+    .trim()
+    .to_string();
+
+    assert!(
+        graph_store.load_base(&head).unwrap().is_none(),
+        "the fixture repo must start with no base layer published for HEAD"
+    );
+
+    super::checks::advisory_source_graph_preflight(root, &work_dir, false);
+
+    let published = graph_store
+        .load_base(&head)
+        .unwrap()
+        .expect("a clean tree with no existing base must publish one at HEAD");
+    assert!(
+        !published.files.is_empty(),
+        "a published base with no extracted files is indistinguishable from \
+         publishing nothing at all: {published:?}"
+    );
+    assert!(
+        published.files.contains_key("src.rs"),
+        "the committed fixture file must be represented in the published \
+         layer: {published:?}"
+    );
+}
+
+/// The `allow_overlay_fallback=true` branch — the one `loom init` takes, and
+/// the one path with zero prior coverage: on a dirty tree (a base publish is
+/// refused) it must fall back to the working-tree overlay at the SAME address
+/// retrieval reads by default (`local_overlay_key`), and that overlay must
+/// describe real extracted files, not an empty degraded layer. It must also
+/// leave no base layer published for HEAD, since the base was refused, not
+/// skipped.
+#[test]
+fn test_preflight_falls_back_to_local_overlay_on_a_dirty_tree_when_allowed() {
+    use crate::context::graph_store::GraphStore;
+    use crate::context::local_overlay::local_overlay_key;
+    use crate::context::store::ContextStore;
+
+    let temp = init_preflight_repo();
+    let root = temp.path();
+    let work_dir = WorkDir::new(root).unwrap();
+    let store = ContextStore::open(&work_dir).unwrap();
+    let graph_store = GraphStore::new(store.root(), work_dir.root());
+
+    // Dirty a TRACKED file without committing: the refusal `dirty_tree_reason`
+    // checks runs with `--untracked-files=no`, so an untracked scratch file
+    // would not trigger it.
+    fs::write(root.join("src.rs"), "fn main() { /* dirty */ }\n").unwrap();
+
+    let head = String::from_utf8_lossy(
+        &std::process::Command::new("git")
+            .args(["rev-parse", "HEAD"])
+            .current_dir(root)
+            .output()
+            .unwrap()
+            .stdout,
+    )
+    .trim()
+    .to_string();
+
+    super::checks::advisory_source_graph_preflight(root, &work_dir, true);
+
+    assert!(
+        graph_store.load_base(&head).unwrap().is_none(),
+        "a dirty tree must never publish an immutable base layer for HEAD"
+    );
+
+    let project_root = work_dir.project_root().unwrap();
+    let (plan, stage) = local_overlay_key(project_root);
+    let overlay = graph_store
+        .load_overlay(&plan, &stage)
+        .unwrap()
+        .expect("the dirty-tree fallback must write the working-tree overlay");
+    assert!(
+        !overlay.files.is_empty(),
+        "the fallback overlay must describe real extracted files, not an \
+         empty degraded layer: {overlay:?}"
+    );
+    assert!(
+        overlay.files.contains_key("src.rs"),
+        "the dirtied tracked file must appear in the overlay: {overlay:?}"
+    );
+}
+
 /// STRUCTURAL guard, not an integration test, and deliberately so: both
 /// insertion points are free functions with side effects and no injectable
 /// seam, so the ordering cannot be observed at runtime without inventing one.

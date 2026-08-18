@@ -268,8 +268,12 @@ fn an_unreadable_file_survives_as_a_reported_lexical_only_entry() {
     let original_perms = std::fs::metadata(&restricted).unwrap().permissions();
     std::fs::set_permissions(&restricted, std::fs::Permissions::from_mode(0o000)).unwrap();
 
-    // Root (and some sandboxes) ignore file permission bits entirely; skip
-    // the assertion in that case rather than asserting a false failure.
+    // Root (and some sandboxes - the DEFAULT in most CI containers) ignore
+    // file permission bits entirely, in which case this environment cannot
+    // exercise the unreadable-file path at all. Skip loudly rather than
+    // silently `return`ing a green pass that asserted nothing, and make the
+    // skip a hard failure when `LOOM_TEST_REQUIRE_UNREADABLE_FILE=1` is set,
+    // mirroring `tests/e2e/tmux_backend.rs`'s `LOOM_E2E_REQUIRE_TMUX`.
     let still_readable = std::fs::read(&restricted).is_ok();
 
     let scope = SourceGraphScope::Overlay {
@@ -281,6 +285,20 @@ fn an_unreadable_file_survives_as_a_reported_lexical_only_entry() {
     std::fs::set_permissions(&restricted, original_perms).unwrap();
 
     if still_readable {
+        if std::env::var("LOOM_TEST_REQUIRE_UNREADABLE_FILE").as_deref() == Ok("1") {
+            panic!(
+                "an_unreadable_file_survives_as_a_reported_lexical_only_entry: this \
+                 environment does not enforce 0o000 file permissions (running as root, or a \
+                 sandbox that ignores mode bits), so the unreadable-file path was never \
+                 exercised (LOOM_TEST_REQUIRE_UNREADABLE_FILE=1 demands a real run)"
+            );
+        }
+        eprintln!(
+            "SKIP an_unreadable_file_survives_as_a_reported_lexical_only_entry: this \
+             environment does not enforce 0o000 file permissions (running as root, or a \
+             sandbox that ignores mode bits), so the unreadable-file path was never \
+             exercised (set LOOM_TEST_REQUIRE_UNREADABLE_FILE=1 to fail instead)"
+        );
         return;
     }
 
