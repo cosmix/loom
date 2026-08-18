@@ -7,7 +7,7 @@ use clap::Subcommand;
 pub enum KnowledgeCommands {
     /// Update (append to) a knowledge file
     Update {
-        /// File to update (entry-points, patterns, conventions)
+        /// Tier-1 file (entry-points, patterns, conventions, ...) or tier-2 topic (<category>/<slug>)
         file: String,
 
         /// Content to append (markdown format). Omit or use "-" to read from stdin.

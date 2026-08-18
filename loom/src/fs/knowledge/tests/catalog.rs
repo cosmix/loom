@@ -171,3 +171,71 @@ fn rule_10_returns_empty_catalog_for_missing_or_empty_root() {
     assert!(empty.chunks.is_empty() && empty.issues.is_empty());
     assert_eq!(missing, empty);
 }
+
+#[test]
+fn rule_11_parent_relative_link_from_a_tier2_file_still_resolves() {
+    // `../concerns.md` from a tier-2 file legitimately points at a tier-1
+    // file one directory up - that must NOT be reported as a broken link.
+    let temp = TempDir::new().unwrap();
+    fs::create_dir_all(temp.path().join("architecture")).unwrap();
+    fs::write(temp.path().join("concerns.md"), "## Concerns\n").unwrap();
+    fs::write(
+        temp.path().join("architecture/topic.md"),
+        "## Topic\n[Concerns](../concerns.md)\n",
+    )
+    .unwrap();
+    let catalog = build(temp.path()).unwrap();
+    assert!(catalog.issues.is_empty(), "issues: {:?}", catalog.issues);
+}
+
+#[test]
+fn rule_12_absolute_link_target_is_reported_broken_not_probed() {
+    let temp = TempDir::new().unwrap();
+    // `elsewhere.md` genuinely exists, right next to the knowledge root:
+    // `Path::join` with an absolute second argument DISCARDS the base
+    // entirely (this is exactly the S2 vulnerability), so the OLD code
+    // would resolve this straight to the real file and never flag it. The
+    // fix must reject the absolute target outright, before that join even
+    // happens.
+    fs::write(temp.path().join("elsewhere.md"), "## Elsewhere\n").unwrap();
+    let absolute = temp.path().join("elsewhere.md").display().to_string();
+    fs::write(
+        temp.path().join("notes.md"),
+        format!("## Topic\n[Away]({absolute})\n"),
+    )
+    .unwrap();
+    let catalog = build(temp.path()).unwrap();
+    assert_eq!(
+        catalog.issues,
+        vec![CatalogIssue::BrokenLink {
+            file: PathBuf::from("notes.md"),
+            target: absolute,
+        }]
+    );
+}
+
+#[test]
+fn rule_13_link_target_escaping_the_knowledge_root_is_reported_broken_not_probed() {
+    let temp = TempDir::new().unwrap();
+    let root = temp.path().join("root");
+    fs::create_dir_all(root.join("architecture")).unwrap();
+    // A real file OUTSIDE the knowledge root, reachable via `..` if the OS
+    // resolved the joined path rather than the target being contained
+    // lexically first - `root/architecture/../../outside.md` normalizes to
+    // this file, which is exactly why the OLD code (plain `Path::join`,
+    // then `fs::metadata`) would have resolved it and never flagged it.
+    fs::write(temp.path().join("outside.md"), "## Outside\n").unwrap();
+    fs::write(
+        root.join("architecture/topic.md"),
+        "## Topic\n[Escape](../../outside.md)\n",
+    )
+    .unwrap();
+    let catalog = build(&root).unwrap();
+    assert_eq!(
+        catalog.issues,
+        vec![CatalogIssue::BrokenLink {
+            file: PathBuf::from("architecture/topic.md"),
+            target: "../../outside.md".to_string(),
+        }]
+    );
+}

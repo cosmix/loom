@@ -87,9 +87,18 @@ fn test_bare_path_stem_matches_exact_path() {
     );
 }
 
-/// A graph containing only [`SourceNodeKind::File`] nodes returns no
-/// candidates: whole-file nodes carry no signature and no scope, and would
-/// otherwise crowd out the symbols inside their file.
+/// A graph containing both a [`SourceNodeKind::File`] node and a real symbol
+/// node in the SAME file returns ONLY the symbol: whole-file nodes carry no
+/// signature and no scope, and would otherwise crowd out the symbols inside
+/// their file.
+///
+/// A graph holding *only* the excluded node cannot fail if `rank_source`
+/// returned nothing at all — this keeps a positive control (the symbol node,
+/// sharing the file node's own path so it earns its OWN exact-path match) in
+/// the same graph and asserts the result is exactly that one candidate, so
+/// the test fails both if the exclusion breaks (the file node reappears,
+/// outranking the symbol via its required-id boost) and if ranking breaks
+/// entirely (the symbol disappears too).
 #[test]
 fn test_file_kind_nodes_are_excluded() {
     let query = RankQuery {
@@ -105,22 +114,47 @@ fn test_file_kind_nodes_are_excluded() {
         SourceNodeKind::File,
         FileCoverage::Full,
     );
+    let mut symbol_node = full_node(
+        "src/lib.rs#function:run",
+        "src/lib.rs",
+        &["run"],
+        "pub fn run()",
+    );
+    symbol_node.span.line_start = 1;
 
-    let candidates = rank_source(&query, &graph(vec![("src/lib.rs", vec![file_node])]));
+    let candidates = rank_source(
+        &query,
+        &graph(vec![("src/lib.rs", vec![file_node, symbol_node])]),
+    );
 
-    assert!(
-        candidates.is_empty(),
-        "file-kind nodes must never become candidates, even a required-id match: {candidates:?}"
+    assert_eq!(
+        candidates.len(),
+        1,
+        "the file-kind node must never become a candidate, even a required-id \
+         match, and even alongside a real symbol in the same file: {candidates:?}"
+    );
+    assert_eq!(
+        candidates[0].id.as_str(),
+        "src/lib.rs#function:run",
+        "the symbol node sharing the excluded node's file must still survive \
+         selection: {candidates:?}"
     );
 }
 
 /// A node sharing no term with the query, not named in `required_ids`, and
 /// matching neither path nor symbol is not a candidate at all — `score_node`
 /// returns `None` rather than a zero-score entry.
+///
+/// The unrelated node sits in the SAME graph as a node that DOES match (by
+/// bare path stem), so the test fails both if the exclusion breaks (the
+/// unrelated node reappears) and if ranking breaks entirely (the positive
+/// control disappears too) — a graph holding only the unrelated node could
+/// not distinguish either regression from `rank_source` always returning
+/// nothing.
 #[test]
 fn test_node_with_no_fired_reason_is_excluded() {
     let query = RankQuery {
-        text: "completely unrelated query text".to_string(),
+        text: "completely unrelated query text about pack".to_string(),
         ..RankQuery::default()
     };
     let unrelated = full_node(
@@ -129,11 +163,31 @@ fn test_node_with_no_fired_reason_is_excluded() {
         &["doStuff"],
         "fn do_stuff(x: i32)",
     );
+    let mut matching = full_node(
+        "src/context/pack.rs#function:pack",
+        "src/context/pack.rs",
+        &["pack"],
+        "pub fn pack()",
+    );
+    matching.span.line_start = 1;
 
-    let candidates = rank_source(&query, &graph(vec![("src/other.rs", vec![unrelated])]));
+    let candidates = rank_source(
+        &query,
+        &graph(vec![
+            ("src/other.rs", vec![unrelated]),
+            ("src/context/pack.rs", vec![matching]),
+        ]),
+    );
 
-    assert!(
-        candidates.is_empty(),
-        "a node sharing nothing with the query must not appear: {candidates:?}"
+    assert_eq!(
+        candidates.len(),
+        1,
+        "a node sharing nothing with the query must not appear, even \
+         alongside one that does: {candidates:?}"
+    );
+    assert_eq!(
+        candidates[0].id.as_str(),
+        "src/context/pack.rs#function:pack",
+        "the matching node must survive selection: {candidates:?}"
     );
 }

@@ -273,6 +273,30 @@ fn capsule_from_append_system_prompt_file_requires_support_and_a_resolved_path()
 // process-global, so both tests run `#[serial]` and restore the original
 // cwd afterward.
 
+/// Restores the working directory on drop. `set_current_dir` is
+/// process-global (see the module doc above), so a manual restore call
+/// placed after the call under test still leaks the temp cwd into every
+/// later test in the binary if that call panics before the restore runs —
+/// `#[serial]` only serializes access to the cwd, it does not undo a leak
+/// that outlives the failing test.
+struct CwdGuard {
+    original: std::path::PathBuf,
+}
+
+impl CwdGuard {
+    fn new() -> Self {
+        Self {
+            original: std::env::current_dir().unwrap(),
+        }
+    }
+}
+
+impl Drop for CwdGuard {
+    fn drop(&mut self) {
+        std::env::set_current_dir(&self.original).unwrap();
+    }
+}
+
 #[test]
 #[serial]
 fn resolved_settings_file_absolutizes_a_relative_cwd() {
@@ -282,10 +306,9 @@ fn resolved_settings_file_absolutizes_a_relative_cwd() {
     let settings_path = worktree.join(".claude").join("settings.local.json");
     std::fs::write(&settings_path, "{}").unwrap();
 
-    let original_cwd = std::env::current_dir().unwrap();
+    let _cwd_guard = CwdGuard::new();
     std::env::set_current_dir(temp.path()).unwrap();
     let result = resolved_settings_file(Path::new("./wt"));
-    std::env::set_current_dir(&original_cwd).unwrap();
 
     let resolved = result.expect("settings file exists and must be found");
     let resolved_path = Path::new(&resolved);
@@ -303,10 +326,9 @@ fn resolved_settings_file_missing_file_yields_none() {
     let worktree = temp.path().join("wt");
     std::fs::create_dir_all(&worktree).unwrap();
 
-    let original_cwd = std::env::current_dir().unwrap();
+    let _cwd_guard = CwdGuard::new();
     std::env::set_current_dir(temp.path()).unwrap();
     let result = resolved_settings_file(Path::new("./wt"));
-    std::env::set_current_dir(&original_cwd).unwrap();
 
     assert_eq!(result, None);
 }

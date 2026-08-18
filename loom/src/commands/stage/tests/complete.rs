@@ -30,6 +30,62 @@ fn completion_proof(
     )
 }
 
+/// Clears `LOOM_STAGE_ID`/`LOOM_SESSION_ID`/`LOOM_WORKTREE_PATH` and restores
+/// them, plus the working directory, on drop. Mirrors the shape of the
+/// `EnvGuard` in `commands/memory/handlers/tests.rs`.
+///
+/// `complete()` routes through `sandbox_control_session`
+/// (`control_session.rs`), which reads these three vars from the ambient
+/// process environment. This suite commonly runs INSIDE a loom worktree
+/// session, which leaves them set for the orchestrator session that spawned
+/// this test binary — so without clearing them, `complete()` in these tests
+/// would silently take the SANDBOXED worktree-completion route instead of the
+/// ordinary host-side one they mean to exercise, and fail for reasons
+/// unrelated to what they assert.
+///
+/// Restoring the cwd on `Drop` (rather than a manual call placed after the
+/// call under test) means a panicking `complete()` call — the one case
+/// `#[serial]` cannot protect against, since the leaked cwd outlives the
+/// failing test — still restores it for every test that runs after it in
+/// this binary.
+struct EnvGuard {
+    original_dir: std::path::PathBuf,
+    original_stage_id: Option<String>,
+    original_session_id: Option<String>,
+    original_worktree_path: Option<String>,
+}
+
+impl EnvGuard {
+    fn new() -> Self {
+        let guard = Self {
+            original_dir: std::env::current_dir().unwrap(),
+            original_stage_id: std::env::var("LOOM_STAGE_ID").ok(),
+            original_session_id: std::env::var("LOOM_SESSION_ID").ok(),
+            original_worktree_path: std::env::var("LOOM_WORKTREE_PATH").ok(),
+        };
+        std::env::remove_var("LOOM_STAGE_ID");
+        std::env::remove_var("LOOM_SESSION_ID");
+        std::env::remove_var("LOOM_WORKTREE_PATH");
+        guard
+    }
+}
+
+impl Drop for EnvGuard {
+    fn drop(&mut self) {
+        std::env::set_current_dir(&self.original_dir).unwrap();
+        restore_var("LOOM_STAGE_ID", &self.original_stage_id);
+        restore_var("LOOM_SESSION_ID", &self.original_session_id);
+        restore_var("LOOM_WORKTREE_PATH", &self.original_worktree_path);
+    }
+}
+
+fn restore_var(name: &str, value: &Option<String>) {
+    match value {
+        Some(v) => std::env::set_var(name, v),
+        None => std::env::remove_var(name),
+    }
+}
+
 #[test]
 #[serial]
 fn test_complete_with_passing_acceptance() {
@@ -40,12 +96,10 @@ fn test_complete_with_passing_acceptance() {
     stage.acceptance = vec![AcceptanceCriterion::Simple("exit 0".to_string())];
     save_test_stage(&work_dir_path, &stage);
 
-    let original_dir = std::env::current_dir().unwrap();
+    let _guard = EnvGuard::new();
     std::env::set_current_dir(temp_dir.path()).unwrap();
 
     let result = complete("test-stage".to_string(), None, false, false, false, None);
-
-    std::env::set_current_dir(original_dir).unwrap();
 
     // Acceptance passes but the test setup has no real git repo or stage branch,
     // so progressive merge correctly hits MergeOutcome::Blocked (no `loom/test-stage`
@@ -110,7 +164,7 @@ fn test_complete_no_verify_refuses_zero_commits_ahead() {
     stage.acceptance = vec![AcceptanceCriterion::Simple("exit 1".to_string())];
     save_test_stage(&work_dir_path, &stage);
 
-    let original_dir = std::env::current_dir().unwrap();
+    let _guard = EnvGuard::new();
     std::env::set_current_dir(repo).unwrap();
 
     let proof = completion_proof("test-stage", true, false, false, "zero-commits-0001");
@@ -122,8 +176,6 @@ fn test_complete_no_verify_refuses_zero_commits_ahead() {
         false,
         Some(proof),
     );
-
-    std::env::set_current_dir(original_dir).unwrap();
 
     assert!(
         result.is_err(),
@@ -163,7 +215,7 @@ fn test_complete_with_no_verify_flag() {
     stage.acceptance = vec![AcceptanceCriterion::Simple("exit 1".to_string())];
     save_test_stage(&work_dir_path, &stage);
 
-    let original_dir = std::env::current_dir().unwrap();
+    let _guard = EnvGuard::new();
     std::env::set_current_dir(temp_dir.path()).unwrap();
 
     let proof = completion_proof("test-stage", true, false, false, "no-verify-test-01");
@@ -175,8 +227,6 @@ fn test_complete_with_no_verify_flag() {
         false,
         Some(proof),
     );
-
-    std::env::set_current_dir(original_dir).unwrap();
 
     assert!(result.is_ok());
 
@@ -195,7 +245,7 @@ fn test_complete_knowledge_stage_sets_merged_true() {
     stage.stage_type = StageType::Knowledge;
     save_test_stage(&work_dir_path, &stage);
 
-    let original_dir = std::env::current_dir().unwrap();
+    let _guard = EnvGuard::new();
     std::env::set_current_dir(temp_dir.path()).unwrap();
 
     let result = complete(
@@ -206,8 +256,6 @@ fn test_complete_knowledge_stage_sets_merged_true() {
         false,
         None,
     );
-
-    std::env::set_current_dir(original_dir).unwrap();
 
     assert!(result.is_ok(), "complete() failed: {:?}", result.err());
 
@@ -232,7 +280,7 @@ fn test_complete_knowledge_stage_with_passing_acceptance() {
     stage.acceptance = vec![AcceptanceCriterion::Simple("exit 0".to_string())];
     save_test_stage(&work_dir_path, &stage);
 
-    let original_dir = std::env::current_dir().unwrap();
+    let _guard = EnvGuard::new();
     std::env::set_current_dir(temp_dir.path()).unwrap();
 
     let result = complete(
@@ -243,8 +291,6 @@ fn test_complete_knowledge_stage_with_passing_acceptance() {
         false,
         None,
     );
-
-    std::env::set_current_dir(original_dir).unwrap();
 
     assert!(result.is_ok(), "complete() failed: {:?}", result.err());
 
@@ -265,7 +311,7 @@ fn test_complete_knowledge_stage_with_failing_acceptance() {
     stage.acceptance = vec![AcceptanceCriterion::Simple("exit 1".to_string())];
     save_test_stage(&work_dir_path, &stage);
 
-    let original_dir = std::env::current_dir().unwrap();
+    let _guard = EnvGuard::new();
     std::env::set_current_dir(temp_dir.path()).unwrap();
 
     let result = complete(
@@ -276,8 +322,6 @@ fn test_complete_knowledge_stage_with_failing_acceptance() {
         false,
         None,
     );
-
-    std::env::set_current_dir(original_dir).unwrap();
 
     // New behavior: acceptance failure returns Err and stage stays Executing
     assert!(
@@ -308,7 +352,7 @@ fn test_complete_knowledge_stage_triggers_dependents() {
     dependent_stage.dependencies = vec!["knowledge-stage".to_string()];
     save_test_stage(&work_dir_path, &dependent_stage);
 
-    let original_dir = std::env::current_dir().unwrap();
+    let _guard = EnvGuard::new();
     std::env::set_current_dir(temp_dir.path()).unwrap();
 
     let result = complete(
@@ -319,8 +363,6 @@ fn test_complete_knowledge_stage_triggers_dependents() {
         false,
         None,
     );
-
-    std::env::set_current_dir(original_dir).unwrap();
 
     assert!(result.is_ok(), "complete() failed: {:?}", result.err());
 
@@ -434,7 +476,7 @@ fn verify_path_succeeds_without_admin_token() {
     stage.acceptance = vec![AcceptanceCriterion::Simple("exit 0".to_string())];
     save_test_stage(&work_dir_path, &stage);
 
-    let original_dir = std::env::current_dir().unwrap();
+    let _guard = EnvGuard::new();
     std::env::set_current_dir(temp_dir.path()).unwrap();
 
     let result = complete(
@@ -445,8 +487,6 @@ fn verify_path_succeeds_without_admin_token() {
         false, // assume_merged
         None,  // admin_proof
     );
-
-    std::env::set_current_dir(original_dir).unwrap();
 
     // We don't require Ok — the test setup has no real git repo and other
     // checks may fail. The critical invariant: the admin-token gate must
@@ -494,7 +534,7 @@ fn test_complete_standard_stage_not_routed_to_knowledge() {
     stage.stage_type = StageType::Standard;
     save_test_stage(&work_dir_path, &stage);
 
-    let original_dir = std::env::current_dir().unwrap();
+    let _guard = EnvGuard::new();
     std::env::set_current_dir(temp_dir.path()).unwrap();
 
     let result = complete(
@@ -505,8 +545,6 @@ fn test_complete_standard_stage_not_routed_to_knowledge() {
         false,
         None,
     );
-
-    std::env::set_current_dir(original_dir).unwrap();
 
     // The point of this test is routing: confirm the standard path is taken,
     // NOT the knowledge auto-merge path. Knowledge stages auto-set merged=true

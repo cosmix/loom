@@ -209,7 +209,7 @@ pub enum Commands {
         fix: bool,
     },
 
-    /// Map codebase structure to knowledge files, or query the source graph
+    /// Query the derived source graph: file outlines, symbol lookup, impact analysis
     Map {
         #[command(flatten)]
         args: crate::commands::map::MapArgs,

@@ -13,15 +13,16 @@ file src/commands/plan/verify.rs 599
 file src/commands/pressure/mod.rs 596
 file src/commands/repair.rs 979
 file src/commands/review/generate.rs 473
+file src/commands/run/tests.rs 459
 file src/commands/self_update/mod.rs 438
 file src/commands/self_update/tests.rs 490
 file src/commands/stage/complete.rs 804
 file src/commands/stage/merge.rs 544
-file src/commands/stage/tests/complete.rs 528
+file src/commands/stage/tests/complete.rs 566
 file src/commands/status/data/collector.rs 501
 file src/commands/status/ui/tui/app.rs 409
 file src/commands/status/ui/tui/renderer.rs 410
-file src/context/refresh/tests_source_graph.rs 661
+file src/context/refresh/tests_source_graph.rs 679
 file src/daemon/server/dispute.rs 508
 file src/daemon/server/status.rs 412
 file src/fs/locking.rs 499
@@ -128,7 +129,7 @@ function src/commands/stage/progressive_complete.rs complete_with_merge 80
 function src/commands/stage/recover.rs test_determine_recovery_reason 86
 function src/commands/stage/skip_retry.rs retry 211
 function src/commands/stage/state.rs reset 61
-function src/commands/stage/tests/complete.rs test_complete_no_verify_refuses_zero_commits_ahead 75
+function src/commands/stage/tests/complete.rs test_complete_no_verify_refuses_zero_commits_ahead 73
 function src/commands/status.rs execute_static 93
 function src/commands/status/data/collector.rs build_stage_summary 61
 function src/commands/status/data/collector.rs make_test_stage 65
@@ -149,6 +150,7 @@ function src/commands/status/ui/tui/state.rs update 57
 function src/commands/verify.rs execute 91
 function src/completions/dynamic/mod.rs complete_after_subcommand 56
 function src/completions/install.rs install 52
+function src/context/refresh/tests_source_graph.rs an_unreadable_file_survives_as_a_reported_lexical_only_entry 62
 function src/daemon/server/broadcast.rs run_status_broadcaster 80
 function src/daemon/server/client.rs handle_client_connection 124
 function src/daemon/server/dispute.rs handle_dispute_criteria 176

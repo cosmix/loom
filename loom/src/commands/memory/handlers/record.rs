@@ -24,15 +24,18 @@ fn record(
     if let Some(ref ctx) = context {
         validate_content(ctx)?;
     }
-    if let Some(ref id) = stage_id {
-        validate_stage_id(id)?;
-    }
     reject_stage_forgery(&stage_id)?;
 
     let work_dir = get_or_create_work_dir()?;
+    // Validate the RESOLVED stage id, not just an explicitly-passed `--stage`:
+    // the `LOOM_STAGE_ID` fallback becomes a path component in
+    // `fs::memory::storage::memory_dir(..).join(format!("{stage_id}.md"))`, so
+    // an unvalidated env value (e.g. `LOOM_STAGE_ID=../../../tmp/x`) would
+    // otherwise bypass the same traversal check applied to `--stage`.
     let stage = stage_id
         .or_else(|| std::env::var("LOOM_STAGE_ID").ok())
         .unwrap_or_else(|| AD_HOC_STAGE_ID.to_string());
+    validate_stage_id(&stage)?;
 
     let entry = match context {
         Some(ctx) => MemoryEntry::with_context(entry_type, text.clone(), ctx),

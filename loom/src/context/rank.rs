@@ -1,6 +1,6 @@
 //! Deterministic BM25 ranking for knowledge chunks, plus the document-agnostic
-//! corpus machinery ([`LexicalCorpus`], [`prepare_lexical`], [`score_bm25`])
-//! that [`crate::context::rank_source`] scores source-graph nodes through.
+//! corpus machinery (`LexicalCorpus`, `prepare_lexical`, `score_bm25`)
+//! that [`crate::context::rank_source()`] scores source-graph nodes through.
 
 use crate::context::lexical::{contains_whole_term, field_tokens, link_target_matches};
 use crate::context::schema::{Channel, ChunkId, KnowledgeChunk, SelectionReason};

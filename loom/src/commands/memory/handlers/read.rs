@@ -277,10 +277,6 @@ fn list_all_stages(work_dir: &Path, type_filter: Option<MemoryEntryType>) -> Res
 
 /// Show full memory journal
 pub fn show(stage_id: Option<String>, all: bool) -> Result<()> {
-    if let Some(ref id) = stage_id {
-        validate_stage_id(id)?;
-    }
-
     let Some(work_dir) = get_work_dir_readonly() else {
         println!(
             "{} No memory recorded yet (no .work directory found)",
@@ -293,11 +289,17 @@ pub fn show(stage_id: Option<String>, all: bool) -> Result<()> {
         return show_all_journals(&work_dir);
     }
 
+    // Validate the RESOLVED stage id, not just an explicitly-passed `--stage`:
+    // an unvalidated `LOOM_STAGE_ID` fallback would otherwise bypass the same
+    // traversal check applied to `--stage` before it reaches
+    // `read_journal`'s path construction (see the matching fix in
+    // `handlers/record.rs`).
     let stage = match stage_id {
         Some(id) => id,
         None => std::env::var("LOOM_STAGE_ID")
             .map_err(|_| anyhow::anyhow!("No stage ID provided or detected. Use --stage <id>"))?,
     };
+    validate_stage_id(&stage)?;
 
     show_single_journal(&work_dir, &stage)
 }

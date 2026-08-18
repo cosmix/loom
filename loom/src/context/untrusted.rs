@@ -61,6 +61,31 @@ pub(crate) fn inline_safe(value: &str) -> String {
             // no line-shaped character survives; `is_control` catches the rest,
             // including the ESC that would start an ANSI sequence.
             _ if ch.is_control() || ch.is_whitespace() => ' ',
+            // Unicode category Cf (format characters) is neither control nor
+            // whitespace, so it survives the two checks above untouched — and
+            // it includes the bidi override/embedding controls (U+202A..U+202E,
+            // U+2066..U+2069), zero-width and word-joining marks
+            // (U+200B..U+200F, U+2060..U+2064), the Arabic letter mark
+            // (U+061C), soft hyphen (U+00AD), and the byte-order mark
+            // (U+FEFF). A value carrying e.g. U+202E (RIGHT-TO-LEFT OVERRIDE)
+            // visually reverses everything rendered after it, so what a
+            // reviewer reads on an agent-facing surface would not match what
+            // was actually written. No crate dependency is added for this —
+            // the ranges below are the specific code points this codebase's
+            // untrusted sources are known to carry unvalidated.
+            _ if matches!(
+                ch,
+                '\u{00AD}'
+                    | '\u{061C}'
+                    | '\u{200B}'..='\u{200F}'
+                    | '\u{202A}'..='\u{202E}'
+                    | '\u{2060}'..='\u{2064}'
+                    | '\u{2066}'..='\u{2069}'
+                    | '\u{FEFF}'
+            ) =>
+            {
+                ' '
+            }
             _ => ch,
         })
         .collect();
@@ -82,5 +107,15 @@ mod tests {
         ] {
             assert_eq!(inline_safe(value), value);
         }
+    }
+
+    #[test]
+    fn bidi_override_is_flattened() {
+        // U+202E (RIGHT-TO-LEFT OVERRIDE) would otherwise visually reverse
+        // everything rendered after it on an agent-facing surface.
+        let hostile = "safe-id\u{202E}desnever ylevitceffe";
+        let flattened = inline_safe(hostile);
+        assert!(!flattened.contains('\u{202E}'));
+        assert_eq!(flattened, "safe-id desnever ylevitceffe");
     }
 }
