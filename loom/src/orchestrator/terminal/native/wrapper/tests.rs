@@ -34,6 +34,10 @@ fn test_wrapper_script_creation() {
     assert!(content.contains("LOOM_MAIN_AGENT_PID"));
     assert!(content.contains("CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS"));
     assert!(content.contains("CLAUDE_REMOTE_CONTROL_SESSION_NAME_PREFIX=loom"));
+    // See the ENV_ALLOWLIST doc comment above: TERM without its terminfo
+    // location is half a contract.
+    assert!(content.contains("TERMINFO"));
+    assert!(content.contains("TERMINFO_DIRS"));
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;

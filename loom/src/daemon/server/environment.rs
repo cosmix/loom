@@ -11,6 +11,17 @@ const HOST_ENV_ALLOWLIST: &[&str] = &[
     "LANG",
     "LANGUAGE",
     "TERM",
+    // TERMINFO/TERMINFO_DIRS locations, paired with TERM above — together
+    // with HOME (already forwarded, which covers `~/.terminfo`) these are the
+    // standard ncurses resolution inputs. TERM only names the terminal;
+    // these say where its capability database lives, and forwarding the name
+    // without the database forwards half a contract: any terminal whose
+    // terminfo entry is not bundled into the system database (kitty is the
+    // observed instance) leaves TERM unresolvable for anything spawned under
+    // this environment, which is how a terminal-database problem can read as
+    // "the server is not accepting clients".
+    "TERMINFO",
+    "TERMINFO_DIRS",
     "COLORTERM",
     "TERM_PROGRAM",
     "TERM_PROGRAM_VERSION",
@@ -88,6 +99,8 @@ mod tests {
             ("PATH", "/usr/bin:/bin"),
             ("LC_MESSAGES", "en_GB.UTF-8"),
             ("TERM", "xterm-256color"),
+            ("TERMINFO", "/home/user/.local/kitty.app/lib/kitty/terminfo"),
+            ("TERMINFO_DIRS", "/usr/share/terminfo:/etc/terminfo"),
             ("LOOM_TERMINAL", "kitty"),
             ("LOOM_ADMIN_TOKEN", "secret-canary"),
             ("LOOM_ADMIN_PROOF", "secret-canary"),
@@ -105,6 +118,10 @@ mod tests {
         assert!(keys.contains(&OsStr::new("PATH")));
         assert!(keys.contains(&OsStr::new("LC_MESSAGES")));
         assert!(keys.contains(&OsStr::new("TERM")));
+        // See the HOST_ENV_ALLOWLIST comment above: TERM without its
+        // terminfo location is half a contract.
+        assert!(keys.contains(&OsStr::new("TERMINFO")));
+        assert!(keys.contains(&OsStr::new("TERMINFO_DIRS")));
         assert!(keys.contains(&OsStr::new("LOOM_TERMINAL")));
         assert!(!keys.contains(&OsStr::new("LOOM_ADMIN_TOKEN")));
         assert!(!keys.contains(&OsStr::new("LOOM_ADMIN_PROOF")));

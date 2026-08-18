@@ -24,6 +24,18 @@ const STAGE_HOST_ENV_ALLOWLIST: &[&str] = &[
     "LC_ALL",
     "LC_CTYPE",
     "TERM",
+    // TERMINFO/TERMINFO_DIRS locations, paired with TERM above — together
+    // with HOME (already forwarded, which covers `~/.terminfo`) these are the
+    // standard ncurses resolution inputs. TERM only names the terminal;
+    // these say where its capability database lives, and forwarding the name
+    // without the database forwards half a contract: any terminal whose
+    // terminfo entry is not bundled into the system database (kitty is the
+    // observed instance) leaves TERM unresolvable. A tmux control probe in
+    // orchestrator/terminal/tmux/ built on an unresolvable TERM exits
+    // non-zero, which reads identically to "the server is not accepting
+    // clients".
+    "TERMINFO",
+    "TERMINFO_DIRS",
     "COLORTERM",
     "TERM_PROGRAM",
     "SHELL",
@@ -94,6 +106,8 @@ mod tests {
             ("HOME", "/safe/home"),
             ("PATH", "/usr/bin:/bin"),
             ("TERM", "xterm-256color"),
+            ("TERMINFO", "/home/user/.local/kitty.app/lib/kitty/terminfo"),
+            ("TERMINFO_DIRS", "/usr/share/terminfo:/etc/terminfo"),
             ("HTTPS_PROXY", "http://proxy.example:8443"),
             ("GITHUB_TOKEN", "ambient-secret-canary"),
             ("AWS_SECRET_ACCESS_KEY", "ambient-secret-canary"),
@@ -105,6 +119,10 @@ mod tests {
         let environment = String::from_utf8(output.stdout).unwrap();
         assert!(environment.contains("HOME=/safe/home"));
         assert!(environment.contains("TERM=xterm-256color"));
+        // See the TERMINFO comment on STAGE_HOST_ENV_ALLOWLIST above: TERM
+        // without its terminfo location is half a contract.
+        assert!(environment.contains("TERMINFO=/home/user/.local/kitty.app/lib/kitty/terminfo"));
+        assert!(environment.contains("TERMINFO_DIRS=/usr/share/terminfo:/etc/terminfo"));
         assert!(environment.contains("HTTPS_PROXY=http://proxy.example:8443"));
         assert!(!environment.contains("ambient-secret-canary"));
         assert!(!environment.contains("GITHUB_TOKEN"));
