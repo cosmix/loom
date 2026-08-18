@@ -315,7 +315,7 @@ pub struct FilesystemConfig {
     pub deny_read: Vec<String>,
 
     /// Paths that agents cannot write (glob patterns)
-    /// Default: ../../**, doc/loom/knowledge/**
+    /// Default: ../../**
     #[serde(default = "default_deny_write")]
     pub deny_write: Vec<String>,
 
@@ -421,16 +421,20 @@ fn default_deny_read() -> Vec<String> {
 
 fn default_deny_write() -> Vec<String> {
     // Worktree escape prevention - block writes to parent directories.
-    // Knowledge files are protected by default; there is no explicit allow
-    // carve-out for knowledge stages (see `sandbox/config.rs`'s
-    // `test_merge_config_knowledge_stage`, which pins that
-    // `doc/loom/knowledge/**` is absent from `allow_write` even there).
-    // Knowledge writes go through the `loom knowledge` CLI, a Bash
-    // subprocess, so this Edit/Write tool-permission deny never applies to
-    // them regardless; `sandbox/settings/policy.rs`'s `filesystem_settings`
-    // separately strips this path from the OS-level `denyWrite` so the CLI
-    // subprocess itself isn't blocked either.
-    vec!["../../**".to_string(), "doc/loom/knowledge/**".to_string()]
+    //
+    // The knowledge directory is deliberately NOT denied here: every stage
+    // records knowledge through the `loom knowledge update` CLI (a Bash
+    // subprocess), and that subprocess runs *inside* the sandbox now that
+    // `sandbox.excluded_commands` is rejected outright
+    // (`sandbox/settings/policy.rs::validate_emittable`) — there is no
+    // "outside the sandbox" escape hatch left for it to use. Denying the
+    // path here would deny the CLI too, not just file tools, bricking
+    // knowledge recording for every stage. Write access is instead
+    // explicitly GRANTED via `sandbox::config::apply_knowledge_write_grant`,
+    // and the file-tool-only "use the CLI, not Edit/Write" doctrine is
+    // enforced by `hooks/worktree-file-guard.sh`, which can block file tools
+    // without blocking the CLI subprocess.
+    vec!["../../**".to_string()]
 }
 
 /// Enhanced truth check with extended success criteria beyond exit code.

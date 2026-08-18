@@ -111,6 +111,12 @@ fn filesystem_settings(config: &MergedSandboxConfig) -> Option<Value> {
     if !deny_read.is_empty() {
         filesystem["denyRead"] = json!(deny_read);
     }
+    // The `doc/loom/knowledge` filter is defense-in-depth, not the grant
+    // itself: `merge_config`'s `apply_knowledge_write_grant`
+    // (`sandbox/config.rs`) already strips the path from `deny_write` and
+    // adds it to `allow_write` for every `MergedSandboxConfig` built the
+    // normal way. This filter only guards a config assembled by hand that
+    // bypassed that path — it grants nothing on its own.
     let deny_write: Vec<&str> = config
         .filesystem
         .deny_write

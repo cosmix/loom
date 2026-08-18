@@ -280,8 +280,14 @@ pub fn generate_settings_json(config: &MergedSandboxConfig) -> Value {
     // here loses no protection: worktree write-escape is enforced independently
     // by the OS sandbox's `allowOnly` list, `hooks/worktree-file-guard.sh`, and
     // `hooks/worktree-isolation.sh`.
+    //
+    // Also skip the knowledge directory: `merge_config` already strips it via
+    // `apply_knowledge_write_grant`, but this is defense-in-depth for any
+    // `MergedSandboxConfig` a caller builds by hand without going through
+    // `merge_config` — such a config must never be able to emit the deny that
+    // blocks the `loom knowledge update` CLI subprocess.
     for path in &config.filesystem.deny_write {
-        if path.contains("../") {
+        if path.contains("../") || path.trim().starts_with("doc/loom/knowledge") {
             continue;
         }
         deny.push(json!(format!("Edit({})", path)));
@@ -426,6 +432,23 @@ fn merge_existing_permissions(
                 // the repo root `../..` is `$HOME`, so a stale `Write(../../**)`
                 // would deny writes across the entire home directory.
                 if !is_worktree && (perm.contains("../") || perm.contains(".worktrees")) {
+                    continue;
+                }
+                // The ONE inherited-rule exception to "loom is conservative
+                // about rules it inherits" (every other filter above only
+                // narrows what a stale rule can deny). A knowledge-dir deny
+                // carried forward from a settings.local.json written before
+                // this fix would otherwise survive regeneration forever —
+                // `merge_config`/`generate_settings_json` never re-add it, but
+                // this merge unions it right back in from disk on every write,
+                // permanently blocking the `loom knowledge update` CLI
+                // subprocess for that worktree. Both `Edit(...)` (the
+                // enforced form) and `Write(...)` (parsed but inert at the
+                // tool layer, still leaks into the OS sandbox's write denies)
+                // must be dropped.
+                if (perm.starts_with("Edit(") || perm.starts_with("Write("))
+                    && perm.contains("doc/loom/knowledge")
+                {
                     continue;
                 }
                 all_deny.insert(perm);
@@ -980,8 +1003,12 @@ mod tests {
         // - From the main repo root: "../../**" is $HOME.
         // Worktree write-escape is enforced independently (OS sandbox
         // allowOnly list + worktree hooks), so dropping the tool-layer rule
-        // loses no protection. Non-traversal paths (e.g. the knowledge dir)
-        // still need to reach permissions.deny to be enforceable at all.
+        // loses no protection. An ordinary non-traversal path DOES still need
+        // to reach permissions.deny to be enforceable at all; the knowledge
+        // directory is the one deliberate exception (see
+        // `every_stage_type_can_write_the_knowledge_directory`) — it is
+        // filtered here too, defense-in-depth against a hand-built config
+        // that bypassed `merge_config`'s `apply_knowledge_write_grant`.
         let config = MergedSandboxConfig {
             enabled: true,
             auto_allow: true,
@@ -989,7 +1016,11 @@ mod tests {
             excluded_commands: vec![],
             filesystem: FilesystemConfig {
                 deny_read: vec![],
-                deny_write: vec!["../../**".to_string(), "doc/loom/knowledge/**".to_string()],
+                deny_write: vec![
+                    "../../**".to_string(),
+                    "some/plan/path/**".to_string(),
+                    "doc/loom/knowledge/**".to_string(),
+                ],
                 allow_write: vec![],
             },
             network: NetworkConfig::default(),
@@ -1001,11 +1032,14 @@ mod tests {
 
         let json = generate_settings_json(&config);
 
-        // OS sandbox denyWrite must NOT contain parent-traversal paths or knowledge paths
-        // Both are filtered: parent-traversal resolves too broadly in sandbox-exec,
-        // and knowledge paths block `loom knowledge update` CLI (excludedCommands
-        // doesn't bypass OS-level filesystem restrictions).
-        assert!(json["sandbox"]["filesystem"]["denyWrite"].is_null());
+        // OS sandbox denyWrite must NOT contain parent-traversal or
+        // knowledge-dir paths (they resolve too broadly in sandbox-exec, and
+        // block the knowledge CLI, respectively); the ordinary non-traversal
+        // path DOES reach it, same as it reaches permissions.deny below.
+        assert_eq!(
+            json["sandbox"]["filesystem"]["denyWrite"],
+            json!(["some/plan/path/**"])
+        );
         // This config's allow_write is empty and the stage is claude-only, so
         // there is nothing to grant: `allowWrite` is omitted entirely (see
         // `test_generate_settings_plan_allow_write_reaches_os_sandbox_claude_only`
@@ -1013,9 +1047,11 @@ mod tests {
         let fs_block = &json["sandbox"]["filesystem"];
         assert!(fs_block["allowWrite"].is_null());
 
-        // permissions.deny should have the non-traversal path only; the
-        // parent-traversal entry must be filtered, or it would deny-match the
-        // worktree's own files once Claude Code enforces `Edit(...)` rules.
+        // permissions.deny should have the ordinary non-traversal path only;
+        // the parent-traversal entry must be filtered, or it would deny-match
+        // the worktree's own files once Claude Code enforces `Edit(...)`
+        // rules, and the knowledge-dir entry must be filtered so it can never
+        // block the `loom knowledge update` CLI subprocess.
         let deny = json["permissions"]["deny"].as_array().unwrap();
         let deny_strs: Vec<&str> = deny.iter().filter_map(|v| v.as_str()).collect();
         assert!(
@@ -1024,8 +1060,12 @@ mod tests {
              (matches the worktree's own files, deny wins over allow)"
         );
         assert!(
-            deny_strs.contains(&"Edit(doc/loom/knowledge/**)"),
-            "Project-relative should still be in permissions.deny"
+            deny_strs.contains(&"Edit(some/plan/path/**)"),
+            "an ordinary project-relative deny_write entry should still reach permissions.deny"
+        );
+        assert!(
+            !deny_strs.contains(&"Edit(doc/loom/knowledge/**)"),
+            "the knowledge directory must never reach permissions.deny, got: {deny_strs:?}"
         );
     }
 
@@ -1120,7 +1160,7 @@ mod tests {
             excluded_commands: vec![],
             filesystem: FilesystemConfig {
                 deny_read: vec![],
-                deny_write: vec!["doc/loom/knowledge/**".to_string()],
+                deny_write: vec!["some/plan/path/**".to_string()],
                 allow_write: vec![],
             },
             network: NetworkConfig {
@@ -1161,7 +1201,7 @@ mod tests {
             .as_array()
             .expect("filesystem deny entries should be present");
         let deny_strs: Vec<&str> = deny.iter().filter_map(|v| v.as_str()).collect();
-        assert!(deny_strs.contains(&"Edit(doc/loom/knowledge/**)"));
+        assert!(deny_strs.contains(&"Edit(some/plan/path/**)"));
     }
 
     #[test]
@@ -1210,6 +1250,104 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn every_stage_type_can_write_the_knowledge_directory() {
+        use crate::plan::schema::{SandboxConfig, StageSandboxConfig, StageType};
+        use crate::sandbox::merge_config;
+
+        // Every stage type must come out of `merge_config` with the
+        // knowledge directory GRANTED, not denied: `loom knowledge update`
+        // is a Bash subprocess that runs inside the sandbox for every stage
+        // type, with no "excluded command" escape hatch to fall back on.
+        for stage_type in [
+            StageType::Standard,
+            StageType::Knowledge,
+            StageType::KnowledgeDistill,
+            StageType::IntegrationVerify,
+        ] {
+            let plan = SandboxConfig::default();
+            let stage = StageSandboxConfig::default();
+            let merged = merge_config(&plan, &stage, stage_type, &Implementers::default());
+            let json = generate_settings_json(&merged);
+
+            assert_eq!(
+                json["sandbox"]["filesystem"]["allowWrite"],
+                json!(["doc/loom/knowledge/**"]),
+                "Stage type {stage_type:?}: sandbox.filesystem.allowWrite must grant the \
+                 knowledge directory, got: {:?}",
+                json["sandbox"]["filesystem"]["allowWrite"]
+            );
+
+            let allow = json["permissions"]["allow"].as_array().unwrap();
+            let allow_strs: Vec<&str> = allow.iter().filter_map(|v| v.as_str()).collect();
+            assert!(
+                allow_strs.contains(&"Edit(doc/loom/knowledge/**)"),
+                "Stage type {stage_type:?}: permissions.allow must contain \
+                 Edit(doc/loom/knowledge/**), got: {allow_strs:?}"
+            );
+
+            let deny_strs: Vec<&str> = json["permissions"]["deny"]
+                .as_array()
+                .map(|a| a.iter().filter_map(|v| v.as_str()).collect())
+                .unwrap_or_default();
+            assert!(
+                !deny_strs.iter().any(|p| p.contains("doc/loom/knowledge")),
+                "Stage type {stage_type:?}: permissions.deny must not mention the knowledge \
+                 directory, got: {deny_strs:?}"
+            );
+            let os_deny_write = json["sandbox"]["filesystem"]["denyWrite"]
+                .as_array()
+                .map(|a| a.iter().filter_map(|v| v.as_str()).collect::<Vec<_>>())
+                .unwrap_or_default();
+            assert!(
+                !os_deny_write
+                    .iter()
+                    .any(|p| p.contains("doc/loom/knowledge")),
+                "Stage type {stage_type:?}: sandbox.filesystem.denyWrite must not mention the \
+                 knowledge directory, got: {os_deny_write:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn plan_authored_knowledge_deny_write_is_dropped_and_grant_added() {
+        use crate::plan::schema::{SandboxConfig, StageSandboxConfig, StageType};
+        use crate::sandbox::merge_config;
+
+        // Plans authored before this fix carry `doc/loom/knowledge/**` in
+        // their own `filesystem.deny_write` (it used to be the default).
+        // `merge_config` must strip that authored entry and add the grant in
+        // its place, not just leave the contradiction for the emitter to
+        // paper over.
+        let plan = SandboxConfig {
+            filesystem: FilesystemConfig {
+                deny_write: vec!["doc/loom/knowledge/**".to_string()],
+                ..FilesystemConfig::default()
+            },
+            ..SandboxConfig::default()
+        };
+        let stage = StageSandboxConfig::default();
+        let merged = merge_config(&plan, &stage, StageType::Standard, &Implementers::default());
+
+        assert!(
+            !merged
+                .filesystem
+                .deny_write
+                .iter()
+                .any(|p| p.starts_with("doc/loom/knowledge")),
+            "the plan-authored deny_write entry must be dropped, got: {:?}",
+            merged.filesystem.deny_write
+        );
+        assert!(
+            merged
+                .filesystem
+                .allow_write
+                .contains(&"doc/loom/knowledge/**".to_string()),
+            "the grant must be added in its place, got: {:?}",
+            merged.filesystem.allow_write
+        );
     }
 
     #[test]
@@ -1615,8 +1753,18 @@ mod tests {
             auto_allow: true,
             allow_unsandboxed_escape: false,
             excluded_commands: vec![],
-            // FilesystemConfig::default() includes ../../** and ../.worktrees/**.
-            filesystem: FilesystemConfig::default(),
+            // FilesystemConfig::default() includes ../../** (deny_read also has
+            // ../.worktrees/**). An explicit non-traversal entry stands in for a
+            // plan-authored deny_write path, to prove non-traversal entries
+            // survive alongside the stripped traversal ones.
+            filesystem: FilesystemConfig {
+                deny_write: {
+                    let mut deny_write = FilesystemConfig::default().deny_write;
+                    deny_write.push("some/plan/path/**".to_string());
+                    deny_write
+                },
+                ..FilesystemConfig::default()
+            },
             network: NetworkConfig::default(),
             linux: LinuxConfig::default(),
             permission_mode: PermissionMode::Auto,
@@ -1643,7 +1791,7 @@ mod tests {
         );
         // Non-traversal protections survive.
         assert!(deny_strs.contains(&"Read(~/.ssh/**)"));
-        assert!(deny_strs.contains(&"Edit(doc/loom/knowledge/**)"));
+        assert!(deny_strs.contains(&"Edit(some/plan/path/**)"));
     }
 
     #[test]
@@ -1657,11 +1805,12 @@ mod tests {
         // crosses path separators, so `Edit(../../**)` matches the worktree's
         // OWN files (e.g. `<repo>/.worktrees/<stage>/loom/src/foo.rs`) and
         // deny wins over allow — refusing the agent's very first edit. This
-        // WORKTREE-shaped config's `deny_write` (via `FilesystemConfig::default()`
-        // -> `default_deny_write()`) contains both `../../**` and the
-        // non-traversal `doc/loom/knowledge/**`: only the traversal entry is
-        // dropped. Worktree write-escape is still enforced independently by
-        // the OS sandbox's `allowOnly` list and the worktree hooks.
+        // config's `deny_write` carries both the traversal entry
+        // (`default_deny_write()`'s only default now) and an explicit
+        // non-traversal path standing in for a plan-authored deny_write
+        // entry: only the traversal entry is dropped. Worktree write-escape
+        // is still enforced independently by the OS sandbox's `allowOnly`
+        // list and the worktree hooks.
         let temp_dir = TempDir::new().unwrap();
         let worktree_path = temp_dir.path().join(".worktrees").join("my-stage");
         fs::create_dir_all(&worktree_path).unwrap();
@@ -1671,7 +1820,11 @@ mod tests {
             auto_allow: true,
             allow_unsandboxed_escape: false,
             excluded_commands: vec![],
-            filesystem: FilesystemConfig::default(),
+            filesystem: FilesystemConfig {
+                deny_read: vec![],
+                deny_write: vec!["../../**".to_string(), "some/plan/path/**".to_string()],
+                allow_write: vec![],
+            },
             network: NetworkConfig::default(),
             linux: LinuxConfig::default(),
             permission_mode: PermissionMode::Auto,
@@ -1694,7 +1847,7 @@ mod tests {
              Edit(...) rule, got: {deny_strs:?}"
         );
         assert!(
-            deny_strs.contains(&"Edit(doc/loom/knowledge/**)"),
+            deny_strs.contains(&"Edit(some/plan/path/**)"),
             "the non-traversal deny_write entry must still be emitted, got: {deny_strs:?}"
         );
     }
@@ -1707,6 +1860,16 @@ mod tests {
         // version that leaked worktree-relative escape rules. Re-running the
         // generator on the main repo must scrub them (both Read and Write sides),
         // even though the merge preserves other user-approved permissions.
+        //
+        // `Write(~/.bashrc)` stands in for a legitimate user-authored deny
+        // entry unrelated to loom's own rules — it must survive the merge,
+        // pinning that loom is conservative about rules it inherits (mirrors
+        // the sibling `Write(~/.bashrc)`-style fixture in
+        // `test_write_settings_preserves_existing_deny_but_not_allow`). A
+        // stale `Write(doc/loom/knowledge/**)` is deliberately NOT used here:
+        // that specific entry is the ONE exception to "conservative about
+        // inherited rules" — see `merge_existing_permissions`'s knowledge-dir
+        // carve-out, exercised separately below.
         let temp_dir = TempDir::new().unwrap();
         let repo_root = temp_dir.path();
         let claude_dir = repo_root.join(".claude");
@@ -1718,7 +1881,7 @@ mod tests {
                     "Read(../../**)",
                     "Read(../.worktrees/**)",
                     "Write(../../**)",
-                    "Write(doc/loom/knowledge/**)"
+                    "Write(~/.bashrc)"
                 ]
             }
         });
@@ -1756,8 +1919,61 @@ mod tests {
                 .any(|p| p.contains("../") || p.contains(".worktrees")),
             "stale escape rules must be scrubbed from the main repo file, got: {deny_strs:?}"
         );
-        // Legitimate knowledge write-protection is preserved.
-        assert!(deny_strs.contains(&"Write(doc/loom/knowledge/**)"));
+        // A legitimate, unrelated user-authored deny entry is preserved.
+        assert!(deny_strs.contains(&"Write(~/.bashrc)"));
+    }
+
+    #[test]
+    fn test_write_settings_scrubs_stale_knowledge_dir_deny_from_existing() {
+        use tempfile::TempDir;
+
+        // A settings.local.json written before this fix could carry a
+        // knowledge-dir deny in EITHER form: `Edit(...)` (the enforced form)
+        // or `Write(...)` (parsed but inert at the tool layer, still leaks
+        // into the OS sandbox's write denies). Without the carve-out in
+        // `merge_existing_permissions`, `deny` is unioned with whatever is
+        // already on disk, so either form would survive regeneration forever
+        // and permanently block the `loom knowledge update` CLI subprocess
+        // for that worktree. An unrelated deny entry proves the merge is
+        // otherwise still conservative about what it inherits.
+        let temp_dir = TempDir::new().unwrap();
+        let worktree_path = temp_dir.path();
+        let claude_dir = worktree_path.join(".claude");
+        fs::create_dir_all(&claude_dir).unwrap();
+
+        let stale = json!({
+            "permissions": {
+                "deny": [
+                    "Edit(doc/loom/knowledge/**)",
+                    "Write(doc/loom/knowledge/**)",
+                    "Write(~/.bashrc)"
+                ]
+            }
+        });
+        fs::write(
+            claude_dir.join("settings.local.json"),
+            serde_json::to_string_pretty(&stale).unwrap(),
+        )
+        .unwrap();
+
+        let config = default_config();
+        write_settings(&config, worktree_path).unwrap();
+
+        let result: Value = serde_json::from_str(
+            &fs::read_to_string(claude_dir.join("settings.local.json")).unwrap(),
+        )
+        .unwrap();
+        let deny = result["permissions"]["deny"].as_array().unwrap();
+        let deny_strs: Vec<&str> = deny.iter().filter_map(|v| v.as_str()).collect();
+
+        assert!(
+            !deny_strs.iter().any(|p| p.contains("doc/loom/knowledge")),
+            "neither Edit() nor Write() knowledge-dir deny may survive, got: {deny_strs:?}"
+        );
+        assert!(
+            deny_strs.contains(&"Write(~/.bashrc)"),
+            "an unrelated inherited deny entry must still survive, got: {deny_strs:?}"
+        );
     }
 
     #[test]

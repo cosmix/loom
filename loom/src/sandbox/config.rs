@@ -7,6 +7,16 @@ use anyhow::{bail, Result};
 use std::env;
 use std::path::Path;
 
+/// Glob granting write access to the curated knowledge directory.
+///
+/// Every stage records knowledge through the `loom knowledge update` CLI, a
+/// Bash subprocess that runs inside this same sandbox (there is no
+/// "excluded command" escape hatch — `validate_emittable` in
+/// `sandbox/settings/policy.rs` rejects `excluded_commands` outright). The
+/// CLI needs OS-level write access to actually create `<file>.md.tmp`, so
+/// this path must be granted, not denied. See `apply_knowledge_write_grant`.
+pub const KNOWLEDGE_WRITE_GLOB: &str = "doc/loom/knowledge/**";
+
 /// Result of path traversal validation
 #[derive(Debug, Clone, PartialEq)]
 pub enum PathEscapeAttempt {
@@ -75,7 +85,7 @@ pub fn merge_config(
         .or(plan_config.permission_mode)
         .unwrap_or_else(|| default_mode_for(stage_type));
 
-    MergedSandboxConfig {
+    let mut merged = MergedSandboxConfig {
         enabled: stage_config.enabled.unwrap_or(plan_config.enabled),
         auto_allow: stage_config.auto_allow.unwrap_or(plan_config.auto_allow),
         allow_unsandboxed_escape: stage_config
@@ -103,6 +113,44 @@ pub fn merge_config(
         command_confinement: stage_config
             .command_confinement
             .unwrap_or(plan_config.command_confinement),
+    };
+    apply_knowledge_write_grant(&mut merged);
+    merged
+}
+
+/// Grant the knowledge directory write access, unconditionally, on every
+/// merged config.
+///
+/// INVARIANT: `doc/loom/knowledge/**` must never appear in both
+/// `allow_write` and `deny_write` at once — deny always wins, which is
+/// exactly the bug this function exists to prevent. A prior fix resolved
+/// that contradiction by dropping the ALLOW half (see
+/// `doc/loom/knowledge/mistakes/sandbox-and-settings.md`); that was the
+/// wrong half to drop. The CLI that records knowledge runs inside the
+/// sandbox (see `KNOWLEDGE_WRITE_GLOB`'s doc comment), so it needs the same
+/// OS-enforced write grant a plan's own `allow_write` entries get — the DENY
+/// is what has to go, not the ALLOW.
+///
+/// A plan or stage may still author `doc/loom/knowledge/**` in its own
+/// `deny_write` (older plans do, since it used to be the default); this
+/// strips those entries too, so authored config can never re-introduce the
+/// contradiction. `plan/schema/validation.rs` warns when it sees one.
+fn apply_knowledge_write_grant(config: &mut MergedSandboxConfig) {
+    config
+        .filesystem
+        .deny_write
+        .retain(|path| !path.trim().starts_with("doc/loom/knowledge"));
+
+    let already_granted = config
+        .filesystem
+        .allow_write
+        .iter()
+        .any(|path| path.trim().starts_with("doc/loom/knowledge"));
+    if !already_granted {
+        config
+            .filesystem
+            .allow_write
+            .push(KNOWLEDGE_WRITE_GLOB.to_string());
     }
 }
 
@@ -440,12 +488,21 @@ mod tests {
             &Implementers::default(),
         );
 
-        // Knowledge stage should NOT have doc/loom/knowledge/** in allow_write
-        // (knowledge stages use `loom knowledge update` CLI which runs outside sandbox)
-        assert!(!merged
+        // A knowledge stage must have doc/loom/knowledge/** granted in
+        // allow_write, and the plan's own (stale) deny_write entry for it
+        // must be stripped: `loom knowledge update` is a Bash subprocess that
+        // runs INSIDE this sandbox, so it needs the same OS-enforced write
+        // grant a plan's allow_write gets, and a leftover deny would win over
+        // any allow and block the CLI outright.
+        assert!(merged
             .filesystem
             .allow_write
             .contains(&"doc/loom/knowledge/**".to_string()));
+        assert!(!merged
+            .filesystem
+            .deny_write
+            .iter()
+            .any(|p| p.starts_with("doc/loom/knowledge")));
     }
 
     #[test]
@@ -471,9 +528,10 @@ mod tests {
             &Implementers::default(),
         );
 
-        // IntegrationVerify stage should NOT have doc/loom/knowledge/** in allow_write
-        // (uses `loom knowledge update` CLI which runs outside sandbox)
-        assert!(!merged
+        // Same grant applies to every stage type, including IntegrationVerify:
+        // `loom knowledge update` runs inside the sandbox regardless of stage
+        // type, so it needs the write grant regardless of stage type too.
+        assert!(merged
             .filesystem
             .allow_write
             .contains(&"doc/loom/knowledge/**".to_string()));
