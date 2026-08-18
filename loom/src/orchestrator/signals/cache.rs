@@ -587,7 +587,7 @@ pub fn generate_knowledge_distill_stable_prefix() -> String {
         "   - Section under ~40 lines → write it inline into the tier-1 file, as above.\n",
     );
     content.push_str("   - Section longer than ~40 lines → write it to a topic file instead: `loom knowledge update <category>/<slug> \"...\"`, then leave a 2-4 line summary plus a link to that topic file in the tier-1 file.\n");
-    content.push_str("   - ALWAYS finish distillation with `loom knowledge index` to regenerate `INDEX.md` — run it LAST, after every other `loom knowledge update` call.\n");
+    content.push_str("   - `INDEX.md` is regenerated automatically on every `loom knowledge update` — there is NO index step to run, so finish distillation with your last write and nothing after it.\n");
     content.push_str("5. DO NOT blindly copy memory entries — synthesize and curate\n");
     content.push_str("6. Remove or update stale knowledge entries — if a mistake has been fixed, a pattern replaced, or an entry-point renamed, update or delete the old entry. Stale entries mislead future agents\n");
     content.push_str("7. Generate review document: `loom review`\n\n");
@@ -781,7 +781,7 @@ pub fn generate_knowledge_stable_prefix() -> String {
     content.push_str("## Section Title\n");
     content.push_str("Content here, can be as long as needed.\n");
     content.push_str("EOF\n");
-    content.push_str("\n# Verify what you just wrote\nloom knowledge show\nloom knowledge show entry-points\n\n# Pull a scoped brief the way implementation stages will consume it\nloom knowledge context --stage <stage-id> --query \"<question>\" --budget-tokens <n>\n");
+    content.push_str("\n# Verify what you just wrote — Read the file itself, there is no CLI for this:\n#   tier 1: doc/loom/knowledge/<file>.md\n#   tier 2: doc/loom/knowledge/<category>/<slug>.md\n\n# Pull a scoped brief the way implementation stages will consume it\nloom knowledge context --stage <stage-id> --query \"<question>\" --budget-tokens <n>\n");
     content.push_str("```\n\n");
 
     content
@@ -966,6 +966,14 @@ mod tests {
         assert!(prefix.contains("leave no major area unmapped"));
         // Per-stage Knowledge Brief consumption contract
         assert!(prefix.contains("Knowledge Brief"));
+        // A knowledge write is verified by READING the file - there is no CLI
+        // for it, so the prefix must hand over the paths instead of a command.
+        // The retired verb is spelled with `concat!` so this file never carries
+        // it contiguously: an acceptance criterion greps all of `loom/src` for
+        // the deleted commands, and a guard that trips its own check is worse
+        // than no guard (same reasoning as tests_doctrine.rs's RETIRED_PHRASES).
+        assert!(prefix.contains("doc/loom/knowledge/<category>/<slug>.md"));
+        assert!(!prefix.contains(concat!("loom knowledge ", "show")));
         // Documentation stage: emits only markdown, so NO code-review block
         assert!(!prefix.contains("Mini Adversarial Code Review"));
         // Pins the fact that this prefix never calls append_subagent_restrictions,
@@ -1101,8 +1109,11 @@ mod tests {
         assert!(prefix.contains("UNDERSTAND-FIRST LADDER"));
         // Per-stage Knowledge Brief consumption contract
         assert!(prefix.contains("Knowledge Brief"));
-        // Tier routing: distillation must regenerate the index last
-        assert!(prefix.contains("loom knowledge index"));
+        // Tier routing, and the fact that the index needs no closing step: an
+        // agent told it owes one but given no command will improvise, so the
+        // prefix must state the regeneration is automatic.
+        assert!(prefix.contains("regenerated automatically on every `loom knowledge update`"));
+        assert!(prefix.contains("there is NO index step to run"));
         assert!(prefix.contains("Tier routing"));
         // Pins the fact that this prefix never calls append_subagent_restrictions,
         // so it must not carry the implementation-stage no-verify rule.

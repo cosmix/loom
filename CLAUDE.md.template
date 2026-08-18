@@ -286,7 +286,7 @@ Updating (interactive/ad-hoc): Write/Edit knowledge files directly when you find
 **Fix:** [What to do instead]
 ```
 
-Do not record ephemera, procedural steps, or anything derivable from git history or the code. During loom execution, use the `loom memory`/`loom knowledge` CLI as your signal instructs — do not edit knowledge files directly: `loom knowledge update <category>/<slug>` writes a tier-2 topic file; `loom knowledge index` regenerates `INDEX.md` and is always the last step after knowledge writes.
+Do not record ephemera, procedural steps, or anything derivable from git history or the code. During loom execution, use the `loom memory`/`loom knowledge` CLI as your signal instructs — do not edit knowledge files directly: `loom knowledge update <category>/<slug>` writes a tier-2 topic file. `INDEX.md` is regenerated automatically on every knowledge write, so there is no final index step to run.
 
 ### 13. SILENT FAILURE DETECTION
 
@@ -329,7 +329,7 @@ System knowledge goes to `doc/loom/knowledge/` (Rule 12), never the project's CL
 | At budget     | BudgetExceeded               |
 | ≥75%          | Stop. Handoff (hard stop 4). |
 
-**CLI:** `loom run` (start) | `loom status` (dashboard) | `loom stop` | `loom check <stage-id> [--suggest]` (goal-backward verification) | `loom map [--deep] [--focus <area>]` | `loom repair [--fix]`.
+**CLI:** `loom run` (start) | `loom status` (dashboard) | `loom stop` | `loom check <stage-id> [--suggest]` (goal-backward verification) | `loom knowledge sync` | `loom repair [--fix]`.
 
 **Handoff template** (`.work/handoffs/YYYY-MM-DD-desc.md`):
 

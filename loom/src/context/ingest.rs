@@ -16,7 +16,7 @@ use std::path::{Path, PathBuf};
 use crate::context::fingerprint::fingerprint_tree;
 use crate::fs::knowledge::catalog::{self, Catalog, CatalogIssue};
 
-/// Summary of one catalog build, for `loom knowledge status` / `sync` output.
+/// Summary of one catalog build, for `loom knowledge sync` output.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct IngestReport {
     /// Root of the knowledge tree that was ingested.

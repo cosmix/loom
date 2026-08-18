@@ -74,7 +74,7 @@ pub(crate) fn resolve_roots(work_dir_hint: &Path) -> Result<(PathBuf, ContextSto
     let knowledge = KnowledgeDir::new(project_root);
 
     if !knowledge.exists() {
-        bail!("Knowledge directory not found. Run 'loom knowledge init' to create it.");
+        bail!("Knowledge directory not found. Run 'loom init' to create it.");
     }
 
     let store = ContextStore::open(&work_dir)?;

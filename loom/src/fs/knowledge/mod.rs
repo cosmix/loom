@@ -12,7 +12,6 @@
 pub mod catalog;
 pub mod chunker;
 pub mod dir;
-pub mod gc;
 pub mod index;
 pub mod summary;
 pub mod templates;
@@ -23,9 +22,5 @@ mod tests;
 
 // Re-export commonly used types
 pub use dir::KnowledgeDir;
-pub use gc::{
-    analyze_gc_metrics, GcMetrics, Tier1Metrics, TopicMetrics, DEFAULT_MAX_PROMOTED_BLOCKS,
-    DEFAULT_MAX_TIER1_LINES, DEFAULT_MAX_TOPIC_LINES, SECTION_EXTRACT_THRESHOLD,
-};
 pub use index::TopicEntry;
 pub use types::{KnowledgeFile, KnowledgeLayout, KnowledgeTarget, INDEX_FILENAME};

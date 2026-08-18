@@ -19,8 +19,8 @@ fn quoted_option_values_are_one_word_and_not_subcommands() {
 #[test]
 fn valued_options_do_not_become_command_path_segments() {
     assert_eq!(
-        path("loom knowledge bootstrap --model opus", ""),
-        ["knowledge", "bootstrap"]
+        path("loom knowledge context --query merge", ""),
+        ["knowledge", "context"]
     );
     assert_eq!(
         path("loom run --max-parallel 4 --backend tmux", ""),

@@ -1,19 +1,28 @@
-//! `loom knowledge sync` — rebuild derived context artifacts.
+//! `loom knowledge sync` — upgrade a flat knowledge tree and rebuild derived
+//! context artifacts.
 //!
-//! Writes only through the context store, never into the knowledge tree
-//! itself: `refresh` rebuilds the catalog when stale and persists it to the
-//! cache, and is a no-op when the catalog is already current.
+//! `sync` is the single, explicit flat-to-hierarchical upgrade: a knowledge
+//! directory that predates the tiered layout has no `INDEX.md`, and this is the
+//! one command that creates it. Nothing else migrates a flat dir — `update` and
+//! every retrieval path leave it flat forever.
+//!
+//! Everything after that upgrade is derived state: `refresh` rebuilds the
+//! catalog when stale and persists it to the cache, and is a no-op when the
+//! catalog is already current.
 
 use super::context::resolve;
 use crate::context::refresh::{
     refresh, RefreshOutcome, SemanticLayer, SemanticOutcome, SOURCE_GRAPH_PREFIX,
 };
+use crate::fs::knowledge::{KnowledgeDir, KnowledgeLayout, INDEX_FILENAME};
 use anyhow::Result;
 use colored::Colorize;
+use std::path::Path;
 
-/// Rebuild derived context artifacts when the knowledge tree has changed.
+/// Upgrade a flat knowledge tree, then rebuild derived context artifacts.
 pub fn sync(structural_only: bool, json: bool) -> Result<()> {
     let (knowledge_root, store) = resolve()?;
+    let upgraded = upgrade_flat_layout(&knowledge_root)?;
     let outcome = refresh(&store, &knowledge_root, structural_only)?;
 
     // Stdout carries the machine-readable result in --json mode, so a refused
@@ -24,15 +33,28 @@ pub fn sync(structural_only: bool, json: bool) -> Result<()> {
     }
 
     if json {
-        print_json(&outcome)
+        print_json(&outcome, upgraded)
     } else {
-        print_human(&outcome);
+        print_human(&outcome, upgraded);
         Ok(())
     }
 }
 
-fn print_json(outcome: &RefreshOutcome) -> Result<()> {
+/// Create `INDEX.md` on a flat (pre-hierarchy) knowledge directory, turning it
+/// hierarchical. Returns whether the upgrade happened. This is the one place in
+/// loom that migrates a flat dir; every read and update path leaves it flat.
+fn upgrade_flat_layout(knowledge_root: &Path) -> Result<bool> {
+    let knowledge = KnowledgeDir::from_root(knowledge_root);
+    if knowledge.layout() == KnowledgeLayout::Hierarchical {
+        return Ok(false);
+    }
+    knowledge.write_index()?;
+    Ok(true)
+}
+
+fn print_json(outcome: &RefreshOutcome, upgraded: bool) -> Result<()> {
     let payload = serde_json::json!({
+        "upgraded": upgraded,
         "rebuilt": outcome.rebuilt,
         "revision": outcome.structural.revision,
         "files": outcome.report.as_ref().map(|report| report.files),
@@ -82,7 +104,13 @@ fn semantic_json(semantic: &SemanticOutcome) -> serde_json::Value {
     })
 }
 
-fn print_human(outcome: &RefreshOutcome) {
+fn print_human(outcome: &RefreshOutcome, upgraded: bool) {
+    if upgraded {
+        println!(
+            "{} Upgraded the knowledge directory to the hierarchical layout (created {INDEX_FILENAME})",
+            "✓".green().bold()
+        );
+    }
     if outcome.rebuilt {
         println!("{} Rebuilt the context catalog", "✓".green().bold());
     } else {

@@ -21,7 +21,7 @@ const KNOWLEDGE_ALIASES: &[(&str, &str)] = &[
     ("issues", "concerns"),
 ];
 
-/// Complete knowledge file names for `loom knowledge show/update`
+/// Complete knowledge file names for `loom knowledge update`
 ///
 /// Includes aliases (deps/tech -> stack, debt/issues -> concerns).
 ///

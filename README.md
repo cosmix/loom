@@ -52,7 +52,7 @@ Loom treats what agents learn as a first-class artifact with a pipeline, not a s
 2. **Distill** — a `knowledge-distill` stage runs at the end of a plan, reads every stage memory, and curates it into permanent knowledge — mistakes rewritten as actionable prevention rules, decisions with their rationale, reusable patterns and conventions.
 3. **Retrieve** — the result is a **tiered** base under `doc/loom/knowledge/`: a generated `INDEX.md`, seven tier-1 summaries, and tier-2 topic files. Agents read the index, then the summary for their area, then only the topics they touch — so the base can grow without every session paying to load it.
 
-`loom knowledge check` reports coverage, `audit` reports structural rot (oversized sections, broken links, orphans), `gc` restructures, and `loom map` seeds the base from static analysis. Details: [Knowledge System](#knowledge-system).
+Knowledge lives in `doc/loom/knowledge/`; agents write it through loom, and `loom knowledge sync` rebuilds the derived retrieval artifacts after the tree changes, including the one-time flat-to-hierarchical upgrade. Details: [Knowledge System](#knowledge-system).
 
 ### Cost control by construction
 
@@ -237,20 +237,7 @@ loom stage output remove <stage-id> <key>
 ### Knowledge / Memory
 
 ```bash
-loom knowledge show [target]                 # target: a tier-1 file, or <category>/<slug>; no arg shows INDEX.md
-loom knowledge update <target> <content>     # e.g. `patterns` (tier 1) or `architecture/merge-flow` (tier 2)
-loom knowledge init
-loom knowledge index                                                         # Regenerate INDEX.md (creates it on a flat dir)
-loom knowledge list
-loom knowledge check [--min-coverage N] [--src-path <path>] [--quiet]
-loom knowledge audit [--max-file-lines N] [--max-topic-lines N] [--quiet]   # Report structural issues (oversized sections, broken links, orphans)
-loom knowledge gc [--model NAME] [--dry-run] [--quick]                       # Spawn Claude to restructure (extract, dedupe, relink)
-loom knowledge bootstrap [--model <name>] [--skip-map] [--quick]             # --quick uses headless `claude -p` (see Billing note)
-
-# Retrieval over the knowledge base — deterministic, offline, no model call
-loom knowledge context --query <text> [--budget-tokens N] [--scope knowledge|source|all] [--require-id <id>] [--explain] [--json]
-loom knowledge status [--json]                                               # Catalog freshness, size, reported issues
-loom knowledge sync [--structural-only] [--json]                             # Rebuild derived context artifacts after editing knowledge
+loom knowledge sync [--structural-only] [--json]              # Rebuild derived retrieval artifacts after editing knowledge
 
 loom memory note <text> [--stage <id>]
 loom memory decision <text> [--context <why>] [--stage <id>]
@@ -273,10 +260,6 @@ loom sessions kill <session-id...> | --stage <stage-id>
 loom worktree list
 loom worktree remove <stage-id>
 loom graph
-loom map [--deep] [--focus <area>] [--overwrite]
-loom map --outline <path>                                                    # Indexed symbols of one file, in source order
-loom map --find-all <symbol>                                                 # Every indexed node whose name matches
-loom map --impact <symbol-or-path>                                           # What reaches a symbol or file, with path confidence
 loom context record-edit --stage <id> --path <path> [--path <path>...]       # Keep a stage's context overlay current
 loom hook user-prompt                                                        # UserPromptSubmit entry point; invoked by loom's hooks
 loom repair [--fix]
@@ -287,15 +270,13 @@ loom completions [<shell>] [--install] [--migrate]
 
 ### ⚠️ Billing: headless `claude -p` flags
 
-Loom runs every orchestrated stage as a normal **interactive** Claude Code session, which bills against your Claude subscription exactly like launching `claude` yourself. A few **opt-in** flags instead invoke Claude in headless print mode (`claude -p`):
+Loom runs every orchestrated stage as a normal **interactive** Claude Code session, which bills against your Claude subscription exactly like launching `claude` yourself. One **opt-in** flag instead invokes Claude in headless print mode (`claude -p`):
 
-| Command                    | Flag           | Behavior without the flag                                       |
-| -------------------------- | -------------- | --------------------------------------------------------------- |
-| `loom knowledge bootstrap` | `--quick`      | Runs an interactive bootstrap session instead                   |
-| `loom knowledge gc`        | `--quick`      | Runs an interactive compaction session instead                  |
-| `loom review`              | `--ai-summary` | Uses the plan's first paragraph as the summary (no Claude call) |
+| Command       | Flag           | Behavior without the flag                                       |
+| ------------- | -------------- | --------------------------------------------------------------- |
+| `loom review` | `--ai-summary` | Uses the plan's first paragraph as the summary (no Claude call) |
 
-Headless `claude -p` usage may be billed **separately from (and in addition to) your Claude subscription** as API/extra charges, depending on your account and auth setup. These flags are **off by default** so loom never silently incurs those charges — only pass them when you knowingly accept the headless billing.
+Headless `claude -p` usage may be billed **separately from (and in addition to) your Claude subscription** as API/extra charges, depending on your account and auth setup. This flag is **off by default** so loom never silently incurs those charges — only pass it when you knowingly accept the headless billing.
 
 ## Plan Format
 
@@ -465,13 +446,13 @@ Procedural noise ("spawned agents", "ran tests") and anything recoverable from g
 
 ### 3. Retrieve — a tiered base agents can afford to read
 
-Knowledge lives in `doc/loom/knowledge/` and is **tiered**: a generated `INDEX.md` (tier 0) maps the seven curated summary files (tier 1), which link out to per-category topic files (tier 2, e.g. `architecture/merge-flow.md`). Tier-1 files stay navigable summaries; detail lives in topics. The index is regenerated automatically on every knowledge write, and by `loom knowledge index`.
+Knowledge lives in `doc/loom/knowledge/` and is **tiered**: a generated `INDEX.md` (tier 0) maps the seven curated summary files (tier 1), which link out to per-category topic files (tier 2, e.g. `architecture/merge-flow.md`). Tier-1 files stay navigable summaries; detail lives in topics. The index is regenerated automatically on every knowledge write.
 
 **Reading protocol** — read the index first, then the tier-1 summary for the area you are working in, then only the tier-2 topics you actually touch. Loading the whole base defeats the point of tiering.
 
-**Writing protocol** — when a tier-1 section grows past roughly 40 lines, move its body into a topic with `loom knowledge update <category>/<slug>` and leave a 2-4 line summary plus a relative link behind. Write the link as `[Title](category/slug.md)` in a tier-1 file: that is the one form `loom knowledge audit` accepts for both its orphan check and its broken-link check.
+**Writing protocol** — when a tier-1 section grows past roughly 40 lines, move its body into a topic with `loom knowledge update <category>/<slug>` and leave a 2-4 line summary plus a relative link behind. Write the link as `[Title](category/slug.md)` in a tier-1 file: that is the tree's convention for references.
 
-There is **no aggregate line budget** across the knowledge base — `loom knowledge audit` prints the total for information only. The limits that matter are per-file (`--max-file-lines`, default 250) and per-topic (`--max-topic-lines`, default 500), because structure is what degrades retrieval, not size.
+There is **no aggregate line budget** across the knowledge base. What matters is per-file size — roughly 250 lines for a tier-1 summary and 500 for a tier-2 topic — because structure is what degrades retrieval, not size.
 
 **Retrieval is deterministic and offline.** `loom knowledge context --query <text>` returns a token-budgeted *context pack*: the tool chunks the curated prose, scores each chunk, fuses the per-channel rankings, and takes whole chunks in order until the budget is spent, always reporting what it left out. There is **no embedding model, no network call and no randomness** — a pack is a pure function of the bytes on disk and the query string, so the same query returns the same pack.
 
@@ -483,22 +464,15 @@ loom knowledge context --query "sandbox rules" --json              # machine-rea
 
 Stage sessions do not have to ask. Signal generation embeds a per-stage **Knowledge Brief** built through the same single entry point, so what a stage receives at spawn and what you get from the CLI are produced identically. Loom records what each recipient was given, so a second retrieval in the same session skips what the first already quoted rather than repeating it.
 
-`--scope` selects which channels to search. Only the `knowledge` channel contributes results today: the source graph that backs `loom map` is a separate store that the ranker does not yet read, so `--scope source` searches nothing. It is accepted for forward compatibility and says so on stderr.
+`--scope` selects which channels to search: `knowledge` searches the curated prose, `source` searches the derived source graph of symbols extracted from the code, and `all` (the default) fuses both.
 
-Run `loom knowledge sync` after editing knowledge outside the CLI; `loom knowledge status` reports whether the derived artifacts are current.
+Run `loom knowledge sync` after editing knowledge outside the CLI; it reports whether both derived layers are current.
 
 ### Bootstrapping and maintenance
 
-| Command                    | Role                                                                                            |
-| -------------------------- | ----------------------------------------------------------------------------------------------- |
-| `loom map [--deep]`        | Static analysis pass — project type, dependencies, entry points, structure — with no agent cost |
-| `loom knowledge bootstrap` | Claude-driven exploration that populates the base (runs a deep `loom map` first by default)     |
-| `loom knowledge check`     | Coverage of `src/` by the knowledge base                                                        |
-| `loom knowledge audit`     | Structural rot: oversized sections, broken links, orphaned topics                               |
-| `loom knowledge gc`        | A Claude session that extracts oversized sections into topics and relinks them                  |
-| `loom knowledge index`     | Regenerate `INDEX.md` — always the last step after knowledge writes                             |
+Agents populate knowledge during orchestration: a knowledge-bootstrap stage writes CONTENT, while `loom init` scaffolds the directory automatically. `loom knowledge sync` rebuilds the derived retrieval artifacts.
 
-Knowledge directories created before the hierarchy existed stay **flat** and keep working unchanged — nothing migrates them behind your back. `loom knowledge audit` will advise it, and `loom knowledge index` (structure only) or `loom knowledge gc` performs the opt-in upgrade.
+Knowledge directories created before the hierarchy existed stay **flat** and keep working unchanged — neither reading nor updating migrates them behind your back. `loom knowledge sync` performs the opt-in upgrade, creating `INDEX.md` the first time it runs on a flat directory.
 
 Knowledge writes are protected by the sandbox defaults: agents update knowledge through `loom knowledge ...`, never by editing the files directly.
 

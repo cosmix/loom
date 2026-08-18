@@ -76,40 +76,11 @@ fn print_minted_proof(
 
 /// `loom knowledge <subcommand>` dispatch.
 ///
-/// Broken out of `dispatch` because this stage's new context/status/sync
+/// Broken out of `dispatch` because this stage's new context/sync
 /// subcommands pushed the parent match past the line limit.
 fn dispatch_knowledge(command: KnowledgeCommands) -> Result<()> {
     match command {
-        KnowledgeCommands::Show { file } => knowledge::show(file),
         KnowledgeCommands::Update { file, content } => knowledge::update(file, content),
-        KnowledgeCommands::Init => knowledge::init(),
-        KnowledgeCommands::List => knowledge::list(),
-        KnowledgeCommands::Index => knowledge::index(),
-        KnowledgeCommands::Check {
-            min_coverage,
-            src_path,
-            quiet,
-        } => knowledge::check::check(min_coverage, src_path, quiet),
-        KnowledgeCommands::Audit {
-            max_file_lines,
-            max_topic_lines,
-            quiet,
-        } => knowledge::audit::audit(max_file_lines, max_topic_lines, quiet),
-        KnowledgeCommands::Gc {
-            model,
-            dry_run,
-            quick,
-        } => knowledge::gc::gc(model, dry_run, quick),
-        KnowledgeCommands::Bootstrap {
-            model,
-            skip_map,
-            quick,
-        } => knowledge::bootstrap::execute(model, skip_map, quick),
-        KnowledgeCommands::ReplaceSection {
-            file,
-            heading,
-            content,
-        } => knowledge::replace_section(file, heading, content),
         // `budget` is bound short so the seven-argument call stays one line.
         KnowledgeCommands::Context {
             stage,
@@ -120,7 +91,6 @@ fn dispatch_knowledge(command: KnowledgeCommands) -> Result<()> {
             explain,
             json,
         } => knowledge::context::context(stage, query, budget, scope, require_id, explain, json),
-        KnowledgeCommands::Status { json } => knowledge::status::status(json),
         KnowledgeCommands::Sync {
             structural_only,
             json,

@@ -1,9 +1,8 @@
 //! Compact knowledge summary for embedding in agent signals.
 //!
 //! This is the flat, tier-1-only digest that predates the tiered hierarchy and
-//! is still what a `Legacy` knowledge directory shows for `loom knowledge show`
-//! with no argument. A `Hierarchical` directory shows its generated `INDEX.md`
-//! instead — see [`super::index`].
+//! is what a `Legacy` knowledge directory reduces to. A `Hierarchical`
+//! directory has a generated `INDEX.md` instead — see [`super::index`].
 
 use super::types::KnowledgeFile;
 use anyhow::Result;

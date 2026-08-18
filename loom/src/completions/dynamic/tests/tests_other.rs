@@ -90,23 +90,23 @@ fn test_complete_knowledge_files_no_match() {
 }
 
 #[test]
-fn test_complete_dynamic_knowledge_show() {
+fn test_complete_dynamic_knowledge_update() {
     let temp_dir = setup_test_workspace();
     let root = temp_dir.path();
 
     let ctx = CompletionContext {
         cwd: root.to_string_lossy().to_string(),
         shell: "bash".to_string(),
-        cmdline: "loom knowledge show".to_string(),
+        cmdline: "loom knowledge update".to_string(),
         current_word: "pa".to_string(),
-        prev_word: "show".to_string(),
+        prev_word: "update".to_string(),
     };
 
     assert!(complete_dynamic(&ctx).is_ok());
 }
 
 #[test]
-fn test_complete_dynamic_knowledge_update() {
+fn test_complete_dynamic_knowledge_update_empty() {
     let temp_dir = setup_test_workspace();
     let root = temp_dir.path();
 
@@ -233,20 +233,6 @@ fn test_complete_dynamic_flag_completion() {
         cmdline: "loom run --".to_string(),
         current_word: "--".to_string(),
         prev_word: "run".to_string(),
-    };
-    assert!(complete_dynamic(&ctx).is_ok());
-}
-
-#[test]
-fn test_complete_dynamic_model_flag_value() {
-    let temp_dir = setup_test_workspace();
-    let root = temp_dir.path();
-    let ctx = CompletionContext {
-        cwd: root.to_string_lossy().to_string(),
-        shell: "bash".to_string(),
-        cmdline: "loom knowledge bootstrap --model ".to_string(),
-        current_word: "".to_string(),
-        prev_word: "--model".to_string(),
     };
     assert!(complete_dynamic(&ctx).is_ok());
 }
