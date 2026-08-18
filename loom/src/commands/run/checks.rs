@@ -166,15 +166,14 @@ fn publish_source_graph_overlay(
     work_dir: &WorkDir,
     refusal: &str,
 ) -> Result<()> {
-    // The overlay address is keyed on the project root's final path component
-    // (see `local_overlay_stage_name`), so it depends on how the path is
-    // SPELLED, not on which directory it identifies: an absolute repo_root and
-    // a relative "." name the same directory but key to different addresses.
-    // Every reader (`loom map`, `loom knowledge sync`/`context`) builds its
-    // `WorkDir` from "." and derives the address from `WorkDir::project_root()`
-    // - a relative ".". The writer must derive the same address the same way,
-    // or it publishes to a location no reader ever looks at. Do not
-    // "simplify" this back to `repo_root`.
+    // The overlay address is keyed on the project root's directory name, and
+    // `local_overlay_stage_name` canonicalizes before taking it, so the
+    // address identifies the directory rather than how the path happened to
+    // be spelled: an absolute repo_root and a relative "." naming the same
+    // directory now key to the SAME address. Deriving it from
+    // `work_dir.project_root()` - the same call every reader (`loom map`,
+    // `loom knowledge sync`/`context`) makes to build the address it reads -
+    // is still correct. Do not "simplify" this back to `repo_root`.
     let project_root = work_dir.project_root().unwrap_or(repo_root);
     let (plan, stage) = local_overlay_key(project_root);
     let overlay = reconcile_source_graph(
