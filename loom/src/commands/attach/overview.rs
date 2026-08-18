@@ -15,10 +15,11 @@ use anyhow::{bail, Context, Result};
 use std::path::Path;
 use std::process::{Command, Output};
 
-use super::{exec_tmux, require_tty};
+use super::{exec_tmux, require_tty, wait};
 use crate::models::session::Session;
 use crate::orchestrator::terminal::tmux::viewer::{
-    attachable_panes, endpoint_ready, pane_command, viewer_socket_name, OVERVIEW_SESSION,
+    attachable_panes, endpoint_ready, live_tmux_sessions, pane_command, viewer_socket_name,
+    OVERVIEW_SESSION,
 };
 
 /// Viewer creation flags: detached, with a fixed initial geometry the real
@@ -215,23 +216,49 @@ fn build_overview_argv(viewer_socket: &str, panes: &[(String, String)]) -> Vec<V
     steps
 }
 
-/// Build the tiled viewer, then exec into it.
-pub(super) fn run_overview(work_dir: &Path, sessions: &[Session]) -> Result<()> {
-    let panes = attachable_panes(sessions, endpoint_ready);
+/// Wait for at least one live session to become attachable, re-reading the
+/// live set from disk on every poll rather than trusting a snapshot taken
+/// once (see `wait`'s module doc for why the wait exists at all). Split out
+/// of `run_overview` only to keep that function under the house size limit.
+fn wait_for_attachable_panes(work_dir: &Path) -> Result<Vec<(String, String)>> {
+    let deadline = wait::endpoint_wait_deadline();
+    let work_dir_owned = work_dir.to_path_buf();
+    let live_sessions = move || live_tmux_sessions(&work_dir_owned);
+    let probe = |candidates: &[Session]| -> Option<Vec<(String, String)>> {
+        let panes = attachable_panes(candidates, endpoint_ready);
+        (!panes.is_empty()).then_some(panes)
+    };
 
+    let outcome = wait::poll_for_endpoint(
+        live_sessions,
+        probe,
+        deadline,
+        wait::ENDPOINT_POLL,
+        |count| wait::announce_wait(deadline, count),
+    )?;
+
+    match outcome {
+        wait::WaitOutcome::Ready(panes) => Ok(panes),
+        wait::WaitOutcome::Ended => bail!(
+            "The live session(s) in {} ended while loom attach was waiting for their tmux \
+             server(s) to accept clients.",
+            work_dir.display()
+        ),
+        wait::WaitOutcome::TimedOut(sessions) => {
+            bail!("{}", wait::diagnose_sessions(work_dir, &sessions))
+        }
+    }
+}
+
+/// Build the tiled viewer, then exec into it.
+pub(super) fn run_overview(work_dir: &Path) -> Result<()> {
     // Reported BEFORE the TTY check, like every other diagnostic this command
     // emits: a session that is alive but not yet attachable is the single most
     // likely reason to run `loom attach` a moment too early, and answering
     // that needs no terminal. Without this the build would proceed into a
     // `new-session` whose pane 0 dies on contact, and the operator would get
     // tmux's `server exited unexpectedly` instead of the actual reason.
-    if panes.is_empty() {
-        bail!(
-            "{} live session(s), but none of their tmux servers are accepting clients yet — \
-             they are still spawning, or have just ended. Re-run `loom attach` in a moment.",
-            sessions.len()
-        );
-    }
+    let panes = wait_for_attachable_panes(work_dir)?;
 
     // Do not build a viewer we could not then attach to.
     require_tty()?;

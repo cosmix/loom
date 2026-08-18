@@ -35,3 +35,22 @@ fn newest_for_stage_returns_none_for_an_unknown_stage() {
     let matches = matches_for_stage(&sessions, "stage-unknown");
     assert!(pick_newest(&matches).is_none());
 }
+
+#[test]
+fn no_live_sessions_message_names_the_work_dir_for_native_backend() {
+    // A `loom attach` against the wrong repo of two must read differently
+    // from a genuinely broken backend — both are otherwise "no live
+    // sessions" and indistinguishable without the location.
+    let work_dir = std::path::Path::new("/tmp/example-repo/.work");
+    let message = no_live_sessions_message(work_dir, SessionBackendKind::Native);
+    assert!(message.contains("/tmp/example-repo/.work"), "{message}");
+    assert!(message.contains("tmux backend"), "{message}");
+}
+
+#[test]
+fn no_live_sessions_message_names_the_work_dir_for_tmux_backend() {
+    let work_dir = std::path::Path::new("/tmp/example-repo/.work");
+    let message = no_live_sessions_message(work_dir, SessionBackendKind::Tmux);
+    assert!(message.contains("/tmp/example-repo/.work"), "{message}");
+    assert!(message.contains("No live tmux sessions"), "{message}");
+}

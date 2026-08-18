@@ -151,7 +151,7 @@ pub(crate) fn attachable_panes(
 /// A session that fails this check is silently absent from the viewer
 /// rather than rendered — a deliberate trade, since the alternative is a
 /// viewer that degrades for every OTHER session too.
-fn is_plain_identifier(value: &str) -> bool {
+pub(crate) fn is_plain_identifier(value: &str) -> bool {
     !value.is_empty()
         && value
             .chars()

@@ -16,6 +16,7 @@
 //! can never disagree about who is attachable.
 
 mod overview;
+mod wait;
 
 use anyhow::{bail, Result};
 use std::io::IsTerminal;
@@ -40,8 +41,8 @@ pub fn execute(stage_id: Option<String>) -> Result<()> {
     }
 
     match stage_id {
-        Some(id) => attach_direct(&sessions, &id),
-        None => run_overview(&work_dir, &sessions),
+        Some(id) => attach_direct(&work_dir, &sessions, &id),
+        None => run_overview(&work_dir),
     }
 }
 
@@ -80,40 +81,83 @@ fn live_stage_ids(sessions: &[Session]) -> String {
     }
 }
 
-/// Attach straight into the session hosting `stage_id`.
-fn attach_direct(sessions: &[Session], stage_id: &str) -> Result<()> {
-    let matches = matches_for_stage(sessions, stage_id);
+/// Wait for the newest live session of `stage_id` to become attachable,
+/// re-reading the live set from disk on every poll (see
+/// `wait::poll_for_endpoint`) scoped to THIS stage: a session belonging to a
+/// different stage appearing or ending is none of this attach's business,
+/// but a newer session for THIS stage replacing the one just picked must be
+/// picked up, and every match for this stage ending must trigger the early
+/// exit rather than the full timeout. Split out of `attach_direct` only to
+/// keep that function under the house size limit.
+fn wait_for_stage_target(work_dir: &Path, stage_id: &str) -> Result<Session> {
+    let stage_id_owned = stage_id.to_string();
+    let work_dir_owned = work_dir.to_path_buf();
+    let live_matches_for_stage = move || -> Result<Vec<Session>> {
+        let all = viewer::live_tmux_sessions(&work_dir_owned)?;
+        Ok(matches_for_stage(&all, &stage_id_owned)
+            .into_iter()
+            .cloned()
+            .collect())
+    };
+    // Same precondition the overview applies, for the same reason and with
+    // the same both-directions caveat — see `viewer::endpoint_ready`.
+    let probe = |candidates: &[Session]| -> Option<Session> {
+        let refs: Vec<&Session> = candidates.iter().collect();
+        let target = pick_newest(&refs)?;
+        let tmux_session = tmux_session_name(target).unwrap_or_default();
+        endpoint_ready(target, &tmux_session).then(|| target.clone())
+    };
 
-    let Some(target) = pick_newest(&matches) else {
+    let deadline = wait::endpoint_wait_deadline();
+    let outcome = wait::poll_for_endpoint(
+        live_matches_for_stage,
+        probe,
+        deadline,
+        wait::ENDPOINT_POLL,
+        |count| wait::announce_wait(deadline, count),
+    )?;
+
+    match outcome {
+        wait::WaitOutcome::Ready(session) => Ok(session),
+        wait::WaitOutcome::Ended => bail!(
+            "The live session for stage '{stage_id}' ended in {} while loom attach was waiting \
+             for its tmux server to accept clients.",
+            work_dir.display()
+        ),
+        wait::WaitOutcome::TimedOut(sessions) => {
+            bail!("{}", wait::diagnose_sessions(work_dir, &sessions))
+        }
+    }
+}
+
+/// Attach straight into the session hosting `stage_id`.
+fn attach_direct(work_dir: &Path, sessions: &[Session], stage_id: &str) -> Result<()> {
+    let matches = matches_for_stage(sessions, stage_id);
+    let match_count = matches.len();
+
+    if pick_newest(&matches).is_none() {
         bail!(
             "No live tmux session for stage '{stage_id}'. Live stage ids: {}",
             live_stage_ids(sessions)
         );
-    };
+    }
 
-    if matches.len() > 1 {
+    // Reported before the TTY check so it reads as a diagnostic rather than
+    // as the `exec` failing: without it, `exec` replaces this process and
+    // tmux's own "no server running on ..." becomes the only thing the
+    // operator sees.
+    let target = wait_for_stage_target(work_dir, stage_id)?;
+
+    if match_count > 1 {
         println!(
-            "Found {} live sessions for stage '{stage_id}'; attaching to the newest (session {})",
-            matches.len(),
+            "Found {match_count} live sessions for stage '{stage_id}'; attaching to the newest \
+             (session {})",
             target.id
         );
     }
 
     // Discovery already guaranteed `Some` for every session here.
-    let tmux_session = tmux_session_name(target).unwrap_or_default();
-
-    // Same precondition the overview applies, for the same reason and with
-    // the same both-directions caveat — see `viewer::endpoint_ready`. Reported
-    // before the TTY check so it reads as a diagnostic rather than as the
-    // `exec` failing: without it, `exec` replaces this process and tmux's own
-    // "no server running on ..." becomes the only thing the operator sees.
-    if !endpoint_ready(target, &tmux_session) {
-        bail!(
-            "Stage '{stage_id}' has a live session ({}) whose tmux server is not accepting \
-             clients — it is still spawning, or has just ended. Re-run in a moment.",
-            target.id
-        );
-    }
+    let tmux_session = tmux_session_name(&target).unwrap_or_default();
 
     // Not `find_session_for_stage`: it returns the FIRST session file in
     // filesystem order without checking liveness. The live set above is correct.
@@ -121,7 +165,7 @@ fn attach_direct(sessions: &[Session], stage_id: &str) -> Result<()> {
 
     exec_tmux(&[
         "-L",
-        &socket_name(target),
+        &socket_name(&target),
         "attach-session",
         "-t",
         &tmux_session,
@@ -146,18 +190,39 @@ fn require_tty() -> Result<()> {
     Ok(())
 }
 
+/// Build the wording for an empty live set, naming the resolved work dir so
+/// "wrong repo of two" reads differently from "backend is actually broken" —
+/// without it both looked identical (see
+/// `doc/loom/knowledge/mistakes/tmux-backend.md`). Split out from
+/// `report_no_live_sessions` purely so the text is testable without a
+/// `.work/config.toml` on disk.
+fn no_live_sessions_message(work_dir: &Path, backend: SessionBackendKind) -> String {
+    match backend {
+        SessionBackendKind::Native => format!(
+            "loom attach requires the tmux backend for {} (set [terminal] backend = \"tmux\" \
+             in .work/config.toml or run loom run --backend tmux)",
+            work_dir.display()
+        ),
+        SessionBackendKind::Tmux => {
+            format!(
+                "No live tmux sessions in {} (backend: tmux)",
+                work_dir.display()
+            )
+        }
+    }
+}
+
 /// Explain an empty live set, choosing the message from the CONFIGURED
 /// backend. Consulted ONLY here, to pick the wording — gating the whole
 /// command on it would be wrong, since live tmux-hosted sessions from before
 /// a config flip to native must stay attachable.
 fn report_no_live_sessions(work_dir: &Path) -> Result<()> {
     let config = crate::fs::work_dir::read_terminal_config(work_dir)?;
+    let message = no_live_sessions_message(work_dir, config.backend);
     match config.backend {
-        SessionBackendKind::Native => bail!(
-            "loom attach requires the tmux backend (set [terminal] backend = \"tmux\" in .work/config.toml or run loom run --backend tmux)"
-        ),
+        SessionBackendKind::Native => bail!("{message}"),
         SessionBackendKind::Tmux => {
-            println!("No live tmux sessions");
+            println!("{message}");
             Ok(())
         }
     }
