@@ -168,7 +168,7 @@ pub fn drain_spool(
 /// Drain a worktree's spool into the stage's canonical journal.
 ///
 /// The one sink shared by both drain callers - the daemon's per-tick pass
-/// ([`crate::orchestrator::core::spool_drain`]) and the final drain a caller
+/// (`orchestrator/core/spool_drain.rs`) and the final drain a caller
 /// runs right before the worktree is removed. Both need identical
 /// validation and attribution behavior, so this is the single implementation
 /// they call instead of each carrying its own copy.
