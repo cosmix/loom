@@ -74,10 +74,9 @@ fn collect_chunk_issues(
             .or_default() += 1;
     }
     for (_, target) in &chunk.links {
-        let target_path = root
-            .join(relative_path.parent().unwrap_or(Path::new("")))
-            .join(target);
-        if !path_exists(&target_path)? {
+        let exists = contained_link_target(root, relative_path, target)
+            .is_some_and(|target_path| path_exists(&target_path));
+        if !exists {
             issues.push(CatalogIssue::BrokenLink {
                 file: relative_path.to_path_buf(),
                 target: target.clone(),
@@ -87,7 +86,7 @@ fn collect_chunk_issues(
     if let Some(project_root) = project_root {
         for source_path in &chunk.source_paths {
             if looks_like_repository_path(source_path)
-                && !path_exists(&project_root.join(source_path))?
+                && !path_exists(&project_root.join(source_path))
             {
                 issues.push(CatalogIssue::MissingSourceRef {
                     file: relative_path.to_path_buf(),
@@ -256,14 +255,57 @@ fn project_root(root: &Path) -> Option<PathBuf> {
         .then(|| project.to_path_buf())
 }
 
-fn path_exists(path: &Path) -> anyhow::Result<bool> {
-    match fs::metadata(path) {
-        Ok(_) => Ok(true),
-        Err(error) if error.kind() == ErrorKind::NotFound => Ok(false),
-        Err(error) => {
-            Err(error).with_context(|| format!("Failed to inspect path: {}", path.display()))
+/// True if `path` exists on disk. Every `fs::metadata` failure — not only
+/// `NotFound` — is treated the same as "does not exist": the result feeds a
+/// diagnostic ("is this link or source reference broken?"), never a hard
+/// error, so a permission-denied or other transient failure on ONE path in
+/// ONE knowledge file must not become a fatal `Err` that takes down
+/// `catalog::build` and, through it, every stage's Knowledge Brief
+/// (`ingest` -> `retrieve_for_stage` -> `orchestrator::signals::retrieval`).
+fn path_exists(path: &Path) -> bool {
+    fs::metadata(path).is_ok()
+}
+
+/// Resolve a markdown link `target` from the knowledge file at
+/// `relative_path` to an absolute path — but only when it stays inside
+/// `root`. Returns `None` for a target that must not be probed on disk at
+/// all: an absolute target, or one that, once `.`/`..` are folded away
+/// lexically, would land outside the knowledge tree (e.g.
+/// `../../../etc/passwd`).
+///
+/// `..` is otherwise legitimate here — a tier-2 file at
+/// `architecture/topic.md` routinely links `../concerns.md` up to a tier-1
+/// file, and that must keep resolving. Resolution is purely lexical
+/// (component-by-component `.`/`..` folding), never `Path::canonicalize`:
+/// the target may legitimately not exist yet, which is exactly the
+/// question [`path_exists`] is being asked to answer.
+fn contained_link_target(root: &Path, relative_path: &Path, target: &str) -> Option<PathBuf> {
+    if Path::new(target).is_absolute() {
+        return None;
+    }
+
+    let start = relative_path.parent().unwrap_or(Path::new(""));
+    let mut normalized = PathBuf::new();
+    for component in start.components().chain(Path::new(target).components()) {
+        match component {
+            std::path::Component::CurDir => {}
+            std::path::Component::ParentDir => {
+                if !normalized.pop() {
+                    // Popped past the knowledge root itself: the target
+                    // escapes the tree.
+                    return None;
+                }
+            }
+            std::path::Component::Normal(part) => normalized.push(part),
+            // `target` is already confirmed relative above, and `start` is
+            // always relative (it comes from a knowledge-relative file
+            // path), so neither a root nor a Windows prefix component can
+            // occur here.
+            std::path::Component::RootDir | std::path::Component::Prefix(_) => return None,
         }
     }
+
+    Some(root.join(normalized))
 }
 
 fn looks_like_repository_path(source_path: &str) -> bool {
