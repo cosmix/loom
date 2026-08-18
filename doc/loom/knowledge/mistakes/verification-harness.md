@@ -77,3 +77,31 @@ subcommand looks identical to a subcommand that was never written.
   was installed.
 - This is the same family as the existing entry about a PATH binary not being your build; the
   new part is that a MID-PLAN reinstall makes the mismatch partial and therefore convincing.
+
+## A Sandboxed Bash Tool Hides Other Processes, So Loom Reports Live Sessions as Dead (2026-08-19)
+
+**What happened:** while diagnosing a `loom attach` complaint, `loom attach` run from the agent's
+sandboxed Bash printed `No live tmux sessions` for a session that was demonstrably alive — its
+`claude` PID, its `tmux: server` process and its socket had all been confirmed present moments
+earlier. The identical command run unsandboxed found the session immediately. The first reading was
+nearly filed as a loom discovery bug.
+
+**Why:** the sandbox restricts the process table. `ps aux` inside it returned five rows — the
+agent's own processes — and `pgrep tmux` found nothing while a real tmux server was running. Loom's
+liveness rule is verified process identity (`TmuxBackend::is_session_alive` →
+`process::ProcessIdentity`), so when the recorded PID is invisible, `live_tmux_sessions` filters out
+every live tmux session and every `.work/sessions/*.md` looks stale.
+
+**The error is one-directional, which is what makes it convincing:** a filtered process table can
+only turn live into dead, never dead into live. The false reading therefore arrives as a plausible,
+specific, _quiet_ answer — "no live sessions" — rather than as anything resembling a malfunction.
+
+**Detection:** `ps aux | rg -c .` returning a handful of rows means you are reading a filtered
+process table, not an idle machine. Once that is established, every loom output derived from PID
+liveness — `loom attach`, `loom status`, crash detection, session listings — is meaningless in that
+shell.
+
+**Prevention:** never conclude that a session is dead, crashed, or orphaned from inside a sandboxed
+shell. Establish that the process table is real first, and re-run that one command unsandboxed
+before drawing any conclusion. Same family as the entries above: the tool answered honestly about
+the world it could see, and that world was not the machine.

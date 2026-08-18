@@ -158,3 +158,33 @@ for id in $(gh api repos/<owner>/<repo>/actions/runs/<run-id>/jobs --jq '.jobs[]
   gh api repos/<owner>/<repo>/check-runs/$id/annotations --jq '.[] | "\(.annotation_level): \(.message)"'
 done | sort -u
 ```
+
+## The Maintainability Gate Is Repo-Wide, So a Concurrent Session's Violations Block Your Commit (2026-08-19)
+
+**What happened:** two finished, fully verified commits could not land. The pre-commit hook runs
+`cargo test --test maintainability` over the whole tree and reported 17 violations. Only 2 were
+mine; the other 15 were in `src/sandbox/`, `src/plan/schema/` and `src/models/stage/` — files
+belonging to a _different_ Claude session working in the same checkout at the same time. Two commit
+attempts were spent before the ownership split was noticed.
+
+**Why:** the ledger gate has no notion of staged scope. It measures the WORKING TREE, so any
+uncommitted work anywhere in the repo — including another agent's, including files you have never
+opened — participates in your commit. Nothing in the failure output attributes a violation to an
+author, so the natural reading is that your own change caused all of them.
+
+**Prevention:** when the gate fails, split the list by owner before touching anything.
+`git status --porcelain` tells you which files you actually modified; fix only those. Never "fix"
+another session's violation, and never edit `maintainability-baseline.txt` to clear one. If the
+remaining failures are entirely someone else's in-flight work, the commit is blocked on THEM, not
+on you — surface that and let the operator decide, rather than reaching for `--no-verify` on your
+own authority.
+
+**Second-order effect worth knowing:** the same hook runs `cargo fmt` across the whole crate before
+the gate. Committing therefore reformats another session's in-progress files in the working tree.
+This is harmless in itself — formatting is idempotent and non-semantic — but an agent whose file
+changes underneath it will see its next `Edit` fail on a content mismatch. Re-read the file rather
+than forcing a `Write`.
+
+**Related:** the entry above covers the ledger's own rule (growth never recordable, shrinkage must
+be recorded). That rule still applies to your own violations here; this entry is only about
+correctly attributing which violations _are_ yours.
