@@ -11,7 +11,7 @@ file src/commands/graph/tests.rs 425
 file src/commands/init/tests.rs 684
 file src/commands/plan/verify.rs 599
 file src/commands/pressure/mod.rs 596
-file src/commands/repair.rs 979
+file src/commands/repair.rs 1145
 file src/commands/review/generate.rs 473
 file src/commands/run/tests.rs 459
 file src/commands/self_update/mod.rs 438
@@ -36,7 +36,7 @@ file src/git/worktree/base.rs 543
 file src/git/worktree/settings.rs 1105
 file src/hooks/tests.rs 481
 file src/models/stage/methods.rs 811
-file src/models/stage/types.rs 1201
+file src/models/stage/types.rs 1205
 file src/orchestrator/adjudication/mod.rs 695
 file src/orchestrator/adjudication/prompt.rs 491
 file src/orchestrator/core/event_handler.rs 468
@@ -57,13 +57,13 @@ file src/orchestrator/terminal/native/pid_tracking.rs 451
 file src/orchestrator/terminal/native/window_ops.rs 575
 file src/plan/amendment.rs 1193
 file src/plan/parser/extraction.rs 410
-file src/plan/schema/tests/validation_tests.rs 703
+file src/plan/schema/tests/validation_tests.rs 780
 file src/plan/schema/types.rs 450
-file src/plan/schema/validation.rs 1130
+file src/plan/schema/validation.rs 1178
 file src/plan/tests/amendment.rs 628
 file src/remote_control.rs 599
-file src/sandbox/config.rs 753
-file src/sandbox/settings.rs 2048
+file src/sandbox/config.rs 811
+file src/sandbox/settings.rs 2264
 file src/skills/index.rs 564
 file src/verify/duplicate_detection.rs 551
 file src/verify/transitions/state.rs 433
@@ -97,9 +97,10 @@ function src/commands/knowledge/tests.rs test_parse_file_type 70
 function src/commands/plan/verify.rs execute 272
 function src/commands/plan/verify.rs print_human 110
 function src/commands/pressure/mod.rs execute 86
-function src/commands/repair.rs check_all_issues 365
+function src/commands/repair.rs check_all_issues 368
 function src/commands/repair.rs execute 99
-function src/commands/repair.rs fix_issue 71
+function src/commands/repair.rs fix_issue 82
+function src/commands/repair/tests.rs repair_fixes_a_stale_knowledge_directory_deny_in_a_worktree 62
 function src/commands/resume.rs execute 99
 function src/commands/review/generate.rs execute 162
 function src/commands/review/generate.rs load_stage_infos 59
@@ -285,17 +286,21 @@ function src/plan/schema/tests/security_policy_tests.rs rejects_misspelled_neste
 function src/plan/schema/validation.rs check_cross_stage_wiring_coverage 66
 function src/plan/schema/validation.rs validate 387
 function src/plan/schema/validation.rs validate_structural_preflight 219
-function src/sandbox/settings.rs generate_settings_json 99
-function src/sandbox/settings.rs merge_existing_permissions 72
-function src/sandbox/settings.rs test_deny_write_parent_traversal_not_in_os_sandbox 60
+function src/sandbox/settings.rs every_stage_type_can_write_the_knowledge_directory 57
+function src/sandbox/settings.rs generate_settings_json 105
+function src/sandbox/settings.rs merge_existing_permissions 89
+function src/sandbox/settings.rs test_deny_write_parent_traversal_not_in_os_sandbox 77
 function src/sandbox/settings.rs test_generate_settings_emits_network_block 53
 function src/sandbox/settings.rs test_write_settings_adds_resolved_work_symlink_permissions 100
 function src/sandbox/settings.rs test_write_settings_does_not_carry_forward_existing_allow 82
-function src/sandbox/settings.rs test_write_settings_main_repo_drops_stale_escape_from_existing 59
+function src/sandbox/settings.rs test_write_settings_main_repo_drops_stale_escape_from_existing 69
+function src/sandbox/settings.rs test_write_settings_main_repo_strips_worktree_escape_denies 54
 function src/sandbox/settings.rs test_write_settings_no_existing_file 52
 function src/sandbox/settings.rs test_write_settings_preserves_existing_deny_but_not_allow 72
-function src/sandbox/settings.rs test_write_settings_worktree_drops_escape_write_deny_from_edit_rule 51
+function src/sandbox/settings.rs test_write_settings_scrubs_stale_knowledge_dir_deny_from_existing 51
+function src/sandbox/settings.rs test_write_settings_worktree_drops_escape_write_deny_from_edit_rule 56
 function src/sandbox/settings.rs write_settings 132
+function src/sandbox/settings/policy.rs filesystem_settings 52
 function src/skills/matcher.rs match_skills 62
 function src/verify/baseline/compare.rs compare_to_baseline 79
 function src/verify/criteria/runner.rs run_acceptance_with_config 106
