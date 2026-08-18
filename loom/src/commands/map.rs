@@ -85,13 +85,23 @@ fn run_views(project_root: &Path, work_dir: &WorkDir, args: &MapArgs) -> Result<
 }
 
 /// Build (or reconcile) the working-tree source graph and resolve it against
-/// its overlay. Works even when the graph has never been built before.
+/// its overlay. Works even when the graph has never been built before, and
+/// degrades rather than erroring when the cache can't be written: `loom map`
+/// is a read-only query, so a read-only `.work` (a sandboxed stage worktree,
+/// for instance) must never stop it from reading whatever layers already sit
+/// on disk. A write failure prints one warning and falls back to the
+/// revision the store already recorded; if that leaves no readable layer at
+/// all, a second warning says so.
 fn load_graph(project_root: &Path, work_dir: &WorkDir) -> Result<(ResolvedGraph, ResolutionStats)> {
     let store = ContextStore::open(work_dir)?;
-    store.ensure()?;
+    if let Err(error) = store.ensure() {
+        eprintln!(
+            "warning: could not prepare the source graph cache ({error}); reading the layers already on disk"
+        );
+    }
     let graph_store = GraphStore::new(store.root(), work_dir.root());
     let (plan, stage) = local_overlay_key(project_root);
-    let outcome = reconcile_source_graph(
+    let revision = match reconcile_source_graph(
         &store,
         &graph_store,
         project_root,
@@ -99,11 +109,24 @@ fn load_graph(project_root: &Path, work_dir: &WorkDir) -> Result<(ResolvedGraph,
             plan: plan.clone(),
             stage: stage.clone(),
         },
-    )?;
-    let mut graph = graph_store.resolved(
-        &outcome.freshness.revision,
-        Some((plan.as_str(), stage.as_str())),
-    )?;
+    ) {
+        Ok(outcome) => outcome.freshness.revision,
+        Err(error) => {
+            eprintln!(
+                "warning: could not refresh the working-tree source graph ({error}); reading the layers already on disk"
+            );
+            store
+                .load_state()
+                .map(|state| state.semantic.revision)
+                .unwrap_or_default()
+        }
+    };
+    let mut graph = graph_store.resolved(&revision, Some((plan.as_str(), stage.as_str())))?;
+    if graph.files.is_empty() {
+        eprintln!(
+            "warning: no readable source-graph layer exists for revision {revision}; run `loom knowledge sync` (or `loom init`) to publish one"
+        );
+    }
     let stats = resolve_graph(&mut graph);
     Ok((graph, stats))
 }
