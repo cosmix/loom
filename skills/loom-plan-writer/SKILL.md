@@ -235,7 +235,7 @@ graph LR
 
 Captures codebase understanding before implementation. `stage_type: knowledge`, model opus (`reasoning_effort: xhigh`) — may write `doc/loom/knowledge/**`. It should: run `loom knowledge sync` to rebuild the derived retrieval artifacts and perform any one-time flat-to-hierarchical upgrade; the knowledge directory scaffold and source graph are created automatically at `loom init` and at run startup, so this stage exists to write CONTENT, never to create the directory or seed it from static analysis; then spawn parallel `Explore` subagents for entry-points, patterns, conventions, each returning `loom knowledge update <file> "..."` commands (tier routing below). Review existing `mistakes.md` before completing. **Use `loom knowledge` CLI, never Write/Edit on knowledge files.**
 
-**Skip ONLY if** `doc/loom/knowledge/` is already populated with real content (the tier-1 files carry `## ` sections describing this codebase, not just the scaffold) AND `loom knowledge sync` runs clean.
+**Skip ONLY if** `doc/loom/knowledge/` is already populated with real content (the tier-1 files carry `##` sections describing this codebase, not just the scaffold) AND `loom knowledge sync` runs clean.
 
 ### Knowledge tier routing (bootstrap & distill)
 
