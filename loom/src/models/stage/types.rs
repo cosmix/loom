@@ -34,25 +34,25 @@ impl StageType {
     /// picks the model per the playbook below. This fallback is a safety net,
     /// not the intended path.
     ///
-    /// Under the model playbook, every stage's MAIN AGENT is an opus orchestrator:
-    /// it reads context, plans the work, and delegates implementation to subagents
-    /// (sonnet or codex terra workers for common implementation and integration
-    /// tests, codex luna workers for boilerplate/scaffolding/simple unit tests,
-    /// opus workers only where architecture or algorithm judgment is required).
-    /// Model choice for the actual implementation work happens at the subagent
-    /// level, not here — so the main-agent default is opus across every stage
-    /// type, regardless of how "lightweight" that stage type used to look in
-    /// isolation.
+    /// Under the model playbook, every implementation stage's MAIN AGENT is an
+    /// opus orchestrator: it reads context, plans the work, and delegates
+    /// implementation to subagents (sonnet or codex terra workers for common
+    /// implementation and integration tests, codex luna workers for
+    /// boilerplate/scaffolding/simple unit tests, opus workers only where
+    /// architecture or algorithm judgment is required). Model choice for the
+    /// actual implementation work happens at the subagent level, not here.
+    /// The one exception is knowledge-distill: a single-agent sonnet pass over
+    /// memories that are already compact summaries — no subagents.
     pub fn default_model(&self) -> &'static str {
         match self {
             // Knowledge stages: the main agent orchestrates exploration and
             // delegates to Explore/sonnet subagents, curating their findings itself.
             StageType::Knowledge => "opus",
-            // KnowledgeDistill curates ALL stage memories into permanent knowledge:
-            // a context-heavy, judgment-laden reduce step. Opus (1M window) absorbs the
-            // accumulated memory volume and synthesizes/dedupes better than sonnet. The
-            // agent may delegate information-gathering to cheaper sonnet subagents.
-            StageType::KnowledgeDistill => "opus",
+            // KnowledgeDistill curates stage memories into permanent knowledge:
+            // a linear read-synthesize-write pass driven by sonnet with NO
+            // subagents — the memories are already compact summaries, so the
+            // volume and the judgment both fit a single sonnet session.
+            StageType::KnowledgeDistill => "sonnet",
             // Standard and integration-verify stages: the main agent orchestrates
             // and delegates implementation/review work to subagents.
             StageType::Standard | StageType::IntegrationVerify => "opus",

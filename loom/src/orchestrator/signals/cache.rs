@@ -566,10 +566,7 @@ pub fn generate_knowledge_distill_stable_prefix() -> String {
     content.push_str(
         "   SPOT-READ code when a memory is ambiguous, conflicting, or clearly incomplete — do NOT re-read\n",
     );
-    content.push_str(
-        "   the whole diff; that is what fills your context. (On large plans, delegate any code spot-reads\n",
-    );
-    content.push_str("   to sonnet subagents — see context management below.)\n");
+    content.push_str("   the whole diff; that is what fills your context.\n");
     content
         .push_str("4. **DISTILL** all memories into `loom knowledge` — synthesize insights from\n");
     content.push_str("   ALL stages (implementation AND your own verification findings):\n");
@@ -592,53 +589,27 @@ pub fn generate_knowledge_distill_stable_prefix() -> String {
     content.push_str("6. Remove or update stale knowledge entries — if a mistake has been fixed, a pattern replaced, or an entry-point renamed, update or delete the old entry. Stale entries mislead future agents\n");
     content.push_str("7. Generate review document: `loom review`\n\n");
 
-    // Self-directed subagent delegation to protect the curator's context window
-    content
-        .push_str("**Managing your context — delegate gathering, do the curation yourself:**\n\n");
+    // Distillation is single-agent work: the curator holds the whole picture.
+    content.push_str("**Work single-agent — do NOT spawn subagents:**\n\n");
     content.push_str(
-        "Distillation is a reduce step: it must read ALL stage memories AND review the code\n",
+        "Distillation is a linear read-synthesize-write pass. The stage memories are already\n",
     );
     content.push_str(
-        "changes across every stage. On a large plan that raw volume can fill your context\n",
-    );
-    content.push_str("before you finish writing knowledge. YOU decide whether to fan out:\n\n");
-    content.push_str(
-        "- **Small plan** (few stages, modest memories/diff) — gather and curate directly in\n",
+        "compact summaries, and coherence comes from ONE curator holding the whole picture.\n\n",
     );
     content.push_str(
-        "  this session. Do NOT spawn subagents for trivial volume; that is over-engineering.\n",
+        "- Do NOT spawn subagents (Task tool) — no gathering agents, no reviewers, no fan-out.\n",
     );
     content.push_str(
-        "- **Large plan** (many stages, large `loom memory show --all`, wide diff) — spawn\n",
+        "- Manage context by leaning on the memories: they are your PRIMARY evidence; keep\n",
     );
     content.push_str(
-        "  **information-gathering subagents** to read slices and return COMPACT summaries,\n",
+        "  code spot-reads narrow (only where a memory is ambiguous, conflicting, or incomplete).\n",
     );
     content.push_str(
-        "  keeping the raw bulk out of your context. Split by knowledge category (architecture,\n",
+        "- You are the only writer: synthesize, dedupe across categories, and run every\n",
     );
-    content.push_str(
-        "  patterns, mistakes, …) or by group of stages — whichever yields disjoint reading.\n\n",
-    );
-    content.push_str("**If you fan out:**\n\n");
-    content.push_str(
-        "- Gathering/summarizing subagents are read-only and can be **sonnet** (`Explore` or\n",
-    );
-    content.push_str(
-        "  `loom-software-engineer`) — they read memories/diffs and report; cheap and sufficient.\n",
-    );
-    content.push_str(
-        "- YOU (the curator) remain the only writer: synthesize the summaries, dedupe across\n",
-    );
-    content.push_str(
-        "  categories, and write every `loom knowledge update` yourself. Coherence is your job.\n",
-    );
-    content.push_str(
-        "- Subagents MUST NOT run `loom knowledge`/`loom memory`/`git` or `loom stage complete`,\n",
-    );
-    content.push_str(
-        "  and MUST NOT write knowledge files — they only gather and report (see Rule 5).\n\n",
-    );
+    content.push_str("  `loom knowledge update` yourself.\n\n");
 
     // Do NOT modify CLAUDE.md
     content.push_str("**IMPORTANT — Do NOT modify the project's CLAUDE.md:**\n\n");
@@ -1118,6 +1089,11 @@ mod tests {
         // Pins the fact that this prefix never calls append_subagent_restrictions,
         // so it must not carry the implementation-stage no-verify rule.
         assert!(!prefix.contains("VERIFICATION IS THE MAIN AGENT'S JOB"));
+        // Distill runs single-agent on sonnet: the prefix must forbid subagents
+        // and must no longer carry the retired fan-out guidance.
+        assert!(prefix.contains("Work single-agent — do NOT spawn subagents"));
+        assert!(!prefix.contains("information-gathering subagents"));
+        assert!(!prefix.contains("If you fan out"));
     }
 
     #[test]

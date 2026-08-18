@@ -254,7 +254,7 @@ Captures codebase understanding before implementation. `stage_type: knowledge`, 
 
 ### knowledge-distill (last)
 
-`stage_type: knowledge-distill`, model opus (`reasoning_effort: xhigh`). Curates all stage memories into permanent knowledge and updates user-facing docs. Reads the plan, `loom memory show --all`, and current knowledge; synthesizes mistakes as actionable prevention rules, patterns, decisions, conventions via `loom knowledge update`, following the same tier-routing rule as knowledge-bootstrap (above); `INDEX.md` regenerates on each knowledge write, so then run `loom review` to prune stale entries; updates README/CONTRIBUTING for changed behavior (only relevant sections). **Context discipline (200k window):** on a large plan, delegate memory/diff gathering to read-only subagents that return compact summaries; stay the sole writer of knowledge files. **Skip ONLY if** the plan produces no new knowledge worth preserving (rare).
+`stage_type: knowledge-distill`, model sonnet (`reasoning_effort: high`) — the ONE bookend that is NOT opus: distillation is a linear read-synthesize-write pass, run **single-agent with NO subagents**. Curates all stage memories into permanent knowledge and updates user-facing docs. Reads the plan, `loom memory show --all`, and current knowledge; synthesizes mistakes as actionable prevention rules, patterns, decisions, conventions via `loom knowledge update`, following the same tier-routing rule as knowledge-bootstrap (above); `INDEX.md` regenerates on each knowledge write, so then run `loom review` to prune stale entries; updates README/CONTRIBUTING for changed behavior (only relevant sections). **Context discipline (200k window):** the memories are compact summaries — lean on them and keep code spot-reads narrow; do NOT fan out to subagents. **Skip ONLY if** the plan produces no new knowledge worth preserving (rare).
 
 Full YAML for all three bookends is in the canonical template (Section 10).
 
@@ -267,7 +267,7 @@ Full YAML for all three bookends is in the canonical template (Section 10).
 
 ## 4. Model Selection Per Stage (REQUIRED)
 
-> ⚠️ **EVERY stage MUST set `model: "opus"` and `reasoning_effort: "xhigh"`.** There is no per-stage subagent-model choice — every stage's main agent is an opus orchestrator. Model choice does not disappear; it MOVES DOWN to the subagents each stage spawns.
+> ⚠️ **EVERY stage MUST set `model: "opus"` and `reasoning_effort: "xhigh"` — EXCEPT knowledge-distill, which sets `model: "sonnet"` and `reasoning_effort: "high"` and spawns NO subagents.** There is no per-stage subagent-model choice — every other stage's main agent is an opus orchestrator. Model choice does not disappear; it MOVES DOWN to the subagents each stage spawns.
 
 BLOCK-B — model allocation playbook:
 
@@ -417,7 +417,7 @@ widen how long an agent may sit blocked on one check.
 
 Consequences for how you write a plan:
 
-- **EVERY stage sets `model: "opus"` in its YAML.** There is no per-stage subagent-model choice any more — the stage's main agent is always an opus orchestrator.
+- **EVERY stage sets `model: "opus"` in its YAML — except knowledge-distill, which sets `model: "sonnet"` and runs single-agent with no subagents.** There is no per-stage subagent-model choice any more — every other stage's main agent is an opus orchestrator.
 - **The fable/opus/sonnet-or-codex-terra/codex-luna decision MOVES DOWN to the subagent level**, made by the orchestrator AT SPAWN TIME — not by the plan author in YAML. The orchestrator picks per subagent assignment, cheapest tier first: codex gpt-5.6-luna for boilerplate, scaffolding, and simple unit tests; sonnet (or codex gpt-5.6-terra) for common implementation and integration tests — the default lane; opus for mainstream architecture and algorithm implementation; fable only for visual/UI design, a bug that survived a delegated fix attempt, or extremely challenging algorithmic design (BLOCK-B rule 3; fable mechanics follow the block).
 - **"Keep sonnet stages small" becomes "keep each subagent's assignment small."** A stage can be as large as the work genuinely requires; what must stay small is each individual subagent's task — that is what earns it a cheap model and keeps it inside its own context budget.
 - **ESCALATION RULE: two failures on the same task ⇒ spawn a `loom-advisor` (fable) subagent, NOT a blind retry.** This replaces any earlier guidance to retry a failing subagent with a bigger model — diagnose first (narrow scope, full detail, advice returned), then re-dispatch with whatever the advisor recommends.
@@ -457,7 +457,7 @@ Consequences for how you write a plan:
 
 **Keep each subagent's assignment small — decompose, don't up-model for headroom.** A subagent that takes on too much hits its own context budget and compacts — an uncached re-read that is slow, expensive, and degrades quality (the cheap model becomes the expensive, worse one). Two levers, in order: (1) scope each subagent's task to a bounded slice — if an assignment grows past ~130k of working context, split it into more subagents; (2) decompose with a subagent hierarchy (Section 5) so the orchestrator (and any coordinator subagent) stays a THIN COORDINATOR at every level — workers burn their own (discarded) context and return compact summaries. **An opus stage with no subagent assignments — where the orchestrator does the bulk of the implementation itself — is a red flag:** it defeats the point of ALWAYS-DELEGATED implementation and risks the same compaction failure, at a higher cost per token.
 
-**Bookend defaults:** knowledge-bootstrap, integration-verify, and knowledge-distill are all `model: "opus"` — the same universal default as every other stage (Section 3).
+**Bookend defaults:** knowledge-bootstrap and integration-verify are `model: "opus"` — the same universal default as every other stage (Section 3). knowledge-distill is the one exception: `model: "sonnet"`, `reasoning_effort: "high"`, single-agent with NO subagents.
 
 ---
 
@@ -912,13 +912,13 @@ loom:
     - id: knowledge-distill
       name: "Knowledge Distillation"
       stage_type: knowledge-distill
-      model: "opus"
-      reasoning_effort: "xhigh"
+      model: "sonnet"
+      reasoning_effort: "high"
       description: |
         Curate all stage memories into permanent knowledge; update user docs.
         NEVER Claude Code auto-memory.
-        CONTEXT DISCIPLINE (200k): on large plans delegate gathering to read-only
-        subagents; stay the sole writer of knowledge files.
+        SINGLE-AGENT: do NOT spawn subagents — memories are compact summaries;
+        lean on them and keep code spot-reads narrow.
         Read plan + loom memory show --all + doc/loom/knowledge/*.md.
         Curate mistakes (prevention rules), patterns, decisions, conventions via
         loom knowledge update. TIER ROUTING: findings ~40 lines or fewer go

@@ -47,7 +47,7 @@ file src/orchestrator/core/stage_executor.rs 953
 file src/orchestrator/merge_attribution.rs 543
 file src/orchestrator/monitor/heartbeat.rs 413
 file src/orchestrator/monitor/tests.rs 737
-file src/orchestrator/signals/cache.rs 1132
+file src/orchestrator/signals/cache.rs 1108
 file src/orchestrator/signals/format/sections.rs 1173
 file src/orchestrator/signals/generate.rs 700
 file src/orchestrator/signals/tests.rs 551
@@ -241,7 +241,7 @@ function src/orchestrator/monitor/tests.rs test_hung_detection_honors_per_stage_
 function src/orchestrator/retry.rs classify_failure 64
 function src/orchestrator/retry.rs test_classify_failure 85
 function src/orchestrator/signals/cache.rs generate_integration_verify_stable_prefix 145
-function src/orchestrator/signals/cache.rs generate_knowledge_distill_stable_prefix 174
+function src/orchestrator/signals/cache.rs generate_knowledge_distill_stable_prefix 145
 function src/orchestrator/signals/cache.rs generate_knowledge_stable_prefix 106
 function src/orchestrator/signals/cache.rs generate_stable_prefix 135
 function src/orchestrator/signals/cache.rs test_generate_stable_prefix_contains_required_sections 77
