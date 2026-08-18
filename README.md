@@ -464,9 +464,11 @@ loom knowledge context --query "sandbox rules" --json              # machine-rea
 
 Stage sessions do not have to ask. Signal generation embeds a per-stage **Knowledge Brief** built through the same single entry point, so what a stage receives at spawn and what you get from the CLI are produced identically. Loom records what each recipient was given, so a second retrieval in the same session skips what the first already quoted rather than repeating it.
 
-`--scope` selects which channels to search: `knowledge` searches the curated prose, `source` searches the derived source graph of symbols extracted from the code, and `all` (the default) fuses both.
+`--scope` selects which channels to search: `knowledge` searches the curated prose, `source` searches the derived source graph of symbols extracted from the code, and `all` (the default) fuses both. The two are ranked separately — prose over chunk text, symbols over their scope and signature — and then fused, so one pack can mix curated prose with the exact symbols a query names. A symbol whose file the parser could not fully read is still returned, but without a high-confidence claim.
 
-Run `loom knowledge sync` after editing knowledge outside the CLI; it reports whether both derived layers are current.
+**The source graph maintains itself.** `loom init` and `loom run` publish a base layer for the current revision before anything else starts, and each stage's working-tree overlay is refreshed immediately before its signal is written — so a stage's brief describes the code as that stage will actually find it. Publication is advisory: when it cannot run, loom prints one line and carries on, because a missing graph must degrade retrieval rather than block a run. A base layer is keyed to a revision and so is never published from a dirty tree; there, `loom knowledge sync` builds a working-tree overlay instead and tells you which layer it wrote.
+
+Run `loom knowledge sync` after editing knowledge outside the CLI; it reports whether both derived layers are current, naming the source-graph layer it produced — `base`, `local-overlay` or `skipped`, with the reason.
 
 ### Bootstrapping and maintenance
 
