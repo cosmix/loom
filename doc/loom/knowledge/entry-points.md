@@ -516,34 +516,34 @@ so the children reach the parent's private helpers via `use super::*` without wi
 Read `loom/src/context/mod.rs` FIRST — its docstring carries an accurate pipeline diagram
 and states plainly which channel is wired. Then the file for what you touch:
 
-| Path | What it owns |
-| --- | --- |
-| `context/mod.rs` | pipeline overview, public re-exports, the one-entry-point rule |
-| `context/retrieve.rs` | `retrieve_for_stage`, `StageQuery`, `context_epoch` — the ONLY way into the pipeline |
-| `context/schema.rs` | `ContextPack`, `ContextItem`, `Channel`, `Freshness`, token constants; re-exports source-graph names |
-| `context/ingest.rs`, `rank.rs`, `fuse.rs`, `pack.rs` | chunk ingest, per-channel scoring, reciprocal-rank fusion, budget-bounded packing |
-| `context/store.rs` | derived-artifact store under `.loom/cache/context-v1/`; **`open` follows the `.work` symlink to the MAIN project root** |
-| `context/delivery.rs` | delivery records, `plan_key`/`plan_key_from`, epoch-scoped suppression |
-| `context/untrusted.rs` | `inline_safe` — the ONE flattener for untrusted values on agent-facing surfaces |
-| `context/freshness.rs`, `fingerprint.rs`, `coverage.rs` | staleness tracking, content fingerprints, `CoverageReport` |
-| `context/refresh/source_graph.rs` | `reconcile_source_graph`, `SourceGraphScope`, `SourceGraphOutcome` |
-| `context/graph_store/` | base/overlay layering, `GraphLayer`, canonical serialization |
-| `context/source_graph/` | `SourceNode`, `SourceEdge`, `EdgeProvenance`, confidence ceilings, `node_id` |
-| `context/extract/` | `SourceGraphExtractor` trait, `registry()`, `ExtractorIdentity`, `treesitter.rs` shared harness, one module per language |
-| `context/resolve/` | cross-file symbol resolution, `impact`, `SymbolIndex` |
-| `telemetry/mod.rs` | `TelemetryEvent`, `emit`, `read_events` over `.work/telemetry/events.jsonl` |
-| `orchestrator/signals/format/brief.rs` | renders the Knowledge Brief into a stage signal |
-| `orchestrator/core/stage_telemetry.rs` | the only telemetry writer, called from `stage_executor.rs:570` |
-| `orchestrator/merge_lifecycle.rs` | merge/verify/cleanup ordering; the single door to post-merge cleanup |
+| Path                                                    | What it owns                                                                                                             |
+| ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `context/mod.rs`                                        | pipeline overview, public re-exports, the one-entry-point rule                                                           |
+| `context/retrieve.rs`                                   | `retrieve_for_stage`, `StageQuery`, `context_epoch` — the ONLY way into the pipeline                                     |
+| `context/schema.rs`                                     | `ContextPack`, `ContextItem`, `Channel`, `Freshness`, token constants; re-exports source-graph names                     |
+| `context/ingest.rs`, `rank.rs`, `fuse.rs`, `pack.rs`    | chunk ingest, per-channel scoring, reciprocal-rank fusion, budget-bounded packing                                        |
+| `context/store.rs`                                      | derived-artifact store under `.loom/cache/context-v1/`; **`open` follows the `.work` symlink to the MAIN project root**  |
+| `context/delivery.rs`                                   | delivery records, `plan_key`/`plan_key_from`, epoch-scoped suppression                                                   |
+| `context/untrusted.rs`                                  | `inline_safe` — the ONE flattener for untrusted values on agent-facing surfaces                                          |
+| `context/freshness.rs`, `fingerprint.rs`, `coverage.rs` | staleness tracking, content fingerprints, `CoverageReport`                                                               |
+| `context/refresh/source_graph.rs`                       | `reconcile_source_graph`, `SourceGraphScope`, `SourceGraphOutcome`                                                       |
+| `context/graph_store/`                                  | base/overlay layering, `GraphLayer`, canonical serialization                                                             |
+| `context/source_graph/`                                 | `SourceNode`, `SourceEdge`, `EdgeProvenance`, confidence ceilings, `node_id`                                             |
+| `context/extract/`                                      | `SourceGraphExtractor` trait, `registry()`, `ExtractorIdentity`, `treesitter.rs` shared harness, one module per language |
+| `context/resolve/`                                      | cross-file symbol resolution, `impact`, `SymbolIndex`                                                                    |
+| `telemetry/mod.rs`                                      | `TelemetryEvent`, `emit`, `read_events` over `.work/telemetry/events.jsonl`                                              |
+| `orchestrator/signals/format/brief.rs`                  | renders the Knowledge Brief into a stage signal                                                                          |
+| `orchestrator/core/stage_telemetry.rs`                  | the only telemetry writer, called from `stage_executor.rs:570`                                                           |
+| `orchestrator/merge_lifecycle.rs`                       | merge/verify/cleanup ordering; the single door to post-merge cleanup                                                     |
 
 ## Execution Containment (2026-08-17)
 
-| Path | What it owns |
-| --- | --- |
-| `verify/criteria/confine.rs` | `spawn_confined` (the single leaf primitive for every plan-authored command), `resolve_confinement`, `plan_confinement` |
-| `process/environment.rs` | `STAGE_HOST_ENV_ALLOWLIST`, `apply_stage_environment` |
-| `models/stage/types.rs:255` | `CommandConfinement`; `:340` `NetworkConfig` |
-| `orchestrator/terminal/native/wrapper.rs:181` | a SECOND, diverging copy of the env allowlist |
+| Path                                          | What it owns                                                                                                            |
+| --------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `verify/criteria/confine.rs`                  | `spawn_confined` (the single leaf primitive for every plan-authored command), `resolve_confinement`, `plan_confinement` |
+| `process/environment.rs`                      | `STAGE_HOST_ENV_ALLOWLIST`, `apply_stage_environment`                                                                   |
+| `models/stage/types.rs:255`                   | `CommandConfinement`; `:340` `NetworkConfig`                                                                            |
+| `orchestrator/terminal/native/wrapper.rs:181` | a SECOND, diverging copy of the env allowlist                                                                           |
 
 Start from `architecture/execution-containment.md` — it states precisely what these do and
 do not guarantee, which is narrower than the word "containment" suggests.
@@ -555,16 +555,16 @@ lag `main` mid-plan: at the end of this plan `loom knowledge context` worked whi
 `loom map --outline`, `loom context` and `loom hook` all reported "unrecognized subcommand"
 from the same binary. Verify a flag against `loom/src/cli/` before documenting it.
 
-| Command | Defined in | Options |
-| --- | --- | --- |
-| `loom knowledge context` | `commands/knowledge/context.rs` | `--query <QUERY>` (**required**), `--budget-tokens <N>` (default 2000), `--scope <knowledge\|source\|all>` (default `all`), `--require-id <ID>` (repeatable), `--explain`, `--json`. **There is no `--stage` flag** — see `concerns.md`. |
-| `loom knowledge status` | `commands/knowledge/status.rs` | `--json`. Reports catalog freshness, size, reported issues. |
-| `loom knowledge sync` | `commands/knowledge/sync.rs` | `--structural-only`, `--json`. Rebuilds derived context artifacts after the knowledge tree changes. |
-| `loom map --outline <PATH>` | `commands/map.rs:34` | prints the indexed symbols of one file, in source order |
-| `loom map --find-all <SYMBOL>` | `commands/map.rs:37` | prints every indexed node whose name matches |
-| `loom map --impact <SYMBOL_OR_PATH>` | `commands/map.rs:40` | prints what reaches a symbol or file, with path confidence |
-| `loom context record-edit` | `cli/types_ops.rs:78` | `--stage <STAGE>`, `--path <PATH>` (**required**, repeatable). Keeps a stage's context overlay current. |
-| `loom hook user-prompt` | `cli/types_ops.rs:92` | no options. `UserPromptSubmit` entry point; emits a retrieval brief or nothing. |
+| Command                              | Defined in                      | Options                                                                                                                                                                                                                                  |
+| ------------------------------------ | ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `loom knowledge context`             | `commands/knowledge/context.rs` | `--query <QUERY>` (**required**), `--budget-tokens <N>` (default 2000), `--scope <knowledge\|source\|all>` (default `all`), `--require-id <ID>` (repeatable), `--explain`, `--json`. **There is no `--stage` flag** — see `concerns.md`. |
+| `loom knowledge status`              | `commands/knowledge/status.rs`  | `--json`. Reports catalog freshness, size, reported issues.                                                                                                                                                                              |
+| `loom knowledge sync`                | `commands/knowledge/sync.rs`    | `--structural-only`, `--json`. Rebuilds derived context artifacts after the knowledge tree changes.                                                                                                                                      |
+| `loom map --outline <PATH>`          | `commands/map.rs:34`            | prints the indexed symbols of one file, in source order                                                                                                                                                                                  |
+| `loom map --find-all <SYMBOL>`       | `commands/map.rs:37`            | prints every indexed node whose name matches                                                                                                                                                                                             |
+| `loom map --impact <SYMBOL_OR_PATH>` | `commands/map.rs:40`            | prints what reaches a symbol or file, with path confidence                                                                                                                                                                               |
+| `loom context record-edit`           | `cli/types_ops.rs:78`           | `--stage <STAGE>`, `--path <PATH>` (**required**, repeatable). Keeps a stage's context overlay current.                                                                                                                                  |
+| `loom hook user-prompt`              | `cli/types_ops.rs:92`           | no options. `UserPromptSubmit` entry point; emits a retrieval brief or nothing.                                                                                                                                                          |
 
 The three `loom map` view flags short-circuit the original knowledge-file analysis
 (`map.rs:56-58`): if any is set, `map` is a read-only source-graph view and does not write
