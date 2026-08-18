@@ -139,12 +139,23 @@ pub(super) fn dirty_tree_reason(project_root: &Path, revision: &str) -> Option<S
 }
 
 /// List tracked files, dropping cache/build roots and paths git lists that no longer exist on disk.
+///
+/// Asks for `-z` (NUL-terminated, unquoted) output rather than the default
+/// newline-terminated form. With `core.quotePath` on (git's default), any
+/// tracked path containing a non-ASCII or otherwise "unusual" byte is
+/// C-quoted on the newline form — e.g. `"loom/src/caf\303\251.rs"` — so a
+/// split on `\n` would leave the quoted literal in `line`,
+/// `project_root.join(line).exists()` would never resolve it, and the file
+/// would be silently dropped from the graph, in violation of this module's
+/// "nothing here ever silently drops a file" contract (see the module doc
+/// comment above). `-z` sidesteps quoting entirely and, as a bonus, also
+/// handles paths containing embedded spaces or newlines correctly. Do not
+/// "simplify" this back to the newline form.
 fn tracked_source_files(project_root: &Path) -> Result<Vec<String>> {
-    let output = run_git_checked(&["ls-files"], project_root)?;
+    let output = run_git_checked(&["ls-files", "-z"], project_root)?;
 
     let mut files: Vec<String> = output
-        .split('\n')
-        .map(|line| line.trim())
+        .split('\0')
         .filter(|line| !line.is_empty())
         .filter(|line| {
             let first_component = line.split('/').next().unwrap_or(line);

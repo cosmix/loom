@@ -68,12 +68,18 @@ pub fn outline(graph: &ResolvedGraph, project_root: &Path, arg: &str) {
 
 pub(crate) fn render_outline(graph: &ResolvedGraph, project_root: &Path, arg: &str) -> String {
     let rel = project_relative(project_root, arg).unwrap_or_else(|| arg.to_string());
+    // Flatten only for display - the graph lookup below keys on the raw
+    // `rel`, since flattening must never change matching behaviour.
+    let safe_rel = crate::context::untrusted::inline_safe(&rel);
 
     let Some(entry) = graph.files.get(&rel) else {
-        return format!("no indexed file at {rel}\n{}", CoverageReport::of(graph));
+        return format!(
+            "no indexed file at {safe_rel}\n{}",
+            CoverageReport::of(graph)
+        );
     };
 
-    let mut lines = vec![format!("{} Outline: {}", "→".cyan().bold(), rel)];
+    let mut lines = vec![format!("{} Outline: {}", "→".cyan().bold(), safe_rel)];
     let mut nodes: Vec<&SourceNode> = entry
         .nodes
         .iter()
@@ -91,15 +97,16 @@ pub(crate) fn render_outline(graph: &ResolvedGraph, project_root: &Path, arg: &s
 }
 
 /// Format one outline row: line range, kind, scope path, signature.
+///
+/// `scope` and `signature` both originate in the parsed source file, not in
+/// this program - they go through [`crate::context::untrusted::inline_safe`]
+/// like every other graph-derived value rendered on this agent-facing
+/// surface (see the module's containment rule).
 fn format_node_line(node: &SourceNode) -> String {
     let range = format!("L{}-L{}", node.span.line_start, node.span.line_end);
-    let scope = node.scope.join("::");
-    let collapsed = node
-        .signature
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ");
-    let signature = crate::utils::truncate_for_display(&collapsed, SIGNATURE_MAX_LEN);
+    let scope = crate::context::untrusted::inline_safe(&node.scope.join("::"));
+    let signature = crate::context::untrusted::inline_safe(&node.signature);
+    let signature = crate::utils::truncate_for_display(&signature, SIGNATURE_MAX_LEN);
     format!(
         "{:<11} {:<11} {:<30} {}",
         range,
@@ -111,17 +118,30 @@ fn format_node_line(node: &SourceNode) -> String {
 
 /// A file's own coverage status, with the detail that explains a degraded
 /// status — a file with no symbols must say why.
+///
+/// Every `detail` here is flattened through
+/// [`crate::context::untrusted::inline_safe`]: `ParseError`'s detail is
+/// built from a raw line of the offending source file
+/// (`context::extract::treesitter::collect::first_error`), so it is
+/// repo-controlled text reaching agent-visible stdout the same way a
+/// Knowledge Brief field is.
 fn file_coverage_line(coverage: &FileCoverage) -> String {
     let status = coverage.status();
     match coverage {
         FileCoverage::Full => format!("coverage: {status}"),
         FileCoverage::Partial { detail } | FileCoverage::LexicalOnly { detail } => {
-            format!("coverage: {status} - {detail}")
+            format!(
+                "coverage: {status} - {}",
+                crate::context::untrusted::inline_safe(detail)
+            )
         }
         FileCoverage::Oversized { bytes, limit } => {
             format!("coverage: {status} - {bytes} bytes (limit {limit})")
         }
-        FileCoverage::ParseError { detail, .. } => format!("coverage: {status} - {detail}"),
+        FileCoverage::ParseError { detail, .. } => format!(
+            "coverage: {status} - {}",
+            crate::context::untrusted::inline_safe(detail)
+        ),
     }
 }
 
@@ -133,35 +153,23 @@ pub fn find_all(graph: &ResolvedGraph, symbol: &str) {
 }
 
 pub(crate) fn render_find_all(graph: &ResolvedGraph, symbol: &str) -> String {
-    let exact: Vec<&SourceNode> = graph
-        .nodes()
-        .filter(|node| node_names(node).iter().any(|name| name == symbol))
-        .collect();
+    let (mut hits, label) = find_symbol_matches(graph, symbol);
 
-    let (mut hits, label) = if exact.is_empty() {
-        let needle = symbol.to_lowercase();
-        let substring = graph
-            .nodes()
-            .filter(|node| {
-                node_names(node)
-                    .iter()
-                    .any(|name| name.to_lowercase().contains(&needle))
-            })
-            .collect::<Vec<_>>();
-        (substring, " (substring matches)")
-    } else {
-        (exact, "")
-    };
+    // Flatten only for display - matching above stays on the raw `symbol`.
+    let safe_symbol = crate::context::untrusted::inline_safe(symbol);
 
     if hits.is_empty() {
-        return format!("no nodes match {symbol}\n{}", CoverageReport::of(graph));
+        return format!(
+            "no nodes match {safe_symbol}\n{}",
+            CoverageReport::of(graph)
+        );
     }
 
     hits.sort_by(|a, b| (&a.path, a.span.line_start).cmp(&(&b.path, b.span.line_start)));
     let mut lines = vec![format!(
         "{} {} - {} matches{}",
         "→".cyan().bold(),
-        symbol,
+        safe_symbol,
         hits.len(),
         label
     )];
@@ -180,12 +188,49 @@ pub(crate) fn render_find_all(graph: &ResolvedGraph, symbol: &str) -> String {
     lines.join("\n")
 }
 
+/// Find nodes whose name matches `symbol`: an exact, case-sensitive match
+/// first, falling back to a case-insensitive substring match only when the
+/// exact pass finds nothing. The returned label distinguishes the two cases
+/// for display.
+fn find_symbol_matches<'a>(
+    graph: &'a ResolvedGraph,
+    symbol: &str,
+) -> (Vec<&'a SourceNode>, &'static str) {
+    let exact: Vec<&SourceNode> = graph
+        .nodes()
+        .filter(|node| node_names(node).iter().any(|name| name == symbol))
+        .collect();
+
+    if exact.is_empty() {
+        let needle = symbol.to_lowercase();
+        let substring = graph
+            .nodes()
+            .filter(|node| {
+                node_names(node)
+                    .iter()
+                    .any(|name| name.to_lowercase().contains(&needle))
+            })
+            .collect::<Vec<_>>();
+        (substring, " (substring matches)")
+    } else {
+        (exact, "")
+    }
+}
+
 /// One `find_all` row: location, kind, name, and — whenever the owning file's
 /// coverage is not `full` — the coverage status, so a hit inside a degraded
 /// file never renders identically to one from a fully-parsed file.
+///
+/// `node.path` and the matched name both come from the source graph (a
+/// tracked file's path, or a symbol name parsed out of it), so both go
+/// through [`crate::context::untrusted::inline_safe`] before reaching
+/// agent-visible stdout.
 fn find_all_row(node: &SourceNode) -> String {
-    let location = format!("{}:{}", node.path.display(), node.span.line_start);
-    let name = node_names(node).into_iter().next().unwrap_or_default();
+    let path = crate::context::untrusted::inline_safe(&node.path.display().to_string());
+    let location = format!("{path}:{}", node.span.line_start);
+    let name = crate::context::untrusted::inline_safe(
+        &node_names(node).into_iter().next().unwrap_or_default(),
+    );
     let mut row = format!("  {:<36} {:<10} {}", location, node.kind.as_str(), name);
     if node.coverage.status() != "full" {
         row.push_str(&format!(" [{}]", node.coverage.status()));
@@ -214,23 +259,24 @@ pub(crate) fn render_impact(
         None => symbol_matches.clone(),
     };
 
+    // Flatten only for display - `file_start`/`symbol_matches`/`starts` above
+    // are already resolved against the raw `arg`.
+    let safe_arg = crate::context::untrusted::inline_safe(arg);
+
     if starts.is_empty() {
-        return format!("no indexed node named {arg}\n{}", CoverageReport::of(graph));
+        return format!(
+            "no indexed node named {safe_arg}\n{}",
+            CoverageReport::of(graph)
+        );
     }
 
     let mut lines = Vec::new();
-    if file_start.is_some() && !symbol_matches.is_empty() {
-        lines.push(format!(
-            "note: {arg} also matches {} symbol definition(s); showing the file's impact only",
-            symbol_matches.len()
-        ));
-    } else if starts.len() > 1 {
-        lines.push(format!(
-            "{} {} definitions match {arg}; showing impact for each",
-            "→".cyan().bold(),
-            starts.len()
-        ));
-    }
+    lines.extend(impact_match_note(
+        &file_start,
+        &symbol_matches,
+        &starts,
+        &safe_arg,
+    ));
 
     let shown = starts.len().min(IMPACT_MAX_STARTS);
     for start_id in starts.iter().take(IMPACT_MAX_STARTS) {
@@ -248,10 +294,40 @@ pub(crate) fn render_impact(
     lines.join("\n")
 }
 
+/// The optional note/header line for `impact`: whether `arg` matched a file
+/// (and also symbol definitions), or matched multiple symbol definitions.
+fn impact_match_note(
+    file_start: &Option<String>,
+    symbol_matches: &[String],
+    starts: &[String],
+    safe_arg: &str,
+) -> Option<String> {
+    if file_start.is_some() && !symbol_matches.is_empty() {
+        Some(format!(
+            "note: {safe_arg} also matches {} symbol definition(s); showing the file's impact only",
+            symbol_matches.len()
+        ))
+    } else if starts.len() > 1 {
+        Some(format!(
+            "{} {} definitions match {safe_arg}; showing impact for each",
+            "→".cyan().bold(),
+            starts.len()
+        ))
+    } else {
+        None
+    }
+}
+
 /// Render one start node's impact heading and its reverse-reachability rows.
+///
+/// `start_id` and every `hit.id` are source-graph node ids (a file path or a
+/// `scope::symbol` path lifted from the parsed source), so both are
+/// flattened for display; the graph traversal itself still runs on the raw
+/// `start_id`.
 fn render_impact_for(graph: &ResolvedGraph, start_id: &str, stats: &ResolutionStats) -> String {
+    let safe_start_id = crate::context::untrusted::inline_safe(start_id);
     let heading = format!(
-        "{} Impact of {start_id} (depth <= {IMPACT_MAX_DEPTH}, reverse edges)",
+        "{} Impact of {safe_start_id} (depth <= {IMPACT_MAX_DEPTH}, reverse edges)",
         "→".cyan().bold(),
     );
     let hits = crate::context::impact(graph, start_id, IMPACT_MAX_DEPTH);
@@ -262,7 +338,11 @@ fn render_impact_for(graph: &ResolvedGraph, start_id: &str, stats: &ResolutionSt
     for hit in &hits {
         lines.push(format!(
             "  d{}  {:.2}  {}  {}  {}",
-            hit.depth, hit.min_confidence, hit.weakest_provenance, hit.weakest_kind, hit.id
+            hit.depth,
+            hit.min_confidence,
+            hit.weakest_provenance,
+            hit.weakest_kind,
+            crate::context::untrusted::inline_safe(&hit.id)
         ));
     }
     lines.join("\n")
