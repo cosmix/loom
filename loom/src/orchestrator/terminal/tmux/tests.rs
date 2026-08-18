@@ -97,6 +97,7 @@ fn tmux_control_runner_returns_structured_timeout() {
         &mut command,
         std::time::Duration::from_millis(100),
         "tmux deterministic timeout",
+        &[],
     )
     .expect_err("fake tmux command must exceed its deadline");
 
@@ -104,6 +105,37 @@ fn tmux_control_runner_returns_structured_timeout() {
         .downcast_ref::<crate::process::ProcessTimeoutError>()
         .expect("tmux timeout must stay machine-identifiable");
     assert_eq!(timeout.operation(), "tmux deterministic timeout");
+}
+
+/// Asserts on the CONFIGURED `Command`, never on a subprocess's output: this
+/// test does not run tmux and does not touch `std::env`. Setting a real
+/// global `TERM` to prove the pin overrides an inherited value would leak
+/// that value into every OTHER test running concurrently in this binary — a
+/// prior version of this test did exactly that and produced an intermittent,
+/// unrelated failure elsewhere in the suite.
+///
+/// The override winning is structural, not something this test needs to
+/// force: `apply_stage_environment` does `env_clear()` and repopulates from
+/// the host's allowlist, and `tmux_control_command` applies
+/// `CONTROL_TERM_OVERRIDE` after that — `Command`'s env is a key/value map,
+/// so the later `.env("TERM", "dumb")` call always wins regardless of
+/// whatever TERM (if any) the host forwarded. Note honestly: on a host whose
+/// OWN ambient TERM happens to already be `dumb`, this assertion would pass
+/// even if the override were deleted — an acceptable trade for not mutating
+/// process-global state.
+#[test]
+fn control_command_pins_term_dumb() {
+    let command = tmux_control_command(&["has-session", "-t", "x"]);
+    let term = command
+        .get_envs()
+        .find(|(key, _)| *key == std::ffi::OsStr::new("TERM"))
+        .map(|(_, value)| value);
+    assert_eq!(
+        term,
+        Some(Some(std::ffi::OsStr::new("dumb"))),
+        "tmux control commands must pin TERM=dumb so a pure control query \
+         never depends on a resolvable terminal"
+    );
 }
 
 #[test]

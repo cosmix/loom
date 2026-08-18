@@ -86,13 +86,54 @@ const TMUX_SPAWN_TIMEOUT: Duration = Duration::from_secs(20);
 const TMUX_PROBE_TIMEOUT: Duration = Duration::from_secs(5);
 const TMUX_TEARDOWN_TIMEOUT: Duration = Duration::from_secs(5);
 
+/// TERM pinned on every pure control query run through [`run_tmux_control`]
+/// (`has-session`, `list-panes`, `set-option`, `kill-session`, …). These
+/// commands need no terminal capabilities at all, but inheriting whatever
+/// TERM the operator's terminal forwarded gives them a way to fail that has
+/// nothing to do with tmux server state — and that failure is
+/// indistinguishable, to `endpoint_ready`, from "the server is not accepting
+/// clients", so a terminfo problem presents as a dead tmux server. `dumb` is
+/// guaranteed present in every terminfo database, so pinning it removes the
+/// failure mode for every terminal emulator, including ones whose terminfo we
+/// do not know how to locate. Forwarding TERMINFO/TERMINFO_DIRS
+/// (`process::environment`) stays: it is what the paths that genuinely need a
+/// real terminal — the agent wrapper, confined acceptance criteria — depend
+/// on. Applied in `tmux_control_command` AFTER `apply_stage_environment`, so
+/// the pin wins over whatever TERM the host forwarded.
+///
+/// Deliberately NOT passed to `spawn_in_tmux`'s `new-session` call: that
+/// command creates the session the AGENT runs in, a different contract the
+/// wrapper's own `env -i` governs.
+const CONTROL_TERM_OVERRIDE: &[(&str, &str)] = &[("TERM", "dumb")];
+
 fn run_tmux_command(
     command: &mut Command,
     timeout: Duration,
     operation: impl Into<String>,
+    env_overrides: &[(&str, &str)],
 ) -> Result<std::process::Output> {
     crate::process::apply_stage_environment(command);
+    for (key, value) in env_overrides {
+        command.env(key, value);
+    }
     crate::process::run_bounded_output(command, timeout, operation)
+}
+
+/// Build the fully-configured `tmux` control-query command, without running
+/// it. Split out of `run_tmux_control` so its configuration — in particular,
+/// that `CONTROL_TERM_OVERRIDE` is applied AFTER `apply_stage_environment`,
+/// so the pin wins by construction rather than by luck of the host's ambient
+/// `TERM` — is assertable on the `Command` value directly, with no
+/// subprocess run and no process-global environment mutation. See
+/// `tests::control_command_pins_term_dumb`.
+fn tmux_control_command(args: &[&str]) -> Command {
+    let mut command = Command::new("tmux");
+    command.args(args);
+    crate::process::apply_stage_environment(&mut command);
+    for (key, value) in CONTROL_TERM_OVERRIDE {
+        command.env(key, value);
+    }
+    command
 }
 
 pub(super) fn run_tmux_control(
@@ -100,9 +141,8 @@ pub(super) fn run_tmux_control(
     timeout: Duration,
     operation: impl Into<String>,
 ) -> Result<std::process::Output> {
-    let mut command = Command::new("tmux");
-    command.args(args);
-    run_tmux_command(&mut command, timeout, operation)
+    let mut command = tmux_control_command(args);
+    crate::process::run_bounded_output(&mut command, timeout, operation)
 }
 
 /// Per-session tmux socket name.
@@ -183,6 +223,7 @@ pub fn spawn_in_tmux(socket: &str, session_name: &str, cwd: &Path, command: &Pat
         &mut command,
         TMUX_SPAWN_TIMEOUT,
         format!("tmux new-session ({socket})"),
+        &[],
     )
     .with_context(|| format!("Failed to spawn tmux new-session on socket '{socket}'"))?;
 
