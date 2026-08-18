@@ -1126,5 +1126,53 @@ pub fn check_sandbox_recommendations(metadata: &LoomMetadata) -> Vec<String> {
         );
     }
 
+    warn_ignored_knowledge_denies(metadata, &mut warnings);
+
     warnings
+}
+
+/// Warn about every `doc/loom/knowledge` `deny_write` entry in the plan, at
+/// plan level and in each stage's own override.
+///
+/// Such an entry is always ignored: loom grants write access to that
+/// directory unconditionally (`sandbox::config::merge_config` via
+/// `apply_knowledge_write_grant`), because every stage records knowledge
+/// through `loom knowledge update`, a Bash subprocess that runs INSIDE the
+/// sandbox. The entry can never take effect, so this is a warning rather
+/// than a hard error — plans written before that default changed still carry
+/// it, and they must keep verifying.
+fn warn_ignored_knowledge_denies(metadata: &LoomMetadata, warnings: &mut Vec<String>) {
+    warn_knowledge_deny_write(&metadata.loom.sandbox.filesystem.deny_write, None, warnings);
+    for stage in &metadata.loom.stages {
+        let Some(filesystem) = stage.sandbox.filesystem.as_ref() else {
+            continue;
+        };
+        warn_knowledge_deny_write(&filesystem.deny_write, Some(stage.id.as_str()), warnings);
+    }
+}
+
+/// Push one warning per `doc/loom/knowledge`-prefixed entry in `deny_write`.
+///
+/// `stage_id` names the owning stage for a stage-level `deny_write` list, or
+/// `None` for the plan-level one — see the call sites in
+/// `check_sandbox_recommendations` for why the entry is always a no-op.
+fn warn_knowledge_deny_write(
+    deny_write: &[String],
+    stage_id: Option<&str>,
+    warnings: &mut Vec<String>,
+) {
+    for entry in deny_write {
+        if !entry.trim().starts_with("doc/loom/knowledge") {
+            continue;
+        }
+        let scope = match stage_id {
+            Some(id) => format!("stage '{id}' sandbox"),
+            None => "plan-level sandbox".to_string(),
+        };
+        warnings.push(format!(
+            "Warning: {scope} deny_write entry '{entry}' is ignored: loom always grants write \
+             access to doc/loom/knowledge/** because stages record knowledge through `loom \
+             knowledge update`, which runs inside the sandbox. Remove the entry."
+        ));
+    }
 }

@@ -3,10 +3,12 @@
 use super::{create_valid_metadata, make_stage};
 use crate::models::stage::WiringCheck;
 use crate::plan::schema::types::{
-    AcceptanceCriterion, LoomConfig, LoomMetadata, SandboxConfig, StageDefinition, StageType,
-    ValidationError, WiringTest,
+    AcceptanceCriterion, FilesystemConfig, LoomConfig, LoomMetadata, SandboxConfig,
+    StageDefinition, StageSandboxConfig, StageType, ValidationError, WiringTest,
 };
-use crate::plan::schema::validation::{validate, validate_structural_preflight};
+use crate::plan::schema::validation::{
+    check_sandbox_recommendations, validate, validate_structural_preflight,
+};
 
 #[test]
 fn test_validate_valid_metadata() {
@@ -699,5 +701,80 @@ fn test_knowledge_distill_with_acceptance_passes() {
         result.is_ok(),
         "knowledge-distill stage with acceptance criteria should pass: {:?}",
         result.err()
+    );
+}
+
+#[test]
+fn test_check_sandbox_recommendations_warns_on_plan_level_knowledge_deny_write() {
+    // Plans authored before the knowledge-dir default changed still carry
+    // this entry. It's silently ignored now (`merge_config` always grants
+    // the write instead), so the author needs a nudge to remove it.
+    let stage = make_stage("stage-1", "Stage One");
+
+    let metadata = LoomMetadata {
+        loom: LoomConfig {
+            version: 1,
+            auto_merge: None,
+            sandbox: SandboxConfig {
+                filesystem: FilesystemConfig {
+                    deny_write: vec!["doc/loom/knowledge/**".to_string()],
+                    ..FilesystemConfig::default()
+                },
+                ..SandboxConfig::default()
+            },
+            change_impact: None,
+            adjudication: None,
+            stages: vec![stage],
+        },
+    };
+
+    let warnings = check_sandbox_recommendations(&metadata);
+    assert!(
+        warnings
+            .iter()
+            .any(|w| w.contains("doc/loom/knowledge/**") && w.contains("is ignored")),
+        "expected a doc/loom/knowledge deny_write warning, got: {warnings:?}"
+    );
+}
+
+#[test]
+fn test_check_sandbox_recommendations_warns_on_stage_level_knowledge_deny_write() {
+    let mut stage = make_stage("stage-1", "Stage One");
+    stage.sandbox = StageSandboxConfig {
+        filesystem: Some(FilesystemConfig {
+            deny_write: vec!["doc/loom/knowledge/**".to_string()],
+            ..FilesystemConfig::default()
+        }),
+        ..StageSandboxConfig::default()
+    };
+
+    let metadata = LoomMetadata {
+        loom: LoomConfig {
+            version: 1,
+            auto_merge: None,
+            sandbox: SandboxConfig::default(),
+            change_impact: None,
+            adjudication: None,
+            stages: vec![stage],
+        },
+    };
+
+    let warnings = check_sandbox_recommendations(&metadata);
+    assert!(
+        warnings
+            .iter()
+            .any(|w| w.contains("stage-1") && w.contains("doc/loom/knowledge/**")),
+        "expected a stage-named doc/loom/knowledge deny_write warning, got: {warnings:?}"
+    );
+}
+
+#[test]
+fn test_check_sandbox_recommendations_no_warning_without_knowledge_deny_write() {
+    // The default plan (produced by `create_valid_metadata`) has no
+    // doc/loom/knowledge deny_write entry, so no such warning should fire.
+    let warnings = check_sandbox_recommendations(&create_valid_metadata());
+    assert!(
+        warnings.iter().all(|w| !w.contains("doc/loom/knowledge")),
+        "unexpected knowledge-dir warning, got: {warnings:?}"
     );
 }
