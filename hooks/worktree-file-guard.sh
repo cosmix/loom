@@ -225,6 +225,24 @@ if [[ -z "$RESOLVED_PATH" ]]; then
 	exit 2
 fi
 
+# Knowledge files are recorded through the `loom knowledge update` CLI, not
+# file tools — the sandbox itself no longer enforces this (the CLI runs
+# inside it too, so a sandbox deny would block the CLI as well as the file
+# tools; see `sandbox::config::apply_knowledge_write_grant`). This hook is
+# the doctrine's replacement enforcement point. Reads stay allowed (an agent
+# legitimately reads its own knowledge base); only write-class tools are
+# gated, and only inside this worktree — main-repo knowledge/knowledge-distill
+# stages cannot be gated reliably here (never gate on LOOM_STAGE_ID).
+KNOWLEDGE_DIR="$WORKTREE_PATH/doc/loom/knowledge"
+case "$TOOL_NAME" in
+Write | Edit | MultiEdit | NotebookEdit)
+	if is_within "$RESOLVED_PATH" "$KNOWLEDGE_DIR"; then
+		block_path "$FILE_PATH" "knowledge files are recorded through \`loom knowledge update\`, not file tools"
+		exit 2
+	fi
+	;;
+esac
+
 if is_within "$RESOLVED_PATH" "$WORKTREE_PATH"; then
 	exit 0
 fi
