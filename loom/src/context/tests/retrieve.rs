@@ -193,13 +193,35 @@ fn retrieve_for_stage_boosts_a_chunk_named_by_stage_dependency_ids() {
     );
 }
 
+/// No knowledge tree is a DEGRADED retrieval, not a failed one: the source
+/// channel needs no catalog, so a checkout with a mapped graph and no
+/// `doc/loom/knowledge/` still gets a pack. What must not happen is a pack that
+/// reads as authoritative over nothing — both layers say plainly that they were
+/// never built. (`retrieve_source.rs` covers the same absence with a graph
+/// actually on disk.)
 #[test]
-fn retrieve_for_stage_fails_when_there_is_no_knowledge_tree() {
+fn retrieve_for_stage_degrades_rather_than_failing_with_no_knowledge_tree() {
     let temp = TempDir::new().unwrap();
     fs::create_dir_all(temp.path().join(".work")).unwrap();
     let query = StageQuery::new(temp.path(), "anything");
 
-    let error = retrieve_for_stage(&query, 500).unwrap_err();
+    let pack = retrieve_for_stage(&query, 500).expect("a missing knowledge tree is not an error");
+
+    assert!(pack.items.is_empty(), "nothing built, nothing to pack");
+    assert!(
+        pack.structural_freshness.stale && pack.semantic_freshness.stale,
+        "a layer that was never built must never report itself current"
+    );
+}
+
+/// The `loom knowledge` commands read and write the tree itself, so for them an
+/// absent tree IS the error — `resolve_roots` still says so.
+#[test]
+fn resolve_roots_still_refuses_a_project_with_no_knowledge_tree() {
+    let temp = TempDir::new().unwrap();
+    fs::create_dir_all(temp.path().join(".work")).unwrap();
+
+    let error = resolve_roots(temp.path()).unwrap_err();
     assert!(
         error.to_string().contains("Knowledge directory not found"),
         "got: {error}"

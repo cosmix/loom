@@ -18,12 +18,12 @@ use crate::context::pack::{pack, PackRequest};
 use crate::context::rank::{rank, RankQuery, RankedCandidate};
 use crate::context::rank_source::rank_source;
 use crate::context::refresh::{evaluate, refresh};
-use crate::context::schema::{Channel, ContextPack};
-use crate::context::store::ContextStore;
+use crate::context::schema::{Channel, ContextPack, Freshness};
+use crate::context::store::{ContextStore, StoreState};
 use crate::fs::knowledge::catalog::Catalog;
 use crate::fs::knowledge::KnowledgeDir;
 use crate::fs::work_dir::WorkDir;
-use anyhow::{bail, Context, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
@@ -64,27 +64,69 @@ impl StageQuery {
     }
 }
 
+/// Message for a caller that cannot proceed without a knowledge tree.
+const NO_KNOWLEDGE_DIR: &str = "Knowledge directory not found. Run 'loom init' to create it.";
+
+/// Structural freshness detail for a project that has no knowledge tree.
+///
+/// Never built, and therefore stale — not "current" over an empty catalog. A
+/// derived layer that reports itself fresh when nothing was ever derived is the
+/// failure `doc/loom/knowledge/mistakes/store-without-consumer.md` records: the
+/// pack looks authoritative and its emptiness reads as "there is nothing to
+/// say" rather than "nothing was ever built".
+const NO_KNOWLEDGE_TREE_DETAIL: &str =
+    "no knowledge directory; the knowledge channel is unavailable here";
+
+/// Semantic freshness detail when no source graph has ever been built here.
+const NO_SOURCE_GRAPH_DETAIL: &str = "source graph not built; run 'loom map' to build one";
+
 /// Resolve the knowledge root and the derived-artifact store together, so no two
 /// callers can disagree about which tree or which cache they are working on.
-pub(crate) fn resolve_roots(work_dir_hint: &Path) -> Result<(PathBuf, ContextStore)> {
+///
+/// The knowledge root is `None` when `doc/loom/knowledge/` does not exist. That
+/// is a degraded retrieval, not a failure: the source channel ranks over the
+/// resolved graph, which lives in the context cache and needs no catalog at
+/// all, so a checkout with a mapped source graph and no knowledge tree still
+/// has something to answer with. Callers that genuinely require a tree use
+/// [`resolve_roots`].
+pub(crate) fn resolve_roots_optional(
+    work_dir_hint: &Path,
+) -> Result<(Option<PathBuf>, ContextStore)> {
     let work_dir = WorkDir::new(work_dir_hint)?;
     let project_root = work_dir
         .project_root()
         .context("Could not determine project root")?;
     let knowledge = KnowledgeDir::new(project_root);
-
-    if !knowledge.exists() {
-        bail!("Knowledge directory not found. Run 'loom init' to create it.");
-    }
+    let knowledge_root = knowledge.exists().then(|| knowledge.root().to_path_buf());
 
     let store = ContextStore::open(&work_dir)?;
-    Ok((knowledge.root().to_path_buf(), store))
+    Ok((knowledge_root, store))
+}
+
+/// [`resolve_roots_optional`] for a caller that cannot work without a knowledge
+/// tree — the `loom knowledge` commands, which read and write that tree.
+pub(crate) fn resolve_roots(work_dir_hint: &Path) -> Result<(PathBuf, ContextStore)> {
+    let (knowledge_root, store) = resolve_roots_optional(work_dir_hint)?;
+    let knowledge_root = knowledge_root.ok_or_else(|| anyhow!(NO_KNOWLEDGE_DIR))?;
+    Ok((knowledge_root, store))
 }
 
 /// Bring the catalog current and return it. A read-only query must never die
 /// because the cache is unwritable: a `refresh` failure is downgraded to a
 /// warning and the catalog is built in memory instead.
-fn resolve_catalog(store: &ContextStore, knowledge_root: &Path) -> Result<Catalog> {
+///
+/// With no knowledge tree there is nothing to ingest, so the catalog is empty
+/// and the knowledge channel contributes no candidates. [`evaluate_state`] is
+/// what keeps that honest.
+fn resolve_catalog(store: &ContextStore, knowledge_root: Option<&Path>) -> Result<Catalog> {
+    let Some(knowledge_root) = knowledge_root else {
+        return Ok(Catalog {
+            revision: String::new(),
+            chunks: Vec::new(),
+            issues: Vec::new(),
+        });
+    };
+
     if let Err(error) = refresh(store, knowledge_root, true) {
         eprintln!(
             "warning: failed to refresh the context cache ({error}); using an in-memory catalog for this query"
@@ -100,6 +142,31 @@ fn resolve_catalog(store: &ContextStore, knowledge_root: &Path) -> Result<Catalo
             Ok(catalog)
         }
     }
+}
+
+/// Freshness of both derived layers for this query.
+///
+/// With a knowledge tree this is [`evaluate`] verbatim. Without one there is
+/// nothing to fingerprint, so the structural layer reports itself never built
+/// while the semantic layer keeps whatever the store records — the source graph
+/// is not derived from the knowledge tree, and its revision is what
+/// [`load_resolved_graph`] reads the base layer by.
+fn evaluate_state(store: &ContextStore, knowledge_root: Option<&Path>) -> Result<StoreState> {
+    let Some(knowledge_root) = knowledge_root else {
+        let stored = store.load_state()?;
+        let semantic = if stored.semantic.revision.is_empty() {
+            Freshness::never_built(NO_SOURCE_GRAPH_DETAIL)
+        } else {
+            stored.semantic
+        };
+        return Ok(StoreState {
+            structural: Freshness::never_built(NO_KNOWLEDGE_TREE_DETAIL),
+            semantic,
+            catalog_revision: stored.catalog_revision,
+        });
+    };
+
+    evaluate(store, knowledge_root)
 }
 
 /// Fail loudly when a caller demands a chunk or source-node id absent from
@@ -219,15 +286,17 @@ fn load_resolved_graph(
 /// Deterministic and offline: no model call, no network access, no randomness.
 /// The result is a pure function of the bytes on disk and `query`.
 ///
-/// Returns `Err` when the knowledge directory is absent, the catalog cannot be
-/// built, or `query.required_ids` names an id the catalog does not hold.
-/// Callers on a hot path — signal generation, the prompt hook — must degrade
-/// rather than propagate: log at `tracing::debug` and carry on with no pack.
+/// Returns `Err` when the catalog cannot be built or `query.required_ids` names
+/// an id the catalog does not hold. An ABSENT knowledge directory is not an
+/// error: retrieval runs source-only, over the resolved graph alone, and the
+/// pack says the structural layer was never built. Callers on a hot path —
+/// signal generation, the prompt hook — must degrade rather than propagate: log
+/// at `tracing::debug` and carry on with no pack.
 pub fn retrieve_for_stage(query: &StageQuery, budget_tokens: usize) -> Result<ContextPack> {
-    let (knowledge_root, store) = resolve_roots(&query.work_dir_hint)?;
+    let (knowledge_root, store) = resolve_roots_optional(&query.work_dir_hint)?;
 
-    let catalog = resolve_catalog(&store, &knowledge_root)?;
-    let state = evaluate(&store, &knowledge_root)?;
+    let catalog = resolve_catalog(&store, knowledge_root.as_deref())?;
+    let state = evaluate_state(&store, knowledge_root.as_deref())?;
 
     // The source graph is keyed by the semantic revision, not the structural
     // one — they are different hash domains over different subjects (see the

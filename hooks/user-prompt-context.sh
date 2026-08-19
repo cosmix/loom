@@ -14,6 +14,13 @@
 # output, so a broken or slow retrieval path never disturbs the session:
 #   {"hookSpecificOutput": {"hookEventName": "UserPromptSubmit", "additionalContext": "..."}}
 #
+# A loom session is NOT required. This runs on every prompt in every repository
+# on the machine, so it gates on whether this checkout has anything to retrieve
+# FROM — a loom work directory, a knowledge tree, or a built context cache —
+# rather than on whether a loom stage spawned the session. Inside a stage the
+# delegate keys its brief to that stage; outside one it keys it to the
+# checkout's working-tree overlay.
+#
 # Note: hooks/skill-trigger.sh is a SEPARATE UserPromptSubmit hook (Python,
 # keyword-based skill suggestions). Two hooks on one event run as separate
 # processes, each printing at most one JSON object — this script does not
@@ -32,12 +39,33 @@ else
 	INPUT_JSON=$(cat 2>/dev/null || true)
 fi
 
-# Fail open (no output) when there is no loom session to retrieve against.
-if [[ -z "${LOOM_WORK_DIR:-}" ]] || [[ -z "${LOOM_STAGE_ID:-}" ]]; then
+if ! command -v loom &>/dev/null; then
 	exit 0
 fi
 
-if ! command -v loom &>/dev/null; then
+# Fail open (no output) unless this checkout holds something to retrieve from.
+# The walk upward mirrors `WorkDir::new`, which looks for `.work` the way git
+# looks for `.git`; `doc/loom/knowledge/` and `.loom/cache/context-v1/` are the
+# other two roots the delegate can answer out of (a mapped source graph needs no
+# knowledge tree). Pure bash directory tests, no subprocesses - this runs on
+# every prompt in every repository, so it must stay close to free.
+has_retrievable_context() {
+	if [[ -d "${LOOM_WORK_DIR:-}" ]]; then
+		return 0
+	fi
+	local dir="$PWD"
+	while [[ -n "$dir" ]]; do
+		if [[ -d "$dir/.work" ]] ||
+			[[ -d "$dir/doc/loom/knowledge" ]] ||
+			[[ -d "$dir/.loom/cache/context-v1" ]]; then
+			return 0
+		fi
+		dir="${dir%/*}"
+	done
+	return 1
+}
+
+if ! has_retrievable_context; then
 	exit 0
 fi
 

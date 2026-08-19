@@ -21,6 +21,7 @@ use crate::context::store::ContextStore;
 use crate::fs::work_dir::WorkDir;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
+use tempfile::TempDir;
 
 /// A symbol distinctive enough that it cannot collide with anything in
 /// `project_with_knowledge`'s prose, so a hit in the pack can only have come
@@ -105,4 +106,53 @@ fn retrieve_for_stage_packs_a_source_node_from_a_real_overlay_on_disk() {
     assert_eq!(item.pointer.path, node.path);
     assert_eq!(item.pointer.line_start, Some(12));
     assert_eq!(item.pointer.line_end, Some(14));
+}
+
+/// A checkout with a `.work/` directory and NO `doc/loom/knowledge/`: a
+/// repository `loom map` has run in, but which has no curated knowledge tree.
+fn project_without_knowledge() -> TempDir {
+    let temp = TempDir::new().unwrap();
+    std::fs::create_dir_all(temp.path().join(".work")).unwrap();
+    temp
+}
+
+/// The source channel needs no chunk catalog, so an absent knowledge tree must
+/// degrade retrieval to source-only rather than failing it. `resolve_roots`
+/// used to `bail!` here, which meant a repository with a perfectly good source
+/// graph got nothing at all — including from the prompt hook, which is the
+/// surface most likely to be pointed at a project that has never been
+/// `loom init`ed.
+#[test]
+fn retrieve_for_stage_packs_source_nodes_with_no_knowledge_tree_at_all() {
+    let temp = project_without_knowledge();
+    let root = temp.path();
+    let node = distinctive_node();
+    write_local_overlay(root, &node);
+
+    let query = StageQuery::new(root, format!("Where is {DISTINCTIVE_SYMBOL} defined?"));
+    let pack = retrieve_for_stage(&query, 500).expect("a missing knowledge tree is not an error");
+
+    let ids: Vec<&str> = pack.items.iter().map(|item| item.id.as_str()).collect();
+    assert!(
+        ids.contains(&node.id.as_str()),
+        "the source node must still be packed: {ids:?}"
+    );
+    assert!(
+        pack.items
+            .iter()
+            .all(|item| item.kind == ItemKind::SourceNode),
+        "with no catalog there is nothing but source nodes to pack"
+    );
+
+    // Honest about the layer that does not exist: never built, never "current".
+    assert!(
+        pack.structural_freshness.stale,
+        "a structural layer over no knowledge tree must not read as current"
+    );
+    assert!(pack.structural_freshness.revision.is_empty());
+    let detail = pack.structural_freshness.detail.as_deref().unwrap_or("");
+    assert!(
+        detail.contains("no knowledge directory"),
+        "the pack must say WHY the structural layer is empty, got: {detail}"
+    );
 }
