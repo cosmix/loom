@@ -27,7 +27,13 @@ These stale entries would have misled future agents into using `permission_mode:
 **Prevention:** After changing any `default_mode_for()`-style constant or sandbox default:
 
 1. `rg -l "auto\|Auto" doc/loom/knowledge/` — find knowledge files with the old value
-2. Update each stale entry with `loom knowledge replace-section` or direct Edit
+2. Correct each stale entry in place with `loom knowledge replace-section <file> "<heading>"
+   "<body>"` — `loom knowledge update` only appends and would leave the old value above the new
+   one. Inside a worktree stage the knowledge files stay closed to Write/Edit
+   (`hooks/worktree-file-guard.sh`), but the CLI writes through: the sandbox grants
+   `doc/loom/knowledge/**` unconditionally (`sandbox::config::apply_knowledge_write_grant`). A
+   non-knowledge stage records the find as a `stale-knowledge:` memory instead, for the
+   knowledge-distill stage to apply (CLAUDE.md Rule 12)
 3. Verify with `rg "permission.mode" doc/loom/knowledge/` that all entries agree
 
 **Generalization:** Any plan that changes an enumerated default (permission modes, stage-type behavior, config field defaults) MUST include a step that searches `doc/loom/knowledge/` for old values and corrects them. This applies even when the code change is a single-line constant update.

@@ -32,14 +32,19 @@ it **after** the locked call returns, never inside the closure. Documented at
 
 ## `loom knowledge update` Appends — a Retry Duplicates the Block (2026-07-28)
 
-**What happened / why:** `update` is append-only by design; there is no replace mode. The
-`INDEX.md` refresh that follows a successful write is deliberately **non-fatal** (it warns to
-stderr and returns `Ok`) precisely so that a refresh failure does not make a successful write
-exit non-zero — an agent's natural retry would then append the same block twice.
+**What happened / why:** `update` is append-only by design. The `INDEX.md` refresh that follows a
+successful write is deliberately **non-fatal** (it warns to stderr and returns `Ok`) precisely so
+that a refresh failure does not make a successful write exit non-zero — an agent's natural retry
+would then append the same block twice.
 
-**Prevention:** use `replace-section` for anything idempotent. A zero exit code does not prove
-`INDEX.md` is current — watch stderr, and finish any batch of knowledge writes with an explicit
-`loom knowledge index`.
+**Prevention:** `update` ALWAYS appends, so never use it to fix an existing section — that is what
+`loom knowledge replace-section <file> "<heading>" "<body>"` is for (restored 2026-08-19 after the
+CLI collapse had removed it; `cli/types_memory.rs`, `commands/knowledge/mod.rs::replace_section`).
+It overwrites the body under the first matching `## <heading>` and appends — announcing that it did
+— when no heading matches, so read its output: an appended "correction" means the heading did not
+match and the stale text is still in the file. A zero exit code does not prove `INDEX.md` is
+current — watch stderr, and finish any batch of knowledge writes with `loom knowledge sync`, which
+regenerates the index unconditionally.
 
 ## Verify a Prefix-Matching Claim Before "Fixing" It (2026-07-28)
 

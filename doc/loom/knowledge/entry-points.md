@@ -447,7 +447,7 @@ resolution, with line references.
 | `loom/src/fs/knowledge/index.rs`                   | `scan_topics`, `generate_index`, `write_index`                                                                              |
 | `loom/src/fs/knowledge/gc.rs`                      | audit metrics, oversized sections, orphan and broken-link detection, thresholds                                             |
 | `loom/src/fs/knowledge/summary.rs`, `templates.rs` | signal summary; tier-1/tier-2 scaffolds                                                                                     |
-| `loom/src/commands/knowledge/mod.rs`               | subcommand dispatch — `show`, `update`, `replace-section`, `init`, `list`, `check`, `audit`, `gc`, `bootstrap`, **`index`** |
+| `loom/src/commands/knowledge/mod.rs`               | the four knowledge verbs — `update` (append), `replace-section` (overwrite a `## ` body), `context`, `sync`               |
 | `loom/src/commands/knowledge/check.rs`             | `architecture_coverage_text()` — folds tier-2 `architecture/` topics into `src/` coverage                                   |
 | `loom/src/cli/types_memory.rs`                     | clap definitions for the knowledge subcommands                                                                              |
 

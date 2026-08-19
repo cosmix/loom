@@ -472,17 +472,20 @@ The uncalled spawn method and `signals/base_conflict.rs` were removed. `SessionT
 remains only where persisted historical records and main-repository merge attribution must still be
 understood; it is no longer exposed as a production spawn route.
 
-## `loom knowledge` Still Cannot Correct an Entry In Place (2026-08-08)
+## ~~`loom knowledge` Still Cannot Correct an Entry In Place~~ (RESOLVED 2026-08-19)
 
-Concrete instance of the "No Delete-Section Verb" gap above: this plan found two tier-1/tier-2 sections
+Concrete instance of the "No Delete-Section Verb" gap above: a plan found two tier-1/tier-2 sections
 that had become factually **wrong** (a "~15-20 struct literal breakages" count that is now 3, and a
 "Session Spawning Pattern" describing an `Arc<NativeBackend>` the orchestrator no longer holds).
 Because `loom knowledge update` only appends, the distill stage could only append `CORRECTION (...)
-supersedes ...` sections beneath them.
+supersedes ...` sections beneath them — the wrong text stayed in the file and still grepped, so an
+agent reading top-down hit the stale claim first.
 
-**Cost:** the wrong text stays in the file and still greps, so a future agent reading top-down hits the
-stale claim first. An `update --replace-section <heading>` verb would let distillation actually retire
-a stale entry instead of layering over it.
+**Resolved:** `loom knowledge replace-section <file> "<heading>" "<body>"` overwrites a section body
+in place (`commands/knowledge/mod.rs::replace_section`, `cli/dispatch.rs`). Distillation retires a
+stale claim instead of layering over it, and CLAUDE.md routes every staleness find into a
+`stale-knowledge:` memory that the knowledge-distill stage must apply. The narrower gaps remain: no
+delete verb (§ above) and no heading rename (§ below).
 
 ## PreToolUse File Guards Cannot Eliminate Path-Swap Races (2026-08-08)
 

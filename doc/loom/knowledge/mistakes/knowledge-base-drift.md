@@ -43,23 +43,26 @@ goal-backward verification layer — it was removed from goal-backward and merge
 wrong text stays directly above the right text, and a reader scanning top-down hits the wrong one
 first.
 
-**Prevention:** After any `loom knowledge update` that corrects an existing section, grep for the
-duplicate heading:
+**Prevention:** After any `loom knowledge update` that corrects an existing section, check for the
+duplicate heading — tier-2 topics included:
 
 ```bash
 cd doc/loom/knowledge
-for f in *.md; do
+for f in *.md */*.md; do
   d=$(rg -N "^#{2,3} " "$f" | sort | uniq -d)
   [ -n "$d" ] && echo "$f: $d"
 done
 ```
 
-`loom knowledge audit` reports duplicate headers too — read its output, do not just check the
-exit code.
+There is no `loom knowledge audit` command; this loop is the check.
 
-**Fix:** Use `loom knowledge replace-section` to overwrite in place rather than `update` to
-append. When deleting a superseded section, leave one line saying what was removed and why —
-otherwise the next agent re-adds it from the same stale source.
+**Fix:** Correct the section IN PLACE with
+`loom knowledge replace-section <file> "<heading>" "<body>"` — restored 2026-08-19, after the CLI
+collapse had removed it, precisely so distillation can retire a stale claim instead of layering
+over it. Pass the body WITHOUT its `## ` heading line. It cannot rename a heading (see
+concerns.md § `loom knowledge` Cannot Rename a Section Heading) and there is still no delete verb.
+When a superseded claim disappears, say in the replacement what was wrong and why — otherwise the
+next agent re-adds it from the same stale source.
 
 ## Invented CLI Surface
 
