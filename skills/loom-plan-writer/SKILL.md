@@ -254,7 +254,7 @@ Captures codebase understanding before implementation. `stage_type: knowledge`, 
 
 ### knowledge-distill (last)
 
-`stage_type: knowledge-distill`, model sonnet (`reasoning_effort: high`) — the ONE bookend that is NOT opus: distillation is a linear read-synthesize-write pass, run **single-agent with NO subagents**. Curates all stage memories into permanent knowledge and updates user-facing docs. Reads the plan, `loom memory show --all`, and current knowledge; synthesizes mistakes as actionable prevention rules, patterns, decisions, conventions via `loom knowledge update`, following the same tier-routing rule as knowledge-bootstrap (above); `INDEX.md` regenerates on each knowledge write, so then run `loom review` to prune stale entries; updates README/CONTRIBUTING for changed behavior (only relevant sections). **Context discipline (200k window):** the memories are compact summaries — lean on them and keep code spot-reads narrow; do NOT fan out to subagents. **Skip ONLY if** the plan produces no new knowledge worth preserving (rare).
+`stage_type: knowledge-distill`, model sonnet (`reasoning_effort: high`) — the ONE bookend that is NOT opus: distillation is a linear read-synthesize-write pass, run **single-agent with NO subagents**. Curates all stage memories into permanent knowledge and updates user-facing docs. Reads the plan, `loom memory show --all`, and current knowledge; FIRST applies every `stale-knowledge:` memory in place with `loom knowledge replace-section <file> "<heading>" "<body>"` (never `update`, which appends the fix below the stale text), then synthesizes mistakes as actionable prevention rules, patterns, decisions, conventions via `loom knowledge update`, following the same tier-routing rule as knowledge-bootstrap (above); `INDEX.md` regenerates on each knowledge write, so then run `loom review` to prune stale entries; updates README/CONTRIBUTING for changed behavior (only relevant sections). **Context discipline (200k window):** the memories are compact summaries — lean on them and keep code spot-reads narrow; do NOT fan out to subagents. **Skip ONLY if** the plan produces no new knowledge worth preserving (rare).
 
 Full YAML for all three bookends is in the canonical template (Section 10).
 
@@ -889,7 +889,8 @@ loom:
         architecture, test coverage); fix ALL findings with an engineer agent.
         FUNCTIONAL: prove features are WIRED IN (CLI/API/UI reachable); run a
         smoke test of the primary use case end-to-end.
-        Record discoveries to loom memory for knowledge-distill.
+        Record discoveries to loom memory for knowledge-distill, including any
+        knowledge file contradicted by the tree: loom memory note "stale-knowledge: ...".
       dependencies: ["stage-a", "stage-b"]
       acceptance:
         - "cargo test"
@@ -920,7 +921,10 @@ loom:
         SINGLE-AGENT: do NOT spawn subagents — memories are compact summaries;
         lean on them and keep code spot-reads narrow.
         Read plan + loom memory show --all + doc/loom/knowledge/*.md.
-        Curate mistakes (prevention rules), patterns, decisions, conventions via
+        CORRECTIONS FIRST: apply every `stale-knowledge:` memory in place with
+        loom knowledge replace-section <file> "<heading>" "<body>" - never with
+        loom knowledge update, which appends the fix below the stale text.
+        Then curate mistakes (prevention rules), patterns, decisions, conventions via
         loom knowledge update. TIER ROUTING: findings ~40 lines or fewer go
         inline in the tier-1 file; larger findings go via loom knowledge update
         <category>/<slug> with a 2-4 line tier-1 summary + link. INDEX.md
