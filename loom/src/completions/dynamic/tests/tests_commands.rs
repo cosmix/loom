@@ -50,7 +50,7 @@ fn test_complete_subcommands_stage_prefix() {
 #[test]
 fn test_complete_subcommands_knowledge() {
     let results = complete_subcommands("knowledge", "").unwrap();
-    for present in ["update", "context", "sync"] {
+    for present in ["update", "replace-section", "context", "sync"] {
         assert!(
             results.contains(&present.to_string()),
             "knowledge must still complete `{present}`"
@@ -66,7 +66,6 @@ fn test_complete_subcommands_knowledge() {
         "gc",
         "bootstrap",
         "status",
-        "replace-section",
     ] {
         assert!(
             !results.contains(&gone.to_string()),

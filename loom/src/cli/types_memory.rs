@@ -15,6 +15,19 @@ pub enum KnowledgeCommands {
         content: Option<String>,
     },
 
+    /// Replace a `## <heading>` section in place (corrects stale knowledge; appends if absent)
+    ReplaceSection {
+        /// Tier-1 file (entry-points, patterns, conventions, ...) or tier-2 topic (<category>/<slug>)
+        file: String,
+
+        /// Heading of the section to overwrite, with or without the leading `## `
+        heading: String,
+
+        /// Replacement body WITHOUT the heading line. Omit or use "-" to read from stdin.
+        #[arg(value_parser = clap_knowledge_content_validator)]
+        content: Option<String>,
+    },
+
     /// Retrieve a token-budgeted context pack for a query (deterministic, offline)
     Context {
         /// Seed the query from this stage's dependencies, and name it in output

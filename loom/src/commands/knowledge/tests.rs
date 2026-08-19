@@ -237,3 +237,113 @@ fn test_sync_upgrades_legacy_dir() {
         "loom knowledge sync must create INDEX.md on a legacy dir"
     );
 }
+
+#[test]
+fn test_normalize_heading_strips_markdown_prefix() {
+    assert_eq!(normalize_heading("## Merge Flow").unwrap(), "Merge Flow");
+    assert_eq!(normalize_heading("  Merge Flow  ").unwrap(), "Merge Flow");
+    assert!(normalize_heading("   ").is_err());
+    assert!(normalize_heading("## Two\nLines").is_err());
+}
+
+#[test]
+fn test_strip_repeated_heading() {
+    assert_eq!(
+        strip_repeated_heading("## Merge Flow\n\nBody text\n", "Merge Flow"),
+        "Body text"
+    );
+    assert_eq!(
+        strip_repeated_heading("Body text", "Merge Flow"),
+        "Body text"
+    );
+    // A heading that is a prefix of the body's own heading must not be stripped.
+    assert_eq!(
+        strip_repeated_heading("## Merge Flow Details\n\nBody", "Merge Flow"),
+        "## Merge Flow Details\n\nBody"
+    );
+}
+
+#[test]
+#[serial]
+fn test_replace_section_corrects_in_place() {
+    let (_temp_dir, test_dir) = setup_test_env();
+    let original_dir = std::env::current_dir().expect("Failed to get current dir");
+    std::env::set_current_dir(&test_dir).expect("Failed to change dir");
+
+    KnowledgeDir::new(".")
+        .initialize()
+        .expect("Failed to initialize knowledge");
+
+    update(
+        "patterns".to_string(),
+        Some("## Merge Flow\n\nStale claim".to_string()),
+    )
+    .expect("seed append failed");
+
+    let result = replace_section(
+        "patterns".to_string(),
+        "## Merge Flow".to_string(),
+        Some("## Merge Flow\n\nCorrected claim".to_string()),
+    );
+    assert!(result.is_ok(), "replace_section() failed: {result:?}");
+
+    let content = fs::read_to_string(test_dir.join("doc/loom/knowledge/patterns.md")).unwrap();
+    assert!(content.contains("Corrected claim"));
+    assert!(
+        !content.contains("Stale claim"),
+        "stale text must be gone, not appended below the fix"
+    );
+    assert_eq!(
+        content.matches("## Merge Flow").count(),
+        1,
+        "the heading must not be duplicated: {content}"
+    );
+
+    std::env::set_current_dir(original_dir).expect("Failed to restore dir");
+}
+
+#[test]
+#[serial]
+fn test_replace_section_appends_when_heading_absent() {
+    let (_temp_dir, test_dir) = setup_test_env();
+    let original_dir = std::env::current_dir().expect("Failed to get current dir");
+    std::env::set_current_dir(&test_dir).expect("Failed to change dir");
+
+    KnowledgeDir::new(".")
+        .initialize()
+        .expect("Failed to initialize knowledge");
+
+    let result = replace_section(
+        "conventions".to_string(),
+        "Brand New".to_string(),
+        Some("Fresh body".to_string()),
+    );
+    assert!(result.is_ok(), "replace_section() failed: {result:?}");
+
+    let content = fs::read_to_string(test_dir.join("doc/loom/knowledge/conventions.md")).unwrap();
+    assert!(content.contains("## Brand New"));
+    assert!(content.contains("Fresh body"));
+
+    std::env::set_current_dir(original_dir).expect("Failed to restore dir");
+}
+
+#[test]
+#[serial]
+fn test_replace_section_rejects_heading_only_body() {
+    let (_temp_dir, test_dir) = setup_test_env();
+    let original_dir = std::env::current_dir().expect("Failed to get current dir");
+    std::env::set_current_dir(&test_dir).expect("Failed to change dir");
+
+    KnowledgeDir::new(".")
+        .initialize()
+        .expect("Failed to initialize knowledge");
+
+    let result = replace_section(
+        "patterns".to_string(),
+        "Merge Flow".to_string(),
+        Some("## Merge Flow".to_string()),
+    );
+    assert!(result.is_err(), "heading-only body must be rejected");
+
+    std::env::set_current_dir(original_dir).expect("Failed to restore dir");
+}

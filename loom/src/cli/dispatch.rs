@@ -81,6 +81,11 @@ fn print_minted_proof(
 fn dispatch_knowledge(command: KnowledgeCommands) -> Result<()> {
     match command {
         KnowledgeCommands::Update { file, content } => knowledge::update(file, content),
+        KnowledgeCommands::ReplaceSection {
+            file,
+            heading,
+            content,
+        } => knowledge::replace_section(file, heading, content),
         // `budget` is bound short so the seven-argument call stays one line.
         KnowledgeCommands::Context {
             stage,
