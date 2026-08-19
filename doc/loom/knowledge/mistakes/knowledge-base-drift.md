@@ -59,7 +59,7 @@ There is no `loom knowledge audit` command; this loop is the check.
 **Fix:** Correct the section IN PLACE with
 `loom knowledge replace-section <file> "<heading>" "<body>"` — restored 2026-08-19, after the CLI
 collapse had removed it, precisely so distillation can retire a stale claim instead of layering
-over it. Pass the body WITHOUT its `## ` heading line. It cannot rename a heading (see
+over it. Pass the body WITHOUT its `##` heading line. It cannot rename a heading (see
 concerns.md § `loom knowledge` Cannot Rename a Section Heading) and there is still no delete verb.
 When a superseded claim disappears, say in the replacement what was wrong and why — otherwise the
 next agent re-adds it from the same stale source.

@@ -446,7 +446,7 @@ resolution, with line references.
 | `loom/src/fs/knowledge/dir.rs`                     | `KnowledgeDir` — initialize, append, replace-section, layout detection                                                      |
 | `loom/src/fs/knowledge/index.rs`                   | `scan_topics`, `generate_index`, `write_index`                                                                              |
 | `loom/src/fs/knowledge/templates.rs`               | tier-1/tier-2 scaffolds                                                                                                     |
-| `loom/src/commands/knowledge/mod.rs`               | the four knowledge verbs — `update` (append), `replace-section` (overwrite a `## ` body), `context`, `sync`               |
+| `loom/src/commands/knowledge/mod.rs`               | the four knowledge verbs — `update` (append), `replace-section` (overwrite a `##` body), `context`, `sync`               |
 | `loom/src/cli/types_memory.rs`                     | clap definitions for the knowledge subcommands                                                                              |
 
 `loom knowledge sync`, or any `loom knowledge update`, regenerates `INDEX.md` — the index

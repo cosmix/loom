@@ -496,7 +496,9 @@ If it is listed, refactor rather than extend.
 
 Never write plain `cargo test` into a loom plan's acceptance criteria. The gate is:
 
-    cargo test --all-targets --no-fail-fast
+```bash
+cargo test --all-targets --no-fail-fast
+```
 
 Both flags earn their place:
 

@@ -792,7 +792,7 @@ success line about the other half.
    (`context/refresh/semantic.rs:50-64`) is the shape that fixed this:
    `Base { revision }` | `LocalOverlay { plan, stage, refusal }` | `Skipped { reason }`,
    serialized kebab-case, printed by `print_semantic` (`sync.rs:132-148`) behind the
-   `source graph: ` prefix. "Did it work?" is not answerable; "which layer did I write,
+   `source graph:` prefix. "Did it work?" is not answerable; "which layer did I write,
    and why not the other one?" is.
 3. A freshness flag cannot carry this. `Freshness` alone could not say which layer ran
    or how big it was (`semantic.rs:33-37`) — which is exactly why the typed outcome had
@@ -807,10 +807,10 @@ working.
 Within one plan, two commands were both reported as doing nothing, and the two diagnoses
 had nothing in common:
 
-- **`loom map --deep`** did nothing *because its work was already present.* The output
+- **`loom map --deep`** did nothing _because its work was already present._ The output
   was correct and the run was a legitimate no-op. Nothing was broken.
-- **`loom knowledge sync`** did nothing *because its failure was written into a JSON
-  field instead of into the exit code.* It exited 0 with
+- **`loom knowledge sync`** did nothing _because its failure was written into a JSON
+  field instead of into the exit code._ It exited 0 with
   `{"semantic":{"layer":"skipped","stale":true,"nodes":0,"detail":"Failed to write
   context state: ..."}}`.
 

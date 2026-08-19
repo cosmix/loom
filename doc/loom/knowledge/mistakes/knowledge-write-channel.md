@@ -63,7 +63,7 @@ quoted into every later stage's Knowledge Brief).
 **Closed 2026-08-19.** `loom knowledge replace-section <file> "<heading>" "<body>"` is restored
 (`cli/types_memory.rs`, `cli/dispatch.rs`, `commands/knowledge/mod.rs::replace_section`) over the
 `KnowledgeDir::replace_section_target` splice that had survived the collapse in the fs layer. It
-overwrites the body under the first `## <heading>` up to the next `## ` heading, appends the section
+overwrites the body under the first `## <heading>` up to the next `##` heading, appends the section
 (and says so) when no heading matches, and strips a `## <heading>` line repeated at the top of the
 body so a caller carrying `update` habits cannot double the heading. Pass the body WITHOUT its
 heading line.
