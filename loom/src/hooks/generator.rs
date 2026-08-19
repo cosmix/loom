@@ -100,8 +100,11 @@ pub fn generate_hooks_settings(
     // value from an earlier session would shadow the wrapper's fresh exports
     // (wrong-stage `loom memory` entries, heartbeats for dead sessions,
     // commit-filter misidentifying the main agent). Also scrub any stale
-    // values written by older loom versions.
+    // values written by older loom versions, and a stale `LOOM_WORK_DIR` pin
+    // left behind by a since-deleted `.work/` — the two heals travel together
+    // so they cannot drift apart (see `scrub_stale_work_dir_env`).
     crate::fs::permissions::scrub_session_identity_env(&mut settings);
+    crate::fs::permissions::scrub_stale_work_dir_env(&mut settings);
 
     let obj = settings
         .as_object_mut()

@@ -131,8 +131,9 @@ pub fn setup_root_claude_md(worktree_path: &Path, repo_root: &Path) -> Result<()
     Ok(())
 }
 
-/// Best-effort removal of per-session identity env vars from a copied
-/// settings file. Leaves the file untouched if it cannot be parsed.
+/// Best-effort removal of per-session identity env vars and a stale
+/// `LOOM_WORK_DIR` pin from a copied settings file. Leaves the file
+/// untouched if it cannot be parsed.
 fn scrub_copied_settings_env(path: &Path) {
     let Ok(content) = std::fs::read_to_string(path) else {
         return;
@@ -140,7 +141,9 @@ fn scrub_copied_settings_env(path: &Path) {
     let Ok(mut settings) = serde_json::from_str::<Value>(&content) else {
         return;
     };
-    if crate::fs::permissions::scrub_session_identity_env(&mut settings) {
+    let identity_removed = crate::fs::permissions::scrub_session_identity_env(&mut settings);
+    let stale_work_dir_removed = crate::fs::permissions::scrub_stale_work_dir_env(&mut settings);
+    if identity_removed || stale_work_dir_removed {
         if let Ok(updated) = serde_json::to_string_pretty(&settings) {
             let _ = std::fs::write(path, updated);
         }
@@ -236,6 +239,7 @@ pub fn refresh_worktree_settings_local(worktree_path: &Path, repo_root: &Path) -
     } else {
         let mut base = main_settings.clone();
         crate::fs::permissions::scrub_session_identity_env(&mut base);
+        crate::fs::permissions::scrub_stale_work_dir_env(&mut base);
         base
     };
     set_permissions(&mut merged, merged_allow, merged_deny)?;
@@ -349,7 +353,8 @@ fn set_permissions(settings: &mut Value, allow: Vec<String>, deny: Vec<String>) 
 /// 1. Reads the main repo's settings.json (if it exists)
 /// 2. Sets `hasTrustDialogAccepted: true` to skip the trust prompt
 /// 3. Strips stale per-session identity vars (`LOOM_MAIN_AGENT_PID`,
-///    `LOOM_STAGE_ID`, `LOOM_SESSION_ID`) from the inherited `env` block
+///    `LOOM_STAGE_ID`, `LOOM_SESSION_ID`) and a stale `LOOM_WORK_DIR` pin
+///    from the inherited `env` block
 /// 4. Writes the merged result to the worktree
 ///
 /// Note: We deliberately do NOT write `permissions.defaultMode` here. The
@@ -389,8 +394,10 @@ fn create_worktree_settings(
 
     // Scrub the copied env block: per-session identity (LOOM_MAIN_AGENT_PID,
     // LOOM_STAGE_ID, LOOM_SESSION_ID) is set dynamically by the wrapper
-    // script, so any inherited value is stale.
+    // script, so any inherited value is stale. A LOOM_WORK_DIR pin naming a
+    // now-deleted .work/ is scrubbed alongside — see scrub_stale_work_dir_env.
     crate::fs::permissions::scrub_session_identity_env(&mut settings);
+    crate::fs::permissions::scrub_stale_work_dir_env(&mut settings);
 
     // Resolve the .work symlink to its absolute target path and add permissions.
     // In worktrees, .work is a symlink to ../../.work (the main repo's .work/).

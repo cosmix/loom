@@ -63,14 +63,52 @@ pub fn scrub_session_identity_env(settings: &mut Value) -> bool {
     removed
 }
 
-/// Heal the MAIN repo's settings files of stale per-session identity env.
+/// Env var name for the pinned `.work` directory path.
+const WORK_DIR_ENV_KEY: &str = "LOOM_WORK_DIR";
+
+/// Remove a stale `LOOM_WORK_DIR` pin from a settings document.
+///
+/// `LOOM_WORK_DIR` is deliberately excluded from `SESSION_IDENTITY_ENV_KEYS`
+/// above: it is repo-stable rather than per-session, so a *live* pin (naming
+/// a `.work/` that still exists) is worth persisting — it saves every hook
+/// and CLI invocation in the repo the upward search `WorkDir::new` would
+/// otherwise perform, and callers reading it while a stage is running rely
+/// on it being there. But once the directory it names is gone — e.g. `loom
+/// repair --fix` deleted a corrupted `.work/` — the pin is strictly worse
+/// than having none at all: Claude Code's settings `env` block overrides the
+/// process environment, so the stale value shadows `WorkDir::new`'s upward
+/// search instead of falling through to it, and hooks/CLI invocations in the
+/// repo silently resolve nothing until someone notices and hand-edits the
+/// settings file.
+///
+/// Returns `true` if the key was removed. A missing/non-object `env` block,
+/// a missing key, or a key whose path still exists on disk are all left
+/// untouched.
+pub fn scrub_stale_work_dir_env(settings: &mut Value) -> bool {
+    let Some(env) = settings.get_mut("env").and_then(|v| v.as_object_mut()) else {
+        return false;
+    };
+    let Some(work_dir) = env.get(WORK_DIR_ENV_KEY).and_then(|v| v.as_str()) else {
+        return false;
+    };
+    if Path::new(work_dir).exists() {
+        return false;
+    }
+    env.remove(WORK_DIR_ENV_KEY);
+    true
+}
+
+/// Heal the MAIN repo's settings files of stale per-session identity env and
+/// a stale `LOOM_WORK_DIR` pin.
 ///
 /// Claude Code applies the main repository's settings env to sessions running
 /// in linked worktrees, so stale identity in either main-repo settings file
 /// shadows the wrapper script's fresh exports in EVERY session of this repo —
 /// worktree stages included. Scrubbing the worktree-side copies is therefore
 /// not enough; the main files must be healed in the run path, not only on
-/// `loom init`/`loom repair` (which polluted repos may never re-run).
+/// `loom init`/`loom repair` (which polluted repos may never re-run). The two
+/// heals travel together here — see [`scrub_session_identity_env`] and
+/// [`scrub_stale_work_dir_env`] for what each removes and why.
 ///
 /// Best-effort: missing or unparseable files are skipped. Returns the paths
 /// that were healed.
@@ -84,7 +122,9 @@ pub fn scrub_main_repo_settings_identity(repo_root: &Path) -> Vec<std::path::Pat
         let Ok(mut settings) = serde_json::from_str::<Value>(&content) else {
             continue;
         };
-        if !scrub_session_identity_env(&mut settings) {
+        let identity_removed = scrub_session_identity_env(&mut settings);
+        let stale_work_dir_removed = scrub_stale_work_dir_env(&mut settings);
+        if !identity_removed && !stale_work_dir_removed {
             continue;
         }
         let Ok(updated) = serde_json::to_string_pretty(&settings) else {
@@ -261,8 +301,11 @@ pub fn ensure_loom_hooks_local(repo_root: &Path) -> Result<()> {
 
     // Drop stale per-session identity env vars left behind by older loom
     // versions (they used to be written here by knowledge-stage spawns and
-    // would shadow the wrapper script's fresh exports in every later session).
-    let stale_env_removed = scrub_session_identity_env(&mut settings);
+    // would shadow the wrapper script's fresh exports in every later session),
+    // and a LOOM_WORK_DIR pin left behind by a since-deleted .work/ (e.g. a
+    // `loom repair --fix` run). Both heals are reported as one change below.
+    let stale_env_removed =
+        scrub_session_identity_env(&mut settings) | scrub_stale_work_dir_env(&mut settings);
     let settings_obj = require_object(&mut settings, "settings.local.json")?;
 
     // Disable Claude Code's worktree isolation for subagents in the main repo.
@@ -596,12 +639,18 @@ mod tests {
         let claude_dir = repo_root.join(".claude");
         fs::create_dir_all(&claude_dir).unwrap();
 
+        // A LIVE work dir: it must survive the identity heal alongside the
+        // dead session-identity keys.
+        let live_work_dir = repo_root.join(".work");
+        fs::create_dir_all(&live_work_dir).unwrap();
+        let live_work_dir_str = live_work_dir.to_string_lossy().to_string();
+
         let polluted = json!({
             "env": {
                 "LOOM_STAGE_ID": "knowledge-bootstrap",
                 "LOOM_SESSION_ID": "session-stale",
                 "LOOM_MAIN_AGENT_PID": "12345",
-                "LOOM_WORK_DIR": "/repo/.work"
+                "LOOM_WORK_DIR": live_work_dir_str
             },
             "permissions": { "allow": ["Bash(loom *)"] }
         });
@@ -623,7 +672,7 @@ mod tests {
             assert!(!env.contains_key("LOOM_STAGE_ID"), "{name}");
             assert!(!env.contains_key("LOOM_SESSION_ID"), "{name}");
             assert!(!env.contains_key("LOOM_MAIN_AGENT_PID"), "{name}");
-            assert_eq!(env["LOOM_WORK_DIR"], "/repo/.work", "{name}");
+            assert_eq!(env["LOOM_WORK_DIR"], live_work_dir_str, "{name}");
             // Unrelated sections untouched
             let allow = settings["permissions"]["allow"].as_array().unwrap();
             assert!(allow.iter().any(|v| v == "Bash(loom *)"), "{name}");
@@ -638,12 +687,15 @@ mod tests {
         // No .claude directory at all
         assert!(scrub_main_repo_settings_identity(repo_root).is_empty());
 
-        // Clean file → nothing healed, file byte-identical
+        // Clean file with a LIVE work dir → nothing healed, file byte-identical
         let claude_dir = repo_root.join(".claude");
         fs::create_dir_all(&claude_dir).unwrap();
-        let clean =
-            serde_json::to_string_pretty(&json!({ "env": { "LOOM_WORK_DIR": "/repo/.work" } }))
-                .unwrap();
+        let live_work_dir = repo_root.join(".work");
+        fs::create_dir_all(&live_work_dir).unwrap();
+        let clean = serde_json::to_string_pretty(&json!({
+            "env": { "LOOM_WORK_DIR": live_work_dir.to_string_lossy() }
+        }))
+        .unwrap();
         fs::write(claude_dir.join("settings.local.json"), &clean).unwrap();
         assert!(scrub_main_repo_settings_identity(repo_root).is_empty());
         assert_eq!(

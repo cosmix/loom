@@ -319,11 +319,13 @@ fn merge_permissions_with_lock(
             .with_context(|| format!("Failed to parse {}", main_settings_path.display()))?
     };
 
-    // Heal stale per-session identity env while rewriting this file. Claude
-    // Code applies the main repo's settings env to worktree sessions, so a
-    // stale value here shadows the wrapper's exports in every session of the
-    // repo until something removes it.
+    // Heal stale per-session identity env, and a stale LOOM_WORK_DIR pin,
+    // while rewriting this file. Claude Code applies the main repo's
+    // settings env to worktree sessions, so a stale value here shadows the
+    // wrapper's exports (or defeats WorkDir::new's upward search) in every
+    // session of the repo until something removes it.
     super::settings::scrub_session_identity_env(&mut settings);
+    super::settings::scrub_stale_work_dir_env(&mut settings);
 
     // Merge permissions
     let result = merge_permission_arrays(&mut settings, allow_perms, deny_perms)?;
@@ -594,13 +596,18 @@ mod tests {
         let temp_dir = tempfile::TempDir::new().unwrap();
         let settings_path = temp_dir.path().join("settings.local.json");
 
+        // A LIVE work dir must survive alongside the identity heal.
+        let live_work_dir = temp_dir.path().join(".work");
+        std::fs::create_dir_all(&live_work_dir).unwrap();
+        let live_work_dir_str = live_work_dir.to_string_lossy().to_string();
+
         // Pre-fix binaries left per-session identity in the main repo's
         // settings.local.json; the fold-back must heal it on every rewrite.
         let polluted = json!({
             "env": {
                 "LOOM_STAGE_ID": "knowledge-bootstrap",
                 "LOOM_SESSION_ID": "session-stale",
-                "LOOM_WORK_DIR": "/repo/.work"
+                "LOOM_WORK_DIR": live_work_dir_str
             },
             "permissions": { "allow": ["Read(.work/**)"] }
         });
@@ -620,7 +627,7 @@ mod tests {
         let env = settings["env"].as_object().unwrap();
         assert!(!env.contains_key("LOOM_STAGE_ID"));
         assert!(!env.contains_key("LOOM_SESSION_ID"));
-        assert_eq!(env["LOOM_WORK_DIR"], "/repo/.work");
+        assert_eq!(env["LOOM_WORK_DIR"], live_work_dir_str);
         let allow = settings["permissions"]["allow"].as_array().unwrap();
         assert!(allow.iter().any(|v| v == "Read(.work/**)"));
         assert!(allow.iter().any(|v| v == "Bash(cargo:*)"));

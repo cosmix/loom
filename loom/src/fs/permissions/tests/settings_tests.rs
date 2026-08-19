@@ -1,6 +1,8 @@
 //! Tests for settings functions
 
-use crate::fs::permissions::settings::ensure_loom_permissions_to;
+use crate::fs::permissions::settings::{
+    ensure_loom_permissions_to, scrub_session_identity_env, scrub_stale_work_dir_env,
+};
 use serde_json::{json, Value};
 use std::fs;
 use tempfile::TempDir;
@@ -143,4 +145,82 @@ fn test_hooks_not_duplicated_on_rerun() {
     // Should still have exactly one Stop hook entry
     let stop_hooks = settings["hooks"]["Stop"].as_array().unwrap();
     assert_eq!(stop_hooks.len(), 1);
+}
+
+#[test]
+fn test_scrub_stale_work_dir_env_removes_dead_pin() {
+    let temp_dir = TempDir::new().unwrap();
+    // A path under a TempDir that was never created — guaranteed absent.
+    let dead_path = temp_dir.path().join("gone").join(".work");
+
+    let mut settings = json!({
+        "env": { "LOOM_WORK_DIR": dead_path.to_string_lossy() }
+    });
+
+    assert!(scrub_stale_work_dir_env(&mut settings));
+    assert!(settings["env"].get("LOOM_WORK_DIR").is_none());
+}
+
+#[test]
+fn test_scrub_stale_work_dir_env_preserves_live_pin() {
+    let temp_dir = TempDir::new().unwrap();
+    let live_path = temp_dir.path().join(".work");
+    fs::create_dir_all(&live_path).unwrap();
+
+    let mut settings = json!({
+        "env": { "LOOM_WORK_DIR": live_path.to_string_lossy() }
+    });
+
+    assert!(!scrub_stale_work_dir_env(&mut settings));
+    assert_eq!(
+        settings["env"]["LOOM_WORK_DIR"],
+        json!(live_path.to_string_lossy())
+    );
+}
+
+#[test]
+fn test_scrub_stale_work_dir_env_noop_without_env_block() {
+    let mut settings = json!({ "permissions": { "allow": ["Bash(loom *)"] } });
+
+    assert!(!scrub_stale_work_dir_env(&mut settings));
+    assert_eq!(
+        settings,
+        json!({ "permissions": { "allow": ["Bash(loom *)"] } })
+    );
+}
+
+#[test]
+fn test_scrub_stale_work_dir_env_noop_missing_key() {
+    let mut settings = json!({ "env": { "FOO": "keep" } });
+
+    assert!(!scrub_stale_work_dir_env(&mut settings));
+    assert_eq!(settings["env"]["FOO"], json!("keep"));
+}
+
+#[test]
+fn test_scrub_identity_and_stale_work_dir_together() {
+    let temp_dir = TempDir::new().unwrap();
+    let dead_path = temp_dir.path().join("gone").join(".work");
+
+    let mut settings = json!({
+        "env": {
+            "LOOM_MAIN_AGENT_PID": "12345",
+            "LOOM_STAGE_ID": "stale-stage",
+            "LOOM_SESSION_ID": "stale-session",
+            "LOOM_WORK_DIR": dead_path.to_string_lossy(),
+            "FOO": "keep"
+        }
+    });
+
+    let identity_removed = scrub_session_identity_env(&mut settings);
+    let work_dir_removed = scrub_stale_work_dir_env(&mut settings);
+    assert!(identity_removed);
+    assert!(work_dir_removed);
+
+    let env = settings["env"].as_object().unwrap();
+    assert!(!env.contains_key("LOOM_MAIN_AGENT_PID"));
+    assert!(!env.contains_key("LOOM_STAGE_ID"));
+    assert!(!env.contains_key("LOOM_SESSION_ID"));
+    assert!(!env.contains_key("LOOM_WORK_DIR"));
+    assert_eq!(env["FOO"], json!("keep"));
 }

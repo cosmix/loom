@@ -25,7 +25,7 @@ pub fn prepare_repo_for_run(repo_root: &Path) -> Result<()> {
     // spawning anything.
     for path in crate::fs::permissions::scrub_main_repo_settings_identity(repo_root) {
         println!(
-            "{} Removed stale session identity env from {}",
+            "{} Removed stale session env vars from {}",
             "✓".green().bold(),
             path.display()
         );

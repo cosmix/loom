@@ -210,7 +210,12 @@ mod generator_tests {
 
     #[test]
     fn test_generate_hooks_settings_new() {
-        let config = super::test_config(PathBuf::from("/hooks"), PathBuf::from("/work"));
+        // LOOM_WORK_DIR must name a directory that actually exists, or
+        // scrub_stale_work_dir_env removes it as a dead pin (config/sync.rs).
+        let temp_dir = TempDir::new().unwrap();
+        let work_dir = temp_dir.path().join("work");
+        std::fs::create_dir_all(&work_dir).unwrap();
+        let config = super::test_config(PathBuf::from("/hooks"), work_dir.clone());
 
         let settings = generate_hooks_settings(&config, None).unwrap();
 
@@ -231,7 +236,10 @@ mod generator_tests {
 
         // Check environment variables: only the stable LOOM_WORK_DIR is
         // persisted; per-session identity comes from the wrapper script env.
-        assert_eq!(settings["env"]["LOOM_WORK_DIR"], json!("/work"));
+        assert_eq!(
+            settings["env"]["LOOM_WORK_DIR"],
+            json!(work_dir.display().to_string())
+        );
         let env = settings["env"].as_object().unwrap();
         assert!(!env.contains_key("LOOM_STAGE_ID"));
         assert!(!env.contains_key("LOOM_SESSION_ID"));
@@ -239,11 +247,31 @@ mod generator_tests {
     }
 
     #[test]
+    fn test_generate_hooks_settings_scrubs_stale_work_dir() {
+        // If HooksConfig.work_dir names a `.work/` that no longer exists (e.g.
+        // its worktree was deleted since the config was built), generation
+        // must not persist a dead LOOM_WORK_DIR pin that would silently
+        // redirect loom commands at nothing.
+        let temp_dir = TempDir::new().unwrap();
+        let dead_work_dir = temp_dir.path().join("gone").join(".work");
+        let config = super::test_config(PathBuf::from("/hooks"), dead_work_dir);
+
+        let settings = generate_hooks_settings(&config, None).unwrap();
+        assert!(settings["env"].get("LOOM_WORK_DIR").is_none());
+    }
+
+    #[test]
     fn test_generate_hooks_settings_scrubs_stale_session_identity() {
         // Older loom versions persisted stage/session IDs in the env block;
         // regenerating settings must remove them so they can never shadow the
-        // wrapper script's fresh exports.
-        let config = super::test_config(PathBuf::from("/hooks"), PathBuf::from("/work"));
+        // wrapper script's fresh exports. This test's subject is the identity
+        // scrub, so LOOM_WORK_DIR is backed by a live directory: it must
+        // survive untouched (see test_generate_hooks_settings_scrubs_stale_work_dir
+        // for the dead-pin case).
+        let temp_dir = TempDir::new().unwrap();
+        let work_dir = temp_dir.path().join("work");
+        std::fs::create_dir_all(&work_dir).unwrap();
+        let config = super::test_config(PathBuf::from("/hooks"), work_dir.clone());
 
         let existing = json!({
             "env": {
@@ -260,7 +288,7 @@ mod generator_tests {
         assert!(!env.contains_key("LOOM_SESSION_ID"));
         assert!(!env.contains_key("LOOM_MAIN_AGENT_PID"));
         assert_eq!(env["KEEP_ME"], json!("yes"));
-        assert_eq!(env["LOOM_WORK_DIR"], json!("/work"));
+        assert_eq!(env["LOOM_WORK_DIR"], json!(work_dir.display().to_string()));
     }
 
     #[test]
@@ -292,7 +320,11 @@ mod generator_tests {
         let temp_dir = TempDir::new().unwrap();
         let worktree_path = temp_dir.path();
 
-        let config = super::test_config(PathBuf::from("/hooks"), PathBuf::from("/work"));
+        // LOOM_WORK_DIR must name a directory that actually exists, or
+        // scrub_stale_work_dir_env removes it as a dead pin (config/sync.rs).
+        let work_dir = temp_dir.path().join("work");
+        std::fs::create_dir_all(&work_dir).unwrap();
+        let config = super::test_config(PathBuf::from("/hooks"), work_dir.clone());
 
         setup_hooks_for_worktree(worktree_path, &config).unwrap();
 
@@ -308,7 +340,10 @@ mod generator_tests {
         let content = std::fs::read_to_string(&settings_path).unwrap();
         let settings: serde_json::Value = serde_json::from_str(&content).unwrap();
 
-        assert_eq!(settings["env"]["LOOM_WORK_DIR"], json!("/work"));
+        assert_eq!(
+            settings["env"]["LOOM_WORK_DIR"],
+            json!(work_dir.display().to_string())
+        );
         assert!(!settings["env"]
             .as_object()
             .unwrap()

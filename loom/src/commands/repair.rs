@@ -871,6 +871,12 @@ fn fix_invalid_work(repo_root: &Path) -> Result<()> {
     } else {
         fs::remove_dir_all(&work_path)?;
     }
+    // The settings files may carry a LOOM_WORK_DIR pin naming the directory
+    // we just deleted. Left in place, it shadows WorkDir::new's upward
+    // search in every later session of this repo (see
+    // scrub_stale_work_dir_env), so heal it now rather than leaving the very
+    // next session to resolve a dead path.
+    crate::fs::permissions::scrub_main_repo_settings_identity(repo_root);
     Ok(())
 }
 
