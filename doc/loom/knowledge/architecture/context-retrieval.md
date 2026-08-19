@@ -12,27 +12,51 @@ function of the bytes on disk and the query string (`context/mod.rs:1-8`).
 Read `context/mod.rs` first; its module docstring is accurate and carries the
 pipeline diagram. `architecture/source-graph.md` covers the second graph.
 
-## Two Graphs, Two Lanes — and Only One Is Wired
+## Two Graphs, Two Lanes, Both Wired
 
-There are two distinct graphs, and the honest description of their relationship
-matters more than either one:
+There are two distinct graphs. Until this plan only one of them was searchable;
+both are now.
 
-| Graph | Built by | Consumed by | In ranking? |
+| Graph | Built by | Ranked by | Consumed by |
 | --- | --- | --- | --- |
-| Knowledge-chunk catalog (curated prose under `doc/loom/knowledge/`) | `fs::knowledge::chunker` → `context::ingest` | `context::rank`, `loom knowledge context`, the Knowledge Brief | YES |
-| Source graph (tree-sitter nodes/edges over the repo) | `context::extract` → `context::refresh::source_graph` | `commands::map` via `context::graph_store` | NO |
+| Knowledge-chunk catalog (curated prose under `doc/loom/knowledge/`) | `fs::knowledge::chunker` → `context::ingest` | `context::rank` | `loom knowledge context`, the Knowledge Brief |
+| Source graph (tree-sitter nodes/edges over the repo) | `context::extract` → `context::refresh::source_graph` | `context::rank_source` | the same two, plus `loom map` via `context::graph_store` |
 
-`Channel` (`context/schema.rs:48-53`) has exactly two variants, `Knowledge` and
-`Source`, and `Channel::all()` puts BOTH in the default path. But `rank` only
-accepts `&[KnowledgeChunk]`, so `rank_channels` in `retrieve` ranks `Source`
-over an **empty slice** (`context/mod.rs:27-34`). Every emitted pack therefore
-names a scope it never searched. Bridging graph nodes into the ranker is
-separate, unbuilt work — ranking `Source` over the same catalog would
-double-count the knowledge chunks.
+`rank_channels` (`retrieve.rs:171-185`) dispatches per channel: `Channel::Knowledge`
+to `rank`, `Channel::Source` to `rank_source` when a resolved graph is available
+and to an empty result when it is not. The two lists then meet in the ordinary
+`fuse` → `pack` path, so a pack can mix curated prose and symbol nodes.
 
-**Do not describe the source graph as a retrieval channel.** Three module
-docstrings did exactly that and had to be corrected (see
-`mistakes/store-without-consumer.md`).
+**`rank_source` is not `rank` with a different corpus.** `context/rank_source.rs:53`:
+
+- Whole-**file** nodes are dropped first — no signature, no scope, nothing to score
+  (`rank_source.rs:56-62`).
+- The exact-match rungs (`ExplicitId` / `ExactPath` / `ExactSymbol`) match against the
+  RAW query text via `contains_whole_term`, not against tokens: `tokenize` would shred
+  CamelCase symbols and slashed paths (`rank_source.rs:106-130`).
+- BM25 documents are built from `node.scope` at `WEIGHT_SYMBOLS` plus `node.signature`
+  at `WEIGHT_BODY` (`rank_source.rs:189-201`). The BM25 machinery itself is shared:
+  `prepare_lexical` / `score_bm25` were lifted out of `rank.rs` (`rank.rs:107-149`) so
+  both rankers score identically and only their document construction differs.
+- Candidates are capped at `MAX_SOURCE_CANDIDATES = 60`; ties break on
+  `(path, line_start)` so the pack is deterministic.
+- **Coverage guard:** a node whose file was not fully extracted loses ALL THREE
+  high-confidence rungs together, not selectively (`withhold_partial_coverage`,
+  `rank_source.rs:170-185`). `Confidence::from_reasons` promotes to `High` on any one
+  of the three, so dropping them one at a time would leave a partially-parsed file
+  claiming full confidence. The node is still ranked and returned — only its
+  confidence claim is withheld.
+
+Packing dispatches on `candidate.channel`, never by trying both maps
+(`pack.rs::build_item`). A source item is `ItemKind::SourceNode` with
+`id = node.id` (`<path>#<kind>:<scope>`, disjoint from a knowledge chunk id),
+`content_hash = node.body_hash`, and an excerpt taken from the signature. The
+strict dispatch is deliberate: if the two id spaces ever did collide, this
+surfaces it as a bug instead of silently masking it.
+
+There is **no per-channel budget.** `fuse` is plain reciprocal-rank fusion and
+`pack` walks the fused list taking whole items until the budget is spent, so a
+query that matches prose strongly can legitimately fill the pack with prose.
 
 ## The Pipeline
 

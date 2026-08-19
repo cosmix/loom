@@ -28,7 +28,7 @@ behaviour on an unreachable path is a green test standing in for an absent contr
 where the design is GOING. A later reader has no way to tell an aspiration in the
 present tense from a fact.
 
-## The Concrete Trail
+## The Concrete Trail (as it was)
 
 | Shape | Location | State |
 | --- | --- | --- |
@@ -82,3 +82,13 @@ later reader from inferring a wiring that is not there.
    as suspicious.
 5. Cross-reference: the merge-side twin of this failure — writing a durable flag
    before verifying the thing it claims — is in `mistakes/phantom-merges.md`.
+
+## Epilogue: the consumer was wired, and the trail is how you check
+
+`ItemKind::SourceNode` is now constructed (`pack.rs::build_source_item`),
+`Channel::Source` now reaches a real ranker (`context::rank_source`), and the
+`ContextItem.excerpt` `None` arm is still unreachable in production. That last one
+is the tell: closing a store-without-consumer gap does not retire every shape the
+gap created, so the trail table is the checklist you re-walk when the consumer
+finally lands. Delete what stayed dead; do not assume wiring the headline item
+wired the rest.

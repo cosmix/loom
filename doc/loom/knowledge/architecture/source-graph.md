@@ -6,10 +6,21 @@
 
 `loom/src/context/source_graph/` plus `context/extract/` hold a derived,
 tree-sitter-backed graph of the repository's own source: file and symbol nodes
-plus edges between them. Its **only** consumer today is `loom map` (via
-`context::graph_store`). It is **not** a retrieval channel — see
-`architecture/context-retrieval.md` for why `Channel::Source` ranks over an
-empty slice.
+plus edges between them. It has **two** production consumers, and both are live:
+
+| Consumer | Route in | What it reads |
+| --- | --- | --- |
+| `loom map` (`--outline`, `--find-all`, `--impact`) | `context::graph_store` | the resolved layer, rendered as read-only views |
+| the `Source` retrieval channel | `context::rank_source` → `fuse` → `pack` | symbol nodes, scored and fused with knowledge chunks into one `ContextPack` |
+
+The second consumer is new. Before it existed the graph was built, persisted and
+given a CLI while `Channel::Source` was ranked over nothing at all — the failure
+class is in `mistakes/store-without-consumer.md`, and the ranking design that
+closed it is in `architecture/context-retrieval.md`.
+
+Nobody builds this graph by hand any more either. `loom init` and `loom run`
+publish a base layer through `advisory_source_graph_preflight`, and every stage's
+overlay is reconciled just before its signal is written — see *Lifecycle* below.
 
 Types live in `context/source_graph/` (not `context/schema.rs`) because the graph
 is a distinct domain from the knowledge corpus; `schema.rs` re-exports the public
@@ -182,3 +193,48 @@ Six dependencies, all `optional = true`, all behind ONE default-on cargo feature
   `--no-default-features` the only supported degraded mode, and that mode falls
   back to file-level lexical nodes rather than failing to build — the point is
   that a host without a C toolchain can still build loom.
+
+## Lifecycle: Who Builds It, and When
+
+Nothing in the normal path asks a human to build the graph. There are three
+publish points and one fallback, and every one of them is **advisory** — it
+reports failure and continues, because a missing graph must degrade retrieval,
+never block a run.
+
+| When | Call site | Scope |
+| --- | --- | --- |
+| `loom init` | `commands/init/execute.rs:187` | `Base`, `allow_overlay_fallback = true` |
+| `loom run` (daemon) | `commands/run/mod.rs:101`, in `prepare_background_run` | `Base`, `allow_overlay_fallback = false` |
+| `loom run --foreground` | `commands/run/foreground.rs:39`, in `run_startup` | same |
+| before a stage's signal is written | `orchestrator/core/stage_executor.rs:429-430` (fresh spawn) and `commands/stage/skip_retry.rs:205` (recovery) | `Overlay { plan, stage }` via `MergeLifecycle::reconcile_overlay` |
+
+`advisory_source_graph_preflight(repo_root, work_dir, allow_overlay_fallback)`
+(`commands/run/checks.rs:103-111`) wraps the fallible `publish_source_graph`; on
+error it prints one `eprintln!` line and swallows the result. It never returns a
+`Result`, so it cannot bail startup — deliberately modelled on
+`advisory_codex_lane_preflight`. `publish_source_graph` (`checks.rs:115`) is
+idempotent and silent on the common path: it early-returns when a base layer for
+`HEAD` already exists (`checks.rs:127-129`).
+
+**Ordering is load-bearing in `loom run`.** The preflight must run BEFORE
+`plan_lifecycle::mark_plan_in_progress`: that rename dirties a tracked file, and a
+dirty tree always refuses a base publish (`run/mod.rs:96-100`). A publish that
+"stopped working" after an unrelated startup reorder is this.
+
+**Recovery signals need their own call.** Signal bytes are embedded once at write
+time and `start_stage` later re-uses them verbatim from disk, so a crash/hang
+retry that did not reconcile first would hand the agent a stale overlay
+(`skip_retry.rs:190-202`). `start_knowledge_stage` deliberately has no reconcile
+call — it runs in the main repo with no worktree, and `reconcile_overlay` would
+early-return anyway.
+
+**The dirty-tree fallback.** `try_reconcile_semantic`
+(`context/refresh/semantic.rs:146-176`) asks `dirty_tree_reason`
+(`refresh/source_graph.rs:128-139`, `git status --porcelain=v1 --untracked-files=no`)
+first. Clean tree → publish `Base { revision }`. Dirty tree, or the check itself
+erroring → build `Overlay` at the address `local_overlay_key(project_root)` owns,
+reported as `SemanticLayer::LocalOverlay { plan, stage, refusal }`. A base layer is
+immutable and keyed to a revision, so a dirty tree can never publish one; but
+publishing NOTHING left the user with no graph at all, and the overlay address is
+exactly what retrieval defaults to reading. So `sync` always leaves a usable graph
+and always says which one it left.

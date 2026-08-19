@@ -66,9 +66,13 @@ Files: src/verify/baseline/capture.rs:76-79, src/verify/baseline/compare.rs:155-
 
 `bootstrap.rs:write_bootstrap_sandbox()` keeps the settings.local.json backup in memory only (`Option<String>`). If the process is killed between writing sandbox settings and restoring the original, user settings are permanently lost. Low probability since bootstrap is interactive, but a disk-based temp backup would be more robust.
 
-## Bootstrap Tool Restriction Scope
+## ~~Bootstrap Tool Restriction Scope~~ (MOOT — 2026-08-19)
 
-`bootstrap.rs:57` uses `Bash(loom knowledge*)` which allows all knowledge subcommands (init, check, audit, show, list, gc) not just `update`. Most are read-only, but `gc` spawns Claude — so allowing it from inside another Claude session could cause recursion. The new `knowledge/gc.rs` and `knowledge/spawn.rs` already exclude `loom knowledge gc` from their own bash allowlist; `bootstrap`'s allowlist should be tightened to `Bash(loom knowledge update*)`, `Bash(loom knowledge replace-section*)`, `Bash(loom knowledge audit*)` for principle of least privilege.
+The `bootstrap` subcommand this concern was about, along with `init`, `check`, `audit`, `show`,
+`list`, and `gc`, was removed by the CLI collapse to `KnowledgeCommands::{Update, Context, Sync}`
+(`cli/types_memory.rs:6-52`). The bash allowlist this concern asked to tighten no longer has
+anything to tighten — there is no `bootstrap.rs` and no wider `Bash(loom knowledge*)` grant to
+narrow.
 
 ## Hook Pattern Matching: False Positives on Embedded Content (2026-03-31)
 
@@ -238,11 +242,10 @@ Repo-root resolution is now inlined in three places: `commands/knowledge/spawn.r
 
 ## Knowledge Signals Never Teach Tier-2 (2026-07-28)
 
-`orchestrator/signals/` generates `loom knowledge update <tier-1-file>` guidance, and the
-knowledge-distill prefix mentions `loom knowledge index`, but **no prefix teaches the
-`category/slug` tier-2 form**. Verified functionally: tier-2 works
-(`loom knowledge update patterns/lock-ordering` creates the file and the index picks it up) — it
-is simply never advertised to an orchestrated knowledge stage.
+`orchestrator/signals/` generates `loom knowledge update <tier-1-file>` guidance, but **no
+prefix teaches the `category/slug` tier-2 form**. Verified functionally: tier-2 works
+(`loom knowledge update patterns/lock-ordering` creates the file and `INDEX.md` picks it up on
+the next knowledge write) — it is simply never advertised to an orchestrated knowledge stage.
 
 Consequence: the hierarchy grows only through the interactive `bootstrap`/`gc` paths, not during
 `loom run`. Not a defect in what landed; follow-up stage material.
@@ -304,7 +307,8 @@ violates MD022 (headings surrounded by blank lines). The repo's pre-commit hook 
 `markdownlint-cli2 --fix`, which inserts the blank lines and re-stages the file.
 
 The result is a loop: the generator writes non-compliant markdown → the pre-commit hook fixes it
-→ the next `loom knowledge index` overwrites the fix → the following commit's hook fixes it
+→ the next knowledge write (`loom knowledge update`/`sync`, which regenerates `INDEX.md` via
+`refresh_index_if_hierarchical`) overwrites the fix → the following commit's hook fixes it
 again. Every commit that touches the knowledge base shows a spurious `INDEX.md` diff.
 
 Observed on this repository with 22 topics across 5 categories; harmless semantically, since
@@ -312,8 +316,8 @@ both forms render identically and the staleness check only looks for substrings.
 
 **Fix:** emit `\n### {category}\n` — a blank line before each category sub-heading — in
 `generate_index`, and add a regression test asserting the generated index is markdownlint-clean.
-Until then, prefer the linted form: let the pre-commit hook be the last writer, and do not
-re-run `loom knowledge index` after committing unless topics actually changed.
+Until then, prefer the linted form: let the pre-commit hook be the last writer, and do not run
+a superfluous `loom knowledge update`/`sync` after committing unless topics actually changed.
 
 ## Sandbox `Write(path)` Rules Are Inert — Generated Settings Fixed, Repo Config Open (2026-07-31, split 2026-08-17)
 
@@ -570,17 +574,6 @@ the old behaviour. When delegating outside a loom run against an older binary, t
 explicitly that `loom memory` will fail, that auto-memory is still forbidden, and that they must
 return insights in their final report for the orchestrator to record by hand.
 
-## Knowledge Brief Advertises a `--stage` Flag That Does Not Exist (2026-08-17)
-
-`brief.rs:46` tells every stage to run
-`loom knowledge context --stage <id> --query ...`, but that command has no `--stage` flag and
-exits with `error: unexpected argument '--stage' found`. The one call-to-action in every
-Knowledge Brief fails. The test at `brief.rs:200` asserts the footer equals that literal string,
-so it pins the defect rather than catching it.
-
-→ [Brief Footer Stage Flag](concerns/brief-footer-stage-flag.md) for the real flag set, the fix,
-and the rule about testing advertised commands by parsing them.
-
 ## Two Diverging Copies of the Stage Environment Allowlist (2026-08-17)
 
 The host env allowlist exists twice, and the copies have **already** diverged:
@@ -725,22 +718,68 @@ two agree over a shared fixture list — not more tests on either side.
   `commands/knowledge/context.rs:126-136`, differing only by a two-space indent. Both live in
   the same module; hoist one.
 
-## `loom knowledge` Cannot Rename a Section Heading (2026-08-17)
+## `loom knowledge` Cannot Rename a Section Heading (2026-08-17, duplicate-heading half fixed 2026-08-19)
 
-`loom knowledge replace-section <file> <heading>` replaces a section's **body** and keeps the
-existing heading line. So content passed with its own `##` heading produces a DUPLICATE
-heading, and marking an entry resolved in the repo's `~~strikethrough~~ (RESOLVED date)`
-convention is not expressible through the CLI at all.
+`loom knowledge replace-section <file> <heading> [content]` replaces a section's **body** and
+keeps the existing heading line. The half of this concern about a DUPLICATE heading is now
+fixed: `commands/knowledge/mod.rs::strip_repeated_heading` drops a `## <heading>` line repeated
+at the top of the caller's content before splicing, so passing content with its own copy of the
+heading no longer double-writes it.
 
-Encountered while closing out this plan: two concerns entries needed their headings rewritten,
-which required a direct file edit despite the "use the CLI during loom execution" rule.
+**Still true:** `splice_section` (`fs/knowledge/dir.rs:278`) matches the EXISTING heading and
+always re-emits that same heading text — there is no way to change the heading itself through
+the CLI, so marking an entry resolved in the repo's `~~strikethrough~~ (RESOLVED date)`
+convention still requires a direct file edit for the heading line, even though the body can now
+be corrected in place.
 
-**Workaround:** pass body-only content to `replace-section`, and treat a heading rename as a
-separate manual edit. **Fix:** either accept content whose first line is a heading and replace
-the heading too, or add a `--heading <new>` flag. Related to the existing entries on the
-missing delete-section verb and correcting an entry in place.
+**Fix:** either accept a `--heading <new>` flag, or match the OLD heading and re-emit whatever
+heading line the content passed in.
 
 ## Potential Concerns
 
 - **18 TODO comments** found in source files
 - **7 FIXME comments** found in source files
+
+## Open After PLAN-automatic-knowledge-and-source-graph (2026-08-18)
+
+**Whole-file read ahead of the size cap.** `context/refresh/source_graph.rs:228` does
+`fs::read` on every tracked file BEFORE `extract_file` applies the 512 KiB
+`MAX_EXTRACTED_FILE_BYTES` cap, so the cap bounds parsing but not allocation, and the
+daemon spikes to the size of the largest tracked blob on every merge reconcile.
+Deliberately not fixed at the quality gate: `FileExtraction::file_level`
+(`extract/mod.rs:103`) needs the BYTES to build the file node's span, so avoiding the
+read means changing the oversized node's span semantics or threading a streamed line
+count through the extractor API — a hot-path refactor. Peak is one file at a time and
+`EXCLUDED_ROOTS` already skips `target/` and `node_modules/`, so the realistic worst
+case is a transient spike, not corruption.
+
+**Four production-dead `KnowledgeDir` methods.** Deleting `loom knowledge show`/`list`
+orphaned part of the read/replace side: `read` (`dir.rs:120`), `append` (`dir.rs:127`),
+`read_index` (`dir.rs:160`), and `replace_section` (`dir.rs:136`, the
+`KnowledgeFile`-keyed variant) have no non-test callers, and all are `pub` on a `pub`
+type so clippy cannot see them. They were kept because ~15 tests in `tests_dir.rs`
+exercise them against each other (append → read, replace_section → read), so deleting
+the methods deletes most of that file's coverage. **Settle them deliberately in one
+follow-up: either delete methods and tests together, or wire them to a real consumer.**
+General rule: when a stage deletes a read-side CLI verb, audit every accessor that verb
+was the last caller of — and when a brief justifies keeping a module by naming a
+caller, check whether that caller is itself reachable. A wrapper is not a consumer. The
+converse also held here: `loom knowledge replace-section` was restored as a live CLI
+verb (`cli/types_memory.rs:19`, `cli/dispatch.rs:84-88`, `commands/knowledge/mod.rs:115`),
+which revived two of the original six dead methods — `read_target` (`dir.rs:176`, now
+called at `commands/knowledge/mod.rs:126`) and `replace_section_target` (`dir.rs:212`,
+now called at `commands/knowledge/mod.rs:130`). A dead-accessor list like this one is
+only true against one revision; re-check it before trusting it.
+
+**Plan-key normalisation on the writer side.** `delivery::plan_key` resolves both a blank
+`plan_id` in `.work/config.toml` and a stage record with no plan to `"default"`;
+`MergeLifecycle`'s writer side does not normalise identically. Silent by construction —
+see `mistakes/writer-reader-address.md`.
+
+**A permission deny now reaches child processes.** The knowledge tree is denied to the
+agent AND to the `loom` binary the doctrine tells agents to use. See Part C of the
+pending-knowledge document, and `concerns/sandbox-write-rules-inert.md` for the history.
+
+**`fs/permissions/constants.rs`** still declares `LOOM_PERMISSIONS_WORKTREE` with
+`Write(.work/**)` / `Bash(loom *)` rules that read like a blanket grant but have no real
+consumers, and `Write(path)` rules are inert anyway. A documented fossil.

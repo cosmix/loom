@@ -69,7 +69,7 @@ The full table lives in the `## Shared append_* Helpers (cache.rs:51-~180)` sect
 
 Changes per **stage type**, not per session. Key sub-sections:
 
-- **Knowledge reference box** (lines 22-32): `loom knowledge show` commands if knowledge exists
+- **Knowledge reference box** (lines 22-32): the Knowledge Brief footer emits `loom knowledge context --stage <id> --query "<question>" --budget-tokens <n>` (`format/brief.rs::format_knowledge_brief`) when knowledge exists
 - **Stage-type-aware reminder box** (lines 35-140): Knowledge/IV/KnowledgeDistill → "KNOWLEDGE UPDATES REQUIRED"; Standard → "SESSION MEMORY REQUIRED"
 - **Knowledge management section** (lines 142-290): If knowledge empty → 4-step exploration order; if present → "Extend as you work"
 - **Delegation Choices** (lines 339-386): Subagents vs. Hierarchy vs. Agent Teams decision

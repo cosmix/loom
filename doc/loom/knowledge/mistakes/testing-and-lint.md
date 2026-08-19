@@ -119,7 +119,7 @@ Expect `Summary: 0 issues`. `.markdownlint.json` disables MD013/MD033/MD036/MD04
 
 **Also check the FILE entry, not just the function.** The ledger records both, so a change that keeps every function small can still fail on the file total — and four of them can fail at once, as the codex sandbox work did (`repair.rs`, `fs/permissions/settings.rs`, `sandbox/settings.rs`, plus three functions). The move that satisfies the ledger honestly is extraction: lift the new code into a new module (`fs/permissions/codex_sandbox.rs`, `commands/repair/settings_checks.rs`), which carries no entry at all while it stays under 400 lines, then lower the now-smaller entries to their measured values. Growth is never recordable; shrinkage must be recorded.
 
-**Prevention:** before adding lines to a function, `rg '<fn name>' loom/maintainability-baseline.txt`. If it is listed, refactor rather than extend — and when the refactor drops it under the limit, DELETE the entry rather than lowering it. Prove behaviour is unchanged by regenerating the artifact and diffing (for INDEX.md: `loom knowledge index` then `git status --porcelain`, expecting no change).
+**Prevention:** before adding lines to a function, `rg '<fn name>' loom/maintainability-baseline.txt`. If it is listed, refactor rather than extend — and when the refactor drops it under the limit, DELETE the entry rather than lowering it. Prove behaviour is unchanged by regenerating the artifact and diffing (for INDEX.md: `loom knowledge sync` then `git status --porcelain`, expecting no change).
 
 **Two more shapes, from wiring the viewer reconciler (2026-08-11):** (1) a cross-cutting per-tick
 call could not live in `orchestrator.rs` (file ledgered at 564) NOR in `event_handler.rs` (468) —

@@ -760,3 +760,169 @@ the `excluded_commands` escape was removed; `loom memory` did not, and nothing f
 Verify an RPC exists before treating a missing write grant as deliberate, and after removing
 a sandbox escape, audit every operation that relied on it.
 → [Sandbox And Settings](mistakes/sandbox-and-settings.md)
+
+## Writer and Reader Disagreeing on One Address
+
+A derived layer written under a key its reader never consults is indistinguishable
+from doing nothing, and `GraphStore::resolved` degrades to the base layer with no
+error, so every gate stays green. One shared definition of the key, and a round-trip
+test through the CONSUMER's address, are the only defences.
+→ [Writer/Reader Address](mistakes/writer-reader-address.md)
+
+## A Layer a Command Drives Must Appear in That Command's Output
+
+**What happened:** `loom knowledge sync` drove two derived layers — the structural
+knowledge catalog and the semantic source graph — and printed the result of only the
+first. When the semantic half was refused (dirty tree) or failed (unwritable cache),
+`sync` still exited 0 and still printed a success line about the catalog. Users
+experienced it as "sync does nothing".
+
+**Why:** this is the tail of the failure recorded in
+`mistakes/store-without-consumer.md`. A derived artifact was built, persisted and given
+a CLI while the consumer that justified it stayed unbuilt — and once a command drives a
+layer, nothing forces it to REPORT on that layer, so half its work can degrade behind a
+success line about the other half.
+
+**Prevention:**
+
+1. **Every layer a command drives appears in that command's output, on success and on
+   failure.** Not a log line — output. If the command has `--json`, the layer gets a
+   typed field there too.
+2. **Report the layer you actually wrote, as a VALUE, not a boolean.** `SemanticLayer`
+   (`context/refresh/semantic.rs:50-64`) is the shape that fixed this:
+   `Base { revision }` | `LocalOverlay { plan, stage, refusal }` | `Skipped { reason }`,
+   serialized kebab-case, printed by `print_semantic` (`sync.rs:132-148`) behind the
+   `source graph: ` prefix. "Did it work?" is not answerable; "which layer did I write,
+   and why not the other one?" is.
+3. A freshness flag cannot carry this. `Freshness` alone could not say which layer ran
+   or how big it was (`semantic.rs:33-37`) — which is exactly why the typed outcome had
+   to be introduced.
+
+**Fix:** if you add a second layer to an existing command, extend its output type in the
+same commit. A layer added without an output field is a layer that will silently stop
+working.
+
+## "It Does Nothing" Has Two Opposite Causes — Tell Them Apart Before Debugging
+
+Within one plan, two commands were both reported as doing nothing, and the two diagnoses
+had nothing in common:
+
+- **`loom map --deep`** did nothing *because its work was already present.* The output
+  was correct and the run was a legitimate no-op. Nothing was broken.
+- **`loom knowledge sync`** did nothing *because its failure was written into a JSON
+  field instead of into the exit code.* It exited 0 with
+  `{"semantic":{"layer":"skipped","stale":true,"nodes":0,"detail":"Failed to write
+  context state: ..."}}`.
+
+**Prevention:** before debugging an apparently inert command, decide which of the two it
+is — and the test is cheap: **look at the failure channel, not the exit code.** An
+idempotent command that already did its work, and a command whose failure was serialized
+into its own output, are both silent and both exit 0. Ask what it would have printed had
+it worked, and compare.
+
+**Corollary for acceptance criteria:** never grep for the presence of a JSON KEY the
+degraded path also emits. `loom knowledge sync --json | rg -q '"semantic":{'` passes on a
+sync that did nothing, because `semantic` is present in the skipped case too. Grep for
+the VALUE that proves work happened.
+
+## Write Acceptance Criteria From Inside a Sandboxed Worktree, Not From Your Checkout
+
+Every criterion below looked green and was wrong, and all four failed the same way:
+they were authored from the main checkout, where `.work` is a real directory and the
+derived cache is writable. In a stage worktree `.work` is a SYMLINK to the main repo
+and the plan sandbox denies writes to it, so any criterion whose command writes a
+derived cache behaves differently there than where it was written.
+
+| Criterion as written | What actually happens in a stage worktree |
+| --- | --- |
+| `loom map --outline src/main.rs \| rg -q function` | unsatisfiable — `loom map` called `reconcile_source_graph`, which WRITES an overlay under `.work/context`, so every invocation hard-failed with `Read-only file system (os error 30)` even though a readable base layer existed |
+| `loom knowledge sync --json \| rg -q '"semantic":{'` | cannot fail — the denied write returns exit 0 with `{"semantic":{"layer":"skipped",...}}`, so the key is present on a sync that did nothing |
+| `$L init >/dev/null 2>&1 \|\| true` then check layers | cannot pass — `loom init` REQUIRES a `<PLAN_PATH>` and exits 2; `\|\| true` turns the usage error into a silent zero-result |
+| `rg --files doc/plans/PLAN-x.md > /dev/null && ...` | fails on an absent file — a worktree materialises only TRACKED files, and those sibling plans were untracked |
+
+**Prevention, in the order the failures appear:**
+
+1. **Run every CLI acceptance criterion from inside a stage worktree with the plan
+   sandbox ON before shipping the plan.** "Works in my checkout" is not evidence; the
+   stage sandbox is the primary environment for these commands.
+2. **A read-only CLI verb must degrade when its derived cache is unwritable**, the way
+   `context/retrieve.rs:87` `resolve_catalog` already does. `loom map` is documented as
+   a read-only view and was writing on every call — that is the bug the criterion
+   exposed, not a criterion problem.
+3. **Grep for the VALUE that proves work happened, never for a key the degraded path
+   also emits.** `'"layer":"base"'` or a non-zero node count, not `'"semantic":{'`.
+4. **A wiring test that invokes a CLI verb must pass that verb's required arguments**,
+   and must not wrap it in `|| true`.
+5. **`git ls-files <path>` every file a stage is told to read or edit, at plan time.**
+   An untracked file is invisible to every worktree stage.
+
+**And know that the escape hatch is shut.** `loom stage dispute-criteria` — the only
+channel an agent has for "this criterion is impossible" — authenticates over daemon RPC
+by reading `.work/user.token`, which the generated stage settings put in `denyRead`. It
+dies with `Failed to read .work/user.token for daemon authentication` before any RPC. So
+an agent facing an unsatisfiable criterion has no structured escape and falls back to
+finishing the stage as CompletedWithFailures, which auto-retries a stage whose criteria no
+retry can ever satisfy. When you hit one: say so explicitly in the finishing report and
+name `loom stage amend` as the operator fix (`commands/stage/amend.rs`, added by this
+plan for exactly this) — do NOT keep working the stage, and never quietly rewrite your
+own gate to green.
+
+## Mutation-Test the Test, and Re-Prove a Silent-Drop Claim End to End
+
+**Mutation testing is cheap and decisive for this repo's most recurrent defect class.**
+After fix agents reported done, each behaviour was broken one line at a time — remove the
+`canonicalize`; replace the `File`-kind filter with `true`; neuter the `reasons.is_empty()`
+guard; empty the span `push_str`; early-return from `publish_source_graph` — and ONLY the
+matching test was run, then `git checkout --` restored it. All five tests went red on
+their own mutation and stayed green on the others. That is what distinguishes a real test
+from one that merely passes.
+
+**COMMIT BEFORE MUTATING.** Restoring with `git checkout --` otherwise discards the
+subagents' uncommitted work, and that is unrecoverable.
+
+**A silent-drop claim needs an end-to-end proof, not a count.** `git ls-files` C-quotes
+non-ASCII paths, so the old newline-split-plus-`exists()`-filter dropped them from the
+source graph with no diagnostic. The proof: create the pathological name in a scratch
+clone, run `git ls-files` to see the WIRE format, then grep the built layer for a symbol
+only that file defines. Counting files is not enough — the count can move for unrelated
+reasons. (Fix: `git ls-files -z` and NUL splitting.)
+
+## The Channel a Doctrine Names Must Be Privileged, or the Doctrine Disables It
+
+"Only `loom knowledge ...` may write knowledge" assumed the loom CLI was a privileged
+writer. It is an ordinary child of the sandboxed shell, so the deny that was meant to
+gate hand-edits disabled the distillation stage outright once an inert `Write(...)` rule
+was corrected to `Edit(...)`. Fixing a no-op guard is a behaviour change everywhere the
+no-op was load-bearing.
+→ [Knowledge Write Channel](mistakes/knowledge-write-channel.md)
+
+## Spooled Knowledge Goes Stale Before It Is Applied
+
+**What happened:** A `knowledge-distill` stage could not write `doc/loom/knowledge/**`
+(the plan sandbox denied it), so it spooled final curated prose to
+`doc/loom/PENDING-KNOWLEDGE-*.md` for an operator to apply later. By the time it was
+applied, several of its load-bearing claims were false: it asserted
+`loom knowledge replace-section` had been deleted (it was restored in the working
+tree), that six `KnowledgeDir` methods were production-dead (four — restoring the CLI
+verb revived `read_target` and `replace_section_target`), and that
+`fs/knowledge/summary.rs` was an open concern (already deleted). A sibling tier-1
+table in `entry-points.md` named three files that no longer existed.
+
+**Why:** Spooled prose is a snapshot of one revision, but it is applied against
+another. The gap between authoring and application is unbounded — and the very
+staleness the distillation exists to remove is what accumulates inside it while it
+waits. Worse, it reads as authoritative: "already curated, it is not notes."
+
+**Prevention:** Treat a spool file as CLAIMS, not as content. Before applying any of
+it, re-verify every factual assertion against the source tree — file existence with
+`test -f`, verb existence against `cli/types_*.rs` and `cli/dispatch.rs` (never against
+`--help`, which reflects the INSTALLED binary, not the working tree), and
+"no callers" claims with `rg` filtered of tests. Verify against the SOURCE, because an
+installed binary and a working tree routinely disagree.
+
+**Fix:** Apply spooled prose through an orchestrator that verifies each claim and
+hands workers the corrected facts, rather than pointing workers at the spool file and
+telling them it is final. An acceptance grep written into the spool goes stale with it:
+here the criterion forbade every mention of `replace-section`, which after the restore
+would have forced workers to write something false in order to pass. When acceptance
+and ground truth disagree, fix the criterion — never the prose.

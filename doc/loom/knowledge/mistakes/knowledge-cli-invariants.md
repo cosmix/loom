@@ -5,10 +5,12 @@
 ## A CLI Handler Is Rarely the Only Caller of the Constructor It Guards (2026-07-28)
 
 **What happened:** "new projects start hierarchical" was implemented only in
-`commands::knowledge::init()`. But `loom init`, `loom map`, `knowledge bootstrap`, and the
-implicit init inside `knowledge update` all call `KnowledgeDir::initialize()` **directly** and
-bypass that handler. Every new project was therefore born flat and then nagged "flat layout, run
-`loom knowledge gc`" forever.
+`commands::knowledge::init()`. But `loom init`, `loom map`, the (now-deleted) `knowledge
+bootstrap`, and the implicit init inside `knowledge update` all called `KnowledgeDir::initialize()`
+**directly** and bypassed that handler. Every new project was therefore born flat and, at the
+time, nagged to run the also-deleted `loom knowledge gc`. The `cli-collapse` later removed both
+verbs — the CLI now has only `update`, `context`, `sync` — but the underlying invariant fix below
+is unaffected by that collapse.
 
 **Prevention:** when a CLI handler establishes an invariant about on-disk layout, grep for the
 underlying filesystem constructor (`rg 'initialize\(\)'`) — the handler is rarely the only

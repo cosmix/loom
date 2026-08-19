@@ -445,15 +445,13 @@ resolution, with line references.
 | `loom/src/fs/knowledge/types.rs`                   | `KnowledgeFile`, `KnowledgeTarget`, `KnowledgeLayout`, tier-1 alias table                                                   |
 | `loom/src/fs/knowledge/dir.rs`                     | `KnowledgeDir` — initialize, append, replace-section, layout detection                                                      |
 | `loom/src/fs/knowledge/index.rs`                   | `scan_topics`, `generate_index`, `write_index`                                                                              |
-| `loom/src/fs/knowledge/gc.rs`                      | audit metrics, oversized sections, orphan and broken-link detection, thresholds                                             |
-| `loom/src/fs/knowledge/summary.rs`, `templates.rs` | signal summary; tier-1/tier-2 scaffolds                                                                                     |
+| `loom/src/fs/knowledge/templates.rs`               | tier-1/tier-2 scaffolds                                                                                                     |
 | `loom/src/commands/knowledge/mod.rs`               | the four knowledge verbs — `update` (append), `replace-section` (overwrite a `## ` body), `context`, `sync`               |
-| `loom/src/commands/knowledge/check.rs`             | `architecture_coverage_text()` — folds tier-2 `architecture/` topics into `src/` coverage                                   |
 | `loom/src/cli/types_memory.rs`                     | clap definitions for the knowledge subcommands                                                                              |
 
-`loom knowledge index` regenerates `INDEX.md` and, on a flat directory, creates it — which is
-what flips the layout to hierarchical. See
-[Knowledge Hierarchy](architecture/knowledge-hierarchy.md).
+`loom knowledge sync`, or any `loom knowledge update`, regenerates `INDEX.md` — the index
+regenerates on every knowledge write — and on a flat directory creates it, which is what flips
+the layout to hierarchical. See [Knowledge Hierarchy](architecture/knowledge-hierarchy.md).
 
 ## Subagent Verification Guard (2026-07-28)
 
@@ -557,8 +555,7 @@ from the same binary. Verify a flag against `loom/src/cli/` before documenting i
 
 | Command                              | Defined in                      | Options                                                                                                                                                                                                                                  |
 | ------------------------------------ | ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `loom knowledge context`             | `commands/knowledge/context.rs` | `--query <QUERY>` (**required**), `--budget-tokens <N>` (default 2000), `--scope <knowledge\|source\|all>` (default `all`), `--require-id <ID>` (repeatable), `--explain`, `--json`. **There is no `--stage` flag** — see `concerns.md`. |
-| `loom knowledge status`              | `commands/knowledge/status.rs`  | `--json`. Reports catalog freshness, size, reported issues.                                                                                                                                                                              |
+| `loom knowledge context`             | `commands/knowledge/context.rs` | `--query <QUERY>` (**required**), `--stage <STAGE>`, `--budget-tokens <N>` (default 2000), `--scope <knowledge\|source\|all>` (default `all`), `--require-id <ID>` (repeatable), `--explain`, `--json`.                                  |
 | `loom knowledge sync`                | `commands/knowledge/sync.rs`    | `--structural-only`, `--json`. Rebuilds derived context artifacts after the knowledge tree changes.                                                                                                                                      |
 | `loom map --outline <PATH>`          | `commands/map.rs:34`            | prints the indexed symbols of one file, in source order                                                                                                                                                                                  |
 | `loom map --find-all <SYMBOL>`       | `commands/map.rs:37`            | prints every indexed node whose name matches                                                                                                                                                                                             |
@@ -572,3 +569,23 @@ knowledge. `--deep`, `--focus` and `--overwrite` remain the analysis-mode flags.
 
 Plan YAML gained `command_confinement: confined | inherit` at plan level
 (`plan/schema/types.rs:52`) and as a per-stage override (`models/stage/types.rs:305`).
+
+## Source Graph as a Retrieval Channel, and Its Lifecycle (2026-08-18)
+
+| Surface | File | Notes |
+| --- | --- | --- |
+| `context::rank_source` | `context/rank_source.rs:53` | ranks source-graph nodes for `Channel::Source`; re-exported at `context/mod.rs:64` |
+| shared BM25 core | `context/rank.rs:107-149` | `prepare_lexical` / `score_bm25`, now `pub(crate)`, used by both rankers |
+| `context/local_overlay.rs` | whole file | the ONE definition of the working-tree overlay address: `LOCAL_PLAN_KEY`, `local_overlay_stage_name`, `local_overlay_key`, `OverlayScope` |
+| `advisory_source_graph_preflight` | `commands/run/checks.rs:103-111` | never returns `Result`; called from `init/execute.rs:187`, `run/mod.rs:101`, `run/foreground.rs:39` |
+| `SemanticLayer` / `SemanticOutcome` | `context/refresh/semantic.rs:50-64` | what `loom knowledge sync` reports: `base` \| `local-overlay` \| `skipped` |
+| `stage_overlay_scope` | `orchestrator/signals/retrieval.rs:~110` | gives a stage brief its own overlay; plan component MUST equal `delivery::plan_key(stage)` |
+| `loom stage amend` | `commands/stage/amend.rs` | operator repair of an impossible criterion; thin wrapper over the pre-existing `apply_amendment` (atomic, flock, snapshot + audit row) |
+| `criterion_needs_ungrantable_resource` | `plan/schema/validation.rs:647` | plan-time warning when a criterion needs `loom map`, `loom knowledge context`, `tmux` or `docker` — resources a worktree sandbox cannot grant |
+| memory spool | `fs/memory/spool.rs:33,59,191` + `orchestrator/core/spool_drain.rs:38` + `git/cleanup/batch.rs:67` | see the spool-and-drain pattern |
+
+`loom map` is now three read-only flags and nothing else: `--outline <PATH>`,
+`--find-all <SYMBOL>`, `--impact <SYMBOL_OR_PATH>` (`commands/map.rs:17-28`). `--deep`
+and `--focus` are gone, along with `map/{analyzer,detectors,knowledge_sync}.rs`. Note
+that the GLOBAL agent doctrine file still documents `loom map [--deep] [--focus <area>]`
+— that text is stale against this repo.

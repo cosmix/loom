@@ -6,7 +6,8 @@
 
 ## Table of Contents
 
-Superseded by the generated index. Run `loom knowledge show` or open
+Superseded by the generated index. Read the files directly, or run
+`loom knowledge context --query "..."` for a targeted pull; open
 [INDEX.md](INDEX.md) for the current tier-1 / tier-2 map — a hand-maintained
 table of contents goes stale the moment a topic is added.
 
@@ -111,7 +112,7 @@ Three systems, in ascending order of permanence:
 
 Memory is placed in the signal's recitation section for maximum LLM attention. The promotion path from memory to knowledge is the **`knowledge-distill` stage**, which reads `loom memory show --all` and curates — there is no `loom memory promote` command.
 
-`loom knowledge update` appends; `loom knowledge replace-section` is the one verb that overwrites in place (there is still no delete verb — see concerns.md). Knowledge commands resolve through `WorkDir::project_root()` (cwd-relative), so a worktree agent writes to its own worktree rather than the main repo.
+`loom knowledge update` appends; `loom knowledge replace-section <file> <heading> [content]` overwrites a `## <heading>` section's body in place — the correction path for stale knowledge — and falls back to appending, with a distinct message, when the heading is not found. There is still no verb that deletes a section outright, or renames its heading (see concerns.md). Knowledge commands resolve through `WorkDir::project_root()` (cwd-relative), so a worktree agent writes to its own worktree rather than the main repo.
 
 **Corrected 2026-07-30:** an earlier version of this section claimed a `.work/facts.toml` cross-stage KV store, a `loom memory promote` command, and `<!-- .loom-protected -->` file markers. None of the three exist in the codebase. Cross-stage KV is `loom stage output`; "Discovered Facts" survives only as a HandoffV2 field and a signal sub-section.
 
@@ -185,10 +186,6 @@ Before creating ANY stage beyond the bookends, it must answer YES to one of four
 
 All NO → merge into ONE stage with parallel subagents over disjoint files. See
 [Stage Fragmentation](mistakes.md) for the detection rule and the cost of getting this wrong.
-
-## Bootstrap Mode
-
-`loom knowledge bootstrap` defaults to interactive mode (Stdio::inherit) for macOS compatibility. `--quick` opts into non-interactive (Stdio::null + -p flag). Exit codes 130/2 treated as user interrupt.
 
 ## Field Propagation Checklist
 
@@ -695,3 +692,61 @@ when the boundary silently stops applying.** This is the positive form of
 `Oversized`, `ParseError` — so a consumer can tell "no symbols here" from "not analysed".
 When adding a new extractor or analyser, the degraded paths are the ones to test: the happy
 path fails loudly, the degraded paths fail silently.
+
+## Advisory Preflight: Do the Work, Report the Failure, Never Bail
+
+`advisory_source_graph_preflight` (`commands/run/checks.rs:103-111`) is the second
+instance of a shape worth copying, after `advisory_codex_lane_preflight`. The contract
+is three rules and no more:
+
+- it returns `()`, never a `Result`, so no caller can accidentally make it fatal;
+- on failure it prints ONE `eprintln!` line with a stable prefix and swallows the error;
+- it is idempotent and silent on the common path — `publish_source_graph`
+  (`checks.rs:127-129`) early-returns when the layer for `HEAD` already exists.
+
+Use it for derived state that IMPROVES a run but must never block one. The signature is
+the enforcement: a function that cannot return an error cannot be made load-bearing by a
+later caller who forgets it was optional.
+
+## Spool-and-Drain: Writing Through a Sandbox You Cannot Widen
+
+A stage agent's `.work` is a symlink into the main repo and the sandbox denies writes to
+it, so `loom memory note` could not reach its own journal. Rather than widening the
+sandbox, the write was made asynchronous:
+
+- the agent appends to `<worktree_root>/.loom/memory-spool.jsonl` (`SPOOL_RELPATH`,
+  `fs/memory/spool.rs:33`), size-capped at `SPOOL_MAX_BYTES` (1 MiB);
+- `record()` (`commands/memory/handlers/record.rs:17`) falls into `record_via_spool`
+  ONLY when the direct write failed AND `is_write_denied(&error)` matches
+  `PermissionDenied`/EROFS — every other error still propagates unchanged;
+- the daemon drains it: `Orchestrator::drain_stage_spools`
+  (`orchestrator/core/spool_drain.rs:38`) every tick, plus a teardown drain
+  `drain_spool_before_removal` (`git/cleanup/batch.rs:67`) so worktree-removal paths with
+  no live orchestrator do not destroy pending entries.
+
+Two design points to keep if you copy it. **The spool payload carries no stage id** — the
+daemon attributes entries to the stage that owns the worktree it drained, so an agent
+cannot forge another stage's journal (a real prompt-injection channel: a stage's journal
+is quoted into that stage's later prompts). And **`drain_stage_spools` enumerates stages
+by scanning `.work/stages/` on disk**, not from `active_worktrees`/`active_sessions`:
+neither in-memory map survives a daemon restart, so disk is the only source of truth for
+a stage recovered as still-Executing.
+
+Known gap: with no daemon running at all, spooled entries stay pending until the next
+tick or a teardown drain. `record_via_spool` says so in its own warning
+(`record.rs:131`) rather than pretending the write landed.
+
+## Ask Which Surfaces Render the Type, Not Who Copied the Helper
+
+`context/untrusted.rs:5-8` names its call sites in a doc comment — "this has exactly two
+call sites, do not add a third copy". That does not prevent a THIRD SURFACE from having
+ZERO copies. `loom map` was rewritten into an agent-facing renderer of the same
+graph-derived strings — scopes, paths, ids, and a `ParseError` detail built from a raw
+line of the offending source file — and flattened none of them.
+
+**Rule:** when a new command renders values an existing renderer flattens, the review
+question is "which surfaces render this TYPE?", not "did anyone copy the helper?" — grep
+for the type's FIELDS, not for the helper's name. And when you do flatten, route every
+variant through it, not only the one that is currently attacker-controlled: uniform
+treatment is free (`inline_safe` passes fixed-format strings through unchanged by its own
+contract) and it avoids an asymmetry that will catch out whoever adds the next variant.

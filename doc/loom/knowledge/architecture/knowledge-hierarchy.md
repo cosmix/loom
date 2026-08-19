@@ -39,18 +39,22 @@ category directory is created automatically on first write.
 
 ## INDEX.md Generation
 
-`loom knowledge index` regenerates `INDEX.md` from the on-disk tree: a generated-file marker, a
-reading-protocol blurb, a **Tier 1** table (file, description, line count) and a **Tier 2**
-table grouped by `### <category>` (topic path, title, blurb, line count). The `Tier 2` section is
-omitted entirely when no topics exist.
+There is no dedicated index-generation verb. `INDEX.md` regenerates automatically —
+`KnowledgeDir::refresh_index_if_hierarchical` (`dir.rs:264`) calls `generate_index`
+(`index.rs:136`) after every `loom knowledge update`, and `loom knowledge sync` forces
+it structurally too. The generated file is built from the on-disk tree: a
+generated-file marker, a reading-protocol blurb, a **Tier 1** table (file,
+description, line count) and a **Tier 2** table grouped by `### <category>` (topic
+path, title, blurb, line count). The `Tier 2` section is omitted entirely when no
+topics exist.
 
 `scan_topics` is **non-recursive** — it reads `<root>/<category>/*.md` only, skipping dotfiles
 and non-`.md` entries. Nested subdirectories under a category are ignored completely. Title is
 the first `#` line, blurb the first `>` line, falling back to the slug and an empty string.
 
 Regeneration is idempotent and does a full atomic overwrite, so hand edits to `INDEX.md` are
-silently destroyed. Every `update` / `replace-section` also refreshes the index — but **only
-once the directory is already hierarchical**.
+silently destroyed. Every `loom knowledge update` refreshes the index — but **only once the
+directory is already hierarchical**.
 
 ## Audit Rules — the Two Checks Disagree About Link Form
 
@@ -87,16 +91,18 @@ information only. A total budget punishes a growing codebase for recording what 
 per-file and per-section limits shape _structure_ instead, which is the thing that actually
 degrades retrieval.
 
-## Coverage Blast Radius (`commands/knowledge/check.rs`)
+## Coverage Blast Radius
 
 `architecture_coverage_text()` concatenates tier-1 `architecture.md` **plus every tier-2 topic
 whose category is `Architecture`** before matching `src/` directories. Without it, the first
-restructuring that moved prose out of the tier-1 summary would have collapsed the number that
-plans gate on with `loom knowledge check --min-coverage`.
+restructuring that moved prose out of the tier-1 summary would have collapsed the number
+retrieval coverage depends on. There is no dedicated coverage-check verb any more — `commands/
+knowledge/check.rs` and its `--min-coverage` gate were deleted along with the rest of the
+collapsed CLI surface (only `update`, `context`, `sync` remain).
 
 The filter is `category == Architecture`. **Architecture prose relocated into a different
 category directory silently stops counting toward coverage.** Keep architecture content under
-`architecture/`, and re-run `loom knowledge check --min-coverage` after any move.
+`architecture/`.
 
 ## Migration Is Opt-In (a Deliberate Backwards-Compatibility Exception)
 
@@ -108,9 +114,11 @@ is never auto-migrated, and `KnowledgeLayout` keeps its `Legacy` arm indefinitel
 The reason is that a knowledge base is **user-curated prose, not code**. Silently restructuring
 thousands of lines of someone's writing as a side effect of an unrelated command is destructive
 and unreviewable; a wrong migration cannot be recovered by re-running a build. Upgrading is
-therefore explicit — `loom knowledge index` for structure only, or `loom knowledge gc` for an
-agent-driven compaction. As a nudge, a `Legacy` directory always reports `gc_recommended`, so on
-a flat directory that flag means "not yet migrated", not "something is wrong".
+therefore explicit: run `loom knowledge sync` to regenerate structure (`INDEX.md`) for an
+already-hierarchical directory, or write a first `INDEX.md` by hand (any `loom knowledge update`
+against a freshly-created directory does this too) to opt a `Legacy` directory in. The dedicated
+`gc`-driven compaction verb this section used to describe is gone along with the rest of the
+collapsed CLI surface.
 
 ## Locking
 

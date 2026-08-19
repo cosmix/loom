@@ -455,20 +455,23 @@ Deterministic, model-free, network-free retrieval over the curated knowledge
 hierarchy: chunk the prose, rank per channel, fuse by reciprocal rank fusion,
 pack to a token budget. One entry point — `context::retrieve_for_stage` — serves
 the `loom knowledge context` command, signal generation and the prompt hook
-alike. Two graphs exist but only the knowledge-chunk one is wired into ranking.
+alike. Two graphs exist — the knowledge-chunk catalog and the tree-sitter source
+graph — and both are ranked and fused into one pack.
 
 Full detail, including the base/overlay layering rule and what is derived versus
 durable: [architecture/context-retrieval.md](architecture/context-retrieval.md).
 
 ## Source Graph (`loom/src/context/source_graph/`, `context/extract/`)
 
-A derived tree-sitter graph of the repo's own source, consumed today only by
-`loom map`. Its defining property is an explicit honesty contract: every edge
-carries provenance and a confidence ceiling, and no file is ever silently
-omitted — a degraded file is reported as degraded.
+A derived tree-sitter graph of the repo's own source, with two live consumers:
+`loom map` (via `context::graph_store`) and the `Source` retrieval channel,
+ranked by `context::rank_source` (`context/rank_source.rs:59`) and fused into the
+same `ContextPack` as knowledge chunks. Its defining property is an explicit
+honesty contract: every edge carries provenance and a confidence ceiling, and no
+file is ever silently omitted — a degraded file is reported as degraded.
 
-Extractor trait, cache identity, coverage contract and the exact grammar pins:
-[architecture/source-graph.md](architecture/source-graph.md).
+Extractor trait, cache identity, coverage contract, the ranker and the
+publish/reconcile lifecycle: [architecture/source-graph.md](architecture/source-graph.md).
 
 ## Execution Containment (`loom/src/verify/criteria/confine.rs`)
 
