@@ -293,15 +293,33 @@ fn a_source_item_reaches_the_signal_carrying_its_line_span() {
         "the fixture (knowledge tree + source overlay) must still produce a \
          brief: {signal}"
     );
+    // The renderer now splits path, symbol name, and span onto their own
+    // fragments of one grouped bullet (`brief.rs::render_source_group` /
+    // `render_source_entry`), so the old combined `<path>#<kind>:<scope>` id
+    // and `<path>:<span>` spellings no longer appear anywhere. Find the
+    // rendered bullet line by path, then assert the symbol name and span both
+    // land on THAT line — a whole-signal `contains` would still pass if the
+    // span were rendered under a different item entirely.
+    let path_marker = format!("`{}`", node.path.display());
+    let source_line = signal
+        .lines()
+        .find(|line| line.contains(&path_marker))
+        .unwrap_or_else(|| {
+            panic!(
+                "the source node itself must reach the pack, not just the \
+                 knowledge items: {signal}"
+            )
+        });
+    let name_marker = format!("`{}`", node.scope.join("::"));
     assert!(
-        signal.contains(&format!("`{}`", node.id)),
-        "the source node itself must reach the pack, not just the knowledge \
-         items: {signal}"
+        source_line.contains(&name_marker),
+        "the source item's rendered line must carry its symbol name: {source_line}"
     );
+    let span_marker = format!(":{}-{}", node.span.line_start, node.span.line_end);
     assert!(
-        signal.contains("— `src/orchestrator/signals.rs:41-58`"),
+        source_line.contains(&span_marker),
         "a source item must carry the line span that locates it in the file, \
-         not just its bare path: {signal}"
+         not just its bare path: {source_line}"
     );
 }
 

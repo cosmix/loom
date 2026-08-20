@@ -8,7 +8,6 @@
 # refactor it back. New violations must be refactored or explicitly recorded.
 
 file src/commands/graph/tests.rs 425
-file src/commands/hook/tests_user_prompt.rs 441
 file src/commands/init/tests.rs 684
 file src/commands/plan/verify.rs 599
 file src/commands/pressure/mod.rs 596

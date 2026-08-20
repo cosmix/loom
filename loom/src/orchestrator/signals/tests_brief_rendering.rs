@@ -41,6 +41,7 @@ pub(in crate::orchestrator::signals::tests) fn sample_context_pack() -> ContextP
         state: LifecycleState::Active,
         content_hash: "sha256:deadbeef".to_string(),
         excerpt: Some("## Overview\n\nThe system is organized into modules.".to_string()),
+        matched_term_count: 0,
     };
     ContextPack {
         query: "stage-1 query text".to_string(),
@@ -55,6 +56,8 @@ pub(in crate::orchestrator::signals::tests) fn sample_context_pack() -> ContextP
             weakest_included_score: 1.0,
             coverage: Coverage::default(),
         },
+        dropped_terms: Vec::new(),
+        degraded: None,
     }
 }
 
