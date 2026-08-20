@@ -92,9 +92,26 @@ fn structural_freshness(stored: &Freshness, current_revision: &str) -> Freshness
 /// claims was built (missing, deleted, or overwritten out from under it —
 /// `save_catalog` and `save_state` are two independent writes with no
 /// cross-file transaction, so this is the only place that catches the two
-/// files disagreeing). The semantic layer is not evaluated against the source
-/// tree here — it is owned by the source-graph stage, so a stored semantic
-/// revision is returned unchanged and an absent one is reported as never built.
+/// files disagreeing).
+///
+/// The semantic layer is still owned by the source-graph stage — this
+/// function never rebuilds it, and an absent semantic revision is reported as
+/// never built, same as always. What DOES happen now: when a semantic
+/// revision has been recorded, it is checked against `git rev-parse HEAD` for
+/// the project `knowledge_root` belongs to (`semantic_freshness_against_head`
+/// below), and reported `stale: true` when HEAD has moved past it. This is
+/// display plus a trigger for a later background reconcile — NOT a rebuild:
+/// [`refresh`] only ever rebuilds the STRUCTURAL layer when it finds
+/// `structural.stale`, and never reads this function's semantic verdict to
+/// decide whether to rebuild anything, so a moved HEAD reported here cannot
+/// start one. `revision` itself always stays the STORED value — that is the
+/// layer actually on disk, and what `load_resolved_graph`
+/// (`context/retrieve.rs`) keys the base read by; only `stale`/`detail`
+/// change. A knowledge root whose project cannot be resolved, or a project
+/// with no git HEAD (not a repository, no commits, `git` unavailable),
+/// degrades to passing the stored semantic freshness through unchanged — a
+/// missing git repository is data, not a crash
+/// (`refresh/source_graph.rs`'s module doc).
 pub fn evaluate(store: &ContextStore, knowledge_root: &Path) -> Result<StoreState> {
     let stored = store.load_state()?;
 
@@ -121,13 +138,13 @@ pub fn evaluate(store: &ContextStore, knowledge_root: &Path) -> Result<StoreStat
         }
     }
 
-    // The semantic layer is populated by the source-graph stage, not this one.
-    // Never invent a revision for it: pass a stored one through unchanged, and
-    // report an absent one as never built.
+    // The semantic layer is populated by the source-graph stage, not this
+    // one. Never invent a revision for it, and never rebuild it here — see
+    // the doc comment above and on `semantic_freshness_against_head`.
     let semantic = if stored.semantic.revision.is_empty() {
         Freshness::never_built("source graph not built; see the source-graph stage")
     } else {
-        stored.semantic.clone()
+        semantic_freshness_against_head(knowledge_root, stored.semantic.clone())
     };
 
     Ok(StoreState {
@@ -135,6 +152,49 @@ pub fn evaluate(store: &ContextStore, knowledge_root: &Path) -> Result<StoreStat
         semantic,
         catalog_revision: stored.catalog_revision,
     })
+}
+
+/// Check `stored` (a non-empty semantic revision) against the current
+/// `git rev-parse HEAD` for the project `knowledge_root` belongs to.
+///
+/// Read-only: no rebuild, no write, no reconcile. Only `stale`/`detail` are
+/// ever changed — `revision` is returned exactly as `stored` held it, because
+/// that is the base layer actually on disk (see [`evaluate`]'s doc comment).
+/// When the project root cannot be derived from `knowledge_root`, or the
+/// project has no resolvable git HEAD, `stored` is returned completely
+/// unchanged — this must never invent a verdict from an unusable comparison.
+fn semantic_freshness_against_head(knowledge_root: &Path, stored: Freshness) -> Freshness {
+    let Some(project_root) = semantic::derive_project_root(knowledge_root) else {
+        return stored;
+    };
+    let Some(head) = source_graph::head_revision(project_root) else {
+        return stored;
+    };
+    if head == stored.revision {
+        return stored;
+    }
+
+    Freshness {
+        revision: stored.revision.clone(),
+        computed_at: stored.computed_at,
+        stale: true,
+        detail: Some(format!(
+            "HEAD moved: {} → {}",
+            short_revision(&stored.revision),
+            short_revision(&head)
+        )),
+    }
+}
+
+/// First 8 characters of `revision`, or the whole string when it is shorter.
+///
+/// Character-based, not a byte slice: `&revision[..8]` panics both when
+/// `revision` has fewer than 8 bytes and when byte index 8 does not fall on a
+/// UTF-8 character boundary. This runs inside `evaluate`, reachable from the
+/// prompt hook, which is contractually forbidden to ever disturb a session —
+/// see `hooks/user-prompt-context.sh`'s fail-open contract.
+fn short_revision(revision: &str) -> String {
+    revision.chars().take(8).collect()
 }
 
 /// Why the semantic layer was skipped when the caller asked for the catalog only.
@@ -216,3 +276,7 @@ fn rebuild_and_persist(
         report: Some(report),
     })
 }
+
+#[cfg(test)]
+#[path = "refresh/tests_freshness.rs"]
+mod tests_freshness;

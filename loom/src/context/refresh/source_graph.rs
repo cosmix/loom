@@ -138,6 +138,17 @@ pub(super) fn dirty_tree_reason(project_root: &Path, revision: &str) -> Option<S
     }
 }
 
+/// `git rev-parse HEAD` for `project_root`, or `None` when this is not a git
+/// repository, has no HEAD (e.g. no commits yet), or `git` itself is
+/// unavailable. The second of the two places `context` reaches `crate::git`
+/// (the first is [`dirty_tree_reason`] above) — deliberately kept to these
+/// two call sites rather than importing `crate::git` a third time elsewhere,
+/// see `doc/loom/knowledge/architecture/source-graph.md`'s "Building and
+/// Persisting" section.
+pub(crate) fn head_revision(project_root: &Path) -> Option<String> {
+    run_git_checked(&["rev-parse", "HEAD"], project_root).ok()
+}
+
 /// List tracked files, dropping cache/build roots and paths git lists that no longer exist on disk.
 ///
 /// Asks for `-z` (NUL-terminated, unquoted) output rather than the default

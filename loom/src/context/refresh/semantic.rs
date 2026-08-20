@@ -123,7 +123,12 @@ pub(super) fn reconcile_semantic_best_effort(
 /// Derive the project root from `knowledge_root` (`<root>/doc/loom/knowledge`),
 /// refusing to guess when the layout does not match - an unvalidated ancestor
 /// would point `WorkDir`, `GraphStore` and `rev-parse` at the wrong tree.
-fn derive_project_root(knowledge_root: &Path) -> Option<&Path> {
+///
+/// `pub(crate)` rather than private: `refresh::evaluate` also needs it, to
+/// resolve the project root a stored semantic revision should be checked
+/// against `git rev-parse HEAD` for (`refresh.rs`'s
+/// `semantic_freshness_against_head`).
+pub(crate) fn derive_project_root(knowledge_root: &Path) -> Option<&Path> {
     let candidate = knowledge_root.ancestors().nth(3)?;
     let derived = candidate.join("doc/loom/knowledge");
     let matches = match (derived.canonicalize(), knowledge_root.canonicalize()) {

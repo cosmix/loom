@@ -196,13 +196,22 @@ impl GraphStore {
     /// A published base layer is immutable: if one already exists for this
     /// revision, this is a no-op returning `false`, because two builds of the
     /// same revision must agree and rewriting would invalidate every overlay
-    /// cut from it.
+    /// cut from it — and, deliberately, that early-return path never prunes:
+    /// a rapid sequence of `publish_base` calls for an already-published
+    /// revision must not each pay a GC pass for nothing.
+    ///
+    /// A NEWLY written base, on the other hand, triggers
+    /// [`Self::prune_after_publish`] (`graph_store/prune.rs`) so publishing
+    /// is the one place base-layer retention is enforced (see
+    /// `doc/PROPOSAL-retrieval-precision.md` §A.14) — `graph/base/`
+    /// otherwise accretes one file per published commit forever.
     pub fn publish_base(&self, revision: &str, layer: &GraphLayer) -> Result<bool> {
         let path = self.base_path(revision);
         if path.exists() {
             return Ok(false);
         }
         write_layer(&path, layer)?;
+        self.prune_after_publish(revision);
         Ok(true)
     }
 
@@ -301,6 +310,8 @@ fn write_layer(path: &Path, layer: &GraphLayer) -> Result<()> {
     crate::fs::locking::locked_write(path, &content)
         .with_context(|| format!("Failed to write source graph: {}", path.display()))
 }
+
+mod prune;
 
 #[cfg(test)]
 mod tests;

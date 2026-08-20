@@ -1,6 +1,7 @@
 //! Clean command for loom resource cleanup
 //! Usage: loom clean [--all] [--worktrees] [--sessions] [--state]
 
+mod base_graphs;
 mod sessions;
 mod worktrees;
 
@@ -40,6 +41,9 @@ pub fn execute(all: bool, worktrees: bool, sessions: bool, state: bool) -> Resul
 
     // Print header
     print_header();
+
+    // Base graph GC (A.14): runs every invocation — see print_base_graph_section.
+    print_base_graph_section(&repo_root);
 
     // Bare invocation with no flags: do NOT treat as --all. Prune-only + help.
     if !all && !worktrees && !sessions && !state {
@@ -116,6 +120,29 @@ fn clean_sessions_and_state(
 /// Print the loom clean header
 fn print_header() {
     crate::utils::print_logo_header("Cleaning...");
+}
+
+/// Prune stale `graph/base/*.json` layer files and print the result.
+/// A prune failure is reported but never aborts the rest of `execute` — base
+/// graph GC is a courtesy, not something the rest of `loom clean` depends on.
+fn print_base_graph_section(repo_root: &Path) {
+    println!("\n{}", "Base graphs".bold());
+    println!("{}", "─".repeat(40).dimmed());
+    match base_graphs::prune_base_graphs(repo_root) {
+        Ok((0, _)) => println!("  {} Nothing to prune", "─".dimmed()),
+        Ok((removed, freed_bytes)) => println!(
+            "  {} Pruned {} layer file{} ({})",
+            "✓".green().bold(),
+            removed,
+            if removed == 1 { "" } else { "s" },
+            base_graphs::human_bytes(freed_bytes)
+        ),
+        Err(error) => println!(
+            "  {} Base graph prune: {}",
+            "⚠".yellow().bold(),
+            error.to_string().dimmed()
+        ),
+    }
 }
 
 /// Remove the .work/ state directory

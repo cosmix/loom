@@ -1,5 +1,39 @@
 use super::*;
+use std::time::{Duration, SystemTime};
 use tempfile::TempDir;
+
+/// Write a base layer for `revision` directly (bypassing `publish_base`, so
+/// none of these fixture writes trigger a prune of their own), then back-date
+/// its mtime by `seconds_ago` so [`GraphStore::prune_base_graphs`] has a
+/// stable, distinct "most recently modified" ordering to sort by. Returns the
+/// layer's path.
+fn write_dated_base(store: &GraphStore, revision: &str, seconds_ago: u64) -> PathBuf {
+    let path = store.base_path(revision);
+    let layer = GraphLayer {
+        revision: revision.to_string(),
+        ..GraphLayer::default()
+    };
+    write_layer(&path, &layer).unwrap();
+
+    let modified = SystemTime::now() - Duration::from_secs(seconds_ago);
+    std::fs::File::open(&path)
+        .unwrap()
+        .set_modified(modified)
+        .unwrap();
+    path
+}
+
+/// Sorted file names directly inside `store`'s base directory, for
+/// before/after comparisons that must prove NOTHING changed.
+fn base_dir_listing(store: &GraphStore) -> Vec<String> {
+    let mut names: Vec<String> = std::fs::read_dir(store.base_dir())
+        .unwrap()
+        .filter_map(|entry| entry.ok())
+        .map(|entry| entry.file_name().to_string_lossy().into_owned())
+        .collect();
+    names.sort();
+    names
+}
 
 fn entry(hash: &str) -> FileEntry {
     FileEntry {
@@ -151,4 +185,136 @@ fn a_missing_base_resolves_to_an_overlay_only_view() {
         .unwrap();
     assert_eq!(resolved.files.len(), 1);
     assert_eq!(resolved.base_revision, "");
+}
+
+#[test]
+fn prune_base_graphs_keeps_the_new_one_the_protected_one_and_the_keep_most_recent() {
+    let temp = TempDir::new().unwrap();
+    let store = store(&temp);
+
+    // Six pre-existing base layers, oldest first. `old_a` is also the
+    // revision `state.json` currently names (protected), despite being the
+    // oldest of the six — proposal A.14's own worked example.
+    let old_a = write_dated_base(&store, "old-a", 600);
+    let old_b = write_dated_base(&store, "old-b", 500);
+    let old_c = write_dated_base(&store, "old-c", 400);
+    let recent_a = write_dated_base(&store, "recent-a", 300);
+    let recent_b = write_dated_base(&store, "recent-b", 200);
+    let recent_c = write_dated_base(&store, "recent-c", 100);
+    let brand_new = write_dated_base(&store, "brand-new", 0);
+
+    store.prune_base_graphs(3, &["brand-new", "old-a"]).unwrap();
+
+    assert!(brand_new.exists(), "the just-written revision must survive");
+    assert!(
+        old_a.exists(),
+        "the state.json-referenced revision must survive despite being the oldest file"
+    );
+    assert!(
+        recent_a.exists(),
+        "among the 3 most recent unprotected files"
+    );
+    assert!(
+        recent_b.exists(),
+        "among the 3 most recent unprotected files"
+    );
+    assert!(
+        recent_c.exists(),
+        "among the 3 most recent unprotected files"
+    );
+    assert!(
+        !old_b.exists(),
+        "older than the 3 most recent, and unprotected"
+    );
+    assert!(
+        !old_c.exists(),
+        "older than the 3 most recent, and unprotected"
+    );
+}
+
+#[test]
+fn republishing_an_existing_revision_prunes_nothing_and_returns_false() {
+    let temp = TempDir::new().unwrap();
+    let store = store(&temp);
+
+    // Seed enough old layers that a real prune (default keep = 3) would
+    // remove some of them, so "the listing did not change" is meaningful.
+    for i in 0..5u64 {
+        write_dated_base(&store, &format!("filler-{i}"), 1000 - i);
+    }
+
+    let layer = GraphLayer {
+        revision: "rev1".to_string(),
+        ..GraphLayer::default()
+    };
+    assert!(store.publish_base("rev1", &layer).unwrap());
+    let listing_after_first_publish = base_dir_listing(&store);
+
+    assert!(
+        !store.publish_base("rev1", &layer).unwrap(),
+        "re-publishing the same revision must be refused"
+    );
+
+    assert_eq!(
+        base_dir_listing(&store),
+        listing_after_first_publish,
+        "a refused re-publish must not prune anything"
+    );
+}
+
+#[test]
+fn a_protected_revision_survives_even_when_it_is_the_oldest_file() {
+    let temp = TempDir::new().unwrap();
+    let store = store(&temp);
+
+    let oldest = write_dated_base(&store, "ancient", 1000);
+    write_dated_base(&store, "b", 400);
+    write_dated_base(&store, "c", 300);
+    write_dated_base(&store, "d", 200);
+    write_dated_base(&store, "e", 100);
+
+    // keep = 2 would normally drop "ancient" first — it is the oldest of all
+    // five — if it were not explicitly protected.
+    store.prune_base_graphs(2, &["ancient"]).unwrap();
+
+    assert!(
+        oldest.exists(),
+        "a protected revision must survive regardless of age"
+    );
+}
+
+#[test]
+fn an_entry_that_cannot_be_removed_does_not_fail_the_prune() {
+    let temp = TempDir::new().unwrap();
+    let store = store(&temp);
+
+    // `fs::remove_file` unconditionally fails on a directory, portably and
+    // regardless of privilege level: unlink is gated by the PARENT
+    // directory's write permission, not the target's own mode bits, so
+    // chmod-ing the candidate file itself would not simulate an unremovable
+    // entry (root and several sandboxes ignore mode bits entirely — see
+    // `refresh/tests_source_graph.rs`'s `an_unreadable_file_...` test), and
+    // chmod-ing the whole base directory would also block the legitimate
+    // writes this test needs to succeed. A directory masquerading as a
+    // `<revision>.json` layer gives a deterministic, portable "this
+    // candidate cannot be removed" case with no such caveat.
+    let stray_dir = store.base_dir().join("stray.json");
+    std::fs::create_dir_all(&stray_dir).unwrap();
+
+    let survivor = write_dated_base(&store, "survivor", 0);
+
+    let result = store.prune_base_graphs(0, &[]);
+
+    assert!(
+        result.is_ok(),
+        "an unremovable candidate must not fail the whole prune"
+    );
+    assert!(
+        stray_dir.exists(),
+        "the unremovable entry is still there: remove_file failed on it, as expected"
+    );
+    assert!(
+        !survivor.exists(),
+        "a removable candidate must still be pruned despite the sibling failure"
+    );
 }
