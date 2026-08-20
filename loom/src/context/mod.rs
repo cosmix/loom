@@ -38,7 +38,15 @@
 //! hook all call it, so a brief rendered at spawn time and a brief pulled by
 //! hand are built the same way. [`delivery`] then records what a recipient was
 //! actually given, so the next retrieval in the same generation can skip it.
+//!
+//! ## Tunables
+//!
+//! Every threshold the pipeline depends on comes from a [`config::RetrievalConfig`],
+//! loaded once by [`retrieve::retrieve_for_stage`] and threaded down by
+//! reference. There is no global: the tunables belong to a retrieval, not to
+//! the process.
 
+pub mod config;
 pub mod coverage;
 pub mod delivery;
 pub mod extract;
@@ -60,6 +68,7 @@ pub mod source_graph;
 pub mod store;
 pub(crate) mod untrusted;
 
+pub use config::RetrievalConfig;
 pub use coverage::CoverageReport;
 pub use rank_source::rank_source;
 pub use resolve::{impact, resolve_graph, ImpactHit, ResolutionStats, SymbolIndex};

@@ -13,6 +13,8 @@ fn request(budget_tokens: usize) -> PackRequest {
         budget_tokens,
         structural_freshness: Freshness::default(),
         semantic_freshness: Freshness::default(),
+        dropped_terms: Vec::new(),
+        degraded: None,
     }
 }
 
@@ -59,6 +61,7 @@ fn test_source_item_carries_every_field() {
         score: 3.75,
         reasons: vec![SelectionReason::ExactSymbol, SelectionReason::Lexical],
         token_count: 22,
+        matched_term_count: 2,
     };
 
     let packed = pack(

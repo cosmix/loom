@@ -22,6 +22,16 @@ pub struct PackRequest {
     pub structural_freshness: Freshness,
     /// Freshness of the semantic retrieval layer.
     pub semantic_freshness: Freshness,
+    /// Query terms the ranker dropped before scoring, copied onto the pack for
+    /// observability. Retrieval takes these from the knowledge channel's
+    /// corpus; see `retrieve::rank_channels`.
+    pub dropped_terms: Vec<String>,
+    /// Why this pack was served from a knowingly incomplete index, when it was.
+    ///
+    /// Passed straight through to [`ContextPack::degraded`] so the wave that
+    /// detects a missing base graph (A.11) only has to fill this field in
+    /// `retrieve_for_stage`, with no further plumbing.
+    pub degraded: Option<String>,
 }
 
 fn summary(chunk: &KnowledgeChunk) -> String {
@@ -87,6 +97,7 @@ fn build_chunk_item(candidate: &RankedCandidate, chunk: &KnowledgeChunk) -> Cont
         state: chunk.state,
         content_hash: chunk.content_hash.clone(),
         excerpt: Some(bounded_excerpt(&chunk.body)),
+        matched_term_count: candidate.matched_term_count,
     }
 }
 
@@ -140,6 +151,7 @@ fn build_source_item(candidate: &RankedCandidate, node: &SourceNode) -> ContextI
         state: LifecycleState::Active,
         content_hash: node.body_hash.clone(),
         excerpt: Some(bounded_excerpt(&node.signature)),
+        matched_term_count: candidate.matched_term_count,
     }
 }
 
@@ -245,5 +257,7 @@ pub fn pack(
         semantic_freshness: request.semantic_freshness.clone(),
         items,
         omitted: omitted_summary,
+        dropped_terms: request.dropped_terms.clone(),
+        degraded: request.degraded.clone(),
     }
 }

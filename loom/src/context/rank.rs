@@ -2,10 +2,11 @@
 //! corpus machinery (`LexicalCorpus`, `prepare_lexical`, `score_bm25`)
 //! that [`crate::context::rank_source()`] scores source-graph nodes through.
 
+use crate::context::config::RetrievalConfig;
 use crate::context::lexical::{contains_whole_term, field_tokens, link_target_matches};
 use crate::context::schema::{Channel, ChunkId, KnowledgeChunk, SelectionReason};
 use std::cmp::Ordering;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
 /// Re-exported so callers (and this module's own tests) can tokenize text the
@@ -36,6 +37,11 @@ pub struct RankQuery {
     pub required_ids: Vec<String>,
     /// Chunk ids referenced by stages this query depends on.
     pub stage_dependency_ids: Vec<String>,
+    /// Project-relative paths owned by the stages this query depends on.
+    ///
+    /// Only the stage spawn brief fills this; the hook and CLI leave it empty.
+    /// `rank_source` boosts nodes whose file is named here (A.23).
+    pub dependency_paths: Vec<String>,
 }
 
 /// One scored candidate, before fusion.
@@ -51,6 +57,24 @@ pub struct RankedCandidate {
     pub reasons: Vec<SelectionReason>,
     /// Estimated chunk token cost.
     pub token_count: usize,
+    /// Distinct query terms this candidate matched lexically. Feeds the hook's
+    /// emit floor through `ContextItem::matched_term_count`.
+    pub matched_term_count: usize,
+}
+
+/// One channel's ranking pass: its candidates, plus the query terms the corpus
+/// dropped before scoring.
+///
+/// `dropped_terms` cannot be recovered from `candidates`: it names terms that
+/// scored nothing anywhere, so no candidate mentions them — yet
+/// [`crate::context::schema::ContextPack::dropped_terms`] has to report them.
+/// It therefore rides out of the ranker beside the candidates.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct ChannelRanking {
+    /// Candidates in final order: score descending, id ascending.
+    pub candidates: Vec<RankedCandidate>,
+    /// Query terms dropped before scoring. Empty until A.2 lands.
+    pub dropped_terms: Vec<String>,
 }
 
 /// Score the exact-match ladder for one chunk against `query`: explicit id,
@@ -107,7 +131,14 @@ fn score_exact_match_ladder(
 }
 
 /// BM25 lexical score for the document at `index`, summed across query terms.
-/// Returns the score and whether any term matched at all.
+///
+/// Returns the score and how many DISTINCT query terms matched the document.
+/// The count is de-duplicated because `query_terms` may legitimately repeat a
+/// term (a prompt saying "cache" twice tokenizes to two entries), and a repeat
+/// is not extra evidence — the hook's emit floor counts *how much of the query*
+/// an item covers, not how often the caller typed a word. The BM25 sum is
+/// deliberately left alone: a repeated term contributing twice is the existing
+/// weighting, and changing it is a ranking decision, not a counting one.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn score_bm25(
     query_terms: &[String],
@@ -117,9 +148,9 @@ pub(crate) fn score_bm25(
     average_length: f32,
     corpus_size: f32,
     index: usize,
-) -> (f32, bool) {
+) -> (f32, usize) {
     let mut lexical_score = 0.0;
-    let mut has_lexical_match = false;
+    let mut matched_terms: BTreeSet<&str> = BTreeSet::new();
     for term in query_terms {
         let document_frequency = document_frequencies[term];
         if document_frequency == 0 {
@@ -140,9 +171,9 @@ pub(crate) fn score_bm25(
             BM25_K1 * (1.0 - BM25_B + BM25_B * lengths[index] as f32 / average_length);
         lexical_score +=
             idf * (weighted_frequency * (BM25_K1 + 1.0)) / (weighted_frequency + normalization);
-        has_lexical_match = true;
+        matched_terms.insert(term.as_str());
     }
-    (lexical_score, has_lexical_match)
+    (lexical_score, matched_terms.len())
 }
 
 /// Query-dependent corpus statistics that do not depend on what a document
@@ -164,6 +195,8 @@ pub(crate) struct LexicalCorpus {
     pub(crate) average_length: f32,
     /// How many documents contain each query term.
     pub(crate) document_frequencies: BTreeMap<String, usize>,
+    /// Query terms dropped before scoring. Empty until A.2 lands.
+    pub(crate) dropped_terms: Vec<String>,
 }
 
 /// Assemble the loop-invariant statistics for one ranking pass.
@@ -171,9 +204,17 @@ pub(crate) struct LexicalCorpus {
 /// Every query term gets a `document_frequencies` entry, including terms no
 /// document contains at all: [`score_bm25`] indexes that map directly, so a
 /// missing key panics instead of scoring zero.
+///
+/// `_raw_query` is the untokenized query text and `_config` the retrieval
+/// tunables; both are threaded in now so A.2 can partition `query_terms` into
+/// surviving and dropped without changing a single call site.
 pub(crate) fn prepare_lexical(
     query_terms: &[String],
     documents: Vec<Vec<(String, f32)>>,
+    // Wave 2 (A.1/A.2) reads this: backticked terms are never dropped.
+    _raw_query: &str,
+    // Wave 2 (A.1/A.2) reads this: `stop_df_ratio`, `min_query_token_len`.
+    _config: &RetrievalConfig,
 ) -> LexicalCorpus {
     let lengths: Vec<usize> = documents.iter().map(Vec::len).collect();
     let average_length = if documents.is_empty() {
@@ -201,6 +242,7 @@ pub(crate) fn prepare_lexical(
         lengths,
         average_length,
         document_frequencies,
+        dropped_terms: Vec::new(),
     }
 }
 
@@ -214,7 +256,7 @@ struct Corpus<'a> {
 }
 
 impl<'a> Corpus<'a> {
-    fn prepare(query: &RankQuery, chunks: &'a [KnowledgeChunk]) -> Self {
+    fn prepare(query: &RankQuery, chunks: &'a [KnowledgeChunk], config: &RetrievalConfig) -> Self {
         let query_terms = tokenize(&query.text);
         let documents: Vec<Vec<(String, f32)>> = chunks.iter().map(field_tokens).collect();
         let explicit_chunks: Vec<&KnowledgeChunk> = chunks
@@ -225,63 +267,112 @@ impl<'a> Corpus<'a> {
             explicit_chunks.iter().map(|chunk| &chunk.file).collect();
 
         Self {
-            lexical: prepare_lexical(&query_terms, documents),
+            lexical: prepare_lexical(&query_terms, documents, &query.text, config),
             explicit_chunks,
             explicit_files,
         }
     }
 }
 
+/// The one deterministic order for a ranked list: score descending, then
+/// ascending id, so two runs over identical bytes agree completely.
+fn by_score_then_id(left: &RankedCandidate, right: &RankedCandidate) -> Ordering {
+    right
+        .score
+        .partial_cmp(&left.score)
+        .unwrap_or(Ordering::Equal)
+        .then_with(|| left.id.cmp(&right.id))
+}
+
+/// Score one chunk, returning `None` when no reason fired — a chunk nothing in
+/// the query pointed at is not a candidate at all.
+///
+/// The mirror of `rank_source`'s `score_node`, deliberately: the two channels
+/// share the rung ladder, the BM25 statistics and the candidate type, and
+/// keeping their per-document scorers the same shape is what makes a drift
+/// between them visible in a diff.
+fn score_chunk(
+    query: &RankQuery,
+    chunk: &KnowledgeChunk,
+    channel: Channel,
+    corpus: &Corpus<'_>,
+    corpus_size: f32,
+    index: usize,
+) -> Option<RankedCandidate> {
+    let (mut score, mut reasons) = score_exact_match_ladder(
+        query,
+        chunk,
+        &corpus.explicit_chunks,
+        &corpus.explicit_files,
+    );
+    let (lexical_score, matched_term_count) = score_bm25(
+        &corpus.lexical.query_terms,
+        &corpus.lexical.document_frequencies,
+        &corpus.lexical.documents,
+        &corpus.lexical.lengths,
+        corpus.lexical.average_length,
+        corpus_size,
+        index,
+    );
+    if matched_term_count > 0 {
+        reasons.push(SelectionReason::Lexical);
+        score += lexical_score;
+    }
+    if reasons.is_empty() {
+        return None;
+    }
+    Some(RankedCandidate {
+        id: ChunkId::from(chunk.id.as_str()),
+        channel,
+        score,
+        reasons,
+        token_count: chunk.estimated_tokens,
+        matched_term_count,
+    })
+}
+
+/// Score every chunk against the query for one channel, reporting the corpus
+/// diagnostics alongside the candidates.
+///
+/// Results descend by score and use ascending id as a deterministic
+/// tie-breaker. This is the form [`crate::context::retrieve`] calls, because
+/// the pack has to report the dropped terms; [`rank`] is the same pass without
+/// them.
+pub fn rank_channel(
+    query: &RankQuery,
+    chunks: &[KnowledgeChunk],
+    channel: Channel,
+    config: &RetrievalConfig,
+) -> ChannelRanking {
+    if chunks.is_empty() {
+        return ChannelRanking::default();
+    }
+
+    let corpus = Corpus::prepare(query, chunks, config);
+    let corpus_size = chunks.len() as f32;
+    let mut candidates = Vec::new();
+    for (index, chunk) in chunks.iter().enumerate() {
+        if let Some(candidate) = score_chunk(query, chunk, channel, &corpus, corpus_size, index) {
+            candidates.push(candidate);
+        }
+    }
+    candidates.sort_by(by_score_then_id);
+    ChannelRanking {
+        candidates,
+        dropped_terms: corpus.lexical.dropped_terms,
+    }
+}
+
 /// Score every chunk against the query for one channel.
 ///
-/// Results descend by score and use ascending id as a deterministic tie-breaker.
+/// Results descend by score and use ascending id as a deterministic
+/// tie-breaker. [`rank_channel`] without the corpus diagnostics, for callers
+/// that only want the ordering.
 pub fn rank(
     query: &RankQuery,
     chunks: &[KnowledgeChunk],
     channel: Channel,
+    config: &RetrievalConfig,
 ) -> Vec<RankedCandidate> {
-    if chunks.is_empty() {
-        return Vec::new();
-    }
-
-    let corpus = Corpus::prepare(query, chunks);
-    let corpus_size = chunks.len() as f32;
-    let mut candidates = Vec::new();
-    for (index, chunk) in chunks.iter().enumerate() {
-        let (mut score, mut reasons) = score_exact_match_ladder(
-            query,
-            chunk,
-            &corpus.explicit_chunks,
-            &corpus.explicit_files,
-        );
-        let (lexical_score, has_lexical_match) = score_bm25(
-            &corpus.lexical.query_terms,
-            &corpus.lexical.document_frequencies,
-            &corpus.lexical.documents,
-            &corpus.lexical.lengths,
-            corpus.lexical.average_length,
-            corpus_size,
-            index,
-        );
-        if has_lexical_match {
-            reasons.push(SelectionReason::Lexical);
-            score += lexical_score;
-        }
-        if !reasons.is_empty() {
-            candidates.push(RankedCandidate {
-                id: ChunkId::from(chunk.id.as_str()),
-                channel,
-                score,
-                reasons,
-                token_count: chunk.estimated_tokens,
-            });
-        }
-    }
-    candidates.sort_by(|a, b| {
-        b.score
-            .partial_cmp(&a.score)
-            .unwrap_or(Ordering::Equal)
-            .then_with(|| a.id.cmp(&b.id))
-    });
-    candidates
+    rank_channel(query, chunks, channel, config).candidates
 }

@@ -1,3 +1,4 @@
+use crate::context::config::RetrievalConfig;
 use crate::context::rank::*;
 use crate::context::schema::*;
 use std::path::PathBuf;
@@ -29,6 +30,7 @@ fn rule_13_required_id_adds_the_explicit_boost() {
         },
         &[chunk("a", "", 1)],
         Channel::Knowledge,
+        &RetrievalConfig::default(),
     );
     assert!(
         (ranked[0].score - 1000.0).abs() < 1e-4,
@@ -49,6 +51,7 @@ fn rule_14_exact_path_adds_one_boost_per_chunk() {
         },
         &[first],
         Channel::Knowledge,
+        &RetrievalConfig::default(),
     );
     assert!(
         (ranked[0].score - 100.0).abs() < 1e-4,
@@ -69,6 +72,7 @@ fn rule_15_exact_symbol_adds_one_boost_per_chunk() {
         },
         &[first],
         Channel::Knowledge,
+        &RetrievalConfig::default(),
     );
     assert!(
         (ranked[0].score - 80.0).abs() < 1e-4,
@@ -94,6 +98,7 @@ fn short_symbol_does_not_match_inside_a_longer_word() {
         },
         &[noise],
         Channel::Knowledge,
+        &RetrievalConfig::default(),
     );
     assert!(
         !ranked
@@ -123,6 +128,7 @@ fn whole_word_symbol_still_matches_including_qualified_paths() {
             },
             &[chunk_value],
             Channel::Knowledge,
+            &RetrievalConfig::default(),
         );
         assert!(
             ranked[0].reasons.contains(&SelectionReason::ExactSymbol),
@@ -147,6 +153,7 @@ fn rule_16_direct_link_neighbours_get_the_linked_from_boost() {
         },
         &[required, points_to_required, target],
         Channel::Knowledge,
+        &RetrievalConfig::default(),
     );
     let linked: Vec<_> = ranked
         .iter()
@@ -190,6 +197,7 @@ fn linked_from_boost_resolves_link_targets_relative_to_the_source_file() {
         },
         &[required, same_dir_target, cousin_target, decoy],
         Channel::Knowledge,
+        &RetrievalConfig::default(),
     );
 
     let boosted = |id: &str| {
@@ -222,6 +230,7 @@ fn rule_17_stage_dependency_adds_its_boost() {
         },
         &[chunk("a", "", 1)],
         Channel::Knowledge,
+        &RetrievalConfig::default(),
     );
     assert!(
         (ranked[0].score - 30.0).abs() < 1e-4,
@@ -243,9 +252,11 @@ fn rule_18_final_score_sums_all_boosts_and_bm25_and_drops_zeroes() {
             text: "alpha /// $$$".into(),
             required_ids: vec!["a".into()],
             stage_dependency_ids: vec!["a".into()],
+            dependency_paths: Vec::new(),
         },
         &[first, chunk("b", "beta", 1)],
         Channel::Knowledge,
+        &RetrievalConfig::default(),
     );
     assert_eq!(ranked.len(), 1);
     assert!(
@@ -275,6 +286,7 @@ fn rule_19_ranked_candidate_copies_estimated_tokens() {
         },
         &[chunk("a", "", 321)],
         Channel::Knowledge,
+        &RetrievalConfig::default(),
     );
     assert_eq!(ranked[0].token_count, 321);
 }

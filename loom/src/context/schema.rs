@@ -304,6 +304,13 @@ pub struct ContextItem {
     /// [`EXCERPT_TRUNCATION_MARKER`] on its own line.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub excerpt: Option<String>,
+    /// How many DISTINCT query terms this item matched lexically.
+    ///
+    /// The hook's emit floor needs a per-item strength signal that survives the
+    /// trip from `RankedCandidate` into the pack; a score cannot serve, because
+    /// scores are not comparable across fusion tiers.
+    #[serde(default)]
+    pub matched_term_count: usize,
 }
 
 /// The result of one retrieval: what was selected, what was not, and how stale
@@ -325,6 +332,18 @@ pub struct ContextPack {
     #[serde(default)]
     pub items: Vec<ContextItem>,
     pub omitted: OmissionSummary,
+    /// Query terms dropped before scoring as corpus-ubiquitous or too short.
+    ///
+    /// Observability only: `--json` and `--explain` surface it, the hook brief
+    /// never renders it. Empty until the stopwording pass exists.
+    #[serde(default)]
+    pub dropped_terms: Vec<String>,
+    /// Set when this pack was served from a knowingly incomplete index.
+    ///
+    /// Carries a human-readable reason, e.g. "source graph base <rev8> missing
+    /// — serving overlay only". `None` is the healthy case.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub degraded: Option<String>,
 }
 
 impl ContextPack {

@@ -19,11 +19,12 @@
 //! not "simplify" that dispatch into trying both maps: it would hide the
 //! collision instead of surfacing it.
 
+use crate::context::config::RetrievalConfig;
 use crate::context::graph_store::ResolvedGraph;
 use crate::context::lexical::{contains_whole_term, WEIGHT_BODY, WEIGHT_SYMBOLS};
 use crate::context::rank::{
-    prepare_lexical, score_bm25, tokenize, LexicalCorpus, RankQuery, RankedCandidate,
-    BOOST_EXACT_PATH, BOOST_EXACT_SYMBOL, BOOST_EXPLICIT_ID,
+    prepare_lexical, score_bm25, tokenize, ChannelRanking, LexicalCorpus, RankQuery,
+    RankedCandidate, BOOST_EXACT_PATH, BOOST_EXACT_SYMBOL, BOOST_EXPLICIT_ID,
 };
 use crate::context::schema::{
     Channel, ChunkId, FileCoverage, SelectionReason, SourceNode, SourceNodeKind,
@@ -52,11 +53,18 @@ struct ScoredNode<'a> {
 }
 
 /// Score every symbol node of `graph` against the query for
-/// [`Channel::Source`].
+/// [`Channel::Source`], reporting the corpus diagnostics alongside the
+/// candidates.
 ///
 /// Results descend by score and break ties by `(path, line_start)` so two runs
-/// over identical bytes produce an identical order.
-pub fn rank_source(query: &RankQuery, graph: &ResolvedGraph) -> Vec<RankedCandidate> {
+/// over identical bytes produce an identical order. This is the form
+/// [`crate::context::retrieve`] calls, because the pack has to report the
+/// dropped terms; [`rank_source`] is the same pass without them.
+pub fn rank_source_channel(
+    query: &RankQuery,
+    graph: &ResolvedGraph,
+    config: &RetrievalConfig,
+) -> ChannelRanking {
     // Whole-file nodes carry no signature and no scope, so they can only ever
     // match on their path — one per file, crowding out the symbols inside it.
     let nodes: Vec<&SourceNode> = graph
@@ -64,12 +72,12 @@ pub fn rank_source(query: &RankQuery, graph: &ResolvedGraph) -> Vec<RankedCandid
         .filter(|node| !matches!(node.kind, SourceNodeKind::File))
         .collect();
     if nodes.is_empty() {
-        return Vec::new();
+        return ChannelRanking::default();
     }
 
     let query_terms = tokenize(&query.text);
     let documents: Vec<Vec<(String, f32)>> = nodes.iter().copied().map(node_document).collect();
-    let corpus = prepare_lexical(&query_terms, documents);
+    let corpus = prepare_lexical(&query_terms, documents, &query.text, config);
     let corpus_size = nodes.len() as f32;
 
     let mut scored: Vec<ScoredNode> = nodes
@@ -92,7 +100,23 @@ pub fn rank_source(query: &RankQuery, graph: &ResolvedGraph) -> Vec<RankedCandid
             .then_with(|| a.order.cmp(&b.order))
     });
     scored.truncate(MAX_SOURCE_CANDIDATES);
-    scored.into_iter().map(|scored| scored.candidate).collect()
+    ChannelRanking {
+        candidates: scored.into_iter().map(|scored| scored.candidate).collect(),
+        dropped_terms: corpus.dropped_terms,
+    }
+}
+
+/// Score every symbol node of `graph` against the query for
+/// [`Channel::Source`].
+///
+/// [`rank_source_channel`] without the corpus diagnostics, for callers that
+/// only want the ordering.
+pub fn rank_source(
+    query: &RankQuery,
+    graph: &ResolvedGraph,
+    config: &RetrievalConfig,
+) -> Vec<RankedCandidate> {
+    rank_source_channel(query, graph, config).candidates
 }
 
 /// Score one node, returning `None` when no reason fired — a node nothing in
@@ -105,7 +129,7 @@ fn score_node(
     index: usize,
 ) -> Option<RankedCandidate> {
     let (mut score, mut reasons) = withhold_partial_coverage(node, score_exact_rungs(query, node));
-    let (lexical_score, has_lexical_match) = score_bm25(
+    let (lexical_score, matched_term_count) = score_bm25(
         &corpus.query_terms,
         &corpus.document_frequencies,
         &corpus.documents,
@@ -114,7 +138,7 @@ fn score_node(
         corpus_size,
         index,
     );
-    if has_lexical_match {
+    if matched_term_count > 0 {
         reasons.push(SelectionReason::Lexical);
         score += lexical_score;
     }
@@ -127,6 +151,7 @@ fn score_node(
         score,
         reasons,
         token_count: estimate_node_tokens(node),
+        matched_term_count,
     })
 }
 

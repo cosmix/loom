@@ -10,13 +10,14 @@
 //! access and no randomness here; a [`ContextPack`] is a pure function of the
 //! bytes on disk and the [`StageQuery`].
 
+mod channels;
+
+use crate::context::config::RetrievalConfig;
 use crate::context::fuse::fuse;
 use crate::context::graph_store::{GraphStore, ResolvedGraph};
 use crate::context::ingest::ingest;
 use crate::context::local_overlay::OverlayScope;
 use crate::context::pack::{pack, PackRequest};
-use crate::context::rank::{rank, RankQuery, RankedCandidate};
-use crate::context::rank_source::rank_source;
 use crate::context::refresh::{evaluate, refresh};
 use crate::context::schema::{Channel, ContextPack, Freshness};
 use crate::context::store::{ContextStore, StoreState};
@@ -39,6 +40,11 @@ pub struct StageQuery {
     pub required_ids: Vec<String>,
     /// Chunk ids referenced by stages this query's stage depends on.
     pub stage_dependency_ids: Vec<String>,
+    /// Project-relative paths owned by the stages this query depends on.
+    ///
+    /// Only the stage spawn brief fills this; the hook and CLI leave it empty.
+    /// `rank_source` boosts nodes whose file is named here (A.23).
+    pub dependency_paths: Vec<String>,
     /// Channels to rank. Use `Channel::all().to_vec()` unless narrowing.
     pub scope: Vec<Channel>,
     /// Which source-graph overlay to read on top of the base layer.
@@ -58,6 +64,7 @@ impl StageQuery {
             text: text.into(),
             required_ids: Vec::new(),
             stage_dependency_ids: Vec::new(),
+            dependency_paths: Vec::new(),
             scope: Channel::all().to_vec(),
             overlay: OverlayScope::Local,
         }
@@ -80,6 +87,24 @@ const NO_KNOWLEDGE_TREE_DETAIL: &str =
 /// Semantic freshness detail when no source graph has ever been built here.
 const NO_SOURCE_GRAPH_DETAIL: &str = "source graph not built; run 'loom map' to build one";
 
+/// Everything one retrieval resolves out of a `work_dir_hint` before it can
+/// read anything: which knowledge tree, which cache, and which project root
+/// owns the configuration for both.
+pub(crate) struct ResolvedRoots {
+    /// Knowledge tree root, `None` when `doc/loom/knowledge/` does not exist.
+    pub(crate) knowledge_root: Option<PathBuf>,
+    /// Canonical MAIN project root — the one [`ContextStore`] resolves its
+    /// cache under, and therefore the one `.loom/config.toml` lives at.
+    ///
+    /// Not the worktree's own root: in a linked worktree `.work` is a symlink
+    /// into the main repository, and `.loom/` is not a tracked directory, so a
+    /// stage resolving its config against its worktree would find nothing and
+    /// silently run on defaults while the host ran on the operator's tunables.
+    pub(crate) main_project_root: PathBuf,
+    /// Cache of derived retrieval artifacts.
+    pub(crate) store: ContextStore,
+}
+
 /// Resolve the knowledge root and the derived-artifact store together, so no two
 /// callers can disagree about which tree or which cache they are working on.
 ///
@@ -89,26 +114,33 @@ const NO_SOURCE_GRAPH_DETAIL: &str = "source graph not built; run 'loom map' to 
 /// all, so a checkout with a mapped source graph and no knowledge tree still
 /// has something to answer with. Callers that genuinely require a tree use
 /// [`resolve_roots`].
-pub(crate) fn resolve_roots_optional(
-    work_dir_hint: &Path,
-) -> Result<(Option<PathBuf>, ContextStore)> {
+pub(crate) fn resolve_roots_optional(work_dir_hint: &Path) -> Result<ResolvedRoots> {
     let work_dir = WorkDir::new(work_dir_hint)?;
     let project_root = work_dir
         .project_root()
         .context("Could not determine project root")?;
     let knowledge = KnowledgeDir::new(project_root);
     let knowledge_root = knowledge.exists().then(|| knowledge.root().to_path_buf());
+    let main_project_root = work_dir
+        .main_project_root()
+        .context("Could not determine the canonical main project root")?;
 
     let store = ContextStore::open(&work_dir)?;
-    Ok((knowledge_root, store))
+    Ok(ResolvedRoots {
+        knowledge_root,
+        main_project_root,
+        store,
+    })
 }
 
 /// [`resolve_roots_optional`] for a caller that cannot work without a knowledge
 /// tree — the `loom knowledge` commands, which read and write that tree.
 pub(crate) fn resolve_roots(work_dir_hint: &Path) -> Result<(PathBuf, ContextStore)> {
-    let (knowledge_root, store) = resolve_roots_optional(work_dir_hint)?;
-    let knowledge_root = knowledge_root.ok_or_else(|| anyhow!(NO_KNOWLEDGE_DIR))?;
-    Ok((knowledge_root, store))
+    let roots = resolve_roots_optional(work_dir_hint)?;
+    let knowledge_root = roots
+        .knowledge_root
+        .ok_or_else(|| anyhow!(NO_KNOWLEDGE_DIR))?;
+    Ok((knowledge_root, roots.store))
 }
 
 /// Bring the catalog current and return it. A read-only query must never die
@@ -216,32 +248,6 @@ pub(crate) fn reject_unknown_require_ids(
     Ok(())
 }
 
-/// Rank the catalog once per requested channel, producing one candidate list
-/// per channel.
-///
-/// Each channel is ranked over its own corpus: the knowledge channel over the
-/// catalog's chunks via [`rank`], the source channel over `graph`'s nodes via
-/// [`rank_source`]. `graph` is `None` when the source graph was never built or
-/// could not be read for this query — that is a degraded pack, not an error,
-/// so the source channel simply contributes no candidates rather than failing
-/// the whole retrieval.
-fn rank_channels(
-    channels: &[Channel],
-    rank_query: &RankQuery,
-    catalog: &Catalog,
-    graph: Option<&ResolvedGraph>,
-) -> Vec<Vec<RankedCandidate>> {
-    channels
-        .iter()
-        .map(|channel| match channel {
-            Channel::Knowledge => rank(rank_query, &catalog.chunks, Channel::Knowledge),
-            Channel::Source => graph
-                .map(|g| rank_source(rank_query, g))
-                .unwrap_or_default(),
-        })
-        .collect()
-}
-
 /// Load the resolved source graph for `query`'s overlay, degrading to `None`
 /// on any error.
 ///
@@ -293,47 +299,82 @@ fn load_resolved_graph(
 /// signal generation, the prompt hook — must degrade rather than propagate: log
 /// at `tracing::debug` and carry on with no pack.
 pub fn retrieve_for_stage(query: &StageQuery, budget_tokens: usize) -> Result<ContextPack> {
-    let (knowledge_root, store) = resolve_roots_optional(&query.work_dir_hint)?;
+    let roots = resolve_roots_optional(&query.work_dir_hint)?;
+    let knowledge_root = roots.knowledge_root.as_deref();
 
-    let catalog = resolve_catalog(&store, knowledge_root.as_deref())?;
-    let state = evaluate_state(&store, knowledge_root.as_deref())?;
+    // Loaded once here, not inside each ranker: the two channels must score
+    // against the SAME tunables, and a per-ranker load would let one channel
+    // pick up an edit made between the two reads and silently rank the halves
+    // of one pack by different rules. It is also one file read per retrieval
+    // instead of one per channel, on a path the prompt hook runs constantly.
+    let config = RetrievalConfig::load(&roots.main_project_root);
+
+    let catalog = resolve_catalog(&roots.store, knowledge_root)?;
+    let state = evaluate_state(&roots.store, knowledge_root)?;
 
     // The source graph is keyed by the semantic revision, not the structural
     // one — they are different hash domains over different subjects (see the
     // comment at `refresh.rs:177-182`), and the graph is semantic-derived data.
     let graph = load_resolved_graph(
         &query.work_dir_hint,
-        &store,
+        &roots.store,
         &state.semantic.revision,
         &query.overlay,
     );
 
-    // A required id can only ever name a source node when the source channel
-    // is actually in scope; see `reject_unknown_require_ids`'s doc comment.
-    let source_graph_for_require_ids = query
+    check_require_ids(query, &catalog, graph.as_ref())?;
+
+    let ranked = channels::rank_channels(
+        &query.scope,
+        &channels::build_rank_query(query),
+        &catalog,
+        graph.as_ref(),
+        &config,
+    );
+    let fused = fuse(&ranked.lists);
+
+    let request = build_pack_request(query, budget_tokens, state, ranked.dropped_terms);
+    Ok(pack(&request, &fused, &catalog.chunks, graph.as_ref()))
+}
+
+/// Reject a `--require-id` this query's scope cannot possibly hold.
+///
+/// `graph` is offered to the check only when the source channel is actually in
+/// scope: see [`reject_unknown_require_ids`]'s doc comment for why accepting a
+/// source-node id for a query that will never rank source nodes reintroduces
+/// the exact silent no-op that function exists to prevent.
+fn check_require_ids(
+    query: &StageQuery,
+    catalog: &Catalog,
+    graph: Option<&ResolvedGraph>,
+) -> Result<()> {
+    let source_graph = query
         .scope
         .contains(&Channel::Source)
-        .then_some(graph.as_ref())
+        .then_some(graph)
         .flatten();
-    reject_unknown_require_ids(&catalog, source_graph_for_require_ids, &query.required_ids)?;
+    reject_unknown_require_ids(catalog, source_graph, &query.required_ids)
+}
 
-    let rank_query = RankQuery {
-        text: query.text.clone(),
-        required_ids: query.required_ids.clone(),
-        stage_dependency_ids: query.stage_dependency_ids.clone(),
-    };
-
-    let lists = rank_channels(&query.scope, &rank_query, &catalog, graph.as_ref());
-    let fused = fuse(&lists);
-
-    let request = PackRequest {
+/// Assemble the packer's request from what this retrieval computed.
+fn build_pack_request(
+    query: &StageQuery,
+    budget_tokens: usize,
+    state: StoreState,
+    dropped_terms: Vec<String>,
+) -> PackRequest {
+    PackRequest {
         query: query.text.clone(),
         scope: query.scope.clone(),
         budget_tokens,
         structural_freshness: state.structural,
         semantic_freshness: state.semantic,
-    };
-    Ok(pack(&request, &fused, &catalog.chunks, graph.as_ref()))
+        dropped_terms,
+        // Filled by the wave that teaches `load_resolved_graph` to tell a
+        // missing base layer from an empty one (A.11); until then every pack
+        // this pipeline builds is honestly undegraded.
+        degraded: None,
+    }
 }
 
 /// Identity of the derived-data generation a pack was built from.

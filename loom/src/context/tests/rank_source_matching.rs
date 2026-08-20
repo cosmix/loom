@@ -6,6 +6,7 @@
 //! symbol, a whole path, and a bare path stem.
 
 use super::source_fixtures::{full_node, graph, node};
+use crate::context::config::RetrievalConfig;
 use crate::context::rank::RankQuery;
 use crate::context::rank_source::rank_source;
 use crate::context::schema::{FileCoverage, SelectionReason, SourceNodeKind};
@@ -27,7 +28,11 @@ fn test_camel_case_qualified_symbol_matches_exact_symbol() {
         ..RankQuery::default()
     };
 
-    let result = rank_source(&query, &graph(vec![("src/foo.rs", vec![symbol_node])]));
+    let result = rank_source(
+        &query,
+        &graph(vec![("src/foo.rs", vec![symbol_node])]),
+        &RetrievalConfig::default(),
+    );
 
     assert!(
         result[0].reasons.contains(&SelectionReason::ExactSymbol),
@@ -53,6 +58,7 @@ fn test_full_path_matches_exact_path() {
     let result = rank_source(
         &query,
         &graph(vec![("src/context/pack.rs", vec![path_node])]),
+        &RetrievalConfig::default(),
     );
 
     assert!(
@@ -79,6 +85,7 @@ fn test_bare_path_stem_matches_exact_path() {
     let result = rank_source(
         &query,
         &graph(vec![("src/context/pack.rs", vec![stem_node])]),
+        &RetrievalConfig::default(),
     );
 
     assert!(
@@ -125,6 +132,7 @@ fn test_file_kind_nodes_are_excluded() {
     let candidates = rank_source(
         &query,
         &graph(vec![("src/lib.rs", vec![file_node, symbol_node])]),
+        &RetrievalConfig::default(),
     );
 
     assert_eq!(
@@ -177,6 +185,7 @@ fn test_node_with_no_fired_reason_is_excluded() {
             ("src/other.rs", vec![unrelated]),
             ("src/context/pack.rs", vec![matching]),
         ]),
+        &RetrievalConfig::default(),
     );
 
     assert_eq!(

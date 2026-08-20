@@ -1,3 +1,4 @@
+use crate::context::config::RetrievalConfig;
 use crate::context::rank::*;
 use crate::context::schema::*;
 use std::path::PathBuf;
@@ -60,6 +61,7 @@ fn rule_7_document_frequency_counts_each_chunk_once() {
         },
         &chunks,
         Channel::Knowledge,
+        &RetrievalConfig::default(),
     )[0]
     .score;
     assert!((got - 0.871_385).abs() < 1e-4, "got {got}");
@@ -79,6 +81,7 @@ fn rule_8_idf_uses_the_specified_logarithm() {
         },
         &chunks,
         Channel::Knowledge,
+        &RetrievalConfig::default(),
     )[0]
     .score;
     assert!((got - 0.980_829).abs() < 1e-4, "got {got}");
@@ -105,6 +108,7 @@ fn rule_9_weighted_fields_contribute_their_assigned_weights() {
         },
         &[first, second],
         Channel::Knowledge,
+        &RetrievalConfig::default(),
     )[0]
     .score;
     // The BM25 component is 1.391_353. This fixture puts "alpha" in both
@@ -124,6 +128,7 @@ fn rule_10_document_length_is_unweighted_across_fields() {
         },
         &chunks,
         Channel::Knowledge,
+        &RetrievalConfig::default(),
     )[0]
     .score;
     assert!((got - 0.609_970).abs() < 1e-4, "got {got}");
@@ -139,6 +144,7 @@ fn rule_11_bm25_sums_each_query_term_contribution() {
         },
         &chunks,
         Channel::Knowledge,
+        &RetrievalConfig::default(),
     )[0]
     .score;
     assert!((got - 1.386_294).abs() < 1e-4, "got {got}");
@@ -154,6 +160,7 @@ fn rule_12_nonzero_bm25_adds_a_lexical_reason() {
         },
         &chunks,
         Channel::Knowledge,
+        &RetrievalConfig::default(),
     );
     assert!(
         // IDF(q) = ln(1 + (2 - 1 + 0.5) / (1 + 0.5)) = ln(2) for a two-chunk

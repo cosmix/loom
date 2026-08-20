@@ -1,4 +1,5 @@
 use super::source_fixtures::{full_node, graph, node};
+use crate::context::config::RetrievalConfig;
 use crate::context::graph_store::ResolvedGraph;
 use crate::context::rank::RankQuery;
 use crate::context::rank_source::rank_source;
@@ -30,6 +31,7 @@ fn test_exact_symbol_outranks_lexical_only() {
     let candidates = rank_source(
         &query,
         &graph(vec![("src/a.rs", vec![exact]), ("src/b.rs", vec![lexical])]),
+        &RetrievalConfig::default(),
     );
 
     assert_eq!(
@@ -72,6 +74,7 @@ fn test_non_full_coverage_never_reaches_high_confidence() {
     let candidates = rank_source(
         &query,
         &graph(vec![("src/context/widget.rs", vec![degraded])]),
+        &RetrievalConfig::default(),
     );
 
     let candidate = candidates
@@ -114,7 +117,11 @@ fn test_explicit_id_on_non_full_coverage_is_not_high() {
         },
     );
 
-    let candidates = rank_source(&query, &graph(vec![("src/billing.rs", vec![degraded])]));
+    let candidates = rank_source(
+        &query,
+        &graph(vec![("src/billing.rs", vec![degraded])]),
+        &RetrievalConfig::default(),
+    );
 
     let candidate = candidates
         .iter()
@@ -173,8 +180,8 @@ fn test_ordering_is_deterministic_across_runs() {
     };
     let fixture = tied_nodes_graph();
 
-    let first = rank_source(&query, &fixture);
-    let second = rank_source(&query, &fixture);
+    let first = rank_source(&query, &fixture, &RetrievalConfig::default());
+    let second = rank_source(&query, &fixture, &RetrievalConfig::default());
 
     assert_eq!(
         first.len(),
@@ -227,7 +234,11 @@ fn test_query_term_matching_no_node_does_not_panic() {
         "fn plain()",
     );
 
-    let candidates = rank_source(&query, &graph(vec![("src/a.rs", vec![plain])]));
+    let candidates = rank_source(
+        &query,
+        &graph(vec![("src/a.rs", vec![plain])]),
+        &RetrievalConfig::default(),
+    );
 
     assert!(
         candidates.is_empty(),

@@ -2,6 +2,7 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
+use loom::context::config::RetrievalConfig;
 use loom::context::fuse::fuse;
 use loom::context::pack::{pack, PackRequest};
 use loom::context::rank::{rank, RankQuery};
@@ -58,6 +59,8 @@ fn pack_request(query: &str, budget_tokens: usize) -> PackRequest {
         budget_tokens,
         structural_freshness: Freshness::default(),
         semantic_freshness: Freshness::default(),
+        dropped_terms: Vec::new(),
+        degraded: None,
     }
 }
 
@@ -178,7 +181,8 @@ fn pack_at_200_tokens_never_exceeds_200() -> anyhow::Result<()> {
         text: "locking".to_string(),
         ..RankQuery::default()
     };
-    let ranked = rank(&query, &catalog.chunks, Channel::Knowledge);
+    let config = RetrievalConfig::default();
+    let ranked = rank(&query, &catalog.chunks, Channel::Knowledge, &config);
     let fused = fuse(&[ranked]);
 
     let packed = pack(&pack_request("locking", 200), &fused, &catalog.chunks, None);
@@ -197,7 +201,8 @@ fn every_pack_reports_omissions_and_coverage() -> anyhow::Result<()> {
         text: "locking".to_string(),
         ..RankQuery::default()
     };
-    let ranked = rank(&query, &catalog.chunks, Channel::Knowledge);
+    let config = RetrievalConfig::default();
+    let ranked = rank(&query, &catalog.chunks, Channel::Knowledge, &config);
     let fused = fuse(&[ranked]);
 
     for budget in [0, 50, 200, 100_000] {

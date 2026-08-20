@@ -28,6 +28,7 @@ fn candidate(id: &str, channel: Channel, score: f32, token_count: usize) -> Rank
         score,
         reasons: vec![SelectionReason::Lexical],
         token_count,
+        matched_term_count: 1,
     }
 }
 
@@ -38,6 +39,8 @@ fn request(budget_tokens: usize) -> PackRequest {
         budget_tokens,
         structural_freshness: Freshness::default(),
         semantic_freshness: Freshness::default(),
+        dropped_terms: Vec::new(),
+        degraded: None,
     }
 }
 
@@ -110,6 +113,7 @@ fn rule_29_knowledge_candidates_still_become_knowledge_chunk_items() {
         score: 2.5,
         reasons: vec![SelectionReason::ExactPath],
         token_count: 4,
+        matched_term_count: 0,
     };
     let packed = pack(&request(4), &[ranked], &[source], None);
     let item = &packed.items[0];

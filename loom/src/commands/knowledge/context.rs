@@ -88,6 +88,9 @@ pub fn context(
         text: query,
         required_ids: require_id,
         stage_dependency_ids: stage_dependencies,
+        // Dependency affinity is a stage-spawn signal: the CLI answers about
+        // whatever the user typed, with no stage's file ownership behind it.
+        dependency_paths: Vec::new(),
         scope: channels,
         // The CLI asks about the tree in front of the user, so it reads that
         // checkout's working-tree overlay — not the last clean base revision.
@@ -114,6 +117,14 @@ fn print_human(pack: &ContextPack, explain: bool) {
     );
     print_freshness_line("Structural", &pack.structural_freshness);
     print_freshness_line("Semantic", &pack.semantic_freshness);
+    if let Some(line) = format_degraded(pack) {
+        println!("{}", line.red().bold());
+    }
+    if explain {
+        if let Some(line) = format_dropped_terms(pack) {
+            println!("{line}");
+        }
+    }
     println!();
 
     if pack.items.is_empty() {
@@ -126,6 +137,43 @@ fn print_human(pack: &ContextPack, explain: bool) {
 
     println!();
     print_omissions(&pack.omitted);
+}
+
+/// The line naming the query terms retrieval dropped before scoring, or `None`
+/// when it dropped none.
+///
+/// Shown under `--explain` only: a dropped term is diagnostic detail about why
+/// a result set looks the way it does, not part of the answer.
+///
+/// Every term goes through [`inline_safe`] first. These are query-derived — the
+/// user's own prompt text, or a stage's free-form metadata — rendered as this
+/// command's own output on a surface an agent reads, which is exactly the shape
+/// `untrusted`'s docstring describes.
+fn format_dropped_terms(pack: &ContextPack) -> Option<String> {
+    if pack.dropped_terms.is_empty() {
+        return None;
+    }
+    let terms = pack
+        .dropped_terms
+        .iter()
+        .map(|term| inline_safe(term.as_str()))
+        .collect::<Vec<_>>()
+        .join(", ");
+    Some(format!(
+        "Dropped query terms: {terms} (corpus-ubiquitous or too short)"
+    ))
+}
+
+/// The degradation banner, or `None` when the pack was built from a complete
+/// index.
+///
+/// Printed with or without `--explain`. A pack served from a knowingly
+/// incomplete index that renders identically to a healthy one is the failure
+/// mode this whole surface exists to prevent: the reader concludes "there is
+/// nothing to say" when the truth is "nothing was there to look at".
+fn format_degraded(pack: &ContextPack) -> Option<String> {
+    let message = pack.degraded.as_ref()?;
+    Some(format!("DEGRADED: {}", inline_safe(message)))
 }
 
 fn print_freshness_line(label: &str, freshness: &Freshness) {
