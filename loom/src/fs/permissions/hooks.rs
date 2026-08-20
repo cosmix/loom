@@ -6,15 +6,15 @@ use std::fs;
 use std::os::unix::fs::PermissionsExt;
 
 use super::constants::LOOM_HOOKS;
+use super::drift;
 
 #[path = "hooks/config.rs"]
 mod config;
 
 /// Generate global hooks configuration for a specific hooks directory.
-///
-/// Internal helper used by [`loom_hooks_config`] to build the hook table
-/// against the host hooks directory.
-fn loom_hooks_config_for_dir(hooks_dir: &str) -> Value {
+/// `pub(super)`: also used by [`loom_hooks_config`] and by [`super::drift`]
+/// to build the canonical config a settings document is compared against.
+pub(super) fn loom_hooks_config_for_dir(hooks_dir: &str) -> Value {
     config::build(hooks_dir)
 }
 
@@ -77,14 +77,10 @@ pub fn install_loom_hooks_to(hooks_dir: &std::path::Path) -> Result<usize> {
 fn install_hook_script(dir: &std::path::Path, filename: &str, content: &str) -> Result<bool> {
     let hook_path = dir.join(filename);
 
-    // Check if hook already exists with same content
-    if hook_path.exists() {
-        let existing_content = fs::read_to_string(&hook_path)
-            .with_context(|| format!("Failed to read existing hook at {}", hook_path.display()))?;
-
-        if existing_content == content {
-            return Ok(false); // Already up to date
-        }
+    // Shares its "up to date" definition with `hook_scripts_needing_install`
+    // so the installer and the drift detector can never disagree.
+    if drift::hook_script_is_current(dir, filename, content) {
+        return Ok(false); // Already up to date
     }
 
     // Write the hook script
@@ -203,10 +199,10 @@ fn migrate_old_hook_paths(settings_obj: &mut serde_json::Map<String, Value>) -> 
     Ok(migrated)
 }
 
-/// Extract the basename (filename) from a command path
-///
-/// Returns the filename component of a path, or the original string if extraction fails.
-fn extract_command_basename(cmd: &str) -> String {
+/// Extract the basename (filename) from a command path, or the original
+/// string if extraction fails. `pub(super)`: also used by [`super::drift`]
+/// to compare registrations against `LOOM_HOOKS`.
+pub(super) fn extract_command_basename(cmd: &str) -> String {
     std::path::Path::new(cmd)
         .file_name()
         .and_then(|n| n.to_str())
@@ -251,8 +247,10 @@ fn remove_duplicate_hooks(hooks_arr: &mut Vec<Value>) {
     });
 }
 
-/// Check if a hook command points to a loom hook (in ~/.claude/hooks/loom/)
-fn is_loom_hook(command: &str) -> bool {
+/// Check if a hook command points to a loom hook (in ~/.claude/hooks/loom/).
+/// `pub(super)`: also used by [`super::drift`] to scope obsolete-registration
+/// detection to loom's own hooks.
+pub(super) fn is_loom_hook(command: &str) -> bool {
     // Check for both absolute path and tilde-prefixed path
     let is_tilde_loom = command.contains("/.claude/hooks/loom/");
     let is_absolute_loom = dirs::home_dir()
@@ -295,8 +293,9 @@ fn remove_loom_hooks(hooks_arr: &mut Vec<Value>) {
 /// 2. Removes ALL existing loom hooks from settings
 /// 3. Adds fresh loom hooks from the given directory
 ///
-/// User's non-loom hooks are preserved.
-fn configure_loom_hooks_with_dir(
+/// User's non-loom hooks are preserved. `pub(super)`: also exercised
+/// directly by [`super::drift`]'s tests against a specific `hooks_dir`.
+pub(super) fn configure_loom_hooks_with_dir(
     settings_obj: &mut serde_json::Map<String, Value>,
     hooks_dir: &str,
 ) -> Result<bool> {
@@ -305,7 +304,7 @@ fn configure_loom_hooks_with_dir(
     let loom_hooks = loom_hooks_config_for_dir(hooks_dir);
 
     let hooks = settings_obj.entry("hooks").or_insert_with(|| json!({}));
-    let hooks_obj = hooks
+    let hooks_obj = drift::coerce_container(hooks, || json!({}))
         .as_object_mut()
         .ok_or_else(|| anyhow::anyhow!("hooks must be a JSON object"))?;
 
@@ -321,9 +320,8 @@ fn configure_loom_hooks_with_dir(
 
     let loom_hooks_obj = loom_hooks.as_object();
     for event_name in all_event_names {
-        let event_arr = hooks_obj
-            .entry(&event_name)
-            .or_insert_with(|| json!([]))
+        let event_val = hooks_obj.entry(&event_name).or_insert_with(|| json!([]));
+        let event_arr = drift::coerce_container(event_val, || json!([]))
             .as_array_mut()
             .ok_or_else(|| anyhow::anyhow!("hooks.{event_name} must be an array"))?;
 

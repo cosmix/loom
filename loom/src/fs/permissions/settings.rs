@@ -287,8 +287,7 @@ pub fn ensure_loom_hooks_local(repo_root: &Path) -> Result<()> {
     let hooks_configured = configure_loom_hooks(settings_obj)?;
 
     // Configure agent teams environment variable
-    let env_obj = settings_obj.entry("env").or_insert_with(|| json!({}));
-    let env_map = require_object(env_obj, "env")?;
+    let env_map = super::drift::coerced_object(settings_obj, "env")?;
     let env_configured = if !env_map.contains_key("CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS") {
         env_map.insert(
             "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS".to_string(),
@@ -316,8 +315,7 @@ pub fn ensure_loom_hooks_local(repo_root: &Path) -> Result<()> {
     // leaving stray branches behind. "none" lets subagents edit the checkout
     // directly. Worktree stage sessions get the same setting via the sandbox
     // settings generator. (Claude Code v2.1.143+; older versions ignore it.)
-    let worktree_obj = settings_obj.entry("worktree").or_insert_with(|| json!({}));
-    let worktree_map = require_object(worktree_obj, "worktree")?;
+    let worktree_map = super::drift::coerced_object(settings_obj, "worktree")?;
     let worktree_configured = if worktree_map.get("bgIsolation") != Some(&json!("none")) {
         worktree_map.insert("bgIsolation".to_string(), json!("none"));
         true
@@ -405,32 +403,6 @@ pub fn settings_json_has_hooks(repo_root: &Path) -> bool {
     };
 
     settings.get("hooks").is_some()
-}
-
-/// Check if settings.local.json has hooks and env configured
-pub fn settings_local_has_hooks(repo_root: &Path) -> bool {
-    let settings_local_path = repo_root.join(".claude/settings.local.json");
-    if !settings_local_path.exists() {
-        return false;
-    }
-
-    let content = match fs::read_to_string(&settings_local_path) {
-        Ok(c) => c,
-        Err(_) => return false,
-    };
-
-    let settings: Value = match serde_json::from_str(&content) {
-        Ok(v) => v,
-        Err(_) => return false,
-    };
-
-    let has_hooks = settings.get("hooks").is_some();
-    let has_env = settings
-        .get("env")
-        .and_then(|e| e.get("CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS"))
-        .is_some();
-
-    has_hooks && has_env
 }
 
 #[cfg(test)]

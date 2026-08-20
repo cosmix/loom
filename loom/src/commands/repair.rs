@@ -801,30 +801,16 @@ fn fix_issue(repo_root: &Path, issue: &RepairIssue) -> Result<bool> {
     {
         fix_hooks(repo_root)?;
         Ok(true)
-    } else if issue
-        .description
-        .contains("Settings not found (.claude/settings.local.json)")
+    } else if issue.description.contains("Loom hook scripts") {
+        crate::fs::permissions::install_loom_hooks()?;
+        Ok(true)
+    } else if let Some(result) = settings_checks::fix_settings_issue(repo_root, &issue.description)
     {
-        fix_sandbox_settings(repo_root)?;
-        fix_hooks_local(repo_root)?;
-        Ok(true)
-    } else if issue
-        .description
-        .contains("Stale knowledge-directory deny in")
-    {
-        // Must be matched before the generic ".claude/settings.local.json"
-        // arm below, which would otherwise swallow this issue (its
-        // description names that file too) and skip the sandbox
-        // regeneration that actually scrubs the stale deny.
-        fix_sandbox_settings(repo_root)?;
-        fix_hooks_local(repo_root)?;
-        Ok(true)
-    } else if issue.description.contains(".claude/settings.local.json") {
-        // Everything else that names this file — missing hooks/env, missing
-        // codex sandbox allowances — is repaired by rewriting it. The
-        // file-absent case is claimed by the arm above, which runs first.
-        fix_hooks_local(repo_root)?;
-        Ok(true)
+        // Claims "Settings not found (.claude/settings.local.json)", "Stale
+        // knowledge-directory deny in", "Stale loom session env in", and the
+        // generic ".claude/settings.local.json" — see its doc comment for the
+        // load-bearing order between those four.
+        result.map(|()| true)
     } else if issue.description.contains("Old unprefixed skill") {
         fix_old_skill(&issue.description)?;
         Ok(true)
@@ -936,13 +922,6 @@ where
     rebuild()
 }
 
-/// Configure hooks and env in settings.local.json
-fn fix_hooks_local(repo_root: &Path) -> Result<()> {
-    use crate::fs::permissions::ensure_loom_hooks_local;
-    ensure_loom_hooks_local(repo_root)?;
-    Ok(())
-}
-
 /// Rebuild the skill keyword index using the built-in skill_index command
 fn rebuild_skill_index() -> Result<()> {
     super::skill_index::execute()
@@ -1018,8 +997,9 @@ fn strip_stale_knowledge_denies(path: &Path) -> Result<()> {
 /// correct there — see `write_default_sandbox_settings`. A worktree's
 /// settings file is not: see `strip_stale_knowledge_denies` for why it gets
 /// a targeted fix instead of regeneration. A worktree with no stale deny,
-/// or no settings file yet, is left untouched.
-fn fix_sandbox_settings(repo_root: &Path) -> Result<()> {
+/// or no settings file yet, is left untouched. `pub(super)`: also called by
+/// `settings_checks::fix_settings_issue`.
+pub(super) fn fix_sandbox_settings(repo_root: &Path) -> Result<()> {
     write_default_sandbox_settings(repo_root)?;
 
     if let Ok(entries) = fs::read_dir(repo_root.join(".worktrees")) {
