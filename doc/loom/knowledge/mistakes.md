@@ -926,3 +926,25 @@ telling them it is final. An acceptance grep written into the spool goes stale w
 here the criterion forbade every mention of `replace-section`, which after the restore
 would have forced workers to write something false in order to pass. When acceptance
 and ground truth disagree, fix the criterion — never the prose.
+
+## Maintainability Ratchet Fails on Shrinkage, Not Just Growth
+
+**What happened:** While healing malformed `hooks`/`env`/`worktree` JSON containers in
+`fs/permissions/{hooks,settings}.rs`, a refactor moved logic into a new
+`fs/permissions/drift.rs` helper. That *shrank* `settings.rs` and its
+`ensure_loom_hooks_local` function below their recorded values in
+`maintainability-baseline.txt`. `cargo test --test maintainability` still failed —
+not for growing past the ceiling, but with "shrank from N to M lines; lower the entry".
+
+**Why:** `maintainability-baseline.txt` entries are exact counts, not ceilings — the
+ratchet (`loom/tests/maintainability.rs` / `tests/maintainability/baseline.rs`) fails
+symmetrically on drift in either direction, at both file and per-function granularity.
+
+**Prevention:** After any edit to a file/function with a baseline entry, run
+`cargo test --test maintainability` once before finishing — don't just eyeball
+`wc -l` against the ceiling. Treat any reported "shrank" line as mandatory, not
+optional: lower that exact entry to the reported value.
+
+**Fix:** Update only the entries the test names, to the exact value it reports —
+never round, never touch entries it didn't flag, never add a new entry for a file/
+function that's still under the 400/50-line limit (those never need one).
