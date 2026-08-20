@@ -96,6 +96,11 @@ fn dispatch_knowledge(command: KnowledgeCommands) -> Result<()> {
             explain,
             json,
         } => knowledge::context::context(stage, query, budget, scope, require_id, explain, json),
+        KnowledgeCommands::Eval {
+            cases,
+            budget_tokens,
+            json,
+        } => knowledge::eval::eval(cases, budget_tokens, json),
         KnowledgeCommands::Sync {
             structural_only,
             json,

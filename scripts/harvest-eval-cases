@@ -1,0 +1,121 @@
+#!/usr/bin/env bash
+# harvest-eval-cases — print DRAFT `loom knowledge eval` cases from a Claude
+# Code session transcript, for a human to label.
+#
+# Every prompt+ids pair below is what retrieval ALREADY delivered — that is
+# exactly what a ground-truth case is supposed to judge, so treat the output
+# as raw material, never as pre-approved cases. A human must read each
+# prompt, decide what SHOULD have come back, and turn the commented-out
+# `# expect:` list into a real `expect:` (keeping only the ids that were
+# actually right) or a `forbid:` (naming the ids that were noise) before it
+# is fit to paste into loom/eval/retrieval-cases.yaml — see Appendix A.20 of
+# doc/PROPOSAL-retrieval-precision.md for the schema `loom knowledge eval`
+# reads.
+#
+# Usage:
+#   scripts/harvest-eval-cases <transcript.jsonl>
+#   scripts/harvest-eval-cases --dir <dir-of-transcripts>
+#
+# What it looks for: every UserPromptSubmit `hook_additional_context`
+# attachment whose content starts with "## Knowledge Brief" (the marker
+# `orchestrator/signals/format/brief.rs` and `hooks/user-prompt-context.sh`
+# both emit) — this excludes the OTHER UserPromptSubmit hook attachment,
+# `hooks/skill-trigger.sh`'s skill suggestions, which share the same
+# attachment shape but never carry retrieval ids. Each brief attachment's
+# `parentUuid` chain is walked back to the real `type: "user"` prompt entry
+# that triggered it (the two are rarely adjacent lines: other attachments,
+# such as skill-trigger's own, chain in between).
+#
+# A line that is not valid JSON, or a JSON object missing the fields this
+# script expects, is skipped — never fatal. Prints only to stdout; this
+# script never writes into loom/eval/.
+
+set -euo pipefail
+
+JQ_PROGRAM='
+def slugify(text):
+  (text
+   | ascii_downcase
+   | gsub("[^a-z0-9]+"; " ")
+   | split(" ")
+   | map(select(length > 0))
+   | .[0:6]
+   | join("-"));
+
+def prompt_text(entry):
+  entry.message.content as $c
+  | if ($c | type) == "string" then $c
+    elif ($c | type) == "array" then
+      ([$c[] | select(.type == "text") | .text] | join("\n"))
+    else null end;
+
+def find_prompt_ancestor($byUuid; entry):
+  if entry == null then null
+  elif entry.type == "user" and entry.message.content != null then entry
+  else find_prompt_ancestor($byUuid; $byUuid[entry.parentUuid])
+  end;
+
+(map(select(.uuid != null)) | INDEX(.uuid)) as $byUuid
+| .[]
+| try (
+    select(.type == "attachment"
+      and ((.attachment // {}) | type) == "object"
+      and (.attachment.type // "") == "hook_additional_context"
+      and (.attachment.hookName // "") == "UserPromptSubmit")
+    | . as $att
+    | find_prompt_ancestor($byUuid; $byUuid[$att.parentUuid]) as $prompt_entry
+    | select($prompt_entry != null)
+    | prompt_text($prompt_entry) as $prompt
+    | select($prompt != null and ($prompt | length) > 0)
+    | ($att.attachment.content // [] | join("\n")) as $brief
+    | select($brief | startswith("## Knowledge Brief"))
+    | ([$brief | scan("(?m)^- `([^`]+)`")] | map(.[0])) as $ids
+    | "- name: " + slugify($prompt) + "\n"
+      + "  query: " + ($prompt | @json) + "\n"
+      + "  mode: prompt\n"
+      + "  # expect:\n"
+      + (if ($ids | length) > 0
+         then ($ids | map("  #   - " + (. | @json)) | join("\n"))
+         else "  #   - \"\"  # no ids parsed - inspect the brief manually" end)
+      + "\n"
+  ) catch empty
+'
+
+harvest_file() {
+  local file="$1"
+  # First pass tolerates a malformed line (fromjson? // empty drops it rather
+  # than aborting the pipeline); second pass runs the extraction over the
+  # whole session at once, since the ancestor walk needs every uuid in scope.
+  jq -R 'fromjson? // empty' "$file" 2>/dev/null | jq -s -r "$JQ_PROGRAM" 2>/dev/null
+}
+
+usage() {
+  cat >&2 <<'USAGE'
+usage: harvest-eval-cases <transcript.jsonl>
+       harvest-eval-cases --dir <dir-of-transcripts>
+USAGE
+}
+
+if [[ $# -eq 0 ]]; then
+  usage
+  exit 1
+fi
+
+if [[ "$1" == "--dir" ]]; then
+  dir="${2:-}"
+  if [[ -z "$dir" ]]; then
+    usage
+    exit 1
+  fi
+  shopt -s nullglob
+  files=("$dir"/*.jsonl)
+  if [[ ${#files[@]} -eq 0 ]]; then
+    echo "no *.jsonl files found under $dir" >&2
+    exit 0
+  fi
+  for file in "${files[@]}"; do
+    harvest_file "$file"
+  done
+else
+  harvest_file "$1"
+fi

@@ -1,0 +1,120 @@
+# Ground-truth cases for `loom knowledge eval` (doc/PROPOSAL-retrieval-precision.md
+# section 5, Appendix A.20). Every `expect`/`forbid` id below was observed in
+# real `loom knowledge context --query "<text>" --budget-tokens <n> --json |
+# jq -r '.items[].id'` output from THIS checkout, re-verified immediately
+# before this file was committed - none is invented, and `expect`/`forbid`
+# never name an id that did not actually come back for its query.
+#
+# Cases 1-5 (the two prose/symbol-collision cases, the filesystem-path case,
+# and the two machine-generated-prompt cases) are EXPECTED TO FAIL today:
+# their `forbid` ids are exactly what the live index returns for these
+# queries right now, through the failure shapes Appendix A.1-A.6 fix
+# (identifier-shaped evidence for exact rungs, query stopwording + a
+# candidacy floor, test-path downweight, magnitude-aware fusion, the emit
+# floor). They are the regression suite for that work: once A.1-A.6 land,
+# these cases should flip to PASS on their own, and a case flipping back to
+# FAIL after that is a real regression, not eval-harness noise.
+#
+# Cases 6-13 are current wins (`expect` hits within the top 5, most already
+# ranked 1st or 2nd) that must NOT regress while Wave 2 lands.
+#
+# pass_floor is Appendix A.20's initial value; raise it once precision
+# improves so the gate keeps tracking the state of the art instead of a
+# floor sized for day one.
+pass_floor: 0.5
+
+cases:
+  # --- Failure shape 1: prose words collide with symbol names (A.1) -------
+  - name: prose-symbol-collision-repair-point-complete
+    query: "why doesn't loom repair --fix do it, the point is that the plan should complete"
+    forbid:
+      - "entry-points.md#command-dispatch-cli-types-rs#0"
+      - "loom/src/commands/stage/complete.rs#function:complete"
+      - "loom/src/commands/repair.rs#function:fix_issue"
+
+  - name: prose-symbol-collision-configure-hooks
+    query: "how do I configure the hooks so sessions get the right settings"
+    forbid:
+      - "loom/src/fs/permissions/hooks.rs#function:configure_loom_hooks"
+      - "entry-points.md#command-dispatch-cli-types-rs#0"
+
+  # --- Failure shape 2: a filesystem path extracts prose-collision terms --
+  - name: filesystem-path-write-home-collision
+    query: "write the recommendation in /home/dkaponis/src/loom/doc"
+    forbid:
+      - "loom/tests/integration/plan_verify.rs#constant:LOOM"
+      - "loom/src/orchestrator/scheduling_report.rs#function:write"
+
+  # --- Failure shape 3: machine-generated prompts have no type filter (A.4)
+  # These pin the retrieval-side symptom: even after the hook stops calling
+  # retrieval for these prompt shapes (A.4), a caller who DOES query with one
+  # (the CLI, or a stage brief seeded from raw agent output) should see the
+  # candidacy floor (A.2) and shaped-evidence gate (A.1) suppress this noise,
+  # since none of the XML/notice vocabulary is identifier-shaped or rare.
+  - name: machine-generated-task-notification-noise
+    query: '<task-notification><agent name="reviewer">Background agent finished</agent><status>completed</status></task-notification>'
+    forbid:
+      - "loom/src/commands/status.rs#module:merge_status"
+      - "loom/src/git/merge/status.rs#implementation:MergeStatusReport"
+      - "mistakes/sessions-and-liveness.md#in-memory-dedup-makes-every-daemon-restart-replay-old-crashes-2026-08-10#0"
+
+  - name: machine-generated-background-agent-stopped-noise
+    query: 'Background agent "reviewer" was stopped by the user.'
+    forbid:
+      - "loom/src/orchestrator/terminal/native/window_ops.rs#function:close_window_by_title"
+      - "loom/src/orchestrator/terminal/native/window_ops.rs#function:window_exists_by_title"
+      - "loom/src/orchestrator/core/spool_drain_tests.rs#function:entry_is_attributed_to_the_worktree_it_was_spooled_in_not_a_sibling_stage"
+
+  # --- Genuine wins: must not regress -------------------------------------
+  - name: genuine-win-phantom-merges
+    query: "phantom merge lesson stage marked merged but branch never actually merged"
+    expect:
+      - "mistakes/phantom-merges.md#phantom-merges-from-defensive-assume-merged-branches-2026-04-15#0"
+
+  - name: genuine-win-sandbox-settings-rules
+    query: "sandbox settings rules for claude code worktree sessions"
+    expect:
+      - "mistakes/sandbox-and-settings.md#worktree-settings-are-a-whole-object-rebuild-unemitted-keys-vanish-2026-08-07#0"
+
+  - name: genuine-win-source-graph-honesty-contract
+    query: "Honesty Contract"
+    expect:
+      - "architecture/source-graph.md#the-honesty-contract#0"
+
+  - name: genuine-win-delivery-epoch-suppression
+    query: "Delivery Records and Epoch Suppression"
+    expect:
+      - "architecture/context-retrieval.md#delivery-records-and-epoch-suppression#0"
+
+  - name: genuine-win-session-identity-env-staleness
+    query: "per session identity persisted in settings env blocks goes stale"
+    expect:
+      - "mistakes.md#per-session-identity-persisted-in-settings-env-blocks-goes-stale-and-shadows-the-wrapper-env-2026-07-22#0"
+
+  # --- Symbol queries that SHOULD reach source nodes ----------------------
+  - name: symbol-query-backticked-plan-key
+    query: "what does `plan_key` do"
+    expect:
+      - "loom/src/context/delivery.rs#function:plan_key"
+
+  - name: symbol-query-snake-case-reconcile-source-graph
+    query: "where is reconcile_source_graph called"
+    expect:
+      - "loom/src/context/refresh/source_graph.rs#function:reconcile_source_graph"
+
+  # --- mode: stage exercise --------------------------------------------
+  # Same target as symbol-query-snake-case-reconcile-source-graph above, but
+  # through the mode: stage path: stage_fields get newline-joined onto query
+  # (build_query_text, mirroring build_stage_query_text at
+  # orchestrator/signals/retrieval.rs:128-148) before retrieval ever runs, so
+  # this also demonstrates that an ExactPath/ExactSymbol rung survives the
+  # dilution a real stage's file/acceptance-criteria list adds, where a
+  # lexical-only prose match would not.
+  - name: genuine-win-stage-mode-source-node
+    query: "fix reconcile_source_graph so it handles a mid-session refresh"
+    mode: stage
+    stage_fields:
+      - "loom/src/context/refresh/source_graph.rs"
+      - "cargo test -p loom"
+    expect:
+      - "loom/src/context/refresh/source_graph.rs#function:reconcile_source_graph"

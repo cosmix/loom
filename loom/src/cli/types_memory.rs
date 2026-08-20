@@ -2,6 +2,7 @@
 
 use crate::validation::{clap_id_validator, clap_knowledge_content_validator};
 use clap::Subcommand;
+use std::path::PathBuf;
 
 #[derive(Subcommand)]
 pub enum KnowledgeCommands {
@@ -48,6 +49,19 @@ pub enum KnowledgeCommands {
         /// Show per-item scores and selection reasons
         #[arg(long)]
         explain: bool,
+        /// Machine-readable JSON output (suppresses human text)
+        #[arg(long)]
+        json: bool,
+    },
+
+    /// Score retrieval against a checked-in case file (precision@5 / MRR)
+    Eval {
+        /// Cases file; defaults to loom/eval/retrieval-cases.yaml under the project root
+        #[arg(long)]
+        cases: Option<PathBuf>,
+        /// Override the per-case token budget
+        #[arg(long)]
+        budget_tokens: Option<usize>,
         /// Machine-readable JSON output (suppresses human text)
         #[arg(long)]
         json: bool,

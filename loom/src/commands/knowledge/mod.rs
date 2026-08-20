@@ -1,5 +1,6 @@
 //! Knowledge command - manage curated codebase knowledge.
 pub mod context;
+pub mod eval;
 pub mod sync;
 
 use crate::fs::knowledge::{KnowledgeDir, KnowledgeTarget};
