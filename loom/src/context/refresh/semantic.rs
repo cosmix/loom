@@ -91,21 +91,31 @@ impl SemanticOutcome {
     }
 }
 
-/// Best-effort semantic reconciliation folded into `refresh`'s result: any
-/// failure below degrades to a stale [`Freshness`] naming it; an unresolvable
-/// project root leaves `current` as is.
-pub(super) fn reconcile_semantic_best_effort(
+/// Best-effort semantic reconciliation for `project_root`: any failure below
+/// degrades to a stale [`Freshness`] naming it — this never returns an `Err`,
+/// by design, so a caller on a hot or fire-and-forget path never has to
+/// decide what to do with one.
+///
+/// `pub(crate)`, not `pub(super)`: reachable from
+/// `commands::hook::reconcile_graph` (A.12/A.22's checkout-scope background
+/// reconcile), which needs exactly this "clean tree → Base, dirty tree →
+/// `_local` overlay" policy and must not re-derive it — a second derivation
+/// of one rule is the drift risk `architecture/context-retrieval.md`'s
+/// `plan_key` reasoning already warns about (`orchestrator/signals/retrieval.rs`
+/// routes through one helper for the same reason). No other visibility in
+/// this module was widened for that call site.
+///
+/// Takes `project_root` directly rather than a knowledge root — the only
+/// thing [`try_reconcile_semantic`] actually needs, and what a caller with no
+/// knowledge tree (a source-graph-only checkout, see `retrieve.rs`'s
+/// `resolve_roots_optional` doc comment) has on hand. [`refresh`] itself only
+/// ever has a knowledge root, so [`reconcile_semantic_best_effort_from_knowledge_root`]
+/// derives one and calls through.
+pub(crate) fn reconcile_semantic_best_effort(
     store: &ContextStore,
-    knowledge_root: &Path,
+    project_root: &Path,
     current: Freshness,
 ) -> SemanticOutcome {
-    let Some(project_root) = derive_project_root(knowledge_root) else {
-        return SemanticOutcome::skipped(
-            current,
-            "project root could not be derived from the knowledge root",
-        );
-    };
-
     match try_reconcile_semantic(store, project_root) {
         Ok(outcome) => outcome,
         Err(error) => {
@@ -118,6 +128,25 @@ pub(super) fn reconcile_semantic_best_effort(
             SemanticOutcome::skipped(freshness, reason)
         }
     }
+}
+
+/// [`reconcile_semantic_best_effort`] for a caller that only has a knowledge
+/// root, not the project root itself — derives it via [`derive_project_root`],
+/// degrading when the layout does not match. [`super::refresh`] is the only
+/// production caller; it always has a knowledge root by its own contract, so
+/// this wrapper stays `pub(super)` rather than widening further.
+pub(super) fn reconcile_semantic_best_effort_from_knowledge_root(
+    store: &ContextStore,
+    knowledge_root: &Path,
+    current: Freshness,
+) -> SemanticOutcome {
+    let Some(project_root) = derive_project_root(knowledge_root) else {
+        return SemanticOutcome::skipped(
+            current,
+            "project root could not be derived from the knowledge root",
+        );
+    };
+    reconcile_semantic_best_effort(store, project_root, current)
 }
 
 /// Derive the project root from `knowledge_root` (`<root>/doc/loom/knowledge`),

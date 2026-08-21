@@ -1,8 +1,11 @@
 //! Source-channel packing tests for [`crate::context::pack::pack`].
 
-use super::source_fixtures::{full_node, graph_with_node, source_candidate};
+use super::source_fixtures::{full_node, graph, graph_with_node, source_candidate};
+use crate::context::config::RetrievalConfig;
+use crate::context::graph_store::ResolvedGraph;
 use crate::context::pack::*;
 use crate::context::rank::*;
+use crate::context::rank_source::rank_source;
 use crate::context::schema::*;
 use std::path::PathBuf;
 
@@ -62,6 +65,7 @@ fn test_source_item_carries_every_field() {
         reasons: vec![SelectionReason::ExactSymbol, SelectionReason::Lexical],
         token_count: 22,
         matched_term_count: 2,
+        confidence_ceiling: None,
     };
 
     let packed = pack(
@@ -151,6 +155,94 @@ fn rule_29_a_long_signature_excerpt_is_truncated_and_marked() {
     assert!(
         prefix.len() < long_signature.len(),
         "the excerpt must actually be shorter than the full signature"
+    );
+}
+
+/// Two nodes that differ only in whether their name can be an English word:
+/// `gini` is short and unshaped, `pruneEvictionWindow` is camelCase. Both are
+/// corpus-rare, so rarity alone cannot tell them apart — which is the point.
+fn confidence_probe_graph() -> ResolvedGraph {
+    graph(vec![
+        (
+            "src/gini.rs",
+            vec![full_node(
+                "src/gini.rs#function:gini",
+                "src/gini.rs",
+                &["gini"],
+                "fn gini()",
+            )],
+        ),
+        (
+            "src/prune.rs",
+            vec![full_node(
+                "src/prune.rs#function:pruneEvictionWindow",
+                "src/prune.rs",
+                &["pruneEvictionWindow"],
+                "fn pruneEvictionWindow()",
+            )],
+        ),
+    ])
+}
+
+/// Rank `text` against [`confidence_probe_graph`] and pack the result, then
+/// read back one item's PUBLISHED confidence.
+///
+/// Deliberately end to end through the real ranker rather than a hand-built
+/// candidate: the confidence cap is computed in `rank_source`, carried on
+/// `RankedCandidate`, and applied in `pack`, and a hand-built candidate would
+/// only ever test the last of those three.
+fn published_confidence(text: &str, id: &str) -> Confidence {
+    let source_graph = confidence_probe_graph();
+    let query = RankQuery {
+        text: text.to_string(),
+        ..RankQuery::default()
+    };
+    let ranked = rank_source(&query, &source_graph, &RetrievalConfig::default());
+    let packed = pack(&request(200), &ranked, &[], Some(&source_graph));
+    packed
+        .items
+        .iter()
+        .find(|item| item.id.as_str() == id)
+        .unwrap_or_else(|| panic!("{id} must be packed, got {:?}", packed.items))
+        .confidence
+}
+
+/// An exact match admitted by nothing but corpus rarity must reach the reader
+/// labelled `medium`. `Confidence::from_reasons` sees only `ExactSymbol` and
+/// would say `high`, so this fails if the cap is dropped anywhere along the
+/// ranker → candidate → packer path.
+#[test]
+fn a_rare_only_exact_match_is_published_as_medium() {
+    assert_eq!(
+        published_confidence(
+            "where is gini and pruneEvictionWindow used",
+            "src/gini.rs#function:gini"
+        ),
+        Confidence::Medium,
+        "an ordinary-looking name admitted only by rarity must not claim `high`"
+    );
+}
+
+/// The other side of the same prompt: a camelCase name is evidence in itself,
+/// so it keeps `high` even though it is exactly as rare as `gini`.
+#[test]
+fn a_shaped_exact_match_is_published_as_high() {
+    assert_eq!(
+        published_confidence(
+            "where is gini and pruneEvictionWindow used",
+            "src/prune.rs#function:pruneEvictionWindow"
+        ),
+        Confidence::High
+    );
+}
+
+/// Backticks are full-strength evidence too: the same `gini` the first test
+/// demotes comes back `high` once the writer marks it as code.
+#[test]
+fn a_backticked_exact_match_is_published_as_high() {
+    assert_eq!(
+        published_confidence("where is `gini` used", "src/gini.rs#function:gini"),
+        Confidence::High
     );
 }
 

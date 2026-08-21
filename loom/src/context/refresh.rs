@@ -23,6 +23,13 @@ pub use source_graph::{
     mark_semantic_stale, reconcile_source_graph, SourceGraphOutcome, SourceGraphScope,
 };
 
+// Crate-visible only: `commands::hook::reconcile_graph` (A.12/A.22's
+// checkout-scope background reconcile) needs the exact same "clean tree →
+// Base, dirty tree → `_local` overlay" policy this implements, and must call
+// it rather than re-derive it. See the function's own doc comment for the
+// full reasoning; no other item in `semantic` was widened for this.
+pub(crate) use semantic::reconcile_semantic_best_effort;
+
 /// One entry of the extractor registry the semantic refresh drives.
 ///
 /// Named here rather than in `context::extract` because the boxing is the
@@ -193,7 +200,11 @@ fn semantic_freshness_against_head(knowledge_root: &Path, stored: Freshness) -> 
 /// UTF-8 character boundary. This runs inside `evaluate`, reachable from the
 /// prompt hook, which is contractually forbidden to ever disturb a session —
 /// see `hooks/user-prompt-context.sh`'s fail-open contract.
-fn short_revision(revision: &str) -> String {
+///
+/// `pub(crate)`: `context::retrieve::graph` needs the identical truncation
+/// for its A.11 degraded-message (`"source graph base <rev8> missing"`) and
+/// must not grow a second, possibly-drifting copy of a panic-safety rule.
+pub(crate) fn short_revision(revision: &str) -> String {
     revision.chars().take(8).collect()
 }
 
@@ -202,7 +213,8 @@ const STRUCTURAL_ONLY_REASON: &str = "--structural-only";
 
 /// Rebuild the structural layer when it is stale; persist catalog and state.
 /// `structural_only` distinguishes catalog-only from also best-effort
-/// reconciling the semantic layer (see `source_graph::reconcile_semantic_best_effort`).
+/// reconciling the semantic layer (see
+/// `semantic::reconcile_semantic_best_effort_from_knowledge_root`).
 pub fn refresh(
     store: &ContextStore,
     knowledge_root: &Path,
@@ -214,7 +226,11 @@ pub fn refresh(
         let semantic = if structural_only {
             SemanticOutcome::skipped(evaluated.semantic, STRUCTURAL_ONLY_REASON)
         } else {
-            semantic::reconcile_semantic_best_effort(store, knowledge_root, evaluated.semantic)
+            semantic::reconcile_semantic_best_effort_from_knowledge_root(
+                store,
+                knowledge_root,
+                evaluated.semantic,
+            )
         };
         return Ok(RefreshOutcome {
             rebuilt: false,
@@ -227,7 +243,11 @@ pub fn refresh(
     let mut outcome = rebuild_and_persist(store, knowledge_root, evaluated.semantic)?;
     if !structural_only {
         let current = outcome.semantic.freshness.clone();
-        outcome.semantic = semantic::reconcile_semantic_best_effort(store, knowledge_root, current);
+        outcome.semantic = semantic::reconcile_semantic_best_effort_from_knowledge_root(
+            store,
+            knowledge_root,
+            current,
+        );
     }
     Ok(outcome)
 }

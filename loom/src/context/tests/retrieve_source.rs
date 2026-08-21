@@ -156,3 +156,91 @@ fn retrieve_for_stage_packs_source_nodes_with_no_knowledge_tree_at_all() {
         "the pack must say WHY the structural layer is empty, got: {detail}"
     );
 }
+
+// A.11: `ContextPack::degraded` fires exactly when `state.json` names a
+// semantic revision whose base layer went missing — never for a revision
+// that was simply never built (`retrieve::graph::degraded_reason`'s two
+// branches). These write `state.json` directly with `ContextStore::update_state`
+// rather than running a real `reconcile_source_graph`, so each test isolates
+// one branch instead of depending on git/dirty-tree behavior neither
+// `retrieve_for_stage` nor this fixture own.
+
+/// A `state.json` revision with no matching `graph/base/<rev>.json` on disk —
+/// the real, currently-reachable degraded mode `load_resolved_graph` reports.
+#[test]
+fn retrieve_for_stage_reports_degraded_when_the_semantic_base_is_missing() {
+    let temp = project_with_knowledge();
+    let root = temp.path();
+    let work_dir = WorkDir::new(root).unwrap();
+    let store = ContextStore::open(&work_dir).unwrap();
+    store
+        .update_state(|state| {
+            state.semantic = Freshness {
+                revision: "deadbeef00".to_string(),
+                ..Freshness::default()
+            };
+        })
+        .unwrap();
+
+    let query = StageQuery::new(root, "anything at all");
+    let pack = retrieve_for_stage(&query, 500).unwrap();
+
+    let degraded = pack
+        .degraded
+        .as_deref()
+        .expect("a semantic revision with no base file must be reported degraded");
+    assert!(
+        degraded.contains("deadbeef"),
+        "the message must name the missing revision, got: {degraded}"
+    );
+}
+
+/// A published base for the exact revision `state.json` names — the honest,
+/// healthy case `Semantic: current` describes.
+#[test]
+fn retrieve_for_stage_is_not_degraded_when_the_semantic_base_exists() {
+    let temp = project_with_knowledge();
+    let root = temp.path();
+    let work_dir = WorkDir::new(root).unwrap();
+    let store = ContextStore::open(&work_dir).unwrap();
+    let graph_store = GraphStore::new(store.root(), work_dir.root());
+
+    let revision = "cafef00dcafef00d";
+    let layer = GraphLayer {
+        revision: revision.to_string(),
+        built_at: None,
+        files: BTreeMap::new(),
+    };
+    graph_store.publish_base(revision, &layer).unwrap();
+    store
+        .update_state(|state| {
+            state.semantic = Freshness {
+                revision: revision.to_string(),
+                ..Freshness::default()
+            };
+        })
+        .unwrap();
+
+    let query = StageQuery::new(root, "anything at all");
+    let pack = retrieve_for_stage(&query, 500).unwrap();
+
+    assert_eq!(
+        pack.degraded, None,
+        "a published base for the recorded revision must never read as degraded"
+    );
+}
+
+/// No `state.json` write at all: the semantic layer stays at its empty
+/// default revision, which reads as "never built", not "degraded".
+#[test]
+fn retrieve_for_stage_is_not_degraded_when_the_semantic_layer_was_never_built() {
+    let temp = project_with_knowledge();
+    let query = StageQuery::new(temp.path(), "anything at all");
+
+    let pack = retrieve_for_stage(&query, 500).unwrap();
+
+    assert_eq!(
+        pack.degraded, None,
+        "an empty semantic revision means never built, not degraded"
+    );
+}

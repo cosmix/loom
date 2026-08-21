@@ -29,6 +29,7 @@ fn candidate(id: &str, channel: Channel, score: f32, token_count: usize) -> Rank
         reasons: vec![SelectionReason::Lexical],
         token_count,
         matched_term_count: 1,
+        confidence_ceiling: None,
     }
 }
 
@@ -114,6 +115,7 @@ fn rule_29_knowledge_candidates_still_become_knowledge_chunk_items() {
         reasons: vec![SelectionReason::ExactPath],
         token_count: 4,
         matched_term_count: 0,
+        confidence_ceiling: None,
     };
     let packed = pack(&request(4), &[ranked], &[source], None);
     let item = &packed.items[0];

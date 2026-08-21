@@ -16,6 +16,9 @@ fn candidate(
         reasons,
         token_count,
         matched_term_count: 0,
+        // Fusion must carry a ceiling through untouched, but none of these
+        // fixtures exercise the demotion, so they claim no cap.
+        confidence_ceiling: None,
     }
 }
 

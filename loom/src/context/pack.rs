@@ -3,8 +3,8 @@
 use crate::context::graph_store::ResolvedGraph;
 use crate::context::rank::RankedCandidate;
 use crate::context::schema::{
-    estimate_tokens, Channel, ChunkId, Confidence, ContextItem, ContextPack, Coverage, Freshness,
-    ItemKind, KnowledgeChunk, LifecycleState, OmissionSummary, SourceNode, SourcePointer,
+    estimate_tokens, Channel, ChunkId, ContextItem, ContextPack, Coverage, Freshness, ItemKind,
+    KnowledgeChunk, LifecycleState, OmissionSummary, SourceNode, SourcePointer,
     BYTES_PER_TOKEN_ESTIMATE, EXCERPT_MAX_TOKENS, EXCERPT_TRUNCATION_MARKER,
 };
 use std::collections::BTreeMap;
@@ -93,7 +93,11 @@ fn build_chunk_item(candidate: &RankedCandidate, chunk: &KnowledgeChunk) -> Cont
         token_count: candidate.token_count,
         score: candidate.score,
         reasons: candidate.reasons.clone(),
-        confidence: Confidence::from_reasons(&candidate.reasons),
+        // Never `Confidence::from_reasons` directly: the ranker can cap a
+        // candidate below what its reasons imply (an exact match admitted only
+        // by corpus rarity is `Medium`, not `High`), and that cap lives on the
+        // candidate, not in the reason list.
+        confidence: candidate.confidence(),
         state: chunk.state,
         content_hash: chunk.content_hash.clone(),
         excerpt: Some(bounded_excerpt(&chunk.body)),
@@ -147,7 +151,9 @@ fn build_source_item(candidate: &RankedCandidate, node: &SourceNode) -> ContextI
         token_count: candidate.token_count,
         score: candidate.score,
         reasons: candidate.reasons.clone(),
-        confidence: Confidence::from_reasons(&candidate.reasons),
+        // See `build_chunk_item`: the cap rides on the candidate, not the
+        // reasons, so both item builders must ask the candidate.
+        confidence: candidate.confidence(),
         state: LifecycleState::Active,
         content_hash: node.body_hash.clone(),
         excerpt: Some(bounded_excerpt(&node.signature)),
