@@ -1,0 +1,625 @@
+#!/usr/bin/env bash
+# retrieval-ab — before/after measurement harness for
+# doc/PROPOSAL-retrieval-precision.md section 5: precision@5 / MRR / forbid
+# violations on the eval set, mean injected tokens per brief, and p95 hook
+# wall time, for BASELINE (commit d06fd2c2, the last commit before this work
+# started) vs CURRENT (this working tree).
+#
+# Usage:
+#   scripts/retrieval-ab [--baseline-rev <rev>] [--out <dir>]
+#   scripts/retrieval-ab --clean [--out <dir>]
+#
+# This script never runs cargo. It prints the exact build commands and exits
+# 1 when either binary is missing, so the caller runs them (ideally under
+# scripts/guarded-cargo.sh's RAM watchdog) and re-runs this script.
+#
+# -----------------------------------------------------------------------
+# ISOLATION CONTRACT — read before changing where anything is invoked from
+# -----------------------------------------------------------------------
+# `loom knowledge context` and `loom hook user-prompt` are NOT read-only:
+# every call opportunistically refreshes the structural (knowledge) catalog
+# cache (context::retrieve::resolve_catalog), files a delivery-dedupe
+# record, and — on the CURRENT binary, which carries A.12 — may spawn a
+# DETACHED background `loom hook reconcile-graph` (a full tree-sitter
+# rebuild of the source graph) whenever the pack it just built reports the
+# semantic layer stale or degraded
+# (loom/src/commands/hook/reconcile_graph.rs `spawn_if_needed`). This
+# checkout's own `.loom/cache/context-v1/state.json` records a
+# `semantic.revision` several commits behind HEAD, so that trigger is not
+# hypothetical — it is the condition this checkout is in right now. A
+# background reconcile spawned against the real checkout would (a) mutate
+# the real index, which this harness is forbidden from doing, and (b) burn
+# real CPU/RAM on a machine that was just rebooted from an OOM caused by an
+# unbounded loom/cargo process (see scripts/guarded-cargo.sh's header).
+#
+# So every invocation below runs with its CWD inside an isolated "measure
+# root" — a plain directory with NO `.git` — one per binary, seeded ONCE
+# from a snapshot of this checkout's real `doc/loom/knowledge/` and
+# `.loom/cache/context-v1/` (so both binaries score against the identical
+# index: baseline vs current isolates the retrieval CODE, not the data).
+# Each measure root additionally gets:
+#   - an EMPTY `.work/` marker directory. `WorkDir::new`
+#     (loom/src/fs/work_dir.rs) tries `<hint>/.work` FIRST and only walks
+#     upward past it as a fallback — without this marker, a measure root
+#     living anywhere under the main checkout (or reachable by an upward
+#     walk from one) would resolve straight past it to the REAL `.work/`,
+#     defeating the isolation entirely.
+#   - `state.json` patched (`.semantic.stale = false`, via jq) and a
+#     pre-seeded, periodically-refreshed `reconcile.lock` "just finished"
+#     marker (see `seed_reconcile_lock`) — belt-and-suspenders so
+#     `reconcile_graph::spawn_if_needed` never has a live reason to fire
+#     even if the copied state reads stale or degraded despite the patch
+#     (no `.git` in the mirror means the HEAD-comparison half of
+#     `evaluate()` always falls through to the stored, patched value — see
+#     `context/refresh.rs`'s `semantic_freshness_against_head` — but the
+#     lock is kept fresh anyway, in case a future code change adds a second
+#     staleness path this comment does not know about).
+# $OUT itself defaults to outside the checkout (`$TMPDIR`) for the same
+# reason, and so a plain `rm -rf "$OUT"` can never touch anything tracked.
+#
+# This script never runs `loom knowledge sync`, never runs cargo, and never
+# writes under the main checkout's `loom/eval/` or `.loom/` — only under the
+# measure roots and worktree this script creates inside `$OUT`.
+
+set -euo pipefail
+
+# --------------------------------------------------------------------------
+# Args
+# --------------------------------------------------------------------------
+BASELINE_REV="d06fd2c2"
+OUT="${TMPDIR:-/tmp}/loom-retrieval-ab"
+DO_CLEAN=0
+
+usage() {
+	cat >&2 <<'USAGE'
+usage: retrieval-ab [--baseline-rev <rev>] [--out <dir>]
+       retrieval-ab --clean [--out <dir>]
+USAGE
+}
+
+while [[ $# -gt 0 ]]; do
+	case "$1" in
+	--baseline-rev)
+		BASELINE_REV="${2:?--baseline-rev needs a value}"
+		shift 2
+		;;
+	--out)
+		OUT="${2:?--out needs a value}"
+		shift 2
+		;;
+	--clean)
+		DO_CLEAN=1
+		shift
+		;;
+	-h | --help)
+		usage
+		exit 0
+		;;
+	*)
+		echo "retrieval-ab: unknown argument '$1'" >&2
+		usage
+		exit 1
+		;;
+	esac
+done
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+BASELINE_SRC="$OUT/baseline-src"
+BIN_BASELINE="$OUT/bin/loom-baseline"
+BIN_CURRENT="$OUT/bin/loom-current"
+MIRROR_BASELINE="$OUT/measure-root/baseline"
+MIRROR_CURRENT="$OUT/measure-root/current"
+RESULTS_DIR="$OUT/results"
+CASES_YAML="$REPO_ROOT/loom/eval/retrieval-cases.yaml"
+CASES_JSON="$RESULTS_DIR/cases.json"
+CASE_RESULTS="$RESULTS_DIR/case-results.ndjson"
+HOOK_RESULTS="$RESULTS_DIR/hook-results.ndjson"
+METRIC1_JSON="$RESULTS_DIR/metric1.json"
+METRIC23_JSON="$RESULTS_DIR/metric23.json"
+PROMPTS_FILE="$SCRIPT_DIR/retrieval-ab-prompts.txt"
+
+if [[ "$DO_CLEAN" -eq 1 ]]; then
+	if git -C "$REPO_ROOT" worktree list --porcelain 2>/dev/null | rg -qF "worktree $BASELINE_SRC"; then
+		git -C "$REPO_ROOT" worktree remove --force "$BASELINE_SRC" || true
+	fi
+	rm -rf "$OUT"
+	echo "retrieval-ab: removed $OUT" >&2
+	exit 0
+fi
+
+# --------------------------------------------------------------------------
+# Preflight
+# --------------------------------------------------------------------------
+for tool in jq git python3; do
+	command -v "$tool" >/dev/null 2>&1 || {
+		echo "retrieval-ab: '$tool' is required and not on PATH" >&2
+		exit 1
+	}
+done
+python3 -c 'import yaml' 2>/dev/null || {
+	echo "retrieval-ab: python3's yaml module (PyYAML) is required to parse" >&2
+	echo "  $CASES_YAML — no 'yq' was found on PATH either. Install PyYAML" >&2
+	echo "  ('pip install pyyaml') or add 'yq' and adapt the conversion step." >&2
+	exit 1
+}
+[[ -f "$CASES_YAML" ]] || {
+	echo "retrieval-ab: no cases file at $CASES_YAML" >&2
+	exit 1
+}
+[[ -f "$PROMPTS_FILE" ]] || {
+	echo "retrieval-ab: no prompt corpus at $PROMPTS_FILE" >&2
+	exit 1
+}
+
+# Cross-platform hard timeout, matching hooks/user-prompt-context.sh's own
+# gtimeout/timeout/none fallback so this harness never wedges on a hung
+# binary.
+run_timeout() {
+	local secs="$1"
+	shift
+	if command -v gtimeout >/dev/null 2>&1; then
+		gtimeout "$secs" "$@"
+	elif command -v timeout >/dev/null 2>&1; then
+		timeout "$secs" "$@"
+	else
+		"$@"
+	fi
+}
+
+# --------------------------------------------------------------------------
+# Ensure both binaries exist — print build commands and exit if not. This
+# script never runs cargo itself (see the file header).
+# --------------------------------------------------------------------------
+ensure_binaries() {
+	local missing=0
+	mkdir -p "$OUT/bin"
+
+	if [[ ! -x "$BIN_BASELINE" ]]; then
+		missing=1
+		cat >&2 <<EOF
+
+Missing baseline binary: $BIN_BASELINE
+Build it with (never run by this script):
+
+  git -C "$REPO_ROOT" worktree add --detach "$BASELINE_SRC" "$BASELINE_REV"
+  CARGO_TARGET_DIR="$OUT/target-baseline" scripts/guarded-cargo.sh \\
+      cargo build --release --manifest-path "$BASELINE_SRC/loom/Cargo.toml"
+  mkdir -p "$OUT/bin"
+  cp "$OUT/target-baseline/release/loom" "$BIN_BASELINE"
+EOF
+	fi
+
+	if [[ ! -x "$BIN_CURRENT" ]]; then
+		missing=1
+		cat >&2 <<EOF
+
+Missing current binary: $BIN_CURRENT
+Build it with (never run by this script; run this AFTER the working tree
+has settled — building mid-edit against other agents' in-flight changes
+gives a non-reproducible binary):
+
+  CARGO_TARGET_DIR="$OUT/target-current" scripts/guarded-cargo.sh \\
+      cargo build --release --manifest-path "$REPO_ROOT/loom/Cargo.toml"
+  mkdir -p "$OUT/bin"
+  cp "$OUT/target-current/release/loom" "$BIN_CURRENT"
+EOF
+	fi
+
+	if [[ "$missing" -eq 1 ]]; then
+		echo "" >&2
+		echo "retrieval-ab: build the binary/binaries above, then re-run this script." >&2
+		exit 1
+	fi
+}
+
+# --------------------------------------------------------------------------
+# Seed one isolated measure root — see the ISOLATION CONTRACT header.
+# --------------------------------------------------------------------------
+seed_measure_root() {
+	local mirror="$1"
+	rm -rf "$mirror"
+	mkdir -p "$mirror/doc/loom" "$mirror/.work"
+
+	cp -a "$REPO_ROOT/doc/loom/knowledge" "$mirror/doc/loom/knowledge"
+
+	if [[ -d "$REPO_ROOT/.loom/cache/context-v1" ]]; then
+		mkdir -p "$mirror/.loom/cache"
+		cp -a "$REPO_ROOT/.loom/cache/context-v1" "$mirror/.loom/cache/context-v1"
+		if [[ -f "$mirror/.loom/cache/context-v1/state.json" ]]; then
+			jq '.semantic.stale = false' \
+				"$mirror/.loom/cache/context-v1/state.json" \
+				>"$mirror/.loom/cache/context-v1/state.json.tmp"
+			mv "$mirror/.loom/cache/context-v1/state.json.tmp" \
+				"$mirror/.loom/cache/context-v1/state.json"
+		fi
+	else
+		echo "retrieval-ab: warning — no $REPO_ROOT/.loom/cache/context-v1 to seed" >&2
+		echo "  from; the source channel will be empty for BOTH binaries in $mirror" >&2
+		echo "  (equally, so the A/B comparison itself stays fair — just degraded)." >&2
+	fi
+
+	seed_reconcile_lock "$mirror"
+}
+
+# (Re)write a "just finished" reconcile.lock (pid 0, current epoch) so
+# reconcile_graph::spawn_if_needed's debounce always reads "throttled,
+# skip" — see the ISOLATION CONTRACT header. Cheap; called at seed time and
+# again before each invocation phase below.
+seed_reconcile_lock() {
+	local mirror="$1"
+	local cache_dir="$mirror/.loom/cache/context-v1"
+	[[ -d "$cache_dir" ]] || return 0
+	printf '%s 0\n' "$(date +%s)" >"$cache_dir/reconcile.lock"
+}
+
+# --------------------------------------------------------------------------
+# Metric 1 — precision@5 / MRR / forbid violations
+# --------------------------------------------------------------------------
+run_metric1() {
+	: >"$CASE_RESULTS"
+
+	python3 -c '
+import json, sys, yaml
+with open(sys.argv[1]) as f:
+    json.dump(yaml.safe_load(f), sys.stdout)
+' "$CASES_YAML" >"$CASES_JSON"
+
+	local n
+	n=$(jq '.cases | length' "$CASES_JSON")
+	echo "retrieval-ab: metric 1 — $n cases x 2 binaries" >&2
+
+	local i case_json name mode budget query require_ids_json
+	local -a require_flags
+	for i in $(seq 0 $((n - 1))); do
+		case_json=$(jq -c ".cases[$i]" "$CASES_JSON")
+		name=$(jq -r '.name' <<<"$case_json")
+		mode=$(jq -r '.mode // "prompt"' <<<"$case_json")
+		budget=$(jq -r '.budget_tokens // empty' <<<"$case_json")
+		if [[ -z "$budget" ]]; then
+			[[ "$mode" == "stage" ]] && budget=3000 || budget=1500
+		fi
+		query=$(jq -r '
+			([.query] + (if .mode == "stage" then (.stage_fields // []) else [] end))
+			| map(select(length > 0)) | join("\n")
+		' <<<"$case_json")
+		require_ids_json=$(jq -c '.require_ids // []' <<<"$case_json")
+		require_flags=()
+		while IFS= read -r id; do
+			[[ -n "$id" ]] && require_flags+=(--require-id "$id")
+		done < <(jq -r '.[]' <<<"$require_ids_json")
+
+		for pair in "baseline:$BIN_BASELINE:$MIRROR_BASELINE" "current:$BIN_CURRENT:$MIRROR_CURRENT"; do
+			IFS=: read -r binary bin mirror <<<"$pair"
+			local errfile="$RESULTS_DIR/context-$binary-$name.err"
+			local status=0
+			local output
+			output=$(cd "$mirror" && run_timeout 10 "$bin" knowledge context \
+				--query "$query" --budget-tokens "$budget" --json \
+				"${require_flags[@]}" 2>"$errfile") || status=$?
+			local item_ids ok
+			if [[ "$status" -eq 0 ]] && item_ids=$(jq -c '[.items[].id]' <<<"$output" 2>/dev/null); then
+				ok=true
+			else
+				item_ids="[]"
+				ok=false
+			fi
+			jq -nc --arg binary "$binary" --arg case "$name" --argjson ok "$ok" \
+				--argjson item_ids "$item_ids" --argjson status "$status" \
+				--arg err "$(tr '\n' ' ' <"$errfile" | cut -c1-300)" \
+				'{binary:$binary, case:$case, ok:$ok, item_ids:$item_ids, exit_code:$status,
+				  error:(if $err=="" then null else $err end)}' >>"$CASE_RESULTS"
+			rm -f "$errfile"
+		done
+	done
+}
+
+# --------------------------------------------------------------------------
+# Metrics 2 + 3 — mean injected tokens per brief, hook wall time
+# --------------------------------------------------------------------------
+run_metric23() {
+	: >"$HOOK_RESULTS"
+	local total
+	total=$(rg -vc '^\s*(#|$)' "$PROMPTS_FILE" || true)
+	echo "retrieval-ab: metrics 2+3 — $total prompts x 3 reps x 2 binaries" >&2
+
+	local binary bin mirror
+	for pair in "baseline:$BIN_BASELINE:$MIRROR_BASELINE" "current:$BIN_CURRENT:$MIRROR_CURRENT"; do
+		IFS=: read -r binary bin mirror <<<"$pair"
+		seed_reconcile_lock "$mirror"
+		local idx=0 cold_used=0 seed_counter=0
+		while IFS='|' read -r class prompt || [[ -n "$class" ]]; do
+			[[ -z "$class" || "$class" == \#* ]] && continue
+			idx=$((idx + 1))
+			for rep in 1 2 3; do
+				seed_counter=$((seed_counter + 1))
+				[[ $((seed_counter % 25)) -eq 0 ]] && seed_reconcile_lock "$mirror"
+
+				local session_id="ab-${binary}-p${idx}-r${rep}-$$"
+				local payload
+				payload=$(jq -nc --arg sid "$session_id" --arg prompt "$prompt" \
+					'{session_id:$sid, prompt:$prompt}')
+
+				local errfile="$RESULTS_DIR/hook-$binary-$idx-$rep.err"
+				local status=0 start_ns end_ns elapsed_ms output
+				start_ns=$(date +%s%N)
+				output=$(printf '%s' "$payload" | (cd "$mirror" && run_timeout 10 "$bin" hook user-prompt) 2>"$errfile") || status=$?
+				end_ns=$(date +%s%N)
+				elapsed_ms=$(((end_ns - start_ns) / 1000000))
+
+				local ok=true empty=false context_bytes=0 tokens_est=0 err=""
+				if [[ "$status" -ne 0 ]]; then
+					ok=false
+					err=$(tr '\n' ' ' <"$errfile" | cut -c1-300)
+				elif [[ -z "$output" ]]; then
+					empty=true
+				else
+					local ctx
+					if ctx=$(jq -er '.hookSpecificOutput.additionalContext' <<<"$output" 2>/dev/null); then
+						context_bytes=$(LC_ALL=C printf '%s' "$ctx" | wc -c)
+						tokens_est=$((context_bytes / 4))
+					else
+						ok=false
+						err="stdout was not the expected hookSpecificOutput JSON shape"
+					fi
+				fi
+				rm -f "$errfile"
+
+				local is_cold=false
+				if [[ "$cold_used" -eq 0 && "$rep" -eq 1 ]]; then
+					is_cold=true
+					cold_used=1
+				fi
+
+				jq -nc --arg binary "$binary" --arg class "$class" \
+					--argjson prompt_index "$idx" --argjson rep "$rep" \
+					--argjson ok "$ok" --argjson empty "$empty" \
+					--argjson elapsed_ms "$elapsed_ms" \
+					--argjson context_bytes "$context_bytes" --argjson tokens_est "$tokens_est" \
+					--argjson exit_code "$status" --argjson is_cold "$is_cold" \
+					--arg err "$err" \
+					'{binary:$binary, class:$class, prompt_index:$prompt_index, rep:$rep,
+					  ok:$ok, empty:$empty, elapsed_ms:$elapsed_ms, context_bytes:$context_bytes,
+					  tokens_est:$tokens_est, exit_code:$exit_code, is_cold:$is_cold,
+					  error:(if $err=="" then null else $err end)}' >>"$HOOK_RESULTS"
+			done
+		done <"$PROMPTS_FILE"
+	done
+}
+
+# --------------------------------------------------------------------------
+# Aggregation
+# --------------------------------------------------------------------------
+score_metric1() {
+	jq -n --slurpfile casesfile "$CASES_JSON" --slurpfile results "$CASE_RESULTS" '
+	  ($casesfile[0]) as $cf
+	  | ($cf.pass_floor // 0.5) as $pass_floor
+	  | ($cf.cases // []) as $cases
+	  | def find_result($b; $c):
+	      (($results // []) | map(select(.binary == $b and .case == $c)) | .[0])
+	      // {ok:false, item_ids:[], error:"no result recorded"};
+	    def score($case; $ids):
+	      ($case.expect // []) as $expect
+	      | ($case.forbid // []) as $forbid
+	      | ($ids[0:5]) as $top5
+	      | (($expect | length) > 0) as $counts
+	      # `$expect | index(.)` would be WRONG here: piping into $expect
+	      # rebinds `.` to $expect itself before index() runs, so every top5
+	      # element would test "is $expect a sub-array of itself" (always
+	      # true) instead of "is this element in $expect". The loop element
+	      # must be captured in a named variable first and referenced
+	      # explicitly - `.` does not survive an intervening `|`.
+	      | (([$top5[] as $x | select(($expect | index($x)) != null) | $x] | length) > 0) as $hit5
+	      | (reduce range(0; ($ids | length)) as $i (null;
+	          if . == null and (($expect | index($ids[$i])) != null) then ($i + 1) else . end)) as $rank
+	      | (if $rank == null then 0 else (1 / $rank) end) as $mrr
+	      | ([$forbid[] as $f | select(($ids | index($f)) != null) | $f]) as $violations
+	      | {counts:$counts, hit5:$hit5, mrr:$mrr, violations:$violations};
+	    (["baseline","current"] | map(. as $b
+	      | ($cases | map(. as $case
+	          | find_result($b; $case.name) as $r
+	          | score($case; ($r.item_ids // [])) as $s
+	          | {binary:$b, name:$case.name, ok:$r.ok, error:($r.error // null)} + $s
+	        ))
+	    ) | add) as $per_case
+	  | (["baseline","current"] | map(. as $b
+	      | ($per_case | map(select(.binary == $b))) as $rows
+	      | ($rows | map(select(.counts))) as $applicable
+	      | ($applicable | length) as $n
+	      | ($applicable | map(select(.hit5)) | length) as $hits
+	      | { binary:$b,
+	          precision_at_5:(if $n == 0 then 0 else ($hits / $n) end),
+	          precision_hits:$hits,
+	          precision_applicable:$n,
+	          mean_mrr:(if $n == 0 then 0 else (($applicable | map(.mrr) | add) / $n) end),
+	          forbid_violations:($rows | map(.violations | length) | add // 0),
+	          invocation_failures:($rows | map(select(.ok | not)) | length) }
+	    )) as $aggregates
+	  | { pass_floor:$pass_floor, per_case:$per_case, aggregates:$aggregates }
+	' >"$METRIC1_JSON"
+}
+
+score_metric23() {
+	jq -n --slurpfile results "$HOOK_RESULTS" '
+	  ($results) as $r
+	  | def pct($sorted; $p):
+	      ($sorted | length) as $n
+	      | if $n == 0 then null
+	        else ( ($p * ($n - 1)) as $rank
+	             | ($rank | floor) as $lo | ($rank | ceil) as $hi
+	             | if $lo == $hi then $sorted[$lo]
+	               else $sorted[$lo] + ($sorted[$hi] - $sorted[$lo]) * ($rank - $lo) end )
+	        end;
+	    (["baseline","current"] | map(
+	      . as $b
+	      | ($r | map(select(.binary == $b))) as $rows
+	      | ($rows | map(select(.rep == 1))) as $rows1
+	      | ($rows1 | map(select(.ok and (.empty | not)))) as $briefs
+	      | ($rows | map(select(.is_cold))) as $cold
+	      | ($rows | map(select(.is_cold | not))) as $warm
+	      | ($warm | map(.elapsed_ms) | sort) as $warm_ms
+	      | { binary:$b,
+	          prompts_measured:($rows1 | length),
+	          briefs:($briefs | length),
+	          silent:($rows1 | map(select(.ok and .empty)) | length),
+	          failures_per_prompt:($rows1 | map(select(.ok | not)) | length),
+	          mean_tokens:(if ($briefs | length) == 0 then 0 else (($briefs | map(.tokens_est) | add) / ($briefs | length)) end),
+	          total_tokens:(($briefs | map(.tokens_est) | add) // 0),
+	          cold_ms:(($cold[0].elapsed_ms) // null),
+	          cold_over_ceiling:(if ($cold | length) > 0 then ($cold[0].elapsed_ms > 5000) else null end),
+	          p50_ms:pct($warm_ms; 0.5), p95_ms:pct($warm_ms; 0.95),
+	          max_ms:(if ($warm_ms | length) == 0 then null else $warm_ms[-1] end),
+	          warm_samples:($warm_ms | length),
+	          over_ceiling:($warm_ms | map(select(. > 5000)) | length),
+	          failures_all_reps:($rows | map(select(.ok | not)) | length) }
+	    )) as $per_binary
+	  | (($r | map(select(.rep == 1)) | group_by([.binary, .class]) | map({
+	        binary:(.[0].binary), class:(.[0].class), samples:length,
+	        briefs:(map(select(.ok and (.empty | not))) | length),
+	        silent:(map(select(.ok and .empty)) | length),
+	        failures:(map(select(.ok | not)) | length) }))) as $per_class
+	  | { per_binary:$per_binary, per_class:$per_class }
+	' >"$METRIC23_JSON"
+}
+
+# --------------------------------------------------------------------------
+# Report
+# --------------------------------------------------------------------------
+fmt2() { [[ "$1" == "null" || -z "$1" ]] && echo "n/a" || printf '%.2f' "$1"; }
+fmt0() { [[ "$1" == "null" || -z "$1" ]] && echo "n/a" || printf '%.0f' "$1"; }
+
+render_report() {
+	while IFS= read -r line; do declare "$line"; done < <(
+		jq -r '.aggregates[] |
+		  "m1_\(.binary)_precision=\(.precision_at_5)",
+		  "m1_\(.binary)_hits=\(.precision_hits)",
+		  "m1_\(.binary)_applicable=\(.precision_applicable)",
+		  "m1_\(.binary)_mrr=\(.mean_mrr)",
+		  "m1_\(.binary)_forbid=\(.forbid_violations)",
+		  "m1_\(.binary)_failures=\(.invocation_failures)"' "$METRIC1_JSON"
+	)
+	local pass_floor
+	pass_floor=$(jq -r '.pass_floor' "$METRIC1_JSON")
+
+	while IFS= read -r line; do declare "$line"; done < <(
+		jq -r '.per_binary[] |
+		  "m2_\(.binary)_prompts=\(.prompts_measured)",
+		  "m2_\(.binary)_briefs=\(.briefs)",
+		  "m2_\(.binary)_silent=\(.silent)",
+		  "m2_\(.binary)_failures=\(.failures_per_prompt)",
+		  "m2_\(.binary)_mean_tokens=\(.mean_tokens)",
+		  "m2_\(.binary)_total_tokens=\(.total_tokens)",
+		  "m3_\(.binary)_cold_ms=\(.cold_ms)",
+		  "m3_\(.binary)_cold_over=\(.cold_over_ceiling)",
+		  "m3_\(.binary)_p50=\(.p50_ms)",
+		  "m3_\(.binary)_p95=\(.p95_ms)",
+		  "m3_\(.binary)_max=\(.max_ms)",
+		  "m3_\(.binary)_warm_samples=\(.warm_samples)",
+		  "m3_\(.binary)_over_ceiling=\(.over_ceiling)",
+		  "m3_\(.binary)_failures_all=\(.failures_all_reps)"' "$METRIC23_JSON"
+	)
+
+	local m1_case_rows m1_violations m2_class_rows
+	m1_case_rows=$(jq -r '.per_case | sort_by([.name, .binary]) | .[] |
+	  "| \(.name) | \(.binary) | \(if .ok then (if .hit5 then "yes" else "no" end) else "ERR" end) | \(if .ok then (.mrr|tostring) else "n/a" end) | \(.violations|length) |"' "$METRIC1_JSON")
+	m1_violations=$(jq -r '[.per_case[] | select(.violations|length>0) |
+	  "- \(.binary) / \(.name): " + (.violations|join(", "))] |
+	  if length == 0 then "(none)" else join("\n") end' "$METRIC1_JSON")
+	m2_class_rows=$(jq -r '.per_class | sort_by([.class, .binary]) | .[] |
+	  "| \(.class) | \(.binary) | \(.samples) | \(.briefs) | \(.silent) | \(.failures) |"' "$METRIC23_JSON")
+
+	local generated_at head_short
+	generated_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+	head_short=$(git -C "$REPO_ROOT" rev-parse --short HEAD 2>/dev/null || echo "unknown")
+
+	cat <<REPORT
+# Retrieval A/B report
+
+Baseline: \`$BASELINE_REV\` (pre-proposal) — Current: working tree (HEAD \`$head_short\`)
+Generated: $generated_at
+
+## Headline: forbid violations (regression specimens)
+
+The five seeded regression cases in \`loom/eval/retrieval-cases.yaml\` are
+expected to go from violating to clean.
+
+| binary | forbid violations |
+| --- | --- |
+| baseline | $m1_baseline_forbid |
+| current | $m1_current_forbid |
+
+Violating cases:
+$m1_violations
+
+## Metric 1 — precision@5 / MRR (loom/eval/retrieval-cases.yaml, pass_floor=$pass_floor)
+
+| metric | baseline | current | delta |
+| --- | --- | --- | --- |
+| precision@5 | $(fmt2 "$m1_baseline_precision") ($m1_baseline_hits/$m1_baseline_applicable) | $(fmt2 "$m1_current_precision") ($m1_current_hits/$m1_current_applicable) | $(fmt2 "$(python3 -c "print($m1_current_precision - $m1_baseline_precision)")") |
+| mean MRR | $(fmt2 "$m1_baseline_mrr") | $(fmt2 "$m1_current_mrr") | $(fmt2 "$(python3 -c "print($m1_current_mrr - $m1_baseline_mrr)")") |
+| invocation failures | $m1_baseline_failures | $m1_current_failures | — |
+
+### Per-case breakdown
+
+| case | binary | hit@5 | mrr | forbid violations |
+| --- | --- | --- | --- | --- |
+$m1_case_rows
+
+## Metric 2 — mean injected tokens per brief
+
+Silence is a deliberate, desirable outcome under the emit floor (A.5) — a
+naive "mean tokens" alone would read a rise in \`silent\` as a regression
+when it is often the opposite. Read \`briefs\`/\`silent\`/\`mean tokens\`
+together.
+
+| | baseline | current |
+| --- | --- | --- |
+| prompts measured | $m2_baseline_prompts | $m2_current_prompts |
+| briefs produced | $m2_baseline_briefs | $m2_current_briefs |
+| silent (no brief, not a failure) | $m2_baseline_silent | $m2_current_silent |
+| invocation failures | $m2_baseline_failures | $m2_current_failures |
+| mean tokens / brief | $(fmt2 "$m2_baseline_mean_tokens") | $(fmt2 "$m2_current_mean_tokens") |
+| total tokens (all briefs) | $m2_baseline_total_tokens | $m2_current_total_tokens |
+
+### Per-class brief/silence breakdown (one sample per prompt, rep 1)
+
+| class | binary | samples | briefs | silent | failures |
+| --- | --- | --- | --- | --- | --- |
+$m2_class_rows
+
+## Metric 3 — hook wall time (ms)
+
+Cold-start is the first \`hook user-prompt\` invocation issued for that
+binary (page-cache-cold read of the measure root); p50/p95/max exclude it.
+The shell wrapper (\`hooks/user-prompt-context.sh\`) enforces a 5s ceiling.
+
+| | baseline | current |
+| --- | --- | --- |
+| cold-start (ms) | $(fmt0 "$m3_baseline_cold_ms") (over 5s ceiling: $m3_baseline_cold_over) | $(fmt0 "$m3_current_cold_ms") (over 5s ceiling: $m3_current_cold_over) |
+| p50 (warm, ms) | $(fmt0 "$m3_baseline_p50") | $(fmt0 "$m3_current_p50") |
+| p95 (warm, ms) | $(fmt0 "$m3_baseline_p95") | $(fmt0 "$m3_current_p95") |
+| max (warm, ms) | $(fmt0 "$m3_baseline_max") | $(fmt0 "$m3_current_max") |
+| warm samples | $m3_baseline_warm_samples | $m3_current_warm_samples |
+| warm samples over 5s ceiling | $m3_baseline_over_ceiling | $m3_current_over_ceiling |
+| invocation failures (all reps) | $m3_baseline_failures_all | $m3_current_failures_all |
+
+Raw per-invocation data: \`$CASE_RESULTS\`, \`$HOOK_RESULTS\`.
+REPORT
+}
+
+# --------------------------------------------------------------------------
+# Main
+# --------------------------------------------------------------------------
+ensure_binaries
+mkdir -p "$RESULTS_DIR"
+seed_measure_root "$MIRROR_BASELINE"
+seed_measure_root "$MIRROR_CURRENT"
+
+run_metric1
+run_metric23
+
+score_metric1
+score_metric23
+
+render_report | tee "$OUT/report.md"

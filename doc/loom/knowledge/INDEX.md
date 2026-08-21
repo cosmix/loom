@@ -11,8 +11,8 @@
 | [architecture.md](architecture.md) | High-level component relationships, data flow, module dependencies | 512 |
 | [entry-points.md](entry-points.md) | Key files agents should read first | 591 |
 | [patterns.md](patterns.md) | Architectural patterns discovered in the codebase | 752 |
-| [conventions.md](conventions.md) | Coding conventions discovered in the codebase | 525 |
-| [mistakes.md](mistakes.md) | Mistakes made and lessons learned - what to avoid | 928 |
+| [conventions.md](conventions.md) | Coding conventions discovered in the codebase | 559 |
+| [mistakes.md](mistakes.md) | Mistakes made and lessons learned - what to avoid | 950 |
 | [stack.md](stack.md) | Dependencies, frameworks, and tooling used in the project | 97 |
 | [concerns.md](concerns.md) | Technical debt, warnings, and issues to address | 785 |
 
@@ -58,6 +58,7 @@
 | --- | --- | --- | --- |
 | [mistakes/codex-lane-rogue-wrapper.md](mistakes/codex-lane-rogue-wrapper.md) | Codex Lane Rogue Wrapper | Topic notes for the mistakes knowledge area. | 79 |
 | [mistakes/completion-broker-credential.md](mistakes/completion-broker-credential.md) | Completion Broker Credential | Topic notes for the mistakes knowledge area. | 57 |
+| [mistakes/detached-spawn-in-tests.md](mistakes/detached-spawn-in-tests.md) | Detached Spawn In Tests | Topic notes for the mistakes knowledge area. | 45 |
 | [mistakes/doctrine-and-acceptance.md](mistakes/doctrine-and-acceptance.md) | Doctrine And Acceptance | Why a one-phrase grep proves presence but never agreement, and how doctrine drifts across surfaces unnoticed. | 110 |
 | [mistakes/knowledge-base-drift.md](mistakes/knowledge-base-drift.md) | Knowledge Base Drift | How the knowledge base itself goes stale: plan-authoring notes frozen as architecture facts, `[UPDATED]` duplicates, and invented CLI surface. | 103 |
 | [mistakes/knowledge-cli-invariants.md](mistakes/knowledge-cli-invariants.md) | Knowledge Cli Invariants | Invariants belong in the fs constructor, not the CLI handler; lock ordering for sibling refreshes; update appends. | 74 |

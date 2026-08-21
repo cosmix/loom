@@ -417,6 +417,19 @@ where a non-defaulted field breaks a running plan.
   Sum the argument names including `,` separators; over 60 and rustfmt goes one-arg-per-line,
   which can explode a match arm and trip the 50-line function gate. Renaming in the pattern
   (`budget_tokens: budget`) is a legitimate way back under the limit.
+- **Only the main agent runs `cargo` at all**, and it runs under a RAM watchdog rather than
+  a job-count throttle. Measured on this 32-core machine, a full `cargo build --all-targets`
+  peaks around 3 GB and the whole test suite barely moves the needle — so throttling `-j` is
+  the wrong lever and just wastes the machine. What actually exhausted 125 GB was **leaked
+  detached child processes**, not build parallelism (see
+  [Never Spawn a Surviving Process From a Test](mistakes/detached-spawn-in-tests.md)).
+  Run cargo wrapped in a watchdog that samples `free`, kills the whole **process group** on a
+  low-headroom trip (killing cargo alone orphans the `rustc` children holding the pages), and
+  reports any `loom` process still alive after exit.
+- **A test may never create a process that outlives the test harness.** `cargo test` gives no
+  warning for a leaked detached child; it simply exits green while the child keeps running.
+  See [Never Spawn a Surviving Process From a Test](mistakes/detached-spawn-in-tests.md) —
+  this cost a reboot once already.
 
 ## Dependency Pins for Native-Grammar Crates
 
@@ -434,9 +447,31 @@ that fetch works inside the sandbox because the `.crate` files are present.
 ## Splitting a File
 
 Use the edition-2021 layout `<name>.rs` plus a `<name>/` subdirectory (as
-`context/graph_store.rs` + `graph_store/` do). **Never `<name>/mod.rs`** — it deletes the
-path that a stage's artifacts and wiring lists pin. Check the ledger and the wiring patterns
-first; see `mistakes/pinned-literals-ledgers-and-wiring.md`.
+`context/rank.rs` + `context/rank/{corpus.rs,rungs.rs}` do). **Never `<name>/mod.rs`**
+— it deletes the path that a stage's artifacts and wiring lists pin. Check the ledger
+and the wiring patterns first; see `mistakes/pinned-literals-ledgers-and-wiring.md`.
+
+(Correction 2026-08-21: this section previously cited `context/graph_store.rs` +
+`graph_store/` as the worked example, but the tree has never had a
+`context/graph_store.rs` file — that module has always been `context/graph_store/mod.rs`,
+the OTHER layout this section says to avoid. `context/rank.rs` is a verified, currently
+accurate example of the sibling-style split with no `mod.rs`; other equally valid ones
+include `context/lexical.rs` + `context/lexical/`, `context/refresh.rs` +
+`context/refresh/`, and `context/retrieve.rs` + `context/retrieve/`. The
+`<name>/mod.rs` layout is not wrong everywhere — `commands/hook/mod.rs` and
+`context/graph_store/mod.rs` are both legitimate *directory modules* built that way
+from the start. The rule this section states applies specifically to *splitting an
+existing top-level `<name>.rs` file*: converting it to `<name>/mod.rs` mid-split
+changes the file's own path, which breaks anything pinning `<name>.rs` as a literal —
+acceptance criteria, artifacts lists, wiring checks.)
+
+A file that must ADD a wired submodule without editing a read-only parent (the file that
+would otherwise gain the new `mod` declaration is owned by another stage or subagent) can
+route around that instead of waiting: `#[path = "sibling_file.rs"] mod name;` inside the
+file you DO own declares a flat sibling file as a child module, without any edit to the
+directory's own `mod.rs`/parent declaration. `commands/hook/user_prompt.rs`'s
+`#[path = "tests_user_prompt_e2e.rs"] mod e2e;` is the established precedent for this,
+used for splitting a same-directory test file the same way.
 
 Two visibility details that bite when splitting:
 
