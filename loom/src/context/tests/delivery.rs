@@ -372,3 +372,10 @@ fn an_ordinary_recipient_id_is_accepted() {
         vec![accepted]
     );
 }
+
+// Session-scoped delivery dedupe (A.16) and its compaction reset (A.21) have
+// their own tests in a submodule, split out to keep this file under the
+// maintainability line limit — the standard `<name>.rs` + `<name>/` layout
+// (as `context/rank.rs` + `context/rank/` do), which needs no edit to
+// `context/tests/mod.rs`: this `mod` declaration lives here, not there.
+mod session;

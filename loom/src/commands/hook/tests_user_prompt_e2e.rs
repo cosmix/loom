@@ -110,7 +110,7 @@ fn a_session_with_no_stage_at_all_still_gets_a_brief() {
     let temp = mapped_project_without_knowledge();
     enter_checkout(temp.path());
 
-    let emission = retrieve_for_prompt(distinctive_prompt());
+    let emission = retrieve_for_prompt(distinctive_prompt(), None);
 
     leave();
     let emission = emission.expect("a mapped checkout answers even with no stage and no knowledge");
@@ -145,17 +145,63 @@ fn a_second_local_prompt_is_suppressed_once_the_first_is_recorded() {
     let temp = mapped_project_without_knowledge();
     enter_checkout(temp.path());
 
-    let first = retrieve_for_prompt(distinctive_prompt());
+    let first = retrieve_for_prompt(distinctive_prompt(), Some("session-a"));
     if let Some(emission) = &first {
-        emission.target.record(&emission.handed_over);
+        emission
+            .target
+            .record(&emission.recipient, &emission.handed_over);
     }
-    let second = retrieve_for_prompt(distinctive_prompt());
+    let second = retrieve_for_prompt(distinctive_prompt(), Some("session-a"));
 
     leave();
     assert!(first.is_some(), "the first prompt is answered");
     assert!(
         second.is_none(),
         "the same units in the same epoch must not be handed over twice"
+    );
+}
+
+#[test]
+#[serial]
+fn a_different_session_is_not_suppressed_by_the_first_sessions_delivery() {
+    let temp = mapped_project_without_knowledge();
+    enter_checkout(temp.path());
+
+    let first = retrieve_for_prompt(distinctive_prompt(), Some("session-a"));
+    if let Some(emission) = &first {
+        emission
+            .target
+            .record(&emission.recipient, &emission.handed_over);
+    }
+    let second = retrieve_for_prompt(distinctive_prompt(), Some("session-b"));
+
+    leave();
+    assert!(first.is_some(), "the first session is answered");
+    assert!(
+        second.is_some(),
+        "a different session's empty context window must not inherit session-a's suppression"
+    );
+}
+
+#[test]
+#[serial]
+fn a_hook_payload_with_no_session_id_still_answers_and_suppresses_a_repeat() {
+    let temp = mapped_project_without_knowledge();
+    enter_checkout(temp.path());
+
+    let first = retrieve_for_prompt(distinctive_prompt(), None);
+    if let Some(emission) = &first {
+        emission
+            .target
+            .record(&emission.recipient, &emission.handed_over);
+    }
+    let second = retrieve_for_prompt(distinctive_prompt(), None);
+
+    leave();
+    assert!(first.is_some(), "a session-less prompt is still answered");
+    assert!(
+        second.is_none(),
+        "today's shared 'nosession' behaviour: a repeat with no session id is still suppressed"
     );
 }
 
@@ -174,7 +220,7 @@ fn a_stage_session_is_still_keyed_to_its_stage() {
 
     std::env::set_var("LOOM_WORK_DIR", &work_dir);
     std::env::set_var("LOOM_STAGE_ID", &stage.id);
-    let emission = retrieve_for_prompt(distinctive_prompt());
+    let emission = retrieve_for_prompt(distinctive_prompt(), None);
     leave();
 
     let emission = emission.expect("a stage in a mapped checkout is answered too");

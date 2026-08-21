@@ -90,4 +90,14 @@ pub enum ContextCommands {
 pub enum HookCommands {
     /// UserPromptSubmit entry point: emit a retrieval brief, or nothing
     UserPrompt,
+
+    /// Internal maintenance entry point invoked by the UserPromptSubmit hook
+    /// itself as a fire-and-forget nudge when the source graph looks stale.
+    /// Not a user-facing command.
+    ReconcileGraph,
+
+    /// Internal maintenance entry point invoked by the PreCompact shell hook
+    /// to reopen this session's own delivery suppression before its context
+    /// window is compacted away. Not a user-facing command.
+    PreCompact,
 }

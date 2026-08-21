@@ -10,7 +10,7 @@
 #   {"session_id": "...", "prompt": "...", ...}
 #
 # Output: the delegate's stdout, verbatim, when it produced output within the
-# 8 KiB payload ceiling; nothing otherwise. Every failure path exits 0 with no
+# 16 KiB payload ceiling; nothing otherwise. Every failure path exits 0 with no
 # output, so a broken or slow retrieval path never disturbs the session:
 #   {"hookSpecificOutput": {"hookEventName": "UserPromptSubmit", "additionalContext": "..."}}
 #
@@ -85,12 +85,14 @@ if [[ -z "$OUTPUT" ]]; then
 	exit 0
 fi
 
-# Re-check the 8 KiB payload ceiling on this side too. The Rust delegate caps
-# itself, but this script runs against whatever `loom` happens to be on PATH,
-# so the bound is enforced where the bytes actually enter the session rather
-# than trusted to the binary that produced them. `wc -c` counts BYTES
-# regardless of locale, which `${#OUTPUT}` (characters) would not.
-MAX_OUTPUT_BYTES=8192
+# Re-check the 16 KiB payload ceiling on this side too. The Rust delegate caps
+# itself at `config.max_payload_bytes` (default 16384), but this script runs
+# against whatever `loom` happens to be on PATH — possibly an older binary
+# than the hook script itself, which is why the bound is duplicated here
+# rather than trusted entirely to the binary that produced the output: the
+# bytes are enforced where they actually enter the session. `wc -c` counts
+# BYTES regardless of locale, which `${#OUTPUT}` (characters) would not.
+MAX_OUTPUT_BYTES=16384
 OUTPUT_BYTES=$(LC_ALL=C printf '%s' "$OUTPUT" | wc -c)
 if [[ "$OUTPUT_BYTES" -gt "$MAX_OUTPUT_BYTES" ]]; then
 	exit 0

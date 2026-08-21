@@ -26,6 +26,13 @@ use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 use uuid::Uuid;
 
+/// Session-scoped delivery dedupe (A.16) and its compaction reset (A.21) —
+/// split out to keep this file under the maintainability line limit. Still
+/// delivery-record bookkeeping, not a new concept: `session::`'s own module
+/// doc picks up exactly where this file's doc comment leaves off.
+mod session;
+pub use session::{delivered_to_session, discard_session_delivery, hook_recipient_id};
+
 /// Delivery records live beside the stage overlay, in this subdirectory.
 const DELIVERY_RELATIVE_DIR: &str = "session-retrieval";
 

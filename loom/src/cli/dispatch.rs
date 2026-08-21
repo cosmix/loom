@@ -144,6 +144,8 @@ fn dispatch_context(command: ContextCommands) -> Result<()> {
 fn dispatch_hook(command: HookCommands) -> Result<()> {
     match command {
         HookCommands::UserPrompt => hook::user_prompt::user_prompt(),
+        HookCommands::ReconcileGraph => hook::reconcile_graph::reconcile_graph(),
+        HookCommands::PreCompact => hook::pre_compact::pre_compact(),
     }
 }
 
