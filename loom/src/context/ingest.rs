@@ -1,13 +1,17 @@
 //! Pure catalog ingestion over the knowledge tree.
 //!
-//! [`ingest`] reads `doc/loom/knowledge/**/*.md` and turns it into a
-//! [`Catalog`] plus an [`IngestReport`] summarizing the build. It is pure and
-//! side-effect free: it reads bytes and writes nothing.
+//! [`ingest`] reads `doc/loom/knowledge/**/*.md` — plus the project's
+//! configured prose roots (`crate::fs::knowledge::catalog::prose`, default
+//! `doc/`) — and turns it into a [`Catalog`] plus an [`IngestReport`]
+//! summarizing the build. It is pure and side-effect free: it reads bytes and
+//! writes nothing.
 //!
 //! **HARD CONSTRAINT: `ingest` must not modify one byte of the knowledge
 //! tree.** Duplicate headings, generic blurbs, and broken links are surfaced
 //! through [`IngestReport::issues`] and never repaired here — repair, if it
-//! ever exists, is a separate, explicit operation.
+//! ever exists, is a separate, explicit operation. This constraint does not
+//! extend to prose: prose contributes no issues at all (see `catalog::build`),
+//! so there is nothing there to repair or report.
 
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
@@ -21,7 +25,8 @@ use crate::fs::knowledge::catalog::{self, Catalog, CatalogIssue};
 pub struct IngestReport {
     /// Root of the knowledge tree that was ingested.
     pub knowledge_root: PathBuf,
-    /// Number of `*.md` files fingerprinted.
+    /// Number of `*.md` files fingerprinted — knowledge files plus indexed
+    /// prose files, since [`fingerprint_tree`] folds both into one list.
     pub files: usize,
     /// Number of chunks the catalog was split into.
     pub chunks: usize,

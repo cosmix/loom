@@ -228,3 +228,50 @@ fn refresh_does_not_modify_knowledge_files() {
         );
     }
 }
+
+#[test]
+fn editing_prose_changes_the_tree_revision() {
+    let temp = TempDir::new().unwrap();
+    let root = temp.path();
+    write_file(
+        root,
+        "doc/loom/knowledge/architecture.md",
+        "# Architecture\n\nBody.\n",
+    );
+    write_file(root, "doc/design.md", "# Design\n\nOriginal design body.\n");
+    let knowledge_root = root.join("doc/loom/knowledge");
+
+    let before_edit = tree_revision(&fingerprint_tree(&knowledge_root).unwrap());
+
+    write_file(root, "doc/design.md", "# Design\n\nEdited design body.\n");
+    let after_edit = tree_revision(&fingerprint_tree(&knowledge_root).unwrap());
+    assert_ne!(
+        before_edit, after_edit,
+        "editing a prose file must change the tree revision"
+    );
+
+    let after_reread = tree_revision(&fingerprint_tree(&knowledge_root).unwrap());
+    assert_eq!(
+        after_edit, after_reread,
+        "re-reading unchanged files must not change the revision"
+    );
+}
+
+#[test]
+fn a_project_with_no_prose_root_still_fingerprints() {
+    let temp = TempDir::new().unwrap();
+    let root = temp.path();
+    write_file(root, ".loom/config.toml", "[retrieval]\nprose_roots = []\n");
+    write_file(
+        root,
+        "doc/loom/knowledge/architecture.md",
+        "# Architecture\n\nBody.\n",
+    );
+    let knowledge_root = root.join("doc/loom/knowledge");
+
+    let first = tree_revision(&fingerprint_tree(&knowledge_root).unwrap());
+    let second = tree_revision(&fingerprint_tree(&knowledge_root).unwrap());
+
+    assert!(!first.is_empty());
+    assert_eq!(first, second, "revision must be stable with no prose root");
+}

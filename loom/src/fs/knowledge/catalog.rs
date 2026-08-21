@@ -9,6 +9,10 @@ use std::fs;
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 
+pub(crate) mod prose;
+#[cfg(test)]
+mod tests_prose;
+
 /// A problem found in the knowledge base. REPORTED, never repaired: this
 /// subsystem does not modify one byte of the knowledge tree.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -50,7 +54,11 @@ pub enum CatalogIssue {
 pub struct Catalog {
     /// Hash over the catalog's chunk identities and content hashes.
     pub revision: String,
-    /// All chunks, in relative-path order.
+    /// Curated knowledge chunks in relative-path order, followed by every
+    /// indexed prose chunk (`prose:`-prefixed id — see [`prose`]) in the
+    /// order [`prose::ProseSources::files`] returns. Not one global sort: the
+    /// two groups are ordering-independent by construction, since ranking
+    /// scores every chunk on its own and never assumes catalog order.
     pub chunks: Vec<KnowledgeChunk>,
     /// Diagnostics, sorted deterministically.
     pub issues: Vec<CatalogIssue>,
@@ -136,10 +144,12 @@ fn process_file(
     Ok(file_chunks)
 }
 
-/// Build a deterministic catalog rooted at a knowledge directory.
+/// Build a deterministic catalog rooted at a knowledge directory, extended
+/// with every chunk indexed from the project's configured prose roots (see
+/// [`prose`]).
 pub fn build(root: &Path) -> anyhow::Result<Catalog> {
     let files = markdown_files(root)?;
-    let project_root = project_root(root);
+    let project_root = prose::project_root_of(root);
     let mut chunks = Vec::new();
     let mut issues = Vec::new();
     let mut heading_counts: BTreeMap<PathBuf, BTreeMap<String, usize>> = BTreeMap::new();
@@ -168,6 +178,17 @@ pub fn build(root: &Path) -> anyhow::Result<Catalog> {
     }
 
     issues.sort_by(compare_issues);
+
+    // Prose is appended to the SAME chunk list the curated tree produced, so
+    // one BM25 corpus covers both and `revision_for` below folds prose edits
+    // into the catalog's own revision. Prose contributes no `issues`: the
+    // duplicate-heading, generic-blurb, broken-link and missing-source-ref
+    // diagnostics are contracts on the CURATED tree, and reporting them for
+    // arbitrary project docs would bury the ones an author can act on.
+    if let Some(sources) = prose::sources_for_knowledge_root(root) {
+        chunks.extend(sources.chunks());
+    }
+
     Ok(Catalog {
         revision: revision_for(&chunks),
         chunks,
@@ -245,14 +266,6 @@ fn generic_blurb(content: &str, relative_path: &Path) -> Option<String> {
         .to_string();
     let scaffold = crate::fs::knowledge::templates::scaffold_blurb(category);
     (blurb == scaffold).then_some(blurb)
-}
-
-fn project_root(root: &Path) -> Option<PathBuf> {
-    let loom = root.parent()?;
-    let doc = loom.parent()?;
-    let project = doc.parent()?;
-    (root.file_name()? == "knowledge" && loom.file_name()? == "loom" && doc.file_name()? == "doc")
-        .then(|| project.to_path_buf())
 }
 
 /// True if `path` exists on disk. Every `fs::metadata` failure — not only
