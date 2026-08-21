@@ -459,9 +459,9 @@ accurate example of the sibling-style split with no `mod.rs`; other equally vali
 include `context/lexical.rs` + `context/lexical/`, `context/refresh.rs` +
 `context/refresh/`, and `context/retrieve.rs` + `context/retrieve/`. The
 `<name>/mod.rs` layout is not wrong everywhere — `commands/hook/mod.rs` and
-`context/graph_store/mod.rs` are both legitimate *directory modules* built that way
-from the start. The rule this section states applies specifically to *splitting an
-existing top-level `<name>.rs` file*: converting it to `<name>/mod.rs` mid-split
+`context/graph_store/mod.rs` are both legitimate _directory modules_ built that way
+from the start. The rule this section states applies specifically to _splitting an
+existing top-level `<name>.rs` file_: converting it to `<name>/mod.rs` mid-split
 changes the file's own path, which breaks anything pinning `<name>.rs` as a literal —
 acceptance criteria, artifacts lists, wiring checks.)
 
