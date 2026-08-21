@@ -12,11 +12,11 @@
 //! does.
 //!
 //! Three gates stand between a prompt and a printed brief, in order:
-//! [`parse_prompt`] drops machine-generated payloads before retrieval even
+//! `parse_prompt` drops machine-generated payloads before retrieval even
 //! runs (task-notification XML, stopped-agent notices — see
-//! [`is_machine_generated`]); `user_prompt_compose.rs`'s emit floor drops a
+//! `is_machine_generated`); `user_prompt_compose.rs`'s emit floor drops a
 //! retrieval too weak to be worth saying anything about; and
-//! [`DeliveryTarget::already_delivered`] drops whatever THIS session — not
+//! `DeliveryTarget::already_delivered` drops whatever THIS session — not
 //! some other session that happens to share the stage — has already been
 //! handed this epoch.
 //!

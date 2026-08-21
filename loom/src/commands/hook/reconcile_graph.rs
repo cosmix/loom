@@ -12,15 +12,15 @@
 //! ## Debounce
 //!
 //! See the `lock` submodule for the `reconcile.lock` file's encoding and the
-//! full Spawn/Skip policy table. In short: [`try_reconcile`] never unlinks
+//! full Spawn/Skip policy table. In short: `try_reconcile` never unlinks
 //! the lock, it REWRITES it — once at the very start, correcting the pid
 //! field from whatever [`spawn_if_needed`] claimed it with to this process's
 //! own pid, and once at the very end to a finished marker, on BOTH outcomes.
-//! See [`try_reconcile`]'s own comments for why each rewrite is necessary.
+//! See `try_reconcile`'s own comments for why each rewrite is necessary.
 //!
 //! ## Scope resolution
 //!
-//! [`ReconcileTarget::from_environment`] mirrors
+//! `ReconcileTarget::from_environment` mirrors
 //! `commands::hook::user_prompt::DeliveryTarget::from_environment` point for
 //! point (stage scope when `LOOM_STAGE_ID`/`LOOM_WORK_DIR` name a real stage,
 //! else the checkout's own working-tree overlay) but is a second, small
@@ -28,7 +28,7 @@
 //! that sibling file, which this module does not own.
 //!
 //! Checkout scope calls
-//! [`crate::context::refresh::reconcile_semantic_best_effort`] — promoted
+//! `crate::context::refresh::reconcile_semantic_best_effort` — promoted
 //! from `pub(super)` to `pub(crate)` in `context::refresh::semantic` for
 //! exactly this call site — rather than re-implementing its Base-then-overlay
 //! fallback (publish an immutable base for a clean HEAD, fall back to the
@@ -57,7 +57,7 @@ use lock::{claim_lock, decide, reconcile_lock_path, unix_now, LockDecision};
 
 /// The `loom hook reconcile-graph` subcommand body: a best-effort, one-shot
 /// reconcile of the source graph for whatever scope
-/// [`ReconcileTarget::from_environment`] resolves.
+/// `ReconcileTarget::from_environment` resolves.
 ///
 /// Always exits `Ok(())` and prints nothing: this is an internal maintenance
 /// entry point [`spawn_if_needed`] launches detached from a hook, so nothing
@@ -201,7 +201,7 @@ fn reconcile(target: &ReconcileTarget, store: &ContextStore) -> Result<()> {
 
 /// Spawn a detached `loom hook reconcile-graph` when `pack` reports the
 /// source graph stale or degraded (A.11), debounced through
-/// [`reconcile_lock_path`] so a burst of hook invocations spawns at most one
+/// `reconcile_lock_path` so a burst of hook invocations spawns at most one
 /// reconcile at a time.
 ///
 /// Fire-and-forget by contract: never waits on the child, never fails, never
@@ -320,7 +320,7 @@ static SPAWN_ENABLED: AtomicBool = AtomicBool::new(!cfg!(test));
 #[cfg(test)]
 static SUPPRESSED_SPAWNS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 
-/// Disable [`spawn_detached`] for the remainder of this process. Idempotent.
+/// Disable `spawn_detached` for the remainder of this process. Idempotent.
 ///
 /// Deliberately `pub`, not `pub(crate)`, and NOT `#[cfg(test)]`-gated, even
 /// though it exists only for tests: each file under `loom/tests/*.rs` is its
@@ -329,7 +329,7 @@ static SUPPRESSED_SPAWNS: std::sync::atomic::AtomicUsize = std::sync::atomic::At
 /// test`), so reaching it from there requires both a real, external-visible
 /// item and one that exists in every build. Call this before exercising any
 /// path that reaches [`spawn_if_needed`] from outside this crate's own unit
-/// tests, which get it for free — see [`SPAWN_ENABLED`]'s doc.
+/// tests, which get it for free — see `SPAWN_ENABLED`'s doc.
 pub fn disable_spawn_for_tests() {
     SPAWN_ENABLED.store(false, Ordering::SeqCst);
 }

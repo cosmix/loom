@@ -201,7 +201,7 @@ impl GraphStore {
     /// revision must not each pay a GC pass for nothing.
     ///
     /// A NEWLY written base, on the other hand, triggers
-    /// [`Self::prune_after_publish`] (`graph_store/prune.rs`) so publishing
+    /// `Self::prune_after_publish` (`graph_store/prune.rs`) so publishing
     /// is the one place base-layer retention is enforced (see
     /// `doc/PROPOSAL-retrieval-precision.md` §A.14) — `graph/base/`
     /// otherwise accretes one file per published commit forever.

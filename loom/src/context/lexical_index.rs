@@ -19,7 +19,7 @@
 //!
 //! ## The scan is still the oracle
 //!
-//! [`crate::context::rank::score_bm25`] and the full corpus scan behind it are
+//! `crate::context::rank::score_bm25` and the full corpus scan behind it are
 //! not dead code and must not be removed. They run whenever no cache is
 //! configured — which is every existing test and every caller that has no
 //! cache root to hand — they are what a miss falls back to, and they are what

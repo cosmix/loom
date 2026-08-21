@@ -94,7 +94,7 @@ impl GraphStore {
     /// Prune published base layers, keeping the most useful few.
     ///
     /// Retains every stem named in `protected` — from
-    /// [`Self::prune_after_publish`] this is the revision just written plus
+    /// `Self::prune_after_publish` this is the revision just written plus
     /// whatever `state.json` currently names, so a concurrent reader can
     /// never have its live base pulled out from under it — plus the `keep`
     /// most-recently-modified of whatever remains. Best-effort: an unlink

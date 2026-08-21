@@ -1,9 +1,9 @@
 //! Deterministic BM25 ranking for knowledge chunks.
 //!
 //! The document-agnostic corpus machinery (`LexicalCorpus`,
-//! `prepare_lexical_cached`, `score_bm25`) lives in [`corpus`], the exact-rung
-//! accumulator in [`rungs`], and this channel's chunk-specific exact-match
-//! ladder in [`ladder`]. The first two are re-exported here because
+//! `prepare_lexical_cached`, `score_bm25`) lives in `corpus`, the exact-rung
+//! accumulator in `rungs`, and this channel's chunk-specific exact-match
+//! ladder in `ladder`. The first two are re-exported here because
 //! [`crate::context::rank_source()`] scores source-graph nodes through exactly
 //! the same statistics and the same rung ladder; `ladder` is not, because it
 //! reads `KnowledgeChunk` fields a source node does not have.

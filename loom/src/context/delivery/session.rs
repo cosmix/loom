@@ -41,7 +41,7 @@ use std::path::Path;
 ///
 /// Hashing rather than filing the raw id is not decoration. The recipient
 /// reaches the filesystem as `<recipient_id>.json` and
-/// [`validate_recipient_id`] refuses anything outside `[A-Za-z0-9._-]`
+/// `validate_recipient_id` refuses anything outside `[A-Za-z0-9._-]`
 /// because of that — but a session id arriving on a hook's stdin JSON is
 /// untrusted input, so a raw id would either be refused outright (a starved
 /// session, indistinguishable from a bug) or, were that check ever loosened,

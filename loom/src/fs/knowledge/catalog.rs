@@ -55,8 +55,8 @@ pub struct Catalog {
     /// Hash over the catalog's chunk identities and content hashes.
     pub revision: String,
     /// Curated knowledge chunks in relative-path order, followed by every
-    /// indexed prose chunk (`prose:`-prefixed id — see [`prose`]) in the
-    /// order [`prose::ProseSources::files`] returns. Not one global sort: the
+    /// indexed prose chunk (`prose:`-prefixed id — see `prose`) in the
+    /// order `prose::ProseSources::files` returns. Not one global sort: the
     /// two groups are ordering-independent by construction, since ranking
     /// scores every chunk on its own and never assumes catalog order.
     pub chunks: Vec<KnowledgeChunk>,
@@ -146,7 +146,7 @@ fn process_file(
 
 /// Build a deterministic catalog rooted at a knowledge directory, extended
 /// with every chunk indexed from the project's configured prose roots (see
-/// [`prose`]).
+/// `prose`).
 pub fn build(root: &Path) -> anyhow::Result<Catalog> {
     let files = markdown_files(root)?;
     let project_root = prose::project_root_of(root);

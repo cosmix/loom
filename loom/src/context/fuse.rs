@@ -56,7 +56,7 @@
 //!
 //! Both merge passes below key by [`ChunkId`] across every input list,
 //! exactly as fusion did before the two-tier rework -- see the hazard note at
-//! the top of [`crate::context::rank_source`] (`rank_source.rs:10-20`):
+//! the top of [`mod@crate::context::rank_source`] (`rank_source.rs:10-20`):
 //! knowledge and source ids live in disjoint path spaces today, so a
 //! collision cannot occur, but if one ever did, a merged entry would adopt
 //! one channel and [`crate::context::pack`]'s dispatch on `candidate.channel`

@@ -18,8 +18,8 @@ use std::path::{Path, PathBuf};
 pub struct FileFingerprint {
     /// Path relative to the knowledge root, with `/` separators.
     ///
-    /// **Exception:** a prose entry (see [`prose_fingerprints`]) carries an
-    /// already [`crate::fs::knowledge::catalog::prose::PROSE_ID_PREFIX`]-prefixed
+    /// **Exception:** a prose entry (see `prose_fingerprints`) carries an
+    /// already `crate::fs::knowledge::catalog::prose::PROSE_ID_PREFIX`-prefixed
     /// path relative to the *project* root instead, and must never be joined
     /// onto the knowledge root.
     pub path: PathBuf,
@@ -51,7 +51,7 @@ pub fn fingerprint_file(knowledge_root: &Path, path: &Path) -> Result<FileFinger
 
 /// Fingerprint every `*.md` file under `knowledge_root`, recursively, sorted by
 /// relative path, extended with a fingerprint for every indexed prose file
-/// (see [`prose_fingerprints`]).
+/// (see `prose_fingerprints`).
 ///
 /// Skips dotfiles and dot-directories at any depth. A missing `knowledge_root`
 /// yields an empty `Vec`, not an error — a project without a knowledge tree yet
