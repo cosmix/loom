@@ -1,12 +1,38 @@
-//! Deterministic BM25 ranking for knowledge chunks, plus the document-agnostic
-//! corpus machinery (`LexicalCorpus`, `prepare_lexical`, `score_bm25`)
-//! that [`crate::context::rank_source()`] scores source-graph nodes through.
+//! Deterministic BM25 ranking for knowledge chunks.
+//!
+//! The document-agnostic corpus machinery (`LexicalCorpus`,
+//! `prepare_lexical_cached`, `score_bm25`) lives in [`corpus`], the exact-rung
+//! accumulator in [`rungs`], and this channel's chunk-specific exact-match
+//! ladder in [`ladder`]. The first two are re-exported here because
+//! [`crate::context::rank_source()`] scores source-graph nodes through exactly
+//! the same statistics and the same rung ladder; `ladder` is not, because it
+//! reads `KnowledgeChunk` fields a source node does not have.
+
+mod corpus;
+mod ladder;
+mod rungs;
+
+pub(crate) use corpus::{prepare_lexical_cached, LexicalCorpus};
+pub(crate) use rungs::RungScore;
+
+// The scan oracle, re-exported for `context/tests/rank_stopwords.rs`, which
+// pins BM25 one input at a time against it. Production reaches the same
+// arithmetic through `LexicalCorpus::score`, which is what picks between the
+// scanned and the indexed representation (`rank/corpus.rs:164`), so nothing
+// outside the tests names `score_bm25` any more — hence the `cfg`, which keeps
+// a non-test build from warning on an unused re-export. `doc` rides along
+// because `lexical_index.rs:22` links this path when arguing that the scan is
+// not dead code, and that argument should not go dark in the rendered docs.
+#[cfg(any(test, doc))]
+pub(crate) use corpus::score_bm25;
 
 use crate::context::config::RetrievalConfig;
-use crate::context::lexical::{contains_whole_term, field_tokens, link_target_matches};
-use crate::context::schema::{Channel, ChunkId, KnowledgeChunk, SelectionReason};
+use crate::context::lexical::{field_tokens, ExactGate};
+use crate::context::lexical_index::LexicalCache;
+use crate::context::schema::{Channel, ChunkId, Confidence, KnowledgeChunk, SelectionReason};
+use crate::fs::knowledge::catalog::prose::PROSE_ID_PREFIX;
+use ladder::score_exact_match_ladder;
 use std::cmp::Ordering;
-use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
 /// Re-exported so callers (and this module's own tests) can tokenize text the
@@ -27,6 +53,54 @@ pub const BOOST_EXACT_SYMBOL: f32 = 80.0;
 pub const BOOST_LINKED_FROM: f32 = 40.0;
 /// Additive score for a stage dependency id.
 pub const BOOST_STAGE_DEPENDENCY: f32 = 30.0;
+
+/// How much to subtract from an indexed-prose candidate so that curated
+/// knowledge outranks it at equal evidence (A.15).
+///
+/// Curated knowledge is hand-written, reviewed, and cannot be re-derived from
+/// the code; an indexed design doc under `doc/` is none of those, so at equal
+/// evidence the curated section is the better answer and must rank first. The
+/// magnitude is `RetrievalConfig::knowledge_curated_prior` (5.0 by default,
+/// `loom/src/context/config.rs:106`) - an increment, not a multiplier, and
+/// deliberately far below the exact-match rungs: it settles ties and near-ties
+/// between the two corpora without ever outranking real evidence.
+///
+/// Applied as a demotion of prose rather than a bonus to curated: the two are
+/// equivalent for curated-vs-prose ordering, but adding a constant to every
+/// curated candidate would also inflate the knowledge channel against the
+/// source channel and compress the within-channel normalized scores that
+/// `fuse`'s tier-2 tie-break depends on (see `context/fuse.rs`). It also leaves
+/// curated scores at exactly the arithmetic the BM25 and rung-ladder tests pin
+/// (`context/tests/rank.rs`, `context/tests/rank_ladder.rs`), so those keep
+/// measuring what they were written to measure instead of this constant.
+///
+/// The caller CLAMPS the difference at zero, and that clamp is load-bearing,
+/// not defensive. [`crate::context::fuse`]'s tier-2 tie-break divides a
+/// candidate's raw score by its channel's maximum (`fuse.rs:133`), guarding
+/// only a zero or non-finite divisor — never a negative one. Let a prose score
+/// go negative on a query that ONLY prose answers and the channel maximum is
+/// itself negative, at which point `-3.0 / -1.0 = 3.0` outranks
+/// `-1.0 / -1.0 = 1.0` and the whole list INVERTS: the worst match sorts first.
+/// The clamp costs only discrimination among prose that scored below the
+/// prior — weak matches, whose tie then breaks deterministically by id in
+/// [`by_score_then_id`] — which is far cheaper than an inverted list. Do not
+/// "simplify" it away.
+///
+/// Applied HERE rather than inside [`score_exact_match_ladder`] for one
+/// load-bearing reason: `score_chunk` returns `None` when no rung fired
+/// (`rank.rs`, "a chunk nothing in the query pointed at is not a candidate at
+/// all"), and a prior settled inside the ladder would give EVERY curated chunk
+/// a non-empty score, turning the whole knowledge tree into candidates on every
+/// query and undoing A.2's candidacy floor. Adjusting only a chunk that already
+/// earned a reason keeps the prior an ORDERING signal and never an admission
+/// one.
+fn prose_demotion(chunk: &KnowledgeChunk, config: &RetrievalConfig) -> f32 {
+    if chunk.id.starts_with(PROSE_ID_PREFIX) {
+        config.knowledge_curated_prior
+    } else {
+        0.0
+    }
+}
 
 /// What the caller is asking for.
 #[derive(Debug, Clone, Default)]
@@ -60,6 +134,56 @@ pub struct RankedCandidate {
     /// Distinct query terms this candidate matched lexically. Feeds the hook's
     /// emit floor through `ContextItem::matched_term_count`.
     pub matched_term_count: usize,
+    /// Cap on the confidence the reasons alone would imply, when the rung
+    /// ladder judged the evidence weaker than the reason names it. See
+    /// [`RankedCandidate::confidence`] — read it there, never here: a consumer
+    /// that calls `Confidence::from_reasons` directly silently ignores the cap.
+    pub confidence_ceiling: Option<Confidence>,
+}
+
+impl RankedCandidate {
+    /// The confidence to publish for this candidate. This CAPS and never
+    /// raises: it returns the WEAKER of what the reasons imply and
+    /// [`RankedCandidate::confidence_ceiling`].
+    ///
+    /// A ceiling of `Some(Confidence::High)` therefore cannot promote a
+    /// lexical-only candidate, and `None` behaves exactly as
+    /// `Confidence::from_reasons` alone. Stated first because a "ceiling" that
+    /// could also lift is the obvious footgun here, and nothing in the type
+    /// prevents a future caller from setting one optimistically.
+    ///
+    /// This is the ONE place the two halves of the answer meet, so every
+    /// consumer that renders or serializes a confidence must come through it.
+    pub fn confidence(&self) -> Confidence {
+        let from_reasons = Confidence::from_reasons(&self.reasons);
+        match self.confidence_ceiling {
+            Some(ceiling) => weaker(ceiling, from_reasons),
+            None => from_reasons,
+        }
+    }
+}
+
+/// The weaker of two confidences.
+///
+/// Spelled out here rather than as `Ord` on [`Confidence`] in `schema.rs`
+/// deliberately: a total order over a three-value trust label invites
+/// comparisons that do not mean anything (`>`, sorting, ranges), and only this
+/// one `min` is actually wanted anywhere in the codebase.
+fn weaker(left: Confidence, right: Confidence) -> Confidence {
+    if strength(left) <= strength(right) {
+        left
+    } else {
+        right
+    }
+}
+
+/// Order `Confidence`'s variants so [`weaker`] can compare two of them.
+fn strength(confidence: Confidence) -> u8 {
+    match confidence {
+        Confidence::Low => 0,
+        Confidence::Medium => 1,
+        Confidence::High => 2,
+    }
 }
 
 /// One channel's ranking pass: its candidates, plus the query terms the corpus
@@ -73,177 +197,8 @@ pub struct RankedCandidate {
 pub struct ChannelRanking {
     /// Candidates in final order: score descending, id ascending.
     pub candidates: Vec<RankedCandidate>,
-    /// Query terms dropped before scoring. Empty until A.2 lands.
+    /// Query terms dropped as corpus-ubiquitous or too short to discriminate.
     pub dropped_terms: Vec<String>,
-}
-
-/// Score the exact-match ladder for one chunk against `query`: explicit id,
-/// exact path, exact symbol, linked-from, and stage-dependency boosts, in
-/// that order. Returns the summed boost and the reasons that fired.
-fn score_exact_match_ladder(
-    query: &RankQuery,
-    chunk: &KnowledgeChunk,
-    explicit_chunks: &[&KnowledgeChunk],
-    explicit_files: &[&PathBuf],
-) -> (f32, Vec<SelectionReason>) {
-    let mut score = 0.0;
-    let mut reasons = Vec::new();
-    if query.required_ids.iter().any(|id| id == &chunk.id) {
-        score += BOOST_EXPLICIT_ID;
-        reasons.push(SelectionReason::ExplicitId);
-    }
-    if chunk
-        .source_paths
-        .iter()
-        .any(|path| contains_whole_term(&query.text, path))
-    {
-        score += BOOST_EXACT_PATH;
-        reasons.push(SelectionReason::ExactPath);
-    }
-    if chunk
-        .symbols
-        .iter()
-        .any(|symbol| contains_whole_term(&query.text, symbol))
-    {
-        score += BOOST_EXACT_SYMBOL;
-        reasons.push(SelectionReason::ExactSymbol);
-    }
-    let links_to_explicit = chunk.links.iter().any(|(_, target)| {
-        explicit_files
-            .iter()
-            .any(|file| link_target_matches(&chunk.file, target, file))
-    });
-    let linked_from_explicit = explicit_chunks.iter().any(|explicit| {
-        explicit
-            .links
-            .iter()
-            .any(|(_, target)| link_target_matches(&explicit.file, target, &chunk.file))
-    });
-    if links_to_explicit || linked_from_explicit {
-        score += BOOST_LINKED_FROM;
-        reasons.push(SelectionReason::LinkedFrom);
-    }
-    if query.stage_dependency_ids.iter().any(|id| id == &chunk.id) {
-        score += BOOST_STAGE_DEPENDENCY;
-        reasons.push(SelectionReason::StageDependency);
-    }
-    (score, reasons)
-}
-
-/// BM25 lexical score for the document at `index`, summed across query terms.
-///
-/// Returns the score and how many DISTINCT query terms matched the document.
-/// The count is de-duplicated because `query_terms` may legitimately repeat a
-/// term (a prompt saying "cache" twice tokenizes to two entries), and a repeat
-/// is not extra evidence — the hook's emit floor counts *how much of the query*
-/// an item covers, not how often the caller typed a word. The BM25 sum is
-/// deliberately left alone: a repeated term contributing twice is the existing
-/// weighting, and changing it is a ranking decision, not a counting one.
-#[allow(clippy::too_many_arguments)]
-pub(crate) fn score_bm25(
-    query_terms: &[String],
-    document_frequencies: &BTreeMap<String, usize>,
-    documents: &[Vec<(String, f32)>],
-    lengths: &[usize],
-    average_length: f32,
-    corpus_size: f32,
-    index: usize,
-) -> (f32, usize) {
-    let mut lexical_score = 0.0;
-    let mut matched_terms: BTreeSet<&str> = BTreeSet::new();
-    for term in query_terms {
-        let document_frequency = document_frequencies[term];
-        if document_frequency == 0 {
-            continue;
-        }
-        let frequency = document_frequency as f32;
-        let idf = (1.0 + (corpus_size - frequency + 0.5) / (frequency + 0.5)).ln();
-        let matching_weights: Vec<f32> = documents[index]
-            .iter()
-            .filter(|(value, _)| value == term)
-            .map(|(_, weight)| *weight)
-            .collect();
-        if matching_weights.is_empty() {
-            continue;
-        }
-        let weighted_frequency: f32 = matching_weights.iter().sum();
-        let normalization =
-            BM25_K1 * (1.0 - BM25_B + BM25_B * lengths[index] as f32 / average_length);
-        lexical_score +=
-            idf * (weighted_frequency * (BM25_K1 + 1.0)) / (weighted_frequency + normalization);
-        matched_terms.insert(term.as_str());
-    }
-    (lexical_score, matched_terms.len())
-}
-
-/// Query-dependent corpus statistics that do not depend on what a document
-/// *is*: tokenized query terms, per-document weighted tokens and lengths, the
-/// corpus average length, and per-term document frequencies.
-///
-/// Nothing here knows whether a document was built from a knowledge chunk or
-/// from a source-graph node, which is the point: every channel builds its own
-/// `(term, weight)` documents and then scores through the same statistics, so
-/// the rankers cannot drift apart in how they weigh a term.
-pub(crate) struct LexicalCorpus {
-    /// Tokenized query terms, in query order.
-    pub(crate) query_terms: Vec<String>,
-    /// Weighted `(term, weight)` pairs per document, parallel to the input.
-    pub(crate) documents: Vec<Vec<(String, f32)>>,
-    /// Token count per document, parallel to `documents`.
-    pub(crate) lengths: Vec<usize>,
-    /// Mean document length; `0.0` for an empty corpus.
-    pub(crate) average_length: f32,
-    /// How many documents contain each query term.
-    pub(crate) document_frequencies: BTreeMap<String, usize>,
-    /// Query terms dropped before scoring. Empty until A.2 lands.
-    pub(crate) dropped_terms: Vec<String>,
-}
-
-/// Assemble the loop-invariant statistics for one ranking pass.
-///
-/// Every query term gets a `document_frequencies` entry, including terms no
-/// document contains at all: [`score_bm25`] indexes that map directly, so a
-/// missing key panics instead of scoring zero.
-///
-/// `_raw_query` is the untokenized query text and `_config` the retrieval
-/// tunables; both are threaded in now so A.2 can partition `query_terms` into
-/// surviving and dropped without changing a single call site.
-pub(crate) fn prepare_lexical(
-    query_terms: &[String],
-    documents: Vec<Vec<(String, f32)>>,
-    // Wave 2 (A.1/A.2) reads this: backticked terms are never dropped.
-    _raw_query: &str,
-    // Wave 2 (A.1/A.2) reads this: `stop_df_ratio`, `min_query_token_len`.
-    _config: &RetrievalConfig,
-) -> LexicalCorpus {
-    let lengths: Vec<usize> = documents.iter().map(Vec::len).collect();
-    let average_length = if documents.is_empty() {
-        0.0
-    } else {
-        lengths.iter().sum::<usize>() as f32 / documents.len() as f32
-    };
-
-    // Document frequency per query term is loop-invariant: it scans every
-    // document but does not depend on which document is currently being
-    // scored. Computed once here instead of inside the per-document loop.
-    let mut document_frequencies: BTreeMap<String, usize> = BTreeMap::new();
-    for term in query_terms {
-        document_frequencies.entry(term.clone()).or_insert_with(|| {
-            documents
-                .iter()
-                .filter(|document| document.iter().any(|(value, _)| value == term))
-                .count()
-        });
-    }
-
-    LexicalCorpus {
-        query_terms: query_terms.to_vec(),
-        documents,
-        lengths,
-        average_length,
-        document_frequencies,
-        dropped_terms: Vec::new(),
-    }
 }
 
 /// The knowledge channel's corpus: the shared [`LexicalCorpus`] plus the two
@@ -256,9 +211,23 @@ struct Corpus<'a> {
 }
 
 impl<'a> Corpus<'a> {
-    fn prepare(query: &RankQuery, chunks: &'a [KnowledgeChunk], config: &RetrievalConfig) -> Self {
+    /// Assemble the corpus, reading the persistent lexical index (A.13) when
+    /// `cache` is `Some` and warm, and building it when it is not.
+    ///
+    /// The documents go in as a CLOSURE rather than a `Vec` because skipping
+    /// their construction IS the optimization: `field_tokens` runs over every
+    /// chunk in the catalog — 656 of them in this repository — on every prompt,
+    /// inside a hook with a five-second ceiling. `doc_ids` are the chunk ids in
+    /// corpus order, and they are what proves a warm file describes THIS
+    /// catalog rather than a same-revision-different-chunks one.
+    fn prepare(
+        query: &RankQuery,
+        chunks: &'a [KnowledgeChunk],
+        config: &RetrievalConfig,
+        cache: Option<&LexicalCache>,
+    ) -> Self {
         let query_terms = tokenize(&query.text);
-        let documents: Vec<Vec<(String, f32)>> = chunks.iter().map(field_tokens).collect();
+        let doc_ids: Vec<&str> = chunks.iter().map(|chunk| chunk.id.as_str()).collect();
         let explicit_chunks: Vec<&KnowledgeChunk> = chunks
             .iter()
             .filter(|chunk| query.required_ids.iter().any(|id| id == &chunk.id))
@@ -267,7 +236,14 @@ impl<'a> Corpus<'a> {
             explicit_chunks.iter().map(|chunk| &chunk.file).collect();
 
         Self {
-            lexical: prepare_lexical(&query_terms, documents, &query.text, config),
+            lexical: prepare_lexical_cached(
+                &query_terms,
+                &doc_ids,
+                || chunks.iter().map(field_tokens).collect(),
+                &query.text,
+                config,
+                cache,
+            ),
             explicit_chunks,
             explicit_files,
         }
@@ -285,49 +261,50 @@ fn by_score_then_id(left: &RankedCandidate, right: &RankedCandidate) -> Ordering
 }
 
 /// Score one chunk, returning `None` when no reason fired — a chunk nothing in
-/// the query pointed at is not a candidate at all.
+/// the query pointed at is not a candidate at all. With stopwording in place
+/// that is a real filter rather than a formality: a chunk whose only overlap
+/// with the prompt was "the" now matches no surviving term, earns no reason,
+/// and never becomes a candidate to be counted as `omitted`.
 ///
 /// The mirror of `rank_source`'s `score_node`, deliberately: the two channels
 /// share the rung ladder, the BM25 statistics and the candidate type, and
 /// keeping their per-document scorers the same shape is what makes a drift
 /// between them visible in a diff.
+#[allow(clippy::too_many_arguments)]
 fn score_chunk(
     query: &RankQuery,
     chunk: &KnowledgeChunk,
     channel: Channel,
     corpus: &Corpus<'_>,
+    gate: &ExactGate<'_>,
     corpus_size: f32,
     index: usize,
 ) -> Option<RankedCandidate> {
-    let (mut score, mut reasons) = score_exact_match_ladder(
+    let mut rungs = score_exact_match_ladder(
         query,
         chunk,
         &corpus.explicit_chunks,
         &corpus.explicit_files,
+        gate,
     );
-    let (lexical_score, matched_term_count) = score_bm25(
-        &corpus.lexical.query_terms,
-        &corpus.lexical.document_frequencies,
-        &corpus.lexical.documents,
-        &corpus.lexical.lengths,
-        corpus.lexical.average_length,
-        corpus_size,
-        index,
-    );
+    let (lexical_score, matched_term_count) = corpus.lexical.score(corpus_size, index);
     if matched_term_count > 0 {
-        reasons.push(SelectionReason::Lexical);
-        score += lexical_score;
+        rungs.reasons.push(SelectionReason::Lexical);
+        rungs.score += lexical_score;
     }
-    if reasons.is_empty() {
+    if rungs.is_empty() {
         return None;
     }
+    // Read before `reasons` is moved out of `rungs` below.
+    let confidence_ceiling = rungs.confidence_ceiling();
     Some(RankedCandidate {
         id: ChunkId::from(chunk.id.as_str()),
         channel,
-        score,
-        reasons,
+        score: rungs.score,
+        reasons: rungs.reasons,
         token_count: chunk.estimated_tokens,
         matched_term_count,
+        confidence_ceiling,
     })
 }
 
@@ -335,24 +312,58 @@ fn score_chunk(
 /// diagnostics alongside the candidates.
 ///
 /// Results descend by score and use ascending id as a deterministic
-/// tie-breaker. This is the form [`crate::context::retrieve`] calls, because
-/// the pack has to report the dropped terms; [`rank`] is the same pass without
-/// them.
+/// tie-breaker. This is the shape [`crate::context::retrieve`] consumes,
+/// because the pack has to report the dropped terms; [`rank`] is the same pass
+/// without them.
+///
+/// Scores over a freshly tokenized corpus — the scan path, and the oracle the
+/// persistent index is checked against. [`rank_channel_cached`] is the same
+/// pass with an index behind it, and is what retrieval itself reaches for.
 pub fn rank_channel(
     query: &RankQuery,
     chunks: &[KnowledgeChunk],
     channel: Channel,
     config: &RetrievalConfig,
 ) -> ChannelRanking {
+    rank_channel_cached(query, chunks, channel, config, None)
+}
+
+/// [`rank_channel`], reading and maintaining the persistent lexical index
+/// (A.13) when `cache` is given.
+///
+/// The `Option` is what keeps the scan reachable: a caller with no context
+/// cache root — and every existing test — passes `None` and gets the full
+/// scan, so the fallback path stays exercised rather than becoming code that
+/// only runs after a cache is deleted. Mirrors
+/// [`crate::context::rank_source::rank_source_channel_cached`] deliberately;
+/// the two channels' entry points are kept the same shape so a drift between
+/// them shows up in a diff.
+pub fn rank_channel_cached(
+    query: &RankQuery,
+    chunks: &[KnowledgeChunk],
+    channel: Channel,
+    config: &RetrievalConfig,
+    cache: Option<&LexicalCache>,
+) -> ChannelRanking {
     if chunks.is_empty() {
         return ChannelRanking::default();
     }
 
-    let corpus = Corpus::prepare(query, chunks, config);
+    // Order is load-bearing: the gate's `rare` test reads the corpus document
+    // frequencies, so the corpus has to exist before any rung is scored.
+    let corpus = Corpus::prepare(query, chunks, config, cache);
+    let gate = ExactGate::new(
+        &query.text,
+        &corpus.lexical.document_frequencies,
+        config.df_ident_max,
+    );
     let corpus_size = chunks.len() as f32;
     let mut candidates = Vec::new();
     for (index, chunk) in chunks.iter().enumerate() {
-        if let Some(candidate) = score_chunk(query, chunk, channel, &corpus, corpus_size, index) {
+        if let Some(mut candidate) =
+            score_chunk(query, chunk, channel, &corpus, &gate, corpus_size, index)
+        {
+            candidate.score = (candidate.score - prose_demotion(chunk, config)).max(0.0);
             candidates.push(candidate);
         }
     }
@@ -376,3 +387,7 @@ pub fn rank(
 ) -> Vec<RankedCandidate> {
     rank_channel(query, chunks, channel, config).candidates
 }
+
+#[cfg(test)]
+#[path = "rank/tests_prior.rs"]
+mod tests_prior;

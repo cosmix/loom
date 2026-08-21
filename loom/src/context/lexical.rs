@@ -1,5 +1,19 @@
 //! Tokenization and text-matching primitives used by [`crate::context::rank`].
 
+mod evidence;
+
+pub use evidence::{backtick_spans, TermEvidence};
+pub(crate) use evidence::{occurs_backticked, ExactGate};
+
+/// `admits_exact` and `is_shaped` are `pub` because they are the exact-rung
+/// PREDICATE that A.1 rests on and the unit tests pin them directly, one input
+/// at a time — a rule this load-bearing is not allowed to be reachable only
+/// through the 8,500-candidate path that uses it. Production calls them solely
+/// via [`ExactGate::admits`], which is why the re-export is test-only: outside
+/// tests nothing should reach past the gate to re-derive the decision itself.
+#[cfg(test)]
+pub use evidence::{admits_exact, is_shaped};
+
 use crate::context::schema::KnowledgeChunk;
 use std::path::{Component, Path, PathBuf};
 
@@ -135,7 +149,8 @@ fn normalize_slashes(path: &Path) -> PathBuf {
     PathBuf::from(path.to_string_lossy().replace('\\', "/"))
 }
 
-/// True when `term` occurs in `text` delimited by non-identifier characters.
+/// Byte ranges of every occurrence of `lower_term` in `lower_text` delimited by
+/// non-identifier characters. BOTH arguments must already be ASCII-lowercased.
 ///
 /// The exact-match rungs must not fire on a fragment buried inside a longer
 /// word. Curated prose is full of one- and two-character backticked tokens
@@ -144,30 +159,55 @@ fn normalize_slashes(path: &Path) -> PathBuf {
 /// and a `high` confidence label, essentially at random. Requiring identifier
 /// boundaries keeps `Foo::Bar` and `src/context/pack.rs` matching while a bare
 /// `n` no longer matches "signal generation".
-pub(crate) fn contains_whole_term(text: &str, term: &str) -> bool {
-    if term.is_empty() {
-        return false;
+///
+/// Case folding is the CALLER's job precisely because the returned ranges are
+/// byte offsets its caller compares against spans taken from the raw prompt
+/// (`evidence::occurs_backticked`). `str::to_ascii_lowercase` preserves every
+/// offset, so folding once at the top and threading the folded text down keeps
+/// the two coordinate systems identical — and keeps a 500-character stage query
+/// from being re-folded once per candidate name.
+pub(crate) fn whole_term_ranges(lower_text: &str, lower_term: &str) -> Vec<(usize, usize)> {
+    if lower_term.is_empty() {
+        return Vec::new();
     }
-    let text_lower = text.to_ascii_lowercase();
-    let term_lower = term.to_ascii_lowercase();
     let is_identifier_char = |c: char| c.is_ascii_alphanumeric() || c == '_';
 
+    let mut ranges = Vec::new();
     let mut offset = 0;
-    while let Some(found) = text_lower[offset..].find(&term_lower) {
+    while let Some(found) = lower_text[offset..].find(lower_term) {
         let start = offset + found;
-        let end = start + term_lower.len();
-        let before_ok = text_lower[..start]
+        let end = start + lower_term.len();
+        let before_ok = lower_text[..start]
             .chars()
             .next_back()
             .is_none_or(|c| !is_identifier_char(c));
-        let after_ok = text_lower[end..]
+        let after_ok = lower_text[end..]
             .chars()
             .next()
             .is_none_or(|c| !is_identifier_char(c));
         if before_ok && after_ok {
-            return true;
+            ranges.push((start, end));
         }
-        offset = start + term_lower.chars().next().map_or(1, char::len_utf8);
+        offset = start + lower_term.chars().next().map_or(1, char::len_utf8);
     }
-    false
+    ranges
+}
+
+/// Byte range of the first identifier-boundary-delimited occurrence of `term`
+/// in `text`, case-insensitively.
+///
+/// The range indexes `text` directly: ASCII case folding does not move a single
+/// byte, so an offset found in the folded copy is the same offset in the
+/// original.
+pub(crate) fn find_whole_term(text: &str, term: &str) -> Option<(usize, usize)> {
+    whole_term_ranges(&text.to_ascii_lowercase(), &term.to_ascii_lowercase())
+        .into_iter()
+        .next()
+}
+
+/// True when `term` occurs in `text` delimited by non-identifier characters.
+///
+/// See [`whole_term_ranges`] for why the boundaries are required at all.
+pub(crate) fn contains_whole_term(text: &str, term: &str) -> bool {
+    find_whole_term(text, term).is_some()
 }

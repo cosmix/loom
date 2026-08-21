@@ -1,25 +1,7 @@
+use super::rank_fixtures::chunk;
 use crate::context::config::RetrievalConfig;
 use crate::context::rank::*;
 use crate::context::schema::*;
-use std::path::PathBuf;
-
-fn chunk(id: &str, body: &str, tokens: usize) -> KnowledgeChunk {
-    KnowledgeChunk {
-        id: id.to_string(),
-        file: PathBuf::from(format!("{id}.md")),
-        anchor: String::new(),
-        heading: String::new(),
-        body: body.to_string(),
-        content_hash: String::new(),
-        estimated_tokens: tokens,
-        aliases: Vec::new(),
-        category: None,
-        source_paths: Vec::new(),
-        symbols: Vec::new(),
-        links: Vec::new(),
-        state: LifecycleState::Active,
-    }
-}
 
 #[test]
 fn rule_1_tokenizer_lowercases_input() {

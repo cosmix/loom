@@ -82,7 +82,7 @@ fn test_non_full_coverage_never_reaches_high_confidence() {
         .find(|candidate| candidate.id.as_str() == "src/context/widget.rs#function:widget")
         .expect("the degraded node still earns a lexical match and must be present");
     assert_ne!(
-        Confidence::from_reasons(&candidate.reasons),
+        candidate.confidence(),
         Confidence::High,
         "partial coverage must never earn high confidence: {candidate:?}"
     );
@@ -128,7 +128,7 @@ fn test_explicit_id_on_non_full_coverage_is_not_high() {
         .find(|candidate| candidate.id.as_str() == "src/billing.rs#function:retry")
         .expect("a required id that loses its rung must still be ranked");
     assert_ne!(
-        Confidence::from_reasons(&candidate.reasons),
+        candidate.confidence(),
         Confidence::High,
         "an explicit id on non-full coverage must not reach high confidence: {candidate:?}"
     );
@@ -217,10 +217,10 @@ fn test_ordering_is_deterministic_across_runs() {
 }
 
 /// A query whose terms appear in no node's scope or signature must return
-/// normally rather than panicking: `score_bm25` indexes
-/// `document_frequencies` by query term, a `BTreeMap` index that panics on a
-/// missing key, so `prepare_lexical` must insert a zero-frequency entry for
-/// every query term.
+/// normally: nothing fires, so nothing is a candidate. The missing-key half of
+/// this — a term absent from `document_frequencies` altogether — is pinned in
+/// `rank_stopwords.rs`, since stopwording means the scored term list and that
+/// map no longer have to agree.
 #[test]
 fn test_query_term_matching_no_node_does_not_panic() {
     let query = RankQuery {

@@ -19,16 +19,22 @@
 //! not "simplify" that dispatch into trying both maps: it would hide the
 //! collision instead of surfacing it.
 
+mod paths;
+
+pub use paths::normalize_dependency_path;
+
 use crate::context::config::RetrievalConfig;
 use crate::context::graph_store::ResolvedGraph;
-use crate::context::lexical::{contains_whole_term, WEIGHT_BODY, WEIGHT_SYMBOLS};
+use crate::context::lexical::{ExactGate, WEIGHT_BODY, WEIGHT_SYMBOLS};
+use crate::context::lexical_index::LexicalCache;
 use crate::context::rank::{
-    prepare_lexical, score_bm25, tokenize, ChannelRanking, LexicalCorpus, RankQuery,
-    RankedCandidate, BOOST_EXACT_PATH, BOOST_EXACT_SYMBOL, BOOST_EXPLICIT_ID,
+    prepare_lexical_cached, tokenize, ChannelRanking, LexicalCorpus, RankQuery, RankedCandidate,
+    RungScore, BOOST_EXACT_PATH, BOOST_EXACT_SYMBOL, BOOST_EXPLICIT_ID, BOOST_STAGE_DEPENDENCY,
 };
 use crate::context::schema::{
     Channel, ChunkId, FileCoverage, SelectionReason, SourceNode, SourceNodeKind,
 };
+use paths::{apply_test_path_factor, matches_path, names_dependency_path, PathMatch};
 use std::cmp::Ordering;
 use std::path::Path;
 
@@ -60,10 +66,30 @@ struct ScoredNode<'a> {
 /// over identical bytes produce an identical order. This is the form
 /// [`crate::context::retrieve`] calls, because the pack has to report the
 /// dropped terms; [`rank_source`] is the same pass without them.
+///
+/// Scores over a freshly tokenized corpus — the scan path, and the oracle the
+/// persistent index is checked against. [`rank_source_channel_cached`] is the
+/// same pass with an index behind it.
 pub fn rank_source_channel(
     query: &RankQuery,
     graph: &ResolvedGraph,
     config: &RetrievalConfig,
+) -> ChannelRanking {
+    rank_source_channel_cached(query, graph, config, None)
+}
+
+/// [`rank_source_channel`], reading and maintaining the persistent lexical
+/// index (A.13) when `cache` is given.
+///
+/// The `Option` is what keeps the scan reachable: a caller with no context
+/// cache root — and every existing test — passes `None` and gets the full
+/// scan, so the fallback path stays exercised rather than becoming code that
+/// only runs after a cache is deleted.
+pub fn rank_source_channel_cached(
+    query: &RankQuery,
+    graph: &ResolvedGraph,
+    config: &RetrievalConfig,
+    cache: Option<&LexicalCache>,
 ) -> ChannelRanking {
     // Whole-file nodes carry no signature and no scope, so they can only ever
     // match on their path — one per file, crowding out the symbols inside it.
@@ -76,22 +102,36 @@ pub fn rank_source_channel(
     }
 
     let query_terms = tokenize(&query.text);
-    let documents: Vec<Vec<(String, f32)>> = nodes.iter().copied().map(node_document).collect();
-    let corpus = prepare_lexical(&query_terms, documents, &query.text, config);
-    let corpus_size = nodes.len() as f32;
+    // Node ids in corpus order: the index is keyed by the resolved layer, and
+    // these prove the file it hands back describes exactly these nodes in
+    // exactly this order. Building them is a pointer copy per node; building
+    // the documents below is the ~7,900-node tokenization a warm index exists
+    // to skip, which is why it is a closure and not a value.
+    let doc_ids: Vec<&str> = nodes.iter().map(|node| node.id.as_str()).collect();
+    // Order is load-bearing: the gate's `rare` test reads these document
+    // frequencies, so the corpus has to exist before any rung is scored.
+    let corpus = prepare_lexical_cached(
+        &query_terms,
+        &doc_ids,
+        || nodes.iter().copied().map(node_document).collect(),
+        &query.text,
+        config,
+        cache,
+    );
+    let gate = ExactGate::new(
+        &query.text,
+        &corpus.document_frequencies,
+        config.df_ident_max,
+    );
 
-    let mut scored: Vec<ScoredNode> = nodes
-        .iter()
-        .copied()
-        .enumerate()
-        .filter_map(|(index, node)| {
-            score_node(query, node, &corpus, corpus_size, index).map(|candidate| ScoredNode {
-                candidate,
-                order: (node.path.as_path(), node.span.line_start),
-            })
-        })
-        .collect();
+    let scored = score_nodes(query, &nodes, &corpus, &gate, config);
+    rank_order(scored, corpus.dropped_terms)
+}
 
+/// Put the scored nodes in the one deterministic order and cut them to the
+/// channel's ceiling: score descending, then `(path, line_start)` ascending so
+/// two runs over identical bytes agree completely.
+fn rank_order(mut scored: Vec<ScoredNode<'_>>, dropped_terms: Vec<String>) -> ChannelRanking {
     scored.sort_by(|a, b| {
         b.candidate
             .score
@@ -102,7 +142,7 @@ pub fn rank_source_channel(
     scored.truncate(MAX_SOURCE_CANDIDATES);
     ChannelRanking {
         candidates: scored.into_iter().map(|scored| scored.candidate).collect(),
-        dropped_terms: corpus.dropped_terms,
+        dropped_terms,
     }
 }
 
@@ -119,39 +159,69 @@ pub fn rank_source(
     rank_source_channel(query, graph, config).candidates
 }
 
+/// Score every node against the query, keeping each surviving candidate beside
+/// the `(path, line_start)` key its ties break on.
+fn score_nodes<'a>(
+    query: &RankQuery,
+    nodes: &[&'a SourceNode],
+    corpus: &LexicalCorpus,
+    gate: &ExactGate<'_>,
+    config: &RetrievalConfig,
+) -> Vec<ScoredNode<'a>> {
+    let corpus_size = nodes.len() as f32;
+    nodes
+        .iter()
+        .copied()
+        .enumerate()
+        .filter_map(|(index, node)| {
+            score_node(query, node, corpus, gate, config, corpus_size, index).map(|candidate| {
+                ScoredNode {
+                    candidate,
+                    order: (node.path.as_path(), node.span.line_start),
+                }
+            })
+        })
+        .collect()
+}
+
 /// Score one node, returning `None` when no reason fired — a node nothing in
 /// the query pointed at is not a candidate at all.
+#[allow(clippy::too_many_arguments)]
 fn score_node(
     query: &RankQuery,
     node: &SourceNode,
     corpus: &LexicalCorpus,
+    gate: &ExactGate<'_>,
+    config: &RetrievalConfig,
     corpus_size: f32,
     index: usize,
 ) -> Option<RankedCandidate> {
-    let (mut score, mut reasons) = withhold_partial_coverage(node, score_exact_rungs(query, node));
-    let (lexical_score, matched_term_count) = score_bm25(
-        &corpus.query_terms,
-        &corpus.document_frequencies,
-        &corpus.documents,
-        &corpus.lengths,
-        corpus.average_length,
-        corpus_size,
-        index,
-    );
-    if matched_term_count > 0 {
-        reasons.push(SelectionReason::Lexical);
-        score += lexical_score;
+    let mut rungs = withhold_partial_coverage(node, score_exact_rungs(query, node, gate));
+    // Deliberately after the coverage guard: partial extraction says nothing
+    // about whether this file belongs to a stage we depend on, and the guard is
+    // about high-confidence rungs, which this medium-tier one is not.
+    if names_dependency_path(query, node) {
+        rungs.award(BOOST_STAGE_DEPENDENCY, SelectionReason::StageDependency);
     }
-    if reasons.is_empty() {
+    let (lexical_score, matched_term_count) = corpus.score(corpus_size, index);
+    if matched_term_count > 0 {
+        rungs.reasons.push(SelectionReason::Lexical);
+        rungs.score += lexical_score;
+    }
+    if rungs.is_empty() {
         return None;
     }
+    // Both read before `reasons` is moved out of `rungs` below.
+    let confidence_ceiling = rungs.confidence_ceiling();
+    let score = apply_test_path_factor(node, rungs.score, config);
     Some(RankedCandidate {
         id: ChunkId::from(node.id.as_str()),
         channel: Channel::Source,
         score,
-        reasons,
+        reasons: rungs.reasons,
         token_count: estimate_node_tokens(node),
         matched_term_count,
+        confidence_ceiling,
     })
 }
 
@@ -162,26 +232,27 @@ fn score_node(
 /// character, so `Foo::Bar` becomes `foo, bar` and `src/context/pack.rs`
 /// becomes `src, context, pack, rs` — token equality would match neither a
 /// CamelCase symbol nor a whole path. Tokens feed BM25 and nothing else.
-fn score_exact_rungs(query: &RankQuery, node: &SourceNode) -> (f32, Vec<SelectionReason>) {
-    let mut score = 0.0;
-    let mut reasons = Vec::new();
+///
+/// Finding the string is necessary but not sufficient: `gate` additionally
+/// requires the occurrence in the prompt to LOOK like a code reference, which
+/// is what stops "the point is" from claiming `type Point` and "write … in
+/// /home/…" from claiming every `write` and `home` in the tree.
+fn score_exact_rungs(query: &RankQuery, node: &SourceNode, gate: &ExactGate<'_>) -> RungScore {
+    let mut rungs = RungScore::default();
     if query.required_ids.iter().any(|id| id == &node.id) {
-        score += BOOST_EXPLICIT_ID;
-        reasons.push(SelectionReason::ExplicitId);
+        rungs.award(BOOST_EXPLICIT_ID, SelectionReason::ExplicitId);
     }
-    if matches_path(&query.text, node) {
-        score += BOOST_EXACT_PATH;
-        reasons.push(SelectionReason::ExactPath);
+    match matches_path(&query.text, node, gate) {
+        Some(PathMatch::FullPath) => rungs.award(BOOST_EXACT_PATH, SelectionReason::ExactPath),
+        Some(PathMatch::Stem(evidence)) => {
+            rungs.award_matched(BOOST_EXACT_PATH, SelectionReason::ExactPath, &evidence)
+        }
+        None => {}
     }
-    if node
-        .scope
-        .last()
-        .is_some_and(|terminal| contains_whole_term(&query.text, terminal))
-    {
-        score += BOOST_EXACT_SYMBOL;
-        reasons.push(SelectionReason::ExactSymbol);
+    if let Some(evidence) = node.scope.last().and_then(|terminal| gate.admits(terminal)) {
+        rungs.award_matched(BOOST_EXACT_SYMBOL, SelectionReason::ExactSymbol, &evidence);
     }
-    (score, reasons)
+    rungs
 }
 
 /// Withhold every high-confidence rung from a node whose file was not fully
@@ -195,16 +266,13 @@ fn score_exact_rungs(query: &RankQuery, node: &SourceNode) -> (f32, Vec<Selectio
 /// `--require-id` for a node in a partially-extracted file. A required id that
 /// loses its rung is still ranked and can still appear; it simply cannot claim
 /// that the extraction behind it was complete.
-fn withhold_partial_coverage(
-    node: &SourceNode,
-    scored: (f32, Vec<SelectionReason>),
-) -> (f32, Vec<SelectionReason>) {
+fn withhold_partial_coverage(node: &SourceNode, scored: RungScore) -> RungScore {
     if matches!(node.coverage, FileCoverage::Full) {
         return scored;
     }
     // Every rung score_exact_rungs awards is high-tier, so dropping them all
     // leaves no boost and no reason behind.
-    (0.0, Vec::new())
+    RungScore::default()
 }
 
 /// Build one node's BM25 document from the text that identifies it: its scope
@@ -223,17 +291,6 @@ fn node_document(node: &SourceNode) -> Vec<(String, f32)> {
             .map(|term| (term, WEIGHT_BODY)),
     );
     terms
-}
-
-/// True when the query names the node's file, spelled either as a path or as a
-/// bare stem — `src/context/pack.rs` and `pack` must both match.
-fn matches_path(query_text: &str, node: &SourceNode) -> bool {
-    if contains_whole_term(query_text, &node.path.display().to_string()) {
-        return true;
-    }
-    node.path
-        .file_stem()
-        .is_some_and(|stem| contains_whole_term(query_text, &stem.to_string_lossy()))
 }
 
 /// Estimated token cost of rendering one source node.

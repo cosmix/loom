@@ -9,9 +9,12 @@ use std::path::Path;
 
 use crate::context::delivery::plan_key;
 use crate::context::local_overlay::OverlayScope;
+use crate::context::rank_source::normalize_dependency_path;
 use crate::context::retrieve::{retrieve_for_stage, StageQuery};
 use crate::context::schema::ContextPack;
 use crate::fs::knowledge::KnowledgeDir;
+use crate::fs::stage_files::find_stage_file;
+use crate::fs::stage_loading::extract_stage_definition;
 use crate::fs::work_dir::WorkDir;
 use crate::models::stage::{Stage, WiringCheck};
 
@@ -71,6 +74,7 @@ pub(super) fn retrieve_stage_pack(work_dir: &Path, stage: &Stage) -> Option<Cont
         plan_key(stage),
         &stage.dependencies,
     );
+    query.dependency_paths = dependency_paths(work_dir, stage);
     match retrieve_for_stage(&query, STAGE_BRIEF_BUDGET_TOKENS) {
         Ok(pack) if !pack.items.is_empty() => Some(pack),
         Ok(_) => None,
@@ -83,6 +87,46 @@ pub(super) fn retrieve_stage_pack(work_dir: &Path, stage: &Stage) -> Option<Cont
             None
         }
     }
+}
+
+/// Project-relative paths the stages `stage` depends on declared as theirs.
+///
+/// Feeds `RankQuery::dependency_paths`, which boosts a source node whose file a
+/// dependency owns: the files a stage we wait on just rewrote are the files this
+/// stage is most likely to be about, and nothing else in the ranker knows that.
+///
+/// `work_dir` is the resolved `.work` root, exactly as
+/// [`crate::context::delivery::dependency_chunk_ids`] two lines above already
+/// assumes. That function reads DELIVERY records, which carry chunk ids and no
+/// paths, so the declared file lists have to come from the stage records
+/// themselves — the same `.work/stages/` lookup `verify::transitions` uses.
+///
+/// Every failure is skipped rather than reported: a brief with a thinner set of
+/// boosts is a slightly worse brief, while a stage that will not spawn is a
+/// stalled plan.
+fn dependency_paths(work_dir: &Path, stage: &Stage) -> Vec<String> {
+    let stages_dir = work_dir.join("stages");
+    let mut paths: Vec<String> = Vec::new();
+    for dependency in &stage.dependencies {
+        let Ok(Some(stage_file)) = find_stage_file(&stages_dir, dependency) else {
+            continue;
+        };
+        let Ok(content) = std::fs::read_to_string(&stage_file) else {
+            continue;
+        };
+        let Ok(definition) = extract_stage_definition(&content) else {
+            continue;
+        };
+        for declared in definition.files.iter().chain(definition.artifacts.iter()) {
+            // Normalized through the ranker's own helper so the producer and
+            // the exact-string comparison on the other end cannot drift apart.
+            let normalized = normalize_dependency_path(declared);
+            if !normalized.is_empty() && !paths.contains(&normalized) {
+                paths.push(normalized);
+            }
+        }
+    }
+    paths
 }
 
 /// Which source-graph overlay a stage's brief reads: that stage's OWN overlay,
@@ -187,6 +231,38 @@ mod tests {
             STAGE_QUERY_INPUTS.len() < 200,
             "the `Selected from:` label must stay bounded, got {} chars",
             STAGE_QUERY_INPUTS.len()
+        );
+    }
+
+    /// The spawn brief is the ONLY producer of `dependency_paths`, so a
+    /// dependency's declared `files` and `artifacts` reaching the ranker is the
+    /// whole of A.23's input side. Duplicates collapse and order is stable,
+    /// because a query that varies run to run cannot be reproduced.
+    #[test]
+    fn dependency_file_and_artifact_paths_reach_the_query() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let work_dir = temp.path().join(".work");
+        std::fs::create_dir_all(work_dir.join("stages")).unwrap();
+
+        let mut dependency = Stage::new("Upstream".to_string(), None);
+        dependency.id = "upstream".to_string();
+        dependency.files = vec!["./src/foo.ts".to_string(), "src/foo.ts".to_string()];
+        dependency.artifacts = vec!["docs/foo.md".to_string()];
+        std::fs::write(
+            work_dir.join("stages/upstream.md"),
+            crate::verify::transitions::serialize_stage_to_markdown(&dependency).unwrap(),
+        )
+        .unwrap();
+
+        let mut stage = Stage::new("Downstream".to_string(), None);
+        stage.id = "downstream".to_string();
+        stage.dependencies = vec!["upstream".to_string(), "never-written".to_string()];
+
+        assert_eq!(
+            dependency_paths(&work_dir, &stage),
+            vec!["src/foo.ts".to_string(), "docs/foo.md".to_string()],
+            "normalized, deduplicated, files before artifacts, missing \
+             dependencies skipped"
         );
     }
 
