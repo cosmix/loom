@@ -77,8 +77,17 @@ pub struct RetrievalConfig {
     /// Multiplier applied to a source node's total score when its file is a
     /// test file. Ordering pressure, not exclusion.
     pub test_path_factor: f32,
-    /// Distinct surviving query terms a knowledge item must match to satisfy
-    /// the hook's emit floor on its own.
+    /// Distinct surviving query terms an item must match to satisfy the
+    /// hook's emit floor on its own.
+    ///
+    /// The name predates the floor covering both channels — it now gates a
+    /// source node exactly the same way it gates a knowledge chunk (see
+    /// `commands::hook::user_prompt_compose::clears_emit_floor`), because a
+    /// knowledge-only floor blacks out retrieval entirely in a checkout with a
+    /// mapped source graph but no curated knowledge tree. Left unrenamed
+    /// deliberately: every reference below and the `[retrieval]` TOML key
+    /// would need to move together with no alias, for a name change that
+    /// changes no behavior.
     pub min_knowledge_terms: usize,
     /// Additive score prior for curated knowledge over indexed prose. A score
     /// increment, not a ratio — it is deliberately greater than 1.

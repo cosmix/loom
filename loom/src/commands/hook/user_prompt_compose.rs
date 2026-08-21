@@ -11,7 +11,7 @@
 //! enforces by shedding the weakest surviving units.
 
 use crate::context::config::RetrievalConfig;
-use crate::context::schema::{ContextItem, ContextPack, ItemKind, SelectionReason};
+use crate::context::schema::{ContextItem, ContextPack, SelectionReason};
 use std::collections::BTreeSet;
 
 /// What the shared renderer reports on its `Selected from:` line. A prompt hook
@@ -67,10 +67,30 @@ pub(super) fn compose(
 ///
 /// Only ONE item needs to clear the bar: an exact-rung [`SelectionReason`]
 /// (see [`is_exact_rung`] — these are post-gating reasons now, so a hit on one
-/// of them means something a bare lexical score does not), or, for a knowledge
-/// item, a lexical match on at least `config.min_knowledge_terms` distinct
-/// query terms — `matched_term_count` is exactly that per-item strength
-/// signal, carried on the item for this reason.
+/// of them means something a bare lexical score does not), or a lexical match
+/// on at least `config.min_knowledge_terms` distinct query terms —
+/// `matched_term_count` is exactly that per-item strength signal, carried on
+/// the item for this reason.
+///
+/// The term-count clause applies to ANY item, not just a `KnowledgeChunk` —
+/// deliberately, not as a loosening. `matched_term_count` counts DISTINCT
+/// SURVIVING query terms: corpus-ubiquitous terms are already gone, stripped
+/// by the stopwording pass in `context/rank/corpus/stopwords.rs`, so two
+/// surviving terms is genuine evidence whichever channel produced it. If
+/// anything the bar is HARDER for a source node than a knowledge chunk: its
+/// BM25 document is only its scope segments plus a one-line signature
+/// (`rank_source.rs::node_document`), a far smaller surface than a prose
+/// chunk's whole body, so matching two distinct surviving terms there is a
+/// stronger signal than the same count against a knowledge chunk.
+///
+/// A knowledge-only clause would silently blackout a real configuration: a
+/// checkout with a mapped source graph (`loom map`) but no curated knowledge
+/// tree has no `KnowledgeChunk` items at all, so a knowledge-only second
+/// clause could never fire — every prompt that does not spell an identifier
+/// in identifier form (most of them; see the identifier-shaped-evidence
+/// gating behind [`is_exact_rung`]) would retrieve nothing, permanently, for
+/// exactly the questions people actually ask. The floor's job is "is there
+/// enough signal to say anything", not "did this come from curated prose".
 ///
 /// **This floor applies only to this hook's unsolicited injection.**
 /// `loom knowledge context` is NOT floor-gated — it prints what it found
@@ -84,8 +104,7 @@ pub(super) fn compose(
 fn clears_emit_floor(pack: &ContextPack, config: &RetrievalConfig) -> bool {
     pack.items.iter().any(|item| {
         item.reasons.iter().any(is_exact_rung)
-            || (item.kind == ItemKind::KnowledgeChunk
-                && item.matched_term_count >= config.min_knowledge_terms)
+            || item.matched_term_count >= config.min_knowledge_terms
     })
 }
 
