@@ -87,6 +87,28 @@ fn a_ratio_written_as_an_integer_is_accepted() {
     assert_eq!(load("stop_df_ratio = 1").stop_df_ratio, 1.0);
 }
 
+/// A.16's rescue ceiling is read like every other ratio: absent it is the
+/// shipped 0.25, above one it clamps, and a non-positive value falls back rather
+/// than disabling the rescue floor by arithmetic accident — `0` would put the
+/// ceiling under every possible document frequency and quietly restore the empty
+/// packs the floor exists to prevent.
+#[test]
+fn the_rescue_ceiling_defaults_and_clamps_like_a_ratio() {
+    let default = RetrievalConfig::default().stop_rescue_max_ratio;
+
+    assert_eq!(default, 0.25);
+    assert_eq!(ceiling("min_knowledge_terms = 4"), default);
+    assert_eq!(ceiling("stop_rescue_max_ratio = 0.5"), 0.5);
+    assert_eq!(ceiling("stop_rescue_max_ratio = 5.0"), 1.0);
+    assert_eq!(ceiling("stop_rescue_max_ratio = 0"), default);
+    assert_eq!(ceiling("stop_rescue_max_ratio = -0.5"), default);
+}
+
+/// The rescue ceiling a `[retrieval]` table holding `body` resolves to.
+fn ceiling(body: &str) -> f32 {
+    load(body).stop_rescue_max_ratio
+}
+
 #[test]
 fn a_budget_clamps_into_its_legal_range() {
     let low = load("prompt_budget_tokens = 1");

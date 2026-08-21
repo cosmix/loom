@@ -15,6 +15,7 @@
 //! ```toml
 //! [retrieval]
 //! stop_df_ratio = 0.10
+//! stop_rescue_max_ratio = 0.25
 //! min_query_token_len = 3
 //! df_ident_max = 5
 //! test_path_factor = 0.4
@@ -63,6 +64,11 @@ pub struct RetrievalConfig {
     /// A query term is corpus-ubiquitous, and dropped, when its document
     /// frequency exceeds `corpus_size * stop_df_ratio`.
     pub stop_df_ratio: f32,
+    /// Ceiling, as a fraction of the corpus, on the document frequency of a
+    /// term the rescue floor may put back when stopwording dropped the WHOLE
+    /// query. Deliberately looser than `stop_df_ratio` — below it the rescue
+    /// is vacuous, since nothing dropped for ubiquity could ever clear it.
+    pub stop_rescue_max_ratio: f32,
     /// Shorter query terms are dropped unless backticked in the raw prompt.
     pub min_query_token_len: usize,
     /// Highest document frequency at which a term still counts as corpus-rare,
@@ -99,6 +105,7 @@ impl Default for RetrievalConfig {
     fn default() -> Self {
         Self {
             stop_df_ratio: 0.10,
+            stop_rescue_max_ratio: 0.25,
             min_query_token_len: 3,
             df_ident_max: 5,
             test_path_factor: 0.4,
@@ -173,6 +180,9 @@ impl RetrievalConfig {
     fn apply(&mut self, key: &str, value: &Value) {
         match key {
             "stop_df_ratio" => self.stop_df_ratio = ratio(value, key, self.stop_df_ratio),
+            "stop_rescue_max_ratio" => {
+                self.stop_rescue_max_ratio = ratio(value, key, self.stop_rescue_max_ratio);
+            }
             "min_query_token_len" => {
                 self.min_query_token_len = count(value, key, self.min_query_token_len);
             }

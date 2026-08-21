@@ -19,11 +19,11 @@
 //! prompt gets depends on nothing but whether a cache file happened to be
 //! warm. So the BM25 formula is written ONCE, in [`score_terms`], and the two
 //! representations differ only in the closure that answers "what weight does
-//! this document give this term?".
+//! this document give this term?". WHICH terms are scored at all is a separate
+//! question, answered once for both representations in [`stopwords`].
 
 use super::{BM25_B, BM25_K1};
 use crate::context::config::RetrievalConfig;
-use crate::context::lexical::{backtick_spans, occurs_backticked};
 use crate::context::lexical_index::{LexicalCache, LexicalIndex, QueryPostings};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -187,13 +187,13 @@ impl LexicalCorpus {
 /// Assemble the loop-invariant statistics for one ranking pass, dropping the
 /// query terms that carry no information about this corpus.
 ///
-/// Corpus-derived stopwording rather than a fixed English list: a list would
-/// catch "the" and "is" and stop there, while the words that actually flood
-/// this retrieval are the project's own — "loom", "stage", "signal", "context"
-/// appear in most documents of a loom knowledge tree and discriminate nothing,
-/// and no English list contains them. Deriving the set from document frequency
-/// absorbs both classes at once, adapts to whatever corpus it is pointed at,
-/// and needs nobody to maintain it.
+/// The scan path: document frequencies are counted over freshly tokenized
+/// documents here, while WHICH of the query's terms survive counting them is
+/// decided in [`assemble`], the one place that partitions. See [`stopwords`]
+/// for why the surviving set is derived from this corpus rather than from a
+/// fixed English list of stopwords, and for the rescue floor that keeps a
+/// query whose every term the corpus has grown around from retrieving nothing
+/// at all.
 pub(crate) fn prepare_lexical(
     query_terms: &[String],
     documents: Vec<Vec<(String, f32)>>,
@@ -215,19 +215,13 @@ pub(crate) fn prepare_lexical(
         });
     }
 
-    let (surviving, dropped) = partition_terms(
-        query_terms,
-        &document_frequencies,
-        lengths.len(),
-        raw_query,
-        config,
-    );
     assemble(
-        surviving,
-        dropped,
-        LexicalDocuments::Scanned(documents),
+        query_terms,
+        |_| LexicalDocuments::Scanned(documents),
         lengths,
         document_frequencies,
+        raw_query,
+        config,
     )
 }
 
@@ -269,9 +263,9 @@ where
 ///
 /// `lengths` and the document frequencies are recomputed here rather than read
 /// from the file — see `lexical_index`'s module docs on why a derived value is
-/// not persisted — and the surviving/dropped partition runs on exactly the same
-/// inputs it would have on the scan path, so the two agree by construction
-/// rather than by coincidence.
+/// not persisted. Everything downstream of them, the partition included, is
+/// [`assemble`]'s, which is what makes this path and the scan agree by
+/// construction rather than by two call sites remembering to.
 fn from_index(
     query_terms: &[String],
     index: &LexicalIndex,
@@ -280,32 +274,51 @@ fn from_index(
 ) -> LexicalCorpus {
     let lengths = index.lengths();
     let document_frequencies = index.document_frequencies(query_terms);
-    let (surviving, dropped) = partition_terms(
+    assemble(
+        query_terms,
+        |surviving| LexicalDocuments::Indexed(index.project(surviving)),
+        lengths,
+        document_frequencies,
+        raw_query,
+        config,
+    )
+}
+
+/// Finish a corpus once its lengths and frequencies are known: partition the
+/// query, build the representation over the terms that survived, and construct
+/// the [`LexicalCorpus`].
+///
+/// The single place a corpus is constructed AND the single call to
+/// [`stopwords::partition_terms`] anywhere. Construction alone was already
+/// centralized so the two paths could not disagree about a derived field;
+/// folding the partition in extends that to which terms are SCORED, which is
+/// the difference a cache hit and a cache miss must never have. A future path
+/// cannot partition its own way by passing one argument differently — it would
+/// have to be written past this function entirely.
+///
+/// `documents` is a closure over the surviving terms because the indexed path
+/// projects its postings from exactly them: only terms that will be scored are
+/// decoded, and the parsed index — megabytes of postings for the whole
+/// vocabulary — is dropped as its caller returns. The scan path already holds
+/// its documents and ignores the argument.
+fn assemble(
+    query_terms: &[String],
+    documents: impl FnOnce(&[String]) -> LexicalDocuments,
+    lengths: Vec<usize>,
+    document_frequencies: BTreeMap<String, usize>,
+    raw_query: &str,
+    config: &RetrievalConfig,
+) -> LexicalCorpus {
+    let (surviving, dropped_terms) = stopwords::partition_terms(
         query_terms,
         &document_frequencies,
         lengths.len(),
         raw_query,
         config,
     );
-    // Projected AFTER the partition so only the terms that will actually be
-    // scored are decoded, and so the parsed index — megabytes of postings for
-    // the whole vocabulary — can be dropped as this function returns.
-    let postings = LexicalDocuments::Indexed(index.project(&surviving));
-    assemble(surviving, dropped, postings, lengths, document_frequencies)
-}
-
-/// Finish a corpus once its terms are partitioned and its representation,
-/// lengths and frequencies are known. The single place a [`LexicalCorpus`] is
-/// constructed, so the two paths cannot disagree about a derived field.
-fn assemble(
-    query_terms: Vec<String>,
-    dropped_terms: Vec<String>,
-    documents: LexicalDocuments,
-    lengths: Vec<usize>,
-    document_frequencies: BTreeMap<String, usize>,
-) -> LexicalCorpus {
+    let documents = documents(&surviving);
     LexicalCorpus {
-        query_terms,
+        query_terms: surviving,
         documents,
         average_length: mean_length(&lengths),
         lengths,
@@ -326,50 +339,7 @@ fn mean_length(lengths: &[usize]) -> f32 {
     lengths.iter().sum::<usize>() as f32 / lengths.len() as f32
 }
 
-/// Split the tokenized query into the terms worth scoring and the terms that
-/// are not, returning `(surviving, dropped)`.
-///
-/// Repeats survive in `surviving` because BM25 sums a repeated term twice and
-/// that weighting predates this filter; `dropped` is deduplicated in first-seen
-/// order because it is shown to a human, and because determinism over identical
-/// bytes is a hard requirement of the whole pipeline.
-fn partition_terms(
-    query_terms: &[String],
-    document_frequencies: &BTreeMap<String, usize>,
-    corpus_size: usize,
-    raw_query: &str,
-    config: &RetrievalConfig,
-) -> (Vec<String>, Vec<String>) {
-    let spans = backtick_spans(raw_query);
-    let lower_query = raw_query.to_ascii_lowercase();
-    let floor = ubiquity_floor(corpus_size, config);
-
-    let mut surviving = Vec::new();
-    let mut dropped = Vec::new();
-    for term in query_terms {
-        let backticked = occurs_backticked(&lower_query, &spans, term);
-        let frequency = document_frequencies.get(term).copied().unwrap_or(0);
-        let keep =
-            backticked || (term.len() >= config.min_query_token_len && frequency as f32 <= floor);
-        if keep {
-            surviving.push(term.clone());
-        } else if !dropped.contains(term) {
-            dropped.push(term.clone());
-        }
-    }
-    (surviving, dropped)
-}
-
-/// Highest document frequency a term may reach and still be scored.
-///
-/// `corpus_size * stop_df_ratio` is the rule the ratio names, and on a real
-/// corpus (thousands of documents) it is the only one that binds. The
-/// `df_ident_max` floor exists for the other end: on a five-document corpus the
-/// ratio resolves to 0.5, so a term in ONE document is "ubiquitous" and a small
-/// knowledge tree would lose lexical retrieval entirely. A term that occurs in
-/// at most `df_ident_max` documents is corpus-RARE by the very definition the
-/// exact-rung gate uses — calling the same term ubiquitous here would have the
-/// two halves of this module contradict each other.
-fn ubiquity_floor(corpus_size: usize, config: &RetrievalConfig) -> f32 {
-    (corpus_size as f32 * config.stop_df_ratio).max(config.df_ident_max as f32)
-}
+/// Corpus-derived query stopwording and its rescue floor. A child module rather
+/// than more of this file: it shares nothing with the BM25 arithmetic above but
+/// the `(term, df)` map, and both halves are dense enough to be read alone.
+mod stopwords;

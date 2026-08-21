@@ -7,6 +7,10 @@
 //! warm cache and a cold one is latency — a divergence here would surface as
 //! "the ranking changed and nobody touched the code", which is close to
 //! untrackable in the field.
+//!
+//! One case the generator cannot reach: a query whose every term is dropped and
+//! then rescued (A.16), since an unseen word has a df of 0 and always survives.
+//! That agreement is asserted in `rank_stopwords.rs`, over the fixture below.
 
 use super::source_fixtures::{full_node, graph};
 use crate::context::config::RetrievalConfig;
@@ -339,6 +343,32 @@ fn a_ubiquitous_symbol_name_claims_no_rung_on_a_cache_hit() {
             .all(|candidate| !candidate.reasons.contains(&SelectionReason::ExactSymbol)),
         "a df of 0 for a dropped term would readmit the rung the gate exists to reject"
     );
+}
+
+/// Forty single-node files, `Manifest` returned by eight of them and `Tokens`
+/// by seven, against a floor of `max(40 * 0.10, 5) = 5` and a rescue ceiling of
+/// 10: both terms of the query `manifest tokens` are ubiquitous enough to drop
+/// and rare enough for the rescue floor (A.16) to put back.
+pub(super) fn rescued_source_graph() -> ResolvedGraph {
+    let mut paths = Vec::new();
+    let mut per_file = Vec::new();
+    for file in 0..40 {
+        let path = format!("src/rescue/m{file}.rs");
+        let returns = match file {
+            0..=7 => "Manifest",
+            8..=14 => "Tokens",
+            _ => "Value",
+        };
+        let name = format!("item{file}");
+        per_file.push(vec![full_node(
+            &format!("{path}#function:{name}"),
+            &path,
+            &[name.as_str()],
+            &format!("fn {name}(raw: &str) -> {returns}"),
+        )]);
+        paths.push(path);
+    }
+    graph(paths.iter().map(String::as_str).zip(per_file).collect())
 }
 
 /// Sixty files whose every symbol is named `point` — a real file stem and a
