@@ -11,10 +11,11 @@
 //! bytes on disk and the [`StageQuery`].
 
 mod channels;
+mod graph;
 
 use crate::context::config::RetrievalConfig;
 use crate::context::fuse::fuse;
-use crate::context::graph_store::{GraphStore, ResolvedGraph};
+use crate::context::graph_store::ResolvedGraph;
 use crate::context::ingest::ingest;
 use crate::context::local_overlay::OverlayScope;
 use crate::context::pack::{pack, PackRequest};
@@ -182,7 +183,7 @@ fn resolve_catalog(store: &ContextStore, knowledge_root: Option<&Path>) -> Resul
 /// nothing to fingerprint, so the structural layer reports itself never built
 /// while the semantic layer keeps whatever the store records — the source graph
 /// is not derived from the knowledge tree, and its revision is what
-/// [`load_resolved_graph`] reads the base layer by.
+/// [`graph::load_resolved_graph`] reads the base layer by.
 fn evaluate_state(store: &ContextStore, knowledge_root: Option<&Path>) -> Result<StoreState> {
     let Some(knowledge_root) = knowledge_root else {
         let stored = store.load_state()?;
@@ -248,45 +249,6 @@ pub(crate) fn reject_unknown_require_ids(
     Ok(())
 }
 
-/// Load the resolved source graph for `query`'s overlay, degrading to `None`
-/// on any error.
-///
-/// `overlay.resolve` always yields a `(plan, stage)` pair, so this always asks
-/// [`GraphStore::resolved`] for the overlay-applied view — never `None` for
-/// the stage. That distinction matters on its own: with `None`, `resolved`
-/// reads only the base layer, and a base miss there becomes an *empty* graph
-/// rather than a missing one, silently dropping an overlay the query should
-/// have read. [`OverlayScope::Local`] resolves to the `(plan, stage)` address
-/// `local_overlay_key` computes and `loom map` writes (`commands/map.rs`) —
-/// the only production writer of that overlay today — so a `Local`-scoped
-/// query is what lets a caller see a working tree that no merge has
-/// published a base for.
-///
-/// Retrieval itself never builds or refreshes this graph: [`resolve_catalog`]
-/// calls [`refresh`] with `structural_only = true`, which skips the semantic
-/// reconcile on every call this pipeline makes. So this function only ever
-/// reads what a prior `loom map` run, or a merge, already wrote for
-/// `semantic_revision`. **Real, currently-reachable degraded mode:** on a
-/// checkout where `loom map` has never run and no merge has published a base
-/// for `semantic_revision`, neither layer exists — `resolved` still returns
-/// an empty graph rather than an error, so this degrades silently, and the
-/// source channel contributes nothing to the pack with no signal to the
-/// caller that anything is missing.
-fn load_resolved_graph(
-    work_dir_hint: &Path,
-    store: &ContextStore,
-    semantic_revision: &str,
-    overlay: &OverlayScope,
-) -> Option<ResolvedGraph> {
-    let work_dir = WorkDir::new(work_dir_hint).ok()?;
-    let project_root = work_dir.project_root()?;
-    let (plan, stage) = overlay.resolve(project_root);
-    let graph_store = GraphStore::new(store.root(), work_dir.root());
-    graph_store
-        .resolved(semantic_revision, Some((&plan, &stage)))
-        .ok()
-}
-
 /// Retrieve a token-budgeted pack for `query`.
 ///
 /// Deterministic and offline: no model call, no network access, no randomness.
@@ -315,7 +277,7 @@ pub fn retrieve_for_stage(query: &StageQuery, budget_tokens: usize) -> Result<Co
     // The source graph is keyed by the semantic revision, not the structural
     // one — they are different hash domains over different subjects (see the
     // comment at `refresh.rs:177-182`), and the graph is semantic-derived data.
-    let graph = load_resolved_graph(
+    let (graph, degraded) = graph::load_resolved_graph(
         &query.work_dir_hint,
         &roots.store,
         &state.semantic.revision,
@@ -324,16 +286,20 @@ pub fn retrieve_for_stage(query: &StageQuery, budget_tokens: usize) -> Result<Co
 
     check_require_ids(query, &catalog, graph.as_ref())?;
 
-    let ranked = channels::rank_channels(
+    // The store's root, not the worktree's: it follows a worktree's `.work`
+    // symlink to the main project, so parallel stages share one lexical index
+    // (A.13) instead of each rebuilding its own.
+    let ranked = channels::rank_channels_cached(
         &query.scope,
         &channels::build_rank_query(query),
         &catalog,
         graph.as_ref(),
         &config,
+        Some(roots.store.root()),
     );
     let fused = fuse(&ranked.lists);
 
-    let request = build_pack_request(query, budget_tokens, state, ranked.dropped_terms);
+    let request = build_pack_request(query, budget_tokens, state, ranked.dropped_terms, degraded);
     Ok(pack(&request, &fused, &catalog.chunks, graph.as_ref()))
 }
 
@@ -357,11 +323,15 @@ fn check_require_ids(
 }
 
 /// Assemble the packer's request from what this retrieval computed.
+///
+/// `degraded` comes straight from [`graph::load_resolved_graph`] — see its
+/// doc comment for what sets it (A.11).
 fn build_pack_request(
     query: &StageQuery,
     budget_tokens: usize,
     state: StoreState,
     dropped_terms: Vec<String>,
+    degraded: Option<String>,
 ) -> PackRequest {
     PackRequest {
         query: query.text.clone(),
@@ -370,10 +340,7 @@ fn build_pack_request(
         structural_freshness: state.structural,
         semantic_freshness: state.semantic,
         dropped_terms,
-        // Filled by the wave that teaches `load_resolved_graph` to tell a
-        // missing base layer from an empty one (A.11); until then every pack
-        // this pipeline builds is honestly undegraded.
-        degraded: None,
+        degraded,
     }
 }
 
