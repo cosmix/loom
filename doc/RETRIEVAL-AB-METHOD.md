@@ -63,8 +63,7 @@ delivery-dedupe record, and the CURRENT binary may additionally spawn a
 **detached background `loom hook reconcile-graph`** — a full tree-sitter
 rebuild of the source graph — whenever the pack it just built reports the
 semantic layer stale or degraded (`context::reconcile_graph::spawn_if_needed`,
-A.12). This checkout's own cache records a semantic revision several commits
-behind HEAD, so that trigger is live, not hypothetical.
+A.12).
 
 To keep the measurement honest (never mutating the real index) and safe
 (never spawning an uncontrolled background rebuild on a machine that was
@@ -75,12 +74,115 @@ per binary, seeded once from a snapshot of this checkout's real
 against the identical index (the code is the only variable under test, not
 the data). Each measure root gets an empty `.work/` marker (so
 `WorkDir::new`'s upward search can't escape to the real `.work/`), a patched
-`state.json` (`semantic.stale = false`), and a periodically-refreshed
-"just finished" `reconcile.lock`, so the background reconcile never has a
-live reason to fire. See the header comment in `scripts/retrieval-ab` for
-the full reasoning — it is long on purpose, because getting this wrong
-either corrupts the measurement or repeats the RAM-exhaustion incident this
-whole harness was commissioned to avoid triggering again.
+`state.json` (`semantic.stale = false`, and `semantic.revision` repointed at
+a base graph layer the snapshot actually has — see "Why isolation is hard
+here" below), and a periodically-refreshed "just finished" `reconcile.lock`,
+so the background reconcile never has a live reason to fire. Every binary
+invocation is also routed through `run_bin`, which strips the harness's own
+inherited `LOOM_WORK_DIR`/`LOOM_STAGE_ID`/`LOOM_SESSION_ID` before exec'ing.
+The run's last act, `verify_real_checkout_untouched`, fingerprints the real
+checkout's own cache/work-directory mtimes before seeding and again after
+scoring and fails loudly if either moved. See the header comment in
+`scripts/retrieval-ab` for the full reasoning — it is long on purpose,
+because getting this wrong either corrupts the measurement or repeats the
+RAM-exhaustion incident this whole harness was commissioned to avoid
+triggering again.
+
+### Why isolation is hard here
+
+An earlier version of this harness looked isolated — measure roots, a
+`.work` marker, a patched `state.json` — and still silently measured against
+the real checkout. Two independent gaps combined into a third, and the
+resulting numbers were wrong enough to invert two conclusions (an apparent
+current-binary latency regression that was actually concurrent contention,
+and a "clean" precision@5 comparison in which the source channel never fired
+for either binary). All three are fixed now; this section exists so the next
+person who touches this file understands why the fixes look the way they do
+before "simplifying" one away.
+
+1. **The environment goes around the measure root, not just the CWD.**
+   `LOOM_WORK_DIR`/`LOOM_STAGE_ID`/`LOOM_SESSION_ID` are ordinary environment
+   variables, set in the invoking session and inherited by every child
+   process by default. `loom hook user-prompt`/`reconcile-graph`/
+   `pre-compact` all resolve their work-dir hint from `LOOM_WORK_DIR` FIRST,
+   falling back to the current directory only when it is unset
+   (`non_empty_env("LOOM_WORK_DIR")` in
+   `loom/src/commands/hook/{user_prompt,reconcile_graph,pre_compact}.rs`).
+   `cd`-ing into an isolated measure root does nothing to stop an inherited
+   `LOOM_WORK_DIR` from resolving straight past that root's own `.work`
+   marker to the REAL `.work/` — delivery-dedupe records get written into
+   the real checkout, and the source channel reads the real overlay instead
+   of the mirror's. **Fix:** every binary invocation now routes through
+   `run_bin`, the single choke point that strips these three variables with
+   `env -u` before exec'ing (a child-only removal — it never touches the
+   harness's own environment).
+
+2. **A degraded pack is also a spawn trigger, not just a stale one.**
+   `reconcile_graph::spawn_if_needed` fires on `stale OR degraded`. Patching
+   `state.json`'s `.semantic.stale = false` only disarms half of that gate.
+   A checkout's `state.json` can name a `semantic.revision` for which
+   `graph/base/<revision>.json` was never published — base layers are
+   published on `loom map`/merge, not eagerly, so `state.json` can outrun
+   `graph/base/`'s own contents even in a healthy, actively-developed
+   checkout. When that happens, `GraphStore::resolved()` reads a silently
+   EMPTY base (`unwrap_or_default()` over a missing file, by design — see
+   `context/retrieve/graph.rs`'s doc comment), which
+   `degraded_reason` turns into `pack.degraded = Some("source graph base
+   <rev8> missing — serving overlay only")` regardless of the stale patch.
+   With that trigger live, a plain `loom hook user-prompt` or
+   `knowledge context` call spawned a detached full source-graph rebuild
+   against whatever `LOOM_WORK_DIR` resolved to — which, combined with gap 1,
+   was the REAL checkout. The current binary's timing phase ran entirely
+   under that concurrent rebuild, which is where its apparent latency
+   regression came from; a clean re-measurement showed no regression at all.
+   **Fix:** `seed_measure_root` now repoints the copied `state.json`'s
+   `.semantic.revision` at whichever base-layer file the snapshot's
+   `graph/base/` directory actually has (picked by file mtime, not
+   hardcoded — `graph/base/` prunes old layers, so a fixed revision here
+   would go stale the next time this script runs). When no base layer is
+   available at all, it falls back to only patching `.semantic.stale` and
+   prints an explicit warning; the report's "Source channel" line always
+   states which case applied — never read a report without checking it.
+
+3. **Consequence of gap 2: the source channel was never exercised.**
+   With no base layer, `graph.base_revision` was always empty, so zero
+   source-node ids appeared in results for EITHER binary — the eval cases
+   that depend on the source channel were unwinnable for both, which reads
+   as "fair" (equal for both binaries) but is actually a blind spot: neither
+   binary's source-retrieval code path ran at all. Fixing gap 2 fixes this
+   for free, since a present base layer means `resolved()` returns real
+   nodes and edges instead of an empty graph.
+
+### Known-good invocation
+
+```bash
+# Build (see "Running it" above for the exact commands this prints).
+scripts/retrieval-ab   # prints build instructions and exits 1 if a binary is missing
+
+# Run. Prints the report to stdout and $OUT/report.md, then fails loudly
+# (exit 1) if the real checkout's own cache/work state moved during the run.
+scripts/retrieval-ab
+```
+
+`.loom/cache/` and `.work/` are both gitignored, so `git status` cannot see
+into them — it cannot stand in for the isolation check. The harness's own
+stderr, from `verify_real_checkout_untouched`, is the authoritative signal;
+do not invent a second one. Read the run's stderr for two things:
+
+- A line like `real checkout's own session-retrieval records: N before, N
+  after (delta 0; ...)` and NO `ISOLATION BREACH` block. A nonzero delta by
+  itself is not proof of a breach (a concurrent, unrelated Claude Code
+  session in this same checkout can legitimately add those records while
+  this harness runs) — only a moved `catalog.json`/`state.json`/
+  `.work/context` mtime is proof, and that path always exits 1.
+- The report's "Source channel" line reading `exercised — ...`, not `NOT
+  exercised`. The latter means every source-dependent eval case was scored
+  as a miss for BOTH binaries, not a real result.
+
+```bash
+# Tear down.
+scripts/retrieval-ab --clean
+```
 
 ## Known weaknesses (read before trusting the numbers)
 
@@ -142,7 +244,22 @@ whole harness was commissioned to avoid triggering again.
   checkout for measurement or testing purposes needs the same debounce-lock
   seeding this harness does, or needs to run against an isolated copy with
   no `.git` (so `evaluate()`'s HEAD comparison always falls through to
-  stored state).
+  stored state). The trigger is `stale OR degraded` — a `state.json` with
+  `stale = false` can still be degraded if its `semantic.revision` names a
+  `graph/base/<revision>.json` that was never published; patching staleness
+  alone is not enough (see "Why isolation is hard here" above).
+- `LOOM_WORK_DIR`/`LOOM_STAGE_ID`/`LOOM_SESSION_ID` are read from the
+  process environment, not passed as CLI flags, by
+  `loom hook user-prompt`/`reconcile-graph`/`pre-compact`
+  (`non_empty_env` in `loom/src/commands/hook/*.rs`). They are ordinary
+  environment variables and so are inherited by every child process by
+  default — `cd`-ing a subprocess into an isolated directory does not stop
+  an inherited `LOOM_WORK_DIR` from resolving it straight past that
+  directory's own `.work` marker to wherever the *parent* session's
+  `LOOM_WORK_DIR` pointed. Any tool that shells out to these hook
+  subcommands against an isolated copy must explicitly `env -u` all three
+  (or otherwise clear them) at the exact call site, not just change the
+  child's working directory.
 - jq's `EXPR | index(.)` is a footgun: piping into `EXPR` rebinds `.` to
   `EXPR`'s result *before* `index(.)` evaluates its argument, so a loop
   written as `[items[] | select((set | index(.)) != null)]` silently checks

@@ -1,6 +1,11 @@
 //! Resolving the source graph for a query's overlay, and detecting the A.11
-//! degraded mode: a non-empty semantic revision whose base layer went
-//! missing.
+//! degraded mode: a non-empty semantic revision whose RESOLVED graph —
+//! base layer plus whatever overlay this query is scoped to — came back
+//! with no content at all. A missing base alone is not this condition: a
+//! dirty working tree never publishes a base (bases are immutable and
+//! revision-keyed; see `graph_store.rs`'s module doc), so "no base for the
+//! current revision, but the overlay covers it" is the ordinary, healthy
+//! state of any checkout someone is actively working in, not a fault.
 //!
 //! Split out of `retrieve.rs` so the top-level pipeline in
 //! [`super::retrieve_for_stage`] stays a readable sequence of steps rather
@@ -38,13 +43,18 @@ use std::path::Path;
 ///
 /// **Real, currently-reachable degraded mode:** a non-empty
 /// `semantic_revision` names a layer `state.json` claims was built, but
-/// `graph_store::GraphStore::resolved`'s base half is `unwrap_or_default()`
-/// over `load_base`, so a missing base file resolves to an *empty* base
-/// rather than an error — `resolved.base_revision` comes back empty exactly
-/// when that happened. [`degraded_reason`] turns that into the message
-/// `super::build_pack_request` carries out to `ContextPack::degraded`, so a
-/// checkout whose entire source channel is served from one overlay against a
-/// silently empty base says so instead of reading as `Semantic: current`.
+/// NEITHER half of the resolved view can back that claim: no base file was
+/// found for the revision (`graph_store::GraphStore::resolved`'s base half is
+/// `unwrap_or_default()` over `load_base`, so a missing base file resolves to
+/// an *empty* base rather than an error) AND nothing published an overlay to
+/// cover for it either, so the resolved graph has no files at all.
+/// [`degraded_reason`] turns THAT combination into the message
+/// `super::build_pack_request` carries out to `ContextPack::degraded`. A
+/// missing base alone is NOT this condition — see this module's doc comment
+/// and [`degraded_reason`]'s own — so a checkout with a healthy overlay, or
+/// one with a genuinely empty published base, both read as `Semantic:
+/// current`, exactly as they should; only a checkout where the source
+/// channel has genuinely nothing to answer with gets flagged.
 pub(super) fn load_resolved_graph(
     work_dir_hint: &Path,
     store: &ContextStore,
@@ -74,15 +84,41 @@ pub(super) fn load_resolved_graph(
 /// already reports that honestly as a `never_built` [`crate::context::schema::Freshness`]
 /// elsewhere in the pack, so flagging it here too would print a
 /// `DEGRADED:` banner on every unmapped checkout forever, for a condition
-/// that is not a degradation at all; skip it. Otherwise, `graph.base_revision`
-/// empty means [`GraphStore::load_base`] missed for a revision the store
-/// claims exists — the real degraded mode this function exists to surface.
+/// that is not a degradation at all; skip it.
+///
+/// Otherwise this is NOT simply `graph.base_revision.is_empty()` — that was
+/// the bug. `GraphStore::resolved` returns `base ∪ overlay`
+/// (`graph_store.rs`), and a missing base is the ORDINARY state of a dirty
+/// working tree: bases are immutable and revision-keyed, so
+/// `refresh::semantic::try_reconcile_semantic` deliberately builds a `_local`
+/// OVERLAY instead of a base whenever the tree is dirty — it CANNOT publish
+/// one. "state names the current revision, no base file exists for it,
+/// content is served from the overlay" is therefore the normal, healthy
+/// steady state of any checkout someone is actually working in, not a fault
+/// — testing `base_revision` alone flagged every such checkout as degraded
+/// forever, which is both a banner nobody can ever clear (a warning that is
+/// always on is a warning nobody reads) and, far more importantly, a live
+/// input to [`crate::commands::hook::reconcile_graph::spawn_if_needed`]: that
+/// function fires a detached full-repository tree-sitter rebuild on `stale OR
+/// degraded`, so this predicate does not merely choose a display string — it
+/// decides whether every single prompt in every checkout with a dirty tree
+/// (i.e. nearly all of them) starts an unbounded background rebuild, throttled
+/// only by the reconcile debounce lock.
+///
+/// The honest test is two-part: a base was found (`base_revision` non-empty —
+/// note this stays true even for a genuinely empty, zero-file base: a
+/// published layer over a project with no matching source files is current,
+/// not degraded), OR the resolved view has ANY content at all (`files`
+/// non-empty — an overlay alone can supply this with no base present). Only
+/// when NEITHER holds — no base was found for this revision AND nothing else
+/// covered for it — is there truly nothing to answer a query with, which is
+/// the one case worth surfacing.
 fn degraded_reason(semantic_revision: &str, graph: &ResolvedGraph) -> Option<String> {
-    if semantic_revision.is_empty() || !graph.base_revision.is_empty() {
+    if semantic_revision.is_empty() || !graph.base_revision.is_empty() || !graph.files.is_empty() {
         return None;
     }
     Some(format!(
-        "source graph base {} missing — serving overlay only",
+        "source graph base {} missing and no overlay covers this checkout — no source graph content available",
         short_revision(semantic_revision)
     ))
 }

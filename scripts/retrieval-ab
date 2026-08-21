@@ -23,14 +23,46 @@
 # DETACHED background `loom hook reconcile-graph` (a full tree-sitter
 # rebuild of the source graph) whenever the pack it just built reports the
 # semantic layer stale or degraded
-# (loom/src/commands/hook/reconcile_graph.rs `spawn_if_needed`). This
-# checkout's own `.loom/cache/context-v1/state.json` records a
-# `semantic.revision` several commits behind HEAD, so that trigger is not
-# hypothetical — it is the condition this checkout is in right now. A
+# (loom/src/commands/hook/reconcile_graph.rs `spawn_if_needed`). A
 # background reconcile spawned against the real checkout would (a) mutate
 # the real index, which this harness is forbidden from doing, and (b) burn
 # real CPU/RAM on a machine that was just rebooted from an OOM caused by an
 # unbounded loom/cargo process (see scripts/guarded-cargo.sh's header).
+#
+# An earlier version of this harness got this isolation wrong in three ways
+# at once — see doc/RETRIEVAL-AB-METHOD.md's "Why isolation is hard here"
+# for the full incident writeup. The fixes below are load-bearing, not
+# defensive filler:
+#
+# BREACH 1 (env, not just CWD): `LOOM_WORK_DIR`/`LOOM_STAGE_ID`/
+# `LOOM_SESSION_ID` are ordinary environment variables — set in the
+# invoking session, inherited by every child process by default — and
+# `loom hook user-prompt`/`reconcile-graph`/`pre-compact` all resolve their
+# work-dir hint from `LOOM_WORK_DIR` FIRST, falling back to CWD only when it
+# is unset (`non_empty_env("LOOM_WORK_DIR")` in
+# loom/src/commands/hook/{user_prompt,reconcile_graph,pre_compact}.rs).
+# `cd`-ing into a measure root is not enough on its own: an inherited
+# `LOOM_WORK_DIR` resolves straight past the mirror's own `.work` marker to
+# the REAL `.work/`, silently defeating the isolation. Every binary
+# invocation below MUST go through `run_bin`, the one helper that strips
+# these three before exec'ing — see its own doc comment.
+#
+# BREACH 2 (a degraded pack is also a spawn trigger, not just a stale one):
+# `spawn_if_needed` fires on `stale OR degraded`. Patching
+# `state.json`'s `.semantic.stale = false` only disarms the first half. A
+# checkout's `state.json` can name a `semantic.revision` for which
+# `graph/base/<revision>.json` was never published (a base layer is
+# published on `loom map`/merge, not eagerly) — `graph_store.rs::resolved()`
+# then reads a silently EMPTY base, `retrieve/graph.rs::degraded_reason`
+# turns that into `pack.degraded = Some(...)`, and the pack is degraded
+# regardless of the stale patch. `seed_measure_root` fixes this by pointing
+# the copy's `.semantic.revision` at whichever base layer file the snapshot
+# actually has (picked by mtime, since `graph/base/` prunes old layers —
+# hardcoding a revision here would go stale the next time this runs), so
+# `resolved()` finds a real base and the pack reads healthy. This also fixes
+# a third consequence: with no base layer, EVERY query saw zero source-node
+# ids and the source channel's own eval cases were unwinnable for both
+# binaries — pointing at a real base layer exercises that channel properly.
 #
 # So every invocation below runs with its CWD inside an isolated "measure
 # root" — a plain directory with NO `.git` — one per binary, seeded ONCE
@@ -44,18 +76,26 @@
 #     living anywhere under the main checkout (or reachable by an upward
 #     walk from one) would resolve straight past it to the REAL `.work/`,
 #     defeating the isolation entirely.
-#   - `state.json` patched (`.semantic.stale = false`, via jq) and a
-#     pre-seeded, periodically-refreshed `reconcile.lock` "just finished"
-#     marker (see `seed_reconcile_lock`) — belt-and-suspenders so
-#     `reconcile_graph::spawn_if_needed` never has a live reason to fire
-#     even if the copied state reads stale or degraded despite the patch
-#     (no `.git` in the mirror means the HEAD-comparison half of
-#     `evaluate()` always falls through to the stored, patched value — see
-#     `context/refresh.rs`'s `semantic_freshness_against_head` — but the
-#     lock is kept fresh anyway, in case a future code change adds a second
-#     staleness path this comment does not know about).
+#   - `state.json` patched (`.semantic.stale = false` AND
+#     `.semantic.revision` repointed at a base layer the snapshot actually
+#     has — see BREACH 2 above) and a pre-seeded, periodically-refreshed
+#     `reconcile.lock` "just finished" marker (see `seed_reconcile_lock`) —
+#     belt-and-suspenders so `reconcile_graph::spawn_if_needed` never has a
+#     live reason to fire even if the copied state reads stale or degraded
+#     despite the patch (no `.git` in the mirror means the HEAD-comparison
+#     half of `evaluate()` always falls through to the stored, patched
+#     value — see `context/refresh.rs`'s `semantic_freshness_against_head`
+#     — but the lock is kept fresh anyway, in case a future code change
+#     adds a second staleness path this comment does not know about).
 # $OUT itself defaults to outside the checkout (`$TMPDIR`) for the same
 # reason, and so a plain `rm -rf "$OUT"` can never touch anything tracked.
+#
+# Belt-and-suspenders is not proof: the run's LAST act is
+# `verify_real_checkout_untouched`, which fingerprints
+# `.loom/cache/context-v1/{catalog,state}.json` and `.work/context/`'s own
+# mtimes before seeding and again after scoring, and fails the whole run
+# loudly if either moved — a measurement that silently mutated its own
+# subject is worse than no measurement at all.
 #
 # This script never runs `loom knowledge sync`, never runs cargo, and never
 # writes under the main checkout's `loom/eval/` or `.loom/` — only under the
@@ -120,6 +160,19 @@ METRIC1_JSON="$RESULTS_DIR/metric1.json"
 METRIC23_JSON="$RESULTS_DIR/metric23.json"
 PROMPTS_FILE="$SCRIPT_DIR/retrieval-ab-prompts.txt"
 
+# The real checkout paths this run must never mutate — see
+# verify_real_checkout_untouched below and the ISOLATION CONTRACT header.
+REAL_CATALOG="$REPO_ROOT/.loom/cache/context-v1/catalog.json"
+REAL_STATE="$REPO_ROOT/.loom/cache/context-v1/state.json"
+REAL_WORK_CONTEXT="$REPO_ROOT/.work/context"
+
+# Set by seed_measure_root (BREACH 2 fix) to the base-layer revision both
+# mirrors were pointed at, or left empty when no base layer was available to
+# seed — read back by render_report so the report states plainly whether the
+# source channel was actually exercised. Both mirrors are seeded from the
+# same snapshot, so this is a single global rather than one value per binary.
+SOURCE_CHANNEL_REVISION=""
+
 if [[ "$DO_CLEAN" -eq 1 ]]; then
 	if git -C "$REPO_ROOT" worktree list --porcelain 2>/dev/null | rg -qF "worktree $BASELINE_SRC"; then
 		git -C "$REPO_ROOT" worktree remove --force "$BASELINE_SRC" || true
@@ -153,18 +206,31 @@ python3 -c 'import yaml' 2>/dev/null || {
 	exit 1
 }
 
-# Cross-platform hard timeout, matching hooks/user-prompt-context.sh's own
+# Isolated binary invocation — THE single choke point every `"$bin"` call
+# below routes through, so a future call site cannot forget either half of
+# this. `env -u` strips a variable from the CHILD's environment only (never
+# mutates this script's own), which is why this alone closes BREACH 1 even
+# though `hook reconcile-graph` may itself spawn a detached grandchild — see
+# `spawn_detached`'s explicit re-export of LOOM_STAGE_ID/LOOM_WORK_DIR in
+# loom/src/commands/hook/reconcile_graph.rs: it re-exports nothing when
+# neither var was set in this process to begin with. The list below is
+# every `LOOM_*` variable `loom/src/commands/hook/{user_prompt,
+# reconcile_graph,pre_compact}.rs` reads via `non_empty_env` — re-check with
+# `rg -n non_empty_env loom/src/commands/hook/` before trusting it after a
+# future change to those files.
+#
+# The timeout fallback matches hooks/user-prompt-context.sh's own
 # gtimeout/timeout/none fallback so this harness never wedges on a hung
 # binary.
-run_timeout() {
+run_bin() {
 	local secs="$1"
 	shift
 	if command -v gtimeout >/dev/null 2>&1; then
-		gtimeout "$secs" "$@"
+		env -u LOOM_WORK_DIR -u LOOM_STAGE_ID -u LOOM_SESSION_ID gtimeout "$secs" "$@"
 	elif command -v timeout >/dev/null 2>&1; then
-		timeout "$secs" "$@"
+		env -u LOOM_WORK_DIR -u LOOM_STAGE_ID -u LOOM_SESSION_ID timeout "$secs" "$@"
 	else
-		"$@"
+		env -u LOOM_WORK_DIR -u LOOM_STAGE_ID -u LOOM_SESSION_ID "$@"
 	fi
 }
 
@@ -228,9 +294,43 @@ seed_measure_root() {
 		mkdir -p "$mirror/.loom/cache"
 		cp -a "$REPO_ROOT/.loom/cache/context-v1" "$mirror/.loom/cache/context-v1"
 		if [[ -f "$mirror/.loom/cache/context-v1/state.json" ]]; then
-			jq '.semantic.stale = false' \
-				"$mirror/.loom/cache/context-v1/state.json" \
-				>"$mirror/.loom/cache/context-v1/state.json.tmp"
+			# BREACH 2 fix: point .semantic.revision at a base layer file the
+			# SNAPSHOT actually has, instead of trusting whatever revision the
+			# copied state.json names. A checkout's state.json can name a
+			# revision for which graph/base/<revision>.json was never
+			# published (base layers are published on `loom map`/merge, not
+			# eagerly) — resolved() then reads a silently empty base, which
+			# `retrieve/graph.rs::degraded_reason` reports as a degraded pack,
+			# which is one of spawn_if_needed's two triggers even with
+			# .semantic.stale patched false. Picked by mtime, not hardcoded:
+			# graph/base/ prunes old layers (graph_store/prune.rs), so a fixed
+			# revision here would go stale the next time this script runs.
+			local base_dir="$mirror/.loom/cache/context-v1/graph/base"
+			local newest_base="" f
+			if [[ -d "$base_dir" ]]; then
+				for f in "$base_dir"/*.json; do
+					[[ -e "$f" ]] || continue
+					if [[ -z "$newest_base" || "$f" -nt "$newest_base" ]]; then
+						newest_base="$f"
+					fi
+				done
+			fi
+			if [[ -n "$newest_base" ]]; then
+				SOURCE_CHANNEL_REVISION="$(basename "$newest_base" .json)"
+				jq --arg rev "$SOURCE_CHANNEL_REVISION" \
+					'.semantic.stale = false | .semantic.revision = $rev' \
+					"$mirror/.loom/cache/context-v1/state.json" \
+					>"$mirror/.loom/cache/context-v1/state.json.tmp"
+			else
+				echo "retrieval-ab: warning — no base graph layer under $base_dir;" >&2
+				echo "  the source channel will read as A.11-degraded for BOTH" >&2
+				echo "  binaries in $mirror (fair to the A/B comparison, but the" >&2
+				echo "  source-dependent eval cases are unwinnable for both — see" >&2
+				echo "  doc/RETRIEVAL-AB-METHOD.md)." >&2
+				jq '.semantic.stale = false' \
+					"$mirror/.loom/cache/context-v1/state.json" \
+					>"$mirror/.loom/cache/context-v1/state.json.tmp"
+			fi
 			mv "$mirror/.loom/cache/context-v1/state.json.tmp" \
 				"$mirror/.loom/cache/context-v1/state.json"
 		fi
@@ -295,7 +395,7 @@ with open(sys.argv[1]) as f:
 			local errfile="$RESULTS_DIR/context-$binary-$name.err"
 			local status=0
 			local output
-			output=$(cd "$mirror" && run_timeout 10 "$bin" knowledge context \
+			output=$(cd "$mirror" && run_bin 10 "$bin" knowledge context \
 				--query "$query" --budget-tokens "$budget" --json \
 				"${require_flags[@]}" 2>"$errfile") || status=$?
 			local item_ids ok
@@ -344,7 +444,7 @@ run_metric23() {
 				local errfile="$RESULTS_DIR/hook-$binary-$idx-$rep.err"
 				local status=0 start_ns end_ns elapsed_ms output
 				start_ns=$(date +%s%N)
-				output=$(printf '%s' "$payload" | (cd "$mirror" && run_timeout 10 "$bin" hook user-prompt) 2>"$errfile") || status=$?
+				output=$(printf '%s' "$payload" | (cd "$mirror" && run_bin 10 "$bin" hook user-prompt) 2>"$errfile") || status=$?
 				end_ns=$(date +%s%N)
 				elapsed_ms=$(((end_ns - start_ns) / 1000000))
 
@@ -538,6 +638,13 @@ render_report() {
 
 Baseline: \`$BASELINE_REV\` (pre-proposal) — Current: working tree (HEAD \`$head_short\`)
 Generated: $generated_at
+Source channel: $(
+	if [[ -n "$SOURCE_CHANNEL_REVISION" ]]; then
+		echo "exercised — both mirrors' semantic.revision points at base layer \`$SOURCE_CHANNEL_REVISION\` (see seed_measure_root's BREACH 2 fix)"
+	else
+		echo "NOT exercised — no base graph layer was available to seed; every source-dependent eval case is a miss for BOTH binaries, not a real result (see doc/RETRIEVAL-AB-METHOD.md)"
+	fi
+)
 
 ## Headline: forbid violations (regression specimens)
 
@@ -593,6 +700,11 @@ $m2_class_rows
 Cold-start is the first \`hook user-prompt\` invocation issued for that
 binary (page-cache-cold read of the measure root); p50/p95/max exclude it.
 The shell wrapper (\`hooks/user-prompt-context.sh\`) enforces a 5s ceiling.
+A cold number taken while anything else — another agent, a background
+reconcile, the OS page cache warming from an unrelated process — is writing
+to the same measure root or its underlying disk is contention, not cost;
+treat an unusually high cold-start figure as a signal to re-run in
+isolation, not as this binary's real first-touch latency.
 
 | | baseline | current |
 | --- | --- | --- |
@@ -609,8 +721,79 @@ REPORT
 }
 
 # --------------------------------------------------------------------------
+# Isolation verification — belt-and-suspenders is not proof. Fingerprints
+# the real checkout's own cache/work state before this run touches anything
+# and diffs it after scoring: any change means some invocation resolved past
+# its measure root and mutated the real checkout despite everything above —
+# see the ISOLATION CONTRACT header. `stat -c`/`stat -f` mirrors the
+# GNU-vs-BSD fallback hooks/worktree-file-guard.sh already uses.
+# --------------------------------------------------------------------------
+mtime_of() {
+	local path="$1"
+	[[ -e "$path" ]] || {
+		echo "absent"
+		return
+	}
+	stat -c '%Y' "$path" 2>/dev/null || stat -f '%m' "$path" 2>/dev/null || echo "unknown"
+}
+
+real_checkout_fingerprint() {
+	printf '%s %s %s' "$(mtime_of "$REAL_CATALOG")" "$(mtime_of "$REAL_STATE")" "$(mtime_of "$REAL_WORK_CONTEXT")"
+}
+
+# Delivery-dedupe records under the real checkout's LOCAL overlay scope —
+# reported as a delta, not asserted, because a concurrent, unrelated Claude
+# Code session in this same checkout can legitimately add these while this
+# harness runs; only the catalog/state/work-context mtimes above are proof
+# of an isolation breach.
+count_real_retrievals() {
+	local dir="$REAL_WORK_CONTEXT/_local"
+	[[ -d "$dir" ]] || {
+		echo 0
+		return
+	}
+	local count=0 f
+	for f in "$dir"/*/session-retrieval/*.json; do
+		[[ -e "$f" ]] || continue
+		count=$((count + 1))
+	done
+	echo "$count"
+}
+
+# Compare a fingerprint/retrieval-count pair captured before this run against
+# the same pair captured now. Reports the retrieval-count delta either way
+# (informational — see count_real_retrievals's doc); FAILS LOUDLY, exiting
+# 1, when the fingerprint moved, since that is proof (not a guess) that this
+# run mutated the real checkout it was supposed to leave untouched.
+verify_real_checkout_untouched() {
+	local before_fingerprint="$1" before_retrievals="$2"
+	local after_fingerprint after_retrievals
+	after_fingerprint="$(real_checkout_fingerprint)"
+	after_retrievals="$(count_real_retrievals)"
+
+	echo "" >&2
+	echo "retrieval-ab: real checkout's own session-retrieval records: $before_retrievals before, $after_retrievals after (delta $((after_retrievals - before_retrievals)); informational, see count_real_retrievals)." >&2
+
+	if [[ "$before_fingerprint" != "$after_fingerprint" ]]; then
+		echo "" >&2
+		echo "retrieval-ab: ISOLATION BREACH — the real checkout's own cache/work state" >&2
+		echo "  (catalog.json mtime / state.json mtime / .work/context mtime) changed" >&2
+		echo "  during this run:" >&2
+		echo "    before: $before_fingerprint" >&2
+		echo "    after:  $after_fingerprint" >&2
+		echo "  The report above was measured against a moving target and MUST NOT be" >&2
+		echo "  trusted. Investigate before re-running — see the ISOLATION CONTRACT" >&2
+		echo "  header and doc/RETRIEVAL-AB-METHOD.md's incident writeup." >&2
+		exit 1
+	fi
+}
+
+# --------------------------------------------------------------------------
 # Main
 # --------------------------------------------------------------------------
+BEFORE_FINGERPRINT="$(real_checkout_fingerprint)"
+BEFORE_RETRIEVALS="$(count_real_retrievals)"
+
 ensure_binaries
 mkdir -p "$RESULTS_DIR"
 seed_measure_root "$MIRROR_BASELINE"
@@ -623,3 +806,5 @@ score_metric1
 score_metric23
 
 render_report | tee "$OUT/report.md"
+
+verify_real_checkout_untouched "$BEFORE_FINGERPRINT" "$BEFORE_RETRIEVALS"

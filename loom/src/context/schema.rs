@@ -340,8 +340,9 @@ pub struct ContextPack {
     pub dropped_terms: Vec<String>,
     /// Set when this pack was served from a knowingly incomplete index.
     ///
-    /// Carries a human-readable reason, e.g. "source graph base <rev8> missing
-    /// — serving overlay only". `None` is the healthy case.
+    /// Carries a human-readable reason; `None` is healthy. A missing base
+    /// layer ALONE is not a degradation — a dirty tree can never publish one,
+    /// so the overlay is the designed path. See `retrieve::graph` for why.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub degraded: Option<String>,
 }

@@ -157,18 +157,70 @@ fn retrieve_for_stage_packs_source_nodes_with_no_knowledge_tree_at_all() {
     );
 }
 
-// A.11: `ContextPack::degraded` fires exactly when `state.json` names a
-// semantic revision whose base layer went missing — never for a revision
-// that was simply never built (`retrieve::graph::degraded_reason`'s two
-// branches). These write `state.json` directly with `ContextStore::update_state`
-// rather than running a real `reconcile_source_graph`, so each test isolates
-// one branch instead of depending on git/dirty-tree behavior neither
+// A.11: `ContextPack::degraded` fires only when `state.json` names a
+// semantic revision AND the RESOLVED graph — base plus this query's overlay —
+// has nothing to answer with: no base was found for that revision, AND no
+// overlay covered for it either (`retrieve::graph::degraded_reason`). A
+// missing base alone is NOT degraded — bases are immutable and revision-keyed
+// (`graph_store.rs`), so a dirty working tree can never publish one, and
+// `refresh::semantic::try_reconcile_semantic` deliberately builds a `_local`
+// overlay instead; "no base for the current revision, served from the
+// overlay" is the ordinary, healthy state of a checkout someone is actively
+// working in. Getting this wrong is not just a display bug: `degraded` is a
+// live input to `reconcile_graph::spawn_if_needed` (`stale OR degraded`), so
+// misreporting it means every prompt against a dirty tree trips a background
+// full-repository rebuild.
+//
+// These write `state.json` directly with `ContextStore::update_state` rather
+// than running a real `reconcile_source_graph`, so each test isolates one
+// branch instead of depending on git/dirty-tree behavior neither
 // `retrieve_for_stage` nor this fixture own.
 
-/// A `state.json` revision with no matching `graph/base/<rev>.json` on disk —
-/// the real, currently-reachable degraded mode `load_resolved_graph` reports.
+/// THE regression case this predicate exists to get right: no base was ever
+/// published for the recorded revision, but a real overlay covers it — the
+/// ordinary, healthy state of a dirty working tree, not a degradation. Before
+/// the two-part fix, this read as `degraded: Some(..)` for every dirty-tree
+/// checkout, forever.
 #[test]
-fn retrieve_for_stage_reports_degraded_when_the_semantic_base_is_missing() {
+fn retrieve_for_stage_is_not_degraded_when_an_overlay_covers_a_missing_base() {
+    let temp = project_with_knowledge();
+    let root = temp.path();
+    let node = distinctive_node();
+    write_local_overlay(root, &node);
+
+    let work_dir = WorkDir::new(root).unwrap();
+    let store = ContextStore::open(&work_dir).unwrap();
+    store
+        .update_state(|state| {
+            state.semantic = Freshness {
+                revision: "deadbeef00".to_string(),
+                ..Freshness::default()
+            };
+        })
+        .unwrap();
+
+    let query = StageQuery::new(root, format!("Where is {DISTINCTIVE_SYMBOL} defined?"));
+    let pack = retrieve_for_stage(&query, 500).unwrap();
+
+    assert_eq!(
+        pack.degraded, None,
+        "an overlay that covers a missing base must never read as degraded"
+    );
+    assert!(
+        pack.items.iter().any(|item| item.id.as_str() == node.id),
+        "the overlay's own content must still be packed: {:?}",
+        pack.items
+            .iter()
+            .map(|item| item.id.as_str())
+            .collect::<Vec<_>>()
+    );
+}
+
+/// A `state.json` revision with no matching `graph/base/<rev>.json` on disk
+/// AND no overlay to cover for it — the resolved graph is genuinely empty, the
+/// one case `degraded_reason` exists to surface.
+#[test]
+fn retrieve_for_stage_reports_degraded_when_nothing_covers_the_missing_base() {
     let temp = project_with_knowledge();
     let root = temp.path();
     let work_dir = WorkDir::new(root).unwrap();
@@ -196,7 +248,11 @@ fn retrieve_for_stage_reports_degraded_when_the_semantic_base_is_missing() {
 }
 
 /// A published base for the exact revision `state.json` names — the honest,
-/// healthy case `Semantic: current` describes.
+/// healthy case `Semantic: current` describes. Deliberately publishes a base
+/// with an EMPTY `files` map: a project with no matching source files still
+/// has a real, current base, so this must stay `None` on `files` content
+/// alone — `degraded_reason` has to check `base_revision`, not just whether
+/// the resolved graph happens to have files.
 #[test]
 fn retrieve_for_stage_is_not_degraded_when_the_semantic_base_exists() {
     let temp = project_with_knowledge();
