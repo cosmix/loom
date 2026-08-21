@@ -20,16 +20,25 @@
 //! ```
 //!
 //! [`rank`] scores each requested channel independently, [`fuse`] merges the
-//! per-channel rank lists by reciprocal rank fusion, and [`pack`] walks the
-//! fused list in order taking whole chunks until the budget is spent. The
-//! packer never exceeds its budget and always reports what it left out.
+//! per-channel rank lists in TWO TIERS, and [`pack`] walks the fused list in
+//! order taking whole chunks until the budget is spent. The packer never
+//! exceeds its budget and always reports what it left out.
 //!
 //! Both channels contribute candidates. [`rank`] scores the knowledge chunks of
-//! the catalog; [`rank_source::rank_source`] scores the nodes [`source_graph`]
-//! extracted, read back through [`graph_store`] as a resolved base-plus-overlay
-//! view. The two rank lists are fused by reciprocal rank, so a source node and
-//! a knowledge chunk compete on rank alone — a source item points into the
-//! code, while the prose is the part that cannot be re-derived from it.
+//! the catalog — curated prose and, behind a `prose:` id prefix, the project's
+//! own design documents; [`rank_source::rank_source`] scores the nodes
+//! [`source_graph`] extracted, read back through [`graph_store`] as a resolved
+//! base-plus-overlay view.
+//!
+//! Fusion is not plain reciprocal rank: every candidate holding an exact rung
+//! is ordered ahead of the lexical remainder by its raw ladder score, and only
+//! that remainder is fused by RRF. Plain RRF reduced each candidate to a rank
+//! position, so a chunk scoring 1080 on an explicit-id hit and a node scoring
+//! 0.3 on a weak lexical match tied exactly and fell through to alphabetical
+//! order by id. See [`fuse`] for the tier contract, and note the invariant
+//! stated there: a tier-1 score and a tier-2 score live on unrelated scales and
+//! are not comparable across the boundary — the ordering is the contract, the
+//! magnitude is not.
 //!
 //! ## One entry point
 //!

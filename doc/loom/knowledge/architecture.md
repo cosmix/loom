@@ -452,11 +452,15 @@ trap, the sticky `.work/terminal-backend-fallback` marker and every path that wr
 ## Context Retrieval (`loom/src/context/`)
 
 Deterministic, model-free, network-free retrieval over the curated knowledge
-hierarchy: chunk the prose, rank per channel, fuse by reciprocal rank fusion,
-pack to a token budget. One entry point — `context::retrieve_for_stage` — serves
-the `loom knowledge context` command, signal generation and the prompt hook
-alike. Two graphs exist — the knowledge-chunk catalog and the tree-sitter source
-graph — and both are ranked and fused into one pack.
+hierarchy: chunk the prose (curated plus indexed project prose under `doc/`),
+rank per channel, fuse by **two-tier fusion** (exact-rung candidates first by
+raw score, the lexical remainder by reciprocal-rank fusion — NOT plain RRF),
+pack to a token budget. One entry point — `context::retrieve_for_stage` —
+serves the `loom knowledge context`/`loom knowledge eval` commands, signal
+generation and the prompt hook alike. Two graphs exist — the knowledge-chunk
+catalog and the tree-sitter source graph — and both are ranked and fused into
+one pack, each through a persistent per-revision BM25 index behind the full
+scan (the scan stays the correctness oracle).
 
 Full detail, including the base/overlay layering rule and what is derived versus
 durable: [architecture/context-retrieval.md](architecture/context-retrieval.md).
@@ -465,7 +469,7 @@ durable: [architecture/context-retrieval.md](architecture/context-retrieval.md).
 
 A derived tree-sitter graph of the repo's own source, with two live consumers:
 `loom map` (via `context::graph_store`) and the `Source` retrieval channel,
-ranked by `context::rank_source` (`context/rank_source.rs:59`) and fused into the
+ranked by `context::rank_source` (`context/rank_source.rs:154`) and fused into the
 same `ContextPack` as knowledge chunks. Its defining property is an explicit
 honesty contract: every edge carries provenance and a confidence ceiling, and no
 file is ever silently omitted — a degraded file is reported as degraded.

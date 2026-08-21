@@ -560,3 +560,32 @@ broke it. The durable fix is an RAII env guard at test start — mirroring `EnvG
 in `commands/memory/handlers/tests.rs` — that restores on `Drop`, so a panic mid-test
 cannot leak state into later tests. Do not apply that fix from an unrelated stage:
 touching a file outside your territory is cross-stage merge-conflict bait.
+
+## Bump `INDEX_VERSION` Whenever `lexical::tokenize` Changes
+
+`context/lexical_index.rs::INDEX_VERSION` (currently `1`) has no compile-time
+protection tying it to the tokenizer. The persisted index file already hashes
+the `WEIGHT_*` scoring constants (`derivation()`, `lexical_index.rs:85-98`) and
+is rejected on a mismatch, so retuning a weight cannot leave a warm cache
+scoring at the old value. `lexical::tokenize` (`context/lexical.rs`) is the one
+document input to that same index with **no** constant hashed into it: a
+tokenizer change that keeps every source byte identical still changes what
+each document's `(term, weight)` pairs are, and the index has no way to detect
+that on its own.
+
+The failure mode is a divergence visible only on a cache HIT: a warm index
+built under the old tokenizer keeps serving old-tokenization postings, while a
+cold miss rebuilds under the new tokenizer and scores differently — same code,
+same corpus revision, two different answers depending on nothing but whether a
+cache file happened to survive. See [Context Retrieval](architecture/context-retrieval.md)
+for the rest of the index's invalidation contract (why `average_length` and
+the document-frequency map are recomputed rather than stored, and why weights
+are persisted as IEEE-754 bits).
+
+**Rule:** any change to `lexical::tokenize` (the split rules, the emitted
+casing, what counts as a token boundary) MUST bump `INDEX_VERSION` in the same
+commit. A file at the wrong version is treated as a miss, not an error — the
+reader falls back to the scan and rewrites the file — so bumping the version
+costs nothing but a few extra scans on the next prompt per revision, while
+forgetting it costs a silent, hit-only scoring divergence that no test
+currently pins.

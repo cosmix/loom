@@ -8,11 +8,11 @@
 
 | File | Description | Lines |
 | --- | --- | --- |
-| [architecture.md](architecture.md) | High-level component relationships, data flow, module dependencies | 512 |
+| [architecture.md](architecture.md) | High-level component relationships, data flow, module dependencies | 516 |
 | [entry-points.md](entry-points.md) | Key files agents should read first | 591 |
 | [patterns.md](patterns.md) | Architectural patterns discovered in the codebase | 752 |
-| [conventions.md](conventions.md) | Coding conventions discovered in the codebase | 559 |
-| [mistakes.md](mistakes.md) | Mistakes made and lessons learned - what to avoid | 950 |
+| [conventions.md](conventions.md) | Coding conventions discovered in the codebase | 591 |
+| [mistakes.md](mistakes.md) | Mistakes made and lessons learned - what to avoid | 964 |
 | [stack.md](stack.md) | Dependencies, frameworks, and tooling used in the project | 97 |
 | [concerns.md](concerns.md) | Technical debt, warnings, and issues to address | 785 |
 
@@ -24,7 +24,7 @@
 | --- | --- | --- | --- |
 | [architecture/codex-concurrency.md](architecture/codex-concurrency.md) | Codex Concurrency | Topic notes for the architecture knowledge area. | 102 |
 | [architecture/codex-plugin.md](architecture/codex-plugin.md) | Codex Plugin | Topic notes for the architecture knowledge area. | 254 |
-| [architecture/context-retrieval.md](architecture/context-retrieval.md) | Context Retrieval | Topic notes for the architecture knowledge area. | 186 |
+| [architecture/context-retrieval.md](architecture/context-retrieval.md) | Context Retrieval | Topic notes for the architecture knowledge area. | 469 |
 | [architecture/core-abstractions.md](architecture/core-abstractions.md) | Core Abstractions | ExecutionGraph, Stage, Session, Orchestrator, TerminalBackend — plus data flow and .work/ file ownership. | 93 |
 | [architecture/directory-structure.md](architecture/directory-structure.md) | Directory Structure | Full loom/src module tree, the .work/ state layout, and the repo-root asset directories. | 49 |
 | [architecture/execution-containment.md](architecture/execution-containment.md) | Execution Containment | Topic notes for the architecture knowledge area. | 165 |
@@ -58,6 +58,7 @@
 | --- | --- | --- | --- |
 | [mistakes/codex-lane-rogue-wrapper.md](mistakes/codex-lane-rogue-wrapper.md) | Codex Lane Rogue Wrapper | Topic notes for the mistakes knowledge area. | 79 |
 | [mistakes/completion-broker-credential.md](mistakes/completion-broker-credential.md) | Completion Broker Credential | Topic notes for the mistakes knowledge area. | 57 |
+| [mistakes/computed-values-and-hidden-couplings.md](mistakes/computed-values-and-hidden-couplings.md) | Computed Values and Hidden Couplings | Topic notes for the mistakes knowledge area. Three lessons from the | 156 |
 | [mistakes/detached-spawn-in-tests.md](mistakes/detached-spawn-in-tests.md) | Detached Spawn In Tests | Topic notes for the mistakes knowledge area. | 45 |
 | [mistakes/doctrine-and-acceptance.md](mistakes/doctrine-and-acceptance.md) | Doctrine And Acceptance | Why a one-phrase grep proves presence but never agreement, and how doctrine drifts across surfaces unnoticed. | 110 |
 | [mistakes/knowledge-base-drift.md](mistakes/knowledge-base-drift.md) | Knowledge Base Drift | How the knowledge base itself goes stale: plan-authoring notes frozen as architecture facts, `[UPDATED]` duplicates, and invented CLI surface. | 103 |

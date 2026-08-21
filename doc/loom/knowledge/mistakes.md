@@ -931,7 +931,7 @@ and ground truth disagree, fix the criterion — never the prose.
 
 **What happened:** While healing malformed `hooks`/`env`/`worktree` JSON containers in
 `fs/permissions/{hooks,settings}.rs`, a refactor moved logic into a new
-`fs/permissions/drift.rs` helper. That *shrank* `settings.rs` and its
+`fs/permissions/drift.rs` helper. That _shrank_ `settings.rs` and its
 `ensure_loom_hooks_local` function below their recorded values in
 `maintainability-baseline.txt`. `cargo test --test maintainability` still failed —
 not for growing past the ceiling, but with "shrank from N to M lines; lower the entry".
@@ -948,3 +948,17 @@ optional: lower that exact entry to the reported value.
 **Fix:** Update only the entries the test names, to the exact value it reports —
 never round, never touch entries it didn't flag, never add a new entry for a file/
 function that's still under the 400/50-line limit (those never need one).
+
+## Computed Values and Hidden Couplings (2026-08-21)
+
+Three lessons from the retrieval-precision work, same underlying shape: a value that
+was correctly computed and correctly carried was still wrong, because something
+OUTSIDE the function being read depended on it — a downstream consumer that forgot to
+apply a cap and shipped it unpublished, a "reason" field that was secretly also a
+control signal three modules away, and a ratio-based threshold whose meaning silently
+changed when the corpus it measures grew. Also covers why the confidence-ceiling bug
+needed a test through the REAL ranker AND the REAL packer to catch — see
+[Tests That Cannot Fail](mistakes/tests-that-cannot-fail.md) for the general form of
+that lesson.
+
+→ [Computed Values and Hidden Couplings](mistakes/computed-values-and-hidden-couplings.md)

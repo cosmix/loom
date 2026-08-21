@@ -519,9 +519,9 @@ and states plainly which channel is wired. Then the file for what you touch:
 | `context/mod.rs`                                        | pipeline overview, public re-exports, the one-entry-point rule                                                           |
 | `context/retrieve.rs`                                   | `retrieve_for_stage`, `StageQuery`, `context_epoch` — the ONLY way into the pipeline                                     |
 | `context/schema.rs`                                     | `ContextPack`, `ContextItem`, `Channel`, `Freshness`, token constants; re-exports source-graph names                     |
-| `context/ingest.rs`, `rank.rs`, `fuse.rs`, `pack.rs`    | chunk ingest, per-channel scoring, reciprocal-rank fusion, budget-bounded packing                                        |
+| `context/ingest.rs`, `rank.rs`, `fuse.rs`, `pack.rs`    | chunk ingest, per-channel scoring, two-tier fusion (exact rungs, then reciprocal-rank fusion), budget-bounded packing    |
 | `context/store.rs`                                      | derived-artifact store under `.loom/cache/context-v1/`; **`open` follows the `.work` symlink to the MAIN project root**  |
-| `context/delivery.rs`                                   | delivery records, `plan_key`/`plan_key_from`, epoch-scoped suppression                                                   |
+| `context/delivery.rs`, `delivery/session.rs`             | delivery records, `plan_key`/`plan_key_from`, epoch-scoped suppression; `session.rs` adds the prompt hook's per-session dedupe (`hook_recipient_id`, `delivered_to_session`, `discard_session_delivery`, A.16/A.21) |
 | `context/untrusted.rs`                                  | `inline_safe` — the ONE flattener for untrusted values on agent-facing surfaces                                          |
 | `context/freshness.rs`, `fingerprint.rs`, `coverage.rs` | staleness tracking, content fingerprints, `CoverageReport`                                                               |
 | `context/refresh/source_graph.rs`                       | `reconcile_source_graph`, `SourceGraphScope`, `SourceGraphOutcome`                                                       |
@@ -574,8 +574,8 @@ Plan YAML gained `command_confinement: confined | inherit` at plan level
 
 | Surface | File | Notes |
 | --- | --- | --- |
-| `context::rank_source` | `context/rank_source.rs:53` | ranks source-graph nodes for `Channel::Source`; re-exported at `context/mod.rs:64` |
-| shared BM25 core | `context/rank.rs:107-149` | `prepare_lexical` / `score_bm25`, now `pub(crate)`, used by both rankers |
+| `context::rank_source` | `context/rank_source.rs:154` | ranks source-graph nodes for `Channel::Source`; re-exported at `context/mod.rs:74` |
+| shared BM25 core | `context/rank/corpus.rs` | `prepare_lexical` / `prepare_lexical_cached` / `score_bm25`, re-exported `pub(crate)` from `rank.rs`, used by both rankers and by the persistent index (`context/lexical_index.rs`, A.13) |
 | `context/local_overlay.rs` | whole file | the ONE definition of the working-tree overlay address: `LOCAL_PLAN_KEY`, `local_overlay_stage_name`, `local_overlay_key`, `OverlayScope` |
 | `advisory_source_graph_preflight` | `commands/run/checks.rs:103-111` | never returns `Result`; called from `init/execute.rs:187`, `run/mod.rs:101`, `run/foreground.rs:39` |
 | `SemanticLayer` / `SemanticOutcome` | `context/refresh/semantic.rs:50-64` | what `loom knowledge sync` reports: `base` \| `local-overlay` \| `skipped` |
