@@ -106,6 +106,36 @@ impl Session {
         self.last_active = Utc::now();
     }
 
+    /// Apply an observed heartbeat to this session.
+    ///
+    /// A heartbeat is the only ongoing evidence the daemon has that a live
+    /// session is doing anything: the hooks rewrite
+    /// `.work/heartbeat/<stage-id>.json` after every tool call. Recording it
+    /// here is what keeps `last_active` honest — without it the field is set
+    /// once by [`Session::assign_to_stage`] at spawn and never again, so every
+    /// duration derived from it reports a session's entire lifetime as idle.
+    ///
+    /// `context_percent` is threaded through but is `None` in practice today:
+    /// both `hooks/session-start.sh` and `hooks/post-tool-use.sh` write a
+    /// literal `null`, because Claude Code's PostToolUse payload does not carry
+    /// context usage. It is applied when present rather than assumed absent, so
+    /// that a hook learning the field becomes a hook-only change instead of a
+    /// second wiring job here.
+    pub fn record_heartbeat(&mut self, context_percent: Option<f32>) {
+        self.last_active = Utc::now();
+
+        // Only a real, in-range reading may move context_tokens. A missing or
+        // nonsensical percentage leaves the previous value alone rather than
+        // zeroing it: `is_context_exhausted` reads this field, and resetting it
+        // to 0 would silently retract a handoff that was already due.
+        let Some(percent) = context_percent else {
+            return;
+        };
+        if percent.is_finite() && (0.0..=100.0).contains(&percent) && self.context_limit > 0 {
+            self.context_tokens = ((percent / 100.0) * self.context_limit as f32).round() as u32;
+        }
+    }
+
     pub fn context_usage_percent(&self) -> f32 {
         if self.context_limit == 0 {
             return 0.0;

@@ -215,12 +215,12 @@ impl Orchestrator {
                     );
             }
             MonitorEvent::HeartbeatReceived {
-                stage_id: _,
-                session_id: _,
-                context_percent: _,
+                stage_id,
+                session_id,
+                context_percent,
                 last_tool: _,
             } => {
-                // Heartbeat events are silent - just used for internal tracking
+                self.apply_heartbeat(&stage_id, &session_id, context_percent)?;
             }
             MonitorEvent::BudgetExceeded {
                 session_id,
