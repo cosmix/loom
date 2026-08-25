@@ -37,6 +37,11 @@ pub enum MonitorEvent {
         timeout_secs: u64,
         /// Last known activity from heartbeat
         last_activity: Option<String>,
+        /// The stage looks FINISHED rather than stuck: its branch carries
+        /// commits beyond its base and its worktree is clean, so the session
+        /// most likely ended its turn without running `loom stage complete`.
+        /// Advisory like the rest of this event — it only sharpens the warning.
+        finished_without_completing: bool,
     },
     SessionNeedsHandoff {
         session_id: String,

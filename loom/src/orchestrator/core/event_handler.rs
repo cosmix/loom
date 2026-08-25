@@ -6,6 +6,7 @@ use colored::Colorize;
 use std::path::PathBuf;
 
 use crate::models::stage::{Stage, StageStatus};
+use crate::orchestrator::monitor::parked::hung_warning;
 use crate::orchestrator::monitor::MonitorEvent;
 use crate::orchestrator::signals::remove_signal;
 
@@ -197,22 +198,20 @@ impl Orchestrator {
                 stale_duration_secs,
                 timeout_secs,
                 last_activity,
+                finished_without_completing,
             } => {
                 clear_status_line();
-                let stage_info = stage_id
-                    .as_ref()
-                    .map(|s| format!(" (stage '{s}')"))
-                    .unwrap_or_default();
-                let activity_info = last_activity
-                    .as_ref()
-                    .map(|a| format!(", last: {a}"))
-                    .unwrap_or_default();
-                // ADVISORY ONLY: nothing is killed and nothing is retried. Naming
-                // the budget tells the operator whether to raise the stage's
-                // `subagent_timeout_secs` or go look at the session.
-                eprintln!(
-                        "Warning: Session '{session_id}'{stage_info} appears hung (no heartbeat for {stale_duration_secs}s, budget {timeout_secs}s{activity_info})"
-                    );
+                // ADVISORY ONLY: nothing is killed and nothing is retried. The
+                // wording, and the parked/stuck split, live in monitor::parked.
+                let warning = hung_warning(
+                    &session_id,
+                    stage_id.as_deref(),
+                    stale_duration_secs,
+                    timeout_secs,
+                    last_activity.as_deref(),
+                    finished_without_completing,
+                );
+                eprintln!("{warning}");
             }
             MonitorEvent::HeartbeatReceived {
                 stage_id,
