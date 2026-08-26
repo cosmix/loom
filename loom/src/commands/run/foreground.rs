@@ -84,19 +84,13 @@ fn execute_foreground(
         shutdown_flag: None,
     };
 
+    // Harmless even with no `orchestrator.pid` lock: the adopt-side liveness gate covers it.
+    crate::fs::tmux_tmpdir::record_tmux_tmpdir_best_effort(work_dir.root());
+
     let mut orchestrator =
         Orchestrator::new(config, graph).context("Failed to create orchestrator")?;
 
-    if watch {
-        println!(
-            "{} Running in watch mode {}",
-            "→".cyan().bold(),
-            "(continuous execution)".dimmed()
-        );
-        println!("  {} Press {} to stop\n", "→".dimmed(), "Ctrl+C".bold());
-    } else {
-        println!("{} Running all ready stages...", "→".cyan().bold());
-    }
+    announce_run_mode(watch);
     let result = orchestrator.run()?;
 
     // Collect and print the completion summary with timing and execution graph
@@ -120,6 +114,21 @@ fn execute_foreground(
         Ok(())
     } else {
         bail!("Orchestration completed with failures")
+    }
+}
+
+/// Print the startup banner for foreground mode: watch mode explains it will
+/// keep running until Ctrl+C, one-shot mode just announces the run.
+fn announce_run_mode(watch: bool) {
+    if watch {
+        println!(
+            "{} Running in watch mode {}",
+            "→".cyan().bold(),
+            "(continuous execution)".dimmed()
+        );
+        println!("  {} Press {} to stop\n", "→".dimmed(), "Ctrl+C".bold());
+    } else {
+        println!("{} Running all ready stages...", "→".cyan().bold());
     }
 }
 

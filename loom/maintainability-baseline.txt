@@ -104,7 +104,7 @@ function src/commands/resume.rs execute 99
 function src/commands/review/generate.rs execute 162
 function src/commands/review/generate.rs load_stage_infos 59
 function src/commands/review/generate.rs render_stage_section 59
-function src/commands/run/foreground.rs execute_foreground 75
+function src/commands/run/foreground.rs execute_foreground 69
 function src/commands/run/foreground.rs print_result 58
 function src/commands/self_update/install.rs install_binary 52
 function src/commands/self_update/mod.rs download_verify_and_extract_zip 117
@@ -156,7 +156,7 @@ function src/daemon/server/client.rs handle_client_connection 124
 function src/daemon/server/dispute.rs handle_dispute_criteria 176
 function src/daemon/server/lifecycle.rs run_server 125
 function src/daemon/server/lifecycle.rs start 141
-function src/daemon/server/orchestrator.rs run_orchestrator 93
+function src/daemon/server/orchestrator.rs run_orchestrator 90
 function src/daemon/server/status.rs collect_completion_summary 97
 function src/daemon/server/status.rs collect_status 78
 function src/daemon/server/tests.rs test_collect_status_with_stages 77

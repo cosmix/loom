@@ -38,18 +38,15 @@ fn run_orchestrator(
     daemon_config: &DaemonConfig,
     shutdown_flag: Arc<AtomicBool>,
 ) -> Result<()> {
-    // Build execution graph from stage files
     let (graph, plan_sandbox) = build_execution_graph(work_dir)?;
 
-    // Get repo root (parent of .work/)
-    // Clone for later use in mark_plan_done_if_all_merged
+    // repo_root = work_dir's parent; unreachable fallback once work_dir is absolute.
     let repo_root = work_dir
         .parent()
         .map(|p| p.to_path_buf())
         .unwrap_or_else(|| PathBuf::from("."));
     let repo_root_for_plan = repo_root.clone();
 
-    // Parse base_branch from config.toml
     let base_branch = parse_base_branch_from_config(work_dir)?;
     if let Some(ref branch) = base_branch {
         eprintln!("Loaded base_branch from config: {branch}");
@@ -74,8 +71,8 @@ fn run_orchestrator(
         sandbox_config: plan_sandbox,
         shutdown_flag: Some(shutdown_flag.clone()),
     };
+    crate::fs::tmux_tmpdir::record_tmux_tmpdir_best_effort(work_dir);
 
-    // Create and run orchestrator
     let mut orchestrator =
         Orchestrator::new(config, graph).context("Failed to create orchestrator")?;
 
@@ -120,9 +117,9 @@ fn run_orchestrator(
         }
     }
 
-    // Signal daemon to exit now that orchestration is complete
     println!("Orchestration finished, signaling daemon shutdown");
     shutdown_flag.store(true, Ordering::Relaxed);
+    crate::fs::tmux_tmpdir::remove_tmux_tmpdir_record(work_dir);
 
     Ok(())
 }

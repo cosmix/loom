@@ -80,7 +80,10 @@ fn prepare_background_run(backend: Option<String>) -> Result<WorkDir> {
     let repo_root = std::env::current_dir()?;
     prepare_repo_for_run(&repo_root)?;
 
-    let work_dir = WorkDir::new(".")?;
+    // Absolute, not ".": a long-lived daemon must get an absolute base — a
+    // relative ".work" silently diverges from every other process's view of
+    // the same paths (e.g. `loom attach`, which always resolves absolute).
+    let work_dir = WorkDir::new(&repo_root)?;
     work_dir.load()?;
 
     resolve_backend_flag(&work_dir, backend, "loom run")?;
