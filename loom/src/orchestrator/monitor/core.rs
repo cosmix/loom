@@ -69,11 +69,15 @@ impl Monitor {
         // ones gain one, without the operator detaching and re-attaching.
         // Costs a single `stat` when nobody is attached (the common case).
         // Best-effort — a viewer that cannot be reconciled must never fail
-        // the poll (O-4).
+        // the poll (O-4). Logged at `warn`, not `debug`: the executor stops
+        // at the first failed step, so one failing step silently blocks
+        // every later add/kill in the same pass — a `debug`-level failure
+        // would leave that invisible to an operator who never raised the
+        // log level.
         if let Err(error) =
             crate::orchestrator::terminal::tmux::refresh_attached_viewer(&self.config.work_dir)
         {
-            tracing::debug!(error = %error, "Overview viewer reconcile skipped");
+            tracing::warn!(error = %error, "Overview viewer reconcile failed");
         }
 
         Ok(events)

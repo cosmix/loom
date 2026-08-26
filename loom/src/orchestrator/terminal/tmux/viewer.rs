@@ -28,16 +28,19 @@ use super::{socket_name, socket_path_for, TmuxBackend};
 /// tmux session name of the tiled viewer. Fixed; the SOCKET is what varies per
 /// repo. Shared by `commands/attach`, which builds the viewer under this
 /// name, and `tmux::reconcile`, which targets the same name to keep it in
-/// sync.
-pub(crate) const OVERVIEW_SESSION: &str = "loom-overview";
+/// sync. `pub`: also read by `tests/e2e/tmux_reconcile.rs` to mirror
+/// `loom attach`'s build sequence.
+pub const OVERVIEW_SESSION: &str = "loom-overview";
 
 /// Per-REPOSITORY viewer socket name, `loom-view-<8 hex>`. The tmux socket
 /// directory is per-USER, not per-repo, so a fixed global name would make two
 /// checkouts collide — and the overview's own best-effort `kill-session`
 /// would then tear down the other repo's viewer. Shared by `commands/attach`,
 /// which derives the socket to build the viewer on, and `tmux::reconcile`,
-/// which derives the same socket to find the viewer it maintains.
-pub(crate) fn viewer_socket_name(work_dir: &Path) -> String {
+/// which derives the same socket to find the viewer it maintains. `pub`: also
+/// used by `tests/e2e/tmux_reconcile.rs` to locate the viewer socket it
+/// builds by hand.
+pub fn viewer_socket_name(work_dir: &Path) -> String {
     // `.work` is a SYMLINK to the main repo's `.work` in a worktree, so
     // canonicalizing gives the same path from every worktree of the repo.
     let canonical = work_dir
@@ -76,7 +79,9 @@ fn escape_arg(s: &str) -> String {
 /// `sh`-flavoured quoting provably correct rather than accidentally so.
 /// Shared by `commands/attach`, which emits this as the initial pane command,
 /// and `tmux::reconcile`, which emits it again for every pane it adds later.
-pub(crate) fn pane_command(session_socket: &str, tmux_session: &str) -> String {
+/// `pub`: also used by `tests/e2e/tmux_reconcile.rs` to build a pane command
+/// matching `loom attach`'s own.
+pub fn pane_command(session_socket: &str, tmux_session: &str) -> String {
     format!(
         "unset TMUX; exec tmux -L {} attach-session -t {}",
         escape_arg(session_socket),
