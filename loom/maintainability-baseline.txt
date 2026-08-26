@@ -161,7 +161,6 @@ function src/daemon/server/status.rs collect_completion_summary 97
 function src/daemon/server/status.rs collect_status 78
 function src/daemon/server/tests.rs test_collect_status_with_stages 77
 function src/diagnosis/signal.rs generate_diagnosis_signal 124
-function src/fs/knowledge/dir.rs splice_section 52
 function src/fs/knowledge/templates.rs default_content 62
 function src/fs/memory/export.rs format_memory_for_handoff 91
 function src/fs/memory/export.rs format_memory_for_signal 92

@@ -1,6 +1,8 @@
 //! Knowledge directory manager.
 
 use super::index::{self, TopicEntry};
+use super::scaffold;
+use super::splice::{self, SectionOutcome};
 use super::templates;
 use super::types::{KnowledgeFile, KnowledgeLayout, KnowledgeTarget, INDEX_FILENAME};
 use anyhow::{Context, Result};
@@ -128,17 +130,19 @@ impl KnowledgeDir {
         self.append_target(&KnowledgeTarget::Tier1(file_type), content)
     }
 
-    /// Replace a section in a knowledge file identified by its ## heading.
+    /// Replace a section in a knowledge file identified by its heading, at
+    /// whatever ATX level (`##` through `######`) it is written.
     ///
-    /// Finds the first `## <heading>` line and replaces everything between it and
-    /// the next `## ` heading (or EOF) with the new content. If the heading is not
-    /// found, appends a new section.
+    /// Finds the first heading line matching `heading` and replaces everything
+    /// between it and the next heading of the same or shallower level (or EOF)
+    /// with the new content. If no heading matches, appends a new `##
+    /// <heading>` section instead — see [`SectionOutcome`].
     pub fn replace_section(
         &self,
         file_type: KnowledgeFile,
         heading: &str,
         content: &str,
-    ) -> Result<()> {
+    ) -> Result<SectionOutcome> {
         self.replace_section_target(&KnowledgeTarget::Tier1(file_type), heading, content)
     }
 
@@ -182,23 +186,31 @@ impl KnowledgeDir {
     /// Append content to a tier-1 file or tier-2 topic (both are append-only).
     ///
     /// A topic file that does not exist yet is scaffolded with a `# Title` /
-    /// `> blurb` header derived from its slug before the content is appended.
+    /// `> blurb` header derived from its slug before the content is appended
+    /// — UNLESS the content already carries its own `# ` title, in which case
+    /// it is written verbatim and the generic scaffold is skipped entirely
+    /// (tier-1 files always keep their curated template regardless). An
+    /// EXISTING topic file whose header is still that generic stub is healed
+    /// in place: content carrying its own `# ` title replaces the stub header
+    /// instead of leaving both a generic and a real title in the file.
     pub fn append_target(&self, target: &KnowledgeTarget, content: &str) -> Result<()> {
         let path = self.target_path(target);
         let default = templates::default_scaffold(target);
         let content_owned = content.to_string();
+        let topic = scaffold::topic_category_and_slug(target);
 
         crate::fs::locking::locked_read_modify_write(&path, |existing| {
-            let base = if existing.is_empty() {
-                default
-            } else {
-                existing
-            };
-            if base.ends_with('\n') {
-                format!("{base}\n{content_owned}\n")
-            } else {
-                format!("{base}\n\n{content_owned}\n")
+            if existing.is_empty() {
+                return scaffold::new_topic_content(&default, &content_owned, topic.is_some());
             }
+            if let Some((category, slug)) = topic {
+                if scaffold::has_own_title(&content_owned) {
+                    if let Some(rest) = scaffold::strip_stub_header(&existing, category, slug) {
+                        return scaffold::heal_stub_header(&content_owned, &rest);
+                    }
+                }
+            }
+            scaffold::append_below(&existing, &content_owned)
         })
         .with_context(|| format!("Failed to append to {}", target.display_name()))?;
 
@@ -206,19 +218,27 @@ impl KnowledgeDir {
         Ok(())
     }
 
-    /// Replace a `## <heading>` section in a tier-1 file or tier-2 topic,
-    /// appending it if the heading is not found. See [`Self::replace_section`]
-    /// for the exact splicing rules.
+    /// Replace a `#{2,6} <heading>` section in a tier-1 file or tier-2 topic,
+    /// at whatever level the heading is actually written, appending a new
+    /// `## <heading>` section if no heading matches. See
+    /// [`Self::replace_section`] for the exact splicing rules and
+    /// [`SectionOutcome`] for what gets reported back.
+    ///
+    /// A tier-2 topic that does not exist yet is still seeded with
+    /// `templates::default_scaffold`'s generic `# Title` / stub blurb here —
+    /// unlike [`Self::append_target`]'s BUG-3 fix, there is no caller-supplied
+    /// title to prefer, since a section `content` is a body, not a whole file.
     pub fn replace_section_target(
         &self,
         target: &KnowledgeTarget,
         heading: &str,
         content: &str,
-    ) -> Result<()> {
+    ) -> Result<SectionOutcome> {
         let path = self.target_path(target);
         let default = templates::default_scaffold(target);
         let heading_owned = heading.to_string();
         let content_owned = content.to_string();
+        let mut outcome = None;
 
         crate::fs::locking::locked_read_modify_write(&path, |existing| {
             let base = if existing.is_empty() {
@@ -226,7 +246,9 @@ impl KnowledgeDir {
             } else {
                 existing
             };
-            splice_section(base, &heading_owned, &content_owned)
+            let (result, found) = splice::splice_section(base, &heading_owned, &content_owned);
+            outcome = Some(found);
+            result
         })
         .with_context(|| {
             format!(
@@ -236,7 +258,7 @@ impl KnowledgeDir {
         })?;
 
         self.refresh_index_if_hierarchical();
-        Ok(())
+        Ok(outcome.expect("locked_read_modify_write always invokes its closure"))
     }
 
     /// List every tier-2 topic file under this knowledge directory.
@@ -271,63 +293,10 @@ impl KnowledgeDir {
     }
 }
 
-/// Splice `## <heading>` section `content` into `base`, replacing an existing
-/// section with that heading (up to but excluding the next `## ` heading, or
-/// EOF) or appending a new one if the heading is not found. Shared by
-/// [`KnowledgeDir::replace_section`] and [`KnowledgeDir::replace_section_target`].
-fn splice_section(base: String, heading: &str, content: &str) -> String {
-    let target_line = format!("## {heading}");
-    let lines: Vec<&str> = base.lines().collect();
-
-    let heading_idx = lines.iter().position(|line| line.trim_end() == target_line);
-
-    match heading_idx {
-        Some(start) => {
-            // Find the next ## heading after this one (or EOF)
-            let end = lines
-                .iter()
-                .enumerate()
-                .skip(start + 1)
-                .find(|(_, line)| line.starts_with("## "))
-                .map(|(i, _)| i)
-                .unwrap_or(lines.len());
-
-            let mut result = String::new();
-            // Lines before the heading
-            for line in &lines[..start] {
-                result.push_str(line);
-                result.push('\n');
-            }
-            // Replacement section
-            result.push_str(&format!("## {heading}\n\n{content}\n"));
-            // Lines after the replaced section
-            if end < lines.len() {
-                result.push('\n');
-                for (i, line) in lines[end..].iter().enumerate() {
-                    result.push_str(line);
-                    if i < lines.len() - end - 1 {
-                        result.push('\n');
-                    }
-                }
-                // Preserve trailing newline
-                if base.ends_with('\n') {
-                    result.push('\n');
-                }
-            }
-            result
-        }
-        None => {
-            // Heading not found, append
-            let mut result = base;
-            if !result.ends_with('\n') {
-                result.push('\n');
-            }
-            result.push_str(&format!("\n## {heading}\n\n{content}\n"));
-            result
-        }
-    }
-}
-
 #[cfg(test)]
 #[path = "tests_dir.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "tests_dir_bugfixes.rs"]
+mod tests_bugfixes;

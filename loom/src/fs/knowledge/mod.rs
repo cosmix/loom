@@ -13,6 +13,8 @@ pub mod catalog;
 pub mod chunker;
 pub mod dir;
 pub mod index;
+mod scaffold;
+pub mod splice;
 pub mod templates;
 pub mod types;
 
@@ -22,4 +24,5 @@ mod tests;
 // Re-export commonly used types
 pub use dir::KnowledgeDir;
 pub use index::TopicEntry;
+pub use splice::SectionOutcome;
 pub use types::{KnowledgeFile, KnowledgeLayout, KnowledgeTarget, INDEX_FILENAME};
