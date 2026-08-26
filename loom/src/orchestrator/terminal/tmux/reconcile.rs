@@ -180,7 +180,7 @@ fn apply_steps(viewer: &str, steps: Vec<Vec<String>>) -> Result<()> {
 /// the "nothing to converge this tick" case below, which returns `Ok(())`
 /// by design — it describes a viewer that does not exist yet, is gone, or is
 /// mid-rebuild, not a reconcile failure. Steps 2 and 3 (probe + list) are
-/// [`list_viewer_panes`]; step 4 (apply) is [`apply_steps`].
+/// `list_viewer_panes`; step 4 (apply) is `apply_steps`.
 ///
 /// `pub`, not `pub(crate)`: exercised directly by the real-tmux e2e test
 /// (`tests/e2e/tmux_reconcile.rs`), which needs a reconciler reachable from
