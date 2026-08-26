@@ -14,7 +14,7 @@
 | [conventions.md](conventions.md) | Coding conventions discovered in the codebase | 591 |
 | [mistakes.md](mistakes.md) | Mistakes made and lessons learned - what to avoid | 984 |
 | [stack.md](stack.md) | Dependencies, frameworks, and tooling used in the project | 97 |
-| [concerns.md](concerns.md) | Technical debt, warnings, and issues to address | 723 |
+| [concerns.md](concerns.md) | Technical debt, warnings, and issues to address | 741 |
 
 ## Tier 2 — Topics
 
@@ -34,7 +34,7 @@
 | [architecture/remote-control.md](architecture/remote-control.md) | Remote Control | Capability detection, preflight, resolution, and per-kind session naming for driving external agent binaries. | 64 |
 | [architecture/signal-generation.md](architecture/signal-generation.md) | Signal Generation | How a stage signal is assembled: stable-prefix cache, shared append_* helpers, per-stage-type prefixes, soft signals. | 172 |
 | [architecture/source-graph.md](architecture/source-graph.md) | Source Graph | Topic notes for the architecture knowledge area. | 240 |
-| [architecture/terminal-backends.md](architecture/terminal-backends.md) | Terminal Backends | Topic notes for the architecture knowledge area. | 196 |
+| [architecture/terminal-backends.md](architecture/terminal-backends.md) | Terminal Backends | Topic notes for the architecture knowledge area. | 209 |
 
 ### entry-points
 

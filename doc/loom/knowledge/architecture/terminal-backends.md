@@ -154,11 +154,20 @@ build sequence (`build_overview_argv`, `VIEWER_HARDENING`).
 
 The overview is no longer a one-shot snapshot. `Monitor::poll` calls
 `tmux::refresh_attached_viewer` (`orchestrator/terminal/tmux/reconcile.rs`) once per scheduler tick,
-best-effort (an error is logged at debug and never fails the poll). The daemon never CREATES the
-viewer — only `loom attach` does — it maintains one the operator already built. Gate order keeps the
-common case free: viewer-socket `stat` (no subprocess, no session reads when nobody is attached) →
-bounded `has-session` (skip while absent or mid-`loom attach` rebuild) → `list-panes -F` → pure diff
-(`reconcile_steps`) → apply.
+best-effort: a failed pass is logged at `warn` (it was `debug` until 2026-08-26, which hid every
+later kill/add behind one bad step) and never fails the poll. The daemon never CREATES the viewer —
+only `loom attach` does — it maintains one the operator already built. Gate order keeps the common
+case free: viewer-socket `stat` (no subprocess, no session reads, no log when nobody is attached) →
+bounded `has-session` (skip, logged at `debug` with the refusal/error, while absent or
+mid-`loom attach` rebuild) → `list-panes -F` → pure diff (`reconcile_steps`, in
+`reconcile/steps.rs` — the executor stays in `reconcile.rs`) → apply.
+
+Both processes must resolve the same tmux socket directory: the orchestrator records its
+`TMUX_TMPDIR` in `.work/tmux-tmpdir` at start (`fs/tmux_tmpdir.rs`, removed at exit) and
+`loom attach` adopts it while a daemon is alive, so a shell with a different `TMUX_TMPDIR` cannot
+make the reconciler stat the wrong directory. The daemon's `work_dir` is absolute (`loom run`
+passes its cwd, never `.`) because `viewer_socket_name` hashes the canonical repo root and a
+relative path silently diverges on any `canonicalize` failure.
 
 Panes are attributed by parsing the inner socket out of `#{pane_start_command}` (survives for
 `new-session` and `split-window` panes; verified tmux 3.6a) with a `loom-` prefix requirement, so an
@@ -167,8 +176,12 @@ touched. Diff rules: missing attachable session ⇒ `split-window` re-tiled afte
 pane trap); dead pane whose server still lives ⇒ `respawn-pane`; dead pane whose session is gone ⇒
 `kill-pane`, but never the last pane (a killed last pane collapses window and session despite
 `exit-empty off`); duplicate panes for one socket (attach-rebuild race) collapse to one keeper; all
-adds before all kills. Every tmux call is bounded (`run_tmux_control` + probe timeout) because it
-runs on the single scheduler loop.
+adds, then all respawns, then all kills, then ONE `select-layout tiled` iff any pane was killed.
+`select-layout` steps are cosmetic: a failed one is logged at `debug` and the pass continues; every
+other verb stops the pass on first failure. Every tmux call is bounded (`run_tmux_control` + probe
+timeout) because it runs on the single scheduler loop. `tests/e2e/tmux_reconcile.rs` drives
+`reconcile_viewer` against a real tmux (add, kill, floor); it skips loudly where AF_UNIX bind is
+denied — every Claude Code sandbox — so it only truly runs on a developer host or CI.
 
 Each overview pane nests into an inner server by running `unset TMUX; exec tmux -L <sock>
 attach-session -t <key>` — passed as **separate `sh -c` argv words**, not one string, so the shell is

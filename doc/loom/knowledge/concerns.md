@@ -721,3 +721,21 @@ than alarming.
 `loom knowledge update <file> "<content with trailing blank lines>"` call therefore widens the gap
 before the next appended section, while the same content piped via stdin would not. Minor, but the
 two paths should agree.
+
+## `loom attach <stage-id>` Dies With Its Stage (2026-08-26)
+
+Investigated after a report that the overview never removed dead panes or added new stages. The
+report was a ghost — re-tested the same day, the reconciler both adds and kills correctly on tmux
+3.6a. The defects the investigation surfaced (debug-only/absent reconciler logging, relative daemon
+`work_dir`, `TMUX_TMPDIR` divergence, no retile after kills, no real-tmux test, the never-compiled
+`reconcile/steps.rs` copy) were fixed the same day — see `architecture/terminal-backends.md`
+§ "Live Overview Reconciliation". What remains is a design property, not a bug:
+
+**Direct attach dies with its stage by design.** `loom attach <stage-id>` `exec`s into the stage's
+OWN server (`commands/attach/mod.rs`), whose lifetime is the stage's (default `exit-empty`;
+`completion_handler.rs` `kill_session` is only a backstop). The client gets `[exited]` on
+completion; no follow/loop exists. Candidate design if this matters: make direct attach a
+`select-pane` + `resize-pane -Z` focus on the long-lived overview viewer, so the operator is attached
+to the viewer's lifetime, not the stage's (note `split-window` unzooms, and the build should reuse a
+healthy viewer instead of `kill-session`-ing it). Daemon log for any attach/reconcile question:
+`.work/orchestrator.log`, level fixed by `RUST_LOG` in the shell BEFORE `loom run`.
