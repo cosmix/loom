@@ -150,6 +150,8 @@ ledgered.
 
 **Prevention:** if the local check before a push does not include `RUSTDOCFLAGS="-D warnings" cargo doc --workspace --all-features --no-deps`, the docs gate is untested. Fixed 2026-08-14: the pre-push hook now runs exactly that command between clippy and cargo-audit. Still run it directly after editing any `//!` or `///` block to catch issues before push time. When pointing prose at a private helper, use a plain code span (`` `kind_env` ``) — brackets promise a resolvable link, and only `--document-private-items` (which CI does not pass) would make it one.
 
+**Recurrence (2026-08-26):** it happened again, in an interactive session, in exactly the shape this note predicts. Two doc comments written during a bug-fix series linked `` [`catalog_failure_context`] `` and `` [`splice_section`] `` — both private. The session ran build, clippy, fmt, the full test suite and the hook test suite, called the gate green, and committed five times; the pre-push hook then failed on the docs job. The lesson is not "remember rustdoc" — this note already said that — it is that a hand-picked set of checks is not the gate. The gate is the list in `loom/.githooks/pre-push`: fmt, markdownlint, clippy, rustdoc, cargo-audit, `cargo test --all-targets --no-fail-fast`. Read that file and run its steps before claiming a change is ready to push, rather than assembling a plausible-looking subset from memory.
+
 **Reading a CI failure without admin rights:** `gh run view <id> --log-failed` returns `HTTP 403: Must have admin rights` on this repo. The annotations endpoint does not require admin and carries both the failing step's error and every runner warning:
 
 ```bash
