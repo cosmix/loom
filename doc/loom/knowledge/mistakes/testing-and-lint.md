@@ -188,3 +188,60 @@ than forcing a `Write`.
 **Related:** the entry above covers the ledger's own rule (growth never recordable, shrinkage must
 be recorded). That rule still applies to your own violations here; this entry is only about
 correctly attributing which violations _are_ yours.
+
+## CI's Clippy Tracks Rustup `stable`, So a New Rust Release Breaks Main With No Code Change (2026-08-26)
+
+**What happened:** three consecutive pushes to main failed CI with only the `Clippy` job red —
+build, both test matrices, docs, fmt, maintainability, audit and deny all green, and the same
+`cargo clippy --all-targets -- -D warnings` passed locally. The first failure was on 2026-08-21;
+the last green run was 2026-08-20. Nothing in those commits touched Rust — they were
+`docs(knowledge)` commits. The real trigger was Rust **1.98.0**, released 2026-08-20, whose new
+`chunks_exact_to_as_chunks` (style, warn-by-default) fires on `ticks.chunks_exact(2)` in
+`src/context/lexical/evidence.rs`. The local toolchain was still 1.97.1, which has no such lint.
+
+**Why:** `.github/workflows/ci.yml` installs `dtolnay/rust-toolchain@stable` and the repo pins no
+`rust-toolchain.toml` and no `rust-version`. CI therefore silently follows the newest stable, while
+a developer machine sits on whatever `rustup update` last fetched. Every six weeks a new stable can
+turn previously-clean code into `-D warnings` errors, and the offending commit will be whichever
+one happened to push next — usually one that changed nothing relevant.
+
+**Prevention:** when Clippy alone fails and the diff cannot explain it, check the toolchain gap
+first — do not read the diff for a cause it does not contain:
+
+```bash
+rustc --version                                                   # local
+curl -sS https://static.rust-lang.org/dist/channel-rust-stable.toml | rg -m1 '^version = "1\.'
+```
+
+If they differ, read the lint list for the intervening release before anything else — the
+`## Rust <version>` section of
+`https://raw.githubusercontent.com/rust-lang/rust-clippy/master/CHANGELOG.md` names every new lint
+and every widened one. Only `style`, `complexity`, `suspicious`, `correctness` and `perf` additions
+can break this gate; `pedantic` and `nursery` entries are allow-by-default and irrelevant here.
+
+**Reproducing the newer toolchain without touching `~/.rustup`:** the sandbox denies writes there,
+so `rustup update` fails with `Read-only file system`. Redirect all three homes into scratch space
+instead — the toolchain download and the crate re-fetch both go over the proxy fine:
+
+```bash
+export RUSTUP_HOME=$TMPDIR/rustup CARGO_HOME=$TMPDIR/cargo CARGO_TARGET_DIR=$TMPDIR/target198
+~/.cargo/bin/rustup toolchain install 1.98.0 --profile minimal --component clippy --no-self-update
+# rustup installs NO cargo/clippy proxies into a redirected CARGO_HOME - call the toolchain's own
+# binaries and put its bin dir on PATH so `cargo clippy` finds `cargo-clippy`:
+TC=$RUSTUP_HOME/toolchains/1.98.0-x86_64-unknown-linux-gnu
+PATH=$TC/bin:$PATH "$TC/bin/cargo" clippy --all-targets -- -D warnings
+```
+
+Use a separate `CARGO_TARGET_DIR`: sharing `loom/target/` between two toolchains invalidates every
+artifact on each switch.
+
+**The annotations workaround does not help for this failure mode.** The entry above recommends
+`gh api .../check-runs/<id>/annotations` when `--log-failed` returns 403. For a Clippy failure the
+only annotation is `Process completed with exit code 101` — no lint name, no file. Reproducing
+locally against the CI toolchain is the only route to the actual diagnosis.
+
+**Fix applied:** `backtick_spans` now uses `as_chunks::<2>().0.iter()` with a `&[open, close]`
+pattern. `as_chunks` is stable since 1.88 and discards a trailing odd element exactly as
+`chunks_exact` did, so the unpaired-backtick behaviour is unchanged. Pinning a `rust-toolchain.toml`
+would trade these surprise breakages for silently ageing lint coverage; it was deliberately NOT
+done.

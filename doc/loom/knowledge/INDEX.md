@@ -12,7 +12,7 @@
 | [entry-points.md](entry-points.md) | Key files agents should read first | 591 |
 | [patterns.md](patterns.md) | Architectural patterns discovered in the codebase | 752 |
 | [conventions.md](conventions.md) | Coding conventions discovered in the codebase | 591 |
-| [mistakes.md](mistakes.md) | Mistakes made and lessons learned - what to avoid | 973 |
+| [mistakes.md](mistakes.md) | Mistakes made and lessons learned - what to avoid | 974 |
 | [stack.md](stack.md) | Dependencies, frameworks, and tooling used in the project | 97 |
 | [concerns.md](concerns.md) | Technical debt, warnings, and issues to address | 785 |
 
@@ -76,7 +76,7 @@
 | [mistakes/shell-command-matchers.md](mistakes/shell-command-matchers.md) | Shell Command Matchers | Separators that never become tokens, forgeable glob lookups, env leakage in hook tests, and three Bash traps. | 187 |
 | [mistakes/store-without-consumer.md](mistakes/store-without-consumer.md) | Store Without Consumer | Topic notes for the mistakes knowledge area. | 94 |
 | [mistakes/subagent-orchestration.md](mistakes/subagent-orchestration.md) | Subagent Orchestration | Topic notes for the mistakes knowledge area. | 145 |
-| [mistakes/testing-and-lint.md](mistakes/testing-and-lint.md) | Testing And Lint | Lint and test discipline: --all-targets, --no-fail-fast, headless CI, ambient git config and inherited descriptors in tests, the stub checker, the maintainability ledger, and reviewer claims. | 190 |
+| [mistakes/testing-and-lint.md](mistakes/testing-and-lint.md) | Testing And Lint | Lint and test discipline: --all-targets, --no-fail-fast, headless CI, ambient git config and inherited descriptors in tests, the stub checker, the maintainability ledger, and reviewer claims. | 247 |
 | [mistakes/tests-that-cannot-fail.md](mistakes/tests-that-cannot-fail.md) | Tests That Cannot Fail | Topic notes for the mistakes knowledge area. | 124 |
 | [mistakes/tmux-backend.md](mistakes/tmux-backend.md) | Tmux Backend | Topic notes for the mistakes knowledge area. | 120 |
 | [mistakes/untrusted-value-boundaries.md](mistakes/untrusted-value-boundaries.md) | Untrusted Value Boundaries | Topic notes for the mistakes knowledge area. | 78 |

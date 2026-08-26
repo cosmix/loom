@@ -92,7 +92,8 @@ aborts at the first failing TARGET so a green tail is not a green suite, headles
 emulator, ambient git config leaks into shelling tests, an inherited descriptor holds an flock past
 release, the maintainability ledger rejects a grown function, `TODO` in a string literal trips the
 stub checker, CI's docs job runs a rustdoc lint (`private_intra_doc_links`) that no local gate
-evaluates, and a reviewer's behaviour claim must be checked against the diff before acting on it.
+evaluates, CI's clippy job follows rustup `stable` so a new Rust release can redden main with no
+code change, and a reviewer's behaviour claim must be checked against the diff before acting on it.
 
 → [Testing & Lint](mistakes/testing-and-lint.md)
 
