@@ -88,8 +88,10 @@ pub fn backtick_spans(raw: &str) -> Vec<(usize, usize)> {
         .map(|(index, _)| index)
         .collect();
     ticks
-        .chunks_exact(2)
-        .map(|pair| (pair[0] + 1, pair[1]))
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .map(|&[open, close]| (open + 1, close))
         .collect()
 }
 
