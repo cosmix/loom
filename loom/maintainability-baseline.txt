@@ -15,9 +15,9 @@ file src/commands/review/generate.rs 473
 file src/commands/run/tests.rs 459
 file src/commands/self_update/mod.rs 438
 file src/commands/self_update/tests.rs 490
-file src/commands/stage/complete.rs 804
+file src/commands/stage/complete.rs 860
 file src/commands/stage/merge.rs 544
-file src/commands/stage/tests/complete.rs 566
+file src/commands/stage/tests/complete.rs 583
 file src/commands/status/data/collector.rs 503
 file src/commands/status/ui/tui/app.rs 409
 file src/commands/status/ui/tui/renderer.rs 412
@@ -26,7 +26,7 @@ file src/daemon/server/dispute.rs 508
 file src/daemon/server/status.rs 414
 file src/fs/locking.rs 499
 file src/fs/permissions/hooks.rs 446
-file src/fs/permissions/settings.rs 708
+file src/fs/permissions/settings.rs 750
 file src/fs/permissions/sync.rs 654
 file src/fs/plan_lifecycle.rs 609
 file src/fs/safe_fs.rs 1019
@@ -115,7 +115,7 @@ function src/commands/sessions.rs kill 54
 function src/commands/sessions.rs kill_single_session 51
 function src/commands/skill_index.rs parse_skill_triggers 80
 function src/commands/stage/acceptance_runner.rs resolve_acceptance_dir 60
-function src/commands/stage/complete.rs complete 178
+function src/commands/stage/complete.rs complete 175
 function src/commands/stage/complete.rs handle_force_unsafe_completion 83
 function src/commands/stage/complete.rs route_complete_for_conflicts 159
 function src/commands/stage/complete.rs run_verification_phase 99
@@ -168,7 +168,7 @@ function src/fs/memory/parser.rs parse_journal 108
 function src/fs/memory/query.rs generate_summary 52
 function src/fs/permissions/hooks.rs migrate_old_hook_paths 84
 function src/fs/permissions/settings.rs ensure_loom_hooks_local 94
-function src/fs/permissions/settings.rs ensure_loom_permissions_to 94
+function src/fs/permissions/settings.rs ensure_loom_permissions_to 106
 function src/fs/permissions/sync.rs merge_permissions_with_lock 70
 function src/fs/permissions/sync.rs sync_worktree_permissions_with_working_dir 95
 function src/fs/permissions/sync.rs transform_worktree_path 65

@@ -37,6 +37,28 @@ post_case() {
 	invoke_hook "$payload"
 }
 
+# invoke_hook_capture / post_case_capture - same as invoke_hook / post_case but
+# return the hook's stdout instead of discarding it, so a caller can inspect
+# the additionalContext JSON the two former silent skips now emit.
+invoke_hook_capture() {
+	local payload=$1
+	local test_bin=${LOOM_CONTROL_TEST_BIN_OVERRIDE:-$TMP/bin/loom}
+	local worktree=${LOOM_CONTROL_TEST_WORKTREE:-$WORKTREE}
+	printf '%s' "$payload" |
+		env PATH="$TMP/bin:/usr/bin:/bin" \
+		BROKER_LOG="$LOG" LOOM_CONTROL_TESTING=1 LOOM_CONTROL_TEST_BIN="$test_bin" \
+		LOOM_STAGE_ID="build-api" LOOM_SESSION_ID="session-123" \
+		LOOM_WORKTREE_PATH="$worktree" bash "$HOOK"
+}
+
+post_case_capture() {
+	local command=$1 output=$2 is_error=$3 payload
+	payload=$(jq -n \
+		--arg command "$command" --arg output "$output" --argjson is_error "$is_error" \
+		'{tool_name:"Bash",tool_input:{command:$command},tool_result:{output:$output,is_error:$is_error}}')
+	invoke_hook_capture "$payload"
+}
+
 pre_case() {
 	local command=$1 payload
 	jq -n \
@@ -133,8 +155,24 @@ for non_worktree in "$MAIN_REPO" "$MAIN_REPO/.worktrees" "$TMP/repo-worktrees-ba
 done
 [[ ! -e "$LOG" ]] || { echo "main-repo session reached broker" >&2; exit 1; }
 
-post_case "$PINNED" "$MARKER" true
-post_case "$PINNED" 'verification failed' false
+# is_error=true skips the broker without ever inspecting stdout for the
+# marker. That used to be a bare `exit 0` - now it must explain, via
+# additionalContext, that the completion command itself errored and the
+# stage is still Executing.
+is_error_output=$(post_case_capture "$PINNED" "$MARKER" true)
+is_error_context=$(printf '%s' "$is_error_output" | jq -r '.hookSpecificOutput.additionalContext // empty')
+[[ -n "$is_error_context" ]] || { echo "is_error skip produced no additionalContext" >&2; exit 1; }
+[[ "$is_error_context" == *"error"* ]] || { echo "is_error skip message does not explain the error: $is_error_context" >&2; exit 1; }
+[[ "$is_error_context" == *"Executing"* ]] || { echo "is_error skip message does not say the stage is still Executing: $is_error_context" >&2; exit 1; }
+
+# is_error=false but the marker is absent from stdout ("verification
+# failed" instead of the pinned marker line). That was also a bare `exit 0`
+# - now it must explain that the marker was not found.
+missing_marker_output=$(post_case_capture "$PINNED" 'verification failed' false)
+missing_marker_context=$(printf '%s' "$missing_marker_output" | jq -r '.hookSpecificOutput.additionalContext // empty')
+[[ -n "$missing_marker_context" ]] || { echo "missing-marker skip produced no additionalContext" >&2; exit 1; }
+[[ "$missing_marker_context" == *"marker"* ]] || { echo "missing-marker skip message does not mention the marker: $missing_marker_context" >&2; exit 1; }
+
 [[ ! -e "$LOG" ]] || { echo "failed verification reached broker" >&2; exit 1; }
 
 for command in 'loom stage complete build-api' '/tmp/loom stage complete build-api'; do

@@ -1,7 +1,9 @@
 //! Tests for complete command
 
 use super::super::admin_proof::{mint_admin_proof, AdminProofRequest};
-use super::super::complete::{complete, complete_authorization::require_admin_capability};
+use super::super::complete::{
+    complete, complete_authorization::require_admin_capability, verification_passed_marker_line,
+};
 use super::{create_test_stage, save_test_stage, setup_work_dir};
 use crate::models::stage::{StageStatus, StageType};
 use crate::plan::schema::AcceptanceCriterion;
@@ -563,4 +565,19 @@ fn test_complete_standard_stage_not_routed_to_knowledge() {
         "Standard stage must not transition to Completed without a real merge"
     );
     let _ = result;
+}
+
+#[test]
+fn verification_passed_marker_line_matches_the_bridges_exact_match() {
+    // `hooks/loom-control-complete.sh` builds its own copy of this exact
+    // string (`MARKER="LOOM_CONTROL_VERIFICATION_PASSED stage=$STAGE_ID
+    // session=$SESSION_ID"`) and matches it as an exact whole line of
+    // stdout before it will forward completion to the daemon. This test
+    // pins the Rust side's format so a later "improve the wording" edit to
+    // `run_verification_phase` fails here instead of silently breaking
+    // completion for every sandboxed worktree session.
+    assert_eq!(
+        verification_passed_marker_line("build-api", "session-123"),
+        "LOOM_CONTROL_VERIFICATION_PASSED stage=build-api session=session-123"
+    );
 }

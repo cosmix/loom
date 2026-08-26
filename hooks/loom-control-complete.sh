@@ -175,12 +175,29 @@ fi
 [[ "$COMMAND" == "$PINNED_COMMAND" ]] || fail_closed "completion result was not produced by the exact pinned command"
 
 IS_ERROR=$(printf '%s' "$INPUT_JSON" | jq -r '(.tool_result.is_error // .tool_response.is_error // false)')
-[[ "$IS_ERROR" == false ]] || exit 0
+if [[ "$IS_ERROR" != false ]]; then
+	# The pinned completion command itself reported an error, so this bridge
+	# never reaches the broker below. Say so instead of skipping silently -
+	# without this, the session sees a failing tool call and no explanation
+	# of what state that leaves the stage in.
+	jq -n --arg message "Stage '$STAGE_ID' completion was NOT applied: the completion command itself reported an error, so the completion bridge did not run. The stage is still Executing." \
+		'{hookSpecificOutput: {hookEventName: "PostToolUse", additionalContext: $message}}'
+	exit 0
+fi
 MARKER="LOOM_CONTROL_VERIFICATION_PASSED stage=$STAGE_ID session=$SESSION_ID"
 HAS_MARKER=$(printf '%s' "$INPUT_JSON" | jq -r --arg marker "$MARKER" '
   [.tool_result.stdout, .tool_result.output, .tool_response.stdout, .tool_response.output]
   | map(select(type == "string")) | join("\n") | split("\n") | index($marker) != null')
-[[ "$HAS_MARKER" == true ]] || exit 0
+if [[ "$HAS_MARKER" != true ]]; then
+	# The command exited 0 but the verification marker is not present as its
+	# own whole line of stdout, so this bridge cannot confirm verification
+	# passed and will not call the broker. Truncated or line-wrapped stdout
+	# is a known way for the marker to go missing even when the command
+	# itself actually printed it.
+	jq -n --arg message "Stage '$STAGE_ID' completion was NOT applied: the verification marker was not found in the command output, so the bridge could not confirm verification and did not complete the stage. The marker must appear as its own complete line in stdout; truncated or wrapped output is a known cause." \
+		'{hookSpecificOutput: {hookEventName: "PostToolUse", additionalContext: $message}}'
+	exit 0
+fi
 
 if ! BROKER_OUTPUT=$(LOOM_CONTROL_BROKER=1 "$LOOM_BIN" stage complete "$STAGE_ID" --session "$SESSION_ID" 2>&1); then
 	fail_closed "daemon completion broker failed: $BROKER_OUTPUT"
