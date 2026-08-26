@@ -173,12 +173,20 @@ is explicit that `allowWrite` means "additional paths to allow writing within th
 with paths from `Edit(...)` allow rules" — additive, and OS-enforced for child processes. It is the
 documented, recommended lever for exactly this, preferred over `excludedCommands`.
 
-**Prevention:** to give a **subprocess** (codex, tmux, any non-Claude-tool binary) write access to a
-path outside the worktree, `sandbox.filesystem.allowWrite` is the lever — plan `allow_write` still is
-not, because nothing copies it there. Wiring plan `allow_write` through to the OS layer is a live
-follow-up (see `concerns.md`); until then, adding a path means adding it to the generator, as the
-codex lane does. Note the deny-leak asymmetry documented above still holds: `denyWrite` leaks into
-the OS sandbox from `permissions.deny` as well.
+**Prevention (corrected 2026-08-26 — the claim below was stale):** to give a **subprocess** (codex,
+tmux, any non-Claude-tool binary) write access to a path outside the worktree,
+`sandbox.filesystem.allowWrite` is the lever. Plan `allow_write` DOES now reach it: `filesystem_settings`
+in `sandbox/settings/policy.rs` copies every plan `allow_write` entry straight into the OS-enforced
+`allowWrite` grant (pinned by a test near `sandbox/settings.rs:719`) — this note previously claimed
+"nothing copies it there" and that wiring it through was a "live follow-up"; both were wrong by the
+time this correction was written. The remaining reasons a subprocess write can still fail are: (1) the
+path escapes the worktree with `../` — filtered out by both emitters; (2) the path did not exist at
+session start — the sandbox skips a listed path that is not there; (3) a deny entry shadows it (deny
+beats allow). Package-manager caches (bun, npm, cargo, uv, go, ...) no longer need a plan entry at
+all — they are granted to every stage automatically; see `sandbox/package_caches.rs` and the
+"Package-Manager Caches Are Granted To Every Stage" section of `architecture/execution-containment.md`.
+Note the deny-leak asymmetry documented above still holds: `denyWrite` leaks into the OS sandbox from
+`permissions.deny` as well.
 
 ## `excludedCommands` Does Not Reliably Bypass the OS Sandbox for Compound Commands (2026-08-08)
 
