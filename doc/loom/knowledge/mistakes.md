@@ -730,6 +730,15 @@ function with irreversible side effects: **after this returns, what can no longe
 verified?**
 → [Merge Cleanup Boundary](mistakes/merge-cleanup-boundary.md)
 
+## Cleanup Refused Over Scaffold It Never Planted
+
+Non-forced worktree removal bailed from 2026-08-09 on because it demanded the root
+`CLAUDE.md` be loom's symlink, while the creation side had (correctly) skipped planting one
+in a repo that tracks its own. Removal must mirror creation's condition — remove only what
+you can prove you planted — and never re-implement git's cleanliness check in front of
+`git worktree remove`; let git refuse and name the blocking paths.
+→ [Merge Cleanup Boundary](mistakes/merge-cleanup-boundary.md)
+
 ## Shipping the Store Without the Consumer
 
 A deliberately-deferred consumer left a trail of `pub` enum variants, methods, fields and

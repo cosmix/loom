@@ -67,6 +67,55 @@ a lifecycle does not mean absorbing the lock-holding steps into it.
   durable result and the derived artifact have different failure budgets; never let
   the cheaper one veto the expensive one.
 
+## Cleanup Refused Over Scaffold It Never Planted (2026-08-26)
+
+**What happened:** Every non-forced worktree removal in this repo failed from
+2026-08-09 (`bb15c919`) on. `remove_worktree_scaffold` (`git/cleanup/worktree.rs`)
+runs ahead of `git worktree remove` and demanded that the worktree's root `CLAUDE.md`
+be a symlink, bailing otherwise. This repo tracks `CLAUDE.md`, so every worktree checks
+it out as a regular file; `setup_root_claude_md` (`git/worktree/settings.rs`) already
+knew that and skipped planting the symlink — the removal side did not. Git was never
+asked, and the `?` chain in `cleanup_after_merge` then skipped the branch and
+base-branch deletion too: `.worktrees/<id>`, `loom/<id>` and `loom/_base/<id>` all
+survived every merge. The daemon's deferred-cleanup branch
+(`orchestrator/core/merge_handler.rs`, the `stage.merged` short circuit) discarded the
+`CleanupOutcome`, so the only trace was a `tracing::warn!` on daemon stderr.
+
+**Misleading signal:** the worktree WAS clean — empty `git status`, stage merged and
+Completed. Nothing pointed at loom's own pre-check; the natural suspects were untracked
+files (`.loom/`, say), which cannot be it: the non-forced `git worktree remove` runs
+`git status --porcelain` without `--ignored`, so ignored paths never block it.
+
+**Why:** the creation side and the removal side of the scaffold encoded different
+assumptions. Creation was conditional ("plant a symlink only if the checkout has
+none"); removal was unconditional ("it must be our symlink"). Tests covered
+`.claude/CLAUDE.md`, never a regular root `CLAUDE.md`. And bailing on "unexpected
+content" in `.claude/` re-implemented git's cleanliness check in front of git, but
+stricter and blind — no path in the error, no ignore semantics.
+
+**Prevention:** when a pre-removal step mirrors a conditional creation step, it must
+mirror the condition: remove only what you can prove you planted (`remove_if_symlink`),
+never assert the shape of what you did not. Do not re-implement git's cleanliness policy
+ahead of `git worktree remove` — let git refuse, and name the blocking paths from
+`git status --porcelain` in the error. A daemon path that calls cleanup must print a
+`Failed`/`Refused` outcome; "logged at warn" is silence in a detached daemon. A
+regression test for cleanup must build a real worktree from a repo that tracks the
+scaffold path.
+
+**Fix:** `remove_worktree_scaffold` removes the root `CLAUDE.md` only when it is a
+symlink; `remove_known_claude_scaffold` skips unknown `.claude/` entries (Claude Code's
+`.cc-writes/` runtime dir included) and keeps a non-empty dir; `cleanup_worktree`
+appends the blocking paths when git refuses; `try_auto_merge` prints failed/refused
+deferred cleanups with the `loom worktree remove <id>` hint. And because the daemon's
+console is `.work/orchestrator.log` (fds 1 and 2 are `dup2`'d there in
+`daemon/server/lifecycle.rs`, and the `LogLine` broadcaster has no client), printing is
+not enough: `MergeLifecycle::cleanup` — the one door — now records a failed or refused
+outcome as `Stage.cleanup_warning`, cleared by the next cleanup that succeeds, and
+`loom status` (static graph, `--verbose` attention list, live TUI tree) renders it as
+`cleanup failed` with the hint. Regression test:
+`test_cleanup_worktree_succeeds_when_repo_tracks_root_claude_md` in
+`git/cleanup/tests.rs`.
+
 ## Related
 
 - `mistakes/phantom-merges.md` — the parent failure class, including the original
