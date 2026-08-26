@@ -13,6 +13,8 @@ fn test_loom_permissions_constant() {
     assert!(LOOM_PERMISSIONS.contains(&"Read(~/.claude/CLAUDE.md)"));
     // Loom hooks only, not all hooks
     assert!(LOOM_PERMISSIONS.contains(&"Read(~/.claude/hooks/loom/**)"));
+    // Codex forwarding wrapper (guard pins forwarders to one exact invocation)
+    assert!(LOOM_PERMISSIONS.contains(&"Bash(~/.claude/hooks/loom/codex-forward.sh:*)"));
 }
 
 #[test]
@@ -26,4 +28,6 @@ fn test_worktree_permissions_constant() {
     // Loom hooks only
     assert!(LOOM_PERMISSIONS_WORKTREE.contains(&"Read(~/.claude/hooks/loom/**)"));
     assert!(LOOM_PERMISSIONS_WORKTREE.contains(&"Bash(loom *)"));
+    // Codex forwarding wrapper (guard pins forwarders to one exact invocation)
+    assert!(LOOM_PERMISSIONS_WORKTREE.contains(&"Bash(~/.claude/hooks/loom/codex-forward.sh:*)"));
 }

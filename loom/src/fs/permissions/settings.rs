@@ -37,6 +37,36 @@ fn require_object<'a>(value: &'a mut Value, label: &str) -> Result<&'a mut Map<S
         .ok_or_else(|| anyhow::anyhow!("{label} must be a JSON object"))
 }
 
+/// Home-expanded twin of `LOOM_PERMISSIONS`'s static
+/// `Bash(~/.claude/hooks/loom/codex-forward.sh:*)` allow entry.
+///
+/// `hooks/codex-forward-guard.sh` accepts TWO spellings of the wrapper path —
+/// the literal `~/...` form and the fully `$HOME`-expanded absolute form (see
+/// `is_exact_forward_command` there, and `hooks/tests/codex-forward-guard-quoting.sh`,
+/// which pins the absolute form deliberately). A forwarder subagent that
+/// writes the absolute spelling passes the guard but was still denied by the
+/// Claude Code permission classifier, since only the `~` spelling could live
+/// in `LOOM_PERMISSIONS` — `$HOME` varies per machine, so a `&'static str`
+/// can't express it. This computes that second spelling at runtime, matching
+/// the `dirs::home_dir()` pattern already used for hook installation (see
+/// `hooks.rs`).
+///
+/// Returns `None` if the home directory can't be determined; callers must
+/// treat that as "skip the dynamic entry" rather than a hard failure — a
+/// machine without a resolvable home dir must not lose the static entry too.
+///
+/// `pub(crate)`: `settings` is already a `pub(crate) mod` (see
+/// `permissions/mod.rs`), so any other in-crate call site that ever needs
+/// this same entry (e.g. a future worktree-side fold) can reuse it directly
+/// instead of re-deriving the string.
+pub(crate) fn codex_forward_home_allow_entry() -> Option<String> {
+    let home = dirs::home_dir()?;
+    Some(format!(
+        "Bash({}/.claude/hooks/loom/codex-forward.sh:*)",
+        home.display()
+    ))
+}
+
 /// Per-session identity env vars that must NEVER be persisted in settings files.
 ///
 /// These are set dynamically by the session wrapper script (`export LOOM_...`
@@ -216,6 +246,18 @@ pub fn ensure_loom_permissions_to(repo_root: &Path, hooks_dir: Option<&Path>) ->
     for permission in LOOM_PERMISSIONS {
         if !existing.contains(*permission) {
             allow_arr.push(json!(permission));
+            added_permissions += 1;
+        }
+    }
+
+    // Additive: also allow the home-expanded spelling of the codex forwarding
+    // wrapper (see `codex_forward_home_allow_entry` for why this can't live
+    // in the static LOOM_PERMISSIONS array above). Skipped silently if the
+    // home directory can't be resolved — never fail the whole permission
+    // write over it.
+    if let Some(home_entry) = codex_forward_home_allow_entry() {
+        if !existing.contains(home_entry.as_str()) {
+            allow_arr.push(json!(home_entry));
             added_permissions += 1;
         }
     }

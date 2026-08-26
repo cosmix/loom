@@ -198,6 +198,67 @@ fn test_scrub_stale_work_dir_env_noop_missing_key() {
 }
 
 #[test]
+fn test_ensure_loom_permissions_adds_home_expanded_codex_forward_entry() {
+    // Drives the real write path (not just the LOOM_PERMISSIONS constant) so
+    // this would actually catch the fold site being missed. This is also the
+    // exact file `create_worktree_settings` copies verbatim into every new
+    // worktree's settings.json, so proving both spellings land here proves
+    // the worktree context inherits both too — worktrees never independently
+    // fold LOOM_PERMISSIONS_WORKTREE (nothing does; see concerns.md), they
+    // get their allow-list from a straight copy of this file at creation.
+    let temp_dir = TempDir::new().unwrap();
+    let repo_root = temp_dir.path();
+    let hooks_dir = temp_dir.path().join("hooks");
+
+    ensure_loom_permissions_to(repo_root, Some(&hooks_dir)).unwrap();
+
+    let settings_path = repo_root.join(".claude/settings.json");
+    let content = fs::read_to_string(&settings_path).unwrap();
+    let settings: Value = serde_json::from_str(&content).unwrap();
+    let allow = settings["permissions"]["allow"].as_array().unwrap();
+
+    // The pre-existing `~` spelling must still be present (additive fix).
+    assert!(allow
+        .iter()
+        .any(|v| v == "Bash(~/.claude/hooks/loom/codex-forward.sh:*)"));
+
+    // The new home-expanded spelling must also be present.
+    let home = dirs::home_dir().expect("test environment must have a resolvable home dir");
+    let expected = format!(
+        "Bash({}/.claude/hooks/loom/codex-forward.sh:*)",
+        home.display()
+    );
+    assert!(
+        allow.iter().any(|v| v == expected.as_str()),
+        "expected {expected:?} in allow list, got {allow:?}"
+    );
+}
+
+#[test]
+fn test_ensure_loom_permissions_home_expanded_entry_no_duplicates_on_rerun() {
+    let temp_dir = TempDir::new().unwrap();
+    let repo_root = temp_dir.path();
+    let hooks_dir = temp_dir.path().join("hooks");
+
+    // Run twice, as a repeated `loom init`/`loom repair --fix` would.
+    ensure_loom_permissions_to(repo_root, Some(&hooks_dir)).unwrap();
+    ensure_loom_permissions_to(repo_root, Some(&hooks_dir)).unwrap();
+
+    let settings_path = repo_root.join(".claude/settings.json");
+    let content = fs::read_to_string(&settings_path).unwrap();
+    let settings: Value = serde_json::from_str(&content).unwrap();
+    let allow = settings["permissions"]["allow"].as_array().unwrap();
+
+    let home = dirs::home_dir().expect("test environment must have a resolvable home dir");
+    let expected = format!(
+        "Bash({}/.claude/hooks/loom/codex-forward.sh:*)",
+        home.display()
+    );
+    let count = allow.iter().filter(|v| *v == expected.as_str()).count();
+    assert_eq!(count, 1, "home-expanded entry must not be duplicated");
+}
+
+#[test]
 fn test_scrub_identity_and_stale_work_dir_together() {
     let temp_dir = TempDir::new().unwrap();
     let dead_path = temp_dir.path().join("gone").join(".work");

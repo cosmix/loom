@@ -133,6 +133,9 @@ pub const LOOM_PERMISSIONS: &[&str] = &[
     "Read(~/.claude/hooks/loom/**)",
     // Loom CLI commands (use :* for prefix matching)
     "Bash(loom *)",
+    // Loom's own codex forwarding wrapper. codex-forward-guard.sh independently
+    // pins forwarder subagents to exactly one invocation of this wrapper.
+    "Bash(~/.claude/hooks/loom/codex-forward.sh:*)",
 ];
 
 /// Loom permissions for WORKTREE context
@@ -148,4 +151,7 @@ pub const LOOM_PERMISSIONS_WORKTREE: &[&str] = &[
     "Read(~/.claude/hooks/loom/**)",
     // Loom CLI commands (use :* for prefix matching)
     "Bash(loom *)",
+    // Loom's own codex forwarding wrapper. codex-forward-guard.sh independently
+    // pins forwarder subagents to exactly one invocation of this wrapper.
+    "Bash(~/.claude/hooks/loom/codex-forward.sh:*)",
 ];
