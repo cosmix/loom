@@ -783,3 +783,41 @@ pending-knowledge document, and `concerns/sandbox-write-rules-inert.md` for the 
 **`fs/permissions/constants.rs`** still declares `LOOM_PERMISSIONS_WORKTREE` with
 `Write(.work/**)` / `Bash(loom *)` rules that read like a blanket grant but have no real
 consumers, and `Write(path)` rules are inert anyway. A documented fossil.
+
+## Two Hook Files Now Exceed Rule 17's 400-Line Cap (2026-08-26)
+
+`hooks/_common.sh` is 619 lines and `hooks/subagent-verify-guard.sh` is 416 lines (`wc -l`,
+2026-08-26) — both over CLAUDE.md Rule 17's 400-line file limit. Splitting either needs a new
+hook file, which needs registration in BOTH `all_hooks` arrays in `install.sh`, an `include_str!`
+const plus a `LOOM_HOOKS` entry in `loom/src/fs/permissions/constants.rs`, and the hooks config
+builder — so it is a deliberate, separate change, not a drive-by trim.
+
+## Two Fenced-Code-Block Models Disagree in `fs/knowledge/` (2026-08-26)
+
+`splice.rs`'s `fence_mask` (the level-agnostic `replace-section` splicer) requires a closing
+fence's run length to be at least as long as the opener's — CommonMark-correct. `chunker.rs`'s
+`fence_marker` (used for retrieval chunking, `~:153-222`) closes on ANY line whose first
+non-whitespace characters start with the same delimiter, regardless of run length. They disagree
+on, e.g., a ` ``` ` line inside a ```` ```` ```` fence: `chunker.rs` treats it as closing the
+fence early (so a `##` line just past it can be lexed as a heading) while `splice.rs` keeps
+reading through to the real closer. Consequence: the span `loom knowledge context` reads a
+heading from is not necessarily the span `replace-section` will overwrite. Should become one
+shared scanner.
+
+## `replace-section` Silently Converts CRLF to LF and Can Drop Trailing Blank Lines (2026-08-26)
+
+`splice.rs::assemble_replacement` rebuilds the file from `base.lines()` (which strips both `\n`
+and any preceding `\r`) joined back with plain `\n`, so a CRLF knowledge file is silently
+rewritten to LF on any `replace-section` write. When the replaced section runs to EOF, any
+trailing blank lines that followed the old section body are also dropped, since the tail beyond
+the match is not copied forward. Harmless today — this tree's knowledge files are LF — but worth
+knowing so a surprising whitespace-only diff after a `replace-section` call is explainable rather
+than alarming.
+
+## `loom knowledge update` Trims Stdin Content But Not Inline Content (2026-08-26)
+
+`commands/knowledge/mod.rs::resolve_content` trims stdin input (`read_content_from_stdin` calls
+`buffer.trim()`) but passes an inline CLI argument through untrimmed (`Some(c) => c`). An inline
+`loom knowledge update <file> "<content with trailing blank lines>"` call therefore widens the gap
+before the next appended section, while the same content piped via stdin would not. Minor, but the
+two paths should agree.

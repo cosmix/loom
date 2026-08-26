@@ -42,8 +42,10 @@ would then append the same block twice.
 **Prevention:** `update` ALWAYS appends, so never use it to fix an existing section — that is what
 `loom knowledge replace-section <file> "<heading>" "<body>"` is for (restored 2026-08-19 after the
 CLI collapse had removed it; `cli/types_memory.rs`, `commands/knowledge/mod.rs::replace_section`).
-It overwrites the body under the first matching `## <heading>` and appends — announcing that it did
-— when no heading matches, so read its output: an appended "correction" means the heading did not
+It overwrites the body under the first matching heading at ANY level `##` through `######`
+(replace-section is NOT H2-only — an earlier note here said it was), replacing up to the next
+heading at the same or shallower level, and appends — announcing that it did — when no heading
+matches at any level, so read its output: an appended "correction" means the heading did not
 match and the stale text is still in the file. A zero exit code does not prove `INDEX.md` is
 current — watch stderr, and finish any batch of knowledge writes with `loom knowledge sync`, which
 regenerates the index unconditionally.

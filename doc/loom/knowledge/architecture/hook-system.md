@@ -98,13 +98,22 @@ Three-layer defense: documentation (CLAUDE.md Rule 5), signal injection (cache.r
 | `commit-filter.sh`         | subagents may not run git operations; blocks AI attribution in commit messages                                                                                                                                          |
 | `subagent-verify-guard.sh` | subagents may not run project-wide build/test/lint/typecheck suites — at most one narrowly-scoped check. `integration-verify` stages are carved out and may run the full suite. Deliberately has **no opt-out env var** |
 
-**Detection is not a PPID comparison.** Both hooks gate on `loom_is_subagent()` in
-`hooks/_common.sh`, which requires `LOOM_MAIN_AGENT_PID` to be a **live ancestor** of the current
-process _and_ at least one intervening Claude process between them. A 2-level claude chain is
-classified MAIN AGENT; a 3-level chain is a SUBAGENT (verified empirically with
-`COMMIT_FILTER_DEBUG=1`).
+**Detection is payload-first, not a PPID comparison.** Both hooks gate on `loom_is_subagent()` in
+`hooks/_common.sh`, which first requires `LOOM_MAIN_AGENT_PID` to be a **live ancestor** of the
+current process — this scopes the globally-installed hooks to a loom stage session. Once that
+passes, it classifies the caller from the hook's stdin JSON payload via `loom_payload_agent_verdict`
+(`.agent_type` / `.transcript_path` / `.session_id`, which the caller cannot forge): a Task-spawned
+subagent always carries a non-empty `.agent_type` and is classified SUBAGENT immediately, and a
+main-session payload is recognized by its main-shaped `.transcript_path` and classified MAIN
+immediately. Only a payload-less caller, or one whose verdict is "unknown", falls back to the
+process-tree walk (`find_nearest_claude_ancestor` / `count_claude_processes_between`). In that
+FALLBACK ONLY, a 2-level claude chain is classified MAIN AGENT and a 3-level chain is a SUBAGENT
+(verified empirically with `COMMIT_FILTER_DEBUG=1`).
 
 **Consequence worth knowing:** agent-team _teammates_ are not in the main agent's process tree,
 so `LOOM_MAIN_AGENT_PID` is set but is not a live ancestor and `loom_is_subagent` returns false
-for them. Hooks gated on it therefore do **not** fire inside teammates. Task-tool subagents are
-in-tree and detect correctly.
+for them before either check runs. Hooks gated on it therefore do **not** fire inside teammates.
+A Task-tool subagent, by contrast, runs **in-process** (the same claude process as the main
+agent), so the process-tree walk alone finds no intervening Claude process between it and
+`LOOM_MAIN_AGENT_PID` — it is the payload check, not the process tree, that correctly classifies
+it as a subagent.

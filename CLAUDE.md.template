@@ -308,7 +308,7 @@ loom knowledge replace-section patterns "Merge Flow" "<corrected body, WITHOUT t
 loom knowledge replace-section mistakes/phantom-merges "What Happened" -   # body from stdin
 ```
 
-It overwrites the body under the first `## <heading>` up to the next `## ` heading, and when the heading is absent it appends the section and SAYS so — read that line: an appended "correction" means your heading did not match and the stale text is still there. Name the wrong claim explicitly in the replacement ("there is no `loom knowledge audit`; duplicate headings are found with ..."), because a silent deletion invites the next agent to re-add it from the same stale source.
+It overwrites the body under the first matching heading (any level `##` through `######`) up to the next heading at the same or shallower level, and when the heading is absent it appends the section and SAYS so — read that line: an appended "correction" means your heading did not match and the stale text is still there. Name the wrong claim explicitly in the replacement ("there is no `loom knowledge audit`; duplicate headings are found with ..."), because a silent deletion invites the next agent to re-add it from the same stale source.
 
 **knowledge-distill: corrections come first.** Sweep the memories for `stale-knowledge:` and apply every one before curating anything new. An unapplied `stale-knowledge:` memory is a correction LOST when the plan completes — memory is discarded, the knowledge base stays wrong, and the next plan inherits the falsehood. Then confirm nothing got duplicated:
 
