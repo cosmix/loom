@@ -79,7 +79,7 @@ Do not trust verbal descriptions of what a commit does — always compare before
 
 **What happened:** every commit printed `Linting markdown files...` and succeeded, yet the markdown was never linted or auto-fixed. The pre-push hook then lints for real and rejected the push over four `MD049/emphasis-style` errors (asterisk emphasis where this repo enforces underscore).
 
-**Why:** `.githooks/pre-commit` runs `xargs bunx markdownlint-cli2 --fix 2>/dev/null || true`. Under the sandbox `bunx` dies with `bun is unable to write files to tempdir: ReadOnlyFileSystem` — bun wants `/tmp`, which is outside the write allowlist — and both the error and the exit code are discarded by design, so the step is indistinguishable from a clean pass. Exit 0 is not success (CLAUDE.md Rule 13); a hook that swallows stderr can only ever look green.
+**Why:** `.githooks/pre-commit` runs `xargs bunx markdownlint-cli2 --fix 2>/dev/null || true`. Under the sandbox `bunx` dies with `bun is unable to write files to tempdir: ReadOnlyFileSystem` (newer bun: `Unexpected accessing temporary directory. Please set $BUN_TMPDIR or $BUN_INSTALL`) — bun wants `/tmp` and `~/.bun/install/cache`, both outside the write allowlist — and both the error and the exit code are discarded by design, so the step is indistinguishable from a clean pass. Exit 0 is not success (CLAUDE.md Rule 13); a hook that swallows stderr can only ever look green.
 
 **Prevention:** lint markdown explicitly before pushing, redirecting bun's cache to a writable dir so it actually runs:
 

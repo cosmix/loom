@@ -64,7 +64,7 @@
 | [mistakes/knowledge-base-drift.md](mistakes/knowledge-base-drift.md) | Knowledge Base Drift | How the knowledge base itself goes stale: plan-authoring notes frozen as architecture facts, `[UPDATED]` duplicates, and invented CLI surface. | 103 |
 | [mistakes/knowledge-cli-invariants.md](mistakes/knowledge-cli-invariants.md) | Knowledge Cli Invariants | Invariants belong in the fs constructor, not the CLI handler; lock ordering for sibling refreshes; update appends. | 74 |
 | [mistakes/knowledge-write-channel.md](mistakes/knowledge-write-channel.md) | Knowledge Write Channel | Topic notes for the mistakes knowledge area. | 100 |
-| [mistakes/merge-cleanup-boundary.md](mistakes/merge-cleanup-boundary.md) | Merge Cleanup Boundary | Topic notes for the mistakes knowledge area. | 118 |
+| [mistakes/merge-cleanup-boundary.md](mistakes/merge-cleanup-boundary.md) | Merge Cleanup Boundary | Topic notes for the mistakes knowledge area. | 124 |
 | [mistakes/parallel-worktree-shared-state.md](mistakes/parallel-worktree-shared-state.md) | Parallel Worktree Shared State | Topic notes for the mistakes knowledge area. | 104 |
 | [mistakes/phantom-merges.md](mistakes/phantom-merges.md) | Phantom Merges | Seven lessons on loom's merge machinery — writing merged=true without verifying git ancestry (the costliest recurring failure class in loom), plus the preflight guards and session lifecycle around it. | 131 |
 | [mistakes/pinned-literals-ledgers-and-wiring.md](mistakes/pinned-literals-ledgers-and-wiring.md) | Pinned Literals Ledgers And Wiring | Topic notes for the mistakes knowledge area. | 110 |
