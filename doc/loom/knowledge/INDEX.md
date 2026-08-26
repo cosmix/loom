@@ -27,12 +27,12 @@
 | [architecture/context-retrieval.md](architecture/context-retrieval.md) | Context Retrieval | Topic notes for the architecture knowledge area. | 469 |
 | [architecture/core-abstractions.md](architecture/core-abstractions.md) | Core Abstractions | ExecutionGraph, Stage, Session, Orchestrator, TerminalBackend — plus data flow and .work/ file ownership. | 93 |
 | [architecture/directory-structure.md](architecture/directory-structure.md) | Directory Structure | Full loom/src module tree, the .work/ state layout, and the repo-root asset directories. | 49 |
-| [architecture/execution-containment.md](architecture/execution-containment.md) | Execution Containment | Topic notes for the architecture knowledge area. | 165 |
+| [architecture/execution-containment.md](architecture/execution-containment.md) | Execution Containment | Topic notes for the architecture knowledge area. | 193 |
 | [architecture/hook-system.md](architecture/hook-system.md) | Hook System | Hook embedding and install, the SessionStart hookSpecificOutput contract, and the two subagent enforcement hooks. | 110 |
 | [architecture/knowledge-hierarchy.md](architecture/knowledge-hierarchy.md) | Knowledge Hierarchy | Tier-1/tier-2 knowledge mechanics: layout predicate, target parsing, INDEX.md generation, audit link rules, coverage blast radius, opt-in migration, lock ordering. | 130 |
 | [architecture/memory-spool.md](architecture/memory-spool.md) | Memory Spool and Drain | Topic notes for the architecture knowledge area. | 105 |
 | [architecture/remote-control.md](architecture/remote-control.md) | Remote Control | Capability detection, preflight, resolution, and per-kind session naming for driving external agent binaries. | 64 |
-| [architecture/signal-generation.md](architecture/signal-generation.md) | Signal Generation | How a stage signal is assembled: stable-prefix cache, shared append_* helpers, per-stage-type prefixes, soft signals. | 168 |
+| [architecture/signal-generation.md](architecture/signal-generation.md) | Signal Generation | How a stage signal is assembled: stable-prefix cache, shared append_* helpers, per-stage-type prefixes, soft signals. | 172 |
 | [architecture/source-graph.md](architecture/source-graph.md) | Source Graph | Topic notes for the architecture knowledge area. | 240 |
 | [architecture/terminal-backends.md](architecture/terminal-backends.md) | Terminal Backends | Topic notes for the architecture knowledge area. | 196 |
 
@@ -69,7 +69,7 @@
 | [mistakes/phantom-merges.md](mistakes/phantom-merges.md) | Phantom Merges | Seven lessons on loom's merge machinery — writing merged=true without verifying git ancestry (the costliest recurring failure class in loom), plus the preflight guards and session lifecycle around it. | 131 |
 | [mistakes/pinned-literals-ledgers-and-wiring.md](mistakes/pinned-literals-ledgers-and-wiring.md) | Pinned Literals Ledgers And Wiring | Topic notes for the mistakes knowledge area. | 110 |
 | [mistakes/refactor-stragglers.md](mistakes/refactor-stragglers.md) | Refactor Stragglers | What a large removal or rename leaves behind: straggler initializers, stale comments, stale docs, duplicate modules. | 62 |
-| [mistakes/sandbox-and-settings.md](mistakes/sandbox-and-settings.md) | Sandbox And Settings | Sandbox path rules, permission sync, excludedCommands matching, and settings env leaking between main repo and worktrees. | 332 |
+| [mistakes/sandbox-and-settings.md](mistakes/sandbox-and-settings.md) | Sandbox And Settings | Sandbox path rules, permission sync, excludedCommands matching, and settings env leaking between main repo and worktrees. | 340 |
 | [mistakes/schema-reuse-and-silent-skips.md](mistakes/schema-reuse-and-silent-skips.md) | Schema Reuse And Silent Skips | Topic notes for the mistakes knowledge area. | 56 |
 | [mistakes/session-identity-env.md](mistakes/session-identity-env.md) | Session Identity Env | The wrapper script's `LOOM_*` exports are a contract read by hooks, the CLI and the daemon. Two long-standing defects in that contract made knowledge stages impossible to complete. | 83 |
 | [mistakes/sessions-and-liveness.md](mistakes/sessions-and-liveness.md) | Sessions And Liveness | Session identity, liveness routing, spawn-site coverage, and the blast radius of adding a session field. | 136 |
