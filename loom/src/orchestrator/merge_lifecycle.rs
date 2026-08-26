@@ -17,7 +17,9 @@
 //! The merge attempt, the ancestry verification and the state marking stay with
 //! the callers, which hold the orchestrator handle and the stage-file lock.
 //! Everything around them lives here, and [`MergeLifecycle::cleanup`] is the
-//! single path by which a merge caller may reach `cleanup_after_merge`.
+//! single path by which a merge caller may reach `cleanup_after_merge`. It is
+//! also where a failed or refused cleanup is written onto the stage record
+//! for `loom status`.
 
 use std::path::Path;
 
@@ -122,6 +124,8 @@ impl<'a> MergeLifecycle<'a> {
         config: &CleanupConfig,
     ) -> CleanupOutcome {
         if !needs_cleanup(self.stage_id, self.repo_root) {
+            // Nothing left on disk, so any old warning is stale.
+            self.record_cleanup_warning(None);
             return CleanupOutcome::NothingToDo;
         }
 
@@ -136,15 +140,24 @@ impl<'a> MergeLifecycle<'a> {
 
         if let Some(reason) = containment::containment_refusal(self, target_branch) {
             tracing::error!(stage = %self.stage_id, %reason, "Refusing post-merge cleanup");
+            self.record_cleanup_warning(Some(format!("refused: {reason}")));
             return CleanupOutcome::Refused { reason };
         }
 
-        match cleanup_after_merge(self.stage_id, self.repo_root, config) {
+        self.finish_cleanup(cleanup_after_merge(self.stage_id, self.repo_root, config))
+    }
+
+    /// Translate the result of `cleanup_after_merge` into a [`CleanupOutcome`]
+    /// and record it on the stage. Split out of `cleanup_with_cwd` to keep
+    /// that function within the file's line-length limit.
+    fn finish_cleanup(&self, result: anyhow::Result<CleanupResult>) -> CleanupOutcome {
+        match result {
             Ok(result) => {
                 // Only now: a merged overlay describes a revision nobody should
                 // read, but a FAILED cleanup leaves the worktree and branch in
                 // place, and the overlay still describes them.
                 self.discard_overlay();
+                self.record_cleanup_warning(None);
                 CleanupOutcome::Done(result)
             }
             Err(failure) => {
@@ -153,8 +166,30 @@ impl<'a> MergeLifecycle<'a> {
                 // the stage MergeBlocked even though the merge had succeeded.
                 let error = format!("{failure:#}");
                 tracing::warn!(stage = %self.stage_id, %error, "Post-merge cleanup failed");
+                self.record_cleanup_warning(Some(format!("failed: {error}")));
                 CleanupOutcome::Failed(error)
             }
+        }
+    }
+
+    /// Record (or clear) the cleanup warning on the stage record. Best effort:
+    /// a stage with no record (orphan cleanup) has nothing to annotate, and a
+    /// failed write must not change the cleanup outcome.
+    fn record_cleanup_warning(&self, warning: Option<String>) {
+        let stage = match crate::verify::transitions::load_stage(self.stage_id, self.work_dir) {
+            Ok(stage) => stage,
+            Err(_) => return,
+        };
+        if stage.cleanup_warning == warning {
+            return;
+        }
+        if let Err(error) =
+            crate::verify::transitions::update_stage(self.stage_id, self.work_dir, |s| {
+                s.cleanup_warning = warning.clone();
+                Ok(())
+            })
+        {
+            tracing::debug!(stage = %self.stage_id, %error, "Could not record cleanup warning");
         }
     }
 
@@ -283,3 +318,5 @@ pub fn should_defer_cleanup(cwd: &Path, repo_root: &Path, stage_id: &str) -> boo
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tests_cleanup_warning;

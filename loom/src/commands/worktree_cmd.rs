@@ -7,7 +7,8 @@ use std::path::{Path, PathBuf};
 
 use crate::git::branch::{branch_name_for_stage, default_branch};
 use crate::git::cleanup::{
-    cleanup_destructive_stage, cleanup_orphaned_worktrees, cleanup_verified_stage, CleanupResult,
+    cleanup_destructive_stage, cleanup_orphaned_worktrees, cleanup_verified_stage,
+    stage_resources_exist, CleanupResult,
 };
 use crate::git::merge::lock::MergeLock;
 use crate::git::worktree::find_worktree_by_prefix;
@@ -86,15 +87,15 @@ pub fn remove(stage_id: String, force: bool, confirmation: Option<String>) -> Re
         .context("Could not acquire merge lock for worktree removal")?;
 
     if force {
-        let result = cleanup_destructive_stage(
+        return remove_destructively(
             &actual_stage_id,
-            confirmation.as_deref().unwrap_or_default(),
+            confirmation.as_deref(),
             &repo_root,
-        )?;
-        print_cleanup_result(&actual_stage_id, &result);
-        println!("  Stage state left unchanged; destructive removal does not prove a merge.");
-        return Ok(());
+            &work_dir,
+        );
     }
+
+    clear_stale_warning_when_nothing_remains(&actual_stage_id, &repo_root, &work_dir)?;
 
     let stage = load_stage(&actual_stage_id, &work_dir)
         .with_context(|| format!("Cannot verify safe removal for stage '{actual_stage_id}'"))?;
@@ -112,6 +113,51 @@ pub fn remove(stage_id: String, force: bool, confirmation: Option<String>) -> Re
         "  {} Stage marked as merged after ancestry verification",
         "✓".green()
     );
+    Ok(())
+}
+
+/// Destructive removal path for `force`: bypasses ancestry verification and
+/// removes the stage's git resources unconditionally after the exact
+/// confirmation check inside `cleanup_destructive_stage`. Deliberately makes
+/// no claim that the stage was merged.
+fn remove_destructively(
+    stage_id: &str,
+    confirmation: Option<&str>,
+    repo_root: &Path,
+    work_dir: &Path,
+) -> Result<()> {
+    let result = cleanup_destructive_stage(stage_id, confirmation.unwrap_or_default(), repo_root)?;
+    // Best-effort: a destructive removal proves nothing about the merge, but
+    // it does remove the worktree/branch a stale cleanup warning pointed at.
+    let _ = update_stage(stage_id, work_dir, |stage| {
+        stage.cleanup_warning = None;
+        Ok(())
+    });
+    print_cleanup_result(stage_id, &result);
+    println!("  Merge state left unchanged; destructive removal does not prove a merge.");
+    Ok(())
+}
+
+/// When none of the stage's git resources remain (worktree, `loom/<id>`,
+/// `loom/_base/<id>`), a stale `cleanup_warning` from a hand-removal has
+/// nothing left to warn about; clear it as a side effect. Deliberately does
+/// NOT short-circuit removal: normal removal must still flow into
+/// `cleanup_verified_stage`, whose `require_resources` bails with "refusing
+/// to infer that it was merged" — a stage with no resources left is exactly
+/// the case that guard exists to refuse, not a success.
+fn clear_stale_warning_when_nothing_remains(
+    stage_id: &str,
+    repo_root: &Path,
+    work_dir: &Path,
+) -> Result<()> {
+    if stage_resources_exist(stage_id, repo_root)? {
+        return Ok(());
+    }
+    let _ = update_stage(stage_id, work_dir, |stage| {
+        stage.cleanup_warning = None;
+        Ok(())
+    });
+    println!("  Nothing left on disk for stage '{stage_id}'; cleared its stale cleanup warning.");
     Ok(())
 }
 
@@ -160,6 +206,7 @@ fn mark_verified_merge(stage_id: &str, completed_commit: &str, work_dir: &Path) 
             bail!("Stage completed commit changed during cleanup; refusing merge-state update");
         }
         stage.merged = true;
+        stage.cleanup_warning = None;
         Ok(())
     })?;
     Ok(())

@@ -149,6 +149,7 @@ fn build_stage_summary(stage: &Stage, sessions: &[Session], work_dir: &WorkDir) 
         context_budget_pct: None, // TODO: Read from plan if needed
         review_reason: stage.review_reason.clone(),
         merged: stage.merged,
+        cleanup_warning: stage.cleanup_warning.clone(),
         held: stage.held,
         retry_count: stage.retry_count,
         max_retries: stage.max_retries,
@@ -317,6 +318,7 @@ mod tests {
             base_merged_from: vec![],
             outputs: vec![],
             completed_commit: None,
+            cleanup_warning: None,
             merged: false,
             merge_conflict: false,
             verification_status: Default::default(),

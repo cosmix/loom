@@ -703,6 +703,13 @@ pub struct Stage {
     /// SHA of HEAD commit when stage completed
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub completed_commit: Option<String>,
+    /// Why the post-merge worktree/branch cleanup failed or was refused, when
+    /// it did. Set by `MergeLifecycle::cleanup`, cleared by the next cleanup
+    /// that succeeds (including `loom worktree remove`). Surfaced by
+    /// `loom status`; a merged stage with this set still has its worktree
+    /// and branch on disk.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cleanup_warning: Option<String>,
     /// Whether this stage's changes have been merged to the merge point.
     ///
     /// Semantics vary by completion mode:
@@ -1164,6 +1171,7 @@ impl Default for Stage {
             base_merged_from: Vec::new(),
             outputs: Vec::new(),
             completed_commit: None,
+            cleanup_warning: None,
             merged: false,
             merge_conflict: false,
             verification_status: Default::default(),

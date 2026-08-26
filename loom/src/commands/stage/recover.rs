@@ -126,6 +126,7 @@ mod tests {
             base_merged_from: vec![],
             outputs: vec![],
             completed_commit: None,
+            cleanup_warning: None,
             merged: false,
             merge_conflict: false,
             verification_status: Default::default(),

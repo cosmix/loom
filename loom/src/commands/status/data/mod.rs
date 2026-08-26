@@ -85,6 +85,9 @@ pub struct StageSummary {
     pub review_reason: Option<String>,
     /// Whether stage changes have been merged to the merge point
     pub merged: bool,
+    /// Why the post-merge cleanup failed, if it did (worktree/branch still on disk)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cleanup_warning: Option<String>,
     /// Whether the stage is held
     pub held: bool,
     /// Current retry count

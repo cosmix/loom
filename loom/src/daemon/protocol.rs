@@ -256,6 +256,9 @@ pub struct StageInfo {
     /// Effective model name for this stage (explicit override or stage-type default)
     #[serde(default)]
     pub model: String,
+    /// Why post-merge worktree/branch cleanup failed or was refused, when it did.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cleanup_warning: Option<String>,
 }
 
 pub use super::wire::{

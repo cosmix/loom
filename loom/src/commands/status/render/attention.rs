@@ -18,7 +18,7 @@ pub fn render_attention<W: Write>(w: &mut W, stages: &[StageSummary]) -> std::io
                     | StageStatus::CompletedWithFailures
                     | StageStatus::MergeBlocked
                     | StageStatus::NeedsHumanReview
-            )
+            ) || s.cleanup_warning.is_some()
         })
         .collect();
 
@@ -38,6 +38,11 @@ pub fn render_attention<W: Write>(w: &mut W, stages: &[StageSummary]) -> std::io
 }
 
 fn render_problem_stage<W: Write>(w: &mut W, stage: &StageSummary) -> std::io::Result<()> {
+    // A cleanup warning can land on any stage status (orphan cleanup also runs
+    // on Skipped stages, not just Completed), so it is decided before status.
+    if stage.cleanup_warning.is_some() {
+        return render_cleanup_warning(w, stage);
+    }
     let status_str = match &stage.status {
         StageStatus::Blocked => "BLOCKED",
         StageStatus::MergeConflict => "MERGE CONFLICT",
@@ -88,5 +93,29 @@ fn render_problem_stage<W: Write>(w: &mut W, stage: &StageSummary) -> std::io::R
     };
     writeln!(w, "    {}: {}", "Hint".cyan(), hint.dimmed())?;
 
+    Ok(())
+}
+
+/// Render a stage entirely on account of a failed/refused deferred cleanup:
+/// header, ID, warning body, and its `loom worktree remove` hint. Takes over
+/// the whole presentation regardless of `stage.status` — cleanup runs on
+/// Skipped stages too, not just Completed. Only called when
+/// `stage.cleanup_warning` is `Some`.
+fn render_cleanup_warning<W: Write>(w: &mut W, stage: &StageSummary) -> std::io::Result<()> {
+    writeln!(
+        w,
+        "\n  {} {} (CLEANUP FAILED)",
+        "►".red(),
+        stage.name.red().bold()
+    )?;
+    writeln!(w, "    ID: {}", stage.id.dimmed())?;
+    if let Some(ref warning) = stage.cleanup_warning {
+        writeln!(w, "    Cleanup warning:")?;
+        for line in warning.lines() {
+            writeln!(w, "      {}", line.yellow())?;
+        }
+    }
+    let hint = format!("loom worktree remove {}", stage.id);
+    writeln!(w, "    {}: {}", "Hint".cyan(), hint.dimmed())?;
     Ok(())
 }

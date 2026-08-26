@@ -21,6 +21,7 @@ fn make_stage_summary(id: &str, deps: Vec<&str>, status: StageStatus) -> StageSu
         context_budget_pct: None,
         review_reason: None,
         merged: false,
+        cleanup_warning: None,
         held: false,
         retry_count: 0,
         max_retries: None,
@@ -202,5 +203,46 @@ fn test_completed_unmerged_knowledge_no_hint() {
     assert!(
         !output_str.contains("loom stage merge"),
         "Knowledge stages should not show merge hint"
+    );
+}
+
+#[test]
+fn test_completed_merged_with_cleanup_warning_shows_failure_and_hint() {
+    // A merged stage whose post-merge cleanup failed or was refused should
+    // surface the failure and a hint to retry it manually.
+    let mut stage = make_stage_summary("my-stage", vec![], StageStatus::Completed);
+    stage.merged = true;
+    stage.cleanup_warning = Some("failed: git worktree remove refused for x".into());
+
+    let data = make_status_data(vec![stage]);
+    let mut output = Vec::new();
+    render_graph(&mut output, &data).unwrap();
+    let output_str = String::from_utf8(output).unwrap();
+
+    assert!(
+        output_str.contains("cleanup failed"),
+        "Expected 'cleanup failed' marker in output"
+    );
+    assert!(
+        output_str.contains("loom worktree remove my-stage"),
+        "Expected cleanup retry hint in output"
+    );
+}
+
+#[test]
+fn test_completed_merged_without_cleanup_warning_has_no_marker() {
+    // A merged stage with no cleanup warning must not show the failure marker.
+    let mut stage = make_stage_summary("my-stage", vec![], StageStatus::Completed);
+    stage.merged = true;
+    stage.cleanup_warning = None;
+
+    let data = make_status_data(vec![stage]);
+    let mut output = Vec::new();
+    render_graph(&mut output, &data).unwrap();
+    let output_str = String::from_utf8(output).unwrap();
+
+    assert!(
+        !output_str.contains("cleanup failed"),
+        "Should not show 'cleanup failed' marker when there is no cleanup warning"
     );
 }

@@ -125,6 +125,7 @@ fn format_stage_annotations(stage: &StageSummary) -> String {
             // Completed but not merged and not a knowledge stage — needs manual merge
             parts.push(format!("{}", "unmerged".yellow()));
         }
+        parts.extend(cleanup_annotation(stage));
     }
 
     if parts.is_empty() {
@@ -133,6 +134,15 @@ fn format_stage_annotations(stage: &StageSummary) -> String {
         let sep = format!(" {} ", "·".dimmed());
         format!("  {}", parts.join(&sep))
     }
+}
+
+/// The `cleanup failed` annotation for a completed stage whose deferred
+/// worktree/branch cleanup was refused or errored; `None` otherwise.
+fn cleanup_annotation(stage: &StageSummary) -> Option<String> {
+    stage
+        .cleanup_warning
+        .is_some()
+        .then(|| format!("{}", "cleanup failed".yellow()))
 }
 
 /// 3-space indent applied to every dashboard row so the tree visually aligns
@@ -203,6 +213,7 @@ pub fn render_graph<W: Write>(w: &mut W, data: &StatusData) -> std::io::Result<(
             let hint = format!("→ run: loom stage merge {}", stage.id);
             writeln!(w, "{ROW_INDENT}{hint_indent}{}", hint.yellow().dimmed())?;
         }
+        write_cleanup_hint(w, stage, &connector)?;
 
         // Increment index for this level
         *level_indices.get_mut(&level).unwrap() += 1;
@@ -212,6 +223,28 @@ pub fn render_graph<W: Write>(w: &mut W, data: &StatusData) -> std::io::Result<(
     render_legend(w)?;
 
     Ok(())
+}
+
+/// For a completed stage whose post-merge cleanup failed or was refused, show
+/// why and how to retry it manually. No-op for any other stage.
+fn write_cleanup_hint<W: Write>(
+    w: &mut W,
+    stage: &StageSummary,
+    connector: &str,
+) -> std::io::Result<()> {
+    if stage.status != StageStatus::Completed {
+        return Ok(());
+    }
+    let Some(warning) = &stage.cleanup_warning else {
+        return Ok(());
+    };
+    let hint_indent = " ".repeat(connector.chars().count() + 4);
+    let first_line = warning.lines().next().unwrap_or_default();
+    let hint = format!(
+        "↳ cleanup failed: {first_line} — {}",
+        format!("loom worktree remove {}", stage.id).cyan()
+    );
+    writeln!(w, "{ROW_INDENT}{hint_indent}{}", hint.yellow())
 }
 
 /// Render the legend explaining status indicators.

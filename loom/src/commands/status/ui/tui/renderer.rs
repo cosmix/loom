@@ -138,6 +138,7 @@ pub fn stage_info_to_stage(info: &StageInfo) -> Stage {
         base_merged_from: vec![],
         outputs: vec![],
         completed_commit: None,
+        cleanup_warning: info.cleanup_warning.clone(),
         merged: info.merged,
         merge_conflict: false,
         verification_status: Default::default(),
@@ -395,6 +396,7 @@ mod tests {
             merged: true,
             dependencies: vec!["dep1".to_string(), "dep2".to_string()],
             model: "opus".to_string(),
+            cleanup_warning: None,
         };
 
         let stage = stage_info_to_stage(&info);
