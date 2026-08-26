@@ -7,11 +7,26 @@
 # narrowly-scoped runs (a filter, one test target, a path) allowed.
 #
 # The MAIN AGENT IS NEVER AFFECTED: the hook acts only when `loom_is_subagent`
-# (hooks/_common.sh) proves LOOM_MAIN_AGENT_PID is a LIVE ancestor with another
-# Claude process between. integration-verify stages are carved out below (their
-# review subagents are supposed to run the full suite). There is deliberately NO
-# escape-hatch env var - an opt-out would defeat the whole purpose
-# (commit-filter.sh already treats unsetting the detection gate as evasion).
+# (hooks/_common.sh) says so. That check gates on a LIVE loom session FIRST,
+# ALWAYS - LOOM_MAIN_AGENT_PID must be set and a live process-tree ancestor -
+# because this hook installs globally at ~/.claude/hooks/loom/, so that
+# precondition is the only thing scoping the block to a loom stage session
+# rather than every Claude Code session on the machine. Only once that gate
+# passes does the hook's JSON payload (captured below as $INPUT_JSON) decide
+# main-vs-subagent outright: `.agent_type` / `.transcript_path`, which the
+# caller cannot forge, decide "subagent" or "main" when present - a Task-tool
+# subagent's own `.agent_type` names it even though it runs IN-PROCESS with no
+# separate Claude process to find (that subagent trivially satisfies the
+# live-ancestor gate too, since it runs inside the very claude process
+# LOOM_MAIN_AGENT_PID names), and a Bash-tool shell's cmdline (which often
+# mentions a ~/.claude/ path, e.g. sourcing a shell-snapshot file) can no
+# longer be mistaken for an intervening Claude process. Only when the payload
+# answers neither field does the hook fall back to counting Claude processes
+# between the caller and LOOM_MAIN_AGENT_PID. integration-verify stages are
+# carved out below (their review subagents are supposed to run the full
+# suite). There is deliberately NO escape-hatch env var - an opt-out would
+# defeat the whole purpose (commit-filter.sh already treats unsetting the
+# detection gate as evasion).
 #
 # SECURITY NOTE (best-effort, defense-in-depth): matching is token-based, not a
 # shell parser, so a runner hidden in a quoted string (`bash -c "cargo test"`)
@@ -49,15 +64,17 @@ if [[ "$TOOL_NAME" != "Bash" ]] || [[ -z "$COMMAND" ]]; then
 fi
 
 # === SUBAGENT GATE === everything below is subagent-only; a main agent exits here
-loom_is_subagent || exit 0
+loom_is_subagent "$INPUT_JSON" || exit 0
 
 # === INTEGRATION-VERIFY CARVE-OUT ===
 # WHY LOOM_STAGE_ID IS SAFE HERE AND ONLY HERE: LOOM_STAGE_ID leaks into plain
 # Claude Code sessions (knowledge mistakes.md, "Worktree-Isolation Hooks Gated
 # on LOOM_STAGE_ID"), so it must never be an activation gate. It is not one
-# here: the subagent gate above already proved LOOM_MAIN_AGENT_PID is a LIVE
-# ancestor, so we are demonstrably inside a live loom session, and this is a
-# carve-out that only ever RELAXES the hook. Do not "fix" this into a gate.
+# here: the subagent gate above ALWAYS proves LOOM_MAIN_AGENT_PID is a LIVE
+# ancestor FIRST - unconditionally, before it ever consults the payload to
+# classify main-vs-subagent - so we are demonstrably inside a live loom
+# session by the time this line runs, and this is a carve-out that only ever
+# RELAXES the hook. Do not "fix" this into a gate.
 #
 # AMBIGUITY IS FAIL-SAFE: stage files carry a depth prefix (02-<id>.md), so the
 # glob can match more than once. Taking the first would let a planted

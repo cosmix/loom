@@ -36,6 +36,7 @@ run_test "plans-path-guard: blocks ~/.claude/projects/*/plans edit" "$SCRIPT_DIR
 run_test "plans-path-guard: allows doc/plans and other .claude paths" "$SCRIPT_DIR/plans-path-guard-allows-doc-plans.sh"
 run_test "plans-path-guard: blocks MultiEdit to .claude plans, allows doc/plans" "$SCRIPT_DIR/plans-path-guard-multiedit.sh"
 run_test "codex-forward-guard: agent_type gate pins both shim types" "$SCRIPT_DIR/codex-forward-guard-agent-type.sh"
+run_test "subagent-gate-payload: agent_type/transcript_path decide before the process-tree fallback" "$SCRIPT_DIR/subagent-gate-payload.sh"
 run_test "codex-forward-guard: blocks Edit by a forwarder" "$SCRIPT_DIR/codex-forward-guard-blocks-edit.sh"
 run_test "codex-forward-guard: companion Bash allowed, other Bash blocked" "$SCRIPT_DIR/codex-forward-guard-bash-companion-only.sh"
 run_test "codex-forward-guard: plain subagents, main sessions, no-path all untouched" "$SCRIPT_DIR/codex-forward-guard-ignores-others.sh"

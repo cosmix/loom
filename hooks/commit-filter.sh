@@ -126,12 +126,20 @@ fi
 
 # === SUBAGENT COMMIT PREVENTION ===
 # Block git commits from subagents (per ISSUES.md #3)
-# Main agent sets LOOM_MAIN_AGENT_PID in wrapper script
-# Subagents inherit this var but run under a different Claude process
 #
 # Detection lives in _common.sh (`loom_is_subagent`) so that every hook needing
-# "am I a subagent?" shares one depth-agnostic implementation.
-if loom_is_subagent; then
+# "am I a subagent?" shares one implementation. It gates on a LIVE loom
+# session FIRST (LOOM_MAIN_AGENT_PID set and a live process-tree ancestor) -
+# this hook installs globally at ~/.claude/hooks/loom/, so that precondition
+# is the only thing scoping the block to a loom stage session rather than
+# every Claude Code session on the machine. Only once that gate passes does
+# the hook payload's `.agent_type` / `.transcript_path` (from $INPUT_JSON,
+# captured above) decide main-vs-subagent outright - it identifies a genuine
+# Task-tool subagent even when it runs IN-PROCESS (no separate Claude process
+# to find) and is immune to a Bash-tool shell's cmdline merely mentioning a
+# ~/.claude/ path. A process-tree walk is only the further fallback for a
+# payload that answers neither field.
+if loom_is_subagent "$INPUT_JSON"; then
 	# Check if this is a git commit or loom stage complete command.
 	# Direct form: `git ... commit|add -A|add .`. Indirection form:
 	# a variable assigned to git/commit then expanded (`c=commit; git $c`,
