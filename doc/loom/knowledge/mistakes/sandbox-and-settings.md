@@ -293,3 +293,40 @@ worktree location, not by any claim in the payload. See
 id, so `loom memory note --stage <other>` could write another stage's journal — and journals
 are injected into other stages' prompts (`orchestrator/signals/generate.rs`). Now refused
 whenever `LOOM_STAGE_ID` is set and disagrees.
+
+## An Agent-Facing `touch /tmp/<marker>` Handshake Can Never Fire (2026-08-25)
+
+**What happened:** `loom pressure` auto-closes each foreground Claude session by injecting,
+via `--append-system-prompt`, "your FINAL action MUST be to run exactly this shell command
+… `touch /tmp/loom-pressure-claude-<pid>.done`", then polling for that file and SIGTERMing
+the idle session once it appears. The marker never appeared — not once, in any round, since
+the command shipped. The operator had to create the file by hand TWICE per round (after
+`/pressure` and again after `/address`), and the failure looked like an agent ignoring its
+instruction rather than a hard impossibility.
+
+**Why:** the driver spawns `claude --permission-mode auto`, so the agent's Bash runs inside
+the OS sandbox, which mounts `/tmp` **read-only** (`touch: cannot touch '/tmp/x':
+Read-only file system`). But `std::env::temp_dir()` was evaluated in the DRIVER, which is
+unsandboxed and could create, poll and delete `/tmp` paths perfectly well. Every side of the
+mechanism except the agent's own write worked, so it read as sound.
+
+**Prevention:** for any handshake file, ask **who creates it** separately from **who reads
+it**. A path an AGENT must write at runtime has to live inside the repo working tree — the
+sandbox's writable root is the child's cwd — regardless of where the parent process could
+write. `codex_log_path()` in the same module correctly stays in the temp dir because the
+DRIVER opens it. Before shipping such a handshake, run its literal command from inside a
+sandboxed session; the whole bug is visible in one `touch`.
+
+**Fix:** the marker moved to `<repo>/.work/pressure/claude-<pid>.done` (gitignored, and
+loom's own hook guard covers only `.work/stages/` and `.work/sessions/`), the driver
+`create_dir_all`s the parent before each spawn, and the injected instruction now names this
+as the sanctioned exception to the "never write under `.work/` directly" rule so a
+rule-abiding agent does not balk at it. Regression test: `claude_marker_path` must NOT
+start with `std::env::temp_dir()` (`commands/pressure/tests.rs`) — mutation-verified by
+reverting the path and watching only that test go red.
+
+**Found alongside:** the fix added 31 lines to a file sitting exactly at its
+`maintainability-baseline.txt` cap (596), so `cargo test --test maintainability` rejected a
+5-line behavioural change. Budget for this: touching an at-cap file means refactoring it in
+the same change — `pressure/mod.rs` was split into `mod.rs` / `paths.rs` / `spawn.rs`
+(229/145/278 lines) and its ledger entry deleted.
