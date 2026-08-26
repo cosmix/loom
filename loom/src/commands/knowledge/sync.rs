@@ -46,7 +46,7 @@ use std::path::Path;
 /// still fails `sync` — that rebuild is real, un-cosmetic work — but the
 /// index step above has already run by the time `refresh` is even called, so
 /// letting the bare `refresh` error stand on its own would read as "sync did
-/// nothing" to a caller who only checks the exit code. [`catalog_failure_context`]
+/// nothing" to a caller who only checks the exit code. `catalog_failure_context`
 /// annotates the error to say the index step already completed, leaving the
 /// underlying cause (still the real failure reason) in the chain beneath it.
 pub fn sync(structural_only: bool, json: bool) -> Result<()> {

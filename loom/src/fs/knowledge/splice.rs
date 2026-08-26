@@ -9,7 +9,7 @@
 //! deeper nested heading stays inside the replaced section), and ignores
 //! `#`-prefixed lines inside fenced code blocks.
 
-/// What [`splice_section`] actually did, so callers can report accurately
+/// What `splice_section` actually did, so callers can report accurately
 /// instead of assuming "found" from a separate, possibly-stale pre-check.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SectionOutcome {
