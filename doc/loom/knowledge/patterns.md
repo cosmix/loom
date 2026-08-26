@@ -214,11 +214,13 @@ Uses `#[serde(untagged)]` enum with two variants:
 
 Serde tries variants in order: strings match Simple first, objects fail Simple then match Extended. Error messages for malformed objects are poor (inherent untagged limitation). helper methods: `command()`, `is_extended()`, `Display` delegates to `command()`.
 
-## Hook Content-Stripping Pattern
+## Hook Command Matching
 
-How hooks strip heredoc bodies and `-m` message text before pattern-matching a command, so a
-rule that merely _mentions_ a forbidden flag is not blocked — plus the known limits of that
-stripping.
+Hooks decide what a Bash command INVOKES by scanning argv tokens, not by regexing the command
+string — a regex cannot tell an argument's _value_ from its _mention_, so quoted prose was read as
+shell. Stripping heredoc and `-m` bodies is now the pre-step; the old regexes survive only as the
+unterminated-quote fallback. Path checks key on whitespace, since a real path argument is a
+whitespace-free word and a prose payload is not.
 
 → [Hook Content-Stripping](patterns/hook-content-stripping.md)
 

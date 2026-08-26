@@ -1,7 +1,10 @@
 # Concerns & Technical Debt
 
 > Technical debt, warnings, issues, and improvements needed.
-> This file is append-only - agents add discoveries, never delete.
+> Every section here must be an OPEN concern. When one is resolved, DELETE it — do not strike the
+> heading and leave the body, which is how eleven dead entries accumulated before 2026-08-26. Git
+> history keeps the record and [mistakes.md](mistakes.md) keeps the lesson. If a resolved concern
+> leaves a genuine residual, keep only the residual, under a plain heading.
 >
 > **Related files:** [mistakes.md](mistakes.md) for lessons learned, [architecture.md](architecture.md) for context.
 
@@ -66,39 +69,9 @@ Files: src/verify/baseline/capture.rs:76-79, src/verify/baseline/compare.rs:155-
 
 `bootstrap.rs:write_bootstrap_sandbox()` keeps the settings.local.json backup in memory only (`Option<String>`). If the process is killed between writing sandbox settings and restoring the original, user settings are permanently lost. Low probability since bootstrap is interactive, but a disk-based temp backup would be more robust.
 
-## ~~Bootstrap Tool Restriction Scope~~ (MOOT — 2026-08-19)
-
-The `bootstrap` subcommand this concern was about, along with `init`, `check`, `audit`, `show`,
-`list`, and `gc`, was removed by the CLI collapse to `KnowledgeCommands::{Update, Context, Sync}`
-(`cli/types_memory.rs:6-52`). The bash allowlist this concern asked to tighten no longer has
-anything to tighten — there is no `bootstrap.rs` and no wider `Bash(loom knowledge*)` grant to
-narrow.
-
-## Hook Pattern Matching: False Positives on Embedded Content (2026-03-31)
-
-All PreToolUse hooks (worktree-isolation.sh, commit-filter.sh, git-add-guard.sh,
-prefer-modern-tools.sh) and Rust validators (bash.rs) matched patterns against
-full bash command strings including heredoc bodies and -m/--message content.
-Keywords in commit messages or string literals triggered false blocks.
-
-Issue #13: git commit -m "Add .worktrees/ to .gitignore" blocked by
-worktree-isolation.sh because .worktrees/ appeared in message text.
-
-Fix: Introduced _common.sh with strip_embedded_content() that removes heredoc
-bodies and message content before pattern matching. Rust parallel implementation
-in validators/bash.rs. Also tightened commit-filter.sh attribution pattern to
-require Co-Authored-By: header prefix instead of substring matching.
-
-Hooks affected: worktree-isolation.sh, commit-filter.sh, git-add-guard.sh,
-prefer-modern-tools.sh, validators/bash.rs.
-
 ## Hook Debug Logging to /tmp/ (2026-03-31)
 
 Several hooks (worktree-isolation.sh, commit-filter.sh, prefer-modern-tools.sh) hardcode debug log paths to `/tmp/<name>-debug.log`. Under `set -euo pipefail`, if `/tmp/` is not writable (e.g., sandboxed environments), the hook script exits immediately with error. `git-add-guard.sh` already uses a gated `debug()` pattern that only writes when `GIT_ADD_GUARD_DEBUG=1` is set. Other hooks should adopt the same pattern.
-
-## ~~Sandbox Test Failures in fs::permissions~~ (RESOLVED 2026-04-16)
-
-Fixed by `install_loom_hooks_to(path)` in commit 8d2bf2e. Tests now use temp directories via `ensure_loom_permissions_to(repo_root, Some(&hooks_dir))` instead of writing to the real `~/.claude/` directory.
 
 ## Rust/Shell Heredoc Terminator Divergence
 
@@ -180,31 +153,6 @@ This is a logically defensible design (commits exist, don't burn tokens redoing 
 - `commands/stage/skip_retry.rs::retry` (where retry mutates stage fields)
 - `orchestrator/core/stage_executor.rs:291-293` (`begin_attempt(Utc::now())` is already called here — confirm it's the only writer of `started_at` and that it's reached on retry).
 - The "stale" indicator emitter — likely in `commands/graph/indicators.rs` or a dashboard renderer.
-
-## ~~Daemon Singleton Not Enforced~~ (RESOLVED 2026-08-08)
-
-The daemon now holds an authoritative stable-file `flock` for its full lifetime. Startup refuses a
-second owner before socket/control-file mutation, and shutdown signals only a matching PID/start-time
-identity. The original incident and its evidence remain preserved for regression context.
-
-→ [Daemon Singleton Incident](concerns/daemon-singleton.md)
-
-## ~~loom plan verify: Missing bypass-permissions Sandbox Validation~~ (RESOLVED 2026-08-17)
-
-`commands/plan/verify.rs:439-458` now runs the SAME merge plus validation that
-`loom init` and stage spawn use — `sandbox::merge_config`, then
-`sandbox::validate_config` and `sandbox::validate_emittable`, per stage — and
-pushes any failure into `hard_errors` rather than warnings, because `loom init`
-already rejects those plans outright. A plan that `loom init` would refuse is no
-longer reported clean by `plan verify`.
-
-Note the scope of the fix: it wires the two validators that were always the
-authoritative gate. `sandbox::config::validate_paths` remains uncalled in
-production — see the separate concern on uncalled path-escape validators.
-
-## ~~code_review Persistence Gap~~ (RESOLVED 2026-08-08)
-
-`Stage` now persists `code_review`, and the single `Stage::from_definition` conversion copies it with all other execution and verification policy. Initialization delegates to that canonical conversion, preventing schema-to-runtime field drift.
 
 ## before_stage Already Wired — Plan PLAN-anti-slop-thoroughness Was Wrong
 
@@ -319,6 +267,16 @@ both forms render identically and the staleness check only looks for substrings.
 Until then, prefer the linted form: let the pre-commit hook be the last writer, and do not run
 a superfluous `loom knowledge update`/`sync` after committing unless topics actually changed.
 
+## Sandbox Denial Has No End-to-End CI Canary
+
+The generated sandbox policy is covered by unit and flow tests, but nothing proves denial actually
+holds against a live Claude runtime: CI has no callable credentialed Claude sandbox runtime, so
+Bash, interpreter, build-script, symlink, and file-tool denial cannot be exercised end to end.
+That verification is manual release validation.
+
+(Residual of a resolved concern: the fail-open defect itself — generated settings not carrying
+sensitive reads into `denyRead`, and `failIfUnavailable` unset — was fixed 2026-08-08.)
+
 ## Sandbox `Write(path)` Rules Are Inert — Generated Settings Fixed, Repo Config Open (2026-07-31, split 2026-08-17)
 
 Claude Code's file permission check consults **only** `Edit(path)`; a `Write(path)` rule parses,
@@ -400,33 +358,6 @@ subsystem change with its own test surface, unrelated to the codex lane. Fix if 
 pass `Stage::effective_subagent_timeout_secs()` into `determine_activity_status` and the activity
 renderer instead of the constant.
 
-## ~~Orchestrator Control Subprocesses Were Unbounded~~ (RESOLVED 2026-08-08)
-
-`mistakes.md`'s "Diagnostics: Restart Destroys the Evidence" records the 10-hour daemon-freeze
-lesson: every external command issued from the poll loop must have a wall-clock deadline.
-
-tmux spawn/probe/teardown operations now use `process::run_bounded_output` with 20s/5s/5s
-deadlines. Native terminal detection and process discovery use 2s deadlines, while desktop
-notifications use 2s (`notify-send`) or 3s (`osascript`). A timeout kills and reaps the child process
-group and returns an error or an unavailable probe result instead of wedging the scheduler.
-
-## ~~Sandbox Secret Denials Could Fail Open~~ (RESOLVED IN CODE 2026-08-08)
-
-Generated settings now carry sensitive read restrictions into the host sandbox's `denyRead`, add
-resolved `.work/admin.token` and `.work/user.token` paths, and set `failIfUnavailable: true` whenever
-the sandbox is enabled. Stage startup treats a required settings-write failure as an infrastructure
-block and does not spawn the session, so the configured boundary cannot silently disappear.
-
-Unit and flow tests cover the generated policy and settings-write failure. A true Claude runtime
-canary remains manual release validation: CI has no callable credentialed Claude sandbox runtime, so
-it cannot prove Bash, interpreter, build-script, symlink, and file-tool denial end to end.
-
-## ~~Repair Counted a Failed Skill-Index Rebuild as Fixed~~ (RESOLVED 2026-08-08)
-
-Hook repair now propagates `skill_index::execute()` failure through `fix_hooks_with` instead of
-discarding it. `hook_repair_propagates_skill_index_write_failure` supplies regression coverage for
-the previously silent write-failure path.
-
 ## `evaluate_new_session` Fails a Working Spawn on a Benign `~/.tmux.conf` Warning (2026-08-08)
 
 The rule "any stderr with exit 0 is a failure" is a plan mandate, pinned by unit tests and carried by
@@ -439,15 +370,6 @@ spawn, kills a **working** server via the abort path, and writes the sticky
 The `has-session` probe that immediately follows is the authoritative signal and would distinguish the
 two cases. Gating the stderr rule on that probe is a design call for the plan owner, not an
 integration-verify defect.
-
-## ~~PID Recycling Could Route a SIGTERM to a Stranger~~ (RESOLVED 2026-08-09)
-
-All backend and daemon signaling now routes through `process::ProcessIdentity` (PID plus kernel start
-time). A start-time mismatch is definitive death, and missing start-time evidence is `Unverifiable`;
-`terminate_verified` refuses destructive signaling in both cases. Native and tmux PID-file checks use
-the same identity service, and daemon stop additionally requires the singleton lock to be held.
-
-The durable rule is fail closed: never discard failed identity evidence and then re-probe the raw PID.
 
 ## `loom attach` Overview Panes Are Live, Writable Agent Terminals (2026-08-08)
 
@@ -469,27 +391,6 @@ unattributable, and the skip comment concedes "Nothing currently reaps this sock
 It is the one socket whose name is a pure function of the repo root, so reaping it carries no
 cross-checkout risk — roughly two lines in `cleanup_orphaned_sessions` and `clean::sessions` once
 `viewer_socket_name` is crate-visible.
-
-## ~~Dead `NativeBackend::spawn_base_conflict_session` Surface~~ (RESOLVED 2026-08-09)
-
-The uncalled spawn method and `signals/base_conflict.rs` were removed. `SessionType::BaseConflict`
-remains only where persisted historical records and main-repository merge attribution must still be
-understood; it is no longer exposed as a production spawn route.
-
-## ~~`loom knowledge` Still Cannot Correct an Entry In Place~~ (RESOLVED 2026-08-19)
-
-Concrete instance of the "No Delete-Section Verb" gap above: a plan found two tier-1/tier-2 sections
-that had become factually **wrong** (a "~15-20 struct literal breakages" count that is now 3, and a
-"Session Spawning Pattern" describing an `Arc<NativeBackend>` the orchestrator no longer holds).
-Because `loom knowledge update` only appends, the distill stage could only append `CORRECTION (...)
-supersedes ...` sections beneath them — the wrong text stayed in the file and still grepped, so an
-agent reading top-down hit the stale claim first.
-
-**Resolved:** `loom knowledge replace-section <file> "<heading>" "<body>"` overwrites a section body
-in place (`commands/knowledge/mod.rs::replace_section`, `cli/dispatch.rs`). Distillation retires a
-stale claim instead of layering over it, and CLAUDE.md routes every staleness find into a
-`stale-knowledge:` memory that the knowledge-distill stage must apply. The narrower gaps remain: no
-delete verb (§ above) and no heading rename (§ below).
 
 ## PreToolUse File Guards Cannot Eliminate Path-Swap Races (2026-08-08)
 
@@ -519,55 +420,21 @@ and the daemon reads state from disk — but the caller observes a false negativ
 operation. If this is ever observed in the wild, split the response so callers can distinguish
 "completed, replay marker failed" from "not completed".
 
-## One Hook Still Regexes Raw Command Strings (2026-08-11, narrowed 2026-08-26)
+## `subagent-verify-guard.sh` Still Regexes Raw Command Strings
 
-Regexing the raw command string cannot tell an argument's _value_ from an argument's _mention_
-(see `mistakes/shell-command-matchers.md`). `git-add-guard.sh` was converted to a token scan in
-2026-08; `commit-filter.sh`, `prefer-modern-tools.sh` and `worktree-isolation.sh` followed on
-2026-08-26 after the deferral below cost months of blocked codex briefs.
+It is the last hook that matches patterns against the raw command string, so it still cannot tell
+an argument's _value_ from an argument's _mention_: text quoted inside a command is scanned as if
+it were shell. The shared `loom_tokens_*` helpers it needs already exist in `hooks/_common.sh`.
 
-| Hook                       | Status                                                  |
-| -------------------------- | ------------------------------------------------------- |
-| `git-add-guard.sh`         | token scan (2026-08-11)                                 |
-| `commit-filter.sh`         | token scan (2026-08-26)                                 |
-| `prefer-modern-tools.sh`   | token scan (2026-08-26)                                 |
-| `worktree-isolation.sh`    | token scan (2026-08-26)                                 |
-| `subagent-verify-guard.sh` | **still raw strings — carries the bug class**           |
-
-`subagent-verify-guard.sh` blocks project-wide build/test/lint runs by subagents, so a false
-positive strands a subagent rather than letting a bad command through; it is the least dangerous
-of the five to leave, not a judgement that it is safe. The shared `loom_tokens_*` helpers it would
-need already exist.
-
-`strip_embedded_content` is still unchanged and still runs FIRST in every converted hook — it
-strips heredoc bodies, whose words would otherwise tokenize as real command words. Its Rust twin
-at `loom/src/hooks/validators/bash.rs:71` is likewise untouched.
+It was left for last because its failure direction is the mild one — it blocks project-wide
+build/test/lint runs by subagents, so a false positive strands a subagent rather than admitting a
+dangerous command. That is a reason to do it last, not a reason it is safe.
 
 **Converting the fifth hook is not a mechanical edit.** The 2026-08-26 conversion of three hooks
 opened seven bypasses that the raw regexes had blocked, all found only by adversarial probing
 against the OLD pattern — a fully green suite showed nothing. Read
 `mistakes/shell-command-matchers.md` § "Converting a Raw-String Matcher to Token Scanning
 Silently Narrows It" before starting, and budget for the differential testing it describes.
-
-## `hooks/_common.sh` Is 1167 Lines Against a 400-Line Limit (2026-08-26)
-
-The token-scanning conversion roughly doubled it (was ~560, itself already over Rule 17's limit).
-`commit-filter.sh` is 489. Splitting `_common.sh` is not a simple file move: hooks are embedded by
-filename via `include_str!`, so a new file needs a `LOOM_HOOKS` entry in
-`fs/permissions/constants.rs`, an entry in the config builder, **both** copies of the `all_hooks`
-array in `install.sh`, and an update to the exact-length assertion in
-`fs/permissions/tests/hooks_tests.rs`. Miss any one and the hook is silently dead rather than
-broken. Deliberately not bundled into a security fix that needed to stay reviewable.
-
-**Update 2026-08-17.** The stage-finalize bridge hook was converted to the same
-token scan and is therefore no longer in this list — but its unterminated-quote
-FALLBACK still uses the raw-string glob, on purpose, so that the gate is never
-weaker than before the conversion. That fallback fires on ordinary English prose
-containing an apostrophe, which makes it a live false-positive source for any
-command that feeds prose through a heredoc. Mechanism, matched-pair reproduction
-and the correct workaround: `patterns/hook-content-stripping.md`. Note the general
-shape — converting a matcher to tokens does not retire the raw-string class while a
-raw-string fallback remains reachable.
 
 ## `loom memory` Is Unusable Without an Initialised `.work` (2026-08-11)
 
@@ -805,13 +672,25 @@ pending-knowledge document, and `concerns/sandbox-write-rules-inert.md` for the 
 `Write(.work/**)` / `Bash(loom *)` rules that read like a blanket grant but have no real
 consumers, and `Write(path)` rules are inert anyway. A documented fossil.
 
-## Two Hook Files Now Exceed Rule 17's 400-Line Cap (2026-08-26)
+## Three Hook Files Exceed Rule 17's 400-Line Cap
 
-`hooks/_common.sh` is 619 lines and `hooks/subagent-verify-guard.sh` is 416 lines (`wc -l`,
-2026-08-26) — both over CLAUDE.md Rule 17's 400-line file limit. Splitting either needs a new
-hook file, which needs registration in BOTH `all_hooks` arrays in `install.sh`, an `include_str!`
-const plus a `LOOM_HOOKS` entry in `loom/src/fs/permissions/constants.rs`, and the hooks config
-builder — so it is a deliberate, separate change, not a drive-by trim.
+Over CLAUDE.md Rule 17's 400-line file limit (`wc -l`, 2026-08-26):
+
+| File                             | Lines |
+| -------------------------------- | ----- |
+| `hooks/_common.sh`               | 1197  |
+| `hooks/commit-filter.sh`         | 489   |
+| `hooks/subagent-verify-guard.sh` | 416   |
+
+`_common.sh` roughly doubled when the token-scanning helpers landed; it was already over the cap
+before that.
+
+Splitting any of them needs a new hook file, and a new hook file needs FOUR registrations: an
+`include_str!` const plus a `LOOM_HOOKS` entry in `loom/src/fs/permissions/constants.rs`, the
+hooks config builder, BOTH copies of the `all_hooks` array in `install.sh`, and the exact-length
+assertion in `loom/src/fs/permissions/tests/hooks_tests.rs`. Miss any one and the hook is
+**silently dead** rather than broken — it simply never runs, and nothing reports it. That is why
+this is a deliberate, separate change and not a drive-by trim.
 
 ## Two Fenced-Code-Block Models Disagree in `fs/knowledge/` (2026-08-26)
 

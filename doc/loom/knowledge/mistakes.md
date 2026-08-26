@@ -972,3 +972,13 @@ needed a test through the REAL ranker AND the REAL packer to catch — see
 that lesson.
 
 → [Computed Values and Hidden Couplings](mistakes/computed-values-and-hidden-couplings.md)
+
+## Two Daemons Once Attached to the Same `.work/` (2026-08-08)
+
+Nothing enforced daemon singleton, so a second daemon could attach to a live `.work/` and both
+would drive the same stages. Startup now takes an authoritative stable-file `flock` for the
+daemon's whole lifetime and refuses a second owner before touching the socket or control files;
+shutdown signals only a matching PID/start-time identity. The incident and its evidence are kept
+for regression context.
+
+→ [Daemon Singleton Incident](concerns/daemon-singleton.md)
