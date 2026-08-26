@@ -1,11 +1,15 @@
-//! Sandbox allowances that make the codex implementation lane runnable.
+//! Sandbox allowances that make subprocesses runnable in the MAIN repo.
 //!
-//! Codex is a subprocess, so the Bash sandbox — not Claude Code's tool
-//! permissions — decides whether it can run. Its write set is the working
-//! directory plus the session temp dir, and codex keeps state in two
-//! directories outside both, so without an explicit grant every forward dies
-//! before the model is reached. See [`crate::codex::CODEX_SANDBOX_WRITE_PATHS`]
-//! for the failure modes and why the sandbox escape hatch is not an answer.
+//! Two subprocess grants live here: the codex lane's state directories and
+//! network hosts, and the package-manager cache directories every stage
+//! needs to install dependencies. Both are subprocess concerns, so the Bash
+//! sandbox — not Claude Code's tool permissions — decides whether they work.
+//! Codex keeps state outside its write set (working directory plus session
+//! temp dir), so without an explicit grant every forward dies before the
+//! model is reached; see [`crate::codex::CODEX_SANDBOX_WRITE_PATHS`] for the
+//! failure modes and why the sandbox escape hatch is not an answer. Package
+//! managers fail the same way, at the first dependency install; see
+//! [`crate::sandbox::PACKAGE_MANAGER_CACHE_WRITE_PATHS`].
 //!
 //! These live here rather than in the sandbox settings generator because they
 //! also have to reach `loom init`, which writes hooks, env and permission rules
@@ -16,9 +20,10 @@ use std::fs;
 use std::path::Path;
 
 use crate::codex::{CODEX_SANDBOX_DOMAINS, CODEX_SANDBOX_WRITE_PATHS};
+use crate::sandbox::PACKAGE_MANAGER_CACHE_WRITE_PATHS;
 
 /// The `sandbox` subsections carrying the lane's allowances, and their entries.
-const ALLOWANCES: [(&str, &str, &[&str]); 2] = [
+const ALLOWANCES: [(&str, &str, &[&str]); 3] = [
     (
         "filesystem",
         "allowWrite",
@@ -28,6 +33,11 @@ const ALLOWANCES: [(&str, &str, &[&str]); 2] = [
         "network",
         "allowedDomains",
         CODEX_SANDBOX_DOMAINS.as_slice(),
+    ),
+    (
+        "filesystem",
+        "allowWrite",
+        PACKAGE_MANAGER_CACHE_WRITE_PATHS.as_slice(),
     ),
 ];
 
@@ -127,6 +137,9 @@ mod tests {
         for path in CODEX_SANDBOX_WRITE_PATHS {
             assert!(allow_write.iter().any(|p| p == path), "missing {path}");
         }
+        for path in PACKAGE_MANAGER_CACHE_WRITE_PATHS {
+            assert!(allow_write.iter().any(|p| p == path), "missing {path}");
+        }
         let domains = settings["sandbox"]["network"]["allowedDomains"]
             .as_array()
             .unwrap();
@@ -142,7 +155,7 @@ mod tests {
                 .as_array()
                 .unwrap()
                 .len(),
-            1 + CODEX_SANDBOX_WRITE_PATHS.len()
+            1 + CODEX_SANDBOX_WRITE_PATHS.len() + PACKAGE_MANAGER_CACHE_WRITE_PATHS.len()
         );
     }
 

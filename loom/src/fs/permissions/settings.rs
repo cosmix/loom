@@ -328,7 +328,7 @@ pub fn ensure_loom_hooks_local(repo_root: &Path) -> Result<()> {
         (hooks_configured, "Configured loom hooks"),
         (env_configured, "Configured agent teams env var"),
         (worktree_configured, "Disabled worktree isolation"),
-        (codex_configured, "Granted the codex lane sandbox access"),
+        (codex_configured, "Granted codex + cache sandbox access"),
         (stale_env_removed, "Removed stale session env vars"),
     ];
 

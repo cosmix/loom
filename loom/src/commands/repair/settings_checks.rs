@@ -43,15 +43,19 @@ pub(super) fn check(repo_root: &Path) -> Vec<RepairIssue> {
 
     issues.extend(settings_local_drift_issue(repo_root));
 
-    // Checked apart from hooks/env: a settings file written before the codex
-    // lane had sandbox allowances is otherwise complete, so nothing else here
-    // flags it and `--fix` would leave every codex run blocked.
+    // Checked apart from hooks/env: a settings file written before these
+    // subprocess allowances existed is otherwise complete, so nothing else
+    // here flags it and `--fix` would leave codex runs, or package-manager
+    // installs, blocked.
     if !settings_local_has_codex_sandbox(repo_root) {
         issues.push(RepairIssue {
             severity: Severity::Warning,
-            description: "Codex sandbox allowances missing from .claude/settings.local.json"
+            description: "Subprocess sandbox allowances missing from .claude/settings.local.json \
+                 (codex lane, package-manager caches)"
                 .to_string(),
-            fix_description: "Grant the codex lane write access to its state dirs".to_string(),
+            fix_description: "Grant the codex lane and package managers write access to their \
+                               state/cache dirs"
+                .to_string(),
         });
     }
 

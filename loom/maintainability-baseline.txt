@@ -285,10 +285,10 @@ function src/plan/schema/tests/security_policy_tests.rs rejects_misspelled_neste
 function src/plan/schema/validation.rs check_cross_stage_wiring_coverage 66
 function src/plan/schema/validation.rs validate 387
 function src/plan/schema/validation.rs validate_structural_preflight 219
-function src/sandbox/settings.rs every_stage_type_can_write_the_knowledge_directory 57
+function src/sandbox/settings.rs every_stage_type_can_write_the_knowledge_directory 56
 function src/sandbox/settings.rs generate_settings_json 105
 function src/sandbox/settings.rs merge_existing_permissions 89
-function src/sandbox/settings.rs test_deny_write_parent_traversal_not_in_os_sandbox 77
+function src/sandbox/settings.rs test_deny_write_parent_traversal_not_in_os_sandbox 73
 function src/sandbox/settings.rs test_generate_settings_emits_network_block 53
 function src/sandbox/settings.rs test_write_settings_adds_resolved_work_symlink_permissions 100
 function src/sandbox/settings.rs test_write_settings_does_not_carry_forward_existing_allow 82

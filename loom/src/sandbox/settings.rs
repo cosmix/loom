@@ -528,7 +528,7 @@ mod tests {
         CommandConfinement, FilesystemConfig, LinuxConfig, NetworkConfig, SandboxConfig,
         StageSandboxConfig, StageType,
     };
-    use crate::sandbox::merge_config;
+    use crate::sandbox::{merge_config, PACKAGE_MANAGER_CACHE_WRITE_PATHS};
 
     fn default_config() -> MergedSandboxConfig {
         MergedSandboxConfig {
@@ -552,6 +552,13 @@ mod tests {
         let mut config = default_config();
         config.implementers = Implementers::new(vec![Implementer::Codex]);
         config
+    }
+
+    /// `allowWrite`: prefix paths then every granted package-manager cache.
+    fn allow_write_with_caches(prefix: &[&str]) -> Value {
+        let mut expected: Vec<&str> = prefix.to_vec();
+        expected.extend(PACKAGE_MANAGER_CACHE_WRITE_PATHS);
+        json!(expected)
     }
 
     #[test]
@@ -716,9 +723,8 @@ mod tests {
         assert!(deny_read
             .iter()
             .any(|value| value == "~/.claude/.credentials.json"));
-        // The plan's own allow_write reaches the OS-enforced allowWrite grant.
-        // This config is claude-only, so no codex state paths are appended.
-        assert_eq!(fs_block["allowWrite"], json!(["src/**"]));
+        // allowWrite: plan entries then package-manager caches (claude-only).
+        assert_eq!(fs_block["allowWrite"], allow_write_with_caches(&["src/**"]));
         let deny_write = fs_block["denyWrite"].as_array().unwrap();
         assert_eq!(deny_write.len(), 1);
         assert_eq!(deny_write[0], ".work/**");
@@ -1040,12 +1046,8 @@ mod tests {
             json["sandbox"]["filesystem"]["denyWrite"],
             json!(["some/plan/path/**"])
         );
-        // This config's allow_write is empty and the stage is claude-only, so
-        // there is nothing to grant: `allowWrite` is omitted entirely (see
-        // `test_generate_settings_plan_allow_write_reaches_os_sandbox_claude_only`
-        // for the case where a plan's allow_write DOES reach the OS layer).
         let fs_block = &json["sandbox"]["filesystem"];
-        assert!(fs_block["allowWrite"].is_null());
+        assert_eq!(fs_block["allowWrite"], allow_write_with_caches(&[]));
 
         // permissions.deny should have the ordinary non-traversal path only;
         // the parent-traversal entry must be filtered, or it would deny-match
@@ -1098,9 +1100,8 @@ mod tests {
 
         assert_eq!(
             json["sandbox"]["filesystem"]["allowWrite"],
-            json!(["tmp/tmux-sockets/**"]),
-            "a claude-only stage's own allow_write must reach the OS sandbox, \
-             with no codex state paths appended, got: {json:?}"
+            allow_write_with_caches(&["tmp/tmux-sockets/**"]),
+            "must include package caches, no codex paths, got: {json:?}"
         );
     }
 
@@ -1274,9 +1275,8 @@ mod tests {
 
             assert_eq!(
                 json["sandbox"]["filesystem"]["allowWrite"],
-                json!(["doc/loom/knowledge/**"]),
-                "Stage type {stage_type:?}: sandbox.filesystem.allowWrite must grant the \
-                 knowledge directory, got: {:?}",
+                allow_write_with_caches(&["doc/loom/knowledge/**"]),
+                "Stage type {stage_type:?}: must include package caches, got: {:?}",
                 json["sandbox"]["filesystem"]["allowWrite"]
             );
 

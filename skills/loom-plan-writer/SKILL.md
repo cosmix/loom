@@ -714,6 +714,8 @@ Per-stage `sandbox:` overrides are allowed (e.g. `enabled: false`, or extra `all
 
 **Walk the writes.** For every acceptance command in every stage, list the paths it writes and confirm each is inside `allow_write`: build outputs (`dist/**`, `.vite/**`, `target/**`), caches, and the lockfile by its REAL name — read the repo, don't assume (`bun.lock` vs `bun.lockb` bit three logged plans). A blocked write can exit 0 (Section 9) — the stage "passes" while nothing landed. **And a path you cannot get INTO `allow_write` disqualifies the command — see below.**
 
+**Package-manager caches are pre-granted.** Loom emits the per-user cache directories of bun, npm, pnpm, yarn, deno, cargo, rustup, uv, pip and go (`sandbox/package_caches.rs`) into every stage's OS-level `allowWrite`, so a dependency install in a worktree does not need a plan `allow_write` line. Two gaps stay the plan's job: a cache relocated by an env var (`XDG_CACHE_HOME`, `CARGO_HOME`, `BUN_INSTALL_CACHE_DIR`, ...) must be listed in `allow_write` explicitly, and a cache directory that does not exist on the host at session start is skipped by the sandbox — a manager used for the very first time on that machine fails with `EROFS` until the directory exists.
+
 ### Acceptance runs INSIDE the stage's sandbox — verify it THERE
 
 `loom stage complete` runs the acceptance list itself, from the agent's own process inside the
