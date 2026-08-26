@@ -265,3 +265,17 @@ pub(super) fn format_structured_handoff(handoff: &HandoffV2) -> String {
 
     content
 }
+
+/// Append the "stage end sequence" recap emitted at the end of "## Immediate
+/// Tasks" in the recitation section — the order commits must follow, restated
+/// at maximum attention (Manus recitation pattern) alongside the task list.
+pub(super) fn append_stage_end_sequence(content: &mut String) {
+    content.push('\n');
+    content.push_str("**Stage end sequence (in this order, nothing skipped):** every subagent returned → full gate green → adversarial review returned and every finding fixed → gate green again → commit (orchestrator only, one logical commit per concern) → `loom stage complete <stage-id>`. A commit before this point is premature.\n");
+}
+
+/// Append the package-manager-cache carve-out note to the sandbox section,
+/// shown whenever the sandbox is enabled (`format/sandbox_section.rs`).
+pub(super) fn append_package_cache_note(content: &mut String) {
+    content.push_str("**Package-manager caches:** the per-user caches of bun, npm, pnpm, yarn, deno, cargo, rustup, uv, pip and go under your home directory are writable, so `bun install`, `cargo add`, `uv sync`, `go get` and their peers work inside this sandbox. Two limits: a cache directory that does not exist yet at session start is NOT bound (the sandbox skips missing paths), and a cache relocated by an env var (`XDG_CACHE_HOME`, `CARGO_HOME`, `BUN_INSTALL_CACHE_DIR`, ...) is not covered — either one surfaces as `EROFS` / `Read-only file system` from the package manager. That is a sandbox limit, not a bug in your change: STOP and report it as a blocker (it needs a plan-level `sandbox.filesystem.allow_write` entry); do not work around it.\n\n");
+}

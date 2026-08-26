@@ -138,6 +138,31 @@ pub(super) fn extract_backtick_items(lines: &[String]) -> Vec<String> {
         .collect()
 }
 
+/// Append the commit-timing doctrine: commits are the ORCHESTRATOR's, made ONLY
+/// as the final step of the stage, after every subagent has returned and all
+/// verification is green — never mid-stage.
+///
+/// `gate` names the verification gate for the stage type (code stages: build,
+/// tests, lint, format, acceptance; documentation stages: acceptance only) and
+/// `review` states the review condition (code stages: the mini adversarial
+/// review returned and its findings fixed; documentation stages: the knowledge
+/// files re-read). Both are interpolated into otherwise identical text so the
+/// doctrine lives in exactly one place; `tests_commit_timing.rs` pins the
+/// sentinel phrases across every stable prefix and `CLAUDE.md.template`.
+pub(super) fn append_commit_timing_rules(content: &mut String, gate: &str, review: &str) {
+    content.push_str(
+        "**When to Commit (ORCHESTRATOR ONLY — AT THE END — AFTER ALL VERIFICATION):**\n\n",
+    );
+    content.push_str("Commits are made by YOU, the main agent, and ONLY as the final step of the stage — never mid-stage, never \"what is done so far\". A commit is legitimate only once ALL of these hold:\n\n");
+    content.push_str("1. Every subagent, coordinator, team, and Workflow you spawned has RETURNED and its result is absorbed — nothing is still running or still expected to report.\n");
+    content.push_str(&format!(
+        "2. The full verification gate is GREEN on the complete tree: {gate}.\n"
+    ));
+    content.push_str(&format!("3. {review}\n\n"));
+    content.push_str("Only then: stage your files, commit (one logical commit per concern — module, tests, wiring, docs), and run `loom stage complete <stage-id>`.\n\n");
+    content.push_str("Committing while a subagent is still out, before the reviewer has reported, or before the gate is green is PREMATURE: it snapshots unverified work and tempts you to complete on top of it. \"I ran the tests before committing\" is no defense while any condition above is still open. A context handoff is not a reason to commit unverified work either — record the uncommitted files in the handoff; the next session resumes from the worktree.\n\n");
+}
+
 /// Append the shared "settled stage" completion doctrine: `loom stage
 /// complete` is the session's LAST act, run only once the stage is SETTLED,
 /// plus the "verify acceptance criteria" line shared by both callers.
@@ -170,6 +195,33 @@ pub(super) fn append_completion_rules(content: &mut String) {
     content.push_str("- **IMPORTANT: Before running `loom stage complete`, ensure you are at the worktree root directory**\n");
     content.push_str("- **If acceptance criteria fail**: Fix the issues and run `loom stage complete <stage-id>` again\n");
     content.push_str("- **NEVER use `loom stage retry` from an active session** — it creates a parallel session\n\n");
+}
+
+/// Append git staging rules with danger box (standard prefix only)
+pub(super) fn append_git_staging_full(content: &mut String) {
+    content.push_str("**Git Staging (CRITICAL - READ CAREFULLY):**\n\n");
+    content.push_str("```text\n");
+    content.push_str("  ⛔ DANGER: .work is a SYMLINK to shared state in worktrees\n");
+    content.push_str("     Committing it CORRUPTS the main repository!\n");
+    content.push_str("```\n\n");
+    append_git_staging_rules(content);
+    content.push_str("**Example:**\n");
+    content.push_str("```bash\n");
+    content.push_str("# CORRECT:\n");
+    content.push_str("git add src/main.rs src/lib.rs tests/\n\n");
+    content.push_str("# WRONG (will stage .work):\n");
+    content.push_str("git add -A  # DON'T DO THIS\n");
+    content.push_str("git add .   # DON'T DO THIS\n");
+    content.push_str("```\n\n");
+}
+
+/// Append the 3 core git staging rules (shared by standard and integration-verify)
+pub(super) fn append_git_staging_rules(content: &mut String) {
+    content
+        .push_str("- **ALWAYS** use `git add <specific-files>` - stage only files you modified\n");
+    content.push_str("- **NEVER** use `git add -A`, `git add --all`, or `git add .`\n");
+    content
+        .push_str("- **NEVER** stage `.work` - it is orchestration state shared across stages\n\n");
 }
 
 #[cfg(test)]

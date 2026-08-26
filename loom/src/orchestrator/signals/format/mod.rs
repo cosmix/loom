@@ -8,6 +8,7 @@ use super::types::{DependencyStatus, EmbeddedContext};
 
 mod brief;
 mod helpers;
+mod sandbox_section;
 mod sections;
 
 // Re-export public functions
