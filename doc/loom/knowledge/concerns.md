@@ -519,24 +519,45 @@ and the daemon reads state from disk — but the caller observes a false negativ
 operation. If this is ever observed in the wild, split the response so callers can distinguish
 "completed, replay marker failed" from "not completed".
 
-## Four Hooks Still Regex Raw Command Strings (2026-08-11)
+## One Hook Still Regexes Raw Command Strings (2026-08-11, narrowed 2026-08-26)
 
-`git-add-guard.sh` was converted to a token scan (see
-`mistakes/shell-command-matchers.md`) because regexing the raw command string cannot tell an
-argument's _value_ from an argument's _mention_. That bug class is not specific to it. These
-still match against raw strings and share it:
+Regexing the raw command string cannot tell an argument's _value_ from an argument's _mention_
+(see `mistakes/shell-command-matchers.md`). `git-add-guard.sh` was converted to a token scan in
+2026-08; `commit-filter.sh`, `prefer-modern-tools.sh` and `worktree-isolation.sh` followed on
+2026-08-26 after the deferral below cost months of blocked codex briefs.
 
-| Hook                        | Shared helper used            |
-| --------------------------- | ----------------------------- |
-| `commit-filter.sh`          | `strip_embedded_content`      |
-| `prefer-modern-tools.sh`    | `strip_embedded_content`      |
-| `worktree-isolation.sh`     | `strip_embedded_content`      |
-| `subagent-verify-guard.sh`  | `strip_embedded_content`      |
+| Hook                       | Status                                                  |
+| -------------------------- | ------------------------------------------------------- |
+| `git-add-guard.sh`         | token scan (2026-08-11)                                 |
+| `commit-filter.sh`         | token scan (2026-08-26)                                 |
+| `prefer-modern-tools.sh`   | token scan (2026-08-26)                                 |
+| `worktree-isolation.sh`    | token scan (2026-08-26)                                 |
+| `subagent-verify-guard.sh` | **still raw strings — carries the bug class**           |
 
-`strip_embedded_content` in `hooks/_common.sh` was deliberately left unchanged during that fix:
-all four depend on its current contract, and it has a Rust twin at
-`loom/src/hooks/validators/bash.rs:71` that would have to move in lockstep. Widening the fix was
-out of scope for a two-bug repair, not a judgement that these are safe.
+`subagent-verify-guard.sh` blocks project-wide build/test/lint runs by subagents, so a false
+positive strands a subagent rather than letting a bad command through; it is the least dangerous
+of the five to leave, not a judgement that it is safe. The shared `loom_tokens_*` helpers it would
+need already exist.
+
+`strip_embedded_content` is still unchanged and still runs FIRST in every converted hook — it
+strips heredoc bodies, whose words would otherwise tokenize as real command words. Its Rust twin
+at `loom/src/hooks/validators/bash.rs:71` is likewise untouched.
+
+**Converting the fifth hook is not a mechanical edit.** The 2026-08-26 conversion of three hooks
+opened seven bypasses that the raw regexes had blocked, all found only by adversarial probing
+against the OLD pattern — a fully green suite showed nothing. Read
+`mistakes/shell-command-matchers.md` § "Converting a Raw-String Matcher to Token Scanning
+Silently Narrows It" before starting, and budget for the differential testing it describes.
+
+## `hooks/_common.sh` Is 1167 Lines Against a 400-Line Limit (2026-08-26)
+
+The token-scanning conversion roughly doubled it (was ~560, itself already over Rule 17's limit).
+`commit-filter.sh` is 489. Splitting `_common.sh` is not a simple file move: hooks are embedded by
+filename via `include_str!`, so a new file needs a `LOOM_HOOKS` entry in
+`fs/permissions/constants.rs`, an entry in the config builder, **both** copies of the `all_hooks`
+array in `install.sh`, and an update to the exact-length assertion in
+`fs/permissions/tests/hooks_tests.rs`. Miss any one and the hook is silently dead rather than
+broken. Deliberately not bundled into a security fix that needed to stay reviewable.
 
 **Update 2026-08-17.** The stage-finalize bridge hook was converted to the same
 token scan and is therefore no longer in this list — but its unterminated-quote
