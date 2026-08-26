@@ -5,41 +5,49 @@ use crate::git::cleanup::{
     cleanup_after_merge, cleanup_branch, cleanup_worktree, needs_cleanup, prune_worktrees,
     CleanupConfig, CleanupResult,
 };
+use serial_test::serial;
 use std::fs;
+use std::path::Path;
 use std::process::Command;
 use tempfile::TempDir;
 
-fn setup_git_repo() -> TempDir {
+/// Run git with ambient configuration neutralized, so a developer's global
+/// settings (hooks, gpg signing, default branch, aliases) cannot change what
+/// these tests exercise. Mirrors
+/// `orchestrator::merge_lifecycle::tests::isolated_git`.
+fn isolated_git(root: &Path, args: &[&str]) -> std::process::Output {
+    Command::new("git")
+        .args(args)
+        .current_dir(root)
+        .env("GIT_CONFIG_GLOBAL", root.join(".loom-test-no-global"))
+        .env("GIT_CONFIG_SYSTEM", root.join(".loom-test-no-system"))
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .output()
+        .unwrap()
+}
+
+/// Assert a setup command succeeded. Dropping the exit status here would hide
+/// setup failures and turn them into a confusing assertion further down.
+pub(super) fn git_ok(root: &Path, args: &[&str]) {
+    let out = isolated_git(root, args);
+    assert!(
+        out.status.success(),
+        "git {args:?} failed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
+pub(super) fn setup_git_repo() -> TempDir {
     let temp_dir = TempDir::new().unwrap();
-    Command::new("git")
-        .args(["init"])
-        .current_dir(temp_dir.path())
-        .output()
-        .unwrap();
-    Command::new("git")
-        .args(["config", "user.email", "test@test.com"])
-        .current_dir(temp_dir.path())
-        .output()
-        .unwrap();
-    Command::new("git")
-        .args(["config", "user.name", "Test"])
-        .current_dir(temp_dir.path())
-        .output()
-        .unwrap();
+    git_ok(temp_dir.path(), &["init"]);
+    git_ok(temp_dir.path(), &["config", "user.email", "test@test.com"]);
+    git_ok(temp_dir.path(), &["config", "user.name", "Test"]);
 
     // Create initial commit
     let test_file = temp_dir.path().join("README.md");
     fs::write(&test_file, "# Test").unwrap();
-    Command::new("git")
-        .args(["add", "."])
-        .current_dir(temp_dir.path())
-        .output()
-        .unwrap();
-    Command::new("git")
-        .args(["commit", "-m", "Initial commit"])
-        .current_dir(temp_dir.path())
-        .output()
-        .unwrap();
+    git_ok(temp_dir.path(), &["add", "."]);
+    git_ok(temp_dir.path(), &["commit", "-m", "Initial commit"]);
 
     temp_dir
 }
@@ -206,8 +214,9 @@ fn test_remove_worktree_scaffold_preserves_unknown_claude_content() {
     fs::write(claude_dir.join("notes.md"), "keep").unwrap();
 
     let result = remove_worktree_scaffold(&worktree_path);
-    assert!(result.is_err());
+    assert!(result.is_ok());
     assert!(claude_dir.join("notes.md").exists());
+    assert!(claude_dir.exists(), "non-empty .claude dir should be kept");
 }
 
 #[test]
@@ -219,6 +228,132 @@ fn test_remove_worktree_scaffold_preserves_regular_claude_instructions() {
     fs::write(claude_dir.join("CLAUDE.md"), "user instructions").unwrap();
 
     let result = remove_worktree_scaffold(&worktree_path);
-    assert!(result.is_err());
+    assert!(result.is_ok());
     assert!(claude_dir.join("CLAUDE.md").exists());
+}
+
+#[test]
+fn test_remove_worktree_scaffold_leaves_tracked_root_claude_md() {
+    let temp_dir = TempDir::new().unwrap();
+    let worktree_path = temp_dir.path().join("worktree");
+    let claude_dir = worktree_path.join(".claude");
+    fs::create_dir_all(&claude_dir).unwrap();
+    fs::write(worktree_path.join("CLAUDE.md"), "project rules").unwrap();
+    fs::write(claude_dir.join("settings.local.json"), "{}").unwrap();
+
+    let result = remove_worktree_scaffold(&worktree_path);
+    assert!(result.is_ok());
+    assert_eq!(
+        fs::read_to_string(worktree_path.join("CLAUDE.md")).unwrap(),
+        "project rules"
+    );
+    assert!(
+        !claude_dir.exists(),
+        "generated .claude scaffold should be removed"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn test_remove_worktree_scaffold_removes_root_claude_md_symlink() {
+    let temp_dir = TempDir::new().unwrap();
+    let worktree_path = temp_dir.path().join("worktree");
+    fs::create_dir_all(&worktree_path).unwrap();
+    let target = temp_dir.path().join("real-claude.md");
+    fs::write(&target, "target content").unwrap();
+    std::os::unix::fs::symlink(&target, worktree_path.join("CLAUDE.md")).unwrap();
+
+    let result = remove_worktree_scaffold(&worktree_path);
+    assert!(result.is_ok());
+    assert!(
+        fs::symlink_metadata(worktree_path.join("CLAUDE.md")).is_err(),
+        "symlinked root CLAUDE.md should be removed"
+    );
+}
+
+#[test]
+fn test_remove_worktree_scaffold_skips_runtime_dirs_in_claude() {
+    let temp_dir = TempDir::new().unwrap();
+    let worktree_path = temp_dir.path().join("worktree");
+    let claude_dir = worktree_path.join(".claude");
+    let runtime_dir = claude_dir.join(".cc-writes");
+    fs::create_dir_all(&runtime_dir).unwrap();
+    fs::write(claude_dir.join("settings.local.json"), "{}").unwrap();
+    fs::write(runtime_dir.join("scratch.txt"), "runtime state").unwrap();
+
+    let result = remove_worktree_scaffold(&worktree_path);
+    assert!(result.is_ok());
+    assert!(!claude_dir.join("settings.local.json").exists());
+    assert!(
+        runtime_dir.exists(),
+        ".cc-writes runtime dir should be kept"
+    );
+    assert!(claude_dir.exists(), "non-empty .claude dir should be kept");
+}
+
+#[test]
+#[serial]
+fn test_cleanup_worktree_succeeds_when_repo_tracks_root_claude_md() {
+    let temp_dir = setup_git_repo();
+    fs::write(temp_dir.path().join("CLAUDE.md"), "tracked instructions").unwrap();
+    git_ok(temp_dir.path(), &["add", "CLAUDE.md"]);
+    git_ok(temp_dir.path(), &["commit", "-m", "add CLAUDE.md"]);
+
+    let worktrees_dir = temp_dir.path().join(".worktrees");
+    fs::create_dir_all(&worktrees_dir).unwrap();
+    git_ok(
+        temp_dir.path(),
+        &[
+            "worktree",
+            "add",
+            ".worktrees/stage-1",
+            "-b",
+            "loom/stage-1",
+        ],
+    );
+
+    let worktree_claude_md = worktrees_dir.join("stage-1").join("CLAUDE.md");
+    assert!(worktree_claude_md.exists());
+    assert!(!fs::symlink_metadata(&worktree_claude_md)
+        .unwrap()
+        .is_symlink());
+
+    let result = cleanup_worktree("stage-1", temp_dir.path(), false);
+    assert!(result.is_ok(), "cleanup failed: {:?}", result.err());
+    assert!(result.unwrap());
+    assert!(!worktrees_dir.join("stage-1").exists());
+}
+
+#[test]
+#[serial]
+fn test_cleanup_worktree_refusal_names_blocking_paths() {
+    let temp_dir = setup_git_repo();
+
+    let worktrees_dir = temp_dir.path().join(".worktrees");
+    fs::create_dir_all(&worktrees_dir).unwrap();
+    git_ok(
+        temp_dir.path(),
+        &[
+            "worktree",
+            "add",
+            ".worktrees/stage-1",
+            "-b",
+            "loom/stage-1",
+        ],
+    );
+
+    fs::write(
+        worktrees_dir.join("stage-1").join("scratch.txt"),
+        "untracked",
+    )
+    .unwrap();
+
+    let result = cleanup_worktree("stage-1", temp_dir.path(), false);
+    assert!(result.is_err());
+    let message = format!("{:#}", result.unwrap_err());
+    assert!(
+        message.contains("scratch.txt"),
+        "expected error to name the blocking path, got: {message}"
+    );
+    assert!(worktrees_dir.join("stage-1").exists());
 }

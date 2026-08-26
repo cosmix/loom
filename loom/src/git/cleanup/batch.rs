@@ -159,7 +159,11 @@ pub fn cleanup_multiple_stages(
 
 /// Check if a stage has resources that need cleanup
 ///
-/// Returns true if the stage has a worktree or branch that exists.
+/// Returns true if the stage has a worktree, branch, or base branch that
+/// exists. The base branch check matters: a prior cleanup that removed the
+/// worktree and branch but failed on `loom/_base/<id>` must still be
+/// reported as needing cleanup, or the still-true `cleanup_warning` on the
+/// stage is silently stranded.
 pub fn needs_cleanup(stage_id: &str, repo_root: &Path) -> bool {
     let worktree_path = repo_root.join(".worktrees").join(stage_id);
     let branch_name = branch_name_for_stage(stage_id);
@@ -179,5 +183,10 @@ pub fn needs_cleanup(stage_id: &str, repo_root: &Path) -> bool {
         .current_dir(repo_root)
         .output();
 
-    matches!(output, Ok(o) if o.status.success())
+    if matches!(output, Ok(o) if o.status.success()) {
+        return true;
+    }
+
+    // Check base branch exists; an unanswerable query counts as "absent".
+    super::base::base_branch_exists(stage_id, repo_root).unwrap_or(false)
 }

@@ -72,6 +72,17 @@ pub fn cleanup_destructive_stage(
     cleanup_after_merge(stage_id, repo_root, &config)
 }
 
+/// Whether any of the stage's git resources — worktree, `loom/<id>`,
+/// `loom/_base/<id>` — still exist.
+///
+/// Used to tell a stale `cleanup_warning` (the resources it warned about
+/// were already removed by hand) from a live one that still needs `loom
+/// worktree remove` to act.
+pub fn stage_resources_exist(stage_id: &str, repo_root: &Path) -> Result<bool> {
+    let resources = inspect_resources(stage_id, repo_root)?;
+    Ok(resources.worktree_exists || resources.branch_exists || resources.base_branch_present)
+}
+
 fn inspect_resources(stage_id: &str, repo_root: &Path) -> Result<StageResources> {
     crate::validation::validate_id(stage_id)
         .with_context(|| format!("Invalid stage ID '{stage_id}' for worktree removal"))?;

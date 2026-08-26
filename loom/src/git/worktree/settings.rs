@@ -562,6 +562,13 @@ pub fn add_settings_local_to_main_gitignore(repo_root: &Path) -> Result<()> {
 /// - .work symlink
 /// - .claude directory (or legacy symlink)
 /// - root CLAUDE.md symlink
+///
+/// Unconditional: it removes `.claude/` and root `CLAUDE.md` whenever they
+/// exist, whatever planted them, so it is only safe ahead of `git worktree
+/// remove --force` (its sole production caller is the spawn-failure path in
+/// `orchestrator/core/stage_executor.rs`). The non-forced removal path must
+/// use `git::cleanup::remove_worktree_scaffold` instead, which removes only
+/// what loom planted (and leaves anything git tracks alone).
 pub fn cleanup_worktree_settings(worktree_path: &Path) {
     // Remove the .work symlink first to avoid issues
     let work_link = worktree_path.join(".work");
