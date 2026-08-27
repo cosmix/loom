@@ -215,6 +215,13 @@ pub enum Commands {
         args: crate::commands::map::MapArgs,
     },
 
+    /// Read-only watchdog over Claude Code's per-subagent transcripts:
+    /// list liveness state, harvest final reports, or watch until settled
+    Subagents {
+        #[command(flatten)]
+        args: crate::commands::subagents::SubagentsArgs,
+    },
+
     /// Pressure-test a plan with alternating Claude and Codex review rounds
     Pressure {
         /// Path to the plan file (repo-relative or absolute; a bare filename

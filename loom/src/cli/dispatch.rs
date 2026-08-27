@@ -1,7 +1,7 @@
 use crate::commands::{
     attach, clean, context, diagnose, graph, handoff, hook, init, knowledge, map, memory, plan,
     pressure, repair, resume, review, run, self_update, sessions, skill_index, stage, status, stop,
-    verify, worktree_cmd,
+    subagents, verify, worktree_cmd,
 };
 use crate::completions::{complete_dynamic, generate_completions, CompletionContext, Shell};
 use anyhow::Result;
@@ -328,6 +328,7 @@ pub fn dispatch(command: Commands) -> Result<()> {
         } => clean::execute(all, worktrees, sessions, state),
         Commands::Repair { fix } => repair::execute(fix),
         Commands::Map { args } => map::execute(args),
+        Commands::Subagents { args } => subagents::execute(args),
         Commands::Pressure {
             plan,
             rounds,
