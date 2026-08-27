@@ -757,3 +757,21 @@ completion; no follow/loop exists. Candidate design if this matters: make direct
 to the viewer's lifetime, not the stage's (note `split-window` unzooms, and the build should reuse a
 healthy viewer instead of `kill-session`-ing it). Daemon log for any attach/reconcile question:
 `.work/orchestrator.log`, level fixed by `RUST_LOG` in the shell BEFORE `loom run`.
+
+## `git/worktree/settings.rs` Is Still 637 Lines After Its Tests Moved Out (2026-08-27)
+
+Splitting the inline test module into `tests_settings.rs` / `tests_settings_env.rs` took the file
+from 1263 to 637 lines and its ledger entry from 1119 to 637 — a large win, but the production
+half is still well over the 400-line guidance and remains a recorded violation in
+`maintainability-baseline.txt`.
+
+It is genuinely multi-purpose: worktree `.work`/`.claude`/`CLAUDE.md` scaffold planting, settings
+generation and permission merging, env scrubbing, and the git-exclude writer. Those are separable
+— the exclude writer in particular (`add_to_gitignore_exclude`,
+`add_worktree_exclude_patterns`, and the two `add_settings_local_to_*_gitignore` entry points)
+is self-contained and has its own tests.
+
+Not done as part of the sandbox bug fixes because a structural split is not a surgical change and
+would have collided with four agents working the same tree. Worth a dedicated stage; note that
+any file at or near its ledger cap must be refactored in the same change that grows it (see
+`mistakes/sandbox-and-settings.md`).

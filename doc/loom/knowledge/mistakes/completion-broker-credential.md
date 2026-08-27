@@ -91,3 +91,51 @@ routes say they did not complete the stage; both template copies say the stop ho
 whole line, so rewording it disables completion everywhere with nothing failing loudly. A test
 pins the exact text. Verify any change to it by deriving both sides independently and comparing
 bytes — not by eye.
+
+## The Truncation Risk Was Real: a 2KB Preview Ate the Marker (2026-08-27)
+
+**What happened:** the truncation hazard noted above stopped being hypothetical. A stage's
+`loom stage complete` ran green, printed the marker, and left the stage `Executing`. Confirmed
+from the session transcript: the tool result was **persisted**, and the marker was absent from
+what the bridge could read. An earlier attempt in the same stage produced 20.6KB — under the
+threshold — and completed normally. Purely a size threshold.
+
+**Why:** past an internal size limit Claude Code does not put the output in the tool result at
+all. It writes the output to a file and substitutes a wrapper:
+
+```text
+<persisted-output>
+Output too large (43.5KB). Full output saved to: /home/<user>/.claude/projects/<slug>/<session>/tool-results/<id>.txt
+
+Preview (first 2KB):
+<first 2KB of the real output>
+</persisted-output>
+```
+
+The marker sat at line 1362 of 1364, so `HAS_MARKER` — an exact whole-line match over the tool
+result — could never see it. The flood that inflated the output came from loom's own grep calls
+(`mistakes/schema-reuse-and-silent-skips.md`).
+
+**Fix:** when the inline check fails, the bridge resolves the `Full output saved to:` path and
+looks for the marker there. **The wrapper text is agent-influenceable** — `loom stage complete`
+echoes acceptance-criteria output and duplicate-detection prints matched source lines back out —
+so a stage could otherwise print a forged wrapper naming a file it wrote itself. The path is
+accepted only when it is absolute, under `$HOME/.claude/projects`, contains a `/tool-results/`
+segment, contains **no `..` path segment**, exists as a regular file, and is not a symlink.
+
+**What makes that sound, and the trap inside it.** The guarantee is that `~/.claude/projects/` is
+write-denied to the sandboxed stage agent, so only the harness can author a file there. The first
+version of the check tested containment with a glob over the raw string, which a traversal
+satisfies while resolving elsewhere:
+
+```text
+candidate:   $HOME/.claude/projects/../../../../tmp/claude-1000/tool-results/fake.txt
+resolves to: /tmp/claude-1000/tool-results/fake.txt        # agent-WRITABLE
+```
+
+`/tmp/claude*` and `$TMPDIR` are in the agent's sandbox write allowlist, so that was a working
+forgery of a completion marker. See `mistakes/untrusted-value-boundaries.md` § "A Glob Is Not a
+Containment Check".
+
+**Prevention:** fixing the marker's *carrier* does not fix the marker's *volume*. Keep the
+completion command's output small — a verbose verification stage will find this threshold again.

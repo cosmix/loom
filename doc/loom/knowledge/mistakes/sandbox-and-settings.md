@@ -338,3 +338,49 @@ reverting the path and watching only that test go red.
 5-line behavioural change. Budget for this: touching an at-cap file means refactoring it in
 the same change — `pressure/mod.rs` was split into `mod.rs` / `paths.rs` / `spawn.rs`
 (229/145/278 lines) and its ledger entry deleted.
+
+## A Sandboxed Caller Cannot Reach the Daemon Socket, and `loom status` Called It Missing (2026-08-27)
+
+**What happened:** a stage agent reported that the completion bridge had "no transport", because
+`loom status` said `daemon process alive, socket missing / try loom repair`. The socket was on
+disk and the daemon healthy. Reproduced directly:
+
+```text
+$ ls -la .work/orchestrator.sock
+srw------- dkaponis dkaponis 0 B  .work/orchestrator.sock        # present
+
+$ python3 -c "import socket; socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)"
+PermissionError: [Errno 1] Operation not permitted                # denied at socket() creation
+```
+
+**Why:** Claude Code's Bash sandbox denies AF_UNIX socket syscalls outright — the denial lands at
+`socket()`, before `connect()` is even attempted. `DaemonServer::check_status` inferred "socket
+missing" from any `UnixStream::connect` failure, so every stage agent that ran `loom status`
+against a healthy daemon got the alarming form. The hint then pointed at `loom repair`, whose
+advice for socket trouble is to kill and restart the daemon.
+
+**Prevention:**
+
+- **A failed connect is not evidence about the server.** It conflates three states: no socket, a
+  stale socket with no listener, and a caller that is not permitted to dial. Classify by
+  `io::ErrorKind` (`PermissionDenied` → unreachable-from-here) before naming a cause in a message
+  an operator or agent will act on.
+- **Do not corroborate a sandbox denial with a second syscall.** A sandbox that denies `connect`
+  may or may not permit `stat`, so a failed `exists()` proves nothing and must never downgrade the
+  classification.
+- **`is_running()` must stay true for the unreachable state.** The flock already proved a daemon
+  owns the `.work/`; reporting otherwise would let a second daemon start. See
+  `concerns/daemon-singleton.md` for the incident that makes this load-bearing.
+
+**Also worth knowing — ~20 project-root paths are read-denied in a stage sandbox.** Extracted from
+real transcripts, these produce `Permission denied` for any recursive read from the worktree root:
+
+```text
+./.claude/{hooks,skills,agents,commands,workflows,routines,output-styles,launch.json,scheduled_tasks.json,loop.md}
+./.gitconfig ./.gitmodules ./.mcp.json ./.ripgreprc ./.vscode
+./.bashrc ./.zshrc ./.profile ./.bash_profile ./.zprofile
+```
+
+Any tool loom shells out to that walks the tree will hit all of them, once per invocation. See
+`mistakes/schema-reuse-and-silent-skips.md` § "An Exit Code That Also Means 'Some Files Were
+Unreadable'" for what that cost.

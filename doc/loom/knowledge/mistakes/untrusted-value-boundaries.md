@@ -69,8 +69,47 @@ signal file that an agent reads as its instructions.
 prose is untrusted regardless of where it came from, because the blast radius is
 "the agent does something else".
 
+## A Glob Is Not a Containment Check (2026-08-27)
+
+**What happened:** a fix under review validated an agent-influenceable file path with five
+guards — absolute, under `$HOME/.claude/projects`, contains `/tool-results/`, is a regular file,
+is not a symlink — and a thorough comment block explaining that the projects root is write-denied
+to the sandboxed agent, so only the harness can author a file inside it. The reasoning was
+correct. The predicate did not implement it:
+
+```text
+candidate:   $HOME/.claude/projects/../../../../tmp/claude-1000/tool-results/fake.txt
+resolves to: /tmp/claude-1000/tool-results/fake.txt
+RESULT: passes all five guards; marker read back successfully
+```
+
+`[[ "$p" == "$ROOT"/* ]]` is a pattern match on the RAW STRING. A `..` segment satisfies it
+while the path resolves anywhere. `/tmp/claude*` and `$TMPDIR` are sandbox-writable by the stage
+agent, so it could author the file and forge a trusted completion marker.
+
+**Why it nearly shipped:** the comment argued the right invariant ("a file that genuinely resolves
+under the write-denied root cannot be agent-authored") and the code tested a different, weaker
+property (the string starts with that root). Careful reasoning attached to the wrong predicate
+reads as thoroughness on review — the guards are numerous, the explanation is detailed, and
+nothing looks omitted.
+
+**Prevention:**
+
+- **"Under directory D" is a claim about the RESOLVED path.** Either reject `..` segments outright
+  (a genuine harness path never has one) or resolve first — and if you resolve, re-check and
+  consume the RESOLVED value, or you have relocated a TOCTOU rather than closed it.
+- **Reject the segment, not the substring.** `== *..*` also rejects the legitimate `foo..txt`.
+  Match `../`, `/../`, `/..`, and a bare `..`; keep a positive test with a two-dot filename so the
+  check cannot silently harden into a substring ban.
+- **A `-L` test covers only the final component.** It is worth stating why intermediate symlinks
+  are out of scope (here: the parent directories are themselves write-denied).
+- **Test the attack, not the guard list.** The reproduction above is a one-line assertion; without
+  it, five passing guards read as five layers of defence.
+
 ## Related
 
+- `mistakes/completion-broker-credential.md` — the bridge this hardened, and why the
+  write-denied projects root is the load-bearing premise.
 - `mistakes/tests-that-cannot-fail.md` — the fix here needed tests asserting the refusing
   direction; an escaping test that only checks benign input passes forever.
 - `architecture/context-retrieval.md` — where `inline_safe` sits in the pipeline.

@@ -166,3 +166,33 @@ to fix problems already fixed. When dispatching into a tree others have touched,
 the state immediately before writing the brief, and tell the agent to STOP and report if
 what it finds contradicts the brief. The one agent that did exactly that is the only one
 that cost nothing.
+
+## An Idle Notice Is Not a Report, and Absence of an Edit Is Not Refusal (2026-08-27)
+
+**What happened:** in one interactive fan-out, two subagents were sent follow-up corrections via
+their mailbox. Both emitted `idle_notification … "available"` shortly after. Reading the files
+showed neither correction applied, so both were stopped and the remainders re-delegated to fresh
+agents. The fresh agents then reported that the work was **already there** — the originals had
+been mid-edit and finished in the window between the check and the stop. One re-delegation was
+genuinely needed (that agent had written only the test, not the fix); the other was pure waste.
+
+**Why:** `idle` means "not currently in a turn", not "processed your message". And a file read is
+a point sample: an agent that has read the brief and is composing an edit looks byte-identical to
+one that ignored it. Combining the two — idle notice plus no visible edit — feels like conclusive
+evidence of non-compliance and is not.
+
+**Prevention:**
+
+- **Only a completion report closes a delegation.** Stop an agent on its own report, or on the
+  liveness rules above (transcript not growing past a real budget) — never on "went idle and I
+  don't see the change yet".
+- **Verify against the tree, then wait, then verify again** before concluding an agent is not
+  acting. The second sample is what distinguishes mid-edit from ignored.
+- **What DID pay off: reading diffs instead of reports.** Two agents reported work as complete and
+  clean that was neither — one had a path-traversal bypass in a security guard
+  (`mistakes/untrusted-value-boundaries.md`), another left a status arm that rendered a stalled
+  loop as healthy. Both reports were detailed and confident. Review the diff of anything
+  load-bearing; a subagent's summary is a claim, not evidence.
+- **A ledger or gate the agents cannot see will bite at commit time.** Five files broke the
+  repo-wide line-count gate because every agent added regression tests and comments in good faith.
+  Check the gate BEFORE fanning out, or expect a second round purely to satisfy it.

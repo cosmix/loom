@@ -116,6 +116,52 @@ outcome as `Stage.cleanup_warning`, cleared by the next cleanup that succeeds, a
 `test_cleanup_worktree_succeeds_when_repo_tracks_root_claude_md` in
 `git/cleanup/tests.rs`.
 
+## Cleanup Refused Over Loom's Own Memory Spool (2026-08-27)
+
+**What happened:** every worktree whose stage recorded a memory note survived its merge.
+`git worktree remove` refused with "contains modified or untracked files", and the
+`Blocking paths` line named `?? .loom/memory-spool.jsonl` — loom's own file.
+`fs/memory/spool.rs` writes `<worktree>/.loom/memory-spool.jsonl` as the sandbox fallback
+for `loom memory note` (`.work` is a symlink outside the write boundary). Teardown drained
+the spool but left the file, and nothing ignored or removed it.
+
+**Why it was invisible here:** this repository's own `.gitignore` lists `.loom/cache/` and
+`.loom/memory-spool.jsonl` by hand. No other project has those lines, so loom broke worktree
+cleanup everywhere EXCEPT in its own checkout — the one place it gets exercised daily. The
+failure was found in a different repository.
+
+**Second defect, found while fixing the first — the per-worktree exclude never worked.**
+`add_settings_local_to_worktree_gitignore` wrote to `<repo>/.git/worktrees/<stage-id>/info/exclude`,
+with a doc comment asserting that acts as a per-worktree `.gitignore`. **Git resolves `info/`
+to the COMMON git dir**, so that file is never read. Demonstrated directly:
+
+```text
+rule in .git/worktrees/wt/info/exclude  →  git status: ?? ignored.txt   (NOT ignored)
+rule in .git/info/exclude               →  git status: (clean)          (ignored)
+```
+
+The function had therefore never done anything since it was written. `.claude/settings.local.json`
+escaped notice only because most projects gitignore `.claude/` themselves.
+
+**Prevention:**
+
+- **A cleanup path must know about every file its own product plants.** Creation and removal
+  drifted apart again, exactly as in the scaffold incident above. When adding a runtime file
+  under a worktree, update `is_worktree_scaffold_path`, `remove_worktree_scaffold`, and the
+  exclude list in the same change.
+- **Never let the tool's own repo be the only test bed.** A hand-written `.gitignore` line in
+  this checkout masked a universal breakage. When a fix depends on ignore rules, ask what a
+  fresh project without them would do.
+- **Assert git's BEHAVIOUR, not the file content.** A test that only asserted the exclude file
+  contained the pattern passed for as long as the bug existed. The regression test now runs
+  `git check-ignore` / `git status --porcelain` against a real worktree.
+
+**Fix:** `remove_worktree_scaffold` deletes the drained spool when it is a regular file loom
+planted (never a symlink, never a tracked path), then removes `.loom/` only if that leaves it
+empty. The exclude writer targets the common `.git/info/exclude` and lists exactly
+`.loom/memory-spool.jsonl` and `.loom/cache/` — **not** a blanket `.loom/`, which would hide a
+committable `.loom/config.toml`.
+
 ## Related
 
 - `mistakes/phantom-merges.md` — the parent failure class, including the original
