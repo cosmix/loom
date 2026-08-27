@@ -32,6 +32,8 @@ pub(crate) mod worktree;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]
+mod tests_spool;
+#[cfg(test)]
 mod tests_tracked_scaffold;
 
 // Re-export public API

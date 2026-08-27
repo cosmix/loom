@@ -120,6 +120,41 @@ fn blocking_paths_are_capped() {
 }
 
 #[test]
+#[serial]
+fn tracked_loom_memory_spool_survives_scaffold_removal() {
+    let temp_dir = setup_git_repo();
+    fs::create_dir_all(temp_dir.path().join(".loom")).unwrap();
+    fs::write(temp_dir.path().join(".loom/memory-spool.jsonl"), "tracked").unwrap();
+    git_ok(temp_dir.path(), &["add", ".loom/memory-spool.jsonl"]);
+    git_ok(temp_dir.path(), &["commit", "-m", "track spool"]);
+
+    fs::create_dir_all(temp_dir.path().join(".worktrees")).unwrap();
+    git_ok(
+        temp_dir.path(),
+        &[
+            "worktree",
+            "add",
+            ".worktrees/stage-1",
+            "-b",
+            "loom/stage-1",
+        ],
+    );
+
+    let worktree = temp_dir.path().join(".worktrees/stage-1");
+    let result = remove_worktree_scaffold(&worktree);
+    assert!(
+        result.is_ok(),
+        "scaffold removal failed: {:?}",
+        result.err()
+    );
+    assert_eq!(
+        fs::read_to_string(worktree.join(".loom/memory-spool.jsonl")).unwrap(),
+        "tracked",
+        "a spool path git tracks is the repo's own file, not loom's to remove"
+    );
+}
+
+#[test]
 fn needs_cleanup_sees_a_lone_base_branch() {
     let temp_dir = setup_git_repo();
     git_ok(temp_dir.path(), &["branch", "loom/_base/stage-1"]);

@@ -12,6 +12,7 @@ use std::fs::File;
 use std::io::{Read, Write};
 use std::path::Path;
 
+use crate::fs::memory::SPOOL_RELPATH;
 use crate::hooks::{setup_hooks_for_worktree, HooksConfig};
 use crate::plan::schema::PermissionMode;
 
@@ -23,6 +24,14 @@ use crate::plan::schema::PermissionMode;
 /// not see them as untracked. Callers reading `git status` to judge whether a
 /// worktree holds *agent work* must discount them either way.
 ///
+/// Also discounted: `.loom/memory-spool.jsonl` and `.loom/cache/`, loom's own
+/// runtime paths (see `crate::fs::memory::spool` and `crate::context::store`).
+/// Unlike the paths above these are written lazily during a stage's
+/// execution, not planted by `create_worktree` — but they are just as much
+/// loom's own output as the rest, so they discount the same way. Note this is
+/// narrower than `.loom/` as a whole: a project may legitimately track
+/// `.loom/config.toml`, which must NOT be discounted here.
+///
 /// Keep this in sync with the scaffold `create_worktree` writes.
 pub fn is_worktree_scaffold_path(path: &str) -> bool {
     let path = path.trim_end_matches('/');
@@ -31,6 +40,9 @@ pub fn is_worktree_scaffold_path(path: &str) -> bool {
         || path == ".claude"
         || path.starts_with(".claude/")
         || path.starts_with(".work/")
+        || path == SPOOL_RELPATH
+        || path == ".loom/cache"
+        || path.starts_with(".loom/cache/")
 }
 
 /// Creates or restores the .work symlink in a worktree.
@@ -536,24 +548,49 @@ fn add_to_gitignore_exclude(git_dir: &Path, pattern: &str) -> Result<()> {
     Ok(())
 }
 
-/// Exclude `.claude/settings.local.json` from the worktree's per-worktree git exclude.
-///
-/// Git stores per-worktree state at `<repo>/.git/worktrees/<stage-id>/`. The
-/// `info/exclude` inside that directory acts as an uncommitted `.gitignore` scoped
-/// to this worktree. Adding `settings.local.json` here prevents agents from
-/// accidentally staging session-specific hook/sandbox settings into the main
-/// repository.
-pub fn add_settings_local_to_worktree_gitignore(stage_id: &str, repo_root: &Path) -> Result<()> {
-    let gitdir = repo_root.join(".git/worktrees").join(stage_id);
-    add_to_gitignore_exclude(&gitdir, ".claude/settings.local.json")
+/// Patterns loom excludes from git's view of every worktree: the previous
+/// session's `.claude/settings.local.json`, plus loom's own runtime output
+/// (the memory spool and the derived context cache — see
+/// `is_worktree_scaffold_path`). Deliberately NOT a blanket `.loom/`: a
+/// project may legitimately track `.loom/config.toml`, and excluding the
+/// whole directory would silently hide it from `git status`. These match
+/// the patterns this repository's own `.gitignore` hand-lists for the same
+/// reason.
+const WORKTREE_EXCLUDE_PATTERNS: &[&str] =
+    &[".claude/settings.local.json", SPOOL_RELPATH, ".loom/cache/"];
+
+/// Write [`WORKTREE_EXCLUDE_PATTERNS`] into `git_dir`'s `info/exclude`.
+fn add_worktree_exclude_patterns(git_dir: &Path) -> Result<()> {
+    for pattern in WORKTREE_EXCLUDE_PATTERNS {
+        add_to_gitignore_exclude(git_dir, pattern)?;
+    }
+    Ok(())
 }
 
-/// Exclude `.claude/settings.local.json` from the main repo's git exclude.
+/// Exclude loom's own runtime paths from git's view of a worktree.
+///
+/// Writes to the repository's COMMON `.git/info/exclude`, not a per-worktree
+/// file. Git worktrees each get their own metadata directory at
+/// `<repo>/.git/worktrees/<stage-id>/`, but `info/exclude` is not among the
+/// files git treats as per-worktree there — `git status` always resolves
+/// `info/exclude` to the common git dir (`<repo>/.git/info/exclude`), shared
+/// by every worktree and the main checkout alike. A previous version of this
+/// function wrote to `.git/worktrees/<stage-id>/info/exclude`, believing it
+/// acted as an exclude file scoped to that worktree; git never reads that
+/// path, so the write was silently inert. Writing to the common dir instead
+/// means this function and [`add_settings_local_to_main_gitignore`] now
+/// target the same file — kept as two entry points because their callers
+/// (worktree creation vs. main-repo knowledge stages) are otherwise
+/// unrelated, and future patterns may diverge between them.
+pub fn add_settings_local_to_worktree_gitignore(repo_root: &Path) -> Result<()> {
+    add_worktree_exclude_patterns(&repo_root.join(".git"))
+}
+
+/// Exclude loom's own runtime paths from the main repo's git exclude.
 ///
 /// Used for knowledge stages that run in the main repo without a dedicated worktree.
 pub fn add_settings_local_to_main_gitignore(repo_root: &Path) -> Result<()> {
-    let gitdir = repo_root.join(".git");
-    add_to_gitignore_exclude(&gitdir, ".claude/settings.local.json")
+    add_worktree_exclude_patterns(&repo_root.join(".git"))
 }
 
 /// Remove worktree-specific settings and symlinks
@@ -593,527 +630,8 @@ pub fn cleanup_worktree_settings(worktree_path: &Path) {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use tempfile::TempDir;
-
-    #[test]
-    fn test_is_worktree_scaffold_path() {
-        // Everything create_worktree plants, in the shapes git reports it.
-        for scaffold in [
-            ".work",
-            ".work/",
-            ".claude",
-            ".claude/",
-            ".claude/settings.local.json",
-            ".claude/CLAUDE.md",
-            "CLAUDE.md",
-        ] {
-            assert!(
-                is_worktree_scaffold_path(scaffold),
-                "{scaffold} should be recognized as scaffolding"
-            );
-        }
-
-        // Agent work must never be discounted as scaffolding.
-        for work in [
-            "src/feature.rs",
-            "docs/CLAUDE.md",
-            ".workflows/ci.yml",
-            "claude.md",
-        ] {
-            assert!(
-                !is_worktree_scaffold_path(work),
-                "{work} should NOT be treated as scaffolding"
-            );
-        }
-    }
-
-    #[test]
-    fn test_extract_permissions() {
-        let settings = json!({
-            "permissions": {
-                "allow": ["Read(foo)", "Write(bar)"],
-                "deny": ["Bash(rm:*)"]
-            }
-        });
-
-        let (allow, deny) = extract_permissions(&settings);
-        assert_eq!(allow, vec!["Read(foo)", "Write(bar)"]);
-        assert_eq!(deny, vec!["Bash(rm:*)"]);
-    }
-
-    #[test]
-    fn test_extract_permissions_empty() {
-        let settings = json!({});
-        let (allow, deny) = extract_permissions(&settings);
-        assert!(allow.is_empty());
-        assert!(deny.is_empty());
-    }
-
-    #[test]
-    fn test_merge_permission_vecs() {
-        let a = vec!["Read(foo)".to_string(), "Write(bar)".to_string()];
-        let b = vec!["Write(bar)".to_string(), "Bash(cargo:*)".to_string()];
-
-        let merged = merge_permission_vecs(a, b);
-        assert_eq!(merged.len(), 3);
-        assert!(merged.contains(&"Read(foo)".to_string()));
-        assert!(merged.contains(&"Write(bar)".to_string()));
-        assert!(merged.contains(&"Bash(cargo:*)".to_string()));
-    }
-
-    #[test]
-    fn test_merge_permission_vecs_empty() {
-        let a: Vec<String> = vec![];
-        let b = vec!["Read(foo)".to_string()];
-
-        let merged = merge_permission_vecs(a, b);
-        assert_eq!(merged, vec!["Read(foo)"]);
-    }
-
-    #[test]
-    fn test_refresh_worktree_settings_local_merges_permissions() {
-        let temp_dir = TempDir::new().unwrap();
-        let repo_root = temp_dir.path().join("repo");
-        let worktree = temp_dir.path().join("worktree");
-
-        // Setup main repo with permission A
-        let main_claude = repo_root.join(".claude");
-        std::fs::create_dir_all(&main_claude).unwrap();
-        let main_settings = json!({
-            "permissions": {
-                "allow": ["Read(main_perm)"]
-            }
-        });
-        std::fs::write(
-            main_claude.join("settings.local.json"),
-            serde_json::to_string_pretty(&main_settings).unwrap(),
-        )
-        .unwrap();
-
-        // Setup worktree with permission B
-        let wt_claude = worktree.join(".claude");
-        std::fs::create_dir_all(&wt_claude).unwrap();
-        let wt_settings = json!({
-            "permissions": {
-                "allow": ["Write(worktree_perm)"]
-            }
-        });
-        std::fs::write(
-            wt_claude.join("settings.local.json"),
-            serde_json::to_string_pretty(&wt_settings).unwrap(),
-        )
-        .unwrap();
-
-        // Refresh should merge, not overwrite
-        let result = refresh_worktree_settings_local(&worktree, &repo_root).unwrap();
-        assert!(result);
-
-        // Verify merged result
-        let merged_content =
-            std::fs::read_to_string(wt_claude.join("settings.local.json")).unwrap();
-        let merged: Value = serde_json::from_str(&merged_content).unwrap();
-
-        let (allow, _deny) = extract_permissions(&merged);
-        assert!(allow.contains(&"Read(main_perm)".to_string()));
-        assert!(allow.contains(&"Write(worktree_perm)".to_string()));
-    }
-
-    #[test]
-    fn test_refresh_worktree_settings_local_no_existing_worktree_settings() {
-        let temp_dir = TempDir::new().unwrap();
-        let repo_root = temp_dir.path().join("repo");
-        let worktree = temp_dir.path().join("worktree");
-
-        // Setup main repo with permission
-        let main_claude = repo_root.join(".claude");
-        std::fs::create_dir_all(&main_claude).unwrap();
-        let main_settings = json!({
-            "permissions": {
-                "allow": ["Read(main_perm)"],
-                "deny": ["Bash(rm:*)"]
-            }
-        });
-        std::fs::write(
-            main_claude.join("settings.local.json"),
-            serde_json::to_string_pretty(&main_settings).unwrap(),
-        )
-        .unwrap();
-
-        // Worktree has no existing settings
-        std::fs::create_dir_all(&worktree).unwrap();
-
-        // Refresh should create new settings
-        let result = refresh_worktree_settings_local(&worktree, &repo_root).unwrap();
-        assert!(result);
-
-        // Verify result contains main permissions
-        let wt_settings_path = worktree.join(".claude/settings.local.json");
-        assert!(wt_settings_path.exists());
-
-        let content = std::fs::read_to_string(&wt_settings_path).unwrap();
-        let settings: Value = serde_json::from_str(&content).unwrap();
-
-        let (allow, deny) = extract_permissions(&settings);
-        assert_eq!(allow, vec!["Read(main_perm)"]);
-        assert_eq!(deny, vec!["Bash(rm:*)"]);
-    }
-
-    #[test]
-    fn test_refresh_worktree_settings_local_no_main_settings() {
-        let temp_dir = TempDir::new().unwrap();
-        let repo_root = temp_dir.path().join("repo");
-        let worktree = temp_dir.path().join("worktree");
-
-        // Setup repo without settings.local.json
-        let main_claude = repo_root.join(".claude");
-        std::fs::create_dir_all(&main_claude).unwrap();
-
-        std::fs::create_dir_all(&worktree).unwrap();
-
-        // Should return false when no main settings exist
-        let result = refresh_worktree_settings_local(&worktree, &repo_root).unwrap();
-        assert!(!result);
-    }
-
-    #[test]
-    fn test_create_worktree_settings_adds_resolved_work_permissions() {
-        let temp_dir = TempDir::new().unwrap();
-        let repo_root = temp_dir.path().join("repo");
-        let worktree = temp_dir.path().join("worktree");
-
-        // Create the main .work directory (simulates the real .work state dir)
-        let main_work = repo_root.join(".work");
-        std::fs::create_dir_all(&main_work).unwrap();
-
-        // Create worktree directory and .work symlink pointing to main .work
-        std::fs::create_dir_all(&worktree).unwrap();
-        let worktree_work_link = worktree.join(".work");
-        #[cfg(unix)]
-        std::os::unix::fs::symlink(&main_work, &worktree_work_link).unwrap();
-
-        // Create main repo settings.json with an existing permission
-        let main_claude = repo_root.join(".claude");
-        std::fs::create_dir_all(&main_claude).unwrap();
-        let main_settings_json = json!({
-            "permissions": {
-                "allow": ["Read(.work/**)"]
-            }
-        });
-        let main_settings_path = main_claude.join("settings.json");
-        std::fs::write(
-            &main_settings_path,
-            serde_json::to_string_pretty(&main_settings_json).unwrap(),
-        )
-        .unwrap();
-
-        // Run create_worktree_settings
-        let worktree_settings_path = worktree.join("settings.json");
-        create_worktree_settings(&main_settings_path, &worktree_settings_path, &worktree).unwrap();
-
-        // Read and parse the generated settings
-        let content = std::fs::read_to_string(&worktree_settings_path).unwrap();
-        let settings: Value = serde_json::from_str(&content).unwrap();
-
-        // Extract the allow list
-        let (allow, _deny) = extract_permissions(&settings);
-
-        // The original relative permission should still be there
-        assert!(
-            allow.contains(&"Read(.work/**)".to_string()),
-            "Original relative permission should be preserved"
-        );
-
-        // Resolve the symlink to get the expected absolute path
-        let resolved_work = worktree_work_link.canonicalize().unwrap();
-        let resolved_str = resolved_work.to_string_lossy();
-
-        // All resolved absolute-path permissions should be present
-        // Note: // prefix is required for absolute paths in Claude Code
-        assert!(
-            allow.contains(&format!("Read(/{}/**)", resolved_str)),
-            "Should contain Read(//resolved/**)"
-        );
-        assert!(
-            allow.contains(&format!("Write(/{}/**)", resolved_str)),
-            "Should contain Write(//resolved/**)"
-        );
-        assert!(
-            allow.contains(&format!("Read(/{}/signals/**)", resolved_str)),
-            "Should contain Read(//resolved/signals/**)"
-        );
-        assert!(
-            allow.contains(&format!("Read(/{}/config.toml)", resolved_str)),
-            "Should contain Read(//resolved/config.toml)"
-        );
-        assert!(
-            allow.contains(&format!("Read(/{}/handoffs/**)", resolved_str)),
-            "Should contain Read(//resolved/handoffs/**)"
-        );
-
-        // Trust is set; defaultMode is intentionally NOT written here —
-        // it lives in settings.local.json via sandbox::apply_default_mode.
-        assert_eq!(settings["hasTrustDialogAccepted"], json!(true));
-        assert!(
-            settings["permissions"].get("defaultMode").is_none(),
-            "Base settings.json must not write defaultMode (finding #5)"
-        );
-    }
-
-    #[test]
-    fn test_create_worktree_settings_no_work_symlink() {
-        let temp_dir = TempDir::new().unwrap();
-        let worktree = temp_dir.path().join("worktree");
-        std::fs::create_dir_all(&worktree).unwrap();
-
-        // No .work symlink exists -- function should still succeed
-        let main_settings_path = temp_dir.path().join("nonexistent_settings.json");
-        let worktree_settings_path = worktree.join("settings.json");
-        create_worktree_settings(&main_settings_path, &worktree_settings_path, &worktree).unwrap();
-
-        let content = std::fs::read_to_string(&worktree_settings_path).unwrap();
-        let settings: Value = serde_json::from_str(&content).unwrap();
-
-        assert_eq!(settings["hasTrustDialogAccepted"], json!(true));
-        assert!(
-            settings["permissions"].get("defaultMode").is_none(),
-            "Base settings.json must not write defaultMode"
-        );
-
-        // Allow array should not exist (no permissions were added)
-        let allow = settings
-            .get("permissions")
-            .and_then(|p| p.get("allow"))
-            .and_then(|a| a.as_array());
-        assert!(
-            allow.is_none(),
-            "No allow array should exist when there is no .work symlink"
-        );
-    }
-
-    #[test]
-    fn test_add_settings_local_to_worktree_gitignore_creates_exclude() {
-        let temp_dir = TempDir::new().unwrap();
-        let repo_root = temp_dir.path().join("repo");
-        let stage_id = "test-stage";
-
-        let gitdir = repo_root.join(".git/worktrees").join(stage_id);
-        std::fs::create_dir_all(&gitdir).unwrap();
-
-        add_settings_local_to_worktree_gitignore(stage_id, &repo_root).unwrap();
-
-        let exclude_path = gitdir.join("info/exclude");
-        assert!(exclude_path.exists(), "exclude file should be created");
-
-        let content = std::fs::read_to_string(&exclude_path).unwrap();
-        assert!(
-            content.contains(".claude/settings.local.json"),
-            "exclude should contain the pattern"
-        );
-    }
-
-    #[test]
-    fn test_add_settings_local_to_worktree_gitignore_idempotent() {
-        let temp_dir = TempDir::new().unwrap();
-        let repo_root = temp_dir.path().join("repo");
-        let stage_id = "test-stage";
-
-        let gitdir = repo_root.join(".git/worktrees").join(stage_id);
-        std::fs::create_dir_all(&gitdir).unwrap();
-
-        add_settings_local_to_worktree_gitignore(stage_id, &repo_root).unwrap();
-        add_settings_local_to_worktree_gitignore(stage_id, &repo_root).unwrap();
-
-        let exclude_path = gitdir.join("info/exclude");
-        let content = std::fs::read_to_string(&exclude_path).unwrap();
-
-        let count = content
-            .lines()
-            .filter(|l| l.trim() == ".claude/settings.local.json")
-            .count();
-        assert_eq!(
-            count, 1,
-            "pattern should appear exactly once after two calls"
-        );
-    }
-
-    #[test]
-    fn test_add_settings_local_to_main_gitignore_creates_exclude() {
-        let temp_dir = TempDir::new().unwrap();
-        let repo_root = temp_dir.path().join("repo");
-
-        let gitdir = repo_root.join(".git");
-        std::fs::create_dir_all(&gitdir).unwrap();
-
-        add_settings_local_to_main_gitignore(&repo_root).unwrap();
-
-        let exclude_path = gitdir.join("info/exclude");
-        assert!(exclude_path.exists(), "exclude file should be created");
-
-        let content = std::fs::read_to_string(&exclude_path).unwrap();
-        assert!(
-            content.contains(".claude/settings.local.json"),
-            "exclude should contain the pattern"
-        );
-    }
-
-    #[test]
-    fn test_add_settings_local_appends_to_existing_exclude() {
-        let temp_dir = TempDir::new().unwrap();
-        let repo_root = temp_dir.path().join("repo");
-
-        let gitdir = repo_root.join(".git");
-        let info_dir = gitdir.join("info");
-        std::fs::create_dir_all(&info_dir).unwrap();
-        std::fs::write(info_dir.join("exclude"), "# existing patterns\n*.log\n").unwrap();
-
-        add_settings_local_to_main_gitignore(&repo_root).unwrap();
-
-        let content = std::fs::read_to_string(info_dir.join("exclude")).unwrap();
-        assert!(content.contains("*.log"), "existing patterns preserved");
-        assert!(
-            content.contains(".claude/settings.local.json"),
-            "new pattern appended"
-        );
-    }
-
-    #[test]
-    fn test_create_worktree_settings_preserves_env_for_native() {
-        let temp_dir = TempDir::new().unwrap();
-        let worktree = temp_dir.path().join("worktree");
-        std::fs::create_dir_all(&worktree).unwrap();
-
-        let main_claude = temp_dir.path().join("repo").join(".claude");
-        std::fs::create_dir_all(&main_claude).unwrap();
-        let main_settings_json = json!({
-            "env": {
-                "AWS_ACCESS_KEY_ID": "keep-on-native",
-                "GH_TOKEN": "keep-on-native",
-                "LOOM_MAIN_AGENT_PID": "stale",
-                "LOOM_STAGE_ID": "stale-stage",
-                "LOOM_SESSION_ID": "stale-session"
-            }
-        });
-        let main_settings_path = main_claude.join("settings.json");
-        std::fs::write(
-            &main_settings_path,
-            serde_json::to_string_pretty(&main_settings_json).unwrap(),
-        )
-        .unwrap();
-
-        let worktree_settings_path = worktree.join("settings.json");
-        create_worktree_settings(&main_settings_path, &worktree_settings_path, &worktree).unwrap();
-
-        let content = std::fs::read_to_string(&worktree_settings_path).unwrap();
-        let settings: Value = serde_json::from_str(&content).unwrap();
-
-        let env = settings["env"].as_object().unwrap();
-        assert!(env.contains_key("AWS_ACCESS_KEY_ID"));
-        assert!(env.contains_key("GH_TOKEN"));
-        assert!(
-            !env.contains_key("LOOM_MAIN_AGENT_PID"),
-            "LOOM_MAIN_AGENT_PID is always stripped, even on native"
-        );
-        assert!(
-            !env.contains_key("LOOM_STAGE_ID") && !env.contains_key("LOOM_SESSION_ID"),
-            "per-session identity env vars must be stripped from inherited settings"
-        );
-    }
-
-    #[test]
-    fn test_refresh_preserves_worktree_env_hooks_and_mode() {
-        // Regression test: refresh_worktree_settings_local used the MAIN
-        // repo's settings as the merge base, clobbering the worktree's
-        // session-specific env, hooks, and resolved defaultMode with whatever
-        // the last main-repo session left behind (stale LOOM_STAGE_ID etc.).
-        let temp_dir = TempDir::new().unwrap();
-        let repo_root = temp_dir.path().join("repo");
-        let worktree = temp_dir.path().join("worktree");
-
-        let main_claude = repo_root.join(".claude");
-        std::fs::create_dir_all(&main_claude).unwrap();
-        let main_settings = json!({
-            "permissions": { "allow": ["Read(main_perm)"], "defaultMode": "default" },
-            "env": {
-                "LOOM_STAGE_ID": "stale-knowledge-stage",
-                "LOOM_SESSION_ID": "stale-session"
-            },
-            "hooks": { "Stop": [{ "matcher": "*", "hooks": [] }] }
-        });
-        std::fs::write(
-            main_claude.join("settings.local.json"),
-            serde_json::to_string_pretty(&main_settings).unwrap(),
-        )
-        .unwrap();
-
-        let wt_claude = worktree.join(".claude");
-        std::fs::create_dir_all(&wt_claude).unwrap();
-        let wt_settings = json!({
-            "permissions": { "allow": ["Write(worktree_perm)"], "defaultMode": "auto" },
-            "env": { "LOOM_WORK_DIR": "/repo/.work" },
-            "hooks": { "SessionStart": [{ "matcher": "*", "hooks": [] }] }
-        });
-        std::fs::write(
-            wt_claude.join("settings.local.json"),
-            serde_json::to_string_pretty(&wt_settings).unwrap(),
-        )
-        .unwrap();
-
-        assert!(refresh_worktree_settings_local(&worktree, &repo_root).unwrap());
-
-        let merged: Value = serde_json::from_str(
-            &std::fs::read_to_string(wt_claude.join("settings.local.json")).unwrap(),
-        )
-        .unwrap();
-
-        // Permissions are unioned
-        let (allow, _) = extract_permissions(&merged);
-        assert!(allow.contains(&"Read(main_perm)".to_string()));
-        assert!(allow.contains(&"Write(worktree_perm)".to_string()));
-
-        // Worktree-specific settings survive; main's stale env does not leak in
-        assert_eq!(merged["permissions"]["defaultMode"], json!("auto"));
-        assert_eq!(merged["env"]["LOOM_WORK_DIR"], json!("/repo/.work"));
-        let env = merged["env"].as_object().unwrap();
-        assert!(!env.contains_key("LOOM_STAGE_ID"));
-        assert!(!env.contains_key("LOOM_SESSION_ID"));
-        assert!(merged["hooks"]["SessionStart"].is_array());
-        assert!(merged["hooks"].get("Stop").is_none());
-    }
-
-    #[test]
-    fn test_refresh_without_worktree_settings_scrubs_identity_env() {
-        // When the worktree has no settings yet, the main copy is used as
-        // base — minus any per-session identity env vars.
-        let temp_dir = TempDir::new().unwrap();
-        let repo_root = temp_dir.path().join("repo");
-        let worktree = temp_dir.path().join("worktree");
-
-        let main_claude = repo_root.join(".claude");
-        std::fs::create_dir_all(&main_claude).unwrap();
-        let main_settings = json!({
-            "permissions": { "allow": ["Read(main_perm)"] },
-            "env": { "LOOM_STAGE_ID": "stale", "LOOM_SESSION_ID": "stale", "FOO": "keep" }
-        });
-        std::fs::write(
-            main_claude.join("settings.local.json"),
-            serde_json::to_string_pretty(&main_settings).unwrap(),
-        )
-        .unwrap();
-
-        std::fs::create_dir_all(&worktree).unwrap();
-
-        assert!(refresh_worktree_settings_local(&worktree, &repo_root).unwrap());
-
-        let merged: Value = serde_json::from_str(
-            &std::fs::read_to_string(worktree.join(".claude/settings.local.json")).unwrap(),
-        )
-        .unwrap();
-
-        let env = merged["env"].as_object().unwrap();
-        assert!(!env.contains_key("LOOM_STAGE_ID"));
-        assert!(!env.contains_key("LOOM_SESSION_ID"));
-        assert_eq!(env["FOO"], json!("keep"));
-    }
-}
+#[path = "tests_settings.rs"]
+mod tests;
+#[cfg(test)]
+#[path = "tests_settings_env.rs"]
+mod tests_settings_env;

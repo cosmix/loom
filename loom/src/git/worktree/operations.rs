@@ -25,6 +25,14 @@ use super::settings::{
 /// If `base_branch` is Some(branch), the new branch is created from that branch:
 ///   git worktree add -b loom/{stage_id} .worktrees/{stage_id} {branch}
 /// If `base_branch` is None, the new branch is created from HEAD (current behavior).
+///
+/// Also excludes `.claude/settings.local.json` and loom's own runtime paths
+/// from git's view of this worktree, by writing to the repo's common
+/// `.git/info/exclude` (see `add_settings_local_to_worktree_gitignore`'s doc
+/// comment for why it is NOT the per-worktree gitdir). This prevents agents
+/// from accidentally staging session-specific hook/sandbox settings, and
+/// keeps the memory spool / context cache out of `git status` for every
+/// worktree.
 pub fn create_worktree(
     stage_id: &str,
     repo_root: &Path,
@@ -130,11 +138,7 @@ pub fn create_worktree(
         eprintln!("Warning: Failed to register worktree trust: {e}");
     }
 
-    // Exclude .claude/settings.local.json from the worktree's per-worktree gitignore.
-    // This prevents agents from accidentally committing session-specific hook/sandbox
-    // settings into the main repository. Uses the per-worktree gitdir at
-    // .git/worktrees/<stage-id>/.
-    if let Err(e) = super::settings::add_settings_local_to_worktree_gitignore(stage_id, repo_root) {
+    if let Err(e) = super::settings::add_settings_local_to_worktree_gitignore(repo_root) {
         eprintln!("Warning: Failed to add settings.local.json to worktree gitignore: {e}");
     }
 
