@@ -32,6 +32,17 @@ pub fn execute() -> Result<()> {
 
 /// Variant that exposes the `--force` flag. Without `--force`, a hung daemon
 /// causes us to refuse PID kill rather than risk killing the wrong process.
+///
+/// The running check is deliberately `== NotRunning`, not a `matches!`
+/// allowlist: every other variant (`Running`, `ProcessOnly`, and
+/// `Unreachable`) means a daemon is alive per the singleton flock, so all of
+/// them must fall through to the stop attempt below. `Unreachable` in
+/// particular means THIS process can't dial the socket (e.g. a sandboxed
+/// caller) while the daemon itself is fine — `DaemonServer::stop` handles
+/// that below via its own `connect()` attempt, which fails into
+/// `DaemonUnavailable` and (with `--force`) the verified-SIGTERM fallback,
+/// exactly like a genuinely unresponsive `ProcessOnly` daemon. No separate
+/// branch is needed here.
 pub fn execute_with_force(force: bool) -> Result<()> {
     let work_dir = WorkDir::new(".")?;
 

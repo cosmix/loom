@@ -22,6 +22,34 @@ pub enum DaemonStatus {
     Running,
     /// Daemon process exists but socket unreachable or unresponsive (hung state)
     ProcessOnly,
+    /// The singleton flock proves a daemon owns this `.work/`, but this
+    /// process could not `connect()` to its socket because AF_UNIX socket
+    /// syscalls are denied to it — e.g. Claude Code's Bash tool sandbox,
+    /// which permits `stat`/`ls` on the socket file but rejects `socket()`
+    /// outright. Distinct from `ProcessOnly`: there the connect failure
+    /// (connection refused, or a genuinely missing socket file) is real
+    /// evidence the daemon's listener is gone. Here the failure is a
+    /// property of the CALLER's sandbox, not the daemon, so it must never
+    /// drive "restart the daemon" advice (`commands/repair.rs`) or a
+    /// "socket missing" message (`commands/status.rs`).
+    Unreachable,
+}
+
+/// Whether `status` should be treated as "a daemon owns this `.work/`" for
+/// the purposes of refusing a second `loom run` to start.
+///
+/// `Unreachable` counts as running: by construction (see `check_status`) it
+/// is only ever produced from `LockState::Held`, i.e. the flock already
+/// proved a live daemon owns the state before the connect attempt even ran —
+/// the failed `connect()` is a property of the CALLER, not evidence the
+/// daemon died. Treating it as "not running" would let a second daemon start
+/// against the same `.work/`, which is exactly the singleton failure
+/// recorded in `doc/loom/knowledge/concerns/daemon-singleton.md`.
+pub(super) fn daemon_running_from_status(status: DaemonStatus) -> bool {
+    matches!(
+        status,
+        DaemonStatus::Running | DaemonStatus::ProcessOnly | DaemonStatus::Unreachable
+    )
 }
 
 /// Daemon server that listens on a Unix domain socket.
@@ -87,10 +115,33 @@ impl DaemonServer {
     pub fn check_status(work_dir: &Path) -> DaemonStatus {
         let socket_path = work_dir.join("orchestrator.sock");
         match inspect_lock(work_dir) {
-            LockState::Held(_) => match UnixStream::connect(socket_path) {
+            LockState::Held(_) => match UnixStream::connect(&socket_path) {
                 Ok(stream) => {
                     let _ = stream.set_read_timeout(Some(Duration::from_millis(100)));
                     DaemonStatus::Running
+                }
+                Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => {
+                    // Sandboxed callers (e.g. this process running inside
+                    // Claude Code's Bash tool) have AF_UNIX socket syscalls
+                    // denied outright, so `UnixStream::connect` fails either
+                    // at socket() creation or at connect() itself — POSIX
+                    // doesn't guarantee which, but both surface as
+                    // `PermissionDenied` here and mean the identical thing:
+                    // the daemon is fine, this process just cannot reach it.
+                    // The flock already proved a live daemon owns this state
+                    // (we are in the `LockState::Held` arm), so trust that
+                    // over the failed connect.
+                    //
+                    // Deliberately NOT corroborating with
+                    // `socket_path.exists()`: a sandbox that denies
+                    // `connect()` may or may not also deny `stat`/`lstat` on
+                    // the same path, so a failed `exists()` here would prove
+                    // nothing (the socket can still be there) and a
+                    // successful one adds no confidence that `connect` would
+                    // ever succeed from this process. Classify by error kind
+                    // alone and never let this downgrade back to
+                    // `ProcessOnly`.
+                    DaemonStatus::Unreachable
                 }
                 Err(_) => DaemonStatus::ProcessOnly,
             },
@@ -113,10 +164,7 @@ impl DaemonServer {
     /// # Returns
     /// `true` if a daemon is running (either responsive or hung), `false` otherwise
     pub fn is_running(work_dir: &Path) -> bool {
-        matches!(
-            Self::check_status(work_dir),
-            DaemonStatus::Running | DaemonStatus::ProcessOnly
-        )
+        daemon_running_from_status(Self::check_status(work_dir))
     }
 
     /// Read the PID from the PID file.
