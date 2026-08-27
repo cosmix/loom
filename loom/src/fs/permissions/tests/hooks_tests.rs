@@ -1,7 +1,9 @@
 //! Tests for hooks configuration.
 
+use crate::fs::permissions::constants::LOOM_HOOKS;
 use crate::fs::permissions::hooks::loom_hooks_config;
 use crate::fs::permissions::settings::ensure_loom_permissions_to;
+use crate::hooks::HookEvent;
 use serde_json::{json, Value};
 use tempfile::TempDir;
 
@@ -95,6 +97,38 @@ fn assert_notebook_edit_hooks(pre_tool: &[Value]) {
         "NotebookEdit",
         "no-preexisting-failures.sh"
     ));
+}
+
+/// Pins the session-specific `HookEvent` surface (`loom/src/hooks/config.rs`).
+/// A variant added to the enum without bumping this count is a silent
+/// regression - this must be bumped deliberately, in the same change that
+/// adds/removes an event, alongside `Display`, `script_name()` and `all()`.
+#[test]
+fn test_hook_event_surface_has_seven_events() {
+    assert_eq!(
+        HookEvent::all().len(),
+        7,
+        "HookEvent::all() surface changed - verify Display, script_name(), \
+         and to_settings_hooks() were all updated to match"
+    );
+}
+
+/// Regression test for the "updated 3 of the 4 sites" failure mode: every
+/// `HookEvent`'s `script_name()` must be embedded in `LOOM_HOOKS`
+/// (`fs/permissions/constants.rs`), or `install_loom_hooks_to` never writes
+/// the script to `~/.claude/hooks/loom/` even though a settings.json entry
+/// (from `HooksConfig::to_settings_hooks`) points at it.
+#[test]
+fn test_hook_event_scripts_are_all_embedded() {
+    let embedded: Vec<&str> = LOOM_HOOKS.iter().map(|(name, _)| *name).collect();
+    for event in HookEvent::all() {
+        assert!(
+            embedded.contains(&event.script_name()),
+            "HookEvent::{event} names script '{}' which is missing from LOOM_HOOKS \
+             in fs/permissions/constants.rs - it would never be installed",
+            event.script_name()
+        );
+    }
 }
 
 fn assert_lifecycle_hooks(hooks: &Value) {

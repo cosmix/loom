@@ -25,6 +25,8 @@ pub enum HookEvent {
     Stop,
     /// Called before Bash tool use to suggest modern CLI tools (fd/rg)
     PreferModernTools,
+    /// Called when a Task-tool subagent finishes (completion signal + heartbeat refresh)
+    SubagentStop,
 }
 
 impl fmt::Display for HookEvent {
@@ -36,6 +38,7 @@ impl fmt::Display for HookEvent {
             HookEvent::SessionEnd => write!(f, "SessionEnd"),
             HookEvent::Stop => write!(f, "Stop"),
             HookEvent::PreferModernTools => write!(f, "PreferModernTools"),
+            HookEvent::SubagentStop => write!(f, "SubagentStop"),
         }
     }
 }
@@ -50,6 +53,7 @@ impl HookEvent {
             HookEvent::SessionEnd => "session-end.sh",
             HookEvent::Stop => "learning-validator.sh",
             HookEvent::PreferModernTools => "prefer-modern-tools.sh",
+            HookEvent::SubagentStop => "subagent-stop.sh",
         }
     }
 
@@ -62,6 +66,7 @@ impl HookEvent {
             HookEvent::SessionEnd,
             HookEvent::Stop,
             HookEvent::PreferModernTools,
+            HookEvent::SubagentStop,
         ]
     }
 }
@@ -151,6 +156,7 @@ impl HooksConfig {
     /// - PreCompact (handoff trigger)
     /// - SessionEnd (cleanup)
     /// - Stop (learning-validator)
+    /// - SubagentStop (subagent completion signal + heartbeat refresh)
     ///
     /// Returns a map of event type to hook rules.
     pub fn to_settings_hooks(&self) -> std::collections::HashMap<String, Vec<HookRule>> {
@@ -216,6 +222,21 @@ impl HooksConfig {
                 hooks: vec![HookCommand {
                     hook_type: "command".to_string(),
                     command: self.build_command(HookEvent::Stop),
+                }],
+            });
+
+        // SubagentStop hook - runs when a Task-tool subagent finishes, in the
+        // PARENT session's own hook context. Writes a completion record and
+        // refreshes the parent's heartbeat (the parent runs no tools of its
+        // own while blocked on the subagent, so PostToolUse cannot do this).
+        hooks_map
+            .entry("SubagentStop".to_string())
+            .or_default()
+            .push(HookRule {
+                matcher: "*".to_string(),
+                hooks: vec![HookCommand {
+                    hook_type: "command".to_string(),
+                    command: self.build_command(HookEvent::SubagentStop),
                 }],
             });
 
