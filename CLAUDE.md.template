@@ -139,9 +139,13 @@ File exclusivity: each subagent gets exclusive write access to its files — two
 
 Hierarchical EXECUTION PLANs: spawn the COORDINATORS (not workers) in one message; each spawns its own workers (Rule 6c).
 
-**Check on subagents at a bounded cadence — a check firing is NOT a deadline on the subagent's work.** Never block open-endedly on a single wait: any watcher, poll loop, or background wait you arm MUST have its own deadline of 300s or less, MUST terminate on BOTH branches — result AND no-result-yet — reporting which fired, and MUST carry a liveness signal (task still running? files changing?) so "slow" and "dead" are distinguishable. `subagent_timeout_secs` (300s built-in default) is the stage's advisory heartbeat budget — a monitoring cadence, not a time limit on subagents.
+**Checking on subagents: use `loom subagents`, never a hand-rolled poll loop.** `loom subagents watch --timeout <secs>` blocks until every subagent settles or the timeout fires, exits 0 vs. 2, and states which branch fired — that alone satisfies the bounded-check rule (deadline ≤300s, terminates on both branches, reports which fired). `loom subagents list`/`harvest` give a one-shot look; per-subagent state is `done`, `tool-wait`, `generating`, or `unknown`. Three cases, not one:
 
-When a check fires and the subagent is still alive — the harness reports its task running, or anything progressed since the last check — the ONLY correct move is to re-arm the check and keep waiting. That is the normal case, not a failure: slow is not dead, and a subagent gets as long as its task takes. Take over or re-assign ONLY on positive evidence of death — the task failed or was killed, or several consecutive checks show zero liveness AND no result. Elapsed time alone is NEVER that evidence. Restarting live work forfeits every token it has spent and sets two agents writing the same files; both cost more than any wait. And never answer a slow subagent by completing the stage: a stage with any subagent still out is not settled (Rule 4).
+1. **`done` but silent** — the subagent's turn ended and its report is on disk. Harvest it and proceed immediately; a missing notification is not a missing result.
+2. **`tool-wait` / `generating`** — genuinely alive. Re-arm `watch` and keep waiting; slow is not dead. `subagent_timeout_secs` only widens the cadence you re-arm against, never a deadline on the subagent's own work.
+3. **Idle past the budget with no transcript growth** — the only case with positive evidence of death. `TaskStop` it, confirm it stopped, then RE-DELEGATE the remainder to a fresh subagent. Never absorb the work into yourself — the orchestrator decomposes, delegates, verifies, and commits; it does not implement (hard stop 6). Re-read the tree before writing the new brief: a stale brief is worse than no brief.
+
+Elapsed time alone is still never evidence of death. Never complete the stage while any subagent is still out (Rule 4).
 
 ### 6b. AGENT TEAMS (WHEN AVAILABLE)
 

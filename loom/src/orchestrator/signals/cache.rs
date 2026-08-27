@@ -78,6 +78,24 @@ fn append_path_boundaries(content: &mut String) {
     );
 }
 
+/// Append the subagent-waiting doctrine (BLOCK-C, pinned verbatim against
+/// `CLAUDE.md.template` Rule 6 by `tests_doctrine_waiting.rs`).
+///
+/// Shared by the three stage types that spawn subagents — standard,
+/// integration-verify, knowledge — so a stage carries the "how do I check on a
+/// subagent" rule even when it never sets `subagent_timeout_secs`
+/// (`format_subagent_timeout_section` layers the stage-specific number on top
+/// when that field IS set, instead of repeating the whole doctrine).
+/// knowledge-distill never calls this — it spawns no subagents by design (see
+/// its own stable prefix's "Work single-agent" section).
+fn append_subagent_waiting_doctrine(content: &mut String) {
+    content.push_str("**Checking on subagents: use `loom subagents`, never a hand-rolled poll loop.** `loom subagents watch --timeout <secs>` blocks until every subagent settles or the timeout fires, exits 0 vs. 2, and states which branch fired — that alone satisfies the bounded-check rule (deadline ≤300s, terminates on both branches, reports which fired). `loom subagents list`/`harvest` give a one-shot look; per-subagent state is `done`, `tool-wait`, `generating`, or `unknown`. Three cases, not one:\n\n");
+    content.push_str("1. **`done` but silent** — the subagent's turn ended and its report is on disk. Harvest it and proceed immediately; a missing notification is not a missing result.\n");
+    content.push_str("2. **`tool-wait` / `generating`** — genuinely alive. Re-arm `watch` and keep waiting; slow is not dead. `subagent_timeout_secs` only widens the cadence you re-arm against, never a deadline on the subagent's own work.\n");
+    content.push_str("3. **Idle past the budget with no transcript growth** — the only case with positive evidence of death. `TaskStop` it, confirm it stopped, then RE-DELEGATE the remainder to a fresh subagent. Never absorb the work into yourself — the orchestrator decomposes, delegates, verifies, and commits; it does not implement (hard stop 6). Re-read the tree before writing the new brief: a stale brief is worse than no brief.\n\n");
+    content.push_str("Elapsed time alone is still never evidence of death. Never complete the stage while any subagent is still out (Rule 4).\n\n");
+}
+
 /// Append subagent restrictions (shared by standard and integration-verify, last line differs)
 fn append_subagent_restrictions(content: &mut String, agents_role: &str) {
     content.push_str("**Subagent Restrictions (CRITICAL - PREVENTS LOST WORK):**\n\n");
@@ -263,6 +281,7 @@ pub fn generate_stable_prefix() -> String {
     content.push_str(
         "- ~6 or fewer tasks → plain flat subagents; do NOT add a hierarchy for small work\n\n",
     );
+    append_subagent_waiting_doctrine(&mut content);
     append_subagent_restrictions(
         &mut content,
         "- Subagents write code (coordinators delegate) and report results; main agent handles git\n\n",
@@ -452,6 +471,8 @@ pub fn generate_integration_verify_stable_prefix() -> String {
         "- Skills: /loom-security-audit (REQUIRED for security review), /loom-testing, /loom-auth, /loom-ci-cd, /loom-logging-observability\n\n",
     );
     content.push_str("- **FILE EXCLUSIVITY**: Each subagent must own exclusive write files. Overlap = lost work. List file assignments in each Task prompt.\n");
+
+    append_subagent_waiting_doctrine(&mut content);
 
     append_subagent_restrictions(
         &mut content,
@@ -711,6 +732,7 @@ pub fn generate_knowledge_stable_prefix() -> String {
     content.push_str(
         "- Skills: /loom-auth, /loom-testing, /loom-ci-cd, /loom-logging-observability\n\n",
     );
+    append_subagent_waiting_doctrine(&mut content);
     content.push_str("**Completion:**\n");
     append_commit_timing_rules(&mut content, DOC_STAGE_GATE, DOC_STAGE_REVIEW);
     append_settled_completion_rules(&mut content);

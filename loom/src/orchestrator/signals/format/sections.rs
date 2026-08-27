@@ -362,7 +362,9 @@ pub(super) fn format_semi_stable_section(
     // Per-subagent response budget (semi-stable - gated on an explicit plan value).
     // The orchestrator measures the stage against this budget from the outside, so
     // the session has to be told the same number or it is held to a deadline it
-    // cannot see.
+    // cannot see. The general "how do I check on a subagent" doctrine (BLOCK-C) is
+    // unconditional and already in this stage's stable prefix; this block only
+    // layers the stage-specific number on top.
     if let Some(timeout_secs) = embedded_context.subagent_timeout_secs {
         content.push_str(&super::helpers::format_subagent_timeout_section(
             timeout_secs,

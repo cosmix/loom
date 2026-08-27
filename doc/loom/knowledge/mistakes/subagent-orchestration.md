@@ -36,6 +36,13 @@ seconds earlier.
 `fd --changed-within 5min`. Restarting live work forfeits every token it has spent and
 sets two agents writing the same files.
 
+**Superseded as the PRIMARY signal (2026-08-27), not deleted.** `loom subagents
+list`/`watch` read each subagent's own transcript and report `done`, `tool-wait`,
+`generating`, or `unknown` — a distinction mtime cannot make, since a file sitting still
+is consistent with both "finished" and "deep in one long tool call". Prefer `loom
+subagents` first; mtime stays true as a fallback and as the reason NOT to trust file
+size.
+
 ## File Exclusivity Is a Property of ALL Live Agents, Not of One Wave
 
 A second subagent was spawned whose file set overlapped a still-running one: the
@@ -111,28 +118,44 @@ in ~160-line chunks (measured 9m45s unscoped versus 54s scoped).
 - `mistakes/verification-harness.md` — when every check fails at once, suspect the harness.
 - `patterns/subagent-hierarchy.md` — choosing flat fan-out, a coordinator hierarchy, or a team.
 
-## Before Its First Write, an Agent Has NO Liveness Signal At All (2026-08-17)
+## Before Its First Write, an Agent Had NO Liveness Signal At All (2026-08-17; CLOSED 2026-08-27)
 
 The mtime rule above assumes the agent has already written something. Between spawn and
-first write there is **no negative evidence available** — not an empty `git status`, not
-an absent file, not `ListAgents`. An interactive session re-dispatched a second agent
-onto a live one's file set on exactly that reasoning ("no changes on disk, and
-`ListAgents` reports nothing reachable, so it must be dead"). It was mid-investigation
-and had simply not typed yet. The two agents then wrote competing test layouts, a third
-was sent in on a stale snapshot, and at the worst moment one was deleting another's files
-while the suite sat at 5 red. Roughly 20 minutes and three agents of work were burned;
-the production fixes had been correct the whole time.
+first write there used to be **no negative evidence available** — not an empty `git
+status`, not an absent file, not `ListAgents`. An interactive session re-dispatched a
+second agent onto a live one's file set on exactly that reasoning ("no changes on disk,
+and `ListAgents` reports nothing reachable, so it must be dead"). It was
+mid-investigation and had simply not typed yet. The two agents then wrote competing test
+layouts, a third was sent in on a stale snapshot, and at the worst moment one was
+deleting another's files while the suite sat at 5 red. Roughly 20 minutes and three
+agents of work were burned; the production fixes had been correct the whole time.
 
 **`ListAgents` returning "No reachable agents" is NOT evidence of death.** It went on
 returning that while three spawned agents were actively editing files, and it said it
 about agents that had already delivered final reports minutes earlier. Treat it as
 "cannot tell", never as "gone".
 
-**Prevention:** the only positive evidence of death is the harness reporting the task
-failed or killed. Absent that, WAIT — a subagent gets as long as its task takes, and a
-silent one is the normal case, not a failure (see "A Missing Report Is Not a Missing
-Result"). If a takeover ever does look necessary, `TaskStop` the original FIRST, confirm
-it stopped, and only then dispatch a replacement — never leave two writers pointed at one
+**The blind spot is CLOSED: Claude Code writes every subagent its own JSONL transcript
+from its FIRST TURN, before it writes any file.** It lives at
+`~/.claude/projects/<project-slug>/<session-uuid>/subagents/agent-<agentId>.jsonl`
+(`<project-slug>` is the absolute cwd with every `/` and `.` replaced by `-`), one JSON
+entry per line carrying `agentId`, `timestamp`, `type` (`assistant`/`user`), and
+`message.content`. `loom subagents list` reads this, so a spawned agent has a liveness
+signal immediately — the incident above could not recur today.
+
+**Prevention: run `loom subagents list` (or `watch --timeout <secs>`), not "wait because
+you have no signal".** Per-subagent state is `done`, `tool-wait`, `generating`, or
+`unknown`: `done` but silent means harvest from disk and proceed — a missing notification
+is not a missing result (see "A Missing Report Is Not a Missing Result"); `tool-wait` /
+`generating` means genuinely alive, re-arm and keep waiting; only idle time past the
+budget with NO transcript growth is positive evidence of death. Two measured numbers set
+that budget, not estimates: a single tool call was clocked at 1,425s (23.8 minutes) in
+one real transcript, which is why `tool-wait` must NEVER carry its own timeout no matter
+how long it runs; and true intra-turn flush gaps (pauses between transcript writes within
+one still-live turn) topped out at 137.7s across 8,808 sampled gaps, which is why a
+`done` classification is debounced by 180s rather than trusted the instant output stops.
+If a takeover ever does look necessary, `TaskStop` the original FIRST, confirm it
+stopped, and only then dispatch a replacement — never leave two writers pointed at one
 file set. Recovery from a collision is the same discipline: hard-stop every agent, take
 one snapshot of the frozen tree, decide the target layout yourself, then send exactly one
 agent to converge it.

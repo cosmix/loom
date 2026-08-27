@@ -11,40 +11,21 @@ use super::super::types::DependencyStatus;
 /// semi-stable path and the recovery path emit it, and `sections.rs` is already
 /// well over the file-size ceiling.
 ///
-/// The block states the budget and what to DO when it elapses. The orchestrator
-/// side is advisory — it prints a warning and nothing more — so the only thing
-/// that can actually act on a silent subagent is the agent holding the stage.
+/// This carries ONLY the stage's specific number. The doctrine for what to DO
+/// with it — the three-case rule keyed on `loom subagents watch`/`list`/`harvest`
+/// (BLOCK-C, `cache::append_subagent_waiting_doctrine`) — is unconditional and
+/// already present in this stage's stable prefix, so repeating the whole
+/// doctrine here for every budgeted stage would just duplicate it in the same
+/// signal.
 pub(crate) fn format_subagent_timeout_section(timeout_secs: u64) -> String {
-    let mut content = String::new();
-
-    content.push_str("## Subagent Response Budget\n\n");
-    content.push_str(&format!(
-        "This stage's heartbeat budget is {timeout_secs}s: the orchestrator warns when the session goes\n"
-    ));
-    content.push_str(
-        "that long with no tool activity. The warning is ADVISORY - it never kills or retries anything.\n",
-    );
-    content.push_str(
-        "Treat the budget as a check-in cadence for your bounded liveness checks, NOT as a deadline on\n",
-    );
-    content.push_str(
-        "any subagent's work. When a check fires and the subagent is still alive (task running, files\n",
-    );
-    content.push_str(
-        "changing, output growing), re-arm the check and keep waiting - slow is not dead. Take over or\n",
-    );
-    content.push_str(
-        "re-assign ONLY on positive evidence of death: the task failed or was killed, or several\n",
-    );
-    content.push_str(
-        "consecutive checks show zero liveness AND no result. Elapsed time alone is NEVER that evidence.\n",
-    );
-    content.push_str(
-        "Restarting live work forfeits the tokens it already spent and risks two agents writing the same\n",
-    );
-    content.push_str("files. Never complete the stage while any subagent is still out.\n\n");
-
-    content
+    format!(
+        "## Subagent Response Budget\n\n\
+         This stage's advisory heartbeat budget is {timeout_secs}s — pass it as `loom subagents \
+         watch --timeout {timeout_secs}`. Re-arm while a subagent reports `tool-wait` or \
+         `generating`; only idle time past this budget with no transcript growth counts as \
+         evidence of death. ADVISORY ONLY: the orchestrator's own hung warning never kills or \
+         retries anything — recovery stays with you.\n\n"
+    )
 }
 
 /// Append the "BUDGET EXCEEDED - WRAP UP NOW" box shown in the recitation

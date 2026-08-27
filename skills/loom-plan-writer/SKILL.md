@@ -398,22 +398,31 @@ If the user picks Codex:
 
 Optional, seconds, default **300**. It is how long a stage may go without a heartbeat before the
 orchestrator flags it, and the same number is written into the stage's signal so the session knows
-the cadence it is being measured against.
+the cadence it is being measured against — the value to pass as `loom subagents watch --timeout
+<secs>`.
 
 Set it from how long the work legitimately goes quiet, not from how long you hope it takes. A wide
 mechanical sweep, a large test run, or a FOREGROUND codex run is one long tool call that emits
 nothing while it works — codex stages in particular should raise it, since a foreground run posts no
 intermediate output at all. A stage of small edits should leave it alone.
 
-Three things it does NOT do. It never kills or retries anything — the check is advisory, it prints a
-warning and recovery stays with the orchestrating agent. It is NOT a deadline on any subagent's work:
-a live subagent may run past it indefinitely — the orchestrator re-arms its bounded checks and keeps
-waiting, and takes over or re-assigns only on positive evidence of death (task failed or killed, or
-several consecutive checks with zero liveness and no result), never on elapsed time alone. And it
-does not license an open-ended wait: whatever the budget, **a single watcher or poll check must still
-have a deadline of 300s or less** and must terminate on both branches (CLAUDE.md Rule 6). Re-arm to
-wait longer. Raising this field widens the budget the orchestrator measures against; it does not
-widen how long an agent may sit blocked on one check.
+Checking on subagents is CLAUDE.md.template Rule 6 ("Checking on subagents: use `loom subagents`,
+never a hand-rolled poll loop") — that block is canonical; this is the short version. `loom subagents
+watch --timeout <secs>` blocks until every subagent settles or the timeout fires, exits 0 vs. 2, and
+states which branch fired — that alone satisfies the bounded-check rule. Three cases, keyed on
+per-subagent state (`done`, `tool-wait`, `generating`, `unknown`):
+
+1. **`done` but silent** — the subagent's turn ended and its report is on disk. Harvest it and
+   proceed immediately; a missing notification is not a missing result.
+2. **`tool-wait` / `generating`** — genuinely alive. Re-arm `watch` and keep waiting; slow is not
+   dead. `subagent_timeout_secs` only widens the cadence you re-arm against, never a deadline on the
+   subagent's own work.
+3. **Idle past the budget with no transcript growth** — the only case with positive evidence of
+   death. `TaskStop` it, confirm it stopped, then RE-DELEGATE the remainder to a fresh subagent.
+   Never absorb the work into yourself — the orchestrator decomposes, delegates, verifies, and
+   commits; it does not implement (hard stop 6).
+
+Elapsed time alone is still never evidence of death.
 
 Consequences for how you write a plan:
 
@@ -617,7 +626,7 @@ loom:
       model: "opus"                 # REQUIRED — every stage is an opus orchestrator now; subagent model choice happens at spawn time (Section 4)
       reasoning_effort: "xhigh"    # REQUIRED on every stage
       implementers: ["codex", "claude"]  # OPTIONAL - licensed lanes, first = preferred for routine work (default ["claude"])
-      subagent_timeout_secs: 900   # OPTIONAL - advisory heartbeat budget (default 300); a cadence, not a per-subagent deadline
+      subagent_timeout_secs: 900   # OPTIONAL - advisory heartbeat budget (default 300) for `loom subagents watch --timeout`; a cadence, not a per-subagent deadline
       description: |               # full task spec; NO triple backticks inside
         What this stage accomplishes.
         Use parallel subagents and skills to maximize performance.

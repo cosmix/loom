@@ -349,7 +349,7 @@ loom:
 | `reasoning_effort`                 | No                     | `low`, `medium`, `high`, `xhigh`, `max` (default `xhigh` on opus, `high` otherwise)                                                        |
 | `implementers`                     | No                     | Licensed agent lanes as a list, first = preferred for routine work: `["codex", "claude"]`. Default `["claude"]`. Listing a lane makes it available, not mandatory — a stage mixes lanes per subagent |
 | `ultracode`                        | No                     | License this stage for large multi-agent fan-out; per-stage opt-in (default `false`)                                                       |
-| `subagent_timeout_secs`            | No                     | Seconds of tool silence before the monitor warns `appears hung` (default 300); advisory only                                               |
+| `subagent_timeout_secs`            | No                     | Seconds of tool silence before the monitor warns `appears hung` (default 300); advisory only — also the value to pass as `loom subagents watch --timeout <secs>` |
 | `context_budget`                   | No                     | Context threshold (%) for handoff (default 65%, hard maximum 75%)                                                                          |
 | `sandbox`                          | No                     | Per-stage sandbox override                                                                                                                 |
 | `sandbox.permission_mode`          | No                     | `auto` (default), `accept-edits`, `plan`, `default` — resolves stage > plan > stage-type default; `bypass-permissions` is rejected at init |
