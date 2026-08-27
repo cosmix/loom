@@ -186,3 +186,154 @@ done
 post_case "$PINNED" "$MARKER" false
 [[ "$(wc -l <"$LOG" | tr -d ' ')" == 1 ]] || { echo "valid route did not run once" >&2; exit 1; }
 rg -q '^stage complete build-api --session session-123$' "$LOG"
+
+# --- Persisted-output recovery -----------------------------------------
+#
+# Claude Code truncates large tool output into a "<persisted-output>" wrapper
+# naming the file it saved the FULL output to, previewing only the first 2KB.
+# A marker line past that preview must still be recoverable from the named
+# file - but ONLY when that file resolves to a path the sandboxed stage agent
+# itself could never have written (under $HOME/.claude/projects/**/tool-results,
+# a regular file, not a symlink). Each case below gets its own throwaway
+# $HOME so the sandbox's real ~/.claude/projects is never touched.
+
+persisted_home() {
+	local dir="$TMP/homes/$1"
+	mkdir -p "$dir"
+	printf '%s' "$dir"
+}
+
+persisted_case_capture() {
+	local command=$1 output=$2 home=$3 payload
+	payload=$(jq -n \
+		--arg command "$command" --arg output "$output" \
+		'{tool_name:"Bash",tool_input:{command:$command},tool_result:{output:$output,is_error:false}}')
+	printf '%s' "$payload" |
+		env PATH="$TMP/bin:/usr/bin:/bin" HOME="$home" \
+		BROKER_LOG="$LOG" LOOM_CONTROL_TESTING=1 LOOM_CONTROL_TEST_BIN="$TMP/bin/loom" \
+		LOOM_STAGE_ID="build-api" LOOM_SESSION_ID="session-123" \
+		LOOM_WORKTREE_PATH="$WORKTREE" bash "$HOOK"
+}
+
+# Mimics Claude Code's own wrapper: names the persisted file, and its 2KB
+# preview deliberately does NOT contain the marker (it sits further down in
+# the real file, past what the preview shows).
+wrapper_output() {
+	local path=$1
+	printf '<persisted-output>\nOutput too large (43.5KB). Full output saved to: %s\n\nPreview (first 2KB):\nsome earlier verify output\n...\n</persisted-output>\n' "$path"
+}
+
+log_lines() { [[ -e "$LOG" ]] && wc -l <"$LOG" | tr -d ' ' || echo 0; }
+
+# 1. Marker present ONLY in the persisted file -> broker IS invoked.
+home1=$(persisted_home case1)
+persisted_dir1="$home1/.claude/projects/proj/sess/tool-results"
+mkdir -p "$persisted_dir1"
+persisted_file1="$persisted_dir1/out.txt"
+printf 'earlier verify output\n%s\nlater verify output\n' "$MARKER" >"$persisted_file1"
+before=$(log_lines)
+persisted_case_capture "$PINNED" "$(wrapper_output "$persisted_file1")" "$home1" >/dev/null
+after=$(log_lines)
+[[ "$after" == "$((before + 1))" ]] || { echo "marker-in-persisted-file case did not invoke the broker" >&2; exit 1; }
+rg -q '^stage complete build-api --session session-123$' "$LOG"
+
+# 2. Persisted path present but the file does NOT contain the marker ->
+# broker NOT invoked, message says so.
+home2=$(persisted_home case2)
+persisted_dir2="$home2/.claude/projects/proj/sess/tool-results"
+mkdir -p "$persisted_dir2"
+persisted_file2="$persisted_dir2/out.txt"
+printf 'earlier verify output\nverification failed\nlater verify output\n' >"$persisted_file2"
+before=$(log_lines)
+out2=$(persisted_case_capture "$PINNED" "$(wrapper_output "$persisted_file2")" "$home2")
+after=$(log_lines)
+[[ "$after" == "$before" ]] || { echo "no-marker-in-persisted-file case reached the broker" >&2; exit 1; }
+ctx2=$(printf '%s' "$out2" | jq -r '.hookSpecificOutput.additionalContext // empty')
+[[ "$ctx2" == *"persisted-output"* ]] || { echo "no-marker-in-persisted-file message does not mention the persisted file: $ctx2" >&2; exit 1; }
+[[ "$ctx2" == *"did not contain the marker"* ]] || { echo "no-marker-in-persisted-file message does not say the marker was absent: $ctx2" >&2; exit 1; }
+
+# 3. Persisted path OUTSIDE $HOME/.claude/projects/ -> rejected, broker NOT
+# invoked.
+home3=$(persisted_home case3)
+outside_dir3="$TMP/outside/tool-results"
+mkdir -p "$outside_dir3"
+outside_file3="$outside_dir3/out.txt"
+printf '%s\n' "$MARKER" >"$outside_file3"
+before=$(log_lines)
+out3=$(persisted_case_capture "$PINNED" "$(wrapper_output "$outside_file3")" "$home3")
+after=$(log_lines)
+[[ "$after" == "$before" ]] || { echo "outside-projects persisted path reached the broker" >&2; exit 1; }
+ctx3=$(printf '%s' "$out3" | jq -r '.hookSpecificOutput.additionalContext // empty')
+[[ "$ctx3" == *"did not validate"* ]] || { echo "outside-projects message does not say validation failed: $ctx3" >&2; exit 1; }
+
+# 4. Persisted path IS a symlink -> rejected, broker NOT invoked (even though
+# its target is a real file that does contain the marker).
+home4=$(persisted_home case4)
+persisted_dir4="$home4/.claude/projects/proj/sess/tool-results"
+real_dir4="$TMP/outside/real4"
+mkdir -p "$persisted_dir4" "$real_dir4"
+real_file4="$real_dir4/out.txt"
+printf '%s\n' "$MARKER" >"$real_file4"
+symlink_file4="$persisted_dir4/out.txt"
+ln -s "$real_file4" "$symlink_file4"
+before=$(log_lines)
+out4=$(persisted_case_capture "$PINNED" "$(wrapper_output "$symlink_file4")" "$home4")
+after=$(log_lines)
+[[ "$after" == "$before" ]] || { echo "symlinked persisted path reached the broker" >&2; exit 1; }
+ctx4=$(printf '%s' "$out4" | jq -r '.hookSpecificOutput.additionalContext // empty')
+[[ "$ctx4" == *"did not validate"* ]] || { echo "symlinked persisted path message does not say validation failed: $ctx4" >&2; exit 1; }
+
+# 5. Persisted path string-matches the projects root but TRAVERSES OUT via
+# ".." to a file outside it that genuinely contains the marker -> rejected,
+# broker NOT invoked. `[[ "$path" == "$PROJECTS_ROOT"/* ]]` is a glob against
+# the raw string, not a resolved path, so `.../projects/../../../../tmp/x`
+# satisfies it while resolving somewhere else entirely - the same directory
+# class the sandboxed stage agent can genuinely write to itself.
+home5=$(persisted_home case5)
+persisted_dir5="$home5/.claude/projects"
+mkdir -p "$persisted_dir5"
+# The traversal target's directory MUST itself contain a "tool-results"
+# segment - otherwise the pre-existing "*/tool-results/*" guard rejects the
+# path for an unrelated reason and the traversal case never actually
+# exercises the bug this test targets.
+real_dir5="$TMP/outside/real5/tool-results"
+mkdir -p "$real_dir5"
+real_file5="$real_dir5/out.txt"
+printf '%s\n' "$MARKER" >"$real_file5"
+# Compute the ".." depth from $persisted_dir5 back to $TMP in pure bash, so
+# this does not silently drift if persisted_home()'s nesting ever changes.
+relative5="${persisted_dir5#"$TMP"/}"
+depth5=1
+rest5="$relative5"
+while [[ "$rest5" == */* ]]; do
+	depth5=$((depth5 + 1))
+	rest5="${rest5#*/}"
+done
+dotdots5=""
+for ((i = 0; i < depth5; i++)); do dotdots5+="../"; done
+traversal_path5="${persisted_dir5}/${dotdots5}outside/real5/tool-results/out.txt"
+before=$(log_lines)
+out5=$(persisted_case_capture "$PINNED" "$(wrapper_output "$traversal_path5")" "$home5")
+after=$(log_lines)
+[[ "$after" == "$before" ]] || { echo "path-traversal persisted path reached the broker" >&2; exit 1; }
+ctx5=$(printf '%s' "$out5" | jq -r '.hookSpecificOutput.additionalContext // empty')
+[[ "$ctx5" == *"did not validate"* ]] || { echo "path-traversal message does not say validation failed: $ctx5" >&2; exit 1; }
+
+# 6. Persisted path contains a legitimate filename with two dots (not a `..`
+# path SEGMENT) -> still ACCEPTED, broker invoked. Proves the traversal guard
+# above is segment-aware rather than a blanket "contains .." substring ban,
+# which would wrongly reject real filenames like this one.
+home6=$(persisted_home case6)
+persisted_dir6="$home6/.claude/projects/proj/sess/tool-results"
+mkdir -p "$persisted_dir6"
+persisted_file6="$persisted_dir6/out..1.txt"
+printf '%s\n' "$MARKER" >"$persisted_file6"
+before=$(log_lines)
+persisted_case_capture "$PINNED" "$(wrapper_output "$persisted_file6")" "$home6" >/dev/null
+after=$(log_lines)
+[[ "$after" == "$((before + 1))" ]] || { echo "two-dot legitimate filename case did not invoke the broker" >&2; exit 1; }
+rg -q '^stage complete build-api --session session-123$' "$LOG"
+
+# 7. Existing behaviour unchanged: marker inline in the tool result -> broker
+# invoked. Already covered above (the original "valid route" assertion); no
+# duplicate case added here.
