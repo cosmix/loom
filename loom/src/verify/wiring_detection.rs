@@ -4,6 +4,7 @@
 //! one other file. Files that exist but are never referenced are "unwired" and likely indicate
 //! a forgotten module declaration or import.
 
+use crate::verify::utils::bounded_stderr_warning;
 use anyhow::{bail, Context, Result};
 use std::path::Path;
 use std::process::Command;
@@ -199,21 +200,34 @@ fn file_stem(path: &str) -> String {
 
 /// Search the worktree for references to `importable_name` in files other than
 /// the file that was added. Returns `true` if at least one reference is found.
+///
+/// Each grep invocation uses `-r -l -m 1 -s --binary-files=without-match`:
+/// recursive, filenames-only, stop after the first match to avoid unbounded
+/// output, skip binary files, and suppress grep's own per-file "Permission
+/// denied" messages for nonexistent/unreadable files (see the exit-code-2
+/// handling below).
+///
+/// Exit code 2 fires both for a genuine grep error AND whenever ANY file
+/// under the search root is unreadable (permission denied) - the `-s` flag
+/// suppresses grep's own per-file message, but the exit code itself still
+/// reflects it. stdout still holds every match grep DID find in the files it
+/// could read, so it must still be parsed rather than skipped: `continue`-ing
+/// here previously turned "some file is unreadable" into a silent false
+/// "unwired" report even when a real reference existed. Only warn (bounded)
+/// and fall through to parsing stdout.
 fn is_referenced(worktree_path: &Path, added_file: &str, importable_name: &str) -> Result<bool> {
     // Build language-aware patterns based on the file extension
     let ext = added_file.rsplit('.').next().unwrap_or("").to_lowercase();
     let patterns = build_search_patterns(&ext, importable_name);
 
     for pattern in &patterns {
-        // Use grep -r -l with source-only includes and exclusions for noisy dirs (fix #3).
-        // -m 1 stops after the first match to avoid unbounded output (fix #4).
-        // --binary-files=without-match skips binary files (fix #4).
         let output = Command::new("grep")
             .args([
                 "-r",
                 "-l",
                 "-m",
                 "1",
+                "-s",
                 "--binary-files=without-match",
                 "--include=*.rs",
                 "--include=*.ts",
@@ -234,18 +248,18 @@ fn is_referenced(worktree_path: &Path, added_file: &str, importable_name: &str) 
 
         let output = match output {
             Ok(o) => o,
-            Err(_) => continue, // grep not available or failed; skip this pattern
+            Err(_) => continue, // grep not available or failed to spawn; skip this pattern
         };
 
-        // Exit code 2 means grep encountered an error (fix #5).
         if output.status.code() == Some(2) {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            eprintln!(
-                "wiring_detection: grep error for pattern {:?}: {}",
-                pattern,
-                stderr.trim()
-            );
-            continue;
+            if !stderr.trim().is_empty() {
+                eprintln!(
+                    "wiring_detection: grep warning for pattern {:?}: {}",
+                    pattern,
+                    bounded_stderr_warning(&stderr)
+                );
+            }
         }
 
         let stdout = String::from_utf8_lossy(&output.stdout);
@@ -287,104 +301,5 @@ fn build_search_patterns(ext: &str, name: &str) -> Vec<String> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_extract_importable_name_nested() {
-        assert_eq!(extract_importable_name("src/cache/store.rs"), "store");
-    }
-
-    #[test]
-    fn test_extract_importable_name_top_level() {
-        assert_eq!(extract_importable_name("src/cache.rs"), "cache");
-    }
-
-    #[test]
-    fn test_extract_importable_name_no_extension() {
-        assert_eq!(extract_importable_name("src/cache"), "cache");
-    }
-
-    #[test]
-    fn test_has_source_extension_rs() {
-        assert!(has_source_extension("src/foo.rs"));
-    }
-
-    #[test]
-    fn test_has_source_extension_ts() {
-        assert!(has_source_extension("src/foo.ts"));
-    }
-
-    #[test]
-    fn test_has_source_extension_txt() {
-        assert!(!has_source_extension("src/foo.txt"));
-    }
-
-    #[test]
-    fn test_is_test_file_tests_dir() {
-        assert!(is_test_file("src/tests/foo.rs"));
-    }
-
-    #[test]
-    fn test_is_test_file_suffix() {
-        assert!(is_test_file("src/foo_test.rs"));
-    }
-
-    #[test]
-    fn test_is_test_file_spec() {
-        assert!(is_test_file("src/foo.spec.ts"));
-    }
-
-    #[test]
-    fn test_is_not_test_file() {
-        assert!(!is_test_file("src/cache/store.rs"));
-    }
-
-    #[test]
-    fn test_excluded_stem_mod() {
-        let stem = file_stem("src/cache/mod.rs");
-        assert!(EXCLUDED_STEMS.contains(&stem.as_str()));
-    }
-
-    #[test]
-    fn test_build_search_patterns_rust() {
-        let patterns = build_search_patterns("rs", "store");
-        assert!(patterns.iter().any(|p| p.contains("mod store")));
-        assert!(patterns.iter().any(|p| p.contains("use .*store")));
-    }
-
-    #[test]
-    fn test_build_search_patterns_typescript() {
-        let patterns = build_search_patterns("ts", "client");
-        assert!(patterns.iter().any(|p| p.contains("client")));
-    }
-
-    #[test]
-    fn test_build_search_patterns_python() {
-        let patterns = build_search_patterns("py", "utils");
-        assert!(patterns.iter().any(|p| p.contains("import utils")));
-    }
-
-    #[test]
-    fn test_build_search_patterns_go() {
-        let patterns = build_search_patterns("go", "cache");
-        assert!(patterns.iter().any(|p| p.contains("cache")));
-    }
-
-    #[test]
-    fn test_is_safe_identifier_valid() {
-        assert!(is_safe_identifier("store"));
-        assert!(is_safe_identifier("my_module"));
-        assert!(is_safe_identifier("Module123"));
-    }
-
-    #[test]
-    fn test_is_safe_identifier_invalid() {
-        assert!(!is_safe_identifier(""));
-        assert!(!is_safe_identifier("foo-bar"));
-        assert!(!is_safe_identifier("foo.bar"));
-        assert!(!is_safe_identifier("foo bar"));
-        assert!(!is_safe_identifier("foo*"));
-        assert!(!is_safe_identifier("../etc/passwd"));
-    }
-}
+#[path = "tests_wiring_detection.rs"]
+mod tests;
