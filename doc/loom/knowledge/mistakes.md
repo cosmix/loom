@@ -92,7 +92,8 @@ aborts at the first failing TARGET so a green tail is not a green suite, headles
 emulator, ambient git config leaks into shelling tests, an inherited descriptor holds an flock past
 release, the maintainability ledger rejects a grown function, `TODO` in a string literal trips the
 stub checker, CI's docs job runs a rustdoc lint (`private_intra_doc_links`) that no local gate
-evaluates, and a reviewer's behaviour claim must be checked against the diff before acting on it.
+evaluates, CI's clippy job follows rustup `stable` so a new Rust release can redden main with no
+code change, and a reviewer's behaviour claim must be checked against the diff before acting on it.
 
 → [Testing & Lint](mistakes/testing-and-lint.md)
 
@@ -302,7 +303,7 @@ persisted and read back through the shared service.
 
 **What happened:** During the 61-file skills/ overhaul (4 coordinators × ~6 workers), two recurring failures: (1) workers rewriting very large files (~2-3K lines, e.g. `skills/loom-react/SKILL.md`) with a single whole-file Write died repeatedly with "Connection closed mid-response" (0 tokens, files untouched); the same file succeeded when the worker was re-instructed to apply ~18 small targeted Edits instead. (2) Workers self-reported "markdownlint clean" but a single authoritative `markdownlint-cli2` pass at the gate found 35 residual errors across territories (MD032/MD056/MD038/MD034/MD028) — worker self-verification via ad-hoc greps does not implement markdownlint rules.
 **Why:** A multi-thousand-line Write is one giant model response — long uninterrupted output maximizes exposure to connection drops, and a failure loses ALL of the work; incremental Edits checkpoint progress per tool call. Lint self-reports were grep-approximations, not the real linter (bunx was sandbox-blocked for workers: bun needs tempdir writes outside the sandbox allowlist).
-**Prevention:** (1) When directing agents to rewrite files >~1000 lines, instruct them to transform via a sequence of targeted Edits, never one whole-file Write. (2) Never trust per-agent lint claims — run ONE authoritative `bunx markdownlint-cli2 "skills/**/SKILL.md"` (needs sandbox escape for bun's tempdir) at the merge/verify gate; the repo `.markdownlint.json` is picked up from the root.
+**Prevention:** (1) When directing agents to rewrite files >~1000 lines, instruct them to transform via a sequence of targeted Edits, never one whole-file Write. (2) Never trust per-agent lint claims — run ONE authoritative `bunx markdownlint-cli2 "skills/**/SKILL.md"` at the merge/verify gate (no sandbox escape needed — point `TMPDIR` and `BUN_INSTALL_CACHE_DIR` at a writable scratch dir; recipe in `mistakes/testing-and-lint.md`); the repo `.markdownlint.json` is picked up from the root.
 **Fix:** Re-spawned failed workers with the incremental-Edit instruction; ran the gate lint pass and fixed the 12 residual errors (main agent) + 23 (backend coordinator) directly.
 
 ## `loom pressure` codex "never starts" — it was invisible, not broken (2026-07-02)
@@ -730,6 +731,15 @@ function with irreversible side effects: **after this returns, what can no longe
 verified?**
 → [Merge Cleanup Boundary](mistakes/merge-cleanup-boundary.md)
 
+## Cleanup Refused Over Scaffold It Never Planted
+
+Non-forced worktree removal bailed from 2026-08-09 on because it demanded the root
+`CLAUDE.md` be loom's symlink, while the creation side had (correctly) skipped planting one
+in a repo that tracks its own. Removal must mirror creation's condition — remove only what
+you can prove you planted — and never re-implement git's cleanliness check in front of
+`git worktree remove`; let git refuse and name the blocking paths.
+→ [Merge Cleanup Boundary](mistakes/merge-cleanup-boundary.md)
+
 ## Shipping the Store Without the Consumer
 
 A deliberately-deferred consumer left a trail of `pub` enum variants, methods, fields and
@@ -962,3 +972,13 @@ needed a test through the REAL ranker AND the REAL packer to catch — see
 that lesson.
 
 → [Computed Values and Hidden Couplings](mistakes/computed-values-and-hidden-couplings.md)
+
+## Two Daemons Once Attached to the Same `.work/` (2026-08-08)
+
+Nothing enforced daemon singleton, so a second daemon could attach to a live `.work/` and both
+would drive the same stages. Startup now takes an authoritative stable-file `flock` for the
+daemon's whole lifetime and refuses a second owner before touching the socket or control files;
+shutdown signals only a matching PID/start-time identity. The incident and its evidence are kept
+for regression context.
+
+→ [Daemon Singleton Incident](concerns/daemon-singleton.md)

@@ -43,6 +43,41 @@ pub fn extract_matching_lines(output: &str, patterns: &[String]) -> Result<Vec<S
     Ok(matching_lines)
 }
 
+/// Cap a grep stderr blob to a few lines / a few hundred bytes so that a tree with
+/// many unreadable files (e.g. a sandbox that denies read on dotfiles) cannot flood
+/// the caller's output. Grep exits 2 both for a genuine error and whenever any file
+/// under the search root is unreadable; callers still need to parse stdout in that
+/// case, but the raw stderr can be arbitrarily long, so it is only ever surfaced
+/// through this bounded form. Shared by `duplicate_detection` and `wiring_detection`,
+/// which both report this exact grep exit-2 warning.
+pub(crate) fn bounded_stderr_warning(stderr: &str) -> String {
+    const MAX_LINES: usize = 3;
+    const MAX_CHARS: usize = 400;
+
+    let all_lines: Vec<&str> = stderr.trim().lines().collect();
+    let omitted_lines = all_lines.len().saturating_sub(MAX_LINES);
+    let mut shown = all_lines
+        .into_iter()
+        .take(MAX_LINES)
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    let mut chars_truncated = false;
+    if shown.chars().count() > MAX_CHARS {
+        shown = shown.chars().take(MAX_CHARS).collect();
+        chars_truncated = true;
+    }
+
+    if omitted_lines > 0 {
+        let plural = if omitted_lines == 1 { "" } else { "s" };
+        format!("{shown}\n… ({omitted_lines} more line{plural})")
+    } else if chars_truncated {
+        format!("{shown}…")
+    } else {
+        shown
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -74,5 +109,22 @@ mod tests {
 
         let matches = extract_matching_lines(output, &patterns).unwrap();
         assert_eq!(matches.len(), 1);
+    }
+
+    #[test]
+    fn test_bounded_stderr_warning_short_input_unchanged() {
+        let warning = bounded_stderr_warning("grep: ./foo: Permission denied");
+        assert_eq!(warning, "grep: ./foo: Permission denied");
+    }
+
+    #[test]
+    fn test_bounded_stderr_warning_caps_lines() {
+        let stderr = (0..10)
+            .map(|i| format!("grep: ./file{i}: Permission denied"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let warning = bounded_stderr_warning(&stderr);
+        assert_eq!(warning.lines().count(), 4); // 3 content lines + 1 "more" line
+        assert!(warning.contains("(7 more line"));
     }
 }

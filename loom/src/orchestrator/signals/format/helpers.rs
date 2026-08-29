@@ -11,40 +11,21 @@ use super::super::types::DependencyStatus;
 /// semi-stable path and the recovery path emit it, and `sections.rs` is already
 /// well over the file-size ceiling.
 ///
-/// The block states the budget and what to DO when it elapses. The orchestrator
-/// side is advisory — it prints a warning and nothing more — so the only thing
-/// that can actually act on a silent subagent is the agent holding the stage.
+/// This carries ONLY the stage's specific number. The doctrine for what to DO
+/// with it — the three-case rule keyed on `loom subagents watch`/`list`/`harvest`
+/// (BLOCK-C, `cache::append_subagent_waiting_doctrine`) — is unconditional and
+/// already present in this stage's stable prefix, so repeating the whole
+/// doctrine here for every budgeted stage would just duplicate it in the same
+/// signal.
 pub(crate) fn format_subagent_timeout_section(timeout_secs: u64) -> String {
-    let mut content = String::new();
-
-    content.push_str("## Subagent Response Budget\n\n");
-    content.push_str(&format!(
-        "This stage's heartbeat budget is {timeout_secs}s: the orchestrator warns when the session goes\n"
-    ));
-    content.push_str(
-        "that long with no tool activity. The warning is ADVISORY - it never kills or retries anything.\n",
-    );
-    content.push_str(
-        "Treat the budget as a check-in cadence for your bounded liveness checks, NOT as a deadline on\n",
-    );
-    content.push_str(
-        "any subagent's work. When a check fires and the subagent is still alive (task running, files\n",
-    );
-    content.push_str(
-        "changing, output growing), re-arm the check and keep waiting - slow is not dead. Take over or\n",
-    );
-    content.push_str(
-        "re-assign ONLY on positive evidence of death: the task failed or was killed, or several\n",
-    );
-    content.push_str(
-        "consecutive checks show zero liveness AND no result. Elapsed time alone is NEVER that evidence.\n",
-    );
-    content.push_str(
-        "Restarting live work forfeits the tokens it already spent and risks two agents writing the same\n",
-    );
-    content.push_str("files. Never complete the stage while any subagent is still out.\n\n");
-
-    content
+    format!(
+        "## Subagent Response Budget\n\n\
+         This stage's advisory heartbeat budget is {timeout_secs}s — pass it as `loom subagents \
+         watch --timeout {timeout_secs}`. Re-arm while a subagent reports `tool-wait` or \
+         `generating`; only idle time past this budget with no transcript growth counts as \
+         evidence of death. ADVISORY ONLY: the orchestrator's own hung warning never kills or \
+         retries anything — recovery stays with you.\n\n"
+    )
 }
 
 /// Append the "BUDGET EXCEEDED - WRAP UP NOW" box shown in the recitation
@@ -264,4 +245,18 @@ pub(super) fn format_structured_handoff(handoff: &HandoffV2) -> String {
     }
 
     content
+}
+
+/// Append the "stage end sequence" recap emitted at the end of "## Immediate
+/// Tasks" in the recitation section — the order commits must follow, restated
+/// at maximum attention (Manus recitation pattern) alongside the task list.
+pub(super) fn append_stage_end_sequence(content: &mut String) {
+    content.push('\n');
+    content.push_str("**Stage end sequence (in this order, nothing skipped):** every subagent returned → full gate green → adversarial review returned and every finding fixed → gate green again → commit (orchestrator only, one logical commit per concern) → `loom stage complete <stage-id>`. A commit before this point is premature.\n");
+}
+
+/// Append the package-manager-cache carve-out note to the sandbox section,
+/// shown whenever the sandbox is enabled (`format/sandbox_section.rs`).
+pub(super) fn append_package_cache_note(content: &mut String) {
+    content.push_str("**Package-manager caches:** the per-user caches of bun, npm, pnpm, yarn, deno, cargo, rustup, uv, pip and go under your home directory are writable, so `bun install`, `cargo add`, `uv sync`, `go get` and their peers work inside this sandbox. Two limits: a cache directory that does not exist yet at session start is NOT bound (the sandbox skips missing paths), and a cache relocated by an env var (`XDG_CACHE_HOME`, `CARGO_HOME`, `BUN_INSTALL_CACHE_DIR`, ...) is not covered — either one surfaces as `EROFS` / `Read-only file system` from the package manager. That is a sandbox limit, not a bug in your change: STOP and report it as a blocker (it needs a plan-level `sandbox.filesystem.allow_write` entry); do not work around it.\n\n");
 }

@@ -242,6 +242,19 @@ pub fn route_complete_for_conflicts(
     Ok(CompleteConflictRoute::Proceed)
 }
 
+/// Shared "the daemon owns merge resolution; the stage is not yet completed"
+/// notice. `complete()`'s direct `CompleteConflictRoute::DaemonManaged` route
+/// and `spawn_resolver_for_route`'s `MergeResolverResult::DaemonManaged` arm
+/// both land here — different callers reaching the same state, an active
+/// merge already redirected to the daemon — so both print exactly this.
+fn print_daemon_managed_notice(stage_id: &str) {
+    println!(
+        "Daemon is handling merge resolution for stage '{stage_id}'. The stage is \
+         NOT completed yet — do not treat this as completion. Run `loom status` to \
+         monitor; completion applies once the daemon finishes resolving the merge."
+    );
+}
+
 /// Spawn a CLI-side merge resolver for a route that already satisfies the
 /// `MergeConflict | MergeBlocked` status contract on disk.
 fn spawn_resolver_for_route(
@@ -252,6 +265,10 @@ fn spawn_resolver_for_route(
     repo_root: &Path,
     work_dir: &Path,
 ) -> Result<()> {
+    // None of the three arms below complete the stage — they only report on
+    // resolver status and return Ok(()). Each message says so explicitly so a
+    // session (or agent) reading exit 0 here does not mistake it for
+    // completion.
     match spawn_merge_resolver(
         stage,
         conflicting_files,
@@ -261,18 +278,21 @@ fn spawn_resolver_for_route(
         work_dir,
     )? {
         MergeResolverResult::DaemonManaged => {
-            println!(
-                "Daemon is handling merge resolution for stage '{}'.",
-                stage.id
-            );
+            print_daemon_managed_notice(&stage.id);
         }
         MergeResolverResult::Spawned(id) => {
-            println!("Spawned merge resolver session: {id}");
+            println!(
+                "Spawned merge resolver session: {id}. Stage '{}' is NOT completed yet \
+                 — completion happens once the resolver session finishes and the merge \
+                 lands. Do not treat this as completion.",
+                stage.id
+            );
         }
         MergeResolverResult::AlreadyRunning { session_id } => {
             println!(
                 "A merge resolver session is already running for stage '{}': {session_id}. \
-                 Wait for it to complete, or run `loom sessions kill {session_id}` to abort.",
+                 Wait for it to complete, or run `loom sessions kill {session_id}` to abort. \
+                 The stage is NOT completed yet — do not treat this as completion.",
                 stage.id
             );
         }
@@ -357,10 +377,7 @@ pub fn complete(
         CompleteConflictRoute::DaemonManaged {
             stage_id: managed_id,
         } => {
-            println!(
-                "Daemon is handling merge resolution for stage '{managed_id}'. \
-                 Run `loom status` to monitor."
-            );
+            print_daemon_managed_notice(&managed_id);
             return Ok(());
         }
         CompleteConflictRoute::SpawnResolver {
@@ -461,6 +478,45 @@ pub fn complete(
     })?;
 
     Ok(())
+}
+
+/// The exact stdout line `hooks/loom-control-complete.sh` matches to confirm
+/// verification passed for a sandboxed worktree completion.
+///
+/// The bridge does a whole-line EXACT match against
+/// `MARKER="LOOM_CONTROL_VERIFICATION_PASSED stage=$STAGE_ID
+/// session=$SESSION_ID"`. Changing this format string's wording, field
+/// order, or spacing silently breaks completion for every sandboxed
+/// session — the bridge fails closed with a generic "verification marker
+/// was not found" skip and nothing else reports the break.
+///
+/// Extracted to its own function (rather than inlined only at the
+/// `println!` call site) so a test can pin the exact text without needing
+/// to capture process stdout.
+pub(super) fn verification_passed_marker_line(stage_id: &str, session_id: &str) -> String {
+    format!(
+        "{} stage={} session={}",
+        control_complete::VERIFIED_MARKER,
+        stage_id,
+        session_id
+    )
+}
+
+/// Prints the explanation that follows `verification_passed_marker_line`'s
+/// output: verification passing on the sandboxed worktree route does NOT
+/// mean the stage is completed — that transition is applied out-of-band by
+/// the daemon via the completion bridge, not by this process.
+fn print_sandboxed_completion_pending_notice(stage_id: &str) {
+    println!();
+    println!(
+        "Verification passed, but stage '{stage_id}' is NOT completed yet — \
+         completion is applied out-of-band by the daemon via the completion \
+         bridge (hooks/loom-control-complete.sh), which reads the marker line \
+         above. Do not treat this output as completion: the confirmation to \
+         look for is the bridge's own message, \"Stage '{stage_id}' completion \
+         was accepted by the daemon.\" If that confirmation never appears, the \
+         stage is still Executing and this work is NOT landed."
+    );
 }
 
 fn ensure_acceptance_passed(result: Option<bool>, stage_id: &str) -> Result<()> {
@@ -725,12 +781,12 @@ fn run_verification_phase(phase: VerificationPhase<'_>) -> Result<()> {
         })?;
 
         if let Some(control_session) = control_session {
+            // FROZEN marker (`verification_passed_marker_line`) + pending-completion notice.
             println!(
-                "{} stage={} session={}",
-                control_complete::VERIFIED_MARKER,
-                stage_id,
-                control_session
+                "{}",
+                verification_passed_marker_line(stage_id, control_session)
             );
+            print_sandboxed_completion_pending_notice(stage_id);
             return Ok(());
         }
 

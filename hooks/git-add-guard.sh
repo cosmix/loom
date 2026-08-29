@@ -74,109 +74,104 @@ if [[ "$TOOL_NAME" != "Bash" ]] || [[ -z "$COMMAND" ]]; then
     exit 0
 fi
 
-# scan_git_add_tokens - Walk a tokenized command (as produced by
-# loom_tokenize_command: real argv tokens plus "%%SEP%%" command-boundary
-# sentinels) looking for a `git add` invocation whose arguments would stage
-# everything or stage .work.
+# scan_git_add_tokens - Walk the global LOOM_TOKENS array (as produced by a
+# prior loom_tokenize_command call: real argv tokens plus "%%SEP%%"
+# command-boundary sentinels) looking for a `git add` invocation whose
+# arguments would stage everything or stage .work.
 #
-# A token is at a COMMAND POSITION when it is index 0 or immediately follows
-# a "%%SEP%%" sentinel - that is how `foo && git add -A` is still caught,
-# and how `git add -A` inside `$( )` is still caught (loom_tokenize_command
-# pushes a sentinel at the `$(` opener). Leading VAR=value environment
-# assignments at a command position are skipped before looking for `git`.
+# Command-word resolution reuses loom_tokens_command_word_index from
+# _common.sh - the same helper commit-filter.sh's checks use - instead of a
+# bespoke walk: it already skips leading VAR=value environment assignments
+# AND unwraps wrapper commands (sudo, env, xargs, time, nohup, command,
+# nice, stdbuf, timeout, gtimeout - including each wrapper's OWN option
+# words, e.g. `env -u NAME` or `env FOO=1`), so `sudo git add -A` and
+# `env FOO=1 git add .` now resolve to `git` exactly like every other hook's
+# checks. The previous bespoke check here (`tok == "git" || tok == */git`
+# after only an env-assignment skip) had no wrapper awareness at all, so
+# both of those slipped through entirely.
 #
-# Once `git` is found, this looks at the tokens that follow for the `add`
-# subcommand, skipping git's own global options: `-C <dir>` and `-c <cfg>`
-# take a separate argument and both are skipped; any other `-`-prefixed
-# token is assumed to take no argument and is skipped on its own. This is
-# deliberately modest - it is not a full git CLI parser.
+# Everything AFTER the effective `git` command word - git's own global
+# options (-C <dir>, -c <cfg> skipped with their value; any other -flag
+# skipped bare), locating the `add` subcommand, then add's own arguments
+# (--all, a combined short flag containing A, `.`, `.work`/`.work/*`, with
+# `--` only suppressing the -A/--all flag checks, matching git's own
+# semantics that `--` still leaves `.`/`.work` as positional arguments) is
+# still a bespoke, git-add-specific walk: none of that generalizes into
+# _common.sh's shared helpers, which know how to find an invoking command
+# and its argv, not how to walk a specific subcommand's own option grammar.
 #
 # Returns 1 (block) if a dangerous `git add` invocation is found, 0 (allow)
 # otherwise.
 scan_git_add_tokens() {
-    local -a tokens=("$@")
-    local n=${#tokens[@]}
+    local n=${#LOOM_TOKENS[@]}
     local i=0
     local at_cmd_pos=1
-    local tok gt at
+    local j gt at
     local found_add seen_dashdash
 
     while ((i < n)); do
-        tok="${tokens[$i]}"
-
-        if [[ "$tok" == "%%SEP%%" ]]; then
+        if [[ "${LOOM_TOKENS[$i]}" == "%%SEP%%" ]]; then
             at_cmd_pos=1
             i=$((i + 1))
             continue
         fi
 
-        if [[ $at_cmd_pos -eq 1 ]]; then
-            # Skip leading VAR=value environment assignments
-            while ((i < n)) && [[ "${tokens[$i]}" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]]; do
-                i=$((i + 1))
-            done
-            if ((i >= n)); then
-                break
-            fi
-            tok="${tokens[$i]}"
-
-            if [[ "$tok" == "git" || "$tok" == */git ]]; then
-                i=$((i + 1))
-                found_add=0
-                while ((i < n)); do
-                    gt="${tokens[$i]}"
-                    [[ "$gt" == "%%SEP%%" ]] && break
-                    if [[ "$gt" == "-C" || "$gt" == "-c" ]]; then
-                        i=$((i + 2))
-                        continue
-                    fi
-                    if [[ "$gt" == "add" ]]; then
-                        found_add=1
-                        i=$((i + 1))
-                        break
-                    fi
-                    if [[ "$gt" == -* ]]; then
-                        i=$((i + 1))
-                        continue
-                    fi
-                    # Some other git subcommand, not `add` - leave i pointing
-                    # at it and stop looking.
+        if [[ $at_cmd_pos -eq 1 ]] && j=$(loom_tokens_command_word_index "$i") && [[ "${LOOM_TOKENS[$j]##*/}" == "git" ]]; then
+            i=$((j + 1))
+            found_add=0
+            while ((i < n)); do
+                gt="${LOOM_TOKENS[$i]}"
+                [[ "$gt" == "%%SEP%%" ]] && break
+                if [[ "$gt" == "-C" || "$gt" == "-c" ]]; then
+                    i=$((i + 2))
+                    continue
+                fi
+                if [[ "$gt" == "add" ]]; then
+                    found_add=1
+                    i=$((i + 1))
                     break
-                done
+                fi
+                if [[ "$gt" == -* ]]; then
+                    i=$((i + 1))
+                    continue
+                fi
+                # Some other git subcommand, not `add` - leave i pointing
+                # at it and stop looking.
+                break
+            done
 
-                if [[ $found_add -eq 1 ]]; then
-                    seen_dashdash=0
-                    while ((i < n)); do
-                        at="${tokens[$i]}"
-                        [[ "$at" == "%%SEP%%" ]] && break
-                        if [[ $seen_dashdash -eq 0 && "$at" == "--" ]]; then
-                            seen_dashdash=1
-                            i=$((i + 1))
-                            continue
-                        fi
-                        if [[ $seen_dashdash -eq 0 ]]; then
-                            if [[ "$at" == "--all" ]]; then
-                                debug "BLOCKED by token scan: git add --all"
-                                return 1
-                            fi
-                            if [[ "$at" =~ ^-[a-zA-Z]*A[a-zA-Z]*$ ]]; then
-                                debug "BLOCKED by token scan: git add $at"
-                                return 1
-                            fi
-                        fi
-                        if [[ "$at" == "." ]]; then
-                            debug "BLOCKED by token scan: git add ."
+            if [[ $found_add -eq 1 ]]; then
+                seen_dashdash=0
+                while ((i < n)); do
+                    at="${LOOM_TOKENS[$i]}"
+                    [[ "$at" == "%%SEP%%" ]] && break
+                    if [[ $seen_dashdash -eq 0 && "$at" == "--" ]]; then
+                        seen_dashdash=1
+                        i=$((i + 1))
+                        continue
+                    fi
+                    if [[ $seen_dashdash -eq 0 ]]; then
+                        if [[ "$at" == "--all" ]]; then
+                            debug "BLOCKED by token scan: git add --all"
                             return 1
                         fi
-                        if [[ "$at" == ".work" || "$at" == .work/* ]]; then
+                        if [[ "$at" =~ ^-[a-zA-Z]*A[a-zA-Z]*$ ]]; then
                             debug "BLOCKED by token scan: git add $at"
                             return 1
                         fi
-                        i=$((i + 1))
-                    done
-                    at_cmd_pos=0
-                    continue
-                fi
+                    fi
+                    if [[ "$at" == "." ]]; then
+                        debug "BLOCKED by token scan: git add ."
+                        return 1
+                    fi
+                    if [[ "$at" == ".work" || "$at" == .work/* ]]; then
+                        debug "BLOCKED by token scan: git add $at"
+                        return 1
+                    fi
+                    i=$((i + 1))
+                done
+                at_cmd_pos=0
+                continue
             fi
         fi
 
@@ -198,8 +193,17 @@ check_dangerous_patterns() {
     stripped=$(strip_embedded_content "$cmd")
 
     if loom_tokenize_command "$stripped"; then
-        debug "Tokenized into ${#LOOM_TOKENS[@]} token(s): ${LOOM_TOKENS[*]}"
-        if ! scan_git_add_tokens "${LOOM_TOKENS[@]}"; then
+        # ${LOOM_TOKENS[*]} is only safe to expand when the array is
+        # non-empty: bash 3.2 (this file's header targets macOS) errors on
+        # "${arr[*]}" for an EMPTY array under `set -u`, and the argument is
+        # expanded at the call site regardless of whether debug() actually
+        # prints it. ${#LOOM_TOKENS[@]} alone is always safe.
+        if ((${#LOOM_TOKENS[@]} > 0)); then
+            debug "Tokenized into ${#LOOM_TOKENS[@]} token(s): ${LOOM_TOKENS[*]}"
+        else
+            debug "Tokenized into 0 token(s)"
+        fi
+        if ! scan_git_add_tokens; then
             return 1
         fi
         debug "ALLOWED: token scan found no dangerous git add pattern"

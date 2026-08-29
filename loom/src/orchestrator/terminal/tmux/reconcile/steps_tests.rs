@@ -1,7 +1,6 @@
-//! Pure unit tests for [`super::parse_pane_socket`], [`super::parse_pane_list`]
-//! and [`super::reconcile_steps`] — no tmux server needed. Density matches
-//! `commands/attach/tests/overview.rs`: every test names the real regression
-//! it prevents.
+//! Pure unit tests for [`super::reconcile_steps`] — no tmux server needed.
+//! Density matches `commands/attach/tests/overview.rs`: every test names
+//! the real regression it prevents.
 
 use super::*;
 
@@ -23,112 +22,18 @@ fn desired_sessions(n: usize) -> Vec<(String, String)> {
         .collect()
 }
 
-// ---------------------------------------------------------------------
-// parse_pane_socket
-// ---------------------------------------------------------------------
-
-#[test]
-fn parse_pane_socket_parses_the_real_tmux_3_6a_rendering() {
-    // THE REAL SHAPE: verified empirically against tmux 3.6a (see
-    // `parse_pane_socket`'s doc comment). A parser tied to a DIFFERENT
-    // rendering would silently stop attributing every viewer pane.
-    let start_command = r#"sh -c "unset TMUX; exec tmux -L loom-session-abc12345-1754900000 attach-session -t some-key""#;
-    assert_eq!(
-        parse_pane_socket(start_command),
-        Some("loom-session-abc12345-1754900000".to_string())
-    );
+/// Expected steps for a pass that kills exactly one pane (`pane_id`) and
+/// retiles once — [`retile_step`] is the production helper this reuses.
+fn kill_then_retile(pane_id: &str) -> Vec<Vec<String>> {
+    vec![
+        vec![
+            "kill-pane".to_string(),
+            "-t".to_string(),
+            pane_id.to_string(),
+        ],
+        retile_step(),
+    ]
 }
-
-#[test]
-fn parse_pane_socket_ignores_a_plain_login_shell_pane() {
-    // An operator's own split running their login shell has no `attach-session`
-    // token at all and must never be attributed to loom.
-    assert_eq!(parse_pane_socket("zsh"), None);
-}
-
-#[test]
-fn parse_pane_socket_ignores_a_pane_with_no_attach_session() {
-    assert_eq!(parse_pane_socket(r#"sh -c "sleep 30""#), None);
-}
-
-#[test]
-fn parse_pane_socket_ignores_attach_session_without_dash_l() {
-    // No explicit socket at all — rule 2 must reject it rather than guess one.
-    assert_eq!(
-        parse_pane_socket(r#"sh -c "tmux attach-session -t work""#),
-        None
-    );
-}
-
-#[test]
-fn parse_pane_socket_strips_surrounding_quotes_from_the_socket_token() {
-    assert_eq!(
-        parse_pane_socket(r#"sh -c "exec tmux -L 'loom-session-quoted' attach-session -t k""#),
-        Some("loom-session-quoted".to_string())
-    );
-}
-
-#[test]
-fn parse_pane_socket_rejects_a_one_sided_quote_fragment_and_a_non_identifier() {
-    // A quoted socket containing whitespace splits at tokenization, handing
-    // back the fragment `'loom-a` — attributing it would make Rule 1 re-add
-    // the real socket on EVERY tick (unbounded pane growth). Rule 3 rejects
-    // the asymmetric fragment; rule 5's charset check rejects anything that
-    // is not a plain loom identifier even when the quoting is intact.
-    assert_eq!(
-        parse_pane_socket("tmux -L 'loom-a b' attach-session -t k"),
-        None
-    );
-    assert_eq!(
-        parse_pane_socket(r#"tmux -L "loom-x;rm" attach-session -t k"#),
-        None
-    );
-}
-
-#[test]
-fn parse_pane_socket_rejects_a_non_loom_socket() {
-    // OPERATOR-PANE PROTECTION: if the operator splits their own pane and
-    // runs a plain `tmux attach-session` against THEIR OWN socket, rules 1-3
-    // alone would attribute it as a loom pane, and `reconcile_steps` would
-    // then be free to kill it as a stray duplicate or an orphan. Requiring
-    // the `loom-` prefix is what keeps that pane untouchable.
-    assert_eq!(
-        parse_pane_socket("tmux -L my-own-socket attach-session -t work"),
-        None
-    );
-}
-
-// ---------------------------------------------------------------------
-// parse_pane_list
-// ---------------------------------------------------------------------
-
-#[test]
-fn parse_pane_list_splits_on_real_tab_bytes_and_skips_short_lines() {
-    // `PANE_FORMAT` renders id/dead/start_command TAB-separated with no
-    // shell in between — a parser that split on plain whitespace would
-    // shatter every multi-word start command. The trailing short line
-    // simulates a row caught mid-write and must be skipped, not panic.
-    let stdout =
-        "%1\t0\tzsh\n%2\t1\tsh -c \"exec tmux -L loom-session-a attach-session -t k\"\n%3\n";
-
-    let panes = parse_pane_list(stdout);
-
-    assert_eq!(
-        panes.len(),
-        2,
-        "the malformed trailing line must be skipped"
-    );
-    assert_eq!(panes[0].id, "%1");
-    assert!(!panes[0].dead);
-    assert_eq!(panes[0].session_socket, None);
-    assert_eq!(panes[1].id, "%2");
-    assert!(panes[1].dead);
-    assert_eq!(panes[1].session_socket, Some("loom-session-a".to_string()));
-}
-
-// ---------------------------------------------------------------------
-// reconcile_steps
-// ---------------------------------------------------------------------
 
 #[test]
 fn reconcile_steps_add_only_six_retiles_after_every_split() {
@@ -232,12 +137,9 @@ fn reconcile_steps_kills_a_dead_pane_whose_session_is_gone() {
 
     assert_eq!(
         steps,
-        vec![vec![
-            "kill-pane".to_string(),
-            "-t".to_string(),
-            "%1".to_string()
-        ]],
-        "only the dead orphaned pane is killed; the live pane gets no step"
+        kill_then_retile("%1"),
+        "the dead orphaned pane is killed and the survivors are retiled once; \
+         the live pane gets no step of its own"
     );
 }
 
@@ -268,12 +170,9 @@ fn reconcile_steps_floor_keeps_the_first_dead_pane_as_placeholder() {
 
     assert_eq!(
         steps,
-        vec![vec![
-            "kill-pane".to_string(),
-            "-t".to_string(),
-            "%2".to_string()
-        ]],
-        "the FIRST dead pane in pane order survives as the retained placeholder"
+        kill_then_retile("%2"),
+        "the FIRST dead pane in pane order survives as the retained placeholder, \
+         and the survivor is retiled once"
     );
 }
 
@@ -314,12 +213,9 @@ fn reconcile_steps_collapses_a_duplicate_pane_pair() {
 
     assert_eq!(
         steps,
-        vec![vec![
-            "kill-pane".to_string(),
-            "-t".to_string(),
-            "%1".to_string()
-        ]],
-        "only the dead duplicate is killed; the live keeper gets no step at all"
+        kill_then_retile("%1"),
+        "only the dead duplicate is killed and the survivors retiled once; \
+         the live keeper gets no step at all"
     );
 }
 
@@ -334,13 +230,10 @@ fn reconcile_steps_leaves_operator_panes_untouched_but_counts_them_for_the_floor
 
     assert_eq!(
         steps,
-        vec![vec![
-            "kill-pane".to_string(),
-            "-t".to_string(),
-            "%2".to_string()
-        ]],
+        kill_then_retile("%2"),
         "the operator's pane must never appear as a step, but its presence \
-         satisfies the floor so the dead loom pane can still be killed"
+         satisfies the floor so the dead loom pane can still be killed and \
+         the survivors retiled once"
     );
 }
 
@@ -395,4 +288,47 @@ fn reconcile_steps_orders_adds_before_respawns_before_kills() {
 
     assert!(split_idx < respawn_idx, "adds must precede respawns");
     assert!(respawn_idx < kill_idx, "respawns must precede kills");
+}
+
+#[test]
+fn reconcile_steps_retiles_once_after_kills_and_never_without_them() {
+    // Kills leave the SURVIVING panes at their pre-kill tiled geometry;
+    // adds already retile themselves after every split (Rule 1), so only a
+    // kill needs the trailing retile, and it must fire exactly once no
+    // matter how many panes are killed in the same pass.
+    let panes = vec![
+        pane("%1", true, Some("loom-session-gone-a")),
+        pane("%2", true, Some("loom-session-gone-b")),
+        pane("%3", false, Some("loom-session-live")),
+    ];
+    let desired = vec![(
+        "loom-session-live".to_string(),
+        "loom-stage-live".to_string(),
+    )];
+
+    let steps = reconcile_steps(&panes, &desired);
+
+    let select_layout_count = steps
+        .iter()
+        .filter(|s| s.first().map(String::as_str) == Some("select-layout"))
+        .count();
+    assert_eq!(
+        select_layout_count, 1,
+        "exactly one retile no matter how many panes were killed"
+    );
+    assert_eq!(
+        steps.last(),
+        Some(&retile_step()),
+        "the retile must be the LAST step, after every kill"
+    );
+
+    // No kills at all -> no trailing retile.
+    let no_kills = vec![pane("%1", true, Some("loom-session-live"))];
+    let steps_no_kill = reconcile_steps(&no_kills, &desired);
+    assert!(
+        steps_no_kill
+            .iter()
+            .all(|s| s.first().map(String::as_str) != Some("select-layout")),
+        "no retile may appear when nothing was killed"
+    );
 }

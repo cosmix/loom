@@ -24,9 +24,12 @@
 
 mod reconcile;
 mod socket;
-/// `pub(crate)` rather than re-exported piecemeal: `commands/attach` consumes
-/// most of this module, and its tests share `viewer::tests::stub_session`.
-pub(crate) mod viewer;
+/// `pub` (not `pub(crate)`) rather than re-exported piecemeal: `commands/attach`
+/// consumes most of this module, its tests share `viewer::tests::stub_session`,
+/// and the real-tmux e2e test (`tests/e2e/tmux_reconcile.rs`) needs
+/// `viewer_socket_name`, `pane_command`, and `OVERVIEW_SESSION` to mirror
+/// `loom attach`'s own build sequence from outside the crate.
+pub mod viewer;
 
 use anyhow::{Context, Result};
 use shell_escape::escape;
@@ -46,6 +49,11 @@ pub use socket::{
 /// the scheduler loop names the tmux backend rather than reaching into a
 /// submodule for what is, from its side, a single best-effort call.
 pub(crate) use reconcile::refresh_attached_viewer;
+
+/// `pub`, not `pub(crate)`: lets the real-tmux e2e test
+/// (`tests/e2e/tmux_reconcile.rs`) drive the reconciler directly against a
+/// tmux server it stands up itself, rather than only through the daemon.
+pub use reconcile::reconcile_viewer;
 
 /// Server options loom forces on every stage server it creates, applied
 /// best-effort after the spawn.

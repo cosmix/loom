@@ -26,6 +26,11 @@ pub const HOOK_PRE_COMPACT: &str = include_str!("../../../../hooks/pre-compact.s
 /// SessionEnd hook - handles session completion
 pub const HOOK_SESSION_END: &str = include_str!("../../../../hooks/session-end.sh");
 
+/// SubagentStop hook - records a Task-tool subagent's completion and refreshes
+/// the parent session's heartbeat (the parent runs no tools of its own while
+/// blocked waiting on a subagent, so PostToolUse cannot refresh it there).
+pub const HOOK_SUBAGENT_STOP: &str = include_str!("../../../../hooks/subagent-stop.sh");
+
 /// AskUserQuestion pre hook - marks stage as waiting for input
 pub const HOOK_ASK_USER_PRE: &str = include_str!("../../../../hooks/ask-user-pre.sh");
 
@@ -98,6 +103,7 @@ pub const LOOM_HOOKS: &[(&str, &str)] = &[
     ("session-start.sh", HOOK_SESSION_START),
     ("pre-compact.sh", HOOK_PRE_COMPACT),
     ("session-end.sh", HOOK_SESSION_END),
+    ("subagent-stop.sh", HOOK_SUBAGENT_STOP),
     ("learning-validator.sh", HOOK_LEARNING_VALIDATOR),
     // Global hooks (commit enforcement, user question handling, tool guidance)
     ("commit-guard.sh", HOOK_COMMIT_GUARD),
@@ -133,6 +139,9 @@ pub const LOOM_PERMISSIONS: &[&str] = &[
     "Read(~/.claude/hooks/loom/**)",
     // Loom CLI commands (use :* for prefix matching)
     "Bash(loom *)",
+    // Loom's own codex forwarding wrapper. codex-forward-guard.sh independently
+    // pins forwarder subagents to exactly one invocation of this wrapper.
+    "Bash(~/.claude/hooks/loom/codex-forward.sh:*)",
 ];
 
 /// Loom permissions for WORKTREE context
@@ -148,4 +157,7 @@ pub const LOOM_PERMISSIONS_WORKTREE: &[&str] = &[
     "Read(~/.claude/hooks/loom/**)",
     // Loom CLI commands (use :* for prefix matching)
     "Bash(loom *)",
+    // Loom's own codex forwarding wrapper. codex-forward-guard.sh independently
+    // pins forwarder subagents to exactly one invocation of this wrapper.
+    "Bash(~/.claude/hooks/loom/codex-forward.sh:*)",
 ];

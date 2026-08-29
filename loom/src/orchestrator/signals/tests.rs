@@ -16,8 +16,14 @@ use super::types::{DependencyStatus, EmbeddedContext, SignalUpdates};
 mod tests_brief;
 #[path = "tests_cache.rs"]
 mod tests_cache;
+#[path = "tests_commit_timing.rs"]
+mod tests_commit_timing;
 #[path = "tests_doctrine.rs"]
 mod tests_doctrine;
+#[path = "tests_doctrine_prefixes.rs"]
+mod tests_doctrine_prefixes;
+#[path = "tests_doctrine_waiting.rs"]
+mod tests_doctrine_waiting;
 #[path = "tests_merge.rs"]
 mod tests_merge;
 #[path = "tests_working_dir.rs"]

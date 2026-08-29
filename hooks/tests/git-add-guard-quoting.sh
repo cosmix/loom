@@ -81,4 +81,25 @@ expect_block "quoted real .work argument" 'git add ".work"'
 expect_block "git add reached through a && separator" 'cargo build && git add -A'
 expect_block "git add -A inside a command substitution" 'echo $(git add -A)'
 
+# --- A3 regression: wrapper commands must not bypass the guard -------------
+#
+# scan_git_add_tokens used to walk the token stream itself, only recognizing
+# a bare `git`/`*/git` token as "the git invocation" - it never unwrapped a
+# leading wrapper command, so `sudo git add -A` and `env FOO=1 git add .`
+# slipped past entirely. It now resolves the effective command word via
+# _common.sh's loom_tokens_command_word_index (the same helper every other
+# hook's checks use), which already unwraps sudo/env/xargs/time/nohup/
+# command/nice/stdbuf/timeout/gtimeout and their own option words.
+expect_block "sudo git add -A is still blocked" "sudo git add -A"
+expect_block "env FOO=1 git add . is still blocked" "env FOO=1 git add ."
+
+# --- A5: raw-regex FALLBACK branch coverage ---------------------------------
+#
+# Nothing previously exercised the path loom_tokenize_command falls back to
+# on an unterminated quote. An UNTERMINATED QUOTE forces the pre-tokenizing
+# regex fallback in check_dangerous_patterns - a real dangerous `git add -A`
+# invocation inside that malformed command must still be blocked.
+expect_block "unterminated quote wrapping a real 'git add -A' is still blocked" \
+    'git add -A "oops'
+
 echo "PASS"

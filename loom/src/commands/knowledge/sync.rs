@@ -25,7 +25,7 @@ use crate::context::refresh::{
     refresh, RefreshOutcome, SemanticLayer, SemanticOutcome, SOURCE_GRAPH_PREFIX,
 };
 use crate::fs::knowledge::{KnowledgeDir, KnowledgeLayout, INDEX_FILENAME};
-use anyhow::Result;
+use anyhow::{Context, Result};
 use colored::Colorize;
 use std::path::Path;
 
@@ -41,13 +41,22 @@ use std::path::Path;
 /// (`fs/knowledge/dir.rs`) rather than inventing a new one. The UPGRADE write
 /// (flat to hierarchical) stays a hard failure: a flat tree that cannot get an
 /// index at all is a real problem worth surfacing, not a cosmetic one.
+///
+/// A [`refresh`] failure (the derived context catalog under `.loom/cache/`)
+/// still fails `sync` — that rebuild is real, un-cosmetic work — but the
+/// index step above has already run by the time `refresh` is even called, so
+/// letting the bare `refresh` error stand on its own would read as "sync did
+/// nothing" to a caller who only checks the exit code. `catalog_failure_context`
+/// annotates the error to say the index step already completed, leaving the
+/// underlying cause (still the real failure reason) in the chain beneath it.
 pub fn sync(structural_only: bool, json: bool) -> Result<()> {
     let (knowledge_root, store) = resolve()?;
     let upgraded = upgrade_flat_layout(&knowledge_root)?;
     if !upgraded {
         refresh_index_best_effort(&knowledge_root);
     }
-    let outcome = refresh(&store, &knowledge_root, structural_only)?;
+    let outcome = refresh(&store, &knowledge_root, structural_only)
+        .with_context(|| catalog_failure_context(upgraded))?;
 
     // Stdout carries the machine-readable result in --json mode, so a refused
     // base publish goes to stderr in BOTH modes: a scripted caller that reads
@@ -103,6 +112,32 @@ fn refresh_index_best_effort(knowledge_root: &Path) {
     if let Err(error) = knowledge.write_index() {
         eprintln!("warning: failed to refresh {INDEX_FILENAME}: {error:#}");
     }
+}
+
+/// Context attached to a [`refresh`] failure, naming which of `sync`'s two
+/// jobs actually failed.
+///
+/// `refresh` rebuilds the derived context catalog — cached state under
+/// `.loom/cache/` that a re-run rebuilds from the knowledge tree, not the
+/// knowledge tree itself. By the time `sync` calls it, the index half above
+/// has already run, so a bare propagation of `refresh`'s error would read as
+/// total failure (see `loom-bugs.txt` BUG 4) even though `doc/loom/knowledge/`
+/// is intact. The two branches mirror what the caller can actually promise:
+/// `upgraded` came back from a hard-failing write ([`upgrade_flat_layout`]),
+/// so "created" is a fact; the `false` branch instead went through
+/// [`refresh_index_best_effort`], which can itself fail silently (a stderr
+/// warning, not a returned error), so it only claims the step ran — never
+/// that `INDEX.md` is correct.
+fn catalog_failure_context(upgraded: bool) -> String {
+    let index_step = if upgraded {
+        "the knowledge index was created (flat directory upgraded to hierarchical)"
+    } else {
+        "the knowledge index step completed before this failure"
+    };
+    format!(
+        "{index_step}; rebuilding the derived context catalog failed \
+         (cached state under .loom/cache/ that a re-run rebuilds)"
+    )
 }
 
 fn print_json(outcome: &RefreshOutcome, upgraded: bool) -> Result<()> {

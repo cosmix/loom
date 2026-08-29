@@ -25,6 +25,7 @@ mod config_tests {
             HookEvent::PreferModernTools.to_string(),
             "PreferModernTools"
         );
+        assert_eq!(HookEvent::SubagentStop.to_string(), "SubagentStop");
     }
 
     #[test]
@@ -38,18 +39,20 @@ mod config_tests {
             HookEvent::PreferModernTools.script_name(),
             "prefer-modern-tools.sh"
         );
+        assert_eq!(HookEvent::SubagentStop.script_name(), "subagent-stop.sh");
     }
 
     #[test]
     fn test_hook_event_all() {
         let all = HookEvent::all();
-        assert_eq!(all.len(), 6);
+        assert_eq!(all.len(), 7);
         assert!(all.contains(&HookEvent::SessionStart));
         assert!(all.contains(&HookEvent::PostToolUse));
         assert!(all.contains(&HookEvent::PreCompact));
         assert!(all.contains(&HookEvent::SessionEnd));
         assert!(all.contains(&HookEvent::Stop));
         assert!(all.contains(&HookEvent::PreferModernTools));
+        assert!(all.contains(&HookEvent::SubagentStop));
     }
 
     #[test]
@@ -96,8 +99,9 @@ mod config_tests {
         let config = super::test_config(PathBuf::from("/hooks"), PathBuf::from("/work"));
 
         let hooks = config.to_settings_hooks();
-        // Should have hook events: SessionStart, PostToolUse, PreCompact, SessionEnd, Stop
-        assert!(hooks.len() >= 5);
+        // Should have hook events: SessionStart, PostToolUse, PreCompact,
+        // SessionEnd, Stop, SubagentStop
+        assert!(hooks.len() >= 6);
 
         // Check PreCompact hook exists
         assert!(hooks.contains_key("PreCompact"));
@@ -114,6 +118,12 @@ mod config_tests {
         assert!(hooks.contains_key("PostToolUse"));
         let post_tool_rules = &hooks["PostToolUse"];
         assert!(post_tool_rules.iter().any(|r| r.matcher == "*"));
+
+        // Check SubagentStop hook exists
+        assert!(hooks.contains_key("SubagentStop"));
+        let subagent_stop_rules = &hooks["SubagentStop"];
+        assert!(!subagent_stop_rules.is_empty());
+        assert_eq!(subagent_stop_rules[0].matcher, "*");
     }
 }
 
@@ -233,6 +243,7 @@ mod generator_tests {
         assert!(settings["hooks"]["PreCompact"].is_array());
         assert!(settings["hooks"]["SessionEnd"].is_array());
         assert!(settings["hooks"]["Stop"].is_array());
+        assert!(settings["hooks"]["SubagentStop"].is_array());
 
         // Check environment variables: only the stable LOOM_WORK_DIR is
         // persisted; per-session identity comes from the wrapper script env.

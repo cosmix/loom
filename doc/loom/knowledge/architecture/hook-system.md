@@ -48,8 +48,8 @@ Used by hooks to inject context into Claude's next turn:
 
 **Examples:**
 
-- `prefer-modern-tools.sh` (lines 100-101): PreToolUse warning about grep usage
-- `skill-trigger.sh` (lines 286-291): UserPromptSubmit skill suggestions
+- `prefer-modern-tools.sh`: PreToolUse warning when a command-position token invokes `grep`/`find`
+- `skill-trigger.sh`: UserPromptSubmit skill suggestions
 - `session-start.sh`: SessionStart re-anchor pointer on compact/resume source
 
 **Why JSON over plain text:** Claude Code has reliability issues with plain-text stdout from certain hook types (see issue claude-code#13912); JSON additionalContext is more reliable for context injection.
@@ -73,21 +73,24 @@ Set by wrapper script (pid_tracking.rs:463-479) before `exec claude`:
 
 ### Hook Embedding (constants.rs)
 
-`LOOM_HOOKS` (`fs/permissions/constants.rs`) holds **17 entries**, each embedded via `include_str!()` at compile time. `install_loom_hooks()` writes them to `~/.claude/hooks/loom/` with mode 0o755. Hooks are NOT read from disk by loom at runtime.
+`LOOM_HOOKS` (`fs/permissions/constants.rs`) holds **23 entries**, each embedded via `include_str!()` at compile time. `install_loom_hooks()` writes them to `~/.claude/hooks/loom/` with mode 0o755. Hooks are NOT read from disk by loom at runtime.
 
-**Do not read "17 entries" as "17 hooks."** The arithmetic, verified against `ls hooks/*.sh` and the `LOOM_HOOKS` table:
+**Do not read "23 entries" as "23 hooks."** The arithmetic, verified against `ls hooks/*.sh` and the `LOOM_HOOKS` table:
 
 ```text
-18 top-level scripts in hooks/
+24 top-level scripts in hooks/
  −1  git-pre-commit-hook.sh   (excluded from LOOM_HOOKS; appended to .git/hooks/pre-commit by loom init)
  ───
- 17  LOOM_HOOKS entries installed to ~/.claude/hooks/loom/
+ 23  LOOM_HOOKS entries installed to ~/.claude/hooks/loom/
  −1  _common.sh               (a sourced library, not a registered hook)
  ───
- 16  actual Claude Code hooks
+ 22  actual Claude Code hooks
 ```
 
-So: **16 Claude Code hooks + 1 shared library + 1 git-side hook = 18 scripts** (29 files including `hooks/tests/`). An earlier version of this file said "All 17 Claude Code hooks are embedded" in one paragraph and "16 Claude Code hooks" in the next; the second was right.
+So: **22 Claude Code hooks + 1 shared library + 1 git-side hook = 24 scripts** (64 files including
+`hooks/tests/`). Re-derive these with `fd -t f -e sh . hooks --max-depth 1 | wc -l` and
+`rg -c '^    \("' loom/src/fs/permissions/constants.rs` rather than trusting the numbers here —
+they have gone stale twice.
 
 ## Subagent Isolation
 
@@ -95,16 +98,25 @@ Three-layer defense: documentation (CLAUDE.md Rule 5), signal injection (cache.r
 
 | Hook                       | Enforces                                                                                                                                                                                                                |
 | -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `commit-filter.sh`         | subagents may not run git operations; blocks AI attribution in commit messages                                                                                                                                          |
-| `subagent-verify-guard.sh` | subagents may not run project-wide build/test/lint/typecheck suites — at most one narrowly-scoped check. `integration-verify` stages are carved out and may run the full suite. Deliberately has **no opt-out env var** |
+| `commit-filter.sh`         | subagents may not run git operations; blocks AI attribution in commit messages. Matches argv TOKENS (raw-regex fallback on an unterminated quote), so quoted prose about git is not a git invocation                     |
+| `subagent-verify-guard.sh` | **still matches raw command strings** (see concerns.md). subagents may not run project-wide build/test/lint/typecheck suites — at most one narrowly-scoped check. `integration-verify` stages are carved out and may run the full suite. Deliberately has **no opt-out env var** |
 
-**Detection is not a PPID comparison.** Both hooks gate on `loom_is_subagent()` in
-`hooks/_common.sh`, which requires `LOOM_MAIN_AGENT_PID` to be a **live ancestor** of the current
-process _and_ at least one intervening Claude process between them. A 2-level claude chain is
-classified MAIN AGENT; a 3-level chain is a SUBAGENT (verified empirically with
-`COMMIT_FILTER_DEBUG=1`).
+**Detection is payload-first, not a PPID comparison.** Both hooks gate on `loom_is_subagent()` in
+`hooks/_common.sh`, which first requires `LOOM_MAIN_AGENT_PID` to be a **live ancestor** of the
+current process — this scopes the globally-installed hooks to a loom stage session. Once that
+passes, it classifies the caller from the hook's stdin JSON payload via `loom_payload_agent_verdict`
+(`.agent_type` / `.transcript_path` / `.session_id`, which the caller cannot forge): a Task-spawned
+subagent always carries a non-empty `.agent_type` and is classified SUBAGENT immediately, and a
+main-session payload is recognized by its main-shaped `.transcript_path` and classified MAIN
+immediately. Only a payload-less caller, or one whose verdict is "unknown", falls back to the
+process-tree walk (`find_nearest_claude_ancestor` / `count_claude_processes_between`). In that
+FALLBACK ONLY, a 2-level claude chain is classified MAIN AGENT and a 3-level chain is a SUBAGENT
+(verified empirically with `COMMIT_FILTER_DEBUG=1`).
 
 **Consequence worth knowing:** agent-team _teammates_ are not in the main agent's process tree,
 so `LOOM_MAIN_AGENT_PID` is set but is not a live ancestor and `loom_is_subagent` returns false
-for them. Hooks gated on it therefore do **not** fire inside teammates. Task-tool subagents are
-in-tree and detect correctly.
+for them before either check runs. Hooks gated on it therefore do **not** fire inside teammates.
+A Task-tool subagent, by contrast, runs **in-process** (the same claude process as the main
+agent), so the process-tree walk alone finds no intervening Claude process between it and
+`LOOM_MAIN_AGENT_PID` — it is the payload check, not the process tree, that correctly classifies
+it as a subagent.

@@ -1,7 +1,7 @@
 //! Security policy helpers for Claude settings generation.
 
 use crate::codex::{CODEX_SANDBOX_DOMAINS, CODEX_SANDBOX_WRITE_PATHS};
-use crate::sandbox::MergedSandboxConfig;
+use crate::sandbox::{MergedSandboxConfig, PACKAGE_MANAGER_CACHE_WRITE_PATHS};
 use anyhow::{bail, Result};
 use serde_json::{json, Value};
 use std::collections::HashSet;
@@ -105,6 +105,13 @@ fn network_settings(config: &MergedSandboxConfig) -> Option<Value> {
         .then_some(network)
 }
 
+/// Push `path` onto `into` unless it is already present (dedup, keeps order).
+fn push_unique(into: &mut Vec<String>, path: &str) {
+    if !into.iter().any(|existing| existing == path) {
+        into.push(path.to_string());
+    }
+}
+
 fn filesystem_settings(config: &MergedSandboxConfig) -> Option<Value> {
     let mut filesystem = json!({});
     let deny_read = deny_read_patterns(config);
@@ -127,9 +134,10 @@ fn filesystem_settings(config: &MergedSandboxConfig) -> Option<Value> {
     if !deny_write.is_empty() {
         filesystem["denyWrite"] = json!(deny_write);
     }
-    // `allowWrite` is the OS-enforced, additive write grant. Plan entries reach
-    // it directly; codex state directories are added only when that lane is
-    // licensed for the stage.
+    // `allowWrite` is the OS-enforced, additive write grant. Plan entries
+    // reach it directly; package-manager caches are granted to every stage
+    // (`sandbox::package_caches`); codex state directories only when that
+    // lane is licensed.
     let mut allow_write: Vec<String> = Vec::new();
     for path in config
         .filesystem
@@ -138,15 +146,14 @@ fn filesystem_settings(config: &MergedSandboxConfig) -> Option<Value> {
         .map(|p| p.trim())
         .filter(|p| !p.is_empty() && !p.contains("../"))
     {
-        if !allow_write.iter().any(|existing| existing == path) {
-            allow_write.push(path.to_string());
-        }
+        push_unique(&mut allow_write, path);
+    }
+    for path in PACKAGE_MANAGER_CACHE_WRITE_PATHS {
+        push_unique(&mut allow_write, path);
     }
     if config.implementers.includes_codex() {
         for path in CODEX_SANDBOX_WRITE_PATHS {
-            if !allow_write.iter().any(|existing| existing == path) {
-                allow_write.push(path.to_string());
-            }
+            push_unique(&mut allow_write, path);
         }
     }
     if !allow_write.is_empty() {
@@ -203,9 +210,31 @@ mod tests {
         let mut config = config();
         config.implementers = Implementers::new(vec![Implementer::Codex]);
         let sandbox = sandbox_settings(&config);
-        assert_eq!(
-            sandbox["filesystem"]["allowWrite"],
-            json!(CODEX_SANDBOX_WRITE_PATHS)
+        let allow_write: Vec<&str> = sandbox["filesystem"]["allowWrite"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(Value::as_str)
+            .collect();
+        for expected in CODEX_SANDBOX_WRITE_PATHS {
+            assert!(
+                allow_write.contains(&expected),
+                "missing codex write path {expected}"
+            );
+        }
+        // Package-manager caches are granted to every stage; codex's own
+        // state dirs come after them, matching filesystem_settings' order.
+        let last_package_cache_index = allow_write
+            .iter()
+            .rposition(|path| PACKAGE_MANAGER_CACHE_WRITE_PATHS.contains(path))
+            .expect("package caches must be present");
+        let first_codex_index = allow_write
+            .iter()
+            .position(|path| CODEX_SANDBOX_WRITE_PATHS.contains(path))
+            .expect("codex paths must be present");
+        assert!(
+            first_codex_index > last_package_cache_index,
+            "codex paths must come after package-manager caches, got: {allow_write:?}"
         );
         let domains = sandbox["network"]["allowedDomains"].as_array().unwrap();
         for expected in CODEX_SANDBOX_DOMAINS {
@@ -301,13 +330,31 @@ mod tests {
     }
 
     #[test]
-    fn claude_only_allow_write_contains_only_plan_paths() {
+    fn claude_only_allow_write_is_plan_paths_then_package_caches() {
         let mut config = config();
         config.filesystem.allow_write = vec!["src/**".to_string()];
 
         let filesystem = filesystem_settings(&config).unwrap();
+        let allow_write: Vec<&str> = filesystem["allowWrite"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(Value::as_str)
+            .collect();
 
-        assert_eq!(filesystem["allowWrite"], json!(["src/**"]));
+        assert_eq!(allow_write.first(), Some(&"src/**"));
+        for expected in CODEX_SANDBOX_WRITE_PATHS {
+            assert!(
+                !allow_write.contains(&expected),
+                "claude-only stage must not receive codex path {expected}"
+            );
+        }
+        for expected in PACKAGE_MANAGER_CACHE_WRITE_PATHS {
+            assert!(
+                allow_write.contains(&expected),
+                "missing package-manager cache {expected}"
+            );
+        }
     }
 
     #[test]
@@ -318,13 +365,23 @@ mod tests {
 
         let filesystem = filesystem_settings(&config).unwrap();
 
+        let mut expected: Vec<&str> = vec!["src/**"];
+        expected.extend(PACKAGE_MANAGER_CACHE_WRITE_PATHS);
+        expected.extend(CODEX_SANDBOX_WRITE_PATHS);
+        assert_eq!(filesystem["allowWrite"], json!(expected));
+    }
+
+    #[test]
+    fn every_stage_gets_the_package_caches_even_with_no_plan_entries() {
+        let config = config();
+        assert!(config.filesystem.allow_write.is_empty());
+        assert!(!config.implementers.includes_codex());
+
+        let filesystem = filesystem_settings(&config).unwrap();
+
         assert_eq!(
             filesystem["allowWrite"],
-            json!([
-                "src/**",
-                "~/.codex",
-                "~/.claude/plugins/data/codex-openai-codex"
-            ])
+            json!(PACKAGE_MANAGER_CACHE_WRITE_PATHS)
         );
     }
 

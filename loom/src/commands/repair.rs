@@ -564,6 +564,7 @@ fn check_all_issues(repo_root: &Path) -> Vec<RepairIssue> {
                         });
                     }
 
+                    // Raw `Path::exists()`, not `check_status`: still sees the socket when a sandboxed `connect()` is denied.
                     if !socket_path.exists() {
                         issues.push(RepairIssue {
                             severity: Severity::Critical,
@@ -577,8 +578,7 @@ fn check_all_issues(repo_root: &Path) -> Vec<RepairIssue> {
                     }
                 }
             } else if DaemonServer::check_status(&work_dir) == DaemonStatus::ProcessOnly {
-                // No flock holder, but a daemon process appears alive with an
-                // unreachable socket (legacy daemon started before the flock fix).
+                // No flock holder, but a process appears alive with an unreachable socket. Checked via `== ProcessOnly`, not `Unreachable` too: our own sandboxed `connect()` denial also reads as `Unreachable` and must not restart a healthy daemon.
                 issues.push(RepairIssue {
                     severity: Severity::Warning,
                     description: "Daemon process appears alive but its socket is unreachable"

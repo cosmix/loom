@@ -279,7 +279,7 @@ const results = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "w
 expect(results.violations).toEqual([]);
 ```
 
-- Lint: `eslint-plugin-jsx-a11y`. Query by role/name in tests (`getByRole("button", { name: "Save" })`) — it fails when the accessible name is missing, doubling as an a11y assertion.
+- Lint: oxlint's `jsx-a11y` plugin (add `"jsx-a11y"` to `plugins` in `.oxlintrc.json` alongside the defaults you keep — setting `plugins` replaces the default set `eslint`, `typescript`, `unicorn`, `oxc`; `eslint-plugin-jsx-a11y` is the legacy ESLint equivalent). Query by role/name in tests (`getByRole("button", { name: "Save" })`) — it fails when the accessible name is missing, doubling as an a11y assertion.
 - CI gates: Lighthouse `categories:accessibility` ≥ 0.9, or Pa11y with `WCAG2AA`.
 
 **Manual (before release) — the load-bearing part:**

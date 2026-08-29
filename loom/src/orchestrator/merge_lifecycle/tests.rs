@@ -71,7 +71,7 @@ fn init_repo() -> TempDir {
 
 /// Add `.worktrees/<stage_id>` on a fresh `loom/<stage_id>` branch cut from
 /// main, and commit one file on it. Returns the repo and that commit's SHA.
-fn repo_with_stage_commit(stage_id: &str) -> (TempDir, String) {
+pub(super) fn repo_with_stage_commit(stage_id: &str) -> (TempDir, String) {
     let temp = init_repo();
     let root = temp.path();
     let path = worktree_of(root, stage_id);
@@ -100,16 +100,16 @@ fn commit_in_worktree(root: &Path, stage_id: &str, name: &str, body: &str) -> St
     git_stdout(&worktree, &["rev-parse", "HEAD"])
 }
 
-fn worktree_of(root: &Path, stage_id: &str) -> PathBuf {
+pub(super) fn worktree_of(root: &Path, stage_id: &str) -> PathBuf {
     root.join(".worktrees").join(stage_id)
 }
 
-fn merge_stage_branch(root: &Path, stage_id: &str) {
+pub(super) fn merge_stage_branch(root: &Path, stage_id: &str) {
     let branch = branch_name_for_stage(stage_id);
     git_ok(root, &["merge", "--no-ff", "-m", "merge stage", &branch]);
 }
 
-fn write_stage_record(work_dir: &Path, stage_id: &str, completed_commit: &str) {
+pub(super) fn write_stage_record(work_dir: &Path, stage_id: &str, completed_commit: &str) {
     let stage = Stage {
         id: stage_id.to_string(),
         name: format!("Stage {stage_id}"),
@@ -119,7 +119,7 @@ fn write_stage_record(work_dir: &Path, stage_id: &str, completed_commit: &str) {
     create_stage(&stage, work_dir).unwrap();
 }
 
-fn cleanup_from_outside(root: &Path, stage_id: &str) -> CleanupOutcome {
+pub(super) fn cleanup_from_outside(root: &Path, stage_id: &str) -> CleanupOutcome {
     // `root` is never inside the worktree, so this exercises the real path
     // without depending on the test runner's process-wide cwd.
     MergeLifecycle::new(stage_id, root, &root.join(".work")).cleanup_with_cwd(

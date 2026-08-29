@@ -131,7 +131,7 @@ const SOCKET_NAME_BUDGET: usize = 40;
 ///
 /// Panics naming every rejected candidate and why if none qualifies -- a
 /// skipped test is a test that can never fail, so this never skips.
-fn create_isolated_tmux_tmpdir() -> PathBuf {
+pub(crate) fn create_isolated_tmux_tmpdir() -> PathBuf {
     // SAFETY: getuid() is always safe to call and cannot fail. Matches
     // `loom_socket_dir()` in `src/orchestrator/terminal/tmux/socket.rs`,
     // which builds the real socket path the same way.
@@ -196,7 +196,7 @@ fn tmux_bind_supported(dir: &Path) -> Result<(), String> {
 /// nothing to do with the code under test. Prints a loud `SKIP` line naming
 /// the probe error. Panics instead of skipping when
 /// `LOOM_E2E_REQUIRE_TMUX=1`, so CI can demand a real run.
-fn skip_unless_tmux_can_bind(dir: &Path, test_name: &str) -> bool {
+pub(crate) fn skip_unless_tmux_can_bind(dir: &Path, test_name: &str) -> bool {
     match tmux_bind_supported(dir) {
         Ok(()) => false,
         Err(err) => {
@@ -220,13 +220,13 @@ fn skip_unless_tmux_can_bind(dir: &Path, test_name: &str) -> bool {
 /// Redirects `TMUX_TMPDIR` to an isolated per-test directory for the
 /// duration of the guard, additionally removing the directory on drop -- on
 /// EVERY exit path, including a panic mid-test.
-struct TmuxTmpDirGuard {
+pub(crate) struct TmuxTmpDirGuard {
     _env: EnvVarGuard,
     dir: PathBuf,
 }
 
 impl TmuxTmpDirGuard {
-    fn new() -> Self {
+    pub(crate) fn new() -> Self {
         let dir = create_isolated_tmux_tmpdir();
         let _env = EnvVarGuard::set("TMUX_TMPDIR", &dir);
         Self { _env, dir }
@@ -234,7 +234,7 @@ impl TmuxTmpDirGuard {
 
     /// The isolated `TMUX_TMPDIR` this guard set, e.g. for a bind probe
     /// before starting a real tmux server against it.
-    fn dir(&self) -> &Path {
+    pub(crate) fn dir(&self) -> &Path {
         &self.dir
     }
 }
@@ -249,8 +249,8 @@ impl Drop for TmuxTmpDirGuard {
 /// a panicking assertion mid-test -- without this, a failing assertion
 /// between spawn and an explicit teardown call would strand a live tmux
 /// server outside the test's own `TMUX_TMPDIR` cleanup.
-struct TmuxServerGuard {
-    socket_path: PathBuf,
+pub(crate) struct TmuxServerGuard {
+    pub(crate) socket_path: PathBuf,
 }
 
 impl Drop for TmuxServerGuard {
@@ -292,7 +292,7 @@ impl Drop for PermissionsGuard {
     }
 }
 
-fn wait_until(mut cond: impl FnMut() -> bool, timeout: Duration) -> bool {
+pub(crate) fn wait_until(mut cond: impl FnMut() -> bool, timeout: Duration) -> bool {
     let deadline = Instant::now() + timeout;
     loop {
         if cond() {

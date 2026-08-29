@@ -40,16 +40,22 @@ pub(super) struct PaneInfo {
 /// 2. Split on whitespace and find the first `-L` token; take the token
 ///    right after it. No `-L`, or nothing after it, means this is not a
 ///    loom pane.
-/// 3. Strip any surrounding `"` or `'` from that token.
-/// 4. The result must start with `loom-` (session sockets are
-///    `loom-<session.id>`, see `super::socket_name`).
+/// 3. The token must be quote-SYMMETRIC — quoted at both ends or neither.
+///    A quoted value containing whitespace splits at step 2, handing back a
+///    one-sided fragment like `'loom-a`; misattributing it would make Rule 1
+///    re-add the "missing" real socket on every tick, growing the viewer by
+///    one pane per tick until `split-window` runs out of room.
+/// 4. Strip any surrounding `"` or `'` from that token.
+/// 5. The result must start with `loom-` and contain only `[A-Za-z0-9_-]`
+///    (the id charset `validate_id` enforces, and session sockets are
+///    `loom-<session.id>` — see `super::super::socket_name`).
 ///
-/// Rule 4 is a deliberate SAFETY TIGHTENING, not decoration. Without it, an
+/// Rule 5 is a deliberate SAFETY TIGHTENING, not decoration. Without it, an
 /// operator who split their own pane and ran a plain `tmux attach-session`
-/// there would be attributed as a loom pane by rules 1-3 and then killed by
-/// [`reconcile_steps`]'s duplicate/removal logic. Loom session ids
+/// there would be attributed as a loom pane by the earlier rules and then
+/// killed by [`reconcile_steps`]'s duplicate/removal logic. Loom session ids
 /// (`session-<uuid8>-<unixts>`, `[A-Za-z0-9-]` only) need no unescaping, so
-/// the stripped token is unambiguous once rule 4 passes.
+/// the stripped token is unambiguous once rule 5 passes.
 fn parse_pane_socket(start_command: &str) -> Option<String> {
     if !start_command.contains("attach-session") {
         return None;
@@ -57,8 +63,14 @@ fn parse_pane_socket(start_command: &str) -> Option<String> {
     let tokens: Vec<&str> = start_command.split_whitespace().collect();
     let position = tokens.iter().position(|&token| token == "-L")?;
     let raw = tokens.get(position + 1)?;
+    if raw.starts_with(['"', '\'']) != raw.ends_with(['"', '\'']) {
+        return None; // Rule 3: a fragment of a quoted value, not a socket.
+    }
     let socket = raw.trim_matches(|c| c == '"' || c == '\'');
-    if socket.starts_with("loom-") {
+    let is_identifier = socket
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_');
+    if socket.starts_with("loom-") && is_identifier {
         Some(socket.to_string())
     } else {
         None
@@ -163,6 +175,58 @@ fn add_steps(panes: &[PaneInfo], desired: &[(String, String)]) -> Vec<Vec<String
     steps
 }
 
+/// Classifies each pane per Rules 2 (respawn), 3 (remove candidate), 4
+/// (duplicate), and 5 (untouchable) of [`reconcile_steps`], in tmux pane
+/// order — the order that rule set relies on for "the first kill in pane
+/// order" (its floor rule). Returns `(respawns, kill_candidates)`:
+/// `respawns` are ready-to-emit `respawn-pane` steps; `kill_candidates` are
+/// pane INDICES still subject to the floor rule before becoming `kill-pane`
+/// steps.
+fn classify_panes(
+    panes: &[PaneInfo],
+    keepers: &HashSet<usize>,
+    live: &HashSet<&str>,
+) -> (Vec<Vec<String>>, Vec<usize>) {
+    let mut respawns: Vec<Vec<String>> = Vec::new();
+    let mut kill_candidates: Vec<usize> = Vec::new();
+    for (index, pane) in panes.iter().enumerate() {
+        let Some(socket) = pane.session_socket.as_deref() else {
+            continue; // Rule 5: never touched.
+        };
+        if !keepers.contains(&index) {
+            kill_candidates.push(index); // Rule 4: non-keeper duplicate.
+            continue;
+        }
+        if !pane.dead {
+            continue; // Live keeper: left alone.
+        }
+        if live.contains(socket) {
+            respawns.push(vec![
+                "respawn-pane".to_string(),
+                "-t".to_string(),
+                pane.id.clone(),
+            ]);
+        } else {
+            kill_candidates.push(index); // Rule 3 candidate.
+        }
+    }
+    (respawns, kill_candidates)
+}
+
+/// Rule 7's trailing step: re-tile the survivors once, after every kill in
+/// the pass — see [`reconcile_steps`]'s "# Rule 7" doc.
+fn retile_step() -> Vec<String> {
+    [
+        "select-layout",
+        "-t",
+        super::super::viewer::OVERVIEW_SESSION,
+        "tiled",
+    ]
+    .into_iter()
+    .map(str::to_string)
+    .collect()
+}
+
 /// Pure diff: panes as tmux reports them vs. the sessions that SHOULD have a
 /// pane, `desired` being `(session_socket, tmux_session)` pairs in discovery
 /// order (the shape [`super::super::viewer::attachable_sessions`] returns).
@@ -204,41 +268,36 @@ fn add_steps(panes: &[PaneInfo], desired: &[(String, String)]) -> Vec<Vec<String
 /// An empty diff returns an empty vec, so [`super::reconcile_viewer`] runs
 /// no tmux command beyond its probe and `list-panes`.
 ///
+/// # Rule 7 — Retile after kills
+///
+/// A kill leaves the SURVIVING panes at their pre-kill tiled geometry —
+/// unlike an add, which re-tiles itself (Rule 1), `kill-pane` never does.
+/// When the final kill list (after the floor rule above) is non-empty, ONE
+/// trailing `select-layout … tiled` step is appended after the last kill.
+/// No kills means no trailing retile at all.
+///
 /// # Global order
 ///
-/// ALL adds, then ALL respawns, then ALL kills — adds first so a concurrent
-/// add guarantees a survivor before any kill runs.
-pub(super) fn reconcile_steps(panes: &[PaneInfo], desired: &[(String, String)]) -> Vec<Vec<String>> {
+/// ALL adds, then ALL respawns, then ALL kills, then one retile iff any
+/// kill — adds first so a concurrent add guarantees a survivor before any
+/// kill runs; the retile last because it is only kills that leave the
+/// layout stale. A `select-layout` step's OWN failure never blocks a step
+/// after it, though — the executor (`super::apply_steps`, see its
+/// "cosmetic step" doc) applies these in order but treats every
+/// `select-layout` as non-fatal, so this ordering is about SESSION-STATE
+/// correctness (adds/respawns/kills), not about the retile itself
+/// surviving to run.
+pub(super) fn reconcile_steps(
+    panes: &[PaneInfo],
+    desired: &[(String, String)],
+) -> Vec<Vec<String>> {
     let live: HashSet<&str> = desired.iter().map(|(socket, _)| socket.as_str()).collect();
     let mut steps = add_steps(panes, desired);
     let add_count = steps.len() / 2;
     let keepers = select_keepers(panes);
 
-    // Rules 2, 3 (candidates), 4, 5 — one pass, tmux order, so "the first
-    // kill in pane order" (the floor, below) is well defined.
-    let mut respawns: Vec<Vec<String>> = Vec::new();
-    let mut kill_candidates: Vec<usize> = Vec::new();
-    for (index, pane) in panes.iter().enumerate() {
-        let Some(socket) = pane.session_socket.as_deref() else {
-            continue; // Rule 5: never touched.
-        };
-        if !keepers.contains(&index) {
-            kill_candidates.push(index); // Rule 4: non-keeper duplicate.
-            continue;
-        }
-        if !pane.dead {
-            continue; // Live keeper: left alone.
-        }
-        if live.contains(socket) {
-            respawns.push(vec![
-                "respawn-pane".to_string(),
-                "-t".to_string(),
-                pane.id.clone(),
-            ]);
-        } else {
-            kill_candidates.push(index); // Rule 3 candidate.
-        }
-    }
+    // Rules 2, 3 (candidates), 4, 5 — see `classify_panes`'s doc.
+    let (respawns, mut kill_candidates) = classify_panes(panes, &keepers, &live);
 
     // Rule 3's floor: never let a reconcile tick empty the window.
     let survivors = panes.len() as isize - kill_candidates.len() as isize + add_count as isize;
@@ -247,6 +306,7 @@ pub(super) fn reconcile_steps(panes: &[PaneInfo], desired: &[(String, String)]) 
     }
 
     steps.extend(respawns);
+    let kill_count = kill_candidates.len();
     steps.extend(kill_candidates.into_iter().map(|index| {
         vec![
             "kill-pane".to_string(),
@@ -254,6 +314,10 @@ pub(super) fn reconcile_steps(panes: &[PaneInfo], desired: &[(String, String)]) 
             panes[index].id.clone(),
         ]
     }));
+    // Rule 7: retile once iff this pass killed at least one pane.
+    if kill_count > 0 {
+        steps.push(retile_step());
+    }
     steps
 }
 

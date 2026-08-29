@@ -54,3 +54,22 @@ fn no_live_sessions_message_names_the_work_dir_for_tmux_backend() {
     assert!(message.contains("/tmp/example-repo/.work"), "{message}");
     assert!(message.contains("No live tmux sessions"), "{message}");
 }
+
+#[test]
+fn tmux_tmpdir_adoption_message_names_both_recorded_and_ambient_values() {
+    let recorded = Some(std::ffi::OsString::from("/daemon/socket/dir"));
+    let ambient = Some(std::ffi::OsString::from("/attach/shell/dir"));
+    let message = format_tmux_tmpdir_adoption_message(&recorded, &ambient);
+    assert!(message.contains("/daemon/socket/dir"), "{message}");
+    assert!(message.contains("/attach/shell/dir"), "{message}");
+}
+
+#[test]
+fn tmux_tmpdir_adoption_message_shows_unset_for_absent_values() {
+    let message = format_tmux_tmpdir_adoption_message(&None, &None);
+    assert_eq!(
+        message,
+        "Using the orchestrator's tmux socket dir (TMUX_TMPDIR=<unset>) instead of this shell's \
+         (<unset>)"
+    );
+}

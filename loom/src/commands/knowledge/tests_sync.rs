@@ -221,3 +221,52 @@ fn sync_does_not_fail_when_the_index_write_fails() {
         "an INDEX.md write failure on an already-hierarchical directory must not fail sync",
     );
 }
+
+/// A context-catalog write failure (BUG 4, `loom-bugs.txt`) must still fail
+/// `sync` — the catalog rebuild is real work — but the error it returns must
+/// say the knowledge index step already completed, not read as if `sync` did
+/// nothing at all. `INDEX.md` itself must still be on disk, unaffected by a
+/// failure two steps later in an unrelated cache directory.
+///
+/// The catalog write is forced to fail by occupying its own persisted path
+/// (`.loom/cache/context-v1/catalog.json`) with a directory: `save_catalog`
+/// (`context/store.rs`) writes its temp file into the still-writable parent
+/// and then renames it onto that path, so the write itself succeeds and only
+/// the final rename fails (`EISDIR`) — the same "catalog write failed" shape
+/// the bug report hit, without needing a read-only filesystem.
+#[test]
+#[serial]
+fn sync_reports_the_index_step_completed_when_the_context_catalog_write_fails() {
+    let (_temp_dir, test_dir) = setup_test_env();
+    let original_dir = std::env::current_dir().expect("Failed to get current dir");
+    std::env::set_current_dir(&test_dir).expect("Failed to change dir");
+
+    KnowledgeDir::new(".")
+        .initialize()
+        .expect("Failed to initialize knowledge");
+
+    let catalog_path = test_dir
+        .join(crate::context::store::CACHE_RELATIVE_DIR)
+        .join(crate::context::store::CATALOG_FILE);
+    fs::create_dir_all(&catalog_path).expect("failed to occupy catalog.json with a directory");
+
+    let result = sync(true, false);
+    std::env::set_current_dir(original_dir).expect("Failed to restore dir");
+
+    let error = result.expect_err("a context catalog write failure must still fail sync");
+    let rendered = format!("{error:#}");
+    assert!(
+        rendered.contains("knowledge index step completed"),
+        "error must say the index step already completed, got:\n{rendered}"
+    );
+    assert!(
+        rendered.contains("context catalog"),
+        "error must name the context catalog as the failing half, got:\n{rendered}"
+    );
+
+    let index_path = test_dir.join("doc/loom/knowledge").join(INDEX_FILENAME);
+    assert!(
+        index_path.exists(),
+        "INDEX.md must still be on disk after the later catalog step fails"
+    );
+}

@@ -146,7 +146,7 @@ const VIEWER_HARDENING: &[&str] = &[
     "set-option",
     "-g",
     "remain-on-exit-format",
-    "loom: session ended (exit #{pane_dead_status}) - new sessions appear automatically while loom runs",
+    "loom: session ended (exit #{pane_dead_status}) - this view updates only while loom run is active; see loom status",
 ];
 
 /// One step's argv, sharing the `-L <viewer_socket>` prefix every invocation

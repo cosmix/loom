@@ -5,6 +5,7 @@
 //! simple regex patterns instead of a full language server. Common/generic names are
 //! filtered out to reduce noise.
 
+use crate::verify::utils::bounded_stderr_warning;
 use anyhow::{bail, Context, Result};
 use regex::Regex;
 use std::fs;
@@ -297,6 +298,17 @@ fn extract_with_patterns(content: &str, patterns: &[(Regex, &str)]) -> Vec<Symbo
 /// excluding `changed_files`.
 ///
 /// Returns a list of (file_path, line_number) pairs for each match found.
+///
+/// grep exit code 1 means no matches (normal). Exit code 2 fires both for a
+/// genuine error (bad pattern, etc.) AND whenever ANY file under the search
+/// root is unreadable (permission denied) - the `-s` flag suppresses grep's
+/// own per-file "Permission denied" line, but the exit code itself still
+/// reflects it. Either way, stdout still holds every match grep DID find in
+/// the files it could read, so it must still be parsed - treating exit 2 as
+/// fatal here previously discarded real matches (a silent false "no
+/// duplicate" pass) any time the tree had even one unreadable file. Only
+/// warn (bounded, so an unreadable-file storm can't flood the caller's
+/// output) and fall through to parsing.
 fn find_symbol_in_codebase(
     worktree_path: &Path,
     name: &str,
@@ -309,6 +321,7 @@ fn find_symbol_in_codebase(
         .args([
             "-r",
             "-n",
+            "-s",
             "-E",
             "--binary-files=without-match",
             "--exclude-dir=.git",
@@ -326,16 +339,14 @@ fn find_symbol_in_codebase(
         Err(_) => return Ok(Vec::new()),
     };
 
-    // grep exit code 1 means no matches (normal), exit code 2 means error
-    if let Some(code) = output.status.code() {
-        if code == 2 {
-            let stderr = String::from_utf8_lossy(&output.stderr);
+    if output.status.code() == Some(2) {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        if !stderr.trim().is_empty() {
             eprintln!(
                 "warn: grep reported an error while searching for '{}': {}",
                 name,
-                stderr.trim()
+                bounded_stderr_warning(&stderr)
             );
-            return Ok(Vec::new());
         }
     }
 
@@ -421,131 +432,5 @@ fn word_boundary_match(text: &str, word: &str) -> bool {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_extract_rust_symbols_pub_fn() {
-        let content = "pub fn my_function() {}\npub struct MyStruct {}\n";
-        let symbols = extract_with_patterns(content, &RUST_PATTERNS);
-        let names: Vec<&str> = symbols.iter().map(|s| s.name.as_str()).collect();
-        assert!(names.contains(&"my_function"));
-        assert!(names.contains(&"MyStruct"));
-    }
-
-    #[test]
-    fn test_extract_rust_symbols_private_excluded() {
-        let content = "fn private_fn() {}\nstruct PrivateStruct {}\n";
-        let symbols = extract_with_patterns(content, &RUST_PATTERNS);
-        // Private symbols without `pub` should not be captured by pub patterns
-        assert!(symbols.is_empty());
-    }
-
-    #[test]
-    fn test_extract_rust_symbols_enum_and_trait() {
-        let content = "pub enum Color { Red, Green }\npub trait Display {}\n";
-        let symbols = extract_with_patterns(content, &RUST_PATTERNS);
-        let names: Vec<&str> = symbols.iter().map(|s| s.name.as_str()).collect();
-        assert!(names.contains(&"Color"));
-        assert!(names.contains(&"Display"));
-    }
-
-    #[test]
-    fn test_extract_ts_symbols() {
-        let content =
-            "export function greet() {}\nexport class Greeter {}\nexport const VERSION = '1';\n";
-        let symbols = extract_with_patterns(content, &TS_PATTERNS);
-        let names: Vec<&str> = symbols.iter().map(|s| s.name.as_str()).collect();
-        assert!(names.contains(&"greet"));
-        assert!(names.contains(&"Greeter"));
-        assert!(names.contains(&"VERSION"));
-    }
-
-    #[test]
-    fn test_extract_python_symbols() {
-        let content = "def my_func():\n    pass\nclass MyClass:\n    pass\n";
-        let symbols = extract_with_patterns(content, &PYTHON_PATTERNS);
-        let names: Vec<&str> = symbols.iter().map(|s| s.name.as_str()).collect();
-        assert!(names.contains(&"my_func"));
-        assert!(names.contains(&"MyClass"));
-    }
-
-    #[test]
-    fn test_extract_go_symbols() {
-        let content = "func HandleRequest() {}\ntype Server struct {}\n";
-        let symbols = extract_with_patterns(content, &GO_PATTERNS);
-        let names: Vec<&str> = symbols.iter().map(|s| s.name.as_str()).collect();
-        assert!(names.contains(&"HandleRequest"));
-        assert!(names.contains(&"Server"));
-    }
-
-    #[test]
-    fn test_word_boundary_match_exact() {
-        assert!(word_boundary_match("pub fn store()", "store"));
-    }
-
-    #[test]
-    fn test_word_boundary_match_no_match() {
-        assert!(!word_boundary_match("pub fn storage()", "store"));
-    }
-
-    #[test]
-    fn test_word_boundary_match_prefix() {
-        assert!(!word_boundary_match("fn restore()", "store"));
-    }
-
-    #[test]
-    fn test_has_source_extension() {
-        assert!(has_source_extension("src/foo.rs"));
-        assert!(has_source_extension("src/bar.ts"));
-        assert!(has_source_extension("src/baz.py"));
-        assert!(!has_source_extension("src/baz.md"));
-        assert!(!has_source_extension("src/baz.toml"));
-    }
-
-    #[test]
-    fn test_noise_names_filtered() {
-        // Verify that common noise names are in the list
-        assert!(NOISE_NAMES.contains(&"new"));
-        assert!(NOISE_NAMES.contains(&"default"));
-        assert!(NOISE_NAMES.contains(&"main"));
-    }
-
-    #[test]
-    fn test_symbol_line_number() {
-        let content = "// comment\npub fn first() {}\npub fn second() {}\n";
-        let symbols = extract_with_patterns(content, &RUST_PATTERNS);
-        let first = symbols.iter().find(|s| s.name == "first").unwrap();
-        let second = symbols.iter().find(|s| s.name == "second").unwrap();
-        assert_eq!(first.line, 2);
-        assert_eq!(second.line, 3);
-    }
-
-    #[test]
-    fn test_build_grep_pattern_function() {
-        let pat = build_grep_pattern("my_func", "function");
-        assert!(pat.contains("fn"));
-        assert!(pat.contains("def"));
-        assert!(pat.contains("function"));
-        assert!(pat.contains("my_func"));
-    }
-
-    #[test]
-    fn test_build_grep_pattern_struct() {
-        let pat = build_grep_pattern("MyStruct", "struct");
-        assert!(pat.contains("struct"));
-        assert!(pat.contains("MyStruct"));
-        // struct pattern should not include fn/def
-        assert!(!pat.contains("fn"));
-    }
-
-    #[test]
-    fn test_build_grep_pattern_kind_precision() {
-        // enum pattern should only contain enum keyword
-        let pat = build_grep_pattern("Color", "enum");
-        assert!(pat.contains("enum"));
-        assert!(pat.contains("Color"));
-        assert!(!pat.contains("fn"));
-        assert!(!pat.contains("struct"));
-    }
-}
+#[path = "tests_duplicate_detection.rs"]
+mod tests;

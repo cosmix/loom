@@ -1,6 +1,6 @@
 ---
 name: loom-typescript
-description: TypeScript language expertise for type-safe, production-quality code. Use for advanced type system features (generics, discriminated unions, conditional and mapped types), strict mode configuration, type-safe APIs with zod/trpc/prisma, and modern tooling across Node, Deno, and Bun.
+description: TypeScript language expertise for type-safe, production-quality code. Use for advanced type system features (generics, discriminated unions, conditional and mapped types), strict mode configuration, type-safe APIs with zod/trpc/prisma, and the Bun + Vite + Oxc toolchain (oxlint, oxfmt, Rolldown, tsdown) across Node, Deno, and Bun.
 triggers:
   - typescript
   - ts
@@ -25,6 +25,14 @@ triggers:
   - nodejs
   - deno
   - bun
+  - oxc
+  - oxlint
+  - oxfmt
+  - rolldown
+  - tsdown
+  - vite
+  - eslint
+  - prettier
   - npm
   - pnpm
   - yarn
@@ -40,6 +48,8 @@ triggers:
 ## Overview
 
 Type-safe, production-quality TypeScript: the type system's sharp edges, strict-mode config that actually moves the needle, the type-vs-runtime boundary, and framework patterns (zod/tRPC/Prisma/React/Express). Assumes fluency with JS and basic TS — this is reference for the traps and idioms that bite experienced engineers.
+
+Toolchain assumed throughout: **Bun** (install/run/test), **Vite** (app dev server and bundler — Rolldown bundling, Oxc transforms and minifier, Lightning CSS), **tsdown** (library bundler on Rolldown), **oxlint** (lint), **oxfmt** (format), `tsc --noEmit` (type-check). ESLint, Prettier, esbuild, and Babel are the legacy equivalents — do not add them to a project that has this stack. See **Toolchain** below.
 
 ## Type System Essentials
 
@@ -185,9 +195,9 @@ Requires explicit `.js` extensions on relative imports plus `"type": "module"` i
 }
 ```
 
-### Bundler app (Vite, esbuild, webpack)
+### Bundler app (Vite / Rolldown)
 
-Extensionless relative imports work; the bundler emits, so `tsc` only type-checks (`noEmit`). ⚠ Never use `moduleResolution: bundler` for a **published library** — it's "infectious": emitted `.d.ts` files carry extensionless relative imports that break Node.js ESM consumers.
+Extensionless relative imports work; the bundler emits, so `tsc` only type-checks (`noEmit`). ⚠ Never use `moduleResolution: bundler` for a **published library** — it's "infectious": emitted `.d.ts` files carry extensionless relative imports that break Node.js ESM consumers. Vite transpiles TS with Oxc, which strips types without checking them — `tsc --noEmit` stays the type gate (`oxlint --type-aware` covers the lint half, not the compiler's).
 
 ```json
 {
@@ -222,7 +232,7 @@ Extensionless relative imports work; the bundler emits, so `tsc` only type-check
 - **`exactOptionalPropertyTypes`** — `obj.x = undefined` becomes an error for `x?: "a" | "b"`; only *deleting* the key makes the property absent. Matters for `"x" in obj` checks and serialization round-trips.
 - **`useUnknownInCatchVariables`** (on via `strict` since 4.4) — `catch` vars are `unknown`; guard with `instanceof Error`.
 - **`verbatimModuleSyntax`** — modern module-safety baseline; supersedes the now-no-op `importsNotUsedAsValues`/`preserveValueImports` (see Modules).
-- **`isolatedModules`** — forbids constructs single-file transpilers can't handle (re-exporting a type without `type`, `const enum` inlining); required for esbuild/swc/Babel pipelines.
+- **`isolatedModules`** — forbids constructs single-file transpilers can't handle (re-exporting a type without `type`, `const enum` inlining); required for single-file transpilers — Oxc (Vite, tsdown), Bun's transpiler, esbuild, swc, Babel.
 
 ### Checklist: tsconfig
 
@@ -231,6 +241,70 @@ Extensionless relative imports work; the bundler emits, so `tsc` only type-check
 - [ ] `verbatimModuleSyntax: true`; type-only imports carry the `type` modifier
 - [ ] Library build: `declaration: true`, NOT `moduleResolution: bundler`, no `const enum` in public `.d.ts`
 - [ ] `isolatedModules: true` if any non-`tsc` transpiler is in the build
+
+## Toolchain: Bun + Vite + Oxc
+
+One stack, no overlap: **Bun** installs, runs scripts, and runs `bun test`; **Vite** builds apps (Rolldown bundler, Oxc transform + minifier, Lightning CSS); **tsdown** builds libraries (Rolldown); **oxlint** lints; **oxfmt** formats; `tsc --noEmit` type-checks. Oxc replaces ESLint, Prettier, esbuild, and Babel — never add those to a project that has this stack, and never run two formatters over the same files; a second linter is acceptable only as a temporary migration bridge (see oxlint below).
+
+```bash
+bun add -D typescript oxlint oxfmt
+bunx oxlint --init            # writes .oxlintrc.json
+bunx oxfmt --init             # writes .oxfmtrc.json (--migrate=prettier converts an existing Prettier config)
+bun add -D oxlint-tsgolint    # needed by "typeAware": true in the config below; drop both to skip type-aware rules
+```
+
+`package.json` scripts:
+
+```json
+{
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "lint": "oxlint --deny-warnings",
+    "lint:fix": "oxlint --fix",
+    "format": "oxfmt",
+    "format:check": "oxfmt --check",
+    "check": "bun run typecheck && bun run lint && bun run format:check"
+  }
+}
+```
+
+### oxlint
+
+- Config is `.oxlintrc.json`. Rules are grouped in categories; only `correctness` is on by default — opt into `suspicious`, `perf`, `pedantic` per project rather than `all`.
+- Setting `plugins` REPLACES the default set (`eslint`, `typescript`, `unicorn`, `oxc`) — list the defaults you keep alongside the ones you add (`import`, `promise`, `vitest`, `react`, `jsx-a11y`, ...).
+- `oxlint --fix` applies only safe fixes; `--fix-suggestions` and `--fix-dangerously` can change behavior — review the diff.
+- Type-aware rules (`typescript/no-floating-promises`, `typescript/no-unsafe-assignment`, ...) need `oxlint-tsgolint` plus `"options": { "typeAware": true }` (or `oxlint --type-aware`). They run on the native TypeScript compiler (tsgo), so the tsconfig must be tsgo-clean — no `baseUrl` — and `include` should stay tight or the pass gets slow.
+- Migrating from ESLint: `bunx -p @oxlint/migrate oxlint-migrate` converts a flat config to `.oxlintrc.json`. If a rule oxlint lacks must stay, keep ESLint for that rule only, add `eslint-plugin-oxlint` to turn off everything oxlint already covers, and run `oxlint && eslint` so the fast pass fails first.
+
+```json
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["eslint", "typescript", "unicorn", "oxc", "import", "promise"],
+  "categories": { "correctness": "error", "suspicious": "warn" },
+  "rules": {
+    "typescript/no-explicit-any": "error",
+    "typescript/explicit-function-return-type": "error",
+    "typescript/method-signature-style": ["error", "property"],
+    "import/no-cycle": "error"
+  },
+  "options": { "typeAware": true },
+  "ignorePatterns": ["dist/**", "coverage/**"]
+}
+```
+
+### oxfmt
+
+- Prettier-compatible output, Prettier-style CLI: `oxfmt` writes in place, `oxfmt --check` for CI. Config is `.oxfmtrc.json`; it honors `.gitignore` and `.prettierignore` by default and formats TS/JS/JSX/TSX, JSON, CSS, Markdown, YAML and more.
+- Default `printWidth` is 100 (Prettier's is 80). Matching an existing Prettier codebase: generate the config with `oxfmt --migrate=prettier` or set `printWidth` explicitly, then land one formatting-only commit.
+- `sortPackageJson` is on by default; `sortImports` is opt-in. Drop Prettier and its ESLint bridges (`eslint-config-prettier`, `eslint-plugin-prettier`) — oxlint and oxfmt do not overlap under the default categories (`style` is off), so nothing needs silencing.
+
+### tsdown for libraries
+
+Bundle published packages with `tsdown` (Rolldown under the hood): `tsdown.config.ts` with `defineConfig({ entry: ["src/index.ts"], format: ["esm"], dts: true })`, `nodenext` resolution in tsconfig (see above), and `isolatedDeclarations: true` so `.d.ts` emit is per-file (see Performance). It replaces tsup/rollup/esbuild-based library builds.
+
+### Bun as runtime
+
+`bun run src/x.ts` and `bun test` transpile TypeScript themselves — no build step, no `ts-node`/`tsx` loader. Bun strips types without checking them, exactly like Vite, so `tsc --noEmit` is still the gate. Use `bun test` for Node/Bun-target code and Vitest (which runs on Vite's Oxc transform) for browser-target code.
 
 ## Modules & Declaration Merging
 
@@ -547,7 +621,7 @@ const t = tags(["a", "b"]); // readonly ['a', 'b']
 
 #### `verbatimModuleSyntax` and precise type-only imports
 
-`verbatimModuleSyntax` (TS 5.0+) replaces the deprecated, now-no-op `importsNotUsedAsValues`/`preserveValueImports` with one rule: imports/exports WITHOUT a `type` modifier are emitted verbatim; anything WITH `type` is erased. So every purely-type import must be `import type { ... }` or use an inline `type` specifier — otherwise it is emitted as a runtime import even when unused, defeating tree-shaking, forcing unwanted CJS/ESM `require()` inclusion, and breaking cross-compiler consistency (esbuild/swc/Babel all strip `type`-marked imports reliably). It is in TS 5.9's `tsc --init` defaults. (See Modules above.)
+`verbatimModuleSyntax` (TS 5.0+) replaces the deprecated, now-no-op `importsNotUsedAsValues`/`preserveValueImports` with one rule: imports/exports WITHOUT a `type` modifier are emitted verbatim; anything WITH `type` is erased. So every purely-type import must be `import type { ... }` or use an inline `type` specifier — otherwise it is emitted as a runtime import even when unused, defeating tree-shaking, forcing unwanted CJS/ESM `require()` inclusion, and breaking cross-compiler consistency (Oxc/esbuild/swc/Babel all strip `type`-marked imports reliably). It is in TS 5.9's `tsc --init` defaults. (See Modules above.)
 
 #### `using` / `await using` — deterministic cleanup (TS 5.2)
 
@@ -585,7 +659,7 @@ function isPositive(n: number): n is 1 | 2 | 3 {
 
 #### Never publish `const enum` in a `.d.ts`
 
-A published `const enum` is inlined into consumers' bundles at compile time. If a later patch changes member values, consumers keep the OLD inlined values while running the NEW library — a silent wrong-branch bug. It is also incompatible with `isolatedModules` and single-file transpilers (Babel, esbuild, swc), which cannot inline cross-file values. For published APIs use a regular `enum`, an `as const` object, or `preserveConstEnums` to strip the `const` from declaration output.
+A published `const enum` is inlined into consumers' bundles at compile time. If a later patch changes member values, consumers keep the OLD inlined values while running the NEW library — a silent wrong-branch bug. It is also incompatible with `isolatedModules` and single-file transpilers (Oxc, Babel, esbuild, swc), which cannot inline cross-file values. For published APIs use a regular `enum`, an `as const` object, or `preserveConstEnums` to strip the `const` from declaration output.
 
 ```typescript
 // Safe in a published package — value exists at runtime, no inlining:
@@ -654,7 +728,7 @@ function deferred(value?: string): () => string {
 
 #### Method-shorthand syntax is checked bivariantly — `strictFunctionTypes` does not catch it
 
-`strictFunctionTypes` enforces contravariant parameter checking for function-TYPED properties (`m: (x: T) => void`), but the docs explicitly exempt parameters of methods declared in shorthand syntax (`m(x: T): void`) — these stay BIVARIANT. The exemption lets `Array<T>` relate covariantly, but in user-defined interfaces it is a real soundness hole. The typescript-eslint rule `method-signature-style` can force property syntax to close the gap.
+`strictFunctionTypes` enforces contravariant parameter checking for function-TYPED properties (`m: (x: T) => void`), but the docs explicitly exempt parameters of methods declared in shorthand syntax (`m(x: T): void`) — these stay BIVARIANT. The exemption lets `Array<T>` relate covariantly, but in user-defined interfaces it is a real soundness hole. oxlint's `typescript/method-signature-style` set to `"property"` forces property syntax to close the gap.
 
 ```typescript
 interface Processor {
@@ -693,7 +767,7 @@ interface AdminUser extends BaseUser, AdminPermissions {
 
 #### `isolatedDeclarations` unlocks parallel `.d.ts` emit
 
-`isolatedDeclarations` (TS 5.5+) requires explicit type annotations on all exported symbols so each file's `.d.ts` can be generated independently, without a whole-program type-checker pass — letting tools (Oxc, esbuild, swc) emit declarations in parallel and removing the monorepo serialization bottleneck. Requires `declaration` or `composite`. Tradeoff: explicit return types on exported functions become mandatory; it pays off most when you already enforce explicit-return-types via ESLint.
+`isolatedDeclarations` (TS 5.5+) requires explicit type annotations on all exported symbols so each file's `.d.ts` can be generated independently, without a whole-program type-checker pass — letting tools (Oxc, esbuild, swc) emit declarations in parallel and removing the monorepo serialization bottleneck. Requires `declaration` or `composite`. Tradeoff: explicit return types on exported functions become mandatory; it pays off most when you already enforce `typescript/explicit-function-return-type` in oxlint, and it is what lets tsdown emit `.d.ts` per file instead of running a whole-program pass.
 
 ```typescript
 // isolatedDeclarations: true (with declaration: true)
@@ -730,3 +804,4 @@ Compiler defaults and deprecated module-resolution modes change across TypeScrip
 - [ ] Public API types use `interface extends` (not `&`); no `const enum` in shipped `.d.ts`
 - [ ] Type guards prefer inferred predicates; explicit `x is T` guards are unit-tested
 - [ ] `tsc --noEmit` clean under `strict` + `noUncheckedIndexedAccess` + `exactOptionalPropertyTypes`
+- [ ] `oxlint --deny-warnings` and `oxfmt --check` clean; no ESLint/Prettier/esbuild/Babel added to a project on the Bun + Vite + Oxc stack

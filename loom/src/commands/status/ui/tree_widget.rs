@@ -73,6 +73,31 @@ fn compute_stage_elapsed(stage: &Stage) -> Option<String> {
     }
 }
 
+/// `merged` / `unmerged` / `cleanup failed` spans for a completed stage's
+/// tree row; empty for any other stage.
+fn merge_status_spans(stage: &Stage) -> Vec<Span<'static>> {
+    if stage.status != StageStatus::Completed {
+        return Vec::new();
+    }
+    let mut spans = Vec::new();
+    if stage.merged {
+        spans.push(Span::styled("  merged", Theme::dimmed()));
+    } else if !matches!(stage.stage_type, StageType::Knowledge) {
+        // Needs manual merge — highlight in yellow
+        spans.push(Span::styled(
+            "  unmerged",
+            Style::default().fg(Color::Yellow),
+        ));
+    }
+    if stage.cleanup_warning.is_some() {
+        spans.push(Span::styled(
+            "  cleanup failed",
+            Style::default().fg(Color::Yellow),
+        ));
+    }
+    spans
+}
+
 /// Truncate a string to fit within budget, appending ".." if truncated
 fn truncate_id(id: &str, budget: usize) -> String {
     if id.len() <= budget {
@@ -211,17 +236,7 @@ impl<'a> TreeWidget<'a> {
             }
 
             // For completed stages: show merge status inline
-            if stage.status == StageStatus::Completed {
-                if stage.merged {
-                    spans.push(Span::styled("  merged", Theme::dimmed()));
-                } else if !matches!(stage.stage_type, StageType::Knowledge) {
-                    // Needs manual merge — highlight in yellow
-                    spans.push(Span::styled(
-                        "  unmerged",
-                        Style::default().fg(Color::Yellow),
-                    ));
-                }
-            }
+            spans.extend(merge_status_spans(stage));
 
             // Dependencies
             if !stage.dependencies.is_empty() && deps_budget >= 7 {

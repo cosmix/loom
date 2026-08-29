@@ -52,6 +52,7 @@ pub fn collect_status(work_dir: &Path) -> Result<Response> {
                             );
 
                             let model = stage.effective_model().to_string();
+                            let cleanup_warning = stage.cleanup_warning.clone();
                             let bucket = stage.status.bucket();
                             let stage_info = StageInfo {
                                 id: stage.id,
@@ -64,6 +65,7 @@ pub fn collect_status(work_dir: &Path) -> Result<Response> {
                                 merged: stage.merged,
                                 dependencies: stage.dependencies,
                                 model,
+                                cleanup_warning,
                             };
 
                             // D-5: categorize via the canonical StageStatus::bucket()

@@ -10,6 +10,11 @@
 //! * BLOCK-B, the model playbook, appears in `CLAUDE.md.template` (Rule 7) and
 //!   in `skills/loom-plan-writer/SKILL.md`.
 //!
+//! A third, BLOCK-C (subagent-waiting), is pinned the same way in the sibling
+//! `tests_doctrine_waiting.rs`, split out to keep both files under budget. The
+//! tests that pin the emitted STABLE PREFIX / SIGNAL text (rather than the
+//! static guidance surfaces BLOCK-A/BLOCK-B live on) are split out the same
+//! way into `tests_doctrine_prefixes.rs`.
 //! An agent meets these words at the signal, in CLAUDE.md, and at the tool
 //! boundary. If the copies drift, one surface silently teaches a rule the
 //! others contradict - and a subagent obeying the wrong copy is blocked by the
@@ -26,14 +31,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use tempfile::TempDir;
-
-use super::super::cache::{
-    generate_integration_verify_stable_prefix, generate_knowledge_distill_stable_prefix,
-    generate_knowledge_stable_prefix, generate_stable_prefix, KNOWLEDGE_CONSUMPTION_CONTRACT,
-};
-use super::super::generate::generate_signal_with_metrics;
-use super::{create_test_session, create_test_stage, create_test_worktree};
+use super::super::cache::{generate_integration_verify_stable_prefix, generate_stable_prefix};
 use crate::fs::permissions::constants::HOOK_SUBAGENT_VERIFY_GUARD;
 
 const CLAUDE_MD_TEMPLATE: &str = include_str!("../../../../CLAUDE.md.template");
@@ -130,7 +128,8 @@ const BLOCK_B: &str = r#"1. THE MAIN AGENT NEVER IMPLEMENTS — WHATEVER MODEL I
    writes. Its diagnosis then feeds a sonnet or opus implementer per point 2.
    Do not let an implementer thrash on the same failure twice."#;
 
-/// Phrasing the no-verify rule RETIRED. Acceptance criteria only grep for the
+/// Phrasing RETIRED doctrines used, across the no-verify rule (BLOCK-A) and the
+/// subagent-waiting rule (BLOCK-C). Acceptance criteria only grep for the
 /// wording a doctrine INTRODUCES, so they cannot catch a surface that still
 /// carries the instruction it replaced - which is exactly how the enforcement
 /// layer once landed while three guidance files still told subagents to run
@@ -151,6 +150,9 @@ const RETIRED_PHRASES: &[&str] = &[
     concat!("take the work ", "over"),
     concat!("report back ", "within"),
     concat!("hard ceiling on any", " single check"),
+    // BLOCK-C: superseded by `loom subagents watch`'s own deadline/state.
+    concat!("a check firing is NOT", " a deadline"),
+    concat!("MUST carry a liveness", " signal"),
 ];
 
 /// Every static guidance surface pasted into a subagent prompt, as (label, text).
@@ -295,106 +297,11 @@ fn no_guidance_surface_still_tells_a_subagent_to_verify() {
     );
 }
 
-/// A stable-prefix generator, named for its failure message.
-type PrefixGenerator = fn() -> String;
-
-/// The "settled stage" completion doctrine (`is the LAST act of your
-/// session` / `post-completion work is LOST WORK`) must reach every stable
-/// prefix, not just the two surfaces `cache.rs`'s own unit tests happen to
-/// pin - a fourth generator added later gets no coverage from those two.
-#[test]
-fn settled_completion_doctrine_present_in_all_stable_prefixes() {
-    let generators: [(&str, PrefixGenerator); 4] = [
-        ("generate_stable_prefix", generate_stable_prefix),
-        (
-            "generate_integration_verify_stable_prefix",
-            generate_integration_verify_stable_prefix,
-        ),
-        (
-            "generate_knowledge_distill_stable_prefix",
-            generate_knowledge_distill_stable_prefix,
-        ),
-        (
-            "generate_knowledge_stable_prefix",
-            generate_knowledge_stable_prefix,
-        ),
-    ];
-
-    for (name, generator) in generators {
-        let prefix = generator();
-        assert!(
-            prefix.contains("is the LAST act of your session"),
-            "{name} must frame `loom stage complete` as the session's LAST act"
-        );
-        assert!(
-            prefix.contains("post-completion work is LOST WORK"),
-            "{name} must warn that post-completion work is LOST WORK"
-        );
-    }
-}
-
-/// The subagent-response-budget block must frame the timeout as a check-in
-/// cadence, not a deadline that licenses taking over a live subagent's work.
-#[test]
-fn subagent_budget_is_cadence_not_deadline_in_emitted_signal() {
-    let temp_dir = TempDir::new().unwrap();
-    let work_dir = temp_dir.path().join(".work");
-    fs::create_dir_all(&work_dir).unwrap();
-
-    let session = create_test_session();
-    let worktree = create_test_worktree();
-    let mut budgeted_stage = create_test_stage();
-    budgeted_stage.subagent_timeout_secs = Some(900);
-
-    let (signal_path, _) = generate_signal_with_metrics(
-        &session,
-        &budgeted_stage,
-        &worktree,
-        &[],
-        None,
-        None,
-        &work_dir,
-    )
-    .unwrap();
-    let content = fs::read_to_string(&signal_path).unwrap();
-
-    assert!(
-        content.contains("NOT as a deadline"),
-        "the block must say the budget is a check-in cadence, not a deadline on \
-         any subagent's work"
-    );
-    assert!(
-        content.contains("positive evidence of death"),
-        "the block must require positive evidence before a takeover, not elapsed \
-         time alone"
-    );
-    assert!(
-        !content.contains("report back within"),
-        "the retired takeover doctrine must not resurface in the emitted block"
-    );
-    assert!(
-        !content.contains("take the work over"),
-        "the retired takeover doctrine must not resurface in the emitted block"
-    );
-}
-
-/// A grep proves presence, never agreement - pin `KNOWLEDGE_CONSUMPTION_CONTRACT`
-/// byte-for-byte against `CLAUDE.md.template`'s `## KNOWLEDGE-FIRST` section.
-#[test]
-fn knowledge_consumption_contract_agrees_with_claude_md_template() {
-    let heading = "## KNOWLEDGE-FIRST";
-    let start = CLAUDE_MD_TEMPLATE
-        .find(heading)
-        .expect("template needs a ## KNOWLEDGE-FIRST section")
-        + heading.len();
-    let rest = &CLAUDE_MD_TEMPLATE[start..];
-    let end = rest
-        .find("\n---")
-        .expect("## KNOWLEDGE-FIRST must be followed by ---");
-    let block = rest[..end].trim();
-    assert_eq!(block, KNOWLEDGE_CONSUMPTION_CONTRACT.trim(), "CLAUDE.md.template's ## KNOWLEDGE-FIRST body must match cache::KNOWLEDGE_CONSUMPTION_CONTRACT byte-for-byte (see doc/loom/knowledge/mistakes/doctrine-and-acceptance.md)");
-}
-
+// The tests pinning the STABLE PREFIX / emitted-signal text - the settled-
+// completion doctrine, the subagent-budget cadence framing, and the
+// KNOWLEDGE_CONSUMPTION_CONTRACT byte-equality check - live in the sibling
+// `tests_doctrine_prefixes.rs`, split out to keep this file under budget.
+//
 // The "both renderers emit the brief" tests live in tests_brief.rs, beside
 // `sample_context_pack` - this file already sits near its own line budget and
 // those tests are about the brief pipeline, not cross-surface doctrine.

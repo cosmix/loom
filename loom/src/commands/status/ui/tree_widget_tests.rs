@@ -42,6 +42,7 @@ fn make_stage(id: &str, deps: Vec<&str>, status: StageStatus) -> Stage {
         base_merged_from: vec![],
         outputs: vec![],
         completed_commit: None,
+        cleanup_warning: None,
         merged: false,
         merge_conflict: false,
         verification_status: Default::default(),
@@ -181,6 +182,46 @@ fn test_truncation_with_max_width() {
     let widget = TreeWidget::new(&stages).max_width(50);
     let lines = widget.build_lines();
     assert_eq!(lines.len(), 2);
+}
+
+#[test]
+fn test_completed_merged_with_cleanup_warning_shows_marker() {
+    let mut stage = make_stage("done", vec![], StageStatus::Completed);
+    stage.merged = true;
+    stage.cleanup_warning = Some("failed: git worktree remove refused for done".to_string());
+    let stages = vec![stage];
+
+    let widget = TreeWidget::new(&stages);
+    let lines = widget.build_lines();
+
+    let found = lines.iter().any(|line| {
+        let joined: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
+        joined.contains("cleanup failed")
+    });
+    assert!(
+        found,
+        "expected a 'cleanup failed' marker in the rendered lines"
+    );
+}
+
+#[test]
+fn test_completed_merged_without_cleanup_warning_has_no_marker() {
+    let mut stage = make_stage("done", vec![], StageStatus::Completed);
+    stage.merged = true;
+    stage.cleanup_warning = None;
+    let stages = vec![stage];
+
+    let widget = TreeWidget::new(&stages);
+    let lines = widget.build_lines();
+
+    let found = lines.iter().any(|line| {
+        let joined: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
+        joined.contains("cleanup failed")
+    });
+    assert!(
+        !found,
+        "expected no 'cleanup failed' marker when cleanup_warning is None"
+    );
 }
 
 #[test]

@@ -1,7 +1,7 @@
 //! Tests for daemon server module.
 
 use super::super::protocol::Response;
-use super::core::{DaemonServer, DaemonStatus};
+use super::core::{daemon_running_from_status, DaemonServer, DaemonStatus};
 use super::status::{collect_status, detect_worktree_status, is_manually_merged};
 use crate::models::worktree::WorktreeStatus;
 use std::fs;
@@ -84,6 +84,30 @@ fn test_read_pid_no_file() {
 
     let pid = DaemonServer::read_pid(work_dir);
     assert_eq!(pid, None);
+}
+
+#[test]
+fn unreachable_status_counts_as_running() {
+    // `Unreachable` is only ever produced when the singleton flock is
+    // already `Held` (see `DaemonServer::check_status`), so a live daemon
+    // genuinely owns this `.work/` — the failed `connect()` is a property of
+    // the sandboxed caller, not evidence the daemon died. `is_running` must
+    // treat it as running so a second `loom run` cannot start against the
+    // same `.work/` (the singleton hazard recorded in
+    // doc/loom/knowledge/concerns/daemon-singleton.md). Simulating a real
+    // `PermissionDenied` from `connect()` isn't practical in a unit test, so
+    // this asserts the pure classification directly instead of driving it
+    // through a real socket.
+    assert!(daemon_running_from_status(DaemonStatus::Unreachable));
+}
+
+#[test]
+fn process_only_and_not_running_still_classify_correctly() {
+    // Guards against a future edit accidentally widening/narrowing the
+    // `matches!` in `daemon_running_from_status` while adding new variants.
+    assert!(daemon_running_from_status(DaemonStatus::Running));
+    assert!(daemon_running_from_status(DaemonStatus::ProcessOnly));
+    assert!(!daemon_running_from_status(DaemonStatus::NotRunning));
 }
 
 #[test]

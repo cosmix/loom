@@ -31,6 +31,10 @@ pub(crate) mod worktree;
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tests_spool;
+#[cfg(test)]
+mod tests_tracked_scaffold;
 
 // Re-export public API
 pub use base::{base_branch_exists, cleanup_all_base_branches, cleanup_base_branch};
@@ -44,5 +48,6 @@ pub use config::{CleanupConfig, CleanupResult};
 pub use orphans::cleanup_orphaned_worktrees;
 pub use removal::{
     cleanup_destructive_stage, cleanup_verified_stage, destructive_removal_confirmation,
+    stage_resources_exist,
 };
 pub use worktree::cleanup_worktree;

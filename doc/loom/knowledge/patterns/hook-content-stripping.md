@@ -1,19 +1,58 @@
-# Hook Content Stripping
+# Hook Command Matching
 
-> Stripping heredoc bodies and -m text before matching, the full hook inventory, and the limits of that stripping.
+> How a hook decides what a Bash command actually invokes: strip embedded content, tokenize into
+> argv, match command words and argument values — and fall back to the old regexes when the
+> command will not parse.
 
-## Hook Content-Stripping Pattern
+## Match Tokens, Not Text
 
-Hooks that validate bash commands must strip embedded text content before
-pattern matching. The strip_embedded_content() function (in hooks/\_common.sh
-for shell, validators/bash.rs for Rust) removes:
+A hook that validates a Bash command must answer "what does this command INVOKE?", and a regex
+over the command string cannot: it cannot tell an argument's _value_ from its _mention_. Text
+quoted inside a command — a task brief, a `loom memory note` body, a doc string — is scanned as if
+it were shell. That produced months of false blocks (see
+`mistakes/shell-command-matchers.md`).
 
-1. Heredoc bodies (awk state machine tracking <<MARKER to MARKER)
-2. -m / --message quoted content (sed replacements)
+The matching pipeline, in order:
 
-Each hook sources \_common.sh via: source "$(dirname "$0")/\_common.sh"
+1. **Strip embedded content.** `strip_embedded_content()` removes heredoc bodies (awk state
+   machine, `<<MARKER` to `MARKER`) and `-m` / `--message` quoted text. This still runs FIRST and
+   is still necessary: a heredoc body is not quoted, so its words would otherwise tokenize as real
+   command words. Known limit: it cannot strip a multi-line `-m` body.
+2. **Tokenize.** `loom_tokenize_command` walks the stripped string with quote/escape state and
+   fills `LOOM_TOKENS` with argv-shaped words plus a `%%SEP%%` sentinel at every command boundary.
+   It returns non-zero only when the string ends inside an unterminated quote.
+3. **Match tokens.** Ask whether a segment INVOKES a command (`loom_tokens_invoke`) and whether
+   that segment carries a given argument (`loom_tokens_cmd_has_arg`, `..._has_arg_pair`,
+   `..._cmd_argv`), or whether any word-shaped token matches (`loom_tokens_word_matches`).
+   Quoting changes an argument's VALUE, not what matches: `git "commit"` is still caught, while
+   the same words inside one quoted argument are one token belonging to `echo`.
+4. **Fall back.** When tokenizing fails, run the hook's ORIGINAL regexes verbatim, so protection
+   is never weaker than before the conversion. The command is not valid bash anyway.
 
-Full hook inventory (18 top-level scripts in `hooks/`; 29 including `hooks/tests/`):
+**Path checks key on whitespace, not quoting.** A real path argument is a whitespace-free word; a
+prose payload is not. `loom_token_is_word` is that discriminator — so a quoted real path
+(`cat "../../x"`) is still blocked while a brief mentioning `../../src/y` is not.
+
+**Which hooks do this:** `git-add-guard.sh`, `commit-filter.sh`, `worktree-isolation.sh`,
+`prefer-modern-tools.sh`, and the finalize bridge. `subagent-verify-guard.sh` is the ONLY hook
+still matching raw strings and still carries the bug class — see `concerns.md`.
+
+**New command-matching logic must scan tokens.** Do not add a regex over the raw or stripped
+string; the stripped-string regexes survive only as the unterminated-quote fallback.
+
+**Converting a hook is not mechanical.** The 2026-08-26 conversion of three hooks removed the
+false positives and opened seven bypasses the old regexes had blocked, none of which a fully green
+suite revealed. Read `mistakes/shell-command-matchers.md` § "Converting a Raw-String Matcher to
+Token Scanning Silently Narrows It" first.
+
+**Security posture:** every failure mode here — a strip that misses, a parse that aborts, a
+recursion budget exhausted — resolves toward the stricter check, never toward permitting. That is
+the correct direction for a development guard.
+
+Each hook sources `_common.sh` via `source "$(dirname "$0")/_common.sh"`. The Rust twin of
+`strip_embedded_content` lives at `loom/src/hooks/validators/bash.rs` and has NOT been converted.
+
+Full hook inventory (24 top-level scripts in `hooks/`; 64 including `hooks/tests/`):
 
 - PreToolUse: worktree-isolation.sh, commit-filter.sh, subagent-verify-guard.sh,
   git-add-guard.sh, prefer-modern-tools.sh, worktree-file-guard.sh,
@@ -28,38 +67,18 @@ Full hook inventory (18 top-level scripts in `hooks/`; 29 including `hooks/tests
 - Git-side: git-pre-commit-hook.sh (appended to `.git/hooks/pre-commit` by `loom init`;
   the only top-level script not in `LOOM_HOOKS`)
 
-The `PreToolUse` array in `fs/permissions/hooks.rs` has **13 entries** — several hooks are
-registered against more than one matcher (worktree-isolation on Bash/Edit/Write,
-worktree-file-guard on Read/Glob/Grep, plans-path-guard on Edit/Write). Its exact length and
-per-index order are asserted by `fs/permissions/tests/hooks_tests.rs::test_hooks_config_structure`,
-so adding a hook means updating that test too.
+The `PreToolUse` array in `fs/permissions/hooks/config.rs` has **35 entries** — most hooks are
+registered against more than one matcher (worktree-file-guard on Edit/MultiEdit/Write/
+NotebookEdit/Read/Glob/Grep, plans-path-guard on Edit/MultiEdit/Write, codex-forward-guard on
+Bash/Edit/Write/Read/Task/Agent, stage-terminal-guard on Write/Edit/Task/Agent). Its exact length
+and the per-index order of its first sixteen entries are asserted by
+`fs/permissions/tests/hooks_tests.rs::test_hooks_config_structure`, so adding a hook means updating
+that test too.
 
-## Hook Content-Stripping Pattern (Updated 2026-03-31)
-
-All PreToolUse hooks that match command patterns MUST use `strip_embedded_content()` before pattern matching to prevent false positives from keywords appearing inside commit messages or heredoc bodies.
-
-**Architecture:**
-
-- `_common.sh` provides `strip_embedded_content()` (shared across all shell hooks)
-- `loom/src/hooks/validators/bash.rs` provides Rust equivalent `strip_embedded_content()`
-- Phase 1: awk state machine strips heredoc bodies (`<<MARKER` to `^MARKER$`)
-- Phase 2: sed strips `-m`/`--message` quoted content
-
-**Usage pattern:**
-
-1. Source `_common.sh` at top of hook
-2. Call `stripped=$(strip_embedded_content "$cmd")`
-3. Use `$stripped` for pattern detection (git -C, .worktrees/, ../../, grep, find)
-4. Use original `$cmd` for patterns that MUST match message body (e.g., Co-Authored-By)
-
-**Commit-filter dual-check:**
-
-- STRIPPED_COMMAND for detecting `git commit` (prevents "commit" in messages from triggering)
-- ORIGINAL COMMAND for Co-Authored-By check (anchor `^` prevents mid-line false positives)
-
-**Security posture:** All stripping failures result in false positives (overly strict), never bypasses (permissive). This is the correct safety direction for development hooks.
-
-**Hooks using this pattern:** worktree-isolation.sh, commit-filter.sh, git-add-guard.sh, prefer-modern-tools.sh
+**Commit-filter's dual read is still load-bearing.** It matches TOKENS to decide whether a real
+`git commit` is being invoked, but scans the ORIGINAL command for attribution trailers — those
+exist precisely inside the message body, so stripping or tokenizing would blind the check. Detect
+the invocation on tokens; inspect message content on the raw string.
 
 ## Two Ways The Stage-Finalize Prefilter Blocks A Command You Never Typed
 

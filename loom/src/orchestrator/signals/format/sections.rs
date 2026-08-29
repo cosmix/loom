@@ -9,12 +9,14 @@ use crate::models::worktree::Worktree;
 use crate::skills::SkillMatch;
 
 use super::super::retrieval::STAGE_QUERY_INPUTS;
-use super::super::types::{DependencyStatus, EmbeddedContext, SandboxSummary};
+use super::super::types::{DependencyStatus, EmbeddedContext};
 use super::brief::format_knowledge_brief;
+use super::helpers::append_stage_end_sequence;
 use super::helpers::{
     append_budget_exceeded_box, extract_tasks_from_stage, format_dependency_outputs,
     format_dependency_table, format_structured_handoff,
 };
+use super::sandbox_section::format_sandbox_section;
 
 /// SEMI-STABLE section: per-stage content (brief, facts), never per-session
 pub(super) fn format_semi_stable_section(
@@ -341,7 +343,7 @@ pub(super) fn format_semi_stable_section(
     content.push_str("- Exploration across many code areas\n\n");
     content.push_str("**If you create a team:**\n");
     content.push_str("- Team name: loom-{stage_id} (using your stage ID)\n");
-    content.push_str("- YOU are the only agent that may run git commit\n");
+    content.push_str("- YOU are the only agent that may run git commit — and only at the END of the stage, after every teammate has returned and verification is green\n");
     content.push_str("- YOU are the only agent that may run loom stage complete\n");
     content.push_str("- Record teammate findings: loom memory note \"Teammate found: ...\"\n");
     content.push_str("- Keep your own context for coordination (aim for <40% utilization)\n");
@@ -360,7 +362,9 @@ pub(super) fn format_semi_stable_section(
     // Per-subagent response budget (semi-stable - gated on an explicit plan value).
     // The orchestrator measures the stage against this budget from the outside, so
     // the session has to be told the same number or it is held to a deadline it
-    // cannot see.
+    // cannot see. The general "how do I check on a subagent" doctrine (BLOCK-C) is
+    // unconditional and already in this stage's stable prefix; this block only
+    // layers the stage-specific number on top.
     if let Some(timeout_secs) = embedded_context.subagent_timeout_secs {
         content.push_str(&super::helpers::format_subagent_timeout_section(
             timeout_secs,
@@ -749,6 +753,7 @@ pub(super) fn format_recitation_section(
             content.push_str(&format!("{}. {task}\n", i + 1));
         }
     }
+    append_stage_end_sequence(&mut content);
     content.push('\n');
 
     // Embed stage memory at the END for maximum attention (Manus recitation pattern)
@@ -963,79 +968,11 @@ pub(crate) fn format_codex_implementers_section(
     );
     content.push_str("- VERIFICATION STAYS WITH YOU (opus). Codex subagents implement and report; they never verify, never\n");
     content.push_str("  commit, and never run loom stage complete (Rule 5). YOU run the full build/test/lint gate, YOU run\n");
-    content.push_str("  the six-dimension mini adversarial code review, and YOU commit. Never accept a codex agent's own\n");
+    content.push_str("  the six-dimension mini adversarial code review, and only THEN — after both — YOU commit, at the end of the stage. Never accept a codex agent's own\n");
     content.push_str(
         "  claim that its work is correct, and never have codex review its own output - use\n",
     );
     content.push_str("  loom-code-reviewer or your own reading.\n\n");
-
-    content
-}
-
-/// Format sandbox restrictions for agent awareness
-fn format_sandbox_section(summary: &SandboxSummary) -> String {
-    let mut content = String::new();
-
-    if !summary.enabled {
-        content.push_str("## Sandbox Status\n\n");
-        content.push_str("**Sandbox is DISABLED** for this stage.\n\n");
-        return content;
-    }
-
-    content.push_str("## Sandbox Restrictions\n\n");
-    content.push_str("The following restrictions are in effect for this session:\n\n");
-
-    // Filesystem restrictions
-    if !summary.deny_read.is_empty() || !summary.deny_write.is_empty() {
-        content.push_str("### Filesystem\n\n");
-
-        if !summary.deny_read.is_empty() {
-            content.push_str("**Cannot Read:**\n");
-            for path in &summary.deny_read {
-                content.push_str(&format!("- `{}`\n", path));
-            }
-            content.push('\n');
-        }
-
-        if !summary.deny_write.is_empty() {
-            content.push_str("**Cannot Write:**\n");
-            for path in &summary.deny_write {
-                content.push_str(&format!("- `{}`\n", path));
-            }
-            content.push('\n');
-        }
-
-        if !summary.allow_write.is_empty() {
-            content.push_str("**Exceptions (CAN Write):**\n");
-            for path in &summary.allow_write {
-                content.push_str(&format!("- `{}`\n", path));
-            }
-            content.push('\n');
-        }
-    }
-
-    // Network restrictions
-    if !summary.allowed_domains.is_empty() {
-        content.push_str("### Network\n\n");
-        content.push_str("**Allowed Domains:**\n");
-        for domain in &summary.allowed_domains {
-            content.push_str(&format!("- `{}`\n", domain));
-        }
-        content.push('\n');
-    } else {
-        content.push_str("### Network\n\n");
-        content.push_str("**No network access allowed.**\n\n");
-    }
-
-    // Excluded commands
-    if !summary.excluded_commands.is_empty() {
-        content.push_str("### Excluded Commands\n\n");
-        content.push_str("These commands bypass sandbox restrictions:\n");
-        for cmd in &summary.excluded_commands {
-            content.push_str(&format!("- `{}`\n", cmd));
-        }
-        content.push('\n');
-    }
 
     content
 }

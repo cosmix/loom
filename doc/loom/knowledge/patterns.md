@@ -92,7 +92,7 @@ Hooks receive data via **stdin JSON**. Read with `timeout 1 cat`. Response: exit
 
 **Key hooks**: commit-guard.sh (Stop) blocks exit without commit; commit-filter.sh (PreToolUse:Bash) blocks subagent commits; subagent-verify-guard.sh (PreToolUse:Bash) blocks subagent full-suite verification; plans-path-guard.sh (PreToolUse:Edit/Write) blocks plan writes outside `doc/plans/`; prefer-modern-tools.sh blocks grep/find; post-tool-use.sh updates heartbeat; pre-compact.sh triggers handoff; session-start/end.sh handle lifecycle.
 
-**Subagent detection**: Wrapper script exports `LOOM_MAIN_AGENT_PID`. `loom_is_subagent()` requires that PID to be a live ancestor with an intervening Claude process; it is not a `$PPID` comparison. Subagents are blocked from git mutation and stage completion.
+**Subagent detection**: Wrapper script exports `LOOM_MAIN_AGENT_PID`. `loom_is_subagent()` requires that PID to be a live ancestor, then classifies the caller payload-first via `loom_payload_agent_verdict` (`.agent_type`/`.transcript_path`); an intervening-Claude-process walk is only the fallback for a payload-less or unrecognized caller — it is not a `$PPID` comparison. Subagents are blocked from git mutation and stage completion.
 
 Hook installation: scripts embedded via `include_str!()` in constants.rs, installed to `~/.claude/hooks/loom/`, config in `.claude/settings.local.json`.
 
@@ -214,11 +214,13 @@ Uses `#[serde(untagged)]` enum with two variants:
 
 Serde tries variants in order: strings match Simple first, objects fail Simple then match Extended. Error messages for malformed objects are poor (inherent untagged limitation). helper methods: `command()`, `is_extended()`, `Display` delegates to `command()`.
 
-## Hook Content-Stripping Pattern
+## Hook Command Matching
 
-How hooks strip heredoc bodies and `-m` message text before pattern-matching a command, so a
-rule that merely _mentions_ a forbidden flag is not blocked — plus the known limits of that
-stripping.
+Hooks decide what a Bash command INVOKES by scanning argv tokens, not by regexing the command
+string — a regex cannot tell an argument's _value_ from its _mention_, so quoted prose was read as
+shell. Stripping heredoc and `-m` bodies is now the pre-step; the old regexes survive only as the
+unterminated-quote fallback. Path checks key on whitespace, since a real path argument is a
+whitespace-free word and a prose payload is not.
 
 → [Hook Content-Stripping](patterns/hook-content-stripping.md)
 

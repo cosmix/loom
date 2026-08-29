@@ -443,10 +443,11 @@ resolution, with line references.
 | Path                                               | Role                                                                                                                        |
 | -------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
 | `loom/src/fs/knowledge/types.rs`                   | `KnowledgeFile`, `KnowledgeTarget`, `KnowledgeLayout`, tier-1 alias table                                                   |
-| `loom/src/fs/knowledge/dir.rs`                     | `KnowledgeDir` — initialize, append, replace-section, layout detection                                                      |
+| `loom/src/fs/knowledge/dir.rs`                     | `KnowledgeDir` — initialize, append, layout detection; `replace_section`/`replace_section_target` delegate the actual splicing to `splice.rs`                                                      |
+| `loom/src/fs/knowledge/splice.rs`                  | `splice_section` — level-agnostic (`##` through `######`) section splicer; returns `SectionOutcome`                                                   |
 | `loom/src/fs/knowledge/index.rs`                   | `scan_topics`, `generate_index`, `write_index`                                                                              |
 | `loom/src/fs/knowledge/templates.rs`               | tier-1/tier-2 scaffolds                                                                                                     |
-| `loom/src/commands/knowledge/mod.rs`               | the four knowledge verbs — `update` (append), `replace-section` (overwrite a `##` body), `context`, `sync`               |
+| `loom/src/commands/knowledge/mod.rs`               | the four knowledge verbs — `update` (append), `replace-section` (overwrite the section body at any heading level `##` to `######`), `context`, `sync`               |
 | `loom/src/cli/types_memory.rs`                     | clap definitions for the knowledge subcommands                                                                              |
 
 `loom knowledge sync`, or any `loom knowledge update`, regenerates `INDEX.md` — the index
@@ -457,8 +458,8 @@ the layout to hierarchical. See [Knowledge Hierarchy](architecture/knowledge-hie
 
 | Path                                                             | Role                                                                                                   |
 | ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| `hooks/subagent-verify-guard.sh`                                 | PreToolUse:Bash guard — blocks project-wide verification for subagents (400 lines, at the Rule 17 cap) |
-| `hooks/_common.sh`                                               | `loom_is_subagent()` — the shared detection gate                                                       |
+| `hooks/subagent-verify-guard.sh`                                 | PreToolUse:Bash guard — blocks project-wide verification for subagents (over the Rule 17 400-line cap — see [concerns.md](concerns.md)) |
+| `hooks/_common.sh`                                               | `loom_is_subagent()` — payload-first detection gate, process-tree walk as fallback; 619 lines, also over the Rule 17 cap — see [concerns.md](concerns.md) |
 | `loom/src/orchestrator/signals/tests_doctrine.rs`                | pins the doctrine blocks byte-for-byte across signal, template, and hook                               |
 | `loom/tests/integration/hooks_subagent_verify_guard.rs`          | harness: process-tree construction, env scrubbing, payload building                                    |
 | `loom/tests/integration/hooks_subagent_verify_guard_cases.rs`    | `BLOCK_CASES` / `ALLOW_CASES` table data                                                               |

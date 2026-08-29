@@ -16,7 +16,7 @@ pub enum KnowledgeCommands {
         content: Option<String>,
     },
 
-    /// Replace a `## <heading>` section in place (corrects stale knowledge; appends if absent)
+    /// Replace a `#{2,6} <heading>` section in place, at whatever level it's found (corrects stale knowledge; appends if absent)
     ReplaceSection {
         /// Tier-1 file (entry-points, patterns, conventions, ...) or tier-2 topic (<category>/<slug>)
         file: String,

@@ -1,6 +1,6 @@
 ---
 name: loom-react
-description: Modern client-side React development patterns. Use for React 19+ SPAs with components, Hooks, Jotai state, React Router v7, accessibility, performance optimization, and testing. Covers client-side routing, composition, and async data loading; not framework-specific SSR or Server Components.
+description: Modern client-side React development patterns. Use for React 19+ SPAs with components, Hooks, Jotai state, React Router v7, accessibility, performance optimization, and testing on the Bun + Vite + Oxc (oxlint/oxfmt) toolchain. Covers client-side routing, composition, and async data loading; not framework-specific SSR or Server Components.
 triggers:
   - react
   - jsx
@@ -25,6 +25,13 @@ triggers:
   - jotai
   - vite
   - bun
+  - oxc
+  - oxlint
+  - oxfmt
+  - rolldown
+  - react compiler
+  - eslint
+  - prettier
   - client-side routing
   - accessibility
   - a11y
@@ -44,7 +51,7 @@ triggers:
 
 ## Overview
 
-Client-side React 19+ SPAs. Stack: **React Router v7** (routing/loaders), **Jotai** (atomic global state), **Vite** (build), **Bun** (package manager/runtime). NOT for SSR frameworks (Next.js/Remix) — those are out of scope.
+Client-side React 19+ SPAs. Stack: **React Router v7** (routing/loaders), **Jotai** (atomic global state), **Vite** (build — Rolldown bundler, Oxc transforms and minifier, Lightning CSS), **oxlint** + **oxfmt** (lint/format — the Oxc replacements for ESLint and Prettier), **Bun** (package manager/runtime). NOT for SSR frameworks (Next.js/Remix) — those are out of scope.
 
 The single densest section is **Expert Practices** at the end — read it first if you know React basics. The middle sections are reference implementations.
 
@@ -330,7 +337,7 @@ export function DataLoader<T>({ data, isLoading, error, children }: {
 ### Initial Setup with Bun and Vite
 
 ```bash
-# Create new React app with Vite template
+# Create new React app with Vite template (Vite runs on Rolldown + Oxc)
 bun create vite my-app --template react-ts
 cd my-app
 
@@ -340,12 +347,62 @@ bun install
 # Add React Router and Jotai
 bun add react-router jotai
 
-# Add development dependencies
-bun add -D @types/react @types/react-dom
+# Add development dependencies: types, oxlint (lint), oxfmt (format)
+bun add -D @types/react @types/react-dom oxlint oxfmt
+bunx oxlint --init   # .oxlintrc.json — then enable the React plugins (next section)
+bunx oxfmt --init    # .oxfmtrc.json
+
+# If the template scaffolded ESLint, remove it — oxlint replaces it:
+# delete eslint.config.js and `bun remove` every eslint*/typescript-eslint devDependency
 
 # Start development server
 bun run dev
 ```
+
+### Lint and Format (oxlint + oxfmt)
+
+oxlint and oxfmt are the Oxc-native replacements for ESLint and Prettier — same job, no plugin graph, no linter/formatter conflict config. Setting `plugins` in `.oxlintrc.json` REPLACES the default set (`eslint`, `typescript`, `unicorn`, `oxc`), so list the defaults you keep next to the React ones. Only the `correctness` category is on by default: `react/rules-of-hooks` is `pedantic`, so it stays off until you name it, and `react/exhaustive-deps` is `correctness` but only fires once `react` is in `plugins` — list both.
+
+```json
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["eslint", "typescript", "unicorn", "oxc", "react", "jsx-a11y", "import", "vitest"],
+  "categories": { "correctness": "error", "suspicious": "warn" },
+  "rules": {
+    "react/rules-of-hooks": "error",
+    "react/exhaustive-deps": "error",
+    "react/jsx-key": "error",
+    "typescript/no-explicit-any": "error"
+  },
+  "env": { "browser": true },
+  "ignorePatterns": ["dist/**", "coverage/**"]
+}
+```
+
+`package.json` scripts:
+
+```json
+{
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "lint": "oxlint --deny-warnings",
+    "lint:fix": "oxlint --fix",
+    "format": "oxfmt",
+    "format:check": "oxfmt --check",
+    "check": "bun run typecheck && bun run lint && bun run format:check && bun run test"
+  }
+}
+```
+
+- `oxfmt` is Prettier-compatible: `.oxfmtrc.json`, honors `.gitignore`/`.prettierignore`, default `printWidth` is 100 where Prettier's is 80 (`oxfmt --migrate=prettier` carries an existing Prettier config over). `oxfmt` writes in place; `oxfmt --check` gates CI.
+- `oxlint --fix` applies safe fixes only; `--fix-suggestions`/`--fix-dangerously` may change behavior — review the diff.
+- Leave the `react-perf` plugin off while the React Compiler is on: its rules flag the inline handlers and object props the compiler memoizes for you, and under `--deny-warnings` they fail the build.
+- Type-aware rules (`typescript/no-floating-promises` on event handlers and loaders, ...): `bun add -D oxlint-tsgolint` and `"options": { "typeAware": true }`. They run on the native TypeScript compiler, so the tsconfig must avoid `baseUrl`.
+- Migrating: `bunx -p @oxlint/migrate oxlint-migrate` converts an ESLint flat config to `.oxlintrc.json`; keep ESLint only for a rule oxlint lacks, with `eslint-plugin-oxlint` disabling the overlap and `oxlint && eslint` as the script.
 
 ### Vite Configuration
 
@@ -356,9 +413,11 @@ import react from "@vitejs/plugin-react";
 import path from "path";
 
 export default defineConfig({
-  // Fast Refresh is always on; @vitejs/plugin-react removed the `fastRefresh`
-  // option in v4. Pass the options object only for real settings,
-  // e.g. react({ babel: { plugins: [...] } }).
+  // Fast Refresh is always on and JSX is transformed by Oxc — no Babel in the
+  // pipeline. Pass options only for real settings: react({ compiler: true })
+  // turns on the React Compiler (Rust port; `bun add -D oxc-transform-react`).
+  // Babel-only transforms are a separate plugin (`@rolldown/plugin-babel`),
+  // not a `babel` option on react().
   plugins: [react()],
   resolve: {
     alias: {
@@ -375,12 +434,17 @@ export default defineConfig({
   },
   build: {
     sourcemap: true,
-    rollupOptions: {
+    // minify defaults to Oxc and CSS minify to Lightning CSS. `rollupOptions`
+    // is a deprecated alias, and the object form of `manualChunks` is gone —
+    // group vendor chunks with Rolldown's `codeSplitting`.
+    rolldownOptions: {
       output: {
-        manualChunks: {
-          "react-vendor": ["react", "react-dom"],
-          router: ["react-router"],
-          state: ["jotai"],
+        codeSplitting: {
+          groups: [
+            { name: "react-vendor", test: /node_modules[\\/](react|react-dom)[\\/]/ },
+            { name: "router", test: /node_modules[\\/]react-router/ },
+            { name: "state", test: /node_modules[\\/]jotai/ },
+          ],
         },
       },
     },
@@ -389,6 +453,8 @@ export default defineConfig({
 ```
 
 ### TypeScript Configuration
+
+No `baseUrl`: `paths` resolves relative to this file without it, and oxlint's type-aware pass (tsgo) rejects it.
 
 ```json
 {
@@ -412,7 +478,6 @@ export default defineConfig({
     "noFallthroughCasesInSwitch": true,
     "noUncheckedIndexedAccess": true,
 
-    "baseUrl": ".",
     "paths": {
       "@/*": ["./src/*"],
       "@components/*": ["./src/components/*"],
@@ -1210,13 +1275,13 @@ A single app-level `aria-live` region announces async results (saves, errors, ro
 
 ### Forbidden in this stack
 
-Next.js / Remix (SSR — out of scope), `next/*` imports · create-react-app (deprecated) · webpack configs (use Vite) · Redux/RTK (use Jotai; exception: existing Redux codebases) · Context for hot global state (use Jotai; Context is for ambient subtree values like theme) · class components · default exports (prefer named).
+Next.js / Remix (SSR — out of scope), `next/*` imports · create-react-app (deprecated) · webpack configs (use Vite) · Redux/RTK (use Jotai; exception: existing Redux codebases) · Context for hot global state (use Jotai; Context is for ambient subtree values like theme) · class components · default exports (prefer named) · ESLint/Prettier/Biome (use oxlint + oxfmt) · `esbuild` or Babel options in `vite.config.ts` (Vite runs on Oxc: `esbuild` → `oxc`, `build.rollupOptions` → `build.rolldownOptions`).
 
 ### Common Mistakes
 
 - **Mutation:** `items.push(x); setItems(items)` — React compares by reference, no re-render. Use `setItems([...items, x])` / `setItems(prev => [...prev, x])`.
 - **Derived state in Effect:** `useEffect(() => setFiltered(items.filter(f)), [items,f])` — compute during render instead: `const filtered = items.filter(f)`.
-- **Missing deps:** every value read inside an Effect belongs in its dep array (enable `eslint-plugin-react-hooks`); don't disable the lint — fix the design.
+- **Missing deps:** every value read inside an Effect belongs in its dep array (enable oxlint's `react/exhaustive-deps`); don't disable the lint — fix the design.
 - **Prop drilling shared state:** lift to a Jotai atom, read via `useAtom` at the leaf.
 - **Fetch-in-effect for render data:** prefer a route loader or async atom + `<Suspense>` over `useState`/`useEffect` fetch triads. If you must fetch in an Effect, use the ignore-flag pattern (see Gotchas) to avoid races and setState-after-unmount.
 
@@ -1285,8 +1350,9 @@ Defaults for refs vs state vs effects vs memo vs shared state. Most rationale is
 // it from 'react' fails — use a ref to hold the latest value instead. It may
 // ONLY be called from inside Effects or other Effect Events — never call it
 // during render, never pass it to a child component or Hook, and never list it
-// in a dependency array (its identity changes every render by design). Upgrade
-// eslint-plugin-react-hooks to @latest so the linter treats it as a non-dependency.
+// in a dependency array (its identity changes every render by design). Keep
+// oxlint current so `react/exhaustive-deps` treats it as a non-dependency; if
+// it still flags the Effect Event, use the ref fallback above rather than suppress it.
 function ChatRoom({ roomId, theme }: { roomId: string; theme: Theme }) {
   const onConnected = useEffectEvent(() => {
     showToast("Connected", theme)
@@ -1328,7 +1394,7 @@ useEffect(() => {
 
 ## Testing
 
-Vitest + React Testing Library (jsdom). Config: `test: { globals: true, environment: 'jsdom', setupFiles: './src/test/setup.ts' }` in `vite.config.ts`; in `setup.ts` extend `expect` with `@testing-library/jest-dom/matchers` and `afterEach(cleanup)`.
+Vitest + React Testing Library (jsdom). Config: `test: { globals: true, environment: 'jsdom', setupFiles: './src/test/setup.ts' }` in `vite.config.ts`; in `setup.ts` extend `expect` with `@testing-library/jest-dom/matchers` and `afterEach(cleanup)`. Vitest runs on Vite, so tests get the same Oxc transform as the app — no `ts-jest`/`babel-jest`; enable oxlint's `vitest` plugin for test-file rules.
 
 Test behavior via accessible roles/text, not implementation. Query with `getByRole`/`getByLabelText` (which also enforce a11y); use `userEvent` over `fireEvent` for realistic interaction; wrap state updates in `act`.
 
@@ -1518,7 +1584,7 @@ const navigate = (url: string) => startTransition(() => setPage(url))
 </Suspense>
 ```
 
-**React Compiler v1.0 (stable Oct 7, 2025) automates memoization — write plain components in NEW code.** A build-time transform inserts the equivalent of `useMemo`/`useCallback`/`React.memo` via dataflow analysis, and can memoize conditionally and past early returns (which manual memoization cannot). With the compiler enabled, do not pre-emptively scatter memoization in new code. Precision: the React team does NOT say to strip existing manual memoization — `useMemo`/`useCallback` "can continue to be used with React Compiler as an escape hatch" for precise control, and for existing code they recommend leaving it in place or testing carefully before removing, since removal can change compiler output. Supports React 17+ (add `react-compiler-runtime` for pre-19).
+**React Compiler v1.0 (stable Oct 7, 2025) automates memoization — write plain components in NEW code.** A build-time transform inserts the equivalent of `useMemo`/`useCallback`/`React.memo` via dataflow analysis, and can memoize conditionally and past early returns (which manual memoization cannot). With the compiler enabled, do not pre-emptively scatter memoization in new code. Precision: the React team does NOT say to strip existing manual memoization — `useMemo`/`useCallback` "can continue to be used with React Compiler as an escape hatch" for precise control, and for existing code they recommend leaving it in place or testing carefully before removing, since removal can change compiler output. Supports React 17+ (add `react-compiler-runtime` for pre-19). In this stack the compiler is a plugin flag — `react({ compiler: true })` in `vite.config.ts` with `oxc-transform-react` installed (the Rust port; experimental — if it rejects a pattern, fall back to the Babel path: `@rolldown/plugin-babel` + `babel-plugin-react-compiler` + `@babel/core`, wired as `babel({ presets: [reactCompilerPreset()] })` with `reactCompilerPreset` imported from `@vitejs/plugin-react`).
 
 **`<Activity>` (React 19.2) hides UI without unmounting — replaces `display:none` and conditional-render hacks.** With `mode="hidden"` it "hides the children, unmounts effects, and defers all updates until React has nothing left to work on" while preserving state and DOM, so revealing it is instant with no re-mount. This beats conditional rendering (`{cond && <X/>}`), which destroys state, and a CSS `display:none` wrapper, which preserves state but does NOT pause effects/free resources. Use it for tab panels that should keep scroll/input state and for pre-rendering routes during navigation.
 
@@ -1550,4 +1616,4 @@ function Tabs({ activeTab }: { activeTab: string }) {
 - [ ] No `forwardRef` in new code (ref is a plain prop); ref callbacks use block bodies
 - [ ] Interactive elements are keyboard-operable with correct roles/`aria-*`; inputs have labels; errors in `role="alert"` via `aria-describedby`
 - [ ] Not using Next.js/Remix/Redux/CRA/webpack/class components
-- [ ] `tsc` and lint clean (`eslint-plugin-react-hooks` enabled, deps not suppressed)
+- [ ] `tsc --noEmit`, `oxlint --deny-warnings` (react plugin on: `rules-of-hooks` + `exhaustive-deps`, deps not suppressed), and `oxfmt --check` clean

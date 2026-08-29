@@ -134,6 +134,34 @@ Two things not to "fix" without reading the reasoning first:
 `allow_write` rules also have parent traversal filtered out at the emitter, which
 is what actually closes the path-escape hole at the point of use.
 
+## Package-Manager Caches Are Granted To Every Stage
+
+`sandbox::PACKAGE_MANAGER_CACHE_WRITE_PATHS` (`sandbox/package_caches.rs`) lists the
+per-user cache directories of bun, npm, pnpm, yarn, deno, cargo, rustup, uv, pip and
+go, in tilde form. It is emitted into `sandbox.filesystem.allowWrite` on TWO
+surfaces: `sandbox/settings/policy.rs::filesystem_settings` for every worktree
+stage's settings (order: plan `allow_write` entries, then the package caches,
+then codex's own state paths when that lane is licensed), and
+`fs/permissions/codex_sandbox.rs::ALLOWANCES` for the MAIN repo's
+`.claude/settings.local.json` on `loom init`/`loom repair`.
+
+**Cache-only policy.** Only cache directories are listed, never a
+credential-bearing parent — `~/.cargo/registry` and `~/.cargo/git` are granted,
+`~/.cargo` as a whole is not (`~/.cargo/credentials.toml` lives there); same
+reasoning excludes `~/.rustup`, `~/.bun`, `~/.yarn`, `~/go` as whole directories.
+
+**Two limits, same as any `allowWrite` entry:** (1) a cache directory that does
+not exist on the host at session start is skipped by the sandbox, not created —
+a manager used for the first time on that machine still fails until the
+directory exists; (2) a cache relocated by an env var (`XDG_CACHE_HOME`,
+`CARGO_HOME`, `BUN_INSTALL_CACHE_DIR`, `UV_CACHE_DIR`, ...) is not covered and
+needs an explicit plan `allow_write` entry.
+
+**Detection rule:** `EROFS` / `Read-only file system` from a package manager
+inside a stage means one of those two limits, not a code bug — check whether the
+cache dir exists on the host, and whether an env var relocated it, before
+assuming the grant is missing.
+
 ## The Test Pattern That Makes A Boundary Test Able To Fail
 
 This is the most reusable thing the containment work produced, and it belongs on

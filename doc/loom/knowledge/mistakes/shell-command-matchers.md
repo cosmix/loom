@@ -155,11 +155,70 @@ returns non-zero only on an unterminated quote) plus `scan_git_add_tokens` in
 fallback so protection never drops below its previous level. Cases in
 `hooks/tests/git-add-guard-quoting.sh`.
 
-**Deliberately NOT swept:** `strip_embedded_content` itself is unchanged, because
-`commit-filter.sh`, `prefer-modern-tools.sh`, `worktree-isolation.sh` and
-`subagent-verify-guard.sh` all depend on its current contract, and it has a Rust twin at
-`loom/src/hooks/validators/bash.rs:71`. Those four still regex raw strings and still carry this
-bug class — see `concerns.md`.
+**Swept 2026-08-26 (was "deliberately NOT swept").** The deferral above cost real work: the three
+deferred hooks kept blocking codex briefs for months, and the deferral note is what identified
+them when it finally bit. `commit-filter.sh`, `prefer-modern-tools.sh` and `worktree-isolation.sh`
+now scan tokens too, sharing seven `loom_tokens_*` helpers in `_common.sh` rather than each
+re-implementing the walk. `strip_embedded_content` is still unchanged and still runs FIRST — it
+strips heredoc bodies, which would otherwise tokenize as real command words.
+`subagent-verify-guard.sh` remains on raw strings and still carries this bug class.
+
+**The conversion itself is the dangerous part — see the section below.**
+
+## Sourcing a Bash-Targeted Hook From an Interactive zsh Gives Bogus Results (2026-08-26)
+
+**What happened:** ad-hoc probes of `loom_tokenize_command` produced results that contradicted
+each other run to run — the same input appeared to splice `sh -c` payloads in one invocation and
+not the next. Nothing was flaky. The probes that ran as `bash script.sh` were correct; the ones
+typed inline were evaluated by the session's **interactive zsh**, where arrays are 1-based, so
+every index computed by the walker was off by one and the token dumps were meaningless. Nearly
+led to a fabricated "non-deterministic tokenizer" bug report.
+
+**Why:** the default shell here is zsh; `hooks/*.sh` are all `#!/usr/bin/env bash` and are only
+ever executed by bash in production. Sourcing one into zsh runs bash-targeted array code under
+different semantics with no error.
+
+**Prevention:** never verify a hook by sourcing it inline. Put the probe in a file with a bash
+shebang and run it with `bash <file>`, and have the probe print `$BASH_VERSION` if there is any
+doubt. When two runs of "the same" check disagree, suspect the interpreter before the code.
+
+## Converting a Raw-String Matcher to Token Scanning Silently Narrows It (2026-08-26)
+
+**What happened:** converting `commit-filter.sh`, `worktree-isolation.sh` and
+`prefer-modern-tools.sh` from regex-on-raw-string to argv-token scanning removed the documented
+false positives AND opened **seven bypasses**, every one of which the old regex had blocked. The
+full suite was green — 3090 Rust tests, 39 hook tests, clippy, fmt — and an adversarial review
+found six of them; a self-directed pass afterwards found the seventh. Confirmed bypasses:
+`bash -c 'git commit'`, `if git commit; then`, `timeout 60 git commit`, `git $'commit'`,
+`exec git commit`, a `loom stage complete` split across two segments, and a triple-nested
+`bash -c`.
+
+**Why:** a raw regex matches the words **anywhere**; token scanning matches them only at an argv
+position the walker actually reaches. Every construct the walker does not model — a shell's `-c`
+payload, a keyword or builtin occupying argv[0], an arg-taking wrapper flag, an alternate quoting
+spelling — becomes a hole. The tests measured the false positives being removed; nothing measured
+the coverage being given up.
+
+**Prevention:** when replacing a matcher, the acceptance criterion is not "the new tests pass" but
+**"every input the old matcher blocked is still blocked."** Keep the old pattern runnable and diff
+the two over an adversarial corpus. Concretely: `printf '%s' "$cmd" | grep -qiE '<old pattern>'`
+next to the new predicate, and a case list of command-word obfuscations (`command`/`exec`,
+keywords, wrappers, `VAR=`, absolute and `./` paths, `$'...'`, separators, `$( )`, pipes,
+here-strings, process substitution). A green suite is not evidence here — it never was.
+
+**A bounded walker must fail toward the block.** The `sh -c` splice recursion stopped at depth 2
+and still returned success, so a triple-nested payload was trusted as fully walked. Exhausting the
+budget now returns failure, which routes callers to the stricter raw-regex fallback. Any fixed
+bound has a next level; what matters is which way it fails.
+
+**Fix:** `hooks/_common.sh` — `sh -c` payloads spliced (real shells only: `grep -c`, `sort -c`,
+`wc -c` must not match), transparent keywords and command-prefix builtins, arg-taking wrapper
+flags, ANSI-C quoting, a substitution-state stack so `$(` inside double quotes no longer aborts
+the parse, and the depth-budget fail-safe. Cases in `hooks/tests/common-token-helpers.sh`.
+
+**Two residuals, both pre-existing (the old regex allowed them too, so not regressions):**
+`${GITBIN} commit` (parameter expansion at a command position) and `git $'\x63ommit'` (ANSI-C hex
+escape). Verify any future "bypass" against the OLD pattern before calling it a regression.
 
 ## Bash: `'\\'` in a `case` Pattern Never Matches a Lone Backslash (2026-08-11)
 

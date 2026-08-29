@@ -54,3 +54,41 @@ plan-shaped frontmatter and asserted it parsed — the exact assumption the bug 
 They passed for as long as the bug existed. When a fix makes old fixtures fail, check
 whether the fixture or the code was wrong before "repairing" the fixture; here the fixtures
 were, and were rebuilt to serialize a real `Stage`.
+
+## An Exit Code That Also Means "Some Files Were Unreadable" (2026-08-27)
+
+**What happened:** duplicate detection and wiring detection had been silently reporting
+"nothing found" under every sandbox, while passing. Both shell out to `grep -r … .` from the
+worktree root and treated exit code 2 as fatal — dump stderr, discard stdout, return empty.
+
+**Why:** grep exits 2 when ANY file under the search root is unreadable, **even when the search
+succeeded and stdout holds real matches**. Verified on the host:
+
+```text
+grep -r -n "needle" .    →  good.txt:1:needle here   exit=2   stderr: Permission denied
+grep -s -r -n "needle" . →  good.txt:1:needle here   exit=2   stderr: (empty)
+```
+
+Note the second line: `-s` suppresses the messages but **the exit code is still 2**. Silencing
+the noise alone would have hidden the flood and left the false PASS in place.
+
+Sandboxed stages have ~20 read-denied paths at the project root
+(`mistakes/sandbox-and-settings.md`), so exit 2 was the normal case, not the exception. The
+same handler also `eprintln!`-ed the whole stderr blob: one integration-verify stage emitted
+1344 lines / 59.8KB, which pushed the completion command's output past the harness persist
+threshold and cost the stage its verification marker
+(`mistakes/completion-broker-credential.md`).
+
+**Prevention:**
+
+- **Ask what a non-zero exit actually asserts.** An exit code that conflates "I failed" with "I
+  partially succeeded" cannot be used as a control-flow signal. Read the tool's documented exit
+  semantics before branching on them; here the stdout was always authoritative.
+- **This is the sibling of "warn-and-continue" above.** There a per-item skip turned total
+  failure into an empty success; here an exit code did. Both present as a thinner result, never
+  as an error, and both passed their tests for as long as the bug existed.
+- **A subprocess's stderr is unbounded input.** Never `eprintln!` it verbatim into output that
+  something downstream parses or truncates. Cap it by lines and bytes.
+- **Test the degraded environment, not just the happy one.** The regression tests build a tree
+  containing a `0o000` file and assert the match is still found — and skip loudly (rather than
+  passing vacuously) where permission bits are not enforced, e.g. under root.

@@ -11,7 +11,7 @@ use crate::git::merge::{
 use crate::models::session::{Session, SessionType};
 use crate::models::stage::StageStatus;
 use crate::orchestrator::auto_merge::{attempt_auto_merge, is_auto_merge_enabled, AutoMergeResult};
-use crate::orchestrator::merge_lifecycle::{self, MergeLifecycle};
+use crate::orchestrator::merge_lifecycle::{self, CleanupOutcome, MergeLifecycle};
 use crate::orchestrator::signals::{
     find_live_merge_session_for_stage, generate_merge_signal, remove_signal,
 };
@@ -491,23 +491,8 @@ impl Orchestrator {
         // MergeConflict/MergeBlocked — even though Completed is a terminal state.
         // This would spawn a spurious resolver session while the dependent stage was
         // already started by sync_graph_with_stage_files.
-        //
-        // This branch also owns the DEFERRED worktree/branch cleanup for such
-        // stages. `loom stage complete` intentionally skips `cleanup_after_merge`
-        // when it runs from inside the worktree it would delete — removing the
-        // live agent session's cwd breaks every remaining Claude Code hook spawn
-        // for that session (Stop, SessionEnd, the trailing PostToolUse all fail
-        // with `posix_spawn '/bin/sh'` ENOENT once their cwd is gone). By the
-        // time this branch runs, cleanup is safe: the session has already exited
-        // (or this is a startup retry / prior-run stage), so nothing depends on
-        // the worktree still existing.
         if stage.merged {
-            let target_branch = crate::git::branch::resolve_target_branch(
-                &self.config.base_branch,
-                &self.config.repo_root,
-            );
-            MergeLifecycle::new(stage_id, &self.config.repo_root, &self.config.work_dir)
-                .cleanup(&target_branch, &CleanupConfig::quiet());
+            self.cleanup_already_merged(stage_id);
             return true;
         }
 
@@ -730,6 +715,29 @@ impl Orchestrator {
                 false
             }
         }
+    }
+
+    /// Run the deferred worktree/branch cleanup for a stage already marked
+    /// merged (e.g. by `loom stage complete`).
+    ///
+    /// `loom stage complete` intentionally skips `cleanup_after_merge` when it
+    /// runs from inside the worktree it would delete — removing the live
+    /// agent session's cwd breaks every remaining Claude Code hook spawn for
+    /// that session (Stop, SessionEnd, the trailing PostToolUse all fail with
+    /// `posix_spawn '/bin/sh'` ENOENT once their cwd is gone). By the time
+    /// this runs, cleanup is safe: the session has already exited (or this is
+    /// a startup retry / prior-run stage), so nothing depends on the worktree
+    /// still existing. The outcome is reported (not just logged at `warn`) so
+    /// a failed or refused cleanup is visible on the daemon's console instead
+    /// of only in tracing output nobody watches.
+    fn cleanup_already_merged(&self, stage_id: &str) {
+        let target_branch = crate::git::branch::resolve_target_branch(
+            &self.config.base_branch,
+            &self.config.repo_root,
+        );
+        let outcome = MergeLifecycle::new(stage_id, &self.config.repo_root, &self.config.work_dir)
+            .cleanup(&target_branch, &CleanupConfig::quiet());
+        report_deferred_cleanup(stage_id, &outcome);
     }
 
     /// Shared tail for `try_auto_merge`'s three merge-succeeded outcomes
@@ -1157,6 +1165,28 @@ impl Orchestrator {
         self.save_session(&spawned_session)?;
 
         Ok(())
+    }
+}
+
+/// Make a failed or refused deferred cleanup visible on the daemon's console.
+///
+/// `MergeLifecycle::cleanup` already logs at `warn`, but the daemon's tracing
+/// goes to stderr nobody watches; the stage is Completed and merged either
+/// way, so the only thing lost by silence is the worktree the user later
+/// finds still on disk.
+fn report_deferred_cleanup(stage_id: &str, outcome: &CleanupOutcome) {
+    match outcome {
+        CleanupOutcome::Failed(e) => {
+            clear_status_line();
+            eprintln!("Warning: deferred cleanup for stage '{stage_id}' failed: {e}");
+            eprintln!("  Clean up manually with: loom worktree remove {stage_id}");
+        }
+        CleanupOutcome::Refused { reason } => {
+            clear_status_line();
+            eprintln!("Warning: deferred cleanup for stage '{stage_id}' refused: {reason}");
+            eprintln!("  Clean up manually with: loom worktree remove {stage_id}");
+        }
+        CleanupOutcome::Done(_) | CleanupOutcome::NothingToDo | CleanupOutcome::Deferred => {}
     }
 }
 

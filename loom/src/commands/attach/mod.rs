@@ -19,12 +19,14 @@ mod overview;
 mod wait;
 
 use anyhow::{bail, Result};
+use std::ffi::OsString;
 use std::io::IsTerminal;
 use std::os::unix::process::CommandExt;
 use std::path::Path;
 use std::process::Command;
 
 use crate::commands::common::find_work_dir;
+use crate::fs::tmux_tmpdir::{adopt_recorded_tmux_tmpdir, TmuxTmpdirAdoption};
 use crate::models::session::{Session, SessionBackendKind};
 use crate::orchestrator::terminal::tmux::socket_name;
 use crate::orchestrator::terminal::tmux::viewer::{self, endpoint_ready, tmux_session_name};
@@ -32,8 +34,24 @@ use overview::run_overview;
 
 /// Entry point. `stage_id == None` => tiled overview of every live tmux
 /// session; `Some(id)` => attach straight into that stage's session.
+///
+/// Adopts the daemon's recorded `TMUX_TMPDIR` (see [`adopt_recorded_tmux_tmpdir`])
+/// BEFORE any discovery: `live_tmux_sessions` below, the later
+/// `endpoint_ready` checks, the overview build, and the final `exec_tmux`
+/// all resolve the tmux socket directory from this process's environment,
+/// so adopting late would leave earlier steps looking in the wrong place
+/// while later ones looked in the right one.
 pub fn execute(stage_id: Option<String>) -> Result<()> {
     let work_dir = find_work_dir()?;
+
+    if let TmuxTmpdirAdoption::Adopted { recorded, ambient } = adopt_recorded_tmux_tmpdir(&work_dir)
+    {
+        println!(
+            "{}",
+            format_tmux_tmpdir_adoption_message(&recorded, &ambient)
+        );
+    }
+
     let sessions = viewer::live_tmux_sessions(&work_dir)?;
 
     if sessions.is_empty() {
@@ -188,6 +206,27 @@ fn require_tty() -> Result<()> {
         bail!("loom attach must be run from a terminal");
     }
     Ok(())
+}
+
+/// Build the one-line notice printed when [`adopt_recorded_tmux_tmpdir`]
+/// swaps this process's `TMUX_TMPDIR` for the daemon's recorded value — so
+/// an operator whose shell disagrees with the orchestrator's sees why
+/// `loom attach` looked somewhere other than their own `$TMUX_TMPDIR`.
+fn format_tmux_tmpdir_adoption_message(
+    recorded: &Option<OsString>,
+    ambient: &Option<OsString>,
+) -> String {
+    fn display(value: &Option<OsString>) -> String {
+        value
+            .as_ref()
+            .map(|v| v.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "<unset>".to_string())
+    }
+    format!(
+        "Using the orchestrator's tmux socket dir (TMUX_TMPDIR={}) instead of this shell's ({})",
+        display(recorded),
+        display(ambient)
+    )
 }
 
 /// Build the wording for an empty live set, naming the resolved work dir so

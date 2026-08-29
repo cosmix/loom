@@ -51,6 +51,7 @@ impl Stage {
             base_merged_from: Vec::new(),
             outputs: Vec::new(),
             completed_commit: None,
+            cleanup_warning: None,
             merged: false,
             merge_conflict: false,
             verification_status: Default::default(),

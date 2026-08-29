@@ -12,6 +12,16 @@
 # Per CLAUDE.md rule 8:
 #   "Search with `rg` (text) and `fd` (files) — never `grep` or `find`."
 #
+# Detection tokenizes the (stripped) command with loom_tokenize_command and
+# asks loom_tokens_invoke whether 'grep'/'find' is an actual command word at
+# a command position (see _common.sh). This is what git-add-guard.sh already
+# does for `git add`. Regex-matching the raw string instead used to flag a
+# command that merely quoted the word "grep"/"find" as one argument - a
+# codex-forward task prompt discussing "grep -n is banned", or a JavaScript
+# `ARR.find((c) => ...)` call embedded in a quoted brief - even though
+# neither ever invoked the real command. Token scanning also correctly
+# leaves 'rg' alone, since it never matches the 'grep' basename.
+#
 # Input: JSON from stdin (Claude Code passes tool info via stdin)
 #   {"tool_name": "Bash", "tool_input": {"command": "..."}, ...}
 #
@@ -23,7 +33,8 @@
 
 set -euo pipefail
 
-# Source shared utilities for strip_embedded_content()
+# Source shared utilities for strip_embedded_content(), loom_tokenize_command(),
+# and loom_tokens_invoke()
 source "$(dirname "$0")/_common.sh"
 
 debug() {
@@ -71,24 +82,67 @@ fi
 # Strip heredoc bodies and -m/--message content to avoid false positives
 STRIPPED_COMMAND=$(strip_embedded_content "$COMMAND")
 
+# Tokenize once. On a clean parse this populates the global LOOM_TOKENS array
+# so uses_grep/uses_find below can scan argv VALUES instead of regex-matching
+# the raw string. TOKENIZED=0 means the string had an unterminated quote (not
+# valid bash anyway), so loom_tokenize_command's LOOM_TOKENS can't be trusted -
+# uses_grep/uses_find fall back to the pre-tokenizing regex scan in that case,
+# same as check_dangerous_patterns does in git-add-guard.sh.
+if loom_tokenize_command "$STRIPPED_COMMAND"; then
+	TOKENIZED=1
+	# Guard ${LOOM_TOKENS[*]} behind a count check: a whitespace-only command
+	# tokenizes to ZERO tokens (and still returns 0 from loom_tokenize_command),
+	# and under `set -u` bash 3.2 (macOS) errors expanding `[*]` on an empty
+	# array - the expansion happens at this call site even when debug is off,
+	# same class of bug already fixed in commit-filter.sh.
+	if ((${#LOOM_TOKENS[@]} > 0)); then
+		debug "Tokenized into ${#LOOM_TOKENS[@]} token(s): ${LOOM_TOKENS[*]}"
+	else
+		debug "Tokenized into 0 token(s)"
+	fi
+else
+	TOKENIZED=0
+	debug "Tokenizer reported an unterminated quote - falling back to the legacy regex scan"
+fi
+
 # Skip loom knowledge/memory commands — their text payloads often contain
-# words like "find" or "grep" that are not actual command invocations
+# words like "find" or "grep" that are not actual command invocations. Token
+# scanning above already ignores text payloads on its own, so this is now
+# largely redundant on the tokenized path - it stays as a cheap
+# belt-and-braces guard for the TOKENIZED=0 fallback below, which has no
+# other protection against a loom memory/knowledge body quoting those words.
 if echo "$COMMAND" | grep -qE '(^|[;&|[:space:]])loom[[:space:]]+(knowledge|memory)[[:space:]]'; then
 	debug "Skipping: loom knowledge/memory command"
 	exit 0
 fi
 
-# Check if command uses grep (but not rg)
+# Check if command invokes grep (but not rg). loom_tokens_invoke matches on
+# the effective command word's BASENAME, so "/usr/bin/grep" and "grep" both
+# match while "rg" never does (it is a different basename entirely, not a
+# substring match).
 uses_grep() {
+	if [[ $TOKENIZED -eq 1 ]]; then
+		loom_tokens_invoke 'grep'
+		return
+	fi
+	# Fallback (unterminated quote): preserve the pre-tokenizing regex scan
+	# verbatim so protection is never weaker than it was before tokenizing.
 	local cmd="$1"
-	# Match grep but not rg (ripgrep)
 	echo "$cmd" | grep -qE '(^|[|;&[:space:]])(\/usr\/bin\/|\/bin\/)?grep[[:space:]]'
 }
 
-# Check if command uses find (but not fd)
+# Check if command invokes find (but not fd). Same basename-matching as
+# uses_grep. Note this correctly does NOT flag a JavaScript `.find(` call -
+# e.g. `ARR.find((c) => c.k === key)` inside a quoted argument - since that
+# is a method call, not a command word at a command position.
 uses_find() {
+	if [[ $TOKENIZED -eq 1 ]]; then
+		loom_tokens_invoke 'find'
+		return
+	fi
+	# Fallback (unterminated quote): preserve the pre-tokenizing regex scan
+	# verbatim so protection is never weaker than it was before tokenizing.
 	local cmd="$1"
-	# Match find but not fd
 	echo "$cmd" | grep -qE '(^|[|;&[:space:]])(\/usr\/bin\/|\/bin\/)?find[[:space:]]'
 }
 

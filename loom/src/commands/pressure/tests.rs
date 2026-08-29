@@ -1,3 +1,5 @@
+use super::paths::*;
+use super::spawn::*;
 use super::*;
 use std::fs;
 use tempfile::TempDir;
@@ -112,10 +114,44 @@ fn test_plan_steps_single_round() {
 }
 
 #[test]
+fn test_claude_marker_path_is_inside_repo_not_temp_dir() {
+    let repo = Path::new("/repo");
+    let marker = claude_marker_path(repo);
+    // The agent's sandbox mounts /tmp read-only, so a temp-dir marker can never
+    // be created and the session would never auto-close.
+    assert!(
+        !marker.starts_with(std::env::temp_dir()),
+        "marker in temp dir: {}",
+        marker.display()
+    );
+    assert!(
+        marker.starts_with(repo.join(".work").join("pressure")),
+        "got: {}",
+        marker.display()
+    );
+    assert_eq!(marker.extension().unwrap(), "done");
+}
+
+#[test]
+fn test_ensure_marker_dir_creates_parent_and_is_idempotent() {
+    let temp = TempDir::new().unwrap();
+    let root = canonical(&temp);
+    let marker = root.join(".work").join("pressure").join("claude-1.done");
+    assert!(!marker.parent().unwrap().exists());
+
+    ensure_marker_dir(&marker).unwrap();
+    assert!(marker.parent().unwrap().is_dir());
+
+    // Idempotent: calling again on an already-existing dir is still Ok.
+    ensure_marker_dir(&marker).unwrap();
+    assert!(marker.parent().unwrap().is_dir());
+}
+
+#[test]
 fn test_render_dry_run_shows_real_argv() {
     let report = PathBuf::from("/repo/doc/plans/codex-PLAN-foo.md");
     let repo = Path::new("/repo");
-    let marker = PathBuf::from("/tmp/loom-pressure-claude-1.done");
+    let marker = PathBuf::from("/repo/.work/pressure/claude-1.done");
     let codex_log = PathBuf::from("/tmp/loom-pressure-codex-1.log");
     let out = render_dry_run(
         1,
@@ -141,12 +177,12 @@ fn test_render_dry_run_shows_real_argv() {
     // The parallel pressure step is labelled and the codex log path shown.
     assert!(out.contains("[parallel]"));
     assert!(out.contains("loom-pressure-codex-1.log"));
-    assert!(out.contains("loom-pressure-claude-1.done"));
+    assert!(out.contains(".work/pressure/claude-1.done"));
 }
 
 #[test]
 fn test_claude_args_shape() {
-    let marker = PathBuf::from("/tmp/loom-pressure-claude-1.done");
+    let marker = PathBuf::from("/repo/.work/pressure/claude-1.done");
     let args = claude_args("/pressure doc/plans/PLAN-foo.md", &marker);
     // Interactive (no -p): keeps subscription billing. Auto permission mode.
     assert!(!args.iter().any(|a| a == "-p" || a == "--print"));
@@ -157,7 +193,7 @@ fn test_claude_args_shape() {
     // The appended system prompt names the marker so the driver can auto-close.
     let joined = args.join(" ");
     assert!(joined.contains("--append-system-prompt"));
-    assert!(joined.contains("/tmp/loom-pressure-claude-1.done"));
+    assert!(joined.contains("/repo/.work/pressure/claude-1.done"));
 }
 
 #[test]

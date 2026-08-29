@@ -40,7 +40,7 @@ fn repair_fixes_a_settings_file_missing_the_codex_allowances() {
         .find(|issue| {
             issue
                 .description
-                .contains("Codex sandbox allowances missing")
+                .contains("Subprocess sandbox allowances missing")
         })
         .expect("a stale settings file must be reported as an issue");
 
@@ -55,7 +55,7 @@ fn repair_fixes_a_settings_file_missing_the_codex_allowances() {
     // And the repo is then clean on a re-check.
     assert!(!check_all_issues(root.path()).iter().any(|issue| issue
         .description
-        .contains("Codex sandbox allowances missing")));
+        .contains("Subprocess sandbox allowances missing")));
 }
 
 /// A settings file written before the knowledge-directory sandbox grant
