@@ -189,7 +189,7 @@ WORKER RESTRICTIONS - YOU ARE A LEAF AGENT:
 
 ### 7. SKILLS, AGENTS, AND MODEL CHOICE
 
-Check skills and agents before implementing; the prompt-submit hook surfaces matching `/loom-*` skills — invoke the best match.
+Check skills and agents before implementing; the prompt-submit hook surfaces matches and names how to invoke each.
 
 | Agent | Model | Use for |
 | --- | --- | --- |

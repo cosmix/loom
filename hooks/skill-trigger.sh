@@ -10,8 +10,14 @@ Input: JSON from stdin with structure:
 Output: JSON with hookSpecificOutput.additionalContext for context injection.
   Plain text stdout from UserPromptSubmit hooks is unreliable (see claude-code#13912).
 
+  A skill installed in ~/.claude/skills keeps its slash-command form:
+    - /loom-plan-writer -- <desc> (matched: kw)
+  A catalogued skill has no slash command, so the line names the loader instead:
+    - loom-rust -- <desc> (matched: kw) -- load with Skill(skill="loom-skills", args="loom-rust")
+
 Dependencies:
-  ~/.claude/hooks/loom/skill-keywords.json (built by skill-index-builder.sh)
+  ~/.claude/hooks/loom/skill-keywords.json (built by `loom skill-index`)
+  ~/.claude/loom-skill-catalog/<name>/SKILL.md for descriptions of catalogued skills
 """
 
 import json
@@ -21,6 +27,7 @@ import sys
 
 INDEX_FILE = os.path.expanduser("~/.claude/hooks/loom/skill-keywords.json")
 SKILLS_DIR = os.path.expanduser("~/.claude/skills")
+CATALOG_DIR = os.path.expanduser("~/.claude/loom-skill-catalog")
 DEBUG_LOG = os.path.expanduser("~/.claude/hooks/loom/skill-trigger.log")
 MAX_SUGGESTIONS = 3
 MIN_SCORE = 2  # Minimum weighted score to suggest a skill
@@ -268,8 +275,17 @@ def main():
     lines = []
     for skill, _score in top:
         kws = ", ".join(matched[skill][:4])
-        desc = _get_description(skill)
-        if desc:
+        path, catalogued = _locate_skill_md(skill)
+        desc = _parse_description(path) if path else ""
+        if catalogued:
+            # Not indexed by Claude Code, so there's no /{skill} slash
+            # command to name — point at the loader invocation instead.
+            loader = f'Skill(skill="loom-skills", args="{skill}")'
+            if desc:
+                lines.append(f"  - {skill} -- {desc} (matched: {kws}) -- load with {loader}")
+            else:
+                lines.append(f"  - {skill} (matched: {kws}) -- load with {loader}")
+        elif desc:
             lines.append(f"  - /{skill} -- {desc} (matched: {kws})")
         else:
             lines.append(f"  - /{skill} (matched: {kws})")
@@ -293,37 +309,49 @@ def main():
         _debug(f"NO MATCH: scores={scores}")
 
 
-def _get_description(skill_name):
-    """Extract short description from SKILL.md frontmatter."""
-    path = os.path.join(SKILLS_DIR, skill_name, "SKILL.md")
-    if not os.path.isfile(path):
-        return ""
+def _locate_skill_md(skill_name):
+    """Find a skill's SKILL.md, checking the installed directory before the
+    catalog. Returns (path, catalogued): catalogued is True when the skill
+    was found under CATALOG_DIR rather than SKILLS_DIR. Returns (None,
+    False) when neither directory has it (a stale index entry).
+    """
+    installed = os.path.join(SKILLS_DIR, skill_name, "SKILL.md")
+    if os.path.isfile(installed):
+        return installed, False
+    catalogued = os.path.join(CATALOG_DIR, skill_name, "SKILL.md")
+    if os.path.isfile(catalogued):
+        return catalogued, True
+    return None, False
+
+
+def _parse_description(path):
+    """Extract short description from a SKILL.md file's frontmatter."""
     try:
         with open(path) as f:
             text = f.read(2000)
-        m = re.search(r"^---\s*\n(.*?)\n---", text, re.DOTALL)
-        if not m:
-            return ""
-        fm = m.group(1)
-        # Multiline description (|)
-        m = re.search(r"^description:\s*\|\s*\n\s+(.+)", fm, re.MULTILINE)
-        if m:
-            d = m.group(1).strip()
-        else:
-            # Inline description
-            m = re.search(r"^description:\s*(.+)", fm, re.MULTILINE)
-            if not m:
-                return ""
-            d = m.group(1).strip()
-        # Truncate at first natural break point
-        for marker in [". Trigger", ". Use when", ". Covers", ". Keywords", ". Primary"]:
-            idx = d.find(marker)
-            if 0 < idx < 80:
-                d = d[: idx + 1]
-                break
-        return d[:80]
     except IOError:
         return ""
+    m = re.search(r"^---\s*\n(.*?)\n---", text, re.DOTALL)
+    if not m:
+        return ""
+    fm = m.group(1)
+    # Multiline description (|)
+    m = re.search(r"^description:\s*\|\s*\n\s+(.+)", fm, re.MULTILINE)
+    if m:
+        d = m.group(1).strip()
+    else:
+        # Inline description
+        m = re.search(r"^description:\s*(.+)", fm, re.MULTILINE)
+        if not m:
+            return ""
+        d = m.group(1).strip()
+    # Truncate at first natural break point
+    for marker in [". Trigger", ". Use when", ". Covers", ". Keywords", ". Primary"]:
+        idx = d.find(marker)
+        if 0 < idx < 80:
+            d = d[: idx + 1]
+            break
+    return d[:80]
 
 
 if __name__ == "__main__":
