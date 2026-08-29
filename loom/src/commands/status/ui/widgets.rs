@@ -45,17 +45,23 @@ pub fn progress_bar(pct: f32, width: usize, _style: Style) -> String {
 /// Create a mini context bar for tables (compact version)
 ///
 /// # Arguments
-/// * `pct` - Context percentage (0.0 to 1.0)
+/// * `tokens` - Resident context token count
+/// * `ceiling` - Resolved context ceiling
 /// * `width` - Bar width (default: 8)
-pub fn context_bar(pct: f32, width: usize) -> Line<'static> {
-    let style = Theme::context_style(pct);
-    let bar = progress_bar(pct, width, style);
-    let pct_str = format!("{:3.0}%", pct * 100.0);
+pub fn context_bar(tokens: u32, ceiling: u32, width: usize) -> Line<'static> {
+    let style = Theme::context_style(tokens, ceiling);
+    let usage = if ceiling == 0 {
+        0.0
+    } else {
+        tokens as f32 / ceiling as f32
+    };
+    let bar = progress_bar(usage, width, style);
+    let token_str = format!("{tokens}/{ceiling}");
 
     Line::from(vec![
         Span::styled(bar, style),
         Span::raw(" "),
-        Span::styled(pct_str, style),
+        Span::styled(token_str, style),
     ])
 }
 
@@ -91,20 +97,21 @@ pub fn activity_indicator(status: &ActivityStatus) -> Span<'static> {
     }
 }
 
-/// Create a context budget gauge with threshold coloring
-pub fn context_budget_gauge(usage_pct: f32, budget_pct: f32) -> Gauge<'static> {
-    let color = if usage_pct >= 65.0 {
-        StatusColors::BLOCKED
-    } else if usage_pct >= 50.0 {
-        StatusColors::WARNING
+/// Create a resident-token context gauge with health coloring.
+pub fn context_gauge(tokens: u32, ceiling: u32) -> Gauge<'static> {
+    let usage = if ceiling == 0 {
+        0.0
     } else {
-        StatusColors::COMPLETED
+        tokens as f32 / ceiling as f32
     };
+    let color = Theme::context_style(tokens, ceiling)
+        .fg
+        .unwrap_or(StatusColors::COMPLETED);
 
     Gauge::default()
-        .percent(usage_pct.clamp(0.0, 100.0) as u16)
+        .percent((usage * 100.0).clamp(0.0, 100.0) as u16)
         .gauge_style(Style::default().fg(color))
-        .label(format!("{usage_pct:.0}% (budget: {budget_pct:.0}%)"))
+        .label(format!("{tokens}/{ceiling} tokens"))
 }
 
 /// Create an activity feed widget displaying recent activities with status

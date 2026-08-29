@@ -3,7 +3,7 @@ use chrono::Utc;
 use std::fs;
 
 use crate::commands::status::merge_status::build_merge_report;
-use crate::fs::work_dir::{load_config, WorkDir};
+use crate::fs::work_dir::{load_config, resolve_context_ceiling_tokens, WorkDir};
 use crate::models::constants::STALENESS_THRESHOLD_SECS;
 use crate::models::session::{Session, SessionStatus};
 use crate::models::stage::{Stage, StageStatus, StatusBucket};
@@ -110,13 +110,9 @@ fn build_stage_summary(stage: &Stage, sessions: &[Session], work_dir: &WorkDir) 
         .iter()
         .find(|s| s.stage_id.as_ref() == Some(&stage.id));
 
-    let context_pct = session.and_then(|s| {
-        if s.context_limit == 0 || s.context_tokens == 0 {
-            None
-        } else {
-            Some(s.context_tokens as f32 / s.context_limit as f32)
-        }
-    });
+    let context_tokens = session.map(|s| s.context_tokens);
+    let context_ceiling_tokens = session
+        .map(|_| resolve_context_ceiling_tokens(work_dir.root(), stage.context_ceiling_tokens));
 
     let pid = session.and_then(|s| s.pid);
     let session_alive = pid.map(crate::process::is_process_alive).unwrap_or(false);
@@ -145,7 +141,7 @@ fn build_stage_summary(stage: &Stage, sessions: &[Session], work_dir: &WorkDir) 
         status: stage.status.clone(),
         stage_type: stage.stage_type,
         dependencies: stage.dependencies.clone(),
-        context_pct,
+        context_tokens,
         elapsed_secs: Some(elapsed_secs),
         execution_secs: stage.execution_secs,
         base_branch: stage.base_branch.clone(),
@@ -155,7 +151,7 @@ fn build_stage_summary(stage: &Stage, sessions: &[Session], work_dir: &WorkDir) 
         last_tool,
         last_activity,
         staleness_secs,
-        context_budget_pct: None, // TODO: Read from plan if needed
+        context_ceiling_tokens,
         review_reason: stage.review_reason.clone(),
         merged: stage.merged,
         cleanup_warning: stage.cleanup_warning.clone(),
@@ -179,7 +175,6 @@ fn build_session_summary(session: &Session) -> SessionSummary {
         stage_id: session.stage_id.clone(),
         pid: session.pid,
         context_tokens: session.context_tokens,
-        context_limit: session.context_limit,
         uptime_secs,
         is_alive,
     }

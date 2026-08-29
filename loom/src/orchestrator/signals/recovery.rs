@@ -104,7 +104,7 @@ mod tests {
         use crate::orchestrator::signals::recovery_types::RecoverySignalContent;
         let hb = LastHeartbeatInfo {
             timestamp: Utc::now(),
-            context_percent: Some(45.0),
+            context_tokens: Some(45_000),
             last_tool: Some("Bash".to_string()),
             activity: Some("Running tests".to_string()),
         };

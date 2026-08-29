@@ -1,6 +1,6 @@
 use ratatui::style::{Color, Modifier, Style};
 
-use crate::utils::context_pct_tui_color;
+use crate::orchestrator::{context_health, ContextHealth};
 
 /// Color scheme for status indicators
 pub struct StatusColors;
@@ -15,10 +15,10 @@ impl StatusColors {
     pub const WARNING: Color = Color::Yellow;
     pub const MERGED: Color = Color::Rgb(100, 180, 100); // Lighter green for merged
 
-    // Context bar colors (thresholds in models::constants::display)
-    pub const CONTEXT_LOW: Color = Color::Green; // Below CONTEXT_HEALTHY_PCT
-    pub const CONTEXT_MED: Color = Color::Yellow; // CONTEXT_HEALTHY_PCT to CONTEXT_WARNING_PCT
-    pub const CONTEXT_HIGH: Color = Color::Red; // Above CONTEXT_WARNING_PCT
+    // Context bar colors from ContextHealth.
+    pub const CONTEXT_LOW: Color = Color::Green;
+    pub const CONTEXT_MED: Color = Color::Yellow;
+    pub const CONTEXT_HIGH: Color = Color::Red;
 
     // UI chrome
     pub const HEADER: Color = Color::White;
@@ -74,9 +74,12 @@ impl Theme {
         Style::default().fg(StatusColors::WARNING)
     }
 
-    pub fn context_style(pct: f32) -> Style {
-        // pct is 0.0-1.0, convert to percentage for helper
-        let color = context_pct_tui_color(pct * 100.0);
+    pub fn context_style(tokens: u32, ceiling: u32) -> Style {
+        let color = match context_health(tokens, ceiling) {
+            ContextHealth::Green => StatusColors::CONTEXT_LOW,
+            ContextHealth::Yellow => StatusColors::CONTEXT_MED,
+            ContextHealth::Red => StatusColors::CONTEXT_HIGH,
+        };
         Style::default().fg(color)
     }
 

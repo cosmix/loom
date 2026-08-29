@@ -10,8 +10,8 @@ use super::brief::format_knowledge_brief;
 use super::codex::format_codex_implementers_section;
 use super::helpers::append_stage_end_sequence;
 use super::helpers::{
-    append_budget_exceeded_box, extract_tasks_from_stage, format_dependency_outputs,
-    format_dependency_table, format_structured_handoff,
+    extract_tasks_from_stage, format_dependency_outputs, format_dependency_table,
+    format_structured_handoff,
 };
 use super::sandbox_section::format_sandbox_section;
 
@@ -600,40 +600,14 @@ pub(super) fn format_recitation_section(
 ) -> String {
     let mut content = String::new();
 
-    // Context-aware handoff reminders (independent of budget)
-    if let Some(usage) = embedded_context.context_usage {
-        if usage >= 75.0 {
-            content.push_str("## COMPACTION IMMINENT\n\n");
-            content.push_str("**Context is at critical level.** Run NOW:\n");
-            content.push_str("```\nloom handoff --message \"what I was doing\"\n```\n\n");
-        } else if usage >= 60.0 {
-            content.push_str("## Context Preservation Reminder\n\n");
-            content.push_str("Consider creating a handoff to preserve your working state:\n");
-            content.push_str("```\nloom handoff --message \"current state\"\n```\n\n");
-        }
-    }
-
-    // Context Budget Warning (high attention position - before tasks)
-    if let (Some(usage), Some(budget)) = (
-        embedded_context.context_usage,
-        embedded_context.context_budget,
+    // Context usage (high attention position - before tasks). Rendered as an
+    // absolute token count against the stage's resident-token ceiling, not a
+    // percentage - see `context_ceiling_tokens` on `Stage`/`StageDefinition`.
+    if let (Some(tokens), Some(ceiling)) = (
+        embedded_context.context_tokens,
+        embedded_context.context_ceiling_tokens,
     ) {
-        if usage >= budget * 0.8 {
-            // 80% of budget
-            content.push_str("## ⚠️ CONTEXT BUDGET WARNING\n\n");
-            content.push_str(&format!(
-                "Current usage: **{usage:.0}%** | Budget: **{budget:.0}%**\n\n",
-            ));
-
-            if usage >= budget {
-                append_budget_exceeded_box(&mut content);
-            } else {
-                content.push_str("**Approaching budget limit.** Prepare for handoff:\n");
-                content.push_str("- `loom memory note` to record remaining observations\n");
-                content.push_str("- `loom memory list` to verify insights captured\n");
-            }
-            content.push('\n');
-        }
+        content.push_str(&format!("Context: {tokens} of {ceiling} tokens\n\n"));
     }
 
     // Immediate tasks - recited at end for attention

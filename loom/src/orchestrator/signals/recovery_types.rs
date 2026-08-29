@@ -57,8 +57,8 @@ pub struct RecoverySignalContent {
 pub struct LastHeartbeatInfo {
     /// When the heartbeat was recorded
     pub timestamp: DateTime<Utc>,
-    /// Context percentage at the time
-    pub context_percent: Option<f32>,
+    /// Resident context tokens at the time
+    pub context_tokens: Option<u32>,
     /// Last tool being used
     pub last_tool: Option<String>,
     /// Activity description
@@ -128,7 +128,7 @@ impl RecoverySignalContent {
         session_id: String,
         stage_id: String,
         previous_session_id: String,
-        context_percent: f32,
+        context_tokens: u32,
         recovery_attempt: u32,
     ) -> Self {
         Self {
@@ -139,7 +139,7 @@ impl RecoverySignalContent {
             detected_at: Utc::now(),
             last_heartbeat: Some(LastHeartbeatInfo {
                 timestamp: Utc::now(),
-                context_percent: Some(context_percent),
+                context_tokens: Some(context_tokens),
                 last_tool: None,
                 activity: Some("Context limit reached".to_string()),
             }),

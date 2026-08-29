@@ -44,7 +44,8 @@ fn make_test_stage(id: &str, status: StageStatus) -> Stage {
         merged: false,
         merge_conflict: false,
         verification_status: Default::default(),
-        context_budget: None,
+        context_ceiling_tokens: None,
+        plan_overview: None,
         artifacts: Vec::new(),
         wiring: Vec::new(),
         wiring_tests: Vec::new(),
@@ -126,15 +127,14 @@ fn test_build_stage_summary_with_session() {
     let mut session = Session::new();
     session.assign_to_stage("test-stage".to_string());
     session.context_tokens = 50000;
-    session.context_limit = 200000;
 
     let summary = build_stage_summary(&stage, &[session], &work_dir);
 
     assert_eq!(summary.id, "test-stage");
     assert_eq!(summary.status, StageStatus::Executing);
     assert_eq!(summary.dependencies, vec!["dep-1"]);
-    assert!(summary.context_pct.is_some());
-    assert_eq!(summary.context_pct.unwrap(), 0.25); // 50000/200000
+    assert_eq!(summary.context_tokens, Some(50_000));
+    assert_eq!(summary.context_ceiling_tokens, Some(150_000));
     assert!(summary.elapsed_secs.is_some());
     // New fields
     assert_eq!(summary.activity_status, ActivityStatus::Working);
@@ -154,7 +154,7 @@ fn test_build_stage_summary_without_session() {
     assert_eq!(summary.id, "test-stage");
     assert_eq!(summary.status, StageStatus::WaitingForDeps);
     assert!(summary.dependencies.is_empty());
-    assert!(summary.context_pct.is_none());
+    assert_eq!(summary.context_tokens, None);
     assert!(summary.elapsed_secs.is_some());
     // New fields
     assert_eq!(summary.activity_status, ActivityStatus::Idle);
@@ -181,14 +181,12 @@ fn test_build_session_summary() {
     session.assign_to_stage("test-stage".to_string());
     session.pid = Some(12345);
     session.context_tokens = 100000;
-    session.context_limit = 200000;
 
     let summary = build_session_summary(&session);
 
     assert_eq!(summary.stage_id, Some("test-stage".to_string()));
     assert_eq!(summary.pid, Some(12345));
     assert_eq!(summary.context_tokens, 100000);
-    assert_eq!(summary.context_limit, 200000);
     assert!(summary.uptime_secs >= 0);
 }
 
@@ -212,7 +210,6 @@ fn test_parse_session_from_markdown() {
 id: test-session
 status: running
 context_tokens: 1000
-context_limit: 200000
 created_at: "2024-01-01T00:00:00Z"
 last_active: "2024-01-01T00:00:00Z"
 ---

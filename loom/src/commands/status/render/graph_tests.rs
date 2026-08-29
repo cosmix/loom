@@ -8,7 +8,7 @@ fn make_stage_summary(id: &str, deps: Vec<&str>, status: StageStatus) -> StageSu
         status,
         stage_type: StageType::Standard,
         dependencies: deps.into_iter().map(String::from).collect(),
-        context_pct: None,
+        context_tokens: None,
         elapsed_secs: None,
         execution_secs: None,
         base_branch: None,
@@ -18,7 +18,7 @@ fn make_stage_summary(id: &str, deps: Vec<&str>, status: StageStatus) -> StageSu
         last_tool: None,
         last_activity: None,
         staleness_secs: None,
-        context_budget_pct: None,
+        context_ceiling_tokens: None,
         review_reason: None,
         merged: false,
         cleanup_warning: None,
@@ -114,14 +114,15 @@ fn test_render_graph_linear() {
 #[test]
 fn test_render_graph_with_context() {
     let mut stage = make_stage_summary("executing", vec![], StageStatus::Executing);
-    stage.context_pct = Some(0.45);
+    stage.context_tokens = Some(45_000);
+    stage.context_ceiling_tokens = Some(150_000);
     stage.elapsed_secs = Some(120);
 
     let data = make_status_data(vec![stage]);
     let mut output = Vec::new();
     render_graph(&mut output, &data).unwrap();
     let output_str = String::from_utf8(output).unwrap();
-    assert!(output_str.contains("45%"));
+    assert!(output_str.contains("45000/150000"));
     assert!(output_str.contains("2m0s"));
 }
 

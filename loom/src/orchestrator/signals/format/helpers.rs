@@ -31,25 +31,6 @@ pub(crate) fn format_subagent_timeout_section(timeout_secs: u64) -> String {
     )
 }
 
-/// Append the "BUDGET EXCEEDED - WRAP UP NOW" box shown in the recitation
-/// section once context usage reaches the stage's budget.
-///
-/// Extracted from `format_recitation_section` (`sections.rs`), which is
-/// already well over the file-size ceiling.
-pub(super) fn append_budget_exceeded_box(content: &mut String) {
-    content.push_str("```\n");
-    content.push_str("┌──────────────────────────────────────────────────────────┐\n");
-    content.push_str("│  🛑 BUDGET EXCEEDED - WRAP UP NOW                        │\n");
-    content.push_str("│  1. loom memory list (verify insights captured)          │\n");
-    content.push_str("│  2. Stage SETTLED (subagents returned, defects fixed,    │\n");
-    content.push_str("│     everything committed)?                               │\n");
-    content.push_str("│     YES -> loom stage complete <stage-id>                │\n");
-    content.push_str("│     NO  -> loom handoff --message \"<state>\" and STOP.    │\n");
-    content.push_str("│            Do NOT complete an unsettled stage.           │\n");
-    content.push_str("└──────────────────────────────────────────────────────────┘\n");
-    content.push_str("```\n");
-}
-
 /// Format a table showing dependency status for inclusion in signals
 pub fn format_dependency_table(deps: &[DependencyStatus]) -> String {
     let mut table = String::new();
@@ -146,8 +127,8 @@ pub(super) fn format_structured_handoff(handoff: &HandoffV2) -> String {
     let mut content = String::new();
 
     content.push_str(&format!(
-        "**Previous Session**: {} | **Context**: {:.1}%\n\n",
-        handoff.session_id, handoff.context_percent
+        "**Previous Session**: {} | **Context**: {} tokens\n\n",
+        handoff.session_id, handoff.context_tokens
     ));
 
     // Completed tasks

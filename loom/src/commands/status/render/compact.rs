@@ -4,10 +4,10 @@ use colored::Colorize;
 use std::io::Write;
 
 use crate::commands::status::data::StatusData;
-use crate::utils::context_pct_terminal_color;
+use crate::orchestrator::{context_health, ContextHealth};
 
 /// Render single-line compact status (for scripting/monitoring)
-/// Format: [4/12] ●2 ○6 ✗1 ⟳1 | ctx:67% | conflicts:0
+/// Format: [4/12] ●2 ○6 ✗1 ⟳1 | ctx:100000/150000 | conflicts:0
 pub fn render_compact<W: Write>(w: &mut W, data: &StatusData) -> std::io::Result<()> {
     let progress = &data.progress;
 
@@ -56,15 +56,19 @@ pub fn render_compact<W: Write>(w: &mut W, data: &StatusData) -> std::io::Result
         )?;
     }
 
-    // Max context usage
-    let max_ctx = data
+    // Largest resident context reading.
+    let max_context = data
         .stages
         .iter()
-        .filter_map(|s| s.context_pct)
-        .fold(0.0f32, |a, b| a.max(b));
-    if max_ctx > 0.0 {
-        let ctx_str = format!("{:.0}%", max_ctx * 100.0);
-        let color = context_pct_terminal_color(max_ctx * 100.0);
+        .filter_map(|stage| stage.context_tokens.zip(stage.context_ceiling_tokens))
+        .max_by_key(|(tokens, _)| *tokens);
+    if let Some((tokens, ceiling)) = max_context {
+        let ctx_str = format!("{tokens}/{ceiling}");
+        let color = match context_health(tokens, ceiling) {
+            ContextHealth::Green => colored::Color::Green,
+            ContextHealth::Yellow => colored::Color::Yellow,
+            ContextHealth::Red => colored::Color::Red,
+        };
         let colored = ctx_str.color(color);
         write!(w, " | ctx:{colored}")?;
     }
