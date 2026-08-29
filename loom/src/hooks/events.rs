@@ -40,9 +40,12 @@ pub enum HookEventPayload {
     },
     /// PreCompact event data
     PreCompact {
-        /// Context usage percentage at compaction time
+        /// Resident context tokens at compaction time
         #[serde(skip_serializing_if = "Option::is_none")]
-        context_percent: Option<f32>,
+        context_tokens: Option<u32>,
+        /// Transcript path recorded at compaction time
+        #[serde(skip_serializing_if = "Option::is_none")]
+        transcript_path: Option<String>,
         /// Handoff file created
         #[serde(skip_serializing_if = "Option::is_none")]
         handoff_file: Option<String>,

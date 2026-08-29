@@ -3,7 +3,7 @@
 use std::collections::{HashMap, HashSet};
 use std::time::Duration;
 
-use crate::models::constants::DEFAULT_CONTEXT_BUDGET;
+use crate::models::constants::DAEMON_CEILING_MULTIPLIER;
 use crate::models::session::{Session, SessionStatus};
 use crate::models::stage::{Stage, StageStatus};
 // `check_session_alive` below routes through the `LivenessService`
@@ -13,7 +13,7 @@ use crate::models::stage::{Stage, StageStatus};
 use crate::orchestrator::liveness::LivenessService;
 
 use super::config::MonitorConfig;
-use super::context::{context_health, context_usage_percent, ContextHealth};
+use super::context::{context_health, ContextHealth};
 use super::events::MonitorEvent;
 use super::handlers::Handlers;
 use super::heartbeat::{HeartbeatStatus, HeartbeatWatcher};
@@ -106,7 +106,7 @@ impl Detection {
         events
     }
 
-    /// Detect session status changes and context levels
+    /// Detect session status changes, context bands, and backstop crossings.
     pub fn detect_session_changes(
         &mut self,
         sessions: &[Session],
@@ -122,97 +122,92 @@ impl Detection {
                 continue;
             }
 
-            let current_context_health =
-                context_health(session.context_tokens, session.context_limit);
-            let previous_context_health = self.last_context_levels.get(&session.id).copied();
+            let ceiling = resolve_ceiling_tokens(session, stages, handlers);
 
-            if previous_context_health != Some(current_context_health) {
-                match current_context_health {
-                    ContextHealth::Yellow => {
-                        // Auto-summarize memory at warning threshold (60%)
-                        if let Err(e) = handlers.handle_context_warning(session) {
-                            eprintln!(
-                                "Failed to auto-summarize memory for session '{}': {}",
-                                session.id, e
-                            );
-                        }
-
-                        events.push(MonitorEvent::SessionContextWarning {
-                            session_id: session.id.clone(),
-                            usage_percent: context_usage_percent(
-                                session.context_tokens,
-                                session.context_limit,
-                            ),
-                        });
-                    }
-                    ContextHealth::Red => {
-                        let usage_percent =
-                            context_usage_percent(session.context_tokens, session.context_limit);
-
-                        events.push(MonitorEvent::SessionContextCritical {
-                            session_id: session.id.clone(),
-                            usage_percent,
-                        });
-
-                        // Generate handoff file if session has an associated stage
-                        if let Some(stage_id) = &session.stage_id {
-                            if let Some(stage) = stages.iter().find(|s| &s.id == stage_id) {
-                                if let Ok(handoff_path) =
-                                    handlers.handle_context_critical(session, stage)
-                                {
-                                    eprintln!(
-                                        "Generated handoff for session {} at {}",
-                                        session.id,
-                                        handoff_path.display()
-                                    );
-                                }
-                            }
-                        }
-                    }
-                    _ => {}
-                }
-
-                self.last_context_levels
-                    .insert(session.id.clone(), current_context_health);
-            }
-
-            // Budget check runs every tick (independent of coarse health-bucket changes).
-            // A stage with a per-stage budget (e.g. 70%) can be exceeded while the
-            // session stays in the same coarse bucket (e.g. Red = 65%+), so we must
-            // not gate this check on a bucket transition.  We emit BudgetExceeded only
-            // on the first tick where usage crosses the threshold to avoid flooding.
-            if let Some(stage_id) = &session.stage_id {
-                if let Some(stage) = stages.iter().find(|s| &s.id == stage_id) {
-                    let budget_percent = stage
-                        .context_budget
-                        .unwrap_or(DEFAULT_CONTEXT_BUDGET as u32)
-                        as f32;
-                    let usage_percent =
-                        context_usage_percent(session.context_tokens, session.context_limit);
-
-                    let was_exceeded = self
-                        .last_budget_exceeded
-                        .get(&session.id)
-                        .copied()
-                        .unwrap_or(false);
-                    let is_exceeded = usage_percent > budget_percent;
-
-                    if is_exceeded && !was_exceeded {
-                        events.push(MonitorEvent::BudgetExceeded {
-                            session_id: session.id.clone(),
-                            stage_id: stage_id.clone(),
-                            usage_percent,
-                            budget_percent,
-                        });
-                    }
-
-                    self.last_budget_exceeded
-                        .insert(session.id.clone(), is_exceeded);
-                }
+            events.extend(self.detect_context_health(session, stages, handlers, ceiling));
+            if let Some(event) = self.detect_backstop_crossing(session, ceiling) {
+                events.push(event);
             }
         }
 
         events
+    }
+
+    /// Emit Yellow/Red band transitions for one session, and generate a handoff
+    /// the first time it enters Red. Gated on a band CHANGE so a session parked
+    /// in one band does not re-emit every tick.
+    fn detect_context_health(
+        &mut self,
+        session: &Session,
+        stages: &[Stage],
+        handlers: &Handlers,
+        ceiling: u32,
+    ) -> Vec<MonitorEvent> {
+        let current = context_health(session.context_tokens, ceiling);
+        if self.last_context_levels.get(&session.id).copied() == Some(current) {
+            return Vec::new();
+        }
+        self.last_context_levels.insert(session.id.clone(), current);
+
+        let mut events = Vec::new();
+        match current {
+            ContextHealth::Yellow => {
+                if let Err(e) = handlers.handle_context_warning(session) {
+                    eprintln!(
+                        "Failed to auto-summarize memory for session '{}': {}",
+                        session.id, e
+                    );
+                }
+                events.push(MonitorEvent::SessionContextWarning {
+                    session_id: session.id.clone(),
+                    context_tokens: session.context_tokens,
+                    ceiling_tokens: ceiling,
+                });
+            }
+            ContextHealth::Red => {
+                events.push(MonitorEvent::SessionContextCritical {
+                    session_id: session.id.clone(),
+                    context_tokens: session.context_tokens,
+                    ceiling_tokens: ceiling,
+                });
+
+                generate_red_band_handoff(session, stages, handlers);
+            }
+            ContextHealth::Green => {}
+        }
+        events
+    }
+
+    /// The daemon's backstop: fire once when a session runs past
+    /// `DAEMON_CEILING_MULTIPLIER` times its stage ceiling.
+    ///
+    /// The agent's own hook governs at 100% of the ceiling, so reaching 125%
+    /// means that governance was ignored and the daemon must take the session
+    /// down itself. Deliberately NOT gated on a band change — a session is
+    /// already Red at 90%, so no further transition would ever come.
+    fn detect_backstop_crossing(
+        &mut self,
+        session: &Session,
+        ceiling: u32,
+    ) -> Option<MonitorEvent> {
+        let stage_id = session.stage_id.clone()?;
+        let backstop = (ceiling as f32 * DAEMON_CEILING_MULTIPLIER) as u32;
+
+        let was_exceeded = self
+            .last_budget_exceeded
+            .get(&session.id)
+            .copied()
+            .unwrap_or(false);
+        let is_exceeded = ceiling > 0 && session.context_tokens > backstop;
+        self.last_budget_exceeded
+            .insert(session.id.clone(), is_exceeded);
+
+        (is_exceeded && !was_exceeded).then(|| MonitorEvent::BudgetExceeded {
+            session_id: session.id.clone(),
+            stage_id,
+            context_tokens: session.context_tokens,
+            ceiling_tokens: ceiling,
+        })
     }
 
     /// Detect heartbeat-based events (heartbeat updates, silent sessions).
@@ -243,7 +238,8 @@ impl Detection {
                 events.push(MonitorEvent::HeartbeatReceived {
                     stage_id: update.heartbeat.stage_id.clone(),
                     session_id: update.heartbeat.session_id.clone(),
-                    context_percent: update.heartbeat.context_percent,
+                    context_tokens: update.heartbeat.context_tokens,
+                    transcript_path: update.heartbeat.transcript_path.clone(),
                     last_tool: update.heartbeat.last_tool.clone(),
                 });
 
@@ -361,4 +357,43 @@ fn hung_event(
         last_activity,
         finished_without_completing,
     }
+}
+
+/// Write the handoff a session entering the Red band is owed. Best-effort: a
+/// missing stage or an unwritable handoff must not abort the tick.
+fn generate_red_band_handoff(session: &Session, stages: &[Stage], handlers: &Handlers) {
+    let Some(stage) = stage_for(session, stages) else {
+        return;
+    };
+    match handlers.handle_context_critical(session, stage) {
+        Ok(path) => eprintln!(
+            "Generated handoff for session {} at {}",
+            session.id,
+            path.display()
+        ),
+        Err(e) => eprintln!(
+            "Failed to generate handoff for session '{}': {}",
+            session.id, e
+        ),
+    }
+}
+
+/// The stage a session is currently assigned to, if it is in `stages`.
+fn stage_for<'a>(session: &Session, stages: &'a [Stage]) -> Option<&'a Stage> {
+    let stage_id = session.stage_id.as_deref()?;
+    stages.iter().find(|s| s.id == stage_id)
+}
+
+/// Resolve the ceiling governing a session, in absolute tokens.
+///
+/// `ContextConfig::ceiling_for` owns the order (stage value ->
+/// `[context] ceiling_tokens` -> the built-in default) so this reader cannot
+/// drift from the signal, the launcher and `loom status`. It resolves against
+/// the config the monitor read once at startup rather than
+/// `resolve_context_ceiling_tokens`, which would re-read `.work/config.toml`
+/// for every session on every tick.
+fn resolve_ceiling_tokens(session: &Session, stages: &[Stage], handlers: &Handlers) -> u32 {
+    handlers
+        .context_config()
+        .ceiling_for(stage_for(session, stages).and_then(|stage| stage.context_ceiling_tokens))
 }

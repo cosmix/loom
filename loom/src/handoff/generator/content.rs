@@ -9,7 +9,7 @@ pub struct HandoffContent {
     pub session_id: String,
     pub stage_id: String,
     pub plan_id: Option<String>,
-    pub context_percent: f32,
+    pub context_tokens: u32,
     pub goals: String,
     pub completed_work: Vec<String>,
     pub decisions: Vec<(String, String)>, // (decision, rationale)
@@ -29,7 +29,7 @@ impl HandoffContent {
             session_id,
             stage_id,
             plan_id: None,
-            context_percent: 0.0,
+            context_tokens: 0,
             goals: String::new(),
             completed_work: Vec::new(),
             decisions: Vec::new(),
@@ -42,9 +42,9 @@ impl HandoffContent {
         }
     }
 
-    /// Set the context usage percentage
-    pub fn with_context_percent(mut self, percent: f32) -> Self {
-        self.context_percent = percent;
+    /// Set the resident context, in absolute tokens
+    pub fn with_context_tokens(mut self, tokens: u32) -> Self {
+        self.context_tokens = tokens;
         self
     }
 
@@ -138,7 +138,7 @@ impl HandoffContent {
             .unwrap_or_default();
 
         HandoffV2::new(&self.session_id, &self.stage_id)
-            .with_context_percent(self.context_percent)
+            .with_context_tokens(self.context_tokens)
             .with_completed_tasks(completed_tasks)
             .with_key_decisions(key_decisions)
             .with_next_actions(self.next_steps.clone())

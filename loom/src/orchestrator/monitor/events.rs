@@ -14,11 +14,13 @@ pub enum MonitorEvent {
     },
     SessionContextWarning {
         session_id: String,
-        usage_percent: f32,
+        context_tokens: u32,
+        ceiling_tokens: u32,
     },
     SessionContextCritical {
         session_id: String,
-        usage_percent: f32,
+        context_tokens: u32,
+        ceiling_tokens: u32,
     },
     SessionCrashed {
         session_id: String,
@@ -65,15 +67,19 @@ pub enum MonitorEvent {
     HeartbeatReceived {
         stage_id: String,
         session_id: String,
-        context_percent: Option<f32>,
+        /// Resident tokens, or `None` when the hook could not measure them.
+        context_tokens: Option<u32>,
+        transcript_path: Option<String>,
         last_tool: Option<String>,
     },
-    /// Context budget has been exceeded - forced handoff required
+    /// A session ran past the daemon's backstop multiple of its stage ceiling -
+    /// forced handoff required. `ceiling_tokens` is the stage's own ceiling;
+    /// the backstop fires at `DAEMON_CEILING_MULTIPLIER` times that.
     BudgetExceeded {
         session_id: String,
         stage_id: String,
-        usage_percent: f32,
-        budget_percent: f32,
+        context_tokens: u32,
+        ceiling_tokens: u32,
     },
     /// Stage needs human review - agent flagged something for human judgment
     StageNeedsHumanReview {

@@ -5,30 +5,17 @@
 //! `HeartbeatWatcher` polls `.work/heartbeat/<stage-id>.json` and the monitor
 //! turns every update into a [`MonitorEvent::HeartbeatReceived`]. Until this
 //! module existed that event's handler was an empty block whose comment claimed
-//! the data was "just used for internal tracking" — nothing tracked it, and
-//! [`Session::update_context`], the only method that touched `context_tokens`,
-//! had no non-test caller anywhere in the crate.
-//!
-//! The consequence was silent and total. `Session::last_active` kept its spawn
-//! timestamp for the whole life of every session and `context_tokens` stayed
-//! `0`, so:
-//!
-//! - [`Session::is_context_exhausted`] could never return `true`, and
-//!   `handoff::detector` therefore never saw a session worth handing off —
-//!   `CONTEXT_CRITICAL_THRESHOLD` was unreachable in production;
-//! - `commands/status/data/collector` treats `context_tokens == 0` as "no
-//!   reading", so the dashboard's context column was blank for healthy and
-//!   exhausted sessions alike;
-//! - `orchestrator/signals/generate` handed every resumed agent a context
-//!   figure of 0%;
-//! - every duration derived from `last_active` measured from spawn, which reads
-//!   as "idle since it started" for a session that has been working for hours.
+//! the data was "just used for internal tracking" — nothing tracked it, so
+//! `Session::last_active` kept its spawn timestamp for the whole life of every
+//! session and `context_tokens` stayed `0`.
 //!
 //! Observed 2026-08-24 on an eight-stage plan: all five session records carried
 //! `last_active` equal to their spawn timestamp and `context_tokens: 0`, while
 //! `.work/heartbeat/<stage>.json` was being rewritten correctly by the hooks the
 //! whole time. The data was arriving and being dropped one layer above where it
-//! was needed.
+//! was needed. Every consumer of the figure — the status dashboard's context
+//! column, the ceiling comparison, the resumed agent's signal — was reading a
+//! constant zero.
 //!
 //! # What this does NOT change
 //!
@@ -79,7 +66,8 @@ impl Orchestrator {
         &self,
         stage_id: &str,
         session_id: &str,
-        context_percent: Option<f32>,
+        context_tokens: Option<u32>,
+        transcript_path: Option<String>,
     ) -> Result<()> {
         let work_dir = self.persistence_work_dir();
 
@@ -104,7 +92,7 @@ impl Orchestrator {
             return Ok(());
         }
 
-        session.record_heartbeat(context_percent);
+        session.record_heartbeat(context_tokens, transcript_path);
         save_session(&session, work_dir)
     }
 }
@@ -165,7 +153,7 @@ mod tests {
         let spawned_at = Utc::now() - Duration::hours(3);
         session.last_active = spawned_at;
 
-        session.record_heartbeat(None);
+        session.record_heartbeat(None, None);
 
         assert!(
             session.last_active > spawned_at,
@@ -174,42 +162,40 @@ mod tests {
     }
 
     #[test]
-    fn a_percentage_reading_sets_context_tokens() {
+    fn a_token_reading_replaces_the_previous_one() {
         let mut session = running_session("build");
-        session.context_limit = 200_000;
-        session.record_heartbeat(Some(65.0));
-        assert_eq!(session.context_tokens, 130_000);
-        assert!(session.is_context_exhausted());
+        session.record_heartbeat(Some(91_000), None);
+        assert_eq!(session.context_tokens, 91_000);
+        session.record_heartbeat(Some(147_000), None);
+        assert_eq!(session.context_tokens, 147_000);
     }
 
-    /// The live hooks emit `context_percent: null`, so this is the common path.
-    /// It must still advance `last_active`, and it must not zero a reading a
-    /// previous heartbeat established.
+    /// A hook that could not measure the transcript reports `None`. That is
+    /// ignorance, not a context of zero: zeroing the field would retract a
+    /// handoff the ceiling comparison had already made due.
     #[test]
-    fn a_missing_percentage_preserves_the_previous_reading() {
+    fn a_missing_reading_preserves_the_previous_one() {
         let mut session = running_session("build");
-        session.context_limit = 200_000;
-        session.record_heartbeat(Some(65.0));
-        session.record_heartbeat(None);
-        assert_eq!(session.context_tokens, 130_000);
+        session.record_heartbeat(Some(147_000), None);
+        session.record_heartbeat(None, None);
+        assert_eq!(session.context_tokens, 147_000);
     }
 
+    /// The transcript path is written once and never nulled: a later heartbeat
+    /// without it means the hook did not resend the path, not that the
+    /// transcript stopped existing.
     #[test]
-    fn an_out_of_range_percentage_is_ignored() {
+    fn the_transcript_path_survives_a_heartbeat_that_omits_it() {
         let mut session = running_session("build");
-        session.context_limit = 200_000;
-        session.record_heartbeat(Some(50.0));
-        session.record_heartbeat(Some(-3.0));
-        session.record_heartbeat(Some(140.0));
-        session.record_heartbeat(Some(f32::NAN));
-        assert_eq!(session.context_tokens, 100_000);
-    }
+        assert_eq!(session.transcript_path, None);
 
-    #[test]
-    fn an_unknown_context_limit_leaves_tokens_alone() {
-        let mut session = running_session("build");
-        session.context_limit = 0;
-        session.record_heartbeat(Some(65.0));
-        assert_eq!(session.context_tokens, 0);
+        session.record_heartbeat(None, Some("/t/a.jsonl".to_string()));
+        assert_eq!(session.transcript_path, Some("/t/a.jsonl".to_string()));
+
+        session.record_heartbeat(Some(1_000), None);
+        assert_eq!(session.transcript_path, Some("/t/a.jsonl".to_string()));
+
+        session.record_heartbeat(None, Some("/t/b.jsonl".to_string()));
+        assert_eq!(session.transcript_path, Some("/t/b.jsonl".to_string()));
     }
 }

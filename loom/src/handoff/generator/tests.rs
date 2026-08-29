@@ -13,13 +13,13 @@ use crate::models::stage::Stage;
 #[test]
 fn test_handoff_content_builder() {
     let content = HandoffContent::new("session-123".to_string(), "stage-456".to_string())
-        .with_context_percent(75.5)
+        .with_context_tokens(112_500)
         .with_goals("Build feature X".to_string())
         .with_next_steps(vec!["Step 1".to_string(), "Step 2".to_string()]);
 
     assert_eq!(content.session_id, "session-123");
     assert_eq!(content.stage_id, "stage-456");
-    assert_eq!(content.context_percent, 75.5);
+    assert_eq!(content.context_tokens, 112_500);
     assert_eq!(content.goals, "Build feature X");
     assert_eq!(content.next_steps.len(), 2);
     assert!(content.git_history.is_none());
@@ -28,7 +28,7 @@ fn test_handoff_content_builder() {
 #[test]
 fn test_format_handoff_markdown() {
     let content = HandoffContent::new("session-abc".to_string(), "stage-xyz".to_string())
-        .with_context_percent(80.0)
+        .with_context_tokens(120_000)
         .with_goals("Implement authentication".to_string())
         .with_completed_work(vec!["Created login form".to_string()])
         .with_decisions(vec![(
@@ -41,7 +41,10 @@ fn test_format_handoff_markdown() {
 
     assert!(markdown.contains("# Handoff: stage-xyz"));
     assert!(markdown.contains("**From**: session-abc"));
-    assert!(markdown.contains("**Context**: 80.0%"));
+    assert!(
+        markdown.contains("**Context**: 120,000 tokens resident at handoff"),
+        "the handoff must state absolute tokens, never a percentage: {markdown}"
+    );
     assert!(markdown.contains("Implement authentication"));
     assert!(markdown.contains("Created login form"));
     assert!(markdown.contains("Use JWT tokens"));
@@ -163,7 +166,7 @@ fn test_generate_handoff() {
     let stage = Stage::new("test-stage".to_string(), Some("Test stage".to_string()));
 
     let content = HandoffContent::new(session.id.clone(), stage.id.clone())
-        .with_context_percent(75.0)
+        .with_context_tokens(112_000)
         .with_goals("Complete test".to_string());
 
     let handoff_path = generate_handoff(&session, &stage, content, work_dir).unwrap();

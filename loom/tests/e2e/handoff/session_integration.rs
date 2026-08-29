@@ -1,29 +1,23 @@
-//! Session and stage integration tests for handoff system
+//! Session and stage integration tests for the handoff system.
 //!
-//! Thresholds are set to trigger handoff BEFORE Claude Code's automatic
-//! context compaction (~75-80%), ensuring we capture full context.
+//! Context is measured in absolute resident tokens against the ceiling that
+//! governs the stage, so nothing here reasons in percentages.
 
-use loom::models::constants::DEFAULT_CONTEXT_LIMIT;
 use loom::models::session::{Session, SessionStatus};
 use loom::models::stage::{Stage, StageStatus};
 
 #[test]
 fn test_session_marks_context_exhausted() {
     let mut session = Session::new();
-    session.context_limit = DEFAULT_CONTEXT_LIMIT;
     session.status = SessionStatus::Running;
 
-    // Simulate gradual context usage increase
-    // Yellow zone (50-64%) - not exhausted yet
-    session.context_tokens = 100_000; // 50%
-    assert!(!session.is_context_exhausted());
+    session.record_heartbeat(Some(100_000), None);
+    assert_eq!(session.context_tokens, 100_000);
     assert_eq!(session.status, SessionStatus::Running);
 
-    // Increase to critical threshold (65%)
-    session.context_tokens = 130_000; // 65%
-    assert!(session.is_context_exhausted());
+    session.record_heartbeat(Some(150_000), None);
+    assert_eq!(session.context_tokens, 150_000);
 
-    // Manually mark session as context exhausted
     session
         .try_mark_context_exhausted()
         .expect("Should transition to ContextExhausted");
@@ -39,11 +33,8 @@ fn test_context_exhausted_triggers_stage_needs_handoff() {
     session.status = SessionStatus::Running;
     stage.status = StageStatus::Executing;
 
-    // Simulate context exhaustion
-    session.context_limit = DEFAULT_CONTEXT_LIMIT;
-    session.context_tokens = 160_000; // 80%
-
-    assert!(session.is_context_exhausted());
+    // Simulate the session running past its ceiling
+    session.record_heartbeat(Some(160_000), None);
 
     // Update statuses using validated transitions
     session

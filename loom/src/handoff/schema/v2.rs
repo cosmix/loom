@@ -20,8 +20,8 @@ pub struct HandoffV2 {
     pub session_id: String,
     /// ID of the stage being worked on
     pub stage_id: String,
-    /// Context usage percentage (0.0 - 100.0) at handoff time
-    pub context_percent: f32,
+    /// Resident context, in absolute tokens, at handoff time
+    pub context_tokens: u32,
     /// Tasks completed during this session
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub completed_tasks: Vec<CompletedTask>,
@@ -61,7 +61,7 @@ impl HandoffV2 {
             version: HANDOFF_SCHEMA_VERSION,
             session_id: session_id.into(),
             stage_id: stage_id.into(),
-            context_percent: 0.0,
+            context_tokens: 0,
             completed_tasks: Vec::new(),
             key_decisions: Vec::new(),
             discovered_facts: Vec::new(),
@@ -75,9 +75,9 @@ impl HandoffV2 {
         }
     }
 
-    /// Set context percentage
-    pub fn with_context_percent(mut self, percent: f32) -> Self {
-        self.context_percent = percent;
+    /// Set the resident-token count
+    pub fn with_context_tokens(mut self, tokens: u32) -> Self {
+        self.context_tokens = tokens;
         self
     }
 
@@ -160,13 +160,6 @@ impl HandoffV2 {
             bail!("Handoff stage_id cannot be empty");
         }
 
-        if !(0.0..=100.0).contains(&self.context_percent) {
-            bail!(
-                "Handoff context_percent must be between 0.0 and 100.0, got {}",
-                self.context_percent
-            );
-        }
-
         Ok(())
     }
 }
@@ -181,18 +174,18 @@ mod tests {
         assert_eq!(handoff.version, HANDOFF_SCHEMA_VERSION);
         assert_eq!(handoff.session_id, "session-123");
         assert_eq!(handoff.stage_id, "stage-1");
-        assert_eq!(handoff.context_percent, 0.0);
+        assert_eq!(handoff.context_tokens, 0);
     }
 
     #[test]
     fn test_handoff_v2_builder() {
         let handoff = HandoffV2::new("session-123", "stage-1")
-            .with_context_percent(75.5)
+            .with_context_tokens(112_500)
             .with_branch("loom/stage-1")
             .with_completed_tasks(vec![CompletedTask::new("Task 1")])
             .with_next_actions(vec!["Continue work".to_string()]);
 
-        assert_eq!(handoff.context_percent, 75.5);
+        assert_eq!(handoff.context_tokens, 112_500);
         assert_eq!(handoff.branch, Some("loom/stage-1".to_string()));
         assert_eq!(handoff.completed_tasks.len(), 1);
         assert_eq!(handoff.next_actions.len(), 1);
@@ -201,7 +194,7 @@ mod tests {
     #[test]
     fn test_handoff_v2_yaml_roundtrip() {
         let original = HandoffV2::new("session-abc", "my-stage")
-            .with_context_percent(65.0)
+            .with_context_tokens(97_500)
             .with_branch("loom/my-stage")
             .with_completed_tasks(vec![CompletedTask::new("Did something")])
             .with_key_decisions(vec![KeyDecision::new(
@@ -219,7 +212,7 @@ mod tests {
     #[test]
     fn test_handoff_v2_validation() {
         // Valid handoff
-        let handoff = HandoffV2::new("session-1", "stage-1").with_context_percent(50.0);
+        let handoff = HandoffV2::new("session-1", "stage-1").with_context_tokens(75_000);
         assert!(handoff.validate().is_ok());
 
         // Invalid: empty session_id
@@ -228,10 +221,6 @@ mod tests {
 
         // Invalid: empty stage_id
         invalid = HandoffV2::new("session-1", "");
-        assert!(invalid.validate().is_err());
-
-        // Invalid: context_percent out of range
-        invalid = HandoffV2::new("session-1", "stage-1").with_context_percent(150.0);
         assert!(invalid.validate().is_err());
     }
 }

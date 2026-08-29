@@ -3,7 +3,8 @@
 //! Sessions write heartbeat files to `.work/heartbeat/<stage-id>.json` to indicate
 //! they are still actively working. The heartbeat includes:
 //! - Timestamp of last activity
-//! - Context usage percentage
+//! - Resident context, in absolute tokens
+//! - Path to the agent's transcript
 //! - Last tool used
 //!
 //! The orchestrator polls these files to detect:
@@ -32,9 +33,14 @@ pub struct Heartbeat {
     pub session_id: String,
     /// Timestamp of this heartbeat
     pub timestamp: DateTime<Utc>,
-    /// Context usage percentage (0-100)
+    /// Resident context in absolute tokens, as measured from the transcript.
+    /// `None` means the hook could not measure it on this tick — it is not a
+    /// reading of zero, and consumers must preserve the previous value.
     #[serde(default)]
-    pub context_percent: Option<f32>,
+    pub context_tokens: Option<u32>,
+    /// Path to the agent's transcript file, as reported by the hook.
+    #[serde(default)]
+    pub transcript_path: Option<String>,
     /// Last tool that was used
     #[serde(default)]
     pub last_tool: Option<String>,
@@ -50,15 +56,22 @@ impl Heartbeat {
             stage_id,
             session_id,
             timestamp: Utc::now(),
-            context_percent: None,
+            context_tokens: None,
+            transcript_path: None,
             last_tool: None,
             activity: None,
         }
     }
 
-    /// Create heartbeat with context percentage
-    pub fn with_context_percent(mut self, percent: f32) -> Self {
-        self.context_percent = Some(percent);
+    /// Create heartbeat with a resident-token reading
+    pub fn with_context_tokens(mut self, tokens: u32) -> Self {
+        self.context_tokens = Some(tokens);
+        self
+    }
+
+    /// Create heartbeat with the agent's transcript path
+    pub fn with_transcript_path(mut self, path: impl Into<String>) -> Self {
+        self.transcript_path = Some(path.into());
         self
     }
 
@@ -296,118 +309,17 @@ pub fn heartbeat_path(work_dir: &Path, stage_id: &str) -> PathBuf {
     work_dir.join("heartbeat").join(format!("{stage_id}.json"))
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use tempfile::TempDir;
-
-    #[test]
-    fn test_heartbeat_creation() {
-        let hb = Heartbeat::new("stage-1".to_string(), "session-abc".to_string())
-            .with_context_percent(45.5)
-            .with_last_tool("Bash".to_string())
-            .with_activity("Running tests".to_string());
-
-        assert_eq!(hb.stage_id, "stage-1");
-        assert_eq!(hb.session_id, "session-abc");
-        assert_eq!(hb.context_percent, Some(45.5));
-        assert_eq!(hb.last_tool, Some("Bash".to_string()));
-        assert_eq!(hb.activity, Some("Running tests".to_string()));
-    }
-
-    #[test]
-    fn test_heartbeat_staleness() {
-        let hb = Heartbeat::new("stage-1".to_string(), "session-abc".to_string());
-
-        // Fresh heartbeat should not be stale
-        assert!(!hb.is_stale(Duration::from_secs(300)));
-
-        // Any heartbeat is stale with 0 timeout
-        assert!(hb.is_stale(Duration::from_secs(0)));
-    }
-
-    #[test]
-    fn test_write_and_read_heartbeat() -> Result<()> {
-        let tmp = TempDir::new()?;
-        let work_dir = tmp.path();
-
-        let hb = Heartbeat::new("test-stage".to_string(), "test-session".to_string())
-            .with_context_percent(50.0);
-
-        let path = write_heartbeat(work_dir, &hb)?;
-        assert!(path.exists());
-
-        let read_hb = read_heartbeat(&path)?;
-        assert_eq!(read_hb.stage_id, "test-stage");
-        assert_eq!(read_hb.session_id, "test-session");
-        assert_eq!(read_hb.context_percent, Some(50.0));
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_heartbeat_watcher_poll() -> Result<()> {
-        let tmp = TempDir::new()?;
-        let work_dir = tmp.path();
-
-        // Write a heartbeat
-        let hb = Heartbeat::new("stage-1".to_string(), "session-1".to_string());
-        write_heartbeat(work_dir, &hb)?;
-
-        // Poll should find it
-        let mut watcher = HeartbeatWatcher::new();
-        let updates = watcher.poll(work_dir)?;
-
-        assert_eq!(updates.len(), 1);
-        assert_eq!(updates[0].stage_id, "stage-1");
-        assert!(updates[0].is_new);
-
-        // Second poll should not return update (no change)
-        let updates = watcher.poll(work_dir)?;
-        assert!(updates.is_empty());
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_heartbeat_watcher_check_hung() {
-        let budget = Duration::from_secs(60);
-        let mut watcher = HeartbeatWatcher::new();
-
-        // No heartbeat
-        assert_eq!(
-            watcher.check_session_hung("unknown", "session-1", budget),
-            HeartbeatStatus::NoHeartbeat
-        );
-
-        // Add a fresh heartbeat
-        let hb = Heartbeat::new("stage-1".to_string(), "session-1".to_string());
-        watcher.heartbeats.insert("stage-1".to_string(), hb);
-
-        assert_eq!(
-            watcher.check_session_hung("stage-1", "session-1", budget),
-            HeartbeatStatus::Healthy
-        );
-
-        // A heartbeat from a different session for the same stage must not
-        // flag the current session — treated as NoHeartbeat.
-        assert_eq!(
-            watcher.check_session_hung("stage-1", "session-2", budget),
-            HeartbeatStatus::NoHeartbeat
-        );
-
-        // The same cached heartbeat read against a zero budget is Hung — the
-        // threshold is the caller's, not the watcher's.
-        let zero = Duration::from_secs(0);
-        match watcher.check_session_hung("stage-1", "session-1", zero) {
-            HeartbeatStatus::Hung { .. } => (),
-            other => panic!("Expected Hung, got {other:?}"),
-        }
-
-        // Stale-session guard still wins even when the cached heartbeat is old.
-        assert_eq!(
-            watcher.check_session_hung("stage-1", "session-2", zero),
-            HeartbeatStatus::NoHeartbeat
-        );
-    }
+/// Read the resident-token count from a stage's latest heartbeat file.
+///
+/// `None` covers every way the reading can be unavailable — no heartbeat file,
+/// an unreadable one, or a hook that could not measure the transcript — because
+/// callers treat all three the same way: they have no reading, not a reading of
+/// zero.
+pub fn stage_context_tokens(work_dir: &Path, stage_id: &str) -> Option<u32> {
+    read_heartbeat(&heartbeat_path(work_dir, stage_id))
+        .ok()
+        .and_then(|heartbeat| heartbeat.context_tokens)
 }
+
+#[cfg(test)]
+mod tests;

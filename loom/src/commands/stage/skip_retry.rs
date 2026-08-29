@@ -3,8 +3,10 @@
 use anyhow::{bail, Context, Result};
 use std::path::Path;
 
+use crate::fs::work_dir::read_context_config;
 use crate::git::worktree::find_repo_root_from_cwd;
 use crate::hooks::read_stage_events;
+use crate::models::constants::DEFAULT_CONTEXT_CEILING_TOKENS;
 use crate::models::stage::StageStatus;
 use crate::orchestrator::merge_lifecycle::MergeLifecycle;
 use crate::orchestrator::monitor::failure_tracking::FailureTracker;
@@ -15,7 +17,7 @@ use crate::orchestrator::skip::skip_stage;
 use crate::verify::transitions::{load_stage, update_stage};
 
 use super::recover::{
-    determine_recovery_reason, extract_context_percent, find_crash_report,
+    determine_recovery_reason, extract_context_tokens, find_crash_report,
     generate_recovery_session_id, load_last_heartbeat,
 };
 
@@ -170,16 +172,22 @@ pub fn retry(stage_id: String, force: bool, context: Option<String>) -> Result<(
                 recovery_attempt,
             ),
             RecoveryReason::ContextExhaustion => {
-                let context_pct = stage
+                let context_tokens = stage
                     .close_reason
                     .as_ref()
-                    .and_then(|r| extract_context_percent(r))
-                    .unwrap_or(75.0);
+                    .and_then(|r| extract_context_tokens(r))
+                    .unwrap_or_else(|| {
+                        stage.context_ceiling_tokens.unwrap_or_else(|| {
+                            read_context_config(work_dir)
+                                .map(|config| config.ceiling_tokens)
+                                .unwrap_or(DEFAULT_CONTEXT_CEILING_TOKENS)
+                        })
+                    });
                 RecoverySignalContent::for_context_exhaustion(
                     new_session_id.clone(),
                     stage_id.clone(),
                     previous_session_id.clone(),
-                    context_pct,
+                    context_tokens,
                     recovery_attempt,
                 )
             }

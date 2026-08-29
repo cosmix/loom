@@ -16,11 +16,11 @@ pub fn create_session_file(work_dir: &Path, session: &Session) -> Result<()> {
     let yaml = serde_yaml::to_string(session).context("Failed to serialize session to YAML")?;
 
     let content = format!(
-        "---\n{yaml}---\n\n# Session: {}\n\n## Details\n\n- **Status**: {:?}\n- **Stage**: {}\n- **Context**: {:.1}%\n",
+        "---\n{yaml}---\n\n# Session: {}\n\n## Details\n\n- **Status**: {:?}\n- **Stage**: {}\n- **Context**: {} tokens\n",
         session.id,
         session.status,
         session.stage_id.as_ref().unwrap_or(&"None".to_string()),
-        session.context_usage_percent()
+        session.context_tokens
     );
 
     std::fs::write(&session_path, content)

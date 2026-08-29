@@ -1,7 +1,6 @@
 //! Handoff generation tests
 
 use loom::handoff::generator::{generate_handoff, HandoffContent};
-use loom::models::constants::DEFAULT_CONTEXT_LIMIT;
 use loom::models::session::Session;
 use loom::models::stage::Stage;
 use std::fs;
@@ -12,10 +11,9 @@ fn test_handoff_generation() {
     let temp_dir = TempDir::new().unwrap();
     let work_dir = temp_dir.path();
 
-    // Create session approaching context limit
+    // Create a session that has run past its 150k default ceiling
     let mut session = Session::new();
-    session.context_limit = DEFAULT_CONTEXT_LIMIT;
-    session.context_tokens = 160_000; // 80% usage
+    session.context_tokens = 160_000;
 
     // Create associated stage
     let stage = Stage::new(
@@ -25,7 +23,7 @@ fn test_handoff_generation() {
 
     // Generate handoff content
     let content = HandoffContent::new(session.id.clone(), stage.id.clone())
-        .with_context_percent(session.context_usage_percent())
+        .with_context_tokens(session.context_tokens)
         .with_goals("Implement test feature with proper error handling".to_string())
         .with_completed_work(vec![
             "Created initial module structure in src/test_feature.rs:1-50".to_string(),
@@ -63,7 +61,10 @@ fn test_handoff_generation() {
     // Verify required fields are present
     assert!(content.contains(&format!("# Handoff: {}", stage.id)));
     assert!(content.contains(&session.id));
-    assert!(content.contains("80.0%") || content.contains("80%"));
+    assert!(
+        content.contains("160,000 tokens"),
+        "the handoff must record absolute tokens, never a percentage"
+    );
     assert!(content.contains("Implement test feature"));
     assert!(content.contains("Created initial module structure"));
     assert!(content.contains("src/test_feature.rs"));
@@ -80,7 +81,7 @@ fn test_handoff_file_naming() {
 
     // Generate first handoff
     let content1 =
-        HandoffContent::new(session.id.clone(), stage.id.clone()).with_context_percent(75.0);
+        HandoffContent::new(session.id.clone(), stage.id.clone()).with_context_tokens(112_500);
 
     let handoff_path1 = generate_handoff(&session, &stage, content1, work_dir)
         .expect("Should generate first handoff");
@@ -89,7 +90,7 @@ fn test_handoff_file_naming() {
 
     // Generate second handoff
     let content2 =
-        HandoffContent::new(session.id.clone(), stage.id.clone()).with_context_percent(80.0);
+        HandoffContent::new(session.id.clone(), stage.id.clone()).with_context_tokens(120_000);
 
     let handoff_path2 = generate_handoff(&session, &stage, content2, work_dir)
         .expect("Should generate second handoff");
@@ -98,7 +99,7 @@ fn test_handoff_file_naming() {
 
     // Generate third handoff
     let content3 =
-        HandoffContent::new(session.id.clone(), stage.id.clone()).with_context_percent(85.0);
+        HandoffContent::new(session.id.clone(), stage.id.clone()).with_context_tokens(127_500);
 
     let handoff_path3 = generate_handoff(&session, &stage, content3, work_dir)
         .expect("Should generate third handoff");
@@ -124,7 +125,7 @@ fn test_handoff_includes_required_fields() {
     stage.id = "stage-required-001".to_string();
 
     let content = HandoffContent::new(session.id.clone(), stage.id.clone())
-        .with_context_percent(78.5)
+        .with_context_tokens(117_750)
         .with_goals("Test all required fields".to_string())
         .with_plan_id(Some("plan-abc-123".to_string()));
 
@@ -140,7 +141,7 @@ fn test_handoff_includes_required_fields() {
     assert!(handoff_content.contains("- **To**: (next session)"));
     assert!(handoff_content.contains(&format!("- **Stage**: {}", stage.id)));
     assert!(handoff_content.contains("- **Plan**: plan-abc-123"));
-    assert!(handoff_content.contains("- **Context**: 78.5%"));
+    assert!(handoff_content.contains("- **Context**: 117,750 tokens"));
 
     // Verify section headers
     assert!(handoff_content.contains("## Goals (What We're Building)"));
@@ -159,7 +160,7 @@ fn test_handoff_content_builder_chain() {
     let stage_id = "stage-test-456".to_string();
 
     let content = HandoffContent::new(session_id.clone(), stage_id.clone())
-        .with_context_percent(82.3)
+        .with_context_tokens(123_450)
         .with_goals("Build comprehensive test".to_string())
         .with_completed_work(vec!["Task 1".to_string(), "Task 2".to_string()])
         .with_decisions(vec![
@@ -177,7 +178,7 @@ fn test_handoff_content_builder_chain() {
 
     assert_eq!(content.session_id, session_id);
     assert_eq!(content.stage_id, stage_id);
-    assert_eq!(content.context_percent, 82.3);
+    assert_eq!(content.context_tokens, 123_450);
     assert_eq!(content.goals, "Build comprehensive test");
     assert_eq!(content.completed_work.len(), 2);
     assert_eq!(content.decisions.len(), 2);
@@ -201,10 +202,10 @@ fn test_multiple_stages_different_handoffs() {
 
     // Generate handoffs for each
     let content1 =
-        HandoffContent::new(session.id.clone(), stage1.id.clone()).with_context_percent(75.0);
+        HandoffContent::new(session.id.clone(), stage1.id.clone()).with_context_tokens(112_500);
 
     let content2 =
-        HandoffContent::new(session.id.clone(), stage2.id.clone()).with_context_percent(80.0);
+        HandoffContent::new(session.id.clone(), stage2.id.clone()).with_context_tokens(120_000);
 
     let handoff1 = generate_handoff(&session, &stage1, content1, work_dir)
         .expect("Should generate handoff for stage 1");

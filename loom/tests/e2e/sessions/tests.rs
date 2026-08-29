@@ -33,7 +33,7 @@ fn test_session_serialization_roundtrip() {
     session.set_worktree_path(PathBuf::from("/tmp/test-worktree"));
     session.set_pid(54321);
     session.try_mark_running().expect("Spawning -> Running");
-    session.update_context(125_000);
+    session.record_heartbeat(Some(125_000), Some("/t/session.jsonl".to_string()));
 
     std::fs::create_dir_all(file_path.parent().unwrap()).expect("Should create sessions directory");
 
@@ -49,7 +49,7 @@ fn test_session_serialization_roundtrip() {
     assert_eq!(loaded.pid, session.pid);
     assert_eq!(loaded.status, session.status);
     assert_eq!(loaded.context_tokens, session.context_tokens);
-    assert_eq!(loaded.context_limit, session.context_limit);
+    assert_eq!(loaded.transcript_path, session.transcript_path);
     assert_eq!(loaded.created_at, session.created_at);
     assert_eq!(loaded.last_active, session.last_active);
 }

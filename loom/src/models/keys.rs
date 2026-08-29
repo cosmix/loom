@@ -10,7 +10,6 @@ pub mod frontmatter {
     // Session-specific fields
     pub const STATUS: &str = "status";
     pub const CONTEXT_TOKENS: &str = "context_tokens";
-    pub const CONTEXT_LIMIT: &str = "context_limit";
 
     // Timestamp fields
     pub const CREATED_AT: &str = "created_at";

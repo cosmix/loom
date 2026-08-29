@@ -3,7 +3,6 @@ use chrono::Utc;
 use std::path::PathBuf;
 
 use super::types::{Session, SessionBackendKind, SessionStatus, SessionType};
-use crate::models::constants::{CONTEXT_CRITICAL_THRESHOLD, DEFAULT_CONTEXT_LIMIT};
 
 impl Session {
     pub fn new() -> Self {
@@ -17,7 +16,7 @@ impl Session {
             pid: None,
             status: SessionStatus::Spawning,
             context_tokens: 0,
-            context_limit: DEFAULT_CONTEXT_LIMIT,
+            transcript_path: None,
             created_at: now,
             last_active: now,
             session_type: SessionType::default(),
@@ -101,11 +100,6 @@ impl Session {
         self.pid = Some(pid);
     }
 
-    pub fn update_context(&mut self, tokens: u32) {
-        self.context_tokens = tokens;
-        self.last_active = Utc::now();
-    }
-
     /// Apply an observed heartbeat to this session.
     ///
     /// A heartbeat is the only ongoing evidence the daemon has that a live
@@ -115,45 +109,23 @@ impl Session {
     /// once by [`Session::assign_to_stage`] at spawn and never again, so every
     /// duration derived from it reports a session's entire lifetime as idle.
     ///
-    /// `context_percent` is threaded through but is `None` in practice today:
-    /// both `hooks/session-start.sh` and `hooks/post-tool-use.sh` write a
-    /// literal `null`, because Claude Code's PostToolUse payload does not carry
-    /// context usage. It is applied when present rather than assumed absent, so
-    /// that a hook learning the field becomes a hook-only change instead of a
-    /// second wiring job here.
-    pub fn record_heartbeat(&mut self, context_percent: Option<f32>) {
+    /// `None` for either reading PRESERVES what a previous heartbeat
+    /// established. A hook that cannot measure the transcript on this tick is
+    /// reporting ignorance, not a context of zero, and treating the two alike
+    /// would silently retract a handoff that was already due.
+    pub fn record_heartbeat(
+        &mut self,
+        context_tokens: Option<u32>,
+        transcript_path: Option<String>,
+    ) {
         self.last_active = Utc::now();
 
-        // Only a real, in-range reading may move context_tokens. A missing or
-        // nonsensical percentage leaves the previous value alone rather than
-        // zeroing it: `is_context_exhausted` reads this field, and resetting it
-        // to 0 would silently retract a handoff that was already due.
-        let Some(percent) = context_percent else {
-            return;
-        };
-        if percent.is_finite() && (0.0..=100.0).contains(&percent) && self.context_limit > 0 {
-            self.context_tokens = ((percent / 100.0) * self.context_limit as f32).round() as u32;
+        if let Some(tokens) = context_tokens {
+            self.context_tokens = tokens;
         }
-    }
-
-    pub fn context_usage_percent(&self) -> f32 {
-        if self.context_limit == 0 {
-            return 0.0;
+        if let Some(path) = transcript_path {
+            self.transcript_path = Some(path);
         }
-        (self.context_tokens as f32 / self.context_limit as f32) * 100.0
-    }
-
-    /// Check if context usage has reached the critical threshold requiring handoff.
-    ///
-    /// Returns true when usage >= 65% (CONTEXT_CRITICAL_THRESHOLD).
-    /// This threshold is set BEFORE Claude Code's automatic compaction (~75-80%)
-    /// to ensure we capture context while it's still complete.
-    pub fn is_context_exhausted(&self) -> bool {
-        if self.context_limit == 0 {
-            return false;
-        }
-        let usage_fraction = self.context_tokens as f32 / self.context_limit as f32;
-        usage_fraction >= CONTEXT_CRITICAL_THRESHOLD
     }
 
     /// Attempt to transition the session to a new status with validation.

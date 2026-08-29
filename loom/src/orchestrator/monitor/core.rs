@@ -22,7 +22,13 @@ pub struct Monitor {
 }
 
 impl Monitor {
-    pub fn new(config: MonitorConfig) -> Self {
+    pub fn new(mut config: MonitorConfig) -> Self {
+        // Resolve the plan-wide ceilings once, here, rather than re-reading
+        // `.work/config.toml` for every session on every tick. Operators edit
+        // the section between runs, exactly like `[terminal]`.
+        config.context =
+            crate::fs::work_dir::read_context_config(&config.work_dir).unwrap_or_default();
+
         // The staleness threshold lives on the stage, not the watcher —
         // `config.hung_timeout` is only the fallback for a session whose stage
         // cannot be resolved, and detection.rs applies it there.
@@ -86,6 +92,12 @@ impl Monitor {
     /// Get handlers for generating handoffs and crash reports
     pub fn handlers(&self) -> &Handlers {
         &self.handlers
+    }
+
+    /// The config this monitor resolved at construction, including the
+    /// `[context]` ceilings it read off disk.
+    pub fn config(&self) -> &MonitorConfig {
+        &self.config
     }
 
     /// Load all stages from .work/stages/

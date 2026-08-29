@@ -4,8 +4,6 @@ use std::sync::{Once, OnceLock};
 
 use colored::Colorize;
 
-use crate::models::constants::display::{CONTEXT_HEALTHY_PCT, CONTEXT_WARNING_PCT};
-
 /// Print the loom logo with a subtitle for human-facing commands.
 pub fn print_logo_header(subtitle: &str) {
     println!();
@@ -226,30 +224,21 @@ pub fn install_crossterm_panic_hook() {
     });
 }
 
-/// Get the terminal color for a context percentage.
+/// Render a token count with `,` separators: `147000` -> `147,000`.
 ///
-/// Returns red if >= WARNING threshold, yellow if >= HEALTHY threshold, green otherwise.
-pub fn context_pct_terminal_color(pct: f32) -> colored::Color {
-    if pct >= CONTEXT_WARNING_PCT {
-        colored::Color::Red
-    } else if pct >= CONTEXT_HEALTHY_PCT {
-        colored::Color::Yellow
-    } else {
-        colored::Color::Green
+/// Context figures are read by people under time pressure — in a handoff, in a
+/// status banner, in a warning about a session about to be killed. A bare
+/// six-digit run is the one number in those documents nobody can scan.
+pub fn format_thousands(value: u32) -> String {
+    let digits = value.to_string();
+    let mut out = String::with_capacity(digits.len() + digits.len() / 3);
+    for (i, ch) in digits.chars().enumerate() {
+        if i > 0 && (digits.len() - i).is_multiple_of(3) {
+            out.push(',');
+        }
+        out.push(ch);
     }
-}
-
-/// Get the TUI color for a context percentage.
-///
-/// Returns red if >= WARNING threshold, yellow if >= HEALTHY threshold, green otherwise.
-pub fn context_pct_tui_color(pct: f32) -> ratatui::style::Color {
-    if pct >= CONTEXT_WARNING_PCT {
-        ratatui::style::Color::Red
-    } else if pct >= CONTEXT_HEALTHY_PCT {
-        ratatui::style::Color::Yellow
-    } else {
-        ratatui::style::Color::Green
-    }
+    out
 }
 
 /// Truncate a string safely by character count, not byte count.
@@ -293,6 +282,15 @@ pub fn truncate_for_display(s: &str, max_len: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn format_thousands_groups_from_the_right() {
+        assert_eq!(format_thousands(0), "0");
+        assert_eq!(format_thousands(999), "999");
+        assert_eq!(format_thousands(1_000), "1,000");
+        assert_eq!(format_thousands(147_000), "147,000");
+        assert_eq!(format_thousands(1_234_567), "1,234,567");
+    }
 
     #[test]
     fn control_sequences_are_withheld_from_a_stdout_that_is_not_a_terminal() {
