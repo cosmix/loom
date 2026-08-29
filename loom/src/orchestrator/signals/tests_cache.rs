@@ -147,8 +147,8 @@ fn test_signal_sections_ordering() {
     let worktree = create_test_worktree();
     let embedded_context = EmbeddedContext {
         memory_content: Some("Test memory content".to_string()),
-        context_budget: None,
-        context_usage: None,
+        context_ceiling_tokens: None,
+        context_tokens: None,
         ..Default::default()
     };
 
@@ -236,8 +236,8 @@ fn test_signal_contains_knowledge_management_section_for_knowledge_stages() {
     // Context with a populated knowledge brief
     let embedded_context = EmbeddedContext {
         context_pack: Some(sample_context_pack()),
-        context_budget: None,
-        context_usage: None,
+        context_ceiling_tokens: None,
+        context_tokens: None,
         ..Default::default()
     };
 

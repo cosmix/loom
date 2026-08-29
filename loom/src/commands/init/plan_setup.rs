@@ -1,7 +1,7 @@
 //! Plan initialization and stage creation for loom init.
 
 use crate::fs::stage_files::stage_file_path;
-use crate::fs::work_dir::{self, WorkDir};
+use crate::fs::work_dir::{self, ContextConfig, WorkDir};
 use crate::git::branch::current_branch;
 use crate::models::session::{SessionBackendKind, TerminalConfig};
 use crate::models::stage::Stage;
@@ -200,6 +200,22 @@ pub fn initialize_with_plan_acknowledgement(
         },
     )
     .context("Failed to persist terminal config")?;
+
+    let context_defaults = ContextConfig::default();
+    let context_config = ContextConfig {
+        ceiling_tokens: parsed_plan
+            .metadata
+            .loom
+            .context_ceiling_tokens
+            .unwrap_or(context_defaults.ceiling_tokens),
+        subagent_ceiling_tokens: parsed_plan
+            .metadata
+            .loom
+            .subagent_ceiling_tokens
+            .unwrap_or(context_defaults.subagent_ceiling_tokens),
+    };
+    work_dir::write_context_config(work_dir.root(), &context_config)
+        .context("Failed to persist context config")?;
 
     println!(
         "  {} Config saved {}",

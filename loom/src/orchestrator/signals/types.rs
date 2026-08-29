@@ -47,10 +47,10 @@ pub struct EmbeddedContext {
     pub memory_content: Option<String>,
     /// Skill recommendations based on stage description matching
     pub skill_recommendations: Vec<SkillMatch>,
-    /// Stage-specific context budget percentage
-    pub context_budget: Option<f32>,
-    /// Current context usage percentage
-    pub context_usage: Option<f32>,
+    /// Effective context ceiling for this stage, in resident tokens.
+    pub context_ceiling_tokens: Option<u32>,
+    /// Current resident context size, in tokens.
+    pub context_tokens: Option<u32>,
     /// Merged sandbox configuration summary for display in signal
     pub sandbox_summary: Option<SandboxSummary>,
     /// Cross-stage change summary for integration-verify stages

@@ -34,8 +34,6 @@ const EXPECTED_SECTIONS: &[&str] = &[
     "Ultracode Mode",
     "Worktree Isolation",
     "Dependency Outputs",
-    "COMPACTION IMMINENT",
-    "⚠️ CONTEXT BUDGET WARNING",
     "Recommended Skills",
     "Codex Implementers",
     "Sandbox Status",

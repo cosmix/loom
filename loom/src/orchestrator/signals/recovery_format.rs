@@ -18,8 +18,8 @@ fn format_last_known_state(hb: &LastHeartbeatInfo) -> String {
         "- **Timestamp**: {}\n",
         hb.timestamp.format("%Y-%m-%d %H:%M:%S UTC")
     ));
-    if let Some(pct) = hb.context_percent {
-        section.push_str(&format!("- **Context Usage**: {pct:.1}%\n"));
+    if let Some(tokens) = hb.context_tokens {
+        section.push_str(&format!("- **Context Tokens**: {tokens} tokens\n"));
     }
     if let Some(ref tool) = hb.last_tool {
         section.push_str(&format!("- **Last Tool**: {tool}\n"));

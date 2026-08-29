@@ -82,6 +82,8 @@ fn test_validate_metadata_with_empty_acceptance() {
             sandbox: SandboxConfig::default(),
             change_impact: None,
             adjudication: None,
+            context_ceiling_tokens: None,
+            subagent_ceiling_tokens: None,
             stages: vec![stage],
         },
     };
@@ -110,6 +112,8 @@ fn test_validate_metadata_with_valid_acceptance() {
             sandbox: SandboxConfig::default(),
             change_impact: None,
             adjudication: None,
+            context_ceiling_tokens: None,
+            subagent_ceiling_tokens: None,
             stages: vec![stage],
         },
     };
@@ -134,6 +138,8 @@ fn test_validate_metadata_multiple_invalid_acceptance() {
             sandbox: SandboxConfig::default(),
             change_impact: None,
             adjudication: None,
+            context_ceiling_tokens: None,
+            subagent_ceiling_tokens: None,
             stages: vec![stage],
         },
     };

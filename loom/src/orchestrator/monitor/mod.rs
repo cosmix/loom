@@ -25,7 +25,7 @@ mod session_events;
 mod tests;
 
 pub use config::MonitorConfig;
-pub use context::{context_health, context_usage_percent, ContextHealth};
+pub use context::{context_health, ContextHealth};
 pub use core::Monitor;
 pub use events::MonitorEvent;
 pub use failure_tracking::{
@@ -33,6 +33,7 @@ pub use failure_tracking::{
     DEFAULT_MAX_FAILURES,
 };
 pub use heartbeat::{
-    heartbeat_path, read_heartbeat, remove_heartbeat, write_heartbeat, Heartbeat, HeartbeatStatus,
-    HeartbeatWatcher, DEFAULT_HEARTBEAT_POLL_SECS, DEFAULT_HUNG_TIMEOUT_SECS,
+    heartbeat_path, read_heartbeat, remove_heartbeat, stage_context_tokens, write_heartbeat,
+    Heartbeat, HeartbeatStatus, HeartbeatWatcher, DEFAULT_HEARTBEAT_POLL_SECS,
+    DEFAULT_HUNG_TIMEOUT_SECS,
 };

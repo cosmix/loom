@@ -59,6 +59,12 @@ run_test "post-tool-use: exits 0 when loom is absent from PATH" "$SCRIPT_DIR/pos
 run_test "post-tool-use: symlinked heartbeat skips only the heartbeat write" "$SCRIPT_DIR/post-tool-use-symlinked-heartbeat.sh"
 run_test "post-tool-use: records MultiEdit file_path via loom context record-edit" "$SCRIPT_DIR/post-tool-use-multiedit-record.sh"
 run_test "post-tool-use: records NotebookEdit notebook_path via loom context record-edit" "$SCRIPT_DIR/post-tool-use-notebookedit-record.sh"
+run_test "post-tool-use: context ceiling resolution order (stage > config.toml > default)" "$SCRIPT_DIR/post-tool-use-ceiling-resolution.sh"
+run_test "post-tool-use: context ceiling hard block fires on every call at 100%" "$SCRIPT_DIR/post-tool-use-ceiling-hard-block.sh"
+run_test "post-tool-use: context ceiling 80% warning fires once per session" "$SCRIPT_DIR/post-tool-use-ceiling-warn-once.sh"
+run_test "post-tool-use: subagent ceiling ignores the stage's own context_ceiling_tokens" "$SCRIPT_DIR/post-tool-use-subagent-ceiling.sh"
+run_test "post-tool-use: resident-token arithmetic (last record wins, torn line survives)" "$SCRIPT_DIR/post-tool-use-resident-tokens.sh"
+run_test "post-tool-use: heartbeat write survives a ceiling exit 2" "$SCRIPT_DIR/post-tool-use-ceiling-heartbeat-survives.sh"
 
 echo ""
 echo "Results: $PASS passed, $FAIL failed"

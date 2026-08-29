@@ -1,15 +1,21 @@
 use anyhow::{Context, Result};
-use chrono::Utc;
 use std::env;
 use std::fs;
+use std::path::Path;
 use std::process::Command;
 
 use crate::commands::common::find_work_dir;
 use crate::git::branch::current_branch;
 use crate::handoff::generator::{generate_handoff, HandoffContent};
 use crate::models::session::{Session, SessionStatus};
-use crate::models::stage::Stage;
-use crate::verify::transitions::load_stage;
+use crate::models::stage::{Stage, StageStatus};
+use crate::orchestrator::monitor::stage_context_tokens;
+use crate::verify::transitions::{load_stage, update_stage};
+
+/// The `--trigger` value an agent uses when its own context ceiling forced the
+/// handoff. Only this trigger ends the session's turn on the stage; every other
+/// trigger just writes a document.
+const CEILING_TRIGGER: &str = "ceiling";
 
 /// Execute the `loom handoff` command
 ///
@@ -94,31 +100,55 @@ pub fn execute(
     let goals_with_trigger = format!("{}{}", content.goals, trigger_note);
     content = content.with_goals(goals_with_trigger);
 
-    // Create a minimal Session for generate_handoff (the _session parameter is unused)
-    let session = Session {
-        id: session_id.clone(),
-        stage_id: Some(stage_id.clone()),
-        status: SessionStatus::Running,
-        context_tokens: 0,
-        context_limit: 0,
-        created_at: Utc::now(),
-        last_active: Utc::now(),
-        worktree_path: None,
-        pid: None,
-        session_type: Default::default(),
-        merge_source_branch: None,
-        merge_target_branch: None,
-        tracking_key: String::new(),
-        backend: Default::default(),
-    };
+    // The heartbeat file is the only place a real context reading exists: the
+    // hooks measure the transcript and write it there. Before this was read,
+    // every handoff loom wrote recorded a context of zero.
+    let context_tokens = stage_context_tokens(&work_dir, &stage_id).unwrap_or(0);
+    content = content.with_context_tokens(context_tokens);
+
+    let mut session = Session::new();
+    session.id = session_id.clone();
+    session.stage_id = Some(stage_id.clone());
+    session.status = SessionStatus::Running;
+    session.context_tokens = context_tokens;
 
     // Generate the handoff file
     let handoff_path = generate_handoff(&session, &stage, content, &work_dir)?;
+
+    if trigger == CEILING_TRIGGER {
+        end_turn_for_handoff(&stage_id, &work_dir);
+    }
 
     // Print the handoff file path (hooks parse this output)
     println!("{}", handoff_path.display());
 
     Ok(())
+}
+
+/// Mark the stage `NeedsHandoff` so the daemon takes the session down and
+/// spawns a successor with this handoff inlined.
+///
+/// Only meaningful while the stage is `Executing`: a stage that already moved
+/// on has an authority of its own, and a CLI-side write must not overrule it.
+/// Best-effort by design — the handoff document is already on disk, and losing
+/// the transition costs a continuation, not the work.
+fn end_turn_for_handoff(stage_id: &str, work_dir: &Path) {
+    let mut skipped = None;
+    let result = update_stage(stage_id, work_dir, |stage| {
+        if stage.status != StageStatus::Executing {
+            skipped = Some(stage.status.clone());
+            return Ok(());
+        }
+        stage.try_mark_needs_handoff()
+    });
+
+    match (result, skipped) {
+        (Err(e), _) => eprintln!("Warning: could not mark stage '{stage_id}' NeedsHandoff: {e}"),
+        (Ok(_), Some(status)) => eprintln!(
+            "Note: Stage '{stage_id}' is {status:?}, not executing. Skipping handoff transition."
+        ),
+        (Ok(_), None) => eprintln!("Stage '{stage_id}' marked NeedsHandoff; session will end."),
+    }
 }
 
 /// Resolve stage ID from argument or LOOM_STAGE_ID environment variable
@@ -241,5 +271,45 @@ mod tests {
         assert_eq!(content.goals, "Test goals");
         assert_eq!(content.current_branch, Some("main".to_string()));
         assert_eq!(content.files_modified.len(), 2);
+    }
+
+    /// `--trigger ceiling` is the agent saying "I am out of room": it must end
+    /// the turn, not just leave a document behind. Without the transition the
+    /// daemon never kills the session, and the stage sits Executing behind an
+    /// agent that has already stopped working.
+    #[test]
+    fn ceiling_trigger_marks_an_executing_stage_needing_handoff() {
+        use crate::verify::transitions::create_stage;
+
+        let temp = tempfile::tempdir().unwrap();
+        let work_dir = temp.path();
+        let mut stage = Stage::new("ceiling".to_string(), None);
+        stage.id = "ceiling".to_string();
+        stage.status = StageStatus::Executing;
+        create_stage(&stage, work_dir).unwrap();
+
+        end_turn_for_handoff("ceiling", work_dir);
+
+        let reloaded = load_stage("ceiling", work_dir).unwrap();
+        assert_eq!(reloaded.status, StageStatus::NeedsHandoff);
+    }
+
+    /// A stage that already moved on has an authority of its own; a late
+    /// CLI-side write must not drag it back out of a terminal state.
+    #[test]
+    fn ceiling_trigger_leaves_a_stage_that_already_moved_on() {
+        use crate::verify::transitions::create_stage;
+
+        let temp = tempfile::tempdir().unwrap();
+        let work_dir = temp.path();
+        let mut stage = Stage::new("done".to_string(), None);
+        stage.id = "done".to_string();
+        stage.status = StageStatus::Completed;
+        create_stage(&stage, work_dir).unwrap();
+
+        end_turn_for_handoff("done", work_dir);
+
+        let reloaded = load_stage("done", work_dir).unwrap();
+        assert_eq!(reloaded.status, StageStatus::Completed);
     }
 }

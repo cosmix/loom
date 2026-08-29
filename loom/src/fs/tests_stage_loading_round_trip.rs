@@ -133,7 +133,9 @@ fn build_full_stage_definition() -> StageDefinition {
         dead_code_check: Some(sample_dead_code_check()),
         before_stage: vec![sample_truth_check("pre")],
         after_stage: vec![sample_truth_check("post")],
-        context_budget: Some(42),
+        context_ceiling_tokens: Some(42),
+        removed_context_budget: None,
+        plan_overview: Some(false),
         sandbox: sample_sandbox_config(),
         execution_mode: Some(ExecutionMode::Team),
         bug_fix: Some(true),
@@ -242,12 +244,16 @@ fn test_extract_stage_definition_round_trip_policy_fields() {
 }
 
 #[test]
-fn test_extract_stage_definition_round_trip_sandbox_and_context_budget() {
+fn test_extract_stage_definition_round_trip_sandbox_and_context_ceiling() {
     let (def, round_tripped) = round_tripped_stage_definition();
 
     assert_eq!(round_tripped.before_stage, def.before_stage);
     assert_eq!(round_tripped.after_stage, def.after_stage);
-    assert_eq!(round_tripped.context_budget, def.context_budget);
+    assert_eq!(
+        round_tripped.context_ceiling_tokens,
+        def.context_ceiling_tokens
+    );
+    assert_eq!(round_tripped.plan_overview, def.plan_overview);
 
     assert_eq!(round_tripped.sandbox.enabled, def.sandbox.enabled);
     assert_eq!(round_tripped.sandbox.auto_allow, def.sandbox.auto_allow);

@@ -7,6 +7,7 @@ use anyhow::Result;
 use crate::fs::memory::{
     format_memory_for_handoff, generate_summary, preserve_for_crash, read_journal, write_summary,
 };
+use crate::fs::work_dir::ContextConfig;
 use crate::handoff::{generate_handoff, HandoffContent};
 use crate::models::session::{Session, SessionStatus};
 use crate::models::stage::Stage;
@@ -16,7 +17,6 @@ use crate::orchestrator::signals::read_merge_signal;
 use crate::orchestrator::spawner::{generate_crash_report, CrashReport};
 
 use super::config::MonitorConfig;
-use super::context::context_usage_percent;
 
 /// Handler functions for monitor events
 pub struct Handlers {
@@ -40,6 +40,12 @@ impl Handlers {
     /// Expose work dir for detection logic that needs filesystem access.
     pub fn work_dir(&self) -> &Path {
         &self.config.work_dir
+    }
+
+    /// Expose the plan-wide context ceilings so detection can resolve a
+    /// stage's ceiling without re-reading `.work/config.toml` per tick.
+    pub fn context_config(&self) -> &ContextConfig {
+        &self.config.context
     }
 
     /// Check if a session is still alive.
@@ -66,9 +72,8 @@ impl Handlers {
         )
     }
 
-    /// Auto-summarize memory at context warning threshold (60%)
+    /// Auto-summarize memory when a session enters the Yellow band.
     ///
-    /// Called when a session reaches the warning threshold.
     /// Generates a summary of the memory journal to reduce context burden.
     pub fn handle_context_warning(&self, session: &Session) -> Result<()> {
         let stage_id = session.stage_id.as_deref().unwrap_or(&session.id);
@@ -95,12 +100,10 @@ impl Handlers {
 
     /// Handle critical context by generating a handoff file
     ///
-    /// Called when a session reaches critical context threshold.
+    /// Called when a session enters the Red band or crosses the daemon backstop.
     /// Loads session and stage data, creates handoff content, and generates the handoff file.
     /// Also merges stage memory into the handoff for continuity.
     pub fn handle_context_critical(&self, session: &Session, stage: &Stage) -> Result<PathBuf> {
-        let context_percent = context_usage_percent(session.context_tokens, session.context_limit);
-
         let goals = stage
             .description
             .clone()
@@ -111,7 +114,7 @@ impl Handlers {
         let memory_content = format_memory_for_handoff(&self.config.work_dir, stage_id);
 
         let content = HandoffContent::new(session.id.clone(), stage.id.clone())
-            .with_context_percent(context_percent)
+            .with_context_tokens(session.context_tokens)
             .with_goals(goals)
             .with_plan_id(stage.plan_id.clone())
             .with_next_steps(vec![

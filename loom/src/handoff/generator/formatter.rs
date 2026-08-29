@@ -5,6 +5,7 @@ use chrono::Utc;
 
 use super::content::HandoffContent;
 use crate::handoff::git_handoff::format_git_history_markdown;
+use crate::utils::format_thousands;
 
 /// Format HandoffContent into V2 format with YAML frontmatter and markdown body.
 ///
@@ -37,8 +38,8 @@ pub fn format_handoff_markdown(content: &HandoffContent) -> Result<String> {
         md.push_str(&format!("- **Plan**: {plan_id}\n"));
     }
     md.push_str(&format!(
-        "- **Context**: {:.1}% (approaching threshold)\n\n",
-        content.context_percent
+        "- **Context**: {} tokens resident at handoff\n\n",
+        format_thousands(content.context_tokens)
     ));
 
     // Goals

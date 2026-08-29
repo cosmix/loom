@@ -13,7 +13,7 @@
 //! an unknown key is almost always a typo the plan author should see at
 //! `loom plan verify` time — that guarantee is untouched by this module. This
 //! is deliberately NOT a partial hand-rolled struct: an intermediate struct
-//! previously dropped `stage_type`, `auto_merge`, `sandbox`, `context_budget`,
+//! previously dropped `stage_type`, `auto_merge`, `sandbox`, `context_ceiling_tokens`,
 //! and `before_stage`/`after_stage` on every daemon restart (the loader prefers
 //! stage files over the plan).
 
@@ -68,7 +68,12 @@ fn definition_from_stage(stage: &Stage) -> StageDefinition {
         dead_code_check: stage.dead_code_check.clone(),
         before_stage: stage.before_stage.clone(),
         after_stage: stage.after_stage.clone(),
-        context_budget: stage.context_budget,
+        context_ceiling_tokens: stage.context_ceiling_tokens,
+        // The trap for the retired `context_budget` key is a parse-time
+        // artifact of reading a plan, never something a live `Stage` carries,
+        // so a definition rebuilt from a stage always clears it.
+        removed_context_budget: None,
+        plan_overview: stage.plan_overview,
         sandbox: stage.sandbox.clone(),
         execution_mode: stage.execution_mode,
         bug_fix: stage.bug_fix,
@@ -103,7 +108,8 @@ pub fn load_stages_from_work_dir(stages_dir: &Path) -> Result<Vec<StageDefinitio
 
         // Parse the file's full Stage frontmatter and project it down to a
         // StageDefinition (lossless for every field StageDefinition carries —
-        // stage_type, auto_merge, sandbox, context_budget, before/after_stage
+        // stage_type, auto_merge, sandbox, context_ceiling_tokens, plan_overview,
+        // before/after_stage
         // all survive).
         let stage_def = match extract_stage_definition(&content) {
             Ok(def) => {

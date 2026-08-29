@@ -19,7 +19,10 @@ mod classify;
 mod ledger;
 mod metrics;
 mod render;
-mod resolve;
+// `pub(crate)` rather than private: `commands::usage` reuses this module's
+// transcript-layout rules (`list_agent_files`, `agent_id_from_path`) so the two
+// commands cannot disagree about where Claude Code keeps its transcripts.
+pub(crate) mod resolve;
 mod summary;
 mod table;
 

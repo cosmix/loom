@@ -14,8 +14,9 @@ use crate::commands::graph::indicators::status_indicator;
 use crate::commands::status::data::{ActivityStatus, StageSummary, StatusData};
 use crate::models::failure::FailureType;
 use crate::models::stage::{StageStatus, StageType};
+use crate::orchestrator::{context_health, ContextHealth};
 use crate::plan::graph::levels;
-use crate::utils::{context_pct_terminal_color, format_elapsed};
+use crate::utils::format_elapsed;
 
 use super::render_orphaned_warning;
 
@@ -47,12 +48,16 @@ fn compute_stage_levels(stages: &[StageSummary]) -> HashMap<String, usize> {
 fn format_stage_annotations(stage: &StageSummary) -> String {
     let mut parts: Vec<String> = Vec::new();
 
-    // Context percentage (only when meaningful)
+    // Resident context tokens (only when a session is active).
     if matches!(stage.status, StageStatus::Executing) {
-        if let Some(ctx_pct) = stage.context_pct {
-            let pct_val = ctx_pct * 100.0;
-            let ctx_str = format!("[{:.0}%]", pct_val);
-            let color = context_pct_terminal_color(pct_val);
+        if let (Some(tokens), Some(ceiling)) = (stage.context_tokens, stage.context_ceiling_tokens)
+        {
+            let ctx_str = format!("[{tokens}/{ceiling}]");
+            let color = match context_health(tokens, ceiling) {
+                ContextHealth::Green => Color::Green,
+                ContextHealth::Yellow => Color::Yellow,
+                ContextHealth::Red => Color::Red,
+            };
             parts.push(format!("{}", ctx_str.color(color)));
         }
 

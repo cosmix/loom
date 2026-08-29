@@ -1,6 +1,5 @@
 //! Tests for session creation and initialization
 
-use loom::models::constants::DEFAULT_CONTEXT_LIMIT;
 use loom::models::session::{Session, SessionStatus};
 
 #[test]
@@ -10,8 +9,7 @@ fn test_session_creation() {
     assert!(session.id.starts_with("session-"));
     assert_eq!(session.status, SessionStatus::Spawning);
     assert_eq!(session.context_tokens, 0);
-    assert_eq!(session.context_limit, DEFAULT_CONTEXT_LIMIT);
-    assert_eq!(session.context_limit, 200_000);
+    assert_eq!(session.transcript_path, None);
     assert!(session.stage_id.is_none());
     assert!(session.worktree_path.is_none());
     assert!(session.pid.is_none());
@@ -42,7 +40,6 @@ fn test_session_default_trait() {
     assert!(session.id.starts_with("session-"));
     assert_eq!(session.status, SessionStatus::Spawning);
     assert_eq!(session.context_tokens, 0);
-    assert_eq!(session.context_limit, DEFAULT_CONTEXT_LIMIT);
 }
 
 #[test]

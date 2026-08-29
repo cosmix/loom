@@ -3,6 +3,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::fs::memory::format_memory_for_signal;
+use crate::fs::work_dir::resolve_context_ceiling_tokens;
 use crate::handoff::git_handoff::GitHistory;
 use crate::handoff::schema::ParsedHandoff;
 use crate::language::{detect_languages_from_files, DetectedLanguage};
@@ -228,7 +229,13 @@ pub fn build_embedded_context_with_stage_and_session(
         }
     }
 
-    context.plan_overview = read_plan_overview(work_dir);
+    if stage_id
+        .and_then(|id| load_stage(id, work_dir).ok())
+        .and_then(|stage| stage.plan_overview)
+        != Some(false)
+    {
+        context.plan_overview = read_plan_overview(work_dir);
+    }
 
     // Manus pattern: recite the last 10 memory entries to keep stage context
     // in the attention window.
@@ -578,16 +585,15 @@ fn build_signal_context(
 ) -> EmbeddedContext {
     let mut embedded_context = build_embedded_context_for_stage(work_dir, handoff_file, &stage.id);
 
-    embedded_context.context_budget = stage
-        .context_budget
-        .map(|b| b as f32)
-        .or(Some(crate::models::constants::DEFAULT_CONTEXT_BUDGET));
-
-    embedded_context.context_usage = Some(if session.context_limit > 0 {
-        (session.context_tokens as f32 / session.context_limit as f32) * 100.0
-    } else {
-        0.0
-    });
+    // Full three-tier resolution, not the stage's own value alone:
+    // the signal must quote the SAME ceiling the hook governs against and the
+    // daemon backstops on, `[context] ceiling_tokens` tier included, or the
+    // agent reads itself as nearer its limit than it is and hands off early.
+    embedded_context.context_ceiling_tokens = Some(resolve_context_ceiling_tokens(
+        work_dir,
+        stage.context_ceiling_tokens,
+    ));
+    embedded_context.context_tokens = Some(session.context_tokens);
 
     embedded_context.sandbox_summary = Some(build_sandbox_summary(stage));
 

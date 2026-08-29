@@ -97,8 +97,17 @@ pub struct Session {
     pub worktree_path: Option<PathBuf>,
     pub pid: Option<u32>,
     pub status: SessionStatus,
+    /// Resident context, in absolute tokens, as of the last heartbeat that
+    /// carried a reading. Absolute rather than a percentage because that is the
+    /// only figure the transcript can supply without guessing the model's
+    /// window.
     pub context_tokens: u32,
-    pub context_limit: u32,
+    /// Path to the agent's transcript, as reported by the heartbeat hook.
+    /// Recorded the first time it arrives and never cleared: a later heartbeat
+    /// without it means the hook did not resend the path, not that the
+    /// transcript went away.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub transcript_path: Option<String>,
     pub created_at: DateTime<Utc>,
     pub last_active: DateTime<Utc>,
     /// The type of session (stage execution or merge resolution)

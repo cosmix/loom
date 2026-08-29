@@ -348,6 +348,7 @@ mod tests {
             "claude 'test'",
             None,
             SessionType::Stage,
+            crate::models::constants::DEFAULT_CONTEXT_CEILING_TOKENS,
         )
         .unwrap();
 

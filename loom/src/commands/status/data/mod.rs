@@ -72,7 +72,8 @@ pub struct StageSummary {
     #[serde(default)]
     pub stage_type: StageType,
     pub dependencies: Vec<String>,
-    pub context_pct: Option<f32>,
+    /// Resident context tokens for the active session.
+    pub context_tokens: Option<u32>,
     pub elapsed_secs: Option<i64>,
     /// Accumulated execution time (excludes wait/backoff time)
     pub execution_secs: Option<i64>,
@@ -87,8 +88,8 @@ pub struct StageSummary {
     pub last_activity: Option<String>,
     /// Seconds since last heartbeat (for staleness detection)
     pub staleness_secs: Option<u64>,
-    /// Stage-specific context budget percentage (if set in plan)
-    pub context_budget_pct: Option<f32>,
+    /// Resolved context ceiling for the active session.
+    pub context_ceiling_tokens: Option<u32>,
     /// Reason the stage was flagged for human review
     pub review_reason: Option<String>,
     /// Whether stage changes have been merged to the merge point
@@ -118,7 +119,6 @@ pub struct SessionSummary {
     pub stage_id: Option<String>,
     pub pid: Option<u32>,
     pub context_tokens: u32,
-    pub context_limit: u32,
     pub uptime_secs: i64,
     pub is_alive: bool,
 }

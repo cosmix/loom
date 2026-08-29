@@ -1,11 +1,17 @@
 #!/usr/bin/env bash
 # post-tool-use.sh - Claude Code PostToolUse hook for loom
 #
-# Called after each tool use to update the heartbeat.
-# This provides activity-based health monitoring.
+# Called after each tool use to update the heartbeat and check the running
+# session's resident context usage against its ceiling.
+#
+# SCOPE: a SESSION hook, registered per loom stage session by
+# loom/src/hooks/config.rs::to_settings_hooks - NOT a global hook. It exits
+# below whenever LOOM_STAGE_ID is unset, so it only ever runs for loom stage
+# sessions (the main agent AND its Task-tool subagents), never an
+# interactive, non-loom Claude Code session.
 #
 # Input: JSON from stdin (Claude Code passes tool info via stdin)
-#   {"tool_name": "Bash", "tool_input": {...}, "tool_result": {...}, ...}
+#   {"tool_name": "Bash", "tool_input": {...}, "transcript_path": "...", ...}
 #
 # Environment variables (set by loom worktree settings):
 #   LOOM_STAGE_ID    - The stage being executed
@@ -13,11 +19,224 @@
 #   LOOM_WORK_DIR    - Path to the .work directory
 #
 # Actions:
-#   1. Updates heartbeat in .work/heartbeat/<stage-id>.json
+#   1. Updates heartbeat in .work/heartbeat/<stage-id>.json with the resident
+#      token count read from the tail of the live transcript
 #   2. After git commits in loom stages, reminds Claude to update knowledge/memory
+#   3. Forwards Write/Edit/MultiEdit/NotebookEdit paths to `loom context record-edit`
+#   4. Compares resident tokens against the context ceiling and, at 80%/100%
+#      of it, tells the agent via exit 2 (see the CONTEXT CEILING section)
 
 set -euo pipefail
 umask 077
+
+source "$(dirname "$0")/_common.sh"
+
+# ---------------------------------------------------------------------------
+# Context-ceiling helpers. Kept in this file rather than _common.sh, which
+# this stage's contract leaves untouched.
+# ---------------------------------------------------------------------------
+
+# Ceiling defaults, used when neither the stage file nor `.work/config.toml`
+# names one. A shell script cannot read a Rust constant, so these are hand-kept
+# copies and each one carries the name of its counterpart:
+#
+#   LOOM_DEFAULT_CONTEXT_CEILING_TOKENS  mirrors DEFAULT_CONTEXT_CEILING_TOKENS
+#   LOOM_DEFAULT_SUBAGENT_CEILING_TOKENS mirrors DEFAULT_SUBAGENT_CEILING_TOKENS
+#
+# both in loom/src/models/constants.rs. Change one side and grep the constant
+# name to find the other; a drift here means the hook governs the agent against
+# a number no other layer uses.
+readonly LOOM_DEFAULT_CONTEXT_CEILING_TOKENS=150000
+readonly LOOM_DEFAULT_SUBAGENT_CEILING_TOKENS=120000
+
+# How much of a transcript's tail is read to find the last usage record. Cheap
+# even for a huge transcript, and large enough to hold many records.
+readonly LOOM_TRANSCRIPT_WINDOW_BYTES=131072
+
+# _loom_ctx_usage_from_stream
+# Reads JSONL on stdin; echoes the resident token count (input +
+# cache_creation + cache_read) of the LAST assistant usage record in it, or
+# nothing. Never fails: the caller must get no reading rather than a wrong one.
+_loom_ctx_usage_from_stream() {
+	jq -c 'select(.type == "assistant" and .message.usage != null) |
+		((.message.usage.input_tokens // 0) +
+		 (.message.usage.cache_creation_input_tokens // 0) +
+		 (.message.usage.cache_read_input_tokens // 0))' 2>/dev/null |
+		tail -n 1 || true
+}
+
+# _loom_ctx_last_usage_tokens <transcript-path>
+# Echoes the resident token count from the LAST assistant usage record of
+# <transcript-path>, or nothing if it cannot be determined. Fail-open under
+# set -euo pipefail.
+#
+# Only the last LOOM_TRANSCRIPT_WINDOW_BYTES are read, and the first line of
+# that chunk is dropped ONLY when the file is bigger than the window: a
+# byte-offset tail routinely slices a JSONL record in half, and jq aborts the
+# WHOLE stream on one malformed leading value (verified: unlike a runtime type
+# error on a later value, which jq skips and continues past, a parse error
+# discards everything). When the whole file fits in the window nothing is torn,
+# and dropping a line there would throw away a complete record - the only usage
+# record the transcript has, if it holds just one.
+_loom_ctx_last_usage_tokens() {
+	local transcript_path="$1"
+	[[ -n "$transcript_path" && -r "$transcript_path" ]] || return 0
+	command -v jq &>/dev/null || return 0
+
+	local size
+	size=$(wc -c <"$transcript_path" 2>/dev/null || echo 0)
+	# `wc` pads its output on some platforms; keep the digits only.
+	size="${size//[^0-9]/}"
+
+	if [[ -n "$size" ]] && [[ "$size" -gt "$LOOM_TRANSCRIPT_WINDOW_BYTES" ]]; then
+		tail -c "$LOOM_TRANSCRIPT_WINDOW_BYTES" "$transcript_path" 2>/dev/null |
+			tail -n +2 |
+			_loom_ctx_usage_from_stream || true
+	else
+		_loom_ctx_usage_from_stream <"$transcript_path" || true
+	fi
+}
+
+# _loom_ctx_toml_get <config-file> <key>
+# Echoes the digits of <key>'s value inside the [context] table of
+# <config-file>, or nothing if the table/key is absent. A minimal,
+# purpose-built reader for the one table this hook needs, not general TOML.
+_loom_ctx_toml_get() {
+	local config_file="$1" key="$2"
+	[[ -n "$config_file" && -r "$config_file" ]] || return 0
+	awk -v key="$key" '
+		/^\[/ { in_section = ($0 == "[context]"); next }
+		in_section {
+			pattern = "^[ \t]*" key "[ \t]*="
+			if ($0 ~ pattern) {
+				line = $0
+				sub(/^[^=]*=/, "", line)
+				if (match(line, /[0-9]+/)) {
+					print substr(line, RSTART, RLENGTH)
+				}
+				exit
+			}
+		}
+	' "$config_file" 2>/dev/null || true
+}
+
+# _loom_ctx_resolve_ceiling <cache-file> <default> <config-key> <use-stage-file>
+# Resolves the token ceiling and caches it in <cache-file> so later tool calls
+# in the same stage skip the lookup. Echoes an integer. The cache is written
+# with the same symlink caution the heartbeat write uses.
+#
+# <use-stage-file> selects the tier order, because the two ceilings do not share
+# one:
+#   1 - stage frontmatter's context_ceiling_tokens -> config.toml
+#       [context].<config-key> -> <default>          (the session's own ceiling)
+#   0 - config.toml [context].<config-key> -> <default>            (a subagent)
+# A stage file has no subagent key, so consulting it for the subagent ceiling
+# would hand every subagent of a stage the STAGE's ceiling and make
+# `subagent_ceiling_tokens` mean nothing.
+_loom_ctx_resolve_ceiling() {
+	# `${4:-}` keeps the fail-open discipline under `set -u`: a caller that
+	# forgets the argument gets the config-only order, never another tier's
+	# ceiling by accident.
+	local cache_file="$1" default_value="$2" config_key="$3" use_stage_file="${4:-}"
+
+	if [[ -r "$cache_file" && ! -L "$cache_file" ]]; then
+		local cached
+		cached=$(<"$cache_file")
+		if [[ "$cached" =~ ^[0-9]+$ ]]; then
+			echo "$cached"
+			return 0
+		fi
+	fi
+
+	local resolved="" stage_file="${LOOM_WORK_DIR}/stages/${LOOM_STAGE_ID}.md"
+	if [[ "$use_stage_file" == "1" && -r "$stage_file" ]]; then
+		local frontmatter
+		frontmatter=$(awk '/^---$/{c++; next} c==1' "$stage_file" 2>/dev/null || true)
+		resolved=$(printf '%s\n' "$frontmatter" |
+			grep -E '^context_ceiling_tokens:[[:space:]]*[0-9]+[[:space:]]*$' |
+			head -n 1 |
+			sed -E 's/^context_ceiling_tokens:[[:space:]]*([0-9]+)[[:space:]]*$/\1/' || true)
+	fi
+
+	if [[ -z "$resolved" ]]; then
+		resolved=$(_loom_ctx_toml_get "${LOOM_WORK_DIR}/config.toml" "$config_key")
+	fi
+
+	[[ "$resolved" =~ ^[0-9]+$ ]] || resolved="$default_value"
+
+	if [[ ! -L "$cache_file" ]]; then
+		printf '%s' "$resolved" >"$cache_file" 2>/dev/null || true
+		chmod 600 "$cache_file" 2>/dev/null || true
+	fi
+	echo "$resolved"
+}
+
+# _loom_ctx_check_main_ceiling <resident-tokens>
+# MAIN branch: warns once (marker-guarded) at >=80% of the ceiling, then
+# hard-blocks every subsequent tool call at >=100%. Exits the whole script
+# via `exit 2` when a threshold fires; falls through otherwise.
+#
+# Both files it writes are keyed on the SESSION, not the stage. Nothing ever
+# deletes them - `remove_heartbeat` (monitor/heartbeat.rs) removes only
+# <stage>.json - so a stage-keyed pair leaks into the stage's successor
+# sessions: the successor would inherit a "already warned" marker it never
+# triggered and go from silence straight to the hard block, and it would keep
+# resolving a ceiling cached before the operator edited config.toml.
+_loom_ctx_check_main_ceiling() {
+	local resident="$1"
+	[[ "$resident" =~ ^[0-9]+$ ]] || return 0
+
+	local session_prefix="${HEARTBEAT_DIR}/${LOOM_STAGE_ID}.${LOOM_SESSION_ID}"
+
+	local ceiling
+	ceiling=$(_loom_ctx_resolve_ceiling "${session_prefix}.ceiling" "$LOOM_DEFAULT_CONTEXT_CEILING_TOKENS" "ceiling_tokens" 1)
+	[[ "$ceiling" =~ ^[0-9]+$ ]] && [[ "$ceiling" -gt 0 ]] || return 0
+
+	if [[ "$resident" -ge "$ceiling" ]]; then
+		echo "CONTEXT CEILING REACHED: ${resident} >= ${ceiling}. Run \`loom handoff --stage ${LOOM_STAGE_ID} --session ${LOOM_SESSION_ID} --trigger ceiling\` now, then stop. Do not start new work." >&2
+		exit 2
+	fi
+
+	local warn_marker="${session_prefix}.ceiling-warned"
+	if [[ "$resident" -ge $((ceiling * 80 / 100)) && ! -e "$warn_marker" && ! -L "$warn_marker" ]]; then
+		printf '%s' "$resident" >"$warn_marker" 2>/dev/null || true
+		chmod 600 "$warn_marker" 2>/dev/null || true
+		echo "Context usage is ${resident}/${ceiling} tokens (>= 80% of the ceiling). Finish the current unit of work and prepare to hand off." >&2
+		exit 2
+	fi
+}
+
+# _loom_ctx_check_subagent_ceiling <resident-tokens>
+# SUBAGENT branch: warns once at >=80%, then hard-blocks every subsequent tool
+# call at >=100%. The 80% marker is keyed on the session AND on the subagent's
+# OWN transcript file: several subagents share one stage and one session, so a
+# marker keyed any less finely would let the first one to cross 80% silence all
+# the others (and, keyed on the stage alone, silence the next session's too).
+_loom_ctx_check_subagent_ceiling() {
+	local resident="$1"
+	[[ "$resident" =~ ^[0-9]+$ ]] || return 0
+
+	local session_prefix="${HEARTBEAT_DIR}/${LOOM_STAGE_ID}.${LOOM_SESSION_ID}"
+
+	local ceiling
+	ceiling=$(_loom_ctx_resolve_ceiling "${session_prefix}.subagent-ceiling" "$LOOM_DEFAULT_SUBAGENT_CEILING_TOKENS" "subagent_ceiling_tokens" 0)
+	[[ "$ceiling" =~ ^[0-9]+$ ]] && [[ "$ceiling" -gt 0 ]] || return 0
+
+	if [[ "$resident" -ge "$ceiling" ]]; then
+		echo "SUBAGENT CEILING REACHED: write your final report now - files changed, checks run, exactly what remains as numbered next steps - then end your turn. Do not start new work." >&2
+		exit 2
+	fi
+
+	local marker_key="${TRANSCRIPT_PATH##*/}"
+	marker_key="${marker_key//[^A-Za-z0-9._-]/_}"
+	local warn_marker="${session_prefix}.subagent-warned-${marker_key:-unknown}"
+	if [[ "$resident" -ge $((ceiling * 80 / 100)) && ! -e "$warn_marker" && ! -L "$warn_marker" ]]; then
+		printf '%s' "$resident" >"$warn_marker" 2>/dev/null || true
+		chmod 600 "$warn_marker" 2>/dev/null || true
+		echo "context ${resident}/${ceiling}: finish the unit of work in progress; do not open another file or start another item" >&2
+		exit 2
+	fi
+}
 
 # Read JSON input from stdin (Claude Code passes tool info via stdin)
 # Cross-platform timeout: gtimeout (macOS+coreutils), timeout (Linux), or plain cat
@@ -50,6 +269,13 @@ case "$LOOM_STAGE_ID" in
 *[!A-Za-z0-9._-]* | "") exit 0 ;;
 esac
 
+# The session id goes into filenames too (the ceiling cache and the 80% warn
+# marker are keyed per session, see _loom_ctx_check_main_ceiling), so it gets
+# the same guard.
+case "$LOOM_SESSION_ID" in
+*[!A-Za-z0-9._-]* | "") exit 0 ;;
+esac
+
 # Validate work directory exists and is accessible
 if [[ ! -d "${LOOM_WORK_DIR}" ]]; then
 	# Silently exit - work dir may have been cleaned up
@@ -64,6 +290,17 @@ chmod 700 "$HEARTBEAT_DIR" 2>/dev/null || exit 0
 # Get timestamp
 TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%S.000Z")
 
+# Resident context usage for THIS invocation's own transcript, and whether
+# this invocation is running under a subagent - both are needed twice below
+# (the heartbeat write and the ceiling check at the end), so compute once.
+TRANSCRIPT_PATH=$(echo "$INPUT_JSON" | jq -r '.transcript_path // empty' 2>/dev/null || true)
+RESIDENT_TOKENS=$(_loom_ctx_last_usage_tokens "$TRANSCRIPT_PATH")
+
+IS_SUBAGENT=0
+if loom_is_subagent "$INPUT_JSON"; then
+	IS_SUBAGENT=1
+fi
+
 # Update heartbeat file in JSON format.
 # Build via `jq -n --arg` so a value containing a quote/backslash (e.g. an exotic
 # TOOL_NAME) can never produce malformed JSON. Fall back to the heredoc only when
@@ -76,6 +313,23 @@ TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%S.000Z")
 # edit recording) are unrelated to the heartbeat and must still run.
 HEARTBEAT_FILE="${HEARTBEAT_DIR}/${LOOM_STAGE_ID}.json"
 if [[ ! -L "$HEARTBEAT_FILE" ]]; then
+	# The heartbeat's context_tokens/transcript_path belong to the MAIN
+	# session's own resident usage exclusively. A subagent's own numbers must
+	# never overwrite them - carry the file's existing values forward instead
+	# (empty/empty, rendered as null below, if it does not exist yet or
+	# cannot be read).
+	if [[ "$IS_SUBAGENT" == "1" ]]; then
+		HB_CONTEXT_TOKENS_RAW=""
+		HB_TRANSCRIPT_PATH_RAW=""
+		if [[ -r "$HEARTBEAT_FILE" ]] && command -v jq &>/dev/null; then
+			HB_CONTEXT_TOKENS_RAW=$(jq -r '.context_tokens // empty' "$HEARTBEAT_FILE" 2>/dev/null || true)
+			HB_TRANSCRIPT_PATH_RAW=$(jq -r '.transcript_path // empty' "$HEARTBEAT_FILE" 2>/dev/null || true)
+		fi
+	else
+		HB_CONTEXT_TOKENS_RAW="$RESIDENT_TOKENS"
+		HB_TRANSCRIPT_PATH_RAW="$TRANSCRIPT_PATH"
+	fi
+
 	HEARTBEAT_JSON=""
 	if command -v jq &>/dev/null; then
 		HEARTBEAT_JSON=$(jq -n \
@@ -83,19 +337,29 @@ if [[ ! -L "$HEARTBEAT_FILE" ]]; then
 			--arg session_id "$LOOM_SESSION_ID" \
 			--arg timestamp "$TIMESTAMP" \
 			--arg last_tool "$TOOL_NAME" \
-			'{stage_id: $stage_id, session_id: $session_id, timestamp: $timestamp, context_percent: null, last_tool: $last_tool, activity: ("Tool executed: " + $last_tool)}' \
+			--arg context_tokens_raw "$HB_CONTEXT_TOKENS_RAW" \
+			--arg transcript_path_raw "$HB_TRANSCRIPT_PATH_RAW" \
+			'{stage_id: $stage_id, session_id: $session_id, timestamp: $timestamp,
+			  context_tokens: (if ($context_tokens_raw | test("^[0-9]+$")) then ($context_tokens_raw | tonumber) else null end),
+			  transcript_path: (if $transcript_path_raw == "" then null else $transcript_path_raw end),
+			  last_tool: $last_tool, activity: ("Tool executed: " + $last_tool)}' \
 			2>/dev/null || true)
 	fi
 
 	if [[ -n "$HEARTBEAT_JSON" ]]; then
 		printf '%s\n' "$HEARTBEAT_JSON" >"$HEARTBEAT_FILE"
 	else
+		HB_CONTEXT_TOKENS_JSON="null"
+		[[ "$HB_CONTEXT_TOKENS_RAW" =~ ^[0-9]+$ ]] && HB_CONTEXT_TOKENS_JSON="$HB_CONTEXT_TOKENS_RAW"
+		HB_TRANSCRIPT_PATH_JSON="null"
+		[[ -n "$HB_TRANSCRIPT_PATH_RAW" ]] && HB_TRANSCRIPT_PATH_JSON="\"${HB_TRANSCRIPT_PATH_RAW}\""
 		cat >"$HEARTBEAT_FILE" <<EOF
 {
   "stage_id": "${LOOM_STAGE_ID}",
   "session_id": "${LOOM_SESSION_ID}",
   "timestamp": "${TIMESTAMP}",
-  "context_percent": null,
+  "context_tokens": ${HB_CONTEXT_TOKENS_JSON},
+  "transcript_path": ${HB_TRANSCRIPT_PATH_JSON},
   "last_tool": "${TOOL_NAME}",
   "activity": "Tool executed: ${TOOL_NAME}"
 }
@@ -181,6 +445,18 @@ if [[ "$TOOL_NAME" == "Write" || "$TOOL_NAME" == "Edit" || "$TOOL_NAME" == "Mult
 			loom context record-edit --stage "$LOOM_STAGE_ID" --path "$EDIT_PATH" >/dev/null 2>&1 || true
 		fi
 	fi
+fi
+
+# === CONTEXT CEILING DETECTION ===
+# Runs LAST, after the heartbeat write and the two blocks above (unrelated
+# to context, and must always run). The tool has already executed by the
+# time PostToolUse fires, so exit 2 here blocks nothing - it is purely a
+# message to the agent, the documented channel that reaches the model in
+# Claude Code 2.1.251 (`additionalContext` may or may not, so unused here).
+if [[ "$IS_SUBAGENT" == "1" ]]; then
+	_loom_ctx_check_subagent_ceiling "$RESIDENT_TOKENS"
+else
+	_loom_ctx_check_main_ceiling "$RESIDENT_TOKENS"
 fi
 
 exit 0

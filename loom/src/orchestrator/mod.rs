@@ -28,8 +28,8 @@ pub use merge_attribution::{
     MergeAttribution, ReconciliationOutcome,
 };
 pub use monitor::{
-    build_failure_info, context_health, context_usage_percent, failure_state_path, heartbeat_path,
-    read_heartbeat, remove_heartbeat, write_heartbeat, ContextHealth, FailureRecord,
+    build_failure_info, context_health, failure_state_path, heartbeat_path, read_heartbeat,
+    remove_heartbeat, stage_context_tokens, write_heartbeat, ContextHealth, FailureRecord,
     FailureTracker, Heartbeat, HeartbeatStatus, HeartbeatWatcher, Monitor, MonitorConfig,
     MonitorEvent, StageFailureState, DEFAULT_HEARTBEAT_POLL_SECS, DEFAULT_HUNG_TIMEOUT_SECS,
     DEFAULT_MAX_FAILURES,

@@ -222,6 +222,12 @@ pub enum Commands {
         args: crate::commands::subagents::SubagentsArgs,
     },
 
+    /// Report what agent sessions actually consume, in tokens
+    Usage {
+        #[command(flatten)]
+        args: crate::commands::usage::UsageArgs,
+    },
+
     /// Pressure-test a plan with alternating Claude and Codex review rounds
     Pressure {
         /// Path to the plan file (repo-relative or absolute; a bare filename

@@ -1,4 +1,5 @@
 use anyhow::{bail, Context, Result};
+use serde::{Deserialize, Serialize};
 use std::fs;
 use std::os::unix::fs::DirBuilderExt;
 #[cfg(test)]
@@ -7,6 +8,7 @@ use std::path::{Path, PathBuf};
 use toml_edit::DocumentMut;
 
 use crate::fs::knowledge::KnowledgeDir;
+use crate::models::constants::{DEFAULT_CONTEXT_CEILING_TOKENS, DEFAULT_SUBAGENT_CEILING_TOKENS};
 use crate::models::session::TerminalConfig;
 use crate::plan::schema::SandboxConfig;
 use crate::remote_control::RemoteControlConfig;
@@ -355,6 +357,54 @@ Do not manually edit these files unless you know what you're doing.
 const PLAN_SANDBOX_SECTION: &str = "plan_sandbox";
 const REMOTE_CONTROL_SECTION: &str = "remote_control";
 const TERMINAL_SECTION: &str = "terminal";
+const CONTEXT_SECTION: &str = "context";
+
+/// Persisted `[context]` section of `.work/config.toml`: the plan-wide context
+/// ceilings, in absolute resident tokens.
+///
+/// Sits between a stage's own `context_ceiling_tokens` and the built-in
+/// defaults, so an operator can raise or lower every stage's ceiling in one
+/// place without editing the plan. Each field carries its own serde default, so
+/// a half-written section still resolves to usable numbers.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ContextConfig {
+    /// Ceiling for a stage's own agent session.
+    #[serde(default = "default_ceiling_tokens")]
+    pub ceiling_tokens: u32,
+    /// Ceiling for a subagent spawned by that session.
+    #[serde(default = "default_subagent_ceiling_tokens")]
+    pub subagent_ceiling_tokens: u32,
+}
+
+fn default_ceiling_tokens() -> u32 {
+    DEFAULT_CONTEXT_CEILING_TOKENS
+}
+
+fn default_subagent_ceiling_tokens() -> u32 {
+    DEFAULT_SUBAGENT_CEILING_TOKENS
+}
+
+impl Default for ContextConfig {
+    fn default() -> Self {
+        Self {
+            ceiling_tokens: default_ceiling_tokens(),
+            subagent_ceiling_tokens: default_subagent_ceiling_tokens(),
+        }
+    }
+}
+
+impl ContextConfig {
+    /// The ceiling governing a stage's agent session, for a caller that already
+    /// holds this config. The monitor reads `[context]` once per run rather than
+    /// once per session per tick, so it resolves against the config in hand.
+    ///
+    /// This is where loom's ceiling order is defined;
+    /// [`resolve_context_ceiling_tokens`] is the same order for a caller that
+    /// has only a work dir.
+    pub fn ceiling_for(&self, stage_ceiling: Option<u32>) -> u32 {
+        stage_ceiling.unwrap_or(self.ceiling_tokens)
+    }
+}
 
 fn config_path(work_dir: &Path) -> PathBuf {
     work_dir.join("config.toml")
@@ -455,7 +505,8 @@ fn read_section<T: serde::de::DeserializeOwned>(
     Ok(Some(typed))
 }
 
-fn write_section<T: serde::Serialize>(work_dir: &Path, section: &str, value: &T) -> Result<()> {
+/// Render `value` as a document holding nothing but `[section]`.
+fn rendered_section_doc<T: serde::Serialize>(section: &str, value: &T) -> Result<DocumentMut> {
     // Serialize the typed value to a toml::Value, then convert to a
     // toml_edit Item by parsing its string representation.
     let toml_value = toml::Value::try_from(value)
@@ -467,9 +518,13 @@ fn write_section<T: serde::Serialize>(work_dir: &Path, section: &str, value: &T)
     }))
     .with_context(|| format!("Failed to render [{section}] section"))?;
 
-    let new_doc: DocumentMut = rendered
+    rendered
         .parse()
-        .with_context(|| format!("Failed to re-parse rendered [{section}] section"))?;
+        .with_context(|| format!("Failed to re-parse rendered [{section}] section"))
+}
+
+fn write_section<T: serde::Serialize>(work_dir: &Path, section: &str, value: &T) -> Result<()> {
+    let new_doc = rendered_section_doc(section, value)?;
 
     let section = section.to_string();
     // RMW under the directory lock so a concurrent writer (e.g. the daemon
@@ -481,6 +536,45 @@ fn write_section<T: serde::Serialize>(work_dir: &Path, section: &str, value: &T)
         } else {
             // Section serialized to nothing (empty table) — remove from doc.
             doc.remove(&section);
+        }
+        Ok(())
+    })
+}
+
+/// Like [`write_section`], but MERGES `value`'s keys into the section instead
+/// of replacing it, leaving keys no Rust struct owns exactly as they were.
+///
+/// `[context]` has more than one owner: [`ContextConfig`] writes the two
+/// ceilings, while `prompt_cache_split` is read straight from the document by
+/// `native::launch::prompt_cache_split_enabled` and belongs to no struct at
+/// all. Replacing that table on a re-init would silently switch prompt cache
+/// splitting back off. Single-owner sections keep using [`write_section`],
+/// whose replace semantics are what they want.
+fn merge_section<T: serde::Serialize>(work_dir: &Path, section: &str, value: &T) -> Result<()> {
+    let new_doc = rendered_section_doc(section, value)?;
+
+    let section = section.to_string();
+    // Same RMW-under-the-directory-lock discipline as `write_section`.
+    update_config(work_dir, |doc| {
+        // Nothing to merge: an empty rendered section sets no keys, so it must
+        // leave the existing table (and its other owners' keys) untouched.
+        let Some(new_table) = new_doc.get(&section).and_then(|item| item.as_table()) else {
+            return Ok(());
+        };
+        let existing = doc
+            .entry(&section)
+            .or_insert(toml_edit::Item::Table(toml_edit::Table::new()));
+        // `as_table_like_mut` covers the inline form (`context = { .. }`) too,
+        // so a hand-written section keeps its other keys either way.
+        match existing.as_table_like_mut() {
+            Some(table) => {
+                for (key, item) in new_table.iter() {
+                    table.insert(key, item.clone());
+                }
+            }
+            // Not a table at all (an operator wrote a scalar): there is nothing
+            // to preserve, so replace it with the section this module owns.
+            None => *existing = toml_edit::Item::Table(new_table.clone()),
         }
         Ok(())
     })
@@ -523,6 +617,42 @@ pub fn read_terminal_config(work_dir: &Path) -> Result<TerminalConfig> {
 /// Persist the terminal backend config (`[terminal]`).
 pub fn write_terminal_config(work_dir: &Path, config: &TerminalConfig) -> Result<()> {
     write_section(work_dir, TERMINAL_SECTION, config)
+}
+
+/// Read the persisted context ceilings (`[context]`).
+///
+/// A missing section yields `ContextConfig::default()`, so callers always get a
+/// usable ceiling without a second fallback of their own.
+pub fn read_context_config(work_dir: &Path) -> Result<ContextConfig> {
+    Ok(read_section(work_dir, CONTEXT_SECTION)?.unwrap_or_default())
+}
+
+/// Persist the context ceilings (`[context]`).
+///
+/// Merges rather than replaces: `[context]` also carries `prompt_cache_split`,
+/// which no Rust struct owns (see [`merge_section`]).
+pub fn write_context_config(work_dir: &Path, config: &ContextConfig) -> Result<()> {
+    merge_section(work_dir, CONTEXT_SECTION, config)
+}
+
+/// The ceiling governing a stage's agent session, in absolute resident tokens.
+///
+/// ONE resolution order, and every reader of a stage ceiling must use it:
+/// the stage's own `context_ceiling_tokens` -> `[context] ceiling_tokens` ->
+/// [`DEFAULT_CONTEXT_CEILING_TOKENS`]. Skipping the middle tier makes the
+/// signal, the governor and the daemon quote three different numbers for one
+/// session.
+///
+/// Takes the stage's value rather than the `Stage` itself so `fs/` keeps no
+/// dependency on the stage model — pass `stage.context_ceiling_tokens`. A
+/// caller that already holds a [`ContextConfig`] uses
+/// [`ContextConfig::ceiling_for`] instead, which is the same order without the
+/// read.
+pub fn resolve_context_ceiling_tokens(work_dir: &Path, stage_ceiling: Option<u32>) -> u32 {
+    // An unreadable or unparseable config falls back to the built-in default
+    // rather than failing: a ceiling is needed on every path that asks for one.
+    let config = read_context_config(work_dir).unwrap_or_default();
+    config.ceiling_for(stage_ceiling)
 }
 
 #[cfg(test)]
@@ -870,5 +1000,69 @@ mod tests {
         let after = fs::read_to_string(work.join("config.toml")).unwrap();
         assert!(after.contains("[project_execution]"));
         assert!(after.contains("[plan_sandbox]"));
+    }
+
+    /// Regression: `[context]` has a second owner. `prompt_cache_split` is read
+    /// straight from the document by `native::launch::prompt_cache_split_enabled`
+    /// and belongs to no struct, so a re-init writing the ceilings must not take
+    /// it out — that would silently switch prompt cache splitting back off.
+    #[test]
+    fn write_context_config_preserves_prompt_cache_split() {
+        let temp = TempDir::new().unwrap();
+        let work = init_work(&temp);
+
+        update_config(&work, |doc| {
+            let context = doc.entry(CONTEXT_SECTION).or_insert(toml_edit::table());
+            if let Some(table) = context.as_table_mut() {
+                table["prompt_cache_split"] = toml_edit::value(true);
+                table["ceiling_tokens"] = toml_edit::value(90_000_i64);
+            }
+            Ok(())
+        })
+        .unwrap();
+
+        write_context_config(
+            &work,
+            &ContextConfig {
+                ceiling_tokens: 200_000,
+                subagent_ceiling_tokens: 100_000,
+            },
+        )
+        .unwrap();
+
+        let doc = read_config(&work).unwrap();
+        assert_eq!(
+            doc[CONTEXT_SECTION]["prompt_cache_split"].as_bool(),
+            Some(true)
+        );
+        // The keys ContextConfig owns are still overwritten.
+        let config = read_context_config(&work).unwrap();
+        assert_eq!(config.ceiling_tokens, 200_000);
+        assert_eq!(config.subagent_ceiling_tokens, 100_000);
+    }
+
+    #[test]
+    fn resolve_context_ceiling_walks_stage_then_config_then_default() {
+        let temp = TempDir::new().unwrap();
+        let work = init_work(&temp);
+
+        // No config: the built-in default.
+        assert_eq!(
+            resolve_context_ceiling_tokens(&work, None),
+            DEFAULT_CONTEXT_CEILING_TOKENS
+        );
+
+        write_context_config(
+            &work,
+            &ContextConfig {
+                ceiling_tokens: 250_000,
+                subagent_ceiling_tokens: 100_000,
+            },
+        )
+        .unwrap();
+
+        // Config tier wins over the default, stage tier over both.
+        assert_eq!(resolve_context_ceiling_tokens(&work, None), 250_000);
+        assert_eq!(resolve_context_ceiling_tokens(&work, Some(80_000)), 80_000);
     }
 }

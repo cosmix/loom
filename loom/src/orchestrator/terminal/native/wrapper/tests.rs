@@ -18,6 +18,7 @@ fn test_wrapper_script_creation() {
         claude_cmd,
         None,
         SessionType::Stage,
+        150_000,
     )
     .unwrap();
 
@@ -64,6 +65,7 @@ fn test_wrapper_script_with_working_dir() {
         claude_cmd,
         Some(working_dir),
         SessionType::Stage,
+        150_000,
     )
     .unwrap();
 
@@ -97,6 +99,7 @@ fn merge_session_env_follows_kind_not_stage_id_prefix() {
         claude_cmd,
         None,
         SessionType::Merge,
+        150_000,
     )
     .unwrap();
 
@@ -114,6 +117,7 @@ fn merge_session_env_follows_kind_not_stage_id_prefix() {
         claude_cmd,
         None,
         SessionType::Stage,
+        150_000,
     )
     .unwrap();
 
@@ -144,6 +148,7 @@ fn worktree_path_is_exported_only_for_stage_sessions() {
             "claude 'test'",
             Some(repo_root),
             kind,
+            150_000,
         )
         .unwrap();
         let content = fs::read_to_string(&wrapper).unwrap();
@@ -163,6 +168,7 @@ fn worktree_path_is_exported_only_for_stage_sessions() {
         "claude 'test'",
         Some(Path::new("/tmp/repo/.worktrees/build-api")),
         SessionType::Stage,
+        150_000,
     )
     .unwrap();
     let stage_content = fs::read_to_string(&stage_wrapper).unwrap();
@@ -184,6 +190,7 @@ fn wrapper_executes_with_minimal_environment_and_no_ambient_secret() {
         &command,
         None,
         SessionType::Stage,
+        150_000,
     )
     .unwrap();
 

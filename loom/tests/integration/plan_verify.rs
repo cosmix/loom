@@ -128,6 +128,87 @@ loom:
 "#
 }
 
+/// Plan whose stage `description` references a design brief that does not
+/// exist under `doc/plans/briefs/`.
+fn missing_brief_path_plan() -> &'static str {
+    r#"# Missing Brief Plan
+
+<!-- loom METADATA -->
+
+```yaml
+loom:
+  version: 1
+  stages:
+    - id: stage-one
+      name: "Stage One"
+      stage_type: standard
+      working_dir: "."
+      description: "See doc/plans/briefs/nonexistent.md for design context."
+      acceptance:
+        - "true"
+```
+
+<!-- END loom METADATA -->
+"#
+}
+
+/// Two independent stages (no `dependencies:` between them) whose `files:`
+/// globs overlap.
+fn overlapping_files_no_dependency_plan() -> &'static str {
+    r#"# Overlapping Files Plan
+
+<!-- loom METADATA -->
+
+```yaml
+loom:
+  version: 1
+  stages:
+    - id: stage-a
+      name: "Stage A"
+      stage_type: standard
+      working_dir: "."
+      files:
+        - "src/a/**"
+      acceptance:
+        - "true"
+    - id: stage-b
+      name: "Stage B"
+      stage_type: standard
+      working_dir: "."
+      files:
+        - "src/a/config.rs"
+      acceptance:
+        - "true"
+```
+
+<!-- END loom METADATA -->
+"#
+}
+
+/// Plan with `working_dir: "."` and a cargo acceptance criterion that names
+/// its manifest explicitly via `--manifest-path`, pointed at a nested
+/// directory rather than the repo root.
+fn manifest_selector_plan() -> &'static str {
+    r#"# Manifest Selector Plan
+
+<!-- loom METADATA -->
+
+```yaml
+loom:
+  version: 1
+  stages:
+    - id: stage-one
+      name: "Stage One"
+      stage_type: standard
+      working_dir: "."
+      acceptance:
+        - "cargo test --manifest-path loom/Cargo.toml"
+```
+
+<!-- END loom METADATA -->
+"#
+}
+
 /// Plan with malformed YAML inside the metadata block (triggers serde_yaml::Error).
 fn malformed_yaml_plan() -> &'static str {
     r#"# Malformed YAML Plan
@@ -326,6 +407,71 @@ fn test_structural_warning_strict() {
     let plan = write_plan(temp.path(), "PLAN-warn.md", structural_warning_plan());
     let out = run_verify(&plan, &["--strict"]);
     assert!(!out.status.success(), "expected exit 1 in strict mode");
+}
+
+#[test]
+fn test_missing_brief_path_warns() {
+    let temp = TempDir::new().unwrap();
+    // `validate_structural_preflight` only runs its repo_root-gated checks
+    // when `find_repo_root` finds a `.git` marker walking up from the plan.
+    fs::create_dir(temp.path().join(".git")).unwrap();
+    let plan = write_plan(temp.path(), "PLAN-brief.md", missing_brief_path_plan());
+    let out = run_verify(&plan, &[]);
+    assert!(
+        out.status.success(),
+        "expected exit 0 (advisory warning), stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stdout.contains("doc/plans/briefs/nonexistent.md"),
+        "stdout: {stdout}"
+    );
+}
+
+#[test]
+fn test_overlapping_files_without_dependency_warns() {
+    let temp = TempDir::new().unwrap();
+    let plan = write_plan(
+        temp.path(),
+        "PLAN-overlap.md",
+        overlapping_files_no_dependency_plan(),
+    );
+    let out = run_verify(&plan, &[]);
+    assert!(
+        out.status.success(),
+        "expected exit 0 (advisory warning), stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stdout.contains("overlaps stage") && stdout.contains("no dependency relationship"),
+        "stdout: {stdout}"
+    );
+}
+
+#[test]
+fn test_manifest_path_selector_no_false_positive() {
+    let temp = TempDir::new().unwrap();
+    fs::create_dir(temp.path().join(".git")).unwrap();
+    fs::create_dir_all(temp.path().join("loom")).unwrap();
+    fs::write(
+        temp.path().join("loom/Cargo.toml"),
+        "[package]\nname=\"x\"\n",
+    )
+    .unwrap();
+    let plan = write_plan(temp.path(), "PLAN-manifest.md", manifest_selector_plan());
+    let out = run_verify(&plan, &[]);
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        !stdout.contains("Cargo.toml not found"),
+        "false positive not fixed, stdout: {stdout}"
+    );
 }
 
 #[test]

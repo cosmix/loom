@@ -6,8 +6,7 @@
 
 use anyhow::Result;
 use colored::Colorize;
-use std::fs;
-use std::path::Path;
+use std::{fs, path::Path};
 
 use crate::models::stage::StageStatus;
 use crate::orchestrator::terminal::native::{cleanup_stage_files, NativeBackend};
@@ -346,6 +345,7 @@ mod tests {
             "claude 'prompt'",
             None,
             session.session_type,
+            150_000,
         )
         .unwrap(); // also creates `pids/`
         fs::write(

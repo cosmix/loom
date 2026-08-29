@@ -98,8 +98,13 @@ fn parse_last_heartbeat(content: &str) -> Option<LastHeartbeatInfo> {
     // If no timestamp, we don't have valid heartbeat info
     let timestamp = timestamp?;
 
-    let context_percent = extract_field(content, "Context Usage")
-        .and_then(|s| s.trim().trim_end_matches('%').parse::<f32>().ok());
+    let context_tokens = extract_field(content, "Context Tokens").and_then(|s| {
+        s.trim()
+            .trim_end_matches("tokens")
+            .trim()
+            .parse::<u32>()
+            .ok()
+    });
 
     let last_tool = extract_field(content, "Last Tool")
         .filter(|s| !s.is_empty())
@@ -111,7 +116,7 @@ fn parse_last_heartbeat(content: &str) -> Option<LastHeartbeatInfo> {
 
     Some(LastHeartbeatInfo {
         timestamp,
-        context_percent,
+        context_tokens,
         last_tool,
         activity,
     })
@@ -226,7 +231,7 @@ mod tests {
 ### Last Known State
 
 - **Timestamp**: 2025-01-24 14:30:00 UTC
-- **Context Usage**: 75.5%
+- **Context Tokens**: 75000 tokens
 - **Last Tool**: Read
 - **Activity**: Reading file
 
@@ -235,7 +240,7 @@ mod tests {
         let hb = parse_last_heartbeat(content);
         assert!(hb.is_some());
         let hb = hb.unwrap();
-        assert_eq!(hb.context_percent, Some(75.5));
+        assert_eq!(hb.context_tokens, Some(75_000));
         assert_eq!(hb.last_tool, Some("Read".to_string()));
         assert_eq!(hb.activity, Some("Reading file".to_string()));
     }

@@ -124,21 +124,26 @@ mod events_tests {
     #[test]
     fn test_hook_event_log_with_payload() {
         let payload = HookEventPayload::PreCompact {
-            context_percent: Some(75.5),
+            context_tokens: Some(75_000),
+            transcript_path: Some(".work/transcripts/stage-1.jsonl".to_string()),
             handoff_file: Some("stage-1-handoff-001.md".to_string()),
         };
         let event =
             HookEventLog::with_payload("stage-1", "session-abc", HookEvent::PreCompact, payload);
-
         assert_eq!(event.event, "PreCompact");
         assert!(event.payload.is_some());
 
         if let Some(HookEventPayload::PreCompact {
-            context_percent,
+            context_tokens,
+            transcript_path,
             handoff_file,
         }) = &event.payload
         {
-            assert_eq!(*context_percent, Some(75.5));
+            assert_eq!(*context_tokens, Some(75_000));
+            assert_eq!(
+                transcript_path.as_deref(),
+                Some(".work/transcripts/stage-1.jsonl")
+            );
             assert_eq!(*handoff_file, Some("stage-1-handoff-001.md".to_string()));
         } else {
             panic!("Expected PreCompact payload");
@@ -149,7 +154,6 @@ mod events_tests {
     fn test_hook_event_log_to_json_line() {
         let event = HookEventLog::new("stage-1", "session-abc", HookEvent::Stop);
         let json = event.to_json_line().unwrap();
-
         assert!(json.contains("\"stage_id\":\"stage-1\""));
         assert!(json.contains("\"session_id\":\"session-abc\""));
         assert!(json.contains("\"event\":\"Stop\""));

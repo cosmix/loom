@@ -44,13 +44,11 @@ fn test_session_complex_lifecycle() {
     session.try_mark_running().expect("Spawning -> Running");
     assert_eq!(session.status, SessionStatus::Running);
 
-    session.update_context(50_000);
-    assert_eq!(session.context_usage_percent(), 25.0);
-    assert!(!session.is_context_exhausted());
+    session.record_heartbeat(Some(50_000), None);
+    assert_eq!(session.context_tokens, 50_000);
 
-    session.update_context(150_000);
-    assert_eq!(session.context_usage_percent(), 75.0);
-    assert!(session.is_context_exhausted());
+    session.record_heartbeat(Some(150_000), None);
+    assert_eq!(session.context_tokens, 150_000);
 
     session
         .try_mark_context_exhausted()
@@ -73,7 +71,7 @@ fn test_session_timestamps_update_correctly() {
 
     let after_assign = session.last_active;
     thread::sleep(Duration::from_millis(10));
-    session.update_context(1000);
+    session.record_heartbeat(Some(1000), None);
     assert_eq!(session.created_at, created);
     assert!(session.last_active > after_assign);
 }
@@ -102,9 +100,9 @@ fn test_multiple_sessions_independent() {
         .try_mark_completed()
         .expect("s3: Running -> Completed");
 
-    session1.update_context(50_000);
-    session2.update_context(100_000);
-    session3.update_context(150_000);
+    session1.record_heartbeat(Some(50_000), None);
+    session2.record_heartbeat(Some(100_000), None);
+    session3.record_heartbeat(Some(150_000), None);
 
     assert_ne!(session1.id, session2.id);
     assert_ne!(session2.id, session3.id);

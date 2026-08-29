@@ -18,6 +18,8 @@ fn test_unsupported_version_rejected() {
             auto_merge: None,
             change_impact: None,
             adjudication: None,
+            context_ceiling_tokens: None,
+            subagent_ceiling_tokens: None,
             stages: vec![create_valid_stage("stage-1", "Test")],
         },
     };
@@ -41,6 +43,8 @@ fn test_empty_stages_rejected() {
             auto_merge: None,
             change_impact: None,
             adjudication: None,
+            context_ceiling_tokens: None,
+            subagent_ceiling_tokens: None,
             stages: vec![],
         },
     };
@@ -101,6 +105,8 @@ fn test_multiple_errors_accumulated() {
             auto_merge: None,
             change_impact: None,
             adjudication: None,
+            context_ceiling_tokens: None,
+            subagent_ceiling_tokens: None,
             stages: vec![create_valid_stage("", ""), {
                 let mut s = create_valid_stage("stage-2", "Stage Two");
                 s.dependencies.push("nonexistent".to_string());

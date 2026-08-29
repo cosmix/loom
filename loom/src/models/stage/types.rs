@@ -59,16 +59,9 @@ impl StageType {
         }
     }
 
-    /// Default reasoning effort for this stage type, given the effective model.
-    /// Sonnet stages need high effort to compensate for the capability gap.
-    /// Opus stages use xhigh for thoroughness on architectural work.
-    /// Any other model defaults to high.
-    pub fn default_reasoning_effort(&self, effective_model: &str) -> &'static str {
-        if effective_model == "opus" {
-            "xhigh"
-        } else {
-            "high"
-        }
+    /// Default reasoning effort for every stage type and model.
+    pub fn default_reasoning_effort(&self) -> &'static str {
+        "high"
     }
 }
 
@@ -730,9 +723,11 @@ pub struct Stage {
     /// Goal-backward verification status
     #[serde(default)]
     pub verification_status: VerificationStatus,
-    /// Stage-specific context budget (percentage)
+    /// Stage-specific context ceiling in tokens.
     #[serde(default)]
-    pub context_budget: Option<u32>,
+    pub context_ceiling_tokens: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub plan_overview: Option<bool>,
     /// Files that must exist with real implementation (not stubs)
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub artifacts: Vec<String>,
@@ -1175,7 +1170,8 @@ impl Default for Stage {
             merged: false,
             merge_conflict: false,
             verification_status: Default::default(),
-            context_budget: None,
+            context_ceiling_tokens: None,
+            plan_overview: None,
             artifacts: Vec::new(),
             wiring: Vec::new(),
             wiring_tests: Vec::new(),

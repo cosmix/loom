@@ -1,9 +1,7 @@
-pub mod detector;
 pub mod generator;
 pub mod git_handoff;
 pub mod schema;
 
-pub use detector::{check_context_threshold, ContextLevel, ThresholdConfig};
 pub use generator::{find_latest_handoff, generate_handoff, HandoffContent};
 pub use git_handoff::{format_git_history_markdown, CommitInfo, GitHistory};
 pub use schema::{

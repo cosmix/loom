@@ -3,16 +3,25 @@
 use anyhow::Result;
 use chrono::{DateTime, Utc};
 use colored::Colorize;
+use std::collections::HashSet;
 use std::path::PathBuf;
+use std::time::{Duration, Instant};
 
+use crate::models::session::Session;
 use crate::models::stage::{Stage, StageStatus};
 use crate::orchestrator::monitor::parked::hung_warning;
 use crate::orchestrator::monitor::MonitorEvent;
+use crate::orchestrator::session_registry::live_sessions_for_stage;
 use crate::orchestrator::signals::remove_signal;
 
 use super::clear_status_line;
 use super::persistence::Persistence;
 use super::Orchestrator;
+
+/// How long a takedown waits for a signalled agent to actually exit before
+/// calling it a survivor. See [`Orchestrator::confirm_session_gone`].
+const KILL_CONFIRM_TIMEOUT: Duration = Duration::from_secs(2);
+const KILL_CONFIRM_POLL_INTERVAL: Duration = Duration::from_millis(50);
 
 fn mark_needs_handoff(stage: &mut Stage, now: DateTime<Utc>) -> Result<()> {
     stage.accumulate_attempt_time(now);
@@ -45,13 +54,13 @@ pub(super) trait EventHandler: Persistence {
     /// Handle merge session completion
     fn on_merge_session_completed(&mut self, session_id: &str, stage_id: &str) -> Result<()>;
 
-    /// Handle budget exceeded (force handoff)
+    /// Handle the daemon backstop firing (force handoff)
     fn on_budget_exceeded(
         &mut self,
         session_id: &str,
         stage_id: &str,
-        usage_percent: f32,
-        budget_percent: f32,
+        context_tokens: u32,
+        ceiling_tokens: u32,
     ) -> Result<()>;
 }
 
@@ -87,30 +96,7 @@ impl EventHandler for Orchestrator {
     fn on_needs_handoff(&mut self, session_id: &str, stage_id: &str) -> Result<()> {
         clear_status_line();
         eprintln!("Session '{session_id}' needs handoff for stage '{stage_id}'");
-
-        let handoff_at = Utc::now();
-        self.update_stage(stage_id, |stage| mark_needs_handoff(stage, handoff_at))?;
-
-        // Kill old session if still tracked
-        if let Some(session) = self.active_sessions.get(stage_id) {
-            let session_clone = session.clone();
-            if let Err(e) = self.backend.kill_session(&session_clone) {
-                eprintln!("Warning: Failed to kill session '{session_id}': {e}");
-            }
-            // Remove old signal file
-            if let Err(e) = remove_signal(&session_clone.id, &self.config.work_dir) {
-                eprintln!("Warning: Failed to remove signal for session '{session_id}': {e}");
-            }
-        }
-        self.active_sessions.remove(stage_id);
-
-        // Re-queue the stage so the next poll cycle picks it up
-        self.update_stage(stage_id, requeue_after_handoff)?;
-        self.graph.mark_queued(stage_id)?;
-
-        eprintln!("Stage '{stage_id}' re-queued for continuation after handoff");
-
-        Ok(())
+        self.hand_off_and_requeue(stage_id, "handoff")
     }
 
     fn on_merge_session_completed(&mut self, session_id: &str, stage_id: &str) -> Result<()> {
@@ -122,11 +108,11 @@ impl EventHandler for Orchestrator {
         &mut self,
         session_id: &str,
         stage_id: &str,
-        usage_percent: f32,
-        budget_percent: f32,
+        context_tokens: u32,
+        ceiling_tokens: u32,
     ) -> Result<()> {
         // Implementation in event_handler.rs
-        self.handle_budget_exceeded(session_id, stage_id, usage_percent, budget_percent)
+        self.handle_budget_exceeded(session_id, stage_id, context_tokens, ceiling_tokens)
     }
 }
 
@@ -146,17 +132,25 @@ impl Orchestrator {
             }
             MonitorEvent::SessionContextWarning {
                 session_id,
-                usage_percent,
+                context_tokens,
+                ceiling_tokens,
             } => {
                 clear_status_line();
-                eprintln!("Warning: Session '{session_id}' context at {usage_percent:.1}%");
+                eprintln!(
+                    "Warning: Session '{session_id}' context at {context_tokens} \
+                     of {ceiling_tokens} tokens"
+                );
             }
             MonitorEvent::SessionContextCritical {
                 session_id,
-                usage_percent,
+                context_tokens,
+                ceiling_tokens,
             } => {
                 clear_status_line();
-                eprintln!("Critical: Session '{session_id}' context at {usage_percent:.1}%");
+                eprintln!(
+                    "Critical: Session '{session_id}' context at {context_tokens} \
+                     of {ceiling_tokens} tokens"
+                );
             }
             MonitorEvent::SessionCrashed {
                 session_id,
@@ -216,18 +210,19 @@ impl Orchestrator {
             MonitorEvent::HeartbeatReceived {
                 stage_id,
                 session_id,
-                context_percent,
+                context_tokens,
+                transcript_path,
                 last_tool: _,
             } => {
-                self.apply_heartbeat(&stage_id, &session_id, context_percent)?;
+                self.apply_heartbeat(&stage_id, &session_id, context_tokens, transcript_path)?;
             }
             MonitorEvent::BudgetExceeded {
                 session_id,
                 stage_id,
-                usage_percent,
-                budget_percent,
+                context_tokens,
+                ceiling_tokens,
             } => {
-                self.on_budget_exceeded(&session_id, &stage_id, usage_percent, budget_percent)?;
+                self.on_budget_exceeded(&session_id, &stage_id, context_tokens, ceiling_tokens)?;
             }
             MonitorEvent::StageNeedsHumanReview {
                 stage_id,
@@ -258,32 +253,163 @@ fn graph_has_ready_stage(graph: &crate::plan::ExecutionGraph, stage_id: &str) ->
 }
 
 impl Orchestrator {
-    /// Handle budget exceeded by generating handoff and transitioning stage
+    /// Take a live session off its stage and queue the stage for a successor.
+    ///
+    /// Marks the stage `NeedsHandoff`, takes the agent down, drops its signal
+    /// file and re-queues. The takedown is the load-bearing step: re-queueing
+    /// puts the stage back on the ready list, so an agent that is still writing
+    /// the worktree would get a second agent spawned on top of it at the next
+    /// poll. The stage is therefore re-queued ONLY once nothing is left running
+    /// for it. When something survives, the stage stays `NeedsHandoff`: that is
+    /// visible in `loom status` and recoverable by hand, where two agents in one
+    /// worktree are silent corruption.
+    fn hand_off_and_requeue(&mut self, stage_id: &str, cause: &str) -> Result<()> {
+        let handoff_at = Utc::now();
+        self.update_stage(stage_id, |stage| mark_needs_handoff(stage, handoff_at))?;
+
+        let survivors = self.take_down_stage_agents(stage_id);
+        if !survivors.is_empty() {
+            eprintln!(
+                "Stage '{stage_id}' stays in NeedsHandoff after {cause}: session(s) {} are still \
+                 alive after the kill attempt, so re-queueing would put a second agent in the \
+                 same worktree. Take them down with \
+                 'loom stage reset {stage_id} --kill-session'.",
+                survivors.join(", ")
+            );
+            return Ok(());
+        }
+
+        // Re-queue the stage so the next poll cycle picks it up
+        self.update_stage(stage_id, requeue_after_handoff)?;
+        self.graph.mark_queued(stage_id)?;
+
+        eprintln!("Stage '{stage_id}' re-queued for continuation after {cause}");
+
+        Ok(())
+    }
+
+    /// Every agent the daemon can find for `stage_id`: the one it tracks in
+    /// memory, plus any live session RECORD on disk it does not.
+    ///
+    /// `active_sessions` is in-memory only and is NOT rebuilt when the daemon
+    /// restarts (see `Orchestrator::new`), so a missing map entry is no evidence
+    /// that nothing is running — after a restart the recovered stage's original
+    /// agent is still there with no entry to its name. The records on disk
+    /// outlive the daemon, so they are consulted through the same
+    /// `live_sessions_for_stage` probe the executor uses before spawning.
+    fn stage_agents(&self, stage_id: &str) -> Vec<Session> {
+        let mut agents: Vec<Session> = self
+            .active_sessions
+            .get(stage_id)
+            .cloned()
+            .into_iter()
+            .collect();
+        match live_sessions_for_stage(&self.config.work_dir, stage_id) {
+            Ok(live) => {
+                let tracked: HashSet<String> = agents.iter().map(|s| s.id.clone()).collect();
+                agents.extend(live.into_iter().filter(|s| !tracked.contains(&s.id)));
+            }
+            Err(e) => eprintln!(
+                "Warning: Failed to list live sessions for stage '{stage_id}': {e}. \
+                 Working from the daemon's in-memory session only."
+            ),
+        }
+        agents
+    }
+
+    /// Kill every agent attached to `stage_id`; return the ids of any that are
+    /// still alive afterwards.
+    ///
+    /// An empty return is the only proof that nothing writes the worktree any
+    /// more, which is what re-queueing needs.
+    fn take_down_stage_agents(&mut self, stage_id: &str) -> Vec<String> {
+        let agents = self.stage_agents(stage_id);
+
+        let mut survivors = Vec::new();
+        for session in &agents {
+            if let Err(e) = self.backend.kill_session(session) {
+                eprintln!("Warning: Failed to kill session '{}': {e}", session.id);
+            }
+            // The liveness probe decides, not the kill's return value: a kill
+            // that reported an error may still have taken the agent down, and
+            // one that reported success may not have (`TmuxBackend::kill_session`
+            // returns `Ok` unconditionally, and the native lane returns `Ok`
+            // when it refuses to signal an unverifiable identity).
+            if self.confirm_session_gone(session) {
+                if let Err(e) = remove_signal(&session.id, &self.config.work_dir) {
+                    eprintln!(
+                        "Warning: Failed to remove signal for session '{}': {e}",
+                        session.id
+                    );
+                }
+            } else {
+                survivors.push(session.id.clone());
+            }
+        }
+
+        // Keep the daemon's handle on a session that outlived its kill: dropping
+        // it would leave the next attempt with nothing to find, since the record
+        // this path already marked `ContextExhausted` no longer counts as live.
+        if survivors.is_empty() {
+            self.active_sessions.remove(stage_id);
+        }
+        survivors
+    }
+
+    /// Whether `session`'s process is gone, waiting a bounded moment for it.
+    ///
+    /// The teardown signals with SIGTERM and returns immediately
+    /// (`process::terminate`), so an agent that is exiting exactly as asked
+    /// still answers the liveness probe for a while. Deciding on the first
+    /// probe would call every correctly-killed agent a survivor and leave every
+    /// handed-off stage sitting in `NeedsHandoff` forever. The wait is short and
+    /// runs once per handoff, which the poll loop can afford; an agent that
+    /// outlasts it is genuinely not responding to the kill.
+    ///
+    /// A probe that ERRORS counts as gone, the same reading
+    /// `session_registry` and `stage/skip_retry.rs` give it: a host that cannot
+    /// answer the question must not wedge the run.
+    fn confirm_session_gone(&self, session: &Session) -> bool {
+        let deadline = Instant::now() + KILL_CONFIRM_TIMEOUT;
+        loop {
+            if !self.backend.is_session_alive(session).unwrap_or(false) {
+                return true;
+            }
+            if Instant::now() >= deadline {
+                return false;
+            }
+            std::thread::sleep(KILL_CONFIRM_POLL_INTERVAL);
+        }
+    }
+
+    /// Handle the daemon's ceiling backstop firing for a session.
+    ///
+    /// The agent's own hook governs at 100% of the stage ceiling; this path
+    /// only runs at `DAEMON_CEILING_MULTIPLIER` times that, i.e. when the agent
+    /// ignored its own governance. So the session is not asked to stop — it is
+    /// handed off and killed.
     pub(super) fn handle_budget_exceeded(
         &mut self,
         session_id: &str,
         stage_id: &str,
-        usage_percent: f32,
-        budget_percent: f32,
+        context_tokens: u32,
+        ceiling_tokens: u32,
     ) -> Result<()> {
         clear_status_line();
         eprintln!(
-            "{} Session '{}' exceeded budget: {:.1}% > {:.1}% limit",
-            "BUDGET EXCEEDED:".red().bold(),
+            "{} Session '{}' at {} tokens, past the daemon backstop for its {}-token ceiling",
+            "CONTEXT CEILING EXCEEDED:".red().bold(),
             session_id,
-            usage_percent,
-            budget_percent
+            context_tokens,
+            ceiling_tokens
         );
 
-        // Load the stage
         let stage = self.load_stage(stage_id)?;
 
-        // Get session from active sessions for handoff generation
+        // Generate the handoff BEFORE the kill, while the session record still
+        // describes a running agent.
         if let Some(session) = self.active_sessions.get(stage_id) {
-            // Clone session data for handoff generation (avoids borrow conflicts)
             let session_clone = session.clone();
-
-            // Generate handoff using the monitor's context critical handler
             let handoff_path = self
                 .monitor
                 .handlers()
@@ -292,8 +418,6 @@ impl Orchestrator {
             eprintln!("Generated handoff at: {}", handoff_path.display());
         }
 
-        // Update session status to ContextExhausted and save
-        // Clone to avoid borrow conflicts between get_mut and save_session
         if let Some(session_mut) = self.active_sessions.get_mut(stage_id) {
             session_mut.try_mark_context_exhausted()?;
             let session_to_save = session_mut.clone();
@@ -301,167 +425,9 @@ impl Orchestrator {
             self.save_session(&session_to_save)?;
         }
 
-        let handoff_at = Utc::now();
-        self.update_stage(stage_id, |stage| mark_needs_handoff(stage, handoff_at))?;
-
-        // Remove from active sessions
-        self.active_sessions.remove(stage_id);
-
-        // Re-queue the stage so the next poll cycle picks it up
-        self.update_stage(stage_id, requeue_after_handoff)?;
-        self.graph.mark_queued(stage_id)?;
-
-        eprintln!("Stage '{stage_id}' re-queued for continuation after budget exceeded");
-
-        Ok(())
+        self.hand_off_and_requeue(stage_id, "the context ceiling backstop")
     }
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::models::stage::{Implementers, Stage, StageStatus};
-    use crate::plan::schema::{StageDefinition, StageSandboxConfig};
-    use crate::plan::ExecutionGraph;
-    use crate::verify::transitions::{create_stage, load_stage, update_stage};
-
-    fn create_test_graph() -> ExecutionGraph {
-        let stages = vec![StageDefinition {
-            id: "test-stage".to_string(),
-            name: "Test Stage".to_string(),
-            description: None,
-            dependencies: vec![],
-            parallel_group: None,
-            acceptance: vec![],
-            setup: vec![],
-            files: vec![],
-            auto_merge: None,
-            working_dir: ".".to_string(),
-            stage_type: None,
-            artifacts: vec![],
-            wiring: vec![],
-            wiring_tests: vec![],
-            dead_code_check: None,
-            before_stage: vec![],
-            after_stage: vec![],
-            context_budget: None,
-            sandbox: StageSandboxConfig::default(),
-            execution_mode: None,
-            bug_fix: None,
-            regression_test: None,
-            model: None,
-            reasoning_effort: None,
-            code_review: None,
-            ultracode: false,
-            implementers: Implementers::default(),
-            subagent_timeout_secs: None,
-        }];
-        ExecutionGraph::build(stages).unwrap()
-    }
-
-    #[test]
-    fn test_needs_handoff_transitions_stage_to_queued() {
-        // Verify that the NeedsHandoff -> Queued transition works correctly
-        // This is the core logic that on_needs_handoff relies on
-        let mut stage = Stage {
-            id: "test-stage".to_string(),
-            name: "Test Stage".to_string(),
-            status: StageStatus::Executing,
-            ..Stage::default()
-        };
-
-        // Transition: Executing -> NeedsHandoff
-        stage.try_mark_needs_handoff().unwrap();
-        assert_eq!(stage.status, StageStatus::NeedsHandoff);
-
-        // Transition: NeedsHandoff -> Queued (the fix)
-        stage.try_mark_queued().unwrap();
-        assert_eq!(stage.status, StageStatus::Queued);
-    }
-
-    #[test]
-    fn test_needs_handoff_requeues_in_graph() {
-        // Verify that graph correctly tracks the stage as ready after re-queuing
-        let mut graph = create_test_graph();
-
-        // Initially the stage should be ready (WaitingForDeps with no deps = ready)
-        assert!(graph_has_ready_stage(&graph, "test-stage"));
-
-        // Mark as executing
-        graph.mark_executing("test-stage").unwrap();
-        assert!(!graph_has_ready_stage(&graph, "test-stage"));
-
-        // Mark as NeedsHandoff then re-queue
-        graph
-            .mark_status("test-stage", StageStatus::NeedsHandoff)
-            .unwrap();
-        graph.mark_queued("test-stage").unwrap();
-
-        // Stage should be ready again for the next poll cycle
-        assert!(graph_has_ready_stage(&graph, "test-stage"));
-    }
-
-    #[test]
-    fn test_budget_exceeded_transitions_to_queued() {
-        // Verify the full budget exceeded transition path:
-        // Executing -> NeedsHandoff -> Queued
-        let mut stage = Stage {
-            id: "test-stage".to_string(),
-            name: "Test Stage".to_string(),
-            status: StageStatus::Executing,
-            ..Stage::default()
-        };
-
-        // Simulate budget exceeded flow
-        stage.accumulate_attempt_time(chrono::Utc::now());
-        stage.try_mark_needs_handoff().unwrap();
-        assert_eq!(stage.status, StageStatus::NeedsHandoff);
-
-        // Re-queue for continuation
-        stage.try_mark_queued().unwrap();
-        assert_eq!(stage.status, StageStatus::Queued);
-    }
-
-    #[test]
-    fn handoff_requeue_preserves_concurrent_unrelated_field() {
-        use std::sync::{Arc, Barrier};
-
-        let temp = tempfile::tempdir().unwrap();
-        let work_dir = temp.path().to_path_buf();
-        let stage = Stage {
-            id: "event-race".to_string(),
-            name: "Event race".to_string(),
-            status: StageStatus::Executing,
-            ..Stage::default()
-        };
-        create_stage(&stage, &work_dir).unwrap();
-
-        let handoff_marked = Arc::new(Barrier::new(2));
-        let concurrent_done = Arc::new(Barrier::new(2));
-        let event_dir = work_dir.clone();
-        let event_marked = Arc::clone(&handoff_marked);
-        let event_done = Arc::clone(&concurrent_done);
-        let event = std::thread::spawn(move || {
-            update_stage("event-race", &event_dir, |stage| {
-                mark_needs_handoff(stage, Utc::now())
-            })
-            .unwrap();
-            event_marked.wait();
-            event_done.wait();
-            update_stage("event-race", &event_dir, requeue_after_handoff).unwrap();
-        });
-
-        handoff_marked.wait();
-        update_stage("event-race", &work_dir, |stage| {
-            stage.dispute_count = 9;
-            Ok(())
-        })
-        .unwrap();
-        concurrent_done.wait();
-        event.join().unwrap();
-
-        let stage = load_stage("event-race", &work_dir).unwrap();
-        assert_eq!(stage.status, StageStatus::Queued);
-        assert_eq!(stage.dispute_count, 9);
-    }
-}
+mod tests;

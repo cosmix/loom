@@ -24,7 +24,6 @@ id: {session_id}
 stage_id: {stage_id}
 status: running
 context_tokens: 0
-context_limit: 200000
 created_at: "2024-01-01T00:00:00Z"
 last_active: "2024-01-01T00:00:00Z"
 ---

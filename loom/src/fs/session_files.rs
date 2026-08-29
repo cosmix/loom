@@ -47,11 +47,11 @@ pub fn session_to_markdown(session: &Session) -> String {
     let yaml = serde_yaml::to_string(session).unwrap_or_else(|_| String::from("{}"));
 
     format!(
-        "---\n{yaml}---\n\n# Session: {}\n\n## Details\n\n- **Status**: {:?}\n- **Stage**: {}\n- **Context**: {:.1}%\n",
+        "---\n{yaml}---\n\n# Session: {}\n\n## Details\n\n- **Status**: {:?}\n- **Stage**: {}\n- **Context**: {} tokens\n",
         session.id,
         session.status,
         session.stage_id.as_deref().unwrap_or("None"),
-        session.context_usage_percent()
+        session.context_tokens
     )
 }
 

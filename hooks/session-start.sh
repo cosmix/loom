@@ -56,15 +56,26 @@ cat >>"$EVENTS_FILE" <<EOF
 {"timestamp":"${TIMESTAMP}","stage_id":"${LOOM_STAGE_ID}","session_id":"${LOOM_SESSION_ID}","event":"SessionStart","payload":{"type":"SessionStart","pid":${PID}}}
 EOF
 
+# The transcript is usually empty/absent this early, so this is normally
+# empty too - recorded when present so a resumed/compacted session still
+# carries its transcript path forward as soon as one exists.
+TRANSCRIPT_PATH=""
+if command -v jq &>/dev/null; then
+	TRANSCRIPT_PATH=$(echo "$INPUT_JSON" | jq -r '.transcript_path // empty' 2>/dev/null || true)
+fi
+TRANSCRIPT_PATH_JSON="null"
+[[ -n "$TRANSCRIPT_PATH" ]] && TRANSCRIPT_PATH_JSON="\"${TRANSCRIPT_PATH}\""
+
 # Write heartbeat file in JSON format
-# Format: {stage_id, session_id, timestamp, context_pct, last_tool, activity}
+# Format: {stage_id, session_id, timestamp, context_tokens, transcript_path, last_tool, activity}
 HEARTBEAT_FILE="${HEARTBEAT_DIR}/${LOOM_STAGE_ID}.json"
 cat >"$HEARTBEAT_FILE" <<EOF
 {
   "stage_id": "${LOOM_STAGE_ID}",
   "session_id": "${LOOM_SESSION_ID}",
   "timestamp": "${TIMESTAMP}",
-  "context_percent": null,
+  "context_tokens": null,
+  "transcript_path": ${TRANSCRIPT_PATH_JSON},
   "last_tool": null,
   "activity": "Session started"
 }

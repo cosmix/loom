@@ -3,10 +3,9 @@
 use super::super::session::cleanup_session_resources;
 use super::setup_work_dir;
 use crate::fs::session_files::find_session_for_stage;
-use crate::models::session::{Session, SessionStatus, SessionType};
+use crate::models::session::{Session, SessionStatus};
 use crate::orchestrator::continuation::session_to_markdown;
 use crate::parser::frontmatter::parse_from_markdown;
-use chrono::Utc;
 use std::fs;
 
 #[test]
@@ -18,7 +17,6 @@ worktree_path: null
 pid: null
 status: running
 context_tokens: 0
-context_limit: 200000
 created_at: "2024-01-01T00:00:00Z"
 last_active: "2024-01-01T00:00:00Z"
 ---
@@ -52,18 +50,9 @@ fn test_session_to_markdown() {
     let session = Session {
         id: "session-1".to_string(),
         stage_id: Some("stage-1".to_string()),
-        worktree_path: None,
         pid: Some(12345),
         status: SessionStatus::Running,
-        context_tokens: 0,
-        context_limit: 200000,
-        created_at: Utc::now(),
-        last_active: Utc::now(),
-        session_type: SessionType::default(),
-        merge_source_branch: None,
-        merge_target_branch: None,
-        tracking_key: String::new(),
-        backend: Default::default(),
+        ..Session::default()
     };
 
     let content = session_to_markdown(&session);
@@ -72,7 +61,7 @@ fn test_session_to_markdown() {
     assert!(content.contains("# Session: session-1"));
     assert!(content.contains("**Status**: Running"));
     assert!(content.contains("**Stage**: stage-1"));
-    assert!(content.contains("**Context**:")); // Canonical version shows context %
+    assert!(content.contains("**Context**:"));
 }
 
 #[test]
@@ -87,7 +76,6 @@ worktree_path: null
 pid: null
 status: running
 context_tokens: 0
-context_limit: 200000
 created_at: "2024-01-01T00:00:00Z"
 last_active: "2024-01-01T00:00:00Z"
 ---
@@ -125,7 +113,6 @@ worktree_path: null
 pid: null
 status: running
 context_tokens: 0
-context_limit: 200000
 created_at: "2024-01-01T00:00:00Z"
 last_active: "2024-01-01T00:00:00Z"
 ---
@@ -147,18 +134,9 @@ fn test_cleanup_session_resources() {
     let session = Session {
         id: "session-1".to_string(),
         stage_id: Some("test-stage".to_string()),
-        worktree_path: None,
         pid: None,
         status: SessionStatus::Running,
-        context_tokens: 0,
-        context_limit: 200000,
-        created_at: Utc::now(),
-        last_active: Utc::now(),
-        session_type: SessionType::default(),
-        merge_source_branch: None,
-        merge_target_branch: None,
-        tracking_key: String::new(),
-        backend: Default::default(),
+        ..Session::default()
     };
 
     let session_content = session_to_markdown(&session);

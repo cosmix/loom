@@ -83,7 +83,7 @@ mod tests {
 version: 2
 session_id: session-test
 stage_id: stage-test
-context_percent: 70.0
+context_tokens: 105000
 "#;
         let parsed = ParsedHandoff::parse(yaml);
         assert!(parsed.is_v2());
@@ -97,7 +97,7 @@ context_percent: 70.0
 version: 2
 session_id: session-fm
 stage_id: stage-fm
-context_percent: 80.0
+context_tokens: 120000
 ---
 
 # Additional markdown content
