@@ -20,9 +20,8 @@ use super::types::{DependencyStatus, EmbeddedContext, SandboxSummary};
 /// Default maximum number of skill recommendations to include in signals
 pub const DEFAULT_MAX_SKILL_RECOMMENDATIONS: usize = 5;
 
-/// Score assigned to skills injected via project language detection.
-/// Higher than trigger-based scores (1.0 word, 2.0 phrase) to ensure
-/// language-detected skills appear prominently in recommendations.
+/// Score assigned to skills injected via project language detection — higher
+/// than trigger-based scores (1.0 word, 2.0 phrase) so they appear prominently.
 const LANGUAGE_DETECTION_SCORE: f32 = 10.0;
 
 pub fn generate_signal(
@@ -60,20 +59,16 @@ pub fn generate_signal_with_skills(
     skill_index: Option<&SkillIndex>,
     detected_languages: &[DetectedLanguage],
 ) -> Result<PathBuf> {
-    // Build embedded context with shared setup logic
     let mut embedded_context = build_signal_context(session, stage, work_dir, handoff_file);
 
-    // Add skill recommendations if skill index is available
     if let Some(index) = skill_index {
         let text_to_match = build_skill_match_text(stage);
         embedded_context.skill_recommendations =
             index.match_skills(&text_to_match, DEFAULT_MAX_SKILL_RECOMMENDATIONS);
 
-        // Inject language skills for the files THIS stage will edit, so the agent
-        // loads the matching `loom-<lang>` skill before writing code. Detection is
-        // file-scoped (so a monorepo's frontend stage gets loom-typescript while a
-        // backend stage gets loom-rust); we fall back to the project-wide languages
-        // only when the stage declares no files.
+        // Detection is file-scoped (a monorepo's frontend stage gets loom-typescript,
+        // backend gets loom-rust); fall back to project-wide languages when the
+        // stage declares no files.
         let stage_languages = detect_languages_from_files(&stage.files);
         let languages: &[DetectedLanguage] = if stage_languages.is_empty() {
             detected_languages
@@ -110,9 +105,8 @@ pub fn generate_signal_with_skills(
         &embedded_context,
     );
 
-    // Inject adjudicator feedback (if any) for stages that have been
-    // disputed. Appended after the formatted sections so it sits near
-    // the end where the agent's recitation attention is highest.
+    // Adjudicator feedback (disputed stages only), appended last so it sits
+    // where the agent's recitation attention is highest.
     if stage.dispute_count > 0 {
         if let Ok(Some(text)) =
             crate::orchestrator::adjudication::feedback::read_feedback(work_dir, &stage.id)
@@ -123,8 +117,7 @@ pub fn generate_signal_with_skills(
         }
     }
 
-    // Surface the runtime stage's structured code-review dimensions to
-    // integration-verify agents as an actionable checklist.
+    // Surface the stage's code-review dimensions to integration-verify agents.
     if matches!(stage.stage_type, StageType::IntegrationVerify) {
         if let Some(section) = stage
             .code_review
@@ -140,15 +133,9 @@ pub fn generate_signal_with_skills(
     super::helpers::write_signal_file(&session.id, &content, work_dir)
 }
 
-/// Render the "## Review Dimensions" section for an integration-verify signal.
-///
-/// Surfaces the plan's `code_review` configuration to the agent as an actionable
-/// checklist — one checkbox per dimension. `require_all` controls the framing:
-/// when `true` every dimension MUST be explicitly addressed before completion;
-/// when `false` the dimensions are advisory ("where applicable").
-///
-/// Returns `None` when no dimensions are configured, so the caller appends
-/// nothing rather than an empty heading.
+/// Render the "## Review Dimensions" checklist for an integration-verify signal,
+/// framed as mandatory when `require_all` is set and advisory otherwise. Returns
+/// `None` when no dimensions are configured.
 pub(super) fn render_review_dimensions(config: &CodeReviewConfig) -> Option<String> {
     if config.dimensions.is_empty() {
         return None;
@@ -169,15 +156,10 @@ pub(super) fn render_review_dimensions(config: &CodeReviewConfig) -> Option<Stri
     Some(section)
 }
 
-/// Resolve a detected language to its skill metadata in the index.
-///
-/// Installed skills follow the `loom-<topic>` naming convention (`loom-rust`,
-/// `loom-typescript`, ...), but [`DetectedLanguage::skill_name`](crate::language::DetectedLanguage::skill_name)
-/// returns the bare topic (`rust`). We try the prefixed name first, then the bare
-/// name, so the lookup works whether or not skills carry the `loom-` prefix.
-///
-/// This guards against a silent failure mode: a plain `get_by_name("rust")` never
-/// matches a skill named `loom-rust`, so language skills would never be injected.
+/// Resolve a detected language to its skill metadata, trying the `loom-<topic>`
+/// prefixed name before the bare topic name. Guards against a silent failure
+/// mode: a plain `get_by_name("rust")` never matches a skill named `loom-rust`,
+/// so language skills would silently never be injected.
 fn resolve_language_skill<'a>(index: &'a SkillIndex, base: &str) -> Option<&'a SkillMetadata> {
     index
         .get_by_name(&format!("loom-{base}"))
@@ -191,7 +173,6 @@ fn build_skill_match_text(stage: &Stage) -> String {
         text.push(' ');
         text.push_str(desc);
     }
-    // Include acceptance criteria for better matching
     for criterion in &stage.acceptance {
         text.push(' ');
         text.push_str(criterion.command());
@@ -230,20 +211,16 @@ pub fn build_embedded_context_with_stage_and_session(
         ..EmbeddedContext::default()
     };
 
-    // Read handoff content if specified
     if let Some(handoff_name) = handoff_file {
         let handoff_path = work_dir.join("handoffs").join(format!("{handoff_name}.md"));
         if handoff_path.exists() {
             if let Ok(content) = fs::read_to_string(&handoff_path) {
-                // Try to parse as V2, fall back to V1
                 match ParsedHandoff::parse(&content) {
                     ParsedHandoff::V2(handoff) => {
                         context.parsed_handoff = Some(*handoff);
-                        // Still store full content for human-readable sections
                         context.handoff_content = Some(content);
                     }
                     ParsedHandoff::V1Fallback(_) => {
-                        // V1 format: just store the raw content
                         context.handoff_content = Some(content);
                     }
                 }
@@ -251,11 +228,10 @@ pub fn build_embedded_context_with_stage_and_session(
         }
     }
 
-    // Read plan overview from config.toml and the plan file
     context.plan_overview = read_plan_overview(work_dir);
 
-    // Read recent memory entries for recitation (Manus pattern - last 10 entries)
-    // This keeps important stage context in the attention window
+    // Manus pattern: recite the last 10 memory entries to keep stage context
+    // in the attention window.
     if let Some(sid) = stage_id {
         context.memory_content = format_memory_for_signal(work_dir, sid, 10);
     }
@@ -281,30 +257,76 @@ fn read_plan_overview(work_dir: &Path) -> Option<String> {
     }
 
     let plan_content = fs::read_to_string(&plan_path).ok()?;
-
-    // Extract overview section from plan markdown
-    extract_plan_overview(&plan_content)
+    extract_plan_overview_from(&plan_content, source_path)
 }
 
-/// Extract overview and proposed changes sections from plan markdown
+/// Hard cap, in bytes, on the overview text embedded in a signal — unconditional,
+/// since a plan's Overview section can run to any length and would otherwise be
+/// paid for on every fresh session spawned for the stage.
+const MAX_PLAN_OVERVIEW_BYTES: usize = 4096;
+
+/// Truncate `text` to at most `max_bytes` bytes: prefers a line-boundary cut
+/// when it keeps most of the budget, else a mid-line (never mid-codepoint)
+/// cut, then appends a suffix naming `plan_label`. The suffix is clamped to
+/// `max_bytes` first, so the result is always `<= max_bytes` even when
+/// `plan_label` alone would blow the budget.
+fn truncate_overview(text: &str, max_bytes: usize, plan_label: &str) -> String {
+    if text.len() <= max_bytes {
+        return text.to_string();
+    }
+
+    let full_suffix =
+        format!("\n\n_Overview truncated at {max_bytes} bytes — full text is in {plan_label}._");
+    let mut suffix_cut = full_suffix.len().min(max_bytes);
+    while suffix_cut > 0 && !full_suffix.is_char_boundary(suffix_cut) {
+        suffix_cut -= 1;
+    }
+    let suffix = &full_suffix[..suffix_cut];
+
+    let budget = max_bytes - suffix.len();
+    let mut cut = budget.min(text.len());
+    while cut > 0 && !text.is_char_boundary(cut) {
+        cut -= 1;
+    }
+    // An unconditional line-boundary cut can land right after the heading (a
+    // one-paragraph Overview) and drop the rest; only take it if it keeps half the budget.
+    let line_cut = text[..cut].rfind('\n').unwrap_or(0);
+    cut = if line_cut * 2 >= cut { line_cut } else { cut };
+
+    let mut truncated = text[..cut].trim_end().to_string();
+    truncated.push_str(suffix);
+    truncated
+}
+
+/// Extract overview and proposed changes sections from plan markdown.
+///
+/// Test-only: production code calls [`extract_plan_overview_from`] directly so
+/// it can pass the real plan path as the truncation label; this unlabeled form
+/// exists so tests don't need to care about that label.
+#[cfg(test)]
 pub(super) fn extract_plan_overview(plan_content: &str) -> Option<String> {
+    extract_plan_overview_from(plan_content, "the plan file")
+}
+
+/// `pub(super)` so `tests_size.rs` can call it directly with a pathological
+/// (e.g. multi-KB) `plan_label` and assert the truncation bound still holds
+/// on the production path, which passes the plan's real file path rather than
+/// the short label the `#[cfg(test)]` wrapper above uses.
+pub(super) fn extract_plan_overview_from(plan_content: &str, plan_label: &str) -> Option<String> {
     let mut overview = String::new();
     let mut in_relevant_section = false;
     let mut current_section = String::new();
 
     for line in plan_content.lines() {
-        // Detect section headers
         if line.starts_with("## ") {
             let section_name = line.trim_start_matches("## ").trim().to_lowercase();
 
-            // Save accumulated content from previous relevant section
             if in_relevant_section && !current_section.is_empty() {
                 overview.push_str(&current_section);
                 overview.push_str("\n\n");
                 current_section.clear();
             }
 
-            // Check if entering a relevant section
             in_relevant_section = section_name.contains("overview")
                 || section_name.contains("proposed changes")
                 || section_name.contains("summary")
@@ -315,7 +337,6 @@ pub(super) fn extract_plan_overview(plan_content: &str) -> Option<String> {
                 current_section.push('\n');
             }
         } else if line.starts_with("# ") && overview.is_empty() {
-            // Capture plan title
             overview.push_str(line);
             overview.push_str("\n\n");
         } else if in_relevant_section {
@@ -338,7 +359,6 @@ pub(super) fn extract_plan_overview(plan_content: &str) -> Option<String> {
         }
     }
 
-    // Capture any remaining content
     if in_relevant_section && !current_section.is_empty() {
         overview.push_str(&current_section);
     }
@@ -347,14 +367,16 @@ pub(super) fn extract_plan_overview(plan_content: &str) -> Option<String> {
     if trimmed.is_empty() {
         None
     } else {
-        Some(trimmed.to_string())
+        Some(truncate_overview(
+            trimmed,
+            MAX_PLAN_OVERVIEW_BYTES,
+            plan_label,
+        ))
     }
 }
 
-/// Generate a signal file with metrics about section sizes
-///
-/// Returns both the signal path and metrics about the signal's structure.
-/// Use this for debugging KV-cache efficiency and token usage.
+/// Generate a signal file with metrics about section sizes, for debugging
+/// KV-cache efficiency and token usage.
 pub fn generate_signal_with_metrics(
     session: &Session,
     stage: &Stage,
@@ -364,7 +386,6 @@ pub fn generate_signal_with_metrics(
     git_history: Option<&GitHistory>,
     work_dir: &Path,
 ) -> Result<(PathBuf, SignalMetrics)> {
-    // Build embedded context with shared setup logic
     let embedded_context = build_signal_context(session, stage, work_dir, handoff_file);
 
     let formatted = format_signal_with_metrics(
@@ -383,19 +404,19 @@ pub fn generate_signal_with_metrics(
     Ok((signal_path, formatted.metrics))
 }
 
-/// Build cross-stage change summary for integration-verify stages.
-///
-/// For each completed dependency, aggregates file assignments and stage metadata
-/// to give integration-verify agents a bird's eye view of all changes.
-fn build_cross_stage_summary(work_dir: &Path, stage: &Stage) -> Option<String> {
-    if !matches!(
+/// True when `stage` is an enrichment target: integration-verify or
+/// knowledge-distill with at least one dependency to summarize.
+fn wants_stage_enrichment(stage: &Stage) -> bool {
+    matches!(
         stage.stage_type,
         StageType::IntegrationVerify | StageType::KnowledgeDistill
-    ) {
-        return None;
-    }
+    ) && !stage.dependencies.is_empty()
+}
 
-    if stage.dependencies.is_empty() {
+/// Build a cross-stage change summary: aggregates each dependency's file
+/// assignments and metadata into a bird's-eye view for integration-verify agents.
+fn build_cross_stage_summary(work_dir: &Path, stage: &Stage) -> Option<String> {
+    if !wants_stage_enrichment(stage) {
         return None;
     }
 
@@ -486,19 +507,10 @@ fn format_stage_status(status: &crate::models::stage::StageStatus) -> &'static s
     }
 }
 
-/// Build wiring checklist from stage memories for integration-verify.
-///
-/// Reads memory entries from all completed stages and extracts
-/// wiring-related notes into an actionable checklist.
+/// Build a wiring checklist for integration-verify by extracting wiring-related
+/// notes from completed dependency stages' memory entries.
 fn build_wiring_checklist(work_dir: &Path, stage: &Stage) -> Option<String> {
-    if !matches!(
-        stage.stage_type,
-        StageType::IntegrationVerify | StageType::KnowledgeDistill
-    ) {
-        return None;
-    }
-
-    if stage.dependencies.is_empty() {
+    if !wants_stage_enrichment(stage) {
         return None;
     }
 
@@ -518,7 +530,6 @@ fn build_wiring_checklist(work_dir: &Path, stage: &Stage) -> Option<String> {
             Err(_) => continue,
         };
 
-        // Load stage name for display
         let stage_name = load_stage(dep_id, work_dir)
             .map(|s| s.name)
             .unwrap_or_else(|_| dep_id.clone());
@@ -557,52 +568,39 @@ fn build_wiring_checklist(work_dir: &Path, stage: &Stage) -> Option<String> {
     Some(checklist)
 }
 
-/// Build signal context with all shared setup logic
-///
-/// This consolidates the context building, budget, usage, and sandbox setup
-/// that was duplicated between `generate_signal_with_skills` and `generate_signal_with_metrics`.
+/// Build signal context with all shared setup logic, consolidating context,
+/// budget, usage, and sandbox setup duplicated across the two signal generators.
 fn build_signal_context(
     session: &Session,
     stage: &Stage,
     work_dir: &Path,
     handoff_file: Option<&str>,
 ) -> EmbeddedContext {
-    // Build embedded context by reading files, including task state and stage memory for recitation
     let mut embedded_context = build_embedded_context_for_stage(work_dir, handoff_file, &stage.id);
 
-    // Populate context budget from stage (or use default)
     embedded_context.context_budget = stage
         .context_budget
         .map(|b| b as f32)
         .or(Some(crate::models::constants::DEFAULT_CONTEXT_BUDGET));
 
-    // Populate current context usage from session
     embedded_context.context_usage = Some(if session.context_limit > 0 {
         (session.context_tokens as f32 / session.context_limit as f32) * 100.0
     } else {
         0.0
     });
 
-    // Populate sandbox summary from stage config
     embedded_context.sandbox_summary = Some(build_sandbox_summary(stage));
 
-    // Propagate the ultracode license so the semi-stable section can gate on it
+    // Ultracode license and implementer lanes gate the semi-stable section.
     embedded_context.ultracode = stage.ultracode;
-
-    // Propagate the licensed implementer lanes so the semi-stable section can gate on them
     embedded_context.implementers = stage.implementers.clone();
 
-    // Propagate the subagent response budget, but only when the plan set one.
-    // The orchestrator measures every stage against
-    // `effective_subagent_timeout_secs()`; the signal only *tells* the agent
-    // about it when the plan made a deliberate choice worth acting on.
+    // Only set when the plan made a deliberate choice: the orchestrator always
+    // measures against `effective_subagent_timeout_secs()`, but the signal tells
+    // the agent about it only when there's a value worth acting on.
     embedded_context.subagent_timeout_secs = stage.subagent_timeout_secs;
 
-    // Build integration-verify and knowledge-distill enrichments
-    if matches!(
-        stage.stage_type,
-        StageType::IntegrationVerify | StageType::KnowledgeDistill
-    ) {
+    if wants_stage_enrichment(stage) {
         embedded_context.cross_stage_summary = build_cross_stage_summary(work_dir, stage);
         embedded_context.wiring_checklist = build_wiring_checklist(work_dir, stage);
     }
@@ -614,8 +612,7 @@ fn build_signal_context(
 
 /// Build sandbox summary from stage configuration
 fn build_sandbox_summary(stage: &Stage) -> SandboxSummary {
-    // For now, use stage.sandbox directly
-    // Later this will use the sandbox::merge_config function to merge plan-level defaults
+    // For now, use stage.sandbox directly; later, merge plan-level defaults via sandbox::merge_config.
     SandboxSummary {
         enabled: stage.sandbox.enabled.unwrap_or(true),
         deny_read: stage

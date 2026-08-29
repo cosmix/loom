@@ -89,18 +89,18 @@ pub fn format_recovery_signal(
 
     signal.push_str(&format_recovery_header(content));
 
-    // Full stable prefix for this stage type: worktree context, isolation, execution
-    // rules, subagent restrictions, git-staging, anti-slop, completion rules, and —
-    // for code stages (Standard / IntegrationVerify) — the mini adversarial code
-    // review. The recovery signal is built outside the KV-cache path, so without
-    // this a resumed stage would miss ALL of that guidance, not just the review.
+    // Full stable prefix for this stage type: worktree context, isolation and path boundaries, the
+    // "## Execution Rules" header (a pointer at ~/.claude/CLAUDE.md plus the knowledge-consumption
+    // contract), the subagent no-verify block, and — for code stages (Standard / IntegrationVerify)
+    // — the mini adversarial code review, plus commit-timing and completion rules. Built outside
+    // the KV-cache path, so without this a resumed stage would miss all of that guidance.
     signal.push_str(&stable_prefix_for(stage.stage_type));
 
-    // The codex lane's rules live in the SEMI-STABLE section, which this signal
-    // does not embed — and the stable prefix above forward-references them. Emit
-    // the gated block here too, or a resumed codex stage reads a pointer to a
-    // section that is not present and loses foreground-only fan-out, the
-    // concurrency cap, and "verification stays with you".
+    // The codex lane's rules are SEMI-STABLE and per-stage (which lanes THIS stage
+    // licenses), so they are never part of the stable prefix and this signal does
+    // not embed them elsewhere. Emit the gated block here too, or a resumed codex
+    // stage loses foreground-only fan-out, the concurrency cap, and "verification
+    // stays with you" for its licensed lanes.
     if stage.implementers.includes_codex() {
         signal.push_str(&format_codex_implementers_section(
             &stage.implementers,

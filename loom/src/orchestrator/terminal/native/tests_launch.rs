@@ -115,17 +115,15 @@ fn an_enabled_split_writes_the_stable_prefix_verbatim() {
         crate::orchestrator::signals::stable_prefix_for(stage.stage_type),
         "the prefix file must be the stable prefix byte for byte, never an approximation of it"
     );
-    // The Rule 5 subagent-safety preamble has to survive the move into a
-    // system-prompt file: a prefix that lost it would silently drop every
-    // subagent restriction the stage relies on to avoid lost work.
+    // This stage retired the restated CLAUDE.md doctrine (the Rule 5
+    // subagent-restrictions fence included) from every stable prefix in favor
+    // of a pointer to the binding rules file, which is already in context in
+    // the same session. The prefix file must carry that pointer, not the
+    // doctrine it replaced.
     assert!(
-        written.contains("**Subagent Restrictions (CRITICAL - PREVENTS LOST WORK):**"),
-        "the prefix file must carry the Rule 5 preamble"
+        written.contains("Binding rules: ~/.claude/CLAUDE.md. This signal overrides none of them."),
+        "the prefix file must carry the doctrine pointer"
     );
-    assert!(written.contains("- ⛔ **NEVER run `git commit`** - only the main agent commits"));
-    assert!(written.contains(
-        "- ⛔ **NEVER run `loom stage complete`** - only the main agent completes stages"
-    ));
 }
 
 #[test]

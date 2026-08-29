@@ -7,7 +7,13 @@ use anyhow::{bail, Result};
 
 use super::types::SignalContent;
 
-/// Expected section headers in a standard signal file
+/// Expected `## ` section headers across every signal kind written to
+/// `signals/<session-id>.md` (standard/knowledge/integration-verify/distill
+/// stage signals, recovery signals, merge and merge-conflict signals). Kept
+/// exhaustive rather than just the common path: this list only suppresses the
+/// "unexpected section" warning below (see the `Context`/`Handoff`/prefix
+/// exemptions there for sections not listed here), so a missing entry is
+/// silent false-positive noise on every signal of that kind, not a failure.
 const EXPECTED_SECTIONS: &[&str] = &[
     "Worktree Context",
     "Target",
@@ -15,6 +21,28 @@ const EXPECTED_SECTIONS: &[&str] = &[
     "Acceptance Criteria",
     "Files to Modify",
     "Immediate Tasks",
+    "Execution Rules",
+    "Your Task",
+    "Important",
+    "Inherited Responsibilities",
+    "Situation",
+    "Stage Context",
+    "Conflicting Files",
+    "Files to Explore",
+    "Knowledge Management",
+    "Stage Memory",
+    "Ultracode Mode",
+    "Worktree Isolation",
+    "Dependency Outputs",
+    "COMPACTION IMMINENT",
+    "⚠️ CONTEXT BUDGET WARNING",
+    "Recommended Skills",
+    "Codex Implementers",
+    "Sandbox Status",
+    "Sandbox Restrictions",
+    "Subagent Response Budget",
+    "Knowledge Brief",
+    "Section Title",
 ];
 
 /// Required sections that must be present

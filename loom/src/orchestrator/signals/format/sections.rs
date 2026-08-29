@@ -30,111 +30,38 @@ pub(super) fn format_semi_stable_section(
         content.push_str(&format_knowledge_brief(pack, stage_id, STAGE_QUERY_INPUTS));
     }
 
-    // Stage-type-aware reminder boxes
-    match stage_type {
-        StageType::Knowledge | StageType::IntegrationVerify | StageType::KnowledgeDistill => {
-            // Knowledge, integration-verify, and knowledge-distill stages: CAN use both memory and knowledge
-            content.push_str("```text\n");
-            content.push_str(
-                "┌────────────────────────────────────────────────────────────────────┐\n",
-            );
-            content.push_str(
-                "│  📝 KNOWLEDGE UPDATES REQUIRED                                     │\n",
-            );
-            content.push_str(
-                "│                                                                    │\n",
-            );
-            content.push_str(
-                "│  As you work, UPDATE doc/loom/knowledge/:                          │\n",
-            );
-            content.push_str(
-                "│  - Entry points: Key files you discover                            │\n",
-            );
-            content.push_str(
-                "│  - Patterns: Architectural patterns you find                       │\n",
-            );
-            content.push_str(
-                "│  - Conventions: Coding conventions you learn                       │\n",
-            );
-            content.push_str(
-                "│  - Mistakes: Errors you make and how to avoid them                 │\n",
-            );
-            content.push_str(
-                "│                                                                    │\n",
-            );
-            content.push_str(
-                "│  Command: loom knowledge update <file> \"content\"                   │\n",
-            );
-            content.push_str(
-                "└────────────────────────────────────────────────────────────────────┘\n",
-            );
-            content.push_str("```\n\n");
-        }
-        StageType::Standard => {
-            // Standard implementation stages: MEMORY ONLY, NO KNOWLEDGE UPDATES
-            content.push_str("```text\n");
-            content.push_str(
-                "┌────────────────────────────────────────────────────────────────────┐\n",
-            );
-            content.push_str(
-                "│  📝 SESSION MEMORY REQUIRED — RECORD AS YOU GO                    │\n",
-            );
-            content.push_str(
-                "│                                                                    │\n",
-            );
-            content.push_str(
-                "│  Record IMMEDIATELY when these happen (not at stage end):          │\n",
-            );
-            content.push_str(
-                "│  Write each as ADVICE to your future self, not just a log entry.  │\n",
-            );
-            content.push_str(
-                "│  - MISTAKE: tried X, failed → loom memory note \"mistake: ...\"     │\n",
-            );
-            content.push_str(
-                "│  - DECISION: chose X over Y → loom memory decision \"...\"          │\n",
-            );
-            content.push_str(
-                "│  - SURPRISE: unexpected behavior → loom memory note \"found: ...\"  │\n",
-            );
-            content.push_str(
-                "│  - GOTCHA: trap for future agents → loom memory note \"gotcha: ...\"│\n",
-            );
-            content.push_str(
-                "│                                                                    │\n",
-            );
-            content.push_str(
-                "│  Do NOT record: procedural actions, obvious outcomes, task recaps  │\n",
-            );
-            content.push_str(
-                "│                                                                    │\n",
-            );
-            content.push_str(
-                "│  ⚠️  NEVER use 'loom knowledge' in implementation stages           │\n",
-            );
-            content.push_str(
-                "│      Memory gets curated into knowledge by knowledge-distill       │\n",
-            );
-            content.push_str(
-                "│                                                                    │\n",
-            );
-            content.push_str(
-                "│  ⛔  NEVER use Claude Code's auto-memory system                   │\n",
-            );
-            content.push_str(
-                "│      NEVER Write/Edit files under ~/.claude/projects/*/memory/    │\n",
-            );
-            content.push_str(
-                "│      Use ONLY 'loom memory' commands — auto-memory is INVISIBLE   │\n",
-            );
-            content.push_str(
-                "│      to loom and other stages. Anything saved there is LOST.      │\n",
-            );
-            content.push_str(
-                "└────────────────────────────────────────────────────────────────────┘\n",
-            );
-            content.push_str("```\n\n");
-        }
+    // Stage-type-aware reminder box. Knowledge/integration-verify/distill stages
+    // get the knowledge-updates box here; standard stages get their compact
+    // memory reminder folded into "## Stage Memory" below instead (kept in one
+    // place rather than two - CLAUDE.md already has this content in context).
+    if matches!(
+        stage_type,
+        StageType::Knowledge | StageType::IntegrationVerify | StageType::KnowledgeDistill
+    ) {
+        content.push_str("```text\n");
+        content
+            .push_str("┌────────────────────────────────────────────────────────────────────┐\n");
+        content
+            .push_str("│  📝 KNOWLEDGE UPDATES REQUIRED                                     │\n");
+        content
+            .push_str("│                                                                    │\n");
+        content
+            .push_str("│  As you work, UPDATE doc/loom/knowledge/:                          │\n");
+        content
+            .push_str("│  - Entry points: Key files you discover                            │\n");
+        content
+            .push_str("│  - Patterns: Architectural patterns you find                       │\n");
+        content
+            .push_str("│  - Conventions: Coding conventions you learn                       │\n");
+        content
+            .push_str("│  - Mistakes: Errors you make and how to avoid them                 │\n");
+        content
+            .push_str("│                                                                    │\n");
+        content
+            .push_str("│  Command: loom knowledge update <file> \"content\"                   │\n");
+        content
+            .push_str("└────────────────────────────────────────────────────────────────────┘\n");
+        content.push_str("```\n\n");
     }
 
     // Knowledge Management section with stage-type-aware content
@@ -289,63 +216,33 @@ pub(super) fn format_semi_stable_section(
             }
         }
         StageType::Standard => {
-            // Standard implementation stages: Show MEMORY guidance instead
+            // Standard implementation stages: compact memory reminder. Kept
+            // short deliberately - CLAUDE.md's own memory rules are already in
+            // context every session, so this only needs to point at the
+            // commands and the two hard prohibitions, not re-teach the rule.
             content.push_str("## Stage Memory\n\n");
             content.push_str(
-                "**Record insights AS THEY HAPPEN** — not at stage end. Curated later by the knowledge-distill stage.\n\n",
+                "**SESSION MEMORY REQUIRED — RECORD AS YOU GO.** Record immediately when \
+                 these happen, not at stage end - each entry is advice to your future self:\n\n",
             );
-            content.push_str("**Record IMMEDIATELY when:**\n\n");
-            content.push_str("- You make a mistake or hit an error and fix it\n");
-            content.push_str("- The user corrects your approach or gives feedback\n");
-            content.push_str("- You choose between two or more approaches\n");
-            content.push_str("- You discover something surprising or non-obvious about the code\n");
-            content.push_str("- You find a gotcha that would trap future agents\n\n");
-            content.push_str("**Do NOT record:** procedural actions (\"spawned agents\", \"read file\"), obvious outcomes (\"tests passed\"), task restatements\n\n");
-
-            // Show memory commands table for Standard stages
-            content.push_str("**Commands:**\n\n");
-            content.push_str("| Trigger | Command | Example |\n");
-            content.push_str("|---------|---------|--------|\n");
-            content.push_str("| Mistake | `loom memory note \"mistake: ...\"` | `\"mistake: used wrong module path, fs::read vs std::fs::read\"` |\n");
-            content.push_str("| Decision | `loom memory decision \"...\" --context \"...\"` | `\"chose serde_json\" --context \"need streaming, serde_yaml too slow\"` |\n");
-            content.push_str("| Discovery | `loom memory note \"found: ...\"` | `\"found: config is loaded lazily in main.rs:45\"` |\n");
-            content.push_str("| Gotcha | `loom memory note \"gotcha: ...\"` | `\"gotcha: stage IDs must be lowercase despite docs showing mixed\"` |\n");
-            content.push_str("| File change | `loom memory change \"...\"` | `\"src/lib.rs - added new module export for feature X\"` |\n");
-            content.push_str("| Question | `loom memory question \"...\"` | `\"should we deprecate the old API or keep both?\"` |\n");
-            content.push_str("| List | `loom memory list` | Review your entries |\n\n");
+            content.push_str("| Trigger | Command |\n");
+            content.push_str("|---------|---------|\n");
+            content.push_str("| Mistake | `loom memory note \"mistake: ...\"` |\n");
+            content.push_str("| Decision | `loom memory decision \"...\" --context \"...\"` |\n");
+            content.push_str("| Surprise | `loom memory note \"found: ...\"` |\n");
+            content.push_str("| Gotcha | `loom memory note \"gotcha: ...\"` |\n");
+            content.push_str("| File change | `loom memory change \"...\"` |\n");
+            content.push_str("| Question | `loom memory question \"...\"` |\n\n");
+            content.push_str(
+                "⚠️ NEVER use 'loom knowledge' in implementation stages — curated into \
+                 knowledge by knowledge-distill.\n",
+            );
+            content.push_str(
+                "⛔ NEVER use Claude Code's auto-memory system — ONLY 'loom memory' \
+                 commands; anything else is invisible to loom.\n\n",
+            );
         }
     }
-
-    // Delegation decision framework (flat subagents vs hierarchy vs teams)
-    content.push_str("## Delegation Choices\n\n");
-    content
-        .push_str("You have agent teams available (CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1).\n\n");
-    content.push_str("**When to use SUBAGENTS (Task tool, flat):**\n");
-    content.push_str("- ~6 or fewer tasks with clear, concrete file assignments\n");
-    content.push_str("- No inter-agent communication needed\n");
-    content.push_str("- Fire-and-forget parallel work\n\n");
-    content
-        .push_str("**When to use a SUBAGENT HIERARCHY (coordinators → workers, 2-LEVEL CAP):**\n");
-    content.push_str("- >~6 independent worker tasks, or results would bloat your context\n");
-    content.push_str("- Work clusters into DISJOINT file territories\n");
-    content.push_str("- Each coordinator subagent owns one territory, spawns sonnet workers BY TYPE, runs at most ONE narrowly-scoped check, returns a compact summary\n");
-    content.push_str("- Workers NEVER spawn subagents\n\n");
-    content.push_str("**When to use a `loom-advisor` (fable):**\n");
-    content.push_str("- On a second failure on the same task, spawn one instead of a blind retry — narrow scope, full detail supplied by the orchestrator, advice returned\n");
-    content.push_str("- Read-only: it diagnoses and recommends a next step; it never writes\n\n");
-    content.push_str("**When to use AGENT TEAMS (~7x cost):**\n");
-    content.push_str("- Tasks require discussion or iterative discovery\n");
-    content.push_str("- Work scope may expand during execution\n");
-    content.push_str("- Multiple review dimensions (security, quality, tests)\n");
-    content.push_str("- Exploration across many code areas\n\n");
-    content.push_str("**If you create a team:**\n");
-    content.push_str("- Team name: loom-{stage_id} (using your stage ID)\n");
-    content.push_str("- YOU are the only agent that may run git commit — and only at the END of the stage, after every teammate has returned and verification is green\n");
-    content.push_str("- YOU are the only agent that may run loom stage complete\n");
-    content.push_str("- Record teammate findings: loom memory note \"Teammate found: ...\"\n");
-    content.push_str("- Keep your own context for coordination (aim for <40% utilization)\n");
-    content.push_str("- Delegate implementation, do not implement yourself\n");
-    content.push_str("- Shut down all teammates before completing the stage\n\n");
 
     // Codex implementer doctrine (semi-stable - gated on codex being one of the
     // stage's licensed lanes, whether or not it is the preferred one)
@@ -360,8 +257,9 @@ pub(super) fn format_semi_stable_section(
     // The orchestrator measures the stage against this budget from the outside, so
     // the session has to be told the same number or it is held to a deadline it
     // cannot see. The general "how do I check on a subagent" doctrine (BLOCK-C) is
-    // unconditional and already in this stage's stable prefix; this block only
-    // layers the stage-specific number on top.
+    // NOT restated anywhere in the signal - it reaches the agent through
+    // `~/.claude/CLAUDE.md` Rule 6 in the same session; this block only layers the
+    // stage-specific number on top of that.
     if let Some(timeout_secs) = embedded_context.subagent_timeout_secs {
         content.push_str(&super::helpers::format_subagent_timeout_section(
             timeout_secs,
