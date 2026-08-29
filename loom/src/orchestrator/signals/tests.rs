@@ -126,7 +126,7 @@ fn test_signal_directs_agent_to_load_language_skill_from_files() {
         "signal should carry a load-now directive:\n{content}"
     );
     assert!(
-        content.contains("Skill(skill=\"loom-rust\")"),
+        content.contains("Skill(skill=\"loom-skills\", args=\"loom-rust\")"),
         "signal should instruct invoking the loom-rust Skill:\n{content}"
     );
 }

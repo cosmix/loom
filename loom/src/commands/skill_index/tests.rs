@@ -115,3 +115,46 @@ fn execute_propagates_index_write_failure() {
 
     assert!(error.to_string().contains("Failed to write"));
 }
+
+#[test]
+fn catalog_only_skill_is_indexed() {
+    let home = tempfile::tempdir().unwrap();
+    let skills_dir = home.path().join(".claude/skills");
+    let catalog_dir = home.path().join(".claude/loom-skill-catalog");
+    let skill_dir = catalog_dir.join("catalog-only");
+    std::fs::create_dir_all(&skill_dir).unwrap();
+    std::fs::write(
+        skill_dir.join("SKILL.md"),
+        "---\ntriggers:\n  - catalog\n---\n",
+    )
+    .unwrap();
+
+    let (index, skill_count) = build_index(&[&skills_dir, &catalog_dir]).unwrap();
+
+    assert_eq!(skill_count, 1);
+    assert_eq!(
+        index.get("catalog"),
+        Some(&vec!["catalog-only".to_string()])
+    );
+}
+
+#[test]
+fn duplicate_skill_names_across_roots_are_not_duplicated() {
+    let home = tempfile::tempdir().unwrap();
+    let skills_dir = home.path().join(".claude/skills");
+    let catalog_dir = home.path().join(".claude/loom-skill-catalog");
+    for root in [&skills_dir, &catalog_dir] {
+        let skill_dir = root.join("shared");
+        std::fs::create_dir_all(&skill_dir).unwrap();
+        std::fs::write(
+            skill_dir.join("SKILL.md"),
+            "---\ntriggers:\n  - shared\n---\n",
+        )
+        .unwrap();
+    }
+
+    let (index, skill_count) = build_index(&[&skills_dir, &catalog_dir]).unwrap();
+
+    assert_eq!(skill_count, 1);
+    assert_eq!(index.get("shared"), Some(&vec!["shared".to_string()]));
+}

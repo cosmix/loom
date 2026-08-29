@@ -46,15 +46,20 @@ pub fn execute() -> Result<()> {
 
 fn execute_in_home(home: &Path) -> Result<()> {
     let skills_dir = home.join(".claude/skills");
+    let catalog_dir = crate::skills::catalog_dir_for(&skills_dir);
     let output_dir = home.join(".claude/hooks/loom");
     let output_file = output_dir.join("skill-keywords.json");
 
-    if !skills_dir.is_dir() {
-        println!("Skills directory not found: {}", skills_dir.display());
+    if !skills_dir.is_dir() && !catalog_dir.is_dir() {
+        println!(
+            "Skills directory not found: {} or {}",
+            skills_dir.display(),
+            catalog_dir.display()
+        );
         return Ok(());
     }
 
-    let (index, skill_count) = build_index(&skills_dir)?;
+    let (index, skill_count) = build_index(&[&skills_dir, &catalog_dir])?;
 
     fs::create_dir_all(&output_dir)
         .with_context(|| format!("Failed to create {}", output_dir.display()))?;
@@ -70,37 +75,42 @@ fn execute_in_home(home: &Path) -> Result<()> {
     Ok(())
 }
 
-fn build_index(skills_dir: &Path) -> Result<(BTreeMap<String, Vec<String>>, usize)> {
+fn build_index(skills_dirs: &[&Path]) -> Result<(BTreeMap<String, Vec<String>>, usize)> {
     let stopwords: HashSet<&str> = STOPWORDS.iter().copied().collect();
     let mut index: BTreeMap<String, Vec<String>> = BTreeMap::new();
-    let mut skill_count: usize = 0;
-    let entries = fs::read_dir(skills_dir)
-        .with_context(|| format!("Failed to read {}", skills_dir.display()))?;
+    let mut skill_names = HashSet::new();
 
-    for entry in entries.flatten() {
-        let skill_dir = entry.path();
-        if !skill_dir.is_dir() {
+    for skills_dir in skills_dirs {
+        if !skills_dir.is_dir() {
             continue;
         }
-
-        let skill_file = skill_dir.join("SKILL.md");
-        if !skill_file.exists() {
-            continue;
-        }
-
-        let skill_name = entry.file_name().to_string_lossy().to_string();
-
-        match parse_skill_triggers(&skill_file) {
-            Ok(triggers) => {
-                skill_count += 1;
-                add_triggers(&mut index, &stopwords, &skill_name, triggers);
+        let entries = fs::read_dir(skills_dir)
+            .with_context(|| format!("Failed to read {}", skills_dir.display()))?;
+        for entry in entries.flatten() {
+            let skill_dir = entry.path();
+            if !skill_dir.is_dir() {
+                continue;
             }
-            Err(e) => {
-                eprintln!("Warning: Failed to parse {}: {}", skill_file.display(), e);
+
+            let skill_file = skill_dir.join("SKILL.md");
+            if !skill_file.exists() {
+                continue;
+            }
+
+            let skill_name = entry.file_name().to_string_lossy().to_string();
+
+            match parse_skill_triggers(&skill_file) {
+                Ok(triggers) => {
+                    skill_names.insert(skill_name.clone());
+                    add_triggers(&mut index, &stopwords, &skill_name, triggers);
+                }
+                Err(e) => {
+                    eprintln!("Warning: Failed to parse {}: {}", skill_file.display(), e);
+                }
             }
         }
     }
-    Ok((index, skill_count))
+    Ok((index, skill_names.len()))
 }
 
 fn add_triggers(

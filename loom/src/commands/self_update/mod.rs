@@ -287,7 +287,7 @@ fn update_config_files(release: &Release) -> Result<()> {
         println!("  {} agents/ updated", "✓".green());
     }
 
-    // Update skills
+    // Update skills, then re-apply the layout recorded in ~/.claude/loom-install.toml
     if let Some(asset) = release.assets.iter().find(|a| a.name == "skills.zip") {
         println!("  {} Downloading skills...", "→".blue());
         let skills_dir = claude_dir.join("skills");
@@ -298,7 +298,7 @@ fn update_config_files(release: &Release) -> Result<()> {
             "skills.zip",
             &checksums,
         )?;
-        println!("  {} skills/ updated", "✓".green());
+        crate::skills::apply_install_layout(&claude_dir)?;
     }
 
     Ok(())

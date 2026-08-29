@@ -160,8 +160,12 @@ pub const LOOM_PERMISSIONS: &[&str] = &[
     // Read access to instruction files
     "Read(.claude/CLAUDE.md)",
     "Read(~/.claude/CLAUDE.md)",
-    // Read access to loom hooks (Claude Code needs to execute these)
+    // Read access to loom hooks and catalogued skills loaded on demand
     "Read(~/.claude/hooks/loom/**)",
+    "Read(~/.claude/loom-skill-catalog/**)",
+    // Covers the loom-skills loader's fallback read on a `--skills all`
+    // install (no catalog directory) and the installed skills themselves.
+    "Read(~/.claude/skills/**)",
     // Loom CLI commands (use :* for prefix matching)
     "Bash(loom *)",
     // Loom's own codex forwarding wrapper. codex-forward-guard.sh independently
@@ -178,8 +182,12 @@ pub const LOOM_PERMISSIONS_WORKTREE: &[&str] = &[
     // Read access to instruction files
     "Read(.claude/CLAUDE.md)",
     "Read(~/.claude/CLAUDE.md)",
-    // Read access to loom hooks (Claude Code needs to execute these)
+    // Read access to loom hooks and catalogued skills loaded on demand
     "Read(~/.claude/hooks/loom/**)",
+    "Read(~/.claude/loom-skill-catalog/**)",
+    // Covers the loom-skills loader's fallback read on a `--skills all`
+    // install (no catalog directory) and the installed skills themselves.
+    "Read(~/.claude/skills/**)",
     // Loom CLI commands (use :* for prefix matching)
     "Bash(loom *)",
     // Loom's own codex forwarding wrapper. codex-forward-guard.sh independently

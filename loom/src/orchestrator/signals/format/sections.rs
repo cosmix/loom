@@ -2,7 +2,7 @@ use crate::handoff::git_handoff::{format_git_history_markdown, GitHistory};
 use crate::models::session::Session;
 use crate::models::stage::{Stage, StageType};
 use crate::models::worktree::Worktree;
-use crate::skills::SkillMatch;
+use crate::skills::{skill_invocation, SkillMatch};
 
 use super::super::retrieval::STAGE_QUERY_INPUTS;
 use super::super::types::{DependencyStatus, EmbeddedContext};
@@ -711,8 +711,11 @@ pub fn format_skill_recommendations(skills: &[SkillMatch]) -> String {
              stage will edit, invoke the Skill tool for each so your code follows the \
              project's language conventions:\n\n",
         );
+        // Claude Code indexes only the core skills, so a catalogued one has no
+        // `Skill(skill="loom-rust")` of its own. `skill_invocation` renders the
+        // loom-skills loader call for those, and the plain call for the rest.
         for skill in &detected {
-            content.push_str(&format!("- `Skill(skill=\"{}\")`\n", skill.name));
+            content.push_str(&format!("- `{}`\n", skill_invocation(&skill.name)));
         }
         content.push('\n');
     }
@@ -734,12 +737,9 @@ pub fn format_skill_recommendations(skills: &[SkillMatch]) -> String {
             };
             // Escape pipe characters in description and name
             let desc = desc.replace('|', "\\|");
+            let invoke = skill_invocation(&skill.name);
             let name = skill.name.replace('|', "\\|");
-
-            content.push_str(&format!(
-                "| {} | {} | `Skill(skill=\"{}\")` |\n",
-                name, desc, name
-            ));
+            content.push_str(&format!("| {} | {} | `{}` |\n", name, desc, invoke));
         }
         content.push('\n');
 
@@ -786,7 +786,7 @@ mod skill_recommendation_tests {
         // Directive framing + an explicit Skill tool invocation the agent can run.
         assert!(out.contains("Load these now"), "missing directive: {out}");
         assert!(
-            out.contains("Skill(skill=\"loom-rust\")"),
+            out.contains("Skill(skill=\"loom-skills\", args=\"loom-rust\")"),
             "missing Skill tool call: {out}"
         );
     }
@@ -803,7 +803,7 @@ mod skill_recommendation_tests {
             "missing advisory framing: {out}"
         );
         assert!(
-            out.contains("Skill(skill=\"loom-auth\")"),
+            out.contains("Skill(skill=\"loom-skills\", args=\"loom-auth\")"),
             "missing invoke column: {out}"
         );
         assert!(out.contains("jwt"), "missing matched trigger: {out}");
