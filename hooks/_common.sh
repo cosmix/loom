@@ -1165,6 +1165,60 @@ loom_is_subagent() {
     return 0
 }
 
+# loom_deny_enabled - Return 0 when the operator has opted in to the deny
+# branches of the read/poll discipline hooks, non-zero otherwise (the
+# default).
+#
+# The switch lives in the loom work directory's own config, not in the repo
+# or a plan: a `true` value under a `[hooks]` table in
+# "$LOOM_WORK_DIR/config.toml":
+#
+#   [hooks]
+#   deny_enabled = true
+#
+# LOOM_WORK_DIR being unset, the file being absent or unreadable, no
+# `[hooks]` table, the key sitting outside that table, a value other than an
+# exact `true`, or any doubt while parsing all mean DISABLED - this only ever
+# answers "enabled" on an unambiguous match, because a false "enabled" here
+# starts hard-blocking real tool calls in every Claude Code session on the
+# machine. The answer is computed once and cached in
+# _LOOM_DENY_ENABLED_CACHE for the life of this process; later calls skip the
+# file read entirely.
+loom_deny_enabled() {
+    if [[ -n "${_LOOM_DENY_ENABLED_CACHE:-}" ]]; then
+        [[ "$_LOOM_DENY_ENABLED_CACHE" == "1" ]]
+        return
+    fi
+
+    _LOOM_DENY_ENABLED_CACHE=0
+
+    local work_dir="${LOOM_WORK_DIR:-}"
+    if [[ -n "$work_dir" ]]; then
+        local config="${work_dir}/config.toml"
+        if [[ -r "$config" ]]; then
+            local found
+            found=$(awk '
+                {
+                    t = $0
+                    sub(/^[[:space:]]+/, "", t)
+                    sub(/[[:space:]]+$/, "", t)
+                }
+                t == "[hooks]" { in_hooks = 1; next }
+                t ~ /^\[/ { in_hooks = 0; next }
+                in_hooks && t ~ /^deny_enabled[[:space:]]*=[[:space:]]*true$/ {
+                    print "1"
+                    exit
+                }
+            ' "$config" 2>/dev/null || true)
+            if [[ "$found" == "1" ]]; then
+                _LOOM_DENY_ENABLED_CACHE=1
+            fi
+        fi
+    fi
+
+    [[ "$_LOOM_DENY_ENABLED_CACHE" == "1" ]]
+}
+
 # loom_current_worktree - Echo the loom worktree root this session is operating
 # in, or return non-zero if this is NOT a loom worktree session.
 #
