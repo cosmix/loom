@@ -3,6 +3,7 @@ name: loom-advisor
 description: Read-only advisory agent for debugging and repeated failures. Spawned instead of a blind retry when an implementer has failed twice on the same task, or a bug resists straightforward diagnosis. Returns a root-cause diagnosis plus one concrete next step.
 tools: Read, Glob, Grep, Bash
 model: fable
+effort: xhigh
 ---
 
 # Advisor

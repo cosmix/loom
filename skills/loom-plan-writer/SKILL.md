@@ -31,7 +31,7 @@ triggers:
 
 A loom plan is a DAG of stages that loom runs in isolated git worktrees. It maximizes throughput with two levels of parallelism — subagents within a stage (FIRST priority) and concurrent worktree stages (SECOND) — and it is only as good as its CLAIMS about the code are TRUE and its verification actually PROVES them.
 
-This skill assumes CLAUDE.md is in context (it always is under loom). Where CLAUDE.md already governs something — subagent preambles (Rule 5), hierarchies (Rule 6c), memory routing (Rule 12/18), branch discipline — this skill points at it rather than restating it.
+This skill assumes CLAUDE.md is in context (it always is under loom). Where CLAUDE.md already governs something — subagent preambles (Rule 5), hierarchies (Rule 6), memory routing (Rule 12/18), branch discipline — this skill points at it rather than restating it.
 
 **Two rules dominate everything below:**
 
@@ -233,7 +233,7 @@ graph LR
 
 ### knowledge-bootstrap (first)
 
-Captures codebase understanding before implementation. `stage_type: knowledge`, model opus (`reasoning_effort: xhigh`) — may write `doc/loom/knowledge/**`. It should: run `loom knowledge sync` to rebuild the derived retrieval artifacts and perform any one-time flat-to-hierarchical upgrade; the knowledge directory scaffold and source graph are created automatically at `loom init` and at run startup, so this stage exists to write CONTENT, never to create the directory or seed it from static analysis; then spawn parallel `Explore` subagents for entry-points, patterns, conventions, each returning `loom knowledge update <file> "..."` commands (tier routing below). Review existing `mistakes.md` before completing. **Use `loom knowledge` CLI, never Write/Edit on knowledge files.**
+Captures codebase understanding before implementation. `stage_type: knowledge`, model opus (`reasoning_effort: high`) — may write `doc/loom/knowledge/**`. It should: run `loom knowledge sync` to rebuild the derived retrieval artifacts and perform any one-time flat-to-hierarchical upgrade; the knowledge directory scaffold and source graph are created automatically at `loom init` and at run startup, so this stage exists to write CONTENT, never to create the directory or seed it from static analysis; then spawn parallel `Explore` subagents for entry-points, patterns, conventions, each returning `loom knowledge update <file> "..."` commands (tier routing below). Review existing `mistakes.md` before completing. **Use `loom knowledge` CLI, never Write/Edit on knowledge files.**
 
 **Skip ONLY if** `doc/loom/knowledge/` is already populated with real content (the tier-1 files carry `##` sections describing this codebase, not just the scaffold) AND `loom knowledge sync` runs clean.
 
@@ -245,7 +245,7 @@ Captures codebase understanding before implementation. `stage_type: knowledge`, 
 
 > ⚠️ **TESTS PASSING ≠ FEATURE WORKING.** We have had MANY cases where all tests pass, code compiles, but the feature is NEVER WIRED UP. This stage is the gate that catches it.
 
-`stage_type: integration-verify`, model opus (`reasoning_effort: xhigh`) — the same universal default as every other stage (Section 4). It runs AFTER all feature stages and must:
+`stage_type: integration-verify`, model opus (`reasoning_effort: high`) — the same universal default as every other stage (Section 4). It runs AFTER all feature stages and must:
 
 - **Build & test** with ZERO tolerance — fix ALL warnings/lints/failures, nothing is "pre-existing."
 - **Code review** — spawn parallel `loom-code-reviewer` subagents (security via `/loom-security-audit`; architecture; test coverage); fix all findings with an engineer agent (reviewer is read-only). (The 6-dimension mini adversarial review is already injected at the signal layer — don't restate it. To require specific dimensions, use plan-level `code_review` config, not prose.)
@@ -254,7 +254,7 @@ Captures codebase understanding before implementation. `stage_type: knowledge`, 
 
 ### knowledge-distill (last)
 
-`stage_type: knowledge-distill`, model sonnet (`reasoning_effort: high`) — the ONE bookend that is NOT opus: distillation is a linear read-synthesize-write pass, run **single-agent with NO subagents**. Curates all stage memories into permanent knowledge and updates user-facing docs. Reads the plan, `loom memory show --all`, and current knowledge; FIRST applies every `stale-knowledge:` memory in place with `loom knowledge replace-section <file> "<heading>" "<body>"` (never `update`, which appends the fix below the stale text), then synthesizes mistakes as actionable prevention rules, patterns, decisions, conventions via `loom knowledge update`, following the same tier-routing rule as knowledge-bootstrap (above); `INDEX.md` regenerates on each knowledge write, so then run `loom review` to prune stale entries; updates README/CONTRIBUTING for changed behavior (only relevant sections). **Context discipline (200k window):** the memories are compact summaries — lean on them and keep code spot-reads narrow; do NOT fan out to subagents. **Skip ONLY if** the plan produces no new knowledge worth preserving (rare).
+`stage_type: knowledge-distill`, model sonnet (`reasoning_effort: high`) — the ONE bookend that is NOT opus: distillation is a linear read-synthesize-write pass, run **single-agent with NO subagents**. Curates all stage memories into permanent knowledge and updates user-facing docs. Reads the plan, `loom memory show --all`, and current knowledge; FIRST applies every `stale-knowledge:` memory in place with `loom knowledge replace-section <file> "<heading>" "<body>"` (never `update`, which appends the fix below the stale text), then synthesizes mistakes as actionable prevention rules, patterns, decisions, conventions via `loom knowledge update`, following the same tier-routing rule as knowledge-bootstrap (above); `INDEX.md` regenerates on each knowledge write, so then run `loom review` to prune stale entries; updates README/CONTRIBUTING for changed behavior (only relevant sections). Add `loom knowledge check` to this stage's acceptance — it validates the knowledge tree's structure and is acceptance-safe because it never opens the context store. **Context discipline (200k window):** the memories are compact summaries — lean on them and keep code spot-reads narrow; do NOT fan out to subagents. **Skip ONLY if** the plan produces no new knowledge worth preserving (rare).
 
 Full YAML for all three bookends is in the canonical template (Section 10).
 
@@ -267,7 +267,7 @@ Full YAML for all three bookends is in the canonical template (Section 10).
 
 ## 4. Model Selection Per Stage (REQUIRED)
 
-> ⚠️ **EVERY stage MUST set `model: "opus"` and `reasoning_effort: "xhigh"` — EXCEPT knowledge-distill, which sets `model: "sonnet"` and `reasoning_effort: "high"` and spawns NO subagents.** There is no per-stage subagent-model choice — every other stage's main agent is an opus orchestrator. Model choice does not disappear; it MOVES DOWN to the subagents each stage spawns.
+> ⚠️ **EVERY stage MUST set `model: "opus"` — EXCEPT knowledge-distill, which sets `model: "sonnet"`.** `reasoning_effort: "high"` is the documented default for every stage, including knowledge-distill. Reserve `reasoning_effort: "xhigh"` for a stage whose own DESIGN is the hard part — novel architecture, a genuinely difficult algorithm — because an orchestrator's job is decomposition and briefs, not deep solo reasoning. There is no per-stage subagent-model choice — every other stage's main agent is an opus orchestrator. Model choice does not disappear; it MOVES DOWN to the subagents each stage spawns.
 
 BLOCK-B — model allocation playbook:
 
@@ -398,29 +398,29 @@ If the user picks Codex:
 
 Optional, seconds, default **300**. It is how long a stage may go without a heartbeat before the
 orchestrator flags it, and the same number is written into the stage's signal so the session knows
-the cadence it is being measured against — the value to pass as `loom subagents watch --timeout
-<secs>`.
+the idle budget it is being measured against. It is NOT the `--timeout` handed to `loom subagents
+watch`: that stays long (3600) so one background watch covers the whole wait, while this budget is
+only the idle threshold death is judged against.
 
 Set it from how long the work legitimately goes quiet, not from how long you hope it takes. A wide
 mechanical sweep, a large test run, or a FOREGROUND codex run is one long tool call that emits
 nothing while it works — codex stages in particular should raise it, since a foreground run posts no
 intermediate output at all. A stage of small edits should leave it alone.
 
-Checking on subagents is CLAUDE.md.template Rule 6 ("Checking on subagents: use `loom subagents`,
-never a hand-rolled poll loop") — that block is canonical; this is the short version. `loom subagents
-watch --timeout <secs>` blocks until every subagent settles or the timeout fires, exits 0 vs. 2, and
-states which branch fired — that alone satisfies the bounded-check rule. Three cases, keyed on
-per-subagent state (`done`, `tool-wait`, `generating`, `unknown`):
+**Batch independent work.** Independent reads, greps and commands go in ONE message; never issue a
+lone Read when the next two files are already known.
 
-1. **`done` but silent** — the subagent's turn ended and its report is on disk. Harvest it and
-   proceed immediately; a missing notification is not a missing result.
-2. **`tool-wait` / `generating`** — genuinely alive. Re-arm `watch` and keep waiting; slow is not
-   dead. `subagent_timeout_secs` only widens the cadence you re-arm against, never a deadline on the
-   subagent's own work.
-3. **Idle past the budget with no transcript growth** — the only case with positive evidence of
-   death. `TaskStop` it, confirm it stopped, then RE-DELEGATE the remainder to a fresh subagent.
-   Never absorb the work into yourself — the orchestrator decomposes, delegates, verifies, and
-   commits; it does not implement (hard stop 6).
+Checking on subagents is CLAUDE.md.template Rule 6 ("Checking on subagents: use `loom subagents`,
+never a hand-rolled poll loop"), and that block is canonical: it carries the three cases keyed on
+per-subagent state (`done`, `tool-wait`, `generating`, `unknown`) and what to do in each. Read it
+there instead of restating it in a stage description. What bears on the plan: **subagents are
+ONE-SHOT** — brief completely, run ONE `loom subagents watch` in the background with a long
+`--timeout` (3600), harvest with `loom subagents harvest`, and let the subagent end. That one
+blocking watch settles or times out, exits 0 vs. 2, and states which branch fired, which alone
+satisfies the bounded-check rule; no stage needs a poll loop written into it.
+
+**Never message a finished subagent.** Each such message re-writes its entire conversation at the
+cache-write rate. A follow-up is a FRESH spawn whose brief quotes the previous report.
 
 Elapsed time alone is still never evidence of death.
 
@@ -449,7 +449,7 @@ Consequences for how you write a plan:
 # by the opus orchestrator; small enough to be ONE subagent's task
 - id: add-retry-logic
   model: "opus"
-  reasoning_effort: "xhigh"
+  reasoning_effort: "high"
   description: |
     Add retry logic to HttpClient in src/http/client.rs.
     1. Create src/http/retry.rs with a RetryPolicy struct (max_retries: u32 = 3,
@@ -466,6 +466,8 @@ Consequences for how you write a plan:
 
 **Keep each subagent's assignment small — decompose, don't up-model for headroom.** A subagent that takes on too much hits its own context budget and compacts — an uncached re-read that is slow, expensive, and degrades quality (the cheap model becomes the expensive, worse one). Two levers, in order: (1) scope each subagent's task to a bounded slice — if an assignment grows past ~130k of working context, split it into more subagents; (2) decompose with a subagent hierarchy (Section 5) so the orchestrator (and any coordinator subagent) stays a THIN COORDINATOR at every level — workers burn their own (discarded) context and return compact summaries. **An opus stage with no subagent assignments — where the orchestrator does the bulk of the implementation itself — is a red flag:** it defeats the point of ALWAYS-DELEGATED implementation and risks the same compaction failure, at a higher cost per token.
 
+**Size every worker task to finish inside about 40 requests and 120k of context. A task that needs more is two tasks — or a coordinator with two workers.**
+
 **Bookend defaults:** knowledge-bootstrap and integration-verify are `model: "opus"` — the same universal default as every other stage (Section 3). knowledge-distill is the one exception: `model: "sonnet"`, `reasoning_effort: "high"`, single-agent with NO subagents.
 
 ---
@@ -481,7 +483,7 @@ Pick by criteria (not a ranking):
 | Files overlap? | Inter-agent comms needed? | >~6 worker tasks? | Solution |
 | -------------- | ------------------------- | ----------------- | -------- |
 | NO | NO | NO | Same stage, **parallel subagents (flat, as FEW as the work allows)** |
-| NO | NO | YES | Same stage, **2-level hierarchy** (CLAUDE.md Rule 6c) — only once flat fan-out would exceed ~6 tasks |
+| NO | NO | YES | Same stage, **2-level hierarchy** (CLAUDE.md Rule 6) — only once flat fan-out would exceed ~6 tasks |
 | NO | YES | Any | Same stage, **agent team** (wide/exploratory only) |
 | YES | Any | Any | **Separate stages** (loom merges) |
 | ≳10 homogeneous units, wide exploration past one context window, multi-perspective adversarial review, or best-of-N generation | — | — | **`ultracode: true`** — check every parallel-stage group against this row before adding more stages |
@@ -508,31 +510,46 @@ Classic mistakes:
 - Each subagent MUST have EXCLUSIVE write access to its files — **two subagents writing one file = LOST WORK.** Include a file-ownership table in the stage description.
 - **File-exclusivity is necessary but NOT sufficient — check TYPE/import dependencies too.** If subagent A's file DEFINES a type/signature/API that subagent B's file imports, running them in parallel is a race even with disjoint WRITE sets (B compiles against a contract A hasn't written). Put the shared type/signature/API in a main-agent FOUNDATION step that completes BEFORE the consumer subagents fan out.
 
+### Briefs as files
+
+Each worker's brief is written to `doc/plans/briefs/<plan-slug>/<stage-id>/<worker>.md` and committed
+alongside the plan — not pasted inline into the stage description. The stage description then carries
+a TABLE, not prose, naming every worker:
+
+`Worker | Role | Tier | Files owned | Shared context | Brief path`
+
+The rules the old prose `EXECUTION PLAN` block carried still apply and belong in the prose around the
+table: territories are DISJOINT — no two rows share a write path; workers NEVER spawn subagents; the
+orchestrator spawns every worker BY AGENT TYPE, ALL in ONE message. Each spawn gets a short fixed
+prompt plus the line `Your brief: <path>. Read it in full before anything else.` — the full task detail
+(exact paths, signatures, patterns to match, explicit steps, acceptance) lives in the brief file, not
+in the prompt or the table.
+
 ```yaml
 description: |
   Implement auth, logging, and metrics modules.
   Use parallel subagents and skills to maximize performance.
+  Territories below are DISJOINT. Workers NEVER spawn subagents. Spawn every
+  worker BY AGENT TYPE, ALL in ONE message, each with the fixed prompt plus
+  "Your brief: <path>. Read it in full before anything else."
 
-  SUBAGENT FILE ASSIGNMENTS:
-    Subagent 1 — Auth (loom-software-engineer):
-      Files Owned: src/auth/*.rs      Files Read-Only: src/config.rs
-    Subagent 2 — Logging (loom-software-engineer):
-      Files Owned: src/logging/*.rs   Files Read-Only: src/config.rs
-    Subagent 3 — Metrics (loom-software-engineer):
-      Files Owned: src/metrics/*.rs   Files Read-Only: src/config.rs
-  NO FILE OVERLAP between subagents confirmed.
+  | Worker | Role     | Tier   | Files owned      | Shared context            | Brief path |
+  | ------ | -------- | ------ | ---------------- | -------------------------- | ---------- |
+  | W1     | Auth     | sonnet | src/auth/*.rs     | src/config.rs (read-only)  | doc/plans/briefs/add-modules/add-auth-logging-metrics/w1-auth.md |
+  | W2     | Logging  | sonnet | src/logging/*.rs  | src/config.rs (read-only)  | doc/plans/briefs/add-modules/add-auth-logging-metrics/w2-logging.md |
+  | W3     | Metrics  | sonnet | src/metrics/*.rs  | src/config.rs (read-only)  | doc/plans/briefs/add-modules/add-auth-logging-metrics/w3-metrics.md |
 ```
 
 Match agent type to work: execution → `loom-software-engineer` (pins sonnet); judgment → `loom-senior-software-engineer`.
 
 ### Hierarchies, teams, ultracode
 
-- **2-level hierarchy** (main → coordinators → workers; workers NEVER spawn subagents) — for >~6 well-defined tasks in 2–4 DISJOINT file territories. Use an `EXECUTION PLAN - HIERARCHICAL` block: coordinator territories, nested worker file lists, an OPTIONAL per-coordinator `Verify:` line — AT MOST ONE narrowly-scoped check over the files that coordinator's workers wrote, run ONCE, skipped if the coordinator is unsure; it is not a substitute for real verification, which stays the stage's main agent's job (full compile/test/lint) — plus the statements "Territories are DISJOINT" and "Workers NEVER spawn subagents." Coordinator and worker model follows BLOCK-B (codex luna for boilerplate, scaffolding, and simple unit tests; sonnet or codex terra for common implementation and integration tests; opus for mainstream architecture and algorithm implementation; fable only for visual/UI design, a bug that survived a delegated fix attempt, or extremely challenging algorithmic design) picked per task — not a blanket sonnet default that skips that judgment call. Spawn workers BY AGENT TYPE or an untyped worker inherits the (now always opus) main model. On a larger or harder territory, an opus coordinator orchestrating sonnet workers is a common shape (judgment at the seam, cheap execution at the leaves), chosen per task rather than by rote. Mechanics/preambles: CLAUDE.md Rule 6c.
+- **2-level hierarchy** (main → coordinators → workers; workers NEVER spawn subagents) — for >~6 well-defined tasks in 2–4 DISJOINT file territories. Use an `EXECUTION PLAN - HIERARCHICAL` table (Section 5's `Worker | Role | Tier | Files owned | Shared context | Brief path` format, one row per coordinator and per nested worker), each worker's brief written to `doc/plans/briefs/<plan-slug>/<stage-id>/<worker>.md`, an OPTIONAL per-coordinator `Verify:` line — AT MOST ONE narrowly-scoped check over the files that coordinator's workers wrote, run ONCE, skipped if the coordinator is unsure; it is not a substitute for real verification, which stays the stage's main agent's job (full compile/test/lint) — plus the statements "Territories are DISJOINT" and "Workers NEVER spawn subagents." Coordinator and worker model follows BLOCK-B (codex luna for boilerplate, scaffolding, and simple unit tests; sonnet or codex terra for common implementation and integration tests; opus for mainstream architecture and algorithm implementation; fable only for visual/UI design, a bug that survived a delegated fix attempt, or extremely challenging algorithmic design) picked per task — not a blanket sonnet default that skips that judgment call. Spawn workers BY AGENT TYPE or an untyped worker inherits the (now always opus) main model. On a larger or harder territory, an opus coordinator orchestrating sonnet workers is a common shape (judgment at the seam, cheap execution at the leaves), chosen per task rather than by rote. Mechanics/preambles: CLAUDE.md Rule 6.
 - **Ultracode** (`ultracode: true`) — licenses the stage's session for Workflow orchestration: scripted fan-out/verify over tens of agents inside ONE session, zero cross-stage merges. Reach for it whenever a stage — or a would-be GROUP of sibling stages — matches any of: ≳10 homogeneous work units (files to migrate, modules to audit, endpoints to cover); breadth-first exploration or research whose total coverage exceeds one context window; a high-stakes verification gate wanting multi-perspective adversarial review (N independent skeptics / judge panels, not one reviewer); or generating competing implementations and selecting the best. Check every candidate group of parallel stages against this list before defaulting to more stages — don't wait for it to become obvious.
 - **Stage-collapse rule.** Prefer ONE ultracode stage over 3+ parallel sibling stages that perform the SAME operation on different file sets — every extra stage costs a worktree, a session spin-up, a branch merge, and merge-conflict risk with its siblings, where a Workflow runs the identical fan-out inside one session with no cross-stage merge at all. Heuristic: siblings differing only in WHICH files they touch → collapse into one ultracode stage; siblings differing in WHAT they do → keep them as separate stages.
 - **Cost/latency discipline — stay judicious.** Multi-agent orchestration runs roughly an order of magnitude more tokens than a single session (published measurements land around 15×), and wall-clock stretches once fan-out queues past the runtime's concurrency ceiling (~16 agents run concurrently; the rest wait). License it PER STAGE with the existing MANDATORY one-sentence justification in the description — never as a plan-wide default. Do NOT ultracode ordinary implementation, small scope (below ~10 units), or tightly coupled/sequential work — multi-agent measurably underperforms on tightly interdependent coding. Run the Workflow's worker agents at the cheapest adequate tier (sonnet) so the multiplier lands on the cheap rate, not the expensive one.
 - **Claude-only.** Ultracode Workflow fan-out spawns CLAUDE subagents only — the codex lane (`gpt-5.6-terra` / `gpt-5.6-luna`) is not addressable from inside a Workflow script. A stage licensed for both lanes uses the Workflow for its Claude-side fan-out and reaches `loom-codex-forwarder` Agent spawns outside the Workflow for codex work. Ultracode is therefore never a reason to list codex in `implementers`, nor vice versa.
-- **Agent teams** — wide, exploratory scope needing inter-agent comms or dynamic task discovery (~7× whole-job cost; CLAUDE.md Rule 6b). Don't use for concrete file-partitioned work.
+- **Agent teams** — wide, exploratory scope needing inter-agent comms or dynamic task discovery (~7× whole-job cost; CLAUDE.md Rule 6). Don't use for concrete file-partitioned work.
 
 Every stage description MUST include the line **`Use parallel subagents and skills to maximize performance.`**
 
@@ -624,9 +641,9 @@ loom:
       name: "Stage Name"
       stage_type: standard         # knowledge | standard | integration-verify | knowledge-distill (lowercase)
       model: "opus"                 # REQUIRED — every stage is an opus orchestrator now; subagent model choice happens at spawn time (Section 4)
-      reasoning_effort: "xhigh"    # REQUIRED on every stage
+      reasoning_effort: "high"    # REQUIRED on every stage — reserve "xhigh" for a stage whose own design is the hard part
       implementers: ["codex", "claude"]  # OPTIONAL - licensed lanes, first = preferred for routine work (default ["claude"])
-      subagent_timeout_secs: 900   # OPTIONAL - advisory heartbeat budget (default 300) for `loom subagents watch --timeout`; a cadence, not a per-subagent deadline
+      subagent_timeout_secs: 900   # OPTIONAL - advisory IDLE budget (default 300); not the watch's `--timeout` (3600) and not a per-subagent deadline
       description: |               # full task spec; NO triple backticks inside
         What this stage accomplishes.
         Use parallel subagents and skills to maximize performance.
@@ -825,7 +842,7 @@ loom:
       name: "Bootstrap Knowledge Base"
       stage_type: knowledge
       model: "opus"
-      reasoning_effort: "xhigh"
+      reasoning_effort: "high"
       description: |
         Explore codebase and populate doc/loom/knowledge/.
         Use parallel subagents and skills to maximize performance.
@@ -857,7 +874,7 @@ loom:
       name: "Feature A"
       stage_type: standard
       model: "opus"
-      reasoning_effort: "xhigh"
+      reasoning_effort: "high"
       description: |
         Implement feature A. [Exact paths, signatures, patterns to follow,
         step-by-step subtasks, wiring, error handling — see Section 4.]
@@ -874,7 +891,7 @@ loom:
       name: "Feature B"
       stage_type: standard
       model: "opus"
-      reasoning_effort: "xhigh"
+      reasoning_effort: "high"
       description: |
         Implement feature B. [Detailed spec as above.]
         Use parallel subagents and skills to maximize performance.
@@ -888,7 +905,7 @@ loom:
       name: "Integration Verification"
       stage_type: integration-verify
       model: "opus"
-      reasoning_effort: "xhigh"
+      reasoning_effort: "high"
       description: |
         Final verification after all stages. Verify FUNCTIONAL INTEGRATION,
         not just tests passing. NEVER Claude Code auto-memory.
@@ -948,6 +965,7 @@ loom:
         # works under both flat and hierarchical layouts — tier-1 files keep ## headings
         - 'rg -q "## " doc/loom/knowledge/architecture.md'
         - 'rg -q "## " doc/loom/knowledge/patterns.md'
+        - "loom knowledge check"   # acceptance-safe — never opens the context store
       files: ["doc/loom/knowledge/**", "README.md", "CONTRIBUTING.md"]
       working_dir: "."
 ```
@@ -976,21 +994,33 @@ loom:
       description: "Request logging added to handler"
 ```
 
-**Large fan-out (>~6 workers)** — use an `EXECUTION PLAN - HIERARCHICAL` block (coordinators × workers) instead of a flat wave, so the main agent absorbs a few compact summaries instead of a dozen raw results (CLAUDE.md Rule 6c):
+**Large fan-out (>~6 workers)** — use an `EXECUTION PLAN - HIERARCHICAL` block (coordinators × workers) instead of a flat wave, so the main agent absorbs a few compact summaries instead of a dozen raw results (CLAUDE.md Rule 6):
 
 ```yaml
 description: |
   Implement 12 endpoint handlers plus tests.
   Use parallel subagents and skills to maximize performance.
-  EXECUTION PLAN - HIERARCHICAL (2-LEVEL CAP):
-    Coordinator A — REST (loom-software-engineer, sonnet):
-      Territory: src/api/rest/**
-      Workers: A1 users.rs · A2 orders.rs · A3 billing.rs · A4 tests/api/rest/
-      Verify (optional, ONE scoped check, skip if unsure): cargo test --test rest_api
-    Coordinator B — GraphQL (loom-software-engineer, sonnet):
-      Territory: src/api/graphql/**
-      Workers: B1 queries.rs · B2 mutations.rs · B3 subscriptions.rs · B4 tests/
-      Verify (optional, ONE scoped check, skip if unsure): cargo test --test graphql
+  EXECUTION PLAN - HIERARCHICAL (2-LEVEL CAP). Each brief is written to
+  doc/plans/briefs/endpoints-plan/add-endpoints/<worker>.md and committed
+  alongside the plan. Spawn coordinators BY AGENT TYPE, ALL in ONE message;
+  each coordinator spawns its own workers the same way, each with the fixed
+  prompt plus "Your brief: <path>. Read it in full before anything else."
+
+  | Worker | Role | Tier | Files owned | Shared context | Brief path |
+  | ------ | ---- | ---- | ------------ | --------------- | ---------- |
+  | Coordinator A | REST | sonnet | src/api/rest/** | — | doc/plans/briefs/endpoints-plan/add-endpoints/coord-a.md |
+  | A1 | users.rs | sonnet | src/api/rest/users.rs | src/api/rest/mod.rs | doc/plans/briefs/endpoints-plan/add-endpoints/a1-users.md |
+  | A2 | orders.rs | sonnet | src/api/rest/orders.rs | src/api/rest/mod.rs | doc/plans/briefs/endpoints-plan/add-endpoints/a2-orders.md |
+  | A3 | billing.rs | sonnet | src/api/rest/billing.rs | src/api/rest/mod.rs | doc/plans/briefs/endpoints-plan/add-endpoints/a3-billing.md |
+  | A4 | REST tests | sonnet | tests/api/rest/** | src/api/rest/** (read-only) | doc/plans/briefs/endpoints-plan/add-endpoints/a4-tests.md |
+  | Coordinator B | GraphQL | sonnet | src/api/graphql/** | — | doc/plans/briefs/endpoints-plan/add-endpoints/coord-b.md |
+  | B1 | queries.rs | sonnet | src/api/graphql/queries.rs | src/api/graphql/mod.rs | doc/plans/briefs/endpoints-plan/add-endpoints/b1-queries.md |
+  | B2 | mutations.rs | sonnet | src/api/graphql/mutations.rs | src/api/graphql/mod.rs | doc/plans/briefs/endpoints-plan/add-endpoints/b2-mutations.md |
+  | B3 | subscriptions.rs | sonnet | src/api/graphql/subscriptions.rs | src/api/graphql/mod.rs | doc/plans/briefs/endpoints-plan/add-endpoints/b3-subscriptions.md |
+  | B4 | GraphQL tests | sonnet | tests/api/graphql/** | src/api/graphql/** (read-only) | doc/plans/briefs/endpoints-plan/add-endpoints/b4-tests.md |
+
+  Coordinator A verify (optional, ONE scoped check, skip if unsure): cargo test --test rest_api
+  Coordinator B verify (optional, ONE scoped check, skip if unsure): cargo test --test graphql
   Territories are DISJOINT. Workers NEVER spawn subagents.
   Coordinators return compact summaries only. The stage's main agent runs the
   full build/test/lint gate — a coordinator's scoped check never substitutes for it.
@@ -1010,7 +1040,7 @@ description: |
 □ Edits anchored by symbol; decisions settled to ONE value (no "maybe edit" conditionals); every prose task/file has exactly one owner; prose ordering = DAG edges
 □ knowledge-bootstrap first · integration-verify second-to-last · knowledge-distill last
 □ Every non-bookend stage cites which Stage Necessity question (Q1-Q4) forced it; compile-order dependencies resolved with a foundation step, not a stage split
-□ Every stage: model: "opus" + reasoning_effort: xhigh + stage_type + working_dir set
+□ Every stage: model: "opus" + reasoning_effort: high (xhigh reserved for design-hard stages) + stage_type + working_dir set
 □ Codex opt-in asked and answered; `implementers:` lists codex only where routine implementation is delegated, only if the plugin is installed, and never on bookend stages; every list is a non-empty YAML sequence with no repeated lane
 □ Every codex unit names its anchors — files owned/read, entry points by symbol name, done-condition and proof command, and any constraint the graph can't show. An unanchored codex block ("refactor the merge path") is underspecified regardless of length: codex has the source-graph navigation kit (`loom map`, `loom knowledge context`) but not your intent
 □ Every codex subagent prompt states an explicit Bash timeout (900000 ms) alongside the tier-appropriate model — `--model gpt-5.6-terra` (common implementation, integration tests) or `--model gpt-5.6-luna` (boilerplate, scaffolding, simple unit tests) — always `--effort xhigh`; without it the wrapper's single Bash call hits the 120s default and the harness backgrounds the run
