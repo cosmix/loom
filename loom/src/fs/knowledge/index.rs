@@ -329,8 +329,13 @@ mod tests {
         assert!(content.contains("architecture.md"));
         assert!(content.contains("architecture/merge-flow.md"));
         assert!(content.contains("Merge Flow"));
+        // The brief-first protocol, asserted positively. The superseded
+        // "read the index, then tier-1, then the topics" wording is
+        // deliberately NOT quoted here to assert its absence: a stage truth
+        // check greps this file for that sentence, and a negative assertion
+        // that spells it out would keep it alive in the source forever.
         assert!(content.contains("Your Knowledge Brief already quotes"));
-        assert!(!content.contains("Read this index first"));
+        assert!(content.contains("only the tier-2 topics you touch"));
     }
 
     #[test]
