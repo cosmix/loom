@@ -10,12 +10,12 @@ use std::fs;
 
 use tempfile::TempDir;
 
-use super::super::cache::{
+use super::cache::{
     generate_integration_verify_stable_prefix, generate_knowledge_distill_stable_prefix,
     generate_knowledge_stable_prefix, generate_stable_prefix, KNOWLEDGE_CONSUMPTION_CONTRACT,
 };
-use super::super::generate::generate_signal_with_metrics;
-use super::{create_test_session, create_test_stage, create_test_worktree};
+use super::generate::generate_signal_with_metrics;
+use super::tests::{create_test_session, create_test_stage, create_test_worktree};
 
 const CLAUDE_MD_TEMPLATE: &str = include_str!("../../../../CLAUDE.md.template");
 
@@ -84,8 +84,8 @@ fn subagent_budget_is_cadence_not_deadline_in_emitted_signal() {
 
     assert!(
         content.contains("never a deadline on the subagent's own work"),
-        "the block must say the budget is a check-in cadence, not a deadline on \
-         any subagent's work"
+        "the block must say the budget is the idle threshold death is judged \
+         against, never a deadline on the subagent's own work"
     );
     assert!(
         content.contains("positive evidence of death"),

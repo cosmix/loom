@@ -132,7 +132,8 @@ fn test_stable_prefix_contains_working_dir_reminder() {
     // Check working_dir reminder is in Path Boundaries section
     assert!(prefix.contains("working_dir Reminder"));
     assert!(prefix.contains("WORKTREE + working_dir"));
-    assert!(prefix.contains("execution path"));
+    // Points at the Target section for the exact path rather than restating it
+    assert!(prefix.contains("for the exact path"));
 }
 
 #[test]
