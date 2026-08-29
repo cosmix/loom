@@ -56,6 +56,7 @@
 
 | Topic | Title | Blurb | Lines |
 | --- | --- | --- | --- |
+| [mistakes/ambient-filesystem-trust.md](mistakes/ambient-filesystem-trust.md) | Ambient Filesystem Trust | Topic notes for the mistakes knowledge area. | 34 |
 | [mistakes/codex-lane-rogue-wrapper.md](mistakes/codex-lane-rogue-wrapper.md) | Codex Lane Rogue Wrapper | Topic notes for the mistakes knowledge area. | 79 |
 | [mistakes/codex-navigation.md](mistakes/codex-navigation.md) | Codex Navigation | Topic notes for the mistakes knowledge area. | 25 |
 | [mistakes/completion-broker-credential.md](mistakes/completion-broker-credential.md) | Completion Broker Credential | Topic notes for the mistakes knowledge area. | 141 |
@@ -73,10 +74,10 @@
 | [mistakes/sandbox-and-settings.md](mistakes/sandbox-and-settings.md) | Sandbox And Settings | Sandbox path rules, permission sync, excludedCommands matching, and settings env leaking between main repo and worktrees. | 386 |
 | [mistakes/schema-reuse-and-silent-skips.md](mistakes/schema-reuse-and-silent-skips.md) | Schema Reuse And Silent Skips | Topic notes for the mistakes knowledge area. | 94 |
 | [mistakes/session-identity-env.md](mistakes/session-identity-env.md) | Session Identity Env | The wrapper script's `LOOM_*` exports are a contract read by hooks, the CLI and the daemon. Two long-standing defects in that contract made knowledge stages impossible to complete. | 83 |
-| [mistakes/sessions-and-liveness.md](mistakes/sessions-and-liveness.md) | Sessions And Liveness | Session identity, liveness routing, spawn-site coverage, and the blast radius of adding a session field. | 136 |
+| [mistakes/sessions-and-liveness.md](mistakes/sessions-and-liveness.md) | Sessions And Liveness | Session identity, liveness routing, spawn-site coverage, and the blast radius of adding a session field. | 170 |
 | [mistakes/shell-command-matchers.md](mistakes/shell-command-matchers.md) | Shell Command Matchers | Separators that never become tokens, forgeable glob lookups, env leakage in hook tests, and three Bash traps. | 246 |
 | [mistakes/store-without-consumer.md](mistakes/store-without-consumer.md) | Store Without Consumer | Topic notes for the mistakes knowledge area. | 94 |
-| [mistakes/subagent-orchestration.md](mistakes/subagent-orchestration.md) | Subagent Orchestration | Topic notes for the mistakes knowledge area. | 208 |
+| [mistakes/subagent-orchestration.md](mistakes/subagent-orchestration.md) | Subagent Orchestration | Topic notes for the mistakes knowledge area. | 237 |
 | [mistakes/testing-and-lint.md](mistakes/testing-and-lint.md) | Testing And Lint | Lint and test discipline: --all-targets, --no-fail-fast, headless CI, ambient git config and inherited descriptors in tests, the stub checker, the maintainability ledger, and reviewer claims. | 249 |
 | [mistakes/tests-that-cannot-fail.md](mistakes/tests-that-cannot-fail.md) | Tests That Cannot Fail | Topic notes for the mistakes knowledge area. | 124 |
 | [mistakes/tmux-backend.md](mistakes/tmux-backend.md) | Tmux Backend | Topic notes for the mistakes knowledge area. | 120 |

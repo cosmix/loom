@@ -134,3 +134,37 @@ is being executed by this session". Only the second licenses a session to speak 
 stage `Blocked` while its tmux pane looks alive. The blocked-but-alive pane is usually the _reverse_
 case — an un-reaped tmux server holding a dead pane (see the `kill(pid, 0)` note above and
 `architecture/terminal-backends.md`); confirm with `/proc/<pid>`, never with `tmux has-session`.
+
+## The Session Record Was Written After the Agent It Records (2026-08-29)
+
+**What happened:** a daemon killed mid-spawn left a `claude` process running in tmux that loom
+could not see. The stage sat `Executing` behind an hourglass, `loom attach` answered "No live tmux
+sessions", orphan recovery found nothing to recover, and `loom stage reset` then queued a SECOND
+agent into the same worktree. The second agent noticed the first, refused to work, and its
+non-completing exit was read as a crash and retried.
+
+**Why:** `stage_executor.rs` marked the stage `Executing`, spawned the agent, and only afterwards
+wrote `.work/sessions/<id>.md` and linked `stage.session`. Every discovery path in the system reads
+that one artifact — `viewer::live_tmux_sessions` (the sole input to `loom attach`),
+`recover_orphaned_sessions`, and `status`'s `load_all_sessions`. Two compounding errors: a record
+written AFTER the thing it records cannot describe a crash in between, and keying every consumer on
+a single artifact turns its absence into total blindness rather than a degraded view. The agent's
+OS-level evidence — the wrapper's pid file, the tmux socket named for the session — was on disk the
+whole time and nothing looked at it.
+
+**Prevention:** write the record that makes a thing discoverable BEFORE creating the thing, and
+order the two writes so that a crash between them leaves the harmless state (an inert record with
+no process) rather than the harmful one (a live process nothing references). When adding a consumer
+of session state, ask what it does when the record is missing but the process is not: if the answer
+is "reports absence", it is asserting something it cannot know.
+
+**Fix:** the record is saved as `Spawning` and `stage.session` assigned in the same locked update
+that marks the stage `Executing`, all before the spawn; every pre-spawn failure deletes it again.
+`orchestrator/session_registry.rs` reads the pid-file and socket evidence back and rebuilds a
+missing record, so an already-orphaned agent is adopted instead of duplicated, and spawning refuses
+to start a second agent for a stage that has a live one.
+
+**Scan direction matters.** Evidence recovery runs from the STAGE side, deriving each candidate
+tracking key from the stage id, not from the pid-file side. A pid filename is
+`<tracking_key>-<session_id>` and neither half is delimited, so parsing one backwards lets stage
+`a`'s prefix match stage `a-b`'s file and invent a session id that never existed.

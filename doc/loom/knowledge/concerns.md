@@ -820,3 +820,44 @@ of current window` before `write text`, and assert it in `test_iterm2_build_comm
 exporting `CLAUDE_CODE_DISABLE_TERMINAL_TITLE=1` through the wrapper's env allowlist (both copies —
 see "Two Diverging Copies of the Stage Environment Allowlist" above) so neither macOS terminal's
 window name drifts before teardown. Verify on macOS with both terminals before closing #7.
+
+## Orphan Adoption Only Runs at Daemon Startup (2026-08-29)
+
+`adopt_orphaned_agents` is called from `recover_orphaned_sessions`, which
+`orchestrator.rs` invokes exactly ONCE, at daemon startup — not on the poll loop, despite the
+"every tick" phrasing that appeared in the brief that requested it. An agent orphaned mid-run
+therefore stays invisible until the next `loom run`. That is enough for the incident it was written
+for (a killed daemon is restarted by definition), and the spawn-time guard in `start_stage` closes
+the duplicate-spawn hole independently, so this is a narrower reach rather than a hole. Making it
+per-tick is a one-line addition to the scheduler loop; the pass is already idempotent and pinned as
+such by a test, so the only question is cost — it scans `.work/pids/` per Executing stage.
+
+## `get_work_dir()` Trusts Any Path Containing `.worktrees/` (2026-08-29)
+
+`find_worktree_root_from_cwd` (`git/worktree/paths.rs`) is a pure substring match on `.worktrees/`
+in the cwd string — it never checks that the directory is a loom-managed worktree. `get_work_dir`'s
+first branch then adopts `<that root>/.work` if one merely exists. A user working in any directory
+they happen to name `.worktrees/<anything>` that contains a leftover `.work` would silently read
+another project's memory and stage state.
+
+Lower severity than the creation-path bug fixed alongside it (`mistakes/ambient-filesystem-trust.md`):
+both of `get_work_dir`'s branches only ever RETURN a `.work` that already exists, so this
+misattributes reads rather than manufacturing stray directories. Left alone deliberately, because
+changing it would alter the reuse and read-only degrade paths that `loom memory list` depends on
+during post-compaction recovery (Rule 3b). Fix shape if it is ever worth doing: confirm the
+candidate root is a real worktree — a `.git` FILE containing a `gitdir:` pointer — before trusting
+its `.work`.
+
+## `commands::memory` Tests Mutate the Process-Global Working Directory (2026-08-29)
+
+Those tests call `env::set_current_dir` and rely on `#[serial]`, which only serializes a test
+against OTHER `#[serial]` tests — anything unmarked in the same binary runs concurrently with a
+foreign cwd in effect. In each test the `TempDir` is also declared AFTER its `EnvGuard`, so it is
+deleted FIRST and there is a window where the process cwd points at a removed directory.
+
+Neither of these caused the 77-failure incident (an ambient impostor `.git` did, see above), which
+is why they were not changed. They remain a live hazard: any future test in that binary that
+resolves a relative path while a sibling holds a foreign cwd will fail in a way that looks
+unrelated to its own subject. Fix shape: inject the working directory instead of mutating the
+process's, as `orchestrator/merge_lifecycle/tests.rs:321` already does deliberately for this exact
+reason.

@@ -982,3 +982,14 @@ shutdown signals only a matching PID/start-time identity. The incident and its e
 for regression context.
 
 → [Daemon Singleton Incident](concerns/daemon-singleton.md)
+
+## An Unbounded Walk Up the Filesystem Adopts Whatever It Finds (2026-08-29)
+
+`loom memory note`, run outside a repository, wrote its journal into an unrelated ancestor
+directory — the shared OS temp root — because the repo-root search walks up without a ceiling and
+the caller validated the result by NAME (`.git` exists) rather than by structure. An empty
+directory called `.git`, left by an unrelated tool, was enough. Validate what an unbounded walk
+returns, and be most suspicious when it can reach a shared root where other processes leave debris.
+Surfaced as 77 test failures in seven unrelated modules, which looked environmental and were not.
+
+→ [Ambient Filesystem Trust](mistakes/ambient-filesystem-trust.md)

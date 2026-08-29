@@ -206,3 +206,32 @@ evidence of non-compliance and is not.
 - **A ledger or gate the agents cannot see will bite at commit time.** Five files broke the
   repo-wide line-count gate because every agent added regression tests and comments in good faith.
   Check the gate BEFORE fanning out, or expect a second round purely to satisfy it.
+
+## A Connection-Error Notice Is Not Proof of Death (2026-08-29)
+
+**What happened:** a subagent's idle notification arrived carrying
+`failureReason: "API Error: Connection lost mid-response"`, with no result. It was read as death and
+the whole assignment was respawned to a fresh agent. The original was alive and working. Both then
+wrote the same four files for twenty minutes, each reporting the other's edits as a mysterious
+concurrent writer that kept rewriting its test file and referencing methods it had never written.
+
+**Why:** the notice describes a broken RESPONSE, not a stopped agent. The liveness rules above
+already establish that elapsed time is not evidence of death; a transport error is not either. The
+only real evidence is `ListAgents` showing the agent gone, or a transcript that stops growing past
+a genuine budget.
+
+**Prevention:** before respawning ANY assignment, call `ListAgents` and confirm the agent is
+actually gone. If it is alive, message it instead of duplicating it. Once a duplicate exists, stand
+one down explicitly rather than letting both finish, and inspect the surviving files for damage —
+duplicate definitions, half-applied edits, a test file with one agent's imports and another's
+tests — before trusting either report.
+
+**What saved it, and would not always:** the module's API had been pinned in the brief, so both
+agents built the same shape and the last writer's file was coherent. That was luck. A brief leaving
+design latitude would have produced two incompatible halves of one module.
+
+**Second occurrence of the gate lesson above, same session.** The line-count ledger bit again, for
+exactly the reason already recorded: six agents each added tests and explanatory comments, pushing
+three files and five functions over their limits, and clearing it cost a full extra refactor round
+after the functional work was already green. The note was there and went unread. Read the gate
+before fanning out, and if a file is already near its ceiling, say so in the brief.
