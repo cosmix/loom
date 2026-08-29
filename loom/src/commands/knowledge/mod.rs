@@ -1,4 +1,5 @@
 //! Knowledge command - manage curated codebase knowledge.
+pub mod check;
 pub mod context;
 pub mod eval;
 pub mod sync;

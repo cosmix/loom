@@ -61,6 +61,30 @@ fn escape_cell(value: &str) -> String {
     value.replace('|', "\\|")
 }
 
+/// Keeping table entries short makes the generated index inexpensive to pull.
+const MAX_BLURB_CHARS: usize = 120;
+
+/// Preserve enough context to identify a topic without letting one description
+/// dominate a retrieved index.
+fn truncate_blurb(blurb: &str) -> String {
+    let Some((limit, _)) = blurb.char_indices().nth(MAX_BLURB_CHARS) else {
+        return blurb.to_string();
+    };
+    let truncated = match blurb[..limit]
+        .char_indices()
+        .rfind(|(_, character)| character.is_whitespace())
+    {
+        Some((end, _)) => blurb[..end].trim_end_matches(|character: char| {
+            character.is_whitespace()
+                || character.is_ascii_punctuation()
+                || matches!(character, '—' | '–' | '―' | '…')
+        }),
+        None => &blurb[..limit],
+    };
+
+    format!("{truncated}…")
+}
+
 /// Extract the title (first `# ` line) and blurb (first `> ` line) from a
 /// knowledge file's content, falling back to `fallback_title` / empty string.
 fn extract_title_and_blurb(content: &str, fallback_title: &str) -> (String, String) {
@@ -74,7 +98,7 @@ fn extract_title_and_blurb(content: &str, fallback_title: &str) -> (String, Stri
         .find_map(|line| line.strip_prefix("> "))
         .map(|s| s.trim().to_string())
         .unwrap_or_default();
-    (title, blurb)
+    (title, truncate_blurb(&blurb))
 }
 
 /// Walk `<root>/<category>/*.md` for every [`KnowledgeFile`] category.
@@ -140,9 +164,10 @@ pub fn generate_index(root: &Path) -> Result<String> {
     out.push_str(GENERATED_MARKER);
     out.push_str("\n\n# Knowledge Index\n\n");
     out.push_str(
-        "> Read this index first, then the tier-1 summary for the area you're working \
-         in, then only the tier-2 topics you actually need. Tier-1 files are short \
-         summaries with links out; tier-2 files hold the full detail.\n\n",
+        "> Your Knowledge Brief already quotes what retrieval judged relevant. Pull more \
+         with `loom knowledge context --query`. Open a file here only when a pull comes \
+         back empty; then read the tier-1 summary for the area, and only the tier-2 \
+         topics you touch.\n\n",
     );
 
     append_tier1_table(&mut out, root)?;
@@ -256,6 +281,34 @@ mod tests {
         assert!(topics.is_empty());
     }
 
+    /// Long prose must not make a single index row crowd out other topics.
+    #[test]
+    fn test_truncate_blurb_uses_word_boundary_and_ellipsis() {
+        let blurb = format!("{}extra", "word, ".repeat(20));
+        let truncated = truncate_blurb(&blurb);
+
+        assert_eq!(truncated, format!("{}word…", "word, ".repeat(19)));
+        assert!(truncated.ends_with('…'));
+        assert!(truncated.chars().count() <= MAX_BLURB_CHARS + 1);
+    }
+
+    /// A full-sized concise description should not lose useful detail.
+    #[test]
+    fn test_truncate_blurb_preserves_exactly_120_characters() {
+        let blurb = "x".repeat(MAX_BLURB_CHARS);
+        assert_eq!(truncate_blurb(&blurb), blurb);
+    }
+
+    /// Author-written Unicode must never turn a character limit into a bad slice.
+    #[test]
+    fn test_truncate_blurb_handles_multibyte_character_after_limit() {
+        let blurb = format!("{}é beyond the limit", "x".repeat(MAX_BLURB_CHARS));
+        assert_eq!(
+            truncate_blurb(&blurb),
+            format!("{}…", "x".repeat(MAX_BLURB_CHARS))
+        );
+    }
+
     #[test]
     fn test_generate_index_lists_tier1_and_topics_with_marker() {
         let temp = TempDir::new().unwrap();
@@ -276,6 +329,13 @@ mod tests {
         assert!(content.contains("architecture.md"));
         assert!(content.contains("architecture/merge-flow.md"));
         assert!(content.contains("Merge Flow"));
+        // The brief-first protocol, asserted positively. The superseded
+        // "read the index, then tier-1, then the topics" wording is
+        // deliberately NOT quoted here to assert its absence: a stage truth
+        // check greps this file for that sentence, and a negative assertion
+        // that spells it out would keep it alive in the source forever.
+        assert!(content.contains("Your Knowledge Brief already quotes"));
+        assert!(content.contains("only the tier-2 topics you touch"));
     }
 
     #[test]

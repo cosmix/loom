@@ -105,6 +105,7 @@ fn dispatch_knowledge(command: KnowledgeCommands) -> Result<()> {
             structural_only,
             json,
         } => knowledge::sync::sync(structural_only, json),
+        KnowledgeCommands::Check { strict, json } => knowledge::check::check(strict, json),
     }
 }
 

@@ -50,7 +50,10 @@ fn test_complete_subcommands_stage_prefix() {
 #[test]
 fn test_complete_subcommands_knowledge() {
     let results = complete_subcommands("knowledge", "").unwrap();
-    for present in ["update", "replace-section", "context", "sync"] {
+    // `check` is the read-only diagnostics command (`commands/knowledge/check.rs`),
+    // not the long-deleted subcommand that once bore the name — it belongs with
+    // the live subcommands below, not on the `gone` list.
+    for present in ["update", "replace-section", "context", "sync", "check"] {
         assert!(
             results.contains(&present.to_string()),
             "knowledge must still complete `{present}`"
@@ -61,7 +64,6 @@ fn test_complete_subcommands_knowledge() {
         "init",
         "index",
         "list",
-        "check",
         "audit",
         "gc",
         "bootstrap",

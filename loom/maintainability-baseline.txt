@@ -23,6 +23,7 @@ file src/commands/status/ui/tui/renderer.rs 413
 file src/context/refresh/tests_source_graph.rs 679
 file src/daemon/server/dispute.rs 508
 file src/daemon/server/status.rs 414
+file src/fs/knowledge/tests/catalog.rs 402
 file src/fs/locking.rs 499
 file src/fs/permissions/hooks.rs 446
 file src/fs/permissions/settings.rs 750

@@ -76,6 +76,16 @@ pub enum KnowledgeCommands {
         #[arg(long)]
         json: bool,
     },
+
+    /// Report knowledge-base diagnostics (read-only; never opens the context store)
+    Check {
+        /// Exit non-zero when any issue is reported
+        #[arg(long)]
+        strict: bool,
+        /// Machine-readable JSON output (suppresses human text)
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand)]

@@ -9,9 +9,13 @@ use std::fs;
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 
+mod order;
 pub(crate) mod prose;
+pub(crate) mod size;
 #[cfg(test)]
 mod tests_prose;
+
+use order::compare_issues;
 
 /// A problem found in the knowledge base. REPORTED, never repaired: this
 /// subsystem does not modify one byte of the knowledge tree.
@@ -47,6 +51,28 @@ pub enum CatalogIssue {
         /// The missing source path, relative to the project root.
         source_path: String,
     },
+    /// A tier-1 section exceeds the limit before it should spill into a topic.
+    OversizedSection {
+        /// The relative tier-1 knowledge file containing the section.
+        file: PathBuf,
+        /// The section heading.
+        heading: String,
+        /// The section's line count, its `## ` heading line included and
+        /// trailing blank lines excluded.
+        lines: usize,
+    },
+    /// A tier-1 summary exceeds its maximum line count.
+    OversizedFile {
+        /// The relative tier-1 knowledge file.
+        file: PathBuf,
+        /// The file's line count.
+        lines: usize,
+    },
+    /// The generated tier-0 index exceeds its maximum byte size.
+    OversizedIndex {
+        /// The index's size in bytes.
+        bytes: u64,
+    },
 }
 
 /// Deterministic retrieval data and non-mutating knowledge-base diagnostics.
@@ -80,6 +106,9 @@ fn collect_chunk_issues(
             .or_default()
             .entry(chunk.anchor.clone())
             .or_default() += 1;
+    }
+    if let Some(issue) = size::oversized_section(relative_path, chunk) {
+        issues.push(issue);
     }
     for (_, target) in &chunk.links {
         let exists = contained_link_target(root, relative_path, target)
@@ -123,6 +152,10 @@ fn process_file(
     let content = String::from_utf8_lossy(&bytes);
     let file_chunks = chunk_file(relative_path, &bytes)?;
 
+    if let Some(issue) = size::oversized_file(relative_path, &content) {
+        issues.push(issue);
+    }
+
     if let Some(blurb) = generic_blurb(&content, relative_path) {
         issues.push(CatalogIssue::GenericBlurb {
             file: relative_path.to_path_buf(),
@@ -142,6 +175,28 @@ fn process_file(
     }
 
     Ok(file_chunks)
+}
+
+/// Turn the per-file heading tallies [`process_file`] accumulated into one
+/// [`CatalogIssue::DuplicateHeading`] per heading seen more than once.
+///
+/// A separate pass, not part of `process_file`: a duplicate is only knowable
+/// once every section of a file has been counted.
+fn push_duplicate_headings(
+    heading_counts: BTreeMap<PathBuf, BTreeMap<String, usize>>,
+    issues: &mut Vec<CatalogIssue>,
+) {
+    for (file, counts) in heading_counts {
+        for (heading, occurrences) in counts {
+            if occurrences > 1 {
+                issues.push(CatalogIssue::DuplicateHeading {
+                    file: file.clone(),
+                    heading,
+                    occurrences,
+                });
+            }
+        }
+    }
 }
 
 /// Build a deterministic catalog rooted at a knowledge directory, extended
@@ -165,16 +220,10 @@ pub fn build(root: &Path) -> anyhow::Result<Catalog> {
         chunks.extend(file_chunks);
     }
 
-    for (file, counts) in heading_counts {
-        for (heading, occurrences) in counts {
-            if occurrences > 1 {
-                issues.push(CatalogIssue::DuplicateHeading {
-                    file: file.clone(),
-                    heading,
-                    occurrences,
-                });
-            }
-        }
+    push_duplicate_headings(heading_counts, &mut issues);
+
+    if let Some(issue) = size::oversized_index(root) {
+        issues.push(issue);
     }
 
     issues.sort_by(compare_issues);
@@ -328,44 +377,6 @@ fn looks_like_repository_path(source_path: &str) -> bool {
         && !path
             .components()
             .any(|component| matches!(component, std::path::Component::ParentDir))
-}
-
-fn compare_issues(left: &CatalogIssue, right: &CatalogIssue) -> std::cmp::Ordering {
-    issue_file(left)
-        .cmp(issue_file(right))
-        .then_with(|| issue_kind(left).cmp(&issue_kind(right)))
-        .then_with(|| issue_payload(left).cmp(&issue_payload(right)))
-}
-
-fn issue_file(issue: &CatalogIssue) -> &Path {
-    match issue {
-        CatalogIssue::DuplicateHeading { file, .. }
-        | CatalogIssue::GenericBlurb { file, .. }
-        | CatalogIssue::BrokenLink { file, .. }
-        | CatalogIssue::MissingSourceRef { file, .. } => file,
-    }
-}
-
-fn issue_kind(issue: &CatalogIssue) -> u8 {
-    match issue {
-        CatalogIssue::DuplicateHeading { .. } => 0,
-        CatalogIssue::GenericBlurb { .. } => 1,
-        CatalogIssue::BrokenLink { .. } => 2,
-        CatalogIssue::MissingSourceRef { .. } => 3,
-    }
-}
-
-fn issue_payload(issue: &CatalogIssue) -> String {
-    match issue {
-        CatalogIssue::DuplicateHeading {
-            heading,
-            occurrences,
-            ..
-        } => format!("{heading}:{occurrences}"),
-        CatalogIssue::GenericBlurb { blurb, .. } => blurb.clone(),
-        CatalogIssue::BrokenLink { target, .. } => target.clone(),
-        CatalogIssue::MissingSourceRef { source_path, .. } => source_path.clone(),
-    }
 }
 
 fn display_path(path: &Path) -> String {
