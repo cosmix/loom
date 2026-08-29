@@ -18,6 +18,27 @@ mod types;
 #[cfg(test)]
 mod tests;
 
+// Declared here rather than nested under `tests` so `cargo test signals::tests_size`
+// filters to exactly this module's tests (nesting under `tests` would make the
+// path `signals::tests::tests_size`, which that filter would not match).
+#[cfg(test)]
+#[path = "tests_size.rs"]
+mod tests_size;
+
+// Declared here for the same reason as `tests_size` above: the stage's wiring
+// check filters on `signals::tests_doctrine`, and a module nested under
+// `tests` would make the path `signals::tests::tests_doctrine`, which that
+// filter silently misses - exit 0, zero tests run.
+#[cfg(test)]
+#[path = "tests_doctrine.rs"]
+mod tests_doctrine;
+#[cfg(test)]
+#[path = "tests_doctrine_prefixes.rs"]
+mod tests_doctrine_prefixes;
+#[cfg(test)]
+#[path = "tests_doctrine_waiting.rs"]
+mod tests_doctrine_waiting;
+
 // Re-export public types
 pub use cache::SignalMetrics;
 pub use recovery::generate_recovery_signal;

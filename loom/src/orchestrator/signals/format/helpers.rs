@@ -11,20 +11,23 @@ use super::super::types::DependencyStatus;
 /// semi-stable path and the recovery path emit it, and `sections.rs` is already
 /// well over the file-size ceiling.
 ///
-/// This carries ONLY the stage's specific number. The doctrine for what to DO
-/// with it — the three-case rule keyed on `loom subagents watch`/`list`/`harvest`
-/// (BLOCK-C, `cache::append_subagent_waiting_doctrine`) — is unconditional and
-/// already present in this stage's stable prefix, so repeating the whole
-/// doctrine here for every budgeted stage would just duplicate it in the same
-/// signal.
+/// This carries the stage's specific number and just enough framing to keep it
+/// from being misread as the watch's `--timeout`: the budget is the IDLE
+/// threshold death is judged against, while the watch itself waits long (3600)
+/// in the background. The full doctrine for what to DO with it used to be
+/// restated here via BLOCK-C (`cache::append_subagent_waiting_doctrine`). That
+/// function and its home in the stable prefix are both gone: the doctrine now
+/// lives only in `~/.claude/CLAUDE.md` Rule 6, already resident in the agent's
+/// context, so repeating it here would just duplicate it in the same signal.
 pub(crate) fn format_subagent_timeout_section(timeout_secs: u64) -> String {
     format!(
         "## Subagent Response Budget\n\n\
-         This stage's advisory heartbeat budget is {timeout_secs}s — pass it as `loom subagents \
-         watch --timeout {timeout_secs}`. Re-arm while a subagent reports `tool-wait` or \
-         `generating`; only idle time past this budget with no transcript growth counts as \
-         evidence of death. ADVISORY ONLY: the orchestrator's own hung warning never kills or \
-         retries anything — recovery stays with you.\n\n"
+         This stage's advisory heartbeat budget is {timeout_secs}s. Run `loom subagents watch` in \
+         the background with a long `--timeout` (3600), and issue another if it returns while \
+         subagents are still alive. The budget is the idle threshold you judge death against, \
+         never a deadline on the subagent's own work: only idle time past {timeout_secs}s with no \
+         transcript growth is positive evidence of death. ADVISORY ONLY: the orchestrator's own \
+         hung warning never kills or retries anything — recovery stays with you.\n\n"
     )
 }
 

@@ -3,6 +3,7 @@ name: loom-software-engineer
 description: Primary implementation agent for all coding work - features, bug fixes, tests, data pipelines, ML training, infrastructure code, documentation, UI components, and queries. Handles routine implementation across all technical domains.
 tools: Read, Edit, Write, Glob, Grep, Bash, Task, Skill, WebFetch, WebSearch, TodoWrite
 model: sonnet
+maxTurns: 150
 ---
 
 # Software Engineer
@@ -114,3 +115,7 @@ Before reporting your work done, adversarially review EVERY line you changed (as
 6. **No duplication (DRY)** — search the WHOLE codebase to reuse existing utilities/patterns; don't re-implement
 
 Fix what you find before returning. The main agent compiles, tests, lints, and completes the stage — you don't.
+
+## Context Ceiling
+
+If you hit your context ceiling, STOP and report what you completed and what remains. You are never resumed: the orchestrator continues the work with a FRESH spawn of the same agent type whose brief is the remaining items plus your report. Trying to squeeze past the ceiling loses the report.

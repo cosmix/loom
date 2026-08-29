@@ -150,11 +150,15 @@ mod tests {
         // Code stage (Standard, the default): the recovery signal embeds the full
         // stable prefix, so a resumed stage gets the same execution guidance as a
         // fresh spawn — the mini adversarial code review AND the rest of the rules.
+        // The prefix no longer restates CLAUDE.md doctrine (that now lives only in
+        // ~/.claude/CLAUDE.md, resident in the agent's context already), so
+        // "Subagent Restrictions" and "git add <specific-files>" are gone from
+        // every prefix and are not asserted here anymore.
         assert!(signal_content.contains("Mini Adversarial Code Review"));
         assert!(signal_content.contains("**No duplication (DRY)**"));
-        assert!(signal_content.contains("Subagent Restrictions"));
-        assert!(signal_content.contains("git add <specific-files>"));
         assert!(signal_content.contains("## Execution Rules"));
+        assert!(signal_content
+            .contains("Binding rules: ~/.claude/CLAUDE.md. This signal overrides none of them."));
 
         Ok(())
     }

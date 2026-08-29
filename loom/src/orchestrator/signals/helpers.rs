@@ -27,32 +27,9 @@ pub(super) use super::section_formatters::{
     format_knowledge_target_section, format_stage_context_section, format_target_section,
 };
 
-/// Render `body` as one complete markdown list item opened by `marker`.
-///
-/// Every line after the first is indented to the list's continuation column
-/// (the width of `marker`), so the item's later paragraphs stay INSIDE the
-/// item. Left at column 0 they close the list, and a following `2. ` then reads
-/// as lazy continuation text of that paragraph rather than as the second item —
-/// the ladder silently loses the numbering an agent is told to follow in order.
-///
-/// The item is blank-line terminated, so whatever the caller appends next
-/// starts a new item rather than continuing this one. Blank lines are emitted
-/// empty rather than as runs of trailing spaces.
-pub(super) fn as_list_item(marker: &str, body: &str) -> String {
-    let indent = " ".repeat(marker.chars().count());
-    let mut out = String::new();
-    for (index, line) in body.lines().enumerate() {
-        if index == 0 {
-            out.push_str(marker);
-        } else if !line.is_empty() {
-            out.push_str(&indent);
-        }
-        out.push_str(line);
-        out.push('\n');
-    }
-    out.push('\n');
-    out
-}
+/// Handoff trigger, replacing the retired percentage-threshold line: the
+/// PostToolUse hook reports the ceiling, so the agent never estimates it.
+pub(super) const CONTEXT_CEILING_HANDOFF: &str = "- When the PostToolUse hook reports the context ceiling, finish the unit of work in progress and run `loom handoff --stage <id> --session <id> --trigger ceiling`, then stop.\n";
 
 /// Write a signal file to the signals directory, creating it if needed.
 ///
@@ -153,14 +130,13 @@ pub(super) fn append_commit_timing_rules(content: &mut String, gate: &str, revie
     content.push_str(
         "**When to Commit (ORCHESTRATOR ONLY — AT THE END — AFTER ALL VERIFICATION):**\n\n",
     );
-    content.push_str("Commits are made by YOU, the main agent, and ONLY as the final step of the stage — never mid-stage, never \"what is done so far\". A commit is legitimate only once ALL of these hold:\n\n");
-    content.push_str("1. Every subagent, coordinator, team, and Workflow you spawned has RETURNED and its result is absorbed — nothing is still running or still expected to report.\n");
+    content.push_str("Commits are yours alone and ONLY as the final step of the stage — never mid-stage, never \"what is done so far\". Legitimate only once ALL of these hold:\n\n");
+    content.push_str("1. Every subagent, coordinator, team, and Workflow you spawned has RETURNED and its result is absorbed.\n");
     content.push_str(&format!(
         "2. The full verification gate is GREEN on the complete tree: {gate}.\n"
     ));
     content.push_str(&format!("3. {review}\n\n"));
-    content.push_str("Only then: stage your files, commit (one logical commit per concern — module, tests, wiring, docs), and run `loom stage complete <stage-id>`.\n\n");
-    content.push_str("Committing while a subagent is still out, before the reviewer has reported, or before the gate is green is PREMATURE: it snapshots unverified work and tempts you to complete on top of it. \"I ran the tests before committing\" is no defense while any condition above is still open. A context handoff is not a reason to commit unverified work either — record the uncommitted files in the handoff; the next session resumes from the worktree.\n\n");
+    content.push_str("Then stage your files, commit (one logical commit per concern — module, tests, wiring, docs), and run `loom stage complete <stage-id>`.\n\n");
 }
 
 /// Append the shared "settled stage" completion doctrine: `loom stage
@@ -173,17 +149,10 @@ pub(super) fn append_commit_timing_rules(content: &mut String, gate: &str, revie
 /// place.
 pub(super) fn append_settled_completion_rules(content: &mut String) {
     content.push_str(
-        "- **`loom stage complete` is the LAST act of your session.** Run it ONLY when the stage is SETTLED:\n",
+        "- **`loom stage complete` is the LAST act of your session.** Run it ONLY when the stage is SETTLED: every subagent returned and absorbed, every defect found by review or verification fixed and re-verified, all work committed (`git status` clean).\n",
     );
     content.push_str(
-        "  - every subagent/team/Workflow you spawned has returned and its result is absorbed - nothing is still running or expected to report\n",
-    );
-    content.push_str(
-        "  - every defect found by review or verification is fixed and re-verified - nothing is left open or merely \"reported\"\n",
-    );
-    content.push_str("  - all work is committed (`git status` clean)\n");
-    content.push_str(
-        "- **After `loom stage complete` succeeds: STOP and end the session.** No further edits, spawns, or checks - post-completion work is LOST WORK (the merge starts from the completed commit)\n",
+        "- **After it succeeds: STOP and end the session** — post-completion work is LOST WORK (the merge starts from the completed commit).\n",
     );
     content.push_str("- **Verify acceptance criteria** before marking stage complete\n");
 }
@@ -191,59 +160,13 @@ pub(super) fn append_settled_completion_rules(content: &mut String) {
 /// Append completion rules shared between standard and integration-verify prefixes
 pub(super) fn append_completion_rules(content: &mut String) {
     append_settled_completion_rules(content);
-    content.push_str("- **Create handoff** if context exceeds 75%\n");
-    content.push_str("- **IMPORTANT: Before running `loom stage complete`, ensure you are at the worktree root directory**\n");
-    content.push_str("- **If acceptance criteria fail**: Fix the issues and run `loom stage complete <stage-id>` again\n");
-    content.push_str("- **NEVER use `loom stage retry` from an active session** — it creates a parallel session\n\n");
-}
-
-/// Append git staging rules with danger box (standard prefix only)
-pub(super) fn append_git_staging_full(content: &mut String) {
-    content.push_str("**Git Staging (CRITICAL - READ CAREFULLY):**\n\n");
-    content.push_str("```text\n");
-    content.push_str("  ⛔ DANGER: .work is a SYMLINK to shared state in worktrees\n");
-    content.push_str("     Committing it CORRUPTS the main repository!\n");
-    content.push_str("```\n\n");
-    append_git_staging_rules(content);
-    content.push_str("**Example:**\n");
-    content.push_str("```bash\n");
-    content.push_str("# CORRECT:\n");
-    content.push_str("git add src/main.rs src/lib.rs tests/\n\n");
-    content.push_str("# WRONG (will stage .work):\n");
-    content.push_str("git add -A  # DON'T DO THIS\n");
-    content.push_str("git add .   # DON'T DO THIS\n");
-    content.push_str("```\n\n");
-}
-
-/// Append the 3 core git staging rules (shared by standard and integration-verify)
-pub(super) fn append_git_staging_rules(content: &mut String) {
-    content
-        .push_str("- **ALWAYS** use `git add <specific-files>` - stage only files you modified\n");
-    content.push_str("- **NEVER** use `git add -A`, `git add --all`, or `git add .`\n");
-    content
-        .push_str("- **NEVER** stage `.work` - it is orchestration state shared across stages\n\n");
+    content.push_str(CONTEXT_CEILING_HANDOFF);
+    content.push_str("- Run `loom stage complete <stage-id>` from the worktree ROOT directory; if acceptance criteria fail, fix and run it again\n\n");
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn as_list_item_indents_continuation_paragraphs_to_the_marker_width() {
-        let body = "First line.\n\nSecond paragraph.\n\n    indented code\n";
-        let rendered = as_list_item("1. ", body);
-
-        assert_eq!(
-            rendered,
-            "1. First line.\n\n   Second paragraph.\n\n       indented code\n\n"
-        );
-        // A following `2. ` must be the only line at column 0, or the list ends.
-        let stray = rendered
-            .lines()
-            .skip(1)
-            .find(|line| !line.is_empty() && !line.starts_with("   "));
-        assert!(stray.is_none(), "unindented continuation line: {stray:?}");
-    }
 
     #[test]
     fn test_write_signal_file() {

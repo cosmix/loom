@@ -1,9 +1,9 @@
 use sha2::{Digest, Sha256};
 
 use super::helpers::append_commit_timing_rules;
-use super::helpers::append_git_staging_full;
-use super::helpers::append_git_staging_rules;
-use super::helpers::{append_completion_rules, append_settled_completion_rules, as_list_item};
+use super::helpers::{
+    append_completion_rules, append_settled_completion_rules, CONTEXT_CEILING_HANDOFF,
+};
 
 /// Metrics about a generated signal for debugging and optimization
 #[derive(Debug, Clone, Default)]
@@ -66,6 +66,16 @@ const CODE_STAGE_REVIEW: &str = "The mini adversarial code review has RETURNED, 
 const DOC_STAGE_GATE: &str = "this stage's acceptance criteria";
 const DOC_STAGE_REVIEW: &str = "You have re-read every knowledge file you wrote — nothing stale left standing, no duplicate headings — and the acceptance criteria pass AGAIN after any fix.";
 
+/// The one sentence that replaces every block of `~/.claude/CLAUDE.md` doctrine
+/// the prefixes used to restate.
+///
+/// The session already has that file resident when it opens the signal, so a
+/// second copy of the delegation ladder, the subagent-waiting doctrine, the
+/// git-staging rules and the rest was paid for on every stage and read twice.
+/// The prefixes now carry only what is stage-specific or computed.
+const BINDING_RULES_POINTER: &str =
+    "Binding rules: ~/.claude/CLAUDE.md. This signal overrides none of them.\n\n";
+
 /// Append path boundaries table (shared by standard and integration-verify prefixes)
 fn append_path_boundaries(content: &mut String) {
     content.push_str("### Path Boundaries\n\n");
@@ -78,52 +88,20 @@ fn append_path_boundaries(content: &mut String) {
     );
 }
 
-/// Append the subagent-waiting doctrine (BLOCK-C, pinned verbatim against
-/// `CLAUDE.md.template` Rule 6 by `tests_doctrine_waiting.rs`).
+/// Append BLOCK-A — the subagent no-verify rule — as a paste-ready block.
 ///
-/// Shared by the three stage types that spawn subagents — standard,
-/// integration-verify, knowledge — so a stage carries the "how do I check on a
-/// subagent" rule even when it never sets `subagent_timeout_secs`
-/// (`format_subagent_timeout_section` layers the stage-specific number on top
-/// when that field IS set, instead of repeating the whole doctrine).
-/// knowledge-distill never calls this — it spawns no subagents by design (see
-/// its own stable prefix's "Work single-agent" section).
-fn append_subagent_waiting_doctrine(content: &mut String) {
-    content.push_str("**Checking on subagents: use `loom subagents`, never a hand-rolled poll loop.** `loom subagents watch --timeout <secs>` blocks until every subagent settles or the timeout fires, exits 0 vs. 2, and states which branch fired — that alone satisfies the bounded-check rule (deadline ≤300s, terminates on both branches, reports which fired). `loom subagents list`/`harvest` give a one-shot look; per-subagent state is `done`, `tool-wait`, `generating`, or `unknown`. Three cases, not one:\n\n");
-    content.push_str("1. **`done` but silent** — the subagent's turn ended and its report is on disk. Harvest it and proceed immediately; a missing notification is not a missing result.\n");
-    content.push_str("2. **`tool-wait` / `generating`** — genuinely alive. Re-arm `watch` and keep waiting; slow is not dead. `subagent_timeout_secs` only widens the cadence you re-arm against, never a deadline on the subagent's own work.\n");
-    content.push_str("3. **Idle past the budget with no transcript growth** — the only case with positive evidence of death. `TaskStop` it, confirm it stopped, then RE-DELEGATE the remainder to a fresh subagent. Never absorb the work into yourself — the orchestrator decomposes, delegates, verifies, and commits; it does not implement (hard stop 6). Re-read the tree before writing the new brief: a stale brief is worse than no brief.\n\n");
-    content.push_str("Elapsed time alone is still never evidence of death. Never complete the stage while any subagent is still out (Rule 4).\n\n");
-}
-
-/// Append subagent restrictions (shared by standard and integration-verify, last line differs)
-fn append_subagent_restrictions(content: &mut String, agents_role: &str) {
-    content.push_str("**Subagent Restrictions (CRITICAL - PREVENTS LOST WORK):**\n\n");
-    content.push_str("When spawning subagents via Task tool, they MUST be told:\n");
-    content.push_str("- ⛔ **NEVER run `git commit`** - only the main agent commits, and only at the END of the stage after all verification\n");
+/// Pinned byte-identical across every guidance surface by
+/// `tests_doctrine.rs::block_a_agrees_across_every_surface`, so it is the one
+/// piece of subagent doctrine the prefix still spells out: the orchestrator
+/// pastes it into the prompts it writes, and a paraphrase would drift from the
+/// hook that enforces it. The rest of the subagent rules reach the session
+/// through `~/.claude/CLAUDE.md` (see `BINDING_RULES_POINTER`).
+fn append_no_verify_block(content: &mut String) {
     content.push_str(
-        "- ⛔ **NEVER run `loom stage complete`** - only the main agent completes stages\n",
+        "Rule 5's fence in `~/.claude/CLAUDE.md` is the full preamble. This is BLOCK-A, \
+         reproduced here because the hook matches it byte for byte - paste it verbatim:\n\n",
     );
-    content.push_str("- ⛔ **NEVER run `git add -A` or `git add .`** - only specific files\n");
-    content.push_str("- Each subagent MUST own exclusive files - two subagents writing the same file = LOST WORK\n");
-    content
-        .push_str("- 📝 **MUST record memories** — subagents MUST use `loom memory` to record:\n");
-    content.push_str(
-        "  - Mistakes: `loom memory note \"mistake: tried X, failed because Y, fixed by Z\"`\n",
-    );
-    content.push_str(
-        "  - Decisions: `loom memory decision \"chose X over Y\" --context \"because Z\"`\n",
-    );
-    content.push_str(
-        "  - Surprises: `loom memory note \"found: unexpected behavior in file:line\"`\n",
-    );
-    content.push_str(
-        "  - Do NOT record procedural actions (\"read file\", \"ran tests\", \"spawned agents\")\n",
-    );
-    content.push_str(
-        "- ⛔ **NEVER use auto-memory** — do NOT call Write/Edit on `~/.claude/projects/*/memory/` files. Use `loom memory` only.\n",
-    );
-    content.push_str("\nVERIFICATION IS THE MAIN AGENT'S JOB - NOT YOURS:\n");
+    content.push_str("VERIFICATION IS THE MAIN AGENT'S JOB - NOT YOURS:\n");
     content
         .push_str("- Do NOT verify your work. No full build, no full test suite, no linter, no\n");
     content.push_str("  formatter, no type-checker, and never a repeated or looping check.\n");
@@ -131,7 +109,6 @@ fn append_subagent_restrictions(content: &mut String, agents_role: &str) {
     content.push_str("  `cargo test <your_module>::`), run ONCE. Skip it if you are unsure.\n");
     content.push_str("- Report instead: files changed, assumptions made, anything unresolved.\n");
     content.push_str("  The MAIN AGENT compiles, tests, lints, and fixes.\n\n");
-    content.push_str(agents_role);
 }
 
 /// Append the mandatory mini adversarial code review block.
@@ -140,29 +117,33 @@ fn append_subagent_restrictions(content: &mut String, agents_role: &str) {
 /// The documentation stages — knowledge/bootstrap and knowledge-distill — do NOT
 /// call this: both emit only markdown (`doc/loom/knowledge/*.md` and the review
 /// doc), so there is no code to review. Covers the six required review dimensions.
-///
-/// `pub(crate)` so the recovery-signal path (`recovery_format.rs`, which does not
-/// embed the stable prefix) can reuse the exact same block for resumed code stages.
 pub(crate) fn append_adversarial_review(content: &mut String) {
-    content
-        .push_str("**Mini Adversarial Code Review (MANDATORY before `loom stage complete`):**\n\n");
-    content.push_str("Before completing, run an ADVERSARIAL review of EVERY line you wrote or changed this stage. Assume a defect EXISTS and hunt for it — do not rubber-stamp your own work. For non-trivial changes, spawn an independent `loom-code-reviewer` subagent (read-only) so the review is not biased by the author. Fix every issue you find BEFORE completing.\n\n");
-    content.push_str("Review across ALL of these dimensions:\n\n");
-    content.push_str("1. **Code quality & architecture** — SOLID, high cohesion, low coupling; the right level of abstraction (not over- or under-engineered); clear, honest naming; error and edge paths handled.\n");
-    content.push_str("2. **Idiomatic code** — matches the language's idioms AND this project's established patterns/conventions (see `doc/loom/knowledge/patterns.md` and `conventions.md`).\n");
-    content.push_str("3. **Security** — inputs validated at boundaries; no hardcoded secrets; no injection / OWASP exposure; error messages leak nothing sensitive.\n");
-    content.push_str("4. **Wiring** — every new/edited unit is imported, registered/mounted, and reachable by a real caller or user — not merely compiling.\n");
-    content.push_str("5. **Dead & unnecessary code** — no stubs, no unused imports/variables/functions, no unreachable branches, no leftover scaffolding from your changes.\n");
-    content.push_str("6. **No duplication (DRY)** — search the WHOLE codebase (`rg`/`fd`) for existing functions, utilities, or patterns that already do this; REUSE them instead of re-implementing, and extract any duplication you introduced.\n\n");
+    content.push_str("**Mini Adversarial Code Review (MANDATORY before completing):**\n\n");
+    content.push_str("Assume a defect EXISTS in what you wrote; for non-trivial changes spawn a read-only `loom-code-reviewer`. Fix every finding first. Six dimensions:\n\n");
     content.push_str(
-        "Finally, confirm your tests actually exercise the change — not just that it compiles.\n\n",
+        "1. **Code quality & architecture** — SOLID, right abstraction level, error and edge paths handled\n",
+    );
+    content.push_str(
+        "2. **Idiomatic code** — the language's idioms AND this project's patterns/conventions\n",
+    );
+    content.push_str(
+        "3. **Security** — inputs validated at boundaries, no secrets, no injection, no leaky errors\n",
+    );
+    content.push_str(
+        "4. **Wiring** — every new unit imported, registered, reachable by a real caller\n",
+    );
+    content.push_str(
+        "5. **Dead & unnecessary code** — no stubs, no unused imports, no leftover scaffolding\n",
+    );
+    content.push_str("6. **No duplication (DRY)** — search the WHOLE codebase (`rg`/`fd`) and REUSE what exists\n\n");
+    content.push_str(
+        "Confirm your tests actually exercise the change — not just that it compiles.\n\n",
     );
 }
 
-/// Append the two-bullet "Isolation Boundaries (STRICT)" block used by IV and knowledge-distill.
-///
-/// The standard prefix uses a three-bullet version (with the "embedded below" bullet)
-/// written inline. This helper covers the shorter two-bullet form.
+/// Append the two-bullet "Isolation Boundaries (STRICT)" block used by IV and
+/// knowledge-distill. The standard prefix folds the same rule into a single
+/// line under its own `## Worktree Context` heading.
 fn append_isolation_boundaries_simple(content: &mut String) {
     content.push_str("**Isolation Boundaries (STRICT):**\n\n");
     content.push_str("- You are **CONFINED** to this worktree - do not access files outside it\n");
@@ -170,53 +151,17 @@ fn append_isolation_boundaries_simple(content: &mut String) {
         .push_str("- Git commands must target THIS worktree only - no `git -C`, no `cd ../..`\n\n");
 }
 
-/// Append the common "## Execution Rules" intro used by IV, knowledge-distill, and knowledge.
+/// Append the `## Execution Rules` header shared by all four prefixes: the
+/// pointer at `~/.claude/CLAUDE.md`, then the knowledge-consumption contract.
 ///
-/// Standard prefix uses a slightly different wording ("both are symlinked into this worktree")
-/// and writes the header inline.
-fn append_execution_rules_intro(content: &mut String) {
+/// The contract stays spelled out because it governs the Knowledge Brief
+/// embedded in THIS signal — it tells the agent that the quoted sections are
+/// reference data rather than instructions, and where to pull more.
+fn append_execution_rules_header(content: &mut String) {
     content.push_str("## Execution Rules\n\n");
-    content.push_str(
-        "Follow your `~/.claude/CLAUDE.md` and project `CLAUDE.md` rules. Key reminders:\n\n",
-    );
-}
-
-/// Append anti-slop forcing-function (understand-first ladder + banned list)
-fn append_anti_slop_guidance(content: &mut String) {
-    content.push_str("**UNDERSTAND-FIRST LADDER (before writing code):**\n\n");
-    // Indented AT THE SPLICE (the contract itself is pinned byte-for-byte):
-    // at column 0 its later paragraphs end the list and `2.` below restarts.
-    content.push_str(&as_list_item("1. ", KNOWLEDGE_CONSUMPTION_CONTRACT));
-    content.push_str(
-        "2. Map the area: call paths, data flow, every caller/consumer; know the blast radius.\n",
-    );
-    content.push_str("3. Search for existing functions/utilities/patterns to REUSE first.\n");
-    content.push_str("4. Only then implement — minimal and surgical.\n");
-    content.push_str("5. Cannot verify a fact you rely on? Do NOT guess. Check it. If you genuinely cannot (autonomous stage), record via `loom memory decision`/`note` and proceed against the most defensible reading of acceptance — never silently.\n\n");
-    content.push_str("**BANNED — self-reject and redo before reporting done:**\n\n");
-    content.push_str("- \"areas left untouched\"\n");
-    content.push_str("- \"I guessed / should have checked\"\n");
-    content.push_str("- \"that is on me, I should have checked\"\n");
-    content.push_str("- \"reporting unverified work as done\"\n\n");
-    content.push_str("Understand before acting; do not guess.\n\n");
-}
-
-/// Append binary usage, state files, and context recovery (shared by all prefix types)
-fn append_common_footer(content: &mut String) {
-    content.push_str("**Binary Usage (CRITICAL when working on loom):**\n");
-    content.push_str("- **ALWAYS use `loom`** - the installed binary from PATH\n");
-    content.push_str("- **NEVER use `target/debug/loom`** or `./loom/target/debug/loom`\n");
-    content.push_str("- Development binaries cause version mismatches and state corruption\n\n");
-    content.push_str("**State Files (CRITICAL):**\n");
-    content.push_str("- **NEVER edit `.work/` files directly** - always use loom CLI\n");
-    content.push_str("- State is managed by the orchestrator, not by agents\n");
-    content.push_str("- Direct edits corrupt state and cause phantom completions\n\n");
-    content.push_str("**Context Recovery (after compaction):**\n\n");
-    content.push_str("If your context was recently compacted or you feel disoriented:\n");
-    content.push_str("1. Run: `loom memory list` (see your session notes)\n");
-    content.push_str("2. Check: `.work/handoffs/` for handoff files for your stage\n");
-    content.push_str("3. Read the latest handoff to restore working context\n");
-    content.push_str("4. Resume from where you left off - do NOT restart from scratch\n\n");
+    content.push_str(BINDING_RULES_POINTER);
+    content.push_str(KNOWLEDGE_CONSUMPTION_CONTRACT);
+    content.push('\n');
 }
 
 // ── Prefix generators ────────────────────────────────────────────────
@@ -225,133 +170,22 @@ fn append_common_footer(content: &mut String) {
 pub fn generate_stable_prefix() -> String {
     let mut content = String::new();
 
-    // Worktree context header
     content.push_str("## Worktree Context\n\n");
-    content.push_str(
-        "You are in an **isolated git worktree**. This signal contains everything you need:\n\n",
-    );
-    content.push_str("- **Your stage assignment and acceptance criteria are below** - this file is self-contained\n");
-    content.push_str("- **All context (plan overview, handoff, knowledge) is embedded below** - reading main repo files is **FORBIDDEN**\n");
-    content.push_str("- **Commit to your worktree branch ONLY at the very end** — after every subagent has returned and the full verification gate is green; it is merged after `loom stage complete`\n\n");
-
-    // Isolation boundaries
-    content.push_str("**Isolation Boundaries (STRICT):**\n\n");
-    content.push_str("- You are **CONFINED** to this worktree - do not access files outside it\n");
-    content.push_str(
-        "- All context you need is embedded below - reading main repo files is **FORBIDDEN**\n",
-    );
-    content
-        .push_str("- Git commands must target THIS worktree only - no `git -C`, no `cd ../..`\n\n");
+    content.push_str("**Isolation Boundaries (STRICT):** this signal is self-contained; you are **CONFINED** here — **STAY IN THIS WORKTREE**, no `git -C`, no `cd ../..`. Your branch merges after `loom stage complete`.\n\n");
 
     append_path_boundaries(&mut content);
 
-    // working_dir reminder
     content.push_str(
-        "**working_dir Reminder:** Acceptance criteria execute from `WORKTREE + working_dir`.\n",
+        "**working_dir Reminder:** Acceptance criteria execute from `WORKTREE + working_dir` — see the Target section below for the exact path.\n\n",
     );
-    content.push_str("Check the Target section below for the exact execution path.\n\n");
 
-    // Execution rules
-    content.push_str("## Execution Rules\n\n");
-    content.push_str("Follow your `~/.claude/CLAUDE.md` and project `CLAUDE.md` rules (both are symlinked into this worktree). Key reminders:\n\n");
-    content.push_str("**Worktree Isolation (CRITICAL):**\n");
-    content.push_str(
-        "- **STAY IN THIS WORKTREE** - never read files from main repo or other worktrees\n",
-    );
-    content.push_str(
-        "- **All context is embedded above** - you have everything you need in this signal\n",
-    );
-    content.push_str("- **No path escaping** - do not use `../..`, `cd` to parent directories, or absolute paths outside worktree\n\n");
-    append_anti_slop_guidance(&mut content);
-    content.push_str("**Delegation & Efficiency (CRITICAL):**\n\n");
-    content.push_str("**USE THE TASK TOOL** to spawn parallel subagents for multi-part work:\n");
-    content.push_str("- Independent file changes, multiple components, tests + implementation → spawn parallel subagents\n");
-    content.push_str("- Match subagent type to the work, PER SUBAGENT, at the CHEAPEST tier that can do the piece: boilerplate/scaffolding/simple unit tests → the codex luna lane, common implementation and integration tests → `loom-software-engineer` (sonnet) or the codex terra lane (the default lane — most work belongs here), mainstream architecture and algorithm implementation → `loom-senior-software-engineer` (opus), fable only for visual/UI design, a bug that survived a delegated fix attempt, or extremely challenging algorithmic design (explicit model override at spawn). A stage may also license the codex lane — when it does, a `Codex Implementers` section below carries that lane's rules and names every lane licensed for the stage. Licensing a lane never makes it mandatory: a stage mixes lanes freely, choosing per subagent by what the work needs\n");
-    content.push_str("- **DEBUGGING OR REPEATED FAILURE**: on a second failure on the same task, spawn a `loom-advisor` (fable) subagent instead of a blind retry — narrow scope, full detail supplied by the orchestrator, advice returned\n");
-    content.push_str("- Pattern: `Task(subagent_type=\"loom-software-engineer\", prompt=\"...\")` - send MULTIPLE in ONE message\n");
-    content.push_str(
-        "- Skills: /loom-auth, /loom-testing, /loom-ci-cd, /loom-logging-observability\n\n",
-    );
-    content.push_str("- **FILE EXCLUSIVITY**: Each subagent must own exclusive write files. Overlap = lost work. List file assignments in each Task prompt.\n");
-    content.push_str("**Subagent Hierarchies (2-LEVEL CAP):**\n");
-    content.push_str("- For more than ~6 independent worker tasks, split into 2-4 coordinator subagents, each owning a DISJOINT file territory and spawning its own workers (requires Claude Code >= 2.1.172)\n");
-    content.push_str("- Loom policy caps the tree at 2 levels: main agent → coordinators → workers. Workers NEVER spawn subagents.\n");
-    content.push_str("- Spawn workers BY AGENT TYPE (loom-software-engineer = sonnet); untyped workers inherit the MAIN session model\n");
-    content.push_str("- Coordinators run AT MOST ONE narrowly-scoped check over the files their workers wrote (e.g. `cargo test <your_module>::`), run ONCE, skipped if unsure, and return COMPACT summaries; the main agent compiles, tests, lints, and fixes\n");
-    content.push_str(
-        "- ~6 or fewer tasks → plain flat subagents; do NOT add a hierarchy for small work\n\n",
-    );
-    append_subagent_waiting_doctrine(&mut content);
-    append_subagent_restrictions(
-        &mut content,
-        "- Subagents write code (coordinators delegate) and report results; main agent handles git\n\n",
-    );
-    content.push_str("**Agent Teams (WHEN AVAILABLE):**\n\n");
-    content.push_str("If CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1 is set, you can create\n");
-    content.push_str("agent teams for richer coordination than subagents or hierarchies:\n");
-    content.push_str(
-        "- Teams provide: inter-agent messaging, shared task lists, idle/wake lifecycle\n",
-    );
-    content
-        .push_str("- Teams cost ~7x tokens - use ONLY when coordination benefit justifies cost\n");
-    content.push_str("- YOU are the team lead - only YOU may run git commit and loom stage complete, and only at the END, after every teammate has returned and verification is green\n");
-    content.push_str("- Teammates CANNOT commit, complete stages, or update memory/knowledge\n");
-    content.push_str("- Record teammate insights: loom memory note \"Teammate found: ...\"\n");
-    content
-        .push_str("- Keep context for coordination (<40% utilization), delegate implementation\n");
-    content.push_str("- Shut down ALL teammates before completing the stage\n\n");
+    append_execution_rules_header(&mut content);
+    append_no_verify_block(&mut content);
+    append_adversarial_review(&mut content);
+
     content.push_str("**Completion:**\n");
     append_commit_timing_rules(&mut content, CODE_STAGE_GATE, CODE_STAGE_REVIEW);
     append_completion_rules(&mut content);
-
-    append_adversarial_review(&mut content);
-
-    content.push_str("**Silent Failure Check (exit 0 ≠ success):**\n\n");
-    content.push_str("Re-read ALL command stderr even when the exit code is 0. If you see \"connection refused\", \"permission denied\", \"failed to download\", \"blocked\", or \"sandbox\", investigate it. If the sandbox blocked something you needed, STOP and report it as a blocker — do NOT work around it silently.\n\n");
-
-    content.push_str("**Stage Memory - MEMORY ONLY (MANDATORY):**\n\n");
-    content.push_str("```text\n");
-    content.push_str("⚠️  IMPLEMENTATION STAGES USE `loom memory` ONLY - NEVER `loom knowledge`\n");
-    content.push_str("    Curating memories into knowledge is knowledge-distill's job.\n");
-    content.push('\n');
-    content.push_str(
-        "⛔  DO NOT use Claude Code's auto-memory system (~/.claude/projects/*/memory/)\n",
-    );
-    content.push_str("    NEVER call Write or Edit on files under ~/.claude/projects/*/memory/\n");
-    content
-        .push_str("    Use ONLY `loom memory` commands. Loom memory is embedded in signals and\n");
-    content
-        .push_str("    shared across sessions. Claude Code's auto-memory is disconnected from\n");
-    content.push_str(
-        "    orchestration and invisible to other stages — anything saved there is LOST.\n",
-    );
-    content.push_str("```\n\n");
-    content.push_str("**LEARN FROM PAST SESSIONS (BEFORE starting work):**\n\n");
-    content.push_str("- Check your signal's Knowledge Brief for known pitfalls, or pull more with `loom knowledge context --stage <stage-id> --query \"mistakes in <area>\" --budget-tokens <n>`\n");
-    content.push_str(
-        "- If a past mistake matches your task, adjust your approach BEFORE writing code\n",
-    );
-    content.push_str("- This is the self-improvement loop: past agents recorded mistakes so YOU can avoid them\n\n");
-    content.push_str("**WHEN to record (write advice to your future self — IMMEDIATELY, not at stage end):**\n\n");
-    content.push_str("Each memory entry should help a FUTURE agent who faces similar work. Include the misleading signal (what made the wrong approach look right) and a prevention rule (how to detect this earlier).\n\n");
-    content.push_str("- **Mistake/error** → `loom memory note \"mistake: tried X because [misleading signal]. Failed because Y. Prevention: [how to detect earlier]. Fix: Z\"`\n");
-    content.push_str("- **User correction** → `loom memory note \"mistake: user said do Y instead of X because Z\"`\n");
-    content.push_str("- **Approach chosen** → `loom memory decision \"chose X over Y\" --context \"because Z\"`\n");
-    content.push_str("- **Surprising discovery** → `loom memory note \"found: unexpected behavior in file:line\"`\n");
-    content.push_str("- **Gotcha/trap** → `loom memory note \"gotcha: X looks right because [why], but actually Y. Rule: [detection heuristic]\"`\n");
-    content.push_str(
-        "- **File changes** → `loom memory change \"src/file.rs - what changed and why\"`\n\n",
-    );
-    content.push_str("**What NOT to record** (these waste memory and obscure real insights):\n\n");
-    content.push_str("- Procedural narration: \"spawned 3 subagents\", \"read the config\", \"ran cargo test\"\n");
-    content
-        .push_str("- Obvious outcomes: \"tests passed\", \"build succeeded\", \"file created\"\n");
-    content.push_str("- Task restating: repeating the assignment or acceptance criteria\n");
-    content.push_str("- Bare facts without advice: \"config is at path/X\" — instead say WHY it matters and WHAT to do about it\n\n");
-    content.push_str("- **FORBIDDEN**: `loom knowledge update` commands (ONLY for knowledge-bootstrap, integration-verify, and knowledge-distill)\n");
-    content.push_str("- Memory persists across sessions and is curated into knowledge by the knowledge-distill stage\n\n");
-    append_git_staging_full(&mut content);
-    append_common_footer(&mut content);
 
     content
 }
@@ -366,126 +200,34 @@ pub fn generate_integration_verify_stable_prefix() -> String {
         "You are running an **integration-verify stage** - the **FINAL QUALITY GATE** before merge.\n\n",
     );
 
-    // Zero tolerance
-    content.push_str("**ZERO TOLERANCE FOR ISSUES:**\n\n");
-    content.push_str("- **ALL** compiler warnings must be fixed - not suppressed, FIXED\n");
-    content.push_str("- **ALL** linter errors must be resolved - no exceptions\n");
-    content.push_str("- **ALL** test failures must be addressed\n");
-    content.push_str("- **ALL** IDE warnings should be investigated and resolved\n");
-    content.push_str("- **NOTHING** is \"pre-existing\" or \"out of scope\" - every issue is YOUR issue, treat it as relevant and critical\n");
-    content
-        .push_str("- **NOTHING** is \"too trivial\" - small issues compound into big problems\n\n");
+    content.push_str("**ZERO TOLERANCE FOR ISSUES:** **ALL** compiler warnings, linter errors, test failures, and IDE warnings must be FIXED, not suppressed. **NOTHING** is \"pre-existing\", \"out of scope\", or \"too trivial\" — every issue is YOUR issue.\n\n");
 
-    // Mission
-    content.push_str("**Your Mission:**\n\n");
-    content.push_str("1. **REVIEW** code for quality, security, and correctness issues\n");
-    content.push_str("2. **FIX** every warning, error, and issue you encounter\n");
-    content.push_str("3. **VERIFY** all acceptance criteria pass\n");
-    content.push_str("4. **TEST** that the feature actually works end-to-end\n\n");
+    content.push_str("**Your Mission:** **REVIEW** code for quality, security, and correctness; **FIX** every warning and error; **VERIFY** all acceptance criteria pass; **TEST** the feature end-to-end.\n\n");
 
     // Mini adversarial code review — the six required dimensions, stated up front
     append_adversarial_review(&mut content);
 
-    // Code review execution strategy - detailed instructions
-    content.push_str("```text\n");
-    content.push_str("┌────────────────────────────────────────────────────────────────────┐\n");
-    content.push_str("│  🔍 CODE REVIEW + VERIFICATION EXECUTION STRATEGY                  │\n");
-    content.push_str("│                                                                    │\n");
-    content.push_str("│  MUST use PARALLEL SPECIALIZED AGENTS for comprehensive review:   │\n");
-    content.push_str("│                                                                    │\n");
-    content.push_str("│  1. loom-code-reviewer + /loom-security-audit - Security review   │\n");
-    content.push_str("│  2. loom-code-reviewer   - Architecture: coupling, dead code      │\n");
-    content.push_str("│  3. Build/test/sandbox   - Full suite + stderr + sandbox verify    │\n");
-    content.push_str("│  4. Functional verifier  - End-to-end test, wiring, reachability   │\n");
-    content.push_str("│                                                                    │\n");
-    content.push_str("│  loom-code-reviewer is READ-ONLY — use engineers to FIX issues.   │\n");
-    content.push_str("│  Spawn these as PARALLEL subagents to maximize efficiency.        │\n");
-    content.push_str("└────────────────────────────────────────────────────────────────────┘\n");
-    content.push_str("```\n\n");
-
-    // Detailed review dimension instructions
-    content.push_str("**Review Dimension Details:**\n\n");
-    content.push_str(
-        "1. **loom-code-reviewer + /loom-security-audit (security)** — Invoke /loom-security-audit skill. ",
-    );
-    content.push_str("Check for OWASP Top 10 (injection, XSS, auth bypass). ");
-    content.push_str("Verify no hardcoded secrets or credentials. ");
-    content.push_str("Check dependency security (known vulnerabilities). ");
-    content.push_str("Validate input sanitization at boundaries. ");
-    content.push_str("Review error messages for information leakage.\n\n");
-    content.push_str(
-        "2. **loom-code-reviewer (architecture)** — Check code organization and module coupling. ",
-    );
-    content.push_str("Verify error handling is complete (no swallowed errors). ");
-    content.push_str("Check for proper abstraction (not over/under-engineered). ");
-    content.push_str("Verify naming conventions and code style consistency. ");
-    content.push_str("Check for dead code, unused imports, unreachable paths.\n\n");
-    content.push_str(
-        "3. **Build/test/sandbox verifier** — Run full test suite AND read ALL stderr output. ",
-    );
-    content.push_str("Check for warnings even when tests pass. ");
-    content.push_str("Verify no sandbox interference (blocked downloads, denied writes). ");
-    content.push_str("If ANY stderr contains \"blocked\", \"denied\", \"connection refused\", ");
-    content.push_str("\"failed to download\" — investigate and resolve. ");
-    content.push_str("Confirm all external dependencies are actually present.\n\n");
-    content.push_str("4. **Functional verifier** — Actually RUN the feature end-to-end. ");
-    content.push_str("Verify output is correct (not just that it doesn't crash). ");
-    content.push_str("Check wiring: is feature registered, mounted, callable? ");
-    content.push_str("Test primary use case with realistic inputs.\n\n");
-
-    // SILENT FAILURE DETECTION section
-    content.push_str("**SILENT FAILURE DETECTION:**\n\n");
-    content.push_str("- EXIT CODE 0 does NOT mean success\n");
-    content.push_str("- Sandbox can block downloads silently (tool uses cached/stale data)\n");
-    content.push_str("- MUST check stderr of ALL commands for failure indicators\n");
-    content.push_str("- If sandbox blocked something needed, report as BLOCKER\n");
-    content.push_str("- Verify external dependencies are present, not just referenced\n\n");
-
-    // Agent teams for IV - changed to MUST
-    content.push_str("**Agent Teams for Integration Verification:**\n\n");
-    content.push_str(
-        "MUST use an agent team when available for multi-dimension review and verification:\n",
-    );
-    content.push_str("- Security review: specific OWASP checks, dependency audit\n");
-    content
-        .push_str("- Architecture review: coupling analysis, pattern compliance, error handling\n");
-    content.push_str("- Build/test/sandbox: full suite + stderr analysis + sandbox verification\n");
-    content.push_str("- Functional verification: end-to-end feature test, wiring check\n");
-    content.push_str("Teams allow verification tasks to coordinate on discovered issues.\n\n");
+    // Four review dimensions, each its own parallel subagent. `loom-code-reviewer`
+    // is READ-ONLY, so its findings go to an engineer to fix.
+    content.push_str("**Review Dimension Details** — spawn these as PARALLEL subagents; `loom-code-reviewer` is READ-ONLY, so hand its findings to an engineer to fix:\n\n");
+    content.push_str("1. **Security** — invoke /loom-security-audit: OWASP Top 10, hardcoded secrets, dependency CVEs, boundary sanitization, error-message leakage.\n");
+    content.push_str("2. **Architecture** — module coupling, swallowed errors, over/under-abstraction, naming consistency, dead code and unreachable paths.\n");
+    content.push_str("3. **Build/test/sandbox** — full suite plus ALL stderr, warnings even when tests pass; any \"blocked\", \"denied\", \"connection refused\" or \"failed to download\" is a BLOCKER, not a workaround. Exit code 0 does NOT mean success.\n");
+    content.push_str("4. **Functional** — RUN the feature end-to-end on realistic inputs; confirm the output is correct and the feature is registered, mounted, and callable.\n\n");
 
     // Isolation + path boundaries (shared)
     append_isolation_boundaries_simple(&mut content);
     append_path_boundaries(&mut content);
 
-    // Execution rules
-    append_execution_rules_intro(&mut content);
-    append_anti_slop_guidance(&mut content);
+    append_execution_rules_header(&mut content);
 
-    content.push_str("**Delegation & Efficiency (CRITICAL):**\n\n");
-    content.push_str("**USE THE TASK TOOL** to spawn parallel subagents for verification:\n");
-    content.push_str("- Run tests, linting, and build checks in parallel where possible\n");
-    content.push_str("- Pattern: `Task(subagent_type=\"loom-code-reviewer\", prompt=\"...\")` - send MULTIPLE in ONE message\n");
-    content.push_str("- Agents: `loom-code-reviewer` (REQUIRED for code review — read-only, focused on quality/security/architecture), `loom-senior-software-engineer` (for fixing review findings, complex judgment), `loom-software-engineer` (for test fixes, simple patches), `Explore`\n");
-    content.push_str("- **DEBUGGING OR REPEATED FAILURE**: on a second failure on the same task, spawn a `loom-advisor` (fable) subagent instead of a blind retry — narrow scope, full detail supplied by the orchestrator, advice returned\n");
+    append_no_verify_block(&mut content);
     content.push_str(
-        "- Skills: /loom-security-audit (REQUIRED for security review), /loom-testing, /loom-auth, /loom-ci-cd, /loom-logging-observability\n\n",
-    );
-    content.push_str("- **FILE EXCLUSIVITY**: Each subagent must own exclusive write files. Overlap = lost work. List file assignments in each Task prompt.\n");
-
-    append_subagent_waiting_doctrine(&mut content);
-
-    append_subagent_restrictions(
-        &mut content,
-        "- Subagents fix issues and report results; main agent handles git\n\n\
-         ⚠️ **INTEGRATION-VERIFY OVERRIDE — the no-verify rule above does NOT apply here:**\n\n\
-         - The \"VERIFICATION IS THE MAIN AGENT'S JOB - NOT YOURS\" rule is written for\n  \
-         implementation-stage subagents. IV review/verification subagents are the OPPOSITE\n  \
-         case: their entire purpose is to run the FULL build, the FULL test suite, and the\n  \
-         FULL linter, and to report every warning and failure — that IS their job here.\n\n\
-         - When you spawn a build/test/sandbox verifier or a functional verifier for this\n  \
-         integration-verify stage, tell it explicitly to run the complete suite (e.g.\n  \
-         `cargo build`, `cargo test`, `cargo clippy -- -D warnings`, `cargo fmt --check`)\n  \
-         and read all stderr — not a narrowly-scoped, single, skip-if-unsure check.\n\n",
+        "⚠️ **INTEGRATION-VERIFY OVERRIDE — the no-verify rule above does NOT apply here:**\n\n\
+         It is written for implementation-stage subagents. IV review/verification subagents are \
+         the OPPOSITE case: tell every build/test/sandbox or functional verifier you spawn to run \
+         the COMPLETE suite (e.g. `cargo build`, `cargo test`, `cargo clippy -- -D warnings`, \
+         `cargo fmt --check`) and read all stderr — that IS their job here.\n\n",
     );
 
     content.push_str("**Completion:**\n");
@@ -496,12 +238,6 @@ pub fn generate_integration_verify_stable_prefix() -> String {
     append_completion_rules(&mut content);
 
     content.push_str("Knowledge distillation is handled by a separate knowledge-distill stage that runs after this stage.\n\n");
-
-    // Git staging (shorter version)
-    content.push_str("**Git Staging (CRITICAL):**\n");
-    append_git_staging_rules(&mut content);
-
-    append_common_footer(&mut content);
 
     content
 }
@@ -526,29 +262,16 @@ pub fn generate_knowledge_distill_stable_prefix() -> String {
     content.push_str(
         "**⛔ MEMORY IS A ONE-WAY DOOR — recording to `loom memory` AFTER you distill is ZERO-VALUE WASTE.**\n",
     );
-    content.push_str(
-        "This is the LAST stage of the plan. The moment distillation finishes the plan completes and the\n",
-    );
-    content.push_str(
-        "ENTIRE `.work/` directory — including EVERY `loom memory` entry — is cleaned up and DELETED. Nothing\n",
-    );
-    content.push_str(
-        "reads memory after this stage; there is no next stage and no next plan. A memory recorded once you\n",
-    );
-    content.push_str(
-        "have started distilling is seen by NO ONE and discarded minutes later — pure wasted time, tokens, and\n",
-    );
-    content.push_str("energy. Therefore:\n\n");
+    content.push_str("This is the LAST stage of the plan: the moment distillation finishes, the plan completes and the\n");
+    content.push_str("ENTIRE `.work/` directory — including EVERY `loom memory` entry — is DELETED. Nothing reads memory\n");
+    content.push_str("after this stage. Therefore:\n\n");
     content.push_str(
         "- Record ALL of your own findings to `loom memory` in step 1, BEFORE you begin step 4.\n",
     );
     content.push_str(
-        "- Once you start distilling, STOP using `loom memory` entirely — do not \"capture\" anything else there.\n",
+        "- Once you start distilling, STOP using `loom memory` entirely; anything discovered from then on goes\n",
     );
-    content.push_str(
-        "- Discover something new mid- or post-distillation? Write it DIRECTLY into `loom knowledge update`\n",
-    );
-    content.push_str("  (the permanent files that survive) — NEVER back into `loom memory`.\n");
+    content.push_str("  DIRECTLY into `loom knowledge update`, never back into memory.\n");
     content.push_str(
         "- At completion, do NOT run a \"record outstanding memories\" pass. There is nothing left to record.\n\n",
     );
@@ -582,74 +305,26 @@ pub fn generate_knowledge_distill_stable_prefix() -> String {
     content.push_str("   - `mistakes` — errors made, written as ACTIONABLE PREVENTION RULES: what was misleading, how to detect it, what to do instead. If 2+ stages hit the same mistake, it is a systemic issue — document the root cause\n");
     content.push_str("   - `stack` — new dependencies, tooling changes\n");
     content.push_str("   - `concerns` — tech debt introduced, known issues\n");
-    content.push_str("   **Tier routing:** each section above stays SHORT (a tier-1 file is a summary, not an archive).\n");
-    content.push_str(
-        "   - Section under ~40 lines → write it inline into the tier-1 file, as above.\n",
-    );
-    content.push_str("   - Section longer than ~40 lines → write it to a topic file instead: `loom knowledge update <category>/<slug> \"...\"`, then leave a 2-4 line summary plus a link to that topic file in the tier-1 file.\n");
-    content.push_str("   - `INDEX.md` is regenerated automatically on every `loom knowledge update` — there is NO index step to run, so finish distillation with your last write and nothing after it.\n");
+    content.push_str("   **Tier routing:** tier-1 files are summaries, not archives. A section under ~40 lines goes inline; a longer one goes to a topic file (`loom knowledge update <category>/<slug> \"...\"`) with a 2-4 line summary plus link left behind. `INDEX.md` is regenerated automatically on every `loom knowledge update` — there is NO index step to run, so finish with your last write.\n");
     content.push_str("5. DO NOT blindly copy memory entries — synthesize and curate\n");
-    content.push_str("6. **CORRECTIONS PASS — run it BEFORE the step-4 writes.** Sweep `loom memory show --all` for entries starting `stale-knowledge:` and apply EVERY one, plus anything else you find stale (a mistake since fixed, a pattern replaced, an entry-point renamed). Stale entries are quoted verbatim into every later stage's Knowledge Brief, so one wrong line misleads every agent of the next plan, and an unapplied `stale-knowledge:` memory is a correction LOST when this plan completes\n   - Correct IN PLACE: `loom knowledge replace-section <file> \"<heading>\" \"<corrected body>\"` — body WITHOUT its `## ` heading line\n   - NEVER correct with `loom knowledge update`: it APPENDS, leaving the wrong text directly above the right text for the next top-down reader\n   - `replace-section` appends the section and SAYS so when no heading matches — read that line: an appended \"correction\" means your heading was wrong and the stale text is still in the file\n   - Name the wrong claim explicitly in the replacement; a silent deletion invites the next agent to re-add it from the same stale source\n");
+    content.push_str("6. **CORRECTIONS PASS — run it BEFORE the step-4 writes.** Sweep `loom memory show --all` for entries starting `stale-knowledge:` and apply EVERY one, plus anything else you find stale. An unapplied `stale-knowledge:` memory is a correction LOST when this plan completes, and the falsehood is quoted into every later Knowledge Brief. Correct IN PLACE with `loom knowledge replace-section <file> \"<heading>\" \"<corrected body>\"` (body WITHOUT its `## ` heading line) — never `loom knowledge update`, which APPENDS. When no heading matches, `replace-section` appends and SAYS so: read that line, or the stale text is still standing.\n");
     content.push_str("7. Generate review document: `loom review`\n\n");
 
     // Distillation is single-agent work: the curator holds the whole picture.
     content.push_str("**Work single-agent — do NOT spawn subagents:**\n\n");
-    content.push_str(
-        "Distillation is a linear read-synthesize-write pass. The stage memories are already\n",
-    );
-    content.push_str(
-        "compact summaries, and coherence comes from ONE curator holding the whole picture.\n\n",
-    );
-    content.push_str(
-        "- Do NOT spawn subagents (Task tool) — no gathering agents, no reviewers, no fan-out.\n",
-    );
-    content.push_str(
-        "- Manage context by leaning on the memories: they are your PRIMARY evidence; keep\n",
-    );
-    content.push_str(
-        "  code spot-reads narrow (only where a memory is ambiguous, conflicting, or incomplete).\n",
-    );
-    content.push_str(
-        "- You are the only writer: synthesize, dedupe across categories, and run every\n",
-    );
-    content.push_str("  `loom knowledge update` yourself.\n\n");
+    content.push_str("Distillation is a linear read-synthesize-write pass and coherence comes from ONE curator holding the whole picture. No gathering agents, no reviewers, no fan-out: you are the only writer, so synthesize, dedupe across categories, and run every `loom knowledge update` yourself. Manage context by leaning on the memories rather than the diff.\n\n");
 
-    // Do NOT modify CLAUDE.md
-    content.push_str("**IMPORTANT — Do NOT modify the project's CLAUDE.md:**\n\n");
-    content.push_str("- CLAUDE.md is the user's file — loom agents must not write to it\n");
-    content.push_str("- ALL system knowledge belongs in `loom knowledge update` exclusively\n");
-    content.push_str(
-        "- This includes architecture, conventions, best practices, and lessons learned\n\n",
-    );
-
-    // Auto-memory prohibition
-    content.push_str("```text\n");
-    content.push_str(
-        "⛔  DO NOT use Claude Code's auto-memory system (~/.claude/projects/*/memory/)\n",
-    );
-    content.push_str("    NEVER call Write or Edit on files under ~/.claude/projects/*/memory/\n");
-    content.push_str("    Use ONLY `loom memory` commands for recording insights.\n");
-    content.push_str("    Claude Code's auto-memory is disconnected from orchestration —\n");
-    content.push_str("    anything saved there is INVISIBLE to other stages and will be LOST.\n");
-    content.push_str("```\n\n");
+    content.push_str("**Do NOT modify the project's CLAUDE.md** — it is the user's file. ALL system knowledge goes to `loom knowledge update`.\n\n");
 
     // Isolation + path boundaries (shared)
     append_isolation_boundaries_simple(&mut content);
     append_path_boundaries(&mut content);
 
-    // Execution rules
-    append_execution_rules_intro(&mut content);
-    append_anti_slop_guidance(&mut content);
+    append_execution_rules_header(&mut content);
 
     content.push_str("**Completion:**\n");
     append_commit_timing_rules(&mut content, DOC_STAGE_GATE, DOC_STAGE_REVIEW);
     append_completion_rules(&mut content);
-
-    // Git staging
-    content.push_str("**Git Staging (CRITICAL):**\n");
-    append_git_staging_rules(&mut content);
-
-    append_common_footer(&mut content);
 
     content
 }
@@ -689,59 +364,17 @@ pub fn generate_knowledge_stable_prefix() -> String {
     content.push_str("4. **Contextualize the plan** — understand what the plan intends to change and document the current state of those areas\n");
     content.push_str("5. **Review existing mistakes** — pull them with `loom knowledge context --stage <stage-id> --query \"mistakes\" --budget-tokens <n>` and check if any entries are now obsolete or fixed. Remove stale entries to keep the briefing accurate\n");
     content.push_str("6. **Verify** acceptance criteria before completing\n\n");
-    content.push_str("**Do NOT modify the project's CLAUDE.md** — it is the user's file. All knowledge goes to `loom knowledge update`.\n\n");
-    content.push_str("**Memory System:** In loom workspaces, use ONLY `loom memory` commands for recording insights.\n");
-    content
-        .push_str("Do NOT use Claude Code's auto-memory system (`~/.claude/projects/*/memory/`). ");
-    content.push_str("NEVER call Write or Edit on files under `~/.claude/projects/*/memory/`. ");
-    content.push_str(
-        "Auto-memory is disconnected from loom orchestration — anything saved there is LOST.\n\n",
-    );
+    content.push_str("**Do NOT modify the project's CLAUDE.md** — it is the user's file. All knowledge goes to `loom knowledge update`; your own insights go to `loom memory`.\n\n");
 
-    // Agent teams for knowledge
-    content.push_str("**Agent Teams for Knowledge Bootstrap:**\n\n");
-    content.push_str("Consider using an agent team for coordinated exploration:\n");
-    content.push_str("- Architecture explorer: component relationships, data flow\n");
-    content.push_str("- Patterns explorer: error handling, state management, idioms\n");
-    content.push_str("- Conventions explorer: naming, file structure, testing patterns\n");
-    content.push_str("Teams allow explorers to share discoveries that inform each other.\n\n");
+    append_execution_rules_header(&mut content);
 
-    // Record discoveries box
-    content.push_str("```text\n");
-    content.push_str("┌────────────────────────────────────────────────────────────────────┐\n");
-    content.push_str("│  📝 RECORD YOUR DISCOVERIES                                        │\n");
-    content.push_str("│                                                                    │\n");
-    content.push_str("│  As you explore, UPDATE doc/loom/knowledge/:                       │\n");
-    content.push_str("│  - Entry points: Key files and their purposes                      │\n");
-    content.push_str("│  - Patterns: Architectural patterns and best practices             │\n");
-    content.push_str("│  - Conventions: Coding standards and naming schemes                │\n");
-    content.push_str("│  - Mistakes: Document ANY errors you encounter                     │\n");
-    content.push_str("│                                                                    │\n");
-    content.push_str("│  Use: loom knowledge update <file> \"content\"                       │\n");
-    content.push_str("└────────────────────────────────────────────────────────────────────┘\n");
-    content.push_str("```\n\n");
-
-    // Execution rules
-    append_execution_rules_intro(&mut content);
-    append_anti_slop_guidance(&mut content);
-    content.push_str("**Delegation & Efficiency (CRITICAL):**\n\n");
-    content.push_str("**USE THE TASK TOOL** to spawn parallel subagents for exploration:\n");
-    content.push_str("- Different codebase areas, multiple knowledge files, independent research → spawn parallel Explore agents\n");
-    content.push_str("- Pattern: `Task(subagent_type=\"Explore\", prompt=\"...\")` - send MULTIPLE in ONE message\n");
-    content.push_str("- Agents: `Explore`, `loom-software-engineer` (execution work), `loom-senior-software-engineer` (judgment work — debugging, architecture, security)\n");
-    content.push_str(
-        "- Skills: /loom-auth, /loom-testing, /loom-ci-cd, /loom-logging-observability\n\n",
-    );
-    append_subagent_waiting_doctrine(&mut content);
     content.push_str("**Completion:**\n");
     append_commit_timing_rules(&mut content, DOC_STAGE_GATE, DOC_STAGE_REVIEW);
     append_settled_completion_rules(&mut content);
     content.push_str("- **Commit knowledge changes**: `git add doc/loom/knowledge/ && git commit -m 'docs(knowledge): populate codebase knowledge'`\n");
-    content.push_str("- **Create handoff** if context exceeds 75%\n");
+    content.push_str(CONTEXT_CEILING_HANDOFF);
     content.push_str("- **Run `loom stage complete <stage-id>`** when done (from the repo root)\n");
-    content.push_str("- **If acceptance criteria fail**: Fix the issues and run `loom stage complete <stage-id>` again\n");
-    content.push_str("- **NEVER use `loom stage retry` from an active session** — it creates a parallel session\n\n");
-    append_common_footer(&mut content);
+    content.push_str("- **If acceptance criteria fail**: Fix the issues and run `loom stage complete <stage-id>` again\n\n");
 
     // Knowledge-specific commands
     content.push_str("**Knowledge Commands:**\n\n");
@@ -830,39 +463,13 @@ mod tests {
         assert!(prefix.contains("Path Boundaries"));
         assert!(prefix.contains("## Execution Rules"));
         assert!(prefix.contains("STAY IN THIS WORKTREE"));
-        assert!(prefix.contains("git add <specific-files>"));
-        // Critical: Task tool guidance
-        assert!(prefix.contains("USE THE TASK TOOL"));
-        assert!(prefix.contains("Task(subagent_type="));
-        assert!(prefix.contains("MULTIPLE in ONE message"));
-        // Subagent memory recording requirement
-        assert!(prefix.contains("MUST record memories"));
-        // Critical: worktree root directory reminder for loom stage complete
-        assert!(prefix.contains(
-            "Before running `loom stage complete`, ensure you are at the worktree root directory"
-        ));
-        // Critical: specific skill examples
-        assert!(prefix.contains("/loom-auth"));
-        assert!(prefix.contains("/loom-testing"));
-        assert!(prefix.contains("loom-software-engineer"));
-        // Critical: Agent Teams guidance
-        assert!(prefix.contains("Agent Teams (WHEN AVAILABLE)"));
-        assert!(prefix.contains("CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1"));
-        assert!(prefix.contains("~7x tokens"));
-        assert!(prefix.contains("Shut down ALL teammates"));
-        // Context recovery instructions
-        assert!(prefix.contains("Context Recovery"));
-        assert!(prefix.contains("loom memory list"));
-        assert!(prefix.contains("handoffs"));
-        // File change tracking
-        assert!(prefix.contains("loom memory change"));
-        // Memory quality guidance
-        assert!(prefix.contains("WHEN to record"));
-        assert!(prefix.contains("What NOT to record"));
-        assert!(prefix.contains("Procedural narration"));
+        // working_dir reminder: acceptance runs from WORKTREE + working_dir
+        assert!(prefix.contains("**working_dir Reminder:**"));
+        // Completion sequence
+        assert!(prefix.contains("When to Commit (ORCHESTRATOR ONLY"));
+        assert!(prefix.contains("worktree ROOT directory"));
         // Mini adversarial code review before completion (all six dimensions)
         assert!(prefix.contains("Mini Adversarial Code Review"));
-        assert!(prefix.contains("ADVERSARIAL review"));
         assert!(prefix.contains("loom-code-reviewer"));
         assert!(prefix.contains("**Code quality & architecture**"));
         assert!(prefix.contains("**Idiomatic code**"));
@@ -872,21 +479,6 @@ mod tests {
         assert!(prefix.contains("**No duplication (DRY)**"));
         assert!(prefix.contains("search the WHOLE codebase"));
         assert!(prefix.contains("tests actually exercise the change"));
-        // Standard prefix carries its own dedicated silent-failure check
-        assert!(prefix.contains("Silent Failure Check (exit 0"));
-        assert!(prefix.contains("Re-read ALL command stderr"));
-        // File exclusivity guidance
-        assert!(prefix.contains("FILE EXCLUSIVITY"));
-        assert!(prefix.contains("exclusive"));
-        // Subagent hierarchy guidance (2-level cap)
-        assert!(prefix.contains("Subagent Hierarchies (2-LEVEL CAP)"));
-        assert!(prefix.contains("Workers NEVER spawn subagents"));
-        assert!(prefix.contains("DISJOINT file territory"));
-        assert!(prefix.contains("BY AGENT TYPE"));
-        // Anti-slop forcing-function
-        assert!(prefix.contains("Understand before acting; do not guess."));
-        assert!(prefix.contains("UNDERSTAND-FIRST LADDER"));
-        assert!(prefix.contains("BANNED — self-reject"));
         // Per-stage Knowledge Brief consumption contract
         assert!(prefix.contains("Knowledge Brief"));
         assert!(prefix.contains("loom knowledge context --stage"));
@@ -895,9 +487,16 @@ mod tests {
         assert!(prefix.contains("AT MOST ONE narrowly-scoped check"));
         // Regression guard: the IV-only carve-out must NOT leak into the standard
         // prefix. If this ever fails, the override was hoisted into the shared
-        // append_subagent_restrictions body and every implementation subagent is
-        // now wrongly told to run full build/test/lint suites.
+        // no-verify block and every implementation subagent is now wrongly told
+        // to run full build/test/lint suites.
         assert!(!prefix.contains("INTEGRATION-VERIFY OVERRIDE"));
+        // Doctrine that reaches the session through ~/.claude/CLAUDE.md must not
+        // be restated here - the prefix points at it instead.
+        assert!(prefix.contains("Binding rules: ~/.claude/CLAUDE.md"));
+        assert!(!prefix.contains("Agent Teams"));
+        assert!(!prefix.contains("Subagent Hierarchies"));
+        assert!(!prefix.contains("loom subagents watch"));
+        assert!(!prefix.contains("git add -A"));
     }
 
     #[test]
@@ -921,23 +520,10 @@ mod tests {
         assert!(prefix.contains("## Execution Rules"));
         assert!(prefix.contains("loom knowledge update"));
         assert!(prefix.contains("loom stage complete"));
-        // Critical: Task tool guidance
-        assert!(prefix.contains("USE THE TASK TOOL"));
-        assert!(prefix.contains("Task(subagent_type="));
-        assert!(prefix.contains("MULTIPLE in ONE message"));
-        // Critical: specific skill examples
-        assert!(prefix.contains("/loom-auth"));
-        assert!(prefix.contains("/loom-testing"));
-        assert!(prefix.contains("Explore"));
-        // Agent Teams guidance for knowledge bootstrap
-        assert!(prefix.contains("Agent Teams for Knowledge Bootstrap"));
-        assert!(prefix.contains("coordinated exploration"));
-        assert!(prefix.contains("Architecture explorer"));
-        // Context recovery instructions
-        assert!(prefix.contains("Context Recovery"));
-        // Anti-slop forcing-function
-        assert!(prefix.contains("Understand before acting; do not guess."));
-        assert!(prefix.contains("UNDERSTAND-FIRST LADDER"));
+        // Points at CLAUDE.md rather than restating it
+        assert!(prefix.contains("Binding rules: ~/.claude/CLAUDE.md"));
+        assert!(!prefix.contains("Agent Teams"));
+        assert!(!prefix.contains("loom subagents watch"));
         // Exhaustive mapping requirement
         assert!(prefix.contains("Exhaustively map"));
         assert!(prefix.contains("leave no major area unmapped"));
@@ -953,7 +539,7 @@ mod tests {
         assert!(!prefix.contains(concat!("loom knowledge ", "show")));
         // Documentation stage: emits only markdown, so NO code-review block
         assert!(!prefix.contains("Mini Adversarial Code Review"));
-        // Pins the fact that this prefix never calls append_subagent_restrictions,
+        // Pins the fact that this prefix never calls append_no_verify_block,
         // so it must not carry the implementation-stage no-verify rule.
         assert!(!prefix.contains("VERIFICATION IS THE MAIN AGENT'S JOB"));
     }
@@ -986,8 +572,7 @@ mod tests {
         // Code review content (merged from code-review prefix)
         assert!(prefix.contains("REVIEW"));
         assert!(prefix.contains("loom-security-audit"));
-        assert!(prefix.contains("loom-senior-software-engineer"));
-        assert!(prefix.contains("CODE REVIEW + VERIFICATION EXECUTION STRATEGY"));
+        assert!(prefix.contains("spawn these as PARALLEL subagents"));
 
         // Worktree isolation
         assert!(prefix.contains("Isolation Boundaries"));
@@ -996,49 +581,32 @@ mod tests {
 
         // Execution rules
         assert!(prefix.contains("## Execution Rules"));
-        assert!(prefix.contains("git add <specific-files>"));
-
-        // Task tool guidance
-        assert!(prefix.contains("USE THE TASK TOOL"));
-        assert!(prefix.contains("Task(subagent_type="));
 
         // Knowledge distillation moved to separate stage
         assert!(!prefix.contains("Knowledge Distillation (MANDATORY)"));
         assert!(prefix.contains("knowledge-distill stage"));
 
         // Worktree root directory reminder
-        assert!(prefix.contains(
-            "Before running `loom stage complete`, ensure you are at the worktree root directory"
-        ));
-        // Agent Teams guidance for integration verification (now includes review dimensions)
-        assert!(prefix.contains("Agent Teams for Integration Verification"));
-        assert!(prefix.contains("multi-dimension review"));
-        assert!(prefix.contains("Build/test/sandbox"));
-        assert!(prefix.contains("Security review"));
-        // Silent failure detection
-        assert!(prefix.contains("SILENT FAILURE DETECTION"));
-        assert!(prefix.contains("EXIT CODE 0 does NOT mean success"));
-        assert!(prefix.contains("MUST check stderr"));
+        assert!(prefix.contains("worktree ROOT directory"));
         // Review dimension details
         assert!(prefix.contains("Review Dimension Details"));
         assert!(prefix.contains("OWASP Top 10"));
+        assert!(prefix.contains("Build/test/sandbox"));
+        // Exit code 0 is not success - kept on the dimension that runs the suite
+        assert!(prefix.contains("Exit code 0 does NOT mean success"));
         // Mini adversarial code review block (six dimensions stated explicitly)
         assert!(prefix.contains("Mini Adversarial Code Review"));
         assert!(prefix.contains("**Idiomatic code**"));
         assert!(prefix.contains("**No duplication (DRY)**"));
         assert!(prefix.contains("search the WHOLE codebase"));
-        // Context recovery instructions
-        assert!(prefix.contains("Context Recovery"));
-        // File exclusivity guidance (must match standard prefix)
-        assert!(prefix.contains("FILE EXCLUSIVITY"));
-        assert!(prefix.contains("exclusive"));
-        // Anti-slop forcing-function
-        assert!(prefix.contains("Understand before acting; do not guess."));
-        assert!(prefix.contains("UNDERSTAND-FIRST LADDER"));
         // Per-stage Knowledge Brief consumption contract
         assert!(prefix.contains("Knowledge Brief"));
+        // Points at CLAUDE.md rather than restating it
+        assert!(prefix.contains("Binding rules: ~/.claude/CLAUDE.md"));
+        assert!(!prefix.contains("Agent Teams"));
+        assert!(!prefix.contains("loom subagents watch"));
         // IV subagents restore full-suite verification: the no-verify rule is present
-        // (inherited from the shared subagent-restrictions body) AND explicitly
+        // (emitted by `append_no_verify_block`, the BLOCK-A source) AND explicitly
         // overridden for this stage type by the carve-out tail.
         assert!(prefix.contains("VERIFICATION IS THE MAIN AGENT'S JOB - NOT YOURS"));
         assert!(prefix.contains("INTEGRATION-VERIFY OVERRIDE"));
@@ -1066,14 +634,8 @@ mod tests {
         assert!(prefix.contains("loom knowledge update") || prefix.contains("loom knowledge"),);
         assert!(prefix.contains("loom review"));
 
-        // Context recovery (from common footer)
-        assert!(prefix.contains("Context Recovery"));
-
         // Isolation and path boundaries
         assert!(prefix.contains("Isolation Boundaries") || prefix.contains("Path Boundaries"),);
-
-        // Git staging rules
-        assert!(prefix.contains("git add <specific-files>"));
 
         // Must NOT contain IV-specific content
         assert!(!prefix.contains("ZERO TOLERANCE"));
@@ -1081,18 +643,18 @@ mod tests {
         assert!(!prefix.contains("FINAL QUALITY GATE"));
         // Documentation stage: emits only markdown, so NO code-review block
         assert!(!prefix.contains("Mini Adversarial Code Review"));
-        // Anti-slop forcing-function
-        assert!(prefix.contains("Understand before acting; do not guess."));
-        assert!(prefix.contains("UNDERSTAND-FIRST LADDER"));
         // Per-stage Knowledge Brief consumption contract
         assert!(prefix.contains("Knowledge Brief"));
+        // Points at CLAUDE.md rather than restating it
+        assert!(prefix.contains("Binding rules: ~/.claude/CLAUDE.md"));
+        assert!(!prefix.contains("loom subagents watch"));
         // Tier routing, and the fact that the index needs no closing step: an
         // agent told it owes one but given no command will improvise, so the
         // prefix must state the regeneration is automatic.
         assert!(prefix.contains("regenerated automatically on every `loom knowledge update`"));
         assert!(prefix.contains("there is NO index step to run"));
         assert!(prefix.contains("Tier routing"));
-        // Pins the fact that this prefix never calls append_subagent_restrictions,
+        // Pins the fact that this prefix never calls append_no_verify_block,
         // so it must not carry the implementation-stage no-verify rule.
         assert!(!prefix.contains("VERIFICATION IS THE MAIN AGENT'S JOB"));
         // Distill runs single-agent on sonnet: the prefix must forbid subagents

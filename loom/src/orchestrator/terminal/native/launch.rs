@@ -60,8 +60,9 @@ fn prompt_cache_split_enabled(work_dir: &Path) -> bool {
 /// `<work_dir>/signals/prefix/<stage-id>.md` and returns that path, so the
 /// immutable half of the signal is handed over as its own cacheable unit
 /// instead of being re-sent behind the volatile half on every turn. The file
-/// carries the Rule 5 subagent-safety preamble verbatim — it is the same
-/// string the signal's stable section renders, never an approximation of it.
+/// is the same string the signal's stable section renders, byte for byte,
+/// never an approximation of it — including the pointer to `~/.claude/CLAUDE.md`
+/// that now stands in for the doctrine this stage moved out of the signal.
 ///
 /// Every failure degrades to `None`, which produces exactly the command line
 /// the split-off default produces: this is an optimisation, and a failed

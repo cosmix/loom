@@ -103,10 +103,12 @@ fn commit_timing_sentinels_agree_with_claude_md_template() {
     let sentinel = "Commits happen ONLY as the final step of the stage";
     let occurrences = CLAUDE_MD_TEMPLATE.matches(sentinel).count();
     assert_eq!(
-        occurrences, 2,
-        "hard stop 3's commit-timing sentence must appear exactly twice in \
-         CLAUDE.md.template (the rule at the top and its verbatim recap at the \
-         bottom); found {occurrences}"
+        occurrences, 1,
+        "hard stop 3's commit-timing sentence must appear exactly once in \
+         CLAUDE.md.template, in Rule 4's body - this test does not care which \
+         section carries it, only that there is exactly one copy: 0 means the \
+         sentence was dropped from Rule 4, 2+ means the verbatim hard-stops \
+         recap this stage deleted has been reintroduced; found {occurrences}"
     );
 }
 
