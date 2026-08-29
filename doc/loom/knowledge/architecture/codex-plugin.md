@@ -252,3 +252,52 @@ over a seeded file twice). **Prefer user or project scope anyway**: the carve-ou
 keys, so local scope is safe only for plugins and only by special case, while every other top-level
 key in that file is still dropped. `/loom-plan-writer` states the user/project rule as the
 requirement. See [Sandbox & Settings](../mistakes/sandbox-and-settings.md) for the rebuild mechanics.
+
+## What Codex Actually Reads (verified 2026-08-29)
+
+Codex loads `AGENTS.md` from its working directory and never reads `CLAUDE.md`. Probed both
+directions with `codex exec -m gpt-5.6-luna` in a scratch repo: a passphrase planted in
+`AGENTS.md` came back verbatim; the identical file renamed `CLAUDE.md` produced `UNKNOWN`. Loom
+ships no `AGENTS.md` anywhere - not at the repo root, not in a worktree, not at `~/.codex/AGENTS.md`.
+
+Two consequences:
+
+- Codex starts every run with no project doctrine beyond what the prompt carries. That is why
+  `hooks/codex-forward.sh` prepends one; the wrapper is the only channel an orchestrator writing a
+  prompt cannot forget.
+- The old signal doctrine's claim that codex "inherits CLAUDE.md's knowledge-first rule" named the
+  wrong mechanism. The rule reached codex because orchestrators pasted CLAUDE.md Rule 5's Claude
+  preamble ("READ CLAUDE.md IMMEDIATELY AND FOLLOW ALL ITS RULES") into codex prompts. Codex obeyed,
+  read the file, hit KNOWLEDGE-FIRST, and paged a ~200k-token corpus through shell reads. Never send
+  that preamble to a codex prompt.
+
+## The Navigation Kit
+
+Codex's harness is shell-based, so the cure for slow reading is a shell command that returns
+digested facts rather than bytes. Loom's source graph already ships four commands, all sub-second,
+all usable from any directory in the tree:
+
+| Command | Answers |
+| --- | --- |
+| `loom map --find-all <symbol>` | every definition of a name: path, line, kind |
+| `loom map --outline <file>` | a file's symbols with line ranges and signatures |
+| `loom map --impact <symbol\|path>` | what reaches it, with path confidence |
+| `loom knowledge context --query "<q>" --budget-tokens <n>` | ranked knowledge plus matching source |
+
+Verified: given only the first two, `gpt-5.6-luna` answered a two-part structural question - where a
+constant is defined, and how many functions its file holds - in two commands and ~10k tokens, with
+no file reads at all.
+
+**Not read-only: they try to refresh a cache outside the worktree's sandbox.** Both commands never
+write anything inside the worktree itself, but they DO try to refresh a derived-artifact cache under
+the canonical MAIN repo's `.loom/cache/context-v1/` (`context/store.rs:44-57` resolves it via
+`main_project_root`, following `.work`'s symlink out of the worktree on purpose so every parallel
+stage shares one cache rather than growing an immediately-stale copy of its own). That path is not
+in a stage worktree's `allowWrite` set (`sandbox/settings/policy.rs:137-158`), so inside a worktree
+the refresh is denied, the command prints `warning: could not refresh the working-tree source graph
+...; reading the layers already on disk` (`commands/map.rs:116`), and it answers from the last
+successfully published layer instead — the BASE the stage branched from, not the current working
+tree. Consequence: inside a worktree the navigation kit does not show edits made during the same
+session, including a sibling unit's earlier changes in that stage. See
+[Parallel Worktree Shared State](../mistakes/parallel-worktree-shared-state.md) for the general rule
+this instance follows.

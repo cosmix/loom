@@ -14,7 +14,7 @@
 | [conventions.md](conventions.md) | Coding conventions discovered in the codebase | 591 |
 | [mistakes.md](mistakes.md) | Mistakes made and lessons learned - what to avoid | 984 |
 | [stack.md](stack.md) | Dependencies, frameworks, and tooling used in the project | 97 |
-| [concerns.md](concerns.md) | Technical debt, warnings, and issues to address | 777 |
+| [concerns.md](concerns.md) | Technical debt, warnings, and issues to address | 822 |
 
 ## Tier 2 — Topics
 
@@ -23,7 +23,7 @@
 | Topic | Title | Blurb | Lines |
 | --- | --- | --- | --- |
 | [architecture/codex-concurrency.md](architecture/codex-concurrency.md) | Codex Concurrency | Topic notes for the architecture knowledge area. | 102 |
-| [architecture/codex-plugin.md](architecture/codex-plugin.md) | Codex Plugin | Topic notes for the architecture knowledge area. | 254 |
+| [architecture/codex-plugin.md](architecture/codex-plugin.md) | Codex Plugin | Topic notes for the architecture knowledge area. | 303 |
 | [architecture/context-retrieval.md](architecture/context-retrieval.md) | Context Retrieval | Topic notes for the architecture knowledge area. | 469 |
 | [architecture/core-abstractions.md](architecture/core-abstractions.md) | Core Abstractions | ExecutionGraph, Stage, Session, Orchestrator, TerminalBackend — plus data flow and .work/ file ownership. | 93 |
 | [architecture/directory-structure.md](architecture/directory-structure.md) | Directory Structure | Full loom/src module tree, the .work/ state layout, and the repo-root asset directories. | 49 |
@@ -57,6 +57,7 @@
 | Topic | Title | Blurb | Lines |
 | --- | --- | --- | --- |
 | [mistakes/codex-lane-rogue-wrapper.md](mistakes/codex-lane-rogue-wrapper.md) | Codex Lane Rogue Wrapper | Topic notes for the mistakes knowledge area. | 79 |
+| [mistakes/codex-navigation.md](mistakes/codex-navigation.md) | Codex Navigation | Topic notes for the mistakes knowledge area. | 25 |
 | [mistakes/completion-broker-credential.md](mistakes/completion-broker-credential.md) | Completion Broker Credential | Topic notes for the mistakes knowledge area. | 141 |
 | [mistakes/computed-values-and-hidden-couplings.md](mistakes/computed-values-and-hidden-couplings.md) | Computed Values and Hidden Couplings | Topic notes for the mistakes knowledge area. Three lessons from the | 156 |
 | [mistakes/detached-spawn-in-tests.md](mistakes/detached-spawn-in-tests.md) | Detached Spawn In Tests | Topic notes for the mistakes knowledge area. | 45 |
@@ -75,7 +76,7 @@
 | [mistakes/sessions-and-liveness.md](mistakes/sessions-and-liveness.md) | Sessions And Liveness | Session identity, liveness routing, spawn-site coverage, and the blast radius of adding a session field. | 136 |
 | [mistakes/shell-command-matchers.md](mistakes/shell-command-matchers.md) | Shell Command Matchers | Separators that never become tokens, forgeable glob lookups, env leakage in hook tests, and three Bash traps. | 246 |
 | [mistakes/store-without-consumer.md](mistakes/store-without-consumer.md) | Store Without Consumer | Topic notes for the mistakes knowledge area. | 94 |
-| [mistakes/subagent-orchestration.md](mistakes/subagent-orchestration.md) | Subagent Orchestration | Topic notes for the mistakes knowledge area. | 198 |
+| [mistakes/subagent-orchestration.md](mistakes/subagent-orchestration.md) | Subagent Orchestration | Topic notes for the mistakes knowledge area. | 208 |
 | [mistakes/testing-and-lint.md](mistakes/testing-and-lint.md) | Testing And Lint | Lint and test discipline: --all-targets, --no-fail-fast, headless CI, ambient git config and inherited descriptors in tests, the stub checker, the maintainability ledger, and reviewer claims. | 249 |
 | [mistakes/tests-that-cannot-fail.md](mistakes/tests-that-cannot-fail.md) | Tests That Cannot Fail | Topic notes for the mistakes knowledge area. | 124 |
 | [mistakes/tmux-backend.md](mistakes/tmux-backend.md) | Tmux Backend | Topic notes for the mistakes knowledge area. | 120 |

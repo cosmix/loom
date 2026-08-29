@@ -109,9 +109,19 @@ work silently inherited the session default instead of getting its own lane deci
 user called it out.
 
 **Test to apply per spawn:** if you can name the exact files, the exact target shape, and
-every signature that must survive, it is codex terra work. If the task needs open-ended
-repo exploration, it is sonnet — codex has no Read tool and pages files through the shell
-in ~160-line chunks (measured 9m45s unscoped versus 54s scoped).
+every signature that must survive, it is codex terra work. Route to sonnet when the work
+needs open-ended judgment — not because codex cannot look things up.
+
+**Superseded claim, corrected:** this section used to say "codex has no Read tool and
+pages files through the shell in ~160-line chunks (measured 9m45s unscoped versus 54s
+scoped)," and concluded that open-ended repo exploration must go to sonnet for that
+reason. That measurement came from codex being told to read CLAUDE.md and sweep
+`doc/loom/knowledge/` wholesale — not from exploration being inherently slow for codex.
+Loom's forwarding wrapper now hands every codex prompt a source-graph navigation kit
+(`loom map --find-all` / `--outline` / `--impact`, `loom knowledge context --query`), so
+codex navigates by querying loom's index instead of paging files
+(`architecture/codex-plugin.md#the-navigation-kit`). Codex is no longer excluded from
+exploration on that basis; the cheapest-capable test above still governs the lane choice.
 
 ## Related
 
