@@ -32,7 +32,9 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use super::super::cache::{generate_integration_verify_stable_prefix, generate_stable_prefix};
-use crate::fs::permissions::constants::HOOK_SUBAGENT_VERIFY_GUARD;
+use super::super::format::format_codex_implementers_section;
+use crate::fs::permissions::constants::{HOOK_CODEX_FORWARD, HOOK_SUBAGENT_VERIFY_GUARD};
+use crate::models::stage::{Implementer, Implementers};
 
 const CLAUDE_MD_TEMPLATE: &str = include_str!("../../../../CLAUDE.md.template");
 const PLAN_WRITER_SKILL: &str = include_str!("../../../../skills/loom-plan-writer/SKILL.md");
@@ -270,6 +272,93 @@ fn codex_forward_sentinel_agrees_across_surfaces() {
         assert!(
             text.contains("loom-codex-forwarder"),
             "{label} must route codex work through loom-codex-forwarder"
+        );
+    }
+}
+
+/// Pins the forwarding wrapper's navigation-kit preamble: the WRAPPER half of
+/// the wrapper/signal-doctrine pair pinned together with
+/// [`codex_navigation_kit_signal_doctrine_names_the_kit`]. Three things are
+/// pinned, not just one: the preamble TEXT (the needle list below), the
+/// COMPOSITION that splices that preamble onto the caller's prompt
+/// (`task="${preamble}...`), and the HAND-OFF that passes the composed
+/// `$task` - not the bare `$prompt` - to the companion runtime
+/// (`task "$task"`).
+///
+/// Pinning only the text is not enough: a wrapper can keep every word of the
+/// preamble in the file while never delivering it, for example by reverting
+/// the final invocation to `task "$prompt"`, and the text needles alone would
+/// still pass.
+///
+/// If any of the three broke, every codex prompt built against this doctrine
+/// would go out underspecified with nothing in CI failing to say so: the
+/// wrapper would silently stop scoping codex's reads, and codex would fall
+/// back to sweeping the whole knowledge base again (the multi-minute runs this
+/// doctrine exists to prevent), with no test catching the regression until an
+/// orchestrator noticed the slow runs by hand.
+#[test]
+fn codex_navigation_kit_wrapper_carries_and_delivers_the_preamble() {
+    for needle in [
+        "loom map --find-all",
+        "loom map --outline",
+        "loom map --impact",
+        "loom knowledge context",
+        "NEVER run git",
+        ".work/",
+    ] {
+        assert!(
+            HOOK_CODEX_FORWARD.contains(needle),
+            "hooks/codex-forward.sh must still carry {needle:?} - the signal \
+             doctrine tells the orchestrator this navigation kit and these \
+             prohibitions already reach every codex prompt, so the wrapper \
+             dropping any of them would leave that promise false"
+        );
+    }
+
+    // The needles above pin the preamble TEXT only. A wrapper can keep every
+    // word of it and still never deliver it: the composition that splices the
+    // preamble onto the caller's prompt, and the hand-off that passes the
+    // composed value - not the bare prompt - to the companion runtime, are
+    // separate lines neither needle touches. Pin those too.
+    assert!(
+        HOOK_CODEX_FORWARD.contains("task=\"${preamble}"),
+        "hooks/codex-forward.sh must still compose the preamble onto the task \
+         via `task=\"${{preamble}}...` - the navigation kit only reaches codex \
+         if the wrapper actually splices it onto the caller's prompt, not \
+         merely if the preamble text still sits in the file"
+    );
+    assert!(
+        HOOK_CODEX_FORWARD.contains("task \"$task\""),
+        "hooks/codex-forward.sh must still hand the COMPOSED `$task` - not the \
+         bare `$prompt` - to the companion runtime: reverting `task \"$task\"` \
+         to `task \"$prompt\"` silently drops the navigation kit from every \
+         codex prompt while the preamble text stays in the file and every \
+         needle above still matches"
+    );
+}
+
+/// Pins the signal doctrine's SIGNAL half of the same pair: the text told to
+/// the orchestrator, not the wrapper it describes (that half is
+/// [`codex_navigation_kit_wrapper_carries_and_delivers_the_preamble`]). The
+/// signal doctrine tells the orchestrator that codex arrives at every prompt
+/// already carrying `loom map`/`loom knowledge context` anchors and the
+/// instruction not to read CLAUDE.md or sweep doc/loom/knowledge/ - so the
+/// orchestrator never repeats any of that itself. If this doctrine text
+/// stopped naming the kit, an orchestrator reading the signal would have no
+/// way to know the wrapper already supplies it, and would start re-pasting
+/// navigation instructions the wrapper already sends.
+#[test]
+fn codex_navigation_kit_signal_doctrine_names_the_kit() {
+    let implementers = Implementers::new(vec![Implementer::Codex]);
+    let content = format_codex_implementers_section(&implementers, true);
+
+    for needle in ["loom map --find-all", "loom map --impact", "AGENTS.md"] {
+        assert!(
+            content.contains(needle),
+            "the codex-implementers signal section must reference {needle:?} - \
+             it tells the orchestrator the wrapper already equips codex with \
+             the navigation kit, so the doctrine text must name the kit it is \
+             pointing to, not just assert one exists"
         );
     }
 }

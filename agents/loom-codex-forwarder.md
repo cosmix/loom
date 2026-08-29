@@ -29,7 +29,10 @@ The prompt you receive carries, in order:
 Invoke Loom's installed forwarding wrapper directly. Strip the sentinel and the
 `--model`/`--effort` line from the forwarded task text — they are instructions to you, not part
 of the task. Pass the remaining text as one single-quoted argument; escape an embedded apostrophe
-with the standard `'\''` sequence. Quoted newlines and shell metacharacters remain literal task data:
+with the standard `'\''` sequence. Quoted newlines and shell metacharacters remain literal task data.
+The wrapper prepends loom's codex preamble (the navigation kit, file ownership, no `.work/`, no
+git, no verification) to every forwarded task before it reaches codex — you pass the task text
+through unmodified; do not strip, summarise, or duplicate the preamble yourself:
 
 ```bash
 ~/.claude/hooks/loom/codex-forward.sh task '<the task text, verbatim>' --model gpt-5.6-terra --effort xhigh --write
@@ -40,7 +43,9 @@ with the standard `'\''` sequence. Quoted newlines and shell metacharacters rema
 - **ONE Bash call.** Foreground, never `--background`, never `--resume-last`. `--write` stays —
   the whole point is that Codex edits the working tree.
 - **Return the command output verbatim.** No summary of your own and no commentary before or after.
-  The Bash tool result and wrapper exit status are the forwarding evidence.
+  The wrapper appends a `--- LOOM-CODEX-EVIDENCE ---` trailer carrying the companion's exit code
+  and the newest companion job-record paths; return it verbatim along with the rest of stdout as
+  the forwarding evidence.
 - **On failure, report — never implement.** If the call errors (companion missing, codex not
   authenticated, non-zero exit), return the complete output verbatim prefixed with
   `LOOM-CODEX-FORWARD-ERROR`. A failed forward is a reportable failure, not a license to do the

@@ -31,6 +31,14 @@ Need more than the brief holds — a topic it did not cover, or a question it ra
 
 Read `doc/loom/knowledge/` by hand only when a pull comes back empty.
 
+Loom also indexes the repository's own source; query the graph before opening a file:
+
+    loom map --outline <file>          file's symbols, line ranges, signatures
+    loom map --find-all <symbol>       every definition of a name: path, line, kind
+    loom map --impact <symbol|path>    what reaches it, with path confidence
+
+`--outline` replaces reading a file to learn what is in it, `--find-all` replaces a repo-wide grep for a definition, `--impact` gives blast radius before a change. Use `rg` for literal text the graph does not model, and read line ranges rather than whole files once a lookup has named them.
+
 ---
 
 ## ENGINEERING DISCIPLINE
@@ -123,6 +131,8 @@ AUTO-MEMORY PROHIBITION:
 - ONLY loom memory commands - NEVER Claude Code auto-memory
 - NEVER Write/Edit files under ~/.claude/projects/*/memory/ (invisible to loom)
 ```
+
+This preamble is for Claude subagents. A codex prompt gets none of it — codex never reads CLAUDE.md, and that line is what sends it paging the knowledge base instead of working; `hooks/codex-forward.sh` prepends codex's own rules to every forwarded prompt. See Rule 7's codex row.
 
 ### 6. EXECUTING PARALLEL SUBAGENTS
 
@@ -327,9 +337,17 @@ done
 
 Exit code 0 ≠ success: sandbox blocks, dependency-fetch failures, and write denials can all exit 0. Read stderr of all output; on "blocked", "denied", "connection refused", "failed to download" — stop and investigate. Verify external dependencies are actually present; if the sandbox blocked something needed, report it as a blocker.
 
-### 14. TOKEN EFFICIENCY
+### 14. TOKEN EFFICIENCY (HARD REQUIREMENT)
 
-Don't repeat the request back or narrate between tool calls; explain non-obvious decisions, not standard operations (Rule 19 governs the prose itself). Prefer Edit over Write; read specific line ranges; don't re-read files already in context. Pipe verbose output: tests through `tail -50` or `rg -B 2 -A 5 'FAIL|ERROR'`, builds to a file (show on failure), linters through `head -30`. Don't spawn agents for simple direct tasks. Use `.claudeignore` for generated files, build artifacts, lock files.
+Minimizing tokens is a requirement of the work, met by choosing what to read. Doing less of the work does not count.
+
+- Query before you read: `loom map --outline` for a file's shape without its bytes, `--find-all` for a definition without a sweep, `loom knowledge context --query` for a question without reading the corpus. Open a file only when a lookup has named the lines.
+- Read ranges, not files — the Read tool's offset/limit; whole files only when you will use the whole file.
+- Never re-read what is already in your context. Re-reading "to make sure" is the commonest waste in a long session.
+- Read for the task in front of you: adjacent curiosity and "while I am here" reading cost as much as the work and buy nothing.
+- Don't repeat the request back or narrate between tool calls; explain non-obvious decisions, not standard operations (Rule 19 governs the prose itself). Prefer Edit over Write. Pipe verbose output: tests through `tail -50` or `rg -B 2 -A 5 'FAIL|ERROR'`, builds to a file (show on failure), linters through `head -30`. Don't spawn agents for simple direct tasks. Use `.claudeignore` for generated files, build artifacts, lock files.
+
+Reading the wrong thing is the waste; reading too little and guessing is a defect (Engineering Discipline A).
 
 ### 15. QUALITY GATES
 

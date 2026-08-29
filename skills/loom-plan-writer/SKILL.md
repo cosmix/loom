@@ -361,29 +361,29 @@ If the user picks Codex:
    agent and a sonnet agent writing the same file is lost work exactly as two agents in one lane
    would be.
 
-   **⚠️ CODEX UNITS MUST BE SPECIFIED TO EXHAUSTION — THIS IS THE PLAN AUTHOR'S JOB, NOT THE
-   ORCHESTRATOR'S.** A codex subagent is `gpt-5.6-terra` or `gpt-5.6-luna` with a shell and
-   nothing else: no Read
-   tool, no repo exploration (the signal forbids it, because an unscoped codex agent spends ten
-   minutes paging `doc/loom/knowledge/` through `perl` before it starts). It will not infer your
-   conventions, spot a helper it should reuse, or reconstruct the design you had in mind. Whatever
-   you leave out, it invents.
+   **⚠️ CODEX UNITS NAME ANCHORS, NOT EXHAUSTIVE DETAIL.** A codex subagent is `gpt-5.6-terra` or
+   `gpt-5.6-luna` with a shell, and no Read tool — but it is not blind: loom's forwarding wrapper
+   hands every codex prompt the source-graph navigation kit (`loom map --find-all`, `--outline`,
+   `--impact`, `loom knowledge context --query`), each answering in under a second. It looks up a
+   signature, a call site, or a surrounding pattern itself, so the plan does not paste them. In a
+   worktree these commands cannot refresh their cache (it lives outside the worktree's sandbox), so
+   they print `warning: could not refresh ...` and answer from the published BASE layer — codex
+   cannot see edits made during the run. When a unit depends on a file an EARLIER unit in the same
+   stage changed, name that file and say what changed rather than assume codex can look it up.
 
-   So a codex unit's YAML detail block must contain, inline:
+   A codex unit's YAML detail block names:
 
-   - Exact file paths it owns and may read — nothing left to discovery.
-   - Exact symbol names and **full signatures**, pasted, for everything it calls, implements or
-     matches. Never "mirror the existing helper" — paste the helper.
-   - The surrounding pattern as a **snippet** whenever it must match existing style.
-   - Every constraint that would otherwise live in a knowledge or conventions file.
-   - Numbered steps with per-step acceptance, not a goal to work toward.
-   - The exact command that proves the slice works.
+   - The files it owns (write) and may read.
+   - Its entry points BY NAME — the symbols and files to start from, e.g. "start from `foo` in
+     `path/to/bar.rs`", not the function's body.
+   - What done means and the exact command that proves the slice works.
+   - Constraints the graph cannot show it — invariants, an ordering that matters, a trap the
+     knowledge files record, anything where the obvious reading is wrong.
 
-   Calibration: a codex unit's spec runs **longer** than the sonnet equivalent, often much longer.
-   If a codex block is about as long as the one next to it for a sonnet subagent, it is
-   underspecified — sonnet reads the repo to fill gaps and codex has been told not to. Route work
-   to codex only when it can be enumerated to that depth; anything requiring judgment or discovery
-   belongs on sonnet or opus regardless of which lane the stage prefers.
+   Calibration: a codex unit's spec is about as long as the sonnet equivalent. An anchored unit is
+   well specified at any length; an unanchored one is not. Route work to codex when its acceptance
+   is mechanical and checkable; anything needing architectural judgment belongs on opus regardless
+   of lane.
 6. Omitting the field is always safe: a stage without it runs on the Claude lane.
 7. NEVER put a `.work/` path in a codex stage's `files:` list or its description. Codex runs with
    sandbox `workspace-write` and approval policy `never` — it edits anything under the git root
@@ -1012,7 +1012,7 @@ description: |
 □ Every non-bookend stage cites which Stage Necessity question (Q1-Q4) forced it; compile-order dependencies resolved with a foundation step, not a stage split
 □ Every stage: model: "opus" + reasoning_effort: xhigh + stage_type + working_dir set
 □ Codex opt-in asked and answered; `implementers:` lists codex only where routine implementation is delegated, only if the plugin is installed, and never on bookend stages; every list is a non-empty YAML sequence with no repeated lane
-□ Every codex unit is specified to exhaustion — exact paths, pasted signatures, pattern snippets, numbered steps with per-step acceptance, and the command that proves it. A codex block no longer than its sonnet neighbour is underspecified: codex is forbidden from exploring the repo, so anything you omit it invents
+□ Every codex unit names its anchors — files owned/read, entry points by symbol name, done-condition and proof command, and any constraint the graph can't show. An unanchored codex block ("refactor the merge path") is underspecified regardless of length: codex has the source-graph navigation kit (`loom map`, `loom knowledge context`) but not your intent
 □ Every codex subagent prompt states an explicit Bash timeout (900000 ms) alongside the tier-appropriate model — `--model gpt-5.6-terra` (common implementation, integration tests) or `--model gpt-5.6-luna` (boilerplate, scaffolding, simple unit tests) — always `--effort xhigh`; without it the wrapper's single Bash call hits the 120s default and the harness backgrounds the run
 □ Standard/IV stages: acceptance OR ≥1 goal-backward check (artifacts/wiring/wiring_tests/dead_code_check); wiring targets the CONSUMER; no leftover `truths:` block
 □ Every stage's acceptance carries the repo's FULL canonical gate covering its OWN files (not a scoped subset, not deferred downstream)

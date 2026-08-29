@@ -7,6 +7,7 @@ use super::cache::{stable_prefix_for, SignalMetrics};
 use super::types::{DependencyStatus, EmbeddedContext};
 
 mod brief;
+mod codex;
 mod helpers;
 mod sandbox_section;
 mod sections;
@@ -18,8 +19,8 @@ pub use sections::format_skill_recommendations;
 // codex lane's rules, the stage's response budget, and the knowledge brief; see
 // recovery_format.rs.
 pub(crate) use brief::format_knowledge_brief;
+pub(crate) use codex::format_codex_implementers_section;
 pub(crate) use helpers::format_subagent_timeout_section;
-pub(crate) use sections::format_codex_implementers_section;
 
 // Re-export for external use
 #[allow(unused_imports)]
