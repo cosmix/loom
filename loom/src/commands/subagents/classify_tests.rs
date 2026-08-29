@@ -156,6 +156,7 @@ fn empty_file_is_unknown_not_an_error() {
     assert_eq!(summary.turns, 0);
     assert!(summary.last_tool.is_none());
     assert!(summary.final_report.is_none());
+    assert!(summary.request_count.is_none());
 }
 
 #[test]
@@ -326,4 +327,61 @@ fn missing_work_dir_degrades_silently() {
     )
     .unwrap();
     assert_eq!(summary.state, SubagentState::Done);
+    assert!(summary.agent_type.is_none());
+}
+
+/// One `assistant` transcript row aged past the debounce, with a distinct
+/// `requestId` and token usage, for `analyze_carries_agent_type_model_requests_and_peak_tokens`.
+fn assistant_row(request_id: &str, content: Value, input_tokens: u64) -> Value {
+    serde_json::json!({
+        "type": "assistant",
+        "requestId": request_id,
+        "timestamp": AGED_TIMESTAMP,
+        "message": {
+            "role": "assistant",
+            "model": "claude-sonnet-5",
+            "content": content,
+            "usage": {"input_tokens": input_tokens},
+        },
+    })
+}
+
+/// End-to-end coverage for the four fields `classify::analyze` threads
+/// through `summary::with_last` (`agent_type`, `model`, `request_count`,
+/// `peak_resident_tokens`): leaf-only tests on `ledger.rs`, `metrics_tests.rs`
+/// and `table.rs` cannot catch a swapped or dropped argument at the
+/// `summary::with_last` call site, since none of them go through `analyze`.
+#[test]
+fn analyze_carries_agent_type_model_requests_and_peak_tokens() {
+    let temp = tempfile::tempdir().unwrap();
+    let tool_use = serde_json::json!([{"type": "tool_use", "name": "Read", "input": {}}]);
+    let text = serde_json::json!([{"type": "text", "text": "done"}]);
+    let content = format!(
+        "{}\n{}\n",
+        assistant_row("req-1", tool_use, 1_000),
+        assistant_row("req-2", text, 2_000),
+    );
+    let path = write_transcript(temp.path(), "agent-y.jsonl", &content);
+
+    let work_dir = tempfile::tempdir().unwrap();
+    let stage_dir = work_dir.path().join("subagents").join("stage-a");
+    fs::create_dir_all(&stage_dir).unwrap();
+    fs::write(
+        stage_dir.join("starts.jsonl"),
+        "{\"agent_id\":\"y\",\"agent_type\":\"review\"}\n",
+    )
+    .unwrap();
+
+    let summary = analyze(
+        &path,
+        "y".to_string(),
+        DEFAULT_DONE_DEBOUNCE_SECS,
+        Some(work_dir.path()),
+    )
+    .unwrap();
+
+    assert_eq!(summary.agent_type.as_deref(), Some("review"));
+    assert_eq!(summary.model.as_deref(), Some("claude-sonnet-5"));
+    assert_eq!(summary.request_count, Some(2));
+    assert_eq!(summary.peak_resident_tokens, Some(2000));
 }

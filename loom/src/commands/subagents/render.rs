@@ -6,10 +6,10 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use anyhow::Result;
-use colored::Colorize;
 
 use super::classify::{self, SubagentState, SubagentSummary};
 use super::resolve::{self, Resolution};
+use super::table;
 
 const POLL_INTERVAL: Duration = Duration::from_secs(2);
 
@@ -22,10 +22,10 @@ enum Gathered {
     Found(Vec<SubagentSummary>),
 }
 
-/// Best-effort `.work/` root for the authoritative-termination fast path in
-/// `classify::analyze` (see its doc). `None` when no `.work/` is found --
-/// this command has no other reason to need one, so absence is silent, not
-/// an error.
+/// Best-effort `.work/` root for the authoritative lifecycle and spawn-ledger
+/// paths in `classify::analyze` (see its doc). `None` when no `.work/` is
+/// found -- this command has no other reason to need one, so absence is
+/// silent, not an error.
 fn find_work_dir_quietly() -> Option<PathBuf> {
     crate::commands::common::find_work_dir().ok()
 }
@@ -94,7 +94,7 @@ pub fn list(
         return Ok(());
     }
 
-    print_table(&summaries);
+    table::print_table(&summaries);
     Ok(())
 }
 
@@ -172,7 +172,8 @@ pub fn watch(
 ) -> Result<()> {
     let deadline = Instant::now() + Duration::from_secs(timeout_secs);
     // Resolved once, not per-poll: it's a directory path, not its contents
-    // -- has_authoritative_termination still reads it fresh every poll.
+    // -- lifecycle and ledger reads inside classify still happen fresh every
+    // poll.
     let work_dir = find_work_dir_quietly();
 
     loop {
@@ -186,13 +187,13 @@ pub fn watch(
                     && summaries.iter().all(|s| s.state == SubagentState::Done);
                 if settled {
                     println!("settled: every subagent is done");
-                    print_table(&summaries);
+                    table::print_table(&summaries);
                     return Ok(());
                 }
 
                 if Instant::now() >= deadline {
                     println!("timeout: {timeout_secs}s elapsed with subagents still active");
-                    print_table(&summaries);
+                    table::print_table(&summaries);
                     std::process::exit(2);
                 }
             }
@@ -201,59 +202,10 @@ pub fn watch(
     }
 }
 
-fn print_table(summaries: &[SubagentSummary]) {
-    if summaries.is_empty() {
-        println!("no subagent transcripts found");
-        return;
-    }
-
-    // AGENT ID is the only variable-width column: real ids (user-chosen, up
-    // to ~34 chars, e.g. "aexplore-doctrine-1d2b4f8be46cae08") exceed the
-    // historical 28-char width, and a hardcoded width pushes every later
-    // column out of alignment on any row with a long id. Compute the width
-    // from the data, floored at the pre-existing 28-char width so a short
-    // list still looks exactly as it did before. Ids are never truncated --
-    // this is the handle a human copy-pastes into `harvest --id`.
-    const MIN_AGENT_ID_WIDTH: usize = 28;
-    let agent_id_width = summaries
-        .iter()
-        .map(|s| s.agent_id.chars().count())
-        .max()
-        .unwrap_or(0)
-        .max(MIN_AGENT_ID_WIDTH);
-
-    let header = format!(
-        "{:<width$} {:<10} {:>9} {:>5}  {}",
-        "AGENT ID",
-        "STATE",
-        "IDLE(S)",
-        "TURNS",
-        "LAST TOOL",
-        width = agent_id_width
-    );
-    println!("{}", header.bold());
-    for summary in summaries {
-        println!(
-            "{:<width$} {:<10} {:>9} {:>5}  {}",
-            summary.agent_id,
-            summary.state.label(),
-            summary.idle_secs,
-            summary.turns,
-            summary.last_tool.as_deref().unwrap_or("-"),
-            width = agent_id_width
-        );
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use classify::DEFAULT_DONE_DEBOUNCE_SECS;
-
-    #[test]
-    fn print_table_handles_empty_summaries_without_panicking() {
-        print_table(&[]);
-    }
 
     #[test]
     fn list_on_unresolvable_dir_still_succeeds() {

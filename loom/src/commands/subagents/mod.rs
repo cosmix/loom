@@ -16,8 +16,12 @@
 //! and `render` for the three subcommands themselves.
 
 mod classify;
+mod ledger;
+mod metrics;
 mod render;
 mod resolve;
+mod summary;
+mod table;
 
 use std::path::PathBuf;
 

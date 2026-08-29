@@ -52,6 +52,8 @@ use chrono::{DateTime, Utc};
 use serde::Serialize;
 use serde_json::Value;
 
+use super::{ledger, metrics, summary};
+
 /// Minimum idle time (seconds) a structurally-`done` last entry must sit
 /// unchanged before it is trusted as genuinely turn-final, rather than one
 /// text block flushed mid-turn just before the next block (typically a
@@ -108,6 +110,22 @@ pub struct SubagentSummary {
     pub idle_secs: i64,
     pub turns: usize,
     pub last_tool: Option<String>,
+    /// Spawn type from loom's optional hook-side ledgers, when they can
+    /// identify this agent without inferring it from a conflicting spawn.
+    pub agent_type: Option<String>,
+    /// Raw model from the first assistant transcript row; the table narrows
+    /// Claude model names for display while JSON preserves this source value.
+    pub model: Option<String>,
+    /// Distinct non-null top-level `requestId` values in the transcript.
+    /// `None` means no parseable entry was found at all -- a real zero (some
+    /// entries parsed, none carried a `requestId`) stays `Some(0)`.
+    pub request_count: Option<usize>,
+    /// Largest resident context carried by one assistant request, excluding
+    /// output tokens. `None` means no assistant row exposed usage data.
+    pub peak_resident_tokens: Option<u64>,
+    /// Whether [`peak_resident_tokens`](Self::peak_resident_tokens) reached
+    /// the context safety ceiling used to mark the table cell.
+    pub peak_tokens_over_ceiling: bool,
     /// Only set when `state == Done`: the concatenated text of the last
     /// entry's text blocks, i.e. the subagent's final report.
     pub final_report: Option<String>,
@@ -126,8 +144,9 @@ pub struct SubagentSummary {
 ///
 /// `work_dir`, when given, is the loom `.work/` root to check for an
 /// authoritative `subagents/<stage-id>/<agentId>.json` termination record
-/// (see the module doc). `None` (no `.work/` found, or the caller doesn't
-/// want the fast path) falls straight through to the transcript rule.
+/// and optional spawn-type ledgers (see the module doc). `None` (no `.work/`
+/// found, or the caller doesn't want the fast path) falls straight through
+/// to the transcript rule and leaves type unknown.
 pub fn analyze(
     path: &Path,
     agent_id: String,
@@ -138,20 +157,19 @@ pub fn analyze(
         .with_context(|| format!("reading subagent transcript {}", path.display()))?;
     let entries = parse_lines(&content);
     let authoritative_done = has_authoritative_termination(work_dir, &agent_id);
+    let agent_type = ledger::agent_type(work_dir, &agent_id);
+    let metrics = metrics::extract(&entries);
+    let peak_tokens_over_ceiling = metrics
+        .peak_resident_tokens
+        .is_some_and(|tokens| tokens >= metrics::PEAK_TOKENS_CEILING);
 
     let Some(last) = entries.last() else {
-        return Ok(SubagentSummary {
+        return Ok(summary::empty(
             agent_id,
-            state: if authoritative_done {
-                SubagentState::Done
-            } else {
-                SubagentState::Unknown
-            },
-            idle_secs: idle_since_mtime(path),
-            turns: 0,
-            last_tool: None,
-            final_report: None,
-        });
+            authoritative_done,
+            idle_since_mtime(path),
+            agent_type,
+        ));
     };
 
     let idle_secs = entry_timestamp(last)
@@ -165,14 +183,19 @@ pub fn analyze(
     let last_tool = last_tool_used(&entries);
     let final_report = (state == SubagentState::Done).then(|| text_blocks(last).join("\n\n"));
 
-    Ok(SubagentSummary {
+    Ok(summary::with_last(
         agent_id,
         state,
         idle_secs,
-        turns,
-        last_tool,
-        final_report,
-    })
+        summary::TranscriptActivity {
+            turns,
+            last_tool,
+            final_report,
+        },
+        agent_type,
+        metrics,
+        peak_tokens_over_ceiling,
+    ))
 }
 
 /// Resolve the final [`SubagentState`] for the last transcript entry: an
