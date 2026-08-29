@@ -327,6 +327,18 @@ loom:
 <!-- END loom METADATA -->
 ````
 
+### Plan-Level Context Fields
+
+Set in the `loom:` block alongside `version` and `stages`, these supply the
+default ceiling for every stage that does not declare its own. Both are
+absolute resident-token counts with a minimum of 60000, and both are persisted
+into `.work/config.toml`'s `[context]` section at `loom init`.
+
+| Field                     | Required | Notes                                                                                      |
+| ------------------------- | -------- | ------------------------------------------------------------------------------------------ |
+| `context_ceiling_tokens`  | No       | Default ceiling for a stage's main agent session (default 150000)                           |
+| `subagent_ceiling_tokens` | No       | Ceiling for subagents spawned by a stage session (default 120000); never read from a stage  |
+
 ### Stage Fields
 
 | Field                              | Required               | Notes                                                                                                                                      |
@@ -346,11 +358,12 @@ loom:
 | `after_stage`                      | No                     | Post-acceptance checks (TruthCheck list); completion fails if any fail                                                                     |
 | `code_review`                      | No                     | `integration-verify` only: `dimensions` (string list) and `require_all` (bool); rendered as checklist in agent signal                      |
 | `model`                            | No                     | Model for this stage's main agent (default `opus` for every stage type)                                                                    |
-| `reasoning_effort`                 | No                     | `low`, `medium`, `high`, `xhigh`, `max` (default `xhigh` on opus, `high` otherwise)                                                        |
+| `reasoning_effort`                 | No                     | `low`, `medium`, `high`, `xhigh`, `max` (default `high` for every stage type and model)                                                    |
 | `implementers`                     | No                     | Licensed agent lanes as a list, first = preferred for routine work: `["codex", "claude"]`. Default `["claude"]`. Listing a lane makes it available, not mandatory — a stage mixes lanes per subagent |
 | `ultracode`                        | No                     | License this stage for large multi-agent fan-out; per-stage opt-in (default `false`)                                                       |
 | `subagent_timeout_secs`            | No                     | Seconds of tool silence before the monitor warns `appears hung` (default 300); advisory only — also the value to pass as `loom subagents watch --timeout <secs>` |
-| `context_budget`                   | No                     | Context threshold (%) for handoff (default 65%, hard maximum 75%)                                                                          |
+| `context_ceiling_tokens`           | No                     | Absolute resident-token ceiling for this stage's session (minimum 60000). Resolved stage value → plan-level `context_ceiling_tokens` → 150000. The session hook warns at 80% and blocks at 100%; the daemon forces a handoff at 125% |
+| `plan_overview`                    | No                     | Set `false` to suppress the embedded plan overview in this stage's signal                                                                  |
 | `sandbox`                          | No                     | Per-stage sandbox override                                                                                                                 |
 | `sandbox.permission_mode`          | No                     | `auto` (default), `accept-edits`, `plan`, `default` — resolves stage > plan > stage-type default; `bypass-permissions` is rejected at init |
 | `execution_mode`                   | No                     | `single` (default) or `team` hint                                                                                                          |
