@@ -21,8 +21,12 @@ GITHUB_RELEASES="https://github.com/${GITHUB_REPO}/releases/latest/download"
 # Component counts (updated during install)
 COUNT_AGENTS=0
 COUNT_SKILLS=0
+COUNT_CATALOG_SKILLS=0
 COUNT_HOOKS=0
 COUNT_COMMANDS=0
+SKILLS_MODE=""
+SKILLS_MODE_EXPLICIT=0
+CORE_SKILLS=()
 
 print_banner() {
 	cat <<'EOF'
@@ -45,6 +49,17 @@ print_components() {
 	echo -e "   ${C}hooks${N}    session lifecycle events"
 	echo -e "   ${C}config${N}   orchestration rules"
 	echo ""
+}
+
+print_usage() {
+	cat <<'EOF'
+Usage: install.sh [--skills core|all]
+
+Options:
+  --skills core  Install core skills to ~/.claude/skills and catalog the rest (default)
+  --skills all   Install every loom skill to ~/.claude/skills
+  -h, --help     Show this help message
+EOF
 }
 
 # Progress indicators
@@ -128,6 +143,186 @@ build_skill_index() {
 	[[ -x "$loom_bin" ]] && "$loom_bin" skill-index >/dev/null 2>&1 || true
 }
 
+read_recorded_skills_mode() {
+	local config_file="$CLAUDE_DIR/loom-install.toml"
+	local line
+
+	[[ -f "$config_file" ]] || return 0
+
+	while IFS= read -r line || [[ -n "$line" ]]; do
+		line="${line#"${line%%[![:space:]]*}"}"
+		line="${line%"${line##*[![:space:]]}"}"
+		[[ "$line" =~ ^skills([[:space:]]|=) ]] || continue
+
+		if [[ "$line" =~ ^skills[[:space:]]*=[[:space:]]*\"(core|all)\"[[:space:]]*$ ]]; then
+			SKILLS_MODE="${BASH_REMATCH[1]}"
+			return 0
+		fi
+
+		err "invalid skills setting in $config_file"
+		return 1
+	done < "$config_file"
+}
+
+parse_args() {
+	while [[ $# -gt 0 ]]; do
+		case "$1" in
+			--skills)
+				if [[ $# -lt 2 || "$2" == -* ]]; then
+					err "--skills requires core or all"
+					return 1
+				fi
+				SKILLS_MODE="$2"
+				SKILLS_MODE_EXPLICIT=1
+				shift 2
+				;;
+			--skills=*)
+				SKILLS_MODE="${1#--skills=}"
+				SKILLS_MODE_EXPLICIT=1
+				shift
+				;;
+			-h|--help)
+				print_usage
+				exit 0
+				;;
+			*)
+				err "unknown option: $1"
+				return 1
+				;;
+		esac
+	done
+
+	if [[ "$SKILLS_MODE_EXPLICIT" -eq 0 ]]; then
+		read_recorded_skills_mode
+	fi
+
+	if [[ -z "$SKILLS_MODE" ]]; then
+		SKILLS_MODE="core"
+	fi
+
+	case "$SKILLS_MODE" in
+		core|all) ;;
+		*)
+			err "--skills must be core or all"
+			return 1
+			;;
+	esac
+}
+
+write_install_config() {
+	{
+		printf '%s\n' '# Managed by loom install.sh. Delete this file to reset the skills layout.'
+		printf 'skills = "%s"\n' "$SKILLS_MODE"
+	} > "$CLAUDE_DIR/loom-install.toml"
+}
+
+load_core_skills() {
+	local manifest="$1"
+	local line
+
+	[[ -f "$manifest" ]] || return 1
+	CORE_SKILLS=()
+
+	while IFS= read -r line || [[ -n "$line" ]]; do
+		line="${line#"${line%%[![:space:]]*}"}"
+		line="${line%"${line##*[![:space:]]}"}"
+		[[ -z "$line" || "$line" == \#* ]] && continue
+		CORE_SKILLS+=("$line")
+	done < "$manifest"
+}
+
+is_core_skill() {
+	local name="$1"
+	local core_skill
+
+	for core_skill in ${CORE_SKILLS[@]+"${CORE_SKILLS[@]}"}; do
+		[[ "$core_skill" == "$name" ]] && return 0
+	done
+	return 1
+}
+
+install_skills_from_source() {
+	local source_dir="$1"
+	local manifest="$2"
+	local allow_missing_manifest="$3"
+	local placement_mode="$SKILLS_MODE"
+	local catalog_dir="$CLAUDE_DIR/loom-skill-catalog"
+	local skill_dir name destination_dir old_name
+	local installed_skills=0
+	local catalogued_skills=0
+
+	step "skills"
+
+	if ! load_core_skills "$manifest"; then
+		if [[ "$allow_missing_manifest" == "true" ]]; then
+			warn "core-skills.txt missing from release; installing all skills"
+			placement_mode="all"
+		else
+			err "core-skills.txt not found: $manifest"
+			return 1
+		fi
+	fi
+
+	mkdir -p "$CLAUDE_DIR/skills"
+	if [[ "$placement_mode" == "core" ]]; then
+		mkdir -p "$catalog_dir"
+	else
+		rm -rf "$catalog_dir"
+	fi
+
+	for skill_dir in "$source_dir"/loom-*/; do
+		[[ -d "$skill_dir" ]] || continue
+		name=$(basename "$skill_dir")
+		[[ "$name" == loom-* ]] || continue
+
+		if [[ "$placement_mode" == "core" ]] && ! is_core_skill "$name"; then
+			destination_dir="$catalog_dir"
+			((++catalogued_skills))
+		else
+			destination_dir="$CLAUDE_DIR/skills"
+			((++installed_skills))
+		fi
+
+		# Every generated destination is a verified loom-* directory.
+		# The trailing slash must be stripped: BSD cp copies a directory's
+		# CONTENTS when the source ends in `/`, which on macOS would splatter
+		# every SKILL.md straight into the destination root.
+		rm -rf "$destination_dir/$name"
+		cp -R "${skill_dir%/}" "$destination_dir/"
+
+		# Remove the old unprefixed version.
+		old_name="${name#loom-}"
+		rm -rf "$CLAUDE_DIR/skills/$old_name"
+	done
+
+	if [[ "$placement_mode" == "core" ]]; then
+		# Only loom-* directories are considered for resident/catalog cleanup.
+		for skill_dir in "$CLAUDE_DIR/skills"/loom-*/; do
+			[[ -d "$skill_dir" ]] || continue
+			name=$(basename "$skill_dir")
+			if ! is_core_skill "$name"; then
+				rm -rf "${skill_dir%/}"
+			fi
+		done
+
+		for skill_dir in "$catalog_dir"/loom-*/; do
+			[[ -d "$skill_dir" ]] || continue
+			name=$(basename "$skill_dir")
+			if is_core_skill "$name"; then
+				rm -rf "${skill_dir%/}"
+			fi
+		done
+	fi
+
+	COUNT_SKILLS="$installed_skills"
+	COUNT_CATALOG_SKILLS="$catalogued_skills"
+	if [[ "$placement_mode" == "core" ]]; then
+		ok "$COUNT_SKILLS skills, $COUNT_CATALOG_SKILLS catalogued"
+	else
+		ok "$COUNT_SKILLS skills"
+	fi
+}
+
 install_agents_remote() {
 	step "agents"
 
@@ -153,28 +348,13 @@ install_agents_remote() {
 }
 
 install_skills_remote() {
-	step "skills"
-
-	mkdir -p "$CLAUDE_DIR/skills"
 	download_and_extract_zip "${GITHUB_RELEASES}/skills.zip" "/tmp/loom_skills_$$" || {
 		warn "failed to download skills"
 		return 1
 	}
 
-	for skill_dir in /tmp/loom_skills_$$/loom-*/; do
-		[ -d "$skill_dir" ] || continue
-		local name
-		name=$(basename "$skill_dir")
-		mkdir -p "$CLAUDE_DIR/skills/$name"
-		cp "$skill_dir/SKILL.md" "$CLAUDE_DIR/skills/$name/"
-		# Remove old unprefixed version
-		local old_name="${name#loom-}"
-		rm -rf "$CLAUDE_DIR/skills/$old_name"
-	done
+	install_skills_from_source "/tmp/loom_skills_$$" "/tmp/loom_skills_$$/core-skills.txt" "true"
 	rm -rf "/tmp/loom_skills_$$"
-
-	COUNT_SKILLS=$(find "$CLAUDE_DIR/skills"/loom-* -name "SKILL.md" 2>/dev/null | wc -l | tr -d ' ')
-	ok "$COUNT_SKILLS skills"
 }
 
 install_claude_md_remote() {
@@ -267,6 +447,7 @@ install_hooks_remote() {
 check_requirements() {
 	[[ -d "$SCRIPT_DIR/agents" ]] || { err "agents/ not found"; exit 1; }
 	[[ -d "$SCRIPT_DIR/skills" ]] || { err "skills/ not found"; exit 1; }
+	[[ -f "$SCRIPT_DIR/skills/core-skills.txt" ]] || { err "skills/core-skills.txt not found"; exit 1; }
 	[[ -f "$SCRIPT_DIR/CLAUDE.md.template" ]] || { err "CLAUDE.md.template not found"; exit 1; }
 	[[ -f "$SCRIPT_DIR/commands/pressure.md" ]] || { err "commands/pressure.md not found"; exit 1; }
 	[[ -f "$SCRIPT_DIR/commands/address.md" ]] || { err "commands/address.md not found"; exit 1; }
@@ -333,22 +514,7 @@ install_agents() {
 }
 
 install_skills() {
-	step "skills"
-
-	mkdir -p "$CLAUDE_DIR/skills"
-	for skill_dir in "$SCRIPT_DIR/skills"/loom-*/; do
-		[ -d "$skill_dir" ] || continue
-		local name
-		name=$(basename "$skill_dir")
-		mkdir -p "$CLAUDE_DIR/skills/$name"
-		cp "$skill_dir/SKILL.md" "$CLAUDE_DIR/skills/$name/"
-		# Remove old unprefixed version
-		local old_name="${name#loom-}"
-		rm -rf "$CLAUDE_DIR/skills/$old_name"
-	done
-
-	COUNT_SKILLS=$(find "$CLAUDE_DIR/skills"/loom-* -name "SKILL.md" 2>/dev/null | wc -l | tr -d ' ')
-	ok "$COUNT_SKILLS skills"
+	install_skills_from_source "$SCRIPT_DIR/skills" "$SCRIPT_DIR/skills/core-skills.txt" "false"
 }
 
 install_commands() {
@@ -609,7 +775,12 @@ print_summary() {
 	echo ""
 	echo -e "   ${D}~/.claude/${N}"
 	echo -e "     agents/     ${D}$COUNT_AGENTS specialized subagents${N}"
-	echo -e "     skills/     ${D}$COUNT_SKILLS domain knowledge modules${N}"
+	if [[ "$COUNT_CATALOG_SKILLS" -gt 0 ]]; then
+		echo -e "     skills/     ${D}$COUNT_SKILLS indexed orchestration mechanics skills${N}"
+		echo -e "     loom-skill-catalog/ ${D}$COUNT_CATALOG_SKILLS catalogued domain knowledge modules${N}"
+	else
+		echo -e "     skills/     ${D}$COUNT_SKILLS indexed orchestration and domain skills${N}"
+	fi
 	echo -e "     hooks/      ${D}$COUNT_HOOKS lifecycle event handlers${N}"
 	echo -e "     commands/   ${D}$COUNT_COMMANDS slash commands${N}"
 	echo -e "     CLAUDE.md   ${D}orchestration rules${N}"
@@ -627,6 +798,7 @@ print_summary() {
 }
 
 main() {
+	parse_args "$@"
 	print_banner
 	print_components
 
@@ -638,8 +810,6 @@ main() {
 		install_loom_remote
 		install_agents_remote
 		install_skills_remote
-		install_hooks_remote
-		install_claude_md_remote
 	else
 		check_requirements
 		confirm_overwrites
@@ -647,6 +817,14 @@ main() {
 		install_loom_local
 		install_agents
 		install_skills
+	fi
+
+	write_install_config
+
+	if is_curl_pipe; then
+		install_hooks_remote
+		install_claude_md_remote
+	else
 		install_hooks
 		install_claude_md
 		install_commands
