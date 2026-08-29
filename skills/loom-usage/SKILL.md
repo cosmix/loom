@@ -1,6 +1,6 @@
 ---
 name: loom-usage
-description: Meta-orchestration skill for Claude driving loom itself. Use when running plans, interpreting loom status, debugging failed or blocked stages, managing worktrees, recovering from crashes, and coordinating multi-stage execution. Do NOT use for writing plans (use loom-plan-writer) or wiring checks (use loom-wiring-test).
+description: Meta-orchestration skill for Claude driving loom itself.
 allowed-tools:
   - Read
   - Grep

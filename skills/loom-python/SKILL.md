@@ -1,6 +1,6 @@
 ---
 name: loom-python
-description: Python language expertise for idiomatic, production-quality code. Use for web frameworks (FastAPI, Django, Flask), data processing (pandas, numpy), ML patterns (sklearn, pytorch), async programming, type hints, pytest, packaging with uv/poetry, and linting with ruff/mypy/black.
+description: Python language expertise for idiomatic, production-quality code.
 triggers:
   - python
   - py

@@ -1,6 +1,6 @@
 ---
 name: loom-git-workflow
-description: Git operations guidance including branching strategies, commit conventions, merge workflows, conflict resolution, and worktree management. Use for any Git-related task from branch design to history rewriting.
+description: Git operations guidance including branching strategies, commit conventions, merge workflows, conflict resolution, and worktree management.
 allowed-tools:
   - Read
   - Grep

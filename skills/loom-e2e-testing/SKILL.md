@@ -1,6 +1,6 @@
 ---
 name: loom-e2e-testing
-description: End-to-end testing for web applications with Playwright, Cypress, Selenium, and Puppeteer. Use for setting up E2E tests, debugging failures, improving reliability, and implementing browser automation with Page Object Model, selector strategies, network interception, visual regression, and flaky-test prevention.
+description: End-to-end testing for web applications with Playwright, Cypress, Selenium, and Puppeteer.
 triggers:
   - e2e
   - e2e testing

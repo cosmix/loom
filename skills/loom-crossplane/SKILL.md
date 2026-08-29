@@ -1,6 +1,6 @@
 ---
 name: loom-crossplane
-description: Cloud-native infrastructure management with Crossplane via Kubernetes APIs. Use for building internal platform APIs, composite resources, XRDs, compositions, claims, provider configuration, and multi-cloud self-service provisioning.
+description: Cloud-native infrastructure management with Crossplane via Kubernetes APIs.
 allowed-tools:
   - Read
   - Grep

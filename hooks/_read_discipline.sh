@@ -89,6 +89,24 @@ _loom_is_tier1_knowledge_path() {
 	return 1
 }
 
+# _loom_is_skill_md_path <path> - Return 0 when <path> is a skill's SKILL.md
+# under either skill root: the catalog (.claude/loom-skill-catalog/<name>/
+# SKILL.md) or the indexed directory (.claude/skills/<name>/SKILL.md).
+# Matched on the path SUFFIX shape rather than an absolute home path, because
+# the hook receives whatever path the calling tool was invoked with -
+# relative, `~`-relative, or absolute under a non-default HOME. A skill is
+# meant to be read whole (skills/loom-skills/SKILL.md says so explicitly),
+# and 22 catalogued skills exceed READ_GUARD_LINE_LIMIT - without this
+# exemption, rule 1 would tell an agent to read a partial skill and rule 2
+# would deny loading the same skill a third time in one session.
+_loom_is_skill_md_path() {
+	local path="$1"
+	case "$path" in
+	*.claude/loom-skill-catalog/*/SKILL.md | *.claude/skills/*/SKILL.md) return 0 ;;
+	esac
+	return 1
+}
+
 # _loom_file_line_count <path> - echo <path>'s line count via `wc -l`, or 0
 # when it is not a regular file (a redirect onto a missing path is a hard
 # error even under 2>/dev/null, and this runs on every unbounded Read).
@@ -311,7 +329,11 @@ _loom_read_discipline_verdict2() {
 # loom_read_discipline_check <path> <kind:full|range> <lines> <agent_id>
 # <fallback_session_id> - the shared core for read-guard.sh's Task C Read
 # checks and poll-guard.sh's Task D Bash-side cat/sed/head/tail checks. Same
-# three rules regardless of which tool performed the read:
+# rules regardless of which tool performed the read:
+#   0. A skill's SKILL.md (either skill root) is exempt outright, with no
+#      warning at all - loading one whole is the intended way to use it, not
+#      a read-discipline violation. Checked before rule 3, since a skill
+#      path is never also a tier-1 knowledge path.
 #   1. An unbounded ("full") read of a file over READ_GUARD_LINE_LIMIT lines
 #      is redirected to `loom map --outline` (denied when covered, warned
 #      when not).
@@ -334,6 +356,11 @@ loom_read_discipline_check() {
 	local path="$1" kind="$2" lines="$3" agent_id="$4" fallback_sid="$5"
 	local ledger
 	ledger=$(_loom_ledger_file "reads" "$agent_id" "$fallback_sid")
+
+	if _loom_is_skill_md_path "$path"; then
+		_loom_ledger_append "$ledger" "$path" "$kind" "$lines"
+		return 0
+	fi
 
 	if _loom_is_tier1_knowledge_path "$path" && [[ -n "${LOOM_STAGE_ID:-}" ]]; then
 		loom_hook_note_warn "${path} is a tier-1 knowledge summary - pull the specific question instead: loom knowledge context --stage ${LOOM_STAGE_ID} --query \"...\""

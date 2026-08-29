@@ -1,6 +1,6 @@
 ---
 name: loom-background-jobs
-description: Background job processing patterns including job queues, scheduled jobs, worker pools, retry strategies, and delivery guarantees. Use when implementing async processing, ETL pipelines, ML training jobs, cron schedules, or dead letter queues.
+description: Background job processing patterns including job queues, scheduled jobs, worker pools, retry strategies, and delivery guarantees.
 triggers:
   - async processing
   - job queue

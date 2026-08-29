@@ -1,6 +1,6 @@
 ---
 name: loom-model-evaluation
-description: Evaluates ML models for performance, fairness, and reliability. Use for metric selection, cross-validation strategies, overfitting/underfitting diagnosis, hyperparameter tuning, LLM evaluation, A/B testing, and production monitoring for model drift.
+description: Evaluates ML models for performance, fairness, and reliability.
 allowed-tools:
   - Read
   - Grep

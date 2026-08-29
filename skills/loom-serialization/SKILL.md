@@ -1,6 +1,6 @@
 ---
 name: loom-serialization
-description: Data serialization and deserialization patterns across formats. Use when implementing data exchange, API payloads, storage formats, encoding/decoding, schema evolution, or cross-language communication with JSON, YAML, TOML, Protocol Buffers, MessagePack, CBOR, Avro, or serde.
+description: Data serialization and deserialization patterns across formats.
 triggers:
   - serialize
   - deserialize

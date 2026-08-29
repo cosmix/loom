@@ -1,6 +1,6 @@
 ---
 name: loom-golang
-description: Go language expertise for idiomatic, production-quality code. Use for Go development, concurrency patterns with goroutines and channels, error handling, testing, and module management following Effective Go principles.
+description: Go language expertise for idiomatic, production-quality code.
 triggers:
   - go
   - golang

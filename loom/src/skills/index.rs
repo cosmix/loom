@@ -78,7 +78,7 @@ impl SkillIndex {
     }
 
     /// Parse a SKILL.md file to extract metadata from YAML frontmatter
-    fn parse_skill_file(path: &Path) -> Result<SkillMetadata> {
+    pub(super) fn parse_skill_file(path: &Path) -> Result<SkillMetadata> {
         let content = fs::read_to_string(path)
             .with_context(|| format!("Failed to read skill file: {}", path.display()))?;
 
@@ -93,7 +93,7 @@ impl SkillIndex {
     }
 
     /// Add a skill to the index
-    fn add_skill(&mut self, metadata: SkillMetadata) {
+    pub(super) fn add_skill(&mut self, metadata: SkillMetadata) {
         // Store description for output
         self.descriptions
             .insert(metadata.name.clone(), metadata.description.clone());

@@ -1,6 +1,6 @@
 ---
 name: loom-prompt-engineering
-description: Designs and optimizes prompts for large language models including system prompts, agent signals, and few-shot examples. Use for instruction design, prompt security, reasoning-task decomposition, and in-context learning for orchestrated agents.
+description: Designs and optimizes prompts for large language models including system prompts, agent signals, and few-shot examples.
 allowed-tools:
   - Read
   - Grep

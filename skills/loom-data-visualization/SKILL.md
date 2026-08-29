@@ -1,6 +1,6 @@
 ---
 name: loom-data-visualization
-description: Build effective charts, dashboards, and reports across analytics, infrastructure monitoring, and ML domains. Use for library selection, visualization UX, accessibility, and domain-specific dashboard design.
+description: Build effective charts, dashboards, and reports across analytics, infrastructure monitoring, and ML domains.
 allowed-tools:
   - Read
   - Grep

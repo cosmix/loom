@@ -1,6 +1,6 @@
 ---
 name: loom-testing
-description: Test implementation across unit, integration, e2e, security, infrastructure, data pipeline, and ML domains. Use for writing tests, debugging flaky tests, improving coverage, and following TDD/BDD workflows with pytest, jest, vitest, mocha, junit, or testify.
+description: Test implementation across unit, integration, e2e, security, infrastructure, data pipeline, and ML domains.
 allowed-tools:
   - Read
   - Grep

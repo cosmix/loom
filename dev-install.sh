@@ -20,4 +20,4 @@ cargo build --release
 echo ""
 echo "Running install.sh..."
 cd "$SCRIPT_DIR"
-bash ./install.sh
+bash ./install.sh "$@"

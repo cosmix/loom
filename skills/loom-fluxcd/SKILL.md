@@ -1,6 +1,6 @@
 ---
 name: loom-fluxcd
-description: GitOps continuous delivery toolkit for Kubernetes with Flux CD. Use for declarative deployments, Helm chart automation, Kustomize overlays, image update automation, multi-tenancy, and Git-based continuous delivery.
+description: GitOps continuous delivery toolkit for Kubernetes with Flux CD.
 allowed-tools:
   - Read
   - Grep

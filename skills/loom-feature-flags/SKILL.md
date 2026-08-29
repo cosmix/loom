@@ -1,6 +1,6 @@
 ---
 name: loom-feature-flags
-description: Feature flag patterns for controlled rollouts, A/B testing, kill switches, and runtime configuration. Use for feature toggles, gradual/percentage/canary rollouts, dark launches, user targeting, experiments, emergency kill switches, and model/infrastructure flag switching.
+description: Feature flag patterns for controlled rollouts, A/B testing, kill switches, and runtime configuration.
 triggers:
   - feature flag
   - feature toggle

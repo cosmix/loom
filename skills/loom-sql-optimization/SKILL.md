@@ -1,6 +1,6 @@
 ---
 name: loom-sql-optimization
-description: Analyzes and optimizes SQL queries for performance. Use for index design, query rewriting, EXPLAIN/EXPLAIN ANALYZE interpretation, PostgreSQL tuning, N+1 prevention, CTE and window function optimization, join strategies, and common SQL anti-patterns.
+description: Analyzes and optimizes SQL queries for performance.
 allowed-tools:
   - Read
   - Grep

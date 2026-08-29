@@ -1,6 +1,6 @@
 ---
 name: loom-code-review
-description: Comprehensive code review covering correctness, maintainability, performance, security, and best practices. Use for PR reviews, pre-merge audits, architecture and design critique, and actionable reviewer feedback.
+description: Comprehensive code review covering correctness, maintainability, performance, security, and best practices.
 allowed-tools:
   - Read
   - Grep

@@ -233,7 +233,7 @@ impl Orchestrator {
             return None;
         }
 
-        match SkillIndex::load_from_directory(&skills_dir) {
+        match crate::skills::load_with_catalog(&skills_dir) {
             Ok(index) => {
                 if index.is_empty() {
                     None

@@ -1,6 +1,6 @@
 ---
 name: loom-threat-model
-description: Threat modeling methodologies (STRIDE, DREAD, PASTA, attack trees) for secure architecture design. Use when planning new systems, reviewing architecture security, mapping trust boundaries and data flows, identifying threats, or assessing risk.
+description: Threat modeling methodologies (STRIDE, DREAD, PASTA, attack trees) for secure architecture design.
 allowed-tools:
   - Read
   - Grep

@@ -1,6 +1,6 @@
 ---
 name: loom-security-scan
-description: Quick routine security checks for secrets, dependencies, container images, and common vulnerabilities. Use for lightweight pre-commit and CI scans with tools like Semgrep, Trivy, gitleaks, cargo audit, npm audit, and pip-audit. Not a substitute for deep audits (use loom-security-audit).
+description: Quick routine security checks for secrets, dependencies, container images, and common vulnerabilities.
 allowed-tools:
   - Read
   - Grep
