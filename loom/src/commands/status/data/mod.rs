@@ -20,16 +20,23 @@ pub enum ActivityStatus {
     Error,
     /// Session may be hung (no recent heartbeat but PID alive)
     Stale,
+    /// Stage status claims Executing but no session record exists for it —
+    /// e.g. the daemon was killed and restarted while the file that would
+    /// have named the running agent's session was never written or was lost.
+    /// Distinct from `Idle`: there is nothing quiet here, the tracking data
+    /// itself is missing.
+    Orphaned,
 }
 
 impl ActivityStatus {
     /// Get Unicode icon for this activity status
     pub fn icon(&self) -> &'static str {
         match self {
-            Self::Idle => "\u{23F3}",     // hourglass
-            Self::Working => "\u{1F504}", // arrows counterclockwise
-            Self::Error => "\u{274C}",    // cross mark
-            Self::Stale => "\u{26A0}",    // warning
+            Self::Idle => "\u{23F3}",      // hourglass
+            Self::Working => "\u{1F504}",  // arrows counterclockwise
+            Self::Error => "\u{274C}",     // cross mark
+            Self::Stale => "\u{26A0}",     // warning
+            Self::Orphaned => "\u{1F480}", // skull
         }
     }
 
@@ -40,6 +47,7 @@ impl ActivityStatus {
             Self::Working => "WORKING",
             Self::Error => "ERROR",
             Self::Stale => "STALE",
+            Self::Orphaned => "ORPHANED",
         }
     }
 }

@@ -87,6 +87,7 @@ pub fn activity_indicator(status: &ActivityStatus) -> Span<'static> {
         ActivityStatus::Working => Span::styled("\u{1F504} WORKING", Theme::status_executing()),
         ActivityStatus::Error => Span::styled("\u{274C} ERROR", Theme::status_blocked()),
         ActivityStatus::Stale => Span::styled("\u{26A0} STALE", Theme::status_warning()),
+        ActivityStatus::Orphaned => Span::styled("\u{1F480} ORPHANED", Theme::status_blocked()),
     }
 }
 
@@ -123,6 +124,7 @@ pub fn activity_feed_widget<'a>(
                 ActivityStatus::Error => Theme::status_blocked(),
                 ActivityStatus::Stale => Theme::status_warning(),
                 ActivityStatus::Idle => Theme::dimmed(),
+                ActivityStatus::Orphaned => Theme::status_blocked(),
             };
             ListItem::new(format!("{} {}", status.icon(), msg)).style(style)
         })

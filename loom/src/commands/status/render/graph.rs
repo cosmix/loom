@@ -11,11 +11,13 @@ use colored::{Color, Colorize};
 use crate::commands::common::tree::{compute_connector, format_dep_annotation};
 use crate::commands::graph::colors::color_by_index;
 use crate::commands::graph::indicators::status_indicator;
-use crate::commands::status::data::{StageSummary, StatusData};
+use crate::commands::status::data::{ActivityStatus, StageSummary, StatusData};
 use crate::models::failure::FailureType;
 use crate::models::stage::{StageStatus, StageType};
 use crate::plan::graph::levels;
 use crate::utils::{context_pct_terminal_color, format_elapsed};
+
+use super::render_orphaned_warning;
 
 /// All `StageStatus` variants in display order for legend generation.
 ///
@@ -203,16 +205,8 @@ pub fn render_graph<W: Write>(w: &mut W, data: &StatusData) -> std::io::Result<(
             "{ROW_INDENT}{connector}{indicator}  {colored_id}{model_tag}{deps}{annotations}"
         )?;
 
-        // For completed-but-not-merged non-knowledge stages, show a merge hint.
-        if stage.status == StageStatus::Completed
-            && !stage.merged
-            && !matches!(stage.stage_type, StageType::Knowledge)
-        {
-            // Indent to align under the stage id (connector width + icon + 2 spaces)
-            let hint_indent = " ".repeat(connector.chars().count() + 4);
-            let hint = format!("→ run: loom stage merge {}", stage.id);
-            writeln!(w, "{ROW_INDENT}{hint_indent}{}", hint.yellow().dimmed())?;
-        }
+        write_orphaned_hint(w, stage, &connector)?;
+        write_merge_hint(w, stage, &connector)?;
         write_cleanup_hint(w, stage, &connector)?;
 
         // Increment index for this level
@@ -223,6 +217,41 @@ pub fn render_graph<W: Write>(w: &mut W, data: &StatusData) -> std::io::Result<(
     render_legend(w)?;
 
     Ok(())
+}
+
+/// For a stage whose activity status is `Orphaned` — it claims to be
+/// executing but no session record exists for it at all — show the one-line
+/// explanation and the two ways out. No-op for any other stage.
+fn write_orphaned_hint<W: Write>(
+    w: &mut W,
+    stage: &StageSummary,
+    connector: &str,
+) -> std::io::Result<()> {
+    if stage.activity_status != ActivityStatus::Orphaned {
+        return Ok(());
+    }
+    let hint_indent = " ".repeat(connector.chars().count() + 4);
+    let hint = render_orphaned_warning(&stage.id);
+    writeln!(w, "{ROW_INDENT}{hint_indent}{}", hint.trim_start().red())
+}
+
+/// For a completed-but-not-merged non-knowledge stage, show a merge hint.
+/// No-op for any other stage.
+fn write_merge_hint<W: Write>(
+    w: &mut W,
+    stage: &StageSummary,
+    connector: &str,
+) -> std::io::Result<()> {
+    if stage.status != StageStatus::Completed
+        || stage.merged
+        || matches!(stage.stage_type, StageType::Knowledge)
+    {
+        return Ok(());
+    }
+    // Indent to align under the stage id (connector width + icon + 2 spaces)
+    let hint_indent = " ".repeat(connector.chars().count() + 4);
+    let hint = format!("→ run: loom stage merge {}", stage.id);
+    writeln!(w, "{ROW_INDENT}{hint_indent}{}", hint.yellow().dimmed())
 }
 
 /// For a completed stage whose post-merge cleanup failed or was refused, show
