@@ -14,8 +14,8 @@
 //! - `PreCompact`: Called before context compaction (triggers handoff)
 //! - `SessionEnd`: Called when a session ends normally
 //! - `Stop`: Called when session is stopping (learning-validator)
-//! - `PreferModernTools`: Called before Bash to suggest modern CLI tools
-//! - `WorktreeIsolation`: Called before Bash/Edit/Write to enforce boundaries
+//! - `SubagentStart`: Called when a Task-tool subagent starts (spawn-type ledger)
+//! - `SubagentStop`: Called when a Task-tool subagent finishes (completion signal + heartbeat refresh)
 //!
 //! ## Configuration
 //!

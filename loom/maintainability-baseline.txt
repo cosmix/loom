@@ -32,7 +32,7 @@ file src/fs/safe_fs.rs 1019
 file src/fs/work_dir.rs 874
 file src/git/worktree/base.rs 543
 file src/git/worktree/settings.rs 637
-file src/hooks/tests.rs 527
+file src/hooks/tests.rs 510
 file src/models/stage/methods.rs 812
 file src/models/stage/types.rs 1213
 file src/orchestrator/adjudication/mod.rs 695
@@ -188,7 +188,6 @@ function src/git/worktree/tests_settings.rs test_create_worktree_settings_adds_r
 function src/git/worktree/tests_settings_env.rs test_refresh_preserves_worktree_env_hooks_and_mode 59
 function src/git/worktree/tests_settings_env.rs test_worktree_gitignore_actually_hides_loom_runtime_paths 57
 function src/handoff/generator/formatter.rs format_handoff_markdown 112
-function src/hooks/config.rs to_settings_hooks 83
 function src/hooks/generator.rs generate_hooks_settings 131
 function src/hooks/generator.rs test_generate_hooks_settings_includes_global_hooks 56
 function src/hooks/tests.rs test_generate_hooks_merges_with_global_hooks 75

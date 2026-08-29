@@ -23,8 +23,8 @@ pub enum HookEvent {
     SessionEnd,
     /// Called when session is stopping
     Stop,
-    /// Called before Bash tool use to suggest modern CLI tools (fd/rg)
-    PreferModernTools,
+    /// Called when a Task-tool subagent starts (spawn-type ledger)
+    SubagentStart,
     /// Called when a Task-tool subagent finishes (completion signal + heartbeat refresh)
     SubagentStop,
 }
@@ -37,7 +37,7 @@ impl fmt::Display for HookEvent {
             HookEvent::PreCompact => write!(f, "PreCompact"),
             HookEvent::SessionEnd => write!(f, "SessionEnd"),
             HookEvent::Stop => write!(f, "Stop"),
-            HookEvent::PreferModernTools => write!(f, "PreferModernTools"),
+            HookEvent::SubagentStart => write!(f, "SubagentStart"),
             HookEvent::SubagentStop => write!(f, "SubagentStop"),
         }
     }
@@ -52,7 +52,7 @@ impl HookEvent {
             HookEvent::PreCompact => "pre-compact.sh",
             HookEvent::SessionEnd => "session-end.sh",
             HookEvent::Stop => "learning-validator.sh",
-            HookEvent::PreferModernTools => "prefer-modern-tools.sh",
+            HookEvent::SubagentStart => "subagent-start.sh",
             HookEvent::SubagentStop => "subagent-stop.sh",
         }
     }
@@ -65,7 +65,7 @@ impl HookEvent {
             HookEvent::PreCompact,
             HookEvent::SessionEnd,
             HookEvent::Stop,
-            HookEvent::PreferModernTools,
+            HookEvent::SubagentStart,
             HookEvent::SubagentStop,
         ]
     }
@@ -144,101 +144,52 @@ impl HooksConfig {
         script.display().to_string()
     }
 
+    /// Build the single hook rule for `event`: a `"*"` matcher running
+    /// `self.build_command(event)` as the sole command.
+    fn hook_rule(&self, event: HookEvent) -> HookRule {
+        HookRule {
+            matcher: "*".to_string(),
+            hooks: vec![HookCommand {
+                hook_type: "command".to_string(),
+                command: self.build_command(event),
+            }],
+        }
+    }
+
     /// Generate session-specific hooks for Claude Code settings.json (new format)
     ///
     /// This creates ONLY session-specific hooks that should be added to worktree settings.
     /// Global hooks (ask-user-pre, ask-user-post, prefer-modern-tools, commit-guard, skill-trigger)
     /// are already in the main settings.json and should NOT be duplicated here.
     ///
-    /// Session hooks generated:
-    /// - SessionStart (initial heartbeat)
-    /// - PostToolUse (heartbeat update)
-    /// - PreCompact (handoff trigger)
-    /// - SessionEnd (cleanup)
-    /// - Stop (learning-validator)
-    /// - SubagentStop (subagent completion signal + heartbeat refresh)
+    /// Every `HookEvent` variant returned by `HookEvent::all()` is a session
+    /// hook and belongs in this map — there is currently no variant that must
+    /// be excluded. What each one does, and why:
+    /// - SessionStart: writes the initial heartbeat.
+    /// - PostToolUse: updates the heartbeat after each tool use ("*" matcher
+    ///   catches every tool).
+    /// - PreCompact: triggers a handoff before context compaction.
+    /// - SessionEnd: runs cleanup when a session ends normally.
+    /// - Stop: runs learning-validator.sh. commit-guard.sh is a separate,
+    ///   global hook already present in the main settings.json, so it must
+    ///   not be duplicated here.
+    /// - SubagentStart: records a Task-tool subagent's spawn type in the ledger.
+    /// - SubagentStop: runs in the PARENT session's own hook context when a
+    ///   Task-tool subagent finishes. Writes a completion record and
+    ///   refreshes the parent's heartbeat, since the parent runs no tools of
+    ///   its own while blocked on the subagent, so PostToolUse cannot do that.
     ///
     /// Returns a map of event type to hook rules.
     pub fn to_settings_hooks(&self) -> std::collections::HashMap<String, Vec<HookRule>> {
         use std::collections::HashMap;
         let mut hooks_map: HashMap<String, Vec<HookRule>> = HashMap::new();
 
-        // SessionStart hook - runs once when Claude Code session starts
-        hooks_map
-            .entry("SessionStart".to_string())
-            .or_default()
-            .push(HookRule {
-                matcher: "*".to_string(),
-                hooks: vec![HookCommand {
-                    hook_type: "command".to_string(),
-                    command: self.build_command(HookEvent::SessionStart),
-                }],
-            });
-
-        // PostToolUse hook - runs after any tool use to update heartbeat
-        // "*" matcher to catch all tools
-        hooks_map
-            .entry("PostToolUse".to_string())
-            .or_default()
-            .push(HookRule {
-                matcher: "*".to_string(),
-                hooks: vec![HookCommand {
-                    hook_type: "command".to_string(),
-                    command: self.build_command(HookEvent::PostToolUse),
-                }],
-            });
-
-        // PreCompact - runs before context compaction
-        hooks_map
-            .entry("PreCompact".to_string())
-            .or_default()
-            .push(HookRule {
-                matcher: "*".to_string(),
-                hooks: vec![HookCommand {
-                    hook_type: "command".to_string(),
-                    command: self.build_command(HookEvent::PreCompact),
-                }],
-            });
-
-        // SessionEnd hook - runs when Claude Code session ends normally
-        hooks_map
-            .entry("SessionEnd".to_string())
-            .or_default()
-            .push(HookRule {
-                matcher: "*".to_string(),
-                hooks: vec![HookCommand {
-                    hook_type: "command".to_string(),
-                    command: self.build_command(HookEvent::SessionEnd),
-                }],
-            });
-
-        // Stop hook - runs when session is stopping (learning-validator.sh)
-        // Note: commit-guard.sh is a global hook and should already be in settings.json
-        hooks_map
-            .entry("Stop".to_string())
-            .or_default()
-            .push(HookRule {
-                matcher: "*".to_string(),
-                hooks: vec![HookCommand {
-                    hook_type: "command".to_string(),
-                    command: self.build_command(HookEvent::Stop),
-                }],
-            });
-
-        // SubagentStop hook - runs when a Task-tool subagent finishes, in the
-        // PARENT session's own hook context. Writes a completion record and
-        // refreshes the parent's heartbeat (the parent runs no tools of its
-        // own while blocked on the subagent, so PostToolUse cannot do this).
-        hooks_map
-            .entry("SubagentStop".to_string())
-            .or_default()
-            .push(HookRule {
-                matcher: "*".to_string(),
-                hooks: vec![HookCommand {
-                    hook_type: "command".to_string(),
-                    command: self.build_command(HookEvent::SubagentStop),
-                }],
-            });
+        for &event in HookEvent::all() {
+            hooks_map
+                .entry(event.to_string())
+                .or_default()
+                .push(self.hook_rule(event));
+        }
 
         hooks_map
     }
