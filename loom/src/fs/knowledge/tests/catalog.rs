@@ -1,8 +1,38 @@
 use crate::fs::knowledge::catalog::*;
 use sha2::{Digest, Sha256};
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use tempfile::TempDir;
+
+fn section(heading: &str, body_lines: usize) -> String {
+    format!("## {heading}\n{}", "detail\n".repeat(body_lines))
+}
+
+fn small_sections(count: usize) -> String {
+    (0..count)
+        .map(|index| section(&format!("Part {index}"), 3))
+        .collect()
+}
+
+fn write_ordering_fixture(root: &Path) {
+    fs::create_dir_all(root.join("topics")).unwrap();
+    fs::write(root.join("INDEX.md"), "x".repeat(8_193)).unwrap();
+    fs::write(
+        root.join("a.md"),
+        format!(
+            "## Repeat\n## repeat\n[Missing](missing.md)\n{}",
+            section("Large", 40)
+        ),
+    )
+    .unwrap();
+    fs::write(root.join("b.md"), small_sections(63)).unwrap();
+    fs::write(root.join("d.md"), "## Source\n`src/missing.rs`\n").unwrap();
+    fs::write(
+        root.join("topics/generic.md"),
+        "> Topic notes for the topics knowledge area.\n## Topic\n",
+    )
+    .unwrap();
+}
 
 #[test]
 fn rule_1_walks_markdown_recursively_and_sorts_while_skipping_generated_files() {
@@ -140,25 +170,40 @@ fn rule_8_reports_missing_repository_source_paths_when_project_root_is_known() {
 #[test]
 fn rule_9_sorts_issues_by_file_kind_and_payload() {
     let temp = TempDir::new().unwrap();
-    fs::write(
-        temp.path().join("a.md"),
-        "## Repeat\n## repeat\n[Missing](missing.md)\n",
-    )
-    .unwrap();
-    fs::write(temp.path().join("b.md"), "## Topic\n[Missing](other.md)\n").unwrap();
-    let catalog = build(temp.path()).unwrap();
-    assert!(matches!(
-        catalog.issues.first(),
-        Some(CatalogIssue::DuplicateHeading { .. })
-    ));
-    assert!(matches!(
-        catalog.issues.get(1),
-        Some(CatalogIssue::BrokenLink { file, .. }) if file == &PathBuf::from("a.md")
-    ));
-    assert!(matches!(
-        catalog.issues.get(2),
-        Some(CatalogIssue::BrokenLink { file, .. }) if file == &PathBuf::from("b.md")
-    ));
+    let root = temp.path().join("project/doc/loom/knowledge");
+    write_ordering_fixture(&root);
+    assert_eq!(
+        build(&root).unwrap().issues,
+        vec![
+            CatalogIssue::OversizedIndex { bytes: 8_193 },
+            CatalogIssue::DuplicateHeading {
+                file: PathBuf::from("a.md"),
+                heading: "repeat".to_string(),
+                occurrences: 2,
+            },
+            CatalogIssue::BrokenLink {
+                file: PathBuf::from("a.md"),
+                target: "missing.md".to_string(),
+            },
+            CatalogIssue::OversizedSection {
+                file: PathBuf::from("a.md"),
+                heading: "Large".to_string(),
+                lines: 41,
+            },
+            CatalogIssue::OversizedFile {
+                file: PathBuf::from("b.md"),
+                lines: 252,
+            },
+            CatalogIssue::MissingSourceRef {
+                file: PathBuf::from("d.md"),
+                source_path: "src/missing.rs".to_string(),
+            },
+            CatalogIssue::GenericBlurb {
+                file: PathBuf::from("topics/generic.md"),
+                blurb: "Topic notes for the topics knowledge area.".to_string(),
+            },
+        ]
+    );
 }
 
 #[test]
@@ -236,6 +281,122 @@ fn rule_13_link_target_escaping_the_knowledge_root_is_reported_broken_not_probed
         vec![CatalogIssue::BrokenLink {
             file: PathBuf::from("architecture/topic.md"),
             target: "../../outside.md".to_string(),
+        }]
+    );
+}
+
+#[test]
+fn rule_14_reports_tier1_sections_over_the_spill_threshold() {
+    let temp = TempDir::new().unwrap();
+    fs::write(temp.path().join("notes.md"), section("Topic", 40)).unwrap();
+    assert_eq!(
+        build(temp.path()).unwrap().issues,
+        vec![CatalogIssue::OversizedSection {
+            file: PathBuf::from("notes.md"),
+            heading: "Topic".to_string(),
+            lines: 41,
+        }]
+    );
+}
+
+#[test]
+fn rule_15_does_not_report_tier1_sections_at_or_below_the_spill_threshold() {
+    let temp = TempDir::new().unwrap();
+    fs::write(
+        temp.path().join("notes.md"),
+        format!("{}{}", section("First", 39), section("Second", 39)),
+    )
+    .unwrap();
+    let catalog = build(temp.path()).unwrap();
+    assert!(!catalog
+        .issues
+        .iter()
+        .any(|issue| matches!(issue, CatalogIssue::OversizedSection { .. })));
+}
+
+#[test]
+fn rule_16_reports_tier1_files_over_the_line_limit() {
+    let temp = TempDir::new().unwrap();
+    fs::write(temp.path().join("notes.md"), small_sections(63)).unwrap();
+    assert_eq!(
+        build(temp.path()).unwrap().issues,
+        vec![CatalogIssue::OversizedFile {
+            file: PathBuf::from("notes.md"),
+            lines: 252,
+        }]
+    );
+}
+
+#[test]
+fn rule_17_does_not_report_oversized_tier2_topics() {
+    let temp = TempDir::new().unwrap();
+    fs::create_dir_all(temp.path().join("architecture")).unwrap();
+    let content = format!("{}{}", section("Large", 40), small_sections(53));
+    fs::write(temp.path().join("architecture/topic.md"), content).unwrap();
+    let catalog = build(temp.path()).unwrap();
+    assert!(!catalog.issues.iter().any(|issue| {
+        matches!(
+            issue,
+            CatalogIssue::OversizedSection { .. } | CatalogIssue::OversizedFile { .. }
+        )
+    }));
+}
+
+#[test]
+fn rule_18_reports_only_indexes_over_the_byte_limit() {
+    let oversized = TempDir::new().unwrap();
+    fs::write(oversized.path().join("INDEX.md"), "x".repeat(8_193)).unwrap();
+    assert_eq!(
+        build(oversized.path()).unwrap().issues,
+        vec![CatalogIssue::OversizedIndex { bytes: 8_193 }]
+    );
+
+    let small = TempDir::new().unwrap();
+    fs::write(small.path().join("INDEX.md"), "small index").unwrap();
+    assert!(!build(small.path())
+        .unwrap()
+        .issues
+        .iter()
+        .any(|issue| matches!(issue, CatalogIssue::OversizedIndex { .. })));
+}
+
+/// Write an `INDEX.md` of exactly `bytes` bytes, asserting the size actually
+/// landed so the boundary test cannot rot into testing a different size.
+fn index_of_exactly(root: &Path, bytes: usize) {
+    let path = root.join("INDEX.md");
+    fs::write(&path, "x".repeat(bytes)).unwrap();
+    assert_eq!(fs::metadata(&path).unwrap().len(), bytes as u64);
+}
+
+#[test]
+fn rule_19_reports_index_only_strictly_over_the_byte_boundary() {
+    let at = TempDir::new().unwrap();
+    index_of_exactly(at.path(), 8_192);
+    assert!(build(at.path()).unwrap().issues.is_empty());
+
+    let over = TempDir::new().unwrap();
+    index_of_exactly(over.path(), 8_193);
+    assert_eq!(
+        build(over.path()).unwrap().issues,
+        vec![CatalogIssue::OversizedIndex { bytes: 8_193 }]
+    );
+}
+
+#[test]
+fn rule_20_reports_tier1_file_only_strictly_over_the_line_boundary() {
+    let at = TempDir::new().unwrap();
+    assert_eq!("line\n".repeat(250).lines().count(), 250);
+    fs::write(at.path().join("notes.md"), "line\n".repeat(250)).unwrap();
+    assert!(build(at.path()).unwrap().issues.is_empty());
+
+    let over = TempDir::new().unwrap();
+    assert_eq!("line\n".repeat(251).lines().count(), 251);
+    fs::write(over.path().join("notes.md"), "line\n".repeat(251)).unwrap();
+    assert_eq!(
+        build(over.path()).unwrap().issues,
+        vec![CatalogIssue::OversizedFile {
+            file: PathBuf::from("notes.md"),
+            lines: 251,
         }]
     );
 }
