@@ -15,6 +15,8 @@ fn test_validate_stage_id_path_traversal() {
             sandbox: SandboxConfig::default(),
             change_impact: None,
             adjudication: None,
+            context_ceiling_tokens: None,
+            subagent_ceiling_tokens: None,
             stages: vec![stage],
         },
     };
@@ -38,6 +40,8 @@ fn test_validate_stage_id_with_slashes() {
             sandbox: SandboxConfig::default(),
             change_impact: None,
             adjudication: None,
+            context_ceiling_tokens: None,
+            subagent_ceiling_tokens: None,
             stages: vec![stage],
         },
     };
@@ -61,6 +65,8 @@ fn test_validate_stage_id_with_dots() {
             sandbox: SandboxConfig::default(),
             change_impact: None,
             adjudication: None,
+            context_ceiling_tokens: None,
+            subagent_ceiling_tokens: None,
             stages: vec![stage],
         },
     };
@@ -84,6 +90,8 @@ fn test_validate_stage_id_reserved_name_dotdot() {
             sandbox: SandboxConfig::default(),
             change_impact: None,
             adjudication: None,
+            context_ceiling_tokens: None,
+            subagent_ceiling_tokens: None,
             stages: vec![stage],
         },
     };
@@ -103,6 +111,8 @@ fn test_validate_stage_id_reserved_name_con() {
             sandbox: SandboxConfig::default(),
             change_impact: None,
             adjudication: None,
+            context_ceiling_tokens: None,
+            subagent_ceiling_tokens: None,
             stages: vec![stage],
         },
     };
@@ -125,6 +135,8 @@ fn test_validate_dependency_id_path_traversal() {
             sandbox: SandboxConfig::default(),
             change_impact: None,
             adjudication: None,
+            context_ceiling_tokens: None,
+            subagent_ceiling_tokens: None,
             stages: vec![stage],
         },
     };
@@ -149,6 +161,8 @@ fn test_validate_stage_id_too_long() {
             sandbox: SandboxConfig::default(),
             change_impact: None,
             adjudication: None,
+            context_ceiling_tokens: None,
+            subagent_ceiling_tokens: None,
             stages: vec![stage],
         },
     };
@@ -170,6 +184,8 @@ fn test_validate_stage_id_with_spaces() {
             sandbox: SandboxConfig::default(),
             change_impact: None,
             adjudication: None,
+            context_ceiling_tokens: None,
+            subagent_ceiling_tokens: None,
             stages: vec![stage],
         },
     };

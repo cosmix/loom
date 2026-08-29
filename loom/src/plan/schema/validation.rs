@@ -1,11 +1,15 @@
 //! Plan YAML schema validation
 
+use crate::models::constants::MIN_CONTEXT_CEILING_TOKENS;
 use crate::validation::validate_id;
 
 use super::detect::detect_stage_type;
+use super::structural_checks::{
+    check_missing_brief_paths, check_overlapping_files_without_dependency,
+};
 use super::types::{
-    FilesystemConfig, Implementer, LoomMetadata, NetworkConfig, SandboxConfig, StageSandboxConfig,
-    ValidationError,
+    FilesystemConfig, Implementer, LoomConfig, LoomMetadata, NetworkConfig, SandboxConfig,
+    StageSandboxConfig, ValidationError,
 };
 
 /// Reject commands listed in `excluded_commands`: command-prefix exclusions run
@@ -231,6 +235,61 @@ fn validate_stage_sandbox_config(
 }
 
 /// Validate the loom metadata
+/// The floor every context ceiling must clear, whichever field carries it.
+///
+/// Below [`MIN_CONTEXT_CEILING_TOKENS`] a session cannot hold its own signal
+/// plus a turn of work: the hook's 100% branch fires on the first tool call,
+/// the daemon backstop kills the successor just as fast, and the plan makes no
+/// progress at all. That is an ERROR rather than a warning — a run that cannot
+/// advance must not start.
+///
+/// `stage_id` names the stage when the ceiling is a stage's own, and is `None`
+/// for the plan-level fields of [`crate::plan::schema::types::LoomConfig`].
+fn check_ceiling_minimum(
+    field: &str,
+    ceiling: Option<u32>,
+    stage_id: Option<&str>,
+    errors: &mut Vec<ValidationError>,
+) {
+    let Some(ceiling) = ceiling else {
+        return;
+    };
+    if ceiling >= MIN_CONTEXT_CEILING_TOKENS {
+        return;
+    }
+
+    let scope = match stage_id {
+        Some(id) => format!("Stage '{id}': "),
+        None => "Plan-level ".to_string(),
+    };
+    errors.push(ValidationError {
+        message: format!(
+            "{scope}{field} must be at least {MIN_CONTEXT_CEILING_TOKENS} tokens (got {ceiling})"
+        ),
+        stage_id: stage_id.map(str::to_string),
+    });
+}
+
+/// The plan-level ceilings ([`LoomConfig::context_ceiling_tokens`] and
+/// [`LoomConfig::subagent_ceiling_tokens`]) get the same floor a stage's own
+/// ceiling gets: `commands/init/plan_setup.rs` persists them verbatim to
+/// `.work/config.toml`, where they become the default for every stage that
+/// sets none, and the hook and the daemon backstop both read them from there.
+fn check_plan_ceiling_minimums(config: &LoomConfig, errors: &mut Vec<ValidationError>) {
+    check_ceiling_minimum(
+        "context_ceiling_tokens",
+        config.context_ceiling_tokens,
+        None,
+        errors,
+    );
+    check_ceiling_minimum(
+        "subagent_ceiling_tokens",
+        config.subagent_ceiling_tokens,
+        None,
+        errors,
+    );
+}
+
 pub fn validate(metadata: &LoomMetadata) -> Result<(), Vec<ValidationError>> {
     let mut errors = Vec::new();
 
@@ -247,6 +306,8 @@ pub fn validate(metadata: &LoomMetadata) -> Result<(), Vec<ValidationError>> {
 
     // Validate plan-level sandbox configuration
     validate_sandbox_config(&metadata.loom.sandbox, &mut errors);
+
+    check_plan_ceiling_minimums(&metadata.loom, &mut errors);
 
     // Check for empty stages
     if metadata.loom.stages.is_empty() {
@@ -610,6 +671,28 @@ pub fn validate(metadata: &LoomMetadata) -> Result<(), Vec<ValidationError>> {
                 });
             }
         }
+
+        check_ceiling_minimum(
+            "context_ceiling_tokens",
+            stage.context_ceiling_tokens,
+            Some(&stage.id),
+            &mut errors,
+        );
+
+        // `removed_context_budget` is a trap field on `StageDefinition`: it
+        // only ever deserializes when a plan still writes the old
+        // `context_budget:` key, which `context_ceiling_tokens` replaced.
+        if let Some(removed) = stage.removed_context_budget {
+            errors.push(ValidationError {
+                message: format!(
+                    "Stage '{}': `context_budget` ({removed}, a percentage) was replaced by \
+                     `context_ceiling_tokens` (absolute resident tokens, minimum {}). Remove \
+                     `context_budget` and set `context_ceiling_tokens` instead.",
+                    stage.id, MIN_CONTEXT_CEILING_TOKENS
+                ),
+                stage_id: Some(stage.id.clone()),
+            });
+        }
     }
 
     if errors.is_empty() {
@@ -642,6 +725,51 @@ fn criterion_uses_build_tool(criterion: &str, tool_cmd: &str) -> bool {
         }
     }
     false
+}
+
+/// Extract the value of a `--flag <value>` or `--flag=value` selector from an
+/// acceptance command.
+///
+/// Whitespace-split only, with no quoting/escaping support beyond what a plan
+/// author would plausibly write in a one-line acceptance command.
+fn extract_flag_value<'a>(cmd: &'a str, flag: &str) -> Option<&'a str> {
+    let mut tokens = cmd.split_whitespace();
+    while let Some(token) = tokens.next() {
+        if token == flag {
+            return tokens.next();
+        }
+        if let Some(value) = token
+            .strip_prefix(flag)
+            .and_then(|rest| rest.strip_prefix('='))
+        {
+            return Some(value);
+        }
+    }
+    None
+}
+
+/// Resolve the config file an acceptance criterion's build-tool check should
+/// look for, honoring an explicit tool selector when the criterion names one.
+///
+/// `--manifest-path <p>` (cargo) names the config file itself: the selector
+/// value IS the path to check, not a directory `config_file` should be joined
+/// onto. `--project-dir <p>` (bun) and `-C <p>` (go) name a directory: resolve
+/// `config_file` inside it. Absent a selector, fall back to the stage's
+/// `working_dir` as before.
+fn resolve_build_tool_config_path(
+    cmd: &str,
+    tool_cmd: &str,
+    config_file: &str,
+    root: &std::path::Path,
+    working_dir: &std::path::Path,
+) -> std::path::PathBuf {
+    let selector = match tool_cmd {
+        "cargo" => extract_flag_value(cmd, "--manifest-path").map(|p| root.join(p)),
+        "bun " => extract_flag_value(cmd, "--project-dir").map(|p| root.join(p).join(config_file)),
+        "go " => extract_flag_value(cmd, "-C").map(|p| root.join(p).join(config_file)),
+        _ => None,
+    };
+    selector.unwrap_or_else(|| working_dir.join(config_file))
 }
 
 /// Check whether an acceptance criterion invokes a resource that a worktree
@@ -833,6 +961,8 @@ pub fn validate_structural_preflight(
     // This is the DAG-wide check; per-stage coherence is subsumed here to avoid
     // duplicate warnings.
     warnings.extend(check_cross_stage_wiring_coverage(stages));
+    warnings.extend(check_missing_brief_paths(stages, repo_root));
+    warnings.extend(check_overlapping_files_without_dependency(stages));
 
     // Build tool command patterns and their expected config files
     const BUILD_TOOL_CHECKS: &[(&str, &str)] = &[
@@ -845,7 +975,7 @@ pub fn validate_structural_preflight(
         ("uv ", "pyproject.toml"),
     ];
 
-    if let Some(root) = repo_root {
+    if let Some(root) = repo_root.filter(|r| !r.as_os_str().is_empty()) {
         for stage in stages {
             let working_dir = if stage.working_dir.is_empty() || stage.working_dir == "." {
                 root.to_path_buf()
@@ -853,20 +983,31 @@ pub fn validate_structural_preflight(
                 root.join(&stage.working_dir)
             };
 
-            // Check if acceptance criteria reference build tools whose config files are missing
+            // Check if acceptance criteria reference build tools whose config files are missing.
+            // A criterion naming an explicit tool selector (`--manifest-path`,
+            // `--project-dir`, `-C`) is resolved against THAT selector instead
+            // of working_dir - see `resolve_build_tool_config_path`.
             for criterion in &stage.acceptance {
                 let cmd = criterion.command();
                 for &(tool_cmd, config_file) in BUILD_TOOL_CHECKS {
-                    if criterion_uses_build_tool(cmd, tool_cmd)
-                        && !working_dir.join(config_file).exists()
-                    {
+                    if !criterion_uses_build_tool(cmd, tool_cmd) {
+                        continue;
+                    }
+                    let resolved = resolve_build_tool_config_path(
+                        cmd,
+                        tool_cmd,
+                        config_file,
+                        root,
+                        &working_dir,
+                    );
+                    if !resolved.exists() {
                         warnings.push(format!(
                             "Stage '{}': Acceptance criterion '{}' uses '{}' but {} not found at {}",
                             stage.id,
                             cmd,
                             tool_cmd.trim(),
                             config_file,
-                            working_dir.display()
+                            resolved.display()
                         ));
                     }
                 }

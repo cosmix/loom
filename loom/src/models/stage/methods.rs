@@ -55,7 +55,8 @@ impl Stage {
             merged: false,
             merge_conflict: false,
             verification_status: Default::default(),
-            context_budget: None,
+            context_ceiling_tokens: None,
+            plan_overview: None,
             artifacts: Vec::new(),
             wiring: Vec::new(),
             wiring_tests: Vec::new(),
@@ -103,7 +104,8 @@ impl Stage {
         stage.plan_id = Some(plan_id.to_string());
         stage.auto_merge = definition.auto_merge;
         stage.working_dir = Some(definition.working_dir.clone());
-        stage.context_budget = definition.context_budget;
+        stage.context_ceiling_tokens = definition.context_ceiling_tokens;
+        stage.plan_overview = definition.plan_overview;
         stage.artifacts = definition.artifacts.clone();
         stage.wiring = definition.wiring.clone();
         stage.wiring_tests = definition.wiring_tests.clone();
@@ -133,13 +135,12 @@ impl Stage {
 
     /// Returns the effective reasoning effort for this stage.
     /// Uses the explicit override if set, otherwise falls back to the stage-type
-    /// default (which is model-aware: opus gets xhigh, everything else high).
+    /// default (which is always high).
     pub fn effective_reasoning_effort(&self) -> &str {
         if let Some(effort) = self.reasoning_effort.as_deref() {
             return effort;
         }
-        let model = self.effective_model();
-        self.stage_type.default_reasoning_effort(model)
+        self.stage_type.default_reasoning_effort()
     }
 
     /// Returns the effective subagent response budget for this stage, in seconds.
@@ -665,7 +666,9 @@ mod tests {
                 exit_code: Some(0),
                 description: Some("present after".to_string()),
             }],
-            context_budget: Some(71),
+            context_ceiling_tokens: Some(71),
+            removed_context_budget: None,
+            plan_overview: Some(true),
             sandbox: StageSandboxConfig {
                 enabled: Some(true),
                 auto_allow: Some(false),
@@ -709,7 +712,8 @@ mod tests {
         assert_eq!(stage.plan_id.as_deref(), Some("plan-policy"));
         assert_eq!(stage.auto_merge, Some(true));
         assert_eq!(stage.working_dir.as_deref(), Some("loom"));
-        assert_eq!(stage.context_budget, Some(71));
+        assert_eq!(stage.context_ceiling_tokens, Some(71));
+        assert_eq!(stage.plan_overview, Some(true));
         assert_eq!(stage.artifacts, definition.artifacts);
         assert_eq!(stage.wiring[0].source, "src/lib.rs");
         assert_eq!(stage.wiring_tests[0].command, "cargo test policy");

@@ -165,6 +165,10 @@ pub struct LoomConfig {
     /// limits). When omitted, defaults apply via [`AdjudicationConfig::default`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub adjudication: Option<AdjudicationConfig>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub context_ceiling_tokens: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub subagent_ceiling_tokens: Option<u32>,
     pub stages: Vec<StageDefinition>,
 }
 
@@ -252,10 +256,22 @@ pub struct StageDefinition {
     /// Example: exit_code: 0 for a test that should pass after the feature is built.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub after_stage: Vec<TruthCheck>,
-    /// Context budget as percentage (1-100). Default is 65%.
-    /// When context usage exceeds this, auto-handoff is triggered.
+    /// Context ceiling in tokens.
     #[serde(default)]
-    pub context_budget: Option<u32>,
+    pub context_ceiling_tokens: Option<u32>,
+    /// Trap for the removed `context_budget` (percentage) field. Never used as
+    /// real configuration — a separate validation pass checks this and errors,
+    /// naming `context_ceiling_tokens` as the replacement. Exists only so
+    /// `deny_unknown_fields` does not produce a bare "unknown field" error with
+    /// no guidance for the plan author.
+    #[serde(
+        rename = "context_budget",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub removed_context_budget: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub plan_overview: Option<bool>,
     /// Per-stage sandbox configuration (overrides plan-level defaults)
     #[serde(default)]
     pub sandbox: StageSandboxConfig,

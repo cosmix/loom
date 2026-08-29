@@ -29,6 +29,8 @@ fn test_validate_unsupported_version() {
             sandbox: SandboxConfig::default(),
             change_impact: None,
             adjudication: None,
+            context_ceiling_tokens: None,
+            subagent_ceiling_tokens: None,
             stages: vec![stage],
         },
     };
@@ -49,6 +51,8 @@ fn test_validate_empty_stages() {
             sandbox: SandboxConfig::default(),
             change_impact: None,
             adjudication: None,
+            context_ceiling_tokens: None,
+            subagent_ceiling_tokens: None,
             stages: vec![],
         },
     };
@@ -72,6 +76,8 @@ fn test_validate_empty_stage_id() {
             sandbox: SandboxConfig::default(),
             change_impact: None,
             adjudication: None,
+            context_ceiling_tokens: None,
+            subagent_ceiling_tokens: None,
             stages: vec![stage],
         },
     };
@@ -95,6 +101,8 @@ fn test_validate_empty_stage_name() {
             sandbox: SandboxConfig::default(),
             change_impact: None,
             adjudication: None,
+            context_ceiling_tokens: None,
+            subagent_ceiling_tokens: None,
             stages: vec![stage],
         },
     };
@@ -119,6 +127,8 @@ fn test_validate_unknown_dependency() {
             sandbox: SandboxConfig::default(),
             change_impact: None,
             adjudication: None,
+            context_ceiling_tokens: None,
+            subagent_ceiling_tokens: None,
             stages: vec![stage],
         },
     };
@@ -144,6 +154,8 @@ fn test_validate_self_dependency() {
             sandbox: SandboxConfig::default(),
             change_impact: None,
             adjudication: None,
+            context_ceiling_tokens: None,
+            subagent_ceiling_tokens: None,
             stages: vec![stage],
         },
     };
@@ -169,6 +181,8 @@ fn test_validate_multiple_errors() {
             sandbox: SandboxConfig::default(),
             change_impact: None,
             adjudication: None,
+            context_ceiling_tokens: None,
+            subagent_ceiling_tokens: None,
             stages: vec![stage1, stage2],
         },
     };
@@ -238,6 +252,8 @@ fn test_complex_dependency_chain() {
             sandbox: SandboxConfig::default(),
             change_impact: None,
             adjudication: None,
+            context_ceiling_tokens: None,
+            subagent_ceiling_tokens: None,
             stages: vec![stage1, stage2, stage3],
         },
     };
@@ -257,6 +273,8 @@ fn test_validate_duplicate_stage_ids() {
             sandbox: SandboxConfig::default(),
             change_impact: None,
             adjudication: None,
+            context_ceiling_tokens: None,
+            subagent_ceiling_tokens: None,
             stages: vec![stage1, stage2],
         },
     };
@@ -281,6 +299,8 @@ fn test_validate_working_dir_path_traversal() {
             sandbox: SandboxConfig::default(),
             change_impact: None,
             adjudication: None,
+            context_ceiling_tokens: None,
+            subagent_ceiling_tokens: None,
             stages: vec![stage],
         },
     };
@@ -303,6 +323,8 @@ fn test_validate_working_dir_absolute_path() {
             sandbox: SandboxConfig::default(),
             change_impact: None,
             adjudication: None,
+            context_ceiling_tokens: None,
+            subagent_ceiling_tokens: None,
             stages: vec![stage],
         },
     };
@@ -328,6 +350,8 @@ fn test_validate_working_dir_valid_subdirectory() {
             sandbox: SandboxConfig::default(),
             change_impact: None,
             adjudication: None,
+            context_ceiling_tokens: None,
+            subagent_ceiling_tokens: None,
             stages: vec![stage],
         },
     };
@@ -352,6 +376,8 @@ fn test_integration_verify_requires_goal_backward() {
             sandbox: SandboxConfig::default(),
             change_impact: None,
             adjudication: None,
+            context_ceiling_tokens: None,
+            subagent_ceiling_tokens: None,
             stages: vec![stage],
         },
     };
@@ -377,6 +403,8 @@ fn test_integration_verify_with_artifacts_passes() {
             sandbox: SandboxConfig::default(),
             change_impact: None,
             adjudication: None,
+            context_ceiling_tokens: None,
+            subagent_ceiling_tokens: None,
             stages: vec![stage],
         },
     };
@@ -402,6 +430,8 @@ fn test_integration_verify_with_wiring_tests_passes() {
             sandbox: SandboxConfig::default(),
             change_impact: None,
             adjudication: None,
+            context_ceiling_tokens: None,
+            subagent_ceiling_tokens: None,
             stages: vec![stage],
         },
     };
@@ -426,6 +456,8 @@ fn test_integration_verify_with_wiring_passes() {
             sandbox: SandboxConfig::default(),
             change_impact: None,
             adjudication: None,
+            context_ceiling_tokens: None,
+            subagent_ceiling_tokens: None,
             stages: vec![stage],
         },
     };
@@ -446,6 +478,8 @@ fn test_knowledge_stage_exempt_from_goal_backward() {
             sandbox: SandboxConfig::default(),
             change_impact: None,
             adjudication: None,
+            context_ceiling_tokens: None,
+            subagent_ceiling_tokens: None,
             stages: vec![stage],
         },
     };
@@ -666,6 +700,8 @@ fn test_knowledge_distill_exempt_from_goal_backward() {
             sandbox: SandboxConfig::default(),
             change_impact: None,
             adjudication: None,
+            context_ceiling_tokens: None,
+            subagent_ceiling_tokens: None,
             stages: vec![stage],
         },
     };
@@ -692,6 +728,8 @@ fn test_knowledge_distill_with_acceptance_passes() {
             sandbox: SandboxConfig::default(),
             change_impact: None,
             adjudication: None,
+            context_ceiling_tokens: None,
+            subagent_ceiling_tokens: None,
             stages: vec![stage],
         },
     };
@@ -724,6 +762,8 @@ fn test_check_sandbox_recommendations_warns_on_plan_level_knowledge_deny_write()
             },
             change_impact: None,
             adjudication: None,
+            context_ceiling_tokens: None,
+            subagent_ceiling_tokens: None,
             stages: vec![stage],
         },
     };
@@ -755,6 +795,8 @@ fn test_check_sandbox_recommendations_warns_on_stage_level_knowledge_deny_write(
             sandbox: SandboxConfig::default(),
             change_impact: None,
             adjudication: None,
+            context_ceiling_tokens: None,
+            subagent_ceiling_tokens: None,
             stages: vec![stage],
         },
     };
@@ -776,5 +818,106 @@ fn test_check_sandbox_recommendations_no_warning_without_knowledge_deny_write() 
     assert!(
         warnings.iter().all(|w| !w.contains("doc/loom/knowledge")),
         "unexpected knowledge-dir warning, got: {warnings:?}"
+    );
+}
+
+/// A plan-level ceiling below the minimum wedges the run it configures: it is
+/// persisted verbatim to `.work/config.toml` and becomes the default for every
+/// stage that sets none, so the hook blocks the first tool call of every
+/// session and the daemon backstop kills each successor. `loom plan verify`
+/// must fail rather than let that plan start.
+#[test]
+fn plan_level_context_ceiling_below_minimum_is_an_error() {
+    let mut metadata = create_valid_metadata();
+    metadata.loom.context_ceiling_tokens = Some(1000);
+
+    let errors = validate(&metadata).unwrap_err();
+    assert!(
+        errors.iter().any(|e| {
+            e.stage_id.is_none()
+                && e.message.contains("context_ceiling_tokens")
+                && e.message.contains("60000")
+        }),
+        "expected a plan-level context_ceiling_tokens minimum error, got: {errors:?}"
+    );
+}
+
+#[test]
+fn plan_level_subagent_ceiling_below_minimum_is_an_error() {
+    let mut metadata = create_valid_metadata();
+    metadata.loom.subagent_ceiling_tokens = Some(500);
+
+    let errors = validate(&metadata).unwrap_err();
+    assert!(
+        errors.iter().any(|e| {
+            e.stage_id.is_none()
+                && e.message.contains("subagent_ceiling_tokens")
+                && e.message.contains("60000")
+        }),
+        "expected a plan-level subagent_ceiling_tokens minimum error, got: {errors:?}"
+    );
+}
+
+#[test]
+fn plan_level_ceilings_at_the_minimum_are_accepted() {
+    let mut metadata = create_valid_metadata();
+    metadata.loom.context_ceiling_tokens = Some(60_000);
+    metadata.loom.subagent_ceiling_tokens = Some(60_000);
+
+    assert!(validate(&metadata).is_ok());
+}
+
+#[test]
+fn stage_context_ceiling_below_minimum_is_an_error() {
+    let mut metadata = create_valid_metadata();
+    metadata.loom.stages[0].context_ceiling_tokens = Some(1000);
+
+    let errors = validate(&metadata).unwrap_err();
+    assert!(
+        errors.iter().any(|e| {
+            e.stage_id.as_deref() == Some("stage-1")
+                && e.message.contains("context_ceiling_tokens")
+                && e.message.contains("60000")
+        }),
+        "expected a stage-level context_ceiling_tokens minimum error, got: {errors:?}"
+    );
+}
+
+/// The `context_budget` trap field (`StageDefinition::removed_context_budget`)
+/// exists only to turn what `deny_unknown_fields` would report as a bare
+/// unknown key into guidance naming the replacement. That is worth nothing
+/// unless both halves hold, so this parses REAL plan YAML — exercising the
+/// serde rename, which setting the struct field directly would skip — and then
+/// asserts on the guidance itself.
+#[test]
+fn a_plan_still_using_context_budget_is_told_what_replaced_it() {
+    let yaml = r#"
+loom:
+  version: 1
+  stages:
+    - id: s1
+      name: First Stage
+      working_dir: "."
+      artifacts: ["README.md"]
+      context_budget: 65
+"#;
+
+    let metadata: LoomMetadata = serde_yaml::from_str(yaml)
+        .expect("`context_budget` must land in the trap field, not fail as an unknown key");
+    assert_eq!(metadata.loom.stages[0].removed_context_budget, Some(65));
+
+    let errors = validate(&metadata).unwrap_err();
+    let guidance = errors
+        .iter()
+        .map(|e| e.message.as_str())
+        .find(|message| message.contains("context_budget"))
+        .unwrap_or_else(|| panic!("no error mentioned `context_budget`, got: {errors:?}"));
+    assert!(
+        guidance.contains("context_ceiling_tokens"),
+        "the error must name the replacement field, got: {guidance}"
+    );
+    assert!(
+        guidance.contains("65"),
+        "the error must echo the value the plan set, got: {guidance}"
     );
 }

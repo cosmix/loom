@@ -27,6 +27,8 @@ fn create_test_plan(dir: &Path, stages: Vec<StageDefinition>) -> PathBuf {
             sandbox: SandboxConfig::default(),
             change_impact: None,
             adjudication: None,
+            context_ceiling_tokens: Some(160_000),
+            subagent_ceiling_tokens: Some(110_000),
             stages,
         },
     };
@@ -61,7 +63,9 @@ fn test_create_stage_from_definition_no_dependencies() {
         dead_code_check: None,
         before_stage: vec![],
         after_stage: vec![],
-        context_budget: None,
+        context_ceiling_tokens: None,
+        removed_context_budget: None,
+        plan_overview: None,
         sandbox: StageSandboxConfig::default(),
         execution_mode: None,
         bug_fix: None,
@@ -149,7 +153,9 @@ fn test_create_stage_from_definition_with_dependencies() {
         dead_code_check: None,
         before_stage: vec![],
         after_stage: vec![],
-        context_budget: None,
+        context_ceiling_tokens: None,
+        removed_context_budget: None,
+        plan_overview: None,
         sandbox: StageSandboxConfig::default(),
         execution_mode: None,
         bug_fix: None,
@@ -184,7 +190,8 @@ fn test_serialize_stage_to_markdown_minimal() {
         setup: vec![],
         files: vec![],
         stage_type: ModelStageType::default(),
-        context_budget: None,
+        context_ceiling_tokens: None,
+        plan_overview: None,
         plan_id: None,
         worktree: None,
         session: None,
@@ -261,7 +268,8 @@ fn test_serialize_stage_to_markdown_with_all_fields() {
         setup: vec![],
         files: vec!["file1.rs".to_string(), "file2.rs".to_string()],
         stage_type: ModelStageType::default(),
-        context_budget: None,
+        context_ceiling_tokens: None,
+        plan_overview: None,
         plan_id: Some("plan-123".to_string()),
         worktree: None,
         session: None,
@@ -332,7 +340,6 @@ fn test_initialize_with_plan_nonexistent_file() {
     let temp_dir = TempDir::new().unwrap();
     let work_dir = WorkDir::new(temp_dir.path()).unwrap();
     work_dir.initialize().unwrap();
-
     let nonexistent_path = temp_dir.path().join("nonexistent.md");
 
     let result = initialize_with_plan_acknowledgement(
@@ -352,7 +359,6 @@ fn test_initialize_with_plan_creates_config() {
     let temp_dir = TempDir::new().unwrap();
     let work_dir = WorkDir::new(temp_dir.path()).unwrap();
     work_dir.initialize().unwrap();
-
     let stage_def = StageDefinition {
         id: "test-stage".to_string(),
         name: "Test Stage".to_string(),
@@ -371,7 +377,9 @@ fn test_initialize_with_plan_creates_config() {
         dead_code_check: None,
         before_stage: vec![],
         after_stage: vec![],
-        context_budget: None,
+        context_ceiling_tokens: None,
+        removed_context_budget: None,
+        plan_overview: None,
         sandbox: StageSandboxConfig::default(),
         execution_mode: None,
         bug_fix: None,
@@ -383,24 +391,24 @@ fn test_initialize_with_plan_creates_config() {
         implementers: Implementers::default(),
         subagent_timeout_secs: None,
     };
-
     let plan_path = create_test_plan(temp_dir.path(), vec![stage_def]);
-
     let result = initialize_with_plan_acknowledgement(
         &work_dir,
         &plan_path,
         SessionBackendKind::Native,
         false,
     );
-
     assert!(result.is_ok());
-
     let config_path = work_dir.root().join("config.toml");
     assert!(config_path.exists());
-
     let config_content = fs::read_to_string(config_path).unwrap();
-    assert!(config_content.contains("source_path"));
-    assert!(config_content.contains("plan_id"));
+    assert!(
+        config_content.contains("source_path")
+            && config_content.contains("plan_id")
+            && config_content.contains("[context]")
+            && config_content.contains("ceiling_tokens = 160000")
+            && config_content.contains("subagent_ceiling_tokens = 110000")
+    );
 }
 
 #[test]
@@ -429,7 +437,9 @@ fn test_initialize_with_plan_creates_stage_files() {
             dead_code_check: None,
             before_stage: vec![],
             after_stage: vec![],
-            context_budget: None,
+            context_ceiling_tokens: None,
+            removed_context_budget: None,
+            plan_overview: None,
             sandbox: StageSandboxConfig::default(),
             execution_mode: None,
             bug_fix: None,
@@ -459,7 +469,9 @@ fn test_initialize_with_plan_creates_stage_files() {
             dead_code_check: None,
             before_stage: vec![],
             after_stage: vec![],
-            context_budget: None,
+            context_ceiling_tokens: None,
+            removed_context_budget: None,
+            plan_overview: None,
             sandbox: StageSandboxConfig::default(),
             execution_mode: None,
             bug_fix: None,

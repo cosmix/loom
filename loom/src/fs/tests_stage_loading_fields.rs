@@ -68,7 +68,7 @@ fn truth_check(command: &str) -> TruthCheck {
 }
 
 /// Regression test for A-10: the old `StageFrontmatter` intermediate struct
-/// hardcoded `stage_type`, `auto_merge`, `sandbox`, `context_budget`, and
+/// hardcoded `stage_type`, `auto_merge`, `sandbox`, `context_ceiling_tokens`, and
 /// `before_stage`/`after_stage` to defaults, silently dropping them on every
 /// daemon restart (the loader prefers stage files over the plan).
 /// `definition_from_stage` must preserve all of them.
@@ -77,7 +77,8 @@ fn test_extract_stage_definition_preserves_previously_dropped_fields() {
     let content = stage_file_content("kn-stage", "Knowledge Stage", |stage| {
         stage.stage_type = StageType::Knowledge;
         stage.auto_merge = Some(false);
-        stage.context_budget = Some(50);
+        stage.context_ceiling_tokens = Some(50);
+        stage.plan_overview = Some(false);
         stage.before_stage = vec![truth_check("echo pre")];
         stage.after_stage = vec![truth_check("echo post")];
         stage.sandbox.enabled = Some(false);
@@ -91,7 +92,12 @@ fn test_extract_stage_definition_preserves_previously_dropped_fields() {
         "stage_type must survive"
     );
     assert_eq!(def.auto_merge, Some(false), "auto_merge must survive");
-    assert_eq!(def.context_budget, Some(50), "context_budget must survive");
+    assert_eq!(
+        def.context_ceiling_tokens,
+        Some(50),
+        "context_ceiling_tokens must survive"
+    );
+    assert_eq!(def.plan_overview, Some(false), "plan_overview must survive");
     assert_eq!(def.before_stage.len(), 1, "before_stage must survive");
     assert_eq!(def.after_stage.len(), 1, "after_stage must survive");
     assert_eq!(

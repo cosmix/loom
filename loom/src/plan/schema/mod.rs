@@ -1,6 +1,7 @@
 //! Plan YAML schema definitions and validation
 
 mod detect;
+mod structural_checks;
 mod types;
 mod validation;
 
