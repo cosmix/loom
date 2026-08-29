@@ -21,10 +21,7 @@ mod config_tests {
         assert_eq!(HookEvent::PreCompact.to_string(), "PreCompact");
         assert_eq!(HookEvent::SessionEnd.to_string(), "SessionEnd");
         assert_eq!(HookEvent::Stop.to_string(), "Stop");
-        assert_eq!(
-            HookEvent::PreferModernTools.to_string(),
-            "PreferModernTools"
-        );
+        assert_eq!(HookEvent::SubagentStart.to_string(), "SubagentStart");
         assert_eq!(HookEvent::SubagentStop.to_string(), "SubagentStop");
     }
 
@@ -35,10 +32,7 @@ mod config_tests {
         assert_eq!(HookEvent::PreCompact.script_name(), "pre-compact.sh");
         assert_eq!(HookEvent::SessionEnd.script_name(), "session-end.sh");
         assert_eq!(HookEvent::Stop.script_name(), "learning-validator.sh");
-        assert_eq!(
-            HookEvent::PreferModernTools.script_name(),
-            "prefer-modern-tools.sh"
-        );
+        assert_eq!(HookEvent::SubagentStart.script_name(), "subagent-start.sh");
         assert_eq!(HookEvent::SubagentStop.script_name(), "subagent-stop.sh");
     }
 
@@ -51,7 +45,7 @@ mod config_tests {
         assert!(all.contains(&HookEvent::PreCompact));
         assert!(all.contains(&HookEvent::SessionEnd));
         assert!(all.contains(&HookEvent::Stop));
-        assert!(all.contains(&HookEvent::PreferModernTools));
+        assert!(all.contains(&HookEvent::SubagentStart));
         assert!(all.contains(&HookEvent::SubagentStop));
     }
 
@@ -99,31 +93,19 @@ mod config_tests {
         let config = super::test_config(PathBuf::from("/hooks"), PathBuf::from("/work"));
 
         let hooks = config.to_settings_hooks();
-        // Should have hook events: SessionStart, PostToolUse, PreCompact,
-        // SessionEnd, Stop, SubagentStop
-        assert!(hooks.len() >= 6);
+        // One entry per HookEvent variant (SessionStart, PostToolUse,
+        // PreCompact, SessionEnd, Stop, SubagentStart, SubagentStop) - every
+        // variant is a session hook and none are excluded.
+        assert_eq!(hooks.len(), HookEvent::all().len());
 
-        // Check PreCompact hook exists
-        assert!(hooks.contains_key("PreCompact"));
-        let pre_compact_rules = &hooks["PreCompact"];
-        assert!(!pre_compact_rules.is_empty());
-        assert_eq!(pre_compact_rules[0].matcher, "*");
-
-        // Check Stop hook exists
-        assert!(hooks.contains_key("Stop"));
-        let stop_rules = &hooks["Stop"];
-        assert!(!stop_rules.is_empty());
-
-        // Check PostToolUse has * matcher
-        assert!(hooks.contains_key("PostToolUse"));
-        let post_tool_rules = &hooks["PostToolUse"];
-        assert!(post_tool_rules.iter().any(|r| r.matcher == "*"));
-
-        // Check SubagentStop hook exists
-        assert!(hooks.contains_key("SubagentStop"));
-        let subagent_stop_rules = &hooks["SubagentStop"];
-        assert!(!subagent_stop_rules.is_empty());
-        assert_eq!(subagent_stop_rules[0].matcher, "*");
+        for &event in HookEvent::all() {
+            let rules = hooks
+                .get(&event.to_string())
+                .unwrap_or_else(|| panic!("missing hook rules for {event}"));
+            assert!(!rules.is_empty(), "{event} has no hook rules");
+            assert_eq!(rules[0].matcher, "*");
+            assert!(rules[0].hooks[0].command.ends_with(event.script_name()));
+        }
     }
 }
 
@@ -243,6 +225,7 @@ mod generator_tests {
         assert!(settings["hooks"]["PreCompact"].is_array());
         assert!(settings["hooks"]["SessionEnd"].is_array());
         assert!(settings["hooks"]["Stop"].is_array());
+        assert!(settings["hooks"]["SubagentStart"].is_array());
         assert!(settings["hooks"]["SubagentStop"].is_array());
 
         // Check environment variables: only the stable LOOM_WORK_DIR is

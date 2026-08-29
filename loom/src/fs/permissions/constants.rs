@@ -3,6 +3,13 @@
 /// Common utilities shared across loom hooks (source guard, strip_embedded_content)
 pub const HOOK_COMMON: &str = include_str!("../../../../hooks/_common.sh");
 
+/// Read-discipline utilities shared by read-guard and poll-guard hooks
+pub const HOOK_READ_DISCIPLINE: &str = include_str!("../../../../hooks/_read_discipline.sh");
+
+/// TSV ledger read/write/cap utilities, sourced by `_read_discipline.sh`
+/// (never registered as a hook directly)
+pub const HOOK_READ_LEDGER: &str = include_str!("../../../../hooks/_read_ledger.sh");
+
 /// Commit guard hook - enforces commit and stage completion in loom worktrees
 /// Runs as a global Stop hook, blocks exit if uncommitted changes or stage incomplete
 pub const HOOK_COMMIT_GUARD: &str = include_str!("../../../../hooks/commit-guard.sh");
@@ -30,6 +37,9 @@ pub const HOOK_SESSION_END: &str = include_str!("../../../../hooks/session-end.s
 /// the parent session's heartbeat (the parent runs no tools of its own while
 /// blocked waiting on a subagent, so PostToolUse cannot refresh it there).
 pub const HOOK_SUBAGENT_STOP: &str = include_str!("../../../../hooks/subagent-stop.sh");
+
+/// SubagentStart hook - records a Task-tool subagent's spawn type in the ledger
+pub const HOOK_SUBAGENT_START: &str = include_str!("../../../../hooks/subagent-start.sh");
 
 /// AskUserQuestion pre hook - marks stage as waiting for input
 pub const HOOK_ASK_USER_PRE: &str = include_str!("../../../../hooks/ask-user-pre.sh");
@@ -88,6 +98,15 @@ pub const HOOK_CODEX_FORWARD: &str = include_str!("../../../../hooks/codex-forwa
 pub const HOOK_STAGE_TERMINAL_GUARD: &str =
     include_str!("../../../../hooks/stage-terminal-guard.sh");
 
+/// SpawnGuard hook - enforces subagent spawning constraints for Task and Agent tools
+pub const HOOK_SPAWN_GUARD: &str = include_str!("../../../../hooks/spawn-guard.sh");
+
+/// ReadGuard hook - enforces source-graph navigation before file reads
+pub const HOOK_READ_GUARD: &str = include_str!("../../../../hooks/read-guard.sh");
+
+/// PollGuard hook - enforces disciplined subagent polling through Bash
+pub const HOOK_POLL_GUARD: &str = include_str!("../../../../hooks/poll-guard.sh");
+
 /// UserPromptContext hook - delegates retrieval-backed context injection to
 /// `loom hook user-prompt`; contains no retrieval logic of its own.
 pub const HOOK_USER_PROMPT_CONTEXT: &str = include_str!("../../../../hooks/user-prompt-context.sh");
@@ -97,6 +116,8 @@ pub const HOOK_USER_PROMPT_CONTEXT: &str = include_str!("../../../../hooks/user-
 pub const LOOM_HOOKS: &[(&str, &str)] = &[
     // Common utilities (sourced by other hooks)
     ("_common.sh", HOOK_COMMON),
+    ("_read_discipline.sh", HOOK_READ_DISCIPLINE),
+    ("_read_ledger.sh", HOOK_READ_LEDGER),
     // Session lifecycle hooks
     ("post-tool-use.sh", HOOK_POST_TOOL_USE),
     ("loom-control-complete.sh", HOOK_LOOM_CONTROL_COMPLETE),
@@ -104,6 +125,7 @@ pub const LOOM_HOOKS: &[(&str, &str)] = &[
     ("pre-compact.sh", HOOK_PRE_COMPACT),
     ("session-end.sh", HOOK_SESSION_END),
     ("subagent-stop.sh", HOOK_SUBAGENT_STOP),
+    ("subagent-start.sh", HOOK_SUBAGENT_START),
     ("learning-validator.sh", HOOK_LEARNING_VALIDATOR),
     // Global hooks (commit enforcement, user question handling, tool guidance)
     ("commit-guard.sh", HOOK_COMMIT_GUARD),
@@ -120,6 +142,9 @@ pub const LOOM_HOOKS: &[(&str, &str)] = &[
     ("codex-forward-guard.sh", HOOK_CODEX_FORWARD_GUARD),
     ("codex-forward.sh", HOOK_CODEX_FORWARD),
     ("stage-terminal-guard.sh", HOOK_STAGE_TERMINAL_GUARD),
+    ("spawn-guard.sh", HOOK_SPAWN_GUARD),
+    ("read-guard.sh", HOOK_READ_GUARD),
+    ("poll-guard.sh", HOOK_POLL_GUARD),
     // Skill suggestion hooks
     ("skill-trigger.sh", HOOK_SKILL_TRIGGER),
     ("user-prompt-context.sh", HOOK_USER_PROMPT_CONTEXT),

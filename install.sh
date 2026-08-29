@@ -212,11 +212,14 @@ install_hooks_remote() {
 	# All loom hooks
 	local all_hooks=(
 		"_common.sh"
+		"_read_discipline.sh"
+		"_read_ledger.sh"
 		"session-start.sh"
 		"post-tool-use.sh"
 		"pre-compact.sh"
 		"session-end.sh"
 		"subagent-stop.sh"
+		"subagent-start.sh"
 		"learning-validator.sh"
 		"commit-guard.sh"
 		"commit-filter.sh"
@@ -235,6 +238,9 @@ install_hooks_remote() {
 		"codex-forward.sh"
 		"loom-control-complete.sh"
 		"stage-terminal-guard.sh"
+		"spawn-guard.sh"
+		"read-guard.sh"
+		"poll-guard.sh"
 	)
 
 	for hook in "${all_hooks[@]}"; do
@@ -408,11 +414,14 @@ install_hooks() {
 	# All loom hooks
 	local all_hooks=(
 		"_common.sh"
+		"_read_discipline.sh"
+		"_read_ledger.sh"
 		"session-start.sh"
 		"post-tool-use.sh"
 		"pre-compact.sh"
 		"session-end.sh"
 		"subagent-stop.sh"
+		"subagent-start.sh"
 		"learning-validator.sh"
 		"commit-guard.sh"
 		"commit-filter.sh"
@@ -431,6 +440,9 @@ install_hooks() {
 		"codex-forward.sh"
 		"loom-control-complete.sh"
 		"stage-terminal-guard.sh"
+		"spawn-guard.sh"
+		"read-guard.sh"
+		"poll-guard.sh"
 	)
 
 	if [[ -d "$SCRIPT_DIR/hooks" ]]; then

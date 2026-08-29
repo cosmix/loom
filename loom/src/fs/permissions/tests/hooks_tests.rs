@@ -29,12 +29,26 @@ fn test_hooks_config_structure() {
         ("Glob", "worktree-file-guard.sh"),
         ("Grep", "worktree-file-guard.sh"),
     ];
-    assert_eq!(pre_tool.len(), 35);
+    assert_eq!(pre_tool.len(), 39);
     for (entry, (matcher, script)) in pre_tool.iter().zip(expected_prefix) {
         assert_hook(entry, matcher, script);
     }
     for matcher in ["Bash", "Edit", "Write", "Read", "Task", "Agent"] {
         assert!(contains_hook(pre_tool, matcher, "codex-forward-guard.sh"));
+    }
+    assert!(contains_hook(pre_tool, "Task", "spawn-guard.sh"));
+    assert!(contains_hook(pre_tool, "Agent", "spawn-guard.sh"));
+    assert!(contains_hook(pre_tool, "Read", "read-guard.sh"));
+    assert!(contains_hook(pre_tool, "Bash", "poll-guard.sh"));
+    // `_read_discipline.sh` and `_read_ledger.sh` are sourced libraries, not
+    // PreToolUse hooks.
+    for library in ["_read_discipline.sh", "_read_ledger.sh"] {
+        assert!(!pre_tool.iter().any(|entry| {
+            hook_command(entry)
+                .rsplit('/')
+                .next()
+                .is_some_and(|script| script == library)
+        }));
     }
     assert!(contains_hook(pre_tool, "Bash", "loom-control-complete.sh"));
     for matcher in ["Write", "Edit", "Task", "Agent"] {
