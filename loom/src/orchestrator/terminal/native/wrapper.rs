@@ -44,9 +44,17 @@ const CONTINUATION: &str = "\\\n";
 /// * `working_dir` - The working directory to cd into before running claude
 /// * `kind` - The session kind. Drives the two env vars that are NOT derivable
 ///   from `stage_id`; see `kind_env`.
+/// * `context_ceiling_tokens` - The session's resolved context ceiling
+///   (tokens), used to size `CLAUDE_CODE_AUTO_COMPACT_WINDOW`; see
+///   `auto_compact_window_tokens`.
 ///
 /// # Returns
 /// The path to the created wrapper script
+// Each of the eight parameters documents a distinct part of the wrapper's
+// environment/security contract above; collapsing them into a params struct
+// would force editing every call site, including wrapper/tests.rs's
+// byte-exact script assertions, which must stay untouched.
+#[allow(clippy::too_many_arguments)]
 pub fn create_wrapper_script(
     work_dir: &Path,
     pid_key: &str,
@@ -55,6 +63,7 @@ pub fn create_wrapper_script(
     claude_cmd: &str,
     working_dir: Option<&Path>,
     kind: SessionType,
+    context_ceiling_tokens: u32,
 ) -> Result<PathBuf> {
     create_wrappers_dir(work_dir)?;
     create_pid_dir(work_dir)?;
@@ -68,6 +77,7 @@ pub fn create_wrapper_script(
         claude_cmd,
         working_dir,
         kind,
+        context_ceiling_tokens,
     );
 
     fs::write(&wrapper_path, &script)
@@ -208,8 +218,58 @@ for _loom_name in LANG LC_ALL LC_CTYPE TERM TERMINFO TERMINFO_DIRS COLORTERM \
 done
 "#;
 
+/// Upper clamp applied to `CLAUDE_CODE_AUTO_COMPACT_WINDOW` before export.
+/// The installed binary re-clamps to `[1, 1_000_000]` and then again to the
+/// model's own context window, so only this upper bound needs applying here
+/// — no lower clamp is required.
+const AUTO_COMPACT_WINDOW_MAX_TOKENS: u32 = 1_000_000;
+
+/// `CLAUDE_CODE_AUTO_COMPACT_WINDOW` is 1.5x the session's resolved context
+/// ceiling, clamped to [`AUTO_COMPACT_WINDOW_MAX_TOKENS`].
+///
+/// Intended ordering for a session that never hands off on its own: the
+/// harness's own context-budget hook instruction fires at 1.0x the ceiling,
+/// the daemon's kill at 1.25x, and this Claude Code compaction trigger at
+/// 1.5x — effectively unreachable in practice, with `pre-compact.sh`'s
+/// block-then-allow hook as the true last resort.
+fn auto_compact_window_tokens(context_ceiling_tokens: u32) -> u32 {
+    let scaled = (u64::from(context_ceiling_tokens) * 3) / 2;
+    scaled.min(u64::from(AUTO_COMPACT_WINDOW_MAX_TOKENS)) as u32
+}
+
+/// The three shell-quoted `exec env` assignments that bound and observe a
+/// session's resource usage, rendered together as one block. Split out of
+/// `build_wrapper_script` purely to keep that function under the line-count
+/// cap, the way `kind_env` and `cd_section` already factor out other parts
+/// of that same script.
+///
+/// BASH_MAX_TIMEOUT_MS: lets a foregrounded `loom subagents watch --timeout
+/// 3600` run to completion inside a session without the harness's own
+/// Bash-call timeout cutting it off first.
+///
+/// BASH_MAX_OUTPUT_LENGTH: truncates a bare `git show`, an unpiped `rg`, or
+/// a `cat` of a large file at the PROCESS boundary rather than letting it
+/// enter the session's context whole. The installed Claude Code binary's
+/// resolver for this env var takes (name, env, default=30000, cap=150000)
+/// with NO LOWER CLAMP, so 12000 is honored as given — the default is
+/// 30000, never 150,000.
+///
+/// CLAUDE_CODE_AUTO_COMPACT_WINDOW: see `auto_compact_window_tokens`.
+fn resource_limit_env(context_ceiling_tokens: u32) -> String {
+    let auto_compact_window = auto_compact_window_tokens(context_ceiling_tokens);
+    format!(
+        r#"    "BASH_MAX_TIMEOUT_MS=3600000" \
+    "BASH_MAX_OUTPUT_LENGTH=12000" \
+    "CLAUDE_CODE_AUTO_COMPACT_WINDOW={auto_compact_window}" \
+"#
+    )
+}
+
 /// Render the wrapper script text. Pure: every path is resolved by the caller
 /// or by `absolute*`, and nothing is written.
+// Mirrors `create_wrapper_script`'s parameter list one-for-one; see that
+// function's `#[allow(clippy::too_many_arguments)]` for why it stays flat.
+#[allow(clippy::too_many_arguments)]
 fn build_wrapper_script(
     work_dir: &Path,
     host_pid_file: &Path,
@@ -218,6 +278,7 @@ fn build_wrapper_script(
     claude_cmd: &str,
     working_dir: Option<&Path>,
     kind: SessionType,
+    context_ceiling_tokens: u32,
 ) -> String {
     let cd_section = cd_section(working_dir);
     let (merge_session_env, worktree_path_env) = kind_env(kind, working_dir);
@@ -228,6 +289,7 @@ fn build_wrapper_script(
     let work_dir_env = escape(format!("LOOM_WORK_DIR={}", absolute(work_dir).display()).into());
     let pid_file = escape(absolute_target(host_pid_file).display().to_string().into());
     let pid_capture = pid_capture(&pid_file);
+    let resource_limit_env = resource_limit_env(context_ceiling_tokens);
 
     format!(
         r#"#!/bin/bash
@@ -248,7 +310,7 @@ exec env -i "${{_loom_env[@]}}" \
     "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1" \
     "CLAUDE_CODE_DISABLE_AUTO_MEMORY=1" \
     "CLAUDE_REMOTE_CONTROL_SESSION_NAME_PREFIX=loom" \
-{merge_session_env}{worktree_path_env}    {claude_cmd}
+{resource_limit_env}{merge_session_env}{worktree_path_env}    {claude_cmd}
 "#
     )
 }

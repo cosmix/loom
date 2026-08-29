@@ -41,6 +41,7 @@
 //! `LOOM_E2E_REQUIRE_TMUX=1` to turn that skip back into a panic, so CI can
 //! assert the tests really ran against a live tmux server.
 
+use loom::models::constants::DEFAULT_CONTEXT_CEILING_TOKENS;
 use loom::models::session::{Session, SessionType};
 use loom::orchestrator::terminal::native::create_wrapper_script;
 use loom::orchestrator::terminal::tmux::{
@@ -70,6 +71,7 @@ fn stage_wrapper(work_dir: &Path, pid_key: &str, stage_id: &str, session_id: &st
         "sleep 30",
         Some(work_dir),
         SessionType::Stage,
+        DEFAULT_CONTEXT_CEILING_TOKENS,
     )
     .expect("wrapper script creation does not depend on TMUX_TMPDIR and must succeed")
 }

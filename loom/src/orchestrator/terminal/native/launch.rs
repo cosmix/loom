@@ -156,11 +156,11 @@ pub(crate) fn prepare_session_launch(
     let escaped_prompt = escape(Cow::Borrowed(&initial_prompt));
 
     // Model/effort POLICY (kept explicit, not buried). Merge and
-    // base-conflict resolution always run on the strongest model with
-    // maximum deliberation regardless of the originating stage's settings;
-    // stage and knowledge sessions use the stage's effective values.
+    // base-conflict resolution always run on the strongest model at high
+    // reasoning effort regardless of the originating stage's settings; stage
+    // and knowledge sessions use the stage's effective values.
     let (model, effort) = match kind {
-        SessionType::Merge | SessionType::BaseConflict => ("opus", "xhigh"),
+        SessionType::Merge | SessionType::BaseConflict => ("opus", "high"),
         SessionType::Stage | SessionType::Knowledge => {
             (stage.effective_model(), stage.effective_reasoning_effort())
         }
@@ -206,6 +206,13 @@ pub(crate) fn prepare_session_launch(
         &escaped_prompt,
     );
 
+    // The context ceiling for CLAUDE_CODE_AUTO_COMPACT_WINDOW, resolved through
+    // the shared order (stage value -> `[context] ceiling_tokens` -> default)
+    // so the window the session runs under is the number the signal quotes and
+    // the daemon backstops on. See wrapper.rs's CONTRACT-ordered resolution.
+    let context_ceiling_tokens =
+        crate::fs::work_dir::resolve_context_ceiling_tokens(work_dir, stage.context_ceiling_tokens);
+
     // Create the wrapper script (writes PID + start-time before exec'ing
     // claude). `stage.id` sets LOOM_STAGE_ID; `pid_key` names the per-session
     // PID file. Pass cwd so the script can cd there (macOS).
@@ -217,6 +224,7 @@ pub(crate) fn prepare_session_launch(
         &claude_cmd,
         Some(cwd),
         kind,
+        context_ceiling_tokens,
     )?;
 
     // Build the command that runs the wrapper script.

@@ -20,6 +20,7 @@ fn wrapper_left_by_an_attempted_spawn(work: &Path, pid_key: &str) {
         "claude 'prompt'",
         None,
         SessionType::Stage,
+        150_000,
     )
     .unwrap();
 }
