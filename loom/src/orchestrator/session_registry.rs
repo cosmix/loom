@@ -10,8 +10,8 @@
 //!
 //! The agent's OS-level evidence outlives the daemon, in two places the spawn
 //! path writes BEFORE the record: `.work/pids/<tracking_key>-<session_id>.pid`
-//! from the wrapper script ([`read_pid_entry`]), and, on the tmux lane, a
-//! socket named `loom-<session_id>` ([`socket_path_for`]).
+//! from the wrapper script (`read_pid_entry`), and, on the tmux lane, a
+//! socket named `loom-<session_id>` (`socket_path_for`).
 //!
 //! This module reads that evidence back. [`live_sessions_for_stage`] answers
 //! the question from records, [`orphan_evidence`] finds the agents the records
@@ -180,7 +180,7 @@ fn pid_file_path(work_dir: &Path, evidence: &OrphanEvidence) -> PathBuf {
 /// the daemon running whatever it finds. An unreadable stage or pid file is
 /// logged and contributes no evidence, which is the safe direction — nothing
 /// gets adopted. A missing terminal is not a failure at all here; liveness
-/// degrades to PID identity (see [`LivenessProbe::resolve`]), because a
+/// degrades to PID identity (see `LivenessProbe::resolve`), because a
 /// container is exactly where an unadoptable orphan hurts most.
 pub fn orphan_evidence(work_dir: &Path) -> Vec<OrphanEvidence> {
     let pid_files = list_pid_files(work_dir);
