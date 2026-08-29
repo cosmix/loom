@@ -68,8 +68,16 @@ pub(super) fn get_or_create_work_dir() -> Result<std::path::PathBuf> {
     // `find_repo_root_from_cwd` falls back to returning `cwd` itself when it
     // walks all the way to the filesystem root without finding a `.git`, so
     // `Some` alone doesn't mean "inside a git repo" - confirm the candidate
-    // root actually has a `.git` entry before trusting it.
-    let repo_root = find_repo_root_from_cwd(&cwd).filter(|root| root.join(".git").exists());
+    // root actually has a `.git` entry before trusting it. A bare
+    // `.exists()` isn't enough either: the walk-up has no ceiling, so from a
+    // cwd with no repo in its own ancestry (e.g. a scratch directory under
+    // the OS-shared temp root) it can climb all the way to an unrelated
+    // ambient `.git` sitting far above any real project - even an empty
+    // impostor directory that merely happens to be named `.git` - and treat
+    // it as this call's repo root. `is_real_git_dir` requires the structure
+    // a real repo always has, not just the name.
+    let repo_root =
+        find_repo_root_from_cwd(&cwd).filter(|root| is_real_git_dir(&root.join(".git")));
     let Some(repo_root) = repo_root else {
         bail!(".work directory not found. Run 'loom init' first.");
     };
@@ -97,6 +105,24 @@ pub(super) fn get_or_create_work_dir() -> Result<std::path::PathBuf> {
 /// anything.
 pub(super) fn get_work_dir_readonly() -> Option<std::path::PathBuf> {
     get_work_dir().ok()
+}
+
+/// True when `git_path` (a candidate `<root>/.git`) looks like a real git
+/// directory or worktree pointer, not merely a path that happens to be
+/// named `.git`.
+///
+/// A worktree's `.git` is a FILE containing `gitdir: <path>` - git always
+/// writes that content, so existence alone is a reliable signal. A real
+/// `.git` DIRECTORY, whether from `git init`, `git clone`, or a bare repo,
+/// always contains a `HEAD` file immediately; an ancestor directory that
+/// merely happens to be named `.git` (for example one left behind, empty,
+/// by an unrelated process sharing the same OS temp root) does not. Bare
+/// existence would accept both; this rejects the impostor.
+fn is_real_git_dir(git_path: &std::path::Path) -> bool {
+    if git_path.is_file() {
+        return true;
+    }
+    git_path.is_dir() && git_path.join("HEAD").exists()
 }
 
 /// Validate stage ID to prevent path traversal attacks

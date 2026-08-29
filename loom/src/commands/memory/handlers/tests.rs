@@ -127,6 +127,13 @@ fn note_explicit_stage_allowed_when_loom_stage_id_unset() {
     assert!(repo.path().join(".work/memory/cli-stage.md").exists());
 }
 
+// `AmbientTempRootGuard` and its regression test
+// (`note_does_not_adopt_an_impostor_git_dir_at_the_temp_root`) live in
+// `impostor_git_dir_tests.rs`, split out to keep this file under the
+// maintainability limit.
+#[path = "impostor_git_dir_tests.rs"]
+mod impostor_git_dir_tests;
+
 #[test]
 #[serial]
 fn note_outside_git_repo_still_fails() {
