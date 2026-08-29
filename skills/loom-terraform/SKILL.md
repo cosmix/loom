@@ -1,6 +1,6 @@
 ---
 name: loom-terraform
-description: Infrastructure as Code with Terraform/OpenTofu. Use for cloud resource provisioning, module development, state and backend management, multi-environment deployments (workspaces, tfvars), provider configuration, and refactoring/import workflows.
+description: Infrastructure as Code with Terraform/OpenTofu.
 allowed-tools:
   - Read
   - Grep

@@ -1,6 +1,6 @@
 ---
 name: loom-performance-testing
-description: Performance and load testing with k6, locust, JMeter, Gatling, and artillery. Use for load/stress/spike/soak tests, API and database benchmarking, profiling, p95/p99 latency analysis, throughput measurement, and bottleneck identification.
+description: Performance and load testing with k6, locust, JMeter, Gatling, and artillery.
 triggers:
   - performance testing
   - load testing

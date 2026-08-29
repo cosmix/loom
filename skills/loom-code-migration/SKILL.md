@@ -1,6 +1,6 @@
 ---
 name: loom-code-migration
-description: Strategies and patterns for safe code migrations and upgrades. Use when upgrading frameworks, migrating between technologies, handling deprecations, planning incremental rollouts, or applying automated codemods.
+description: Strategies and patterns for safe code migrations and upgrades.
 triggers:
   - migration
   - migrate

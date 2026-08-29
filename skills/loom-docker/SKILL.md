@@ -1,6 +1,6 @@
 ---
 name: loom-docker
-description: Docker and container expertise. Use for writing Dockerfiles, docker-compose files, multi-stage builds, layer optimization, image security hardening, networking, volumes, registries, and container debugging.
+description: Docker and container expertise.
 allowed-tools:
   - Read
   - Grep

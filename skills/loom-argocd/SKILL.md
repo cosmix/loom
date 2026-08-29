@@ -1,6 +1,6 @@
 ---
 name: loom-argocd
-description: GitOps continuous delivery with Argo CD for Kubernetes. Use when implementing declarative GitOps workflows, application sync/rollback, multi-cluster deployments, progressive delivery, or CD automation.
+description: GitOps continuous delivery with Argo CD for Kubernetes.
 allowed-tools:
   - Read
   - Edit

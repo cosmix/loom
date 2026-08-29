@@ -1,6 +1,6 @@
 ---
 name: loom-security-audit
-description: Comprehensive security audits identifying vulnerabilities, misconfigurations, and best-practice violations across applications, APIs, infrastructure, and data pipelines. Use for OWASP Top 10 reviews, compliance assessments (SOC2, PCI-DSS, HIPAA, GDPR), threat modeling, risk assessment, and hardening.
+description: Comprehensive security audits across applications, APIs, infrastructure, and data pipelines.
 allowed-tools:
   - Read
   - Grep

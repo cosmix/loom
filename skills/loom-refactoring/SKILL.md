@@ -1,6 +1,6 @@
 ---
 name: loom-refactoring
-description: Restructures existing code to improve readability, maintainability, and performance without changing behavior. Use for extracting methods/classes, removing duplication, applying design patterns, improving organization, and reducing technical debt. Not for bug fixes (use loom-debugging) or new features.
+description: Restructures existing code to improve readability, maintainability, and performance without changing behavior.
 allowed-tools:
   - Read
   - Grep

@@ -1,6 +1,6 @@
 ---
 name: loom-api-documentation
-description: Document REST APIs with OpenAPI/Swagger specifications, endpoint references, authentication flows, error handling, and SDK guides. Use for API reference docs, Swagger specs, interactive explorers, and client library documentation.
+description: Document REST APIs with OpenAPI/Swagger specifications, endpoint references, authentication flows, error handling, and SDK guides.
 triggers:
   - api docs
   - openapi

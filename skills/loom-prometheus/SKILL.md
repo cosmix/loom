@@ -1,6 +1,6 @@
 ---
 name: loom-prometheus
-description: Prometheus monitoring and alerting for cloud-native observability. Use for writing PromQL queries, configuring scrape targets, creating alerting and recording rules, instrumenting applications, and setting up service discovery. Not for dashboards (use loom-grafana) or log analysis (use loom-logging-observability).
+description: Prometheus monitoring and alerting for cloud-native observability.
 allowed-tools:
   - Read
   - Grep

@@ -1,6 +1,6 @@
 ---
 name: loom-i18n
-description: Internationalization and localization patterns for multi-language applications. Use when implementing translation systems, locale-specific formatting (dates, numbers, currency), RTL layouts, pluralization, or language switching with libraries like i18next, react-intl, FormatJS, or gettext.
+description: Internationalization and localization patterns for multi-language applications.
 triggers:
   - i18n
   - internationalization

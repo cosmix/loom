@@ -1,6 +1,6 @@
 ---
 name: loom-accessibility
-description: Web accessibility patterns, WCAG compliance, and inclusive design. Use when implementing accessible UI, keyboard navigation, screen reader support, focus management, semantic HTML, ARIA patterns, or auditing for compliance.
+description: Web accessibility patterns, WCAG compliance, and inclusive design.
 triggers:
   - accessibility
   - a11y

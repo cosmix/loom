@@ -1,6 +1,6 @@
 ---
 name: loom-documentation
-description: Creates and maintains technical documentation including API docs, READMEs, architecture docs, changelogs, ADRs, and inline code comments. Use for any documentation task from code-level docstrings to project-level guides.
+description: Creates and maintains technical documentation including API docs, READMEs, architecture docs, changelogs, ADRs, and inline code comments.
 allowed-tools:
   - Read
   - Grep

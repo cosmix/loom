@@ -1,6 +1,6 @@
 ---
 name: loom-kubernetes
-description: Kubernetes deployment, cluster architecture, security, and operations. Use for manifests, Helm charts, RBAC, network policies, operators/CRDs, PodSecurityStandards, troubleshooting, and production best practices.
+description: Kubernetes deployment, cluster architecture, security, and operations.
 allowed-tools:
   - Read
   - Grep

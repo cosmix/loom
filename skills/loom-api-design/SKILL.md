@@ -1,6 +1,6 @@
 ---
 name: loom-api-design
-description: Designs RESTful APIs, GraphQL schemas, and RPC interfaces for consistency, usability, and scalability. Use when defining endpoints, resource models, HTTP semantics, pagination, versioning, or RPC service contracts.
+description: Designs RESTful APIs, GraphQL schemas, and RPC interfaces for consistency, usability, and scalability.
 allowed-tools:
   - Read
   - Grep

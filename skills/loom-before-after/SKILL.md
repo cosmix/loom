@@ -1,6 +1,6 @@
 ---
 name: loom-before-after
-description: Generates before/after verification pairs for loom plans. Proves a stage actually changed system behavior by capturing state before and after implementation. Use for delta-proof verification of new commands, endpoints, modules, or bug fixes.
+description: Generates before/after verification pairs for loom plans.
 allowed-tools:
   - Read
   - Grep

@@ -1,6 +1,6 @@
 ---
 name: loom-logging-observability
-description: Logging and observability patterns for production systems. Use for structured JSON logging with correlation IDs, distributed tracing (OpenTelemetry, Jaeger, Zipkin), metrics collection (Prometheus), log aggregation (ELK, Loki, Datadog), and alerting strategies.
+description: Logging and observability patterns for production systems.
 triggers:
   - log
   - logging

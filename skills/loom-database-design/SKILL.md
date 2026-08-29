@@ -1,6 +1,6 @@
 ---
 name: loom-database-design
-description: Database schema and data model design for relational, NoSQL, time-series, and warehouse systems. Use for ERDs, normalization/denormalization, indexing, migrations, star/snowflake schemas, event sourcing, and OLTP/OLAP performance tuning.
+description: Database schema and data model design for relational, NoSQL, time-series, and warehouse systems.
 allowed-tools:
   - Read
   - Grep

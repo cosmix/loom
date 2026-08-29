@@ -1,6 +1,6 @@
 ---
 name: loom-ci-cd
-description: Designs and implements CI/CD pipelines for automated testing, building, deployment, and security scanning across GitHub Actions, GitLab CI, Jenkins, CircleCI, and cloud-native platforms. Covers pipeline optimization, test integration, artifact management, and release automation.
+description: Designs and implements CI/CD pipelines for automated testing, builds, deployment, and security scanning.
 allowed-tools:
   - Read
   - Grep

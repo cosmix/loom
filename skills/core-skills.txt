@@ -1,0 +1,29 @@
+# core-skills.txt
+#
+# The manifest of skills that stay installed into the Claude Code skills
+# directory (~/.claude/skills/), where they are indexed and their
+# description stays resident in every request. Every other skill under
+# skills/ installs instead into the on-demand catalog directory
+# (~/.claude/loom-skill-catalog/), loaded only when loom-skills reads it.
+#
+# Both install.sh (bash, at install time) and
+# loom/src/skills/index_catalog.rs (Rust, via include_str!) read this exact
+# file, so the two cannot drift apart into disagreeing lists.
+#
+# PARSING RULE (both readers implement this identically):
+#   trim the line; skip it if it is empty or if it starts with '#';
+#   otherwise the whole trimmed line is a skill directory name under
+#   skills/.
+#
+# A name line carries no trailing comment. Use '#' comments only on their
+# own lines.
+
+loom-plan-writer
+loom-usage
+loom-wiring-test
+loom-before-after
+loom-dead-code-check
+loom-md-tables
+loom-code-review
+loom-debugging
+loom-skills

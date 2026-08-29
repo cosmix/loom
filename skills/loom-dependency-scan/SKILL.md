@@ -1,6 +1,6 @@
 ---
 name: loom-dependency-scan
-description: Scan project dependencies for CVEs, outdated packages, and license compliance across npm, pip, cargo, go, maven, and other ecosystems. Use for vulnerability scanning, SBOM generation, supply chain analysis, and automated dependency updates.
+description: Scan project dependencies for CVEs, outdated packages, and license compliance across npm, pip, cargo, go, maven, and other ecosystems.
 allowed-tools:
   - Read
   - Grep

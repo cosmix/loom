@@ -1,6 +1,6 @@
 ---
 name: loom-test-strategy
-description: Test strategy guidance — test pyramid design, coverage goals, test categorization, altitude/cost tradeoffs, flaky-test diagnosis, infrastructure architecture, and risk-based prioritization. Use when planning testing approaches, optimizing test suites, or designing test architecture across APIs, data pipelines, ML models, and infrastructure.
+description: Test strategy guidance covering pyramid design, coverage, test categorization, flaky tests, infrastructure, and risk-based prioritization.
 triggers:
   - test strategy
   - test pyramid

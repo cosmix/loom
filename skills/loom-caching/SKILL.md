@@ -1,6 +1,6 @@
 ---
 name: loom-caching
-description: Caching strategies for performance optimization — cache-aside, write-through, write-behind, TTL policies, eviction, and stampede prevention. Use for Redis/Memcached, CDN caching, database query caching, ML model caching, and distributed cache design.
+description: Caching strategies for performance optimization — cache-aside, write-through, write-behind, TTL policies, eviction, and stampede prevention.
 triggers:
   - cache
   - caching

@@ -1,6 +1,6 @@
 ---
 name: loom-kustomize
-description: Kubernetes-native configuration management with Kustomize. Use for environment-specific configs, resource patching (strategic merge, JSON6902), ConfigMap/Secret generation, overlays/bases, multi-environment deployments, and GitOps workflows.
+description: Kubernetes-native configuration management with Kustomize.
 allowed-tools:
   - Read
   - Grep

@@ -1,6 +1,6 @@
 ---
 name: loom-webhooks
-description: Webhook implementation and consumption patterns. Use when building webhook endpoints, receivers, or senders — covering HMAC signature verification, retry with exponential backoff, idempotency keys, delivery guarantees, replay protection, dead letter queues, payload design, and monitoring.
+description: Webhook implementation and consumption patterns.
 triggers:
   - webhook
   - webhooks

@@ -1,6 +1,6 @@
 ---
 name: loom-rust
-description: Rust language expertise for idiomatic, production-quality code. Use for ownership and lifetimes, error handling with anyhow/thiserror, async/await with tokio, cargo workspace management, CLI tools with clap, and serialization with serde. Primary language of the Loom project.
+description: Rust language expertise for idiomatic, production-quality code.
 triggers:
   - rust
   - cargo

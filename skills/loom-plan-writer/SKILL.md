@@ -1,6 +1,6 @@
 ---
 name: loom-plan-writer
-description: REQUIRED skill for creating Loom execution plans. Designs DAG-based plans with mandatory knowledge-bootstrap and integration-verify bookends, parallel subagent execution within stages, and concurrent worktree stages for maximum throughput.
+description: REQUIRED skill for creating Loom execution plans.
 allowed-tools:
   - Read
   - Grep

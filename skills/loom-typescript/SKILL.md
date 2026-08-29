@@ -1,6 +1,6 @@
 ---
 name: loom-typescript
-description: TypeScript language expertise for type-safe, production-quality code. Use for advanced type system features (generics, discriminated unions, conditional and mapped types), strict mode configuration, type-safe APIs with zod/trpc/prisma, and the Bun + Vite + Oxc toolchain (oxlint, oxfmt, Rolldown, tsdown) across Node, Deno, and Bun.
+description: TypeScript language expertise for type-safe, production-quality code.
 triggers:
   - typescript
   - ts

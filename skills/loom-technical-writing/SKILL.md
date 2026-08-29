@@ -1,6 +1,6 @@
 ---
 name: loom-technical-writing
-description: Professional technical documentation writing for software projects. Use for READMEs, user guides, tutorials, migration guides, changelogs, API documentation, error messages, and release notes. Covers style, tone, voice, clarity, and audience-appropriate writing.
+description: Professional technical documentation writing for software projects.
 triggers:
   - technical writing
   - documentation

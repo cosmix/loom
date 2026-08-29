@@ -1,6 +1,6 @@
 ---
 name: loom-data-validation
-description: Data validation patterns covering schema validation, input sanitization, output encoding, and type coercion. Use for form/API validation with Zod/Pydantic/Joi/JSON Schema, XSS and injection prevention, constraint checks, data pipeline and ML feature validation.
+description: Data validation patterns covering schema validation, input sanitization, output encoding, and type coercion.
 triggers:
   - validate
   - validation

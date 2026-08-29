@@ -1,6 +1,6 @@
 ---
 name: loom-wiring-test
-description: Generates wiring verification YAML for loom plans. Use when writing acceptance, artifacts, wiring, and wiring_tests fields for plan stages to prove features are actually integrated — commands registered, endpoints mounted, modules exported, components rendered.
+description: Generates wiring verification YAML for loom plans.
 allowed-tools:
   - Read
   - Grep

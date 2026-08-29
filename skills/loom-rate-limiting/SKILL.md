@@ -1,6 +1,6 @@
 ---
 name: loom-rate-limiting
-description: API rate limiting and quota management. Use when implementing request throttling, API quotas, backpressure handling, or abuse protection. Covers token bucket, leaky bucket, sliding/fixed window algorithms, and distributed rate limiting with Redis.
+description: API rate limiting and quota management.
 triggers:
   - rate limiting
   - rate limit

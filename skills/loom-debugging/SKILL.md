@@ -1,6 +1,6 @@
 ---
 name: loom-debugging
-description: Systematic diagnosis and resolution of software bugs, test failures, data quality issues, and performance problems. Use for root-cause analysis, stack trace investigation, flaky/intermittent tests, regressions, crash triage, and "passes locally, fails in CI".
+description: Systematic diagnosis and resolution of software bugs, test failures, data quality issues, and performance problems.
 allowed-tools:
   - Read
   - Grep

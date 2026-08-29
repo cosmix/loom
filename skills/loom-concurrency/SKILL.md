@@ -1,6 +1,6 @@
 ---
 name: loom-concurrency
-description: Concurrency and parallelism patterns for multi-threaded and async code. Use when implementing async/await, parallel processing, thread safety, worker pools, channels, or debugging race conditions and deadlocks across Rust (tokio), Python (asyncio), TypeScript, and Go.
+description: Concurrency and parallelism patterns for multi-threaded and async code.
 triggers:
   - async
   - await

@@ -1,6 +1,6 @@
 ---
 name: loom-dead-code-check
-description: Generate dead code detection configuration for loom plan verification across Rust, TypeScript, Python, Go, and JavaScript. Use when adding the dead_code_check field or dead-code acceptance criteria to a plan, or catching incomplete wiring where code exists but is never called.
+description: Generate dead code detection configuration for loom plan verification across Rust, TypeScript, Python, Go, and JavaScript.
 allowed-tools:
   - Read
   - Grep
