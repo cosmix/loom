@@ -2,7 +2,6 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
 
-use crate::models::constants::DEFAULT_CONTEXT_CEILING_TOKENS;
 use crate::models::failure::FailureInfo;
 use crate::plan::schema::CodeReviewConfig;
 
@@ -1125,13 +1124,6 @@ where
             );
             Ok(None)
         }
-    }
-}
-
-impl Stage {
-    pub fn effective_context_ceiling_tokens(&self) -> u32 {
-        self.context_ceiling_tokens
-            .unwrap_or(DEFAULT_CONTEXT_CEILING_TOKENS)
     }
 }
 

@@ -3,10 +3,9 @@
 use anyhow::{bail, Context, Result};
 use std::path::Path;
 
-use crate::fs::work_dir::read_context_config;
+use crate::fs::work_dir::resolve_context_ceiling_tokens;
 use crate::git::worktree::find_repo_root_from_cwd;
 use crate::hooks::read_stage_events;
-use crate::models::constants::DEFAULT_CONTEXT_CEILING_TOKENS;
 use crate::models::stage::StageStatus;
 use crate::orchestrator::merge_lifecycle::MergeLifecycle;
 use crate::orchestrator::monitor::failure_tracking::FailureTracker;
@@ -177,11 +176,7 @@ pub fn retry(stage_id: String, force: bool, context: Option<String>) -> Result<(
                     .as_ref()
                     .and_then(|r| extract_context_tokens(r))
                     .unwrap_or_else(|| {
-                        stage.context_ceiling_tokens.unwrap_or_else(|| {
-                            read_context_config(work_dir)
-                                .map(|config| config.ceiling_tokens)
-                                .unwrap_or(DEFAULT_CONTEXT_CEILING_TOKENS)
-                        })
+                        resolve_context_ceiling_tokens(work_dir, stage.context_ceiling_tokens)
                     });
                 RecoverySignalContent::for_context_exhaustion(
                     new_session_id.clone(),
