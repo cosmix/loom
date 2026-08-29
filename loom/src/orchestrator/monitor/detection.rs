@@ -17,6 +17,7 @@ use super::context::{context_health, context_usage_percent, ContextHealth};
 use super::events::MonitorEvent;
 use super::handlers::Handlers;
 use super::heartbeat::{HeartbeatStatus, HeartbeatWatcher};
+use super::parked::stage_looks_finished;
 
 /// Detection state for tracking changes
 pub struct Detection {
@@ -293,17 +294,14 @@ impl Detection {
                         if let Ok(Some(is_alive)) = handlers.check_session_alive(session) {
                             if is_alive {
                                 // Session is alive but not sending heartbeats - it's hung
-                                let last_activity = heartbeat_watcher
-                                    .get_heartbeat(stage_id)
-                                    .and_then(|hb| hb.activity.clone());
-
-                                events.push(MonitorEvent::SessionHung {
-                                    session_id: session.id.clone(),
-                                    stage_id: Some(stage_id.clone()),
+                                events.push(hung_event(
+                                    session,
+                                    stage_id,
+                                    stages,
+                                    heartbeat_watcher,
                                     stale_duration_secs,
                                     timeout_secs,
-                                    last_activity,
-                                });
+                                ));
 
                                 self.reported_hung_sessions.insert(session.id.clone());
                             }
@@ -329,5 +327,38 @@ impl Detection {
 impl Default for Detection {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+/// Build the `SessionHung` event for a session whose heartbeat has gone stale.
+///
+/// Split out of [`Detection::detect_heartbeat_events`] so the classification
+/// has somewhere to live without growing that function, and so the two git
+/// probes behind [`stage_looks_finished`] are visibly paid once per hung
+/// report rather than once per poll.
+fn hung_event(
+    session: &Session,
+    stage_id: &str,
+    stages: &[Stage],
+    heartbeat_watcher: &HeartbeatWatcher,
+    stale_duration_secs: u64,
+    timeout_secs: u64,
+) -> MonitorEvent {
+    let last_activity = heartbeat_watcher
+        .get_heartbeat(stage_id)
+        .and_then(|hb| hb.activity.clone());
+
+    let finished_without_completing = stages
+        .iter()
+        .find(|s| s.id == stage_id)
+        .is_some_and(|stage| stage_looks_finished(session, stage));
+
+    MonitorEvent::SessionHung {
+        session_id: session.id.clone(),
+        stage_id: Some(stage_id.to_string()),
+        stale_duration_secs,
+        timeout_secs,
+        last_activity,
+        finished_without_completing,
     }
 }

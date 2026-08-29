@@ -18,6 +18,7 @@ pub mod events;
 pub mod failure_tracking;
 pub(crate) mod handlers;
 pub mod heartbeat;
+pub(crate) mod parked;
 mod session_events;
 
 #[cfg(test)]

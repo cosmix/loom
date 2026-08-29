@@ -38,7 +38,7 @@ file src/models/stage/methods.rs 812
 file src/models/stage/types.rs 1213
 file src/orchestrator/adjudication/mod.rs 695
 file src/orchestrator/adjudication/prompt.rs 491
-file src/orchestrator/core/event_handler.rs 468
+file src/orchestrator/core/event_handler.rs 467
 file src/orchestrator/core/merge_handler.rs 1330
 file src/orchestrator/core/orchestrator.rs 574
 file src/orchestrator/core/recovery.rs 1621
@@ -209,7 +209,7 @@ function src/orchestrator/auto_merge.rs attempt_auto_merge 63
 function src/orchestrator/core/completion_handler.rs handle_stage_completed 78
 function src/orchestrator/core/crash_handler.rs handle_session_crashed 156
 function src/orchestrator/core/event_handler.rs handle_budget_exceeded 56
-function src/orchestrator/core/event_handler.rs handle_one_event 117
+function src/orchestrator/core/event_handler.rs handle_one_event 115
 function src/orchestrator/core/merge_handler.rs finalize_merge_resolution 97
 function src/orchestrator/core/merge_handler.rs handle_merge_session_completed 168
 function src/orchestrator/core/merge_handler.rs read_plan_level_auto_merge 61
@@ -232,7 +232,7 @@ function src/orchestrator/core/stage_executor.rs start_ready_stages 67
 function src/orchestrator/core/stage_executor.rs start_stage 430
 function src/orchestrator/merge_attribution.rs attribute_main_repo_merge 101
 function src/orchestrator/merge_attribution.rs reconcile_main_repo_active_merge 64
-function src/orchestrator/monitor/detection.rs detect_heartbeat_events 99
+function src/orchestrator/monitor/detection.rs detect_heartbeat_events 96
 function src/orchestrator/monitor/detection.rs detect_session_changes 107
 function src/orchestrator/monitor/detection.rs detect_stage_changes 62
 function src/orchestrator/monitor/heartbeat.rs poll 52
