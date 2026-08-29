@@ -18,7 +18,6 @@ file src/commands/self_update/tests.rs 490
 file src/commands/stage/complete.rs 860
 file src/commands/stage/merge.rs 544
 file src/commands/stage/tests/complete.rs 583
-file src/commands/status/data/collector.rs 503
 file src/commands/status/ui/tui/app.rs 409
 file src/commands/status/ui/tui/renderer.rs 412
 file src/context/refresh/tests_source_graph.rs 679
@@ -41,8 +40,8 @@ file src/orchestrator/adjudication/prompt.rs 491
 file src/orchestrator/core/event_handler.rs 467
 file src/orchestrator/core/merge_handler.rs 1330
 file src/orchestrator/core/orchestrator.rs 574
-file src/orchestrator/core/recovery.rs 1621
-file src/orchestrator/core/stage_executor.rs 953
+file src/orchestrator/core/recovery.rs 1618
+file src/orchestrator/core/stage_executor.rs 796
 file src/orchestrator/merge_attribution.rs 543
 file src/orchestrator/monitor/heartbeat.rs 413
 file src/orchestrator/monitor/tests.rs 737
@@ -128,17 +127,16 @@ function src/commands/stage/progressive_complete.rs attempt_progressive_merge 11
 function src/commands/stage/progressive_complete.rs complete_with_merge 80
 function src/commands/stage/recover.rs test_determine_recovery_reason 87
 function src/commands/stage/skip_retry.rs retry 211
-function src/commands/stage/state.rs reset 61
 function src/commands/stage/tests/complete.rs test_complete_no_verify_refuses_zero_commits_ahead 73
 function src/commands/status.rs execute_static 81
 function src/commands/status/data/collector.rs build_stage_summary 62
-function src/commands/status/data/collector.rs make_test_stage 66
+function src/commands/status/data/collector_tests.rs make_test_stage 66
 function src/commands/status/render/attention.rs render_problem_stage 58
 function src/commands/status/render/compact.rs render_compact 70
 function src/commands/status/render/completion.rs render_completion_lines 55
 function src/commands/status/render/completion.rs render_completion_screen 84
 function src/commands/status/render/graph.rs format_stage_annotations 93
-function src/commands/status/render/graph.rs render_graph 74
+function src/commands/status/render/graph.rs render_graph 66
 function src/commands/status/ui/tree_widget.rs build_lines 183
 function src/commands/status/ui/tree_widget_tests.rs make_stage 66
 function src/commands/status/ui/tui/app.rs render 86
@@ -221,15 +219,15 @@ function src/orchestrator/core/orchestrator.rs new 80
 function src/orchestrator/core/orchestrator.rs run 253
 function src/orchestrator/core/recovery.rs all_stages_terminal 62
 function src/orchestrator/core/recovery.rs orphan_with_commits_ahead_signals_handoff_input 64
-function src/orchestrator/core/recovery.rs recover_orphaned_sessions 180
+function src/orchestrator/core/recovery.rs recover_orphaned_sessions 164
 function src/orchestrator/core/recovery.rs recovery_commit_and_merge_reconciliation_preserve_each_other 57
 function src/orchestrator/core/recovery.rs sync_graph_with_stage_files 516
 function src/orchestrator/core/recovery.rs sync_queued_status_to_files 60
 function src/orchestrator/core/recovery.rs verify_merged_true_or_revert 56
 function src/orchestrator/core/stage_executor.rs before_stage_gate_passed 62
-function src/orchestrator/core/stage_executor.rs start_knowledge_stage 143
+function src/orchestrator/core/stage_executor.rs start_knowledge_stage 102
 function src/orchestrator/core/stage_executor.rs start_ready_stages 67
-function src/orchestrator/core/stage_executor.rs start_stage 430
+function src/orchestrator/core/stage_executor.rs start_stage 401
 function src/orchestrator/merge_attribution.rs attribute_main_repo_merge 101
 function src/orchestrator/merge_attribution.rs reconcile_main_repo_active_merge 64
 function src/orchestrator/monitor/detection.rs detect_heartbeat_events 96
