@@ -5,11 +5,9 @@ use chrono::Utc;
 
 use crate::git;
 use crate::git::worktree::setup_worktree_hooks;
-use crate::git::BaseBranchError;
 use crate::handoff::find_latest_handoff;
 use crate::hooks::find_hooks_dir;
 use crate::models::failure::{FailureInfo, FailureType};
-use crate::models::session::Session;
 use crate::models::stage::{Stage, StageStatus, StageType};
 use crate::orchestrator::merge_lifecycle::MergeLifecycle;
 use crate::orchestrator::scheduling_report::{self, BlockReason, BlockedStage, SchedulingReport};
@@ -21,7 +19,7 @@ use super::persistence::Persistence;
 use super::Orchestrator;
 
 impl Orchestrator {
-    fn persist_blocked_stage(
+    pub(super) fn persist_blocked_stage(
         &self,
         stage_id: &str,
         failure_type: FailureType,
@@ -198,6 +196,17 @@ impl StageExecutor for Orchestrator {
             return Ok(());
         }
 
+        // Refuse to spawn a second agent over one that is still alive. A
+        // daemon crash can leave a stage `Executing` with a session that is
+        // unreachable (e.g. an orphaned tmux server) but still running; if
+        // the stage is later requeued (`loom stage reset`, or any other path
+        // that walks it back to `Queued`), scheduling it again here would
+        // spawn a duplicate agent into the same worktree alongside the first.
+        // Adopt the live session instead of spawning a duplicate.
+        if self.adopt_live_session_if_present(stage_id)? {
+            return Ok(());
+        }
+
         // Refuse phantom-merge propagation without blocking an unattempted stage.
         // The cached check avoids repeated git work while dependencies are unchanged.
         let target_branch = crate::git::branch::resolve_target_branch(
@@ -270,16 +279,12 @@ impl StageExecutor for Orchestrator {
             stage = self.update_stage(stage_id, |current| current.try_mark_queued())?;
         }
 
-        // Knowledge stages run in main repo without a worktree - mark executing immediately
+        // Knowledge stages run in main repo without a worktree.
+        // `start_knowledge_stage` itself resolves the session, writes the
+        // write-ahead record, and marks the stage Executing (mirroring the
+        // worktree spawn path below), so this branch only dispatches and
+        // contains a failure.
         if stage.stage_type == StageType::Knowledge {
-            stage = self.update_stage(stage_id, |current| {
-                current.try_mark_executing()?;
-                current.begin_attempt(Utc::now());
-                Ok(())
-            })?;
-            self.graph
-                .mark_executing(stage_id)
-                .context("Failed to mark stage as executing in graph")?;
             // Wrap the spawn so a failure does not strand the stage in
             // Executing state. Propagating the error here causes the
             // orchestrator to exit, leaving disk state Executing — and the
@@ -304,65 +309,8 @@ impl StageExecutor for Orchestrator {
 
         // For worktree stages: attempt worktree creation BEFORE marking as Executing
         // This ensures we don't leave stages in Executing state if worktree creation fails
-
-        // Resolve the base branch for worktree creation.
-        //
-        // Route on the *typed* `BaseBranchError` variant rather than matching
-        // substrings of the error text (A-13): rewording a message can no
-        // longer silently reclassify a handled condition into a propagated
-        // error that exits the orchestrator loop.
-        let resolved = match git::resolve_base_branch(
-            stage_id,
-            &stage.dependencies,
-            &self.graph,
-            &self.config.repo_root,
-            self.config.base_branch.as_deref(),
-        ) {
-            Ok(resolved) => resolved,
-            Err(BaseBranchError::SchedulingNotReady(msg)) => {
-                // Transient — skip this cycle, retry on the next poll.
-                // Logged once per stage per daemon run: this fires on every
-                // 5-second poll for as long as the condition holds, and an
-                // unbounded print here buries the log (and the operator) under
-                // thousands of identical lines while the stage sits Queued.
-                if self.spawn_skip_logged.insert(stage_id.to_string()) {
-                    tracing::warn!(
-                        stage_id = %stage_id,
-                        reason = %msg,
-                        "Stage skipped due to scheduling error; will retry each poll"
-                    );
-                }
-                self.spawn_blocks.insert(
-                    stage_id.to_string(),
-                    BlockReason::SchedulingNotReady { detail: msg },
-                );
-                return Ok(());
-            }
-            Err(BaseBranchError::Other(e)) => {
-                return Err(e).with_context(|| {
-                    format!("Failed to resolve base branch for stage: {stage_id}")
-                });
-            }
-        };
-
-        let worktree = match git::get_or_create_worktree(
-            stage_id,
-            &self.config.repo_root,
-            Some(resolved.branch_name()),
-        ) {
-            Ok(wt) => wt,
-            Err(e) => {
-                let err_msg = format!("{e:#}");
-                eprintln!("Stage '{stage_id}' blocked due to worktree error: {err_msg}");
-
-                // Stage is Queued here and may transition directly to Blocked.
-                let _ = self.persist_blocked_stage(
-                    stage_id,
-                    FailureType::InfrastructureError,
-                    vec![err_msg],
-                );
-                return Ok(());
-            }
+        let Some((resolved, worktree)) = self.resolve_worktree(stage_id, &stage)? else {
+            return Ok(());
         };
 
         // Run before-stage checks if configured (verify pre-conditions in a
@@ -371,13 +319,44 @@ impl StageExecutor for Orchestrator {
             return Ok(());
         }
 
-        // Worktree created successfully - NOW mark as Executing
-        // This ensures we only reach Executing state after infrastructure is ready
-        stage = self.update_stage(stage_id, |current| {
+        // Honor a pending recovery signal (C-5) and resolve the session id up
+        // front. `loom stage retry --context` (and crash/hung auto-recovery)
+        // writes a `recovery-<...>` signal file keyed to a new session ID and
+        // stores that ID in `stage.session`. If such a signal exists, reuse
+        // its session ID (and, once the signal path is resolved further
+        // below, its signal file) so the new agent actually receives the
+        // recovery context, instead of overwriting it with a freshly
+        // generated signal.
+        //
+        // Also writes the session record BEFORE the stage is marked
+        // Executing (see `write_ahead_session`'s invariant doc): a daemon
+        // crash must never produce a live, unreachable agent with no record
+        // on disk at all.
+        let Some((session, recovery_signal)) = self.write_ahead_session(&stage, stage_id) else {
+            return Ok(());
+        };
+
+        // Worktree created successfully - NOW mark as Executing, linked to
+        // the session record written above, in ONE locked update so
+        // "Executing" and "session assigned" can never be observed apart.
+        let session_id = session.id.clone();
+        stage = match self.update_stage(stage_id, |current| {
             current.try_mark_executing()?;
             current.begin_attempt(Utc::now());
+            current.assign_session(session_id.clone());
             Ok(())
-        })?;
+        }) {
+            Ok(stage) => stage,
+            Err(e) => {
+                self.block_and_undo_session(
+                    stage_id,
+                    &session.id,
+                    FailureType::InfrastructureError,
+                    format!("Failed to mark stage executing: {e:#}"),
+                );
+                return Ok(());
+            }
+        };
         self.graph
             .mark_executing(stage_id)
             .context("Failed to mark stage as executing in graph")?;
@@ -393,12 +372,11 @@ impl StageExecutor for Orchestrator {
         // rejects incompatible configs; refuse to spawn rather than silently
         // downgrade if the on-disk config has since become invalid.
         if let Err(e) = crate::sandbox::validate_config(&merged_sandbox) {
-            let err_msg = format!("{e:#}");
-            eprintln!("Stage '{stage_id}' blocked: invalid sandbox config at spawn: {err_msg}");
-            let _ = self.persist_blocked_stage(
+            self.block_and_undo_session(
                 stage_id,
+                &session.id,
                 FailureType::InfrastructureError,
-                vec![err_msg],
+                format!("invalid sandbox config at spawn: {e:#}"),
             );
             return Ok(());
         }
@@ -406,7 +384,12 @@ impl StageExecutor for Orchestrator {
         if let Err(error) =
             write_required_sandbox_settings(&merged_sandbox, &worktree.path, stage_id)
         {
-            self.block_stranded_stage(stage_id, format!("{error:#}"));
+            self.block_and_undo_session(
+                stage_id,
+                &session.id,
+                FailureType::InfrastructureError,
+                format!("{error:#}"),
+            );
             return Ok(());
         }
 
@@ -429,19 +412,6 @@ impl StageExecutor for Orchestrator {
         MergeLifecycle::new(stage_id, &self.config.repo_root, &self.config.work_dir)
             .reconcile_overlay();
 
-        // Honor a pending recovery signal (C-5). `loom stage retry --context`
-        // (and crash/hung auto-recovery) writes a `recovery-<...>` signal file
-        // keyed to a new session ID and stores that ID in `stage.session`. If
-        // such a signal exists, reuse its session ID and signal path so the new
-        // agent actually receives the recovery context, instead of overwriting
-        // it with a freshly generated signal. The tracking key is derived from
-        // the stage ID (not the session ID), so kill/liveness still work.
-        let recovery_signal = self.pending_recovery_signal(&stage);
-        let mut session = Session::new();
-        if let Some((recovery_session_id, _)) = &recovery_signal {
-            session.id = recovery_session_id.clone();
-        }
-
         // Claude Code hooks are the stage's security boundary, not an optional
         // enhancement: a session is never spawned without them. Contain a
         // setup failure as Blocked rather than propagating it, which would kill
@@ -453,14 +423,12 @@ impl StageExecutor for Orchestrator {
             merged_sandbox.permission_mode,
             stage_id,
         ) {
-            let err_msg = format!("Stage '{stage_id}' blocked: {e:#}");
-            eprintln!("{err_msg}");
-            let _ = self.persist_blocked_stage(
+            self.block_and_undo_session(
                 stage_id,
+                &session.id,
                 FailureType::SandboxSetupFailure,
-                vec![err_msg],
+                format!("{e:#}"),
             );
-            let _ = self.graph.mark_status(stage_id, StageStatus::Blocked);
             return Ok(());
         }
 
@@ -495,8 +463,12 @@ impl StageExecutor for Orchestrator {
             ) {
                 Ok(path) => path,
                 Err(e) => {
-                    let err_msg = format!("Failed to generate signal file: {e:#}");
-                    self.block_stranded_stage(stage_id, err_msg);
+                    self.block_and_undo_session(
+                        stage_id,
+                        &session.id,
+                        FailureType::InfrastructureError,
+                        format!("Failed to generate signal file: {e:#}"),
+                    );
                     return Ok(());
                 }
             }
@@ -525,7 +497,6 @@ impl StageExecutor for Orchestrator {
                 Err(spawn_err) => {
                     let err_msg =
                         format!("Failed to spawn session for stage {stage_id}: {spawn_err:#}");
-                    eprintln!("{err_msg}");
                     // Remove orphan resources so a retry can start clean.
                     // Worktree — best-effort force-removal; ignore "not found" etc.
                     let _ = git::remove_worktree(stage_id, &self.config.repo_root, true);
@@ -533,16 +504,12 @@ impl StageExecutor for Orchestrator {
                     // it from the correct base.
                     let branch = git::branch_name_for_stage(stage_id);
                     let _ = git::delete_branch(&branch, true, &self.config.repo_root);
-                    if self
-                        .persist_blocked_stage(
-                            stage_id,
-                            FailureType::InfrastructureError,
-                            vec![err_msg],
-                        )
-                        .is_ok()
-                    {
-                        let _ = self.graph.mark_status(stage_id, StageStatus::Blocked);
-                    }
+                    self.block_and_undo_session(
+                        stage_id,
+                        &original_session_id,
+                        FailureType::InfrastructureError,
+                        err_msg,
+                    );
                     return Ok(());
                 }
             }
@@ -576,11 +543,13 @@ impl StageExecutor for Orchestrator {
             original_session_id, spawned_session.id
         );
 
-        // Persisting the session can fail. At this point a real session may be
-        // running, but the stage on disk is still Executing+session:None, which
-        // orphan recovery cannot see (it scans session files). Contain the
-        // failure: mark Blocked + InfrastructureError so a retry can clean up,
-        // rather than propagating and killing the daemon (O-11).
+        // Persisting the update (pid, Running status) can fail even though a
+        // real agent is now running: the write-ahead `save_session` above
+        // already created the record and linked `stage.session` to it, so
+        // orphan recovery and `loom attach` can still find the session even
+        // if this particular update is lost. Contain the failure: mark
+        // Blocked + InfrastructureError so a retry can clean up, rather than
+        // propagating and killing the daemon (O-11).
         if let Err(e) = self.save_session(&spawned_session) {
             let err_msg = format!("Failed to save session for stage {stage_id}: {e:#}");
             self.block_stranded_stage(stage_id, err_msg);
@@ -588,13 +557,14 @@ impl StageExecutor for Orchestrator {
         }
 
         super::stage_telemetry::record_context_telemetry(self, &stage, &spawned_session.id);
-        // Merge only executor-owned fields into the fresh record under lock, so
-        // the slow spawn cannot clobber a concurrent CLI update (O-22).
-        let session_id = spawned_session.id.clone();
+        // Merge only executor-owned fields into the fresh record under lock,
+        // so the slow spawn cannot clobber a concurrent CLI update (O-22).
+        // Session assignment already happened before the spawn (write-ahead,
+        // above); only the worktree/base fields the spawn just learned land
+        // here.
         let worktree_id = worktree.id.clone();
         let resolved_base = resolved.branch_name().to_string();
         if let Err(e) = self.update_stage(stage_id, |current| {
-            current.assign_session(session_id);
             current.set_worktree(Some(worktree_id));
             current.set_resolved_base(Some(resolved_base));
             Ok(())
@@ -604,8 +574,7 @@ impl StageExecutor for Orchestrator {
             return Ok(());
         }
 
-        self.active_sessions
-            .insert(stage_id.to_string(), spawned_session);
+        self.insert_active_session(stage_id, spawned_session);
         self.active_worktrees.insert(stage_id.to_string(), worktree);
 
         Ok(())
@@ -614,70 +583,17 @@ impl StageExecutor for Orchestrator {
     fn start_knowledge_stage(&mut self, stage: Stage) -> Result<()> {
         let stage_id = stage.id.clone();
 
-        // Generate and write sandbox settings to main repo
-        let mut merged_sandbox = crate::sandbox::merge_config(
-            &self.config.sandbox_config,
-            &stage.sandbox,
-            stage.stage_type,
-            &stage.implementers,
-        );
-        // Defense-in-depth: re-validate at spawn time even for knowledge stages.
-        if let Err(e) = crate::sandbox::validate_config(&merged_sandbox) {
-            let err_msg = format!("{e:#}");
-            eprintln!(
-                "Knowledge stage '{stage_id}' blocked: invalid sandbox config at spawn: {err_msg}"
-            );
-            let _ = self.persist_blocked_stage(
-                &stage_id,
-                FailureType::InfrastructureError,
-                vec![err_msg],
-            );
+        // Resolve the session and persist a write-ahead record BEFORE the
+        // stage is marked Executing, mirroring the worktree spawn path above:
+        // a daemon crash between "Executing" and a live agent must never
+        // leave the stage pointing at a session record that does not exist
+        // on disk.
+        let Some(session) = self.write_ahead_knowledge_session(&stage_id)? else {
             return Ok(());
-        }
-        crate::sandbox::expand_paths(&mut merged_sandbox);
-        // Knowledge stages share the host's main-repo `.claude/settings.local.json`
-        // (the agent runs on the host directly), so the sandbox/permissions settings
-        // must be written there.
-        write_required_sandbox_settings(&merged_sandbox, &self.config.repo_root, &stage_id)?;
+        };
 
-        let session = Session::new();
-
-        // Set up Claude Code hooks for this session by writing into the main
-        // repo's `.claude/settings.local.json` (the host's agent reads this
-        // file directly). Session identity is deliberately NOT written: this
-        // file is shared by every main-repo session (later knowledge stages,
-        // interactive user sessions), so persisted stage/session IDs would go
-        // stale and shadow the wrapper script's fresh exports.
-        // Claude Code hooks are the knowledge stage's security boundary, not
-        // an optional enhancement: a session is never spawned without them.
-        // Contain a setup failure as Blocked rather than propagating it, which
-        // would kill the daemon while the stage sits Executing with no session.
-        // Knowledge stages have no worktree of their own: the main repo root is
-        // the install target that receives `.claude/settings.json`.
-        if let Err(e) = install_required_hooks(
-            find_hooks_dir(),
-            &self.config.repo_root,
-            &self.config.work_dir,
-            merged_sandbox.permission_mode,
-            &stage_id,
-        ) {
-            let err_msg = format!("Knowledge stage '{stage_id}' blocked: {e:#}");
-            eprintln!("{err_msg}");
-            let _ = self.persist_blocked_stage(
-                &stage_id,
-                FailureType::SandboxSetupFailure,
-                vec![err_msg],
-            );
-            let _ = self.graph.mark_status(&stage_id, StageStatus::Blocked);
+        if !self.setup_knowledge_sandbox_and_hooks(&stage, &stage_id, &session.id)? {
             return Ok(());
-        }
-
-        // Exclude .claude/settings.local.json from the main repo's gitignore so knowledge-stage
-        // hook configs cannot be accidentally committed.
-        if let Err(e) =
-            crate::git::worktree::add_settings_local_to_main_gitignore(&self.config.repo_root)
-        {
-            eprintln!("Warning: Failed to add settings.local.json to main repo gitignore: {e}");
         }
 
         let deps = get_dependency_status(&stage, &self.graph);
@@ -707,17 +623,30 @@ impl StageExecutor for Orchestrator {
 
         let spawned_session = if !self.config.manual_mode {
             // Spawn session in the main repo directory (not a worktree)
-            let spawned = self
-                .backend
-                .spawn_knowledge_session(&stage, session, &signal_path, &self.config.repo_root)
-                .with_context(|| {
-                    format!("Failed to spawn knowledge session for stage: {stage_id}")
-                })?;
-
-            // Print confirmation that stage was started
-            println!("  Started (knowledge): {stage_id}");
-
-            spawned
+            match self.backend.spawn_knowledge_session(
+                &stage,
+                session,
+                &signal_path,
+                &self.config.repo_root,
+            ) {
+                Ok(spawned) => {
+                    // Print confirmation that stage was started
+                    println!("  Started (knowledge): {stage_id}");
+                    spawned
+                }
+                Err(spawn_err) => {
+                    let err_msg = format!(
+                        "Failed to spawn knowledge session for stage {stage_id}: {spawn_err:#}"
+                    );
+                    self.block_and_undo_session(
+                        &stage_id,
+                        &original_session_id,
+                        FailureType::InfrastructureError,
+                        err_msg,
+                    );
+                    return Ok(());
+                }
+            }
         } else {
             println!("Manual mode: Session setup for knowledge stage '{stage_id}'");
             println!("  Directory: {}", self.config.repo_root.display());
@@ -739,48 +668,27 @@ impl StageExecutor for Orchestrator {
 
         self.save_session(&spawned_session)?;
 
-        // Knowledge stages don't have a worktree; update only executor-owned
-        // runtime fields on the fresh record.
-        let session_id = spawned_session.id.clone();
+        // Knowledge stages don't have a worktree; assign_session already
+        // happened before the spawn (write-ahead, above), so only clear the
+        // executor-owned worktree fields here.
         self.update_stage(&stage_id, |current| {
-            current.assign_session(session_id);
             current.set_worktree(None);
             current.set_resolved_base(None);
             Ok(())
         })?;
 
         // Add to active sessions but NOT to active_worktrees (no worktree for knowledge stages)
-        self.active_sessions.insert(stage_id, spawned_session);
+        self.insert_active_session(&stage_id, spawned_session);
 
         Ok(())
     }
 }
 
-/// Helpers shared by the worktree spawn path (recovery-signal delivery and
-/// infrastructure-failure containment).
+/// Helpers shared by the worktree spawn path. Write-ahead session handling,
+/// live-session adoption, and Blocked-transition cleanup live in
+/// `session_lifecycle.rs`; this impl keeps what is specific to the spawn
+/// sequence itself.
 impl Orchestrator {
-    /// Mark a stage Blocked with an `InfrastructureError` after a failure that
-    /// occurred *after* it was already marked Executing but *before* a session
-    /// was successfully recorded (O-11).
-    ///
-    /// Such a stage would otherwise be stranded as `Executing, session: None`:
-    /// the daemon would exit on the propagated error and orphan recovery, which
-    /// iterates session *files*, would never route it back to a runnable state.
-    /// We reload from disk (the in-memory copy may be stale) and best-effort
-    /// transition + persist; failures here are logged, not propagated.
-    fn block_stranded_stage(&mut self, stage_id: &str, err_msg: String) {
-        eprintln!("Stage '{stage_id}' blocked due to spawn-setup failure: {err_msg}");
-        match self.persist_blocked_stage(stage_id, FailureType::InfrastructureError, vec![err_msg])
-        {
-            Ok(()) => {
-                let _ = self.graph.mark_status(stage_id, StageStatus::Blocked);
-            }
-            Err(error) => {
-                eprintln!("Failed to persist Blocked state for '{stage_id}': {error:#}");
-            }
-        }
-    }
-
     /// Run the stage's `before_stage` pre-condition gate before spawning.
     ///
     /// The gate is a delta-proof: it asserts the feature does NOT exist yet, so
@@ -856,75 +764,6 @@ impl Orchestrator {
             }
         }
     }
-
-    /// If the stage's recorded session points at an existing `recovery-*` signal
-    /// file, return `(recovery_session_id, signal_path)` so the spawn path can
-    /// reuse it and deliver the recovery context (C-5).
-    fn pending_recovery_signal(&self, stage: &Stage) -> Option<(String, std::path::PathBuf)> {
-        let session_id = stage.session.as_ref()?;
-        if !session_id.starts_with("recovery-") {
-            return None;
-        }
-        let signal_path = self
-            .config
-            .work_dir
-            .join("signals")
-            .join(format!("{session_id}.md"));
-        if signal_path.exists() {
-            Some((session_id.clone(), signal_path))
-        } else {
-            None
-        }
-    }
-
-    /// Remove `recovery-<stage_id>-*` signal files that do not belong to the
-    /// session about to spawn, so stale recovery signals from prior attempts do
-    /// not accumulate in `.work/signals/` (C-5).
-    ///
-    /// Recovery session IDs are `recovery-<stage_id>-<8hex>-<timestamp>`. We
-    /// match the trailing `<8hex>-<timestamp>` shape exactly so a sibling stage
-    /// whose ID shares this stage's prefix (e.g. `auth` vs `auth-tests`) is not
-    /// caught by a naive `starts_with` — the prefix-collision class behind O-5.
-    fn cleanup_stale_recovery_signals(&self, stage_id: &str, keep_session_id: &str) {
-        let signals_dir = self.config.work_dir.join("signals");
-        let prefix = format!("recovery-{stage_id}-");
-        let keep_file = format!("{keep_session_id}.md");
-        let Ok(entries) = std::fs::read_dir(&signals_dir) else {
-            return;
-        };
-        for entry in entries.flatten() {
-            let name = entry.file_name();
-            let Some(name) = name.to_str() else { continue };
-            if name == keep_file {
-                continue;
-            }
-            let Some(stem) = name.strip_suffix(".md") else {
-                continue;
-            };
-            let Some(suffix) = stem.strip_prefix(&prefix) else {
-                continue;
-            };
-            // Suffix must be exactly `<8hex>-<digits>` for this stage — not a
-            // sibling stage whose ID begins with `stage_id-`.
-            if is_recovery_id_suffix(suffix) {
-                let _ = std::fs::remove_file(entry.path());
-            }
-        }
-    }
-}
-
-/// Whether `suffix` is the `<8hex>-<timestamp>` tail of a recovery session ID.
-///
-/// Used to distinguish this stage's recovery signals from those of a sibling
-/// stage whose ID merely begins with `<stage_id>-`.
-fn is_recovery_id_suffix(suffix: &str) -> bool {
-    let Some((hex, ts)) = suffix.split_once('-') else {
-        return false;
-    };
-    hex.len() == 8
-        && hex.chars().all(|c| c.is_ascii_hexdigit())
-        && !ts.is_empty()
-        && ts.chars().all(|c| c.is_ascii_digit())
 }
 
 /// Get dependency status for signal generation
@@ -951,3 +790,7 @@ fn get_dependency_status(
         })
         .collect()
 }
+
+#[cfg(test)]
+#[path = "stage_executor_tests.rs"]
+mod stage_executor_tests;

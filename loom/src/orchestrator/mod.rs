@@ -10,6 +10,7 @@ pub mod notify;
 pub mod progressive_merge;
 pub mod retry;
 pub mod scheduling_report;
+pub mod session_registry;
 pub mod signals;
 pub mod skip;
 pub mod spawner;
@@ -36,6 +37,9 @@ pub use monitor::{
 pub use notify::{notify_needs_human_review, send_desktop_notification};
 pub use progressive_merge::{
     get_merge_point, merge_completed_stage, MergeLock, ProgressiveMergeResult,
+};
+pub use session_registry::{
+    adopt_orphan, live_sessions_for_stage, orphan_evidence, OrphanEvidence,
 };
 pub use signals::{
     generate_recovery_signal, generate_signal, list_signals, read_recovery_signal, read_signal,

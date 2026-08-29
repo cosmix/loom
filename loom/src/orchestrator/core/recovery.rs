@@ -8,22 +8,26 @@ use std::path::{Path, PathBuf};
 use crate::models::session::Session;
 use crate::models::stage::{Stage, StageStatus};
 use crate::orchestrator::retry::{calculate_backoff, is_backoff_elapsed, should_auto_retry};
+use crate::orchestrator::session_registry::orphan_evidence;
 use crate::parser::frontmatter::parse_from_markdown;
 use crate::verify::transitions::update_stage_at_path;
 
-use super::clear_status_line;
+use super::orphan_adoption::{register_live_current_session, session_is_current_for_stage};
 use super::persistence::Persistence;
-use super::Orchestrator;
+use super::{clear_status_line, Orchestrator};
 
 #[derive(Debug, Default, PartialEq, Eq)]
-struct StageScanCounter {
-    directory_reads: usize,
-    entries_visited: usize,
+pub(super) struct StageScanCounter {
+    pub(super) directory_reads: usize,
+    pub(super) entries_visited: usize,
 }
 
 /// Enumerate stage paths exactly once. Callers load the already-known path
 /// directly instead of resolving every ID through another directory scan.
-fn scan_stage_paths(stages_dir: &Path, counter: &mut StageScanCounter) -> Result<Vec<PathBuf>> {
+pub(super) fn scan_stage_paths(
+    stages_dir: &Path,
+    counter: &mut StageScanCounter,
+) -> Result<Vec<PathBuf>> {
     counter.directory_reads += 1;
     let mut paths = Vec::new();
     for entry in std::fs::read_dir(stages_dir)? {
@@ -36,7 +40,7 @@ fn scan_stage_paths(stages_dir: &Path, counter: &mut StageScanCounter) -> Result
     Ok(paths)
 }
 
-fn load_stage_at_path(path: &Path) -> Result<Stage> {
+pub(super) fn load_stage_at_path(path: &Path) -> Result<Stage> {
     let content = crate::fs::locking::locked_read(path)?;
     crate::verify::transitions::parse_stage_from_markdown(&content)
         .with_context(|| format!("Failed to parse stage from: {}", path.display()))
@@ -54,23 +58,6 @@ fn persist_recovery_completed_commit(
         }
         Ok(())
     })
-}
-
-fn session_is_current_for_stage(stage: &Stage, session: &Session) -> bool {
-    stage.session.as_deref() == Some(session.id.as_str())
-        && session.stage_id.as_deref() == Some(stage.id.as_str())
-}
-
-fn register_live_current_session(
-    active_sessions: &mut HashMap<String, Session>,
-    stage: &Stage,
-    session: &Session,
-) -> bool {
-    if !session_is_current_for_stage(stage, session) {
-        return false;
-    }
-    active_sessions.insert(stage.id.clone(), session.clone());
-    true
 }
 
 fn recover_orphaned_stage(
@@ -134,6 +121,14 @@ pub(super) trait Recovery: Persistence {
     /// This ensures files reflect when dependencies are satisfied.
     /// This syncs FROM graph TO files.
     fn sync_queued_status_to_files(&mut self) -> Result<()>;
+
+    /// Re-adopt live agents that have no session record at all, rebuilding
+    /// the record and relinking the stage to it. The mirror image of
+    /// [`Self::recover_orphaned_sessions`], which iterates session FILES and
+    /// so cannot see an agent that never got one; runs FIRST from inside
+    /// that method for the same reason. Never fails the recovery pass —
+    /// per-agent failures are logged and skipped.
+    fn adopt_orphaned_agents(&mut self) -> usize;
 
     /// Recover orphaned sessions (process died but session/stage files exist).
     fn recover_orphaned_sessions(&mut self) -> Result<usize>;
@@ -891,35 +886,33 @@ impl Recovery for Orchestrator {
         Ok(())
     }
 
+    fn adopt_orphaned_agents(&mut self) -> usize {
+        let work_dir = self.config.work_dir.clone();
+        let stages_dir = work_dir.join("stages");
+        let mut adopted = 0;
+
+        for evidence in orphan_evidence(&work_dir) {
+            if self.try_adopt_orphan(&work_dir, &stages_dir, &evidence) {
+                adopted += 1;
+            }
+        }
+
+        adopted
+    }
+
     fn recover_orphaned_sessions(&mut self) -> Result<usize> {
+        // FIRST: give every live-but-unrecorded agent a record, so the
+        // file-driven scan below sees it instead of concluding its stage is
+        // idle. Idempotent — the record written here makes the next scan skip
+        // that pid file entirely.
+        self.adopt_orphans_and_log();
+
         let sessions_dir = self.config.work_dir.join("sessions");
         if !sessions_dir.exists() {
             return Ok(0);
         }
 
-        let stages_dir = self.config.work_dir.join("stages");
-        let mut scan = StageScanCounter::default();
-        let mut stages_by_id: HashMap<String, (Stage, PathBuf)> = HashMap::new();
-        if stages_dir.exists() {
-            for stage_path in scan_stage_paths(&stages_dir, &mut scan)? {
-                match load_stage_at_path(&stage_path) {
-                    Ok(stage) => {
-                        stages_by_id.insert(stage.id.clone(), (stage, stage_path));
-                    }
-                    Err(error) => tracing::error!(
-                        path = %stage_path.display(),
-                        error = %error,
-                        "Failed to index stage during orphan recovery; skipping"
-                    ),
-                }
-            }
-        }
-        tracing::debug!(
-            directory_reads = scan.directory_reads,
-            entries_visited = scan.entries_visited,
-            "Indexed current stage sessions for recovery"
-        );
-
+        let stages_by_id = self.index_stages_for_recovery()?;
         let mut recovered = 0;
 
         for entry in std::fs::read_dir(&sessions_dir)? {
@@ -1619,3 +1612,7 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+#[path = "recovery_adoption_tests.rs"]
+mod recovery_adoption_tests;
