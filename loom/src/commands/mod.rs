@@ -23,5 +23,6 @@ pub mod stage;
 pub mod status;
 pub mod stop;
 pub mod subagents;
+pub mod usage;
 pub mod verify;
 pub mod worktree_cmd;

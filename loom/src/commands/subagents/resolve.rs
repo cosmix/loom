@@ -94,7 +94,10 @@ fn projects_root() -> Option<PathBuf> {
 
 /// Replace every `/` and `.` in the absolute cwd with `-`, matching the slug
 /// Claude Code derives for `~/.claude/projects/<slug>/`.
-fn project_slug(cwd: &Path) -> String {
+///
+/// `pub` (not private) so `commands::usage::discovery` can reuse this exact
+/// rule instead of maintaining its own copy that could silently drift from it.
+pub fn project_slug(cwd: &Path) -> String {
     cwd.to_string_lossy()
         .chars()
         .map(|c| if c == '/' || c == '.' { '-' } else { c })
