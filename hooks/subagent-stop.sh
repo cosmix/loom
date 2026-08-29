@@ -166,14 +166,32 @@ fi
 # session-start.sh/post-tool-use.sh write, so HeartbeatWatcher does not flag
 # the stage hung while the parent was legitimately blocked waiting on this
 # subagent.
+#
+# context_tokens/transcript_path belong to the PARENT's own resident usage
+# exclusively - this hook only knows about the SUBAGENT's transcript, so it
+# must carry the parent's existing values forward unchanged rather than
+# overwrite them with the subagent's numbers or with null. If the file is
+# unreadable or absent, both come back empty and render as null below.
 HEARTBEAT_FILE="${HEARTBEAT_DIR}/${LOOM_STAGE_ID}.json"
 if [[ ! -L "$HEARTBEAT_FILE" ]]; then
+	EXISTING_CONTEXT_TOKENS_RAW=""
+	EXISTING_TRANSCRIPT_PATH_RAW=""
+	if [[ -r "$HEARTBEAT_FILE" ]]; then
+		EXISTING_CONTEXT_TOKENS_RAW=$(jq -r '.context_tokens // empty' "$HEARTBEAT_FILE" 2>/dev/null || true)
+		EXISTING_TRANSCRIPT_PATH_RAW=$(jq -r '.transcript_path // empty' "$HEARTBEAT_FILE" 2>/dev/null || true)
+	fi
+
 	HEARTBEAT_JSON=$(jq -n \
 		--arg stage_id "$LOOM_STAGE_ID" \
 		--arg session_id "$LOOM_SESSION_ID" \
 		--arg timestamp "$TIMESTAMP" \
 		--arg activity "subagent ${AGENT_ID} finished" \
-		'{stage_id: $stage_id, session_id: $session_id, timestamp: $timestamp, context_percent: null, last_tool: null, activity: $activity}' \
+		--arg context_tokens_raw "$EXISTING_CONTEXT_TOKENS_RAW" \
+		--arg transcript_path_raw "$EXISTING_TRANSCRIPT_PATH_RAW" \
+		'{stage_id: $stage_id, session_id: $session_id, timestamp: $timestamp,
+		  context_tokens: (if ($context_tokens_raw | test("^[0-9]+$")) then ($context_tokens_raw | tonumber) else null end),
+		  transcript_path: (if $transcript_path_raw == "" then null else $transcript_path_raw end),
+		  last_tool: null, activity: $activity}' \
 		2>/dev/null || true)
 	if [[ -n "$HEARTBEAT_JSON" ]]; then
 		printf '%s\n' "$HEARTBEAT_JSON" >"$HEARTBEAT_FILE"
