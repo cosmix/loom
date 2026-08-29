@@ -3,11 +3,13 @@
 use anyhow::{Context, Result};
 use std::path::Path;
 
-use crate::fs::session_files::find_session_file;
 use crate::models::session::Session;
 use crate::models::stage::{Stage, StageStatus};
+use crate::orchestrator::session_registry::{
+    live_sessions_for_stage, orphan_evidence, OrphanEvidence,
+};
 use crate::orchestrator::terminal::backend::SessionBackend;
-use crate::parser::frontmatter::parse_from_markdown;
+use crate::orchestrator::terminal::native;
 use crate::verify::transitions::{load_stage, update_stage};
 
 /// Block a stage with a reason
@@ -26,6 +28,124 @@ pub fn block(stage_id: String, reason: String) -> Result<()> {
     Ok(())
 }
 
+/// A live agent process found for a stage: either a session the registry can
+/// account for, or an orphan seen only through PID evidence because its
+/// stage link went missing (the hazard `orphan_evidence` exists to catch).
+enum LiveAgent {
+    Known(Session),
+    Orphan(OrphanEvidence),
+}
+
+impl LiveAgent {
+    fn session_id(&self) -> &str {
+        match self {
+            LiveAgent::Known(session) => &session.id,
+            LiveAgent::Orphan(evidence) => &evidence.session_id,
+        }
+    }
+
+    /// Human-readable description for the refusal message: names the
+    /// session, its pid (if known), and its backend. Never claims a pid we
+    /// have not actually observed.
+    fn describe(&self) -> String {
+        match self {
+            LiveAgent::Known(session) => {
+                let pid = session
+                    .pid
+                    .map_or_else(|| "unknown".to_string(), |pid| pid.to_string());
+                format!(
+                    "session '{}' (pid {pid}, {} backend)",
+                    session.id, session.backend
+                )
+            }
+            LiveAgent::Orphan(evidence) => format!(
+                "orphan session '{}' (pid {}, {} backend, no session record)",
+                evidence.session_id, evidence.pid, evidence.backend
+            ),
+        }
+    }
+}
+
+/// Every live agent process associated with `stage_id`: sessions the
+/// registry can account for, plus orphans it can only see via PID evidence
+/// (e.g. after a daemon crash severed `stage.session`).
+fn live_agents_for(work_dir: &Path, stage_id: &str) -> Result<Vec<LiveAgent>> {
+    let mut agents: Vec<LiveAgent> = live_sessions_for_stage(work_dir, stage_id)?
+        .into_iter()
+        .map(LiveAgent::Known)
+        .collect();
+    agents.extend(
+        orphan_evidence(work_dir)
+            .into_iter()
+            .filter(|evidence| evidence.stage_id == stage_id)
+            .map(LiveAgent::Orphan),
+    );
+    Ok(agents)
+}
+
+/// Build the refusal error for a reset blocked by live agents: names what is
+/// running and both ways forward.
+fn live_agent_refusal(stage_id: &str, agents: &[LiveAgent]) -> anyhow::Error {
+    let details = agents
+        .iter()
+        .map(LiveAgent::describe)
+        .collect::<Vec<_>>()
+        .join(", ");
+    anyhow::anyhow!(
+        "Stage '{stage_id}' still has a live agent running ({details}); refusing to reset. \
+         Run 'loom stage reset {stage_id} --kill-session' to terminate it first, or leave it \
+         alone: the daemon adopts a live session instead of spawning a duplicate."
+    )
+}
+
+/// Kill every live agent found for the stage. Known sessions go through the
+/// configured backend; orphans have no session record for a backend to
+/// dispatch on, so they go through the shared PID-identity teardown
+/// directly, reconstructing just enough of a `Session` to identify them.
+fn kill_live_agents(work_dir: &Path, agents: &[LiveAgent]) {
+    for agent in agents {
+        let result = match agent {
+            LiveAgent::Known(session) => kill_known_session(work_dir, session),
+            LiveAgent::Orphan(evidence) => kill_orphan_session(work_dir, evidence),
+        };
+        if let Err(e) = result {
+            eprintln!(
+                "Warning: Failed to kill session '{}': {e}",
+                agent.session_id()
+            );
+        }
+    }
+}
+
+fn kill_known_session(work_dir: &Path, session: &Session) -> Result<()> {
+    let backend = SessionBackend::from_config(work_dir.to_path_buf())
+        .context("Failed to construct session backend")?;
+    if backend.is_session_alive(session)? {
+        backend.kill_session(session)?;
+        println!("  Killed session '{}'", session.id);
+    } else {
+        println!("  Session '{}' already terminated", session.id);
+    }
+    Ok(())
+}
+
+/// Terminate an orphan through the same PID-identity path the backend falls
+/// back to when it has no window to close, since there is no session record
+/// here for a backend to be constructed against.
+fn kill_orphan_session(work_dir: &Path, evidence: &OrphanEvidence) -> Result<()> {
+    let mut session = Session::new();
+    session.id = evidence.session_id.clone();
+    session.stage_id = Some(evidence.stage_id.clone());
+    session.tracking_key = evidence.tracking_key.clone();
+    session.session_type = evidence.session_type;
+    session.backend = evidence.backend;
+    session.pid = Some(evidence.pid);
+
+    native::pid_only_terminate(work_dir, &session)?;
+    println!("  Killed orphan session '{}'", evidence.session_id);
+    Ok(())
+}
+
 /// Reset a stage to pending
 ///
 /// NOTE: This is a manual recovery command that intentionally bypasses state machine validation.
@@ -36,44 +156,21 @@ pub fn reset(stage_id: String, hard: bool, kill_session: bool) -> Result<()> {
 
     let stage = load_stage(&stage_id, work_dir)?;
 
-    // Kill the associated session before resetting, if requested. This prevents
-    // a duplicate-session hazard where the old session keeps running while the
-    // respawned stage starts a new one.
-    if kill_session {
-        if let Some(ref session_id) = stage.session.clone() {
-            let kill_result = find_session_file(work_dir, session_id)
-                .context("Failed to locate session file")
-                .and_then(|maybe_path| match maybe_path {
-                    None => {
-                        eprintln!("Note: No session file found for '{session_id}', skipping kill");
-                        Ok(())
-                    }
-                    Some(session_file) => std::fs::read_to_string(&session_file)
-                        .context("Failed to read session file")
-                        .and_then(|content| {
-                            parse_from_markdown::<Session>(&content, "Session")
-                                .context("Failed to parse session")
-                        })
-                        .and_then(|session| {
-                            SessionBackend::from_config(work_dir.to_path_buf())
-                                .context("Failed to construct session backend")
-                                .and_then(|backend| {
-                                    if backend.is_session_alive(&session)? {
-                                        backend.kill_session(&session)?;
-                                        println!("  Killed session '{session_id}'");
-                                    } else {
-                                        println!("  Session '{session_id}' already terminated");
-                                    }
-                                    Ok(())
-                                })
-                        }),
-                });
-            if let Err(e) = kill_result {
-                eprintln!("Warning: Failed to kill session '{session_id}': {e}");
-            }
+    // Refuse to reset while an agent is still running for this stage, unless
+    // told to kill it first. This prevents a duplicate-session hazard where
+    // the old session keeps running while the respawned stage starts a new
+    // one. Checks both tracked sessions and orphan PID evidence: a stage
+    // whose `session` link went missing (e.g. a daemon crash) is exactly the
+    // case a `stage.session`-only check misses.
+    let live_agents = live_agents_for(work_dir, &stage_id)?;
+    if !live_agents.is_empty() {
+        if kill_session {
+            kill_live_agents(work_dir, &live_agents);
         } else {
-            eprintln!("Note: Stage '{stage_id}' has no associated session to kill");
+            return Err(live_agent_refusal(&stage_id, &live_agents));
         }
+    } else if kill_session {
+        eprintln!("Note: Stage '{stage_id}' has no live agent to kill");
     }
 
     // INTENTIONAL STATE MACHINE BYPASS: WaitingForDeps is the initial state and
@@ -84,7 +181,7 @@ pub fn reset(stage_id: String, hard: bool, kill_session: bool) -> Result<()> {
         stage.status
     );
     update_stage(&stage_id, work_dir, |current| {
-        apply_reset(current, hard);
+        apply_reset(current);
         Ok(())
     })?;
 
@@ -186,7 +283,7 @@ pub fn release(stage_id: String) -> Result<()> {
     Ok(())
 }
 
-fn apply_reset(stage: &mut Stage, hard: bool) {
+fn apply_reset(stage: &mut Stage) {
     stage.status = StageStatus::WaitingForDeps;
     stage.completed_at = None;
     stage.close_reason = None;
@@ -196,8 +293,10 @@ fn apply_reset(stage: &mut Stage, hard: bool) {
     stage.fix_attempts = 0;
     stage.last_failure_at = None;
     stage.failure_info = None;
+    // Cleared in both soft and hard resets: by this point any live agent has
+    // either been killed or refused (see `reset`), so a stage naming a
+    // session it no longer owns is the exact inconsistency this fix exists
+    // to eliminate.
+    stage.session = None;
     stage.updated_at = chrono::Utc::now();
-    if hard {
-        stage.session = None;
-    }
 }

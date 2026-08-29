@@ -135,8 +135,11 @@ pub enum StageCommands {
         #[arg(value_parser = clap_id_validator)]
         stage_id: String,
 
-        /// Also clear the stage's session assignment (does NOT run git reset --hard in the
-        /// worktree — clean the worktree manually if needed)
+        /// No longer changes what gets cleared: the stage's session assignment
+        /// is always cleared on reset, in both soft and hard mode. Only
+        /// affects the printed "(hard reset)" vs "(soft reset)" label. Does
+        /// NOT run git reset --hard in the worktree — clean the worktree
+        /// manually if needed.
         #[arg(long)]
         hard: bool,
 
