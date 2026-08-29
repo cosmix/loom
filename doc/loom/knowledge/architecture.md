@@ -401,8 +401,8 @@ Supporting pieces:
 
 Two-tier curated knowledge: generated `INDEX.md`, tier-1 summary files, and tier-2 topics at
 `<category>/<slug>.md`. Layout is `Hierarchical` **iff** `INDEX.md` exists. Covers module split,
-target parsing, index generation, the audit rules (orphan vs broken-link link forms disagree),
-thresholds, the `check.rs` coverage blast radius, opt-in migration, and lock ordering.
+target parsing, index generation, the `catalog::build` diagnostics (duplicate heading, generic
+blurb, broken link, missing source ref), opt-in migration, and lock ordering.
 
 → [Knowledge Hierarchy](architecture/knowledge-hierarchy.md)
 

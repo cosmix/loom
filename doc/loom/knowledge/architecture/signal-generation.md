@@ -33,12 +33,12 @@ All generators are composed from shared `append_*` helpers and produce immutable
 
 | Generator          | Function                                      | Line | Stage Type                     |
 | ------------------ | --------------------------------------------- | ---- | ------------------------------ |
-| Standard           | `generate_stable_prefix()`                    | 174  | `StageType::Standard`          |
-| Integration-Verify | `generate_integration_verify_stable_prefix()` | 313  | `StageType::IntegrationVerify` |
-| Knowledge-Distill  | `generate_knowledge_distill_stable_prefix()`  | 447  | `StageType::KnowledgeDistill`  |
-| Knowledge          | `generate_knowledge_stable_prefix()`          | 527  | `StageType::Knowledge`         |
+| Standard           | `generate_stable_prefix()`                    | 225  | `StageType::Standard`          |
+| Integration-Verify | `generate_integration_verify_stable_prefix()` | 360  | `StageType::IntegrationVerify` |
+| Knowledge-Distill  | `generate_knowledge_distill_stable_prefix()`  | 510  | `StageType::KnowledgeDistill`  |
+| Knowledge          | `generate_knowledge_stable_prefix()`          | 658  | `StageType::Knowledge`         |
 
-**Standard prefix section order (approx lines 174-310):**
+**Standard prefix section order (approx lines 225-355):**
 
 1. Worktree Context header
 2. Isolation Boundaries (3 bullets)
@@ -88,14 +88,17 @@ End of signal for maximum attention. Includes: Compaction Imminent warning (≥7
 
 ### EmbeddedContext Struct (types.rs:25-61)
 
-Single container flowing through all 4 sections:
+Single container flowing through all 4 sections. The struct is currently `types.rs:24-73` — this
+heading's `25-61` range is stale, and the field list below has changed: `knowledge_has_content: bool`
+was replaced by `context_pack` and `knowledge_tree_empty`.
 
 ```rust
 pub struct EmbeddedContext {
     pub handoff_content: Option<String>,      // V1 prose handoff
     pub parsed_handoff: Option<HandoffV2>,    // V2 structured handoff
     pub plan_overview: Option<String>,
-    pub knowledge_has_content: bool,
+    pub context_pack: Option<ContextPack>,    // types.rs:35 - this stage's retrieved brief, when retrieval selected anything
+    pub knowledge_tree_empty: bool,           // types.rs:45 - doc/loom/knowledge/ has no real content; distinct from context_pack (see doc comment at the field)
     pub memory_content: Option<String>,       // Last 10 entries
     pub skill_recommendations: Vec<SkillMatch>,
     pub context_budget: Option<f32>,

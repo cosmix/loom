@@ -10,11 +10,11 @@
 | --- | --- | --- |
 | [architecture.md](architecture.md) | High-level component relationships, data flow, module dependencies | 516 |
 | [entry-points.md](entry-points.md) | Key files agents should read first | 592 |
-| [patterns.md](patterns.md) | Architectural patterns discovered in the codebase | 754 |
+| [patterns.md](patterns.md) | Architectural patterns discovered in the codebase | 756 |
 | [conventions.md](conventions.md) | Coding conventions discovered in the codebase | 591 |
-| [mistakes.md](mistakes.md) | Mistakes made and lessons learned - what to avoid | 984 |
+| [mistakes.md](mistakes.md) | Mistakes made and lessons learned - what to avoid | 995 |
 | [stack.md](stack.md) | Dependencies, frameworks, and tooling used in the project | 97 |
-| [concerns.md](concerns.md) | Technical debt, warnings, and issues to address | 822 |
+| [concerns.md](concerns.md) | Technical debt, warnings, and issues to address | 863 |
 
 ## Tier 2 — Topics
 
@@ -29,10 +29,10 @@
 | [architecture/directory-structure.md](architecture/directory-structure.md) | Directory Structure | Full loom/src module tree, the .work/ state layout, and the repo-root asset directories. | 49 |
 | [architecture/execution-containment.md](architecture/execution-containment.md) | Execution Containment | Topic notes for the architecture knowledge area. | 193 |
 | [architecture/hook-system.md](architecture/hook-system.md) | Hook System | Hook embedding and install, the SessionStart hookSpecificOutput contract, and the two subagent enforcement hooks. | 122 |
-| [architecture/knowledge-hierarchy.md](architecture/knowledge-hierarchy.md) | Knowledge Hierarchy | Tier-1/tier-2 knowledge mechanics: layout predicate, target parsing, INDEX.md generation, audit link rules, coverage blast radius, opt-in migration, lock ordering. | 130 |
+| [architecture/knowledge-hierarchy.md](architecture/knowledge-hierarchy.md) | Knowledge Hierarchy | Tier-1/tier-2 knowledge mechanics: layout predicate, target parsing, INDEX.md generation, audit link rules, coverage blast radius, opt-in migration, lock ordering. | 144 |
 | [architecture/memory-spool.md](architecture/memory-spool.md) | Memory Spool and Drain | Topic notes for the architecture knowledge area. | 105 |
 | [architecture/remote-control.md](architecture/remote-control.md) | Remote Control | Capability detection, preflight, resolution, and per-kind session naming for driving external agent binaries. | 64 |
-| [architecture/signal-generation.md](architecture/signal-generation.md) | Signal Generation | How a stage signal is assembled: stable-prefix cache, shared append_* helpers, per-stage-type prefixes, soft signals. | 172 |
+| [architecture/signal-generation.md](architecture/signal-generation.md) | Signal Generation | How a stage signal is assembled: stable-prefix cache, shared append_* helpers, per-stage-type prefixes, soft signals. | 175 |
 | [architecture/source-graph.md](architecture/source-graph.md) | Source Graph | Topic notes for the architecture knowledge area. | 240 |
 | [architecture/terminal-backends.md](architecture/terminal-backends.md) | Terminal Backends | Topic notes for the architecture knowledge area. | 209 |
 
@@ -40,7 +40,7 @@
 
 | Topic | Title | Blurb | Lines |
 | --- | --- | --- | --- |
-| [entry-points/hooks.md](entry-points/hooks.md) | Hooks | Every hook script and the event it binds to, _common.sh's command-matching and subagent-detection helpers, and the registration sites a new hook needs. | 104 |
+| [entry-points/hooks.md](entry-points/hooks.md) | Hooks | Every hook script and the event it binds to, _common.sh's command-matching and subagent-detection helpers, and the registration sites a new hook needs. | 111 |
 | [entry-points/remote-control.md](entry-points/remote-control.md) | Remote Control | Files and call sites for remote-control capability detection and permission-mode resolution. | 97 |
 
 ### patterns

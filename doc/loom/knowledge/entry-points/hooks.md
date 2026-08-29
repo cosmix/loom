@@ -18,21 +18,28 @@
 ## Hook System (loom/src/hooks/)
 
 - `hooks/mod.rs` - Module root; re-exports `HookEvent`, `HooksConfig`, `generate_hooks_settings`, `setup_hooks_for_worktree`, `find_hooks_dir`
-- `hooks/config.rs` - `HookEvent` enum (6 variants) + `HooksConfig` struct + `to_settings_hooks()`
+- `hooks/config.rs` - `HookEvent` enum (7 variants) + `HooksConfig` struct + `to_settings_hooks()`
 - `hooks/generator.rs` - `generate_hooks_settings()` (merge session hooks into settings.json), `setup_hooks_for_worktree()`, `find_hooks_dir()`
 - `hooks/events.rs` - `log_hook_event()`, `read_recent_events()`, event log CRUD
 - `hooks/validators/` - Validator scripts for PreToolUse hooks (commit-filter, git-add-guard, worktree-isolation, prefer-modern-tools)
 
-**6 hook events:**
+**6 emitted session-hook events** (`HooksConfig::to_settings_hooks()`, `config.rs:162`):
 
-| Event               | Script                   | Purpose                                   |
-| ------------------- | ------------------------ | ----------------------------------------- |
-| `SessionStart`      | `session-start.sh`       | Initial heartbeat                         |
-| `PostToolUse`       | `post-tool-use.sh`       | Heartbeat update after every tool call    |
-| `PreCompact`        | `pre-compact.sh`         | Trigger handoff before context compaction |
-| `SessionEnd`        | `session-end.sh`         | Cleanup on normal exit                    |
-| `Stop`              | `learning-validator.sh`  | Memory usage check on stop                |
-| `PreferModernTools` | `prefer-modern-tools.sh` | Suggest fd/rg over find/grep in Bash      |
+| Event          | Script                   | Purpose                                                                  |
+| -------------- | ------------------------ | ------------------------------------------------------------------------- |
+| `SessionStart` | `session-start.sh`       | Initial heartbeat                                                        |
+| `PostToolUse`  | `post-tool-use.sh`       | Heartbeat update after every tool call                                   |
+| `PreCompact`   | `pre-compact.sh`         | Trigger handoff before context compaction                                |
+| `SessionEnd`   | `session-end.sh`         | Cleanup on normal exit                                                   |
+| `Stop`         | `learning-validator.sh`  | Memory usage check on stop                                               |
+| `SubagentStop` | `subagent-stop.sh`       | Completion signal + heartbeat refresh when a Task-tool subagent finishes |
+
+The `HookEvent` enum has a 7th variant, `PreferModernTools`, that `to_settings_hooks()` never
+emits — it is dead with respect to session-hook settings generation (exercised only by
+`HookEvent::all()` in tests). `prefer-modern-tools.sh` still runs, but through a separate path
+entirely: it is registered as a **global** `PreToolUse:Bash` hook in
+`fs/permissions/hooks/config.rs:25`, alongside `commit-filter.sh`/`git-add-guard.sh`/etc., never
+through `HookEvent`/`to_settings_hooks()`.
 
 **Settings placement:** Session hooks → `<worktree>/.claude/settings.local.json`. Global hooks (commit-filter, git-add-guard, worktree-isolation) configured via `fs/permissions.rs:configure_loom_hooks()`.
 

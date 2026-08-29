@@ -530,9 +530,11 @@ Reading protocol: index first, then the tier-1 summary for your area, then only 
 topics you actually touch. Writing protocol: a tier-1 section that grows past ~40 lines is spilled
 into a topic and replaced by a 2-4 line summary plus a relative link.
 
-The link form matters — `[Title](category/slug.md)` in a **tier-1** file is the only form that
-satisfies both audit checks. See [Knowledge Hierarchy](architecture/knowledge-hierarchy.md) for
-the mechanics and the audit rules.
+The link form `[Title](category/slug.md)` in a **tier-1** file is the house convention —
+relative, `.md` extension, no `./`, no anchor. No audit enforces it today; an earlier version of
+this doc claimed two link-form checks required exactly this form, but no such checks exist in the
+tree. See [Knowledge Hierarchy](architecture/knowledge-hierarchy.md) for the mechanics and the
+`catalog::build` diagnostics that actually run.
 
 ## Model Playbook: Orchestration Is Always Opus (2026-07-28)
 

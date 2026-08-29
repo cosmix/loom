@@ -7,17 +7,23 @@
 Split by concern when the tiering work pushed `dir.rs` past the 400-line cap; every public
 method signature was kept stable so no caller changed.
 
-| File           | Owns                                                                                                         |
-| -------------- | ------------------------------------------------------------------------------------------------------------ |
-| `types.rs`     | `KnowledgeFile`, `KnowledgeTarget`, `KnowledgeLayout`, `INDEX_FILENAME`, the tier-1 alias table              |
-| `dir.rs`       | `KnowledgeDir` — `initialize`, `append_target`, `replace_section_target`, `splice_section`, layout detection |
-| `index.rs`     | `scan_topics`, `generate_index`, `write_index`                                                               |
-| `gc.rs`        | `analyze_gc_metrics`, `find_oversized_sections`, orphan and broken-link detection, thresholds                |
-| `summary.rs`   | signal-facing knowledge summary                                                                              |
-| `templates.rs` | tier-1 and tier-2 file scaffolds                                                                             |
+| File                                | Owns                                                                                                                                                    |
+| ------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `types.rs`                          | `KnowledgeFile`, `KnowledgeTarget`, `KnowledgeLayout`, `INDEX_FILENAME`, the tier-1 alias table                                                          |
+| `dir.rs`                            | `KnowledgeDir` — `initialize`, `append_target`, `replace_section_target`, `layout` detection, index read/write                                          |
+| `index.rs`                          | `scan_topics`, `generate_index`, `write_index`                                                                                                           |
+| `catalog.rs` (+ `catalog/prose.rs`) | `catalog::build` — deterministic chunk list plus `CatalogIssue` diagnostics (duplicate heading, generic blurb, broken link, missing source ref) over the curated tree; `prose.rs` extends the same catalog with the project's configured prose roots |
+| `chunker.rs`                        | `chunk_file` — splits one file into heading-anchored `KnowledgeChunk`s, extracts links and backticked source-path references                             |
+| `splice.rs`                         | `splice_section` — in-place `#{2,6}` heading section replace/append, backing `replace_section_target`                                                    |
+| `scaffold.rs`                       | tier-2 stub-header detection/healing helpers used when a new topic file is created                                                                       |
+| `templates.rs`                      | tier-1 and tier-2 file scaffolds                                                                                                                          |
 
-The alias table lives in `types.rs`, not the CLI layer: `commands/knowledge/mod.rs::parse_file_type`
-delegates to `KnowledgeFile::parse` so the data layer and the CLI cannot drift.
+There is no `gc.rs` or `summary.rs` in this module — an earlier version of this doc invented both.
+
+The alias table lives in `types.rs`, not the CLI layer: `commands/knowledge/mod.rs::update`/`replace_section`
+resolve their `file` argument through `KnowledgeTarget::parse` (`types.rs:146-170`), which matches the
+no-slash case against `KnowledgeFile::parse` (`types.rs:167`), so the data layer and the CLI cannot drift.
+There is no `parse_file_type` function anywhere in the tree — a name an earlier version of this doc invented.
 
 ## Layout Predicate
 
@@ -40,7 +46,7 @@ category directory is created automatically on first write.
 ## INDEX.md Generation
 
 There is no dedicated index-generation verb. `INDEX.md` regenerates automatically —
-`KnowledgeDir::refresh_index_if_hierarchical` (`dir.rs:264`) calls `generate_index`
+`KnowledgeDir::refresh_index_if_hierarchical` (`dir.rs:286`) calls `generate_index`
 (`index.rs:136`) after every `loom knowledge update`, and `loom knowledge sync` forces
 it structurally too. The generated file is built from the on-disk tree: a
 generated-file marker, a reading-protocol blurb, a **Tier 1** table (file,
@@ -50,7 +56,8 @@ topics exist.
 
 `scan_topics` is **non-recursive** — it reads `<root>/<category>/*.md` only, skipping dotfiles
 and non-`.md` entries. Nested subdirectories under a category are ignored completely. Title is
-the first `#` line, blurb the first `>` line, falling back to the slug and an empty string.
+the first `#` line, blurb the first `>` line (`index.rs:66-78 extract_title_and_blurb`), falling
+back to the slug and an empty string, with no length cap on either.
 
 Regeneration is idempotent and does a full atomic overwrite, so hand edits to `INDEX.md` are
 silently destroyed. Every `loom knowledge update` refreshes the index — but **only once the
@@ -58,51 +65,58 @@ directory is already hierarchical**.
 
 ## Audit Rules — the Two Checks Disagree About Link Form
 
-This is the single most surprising part of the system, and it drives how every link must be
-written.
+This heading is inherited from an earlier version of this doc, which described a `gc.rs`-based
+system with two disagreeing link-form checks. That system does not exist anywhere in the tree.
 
-- **Orphan detection** (`gc.rs`): a topic is an orphan unless its relative path
-  (`architecture/foo.md`) appears as a **plain substring** in one of the **seven tier-1 files**.
-  `INDEX.md` is _not_ in that set — a topic linked only from the generated index is still an
-  orphan. The `.md` extension is required.
-- **Broken-link detection** (`gc.rs`): a stricter regex that only matches the **inline markdown
-  form** `](category/slug.md)` with a literal `)` immediately after `.md`. A leading `./` or a
-  trailing `#anchor` makes a link invisible to this check. Only tier-1 files are scanned;
-  topic-to-topic links are never validated.
+What actually runs today is `fs::knowledge::catalog::build` (`catalog.rs:150`), which walks every
+curated `*.md` file under the knowledge root (skipping `INDEX.md`) and reports four `CatalogIssue`
+kinds, sorted deterministically:
 
-**Therefore the one link form that satisfies both checks is `[Title](category/slug.md)` —
-relative, no `./`, with `.md`, no anchor, written in a tier-1 file.**
+- **`DuplicateHeading`** — the same normalized H2+ anchor occurs more than once in one file.
+- **`GenericBlurb`** — a topic's `>` blurb still matches the unmodified scaffold text for its category.
+- **`BrokenLink`** — a markdown link target does not resolve to a real file, by real lexical path
+  resolution (`.`/`..` folding relative to the linking file, `catalog.rs:295-322`), not a regex on
+  link syntax. An absolute target, or one that folds outside the knowledge root, is skipped rather
+  than flagged. Any link form resolves the same way — there is no special-cased "only this exact
+  markdown form counts" rule.
+- **`MissingSourceRef`** — a backticked repository-relative path in the file does not exist on disk.
 
-Index staleness is a third, separate check: `INDEX.md` must textually contain every tier-1
-filename and every topic path. Line counts in the index are _not_ compared, so stale numbers are
-never flagged.
+`catalog::build` never repairs anything (`context/ingest.rs:9-14` states the hard constraint) and
+runs over the curated tree only — chunks pulled in from the project's configured prose roots
+contribute no issues. `loom knowledge sync` is the CLI surface that runs it and prints the issue
+count (`commands/knowledge/sync.rs`); nothing gates a write on the result today.
+
+Index staleness is a separate, lighter check inside the same build path: whether the on-disk
+`INDEX.md` textually contains every tier-1 filename and topic path. Line counts in the index are
+not compared, so stale numbers are never flagged.
+
+There is no per-link "form" requirement — `[Title](category/slug.md)` is simply the house style
+(see `patterns.md`), not something an audit enforces.
 
 ## Thresholds
 
-| Constant                      | Value | Meaning                                                                          |
-| ----------------------------- | ----- | -------------------------------------------------------------------------------- |
-| `SECTION_EXTRACT_THRESHOLD`   | 40    | a tier-1 `##` section with **more than** 40 body lines is flagged for extraction |
-| `DEFAULT_MAX_TIER1_LINES`     | 250   | per tier-1 file (`--max-file-lines`)                                             |
-| `DEFAULT_MAX_TOPIC_LINES`     | 500   | per tier-2 topic (`--max-topic-lines`)                                           |
-| `DEFAULT_MAX_PROMOTED_BLOCKS` | 3     | `## Promoted from Memory` blocks per file                                        |
+None of `SECTION_EXTRACT_THRESHOLD`, `DEFAULT_MAX_TIER1_LINES`, `DEFAULT_MAX_TOPIC_LINES`, or
+`DEFAULT_MAX_PROMOTED_BLOCKS` exist anywhere in the tree — an earlier version of this doc invented
+all four. No file-size, section-size, or promoted-block-count limit is enforced in code today.
 
-**There is deliberately no aggregate line cap.** Total lines are computed and printed for
-information only. A total budget punishes a growing codebase for recording what it learned; the
-per-file and per-section limits shape _structure_ instead, which is the thing that actually
-degrades retrieval.
+The "tier-1 section past ~40 lines spills into a topic" rule (CLAUDE.md Rule 12) is prose-only —
+a convention for authors to apply by hand, not a check `loom knowledge sync` or anything else
+runs. The four `CatalogIssue` kinds `catalog::build` actually reports (duplicate heading, generic
+blurb, broken link, missing source ref — see the Audit Rules section above) say nothing about size.
 
 ## Coverage Blast Radius
 
-`architecture_coverage_text()` concatenates tier-1 `architecture.md` **plus every tier-2 topic
-whose category is `Architecture`** before matching `src/` directories. Without it, the first
-restructuring that moved prose out of the tier-1 summary would have collapsed the number
-retrieval coverage depends on. There is no dedicated coverage-check verb any more — `commands/
-knowledge/check.rs` and its `--min-coverage` gate were deleted along with the rest of the
-collapsed CLI surface (only `update`, `context`, `sync` remain).
+`architecture_coverage_text()` does not exist anywhere in the tree — an earlier version of this
+doc invented it, along with the coverage-weighted-retrieval mechanism it described. No function
+concatenates tier-1 `architecture.md` with tier-2 Architecture topics to weight `src/` directory
+matches; nothing in `fs/knowledge/` or `context/` does that. (`context/coverage.rs` does define a
+`CoverageReport`, but it reports source-graph parse coverage — full / lexical-only / parse-error
+per file — which is unrelated to knowledge docs.)
 
-The filter is `category == Architecture`. **Architecture prose relocated into a different
-category directory silently stops counting toward coverage.** Keep architecture content under
-`architecture/`.
+`commands/knowledge/check.rs` and a `--min-coverage` gate do not exist either. The current
+`loom knowledge` CLI surface is five subcommands, all dispatched from `cli/dispatch.rs:83-107`:
+`update`, `replace-section`, `context`, `eval` (scores retrieval against a checked-in case file),
+and `sync`.
 
 ## Migration Is Opt-In (a Deliberate Backwards-Compatibility Exception)
 

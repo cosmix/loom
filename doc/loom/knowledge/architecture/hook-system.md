@@ -10,8 +10,8 @@ The `hooks/` module provides Claude Code hooks integration for session lifecycle
 
 **Global vs session hooks distinction:**
 
-- **Global hooks** include commit filtering, Git-add protection, Bash isolation, the canonical five-tool file guard, plan-path protection, and the forwarding guard. They are installed under `~/.claude/hooks/loom/` and registered by `fs/permissions/hooks.rs`, so they persist across sessions.
-- **Session hooks** (session-start.sh, post-tool-use.sh, pre-compact.sh, session-end.sh, learning-validator.sh): generated fresh per-session by `hooks/generator.rs:generate_hooks_settings()`. Merged into worktree's `settings.local.json` with duplicate detection.
+- **Global hooks** include commit filtering, Git-add protection, Bash isolation, the canonical five-tool file guard, plan-path protection, `prefer-modern-tools.sh`, and the forwarding guard. They are installed under `~/.claude/hooks/loom/` and registered by `fs/permissions/hooks.rs`, so they persist across sessions. `prefer-modern-tools.sh` lives here as a global `PreToolUse:Bash` hook (`fs/permissions/hooks/config.rs:25`) — it is not one of the six `HookEvent` session hooks below, despite the enum carrying a `PreferModernTools` variant that `to_settings_hooks()` never emits.
+- **Session hooks** (session-start.sh, post-tool-use.sh, pre-compact.sh, session-end.sh, learning-validator.sh, subagent-stop.sh): generated fresh per-session by `hooks/generator.rs:generate_hooks_settings()` from the six `HookEvent`s that `HooksConfig::to_settings_hooks()` (`hooks/config.rs:162`) actually emits. Merged into worktree's `settings.local.json` with duplicate detection.
 
 ## Hook System — Session-Start Behavior and hookSpecificOutput Pattern
 
