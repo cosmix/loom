@@ -17,7 +17,9 @@ fn test_loom_permissions_constant() {
     // Main repo permissions - tightened to minimum necessary
     assert!(LOOM_PERMISSIONS.contains(&"Bash(loom *)"));
     assert!(LOOM_PERMISSIONS.contains(&"Read(.work/**)"));
-    assert!(LOOM_PERMISSIONS.contains(&"Write(.work/**)"));
+    // Handoffs are the only `.work` subtree a file tool may write; everything
+    // else goes through the loom CLI.
+    assert!(LOOM_PERMISSIONS.contains(&"Edit(.work/handoffs/**)"));
     // Only CLAUDE.md files, not all of .claude/
     assert!(LOOM_PERMISSIONS.contains(&"Read(.claude/CLAUDE.md)"));
     assert!(LOOM_PERMISSIONS.contains(&"Read(~/.claude/CLAUDE.md)"));
@@ -31,7 +33,7 @@ fn test_loom_permissions_constant() {
 fn test_worktree_permissions_constant() {
     // Worktree permissions - same tightened set
     assert!(LOOM_PERMISSIONS_WORKTREE.contains(&"Read(.work/**)"));
-    assert!(LOOM_PERMISSIONS_WORKTREE.contains(&"Write(.work/**)"));
+    assert!(LOOM_PERMISSIONS_WORKTREE.contains(&"Edit(.work/handoffs/**)"));
     // Only CLAUDE.md files, not all of .claude/
     assert!(LOOM_PERMISSIONS_WORKTREE.contains(&"Read(.claude/CLAUDE.md)"));
     assert!(LOOM_PERMISSIONS_WORKTREE.contains(&"Read(~/.claude/CLAUDE.md)"));
@@ -40,6 +42,29 @@ fn test_worktree_permissions_constant() {
     assert!(LOOM_PERMISSIONS_WORKTREE.contains(&"Bash(loom *)"));
     // Codex forwarding wrapper (guard pins forwarders to one exact invocation)
     assert!(LOOM_PERMISSIONS_WORKTREE.contains(&"Bash(~/.claude/hooks/loom/codex-forward.sh:*)"));
+}
+
+#[test]
+fn loom_permission_constants_never_grant_a_write_rule() {
+    // Claude Code's file permission check consults only `Edit(path)` rules. A
+    // `Write(path)` allow grants nothing and prints a warning at every session
+    // start — and these constants are copied verbatim into every worktree's
+    // settings.json, so one entry here means one warning per stage session.
+    for (name, perms) in [
+        ("LOOM_PERMISSIONS", LOOM_PERMISSIONS),
+        ("LOOM_PERMISSIONS_WORKTREE", LOOM_PERMISSIONS_WORKTREE),
+    ] {
+        assert!(
+            !perms.iter().any(|p| p.starts_with("Write(")),
+            "{name} must not contain an inert Write(...) grant, got: {perms:?}"
+        );
+        // Nor the broad Edit form it would tempt: `Edit(.work/**)` re-exposes
+        // `.work/admin.token` and `.work/user.token` (S-1).
+        assert!(
+            !perms.contains(&"Edit(.work/**)"),
+            "{name} must not grant a broad edit over the .work root"
+        );
+    }
 }
 
 /// A hook script has up to FIVE registration sites; missing any one of them

@@ -11,6 +11,7 @@ mod hooks;
 pub(crate) mod settings;
 mod sync;
 mod trust;
+pub(crate) mod write_rules;
 
 #[cfg(test)]
 mod tests;

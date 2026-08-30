@@ -13,6 +13,7 @@ use std::fs::{self, OpenOptions};
 use std::io::{Read, Seek, Write};
 use std::path::{Path, PathBuf};
 
+use super::write_rules::is_inert_write_permission;
 use crate::git::worktree::refresh_worktree_settings_local;
 
 /// Patterns that indicate a worktree-specific permission that should not be synced.
@@ -29,7 +30,8 @@ const WORKTREE_PATH_PATTERNS: &[&str] = &["../", ".worktrees/"];
 /// This function:
 /// 1. Reads the worktree's settings.local.json (from both worktree root and working_dir)
 /// 2. Extracts permissions.allow and permissions.deny arrays
-/// 3. Filters out worktree-specific paths (containing ../../ or .worktrees/)
+/// 3. Drops inert `Write(...)` rules (see `is_inert_write_permission`) and
+///    filters out worktree-specific paths (containing ../../ or .worktrees/)
 /// 4. Acquires an exclusive file lock on the main settings.local.json
 /// 5. Merges new permissions (skipping duplicates)
 /// 6. Writes back atomically
@@ -100,28 +102,8 @@ pub fn sync_worktree_permissions_with_working_dir(
     all_deny_perms.sort();
     all_deny_perms.dedup();
 
-    // Transform worktree-specific paths to portable paths, or keep as-is if not worktree-specific
-    let filtered_allow: Vec<String> = all_allow_perms
-        .into_iter()
-        .filter_map(|p| {
-            if is_worktree_specific_permission(&p) {
-                transform_worktree_path(&p)
-            } else {
-                Some(p)
-            }
-        })
-        .collect();
-
-    let filtered_deny: Vec<String> = all_deny_perms
-        .into_iter()
-        .filter_map(|p| {
-            if is_worktree_specific_permission(&p) {
-                transform_worktree_path(&p)
-            } else {
-                Some(p)
-            }
-        })
-        .collect();
+    let filtered_allow = portable_permissions(all_allow_perms);
+    let filtered_deny = portable_permissions(all_deny_perms);
 
     // If nothing to sync, return early
     if filtered_allow.is_empty() && filtered_deny.is_empty() {
@@ -195,6 +177,22 @@ fn extract_permissions(settings: &Value) -> (Vec<String>, Vec<String>) {
         .unwrap_or_default();
 
     (allow, deny)
+}
+
+/// Drop inert `Write(...)` rules, then rewrite worktree-specific paths to their
+/// portable form, keeping every other rule as it is.
+fn portable_permissions(perms: Vec<String>) -> Vec<String> {
+    perms
+        .into_iter()
+        .filter(|p| !is_inert_write_permission(p))
+        .filter_map(|p| {
+            if is_worktree_specific_permission(&p) {
+                transform_worktree_path(&p)
+            } else {
+                Some(p)
+            }
+        })
+        .collect()
 }
 
 /// Check if a permission string contains worktree-specific path patterns

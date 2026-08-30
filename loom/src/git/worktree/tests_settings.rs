@@ -248,10 +248,10 @@ fn test_create_worktree_settings_adds_resolved_work_permissions() {
         allow.contains(&format!("Read(/{}/**)", resolved_str)),
         "Should contain Read(//resolved/**)"
     );
-    assert!(
-        allow.contains(&format!("Write(/{}/**)", resolved_str)),
-        "Should contain Write(//resolved/**)"
-    );
+    // No broad write grant over the resolved `.work` root, in either spelling:
+    // `Edit(` would re-expose the daemon tokens (S-1); `Write(` granted nothing.
+    assert!(!allow.contains(&format!("Write(/{}/**)", resolved_str)));
+    assert!(!allow.contains(&format!("Edit(/{}/**)", resolved_str)));
     assert!(
         allow.contains(&format!("Read(/{}/signals/**)", resolved_str)),
         "Should contain Read(//resolved/signals/**)"

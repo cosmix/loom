@@ -10,3 +10,5 @@ mod install_tests;
 mod settings_tests;
 #[cfg(test)]
 mod sync_tests;
+#[cfg(test)]
+mod write_rules_tests;

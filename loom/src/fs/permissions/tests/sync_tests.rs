@@ -16,7 +16,7 @@ fn test_sync_basic_permissions() {
 
     let worktree_settings = json!({
         "permissions": {
-            "allow": ["Read(src/**)", "Write(tests/**)"],
+            "allow": ["Read(src/**)", "Edit(tests/**)"],
             "deny": ["Bash(rm -rf:*)"]
         }
     });
@@ -40,10 +40,60 @@ fn test_sync_basic_permissions() {
 
     let allow = main_settings["permissions"]["allow"].as_array().unwrap();
     assert!(allow.iter().any(|v| v == "Read(src/**)"));
-    assert!(allow.iter().any(|v| v == "Write(tests/**)"));
+    assert!(allow.iter().any(|v| v == "Edit(tests/**)"));
 
     let deny = main_settings["permissions"]["deny"].as_array().unwrap();
     assert!(deny.iter().any(|v| v == "Bash(rm -rf:*)"));
+}
+
+#[test]
+fn test_sync_drops_inert_write_rules() {
+    // Claude Code's file permission check consults only `Edit(path)` rules, so
+    // a promoted `Write(...)` entry grants nothing on the allow side, enforces
+    // nothing on the deny side, and leaves a startup warning in the
+    // developer's own settings forever. Sync must not carry either one over.
+    let worktree_dir = TempDir::new().unwrap();
+    let main_dir = TempDir::new().unwrap();
+
+    let worktree_claude_dir = worktree_dir.path().join(".claude");
+    fs::create_dir_all(&worktree_claude_dir).unwrap();
+
+    let worktree_settings = json!({
+        "permissions": {
+            "allow": ["Write(tests/**)", "Write(../../doc/plans/**)", "Edit(src/**)"],
+            "deny": ["Write(~/.bashrc)", "Bash(rm -rf:*)"]
+        }
+    });
+    fs::write(
+        worktree_claude_dir.join("settings.local.json"),
+        serde_json::to_string_pretty(&worktree_settings).unwrap(),
+    )
+    .unwrap();
+
+    let result = sync_worktree_permissions(worktree_dir.path(), main_dir.path()).unwrap();
+
+    // Only the enforceable entries are promoted, transformable or not.
+    assert_eq!(result.allow_added, 1);
+    assert_eq!(result.deny_added, 1);
+
+    let main_settings_path = main_dir.path().join(".claude/settings.local.json");
+    let content = fs::read_to_string(&main_settings_path).unwrap();
+    let main_settings: Value = serde_json::from_str(&content).unwrap();
+
+    let allow = main_settings["permissions"]["allow"].as_array().unwrap();
+    assert!(allow.iter().any(|v| v == "Edit(src/**)"));
+    let deny = main_settings["permissions"]["deny"].as_array().unwrap();
+    assert!(deny.iter().any(|v| v == "Bash(rm -rf:*)"));
+
+    for section in ["allow", "deny"] {
+        let entries = main_settings["permissions"][section].as_array().unwrap();
+        assert!(
+            !entries
+                .iter()
+                .any(|v| v.as_str().is_some_and(|s| s.starts_with("Write("))),
+            "no Write(...) rule may reach the main repo's {section} list, got: {entries:?}"
+        );
+    }
 }
 
 #[test]
@@ -60,7 +110,7 @@ fn test_sync_transforms_worktree_paths() {
             "allow": [
                 "Read(src/**)",                     // regular - keep as-is
                 "Read(../../.work/**)",             // transformable - becomes Read(.work/**)
-                "Write(.worktrees/stage-1/**)",    // non-transformable - filtered out
+                "Edit(.worktrees/stage-1/**)",      // non-transformable - filtered out
                 "Bash(cargo:*)"                     // regular - keep as-is
             ]
         }
@@ -76,7 +126,7 @@ fn test_sync_transforms_worktree_paths() {
 
     // Regular permissions + transformed permission should be synced
     // (Read(src/**), Read(.work/**), Bash(cargo:*))
-    // Write(.worktrees/stage-1/**) is filtered out as non-transformable
+    // Edit(.worktrees/stage-1/**) is filtered out as non-transformable
     assert_eq!(result.allow_added, 3);
 
     // Verify main settings have correct permissions
@@ -122,7 +172,7 @@ fn test_sync_deduplicates() {
 
     let worktree_settings = json!({
         "permissions": {
-            "allow": ["Read(src/**)", "Write(tests/**)"]
+            "allow": ["Read(src/**)", "Edit(tests/**)"]
         }
     });
     fs::write(
@@ -144,7 +194,7 @@ fn test_sync_deduplicates() {
     let allow = main_settings["permissions"]["allow"].as_array().unwrap();
     let read_count = allow.iter().filter(|v| *v == "Read(src/**)").count();
     assert_eq!(read_count, 1, "Read(src/**) should appear exactly once");
-    assert!(allow.iter().any(|v| v == "Write(tests/**)"));
+    assert!(allow.iter().any(|v| v == "Edit(tests/**)"));
 }
 
 #[test]
@@ -269,7 +319,7 @@ fn test_sync_idempotent() {
 
     let worktree_settings = json!({
         "permissions": {
-            "allow": ["Read(src/**)", "Write(tests/**)"],
+            "allow": ["Read(src/**)", "Edit(tests/**)"],
             "deny": ["Bash(rm -rf:*)"]
         }
     });

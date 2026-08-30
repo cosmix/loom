@@ -154,9 +154,21 @@ pub const LOOM_HOOKS: &[(&str, &str)] = &[
 /// Includes worktree permissions so settings.json can be read by worktrees
 /// and all sessions share the same permission file (approvals propagate)
 pub const LOOM_PERMISSIONS: &[&str] = &[
-    // Read/write access to loom state directory
+    // Read access to loom state, plus the ONE directory agents write with a
+    // file tool. `.work/` is otherwise read-only to file tools (CLAUDE.md rule
+    // 11: state changes go through the `loom` CLI), and handoffs are the sole
+    // direct write root — the same narrowing `sandbox/settings.rs` already
+    // applies to generated stage settings (`Edit(/<abs>/handoffs/**)`).
+    //
+    // Deliberately NOT `Edit(.work/**)`: this file is copied verbatim into
+    // every stage worktree's settings.json, and a broad Edit grant over the
+    // resolved `.work` root re-exposes `.work/admin.token` / `.work/user.token`
+    // (S-1, the daemon-RPC privilege escalation `git/worktree/settings.rs`
+    // documents). Nor `Write(...)` in any spelling: Claude Code's file
+    // permission check consults only `Edit(path)` rules, so a `Write(path)`
+    // grant enforces nothing and only prints a startup warning.
     "Read(.work/**)",
-    "Write(.work/**)",
+    "Edit(.work/handoffs/**)",
     // Read access to instruction files
     "Read(.claude/CLAUDE.md)",
     "Read(~/.claude/CLAUDE.md)",
@@ -176,9 +188,13 @@ pub const LOOM_PERMISSIONS: &[&str] = &[
 /// Loom permissions for WORKTREE context
 /// Worktrees are at .worktrees/stage-X/ with symlink .work -> ../../.work
 pub const LOOM_PERMISSIONS_WORKTREE: &[&str] = &[
-    // Read/write access via symlink path (how Claude sees the paths)
+    // Access via the symlink path (how Claude sees the paths). Same shape as
+    // LOOM_PERMISSIONS above and for the same reasons: read-only over `.work/`
+    // except handoffs, no broad `Edit(.work/**)` that would re-expose the
+    // daemon tokens, and never a `Write(...)` rule (inert — Claude Code's file
+    // permission check consults only `Edit(path)`).
     "Read(.work/**)",
-    "Write(.work/**)",
+    "Edit(.work/handoffs/**)",
     // Read access to instruction files
     "Read(.claude/CLAUDE.md)",
     "Read(~/.claude/CLAUDE.md)",

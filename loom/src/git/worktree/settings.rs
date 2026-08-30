@@ -428,18 +428,18 @@ fn create_worktree_settings(
 
             // Collect the permissions to add
             // Use / prefix on absolute paths for Claude Code's // convention
-            // The `Write(...)` rule below is NOT a typo for `Edit(...)` and
-            // must stay `Write(`. Claude Code's file permission check
-            // consults only `Edit(path)` rules, so `Write(` is parsed and
-            // then silently ignored — this grant is inert. Converting it to
-            // `Edit(` would RESTORE a broad `Edit(/{resolved}/**)` grant over
-            // the whole resolved `.work` root that was deliberately narrowed
-            // elsewhere (S-1, see `sandbox/settings.rs`) because it exposed
-            // `.work/admin.token` and `.work/user.token` to a sandboxed
-            // worktree agent — a daemon RPC privilege escalation.
+            //
+            // There is deliberately NO broad write grant over the resolved
+            // `.work` root here, in either spelling. `Edit(/{resolved}/**)`
+            // would restore the grant narrowed elsewhere (S-1, see
+            // `sandbox/settings.rs`) because it exposed `.work/admin.token`
+            // and `.work/user.token` to a sandboxed worktree agent — a daemon
+            // RPC privilege escalation. `Write(/{resolved}/**)` sat here as
+            // its inert stand-in until it was REMOVED rather than converted:
+            // Claude Code's permission check consults only `Edit(path)`, so it
+            // granted nothing and warned every session start.
             let work_perms = vec![
                 format!("Read(/{}/**)", resolved_str),
-                format!("Write(/{}/**)", resolved_str),
                 format!("Read(/{}/signals/**)", resolved_str),
                 format!("Read(/{}/config.toml)", resolved_str),
                 format!("Read(/{}/handoffs/**)", resolved_str),
