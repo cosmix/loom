@@ -6,6 +6,7 @@ use std::collections::BTreeMap;
 
 use crate::commands::usage::accounting::Accounting;
 use crate::commands::usage::transcript::{Scope, Transcript};
+use crate::commands::usage::transcript_types::SYNTHETIC_MODEL;
 use crate::context::untrusted::inline_safe;
 
 use super::fmt::{format_f64, format_u64, heading, no_data, row};
@@ -112,7 +113,10 @@ pub fn render(report: &AgentReport) {
 fn parent_models(transcripts: &[Transcript]) -> BTreeMap<String, String> {
     let mut models = BTreeMap::new();
     for transcript in transcripts.iter().filter(|item| item.scope == Scope::Main) {
-        if let Some(request) = transcript.requests().next() {
+        if let Some(request) = transcript
+            .requests()
+            .find(|request| request.model != SYNTHETIC_MODEL)
+        {
             models
                 .entry(transcript.session_id.clone())
                 .or_insert_with(|| request.model.clone());
@@ -134,7 +138,7 @@ fn tiny_subagents(subagents: &[&Transcript]) -> Vec<TinySubagent> {
                     .unwrap_or_else(|| "unknown".to_owned()),
                 model: transcript
                     .requests()
-                    .next()
+                    .find(|item| item.model != SYNTHETIC_MODEL)
                     .map(|item| item.model.clone())
                     .unwrap_or_else(|| "(no requests)".to_owned()),
                 output: usage.output,
@@ -156,6 +160,9 @@ fn by_agent_model(subagents: &[&Transcript]) -> Vec<AgentModelRow> {
     for transcript in subagents {
         let kind = agent_type(transcript);
         for request in transcript.requests() {
+            if request.model == SYNTHETIC_MODEL {
+                continue;
+            }
             let row = grouped
                 .entry((kind.clone(), request.model.clone()))
                 .or_insert_with(|| AgentModelRow {
@@ -194,6 +201,9 @@ fn parent_matches(
     let mut matches = ParentModelMatch::default();
     for transcript in subagents {
         for request in transcript.requests() {
+            if request.model == SYNTHETIC_MODEL {
+                continue;
+            }
             match parents.get(&transcript.session_id) {
                 Some(model) if model == &request.model => matches.same += 1,
                 Some(_) => matches.different += 1,
@@ -210,25 +220,85 @@ fn parent_matches(
     matches
 }
 
+/// Names inferred from a subagent's spawn prompt. `agent_type` collects every
+/// match and returns a name only when exactly one survives, so this list's
+/// order carries no meaning -- it need not be sorted or otherwise ordered.
+///
+/// Deliberately excludes `Explore`: unlike every other candidate here, it is
+/// an ordinary English word (as in "Explore the tree first"), so it is the
+/// one name likely to appear as a false-positive match in unrelated task
+/// prose. That false match is worse than merely mislabeling one Explore
+/// spawn as `unknown` -- co-occurring with a second, genuine match collapses
+/// an otherwise-unambiguous identification to `unknown` too, per the
+/// disambiguation rule below. There is no realistic textual context to
+/// require instead (e.g. a `subagent_type=` neighbourhood): the whole reason
+/// this module falls back to prompt text is that the real spawn type is
+/// never echoed into the subagent's own received prompt in the first place.
+const KNOWN_AGENT_TYPES: [&str; 6] = [
+    "loom-senior-software-engineer",
+    "loom-software-engineer",
+    "loom-codex-forwarder",
+    "loom-code-reviewer",
+    "general-purpose",
+    "loom-advisor",
+];
+
+/// Infer a subagent's type from its spawn prompt. The transcript format
+/// carries no explicit type field, so this is a best-effort textual
+/// fallback: `commands::subagents::ledger::agent_type` reads the hook-written
+/// `starts.jsonl`/`spawns.jsonl` ledgers and is the authoritative source when
+/// it applies, but that module is scoped to `commands::subagents` and this
+/// report has no `.work/` root threaded through `build` to reach it.
+///
+/// Plain substring matching against a fixed-order list used to pick
+/// whichever known name happened to be checked first, which broke two ways:
+/// `loom-software-engineer` was checked before `loom-senior-software-engineer`,
+/// and CLAUDE.md's own Rule 6c coordinator preamble writes
+/// "(loom-software-engineer = sonnet)" into virtually every coordinator
+/// prompt regardless of the coordinator's real type, so that boilerplate
+/// alone made every senior-engineer spawn get reported as the sonnet tier.
+/// This version (1) never counts a name immediately followed by `=` as an
+/// identity mention -- that shape is CLAUDE.md's own cost-tier annotation,
+/// naming every known type without declaring the current transcript's own
+/// identity; (2) requires the match be delimited, not embedded inside a
+/// longer identifier; (3) refuses to guess when more than one distinct name
+/// survives those two filters, since a wrong label here is worse than an
+/// absent one.
 fn agent_type(transcript: &Transcript) -> String {
     let prompt = transcript
         .first_user_entry
         .as_ref()
         .map_or("", |entry| entry.text.as_str());
-    for name in [
-        "loom-software-engineer",
-        "loom-senior-software-engineer",
-        "loom-code-reviewer",
-        "loom-codex-forwarder",
-        "loom-advisor",
-        "Explore",
-        "general-purpose",
-    ] {
-        if prompt.contains(name) {
-            return name.to_owned();
-        }
+    let matches: Vec<&str> = KNOWN_AGENT_TYPES
+        .into_iter()
+        .filter(|name| mentions_agent_type(prompt, name))
+        .collect();
+    match matches.as_slice() {
+        [name] => (*name).to_owned(),
+        _ => "unknown".to_owned(),
     }
-    "unknown".to_owned()
+}
+
+/// True when `name` occurs in `prompt` as a delimited identity mention: the
+/// character immediately before and after the match must not be part of a
+/// longer identifier (alphanumeric, `-`, or `_`), and the match must not be
+/// immediately followed by (optional whitespace then) `=` -- the shape of
+/// CLAUDE.md's "(name = tier)" cost annotation.
+fn mentions_agent_type(prompt: &str, name: &str) -> bool {
+    let is_identifier_char = |c: char| c.is_alphanumeric() || c == '-' || c == '_';
+    prompt.match_indices(name).any(|(start, matched)| {
+        let before_ok = prompt[..start]
+            .chars()
+            .next_back()
+            .is_none_or(|c| !is_identifier_char(c));
+        let end = start + matched.len();
+        let after_ok = prompt[end..]
+            .chars()
+            .next()
+            .is_none_or(|c| !is_identifier_char(c));
+        let is_cost_annotation = prompt[end..].trim_start().starts_with('=');
+        before_ok && after_ok && !is_cost_annotation
+    })
 }
 
 fn add_usage(row: &mut AgentModelRow, request: &crate::commands::usage::transcript::Request) {
@@ -244,3 +314,7 @@ fn add_usage(row: &mut AgentModelRow, request: &crate::commands::usage::transcri
     row.s2 += accounting.s2;
     row.s3 += accounting.s3;
 }
+
+#[cfg(test)]
+#[path = "agents_tests.rs"]
+mod tests;

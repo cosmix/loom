@@ -6,6 +6,8 @@ use std::collections::BTreeSet;
 
 use serde_json::Value;
 
+use crate::commands::usage::transcript_types::SYNTHETIC_MODEL;
+
 /// 75% of a 200k context window, matching the 75% hard stop that CLAUDE.md
 /// rule 3 puts on context usage.
 pub const PEAK_TOKENS_CEILING: u64 = 150_000;
@@ -37,6 +39,7 @@ pub(super) fn extract(entries: &[Value]) -> TranscriptMetrics {
                 .get("message")
                 .and_then(|message| message.get("model"))
                 .and_then(Value::as_str)
+                .filter(|model| *model != SYNTHETIC_MODEL)
                 .map(str::to_string);
         }
         if let Some(tokens) = resident_tokens(entry) {

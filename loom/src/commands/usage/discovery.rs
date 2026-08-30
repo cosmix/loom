@@ -96,11 +96,24 @@ fn claude_projects_root() -> Option<PathBuf> {
         .map(|home| home.join(".claude/projects"))
 }
 
+/// Reads every selected project directory, warning on stderr and skipping
+/// any that can't be read rather than failing the whole report - the same
+/// posture `parse_all` takes toward an unparseable transcript. The one
+/// exception is a `--project <path>` the caller named explicitly: that one
+/// fails hard, since a user who pointed at a specific directory deserves to
+/// be told it's unreadable rather than see the report silently drop to
+/// empty.
 fn collect_projects(root: &Path, options: &DiscoveryOptions) -> Result<Vec<DiscoveredFile>> {
     let slugs = selected_slugs(root, options)?;
+    let strict = options.project.is_some();
     let mut files = Vec::new();
     for slug in slugs {
-        files.extend(project_files(&root.join(&slug), slug, options.since)?);
+        let directory = root.join(&slug);
+        match project_files(&directory, slug, options.since) {
+            Ok(found) => files.extend(found),
+            Err(error) if strict => return Err(error),
+            Err(error) => eprintln!("loom usage: skipping {}: {error:#}", directory.display()),
+        }
     }
     Ok(files)
 }

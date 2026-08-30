@@ -10,9 +10,22 @@
 use std::collections::BTreeMap;
 
 use crate::commands::usage::transcript::{Entry, Scope, Transcript};
+use crate::commands::usage::transcript_types::SYNTHETIC_MODEL;
 use crate::context::untrusted::inline_safe;
 
 use super::fmt::{format_u64, heading, no_data};
+
+// See `SYNTHETIC_MODEL`'s doc in `usage::transcript_types` for what this
+// sentinel means and why it is filtered per-site rather than once in
+// `Transcript::requests()`. This module's own reason to keep the filter
+// local: `collect_transcript`'s pairing loop below does not even go through
+// `requests()` -- it walks `entries` directly to keep original indices -- so
+// a source-level filter would miss this exact site regardless. Left
+// unfiltered, pairing a synthetic row (all-zero `usage`) as the `current`
+// side of a rewrite window turns `tokens = previous.usage.resident() -
+// current.usage.cache_read` into the whole prior residency (`cache_read`
+// reads as 0), which reliably clears the 10,000-token gate and reports a
+// giant phantom rewrite attributed to the `<synthetic>` model.
 
 #[derive(Debug, serde::Serialize)]
 pub struct CacheRewrites {
@@ -104,6 +117,9 @@ fn collect_transcript(collector: &mut Collector, transcript: &Transcript) {
     for pair in requests.windows(2) {
         let (previous_index, previous) = pair[0];
         let (current_index, current) = pair[1];
+        if current.model == SYNTHETIC_MODEL {
+            continue;
+        }
         let tokens = previous
             .usage
             .resident()
@@ -237,3 +253,7 @@ fn share(value: u64, total: u64) -> f64 {
         value as f64 * 100.0 / total as f64
     }
 }
+
+#[cfg(test)]
+#[path = "rewrites_tests.rs"]
+mod tests;
