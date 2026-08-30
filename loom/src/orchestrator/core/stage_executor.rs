@@ -5,7 +5,6 @@ use chrono::Utc;
 
 use crate::git;
 use crate::git::worktree::setup_worktree_hooks;
-use crate::handoff::find_latest_handoff;
 use crate::hooks::find_hooks_dir;
 use crate::models::failure::{FailureInfo, FailureType};
 use crate::models::stage::{Stage, StageStatus, StageType};
@@ -332,6 +331,7 @@ impl StageExecutor for Orchestrator {
         // Executing (see `write_ahead_session`'s invariant doc): a daemon
         // crash must never produce a live, unreachable agent with no record
         // on disk at all.
+        let outgoing_session_id = stage.session.clone();
         let Some((session, recovery_signal)) = self.write_ahead_session(&stage, stage_id) else {
             return Ok(());
         };
@@ -438,14 +438,13 @@ impl StageExecutor for Orchestrator {
         } else {
             let deps = get_dependency_status(&stage, &self.graph);
 
-            // Check for existing handoff file to include in signal for continuation
-            let handoff_file = find_latest_handoff(&stage.id, &self.config.work_dir)
-                .ok()
-                .flatten()
-                .and_then(|p| {
-                    p.file_stem()
-                        .and_then(|s| s.to_str().map(|s| s.to_string()))
-                });
+            let Some(handoff_file) = self.continuation_handoff_or_block(
+                &stage.id,
+                outgoing_session_id.as_deref(),
+                &session.id,
+            ) else {
+                return Ok(());
+            };
 
             // Generating the signal can fail (e.g. unwritable signals dir).
             // Contain it: mark Blocked rather than propagating and killing the
@@ -598,14 +597,11 @@ impl StageExecutor for Orchestrator {
 
         let deps = get_dependency_status(&stage, &self.graph);
 
-        // Check for existing handoff file to include in signal for continuation
-        let handoff_file = find_latest_handoff(&stage.id, &self.config.work_dir)
-            .ok()
-            .flatten()
-            .and_then(|p| {
-                p.file_stem()
-                    .and_then(|s| s.to_str().map(|s| s.to_string()))
-            });
+        let Some(handoff_file) =
+            self.continuation_handoff_or_block(&stage.id, stage.session.as_deref(), &session.id)
+        else {
+            return Ok(());
+        };
 
         // Generate knowledge-specific signal (runs in main repo, no commit required)
         let signal_path = generate_knowledge_signal(

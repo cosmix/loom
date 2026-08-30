@@ -22,6 +22,7 @@ mod session_lifecycle;
 mod spawn_setup;
 mod spool_drain;
 mod stage_executor;
+mod stage_handoff;
 mod stage_telemetry;
 
 pub use orchestrator::{Orchestrator, OrchestratorConfig, OrchestratorResult};

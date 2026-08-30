@@ -8,6 +8,20 @@ use super::types::{CommitRef, CompletedTask, FileRef, KeyDecision};
 /// Version of the handoff schema
 pub const HANDOFF_SCHEMA_VERSION: u32 = 2;
 
+/// The event that initiated a handoff.
+///
+/// This is optional so existing V2 handoffs remain valid. New producers should
+/// set it whenever the initiating condition is known, allowing consumers to
+/// distinguish advisory Red-band snapshots from an enforced budget handoff.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum HandoffOrigin {
+    /// The session crossed the advisory Red-band threshold.
+    RedBand,
+    /// The session crossed its hard budget ceiling.
+    BudgetExceeded,
+}
+
 /// Structured handoff schema V2.
 ///
 /// This format replaces prose handoffs with validated YAML fields,
@@ -22,6 +36,9 @@ pub struct HandoffV2 {
     pub stage_id: String,
     /// Resident context, in absolute tokens, at handoff time
     pub context_tokens: u32,
+    /// Event that initiated this handoff, when known.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub origin: Option<HandoffOrigin>,
     /// Tasks completed during this session
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub completed_tasks: Vec<CompletedTask>,
@@ -62,6 +79,7 @@ impl HandoffV2 {
             session_id: session_id.into(),
             stage_id: stage_id.into(),
             context_tokens: 0,
+            origin: None,
             completed_tasks: Vec::new(),
             key_decisions: Vec::new(),
             discovered_facts: Vec::new(),
@@ -78,6 +96,18 @@ impl HandoffV2 {
     /// Set the resident-token count
     pub fn with_context_tokens(mut self, tokens: u32) -> Self {
         self.context_tokens = tokens;
+        self
+    }
+
+    /// Record the event that initiated this handoff.
+    pub fn with_origin(mut self, origin: HandoffOrigin) -> Self {
+        self.origin = Some(origin);
+        self
+    }
+
+    /// Set the optional handoff origin.
+    pub fn with_origin_opt(mut self, origin: Option<HandoffOrigin>) -> Self {
+        self.origin = origin;
         self
     }
 
@@ -181,11 +211,13 @@ mod tests {
     fn test_handoff_v2_builder() {
         let handoff = HandoffV2::new("session-123", "stage-1")
             .with_context_tokens(112_500)
+            .with_origin(HandoffOrigin::RedBand)
             .with_branch("loom/stage-1")
             .with_completed_tasks(vec![CompletedTask::new("Task 1")])
             .with_next_actions(vec!["Continue work".to_string()]);
 
         assert_eq!(handoff.context_tokens, 112_500);
+        assert_eq!(handoff.origin, Some(HandoffOrigin::RedBand));
         assert_eq!(handoff.branch, Some("loom/stage-1".to_string()));
         assert_eq!(handoff.completed_tasks.len(), 1);
         assert_eq!(handoff.next_actions.len(), 1);
@@ -195,6 +227,7 @@ mod tests {
     fn test_handoff_v2_yaml_roundtrip() {
         let original = HandoffV2::new("session-abc", "my-stage")
             .with_context_tokens(97_500)
+            .with_origin(HandoffOrigin::BudgetExceeded)
             .with_branch("loom/my-stage")
             .with_completed_tasks(vec![CompletedTask::new("Did something")])
             .with_key_decisions(vec![KeyDecision::new(
@@ -207,6 +240,29 @@ mod tests {
         let parsed = HandoffV2::from_yaml(&yaml).unwrap();
 
         assert_eq!(original, parsed);
+    }
+
+    #[test]
+    fn legacy_handoff_without_origin_parses() {
+        let handoff = HandoffV2::from_yaml(
+            "version: 2\nsession_id: session-abc\nstage_id: stage-1\ncontext_tokens: 90000\n",
+        )
+        .unwrap();
+
+        assert_eq!(handoff.origin, None);
+    }
+
+    #[test]
+    fn origin_uses_stable_snake_case_yaml() {
+        for (origin, serialized) in [
+            (HandoffOrigin::BudgetExceeded, "budget_exceeded"),
+            (HandoffOrigin::RedBand, "red_band"),
+        ] {
+            let handoff = HandoffV2::new("session-abc", "stage-1").with_origin(origin);
+            let yaml = handoff.to_yaml().unwrap();
+            assert!(yaml.contains(&format!("origin: {serialized}")), "{yaml}");
+            assert_eq!(HandoffV2::from_yaml(&yaml).unwrap().origin, handoff.origin);
+        }
     }
 
     #[test]

@@ -11,4 +11,4 @@ mod v2;
 // Re-export all public types
 pub use parsing::ParsedHandoff;
 pub use types::{CommitRef, CompletedTask, FileRef, KeyDecision};
-pub use v2::{HandoffV2, HANDOFF_SCHEMA_VERSION};
+pub use v2::{HandoffOrigin, HandoffV2, HANDOFF_SCHEMA_VERSION};

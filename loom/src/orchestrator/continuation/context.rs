@@ -5,7 +5,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::git::branch::branch_name_for_stage;
-use crate::handoff::generator::find_latest_handoff;
+use crate::handoff::generator::find_continuation_handoff;
 use crate::handoff::schema::{HandoffV2, ParsedHandoff};
 use crate::models::stage::Stage;
 use crate::models::worktree::Worktree;
@@ -32,7 +32,7 @@ pub struct ContinuationContext {
 /// ContinuationContext with stage, handoff path, worktree path, and branch
 pub fn prepare_continuation(stage_id: &str, work_dir: &Path) -> Result<ContinuationContext> {
     let stage = load_stage(work_dir, stage_id)?;
-    let handoff_path = find_latest_handoff(stage_id, work_dir)?;
+    let handoff_path = find_continuation_handoff(stage_id, stage.session.as_deref(), work_dir)?;
     let (worktree_path, branch) = resolve_worktree_info(&stage, work_dir)?;
 
     Ok(ContinuationContext {

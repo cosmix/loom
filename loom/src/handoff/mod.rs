@@ -2,10 +2,13 @@ pub mod generator;
 pub mod git_handoff;
 pub mod schema;
 
-pub use generator::{find_latest_handoff, generate_handoff, HandoffContent};
+pub use generator::{
+    ensure_handoff, find_continuation_handoff, find_continuation_handoff_name, find_latest_handoff,
+    find_latest_session_handoff, find_matching_handoff, generate_handoff, HandoffContent,
+};
 pub use git_handoff::{format_git_history_markdown, CommitInfo, GitHistory};
 pub use schema::{
-    CommitRef, CompletedTask, FileRef, HandoffV2, KeyDecision, ParsedHandoff,
+    CommitRef, CompletedTask, FileRef, HandoffOrigin, HandoffV2, KeyDecision, ParsedHandoff,
     HANDOFF_SCHEMA_VERSION,
 };
 

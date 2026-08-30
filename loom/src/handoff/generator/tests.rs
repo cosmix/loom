@@ -5,8 +5,9 @@ use tempfile::TempDir;
 
 use super::content::HandoffContent;
 use super::formatter::format_handoff_markdown;
-use super::generate_handoff;
 use super::numbering::{find_latest_handoff, get_next_handoff_number};
+use super::{ensure_handoff, generate_handoff};
+use crate::handoff::HandoffOrigin;
 use crate::models::session::Session;
 use crate::models::stage::Stage;
 
@@ -14,15 +15,26 @@ use crate::models::stage::Stage;
 fn test_handoff_content_builder() {
     let content = HandoffContent::new("session-123".to_string(), "stage-456".to_string())
         .with_context_tokens(112_500)
+        .with_origin(HandoffOrigin::RedBand)
         .with_goals("Build feature X".to_string())
         .with_next_steps(vec!["Step 1".to_string(), "Step 2".to_string()]);
 
     assert_eq!(content.session_id, "session-123");
     assert_eq!(content.stage_id, "stage-456");
     assert_eq!(content.context_tokens, 112_500);
+    assert_eq!(content.origin, Some(HandoffOrigin::RedBand));
     assert_eq!(content.goals, "Build feature X");
     assert_eq!(content.next_steps.len(), 2);
     assert!(content.git_history.is_none());
+}
+
+#[test]
+fn handoff_content_threads_origin_to_v2_schema() {
+    let handoff = HandoffContent::new("session-123".to_string(), "stage-456".to_string())
+        .with_origin(HandoffOrigin::BudgetExceeded)
+        .to_v2();
+
+    assert_eq!(handoff.origin, Some(HandoffOrigin::BudgetExceeded));
 }
 
 #[test]
@@ -197,4 +209,72 @@ fn test_generate_multiple_handoffs() {
 
     assert!(path1.to_string_lossy().contains("handoff-001.md"));
     assert!(path2.to_string_lossy().contains("handoff-002.md"));
+}
+
+#[test]
+fn concurrent_generators_allocate_distinct_atomic_handoffs() {
+    let temp = TempDir::new().unwrap();
+    let work_dir = temp.path().to_path_buf();
+    let session = Session::new();
+    let stage = Stage::new("test-stage".to_string(), None);
+    let threads: Vec<_> = (0..8)
+        .map(|_| {
+            let work_dir = work_dir.clone();
+            let session = session.clone();
+            let stage = stage.clone();
+            std::thread::spawn(move || {
+                let content = HandoffContent::new(session.id.clone(), stage.id.clone());
+                generate_handoff(&session, &stage, content, &work_dir).unwrap()
+            })
+        })
+        .collect();
+
+    let mut paths: Vec<_> = threads
+        .into_iter()
+        .map(|thread| thread.join().unwrap())
+        .collect();
+    paths.sort();
+    paths.dedup();
+
+    assert_eq!(paths.len(), 8);
+    for path in paths {
+        let content = fs::read_to_string(path).unwrap();
+        assert!(crate::handoff::ParsedHandoff::parse(&content).is_v2());
+    }
+}
+
+#[test]
+fn concurrent_budget_retries_create_one_cause_specific_handoff() {
+    let temp = TempDir::new().unwrap();
+    let work_dir = temp.path().to_path_buf();
+    let session = Session::new();
+    let stage = Stage::new("test-stage".to_string(), None);
+    let threads: Vec<_> = (0..8)
+        .map(|_| {
+            let work_dir = work_dir.clone();
+            let session = session.clone();
+            let stage = stage.clone();
+            std::thread::spawn(move || {
+                let content = HandoffContent::new(session.id.clone(), stage.id.clone())
+                    .with_context_tokens(200_000)
+                    .with_origin(HandoffOrigin::BudgetExceeded);
+                ensure_handoff(
+                    &session,
+                    &stage,
+                    content,
+                    HandoffOrigin::BudgetExceeded,
+                    &work_dir,
+                )
+                .unwrap()
+            })
+        })
+        .collect();
+
+    let generated = threads
+        .into_iter()
+        .map(|thread| thread.join().unwrap())
+        .filter(Option::is_some)
+        .count();
+    assert_eq!(generated, 1);
+    assert_eq!(fs::read_dir(work_dir.join("handoffs")).unwrap().count(), 1);
 }

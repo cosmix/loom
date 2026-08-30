@@ -28,19 +28,12 @@ use crate::models::session::Session;
 use crate::models::stage::{Stage, StageStatus};
 use crate::models::worktree::Worktree;
 use crate::orchestrator::signals::{generate_signal, DependencyStatus};
-use crate::orchestrator::terminal::backend::SessionBackend;
 
 /// Configuration for session continuation
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct ContinuationConfig {
     /// Whether to automatically spawn a terminal session
     pub auto_spawn: bool,
-}
-
-impl Default for ContinuationConfig {
-    fn default() -> Self {
-        Self { auto_spawn: true }
-    }
 }
 
 /// Continue work on a stage after a handoff
@@ -65,6 +58,12 @@ pub fn continue_session(
     work_dir: &Path,
 ) -> Result<Session> {
     validate_stage_for_continuation(stage)?;
+    if config.auto_spawn {
+        bail!(
+            "Direct continuation spawning is unsafe; queue the stage with `loom resume` and let \
+             `loom run` verify and replace its predecessor"
+        );
+    }
 
     let mut session = Session::new();
     session.assign_to_stage(stage.id.clone());
@@ -74,7 +73,7 @@ pub fn continue_session(
     let dependencies_status: Vec<DependencyStatus> = Vec::new();
     let original_session_id = session.id.clone();
 
-    let signal_path = generate_signal(
+    let _signal_path = generate_signal(
         &session,
         stage,
         worktree,
@@ -84,14 +83,6 @@ pub fn continue_session(
         work_dir,
     )
     .context("Failed to generate signal for continuation")?;
-
-    if config.auto_spawn {
-        let backend = SessionBackend::from_config(work_dir.to_path_buf())
-            .context("Failed to construct session backend for continuation")?;
-        session = backend
-            .spawn_session(stage, worktree, session, &signal_path)
-            .context("Failed to spawn session for continuation")?;
-    }
 
     debug_assert_eq!(
         original_session_id, session.id,

@@ -84,10 +84,39 @@ Test the continuation feature.
     handoff_path
 }
 
+fn write_v2_handoff(
+    path: &std::path::Path,
+    stage_id: &str,
+    session_id: &str,
+) -> std::path::PathBuf {
+    let handoff = crate::handoff::HandoffV2::new(session_id, stage_id);
+    fs::write(path, format!("---\n{}---\n", handoff.to_yaml().unwrap())).unwrap();
+    path.to_path_buf()
+}
+
 #[test]
 fn test_continuation_config_default() {
     let config = ContinuationConfig::default();
-    assert!(config.auto_spawn);
+    assert!(!config.auto_spawn);
+}
+
+#[test]
+fn direct_auto_spawn_is_refused_before_writing_a_session() {
+    let (_temp, work_dir) = create_test_work_dir();
+    let project_root = work_dir.parent().unwrap();
+    let stage = create_test_stage("unsafe-direct-spawn", &work_dir);
+    let worktree = create_test_worktree(&stage.id, project_root);
+    let error = continue_session(
+        &stage,
+        None,
+        &worktree,
+        &ContinuationConfig { auto_spawn: true },
+        &work_dir,
+    )
+    .unwrap_err();
+
+    assert!(format!("{error:#}").contains("Direct continuation spawning is unsafe"));
+    assert_eq!(fs::read_dir(work_dir.join("sessions")).unwrap().count(), 0);
 }
 
 #[test]
@@ -128,6 +157,61 @@ fn test_prepare_continuation_without_handoff() {
     assert_eq!(context.stage.id, stage_id);
     assert!(context.handoff_path.is_none());
     assert!(context.worktree_path.exists());
+}
+
+#[test]
+fn prepare_continuation_selects_the_exact_outgoing_session() {
+    let (_temp, work_dir) = create_test_work_dir();
+    let project_root = work_dir.parent().unwrap();
+    let stage_id = "stage-exact";
+    create_test_stage(stage_id, &work_dir);
+    create_test_worktree(stage_id, project_root);
+    crate::verify::transitions::update_stage(stage_id, &work_dir, |stage| {
+        stage.session = Some("session-old".to_string());
+        Ok(())
+    })
+    .unwrap();
+
+    let exact = write_v2_handoff(
+        &work_dir
+            .join("handoffs")
+            .join(format!("{stage_id}-handoff-001.md")),
+        stage_id,
+        "session-old",
+    );
+    write_v2_handoff(
+        &work_dir
+            .join("handoffs")
+            .join(format!("{stage_id}-handoff-002.md")),
+        stage_id,
+        "session-other",
+    );
+
+    let context = prepare_continuation(stage_id, &work_dir).unwrap();
+    assert_eq!(context.handoff_path.as_deref(), Some(exact.as_path()));
+}
+
+#[test]
+fn prepare_continuation_surfaces_unreadable_handoff_uncertainty() {
+    let (_temp, work_dir) = create_test_work_dir();
+    let project_root = work_dir.parent().unwrap();
+    let stage_id = "stage-unreadable";
+    create_test_stage(stage_id, &work_dir);
+    create_test_worktree(stage_id, project_root);
+    crate::verify::transitions::update_stage(stage_id, &work_dir, |stage| {
+        stage.session = Some("session-old".to_string());
+        Ok(())
+    })
+    .unwrap();
+    fs::create_dir(
+        work_dir
+            .join("handoffs")
+            .join(format!("{stage_id}-handoff-001.md")),
+    )
+    .unwrap();
+
+    let error = prepare_continuation(stage_id, &work_dir).unwrap_err();
+    assert!(format!("{error:#}").contains("Failed to read handoff file"));
 }
 
 #[test]

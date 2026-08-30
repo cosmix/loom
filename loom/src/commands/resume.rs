@@ -1,20 +1,24 @@
 use crate::fs::work_dir::WorkDir;
-use crate::handoff::{
-    continue_session, find_latest_handoff, load_handoff_content, prepare_continuation,
-    ContinuationConfig,
-};
+use crate::handoff::{find_continuation_handoff, load_handoff_content};
 use crate::models::stage::StageStatus;
-use crate::models::worktree::Worktree;
 use crate::verify::transitions::{load_stage, update_stage};
-use anyhow::{bail, Context, Result};
+use anyhow::{bail, Result};
 use std::io::{stdin, stdout, Write};
+use std::path::Path;
+
+/// Queue continuation for the orchestrator's write-ahead spawn path. Preserve
+/// the predecessor id so it can select the exact handoff and refuse a second
+/// writer while the predecessor remains alive.
+fn queue_for_continuation(stage_id: &str, work_dir: &Path) -> Result<()> {
+    update_stage(stage_id, work_dir, |current| current.try_mark_queued())?;
+    Ok(())
+}
 
 /// Resume failed/blocked stages with handoff context
 /// Usage: loom resume <stage_id>
 pub fn execute(stage_id: String) -> Result<()> {
     let work_dir = WorkDir::new(".")?;
     work_dir.load()?;
-
     let stage = load_stage(&stage_id, work_dir.root())?;
 
     if !matches!(
@@ -30,7 +34,8 @@ pub fn execute(stage_id: String) -> Result<()> {
 
     println!("Stage: {} (status: {:?})", stage.name, stage.status);
 
-    let handoff_path = find_latest_handoff(&stage_id, work_dir.root())?;
+    let handoff_path =
+        find_continuation_handoff(&stage_id, stage.session.as_deref(), work_dir.root())?;
 
     if let Some(ref path) = handoff_path {
         println!("\nLatest handoff: {}", path.display());
@@ -57,56 +62,38 @@ pub fn execute(stage_id: String) -> Result<()> {
         return Ok(());
     }
 
-    // Prepare continuation context
-    let context = prepare_continuation(&stage_id, work_dir.root())
-        .context("Failed to prepare continuation context")?;
-
-    // Create continuation configuration with auto_spawn enabled
-    let config = ContinuationConfig { auto_spawn: true };
-
-    // Check if we have a worktree to spawn the session in
-    if let Some(worktree_id) = &stage.worktree {
-        // Create worktree object for the continuation
-        let worktree = Worktree::new(
-            worktree_id.clone(),
-            context.worktree_path.clone(),
-            context.branch.clone(),
-        );
-
-        // Spawn the continuation session with handoff context
-        let session = continue_session(
-            &context.stage,
-            context.handoff_path.as_deref(),
-            &worktree,
-            &config,
-            work_dir.root(),
-        )
-        .context("Failed to spawn continuation session")?;
-
-        update_stage(&stage_id, work_dir.root(), |current| {
-            current.try_mark_executing()
-        })?;
-
-        println!("\n✓ Stage status updated to Executing");
-        println!("✓ Spawned session: {}", session.id);
-
-        if let Some(ref path) = handoff_path {
-            println!("\nHandoff context loaded from: {}", path.display());
-        }
-    } else {
-        // No worktree assigned - just update the status
-        update_stage(&stage_id, work_dir.root(), |current| {
-            current.try_mark_executing()
-        })?;
-
-        println!("\n✓ Stage status updated to Executing");
-        println!("\n⚠️  No worktree assigned to this stage.");
-        println!("Work can be resumed manually in the main directory.");
-
-        if let Some(ref path) = handoff_path {
-            println!("\nHandoff available at: {}", path.display());
-        }
+    queue_for_continuation(&stage_id, work_dir.root())?;
+    println!("\n✓ Stage queued for safe continuation.");
+    println!(
+        "Run `loom run` to let the orchestrator verify the predecessor and spawn its successor."
+    );
+    if let Some(ref path) = handoff_path {
+        println!("Handoff context: {}", path.display());
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::stage::Stage;
+    use crate::verify::transitions::create_stage;
+
+    #[test]
+    fn queuing_preserves_the_predecessor_and_spawns_nothing() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let mut stage = Stage::new("resume".to_string(), None);
+        stage.id = "resume-stage".to_string();
+        stage.status = StageStatus::NeedsHandoff;
+        stage.session = Some("session-old".to_string());
+        create_stage(&stage, temp.path()).unwrap();
+
+        queue_for_continuation(&stage.id, temp.path()).unwrap();
+
+        let queued = load_stage(&stage.id, temp.path()).unwrap();
+        assert_eq!(queued.status, StageStatus::Queued);
+        assert_eq!(queued.session.as_deref(), Some("session-old"));
+        assert!(!temp.path().join("sessions").exists());
+    }
 }

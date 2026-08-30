@@ -22,7 +22,11 @@ pub fn generate_recovery_signal(
     work_dir: &Path,
 ) -> Result<PathBuf> {
     // Build embedded context including any available handoff
-    let handoff_file = find_latest_handoff_for_stage(work_dir, &content.stage_id);
+    let handoff_file = find_recovery_handoff_for_session(
+        work_dir,
+        &content.stage_id,
+        &content.previous_session_id,
+    )?;
     let mut embedded_context = build_embedded_context_with_stage(
         work_dir,
         handoff_file.as_deref(),
@@ -49,13 +53,17 @@ pub fn generate_recovery_signal(
     super::helpers::write_signal_file(&content.session_id, &signal_content, work_dir)
 }
 
-/// Find the latest handoff file for a stage
-pub fn find_latest_handoff_for_stage(work_dir: &Path, stage_id: &str) -> Option<String> {
-    // Use the canonical version from handoff::generator
-    crate::handoff::generator::find_latest_handoff(stage_id, work_dir)
-        .ok()
-        .flatten()
-        .and_then(|path| path.file_stem().and_then(|s| s.to_str()).map(String::from))
+/// Find the newest valid handoff written by the session being recovered.
+pub fn find_recovery_handoff_for_session(
+    work_dir: &Path,
+    stage_id: &str,
+    previous_session_id: &str,
+) -> Result<Option<String>> {
+    crate::handoff::generator::find_continuation_handoff_name(
+        stage_id,
+        Some(previous_session_id),
+        work_dir,
+    )
 }
 
 #[cfg(test)]
@@ -79,6 +87,47 @@ mod tests {
             session: Some("session-123".to_string()),
             ..Stage::default()
         }
+    }
+
+    fn write_v2_handoff(path: &Path, stage_id: &str, session_id: &str) {
+        let handoff = crate::handoff::HandoffV2::new(session_id, stage_id);
+        fs::write(path, format!("---\n{}---\n", handoff.to_yaml().unwrap())).unwrap();
+    }
+
+    #[test]
+    fn recovery_selects_the_previous_sessions_valid_handoff() {
+        let temp = TempDir::new().unwrap();
+        let dir = temp.path().join("handoffs");
+        fs::create_dir_all(&dir).unwrap();
+        write_v2_handoff(
+            &dir.join("test-stage-handoff-001.md"),
+            "test-stage",
+            "session-old",
+        );
+        write_v2_handoff(
+            &dir.join("test-stage-handoff-002.md"),
+            "test-stage",
+            "session-other",
+        );
+
+        assert_eq!(
+            find_recovery_handoff_for_session(temp.path(), "test-stage", "session-old").unwrap(),
+            Some("test-stage-handoff-001".to_string())
+        );
+    }
+
+    #[test]
+    fn recovery_surfaces_unreadable_handoff_uncertainty() {
+        let temp = TempDir::new().unwrap();
+        let path = temp
+            .path()
+            .join("handoffs")
+            .join("test-stage-handoff-001.md");
+        fs::create_dir_all(&path).unwrap();
+
+        let error = find_recovery_handoff_for_session(temp.path(), "test-stage", "session-old")
+            .unwrap_err();
+        assert!(format!("{error:#}").contains("Failed to read handoff file"));
     }
 
     #[test]
