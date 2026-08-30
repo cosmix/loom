@@ -630,7 +630,7 @@ pub fn read_context_config(work_dir: &Path) -> Result<ContextConfig> {
 /// Persist the context ceilings (`[context]`).
 ///
 /// Merges rather than replaces: `[context]` also carries `prompt_cache_split`,
-/// which no Rust struct owns (see [`merge_section`]).
+/// which no Rust struct owns (see `merge_section`).
 pub fn write_context_config(work_dir: &Path, config: &ContextConfig) -> Result<()> {
     merge_section(work_dir, CONTEXT_SECTION, config)
 }
