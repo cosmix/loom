@@ -40,7 +40,7 @@ Review a change for correctness, security, performance, and maintainability, the
 Different jobs — don't conflate:
 
 - **Code review (this skill):** holistic, author-empathetic. Reviews the *diff and its blast radius* against stated intent across four lenses. Assumes good faith; catches the bugs a careful peer catches.
-- **Security audit (`/loom-security-audit`, `/loom-threat-model`):** attacker mindset, threat model, whole-attack-surface. Assumes hostile input everywhere.
+- **Security audit (`Skill(skill="loom-skills", args="loom-security-audit")`, `Skill(skill="loom-skills", args="loom-threat-model")`):** attacker mindset, threat model, whole-attack-surface. Assumes hostile input everywhere.
 
 For auth, crypto, payments, deserialization, or anything touching a trust boundary: do the code review AND trigger a security audit. A passing code review is not a security sign-off.
 
