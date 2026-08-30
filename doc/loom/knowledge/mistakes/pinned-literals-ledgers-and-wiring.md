@@ -1,6 +1,6 @@
 # Pinned Literals Ledgers And Wiring
 
-> Topic notes for the mistakes knowledge area.
+> The maintainability ledger exact-match trap and goal-backward wiring checks pinning a pattern to a path.
 
 ## Why These Two Belong Together
 
@@ -88,6 +88,22 @@ nothing in the diff looks wrong.
   literal at the pinned call site (inlining the assignment) beats delegating it.
 - **For plan authors:** pin wiring patterns to the symbol's DEFINING module, where it
   cannot migrate, not to a call site a future extraction will relocate.
+
+**A third shape: a LATER stage can break an EARLIER, already-merged stage's pin.**
+Extracting `take_down_stage_agents` out of `orchestrator/core/event_handler.rs` into
+`event_handler/stage_takedown.rs` (done purely to stay under the 400-line file limit) broke
+an upstream stage's own wiring check, which pinned the literal pattern `kill_session` to
+`loom/src/orchestrator/core/event_handler.rs` — and the stage-completion command refuses on
+an AGGREGATED wiring re-verification that re-checks EVERY already-merged stage in the plan,
+not just the one currently finishing, LONG AFTER the pinning stage had already merged. The
+error names the pinning stage, which reads like that earlier stage regressed, when it is the
+CURRENT stage's refactor that moved the code — read the file the pattern names, not the stage
+the error names. Two rules follow: before extracting code out of any file, `rg` every stage's
+wiring patterns for that file's path, since a refactor that satisfies one gate
+(maintainability) can silently break a different, already-closed gate (wiring) belonging to a
+sibling stage; and when the honest fix is impossible without moving the code, satisfy the
+pattern honestly (e.g. a comment at the new call site naming the moved-to file) rather than
+moving code back just to appease a grep.
 
 ## And While You Are Reading Plan Pins: Two Wiring-Test Traps
 

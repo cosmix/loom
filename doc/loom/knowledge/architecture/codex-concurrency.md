@@ -1,6 +1,6 @@
 # Codex Concurrency
 
-> Topic notes for the architecture knowledge area.
+> Codex fan-out concurrency limits, what is measured, and what degrades under load (the shared state.json sidecar).
 
 ## Fan-out cap: 6 (a doctrine number, not a code constant)
 

@@ -107,7 +107,7 @@ Total: 23 visible commands + 1 hidden (`complete`, for dynamic completions). Dis
 - `orchestrator/monitor/core.rs` - Coordinates detection, heartbeat, checkpoints
 - `orchestrator/monitor/detection.rs` - Stage/session state change detection, budget checks
 - `orchestrator/monitor/heartbeat.rs` - Hung detection (300s timeout)
-- `orchestrator/monitor/context.rs` - Context health: Green (<50%), Yellow (50-64%), Red (65%+)
+- `orchestrator/monitor/context.rs` - `context_health(tokens, ceiling)`: Green `<60%`, Yellow `60-90%`, Red `>=90%` of the resolved absolute `context_ceiling_tokens` (not a fixed 200k window — see architecture.md "Context Budget Enforcement")
 - `orchestrator/monitor/failure_tracking.rs` - Consecutive failure escalation
 
 ## Signal System
@@ -470,45 +470,10 @@ so the children reach the parent's private helpers via `use super::*` without wi
 
 ## Terminal Backends and `loom attach` (2026-08-08)
 
-**Dispatcher and lanes**
+The dispatcher/lanes, `[terminal]` config, `--backend` flag, and `loom attach` entry
+points all live in one topic file now.
 
-- `loom/src/orchestrator/terminal/backend.rs` — `SessionBackend`: `from_config`, `resolve_lane`
-  (`:125-128`), `dispatch_spawn`, the fallback-marker helpers (`:45-69`) and the lazy `OnceLock` native
-  lane. Tests in `terminal/backend/tests.rs`.
-- `loom/src/orchestrator/terminal/tmux/mod.rs` — `TmuxBackend`, `socket_name` (`:41-43`),
-  `spawn_in_tmux`, `evaluate_new_session`, `kill_session`.
-- `loom/src/orchestrator/terminal/tmux/socket.rs` — `loom_socket_dir` (`:23-30`), `socket_path_for`, `list_loom_sockets`, `socket_session_is_alive`, `kill_socket_server`.
-- `loom/src/orchestrator/terminal/native/pid_guard.rs` — the deduped PID-file liveness layers shared by
-  both lanes (six former copies).
-- `loom/tests/e2e/tmux_backend.rs` — external e2e; `TmuxTmpDirGuard` works around the sandbox. Note
-  `tests/` can only reach `pub` items, never `pub(crate)`.
-
-**`[terminal]` config**
-
-- `loom/src/models/session/types.rs` — `SessionBackendKind` (`:62-70`, `native`/`tmux`, default
-  `native`), `TerminalConfig` (`:85-89`), `Session.backend` (`:119-123`).
-- `loom/src/fs/work_dir.rs` — `TERMINAL_SECTION` (`:347`), `read_terminal_config` /
-  `write_terminal_config` (`:509-516`).
-- `loom/src/commands/init/plan_setup.rs:179-182` — writes the section at init.
-
-**`--backend` flag**
-
-- `loom/src/cli/types.rs` — on `loom init` (`:41-43`) and `loom run` (`:68-70`),
-  `value_parser = ["native", "tmux"]`.
-- `loom/src/commands/run/mod.rs:118-158` — `resolve_backend_flag`, shared by `run/mod.rs:46` and
-  `run/foreground.rs:32`. Rejects unknown values, refuses to persist a change while the daemon is
-  running (prints a restart hint), clears the fallback marker when selecting tmux, and runs the
-  advisory `which tmux` preflight that never aborts.
-- `loom/src/commands/init/execute.rs:184-226` — `resolve_backend_choice`; flag wins, else prompts when
-  both stdin and stdout are TTYs, else defaults to native.
-
-**`loom attach`**
-
-- `loom/src/commands/attach/mod.rs` — `execute` (`:67-79`), live-session discovery (`:115-141`),
-  `viewer_socket_name` (`:161-177`), `build_overview_argv` (pure), `run_overview`, `attach_direct`
-  (`:346-400`), `require_tty` (`:414-419`). Tests in `attach/tests.rs`.
-- `loom/src/cli/types.rs:101-106` — `Attach { stage_id: Option<String> }`; dispatch at
-  `cli/dispatch.rs:48`. Shell completions complete live stage ids after `loom attach`.
+Full detail: [terminal-backends.md](architecture/terminal-backends.md).
 
 ## Context Retrieval Subsystem (2026-08-17)
 

@@ -84,7 +84,7 @@ Main loop polls every 5 seconds: sync graph from stage files, sync queued status
 
 ## Monitoring Patterns
 
-**Heartbeat**: Sessions write to `.work/heartbeat/{stage-id}.json`. Timeout: 300s. PID alive + stale = Hung; PID dead = Crashed; PID dead + stage Completed = normal exit. **Context health**: Green (0-60%), Yellow (60-75% auto-summarize), Red (75%+ trigger handoff). Custom `context_budget` per stage (1-100%, default 65%). **Retry**: Exponential backoff `min(30 * 2^retry_count, 300s)`. Retryable: SessionCrash, Timeout. Non-retryable: ContextExhausted, TestFailure, BuildFailure, CodeError. Max 3 retries.
+**Heartbeat**: Sessions write to `.work/heartbeat/{stage-id}.{session-id}.json` (session-keyed, see below). Timeout: 300s. PID alive + stale = Hung; PID dead = Crashed; PID dead + stage Completed = normal exit. The heartbeat carries real resident tokens (`context_tokens`, `transcript_path`) written by `hooks/post-tool-use.sh` from the transcript tail — `context_percent` no longer exists. **Context health**: `orchestrator/monitor/context.rs::context_health(tokens, ceiling)` bands the ratio Green `<60%`, Yellow `60-90%`, Red `>=90%` of the resolved `context_ceiling_tokens` (absolute tokens, default 150,000; per-stage override in tokens, not a percentage) — there is no auto-summarize step. **Retry**: Exponential backoff `min(30 * 2^retry_count, 300s)`. Retryable: SessionCrash, Timeout. Non-retryable: ContextExhausted, TestFailure, BuildFailure, CodeError. Max 3 retries.
 
 ## Hook Patterns
 

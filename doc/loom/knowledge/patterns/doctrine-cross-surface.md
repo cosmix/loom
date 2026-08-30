@@ -6,7 +6,17 @@
 
 A **doctrine block** is a fixed chunk of agent guidance that must appear byte-identically on
 several surfaces at once — a runtime signal prefix, a static template, and a hook's refusal
-message. Loom currently carries two: the subagent no-verify rule and the model playbook.
+message. As of the doctrine-surfaces stage, loom carries three named, positively-pinned blocks
+(there is no `BLOCK_D` in the tree today — an assignment or brief that says "four" is counting a
+different thing, most likely the RETIRED_PHRASES sweep below as a fourth mechanism):
+
+| Block     | Content                                                                          | Const location                                   | Pinning test(s)                                                                                              |
+| --------- | --------------------------------------------------------------------------------- | ------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `BLOCK_A` | "VERIFICATION IS THE MAIN AGENT'S JOB — NOT YOURS" (subagent no-verify rule)      | `orchestrator/signals/tests_doctrine.rs:80`       | `tests_doctrine.rs` asserts `text.contains(BLOCK_A)` on every guidance surface                                  |
+| `BLOCK_B` | Model allocation / delegation ladder, incl. `CODEX_IMPLEMENTER_MODEL_TERRA`/`_LUNA`/`_EFFORT` | `orchestrator/signals/tests_doctrine.rs:92`       | same file; also asserts `BLOCK_B.contains(...)` for each codex identifier constant, so a renamed codex tier fails here first |
+| `BLOCK_C` | Subagent one-background-watch / bounded-wait doctrine ("Checking on subagents...")| `orchestrator/signals/tests_doctrine_waiting.rs:35` | `tests_doctrine_waiting.rs::block_c_names_only_the_frozen_subagents_cli_surface` and friends                    |
+
+`CLAUDE.md.template` is `include_str!`'d into both `tests_doctrine.rs` and `tests_doctrine_waiting.rs` (and `tests_doctrine_prefixes.rs`, which separately pins the four stable-prefix generators' byte ceilings — see [signal-generation.md](../architecture/signal-generation.md)) so a change to the template is checked against all three blocks and every generated signal in one pass.
 
 The failure mode is drift, and it is invisible to ordinary acceptance criteria: greping each
 surface for an anchor phrase proves only that a substring exists on each, never that the
@@ -14,25 +24,37 @@ surfaces agree. Two independently-worded copies both pass.
 
 **The pattern:**
 
-1. **One authority.** Exactly one surface is canonical. Authority runs plan → the stage that
-   could read the plan → every other copy. When two copies disagree, reconcile _toward_ the
-   authoritative one rather than adopting whichever was found first.
+1. **One authority, and the orchestrator writes the foundation text first.** Exactly one surface
+   is canonical — CLAUDE.md.template for a rule, or the stage's own brief for a stage-scoped
+   change. When a new mandated rule directly contradicts an existing pinned block (real example:
+   a stage brief mandated ONE background `loom subagents watch --timeout 3600`, which contradicted
+   `BLOCK_C`'s old `(deadline <=300s ...)` parenthetical and its "re-arm and keep waiting" case),
+   the fix is to REWORD the pinned block to agree with the new rule — never to leave the block
+   byte-frozen and let it contradict live doctrine, and never to have a subagent freelance new
+   foundation text. Reconcile *toward* the authoritative source, and update every pinning test's
+   asserted needles to match the reworded block, keeping only the substrings that must survive.
 2. **Pin with equality, not greps.** A single test `include_str!`s each static surface, calls
-   the generator for each runtime surface, and asserts byte equality against the canonical
-   block. See `loom/src/orchestrator/signals/tests_doctrine.rs`.
+   the generator for each runtime surface, and asserts byte equality (or, for `BLOCK_B`,
+   substring containment of the identifiers it must carry) against the canonical block. See
+   `loom/src/orchestrator/signals/tests_doctrine.rs` and `tests_doctrine_waiting.rs`.
 3. **Exceptions travel with the copied block.** For every rule ask: _which surface is pasted
    verbatim into a subagent prompt?_ Any carve-out must survive that paste. A carve-out that
    lives only in the prose explaining the rule never reaches the agent that needs it.
 4. **Frame outside the block.** Surface-specific framing (a hook's `BLOCKED:` header line,
    language-specific examples) sits _outside_ the pinned block so the block itself stays
    byte-identical everywhere.
-5. **Sweep for retired phrasing.** After landing a doctrine, grep the whole guidance surface for
-   the wording the doctrine _replaces_, not only for the wording it introduces.
+5. **Sweep for retired phrasing with a NEGATIVE pin, not a memory of the grep.** `RETIRED_PHRASES`
+   in `tests_doctrine.rs` is asserted absent from `guidance_surfaces()` — CLAUDE.md.template +
+   `skills/loom-plan-writer/SKILL.md` + every `agents/*.md` + `generate_stable_prefix()`'s
+   generated text — so retiring a phrase from the canonical block is checked, not just remembered.
+   `hooks/` is NOT covered by `guidance_surfaces()` — a retired phrase can still live on in a hook's
+   own prose (e.g. `hooks/spawn-guard.sh`'s literal `PREAMBLE_LINE` constant), so a doctrine
+   retirement must ALSO `rg` `hooks/` by hand.
 
-**Known tradeoff:** because the block must stay byte-identical, per-language examples cannot
-live inside it. The current no-verify block carries one Rust example, so a blocked Python or Go
-subagent reads a `cargo` example. The fix is to append language examples _after_ the block as
-explicitly surface-local guidance.
+**Known tradeoff:** because the blocks must stay byte-identical, per-language examples cannot
+live inside them. `BLOCK_A` carries one Rust example, so a blocked Python or Go subagent reads a
+`cargo` example. The fix is to append language examples _after_ the block as explicitly
+surface-local guidance.
 
 ## Ambiguity = Fail Safe (Privilege Lookups From State Files)
 

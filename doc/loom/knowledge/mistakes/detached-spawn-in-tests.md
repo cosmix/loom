@@ -1,6 +1,6 @@
 # Detached Spawn In Tests
 
-> Topic notes for the mistakes knowledge area.
+> Never spawn a process from a test that can outlive the test process.
 
 ## Never Spawn a Surviving Process From a Test (2026-08-21)
 

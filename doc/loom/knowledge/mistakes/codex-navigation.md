@@ -1,6 +1,6 @@
 # Codex Navigation
 
-> Topic notes for the mistakes knowledge area.
+> Forbidding reads instead of fixing a slow reader - a misdiagnosis and its correction.
 
 ## We Answered a Slow Reader by Forbidding Reading (2026-08-29)
 

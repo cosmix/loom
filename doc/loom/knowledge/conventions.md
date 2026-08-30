@@ -59,10 +59,11 @@ Re-export rules: `pub use` explicit items (never wildcards). Only export public 
 ## Constants
 
 ```rust
-// Context thresholds
-DEFAULT_CONTEXT_LIMIT: u32 = 200_000;
-CONTEXT_WARNING_THRESHOLD: f32 = 0.75;
-CONTEXT_CRITICAL_THRESHOLD: f32 = 0.85;
+// Context thresholds (models/constants.rs)
+DEFAULT_CONTEXT_CEILING_TOKENS: u32 = 150_000;
+DEFAULT_SUBAGENT_CEILING_TOKENS: u32 = 120_000;
+MIN_CONTEXT_CEILING_TOKENS: u32 = 60_000;
+DAEMON_CEILING_MULTIPLIER: f32 = 1.25;
 
 // Timeouts
 DEFAULT_COMMAND_TIMEOUT = 300s;
@@ -76,13 +77,15 @@ BACKOFF_BASE_SECONDS: u64 = 30;
 BACKOFF_MAX_SECONDS: u64 = 300;
 ```
 
+`DEFAULT_CONTEXT_LIMIT`, `CONTEXT_WARNING_THRESHOLD`, `CONTEXT_CRITICAL_THRESHOLD`, `DEFAULT_CONTEXT_BUDGET`, `CONTEXT_ABSOLUTE_MAX` and the `display::CONTEXT_*_PCT` module were all deleted with the move from a percentage context budget to an absolute token ceiling — do not reintroduce them.
+
 ## Display Conventions
 
 Status icons: Completed=`✓` Executing=`●` Queued=`▶` WaitingForDeps=`○` Blocked=`✗` NeedsHandoff=`⟳` MergeConflict=`⚡` WaitingForInput=`?` Skipped=`⊘` CompletedWithFailures=`⚠` MergeBlocked=`⊗`
 
 Colors (`colored` crate): Executing=blue.bold, Completed=green, Blocked=red.bold, Pending=dimmed, Queued=cyan, Warning=yellow
 
-Context bar: <60%=green, 60-75%=yellow, >=75%=red
+Context bar: renders absolute `tokens`/`ceiling` and colours off `context_health(tokens, ceiling)` (`commands/status/render/progress.rs:56-72`) — Green `<60%`, Yellow `60-90%`, Red `>=90%` of the resolved ceiling, not a fixed percentage of a 200k window.
 
 ## Git Operations
 
@@ -185,6 +188,8 @@ Validation requires: acceptance OR goal-backward checks for standard/integration
 Old `truths`/`truth_checks` fields were removed from `StageDefinition` and are now rejected by strict deserialization. `before_stage`/`after_stage` remain supported and still use `TruthCheck`.
 
 Plan deserialization is strict at every policy-bearing layer: the metadata root, `LoomConfig`, `StageDefinition`, and nested sandbox, filesystem, network, Linux, adjudication, code-review, truth-check, wiring-test, and dead-code structures use `deny_unknown_fields`. A typo or retired field must fail parsing with an actionable unknown-field error; it must never disappear before validation. In particular, top-level `truths` is rejected.
+
+**`loom knowledge sync` (and anything that reaches `context::retrieve::resolve_roots` → `ContextStore::open` → a `refresh` write) can never sit in a worktree stage's acceptance list.** `ContextStore::open` (`context/store.rs:49`) resolves the context cache under `WorkDir::main_project_root().join(".loom/cache/context-v1")` — deliberately OUT of the worktree, through the `.work` symlink, to the MAIN repository, so parallel stages share one cache instead of each growing an immediately-stale private copy. `sync`'s `refresh` step (`context/refresh.rs:218`) then WRITES there via `ContextStore::save_catalog`, and both settings emitters strip `.loom` from `allow_write`, so that write always trips the sandbox from inside a worktree. `loom knowledge context` (retrieval) also opens the same store but is safe: its refresh failure downgrades to a warning and it builds the catalog in memory instead (`context/retrieve.rs:147-149`), which is why the signal footer tells agents to run it directly. `loom knowledge check` was written specifically to be safe as an acceptance criterion by NEVER opening the context store at all — it resolves only the knowledge root and calls the pure, read-only `catalog::build` (`commands/knowledge/check.rs:1-21`); do not "simplify" it back into `context::resolve()`.
 
 ## Hook Output Contract
 

@@ -1,6 +1,6 @@
 # Parallel Worktree Shared State
 
-> Topic notes for the mistakes knowledge area.
+> Cross-worktree state races: the one diagnostic question, concrete cases, and a blind-review-subagent instance.
 
 ## The One Question That Catches This Whole Class
 
@@ -102,3 +102,23 @@ root and breaks submodule handling for everyone. Stage only your named files.
 They survive the codex run, so a LATER stage in the same worktree inherits them and sees them in
 its own `git status` with no codex run of its own to explain them — do not go looking for the
 agent that wrote them.
+
+## A Read-Only Review Subagent Staged Outside the Worktree Is Silently Blind
+
+**What happened:** six read-only `loom-code-reviewer` subagents were spawned with their diffs
+prepared under `$TMPDIR` (e.g. `/tmp/claude-*/diffs`) instead of inside the worktree. Every one of
+them came back blind: `hooks/worktree-file-guard.sh` blocks every file tool on any path outside
+the current worktree, and `loom-code-reviewer`'s agent type carries no Bash tool to work around
+it — so each reviewer's Read calls all failed, and their reports read as generic
+pattern-matching rather than an actual review of the diff.
+
+**Why it is dangerous rather than merely wasteful:** a blind reviewer does not fail loudly. It
+still produces prose that reads like a review, so the orchestrator can mistake "the reviewer
+returned findings" for "the reviewer actually looked," and complete the stage on unverified work.
+
+**Prevention:** a review subagent's input must live INSIDE the worktree it is spawned from.
+Stage the prepared diffs at `.worktrees/<stage>/.review-diffs/` (or equivalent), pass the
+reviewer the RELATIVE path, and delete that scratch directory before committing — never a
+`$TMPDIR` or other outside-worktree path, even for content the orchestrator itself generated.
+When a review subagent's report looks suspiciously generic or reads as boilerplate, check first
+whether it could actually reach its input before trusting the content of the finding.

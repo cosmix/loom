@@ -46,14 +46,14 @@ All generators are composed from shared `append_*` helpers and produce immutable
 4. working_dir reminder
 5. Execution Rules header
 6. Worktree Isolation detail
-7. Delegation & Efficiency (subagents + hierarchies + agent teams)
+7. Delegation & Efficiency paragraph — DELETED (doctrine-surfaces stage), including its codex-lane forward-reference; the stable prefix points at `~/.claude/CLAUDE.md` Rule 6 instead of restating delegation guidance inline
 8. `append_subagent_restrictions()` — NO commit/complete/add-A rules
 9. When to Commit block (`append_commit_timing_rules()`, `signals/helpers.rs`) — commits are the ORCHESTRATOR's, ONLY at the end, after every subagent has returned and the gate is green
 10. `append_completion_rules()`
 11. `append_adversarial_review()` — Mini Adversarial Code Review (6 dimensions)
 12. Dedicated Silent Failure Check block (Standard only; IV has its own section)
 13. Stage Memory guidance
-14. `append_git_staging_full()` (Standard ONLY; IV/KnowledgeDistill use `append_git_staging_rules()`; both now live in `signals/helpers.rs`)
+14. `append_git_staging_full()`/`append_git_staging_rules()` — DELETED (doctrine-surfaces stage); git-staging rules are stripped to a CLAUDE.md pointer, not emitted inline, on every stage type
 15. `append_common_footer()`
 
 **Integration-Verify key differences:** ZERO TOLERANCE box at top; no full git-staging box; now requires agent teams (MUST).
@@ -73,7 +73,7 @@ Changes per **stage type**, not per session. Key sub-sections:
 - **Knowledge reference box** (lines 22-32): the Knowledge Brief footer emits `loom knowledge context --stage <id> --query "<question>" --budget-tokens <n>` (`format/brief.rs::format_knowledge_brief`) when knowledge exists
 - **Stage-type-aware reminder box** (lines 35-140): Knowledge/IV/KnowledgeDistill → "KNOWLEDGE UPDATES REQUIRED"; Standard → "SESSION MEMORY REQUIRED"
 - **Knowledge management section** (lines 142-290): If knowledge empty → 4-step exploration order; if present → "Extend as you work"
-- **Delegation Choices** (lines 339-386): Subagents vs. Hierarchy vs. Agent Teams decision
+- ~~**Delegation Choices**~~ — REMOVED (doctrine-surfaces stage; it duplicated CLAUDE.md Rule 6). The semi-stable section carries no delegation guidance of its own any more; the signal points at `~/.claude/CLAUDE.md` instead
 - **Ultracode License** (lines 388-413): Gated on `embedded_context.ultracode`; now also states the Claude-only Workflow-fan-out rule — the codex lane (`gpt-5.6-terra`/`gpt-5.6-luna`) is not addressable from a Workflow script, so on a stage licensed for both, codex-tier work goes through normal `loom-codex-forwarder` Agent spawns outside the Workflow
 - **Sandbox Restrictions** (lines 417-419): Sandbox summary if present, rendered by `format_sandbox_section()` in `format/sandbox_section.rs` (moved out of `sections.rs` 2026-08-26 — `sections.rs` carries a maintainability-ledger FILE entry). When the sandbox is enabled, it always carries `append_package_cache_note()` — the package-manager-cache carve-out note — after the filesystem deny/allow-write block and before the network section
 - **Skill Recommendations** (lines 421-426): Skill index matches
@@ -84,13 +84,11 @@ Per-session content. Includes Target (session/stage/plan IDs, working_dir, execu
 
 ### Recitation Section (format/sections.rs:665-765)
 
-End of signal for maximum attention. Includes: Compaction Imminent warning (≥75% usage), Context Budget Warning, Immediate Tasks, Stage end sequence line (`append_stage_end_sequence()`, `format/helpers.rs` — recited right after the task list, before the trailing blank line), Stage Memory (with PROMINENT WARNING if empty).
+End of signal for maximum attention. Includes: a single `Context: {tokens} of {ceiling} tokens` line (absolute resident tokens against the resolved ceiling — replaces the old `Compaction Imminent warning (>=75% usage)` / `Context Budget Warning` pair, both deleted with `append_budget_exceeded_box`, their last caller), Immediate Tasks, Stage end sequence line (`append_stage_end_sequence()`, `format/helpers.rs` — recited right after the task list, before the trailing blank line), Stage Memory (with PROMINENT WARNING if empty).
 
 ### EmbeddedContext Struct (types.rs:25-61)
 
-Single container flowing through all 4 sections. The struct is currently `types.rs:24-73` — this
-heading's `25-61` range is stale, and the field list below has changed: `knowledge_has_content: bool`
-was replaced by `context_pack` and `knowledge_tree_empty`.
+Single container flowing through all 4 sections. The struct is currently `types.rs:24-73`.
 
 ```rust
 pub struct EmbeddedContext {
@@ -101,8 +99,8 @@ pub struct EmbeddedContext {
     pub knowledge_tree_empty: bool,           // types.rs:45 - doc/loom/knowledge/ has no real content; distinct from context_pack (see doc comment at the field)
     pub memory_content: Option<String>,       // Last 10 entries
     pub skill_recommendations: Vec<SkillMatch>,
-    pub context_budget: Option<f32>,
-    pub context_usage: Option<f32>,
+    pub context_ceiling_tokens: Option<u32>,  // types.rs:51 - absolute resident-token ceiling, not a percentage
+    pub context_tokens: Option<u32>,          // types.rs:53 - absolute resident tokens read from the heartbeat
     pub sandbox_summary: Option<SandboxSummary>,
     pub cross_stage_summary: Option<String>,  // IV/KnowledgeDistill only
     pub wiring_checklist: Option<String>,     // IV/KnowledgeDistill only
@@ -112,6 +110,8 @@ pub struct EmbeddedContext {
     pub subagent_timeout_secs: Option<u64>,   // Per-stage override; None emits nothing
 }
 ```
+
+`context_budget: Option<f32>` and `context_usage: Option<f32>` were renamed to the two absolute-token fields above as part of the context-ceiling migration (see architecture.md "Context Budget Enforcement").
 
 ### Caching
 

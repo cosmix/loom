@@ -105,3 +105,45 @@ shell.
 shell. Establish that the process table is real first, and re-run that one command unsandboxed
 before drawing any conclusion. Same family as the entries above: the tool answered honestly about
 the world it could see, and that world was not the machine.
+
+## Write Acceptance Criteria From Inside a Sandboxed Worktree, Not From Your Checkout
+
+Every criterion below looked green and was wrong, and all four failed the same way:
+they were authored from the main checkout, where `.work` is a real directory and the
+derived cache is writable. In a stage worktree `.work` is a SYMLINK to the main repo
+and the plan sandbox denies writes to it, so any criterion whose command writes a
+derived cache behaves differently there than where it was written.
+
+| Criterion as written | What actually happens in a stage worktree |
+| --- | --- |
+| `loom map --outline src/main.rs \| rg -q function` | unsatisfiable — `loom map` called `reconcile_source_graph`, which WRITES an overlay under `.work/context`, so every invocation hard-failed with `Read-only file system (os error 30)` even though a readable base layer existed |
+| `loom knowledge sync --json \| rg -q '"semantic":{'` | cannot fail — the denied write returns exit 0 with `{"semantic":{"layer":"skipped",...}}`, so the key is present on a sync that did nothing |
+| `$L init >/dev/null 2>&1 \|\| true` then check layers | cannot pass — `loom init` REQUIRES a `<PLAN_PATH>` and exits 2; `\|\| true` turns the usage error into a silent zero-result |
+| `rg --files doc/plans/PLAN-x.md > /dev/null && ...` | fails on an absent file — a worktree materialises only TRACKED files, and those sibling plans were untracked |
+
+**Prevention, in the order the failures appear:**
+
+1. **Run every CLI acceptance criterion from inside a stage worktree with the plan
+   sandbox ON before shipping the plan.** "Works in my checkout" is not evidence; the
+   stage sandbox is the primary environment for these commands.
+2. **A read-only CLI verb must degrade when its derived cache is unwritable**, the way
+   `context/retrieve.rs:87` `resolve_catalog` already does. `loom map` is documented as
+   a read-only view and was writing on every call — that is the bug the criterion
+   exposed, not a criterion problem.
+3. **Grep for the VALUE that proves work happened, never for a key the degraded path
+   also emits.** `'"layer":"base"'` or a non-zero node count, not `'"semantic":{'`.
+4. **A wiring test that invokes a CLI verb must pass that verb's required arguments**,
+   and must not wrap it in `|| true`.
+5. **`git ls-files <path>` every file a stage is told to read or edit, at plan time.**
+   An untracked file is invisible to every worktree stage.
+
+**And know that the escape hatch is shut.** A stage's dispute-criteria command — the only
+channel an agent has for "this criterion is impossible" — authenticates over daemon RPC
+by reading `.work/user.token`, which the generated stage settings put in `denyRead`. It
+dies with `Failed to read .work/user.token for daemon authentication` before any RPC. So
+an agent facing an unsatisfiable criterion has no structured escape and falls back to
+finishing the stage as CompletedWithFailures, which auto-retries a stage whose criteria no
+retry can ever satisfy. When you hit one: say so explicitly in the finishing report and
+name the stage-amend operator command as the fix (`commands/stage/amend.rs`, added for
+exactly this) — do NOT keep working the stage, and never quietly rewrite your own gate to
+green.

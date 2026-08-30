@@ -1,6 +1,6 @@
 # Tmux Backend
 
-> Topic notes for the mistakes knowledge area.
+> tmux spawn-failure exit codes, cleanup-on-every-error-path discipline, and PID reuse across a retried session id.
 
 ## `tmux new-session` Exits 0 When the Server Fails to Start
 

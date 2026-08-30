@@ -1,6 +1,6 @@
 # Ambient Filesystem Trust
 
-> Topic notes for the mistakes knowledge area.
+> Why an ancestor directory merely named .git is not evidence of a real repository, and the validation this requires.
 
 ## An Ancestor Named `.git` Is Not a Repository (2026-08-29)
 

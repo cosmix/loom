@@ -18,28 +18,24 @@
 ## Hook System (loom/src/hooks/)
 
 - `hooks/mod.rs` - Module root; re-exports `HookEvent`, `HooksConfig`, `generate_hooks_settings`, `setup_hooks_for_worktree`, `find_hooks_dir`
-- `hooks/config.rs` - `HookEvent` enum (7 variants) + `HooksConfig` struct + `to_settings_hooks()`
+- `hooks/config.rs` - `HookEvent` enum (7 variants: `SessionStart`, `PostToolUse`, `PreCompact`, `SessionEnd`, `Stop`, `SubagentStart`, `SubagentStop`) + `HooksConfig` struct + `to_settings_hooks()`
 - `hooks/generator.rs` - `generate_hooks_settings()` (merge session hooks into settings.json), `setup_hooks_for_worktree()`, `find_hooks_dir()`
 - `hooks/events.rs` - `log_hook_event()`, `read_recent_events()`, event log CRUD
 - `hooks/validators/` - Validator scripts for PreToolUse hooks (commit-filter, git-add-guard, worktree-isolation, prefer-modern-tools)
 
-**6 emitted session-hook events** (`HooksConfig::to_settings_hooks()`, `config.rs:162`):
+**7 emitted session-hook events** (`HooksConfig::to_settings_hooks()`, derives the map by iterating `HookEvent::all()` — `config.rs:183` — rather than seven hand-written blocks, so the list and the map can no longer diverge):
 
-| Event          | Script                   | Purpose                                                                  |
-| -------------- | ------------------------ | ------------------------------------------------------------------------- |
-| `SessionStart` | `session-start.sh`       | Initial heartbeat                                                        |
-| `PostToolUse`  | `post-tool-use.sh`       | Heartbeat update after every tool call                                   |
-| `PreCompact`   | `pre-compact.sh`         | Trigger handoff before context compaction                                |
-| `SessionEnd`   | `session-end.sh`         | Cleanup on normal exit                                                   |
-| `Stop`         | `learning-validator.sh`  | Memory usage check on stop                                               |
-| `SubagentStop` | `subagent-stop.sh`       | Completion signal + heartbeat refresh when a Task-tool subagent finishes |
+| Event           | Script                   | Purpose                                                                  |
+| --------------- | ------------------------ | ------------------------------------------------------------------------- |
+| `SessionStart`  | `session-start.sh`       | Initial heartbeat                                                        |
+| `PostToolUse`   | `post-tool-use.sh`       | Heartbeat update after every tool call                                   |
+| `PreCompact`    | `pre-compact.sh`         | Trigger handoff before context compaction                                |
+| `SessionEnd`    | `session-end.sh`         | Cleanup on normal exit                                                   |
+| `Stop`          | `learning-validator.sh`  | Memory usage check on stop                                               |
+| `SubagentStart` | `subagent-start.sh`      | Records `{agent_id, agent_type, ts}` to `.work/subagents/<stage>/starts.jsonl` |
+| `SubagentStop`  | `subagent-stop.sh`       | Completion signal + heartbeat refresh when a Task-tool subagent finishes |
 
-The `HookEvent` enum has a 7th variant, `PreferModernTools`, that `to_settings_hooks()` never
-emits — it is dead with respect to session-hook settings generation (exercised only by
-`HookEvent::all()` in tests). `prefer-modern-tools.sh` still runs, but through a separate path
-entirely: it is registered as a **global** `PreToolUse:Bash` hook in
-`fs/permissions/hooks/config.rs:25`, alongside `commit-filter.sh`/`git-add-guard.sh`/etc., never
-through `HookEvent`/`to_settings_hooks()`.
+There is no `PreferModernTools` `HookEvent` variant any more — it was deleted. `prefer-modern-tools.sh` still runs, but through a separate path entirely: it is registered as a **global** `PreToolUse:Bash` hook in `fs/permissions/hooks/config.rs`, alongside `commit-filter.sh`/`git-add-guard.sh`/etc., never through `HookEvent`/`to_settings_hooks()`.
 
 **Settings placement:** Session hooks → `<worktree>/.claude/settings.local.json`. Global hooks (commit-filter, git-add-guard, worktree-isolation) configured via `fs/permissions.rs:configure_loom_hooks()`.
 
@@ -98,14 +94,19 @@ Public helpers hooks may call. Everything prefixed `_loom_*`, plus
 
 ### Registration Sites for a New Hook
 
-A hook missing from any of these is **silently dead**, not an error:
+A hook that Claude Code itself invokes (a `PreToolUse` guard, or a session-lifecycle `HookEvent`) needs FIVE registration sites; a SOURCED LIBRARY (like `_common.sh`, `_read_discipline.sh`, `_read_ledger.sh` — embedded and installed, but never invoked directly by the harness) needs only sites 1, 3 and 4, and never site 2:
 
 1. An `include_str!` const plus a `LOOM_HOOKS` entry in `fs/permissions/constants.rs`
-2. The config builder `fs/permissions/hooks.rs::loom_hooks_config_for_dir` (session-lifecycle
-   events are wired separately in `hooks/config.rs`)
+2. Its trigger: for a `PreToolUse` guard, an entry in the config builder `fs/permissions/hooks.rs::loom_hooks_config_for_dir`; for a session-lifecycle hook, a `HookEvent` variant in `hooks/config.rs` (`to_settings_hooks()` derives the emitted map from `HookEvent::all()`, so adding the variant is enough — no hand-written block to update). A sourced library has neither — it carries no independent trigger, so this site does not apply to it.
 3. **Both** `all_hooks` arrays in `install.sh` — there are two independent copies
-4. Tests: `fs/permissions/tests/hooks_tests.rs::test_hooks_config_structure` asserts the exact
-   `PreToolUse` array length and per-index order, plus a `hooks/tests/` case registered in
-   `hooks/tests/run-all.sh`
+4. Its counterpart array in `dev-install.sh`
+5. Tests: `fs/permissions/tests/hooks_tests.rs::test_hooks_config_structure` asserts the exact
+   `PreToolUse` array length and per-index order (currently 39 entries) — or, for a session hook,
+   `fs/permissions/tests/hooks_tests.rs::test_hook_event_surface_has_seven_events` / `hooks/tests.rs`'s
+   `all().len()==7` — plus a `hooks/tests/` case registered in `hooks/tests/run-all.sh`, and the
+   `setup_hook()` of every integration test harness that sources the new file (e.g.
+   `hooks_read_guard.rs`, `hooks_poll_guard.rs`) if it is a sourced library.
+
+`settings_checks.rs` renders `LOOM_HOOKS.len()` dynamically (`commands/repair/settings_checks.rs:79-80`), so it needs no edit when a hook is added — only the count assertions above do.
 
 **Worktree detection gotcha:** `_common.sh:loom_current_worktree()` checks TWO conditions — current directory contains `.worktrees/` AND `LOOM_WORKTREE_PATH` points into `.worktrees/` with the directory existing. LOOM_STAGE_ID alone is insufficient (it leaks into plain sessions from prior runs).

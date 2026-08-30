@@ -1,6 +1,6 @@
 # Subagent Orchestration
 
-> Topic notes for the mistakes knowledge area.
+> Liveness signals for subagents, when a missing report is not a missing result, and the one-background-watch doctrine.
 
 ## A Missing Report Is Not a Missing Result
 
@@ -153,17 +153,20 @@ entry per line carrying `agentId`, `timestamp`, `type` (`assistant`/`user`), and
 `message.content`. `loom subagents list` reads this, so a spawned agent has a liveness
 signal immediately — the incident above could not recur today.
 
-**Prevention: run `loom subagents list` (or `watch --timeout <secs>`), not "wait because
-you have no signal".** Per-subagent state is `done`, `tool-wait`, `generating`, or
-`unknown`: `done` but silent means harvest from disk and proceed — a missing notification
-is not a missing result (see "A Missing Report Is Not a Missing Result"); `tool-wait` /
-`generating` means genuinely alive, re-arm and keep waiting; only idle time past the
-budget with NO transcript growth is positive evidence of death. Two measured numbers set
-that budget, not estimates: a single tool call was clocked at 1,425s (23.8 minutes) in
-one real transcript, which is why `tool-wait` must NEVER carry its own timeout no matter
-how long it runs; and true intra-turn flush gaps (pauses between transcript writes within
-one still-live turn) topped out at 137.7s across 8,808 sampled gaps, which is why a
-`done` classification is debounced by 180s rather than trusted the instant output stops.
+**Prevention (revised 2026-08-30): spawn everyone, then run exactly ONE `loom subagents
+watch --timeout <secs>` (3600 is normal) through the Bash tool's `run_in_background` —
+never a hand-rolled poll and never a re-armed foreground watch.** The harness re-invokes
+the session when the watch exits, and no request is made while it waits. Per-subagent
+state is `done`, `tool-wait`, `generating`, or `unknown`: `done` but silent means harvest
+from disk and proceed — a missing notification is not a missing result (see "A Missing
+Report Is Not a Missing Result"); `tool-wait` / `generating` means genuinely alive, KEEP
+WAITING on the background watch (do not re-arm it); only idle time past the budget with
+NO transcript growth is positive evidence of death. Two measured numbers set that budget,
+not estimates: a single tool call was clocked at 1,425s (23.8 minutes) in one real
+transcript, which is why `tool-wait` must NEVER carry its own timeout no matter how long
+it runs; and true intra-turn flush gaps (pauses between transcript writes within one
+still-live turn) topped out at 137.7s across 8,808 sampled gaps, which is why a `done`
+classification is debounced by 180s rather than trusted the instant output stops.
 If a takeover ever does look necessary, `TaskStop` the original FIRST, confirm it
 stopped, and only then dispatch a replacement — never leave two writers pointed at one
 file set. Recovery from a collision is the same discipline: hard-stop every agent, take

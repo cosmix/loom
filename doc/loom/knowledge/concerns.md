@@ -113,18 +113,7 @@ models/stage/methods.rs:443 defines is_knowledge_stage() but it is never called.
 
 ## Deferred: Context Velocity
 
-The heartbeat JSON written by `post-tool-use.sh` always records `"context_percent": null`. Context velocity tracking (how fast the agent is consuming context budget) was listed as a planned metric but deferred because extracting context percentage requires parsing the stream-json JSONL output of the Claude process, which the `post-tool-use` hook does not currently do.
-
-**Current state:** `context_percent` field exists in the heartbeat JSON schema but is always `null`. The monitor reads it but never observes a non-null value through the hook path.
-
-**What's needed:** Stream-json events (specifically `"type":"system"` with a `usage` subkey, or similar) need to be parsed from the Claude process stdout to extract token counts. A separate sidecar process would be the cleanest approach without modifying the hook flow.
-
-**Where to look when implementing:**
-
-- `hooks/post-tool-use.sh` — heartbeat writer (add context_percent extraction here)
-- `orchestrator/monitor/context.rs` — context health thresholds (Green/Yellow/Red)
-- `orchestrator/monitor/detection.rs` — where heartbeat data is consumed
-- Stream-json `"system"` event shape: `{"type":"system","subtype":"init","session_id":"...","usage":{"input_tokens":N,...}}`
+**Closed.** This concern is fully resolved, not merely mitigated: `context_percent` no longer exists anywhere in the tree. `hooks/post-tool-use.sh` now reads `transcript_path` from the hook payload, takes the last assistant usage record from the transcript tail, and writes `context_tokens = input_tokens + cache_creation_input_tokens + cache_read_input_tokens` into the heartbeat; `orchestrator/monitor/context.rs::context_health(tokens, ceiling)` consumes it as an absolute count against the resolved `context_ceiling_tokens`. The stream-json sidecar this section used to propose was never needed. See architecture.md "Context Budget Enforcement".
 
 ## Recovery: `retry --force` races daemon orphan-recovery on existing worktree (2026-05-13)
 
@@ -304,57 +293,14 @@ a split proposal by topic cohesion instead of naming a section-extraction target
 
 ## Long Codex Runs Starve the Loom Heartbeat (2026-08-07)
 
-A foreground codex-lane run (`loom-codex-forwarder`) is ONE Bash tool call that blocks until codex returns. The
-session heartbeat (`.work/heartbeat/<stage-id>.json`) is refreshed by three writers, all shell
-hooks — `hooks/session-start.sh:61-72` (initial), `hooks/post-tool-use.sh:66-91` (after every tool
-use), and `hooks/subagent-stop.sh:158-179` (after every `SubagentStop`) — registered at
-`loom/src/hooks/config.rs:49-57` (script-name mapping) and `:228-241` (the `SubagentStop` hook
-rule itself). No Rust production code writes a heartbeat (`write_heartbeat`,
-`monitor/heartbeat.rs:264`, has only test callers). PostToolUse cannot fire until the Bash call
-returns, so a codex run longer than the stage's budget makes the daemon print `appears hung` for a
-stage that is perfectly healthy.
+A foreground codex-lane run is ONE blocking Bash call, so neither `PostToolUse` nor
+`SubagentStop` can refresh the heartbeat until it returns — a codex run longer than
+the stage's hung-timeout still produces a spurious, advisory-only `appears hung`
+warning. Partly closed 2026-08-27 for the Task-subagent-wait case; the pure codex
+case stands. Mitigation is doctrine (bound the task, set `subagent_timeout_secs`),
+not a monitor change — raising the global timeout was considered and rejected.
 
-**Update (2026-08-27) — partly closed, not fully.** `hooks/subagent-stop.sh` is new: it refreshes
-this same heartbeat file on every `SubagentStop`, with `activity: "subagent <agentId> finished"`.
-**Closed:** the window where a parent session blocked on Task-tool subagents ran no tools of its
-own, went silent on PostToolUse, and got reported `appears hung` while behaving perfectly — each
-subagent completion now refreshes the heartbeat. **NOT closed:** the codex case this section is
-named for. A foreground codex forward is still ONE blocking Bash call with no subagent underneath
-it — neither PostToolUse nor SubagentStop can fire until it returns, so a single codex run longer
-than the stage budget still produces a spurious `appears hung`. The section's headline finding
-stands for that case; only the Task-subagent-wait case above it was fixed.
-
-Budget: `DEFAULT_HUNG_TIMEOUT_SECS = 300` (`monitor/heartbeat.rs:21`), overridable per stage with
-`subagent_timeout_secs` → `Stage::effective_subagent_timeout_secs()` (`models/stage/methods.rs:107-110`),
-resolved at `monitor/detection.rs:475-488`. `MonitorConfig::hung_timeout` (`monitor/config.rs:17,29`)
-is only the fallback for a session whose stage cannot be resolved by id.
-
-**`MonitorEvent::SessionHung` is ADVISORY ONLY.** One emit site (`monitor/detection.rs:505-511`),
-one match arm (`orchestrator/core/event_handler.rs:187-209`) that is a `clear_status_line()` plus a
-single `eprintln!` — the code carries the comment _"ADVISORY ONLY: nothing is killed and nothing is
-retried."_ It warns ONCE per session (dedupe set `reported_hung_sessions`, `detection.rs:48`,
-cleared on a fresh beat at `:456-457` and on `Healthy` at `:521`). Contrast the siblings that DO
-act: `SessionCrashed` (`event_handler.rs:153`), `SessionNeedsHandoff` (kills + re-queues, `:110`),
-`BudgetExceeded` (`:218`). Nothing kills, retries, or transitions a stage on SessionHung — the
-warning is noise, not damage.
-
-**Mitigation is doctrine, not a monitor change.** Keep each codex task bounded, and set
-`subagent_timeout_secs` on stages that legitimately block for longer. CLAUDE.md Rule 6 ("Checking
-on subagents") routes the check through `loom subagents watch --timeout <secs>` — it blocks until
-every subagent settles or the timeout fires, exits 0 vs. 2, and states which branch fired, which
-alone satisfies the bounded-check rule — and tells the orchestrator to re-arm while the subagent
-reports `tool-wait`/`generating`: takeover or re-assignment needs positive evidence of death
-(idle past the budget with NO transcript growth), never elapsed time alone (revised 2026-08-14;
-the earlier wording told orchestrators to take work over at the deadline, which duplicated live
-work). **Revised again 2026-08-27:** the doctrine now names an actual evidence channel —
-`loom subagents list`/`harvest` report per-subagent state (`done`, `tool-wait`, `generating`,
-`unknown`) read from each subagent's own transcript, so "positive evidence of death" is no longer
-a judgment call the orchestrator has to make from silence.
-
-**Deliberately OUT OF SCOPE: raising `MonitorConfig::hung_timeout`.** A global raise would blind the
-monitor to genuinely dead sessions on every other stage in order to silence a cosmetic warning on
-one lane, and the per-stage override already covers the real case. Do NOT "fix" this by editing the
-default — it was considered and rejected as disproportionate.
+Full detail: [codex-heartbeat-starvation.md](concerns/codex-heartbeat-starvation.md).
 
 ## `loom status` "Stale" Badge Is Not Stage-Aware (2026-08-07)
 
@@ -648,47 +594,13 @@ heading line the content passed in.
 
 ## Open After PLAN-automatic-knowledge-and-source-graph (2026-08-18)
 
-**Whole-file read ahead of the size cap.** `context/refresh/source_graph.rs:228` does
-`fs::read` on every tracked file BEFORE `extract_file` applies the 512 KiB
-`MAX_EXTRACTED_FILE_BYTES` cap, so the cap bounds parsing but not allocation, and the
-daemon spikes to the size of the largest tracked blob on every merge reconcile.
-Deliberately not fixed at the quality gate: `FileExtraction::file_level`
-(`extract/mod.rs:103`) needs the BYTES to build the file node's span, so avoiding the
-read means changing the oversized node's span semantics or threading a streamed line
-count through the extractor API — a hot-path refactor. Peak is one file at a time and
-`EXCLUDED_ROOTS` already skips `target/` and `node_modules/`, so the realistic worst
-case is a transient spike, not corruption.
+Five smaller open items from this plan: an unbounded whole-file read ahead of the
+extraction size cap, four production-dead `KnowledgeDir` methods kept alive only by
+each other's tests, a writer/reader plan-key normalisation mismatch, a permission
+deny that now reaches the `loom` binary's own child processes, and a fossilized
+`LOOM_PERMISSIONS_WORKTREE` grant with no real consumers.
 
-**Four production-dead `KnowledgeDir` methods.** Deleting `loom knowledge show`/`list`
-orphaned part of the read/replace side: `read` (`dir.rs:120`), `append` (`dir.rs:127`),
-`read_index` (`dir.rs:160`), and `replace_section` (`dir.rs:136`, the
-`KnowledgeFile`-keyed variant) have no non-test callers, and all are `pub` on a `pub`
-type so clippy cannot see them. They were kept because ~15 tests in `tests_dir.rs`
-exercise them against each other (append → read, replace_section → read), so deleting
-the methods deletes most of that file's coverage. **Settle them deliberately in one
-follow-up: either delete methods and tests together, or wire them to a real consumer.**
-General rule: when a stage deletes a read-side CLI verb, audit every accessor that verb
-was the last caller of — and when a brief justifies keeping a module by naming a
-caller, check whether that caller is itself reachable. A wrapper is not a consumer. The
-converse also held here: `loom knowledge replace-section` was restored as a live CLI
-verb (`cli/types_memory.rs:19`, `cli/dispatch.rs:84-88`, `commands/knowledge/mod.rs:115`),
-which revived two of the original six dead methods — `read_target` (`dir.rs:176`, now
-called at `commands/knowledge/mod.rs:126`) and `replace_section_target` (`dir.rs:212`,
-now called at `commands/knowledge/mod.rs:130`). A dead-accessor list like this one is
-only true against one revision; re-check it before trusting it.
-
-**Plan-key normalisation on the writer side.** `delivery::plan_key` resolves both a blank
-`plan_id` in `.work/config.toml` and a stage record with no plan to `"default"`;
-`MergeLifecycle`'s writer side does not normalise identically. Silent by construction —
-see `mistakes/writer-reader-address.md`.
-
-**A permission deny now reaches child processes.** The knowledge tree is denied to the
-agent AND to the `loom` binary the doctrine tells agents to use. See Part C of the
-pending-knowledge document, and `concerns/sandbox-write-rules-inert.md` for the history.
-
-**`fs/permissions/constants.rs`** still declares `LOOM_PERMISSIONS_WORKTREE` with
-`Write(.work/**)` / `Bash(loom *)` rules that read like a blanket grant but have no real
-consumers, and `Write(path)` rules are inert anyway. A documented fossil.
+Full detail: [automatic-knowledge-source-graph-followups.md](concerns/automatic-knowledge-source-graph-followups.md).
 
 ## Three Hook Files Exceed Rule 17's 400-Line Cap
 
@@ -778,48 +690,14 @@ any file at or near its ledger cap must be refactored in the same change that gr
 
 ## iTerm2 Windows Survive Stage Completion — Spawn Never Names the Window (GitHub #7, 2026-08-29)
 
-GitHub issue #7 (open since 2026-02-04) reports that `loom stage complete` leaves the iTerm2 window
-open on macOS while Linux DEs close theirs. Commit `2a68aee2` (2026-02-05) added the per-terminal
-AppleScript close functions, but the tree still reproduces the report:
+Teardown closes an iTerm2 window by title, but the iTerm2 spawn arm never names the
+window (`git log -S 'set name of'` is empty), so the close query matches nothing and
+falls through to killing just the `claude` process — the shell (and window) survive.
+A second, independent defect in the same path: teardown addresses `tell application
+"iTerm2"` while iTerm2's real scriptable name is `iTerm`. Naming the window alone is
+necessary but not sufficient. Terminal.app is unverified (needs a macOS host).
 
-**Cause.** Teardown closes by window title: `orchestrator/core/completion_handler.rs:49-67` →
-`NativeBackend::kill_session` (`terminal/native/mod.rs:335-347`) → `close_iterm2_window`
-(`terminal/native/window_ops.rs:165-183`), which runs `every window whose name is
-"loom-<stage-id>"`. The iTerm2 spawn arm (`terminal/emulator.rs:219-238`) does `create window with
-default profile` + `write text` and never uses its `title` parameter — `git log -S 'set name of'` is
-empty, so no version ever named the session. The query matches nothing, the close returns `false`,
-and `kill_session` falls through to `pid_only_terminate` (`native/mod.rs:352-365`). That kills
-`claude`, but `write text` typed the wrapper into an interactive shell, so the shell returns to its
-prompt and the window stays. Linux emulators are launched with `-e <wrapper>`
-(`emulator.rs:180-200`): the window closes on its own when the exec'd `claude` dies, and
-`wmctrl -F -c` also matches the `--title` given at launch. `iterm2_window_exists`
-(`window_ops.rs:378`) has the same gap, so the `is_session_alive` title fallback is inert on iTerm2
-too.
-
-**Why it hid.** `test_iterm2_build_command` (`emulator.rs:417-435`) never asserts that the title
-appears in the generated script.
-
-**A second, independent defect in the same path (verified 2026-08-29).** Spawn addresses
-`tell application "iTerm"` (`emulator.rs:229`); both teardown paths address
-`tell application "iTerm2"` (`window_ops.rs:167`, `:380`). iTerm2's scriptable application name is
-`iTerm`, so the close and the liveness check target a name that does not resolve. Naming the window
-is therefore necessary but not sufficient — a fix that only adds `set name to` would leave teardown
-failing for this second reason, with the same silent `false` return. Found with
-`rg -n 'application "iTerm' loom/src/orchestrator/terminal/`, which is also the check that proves
-it fixed.
-
-**Terminal.app (the issue's TBD).** Unverified — needs a macOS host. Its arm does `set custom title
-of front window` (`emulator.rs:214`), so the close can match, with two risks: a Terminal.app
-window's AppleScript `name` is the full displayed title (custom title plus process and size
-components under default profile settings), and nothing pins the title against Claude Code's own
-OSC title updates — the wrapper (`native/wrapper.rs`, `exec env -i …`) emits no title escape and
-passes no `CLAUDE_CODE_DISABLE_TERMINAL_TITLE`.
-
-**Fix shape.** In the iTerm2 arm add `set name to "{escaped_title}"` inside `tell current session
-of current window` before `write text`, and assert it in `test_iterm2_build_command`. Consider
-exporting `CLAUDE_CODE_DISABLE_TERMINAL_TITLE=1` through the wrapper's env allowlist (both copies —
-see "Two Diverging Copies of the Stage Environment Allowlist" above) so neither macOS terminal's
-window name drifts before teardown. Verify on macOS with both terminals before closing #7.
+Full detail: [iterm2-window-teardown.md](concerns/iterm2-window-teardown.md).
 
 ## Orphan Adoption Only Runs at Daemon Startup (2026-08-29)
 
@@ -861,3 +739,141 @@ resolves a relative path while a sibling holds a foreign cwd will fail in a way 
 unrelated to its own subject. Fix shape: inject the working directory instead of mutating the
 process's, as `orchestrator/merge_lifecycle/tests.rs:321` already does deliberately for this exact
 reason.
+
+## SECURITY: `read-guard.sh` Arithmetic Injection via Unvalidated offset/limit
+
+`hooks/read-guard.sh:64-71` passes `tool_input.offset`/`tool_input.limit` into a bash
+`$((OFF + LIMIT))` arithmetic context UNVALIDATED. Bash re-evaluates a variable's VALUE inside
+`$(( ))`, so a crafted offset like `KIND[$(touch /tmp/PWNED4)]` EXECUTES the embedded command —
+reproduced against the shipped hook. `set -u` does not mitigate this: it aborts only AFTER the
+substitution has already run. Because `read-guard.sh` is registered globally on every `Read` tool
+call (`fs/permissions/hooks/config.rs:55`), this is arbitrary command execution from tool input in
+EVERY session, loom-orchestrated or not. Found at integration-verify 2026-08-30, not yet fixed —
+open. **Fix direction:** regex-validate `^[0-9]+$` on both `offset` and `limit` before either ever
+reaches an arithmetic context; never let harness-supplied JSON reach `$(( ))` unvalidated.
+
+## Agent-Type Inference by Substring Reports the Inverse Model
+
+`commands/usage/sections/agents.rs:213-232` infers an agent's model tier by scanning its spawn
+prompt with `contains()` over a hardcoded array whose FIRST entry, `loom-software-engineer`, is a
+literal SUBSTRING of its second entry, `loom-senior-software-engineer`. Every opus
+senior-engineer spawn therefore matches the sonnet entry first and is reported as sonnet.
+Compounding it, the mandated coordinator preamble in `CLAUDE.md.template` literally contains the
+string `(loom-software-engineer = sonnet)`, so every COORDINATOR prompt matches too, regardless of
+its actual tier. The one report section meant to answer "is the right model running the right
+tier" currently shows the inverse. The hook-written `starts.jsonl` (`subagents/ledger.rs`) already
+carries the authoritative `agent_type` per spawn — the fix is to read that instead of re-deriving
+identity by substring match over prose that quotes the identifiers it is trying to detect. Found
+at integration-verify 2026-08-30, not yet fixed — open.
+
+## `ContextExhausted` Takedown Has a Residual Gap After a Daemon Restart
+
+`take_down_stage_agents` persists `ContextExhausted` for a stage's live agents, but only for
+records it can actually FIND: an `active_sessions` entry, or an on-disk record that is BOTH
+`Running`/`Spawning` AND probe-alive. A record left `Running` on disk when the daemon itself
+restarts mid-session (the in-memory `active_sessions` map is never rebuilt from disk) is invisible
+to takedown, and is then read as a CRASH by `exited_after_stage_finished`, which forgives only
+`Completed`/`MergeConflict`/`MergeBlocked`. Closing this fully means marking every stale record for
+a stage once takedown has proven nothing survives — a change to stale-record semantics generally,
+not a narrow fix, so it was deliberately left open at the integration gate. Reproducing it needs a
+daemon restart plus an agent that had already exited before the restart; the normal
+hook-driven handoff path (no daemon restart involved) is unaffected and already fixed.
+
+## `session-start.sh`'s Heartbeat JSON Is the One Unescaped Writer of Three
+
+`hooks/session-start.sh:72-82` builds its heartbeat JSON with a raw heredoc, interpolating
+`LOOM_STAGE_ID`/`LOOM_SESSION_ID`/`TIMESTAMP`/`TRANSCRIPT_PATH` directly into JSON string
+literals with no escaping. The other two heartbeat writers — `post-tool-use.sh:335` and
+`subagent-stop.sh:191` — both use `jq -n --arg`, which escapes correctly. A transcript path (or,
+in principle, a stage/session id) containing a quote or backslash produces a heartbeat file the
+orchestrator cannot parse, silently reading the session as dead. Found at integration-verify
+2026-08-30, not fixed — the three heartbeat writers should converge on the same `jq -n --arg`
+construction session-start.sh's siblings already use.
+
+## Guard Hooks: Four Design Questions Deliberately Left Open (2026-08-30)
+
+The adversarial review of `read-guard.sh`/`poll-guard.sh`/`_read_discipline.sh` surfaced four
+behaviours kept AS SPECIFIED rather than patched, because each needs a spec decision, not a
+one-line fix:
+
+1. **The deny threshold may not fit CLAUDE.md's own workflow.** Five identical `git status`
+   invocations in one session trigger a deny, yet CLAUDE.md's own commit workflow runs `git
+   status` before staging, again after committing, and again before completion — a real session
+   following the documented workflow can plausibly hit the threshold.
+2. **Ledger TSV keys can interleave across processes.** `_loom_ledger_append` uses the whole
+   normalised command line as the TSV key with no atomicity guarantee beyond `PIPE_BUF`; a key
+   longer than `PIPE_BUF` can interleave between two in-process subagents that both sanitise to
+   `agent_id=main`.
+3. **`loom_deny_enabled` is a line-oriented `grep`-style check**, so a TOML multi-line string
+   VALUE that happens to contain the literal lines `[hooks]` and `deny_enabled = true` would
+   enable the switch even though no real config intended it.
+4. **`poll-guard`'s rule-2 `cat` branch is unreachable for any pre-existing `.work` file**,
+   because rule 3 (repeat-read escalation) fires first for files the ledger already has an entry
+   for — effectively dead code on the common path.
+
+None of these are fixed; each is a live behaviour a future stage should either ratify explicitly
+or change with an accompanying spec decision, not patch as an incidental side effect of unrelated
+hook work.
+
+## `is_ancestor("1")` Cannot Distinguish "Not an Ancestor" From "Walked Off the Top of a Container"
+
+`hooks/_common.sh`'s `is_ancestor()` exits its walk-up-the-process-tree loop as soon as the
+current pid becomes `"1"` or `"0"`, WITHOUT checking whether that final value equals the target
+pid — so `is_ancestor(target="1")` is a guaranteed, deterministic `false` regardless of the real
+process tree, even inside a container where PID 1 genuinely is an ancestor of everything. This is
+useful as a test fixture (a non-ancestor `LOOM_MAIN_AGENT_PID` of `"1"` can never flake true), but
+it is also a real edge-case correctness gap for any deployment where the loom main agent's PID
+could legitimately be 1. Not fixed — recorded because the test-fixture use depends on the same
+behaviour that makes it a latent bug elsewhere.
+
+## Tier-1 Knowledge Housekeeping: What This Distillation Closed and What Remains Open
+
+`loom knowledge check --strict` enforces a 250-line ceiling per tier-1 file and a 40-line
+ceiling per tier-1 SECTION (`MAX_TIER_ONE_FILE_LINES`/`MAX_TIER_ONE_SECTION_LINES`,
+`fs/knowledge/catalog/size.rs`). This distillation pass:
+
+- **Closed every OversizedSection finding** (5, all >40 lines): moved each to a new or
+  existing tier-2 topic file with a short summary and link left in the tier-1 file —
+  `concerns/codex-heartbeat-starvation.md`, `concerns/automatic-knowledge-source-graph-followups.md`,
+  `concerns/iterm2-window-teardown.md`, `architecture/terminal-backends.md` (entry-points
+  section), and `mistakes/verification-harness.md`.
+- **Fixed the one DuplicateHeading finding** and **healed 25 of 27 GenericBlurb** stub
+  descriptions on pre-existing tier-2 topic files (2 could not be healed — see below).
+
+**Still open, deliberately not attempted at this gate:**
+
+- **OversizedFile remains on all six tier-1 files** (`architecture.md` ~522,
+  `entry-points.md` ~557, `conventions.md` ~596, `patterns.md` ~756, `concerns.md` ~827,
+  `mistakes.md` ~962 lines, all against the 250-line ceiling). No individual SECTION in
+  any of them now exceeds 40 lines — the overage is volume: dozens of already-compact
+  10-35-line sections, most dated from PRIOR plans, not this one. Closing this fully means
+  relocating on the order of 80-120 individual sections to tier-2 topics, each its own
+  read-write-summarize cycle — a knowledge-base reorganization project in its own right,
+  not something one knowledge-distill pass can safely absorb without either rushing the
+  moves (risking exactly the duplicate-heading/content-loss mistakes this file's own
+  `mistakes/refactor-stragglers.md` warns about) or ballooning this stage far past a
+  single plan's distillation. Recommend a DEDICATED plan whose only job is this
+  reorganization, working file-by-file, oldest-and-largest section first.
+- **`MissingSourceRef` is the overwhelming majority of `--strict`'s issue count** (~1200 of
+  ~1250 findings) and is PRE-EXISTING, unrelated to this plan: `fs/knowledge/catalog.rs`
+  resolves a citation like `` `types.rs` `` against `project_root.join(source_path)`, but
+  most of this repo's citations are written relative to `loom/src/` (or as a bare
+  filename) rather than fully project-root-qualified. Confirmed non-noise count is small;
+  the rest is this one systemic resolution mismatch repeated across nearly every knowledge
+  file. Two real fixes, either is legitimate: (a) canonicalize citations across the
+  knowledge base to full project-root-relative paths (another dedicated, mechanical
+  project — 566+ unique citations), or (b) change the checker to require at least one
+  path separator before treating a string as a checkable repository path (a `loom/src/`
+  change, outside a knowledge-distill stage's file scope). Until one lands, **`loom
+  knowledge check --strict` cannot exit 0 on this repository** regardless of how clean the
+  size/heading/blurb dimensions get — do not treat a red `--strict` alone as evidence the
+  knowledge base itself is unhealthy; check which issue KINDS remain.
+- **Two GenericBlurb stubs could not be healed via `loom knowledge update`**:
+  `architecture/memory-spool.md` and `mistakes/writer-reader-address.md`. Both topics were
+  originally created with a hand-chosen title richer than the CLI's own
+  `title_case(slug)` (e.g. "Memory Spool and Drain" vs. the slug-derived "Memory Spool"),
+  and the stub-healing path (`fs/knowledge/scaffold.rs::strip_stub_header`) only fires
+  when the file's CURRENT first line matches `title_case(slug)` exactly — it does once a
+  title has already diverged. There is no CLI verb to edit a topic's pre-heading text
+  directly (file tools are blocked on `doc/loom/knowledge/**` inside a worktree). Fixing
+  these two needs either a title that reverts to the plain slug form, or a new CLI verb.
