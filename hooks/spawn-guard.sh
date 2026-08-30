@@ -61,7 +61,7 @@ if [[ -z "$CALLER" ]]; then
 fi
 [[ -n "$CALLER" ]] || CALLER="main"
 
-PREAMBLE_LINE='** READ CLAUDE.md IMMEDIATELY AND FOLLOW ALL ITS RULES. **'
+PREAMBLE_LINE='CLAUDE.md is already in your context; the rules below are the ones that bind you as a subagent. The knowledge you need for this task is quoted in this brief - do not open doc/loom/knowledge/ unless the brief says a pull came back empty.'
 
 # --- THE ENFORCEMENT GATE ---------------------------------------------------
 #

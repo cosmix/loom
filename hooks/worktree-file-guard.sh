@@ -225,6 +225,62 @@ if [[ -z "$RESOLVED_PATH" ]]; then
 	exit 2
 fi
 
+# A skill's SKILL.md is exempt from worktree containment for read-class tools
+# only (Read, Glob, Grep - never Write/Edit/MultiEdit/NotebookEdit, which stay
+# confined). The catalog splits skills across two roots under $HOME -
+# $HOME/.claude/loom-skill-catalog/<name>/SKILL.md and
+# $HOME/.claude/skills/<name>/SKILL.md - and both are meant to be read whole
+# from inside a worktree: the loom-skills loader reaches them with the Read
+# tool (skills/loom-skills/SKILL.md, allowed-tools: [Read]), which this hook
+# gates on every worktree stage session.
+#
+# Anchored to the two real roots built from $HOME, with <name> constrained to
+# EXACTLY one path component, matched against RESOLVED_PATH (after `..`
+# rejection and symlink/ancestor resolution above) - NOT a bare path-suffix
+# glob. A suffix glob like `*.claude/skills/*/SKILL.md` lets `*` cross `/` on
+# both sides: it would match any directory anywhere merely ENDING in
+# `.claude` (e.g. `~/.ssh/evil.claude/skills/a/SKILL.md`) and let `<name>`
+# itself span several components, widening worktree containment to an
+# attacker-chosen path. If HOME is unset or empty the exemption does not
+# apply at all, rather than degrading to a bare-prefix match.
+#
+# Each root is canonicalized ONCE per call with canonical_existing - the SAME
+# helper canonical_target used above to produce RESOLVED_PATH - before the
+# comparison. RESOLVED_PATH has every symlink component already resolved, so
+# comparing it against the RAW "$HOME/.claude/skills" string never matches
+# when $HOME itself traverses a symlink (autofs, a `/home/x -> /data/x`
+# layout, a dotfiles-managed ~/.claude) - that would silently re-block all 53
+# catalogued skills, the exact bug this exemption exists to fix. A root that
+# does not exist (e.g. a --skills all install with no catalog directory) is
+# SKIPPED outright rather than compared as a raw string, which would reopen
+# the escape closed above.
+#
+# hooks/_read_discipline.sh:105's `_loom_is_skill_md_path` keeps the looser
+# suffix-glob shape deliberately - it gates a read-discipline WARNING, not
+# worktree containment, so the wider match there is not a boundary widening.
+# The two diverge on purpose; keep both in mind when touching either.
+is_skill_md_path() {
+	local path="$1" home="${HOME:-}" raw_root canon_root rest name
+	[[ -n "$home" ]] || return 1
+	for raw_root in "$home/.claude/loom-skill-catalog" "$home/.claude/skills"; do
+		canon_root=$(canonical_existing "$raw_root" 2>/dev/null || true)
+		[[ -n "$canon_root" ]] || continue
+		[[ "$path" == "$canon_root"/*/SKILL.md ]] || continue
+		rest="${path#"$canon_root"/}"
+		name="${rest%/SKILL.md}"
+		[[ -n "$name" && "$name" != */* ]] && return 0
+	done
+	return 1
+}
+
+case "$TOOL_NAME" in
+Read | Glob | Grep)
+	if is_skill_md_path "$RESOLVED_PATH"; then
+		exit 0
+	fi
+	;;
+esac
+
 # Knowledge files are recorded through the `loom knowledge update` CLI, not
 # file tools — the sandbox itself no longer enforces this (the CLI runs
 # inside it too, so a sandbox deny would block the CLI as well as the file

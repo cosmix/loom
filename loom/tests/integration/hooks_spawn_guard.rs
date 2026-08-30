@@ -26,7 +26,7 @@ use std::process::{Command, Stdio};
 use tempfile::TempDir;
 
 /// Exact text of spawn-guard.sh's `PREAMBLE_LINE` (hooks/spawn-guard.sh:64).
-const PREAMBLE_LINE: &str = "** READ CLAUDE.md IMMEDIATELY AND FOLLOW ALL ITS RULES. **";
+const PREAMBLE_LINE: &str = "CLAUDE.md is already in your context; the rules below are the ones that bind you as a subagent. The knowledge you need for this task is quoted in this brief - do not open doc/loom/knowledge/ unless the brief says a pull came back empty.";
 
 /// Contract C1 key order (hooks/spawn-guard.sh:262).
 const SPAWN_KEYS: &[&str] = &[
