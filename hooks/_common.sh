@@ -47,11 +47,11 @@ BEGIN { inside = 0; marker = "" }
         next
     }
     # Detect heredoc: <<[-]?[ ]*[quote]?MARKER[quote]?
-    if (match($0, /<<-?[[:space:]]*["\x27]?[A-Za-z_][A-Za-z0-9_]*["\x27]?/)) {
+    if (match($0, /<<-?[[:space:]]*["\047]?[A-Za-z_][A-Za-z0-9_]*["\047]?/)) {
         s = substr($0, RSTART, RLENGTH)
         # Remove << prefix, optional dash, whitespace, quotes
-        sub(/^<<-?[[:space:]]*["\x27]?/, "", s)
-        sub(/["\x27]?$/, "", s)
+        sub(/^<<-?[[:space:]]*["\047]?/, "", s)
+        sub(/["\047]?$/, "", s)
         if (s != "") {
             marker = s
             inside = 1

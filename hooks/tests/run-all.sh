@@ -65,6 +65,9 @@ run_test "post-tool-use: context ceiling 80% warning fires once per session" "$S
 run_test "post-tool-use: subagent ceiling ignores the stage's own context_ceiling_tokens" "$SCRIPT_DIR/post-tool-use-subagent-ceiling.sh"
 run_test "post-tool-use: resident-token arithmetic (last record wins, torn line survives)" "$SCRIPT_DIR/post-tool-use-resident-tokens.sh"
 run_test "post-tool-use: heartbeat write survives a ceiling exit 2" "$SCRIPT_DIR/post-tool-use-ceiling-heartbeat-survives.sh"
+run_test "read-guard: offset/limit arithmetic injection is dead, well-formed reads unchanged" "$SCRIPT_DIR/read-guard-offset-injection.sh"
+run_test "session-start: heartbeat write escapes a quoted transcript_path via jq" "$SCRIPT_DIR/session-start-heartbeat-escaping.sh"
+run_test "post-tool-use: commit reminder is tokenized - heredoc body ignored, real commits fire" "$SCRIPT_DIR/post-tool-use-commit-reminder-tokenized.sh"
 
 echo ""
 echo "Results: $PASS passed, $FAIL failed"

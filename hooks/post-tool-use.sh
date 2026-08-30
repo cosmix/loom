@@ -410,8 +410,18 @@ REMINDER
 
 # Check if this was a git commit command
 if [[ "$TOOL_NAME" == "Bash" ]] && [[ -n "$COMMAND" ]]; then
-	# Detect git commit (matches: git commit, git -C path commit, etc.)
-	if echo "$COMMAND" | grep -qiE 'git\s+(-C\s+\S+\s+)?commit'; then
+	# Detect a real `git commit` invocation (including `git -C <dir> commit`)
+	# via the shared tokenizer over the STRIPPED command, exactly as
+	# commit-filter.sh:74-83 does - heredoc bodies are stripped BEFORE
+	# tokenizing, so a heredoc body whose text happens to start a line with
+	# "git commit" (docs, a test fixture, a plan file) is never mistaken for
+	# a real invocation. This also means a "commit" appearing only inside a
+	# quoted argument's text (e.g. a `loom memory note` body) never fires
+	# this, and the check carries no GNU-only \s/\S dependency. A command
+	# the tokenizer cannot parse (unterminated quote - not valid bash
+	# anyway) simply does not fire the reminder.
+	STRIPPED_COMMAND=$(strip_embedded_content "$COMMAND")
+	if loom_tokenize_command "$STRIPPED_COMMAND" && loom_tokens_cmd_has_arg 'git' 'commit'; then
 		remind_knowledge_update
 	fi
 fi

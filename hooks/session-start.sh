@@ -32,6 +32,16 @@ if [[ -z "${LOOM_STAGE_ID:-}" ]] || [[ -z "${LOOM_SESSION_ID:-}" ]] || [[ -z "${
 	exit 0
 fi
 
+# Both go into filenames below (the heartbeat path is keyed on
+# LOOM_STAGE_ID) - the same character guard post-tool-use.sh, subagent-stop.sh
+# and subagent-start.sh already apply to these two values.
+case "$LOOM_STAGE_ID" in
+*[!A-Za-z0-9._-]* | "") exit 0 ;;
+esac
+case "$LOOM_SESSION_ID" in
+*[!A-Za-z0-9._-]* | "") exit 0 ;;
+esac
+
 # Validate work directory exists and is accessible
 if [[ ! -d "${LOOM_WORK_DIR}" ]]; then
 	echo "Warning: Work directory does not exist: ${LOOM_WORK_DIR}" >&2
@@ -40,11 +50,18 @@ fi
 
 # Ensure directories exist
 HOOKS_DIR="${LOOM_WORK_DIR}/hooks"
-HEARTBEAT_DIR="${LOOM_WORK_DIR}/heartbeat"
-mkdir -p "$HOOKS_DIR" "$HEARTBEAT_DIR" 2>/dev/null || {
+mkdir -p "$HOOKS_DIR" 2>/dev/null || {
 	echo "Warning: Cannot create required directories" >&2
 	exit 0
 }
+
+# Same mode and failure tolerance as post-tool-use.sh's heartbeat directory
+# creation - SessionStart runs first, so without this the directory would
+# otherwise sit at the mkdir default (0755) until the first PostToolUse
+# tightened it, an odd pairing with the heartbeat file's own chmod 600 below.
+HEARTBEAT_DIR="${LOOM_WORK_DIR}/heartbeat"
+mkdir -p -m 700 "$HEARTBEAT_DIR" 2>/dev/null || exit 0
+chmod 700 "$HEARTBEAT_DIR" 2>/dev/null || exit 0
 
 # Get timestamp
 TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%S.000Z")
@@ -63,23 +80,50 @@ TRANSCRIPT_PATH=""
 if command -v jq &>/dev/null; then
 	TRANSCRIPT_PATH=$(echo "$INPUT_JSON" | jq -r '.transcript_path // empty' 2>/dev/null || true)
 fi
-TRANSCRIPT_PATH_JSON="null"
-[[ -n "$TRANSCRIPT_PATH" ]] && TRANSCRIPT_PATH_JSON="\"${TRANSCRIPT_PATH}\""
 
-# Write heartbeat file in JSON format
+# Write heartbeat file in JSON format.
 # Format: {stage_id, session_id, timestamp, context_tokens, transcript_path, last_tool, activity}
+# Built via `jq -n --arg` so a transcript_path containing a quote/backslash can
+# never produce malformed JSON - matches post-tool-use.sh's heartbeat write.
+# A symlinked heartbeat path is refused, matching spawn-guard.sh's spawn
+# record write.
 HEARTBEAT_FILE="${HEARTBEAT_DIR}/${LOOM_STAGE_ID}.json"
-cat >"$HEARTBEAT_FILE" <<EOF
+if [[ ! -L "$HEARTBEAT_FILE" ]]; then
+	HEARTBEAT_JSON=""
+	if command -v jq &>/dev/null; then
+		HEARTBEAT_JSON=$(jq -n \
+			--arg stage_id "$LOOM_STAGE_ID" \
+			--arg session_id "$LOOM_SESSION_ID" \
+			--arg timestamp "$TIMESTAMP" \
+			--arg transcript_path_raw "$TRANSCRIPT_PATH" \
+			'{stage_id: $stage_id, session_id: $session_id, timestamp: $timestamp,
+			  context_tokens: null,
+			  transcript_path: (if $transcript_path_raw == "" then null else $transcript_path_raw end),
+			  last_tool: null, activity: "Session started"}' \
+			2>/dev/null || true)
+	fi
+
+	if [[ -n "$HEARTBEAT_JSON" ]]; then
+		printf '%s\n' "$HEARTBEAT_JSON" >"$HEARTBEAT_FILE"
+	else
+		# jq unavailable: TRANSCRIPT_PATH is only ever populated when jq
+		# succeeded above, so it is guaranteed empty here and this heredoc can
+		# never carry untrusted content - LOOM_STAGE_ID/LOOM_SESSION_ID are
+		# already restricted to [A-Za-z0-9._-] by the guard above.
+		cat >"$HEARTBEAT_FILE" <<EOF
 {
   "stage_id": "${LOOM_STAGE_ID}",
   "session_id": "${LOOM_SESSION_ID}",
   "timestamp": "${TIMESTAMP}",
   "context_tokens": null,
-  "transcript_path": ${TRANSCRIPT_PATH_JSON},
+  "transcript_path": null,
   "last_tool": null,
   "activity": "Session started"
 }
 EOF
+	fi
+	chmod 600 "$HEARTBEAT_FILE" 2>/dev/null || true
+fi
 
 # Emit re-anchor context on compaction/resume starts
 if command -v jq &>/dev/null; then
