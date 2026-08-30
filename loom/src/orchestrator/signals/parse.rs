@@ -41,6 +41,11 @@ const EXPECTED_SECTIONS: &[&str] = &[
     "Subagent Response Budget",
     "Knowledge Brief",
     "Section Title",
+    "Review Dimensions",
+    "Cross-Stage Changes",
+    "Downstream Wiring Checklist",
+    "Goal-Backward Verification",
+    "Adjudicator Feedback (from your prior dispute)",
 ];
 
 /// Required sections that must be present

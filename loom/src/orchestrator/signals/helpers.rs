@@ -160,6 +160,7 @@ pub(super) fn append_settled_completion_rules(content: &mut String) {
 /// Append completion rules shared between standard and integration-verify prefixes
 pub(super) fn append_completion_rules(content: &mut String) {
     append_settled_completion_rules(content);
+    content.push_str("- No `loom stage retry` mid-session.\n");
     content.push_str(CONTEXT_CEILING_HANDOFF);
     content.push_str("- Run `loom stage complete <stage-id>` from the worktree ROOT directory; if acceptance criteria fail, fix and run it again\n\n");
 }

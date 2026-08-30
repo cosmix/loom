@@ -18,9 +18,8 @@
 //! CLAUDE.md in its own context in the same session: a second verbatim copy
 //! in the signal taught nothing new and paid its ~1KB in residency cost on
 //! every fresh spawn for the stage. Dropping the signal copy is safe because
-//! the doctrine is genuinely singular now, not because it stopped mattering —
-//! the CLAUDE.md.template copy below is still pinned so it cannot drift or
-//! silently vanish.
+//! the doctrine now lives on exactly one surface. The CLAUDE.md.template copy
+//! below is still pinned so it cannot drift or silently vanish.
 
 use super::cache::{
     generate_integration_verify_stable_prefix, generate_knowledge_distill_stable_prefix,
