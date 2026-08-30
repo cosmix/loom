@@ -18,14 +18,60 @@ if ! cargo fmt --check 2>/dev/null; then
     exit 1
 fi
 
-# Check markdown formatting (tracked files only, respects .markdownlintignore)
+# Check markdown formatting (tracked files only, respects .markdownlintignore).
+# Auto-fix first: only what markdownlint cannot repair itself blocks the push.
 cd "$REPO_ROOT" || exit 1
 MD_FILES=$(git ls-files '*.md' | grep -v '^doc/plans/' | grep -v '^loom/tests/fixtures/')
 if [ -n "$MD_FILES" ]; then
-    if ! echo "$MD_FILES" | xargs bunx markdownlint-cli2 2>/dev/null; then
+    MD_LOG=$(mktemp)
+    MD_SUMS_BEFORE=$(mktemp)
+    MD_SUMS_AFTER=$(mktemp)
+    trap 'rm -f "$MD_LOG" "$MD_SUMS_BEFORE" "$MD_SUMS_AFTER"' EXIT
+
+    echo "Linting markdown files..."
+    echo "$MD_FILES" | xargs cksum > "$MD_SUMS_BEFORE"
+    echo "$MD_FILES" | xargs bunx markdownlint-cli2 --fix > "$MD_LOG" 2>&1
+    MD_STATUS=$?
+    echo "$MD_FILES" | xargs cksum > "$MD_SUMS_AFTER"
+    MD_FIXED=$(diff "$MD_SUMS_BEFORE" "$MD_SUMS_AFTER" | grep '^>' | cut -d' ' -f4-)
+
+    # A non-zero status also means "the tool never ran": bunx dies when it
+    # cannot write its cache (sandbox) or reach the registry. The version
+    # banner is the only proof that anything was actually linted.
+    if ! grep -q 'markdownlint-cli2 v' "$MD_LOG"; then
         echo ""
-        echo "ERROR: Markdown files have linting issues."
-        echo "Run 'bunx markdownlint-cli2 --fix <files>' to fix."
+        echo "ERROR: markdownlint-cli2 could not run - markdown was NOT linted."
+        cat "$MD_LOG"
+        echo ""
+        echo "If bun cannot reach its cache, point BUN_INSTALL_CACHE_DIR and"
+        echo "TMPDIR at writable directories, then push again."
+        echo ""
+        exit 1
+    fi
+
+    if [ "$MD_STATUS" -ne 0 ]; then
+        echo ""
+        echo "ERROR: Markdown issues that --fix cannot repair:"
+        echo ""
+        grep -v '^Finding:' "$MD_LOG"
+        if [ -n "$MD_FIXED" ]; then
+            echo ""
+            echo "Auto-fixed separately (uncommitted, commit these too):"
+            echo "$MD_FIXED" | sed 's/^/  /'
+        fi
+        echo ""
+        echo "Fix the errors above, commit, then push again."
+        echo ""
+        exit 1
+    fi
+
+    if [ -n "$MD_FIXED" ]; then
+        echo ""
+        echo "Markdown lint auto-fixed these files in the working tree:"
+        echo "$MD_FIXED" | sed 's/^/  /'
+        echo ""
+        echo "The commits you are pushing still carry the unfixed markdown."
+        echo "Review the fixes, commit them, then push again."
         echo ""
         exit 1
     fi
