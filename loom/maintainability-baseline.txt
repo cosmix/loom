@@ -38,7 +38,6 @@ file src/models/stage/methods.rs 816
 file src/models/stage/types.rs 1209
 file src/orchestrator/adjudication/mod.rs 695
 file src/orchestrator/adjudication/prompt.rs 491
-file src/orchestrator/core/event_handler.rs 433
 file src/orchestrator/core/merge_handler.rs 1330
 file src/orchestrator/core/orchestrator.rs 574
 file src/orchestrator/core/recovery.rs 1618

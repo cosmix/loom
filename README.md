@@ -50,7 +50,7 @@ Loom treats what agents learn as a first-class artifact with a pipeline, not a s
 
 1. **Capture** — during execution, agents record to a per-stage journal: `loom memory note` (gotchas, mistakes-with-prevention), `decision` (with rationale), `change`, `question`. The journal is injected into the *recitation* section at the end of the next signal, where model attention is highest.
 2. **Distill** — a `knowledge-distill` stage runs at the end of a plan, reads every stage memory, and curates it into permanent knowledge — mistakes rewritten as actionable prevention rules, decisions with their rationale, reusable patterns and conventions.
-3. **Retrieve** — the result is a **tiered** base under `doc/loom/knowledge/`: a generated `INDEX.md`, seven tier-1 summaries, and tier-2 topic files. Agents read the index, then the summary for their area, then only the topics they touch — so the base can grow without every session paying to load it.
+3. **Retrieve** — the result is a **tiered** base under `doc/loom/knowledge/`: a generated `INDEX.md`, seven tier-1 summaries, and tier-2 topic files. Agents work from their per-stage Knowledge Brief first, pulling more with `loom knowledge context --query`; the index is for when a pull comes back empty, then the summary for their area, then only the topics they touch — so the base can grow without every session paying to load it.
 
 Knowledge lives in `doc/loom/knowledge/`; agents write it through loom, and `loom knowledge sync` rebuilds the derived retrieval artifacts after the tree changes, including the one-time flat-to-hierarchical upgrade. Details: [Knowledge System](#knowledge-system).
 
@@ -172,7 +172,7 @@ Everything else is an explicit, inspectable outcome rather than a hang:
 | State                   | Meaning                                                                |
 | ----------------------- | ---------------------------------------------------------------------- |
 | `Blocked`               | A `before_stage` check or an explicit block stopped the stage          |
-| `NeedsHandoff`          | Context budget exceeded; a handoff was written                         |
+| `NeedsHandoff`          | Context ceiling reached; a handoff was written                         |
 | `WaitingForInput`       | The agent asked a question (raised automatically by the AskUser hooks) |
 | `MergeConflict`         | Auto-merge hit a real conflict; a resolution session is spawned        |
 | `MergeBlocked`          | Merge cannot proceed (e.g. another merge is in progress)               |
@@ -238,6 +238,7 @@ loom stage output remove <stage-id> <key>
 
 ```bash
 loom knowledge sync [--structural-only] [--json]              # Rebuild derived retrieval artifacts after editing knowledge
+loom knowledge check [--strict] [--json]                      # Report knowledge-base diagnostics (read-only; never opens the context store)
 
 loom memory note <text> [--stage <id>]
 loom memory decision <text> [--context <why>] [--stage <id>]
@@ -361,7 +362,7 @@ into `.work/config.toml`'s `[context]` section at `loom init`.
 | `reasoning_effort`                 | No                     | `low`, `medium`, `high`, `xhigh`, `max` (default `high` for every stage type and model)                                                    |
 | `implementers`                     | No                     | Licensed agent lanes as a list, first = preferred for routine work: `["codex", "claude"]`. Default `["claude"]`. Listing a lane makes it available, not mandatory — a stage mixes lanes per subagent |
 | `ultracode`                        | No                     | License this stage for large multi-agent fan-out; per-stage opt-in (default `false`)                                                       |
-| `subagent_timeout_secs`            | No                     | Seconds of tool silence before the monitor warns `appears hung` (default 300); advisory only — also the value to pass as `loom subagents watch --timeout <secs>` |
+| `subagent_timeout_secs`            | No                     | Seconds of tool silence before the monitor warns `appears hung` (default 300); the advisory idle budget death is judged against — never the `--timeout` passed to `loom subagents watch` (that stays long, 3600) |
 | `context_ceiling_tokens`           | No                     | Absolute resident-token ceiling for this stage's session (minimum 60000). Resolved stage value → plan-level `context_ceiling_tokens` → 150000. The session hook warns at 80% and blocks at 100%; the daemon forces a handoff at 125% |
 | `plan_overview`                    | No                     | Set `false` to suppress the embedded plan overview in this stage's signal                                                                  |
 | `sandbox`                          | No                     | Per-stage sandbox override                                                                                                                 |
@@ -461,7 +462,7 @@ Procedural noise ("spawned agents", "ran tests") and anything recoverable from g
 
 Knowledge lives in `doc/loom/knowledge/` and is **tiered**: a generated `INDEX.md` (tier 0) maps the seven curated summary files (tier 1), which link out to per-category topic files (tier 2, e.g. `architecture/merge-flow.md`). Tier-1 files stay navigable summaries; detail lives in topics. The index is regenerated automatically on every knowledge write.
 
-**Reading protocol** — read the index first, then the tier-1 summary for the area you are working in, then only the tier-2 topics you actually touch. Loading the whole base defeats the point of tiering.
+**Reading protocol** — the per-stage Knowledge Brief already quotes what retrieval judged relevant; pull more with `loom knowledge context --query`. Open the index only when a pull comes back empty, then read the tier-1 summary for the area you are working in, then only the tier-2 topics you actually touch. Loading the whole base defeats the point of tiering.
 
 **Writing protocol** — when a tier-1 section grows past roughly 40 lines, move its body into a topic with `loom knowledge update <category>/<slug>` and leave a 2-4 line summary plus a relative link behind. Write the link as `[Title](category/slug.md)` in a tier-1 file: that is the tree's convention for references.
 

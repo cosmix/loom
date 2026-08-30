@@ -17,7 +17,10 @@ mod discovery;
 mod json;
 mod sections;
 mod transcript;
-mod transcript_types;
+// `pub(crate)`, not private: `transcript_types::SYNTHETIC_MODEL` is the
+// canonical model-sentinel constant shared with `commands::subagents`, a
+// sibling module tree that a plain `mod` declaration would not reach.
+pub(crate) mod transcript_types;
 
 use std::path::PathBuf;
 

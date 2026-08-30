@@ -751,22 +751,22 @@ fn extract_flag_value<'a>(cmd: &'a str, flag: &str) -> Option<&'a str> {
 /// Resolve the config file an acceptance criterion's build-tool check should
 /// look for, honoring an explicit tool selector when the criterion names one.
 ///
-/// `--manifest-path <p>` (cargo) names the config file itself: the selector
-/// value IS the path to check, not a directory `config_file` should be joined
-/// onto. `--project-dir <p>` (bun) and `-C <p>` (go) name a directory: resolve
-/// `config_file` inside it. Absent a selector, fall back to the stage's
-/// `working_dir` as before.
+/// `--manifest-path <p>` (cargo) names the config file itself - the selector
+/// value IS the path, resolved against `working_dir`. `--project-dir <p>`
+/// (bun) and `-C <p>` (go) name a directory to resolve `config_file`
+/// inside, also against `working_dir` - the fallback absent any selector.
 fn resolve_build_tool_config_path(
     cmd: &str,
     tool_cmd: &str,
     config_file: &str,
-    root: &std::path::Path,
     working_dir: &std::path::Path,
 ) -> std::path::PathBuf {
     let selector = match tool_cmd {
-        "cargo" => extract_flag_value(cmd, "--manifest-path").map(|p| root.join(p)),
-        "bun " => extract_flag_value(cmd, "--project-dir").map(|p| root.join(p).join(config_file)),
-        "go " => extract_flag_value(cmd, "-C").map(|p| root.join(p).join(config_file)),
+        "cargo" => extract_flag_value(cmd, "--manifest-path").map(|p| working_dir.join(p)),
+        "bun " => {
+            extract_flag_value(cmd, "--project-dir").map(|p| working_dir.join(p).join(config_file))
+        }
+        "go " => extract_flag_value(cmd, "-C").map(|p| working_dir.join(p).join(config_file)),
         _ => None,
     };
     selector.unwrap_or_else(|| working_dir.join(config_file))
@@ -993,13 +993,13 @@ pub fn validate_structural_preflight(
                     if !criterion_uses_build_tool(cmd, tool_cmd) {
                         continue;
                     }
-                    let resolved = resolve_build_tool_config_path(
-                        cmd,
-                        tool_cmd,
-                        config_file,
-                        root,
-                        &working_dir,
-                    );
+                    // `resolve_build_tool_config_path` resolves an explicit
+                    // tool selector (--manifest-path/--project-dir/-C) against
+                    // `working_dir`, since that selector value is relative to
+                    // the acceptance command's CWD - not the repo root - and
+                    // `working_dir` is where a stage's commands actually run.
+                    let resolved =
+                        resolve_build_tool_config_path(cmd, tool_cmd, config_file, &working_dir);
                     if !resolved.exists() {
                         warnings.push(format!(
                             "Stage '{}': Acceptance criterion '{}' uses '{}' but {} not found at {}",

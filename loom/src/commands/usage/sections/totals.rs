@@ -3,6 +3,7 @@
 //! reported as text volume because transcript usage does not measure it.
 
 use crate::commands::usage::transcript::{TokenUsage, Transcript};
+use crate::commands::usage::transcript_types::SYNTHETIC_MODEL;
 
 use super::fmt::{format_u64, heading, no_data, row};
 
@@ -26,6 +27,13 @@ pub fn build(transcripts: &[Transcript]) -> Totals {
     let mut thinking_chars = 0;
     for transcript in transcripts {
         for request in transcript.requests() {
+            // Keep this count consistent with the model-keyed breakdowns
+            // (`by_model`, `by_agent_model`), which also exclude a synthetic
+            // API-error row: otherwise their `requests` sums would never
+            // add back up to this report's own total.
+            if request.model == SYNTHETIC_MODEL {
+                continue;
+            }
             requests += 1;
             thinking_chars += request.thinking_chars;
             usage.add(&request.usage);
@@ -68,3 +76,7 @@ pub fn render(totals: &Totals) {
         format_u64(totals.thinking_tokens_estimate),
     );
 }
+
+#[cfg(test)]
+#[path = "totals_tests.rs"]
+mod tests;

@@ -55,6 +55,24 @@ pub struct Request {
     pub text_chars: usize,
 }
 
+/// Claude Code writes this literal into [`Request::model`] for a synthetic
+/// assistant row -- an API-error entry (`isApiErrorMessage: true`) that
+/// never reached the API, so its `usage` is all zero.
+///
+/// `Transcript::requests()` deliberately does NOT filter it out at the
+/// source: several consumers (raw request/turn counts in
+/// `usage::sections::{edits, lifecycle, reads, tools, polling, lengths}`)
+/// may legitimately want to count an errored-but-attempted request, and
+/// `usage::sections::rewrites`'s pairing loop does not even go through
+/// `requests()` in the first place, so a source-level filter would miss that
+/// site regardless. Every consumer that instead groups, counts, or picks a
+/// "the model" value from `Request.model` -- where counting or grouping by
+/// a request that never actually reached a model would misreport a local
+/// error as a model choice -- must skip this sentinel itself: see
+/// `subagents::metrics::extract` and `usage::sections::{agents, by_model,
+/// rewrites, totals}`.
+pub(crate) const SYNTHETIC_MODEL: &str = "<synthetic>";
+
 #[derive(Debug, Clone)]
 pub struct UserEntry {
     pub timestamp: chrono::DateTime<chrono::Utc>,

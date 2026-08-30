@@ -210,7 +210,7 @@ pub fn generate_integration_verify_stable_prefix() -> String {
     // Four review dimensions, each its own parallel subagent. `loom-code-reviewer`
     // is READ-ONLY, so its findings go to an engineer to fix.
     content.push_str("**Review Dimension Details** — spawn these as PARALLEL subagents; `loom-code-reviewer` is READ-ONLY, so hand its findings to an engineer to fix:\n\n");
-    content.push_str("1. **Security** — invoke /loom-security-audit: OWASP Top 10, hardcoded secrets, dependency CVEs, boundary sanitization, error-message leakage.\n");
+    content.push_str(&format!("1. **Security** — invoke {}: OWASP Top 10, hardcoded secrets, dependency CVEs, boundary sanitization, error-message leakage.\n", crate::skills::skill_invocation("loom-security-audit")));
     content.push_str("2. **Architecture** — module coupling, swallowed errors, over/under-abstraction, naming consistency, dead code and unreachable paths.\n");
     content.push_str("3. **Build/test/sandbox** — full suite plus ALL stderr, warnings even when tests pass; any \"blocked\", \"denied\", \"connection refused\" or \"failed to download\" is a BLOCKER, not a workaround. Exit code 0 does NOT mean success.\n");
     content.push_str("4. **Functional** — RUN the feature end-to-end on realistic inputs; confirm the output is correct and the feature is registered, mounted, and callable.\n\n");

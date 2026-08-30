@@ -101,3 +101,73 @@ fn worktree_repository_root_is_none_for_unparseable_contents() {
     std::fs::write(&git_file, "not a gitdir line\n").unwrap();
     assert_eq!(worktree_repository_root(&git_file), None);
 }
+
+/// Shared ceremony for the repo's unreadable-file/directory probes (see
+/// `tests_source_graph.rs`, `tests_wiring_detection.rs`,
+/// `tests_duplicate_detection.rs`): `still_readable` is whether a 0o000 path
+/// stayed readable anyway (root, or a sandbox that ignores mode bits).
+/// Returns whether the caller must skip - loudly, on stderr - rather than
+/// asserting against a path it never actually exercised. Set
+/// `LOOM_TEST_REQUIRE_UNREADABLE_FILE=1` to turn that skip into a panic
+/// instead, for environments that must enforce the permission.
+fn skip_if_permissions_ignored(test_name: &str, still_readable: bool) -> bool {
+    if !still_readable {
+        return false;
+    }
+    if std::env::var("LOOM_TEST_REQUIRE_UNREADABLE_FILE").as_deref() == Ok("1") {
+        panic!(
+            "{test_name}: this environment does not enforce 0o000 permissions (running as \
+             root, or a sandbox that ignores mode bits), so the unreadable path was never \
+             exercised (LOOM_TEST_REQUIRE_UNREADABLE_FILE=1 demands a real run)"
+        );
+    }
+    eprintln!(
+        "SKIP {test_name}: this environment does not enforce 0o000 permissions (running as \
+         root, or a sandbox that ignores mode bits), so the unreadable path was never \
+         exercised (set LOOM_TEST_REQUIRE_UNREADABLE_FILE=1 to fail instead)"
+    );
+    true
+}
+
+/// Under a sweep (`--all`, no explicit `--project`), one project directory
+/// that can't be read must not sink the whole report: it's skipped with a
+/// warning while the other project's transcript is still discovered.
+#[test]
+fn collect_projects_skips_unreadable_project_directory_under_sweep() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let root = tempfile::tempdir().unwrap();
+
+    let readable = root.path().join("good-project");
+    std::fs::create_dir(&readable).unwrap();
+    std::fs::write(readable.join("session.jsonl"), "{}\n").unwrap();
+
+    let blocked = root.path().join("bad-project");
+    std::fs::create_dir(&blocked).unwrap();
+    let original_perms = std::fs::metadata(&blocked).unwrap().permissions();
+    std::fs::set_permissions(&blocked, std::fs::Permissions::from_mode(0o000)).unwrap();
+    let still_readable = std::fs::read_dir(&blocked).is_ok();
+
+    let options = DiscoveryOptions {
+        since: Utc::now() - Duration::days(1),
+        project: None,
+        all: true,
+        stage: None,
+        plan: None,
+    };
+    let result = collect_projects(root.path(), &options);
+
+    std::fs::set_permissions(&blocked, original_perms).unwrap();
+
+    if skip_if_permissions_ignored(
+        "collect_projects_skips_unreadable_project_directory_under_sweep",
+        still_readable,
+    ) {
+        return;
+    }
+
+    let files =
+        result.expect("an unreadable project directory should be skipped, not fail the sweep");
+    assert_eq!(files.len(), 1);
+    assert_eq!(files[0].project_slug, "good-project");
+}

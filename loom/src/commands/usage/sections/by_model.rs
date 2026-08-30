@@ -5,6 +5,7 @@ use std::collections::BTreeMap;
 
 use crate::commands::usage::accounting::Accounting;
 use crate::commands::usage::transcript::{Scope, Transcript};
+use crate::commands::usage::transcript_types::SYNTHETIC_MODEL;
 use crate::context::untrusted::inline_safe;
 
 use super::fmt::{format_f64, format_u64, heading, no_data};
@@ -35,6 +36,9 @@ pub fn build(transcripts: &[Transcript]) -> ByModel {
     for transcript in transcripts {
         let scope = scope_label(transcript.scope).to_owned();
         for request in transcript.requests() {
+            if request.model == SYNTHETIC_MODEL {
+                continue;
+            }
             let key = (request.model.clone(), scope.clone());
             let row = grouped.entry(key).or_insert_with(|| ModelRow {
                 model: request.model.clone(),
@@ -109,3 +113,7 @@ fn add_usage(row: &mut ModelRow, request: &crate::commands::usage::transcript::R
     row.s2 += accounting.s2;
     row.s3 += accounting.s3;
 }
+
+#[cfg(test)]
+#[path = "by_model_tests.rs"]
+mod tests;

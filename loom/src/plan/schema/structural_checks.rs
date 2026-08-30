@@ -158,6 +158,18 @@ fn glob_prefix(pattern: &str) -> &str {
 fn glob_prefixes_overlap(p1: &str, p2: &str) -> bool {
     let a = glob_prefix(p1);
     let b = glob_prefix(p2);
+    // An empty literal prefix (e.g. "**/*.rs", where the wildcard starts
+    // the pattern) means the match set is not bounded by any directory, so
+    // it is treated as overlapping everything - "" is not a "/"-joined
+    // prefix of a non-empty path, so the component-wise comparison below
+    // would otherwise call it disjoint. This is deliberately conservative:
+    // the heuristic compares directory prefixes only, never extensions, so
+    // "**/*.rs" and "**/*.md" still warn even though they match no files in
+    // common. A missed overlap costs a stage its work in a merge conflict;
+    // a spurious warning costs a plan author one glance - do not "fix" this.
+    if a.is_empty() || b.is_empty() {
+        return true;
+    }
     a == b || a.starts_with(&format!("{b}/")) || b.starts_with(&format!("{a}/"))
 }
 
@@ -188,6 +200,18 @@ mod tests {
         assert_eq!(warnings.len(), 1, "{warnings:?}");
         assert!(warnings[0].contains("src/a/**"));
         assert!(warnings[0].contains("src/a/config.rs"));
+    }
+
+    #[test]
+    fn empty_prefix_glob_overlaps_rooted_pattern() {
+        let stages = vec![
+            stage("a", &[], &["**/*.rs"], None),
+            stage("b", &[], &["loom/src/plan/**"], None),
+        ];
+        let warnings = check_overlapping_files_without_dependency(&stages);
+        assert_eq!(warnings.len(), 1, "{warnings:?}");
+        assert!(warnings[0].contains("**/*.rs"));
+        assert!(warnings[0].contains("loom/src/plan/**"));
     }
 
     #[test]

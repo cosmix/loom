@@ -26,9 +26,13 @@
 //! `unknown` is likewise never harvested and never counts as settled.
 //!
 //! Transcripts are appended to while being read, so the last line may be a
-//! partial write: lines are parsed independently and an unparseable one is
-//! skipped rather than failing the whole file, which degrades a torn last
-//! line to "use the previous good entry" instead of crashing or erroring.
+//! partial write, including a torn multibyte UTF-8 character: the file is
+//! read as bytes and decoded lossily, turning a torn byte sequence into
+//! replacement characters on that one line instead of failing the whole
+//! read. Lines are then parsed independently, and an unparseable one (JSON
+//! or otherwise) is skipped rather than failing the whole file, which
+//! degrades a torn last line to "use the previous good entry" instead of
+//! crashing or erroring.
 //!
 //! The `done` row needs a debounce because Claude Code flushes each content
 //! block of one assistant turn as its own JSONL entry: a turn that narrates
@@ -153,9 +157,7 @@ pub fn analyze(
     debounce_secs: u64,
     work_dir: Option<&Path>,
 ) -> Result<SubagentSummary> {
-    let content = fs::read_to_string(path)
-        .with_context(|| format!("reading subagent transcript {}", path.display()))?;
-    let entries = parse_lines(&content);
+    let entries = read_entries(path)?;
     let authoritative_done = has_authoritative_termination(work_dir, &agent_id);
     let agent_type = ledger::agent_type(work_dir, &agent_id);
     let metrics = metrics::extract(&entries);
@@ -181,7 +183,7 @@ pub fn analyze(
         .filter(|entry| entry_type(entry) == Some("assistant"))
         .count();
     let last_tool = last_tool_used(&entries);
-    let final_report = (state == SubagentState::Done).then(|| text_blocks(last).join("\n\n"));
+    let final_report = final_report_for(state, last);
 
     Ok(summary::with_last(
         agent_id,
@@ -196,6 +198,31 @@ pub fn analyze(
         metrics,
         peak_tokens_over_ceiling,
     ))
+}
+
+/// Read a transcript's bytes and decode them lossily rather than with
+/// `fs::read_to_string`: the file may be mid-write, and a torn multibyte
+/// UTF-8 character at the tail must degrade to replacement characters on
+/// that one line -- which then simply fails to parse as JSON and is skipped
+/// like any other malformed line -- rather than failing the whole read.
+fn read_entries(path: &Path) -> Result<Vec<Value>> {
+    let bytes = fs::read(path)
+        .with_context(|| format!("reading subagent transcript {}", path.display()))?;
+    let content = String::from_utf8_lossy(&bytes);
+    Ok(parse_lines(&content))
+}
+
+/// The subagent's final report: only ever `Some` when `state == Done`, and
+/// even then only when the last entry actually carried a text block. An
+/// authoritative termination record can force `Done` while the last flushed
+/// entry is a `tool_use` or `thinking` block with no text -- in that case
+/// `text_blocks` is empty and a bare `join` would produce `""`, which is not
+/// a report; filtering it out here sends the caller down the same "nothing
+/// harvestable" path it takes for any other reportless subagent.
+fn final_report_for(state: SubagentState, last: &Value) -> Option<String> {
+    (state == SubagentState::Done)
+        .then(|| text_blocks(last).join("\n\n"))
+        .filter(|report| !report.trim().is_empty())
 }
 
 /// Resolve the final [`SubagentState`] for the last transcript entry: an
@@ -358,3 +385,7 @@ fn idle_since_mtime(path: &Path) -> i64 {
 #[cfg(test)]
 #[path = "classify_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "classify_recovery_tests.rs"]
+mod recovery_tests;

@@ -49,6 +49,17 @@ RAW_AGENT_ID=$(echo "$INPUT_JSON" | jq -r '.agent_id // empty' 2>/dev/null || tr
 PAYLOAD_SID=$(echo "$INPUT_JSON" | jq -r '.session_id // empty' 2>/dev/null || true)
 AGENT_ID=$(_loom_sanitize_agent_id "$RAW_AGENT_ID")
 
+# PAGES is not an arithmetic-injection vector ($lines is only ever
+# string-compared downstream), but it flows unmodified into LINES and from
+# there into the TSV read ledger (_loom_ledger_append), so a value carrying a
+# tab or newline would still write a malformed ledger row. A real page range
+# is "N" or "N-M" (per the Read tool's own documentation); anything else is
+# treated as absent, matching how a malformed offset/limit is handled above.
+if [[ -n "$PAGES" ]] && [[ ! "$PAGES" =~ ^[0-9]+(-[0-9]+)?$ ]]; then
+	loom_debug "read-guard: ignoring malformed pages value: $PAGES"
+	PAGES=""
+fi
+
 # Determine kind + lines value for this read. `pages` (a PDF page range,
 # e.g. "1-5") and offset/limit both make this a bounded "range" read -
 # offset/limit do not apply to a PDF per the Read tool's own documentation,
@@ -62,11 +73,25 @@ if [[ -n "$PAGES" ]]; then
 	KIND="range"
 	LINES="$PAGES"
 elif [[ -n "$OFFSET" || -n "$LIMIT" ]]; then
+	# OFFSET/LIMIT come straight from tool_input with no validation upstream,
+	# and bash re-evaluates a variable's VALUE as an expression in the
+	# arithmetic context below - so a non-numeric value (e.g. a
+	# "$(...)" command substitution payload) MUST be treated as absent, never
+	# interpolated into $(( )). A value that fails validation degrades to the
+	# same "0"/"no limit" behavior as a genuinely absent offset/limit.
 	KIND="range"
-	OFF="${OFFSET:-0}"
-	if [[ -n "$LIMIT" ]]; then
+	OFF=0
+	if [[ "$OFFSET" =~ ^[0-9]+$ ]]; then
+		OFF="$OFFSET"
+	elif [[ -n "$OFFSET" ]]; then
+		loom_debug "read-guard: ignoring non-numeric offset: $OFFSET"
+	fi
+	if [[ "$LIMIT" =~ ^[0-9]+$ ]]; then
 		LINES="${OFF}-$((OFF + LIMIT))"
 	else
+		if [[ -n "$LIMIT" ]]; then
+			loom_debug "read-guard: ignoring non-numeric limit: $LIMIT"
+		fi
 		LINES="${OFF}-"
 	fi
 else

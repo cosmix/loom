@@ -70,3 +70,23 @@ fn model_is_taken_from_first_assistant_row_that_names_one() {
     let metrics = extract(&entries);
     assert_eq!(metrics.model.as_deref(), Some("claude-opus-5"));
 }
+
+/// A synthetic API-error row (Claude Code writes `model: "<synthetic>"` on an
+/// entry that never reached the API) must not latch as the subagent's model
+/// either -- same rule as an absent `message.model`, just a different shape.
+#[test]
+fn synthetic_error_row_does_not_latch_as_the_model() {
+    let entries = vec![
+        serde_json::json!({
+            "type": "assistant",
+            "message": {"model": "<synthetic>"},
+        }),
+        serde_json::json!({
+            "type": "assistant",
+            "message": {"model": "claude-sonnet-5"},
+        }),
+    ];
+
+    let metrics = extract(&entries);
+    assert_eq!(metrics.model.as_deref(), Some("claude-sonnet-5"));
+}

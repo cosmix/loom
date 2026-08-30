@@ -248,13 +248,13 @@ Captures codebase understanding before implementation. `stage_type: knowledge`, 
 `stage_type: integration-verify`, model opus (`reasoning_effort: high`) — the same universal default as every other stage (Section 4). It runs AFTER all feature stages and must:
 
 - **Build & test** with ZERO tolerance — fix ALL warnings/lints/failures, nothing is "pre-existing."
-- **Code review** — spawn parallel `loom-code-reviewer` subagents (security via `/loom-security-audit`; architecture; test coverage); fix all findings with an engineer agent (reviewer is read-only). (The 6-dimension mini adversarial review is already injected at the signal layer — don't restate it. To require specific dimensions, use plan-level `code_review` config, not prose.)
+- **Code review** — spawn parallel `loom-code-reviewer` subagents (security via `Skill(skill="loom-skills", args="loom-security-audit")`; architecture; test coverage); fix all findings with an engineer agent (reviewer is read-only). (The 6-dimension mini adversarial review is already injected at the signal layer — don't restate it. To require specific dimensions, use plan-level `code_review` config, not prose.)
 - **Functional verification** — prove the feature is WIRED IN and usable: CLI command registered/callable, API endpoint mounted/reachable, UI component rendered; run a smoke test of the primary use case end-to-end.
 - Record discoveries to `loom memory` for knowledge-distill to curate. Do NOT do knowledge/docs curation here.
 
 ### knowledge-distill (last)
 
-`stage_type: knowledge-distill`, model sonnet (`reasoning_effort: high`) — the ONE bookend that is NOT opus: distillation is a linear read-synthesize-write pass, run **single-agent with NO subagents**. Curates all stage memories into permanent knowledge and updates user-facing docs. Reads the plan, `loom memory show --all`, and current knowledge; FIRST applies every `stale-knowledge:` memory in place with `loom knowledge replace-section <file> "<heading>" "<body>"` (never `update`, which appends the fix below the stale text), then synthesizes mistakes as actionable prevention rules, patterns, decisions, conventions via `loom knowledge update`, following the same tier-routing rule as knowledge-bootstrap (above); `INDEX.md` regenerates on each knowledge write, so then run `loom review` to prune stale entries; updates README/CONTRIBUTING for changed behavior (only relevant sections). Add `loom knowledge check` to this stage's acceptance — it validates the knowledge tree's structure and is acceptance-safe because it never opens the context store. **Context discipline (200k window):** the memories are compact summaries — lean on them and keep code spot-reads narrow; do NOT fan out to subagents. **Skip ONLY if** the plan produces no new knowledge worth preserving (rare).
+`stage_type: knowledge-distill`, model sonnet (`reasoning_effort: high`) — the ONE bookend that is NOT opus: distillation is a linear read-synthesize-write pass, run **single-agent with NO subagents**. Curates all stage memories into permanent knowledge and updates user-facing docs. Reads the plan, `loom memory show --all`, and current knowledge; FIRST applies every `stale-knowledge:` memory in place with `loom knowledge replace-section <file> "<heading>" "<body>"` (never `update`, which appends the fix below the stale text), then synthesizes mistakes as actionable prevention rules, patterns, decisions, conventions via `loom knowledge update`, following the same tier-routing rule as knowledge-bootstrap (above); `INDEX.md` regenerates on each knowledge write, so then run `loom review` to prune stale entries; updates README/CONTRIBUTING for changed behavior (only relevant sections). Add `loom knowledge check --strict` to this stage's acceptance — `--strict` is what makes the criterion fail on a reported issue; the command validates the knowledge tree's structure and is acceptance-safe because it never opens the context store. **Context discipline (200k window):** the memories are compact summaries — lean on them and keep code spot-reads narrow; do NOT fan out to subagents. **Skip ONLY if** the plan produces no new knowledge worth preserving (rare).
 
 Full YAML for all three bookends is in the canonical template (Section 10).
 
@@ -965,7 +965,7 @@ loom:
         # works under both flat and hierarchical layouts — tier-1 files keep ## headings
         - 'rg -q "## " doc/loom/knowledge/architecture.md'
         - 'rg -q "## " doc/loom/knowledge/patterns.md'
-        - "loom knowledge check"   # acceptance-safe — never opens the context store
+        - "loom knowledge check --strict"   # fails on any reported issue — acceptance-safe, never opens the context store
       files: ["doc/loom/knowledge/**", "README.md", "CONTRIBUTING.md"]
       working_dir: "."
 ```
