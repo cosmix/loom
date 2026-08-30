@@ -193,43 +193,6 @@ fn budget_backstop_kills_the_agent_and_then_requeues() {
         .exists());
 }
 
-/// The other direction, through the same entry point: when the agent survives
-/// the kill the stage must NOT be re-queued, and the daemon must keep its
-/// handle on the session so the takedown can be retried.
-#[test]
-fn budget_backstop_does_not_requeue_an_agent_it_could_not_kill() {
-    let temp = handoff_work_dir();
-    let work = temp.path().join(".work");
-    executing_stage(&work);
-
-    let session = recorded_session(&work);
-    // PID identity with no start time: alive, and unkillable through loom.
-    write_pid_file(&work, &session, None);
-    super::governor_tests::assign_stage_session(&work, &session.id);
-
-    let mut orchestrator = orchestrator_for(&work, temp.path());
-    orchestrator.graph.mark_executing("test-stage").unwrap();
-    orchestrator
-        .active_sessions
-        .insert("test-stage".to_string(), session.clone());
-
-    orchestrator
-        .handle_budget_exceeded(&session.id, "test-stage", 200_000, 150_000)
-        .unwrap();
-
-    assert_eq!(
-        load_stage("test-stage", &work).unwrap().status,
-        StageStatus::NeedsHandoff,
-        "a stage whose agent survived the kill must not go back to Queued"
-    );
-    assert!(!graph_has_ready_stage(&orchestrator.graph, "test-stage"));
-    assert!(
-        orchestrator.active_sessions.contains_key("test-stage"),
-        "the surviving session must stay tracked, or the next attempt has \
-         nothing to find"
-    );
-}
-
 /// The double-spawn this guard exists to stop: `active_sessions` is in-memory
 /// only and is not rebuilt when the daemon restarts, so a handoff that trusts
 /// the map alone kills nothing, finds nothing to clean up, and re-queues the
@@ -244,6 +207,7 @@ fn handoff_does_not_requeue_while_an_untracked_agent_is_still_alive() {
 
     let session = recorded_session(&work);
     write_pid_file(&work, &session, None);
+    super::governor_tests::assign_stage_session(&work, &session.id);
 
     let mut orchestrator = orchestrator_for(&work, temp.path());
     orchestrator.graph.mark_executing("test-stage").unwrap();
@@ -273,6 +237,7 @@ fn handoff_requeues_once_the_stage_has_no_live_agent() {
 
     let session = recorded_session(&work);
     write_pid_file(&work, &session, Some(u64::MAX));
+    super::governor_tests::assign_stage_session(&work, &session.id);
 
     let mut orchestrator = orchestrator_for(&work, temp.path());
     orchestrator.graph.mark_executing("test-stage").unwrap();

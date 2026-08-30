@@ -184,7 +184,7 @@ fn test_session_needs_handoff_event() {
 
     stage.status = StageStatus::NeedsHandoff;
 
-    let events = detection.detect_stage_changes(&[stage]);
+    let events = detection.detect_stage_changes(&[stage.clone()]);
     assert_eq!(events.len(), 1);
 
     if let MonitorEvent::SessionNeedsHandoff {
@@ -197,6 +197,16 @@ fn test_session_needs_handoff_event() {
     } else {
         panic!("Expected SessionNeedsHandoff event");
     }
+
+    // Handoff remains level-triggered until the handler proves takedown and
+    // re-queues the stage. A transient fail-closed error must not latch it.
+    let retry_events = detection.detect_stage_changes(&[stage]);
+    assert_eq!(retry_events.len(), 1);
+    assert!(matches!(
+        &retry_events[0],
+        MonitorEvent::SessionNeedsHandoff { session_id, stage_id }
+            if session_id == "session-1" && stage_id == "stage-1"
+    ));
 }
 
 #[test]

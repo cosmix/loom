@@ -1,7 +1,7 @@
 //! Event handling - processing monitor events and session lifecycle
 
 use anyhow::Result;
-use chrono::{DateTime, Utc};
+use chrono::Utc;
 use colored::Colorize;
 use std::path::PathBuf;
 
@@ -13,12 +13,10 @@ use super::clear_status_line;
 use super::persistence::Persistence;
 use super::Orchestrator;
 
+mod handoff_state;
 mod stage_takedown;
 
-fn mark_needs_handoff(stage: &mut Stage, now: DateTime<Utc>) -> Result<()> {
-    stage.accumulate_attempt_time(now);
-    stage.try_mark_needs_handoff()
-}
+use handoff_state::mark_needs_handoff;
 
 fn requeue_after_handoff(stage: &mut Stage) -> Result<()> {
     stage.try_mark_queued()
@@ -41,7 +39,7 @@ fn event_targets_current_session(stage: &Stage, session_id: &str) -> bool {
         stage_id = %stage.id,
         exceeded_session = %session_id,
         active_session = ?stage.session,
-        "Ignoring a budget-exceeded event from a session that is not the \
+        "Ignoring a handoff event from a session that is not the \
          stage's active session"
     );
     false
@@ -81,7 +79,14 @@ pub(super) trait EventHandler: Persistence {
 
 impl EventHandler for Orchestrator {
     fn handle_events(&mut self, events: Vec<MonitorEvent>) -> Result<()> {
-        for event in events {
+        // Apply fresh heartbeat facts before destructive session events from
+        // the same poll. The monitor preserves its public event order, but a
+        // fresh high reading must reach disk before BudgetExceeded writes the
+        // handoff and terminalizes the record.
+        let (heartbeat_events, other_events): (Vec<_>, Vec<_>) = events
+            .into_iter()
+            .partition(|event| matches!(event, MonitorEvent::HeartbeatReceived { .. }));
+        for event in heartbeat_events.into_iter().chain(other_events) {
             // O-4: one failing event must not drop the rest of the batch or
             // kill the daemon. Each event is handled in isolation; a handler
             // error is logged and the loop moves on to the next event.
@@ -111,7 +116,10 @@ impl EventHandler for Orchestrator {
     fn on_needs_handoff(&mut self, session_id: &str, stage_id: &str) -> Result<()> {
         clear_status_line();
         eprintln!("Session '{session_id}' needs handoff for stage '{stage_id}'");
-        self.hand_off_and_requeue(stage_id, "handoff")
+        if self.begin_handoff(stage_id, session_id)?.is_none() {
+            return Ok(());
+        }
+        self.finish_handoff_and_requeue(stage_id, session_id, "handoff")
     }
 
     fn on_merge_session_completed(&mut self, session_id: &str, stage_id: &str) -> Result<()> {
@@ -268,23 +276,42 @@ fn graph_has_ready_stage(graph: &crate::plan::ExecutionGraph, stage_id: &str) ->
 }
 
 impl Orchestrator {
-    /// Take a live session off its stage and queue the stage for a successor.
-    ///
-    /// Marks the stage `NeedsHandoff`, takes the agent down, drops its signal
-    /// file and re-queues. The takedown is the load-bearing step: re-queueing
-    /// puts the stage back on the ready list, so an agent that is still writing
-    /// the worktree would get a second agent spawned on top of it at the next
-    /// poll. The stage is therefore re-queued ONLY once nothing is left running
-    /// for it. When something survives, the stage stays `NeedsHandoff`: that is
-    /// visible in `loom status` and recoverable by hand, where two agents in one
-    /// worktree are silent corruption.
-    fn hand_off_and_requeue(&mut self, stage_id: &str, cause: &str) -> Result<()> {
+    /// Atomically verify that an asynchronous event still targets the stage's
+    /// assigned session and move that stage to `NeedsHandoff`. Keeping the
+    /// identity check inside the locked update closes the gap where a successor
+    /// could be assigned between an earlier load and the destructive takedown.
+    fn begin_handoff(&mut self, stage_id: &str, session_id: &str) -> Result<Option<Stage>> {
         let handoff_at = Utc::now();
-        self.update_stage(stage_id, |stage| mark_needs_handoff(stage, handoff_at))?;
+        let mut is_current = false;
+        let stage = self.update_stage(stage_id, |stage| {
+            if !event_targets_current_session(stage, session_id)
+                || !matches!(
+                    stage.status,
+                    StageStatus::Executing | StageStatus::NeedsHandoff
+                )
+            {
+                return Ok(());
+            }
+            is_current = true;
+            mark_needs_handoff(stage, handoff_at)
+        })?;
+        Ok(is_current.then_some(stage))
+    }
 
+    /// Complete a handoff whose identity was already locked and marked by
+    /// [`Self::begin_handoff`]. The takedown is load-bearing: re-queue only
+    /// after every prior writer is confirmed gone and its terminal record is
+    /// durable. A survivor or any uncertainty leaves the stage visibly in
+    /// `NeedsHandoff` instead of risking two agents in one worktree.
+    fn finish_handoff_and_requeue(
+        &mut self,
+        stage_id: &str,
+        session_id: &str,
+        cause: &str,
+    ) -> Result<()> {
         // This ends processes: `stage_takedown.rs` signals each of the stage's
         // agents through `kill_session` and returns only those still alive after.
-        let survivors = self.take_down_stage_agents(stage_id);
+        let survivors = self.take_down_stage_agents(stage_id, session_id)?;
         if !survivors.is_empty() {
             eprintln!(
                 "Stage '{stage_id}' stays in NeedsHandoff after {cause}: session(s) {} are still \
@@ -297,7 +324,19 @@ impl Orchestrator {
         }
 
         // Re-queue the stage so the next poll cycle picks it up
-        self.update_stage(stage_id, requeue_after_handoff)?;
+        let mut still_current = false;
+        self.update_stage(stage_id, |stage| {
+            if !event_targets_current_session(stage, session_id)
+                || stage.status != StageStatus::NeedsHandoff
+            {
+                return Ok(());
+            }
+            still_current = true;
+            requeue_after_handoff(stage)
+        })?;
+        if !still_current {
+            return Ok(());
+        }
         self.graph.mark_queued(stage_id)?;
 
         eprintln!("Stage '{stage_id}' re-queued for continuation after {cause}");
@@ -327,51 +366,20 @@ impl Orchestrator {
             ceiling_tokens
         );
 
-        let stage = self.load_stage(stage_id)?;
-
-        if !event_targets_current_session(&stage, session_id) {
-            return Ok(());
-        }
-
-        self.retire_exceeded_session(session_id, &stage)?;
-        self.hand_off_and_requeue(stage_id, "the context ceiling backstop")
-    }
-
-    /// Write the outgoing agent's handoff and mark its record spent, before the
-    /// takedown takes it away.
-    ///
-    /// Does nothing unless the daemon's entry for the stage IS the session the
-    /// event named: `active_sessions` is keyed by stage, so the entry can
-    /// belong to a successor that has no business being handed off or marked.
-    fn retire_exceeded_session(&mut self, session_id: &str, stage: &Stage) -> Result<()> {
-        let Some(session) = self
-            .active_sessions
-            .get(&stage.id)
-            .filter(|s| s.id == session_id)
-            .cloned()
-        else {
+        let Some(stage) = self.begin_handoff(stage_id, session_id)? else {
             return Ok(());
         };
 
-        // Generate the handoff BEFORE the kill, while the session record still
-        // describes a running agent.
-        let handoff_path = self
-            .monitor
-            .handlers()
-            .handle_context_critical(&session, stage)?;
-        eprintln!("Generated handoff at: {}", handoff_path.display());
-
-        if let Some(session_mut) = self.active_sessions.get_mut(&stage.id) {
-            session_mut.try_mark_context_exhausted()?;
-            let session_to_save = session_mut.clone();
-            // session_mut goes out of scope here, ending the mutable borrow
-            self.save_session(&session_to_save)?;
-        }
-        Ok(())
+        self.retire_exceeded_session(session_id, &stage, context_tokens)?;
+        self.finish_handoff_and_requeue(stage_id, session_id, "the context ceiling backstop")
     }
 }
 
 #[cfg(test)]
+mod governor_retry_tests;
+#[cfg(test)]
 mod governor_tests;
+#[cfg(test)]
+mod takedown_identity_tests;
 #[cfg(test)]
 mod tests;

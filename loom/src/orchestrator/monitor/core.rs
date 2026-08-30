@@ -13,6 +13,28 @@ use super::events::MonitorEvent;
 use super::handlers::Handlers;
 use super::heartbeat::HeartbeatWatcher;
 
+fn overlay_heartbeat_context(sessions: &mut [Session], events: &[MonitorEvent]) {
+    for event in events {
+        let MonitorEvent::HeartbeatReceived {
+            stage_id,
+            session_id,
+            context_tokens: Some(context_tokens),
+            ..
+        } = event
+        else {
+            continue;
+        };
+        if let Some(session) = sessions.iter_mut().find(|session| {
+            session.id == *session_id && session.stage_id.as_deref() == Some(stage_id)
+        }) {
+            // Resident context can decrease after compaction. The fresh
+            // heartbeat replaces the persisted snapshot for this poll; the
+            // event handler durably applies the same reading later.
+            session.context_tokens = *context_tokens;
+        }
+    }
+}
+
 /// Monitor state for tracking changes
 pub struct Monitor {
     config: MonitorConfig,
@@ -53,22 +75,31 @@ impl Monitor {
         let mut events = Vec::new();
 
         let stages = self.load_stages()?;
-        let sessions = self.load_sessions()?;
+        let mut sessions = self.load_sessions()?;
 
-        events.extend(self.detection.detect_stage_changes(&stages));
-        events.extend(
-            self.detection
-                .detect_session_changes(&sessions, &stages, &self.handlers),
-        );
-
-        // Poll for heartbeat updates and detect hung sessions
-        events.extend(self.detection.detect_heartbeat_events(
+        // Poll heartbeat files before judging context. A persisted high-water
+        // reading can be older than a fresh post-compaction heartbeat, and
+        // killing from that stale snapshot before applying the heartbeat would
+        // take down a session that is now safely below its backstop.
+        let heartbeat_events = self.detection.detect_heartbeat_events(
             &sessions,
             &stages,
             &mut self.heartbeat_watcher,
             &self.config,
             &self.handlers,
-        ));
+        );
+        overlay_heartbeat_context(&mut sessions, &heartbeat_events);
+
+        // Detect sessions before stages so a BudgetExceeded latch established
+        // on this fresh snapshot can suppress the generic NeedsHandoff retry.
+        // Keep the public event order stable: stage, session, then heartbeat.
+        let session_events =
+            self.detection
+                .detect_session_changes(&sessions, &stages, &self.handlers);
+        let stage_events = self.detection.detect_stage_changes(&stages);
+        events.extend(stage_events);
+        events.extend(session_events);
+        events.extend(heartbeat_events);
 
         // Keep an attached `loom attach` overview in sync with the session
         // reality this poll just observed: ended stages lose their pane, new

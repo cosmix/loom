@@ -12,7 +12,7 @@ use crate::models::stage::{Stage, StageStatus};
 #[allow(unused_imports)]
 use crate::orchestrator::liveness::LivenessService;
 
-use super::ceiling::{generate_red_band_handoff, resolve_ceiling_tokens};
+use super::ceiling::{resolve_ceiling_tokens, session_has_current_assignment};
 use super::config::MonitorConfig;
 use super::context::{context_health, ContextHealth};
 use super::events::MonitorEvent;
@@ -27,8 +27,12 @@ pub struct Detection {
     pub last_context_levels: HashMap<String, ContextHealth>,
     /// Track sessions that have been reported as hung to avoid duplicate events
     pub reported_hung_sessions: HashSet<String>,
-    /// Track whether each session's budget was exceeded on the previous tick,
-    /// so BudgetExceeded is emitted only on the first crossing (not every tick).
+    /// Red handoffs successfully written or found during this daemon run.
+    /// A failed write remains absent so an unchanged-Red poll retries it.
+    pub red_handoff_ready: HashSet<String>,
+    /// Current running assignments whose ceiling backstop is currently
+    /// exceeded. The latch lets budget-owned retries suppress the generic
+    /// handoff event while that exact session still owns the stage.
     pub last_budget_exceeded: HashMap<String, bool>,
 }
 
@@ -39,6 +43,7 @@ impl Detection {
             last_session_states: HashMap::new(),
             last_context_levels: HashMap::new(),
             reported_hung_sessions: HashSet::new(),
+            red_handoff_ready: HashSet::new(),
             last_budget_exceeded: HashMap::new(),
         }
     }
@@ -67,14 +72,7 @@ impl Detection {
                                 .unwrap_or_else(|| "Unknown reason".to_string()),
                         });
                     }
-                    StageStatus::NeedsHandoff => {
-                        if let Some(session_id) = &stage.session {
-                            events.push(MonitorEvent::SessionNeedsHandoff {
-                                session_id: session_id.clone(),
-                                stage_id: stage.id.clone(),
-                            });
-                        }
-                    }
+                    StageStatus::NeedsHandoff => {}
                     StageStatus::WaitingForInput => {
                         events.push(MonitorEvent::StageWaitingForInput {
                             stage_id: stage.id.clone(),
@@ -102,6 +100,7 @@ impl Detection {
                 self.last_stage_states
                     .insert(stage.id.clone(), current_status.clone());
             }
+            events.extend(self.needs_handoff_event(stage));
         }
 
         events
@@ -116,6 +115,8 @@ impl Detection {
     ) -> Vec<MonitorEvent> {
         let mut events = Vec::new();
 
+        self.clear_inactive_latches(sessions);
+
         for session in sessions {
             let status = self.detect_session_status(session, stages, handlers);
             events.extend(status.events);
@@ -126,6 +127,14 @@ impl Detection {
             // backstop against whatever agent the stage is running NOW. Same
             // guard, for the same reason, as `detect_heartbeat_events`.
             if status.terminal || session.status != SessionStatus::Running {
+                self.last_budget_exceeded.remove(&session.id);
+                self.red_handoff_ready.remove(&session.id);
+                continue;
+            }
+            if !session_has_current_assignment(session, stages) {
+                self.last_context_levels.remove(&session.id);
+                self.last_budget_exceeded.remove(&session.id);
+                self.red_handoff_ready.remove(&session.id);
                 continue;
             }
             // A ceiling this snapshot cannot vouch for is no ceiling at all.
@@ -134,7 +143,7 @@ impl Detection {
             };
 
             events.extend(self.detect_context_health(session, stages, handlers, ceiling));
-            if let Some(event) = self.detect_backstop_crossing(session, ceiling) {
+            if let Some(event) = self.detect_backstop_crossing(session, stages, ceiling) {
                 events.push(event);
             }
         }
@@ -153,11 +162,17 @@ impl Detection {
         ceiling: u32,
     ) -> Vec<MonitorEvent> {
         let current = context_health(session.context_tokens, ceiling);
-        if self.last_context_levels.get(&session.id).copied() == Some(current) {
+        let previous = self.last_context_levels.get(&session.id).copied();
+        if previous == Some(current) {
+            if current == ContextHealth::Red && !self.red_handoff_ready.contains(&session.id) {
+                self.record_red_handoff_ready(session, stages, handlers, true);
+            }
             return Vec::new();
         }
         self.last_context_levels.insert(session.id.clone(), current);
-
+        if current != ContextHealth::Red {
+            self.red_handoff_ready.remove(&session.id);
+        }
         let mut events = Vec::new();
         match current {
             ContextHealth::Yellow => {
@@ -180,14 +195,17 @@ impl Detection {
                     ceiling_tokens: ceiling,
                 });
 
-                generate_red_band_handoff(session, stages, handlers);
+                // A cold-start Red observation may reuse the durable advisory
+                // from before a daemon restart. A known Green/Yellow -> Red
+                // transition is a new crossing and deserves a fresh snapshot.
+                self.record_red_handoff_ready(session, stages, handlers, previous.is_none());
             }
             ContextHealth::Green => {}
         }
         events
     }
 
-    /// The daemon's backstop: fire once when a session runs past
+    /// The daemon's backstop: retry while the current assignment remains past
     /// `DAEMON_CEILING_MULTIPLIER` times its stage ceiling.
     ///
     /// The agent's own hook governs at 100% of the ceiling, so reaching 125%
@@ -197,21 +215,28 @@ impl Detection {
     fn detect_backstop_crossing(
         &mut self,
         session: &Session,
+        stages: &[Stage],
         ceiling: u32,
     ) -> Option<MonitorEvent> {
         let stage_id = session.stage_id.clone()?;
         let backstop = (ceiling as f32 * DAEMON_CEILING_MULTIPLIER) as u32;
 
-        let was_exceeded = self
-            .last_budget_exceeded
-            .get(&session.id)
-            .copied()
-            .unwrap_or(false);
         let is_exceeded = ceiling > 0 && session.context_tokens > backstop;
-        self.last_budget_exceeded
-            .insert(session.id.clone(), is_exceeded);
+        let current_assignment = stages.iter().any(|stage| {
+            stage.id == stage_id
+                && stage.session.as_deref() == Some(session.id.as_str())
+                && matches!(
+                    stage.status,
+                    StageStatus::Executing | StageStatus::NeedsHandoff
+                )
+        });
+        if is_exceeded && current_assignment {
+            self.last_budget_exceeded.insert(session.id.clone(), true);
+        } else {
+            self.last_budget_exceeded.remove(&session.id);
+        }
 
-        (is_exceeded && !was_exceeded).then(|| MonitorEvent::BudgetExceeded {
+        (is_exceeded && current_assignment).then(|| MonitorEvent::BudgetExceeded {
             session_id: session.id.clone(),
             stage_id,
             context_tokens: session.context_tokens,

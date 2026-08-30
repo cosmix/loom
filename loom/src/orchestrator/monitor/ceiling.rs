@@ -3,27 +3,62 @@
 //! Split out of `detection` to keep that file inside the size limit; both
 //! answers are about what a session's stage says, so they read together.
 
+use crate::handoff::HandoffOrigin;
 use crate::models::session::Session;
-use crate::models::stage::Stage;
+use crate::models::stage::{Stage, StageStatus};
 
+use super::detection::Detection;
 use super::handlers::Handlers;
 
 /// Write the handoff a session entering the Red band is owed. Best-effort: a
 /// missing stage or an unwritable handoff must not abort the tick.
-pub(super) fn generate_red_band_handoff(session: &Session, stages: &[Stage], handlers: &Handlers) {
+pub(super) fn generate_red_band_handoff(
+    session: &Session,
+    stages: &[Stage],
+    handlers: &Handlers,
+    reuse_existing: bool,
+) -> bool {
     let Some(stage) = stage_for(session, stages) else {
-        return;
+        return false;
     };
-    match handlers.handle_context_critical(session, stage) {
-        Ok(path) => eprintln!(
-            "Generated handoff for session {} at {}",
-            session.id,
-            path.display()
-        ),
-        Err(e) => eprintln!(
-            "Failed to generate handoff for session '{}': {}",
-            session.id, e
-        ),
+    let result = if reuse_existing {
+        handlers.ensure_context_handoff(session, stage, HandoffOrigin::RedBand)
+    } else {
+        handlers
+            .generate_context_handoff(session, stage, HandoffOrigin::RedBand)
+            .map(Some)
+    };
+    match result {
+        Ok(Some(path)) => {
+            eprintln!(
+                "Generated handoff for session {} at {}",
+                session.id,
+                path.display()
+            );
+            true
+        }
+        Ok(None) => true,
+        Err(e) => {
+            eprintln!(
+                "Failed to generate handoff for session '{}': {}",
+                session.id, e
+            );
+            false
+        }
+    }
+}
+
+impl Detection {
+    pub(super) fn record_red_handoff_ready(
+        &mut self,
+        session: &Session,
+        stages: &[Stage],
+        handlers: &Handlers,
+        reuse_existing: bool,
+    ) {
+        if generate_red_band_handoff(session, stages, handlers, reuse_existing) {
+            self.red_handoff_ready.insert(session.id.clone());
+        }
     }
 }
 
@@ -31,6 +66,20 @@ pub(super) fn generate_red_band_handoff(session: &Session, stages: &[Stage], han
 fn stage_for<'a>(session: &Session, stages: &'a [Stage]) -> Option<&'a Stage> {
     let stage_id = session.stage_id.as_deref()?;
     stages.iter().find(|s| s.id == stage_id)
+}
+
+pub(super) fn session_has_current_assignment(session: &Session, stages: &[Stage]) -> bool {
+    let Some(stage_id) = session.stage_id.as_deref() else {
+        return true;
+    };
+    stages.iter().any(|stage| {
+        stage.id == stage_id
+            && stage.session.as_deref() == Some(session.id.as_str())
+            && matches!(
+                stage.status,
+                StageStatus::Executing | StageStatus::NeedsHandoff
+            )
+    })
 }
 
 /// Resolve the ceiling governing a session, in absolute tokens, or `None` when

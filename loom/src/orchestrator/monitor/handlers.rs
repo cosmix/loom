@@ -8,7 +8,7 @@ use crate::fs::memory::{
     format_memory_for_handoff, generate_summary, preserve_for_crash, read_journal, write_summary,
 };
 use crate::fs::work_dir::ContextConfig;
-use crate::handoff::{generate_handoff, HandoffContent};
+use crate::handoff::{ensure_handoff, generate_handoff, HandoffContent, HandoffOrigin};
 use crate::models::session::{Session, SessionStatus};
 use crate::models::stage::Stage;
 use crate::orchestrator::continuation::save_session;
@@ -98,12 +98,43 @@ impl Handlers {
         Ok(())
     }
 
-    /// Handle critical context by generating a handoff file
+    /// Ensure one durable handoff exists for an exact initiating condition.
+    ///
+    /// Returns the newly generated path, or `None` when a matching artifact
+    /// already exists. This durable tuple survives daemon restarts and keeps a
+    /// Red-band advisory from standing in for a later budget-enforcement
+    /// snapshot (and vice versa).
+    pub fn ensure_context_handoff(
+        &self,
+        session: &Session,
+        stage: &Stage,
+        origin: HandoffOrigin,
+    ) -> Result<Option<PathBuf>> {
+        let content = self.context_handoff_content(session, stage, origin);
+        ensure_handoff(session, stage, content, origin, &self.config.work_dir)
+    }
+
+    /// Handle critical context by generating a handoff file.
     ///
     /// Called when a session enters the Red band or crosses the daemon backstop.
     /// Loads session and stage data, creates handoff content, and generates the handoff file.
     /// Also merges stage memory into the handoff for continuity.
-    pub fn handle_context_critical(&self, session: &Session, stage: &Stage) -> Result<PathBuf> {
+    pub fn generate_context_handoff(
+        &self,
+        session: &Session,
+        stage: &Stage,
+        origin: HandoffOrigin,
+    ) -> Result<PathBuf> {
+        let content = self.context_handoff_content(session, stage, origin);
+        generate_handoff(session, stage, content, &self.config.work_dir)
+    }
+
+    fn context_handoff_content(
+        &self,
+        session: &Session,
+        stage: &Stage,
+        origin: HandoffOrigin,
+    ) -> HandoffContent {
         let goals = stage
             .description
             .clone()
@@ -113,16 +144,15 @@ impl Handlers {
         let stage_id = session.stage_id.as_deref().unwrap_or(&session.id);
         let memory_content = format_memory_for_handoff(&self.config.work_dir, stage_id);
 
-        let content = HandoffContent::new(session.id.clone(), stage.id.clone())
+        HandoffContent::new(session.id.clone(), stage.id.clone())
             .with_context_tokens(session.context_tokens)
+            .with_origin(origin)
             .with_goals(goals)
             .with_plan_id(stage.plan_id.clone())
             .with_next_steps(vec![
                 "Review handoff and continue from current state".to_string()
             ])
-            .with_memory_content(memory_content);
-
-        generate_handoff(session, stage, content, &self.config.work_dir)
+            .with_memory_content(memory_content)
     }
 
     /// Handle session crash by generating a crash report

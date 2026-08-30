@@ -6,6 +6,8 @@ use crate::orchestrator::monitor::detection::Detection;
 use crate::orchestrator::monitor::handlers::Handlers;
 use crate::orchestrator::monitor::{ContextHealth, Monitor, MonitorConfig, MonitorEvent};
 
+use super::ceiling_retries::budget_retry_pair;
+
 /// `Handlers` over an empty `.work`. The temp dir comes back with them so the
 /// caller keeps it alive for the length of the test.
 fn ceiling_harness() -> (tempfile::TempDir, Handlers) {
@@ -36,36 +38,20 @@ fn session_at_250k() -> Session {
 /// exactly how the old percentage-based check behaved once `context_tokens`
 /// stopped moving.
 ///
-/// It must also fire exactly ONCE per crossing: this event kills a live agent,
-/// and re-emitting it every 5-second tick would kill each successor in turn.
+/// It must retry while this exact assignment remains over budget. The handler
+/// verifies the same identity before it can take the session down, so a stale
+/// record cannot make a successor eligible for a retry.
 #[test]
-fn daemon_backstop_fires_once_at_125_percent_of_the_stage_ceiling() {
-    use tempfile::TempDir;
-
-    let temp_dir = TempDir::new().unwrap();
-    let config = MonitorConfig {
-        work_dir: temp_dir.path().to_path_buf(),
-        ..Default::default()
-    };
-    let handlers = Handlers::new(config, None);
+fn daemon_backstop_retries_past_125_percent_of_the_stage_ceiling() {
+    let (_temp_dir, handlers) = ceiling_harness();
     let mut detection = Detection::new();
-
     // Pre-seed the band so no band transition can be confused for the backstop.
     detection
         .last_context_levels
         .insert("session-1".to_string(), ContextHealth::Red);
-
-    let mut session = Session::new();
-    session.id = "session-1".to_string();
-    session.status = SessionStatus::Running;
-    session.stage_id = Some("stage-1".to_string());
-
-    let mut stage = Stage::new("test".to_string(), Some("Ceiling test stage".to_string()));
-    stage.id = "stage-1".to_string();
-    stage.context_ceiling_tokens = Some(100_000); // backstop at 125_000
-
-    // Over the ceiling, under the backstop: the agent's own hook governs here,
-    // and the daemon stays out of it.
+    let (mut session, mut stage) = budget_retry_pair();
+    stage.status = StageStatus::Executing;
+    // Over the ceiling, under the backstop: the agent's own hook governs here.
     session.context_tokens = 120_000;
     let events = detection.detect_session_changes(&[session.clone()], &[stage.clone()], &handlers);
     assert!(
@@ -91,13 +77,14 @@ fn daemon_backstop_fires_once_at_125_percent_of_the_stage_ceiling() {
         .expect("the backstop must fire past 125% of the ceiling");
     assert_eq!(fired, (130_000, 100_000));
 
-    // Still past it on the next tick: must NOT fire again.
+    // The first handoff handler might fail before it can persist
+    // `NeedsHandoff`; retry while the same assignment remains Executing.
     let events = detection.detect_session_changes(&[session.clone()], &[stage.clone()], &handlers);
     assert!(
-        !events
+        events
             .iter()
             .any(|e| matches!(e, MonitorEvent::BudgetExceeded { .. })),
-        "the backstop must fire on the crossing, not on every tick above it"
+        "an over-budget current Executing assignment must retry after a failed handler"
     );
 }
 
@@ -136,6 +123,8 @@ fn a_stage_without_a_ceiling_inherits_the_plan_wide_one() {
 
     let mut stage = Stage::new("test".to_string(), None);
     stage.id = "stage-1".to_string();
+    stage.status = StageStatus::Executing;
+    stage.session = Some(session.id.clone());
     assert_eq!(stage.context_ceiling_tokens, None);
 
     let events = detection.detect_session_changes(&[session], &[stage], &handlers);
@@ -229,6 +218,8 @@ fn a_session_under_its_stages_declared_ceiling_is_never_judged_against_the_defau
 
     let mut stage = Stage::new("test".to_string(), Some("Ceiling test stage".to_string()));
     stage.id = "stage-1".to_string();
+    stage.status = StageStatus::Executing;
+    stage.session = Some("session-1".to_string());
     stage.context_ceiling_tokens = Some(300_000);
 
     let events = detection.detect_session_changes(&[session_at_250k()], &[stage], &handlers);
