@@ -15,6 +15,21 @@ Desktop.ini
 .project
 .settings/
 
+# Sandbox-injected home/config mirages
+/.bash_profile
+/.bashrc
+/.codex
+/.gitattributes
+/.gitconfig
+/.gitmodules
+/.idea
+/.mcp.json
+/.profile
+/.ripgreprc
+/.vscode
+/.zprofile
+/.zshrc
+
 # Claude Code (user-specific session data)
 .claude/
 
