@@ -5,7 +5,3 @@
 ## Merge Flow
 
 Details about the merge flow.
-
-## Merge Flow
-
-Details about the merge flow.
