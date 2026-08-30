@@ -1,11 +1,16 @@
 //! Tests for permission constants
 
 use std::collections::BTreeSet;
+use std::fs;
+use std::process::Command;
 
 use serde_json::Value;
+use tempfile::TempDir;
 
 use crate::fs::permissions::constants::{LOOM_HOOKS, LOOM_PERMISSIONS, LOOM_PERMISSIONS_WORKTREE};
 use crate::fs::permissions::hooks::loom_hooks_config;
+
+const INSTALL_SH: &str = include_str!("../../../../../install.sh");
 
 #[test]
 fn test_loom_permissions_constant() {
@@ -56,7 +61,6 @@ fn test_worktree_permissions_constant() {
 /// against sites 1-2; `hooks_tests.rs::test_hook_event_scripts_are_all_embedded`
 /// pins site 5's per-session half against sites 1-2.
 fn install_sh_hook_arrays() -> Vec<Vec<String>> {
-    const INSTALL_SH: &str = include_str!("../../../../../install.sh");
     let mut arrays = Vec::new();
     let mut rest = INSTALL_SH;
     while let Some(start) = rest.find("all_hooks=(") {
@@ -77,6 +81,118 @@ fn install_sh_hook_arrays() -> Vec<Vec<String>> {
         rest = &after_start[end + 1..];
     }
     arrays
+}
+
+#[test]
+fn installer_does_not_delete_legacy_unprefixed_names() {
+    assert!(
+        !INSTALL_SH.contains("name#loom-"),
+        "install.sh must never derive a bare skill or agent name from a Loom-owned name"
+    );
+    assert!(
+        !INSTALL_SH.contains("skills/$old_name") && !INSTALL_SH.contains("agents/$old_name"),
+        "bare names such as rust and custom agent names are user-owned"
+    );
+}
+
+#[test]
+fn local_skill_install_preserves_bare_rust_and_custom_skill() {
+    let temp = TempDir::new().unwrap();
+    let claude_dir = temp.path().join(".claude");
+    let source_dir = temp.path().join("source-skills");
+    fs::create_dir_all(claude_dir.join("skills/rust")).unwrap();
+    fs::create_dir_all(claude_dir.join("skills/my-custom-skill")).unwrap();
+    fs::create_dir_all(source_dir.join("loom-rust")).unwrap();
+    fs::write(claude_dir.join("skills/rust/SKILL.md"), "user rust").unwrap();
+    fs::write(claude_dir.join("skills/my-custom-skill/SKILL.md"), "custom").unwrap();
+    fs::write(source_dir.join("loom-rust/SKILL.md"), "loom rust").unwrap();
+    let manifest = source_dir.join("core-skills.txt");
+    fs::write(&manifest, "loom-rust\n").unwrap();
+
+    let output = Command::new("bash")
+        .arg("-c")
+        .arg(
+            "source \"$INSTALL_SH_PATH\"; \
+             CLAUDE_DIR=\"$TEST_CLAUDE_DIR\"; SKILLS_MODE=all; \
+             install_skills_from_source \"$TEST_SOURCE_DIR\" \"$TEST_MANIFEST\" false",
+        )
+        .env("LOOM_INSTALL_LIB_ONLY", "1")
+        .env(
+            "INSTALL_SH_PATH",
+            concat!(env!("CARGO_MANIFEST_DIR"), "/../install.sh"),
+        )
+        .env("TEST_CLAUDE_DIR", &claude_dir)
+        .env("TEST_SOURCE_DIR", &source_dir)
+        .env("TEST_MANIFEST", &manifest)
+        .output()
+        .unwrap();
+
+    assert!(
+        output.status.success(),
+        "install function failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
+        fs::read_to_string(claude_dir.join("skills/rust/SKILL.md")).unwrap(),
+        "user rust"
+    );
+    assert_eq!(
+        fs::read_to_string(claude_dir.join("skills/my-custom-skill/SKILL.md")).unwrap(),
+        "custom"
+    );
+    assert_eq!(
+        fs::read_to_string(claude_dir.join("skills/loom-rust/SKILL.md")).unwrap(),
+        "loom rust"
+    );
+}
+
+#[test]
+fn local_agent_install_preserves_bare_and_custom_agents() {
+    let temp = TempDir::new().unwrap();
+    let claude_dir = temp.path().join(".claude");
+    fs::create_dir_all(claude_dir.join("agents")).unwrap();
+    fs::write(
+        claude_dir.join("agents/software-engineer.md"),
+        "user-owned bare agent",
+    )
+    .unwrap();
+    fs::write(
+        claude_dir.join("agents/my-custom-agent.md"),
+        "user-owned custom agent",
+    )
+    .unwrap();
+
+    let output = Command::new("bash")
+        .arg("-c")
+        .arg(
+            "source \"$INSTALL_SH_PATH\"; \
+             CLAUDE_DIR=\"$TEST_CLAUDE_DIR\"; install_agents",
+        )
+        .env("LOOM_INSTALL_LIB_ONLY", "1")
+        .env(
+            "INSTALL_SH_PATH",
+            concat!(env!("CARGO_MANIFEST_DIR"), "/../install.sh"),
+        )
+        .env("TEST_CLAUDE_DIR", &claude_dir)
+        .output()
+        .unwrap();
+
+    assert!(
+        output.status.success(),
+        "agent install failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
+        fs::read_to_string(claude_dir.join("agents/software-engineer.md")).unwrap(),
+        "user-owned bare agent"
+    );
+    assert_eq!(
+        fs::read_to_string(claude_dir.join("agents/my-custom-agent.md")).unwrap(),
+        "user-owned custom agent"
+    );
+    assert!(claude_dir
+        .join("agents/loom-software-engineer.md")
+        .is_file());
 }
 
 #[test]

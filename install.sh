@@ -247,7 +247,7 @@ install_skills_from_source() {
 	local allow_missing_manifest="$3"
 	local placement_mode="$SKILLS_MODE"
 	local catalog_dir="$CLAUDE_DIR/loom-skill-catalog"
-	local skill_dir name destination_dir old_name
+	local skill_dir name destination_dir
 	local installed_skills=0
 	local catalogued_skills=0
 
@@ -292,20 +292,6 @@ install_skills_from_source() {
 		# every SKILL.md straight into the destination root.
 		rm -rf "$destination_dir/$name"
 		cp -R "${skill_dir%/}" "$destination_dir/"
-
-		# Remove the old unprefixed version. This guard is only a defensive
-		# assertion against a malformed name (empty/unchanged old_name); it
-		# does NOT address the real risk below, which it still runs into on
-		# every well-formed name. The rm can't tell loom's own historical
-		# unprefixed copy from a user's own same-named skill, so installing
-		# loom-rust deletes ~/.claude/skills/rust, and likewise python,
-		# docker, testing, auth, search, react, debugging, documentation,
-		# and skills. Candidate for removal now that every shipped skill is
-		# loom-prefixed (tracked as a follow-up, not fixed here).
-		old_name="${name#loom-}"
-		if [[ -n "$old_name" && "$old_name" != "$name" ]]; then
-			rm -rf "$CLAUDE_DIR/skills/$old_name"
-		fi
 	done
 
 	if [[ "$placement_mode" == "core" ]]; then
@@ -347,12 +333,7 @@ install_agents_remote() {
 
 	for agent_file in /tmp/loom_agents_$$/loom-*.md; do
 		[ -f "$agent_file" ] || continue
-		local name
-		name=$(basename "$agent_file")
 		cp "$agent_file" "$CLAUDE_DIR/agents/"
-		# Remove old unprefixed version
-		local old_name="${name#loom-}"
-		rm -f "$CLAUDE_DIR/agents/$old_name"
 	done
 	rm -rf "/tmp/loom_agents_$$"
 
@@ -514,12 +495,7 @@ install_agents() {
 	mkdir -p "$CLAUDE_DIR/agents"
 	for agent_file in "$SCRIPT_DIR/agents"/loom-*.md; do
 		[ -f "$agent_file" ] || continue
-		local name
-		name=$(basename "$agent_file")
 		cp "$agent_file" "$CLAUDE_DIR/agents/"
-		# Remove old unprefixed version
-		local old_name="${name#loom-}"
-		rm -f "$CLAUDE_DIR/agents/$old_name"
 	done
 
 	COUNT_AGENTS=$(find "$CLAUDE_DIR/agents" -name "loom-*.md" 2>/dev/null | wc -l | tr -d ' ')
@@ -875,4 +851,6 @@ update_completions() {
 	fi
 }
 
-main "$@"
+if [[ "${LOOM_INSTALL_LIB_ONLY:-0}" != "1" ]]; then
+	main "$@"
+fi
