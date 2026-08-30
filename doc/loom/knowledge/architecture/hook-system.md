@@ -21,7 +21,8 @@ The `hooks/` module provides Claude Code hooks integration for session lifecycle
 
 - Captures stdin into a variable (not drained) using cross-platform gtimeout/timeout/cat, 1s timeout
 - Validates LOOM_STAGE_ID, LOOM_SESSION_ID, LOOM_WORK_DIR — silently exits if missing
-- Writes initial heartbeat: `.work/heartbeat/<LOOM_STAGE_ID>.json`
+- Writes initial heartbeat: `.work/heartbeat/<LOOM_STAGE_ID>.json`, through the shared
+  ownership-checked lock and atomic-replacement protocol
 - Logs SessionStart event to `.work/hooks/events.jsonl`
 - **Parses `.source` field from stdin JSON**: when `.source == "compact"` or `"resume"`, emits `hookSpecificOutput.additionalContext` JSON with a re-anchor pointer (signal file path), redirecting the agent back to its signal after context compaction or resume
 - Stdin must be captured (not drained with `>/dev/null`) so the source field can be parsed — same pattern as `post-tool-use.sh`
@@ -57,6 +58,18 @@ Used by hooks to inject context into Claude's next turn:
 **Why JSON over plain text:** Claude Code has reliability issues with plain-text stdout from certain hook types (see issue claude-code#13912); JSON additionalContext is more reliable for context injection.
 
 **Construction:** Always use `jq -nc --arg ctx "..."  '{hookSpecificOutput: {hookEventName: "...", additionalContext: $ctx}}'` — never manually escape JSON strings.
+
+### PostToolUse context-ceiling boundary
+
+`hooks/post-tool-use.sh` owns transcript-tail usage measurement and threshold messaging, but it owns no
+configuration parsing. It calls the hidden, deterministic `loom hook context-ceilings` command,
+which uses Rust's stage loader and `ContextConfig` TOML deserializer and returns
+`<main>:<subagent>`. The hook validates and caches that complete pair per Loom session before
+selecting the branch for the classified caller. This keeps teammates/subagents on the plan-wide
+subagent ceiling while the parent receives the stage-aware main ceiling, with one canonical config
+read and no shell TOML/YAML grammar to drift from Rust. Missing, failed, malformed, or out-of-range
+command output uses the shell fallback constants; a valid main zero is instead Rust's explicit
+disabled sentinel for a stage record it could not verify.
 
 ### LOOM_* Env Vars Available to All Hooks
 
@@ -117,8 +130,20 @@ FALLBACK ONLY, a 2-level claude chain is classified MAIN AGENT and a 3-level cha
 
 **Consequence worth knowing:** agent-team _teammates_ are not in the main agent's process tree,
 so `LOOM_MAIN_AGENT_PID` is set but is not a live ancestor and `loom_is_subagent` returns false
-for them before either check runs. Hooks gated on it therefore do **not** fire inside teammates.
-A Task-tool subagent, by contrast, runs **in-process** (the same claude process as the main
-agent), so the process-tree walk alone finds no intervening Claude process between it and
-`LOOM_MAIN_AGENT_PID` — it is the payload check, not the process tree, that correctly classifies
-it as a subagent.
+for them before either check runs. Globally installed enforcement hooks gated on it therefore do
+**not** fire inside teammates. The per-session `hooks/post-tool-use.sh` is intentionally different: its
+validated `LOOM_*` identity already scopes it to the stage, so a positive payload verdict marks a
+teammate as a subagent before ancestry. That keeps the parent heartbeat intact and applies the
+subagent ceiling. A Task-tool subagent, by contrast, runs **in-process** (the same claude process
+as the main agent), so the process-tree walk alone finds no intervening Claude process between it
+and `LOOM_MAIN_AGENT_PID` — payload identity is what classifies both shapes correctly.
+
+### Heartbeat writer protocol
+
+`hooks/session-start.sh`, `hooks/post-tool-use.sh`, and `hooks/subagent-stop.sh` all write the same stage-keyed
+heartbeat. Every writer acquires a portable `mkdir` lock, validates the stage's current
+`session:` owner while holding it, and replaces the JSON via a same-directory temp-file rename.
+Late hooks from an old session therefore cannot overwrite a successor, concurrent subagent
+refreshes cannot roll the parent's token count backward, and the Rust watcher never observes a
+partially truncated JSON document. Lock metadata permits conservative recovery after a dead
+writer leaves an abandoned lock; live or uncertain owners are never stolen.

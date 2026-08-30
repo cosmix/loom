@@ -11,9 +11,28 @@ each firing at a different multiple of it, from softest to hardest:
 
 | Multiple | Mechanism                          | Who enforces it                                                                                             | What happens                                                                                                                          |
 | -------- | ----------------------------------- | -------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| 1.0x     | `PostToolUse` hook instruction       | `hooks/post-tool-use.sh`, reading resident tokens off the transcript tail                                       | Tells the agent (via hook stdout) to finish the unit of work in progress and run a `loom handoff` with `--trigger ceiling`, then stop |
-| 1.25x    | Daemon backstop (`BudgetExceeded`)   | `orchestrator/monitor/detection.rs` (`DAEMON_CEILING_MULTIPLIER`, `models/constants.rs`)                        | The daemon KILLS the session (confirmed dead via `confirm_session_gone`, not by trusting the kill call's return value) and re-queues the stage — this closes a double-spawn bug where an unconditional re-queue without a confirmed kill let two agents write the same worktree |
+| 1.0x     | `PostToolUse` hook instruction       | `hooks/post-tool-use.sh`, reading resident tokens off the transcript tail                                       | Blocks each tool call with exit 2 and a stderr instruction to finish the unit of work, run `loom handoff --trigger ceiling`, and stop |
+| 1.25x    | Daemon backstop (`BudgetExceeded`)   | `orchestrator/monitor/detection.rs` (`DAEMON_CEILING_MULTIPLIER`, `models/constants.rs`)                        | Writes the outgoing handoff, discovers in-progress records even after daemon restart, KILLS the session, persists `ContextExhausted` only after confirmed death, then re-queues. Discovery/probe/persistence uncertainty leaves the stage in `NeedsHandoff`; stale events naming a predecessor are ignored. |
 | 1.5x     | `CLAUDE_CODE_AUTO_COMPACT_WINDOW`    | The installed Claude Code binary itself, via an env var loom's native wrapper sets (`auto_compact_window_tokens`, `orchestrator/terminal/native/wrapper.rs:227-238`) | Claude Code's own native auto-compaction kicks in — "effectively unreachable in practice" per the source comment, because the two lower thresholds should already have ended the session by this point |
+
+The daemon backstop is level-triggered while the exact over-budget assignment remains
+`Executing` or `NeedsHandoff`, so a handler failure before the state transition cannot disarm it.
+Each poll applies a fresh matching heartbeat to its session snapshot before making that decision:
+resident context can fall after compaction, so a stale persisted high-water reading must not kill a
+session whose current heartbeat is safely below the backstop. Persisted `Running` predecessors are
+not judged once `stage.session` has moved on. Heartbeat change detection compares the complete
+payload rather than its whole-second timestamp, and persistence is an exact-session locked
+read-modify-write that cannot revive a terminal record or prefix-match another session.
+Generated V2 handoffs persist their origin: Red-band and budget artifacts are independently
+recoverable across daemon restarts. A cold-start Red observation reuses its durable snapshot, while
+a real Green/Yellow-to-Red re-entry writes a fresh one; a cold start reuses Red only when the
+resident-token snapshot is identical. Red-band observation and successful artifact readiness are
+tracked separately, so a transient write failure retries during the same Red band. Budget lookup
+scans all numbered handoffs
+for the exact `(stage_id, session_id, budget_exceeded)` tuple and refreshes it when a newer artifact
+exists, so continuation can select the newest valid handoff for the exact outgoing session rather
+than blindly consuming the highest filename. Number allocation and crash-atomic write share one
+directory lock, preventing concurrent daemon/CLI producers from overwriting the same artifact.
 
 Read the resolved value in code with `fs::work_dir::resolve_context_ceiling_tokens(work_dir,
 stage_ceiling)` — the one resolver. Resolution order: `stage.context_ceiling_tokens` ->
@@ -22,6 +41,18 @@ stage_ceiling)` — the one resolver. Resolution order: `stage.context_ceiling_t
 1.5x auto-compact env var is separately clamped to `AUTO_COMPACT_WINDOW_MAX_TOKENS` (1,000,000)
 before export, since the installed binary re-clamps to `[1, 1_000_000]` and then again to the
 model's own context window.
+
+The shell hook never parses TOML or stage YAML. Its internal
+`loom hook context-ceilings` call loads both through Rust and prints one validated
+`<main>:<subagent>` pair. `hooks/post-tool-use.sh` caches that pair at
+`.work/heartbeat/<stage>.<session>.context-ceilings`, then selects the main or subagent half after
+classifying the hook payload. The main value includes the stage override; the subagent value is
+plan-wide and never consults stage frontmatter. Missing, failed, malformed, or out-of-range helper
+output falls back to the two hand-kept shell defaults, so a broken helper cannot disable the
+governor. A valid zero is different: Rust emits `0` for the main half when it cannot verify the
+requested stage record, explicitly disabling main-stage enforcement rather than borrowing another
+stage's ceiling; the independent subagent half remains usable. Keeping the fallback constants is
+intentional availability defense, not a second config parser.
 
 **The true last resort is `hooks/pre-compact.sh`'s block-then-allow pattern**, independent of
 all three thresholds above (it fires whenever Claude Code's native compaction actually engages,

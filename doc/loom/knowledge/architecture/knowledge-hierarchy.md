@@ -90,8 +90,8 @@ Index staleness is a separate, lighter check inside the same build path: whether
 `INDEX.md` textually contains every tier-1 filename and topic path. Line counts in the index are
 not compared, so stale numbers are never flagged.
 
-There is no per-link "form" requirement — `[Title](category/slug.md)` is simply the house style
-(see `patterns.md`), not something an audit enforces.
+There is no per-link "form" requirement — a human title pointing to `category/slug.md` is simply
+the house style (see `patterns.md`), not something an audit enforces.
 
 ## Thresholds
 

@@ -69,14 +69,11 @@ them.
   BSD). A glob like `"$src"/loom-*/` always yields a trailing slash, so this form passes every
   Linux test and silently splatters files into the destination root on macOS. Always write
   `cp -R "${dir%/}" dest/` instead (found in `install.sh:288`, `install_skills_from_source`).
-- **`install.sh`'s legacy unprefixed-skill cleanup is a live footgun, not fixed by the catalog
-  split.** `old_name=${name#loom-}; rm -rf $CLAUDE_DIR/skills/$old_name` runs once per skill
-  across ~62 skills, deleting a user's OWN `~/.claude/skills/rust`, `python`, `docker`, `auth`,
-  etc. if they happen to share a name with a loom skill's unprefixed form. An empty-`old_name`
-  guard was added, but the cleanup line itself is now probably obsolete (every shipped skill is
-  loom-prefixed) — `loom repair` already solves the identical migration safely
-  (`Severity::Warning`, deletes only on `--fix`); the real fix is to drop the line from
-  `install.sh` and let `repair` own it, not yet done.
+- **Bare skill and agent names are user-owned.** `dev-install.sh` delegates to `install.sh`, so
+  even local development installs must never derive `rust`, `software-engineer`, or another bare
+  name from a `loom-*` entry and delete it as migration cleanup. Installation now replaces only
+  Loom-prefixed destinations; legacy reference migration remains the explicit `loom repair`
+  path. Behavior tests seed both bare and custom user entries and require them to survive.
 - **`self_update/mod.rs::download_verify_and_extract_zip` backs up `dest` to `dest.bak`, extracts
   fresh, then DELETES the backup.** For `skills.zip`, `dest` is `~/.claude/skills`, so a
   self-update wipes any NON-loom skill a user keeps there. Pre-existing, out of the catalog

@@ -194,10 +194,83 @@ Two more traps sit directly downstream of the fix itself:
   right after `kill_session` reports even a correctly-killed agent ALIVE for a moment, which would
   call every killed agent a "survivor" and wedge every handed-off stage. `confirm_session_gone`
   polls for up to a short timeout (2s) instead of probing once.
-- **Do not drop the surviving session's `active_sessions` entry just because its disk record was
-  already marked `ContextExhausted`.** `live_sessions_for_stage` filters that status OUT, so if the
-  in-memory entry is also dropped, a later takedown attempt has no handle to the surviving agent
-  at all — keep the entry until the agent is CONFIRMED gone, not until its status is declared.
+- **Declare `ContextExhausted` only AFTER confirmed death, and require that write to succeed.**
+  `live_sessions_for_stage` filters terminal records out, so marking first can hide a survivor;
+  failing to persist after death leaves a stale `Running` record that the next monitor poll charges
+  as a crash. Remove the in-memory handle and re-queue only after both proofs succeed.
+- **A daemon restart requires the broader persisted-record scan.** `active_sessions` is empty and
+  the old process may already be dead, so liveness-filtered discovery misses the exact stale
+  `Running` record takedown must retire. At this boundary, an unreadable record or liveness-probe
+  error is uncertainty, not absence: leave the stage in `NeedsHandoff` instead of admitting a
+  second writer. `NeedsHandoff` detection is level-triggered on every monitor poll until takedown
+  succeeds and re-queues the stage, so repairing transient uncertainty does not require a daemon
+  restart to rearm the event.
+- **Every asynchronous handoff event must still name `stage.session`.** A delayed
+  `SessionNeedsHandoff` or `BudgetExceeded` from a predecessor must be ignored after a successor is
+  assigned; otherwise a valid old event kills the healthy new agent. Verify that identity in the
+  locked transition, again immediately before discovering/killing processes, and again in the
+  locked re-queue update: a concurrent manual retry can replace the assignment between any two of
+  those steps. Identity is necessary but not sufficient: destructive handoff may begin only from
+  `Executing` or `NeedsHandoff`, and the final kill/re-queue checks require `NeedsHandoff`, so a
+  same-session event cannot override a concurrent `Blocked` or terminal transition.
+- **Judge the freshest resident-token fact, not the largest historical one.** Native compaction can
+  lower resident context. Poll matching heartbeat files first, overlay their token count onto the
+  in-memory session snapshot, and only then evaluate Red/backstop transitions; preserve the public
+  event order separately. Also require the persisted `Running` record to be the exact active stage
+  assignment before context-judging it, because predecessor records outlive their ownership.
+- **Keep the retry's cause attached to the current session.** A failed budget takedown leaves the
+  matching stage in `NeedsHandoff`; on the next poll the monitor must re-emit `BudgetExceeded`, not
+  replace it with generic `SessionNeedsHandoff`. Detect sessions before stages so the live budget
+  latch can suppress that generic event, while retaining stage-before-session _emission_ ordering.
+  Drop latches for missing or non-`Running` records so a predecessor cannot suppress a later normal
+  handoff. Retry while the exact over-budget assignment is still `Executing` too: the first handler
+  can fail before it persists `NeedsHandoff`, and an edge-triggered in-memory latch would otherwise
+  suppress every later attempt. The handler's `NeedsHandoff` mark is idempotent for the same
+  verified session; retries must not add attempt time again.
+- **Handoff idempotence needs a durable cause, not just session identity.** A Red-band snapshot for
+  `(stage_id, session_id)` may predate substantial work done before the 125% backstop. V2 handoffs
+  therefore persist an optional typed `origin` (`red_band` or `budget_exceeded`), and lookup scans
+  all numbered artifacts for the exact `(stage, session, origin)` tuple. Legacy/manual/malformed
+  files cannot suppress the first budget snapshot, while later retries and daemon restarts reuse
+  the tagged artifact. A cold-start Red observation reuses that advisory only when its resident-token
+  snapshot is identical; newer context or a known Green/Yellow-to-Red re-entry writes a fresh one.
+  Two genuine crossings are not retries of one event. Directory or file-read errors remain
+  uncertainty and fail the budget action closed.
+- **Continuation must validate authorship, and allocation must be serialized.** The highest numbered
+  filename may be malformed, manual, or written by another session. Select the newest valid V2
+  handoff for the exact outgoing `(stage, session)` pair; only a stage with no predecessor may use
+  the legacy latest-file fallback. Allocate the sequence number and crash-atomically write the file
+  under one handoff-directory lock, or concurrent daemon/CLI producers can choose and overwrite the
+  same name.
+- **The stage assignment is the final discovery witness.** Combining `active_sessions` with
+  persisted `Running`/`Spawning` records is not enough: after a restart, an assigned session with a
+  missing record could still be an untracked writer. Takedown must load the stage's exact assigned
+  session as a final check. Even an exact terminal record must be probed: `Completed` is persisted
+  before an agent necessarily finishes its merge/teardown path, so workflow state is not process
+  death evidence. A missing or mismatched record leaves the stage in `NeedsHandoff` rather than
+  treating an empty scan as permission to re-queue.
+- **Missing process identity is uncertainty, including after teardown.** Record whether PID
+  evidence was already absent before invoking the backend; removing files during teardown cannot
+  convert that pre-existing uncertainty into confirmed death. A tmux `kill-server` failure must
+  propagate and retain the socket and PID evidence, because unlinking the only control handle can
+  strand a live writer while making it look absent. Verified PID/start-time evidence must likewise
+  survive SIGTERM until confirmation observes definitive death: signal delivery is asynchronous,
+  and deleting the entry immediately makes a slow-exiting process look gone.
+- **Heartbeat persistence is an exact, locked read-modify-write.** A complete event session id must
+  address exactly `<session-id>.md`, match the stage, and still be `Running` under the same lock that
+  applies the heartbeat. Prefix lookup or an unlocked read followed by whole-record save can mutate
+  the wrong session or overwrite a concurrent terminal transition. Compare the complete heartbeat,
+  not only its whole-second timestamp: context can change twice in one second, especially across
+  native compaction.
+- **Manual resume queues work; it does not spawn it.** `loom resume` preserves the predecessor id
+  while moving `Blocked`/`NeedsHandoff` to `Queued`, then asks the operator to run `loom run`. Only
+  the orchestrator may perform predecessor liveness verification, write-ahead session assignment,
+  and successor spawn. Direct continuation auto-spawn is rejected so a CLI path cannot orphan or
+  double-spawn an agent.
+- **Advisory Red handoff readiness is separate from Red-band observation.** Record readiness only
+  after the artifact was successfully found or written. If transient I/O makes that operation fail,
+  an unchanged Red reading retries on the next poll; remembering only the band transition would
+  permanently disarm the handoff until the session left Red.
 
 **How to test a liveness-gated branch without risking the test runner:** write a PID file with NO
 start-time line. It verifies as `Unverifiable`, which counts as ALIVE for probing purposes, while

@@ -84,7 +84,7 @@ Main loop polls every 5 seconds: sync graph from stage files, sync queued status
 
 ## Monitoring Patterns
 
-**Heartbeat**: Sessions write to `.work/heartbeat/{stage-id}.{session-id}.json` (session-keyed, see below). Timeout: 300s. PID alive + stale = Hung; PID dead = Crashed; PID dead + stage Completed = normal exit. The heartbeat carries real resident tokens (`context_tokens`, `transcript_path`) written by `hooks/post-tool-use.sh` from the transcript tail — `context_percent` no longer exists. **Context health**: `orchestrator/monitor/context.rs::context_health(tokens, ceiling)` bands the ratio Green `<60%`, Yellow `60-90%`, Red `>=90%` of the resolved `context_ceiling_tokens` (absolute tokens, default 150,000; per-stage override in tokens, not a percentage) — there is no auto-summarize step. **Retry**: Exponential backoff `min(30 * 2^retry_count, 300s)`. Retryable: SessionCrash, Timeout. Non-retryable: ContextExhausted, TestFailure, BuildFailure, CodeError. Max 3 retries.
+**Heartbeat**: Sessions write to `.work/heartbeat/{stage-id}.json`; the JSON's `session_id` identifies the current owner. The three shell writers share an ownership-checked `mkdir` lock and atomic rename, so an old session cannot replace its successor and readers never see a torn document. Timeout: 300s. PID alive + stale = Hung; PID dead = Crashed; PID dead + stage Completed = normal exit. The heartbeat carries real resident tokens (`context_tokens`, `transcript_path`) written by `hooks/post-tool-use.sh` from the transcript tail — `context_percent` no longer exists. **Context health**: `orchestrator/monitor/context.rs::context_health(tokens, ceiling)` bands the ratio Green `<60%`, Yellow `60-90%`, Red `>=90%` of the resolved `context_ceiling_tokens` (absolute tokens, default 150,000; per-stage override in tokens, not a percentage) — there is no auto-summarize step. **Retry**: Exponential backoff `min(30 * 2^retry_count, 300s)`. Retryable: SessionCrash, Timeout. Non-retryable: ContextExhausted, TestFailure, BuildFailure, CodeError. Max 3 retries.
 
 ## Hook Patterns
 
@@ -530,7 +530,7 @@ Reading protocol: index first, then the tier-1 summary for your area, then only 
 topics you actually touch. Writing protocol: a tier-1 section that grows past ~40 lines is spilled
 into a topic and replaced by a 2-4 line summary plus a relative link.
 
-The link form `[Title](category/slug.md)` in a **tier-1** file is the house convention —
+A human-readable title pointing to `category/slug.md` in a **tier-1** file is the house convention:
 relative, `.md` extension, no `./`, no anchor. No audit enforces it today; an earlier version of
 this doc claimed two link-form checks required exactly this form, but no such checks exist in the
 tree. See [Knowledge Hierarchy](architecture/knowledge-hierarchy.md) for the mechanics and the

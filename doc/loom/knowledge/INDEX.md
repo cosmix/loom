@@ -14,7 +14,7 @@
 | [conventions.md](conventions.md) | Coding conventions discovered in the codebase | 596 |
 | [mistakes.md](mistakes.md) | Mistakes made and lessons learned - what to avoid | 962 |
 | [stack.md](stack.md) | Dependencies, frameworks, and tooling used in the project | 97 |
-| [concerns.md](concerns.md) | Technical debt, warnings, and issues to address | 879 |
+| [concerns.md](concerns.md) | Technical debt, warnings, and issues to address | 742 |
 
 ## Tier 2 — Topics
 
@@ -24,17 +24,17 @@
 | --- | --- | --- | --- |
 | [architecture/codex-concurrency.md](architecture/codex-concurrency.md) | Codex Concurrency | Codex fan-out concurrency limits, what is measured, and what degrades under load (the shared state.json sidecar). | 102 |
 | [architecture/codex-plugin.md](architecture/codex-plugin.md) | Codex Plugin | Codex plugin install and identity, the codex-rescue subagent, and the loom-codex-forwarder lane. | 303 |
-| [architecture/context-ceiling.md](architecture/context-ceiling.md) | Context Ceiling | The absolute resident-token ceiling: resolution order, and the three independent thresholds (hook, daemon, native… | 40 |
+| [architecture/context-ceiling.md](architecture/context-ceiling.md) | Context Ceiling | The absolute resident-token ceiling: resolution order, and the three independent thresholds (hook, daemon, native… | 71 |
 | [architecture/context-retrieval.md](architecture/context-retrieval.md) | Context Retrieval | The retrieval subsystem: two graphs, two lanes, query-side gating, two-tier fusion, and the persistent BM25 index. | 469 |
 | [architecture/core-abstractions.md](architecture/core-abstractions.md) | Core Abstractions | ExecutionGraph, Stage, Session, Orchestrator, TerminalBackend — plus data flow and .work/ file ownership. | 93 |
 | [architecture/directory-structure.md](architecture/directory-structure.md) | Directory Structure | Full loom/src module tree, the .work/ state layout, and the repo-root asset directories. | 49 |
 | [architecture/execution-containment.md](architecture/execution-containment.md) | Execution Containment | What sandboxed command containment means in loom, its two confinement levels, and what routes through spawn_confined. | 193 |
-| [architecture/hook-system.md](architecture/hook-system.md) | Hook System | Hook embedding and install, the SessionStart hookSpecificOutput contract, and the two subagent enforcement hooks. | 124 |
+| [architecture/hook-system.md](architecture/hook-system.md) | Hook System | Hook embedding and install, the SessionStart hookSpecificOutput contract, and the two subagent enforcement hooks. | 149 |
 | [architecture/knowledge-hierarchy.md](architecture/knowledge-hierarchy.md) | Knowledge Hierarchy | Tier-1/tier-2 knowledge mechanics: layout predicate, target parsing, INDEX.md generation, audit link rules, coverage… | 144 |
 | [architecture/memory-spool.md](architecture/memory-spool.md) | Memory Spool and Drain | Topic notes for the architecture knowledge area. | 105 |
 | [architecture/remote-control.md](architecture/remote-control.md) | Remote Control | Capability detection, preflight, resolution, and per-kind session naming for driving external agent binaries. | 64 |
 | [architecture/signal-generation.md](architecture/signal-generation.md) | Signal Generation | How a stage signal is assembled: stable-prefix cache, shared append_* helpers, per-stage-type prefixes, soft signals. | 175 |
-| [architecture/skill-catalog.md](architecture/skill-catalog.md) | Skill Catalog | The two skill roots, why 53 skills live outside `~/.claude/skills`, and the install/hook-exemption hazards that came… | 106 |
+| [architecture/skill-catalog.md](architecture/skill-catalog.md) | Skill Catalog | The two skill roots, why 53 skills live outside `~/.claude/skills`, and the install/hook-exemption hazards that came… | 103 |
 | [architecture/source-graph.md](architecture/source-graph.md) | Source Graph | What the source graph is and is not, its honesty contract, extractor trait, node/edge and cache identity, and lifecycle. | 240 |
 | [architecture/terminal-backends.md](architecture/terminal-backends.md) | Terminal Backends | The native and tmux session backends behind one dispatcher, lane resolution, and session-recorded dispatch. | 251 |
 
@@ -76,7 +76,7 @@
 | [mistakes/sandbox-and-settings.md](mistakes/sandbox-and-settings.md) | Sandbox And Settings | Sandbox path rules, permission sync, excludedCommands matching, and settings env leaking between main repo and… | 386 |
 | [mistakes/schema-reuse-and-silent-skips.md](mistakes/schema-reuse-and-silent-skips.md) | Schema Reuse And Silent Skips | deny_unknown_fields breaking a type with two deserialization sources, warn-and-continue masking total failure, and an… | 94 |
 | [mistakes/session-identity-env.md](mistakes/session-identity-env.md) | Session Identity Env | The wrapper script's `LOOM_*` exports are a contract read by hooks, the CLI and the daemon. Two long-standing defects… | 83 |
-| [mistakes/sessions-and-liveness.md](mistakes/sessions-and-liveness.md) | Sessions And Liveness | Session identity, liveness routing, spawn-site coverage, and the blast radius of adding a session field. | 206 |
+| [mistakes/sessions-and-liveness.md](mistakes/sessions-and-liveness.md) | Sessions And Liveness | Session identity, liveness routing, spawn-site coverage, and the blast radius of adding a session field. | 279 |
 | [mistakes/shell-command-matchers.md](mistakes/shell-command-matchers.md) | Shell Command Matchers | Separators that never become tokens, forgeable glob lookups, env leakage in hook tests, and three Bash traps. | 246 |
 | [mistakes/store-without-consumer.md](mistakes/store-without-consumer.md) | Store Without Consumer | A store that was written but never read - what happened, why it stayed invisible, and the concrete trail. | 94 |
 | [mistakes/subagent-orchestration.md](mistakes/subagent-orchestration.md) | Subagent Orchestration | Liveness signals for subagents, when a missing report is not a missing result, and the one-background-watch doctrine. | 240 |

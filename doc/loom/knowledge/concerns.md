@@ -23,13 +23,15 @@ Critical violations where lower layers import from higher layers:
 
 ## Security Concerns
 
-### Release Checksum Asset-Name Mismatch (corrected 2026-07-01)
+### Release Checksum Asset-Name Mismatch (LOW PRIORITY; corrected 2026-07-01)
 
 > An earlier note here claimed `agents.zip`/`skills.zip`/`CLAUDE.md.template` "lack verification." That is STALE and WRONG — corrected below.
 
 Self-update DOES SHA256-verify all three non-binary assets via `download_verify_and_extract_zip` (loom/src/commands/self_update/mod.rs:277-340) and `verify_checksum` (signature.rs:77), and it REFUSES to install any asset that has no checksum entry.
 
 The real defect is an **asset-name mismatch**: self-update fetches the digests from a release asset literally named `checksums.txt` (mod.rs:224), but the release workflow publishes them as `SHA256SUMS.txt` (.github/workflows/release.yml:148,161,240). At runtime self-update therefore bails with "Release is missing checksums.txt" and cannot update these assets at all.
+
+Deferred: self-update is not in use yet; development installs use `dev-install.sh`.
 
 **Fix:** reconcile the names — rename the published asset to `checksums.txt`, or have self-update look for `SHA256SUMS.txt`.
 
@@ -77,22 +79,6 @@ Several hooks (worktree-isolation.sh, commit-filter.sh, prefer-modern-tools.sh) 
 
 The Rust `strip_embedded_content` in `bash.rs:79` uses `line.trim() == marker` (tolerates indented terminators), while the shell version in `_common.sh:44` uses `$0 == marker` (exact line match). Both fail-safe but should be aligned for consistency.
 
-## Codex Findings Fixed (2026-04-16)
-
-The following Codex review findings from PLAN-fix-codex-findings are now resolved:
-
-- **H-01**: worktree-file-guard.sh registered for Read, Glob, Grep (hooks.rs:87-112)
-- **H-02**: Plan sandbox config threaded to OrchestratorConfig in both foreground and daemon paths
-- **H-03**: Fail-closed error handling in load_stage — only reconstructs on file-not-found, not parse errors
-- **H-04**: finalize_merge_resolution handles both MergeConflict and MergeBlocked
-- **M-03**: Budget check decoupled from health bucket guard — runs every poll tick
-- **M-04**: merge_resolved() and merge_retry() use resolve_target_branch() instead of default_branch()
-- **M-07**: Daemon status categorizes NeedsHandoff/WaitingForInput as "executing" matching CLI
-
-Additionally fixed during integration-verify:
-
-- **is_manually_merged**: Updated to use resolve_target_branch() instead of default_branch(), added work_dir parameter to detect_worktree_status() and is_manually_merged() for config access
-
 ## BranchMissing Phantom-Merge Risk in merge_handler.rs (2026-04-16)
 
 `handle_merge_session_completed` at line 97-103 treats `MergeState::BranchMissing` as a successful merge by calling `finalize_merge_resolution` which unconditionally sets `merged=true`. This violates the project invariant that daemon-side paths must never write `merged=true` without git ancestry verification.
@@ -110,10 +96,6 @@ models/stage/methods.rs:443 defines is_knowledge_stage() but it is never called.
 `attribute_main_repo_merge` carves out `loom/_base/*` merges with a heuristic on the current branch name and on `SessionType::BaseConflict` session metadata. If a base-merge ever runs from a non-`loom/_base/*` branch (manual flow, future refactor) and no `BaseConflict` session is alive, attribution would tie the active merge to the stage whose branch HEAD shows up in `MERGE_HEAD` — leading to a spurious revert.
 
 **Hardening path:** Tag base merges explicitly via session metadata (e.g., a marker file or distinct `SessionType::BaseConflict` always present during the base-merge window) and key the carve-out off that signal alone, not the current branch name. Until then, the heuristic is documented here so future work knows where to look.
-
-## Deferred: Context Velocity
-
-**Closed.** This concern is fully resolved, not merely mitigated: `context_percent` no longer exists anywhere in the tree. `hooks/post-tool-use.sh` now reads `transcript_path` from the hook payload, takes the last assistant usage record from the transcript tail, and writes `context_tokens = input_tokens + cache_creation_input_tokens + cache_read_input_tokens` into the heartbeat; `orchestrator/monitor/context.rs::context_health(tokens, ceiling)` consumes it as an absolute count against the resolved `context_ceiling_tokens`. The stream-json sidecar this section used to propose was never needed. See architecture.md "Context Budget Enforcement".
 
 ## Recovery: `retry --force` races daemon orphan-recovery on existing worktree (2026-05-13)
 
@@ -143,14 +125,6 @@ This is a logically defensible design (commits exist, don't burn tokens redoing 
 - `orchestrator/core/stage_executor.rs:291-293` (`begin_attempt(Utc::now())` is already called here — confirm it's the only writer of `started_at` and that it's reached on retry).
 - The "stale" indicator emitter — likely in `commands/graph/indicators.rs` or a dashboard renderer.
 
-## before_stage Already Wired — Plan PLAN-anti-slop-thoroughness Was Wrong
-
-The plan described before_stage as "dormant / parsed-but-never-run". This was **INCORRECT** — `before_stage` was fully wired at `orchestrator/core/stage_executor.rs:219-256` BEFORE this plan ran.
-
-**Impact:** Stage 3 Subagent 1's task to "wire before_stage" was a confirmed no-op. The wire-dormant-gates implementation agent verified this against the code before writing any code and skipped the task.
-
-**Lesson (see mistakes.md):** Always verify "dead schema" or "dormant" claims against the actual execution paths (`rg "before_stage" loom/src/`) before accepting the plan description as authoritative. Plan descriptions can become stale relative to implementation.
-
 ## `loom pressure` Known Gaps
 
 ### Vendored commands / Codex skill install LOCAL-only
@@ -165,17 +139,12 @@ The two end-to-end smokes — Claude `/pressure` actually editing the plan, and 
 
 Repo-root resolution is now inlined in three places: `commands/knowledge/spawn.rs` (`resolve_project_root`), `commands/stage/merge.rs` (inline), and `commands/pressure/mod.rs` (`resolve_repo_root`). conventions.md Import Deduplication says extract at 3+ — candidate for a shared `git::repo_root()` helper (deferred during the parallel plan to avoid cross-module merge conflicts).
 
-## Stop hooks fail with `posix_spawn '/bin/sh'` ENOENT — worktree deleted under the live session (2026-07-22)
+## Deferred Worktree Cleanup Has Two Residual Edge Cases (2026-07-22)
 
-**Symptom:** Every successful worktree stage ends with two non-blocking Stop hook errors: `ENOENT: no such file or directory, posix_spawn '/bin/sh'` (once each for `commit-guard.sh` and `learning-validator.sh`).
-
-**Root cause:** `loom stage complete` (run by the agent FROM INSIDE the worktree) calls `cleanup_after_merge` on the success path (`commands/stage/progressive_complete.rs:217`), which removes `.worktrees/<stage-id>/` while the Claude session standing in it is still alive. The session then finishes its turn; Claude Code (a Bun binary) spawns each Stop hook as `/bin/sh -c <cmd>` with an explicit `cwd` = the now-deleted worktree, and Bun's spawn with a nonexistent `cwd` fails with exactly this message (reproduced: `Bun.spawnSync({cmd:['/bin/sh','-c','…'], cwd:'/nonexistent'})` → `ENOENT: no such file or directory, posix_spawn '/bin/sh'`). `/bin/sh` itself exists — the ENOENT is for the working directory. The same spawn failure necessarily hits the SessionEnd hook (`session-end.sh`) and the PostToolUse hook for the final `loom stage complete` tool call, so those silently never run either.
-
-**Impact:** Cosmetic noise on the success path (commit-guard has nothing to block once the stage is complete; learning-validator is advisory), but ALL post-completion hooks silently stop running — session-end.sh never writes its final handoff/cleanup, and the last heartbeat/tool-event updates are lost.
-
-**Fix direction:** Worktree removal must not happen while the session whose cwd it is can still run hooks. Move `cleanup_after_merge` out of the agent-run CLI success path and into the daemon, after `kill_session` in `handle_stage_completed` (`orchestrator/core/completion_handler.rs:44`) — the daemon already owns session teardown there, and `stage_executor.rs:390` shows precedent for daemon-side `remove_worktree`. The daemon's `try_auto_merge` path needs the same audit.
-
-**RESOLVED (2026-07-22):** Two-part fix. (1) `commands/stage/progressive_complete.rs::should_defer_cleanup(cwd, repo_root, stage_id)` — `complete_with_merge` now skips `cleanup_after_merge` when the process cwd is inside the worktree it would delete (cwd-based detection, NOT env vars, per the stale-`LOOM_STAGE_ID` lesson; unverifiable cwd fails toward defer). (2) `orchestrator/core/merge_handler.rs::cleanup_merged_stage_resources(stage_id, repo_root)` — `try_auto_merge`'s `stage.merged` short-circuit (reached from `handle_stage_completed` after `kill_session`, and from the recovery one-shot retry) now performs the deferred cleanup, gated on `needs_cleanup` and never mutating stage state. Residual (accepted): the daemon proceeds from `kill_session` to cleanup within the same tick, so SessionEnd hooks that run during SIGTERM teardown can still race the removal — a far smaller window than the old guaranteed Stop-hook failure. Manual `loom stage complete` with no daemon running and cwd inside the worktree defers cleanup that nothing will pick up until the next daemon start (`recovery.rs` retry path) or `loom worktree remove` — the CLI prints that hint.
+The main deleted-working-directory hook failure is fixed. Two residuals remain: daemon cleanup can
+still race SessionEnd hooks during the short SIGTERM teardown window, and manual `loom stage
+complete` with no daemon running defers cleanup until the next recovery pass or an explicit
+`loom worktree remove`.
 
 ## Knowledge Signals Never Teach Tier-2 (2026-07-28)
 
@@ -205,23 +174,17 @@ afterwards. The index's Blurb column is its main routing signal, so this directl
 navigability. Wanted: a `--blurb` flag, or have the scaffold defer to a leading `>` line in the
 supplied content.
 
-## Remote Install Silently Ships Zero Hooks (PRE-EXISTING, 2026-07-28)
+## Remote Releases Do Not Deliver Hooks (PRE-EXISTING, 2026-07-28)
 
 `install.sh::install_hooks_remote` fetches each hook from `${GITHUB_RELEASES}/<name>`, but
-`.github/workflows/release.yml` publishes **no hook assets**, and the fetch loop swallows
-failures (`2>/dev/null`, no error check). The remote install path therefore installs no hooks
-while reporting success — every hook shipped this way is dead on remote installs.
+`.github/workflows/release.yml` publishes **no hook assets**. A clean remote install now fails
+when all downloads miss rather than falsely reporting hook success, but the underlying delivery
+contract is still broken: remote installation cannot install token-governance hooks, and
+self-update has no hook update path either. This is currently low priority because development
+installation (`dev-install.sh`) uses the repository's local hook files.
 
-**Detection:** exit 0 from the remote installer is not evidence hooks landed; list
-`~/.claude/hooks/loom/` after installing.
-
-## `loom plan verify` False-Positive Cargo Warning for Subdirectory Crates (2026-07-28)
-
-For this repo layout the verifier emits "Acceptance criterion uses cargo but Cargo.toml not found
-at `<project root>`" — 15 times in one run — because it probes `<root>/Cargo.toml` while the crate
-lives at `<root>/loom/Cargo.toml` and every criterion already passes
-`--manifest-path loom/Cargo.toml`. 0 errors, 19 warnings, exit 0. Noise for any repo whose crate
-is in a subdirectory. Fix: honour an explicit `--manifest-path` before warning.
+**Fix shape:** publish and checksum a complete hook bundle (or embed hooks in the binary), verify
+its exact `LOOM_HOOKS` inventory before an atomic replacement, and add a clean-install fixture.
 
 ## No-Verify Doctrine Block Carries Only a Rust Example (2026-07-28)
 
@@ -235,26 +198,6 @@ explicitly hook-local guidance, the same way the `BLOCKED:` framing line already
 
 No caller passes a non-default `max_promoted_blocks`. Pre-existing and kept deliberately —
 Engineering Discipline C says record pre-existing dead code rather than delete it as a drive-by.
-
-## Generated INDEX.md Is Not markdownlint-Clean — Permanent Commit Churn (2026-07-28)
-
-`fs/knowledge/index.rs::generate_index` emits each `### <category>` sub-heading of the Tier 2
-section **immediately after the previous table row, with no blank line before it**, which
-violates MD022 (headings surrounded by blank lines). The repo's pre-commit hook runs
-`markdownlint-cli2 --fix`, which inserts the blank lines and re-stages the file.
-
-The result is a loop: the generator writes non-compliant markdown → the pre-commit hook fixes it
-→ the next knowledge write (`loom knowledge update`/`sync`, which regenerates `INDEX.md` via
-`refresh_index_if_hierarchical`) overwrites the fix → the following commit's hook fixes it
-again. Every commit that touches the knowledge base shows a spurious `INDEX.md` diff.
-
-Observed on this repository with 22 topics across 5 categories; harmless semantically, since
-both forms render identically and the staleness check only looks for substrings.
-
-**Fix:** emit `\n### {category}\n` — a blank line before each category sub-heading — in
-`generate_index`, and add a regression test asserting the generated index is markdownlint-clean.
-Until then, prefer the linted form: let the pre-commit hook be the last writer, and do not run
-a superfluous `loom knowledge update`/`sync` after committing unless topics actually changed.
 
 ## Sandbox Denial Has No End-to-End CI Canary
 
@@ -418,7 +361,7 @@ Three agents lost insights to this in a single session before it was noticed.
 inside a git repo, and default the stage to the sentinel `ad-hoc`; `query`/`list`/`show` degrade
 to exit 0 without creating anything. Outside a git repo the original error stands, so `.work` is
 never scattered into arbitrary directories — see
-[`find_repo_root_from_cwd` Returns `Some(cwd)` Outside Any Repo](../mistakes.md) for the trap that
+[`find_repo_root_from_cwd` Returns `Some(cwd)` Outside Any Repo](mistakes.md) for the trap that
 guard exists to dodge.
 
 **Still true until the built binary is installed:** a `loom` on PATH from before this change keeps
@@ -740,56 +683,6 @@ unrelated to its own subject. Fix shape: inject the working directory instead of
 process's, as `orchestrator/merge_lifecycle/tests.rs:321` already does deliberately for this exact
 reason.
 
-## SECURITY: `read-guard.sh` Arithmetic Injection via Unvalidated offset/limit
-
-`hooks/read-guard.sh:64-71` passes `tool_input.offset`/`tool_input.limit` into a bash
-`$((OFF + LIMIT))` arithmetic context UNVALIDATED. Bash re-evaluates a variable's VALUE inside
-`$(( ))`, so a crafted offset like `KIND[$(touch /tmp/PWNED4)]` EXECUTES the embedded command —
-reproduced against the shipped hook. `set -u` does not mitigate this: it aborts only AFTER the
-substitution has already run. Because `read-guard.sh` is registered globally on every `Read` tool
-call (`fs/permissions/hooks/config.rs:55`), this is arbitrary command execution from tool input in
-EVERY session, loom-orchestrated or not. Found at integration-verify 2026-08-30, not yet fixed —
-open. **Fix direction:** regex-validate `^[0-9]+$` on both `offset` and `limit` before either ever
-reaches an arithmetic context; never let harness-supplied JSON reach `$(( ))` unvalidated.
-
-## Agent-Type Inference by Substring Reports the Inverse Model
-
-`commands/usage/sections/agents.rs:213-232` infers an agent's model tier by scanning its spawn
-prompt with `contains()` over a hardcoded array whose FIRST entry, `loom-software-engineer`, is a
-literal SUBSTRING of its second entry, `loom-senior-software-engineer`. Every opus
-senior-engineer spawn therefore matches the sonnet entry first and is reported as sonnet.
-Compounding it, the mandated coordinator preamble in `CLAUDE.md.template` literally contains the
-string `(loom-software-engineer = sonnet)`, so every COORDINATOR prompt matches too, regardless of
-its actual tier. The one report section meant to answer "is the right model running the right
-tier" currently shows the inverse. The hook-written `starts.jsonl` (`subagents/ledger.rs`) already
-carries the authoritative `agent_type` per spawn — the fix is to read that instead of re-deriving
-identity by substring match over prose that quotes the identifiers it is trying to detect. Found
-at integration-verify 2026-08-30, not yet fixed — open.
-
-## `ContextExhausted` Takedown Has a Residual Gap After a Daemon Restart
-
-`take_down_stage_agents` persists `ContextExhausted` for a stage's live agents, but only for
-records it can actually FIND: an `active_sessions` entry, or an on-disk record that is BOTH
-`Running`/`Spawning` AND probe-alive. A record left `Running` on disk when the daemon itself
-restarts mid-session (the in-memory `active_sessions` map is never rebuilt from disk) is invisible
-to takedown, and is then read as a CRASH by `exited_after_stage_finished`, which forgives only
-`Completed`/`MergeConflict`/`MergeBlocked`. Closing this fully means marking every stale record for
-a stage once takedown has proven nothing survives — a change to stale-record semantics generally,
-not a narrow fix, so it was deliberately left open at the integration gate. Reproducing it needs a
-daemon restart plus an agent that had already exited before the restart; the normal
-hook-driven handoff path (no daemon restart involved) is unaffected and already fixed.
-
-## `session-start.sh`'s Heartbeat JSON Is the One Unescaped Writer of Three
-
-`hooks/session-start.sh:72-82` builds its heartbeat JSON with a raw heredoc, interpolating
-`LOOM_STAGE_ID`/`LOOM_SESSION_ID`/`TIMESTAMP`/`TRANSCRIPT_PATH` directly into JSON string
-literals with no escaping. The other two heartbeat writers — `post-tool-use.sh:335` and
-`subagent-stop.sh:191` — both use `jq -n --arg`, which escapes correctly. A transcript path (or,
-in principle, a stage/session id) containing a quote or backslash produces a heartbeat file the
-orchestrator cannot parse, silently reading the session as dead. Found at integration-verify
-2026-08-30, not fixed — the three heartbeat writers should converge on the same `jq -n --arg`
-construction session-start.sh's siblings already use.
-
 ## Guard Hooks: Four Design Questions Deliberately Left Open (2026-08-30)
 
 The adversarial review of `read-guard.sh`/`poll-guard.sh`/`_read_discipline.sh` surfaced four
@@ -826,54 +719,24 @@ it is also a real edge-case correctness gap for any deployment where the loom ma
 could legitimately be 1. Not fixed — recorded because the test-fixture use depends on the same
 behaviour that makes it a latent bug elsewhere.
 
-## Tier-1 Knowledge Housekeeping: What This Distillation Closed and What Remains Open
+## Tier-1 Knowledge Housekeeping Backlog
 
-`loom knowledge check --strict` enforces a 250-line ceiling per tier-1 file and a 40-line
-ceiling per tier-1 SECTION (`MAX_TIER_ONE_FILE_LINES`/`MAX_TIER_ONE_SECTION_LINES`,
-`fs/knowledge/catalog/size.rs`). This distillation pass:
+`loom knowledge check --strict` enforces 250 lines per tier-1 file, 40 lines per tier-1
+section, and 12 KB for `INDEX.md` (`fs/knowledge/catalog/size.rs`). The remaining work is a
+dedicated knowledge-reorganization project, not part of token-governor correctness:
 
-- **Closed every OversizedSection finding** (5, all >40 lines): moved each to a new or
-  existing tier-2 topic file with a short summary and link left in the tier-1 file —
-  `concerns/codex-heartbeat-starvation.md`, `concerns/automatic-knowledge-source-graph-followups.md`,
-  `concerns/iterm2-window-teardown.md`, `architecture/terminal-backends.md` (entry-points
-  section), and `mistakes/verification-harness.md`.
-- **Fixed the one DuplicateHeading finding** and **healed 25 of 27 GenericBlurb** stub
-  descriptions on pre-existing tier-2 topic files (2 could not be healed — see below).
-
-**Still open, deliberately not attempted at this gate:**
-
-- **OversizedFile remains on all six tier-1 files** (`architecture.md` ~522,
-  `entry-points.md` ~557, `conventions.md` ~596, `patterns.md` ~756, `concerns.md` ~827,
-  `mistakes.md` ~962 lines, all against the 250-line ceiling). No individual SECTION in
-  any of them now exceeds 40 lines — the overage is volume: dozens of already-compact
-  10-35-line sections, most dated from PRIOR plans, not this one. Closing this fully means
-  relocating on the order of 80-120 individual sections to tier-2 topics, each its own
-  read-write-summarize cycle — a knowledge-base reorganization project in its own right,
-  not something one knowledge-distill pass can safely absorb without either rushing the
-  moves (risking exactly the duplicate-heading/content-loss mistakes this file's own
-  `mistakes/refactor-stragglers.md` warns about) or ballooning this stage far past a
-  single plan's distillation. Recommend a DEDICATED plan whose only job is this
-  reorganization, working file-by-file, oldest-and-largest section first.
-- **`MissingSourceRef` is the overwhelming majority of `--strict`'s issue count** (~1200 of
-  ~1250 findings) and is PRE-EXISTING, unrelated to this plan: `fs/knowledge/catalog.rs`
-  resolves a citation like `` `types.rs` `` against `project_root.join(source_path)`, but
-  most of this repo's citations are written relative to `loom/src/` (or as a bare
-  filename) rather than fully project-root-qualified. Confirmed non-noise count is small;
-  the rest is this one systemic resolution mismatch repeated across nearly every knowledge
-  file. Two real fixes, either is legitimate: (a) canonicalize citations across the
-  knowledge base to full project-root-relative paths (another dedicated, mechanical
-  project — 566+ unique citations), or (b) change the checker to require at least one
-  path separator before treating a string as a checkable repository path (a `loom/src/`
-  change, outside a knowledge-distill stage's file scope). Until one lands, **`loom
-  knowledge check --strict` cannot exit 0 on this repository** regardless of how clean the
-  size/heading/blurb dimensions get — do not treat a red `--strict` alone as evidence the
-  knowledge base itself is unhealthy; check which issue KINDS remain.
-- **Two GenericBlurb stubs could not be healed via `loom knowledge update`**:
-  `architecture/memory-spool.md` and `mistakes/writer-reader-address.md`. Both topics were
-  originally created with a hand-chosen title richer than the CLI's own
-  `title_case(slug)` (e.g. "Memory Spool and Drain" vs. the slug-derived "Memory Spool"),
-  and the stub-healing path (`fs/knowledge/scaffold.rs::strip_stub_header`) only fires
-  when the file's CURRENT first line matches `title_case(slug)` exactly — it does once a
-  title has already diverged. There is no CLI verb to edit a topic's pre-heading text
-  directly (file tools are blocked on `doc/loom/knowledge/**` inside a worktree). Fixing
-  these two needs either a title that reverts to the plain slug form, or a new CLI verb.
+- **All six tier-1 files remain oversized.** Their individual sections are compact; the
+  overage is cumulative volume. Moving roughly 80-120 sections safely into tier-2 topics
+  should be done file-by-file, preserving links and checking for duplicate headings.
+- **`MissingSourceRef` remains the dominant finding.** Generic Cargo package-root resolution
+  now recognizes unambiguous `src/`-relative citations across this workspace, reducing the
+  source-built check from 1,240 to 614 source-reference issues. The residual is mostly bare
+  filenames, hook filenames, and genuinely stale citations that cannot be assigned to one
+  package root safely. Canonicalize them to repository-relative paths or refine the checker's
+  candidate classification; ambiguity must continue to fail closed.
+- **Six tier-2 topics still have generic blurbs.** Some have titles richer than the
+  slug-derived scaffold, so `strip_stub_header` cannot heal them automatically. The CLI needs
+  an explicit blurb-edit path, or those pre-heading descriptions need careful manual repair.
+- **The generated index remains oversized.** This is low-priority navigation cleanup. Until this
+  backlog lands, a nonzero strict check should be interpreted by issue kind rather than treated as
+  a new regression by itself.
