@@ -10,6 +10,7 @@
 //! - Crashed sessions (PID dead)
 //! - Hung sessions (PID alive but no heartbeat update for threshold duration)
 
+mod ceiling;
 mod config;
 mod context;
 pub mod core;

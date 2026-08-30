@@ -103,15 +103,57 @@ fn load_session_from_file(path: &std::path::Path) -> Result<Session> {
     parse_from_markdown(&content, "Session")
 }
 
+/// The session that speaks for this stage.
+///
+/// Three steps, weakest claim last. `stage.session` is the stage's own claim
+/// about which agent is executing it and wins outright — but only among the
+/// sessions that name this stage back, since an id repeated or reused across
+/// stages would otherwise attribute another stage's agent to this row. Failing
+/// that, the newest session still alive: session files accumulate, so a retried
+/// stage leaves every previous corpse on disk with `stage_id` still set, and the
+/// first one `read_dir` happens to return is nobody in particular. Only if
+/// nothing is alive does a terminal session speak, so that a stage whose agent
+/// crashed still renders as `Error` rather than as an orphan with no session at
+/// all; [`reported_reading`] is what keeps its frozen token count off the
+/// screen.
+fn session_for_stage<'a>(stage: &Stage, sessions: &'a [Session]) -> Option<&'a Session> {
+    let own = || {
+        sessions
+            .iter()
+            .filter(|s| s.stage_id.as_ref() == Some(&stage.id))
+    };
+    if let Some(session_id) = stage.session.as_deref() {
+        if let Some(named) = own().find(|s| s.id == session_id) {
+            return Some(named);
+        }
+    }
+    own()
+        .filter(|s| !s.status.is_terminal())
+        .max_by_key(|s| s.created_at)
+        .or_else(|| own().max_by_key(|s| s.created_at))
+}
+
+/// The session a token reading may be taken from, if any.
+///
+/// Two readings must never reach the column. A session that has not reported
+/// yet would render a confident `0 / 150000` where nothing at all is known. A
+/// TERMINAL session's reading stopped tracking the stage the moment its agent
+/// died, so showing it against the live stage's ceiling states a number that
+/// has not been true since. The stage's ACTIVITY still comes from that session
+/// either way — only its number is dropped.
+fn reported_reading(session: Option<&Session>) -> Option<&Session> {
+    session.filter(|s| s.context_tokens > 0 && !s.status.is_terminal())
+}
+
 /// Build a StageSummary from a Stage and optional associated Session.
 ///
 fn build_stage_summary(stage: &Stage, sessions: &[Session], work_dir: &WorkDir) -> StageSummary {
-    let session = sessions
-        .iter()
-        .find(|s| s.stage_id.as_ref() == Some(&stage.id));
+    let session = session_for_stage(stage, sessions);
 
-    let context_tokens = session.map(|s| s.context_tokens);
-    let context_ceiling_tokens = session
+    // A missing or frozen reading shows a blank column, not a stale number.
+    let reading = reported_reading(session);
+    let context_tokens = reading.map(|s| s.context_tokens);
+    let context_ceiling_tokens = reading
         .map(|_| resolve_context_ceiling_tokens(work_dir.root(), stage.context_ceiling_tokens));
 
     let pid = session.and_then(|s| s.pid);

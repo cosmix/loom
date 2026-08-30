@@ -13,7 +13,7 @@ use crate::verify::transitions::{create_stage, load_stage, update_stage};
 use std::path::Path;
 use tempfile::TempDir;
 
-fn create_test_graph() -> ExecutionGraph {
+pub(super) fn create_test_graph() -> ExecutionGraph {
     let stages = vec![StageDefinition {
         id: "test-stage".to_string(),
         name: "Test Stage".to_string(),
@@ -52,7 +52,7 @@ fn create_test_graph() -> ExecutionGraph {
 /// A `.work` whose configured terminal lane is tmux, so `Orchestrator::new`
 /// never runs real terminal detection (which fails on a headless test runner).
 /// Same trick `stage_executor_tests.rs` uses for the same reason.
-fn handoff_work_dir() -> TempDir {
+pub(super) fn handoff_work_dir() -> TempDir {
     let temp = TempDir::new().unwrap();
     let work = temp.path().join(".work");
     std::fs::create_dir_all(&work).unwrap();
@@ -66,7 +66,7 @@ fn handoff_work_dir() -> TempDir {
     temp
 }
 
-fn orchestrator_for(work_dir: &Path, repo_root: &Path) -> Orchestrator {
+pub(super) fn orchestrator_for(work_dir: &Path, repo_root: &Path) -> Orchestrator {
     let config = OrchestratorConfig {
         work_dir: work_dir.to_path_buf(),
         repo_root: repo_root.to_path_buf(),
@@ -78,7 +78,7 @@ fn orchestrator_for(work_dir: &Path, repo_root: &Path) -> Orchestrator {
 
 /// A session record for `test-stage`, as the daemon would have left on disk
 /// before it restarted.
-fn recorded_session(work_dir: &Path) -> crate::models::session::Session {
+pub(super) fn recorded_session(work_dir: &Path) -> crate::models::session::Session {
     let mut session = crate::models::session::Session::new();
     session.assign_to_stage("test-stage".to_string());
     session.status = SessionStatus::Running;
@@ -95,7 +95,7 @@ fn recorded_session(work_dir: &Path) -> crate::models::session::Session {
 /// `Unverifiable`, which counts as ALIVE and which `terminate_verified`
 /// refuses to signal; a start time that cannot be this process's verifies as
 /// `Dead`.
-fn write_pid_file(
+pub(super) fn write_pid_file(
     work_dir: &Path,
     session: &crate::models::session::Session,
     start_time: Option<u64>,
@@ -118,7 +118,7 @@ fn write_pid_file(
 /// gone. A DIRECT child of the test process would instead linger as an
 /// unreaped zombie that still answers `kill(pid, 0)`, and the assertion would
 /// prove nothing.
-fn spawn_orphan_process() -> u32 {
+pub(super) fn spawn_orphan_process() -> u32 {
     let output = std::process::Command::new("sh")
         .arg("-c")
         // The background process must not inherit the pipe `output()` reads, or
@@ -132,7 +132,7 @@ fn spawn_orphan_process() -> u32 {
         .expect("the stand-in agent process printed no pid")
 }
 
-fn executing_stage(work_dir: &Path) {
+pub(super) fn executing_stage(work_dir: &Path) {
     let stage = Stage {
         id: "test-stage".to_string(),
         name: "Test Stage".to_string(),
@@ -162,6 +162,8 @@ fn budget_backstop_kills_the_agent_and_then_requeues() {
     // signal: `pid_only_terminate` refuses anything less.
     write_test_pid_identity(&work, &session, agent_pid).unwrap();
     assert!(crate::process::is_process_alive(agent_pid));
+    // The state the real executor leaves: the stage names its agent.
+    super::governor_tests::assign_stage_session(&work, &session.id);
 
     let mut orchestrator = orchestrator_for(&work, temp.path());
     orchestrator.graph.mark_executing("test-stage").unwrap();
@@ -203,6 +205,7 @@ fn budget_backstop_does_not_requeue_an_agent_it_could_not_kill() {
     let session = recorded_session(&work);
     // PID identity with no start time: alive, and unkillable through loom.
     write_pid_file(&work, &session, None);
+    super::governor_tests::assign_stage_session(&work, &session.id);
 
     let mut orchestrator = orchestrator_for(&work, temp.path());
     orchestrator.graph.mark_executing("test-stage").unwrap();

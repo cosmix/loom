@@ -12,6 +12,7 @@ use crate::models::stage::{Stage, StageStatus};
 #[allow(unused_imports)]
 use crate::orchestrator::liveness::LivenessService;
 
+use super::ceiling::{generate_red_band_handoff, resolve_ceiling_tokens};
 use super::config::MonitorConfig;
 use super::context::{context_health, ContextHealth};
 use super::events::MonitorEvent;
@@ -118,11 +119,19 @@ impl Detection {
         for session in sessions {
             let status = self.detect_session_status(session, stages, handlers);
             events.extend(status.events);
-            if status.terminal {
+            // Only a session that is actually RUNNING may be judged. `terminal`
+            // covers a session that went terminal on THIS tick; a record already
+            // persisted as Crashed/Completed/ContextExhausted still carries its
+            // last high `context_tokens`, and judging that corpse fires the
+            // backstop against whatever agent the stage is running NOW. Same
+            // guard, for the same reason, as `detect_heartbeat_events`.
+            if status.terminal || session.status != SessionStatus::Running {
                 continue;
             }
-
-            let ceiling = resolve_ceiling_tokens(session, stages, handlers);
+            // A ceiling this snapshot cannot vouch for is no ceiling at all.
+            let Some(ceiling) = resolve_ceiling_tokens(session, stages, handlers) else {
+                continue;
+            };
 
             events.extend(self.detect_context_health(session, stages, handlers, ceiling));
             if let Some(event) = self.detect_backstop_crossing(session, ceiling) {
@@ -357,43 +366,4 @@ fn hung_event(
         last_activity,
         finished_without_completing,
     }
-}
-
-/// Write the handoff a session entering the Red band is owed. Best-effort: a
-/// missing stage or an unwritable handoff must not abort the tick.
-fn generate_red_band_handoff(session: &Session, stages: &[Stage], handlers: &Handlers) {
-    let Some(stage) = stage_for(session, stages) else {
-        return;
-    };
-    match handlers.handle_context_critical(session, stage) {
-        Ok(path) => eprintln!(
-            "Generated handoff for session {} at {}",
-            session.id,
-            path.display()
-        ),
-        Err(e) => eprintln!(
-            "Failed to generate handoff for session '{}': {}",
-            session.id, e
-        ),
-    }
-}
-
-/// The stage a session is currently assigned to, if it is in `stages`.
-fn stage_for<'a>(session: &Session, stages: &'a [Stage]) -> Option<&'a Stage> {
-    let stage_id = session.stage_id.as_deref()?;
-    stages.iter().find(|s| s.id == stage_id)
-}
-
-/// Resolve the ceiling governing a session, in absolute tokens.
-///
-/// `ContextConfig::ceiling_for` owns the order (stage value ->
-/// `[context] ceiling_tokens` -> the built-in default) so this reader cannot
-/// drift from the signal, the launcher and `loom status`. It resolves against
-/// the config the monitor read once at startup rather than
-/// `resolve_context_ceiling_tokens`, which would re-read `.work/config.toml`
-/// for every session on every tick.
-fn resolve_ceiling_tokens(session: &Session, stages: &[Stage], handlers: &Handlers) -> u32 {
-    handlers
-        .context_config()
-        .ceiling_for(stage_for(session, stages).and_then(|stage| stage.context_ceiling_tokens))
 }
