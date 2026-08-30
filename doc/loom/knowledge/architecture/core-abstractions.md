@@ -38,7 +38,7 @@ Signal generation has 4 stable prefix generators in cache.rs (standard, knowledg
 
 ### Session Lifecycle (models/session/)
 
-States: Spawning -> Running -> Completed | Crashed | ContextExhausted | Paused. Tracks PID, terminal window ID, context usage %, timestamps.
+States: Spawning -> Running -> Completed | Crashed | ContextExhausted | Paused. Tracks PID, terminal window ID, absolute `context_tokens` plus `transcript_path` (not a usage percentage — the `context_limit` field was deleted, so there is no denominator stored per-session; the ceiling is resolved per stage, see architecture.md "Context Budget Enforcement"), timestamps.
 
 ### SessionBackend (orchestrator/terminal/)
 

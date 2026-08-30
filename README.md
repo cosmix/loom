@@ -104,6 +104,8 @@ bash ./dev-install.sh
 
 `dev-install.sh` builds the release binary (`cargo build --release`) and runs `install.sh`, which installs `loom-*` prefixed agents and skills (non-destructively, preserving user customizations), hooks, and configuration into `~/.claude/` and the CLI binary to `~/.local/bin/loom`. Orchestration rules are written directly to `~/.claude/CLAUDE.md` (existing file is backed up).
 
+`install.sh` takes an optional `--skills core|all` flag (default `core`): `core` installs a small set of always-loaded core skills to `~/.claude/skills/` and catalogs the rest under `~/.claude/loom-skill-catalog/`, loaded on demand; `all` installs every loom skill directly to `~/.claude/skills/`.
+
 ### 2. Write a Plan
 
 Plans are how loom knows what to build. Open Claude Code in your target project and use the `/loom-plan-writer` skill to create one:
@@ -144,7 +146,8 @@ loom stop
 | Location                     | Contents                                                  |
 | ---------------------------- | --------------------------------------------------------- |
 | `~/.claude/agents/loom-*.md` | 4 specialized subagents (per-item, non-destructive)       |
-| `~/.claude/skills/loom-*/`   | 61 domain knowledge modules (per-item, non-destructive)   |
+| `~/.claude/skills/loom-*/`   | 9 core domain knowledge modules, always loaded (per-item, non-destructive) |
+| `~/.claude/loom-skill-catalog/loom-*/` | 53 more domain knowledge modules, loaded on demand (`--skills core`, the default) |
 | `~/.claude/commands/*.md`    | Loom slash commands (`/pressure`, `/address`, `/distill`) |
 | `~/.claude/hooks/loom/`      | 16 lifecycle and guardrail hooks + shared library         |
 | `~/.claude/CLAUDE.md`        | Orchestration rules                                       |
@@ -255,6 +258,7 @@ See [Knowledge System](#knowledge-system) for how these fit together.
 
 ```bash
 loom review [--ai-summary]                                                   # Generate a code-review doc from stage memories; --ai-summary uses headless `claude -p` (see Billing note)
+loom usage [--since <duration|date>] [--project <path>] [--all] [--stage <id>] [--plan <name>] [--json]  # Report what agent sessions actually consumed, in tokens
 loom attach [stage-id]                                                       # tmux backend only; omit the id for a tiled overview
 loom sessions list
 loom sessions kill <session-id...> | --stage <stage-id>

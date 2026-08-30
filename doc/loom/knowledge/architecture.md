@@ -67,7 +67,11 @@ test fixture string, not a real import.)
 
 ## Context Budget Enforcement
 
-Stages define context_budget (1-100%, default 65%, max 75%). Monitor tracks Green (<50%), Yellow (50-64%), Red (65%+). BudgetExceeded event triggers auto-handoff.
+Stages define `context_ceiling_tokens: Option<u32>` — an ABSOLUTE resident-token ceiling (validated `>= MIN_CONTEXT_CEILING_TOKENS`, 60,000). A plan still writing the retired percentage field `context_budget` is REJECTED (`removed_context_budget` serde trap in `plan/schema/types.rs`, checked in `validation.rs`). Resolution order: `stage.context_ceiling_tokens` -> `.work/config.toml [context] ceiling_tokens` -> `DEFAULT_CONTEXT_CEILING_TOKENS` (150,000); subagents default to `DEFAULT_SUBAGENT_CEILING_TOKENS` (120,000). The one resolver is `fs::work_dir::resolve_context_ceiling_tokens(work_dir, stage_ceiling)`; `monitor/detection.rs` keeps its own copy of the same order because it holds a pre-read `ContextConfig` and must not touch the filesystem per tick.
+
+`orchestrator/monitor/context.rs::context_health(tokens, ceiling)` bands a session as a fraction of its resolved ceiling: Green `<60%`, Yellow `60-90%`, Red `>=90%` (a ceiling of 0 yields Green). `BudgetExceeded` is the daemon's 1.25x-over-ceiling backstop (`DAEMON_CEILING_MULTIPLIER`), not the handoff trigger — and it now KILLS the session it hands off before re-queueing (see [context-ceiling.md](architecture/context-ceiling.md) for why an unconditional re-queue was a double-spawn bug). The actual handoff trigger is the `PostToolUse` hook reading the resident-token count out of the transcript.
+
+Three independent enforcement thresholds fire off this one ceiling — 1.0x (the `PostToolUse` hook instruction), 1.25x (the daemon kill+re-queue), and 1.5x (Claude Code's own native `CLAUDE_CODE_AUTO_COMPACT_WINDOW`) — plus `hooks/pre-compact.sh`'s block-then-allow pattern as a threshold-independent last resort. Full detail: [context-ceiling.md](architecture/context-ceiling.md).
 
 ## Security Model
 
@@ -84,7 +88,9 @@ MergeLock prevents concurrent merges via exclusive file at `.work/merge.lock`. A
 
 ## Skills Module (loom/src/skills/)
 
-Loads skill metadata from SKILL.md files in ~/.claude/skills/, builds inverted index of trigger keywords, matches stage descriptions. Components: types.rs (SkillMetadata, SkillMatch), matcher.rs (keyword matching, phrase=2pts, word=1pt, threshold 2.0), index.rs (SkillIndex, load_from_directory, match_skills). Up to 5 skill recommendations embedded in agent signals.
+Loads skill metadata from SKILL.md files across TWO roots — `~/.claude/skills/` (core skills) and `~/.claude/loom-skill-catalog/` (the other ~53 catalogued skills, split out of `~/.claude/skills` to keep the primary directory small and to avoid tripping `hooks/read-guard.sh`'s 400-line rules on oversized skills — full rationale in [skill-catalog.md](architecture/skill-catalog.md)) — builds an inverted index of trigger keywords, matches stage descriptions. Components: `types.rs` (SkillMetadata, SkillMatch), `matcher.rs` (keyword matching, phrase=2pts, word=1pt, threshold 2.0), `index.rs` (SkillIndex, load_from_directory, match_skills — visibility of `add_skill`/`parse_skill_file` widened to `pub(super)` for the catalog loader, otherwise unchanged), `index_catalog.rs` (the compiled-in core manifest via `include_str!` of `skills/core-skills.txt`, the two-root loader `load_with_catalog`, and `skill_invocation()` which renders the correct invocation form — bare `/loom-<name>` for core skills, `Skill(skill="loom-skills", args="<name>")` for catalogued ones), `install_layout.rs` (reads `~/.claude/loom-install.toml` and re-places skills after a self-update). Up to 5 skill recommendations embedded in agent signals.
+
+A catalogued `SKILL.md` is loaded via the Read tool, not the Skill tool, so both skill roots need an exemption in every Read-class `PreToolUse` hook (`hooks/worktree-file-guard.sh` and `hooks/_read_discipline.sh`) or all catalogued skills become unreachable from a worktree stage session — see [skill-catalog.md](architecture/skill-catalog.md).
 
 ## Diagnosis Module (loom/src/diagnosis/)
 
@@ -202,7 +208,7 @@ Full file list:
 - `failure_tracking.rs` — Consecutive failure escalation logic
 - `handlers.rs` — `Handlers` struct: handoff/crash-report generation; holds optional `LivenessService`
 - `heartbeat.rs` — `HeartbeatWatcher` with 300s hung timeout
-- `context.rs` — Context health thresholds: Green (<50%), Yellow (50-64%), Red (65%+)
+- `context.rs` — `context_health(tokens, ceiling)` bands an absolute token count as a fraction of its resolved ceiling: Green `<60%`, Yellow `60-90%`, Red `>=90%` (see "Context Budget Enforcement" above)
 - `tests.rs` — Unit tests
 
 **`Monitor::poll()` flow:**

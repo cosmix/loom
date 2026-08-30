@@ -1,6 +1,6 @@
 # Untrusted Value Boundaries
 
-> Topic notes for the mistakes knowledge area.
+> Enumerating every producer of a rendered field, not just the field, and why containment at one render site alone is not enough.
 
 ## Enumerate Every PRODUCER of a Rendered Field, Not Every Field
 

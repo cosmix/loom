@@ -1,6 +1,6 @@
 # Merge Cleanup Boundary
 
-> Topic notes for the mistakes knowledge area.
+> A cleanup-boundary bug: what happened, why it survived undetected, and the fix shape worth reusing.
 
 ## What Happened
 

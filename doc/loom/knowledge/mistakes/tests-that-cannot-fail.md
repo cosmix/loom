@@ -1,6 +1,6 @@
 # Tests That Cannot Fail
 
-> Topic notes for the mistakes knowledge area.
+> Tests that pass regardless of whether the bug they exist to catch is present, and how to spot the shape.
 
 ## A Test Named for a Property Is Not Evidence the Property Is Pinned
 
@@ -122,3 +122,36 @@ even in a unit test.** Where that is impossible, say in the test name or a comme
 that it is a structural guard only — a claim the containment stage made explicitly
 when no injection seam existed for a fail-closed hook site, which is the honest way
 to ship one.
+
+## A Bound-Only Assertion Cannot Detect Content Loss
+
+`truncate_overview`'s test asserted only that `extract_plan_overview()` returns `<= 4096` bytes.
+A function returning just `# Title\n\n## Overview` plus a truncation suffix satisfies that bound
+perfectly while discarding 4KB of real content — the bug survived three separate tests because
+none of them asserted a FLOOR. **Rule: when you cap something, assert BOTH bounds** — the ceiling
+AND a floor proving the content that should survive actually did.
+
+A related trap sat in the same function: it took an unconditional `rfind('\n')` line-boundary cut.
+For a plan whose Overview is one unwrapped paragraph, the text always begins `# Title\n\n##
+Overview\n\n<paragraph>`, so the LAST newline in the truncation window sits right after the
+heading — `rfind` finds `Some(early_offset)`, so the `unwrap_or(0)`/`unwrap_or(cut)` fallback (which
+only fires on `None`) never engages. A fix aimed at the `None`/default branch never fires, because
+a newline genuinely exists — just far too early. **When a fix targets a `None`/default branch,
+prove that branch is the one the reported symptom actually takes**, rather than assuming absence
+of the value is the failure mode. (Fixed by computing the line-boundary cut separately and using
+it only when it keeps at least half the byte budget, else falling back to a char-boundary cut.)
+
+## Verify a Headline Fix by Mutation, Not by Reading the Test That Is Supposed to Cover It
+
+A stage's headline fix — make the context-budget backstop KILL the session it hands off, instead
+of only re-queueing it — looked covered by an existing test named for exactly that property. It
+was not: the pre-existing test hand-simulated the flow by calling the state-transition functions
+directly, never the real entry point, so it stayed green with the kill code deleted. The way this
+was actually caught: stub the kill call behind `if false`, confirm the NEW test written against the
+real entry point actually goes red, then restore the code and confirm it goes green again. A test
+that passes both with and without the code under test is worse than no test, because it reads as
+coverage — inspection alone cannot tell a real assertion from a decorative one. **For any defect a
+stage exists to fix, write a test that drives the real entry point, and verify by MUTATION (stub
+or delete the fix, confirm red, restore, confirm green) rather than trusting a plausible-sounding
+test name.** This is the same "delete the production line — does it go red?" question above,
+applied to a fix rather than to existing coverage.

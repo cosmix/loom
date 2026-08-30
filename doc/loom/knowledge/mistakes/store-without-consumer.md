@@ -1,6 +1,6 @@
 # Store Without Consumer
 
-> Topic notes for the mistakes knowledge area.
+> A store that was written but never read - what happened, why it stayed invisible, and the concrete trail.
 
 ## What Happened
 

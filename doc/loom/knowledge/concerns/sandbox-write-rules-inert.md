@@ -1,6 +1,6 @@
 # Sandbox Write Rules Inert
 
-> Topic notes for the concerns knowledge area.
+> Sandbox Write() rules that are inert in loom generated settings versus the repository own committed settings.json.
 
 **Status split on 2026-08-17: the generated-settings half is fixed; the repo-config half is
 still open and needs an owner.**

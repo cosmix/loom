@@ -168,3 +168,39 @@ to start a second agent for a stage that has a live one.
 tracking key from the stage id, not from the pid-file side. A pid filename is
 `<tracking_key>-<session_id>` and neither half is delimited, so parsing one backwards lets stage
 `a`'s prefix match stage `a-b`'s file and invent a session id that never existed.
+
+## Re-Queueing a Stage Without a CONFIRMED Kill Double-Spawns Into a Live Worktree (2026-08-30)
+
+`handle_budget_exceeded` removed the over-ceiling session from `active_sessions` and re-queued its
+stage WITHOUT killing the process first — the next daemon poll then spawned a SECOND agent into a
+worktree the first one was still writing to. The sibling handoff path, `on_needs_handoff`, had
+always done kill → remove-signal → re-queue in the correct order; the fix was to route the budget
+path through the same shared helper. That fix was still broken on first landing: the kill sat
+inside `if let Some(session) = active_sessions.get(stage_id)`, while the re-queue ran
+UNCONDITIONALLY — and `active_sessions` is in-memory only, never rebuilt on a daemon restart. After
+a restart the map is empty, so a live over-ceiling session is re-queued with NO kill and the exact
+same double-spawn recurs through a different door. **Rule: any code path that re-queues a stage
+must gate the re-queue on CONFIRMED death of the prior session — `is_session_alive` plus the
+on-disk session record — never on whether an in-memory map happens to have an entry for it.**
+
+Two more traps sit directly downstream of the fix itself:
+
+- **Survivorship after a kill must be decided by RE-PROBING liveness, not by the kill call's
+  return value.** An errored kill may still have worked; a successful one may not have taken
+  effect yet. `TmuxBackend::kill_session` always returns `Ok`, and `NativeBackend::kill_session`
+  returns `Ok` even when it refuses to signal an identity it cannot verify — `Ok` is never
+  evidence of a kill.
+- **`SIGTERM` returns immediately; the process does not die immediately.** A liveness probe run
+  right after `kill_session` reports even a correctly-killed agent ALIVE for a moment, which would
+  call every killed agent a "survivor" and wedge every handed-off stage. `confirm_session_gone`
+  polls for up to a short timeout (2s) instead of probing once.
+- **Do not drop the surviving session's `active_sessions` entry just because its disk record was
+  already marked `ContextExhausted`.** `live_sessions_for_stage` filters that status OUT, so if the
+  in-memory entry is also dropped, a later takedown attempt has no handle to the surviving agent
+  at all — keep the entry until the agent is CONFIRMED gone, not until its status is declared.
+
+**How to test a liveness-gated branch without risking the test runner:** write a PID file with NO
+start-time line. It verifies as `Unverifiable`, which counts as ALIVE for probing purposes, while
+the verified-kill path REFUSES to signal an unverifiable identity — so a test can point this at its
+own PID with zero risk of the test killing itself. `Some(u64::MAX)` as the start time gives the
+deterministic dead case for the opposite branch.

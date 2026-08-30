@@ -91,6 +91,8 @@ git ls-files '*.md' | rg -v '^doc/plans/' | rg -v '^loom/tests/fixtures/' \
 
 Expect `Summary: 0 issues`. `.markdownlint.json` disables MD013/MD033/MD036/MD041/MD060, so long lines are fine — but emphasis style, heading spacing and list style are all enforced. Running `markdownlint-cli2.mjs` straight from the bun cache with `node` does NOT work: that directory has no `node_modules`, so it fails on `Cannot find package 'globby'`.
 
+**A second, independent root cause with the identical symptom (2026-08-30):** even once the bun-cache write path is allowlisted, the same step tries to reach `registry.npmjs.org` and is DENIED by the sandbox's network filter on every commit — again printing nothing to the visible hook output and exiting 0, with the denial visible only in the harness's own `<sandbox_violations>` block, never in the hook's stdout/stderr. Whichever of the two causes is live in a given sandbox configuration, the fix is the same: lint explicitly out-of-band before pushing (command above) rather than trusting the pre-commit step's silence, and check `<sandbox_violations>` after any hook step that touches the network before believing "no output" means "nothing needed doing."
+
 ## Headless CI Has No Terminal Emulator — Pin `LOOM_TERMINAL` in Tests That Build an Orchestrator (2026-08-10)
 
 **What happened:** `merge_handler_attempt_tests::merge_probe_failure_does_not_consume_resolver_attempt_budget` passed on every dev box and failed in CI with `No terminal emulator found. Set TERMINAL environment variable or install one of: kitty, alacritty, ...`.
@@ -247,3 +249,18 @@ pattern. `as_chunks` is stable since 1.88 and discards a trailing odd element ex
 `chunks_exact` did, so the unpaired-backtick behaviour is unchanged. Pinning a `rust-toolchain.toml`
 would trade these surprise breakages for silently ageing lint coverage; it was deliberately NOT
 done.
+
+## `install.sh` Aborts With No Controlling TTY, After All Real Work Already Succeeded (2026-08-30)
+
+**What happened:** `install.sh`'s `cleanup_backups()` does `read -r response </dev/tty`
+unconditionally. In a sandbox or CI with no controlling TTY this aborts the WHOLE script (`set
+-e`) with a raw `No such device or address` error — even though every real installation step
+(skills, agents, hooks, `CLAUDE.md`, commands) had already completed successfully by that point.
+Pre-existing; not introduced by any specific stage.
+
+**Prevention:** to test `install.sh` non-interactively in a throwaway `HOME`, override
+`HOME=$TMPDIR/...` (`CLAUDE_DIR=$HOME/.claude` is computed at runtime from `HOME`, never
+hardcoded) and pipe `y` to stdin for `confirm_overwrites` (`install.sh:486`, which reads plain
+stdin, not the tty) — but the run will still abort at `cleanup_backups()`'s tty read at the very
+end unless a tty is attached, so treat a `No such device or address` failure AFTER the install
+steps' own success output as a harness artifact, not evidence the install failed.

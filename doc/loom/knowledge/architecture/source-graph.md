@@ -1,6 +1,6 @@
 # Source Graph
 
-> Topic notes for the architecture knowledge area.
+> What the source graph is and is not, its honesty contract, extractor trait, node/edge and cache identity, and lifecycle.
 
 ## What It Is, and What It Is Not
 

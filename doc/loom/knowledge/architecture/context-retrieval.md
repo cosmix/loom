@@ -1,6 +1,6 @@
 # Context Retrieval
 
-> Topic notes for the architecture knowledge area.
+> The retrieval subsystem: two graphs, two lanes, query-side gating, two-tier fusion, and the persistent BM25 index.
 
 ## What This Subsystem Is
 

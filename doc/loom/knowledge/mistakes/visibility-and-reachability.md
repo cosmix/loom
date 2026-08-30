@@ -1,6 +1,6 @@
 # Visibility And Reachability
 
-> Topic notes for the mistakes knowledge area.
+> pub(crate) is not nameable by itself - visibility is capped by path reachability - plus sibling traps around wrapper types and field names.
 
 ## `pub(crate)` Does Not Make an Item Nameable — Visibility Is Capped by PATH Reachability
 

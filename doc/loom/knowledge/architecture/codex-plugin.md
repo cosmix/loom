@@ -1,6 +1,6 @@
 # Codex Plugin
 
-> Topic notes for the architecture knowledge area.
+> Codex plugin install and identity, the codex-rescue subagent, and the loom-codex-forwarder lane.
 
 ## Install and identity
 

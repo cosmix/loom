@@ -1,6 +1,6 @@
 # Completion Broker Credential
 
-> Topic notes for the mistakes knowledge area.
+> The completion broker unreachable server-side fallback, duplicate file naming, and a sandboxed completion that exits 0 without completing.
 
 ## A Designed Fallback Existed on the Server, and the Client Could Never Reach It (2026-08-11)
 
