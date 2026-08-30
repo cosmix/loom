@@ -282,6 +282,8 @@ impl Orchestrator {
         let handoff_at = Utc::now();
         self.update_stage(stage_id, |stage| mark_needs_handoff(stage, handoff_at))?;
 
+        // This ends processes: `stage_takedown.rs` signals each of the stage's
+        // agents through `kill_session` and returns only those still alive after.
         let survivors = self.take_down_stage_agents(stage_id);
         if !survivors.is_empty() {
             eprintln!(
