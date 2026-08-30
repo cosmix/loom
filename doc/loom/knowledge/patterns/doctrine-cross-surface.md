@@ -37,11 +37,11 @@ surfaces agree. Two independently-worded copies both pass.
    the generator for each runtime surface, and asserts byte equality (or, for `BLOCK_B`,
    substring containment of the identifiers it must carry) against the canonical block. See
    `loom/src/orchestrator/signals/tests_doctrine.rs` and `tests_doctrine_waiting.rs`.
-3. **Exceptions travel with the copied block.** For every rule ask: _which surface is pasted
-   verbatim into a subagent prompt?_ Any carve-out must survive that paste. A carve-out that
+3. **Exceptions travel with the copied block.** For every rule ask: *which surface is pasted
+   verbatim into a subagent prompt?* Any carve-out must survive that paste. A carve-out that
    lives only in the prose explaining the rule never reaches the agent that needs it.
 4. **Frame outside the block.** Surface-specific framing (a hook's `BLOCKED:` header line,
-   language-specific examples) sits _outside_ the pinned block so the block itself stays
+   language-specific examples) sits *outside* the pinned block so the block itself stays
    byte-identical everywhere.
 5. **Sweep for retired phrasing with a NEGATIVE pin, not a memory of the grep.** `RETIRED_PHRASES`
    in `tests_doctrine.rs` is asserted absent from `guidance_surfaces()` — CLAUDE.md.template +
@@ -53,7 +53,7 @@ surfaces agree. Two independently-worded copies both pass.
 
 **Known tradeoff:** because the blocks must stay byte-identical, per-language examples cannot
 live inside them. `BLOCK_A` carries one Rust example, so a blocked Python or Go subagent reads a
-`cargo` example. The fix is to append language examples _after_ the block as explicitly
+`cargo` example. The fix is to append language examples *after* the block as explicitly
 surface-local guidance.
 
 ## Ambiguity = Fail Safe (Privilege Lookups From State Files)
@@ -63,7 +63,7 @@ than one candidate match as ambiguous and refuse. Concretely: resolve by glob, c
 matches, and consult the file **only when exactly one exists**.
 
 `glob | head -1` is not a lookup — it is a silent tie-break, and the tie is attacker-chosen when
-filenames carry a sortable prefix. Cross-checking a field _inside_ the file (`id:`) does not
+filenames carry a sortable prefix. Cross-checking a field *inside* the file (`id:`) does not
 help: whoever plants the decoy writes that field too. Only the count is trustworthy.
 
 The matching test obligation: a fail-safe relaxation must be pinned by tests that assert the
@@ -76,7 +76,7 @@ For a hook that must decide "does this Bash command run a project-wide build/tes
 substring matching is wrong (it blocks `rg "cargo test" doc/`) and naive word-splitting is
 bypassable. The working shape:
 
-1. Strip embedded content (heredoc bodies, `-m` message text) so a _mention_ is not a match.
+1. Strip embedded content (heredoc bodies, `-m` message text) so a *mention* is not a match.
 2. Normalise newlines to `;`, then pad separators — `;`, `|`, `(`, `)`, and the pair `&&`.
    Never pad a lone `&`: it would split `2>&1` and reopen a redirection bypass.
 3. Split with `set -f` plus array splitting so quotes stay attached to their token.
