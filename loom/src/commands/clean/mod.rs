@@ -164,6 +164,22 @@ fn clean_state_directory(repo_root: &Path) -> Result<bool> {
     })?;
     println!("  {} Removed {}", "✓".green().bold(), ".work/".dimmed());
 
+    // The .work/ this just deleted may be the one a LOOM_WORK_DIR pin in
+    // .claude/settings.local.json (or settings.json) names — left behind,
+    // that pin outlives the directory it points to and shadows every future
+    // WorkDir::new upward search in this repo. Best-effort: never fails
+    // `loom clean` over it.
+    let healed = crate::fs::permissions::scrub_main_repo_settings_identity(repo_root);
+    if !healed.is_empty() {
+        println!(
+            "  {} Scrubbed stale {} pin from {} settings file{}",
+            "✓".green().bold(),
+            "LOOM_WORK_DIR".dimmed(),
+            healed.len(),
+            if healed.len() == 1 { "" } else { "s" }
+        );
+    }
+
     Ok(true)
 }
 

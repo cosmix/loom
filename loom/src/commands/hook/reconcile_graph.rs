@@ -118,8 +118,19 @@ struct ReconcileTarget {
 impl ReconcileTarget {
     /// A stage scope whenever the environment really names one; the
     /// checkout otherwise.
+    ///
+    /// The single existence check on `work_dir.root()` at the end guards
+    /// both `for_stage` and `for_checkout`: `WorkDir::new` never fails
+    /// (`try_reconcile`'s own doc comment promises "no `.work/` resolvable
+    /// ... nothing to reconcile, and not a failure"), so without this a
+    /// stale `LOOM_STAGE_ID`/`LOOM_WORK_DIR` pin naming a since-deleted
+    /// `.work/` would resolve to a `ReconcileTarget` anyway, and
+    /// `ContextStore::open` below would recreate that `.work/` from
+    /// scratch in a checkout that was never `loom init`ed.
     fn from_environment() -> Option<Self> {
-        Self::for_stage().or_else(Self::for_checkout)
+        Self::for_stage()
+            .or_else(Self::for_checkout)
+            .filter(|target| target.work_dir.root().exists())
     }
 
     /// Resolve from `LOOM_STAGE_ID`/`LOOM_WORK_DIR`. `None` when either is

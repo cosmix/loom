@@ -151,14 +151,16 @@ fn reconcile_graph_leaves_a_finished_marker_after_a_successful_run() {
 
 #[test]
 #[serial]
-fn reconcile_graph_on_a_project_with_no_git_repo_still_returns_ok_and_marks_finished() {
-    // A plain directory: no `.work/`, no `.git` anywhere above it, so
-    // `WorkDir::new`'s upward search finds nothing and falls back to a
-    // path that does not exist on disk, and the checkout-scope reconcile's
-    // own `git rev-parse HEAD` fails cleanly. Every failure on this path
-    // must swallow into `Ok(())` — this is the internal-maintenance entry
-    // point's whole contract — and still leave a finished marker so a
-    // repeatedly-failing checkout is debounced the same as a succeeding one.
+fn reconcile_graph_with_no_resolvable_work_dir_creates_nothing() {
+    // A plain directory: no `.work/`, no `.git` anywhere above it, and
+    // `LOOM_WORK_DIR` names a directory that does not exist either —
+    // `WorkDir::new`'s upward search finds nothing and falls back to a path
+    // that is not on disk. `ReconcileTarget::from_environment`'s existence
+    // check must catch this and yield `None` before `try_reconcile` ever
+    // opens a `ContextStore` or claims the debounce lock — this is the
+    // guard that keeps a stale `LOOM_WORK_DIR` pin (naming a since-deleted
+    // `.work/`) from having a hook materialize a `.work/` or `.loom/`
+    // cache in a checkout that was never `loom init`ed.
     let temp = TempDir::new().unwrap();
     let work_dir = WorkDir::new(temp.path()).unwrap();
     let store = ContextStore::open(&work_dir).unwrap();
@@ -171,11 +173,56 @@ fn reconcile_graph_on_a_project_with_no_git_repo_still_returns_ok_and_marks_fini
 
     assert!(
         result.is_ok(),
-        "an unresolvable target or a git failure must degrade to Ok(()), never propagate"
+        "an unresolvable target must degrade to Ok(()), never propagate"
     );
-    let (_, pid) =
-        read_lock(&lock_path).expect("a failed run must still leave a finished marker behind");
-    assert_eq!(pid, 0);
+    assert!(
+        read_lock(&lock_path).is_none(),
+        "with no .work/ resolvable at all, nothing should ever be written"
+    );
+    assert!(
+        !store.root().exists(),
+        "no cache directory should be created for a checkout with no .work/"
+    );
+}
+
+#[test]
+#[serial]
+fn reconcile_graph_with_a_stale_loom_work_dir_pin_creates_nothing() {
+    // The exact phantom-.work/ scenario: LOOM_WORK_DIR names `.work/`
+    // itself (not the project root), and that directory was deleted after
+    // being pinned — e.g. a leftover `.claude/settings.local.json` entry
+    // from an earlier `loom clean --state`. `WorkDir::new` now resolves the
+    // hint to itself rather than double-appending `.work`, but that path
+    // still does not exist on disk, so the existence check must still
+    // refuse to reconcile.
+    let temp = TempDir::new().unwrap();
+    let root = temp.path();
+    let stale_work_dir_path = root.join(".work");
+    assert!(!stale_work_dir_path.exists());
+
+    let work_dir = WorkDir::new(&stale_work_dir_path).unwrap();
+    assert_eq!(
+        work_dir.root(),
+        stale_work_dir_path,
+        "a hint naming .work directly must resolve to itself"
+    );
+    let store = ContextStore::open(&work_dir).unwrap();
+    let lock_path = reconcile_lock_path(&store);
+
+    std::env::remove_var("LOOM_STAGE_ID");
+    std::env::set_var("LOOM_WORK_DIR", &stale_work_dir_path);
+    let result = reconcile_graph();
+    leave();
+
+    assert!(result.is_ok());
+    assert!(
+        !stale_work_dir_path.exists(),
+        "a stale LOOM_WORK_DIR pin must never cause .work/ to be materialized"
+    );
+    assert!(
+        read_lock(&lock_path).is_none(),
+        "a stale pin naming a deleted .work/ must not reach the debounce lock"
+    );
 }
 
 // ---------------------------------------------------------------------------

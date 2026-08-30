@@ -6,6 +6,7 @@
 mod cleanup;
 mod execute;
 mod plan_setup;
+mod work_state;
 
 #[cfg(test)]
 mod tests;

@@ -15,6 +15,7 @@ use super::cleanup::{
     prune_stale_worktrees, remove_work_directory_on_failure, SessionReapMode,
 };
 use super::plan_setup::initialize_with_plan_acknowledgement;
+use super::work_state::holds_orchestration_state;
 
 /// RAII guard that cleans up .work directory on drop unless disarmed.
 /// This ensures cleanup happens on ANY failure path, not just plan parsing.
@@ -102,11 +103,17 @@ pub fn execute(
     println!("\n{}", "Initialize".bold());
     println!("{}", "─".repeat(40).dimmed());
 
-    // `loom init` is one-shot: if .work/ already exists, refuse. Pass --clean
-    // to wipe and start over. Reusing an existing .work/ would silently
-    // overlay the new plan's stages on top of the previous plan's files,
-    // producing duplicate ids and an unrecoverable graph.
-    if repo_root.join(".work").exists() {
+    // `loom init` is one-shot: if .work/ already holds real orchestration
+    // state, refuse. Pass --clean to wipe and start over. Reusing a stateful
+    // .work/ would silently overlay the new plan's stages on top of the
+    // previous plan's files, producing duplicate ids and an unrecoverable
+    // graph. A .work/ that merely EXISTS but holds no such state — e.g. one a
+    // stale LOOM_WORK_DIR pin made a hook materialize against a since-deleted
+    // .work/ (see `WorkDir::new`) — is adopted instead of refused.
+    let work_dir_path = repo_root.join(".work");
+    let adopting_empty_work_dir =
+        work_dir_path.exists() && !holds_orchestration_state(&work_dir_path);
+    if work_dir_path.exists() && !adopting_empty_work_dir {
         bail!(
             ".work/ already initialized.\n\
              Run `loom init <plan> --clean` to wipe existing state and start over,\n\
@@ -116,13 +123,7 @@ pub fn execute(
 
     let mut guard = InitGuard::new(repo_root.clone());
     let work_dir = WorkDir::new(".")?;
-    work_dir.initialize()?;
-    guard.mark_work_created();
-    println!(
-        "  {} Directory structure created {}",
-        "✓".green().bold(),
-        ".work/".dimmed()
-    );
+    create_or_adopt_work_dir(&work_dir, adopting_empty_work_dir, &mut guard)?;
 
     // Install git pre-commit hook to prevent .work commits
     match install_pre_commit_hook(&repo_root) {
@@ -241,6 +242,40 @@ fn prompt_backend_choice() -> Result<SessionBackendKind> {
             _ => println!("  Please enter 'native' or 'tmux'."),
         }
     }
+}
+
+/// Lay out `.work/`, either creating it or adopting a stateless one that is
+/// already there.
+///
+/// An adopted directory is deliberately NOT marked on the guard: `InitGuard`
+/// deletes `.work/` wholesale on a later failure, and it may only delete a
+/// directory THIS run created.
+fn create_or_adopt_work_dir(
+    work_dir: &WorkDir,
+    adopting: bool,
+    guard: &mut InitGuard,
+) -> Result<()> {
+    if adopting {
+        work_dir.adopt_existing()?;
+        println!(
+            "  {} Adopted existing empty {}",
+            "✓".green().bold(),
+            ".work/".dimmed()
+        );
+        println!(
+            "    {}",
+            "Derived caches (.work/context/, .work/.loom/) were left in place.".dimmed()
+        );
+    } else {
+        work_dir.initialize()?;
+        guard.mark_work_created();
+        println!(
+            "  {} Directory structure created {}",
+            "✓".green().bold(),
+            ".work/".dimmed()
+        );
+    }
+    Ok(())
 }
 
 fn print_repo_bootstrap(repo_bootstrap: crate::git::RepoBootstrapResult) {
