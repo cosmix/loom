@@ -12,10 +12,12 @@ use std::path::{Path, PathBuf};
 mod order;
 pub(crate) mod prose;
 pub(crate) mod size;
+mod source_roots;
 #[cfg(test)]
 mod tests_prose;
 
 use order::compare_issues;
+use source_roots::{cargo_package_source_roots, repository_source_path_exists};
 
 /// A problem found in the knowledge base. REPORTED, never repaired: this
 /// subsystem does not modify one byte of the knowledge tree.
@@ -96,6 +98,7 @@ fn collect_chunk_issues(
     root: &Path,
     relative_path: &Path,
     project_root: Option<&Path>,
+    cargo_source_roots: &[PathBuf],
     chunk: &KnowledgeChunk,
     heading_counts: &mut BTreeMap<PathBuf, BTreeMap<String, usize>>,
     issues: &mut Vec<CatalogIssue>,
@@ -123,7 +126,7 @@ fn collect_chunk_issues(
     if let Some(project_root) = project_root {
         for source_path in &chunk.source_paths {
             if looks_like_repository_path(source_path)
-                && !path_exists(&project_root.join(source_path))
+                && !repository_source_path_exists(project_root, cargo_source_roots, source_path)
             {
                 issues.push(CatalogIssue::MissingSourceRef {
                     file: relative_path.to_path_buf(),
@@ -143,6 +146,7 @@ fn process_file(
     root: &Path,
     relative_path: &Path,
     project_root: Option<&Path>,
+    cargo_source_roots: &[PathBuf],
     heading_counts: &mut BTreeMap<PathBuf, BTreeMap<String, usize>>,
     issues: &mut Vec<CatalogIssue>,
 ) -> anyhow::Result<Vec<KnowledgeChunk>> {
@@ -168,6 +172,7 @@ fn process_file(
             root,
             relative_path,
             project_root,
+            cargo_source_roots,
             chunk,
             heading_counts,
             issues,
@@ -205,6 +210,10 @@ fn push_duplicate_headings(
 pub fn build(root: &Path) -> anyhow::Result<Catalog> {
     let files = markdown_files(root)?;
     let project_root = prose::project_root_of(root);
+    let cargo_source_roots = project_root
+        .as_deref()
+        .map(cargo_package_source_roots)
+        .unwrap_or_default();
     let mut chunks = Vec::new();
     let mut issues = Vec::new();
     let mut heading_counts: BTreeMap<PathBuf, BTreeMap<String, usize>> = BTreeMap::new();
@@ -214,6 +223,7 @@ pub fn build(root: &Path) -> anyhow::Result<Catalog> {
             root,
             &relative_path,
             project_root.as_deref(),
+            &cargo_source_roots,
             &mut heading_counts,
             &mut issues,
         )?;

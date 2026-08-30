@@ -3,7 +3,7 @@ use sha2::{Digest, Sha256};
 use std::fs;
 use std::path::{Path, PathBuf};
 use tempfile::TempDir;
-
+mod source_refs;
 fn section(heading: &str, body_lines: usize) -> String {
     format!("## {heading}\n{}", "detail\n".repeat(body_lines))
 }
