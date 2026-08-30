@@ -2,6 +2,7 @@
 
 mod acceptance_tests;
 mod auto_merge_tests;
+mod build_tool_path_tests;
 mod implementer_tests;
 mod knowledge_recommendations_tests;
 mod reasoning_effort_tests;
