@@ -280,9 +280,10 @@ state are daemon-owned, so direct file-tool writes must never be authorized" —
 RPC that **does not exist**. `daemon/protocol.rs` has `CompleteStage` and `DisputeCriteria`
 and nothing for memory. The comment read as deliberate design, so the missing write grant
 looked intentional rather than like a gap. A second fossil pointed the same wrong way:
-`fs/permissions/constants.rs` still declares `LOOM_PERMISSIONS_WORKTREE` with
-`Write(.work/**)` and `Bash(loom *)`, which reads like a blanket grant but has no consumers
-outside its own unit test — and `Write(path)` rules are inert anyway.
+`fs/permissions/constants.rs` declared `LOOM_PERMISSIONS_WORKTREE` with `Write(.work/**)` and
+`Bash(loom *)`, which read like a blanket grant but has no consumers outside its own unit test
+— and `Write(path)` rules are inert anyway. (That entry is now `Edit(.work/handoffs/**)`; see
+[../concerns/sandbox-write-rules-inert.md](../concerns/sandbox-write-rules-inert.md).)
 
 **Prevention:** when a comment says state is written "through the daemon", verify the RPC
 exists in `daemon/protocol.rs` before treating a missing write grant as intentional. An

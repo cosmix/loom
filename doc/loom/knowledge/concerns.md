@@ -209,16 +209,17 @@ That verification is manual release validation.
 (Residual of a resolved concern: the fail-open defect itself — generated settings not carrying
 sensitive reads into `denyRead`, and `failIfUnavailable` unset — was fixed 2026-08-08.)
 
-## Sandbox `Write(path)` Rules Are Inert — Generated Settings Fixed, Repo Config Open (2026-07-31, split 2026-08-17)
+## Sandbox `Write(path)` Rules Are Inert (2026-07-31, split 2026-08-17, RESOLVED 2026-08-31)
 
 Claude Code's file permission check consults **only** `Edit(path)`; a `Write(path)` rule parses,
-warns at startup, and is then ignored. Loom's GENERATED stage settings are now clean —
-`sandbox/settings.rs` emits `Edit(...)` throughout — but the repository's own committed
-`.claude/settings.json` still carries three inert `Write(.work/**)` deny rules and no `Edit(`
-rule at all, so the "agents never edit `.work` directly" rule is documented and unenforced.
+warns at startup, and is then ignored. Both halves are now fixed: `sandbox/settings.rs` emits
+`Edit(...)` throughout, and the `Write(.work/**)` rules in a project's `.claude/settings.json`
+turned out to be loom's own output from `fs/permissions/constants.rs` (that file is generated and
+untracked, not committed config), replaced by `Edit(.work/handoffs/**)`. Loom now also prunes the
+legacy grants and migrates inherited `Write(...)` denies on every `loom init`.
 
-→ [Sandbox Write Rules Inert](concerns/sandbox-write-rules-inert.md) for both halves, the
-deliberate carry-forward of user-authored rules, and the deny-beats-allow caution before fixing.
+→ [Sandbox Write Rules Inert](concerns/sandbox-write-rules-inert.md) for what each half emitted,
+where the pruning lives, and the deny-beats-allow caution that shaped the migration rule.
 
 ## GC Flags Tier-1 Files for Section Extraction With No Oversized Sections (2026-07-31)
 
