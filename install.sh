@@ -257,6 +257,9 @@ install_skills_from_source() {
 		if [[ "$allow_missing_manifest" == "true" ]]; then
 			warn "core-skills.txt missing from release; installing all skills"
 			placement_mode="all"
+			# Propagate the actual layout to the global so write_install_config
+			# (which runs after this function) records what was really placed.
+			SKILLS_MODE="all"
 		else
 			err "core-skills.txt not found: $manifest"
 			return 1
@@ -290,9 +293,19 @@ install_skills_from_source() {
 		rm -rf "$destination_dir/$name"
 		cp -R "${skill_dir%/}" "$destination_dir/"
 
-		# Remove the old unprefixed version.
+		# Remove the old unprefixed version. This guard is only a defensive
+		# assertion against a malformed name (empty/unchanged old_name); it
+		# does NOT address the real risk below, which it still runs into on
+		# every well-formed name. The rm can't tell loom's own historical
+		# unprefixed copy from a user's own same-named skill, so installing
+		# loom-rust deletes ~/.claude/skills/rust, and likewise python,
+		# docker, testing, auth, search, react, debugging, documentation,
+		# and skills. Candidate for removal now that every shipped skill is
+		# loom-prefixed (tracked as a follow-up, not fixed here).
 		old_name="${name#loom-}"
-		rm -rf "$CLAUDE_DIR/skills/$old_name"
+		if [[ -n "$old_name" && "$old_name" != "$name" ]]; then
+			rm -rf "$CLAUDE_DIR/skills/$old_name"
+		fi
 	done
 
 	if [[ "$placement_mode" == "core" ]]; then
