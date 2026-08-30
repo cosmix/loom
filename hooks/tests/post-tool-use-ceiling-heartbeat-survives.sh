@@ -17,8 +17,9 @@ trap 'rm -rf "$TMP"' EXIT
 assert_heartbeat_survives_ceiling() {
 	local desc="$1" workdir_name="$2" ceiling="$3" resident="$4"
 	local workdir="$TMP/$workdir_name"
-	mkdir -p "$workdir"
-	printf '[context]\nceiling_tokens = %s\n' "$ceiling" >"$workdir/config.toml"
+	mkdir -p "$workdir/heartbeat"
+	printf '%s:%s\n' "$ceiling" '120000' \
+		>"$workdir/heartbeat/test-stage.test-session.context-ceilings"
 
 	local transcript="$workdir/transcript.jsonl"
 	{

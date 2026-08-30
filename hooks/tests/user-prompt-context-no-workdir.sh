@@ -5,16 +5,16 @@
 # has_retrievable_context() also falls open when LOOM_WORK_DIR is unset by
 # walking upward from $PWD for `.work/`, `doc/loom/knowledge/`, or
 # `.loom/cache/context-v1/` - so this test must run from a cwd genuinely
-# outside any loom checkout, or it would find this repo's own trees and
-# invoke the stub after all. Resolve HOOK to an absolute path FIRST, then cd
-# into a fresh subdirectory of the mktemp dir before invoking it - do not
-# "helpfully" drop this cd.
+# outside any loom checkout, or it would find this repo's own trees and invoke
+# the stub after all. Use `/`, not the temp directory: restricted test runs set
+# TMPDIR inside the checkout, which would make even a fresh temp child inherit
+# the repository's retrieval roots during the upward walk.
 set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 HOOK="$ROOT/hooks/user-prompt-context.sh"
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
-mkdir -p "$TMP/bin" "$TMP/outside"
+mkdir -p "$TMP/bin"
 
 cat >"$TMP/bin/loom" <<'SH'
 #!/usr/bin/env bash
@@ -25,7 +25,7 @@ chmod +x "$TMP/bin/loom"
 INPUT='{"session_id":"s1","prompt":"a perfectly ordinary implementation question about the codebase"}'
 
 set +e
-OUTPUT=$(cd "$TMP/outside" && printf '%s' "$INPUT" |
+OUTPUT=$(cd / && printf '%s' "$INPUT" |
 	env -u LOOM_WORK_DIR -u LOOM_MAIN_AGENT_PID -u LOOM_WORKTREE_PATH -u LOOM_SESSION_ID \
 	PATH="$TMP/bin:/usr/bin:/bin" LOOM_STAGE_ID="test-stage" \
 	bash "$HOOK")

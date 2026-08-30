@@ -8,10 +8,6 @@ use serde_json::Value;
 
 use crate::commands::usage::transcript_types::SYNTHETIC_MODEL;
 
-/// 75% of a 200k context window, matching the 75% hard stop that CLAUDE.md
-/// rule 3 puts on context usage.
-pub const PEAK_TOKENS_CEILING: u64 = 150_000;
-
 /// Metrics that describe the requests represented by one subagent transcript.
 #[derive(Debug, Default)]
 pub(super) struct TranscriptMetrics {

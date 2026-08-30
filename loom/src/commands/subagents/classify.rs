@@ -51,12 +51,15 @@ use std::fs;
 use std::path::Path;
 use std::time::SystemTime;
 
-use anyhow::{Context, Result};
-use chrono::{DateTime, Utc};
+use anyhow::Result;
+use chrono::Utc;
 use serde::Serialize;
 use serde_json::Value;
 
 use super::{ledger, metrics, summary};
+use crate::models::constants::DEFAULT_SUBAGENT_CEILING_TOKENS;
+
+mod entry;
 
 /// Minimum idle time (seconds) a structurally-`done` last entry must sit
 /// unchanged before it is trusted as genuinely turn-final, rather than one
@@ -151,19 +154,48 @@ pub struct SubagentSummary {
 /// and optional spawn-type ledgers (see the module doc). `None` (no `.work/`
 /// found, or the caller doesn't want the fast path) falls straight through
 /// to the transcript rule and leaves type unknown.
+#[cfg(test)]
 pub fn analyze(
     path: &Path,
     agent_id: String,
     debounce_secs: u64,
     work_dir: Option<&Path>,
 ) -> Result<SubagentSummary> {
-    let entries = read_entries(path)?;
+    analyze_at_ceiling(
+        path,
+        agent_id,
+        debounce_secs,
+        work_dir,
+        resolve_subagent_ceiling(work_dir),
+    )
+}
+
+/// Resolve the same plan-wide subagent ceiling used by the runtime hook.
+/// Missing or malformed configuration falls back to the one Rust default;
+/// callers such as `watch` resolve once and reuse it across polling cycles.
+pub(super) fn resolve_subagent_ceiling(work_dir: Option<&Path>) -> u64 {
+    work_dir
+        .and_then(|path| crate::fs::work_dir::read_context_config(path).ok())
+        .map_or(u64::from(DEFAULT_SUBAGENT_CEILING_TOKENS), |config| {
+            u64::from(config.subagent_ceiling_tokens)
+        })
+}
+
+pub(super) fn analyze_at_ceiling(
+    path: &Path,
+    agent_id: String,
+    debounce_secs: u64,
+    work_dir: Option<&Path>,
+    subagent_ceiling_tokens: u64,
+) -> Result<SubagentSummary> {
+    let entries = entry::read_entries(path)?;
     let authoritative_done = has_authoritative_termination(work_dir, &agent_id);
     let agent_type = ledger::agent_type(work_dir, &agent_id);
     let metrics = metrics::extract(&entries);
-    let peak_tokens_over_ceiling = metrics
-        .peak_resident_tokens
-        .is_some_and(|tokens| tokens >= metrics::PEAK_TOKENS_CEILING);
+    let peak_tokens_over_ceiling = subagent_ceiling_tokens > 0
+        && metrics
+            .peak_resident_tokens
+            .is_some_and(|tokens| tokens >= subagent_ceiling_tokens);
 
     let Some(last) = entries.last() else {
         return Ok(summary::empty(
@@ -174,15 +206,15 @@ pub fn analyze(
         ));
     };
 
-    let idle_secs = entry_timestamp(last)
+    let idle_secs = entry::timestamp(last)
         .map(|ts| (Utc::now() - ts).num_seconds().max(0))
         .unwrap_or_else(|| idle_since_mtime(path));
     let state = resolve_state(last, authoritative_done, idle_secs, debounce_secs);
     let turns = entries
         .iter()
-        .filter(|entry| entry_type(entry) == Some("assistant"))
+        .filter(|entry| entry::is_assistant(entry))
         .count();
-    let last_tool = last_tool_used(&entries);
+    let last_tool = entry::last_tool_used(&entries);
     let final_report = final_report_for(state, last);
 
     Ok(summary::with_last(
@@ -200,18 +232,6 @@ pub fn analyze(
     ))
 }
 
-/// Read a transcript's bytes and decode them lossily rather than with
-/// `fs::read_to_string`: the file may be mid-write, and a torn multibyte
-/// UTF-8 character at the tail must degrade to replacement characters on
-/// that one line -- which then simply fails to parse as JSON and is skipped
-/// like any other malformed line -- rather than failing the whole read.
-fn read_entries(path: &Path) -> Result<Vec<Value>> {
-    let bytes = fs::read(path)
-        .with_context(|| format!("reading subagent transcript {}", path.display()))?;
-    let content = String::from_utf8_lossy(&bytes);
-    Ok(parse_lines(&content))
-}
-
 /// The subagent's final report: only ever `Some` when `state == Done`, and
 /// even then only when the last entry actually carried a text block. An
 /// authoritative termination record can force `Done` while the last flushed
@@ -221,7 +241,7 @@ fn read_entries(path: &Path) -> Result<Vec<Value>> {
 /// harvestable" path it takes for any other reportless subagent.
 fn final_report_for(state: SubagentState, last: &Value) -> Option<String> {
     (state == SubagentState::Done)
-        .then(|| text_blocks(last).join("\n\n"))
+        .then(|| entry::text_blocks(last).join("\n\n"))
         .filter(|report| !report.trim().is_empty())
 }
 
@@ -242,7 +262,7 @@ fn resolve_state(
     if authoritative_done {
         return SubagentState::Done;
     }
-    let structural = classify_last(last);
+    let structural = entry::classify_last(last);
     if structural == SubagentState::Done && idle_secs < debounce_secs as i64 {
         SubagentState::Generating
     } else {
@@ -270,106 +290,6 @@ fn has_authoritative_termination(work_dir: Option<&Path>, agent_id: &str) -> boo
         .any(|entry| entry.path().join(format!("{agent_id}.json")).is_file())
 }
 
-/// Parse every non-blank line independently, discarding lines that fail to
-/// parse as JSON. This is what makes a torn last line (a concurrent partial
-/// write) and any other mid-file corruption non-fatal.
-fn parse_lines(content: &str) -> Vec<Value> {
-    content
-        .lines()
-        .filter(|line| !line.trim().is_empty())
-        .filter_map(|line| serde_json::from_str::<Value>(line).ok())
-        .collect()
-}
-
-fn entry_type(entry: &Value) -> Option<&str> {
-    entry.get("type").and_then(Value::as_str)
-}
-
-fn entry_timestamp(entry: &Value) -> Option<DateTime<Utc>> {
-    entry
-        .get("timestamp")
-        .and_then(Value::as_str)
-        .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
-        .map(|dt| dt.with_timezone(&Utc))
-}
-
-fn message_content_blocks(entry: &Value) -> Vec<&Value> {
-    entry
-        .get("message")
-        .and_then(|message| message.get("content"))
-        .and_then(Value::as_array)
-        .map(|blocks| blocks.iter().collect())
-        .unwrap_or_default()
-}
-
-fn block_type(block: &Value) -> Option<&str> {
-    block.get("type").and_then(Value::as_str)
-}
-
-fn block_text(block: &Value) -> Option<&str> {
-    block.get("text").and_then(Value::as_str)
-}
-
-fn block_tool_name(block: &Value) -> Option<&str> {
-    block.get("name").and_then(Value::as_str)
-}
-
-fn text_blocks(entry: &Value) -> Vec<&str> {
-    message_content_blocks(entry)
-        .into_iter()
-        .filter(|block| block_type(block) == Some("text"))
-        .filter_map(block_text)
-        .collect()
-}
-
-/// Classify a single entry per the frozen table above: `tool_use` takes
-/// priority over `text` within the same `assistant` entry (the model may
-/// narrate before calling a tool), a `thinking`-only `assistant` entry is
-/// still mid-turn, a bare `user` entry means a turn just started or a
-/// result just came back, and anything else is `unknown`. Never applies the
-/// debounce itself -- that's `analyze`'s job, since it needs `idle_secs`.
-fn classify_last(entry: &Value) -> SubagentState {
-    match entry_type(entry) {
-        Some("assistant") => {
-            let blocks = message_content_blocks(entry);
-            if blocks
-                .iter()
-                .any(|block| block_type(block) == Some("tool_use"))
-            {
-                SubagentState::ToolWait
-            } else if blocks.iter().any(|block| block_type(block) == Some("text")) {
-                SubagentState::Done
-            } else if blocks
-                .iter()
-                .any(|block| block_type(block) == Some("thinking"))
-            {
-                SubagentState::Generating
-            } else {
-                SubagentState::Unknown
-            }
-        }
-        Some("user") => SubagentState::Generating,
-        _ => SubagentState::Unknown,
-    }
-}
-
-/// The most recently used tool name, scanning backward through every entry
-/// (not just the last) so `list` shows useful context even after the
-/// subagent has moved past that tool call.
-fn last_tool_used(entries: &[Value]) -> Option<String> {
-    entries.iter().rev().find_map(|entry| {
-        if entry_type(entry) != Some("assistant") {
-            return None;
-        }
-        message_content_blocks(entry)
-            .into_iter()
-            .rev()
-            .find(|block| block_type(block) == Some("tool_use"))
-            .and_then(block_tool_name)
-            .map(str::to_string)
-    })
-}
-
 /// Fallback idle time for entries with no parseable timestamp (or files
 /// with no parseable entry at all): time since the transcript file's own
 /// mtime, or 0 if even that can't be read.
@@ -389,3 +309,7 @@ mod tests;
 #[cfg(test)]
 #[path = "classify_recovery_tests.rs"]
 mod recovery_tests;
+
+#[cfg(test)]
+#[path = "classify_ceiling_tests.rs"]
+mod ceiling_tests;

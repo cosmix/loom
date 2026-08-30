@@ -34,14 +34,14 @@ fn find_work_dir_quietly() -> Option<PathBuf> {
 /// found there. Shared by `list`, `harvest`, and each `watch` poll. A
 /// transcript that fails to read (not "fails to parse" -- that degrades to
 /// `Unknown` inside `classify::analyze`) is reported and skipped rather
-/// than aborting the whole listing. `debounce_secs` and `work_dir` are
-/// forwarded to `classify::analyze` unchanged -- see its doc for what each
-/// gates.
+/// than aborting the whole listing. The configured ceiling is resolved once
+/// by the command and reused across all transcripts (and every watch poll).
 fn gather(
     session: &Option<String>,
     dir: &Option<PathBuf>,
     debounce_secs: u64,
     work_dir: Option<&Path>,
+    subagent_ceiling_tokens: u64,
 ) -> Gathered {
     match resolve::resolve(dir.clone(), session.clone()) {
         Resolution::NotFound(looked_for) => Gathered::NotFound(looked_for),
@@ -50,7 +50,13 @@ fn gather(
             let mut summaries = Vec::with_capacity(files.len());
             for path in files {
                 let agent_id = resolve::agent_id_from_path(&path);
-                match classify::analyze(&path, agent_id.clone(), debounce_secs, work_dir) {
+                match classify::analyze_at_ceiling(
+                    &path,
+                    agent_id.clone(),
+                    debounce_secs,
+                    work_dir,
+                    subagent_ceiling_tokens,
+                ) {
                     Ok(summary) => summaries.push(summary),
                     Err(error) => eprintln!("warning: could not read {agent_id} ({error})"),
                 }
@@ -69,7 +75,8 @@ pub fn list(
     debounce: u64,
 ) -> Result<()> {
     let work_dir = find_work_dir_quietly();
-    let summaries = match gather(&session, &dir, debounce, work_dir.as_deref()) {
+    let ceiling = classify::resolve_subagent_ceiling(work_dir.as_deref());
+    let summaries = match gather(&session, &dir, debounce, work_dir.as_deref(), ceiling) {
         Gathered::NotFound(looked_for) => {
             if json {
                 println!(
@@ -114,7 +121,8 @@ pub fn harvest(
     debounce: u64,
 ) -> Result<()> {
     let work_dir = find_work_dir_quietly();
-    let summaries = match gather(&session, &dir, debounce, work_dir.as_deref()) {
+    let ceiling = classify::resolve_subagent_ceiling(work_dir.as_deref());
+    let summaries = match gather(&session, &dir, debounce, work_dir.as_deref(), ceiling) {
         Gathered::NotFound(looked_for) => {
             println!("no subagents found: {looked_for}");
             return Ok(());
@@ -175,9 +183,10 @@ pub fn watch(
     // -- lifecycle and ledger reads inside classify still happen fresh every
     // poll.
     let work_dir = find_work_dir_quietly();
+    let ceiling = classify::resolve_subagent_ceiling(work_dir.as_deref());
 
     loop {
-        match gather(&session, &dir, debounce, work_dir.as_deref()) {
+        match gather(&session, &dir, debounce, work_dir.as_deref(), ceiling) {
             Gathered::NotFound(looked_for) => {
                 println!("settled: no subagents found ({looked_for})");
                 return Ok(());
@@ -258,6 +267,7 @@ mod tests {
             &Some(temp.path().to_path_buf()),
             DEFAULT_DONE_DEBOUNCE_SECS,
             None,
+            classify::resolve_subagent_ceiling(None),
         ) else {
             panic!("an explicit --dir must always resolve");
         };
@@ -306,6 +316,7 @@ mod tests {
             &Some(temp.path().to_path_buf()),
             DEFAULT_DONE_DEBOUNCE_SECS,
             None,
+            classify::resolve_subagent_ceiling(None),
         ) else {
             panic!("an explicit --dir must always resolve");
         };

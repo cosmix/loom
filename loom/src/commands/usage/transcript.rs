@@ -51,6 +51,7 @@ pub fn parse(
         project_slug: file.project_slug.clone(),
         session_id: file.session_id.clone(),
         agent_id: file.agent_id.clone(),
+        agent_type: None,
         first_user_entry,
         entries,
     })

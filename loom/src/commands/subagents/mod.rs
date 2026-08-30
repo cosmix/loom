@@ -16,7 +16,7 @@
 //! and `render` for the three subcommands themselves.
 
 mod classify;
-mod ledger;
+pub(crate) mod ledger;
 mod metrics;
 mod render;
 // `pub(crate)` rather than private: `commands::usage` reuses this module's

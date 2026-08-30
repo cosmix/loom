@@ -16,11 +16,9 @@ TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
 
 WORKDIR="$TMP/work"
-mkdir -p "$WORKDIR"
-cat >"$WORKDIR/config.toml" <<'EOF'
-[context]
-ceiling_tokens = 1000
-EOF
+mkdir -p "$WORKDIR/heartbeat"
+printf '%s\n' '1000:120000' >"$WORKDIR/heartbeat/test-stage.session-a.context-ceilings"
+printf '%s\n' '1000:120000' >"$WORKDIR/heartbeat/test-stage.session-b.context-ceilings"
 
 TRANSCRIPT="$TMP/transcript.jsonl"
 {

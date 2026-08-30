@@ -100,4 +100,9 @@ pub enum HookCommands {
     /// to reopen this session's own delivery suppression before its context
     /// window is compacted away. Not a user-facing command.
     PreCompact,
+
+    /// Print Rust-resolved main/subagent context ceilings for session hooks.
+    /// Not a user-facing command.
+    #[command(hide = true)]
+    ContextCeilings,
 }

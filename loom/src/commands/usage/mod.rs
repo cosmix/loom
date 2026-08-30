@@ -22,7 +22,7 @@ mod transcript;
 // sibling module tree that a plain `mod` declaration would not reach.
 pub(crate) mod transcript_types;
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use anyhow::Result;
 
@@ -65,19 +65,52 @@ pub struct UsageArgs {
 fn parse_all(
     files: &[discovery::DiscoveredFile],
     since: chrono::DateTime<chrono::Utc>,
+    work_dir: Option<&Path>,
 ) -> Vec<transcript::Transcript> {
+    let started_agent_types =
+        crate::commands::subagents::ledger::StartedAgentTypeIndex::load(work_dir);
     let mut transcripts = Vec::with_capacity(files.len());
     for file in files {
+        let agent_type = file
+            .agent_id
+            .as_deref()
+            .and_then(|agent_id| started_agent_types.get(agent_id, &file.session_id));
         match transcript::parse(file, since) {
-            Ok(transcript) => transcripts.push(transcript),
+            Ok(mut transcript) => {
+                transcript.agent_type = agent_type;
+                transcripts.push(transcript);
+            }
             Err(error) => eprintln!("loom usage: skipping {}: {error:#}", file.path.display()),
         }
     }
     transcripts
 }
 
+/// Resolve the optional hook ledger for the project being reported. An
+/// explicit project must use its own `.work`; falling back to the caller's
+/// repository would silently attach unrelated spawn metadata. `--all`
+/// likewise spans repositories and therefore has no single safe ledger.
+fn usage_work_dir(project: Option<&Path>, all: bool) -> Option<PathBuf> {
+    if all {
+        return None;
+    }
+    match project {
+        Some(project) => {
+            let project = if project.is_absolute() {
+                project.to_path_buf()
+            } else {
+                std::env::current_dir().ok()?.join(project)
+            };
+            let candidate = project.join(".work");
+            candidate.is_dir().then_some(candidate)
+        }
+        None => crate::commands::common::find_work_dir().ok(),
+    }
+}
+
 pub fn execute(args: UsageArgs) -> Result<()> {
     let since = discovery::parse_since(&args.since)?;
+    let work_dir = usage_work_dir(args.project.as_deref(), args.all);
     let options = discovery::DiscoveryOptions {
         since,
         project: args.project,
@@ -87,7 +120,7 @@ pub fn execute(args: UsageArgs) -> Result<()> {
     };
 
     let files = discovery::discover(&options)?;
-    let transcripts = parse_all(&files, since);
+    let transcripts = parse_all(&files, since, work_dir.as_deref());
     let report = sections::build(&transcripts, args.windows);
 
     if args.json {
@@ -97,3 +130,7 @@ pub fn execute(args: UsageArgs) -> Result<()> {
         Ok(())
     }
 }
+
+#[cfg(test)]
+#[path = "usage_tests.rs"]
+mod tests;

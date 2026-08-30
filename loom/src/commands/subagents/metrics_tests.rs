@@ -31,7 +31,7 @@ fn counts_only_distinct_non_null_request_ids() {
 }
 
 #[test]
-fn peak_resident_tokens_includes_caches_and_reaches_ceiling() {
+fn peak_resident_tokens_includes_caches_and_excludes_output() {
     let entries = vec![
         serde_json::json!({
             "type": "assistant",
@@ -51,7 +51,7 @@ fn peak_resident_tokens_includes_caches_and_reaches_ceiling() {
     ];
 
     let metrics = extract(&entries);
-    assert_eq!(metrics.peak_resident_tokens, Some(PEAK_TOKENS_CEILING));
+    assert_eq!(metrics.peak_resident_tokens, Some(150_000));
 }
 
 /// An API-error/synthetic first assistant row with no `message.model` must

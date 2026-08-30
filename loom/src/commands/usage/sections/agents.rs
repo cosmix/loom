@@ -1,6 +1,6 @@
 //! Makes small, expensive workers visible before their work is normalized into
-//! aggregate totals. Agent type is inferred from the first user message by
-//! known prompt names, because transcripts do not record a type explicitly.
+//! aggregate totals. Loom's hook ledger is authoritative for agent type;
+//! prompt inference is a best-effort fallback for transcripts without one.
 
 use std::collections::BTreeMap;
 
@@ -14,6 +14,7 @@ use super::fmt::{format_f64, format_u64, heading, no_data, row};
 #[derive(Debug, serde::Serialize)]
 pub struct AgentReport {
     pub subagent_transcripts: usize,
+    pub agent_type_ledger_matches: usize,
     pub tiny_subagents: Vec<TinySubagent>,
     pub by_agent_model: Vec<AgentModelRow>,
     pub parent_model: ParentModelMatch,
@@ -63,6 +64,10 @@ pub fn build(transcripts: &[Transcript]) -> AgentReport {
     let parent_model = parent_matches(&subagents, &parent_models);
     AgentReport {
         subagent_transcripts: subagents.len(),
+        agent_type_ledger_matches: subagents
+            .iter()
+            .filter(|transcript| transcript.agent_type.is_some())
+            .count(),
         tiny_subagents,
         by_agent_model,
         parent_model,
@@ -76,6 +81,13 @@ pub fn render(report: &AgentReport) {
         return;
     }
     row("subagent transcripts", report.subagent_transcripts);
+    row(
+        "agent type ledger",
+        format!(
+            "{}/{} transcripts matched",
+            report.agent_type_ledger_matches, report.subagent_transcripts
+        ),
+    );
     row("under-500-output subagents", report.tiny_subagents.len());
     for agent in &report.tiny_subagents {
         println!(
@@ -245,10 +257,10 @@ const KNOWN_AGENT_TYPES: [&str; 6] = [
 
 /// Infer a subagent's type from its spawn prompt. The transcript format
 /// carries no explicit type field, so this is a best-effort textual
-/// fallback: `commands::subagents::ledger::agent_type` reads the hook-written
-/// `starts.jsonl`/`spawns.jsonl` ledgers and is the authoritative source when
-/// it applies, but that module is scoped to `commands::subagents` and this
-/// report has no `.work/` root threaded through `build` to reach it.
+/// fallback. `usage::parse_all` has already joined a matching hook-written
+/// `starts.jsonl` row by agent and parent session when one exists; that value
+/// returns above before this inference runs. `spawns.jsonl` is deliberately
+/// excluded because it has no agent id and cannot address one transcript.
 ///
 /// Plain substring matching against a fixed-order list used to pick
 /// whichever known name happened to be checked first, which broke two ways:
@@ -265,6 +277,9 @@ const KNOWN_AGENT_TYPES: [&str; 6] = [
 /// survives those two filters, since a wrong label here is worse than an
 /// absent one.
 fn agent_type(transcript: &Transcript) -> String {
+    if let Some(agent_type) = transcript.agent_type.as_deref() {
+        return agent_type.to_owned();
+    }
     let prompt = transcript
         .first_user_entry
         .as_ref()

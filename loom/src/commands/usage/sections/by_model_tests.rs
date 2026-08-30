@@ -23,6 +23,7 @@ fn transcript(models: &[&str]) -> Transcript {
         project_slug: "project".to_owned(),
         session_id: "session-1".to_owned(),
         agent_id: Some("agent-1".to_owned()),
+        agent_type: None,
         first_user_entry: None,
         entries: models
             .iter()

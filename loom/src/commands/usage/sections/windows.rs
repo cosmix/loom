@@ -5,6 +5,7 @@
 
 use crate::commands::usage::accounting::{bucket, Accounting, Window, Windowing};
 use crate::commands::usage::transcript::{TokenUsage, Transcript};
+use crate::commands::usage::transcript_types::SYNTHETIC_MODEL;
 
 use super::fmt::{format_f64, format_u64, heading, no_data};
 
@@ -35,6 +36,7 @@ pub fn build(transcripts: &[Transcript], windowing: Windowing) -> WindowReport {
     let mut requests = transcripts
         .iter()
         .flat_map(Transcript::requests)
+        .filter(|request| request.model != SYNTHETIC_MODEL)
         .collect::<Vec<_>>();
     requests.sort_by_key(|request| request.timestamp);
     let windows = bucket(&requests, windowing);
@@ -115,3 +117,7 @@ fn window_row(window: &Window) -> WindowRow {
         s3: window.accounting.s3,
     }
 }
+
+#[cfg(test)]
+#[path = "windows_tests.rs"]
+mod tests;

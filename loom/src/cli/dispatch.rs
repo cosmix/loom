@@ -147,6 +147,7 @@ fn dispatch_hook(command: HookCommands) -> Result<()> {
         HookCommands::UserPrompt => hook::user_prompt::user_prompt(),
         HookCommands::ReconcileGraph => hook::reconcile_graph::reconcile_graph(),
         HookCommands::PreCompact => hook::pre_compact::pre_compact(),
+        HookCommands::ContextCeilings => hook::context_ceilings::context_ceilings(),
     }
 }
 

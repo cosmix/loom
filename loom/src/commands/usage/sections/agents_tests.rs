@@ -32,12 +32,28 @@ fn transcript(scope: Scope, session_id: &str, prompt: Option<&str>, models: &[&s
         project_slug: "project".to_owned(),
         session_id: session_id.to_owned(),
         agent_id: Some("agent-1".to_owned()),
+        agent_type: None,
         first_user_entry: prompt.map(user_entry),
         entries: models
             .iter()
             .map(|m| Entry::Assistant(request(m)))
             .collect(),
     }
+}
+
+/// The hook ledger records what Claude actually started. It must win over a
+/// prompt that happens to quote a different known type in its prose.
+#[test]
+fn authoritative_ledger_type_wins_over_prompt_inference() {
+    let mut transcript = transcript(
+        Scope::Subagent,
+        "session-1",
+        Some("Ask loom-software-engineer to review this later."),
+        &[],
+    );
+    transcript.agent_type = Some("loom-senior-software-engineer".to_owned());
+
+    assert_eq!(agent_type(&transcript), "loom-senior-software-engineer");
 }
 
 // --- Defect 1: agent-type classification ------------------------------

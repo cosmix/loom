@@ -1,8 +1,3 @@
-//! Regression test for the `<synthetic>`-request defect in `build`: the
-//! report's own `requests` count must exclude a synthetic API-error row, the
-//! same as `by_model`/`by_agent_model`, so the breakdown rows still sum back
-//! to this total. Split out to keep `totals.rs` legible (CLAUDE.md Rule 17).
-
 use super::*;
 use crate::commands::usage::transcript::{Entry, Request, Scope};
 
@@ -22,9 +17,7 @@ fn request(model: &str, resident_input: u64) -> Request {
 }
 
 #[test]
-fn totals_excludes_synthetic_requests_from_the_report_count() {
-    let real = request("claude-sonnet-5", 100);
-    let synthetic = request(SYNTHETIC_MODEL, 0);
+fn windows_exclude_synthetic_requests_just_like_totals() {
     let transcript = Transcript {
         path: std::path::PathBuf::from("test.jsonl"),
         scope: Scope::Main,
@@ -33,13 +26,15 @@ fn totals_excludes_synthetic_requests_from_the_report_count() {
         agent_id: None,
         agent_type: None,
         first_user_entry: None,
-        entries: vec![Entry::Assistant(real), Entry::Assistant(synthetic)],
+        entries: vec![
+            Entry::Assistant(request("claude-sonnet-5", 100)),
+            Entry::Assistant(request(SYNTHETIC_MODEL, 999)),
+        ],
     };
 
-    let totals = build(&[transcript]);
-    assert_eq!(
-        totals.requests, 1,
-        "a synthetic row must not count as a request"
-    );
-    assert_eq!(totals.fresh_input, 100);
+    let report = build(&[transcript], Windowing::FiveHour);
+    assert_eq!(report.totals.requests, 1);
+    assert_eq!(report.totals.fresh_input, 100);
+    assert_eq!(report.windows.len(), 1);
+    assert_eq!(report.windows[0].requests, 1);
 }

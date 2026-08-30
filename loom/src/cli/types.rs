@@ -319,6 +319,7 @@ pub enum Commands {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use clap::CommandFactory;
 
     #[test]
     fn run_rejects_zero_parallelism() {
@@ -362,5 +363,15 @@ mod tests {
             "--no-verify"
         ])
         .is_err());
+    }
+
+    #[test]
+    fn internal_context_ceiling_hook_command_is_hidden() {
+        let mut command = Cli::command();
+        let hook = command
+            .find_subcommand_mut("hook")
+            .expect("hook command exists");
+        let help = hook.render_long_help().to_string();
+        assert!(!help.contains("context-ceilings"), "{help}");
     }
 }

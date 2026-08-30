@@ -36,9 +36,9 @@ source "$(dirname "$0")/_common.sh"
 # this stage's contract leaves untouched.
 # ---------------------------------------------------------------------------
 
-# Ceiling defaults, used when neither the stage file nor `.work/config.toml`
-# names one. A shell script cannot read a Rust constant, so these are hand-kept
-# copies and each one carries the name of its counterpart:
+# Ceiling defaults, used only when the canonical Rust resolver is unavailable
+# or returns malformed output. A shell script cannot read a Rust constant, so
+# these are hand-kept copies and each one carries the name of its counterpart:
 #
 #   LOOM_DEFAULT_CONTEXT_CEILING_TOKENS  mirrors DEFAULT_CONTEXT_CEILING_TOKENS
 #   LOOM_DEFAULT_SUBAGENT_CEILING_TOKENS mirrors DEFAULT_SUBAGENT_CEILING_TOKENS
@@ -97,78 +97,69 @@ _loom_ctx_last_usage_tokens() {
 	fi
 }
 
-# _loom_ctx_toml_get <config-file> <key>
-# Echoes the digits of <key>'s value inside the [context] table of
-# <config-file>, or nothing if the table/key is absent. A minimal,
-# purpose-built reader for the one table this hook needs, not general TOML.
-_loom_ctx_toml_get() {
-	local config_file="$1" key="$2"
-	[[ -n "$config_file" && -r "$config_file" ]] || return 0
-	awk -v key="$key" '
-		/^\[/ { in_section = ($0 == "[context]"); next }
-		in_section {
-			pattern = "^[ \t]*" key "[ \t]*="
-			if ($0 ~ pattern) {
-				line = $0
-				sub(/^[^=]*=/, "", line)
-				if (match(line, /[0-9]+/)) {
-					print substr(line, RSTART, RLENGTH)
-				}
-				exit
-			}
-		}
-	' "$config_file" 2>/dev/null || true
+# _loom_ctx_pair_is_valid <main:subagent>
+# Accept exactly the hidden Rust command's two-u32 wire format. Cache files are
+# local mutable state, so validate them just as strictly as fresh command output.
+_loom_ctx_pair_is_valid() {
+	local pair="$1" main_value subagent_value
+	[[ "$pair" =~ ^(0|[1-9][0-9]*):(0|[1-9][0-9]*)$ ]] || return 1
+	main_value="${pair%%:*}"
+	subagent_value="${pair#*:}"
+	[[ "${#main_value}" -le 10 && "${#subagent_value}" -le 10 ]] || return 1
+	[[ "$main_value" -le 4294967295 && "$subagent_value" -le 4294967295 ]]
 }
 
-# _loom_ctx_resolve_ceiling <cache-file> <default> <config-key> <use-stage-file>
-# Resolves the token ceiling and caches it in <cache-file> so later tool calls
-# in the same stage skip the lookup. Echoes an integer. The cache is written
-# with the same symlink caution the heartbeat write uses.
-#
-# <use-stage-file> selects the tier order, because the two ceilings do not share
-# one:
-#   1 - stage frontmatter's context_ceiling_tokens -> config.toml
-#       [context].<config-key> -> <default>          (the session's own ceiling)
-#   0 - config.toml [context].<config-key> -> <default>            (a subagent)
-# A stage file has no subagent key, so consulting it for the subagent ceiling
-# would hand every subagent of a stage the STAGE's ceiling and make
-# `subagent_ceiling_tokens` mean nothing.
+# _loom_ctx_cache_pair <cache-file> <main:subagent>
+# Best-effort same-directory replacement: concurrent main/subagent hook calls
+# may both resolve, but neither can expose a partially-written cache document.
+_loom_ctx_cache_pair() {
+	local cache_file="$1" pair="$2" temp_file=""
+	[[ ! -L "$cache_file" ]] || return 0
+	temp_file=$(mktemp "${cache_file}.tmp.XXXXXX" 2>/dev/null) || return 0
+	if ! printf '%s\n' "$pair" >"$temp_file" 2>/dev/null; then
+		rm -f "$temp_file" 2>/dev/null || true
+		return 0
+	fi
+	chmod 600 "$temp_file" 2>/dev/null || true
+	if [[ -L "$cache_file" ]] || ! mv -f "$temp_file" "$cache_file" 2>/dev/null; then
+		rm -f "$temp_file" 2>/dev/null || true
+	fi
+}
+
+# _loom_ctx_resolve_ceiling <cache-file> <main|subagent> <fallback>
+# The Rust command owns TOML/YAML parsing and returns BOTH ceilings in one call.
+# Cache that pair per Loom session, then select the caller's branch locally so
+# the main agent and its subagents cannot drift onto independently-read values.
 _loom_ctx_resolve_ceiling() {
-	# `${4:-}` keeps the fail-open discipline under `set -u`: a caller that
-	# forgets the argument gets the config-only order, never another tier's
-	# ceiling by accident.
-	local cache_file="$1" default_value="$2" config_key="$3" use_stage_file="${4:-}"
+	local cache_file="$1" branch="$2" fallback="$3" pair=""
 
 	if [[ -r "$cache_file" && ! -L "$cache_file" ]]; then
-		local cached
-		cached=$(<"$cache_file")
-		if [[ "$cached" =~ ^[0-9]+$ ]]; then
-			echo "$cached"
-			return 0
+		pair=$(<"$cache_file")
+		_loom_ctx_pair_is_valid "$pair" || pair=""
+	fi
+
+	if [[ -z "$pair" ]] && command -v loom &>/dev/null; then
+		if command -v gtimeout &>/dev/null; then
+			pair=$(gtimeout 3 loom hook context-ceilings 2>/dev/null || true)
+		elif command -v timeout &>/dev/null; then
+			pair=$(timeout 3 loom hook context-ceilings 2>/dev/null || true)
+		else
+			pair=$(loom hook context-ceilings 2>/dev/null || true)
+		fi
+		if _loom_ctx_pair_is_valid "$pair"; then
+			_loom_ctx_cache_pair "$cache_file" "$pair"
+		else
+			pair=""
 		fi
 	fi
 
-	local resolved="" stage_file="${LOOM_WORK_DIR}/stages/${LOOM_STAGE_ID}.md"
-	if [[ "$use_stage_file" == "1" && -r "$stage_file" ]]; then
-		local frontmatter
-		frontmatter=$(awk '/^---$/{c++; next} c==1' "$stage_file" 2>/dev/null || true)
-		resolved=$(printf '%s\n' "$frontmatter" |
-			grep -E '^context_ceiling_tokens:[[:space:]]*[0-9]+[[:space:]]*$' |
-			head -n 1 |
-			sed -E 's/^context_ceiling_tokens:[[:space:]]*([0-9]+)[[:space:]]*$/\1/' || true)
+	if [[ -z "$pair" ]]; then
+		printf '%s\n' "$fallback"
+	elif [[ "$branch" == "subagent" ]]; then
+		printf '%s\n' "${pair#*:}"
+	else
+		printf '%s\n' "${pair%%:*}"
 	fi
-
-	if [[ -z "$resolved" ]]; then
-		resolved=$(_loom_ctx_toml_get "${LOOM_WORK_DIR}/config.toml" "$config_key")
-	fi
-
-	[[ "$resolved" =~ ^[0-9]+$ ]] || resolved="$default_value"
-
-	if [[ ! -L "$cache_file" ]]; then
-		printf '%s' "$resolved" >"$cache_file" 2>/dev/null || true
-		chmod 600 "$cache_file" 2>/dev/null || true
-	fi
-	echo "$resolved"
 }
 
 # _loom_ctx_check_main_ceiling <resident-tokens>
@@ -189,7 +180,7 @@ _loom_ctx_check_main_ceiling() {
 	local session_prefix="${HEARTBEAT_DIR}/${LOOM_STAGE_ID}.${LOOM_SESSION_ID}"
 
 	local ceiling
-	ceiling=$(_loom_ctx_resolve_ceiling "${session_prefix}.ceiling" "$LOOM_DEFAULT_CONTEXT_CEILING_TOKENS" "ceiling_tokens" 1)
+	ceiling=$(_loom_ctx_resolve_ceiling "${session_prefix}.context-ceilings" "main" "$LOOM_DEFAULT_CONTEXT_CEILING_TOKENS")
 	[[ "$ceiling" =~ ^[0-9]+$ ]] && [[ "$ceiling" -gt 0 ]] || return 0
 
 	if [[ "$resident" -ge "$ceiling" ]]; then
@@ -219,7 +210,7 @@ _loom_ctx_check_subagent_ceiling() {
 	local session_prefix="${HEARTBEAT_DIR}/${LOOM_STAGE_ID}.${LOOM_SESSION_ID}"
 
 	local ceiling
-	ceiling=$(_loom_ctx_resolve_ceiling "${session_prefix}.subagent-ceiling" "$LOOM_DEFAULT_SUBAGENT_CEILING_TOKENS" "subagent_ceiling_tokens" 0)
+	ceiling=$(_loom_ctx_resolve_ceiling "${session_prefix}.context-ceilings" "subagent" "$LOOM_DEFAULT_SUBAGENT_CEILING_TOKENS")
 	[[ "$ceiling" =~ ^[0-9]+$ ]] && [[ "$ceiling" -gt 0 ]] || return 0
 
 	if [[ "$resident" -ge "$ceiling" ]]; then
@@ -287,9 +278,6 @@ HEARTBEAT_DIR="${LOOM_WORK_DIR}/heartbeat"
 mkdir -p -m 700 "$HEARTBEAT_DIR" 2>/dev/null || exit 0
 chmod 700 "$HEARTBEAT_DIR" 2>/dev/null || exit 0
 
-# Get timestamp
-TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%S.000Z")
-
 # Resident context usage for THIS invocation's own transcript, and whether
 # this invocation is running under a subagent - both are needed twice below
 # (the heartbeat write and the ceiling check at the end), so compute once.
@@ -297,7 +285,17 @@ TRANSCRIPT_PATH=$(echo "$INPUT_JSON" | jq -r '.transcript_path // empty' 2>/dev/
 RESIDENT_TOKENS=$(_loom_ctx_last_usage_tokens "$TRANSCRIPT_PATH")
 
 IS_SUBAGENT=0
-if loom_is_subagent "$INPUT_JSON"; then
+# This is a per-session hook, already scoped by the three validated LOOM_*
+# values above. Unlike globally-installed enforcement hooks it may therefore
+# trust a positive harness payload before process ancestry. Agent-team
+# teammates inherit the session metadata but are not descendants of the main
+# Claude process; ancestry-first classification mistakes them for the parent,
+# overwrites the parent's heartbeat, and gives them the parent ceiling.
+PAYLOAD_AGENT_VERDICT=$(loom_payload_agent_verdict "$INPUT_JSON")
+if [[ "$PAYLOAD_AGENT_VERDICT" == "subagent" ]]; then
+	IS_SUBAGENT=1
+elif [[ "$PAYLOAD_AGENT_VERDICT" == "unknown" ]] && loom_is_subagent "$INPUT_JSON"; then
+	# Payload-less/back-compat callers retain the existing process-tree fallback.
 	IS_SUBAGENT=1
 fi
 
@@ -312,7 +310,18 @@ fi
 # NOT a whole-script exit: the matcher blocks below (post-commit reminder,
 # edit recording) are unrelated to the heartbeat and must still run.
 HEARTBEAT_FILE="${HEARTBEAT_DIR}/${LOOM_STAGE_ID}.json"
-if [[ ! -L "$HEARTBEAT_FILE" ]]; then
+HEARTBEAT_LOCK_DIR="${HEARTBEAT_FILE}.lock"
+if loom_heartbeat_lock_acquire "$HEARTBEAT_LOCK_DIR"; then
+	trap 'loom_heartbeat_lock_release "$HEARTBEAT_LOCK_DIR"' EXIT
+	# Re-check after acquiring: another writer may have replaced the path while
+	# this hook waited.
+	if [[ -L "$HEARTBEAT_FILE" ]]; then
+		loom_debug "post-tool-use: skipping heartbeat refresh - $HEARTBEAT_FILE is a symlink"
+		loom_heartbeat_lock_release "$HEARTBEAT_LOCK_DIR"
+		trap - EXIT
+	elif ! loom_heartbeat_owner_is_current "$LOOM_WORK_DIR" "$LOOM_STAGE_ID" "$LOOM_SESSION_ID" "$HEARTBEAT_FILE"; then
+		loom_debug "post-tool-use: skipping stale heartbeat refresh for session $LOOM_SESSION_ID"
+	else
 	# The heartbeat's context_tokens/transcript_path belong to the MAIN
 	# session's own resident usage exclusively. A subagent's own numbers must
 	# never overwrite them - carry the file's existing values forward instead
@@ -330,12 +339,13 @@ if [[ ! -L "$HEARTBEAT_FILE" ]]; then
 		HB_TRANSCRIPT_PATH_RAW="$TRANSCRIPT_PATH"
 	fi
 
+	HEARTBEAT_TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%S.000Z")
 	HEARTBEAT_JSON=""
 	if command -v jq &>/dev/null; then
 		HEARTBEAT_JSON=$(jq -n \
 			--arg stage_id "$LOOM_STAGE_ID" \
 			--arg session_id "$LOOM_SESSION_ID" \
-			--arg timestamp "$TIMESTAMP" \
+			--arg timestamp "$HEARTBEAT_TIMESTAMP" \
 			--arg last_tool "$TOOL_NAME" \
 			--arg context_tokens_raw "$HB_CONTEXT_TOKENS_RAW" \
 			--arg transcript_path_raw "$HB_TRANSCRIPT_PATH_RAW" \
@@ -347,25 +357,31 @@ if [[ ! -L "$HEARTBEAT_FILE" ]]; then
 	fi
 
 	if [[ -n "$HEARTBEAT_JSON" ]]; then
-		printf '%s\n' "$HEARTBEAT_JSON" >"$HEARTBEAT_FILE"
+		loom_heartbeat_atomic_write "$HEARTBEAT_FILE" "$HEARTBEAT_JSON" || \
+			loom_debug "post-tool-use: skipping heartbeat refresh - atomic replacement failed"
 	else
 		HB_CONTEXT_TOKENS_JSON="null"
 		[[ "$HB_CONTEXT_TOKENS_RAW" =~ ^[0-9]+$ ]] && HB_CONTEXT_TOKENS_JSON="$HB_CONTEXT_TOKENS_RAW"
 		HB_TRANSCRIPT_PATH_JSON="null"
 		[[ -n "$HB_TRANSCRIPT_PATH_RAW" ]] && HB_TRANSCRIPT_PATH_JSON="\"${HB_TRANSCRIPT_PATH_RAW}\""
-		cat >"$HEARTBEAT_FILE" <<EOF
+		HEARTBEAT_JSON=$(cat <<EOF
 {
   "stage_id": "${LOOM_STAGE_ID}",
   "session_id": "${LOOM_SESSION_ID}",
-  "timestamp": "${TIMESTAMP}",
+  "timestamp": "${HEARTBEAT_TIMESTAMP}",
   "context_tokens": ${HB_CONTEXT_TOKENS_JSON},
   "transcript_path": ${HB_TRANSCRIPT_PATH_JSON},
   "last_tool": "${TOOL_NAME}",
   "activity": "Tool executed: ${TOOL_NAME}"
 }
 EOF
+		)
+		loom_heartbeat_atomic_write "$HEARTBEAT_FILE" "$HEARTBEAT_JSON" || \
+			loom_debug "post-tool-use: skipping heartbeat refresh - atomic replacement failed"
 	fi
-	chmod 600 "$HEARTBEAT_FILE" 2>/dev/null || true
+	fi
+	loom_heartbeat_lock_release "$HEARTBEAT_LOCK_DIR"
+	trap - EXIT
 fi
 
 # Tool results are intentionally not persisted here. A shell hook cannot append

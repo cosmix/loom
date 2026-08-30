@@ -109,8 +109,8 @@ fn reqs_label(request_count: Option<usize>) -> String {
 }
 
 /// Renders the already-computed ceiling flag rather than recomputing it from
-/// `tokens` -- `classify::analyze` is the single source of truth for what
-/// counts as over the ceiling (`metrics::PEAK_TOKENS_CEILING`).
+/// `tokens` -- classification has already resolved the configured subagent
+/// ceiling that applies to this report.
 fn peak_tokens_label(tokens: Option<u64>, over_ceiling: bool) -> String {
     match tokens {
         Some(tokens) if over_ceiling => format!("{tokens}!"),

@@ -173,7 +173,24 @@ fi
 # overwrite them with the subagent's numbers or with null. If the file is
 # unreadable or absent, both come back empty and render as null below.
 HEARTBEAT_FILE="${HEARTBEAT_DIR}/${LOOM_STAGE_ID}.json"
-if [[ ! -L "$HEARTBEAT_FILE" ]]; then
+HEARTBEAT_LOCK_DIR="${HEARTBEAT_FILE}.lock"
+if loom_heartbeat_lock_acquire "$HEARTBEAT_LOCK_DIR"; then
+	trap 'loom_heartbeat_lock_release "$HEARTBEAT_LOCK_DIR"' EXIT
+	# Read the carried values only after the lock is held. Reading before
+	# acquisition lets a parent write a newer token count and then have this
+	# hook replace it with the stale value it saw earlier.
+	if [[ -L "$HEARTBEAT_FILE" ]]; then
+		loom_debug "subagent-stop: skipping heartbeat refresh - $HEARTBEAT_FILE is a symlink"
+		loom_heartbeat_lock_release "$HEARTBEAT_LOCK_DIR"
+		trap - EXIT
+		exit 0
+	fi
+	if ! loom_heartbeat_owner_is_current "$LOOM_WORK_DIR" "$LOOM_STAGE_ID" "$LOOM_SESSION_ID" "$HEARTBEAT_FILE"; then
+		loom_debug "subagent-stop: skipping stale heartbeat refresh for session $LOOM_SESSION_ID"
+		loom_heartbeat_lock_release "$HEARTBEAT_LOCK_DIR"
+		trap - EXIT
+		exit 0
+	fi
 	EXISTING_CONTEXT_TOKENS_RAW=""
 	EXISTING_TRANSCRIPT_PATH_RAW=""
 	if [[ -r "$HEARTBEAT_FILE" ]]; then
@@ -181,10 +198,11 @@ if [[ ! -L "$HEARTBEAT_FILE" ]]; then
 		EXISTING_TRANSCRIPT_PATH_RAW=$(jq -r '.transcript_path // empty' "$HEARTBEAT_FILE" 2>/dev/null || true)
 	fi
 
+	HEARTBEAT_TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%S.000Z")
 	HEARTBEAT_JSON=$(jq -n \
 		--arg stage_id "$LOOM_STAGE_ID" \
 		--arg session_id "$LOOM_SESSION_ID" \
-		--arg timestamp "$TIMESTAMP" \
+		--arg timestamp "$HEARTBEAT_TIMESTAMP" \
 		--arg activity "subagent ${AGENT_ID} finished" \
 		--arg context_tokens_raw "$EXISTING_CONTEXT_TOKENS_RAW" \
 		--arg transcript_path_raw "$EXISTING_TRANSCRIPT_PATH_RAW" \
@@ -194,13 +212,13 @@ if [[ ! -L "$HEARTBEAT_FILE" ]]; then
 		  last_tool: null, activity: $activity}' \
 		2>/dev/null || true)
 	if [[ -n "$HEARTBEAT_JSON" ]]; then
-		printf '%s\n' "$HEARTBEAT_JSON" >"$HEARTBEAT_FILE"
-		chmod 600 "$HEARTBEAT_FILE" 2>/dev/null || true
+		loom_heartbeat_atomic_write "$HEARTBEAT_FILE" "$HEARTBEAT_JSON" || \
+			loom_debug "subagent-stop: skipping heartbeat refresh - atomic replacement failed"
 	else
 		loom_debug "subagent-stop: skipping heartbeat refresh - jq -n failed"
 	fi
-else
-	loom_debug "subagent-stop: skipping heartbeat refresh - $HEARTBEAT_FILE is a symlink"
+	loom_heartbeat_lock_release "$HEARTBEAT_LOCK_DIR"
+	trap - EXIT
 fi
 
 exit 0

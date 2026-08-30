@@ -107,6 +107,9 @@ pub struct Transcript {
     /// that is what makes the parent/child tree the report needs.
     pub session_id: String,
     pub agent_id: Option<String>,
+    /// Spawn type from loom's hook-side `starts.jsonl` ledger. `None` for
+    /// transcripts outside a loom run or when the optional ledger is absent.
+    pub agent_type: Option<String>,
     /// The transcript's first user entry, captured BEFORE the `since` cutoff
     /// is applied. Spawn-prompt classification reads it, and a cutoff that
     /// dropped it would silently reclassify every long-running subagent from

@@ -34,6 +34,7 @@ fn synthetic_row_following_a_large_residency_request_is_not_a_rewrite() {
         project_slug: "project".to_owned(),
         session_id: "session-1".to_owned(),
         agent_id: None,
+        agent_type: None,
         first_user_entry: None,
         entries: vec![Entry::Assistant(previous), Entry::Assistant(current)],
     };

@@ -8,10 +8,12 @@
 #
 # Input: JSON from stdin, e.g.
 #   {"agent_id": "...", "agent_type": "loom-software-engineer",
+#    "session_id": "<claude-parent-uuid>",
 #    "transcript_path": ".../subagents/agent-<agentId>.jsonl", ...}
 #
 # Environment variables (set by loom worktree settings, PARENT session's own):
 #   LOOM_STAGE_ID    - The stage being executed
+#   LOOM_SESSION_ID  - The parent session ID
 #   LOOM_WORK_DIR    - Path to the .work directory
 #
 # Actions:
@@ -25,7 +27,8 @@ umask 077
 
 source "$(dirname "$0")/_common.sh"
 
-if [[ -z "${LOOM_WORK_DIR:-}" ]] || [[ -z "${LOOM_STAGE_ID:-}" ]] || [[ ! -d "${LOOM_WORK_DIR}" ]]; then
+if [[ -z "${LOOM_WORK_DIR:-}" ]] || [[ -z "${LOOM_STAGE_ID:-}" ]] || \
+	[[ -z "${LOOM_SESSION_ID:-}" ]] || [[ ! -d "${LOOM_WORK_DIR}" ]]; then
 	loom_debug "subagent-start: skipping - not a loom session or work dir missing"
 	exit 0
 fi
@@ -33,6 +36,12 @@ fi
 case "$LOOM_STAGE_ID" in
 *[!A-Za-z0-9._-]* | "")
 	loom_debug "subagent-start: skipping - LOOM_STAGE_ID has unsafe characters: $LOOM_STAGE_ID"
+	exit 0
+	;;
+esac
+case "$LOOM_SESSION_ID" in
+*[!A-Za-z0-9._-]* | "")
+	loom_debug "subagent-start: skipping - LOOM_SESSION_ID has unsafe characters: $LOOM_SESSION_ID"
 	exit 0
 	;;
 esac
@@ -52,6 +61,7 @@ fi
 
 AGENT_TYPE=$(printf '%s' "$INPUT_JSON" | jq -r '.agent_type // empty' 2>/dev/null || true)
 AGENT_ID=$(printf '%s' "$INPUT_JSON" | jq -r '.agent_id // empty' 2>/dev/null || true)
+PARENT_SESSION_ID=$(printf '%s' "$INPUT_JSON" | jq -r '.session_id // empty' 2>/dev/null || true)
 
 # Fall back to deriving the agent id from transcript_path's basename, the same
 # shape subagent-stop.sh already relies on
@@ -70,6 +80,12 @@ fi
 case "$AGENT_ID" in
 *[!A-Za-z0-9._-]* | "")
 	loom_debug "subagent-start: skipping - AGENT_ID missing or has unsafe characters: $AGENT_ID"
+	exit 0
+	;;
+esac
+case "$PARENT_SESSION_ID" in
+*[!A-Za-z0-9._-]* | "")
+	loom_debug "subagent-start: skipping - payload session_id missing or has unsafe characters: $PARENT_SESSION_ID"
 	exit 0
 	;;
 esac
@@ -95,8 +111,11 @@ TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%S.000Z")
 START_JSON=$(jq -nc \
 	--arg agent_id "$AGENT_ID" \
 	--arg agent_type "$AGENT_TYPE" \
+	--arg stage_id "$LOOM_STAGE_ID" \
+	--arg parent_session_id "$PARENT_SESSION_ID" \
+	--arg loom_session_id "$LOOM_SESSION_ID" \
 	--arg ts "$TIMESTAMP" \
-	'{agent_id: $agent_id, agent_type: $agent_type, ts: $ts}' \
+	'{agent_id: $agent_id, agent_type: $agent_type, stage_id: $stage_id, parent_session_id: $parent_session_id, loom_session_id: $loom_session_id, ts: $ts}' \
 	2>/dev/null || true)
 
 if [[ -n "$START_JSON" ]]; then

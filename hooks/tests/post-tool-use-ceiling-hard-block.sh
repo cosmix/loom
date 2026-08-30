@@ -10,11 +10,10 @@ TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
 
 WORKDIR="$TMP/work"
-mkdir -p "$WORKDIR"
-cat >"$WORKDIR/config.toml" <<'EOF'
-[context]
-ceiling_tokens = 1000
-EOF
+mkdir -p "$WORKDIR/heartbeat"
+# Ceiling resolution itself is covered by post-tool-use-ceiling-resolution.sh;
+# this behavioral test starts from the per-session canonical pair cache.
+printf '%s\n' '1000:120000' >"$WORKDIR/heartbeat/test-stage.test-session.context-ceilings"
 
 TRANSCRIPT="$TMP/transcript.jsonl"
 {

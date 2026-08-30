@@ -15,6 +15,9 @@
 #   2. Logs session start event
 
 set -euo pipefail
+umask 077
+
+source "$(dirname "$0")/_common.sh"
 
 # Read stdin JSON (SessionStart may pass {"source": "compact"/"resume"/"startup"/"clear"})
 # Cross-platform timeout: gtimeout (macOS+coreutils), timeout (Linux), or plain cat
@@ -81,36 +84,47 @@ if command -v jq &>/dev/null; then
 	TRANSCRIPT_PATH=$(echo "$INPUT_JSON" | jq -r '.transcript_path // empty' 2>/dev/null || true)
 fi
 
-# Write heartbeat file in JSON format.
+# Write heartbeat file in JSON format. All heartbeat writers share the lock:
+# ownership is checked only after acquisition, then a complete same-directory
+# temp file is renamed into place. In particular, an old SessionStart delayed
+# behind a successor cannot replace the successor's heartbeat.
 # Format: {stage_id, session_id, timestamp, context_tokens, transcript_path, last_tool, activity}
 # Built via `jq -n --arg` so a transcript_path containing a quote/backslash can
 # never produce malformed JSON - matches post-tool-use.sh's heartbeat write.
 # A symlinked heartbeat path is refused, matching spawn-guard.sh's spawn
 # record write.
 HEARTBEAT_FILE="${HEARTBEAT_DIR}/${LOOM_STAGE_ID}.json"
-if [[ ! -L "$HEARTBEAT_FILE" ]]; then
-	HEARTBEAT_JSON=""
-	if command -v jq &>/dev/null; then
-		HEARTBEAT_JSON=$(jq -n \
-			--arg stage_id "$LOOM_STAGE_ID" \
-			--arg session_id "$LOOM_SESSION_ID" \
-			--arg timestamp "$TIMESTAMP" \
-			--arg transcript_path_raw "$TRANSCRIPT_PATH" \
-			'{stage_id: $stage_id, session_id: $session_id, timestamp: $timestamp,
-			  context_tokens: null,
-			  transcript_path: (if $transcript_path_raw == "" then null else $transcript_path_raw end),
-			  last_tool: null, activity: "Session started"}' \
-			2>/dev/null || true)
-	fi
-
-	if [[ -n "$HEARTBEAT_JSON" ]]; then
-		printf '%s\n' "$HEARTBEAT_JSON" >"$HEARTBEAT_FILE"
+HEARTBEAT_LOCK_DIR="${HEARTBEAT_FILE}.lock"
+if loom_heartbeat_lock_acquire "$HEARTBEAT_LOCK_DIR"; then
+	trap 'loom_heartbeat_lock_release "$HEARTBEAT_LOCK_DIR"' EXIT
+	if [[ -L "$HEARTBEAT_FILE" ]]; then
+		loom_debug "session-start: skipping heartbeat write - $HEARTBEAT_FILE is a symlink"
+	elif ! loom_heartbeat_owner_is_current "$LOOM_WORK_DIR" "$LOOM_STAGE_ID" "$LOOM_SESSION_ID" "$HEARTBEAT_FILE"; then
+		loom_debug "session-start: skipping stale heartbeat write for session $LOOM_SESSION_ID"
 	else
+		HEARTBEAT_JSON=""
+		if command -v jq &>/dev/null; then
+			HEARTBEAT_JSON=$(jq -n \
+				--arg stage_id "$LOOM_STAGE_ID" \
+				--arg session_id "$LOOM_SESSION_ID" \
+				--arg timestamp "$TIMESTAMP" \
+				--arg transcript_path_raw "$TRANSCRIPT_PATH" \
+				'{stage_id: $stage_id, session_id: $session_id, timestamp: $timestamp,
+				  context_tokens: null,
+				  transcript_path: (if $transcript_path_raw == "" then null else $transcript_path_raw end),
+				  last_tool: null, activity: "Session started"}' \
+				2>/dev/null || true)
+		fi
+
+		if [[ -n "$HEARTBEAT_JSON" ]]; then
+			loom_heartbeat_atomic_write "$HEARTBEAT_FILE" "$HEARTBEAT_JSON" || \
+				loom_debug "session-start: skipping heartbeat write - atomic replacement failed"
+		else
 		# jq unavailable: TRANSCRIPT_PATH is only ever populated when jq
 		# succeeded above, so it is guaranteed empty here and this heredoc can
 		# never carry untrusted content - LOOM_STAGE_ID/LOOM_SESSION_ID are
 		# already restricted to [A-Za-z0-9._-] by the guard above.
-		cat >"$HEARTBEAT_FILE" <<EOF
+			HEARTBEAT_JSON=$(cat <<EOF
 {
   "stage_id": "${LOOM_STAGE_ID}",
   "session_id": "${LOOM_SESSION_ID}",
@@ -121,8 +135,13 @@ if [[ ! -L "$HEARTBEAT_FILE" ]]; then
   "activity": "Session started"
 }
 EOF
+			)
+			loom_heartbeat_atomic_write "$HEARTBEAT_FILE" "$HEARTBEAT_JSON" || \
+				loom_debug "session-start: skipping heartbeat write - atomic replacement failed"
+		fi
 	fi
-	chmod 600 "$HEARTBEAT_FILE" 2>/dev/null || true
+	loom_heartbeat_lock_release "$HEARTBEAT_LOCK_DIR"
+	trap - EXIT
 fi
 
 # Emit re-anchor context on compaction/resume starts
