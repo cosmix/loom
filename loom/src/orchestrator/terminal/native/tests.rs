@@ -68,7 +68,7 @@ fn kill_session_with_pid_only_identity_refuses_signal_without_error() {
 }
 
 #[test]
-fn kill_session_after_verified_kill_is_an_idempotent_noop() {
+fn kill_session_retains_verified_identity_and_is_idempotent_after_exit() {
     let work_dir = TempDir::new().unwrap();
     let backend = test_backend(work_dir.path());
     let session = stage_session("verified-then-missing");
@@ -93,15 +93,17 @@ fn kill_session_after_verified_kill_is_an_idempotent_noop() {
     )
     .unwrap();
 
-    // First kill: VerifiedAlive -> signaled and tracking entry cleaned up.
+    // First kill: VerifiedAlive -> signaled, with evidence retained until a
+    // caller has observed definitive death.
     backend.kill_session(&session).unwrap();
     assert!(
-        pid_tracking::read_pid_entry(work_dir.path(), &pid_key).is_none(),
-        "a verified kill must clean up its tracking entry"
+        pid_tracking::read_pid_entry(work_dir.path(), &pid_key).is_some(),
+        "an asynchronous verified kill must retain its tracking entry"
     );
     let _ = child.wait();
 
-    // Second kill: entry now Missing -> must stay an idempotent no-op.
+    // Second kill: the retained identity now verifies Dead and is an
+    // idempotent no-op.
     backend.kill_session(&session).unwrap();
 }
 

@@ -26,33 +26,10 @@
 
 use anyhow::Result;
 
-use crate::fs::locking::locked_read;
-use crate::fs::session_files::{find_session_file, save_session};
-use crate::models::session::{Session, SessionStatus};
-use crate::parser::frontmatter::parse_from_markdown;
+use crate::fs::session_files::record_session_heartbeat_exact;
 
 use super::persistence::Persistence;
 use super::Orchestrator;
-
-/// Whether an observed heartbeat may write to `session`.
-///
-/// Heartbeat files are keyed by STAGE, but session records accumulate: a stage
-/// that crashed and retried leaves every previous session on disk with its
-/// `stage_id` still set. So "this heartbeat names the stage this session names"
-/// is far weaker than "this session is the one currently running that stage",
-/// and only the strong form licenses a write. This is the same rule, for the
-/// same reason, as `is_stage_active_session` in `monitor/session_events.rs` and
-/// `stage_answerable_for_crash` in `core/crash_handler.rs`.
-///
-/// The session id is matched by the caller — it looks the record up by the id
-/// the heartbeat carries — so what is left to check here is that the record is
-/// still a live session for the stage the heartbeat is about.
-fn heartbeat_applies_to(session: &Session, stage_id: &str) -> bool {
-    if session.status != SessionStatus::Running {
-        return false;
-    }
-    session.stage_id.as_deref() == Some(stage_id)
-}
 
 impl Orchestrator {
     /// Record a heartbeat against the session it names.
@@ -69,37 +46,27 @@ impl Orchestrator {
         context_tokens: Option<u32>,
         transcript_path: Option<String>,
     ) -> Result<()> {
-        let work_dir = self.persistence_work_dir();
-
-        let Some(path) = find_session_file(work_dir, session_id)? else {
+        let applied = record_session_heartbeat_exact(
+            self.persistence_work_dir(),
+            session_id,
+            stage_id,
+            context_tokens,
+            transcript_path,
+        )?;
+        if !applied {
             tracing::debug!(
                 stage_id = %stage_id,
                 session_id = %session_id,
-                "Heartbeat names a session with no file on disk; ignoring"
+                "Heartbeat does not name this stage's exact live session; ignoring"
             );
-            return Ok(());
-        };
-
-        let mut session: Session = parse_from_markdown(&locked_read(&path)?, "Session")?;
-
-        if !heartbeat_applies_to(&session, stage_id) {
-            tracing::debug!(
-                stage_id = %stage_id,
-                session_id = %session_id,
-                status = ?session.status,
-                "Heartbeat does not apply: session is not the stage's live session"
-            );
-            return Ok(());
         }
-
-        session.record_heartbeat(context_tokens, transcript_path);
-        save_session(&session, work_dir)
+        Ok(())
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use crate::models::session::{Session, SessionStatus};
     use chrono::{Duration, Utc};
 
     fn running_session(stage_id: &str) -> Session {
@@ -107,36 +74,6 @@ mod tests {
         session.assign_to_stage(stage_id.to_string());
         session.status = SessionStatus::Running;
         session
-    }
-
-    #[test]
-    fn applies_to_the_stages_live_session() {
-        let session = running_session("build");
-        assert!(heartbeat_applies_to(&session, "build"));
-    }
-
-    #[test]
-    fn refuses_a_session_that_names_a_different_stage() {
-        let session = running_session("build");
-        assert!(!heartbeat_applies_to(&session, "test"));
-    }
-
-    #[test]
-    fn refuses_a_session_with_no_stage() {
-        let mut session = Session::new();
-        session.status = SessionStatus::Running;
-        assert!(!heartbeat_applies_to(&session, "build"));
-    }
-
-    /// A stage that crashed and retried leaves the old session on disk with
-    /// `stage_id` still set. A heartbeat from the live session must not revive
-    /// the corpse's `last_active`, or `loom sessions list` reports two running
-    /// sessions for one stage.
-    #[test]
-    fn refuses_a_terminal_session_for_the_same_stage() {
-        let mut session = running_session("build");
-        session.status = SessionStatus::Completed;
-        assert!(!heartbeat_applies_to(&session, "build"));
     }
 
     /// The regression this whole module exists for: before it, `last_active`

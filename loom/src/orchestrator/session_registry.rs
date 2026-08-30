@@ -31,6 +31,10 @@ use crate::verify::transitions::parse_stage_from_markdown;
 use super::terminal::backend::SessionBackend;
 use super::terminal::native::pid_only_is_alive;
 
+#[path = "session_registry/in_progress.rs"]
+mod in_progress;
+pub use in_progress::in_progress_sessions_for_stage;
+
 /// Every session kind a spawned agent can carry. Each one derives a different
 /// tracking key from the same stage id ([`Session::derive_tracking_key`]), so
 /// a scan keyed on the stage alone has to try all four.

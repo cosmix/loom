@@ -160,7 +160,7 @@ fn is_session_alive_is_false_for_a_dead_pid_with_no_server() {
 
 #[test]
 #[serial]
-fn kill_session_with_dead_process_still_tears_down_its_socket() {
+fn kill_session_retains_an_unverifiable_stale_socket() {
     let socket_dir = tempfile::TempDir::new().unwrap();
     let _tmux_tmpdir = TmuxTmpDirGuard::set(socket_dir.path());
     let work_dir = tempfile::TempDir::new().unwrap();
@@ -174,10 +174,11 @@ fn kill_session_with_dead_process_still_tears_down_its_socket() {
     std::fs::create_dir_all(socket.parent().unwrap()).unwrap();
     std::fs::write(&socket, "").unwrap();
 
-    backend.kill_session(&session).unwrap();
+    let error = backend.kill_session(&session).unwrap_err();
+    assert!(error.to_string().contains("tmux kill-server failed"));
     assert!(
-        !socket.exists(),
-        "a dead PID tombstone must not prevent this session's attributed socket teardown"
+        socket.exists(),
+        "failed server teardown must retain the only possible control handle"
     );
 }
 

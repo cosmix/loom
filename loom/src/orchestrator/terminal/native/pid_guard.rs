@@ -6,7 +6,7 @@ use std::path::Path;
 use crate::models::session::Session;
 use crate::process::{terminate_verified, verify_process_identity, IdentityStatus};
 
-use super::{cleanup_stage_files, read_pid_entry, NativeBackend};
+use super::{read_pid_entry, NativeBackend};
 
 /// Identity evidence available for a persisted terminal session.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -47,6 +47,9 @@ pub(crate) fn pid_only_is_alive(work_dir: &Path, session: &Session) -> bool {
 ///
 /// Dead/mismatched evidence is a no-op and is retained as a tombstone. Missing
 /// or unverifiable evidence returns an error and never falls back to raw PID.
+/// A successful signal also retains the verified entry: SIGTERM is
+/// asynchronous, so liveness confirmation still needs the PID plus start time
+/// until it observes definitive death.
 pub(crate) fn pid_only_terminate(work_dir: &Path, session: &Session) -> Result<()> {
     let Some((_, pid_key)) = NativeBackend::window_title_and_pid_key(session) else {
         bail!(
@@ -66,7 +69,6 @@ pub(crate) fn pid_only_terminate(work_dir: &Path, session: &Session) -> Result<(
         IdentityStatus::Unverifiable => terminate_verified(identity).map(|_| ()),
         IdentityStatus::VerifiedAlive => {
             terminate_verified(identity)?;
-            cleanup_stage_files(work_dir, &pid_key);
             Ok(())
         }
     }

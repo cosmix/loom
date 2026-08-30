@@ -145,20 +145,22 @@ impl TmuxBackend {
     }
 
     pub fn kill_session(&self, session: &Session) -> Result<()> {
-        // First use the guarded PID branch shared with the native lane: only
-        // signal when PID and start-time both match. `session.pid` is never a
-        // destructive fallback. A failed graceful signal must not skip socket
-        // teardown, which is positively attributed by this session's ID.
-        if native::session_process_status(&self.work_dir, session)
-            == native::SessionProcessStatus::VerifiedAlive
-        {
+        // Capture PID identity before either teardown path can remove its
+        // evidence. `session.pid` is never a destructive fallback.
+        let process_was_verified_alive = native::session_process_status(&self.work_dir, session)
+            == native::SessionProcessStatus::VerifiedAlive;
+
+        // Ask the attributed tmux server to exit before signalling its pane.
+        // Reversing these steps lets the last pane take the server down first,
+        // after which `kill-server` reports failure against a socket that is
+        // merely in the process of disappearing. Keep this result while still
+        // attempting the guarded PID path below: a failed server kill retains
+        // the socket and propagates, but need not leave a verified pane alive.
+        let server_teardown = teardown_socket(&socket_name(session));
+        if process_was_verified_alive {
             let _ = native::pid_only_terminate(&self.work_dir, session);
         }
-
-        // Then tear down this session's tmux server. This is the one place
-        // that knows the exact socket path at clean-teardown time.
-        teardown_socket(&socket_name(session));
-        Ok(())
+        server_teardown
     }
 
     /// Whether `session` is alive, using ONLY the PID layers — never

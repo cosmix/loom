@@ -70,6 +70,25 @@ fn aborting_a_spawn_removes_the_pid_file_and_wrapper_it_created() {
     );
 }
 
+#[test]
+#[serial]
+fn failed_teardown_retains_the_only_socket_handle() {
+    let socket_dir = tempfile::TempDir::new().unwrap();
+    let _tmux_tmpdir = TmuxTmpDirGuard::set(socket_dir.path());
+    let socket = "loom-failed-teardown";
+    let path = socket_path_for(socket);
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    std::fs::write(&path, "not a tmux socket").unwrap();
+
+    let error = teardown_socket(socket).unwrap_err();
+
+    assert!(format!("{error:#}").contains("tmux kill-server failed"));
+    assert!(
+        path.exists(),
+        "failed teardown must retain its control handle"
+    );
+}
+
 /// Strips write permission from a directory so tmux cannot create its
 /// `tmux-<uid>` socket directory inside it — the condition
 /// `tests/e2e/tmux_backend.rs` case 2 verified makes tmux exit 1 with

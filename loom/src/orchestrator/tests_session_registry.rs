@@ -109,6 +109,57 @@ fn live_sessions_for_stage_lists_only_live_records_of_that_stage() {
     assert_eq!(ids(&live), vec![alive.id.as_str()]);
 }
 
+#[test]
+fn in_progress_sessions_for_stage_keeps_dead_records_for_takedown() {
+    let temp = work_dir();
+    let work = temp.path();
+
+    let live = session_for("alpha", SessionStatus::Running);
+    spawn_a_live_agent(work, &live);
+    save_session(&live, work).unwrap();
+
+    // This is the record that outlives a daemon restart after its process has
+    // already exited. It is not live enough to block spawning, but takedown
+    // still needs it so it can declare the deliberate handoff terminal.
+    let dead = session_for("alpha", SessionStatus::Running);
+    spawn_a_dead_agent(work, &dead);
+    save_session(&dead, work).unwrap();
+
+    let spawning = session_for("alpha", SessionStatus::Spawning);
+    save_session(&spawning, work).unwrap();
+
+    let completed = session_for("alpha", SessionStatus::Completed);
+    save_session(&completed, work).unwrap();
+
+    let mut found = in_progress_sessions_for_stage(work, "alpha")
+        .unwrap()
+        .into_iter()
+        .map(|session| session.id)
+        .collect::<Vec<_>>();
+    let mut expected = vec![live.id, dead.id, spawning.id];
+    found.sort();
+    expected.sort();
+    assert_eq!(found, expected);
+}
+
+#[test]
+fn in_progress_scan_rejects_filename_and_record_identity_mismatch() {
+    let temp = work_dir();
+    let work = temp.path();
+    let session = session_for("alpha", SessionStatus::Running);
+    let sessions_dir = work.join("sessions");
+    std::fs::create_dir_all(&sessions_dir).unwrap();
+    std::fs::write(
+        sessions_dir.join("actual.md"),
+        crate::fs::session_files::session_to_markdown(&session),
+    )
+    .unwrap();
+
+    let error = in_progress_sessions_for_stage(work, "alpha").unwrap_err();
+
+    assert!(format!("{error:#}").contains("does not match record id"));
+}
+
 /// A `.work` directory configured for the native lane — the setting that makes
 /// `SessionBackend::from_config` build a `NativeBackend` eagerly.
 fn native_work_dir() -> TempDir {
@@ -176,178 +227,5 @@ fn live_sessions_for_stage_is_empty_before_any_session_exists() {
         .is_empty());
 }
 
-#[test]
-fn orphan_evidence_finds_the_recordless_agent_and_ignores_every_recorded_one() {
-    let temp = work_dir();
-    let work = temp.path();
-
-    // The orphan: `Executing`, a live agent, and no session record at all.
-    stage_at(work, "alpha", StageStatus::Executing);
-    let orphan = session_for("alpha", SessionStatus::Running);
-    spawn_a_live_agent(work, &orphan);
-
-    // Healthy: the record exists and is live, so the stage is already visible
-    // to attach and recovery. Not an orphan even though a PID file is present.
-    stage_at(work, "beta", StageStatus::Executing);
-    let healthy = session_for("beta", SessionStatus::Running);
-    spawn_a_live_agent(work, &healthy);
-    save_session(&healthy, work).unwrap();
-
-    // A record that exists but reports `Completed` while its process is still
-    // up: a record problem for the file-driven pass to judge, not an orphan.
-    // This is the case that isolates the `sessions/<id>.md` existence check
-    // from the liveness check above it.
-    stage_at(work, "gamma", StageStatus::Executing);
-    let stale_record = session_for("gamma", SessionStatus::Completed);
-    spawn_a_live_agent(work, &stale_record);
-    save_session(&stale_record, work).unwrap();
-
-    // Not `Executing`: never scanned, whatever its PID files say.
-    stage_at(work, "delta", StageStatus::Queued);
-    let not_executing = session_for("delta", SessionStatus::Running);
-    spawn_a_live_agent(work, &not_executing);
-
-    let evidence = orphan_evidence(work);
-    assert_eq!(evidence.len(), 1, "unexpected evidence: {evidence:?}");
-    assert_eq!(
-        evidence[0],
-        OrphanEvidence {
-            session_id: orphan.id.clone(),
-            stage_id: "alpha".to_string(),
-            tracking_key: "loom-alpha".to_string(),
-            session_type: SessionType::Stage,
-            pid: std::process::id(),
-            backend: SessionBackendKind::Native,
-        }
-    );
-}
-
-#[test]
-fn a_dead_agents_pid_file_is_not_evidence_of_an_orphan() {
-    let temp = work_dir();
-    let work = temp.path();
-
-    stage_at(work, "alpha", StageStatus::Executing);
-    let corpse = session_for("alpha", SessionStatus::Running);
-    spawn_a_dead_agent(work, &corpse);
-
-    assert!(orphan_evidence(work).is_empty());
-}
-
-#[test]
-fn adoption_is_idempotent_because_its_record_hides_the_pid_file() {
-    let temp = work_dir();
-    let work = temp.path();
-
-    stage_at(work, "alpha", StageStatus::Executing);
-    let orphan = session_for("alpha", SessionStatus::Running);
-    spawn_a_live_agent(work, &orphan);
-
-    let first = orphan_evidence(work);
-    assert_eq!(first.len(), 1);
-    adopt_orphan(work, &first[0]).unwrap();
-
-    // The record written above is what the next scan trips over — the same
-    // reason a healthy stage is never adopted twice by the recovery tick.
-    assert!(
-        orphan_evidence(work).is_empty(),
-        "a second pass re-adopted an agent it had already recorded"
-    );
-}
-
-#[test]
-fn an_adopted_record_is_attachable_again() {
-    let temp = work_dir();
-    let work = temp.path();
-
-    let session_id = "session-abcd1234-1700000000";
-    let evidence = OrphanEvidence {
-        session_id: session_id.to_string(),
-        stage_id: "alpha".to_string(),
-        tracking_key: "loom-alpha".to_string(),
-        session_type: SessionType::Stage,
-        pid: std::process::id(),
-        backend: SessionBackendKind::Tmux,
-    };
-
-    // The PID file the dead daemon's wrapper left behind, under the exact key
-    // `window_title_and_pid_key` will look the adopted session up by.
-    let mut spawned = Session::new();
-    spawned.id = session_id.to_string();
-    spawned.assign_to_stage("alpha".to_string());
-    spawn_a_live_agent(work, &spawned);
-
-    let adopted = adopt_orphan(work, &evidence).unwrap();
-    assert_eq!(adopted.id, session_id);
-    assert_eq!(adopted.stage_id.as_deref(), Some("alpha"));
-    assert_eq!(adopted.tracking_key, "loom-alpha");
-    assert_eq!(adopted.session_type, SessionType::Stage);
-    assert_eq!(adopted.status, SessionStatus::Running);
-    assert_eq!(adopted.backend, SessionBackendKind::Tmux);
-    assert_eq!(adopted.pid, Some(std::process::id()));
-
-    // The point of the whole change: `loom attach`'s discovery set is
-    // `live_tmux_sessions`, and it now sees the agent again.
-    let attachable = live_tmux_sessions(work).unwrap();
-    assert_eq!(ids(&attachable), vec![session_id]);
-
-    // And the stage-side question answers consistently.
-    let live = live_sessions_for_stage(work, "alpha").unwrap();
-    assert_eq!(ids(&live), vec![session_id]);
-}
-
-#[test]
-fn the_adoption_pass_links_the_stage_without_touching_its_status() {
-    // The link half of `Recovery::adopt_orphaned_agents`, which cannot be
-    // driven directly here: it needs a live `Orchestrator` (backend, monitor,
-    // graph), the same reason `core::recovery`'s own tests exercise helpers
-    // rather than the pass. What is asserted is the contract that pass relies
-    // on — a stage still `Executing` and naming nobody gains the adopted
-    // session, and `Executing` is left standing because it just became true
-    // again.
-    let temp = work_dir();
-    let work = temp.path();
-
-    stage_at(work, "alpha", StageStatus::Executing);
-    let orphan = session_for("alpha", SessionStatus::Running);
-    spawn_a_live_agent(work, &orphan);
-
-    let evidence = orphan_evidence(work);
-    assert_eq!(evidence.len(), 1);
-    let adopted = adopt_orphan(work, &evidence[0]).unwrap();
-
-    crate::verify::transitions::update_stage("alpha", work, |stage| {
-        if stage.status == StageStatus::Executing && stage.session.is_none() {
-            stage.session = Some(adopted.id.clone());
-        }
-        Ok(())
-    })
-    .unwrap();
-
-    let stage = crate::verify::transitions::load_stage("alpha", work).unwrap();
-    assert_eq!(stage.session.as_deref(), Some(adopted.id.as_str()));
-    assert_eq!(stage.status, StageStatus::Executing);
-}
-
-#[test]
-fn a_merge_agents_tracking_key_survives_adoption() {
-    let temp = work_dir();
-    let work = temp.path();
-
-    let session_id = "session-beef0001-1700000001";
-    let evidence = OrphanEvidence {
-        session_id: session_id.to_string(),
-        stage_id: "alpha".to_string(),
-        tracking_key: "loom-merge-alpha".to_string(),
-        session_type: SessionType::Merge,
-        pid: std::process::id(),
-        backend: SessionBackendKind::Native,
-    };
-
-    let adopted = adopt_orphan(work, &evidence).unwrap();
-    // `assign_to_stage` derives a key from `(stage_id, session_type)`, so a
-    // kind set after the assignment would leave a `loom-alpha` key on a merge
-    // session and every PID lookup for it would miss.
-    assert_eq!(adopted.tracking_key, "loom-merge-alpha");
-    assert_eq!(adopted.session_type, SessionType::Merge);
-}
+#[path = "tests_session_registry_adoption.rs"]
+mod adoption_tests;

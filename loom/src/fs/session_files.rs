@@ -12,6 +12,14 @@ use crate::fs::locking::locked_write;
 use crate::models::session::Session;
 use crate::parser::markdown::MarkdownDocument;
 
+#[path = "session_files/exact.rs"]
+mod exact;
+pub(crate) use exact::validate_session_file_id;
+pub use exact::{
+    load_session_exact, mark_session_context_exhausted, record_session_context_exact,
+    record_session_heartbeat_exact,
+};
+
 /// Persist a session to `.work/sessions/{id}.md`.
 ///
 /// This is the single canonical session-persistence routine: it serializes the
@@ -25,6 +33,7 @@ use crate::parser::markdown::MarkdownDocument;
 /// The public signature `(session, work_dir)` is stable — external callers
 /// depend on it.
 pub fn save_session(session: &Session, work_dir: &Path) -> Result<()> {
+    validate_session_file_id(&session.id).context("Invalid session file id")?;
     let sessions_dir = work_dir.join("sessions");
     if !sessions_dir.exists() {
         fs::create_dir_all(&sessions_dir).context("Failed to create sessions directory")?;

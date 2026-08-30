@@ -7,6 +7,26 @@ use crate::orchestrator::monitor::handlers::Handlers;
 use crate::orchestrator::monitor::{MonitorConfig, MonitorEvent};
 
 #[test]
+fn same_timestamp_with_changed_context_is_a_new_heartbeat() {
+    use crate::orchestrator::monitor::heartbeat::{write_heartbeat, Heartbeat, HeartbeatWatcher};
+
+    let temp = tempfile::TempDir::new().unwrap();
+    let mut watcher = HeartbeatWatcher::new();
+    let mut heartbeat =
+        Heartbeat::new("stage-1".to_string(), "session-1".to_string()).with_context_tokens(130_000);
+    heartbeat.timestamp = chrono::Utc::now();
+    write_heartbeat(temp.path(), &heartbeat).unwrap();
+    assert_eq!(watcher.poll(temp.path()).unwrap().len(), 1);
+
+    heartbeat.context_tokens = Some(80_000);
+    write_heartbeat(temp.path(), &heartbeat).unwrap();
+    let updates = watcher.poll(temp.path()).unwrap();
+
+    assert_eq!(updates.len(), 1);
+    assert_eq!(updates[0].heartbeat.context_tokens, Some(80_000));
+}
+
+#[test]
 fn test_hung_detection_honors_per_stage_subagent_timeout() {
     use tempfile::TempDir;
 

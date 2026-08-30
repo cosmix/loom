@@ -338,10 +338,10 @@ impl NativeBackend {
         // that use a server process, where killing by PID would kill all windows.
         // The title is the session's tracking_key, so merge/knowledge/base-conflict
         // sessions (which use prefixed titles) are killed correctly too.
-        if let Some((title, pid_key)) = Self::window_title_and_pid_key(session) {
+        if let Some((title, _)) = Self::window_title_and_pid_key(session) {
             if close_window_for_terminal(&title, &self.terminal) {
-                // Clean up tracking files after closing the window
-                cleanup_stage_files(&self.work_dir, &pid_key);
+                // Closing a window is asynchronous too. Retain PID identity so
+                // the caller can confirm the process actually exited.
                 return Ok(());
             }
         }

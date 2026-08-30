@@ -287,12 +287,22 @@ pub fn await_tmux_session_pid(
 /// linger with no process behind it), while removing the file without killing
 /// the server would strand the server AND lose the only handle to it.
 ///
-/// Best-effort by design — this runs on teardown and error paths where there
-/// is nothing useful to do with a failure.
-fn teardown_socket(socket: &str) {
+/// A failed server kill is uncertainty: retain the socket (the only remaining
+/// control handle) and propagate the error to the fail-closed handoff path.
+fn teardown_socket(socket: &str) -> Result<()> {
     let socket_path = socket_path_for(socket);
-    let _ = kill_socket_server(&socket_path);
-    let _ = std::fs::remove_file(&socket_path);
+    if !socket_path.exists() {
+        return Ok(());
+    }
+    if !kill_socket_server(&socket_path) {
+        anyhow::bail!("tmux kill-server failed for {}", socket_path.display());
+    }
+    match std::fs::remove_file(&socket_path) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(error)
+            .with_context(|| format!("removing killed tmux socket {}", socket_path.display())),
+    }
 }
 
 /// Undo a partially-completed tmux spawn: kill whatever server came up, then
@@ -305,7 +315,15 @@ fn teardown_socket(socket: &str) {
 /// removal (see `TmuxBackend::spawn`'s docs: a surviving PID file makes the
 /// native retry adopt the tmux attempt's PID).
 fn abort_tmux_spawn(work_dir: &Path, socket: &str, pid_key: &str) {
-    teardown_socket(socket);
+    let socket_path = socket_path_for(socket);
+    if socket_path.exists() && !kill_socket_server(&socket_path) {
+        eprintln!(
+            "Warning: failed to abort tmux server at {}; retaining its socket and PID evidence",
+            socket_path.display()
+        );
+        return;
+    }
+    let _ = std::fs::remove_file(&socket_path);
     native::cleanup_stage_files(work_dir, pid_key);
 }
 

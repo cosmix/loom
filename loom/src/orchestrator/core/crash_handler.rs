@@ -5,7 +5,8 @@ use chrono::Utc;
 use std::path::PathBuf;
 
 use crate::models::failure::FailureInfo;
-use crate::models::stage::StageStatus;
+use crate::models::session::Session;
+use crate::models::stage::{Stage, StageStatus};
 use crate::orchestrator::retry::{calculate_backoff, classify_failure, should_auto_retry};
 
 use super::persistence::Persistence;
@@ -64,11 +65,7 @@ impl Orchestrator {
     ///
     /// A crash whose session IS the active one still passes after a restart,
     /// which is what lets a genuinely stranded stage recover.
-    fn stage_answerable_for_crash(
-        &self,
-        sid: &str,
-        session_id: &str,
-    ) -> Option<crate::models::stage::Stage> {
+    fn stage_answerable_for_crash(&self, sid: &str, session_id: &str) -> Option<Stage> {
         let stage = match self.load_stage(sid) {
             Ok(stage) => stage,
             Err(e) => {
@@ -106,6 +103,59 @@ impl Orchestrator {
         Some(stage)
     }
 
+    /// Remove only the in-memory handle that belongs to this crash event.
+    fn take_matching_active_session(&mut self, sid: &str, session_id: &str) -> Option<Session> {
+        if self
+            .active_sessions
+            .get(sid)
+            .is_some_and(|session| session.id == session_id)
+        {
+            self.active_sessions.remove(sid)
+        } else {
+            None
+        }
+    }
+
+    fn maybe_disable_remote_control(&self, sid: &str, crashed_session: Option<&Session>) {
+        let Some(session) = crashed_session else {
+            return;
+        };
+        if is_remote_control_fast_fail(
+            (Utc::now() - session.created_at).num_seconds(),
+            session.pid.is_some(),
+        ) && crate::remote_control::resolve(&self.config.work_dir)
+        {
+            let _ = crate::remote_control::write_unsupported_marker(&self.config.work_dir);
+            clear_status_line();
+            eprintln!(
+                "Stage '{sid}' crashed within {FAST_FAIL_WINDOW_SECS}s of spawn; \
+                 disabling Remote Control for the rest of this run."
+            );
+        }
+    }
+
+    /// Best-effort permission sync before the stage transitions to `Blocked`.
+    fn sync_crashed_session_permissions(&self, sid: &str, stage: &Stage) {
+        let worktree_path = self.config.repo_root.join(".worktrees").join(sid);
+        if !worktree_path.exists() {
+            return;
+        }
+        let working_dir_path = stage.working_dir.as_ref().map(|wd| worktree_path.join(wd));
+        match crate::fs::permissions::sync_worktree_permissions_with_working_dir(
+            &worktree_path,
+            &self.config.repo_root,
+            working_dir_path.as_deref(),
+        ) {
+            Ok(result) if result.allow_added > 0 || result.deny_added > 0 => eprintln!(
+                "Synced {} permissions from crashed session for stage '{}'",
+                result.allow_added + result.deny_added,
+                sid
+            ),
+            Ok(_) => {}
+            Err(e) => eprintln!("Warning: Failed to sync permissions from crashed session: {e}"),
+        }
+    }
+
     pub(super) fn handle_session_crashed(
         &mut self,
         session_id: &str,
@@ -119,11 +169,13 @@ impl Orchestrator {
         self.reported_crashes.insert(session_id.to_string());
 
         if let Some(sid) = stage_id {
-            let crashed_session = self.active_sessions.remove(&sid);
-
             let Some(stage) = self.stage_answerable_for_crash(&sid, session_id) else {
                 return Ok(());
             };
+            // A delayed predecessor crash may name this stage while the map
+            // already holds its healthy successor. Remove only the handle
+            // whose identity the stage gate above just authorized.
+            let crashed_session = self.take_matching_active_session(&sid, session_id);
 
             // Remote Control fast-fail fallback: `claude --remote-control` exits
             // non-zero when its prerequisites are unmet. If Remote Control is
@@ -132,20 +184,7 @@ impl Orchestrator {
             // `.work/remote_control-unsupported` marker so `resolve()` returns
             // false on the upcoming retry (which omits `--remote-control`).
             // Best-effort: marker write errors are intentionally ignored.
-            if let Some(session) = &crashed_session {
-                if is_remote_control_fast_fail(
-                    (Utc::now() - session.created_at).num_seconds(),
-                    session.pid.is_some(),
-                ) && crate::remote_control::resolve(&self.config.work_dir)
-                {
-                    let _ = crate::remote_control::write_unsupported_marker(&self.config.work_dir);
-                    clear_status_line();
-                    eprintln!(
-                        "Stage '{sid}' crashed within {FAST_FAIL_WINDOW_SECS}s of spawn; \
-                         disabling Remote Control for the rest of this run."
-                    );
-                }
-            }
+            self.maybe_disable_remote_control(&sid, crashed_session.as_ref());
 
             clear_status_line();
             eprintln!("Session '{session_id}' crashed for stage '{sid}'");
@@ -168,30 +207,7 @@ impl Orchestrator {
                 eprintln!("Crash report generated: {}", path.display());
             }
 
-            // Best-effort permission sync before transitioning to Blocked
-            // This preserves permissions granted during the crashed session
-            let worktree_path = self.config.repo_root.join(".worktrees").join(&sid);
-            if worktree_path.exists() {
-                let working_dir_path = stage.working_dir.as_ref().map(|wd| worktree_path.join(wd));
-                match crate::fs::permissions::sync_worktree_permissions_with_working_dir(
-                    &worktree_path,
-                    &self.config.repo_root,
-                    working_dir_path.as_deref(),
-                ) {
-                    Ok(result) => {
-                        if result.allow_added > 0 || result.deny_added > 0 {
-                            eprintln!(
-                                "Synced {} permissions from crashed session for stage '{}'",
-                                result.allow_added + result.deny_added,
-                                sid
-                            );
-                        }
-                    }
-                    Err(e) => {
-                        eprintln!("Warning: Failed to sync permissions from crashed session: {e}");
-                    }
-                }
-            }
+            self.sync_crashed_session_permissions(&sid, &stage);
 
             let detected_at = Utc::now();
             let mut became_terminal = false;

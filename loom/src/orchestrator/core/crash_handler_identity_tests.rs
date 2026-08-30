@@ -70,6 +70,11 @@ fn a_stale_session_crash_cannot_block_a_stage_running_under_another_session() {
     let work_dir = temp.path().join(".work");
     let stage = executing_stage(&work_dir, "session-live");
     let mut orchestrator = orchestrator_for(&work_dir, temp.path());
+    let mut live = Session::new();
+    live.id = "session-live".to_string();
+    live.stage_id = Some(stage.id.clone());
+    live.status = SessionStatus::Running;
+    orchestrator.active_sessions.insert(stage.id.clone(), live);
 
     orchestrator
         .handle_session_crashed("session-corpse", Some(stage.id.clone()), None)
@@ -85,6 +90,14 @@ fn a_stale_session_crash_cannot_block_a_stage_running_under_another_session() {
         after.session.as_deref(),
         Some("session-live"),
         "the stage's active session must be untouched"
+    );
+    assert_eq!(
+        orchestrator
+            .active_sessions
+            .get(&stage.id)
+            .map(|session| session.id.as_str()),
+        Some("session-live"),
+        "a stale predecessor crash must not drop the healthy successor's in-memory handle"
     );
 }
 

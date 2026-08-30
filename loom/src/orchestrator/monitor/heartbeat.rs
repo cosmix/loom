@@ -25,7 +25,7 @@ pub const DEFAULT_HUNG_TIMEOUT_SECS: u64 = 300;
 pub const DEFAULT_HEARTBEAT_POLL_SECS: u64 = 10;
 
 /// Heartbeat data written by Claude Code hooks
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Heartbeat {
     /// Stage ID this heartbeat is for
     pub stage_id: String,
@@ -129,6 +129,13 @@ pub struct HeartbeatWatcher {
     heartbeats: HashMap<String, Heartbeat>,
 }
 
+/// Hook timestamps have whole-second precision, so every heartbeat field is
+/// part of the update discriminator. Context can change twice in one second
+/// across native compaction even when the timestamp does not.
+fn heartbeat_changed(previous: Option<&Heartbeat>, current: &Heartbeat) -> bool {
+    previous != Some(current)
+}
+
 impl HeartbeatWatcher {
     /// Create a new heartbeat watcher
     pub fn new() -> Self {
@@ -164,9 +171,7 @@ impl HeartbeatWatcher {
                 Ok(heartbeat) => {
                     let previous = self.heartbeats.get(&stage_id);
                     let is_new = previous.is_none();
-                    let is_updated = previous
-                        .map(|p| p.timestamp != heartbeat.timestamp)
-                        .unwrap_or(true);
+                    let is_updated = heartbeat_changed(previous, &heartbeat);
 
                     if is_new || is_updated {
                         updates.push(HeartbeatUpdate {
