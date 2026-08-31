@@ -33,7 +33,7 @@ use crate::verify::transitions::{load_stage, update_stage};
 /// A sandboxed stage agent reaches neither arm: its socket syscalls are denied
 /// before the path is consulted, so it cannot tell whether a daemon is there
 /// and must not assume it isn't. That case queues the block for the daemon
-/// instead — see [`queue_block_request`].
+/// instead — see `queue_block_request`.
 pub fn block(stage_id: String, reason: String) -> Result<()> {
     let work_dir = Path::new(".work");
     let request = Request::BlockStage {

@@ -32,7 +32,7 @@ const FAILURE_OUTPUT_MAX_BYTES: usize = 4096;
 /// `loom stage block` has one. `Unreachable` is different — it says nothing
 /// about the daemon, only that this process may not use unix sockets — so it
 /// queues the dispute rather than concluding there is no daemon (see
-/// [`queue_dispute_request`]).
+/// `queue_dispute_request`).
 pub fn dispute_criteria(
     stage_id: String,
     criterion_index: usize,

@@ -22,7 +22,7 @@ use crate::daemon::{handle_block_stage, handle_dispute_criteria, Response};
 /// documentation for why that is the whole security argument.
 ///
 /// A refusal from a handler is COUNTED, not propagated: `Err` from this sink
-/// would stop [`drain_spool`] truncating the file, so one request the stage
+/// would stop `drain_spool` truncating the file, so one request the stage
 /// can never take - a block of an already-completed stage, a dispute past its
 /// budget - would redeliver forever, wedged in front of every request behind
 /// it. `Err` is reserved for a genuine I/O failure from a handler, where
