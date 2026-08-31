@@ -38,10 +38,8 @@ file src/git/worktree/settings.rs 637
 file src/hooks/tests.rs 514
 file src/models/stage/methods.rs 817
 file src/models/stage/types.rs 1218
-file src/orchestrator/adjudication/mod.rs 695
-file src/orchestrator/adjudication/prompt.rs 491
 file src/orchestrator/core/merge_handler.rs 1330
-file src/orchestrator/core/orchestrator.rs 574
+file src/orchestrator/core/orchestrator.rs 554
 file src/orchestrator/core/recovery.rs 1618
 file src/orchestrator/core/stage_executor.rs 792
 file src/orchestrator/merge_attribution.rs 543
@@ -66,14 +64,14 @@ file src/sandbox/settings/tests.rs 1761
 file src/skills/index.rs 564
 file src/verify/duplicate_detection.rs 436
 file src/verify/transitions/state.rs 433
-file tests/adjudication_e2e.rs 821
+file tests/adjudication_e2e.rs 663
 file tests/e2e/tmux_backend.rs 588
 file tests/failure_resume.rs 468
 file tests/integration/merge_conflict_recovery.rs 412
 file tests/integration/plan_verify.rs 1024
 
 function src/cli/dispatch.rs dispatch 123
-function src/cli/dispatch.rs dispatch_stage 95
+function src/cli/dispatch_stage.rs dispatch_stage 68
 function src/commands/clean/mod.rs print_summary 52
 function src/commands/clean/sessions.rs test_clean_sessions_reaps_live_only_when_destroying_state 54
 function src/commands/clean/worktrees.rs clean_worktrees 110
@@ -120,7 +118,6 @@ function src/commands/stage/complete.rs complete 175
 function src/commands/stage/complete.rs handle_force_unsafe_completion 83
 function src/commands/stage/complete.rs route_complete_for_conflicts 159
 function src/commands/stage/complete.rs run_verification_phase 99
-function src/commands/stage/dispute_criteria.rs dispute_criteria 60
 function src/commands/stage/knowledge_complete.rs complete_knowledge_stage 121
 function src/commands/stage/merge.rs merge_resolved 87
 function src/commands/stage/merge.rs merge_retry 198
@@ -153,7 +150,7 @@ function src/completions/dynamic/mod.rs complete_after_subcommand 56
 function src/completions/install.rs install 52
 function src/context/refresh/tests_source_graph.rs an_unreadable_file_survives_as_a_reported_lexical_only_entry 62
 function src/daemon/server/broadcast.rs run_status_broadcaster 80
-function src/daemon/server/client.rs handle_client_connection 124
+function src/daemon/server/client.rs handle_client_connection 112
 function src/daemon/server/dispute.rs handle_dispute_criteria 176
 function src/daemon/server/lifecycle.rs run_server 125
 function src/daemon/server/lifecycle.rs start 141
@@ -199,12 +196,6 @@ function src/models/stage/methods.rs new 71
 function src/models/stage/transitions.rs can_transition_to 75
 function src/models/stage/transitions.rs valid_transitions 59
 function src/models/stage/types.rs default#3 69
-function src/orchestrator/adjudication/client.rs call_anthropic_with 79
-function src/orchestrator/adjudication/mod.rs apply_verdict 68
-function src/orchestrator/adjudication/mod.rs apply_verdict_inner 78
-function src/orchestrator/adjudication/mod.rs check_pending_disputes 107
-function src/orchestrator/adjudication/prompt.rs build_user_prompt 73
-function src/orchestrator/adjudication/worker.rs run 51
 function src/orchestrator/auto_merge.rs attempt_auto_merge 63
 function src/orchestrator/core/completion_handler.rs handle_stage_completed 78
 function src/orchestrator/core/crash_handler.rs handle_session_crashed 122
@@ -216,8 +207,8 @@ function src/orchestrator/core/merge_handler.rs spawn_merge_resolution_session 8
 function src/orchestrator/core/merge_handler.rs spawn_merge_resolution_sessions 120
 function src/orchestrator/core/merge_handler.rs try_auto_merge 243
 function src/orchestrator/core/merge_handler.rs verify_and_finalize_merge 68
-function src/orchestrator/core/orchestrator.rs new 80
-function src/orchestrator/core/orchestrator.rs run 253
+function src/orchestrator/core/orchestrator.rs new 67
+function src/orchestrator/core/orchestrator.rs run 246
 function src/orchestrator/core/recovery.rs all_stages_terminal 62
 function src/orchestrator/core/recovery.rs orphan_with_commits_ahead_signals_handoff_input 64
 function src/orchestrator/core/recovery.rs recover_orphaned_sessions 164
@@ -264,7 +255,7 @@ function src/orchestrator/terminal/emulator.rs build_command 161
 function src/orchestrator/terminal/native/detection.rs detect_parent_terminal 51
 function src/orchestrator/terminal/native/detection.rs detect_terminal#1 56
 function src/orchestrator/terminal/native/detection.rs detect_terminal#2 65
-function src/orchestrator/terminal/native/launch.rs prepare_session_launch 138
+function src/orchestrator/terminal/native/launch.rs prepare_session_launch 134
 function src/orchestrator/terminal/tmux/tests_discovery.rs live_tmux_sessions_orders_by_created_at_then_id 60
 function src/orchestrator/terminal/tmux/tests_spawn.rs a_failed_spawn_aborts_and_leaves_no_pid_file_for_the_native_retry_to_adopt 97
 function src/orchestrator/terminal/tmux/tests_viewer.rs pane_command_neutralises_hostile_session_ids 69
@@ -307,9 +298,7 @@ function src/verify/transitions/state.rs are_all_dependencies_satisfied 67
 function src/verify/transitions/state.rs describe_dependency_block 95
 function src/verify/wiring_detection.rs collect_added_source_files 56
 function src/verify/wiring_detection.rs is_referenced 66
-function tests/adjudication_e2e.rs amendment_cap_exceeded_escalates_to_human_review 65
-function tests/adjudication_e2e.rs dispute_to_amendment_to_pass 80
-function tests/adjudication_e2e.rs evidence_rounds_exhausted_escalates_to_human_review 54
+function tests/adjudication_e2e.rs dispute_to_amendment_to_pass 65
 function tests/completion_flow.rs test_acceptance_failure_creates_correct_status 64
 function tests/completion_flow.rs test_completion_requires_merged_dependencies 70
 function tests/completion_flow.rs test_successful_completion_flow 55
