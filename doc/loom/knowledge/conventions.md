@@ -128,6 +128,7 @@ Used for complex struct construction: `fn builder() -> Self { Self::default() }`
 - Module docs: `//!` at top of file
 - Function docs: `///` with `# Arguments`, `# Returns` sections
 - Inline comments: sparingly, only for non-obvious logic
+- **Naming an item in doc prose: `` [`name`] `` ONLY if `name` is `pub` and resolves from that module; otherwise a plain code span `` `name` ``.** The brackets are an intra-doc link, and a link to a private `fn`, a field, or a local fails `RUSTDOCFLAGS="-D warnings" cargo doc` — which is a pre-push hook step and a CI job, but is evaluated by no other local check. This has blocked pushes three times; see "A `[`link`]` to a Private Item Fails CI's Docs Job" in [Testing & Lint](mistakes/testing-and-lint.md).
 
 ## Skill File Format
 
