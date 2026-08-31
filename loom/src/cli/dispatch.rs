@@ -8,9 +8,10 @@ use anyhow::Result;
 use std::path::PathBuf;
 use std::str::FromStr;
 
+use super::dispatch_stage;
 use super::types::{
-    Commands, ContextCommands, HookCommands, KnowledgeCommands, MemoryCommands, OutputCommands,
-    PlanCommands, SessionsCommands, StageCommands, WorktreeCommands,
+    Commands, ContextCommands, HookCommands, KnowledgeCommands, MemoryCommands, PlanCommands,
+    SessionsCommands, WorktreeCommands,
 };
 
 /// The admin proof a `loom stage complete` invocation needs, if any.
@@ -20,7 +21,7 @@ use super::types::{
 /// when one is present and otherwise mints from the daemon token the operator
 /// can already read. No flag, and nothing for a human to carry between
 /// commands.
-fn resolve_completion_proof(
+pub(super) fn resolve_completion_proof(
     stage_id: &str,
     no_verify: bool,
     force_unsafe: bool,
@@ -47,7 +48,7 @@ fn resolve_completion_proof(
 /// nothing: a wrong secret simply mints a proof that verification rejects.
 /// That is what separates this command from `admin_proof::authorize`, which
 /// reads the token and therefore relies on the sandbox to keep an agent out.
-fn print_minted_proof(
+pub(super) fn print_minted_proof(
     stage_id: Option<String>,
     daemon_stop: bool,
     no_verify: bool,
@@ -151,106 +152,6 @@ fn dispatch_hook(command: HookCommands) -> Result<()> {
     }
 }
 
-/// `loom stage <subcommand>` dispatch.
-///
-/// Extracted for the same reason as `dispatch_knowledge`: the stage group is
-/// the largest arm in the top-level match, which sits at its line ceiling.
-fn dispatch_stage(command: StageCommands) -> Result<()> {
-    match command {
-        StageCommands::Complete {
-            stage_id,
-            session,
-            no_verify,
-            force_unsafe,
-            assume_merged,
-        } => {
-            let admin_proof =
-                resolve_completion_proof(&stage_id, no_verify, force_unsafe, assume_merged)?;
-            stage::complete(
-                stage_id,
-                session,
-                no_verify,
-                force_unsafe,
-                assume_merged,
-                admin_proof,
-            )
-        }
-        StageCommands::AdminProof {
-            stage_id,
-            daemon_stop,
-            no_verify,
-            force_unsafe,
-            assume_merged,
-        } => print_minted_proof(
-            stage_id,
-            daemon_stop,
-            no_verify,
-            force_unsafe,
-            assume_merged,
-        ),
-        StageCommands::Block { stage_id, reason } => stage::block(stage_id, reason),
-        StageCommands::Reset {
-            stage_id,
-            hard,
-            kill_session,
-        } => stage::reset(stage_id, hard, kill_session),
-        StageCommands::Waiting { stage_id } => stage::waiting(stage_id),
-        StageCommands::Resume { stage_id } => stage::resume_from_waiting(stage_id),
-        StageCommands::Hold { stage_id } => stage::hold(stage_id),
-        StageCommands::Release { stage_id } => stage::release(stage_id),
-        StageCommands::Skip { stage_id, reason } => stage::skip(stage_id, reason),
-        StageCommands::Retry {
-            stage_id,
-            force,
-            context,
-        } => stage::retry(stage_id, force, context),
-        StageCommands::Merge { stage_id, resolved } => stage::merge(stage_id, resolved),
-        StageCommands::HumanReview {
-            stage_id,
-            approve,
-            force_complete,
-            reject,
-        } => stage::human_review(stage_id, approve, force_complete, reject),
-        StageCommands::DisputeCriteria {
-            stage_id,
-            criterion_index,
-            reason,
-            evidence_commit,
-            failure_output,
-        } => stage::dispute_criteria(
-            stage_id,
-            criterion_index,
-            reason,
-            evidence_commit,
-            failure_output,
-        ),
-        StageCommands::Amend {
-            stage_id,
-            field,
-            op,
-            index,
-            value,
-            reason,
-        } => stage::amend(
-            stage_id,
-            field.to_field(),
-            op.to_patch(index, value)?,
-            reason,
-        ),
-        StageCommands::Output { command } => match command {
-            OutputCommands::Set {
-                stage_id,
-                key,
-                value,
-                description,
-            } => stage::output_set(stage_id, key, value, description),
-            OutputCommands::Get { stage_id, key } => stage::output_get(stage_id, key),
-            OutputCommands::List { stage_id } => stage::output_list(stage_id),
-            OutputCommands::Remove { stage_id, key } => stage::output_remove(stage_id, key),
-        },
-    }
-}
-
 pub fn dispatch(command: Commands) -> Result<()> {
     match command {
         Commands::Init {
@@ -305,7 +206,7 @@ pub fn dispatch(command: Commands) -> Result<()> {
             trigger,
             message,
         } => handoff::create::execute(stage, session, trigger, message),
-        Commands::Stage { command } => dispatch_stage(command),
+        Commands::Stage { command } => dispatch_stage::dispatch_stage(command),
         Commands::Knowledge { command } => dispatch_knowledge(command),
         Commands::Memory { command } => match command {
             MemoryCommands::Note { text, stage } => memory::note(text, stage),

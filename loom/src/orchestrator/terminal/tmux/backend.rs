@@ -110,38 +110,18 @@ impl TmuxBackend {
         )
     }
 
-    pub fn spawn_merge_session(
+    /// Spawn a session that runs in the MAIN REPOSITORY rather than in a
+    /// stage worktree — merge resolution, knowledge gathering, adjudication —
+    /// mirroring [`native::NativeBackend::spawn_main_repo_session`].
+    pub fn spawn_main_repo_session(
         &self,
+        kind: SessionType,
         stage: &Stage,
         session: Session,
         signal_path: &Path,
         repo_root: &Path,
     ) -> Result<Session> {
-        self.spawn(
-            SessionType::Merge,
-            stage,
-            session,
-            signal_path,
-            repo_root,
-            false,
-        )
-    }
-
-    pub fn spawn_knowledge_session(
-        &self,
-        stage: &Stage,
-        session: Session,
-        signal_path: &Path,
-        repo_root: &Path,
-    ) -> Result<Session> {
-        self.spawn(
-            SessionType::Knowledge,
-            stage,
-            session,
-            signal_path,
-            repo_root,
-            false,
-        )
+        self.spawn(kind, stage, session, signal_path, repo_root, false)
     }
 
     pub fn kill_session(&self, session: &Session) -> Result<()> {

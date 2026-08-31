@@ -1,13 +1,12 @@
 //! Unit tests for the adjudication module that need access to
 //! multiple sub-modules together (cross-cutting flows). Per-module
-//! tests live in `prompt.rs`, `client.rs`, `verdict.rs`, `worker.rs`,
-//! and `feedback.rs`.
+//! tests live in `prompt.rs`, `session.rs`, `verdict.rs`, and
+//! `feedback.rs`.
 
-use super::feedback;
-use super::{
-    build_amendment_request, parse_yaml_frontmatter, scan_pending_requests, AdjudicatorRegistry,
-    MAX_EVIDENCE_ROUNDS,
-};
+use super::apply::build_amendment_request;
+use super::scan::{parse_yaml_frontmatter, scan_pending_requests};
+use super::session::{attempt_count, MAX_ADJUDICATION_ATTEMPTS};
+use super::{feedback, AdjudicatorRegistry, MAX_EVIDENCE_ROUNDS};
 use crate::models::dispute::{
     request_file, verdict_file, Citation, DisputeRequest, DisputeVerdict, DisputeVerdictRecord,
     PlanPatch,
@@ -72,28 +71,86 @@ fn write_verdict(work_dir: &Path, stage_id: &str, id: u32, verdict: DisputeVerdi
     .unwrap();
 }
 
-fn make_registry_disabled(work_dir: &Path) -> AdjudicatorRegistry {
-    AdjudicatorRegistry::new(None, work_dir)
+fn reject_verdict() -> DisputeVerdict {
+    DisputeVerdict::Reject {
+        citations: vec![Citation {
+            file: "f".to_string(),
+            line: None,
+            excerpt: "e".to_string(),
+            claim: "c".to_string(),
+        }],
+        reasoning: "criterion is correct".to_string(),
+    }
 }
 
 #[test]
-fn registry_disabled_when_no_api_key() {
-    let tmp = tempfile::tempdir().unwrap();
-    let reg = AdjudicatorRegistry::new(None, tmp.path());
-    assert!(reg.is_disabled());
-}
-
-#[test]
-fn check_pending_disputes_escalates_when_disabled() {
+fn pending_dispute_is_offered_a_session_and_counted() {
     let tmp = tempfile::tempdir().unwrap();
     let work = tmp.path();
     std::fs::create_dir_all(work.join("stages")).unwrap();
-    let stage = make_stage("s1");
+    write_stage(work, &make_stage("s1"));
+    write_dispute_request(work, "s1", 1, 0);
+
+    let reg = AdjudicatorRegistry::new();
+    let jobs = reg.disputes_awaiting_session(work).unwrap();
+
+    assert_eq!(jobs.len(), 1);
+    assert_eq!(jobs[0].stage.id, "s1");
+    assert_eq!(jobs[0].request.id, 1);
+    assert_eq!(
+        attempt_count(work, "s1", 1),
+        1,
+        "handing out a job must spend one attempt",
+    );
+}
+
+/// Two unanswered disputes on one stage (an abandoned one plus the live one)
+/// must still produce a single adjudicator.
+#[test]
+fn a_stage_with_two_pending_disputes_gets_one_session() {
+    let tmp = tempfile::tempdir().unwrap();
+    let work = tmp.path();
+    std::fs::create_dir_all(work.join("stages")).unwrap();
+    write_stage(work, &make_stage("s1"));
+    write_dispute_request(work, "s1", 1, 0);
+    write_dispute_request(work, "s1", 2, 0);
+
+    let reg = AdjudicatorRegistry::new();
+    let jobs = reg.disputes_awaiting_session(work).unwrap();
+
+    assert_eq!(jobs.len(), 1);
+    assert_eq!(attempt_count(work, "s1", 2), 0, "only one dispute is spent");
+}
+
+#[test]
+fn dispute_is_skipped_once_the_stage_leaves_adjudication() {
+    let tmp = tempfile::tempdir().unwrap();
+    let work = tmp.path();
+    std::fs::create_dir_all(work.join("stages")).unwrap();
+    let mut stage = make_stage("s1");
+    stage.status = StageStatus::Executing;
     write_stage(work, &stage);
     write_dispute_request(work, "s1", 1, 0);
 
-    let mut reg = make_registry_disabled(work);
-    reg.check_pending_disputes(work).unwrap();
+    let reg = AdjudicatorRegistry::new();
+    assert!(reg.disputes_awaiting_session(work).unwrap().is_empty());
+    assert_eq!(attempt_count(work, "s1", 1), 0);
+}
+
+#[test]
+fn exhausted_spawn_budget_escalates_instead_of_respawning() {
+    let tmp = tempfile::tempdir().unwrap();
+    let work = tmp.path();
+    std::fs::create_dir_all(work.join("stages")).unwrap();
+    write_stage(work, &make_stage("s1"));
+    write_dispute_request(work, "s1", 1, 0);
+
+    let reg = AdjudicatorRegistry::new();
+    for _ in 0..MAX_ADJUDICATION_ATTEMPTS {
+        assert_eq!(reg.disputes_awaiting_session(work).unwrap().len(), 1);
+    }
+    // Budget spent: no further session, and the stage stops waiting silently.
+    assert!(reg.disputes_awaiting_session(work).unwrap().is_empty());
 
     let after = crate::verify::transitions::load_stage("s1", work).unwrap();
     assert_eq!(after.status, StageStatus::NeedsHumanReview);
@@ -101,11 +158,32 @@ fn check_pending_disputes_escalates_when_disabled() {
         .review_reason
         .as_deref()
         .unwrap_or("")
-        .contains("ANTHROPIC_API_KEY"));
+        .contains("no verdict"));
 }
 
 #[test]
-fn apply_verdict_reject_writes_feedback_and_queues_stage() {
+fn evidence_cap_escalates_before_a_session_is_offered() {
+    let tmp = tempfile::tempdir().unwrap();
+    let work = tmp.path();
+    std::fs::create_dir_all(work.join("stages")).unwrap();
+    let mut stage = make_stage("s1");
+    stage.evidence_rounds = MAX_EVIDENCE_ROUNDS;
+    write_stage(work, &stage);
+    write_dispute_request(work, "s1", 1, 0);
+
+    let reg = AdjudicatorRegistry::new();
+    assert!(reg.disputes_awaiting_session(work).unwrap().is_empty());
+
+    let after = crate::verify::transitions::load_stage("s1", work).unwrap();
+    assert_eq!(after.status, StageStatus::NeedsHumanReview);
+    assert_eq!(attempt_count(work, "s1", 1), 0);
+}
+
+/// A Reject is a deadlock, not a retry: the agent called the criterion
+/// impossible and the adjudicator upheld it, so re-queueing would loop the
+/// same disagreement forever.
+#[test]
+fn apply_verdict_reject_escalates_to_human_review() {
     let tmp = tempfile::tempdir().unwrap();
     let work = tmp.path();
     std::fs::create_dir_all(work.join("stages")).unwrap();
@@ -113,27 +191,19 @@ fn apply_verdict_reject_writes_feedback_and_queues_stage() {
     stage.dispute_count = 1;
     write_stage(work, &stage);
     write_dispute_request(work, "s1", 1, 0);
-    write_verdict(
-        work,
-        "s1",
-        1,
-        DisputeVerdict::Reject {
-            citations: vec![Citation {
-                file: "f".to_string(),
-                line: None,
-                excerpt: "e".to_string(),
-                claim: "c".to_string(),
-            }],
-            reasoning: "criterion is correct".to_string(),
-        },
-        1,
-    );
+    write_verdict(work, "s1", 1, reject_verdict(), 1);
 
-    let mut reg = make_registry_disabled(work);
+    let reg = AdjudicatorRegistry::new();
     reg.apply_pending_verdicts(work).unwrap();
 
     let after = crate::verify::transitions::load_stage("s1", work).unwrap();
-    assert_eq!(after.status, StageStatus::Queued);
+    assert_eq!(after.status, StageStatus::NeedsHumanReview);
+    assert!(after
+        .review_reason
+        .as_deref()
+        .unwrap_or("")
+        .contains("upheld the disputed acceptance criterion"));
+    // The reasoning is still written where the agent (and the human) read it.
     let fb = feedback::read_feedback(work, "s1").unwrap().unwrap();
     assert!(fb.contains("rejected"));
     let applied = work
@@ -153,23 +223,9 @@ fn apply_verdict_is_idempotent() {
     stage.dispute_count = 1;
     write_stage(work, &stage);
     write_dispute_request(work, "s1", 1, 0);
-    write_verdict(
-        work,
-        "s1",
-        1,
-        DisputeVerdict::Reject {
-            citations: vec![Citation {
-                file: "f".to_string(),
-                line: None,
-                excerpt: "e".to_string(),
-                claim: "c".to_string(),
-            }],
-            reasoning: "ok".to_string(),
-        },
-        1,
-    );
+    write_verdict(work, "s1", 1, reject_verdict(), 1);
 
-    let mut reg = make_registry_disabled(work);
+    let reg = AdjudicatorRegistry::new();
     reg.apply_pending_verdicts(work).unwrap();
     let mid = crate::verify::transitions::load_stage("s1", work).unwrap();
 
@@ -198,7 +254,7 @@ fn needs_more_evidence_writes_feedback_and_increments_round() {
         1,
     );
 
-    let mut reg = make_registry_disabled(work);
+    let reg = AdjudicatorRegistry::new();
     reg.apply_pending_verdicts(work).unwrap();
 
     let after = crate::verify::transitions::load_stage("s1", work).unwrap();
@@ -228,7 +284,7 @@ fn evidence_loop_exhausts_to_human_review() {
         1,
     );
 
-    let mut reg = make_registry_disabled(work);
+    let reg = AdjudicatorRegistry::new();
     reg.apply_pending_verdicts(work).unwrap();
 
     let after = crate::verify::transitions::load_stage("s1", work).unwrap();
@@ -242,21 +298,7 @@ fn scan_pending_requests_skips_completed_verdicts() {
     let work = tmp.path();
     write_dispute_request(work, "s1", 1, 0);
     write_dispute_request(work, "s1", 2, 0);
-    write_verdict(
-        work,
-        "s1",
-        1,
-        DisputeVerdict::Reject {
-            citations: vec![Citation {
-                file: "f".to_string(),
-                line: None,
-                excerpt: "e".to_string(),
-                claim: "c".to_string(),
-            }],
-            reasoning: "r".to_string(),
-        },
-        1,
-    );
+    write_verdict(work, "s1", 1, reject_verdict(), 1);
     let pending = scan_pending_requests(&work.join("disputes")).unwrap();
     assert_eq!(pending, vec![("s1".to_string(), 2)]);
 }
@@ -327,44 +369,13 @@ fn apply_verdict_writes_applying_marker_then_removes_it() {
     let tmp = tempfile::tempdir().unwrap();
     let work = tmp.path();
     std::fs::create_dir_all(work.join("stages")).unwrap();
-    let stage = make_stage("s1");
-    write_stage(work, &stage);
+    write_stage(work, &make_stage("s1"));
     write_dispute_request(work, "s1", 1, 0);
-    write_verdict(
-        work,
-        "s1",
-        1,
-        DisputeVerdict::Reject {
-            citations: vec![Citation {
-                file: "f".to_string(),
-                line: None,
-                excerpt: "e".to_string(),
-                claim: "c".to_string(),
-            }],
-            reasoning: "r".to_string(),
-        },
-        1,
-    );
-    let mut reg = make_registry_disabled(work);
+    write_verdict(work, "s1", 1, reject_verdict(), 1);
+
+    let reg = AdjudicatorRegistry::new();
     reg.apply_verdict(work, "s1", 1).unwrap();
     let dir = work.join("disputes").join("s1").join("1");
     assert!(dir.join("applied.marker").exists());
     assert!(!dir.join(".applying").exists());
-}
-
-#[test]
-fn drain_completed_workers_is_no_op_when_empty() {
-    let tmp = tempfile::tempdir().unwrap();
-    let mut reg = make_registry_disabled(tmp.path());
-    reg.drain_completed_workers(tmp.path()).unwrap();
-}
-
-#[test]
-fn shutdown_with_no_handles_returns_quickly() {
-    use std::time::{Duration, Instant};
-    let tmp = tempfile::tempdir().unwrap();
-    let mut reg = make_registry_disabled(tmp.path());
-    let start = Instant::now();
-    reg.shutdown(start + Duration::from_secs(5));
-    assert!(start.elapsed() < Duration::from_secs(1));
 }

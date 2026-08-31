@@ -1,3 +1,4 @@
+mod adjudication;
 mod cache;
 mod crud;
 mod format;
@@ -64,6 +65,7 @@ pub use format::{
 // (`orchestrator::terminal::native::launch`), and the UserPromptSubmit hook
 // renders its brief with the SAME untrusted-excerpt fencing rules the signal
 // path uses (`commands::hook::user_prompt`) rather than a second copy.
+pub use adjudication::generate_adjudication_signal;
 pub(crate) use cache::stable_prefix_for;
 pub(crate) use format::format_knowledge_brief;
 pub use generate::{

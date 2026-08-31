@@ -269,6 +269,29 @@ pub enum StageCommands {
         failure_output: Option<std::path::PathBuf>,
     },
 
+    /// Record an adjudication session's verdict on a dispute.
+    ///
+    /// Run by the adjudication session the orchestrator spawns for a dispute,
+    /// from the main repository, once it has written its JSON verdict to a
+    /// file. The command validates the JSON and writes
+    /// `.work/disputes/<stage>/<n>/verdict.md`; the orchestrator applies the
+    /// verdict on its next poll. A stage worktree session is refused: a stage
+    /// may not judge its own disputed criterion.
+    Adjudicate {
+        /// Stage the dispute belongs to (alphanumeric, dash, underscore only;
+        /// max 128 characters).
+        #[arg(long, value_parser = clap_id_validator)]
+        stage: String,
+
+        /// Dispute id, as allocated when the dispute was filed.
+        #[arg(long)]
+        dispute: u32,
+
+        /// Path to the JSON verdict the session wrote.
+        #[arg(long = "verdict-file")]
+        verdict_file: std::path::PathBuf,
+    },
+
     /// Amend a stage's acceptance or wiring array in place (operator repair).
     ///
     /// Routes through the audited plan-amendment path: writes a numbered

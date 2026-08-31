@@ -125,10 +125,12 @@ fn merge_session_env_follows_kind_not_stage_id_prefix() {
     assert!(!regular_content.contains("LOOM_MERGE_SESSION"));
 }
 
-/// Only stage sessions own a worktree. Merge, knowledge and base-conflict
-/// sessions `cd` into the main repo, so exporting `LOOM_WORKTREE_PATH` for them
-/// would make presence-based gates treat a main-repo agent as a sandboxed
-/// worktree agent — which used to make knowledge stages impossible to complete.
+/// Only stage sessions own a worktree. Merge, knowledge, base-conflict and
+/// adjudication sessions `cd` into the main repo, so exporting
+/// `LOOM_WORKTREE_PATH` for them would make presence-based gates treat a
+/// main-repo agent as a sandboxed worktree agent — which used to make knowledge
+/// stages impossible to complete, and which `loom stage adjudicate` now reads
+/// the other way round to refuse a verdict written from a stage worktree.
 #[test]
 fn worktree_path_is_exported_only_for_stage_sessions() {
     let temp_dir = TempDir::new().unwrap();
@@ -139,6 +141,7 @@ fn worktree_path_is_exported_only_for_stage_sessions() {
         SessionType::Knowledge,
         SessionType::Merge,
         SessionType::BaseConflict,
+        SessionType::Adjudication,
     ] {
         let wrapper = create_wrapper_script(
             work_dir,

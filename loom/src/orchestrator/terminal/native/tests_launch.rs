@@ -180,6 +180,52 @@ fn remote_control_session_name_knowledge_is_prefixed() {
 }
 
 #[test]
+fn remote_control_session_name_adjudication_is_prefixed() {
+    let stage = stage_named("my-stage", "My Stage");
+    assert_eq!(
+        remote_control_session_name(SessionType::Adjudication, &stage),
+        "Adjudication: My Stage"
+    );
+}
+
+/// The adjudicator must not run on the model the disputing plan chose — that
+/// would let a plan pick the judge of its own criteria — and it must honour the
+/// operator's `[adjudication] model` override.
+#[test]
+fn adjudication_runs_on_opus_unless_the_config_says_otherwise() {
+    let (_temp, work_dir) = work_dir_without_config();
+    let mut stage = stage_named("my-stage", "My Stage");
+    stage.model = Some("haiku".to_string());
+
+    let (model, effort) = model_and_effort(SessionType::Adjudication, &stage, &work_dir);
+    assert_eq!(model, "opus");
+    assert_eq!(effort, "high");
+
+    std::fs::write(
+        work_dir.join("config.toml"),
+        "[adjudication]\nmodel = \"sonnet\"\n",
+    )
+    .unwrap();
+    let (model, _) = model_and_effort(SessionType::Adjudication, &stage, &work_dir);
+    assert_eq!(model, "sonnet", "the config override must reach the spawn");
+}
+
+#[test]
+fn stage_sessions_still_run_on_the_stage_model() {
+    let (_temp, work_dir) = work_dir_without_config();
+    let mut stage = stage_named("my-stage", "My Stage");
+    stage.model = Some("haiku".to_string());
+
+    let (model, _) = model_and_effort(SessionType::Stage, &stage, &work_dir);
+    assert_eq!(model, "haiku");
+    let (merge_model, merge_effort) = model_and_effort(SessionType::Merge, &stage, &work_dir);
+    assert_eq!(
+        (merge_model.as_str(), merge_effort.as_str()),
+        ("opus", "high")
+    );
+}
+
+#[test]
 fn remote_control_session_name_falls_back_to_stage_id_when_name_empty() {
     let stage = stage_named("my-stage", "   ");
     assert_eq!(

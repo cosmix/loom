@@ -33,7 +33,7 @@ use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
-use crate::models::session::{Session, SessionBackendKind};
+use crate::models::session::{Session, SessionBackendKind, SessionType};
 use crate::models::stage::Stage;
 use crate::models::worktree::Worktree;
 
@@ -262,11 +262,7 @@ impl SessionBackend {
         signal_path: &Path,
         repo_root: &Path,
     ) -> Result<Session> {
-        self.dispatch_spawn(
-            session,
-            |native, s| native.spawn_merge_session(stage, s, signal_path, repo_root),
-            |tmux, s| tmux.spawn_merge_session(stage, s, signal_path, repo_root),
-        )
+        self.spawn_main_repo_session(SessionType::Merge, stage, session, signal_path, repo_root)
     }
 
     pub fn spawn_knowledge_session(
@@ -276,10 +272,49 @@ impl SessionBackend {
         signal_path: &Path,
         repo_root: &Path,
     ) -> Result<Session> {
+        self.spawn_main_repo_session(
+            SessionType::Knowledge,
+            stage,
+            session,
+            signal_path,
+            repo_root,
+        )
+    }
+
+    /// Spawn the session that judges one disputed acceptance criterion.
+    ///
+    /// Runs in the main repository like a knowledge session: the adjudicator
+    /// reads the disputing stage's evidence and records a verdict through the
+    /// CLI, so it needs no worktree of its own.
+    pub fn spawn_adjudication_session(
+        &self,
+        stage: &Stage,
+        session: Session,
+        signal_path: &Path,
+        repo_root: &Path,
+    ) -> Result<Session> {
+        self.spawn_main_repo_session(
+            SessionType::Adjudication,
+            stage,
+            session,
+            signal_path,
+            repo_root,
+        )
+    }
+
+    /// Lane dispatch for every session kind that runs in the main repository.
+    fn spawn_main_repo_session(
+        &self,
+        kind: SessionType,
+        stage: &Stage,
+        session: Session,
+        signal_path: &Path,
+        repo_root: &Path,
+    ) -> Result<Session> {
         self.dispatch_spawn(
             session,
-            |native, s| native.spawn_knowledge_session(stage, s, signal_path, repo_root),
-            |tmux, s| tmux.spawn_knowledge_session(stage, s, signal_path, repo_root),
+            |native, s| native.spawn_main_repo_session(kind, stage, s, signal_path, repo_root),
+            |tmux, s| tmux.spawn_main_repo_session(kind, stage, s, signal_path, repo_root),
         )
     }
 

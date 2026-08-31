@@ -1,4 +1,5 @@
 mod dispatch;
+mod dispatch_stage;
 mod types;
 mod types_memory;
 mod types_ops;

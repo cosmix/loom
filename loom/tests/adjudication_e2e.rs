@@ -1,22 +1,22 @@
-//! Integration tests for the adjudication subsystem driven against a
-//! local deterministic HTTP server (no real Anthropic API calls).
+//! Integration tests for the adjudication subsystem.
 //!
-//! Each test wires up a fresh tmp .work directory and test server,
-//! points `AdjudicatorRegistry` at it, then drives the same hooks the
-//! orchestrator's main loop uses.
+//! Adjudication is a two-party protocol between the daemon and a session it
+//! spawns: the daemon decides a dispute needs a session, the session writes a
+//! JSON verdict and hands it to `loom stage adjudicate`, and the daemon applies
+//! the recorded verdict on a later tick. No agent is started here — the tests
+//! stand in for the session by doing exactly what it does, so both halves of
+//! the protocol (the CLI's persistence and the daemon's application) run for
+//! real against a fresh tmp `.work` directory.
 
-#[path = "support/adjudication_mock_server.rs"]
-mod adjudication_mock_server;
-
-use adjudication_mock_server::MockServer;
-use loom::models::dispute::{
-    applied_marker, dispute_dir, request_file, verdict_file, DisputeRequest,
-};
+use loom::commands::stage::{record_verdict, AdjudicateOutcome};
+use loom::models::dispute::{applied_marker, request_file, verdict_file, DisputeRequest};
+use loom::models::session::Session;
 use loom::models::stage::{Stage, StageStatus};
-use loom::orchestrator::adjudication::{feedback, worker as adj_worker, AdjudicatorRegistry};
+use loom::orchestrator::adjudication::{
+    feedback, verdict_draft_file, AdjudicatorRegistry, MAX_ADJUDICATION_ATTEMPTS,
+};
 use loom::plan::schema::AcceptanceCriterion;
 use std::path::{Path, PathBuf};
-use std::time::{Duration, Instant};
 
 fn write_stage(work_dir: &Path, stage: &Stage) {
     std::fs::create_dir_all(work_dir.join("stages")).unwrap();
@@ -133,167 +133,128 @@ Trailing prose section.
     plan
 }
 
-fn mock_accept_response(server: &MockServer) {
-    let body = serde_json::json!({
-        "content": [
-            {
-                "type": "text",
-                "text": serde_json::to_string(&serde_json::json!({
-                    "verdict": "reject",
-                    "reasoning": "criterion is correct",
-                    "citations": [
-                        {"file": "src/a.rs", "line": 1, "excerpt": "fn foo", "claim": "function exists"}
-                    ]
-                })).unwrap()
-            }
+fn verdict_reject() -> serde_json::Value {
+    serde_json::json!({
+        "verdict": "reject",
+        "reasoning": "criterion is correct",
+        "citations": [
+            {"file": "src/a.rs", "line": 1, "excerpt": "fn foo", "claim": "function exists"}
         ]
-    });
-    server.respond_with(body.to_string());
+    })
 }
 
-fn mock_accept_with_amendment(server: &MockServer) {
-    let body = serde_json::json!({
-        "content": [
-            {
-                "type": "text",
-                "text": serde_json::to_string(&serde_json::json!({
-                    "verdict": "accept",
-                    "reasoning": "criterion was overspecified",
-                    "citations": [
-                        {"file": "src/a.rs", "line": 1, "excerpt": "X", "claim": "Y"}
-                    ],
-                    "plan_patch": {
-                        "stage_id": "s1",
-                        "field": "acceptance",
-                        "patch": {"op": "delete", "index": 0},
-                        "reason": "test amendment"
-                    }
-                })).unwrap()
-            }
-        ]
-    });
-    server.respond_with(body.to_string());
-}
-
-/// Mock an Accept verdict whose `plan_patch` deletes acceptance[0].
-/// Targets the stage seeded by [`make_stage_two_criteria`].
-fn mock_accept_delete_first(server: &MockServer) {
-    let body = serde_json::json!({
-        "content": [
-            {
-                "type": "text",
-                "text": serde_json::to_string(&serde_json::json!({
-                    "verdict": "accept",
-                    "reasoning": "acceptance[0] references a path that cannot exist; criterion has no valid interpretation",
-                    "citations": [
-                        {
-                            "file": "PLAN.md",
-                            "line": 1,
-                            "excerpt": "intentionally_wrong",
-                            "claim": "path does not exist in the project root"
-                        }
-                    ],
-                    "plan_patch": {
-                        "stage_id": "s1",
-                        "field": "acceptance",
-                        "patch": {"op": "delete", "index": 0},
-                        "reason": "criterion path is mechanically wrong"
-                    }
-                })).unwrap()
-            }
-        ]
-    });
-    server.respond_with(body.to_string());
-}
-
-fn mock_needs_more(server: &MockServer) {
-    let body = serde_json::json!({
-        "content": [
-            {
-                "type": "text",
-                "text": serde_json::to_string(&serde_json::json!({
-                    "verdict": "needs-more-evidence",
-                    "questions": ["what is X?"]
-                })).unwrap()
-            }
-        ]
-    });
-    server.respond_with(body.to_string());
-}
-
-fn mock_500_then_success(server: &MockServer) {
-    // Just configure a successful response; testing the retry path
-    // requires sequenced responses which httpmock doesn't expose
-    // directly. Acceptance of the retry behaviour is covered by
-    // unit tests in client.rs.
-    let good_body = serde_json::json!({
-        "content": [
-            {
-                "type": "text",
-                "text": serde_json::to_string(&serde_json::json!({
-                    "verdict": "reject",
-                    "reasoning": "ok",
-                    "citations": [{"file":"f","excerpt":"e","claim":"c"}]
-                })).unwrap()
-            }
-        ]
-    });
-    server.respond_with(good_body.to_string());
-}
-
-fn make_registry(work_dir: &Path, endpoint: String) -> AdjudicatorRegistry {
-    let mut reg = AdjudicatorRegistry::new(Some("test-key".to_string()), work_dir);
-    reg.endpoint = endpoint;
-    reg.model = "claude-test-model".to_string();
-    reg
-}
-
-/// Wait until either the verdict file or applied.marker appears, or a
-/// short deadline expires. Returns whether the predicate was satisfied.
-fn wait_for<F: Fn() -> bool>(pred: F, timeout: Duration) -> bool {
-    let start = Instant::now();
-    while start.elapsed() < timeout {
-        if pred() {
-            return true;
+fn verdict_accept_with_amendment() -> serde_json::Value {
+    serde_json::json!({
+        "verdict": "accept",
+        "reasoning": "criterion was overspecified",
+        "citations": [
+            {"file": "src/a.rs", "line": 1, "excerpt": "X", "claim": "Y"}
+        ],
+        "plan_patch": {
+            "stage_id": "s1",
+            "field": "acceptance",
+            "patch": {"op": "delete", "index": 0},
+            "reason": "test amendment"
         }
-        std::thread::sleep(Duration::from_millis(25));
-    }
-    pred()
+    })
 }
 
+/// An Accept verdict whose `plan_patch` deletes acceptance[0]. Targets the
+/// stage seeded by [`make_stage_two_criteria`].
+fn verdict_accept_delete_first() -> serde_json::Value {
+    serde_json::json!({
+        "verdict": "accept",
+        "reasoning": "acceptance[0] references a path that cannot exist; criterion has no valid interpretation",
+        "citations": [
+            {
+                "file": "PLAN.md",
+                "line": 1,
+                "excerpt": "intentionally_wrong",
+                "claim": "path does not exist in the project root"
+            }
+        ],
+        "plan_patch": {
+            "stage_id": "s1",
+            "field": "acceptance",
+            "patch": {"op": "delete", "index": 0},
+            "reason": "criterion path is mechanically wrong"
+        }
+    })
+}
+
+fn verdict_needs_more() -> serde_json::Value {
+    serde_json::json!({
+        "verdict": "needs-more-evidence",
+        "questions": ["what is X?"]
+    })
+}
+
+/// Stand in for the adjudication session: write the JSON verdict where the
+/// signal told it to, then hand that file to `loom stage adjudicate`.
+fn session_records_verdict(
+    work: &Path,
+    stage_id: &str,
+    dispute_id: u32,
+    verdict: &serde_json::Value,
+) -> AdjudicateOutcome {
+    let draft = verdict_draft_file(work, stage_id, dispute_id);
+    std::fs::create_dir_all(draft.parent().unwrap()).unwrap();
+    std::fs::write(&draft, verdict.to_string()).unwrap();
+    record_verdict(work, stage_id, dispute_id, &draft).expect("recording the verdict must succeed")
+}
+
+/// One full round trip for a dispute already on disk: the daemon offers a
+/// session, the session records its verdict, the daemon applies it.
+fn drive_dispute(
+    reg: &AdjudicatorRegistry,
+    work: &Path,
+    stage_id: &str,
+    dispute_id: u32,
+    verdict: &serde_json::Value,
+) {
+    let jobs = reg.disputes_awaiting_session(work).unwrap();
+    assert!(
+        jobs.iter()
+            .any(|job| job.stage.id == stage_id && job.request.id == dispute_id),
+        "dispute {dispute_id} should have been offered an adjudication session",
+    );
+    assert_eq!(
+        session_records_verdict(work, stage_id, dispute_id, verdict),
+        AdjudicateOutcome::Recorded,
+    );
+    reg.apply_pending_verdicts(work)
+        .expect("apply_pending_verdicts should be Ok");
+}
+
+/// A Reject means the criterion stands and the implementation is wrong — while
+/// the agent already judged the criterion impossible. Neither side can move, so
+/// the stage must land on a human rather than being re-queued into the same
+/// disagreement.
 #[test]
-fn reject_verdict_round_trip() {
+fn reject_verdict_escalates_to_human_review() {
     let tmp = tempfile::tempdir().unwrap();
     let work = tmp.path();
     write_plan(work);
-    let stage = make_stage("s1");
-    write_stage(work, &stage);
+    write_stage(work, &make_stage("s1"));
     write_dispute(work, "s1", 1);
 
-    let server = MockServer::start();
-    mock_accept_response(&server);
-
-    let endpoint = format!("{}/v1/messages", server.base_url());
-    let mut reg = make_registry(work, endpoint);
-
-    // First tick: spawn the worker.
-    reg.check_pending_disputes(work).unwrap();
-    // Wait for the verdict file to land.
-    let verdict_path = verdict_file(&work.join("disputes"), "s1", 1);
-    let ok = wait_for(|| verdict_path.exists(), Duration::from_secs(30));
-    assert!(ok, "verdict.md never appeared");
-
-    // Drain so the worker handle gets joined.
-    reg.drain_completed_workers(work).unwrap();
-    // Apply the verdict.
-    reg.apply_pending_verdicts(work).unwrap();
+    let reg = AdjudicatorRegistry::new();
+    drive_dispute(&reg, work, "s1", 1, &verdict_reject());
 
     let after = loom::verify::transitions::load_stage("s1", work).unwrap();
-    assert_eq!(after.status, StageStatus::Queued);
+    assert_eq!(
+        after.status,
+        StageStatus::NeedsHumanReview,
+        "a rejected dispute must NOT be re-queued",
+    );
+    assert!(after
+        .review_reason
+        .as_deref()
+        .unwrap_or("")
+        .contains("upheld the disputed acceptance criterion"));
 
     let fb = feedback::read_feedback(work, "s1").unwrap().unwrap();
     assert!(fb.contains("rejected"));
-
     assert!(applied_marker(&work.join("disputes"), "s1", 1).exists());
 }
 
@@ -302,23 +263,16 @@ fn needs_more_evidence_writes_questions() {
     let tmp = tempfile::tempdir().unwrap();
     let work = tmp.path();
     write_plan(work);
-    let stage = make_stage("s1");
-    write_stage(work, &stage);
+    write_stage(work, &make_stage("s1"));
     write_dispute(work, "s1", 1);
 
-    let server = MockServer::start();
-    mock_needs_more(&server);
-    let endpoint = format!("{}/v1/messages", server.base_url());
-    let mut reg = make_registry(work, endpoint);
-
-    reg.check_pending_disputes(work).unwrap();
-    let verdict_path = verdict_file(&work.join("disputes"), "s1", 1);
-    assert!(wait_for(|| verdict_path.exists(), Duration::from_secs(30)));
-    reg.drain_completed_workers(work).unwrap();
-    reg.apply_pending_verdicts(work).unwrap();
+    let reg = AdjudicatorRegistry::new();
+    drive_dispute(&reg, work, "s1", 1, &verdict_needs_more());
 
     let fb = feedback::read_feedback(work, "s1").unwrap().unwrap();
     assert!(fb.contains("what is X?"));
+    let after = loom::verify::transitions::load_stage("s1", work).unwrap();
+    assert_eq!(after.status, StageStatus::Queued);
 }
 
 #[test]
@@ -326,21 +280,15 @@ fn accept_verdict_amends_plan_and_clears_feedback() {
     let tmp = tempfile::tempdir().unwrap();
     let work = tmp.path();
     write_plan(work);
-    let stage = make_stage("s1");
-    write_stage(work, &stage);
+    write_stage(work, &make_stage("s1"));
     write_dispute(work, "s1", 1);
     // Pre-seed feedback to verify it gets cleared.
     feedback::append_questions(work, "s1", &["stale".to_string()]).unwrap();
 
-    let server = MockServer::start();
-    mock_accept_with_amendment(&server);
-    let endpoint = format!("{}/v1/messages", server.base_url());
-    let mut reg = make_registry(work, endpoint);
+    let reg = AdjudicatorRegistry::new();
+    assert_eq!(reg.disputes_awaiting_session(work).unwrap().len(), 1);
+    session_records_verdict(work, "s1", 1, &verdict_accept_with_amendment());
 
-    reg.check_pending_disputes(work).unwrap();
-    let verdict_path = verdict_file(&work.join("disputes"), "s1", 1);
-    assert!(wait_for(|| verdict_path.exists(), Duration::from_secs(30)));
-    reg.drain_completed_workers(work).unwrap();
     // `apply_pending_verdicts` returns Ok even when individual verdicts
     // fail to apply — per-verdict failures are logged via tracing and the
     // outer call still walks the rest of the queue. The plan in this test
@@ -351,9 +299,9 @@ fn accept_verdict_amends_plan_and_clears_feedback() {
     reg.apply_pending_verdicts(work)
         .expect("apply_pending_verdicts should return Ok even when per-verdict apply fails");
 
-    // The worker produced a parseable Accept verdict but the amendment
+    // The session produced a parseable Accept verdict but the amendment
     // did not land — the verdict file exists, the marker does not.
-    let content = std::fs::read_to_string(&verdict_path).unwrap();
+    let content = std::fs::read_to_string(verdict_file(&work.join("disputes"), "s1", 1)).unwrap();
     assert!(content.contains("accept"));
     assert!(
         !applied_marker(&work.join("disputes"), "s1", 1).exists(),
@@ -361,66 +309,62 @@ fn accept_verdict_amends_plan_and_clears_feedback() {
     );
 }
 
+/// A session that died without recording anything must be replaced — but only
+/// while the dispute's budget lasts, after which the stage asks for a human
+/// instead of collecting adjudicators forever.
 #[test]
-fn http_500_retries_then_succeeds() {
+fn a_dead_session_is_replaced_until_the_budget_runs_out() {
     let tmp = tempfile::tempdir().unwrap();
     let work = tmp.path();
     write_plan(work);
-    let stage = make_stage("s1");
-    write_stage(work, &stage);
+    write_stage(work, &make_stage("s1"));
     write_dispute(work, "s1", 1);
 
-    let server = MockServer::start();
-    mock_500_then_success(&server);
-    let endpoint = format!("{}/v1/messages", server.base_url());
-    let mut reg = make_registry(work, endpoint);
-
-    reg.check_pending_disputes(work).unwrap();
-    let verdict_path = verdict_file(&work.join("disputes"), "s1", 1);
+    let reg = AdjudicatorRegistry::new();
+    for attempt in 1..=MAX_ADJUDICATION_ATTEMPTS {
+        assert_eq!(
+            reg.disputes_awaiting_session(work).unwrap().len(),
+            1,
+            "attempt {attempt} should still be offered a session",
+        );
+    }
     assert!(
-        wait_for(|| verdict_path.exists(), Duration::from_secs(30)),
-        "verdict.md never appeared",
+        reg.disputes_awaiting_session(work).unwrap().is_empty(),
+        "the budget is spent; no further session may be started",
     );
-    reg.drain_completed_workers(work).unwrap();
-}
-
-#[test]
-fn registry_without_api_key_escalates_disputes() {
-    let tmp = tempfile::tempdir().unwrap();
-    let work = tmp.path();
-    write_plan(work);
-    let stage = make_stage("s1");
-    write_stage(work, &stage);
-    write_dispute(work, "s1", 1);
-
-    let mut reg = AdjudicatorRegistry::new(None, work);
-    reg.check_pending_disputes(work).unwrap();
 
     let after = loom::verify::transitions::load_stage("s1", work).unwrap();
     assert_eq!(after.status, StageStatus::NeedsHumanReview);
+    assert!(!verdict_file(&work.join("disputes"), "s1", 1).exists());
 }
 
+/// Two adjudicators judging the same stage in the same main repository is the
+/// thing the daemon must never do, so a live session suppresses the next offer.
 #[test]
-fn inflight_marker_blocks_double_spawn() {
+fn a_live_adjudication_session_blocks_a_second_one() {
     let tmp = tempfile::tempdir().unwrap();
     let work = tmp.path();
     write_plan(work);
-    let stage = make_stage("s1");
-    write_stage(work, &stage);
+    write_stage(work, &make_stage("s1"));
     write_dispute(work, "s1", 1);
 
-    // Pre-create a fresh inflight marker.
-    let dir = dispute_dir(&work.join("disputes"), "s1", 1);
-    std::fs::create_dir_all(&dir).unwrap();
-    std::fs::write(dir.join(".inflight"), b"").unwrap();
+    // A session record plus PID-identity evidence for a process that really is
+    // alive (this test's own). A PID file with no start-time line reads back as
+    // unverifiable, which every liveness probe treats as alive.
+    let session = Session::new_adjudication("s1");
+    loom::fs::session_files::save_session(&session, work).unwrap();
+    let pids = work.join("pids");
+    std::fs::create_dir_all(&pids).unwrap();
+    std::fs::write(
+        pids.join(format!("{}-{}.pid", session.tracking_key, session.id)),
+        format!("{}\n", std::process::id()),
+    )
+    .unwrap();
 
-    // No mock server needed — if the worker spawned anyway, it would
-    // fail (no endpoint) but the registry's job is to NOT spawn it.
-    let mut reg = make_registry(work, "http://127.0.0.1:1/should-not-be-hit".to_string());
-    reg.check_pending_disputes(work).unwrap();
+    let reg = AdjudicatorRegistry::new();
     assert!(
-        reg.handles.is_empty(),
-        "must not spawn while inflight is fresh"
+        reg.disputes_awaiting_session(work).unwrap().is_empty(),
+        "a live adjudication session must suppress a second one",
     );
 }
 
@@ -429,35 +373,15 @@ fn double_apply_is_idempotent() {
     let tmp = tempfile::tempdir().unwrap();
     let work = tmp.path();
     write_plan(work);
-    let stage = make_stage("s1");
-    write_stage(work, &stage);
+    write_stage(work, &make_stage("s1"));
     write_dispute(work, "s1", 1);
 
-    let server = MockServer::start();
-    mock_accept_response(&server);
-    let endpoint = format!("{}/v1/messages", server.base_url());
-    let mut reg = make_registry(work, endpoint);
-
-    reg.check_pending_disputes(work).unwrap();
-    let verdict_path = verdict_file(&work.join("disputes"), "s1", 1);
-    assert!(wait_for(|| verdict_path.exists(), Duration::from_secs(30)));
-    reg.drain_completed_workers(work).unwrap();
-
-    reg.apply_pending_verdicts(work).unwrap();
+    let reg = AdjudicatorRegistry::new();
+    drive_dispute(&reg, work, "s1", 1, &verdict_reject());
     let mid = loom::verify::transitions::load_stage("s1", work).unwrap();
     reg.apply_pending_verdicts(work).unwrap();
     let after = loom::verify::transitions::load_stage("s1", work).unwrap();
     assert_eq!(mid.status, after.status);
-}
-
-#[test]
-fn shutdown_completes_within_deadline() {
-    let tmp = tempfile::tempdir().unwrap();
-    let work = tmp.path();
-    let mut reg = make_registry(work, "http://127.0.0.1:1/x".to_string());
-    let start = Instant::now();
-    reg.shutdown(start + Duration::from_secs(2));
-    assert!(start.elapsed() < Duration::from_secs(3));
 }
 
 /// True end-to-end coverage of the autonomous-criteria-adjudication
@@ -466,7 +390,7 @@ fn shutdown_completes_within_deadline() {
 /// 1. Stage `s1` has a mechanically wrong acceptance criterion at
 ///    index 0 plus a passing one at index 1.
 /// 2. A dispute is filed against index 0.
-/// 3. The mocked Anthropic endpoint returns an Accept verdict whose
+/// 3. The adjudication session records an Accept verdict whose
 ///    `plan_patch` deletes acceptance[0].
 /// 4. `apply_pending_verdicts` MUST succeed (no silent fallthrough).
 /// 5. Assertions cover every observable side-effect of a successful
@@ -478,26 +402,11 @@ fn dispute_to_amendment_to_pass() {
     let tmp = tempfile::tempdir().unwrap();
     let work = tmp.path();
     let plan = write_plan_with_metadata_markers(work);
-    let stage = make_stage_two_criteria("s1");
-    write_stage(work, &stage);
+    write_stage(work, &make_stage_two_criteria("s1"));
     write_dispute(work, "s1", 1);
 
-    let server = MockServer::start();
-    mock_accept_delete_first(&server);
-    let endpoint = format!("{}/v1/messages", server.base_url());
-    let mut reg = make_registry(work, endpoint);
-
-    reg.check_pending_disputes(work).unwrap();
-    let verdict_path = verdict_file(&work.join("disputes"), "s1", 1);
-    assert!(
-        wait_for(|| verdict_path.exists(), Duration::from_secs(30)),
-        "verdict.md never appeared",
-    );
-    reg.drain_completed_workers(work).unwrap();
-
-    // CRITICAL: apply must succeed. No `let _ =` fallthrough.
-    reg.apply_pending_verdicts(work)
-        .expect("apply_pending_verdicts must succeed for a well-formed plan");
+    let reg = AdjudicatorRegistry::new();
+    drive_dispute(&reg, work, "s1", 1, &verdict_accept_delete_first());
 
     // Snapshot exists at .work/plan_versions/1.md
     let snapshot = work.join("plan_versions").join("1.md");
@@ -567,21 +476,11 @@ fn dispute_amendment_is_idempotent_under_repeat_apply() {
     let tmp = tempfile::tempdir().unwrap();
     let work = tmp.path();
     write_plan_with_metadata_markers(work);
-    let stage = make_stage_two_criteria("s1");
-    write_stage(work, &stage);
+    write_stage(work, &make_stage_two_criteria("s1"));
     write_dispute(work, "s1", 1);
 
-    let server = MockServer::start();
-    mock_accept_delete_first(&server);
-    let endpoint = format!("{}/v1/messages", server.base_url());
-    let mut reg = make_registry(work, endpoint);
-
-    reg.check_pending_disputes(work).unwrap();
-    let verdict_path = verdict_file(&work.join("disputes"), "s1", 1);
-    assert!(wait_for(|| verdict_path.exists(), Duration::from_secs(30)));
-    reg.drain_completed_workers(work).unwrap();
-
-    reg.apply_pending_verdicts(work).unwrap();
+    let reg = AdjudicatorRegistry::new();
+    drive_dispute(&reg, work, "s1", 1, &verdict_accept_delete_first());
     let mid = loom::verify::transitions::load_stage("s1", work).unwrap();
     assert_eq!(mid.amendments_applied, 1);
 
@@ -645,27 +544,19 @@ fn make_stage_three_criteria(id: &str) -> Stage {
     }
 }
 
-/// Drive one dispute through the registry to apply.marker. Used to land
-/// successful amendments in the cap-exceeded e2e test. Re-seeds the
-/// stage to `NeedsAdjudication` before scanning so back-to-back disputes
-/// can be processed without an agent-flow round trip.
-fn drive_dispute_to_applied(
-    reg: &mut AdjudicatorRegistry,
+/// Drive one dispute from filing to applied. Re-seeds the stage to
+/// `NeedsAdjudication` first so back-to-back disputes can be processed
+/// without an agent-flow round trip.
+fn file_and_drive_dispute(
+    reg: &AdjudicatorRegistry,
     work: &Path,
     stage_id: &str,
     dispute_id: u32,
+    verdict: &serde_json::Value,
 ) {
     set_stage_status(work, stage_id, StageStatus::NeedsAdjudication);
     write_dispute(work, stage_id, dispute_id);
-    reg.check_pending_disputes(work).unwrap();
-    let verdict_path = verdict_file(&work.join("disputes"), stage_id, dispute_id);
-    assert!(
-        wait_for(|| verdict_path.exists(), Duration::from_secs(30)),
-        "verdict.md never appeared for dispute {dispute_id}",
-    );
-    reg.drain_completed_workers(work).unwrap();
-    reg.apply_pending_verdicts(work)
-        .expect("apply_pending_verdicts should be Ok");
+    drive_dispute(reg, work, stage_id, dispute_id, verdict);
 }
 
 /// End-to-end coverage of the amendment-cap escalation path. Two
@@ -680,38 +571,22 @@ fn amendment_cap_exceeded_escalates_to_human_review() {
     let tmp = tempfile::tempdir().unwrap();
     let work = tmp.path();
     write_plan_with_cap(work, 2);
-    let stage = make_stage_three_criteria("s1");
-    write_stage(work, &stage);
+    write_stage(work, &make_stage_three_criteria("s1"));
 
-    let server = MockServer::start();
-    mock_accept_delete_first(&server);
-    let endpoint = format!("{}/v1/messages", server.base_url());
-    let mut reg = make_registry(work, endpoint);
+    let reg = AdjudicatorRegistry::new();
+    let accept = verdict_accept_delete_first();
 
     // Two accepted amendments under the cap.
-    drive_dispute_to_applied(&mut reg, work, "s1", 1);
-    drive_dispute_to_applied(&mut reg, work, "s1", 2);
+    file_and_drive_dispute(&reg, work, "s1", 1, &accept);
+    file_and_drive_dispute(&reg, work, "s1", 2, &accept);
 
     let after_two = loom::verify::transitions::load_stage("s1", work).unwrap();
     assert_eq!(after_two.amendments_applied, 2);
     assert_eq!(after_two.status, StageStatus::Queued);
 
-    // Third dispute: stage must be put back into NeedsAdjudication first
-    // (apply_verdict refuses to act on Queued stages with no verdict file).
-    set_stage_status(work, "s1", StageStatus::NeedsAdjudication);
-    write_dispute(work, "s1", 3);
-    reg.check_pending_disputes(work).unwrap();
-    let verdict_path_3 = verdict_file(&work.join("disputes"), "s1", 3);
-    assert!(wait_for(
-        || verdict_path_3.exists(),
-        Duration::from_secs(30)
-    ));
-    reg.drain_completed_workers(work).unwrap();
-    reg.apply_pending_verdicts(work)
-        .expect("apply_pending_verdicts should be Ok");
+    // Third dispute: the cap blocks the amendment.
+    file_and_drive_dispute(&reg, work, "s1", 3, &accept);
 
-    // The cap blocked the third amendment. The orchestrator must
-    // escalate AND write applied.marker so we don't retry forever.
     let after_three = loom::verify::transitions::load_stage("s1", work).unwrap();
     assert_eq!(
         after_three.status,
@@ -742,25 +617,21 @@ fn amendment_cap_exceeded_escalates_to_human_review() {
     assert_eq!(after_replay.amendments_applied, 2);
 }
 
-/// End-to-end coverage of the evidence-rounds escalation path. The
-/// mocked server returns `NeedsMoreEvidence` every time; the
-/// orchestrator drives the stage Queued → NeedsAdjudication → Queued
-/// until `evidence_rounds >= MAX_EVIDENCE_ROUNDS`, at which point the
-/// stage must escalate to `NeedsHumanReview` instead of looping.
+/// End-to-end coverage of the evidence-rounds escalation path. Every verdict
+/// is `NeedsMoreEvidence`; the orchestrator drives the stage
+/// NeedsAdjudication → Queued until `evidence_rounds >= MAX_EVIDENCE_ROUNDS`,
+/// at which point the stage must escalate to `NeedsHumanReview` instead of
+/// looping.
 #[test]
 fn evidence_rounds_exhausted_escalates_to_human_review() {
     let tmp = tempfile::tempdir().unwrap();
     let work = tmp.path();
     write_plan(work);
-    let stage = make_stage("s1");
-    write_stage(work, &stage);
+    write_stage(work, &make_stage("s1"));
 
-    let server = MockServer::start();
-    mock_needs_more(&server);
-    let endpoint = format!("{}/v1/messages", server.base_url());
-    let mut reg = make_registry(work, endpoint);
+    let reg = AdjudicatorRegistry::new();
+    let needs_more = verdict_needs_more();
 
-    // Drive disputes until the evidence-round cap escalates the stage.
     let mut dispute_id: u32 = 0;
     loop {
         let s = loom::verify::transitions::load_stage("s1", work).unwrap();
@@ -774,20 +645,8 @@ fn evidence_rounds_exhausted_escalates_to_human_review() {
             s.status,
             s.evidence_rounds
         );
-        // Ensure the stage is back in NeedsAdjudication so the next dispute
-        // can be processed.
-        set_stage_status(work, "s1", StageStatus::NeedsAdjudication);
-
         dispute_id += 1;
-        write_dispute(work, "s1", dispute_id);
-        reg.check_pending_disputes(work).unwrap();
-        let v = verdict_file(&work.join("disputes"), "s1", dispute_id);
-        assert!(
-            wait_for(|| v.exists(), Duration::from_secs(30)),
-            "verdict.md never appeared for dispute {dispute_id}",
-        );
-        reg.drain_completed_workers(work).unwrap();
-        reg.apply_pending_verdicts(work).unwrap();
+        file_and_drive_dispute(&reg, work, "s1", dispute_id, &needs_more);
     }
 
     let after = loom::verify::transitions::load_stage("s1", work).unwrap();
@@ -801,21 +660,4 @@ fn evidence_rounds_exhausted_escalates_to_human_review() {
         "review_reason should mention evidence-loop exhaustion; got: {:?}",
         after.review_reason,
     );
-}
-
-#[test]
-fn worker_helper_paths_are_under_work_dir() {
-    let tmp = tempfile::tempdir().unwrap();
-    let work = tmp.path();
-    let req = adj_worker::request_path(work, "s1", 1);
-    let ver = adj_worker::verdict_path(work, "s1", 1);
-    let app = adj_worker::applied_marker_path(work, "s1", 1);
-    let inflight = adj_worker::inflight_marker_path(&work.join("disputes"), "s1", 1);
-    for p in [&req, &ver, &app, &inflight] {
-        assert!(
-            p.starts_with(work),
-            "expected {} to start with work_dir",
-            p.display()
-        );
-    }
 }

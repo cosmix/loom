@@ -21,6 +21,7 @@ use crate::plan::ExecutionGraph;
 use crate::skills::SkillIndex;
 use crate::utils::{cleanup_terminal, install_terminal_panic_hook};
 
+use super::clear_status_line;
 use super::event_handler::EventHandler;
 use super::persistence::Persistence;
 use super::recovery::Recovery;
@@ -120,8 +121,8 @@ pub struct Orchestrator {
     /// Stages whose spool drain has already been reported as failing.
     /// Prevents the 5-second poll loop from flooding the logs.
     pub(super) spool_drain_error_logged: HashSet<String>,
-    /// Adjudicator registry — owns worker threads + completion channel.
-    /// Disabled (workers never spawn) when `ANTHROPIC_API_KEY` is unset.
+    /// Adjudicator entry points. Stateless: dispute state lives on disk, so
+    /// this survives a daemon restart without losing anything.
     pub(super) adjudicators: AdjudicatorRegistry,
     /// Why each ready-but-unstarted stage did not spawn on the current tick.
     ///
@@ -166,24 +167,11 @@ impl Orchestrator {
         // Detect project languages for skill recommendations
         let detected_languages = detect_project_languages(&config.repo_root);
 
-        // Adjudicator: read ANTHROPIC_API_KEY at daemon startup. When the
-        // env var is absent, the registry stays in disabled mode for the
-        // entire daemon run and disputes route directly to NeedsHumanReview.
-        let api_key = std::env::var("ANTHROPIC_API_KEY").ok().and_then(|k| {
-            let trimmed = k.trim().to_string();
-            if trimmed.is_empty() {
-                None
-            } else {
-                Some(trimmed)
-            }
-        });
-        if api_key.is_none() {
-            tracing::warn!(
-                target: "loom::adjudication",
-                "ANTHROPIC_API_KEY not set; adjudicator is disabled for this daemon run",
-            );
-        }
-        let adjudicators = AdjudicatorRegistry::new(api_key, &config.work_dir);
+        // Disputes are adjudicated by a session the terminal backend spawns on
+        // demand, so there is nothing to resolve up front: whether a session
+        // can be started at all is the backend's answer, given per spawn, and
+        // a failure escalates the dispute it was for rather than the run.
+        let adjudicators = AdjudicatorRegistry::new();
 
         // Reconcile any orphaned plan-amendment snapshots from a prior
         // crash. This is cheap (no I/O when no snapshots exist) and must
@@ -288,15 +276,13 @@ impl Orchestrator {
         self.sync_queued_status_to_files()
             .context("Failed to sync queued status to files")?;
 
-        // Adjudicator hooks: poll for pending disputes/verdicts and drain
-        // completed worker threads. Idempotent + cheap when there are no
+        // Adjudicator hooks: poll for pending disputes and apply any verdict
+        // a session has written. Idempotent + cheap when there are no
         // disputes on disk.
         self.check_pending_disputes()
             .context("Failed to check pending disputes")?;
         self.apply_pending_verdicts()
             .context("Failed to apply pending verdicts")?;
-        self.drain_completed_adjudicator_workers()
-            .context("Failed to drain completed adjudicator workers")?;
 
         // Spawn merge resolution sessions for stages stuck in MergeConflict/MergeBlocked
         let initial_merge_sessions = self
@@ -342,15 +328,13 @@ impl Orchestrator {
             self.sync_queued_status_to_files()
                 .context("Failed to sync queued status to files")?;
 
-            // Adjudicator hooks (every tick): scan for new disputes,
-            // apply ready verdicts, drain completed workers. The calls
-            // are no-ops when there are no pending disputes on disk.
+            // Adjudicator hooks (every tick): scan for new disputes and apply
+            // ready verdicts. The calls are no-ops when there are no pending
+            // disputes on disk.
             self.check_pending_disputes()
                 .context("Failed to check pending disputes")?;
             self.apply_pending_verdicts()
                 .context("Failed to apply pending verdicts")?;
-            self.drain_completed_adjudicator_workers()
-                .context("Failed to drain completed adjudicator workers")?;
 
             // Spawn merge resolution sessions for stages stuck in MergeConflict/MergeBlocked
             let merge_sessions_spawned = self
@@ -476,13 +460,10 @@ impl Orchestrator {
             }
         }
 
-        // Cooperative shutdown for adjudicator workers. Without this the
-        // AtomicBool cancellation flag is never set; in-flight HTTP workers
-        // keep running until reqwest's own timeout, their JoinHandles are
-        // dropped (detached), and `.inflight` markers can stay fresh into
-        // the next daemon run for up to INFLIGHT_TIMEOUT_SECS, blocking
-        // re-spawn of the same dispute.
-        self.shutdown_adjudicators(Instant::now() + Duration::from_secs(5));
+        // An adjudication session outlives this loop the way a merge
+        // resolution session does: it is an agent in a terminal, not a thread
+        // this process owns, and the verdict it writes is picked up by
+        // whichever daemon is running when it lands.
 
         // The loop is done turning; drop the tick and the scheduling report so
         // a later `loom status` cannot read a stopped daemon's last state as a
@@ -508,32 +489,31 @@ impl Orchestrator {
         self.active_sessions.len()
     }
 
-    /// Poll `.work/disputes/` for new dispute requests and spawn worker
-    /// threads as needed. See [`AdjudicatorRegistry::check_pending_disputes`].
+    /// Poll `.work/disputes/` and start an adjudication session for every
+    /// dispute that needs one. See
+    /// [`AdjudicatorRegistry::start_pending_adjudications`] and
+    /// [`AdjudicatorRegistry::disputes_awaiting_session`] for the guards.
     pub(crate) fn check_pending_disputes(&mut self) -> Result<()> {
-        let work_dir = self.config.work_dir.clone();
-        self.adjudicators.check_pending_disputes(&work_dir)
+        let started = self.adjudicators.start_pending_adjudications(
+            &self.backend,
+            &self.config.work_dir,
+            &self.config.repo_root,
+        )?;
+        for started in started {
+            clear_status_line();
+            eprintln!(
+                "Spawned adjudication session for stage '{}' dispute {}: {}",
+                started.stage_id, started.dispute_id, started.session_id
+            );
+        }
+        Ok(())
     }
 
-    /// Apply verdict files written by adjudicator workers to the
+    /// Apply verdict files written by adjudication sessions to the
     /// stage state. See [`AdjudicatorRegistry::apply_pending_verdicts`].
     pub(crate) fn apply_pending_verdicts(&mut self) -> Result<()> {
         let work_dir = self.config.work_dir.clone();
         self.adjudicators.apply_pending_verdicts(&work_dir)
-    }
-
-    /// Drain the worker→orchestrator completion channel and join any
-    /// handles whose workers have reported done.
-    pub(crate) fn drain_completed_adjudicator_workers(&mut self) -> Result<()> {
-        let work_dir = self.config.work_dir.clone();
-        self.adjudicators.drain_completed_workers(&work_dir)
-    }
-
-    /// Cooperative shutdown for the adjudicator registry. Called from
-    /// the daemon shutdown path; signals workers to cancel and joins
-    /// their handles until `deadline`.
-    pub fn shutdown_adjudicators(&mut self, deadline: std::time::Instant) {
-        self.adjudicators.shutdown(deadline);
     }
 }
 

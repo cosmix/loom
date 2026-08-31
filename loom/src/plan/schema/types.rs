@@ -174,14 +174,14 @@ pub struct LoomConfig {
 
 /// Plan-level adjudication / amendment configuration.
 ///
-/// Caps the number of runtime amendments that may be applied to a single
-/// stage before human intervention is required. The cap is **absolute**:
-/// once `amendments_applied >= max_amendments_per_stage`, further
-/// amendments are rejected by [`crate::plan::amendment::apply_amendment`].
+/// Caps runtime amendments applied to a single stage before human intervention
+/// is required — absolute, enforced by [`crate::plan::amendment::apply_amendment`].
+/// Default 10, not 3: fixes land one dispute at a time, so a multi-fix plan
+/// isn't sent to a human part-way through.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct AdjudicationConfig {
-    /// Absolute cap on amendments per stage. Default 3.
+    /// Absolute cap on amendments per stage. Default 10.
     #[serde(default = "default_max_amendments_per_stage")]
     pub max_amendments_per_stage: u32,
 }
@@ -195,7 +195,7 @@ impl Default for AdjudicationConfig {
 }
 
 fn default_max_amendments_per_stage() -> u32 {
-    3
+    10
 }
 
 /// Stage definition from plan metadata

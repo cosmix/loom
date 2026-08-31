@@ -3,648 +3,219 @@
 //! Disputes filed by agents land in `.work/disputes/<stage>/<n>/request.md`.
 //! The orchestrator polls these files every tick:
 //!
-//! * [`AdjudicatorRegistry::check_pending_disputes`] spawns a worker
-//!   thread for each `request.md` that has no `verdict.md` yet (subject
-//!   to per-dispute retry caps and the absence of a fresh `.inflight`
-//!   marker).
+//! * [`AdjudicatorRegistry::disputes_awaiting_session`] returns the disputes
+//!   that need an adjudication session started, having applied every guard
+//!   (a verdict already written, a stage that has left `NeedsAdjudication`,
+//!   the evidence-round cap, a session already live for the stage, the
+//!   spawn-attempt cap) and escalated the stage where a guard is terminal.
+//!   The daemon spawns the session; see `orchestrator/core/orchestrator.rs`.
 //! * [`AdjudicatorRegistry::apply_pending_verdicts`] scans for verdict
 //!   files that haven't been applied (no `applied.marker`) and mutates
-//!   stage state accordingly.
-//! * [`AdjudicatorRegistry::drain_completed_workers`] drains worker
-//!   completion messages off the mpsc channel and joins their handles
-//!   so dropped sessions don't leak threads.
+//!   stage state accordingly (see `apply.rs`).
 //!
-//! The registry is owned by the
-//! [`Orchestrator`](crate::orchestrator::Orchestrator) and lives for the
-//! entire daemon run. When `ANTHROPIC_API_KEY` is unset the registry
-//! goes into "disabled" mode: workers are never spawned and any
-//! pending disputes route directly to `NeedsHumanReview`.
+//! The adjudicator is a real loom session, not a subprocess the daemon waits
+//! on: it is spawned into a terminal in the MAIN REPOSITORY, judges the
+//! dispute with the full tool surface, and records its verdict by running
+//! `loom stage adjudicate`. The daemon never blocks on it — it observes
+//! `verdict.md` appearing on a later tick, exactly as merge resolution
+//! observes `loom stage merge --resolved`.
+//!
+//! The registry therefore holds no state at all: liveness comes from the
+//! session record and the spawn budget from the dispute directory, so a
+//! daemon restart mid-adjudication neither loses a running session nor
+//! resets its budget.
 
-pub mod client;
+mod apply;
 pub mod feedback;
 pub mod prompt;
+mod scan;
+pub mod session;
 pub mod verdict;
-pub mod worker;
 
 #[cfg(test)]
 mod tests;
 
-use anyhow::{Context, Result};
-use std::collections::HashMap;
+use anyhow::Result;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::AtomicBool;
-use std::sync::mpsc::{self, Receiver, Sender};
-use std::sync::Arc;
-use std::thread::JoinHandle;
-use std::time::{Duration, Instant};
 
-use crate::models::dispute::{
-    applied_marker, dispute_dir, request_file, verdict_file, DisputeRequest, DisputeVerdict,
-    DisputeVerdictRecord,
-};
-use crate::models::stage::{Stage, StageStatus};
-use crate::plan::amendment::{apply_amendment, AmendmentField, AmendmentPatch, AmendmentRequest};
+use crate::models::dispute::{request_file, verdict_file};
+use crate::models::stage::StageStatus;
 use crate::verify::transitions::{load_stage, update_stage};
 
-use worker::{
-    is_inflight_fresh, spawn_worker, WorkerCompletion, WorkerJob, WorkerOutcome, MAX_WORKER_RETRIES,
+use scan::{read_dispute_request, scan_pending_requests};
+
+pub use session::{
+    attempt_count, persist_verdict, read_request, resolve_model, verdict_draft_file,
+    AdjudicationJob, DEFAULT_ADJUDICATION_MODEL, MAX_ADJUDICATION_ATTEMPTS,
 };
 
 /// Maximum evidence-loop rounds. After this, the stage escalates to
 /// `NeedsHumanReview` instead of looping forever.
-pub const MAX_EVIDENCE_ROUNDS: u32 = 3;
-
-/// Adjudicator state owned by the orchestrator.
 ///
-/// Tracks live worker threads keyed by `(stage_id, dispute_id)` and a
-/// cooperative-shutdown flag passed to every worker. When the daemon is
-/// shutting down, it sets `cancel` and drains `completion_rx` until all
-/// handles are joined or a deadline elapses.
-pub struct AdjudicatorRegistry {
-    /// API key. `None` permanently disables the adjudicator for this
-    /// daemon run.
-    pub api_key: Option<String>,
-    /// Adjudicator endpoint URL. Overridable for tests.
-    pub endpoint: String,
-    /// Model identifier sent in the JSON body.
-    pub model: String,
-    /// Per-worker join handles. Removed when a `WorkerCompletion` is
-    /// drained off the channel.
-    pub handles: HashMap<(String, u32), JoinHandle<()>>,
-    /// Cooperative shutdown flag passed to every worker.
-    pub cancel: Arc<AtomicBool>,
-    /// Worker→orchestrator completion channel.
-    pub completion_tx: Sender<WorkerCompletion>,
-    pub completion_rx: Receiver<WorkerCompletion>,
-}
+/// Five, not three: each round is a real exchange — the adjudicator asks
+/// specific questions, the stage agent answers them in its next attempt — and
+/// three cut that conversation off while it was still converging. The loop is
+/// bounded because an adjudicator that cannot decide after five rounds of its
+/// own questions is not going to decide on the sixth, not because rounds are
+/// expensive.
+pub const MAX_EVIDENCE_ROUNDS: u32 = 5;
+
+/// The daemon's entry points into the dispute lifecycle.
+///
+/// Deliberately stateless — see the module docs. It is owned by the
+/// [`Orchestrator`](crate::orchestrator::Orchestrator) and lives for the
+/// entire daemon run.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct AdjudicatorRegistry;
 
 impl AdjudicatorRegistry {
-    /// Construct a registry. `api_key.is_none()` puts the registry in
-    /// disabled mode permanently for the lifetime of this daemon run.
-    pub fn new(api_key: Option<String>, work_dir: &Path) -> Self {
-        let (tx, rx) = mpsc::channel();
-        let model = worker::resolve_model(work_dir);
-        Self {
-            api_key,
-            endpoint: client::ANTHROPIC_MESSAGES_URL.to_string(),
-            model,
-            handles: HashMap::new(),
-            cancel: Arc::new(AtomicBool::new(false)),
-            completion_tx: tx,
-            completion_rx: rx,
-        }
+    pub fn new() -> Self {
+        Self
     }
 
-    /// True when the registry has been permanently disabled (no key).
-    pub fn is_disabled(&self) -> bool {
-        self.api_key.is_none()
-    }
-
-    /// Scan `.work/disputes/<stage>/<n>/` for pending disputes and
-    /// spawn workers for each.
+    /// Disputes that need an adjudication session started on this tick.
     ///
-    /// Skips disputes that:
-    /// - already have a `verdict.md` (worker succeeded),
-    /// - have a fresh `.inflight` marker (worker in progress),
-    /// - have exceeded `MAX_WORKER_RETRIES`,
-    /// - belong to a stage whose entire evidence-loop budget is gone
-    ///   (escalated to NeedsHumanReview already).
-    pub fn check_pending_disputes(&mut self, work_dir: &Path) -> Result<()> {
+    /// Every returned job has already been counted against the dispute's
+    /// spawn budget: the caller is expected to try the spawn immediately, and
+    /// [`AdjudicatorRegistry::start_pending_adjudications`] escalates the
+    /// stage when it cannot.
+    pub fn disputes_awaiting_session(&self, work_dir: &Path) -> Result<Vec<AdjudicationJob>> {
         let disputes_root = work_dir.join("disputes");
         if !disputes_root.exists() {
-            return Ok(());
+            return Ok(Vec::new());
         }
+        let mut jobs: Vec<AdjudicationJob> = Vec::new();
         for (stage_id, dispute_id) in scan_pending_requests(&disputes_root)? {
-            if self.handles.contains_key(&(stage_id.clone(), dispute_id)) {
+            // One adjudicator per stage per pass. A stage can carry more than
+            // one unanswered dispute (an earlier one abandoned when the stage
+            // was escalated and then resumed), and the live-session guard
+            // below only sees sessions started on an EARLIER tick — so
+            // without this, both would be handed a session at once and two
+            // adjudicators would judge the same stage in the same repository.
+            if jobs.iter().any(|job| job.stage.id == stage_id) {
                 continue;
             }
-            let req_path = request_file(&disputes_root, &stage_id, dispute_id);
-            let request: DisputeRequest = match read_dispute_request(&req_path) {
-                Ok(r) => r,
-                Err(e) => {
-                    tracing::warn!(
-                        target: "loom::adjudication",
-                        stage = %stage_id,
-                        dispute = dispute_id,
-                        error = %e,
-                        "skipping unparseable dispute request",
-                    );
-                    continue;
-                }
-            };
-            let verdict_path = verdict_file(&disputes_root, &stage_id, dispute_id);
-            if verdict_path.exists() {
-                continue;
+            if let Some(job) = self.job_for_dispute(work_dir, &stage_id, dispute_id) {
+                jobs.push(job);
             }
-            let inflight = worker::inflight_marker_path(&disputes_root, &stage_id, dispute_id);
-            if is_inflight_fresh(&inflight) {
-                continue;
-            }
-
-            if self.is_disabled() {
-                if let Err(e) = escalate_no_api_key(work_dir, &stage_id) {
-                    tracing::warn!(
-                        target: "loom::adjudication",
-                        stage = %stage_id,
-                        error = %e,
-                        "failed to escalate stage without API key",
-                    );
-                }
-                continue;
-            }
-
-            let attempt = current_attempt_count(work_dir, &stage_id, dispute_id) + 1;
-            if attempt > MAX_WORKER_RETRIES {
-                if let Err(e) = escalate_attempt_cap(work_dir, &stage_id, dispute_id) {
-                    tracing::warn!(
-                        target: "loom::adjudication",
-                        stage = %stage_id,
-                        dispute = dispute_id,
-                        error = %e,
-                        "failed to escalate stage after retry cap",
-                    );
-                }
-                continue;
-            }
-
-            let stage = match load_stage(&stage_id, work_dir) {
-                Ok(s) => s,
-                Err(e) => {
-                    tracing::warn!(
-                        target: "loom::adjudication",
-                        stage = %stage_id,
-                        error = %e,
-                        "could not load stage; skipping dispute",
-                    );
-                    continue;
-                }
-            };
-            if stage.status != StageStatus::NeedsAdjudication {
-                continue;
-            }
-            if stage.evidence_rounds >= MAX_EVIDENCE_ROUNDS {
-                if let Err(e) = escalate_evidence_cap(work_dir, &stage_id) {
-                    tracing::warn!(
-                        target: "loom::adjudication",
-                        stage = %stage_id,
-                        error = %e,
-                        "failed to escalate stage after evidence cap",
-                    );
-                }
-                continue;
-            }
-
-            let plan_path = resolve_plan_path(work_dir).unwrap_or_else(|| PathBuf::from("PLAN.md"));
-            let api_key = match self.api_key.clone() {
-                Some(k) => k,
-                None => continue,
-            };
-            let job = WorkerJob {
-                work_dir: work_dir.to_path_buf(),
-                plan_path,
-                stage,
-                dispute: request,
-                api_key,
-                cancellation: Arc::clone(&self.cancel),
-                completion_tx: self.completion_tx.clone(),
-                endpoint: self.endpoint.clone(),
-                model: self.model.clone(),
-                attempt,
-            };
-            let handle = spawn_worker(job);
-            self.handles.insert((stage_id, dispute_id), handle);
         }
-        Ok(())
+        Ok(jobs)
     }
 
-    /// Apply verdict files that haven't been applied yet (no
-    /// `applied.marker`). Idempotent under crash recovery: a `.applying`
-    /// marker is written before mutating stage state and removed only
-    /// after `applied.marker` is in place.
-    pub fn apply_pending_verdicts(&mut self, work_dir: &Path) -> Result<()> {
-        let disputes_root = work_dir.join("disputes");
-        if !disputes_root.exists() {
-            return Ok(());
-        }
-        for (stage_id, dispute_id) in scan_pending_verdicts(&disputes_root)? {
-            if let Err(e) = self.apply_verdict(work_dir, &stage_id, dispute_id) {
-                tracing::warn!(
-                    target: "loom::adjudication",
-                    stage = %stage_id,
-                    dispute = dispute_id,
-                    error = %e,
-                    "failed to apply verdict",
-                );
-            }
-        }
-        Ok(())
-    }
-
-    /// Apply a single verdict to the stage. Public so callers under
-    /// test can drive a verdict file end-to-end.
-    pub fn apply_verdict(
-        &mut self,
+    /// The guards, in order, for one pending dispute. `None` means "not this
+    /// tick" — either because the dispute is already handled, or because a
+    /// terminal condition escalated the stage instead.
+    fn job_for_dispute(
+        &self,
         work_dir: &Path,
         stage_id: &str,
         dispute_id: u32,
-    ) -> Result<()> {
+    ) -> Option<AdjudicationJob> {
         let disputes_root = work_dir.join("disputes");
-        let verdict_path = verdict_file(&disputes_root, stage_id, dispute_id);
-        let applied = applied_marker(&disputes_root, stage_id, dispute_id);
-        if applied.exists() {
-            return Ok(());
+        if verdict_file(&disputes_root, stage_id, dispute_id).exists() {
+            return None;
         }
-        let applying = dispute_dir(&disputes_root, stage_id, dispute_id).join(".applying");
-
-        let record = read_verdict_record(&verdict_path)?;
-        let mut stage = load_stage(stage_id, work_dir)?;
-
-        // Write the .applying marker BEFORE mutating any state so a
-        // crash mid-apply is recoverable (the next tick re-enters here
-        // and re-applies the same verdict; the work is idempotent).
-        if let Some(parent) = applying.parent() {
-            std::fs::create_dir_all(parent).ok();
-        }
-        let _ = std::fs::write(&applying, b"");
-
-        let result = self.apply_verdict_inner(work_dir, &mut stage, &record);
-        let final_result: Result<()> = (|| -> Result<()> {
-            result?;
-            // Re-apply ONLY the verdict-owned fields onto the FRESH on-disk
-            // stage so a concurrent dispute-thread write (e.g. dispute_count for
-            // a parallel filing) or CLI write is not reverted (A-5). The verdict
-            // owns: status (+ review_reason via try_request_human_review),
-            // evidence_rounds, amendments_applied, and acceptance/wiring (the
-            // latter two were already written to disk by apply_amendment's own
-            // locked update; re-applying the in-memory copy keeps them coherent
-            // under this lock). force_status_with_reason is used because the
-            // in-memory `stage` already holds the verdict's resolved status and
-            // the on-disk status is re-read here — re-validating the transition
-            // would risk a spurious refusal against an intermediate on-disk state.
-            let verdict_status = stage.status.clone();
-            let verdict_review_reason = stage.review_reason.clone();
-            let verdict_evidence_rounds = stage.evidence_rounds;
-            let verdict_amendments_applied = stage.amendments_applied;
-            let verdict_acceptance = stage.acceptance.clone();
-            let verdict_wiring = stage.wiring.clone();
-            update_stage(stage_id, work_dir, |s| {
-                s.force_status_with_reason(verdict_status.clone(), "adjudicator verdict applied");
-                s.review_reason = verdict_review_reason.clone();
-                s.evidence_rounds = verdict_evidence_rounds;
-                s.amendments_applied = verdict_amendments_applied;
-                s.acceptance = verdict_acceptance.clone();
-                s.wiring = verdict_wiring.clone();
-                Ok(())
+        let request = read_dispute_request(&request_file(&disputes_root, stage_id, dispute_id))
+            .map_err(|error| {
+                tracing::warn!(target: "loom::adjudication", stage = %stage_id, dispute = dispute_id, %error, "skipping unparseable dispute request");
             })
-            .context("save amended stage after verdict apply")?;
-            if let Some(parent) = applied.parent() {
-                std::fs::create_dir_all(parent).ok();
-            }
-            std::fs::write(&applied, b"")
-                .with_context(|| format!("Failed to write {}", applied.display()))?;
-            Ok(())
-        })();
-        // Always remove the .applying marker — success means the
-        // applied.marker now exists, failure means we'll retry on
-        // the next tick and re-write the marker.
-        let _ = std::fs::remove_file(&applying);
-        final_result
-    }
+            .ok()?;
 
-    fn apply_verdict_inner(
-        &self,
-        work_dir: &Path,
-        stage: &mut Stage,
-        record: &DisputeVerdictRecord,
-    ) -> Result<()> {
-        match &record.verdict {
-            DisputeVerdict::Accept { plan_patch, .. } => {
-                let plan_path = resolve_plan_path(work_dir)
-                    .ok_or_else(|| anyhow::anyhow!("plan source_path missing"))?;
-                let request = build_amendment_request(stage.id.clone(), plan_patch, record.id)?;
-                match apply_amendment(&plan_path, work_dir, request) {
-                    Ok(_) => {}
-                    Err(e) if crate::plan::amendment::is_amendment_cap_error(&e) => {
-                        // Cap exceeded: a fourth accepted dispute would
-                        // exceed the per-stage amendment budget. Escalate
-                        // to human review and let the caller still write
-                        // applied.marker so we don't loop this verdict
-                        // forever on the next tick.
-                        let reason = format!("{e:#}");
-                        if let Err(transition_err) = stage.try_request_human_review(reason) {
-                            tracing::warn!(
-                                target: "loom::adjudication",
-                                stage = %stage.id,
-                                error = %transition_err,
-                                "amendment cap exceeded but stage could not be escalated to NeedsHumanReview",
-                            );
-                        }
-                        let _ = feedback::clear_feedback(work_dir, &stage.id);
-                        return Ok(());
-                    }
-                    Err(e) => {
-                        return Err(e).context("apply plan amendment from accept verdict");
-                    }
-                }
-                // Resync the stage's acceptance/wiring from disk (the
-                // amendment also rewrites the stage file).
-                if let Ok(reloaded) = load_stage(&stage.id, work_dir) {
-                    stage.acceptance = reloaded.acceptance;
-                    stage.wiring = reloaded.wiring;
-                    // Derive amendments_applied from the audit log (the
-                    // source of truth used by the cap check). Bumping the
-                    // in-memory field by +1 here would double-count on a
-                    // crash-mid-apply retry: apply_amendment is now
-                    // idempotent (returns the prior result), but the
-                    // increment-on-reload would have re-bumped each pass.
-                    stage.amendments_applied =
-                        crate::plan::amendment::count_amendments_for_stage(work_dir, &stage.id)
-                            .unwrap_or_else(|_| reloaded.amendments_applied.saturating_add(1));
-                }
-                // Accept verdict closes the evidence loop: clear feedback
-                // and re-queue the stage so the agent can retry.
-                let _ = feedback::clear_feedback(work_dir, &stage.id);
-                transition_to_queued(stage)?;
-            }
-            DisputeVerdict::Reject {
-                reasoning,
-                citations,
-            } => {
-                feedback::append_rejection(work_dir, &stage.id, reasoning, citations)?;
-                transition_to_queued(stage)?;
-            }
-            DisputeVerdict::NeedsMoreEvidence { questions } => {
-                feedback::append_questions(work_dir, &stage.id, questions)?;
-                stage.evidence_rounds = stage.evidence_rounds.saturating_add(1);
-                if stage.evidence_rounds >= MAX_EVIDENCE_ROUNDS {
-                    let reason = format!(
-                        "Adjudicator evidence loop exhausted ({} rounds)",
-                        stage.evidence_rounds
-                    );
-                    stage.try_request_human_review(reason).ok();
-                } else {
-                    transition_to_queued(stage)?;
-                }
-            }
+        let stage = load_stage(stage_id, work_dir)
+            .map_err(|error| {
+                tracing::warn!(target: "loom::adjudication", stage = %stage_id, %error, "could not load stage; skipping dispute");
+            })
+            .ok()?;
+        if stage.status != StageStatus::NeedsAdjudication {
+            return None;
         }
-        Ok(())
-    }
+        if stage.evidence_rounds >= MAX_EVIDENCE_ROUNDS {
+            escalate_evidence_cap(work_dir, stage_id);
+            return None;
+        }
+        if !self.claim_session_slot(work_dir, stage_id, dispute_id) {
+            return None;
+        }
 
-    /// Drain `completion_rx` and join any handles whose workers
-    /// signalled completion. Called once per orchestrator tick.
-    pub fn drain_completed_workers(&mut self, work_dir: &Path) -> Result<()> {
-        loop {
-            let completion = match self.completion_rx.try_recv() {
-                Ok(c) => c,
-                Err(mpsc::TryRecvError::Empty) => break,
-                Err(mpsc::TryRecvError::Disconnected) => break,
-            };
-            let key = (completion.stage_id.clone(), completion.dispute_id);
-            if let Some(handle) = self.handles.remove(&key) {
-                let _ = handle.join();
-            }
-            match completion.outcome {
-                WorkerOutcome::Wrote => {}
-                WorkerOutcome::Escalate(reason) => {
-                    // Re-apply only the human-review transition onto the fresh
-                    // on-disk stage so a concurrent dispute-thread/CLI write is
-                    // not reverted (A-5). A refused transition is logged inside
-                    // the closure and ignored (best-effort escalation).
-                    let res = update_stage(&completion.stage_id, work_dir, |s| {
-                        s.try_request_human_review(reason.clone()).ok();
-                        Ok(())
-                    });
-                    if let Err(e) = res {
-                        tracing::warn!(
-                            target: "loom::adjudication",
-                            stage = %completion.stage_id,
-                            error = %e,
-                            "failed to persist escalated stage",
-                        );
-                    }
-                }
-                WorkerOutcome::Error(err) => {
-                    tracing::warn!(
-                        target: "loom::adjudication",
-                        stage = %completion.stage_id,
-                        dispute = completion.dispute_id,
-                        error = %err,
-                        "adjudicator worker reported error",
-                    );
-                }
-            }
-        }
-        Ok(())
-    }
-
-    /// Cooperative shutdown: signal cancellation, then drain completion
-    /// messages until `deadline` or all handles are gone. Surviving
-    /// workers exit on their own when reqwest finishes/times out; their
-    /// `.inflight` markers will go stale and be cleaned on next start.
-    pub fn shutdown(&mut self, deadline: Instant) {
-        self.cancel.store(true, std::sync::atomic::Ordering::SeqCst);
-        while Instant::now() < deadline && !self.handles.is_empty() {
-            match self.completion_rx.recv_timeout(Duration::from_millis(100)) {
-                Ok(c) => {
-                    if let Some(handle) = self.handles.remove(&(c.stage_id, c.dispute_id)) {
-                        let _ = handle.join();
-                    }
-                }
-                Err(mpsc::RecvTimeoutError::Timeout) => continue,
-                Err(mpsc::RecvTimeoutError::Disconnected) => break,
-            }
-        }
-        if !self.handles.is_empty() {
-            tracing::warn!(
-                target: "loom::adjudication",
-                orphaned = self.handles.len(),
-                "adjudicator workers still in-flight at shutdown deadline; exiting anyway",
-            );
-        }
+        Some(AdjudicationJob {
+            stage,
+            request,
+            plan_path: resolve_plan_path(work_dir).unwrap_or_else(|| PathBuf::from("PLAN.md")),
+        })
     }
 }
 
-fn transition_to_queued(stage: &mut Stage) -> Result<()> {
-    use StageStatus::*;
-    let target = Queued;
-    // try_transition refuses NeedsAdjudication → Queued unless it knows
-    // about it (the foundations stage added that transition). If the
-    // stage is somehow in a different status, fall back to a direct
-    // assignment with a warning so we don't refuse to apply a verdict
-    // because of unrelated state drift.
-    if stage.status.can_transition_to(&target) {
-        stage.try_transition(target)?;
-    } else {
+impl AdjudicatorRegistry {
+    /// Whether a new adjudication session may be started for this dispute,
+    /// spending one of its attempts if so.
+    ///
+    /// `false` means either that a session is already judging the stage — the
+    /// reason not to start a second one, and one that holds across daemon
+    /// restarts because it is answered from the session record — or that the
+    /// dispute has used its budget, in which case the stage is escalated so it
+    /// does not wait on a session that will never come.
+    fn claim_session_slot(&self, work_dir: &Path, stage_id: &str, dispute_id: u32) -> bool {
+        if let Some(session_id) = session::live_adjudication_session(work_dir, stage_id) {
+            tracing::debug!(target: "loom::adjudication", stage = %stage_id, session = %session_id, "adjudication session already live");
+            return false;
+        }
+        let attempts = session::attempt_count(work_dir, stage_id, dispute_id);
+        if attempts >= MAX_ADJUDICATION_ATTEMPTS {
+            escalate_attempt_cap(work_dir, stage_id, dispute_id, attempts);
+            return false;
+        }
+        session::record_attempt(work_dir, stage_id, dispute_id);
+        true
+    }
+}
+
+/// Escalate a stage whose adjudication session could not be started at all.
+///
+/// A spawn failure is an environment problem (no terminal, no `claude` on
+/// PATH, a backend that refuses), not something a retry fixes, and a dispute
+/// that hangs silently is worse than one that asks for a human.
+fn escalate_adjudicator_unavailable(work_dir: &Path, stage_id: &str, error: &str) {
+    escalate(
+        work_dir,
+        stage_id,
+        format!("No adjudication session could be started for this dispute: {error}"),
+    );
+}
+
+fn escalate_evidence_cap(work_dir: &Path, stage_id: &str) {
+    escalate(
+        work_dir,
+        stage_id,
+        format!("Evidence loop exhausted at {MAX_EVIDENCE_ROUNDS} rounds"),
+    );
+}
+
+fn escalate_attempt_cap(work_dir: &Path, stage_id: &str, dispute_id: u32, attempts: u32) {
+    escalate(
+        work_dir,
+        stage_id,
+        format!(
+            "Adjudication of dispute {dispute_id} produced no verdict after {attempts} session(s)"
+        ),
+    );
+}
+
+/// Single locked read-modify-write: re-apply only the human-review transition
+/// onto the fresh on-disk stage (A-5). Best effort — a refused transition is
+/// logged inside the closure and ignored.
+fn escalate(work_dir: &Path, stage_id: &str, reason: String) {
+    let result = update_stage(stage_id, work_dir, |s| {
+        s.try_request_human_review(reason.clone()).ok();
+        Ok(())
+    });
+    if let Err(error) = result {
         tracing::warn!(
             target: "loom::adjudication",
-            stage = %stage.id,
-            status = %stage.status,
-            "stage not in NeedsAdjudication; forcing queued transition",
+            stage = %stage_id,
+            %error,
+            "failed to escalate stage to NeedsHumanReview",
         );
-        stage.status = target;
-        stage.updated_at = chrono::Utc::now();
     }
-    Ok(())
-}
-
-fn escalate_no_api_key(work_dir: &Path, stage_id: &str) -> Result<()> {
-    // Single locked read-modify-write: re-apply only the human-review
-    // transition onto the fresh on-disk stage (A-5).
-    update_stage(stage_id, work_dir, |s| {
-        s.try_request_human_review("ANTHROPIC_API_KEY not set; adjudicator disabled".to_string())
-            .ok();
-        Ok(())
-    })?;
-    Ok(())
-}
-
-fn escalate_evidence_cap(work_dir: &Path, stage_id: &str) -> Result<()> {
-    update_stage(stage_id, work_dir, |s| {
-        s.try_request_human_review(format!(
-            "Evidence loop exhausted at {} rounds",
-            MAX_EVIDENCE_ROUNDS
-        ))
-        .ok();
-        Ok(())
-    })?;
-    Ok(())
-}
-
-fn escalate_attempt_cap(work_dir: &Path, stage_id: &str, dispute_id: u32) -> Result<()> {
-    update_stage(stage_id, work_dir, |s| {
-        s.try_request_human_review(format!(
-            "Adjudicator worker exhausted retry budget for dispute {dispute_id}"
-        ))
-        .ok();
-        Ok(())
-    })?;
-    Ok(())
-}
-
-/// Discover `(stage_id, dispute_id)` pairs that have `request.md` but
-/// no `verdict.md`.
-fn scan_pending_requests(disputes_root: &Path) -> Result<Vec<(String, u32)>> {
-    let mut pending = Vec::new();
-    if !disputes_root.exists() {
-        return Ok(pending);
-    }
-    for stage_entry in std::fs::read_dir(disputes_root)? {
-        let stage_entry = stage_entry?;
-        let path = stage_entry.path();
-        if !path.is_dir() {
-            continue;
-        }
-        let Some(stage_id) = path
-            .file_name()
-            .and_then(|s| s.to_str())
-            .map(str::to_string)
-        else {
-            continue;
-        };
-        for inner in std::fs::read_dir(&path)? {
-            let inner = inner?;
-            let inner_path = inner.path();
-            if !inner_path.is_dir() {
-                continue;
-            }
-            let Some(name) = inner_path.file_name().and_then(|s| s.to_str()) else {
-                continue;
-            };
-            let Ok(dispute_id) = name.parse::<u32>() else {
-                continue;
-            };
-            let req = inner_path.join("request.md");
-            let ver = inner_path.join("verdict.md");
-            if req.exists() && !ver.exists() {
-                pending.push((stage_id.clone(), dispute_id));
-            }
-        }
-    }
-    pending.sort();
-    Ok(pending)
-}
-
-/// Discover `(stage_id, dispute_id)` pairs that have `verdict.md` but
-/// no `applied.marker`.
-fn scan_pending_verdicts(disputes_root: &Path) -> Result<Vec<(String, u32)>> {
-    let mut pending = Vec::new();
-    if !disputes_root.exists() {
-        return Ok(pending);
-    }
-    for stage_entry in std::fs::read_dir(disputes_root)? {
-        let stage_entry = stage_entry?;
-        let path = stage_entry.path();
-        if !path.is_dir() {
-            continue;
-        }
-        let Some(stage_id) = path
-            .file_name()
-            .and_then(|s| s.to_str())
-            .map(str::to_string)
-        else {
-            continue;
-        };
-        for inner in std::fs::read_dir(&path)? {
-            let inner = inner?;
-            let inner_path = inner.path();
-            if !inner_path.is_dir() {
-                continue;
-            }
-            let Some(name) = inner_path.file_name().and_then(|s| s.to_str()) else {
-                continue;
-            };
-            let Ok(dispute_id) = name.parse::<u32>() else {
-                continue;
-            };
-            let ver = inner_path.join("verdict.md");
-            let applied = inner_path.join("applied.marker");
-            if ver.exists() && !applied.exists() {
-                pending.push((stage_id.clone(), dispute_id));
-            }
-        }
-    }
-    pending.sort();
-    Ok(pending)
-}
-
-fn read_dispute_request(path: &Path) -> Result<DisputeRequest> {
-    let content =
-        std::fs::read_to_string(path).with_context(|| format!("read {}", path.display()))?;
-    parse_yaml_frontmatter::<DisputeRequest>(&content)
-        .with_context(|| format!("parse dispute request {}", path.display()))
-}
-
-fn read_verdict_record(path: &Path) -> Result<DisputeVerdictRecord> {
-    let content =
-        std::fs::read_to_string(path).with_context(|| format!("read {}", path.display()))?;
-    parse_yaml_frontmatter::<DisputeVerdictRecord>(&content)
-        .with_context(|| format!("parse verdict record {}", path.display()))
-}
-
-/// Pull the YAML frontmatter out of a markdown file and deserialize it.
-fn parse_yaml_frontmatter<T: serde::de::DeserializeOwned>(content: &str) -> Result<T> {
-    let trimmed = content.trim_start();
-    let body = trimmed.strip_prefix("---").unwrap_or(trimmed);
-    let body = body.trim_start_matches('\n');
-    let end = body
-        .find("\n---")
-        .ok_or_else(|| anyhow::anyhow!("missing closing '---'"))?;
-    let yaml = &body[..end];
-    let parsed: T = serde_yaml::from_str(yaml).context("yaml deserialization")?;
-    Ok(parsed)
-}
-
-/// Look at the verdict file, if present, to see how many adjudicator
-/// passes the orchestrator has already recorded. Used to enforce
-/// `MAX_WORKER_RETRIES`.
-fn current_attempt_count(work_dir: &Path, stage_id: &str, dispute_id: u32) -> u32 {
-    let path = verdict_file(&work_dir.join("disputes"), stage_id, dispute_id);
-    let Ok(content) = std::fs::read_to_string(&path) else {
-        return 0;
-    };
-    parse_yaml_frontmatter::<DisputeVerdictRecord>(&content)
-        .map(|r| r.adjudicator_attempt_count)
-        .unwrap_or(0)
 }
 
 fn resolve_plan_path(work_dir: &Path) -> Option<PathBuf> {
@@ -659,37 +230,4 @@ fn resolve_plan_path(work_dir: &Path) -> Option<PathBuf> {
             .and_then(|wd| wd.parent().map(|p| p.to_path_buf()))?;
         Some(root.join(path))
     }
-}
-
-fn build_amendment_request(
-    stage_id: String,
-    plan_patch: &crate::models::dispute::PlanPatch,
-    dispute_id: u32,
-) -> Result<AmendmentRequest> {
-    let inner = &plan_patch.inner;
-    let field = inner
-        .get("field")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| anyhow::anyhow!("plan_patch missing 'field' string"))?;
-    let field = match field {
-        "acceptance" => AmendmentField::Acceptance,
-        "wiring" => AmendmentField::Wiring,
-        other => anyhow::bail!("plan_patch field '{other}' must be acceptance|wiring"),
-    };
-    let patch_obj = inner
-        .get("patch")
-        .ok_or_else(|| anyhow::anyhow!("plan_patch missing 'patch' object"))?;
-    let patch: AmendmentPatch = serde_json::from_value(patch_obj.clone())
-        .context("decode AmendmentPatch from plan_patch")?;
-    let reason = inner
-        .get("reason")
-        .and_then(|v| v.as_str())
-        .map(|s| s.to_string());
-    Ok(AmendmentRequest {
-        stage_id,
-        field,
-        patch,
-        reason,
-        dispute_id: Some(dispute_id.to_string()),
-    })
 }

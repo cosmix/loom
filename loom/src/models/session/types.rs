@@ -18,6 +18,9 @@ pub enum SessionType {
     /// Knowledge-gathering session (runs in main repo, no worktree).
     /// Tracking key: `loom-knowledge-{stage_id}`.
     Knowledge,
+    /// Adjudication session for one disputed acceptance criterion (runs in
+    /// main repo, no worktree). Tracking key: `loom-adjudication-{stage_id}`.
+    Adjudication,
 }
 
 impl std::fmt::Display for SessionType {
@@ -27,6 +30,7 @@ impl std::fmt::Display for SessionType {
             SessionType::Merge => write!(f, "merge"),
             SessionType::BaseConflict => write!(f, "base_conflict"),
             SessionType::Knowledge => write!(f, "knowledge"),
+            SessionType::Adjudication => write!(f, "adjudication"),
         }
     }
 }

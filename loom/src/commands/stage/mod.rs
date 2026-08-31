@@ -2,6 +2,7 @@
 //! Usage: `loom stage <id> [complete|block|reset|merge|retry|...]`
 
 pub(crate) mod acceptance_runner;
+mod adjudicate;
 pub(crate) mod admin_hmac;
 pub(crate) mod admin_proof;
 mod amend;
@@ -23,6 +24,7 @@ mod state;
 mod tests;
 
 // Re-export public API
+pub use adjudicate::{adjudicate, record_verdict, AdjudicateOutcome};
 pub use amend::amend;
 pub use complete::complete;
 pub use dispute_criteria::dispute_criteria;

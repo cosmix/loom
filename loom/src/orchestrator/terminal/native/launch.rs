@@ -33,6 +33,7 @@ fn remote_control_session_name(kind: SessionType, stage: &Stage) -> String {
         SessionType::Merge => format!("Merge: {base}"),
         SessionType::BaseConflict => format!("Base conflict: {base}"),
         SessionType::Knowledge => format!("Knowledge: {base}"),
+        SessionType::Adjudication => format!("Adjudication: {base}"),
     }
 }
 
@@ -83,6 +84,30 @@ fn resolve_prompt_cache_split_prefix_file(work_dir: &Path, stage: &Stage) -> Opt
         return None;
     }
     Some(prefix_file.to_str()?.to_string())
+}
+
+/// Model and reasoning effort POLICY per session kind (kept explicit, not
+/// buried in the spawn).
+///
+/// * Merge and base-conflict resolution always run on the strongest model at
+///   high reasoning effort, regardless of the originating stage's settings.
+/// * Adjudication judges a criterion the stage's own agent could not satisfy,
+///   and running it on the disputing stage's model would let a plan pick its
+///   own judge — so it uses the adjudicator's own model
+///   (`.work/config.toml::[adjudication] model`, default `opus`).
+/// * Stage and knowledge sessions use the stage's effective values.
+fn model_and_effort(kind: SessionType, stage: &Stage, work_dir: &Path) -> (String, String) {
+    match kind {
+        SessionType::Merge | SessionType::BaseConflict => ("opus".to_string(), "high".to_string()),
+        SessionType::Adjudication => (
+            crate::orchestrator::adjudication::resolve_model(work_dir),
+            "high".to_string(),
+        ),
+        SessionType::Stage | SessionType::Knowledge => (
+            stage.effective_model().to_string(),
+            stage.effective_reasoning_effort().to_string(),
+        ),
+    }
 }
 
 /// Prepare everything needed to launch a session, short of actually starting
@@ -152,19 +177,15 @@ pub(crate) fn prepare_session_launch(
              This file contains your assignment, tasks, acceptance criteria, \
              and instructions for populating the knowledge base."
         ),
+        SessionType::Adjudication => format!(
+            "Read the adjudication signal file at {signal_path_str} and judge the disputed \
+             acceptance criterion. This file contains the dispute, the evidence available to \
+             you, and the command that records your verdict. Judge the dispute; change nothing."
+        ),
     };
     let escaped_prompt = escape(Cow::Borrowed(&initial_prompt));
 
-    // Model/effort POLICY (kept explicit, not buried). Merge and
-    // base-conflict resolution always run on the strongest model at high
-    // reasoning effort regardless of the originating stage's settings; stage
-    // and knowledge sessions use the stage's effective values.
-    let (model, effort) = match kind {
-        SessionType::Merge | SessionType::BaseConflict => ("opus", "high"),
-        SessionType::Stage | SessionType::Knowledge => {
-            (stage.effective_model(), stage.effective_reasoning_effort())
-        }
-    };
+    let (model, effort) = model_and_effort(kind, stage, work_dir);
 
     // Resolve the Claude Code permission mode and pass it on the CLI. Loom
     // stages run autonomously with no human at the terminal, so they must
@@ -198,8 +219,8 @@ pub(crate) fn prepare_session_launch(
     let capsule = super::session_capsule(&claude_path, cwd, append_system_prompt_file);
     let claude_cmd = super::build_claude_command(
         &claude_path.display().to_string(),
-        model,
-        effort,
+        &model,
+        &effort,
         permission_mode.as_settings_value(),
         &capsule,
         &remote_control,

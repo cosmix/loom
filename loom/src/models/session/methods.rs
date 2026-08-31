@@ -50,6 +50,20 @@ impl Session {
         session
     }
 
+    /// Create a new adjudication session for a disputed criterion.
+    ///
+    /// Adjudication sessions run in the main repository (no worktree), judge
+    /// one dispute, and report their verdict through `loom stage adjudicate`.
+    /// The `stage_id` is required so the `tracking_key` can be derived up-front
+    /// (see [`Session::derive_tracking_key`]).
+    pub fn new_adjudication(stage_id: &str) -> Self {
+        let mut session = Self::new();
+        session.session_type = SessionType::Adjudication;
+        session.stage_id = Some(stage_id.to_string());
+        session.tracking_key = Self::derive_tracking_key(stage_id, SessionType::Adjudication);
+        session
+    }
+
     /// Derive the canonical tracking key for a session.
     ///
     /// The tracking key is used to find OS-level resources owned by this
@@ -64,6 +78,7 @@ impl Session {
             SessionType::Merge => format!("loom-merge-{stage_id}"),
             SessionType::BaseConflict => format!("loom-base-conflict-{stage_id}"),
             SessionType::Knowledge => format!("loom-knowledge-{stage_id}"),
+            SessionType::Adjudication => format!("loom-adjudication-{stage_id}"),
         }
     }
 
