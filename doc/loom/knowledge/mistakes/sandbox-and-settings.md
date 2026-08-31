@@ -385,3 +385,35 @@ real transcripts, these produce `Permission denied` for any recursive read from 
 Any tool loom shells out to that walks the tree will hit all of them, once per invocation. See
 `mistakes/schema-reuse-and-silent-skips.md` § "An Exit Code That Also Means 'Some Files Were
 Unreadable'" for what that cost.
+
+## `loom handoff` Wrote the Document and Silently Failed the Stage Transition (2026-08-31)
+
+**What happened:** a stage's main agent hit its context ceiling, ran the mandated `loom handoff
+--stage climate-timezone-data --session session-a183358d-1788132648 --trigger ceiling`, and
+stopped. The daemon did nothing for hours until an operator noticed. The stage file still read
+`status: executing`. The command's own output, verbatim:
+
+```text
+Warning: could not mark stage 'climate-timezone-data' NeedsHandoff: Failed to open temp file: /home/dkaponis/src/cartolyth/.worktrees/climate-timezone-data/.work/stages/01-climate-timezone-data.md.tmp
+/home/dkaponis/src/cartolyth/.worktrees/climate-timezone-data/.work/handoffs/climate-timezone-data-handoff-002.md
+```
+
+**Why:** a worktree agent's Bash sandbox write allow-list grants `.work/handoffs` but not
+`.work/stages` — deliberately, since `daemon/server/control_complete.rs` exists so a sandboxed
+agent cannot mutate trusted `.work` state directly. `loom handoff` wrote the document and could
+not apply the `Executing -> NeedsHandoff` transition. `commands/handoff/create.rs` treated that
+failure as a warning on a command that exited 0. The daemon's recovery is level-triggered on
+`NeedsHandoff`, so it never armed. Two independent recovery paths existed and neither fired: the
+second, `MonitorEvent::SessionHung`, was advisory and only printed.
+
+**Prevention:** any command a sandboxed worktree agent runs to mutate trusted `.work` state
+outside `.work/handoffs` must either route through the daemon broker or fail loudly — a warning
+on exit 0 reads to the agent as success and it stops. When a recovery path is level-triggered on
+a state field, ask what writes that field and whether the writer can fail under the sandbox. A
+recovery path that only prints is not a recovery path.
+
+**Fix:** `loom handoff` now returns an error naming the cause and the document path. The monitor
+watches `.work/handoffs` for a document naming the current stage and session with
+`origin: agent_ceiling` and drives the existing takedown-and-requeue from it, which is the one
+signal a sandboxed session can always leave. `SessionHung` now recovers the stage, bounded at two
+stall recoveries.

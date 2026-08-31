@@ -238,3 +238,26 @@ exactly the reason already recorded: six agents each added tests and explanatory
 three files and five functions over their limits, and clearing it cost a full extra refactor round
 after the functional work was already green. The note was there and went unread. Read the gate
 before fanning out, and if a file is already near its ceiling, say so in the brief.
+
+## A Stop Condition Without Named Evidence Is an Unfalsifiable Exit (2026-08-31)
+
+**What happened:** in one stage, five subagents in a row ended their turns reporting they had hit
+a context ceiling, having written zero files between them. Their own transcripts were read
+afterward: not one had ever received a ceiling message — no hook line, nothing from the lead.
+Their real usage was 34,000 to 71,000 tokens against a 120,000 ceiling. The stage lost its entire
+first wave of work and the lead spent its remaining context re-delegating.
+
+**Why:** doctrine told a subagent to stop at the context ceiling without telling it what its
+ceiling was or how it would learn it had reached one. That makes "I might be near the ceiling" an
+exit available at any moment with nothing to falsify it, and a well-written report about stopping
+reads like a result.
+
+**Prevention:** a stop condition given to an agent must name the exact evidence that triggers it.
+For the context ceiling that evidence is a hook line beginning `SUBAGENT CEILING REACHED:` in the
+agent's own tool output, and nothing else counts. State the ceiling's value too, so "am I near it"
+has an answer. Treat a turn that ends with zero files written, on a task that asked for files, as
+a failed unit of work rather than a report.
+
+**Fix:** BLOCK-D in `CLAUDE.md.template` and `orchestrator/signals/cache/blocks.rs` now carries
+that rule, pinned byte-identical across surfaces by `tests_doctrine.rs`. The ceiling itself moved
+from 150,000 to 800,000 for main agents and subagents alike, 0.80 of the 1M window both run.
