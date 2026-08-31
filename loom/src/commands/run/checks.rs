@@ -5,6 +5,7 @@
 use anyhow::{bail, Result};
 use colored::Colorize;
 use std::path::Path;
+use std::time::{Duration, Instant};
 
 use crate::context::graph_store::GraphStore;
 use crate::context::local_overlay::local_overlay_key;
@@ -128,6 +129,8 @@ fn publish_source_graph(
         return Ok(());
     }
 
+    announce_source_graph_build(&head);
+    let started = Instant::now();
     let base = reconcile_source_graph(
         &store,
         &graph_store,
@@ -139,11 +142,7 @@ fn publish_source_graph(
     // `reconcile_source_graph` degrades rather than erroring: a refusal comes
     // back as a stale, zero-count freshness carrying the reason.
     if !base.freshness.stale {
-        println!(
-            "{} Source graph published for {}",
-            "✓".green().bold(),
-            head.get(..8).unwrap_or(&head)
-        );
+        report_source_graph_build_finished(&head, &base, started.elapsed());
         return Ok(());
     }
 
@@ -157,6 +156,57 @@ fn publish_source_graph(
     }
 
     publish_source_graph_overlay(&store, &graph_store, repo_root, work_dir, &refusal)
+}
+
+fn announce_source_graph_build(revision: &str) {
+    println!(
+        "{} {}",
+        "→".cyan().bold(),
+        format_source_graph_build_started(revision)
+    );
+}
+
+fn report_source_graph_build_finished(
+    revision: &str,
+    outcome: &crate::context::refresh::SourceGraphOutcome,
+    elapsed: Duration,
+) {
+    println!(
+        "{} {}",
+        "✓".green().bold(),
+        format_source_graph_build_finished(
+            revision,
+            outcome.files_extracted,
+            outcome.nodes,
+            elapsed,
+        )
+    );
+}
+
+fn format_source_graph_build_started(revision: &str) -> String {
+    format!(
+        "Building source graph for {} — this can take a moment...",
+        short_revision(revision)
+    )
+}
+
+fn format_source_graph_build_finished(
+    revision: &str,
+    files: usize,
+    nodes: usize,
+    elapsed: Duration,
+) -> String {
+    let file_label = if files == 1 { "file" } else { "files" };
+    let node_label = if nodes == 1 { "node" } else { "nodes" };
+    format!(
+        "Source graph published for {} ({files} {file_label}, {nodes} {node_label}, {:.1}s)",
+        short_revision(revision),
+        elapsed.as_secs_f64()
+    )
+}
+
+fn short_revision(revision: &str) -> &str {
+    revision.get(..8).unwrap_or(revision)
 }
 
 fn publish_source_graph_overlay(
@@ -239,4 +289,32 @@ pub fn check_for_uncommitted_changes(repo_root: &Path) -> Result<()> {
         bail!("Uncommitted changes in repository - commit or stash before running loom");
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod progress_tests {
+    use super::*;
+
+    #[test]
+    fn source_graph_progress_explains_the_wait_and_summarizes_the_build() {
+        let revision = "1234567890abcdef";
+
+        assert_eq!(
+            format_source_graph_build_started(revision),
+            "Building source graph for 12345678 — this can take a moment..."
+        );
+        assert_eq!(
+            format_source_graph_build_finished(
+                revision,
+                1_564,
+                42_000,
+                Duration::from_millis(12_345),
+            ),
+            "Source graph published for 12345678 (1564 files, 42000 nodes, 12.3s)"
+        );
+        assert_eq!(
+            format_source_graph_build_finished(revision, 1, 1, Duration::ZERO),
+            "Source graph published for 12345678 (1 file, 1 node, 0.0s)"
+        );
+    }
 }
