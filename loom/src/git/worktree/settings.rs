@@ -12,7 +12,8 @@ use std::fs::File;
 use std::io::{Read, Write};
 use std::path::Path;
 
-use crate::fs::memory::SPOOL_RELPATH;
+use crate::fs::memory::SPOOL_RELPATH as MEMORY_SPOOL_RELPATH;
+use crate::fs::stage_request::SPOOL_RELPATH as REQUEST_SPOOL_RELPATH;
 use crate::hooks::{setup_hooks_for_worktree, HooksConfig};
 use crate::plan::schema::PermissionMode;
 
@@ -24,12 +25,11 @@ use crate::plan::schema::PermissionMode;
 /// not see them as untracked. Callers reading `git status` to judge whether a
 /// worktree holds *agent work* must discount them either way.
 ///
-/// Also discounted: `.loom/memory-spool.jsonl` and `.loom/cache/`, loom's own
-/// runtime paths (see `crate::fs::memory::spool` and `crate::context::store`).
-/// Unlike the paths above these are written lazily during a stage's
-/// execution, not planted by `create_worktree` — but they are just as much
-/// loom's own output as the rest, so they discount the same way. Note this is
-/// narrower than `.loom/` as a whole: a project may legitimately track
+/// Also discounted: `.loom/memory-spool.jsonl`, `.loom/stage-request-spool.jsonl`
+/// and `.loom/cache/`, loom's own runtime paths, written lazily during a
+/// stage's execution rather than planted by `create_worktree` — but just as
+/// much loom's own output, so they discount the same way. This is narrower
+/// than `.loom/` as a whole: a project may legitimately track
 /// `.loom/config.toml`, which must NOT be discounted here.
 ///
 /// Keep this in sync with the scaffold `create_worktree` writes.
@@ -40,7 +40,8 @@ pub fn is_worktree_scaffold_path(path: &str) -> bool {
         || path == ".claude"
         || path.starts_with(".claude/")
         || path.starts_with(".work/")
-        || path == SPOOL_RELPATH
+        || path == MEMORY_SPOOL_RELPATH
+        || path == REQUEST_SPOOL_RELPATH
         || path == ".loom/cache"
         || path.starts_with(".loom/cache/")
 }
@@ -549,15 +550,14 @@ fn add_to_gitignore_exclude(git_dir: &Path, pattern: &str) -> Result<()> {
 }
 
 /// Patterns loom excludes from git's view of every worktree: the previous
-/// session's `.claude/settings.local.json`, plus loom's own runtime output
-/// (the memory spool and the derived context cache — see
-/// `is_worktree_scaffold_path`). Deliberately NOT a blanket `.loom/`: a
-/// project may legitimately track `.loom/config.toml`, and excluding the
-/// whole directory would silently hide it from `git status`. These match
-/// the patterns this repository's own `.gitignore` hand-lists for the same
-/// reason.
-const WORKTREE_EXCLUDE_PATTERNS: &[&str] =
-    &[".claude/settings.local.json", SPOOL_RELPATH, ".loom/cache/"];
+/// session's `.claude/settings.local.json`, plus the loom runtime paths
+/// [`is_worktree_scaffold_path`] discounts, matching this repo's own `.gitignore`.
+const WORKTREE_EXCLUDE_PATTERNS: &[&str] = &[
+    ".claude/settings.local.json",
+    MEMORY_SPOOL_RELPATH,
+    REQUEST_SPOOL_RELPATH,
+    ".loom/cache/",
+];
 
 /// Write [`WORKTREE_EXCLUDE_PATTERNS`] into `git_dir`'s `info/exclude`.
 fn add_worktree_exclude_patterns(git_dir: &Path) -> Result<()> {

@@ -9,6 +9,7 @@ pub mod safe_write;
 pub mod session_files;
 pub mod stage_files;
 pub mod stage_loading;
+pub mod stage_request;
 pub mod tmux_tmpdir;
 pub mod verifications;
 pub mod work_dir;

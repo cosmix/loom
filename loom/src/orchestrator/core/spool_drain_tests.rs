@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 use serial_test::serial;
 
 use crate::fs::memory::{self, MemoryEntry, MemoryEntryType};
+use crate::fs::stage_request;
 use crate::models::stage::{Stage, StageStatus};
 use crate::models::worktree::Worktree;
 use crate::orchestrator::core::OrchestratorConfig;
@@ -186,5 +187,135 @@ fn an_invalid_entry_is_skipped_without_blocking_a_valid_entry_and_the_spool_is_t
     assert!(
         pending.is_empty(),
         "the spool must still be truncated even though one entry was invalid"
+    );
+}
+
+/// Append one block request directly to a worktree's request spool, as the
+/// sandboxed CLI fallback would when its socket syscalls are denied.
+fn spool_block(worktree_root: &Path, reason: &str) {
+    stage_request::append_to_spool(
+        worktree_root,
+        &stage_request::StageRequest::Block {
+            reason: reason.to_string(),
+        },
+    )
+    .unwrap();
+}
+
+#[test]
+#[serial]
+fn a_spooled_block_is_applied_on_the_poll_tick_and_the_spool_is_emptied() {
+    let temp = tempfile::tempdir().unwrap();
+    let work_dir = temp.path().join(".work");
+    let stage_id = "request-basic";
+    save_stage_with_status(&work_dir, stage_id, StageStatus::Executing);
+    let worktree_root = worktree_dir(temp.path(), stage_id);
+    spool_block(
+        &worktree_root,
+        "criterion 2 names a binary this plan never builds",
+    );
+
+    let mut orchestrator = orchestrator_for(&work_dir, temp.path());
+    orchestrator.drain_stage_spools();
+
+    let stage = crate::verify::transitions::load_stage(stage_id, &work_dir).unwrap();
+    assert_eq!(stage.status, StageStatus::Blocked);
+    assert_eq!(
+        stage.close_reason.as_deref(),
+        Some("criterion 2 names a binary this plan never builds")
+    );
+    assert!(
+        stage_request::read_pending(&worktree_root)
+            .unwrap()
+            .is_empty(),
+        "the request spool must be emptied after a successful drain"
+    );
+}
+
+#[test]
+#[serial]
+fn a_request_is_attributed_to_the_worktree_it_was_spooled_in_not_a_sibling_stage() {
+    let temp = tempfile::tempdir().unwrap();
+    let work_dir = temp.path().join(".work");
+    save_stage_with_status(&work_dir, "req-stage-a", StageStatus::Executing);
+    save_stage_with_status(&work_dir, "req-stage-b", StageStatus::Executing);
+    spool_block(
+        &worktree_dir(temp.path(), "req-stage-a"),
+        "only stage-a is stuck",
+    );
+    // req-stage-b never spooled anything.
+
+    let mut orchestrator = orchestrator_for(&work_dir, temp.path());
+    orchestrator.drain_stage_spools();
+
+    assert_eq!(
+        crate::verify::transitions::load_stage("req-stage-a", &work_dir)
+            .unwrap()
+            .status,
+        StageStatus::Blocked
+    );
+    assert_eq!(
+        crate::verify::transitions::load_stage("req-stage-b", &work_dir)
+            .unwrap()
+            .status,
+        StageStatus::Executing,
+        "a stage with no spool must not be blocked by a sibling's request"
+    );
+}
+
+#[test]
+#[serial]
+fn one_stages_unappliable_request_does_not_stop_another_stages_drain() {
+    let temp = tempfile::tempdir().unwrap();
+    let work_dir = temp.path().join(".work");
+    // A Completed stage refuses the block; the refusal must not leak into the
+    // sibling's pass.
+    save_stage_with_status(&work_dir, "req-refused", StageStatus::Completed);
+    save_stage_with_status(&work_dir, "req-applied", StageStatus::Executing);
+    spool_block(&worktree_dir(temp.path(), "req-refused"), "too late");
+    spool_block(&worktree_dir(temp.path(), "req-applied"), "genuinely stuck");
+
+    let mut orchestrator = orchestrator_for(&work_dir, temp.path());
+    orchestrator.drain_stage_spools();
+
+    assert_eq!(
+        crate::verify::transitions::load_stage("req-refused", &work_dir)
+            .unwrap()
+            .status,
+        StageStatus::Completed
+    );
+    assert_eq!(
+        crate::verify::transitions::load_stage("req-applied", &work_dir)
+            .unwrap()
+            .status,
+        StageStatus::Blocked
+    );
+}
+
+#[test]
+#[serial]
+fn a_stage_with_only_a_memory_spool_is_unaffected_by_the_request_drain() {
+    let temp = tempfile::tempdir().unwrap();
+    let work_dir = temp.path().join(".work");
+    let stage_id = "memory-only";
+    save_stage_with_status(&work_dir, stage_id, StageStatus::Executing);
+    let worktree_root = worktree_dir(temp.path(), stage_id);
+    spool_note(&worktree_root, "a note, and no control request");
+
+    let mut orchestrator = orchestrator_for(&work_dir, temp.path());
+    orchestrator.drain_stage_spools();
+
+    assert_eq!(
+        crate::verify::transitions::load_stage(stage_id, &work_dir)
+            .unwrap()
+            .status,
+        StageStatus::Executing
+    );
+    assert_eq!(
+        memory::read_journal(&work_dir, stage_id)
+            .unwrap()
+            .entries
+            .len(),
+        1
     );
 }

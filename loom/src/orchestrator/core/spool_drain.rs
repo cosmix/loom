@@ -1,4 +1,7 @@
-//! Drains sandboxed-worktree memory spools into the canonical journal.
+//! Drains the spools a sandboxed worktree writes when it cannot reach the
+//! daemon: memory entries into the canonical journal, and stage-control
+//! requests (`loom stage block`, `loom stage dispute-criteria`) into the
+//! daemon's own handlers.
 //!
 //! `loom memory note` writes directly to `.work/memory/<stage>.md` via
 //! [`crate::fs::memory::append_entry`]. Inside a sandboxed worktree that
@@ -12,18 +15,23 @@
 //! in, never from the spool payload itself (which deliberately carries no
 //! stage id). Memory files are injected into OTHER stages' prompts by
 //! `orchestrator/signals/generate.rs`, so mis-attributing an entry would be a
-//! prompt-injection channel between stages.
+//! prompt-injection channel between stages. The stage-request spool
+//! (`crate::fs::stage_request`) is attributed the same way and for a sharper
+//! reason still: a misattributed request would block or dispute the wrong
+//! stage.
 
 use std::path::Path;
 
 use crate::fs::memory::{self, DrainOutcome};
+use crate::fs::stage_request;
 use crate::models::worktree::Worktree;
 
 use super::persistence::Persistence;
 use super::Orchestrator;
 
 impl Orchestrator {
-    /// Drain every stage's pending memory spool into its canonical journal.
+    /// Drain every stage's pending spools: memory entries into the canonical
+    /// journal, queued control requests into the daemon's handlers.
     ///
     /// Stages are enumerated by a disk scan of `.work/stages/`, mirroring
     /// `spawn_merge_resolution_sessions` — disk is the source of truth and
@@ -63,7 +71,11 @@ impl Orchestrator {
                 continue;
             }
             let worktree_root = Worktree::worktree_path(&self.config.repo_root, &stage_id);
+            // Memory first: an agent's last notes are usually recorded just
+            // before the block it then queues, and a queued block can change
+            // the stage's status out from under a later pass.
             self.drain_one_stage_spool(&stage_id, &worktree_root);
+            self.drain_one_stage_requests(&stage_id, &worktree_root);
         }
     }
 
@@ -88,7 +100,7 @@ impl Orchestrator {
         self.record_drain_result(stage_id, worktree_root, result)
     }
 
-    /// Log and account for the outcome of one stage's drain pass.
+    /// Log and account for the outcome of one stage's memory drain pass.
     fn record_drain_result(
         &mut self,
         stage_id: &str,
@@ -108,29 +120,98 @@ impl Orchestrator {
                         "Drained memory spool"
                     );
                 }
-                // A later recurrence of a drain failure for this stage should
-                // be reported again, mirroring `verified_merged`'s
-                // invalidate-on-change pattern.
-                self.spool_drain_error_logged.remove(stage_id);
+                self.clear_drain_error(MEMORY_SPOOL, stage_id);
                 outcome
             }
             Err(e) => {
-                // Log-once per stage so a stuck spool (e.g. append_entry
-                // hitting a permissions problem in .work/memory) doesn't
-                // flood the logs on every 5-second poll.
-                if self.spool_drain_error_logged.insert(stage_id.to_string()) {
-                    tracing::warn!(
-                        stage_id = %stage_id,
-                        worktree_root = %worktree_root.display(),
-                        error = %e,
-                        "Failed to drain memory spool; entries remain pending and will \
-                         retry next tick"
-                    );
-                }
+                self.report_drain_error(MEMORY_SPOOL, stage_id, worktree_root, &e);
                 DrainOutcome::default()
             }
         }
     }
+
+    /// Apply one stage's spooled control requests through the daemon handlers
+    /// that own them (see [`stage_request::drain_requests`]).
+    ///
+    /// Failure isolation matches the memory drain: one stage's unreadable or
+    /// unappliable spool leaves every other stage's drain untouched, and its
+    /// own requests stay pending for the next tick.
+    ///
+    /// Cheap no-op when the stage has no spool file: `drain_requests` returns
+    /// `DrainOutcome::default()` without touching disk, so calling this
+    /// unconditionally for every stage on every tick is fine.
+    pub(super) fn drain_one_stage_requests(
+        &mut self,
+        stage_id: &str,
+        worktree_root: &Path,
+    ) -> stage_request::DrainOutcome {
+        let work_dir = self.config.work_dir.clone();
+        match stage_request::drain_requests(&work_dir, stage_id, worktree_root) {
+            Ok(outcome) => {
+                // Louder than the memory drain's aggregate, because a stage
+                // that changes status from a spool has no session attached to
+                // account for it; `fs::stage_request::apply` logs the detail.
+                if outcome.applied > 0 || outcome.skipped > 0 {
+                    tracing::info!(
+                        stage_id = %stage_id,
+                        applied = outcome.applied,
+                        skipped = outcome.skipped,
+                        "Applied spooled stage requests"
+                    );
+                }
+                self.clear_drain_error(REQUEST_SPOOL, stage_id);
+                outcome
+            }
+            Err(e) => {
+                self.report_drain_error(REQUEST_SPOOL, stage_id, worktree_root, &e);
+                stage_request::DrainOutcome::default()
+            }
+        }
+    }
+
+    /// Forget a stage's remembered drain failure for `kind`, so a later
+    /// recurrence is reported again - mirroring `verified_merged`'s
+    /// invalidate-on-change pattern.
+    fn clear_drain_error(&mut self, kind: &str, stage_id: &str) {
+        self.spool_drain_error_logged
+            .remove(&drain_error_key(kind, stage_id));
+    }
+
+    /// Warn about a drain failure once per (stage, spool kind), so a stuck
+    /// spool - a permissions problem under `.work/memory`, a stage file that
+    /// won't load - doesn't flood the logs on every 5-second poll.
+    fn report_drain_error(
+        &mut self,
+        kind: &str,
+        stage_id: &str,
+        worktree_root: &Path,
+        error: &anyhow::Error,
+    ) {
+        if self
+            .spool_drain_error_logged
+            .insert(drain_error_key(kind, stage_id))
+        {
+            tracing::warn!(
+                stage_id = %stage_id,
+                spool = kind,
+                worktree_root = %worktree_root.display(),
+                error = %error,
+                "Failed to drain spool; entries remain pending and will retry next tick"
+            );
+        }
+    }
+}
+
+/// Spool kinds, for the log-once bookkeeping below.
+const MEMORY_SPOOL: &str = "memory";
+const REQUEST_SPOOL: &str = "stage-request";
+
+/// Key under which a drain failure is remembered. Namespaced by spool kind so
+/// the two spools a single stage can have are tracked independently in the one
+/// `spool_drain_error_logged` set - a stuck memory spool must not silence the
+/// first report of a stuck request spool.
+fn drain_error_key(kind: &str, stage_id: &str) -> String {
+    format!("{kind}:{stage_id}")
 }
 
 #[cfg(test)]

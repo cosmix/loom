@@ -15,6 +15,7 @@ fn test_is_worktree_scaffold_path() {
         ".claude/CLAUDE.md",
         "CLAUDE.md",
         ".loom/memory-spool.jsonl",
+        ".loom/stage-request-spool.jsonl",
         ".loom/cache",
         ".loom/cache/",
         ".loom/cache/context-v1/catalog.json",
