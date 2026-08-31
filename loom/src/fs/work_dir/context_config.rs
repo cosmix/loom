@@ -22,8 +22,10 @@ use crate::models::constants::{
 /// Sits between a stage's own `context_ceiling_tokens` and the built-in
 /// defaults, so an operator can raise or lower every stage's ceiling in one
 /// place without editing the plan. Each field resolves to a usable number even
-/// when the section is half-written or absent — see [`ContextConfigRaw`] for
-/// how.
+/// when the section is half-written or absent — see `ContextConfigRaw` for
+/// how. That type is private, so this is a plain code span: a bracketed link
+/// would resolve only under `--document-private-items`, which the docs gate
+/// does not pass.
 ///
 /// `model_window_tokens`, when set, replaces the built-in 1M-token window as
 /// what `ceiling_tokens` and `subagent_ceiling_tokens` derive from — via the
