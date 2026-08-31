@@ -6,17 +6,30 @@
 
 A **doctrine block** is a fixed chunk of agent guidance that must appear byte-identically on
 several surfaces at once — a runtime signal prefix, a static template, and a hook's refusal
-message. As of the doctrine-surfaces stage, loom carries three named, positively-pinned blocks
-(there is no `BLOCK_D` in the tree today — an assignment or brief that says "four" is counting a
-different thing, most likely the RETIRED_PHRASES sweep below as a fourth mechanism):
+message. loom carries **four** named, positively-pinned blocks. An earlier version of this
+section said there were three and that `BLOCK_D` did not exist; that was already wrong when
+written or went stale immediately after — `BLOCK_D` is defined at
+`orchestrator/signals/tests_doctrine_blocks.rs:65` and pinned by
+`tests_doctrine.rs::block_d_agrees_across_every_surface`. The same correction moved `BLOCK_A`
+and `BLOCK_B`: their constants live in `tests_doctrine_blocks.rs`, not in `tests_doctrine.rs`
+where this table used to point.
 
 | Block     | Content                                                                          | Const location                                   | Pinning test(s)                                                                                              |
 | --------- | --------------------------------------------------------------------------------- | ------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| `BLOCK_A` | "VERIFICATION IS THE MAIN AGENT'S JOB — NOT YOURS" (subagent no-verify rule)      | `orchestrator/signals/tests_doctrine.rs:80`       | `tests_doctrine.rs` asserts `text.contains(BLOCK_A)` on every guidance surface                                  |
-| `BLOCK_B` | Model allocation / delegation ladder, incl. `CODEX_IMPLEMENTER_MODEL_TERRA`/`_LUNA`/`_EFFORT` | `orchestrator/signals/tests_doctrine.rs:92`       | same file; also asserts `BLOCK_B.contains(...)` for each codex identifier constant, so a renamed codex tier fails here first |
+| `BLOCK_A` | "VERIFICATION IS THE MAIN AGENT'S JOB — NOT YOURS" (subagent no-verify rule)      | `orchestrator/signals/tests_doctrine_blocks.rs:11` | `tests_doctrine.rs` asserts `text.contains(BLOCK_A)` on every guidance surface                                  |
+| `BLOCK_B` | Model allocation / delegation ladder, incl. `CODEX_IMPLEMENTER_MODEL_TERRA`/`_LUNA`/`_EFFORT` | `orchestrator/signals/tests_doctrine_blocks.rs:23` | same file; also asserts `BLOCK_B.contains(...)` for each codex identifier constant, so a renamed codex tier fails here first |
 | `BLOCK_C` | Subagent one-background-watch / bounded-wait doctrine ("Checking on subagents...")| `orchestrator/signals/tests_doctrine_waiting.rs:35` | `tests_doctrine_waiting.rs::block_c_names_only_the_frozen_subagents_cli_surface` and friends                    |
+| `BLOCK_D` | Subagent context-ceiling rule ("CONTEXT CEILING - HOOK-REPORTED ONLY")            | `orchestrator/signals/tests_doctrine_blocks.rs:65` | `tests_doctrine.rs::block_d_agrees_across_every_surface`                                                         |
 
-`CLAUDE.md.template` is `include_str!`'d into both `tests_doctrine.rs` and `tests_doctrine_waiting.rs` (and `tests_doctrine_prefixes.rs`, which separately pins the four stable-prefix generators' byte ceilings — see [signal-generation.md](../architecture/signal-generation.md)) so a change to the template is checked against all three blocks and every generated signal in one pass.
+`BLOCK_D` is pinned in `tests_doctrine.rs` rather than split into its own sibling because it is
+the only block spanning both kinds of surface: a static one (`CLAUDE.md.template` Rule 5) and the
+emitted signal (`cache.rs`'s `append_subagent_ceiling_block`). `BLOCK_A`/`BLOCK_B` are
+static-only and pinned in the same file; `BLOCK_C` is static-only and pinned in the sibling. It
+exists because a subagent that never sees the PostToolUse hook's literal `SUBAGENT CEILING
+REACHED` line has no falsifiable way to know it has NOT reached its ceiling, and was observed
+confabulating one from CLAUDE.md prose alone.
+
+`CLAUDE.md.template` is `include_str!`'d into both `tests_doctrine.rs` and `tests_doctrine_waiting.rs` (and `tests_doctrine_prefixes.rs`, which separately pins the four stable-prefix generators' byte ceilings — see [signal-generation.md](../architecture/signal-generation.md)) so a change to the template is checked against all four blocks and every generated signal in one pass.
 
 The failure mode is drift, and it is invisible to ordinary acceptance criteria: greping each
 surface for an anchor phrase proves only that a substring exists on each, never that the
@@ -50,6 +63,10 @@ surfaces agree. Two independently-worded copies both pass.
    `hooks/` is NOT covered by `guidance_surfaces()` — a retired phrase can still live on in a hook's
    own prose (e.g. `hooks/spawn-guard.sh`'s literal `PREAMBLE_LINE` constant), so a doctrine
    retirement must ALSO `rg` `hooks/` by hand.
+
+**Counting the blocks is itself a drift surface.** This section is where an agent checks how many
+there are, so an added block that is not added HERE reads as "does not exist" to the next reader.
+When you add or retire a doctrine block, the table above is part of the change.
 
 **Known tradeoff:** because the blocks must stay byte-identical, per-language examples cannot
 live inside them. `BLOCK_A` carries one Rust example, so a blocked Python or Go subagent reads a

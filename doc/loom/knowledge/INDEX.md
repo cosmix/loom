@@ -9,12 +9,12 @@
 | File | Description | Lines |
 | --- | --- | --- |
 | [architecture.md](architecture.md) | High-level component relationships, data flow, module dependencies | 522 |
-| [entry-points.md](entry-points.md) | Key files agents should read first | 561 |
-| [patterns.md](patterns.md) | Architectural patterns discovered in the codebase | 756 |
-| [conventions.md](conventions.md) | Coding conventions discovered in the codebase | 596 |
+| [entry-points.md](entry-points.md) | Key files agents should read first | 559 |
+| [patterns.md](patterns.md) | Architectural patterns discovered in the codebase | 761 |
+| [conventions.md](conventions.md) | Coding conventions discovered in the codebase | 665 |
 | [mistakes.md](mistakes.md) | Mistakes made and lessons learned - what to avoid | 962 |
 | [stack.md](stack.md) | Dependencies, frameworks, and tooling used in the project | 97 |
-| [concerns.md](concerns.md) | Technical debt, warnings, and issues to address | 742 |
+| [concerns.md](concerns.md) | Technical debt, warnings, and issues to address | 743 |
 
 ## Tier 2 — Topics
 
@@ -32,6 +32,7 @@
 | [architecture/hook-system.md](architecture/hook-system.md) | Hook System | Hook embedding and install, the SessionStart hookSpecificOutput contract, and the two subagent enforcement hooks. | 149 |
 | [architecture/knowledge-hierarchy.md](architecture/knowledge-hierarchy.md) | Knowledge Hierarchy | Tier-1/tier-2 knowledge mechanics: layout predicate, target parsing, INDEX.md generation, audit link rules, coverage… | 144 |
 | [architecture/memory-spool.md](architecture/memory-spool.md) | Memory Spool and Drain | Topic notes for the architecture knowledge area. | 105 |
+| [architecture/merge-flow.md](architecture/merge-flow.md) | Merge Flow | Topic notes for the architecture knowledge area. | 7 |
 | [architecture/remote-control.md](architecture/remote-control.md) | Remote Control | Capability detection, preflight, resolution, and per-kind session naming for driving external agent binaries. | 64 |
 | [architecture/signal-generation.md](architecture/signal-generation.md) | Signal Generation | How a stage signal is assembled: stable-prefix cache, shared append_* helpers, per-stage-type prefixes, soft signals. | 175 |
 | [architecture/skill-catalog.md](architecture/skill-catalog.md) | Skill Catalog | The two skill roots, why 53 skills live outside `~/.claude/skills`, and the install/hook-exemption hazards that came… | 103 |
@@ -49,9 +50,10 @@
 
 | Topic | Title | Blurb | Lines |
 | --- | --- | --- | --- |
-| [patterns/doctrine-cross-surface.md](patterns/doctrine-cross-surface.md) | Doctrine Cross Surface | Pinning multi-surface guidance with equality tests, ambiguity-equals-fail-safe privilege lookups, and token-based shell… | 89 |
+| [patterns/doctrine-cross-surface.md](patterns/doctrine-cross-surface.md) | Doctrine Cross Surface | Pinning multi-surface guidance with equality tests, ambiguity-equals-fail-safe privilege lookups, and token-based shell… | 106 |
 | [patterns/hook-content-stripping.md](patterns/hook-content-stripping.md) | Hook Command Matching | How a hook decides what a Bash command actually invokes: strip embedded content, tokenize into | 151 |
 | [patterns/remote-control.md](patterns/remote-control.md) | Remote Control | The detect-capability, preflight, resolve-invocation shape for external agent binaries. | 50 |
+| [patterns/stage-daemon-channels.md](patterns/stage-daemon-channels.md) | Stage-to-Daemon Channels | How a stage agent reaches the daemon to change its own stage's state, and why there are three | 81 |
 | [patterns/subagent-hierarchy.md](patterns/subagent-hierarchy.md) | Subagent Hierarchy | Flat fan-out vs 2-level coordinator hierarchy vs agent teams: when to use each, model mix, file exclusivity. | 62 |
 
 ### mistakes
@@ -73,14 +75,14 @@
 | [mistakes/phantom-merges.md](mistakes/phantom-merges.md) | Phantom Merges | Seven lessons on loom's merge machinery — writing merged=true without verifying git ancestry (the costliest recurring… | 131 |
 | [mistakes/pinned-literals-ledgers-and-wiring.md](mistakes/pinned-literals-ledgers-and-wiring.md) | Pinned Literals Ledgers And Wiring | The maintainability ledger exact-match trap and goal-backward wiring checks pinning a pattern to a path. | 126 |
 | [mistakes/refactor-stragglers.md](mistakes/refactor-stragglers.md) | Refactor Stragglers | What a large removal or rename leaves behind: straggler initializers, stale comments, stale docs, duplicate modules. | 62 |
-| [mistakes/sandbox-and-settings.md](mistakes/sandbox-and-settings.md) | Sandbox And Settings | Sandbox path rules, permission sync, excludedCommands matching, and settings env leaking between main repo and… | 386 |
+| [mistakes/sandbox-and-settings.md](mistakes/sandbox-and-settings.md) | Sandbox And Settings | Sandbox path rules, permission sync, excludedCommands matching, and settings env leaking between main repo and… | 419 |
 | [mistakes/schema-reuse-and-silent-skips.md](mistakes/schema-reuse-and-silent-skips.md) | Schema Reuse And Silent Skips | deny_unknown_fields breaking a type with two deserialization sources, warn-and-continue masking total failure, and an… | 94 |
 | [mistakes/session-identity-env.md](mistakes/session-identity-env.md) | Session Identity Env | The wrapper script's `LOOM_*` exports are a contract read by hooks, the CLI and the daemon. Two long-standing defects… | 83 |
 | [mistakes/sessions-and-liveness.md](mistakes/sessions-and-liveness.md) | Sessions And Liveness | Session identity, liveness routing, spawn-site coverage, and the blast radius of adding a session field. | 279 |
 | [mistakes/shell-command-matchers.md](mistakes/shell-command-matchers.md) | Shell Command Matchers | Separators that never become tokens, forgeable glob lookups, env leakage in hook tests, and three Bash traps. | 246 |
 | [mistakes/store-without-consumer.md](mistakes/store-without-consumer.md) | Store Without Consumer | A store that was written but never read - what happened, why it stayed invisible, and the concrete trail. | 94 |
-| [mistakes/subagent-orchestration.md](mistakes/subagent-orchestration.md) | Subagent Orchestration | Liveness signals for subagents, when a missing report is not a missing result, and the one-background-watch doctrine. | 240 |
-| [mistakes/testing-and-lint.md](mistakes/testing-and-lint.md) | Testing And Lint | Lint and test discipline: --all-targets, --no-fail-fast, headless CI, ambient git config and inherited descriptors in… | 266 |
+| [mistakes/subagent-orchestration.md](mistakes/subagent-orchestration.md) | Subagent Orchestration | Liveness signals for subagents, when a missing report is not a missing result, and the one-background-watch doctrine. | 263 |
+| [mistakes/testing-and-lint.md](mistakes/testing-and-lint.md) | Testing And Lint | Lint and test discipline: --all-targets, --no-fail-fast, headless CI, ambient git config and inherited descriptors in… | 268 |
 | [mistakes/tests-that-cannot-fail.md](mistakes/tests-that-cannot-fail.md) | Tests That Cannot Fail | Tests that pass regardless of whether the bug they exist to catch is present, and how to spot the shape. | 157 |
 | [mistakes/tmux-backend.md](mistakes/tmux-backend.md) | Tmux Backend | tmux spawn-failure exit codes, cleanup-on-every-error-path discipline, and PID reuse across a retried session id. | 120 |
 | [mistakes/untrusted-value-boundaries.md](mistakes/untrusted-value-boundaries.md) | Untrusted Value Boundaries | Enumerating every producer of a rendered field, not just the field, and why containment at one render site alone is not… | 117 |
@@ -96,4 +98,4 @@
 | [concerns/codex-heartbeat-starvation.md](concerns/codex-heartbeat-starvation.md) | Codex Heartbeat Starvation | Topic notes for the concerns knowledge area. | 57 |
 | [concerns/daemon-singleton.md](concerns/daemon-singleton.md) | Daemon Singleton (Resolved 2026-08-08) | Historical incident: two daemons once attached to the same `.work/`. Startup now holds an | 98 |
 | [concerns/iterm2-window-teardown.md](concerns/iterm2-window-teardown.md) | Iterm2 Window Teardown | Topic notes for the concerns knowledge area. | 48 |
-| [concerns/sandbox-write-rules-inert.md](concerns/sandbox-write-rules-inert.md) | Sandbox Write Rules Inert | Sandbox Write() rules that are inert in loom generated settings versus the repository own committed settings.json. | 59 |
+| [concerns/sandbox-write-rules-inert.md](concerns/sandbox-write-rules-inert.md) | Sandbox Write Rules Inert | Sandbox Write() rules that are inert in loom's generated stage settings and in the | 62 |

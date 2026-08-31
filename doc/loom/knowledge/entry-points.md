@@ -322,7 +322,7 @@ The legacy `ToolEvent` reader remains able to consume an older `.work/tool-event
 
 `sandbox/settings.rs:16-34` — `SENSITIVE_ENV_KEYS` array filters `ANTHROPIC_API_KEY` from agent sandbox environments.
 
-- When `ANTHROPIC_API_KEY` is absent at daemon startup: adjudication disabled; disputed stages go directly to `NeedsHumanReview`
+- This is env hygiene only. It no longer has anything to do with adjudication: an earlier version of this line claimed an absent `ANTHROPIC_API_KEY` disabled adjudication and sent disputes straight to `NeedsHumanReview`, which stopped being true when the adjudicator moved to a spawned `claude -p` session. What disables it now is a missing `claude` binary — see conventions.md § Adjudicator Transport Convention.
 
 ## HTTP Client Pattern — self_update/client.rs
 
@@ -333,7 +333,7 @@ The legacy `ToolEvent` reader remains able to consume an older `.work/tool-event
 - Streaming download with size limit enforcement (buffer size 8192)
 - Error propagation: `.context("Failed to ...")` pattern throughout
 
-Adjudicator HTTP client should mirror this pattern with `user_agent("loom-adjudicator")` and longer timeout (~120s for Claude API latency).
+This is the pattern for loom's HTTP consumers (self-update). The adjudicator is NOT one of them: an earlier version of this line said an adjudicator HTTP client should mirror it, but the adjudicator spawns a `claude -p` session and makes no HTTP call at all — see conventions.md § Adjudicator Transport Convention.
 
 ## Daemon Credentials and Operator Proofs
 
@@ -356,11 +356,7 @@ and replay protection.
 
 ## Dispute Criteria — Current Implementation
 
-`commands/stage/dispute_criteria.rs:16` — `dispute_criteria(stage_id, reason) -> Result<()>`:
-
-**Shipped 2026-07-30 — this section previously described the pre-adjudication behavior (direct transition to `NeedsHumanReview`) and called the structured version "Stage 2". The structured version is what is in the tree.**
-
-`commands/stage/dispute_criteria.rs` is now a **thin RPC client**, not a state mutator:
+`commands/stage/dispute_criteria.rs` is a **thin RPC client**, not a state mutator:
 
 ```rust
 pub fn dispute_criteria(
@@ -373,9 +369,11 @@ pub fn dispute_criteria(
 ```
 
 - CLI: `loom stage dispute-criteria <stage-id> --criterion-index N --reason <text> [--evidence-commit <sha>] [--failure-output <path>]`
-- Reads `.work/user.token`, sends `Request::DisputeCriteria` over the daemon socket. The **daemon** writes `.work/disputes/<stage>/<n>/request.md` and transitions the stage to `NeedsAdjudication`, then returns the allocated id.
+- Sends `Request::DisputeCriteria` over the daemon socket. The **daemon** writes `.work/disputes/<stage>/<n>/request.md` and transitions the stage to `NeedsAdjudication`, then returns the allocated id.
+- **Credentials: a missing `.work/user.token` is the NORMAL case here, not an error.** An earlier version of this section said the client "reads `.work/user.token`" and treated absence as fatal — that made the command unusable from the one place it was ever needed, because the sandbox denies a stage agent that read by design (S-1: the token authorizes every User RPC, not just the ones a stage agent is entitled to). The client now presents `daemon::rpc::user_credential()`, which falls back to a non-empty placeholder, and names the session it is running inside via `LOOM_SESSION_ID`. The daemon authorizes it by the connection instead — see `daemon/server/self_service.rs`.
 - `--failure-output` is a path; the client loads it and truncates to 4KB on a UTF-8 char boundary.
 - The agent never writes `verdict.md` or `applied.marker` — both are daemon-only.
+- With no daemon listening the dispute cannot be filed at all (the daemon is what persists it), and the command says so rather than reporting a bare connect error.
 - Server-side handler: `daemon/server/dispute.rs`. On-disk schema: `models/dispute.rs`.
 
 ## Fix Attempts Counter — Current Usage

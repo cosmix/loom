@@ -393,7 +393,7 @@ Every field group on `Session` that represents a runtime resource identity requi
 
 ## reqwest::blocking HTTP Client Pattern
 
-Template from `commands/self_update/client.rs` — mirror this for the adjudicator:
+Template from `commands/self_update/client.rs`, for loom's actual HTTP consumers. NOT for the adjudicator, which this line used to point at: it spawns a `claude -p` session and makes no HTTP call.
 
 ```rust
 use reqwest::blocking::Client;
@@ -418,29 +418,25 @@ fn validate_response_status(response: &reqwest::blocking::Response, context: &st
 
 `reqwest::blocking::Client` is already a dependency (used by self_update); no new Cargo.toml entry needed for the adjudicator.
 
-## Worker Thread + mpsc Pattern (New — Adjudicator)
+## No Worker Thread for Adjudication (Retired Pattern)
 
-The adjudicator introduces loom's first worker-thread + mpsc pattern. Template:
+**Retired 2026-08-31. Do not reintroduce this for adjudication.** This section described a
+worker-thread + mpsc channel the adjudicator used to drive a blocking call off the orchestrator's
+poll loop: `worker_completion_tx`/`_rx` on the `Orchestrator`, a `std::thread::spawn` per dispute,
+and a drain in the main tick. All of it is deleted: the adjudication worker and
+client modules were removed outright, so there is no thread to reintroduce it into.
 
-```rust
-// In Orchestrator struct:
-worker_completion_tx: mpsc::Sender<WorkerCompletion>,
-worker_completion_rx: mpsc::Receiver<WorkerCompletion>,
+Adjudication now spawns a real loom session through the `TerminalBackend` and observes the
+resulting state change on the ordinary poll loop, the same way merge conflict resolution has always
+worked. That removed the thread registry, the mpsc channel, the cooperative cancellation flag, the
+`.inflight` staleness marker, and the retry/backoff loop in one go — a session is already a tracked,
+restart-surviving, externally-observable unit of work, and the thread machinery was reimplementing a
+worse version of it.
 
-// On NeedsAdjudication transition:
-let tx = self.worker_completion_tx.clone();
-std::thread::spawn(move || {
-    let verdict = call_anthropic_api(&dispute_request);
-    let _ = tx.send(WorkerCompletion { stage_id, verdict });
-});
-
-// In main loop tick (drain channel):
-while let Ok(completion) = self.worker_completion_rx.try_recv() {
-    self.apply_adjudicator_verdict(completion)?;
-}
-```
-
-Worker crashes leave no verdict file; staleness detection: `.inflight` marker with timestamp, >10min → re-fire (bounded by `adjudicator_attempt_count` cap of 3).
+The general lesson, if you are reaching for a worker thread in the orchestrator: ask first whether
+the work is a SESSION. Loom already knows how to spawn one, track its liveness across a daemon
+restart, and notice when the state it was supposed to change has changed. A thread gets you none of
+that and costs you a shutdown story.
 
 ## Dispute File Authority Split Pattern
 
@@ -754,3 +750,12 @@ for the type's FIELDS, not for the helper's name. And when you do flatten, route
 variant through it, not only the one that is currently attacker-controlled: uniform
 treatment is free (`inline_safe` passes fixed-format strings through unchanged by its own
 contract) and it avoids an asymmetry that will catch out whoever adds the next variant.
+
+## Stage-to-Daemon Channels
+
+Three routes a stage agent uses to change its own stage state, picked by `DaemonReach`: a live
+daemon's answer (refusals included, never routed around), a local fallback when nothing is
+listening, and a worktree spool when the sandbox denies AF_UNIX outright. Covers why the socket
+alone cannot reach a sandboxed stage, and why a spooled request carries no stage id.
+
+→ [Stage-to-Daemon Channels](patterns/stage-daemon-channels.md)

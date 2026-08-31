@@ -284,7 +284,7 @@ Transitions FROM `NeedsAdjudication` (`transitions.rs`) — note it can loop to 
 
 - `Queued` — verdict applied, stage re-queued
 - `NeedsAdjudication` — evidence loop (another round on the same dispute)
-- `NeedsHumanReview` — dispute budget exhausted OR `ANTHROPIC_API_KEY` not set
+- `NeedsHumanReview` — by design, a **`Reject` verdict**: the adjudicator upheld the criterion and ruled the implementation wrong, while the agent disputed it as impossible. Neither side can move, so this is the one outcome a human is needed for. Also reached when a bound is exhausted: the evidence loop (`MAX_EVIDENCE_ROUNDS`, 5), the per-stage amendment cap (`max_amendments_per_stage`, default 10), or the adjudication respawn budget (`MAX_ADJUDICATION_ATTEMPTS`, 3). An earlier version named `ANTHROPIC_API_KEY not set` here; that gate no longer exists — see conventions.md § Adjudicator Transport Convention
 
 `CompletedWithFailures` also transitions into `NeedsAdjudication` (dispute filed after a failed completion) and into `NeedsHumanReview` (budget escalation).
 
@@ -297,7 +297,7 @@ Transitions FROM `NeedsAdjudication` (`transitions.rs`) — note it can loop to 
 | `request.md`     | Agent-writable (via daemon RPC)      | id, stage_id, criterion_index, reason, evidence_commit, failure_output, fix_attempts_at_dispute, created_at |
 | `verdict.md`     | Daemon-only (worker thread writes)   | verdict, citations, reasoning, plan_patch, adjudicator_attempt_count, model                                 |
 | `applied.marker` | Daemon-only (zero-byte, idempotency) | —                                                                                                           |
-| `.inflight`      | Daemon-only (staleness guard)        | timestamp + worker ID; >10min → re-fire                                                                     |
+| `attempts`       | Daemon-only (respawn budget)         | count spent when an adjudication job is handed out; cap 3. Replaced the `.inflight` staleness marker, which is gone with the worker thread |
 
 Request.md is written by the daemon handler on behalf of the agent's RPC call. Trust boundary: same pattern as `loom memory note`.
 
