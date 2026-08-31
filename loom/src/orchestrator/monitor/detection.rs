@@ -3,7 +3,7 @@
 use std::collections::{HashMap, HashSet};
 use std::time::Duration;
 
-use crate::models::constants::DAEMON_CEILING_MULTIPLIER;
+use crate::fs::work_dir::ContextConfig;
 use crate::models::session::{Session, SessionStatus};
 use crate::models::stage::{Stage, StageStatus};
 // `check_session_alive` below routes through the `LivenessService`
@@ -12,13 +12,14 @@ use crate::models::stage::{Stage, StageStatus};
 #[allow(unused_imports)]
 use crate::orchestrator::liveness::LivenessService;
 
-use super::ceiling::{resolve_ceiling_tokens, session_has_current_assignment};
+use super::ceiling::resolve_ceiling_tokens;
 use super::config::MonitorConfig;
 use super::context::{context_health, ContextHealth};
 use super::events::MonitorEvent;
 use super::handlers::Handlers;
+use super::handoff_watch::HandoffWatch;
 use super::heartbeat::{HeartbeatStatus, HeartbeatWatcher};
-use super::parked::stage_looks_finished;
+use super::hung_latch::hung_event;
 
 /// Detection state for tracking changes
 pub struct Detection {
@@ -27,6 +28,9 @@ pub struct Detection {
     pub last_context_levels: HashMap<String, ContextHealth>,
     /// Track sessions that have been reported as hung to avoid duplicate events
     pub reported_hung_sessions: HashSet<String>,
+    /// Sessions whose silence has already been reported a second time, at the
+    /// escalation line. See [`super::hung_latch`].
+    pub(super) escalated_hung_sessions: HashSet<String>,
     /// Red handoffs successfully written or found during this daemon run.
     /// A failed write remains absent so an unchanged-Red poll retries it.
     pub red_handoff_ready: HashSet<String>,
@@ -34,6 +38,9 @@ pub struct Detection {
     /// exceeded. The latch lets budget-owned retries suppress the generic
     /// handoff event while that exact session still owns the stage.
     pub last_budget_exceeded: HashMap<String, bool>,
+    /// Handoff documents asking for a takedown their sandboxed author could
+    /// not record in the stage file. See [`super::handoff_watch`].
+    handoff_watch: HandoffWatch,
 }
 
 impl Detection {
@@ -43,8 +50,10 @@ impl Detection {
             last_session_states: HashMap::new(),
             last_context_levels: HashMap::new(),
             reported_hung_sessions: HashSet::new(),
+            escalated_hung_sessions: HashSet::new(),
             red_handoff_ready: HashSet::new(),
             last_budget_exceeded: HashMap::new(),
+            handoff_watch: HandoffWatch::default(),
         }
     }
 
@@ -120,30 +129,29 @@ impl Detection {
         for session in sessions {
             let status = self.detect_session_status(session, stages, handlers);
             events.extend(status.events);
-            // Only a session that is actually RUNNING may be judged. `terminal`
-            // covers a session that went terminal on THIS tick; a record already
-            // persisted as Crashed/Completed/ContextExhausted still carries its
-            // last high `context_tokens`, and judging that corpse fires the
-            // backstop against whatever agent the stage is running NOW. Same
-            // guard, for the same reason, as `detect_heartbeat_events`.
-            if status.terminal || session.status != SessionStatus::Running {
-                self.last_budget_exceeded.remove(&session.id);
-                self.red_handoff_ready.remove(&session.id);
+            if !self.judgeable(session, stages, status.terminal) {
                 continue;
             }
-            if !session_has_current_assignment(session, stages) {
-                self.last_context_levels.remove(&session.id);
-                self.last_budget_exceeded.remove(&session.id);
-                self.red_handoff_ready.remove(&session.id);
-                continue;
+            // A ceiling handoff whose stage transition the sandbox refused
+            // leaves the request in the document alone. Checked before the
+            // ceiling resolves: this recovery is about a stopped agent, not
+            // about how much context it had.
+            if let Some(event) =
+                self.handoff_watch
+                    .needs_handoff_from_document(session, stages, handlers.work_dir())
+            {
+                events.push(event);
             }
+
             // A ceiling this snapshot cannot vouch for is no ceiling at all.
             let Some(ceiling) = resolve_ceiling_tokens(session, stages, handlers) else {
                 continue;
             };
 
             events.extend(self.detect_context_health(session, stages, handlers, ceiling));
-            if let Some(event) = self.detect_backstop_crossing(session, stages, ceiling) {
+            if let Some(event) =
+                self.detect_backstop_crossing(session, stages, ceiling, handlers.context_config())
+            {
                 events.push(event);
             }
         }
@@ -206,20 +214,27 @@ impl Detection {
     }
 
     /// The daemon's backstop: retry while the current assignment remains past
-    /// `DAEMON_CEILING_MULTIPLIER` times its stage ceiling.
+    /// [`ContextConfig::backstop_tokens`] for its stage ceiling.
     ///
     /// The agent's own hook governs at 100% of the ceiling, so reaching 125%
     /// means that governance was ignored and the daemon must take the session
     /// down itself. Deliberately NOT gated on a band change — a session is
     /// already Red at 90%, so no further transition would ever come.
+    ///
+    /// The multiplier is NOT applied here. At the built-in 800,000 ceiling it
+    /// alone puts the backstop at the whole 1,000,000-token model window — a
+    /// reading no session survives to produce, which would leave this last
+    /// resort permanently unarmed. `backstop_tokens` clamps it to a fraction
+    /// of the window that a session can actually reach.
     fn detect_backstop_crossing(
         &mut self,
         session: &Session,
         stages: &[Stage],
         ceiling: u32,
+        context: &ContextConfig,
     ) -> Option<MonitorEvent> {
         let stage_id = session.stage_id.clone()?;
-        let backstop = (ceiling as f32 * DAEMON_CEILING_MULTIPLIER) as u32;
+        let backstop = context.backstop_tokens(ceiling);
 
         let is_exceeded = ceiling > 0 && session.context_tokens > backstop;
         let current_assignment = stages.iter().any(|stage| {
@@ -279,8 +294,7 @@ impl Detection {
 
                 // If we previously reported this session as hung, clear that flag
                 // since we got a fresh heartbeat
-                self.reported_hung_sessions
-                    .remove(&update.heartbeat.session_id);
+                self.clear_hung_report(&update.heartbeat.session_id);
             }
         }
 
@@ -317,31 +331,28 @@ impl Detection {
                 HeartbeatStatus::Hung {
                     stale_duration_secs,
                 } => {
-                    // Only report if we haven't already and the session is still alive
-                    if !self.reported_hung_sessions.contains(&session.id) {
-                        // Verify PID is still alive before declaring hung
-                        // (if PID is dead, it's a crash not a hang)
-                        if let Ok(Some(is_alive)) = handlers.check_session_alive(session) {
-                            if is_alive {
-                                // Session is alive but not sending heartbeats - it's hung
-                                events.push(hung_event(
-                                    session,
-                                    stage_id,
-                                    stages,
-                                    heartbeat_watcher,
-                                    stale_duration_secs,
-                                    timeout_secs,
-                                ));
-
-                                self.reported_hung_sessions.insert(session.id.clone());
-                            }
-                            // If not alive, the crash detection in detect_session_changes handles it
-                        }
+                    // The first silence past the budget is reported, then one
+                    // more at the escalation line; `hung_latch` owns that
+                    // decision. A dead PID is a crash, and crash detection in
+                    // `detect_session_changes` owns it, so only a live one is
+                    // reported hung.
+                    if self.hung_report_due(&session.id, stale_duration_secs, timeout_secs)
+                        && matches!(handlers.check_session_alive(session), Ok(Some(true)))
+                    {
+                        events.push(hung_event(
+                            session,
+                            stage_id,
+                            stages,
+                            heartbeat_watcher,
+                            stale_duration_secs,
+                            timeout_secs,
+                        ));
+                        self.record_hung_report(&session.id, stale_duration_secs, timeout_secs);
                     }
                 }
                 HeartbeatStatus::Healthy => {
                     // Session is healthy, clear any hung report
-                    self.reported_hung_sessions.remove(&session.id);
+                    self.clear_hung_report(&session.id);
                 }
                 HeartbeatStatus::NoHeartbeat => {
                     // No heartbeat yet - session may not have started heartbeat protocol
@@ -357,38 +368,5 @@ impl Detection {
 impl Default for Detection {
     fn default() -> Self {
         Self::new()
-    }
-}
-
-/// Build the `SessionHung` event for a session whose heartbeat has gone stale.
-///
-/// Split out of [`Detection::detect_heartbeat_events`] so the classification
-/// has somewhere to live without growing that function, and so the two git
-/// probes behind [`stage_looks_finished`] are visibly paid once per hung
-/// report rather than once per poll.
-fn hung_event(
-    session: &Session,
-    stage_id: &str,
-    stages: &[Stage],
-    heartbeat_watcher: &HeartbeatWatcher,
-    stale_duration_secs: u64,
-    timeout_secs: u64,
-) -> MonitorEvent {
-    let last_activity = heartbeat_watcher
-        .get_heartbeat(stage_id)
-        .and_then(|hb| hb.activity.clone());
-
-    let finished_without_completing = stages
-        .iter()
-        .find(|s| s.id == stage_id)
-        .is_some_and(|stage| stage_looks_finished(session, stage));
-
-    MonitorEvent::SessionHung {
-        session_id: session.id.clone(),
-        stage_id: Some(stage_id.to_string()),
-        stale_duration_secs,
-        timeout_secs,
-        last_activity,
-        finished_without_completing,
     }
 }

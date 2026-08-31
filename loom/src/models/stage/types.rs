@@ -761,6 +761,14 @@ pub struct Stage {
     /// Number of accepted plan amendments applied for this stage.
     #[serde(default)]
     pub amendments_applied: u32,
+    /// Times the daemon has recovered this stage from a stalled session — a
+    /// live agent whose heartbeat went silent far past its response budget.
+    /// Bounds that recovery so a stage that stalls every attempt is handed to
+    /// an operator instead of being re-queued forever. Persisted rather than
+    /// held in memory so a restarted daemon cannot reset the bound and resume
+    /// the loop. Owned by `event_handler::recover_hung`.
+    #[serde(default)]
+    pub stall_recoveries: u32,
     /// Per-stage sandbox configuration
     #[serde(default)]
     pub sandbox: StageSandboxConfig,
@@ -1183,6 +1191,7 @@ impl Default for Stage {
             dispute_count: 0,
             evidence_rounds: 0,
             amendments_applied: 0,
+            stall_recoveries: 0,
             sandbox: Default::default(),
             execution_mode: None,
             max_fix_attempts: None,

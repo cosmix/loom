@@ -31,6 +31,7 @@ fn peak_marker_uses_the_configured_subagent_ceiling() {
         &crate::fs::work_dir::ContextConfig {
             ceiling_tokens: 150_000,
             subagent_ceiling_tokens: 30_000,
+            model_window_tokens: None,
         },
     )
     .unwrap();

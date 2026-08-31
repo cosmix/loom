@@ -46,8 +46,8 @@ source "$(dirname "$0")/_common.sh"
 # both in loom/src/models/constants.rs. Change one side and grep the constant
 # name to find the other; a drift here means the hook governs the agent against
 # a number no other layer uses.
-readonly LOOM_DEFAULT_CONTEXT_CEILING_TOKENS=150000
-readonly LOOM_DEFAULT_SUBAGENT_CEILING_TOKENS=120000
+readonly LOOM_DEFAULT_CONTEXT_CEILING_TOKENS=800000
+readonly LOOM_DEFAULT_SUBAGENT_CEILING_TOKENS=800000
 
 # How much of a transcript's tail is read to find the last usage record. Cheap
 # even for a huge transcript, and large enough to hold many records.

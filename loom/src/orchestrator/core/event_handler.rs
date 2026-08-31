@@ -6,7 +6,6 @@ use colored::Colorize;
 use std::path::PathBuf;
 
 use crate::models::stage::{Stage, StageStatus};
-use crate::orchestrator::monitor::parked::hung_warning;
 use crate::orchestrator::monitor::MonitorEvent;
 
 use super::clear_status_line;
@@ -14,9 +13,11 @@ use super::persistence::Persistence;
 use super::Orchestrator;
 
 mod handoff_state;
+mod recover_hung;
 mod stage_takedown;
 
 use handoff_state::mark_needs_handoff;
+use recover_hung::HungReport;
 
 fn requeue_after_handoff(stage: &mut Stage) -> Result<()> {
     stage.try_mark_queued()
@@ -217,18 +218,17 @@ impl Orchestrator {
                 last_activity,
                 finished_without_completing,
             } => {
-                clear_status_line();
-                // ADVISORY ONLY: nothing is killed and nothing is retried. The
-                // wording, and the parked/stuck split, live in monitor::parked.
-                let warning = hung_warning(
-                    &session_id,
-                    stage_id.as_deref(),
+                // Advisory on the first report; a silence deep enough to be
+                // evidence of a dead agent is recovered. Both live in
+                // `recover_hung`, the wording in `monitor::parked`.
+                self.on_session_hung(HungReport {
+                    session_id: &session_id,
+                    stage_id: stage_id.as_deref(),
                     stale_duration_secs,
                     timeout_secs,
-                    last_activity.as_deref(),
+                    last_activity: last_activity.as_deref(),
                     finished_without_completing,
-                );
-                eprintln!("{warning}");
+                })?;
             }
             MonitorEvent::HeartbeatReceived {
                 stage_id,
@@ -379,6 +379,8 @@ impl Orchestrator {
 mod governor_retry_tests;
 #[cfg(test)]
 mod governor_tests;
+#[cfg(test)]
+mod recover_hung_tests;
 #[cfg(test)]
 mod takedown_identity_tests;
 #[cfg(test)]

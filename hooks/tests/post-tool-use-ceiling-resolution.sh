@@ -162,13 +162,15 @@ if [[ -e "$SENTINEL" ]]; then
 fi
 
 # A broken helper must fail safely to the hand-kept defaults rather than
-# accepting a partial pair or disabling the governor.
+# accepting a partial pair or disabling the governor. 700000 sits above 80%
+# of the 800000 fallback (LOOM_DEFAULT_CONTEXT_CEILING_TOKENS), the same band
+# this case was written to exercise.
 WORK_BAD_OUTPUT="$TMP/work-bad-output"
 mkdir -p "$WORK_BAD_OUTPUT"
 printf '%s\n' '1000:not-a-u32' >"$FAKE_OUTPUT"
 TRANSCRIPT_BAD_OUTPUT="$WORK_BAD_OUTPUT/transcript.jsonl"
-build_transcript "$TRANSCRIPT_BAD_OUTPUT" 130000
+build_transcript "$TRANSCRIPT_BAD_OUTPUT" 700000
 run_case "$WORK_BAD_OUTPUT" "$TRANSCRIPT_BAD_OUTPUT"
-assert_warn "malformed canonical output falls back safely" 130000 150000
+assert_warn "malformed canonical output falls back safely" 700000 800000
 
 echo "PASS"

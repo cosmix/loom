@@ -86,11 +86,15 @@ fn test_detect_context_warning() {
     let mut session = Session::new();
     session.id = "session-1".to_string();
     session.status = SessionStatus::Running;
-    session.context_tokens = 50_000; // a third of the 150k default - Green
+    // Fractions of the default ceiling, computed from it: written as absolute
+    // token counts they silently changed band when the default moved.
+    let green = DEFAULT_CONTEXT_CEILING_TOKENS / 3;
+    let yellow = DEFAULT_CONTEXT_CEILING_TOKENS / 100 * 70;
+    session.context_tokens = green;
 
     detection.detect_session_changes(&[session.clone()], &[], &handlers);
 
-    session.context_tokens = 100_000; // 67% of the default ceiling - Yellow
+    session.context_tokens = yellow; // 70% of the default ceiling - Yellow
     let events = detection.detect_session_changes(&[session], &[], &handlers);
     assert_eq!(events.len(), 1);
 
@@ -101,7 +105,7 @@ fn test_detect_context_warning() {
     } = &events[0]
     {
         assert_eq!(session_id, "session-1");
-        assert_eq!(*context_tokens, 100_000);
+        assert_eq!(*context_tokens, yellow);
         assert_eq!(*ceiling_tokens, DEFAULT_CONTEXT_CEILING_TOKENS);
     } else {
         panic!("Expected SessionContextWarning event");
@@ -125,11 +129,13 @@ fn test_detect_context_critical() {
     let mut session = Session::new();
     session.id = "session-1".to_string();
     session.status = SessionStatus::Running;
-    session.context_tokens = 50_000; // a third of the 150k default - Green
+    let green = DEFAULT_CONTEXT_CEILING_TOKENS / 3;
+    let red = DEFAULT_CONTEXT_CEILING_TOKENS / 100 * 93;
+    session.context_tokens = green;
 
     detection.detect_session_changes(&[session.clone()], &[], &handlers);
 
-    session.context_tokens = 140_000; // 93% of the default ceiling - Red
+    session.context_tokens = red; // 93% of the default ceiling - Red
     let events = detection.detect_session_changes(&[session], &[], &handlers);
     assert_eq!(events.len(), 1);
 
@@ -140,7 +146,7 @@ fn test_detect_context_critical() {
     } = &events[0]
     {
         assert_eq!(session_id, "session-1");
-        assert_eq!(*context_tokens, 140_000);
+        assert_eq!(*context_tokens, red);
         assert_eq!(*ceiling_tokens, DEFAULT_CONTEXT_CEILING_TOKENS);
     } else {
         panic!("Expected SessionContextCritical event");

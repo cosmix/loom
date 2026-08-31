@@ -1,5 +1,4 @@
 use anyhow::{bail, Context, Result};
-use serde::{Deserialize, Serialize};
 use std::fs;
 use std::os::unix::fs::DirBuilderExt;
 #[cfg(test)]
@@ -8,10 +7,12 @@ use std::path::{Path, PathBuf};
 use toml_edit::DocumentMut;
 
 use crate::fs::knowledge::KnowledgeDir;
-use crate::models::constants::{DEFAULT_CONTEXT_CEILING_TOKENS, DEFAULT_SUBAGENT_CEILING_TOKENS};
 use crate::models::session::TerminalConfig;
 use crate::plan::schema::SandboxConfig;
 use crate::remote_control::RemoteControlConfig;
+
+mod context_config;
+pub use context_config::ContextConfig;
 
 /// Parsed config.toml structure
 #[derive(Debug, Clone)]
@@ -415,53 +416,6 @@ const REMOTE_CONTROL_SECTION: &str = "remote_control";
 const TERMINAL_SECTION: &str = "terminal";
 const CONTEXT_SECTION: &str = "context";
 
-/// Persisted `[context]` section of `.work/config.toml`: the plan-wide context
-/// ceilings, in absolute resident tokens.
-///
-/// Sits between a stage's own `context_ceiling_tokens` and the built-in
-/// defaults, so an operator can raise or lower every stage's ceiling in one
-/// place without editing the plan. Each field carries its own serde default, so
-/// a half-written section still resolves to usable numbers.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct ContextConfig {
-    /// Ceiling for a stage's own agent session.
-    #[serde(default = "default_ceiling_tokens")]
-    pub ceiling_tokens: u32,
-    /// Ceiling for a subagent spawned by that session.
-    #[serde(default = "default_subagent_ceiling_tokens")]
-    pub subagent_ceiling_tokens: u32,
-}
-
-fn default_ceiling_tokens() -> u32 {
-    DEFAULT_CONTEXT_CEILING_TOKENS
-}
-
-fn default_subagent_ceiling_tokens() -> u32 {
-    DEFAULT_SUBAGENT_CEILING_TOKENS
-}
-
-impl Default for ContextConfig {
-    fn default() -> Self {
-        Self {
-            ceiling_tokens: default_ceiling_tokens(),
-            subagent_ceiling_tokens: default_subagent_ceiling_tokens(),
-        }
-    }
-}
-
-impl ContextConfig {
-    /// The ceiling governing a stage's agent session, for a caller that already
-    /// holds this config. The monitor reads `[context]` once per run rather than
-    /// once per session per tick, so it resolves against the config in hand.
-    ///
-    /// This is where loom's ceiling order is defined;
-    /// [`resolve_context_ceiling_tokens`] is the same order for a caller that
-    /// has only a work dir.
-    pub fn ceiling_for(&self, stage_ceiling: Option<u32>) -> u32 {
-        stage_ceiling.unwrap_or(self.ceiling_tokens)
-    }
-}
-
 fn config_path(work_dir: &Path) -> PathBuf {
     work_dir.join("config.toml")
 }
@@ -695,9 +649,9 @@ pub fn write_context_config(work_dir: &Path, config: &ContextConfig) -> Result<(
 ///
 /// ONE resolution order, and every reader of a stage ceiling must use it:
 /// the stage's own `context_ceiling_tokens` -> `[context] ceiling_tokens` ->
-/// [`DEFAULT_CONTEXT_CEILING_TOKENS`]. Skipping the middle tier makes the
-/// signal, the governor and the daemon quote three different numbers for one
-/// session.
+/// [`crate::models::constants::DEFAULT_CONTEXT_CEILING_TOKENS`]. Skipping the
+/// middle tier makes the signal, the governor and the daemon quote three
+/// different numbers for one session.
 ///
 /// Takes the stage's value rather than the `Stage` itself so `fs/` keeps no
 /// dependency on the stage model — pass `stage.context_ceiling_tokens`. A

@@ -58,6 +58,7 @@ fn make_stage(id: &str, deps: Vec<&str>, status: StageStatus) -> Stage {
         dispute_count: 0,
         evidence_rounds: 0,
         amendments_applied: 0,
+        stall_recoveries: 0,
         sandbox: Default::default(),
         execution_mode: None,
         max_fix_attempts: None,

@@ -40,6 +40,7 @@ fn create_test_stage(id: &str, auto_merge: Option<bool>) -> Stage {
         dispute_count: 0,
         evidence_rounds: 0,
         amendments_applied: 0,
+        stall_recoveries: 0,
         retry_count: 0,
         max_retries: None,
         last_failure_at: None,

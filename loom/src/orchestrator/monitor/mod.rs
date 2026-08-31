@@ -19,7 +19,9 @@ pub(crate) mod detection;
 pub mod events;
 pub mod failure_tracking;
 pub(crate) mod handlers;
+mod handoff_watch;
 pub mod heartbeat;
+pub(crate) mod hung_latch;
 pub(crate) mod parked;
 mod session_events;
 

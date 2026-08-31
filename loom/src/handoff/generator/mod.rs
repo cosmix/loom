@@ -73,7 +73,13 @@ pub fn ensure_handoff(
                 Some(path) => handoff_has_context(path, content.context_tokens)?,
                 None => false,
             },
-            HandoffOrigin::BudgetExceeded => {
+            // Enforcement records: one per verified outgoing pair, reusable
+            // only while it is still the newest artifact for the stage. A
+            // newer document means the session moved on after the enforcement
+            // snapshot, so the snapshot no longer describes it.
+            HandoffOrigin::BudgetExceeded
+            | HandoffOrigin::Stalled
+            | HandoffOrigin::AgentCeiling => {
                 matching.is_some() && matching == find_latest_handoff(&stage.id, work_dir)?
             }
         };

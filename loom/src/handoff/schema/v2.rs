@@ -20,6 +20,14 @@ pub enum HandoffOrigin {
     RedBand,
     /// The session crossed its hard budget ceiling.
     BudgetExceeded,
+    /// The agent hit its own context ceiling and ran `loom handoff --trigger
+    /// ceiling` to end its turn. The daemon watches for this origin: it is the
+    /// only signal a sandboxed worktree session can leave, since it may write
+    /// `.work/handoffs` but not `.work/stages`.
+    AgentCeiling,
+    /// The daemon gave up on a session whose heartbeat went stale far past its
+    /// response budget and recovered the stage without the agent's help.
+    Stalled,
 }
 
 /// Structured handoff schema V2.
@@ -257,6 +265,8 @@ mod tests {
         for (origin, serialized) in [
             (HandoffOrigin::BudgetExceeded, "budget_exceeded"),
             (HandoffOrigin::RedBand, "red_band"),
+            (HandoffOrigin::AgentCeiling, "agent_ceiling"),
+            (HandoffOrigin::Stalled, "stalled"),
         ] {
             let handoff = HandoffV2::new("session-abc", "stage-1").with_origin(origin);
             let yaml = handoff.to_yaml().unwrap();

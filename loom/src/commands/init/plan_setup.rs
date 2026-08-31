@@ -213,6 +213,7 @@ pub fn initialize_with_plan_acknowledgement(
             .loom
             .subagent_ceiling_tokens
             .unwrap_or(context_defaults.subagent_ceiling_tokens),
+        model_window_tokens: context_defaults.model_window_tokens,
     };
     work_dir::write_context_config(work_dir.root(), &context_config)
         .context("Failed to persist context config")?;

@@ -5,6 +5,7 @@ use std::collections::HashSet;
 use crate::models::session::{Session, SessionStatus};
 use crate::models::stage::{Stage, StageStatus};
 
+use super::ceiling::session_has_current_assignment;
 use super::detection::Detection;
 use super::events::MonitorEvent;
 
@@ -22,6 +23,35 @@ impl Detection {
             .retain(|session_id, _| running_session_ids.contains(session_id.as_str()));
         self.red_handoff_ready
             .retain(|session_id| running_session_ids.contains(session_id.as_str()));
+    }
+
+    /// Whether this session may be judged against a ceiling on this tick, and
+    /// the latch cleanup owed to it when it may not.
+    ///
+    /// Only a session that is actually RUNNING may be judged. `terminal` covers
+    /// a session that went terminal on THIS tick; a record already persisted as
+    /// Crashed/Completed/ContextExhausted still carries its last high
+    /// `context_tokens`, and judging that corpse fires the backstop against
+    /// whatever agent the stage is running NOW. Same guard, for the same
+    /// reason, as `detect_heartbeat_events`.
+    pub(super) fn judgeable(
+        &mut self,
+        session: &Session,
+        stages: &[Stage],
+        terminal: bool,
+    ) -> bool {
+        if terminal || session.status != SessionStatus::Running {
+            self.last_budget_exceeded.remove(&session.id);
+            self.red_handoff_ready.remove(&session.id);
+            return false;
+        }
+        if !session_has_current_assignment(session, stages) {
+            self.last_context_levels.remove(&session.id);
+            self.last_budget_exceeded.remove(&session.id);
+            self.red_handoff_ready.remove(&session.id);
+            return false;
+        }
+        true
     }
 
     /// Keep generic handoff retries level-triggered unless a matching live

@@ -417,6 +417,7 @@ fn write_context_config_preserves_prompt_cache_split() {
         &ContextConfig {
             ceiling_tokens: 200_000,
             subagent_ceiling_tokens: 100_000,
+            model_window_tokens: None,
         },
     )
     .unwrap();
@@ -440,7 +441,7 @@ fn resolve_context_ceiling_walks_stage_then_config_then_default() {
     // No config: the built-in default.
     assert_eq!(
         resolve_context_ceiling_tokens(&work, None),
-        DEFAULT_CONTEXT_CEILING_TOKENS
+        crate::models::constants::DEFAULT_CONTEXT_CEILING_TOKENS
     );
 
     write_context_config(
@@ -448,6 +449,7 @@ fn resolve_context_ceiling_walks_stage_then_config_then_default() {
         &ContextConfig {
             ceiling_tokens: 250_000,
             subagent_ceiling_tokens: 100_000,
+            model_window_tokens: None,
         },
     )
     .unwrap();

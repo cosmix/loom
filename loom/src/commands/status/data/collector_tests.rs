@@ -1,4 +1,5 @@
 use super::*;
+use crate::models::constants::DEFAULT_CONTEXT_CEILING_TOKENS;
 use crate::models::stage::{Implementers, StageType};
 use chrono::Utc;
 
@@ -56,6 +57,7 @@ fn make_test_stage(id: &str, status: StageStatus) -> Stage {
         dispute_count: 0,
         evidence_rounds: 0,
         amendments_applied: 0,
+        stall_recoveries: 0,
         sandbox: Default::default(),
         execution_mode: None,
         max_fix_attempts: None,
@@ -134,7 +136,12 @@ fn test_build_stage_summary_with_session() {
     assert_eq!(summary.status, StageStatus::Executing);
     assert_eq!(summary.dependencies, vec!["dep-1"]);
     assert_eq!(summary.context_tokens, Some(50_000));
-    assert_eq!(summary.context_ceiling_tokens, Some(150_000));
+    // The stage declares no ceiling, so the summary shows the built-in
+    // default — asserted through the constant, not through its current value.
+    assert_eq!(
+        summary.context_ceiling_tokens,
+        Some(DEFAULT_CONTEXT_CEILING_TOKENS)
+    );
     assert!(summary.elapsed_secs.is_some());
     // New fields
     assert_eq!(summary.activity_status, ActivityStatus::Working);
