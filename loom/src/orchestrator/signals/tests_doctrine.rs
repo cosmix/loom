@@ -15,6 +15,17 @@
 //! than the static guidance surfaces BLOCK-A and BLOCK-B live on) is pinned in
 //! `tests_doctrine_prefixes.rs` instead - both splits keep files under budget.
 //!
+//! A fourth, BLOCK-D (the subagent context-ceiling rule), is pinned HERE
+//! rather than split out: it appears on both a static surface
+//! (`CLAUDE.md.template` Rule 5) and the emitted signal (`cache.rs`'s
+//! `append_subagent_ceiling_block`), unlike BLOCK-A/B (static-only, pinned in
+//! this file) or BLOCK-C (static-only, pinned in the sibling). It exists
+//! because a subagent that never sees the PostToolUse hook's literal
+//! `SUBAGENT CEILING REACHED` report has no falsifiable way to know it has
+//! NOT reached its ceiling, and was observed confabulating one from CLAUDE.md
+//! prose alone (five subagents, zero files written, real usage 34k-71k
+//! against a 120,000 ceiling - see `block_d_agrees_across_every_surface`).
+//!
 //! The two singular surfaces are embedded with `include_str!`, so moving either is a
 //! COMPILE error rather than a silently-skipped test; the `agents/` roster is scanned
 //! instead, because it grows. BLOCK-A's ABSENCE from the knowledge/knowledge-distill
@@ -74,92 +85,9 @@ fn agent_definitions() -> Vec<(String, String)> {
     found
 }
 
-/// BLOCK-A - the no-verify rule, verbatim. Every surface must carry this text
-/// byte for byte; `hooks/subagent-verify-guard.sh` prefixes it with a hook-only
-/// "BLOCKED" framing line, which is deliberately not part of the block.
-const BLOCK_A: &str = "VERIFICATION IS THE MAIN AGENT'S JOB - NOT YOURS:
-- Do NOT verify your work. No full build, no full test suite, no linter, no
-  formatter, no type-checker, and never a repeated or looping check.
-- AT MOST ONE narrowly-scoped check over the files YOU wrote (e.g.
-  `cargo test <your_module>::`), run ONCE. Skip it if you are unsure.
-- Report instead: files changed, assumptions made, anything unresolved.
-  The MAIN AGENT compiles, tests, lints, and fixes.";
-
-/// BLOCK-B - the model playbook, verbatim.
-///
-/// A raw literal: the block quotes the phrases an orchestrator uses to talk
-/// itself into implementing ("I have diagnosed it"), so it carries `"` inside.
-const BLOCK_B: &str = r#"1. THE MAIN AGENT NEVER IMPLEMENTS — WHATEVER MODEL IT RUNS (hard stop 6).
-   Every stage's main agent is an orchestrator: it decomposes the work, hands
-   each subagent full context, then verifies and commits. That is all. This
-   holds identically for an opus session and a fable session; a session running
-   an expensive model is MORE obliged to delegate, not less.
-2. INVESTIGATION ENDS IN A BRIEF, NOT IN AN EDIT. The moment you finish reading
-   the code and know what the fix is, you are at the delegation boundary — that
-   understanding is exactly what makes a cheap subagent effective. Write it down
-   (file:line, root cause, the change to make, signatures, patterns to match,
-   acceptance) and spawn. Do not slide from "I have diagnosed it" into "I will
-   just type it"; the diagnosis being yours does not make the typing yours.
-3. IMPLEMENTATION IS ALWAYS DELEGATED, to as FEW subagents as the work allows, at
-   the CHEAPEST tier that can do the piece. Pick PER SUBAGENT by what that piece
-   needs, never once for the whole stage, and default downward: codex
-   gpt-5.6-luna for boilerplate, scaffolding, and simple unit tests; SONNET
-   (loom-software-engineer) or codex gpt-5.6-terra for common implementation and
-   integration tests — this is the default lane and most work belongs here; OPUS
-   (loom-senior-software-engineer) for mainstream architecture and algorithm
-   implementation; FABLE only for visual/UI design, a bug that survived a
-   delegated fix attempt, or extremely challenging algorithmic design. Codex
-   tiers (effort xhigh, via loom-codex-forwarder) exist only on stages listing
-   codex in implementers AND when the codex CLI + plugin are installed;
-   otherwise that work goes to sonnet (loom warns at startup when a stage lists
-   codex it cannot use). Verification NEVER delegates - the orchestrator
-   verifies and commits. Spawn BY AGENT TYPE.
-4. ESCALATE ON EVIDENCE, NOT ON HUNCH. Start at the cheapest plausible tier. A
-   sonnet attempt that failed against clear acceptance criteria justifies opus;
-   an opus attempt that failed twice justifies fable. "This feels subtle" does
-   not. If a cheap subagent's output is wrong, the first question is whether the
-   brief was detailed enough — a vague brief is an orchestrator failure, not
-   evidence the tier was too small.
-5. DEBUGGING OR REPEATED FAILURE → spawn a `loom-advisor` (fable) subagent:
-   narrow scope, full detail supplied by the orchestrator, advice returned, no
-   writes. Its diagnosis then feeds a sonnet or opus implementer per point 2.
-   Do not let an implementer thrash on the same failure twice."#;
-
-/// Phrasing RETIRED doctrines used, across the no-verify rule (BLOCK-A) and the
-/// subagent-waiting rule (BLOCK-C). Acceptance criteria only grep for the
-/// wording a doctrine INTRODUCES, so they cannot catch a surface that still
-/// carries the instruction it replaced - which is exactly how the enforcement
-/// layer once landed while three guidance files still told subagents to run
-/// the suite. Grep for what was retired, not only for what was added.
-///
-/// Each phrase is assembled with `concat!` so this file never contains one as a
-/// contiguous literal. The plan's own acceptance criteria grep this very
-/// directory for the retired wording and must find nothing; a checker that
-/// trips over its own checklist is worse than no checker. Keep them split, and
-/// keep the split out of the middle of a word so the phrase stays readable.
-const RETIRED_PHRASES: &[&str] = &[
-    concat!("verify your ", "subtree"),
-    concat!("verifies its ", "subtree"),
-    concat!("Test as ", "you go"),
-    concat!("Zero IDE ", "diagnostics"),
-    concat!("haiku stays rare", " and trivial"),
-    concat!("haiku (rare, trivial ", "mechanical edits)"),
-    concat!("take the work ", "over"),
-    concat!("report back ", "within"),
-    concat!("hard ceiling on any", " single check"),
-    // BLOCK-C: superseded by `loom subagents watch`'s own deadline/state.
-    concat!("a check firing is NOT", " a deadline"),
-    concat!("MUST carry a liveness", " signal"),
-    // Retired: CLAUDE.md is already in the subagent's context, so ordering it
-    // to re-read the file spends a read on text the agent already has.
-    concat!("READ CLAUDE.md ", "IMMEDIATELY"),
-    // Retired with the token ceiling: the trigger is the PostToolUse hook's
-    // message, not a percentage the session watches for itself.
-    concat!("if context ", "exceeds 75%"),
-    // Retired with the one-background-watch rule: re-arming a foreground watch
-    // is a poll loop with extra steps.
-    concat!("Re-arm `watch` and keep", " waiting"),
-];
+#[path = "tests_doctrine_blocks.rs"]
+mod blocks;
+use blocks::{BLOCK_A, BLOCK_B, BLOCK_D, RETIRED_PHRASES};
 
 /// Every static guidance surface pasted into a subagent prompt, as (label, text).
 fn guidance_surfaces() -> Vec<(String, String)> {
@@ -232,6 +160,51 @@ fn block_b_agrees_across_every_surface() {
          when the constant changes",
         crate::codex::CODEX_IMPLEMENTER_EFFORT
     );
+}
+
+#[test]
+fn block_d_agrees_across_every_surface() {
+    let signal_prefix = generate_stable_prefix();
+    let iv_prefix = generate_integration_verify_stable_prefix();
+
+    for (label, text) in [
+        ("signal stable prefix", signal_prefix.as_str()),
+        ("signal integration-verify prefix", iv_prefix.as_str()),
+        ("CLAUDE.md.template", CLAUDE_MD_TEMPLATE),
+    ] {
+        assert!(
+            text.contains(BLOCK_D),
+            "{label} does not carry BLOCK-D verbatim. The subagent \
+             context-ceiling rule must be byte-identical on every surface a \
+             subagent reads it from. Expected to find:\n{BLOCK_D}"
+        );
+    }
+
+    // The literal hook string, spelled exactly as `hooks/post-tool-use.sh`
+    // emits it - a paraphrase here would leave a subagent unable to
+    // recognize the ONE signal that means it has actually reached the
+    // ceiling.
+    assert!(
+        BLOCK_D.contains("SUBAGENT CEILING REACHED:"),
+        "BLOCK-D must quote the hook's literal `SUBAGENT CEILING REACHED:` \
+         line verbatim, or a subagent has no falsifiable way to tell a real \
+         ceiling report from its own inference"
+    );
+
+    // Documentation stages (knowledge, knowledge-distill) never spawn
+    // subagents, so BLOCK-D must not leak into their prefixes.
+    let knowledge_prefix = generate_knowledge_stable_prefix();
+    let distill_prefix = generate_knowledge_distill_stable_prefix();
+    for (label, text) in [
+        ("signal knowledge prefix", knowledge_prefix.as_str()),
+        ("signal knowledge-distill prefix", distill_prefix.as_str()),
+    ] {
+        assert!(
+            !text.contains(BLOCK_D),
+            "{label} must not carry BLOCK-D: this stage type runs single-agent \
+             with no subagents spawned"
+        );
+    }
 }
 
 #[test]

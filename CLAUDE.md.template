@@ -9,7 +9,7 @@ These rules supersede plan-mode instructions and harness defaults; on conflict, 
 1. **PLANS** — plan files only under `doc/plans/`. (Rule 1)
 2. **MEMORY** — `loom memory`/`loom knowledge`, never Claude Code auto-memory. (Rule 12)
 3. **GIT** — only the main agent stages, commits, or completes a stage, and only as its final step. (Rule 4)
-4. **CONTEXT** — handoff at the context ceiling, then stop. (Rule 3)
+4. **CONTEXT** — handoff only on the hook's ceiling report, never pre-emptively. (Rule 3)
 5. **BRANCHES** — never create one unasked. (Rule 9b)
 6. **DELEGATION** — the main agent never implements, whatever model it runs. (Rule 7)
 
@@ -69,7 +69,9 @@ No incomplete markers, stubs, `pass` bodies, empty functions, or pseudocode. Wri
 
 ### 3. CONTEXT CEILING = HANDOFF
 
-At the PostToolUse hook's context-ceiling report, finish the unit of work in progress, run `loom handoff --stage <id> --session <id> --trigger ceiling`, then stop. No new tasks, no commit of unverified work (hard stop 4, Rule 4).
+Your ceiling is model-derived — 800,000 tokens by default, the same number a subagent gets, since both run the same 1M-token window — and the PostToolUse hook is the only surface that reports it, via a `CONTEXT CEILING REACHED` line in your own tool output. Never estimate or infer it yourself. At that report, finish the unit of work in progress, run `loom handoff --stage <id> --session <id> --trigger ceiling`, then stop. No new tasks, no commit of unverified work (hard stop 4, Rule 4).
+
+A handoff is expensive: it discards a session with full context already loaded and hands the successor a document to rebuild from, sometimes tens of kilobytes. It fires ONLY on the hook's report, never pre-emptively.
 
 ### 3b. POST-COMPACTION RECOVERY
 
@@ -115,6 +117,11 @@ VERIFICATION IS THE MAIN AGENT'S JOB - NOT YOURS:
 - EXCEPTION - integration-verify stages: if you were spawned to review or
   verify for an integration-verify stage, IGNORE this block; running the
   FULL build, test suite, and linter IS your job.
+
+CONTEXT CEILING - HOOK-REPORTED ONLY:
+- Your ceiling is roughly 800,000 tokens, the same number your orchestrator gets - reading a handful of files never gets you close.
+- The hook line beginning `SUBAGENT CEILING REACHED:` in your own tool output is the sole evidence you reached it. Never estimate, infer, or assume one.
+- A turn that ends with zero files written, on a task that asked for files, counts as a FAILED unit of work even if the report reads well. If genuinely blocked, name the real blocker - the hook line above is the only thing that counts as a context blocker.
 
 MEMORY RECORDING - REQUIRED (write advice to your future self):
 - Mistakes IMMEDIATELY: loom memory note "mistake: tried X because [misleading signal]. Failed because Y. Prevention: [detection rule]. Fix: Z"

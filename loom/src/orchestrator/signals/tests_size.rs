@@ -21,11 +21,23 @@ use super::generate::{
 
 /// `CLAUDE.md.template` is pasted into every subagent's context on every
 /// spawn, across every stage, in every plan.
-const CLAUDE_MD_TEMPLATE_MAX_BYTES: usize = 26_624;
+///
+/// Raised alongside the subagent context-ceiling doctrine (BLOCK-D, Rule 3
+/// and hard stop 4's ceiling-raise wording): the prior ceiling (26,624) left
+/// only ~26 bytes of headroom, too little for the addition. Actual size is
+/// 27,683 bytes, leaving ~1KB of buffer. Trim future doctrine additions
+/// rather than spending down that buffer.
+const CLAUDE_MD_TEMPLATE_MAX_BYTES: usize = 28_672;
 
 /// The KV-cache-stable prefix pasted into the first message of every fresh
 /// session spawned for a standard stage.
-const STABLE_PREFIX_MAX_BYTES: usize = 5_120;
+///
+/// Raised alongside BLOCK-D (see `CLAUDE_MD_TEMPLATE_MAX_BYTES`). The first
+/// raise (5,120 -> 6,144) left only ~138 bytes of buffer over the 6,006-byte
+/// actual - thin enough that the next one-line doctrine edit would trip it -
+/// so it was raised again to 7,168. Actual size is now 6,046 bytes, leaving
+/// ~1.1KB of buffer.
+const STABLE_PREFIX_MAX_BYTES: usize = 7_168;
 
 /// The stable-prefix + semi-stable-section floor every standard-stage signal
 /// pays, independent of the stage's own assignment text.
@@ -40,6 +52,11 @@ const STABLE_PREFIX_MAX_BYTES: usize = 5_120;
 /// `format_dynamic_section` first or asserting on its literal text (fragile).
 /// A future stage tightening this ratchet should do that split and add a
 /// fifth ceiling over the invariant part; until then it can regrow unchecked.
+///
+/// Unchanged by BLOCK-D (see `STABLE_PREFIX_MAX_BYTES`): stable_prefix_bytes
+/// grows by ~889 bytes for a standard stage, but actual floor after that
+/// addition is 7,624 bytes (stable 6,034, semi-stable 1,590) - comfortably
+/// under this ceiling already, so it stays at its original value.
 const STANDARD_SIGNAL_BOILERPLATE_FLOOR_MAX_BYTES: usize = 10_240;
 
 /// Mirrors `generate::MAX_PLAN_OVERVIEW_BYTES` (private to that module); an

@@ -28,8 +28,12 @@ pub(super) use super::section_formatters::{
 };
 
 /// Handoff trigger, replacing the retired percentage-threshold line: the
-/// PostToolUse hook reports the ceiling, so the agent never estimates it.
-pub(super) const CONTEXT_CEILING_HANDOFF: &str = "- When the PostToolUse hook reports the context ceiling, finish the unit of work in progress and run `loom handoff --stage <id> --session <id> --trigger ceiling`, then stop.\n";
+/// PostToolUse hook reports the ceiling, so the agent never estimates it. The
+/// second line states the handoff's real cost so a session does not reach for
+/// it as a routine checkpoint - see the 2026-08-31 incident where one fired
+/// at 15% of its real budget and threw away a session with full context
+/// already loaded for nothing.
+pub(super) const CONTEXT_CEILING_HANDOFF: &str = "- When the PostToolUse hook reports the context ceiling, finish the unit of work in progress and run `loom handoff --stage <id> --session <id> --trigger ceiling`, then stop.\n- A handoff is expensive — it discards a session with full context already loaded and hands the successor a document to rebuild from. Treat it as a rare last-resort recovery path triggered only by the hook.\n";
 
 /// Write a signal file to the signals directory, creating it if needed.
 ///

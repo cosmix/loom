@@ -470,6 +470,29 @@ Consequences for how you write a plan:
 
 **Bookend defaults:** knowledge-bootstrap and integration-verify are `model: "opus"` — the same universal default as every other stage (Section 3). knowledge-distill is the one exception: `model: "sonnet"`, `reasoning_effort: "high"`, single-agent with NO subagents.
 
+### Context ceiling (`context_ceiling_tokens`)
+
+Optional, tokens, default **800,000** — derived from the 1M-token window every stage's main agent
+and every subagent it spawns run on (one number for both; they run the same window). A stage that
+omits this field gets that default; set it explicitly only when the stage's model runs a smaller
+window. The minimum accepted is **60,000**.
+
+**800,000 is a containment wall: size every stage to finish in ONE session, comfortably under it.**
+Reaching the ceiling is a PLANNING failure that a handoff merely contains. If a stage's brief, its
+expected reading, and its subagents' returned reports could plausibly approach that wall, the stage
+is too big: split it at the seam (Section 5). Never plan a stage that relies on a handoff to
+complete.
+
+Estimate against what actually accumulates in the orchestrator's own context: the brief itself,
+every file the stage must read, each subagent's RETURNED REPORT, and the verification output all
+land there and stay. A stage that fans out to six subagents pays for six reports — decomposing work
+into more subagents lowers what any ONE of them holds, and raises what the orchestrator itself
+accumulates reading their results back.
+
+A handoff is expensive: it discards a session with full context already loaded and hands the
+successor a document to rebuild from, one that can run to tens of kilobytes. Weigh that cost at the
+moment you size the stage.
+
 ---
 
 ## 5. Parallelization Strategy
