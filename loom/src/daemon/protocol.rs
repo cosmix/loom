@@ -82,9 +82,11 @@ impl Default for DaemonConfig {
 /// Authorization capability required by a request.
 ///
 /// `User` requests are unprivileged RPCs (Ping, SubscribeStatus,
-/// SubscribeLogs, Unsubscribe, DisputeCriteria, CompleteStage). They use the
-/// user token. CompleteStage is accepted only for the exact active
-/// stage/session pair and carries no command, path, or privileged flags.
+/// SubscribeLogs, Unsubscribe, DisputeCriteria, BlockStage, CompleteStage).
+/// They use the user token. The three stage-state RPCs — CompleteStage,
+/// DisputeCriteria, BlockStage — are additionally accepted only for the exact
+/// stage/session pair the caller names, and carry no command, path, or
+/// privileged flags.
 ///
 /// `Admin` requests are privileged host-only operations (Stop). They require
 /// an action-bound, one-time operator proof minted from the mode-0600 admin
@@ -111,13 +113,36 @@ pub enum Request {
     /// File a structured dispute against a stage's acceptance criterion.
     /// The daemon writes request.md, increments dispute_count, transitions
     /// the stage to NeedsAdjudication, and replies with the assigned id.
+    ///
+    /// `session_id` names the session the caller claims to be running inside.
+    /// It is the empty string when the caller authenticated with the user token
+    /// from an operator shell, which has no session to name; a stage agent —
+    /// which cannot read that token — fills it in and is authorized by the
+    /// connection instead (`server/peer_identity.rs`).
     DisputeCriteria {
         auth_token: String,
         stage_id: String,
+        session_id: String,
         criterion_index: usize,
         reason: String,
         evidence_commit: Option<String>,
         failure_output: Option<String>, // pre-truncated to 4KB by the CLI
+    },
+    /// Block a stage, recording why it cannot proceed.
+    ///
+    /// The daemon owns the transition for the same reason it owns dispute
+    /// persistence: a stage agent's `.work/` is read-only, so it cannot write
+    /// `stages/<id>.md` itself even though recording its own blockage is
+    /// exactly what it is entitled to do.
+    ///
+    /// `session_id` follows the same rule as [`Request::DisputeCriteria`]:
+    /// empty from an operator shell holding the user token, otherwise the
+    /// session whose stage this is.
+    BlockStage {
+        auth_token: String,
+        stage_id: String,
+        session_id: String,
+        reason: String,
     },
     /// Apply the narrow post-verification completion transition.
     ///
@@ -145,6 +170,7 @@ impl Request {
             | Request::SubscribeLogs { .. }
             | Request::Unsubscribe { .. }
             | Request::DisputeCriteria { .. }
+            | Request::BlockStage { .. }
             | Request::CompleteStage { .. } => Capability::User,
         }
     }
@@ -160,27 +186,28 @@ impl Request {
             | Request::Unsubscribe { auth_token }
             | Request::Ping { auth_token }
             | Request::DisputeCriteria { auth_token, .. }
+            | Request::BlockStage { auth_token, .. }
             | Request::CompleteStage { auth_token, .. } => auth_token,
         }
     }
 }
 
+/// Render a request whose only field is its credential: name it, redact that.
+fn credential_only(formatter: &mut fmt::Formatter<'_>, name: &str) -> fmt::Result {
+    write!(formatter, "{name} {{ auth_token: [REDACTED] }}")
+}
+
 impl fmt::Debug for Request {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Request::SubscribeStatus { .. } => {
-                formatter.write_str("SubscribeStatus { auth_token: [REDACTED] }")
-            }
-            Request::SubscribeLogs { .. } => {
-                formatter.write_str("SubscribeLogs { auth_token: [REDACTED] }")
-            }
-            Request::Stop { .. } => formatter.write_str("Stop { auth_token: [REDACTED] }"),
-            Request::Unsubscribe { .. } => {
-                formatter.write_str("Unsubscribe { auth_token: [REDACTED] }")
-            }
-            Request::Ping { .. } => formatter.write_str("Ping { auth_token: [REDACTED] }"),
+            Request::SubscribeStatus { .. } => credential_only(formatter, "SubscribeStatus"),
+            Request::SubscribeLogs { .. } => credential_only(formatter, "SubscribeLogs"),
+            Request::Stop { .. } => credential_only(formatter, "Stop"),
+            Request::Unsubscribe { .. } => credential_only(formatter, "Unsubscribe"),
+            Request::Ping { .. } => credential_only(formatter, "Ping"),
             Request::DisputeCriteria {
                 stage_id,
+                session_id,
                 criterion_index,
                 evidence_commit,
                 ..
@@ -188,10 +215,22 @@ impl fmt::Debug for Request {
                 .debug_struct("DisputeCriteria")
                 .field("auth_token", &"[REDACTED]")
                 .field("stage_id", stage_id)
+                .field("session_id", session_id)
                 .field("criterion_index", criterion_index)
                 .field("reason", &"[REDACTED]")
                 .field("evidence_commit", evidence_commit)
                 .field("failure_output", &"[REDACTED]")
+                .finish(),
+            Request::BlockStage {
+                stage_id,
+                session_id,
+                ..
+            } => formatter
+                .debug_struct("BlockStage")
+                .field("auth_token", &"[REDACTED]")
+                .field("stage_id", stage_id)
+                .field("session_id", session_id)
+                .field("reason", &"[REDACTED]")
                 .finish(),
             Request::CompleteStage {
                 stage_id,

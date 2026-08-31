@@ -2,7 +2,7 @@
 
 use super::admission::ByteBudget;
 use super::broadcast::{spawn_log_tailer, spawn_status_broadcaster};
-use super::client::{handle_client_connection, ADMIN_TOKEN_FILE, USER_TOKEN_FILE};
+use super::client::handle_client_connection;
 use super::core::{
     DaemonServer, CLIENT_QUEUE_CAPACITY, CLIENT_WORKERS, MAX_IN_FLIGHT_REQUEST_BYTES,
 };
@@ -13,6 +13,7 @@ use super::pool::WorkerPool;
 use super::storage::{
     ensure_private_control_dir, open_private_output, publish_private_file, remove_control_file,
 };
+use super::tokens::{ADMIN_TOKEN_FILE, USER_TOKEN_FILE};
 use anyhow::{Context, Result};
 use nix::unistd::{close, fork, pipe, setsid, ForkResult};
 use std::fs::{self, File, Permissions};

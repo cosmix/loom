@@ -5,9 +5,11 @@ use super::super::protocol::{
     Request, RequestPreface, Response,
 };
 use super::admission::{ByteBudget, DeadlineReader};
+use super::self_service;
+use super::tokens::verify_user_token;
 use anyhow::Result;
 use std::os::unix::net::UnixStream;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -38,72 +40,17 @@ const CLIENT_READ_TIMEOUT: Duration = Duration::from_secs(5);
 /// handlers, so they need an explicit bound in addition to the worker queue.
 const MAX_SUBSCRIBERS_PER_STREAM: usize = 32;
 
-/// Filename for the user-tier token (mode 0o600, lives under `.work/`).
-pub(super) const USER_TOKEN_FILE: &str = "user.token";
-
-/// Filename for the admin token (mode 0o600). Lives under the per-project
-/// `.work/` directory alongside `user.token`. It is owner-only so a
-/// stage-confined agent cannot read it, and being per-project means
-/// concurrent daemons for different projects never share — let alone
-/// clobber or delete — each other's token.
-pub(super) const ADMIN_TOKEN_FILE: &str = "admin.token";
-
-/// Path to the per-project admin token: `<work_dir>/admin.token`.
-///
-/// Mode 0o600 (owner-only rw). Kept per-project rather than in a shared
-/// runtime directory so two daemons (different projects, or a restart)
-/// can never overwrite or delete one another's token.
-pub fn admin_token_path(work_dir: &Path) -> PathBuf {
-    work_dir.join(ADMIN_TOKEN_FILE)
-}
-
-fn read_token_file(work_dir: &Path, relative: &Path) -> Option<String> {
-    crate::fs::safe_read::read_to_string_bounded(work_dir, relative, 4096)
-        .ok()
-        .map(|s| s.trim().to_string())
-}
-
-/// Read the user-tier auth token (Ping / Subscribe / Unsubscribe).
-pub fn read_user_token(work_dir: &Path) -> Option<String> {
-    read_token_file(work_dir, Path::new(USER_TOKEN_FILE))
-}
-
-/// Back-compat shim used by status UI helpers — returns the user token.
-///
-/// Kept on the public surface because TUI code reads it for `Ping` /
-/// `SubscribeStatus`. Never use this for `Stop`; that path must call
-/// the admin-proof verifier.
-pub fn read_auth_token(work_dir: &Path) -> Option<String> {
-    read_user_token(work_dir)
-}
-
-/// Constant-time comparison of two strings.
-fn ct_eq(a: &str, b: &str) -> bool {
-    a.len() == b.len()
-        && a.as_bytes()
-            .iter()
-            .zip(b.as_bytes())
-            .fold(0u8, |acc, (x, y)| acc | (x ^ y))
-            == 0
-}
-
-fn verify_user_token(work_dir: &Path, provided_token: &str) -> bool {
-    let Some(expected) = read_user_token(work_dir) else {
-        return false;
-    };
-    ct_eq(&expected, provided_token)
-}
-
 /// Outcome of checking a request's credential, before its body is read.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Authorization {
     /// The credential is valid for the capability claimed.
     Granted,
-    /// No valid credential, but the peer may still be entitled to complete its
-    /// OWN stage. Only [`Request::CompleteStage`] may proceed on this, and only
-    /// after `peer_identity::caller_is_inside_session` confirms the caller is
-    /// running inside the session it names — which needs the body, so the
-    /// decision cannot be finished here.
+    /// No valid credential, but the peer may still be entitled to act on its
+    /// OWN stage. Only the requests `self_service::self_service_session` names
+    /// may proceed on this, and only after
+    /// `peer_identity::caller_is_inside_session` confirms the caller is running
+    /// inside the session it names — which needs the body, so the decision
+    /// cannot be finished here.
     PendingPeerIdentity,
     Denied,
 }
@@ -148,47 +95,121 @@ fn capacity_exhausted() -> Response {
     }
 }
 
-/// Report and refuse a request whose credential did not carry it.
+/// Report a request whose credential did not carry it, and build the refusal.
 ///
-/// Shared by both refusal points — the flat `Denied` before the body is read,
-/// and a deferred `PendingPeerIdentity` on any request other than
-/// `CompleteStage` — so the two can never drift into reporting differently.
-fn refuse_unauthenticated(stream: &mut UnixStream, preface: &RequestPreface) -> Result<()> {
+/// Shared by both CREDENTIAL refusal points — the flat `Denied` before the
+/// body is read, and a deferred `PendingPeerIdentity` the body cannot redeem —
+/// so the two can never drift into reporting differently. A request whose
+/// credential was fine but whose session does not own the stage it named is a
+/// different failure and says so in its own words.
+fn refuse_unauthenticated(preface: &RequestPreface) -> Response {
     eprintln!(
         "Daemon request authentication failed (capability: {:?})",
         preface.capability()
     );
-    write_message(stream, &Response::AuthenticationFailed)
+    Response::AuthenticationFailed
 }
 
-/// Serve one `CompleteStage`, finishing the authorization the preface deferred.
+/// Finish the authorization the preface had to defer, now that the body is
+/// known. Returns the refusal to send, or `None` to let the request proceed.
 ///
-/// A caller that presented no valid token must BE the session it names.
-/// `peer_pid` comes from the kernel at `connect(2)`, so a request body claiming
-/// someone else's session fails the ancestry check — the cross-stage
-/// escalation that would otherwise replace the token requirement with nothing.
-fn serve_complete_stage(
+/// Two independent gates, and a self-service request has to pass both:
+///
+/// 1. *Is this caller who it says it is?* Only for `PendingPeerIdentity` — a
+///    caller that presented no valid token must BE the session it names.
+///    `peer_pid` comes from the kernel at `connect(2)`, so a body claiming
+///    someone else's session fails the ancestry check. Listing the admissible
+///    requests in `self_service_session` rather than inside each arm means a
+///    new User request is refused by default instead of silently inheriting
+///    this path; an empty session id can never satisfy it, which is the
+///    correct outcome for a caller with neither a token nor a session.
+/// 2. *Is this stage the caller's to act on?* For every authorization outcome,
+///    because a valid token is not the question: being inside session A says
+///    nothing about whether stage X belongs to A.
+fn authorize_body(
     stream: &UnixStream,
     work_dir: &Path,
     authorization: Authorization,
+    preface: &RequestPreface,
+    request: &Request,
+) -> Option<Response> {
+    if authorization == Authorization::PendingPeerIdentity {
+        let Some(session_id) = self_service::self_service_session(request) else {
+            return Some(refuse_unauthenticated(preface));
+        };
+        let inside = super::peer_identity::peer_pid(stream).is_some_and(|caller| {
+            super::peer_identity::caller_is_inside_session(work_dir, session_id, caller)
+        });
+        if !inside {
+            eprintln!("Request refused: caller is not inside session '{session_id}'");
+            return Some(refuse_unauthenticated(preface));
+        }
+    }
+    if let Some((stage_id, session_id)) = self_service::ownership_to_enforce(request) {
+        if let Err(error) = self_service::session_owns_stage(work_dir, stage_id, session_id) {
+            eprintln!(
+                "Request refused: session '{session_id}' does not own stage '{stage_id}': {error:#}"
+            );
+            return Some(Response::AuthenticationFailed);
+        }
+    }
+    None
+}
+
+/// Serve one `DisputeCriteria`.
+///
+/// The handler owns `request.md` persistence and the transition to
+/// `NeedsAdjudication`. Authorization and stage ownership are settled before
+/// it runs; the handler additionally validates `criterion_index` and the
+/// stage's dispute budget.
+fn serve_dispute_criteria(
+    work_dir: &Path,
+    stage_id: &str,
+    criterion_index: usize,
+    reason: String,
+    evidence_commit: Option<String>,
+    failure_output: Option<String>,
+) -> Response {
+    super::dispute::handle_dispute_criteria(
+        work_dir,
+        stage_id,
+        criterion_index,
+        reason,
+        evidence_commit,
+        failure_output,
+    )
+    .unwrap_or_else(|error| Response::Error {
+        message: format!("Dispute persistence failed: {error:#}"),
+    })
+}
+
+/// Serve one `BlockStage`. A transition the state machine refuses comes back
+/// from the handler as `Response::Error`, not as an `Err`.
+fn serve_block_stage(work_dir: &Path, stage_id: &str, reason: &str) -> Response {
+    super::control_block::handle_block_stage(work_dir, stage_id, reason).unwrap_or_else(|error| {
+        Response::Error {
+            message: format!("Block transition failed: {error:#}"),
+        }
+    })
+}
+
+/// Serve one `CompleteStage`.
+///
+/// The handler re-verifies the stage/session binding under the
+/// sessions-directory lock, together with the `Executing` requirement only
+/// completion imposes — which is why `self_service::ownership_to_enforce`
+/// leaves this request to it.
+fn serve_complete_stage(
+    work_dir: &Path,
     stage_id: &str,
     session_id: &str,
     nonce: &str,
 ) -> Response {
-    if authorization == Authorization::PendingPeerIdentity
-        && !super::peer_identity::peer_pid(stream).is_some_and(|caller| {
-            super::peer_identity::caller_is_inside_session(work_dir, session_id, caller)
-        })
-    {
-        eprintln!("Completion refused: caller is not inside session '{session_id}'");
-        return Response::AuthenticationFailed;
-    }
-    match control_complete::handle_complete_stage(work_dir, stage_id, session_id, nonce) {
-        Ok(response) => response,
-        Err(error) => Response::Error {
+    control_complete::handle_complete_stage(work_dir, stage_id, session_id, nonce).unwrap_or_else(
+        |error| Response::Error {
             message: format!("Completion transition refused: {error:#}"),
         },
-    }
+    )
 }
 
 /// Clone a client stream for use as a broadcast subscriber, applying a write
@@ -230,7 +251,7 @@ pub fn handle_client_connection(
         };
         let authorization = authorize_preface(work_dir, &preface);
         if authorization == Authorization::Denied {
-            refuse_unauthenticated(&mut stream, &preface)?;
+            write_message(&mut stream, &refuse_unauthenticated(&preface))?;
             break;
         }
         let length = match read_request_length(&mut reader) {
@@ -250,15 +271,9 @@ pub fn handle_client_connection(
             Err(_) => break,
         };
 
-        // A request that never presented a valid token gets exactly one
-        // opportunity, and only the one an agent is entitled to. Listing the
-        // exception here rather than inside each arm means a NEW User request
-        // added later is refused by default instead of silently inheriting the
-        // peer-identity path.
-        if authorization == Authorization::PendingPeerIdentity
-            && !matches!(request, Request::CompleteStage { .. })
+        if let Some(refusal) = authorize_body(&stream, work_dir, authorization, &preface, &request)
         {
-            refuse_unauthenticated(&mut stream, &preface)?;
+            write_message(&mut stream, &refusal)?;
             break;
         }
 
@@ -290,23 +305,24 @@ pub fn handle_client_connection(
                 failure_output,
                 ..
             } => {
-                // Daemon-side dispute handler: owns request.md persistence
-                // and stage state transition to NeedsAdjudication. The
-                // user.token capability check above guards entry; the
-                // handler additionally validates criterion_index and the
-                // dispute budget.
-                let response = super::dispute::handle_dispute_criteria(
+                let response = serve_dispute_criteria(
                     work_dir,
                     &stage_id,
                     criterion_index,
                     reason,
                     evidence_commit,
                     failure_output,
-                )
-                .unwrap_or_else(|e| Response::Error {
-                    message: format!("Dispute persistence failed: {e:#}"),
-                });
+                );
                 write_message(&mut stream, &response)?;
+                break;
+            }
+            Request::BlockStage {
+                stage_id, reason, ..
+            } => {
+                write_message(
+                    &mut stream,
+                    &serve_block_stage(work_dir, &stage_id, &reason),
+                )?;
                 break;
             }
             Request::CompleteStage {
@@ -315,14 +331,7 @@ pub fn handle_client_connection(
                 nonce,
                 ..
             } => {
-                let response = serve_complete_stage(
-                    &stream,
-                    work_dir,
-                    authorization,
-                    &stage_id,
-                    &session_id,
-                    &nonce,
-                );
+                let response = serve_complete_stage(work_dir, &stage_id, &session_id, &nonce);
                 write_message(&mut stream, &response)?;
                 break;
             }
@@ -361,3 +370,7 @@ fn subscribe(
 #[cfg(test)]
 #[path = "client_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "tests/self_service_client.rs"]
+mod self_service_tests;

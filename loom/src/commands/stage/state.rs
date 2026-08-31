@@ -1,8 +1,12 @@
 //! Stage state transition commands
 
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use std::path::Path;
 
+use crate::daemon::{
+    current_session_id, try_send_request, user_credential, DaemonReach, Request, Response,
+};
+use crate::fs::stage_request::{append_to_spool, spool_path, spool_target_from_cwd, StageRequest};
 use crate::models::session::Session;
 use crate::models::stage::{Stage, StageStatus};
 use crate::orchestrator::session_registry::{
@@ -12,20 +16,94 @@ use crate::orchestrator::terminal::backend::SessionBackend;
 use crate::orchestrator::terminal::native;
 use crate::verify::transitions::{load_stage, update_stage};
 
-/// Block a stage with a reason
+/// Block a stage with a reason.
+///
+/// Routed through the daemon whenever one is listening, because `.work/` is
+/// read-only from a stage worktree: the caller that most needs to record why
+/// it is stuck is exactly the one that cannot write `stages/<id>.md` itself.
+/// With no daemon reachable there is nothing to route to, and an operator's
+/// direct write is the only path — the same one this command always took.
+///
+/// A daemon refusal is an ANSWER, and is reported as one. Falling back to the
+/// direct write on refusal would hand an agent precisely the write the sandbox
+/// denies it. A stale socket left behind by a daemon that died uncleanly is
+/// NOT an answer — there is no authority behind it to defer to — so it takes
+/// the direct-write path exactly like no socket at all.
+///
+/// A sandboxed stage agent reaches neither arm: its socket syscalls are denied
+/// before the path is consulted, so it cannot tell whether a daemon is there
+/// and must not assume it isn't. That case queues the block for the daemon
+/// instead — see [`queue_block_request`].
 pub fn block(stage_id: String, reason: String) -> Result<()> {
     let work_dir = Path::new(".work");
+    let request = Request::BlockStage {
+        auth_token: user_credential(work_dir),
+        stage_id: stage_id.clone(),
+        session_id: current_session_id(),
+        reason: reason.clone(),
+    };
 
-    update_stage(&stage_id, work_dir, |stage| {
-        stage.try_mark_blocked()?;
-        stage.close_reason = Some(reason.clone());
-        stage.updated_at = chrono::Utc::now();
-        Ok(())
-    })?;
+    match try_send_request(work_dir, &request)? {
+        DaemonReach::Answered(response) => handle_block_response(&stage_id, response)?,
+        DaemonReach::NotListening => {
+            update_stage(&stage_id, work_dir, |stage| {
+                stage.try_mark_blocked()?;
+                stage.close_reason = Some(reason.clone());
+                stage.updated_at = chrono::Utc::now();
+                Ok(())
+            })?;
+        }
+        DaemonReach::Unreachable => return queue_block_request(&stage_id, &reason),
+    }
 
     println!("Stage '{stage_id}' blocked");
     println!("Reason: {reason}");
     Ok(())
+}
+
+/// Queue a block for the daemon to apply, for the caller that cannot reach it.
+///
+/// This is the sandboxed stage agent's path, and the only one it has: its
+/// `.work/stages/` write is denied and so are its socket syscalls. Queueing
+/// does not weaken the authorization the RPC path establishes — the daemon
+/// still decides whether the stage may be blocked, and still attributes the
+/// request to the worktree it drained it from, never to anything the request
+/// claims about itself.
+fn queue_block_request(stage_id: &str, reason: &str) -> Result<()> {
+    let worktree_root = spool_target_from_cwd()?;
+    append_to_spool(
+        &worktree_root,
+        &StageRequest::Block {
+            reason: reason.to_string(),
+        },
+    )?;
+
+    println!("Queued a block of stage '{stage_id}' for the loom daemon to apply.");
+    println!("Reason: {reason}");
+    println!("Queued at: {}", spool_path(&worktree_root).display());
+    println!(
+        "The daemon applies it on its next poll; run `loom status` to confirm the stage \
+         reaches Blocked."
+    );
+    Ok(())
+}
+
+/// Interpret the daemon's answer to a `BlockStage` request. A live daemon's
+/// refusal is authoritative and reported verbatim — never a reason to fall
+/// back to the direct write.
+fn handle_block_response(stage_id: &str, response: Response) -> Result<()> {
+    match response {
+        Response::Ok => Ok(()),
+        Response::Error { message } => {
+            bail!("Daemon refused to block stage '{stage_id}': {message}")
+        }
+        Response::AuthenticationFailed => bail!(
+            "Daemon refused to block stage '{stage_id}': it accepted no credential and could \
+             not confirm this process is running inside the session that owns the stage. \
+             Check that the loom daemon is running and that this is that session"
+        ),
+        other => bail!("Unexpected daemon response to BlockStage: {other:?}"),
+    }
 }
 
 /// A live agent process found for a stage: either a session the registry can

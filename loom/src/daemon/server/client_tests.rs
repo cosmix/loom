@@ -1,6 +1,7 @@
 use super::*;
 use crate::commands::stage::admin_proof::{mint_admin_proof, AdminProofRequest};
 use crate::daemon::protocol::read_message;
+use crate::daemon::server::tokens::{admin_token_path, verify_user_token, USER_TOKEN_FILE};
 use std::io::Cursor;
 use std::sync::atomic::AtomicBool;
 use std::thread;
@@ -153,12 +154,12 @@ fn valid_stop_proof_is_verified_before_request_and_shuts_down() {
 #[test]
 fn a_bad_user_token_defers_to_peer_identity_rather_than_denying() {
     // The deadlock this resolves: a sandboxed agent cannot read
-    // `.work/user.token` (it authorizes every User RPC), yet completing its
-    // own stage is the one thing it must be able to do. A failed User
-    // credential therefore defers instead of refusing — but the deferral is
-    // worthless on its own, since `handle_client_connection` admits it for
-    // `CompleteStage` alone and then requires the caller to actually BE the
-    // session it names.
+    // `.work/user.token` (it authorizes every User RPC), yet acting on its own
+    // stage is the one thing it must be able to do. A failed User credential
+    // therefore defers instead of refusing — but the deferral is worthless on
+    // its own, since `authorize_body` admits it only for the requests
+    // `self_service::self_service_session` names, and then requires the caller
+    // to actually BE the session it names. See `tests/self_service_client.rs`.
     let tmp = TempDir::new().unwrap();
     std::fs::write(tmp.path().join(USER_TOKEN_FILE), "user-secret").unwrap();
 

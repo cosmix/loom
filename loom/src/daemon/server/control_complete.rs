@@ -2,9 +2,7 @@
 
 use crate::daemon::protocol::Response;
 use crate::fs::locking::locked_dir_update;
-use crate::models::session::{Session, SessionStatus, SessionType};
 use crate::models::stage::StageStatus;
-use crate::parser::frontmatter::parse_from_markdown;
 use crate::verify::transitions::{load_stage, update_stage};
 use anyhow::{bail, Context, Result};
 use std::fs::{self, OpenOptions};
@@ -59,28 +57,19 @@ fn validate_request_fields(stage_id: &str, session_id: &str, nonce: &str) -> Res
     Ok(())
 }
 
+/// The stage/session binding completion requires, checked under the caller's
+/// sessions-directory lock.
+///
+/// The ownership half is shared with block and dispute
+/// (`self_service::session_owns_stage`), so tightening the rule tightens it for
+/// all three. The `Executing` requirement stays here because it is completion's
+/// alone: a stage may legitimately be blocked or disputed from other states.
 fn validate_active_identity(work_dir: &Path, stage_id: &str, session_id: &str) -> Result<()> {
     let stage = load_stage(stage_id, work_dir)?;
     if stage.status != StageStatus::Executing {
         bail!("stage '{stage_id}' is not executing");
     }
-    if stage.session.as_deref() != Some(session_id) {
-        bail!("session '{session_id}' is not active for stage '{stage_id}'");
-    }
-
-    let relative = PathBuf::from("sessions").join(format!("{session_id}.md"));
-    let content = crate::fs::safe_read::read_to_string_bounded(work_dir, &relative, 1024 * 1024)
-        .with_context(|| format!("failed to read active session '{session_id}'"))?;
-    let session: Session =
-        parse_from_markdown(&content, "session").context("invalid active session file")?;
-    if session.id != session_id
-        || session.stage_id.as_deref() != Some(stage_id)
-        || session.session_type != SessionType::Stage
-        || session.status != SessionStatus::Running
-    {
-        bail!("request does not match the active running stage session");
-    }
-    Ok(())
+    super::super::self_service::session_owns_stage(work_dir, stage_id, session_id)
 }
 
 fn replay_path(work_dir: &Path, nonce: &str) -> PathBuf {
@@ -111,7 +100,7 @@ fn consume_nonce(work_dir: &Path, nonce: &str) -> Result<()> {
 mod tests {
     use super::*;
     use crate::fs::session_files::save_session;
-    use crate::models::session::Session;
+    use crate::models::session::{Session, SessionStatus};
     use crate::models::stage::Stage;
     use crate::verify::transitions::save_stage;
     use tempfile::TempDir;

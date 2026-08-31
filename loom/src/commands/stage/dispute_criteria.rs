@@ -12,6 +12,11 @@
 use anyhow::{bail, Context, Result};
 use std::path::{Path, PathBuf};
 
+use crate::daemon::{
+    current_session_id, try_send_request, user_credential, DaemonReach, Request, Response,
+};
+use crate::fs::stage_request::{append_to_spool, spool_path, spool_target_from_cwd, StageRequest};
+
 const FAILURE_OUTPUT_MAX_BYTES: usize = 4096;
 
 /// Dispute an acceptance criterion via the daemon RPC.
@@ -19,6 +24,15 @@ const FAILURE_OUTPUT_MAX_BYTES: usize = 4096;
 /// `failure_output_path` is optional — when set, the file is read,
 /// truncated to 4KB on a UTF-8 char boundary, and shipped as the
 /// `failure_output` field of the request.
+///
+/// The three ways the daemon can be reached call for three different answers.
+/// With nothing listening the dispute simply cannot be filed: it is the daemon
+/// that writes `.work/disputes/<stage>/<n>/request.md` and moves the stage to
+/// `NeedsAdjudication`, so there is no local fallback to take here the way
+/// `loom stage block` has one. `Unreachable` is different — it says nothing
+/// about the daemon, only that this process may not use unix sockets — so it
+/// queues the dispute rather than concluding there is no daemon (see
+/// [`queue_dispute_request`]).
 pub fn dispute_criteria(
     stage_id: String,
     criterion_index: usize,
@@ -26,10 +40,6 @@ pub fn dispute_criteria(
     evidence_commit: Option<String>,
     failure_output_path: Option<PathBuf>,
 ) -> Result<()> {
-    use crate::daemon::{read_message, read_user_token, write_message, Request, Response};
-    use std::os::unix::net::UnixStream;
-    use std::time::Duration;
-
     let work_dir = Path::new(".work");
 
     let failure_output = match failure_output_path {
@@ -37,28 +47,94 @@ pub fn dispute_criteria(
         None => None,
     };
 
-    let auth_token = read_user_token(work_dir)
-        .context("Failed to read .work/user.token for daemon authentication")?;
-
-    let req = Request::DisputeCriteria {
-        auth_token,
-        stage_id: stage_id.clone(),
+    let req = build_request(
+        work_dir,
+        &stage_id,
         criterion_index,
-        reason: reason.clone(),
-        evidence_commit,
-        failure_output,
-    };
+        &reason,
+        &evidence_commit,
+        &failure_output,
+    );
 
-    let socket_path = work_dir.join("orchestrator.sock");
-    let mut stream = UnixStream::connect(&socket_path)
-        .with_context(|| format!("Failed to connect to daemon at {}", socket_path.display()))?;
-    stream
-        .set_read_timeout(Some(Duration::from_secs(30)))
-        .context("Failed to set socket read timeout")?;
+    match try_send_request(work_dir, &req)? {
+        DaemonReach::Answered(response) => {
+            handle_dispute_response(&stage_id, criterion_index, &reason, response)
+        }
+        DaemonReach::NotListening => bail!(
+            "No daemon is listening on .work/orchestrator.sock, so the dispute cannot be \
+             filed. The criterion stands until a daemon is running."
+        ),
+        DaemonReach::Unreachable => queue_dispute_request(
+            &stage_id,
+            StageRequest::Dispute {
+                criterion_index,
+                reason,
+                evidence_commit,
+                failure_output,
+            },
+        ),
+    }
+}
 
-    write_message(&mut stream, &req).context("Failed to send DisputeCriteria request")?;
-    let response: Response = read_message(&mut stream).context("Failed to read daemon response")?;
+/// Build the RPC the daemon expects, cloning the fields so the caller keeps
+/// its own copies for the spool fallback.
+///
+/// A missing or unreadable token is the NORMAL case here, not an error: the
+/// agent that needs this command most is the one the sandbox denies the read
+/// to (S-1). It names the session it is running inside instead, and the daemon
+/// authorizes it by the connection.
+fn build_request(
+    work_dir: &Path,
+    stage_id: &str,
+    criterion_index: usize,
+    reason: &str,
+    evidence_commit: &Option<String>,
+    failure_output: &Option<String>,
+) -> Request {
+    Request::DisputeCriteria {
+        auth_token: user_credential(work_dir),
+        stage_id: stage_id.to_string(),
+        session_id: current_session_id(),
+        criterion_index,
+        reason: reason.to_string(),
+        evidence_commit: evidence_commit.clone(),
+        failure_output: failure_output.clone(),
+    }
+}
 
+/// Queue a dispute for the daemon to file, for the caller that cannot reach it.
+///
+/// Queueing does not weaken the authorization the RPC path establishes: the
+/// daemon still runs the same handler, still enforces the criterion-index and
+/// dispute-budget checks, and still attributes the dispute to the worktree it
+/// drained it from rather than to anything the request claims about itself.
+fn queue_dispute_request(stage_id: &str, request: StageRequest) -> Result<()> {
+    let worktree_root = spool_target_from_cwd()?;
+    append_to_spool(&worktree_root, &request)?;
+
+    println!("Queued a dispute for stage '{stage_id}' for the loom daemon to file.");
+    println!("Queued at: {}", spool_path(&worktree_root).display());
+    println!();
+    // No id to print, and inventing one would be worse than saying so: ids are
+    // allocated by the daemon at filing time, under the per-stage lock that
+    // makes them sequential.
+    println!(
+        "There is no dispute id yet — the daemon allocates one when it files the dispute \
+         on its next poll. Run `loom status` to watch the stage reach NeedsAdjudication."
+    );
+    Ok(())
+}
+
+/// Interpret the daemon's answer to a `DisputeCriteria` request. A live
+/// daemon's refusal is authoritative and reported verbatim — there is no
+/// local fallback to defer to (see the `NotListening` arm in
+/// `dispute_criteria` above).
+fn handle_dispute_response(
+    stage_id: &str,
+    criterion_index: usize,
+    reason: &str,
+    response: Response,
+) -> Result<()> {
     match response {
         Response::DisputeCreated { id } => {
             println!("Filed dispute #{id} for stage '{stage_id}' (criterion {criterion_index}).");
@@ -74,7 +150,11 @@ pub fn dispute_criteria(
             bail!("Daemon refused dispute: {message}")
         }
         Response::AuthenticationFailed => {
-            bail!("Daemon authentication failed — check .work/user.token")
+            bail!(
+                "Daemon refused this dispute: it accepted no credential and could not confirm \
+                 this process is running inside the session that owns stage '{stage_id}'. \
+                 Check that the loom daemon is running and that this is that session"
+            )
         }
         other => bail!("Unexpected daemon response to DisputeCriteria: {other:?}"),
     }

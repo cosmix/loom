@@ -146,6 +146,7 @@ fn oversized_credential_and_frames_are_rejected_on_write() {
     let oversized_request = Request::DisputeCriteria {
         auth_token: "token".to_string(),
         stage_id: "stage".to_string(),
+        session_id: "session-1".to_string(),
         criterion_index: 0,
         reason: "x".repeat(MAX_REQUEST_BYTES),
         evidence_commit: None,
@@ -164,6 +165,7 @@ fn request_debug_output_redacts_credentials_and_evidence() {
     let request = Request::DisputeCriteria {
         auth_token: "proof-secret".to_string(),
         stage_id: "stage".to_string(),
+        session_id: "session-1".to_string(),
         criterion_index: 0,
         reason: "private reason".to_string(),
         evidence_commit: None,
@@ -175,6 +177,25 @@ fn request_debug_output_redacts_credentials_and_evidence() {
     assert!(!output.contains("private reason"));
     assert!(!output.contains("private output"));
     assert!(output.contains("[REDACTED]"));
+    assert!(output.contains("session-1"), "ids stay legible: {output}");
+}
+
+/// A block request carries a free-text reason and a credential; only the ids
+/// belong in a daemon log line.
+#[test]
+fn block_stage_debug_output_redacts_credential_and_reason() {
+    let request = Request::BlockStage {
+        auth_token: "user-secret".to_string(),
+        stage_id: "stage".to_string(),
+        session_id: "session-1".to_string(),
+        reason: "private reason".to_string(),
+    };
+
+    let output = format!("{request:?}");
+    assert!(!output.contains("user-secret"));
+    assert!(!output.contains("private reason"));
+    assert!(output.contains("stage"));
+    assert!(output.contains("session-1"));
 }
 
 #[test]
