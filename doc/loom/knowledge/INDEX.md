@@ -13,7 +13,7 @@
 | [patterns.md](patterns.md) | Architectural patterns discovered in the codebase | 761 |
 | [conventions.md](conventions.md) | Coding conventions discovered in the codebase | 666 |
 | [mistakes.md](mistakes.md) | Mistakes made and lessons learned - what to avoid | 962 |
-| [stack.md](stack.md) | Dependencies, frameworks, and tooling used in the project | 97 |
+| [stack.md](stack.md) | Dependencies, frameworks, and tooling used in the project | 102 |
 | [concerns.md](concerns.md) | Technical debt, warnings, and issues to address | 743 |
 
 ## Tier 2 — Topics
@@ -36,7 +36,7 @@
 | [architecture/remote-control.md](architecture/remote-control.md) | Remote Control | Capability detection, preflight, resolution, and per-kind session naming for driving external agent binaries. | 64 |
 | [architecture/signal-generation.md](architecture/signal-generation.md) | Signal Generation | How a stage signal is assembled: stable-prefix cache, shared append_* helpers, per-stage-type prefixes, soft signals. | 175 |
 | [architecture/skill-catalog.md](architecture/skill-catalog.md) | Skill Catalog | The two skill roots, why 53 skills live outside `~/.claude/skills`, and the install/hook-exemption hazards that came… | 103 |
-| [architecture/source-graph.md](architecture/source-graph.md) | Source Graph | What the source graph is and is not, its honesty contract, extractor trait, node/edge and cache identity, and lifecycle. | 240 |
+| [architecture/source-graph.md](architecture/source-graph.md) | Source Graph | What the source graph is and is not, its honesty contract, extractor trait, node/edge and cache identity, and lifecycle. | 244 |
 | [architecture/terminal-backends.md](architecture/terminal-backends.md) | Terminal Backends | The native and tmux session backends behind one dispatcher, lane resolution, and session-recorded dispatch. | 251 |
 
 ### entry-points

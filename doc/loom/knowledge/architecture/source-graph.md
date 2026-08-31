@@ -181,18 +181,22 @@ whatever changed, persist the resulting `GraphLayer` through `GraphStore`.
 
 Six dependencies, all `optional = true`, all behind ONE default-on cargo feature
 `source-graph` (`loom/Cargo.toml:41-46`, `:63-77`), exact-pinned with `=`:
-`tree-sitter =0.26.12`, `tree-sitter-rust =0.24.2`,
+`tree-sitter =0.27.0`, `tree-sitter-rust =0.24.2`,
 `tree-sitter-typescript =0.23.2`, `tree-sitter-python =0.25.0`,
 `tree-sitter-go =0.25.0`, `streaming-iterator =0.1.9`.
 
-- `streaming-iterator` is not incidental: tree-sitter 0.26's
-  `QueryCursor::matches` returns a `StreamingIterator`, not a plain `Iterator`.
+- `streaming-iterator` is not incidental: `QueryCursor::matches` returns a
+  `StreamingIterator`, not a plain `Iterator`.
 - **Why one feature and not six.** `cargo add` generates one implicit feature per
   optional dep, which would let a host disable half the grammars and leave the
   extractor registry inconsistent. Collapsing them makes
   `--no-default-features` the only supported degraded mode, and that mode falls
   back to file-level lexical nodes rather than failing to build — the point is
   that a host without a C toolchain can still build loom.
+- Core-crate upgrades carry API breakage: 0.26 → 0.27 turned
+  `QueryMatch::captures` from a public field into a method
+  (`context/extract/treesitter/collect.rs:108`). The grammar crates were
+  unaffected — they bind through `tree-sitter-language`, not the core ABI.
 
 ## Lifecycle: Who Builds It, and When
 

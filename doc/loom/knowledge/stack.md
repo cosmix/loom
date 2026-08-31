@@ -77,15 +77,15 @@ Six optional dependencies behind ONE default-on cargo feature, `source-graph`
 
 | Crate | Pin |
 | --- | --- |
-| `tree-sitter` | `=0.26.12` |
+| `tree-sitter` | `=0.27.0` |
 | `tree-sitter-rust` | `=0.24.2` |
 | `tree-sitter-typescript` | `=0.23.2` |
 | `tree-sitter-python` | `=0.25.0` |
 | `tree-sitter-go` | `=0.25.0` |
 | `streaming-iterator` | `=0.1.9` |
 
-`streaming-iterator` is required, not incidental: tree-sitter 0.26's
-`QueryCursor::matches` returns a `StreamingIterator`, not a plain `Iterator`.
+`streaming-iterator` is required, not incidental: `QueryCursor::matches` returns a
+`StreamingIterator`, not a plain `Iterator`.
 
 `--no-default-features` is the only supported degraded mode and it **builds** — extraction
 falls back to file-level lexical nodes rather than failing — so a host without a C
@@ -94,4 +94,9 @@ host cannot disable half the grammars and leave the extractor registry inconsist
 
 Exact pins matter here because a grammar version participates in the extraction cache
 identity (`ExtractorIdentity.grammar_version`); a floating pin would silently invalidate or,
-worse, silently reuse cached extractions. See `architecture/source-graph.md`.
+worse, silently reuse cached extractions. Note that `grammar_version` carries the *grammar*
+crate version, not the tree-sitter core version, so a core-only bump does not invalidate
+cached extractions. See `architecture/source-graph.md`.
+
+Upgrading the core crate is not free: 0.26 → 0.27 made `QueryMatch::captures` a method
+rather than a public field (`context/extract/treesitter/collect.rs:108`).
