@@ -647,6 +647,74 @@ command enters `acceptance`:
    own file header — which is exactly the kind of header a plan author must read before writing
    `--all-targets` into a gate.)
 
+**Criteria about an artifact the stage has yet to PRODUCE — the baseline rule cannot reach them.**
+A criterion asserting a fact about a file the stage will generate MUST be red at HEAD, so "run it
+and watch it pass" tells the author nothing and the command gets skipped. The expression is then
+never executed even once, and every constant inside it is never measured. This is the costliest
+plan defect there is: it strands a finished, committed, CORRECT stage at the very end, after all
+the work is paid for. (Logged: one stage, implemented correctly and committed, went green on 86 of
+its 88 criteria and stalled on two that no artifact could ever satisfy. The agent's route out —
+`loom stage dispute-criteria`, Section 9 — is real and autonomous, and still costs far more than
+one dry run at authoring time.) Four rules, each of them from that stage:
+
+**1. Invariant or measured constant — only ONE of the two may carry a number.** An INVARIANT holds
+for every correct implementation ("no month band references a city id absent from the cities map";
+"every country carries 12 monthly entries"). A MEASURED CONSTANT asserts a value that comes from
+the data ("DE has 1 zone"; "nodata count is 0"; "198 countries join"). Prefer the invariant every
+time: it states what you actually mean and survives a source-data bump. A measured constant enters
+the plan ONLY with provenance — you ran the measurement against the real source and recorded the
+command and its output in the plan prose. Recalled, reasoned-about, and arithmetic-derived
+constants are plan defects. (Logged: `.zonesByCode.DE | length == 1`, written because "Germany has
+one timezone" is a plausible fact. The plan pinned tzdb 2026c, whose `zone1970.tab` gives DE two
+rows — Europe/Berlin, and Europe/Zurich for the Büsingen exclave — and which uses Germany as its
+own worked example of a multi-zone country. Under the stage's own parse rule the value was 2, and
+the implementer was right to refuse to corrupt the artifact to make the criterion green.) When the
+measurement cannot be made at authoring time, write the invariant, never a guessed constant.
+**Absolutes — "zero", "always", "never", "every" — are measurements too.** Measure them, or write
+the bounded criterion a correct implementation can satisfy. (Logged, same plan: the brief promised
+"measured nodata count is ZERO for both sources"; one city sits on a water cell in one of the two
+rasters, which the implementer had to discover and handle.)
+
+**2. A criterion you have not RUN is not a criterion — dry-run it against TWO fixtures.**
+Hand-build the smallest artifact carrying the shape the stage will produce; a few lines of JSON is
+enough.
+
+```text
+1. run the EXACT criterion string against the good fixture   → observe exit 0
+2. break the fixture in the specific way the criterion exists to catch
+3. run the EXACT same string again                           → observe a non-zero exit
+```
+
+Passes both or fails both = not discriminating = dead weight (Realizability gate 5). Record the
+fixture and both observed exits in the plan prose, the way the baseline rule records an observed
+gate baseline. One run against a three-line fixture would have caught rule 3's first example.
+
+**3. jq and shell hygiene inside `acceptance`** (the mechanics that made that criterion possible):
+
+```text
+# ❌ the pipe rebinds `.` to the id array, so `.cities` indexes an array and jq ERRORS (exit 5)
+[.countries[].months[] | .lowCityId, .highCityId] | unique - ([.cities | keys[]]) | length
+# ✅ bind the root FIRST, cross-reference through it, and let -e decide the exit code
+jq -e '. as $d | (([$d.countries[].months[] | .lowCityId, .highCityId] | unique) - [$d.cities | keys[]] | length) == 0' out.json
+# ❌ prints `false` and exits 0 — a criterion that can only ever pass
+jq '.x == 1' out.json
+```
+
+- **`.` is rebound by every `|`.** An expression touching two parts of one document binds the root
+  before the first pipe (`. as $d | ...`). Cross-referencing after a pipe is silent until executed.
+- **One assertion per criterion.** Two simple criteria beat one clever pipeline: a compound
+  expression that fails does not say which half broke.
+- **Every expression decides its own exit code** — `jq -e`, or a numeric comparison on the output.
+- **Prefer a checked-in script, or a case in the repo's own suite, to a clever YAML one-liner.**
+  Code in the repo gets review, tooling, and its own failure message; a one-liner in YAML gets none
+  of those. Reach for jq in `acceptance` only for a one-line shape check you have dry-run.
+
+**4. A number stated twice must agree with itself.** Before STOP, list every number the plan states
+— counts, thresholds, versions, indices — and confirm each appears with ONE value throughout; for
+each derived number, name the command that produced it. (Logged: the same plan gave 197 joined / 40
+without a city in one section and 198 / 39 in another, and the implementing agent had to re-derive
+both.)
+
 ---
 
 ## 7. YAML & Acceptance Mechanics
@@ -1070,6 +1138,9 @@ description: |
 □ Standard/IV stages: acceptance OR ≥1 goal-backward check (artifacts/wiring/wiring_tests/dead_code_check); wiring targets the CONSUMER; no leftover `truths:` block
 □ Every stage's acceptance carries the repo's FULL canonical gate covering its OWN files (not a scoped subset, not deferred downstream)
 □ Every acceptance command was RUN at HEAD, from a worktree under the stage's own sandbox, and OBSERVED green — the baseline is recorded in the plan prose; any red target is either repaired by a stage of this plan or excluded by a narrow, noted filter
+□ Every criterion asserting a fact about a to-be-PRODUCED artifact was dry-run against a good fixture (exit 0) AND a deliberately broken one (non-zero); both fixtures and both observed exits are in the plan prose
+□ Every number inside a criterion is either absent (an invariant) or a MEASURED constant whose command + observed output is recorded — nothing recalled, reasoned, or arithmetic-derived; absolutes ("zero", "never", "every") measured the same way
+□ jq criteria bind the root before the first pipe (`. as $d | ...`), assert ONE thing each, and set their own exit code (`jq -e` or a numeric comparison); anything longer than a shape check is a checked-in script or a repo test case instead
 □ No acceptance command depends on an ungrantable resource (a write escaping the worktree via main_project_root or the .work symlink, a host daemon/socket, un-allowed network, real HOME); no `loom` subcommand that opens shared .work/.loom state appears in a worktree stage's acceptance
 □ Every prescribed check is realizable (expressible · executes the code · right strength · selected · grounded); no gate claims to prove what its inputs don't exercise
 □ Engines/drivers have a stage owning the composition-root call site; ≤1 stage owns each pre-existing integration file; lifecycle decisions settled in the plan
@@ -1078,5 +1149,6 @@ description: |
 □ Acceptance commands: YAML single-quoted, rg not grep, paths relative to working_dir
 □ Sandbox configured; network is a struct; allow_write covers every path acceptance commands write (real lockfile name, build outputs)
 □ Self-consistency sweep done (prose ↔ YAML); reassuring adjectives backed by file:line + test
+□ Every number the plan states — counts, thresholds, versions, indices — appears with ONE value throughout; each derived number names the command that produced it
 □ loom plan verify passes → tell the user → STOP (do not implement)
 ```
