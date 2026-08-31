@@ -15,30 +15,30 @@ reqwest = { version = "0.13", features = ["blocking", "json"] }
 semver = "1"
 zip = "8"
 dirs = "6"
-minisign-verify = "0.2.4"
+minisign-verify = "0.2.5"
 sha2 = "0.11"
 hex = "0.4.3"
 serde_yaml = "0.9.34"
-uuid = { version = "1.20.0", features = ["v4"] }
+uuid = { version = "1.26.0", features = ["v4"] }
 toml = "1"
-serde_json = "1.0.149"
+serde_json = "1.0.151"
 shell-escape = "0.1.5"
 wait-timeout = "0.2.1"
 nix = { version = "0.31", features = ["process", "fs", "signal"], default-features = false }
-libc = "0.2.180"
-ctrlc = { version = "3.5.1", features = ["termination"] }
-which = "8.0.0"
-regex = "1.12.3"
+libc = "0.2.189"
+ctrlc = { version = "3.5.2", features = ["termination"] }
+which = "8.0.6"
+regex = "1.13.1"
 fs2 = "0.4"
 ratatui = "0.30"
 crossterm = "0.29"
 tracing = "0.1"
-glob = "0.3.3"
-tracing-subscriber = { version = "0.3.22", features = ["env-filter"] }
-tempfile = "3.24.0"
-toml_edit = "0.25.11"
+glob = "0.3.4"
+tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
+tempfile = "3.27.0"
+toml_edit = "0.25.13"
 shell-words = "1.1.1"
-tree-sitter = { version = "=0.26.12", optional = true }
+tree-sitter = { version = "=0.27.0", optional = true }
 tree-sitter-rust = { version = "=0.24.2", optional = true }
 tree-sitter-typescript = { version = "=0.23.2", optional = true }
 tree-sitter-python = { version = "=0.25.0", optional = true }

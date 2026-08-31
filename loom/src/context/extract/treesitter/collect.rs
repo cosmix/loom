@@ -105,7 +105,7 @@ fn process_match<'tree>(
     let mut name: Option<String> = None;
     let mut skipped = 0usize;
 
-    for capture in matched.captures {
+    for capture in matched.captures() {
         let capture_name = capture_names
             .get(capture.index as usize)
             .copied()
