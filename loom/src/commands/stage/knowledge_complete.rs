@@ -10,7 +10,8 @@ use crate::models::stage::StageType;
 use crate::verify::transitions::{load_stage, trigger_dependents, update_stage};
 
 use super::acceptance_runner::{
-    resolve_knowledge_acceptance_dir, run_acceptance_with_display, AcceptanceDisplayOptions,
+    print_acceptance_failure_guidance, resolve_knowledge_acceptance_dir,
+    run_acceptance_with_display, AcceptanceDisplayOptions,
 };
 use super::session::cleanup_session_resources;
 
@@ -110,7 +111,7 @@ pub fn complete_knowledge_stage(
     // Handle acceptance failure - keep stage in Executing, agent can fix and retry
     if acceptance_result == Some(false) {
         eprintln!("Acceptance criteria FAILED for knowledge stage '{stage_id}'");
-        eprintln!("  Fix the issues and run 'loom stage complete {stage_id}' again");
+        print_acceptance_failure_guidance(stage_id);
         anyhow::bail!("Acceptance criteria failed for knowledge stage '{stage_id}'");
     }
 

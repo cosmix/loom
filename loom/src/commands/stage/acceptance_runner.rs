@@ -178,13 +178,22 @@ pub(crate) fn run_acceptance_with_display(
     let result = run_acceptance_with_config(stage, acceptance_dir, &config)
         .context("Failed to run acceptance criteria")?;
 
-    for criterion_result in result.results() {
+    // Index matches `stage.acceptance` 1:1 (run_acceptance_with_config pushes
+    // one CriterionResult per criterion, in loop order) and is what
+    // `loom stage dispute-criteria --criterion-index` takes as an argument.
+    for (index, criterion_result) in result.results().iter().enumerate() {
         if criterion_result.success {
             println!("  ✓ passed: {}", criterion_result.command);
         } else if criterion_result.timed_out {
-            println!("  ✗ TIMEOUT: {}", criterion_result.command);
+            println!(
+                "  ✗ TIMEOUT [criterion {index}]: {}",
+                criterion_result.command
+            );
         } else {
-            println!("  ✗ FAILED: {}", criterion_result.command);
+            println!(
+                "  ✗ FAILED [criterion {index}]: {}",
+                criterion_result.command
+            );
         }
     }
 
@@ -193,6 +202,28 @@ pub(crate) fn run_acceptance_with_display(
     }
 
     Ok(result.all_passed())
+}
+
+/// Print what to do about a failed acceptance criterion: fix it, or, when it
+/// is impossible rather than merely red, dispute it.
+pub(crate) fn print_acceptance_failure_guidance(stage_id: &str) {
+    eprintln!("  Fix the issues and run 'loom stage complete {stage_id}' again");
+    eprintln!();
+    eprintln!(
+        "  If a criterion is impossible — no correct implementation could ever satisfy \
+         it — file a dispute rather than weakening the work until a bad criterion goes \
+         green:"
+    );
+    eprintln!(
+        "    loom stage dispute-criteria {stage_id} --criterion-index <n> --reason \"<why it is impossible>\""
+    );
+    eprintln!(
+        "  <n> is the number shown in the '[criterion n]' label above; --failure-output \
+         <path> ships the captured output as evidence. This routes to the adjudicator, \
+         which can amend the criterion — it is not an escalation to a human. Do not reach \
+         for --no-verify — it needs an operator proof the sandbox denies by design — and \
+         do not corrupt the artifact to satisfy a criterion you believe is wrong."
+    );
 }
 
 #[cfg(test)]

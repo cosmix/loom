@@ -522,7 +522,7 @@ fn print_sandboxed_completion_pending_notice(stage_id: &str) {
 fn ensure_acceptance_passed(result: Option<bool>, stage_id: &str) -> Result<()> {
     if result == Some(false) {
         eprintln!("Acceptance criteria FAILED for stage '{stage_id}'");
-        eprintln!("  Fix the issues and run 'loom stage complete {stage_id}' again");
+        super::acceptance_runner::print_acceptance_failure_guidance(stage_id);
         bail!("Acceptance criteria failed for stage '{stage_id}'");
     }
     Ok(())
