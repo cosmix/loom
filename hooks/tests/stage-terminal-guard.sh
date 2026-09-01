@@ -28,7 +28,7 @@ INPUT='{"tool_name":"Write","tool_input":{"file_path":"src/main.rs","content":"x
 
 run_hook() {
 	local extra_env=("$@")
-	(cd "$WORKTREE" && printf '%s' "$INPUT" | env "${extra_env[@]}" bash "$HOOK" 2>/dev/null)
+	(cd "$WORKTREE" && printf '%s' "$INPUT" | env ${extra_env[@]+"${extra_env[@]}"} bash "$HOOK" 2>/dev/null)
 }
 
 # Case 1: status completed -> BLOCKED (exit 2)

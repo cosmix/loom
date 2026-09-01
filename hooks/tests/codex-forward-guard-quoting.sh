@@ -5,8 +5,10 @@ HOOK="$(dirname "$0")/../codex-forward-guard.sh"
 # Extract parse_shell_words in isolation (lines containing only its
 # definition) so we can assert on the parsed word, not just the hook's exit
 # code. Keeping this in sync with codex-forward-guard.sh is unavoidable for a
-# unit-level assertion on the parser's internal state.
-source <(sed -n '/^parse_shell_words()/,/^}/p' "$HOOK")
+# unit-level assertion on the parser's internal state. `eval`, not
+# `source <(...)`: bash 3.2 (the only bash on this machine) reads zero bytes
+# from a process-substitution fd under `source`, defining nothing.
+eval "$(sed -n '/^parse_shell_words()/,/^}/p' "$HOOK")"
 
 # --- MUST BE ALLOWED (exit 0) ---------------------------------------------
 
