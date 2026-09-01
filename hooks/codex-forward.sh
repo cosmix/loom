@@ -80,6 +80,73 @@ task="${preamble}
 
 ${prompt}"
 
+# macOS refuses to apply a second Seatbelt profile to an already-sandboxed
+# process. Inside a stage session's Bash sandbox every command codex wraps in
+# /usr/bin/sandbox-exec (its workspace-write AND read-only modes both do) dies
+# with `sandbox-exec: sandbox_apply: Operation not permitted` while codex and
+# the companion still exit 0. The companion hardcodes workspace-write and
+# exposes no override, so when nesting is refused the wrapper calls
+# `codex exec` directly with --sandbox danger-full-access: the outer sandbox
+# (worktree + granted paths, strict domain allowlist) stays the boundary, the
+# same containment any other subagent's Bash call has. PATH lookup on purpose:
+# the probe only chooses a lane, and the tests stub it. On Linux there is no
+# sandbox-exec, so the companion path (codex's own bubblewrap nested inside the
+# stage sandbox) is unchanged. The probe is a heuristic: it asks whether ANY
+# profile can be applied, which is the refusal macOS produces; a host that
+# accepted this trivial profile yet rejected codex's own would still fall
+# through to the companion path and fail silently as before.
+nested_seatbelt_refused() {
+	command -v sandbox-exec >/dev/null 2>&1 || return 1
+	! sandbox-exec -p '(version 1)(allow default)' /usr/bin/true >/dev/null 2>&1
+}
+
+# newest-first, capped, via -nt insertion - no ls|head parsing
+print_newest() {
+	local cap=$1
+	shift
+	local newest=()
+	local f i inserted
+	for f in "$@"; do
+		inserted=false
+		for i in "${!newest[@]}"; do
+			if [[ "$f" -nt "${newest[$i]}" ]]; then
+				newest=("${newest[@]:0:$i}" "$f" "${newest[@]:$i}")
+				inserted=true
+				break
+			fi
+		done
+		if [[ "$inserted" == false ]]; then
+			newest+=("$f")
+		fi
+		if [[ ${#newest[@]} -gt $cap ]]; then
+			newest=("${newest[@]:0:$cap}")
+		fi
+	done
+	if [[ ${#newest[@]} -gt 0 ]]; then
+		printf '%s\n' "${newest[@]}"
+	fi
+}
+
+if nested_seatbelt_refused; then
+	printf 'note: the outer sandbox refuses a nested Seatbelt profile; running codex exec with --sandbox danger-full-access (the outer sandbox is the boundary)\n' >&2
+	status=0
+	codex exec --sandbox danger-full-access --skip-git-repo-check \
+		--model "$model" -c "model_reasoning_effort=\"$effort\"" -- "$task" || status=$?
+	printf '\n--- LOOM-CODEX-EVIDENCE ---\n'
+	printf 'exit: %s\n' "$status"
+	printf 'mode: direct (codex exec --sandbox danger-full-access; nested Seatbelt refused)\n'
+	codex_home=${CODEX_HOME:-${HOME}/.codex}
+	shopt -s nullglob
+	rollouts=("$codex_home"/sessions/*/*/*/rollout-*.jsonl)
+	shopt -u nullglob
+	if [[ ${#rollouts[@]} -eq 0 ]]; then
+		printf 'session: none found\n'
+	else
+		printf 'session: %s\n' "$(print_newest 1 "${rollouts[@]}")"
+	fi
+	exit "$status"
+fi
+
 versions_dir=${HOME:?HOME is required}/.claude/plugins/cache/openai-codex/codex
 shopt -s nullglob
 candidates=("$versions_dir"/*/scripts/codex-companion.mjs)
@@ -128,33 +195,17 @@ node "$companion" task "$task" --write --model "$model" --effort "$effort" || st
 
 printf '\n--- LOOM-CODEX-EVIDENCE ---\n'
 printf 'exit: %s\n' "$status"
+printf 'mode: companion\n'
 
+state_root=${CLAUDE_PLUGIN_DATA:-${HOME}/.claude/plugins/data/codex-openai-codex}/state
 shopt -s nullglob
-job_files=("${HOME}"/.claude/plugins/data/codex-openai-codex/state/*/jobs/*.json)
+job_files=("$state_root"/*/jobs/*.json)
 shopt -u nullglob
 
 if [[ ${#job_files[@]} -eq 0 ]]; then
 	printf 'jobs: none found\n'
 else
-	# newest-first, capped at 3, via -nt insertion - no ls|head parsing
-	newest=()
-	for f in "${job_files[@]}"; do
-		inserted=false
-		for i in "${!newest[@]}"; do
-			if [[ "$f" -nt "${newest[$i]}" ]]; then
-				newest=("${newest[@]:0:$i}" "$f" "${newest[@]:$i}")
-				inserted=true
-				break
-			fi
-		done
-		if [[ "$inserted" == false ]]; then
-			newest+=("$f")
-		fi
-		if [[ ${#newest[@]} -gt 3 ]]; then
-			newest=("${newest[@]:0:3}")
-		fi
-	done
-	printf '%s\n' "${newest[@]}"
+	print_newest 3 "${job_files[@]}"
 fi
 
 exit "$status"
