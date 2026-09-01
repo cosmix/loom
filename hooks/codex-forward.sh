@@ -14,7 +14,7 @@ model=$4
 effort=$6
 
 case "$model" in
-gpt-5.6-terra | gpt-5.6-luna) ;;
+gpt-5.6-sol | gpt-5.6-terra | gpt-5.6-luna) ;;
 *)
 	printf 'Unsupported forwarding model: %s\n' "$model" >&2
 	exit 2
@@ -45,7 +45,7 @@ second, never writes inside your worktree, and works from any directory in the t
 first, and open a file only once one of them has told you which lines matter:
 
   loom map --find-all <symbol>      every definition of a name: path, line, kind
-  loom map --outline <file>         a file's symbols with line ranges and signatures
+  loom map --outline <file>         the symbols in a file, with line ranges and signatures
   loom map --impact <symbol|path>   what reaches it, with path confidence
   loom knowledge context --query "<question>" --budget-tokens 1500
                                     ranked project knowledge plus matching source
