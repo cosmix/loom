@@ -3,7 +3,7 @@ set -euo pipefail
 
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 HOOK="$ROOT/hooks/loom-control-complete.sh"
-TMP=$(mktemp -d)
+TMP=$(mktemp -d "${TMPDIR:-/tmp}/loom-hooktest.XXXXXX")
 trap 'rm -rf "$TMP"' EXIT
 # A real loom worktree path: the hook engages on `<repo>/.worktrees/<stage-id>`
 # and must stay out of the way of main-repo sessions.

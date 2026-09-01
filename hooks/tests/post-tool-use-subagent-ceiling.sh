@@ -10,7 +10,7 @@
 # selects the wrong half, the hard block below never fires.
 set -euo pipefail
 HOOK="$(dirname "$0")/../post-tool-use.sh"
-TMP=$(mktemp -d)
+TMP=$(mktemp -d "${TMPDIR:-/tmp}/loom-hooktest.XXXXXX")
 trap 'rm -rf "$TMP"' EXIT
 
 STAGE_ID="test-stage"

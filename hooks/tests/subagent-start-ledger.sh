@@ -2,7 +2,7 @@
 set -euo pipefail
 
 HOOK="$(dirname "$0")/../subagent-start.sh"
-TMP=$(mktemp -d)
+TMP=$(mktemp -d "${TMPDIR:-/tmp}/loom-hooktest.XXXXXX")
 trap 'rm -rf "$TMP"' EXIT
 
 mkdir -p "$TMP/work"

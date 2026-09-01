@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 HOOK="$(dirname "$0")/../codex-forward-guard.sh"
-TMP=$(mktemp -d)
+TMP=$(mktemp -d "${TMPDIR:-/tmp}/loom-hooktest.XXXXXX")
 trap 'rm -rf "$TMP"' EXIT
 mkdir -p "$TMP/subagents"
 TRANSCRIPT="$TMP/subagents/agent-aForwarder-abc123.jsonl"

@@ -6,7 +6,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 HOOK="$SCRIPT_DIR/../session-start.sh"
 
 # Set up a temp work dir with required subdirectories
-TMPDIR_TEST=$(mktemp -d)
+TMPDIR_TEST=$(mktemp -d "${TMPDIR:-/tmp}/loom-hooktest.XXXXXX")
 trap 'rm -rf "$TMPDIR_TEST"' EXIT
 
 LOOM_WORK_DIR="$TMPDIR_TEST"

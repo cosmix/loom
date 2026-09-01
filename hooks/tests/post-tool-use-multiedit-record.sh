@@ -5,7 +5,7 @@
 # `.tool_input.file_path` for all three). It must be recorded the same way.
 set -euo pipefail
 HOOK="$(dirname "$0")/../post-tool-use.sh"
-TMP=$(mktemp -d)
+TMP=$(mktemp -d "${TMPDIR:-/tmp}/loom-hooktest.XXXXXX")
 trap 'rm -rf "$TMP"' EXIT
 mkdir -p "$TMP/bin" "$TMP/work"
 MARKER="$TMP/record-edit-called"

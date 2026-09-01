@@ -5,8 +5,19 @@ HOOK="$(dirname "$0")/../codex-forward-guard.sh"
 # Extract parse_shell_words in isolation (lines containing only its
 # definition) so we can assert on the parsed word, not just the hook's exit
 # code. Keeping this in sync with codex-forward-guard.sh is unavoidable for a
-# unit-level assertion on the parser's internal state.
-source <(sed -n '/^parse_shell_words()/,/^}/p' "$HOOK")
+# unit-level assertion on the parser's internal state. The extraction goes
+# through a real file because `source <(sed ...)` under bash 3.2 (macOS
+# /bin/bash) can return success having defined nothing - the /dev/fd reader
+# closes before bash finishes reading it - which surfaces far below as
+# "parse_shell_words: command not found".
+TMP=$(mktemp -d "${TMPDIR:-/tmp}/loom-hooktest.XXXXXX")
+trap 'rm -rf "$TMP"' EXIT
+sed -n '/^parse_shell_words()/,/^}/p' "$HOOK" >"$TMP/parse_shell_words.sh"
+source "$TMP/parse_shell_words.sh"
+if [[ "$(type -t parse_shell_words || true)" != "function" ]]; then
+    echo "FAIL: could not extract parse_shell_words from $HOOK"
+    exit 1
+fi
 
 # --- MUST BE ALLOWED (exit 0) ---------------------------------------------
 

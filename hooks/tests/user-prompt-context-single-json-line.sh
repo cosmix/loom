@@ -4,7 +4,7 @@
 # shape the real delegate contract specifies.
 set -euo pipefail
 HOOK="$(dirname "$0")/../user-prompt-context.sh"
-TMP=$(mktemp -d)
+TMP=$(mktemp -d "${TMPDIR:-/tmp}/loom-hooktest.XXXXXX")
 trap 'rm -rf "$TMP"' EXIT
 mkdir -p "$TMP/bin" "$TMP/work"
 
