@@ -208,29 +208,38 @@ mod tests {
         }
     }
 
-    /// Whether this process may use AF_UNIX sockets at all.
+    /// Whether this process may BIND an AF_UNIX listener.
     ///
-    /// A sandboxed environment (the agent Bash tool, for one) denies the
-    /// `socket()` syscall outright, so every connect fails `PermissionDenied`
-    /// before the path is even looked at — see `daemon/server/core.rs`. The
-    /// three tests below distinguish connect ERRORS from each other, so they
-    /// cannot say anything under a sandbox that fails all of them
-    /// identically.
-    ///
-    /// Probes by connecting, not binding: binding a listener has its own
-    /// failure modes, and connect is the path these tests actually exercise.
-    /// The target path is guaranteed unbound — a fresh temp dir the probe
-    /// never writes to — so `NotFound` (or an unexpected success) means
-    /// AF_UNIX works here, and only `PermissionDenied` means it doesn't.
-    fn af_unix_available() -> bool {
+    /// Binding and connecting are governed separately on macOS: inside the
+    /// Claude Code Bash sandbox (Seatbelt), `connect` behaves the same as an
+    /// unsandboxed process, but `bind` fails outright with `PermissionDenied`.
+    /// So a test that needs an actual listener (not just a connect attempt)
+    /// must probe `bind` itself rather than reuse the connect-based check.
+    fn af_unix_bind_available() -> bool {
         let temp = TempDir::new().unwrap();
-        match UnixStream::connect(temp.path().join("probe.sock")) {
+        match std::os::unix::net::UnixListener::bind(temp.path().join("probe.sock")) {
             Ok(_) => true,
             Err(e) => e.kind() != ErrorKind::PermissionDenied,
         }
     }
 
-    /// Deliberately NOT guarded by `af_unix_available`: the pre-check answers
+    /// Whether this sandbox denies AF_UNIX `connect` outright.
+    ///
+    /// Outside any sandbox, connecting to a path with nothing bound answers
+    /// `NotFound`, and connecting to a plain (non-socket) file answers
+    /// `ENOTSOCK` on macOS (XNU's `unp_connect` rejects a non-socket path;
+    /// Linux answers `ECONNREFUSED` for the same case instead). Only a
+    /// sandbox that denies the `connect()` syscall itself answers
+    /// `PermissionDenied`, which is what this probes for.
+    fn af_unix_connect_denied() -> bool {
+        let temp = TempDir::new().unwrap();
+        matches!(
+            UnixStream::connect(temp.path().join("probe.sock")),
+            Err(e) if e.kind() == ErrorKind::PermissionDenied
+        )
+    }
+
+    /// Deliberately NOT guarded by either probe above: the pre-check answers
     /// this before any syscall, so it must hold identically sandboxed and not.
     /// That equivalence is the whole point of the pre-check.
     #[test]
@@ -246,16 +255,20 @@ mod tests {
 
     #[test]
     fn a_stale_socket_file_with_nothing_bound_is_not_listening() {
-        if !af_unix_available() {
-            // Sandboxed: every connect fails PermissionDenied before the
-            // path is consulted, so this test can't say anything here.
+        if !af_unix_bind_available() {
+            // Sandboxed: bind is denied before a real stale socket could even
+            // be produced, so this test can't say anything here.
             return;
         }
         let temp = TempDir::new().unwrap();
-        // A plain file at the socket path, standing in for what a daemon that
-        // died without unlinking its socket leaves behind: something exists
-        // there, but nothing is listening on it.
-        std::fs::write(temp.path().join("orchestrator.sock"), b"").unwrap();
+        // A REAL stale socket, not a plain file: a plain file answers
+        // ENOTSOCK on macOS (XNU's unp_connect rejects a non-socket path)
+        // rather than the ECONNREFUSED a dead daemon actually produces.
+        // Binding and immediately dropping the listener leaves a
+        // socket-typed file on disk with nothing accepting on it, which is
+        // exactly what a daemon that died without unlinking its socket
+        // leaves behind.
+        drop(std::os::unix::net::UnixListener::bind(socket_path(temp.path())).unwrap());
 
         match try_send_request(temp.path(), &ping()).unwrap() {
             DaemonReach::NotListening => {}
@@ -265,15 +278,16 @@ mod tests {
     }
 
     /// The inverse of the guard above: this one can ONLY say something where
-    /// AF_UNIX is denied, which is exactly the sandboxed stage agent this
-    /// variant exists for. Under a normal environment the same connect fails
-    /// `ConnectionRefused`, which the test above already covers.
+    /// AF_UNIX connect is denied, which is exactly the sandboxed stage agent
+    /// this variant exists for. Under a normal environment the same connect
+    /// fails `ENOTSOCK` against a plain file (or `ConnectionRefused` against
+    /// a real stale socket), which the other tests already cover.
     ///
     /// The socket file has to exist, or the pre-check would answer
     /// `NotListening` before the connect this test is about ever runs.
     #[test]
     fn a_sandbox_denying_af_unix_is_unreachable_not_not_listening() {
-        if af_unix_available() {
+        if !af_unix_connect_denied() {
             return;
         }
         let temp = TempDir::new().unwrap();
@@ -290,9 +304,9 @@ mod tests {
 
     #[test]
     fn a_live_listener_is_answered() {
-        if !af_unix_available() {
-            // Sandboxed: bind and connect both fail PermissionDenied before
-            // any socket-specific behavior runs, so this test can't say
+        if !af_unix_bind_available() {
+            // Sandboxed: bind fails PermissionDenied before any
+            // socket-specific behavior runs, so this test can't say
             // anything here.
             return;
         }

@@ -6,6 +6,7 @@
 use super::*;
 use crate::orchestrator::terminal::tmux::viewer::tests::stub_session;
 use chrono::Utc;
+use serial_test::serial;
 use std::cell::Cell;
 use std::path::Path;
 use std::time::Instant;
@@ -178,6 +179,7 @@ fn describe_failure_keeps_re_run_advice_off_the_permanent_branch_only() {
 }
 
 #[test]
+#[serial]
 fn diagnose_sessions_names_the_work_dir_and_every_session() {
     let now = Utc::now();
     let plain = stub_session("session-e", "stage-e", now);

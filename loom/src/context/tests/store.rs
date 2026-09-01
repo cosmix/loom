@@ -34,7 +34,8 @@ fn sample_catalog() -> Catalog {
 #[test]
 fn open_resolves_cache_at_main_project_root_from_linked_worktree() {
     let temp = TempDir::new().unwrap();
-    let main_repo = temp.path().join("main-repo");
+    let root = temp.path().canonicalize().unwrap();
+    let main_repo = root.join("main-repo");
     let worktree = main_repo.join(".worktrees").join("stage");
 
     fs::create_dir_all(main_repo.join(".work")).unwrap();

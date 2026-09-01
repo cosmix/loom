@@ -4,6 +4,7 @@ use crate::fs::permissions::settings::{
     ensure_loom_permissions_to, scrub_session_identity_env, scrub_stale_work_dir_env,
 };
 use serde_json::{json, Value};
+use serial_test::serial;
 use std::fs;
 use tempfile::TempDir;
 
@@ -198,6 +199,7 @@ fn test_scrub_stale_work_dir_env_noop_missing_key() {
 }
 
 #[test]
+#[serial]
 fn test_ensure_loom_permissions_adds_home_expanded_codex_forward_entry() {
     // Drives the real write path (not just the LOOM_PERMISSIONS constant) so
     // this would actually catch the fold site being missed. This is also the
@@ -235,6 +237,7 @@ fn test_ensure_loom_permissions_adds_home_expanded_codex_forward_entry() {
 }
 
 #[test]
+#[serial]
 fn test_ensure_loom_permissions_home_expanded_entry_no_duplicates_on_rerun() {
     let temp_dir = TempDir::new().unwrap();
     let repo_root = temp_dir.path();
