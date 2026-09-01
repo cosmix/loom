@@ -48,39 +48,48 @@ the same lesson one level up.
 
 ## The sandbox blocks codex's own state dirs, and the escape hatch is not an escape (2026-08-10)
 
-**What happened:** on Linux, every codex invocation failed — in loom stages and in plain
-interactive sessions alike. The sandboxed Bash call could not create codex-companion's job-state
-directory (`ENOENT: ... mkdir '~/.claude/plugins/data/codex-openai-codex/state/<cwd>-<hash>/jobs'`)
-and the codex CLI could not initialise its sqlite state runtime under `~/.codex`
-(`Read-only file system (os error 30)`). The agent then did the documented thing — retried with
-`dangerouslyDisableSandbox: true` — and the **auto-mode classifier refused it**.
+**What happened:** codex invocations fail before any model call because the sandboxed Bash call
+cannot create codex-companion's job-state directory
+(`EPERM/ENOENT: mkdir '~/.claude/plugins/data/codex-openai-codex/state/<slug>-<hash>/jobs'`), or
+because the codex CLI cannot initialise its sqlite state runtime under `~/.codex`
+(`Read-only file system`). Retrying with `dangerouslyDisableSandbox` is refused by the auto-mode
+classifier, so it reads as having no way out.
 
-**Why:** the sandbox's write set is the working directory and the session temp dir, full stop.
-Codex is a *subprocess*, not a Claude tool, and it keeps state in two dirs outside both.
+**The 2026-08-10 prevention was INCOMPLETE (superseded 2026-09-02).** It said to grant both dirs via
+`sandbox.filesystem.allowWrite`. That is necessary but not sufficient: on macOS 2026-09-02 the
+grant was present and correct — `CODEX_SANDBOX_WRITE_PATHS` had put both paths in
+`.claude/settings.local.json` — and three forwards still died on the same mkdir. A bare `mkdir`
+under the granted path fails too, while `~/.codex` (the other granted path) is writable. The cause
+is a CONFLICTING rule above loom: the harness allows `~/.claude/plugins/data/codex-openai-codex`
+and denies `~/.claude/plugins` around it, and the deny on the parent wins. Loom emits no deny
+there, so `loom repair --fix` cannot help and re-running it changes nothing.
 
-**The 2026-08-10 prevention is NO LONGER SUFFICIENT (superseded 2026-09-01).** That entry said to
-grant the two dirs via `sandbox.filesystem.allowWrite` and treat the problem as solved. Verified
-on macOS 2026-09-01: the grant was present and correct — `.claude/settings.local.json` carried both
-`~/.codex` and `~/.claude/plugins/data/codex-openai-codex` from `CODEX_SANDBOX_WRITE_PATHS` — and
-three codex forwards (sol, terra, luna) still died identically with
-`EPERM: operation not permitted, mkdir '.../state/loom-<hash>/jobs'`. A bare `mkdir` under the
-granted path fails the same way from an ordinary session.
+**Root cause and the fix loom ships.** The companion derives its state root from an env var:
+`stateRoot = $CLAUDE_PLUGIN_DATA/state` (plugin 1.0.6, `scripts/lib/state.mjs:9,41-42`), falling
+back to `os.tmpdir()/codex-companion` when the var is empty. `hooks/codex-forward.sh` now probes
+whether `$CLAUDE_PLUGIN_DATA/state` is creatable and, only when it is not, redirects
+`CLAUDE_PLUGIN_DATA` to `~/.codex/plugin-data` — inside the `~/.codex` grant this lane already
+has. Machines where the default works are untouched, so the plugin's own `/codex:status` and
+`/codex:result` keep finding their records.
 
-The cause is a CONFLICTING rule above loom's layer, not a missing one: the harness sandbox carries
-`~/.claude/plugins/data/codex-openai-codex` in its write allow-list AND `~/.claude/plugins` in its
-deny-within-allow list. The broader deny shadows the narrower grant. Loom emits no deny on that
-path — `rg 'claude/plugins' loom/src` returns only `codex.rs`'s grant and the companion-runtime
-lookup — so `loom repair --fix` cannot fix it and re-running it changes nothing.
+Verified A/B on macOS 2026-09-02: the unmodified wrapper exits 1 on EPERM; with the redirect all
+three tiers (`gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.6-luna`) reach the model and exit 0.
 
-**Detection:** `EPERM`/`ENOENT` naming `~/.claude/plugins/data/codex-openai-codex/`, or
-`EROFS` naming `~/.codex`. Before blaming loom's settings, CHECK THE GRANT IS ACTUALLY ABSENT:
-read `sandbox.filesystem.allowWrite` in `.claude/settings.local.json`. If the entry is there and
-the write still fails, this is the shadowing case and no amount of repair will help. A subagent
-that reports "the allowWrite entry is missing" without reading the file is guessing — three did
-exactly that on 2026-09-01, and all three recommended a fix that was already applied.
+**Platform note.** This is not simply 'macOS is stricter'. The 2026-08-10 entry recorded the
+opposite — Seatbelt let these writes pass while Linux bubblewrap enforced the allowlist. The
+deciding variable is the built-in deny list of the Claude Code build doing the spawning, not the
+kernel sandbox. A Linux box on a build without the `~/.claude/plugins` deny works with no
+redirect; the conditional probe is what makes one wrapper correct on both.
 
-**Fix:** never answer this with `dangerouslyDisableSandbox`. Report it and escalate to whoever owns
-the harness sandbox policy; the loom-side grant is already correct. Open follow-up: loom's codex
-availability check (`codex.rs`, the CLI + plugin probe) does not test WRITABILITY of the state
-directory, so a stage lists codex, starts, and every codex subagent dies mid-run instead of loom
-warning at `loom run` startup.
+**Detection:** `EPERM`/`ENOENT` naming `~/.claude/plugins/data/codex-openai-codex/`, or `EROFS`
+naming `~/.codex`. Before blaming loom's settings, CHECK THE GRANT IS ACTUALLY ABSENT by reading
+`sandbox.filesystem.allowWrite` in `.claude/settings.local.json`. If it is present and the write
+still fails, this is the shadowing case. A subagent reporting 'the allowWrite entry is missing'
+without reading the file is guessing — three did exactly that on 2026-09-01 and all three
+recommended a fix that had already been applied.
+
+**Never** answer this with `dangerouslyDisableSandbox`.
+
+**Open follow-up:** loom's codex availability check (`codex.rs`) probes the CLI and the plugin but
+not WRITABILITY of the state root, so a stage can list codex, start, and lose every codex subagent
+mid-run instead of `loom run` warning at startup.
