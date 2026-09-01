@@ -28,12 +28,21 @@ Invoked with an argument, read `~/.claude/loom-skill-catalog/<argument>/SKILL.md
 in full with the Read tool and follow it as if it had been loaded directly.
 The argument is the full skill name, for example `loom-rust`.
 
-If that path does not exist, try `~/.claude/skills/<argument>/SKILL.md` — an
+**Several names may be passed at once**, separated by whitespace or commas, for
+example `loom-ci-cd loom-rust`. Split the argument and load EACH name by the
+rules below, in the order given. Never treat the whole string as one skill
+name — `~/.claude/loom-skill-catalog/loom-ci-cd loom-rust/SKILL.md` is not a
+path that can exist, and reporting it as a missing catalog is wrong.
+
+If a name's path does not exist, try `~/.claude/skills/<name>/SKILL.md` — an
 install made with `--skills all` keeps every skill in the indexed directory
 and has no catalog directory at all.
 
-If neither exists, the catalog is not installed: say so plainly and continue
-without it.
+If neither path exists for a name, say which name did not resolve and continue
+with the ones that did. Report the catalog as not installed ONLY when
+`~/.claude/loom-skill-catalog/` is itself absent AND the name is missing from
+`~/.claude/skills/` — a single unresolved name means a bad name, not a broken
+install.
 
 Invoked with no argument, show the table below and pick the skill that fits
 the task.
