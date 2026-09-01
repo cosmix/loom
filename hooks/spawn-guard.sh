@@ -205,7 +205,7 @@ tier_rank() {
 # ENFORCEMENT GATE above (deny when the gate passes, warn-and-allow when it
 # does not) and has no additional override.
 UNTYPED_MSG=$(cat <<'EOF'
-Untyped spawn inherits this session's model. Use loom-software-engineer (sonnet, default) / loom-senior-software-engineer (opus) / loom-code-reviewer / loom-advisor (fable, read-only) / loom-codex-forwarder / Explore. Pass `model` only to escalate, and record why.
+Untyped spawn inherits the model of the spawning session. Use loom-software-engineer (sonnet, default) / loom-senior-software-engineer (opus) / loom-code-reviewer / loom-advisor (fable, read-only) / loom-codex-forwarder / Explore. Pass `model` only to escalate, and record why.
 EOF
 )
 
