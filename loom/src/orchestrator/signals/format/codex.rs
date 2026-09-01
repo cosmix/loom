@@ -121,10 +121,12 @@ pub(crate) fn format_codex_implementers_section(
          \"appears hung\" warning past 300s is ADVISORY ONLY; nothing is killed or retried.\n",
     );
     content.push_str(
-        "- BLAST RADIUS: codex runs sandbox `workspace-write`, approval `never` - it edits anything\n\
-         under the git root (the worktree) without asking, and loom's PreToolUse hooks never see\n\
-         commands it runs in its own session. NEVER give it a path under `.work/` (a symlink to\n\
-         state shared with every parallel stage); tell it not to run git at all; check\n\
+        "- BLAST RADIUS: codex runs approval `never` - inside its own `workspace-write` sandbox where the\n\
+         stage sandbox lets it nest one (Linux), or with `--sandbox danger-full-access` where it does not\n\
+         (macOS refuses a nested Seatbelt, so the wrapper falls back to a direct `codex exec`) - and either\n\
+         way it edits anything under the git root (the worktree) without asking, and loom's PreToolUse\n\
+         hooks never see commands it runs in its own session. NEVER give it a path under `.work/` (a\n\
+         symlink to state shared with every parallel stage); tell it not to run git at all; check\n\
          `git status --short` after each run - anything touched outside its files is yours to catch.\n",
     );
     content.push_str(
@@ -136,10 +138,13 @@ pub(crate) fn format_codex_implementers_section(
     );
     content.push_str(
         "- ACCEPT A REPORT ONLY WITH EVIDENCE: a genuine forward returns codex stdout followed by a\n\
-         \"--- LOOM-CODEX-EVIDENCE ---\" trailer listing companion state jobs/*.json paths - verify\n\
-         the newest record for THIS worktree has \"phase\": \"done\". No trailer, or edits with no\n\
-         matching job record, is a FAILED delegation (the wrapper did the work itself): revert and\n\
-         respawn, or review the edits as strictly as sonnet output.\n",
+         \"--- LOOM-CODEX-EVIDENCE ---\" trailer carrying `exit:` and `mode:`. `mode: companion` lists\n\
+         companion state jobs/*.json paths - verify the newest record for THIS worktree has\n\
+         \"phase\": \"done\". `mode: direct` (macOS inside the stage sandbox) lists `session:`, the codex\n\
+         rollout under ~/.codex/sessions/ - verify it exists and is newer than the spawn; codex's own\n\
+         `exec ... succeeded` lines precede the trailer. No trailer, or edits with no matching record or\n\
+         rollout, is a FAILED delegation (the wrapper did the work itself): revert and respawn, or review\n\
+         the edits as strictly as sonnet output.\n",
     );
     content.push_str(
         "- VERIFICATION STAYS WITH YOU (opus): codex subagents implement and report, never verify,\n\

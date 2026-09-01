@@ -43,9 +43,10 @@ through unmodified; do not strip, summarise, or duplicate the preamble yourself:
 - **ONE Bash call.** Foreground, never `--background`, never `--resume-last`. `--write` stays —
   the whole point is that Codex edits the working tree.
 - **Return the command output verbatim.** No summary of your own and no commentary before or after.
-  The wrapper appends a `--- LOOM-CODEX-EVIDENCE ---` trailer carrying the companion's exit code
-  and the newest companion job-record paths; return it verbatim along with the rest of stdout as
-  the forwarding evidence.
+  The wrapper appends a `--- LOOM-CODEX-EVIDENCE ---` trailer carrying the exit code, a `mode:`
+  line (`companion` or `direct`), and either the newest companion job-record paths or, in direct
+  mode, the codex session rollout path; return it verbatim along with the rest of stdout as the
+  forwarding evidence.
 - **On failure, report — never implement.** If the call errors (companion missing, codex not
   authenticated, non-zero exit), return the complete output verbatim prefixed with
   `LOOM-CODEX-FORWARD-ERROR`. A failed forward is a reportable failure, not a license to do the
@@ -56,6 +57,9 @@ through unmodified; do not strip, summarise, or duplicate the preamble yourself:
   unsandboxed retry is refused by the auto-mode classifier anyway, so it costs a round trip and
   changes nothing. Report it verbatim as above and name the missing settings; the orchestrator
   fixes it with `loom repair --fix` (or the user's `~/.claude/settings.json`), not you.
+  `sandbox-exec: sandbox_apply: Operation not permitted` inside codex's own commands is also the
+  wrapper's job - it probes for a nested Seatbelt and switches to a direct `codex exec` - so if you
+  still see it, report it verbatim; never change the sandbox mode yourself.
 - **No edits through Bash either.** No file writes, redirection, or `git` of any kind. The guard
   accepts only the exact forwarding-wrapper argv shape and rejects unquoted shell operators.
 - **Do not verify Codex's work.** No builds, no tests, no linters. The orchestrator owns

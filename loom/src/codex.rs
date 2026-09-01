@@ -52,6 +52,11 @@ pub const CODEX_SANDBOX_DOMAINS: [&str; 4] = [
 /// the forwarder's one Bash call goes through the plugin's companion runtime,
 /// which spawns `codex app-server` itself, so no `-c` CLI override can be
 /// threaded through a forward.
+///
+/// That holds for the companion path (Linux). On macOS inside a stage sandbox
+/// a nested Seatbelt is refused outright, so `hooks/codex-forward.sh` bypasses
+/// the companion and passes `--sandbox danger-full-access` to `codex exec`
+/// itself; this file then plays no part in the run.
 pub fn codex_config_path() -> Option<PathBuf> {
     dirs::home_dir().map(|home| home.join(".codex/config.toml"))
 }
@@ -65,6 +70,9 @@ pub fn codex_config_path() -> Option<PathBuf> {
 /// `/tmp` read-only (only `/tmp/claude` and `$TMPDIR` are writable), so every
 /// sandboxed codex exec dies at namespace setup with `bwrap: Can't mkdir
 /// /tmp/.git: Read-only file system` before the model runs a single command.
+/// On macOS the nesting is refused altogether (`sandbox-exec: sandbox_apply:
+/// Operation not permitted`) and the wrapper's direct `codex exec` mode is the
+/// fix there, so this key is Linux-only.
 ///
 /// `sandbox_workspace_write.exclude_slash_tmp = true` removes `/tmp` from the
 /// writable roots (the session `$TMPDIR` remains, and IS writable in the outer
