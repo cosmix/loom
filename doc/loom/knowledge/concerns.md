@@ -741,3 +741,32 @@ dedicated knowledge-reorganization project, not part of token-governor correctne
 - **The generated index remains oversized.** This is low-priority navigation cleanup. Until this
   backlog lands, a nonzero strict check should be interpreted by issue kind rather than treated as
   a new regression by itself.
+
+## Retrieval Cannot Distinguish 'No Source Graph' From 'Healthy' (2026-09-01)
+
+`degraded_reason` (`context/retrieve/graph.rs:116-124`) returns `None` when
+`semantic_revision` is empty — the never-built case — which is the same value it returns for a
+healthy graph. In a checkout with no `.work/` (so no context store, so no graph), the Knowledge
+Brief therefore prints `Structural: current` with no `DEGRADED` marker while serving
+knowledge-only results.
+
+Observed 2026-09-01 in the loom repo itself: the hook was given the query *how does
+`ensure_work_symlink` plant the worktree symlink and what calls it* — written to need the source
+lane — and returned five knowledge chunks, 130 omitted, and zero `Channel::Source` items, with a
+clean status line. `loom map --outline/--find-all/--impact` all failed with
+`.work directory does not exist` at the same time.
+
+This is the shape recorded in [visibility-and-reachability.md](mistakes/visibility-and-reachability.md):
+an `Option` that is `None` for two reasons cannot gate a claim about either.
+
+**Deliberately NOT fixed on the spot.** The doc comment at `graph.rs:96-115` shows the predicate
+was tuned carefully: it is a live input to
+`commands::hook::reconcile_graph::spawn_if_needed`, which fires a detached full-repository
+tree-sitter rebuild on `stale OR degraded`. Widening it to report the never-built case as degraded
+would make every prompt in an uninitialised checkout start an unbounded background rebuild,
+throttled only by the reconcile debounce lock — the exact failure the current shape exists to
+avoid.
+
+**Fix shape if taken up:** carry the never-built case as its OWN field rather than folding it into
+`degraded`, so the status line can say it without feeding the rebuild trigger. Resolve the question
+at its own source, and default in the fail-safe direction (do not claim currency).

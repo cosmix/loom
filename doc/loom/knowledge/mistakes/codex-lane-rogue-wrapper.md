@@ -53,27 +53,34 @@ interactive sessions alike. The sandboxed Bash call could not create codex-compa
 directory (`ENOENT: ... mkdir '~/.claude/plugins/data/codex-openai-codex/state/<cwd>-<hash>/jobs'`)
 and the codex CLI could not initialise its sqlite state runtime under `~/.codex`
 (`Read-only file system (os error 30)`). The agent then did the documented thing — retried with
-`dangerouslyDisableSandbox: true` — and the **auto-mode classifier refused it**. So there was no
-path to a working codex at all: sandboxed it cannot write, unsandboxed it cannot run.
+`dangerouslyDisableSandbox: true` — and the **auto-mode classifier refused it**.
 
 **Why:** the sandbox's write set is the working directory and the session temp dir, full stop.
-Codex is a *subprocess*, not a Claude tool, and it keeps state in two dirs outside both. The
-earlier note here blamed only the companion's job log and called a sandbox-disabled retry "the
-expected recovery" — wrong on both counts: `~/.codex` is the bigger blocker, and the retry is a
-permission decision the classifier is entitled to (and does) deny. It looked macOS-clean because
-Seatbelt let those writes pass; Linux's bubblewrap sandbox enforces the allowlist.
+Codex is a *subprocess*, not a Claude tool, and it keeps state in two dirs outside both.
 
-**Prevention:** grant the two dirs at the OS layer instead of trying to leave the sandbox.
-`sandbox.filesystem.allowWrite` is additive and enforced for child processes — the only lever that
-reaches a subprocess. Loom emits `CODEX_SANDBOX_WRITE_PATHS` (`loom/src/codex.rs`) from the sandbox
-settings generator and from `loom init`, so stage worktrees, `loom repair --fix` and freshly-
-initialised repos all carry it; sessions outside a loom repo need the same block in
-`~/.claude/settings.json`. See [Codex Plugin](../architecture/codex-plugin.md).
+**The 2026-08-10 prevention is NO LONGER SUFFICIENT (superseded 2026-09-01).** That entry said to
+grant the two dirs via `sandbox.filesystem.allowWrite` and treat the problem as solved. Verified
+on macOS 2026-09-01: the grant was present and correct — `.claude/settings.local.json` carried both
+`~/.codex` and `~/.claude/plugins/data/codex-openai-codex` from `CODEX_SANDBOX_WRITE_PATHS` — and
+three codex forwards (sol, terra, luna) still died identically with
+`EPERM: operation not permitted, mkdir '.../state/loom-<hash>/jobs'`. A bare `mkdir` under the
+granted path fails the same way from an ordinary session.
 
-**Detection:** `Read-only file system` / `EROFS` naming `~/.codex`, or `ENOENT`/`EPERM` naming
-`~/.claude/plugins/data/codex-openai-codex/`, is this — not a codex auth problem and not a reason
-to distrust the forward. `codex-companion setup --json` reporting `loggedIn: false` while the same
-command outside the sandbox reports `loggedIn: true` is the same cause wearing a misleading label:
-the auth probe fails because codex cannot write its state runtime, not because the login expired.
+The cause is a CONFLICTING rule above loom's layer, not a missing one: the harness sandbox carries
+`~/.claude/plugins/data/codex-openai-codex` in its write allow-list AND `~/.claude/plugins` in its
+deny-within-allow list. The broader deny shadows the narrower grant. Loom emits no deny on that
+path — `rg 'claude/plugins' loom/src` returns only `codex.rs`'s grant and the companion-runtime
+lookup — so `loom repair --fix` cannot fix it and re-running it changes nothing.
 
-**Fix:** never answer this with `dangerouslyDisableSandbox`. Report it, and fix the settings.
+**Detection:** `EPERM`/`ENOENT` naming `~/.claude/plugins/data/codex-openai-codex/`, or
+`EROFS` naming `~/.codex`. Before blaming loom's settings, CHECK THE GRANT IS ACTUALLY ABSENT:
+read `sandbox.filesystem.allowWrite` in `.claude/settings.local.json`. If the entry is there and
+the write still fails, this is the shadowing case and no amount of repair will help. A subagent
+that reports "the allowWrite entry is missing" without reading the file is guessing — three did
+exactly that on 2026-09-01, and all three recommended a fix that was already applied.
+
+**Fix:** never answer this with `dangerouslyDisableSandbox`. Report it and escalate to whoever owns
+the harness sandbox policy; the loom-side grant is already correct. Open follow-up: loom's codex
+availability check (`codex.rs`, the CLI + plugin probe) does not test WRITABILITY of the state
+directory, so a stage lists codex, starts, and every codex subagent dies mid-run instead of loom
+warning at `loom run` startup.
