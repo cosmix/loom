@@ -102,6 +102,27 @@ if [[ ! -f "$companion" || -L "$companion" ]]; then
 	exit 1
 fi
 
+# The companion derives its job-state root from CLAUDE_PLUGIN_DATA:
+# `stateRoot = $CLAUDE_PLUGIN_DATA/state` (the plugin's scripts/lib/state.mjs).
+# Claude Code points that at ~/.claude/plugins/data/<plugin>, and some sandbox
+# configurations deny writes anywhere under ~/.claude/plugins — the job-record
+# mkdir then fails with EPERM before any model call, which reads as a codex or
+# auth failure but is neither. A `sandbox.filesystem.allowWrite` grant does not
+# help: it is the deny on the parent that wins.
+#
+# ~/.codex is already granted to this lane (CODEX_SANDBOX_WRITE_PATHS in
+# loom/src/codex.rs), so redirect there — but ONLY when the configured root is
+# genuinely unwritable. Machines where the default works keep it, so the
+# plugin's own /codex:status and /codex:result keep finding their records where
+# they expect them.
+if [[ -n "${CLAUDE_PLUGIN_DATA:-}" ]] && ! mkdir -p "${CLAUDE_PLUGIN_DATA}/state" 2>/dev/null; then
+	CLAUDE_PLUGIN_DATA="${HOME}/.codex/plugin-data"
+	export CLAUDE_PLUGIN_DATA
+	mkdir -p "${CLAUDE_PLUGIN_DATA}/state" 2>/dev/null || true
+	printf 'note: plugin data root not writable; codex state redirected to %s\n' \
+		"$CLAUDE_PLUGIN_DATA" >&2
+fi
+
 status=0
 node "$companion" task "$task" --write --model "$model" --effort "$effort" || status=$?
 
