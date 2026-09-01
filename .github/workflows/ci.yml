@@ -188,6 +188,16 @@ jobs:
         working-directory: loom
         run: cargo fmt --check
 
+  hook-syntax:
+    name: Hook syntax
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Parse every shell hook
+        run: ./scripts/check-hook-syntax.sh
+
   audit:
     name: Security Audit
     runs-on: ubuntu-latest
