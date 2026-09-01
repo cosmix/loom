@@ -9,7 +9,7 @@
 //! fixtures via [`stage_file_content`](super::tests::stage_file_content), the
 //! same fixture builder `tests_stage_loading.rs` uses, which serializes a
 //! real `Stage` the way `serialize_stage_to_markdown` writes an actual
-//! `.work/stages/*.md` file.
+//! `.loom/work/stages/*.md` file.
 
 use super::tests::stage_file_content;
 use super::*;

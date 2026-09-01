@@ -1,6 +1,6 @@
 //! Heartbeat protocol for session health monitoring.
 //!
-//! Sessions write heartbeat files to `.work/heartbeat/<stage-id>.json` to indicate
+//! Sessions write heartbeat files to `.loom/work/heartbeat/<stage-id>.json` to indicate
 //! they are still actively working. The heartbeat includes:
 //! - Timestamp of last activity
 //! - Resident context, in absolute tokens

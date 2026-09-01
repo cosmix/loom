@@ -37,8 +37,8 @@ pub(super) fn authorize_privileged_completion(
     }
     // No daemon means no credential for ANYONE (`admin.token` lives only while
     // the daemon runs), and its absence removes a stage agent's ability to ACT
-    // — no broker, and `.work/**` is denyWrite — so demanding a proof would
-    // lock out only the operator. See `mistakes/sandbox-and-settings.md`.
+    // — no broker, and the state directory is denyWrite — so demanding a proof
+    // would lock out only the operator. See `mistakes/sandbox-and-settings.md`.
     if proof.is_none() && !admin_credential_exists(work_dir) {
         return Ok(());
     }

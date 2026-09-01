@@ -1,7 +1,7 @@
 //! Adjudicator feedback file lifecycle.
 //!
 //! For each stage that has been disputed, a single
-//! `.work/disputes/<stage>/feedback.md` file holds the most recent
+//! `.loom/work/disputes/<stage>/feedback.md` file holds the most recent
 //! human-readable advice the adjudicator surfaced (rejection reasoning,
 //! or follow-up evidence questions). The next signal generated for that
 //! stage embeds the file's contents so the agent reads them on resume.
@@ -19,7 +19,7 @@ use crate::models::dispute::Citation;
 
 const FEEDBACK_FILENAME: &str = "feedback.md";
 
-/// Path to `.work/disputes/<stage>/feedback.md`. The parent directory
+/// Path to `.loom/work/disputes/<stage>/feedback.md`. The parent directory
 /// is created on demand so the first dispute against a stage works
 /// without a prior `mkdir`.
 fn feedback_path(work_dir: &Path, stage_id: &str) -> PathBuf {

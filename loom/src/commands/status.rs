@@ -92,7 +92,7 @@ fn stalled_status_line(message: &'static str) -> DaemonStatusLine {
 /// hint — the daemon itself may be fine even though its loop is stalled.
 ///
 /// `Unreachable` (non-stalled): A-16 / sandboxed connect denial. The
-/// singleton flock already proved a live daemon owns this `.work/` (see
+/// singleton flock already proved a live daemon owns this state directory (see
 /// `DaemonServer::check_status`'s `LockState::Held` arm) — the failed
 /// `connect()` is a property of THIS process's sandbox, not the daemon. It
 /// renders like a healthy `Running` daemon, with a note instead of
@@ -305,7 +305,11 @@ pub fn doctor() -> Result<()> {
     let work_root = work_dir.root();
 
     if !work_root.exists() {
-        println!("{} .work directory does not exist", "ERROR:".red().bold());
+        println!(
+            "{} {} does not exist",
+            "ERROR:".red().bold(),
+            work_root.display()
+        );
         println!("  {} Run 'loom init' to create it", "Fix:".yellow());
         return Ok(());
     }

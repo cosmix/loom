@@ -11,11 +11,11 @@
 //!   mutable. Everything else (stage IDs, dependencies, working_dir, plan
 //!   structure) is off-limits.
 //! - **Versioned + atomic:** under an `flock` on
-//!   `.work/plan_versions/.lock`, the amendment writes a numbered snapshot
-//!   to `.work/plan_versions/<n>.md`, appends one row to
-//!   `.work/plan_versions/audit.md`, replaces the live plan file via
+//!   `.loom/work/plan_versions/.lock`, the amendment writes a numbered
+//!   snapshot to `.loom/work/plan_versions/<n>.md`, appends one row to
+//!   `.loom/work/plan_versions/audit.md`, replaces the live plan file via
 //!   `safe_replace_outside_workdir`, AND rewrites the target stage's
-//!   `.work/stages/<n>-<id>.md`. Skipping the last step would silently
+//!   `.loom/work/stages/<n>-<id>.md`. Skipping the last step would silently
 //!   leave the runtime reading the old criteria via
 //!   `sync_graph_with_stage_files`.
 //! - **Validated:** the proposed value is deserialized into the **real**
@@ -43,6 +43,7 @@ use std::os::unix::io::AsRawFd;
 use std::path::{Path, PathBuf};
 
 use crate::fs::safe_fs;
+use crate::fs::work_dir::WorkDir;
 use crate::models::stage::{Stage, WiringCheck};
 use crate::plan::parser::{extract_yaml_metadata_with_ranges, parse_and_validate};
 use crate::plan::schema::{AcceptanceCriterion, LoomMetadata, StageDefinition};
@@ -126,7 +127,7 @@ pub struct AmendmentResult {
     pub stage_id: String,
     /// Field that was amended.
     pub field: AmendmentField,
-    /// Path written for the snapshot (`.work/plan_versions/<n>.md`).
+    /// Path written for the snapshot (`.loom/work/plan_versions/<n>.md`).
     pub snapshot_path: PathBuf,
     /// New value of `amendments_applied` on the stage AFTER this amendment.
     pub amendments_applied: u32,
@@ -151,7 +152,7 @@ pub fn is_amendment_cap_error(err: &anyhow::Error) -> bool {
         .any(|c| c.to_string().contains(AMENDMENT_CAP_ERROR_PREFIX))
 }
 
-/// Path to `.work/plan_versions/`.
+/// Path to `.loom/work/plan_versions/`.
 ///
 /// Returned as an absolute path when `work_dir` is absolute. The
 /// foundations stage (parallel sibling) is expected to add a
@@ -171,7 +172,7 @@ fn snapshot_tmp_filename(version: u64) -> String {
     format!("{version}.md.tmp")
 }
 
-/// Ensure `.work/plan_versions/` exists.
+/// Ensure `.loom/work/plan_versions/` exists.
 ///
 /// Idempotent. Created with mode 0o700 (state directory).
 fn ensure_plan_versions_dir(work_dir: &Path) -> Result<PathBuf> {
@@ -219,7 +220,7 @@ impl PlanVersionsLock {
     }
 }
 
-/// One row in `.work/plan_versions/audit.md`.
+/// One row in `.loom/work/plan_versions/audit.md`.
 ///
 /// The audit log is a markdown table that is append-only via `O_APPEND`.
 /// We keep the schema deliberately simple so a human can read the file
@@ -273,7 +274,7 @@ const AUDIT_HEADER: &str = "# Plan Amendment Audit\n\n\
 | version | stage_id | field | op | index | applied_at | dispute_id | reason |\n\
 |---------|----------|-------|----|-------|------------|------------|--------|\n";
 
-/// Read every audit row currently in `.work/plan_versions/audit.md`.
+/// Read every audit row currently in `.loom/work/plan_versions/audit.md`.
 /// Returns an empty vec if the file does not exist.
 fn read_audit_rows(work_dir: &Path) -> Result<Vec<AuditRow>> {
     let dir = plan_versions_dir(work_dir);
@@ -365,28 +366,48 @@ fn append_audit_row(work_dir: &Path, row: &AuditRow) -> Result<()> {
     Ok(())
 }
 
-/// Resolve the plan source path from `.work/config.toml::source_path`,
+/// Resolve the plan source path from `.loom/work/config.toml::source_path`,
 /// canonicalising relative paths against the **main** project root (parent
-/// of the resolved `.work` dir).
+/// of the resolved `.loom/work` dir).
 fn resolve_plan_path(work_dir: &Path) -> Result<PathBuf> {
     let resolved = crate::fs::resolve_source_path(work_dir)
-        .context("Failed to resolve plan source_path from .work/config.toml")?;
+        .context("Failed to resolve plan source_path from .loom/work/config.toml")?;
     resolved.ok_or_else(|| {
         anyhow::anyhow!(
-            "No plan source_path configured in .work/config.toml at {}",
+            "No plan source_path configured in .loom/work/config.toml at {}",
             work_dir.display()
         )
     })
 }
 
+/// Resolve the main project root that owns `work_dir`, following the
+/// worktree symlink and applying the correct hop count for either
+/// state-directory layout (`WorkDir::main_project_root` is the one place
+/// that hop count lives — never recompute it here).
+///
+/// Falls back to `fallback`'s parent when `work_dir` cannot be resolved to a
+/// workspace at all (e.g. it does not yet exist on disk in some tests).
+fn resolve_project_root(work_dir: &Path, fallback: &Path) -> PathBuf {
+    WorkDir::new(work_dir)
+        .ok()
+        .and_then(|wd| wd.main_project_root())
+        .and_then(|root| root.canonicalize().ok())
+        .unwrap_or_else(|| {
+            fallback
+                .parent()
+                .map(|p| p.to_path_buf())
+                .unwrap_or_else(|| PathBuf::from("."))
+        })
+}
+
 /// Apply a runtime amendment to a single stage.
 ///
-/// Steps (all under flock on `.work/plan_versions/.lock`):
+/// Steps (all under flock on `.loom/work/plan_versions/.lock`):
 ///
 /// 1. Resolve `plan_path` (parameter is preferred; falls back to
-///    `.work/config.toml::source_path` if the supplied path doesn't exist).
+///    `.loom/work/config.toml::source_path` if the supplied path doesn't exist).
 /// 2. Parse the plan markdown and load the target stage file
-///    (`.work/stages/<n>-<id>.md`).
+///    (`.loom/work/stages/<n>-<id>.md`).
 /// 3. Deserialize the patch's `value` into the **real** Rust type
 ///    ([`AcceptanceCriterion`] or [`WiringCheck`]) and bounds-check `index`.
 /// 4. Refuse if the per-stage absolute amendment cap is already reached.
@@ -394,10 +415,10 @@ fn resolve_plan_path(work_dir: &Path) -> Result<PathBuf> {
 /// 6. Serialize amended YAML; splice into the markdown's metadata block
 ///    using [`extract_yaml_metadata_with_ranges`]; surrounding prose is
 ///    preserved byte-for-byte.
-/// 7. Write a snapshot to `.work/plan_versions/<n>.md.tmp` via
+/// 7. Write a snapshot to `.loom/work/plan_versions/<n>.md.tmp` via
 ///    `safe_create_new_in_workdir` then atomically rename to `<n>.md`
 ///    via `safe_rename_in_workdir`.
-/// 8. Append one row to `.work/plan_versions/audit.md` (O_APPEND under flock).
+/// 8. Append one row to `.loom/work/plan_versions/audit.md` (O_APPEND under flock).
 /// 9. Write the new plan content to `plan_path` via
 ///    `safe_replace_outside_workdir` (dirfd-anchored atomic rename).
 /// 10. Persist the amended `acceptance`/`wiring` via
@@ -449,21 +470,10 @@ pub fn apply_amendment(
     };
 
     // Canonicalise the project root for safe_replace_outside_workdir's
-    // path-confinement check. The project root is the parent of `.work/`
-    // (in worktree layout, `.work/` is a symlink to the main repo's
-    // `.work/`, so canonicalise first to follow the symlink). When work_dir
-    // can't be canonicalised — e.g. it does not yet exist on disk in some
-    // tests — fall back to the plan file's parent directory.
-    let project_root = work_dir
-        .canonicalize()
-        .ok()
-        .and_then(|wd| wd.parent().map(|p| p.to_path_buf()))
-        .unwrap_or_else(|| {
-            plan_path
-                .parent()
-                .map(|p| p.to_path_buf())
-                .unwrap_or_else(|| PathBuf::from("."))
-        });
+    // path-confinement check. See `resolve_project_root` for the hop count
+    // (worktree layout: `.loom/work` is a symlink to the main repo's
+    // `.loom/work`, so this follows the symlink before applying it).
+    let project_root = resolve_project_root(work_dir, &plan_path);
 
     // Early confinement check: refuse a plan file that is not under the
     // resolved project_root BEFORE we start writing snapshots and audit
@@ -617,7 +627,7 @@ pub fn apply_amendment(
     let new_yaml_body = serialize_loom_metadata(&new_metadata)?;
     let new_plan_content = splice_metadata_yaml(&original_plan_content, &extracted, &new_yaml_body);
 
-    // -- 7. Snapshot to .work/plan_versions/<n>.md.tmp then rename to <n>.md.
+    // -- 7. Snapshot to .loom/work/plan_versions/<n>.md.tmp then rename to <n>.md.
     let next_version = compute_next_version(work_dir)?;
     let plan_versions = ensure_plan_versions_dir(work_dir)?;
     let dirfd = safe_fs::safe_open_dirfd(&plan_versions)?;
@@ -691,7 +701,7 @@ pub fn count_amendments_for_stage(work_dir: &Path, stage_id: &str) -> Result<u32
     Ok(count)
 }
 
-/// Verify and reconcile `.work/plan_versions/` against the live plan file
+/// Verify and reconcile `.loom/work/plan_versions/` against the live plan file
 /// and target stage files. Called from orchestrator startup.
 ///
 /// Recovery cases (executed under the plan-versions flock):
@@ -795,16 +805,7 @@ pub fn verify_plan_versions_consistency(plan_path: &Path, work_dir: &Path) -> Re
     let live_content = fs::read_to_string(&plan_path_buf).ok();
     if live_content.as_deref() != Some(snapshot_content.as_str()) {
         // Re-write the plan file from the snapshot.
-        let project_root = work_dir
-            .canonicalize()
-            .ok()
-            .and_then(|wd| wd.parent().map(|p| p.to_path_buf()))
-            .unwrap_or_else(|| {
-                plan_path_buf
-                    .parent()
-                    .unwrap_or(Path::new("."))
-                    .to_path_buf()
-            });
+        let project_root = resolve_project_root(work_dir, &plan_path_buf);
         // Best-effort: only attempt the write if plan_path_buf is under the
         // project root (the safe-fs helper enforces this anyway).
         if safe_fs::safe_replace_outside_workdir(

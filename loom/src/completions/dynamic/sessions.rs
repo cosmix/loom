@@ -6,7 +6,7 @@ use std::path::Path;
 
 use super::stages::complete_stage_ids;
 
-/// Complete session IDs from .work/sessions/*.md
+/// Complete session IDs from .loom/work/sessions/*.md
 ///
 /// # Arguments
 ///
@@ -17,7 +17,12 @@ use super::stages::complete_stage_ids;
 ///
 /// List of matching session IDs
 pub fn complete_session_ids(cwd: &Path, prefix: &str) -> Result<Vec<String>> {
-    let sessions_dir = cwd.join(".work/sessions");
+    // Resolved rather than a hardcoded `.work`/`.loom/work` literal: only
+    // `WorkDir::new` decides which layout a given project uses.
+    let Ok(work_dir) = crate::fs::work_dir::WorkDir::new(cwd) else {
+        return Ok(Vec::new());
+    };
+    let sessions_dir = work_dir.sessions_dir();
 
     if !sessions_dir.exists() {
         return Ok(Vec::new());

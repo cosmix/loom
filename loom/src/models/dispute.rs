@@ -11,7 +11,7 @@ use std::path::PathBuf;
 
 /// Request to dispute a stage's acceptance criterion. Written by the
 /// agent (or on its behalf by the daemon RPC handler) to
-/// `.work/disputes/<stage>/<n>/request.md`. The agent attests to the
+/// `.loom/work/disputes/<stage>/<n>/request.md`. The agent attests to the
 /// failure; the adjudicator returns a separate verdict.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct DisputeRequest {
@@ -73,7 +73,7 @@ pub enum DisputeVerdict {
     },
 }
 
-/// Verdict record written to `.work/disputes/<stage>/<n>/verdict.md` by
+/// Verdict record written to `.loom/work/disputes/<stage>/<n>/verdict.md` by
 /// the daemon (NEVER by an agent). Apply state is signalled by the
 /// existence of a sibling `applied.marker` zero-byte file (also written
 /// only by the daemon).
@@ -88,7 +88,7 @@ pub struct DisputeVerdictRecord {
 }
 
 /// Layout helpers for the on-disk dispute directory:
-/// `.work/disputes/<stage>/<n>/{request.md,verdict.md,applied.marker}`.
+/// `.loom/work/disputes/<stage>/<n>/{request.md,verdict.md,applied.marker}`.
 pub fn dispute_dir(disputes_root: &std::path::Path, stage_id: &str, id: u32) -> PathBuf {
     disputes_root.join(stage_id).join(id.to_string())
 }

@@ -8,10 +8,12 @@
 # Environment variables (set by loom worktree settings):
 #   LOOM_STAGE_ID    - The stage being executed
 #   LOOM_SESSION_ID  - The session ID
-#   LOOM_WORK_DIR    - Path to the .work directory
+#   LOOM_WORK_DIR    - Path to the state directory (.loom/work, or the
+#                      legacy .work for a workspace that already resolved
+#                      to it)
 #
 # Actions:
-#   1. Writes initial heartbeat to .work/heartbeat/<stage-id>.json
+#   1. Writes initial heartbeat to $LOOM_WORK_DIR/heartbeat/<stage-id>.json
 #   2. Logs session start event
 
 set -euo pipefail
@@ -150,7 +152,7 @@ if command -v jq &>/dev/null; then
 	if [[ "$SOURCE" == "compact" ]] || [[ "$SOURCE" == "resume" ]]; then
 		SIGNAL_PATH="${LOOM_WORK_DIR}/signals/${LOOM_SESSION_ID}.md"
 		jq -nc \
-			--arg ctx "Context was compacted. Re-anchor: re-read ${SIGNAL_PATH}, run 'loom memory list', read the latest .work/handoffs/ file. Understand before acting; do not guess." \
+			--arg ctx "Context was compacted. Re-anchor: re-read ${SIGNAL_PATH}, run 'loom memory list', read the latest ${LOOM_WORK_DIR}/handoffs/ file. Understand before acting; do not guess." \
 			'{hookSpecificOutput: {hookEventName: "SessionStart", additionalContext: $ctx}}'
 	fi
 fi

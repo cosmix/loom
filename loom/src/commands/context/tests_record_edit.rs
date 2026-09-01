@@ -52,6 +52,7 @@ fn worktrees_is_administrative_only_when_scanning_the_main_checkout() {
 fn skips_loom_state_derived_data_and_build_output() {
     for skipped in [
         ".work/stages/01-stage-a.md",
+        ".loom/work/stages/01-stage-a.md",
         ".loom/cache/context-v1/catalog.json",
         "doc/loom/knowledge/architecture.md",
         "loom/target/debug/loom",
@@ -162,9 +163,15 @@ fn a_linked_worktree_is_not_the_main_checkout() {
     let temp = TempDir::new().unwrap();
     let main = temp.path().canonicalize().unwrap().join("main");
     let worktree = main.join(".worktrees").join("stage-a");
-    fs::create_dir_all(main.join(".work")).unwrap();
+    let main_work = main.join(".loom").join("work");
+    fs::create_dir_all(&main_work).unwrap();
+    // `WorkDir::new` keys resolution on `config.toml`'s presence, not
+    // directory existence, so a real (if empty) one is needed here for
+    // `main` to be recognised as a workspace at all.
+    fs::write(main_work.join("config.toml"), "").unwrap();
     fs::create_dir_all(&worktree).unwrap();
-    std::os::unix::fs::symlink("../../.work", worktree.join(".work")).unwrap();
+    fs::create_dir_all(worktree.join(".loom")).unwrap();
+    std::os::unix::fs::symlink("../../../.loom/work", worktree.join(".loom").join("work")).unwrap();
 
     let from_main = crate::fs::work_dir::WorkDir::new(&main).unwrap();
     assert!(is_main_checkout(&from_main, &main));

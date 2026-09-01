@@ -1,7 +1,7 @@
 //! Repair command for fixing loom workspace issues
 //!
 //! This command diagnoses and optionally fixes common issues with loom workspaces:
-//! - Corrupted .work directory (symlink in main repo)
+//! - Corrupted .loom/work directory (symlink in main repo)
 //! - Missing .gitignore entries
 //! - Missing git pre-commit hook
 
@@ -13,7 +13,7 @@ use std::process::Command;
 
 use crate::daemon::{DaemonServer, DaemonStatus};
 use crate::fs::permissions::LOOM_PERMISSIONS;
-use crate::fs::work_dir::load_config;
+use crate::fs::work_dir::{load_config, WorkDir};
 use crate::fs::work_integrity::{
     check_work_dir_state, is_work_dir_git_ignored, is_worktrees_git_ignored, WorkDirState,
 };
@@ -229,32 +229,35 @@ pub fn execute(fix: bool) -> Result<()> {
 fn check_all_issues(repo_root: &Path) -> Vec<RepairIssue> {
     let mut issues = Vec::new();
 
-    // Check 1: .work directory state
+    // Check 1: .loom/work directory state. The descriptions below name the path
+    // `check_work_dir_state` actually inspected, and `fix_issue` dispatches on
+    // them by substring — description, fix_description and needle only ever move
+    // together, or the fix silently stops being dispatched.
     let work_state = check_work_dir_state(repo_root);
     match &work_state {
         WorkDirState::Symlink { target } => {
             issues.push(RepairIssue {
                 severity: Severity::Critical,
-                description: format!(".work is a symlink (-> {target}) in main repo"),
-                fix_description: "Remove symlink and reinitialize".to_string(),
+                description: format!(".loom/work is a symlink (-> {target}) in main repo"),
+                fix_description: "Remove the .loom/work symlink and reinitialize".to_string(),
             });
         }
         WorkDirState::Invalid => {
             issues.push(RepairIssue {
                 severity: Severity::Critical,
-                description: ".work exists but is neither directory nor symlink".to_string(),
-                fix_description: "Remove and reinitialize".to_string(),
+                description: ".loom/work exists but is neither directory nor symlink".to_string(),
+                fix_description: "Remove .loom/work and reinitialize".to_string(),
             });
         }
         _ => {}
     }
 
-    // Check 2: .gitignore has .work
+    // Check 2: .gitignore has .loom/work
     if !is_work_dir_git_ignored(repo_root) {
         issues.push(RepairIssue {
             severity: Severity::Warning,
-            description: ".work not found in .gitignore".to_string(),
-            fix_description: "Add .work/ and .work to .gitignore".to_string(),
+            description: ".loom/work not found in .gitignore".to_string(),
+            fix_description: "Add .loom/work/ and .loom/work to .gitignore".to_string(),
         });
     }
 
@@ -409,13 +412,16 @@ fn check_all_issues(repo_root: &Path) -> Vec<RepairIssue> {
     // This check provides a post-hoc safety net that users can run (or that CI can run) to
     // detect these phantom merges before they cause further damage.
     //
-    // Only runs when .work/stages/ exists. Skips Knowledge stages (they legitimately have
-    // `merged = true` with no branch/commit — that's by design). For all other stages:
+    // Only runs when the state directory's stages/ subdirectory exists. Skips Knowledge
+    // stages (they legitimately have `merged = true` with no branch/commit — that's by
+    // design). For all other stages:
     //   - merged=true + commit present -> verify commit is an ancestor of target branch
     //   - merged=true + no commit      -> warn (cannot verify, needs manual check)
     //   - Completed + !merged + branch gone -> warn (branch deleted without merge confirmation)
     {
-        let work_dir = repo_root.join(".work");
+        let work_dir = WorkDir::new(repo_root)
+            .map(|wd| wd.root().to_path_buf())
+            .unwrap_or_else(|_| repo_root.join(".loom").join("work"));
         if work_dir.is_dir() {
             // Determine the target branch for ancestry checks.
             // Load from config.toml if available, otherwise fall back to repo default.
@@ -434,7 +440,9 @@ fn check_all_issues(repo_root: &Path) -> Vec<RepairIssue> {
                         description:
                             "Could not audit stage merge status (stages directory unreadable)"
                                 .to_string(),
-                        fix_description: "Investigate .work/stages/ directory manually".to_string(),
+                        fix_description:
+                            "Investigate the state directory's stages/ subdirectory manually"
+                                .to_string(),
                     });
                 }
                 Ok(stages) => {
@@ -521,7 +529,9 @@ fn check_all_issues(repo_root: &Path) -> Vec<RepairIssue> {
     // no safe automatic fix (killing the wrong daemon loses orchestration state),
     // so each is reported with manual remediation guidance.
     {
-        let work_dir = repo_root.join(".work");
+        let work_dir = WorkDir::new(repo_root)
+            .map(|wd| wd.root().to_path_buf())
+            .unwrap_or_else(|_| repo_root.join(".loom").join("work"));
         if work_dir.is_dir() {
             // (1) More than one `loom run` process alive is always wrong.
             let run_pids = find_loom_run_pids();
@@ -774,13 +784,19 @@ fn apply_fixes(repo_root: &Path, issues: &[RepairIssue]) -> Result<RepairResult>
 /// Fix a single issue
 fn fix_issue(repo_root: &Path, issue: &RepairIssue) -> Result<bool> {
     // Match based on description (not ideal, but works for now)
-    if issue.description.contains(".work is a symlink") {
+    if issue.description.contains(".loom/work is a symlink") {
         fix_work_symlink(repo_root)?;
         Ok(true)
-    } else if issue.description.contains(".work exists but is neither") {
+    } else if issue
+        .description
+        .contains(".loom/work exists but is neither")
+    {
         fix_invalid_work(repo_root)?;
         Ok(true)
-    } else if issue.description.contains(".work not found in .gitignore") {
+    } else if issue
+        .description
+        .contains(".loom/work not found in .gitignore")
+    {
         fix_gitignore_work(repo_root)?;
         Ok(true)
     } else if issue
@@ -841,17 +857,30 @@ fn fix_issue(repo_root: &Path, issue: &RepairIssue) -> Result<bool> {
     }
 }
 
-/// Fix corrupted .work symlink in main repo
+/// Fix corrupted .loom/work symlink in main repo
+///
+/// Operates on the same path `check_work_dir_state` inspected. Pointing it at
+/// the legacy `.work` instead would remove a healthy workspace and leave the
+/// reported corruption in place.
 fn fix_work_symlink(repo_root: &Path) -> Result<()> {
-    let work_path = repo_root.join(".work");
-    fs::remove_file(&work_path)
-        .with_context(|| format!("Failed to remove .work symlink at {}", work_path.display()))?;
+    let work_path = repo_root.join(".loom").join("work");
+    fs::remove_file(&work_path).with_context(|| {
+        format!(
+            "Failed to remove .loom/work symlink at {}",
+            work_path.display()
+        )
+    })?;
     Ok(())
 }
 
-/// Fix invalid .work (neither dir nor symlink)
+/// Fix invalid .loom/work (neither dir nor symlink)
+///
+/// The path MUST stay in step with `check_work_dir_state`: the `else` branch
+/// below is a recursive delete, so aiming it at the legacy `.work` on a repo
+/// that still carries one would destroy that workspace's stages, sessions,
+/// signals, handoffs and memory while the real corruption survived.
 fn fix_invalid_work(repo_root: &Path) -> Result<()> {
-    let work_path = repo_root.join(".work");
+    let work_path = repo_root.join(".loom").join("work");
     if work_path.is_file() {
         fs::remove_file(&work_path)?;
     } else {
@@ -866,7 +895,12 @@ fn fix_invalid_work(repo_root: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Add .work entries to .gitignore
+/// Add .loom/work entries to .gitignore
+///
+/// Only ensures the nested pair (`.loom/work/` and `.loom/work`). A repo that still
+/// carries the legacy `.work/` / `.work` pair keeps it — that pre-existing workspace
+/// must stay ignored too, but this fixer is not the one that put those lines there and
+/// is not responsible for removing them.
 fn fix_gitignore_work(repo_root: &Path) -> Result<()> {
     let gitignore_path = repo_root.join(".gitignore");
     let mut content = if gitignore_path.exists() {
@@ -876,8 +910,8 @@ fn fix_gitignore_work(repo_root: &Path) -> Result<()> {
     };
 
     // Add entries if not present
-    let has_work_dir = content.lines().any(|l| l.trim() == ".work/");
-    let has_work = content.lines().any(|l| l.trim() == ".work");
+    let has_work_dir = content.lines().any(|l| l.trim() == ".loom/work/");
+    let has_work = content.lines().any(|l| l.trim() == ".loom/work");
 
     if !has_work_dir || !has_work {
         if !content.is_empty() && !content.ends_with('\n') {
@@ -888,10 +922,10 @@ fn fix_gitignore_work(repo_root: &Path) -> Result<()> {
         }
         content.push_str("# loom workspace state\n");
         if !has_work_dir {
-            content.push_str(".work/\n");
+            content.push_str(".loom/work/\n");
         }
         if !has_work {
-            content.push_str(".work\n");
+            content.push_str(".loom/work\n");
         }
         fs::write(&gitignore_path, content)?;
     }
@@ -1094,7 +1128,7 @@ fn fix_phantom_merge(repo_root: &Path, description: &str) -> Result<()> {
         .and_then(|s| s.split(' ').next())
         .with_context(|| format!("Cannot parse stage ID from: {description}"))?;
 
-    let work_dir = repo_root.join(".work");
+    let work_dir = WorkDir::new(repo_root)?.root().to_path_buf();
     update_stage(stage_id, &work_dir, |stage| {
         stage.merged = false;
         Ok(())

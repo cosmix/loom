@@ -6,9 +6,9 @@ use std::path::Path;
 
 use super::yaml::extract_yaml_frontmatter;
 
-/// Writes a session to .work/sessions/{session.id}.md
+/// Writes a session to .loom/work/sessions/{session.id}.md
 pub fn create_session_file(work_dir: &Path, session: &Session) -> Result<()> {
-    let sessions_dir = work_dir.join(".work").join("sessions");
+    let sessions_dir = work_dir.join(".loom").join("work").join("sessions");
     std::fs::create_dir_all(&sessions_dir).context("Failed to create sessions directory")?;
 
     let session_path = sessions_dir.join(format!("{}.md", session.id));
@@ -29,10 +29,11 @@ pub fn create_session_file(work_dir: &Path, session: &Session) -> Result<()> {
     Ok(())
 }
 
-/// Reads a session from .work/sessions/{session_id}.md
+/// Reads a session from .loom/work/sessions/{session_id}.md
 pub fn read_session_file(work_dir: &Path, session_id: &str) -> Result<Session> {
     let session_path = work_dir
-        .join(".work")
+        .join(".loom")
+        .join("work")
         .join("sessions")
         .join(format!("{session_id}.md"));
 

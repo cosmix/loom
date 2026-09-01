@@ -95,11 +95,11 @@ pub(super) fn retrieve_stage_pack(work_dir: &Path, stage: &Stage) -> Option<Cont
 /// dependency owns: the files a stage we wait on just rewrote are the files this
 /// stage is most likely to be about, and nothing else in the ranker knows that.
 ///
-/// `work_dir` is the resolved `.work` root, exactly as
+/// `work_dir` is the resolved `.loom/work` root, exactly as
 /// [`crate::context::delivery::dependency_chunk_ids`] two lines above already
 /// assumes. That function reads DELIVERY records, which carry chunk ids and no
 /// paths, so the declared file lists have to come from the stage records
-/// themselves — the same `.work/stages/` lookup `verify::transitions` uses.
+/// themselves — the same `.loom/work/stages/` lookup `verify::transitions` uses.
 ///
 /// Every failure is skipped rather than reported: a brief with a thinner set of
 /// boosts is a slightly worse brief, while a stage that will not spawn is a
@@ -133,14 +133,14 @@ fn dependency_paths(work_dir: &Path, stage: &Stage) -> Vec<String> {
 /// never the checkout-wide [`OverlayScope::Local`] one.
 ///
 /// `Local` would be wrong here: it resolves against the project root of the
-/// `.work/` this query names — the MAIN repository, because signals are generated
+/// `.loom/work/` this query names — the MAIN repository, because signals are generated
 /// by the orchestrator daemon running there — so a stage's brief would describe
 /// the main checkout rather than the worktree the stage is about to edit.
 ///
 /// The plan component MUST be [`plan_key`], and getting it wrong fails SILENTLY.
 /// The overlay this reads is written by `MergeLifecycle::reconcile_overlay`
 /// (`orchestrator/merge_lifecycle.rs`), which keys it by the `plan_id` in
-/// `.work/config.toml`; [`plan_key`] keys it by `Stage::plan_id`, falling back to
+/// `.loom/work/config.toml`; [`plan_key`] keys it by `Stage::plan_id`, falling back to
 /// `"default"` when the stage names no plan. The two agree because `loom init`
 /// writes both from one parsed plan id (`commands/init/plan_setup.rs`: the config
 /// table and every stage record are stamped from `parsed_plan.id`) — an agreement
@@ -150,7 +150,7 @@ fn dependency_paths(work_dir: &Path, stage: &Stage) -> Vec<String> {
 /// silently degrades to the last merged revision and every gate still passes.
 ///
 /// One case does still diverge, and normalizing it a second time here would only
-/// hide it: a `.work/config.toml` whose `plan_id` is blank, or a stage record
+/// hide it: a `.loom/work/config.toml` whose `plan_id` is blank, or a stage record
 /// without one while the config has one. [`plan_key`] resolves both to
 /// `"default"`; the writer normalizes neither, so it files the overlay elsewhere.
 /// The fix is to leave ONE derivation — `MergeLifecycle` keying off
@@ -241,7 +241,7 @@ mod tests {
     #[test]
     fn dependency_file_and_artifact_paths_reach_the_query() {
         let temp = tempfile::TempDir::new().unwrap();
-        let work_dir = temp.path().join(".work");
+        let work_dir = temp.path().join(".loom").join("work");
         std::fs::create_dir_all(work_dir.join("stages")).unwrap();
 
         let mut dependency = Stage::new("Upstream".to_string(), None);
@@ -270,7 +270,7 @@ mod tests {
     fn a_populated_knowledge_tree_is_not_reported_empty() {
         let temp = tempfile::TempDir::new().unwrap();
         let root = temp.path();
-        std::fs::create_dir_all(root.join(".work")).unwrap();
+        std::fs::create_dir_all(root.join(".loom").join("work")).unwrap();
         std::fs::create_dir_all(root.join("doc/loom/knowledge")).unwrap();
         std::fs::write(
             root.join("doc/loom/knowledge/architecture.md"),
@@ -278,15 +278,17 @@ mod tests {
         )
         .unwrap();
 
-        assert!(!knowledge_tree_is_empty(&root.join(".work")));
+        assert!(!knowledge_tree_is_empty(&root.join(".loom").join("work")));
     }
 
     #[test]
     fn a_project_without_a_knowledge_tree_is_reported_empty() {
         let temp = tempfile::TempDir::new().unwrap();
-        std::fs::create_dir_all(temp.path().join(".work")).unwrap();
+        std::fs::create_dir_all(temp.path().join(".loom").join("work")).unwrap();
 
-        assert!(knowledge_tree_is_empty(&temp.path().join(".work")));
+        assert!(knowledge_tree_is_empty(
+            &temp.path().join(".loom").join("work")
+        ));
     }
 
     #[test]

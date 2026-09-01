@@ -33,7 +33,7 @@ use numbering::get_next_handoff_number;
 /// * `session` - The session being handed off
 /// * `stage` - The stage being worked on
 /// * `content` - The handoff content
-/// * `work_dir` - Path to the .work directory
+/// * `work_dir` - Path to the .loom/work directory
 ///
 /// # Returns
 /// Path to the created handoff file

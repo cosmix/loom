@@ -87,7 +87,7 @@ fn run_views(project_root: &Path, work_dir: &WorkDir, args: &MapArgs) -> Result<
 /// Build (or reconcile) the working-tree source graph and resolve it against
 /// its overlay. Works even when the graph has never been built before, and
 /// degrades rather than erroring when the cache can't be written: `loom map`
-/// is a read-only query, so a read-only `.work` (a sandboxed stage worktree,
+/// is a read-only query, so a read-only state directory (a sandboxed stage worktree,
 /// for instance) must never stop it from reading whatever layers already sit
 /// on disk. A write failure prints one warning and falls back to the
 /// revision the store already recorded; if that leaves no readable layer at

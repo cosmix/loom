@@ -102,7 +102,7 @@ mod tests {
     #[test]
     fn generate_writes_the_signal_file() {
         let tmp = tempfile::tempdir().unwrap();
-        let work = tmp.path().join(".work");
+        let work = tmp.path().join(".loom").join("work");
         std::fs::create_dir_all(&work).unwrap();
         let plan = tmp.path().join("PLAN.md");
         std::fs::write(&plan, "# Plan\n").unwrap();

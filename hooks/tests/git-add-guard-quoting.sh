@@ -59,6 +59,8 @@ expect_allow "./file is not ." "git add ./file"
 expect_allow "doc path with no .work at all" "git add doc/foo.md"
 expect_allow "unrelated filename with no .work at all" "git add network.md"
 expect_allow "cargo add is not git add" "cargo add serde"
+expect_allow ".loom/cache is not .loom/work" "git add .loom/cache"
+expect_allow ".loom/workspace is not .loom/work" "git add .loom/workspace"
 
 # --- MUST BE BLOCKED (exit 2) -----------------------------------------------
 
@@ -70,6 +72,9 @@ expect_block "git add .work/" "git add .work/"
 expect_block "git add .work/foo" "git add .work/foo"
 expect_block "git add foo .work bar" "git add foo .work bar"
 expect_block "git add .work other" "git add .work other"
+expect_block "git add .loom/work" "git add .loom/work"
+expect_block "git add .loom/work/" "git add .loom/work/"
+expect_block "git add .loom/work/foo" "git add .loom/work/foo"
 
 # Quoted real arguments: quoting changes how bash PARSES the command, never
 # the argument's VALUE - a naive fix that just blanked quoted interiors
@@ -101,5 +106,17 @@ expect_block "env FOO=1 git add . is still blocked" "env FOO=1 git add ."
 # invocation inside that malformed command must still be blocked.
 expect_block "unterminated quote wrapping a real 'git add -A' is still blocked" \
     'git add -A "oops'
+
+# The state directory has two spellings, and each has its OWN fallback pattern
+# (Pattern 3 for the legacy `.work`, Pattern 4 for `.loom/work`) - `.loom/work`
+# does not contain the substring `.work`, so Pattern 3 never covers it. The
+# well-formed `git add .loom/work` cases above all exit through the token scan,
+# leaving Pattern 4 unexercised until an unterminated quote forces the fallback.
+expect_block "unterminated quote wrapping a real 'git add .work' is still blocked" \
+    'git add .work "oops'
+expect_block "unterminated quote wrapping a real 'git add .loom/work' is still blocked" \
+    'git add .loom/work "oops'
+expect_block "unterminated quote wrapping a path under .loom/work is still blocked" \
+    'git add .loom/work/stages/foo.md "oops'
 
 echo "PASS"

@@ -37,12 +37,12 @@ fn write_file(root: &Path, relative: &str, contents: &str) {
 }
 
 /// A project tree signal generation can retrieve a real brief against: a
-/// `.work/` directory plus a knowledge file whose wording overlaps
+/// `.loom/work/` directory plus a knowledge file whose wording overlaps
 /// `create_test_stage()`'s name, description, files, and acceptance text.
 fn project_with_matching_knowledge() -> TempDir {
     let temp = TempDir::new().unwrap();
     let root = temp.path();
-    fs::create_dir_all(root.join(".work")).unwrap();
+    fs::create_dir_all(root.join(".loom").join("work")).unwrap();
     write_file(
         root,
         "doc/loom/knowledge/patterns.md",
@@ -57,7 +57,7 @@ fn project_with_matching_knowledge() -> TempDir {
 #[test]
 fn delivery_record_exists_before_the_signal_and_lists_every_selected_id() {
     let temp = project_with_matching_knowledge();
-    let work_dir = temp.path().join(".work");
+    let work_dir = temp.path().join(".loom").join("work");
 
     let session = create_test_session();
     let stage = create_test_stage();
@@ -111,7 +111,7 @@ fn no_delivery_record_is_written_when_the_stage_has_no_brief() {
     // No knowledge tree at all: `retrieve_stage_pack` degrades to `None`, and
     // `persist_delivery` must write nothing rather than an empty record.
     let temp = TempDir::new().unwrap();
-    let work_dir = temp.path().join(".work");
+    let work_dir = temp.path().join(".loom").join("work");
     fs::create_dir_all(&work_dir).unwrap();
 
     let session = create_test_session();
@@ -139,11 +139,11 @@ fn selected_from_line(signal: &str) -> &str {
 /// path ever handed it a pack. Every `loom stage retry` / recover emitted a
 /// signal whose stable prefix says "your signal carries a Knowledge Brief —
 /// read it first" with no brief anywhere in the file. Only a test that drives
-/// the real generator over a real `.work/` can catch that class of defect.
+/// the real generator over a real `.loom/work/` can catch that class of defect.
 #[test]
 fn recovery_signal_retrieves_and_carries_a_brief_end_to_end() {
     let temp = project_with_matching_knowledge();
-    let work_dir = temp.path().join(".work");
+    let work_dir = temp.path().join(".loom").join("work");
 
     let stage = create_test_stage();
     let expected_pack =
@@ -187,7 +187,7 @@ fn recovery_signal_retrieves_and_carries_a_brief_end_to_end() {
 #[test]
 fn knowledge_stage_signal_carries_the_brief_its_prefix_promises() {
     let temp = project_with_matching_knowledge();
-    let work_dir = temp.path().join(".work");
+    let work_dir = temp.path().join(".loom").join("work");
 
     let session = create_test_session();
     let mut stage = create_test_stage();
@@ -276,7 +276,7 @@ fn write_stage_overlay(root: &Path, stage_id: &str, node: &SourceNode) {
 fn a_source_item_reaches_the_signal_carrying_its_line_span() {
     let temp = project_with_matching_knowledge();
     let root = temp.path();
-    let work_dir = root.join(".work");
+    let work_dir = root.join(".loom").join("work");
 
     let stage = create_test_stage();
     let node = span_target_node();
@@ -333,7 +333,7 @@ fn selected_from_names_query_fields_and_never_quotes_the_query() {
     const SENTINEL: &str = "ZZ-QUERY-LEAK-SENTINEL-ZZ";
 
     let temp = project_with_matching_knowledge();
-    let work_dir = temp.path().join(".work");
+    let work_dir = temp.path().join(".loom").join("work");
 
     let session = create_test_session();
     let worktree = create_test_worktree();

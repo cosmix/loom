@@ -30,8 +30,8 @@ Invoke Loom's installed forwarding wrapper directly. Strip the sentinel and the
 `--model`/`--effort` line from the forwarded task text — they are instructions to you, not part
 of the task. Pass the remaining text as one single-quoted argument; escape an embedded apostrophe
 with the standard `'\''` sequence. Quoted newlines and shell metacharacters remain literal task data.
-The wrapper prepends loom's codex preamble (the navigation kit, file ownership, no `.work/`, no
-git, no verification) to every forwarded task before it reaches codex — you pass the task text
+The wrapper prepends loom's codex preamble (the navigation kit, file ownership, no `.work/` or
+`.loom/`, no git, no verification) to every forwarded task before it reaches codex — you pass the task text
 through unmodified; do not strip, summarise, or duplicate the preamble yourself:
 
 ```bash

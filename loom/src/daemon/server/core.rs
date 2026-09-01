@@ -22,7 +22,7 @@ pub enum DaemonStatus {
     Running,
     /// Daemon process exists but socket unreachable or unresponsive (hung state)
     ProcessOnly,
-    /// The singleton flock proves a daemon owns this `.work/`, but this
+    /// The singleton flock proves a daemon owns this `.loom/work/`, but this
     /// process could not `connect()` to its socket because AF_UNIX socket
     /// syscalls are denied to it — e.g. Claude Code's Bash tool sandbox,
     /// which permits `stat`/`ls` on the socket file but rejects `socket()`
@@ -35,7 +35,7 @@ pub enum DaemonStatus {
     Unreachable,
 }
 
-/// Whether `status` should be treated as "a daemon owns this `.work/`" for
+/// Whether `status` should be treated as "a daemon owns this `.loom/work/`" for
 /// the purposes of refusing a second `loom run` to start.
 ///
 /// `Unreachable` counts as running: by construction (see `check_status`) it
@@ -43,7 +43,7 @@ pub enum DaemonStatus {
 /// proved a live daemon owns the state before the connect attempt even ran —
 /// the failed `connect()` is a property of the CALLER, not evidence the
 /// daemon died. Treating it as "not running" would let a second daemon start
-/// against the same `.work/`, which is exactly the singleton failure
+/// against the same `.loom/work/`, which is exactly the singleton failure
 /// recorded in `doc/loom/knowledge/concerns/daemon-singleton.md`.
 pub(super) fn daemon_running_from_status(status: DaemonStatus) -> bool {
     matches!(
@@ -72,7 +72,7 @@ impl DaemonServer {
     /// Create a new daemon server with default configuration.
     ///
     /// # Arguments
-    /// * `work_dir` - The .work/ directory path
+    /// * `work_dir` - The .loom/work/ directory path
     ///
     /// # Returns
     /// A new `DaemonServer` instance
@@ -83,7 +83,7 @@ impl DaemonServer {
     /// Create a new daemon server with custom configuration.
     ///
     /// # Arguments
-    /// * `work_dir` - The .work/ directory path
+    /// * `work_dir` - The .loom/work/ directory path
     /// * `config` - The daemon configuration
     ///
     /// # Returns
@@ -108,7 +108,7 @@ impl DaemonServer {
     /// become stale if a second daemon overwrites them or if cleanup races occur.
     ///
     /// # Arguments
-    /// * `work_dir` - The .work/ directory path
+    /// * `work_dir` - The .loom/work/ directory path
     ///
     /// # Returns
     /// `DaemonStatus` indicating whether the daemon is running and responsive
@@ -159,7 +159,7 @@ impl DaemonServer {
     /// Check if a daemon is already running.
     ///
     /// # Arguments
-    /// * `work_dir` - The .work/ directory path
+    /// * `work_dir` - The .loom/work/ directory path
     ///
     /// # Returns
     /// `true` if a daemon is running (either responsive or hung), `false` otherwise
@@ -170,7 +170,7 @@ impl DaemonServer {
     /// Read the PID from the PID file.
     ///
     /// # Arguments
-    /// * `work_dir` - The .work/ directory path
+    /// * `work_dir` - The .loom/work/ directory path
     ///
     /// # Returns
     /// `Some(pid)` if the file exists and contains a valid PID, `None` otherwise

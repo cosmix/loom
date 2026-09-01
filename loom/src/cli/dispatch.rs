@@ -30,8 +30,13 @@ pub(super) fn resolve_completion_proof(
     if !(no_verify || force_unsafe || assume_merged) {
         return Ok(None);
     }
+    // Resolved rather than a hardcoded `.work` literal: only `WorkDir::new`
+    // decides whether this project uses the nested or the legacy layout.
+    let Ok(work_dir) = crate::fs::work_dir::WorkDir::new(".") else {
+        return Ok(None);
+    };
     stage::admin_proof::authorize(
-        std::path::Path::new(".work"),
+        work_dir.root(),
         stage::admin_proof::AdminProofRequest::completion(
             stage_id,
             no_verify,
@@ -44,7 +49,7 @@ pub(super) fn resolve_completion_proof(
 /// `loom stage admin-proof` — mint one capability and print it, nothing else.
 ///
 /// The secret arrives in `LOOM_ADMIN_TOKEN` and is never read from disk here,
-/// so a caller that can invoke loom but cannot read `.work/admin.token` gains
+/// so a caller that can invoke loom but cannot read `.loom/work/admin.token` gains
 /// nothing: a wrong secret simply mints a proof that verification rejects.
 /// That is what separates this command from `admin_proof::authorize`, which
 /// reads the token and therefore relies on the sandbox to keep an agent out.

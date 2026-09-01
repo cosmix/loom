@@ -31,7 +31,9 @@ pub fn cleanup_orphaned_worktrees(repo_root: &Path) -> Result<()> {
         worktree_ids.len(),
         worktree_ids.join(", ").dimmed()
     );
-    let work_dir = repo_root.join(".work");
+    let work_dir = crate::fs::work_dir::WorkDir::new(repo_root)?
+        .root()
+        .to_path_buf();
     let target = target_branch(&work_dir, repo_root)?;
     let (orphaned, active) = partition_worktrees(&worktree_ids, &target, repo_root, &work_dir)?;
     clean_partition(&orphaned, active, repo_root, &target, &work_dir)?;

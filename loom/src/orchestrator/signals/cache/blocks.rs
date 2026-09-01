@@ -27,8 +27,9 @@ pub(super) fn append_path_boundaries(content: &mut String) {
     content.push_str("### Path Boundaries\n\n");
     content.push_str("| Type | Paths |\n");
     content.push_str("|------|-------|\n");
-    content
-        .push_str("| **ALLOWED** | `.` (this worktree), `.work/` (symlink to orchestration) |\n");
+    content.push_str(
+        "| **ALLOWED** | `.` (this worktree), `.loom/work/` (symlink to orchestration) |\n",
+    );
     content.push_str(
         "| **FORBIDDEN** | `../..`, absolute paths to main repo, any path outside worktree |\n\n",
     );

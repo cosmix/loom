@@ -30,7 +30,7 @@ impl HookFixture {
         let sibling = repo.join(".worktrees/stage-sibling");
         let outside = temp.path().join("outside.txt");
         let home = temp.path().join("home");
-        let work_dir = repo.join(".work");
+        let work_dir = repo.join(".loom").join("work");
 
         for path in [&hooks, &worktree, &sibling, &home, &work_dir] {
             fs::create_dir_all(path).unwrap();
@@ -38,7 +38,8 @@ impl HookFixture {
         fs::write(hooks.join("_common.sh"), HOOK_COMMON).unwrap();
         fs::write(&outside, "outside").unwrap();
         fs::write(sibling.join("file.txt"), "sibling").unwrap();
-        symlink("../../.work", worktree.join(".work")).unwrap();
+        fs::create_dir_all(worktree.join(".loom")).unwrap();
+        symlink("../../../.loom/work", worktree.join(".loom").join("work")).unwrap();
 
         Self {
             _temp: temp,
@@ -145,17 +146,17 @@ fn file_guard_allows_normal_worktree_file_but_denies_capability_tokens() {
 
     assert!(file_call(&fixture, "Read", "inside.txt").status.success());
     assert_eq!(
-        file_call(&fixture, "Read", ".work/admin.token")
+        file_call(&fixture, "Read", ".loom/work/admin.token")
             .status
             .code(),
         Some(2)
     );
-    assert!(file_call(&fixture, "Write", ".work/handoffs/state.md")
+    assert!(file_call(&fixture, "Write", ".loom/work/handoffs/state.md")
         .status
         .success());
     for protected in [
-        ".work/memory/forged.md",
-        ".work/disputes/stage/1/verdict.md",
+        ".loom/work/memory/forged.md",
+        ".loom/work/disputes/stage/1/verdict.md",
     ] {
         assert_eq!(
             file_call(&fixture, "Write", protected).status.code(),

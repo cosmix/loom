@@ -13,7 +13,7 @@ pub const LOCAL_PLAN_KEY: &str = "_local";
 /// Stage name for the working-tree overlay, keyed by the tree's own
 /// directory name.
 ///
-/// `.work` is a symlink to the main repository in every worktree, so a fixed
+/// `.loom/work` is a symlink to the main repository in every worktree, so a fixed
 /// stage name would make every worktree's local view read and clobber the
 /// SAME overlay file. Keying by the project root's directory name keeps each
 /// worktree's working-tree view private to it - but only if the key is

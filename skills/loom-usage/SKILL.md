@@ -53,7 +53,7 @@ working inside a loom worktree as an agent.
 - Debugging why a stage failed, is blocked, or has merge conflicts
 - Recovering from crashes, context exhaustion, or corrupted state
 - Managing worktrees, sessions, and daemon lifecycle
-- Understanding `.work/` directory structure and signal files
+- Understanding `.loom/work/` directory structure and signal files
 
 ## Complementary Skills
 
@@ -109,7 +109,7 @@ loom init doc/plans/PLAN-my-feature.md
 
 1. Parses the plan markdown, extracts YAML metadata
 2. Validates all stages (IDs, dependencies, goal-backward fields)
-3. Creates `.work/` directory with stage files, config.toml
+3. Creates `.loom/work/` directory with stage files, config.toml
 4. Installs git hooks (commit guard, commit filter)
 5. Builds execution DAG, checks for cycles
 
@@ -130,7 +130,7 @@ loom init doc/plans/PLAN-my-feature.md
 ### Re-Initialization
 
 ```bash
-# Clean slate — removes .work/, worktrees, sessions
+# Clean slate — removes .loom/work/, worktrees, sessions
 loom clean --all
 
 # Then re-init
@@ -160,7 +160,7 @@ loom run --foreground          # Debug mode (blocks terminal)
 **What `loom run` does:**
 
 1. Renames plan file: `PLAN-*` → `IN_PROGRESS-PLAN-*`
-2. Spawns background daemon on Unix socket (`.work/orchestrator.sock`)
+2. Spawns background daemon on Unix socket (`.loom/work/orchestrator.sock`)
 3. Daemon polls every 5 seconds:
    - Loads stage files → builds execution graph
    - Finds stages with all dependencies completed+merged
@@ -302,7 +302,7 @@ Agent ran out of context window. Loom auto-creates handoff.
 
 ```bash
 # Check handoff was created
-ls .work/handoffs/
+ls .loom/work/handoffs/
 
 # Resume with new session (reads handoff automatically)
 loom resume <stage-id>
@@ -314,7 +314,7 @@ Claude Code process died unexpectedly.
 
 ```bash
 # Check crash report
-ls .work/crashes/
+ls .loom/work/crashes/
 
 # Retry with recovery signal (auto-detected from crash context)
 loom stage retry <stage-id>
@@ -466,12 +466,14 @@ loom review   # prune stale/duplicate knowledge entries
 
 ---
 
-## The .work/ Directory
+## The .loom/work/ Directory
 
-Understanding `.work/` structure is critical for debugging:
+Understanding `.loom/work/` structure is critical for debugging. (A workspace
+created before this directory moved from `.work/` keeps that legacy layout
+forever — see the resolver's back-compat policy.)
 
 ```text
-.work/
+.loom/work/
 ├── config.toml              # Plan reference: source_path, base_branch, plan_id
 ├── stages/
 │   └── NN-<stage-id>.md    # Stage state (YAML frontmatter + markdown body)
@@ -496,10 +498,10 @@ Understanding `.work/` structure is critical for debugging:
 
 **Key rules:**
 
-- NEVER edit `.work/` files directly — use `loom` CLI commands
+- NEVER edit `.loom/work/` files directly — use `loom` CLI commands
 - Stage files use YAML frontmatter with status, timestamps, merged flag
 - Signal files are self-contained — agents read ONLY their signal, not main repo
-- `.work/` is gitignored and symlinked into each worktree
+- `.loom/work/` is gitignored and symlinked into each worktree
 
 ---
 
@@ -510,14 +512,19 @@ Each executing stage gets an isolated git worktree:
 ```text
 PROJECT ROOT
 ├── .worktrees/
-│   └── <stage-id>/              # Isolated copy of repo
-│       ├── .work -> ../../.work # Symlink to shared state
-│       ├── .claude/             # Worktree-specific hooks
-│       ├── CLAUDE.md            # Project instructions
-│       └── <project files>      # Full repo copy on loom/<stage-id> branch
-├── .work/                       # Shared orchestration state
-└── <main repo files>            # Main branch
+│   └── <stage-id>/                        # Isolated copy of repo
+│       ├── .loom/
+│       │   └── work -> ../../../.loom/work # Symlink to shared state
+│       ├── .claude/                       # Worktree-specific hooks
+│       ├── CLAUDE.md                      # Project instructions
+│       └── <project files>                # Full repo copy on loom/<stage-id> branch
+├── .loom/
+│   └── work/                              # Shared orchestration state
+└── <main repo files>                      # Main branch
 ```
+
+(A legacy workspace instead links `<stage-id>/.work -> ../../.work`, one
+level shallower — see the resolver's back-compat policy.)
 
 **Path resolution:** `EXECUTION_PATH = worktree_root + working_dir`
 
@@ -530,7 +537,7 @@ execute from `.worktrees/my-stage/loom/`.
 
 The daemon (`loom run`) is a background process that:
 
-1. Listens on Unix socket (`.work/orchestrator.sock`)
+1. Listens on Unix socket (`.loom/work/orchestrator.sock`)
 2. Polls stage files every 5 seconds
 3. Creates worktrees for ready stages
 4. Spawns Claude Code sessions in terminal windows
@@ -621,12 +628,12 @@ loom clean --worktrees                   # Clean up worktrees
 
 ## Recovery Playbook
 
-### Corrupted .work/ State
+### Corrupted .loom/work/ State
 
 ```bash
 loom repair --fix          # Try repair first
 # If repair can't fix:
-loom clean --state         # Remove .work/ only
+loom clean --state         # Remove .loom/work/ only
 loom init <plan-path>      # Re-initialize
 loom run                   # Re-execute (completed work preserved in git)
 ```
@@ -644,8 +651,8 @@ loom clean --worktrees     # Remove all worktrees
 ```bash
 loom stop                  # Graceful shutdown
 # If that fails:
-kill $(cat .work/orchestrator.pid)  # Force kill
-rm .work/orchestrator.sock          # Clean socket
+kill $(cat .loom/work/orchestrator.pid)  # Force kill
+rm .loom/work/orchestrator.sock          # Clean socket
 loom run                            # Restart
 ```
 
@@ -661,7 +668,7 @@ loom run                                 # Git branches preserve prior work
 
 ## Operator Gotchas
 
-- **The daemon loads the plan ONCE at startup.** Editing the plan file (or a `.work/stages/*.md`) while `loom run` is live has NO effect on the running graph — no reload mechanism exists. To apply plan changes, `loom stop` → edit → `loom init --clean` (or `loom clean --state && loom init`) → `loom run`. (Exception: the adjudicator may amend only a single stage's `acceptance`/`wiring` in place.)
+- **The daemon loads the plan ONCE at startup.** Editing the plan file (or a `.loom/work/stages/*.md`) while `loom run` is live has NO effect on the running graph — no reload mechanism exists. To apply plan changes, `loom stop` → edit → `loom init --clean` (or `loom clean --state && loom init`) → `loom run`. (Exception: the adjudicator may amend only a single stage's `acceptance`/`wiring` in place.)
 - **Exit code 0 ≠ success.** Sandbox blocks, dep-fetch failures, and write denials all exit 0. Read stderr; "blocked / denied / connection refused / failed to download" means investigate, not proceed.
 - **`fix_attempts` caps at 3 by default.** After repeated acceptance failures a stage stops auto-retrying and escalates (Blocked / NeedsHumanReview). Don't loop `loom stage retry` blindly — read the block reason and fix root cause, or `loom stage dispute-criteria` if the criteria themselves are wrong.
 - **All four stage types default to `permission_mode: auto`** (resolves stage > plan > stage-type default). Loom stages run unattended, so the agent auto-accepts actions its heuristics deem safe; the sandbox deny/allow rules are the real boundary. Override to `accept-edits`/`plan` at plan or stage level to tighten.
@@ -672,7 +679,7 @@ loom run                                 # Git branches preserve prior work
 
 | Anti-Pattern | Why It's Wrong | Do This Instead |
 | --- | --- | --- |
-| Editing `.work/` files directly | Corrupts state machine | Use `loom` CLI commands |
+| Editing `.loom/work/` files directly | Corrupts state machine | Use `loom` CLI commands |
 | Using `target/debug/loom` | Version mismatch | Use `loom` from PATH |
 | Running `loom run` on DONE-PLAN | Won't rename, confusing state | Clean and re-init first |
 | Killing daemon with SIGKILL | Leaves orphaned worktrees | Use `loom stop` |

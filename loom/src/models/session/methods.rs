@@ -119,7 +119,7 @@ impl Session {
     ///
     /// A heartbeat is the only ongoing evidence the daemon has that a live
     /// session is doing anything: the hooks rewrite
-    /// `.work/heartbeat/<stage-id>.json` after every tool call. Recording it
+    /// `.loom/work/heartbeat/<stage-id>.json` after every tool call. Recording it
     /// here is what keeps `last_active` honest — without it the field is set
     /// once by [`Session::assign_to_stage`] at spawn and never again, so every
     /// duration derived from it reports a session's entire lifetime as idle.

@@ -76,7 +76,8 @@ pub fn update_plan_source_path(work_dir: &WorkDir, new_path: &Path) -> Result<()
         table["source_path"] = value(new_path.display().to_string());
     }
 
-    work_dir::write_config(work_dir.root(), &doc).context("Failed to write .work/config.toml")?;
+    work_dir::write_config(work_dir.root(), &doc)
+        .context("Failed to write .loom/work/config.toml")?;
     Ok(())
 }
 

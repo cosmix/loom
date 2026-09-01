@@ -20,4 +20,5 @@ keys/loom.key
 *.key
 
 .work
+.loom/work
 .worktrees

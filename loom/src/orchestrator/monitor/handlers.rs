@@ -43,7 +43,7 @@ impl Handlers {
     }
 
     /// Expose the plan-wide context ceilings so detection can resolve a
-    /// stage's ceiling without re-reading `.work/config.toml` per tick.
+    /// stage's ceiling without re-reading `.loom/work/config.toml` per tick.
     pub fn context_config(&self) -> &ContextConfig {
         &self.config.context
     }

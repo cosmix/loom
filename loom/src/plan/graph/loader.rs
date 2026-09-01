@@ -1,4 +1,4 @@
-//! Execution graph loading from .work/stages/ or plan file.
+//! Execution graph loading from .loom/work/stages/ or plan file.
 
 use anyhow::{bail, Context, Result};
 use std::path::Path;
@@ -8,10 +8,10 @@ use crate::plan::graph::ExecutionGraph;
 use crate::plan::parser::parse_plan;
 use crate::plan::schema::{SandboxConfig, StageDefinition};
 
-/// Build execution graph from .work/stages/ files or fall back to plan file.
+/// Build execution graph from .loom/work/stages/ files or fall back to plan file.
 ///
-/// This function accepts either a `WorkDir` reference or a raw `Path` to the .work directory.
-/// It first attempts to load stages from .work/stages/ files, and if none are found,
+/// This function accepts either a `WorkDir` reference or a raw `Path` to the .loom/work directory.
+/// It first attempts to load stages from .loom/work/stages/ files, and if none are found,
 /// falls back to loading from the plan file referenced in config.toml.
 ///
 /// Returns the execution graph and the plan-level sandbox configuration. When loading
@@ -59,9 +59,9 @@ fn build_graph_impl(
 ) -> Result<(ExecutionGraph, SandboxConfig)> {
     let stages_dir = work_dir_path.join("stages");
 
-    // First try to load from .work/stages/ files. Stage files don't carry
+    // First try to load from .loom/work/stages/ files. Stage files don't carry
     // plan-level sandbox config, but `loom init` persists the plan-level
-    // sandbox snapshot to .work/config.toml under [plan_sandbox] so we can
+    // sandbox snapshot to .loom/work/config.toml under [plan_sandbox] so we can
     // recover it on subsequent `loom run` invocations. Without this, the
     // loader silently substitutes `SandboxConfig::default()` and any
     // plan-declared sandbox rules are lost on restart.
@@ -99,7 +99,7 @@ fn load_graph_from_plan_file(
 
     if !source_path.exists() {
         bail!(
-            "Plan file not found: {}\nThe plan may have been moved or deleted.\n\nNote: Stage files in .work/stages/ can be used instead of the plan file.",
+            "Plan file not found: {}\nThe plan may have been moved or deleted.\n\nNote: Stage files in .loom/work/stages/ can be used instead of the plan file.",
             source_path.display()
         );
     }
@@ -113,7 +113,7 @@ fn load_graph_from_plan_file(
     Ok((graph, sandbox))
 }
 
-/// Load stage definitions from .work/stages/ directory.
+/// Load stage definitions from .loom/work/stages/ directory.
 ///
 /// This function reads all .md files in the stages directory, extracts their YAML frontmatter,
 /// and converts them to StageDefinition objects.

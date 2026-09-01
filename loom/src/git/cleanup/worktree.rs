@@ -157,22 +157,29 @@ fn tracked_scaffold_paths(worktree_path: &Path) -> HashSet<String> {
 
 /// Remove only Loom-generated scaffold before non-forced Git removal.
 ///
-/// Loom only removes the scaffold it planted. `.work` is always the symlink
-/// `ensure_work_symlink` creates, so a non-symlink there is refused as wrong
-/// (`remove_required_symlink`). The `.claude/` and root `CLAUDE.md` halves
-/// both mirror creation's "plant only when absent" condition: `.claude/CLAUDE.md`
-/// and root `CLAUDE.md` are scaffold only when they are the symlinks
-/// `setup_claude_directory` / `setup_root_claude_md` create for repos that
-/// carry none of their own. When the repo tracks either path, the worktree
-/// checks it out as the repo's own file — not scaffold — and it is left in
-/// place for `git worktree remove` (or `git status`) to judge, regardless of
-/// whether it happens to be a symlink. Finally, a drained memory spool
-/// (`crate::fs::memory::spool`) is removed the same way: it is loom's own
-/// sandboxed-write fallback, not agent work, and left on disk it is exactly
-/// the kind of untracked file that makes non-forced `git worktree remove`
-/// refuse.
+/// Loom only removes the scaffold it planted. The state-root link is always
+/// the symlink `ensure_work_symlink` creates — `.loom/work` on the nested
+/// layout, `.work` on a legacy workspace — so a non-symlink there is refused
+/// as wrong (`remove_required_symlink`); both paths are checked and each is a
+/// no-op when absent, so this needs no layout lookup. The `.claude/` and root
+/// `CLAUDE.md` halves both mirror creation's "plant only when absent"
+/// condition: `.claude/CLAUDE.md` and root `CLAUDE.md` are scaffold only when
+/// they are the symlinks `setup_claude_directory` / `setup_root_claude_md`
+/// create for repos that carry none of their own. When the repo tracks
+/// either path, the worktree checks it out as the repo's own file — not
+/// scaffold — and it is left in place for `git worktree remove` (or `git
+/// status`) to judge, regardless of whether it happens to be a symlink.
+/// Finally, a drained memory spool (`crate::fs::memory::spool`) is removed
+/// the same way: it is loom's own sandboxed-write fallback, not agent work,
+/// and left on disk it is exactly the kind of untracked file that makes
+/// non-forced `git worktree remove` refuse.
 pub(crate) fn remove_worktree_scaffold(worktree_path: &Path) -> Result<()> {
     let tracked = tracked_scaffold_paths(worktree_path);
+    remove_required_symlink(&worktree_path.join(".loom").join("work"))?;
+    // Tidy up `.loom/` if removing `work` left it empty; harmless no-op
+    // otherwise (e.g. it still holds the drained-spool check below, or the
+    // untracked `.loom/cache/`).
+    let _ = std::fs::remove_dir(worktree_path.join(".loom"));
     remove_required_symlink(&worktree_path.join(".work"))?;
     let claude_dir = worktree_path.join(".claude");
     if claude_dir.is_symlink() {

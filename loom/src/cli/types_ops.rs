@@ -12,7 +12,7 @@ use clap::Subcommand;
 
 #[derive(Subcommand)]
 pub enum PlanCommands {
-    /// Verify a plan file without side effects (no .work/, no git repo required)
+    /// Verify a plan file without side effects (no .loom/work/, no git repo required)
     Verify {
         /// Path to the plan file to validate
         path: std::path::PathBuf,

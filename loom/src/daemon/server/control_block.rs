@@ -1,6 +1,6 @@
 //! Narrow daemon-side stage block transition.
 //!
-//! `.work/` is read-only from a stage worktree, so an agent that discovers it
+//! `.loom/work/` is read-only from a stage worktree, so an agent that discovers it
 //! cannot proceed has no way to write `stages/<id>.md` itself — which left the
 //! sanctioned "say why you are stuck" command unusable from the only place it
 //! was ever needed. The daemon owns the write for the same reason it owns

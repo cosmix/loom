@@ -214,9 +214,9 @@ fn resolve_confinement_prefers_the_stage_override() {
     );
 }
 
-/// Create an empty `.work` directory, as `loom init` would.
+/// Create an empty `.loom/work` directory, as `loom init` would.
 fn work_dir(temp: &TempDir) -> std::path::PathBuf {
-    let work_dir = temp.path().join(".work");
+    let work_dir = temp.path().join(".loom").join("work");
     std::fs::create_dir_all(&work_dir).unwrap();
     work_dir
 }

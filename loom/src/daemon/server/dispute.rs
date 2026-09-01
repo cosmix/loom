@@ -2,17 +2,17 @@
 //!
 //! Trust boundary: the daemon owns dispute persistence. Agents
 //! attest to failures by sending the RPC; only the daemon writes
-//! `.work/disputes/<stage>/<n>/request.md`, only the daemon
+//! `.loom/work/disputes/<stage>/<n>/request.md`, only the daemon
 //! transitions the stage to `NeedsAdjudication`, and only the
 //! daemon writes `verdict.md` and `applied.marker` (the latter two
 //! land in a follow-on stage). The handler:
 //!
-//! 1. acquires a flock on `.work/disputes/<stage>/.lock`
+//! 1. acquires a flock on `.loom/work/disputes/<stage>/.lock`
 //! 2. validates `criterion_index < stage.acceptance.len()`
 //! 3. refuses if `stage.dispute_budget_exhausted()`
 //! 4. allocates the next sequential id (`max(existing) + 1`,
 //!    starting at 1)
-//! 5. creates `.work/disputes/<stage>/<n>/` and writes `request.md`
+//! 5. creates `.loom/work/disputes/<stage>/<n>/` and writes `request.md`
 //!    via the existing `safe_create_new_in_workdir` helper
 //! 6. increments `dispute_count`, resets `evidence_rounds = 0`,
 //!    transitions the stage to `NeedsAdjudication`, saves the stage
@@ -47,16 +47,16 @@ pub fn handle_dispute_criteria(
     // touch. The handler runs under the daemon RPC trust boundary, but the
     // stage_id arrives unvalidated from the wire: a string like
     // "../../tmp/x" would otherwise force `create_dir_all` to materialise
-    // attacker-controlled directories outside `.work/disputes/`.
+    // attacker-controlled directories outside `.loom/work/disputes/`.
     if let Err(e) = crate::validation::validate_id(stage_id) {
         return Ok(Response::Error {
             message: format!("invalid stage_id: {e}"),
         });
     }
 
-    // Resolve canonical .work path. Worktrees use a `.work` symlink to
-    // ../../.work; canonicalize so the dirfd-relative writes land in the
-    // real directory and so the per-stage lock paths align.
+    // Resolve canonical .loom/work path. Worktrees use a `.loom/work` symlink
+    // to ../../../.loom/work; canonicalize so the dirfd-relative writes land
+    // in the real directory and so the per-stage lock paths align.
     let work_canonical = work_dir.canonicalize().map_err(|e| {
         anyhow!(
             "Failed to canonicalize work_dir {}: {e}",
@@ -71,7 +71,7 @@ pub fn handle_dispute_criteria(
         )
     })?;
     // Note: WorkDir::new may search upward — for an already-canonical
-    // .work path it returns that path. Use the canonical work path for
+    // state-root path it returns that path. Use the canonical work path for
     // disputes_dir() so all writes land beneath it deterministically.
     let disputes_root = wd.disputes_dir();
     let stage_disputes = disputes_root.join(stage_id);
@@ -140,7 +140,7 @@ pub fn handle_dispute_criteria(
     }
 
     // Allocate the next id. Read the immediate child entries of
-    // .work/disputes/<stage>/ and pick max numeric+1; if none, id = 1.
+    // .loom/work/disputes/<stage>/ and pick max numeric+1; if none, id = 1.
     let next_id = next_dispute_id(&stage_disputes)?;
 
     // Truncate failure_output to 4KB on a char boundary (defensive even
@@ -409,17 +409,19 @@ mod tests {
 
     #[test]
     fn dispute_works_from_worktree_with_symlinked_work() {
-        // Simulate worktree: parent dir holds real .work, worktree dir holds .work symlink.
+        // Simulate worktree: parent dir holds real .loom/work, worktree dir
+        // holds a .loom/work symlink. `.loom` itself stays a real directory
+        // on both sides — only the `work` child is a symlink.
         let tmp = TempDir::new().unwrap();
         let main_repo = tmp.path().join("main");
         let worktree = tmp.path().join("worktree");
         std::fs::create_dir_all(&main_repo).unwrap();
-        std::fs::create_dir_all(&worktree).unwrap();
-        let real_work = main_repo.join(".work");
+        std::fs::create_dir_all(worktree.join(".loom")).unwrap();
+        let real_work = main_repo.join(".loom").join("work");
         let wd = WorkDir::new(&main_repo).unwrap();
         wd.initialize().unwrap();
-        // Create symlink worktree/.work -> ../main/.work
-        std::os::unix::fs::symlink(&real_work, worktree.join(".work")).unwrap();
+        // Create symlink worktree/.loom/work -> main/.loom/work
+        std::os::unix::fs::symlink(&real_work, worktree.join(".loom").join("work")).unwrap();
 
         let mut stage = Stage {
             id: "stage-sym".to_string(),
@@ -432,13 +434,13 @@ mod tests {
             .push(AcceptanceCriterion::Simple("x".to_string()));
         save_stage(&stage, &real_work).unwrap();
 
-        let symlinked_work = worktree.join(".work");
+        let symlinked_work = worktree.join(".loom").join("work");
         let resp =
             handle_dispute_criteria(&symlinked_work, "stage-sym", 0, "y".to_string(), None, None)
                 .unwrap();
         match resp {
             Response::DisputeCreated { id } => {
-                // The request.md must land in the REAL .work, not the symlink.
+                // The request.md must land in the REAL .loom/work, not the symlink.
                 assert!(real_work
                     .join(format!("disputes/stage-sym/{id}/request.md"))
                     .exists());

@@ -1,4 +1,4 @@
-//! Regression test: stale [project_execution] table in .work/config.toml
+//! Regression test: stale [project_execution] table in .loom/work/config.toml
 //!
 //! After the collapse-backend-scaffolding refactor, `[project_execution]` is no
 //! longer read or written by loom. A config.toml that still carries this legacy
@@ -36,7 +36,7 @@ impl Drop for EnvVarGuard {
     }
 }
 
-/// Write a minimal `.work/config.toml` that includes a stale `[project_execution]`
+/// Write a minimal `.loom/work/config.toml` that includes a stale `[project_execution]`
 /// table along with a valid `[plan]` section.
 fn write_stale_config(work_dir: &std::path::Path) {
     let config_content = r#"# loom Configuration
@@ -66,7 +66,7 @@ fn test_orchestrator_config_ignores_stale_project_execution() {
     let _terminal_env = EnvVarGuard::set("LOOM_TERMINAL", "xterm");
 
     let temp_dir = TempDir::new().unwrap();
-    let work_dir = temp_dir.path().join(".work");
+    let work_dir = temp_dir.path().join(".loom").join("work");
     std::fs::create_dir_all(work_dir.join("stages")).unwrap();
 
     write_stale_config(&work_dir);
@@ -100,7 +100,7 @@ fn test_base_branch_parsed_despite_stale_project_execution() {
     // when a stale [project_execution] section is present in config.toml.
 
     let temp_dir = TempDir::new().unwrap();
-    let work_dir = temp_dir.path().join(".work");
+    let work_dir = temp_dir.path().join(".loom").join("work");
     std::fs::create_dir_all(&work_dir).unwrap();
 
     write_stale_config(&work_dir);

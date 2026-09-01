@@ -37,14 +37,24 @@ fn open_resolves_cache_at_main_project_root_from_linked_worktree() {
     let main_repo = temp.path().join("main-repo");
     let worktree = main_repo.join(".worktrees").join("stage");
 
-    fs::create_dir_all(main_repo.join(".work")).unwrap();
-    fs::create_dir_all(&worktree).unwrap();
-    std::os::unix::fs::symlink("../../.work", worktree.join(".work")).unwrap();
+    // Nested layout: `.loom` is a real directory on both sides, only the
+    // `work` child is a symlink. The worktree sits two levels below the main
+    // repo (`.worktrees/stage`) and the symlink itself lives one level below
+    // that (`.loom/work`), so the relative target needs three `../` to climb
+    // back out to the main repo's `.loom/work`.
+    fs::create_dir_all(main_repo.join(".loom").join("work")).unwrap();
+    fs::create_dir_all(worktree.join(".loom")).unwrap();
+    std::os::unix::fs::symlink("../../../.loom/work", worktree.join(".loom").join("work")).unwrap();
 
     let work_dir = WorkDir::new(&worktree).unwrap();
     let store = ContextStore::open(&work_dir).unwrap();
 
-    assert_eq!(store.root(), main_repo.join(CACHE_RELATIVE_DIR));
+    // Canonicalize both sides: `main_project_root()` resolves the symlink and
+    // returns a canonical path, and on macOS $TMPDIR itself sits behind a
+    // symlink (e.g. /tmp -> private/tmp), so comparing against the raw
+    // `main_repo` path fails spuriously there.
+    let expected = main_repo.canonicalize().unwrap().join(CACHE_RELATIVE_DIR);
+    assert_eq!(store.root(), expected);
 }
 
 #[test]

@@ -56,9 +56,9 @@ fn init_repo() -> TempDir {
     fs::write(root.join("README.md"), "base\n").unwrap();
     git_ok(root, &["add", "README.md"]);
     git_ok(root, &["commit", "-m", "base"]);
-    fs::create_dir_all(root.join(".work/stages")).unwrap();
+    fs::create_dir_all(root.join(".loom/work/stages")).unwrap();
     fs::write(
-        root.join(".work/config.toml"),
+        root.join(".loom/work/config.toml"),
         "[plan]\nbase_branch = \"main\"\n",
     )
     .unwrap();
@@ -84,7 +84,7 @@ fn create_stage(root: &Path, stage_id: &str) -> (PathBuf, String) {
     stage.completed_at = Some(chrono::Utc::now());
     stage.completed_commit = Some(commit.clone());
     stage.merged = false;
-    save_stage(&stage, &root.join(".work")).unwrap();
+    save_stage(&stage, &root.join(".loom").join("work")).unwrap();
     (worktree, commit)
 }
 
@@ -95,7 +95,7 @@ fn write_completed_stage(root: &Path, stage_id: &str, commit: String) {
     stage.status = StageStatus::Completed;
     stage.completed_at = Some(chrono::Utc::now());
     stage.completed_commit = Some(commit);
-    save_stage(&stage, &root.join(".work")).unwrap();
+    save_stage(&stage, &root.join(".loom").join("work")).unwrap();
 }
 
 fn merge_stage(root: &Path, stage_id: &str) {
@@ -126,7 +126,11 @@ fn normal_remove_preserves_dirty_uncommitted_work() {
     let error = in_repo(root, || worktree_cmd::remove("dirty".into(), false, None)).unwrap_err();
     assert!(error.to_string().contains("uncommitted changes"));
     assert!(worktree.join("feature.txt").exists());
-    assert!(!load_stage("dirty", &root.join(".work")).unwrap().merged);
+    assert!(
+        !load_stage("dirty", &root.join(".loom").join("work"))
+            .unwrap()
+            .merged
+    );
 }
 
 #[test]
@@ -142,7 +146,11 @@ fn normal_remove_preserves_clean_but_unmerged_commit() {
     .unwrap_err();
     assert!(error.to_string().contains("not retained"));
     assert!(worktree.exists());
-    assert!(!load_stage("unmerged", &root.join(".work")).unwrap().merged);
+    assert!(
+        !load_stage("unmerged", &root.join(".loom").join("work"))
+            .unwrap()
+            .merged
+    );
 }
 
 #[test]
@@ -163,7 +171,11 @@ fn normal_remove_preserves_commit_added_after_recorded_completion() {
 
     assert!(error.to_string().contains("stage branch head"));
     assert!(worktree.join("later.txt").exists());
-    assert!(!load_stage("advanced", &root.join(".work")).unwrap().merged);
+    assert!(
+        !load_stage("advanced", &root.join(".loom").join("work"))
+            .unwrap()
+            .merged
+    );
 }
 
 #[test]
@@ -172,7 +184,7 @@ fn normal_remove_requires_a_retained_completed_commit() {
     let temp = init_repo();
     let root = temp.path();
     let (worktree, _) = create_stage(root, "missing-commit");
-    let work_dir = root.join(".work");
+    let work_dir = root.join(".loom").join("work");
     update_stage("missing-commit", &work_dir, |stage| {
         stage.completed_commit = None;
         Ok(())
@@ -198,7 +210,11 @@ fn absent_resources_never_create_a_phantom_merge() {
 
     let error = in_repo(root, || worktree_cmd::remove("absent".into(), false, None)).unwrap_err();
     assert!(error.to_string().contains("refusing to infer"));
-    assert!(!load_stage("absent", &root.join(".work")).unwrap().merged);
+    assert!(
+        !load_stage("absent", &root.join(".loom").join("work"))
+            .unwrap()
+            .merged
+    );
 }
 
 #[test]
@@ -211,7 +227,11 @@ fn legitimately_merged_cleanup_marks_stage_only_after_removal() {
 
     in_repo(root, || worktree_cmd::remove("merged".into(), false, None)).unwrap();
     assert!(!worktree.exists());
-    assert!(load_stage("merged", &root.join(".work")).unwrap().merged);
+    assert!(
+        load_stage("merged", &root.join(".loom").join("work"))
+            .unwrap()
+            .merged
+    );
     assert!(
         !git(root, &["show-ref", "--verify", "refs/heads/loom/merged"])
             .status
@@ -233,7 +253,11 @@ fn confirmed_destructive_remove_never_fabricates_merge_state() {
     .unwrap();
 
     assert!(!worktree.exists());
-    assert!(!load_stage("forced", &root.join(".work")).unwrap().merged);
+    assert!(
+        !load_stage("forced", &root.join(".loom").join("work"))
+            .unwrap()
+            .merged
+    );
 }
 
 #[test]
@@ -243,9 +267,13 @@ fn cleanup_error_is_fatal_and_does_not_mark_stage_merged() {
     let root = temp.path();
     let (worktree, _) = create_stage(root, "cleanup-error");
     merge_stage(root, "cleanup-error");
-    fs::write(git_path(&worktree, "info/exclude"), ".work/\n").unwrap();
-    fs::create_dir(worktree.join(".work")).unwrap();
-    fs::write(worktree.join(".work/user-data.txt"), "preserve me\n").unwrap();
+    fs::write(git_path(&worktree, "info/exclude"), ".loom/work/\n").unwrap();
+    fs::create_dir_all(worktree.join(".loom").join("work")).unwrap();
+    fs::write(
+        worktree.join(".loom").join("work").join("user-data.txt"),
+        "preserve me\n",
+    )
+    .unwrap();
     assert_eq!(
         git_stdout(
             &worktree,
@@ -256,7 +284,7 @@ fn cleanup_error_is_fatal_and_does_not_mark_stage_merged() {
                 "--ignored=matching",
             ],
         ),
-        "!! .work/"
+        "!! .loom/work/"
     );
 
     let result = in_repo(root, || {
@@ -266,9 +294,13 @@ fn cleanup_error_is_fatal_and_does_not_mark_stage_merged() {
     assert!(result.is_err(), "cleanup failure must surface");
     assert!(format!("{:#}", result.unwrap_err()).contains("non-symlink worktree scaffold"));
     assert!(worktree.exists());
-    assert!(worktree.join(".work/user-data.txt").exists());
+    assert!(worktree
+        .join(".loom")
+        .join("work")
+        .join("user-data.txt")
+        .exists());
     assert!(
-        !load_stage("cleanup-error", &root.join(".work"))
+        !load_stage("cleanup-error", &root.join(".loom").join("work"))
             .unwrap()
             .merged
     );

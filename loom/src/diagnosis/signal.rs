@@ -73,7 +73,7 @@ You are diagnosing a failed stage. Analyze the evidence and provide actionable r
 
 1. **Analyze** the failure evidence above
 2. **Identify** the root cause
-3. **Write a diagnosis report** to `.work/diagnoses/{stage_id}.md`
+3. **Write a diagnosis report** to `.loom/work/diagnoses/{stage_id}.md`
 4. **Recommend** one of these actions:
    - `retry` - If transient failure, retry will likely succeed
    - `fix` - Provide specific fix instructions in the diagnosis
@@ -82,7 +82,7 @@ You are diagnosing a failed stage. Analyze the evidence and provide actionable r
 
 ## Diagnosis Report Format
 
-Write your diagnosis to `.work/diagnoses/{stage_id}.md`:
+Write your diagnosis to `.loom/work/diagnoses/{stage_id}.md`:
 
 ```markdown
 ---

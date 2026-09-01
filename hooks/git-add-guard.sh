@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
-# PreToolUse hook: Block dangerous git add patterns that would stage .work
+# PreToolUse hook: Block dangerous git add patterns that would stage loom's
+# state directory - the legacy `.work` or the current `.loom/work`.
 #
 # This hook intercepts Bash tool calls and blocks:
-# - git add -A / git add --all (stages everything including .work)
-# - git add . (stages current directory including .work)
-# - git add .work (explicitly staging .work)
+# - git add -A / git add --all (stages everything including the state dir)
+# - git add . (stages current directory including the state dir)
+# - git add .work / git add .loom/work (explicitly staging the state dir)
 #
 # Exit codes:
 #   0 - Allow the command
@@ -13,19 +14,23 @@
 # Debug mode:
 #   Set GIT_ADD_GUARD_DEBUG=1 to see what patterns are being checked
 #
-# Test cases for Pattern 3 (.work detection):
+# Test cases for Pattern 3 (state directory detection):
 #   SHOULD BLOCK:
-#     git add .work          (direct .work)
-#     git add .work/         (directory)
-#     git add .work/foo      (subpath)
-#     git add foo .work bar  (.work as middle argument)
-#     git add .work other    (.work followed by other files)
+#     git add .work            (direct legacy .work)
+#     git add .work/           (directory)
+#     git add .work/foo        (subpath)
+#     git add foo .work bar    (.work as middle argument)
+#     git add .work other      (.work followed by other files)
+#     git add .loom/work       (direct current .loom/work)
+#     git add .loom/work/      (directory)
+#     git add .loom/work/foo   (subpath)
 #   SHOULD ALLOW:
 #     git add .workspace     (.work is substring, not standalone)
 #     git add .working       (.work is substring)
 #     git add .workdir       (.work is substring)
-#     git add doc/foo.md     (no .work at all)
-#     git add network.md     (no .work at all)
+#     git add .loom/cache    (.loom state that isn't the shared work symlink)
+#     git add doc/foo.md     (no state directory at all)
+#     git add network.md     (no state directory at all)
 #
 # Test cases for quoting (the command is tokenized with loom_tokenize_command
 # before scanning, so quoting changes ARGUMENT VALUES, not what gets matched):
@@ -100,6 +105,11 @@ fi
 # _common.sh's shared helpers, which know how to find an invoking command
 # and its argv, not how to walk a specific subcommand's own option grammar.
 #
+# The state-directory check itself matches both the legacy `.work` symlink
+# and the current `.loom/work` symlink - a workspace created before this
+# migration keeps `.work` forever (see doc/plans, "Back-compat"), so both
+# names must stay blocked.
+#
 # Returns 1 (block) if a dangerous `git add` invocation is found, 0 (allow)
 # otherwise.
 scan_git_add_tokens() {
@@ -164,7 +174,7 @@ scan_git_add_tokens() {
                         debug "BLOCKED by token scan: git add ."
                         return 1
                     fi
-                    if [[ "$at" == ".work" || "$at" == .work/* ]]; then
+                    if [[ "$at" == ".work" || "$at" == .work/* || "$at" == ".loom/work" || "$at" == .loom/work/* ]]; then
                         debug "BLOCKED by token scan: git add $at"
                         return 1
                     fi
@@ -249,12 +259,19 @@ check_dangerous_patterns() {
         return 1
     fi
 
-    # Pattern 3: Explicitly staging .work directory
+    # Pattern 3: Explicitly staging the state directory (legacy .work or
+    # current .loom/work).
     # Match .work ONLY as a standalone argument (not as substring of longer name)
     # .work must be followed by: space, forward slash, or end of string
     # This prevents false positives for: .workspace, .working, .workdir, etc.
     if [[ "$normalized" =~ git[[:space:]]+add${args}\.work([[:space:]]|/|[;\&\|]|$) ]]; then
         debug "BLOCKED by Pattern 3: .work directory"
+        return 1
+    fi
+
+    # Pattern 4: Explicitly staging .loom/work (the current state directory)
+    if [[ "$normalized" =~ git[[:space:]]+add${args}\.loom/work([[:space:]]|/|[;\&\|]|$) ]]; then
+        debug "BLOCKED by Pattern 4: .loom/work directory"
         return 1
     fi
 
@@ -271,12 +288,14 @@ if ! check_dangerous_patterns "$COMMAND"; then
   LOOM: BLOCKED - Dangerous git add pattern detected
 ============================================================
 
-Your command would stage .work (orchestration state) which MUST NOT be committed.
+Your command would stage loom's state directory (.work or .loom/work)
+which MUST NOT be committed.
 
 BLOCKED PATTERNS:
   - git add -A / git add --all  (stages everything)
   - git add .                    (stages current directory)
-  - git add .work                (explicitly stages .work)
+  - git add .work                (explicitly stages the legacy state dir)
+  - git add .loom/work           (explicitly stages the current state dir)
 
 CORRECT PATTERN:
   git add <specific-files>
@@ -284,8 +303,8 @@ CORRECT PATTERN:
 Example:
   git add src/main.rs src/lib.rs
 
-WHY: In worktrees, .work is a symlink to shared state. Committing it
-     corrupts the main repository for all parallel stages.
+WHY: In worktrees, .work / .loom/work is a symlink to shared state.
+     Committing it corrupts the main repository for all parallel stages.
 
 ============================================================
 

@@ -18,9 +18,10 @@ use crate::verify::transitions::{load_stage, update_stage};
 
 /// Block a stage with a reason.
 ///
-/// Routed through the daemon whenever one is listening, because `.work/` is
-/// read-only from a stage worktree: the caller that most needs to record why
-/// it is stuck is exactly the one that cannot write `stages/<id>.md` itself.
+/// Routed through the daemon whenever one is listening, because the state
+/// directory is read-only from a stage worktree: the caller that most needs to
+/// record why it is stuck is exactly the one that cannot write `stages/<id>.md`
+/// itself.
 /// With no daemon reachable there is nothing to route to, and an operator's
 /// direct write is the only path — the same one this command always took.
 ///
@@ -35,18 +36,18 @@ use crate::verify::transitions::{load_stage, update_stage};
 /// and must not assume it isn't. That case queues the block for the daemon
 /// instead — see `queue_block_request`.
 pub fn block(stage_id: String, reason: String) -> Result<()> {
-    let work_dir = Path::new(".work");
+    let work_dir = crate::commands::common::work_dir_path()?;
     let request = Request::BlockStage {
-        auth_token: user_credential(work_dir),
+        auth_token: user_credential(&work_dir),
         stage_id: stage_id.clone(),
         session_id: current_session_id(),
         reason: reason.clone(),
     };
 
-    match try_send_request(work_dir, &request)? {
+    match try_send_request(&work_dir, &request)? {
         DaemonReach::Answered(response) => handle_block_response(&stage_id, response)?,
         DaemonReach::NotListening => {
-            update_stage(&stage_id, work_dir, |stage| {
+            update_stage(&stage_id, &work_dir, |stage| {
                 stage.try_mark_blocked()?;
                 stage.close_reason = Some(reason.clone());
                 stage.updated_at = chrono::Utc::now();
@@ -64,7 +65,7 @@ pub fn block(stage_id: String, reason: String) -> Result<()> {
 /// Queue a block for the daemon to apply, for the caller that cannot reach it.
 ///
 /// This is the sandboxed stage agent's path, and the only one it has: its
-/// `.work/stages/` write is denied and so are its socket syscalls. Queueing
+/// state directory's `stages/` write is denied and so are its socket syscalls. Queueing
 /// does not weaken the authorization the RPC path establishes — the daemon
 /// still decides whether the stage may be blocked, and still attributes the
 /// request to the worktree it drained it from, never to anything the request
@@ -230,9 +231,9 @@ fn kill_orphan_session(work_dir: &Path, evidence: &OrphanEvidence) -> Result<()>
 /// WaitingForDeps has no incoming transitions because it's the initial state. For recovery scenarios,
 /// we allow direct assignment to reset stages to their initial state.
 pub fn reset(stage_id: String, hard: bool, kill_session: bool) -> Result<()> {
-    let work_dir = Path::new(".work");
+    let work_dir = crate::commands::common::work_dir_path()?;
 
-    let stage = load_stage(&stage_id, work_dir)?;
+    let stage = load_stage(&stage_id, &work_dir)?;
 
     // Refuse to reset while an agent is still running for this stage, unless
     // told to kill it first. This prevents a duplicate-session hazard where
@@ -240,10 +241,10 @@ pub fn reset(stage_id: String, hard: bool, kill_session: bool) -> Result<()> {
     // one. Checks both tracked sessions and orphan PID evidence: a stage
     // whose `session` link went missing (e.g. a daemon crash) is exactly the
     // case a `stage.session`-only check misses.
-    let live_agents = live_agents_for(work_dir, &stage_id)?;
+    let live_agents = live_agents_for(&work_dir, &stage_id)?;
     if !live_agents.is_empty() {
         if kill_session {
-            kill_live_agents(work_dir, &live_agents);
+            kill_live_agents(&work_dir, &live_agents);
         } else {
             return Err(live_agent_refusal(&stage_id, &live_agents));
         }
@@ -258,7 +259,7 @@ pub fn reset(stage_id: String, hard: bool, kill_session: bool) -> Result<()> {
         "Warning: Bypassing state machine to reset stage to initial state (was: {:?})",
         stage.status
     );
-    update_stage(&stage_id, work_dir, |current| {
+    update_stage(&stage_id, &work_dir, |current| {
         apply_reset(current);
         Ok(())
     })?;
@@ -270,10 +271,10 @@ pub fn reset(stage_id: String, hard: bool, kill_session: bool) -> Result<()> {
 
 /// Mark a stage as waiting for user input (called by hooks)
 pub fn waiting(stage_id: String) -> Result<()> {
-    let work_dir = Path::new(".work");
+    let work_dir = crate::commands::common::work_dir_path()?;
 
     let mut skipped_status = None;
-    update_stage(&stage_id, work_dir, |stage| {
+    update_stage(&stage_id, &work_dir, |stage| {
         if stage.status != StageStatus::Executing {
             skipped_status = Some(stage.status.clone());
             return Ok(());
@@ -294,10 +295,10 @@ pub fn waiting(stage_id: String) -> Result<()> {
 
 /// Resume a stage from waiting for input state (called by hooks)
 pub fn resume_from_waiting(stage_id: String) -> Result<()> {
-    let work_dir = Path::new(".work");
+    let work_dir = crate::commands::common::work_dir_path()?;
 
     let mut skipped_status = None;
-    update_stage(&stage_id, work_dir, |stage| {
+    update_stage(&stage_id, &work_dir, |stage| {
         if stage.status != StageStatus::WaitingForInput {
             skipped_status = Some(stage.status.clone());
             return Ok(());
@@ -318,10 +319,10 @@ pub fn resume_from_waiting(stage_id: String) -> Result<()> {
 
 /// Hold a stage (prevent auto-execution even when ready)
 pub fn hold(stage_id: String) -> Result<()> {
-    let work_dir = Path::new(".work");
+    let work_dir = crate::commands::common::work_dir_path()?;
 
     let mut already_held = false;
-    update_stage(&stage_id, work_dir, |stage| {
+    update_stage(&stage_id, &work_dir, |stage| {
         if stage.held {
             already_held = true;
         } else {
@@ -341,10 +342,10 @@ pub fn hold(stage_id: String) -> Result<()> {
 
 /// Release a held stage (allow auto-execution)
 pub fn release(stage_id: String) -> Result<()> {
-    let work_dir = Path::new(".work");
+    let work_dir = crate::commands::common::work_dir_path()?;
 
     let mut already_released = false;
-    update_stage(&stage_id, work_dir, |stage| {
+    update_stage(&stage_id, &work_dir, |stage| {
         if !stage.held {
             already_released = true;
         } else {

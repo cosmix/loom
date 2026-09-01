@@ -1,7 +1,7 @@
 //! Discovering pending dispute work and parsing the dispute/verdict
 //! record files it is read from.
 //!
-//! Everything here reads `.work/disputes/<stage>/<n>/*.md` on behalf of
+//! Everything here reads `.loom/work/disputes/<stage>/<n>/*.md` on behalf of
 //! [`super::AdjudicatorRegistry`]'s polling methods — it never writes.
 
 use anyhow::{Context, Result};

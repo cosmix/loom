@@ -10,7 +10,7 @@
 //! - a **base layer**, keyed by the source revision it was built from, written
 //!   once by the host and thereafter immutable. `.loom/cache/context-v1/graph/base/`
 //!   under the canonical main project root, shared by every worktree;
-//! - a per-stage **overlay**, under `.work/context/<plan>/<stage>/`, holding
+//! - a per-stage **overlay**, under `.loom/work/context/<plan>/<stage>/`, holding
 //!   only the files that stage changed.
 //!
 //! A read is `overlay ∪ (base − overlay's files)`: an overlay entry shadows the
@@ -37,7 +37,7 @@ use crate::context::store::canonical_json;
 pub const GRAPH_RELATIVE_DIR: &str = "graph";
 /// Immutable per-revision base layers, relative to [`GRAPH_RELATIVE_DIR`].
 pub const BASE_RELATIVE_DIR: &str = "base";
-/// Overlay root inside `.work/`.
+/// Overlay root inside `.loom/work/`.
 pub const OVERLAY_RELATIVE_DIR: &str = "context";
 /// File name of a persisted layer.
 pub const LAYER_FILE: &str = "graph.json";
@@ -148,7 +148,7 @@ impl ResolvedGraph {
 pub struct GraphStore {
     /// `<main project root>/.loom/cache/context-v1/graph`.
     graph_root: PathBuf,
-    /// `<.work>/context`.
+    /// `<.loom/work>/context`.
     overlay_root: PathBuf,
 }
 
@@ -176,7 +176,7 @@ impl GraphStore {
         self.base_dir().join(format!("{revision}.json"))
     }
 
-    /// Directory of a stage's overlay: `.work/context/<plan>/<stage>/`.
+    /// Directory of a stage's overlay: `.loom/work/context/<plan>/<stage>/`.
     pub fn overlay_dir(&self, plan: &str, stage: &str) -> PathBuf {
         self.overlay_root.join(plan).join(stage)
     }
@@ -238,7 +238,7 @@ impl GraphStore {
     /// and `crate::context::delivery` keeps `session-retrieval/*.json` there,
     /// and both outlive the graph layer and are read by other stages after
     /// this one merges. A `remove_dir_all` here would delete those out from
-    /// under their owners on a schedule this module does not control; `.work/`
+    /// under their owners on a schedule this module does not control; `.loom/work/`
     /// is removed wholesale when the plan finishes, so the leftover directory
     /// does not accumulate across plans.
     pub fn discard_overlay(&self, plan: &str, stage: &str) -> Result<()> {

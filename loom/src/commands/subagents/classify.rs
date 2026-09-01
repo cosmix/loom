@@ -39,7 +39,7 @@
 //! before calling a tool produces a text-only assistant entry immediately
 //! followed by a `tool_use` entry. Sampling in that gap would classify a
 //! working agent as `done` -- see [`DEFAULT_DONE_DEBOUNCE_SECS`] for the
-//! measured basis. A `.work/subagents/<stage-id>/<agentId>.json` record
+//! measured basis. A `<state-dir>/subagents/<stage-id>/<agentId>.json` record
 //! (written by a SubagentStop hook, when one exists) is authoritative proof
 //! of termination and skips the debounce entirely -- see
 //! [`has_authoritative_termination`]. Do NOT corroborate completion from the
@@ -83,7 +83,7 @@ pub const DEFAULT_DONE_DEBOUNCE_SECS: u64 = 180;
 pub enum SubagentState {
     /// Last entry is `assistant` with a text block and no `tool_use`, AND
     /// either it has sat idle at least the debounce or a
-    /// `.work/subagents/.../<agentId>.json` termination record exists: the
+    /// `<state-dir>/subagents/.../<agentId>.json` termination record exists: the
     /// subagent's turn ended and `final_report` holds its output.
     Done,
     /// Last entry is `assistant` with a `tool_use` block: waiting on a tool.
@@ -149,9 +149,9 @@ pub struct SubagentSummary {
 /// instead (see the module doc for why). Pass [`DEFAULT_DONE_DEBOUNCE_SECS`]
 /// unless the caller has an explicit `--debounce` override to thread through.
 ///
-/// `work_dir`, when given, is the loom `.work/` root to check for an
+/// `work_dir`, when given, is the loom state directory root to check for an
 /// authoritative `subagents/<stage-id>/<agentId>.json` termination record
-/// and optional spawn-type ledgers (see the module doc). `None` (no `.work/`
+/// and optional spawn-type ledgers (see the module doc). `None` (no state directory
 /// found, or the caller doesn't want the fast path) falls straight through
 /// to the transcript rule and leaves type unknown.
 #[cfg(test)]
@@ -271,7 +271,7 @@ fn resolve_state(
 }
 
 /// True when a SubagentStop hook already recorded this agent's termination
-/// under `.work/subagents/<stage-id>/<agentId>.json`, in any stage-id
+/// under `<state-dir>/subagents/<stage-id>/<agentId>.json`, in any stage-id
 /// subdirectory (the caller doesn't know which stage owns this agent).
 /// Purely optional and best-effort: a missing `work_dir`, a missing
 /// `subagents/` directory, or no record for this agent all silently return

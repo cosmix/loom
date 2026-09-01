@@ -11,7 +11,9 @@
 # Environment variables:
 #   LOOM_STAGE_ID    - The stage being executed
 #   LOOM_SESSION_ID  - The session ID
-#   LOOM_WORK_DIR    - Path to the .work directory
+#   LOOM_WORK_DIR    - Path to the state directory (.loom/work, or the
+#                      legacy .work for a workspace that already resolved
+#                      to it)
 #
 # This hook runs alongside commit-guard.sh (which handles uncommitted changes).
 # It focuses on learning and outcome validation.

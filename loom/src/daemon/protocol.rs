@@ -131,7 +131,7 @@ pub enum Request {
     /// Block a stage, recording why it cannot proceed.
     ///
     /// The daemon owns the transition for the same reason it owns dispute
-    /// persistence: a stage agent's `.work/` is read-only, so it cannot write
+    /// persistence: a stage agent's `.loom/work/` is read-only, so it cannot write
     /// `stages/<id>.md` itself even though recording its own blockage is
     /// exactly what it is entitled to do.
     ///

@@ -31,8 +31,9 @@
 #
 # Self-contained: runs in a scratch temp dir, with LOOM_WORK_DIR/LOOM_STAGE_ID
 # explicitly unset, so neither the integration-verify carve-out nor any
-# worktree-isolation logic can engage on a real repo .work/ (knowledge
-# mistakes.md, "Hook Tests Must Scrub the Env the Hook Gates On"). LOOM_MAIN_
+# worktree-isolation logic can engage on a real repo's state directory
+# (knowledge mistakes.md, "Hook Tests Must Scrub the Env the Hook Gates
+# On"). LOOM_MAIN_
 # AGENT_PID is likewise scrubbed by `run_hook` before any caller-supplied
 # value is layered on - the same lesson, applied to the one variable this
 # change made load-bearing for a passing/failing case (g).
@@ -43,7 +44,7 @@ COMMIT_FILTER="$ROOT/hooks/commit-filter.sh"
 VERIFY_GUARD="$ROOT/hooks/subagent-verify-guard.sh"
 COMMON="$ROOT/hooks/_common.sh"
 
-TMP=$(mktemp -d)
+TMP=$(mktemp -d "${TMPDIR:-/tmp}/loom-hooktest.XXXXXX")
 trap 'rm -rf "$TMP"' EXIT
 
 run_hook() {

@@ -5,7 +5,7 @@
 //! - `tests_brief_rendering.rs` — brief-RENDERING tests that call formatter
 //!   functions (`format_signal_content`, `format_recovery_signal`,
 //!   `cache::generate_stable_prefix`) directly against a hand-built
-//!   `EmbeddedContext`; no real `.work/` tree is involved.
+//!   `EmbeddedContext`; no real `.loom/work/` tree is involved.
 //! - `tests_brief_e2e.rs` — END-TO-END tests that drive the same behaviour
 //!   through the real signal-generation entry points (`generate_signal`,
 //!   `generate_recovery_signal`, `generate_knowledge_signal`) over a real
@@ -28,7 +28,7 @@ pub(super) use tests_brief_rendering::sample_context_pack;
 ///
 /// Shared by both halves: the rendering test drives `format_recovery_signal`
 /// directly, and the end-to-end test drives `generate_recovery_signal` over a
-/// real `.work/` tree — both need the same "a session just crashed" content.
+/// real `.loom/work/` tree — both need the same "a session just crashed" content.
 fn crash_recovery_for(stage: &Stage) -> RecoverySignalContent {
     RecoverySignalContent::for_crash(
         "session-recovery".to_string(),

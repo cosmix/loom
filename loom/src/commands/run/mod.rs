@@ -81,8 +81,9 @@ fn prepare_background_run(backend: Option<String>) -> Result<WorkDir> {
     prepare_repo_for_run(&repo_root)?;
 
     // Absolute, not ".": a long-lived daemon must get an absolute base — a
-    // relative ".work" silently diverges from every other process's view of
-    // the same paths (e.g. `loom attach`, which always resolves absolute).
+    // relative state-directory root silently diverges from every other
+    // process's view of the same paths (e.g. `loom attach`, which always
+    // resolves absolute).
     let work_dir = WorkDir::new(&repo_root)?;
     work_dir.load()?;
 
@@ -117,7 +118,7 @@ fn print_stop_guidance() {
 /// advisory tmux preflight. Shared by `loom run` (daemon mode, see
 /// [`execute_background`]) and `loom run --foreground` (see
 /// [`foreground::execute`]) — this is the ONLY path that clears
-/// `.work/terminal-backend-fallback`, so keeping the logic in one place means
+/// `<state-dir>/terminal-backend-fallback`, so keeping the logic in one place means
 /// a fix here reaches both callers instead of risking a fix landing in one
 /// copy and not the other.
 ///

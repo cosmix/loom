@@ -36,7 +36,7 @@ pub enum MergeResolverResult {
 /// * `conflicting_files` - List of files with conflicts
 /// * `merge_point` - The target branch to merge into
 /// * `repo_root` - Path to the main repository root
-/// * `work_dir` - Path to the .work directory
+/// * `work_dir` - Path to the state directory
 pub fn spawn_merge_resolver(
     stage: &Stage,
     conflicting_files: &[String],

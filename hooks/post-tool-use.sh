@@ -16,10 +16,12 @@
 # Environment variables (set by loom worktree settings):
 #   LOOM_STAGE_ID    - The stage being executed
 #   LOOM_SESSION_ID  - The session ID
-#   LOOM_WORK_DIR    - Path to the .work directory
+#   LOOM_WORK_DIR    - Path to the state directory (.loom/work, or the
+#                      legacy .work for a workspace that already resolved
+#                      to it)
 #
 # Actions:
-#   1. Updates heartbeat in .work/heartbeat/<stage-id>.json with the resident
+#   1. Updates heartbeat in $LOOM_WORK_DIR/heartbeat/<stage-id>.json with the resident
 #      token count read from the tail of the live transcript
 #   2. After git commits in loom stages, reminds Claude to update knowledge/memory
 #   3. Forwards Write/Edit/MultiEdit/NotebookEdit paths to `loom context record-edit`
@@ -443,7 +445,7 @@ if [[ "$TOOL_NAME" == "Bash" ]] && [[ -n "$COMMAND" ]]; then
 fi
 
 # === EDIT RECORDING (Write/Edit/MultiEdit/NotebookEdit tool calls) ===
-# Delegate to the Rust binary, which owns the shared .work write under a lock.
+# Delegate to the Rust binary, which owns the shared state-directory write under a lock.
 # This script only extracts the edited path and forwards it - it must never
 # write shared state itself, and a failed/slow record must never fail the
 # edit (every call below is suffixed with `|| true`).

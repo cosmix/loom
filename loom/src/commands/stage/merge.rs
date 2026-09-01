@@ -42,7 +42,8 @@ pub fn merge(stage_id: Option<String>, resolved: bool) -> Result<()> {
 /// 4. Transitions stage to Completed with merged=true
 /// 5. Triggers dependent stages
 fn merge_resolved(stage_id: Option<String>) -> Result<()> {
-    let work_dir = Path::new(".work");
+    let work_dir_buf = crate::commands::common::work_dir_path()?;
+    let work_dir: &Path = &work_dir_buf;
 
     // Resolve stage ID: use provided or detect from current worktree branch
     let stage_id = resolve_stage_id(stage_id, "merge --resolved <stage-id>")?;
@@ -140,7 +141,8 @@ fn merge_resolved(stage_id: Option<String>) -> Result<()> {
 /// 6. On failure: prints detailed error with conflicting files
 /// 7. If at fix limit: suggests dispute-criteria or human-review
 fn merge_retry(stage_id: Option<String>) -> Result<()> {
-    let work_dir = Path::new(".work");
+    let work_dir_buf = crate::commands::common::work_dir_path()?;
+    let work_dir: &Path = &work_dir_buf;
 
     // Resolve stage ID, load and validate the stage, confirm we're running
     // from a worktree, and refuse an in-progress merge — all before spending
@@ -443,7 +445,7 @@ mod tests {
         let work_dir = temp_dir.path();
 
         // Create stages directory and a stage in Executing status
-        let stages_dir = work_dir.join(".work").join("stages");
+        let stages_dir = work_dir.join(".loom").join("work").join("stages");
         std::fs::create_dir_all(&stages_dir).unwrap();
 
         let stage = create_test_stage("test-stage", StageStatus::Executing);

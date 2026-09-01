@@ -4,7 +4,7 @@ use std::fs;
 use std::path::Path;
 use std::process::Command;
 
-use crate::commands::common::find_work_dir;
+use crate::commands::common::work_dir_path;
 use crate::git::branch::current_branch;
 use crate::handoff::generator::{generate_handoff, HandoffContent};
 use crate::handoff::HandoffOrigin;
@@ -20,11 +20,12 @@ const CEILING_TRIGGER: &str = "ceiling";
 
 /// What the daemon is told when the stage transition below cannot be written.
 ///
-/// The document is the recovery signal in that case: `.work/handoffs` is
-/// writable from a worktree session's sandbox and `.work/stages` is not, so the
-/// daemon's handoff watch reads the document and does the takedown itself.
+/// The document is the recovery signal in that case: the state directory's
+/// `handoffs/` is writable from a worktree session's sandbox and its `stages/`
+/// is not, so the daemon's handoff watch reads the document and does the
+/// takedown itself.
 const SANDBOX_RECOVERY_NOTE: &str = "\
-A worktree session may write .work/handoffs but not .work/stages, so this \
+A worktree session may write the state directory's handoffs/ but not its stages/, so this \
 transition failing from inside a stage worktree is expected.\n\
 The handoff document above IS the record the daemon acts on: it reads the \
 document, ends this session and re-queues the stage for a continuation. \
@@ -50,8 +51,8 @@ pub fn execute(
     let stage_id = resolve_stage_id(&stage_arg)?;
     let session_id = resolve_session_id(&session_arg)?;
 
-    // Determine work directory (look for .work in current dir or as symlink)
-    let work_dir = find_work_dir()?;
+    // Determine the state directory (look in the current dir or via its symlink)
+    let work_dir = work_dir_path()?;
 
     // Load stage (gracefully handle missing stage)
     let stage = load_stage(&stage_id, &work_dir).unwrap_or_else(|_| {

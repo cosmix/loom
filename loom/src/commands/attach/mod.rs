@@ -26,7 +26,7 @@ use std::os::unix::process::CommandExt;
 use std::path::Path;
 use std::process::Command;
 
-use crate::commands::common::find_work_dir;
+use crate::commands::common::work_dir_path;
 use crate::fs::tmux_tmpdir::{adopt_recorded_tmux_tmpdir, TmuxTmpdirAdoption};
 use crate::models::session::{Session, SessionBackendKind};
 use crate::orchestrator::terminal::tmux::socket_name;
@@ -44,7 +44,7 @@ use overview::run_overview;
 /// so adopting late would leave earlier steps looking in the wrong place
 /// while later ones looked in the right one.
 pub fn execute(stage_id: Option<String>) -> Result<()> {
-    let work_dir = find_work_dir()?;
+    let work_dir = work_dir_path()?;
 
     if let TmuxTmpdirAdoption::Adopted { recorded, ambient } = adopt_recorded_tmux_tmpdir(&work_dir)
     {
@@ -236,12 +236,12 @@ fn format_tmux_tmpdir_adoption_message(
 /// without it both looked identical (see
 /// `doc/loom/knowledge/mistakes/tmux-backend.md`). Split out from
 /// `report_no_live_sessions` purely so the text is testable without a
-/// `.work/config.toml` on disk.
+/// `config.toml` on disk.
 fn no_live_sessions_message(work_dir: &Path, backend: SessionBackendKind) -> String {
     match backend {
         SessionBackendKind::Native => format!(
-            "loom attach requires the tmux backend for {} (set [terminal] backend = \"tmux\" \
-             in .work/config.toml or run loom run --backend tmux)",
+            "loom attach requires the tmux backend for {0} (set [terminal] backend = \"tmux\" \
+             in {0}/config.toml or run loom run --backend tmux)",
             work_dir.display()
         ),
         SessionBackendKind::Tmux => {

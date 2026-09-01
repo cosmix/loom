@@ -58,7 +58,7 @@ impl Config {
 /// Load and parse config.toml from a work directory
 ///
 /// # Arguments
-/// * `work_dir` - Path to the .work directory (not the config file itself)
+/// * `work_dir` - Path to the `.loom/work` directory (not the config file itself)
 ///
 /// # Returns
 /// * `Ok(Some(Config))` - Config loaded and parsed successfully
@@ -86,58 +86,162 @@ pub fn load_config_required(work_dir: &Path) -> Result<Config> {
         .ok_or_else(|| anyhow::anyhow!("No active plan. Run 'loom init <plan-path>' first."))
 }
 
+/// Directory holding loom's per-project data; `work/` is one of its children,
+/// `cache/` (written by `loom map`) another.
+const LOOM_DIR: &str = ".loom";
+/// The state root's own name under [`LOOM_DIR`].
+const WORK_DIR: &str = "work";
+/// The pre-move spelling of the state root, directly under the project root.
+const LEGACY_WORK_DIR: &str = ".work";
+
+/// Which on-disk spelling a resolved workspace uses.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Layout {
+    /// `<repo>/.loom/work` — the current layout.
+    Nested,
+    /// `<repo>/.work` — a workspace created before the move.
+    Legacy,
+}
+
+/// The workspace rooted at `dir`, if either layout has a `config.toml` there.
+///
+/// Keyed on the config FILE, never on directory existence: `~/.loom/config.toml`
+/// is a user-level file and `.loom/cache/` appears in any project that has run
+/// `loom map`, so a bare `.loom/` marks nothing. Nested wins over legacy when
+/// both are present.
+fn workspace_at(dir: &Path) -> Option<(PathBuf, Layout)> {
+    let nested = dir.join(LOOM_DIR).join(WORK_DIR);
+    if nested.join("config.toml").exists() {
+        return Some((nested, Layout::Nested));
+    }
+    let legacy = dir.join(LEGACY_WORK_DIR);
+    if legacy.join("config.toml").exists() {
+        return Some((legacy, Layout::Legacy));
+    }
+    None
+}
+
+/// The layout `base` names when it already IS a state root rather than a
+/// project root, in either spelling.
+///
+/// Hook entry points (see `commands/hook/reconcile_graph.rs`) hand `WorkDir::new`
+/// `LOOM_WORK_DIR`, which names the state directory ITSELF, not its parent — so
+/// a `base` that already names one must resolve to itself rather than get a
+/// second state root appended under it. Both spellings need recognising: after
+/// the move the pinned value ends `.loom/work`, whose final component alone is
+/// the unremarkable `work`, while a workspace created before the move still
+/// pins a single `.work`. Miss either and a stale pin materializes a phantom
+/// `<...>/.loom/work/.loom/work` (or `<...>/.work/.work`), whose `repo_root()`
+/// is the state directory itself. `initialize()` creates the root this returns,
+/// so the branch keeps that creation correct for a state-root-named hint too.
+fn base_names_state_root(base: &Path) -> Option<Layout> {
+    let name = base.file_name()?;
+    if name == std::ffi::OsStr::new(WORK_DIR)
+        && base.parent().and_then(Path::file_name) == Some(std::ffi::OsStr::new(LOOM_DIR))
+    {
+        return Some(Layout::Nested);
+    }
+    if name == std::ffi::OsStr::new(LEGACY_WORK_DIR) {
+        return Some(Layout::Legacy);
+    }
+    None
+}
+
+/// The nearest ancestor of `dir` (inclusive) holding a `.git` entry, or `None`
+/// when there is none.
+///
+/// This is the bound on the upward workspace search: a `.git` marks the one
+/// tree whose `config.toml` can legitimately be this base's workspace. `.git`
+/// is an ENTRY, not necessarily a directory — a linked worktree's is a file
+/// pointing at the main repo's gitdir — so existence, not `is_dir`, is the
+/// test.
+fn nearest_git_root(dir: &Path) -> Option<&Path> {
+    let mut current = dir;
+    loop {
+        if current.join(".git").exists() {
+            return Some(current);
+        }
+        match current.parent() {
+            Some(parent) if parent != current => current = parent,
+            _ => return None,
+        }
+    }
+}
+
+/// Apply the layout's hop count to a state-root path.
+fn repo_root_of(root: &Path, layout: Layout) -> Option<&Path> {
+    match layout {
+        Layout::Nested => root.parent()?.parent(),
+        Layout::Legacy => root.parent(),
+    }
+}
+
 pub struct WorkDir {
     root: PathBuf,
+    layout: Layout,
 }
 
 impl WorkDir {
+    /// Resolve the workspace for `base_path`, picking the root exactly once.
+    ///
+    /// Whatever root resolves is the workspace for reads AND writes: a project
+    /// still on `.work/` keeps getting its signals, stages and config writes
+    /// there. Nothing here ever produces a `.work/` that does not already
+    /// exist — the fallback is always the nested layout, so `initialize()` on a
+    /// fresh repo lands at `.loom/work`.
     pub fn new<P: AsRef<Path>>(base_path: P) -> Result<Self> {
         let base = base_path.as_ref();
-        let candidate = base.join(".work");
-        if candidate.exists() {
-            return Ok(Self { root: candidate });
+        // `base` itself first, uncanonicalized: callers passing "." (see
+        // `commands/status.rs`) get a root relative to it, as they always have.
+        if let Some((root, layout)) = workspace_at(base) {
+            return Ok(Self { root, layout });
         }
 
-        // Search upward for .work (like git searches for .git)
+        // Search upward for a workspace (like git searches for .git), bounded
+        // at the enclosing repository: the walk covers `base` up to and
+        // including the nearest ancestor holding a `.git`, and NO base outside
+        // a repository walks at all. Without that second half the walk ran to
+        // `/`, inspecting `$HOME` and the OS temp root on the way, and silently
+        // adopted the first `config.toml` it met — so one `loom init` in
+        // `$HOME` would claim every later command issued from any non-git
+        // directory beneath it, for writes as well as reads.
         if let Ok(abs) = base.canonicalize() {
-            let mut current = abs.as_path();
-            loop {
-                let work_candidate = current.join(".work");
-                if work_candidate.exists() {
-                    return Ok(Self {
-                        root: work_candidate,
-                    });
-                }
-                match current.parent() {
-                    Some(parent) if parent != current => current = parent,
-                    _ => break,
+            if let Some(repo_root) = nearest_git_root(&abs) {
+                let mut current = abs.as_path();
+                loop {
+                    if let Some((root, layout)) = workspace_at(current) {
+                        return Ok(Self { root, layout });
+                    }
+                    if current == repo_root {
+                        break;
+                    }
+                    match current.parent() {
+                        Some(parent) if parent != current => current = parent,
+                        _ => break,
+                    }
                 }
             }
         }
 
-        // Fallback: no `.work` found anywhere, direct or upward. Hook entry
-        // points (see `commands/hook/reconcile_graph.rs`) hand this
-        // function `LOOM_WORK_DIR`, which names the `.work` directory
-        // ITSELF, not its parent — so when `base`'s own final path
-        // component is `.work`, treat `base` as the root rather than
-        // appending a second `.work` under it. A stale pin naming a
-        // since-deleted `.work/` must resolve back to that same missing
-        // path, not to `<...>/.work/.work` (whose `project_root()` would be
-        // the `.work` directory itself, which is how a stale pin used to
-        // materialize a phantom `.work/` in an uninitialized repo). Needed
-        // for `initialize()`, which creates `.work` at whatever root this
-        // returns — this branch keeps that root correct for a `.work`-named
-        // hint too.
-        if base.file_name() == Some(std::ffi::OsStr::new(".work")) {
+        if let Some(layout) = base_names_state_root(base) {
             return Ok(Self {
                 root: base.to_path_buf(),
+                layout,
             });
         }
 
-        Ok(Self { root: candidate })
+        Ok(Self {
+            root: base.join(LOOM_DIR).join(WORK_DIR),
+            layout: Layout::Nested,
+        })
     }
 
-    /// Open an existing `.work/` directory or initialise it if missing.
+    /// The spelling of the resolved state root.
+    pub fn layout(&self) -> Layout {
+        self.layout
+    }
+
+    /// Open an existing state directory or initialise it if missing.
     ///
     /// Used by `loom init` reconfigure paths so a second invocation (with
     /// different flags) does not destroy existing state (per finding #11).
@@ -152,21 +256,22 @@ impl WorkDir {
 
     pub fn initialize(&self) -> Result<()> {
         if self.root.exists() {
-            bail!(".work directory already exists");
+            bail!("{} already exists", self.root.display());
         }
 
+        // Recursive: the nested layout's `.loom/` parent may not exist yet.
         let mut root_builder = fs::DirBuilder::new();
         root_builder.recursive(true).mode(0o700);
         root_builder
             .create(&self.root)
-            .context("Failed to create .work directory")?;
+            .with_context(|| format!("Failed to create {}", self.root.display()))?;
 
         self.ensure_layout()
     }
 
-    /// Adopt a `.work/` directory that already exists on disk but holds no
+    /// Adopt a state directory that already exists on disk but holds no
     /// orchestration state — e.g. a phantom directory a stale `LOOM_WORK_DIR`
-    /// pin caused a hook to materialize against a since-deleted `.work/`.
+    /// pin caused a hook to materialize against a since-deleted workspace.
     /// `commands/init/execute.rs` decides when that is actually safe (no
     /// `config.toml`, no stage/session files) before calling this.
     ///
@@ -176,7 +281,7 @@ impl WorkDir {
     /// directory this call did not create.
     pub fn adopt_existing(&self) -> Result<()> {
         if !self.root.exists() {
-            bail!(".work directory does not exist; nothing to adopt");
+            bail!("{} does not exist; nothing to adopt", self.root.display());
         }
 
         self.ensure_layout()
@@ -185,7 +290,7 @@ impl WorkDir {
     /// The layout work both `initialize()` and `adopt_existing()` need once
     /// `self.root` exists: the private-mode subdirectories, the README, and
     /// the knowledge directory. Idempotent — skips anything already present,
-    /// so `adopt_existing()` can call it against a `.work/` that already
+    /// so `adopt_existing()` can call it against a state root that already
     /// holds some (but not all) of this layout.
     fn ensure_layout(&self) -> Result<()> {
         // Includes `memory`, `wrappers`, `pids` — session wrapper scripts,
@@ -211,8 +316,10 @@ impl WorkDir {
             self.create_readme()?;
         }
 
-        // Initialize knowledge directory with template files
-        // KnowledgeDir expects project root (parent of .work), not work_dir
+        // Initialize knowledge directory with template files.
+        // KnowledgeDir expects the project root, not the state root — the hop
+        // count differs per layout, which is why this goes through
+        // `project_root()` rather than a bare `parent()`.
         if let Some(project_root) = self.project_root() {
             let knowledge = KnowledgeDir::new(project_root);
             knowledge.initialize()?;
@@ -223,7 +330,10 @@ impl WorkDir {
 
     pub fn load(&self) -> Result<()> {
         if !self.root.exists() {
-            bail!(".work directory does not exist. Run 'loom init' first.");
+            bail!(
+                "{} does not exist. Run 'loom init' first.",
+                self.root.display()
+            );
         }
 
         self.validate_structure()?;
@@ -243,7 +353,7 @@ impl WorkDir {
                 // Auto-create missing directories instead of failing, at the
                 // same 0o700 mode `initialize()`/`ensure_layout()` use — a
                 // plain `create_dir` would land these at the process umask
-                // instead, inside an otherwise-0700 `.work/`.
+                // instead, inside an otherwise-0700 state root.
                 let mut builder = fs::DirBuilder::new();
                 builder.mode(0o700);
                 builder
@@ -305,13 +415,13 @@ Do not manually edit these files unless you know what you're doing.
         self.root.join("knowledge")
     }
 
-    /// Path to `.work/disputes/` — adjudication artifacts. See
+    /// Path to `.loom/work/disputes/` — adjudication artifacts. See
     /// `models/dispute.rs` for the per-id directory schema.
     pub fn disputes_dir(&self) -> PathBuf {
         self.root.join("disputes")
     }
 
-    /// Path to `.work/plan_versions/` — plan amendment snapshots and
+    /// Path to `.loom/work/plan_versions/` — plan amendment snapshots and
     /// audit log. Populated by the Stage 3 plan-amendment pipeline.
     pub fn plan_versions_dir(&self) -> PathBuf {
         self.root.join("plan_versions")
@@ -325,7 +435,7 @@ Do not manually edit these files unless you know what you're doing.
     /// Ensure a subdirectory exists, creating it if needed
     ///
     /// # Arguments
-    /// * `name` - The subdirectory name relative to .work/
+    /// * `name` - The subdirectory name relative to the state root
     ///
     /// # Returns
     /// The full path to the directory
@@ -354,24 +464,36 @@ Do not manually edit these files unless you know what you're doing.
         &self.root
     }
 
-    /// Get the project root (parent of .work directory)
+    /// The project root holding this state directory, layout-aware.
+    ///
+    /// Two hops up from `.loom/work`, one from a legacy `.work`. Every caller
+    /// goes through here (or [`Self::project_root`], its alias) so the hop
+    /// count exists in exactly one place.
+    pub fn repo_root(&self) -> Option<&Path> {
+        repo_root_of(&self.root, self.layout)
+    }
+
+    /// Get the project root.
     pub fn project_root(&self) -> Option<&Path> {
-        self.root.parent()
+        self.repo_root()
     }
 
     /// Get the main project root by following symlinks.
     ///
-    /// In a worktree, `.work` is a symlink pointing to `../../.work` (the main repo's .work).
-    /// This method resolves that symlink to find the true main repository root.
+    /// In a worktree the state root is a symlink into the main repo's:
+    /// `.loom/work -> ../../../.loom/work`, or `.work -> ../../.work` under the
+    /// legacy layout. This method resolves that symlink to find the true main
+    /// repository root.
     ///
-    /// - If `.work` is a symlink, follows it and returns the parent of the resolved path.
-    /// - If `.work` is not a symlink, returns the regular project root (same as `project_root()`).
+    /// - If the state root is a symlink, follows it and applies the layout's
+    ///   hop count to the resolved path.
+    /// - Otherwise returns the regular project root (same as `project_root()`).
     pub fn main_project_root(&self) -> Option<PathBuf> {
         if self.root.is_symlink() {
             // Read the symlink target
             if let Ok(link_target) = fs::read_link(&self.root) {
-                // If the symlink is relative, resolve it against the parent directory
-                // (the parent of .work, where the symlink is located)
+                // If the symlink is relative, resolve it against the directory
+                // holding the link itself.
                 let resolved = if link_target.is_relative() {
                     self.root.parent()?.join(&link_target)
                 } else {
@@ -380,8 +502,7 @@ Do not manually edit these files unless you know what you're doing.
 
                 // Canonicalize to get the absolute path
                 if let Ok(canonical) = resolved.canonicalize() {
-                    // Return parent of the resolved .work directory
-                    return canonical.parent().map(|p| p.to_path_buf());
+                    return repo_root_of(&canonical, self.layout).map(|p| p.to_path_buf());
                 }
             }
             None
@@ -393,15 +514,15 @@ Do not manually edit these files unless you know what you're doing.
 }
 
 // ==========================================================================
-// Centralized .work/config.toml API
+// Centralized .loom/work/config.toml API
 //
-// All read/write to `.work/config.toml` MUST go through this module so that:
+// All read/write to `.loom/work/config.toml` MUST go through this module so that:
 //   * comments and unknown keys are preserved (toml_edit, not toml::Value),
 //   * structured sub-tables (`[plan_sandbox]`) have one canonical location,
 //   * concurrent access serializes through the file lock used by other
 //     `fs/` writers when needed by callers.
 //
-// Section layout in `.work/config.toml`:
+// Section layout in `.loom/work/config.toml`:
 //
 //   [plan]
 //   source_path / plan_id / plan_name / base_branch
@@ -420,7 +541,7 @@ fn config_path(work_dir: &Path) -> PathBuf {
     work_dir.join("config.toml")
 }
 
-/// Read `.work/config.toml` as a `toml_edit::DocumentMut`, preserving
+/// Read `.loom/work/config.toml` as a `toml_edit::DocumentMut`, preserving
 /// comments, formatting, and unknown keys. Returns an empty document if the
 /// file does not exist.
 pub fn read_config(work_dir: &Path) -> Result<DocumentMut> {
@@ -435,8 +556,8 @@ pub fn read_config(work_dir: &Path) -> Result<DocumentMut> {
         .with_context(|| format!("Failed to parse {}", path.display()))
 }
 
-/// Write the document back to `.work/config.toml`, crash-atomically and under
-/// the `.work/` directory lock.
+/// Write the document back to `.loom/work/config.toml`, crash-atomically and
+/// under the state directory lock.
 ///
 /// The write goes through [`crate::fs::locking::locked_write`] (temp file +
 /// `fsync` + `rename`), so a crash mid-write leaves either the old config or the
@@ -461,8 +582,8 @@ pub fn write_config(work_dir: &Path, doc: &DocumentMut) -> Result<()> {
     Ok(())
 }
 
-/// Read-modify-write `.work/config.toml` while holding the `.work/` directory
-/// lock for the whole sequence.
+/// Read-modify-write `.loom/work/config.toml` while holding the state
+/// directory lock for the whole sequence.
 ///
 /// This is the lost-update-safe way to mutate the config: the read, the
 /// `modify` closure, and the atomic write all happen under a single exclusive

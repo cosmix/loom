@@ -62,7 +62,7 @@ use lock::{claim_lock, decide, reconcile_lock_path, unix_now, LockDecision};
 /// Always exits `Ok(())` and prints nothing: this is an internal maintenance
 /// entry point [`spawn_if_needed`] launches detached from a hook, so nothing
 /// here may ever surface as a session-visible error or stray output. Every
-/// failure — no resolvable `.work/`, a git failure, a graph-store I/O error —
+/// failure — no resolvable state directory, a git failure, a graph-store I/O error —
 /// is logged at `tracing::debug` and swallowed.
 pub fn reconcile_graph() -> Result<()> {
     if let Err(error) = try_reconcile() {
@@ -76,7 +76,7 @@ pub fn reconcile_graph() -> Result<()> {
 /// regardless of the reconcile's own outcome.
 fn try_reconcile() -> Result<()> {
     let Some(target) = ReconcileTarget::from_environment() else {
-        // No `.work/` resolvable from the environment or cwd at all — nothing
+        // No state directory resolvable from the environment or cwd at all — nothing
         // to reconcile, and not a failure: a bare checkout with no loom
         // project is a legitimate place for this to be invoked from.
         return Ok(());
@@ -106,8 +106,8 @@ fn try_reconcile() -> Result<()> {
     outcome
 }
 
-/// Where this session's reconcile is scoped, and the `.work/` it resolves
-/// against.
+/// Where this session's reconcile is scoped, and the state directory it
+/// resolves against.
 struct ReconcileTarget {
     work_dir: WorkDir,
     /// `Some((plan, stage))` for a real stage's own overlay (A.22); `None`
@@ -121,11 +121,11 @@ impl ReconcileTarget {
     ///
     /// The single existence check on `work_dir.root()` at the end guards
     /// both `for_stage` and `for_checkout`: `WorkDir::new` never fails
-    /// (`try_reconcile`'s own doc comment promises "no `.work/` resolvable
-    /// ... nothing to reconcile, and not a failure"), so without this a
+    /// (`try_reconcile`'s own doc comment promises "no state directory
+    /// resolvable ... nothing to reconcile, and not a failure"), so without this a
     /// stale `LOOM_STAGE_ID`/`LOOM_WORK_DIR` pin naming a since-deleted
-    /// `.work/` would resolve to a `ReconcileTarget` anyway, and
-    /// `ContextStore::open` below would recreate that `.work/` from
+    /// state directory would resolve to a `ReconcileTarget` anyway, and
+    /// `ContextStore::open` below would recreate that state directory from
     /// scratch in a checkout that was never `loom init`ed.
     fn from_environment() -> Option<Self> {
         Self::for_stage()
@@ -137,7 +137,7 @@ impl ReconcileTarget {
     /// unset, unusable, or names no stage on disk.
     ///
     /// `LOOM_STAGE_ID` becomes a path component (the stage's overlay
-    /// directory under `.work/context/<plan>/<stage>/`), so it is validated
+    /// directory under `<state-dir>/context/<plan>/<stage>/`), so it is validated
     /// HERE, at the boundary, exactly as
     /// `commands::hook::user_prompt::DeliveryTarget::for_stage` validates
     /// it — do not weaken this.
@@ -156,7 +156,7 @@ impl ReconcileTarget {
     /// The checkout this process is running in, for no stage at all —
     /// `LOOM_WORK_DIR` when set, else the current directory, matching
     /// `DeliveryTarget::for_checkout`'s fallback so a hook invoked with no
-    /// loom stage in scope still resolves to the same `.work/` retrieval did.
+    /// loom stage in scope still resolves to the same state directory retrieval did.
     fn for_checkout() -> Option<Self> {
         let hint = non_empty_env("LOOM_WORK_DIR").unwrap_or_else(|| ".".to_string());
         let work_dir = WorkDir::new(hint).ok()?;
@@ -179,7 +179,7 @@ fn reconcile(target: &ReconcileTarget, store: &ContextStore) -> Result<()> {
     let project_root = target
         .work_dir
         .project_root()
-        .context("could not resolve a project root for this .work/")?;
+        .context("could not resolve a project root for this state directory")?;
 
     match &target.stage {
         Some((plan, stage)) => {
@@ -233,7 +233,7 @@ pub fn spawn_if_needed(pack: &ContextPack, project_root: &Path) {
 /// walks every tracked file through tree-sitter and rewrites a
 /// multi-megabyte graph; that is too expensive to launch against a checkout
 /// the caller reached only by an upward directory search from an unrelated
-/// working directory (`WorkDir::new`'s `.work`-search fallback — the same
+/// working directory (`WorkDir::new`'s state-directory-search fallback — the same
 /// path `ReconcileTarget::for_checkout` above and
 /// `user_prompt::DeliveryTarget::for_checkout` both take when
 /// `LOOM_WORK_DIR` is unset).

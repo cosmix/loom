@@ -69,7 +69,18 @@ fn drain_spool_before_removal(stage_id: &str, repo_root: &Path) {
     if !worktree_root.exists() {
         return;
     }
-    let work_dir = repo_root.join(".work");
+    let work_dir = match crate::fs::work_dir::WorkDir::new(repo_root) {
+        Ok(wd) => wd.root().to_path_buf(),
+        Err(e) => {
+            tracing::warn!(
+                stage_id = %stage_id,
+                error = %e,
+                "Failed to resolve state directory before draining memory spool; any pending \
+                 entries will be lost with the worktree"
+            );
+            return;
+        }
+    };
     match crate::fs::memory::drain_into_journal(&work_dir, stage_id, &worktree_root) {
         Ok(outcome) if outcome.drained > 0 || outcome.skipped_malformed > 0 => {
             tracing::info!(

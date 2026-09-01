@@ -5,7 +5,7 @@
 //! - Branch management for stage isolation
 //! - Merge operations for integrating completed work
 //! - Cleanup utilities for successful merges
-//! - Git hook installation for .work protection
+//! - Git hook installation for .loom/work protection
 
 pub mod branch;
 pub mod cleanup;

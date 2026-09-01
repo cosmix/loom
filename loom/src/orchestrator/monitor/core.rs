@@ -46,7 +46,7 @@ pub struct Monitor {
 impl Monitor {
     pub fn new(mut config: MonitorConfig) -> Self {
         // Resolve the plan-wide ceilings once, here, rather than re-reading
-        // `.work/config.toml` for every session on every tick. Operators edit
+        // `.loom/work/config.toml` for every session on every tick. Operators edit
         // the section between runs, exactly like `[terminal]`.
         config.context =
             crate::fs::work_dir::read_context_config(&config.work_dir).unwrap_or_default();
@@ -131,12 +131,12 @@ impl Monitor {
         &self.config
     }
 
-    /// Load all stages from .work/stages/
+    /// Load all stages from .loom/work/stages/
     pub fn load_stages(&self) -> Result<Vec<Stage>> {
         crate::verify::transitions::list_all_stages(&self.config.work_dir)
     }
 
-    /// Load all sessions from .work/sessions/
+    /// Load all sessions from .loom/work/sessions/
     pub fn load_sessions(&self) -> Result<Vec<Session>> {
         let sessions_dir = self.config.work_dir.join("sessions");
         if !sessions_dir.exists() {

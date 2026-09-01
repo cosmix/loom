@@ -54,7 +54,7 @@ const MIN_PROMPT_CHARS: usize = 24;
 
 /// Where a prompt-hook delivery is filed, and what it is filed against.
 struct DeliveryTarget {
-    /// The `.work/` root a delivery record is filed under. It may not exist:
+    /// The state directory root a delivery record is filed under. It may not exist:
     /// a session outside any loom project still retrieves, it just has nowhere
     /// to record what it was handed.
     work_dir: PathBuf,
@@ -232,7 +232,7 @@ impl DeliveryTarget {
     ///
     /// Resolved the same way [`retrieve_for_stage`] resolves its own copy
     /// internally — from the MAIN project root, following a worktree's
-    /// `.work` symlink back to the host repository — because
+    /// state directory symlink back to the host repository — because
     /// `retrieve_for_stage` does not hand its config back to its caller, and
     /// this hook needs the SAME values it retrieved against for its own
     /// budget and byte ceiling. [`RetrievalConfig::load`] never errors, so
@@ -296,15 +296,15 @@ impl DeliveryTarget {
     /// nothing else, so it is logged and ignored — the hook has already
     /// printed.
     ///
-    /// With no `.work/` there is nowhere to file anything, and that is not a
+    /// With no state directory there is nowhere to file anything, and that is not a
     /// failure either: a prompt hook running in a project that never asked for
-    /// loom must not create a `.work/` tree as a side effect of answering one
+    /// loom must not create a state directory as a side effect of answering one
     /// question. The cost is that suppression cannot work there — every prompt
     /// re-delivers what the last one was given — which is the same "nothing
     /// delivered" the unreadable-record path already accepts.
     fn record(&self, recipient: &str, handed_over: &ContextPack) {
         if !self.work_dir.exists() {
-            tracing::debug!("No .work/ to file a prompt-hook delivery record in");
+            tracing::debug!("No state directory to file a prompt-hook delivery record in");
             return;
         }
         let record = DeliveryRecord::from_pack(recipient.to_string(), handed_over);

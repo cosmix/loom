@@ -22,8 +22,8 @@ const PEER_IDENTITY_CREDENTIAL: &str = "peer-identity";
 ///
 /// A sandboxed worktree agent is denied the `user.token` read on purpose
 /// (S-1) — the token authorizes every User RPC, not just this one. The
-/// broker itself can't read it either when run from inside a worktree:
-/// `.work` there is a symlink, and `safe_open_dirfd` opens the work-dir root
+/// broker itself can't read it either when run from inside a worktree: the
+/// state directory there is a symlink, and `safe_open_dirfd` opens the work-dir root
 /// with `O_NOFOLLOW`, so the read fails by construction. Either way, absence
 /// is the normal case on this path, not an error.
 ///

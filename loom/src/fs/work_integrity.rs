@@ -1,21 +1,22 @@
 //! Work directory integrity validation
 //!
-//! This module provides validation to detect and prevent corruption of the .work
-//! directory, particularly from accidental commits of the .work symlink in worktrees.
+//! This module provides validation to detect and prevent corruption of the
+//! .loom/work directory, particularly from accidental commits of the
+//! .loom/work symlink in worktrees.
 
 use anyhow::{bail, Result};
 use std::path::Path;
 
-/// State of the .work directory
+/// State of the .loom/work directory
 #[derive(Debug, Clone, PartialEq)]
 pub enum WorkDirState {
-    /// .work is a regular directory (correct state for main repo)
+    /// .loom/work is a regular directory (correct state for main repo)
     Directory,
-    /// .work is a symlink (correct state for worktrees)
+    /// .loom/work is a symlink (correct state for worktrees)
     Symlink { target: String },
-    /// .work does not exist
+    /// .loom/work does not exist
     Missing,
-    /// .work exists but is neither directory nor symlink (corrupted)
+    /// .loom/work exists but is neither directory nor symlink (corrupted)
     Invalid,
 }
 
@@ -30,15 +31,15 @@ impl std::fmt::Display for WorkDirState {
     }
 }
 
-/// Check the current state of the .work directory
+/// Check the current state of the .loom/work directory
 ///
 /// # Arguments
 /// * `repo_root` - Path to the repository root
 ///
 /// # Returns
-/// The current state of the .work directory
+/// The current state of the .loom/work directory
 pub fn check_work_dir_state(repo_root: &Path) -> WorkDirState {
-    let work_path = repo_root.join(".work");
+    let work_path = repo_root.join(".loom").join("work");
 
     if !work_path.exists() && !work_path.is_symlink() {
         return WorkDirState::Missing;
@@ -70,13 +71,13 @@ pub fn is_in_worktree(current_dir: &Path) -> bool {
     path_str.contains(".worktrees/")
 }
 
-/// Validate that the .work directory is in the expected state
+/// Validate that the .loom/work directory is in the expected state
 ///
-/// In the main repository, .work should be a directory.
-/// In a worktree, .work should be a symlink.
+/// In the main repository, .loom/work should be a directory.
+/// In a worktree, .loom/work should be a symlink.
 ///
 /// This function is called during `loom init` and `loom run` to detect
-/// potential corruption from committed .work symlinks.
+/// potential corruption from committed .loom/work symlinks.
 ///
 /// # Arguments
 /// * `repo_root` - Path to the repository root
@@ -91,11 +92,11 @@ pub fn validate_work_dir_state(repo_root: &Path) -> Result<()> {
     match (&state, in_worktree) {
         // Main repo with directory - correct
         (WorkDirState::Directory, false) => Ok(()),
-        // Main repo with missing .work - fine, will be created
+        // Main repo with missing .loom/work - fine, will be created
         (WorkDirState::Missing, false) => Ok(()),
         // Worktree with symlink - correct
         (WorkDirState::Symlink { .. }, true) => Ok(()),
-        // Worktree with missing .work - will be created as symlink
+        // Worktree with missing .loom/work - will be created as symlink
         (WorkDirState::Missing, true) => Ok(()),
 
         // Main repo with symlink - CORRUPTED!
@@ -103,14 +104,14 @@ pub fn validate_work_dir_state(repo_root: &Path) -> Result<()> {
             bail!(
                 "\n\
                 ============================================================\n\
-                CRITICAL: .work directory is corrupted!\n\
+                CRITICAL: .loom/work directory is corrupted!\n\
                 ============================================================\n\
                 \n\
-                The .work directory is a symlink (-> {target}) in the main repo.\n\
-                This typically happens when .work from a worktree was committed.\n\
+                The .loom/work directory is a symlink (-> {target}) in the main repo.\n\
+                This typically happens when .loom/work from a worktree was committed.\n\
                 \n\
                 TO FIX:\n\
-                1. Remove the symlink: rm .work\n\
+                1. Remove the symlink: rm .loom/work\n\
                 2. Run: loom init <your-plan> --clean\n\
                 \n\
                 Or run: loom repair --fix\n\
@@ -124,7 +125,7 @@ pub fn validate_work_dir_state(repo_root: &Path) -> Result<()> {
         // Worktree with directory instead of symlink - unusual but not fatal
         (WorkDirState::Directory, true) => {
             eprintln!(
-                "Warning: .work is a directory in worktree (expected symlink). \
+                "Warning: .loom/work is a directory in worktree (expected symlink). \
                  This may cause state inconsistencies."
             );
             Ok(())
@@ -133,20 +134,20 @@ pub fn validate_work_dir_state(repo_root: &Path) -> Result<()> {
         // Invalid state
         (WorkDirState::Invalid, _) => {
             bail!(
-                ".work exists but is neither a directory nor symlink. \
+                ".loom/work exists but is neither a directory nor symlink. \
                  Remove it and run 'loom init' again."
             );
         }
     }
 }
 
-/// Check if .work is properly ignored by git
+/// Check if .loom/work is properly ignored by git
 ///
 /// # Arguments
 /// * `repo_root` - Path to the repository root
 ///
 /// # Returns
-/// true if .work is ignored
+/// true if .loom/work is ignored
 pub fn is_work_dir_git_ignored(repo_root: &Path) -> bool {
     let gitignore_path = repo_root.join(".gitignore");
     if !gitignore_path.exists() {
@@ -158,7 +159,7 @@ pub fn is_work_dir_git_ignored(repo_root: &Path) -> bool {
             // Check for both patterns
             content.lines().any(|line| {
                 let trimmed = line.trim();
-                trimmed == ".work/" || trimmed == ".work"
+                trimmed == ".loom/work/" || trimmed == ".loom/work"
             })
         }
         Err(_) => false,
@@ -203,7 +204,7 @@ mod tests {
     #[test]
     fn test_check_work_dir_state_directory() {
         let temp = TempDir::new().unwrap();
-        fs::create_dir(temp.path().join(".work")).unwrap();
+        fs::create_dir_all(temp.path().join(".loom").join("work")).unwrap();
         let state = check_work_dir_state(temp.path());
         assert_eq!(state, WorkDirState::Directory);
     }
@@ -214,7 +215,8 @@ mod tests {
         let temp = TempDir::new().unwrap();
         let target = temp.path().join("target");
         fs::create_dir(&target).unwrap();
-        std::os::unix::fs::symlink(&target, temp.path().join(".work")).unwrap();
+        fs::create_dir(temp.path().join(".loom")).unwrap();
+        std::os::unix::fs::symlink(&target, temp.path().join(".loom").join("work")).unwrap();
 
         let state = check_work_dir_state(temp.path());
         match state {
@@ -238,14 +240,14 @@ mod tests {
     #[test]
     fn test_validate_work_dir_state_main_repo_ok() {
         let temp = TempDir::new().unwrap();
-        fs::create_dir(temp.path().join(".work")).unwrap();
+        fs::create_dir_all(temp.path().join(".loom").join("work")).unwrap();
         assert!(validate_work_dir_state(temp.path()).is_ok());
     }
 
     #[test]
     fn test_validate_work_dir_state_main_repo_missing_ok() {
         let temp = TempDir::new().unwrap();
-        // No .work - should be ok (will be created)
+        // No .loom/work - should be ok (will be created)
         assert!(validate_work_dir_state(temp.path()).is_ok());
     }
 
@@ -257,7 +259,7 @@ mod tests {
         assert!(!is_work_dir_git_ignored(temp.path()));
 
         // With proper ignore
-        fs::write(temp.path().join(".gitignore"), ".work/\n.work\n").unwrap();
+        fs::write(temp.path().join(".gitignore"), ".loom/work/\n.loom/work\n").unwrap();
         assert!(is_work_dir_git_ignored(temp.path()));
     }
 }

@@ -40,10 +40,13 @@ fn run_orchestrator(
 ) -> Result<()> {
     let (graph, plan_sandbox) = build_execution_graph(work_dir)?;
 
-    // repo_root = work_dir's parent; unreachable fallback once work_dir is absolute.
-    let repo_root = work_dir
-        .parent()
-        .map(|p| p.to_path_buf())
+    // repo_root: hop count from the state root is layout-dependent (nested
+    // `.loom/work` vs. legacy `.work`), so this goes through
+    // `WorkDir::project_root()` rather than a bare `.parent()`. The fallback
+    // is unreachable once work_dir is absolute.
+    let repo_root = WorkDir::new(work_dir)
+        .ok()
+        .and_then(|wd| wd.project_root().map(|p| p.to_path_buf()))
         .unwrap_or_else(|| PathBuf::from("."));
     let repo_root_for_plan = repo_root.clone();
 
@@ -99,7 +102,8 @@ fn run_orchestrator(
                 println!("All stages completed successfully");
 
                 // Mark plan as done if all stages are merged
-                // Note: WorkDir::new expects repo_root, not work_dir (it appends .work internally)
+                // Note: WorkDir::new expects repo_root, not work_dir — it resolves
+                // the state root itself (nested .loom/work, falling back to legacy .work).
                 if let Ok(work_dir_obj) = WorkDir::new(&repo_root_for_plan) {
                     if let Err(e) = mark_plan_done_if_all_merged(&work_dir_obj) {
                         eprintln!("Warning: Failed to mark plan as done: {e}");
@@ -135,7 +139,7 @@ fn write_completion_marker(work_dir: &Path) {
     }
 }
 
-/// Build execution graph from .work/stages/ files.
+/// Build execution graph from .loom/work/stages/ files.
 ///
 /// This function now delegates to the shared implementation in plan::graph::loader.
 pub(super) fn build_execution_graph(work_dir: &Path) -> Result<(ExecutionGraph, SandboxConfig)> {

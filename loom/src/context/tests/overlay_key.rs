@@ -2,7 +2,7 @@
 //!
 //! A stage's source-graph overlay is WRITTEN by
 //! [`MergeLifecycle::reconcile_overlay`], which keys it by the `plan_id` in
-//! `.work/config.toml`, and READ by the stage's knowledge brief
+//! `.loom/work/config.toml`, and READ by the stage's knowledge brief
 //! (`orchestrator/signals/retrieval.rs`), which keys it by
 //! [`plan_key`] over `Stage::plan_id`. `loom init` stamps both from one parsed
 //! plan id (`commands/init/plan_setup.rs`: the `[plan]` table and every stage
@@ -28,7 +28,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use tempfile::TempDir;
 
-/// The single plan id `loom init` would stamp into BOTH `.work/config.toml` and
+/// The single plan id `loom init` would stamp into BOTH `.loom/work/config.toml` and
 /// the stage record. Supplying it once here is the invariant under test.
 const PLAN_ID: &str = "PLAN-source-channel";
 const STAGE_ID: &str = "source-ranker";
@@ -51,16 +51,16 @@ fn git_ok(root: &Path, args: &[&str]) {
     );
 }
 
-/// A project root with `.work/config.toml` naming [`PLAN_ID`], and a committed
+/// A project root with `.loom/work/config.toml` naming [`PLAN_ID`], and a committed
 /// git repository at `.worktrees/<stage>` for the overlay reconcile to walk —
 /// the shape [`MergeLifecycle::reconcile_overlay`] expects at merge time.
 fn project_with_stage_worktree() -> TempDir {
     let temp = TempDir::new().unwrap();
     let root = temp.path();
 
-    fs::create_dir_all(root.join(".work")).unwrap();
+    fs::create_dir_all(root.join(".loom").join("work")).unwrap();
     fs::write(
-        root.join(".work").join("config.toml"),
+        root.join(".loom").join("work").join("config.toml"),
         format!(
             "[plan]\nsource_path = \"doc/plans/PLAN-source-channel.md\"\n\
              plan_id = \"{PLAN_ID}\"\nplan_name = \"Source channel\"\n\
@@ -91,14 +91,14 @@ fn stage_record() -> Stage {
 }
 
 /// The graph store the reader opens: cache root from [`ContextStore`], overlay
-/// root from `.work/`, exactly as `retrieve::load_resolved_graph` builds it.
+/// root from `.loom/work/`, exactly as `retrieve::load_resolved_graph` builds it.
 fn reader_graph_store(project_root: &Path) -> GraphStore {
     let work_dir = WorkDir::new(project_root).unwrap();
     let store = ContextStore::open(&work_dir).unwrap();
     GraphStore::new(store.root(), work_dir.root())
 }
 
-/// Every overlay layer file under `.work/context/`, whatever it is keyed by.
+/// Every overlay layer file under `.loom/work/context/`, whatever it is keyed by.
 ///
 /// Collected by walking rather than by asking either derivation, so the writer's
 /// address is observed instead of assumed — a test that asked one of the two
@@ -128,9 +128,9 @@ fn written_overlay_layers(work_dir: &Path) -> Vec<PathBuf> {
 fn the_merge_lifecycle_writes_the_overlay_a_stage_brief_reads() {
     let temp = project_with_stage_worktree();
     let project_root = temp.path();
-    let work_dir = project_root.join(".work");
+    let work_dir = project_root.join(".loom").join("work");
 
-    // WRITER: the real production path, keyed off `.work/config.toml`.
+    // WRITER: the real production path, keyed off `.loom/work/config.toml`.
     MergeLifecycle::new(STAGE_ID, project_root, &work_dir).reconcile_overlay();
 
     // READER: the address `signals::retrieval::stage_overlay_scope` builds.

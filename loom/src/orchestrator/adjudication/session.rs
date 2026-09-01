@@ -10,7 +10,7 @@
 //! All of the state that bounds the loop lives on disk, so a daemon restart
 //! mid-adjudication neither loses a live session nor resets its budget:
 //!
-//! * liveness — the session RECORD under `.work/sessions/`, probed through
+//! * liveness — the session RECORD under `.loom/work/sessions/`, probed through
 //!   [`crate::orchestrator::session_registry::live_sessions_for_stage`], the
 //!   same helper the stage executor asks before spawning;
 //! * budget — `attempts` in the dispute directory, mirroring the on-disk
@@ -27,7 +27,7 @@ use crate::models::session::{Session, SessionType};
 use crate::models::stage::Stage;
 use crate::orchestrator::terminal::backend::SessionBackend;
 
-/// Model adjudication sessions run on when `.work/config.toml` names none.
+/// Model adjudication sessions run on when `.loom/work/config.toml` names none.
 ///
 /// A `claude --model` argument (an alias such as `opus`, or a full model id),
 /// never an API model identifier.
@@ -246,7 +246,7 @@ pub fn persist_verdict(
 }
 
 /// Model for adjudication sessions, honouring
-/// `.work/config.toml::[adjudication].model` if present.
+/// `.loom/work/config.toml::[adjudication].model` if present.
 pub fn resolve_model(work_dir: &Path) -> String {
     let config_path = work_dir.join("config.toml");
     if let Ok(content) = std::fs::read_to_string(&config_path) {

@@ -27,10 +27,10 @@ use std::path::Path;
 
 use crate::daemon::DaemonServer;
 
-/// File name of the recorded value under `.work/`.
+/// File name of the recorded value under `.loom/work/`.
 const RECORD_FILE: &str = "tmux-tmpdir";
 
-/// Write `.work/tmux-tmpdir` from the calling process's own environment.
+/// Write `.loom/work/tmux-tmpdir` from the calling process's own environment.
 ///
 /// The file holds the raw bytes of the value (no encoding assumed — a
 /// non-UTF-8 `TMUX_TMPDIR` round-trips unchanged), or is left EMPTY when
@@ -54,11 +54,12 @@ pub fn record_tmux_tmpdir_best_effort(work_dir: &Path) {
     }
 }
 
-/// Remove `.work/tmux-tmpdir` so a `loom attach` run after this orchestrator
-/// has exited never finds a record to adopt. Defense in depth alongside the
-/// daemon-liveness gate on [`adopt_recorded_tmux_tmpdir`] — that gate alone
-/// already refuses a record once no daemon is alive, but deleting the file
-/// also keeps a `.work/` directory from carrying dead state indefinitely.
+/// Remove `.loom/work/tmux-tmpdir` so a `loom attach` run after this
+/// orchestrator has exited never finds a record to adopt. Defense in depth
+/// alongside the daemon-liveness gate on [`adopt_recorded_tmux_tmpdir`] —
+/// that gate alone already refuses a record once no daemon is alive, but
+/// deleting the file also keeps a `.loom/work/` directory from carrying dead
+/// state indefinitely.
 /// Best-effort: a missing file is not an error; any other failure is
 /// reported but never propagated, since cleanup must not block shutdown.
 pub fn remove_tmux_tmpdir_record(work_dir: &Path) {
@@ -72,12 +73,12 @@ pub fn remove_tmux_tmpdir_record(work_dir: &Path) {
 /// What [`adopt_recorded_tmux_tmpdir`] did, for the caller to report.
 #[derive(Debug, PartialEq, Eq)]
 pub enum TmuxTmpdirAdoption {
-    /// No daemon is alive for this `.work/` (per [`DaemonServer::is_running`]).
-    /// Any record present is presumed stale — left behind by an orchestrator
-    /// that has since exited — so it is never adopted and the process env is
-    /// left untouched.
+    /// No daemon is alive for this `.loom/work/` (per
+    /// [`DaemonServer::is_running`]). Any record present is presumed stale —
+    /// left behind by an orchestrator that has since exited — so it is never
+    /// adopted and the process env is left untouched.
     DaemonNotRunning,
-    /// No `.work/tmux-tmpdir` record exists (daemon predates this feature,
+    /// No `.loom/work/tmux-tmpdir` record exists (daemon predates this feature,
     /// or has not recorded yet) — nothing to adopt.
     NoRecord,
     /// The recorded value already matches this process's ambient
@@ -122,7 +123,7 @@ fn trim_trailing_newline(bytes: &[u8]) -> &[u8] {
     bytes.strip_suffix(b"\r").unwrap_or(bytes)
 }
 
-/// Read `.work/tmux-tmpdir` as raw bytes, trimming a trailing line ending. A
+/// Read `.loom/work/tmux-tmpdir` as raw bytes, trimming a trailing line ending. A
 /// record that is empty or all-whitespace after trimming means "recorded as
 /// unset".
 fn read_recorded(work_dir: &Path) -> Option<Option<OsString>> {
@@ -135,8 +136,8 @@ fn read_recorded(work_dir: &Path) -> Option<Option<OsString>> {
     })
 }
 
-/// While an orchestrator is alive for this `.work/` (per
-/// [`DaemonServer::is_running`]), read `.work/tmux-tmpdir`; if it exists and
+/// While an orchestrator is alive for this `.loom/work/` (per
+/// [`DaemonServer::is_running`]), read `.loom/work/tmux-tmpdir`; if it exists and
 /// differs from this process's `TMUX_TMPDIR` (present vs absent counts as
 /// differing), set/unset `TMUX_TMPDIR` in THIS process so every later
 /// `loom_socket_dir()` call and every tmux subprocess this process spawns

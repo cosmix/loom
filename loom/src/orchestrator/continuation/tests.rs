@@ -9,7 +9,7 @@ use tempfile::TempDir;
 
 fn create_test_work_dir() -> (TempDir, std::path::PathBuf) {
     let temp_dir = TempDir::new().expect("Failed to create temp dir");
-    let work_dir = temp_dir.path().join(".work");
+    let work_dir = temp_dir.path().join(".loom").join("work");
 
     fs::create_dir_all(work_dir.join("stages")).unwrap();
     fs::create_dir_all(work_dir.join("handoffs")).unwrap();
@@ -36,6 +36,15 @@ fn create_test_stage(stage_id: &str, work_dir: &std::path::Path) -> crate::model
     stage
 }
 
+/// Plant a worktree fixture where a real one lives: `<repo>/.worktrees/<id>`,
+/// with `repo` the temp directory `create_test_work_dir` rooted the state
+/// directory under — NOT `work_dir.parent()`.
+///
+/// The single hop these tests used to take landed on `<repo>/.loom`, which is
+/// exactly where `load_worktree_path` used to look, so production and the
+/// fixtures agreed on a location no real worktree can ever occupy and the
+/// suite stayed green over the bug. Pinning the real location is what makes
+/// every test below fail if that hop is reintroduced.
 fn create_test_worktree(stage_id: &str, project_root: &std::path::Path) -> Worktree {
     let worktree_path = Worktree::worktree_path(project_root, stage_id);
     fs::create_dir_all(&worktree_path).unwrap();
@@ -102,8 +111,8 @@ fn test_continuation_config_default() {
 
 #[test]
 fn direct_auto_spawn_is_refused_before_writing_a_session() {
-    let (_temp, work_dir) = create_test_work_dir();
-    let project_root = work_dir.parent().unwrap();
+    let (temp, work_dir) = create_test_work_dir();
+    let project_root = temp.path();
     let stage = create_test_stage("unsafe-direct-spawn", &work_dir);
     let worktree = create_test_worktree(&stage.id, project_root);
     let error = continue_session(
@@ -121,8 +130,8 @@ fn direct_auto_spawn_is_refused_before_writing_a_session() {
 
 #[test]
 fn test_prepare_continuation_with_handoff() {
-    let (_temp, work_dir) = create_test_work_dir();
-    let project_root = work_dir.parent().unwrap();
+    let (temp, work_dir) = create_test_work_dir();
+    let project_root = temp.path();
     let stage_id = "stage-test-1";
 
     create_test_stage(stage_id, &work_dir);
@@ -144,8 +153,8 @@ fn test_prepare_continuation_with_handoff() {
 
 #[test]
 fn test_prepare_continuation_without_handoff() {
-    let (_temp, work_dir) = create_test_work_dir();
-    let project_root = work_dir.parent().unwrap();
+    let (temp, work_dir) = create_test_work_dir();
+    let project_root = temp.path();
     let stage_id = "stage-test-2";
 
     create_test_stage(stage_id, &work_dir);
@@ -161,8 +170,8 @@ fn test_prepare_continuation_without_handoff() {
 
 #[test]
 fn prepare_continuation_selects_the_exact_outgoing_session() {
-    let (_temp, work_dir) = create_test_work_dir();
-    let project_root = work_dir.parent().unwrap();
+    let (temp, work_dir) = create_test_work_dir();
+    let project_root = temp.path();
     let stage_id = "stage-exact";
     create_test_stage(stage_id, &work_dir);
     create_test_worktree(stage_id, project_root);
@@ -193,8 +202,8 @@ fn prepare_continuation_selects_the_exact_outgoing_session() {
 
 #[test]
 fn prepare_continuation_surfaces_unreadable_handoff_uncertainty() {
-    let (_temp, work_dir) = create_test_work_dir();
-    let project_root = work_dir.parent().unwrap();
+    let (temp, work_dir) = create_test_work_dir();
+    let project_root = temp.path();
     let stage_id = "stage-unreadable";
     create_test_stage(stage_id, &work_dir);
     create_test_worktree(stage_id, project_root);
@@ -254,8 +263,8 @@ fn test_load_handoff_content_not_found() {
 
 #[test]
 fn test_continue_session_with_handoff() {
-    let (_temp, work_dir) = create_test_work_dir();
-    let project_root = work_dir.parent().unwrap();
+    let (temp, work_dir) = create_test_work_dir();
+    let project_root = temp.path();
     let stage_id = "stage-test-4";
 
     let stage = create_test_stage(stage_id, &work_dir);
@@ -281,8 +290,8 @@ fn test_continue_session_with_handoff() {
 
 #[test]
 fn test_continue_session_without_handoff() {
-    let (_temp, work_dir) = create_test_work_dir();
-    let project_root = work_dir.parent().unwrap();
+    let (temp, work_dir) = create_test_work_dir();
+    let project_root = temp.path();
     let stage_id = "stage-test-5";
 
     let stage = create_test_stage(stage_id, &work_dir);
@@ -299,8 +308,8 @@ fn test_continue_session_without_handoff() {
 
 #[test]
 fn test_continue_session_invalid_status() {
-    let (_temp, work_dir) = create_test_work_dir();
-    let project_root = work_dir.parent().unwrap();
+    let (temp, work_dir) = create_test_work_dir();
+    let project_root = temp.path();
     let stage_id = "stage-test-6";
 
     let mut stage = create_test_stage(stage_id, &work_dir);

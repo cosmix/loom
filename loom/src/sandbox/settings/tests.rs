@@ -152,7 +152,7 @@ fn test_generate_settings_with_filesystem() {
         excluded_commands: vec![],
         filesystem: FilesystemConfig {
             deny_read: vec!["~/.ssh/**".to_string(), "../../**".to_string()],
-            deny_write: vec![".work/**".to_string()],
+            deny_write: vec![".loom/work/**".to_string()],
             allow_write: vec!["src/**".to_string()],
         },
         network: NetworkConfig::default(),
@@ -172,21 +172,22 @@ fn test_generate_settings_with_filesystem() {
     assert_eq!(deny.len(), 3);
     assert_eq!(deny[0], "Read(~/.ssh/**)");
     assert_eq!(deny[1], "Read(~/.claude/.credentials.json)");
-    assert_eq!(deny[2], "Edit(.work/**)");
+    assert_eq!(deny[2], "Edit(.loom/work/**)");
 
-    // allow_write paths come first, then the narrowly-scoped .work/ state
-    // permissions agents need (signals/handoffs/disputes/memory). The set is
-    // deliberately scoped to subdirs an agent touches — never bare `.work/**`,
-    // which would also expose `.work/admin.token` / `.work/user.token` (S-1).
+    // allow_write paths come first, then the narrowly-scoped .loom/work/
+    // state permissions agents need (signals/handoffs/disputes/memory). The
+    // set is deliberately scoped to subdirs an agent touches — never bare
+    // `.loom/work/**`, which would also expose `.loom/work/admin.token` /
+    // `.loom/work/user.token` (S-1).
     let allow = json["permissions"]["allow"].as_array().unwrap();
     assert_eq!(allow.len(), 7);
     assert_eq!(allow[0], "Edit(src/**)");
-    assert_eq!(allow[1], "Read(.work/config.toml)");
-    assert_eq!(allow[2], "Read(.work/signals/**)");
-    assert_eq!(allow[3], "Read(.work/handoffs/**)");
-    assert_eq!(allow[4], "Edit(.work/handoffs/**)");
-    assert_eq!(allow[5], "Read(.work/disputes/**)");
-    assert_eq!(allow[6], "Read(.work/memory/**)");
+    assert_eq!(allow[1], "Read(.loom/work/config.toml)");
+    assert_eq!(allow[2], "Read(.loom/work/signals/**)");
+    assert_eq!(allow[3], "Read(.loom/work/handoffs/**)");
+    assert_eq!(allow[4], "Edit(.loom/work/handoffs/**)");
+    assert_eq!(allow[5], "Read(.loom/work/disputes/**)");
+    assert_eq!(allow[6], "Read(.loom/work/memory/**)");
 }
 
 fn assert_filesystem_sandbox(json: &Value) {
@@ -203,7 +204,7 @@ fn assert_filesystem_sandbox(json: &Value) {
     assert_eq!(fs_block["allowWrite"], allow_write_with_caches(&["src/**"]));
     let deny_write = fs_block["denyWrite"].as_array().unwrap();
     assert_eq!(deny_write.len(), 1);
-    assert_eq!(deny_write[0], ".work/**");
+    assert_eq!(deny_write[0], ".loom/work/**");
 }
 
 #[test]
@@ -355,17 +356,17 @@ fn test_generate_settings_includes_work_dir_read_allows() {
 
     let allow_strs: Vec<&str> = allow.iter().map(|v| v.as_str().unwrap()).collect();
     assert!(
-        allow_strs.contains(&"Read(.work/signals/**)"),
+        allow_strs.contains(&"Read(.loom/work/signals/**)"),
         "Should allow reading signals, got: {:?}",
         allow_strs
     );
     assert!(
-        allow_strs.contains(&"Read(.work/handoffs/**)"),
+        allow_strs.contains(&"Read(.loom/work/handoffs/**)"),
         "Should allow reading handoffs, got: {:?}",
         allow_strs
     );
     assert!(
-        allow_strs.contains(&"Read(.work/config.toml)"),
+        allow_strs.contains(&"Read(.loom/work/config.toml)"),
         "Should allow reading config, got: {:?}",
         allow_strs
     );
@@ -620,7 +621,7 @@ fn test_allow_write_trims_whitespace_and_drops_empty() {
     let allow = json["permissions"]["allow"].as_array().unwrap();
 
     // The padded entry is trimmed and emitted; the whitespace-only entry
-    // contributes nothing - allow.len() is 1 (allow_write) + 6 (.work/
+    // contributes nothing - allow.len() is 1 (allow_write) + 6 (.loom/work/
     // state permissions), same as a single ordinary entry would produce.
     assert_eq!(allow.len(), 7, "got: {allow:?}");
     assert_eq!(allow[0], "Edit(loom/src/**)");
@@ -712,7 +713,7 @@ fn test_no_path_in_both_allow_and_deny() {
             .map(|a| a.to_vec())
             .unwrap_or_default();
 
-        // Compare full permission strings (e.g. "Read(.work/signals/**)")
+        // Compare full permission strings (e.g. "Read(.loom/work/signals/**)")
         // to detect true conflicts where the same permission type + path
         // appears in both allow and deny.
         let allow_strs: Vec<&str> = allow.iter().filter_map(|v| v.as_str()).collect();
@@ -884,7 +885,7 @@ fn test_write_settings_preserves_existing_deny_but_not_allow() {
     let allow = result["permissions"]["allow"].as_array().unwrap();
     let allow_strs: Vec<&str> = allow.iter().filter_map(|v| v.as_str()).collect();
     assert!(allow_strs.contains(&"Edit(src/**)"));
-    assert!(allow_strs.contains(&"Read(.work/signals/**)"));
+    assert!(allow_strs.contains(&"Read(.loom/work/signals/**)"));
 
     // SECURITY: existing `allow` entries are NOT carried forward. Allow is
     // regenerated purely from config on every write - that is what stops a
@@ -938,7 +939,7 @@ fn test_write_settings_does_not_carry_forward_existing_allow() {
     let existing_settings = json!({
         "permissions": {
             "allow": [
-                "Read(.work/signals/**)",  // overlaps a generated entry
+                "Read(.loom/work/signals/**)",  // overlaps a generated entry
                 "Read(custom/path/**)",    // an innocuous-looking extra grant
                 "Edit(../../**)"           // the escalation this test guards against
             ]
@@ -980,11 +981,11 @@ fn test_write_settings_does_not_carry_forward_existing_allow() {
     // duplicates its own output.
     let signal_count = allow_strs
         .iter()
-        .filter(|s| *s == "Read(.work/signals/**)")
+        .filter(|s| *s == "Read(.loom/work/signals/**)")
         .count();
     assert_eq!(
         signal_count, 1,
-        "Read(.work/signals/**) should appear exactly once"
+        "Read(.loom/work/signals/**) should appear exactly once"
     );
 
     // Neither an innocuous-looking nor an escalating existing allow entry
@@ -1037,7 +1038,7 @@ fn test_write_settings_no_existing_file() {
     let allow = result["permissions"]["allow"].as_array().unwrap();
     let allow_strs: Vec<&str> = allow.iter().filter_map(|v| v.as_str()).collect();
     assert!(allow_strs.contains(&"Edit(src/**)"));
-    assert!(allow_strs.contains(&"Read(.work/signals/**)"));
+    assert!(allow_strs.contains(&"Read(.loom/work/signals/**)"));
 
     // permissions.deny includes non-traversal deny_read paths
     let deny = result["permissions"]["deny"].as_array().unwrap();
@@ -1057,13 +1058,13 @@ fn test_write_settings_no_existing_file() {
 
 #[cfg(unix)]
 #[test]
-fn test_write_settings_adds_resolved_work_symlink_permissions() {
+fn test_write_settings_adds_resolved_work_symlink_permissions_legacy_layout() {
     use tempfile::TempDir;
 
     let temp_dir = TempDir::new().unwrap();
     let base = temp_dir.path();
 
-    // Simulate the real layout: repo_root/.work and repo_root/.worktrees/stage/
+    // Simulate a legacy layout: repo_root/.work and repo_root/.worktrees/stage/
     let work_dir = base.join(".work");
     fs::create_dir_all(&work_dir).unwrap();
     fs::create_dir_all(work_dir.join("signals")).unwrap();
@@ -1155,7 +1156,83 @@ fn test_write_settings_adds_resolved_work_symlink_permissions() {
     assert!(os_deny.iter().any(|value| value == &os_user));
 
     // Should also still have the relative permissions
-    assert!(allow_strs.contains(&"Read(.work/signals/**)"));
+    assert!(allow_strs.contains(&"Read(.loom/work/signals/**)"));
+}
+
+#[cfg(unix)]
+#[test]
+fn test_write_settings_adds_resolved_work_symlink_permissions_nested_layout() {
+    use tempfile::TempDir;
+
+    let temp_dir = TempDir::new().unwrap();
+    let base = temp_dir.path();
+
+    // Simulate the nested layout: repo_root/.loom/work and
+    // repo_root/.worktrees/stage/.loom/work (a real .loom/ holding the link).
+    let work_dir = base.join(".loom").join("work");
+    fs::create_dir_all(&work_dir).unwrap();
+    fs::create_dir_all(work_dir.join("signals")).unwrap();
+
+    let worktree_path = base.join(".worktrees").join("my-stage");
+    let worktree_loom = worktree_path.join(".loom");
+    fs::create_dir_all(&worktree_loom).unwrap();
+
+    // Create the symlink: .worktrees/my-stage/.loom/work -> ../../../.loom/work
+    std::os::unix::fs::symlink("../../../.loom/work", worktree_loom.join("work")).unwrap();
+
+    let config = MergedSandboxConfig {
+        enabled: true,
+        auto_allow: true,
+        allow_unsandboxed_escape: false,
+        excluded_commands: vec![],
+        filesystem: FilesystemConfig::default(),
+        network: NetworkConfig::default(),
+        linux: LinuxConfig::default(),
+        permission_mode: PermissionMode::Auto,
+        implementers: Implementers::default(),
+        command_confinement: CommandConfinement::default(),
+    };
+
+    write_settings(&config, &worktree_path).unwrap();
+
+    let settings_path = worktree_path.join(".claude/settings.local.json");
+    let result_content = fs::read_to_string(&settings_path).unwrap();
+    let result: Value = serde_json::from_str(&result_content).unwrap();
+
+    let allow = result["permissions"]["allow"].as_array().unwrap();
+    let allow_strs: Vec<&str> = allow.iter().filter_map(|v| v.as_str()).collect();
+
+    let resolved_work = work_dir.canonicalize().unwrap();
+    let resolved_str = resolved_work.to_string_lossy();
+
+    // The nested `.loom/work` link must be the one resolved: same narrow
+    // grants as the legacy arm, no broad `**` allow (S-1).
+    let broad_read = format!("Read(/{}/**)", resolved_str);
+    let broad_edit = format!("Edit(/{}/**)", resolved_str);
+    assert!(!allow_strs.contains(&broad_read.as_str()));
+    assert!(!allow_strs.contains(&broad_edit.as_str()));
+
+    let expected_read_signals = format!("Read(/{}/signals/**)", resolved_str);
+    let expected_edit_handoffs = format!("Edit(/{}/handoffs/**)", resolved_str);
+    assert!(
+        allow_strs.contains(&expected_read_signals.as_str()),
+        "Should have resolved .loom/work/signals read permission, got: {:?}",
+        allow_strs
+    );
+    assert!(
+        allow_strs.contains(&expected_edit_handoffs.as_str()),
+        "Should have resolved .loom/work/handoffs edit permission, got: {:?}",
+        allow_strs
+    );
+
+    let deny = result["permissions"]["deny"].as_array().unwrap();
+    let deny_strs: Vec<&str> = deny.iter().filter_map(|v| v.as_str()).collect();
+    let deny_admin = format!("Read(/{}/admin.token)", resolved_str);
+    let deny_user = format!("Read(/{}/user.token)", resolved_str);
+    assert!(deny_strs.contains(&deny_admin.as_str()));
+    assert!(deny_strs.contains(&deny_user.as_str()));
+
+    assert!(allow_strs.contains(&"Read(.loom/work/signals/**)"));
 }
 
 #[test]
@@ -1216,7 +1293,8 @@ fn test_target_is_worktree_detection() {
         let base = temp_dir.path();
 
         // A symlinked `.work` marks a worktree even without a `.worktrees`
-        // component (the structural invariant loom relies on).
+        // component (the structural invariant loom relies on) — the legacy
+        // layout arm.
         let real_work = base.join("real-work");
         fs::create_dir_all(&real_work).unwrap();
         let wt = base.join("checkout");
@@ -1228,6 +1306,22 @@ fn test_target_is_worktree_detection() {
         let main = base.join("main");
         fs::create_dir_all(main.join(".work")).unwrap();
         assert!(!target_is_worktree(&main));
+
+        // A symlinked `.loom/work` under a real `.loom/` marks a worktree —
+        // the nested layout arm.
+        let real_nested_work = base.join("real-nested-work");
+        fs::create_dir_all(&real_nested_work).unwrap();
+        let nested_wt = base.join("nested-checkout");
+        let nested_wt_loom = nested_wt.join(".loom");
+        fs::create_dir_all(&nested_wt_loom).unwrap();
+        std::os::unix::fs::symlink(&real_nested_work, nested_wt_loom.join("work")).unwrap();
+        assert!(target_is_worktree(&nested_wt));
+
+        // A real `.loom/` (holding no `work` symlink) alone must NOT mark a
+        // worktree — both the main repo and a worktree have a real `.loom/`.
+        let nested_main = base.join("nested-main");
+        fs::create_dir_all(nested_main.join(".loom")).unwrap();
+        assert!(!target_is_worktree(&nested_main));
     }
 }
 

@@ -20,7 +20,9 @@ use super::settings::{
 /// Create a new worktree for a stage
 ///
 /// Creates: .worktrees/{stage_id}/ with branch loom/{stage_id}
-/// Also creates symlink .worktrees/{stage_id}/.work -> main .work/
+/// Also creates the state-root symlink into the main repo's shared state —
+/// .worktrees/{stage_id}/.loom/work -> main .loom/work/ (or, on a legacy
+/// workspace, .worktrees/{stage_id}/.work -> main .work/)
 ///
 /// If `base_branch` is Some(branch), the new branch is created from that branch:
 ///   git worktree add -b loom/{stage_id} .worktrees/{stage_id} {branch}
@@ -124,7 +126,8 @@ pub fn create_worktree(
         }
     }
 
-    // Create symlink to main .work/ directory
+    // Create symlink to the main repo's state root (.loom/work, or .work on
+    // a legacy workspace)
     ensure_work_symlink(&worktree_path, repo_root)?;
 
     // Set up .claude/ directory for worktree.

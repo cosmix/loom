@@ -366,7 +366,8 @@ mod prior_work_tests {
         // Counting these would skip the gate on the very first spawn.
         std::fs::create_dir_all(path.join(".claude")).unwrap();
         std::fs::write(path.join(".claude/settings.local.json"), "{}").unwrap();
-        std::fs::write(path.join(".work"), "symlink stand-in").unwrap();
+        std::fs::create_dir_all(path.join(".loom")).unwrap();
+        std::fs::write(path.join(".loom/work"), "symlink stand-in").unwrap();
         std::fs::write(path.join("CLAUDE.md"), "project guidance").unwrap();
 
         assert_eq!(

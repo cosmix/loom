@@ -51,7 +51,7 @@ pub fn spool_target_from_cwd() -> Result<PathBuf> {
     let cwd = std::env::current_dir().context("Failed to get current directory")?;
     find_worktree_root_from_cwd(&cwd).ok_or_else(|| {
         anyhow::anyhow!(
-            "Cannot reach the loom daemon over .work/orchestrator.sock, and this is not a \
+            "Cannot reach the loom daemon over .loom/work/orchestrator.sock, and this is not a \
              stage worktree, so there is nowhere to queue the request. Run this from the \
              stage's worktree, or from a shell that can reach the daemon."
         )

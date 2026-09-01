@@ -2,7 +2,7 @@
 //!
 //! # Why this is a module and not four lines in `event_handler`
 //!
-//! `HeartbeatWatcher` polls `.work/heartbeat/<stage-id>.json` and the monitor
+//! `HeartbeatWatcher` polls `.loom/work/heartbeat/<stage-id>.json` and the monitor
 //! turns every update into a [`MonitorEvent::HeartbeatReceived`]. Until this
 //! module existed that event's handler was an empty block whose comment claimed
 //! the data was "just used for internal tracking" — nothing tracked it, so
@@ -11,7 +11,7 @@
 //!
 //! Observed 2026-08-24 on an eight-stage plan: all five session records carried
 //! `last_active` equal to their spawn timestamp and `context_tokens: 0`, while
-//! `.work/heartbeat/<stage>.json` was being rewritten correctly by the hooks the
+//! `.loom/work/heartbeat/<stage>.json` was being rewritten correctly by the hooks the
 //! whole time. The data was arriving and being dropped one layer above where it
 //! was needed. Every consumer of the figure — the status dashboard's context
 //! column, the ceiling comparison, the resumed agent's signal — was reading a

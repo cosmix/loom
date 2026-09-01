@@ -388,14 +388,14 @@ pub(super) fn format_dynamic_section(
 
     content.push_str("**ALLOWED:**\n");
     content.push_str("- Files within this worktree\n");
-    content.push_str("- `.work/` directory (via symlink)\n");
+    content.push_str("- `.loom/work/` directory (via symlink)\n");
     content.push_str("- Reading `CLAUDE.md` (symlinked)\n");
     content.push_str("- Using loom CLI commands\n\n");
 
     content.push_str("**FORBIDDEN:**\n");
     content.push_str("- Path traversal (`../../`, `../.worktrees/`)\n");
     content.push_str("- Git operations targeting main repo (`git -C`, `--work-tree`)\n");
-    content.push_str("- Direct modification of `.work/stages/` or `.work/sessions/`\n");
+    content.push_str("- Direct modification of `.loom/work/stages/` or `.loom/work/sessions/`\n");
     content.push_str("- Attempting to merge your own branch (loom handles merges)\n\n");
 
     content.push_str(
@@ -471,7 +471,7 @@ pub(super) fn format_dynamic_section(
         // Fallback reference if content couldn't be read
         content.push_str("## Context Restoration\n\n");
         content.push_str(&format!(
-            "- `.work/handoffs/{handoff}.md` - **READ THIS FIRST** - Previous session handoff\n\n"
+            "- `.loom/work/handoffs/{handoff}.md` - **READ THIS FIRST** - Previous session handoff\n\n"
         ));
     }
 

@@ -26,7 +26,7 @@ use super::super::progressive_complete::{
 };
 use crate::models::stage::{Stage, StageStatus};
 
-/// Build a real git repo with a `.work` directory and a `config.toml` that
+/// Build a real git repo with a `.loom/work` directory and a `config.toml` that
 /// points at `main` as the base branch. Returns the repo root TempDir.
 fn init_repo_with_work_dir() -> TempDir {
     let temp_dir = TempDir::new().expect("tempdir");
@@ -64,10 +64,10 @@ fn init_repo_with_work_dir() -> TempDir {
         .output()
         .expect("rename to main");
 
-    // Create a minimal .work directory with config.toml so `get_merge_point`
+    // Create a minimal state directory with config.toml so `get_merge_point`
     // can resolve to "main".
-    let work_dir = repo_root.join(".work");
-    std::fs::create_dir_all(&work_dir).expect("mkdir .work");
+    let work_dir = repo_root.join(".loom").join("work");
+    std::fs::create_dir_all(&work_dir).expect("mkdir .loom/work");
     std::fs::write(work_dir.join("config.toml"), "base_branch = \"main\"\n")
         .expect("write config.toml");
 
@@ -94,7 +94,7 @@ fn make_stage(id: &str) -> Stage {
 fn no_branch_does_not_mark_merged() {
     let repo = init_repo_with_work_dir();
     let repo_root = repo.path();
-    let work_dir = repo_root.join(".work");
+    let work_dir = repo_root.join(".loom").join("work");
 
     let mut stage = make_stage("stage-no-branch");
     assert!(!stage.merged, "precondition: stage starts unmerged");

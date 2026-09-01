@@ -71,7 +71,7 @@ fn spool_note(worktree_root: &Path, content: &str) {
 #[serial]
 fn pending_entry_lands_in_journal_and_spool_is_emptied() {
     let temp = tempfile::tempdir().unwrap();
-    let work_dir = temp.path().join(".work");
+    let work_dir = temp.path().join(".loom").join("work");
     let stage_id = "spool-basic";
     save_stage_with_status(&work_dir, stage_id, StageStatus::Executing);
     let worktree_root = worktree_dir(temp.path(), stage_id);
@@ -98,7 +98,7 @@ fn pending_entry_lands_in_journal_and_spool_is_emptied() {
 #[serial]
 fn entry_is_attributed_to_the_worktree_it_was_spooled_in_not_a_sibling_stage() {
     let temp = tempfile::tempdir().unwrap();
-    let work_dir = temp.path().join(".work");
+    let work_dir = temp.path().join(".loom").join("work");
     save_stage_with_status(&work_dir, "stage-a", StageStatus::Executing);
     save_stage_with_status(&work_dir, "stage-b", StageStatus::Executing);
     let worktree_a = worktree_dir(temp.path(), "stage-a");
@@ -122,7 +122,7 @@ fn entry_is_attributed_to_the_worktree_it_was_spooled_in_not_a_sibling_stage() {
 #[serial]
 fn stage_with_no_spool_file_is_a_silent_no_op() {
     let temp = tempfile::tempdir().unwrap();
-    let work_dir = temp.path().join(".work");
+    let work_dir = temp.path().join(".loom").join("work");
     let stage_id = "no-spool";
     save_stage_with_status(&work_dir, stage_id, StageStatus::Executing);
     // No .loom/memory-spool.jsonl ever written for this stage.
@@ -140,7 +140,7 @@ fn stage_with_no_spool_file_is_a_silent_no_op() {
 #[serial]
 fn drain_still_happens_for_a_stage_that_is_not_executing() {
     let temp = tempfile::tempdir().unwrap();
-    let work_dir = temp.path().join(".work");
+    let work_dir = temp.path().join(".loom").join("work");
     let stage_id = "already-completed";
     save_stage_with_status(&work_dir, stage_id, StageStatus::Completed);
     let worktree_root = worktree_dir(temp.path(), stage_id);
@@ -165,7 +165,7 @@ fn drain_still_happens_for_a_stage_that_is_not_executing() {
 #[serial]
 fn an_invalid_entry_is_skipped_without_blocking_a_valid_entry_and_the_spool_is_truncated() {
     let temp = tempfile::tempdir().unwrap();
-    let work_dir = temp.path().join(".work");
+    let work_dir = temp.path().join(".loom").join("work");
     let stage_id = "mixed-spool";
     save_stage_with_status(&work_dir, stage_id, StageStatus::Executing);
     let worktree_root = worktree_dir(temp.path(), stage_id);
@@ -206,7 +206,7 @@ fn spool_block(worktree_root: &Path, reason: &str) {
 #[serial]
 fn a_spooled_block_is_applied_on_the_poll_tick_and_the_spool_is_emptied() {
     let temp = tempfile::tempdir().unwrap();
-    let work_dir = temp.path().join(".work");
+    let work_dir = temp.path().join(".loom").join("work");
     let stage_id = "request-basic";
     save_stage_with_status(&work_dir, stage_id, StageStatus::Executing);
     let worktree_root = worktree_dir(temp.path(), stage_id);
@@ -236,7 +236,7 @@ fn a_spooled_block_is_applied_on_the_poll_tick_and_the_spool_is_emptied() {
 #[serial]
 fn a_request_is_attributed_to_the_worktree_it_was_spooled_in_not_a_sibling_stage() {
     let temp = tempfile::tempdir().unwrap();
-    let work_dir = temp.path().join(".work");
+    let work_dir = temp.path().join(".loom").join("work");
     save_stage_with_status(&work_dir, "req-stage-a", StageStatus::Executing);
     save_stage_with_status(&work_dir, "req-stage-b", StageStatus::Executing);
     spool_block(
@@ -267,7 +267,7 @@ fn a_request_is_attributed_to_the_worktree_it_was_spooled_in_not_a_sibling_stage
 #[serial]
 fn one_stages_unappliable_request_does_not_stop_another_stages_drain() {
     let temp = tempfile::tempdir().unwrap();
-    let work_dir = temp.path().join(".work");
+    let work_dir = temp.path().join(".loom").join("work");
     // A Completed stage refuses the block; the refusal must not leak into the
     // sibling's pass.
     save_stage_with_status(&work_dir, "req-refused", StageStatus::Completed);
@@ -296,7 +296,7 @@ fn one_stages_unappliable_request_does_not_stop_another_stages_drain() {
 #[serial]
 fn a_stage_with_only_a_memory_spool_is_unaffected_by_the_request_drain() {
     let temp = tempfile::tempdir().unwrap();
-    let work_dir = temp.path().join(".work");
+    let work_dir = temp.path().join(".loom").join("work");
     let stage_id = "memory-only";
     save_stage_with_status(&work_dir, stage_id, StageStatus::Executing);
     let worktree_root = worktree_dir(temp.path(), stage_id);

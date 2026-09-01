@@ -35,7 +35,7 @@ fn init_repo() -> TempDir {
 }
 
 fn make_work_dir(repo: &Path) -> std::path::PathBuf {
-    let work_dir = repo.join(".work");
+    let work_dir = repo.join(".loom").join("work");
     std::fs::create_dir_all(work_dir.join("stages")).unwrap();
     std::fs::write(work_dir.join("config.toml"), "base_branch = \"main\"\n").unwrap();
     work_dir

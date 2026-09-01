@@ -123,7 +123,7 @@ pub(crate) fn format_codex_implementers_section(
     content.push_str(
         "- BLAST RADIUS: codex runs sandbox `workspace-write`, approval `never` - it edits anything\n\
          under the git root (the worktree) without asking, and loom's PreToolUse hooks never see\n\
-         commands it runs in its own session. NEVER give it a path under `.work/` (a symlink to\n\
+         commands it runs in its own session. NEVER give it a path under `.loom/work/` (a symlink to\n\
          state shared with every parallel stage); tell it not to run git at all; check\n\
          `git status --short` after each run - anything touched outside its files is yours to catch.\n",
     );

@@ -14,7 +14,8 @@
 //! - Block `.worktrees/` access except current worktree
 //!
 //! ### File Paths (Edit/Write)
-//! - Block writes to `.work/stages/` and `.work/sessions/`
+//! - Block writes to `.loom/work/stages/` and `.loom/work/sessions/`
+//!   (or the legacy `.work/stages/` and `.work/sessions/`)
 //! - Block writes to other worktrees
 //! - Block `../../` path traversal in paths
 
@@ -68,7 +69,7 @@ pub enum BlockedReason {
         /// The stage being accessed
         target_stage: Option<String>,
     },
-    /// Write to protected state files (.work/stages/ or .work/sessions/)
+    /// Write to protected state files (.loom/work/stages/ or .loom/work/sessions/)
     ProtectedStateFile,
     /// Write to another worktree
     CrossWorktreeWrite,
@@ -134,7 +135,9 @@ Current stage: {}
             BlockedReason::CrossWorktreeAccess { .. } => {
                 "Access .worktrees/ directory (another stage's worktree)"
             }
-            BlockedReason::ProtectedStateFile => "Write to .work/stages/ or .work/sessions/",
+            BlockedReason::ProtectedStateFile => {
+                "Write to .loom/work/stages/ or .loom/work/sessions/"
+            }
             BlockedReason::CrossWorktreeWrite => "Write to another stage's worktree",
         }
     }

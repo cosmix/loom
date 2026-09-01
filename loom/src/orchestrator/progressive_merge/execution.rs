@@ -3,6 +3,7 @@
 use anyhow::{Context, Result};
 use std::path::Path;
 
+use crate::fs::work_dir::WorkDir;
 use crate::git::branch::{branch_exists, branch_name_for_stage};
 use crate::git::merge::{merge_stage, MergeResult};
 use crate::models::stage::Stage;
@@ -42,13 +43,13 @@ pub fn merge_completed_stage(
     }
 
     // Get the work directory - merge_stage will acquire the lock
-    let work_dir = repo_root.join(".work");
-    if !work_dir.exists() {
-        return Err(anyhow::anyhow!(".work directory not found"));
+    let work_dir = WorkDir::new(repo_root)?;
+    if !work_dir.root().exists() {
+        return Err(anyhow::anyhow!(".loom/work directory not found"));
     }
 
     // Attempt the merge (merge_stage will acquire the lock internally)
-    let result = merge_stage(&stage.id, merge_point, repo_root, &work_dir)
+    let result = merge_stage(&stage.id, merge_point, repo_root, work_dir.root())
         .with_context(|| format!("Failed to merge stage {} into {}", stage.id, merge_point))?;
 
     // Convert git::merge::MergeResult to ProgressiveMergeResult

@@ -164,7 +164,7 @@ pub(crate) fn build_claude_command(
 pub struct NativeBackend {
     /// The terminal emulator to use
     terminal: super::emulator::TerminalEmulator,
-    /// The .work directory path for PID tracking
+    /// The .loom/work directory path for PID tracking
     work_dir: PathBuf,
 }
 

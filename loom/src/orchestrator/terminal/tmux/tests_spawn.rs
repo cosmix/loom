@@ -39,7 +39,7 @@ fn aborting_a_spawn_removes_the_pid_file_and_wrapper_it_created() {
     let _tmux_tmpdir = TmuxTmpDirGuard::set(socket_dir.path());
 
     // THE REGRESSION THIS PINS: without this cleanup, a tmux spawn that failed
-    // AFTER the wrapper ran leaves `.work/pids/<pid_key>.pid` behind. The
+    // AFTER the wrapper ran leaves `.loom/work/pids/<pid_key>.pid` behind. The
     // native retry reuses the same `Session`, so `prepare_session_launch`
     // derives the SAME pid_key, `create_wrapper_script` does not truncate the
     // file, and `await_session_pid` returns the first LIVE pid it reads there

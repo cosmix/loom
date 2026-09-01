@@ -224,7 +224,7 @@ fn apply_reject(
         "Adjudicator upheld the disputed acceptance criterion (dispute {dispute_id}): \
          the criterion stands and the implementation is what must change. The stage \
          agent judged it impossible, so it cannot make progress unaided — read \
-         .work/disputes/{}/{dispute_id}/verdict.md",
+         .loom/work/disputes/{}/{dispute_id}/verdict.md",
         stage.id
     );
     // A Reject MUST leave the stage in NeedsHumanReview: re-queueing is the

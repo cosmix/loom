@@ -44,7 +44,7 @@ impl Drop for EnvVarGuard {
 #[serial]
 fn test_block_updates_status() {
     let temp_dir = setup_work_dir();
-    let work_dir_path = temp_dir.path().join(".work");
+    let work_dir_path = temp_dir.path().join(".loom").join("work");
 
     let stage = create_test_stage("test-stage", StageStatus::Queued);
     save_test_stage(&work_dir_path, &stage);
@@ -68,7 +68,7 @@ fn test_block_updates_status() {
 fn test_reset_clears_completion() {
     let _terminal_env = EnvVarGuard::set("LOOM_TERMINAL", "xterm");
     let temp_dir = setup_work_dir();
-    let work_dir_path = temp_dir.path().join(".work");
+    let work_dir_path = temp_dir.path().join(".loom").join("work");
 
     let mut stage = create_test_stage("test-stage", StageStatus::Completed);
     stage.completed_at = Some(Utc::now());
@@ -95,7 +95,7 @@ fn test_reset_clears_completion() {
 fn test_reset_hard_clears_session() {
     let _terminal_env = EnvVarGuard::set("LOOM_TERMINAL", "xterm");
     let temp_dir = setup_work_dir();
-    let work_dir_path = temp_dir.path().join(".work");
+    let work_dir_path = temp_dir.path().join(".loom").join("work");
 
     let mut stage = create_test_stage("test-stage", StageStatus::Executing);
     stage.session = Some("session-1".to_string());
@@ -119,7 +119,7 @@ fn test_reset_hard_clears_session() {
 fn test_reset_soft_also_clears_session() {
     let _terminal_env = EnvVarGuard::set("LOOM_TERMINAL", "xterm");
     let temp_dir = setup_work_dir();
-    let work_dir_path = temp_dir.path().join(".work");
+    let work_dir_path = temp_dir.path().join(".loom").join("work");
 
     let mut stage = create_test_stage("test-stage", StageStatus::Executing);
     stage.session = Some("session-1".to_string());
@@ -147,7 +147,7 @@ fn test_reset_soft_also_clears_session() {
 fn test_reset_proceeds_when_nothing_is_live() {
     let _terminal_env = EnvVarGuard::set("LOOM_TERMINAL", "xterm");
     let temp_dir = setup_work_dir();
-    let work_dir_path = temp_dir.path().join(".work");
+    let work_dir_path = temp_dir.path().join(".loom").join("work");
 
     // stage.session names an id, but no session file and no PID evidence
     // exist for it - nothing is actually live.
@@ -174,7 +174,7 @@ fn test_reset_proceeds_when_nothing_is_live() {
 fn test_reset_refuses_with_live_session_and_no_kill_flag() {
     let _terminal_env = EnvVarGuard::set("LOOM_TERMINAL", "xterm");
     let temp_dir = setup_work_dir();
-    let work_dir_path = temp_dir.path().join(".work");
+    let work_dir_path = temp_dir.path().join(".loom").join("work");
 
     let mut stage = create_test_stage("test-stage", StageStatus::Executing);
     stage.session = Some("live-session-1".to_string());
@@ -212,7 +212,7 @@ fn test_reset_refuses_with_live_session_and_no_kill_flag() {
 #[serial]
 fn test_hold_sets_held_flag() {
     let temp_dir = setup_work_dir();
-    let work_dir_path = temp_dir.path().join(".work");
+    let work_dir_path = temp_dir.path().join(".loom").join("work");
 
     let stage = create_test_stage("test-stage", StageStatus::Queued);
     save_test_stage(&work_dir_path, &stage);
@@ -234,7 +234,7 @@ fn test_hold_sets_held_flag() {
 #[serial]
 fn test_release_clears_held_flag() {
     let temp_dir = setup_work_dir();
-    let work_dir_path = temp_dir.path().join(".work");
+    let work_dir_path = temp_dir.path().join(".loom").join("work");
 
     let mut stage = create_test_stage("test-stage", StageStatus::Queued);
     stage.held = true;
@@ -257,7 +257,7 @@ fn test_release_clears_held_flag() {
 #[serial]
 fn test_waiting_transitions_from_executing() {
     let temp_dir = setup_work_dir();
-    let work_dir_path = temp_dir.path().join(".work");
+    let work_dir_path = temp_dir.path().join(".loom").join("work");
 
     let stage = create_test_stage("test-stage", StageStatus::Executing);
     save_test_stage(&work_dir_path, &stage);
@@ -279,7 +279,7 @@ fn test_waiting_transitions_from_executing() {
 #[serial]
 fn test_waiting_skips_if_not_executing() {
     let temp_dir = setup_work_dir();
-    let work_dir_path = temp_dir.path().join(".work");
+    let work_dir_path = temp_dir.path().join(".loom").join("work");
 
     let stage = create_test_stage("test-stage", StageStatus::Queued);
     save_test_stage(&work_dir_path, &stage);
@@ -301,7 +301,7 @@ fn test_waiting_skips_if_not_executing() {
 #[serial]
 fn test_resume_from_waiting_transitions_to_executing() {
     let temp_dir = setup_work_dir();
-    let work_dir_path = temp_dir.path().join(".work");
+    let work_dir_path = temp_dir.path().join(".loom").join("work");
 
     let stage = create_test_stage("test-stage", StageStatus::WaitingForInput);
     save_test_stage(&work_dir_path, &stage);

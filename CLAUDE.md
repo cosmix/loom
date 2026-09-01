@@ -49,7 +49,7 @@ plan/
   parser.rs          Markdown plan document parser
   schema/            YAML metadata validation
   graph/             Execution DAG building
-fs/                  File operations for .work/ directory
+fs/                  File operations for the .loom/work/ state directory
 git/                 Git operations (worktrees, branches, merges)
 verify/              Acceptance criteria execution
 ```
@@ -67,7 +67,7 @@ verify/              Acceptance criteria execution
 
 **TerminalBackend** (`orchestrator/terminal/`): Abstraction for spawning sessions in OS terminal windows.
 
-### State Directory (`.work/`)
+### State Directory (`.loom/work/`)
 
 All state is file-based for git-friendliness:
 
@@ -132,7 +132,7 @@ Behavior details:
 - When orchestration completes successfully and all stages have `merged: true`, the prefix changes to `DONE-`
 - If not all stages are merged, the plan stays as `IN_PROGRESS-` for manual intervention
 - Re-running a `DONE-` plan does not rename it (prevents accidental status reset)
-- The `source_path` in `.work/config.toml` is automatically updated to track renames
+- The `source_path` in `.loom/work/config.toml` is automatically updated to track renames
 
 ## Remember your Mandatory Rules
 

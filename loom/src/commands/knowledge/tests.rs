@@ -124,8 +124,8 @@ fn test_knowledge_update_in_worktree_writes_to_worktree() {
     let base = temp_dir.path();
 
     let main_repo = base.join("main-repo");
-    let main_work = main_repo.join(".work");
-    fs::create_dir_all(&main_work).expect("Failed to create main .work dir");
+    let main_work = main_repo.join(".loom").join("work");
+    fs::create_dir_all(&main_work).expect("Failed to create main state dir");
 
     for subdir in &[
         "runners",
@@ -146,10 +146,15 @@ fn test_knowledge_update_in_worktree_writes_to_worktree() {
     let worktree = main_repo.join(".worktrees").join("my-worktree");
     fs::create_dir_all(&worktree).expect("Failed to create worktree dir");
 
-    let worktree_work = worktree.join(".work");
+    let worktree_work = worktree.join(".loom").join("work");
     #[cfg(unix)]
     {
-        let target = std::path::PathBuf::from("..").join("..").join(".work");
+        fs::create_dir_all(worktree.join(".loom")).expect("Failed to create worktree .loom dir");
+        let target = std::path::PathBuf::from("..")
+            .join("..")
+            .join("..")
+            .join(".loom")
+            .join("work");
         std::os::unix::fs::symlink(&target, &worktree_work).expect("Failed to create symlink");
     }
 

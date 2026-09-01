@@ -1,6 +1,6 @@
 //! Best-effort orchestration telemetry.
 //!
-//! One append-only JSON-lines file (`.work/telemetry/events.jsonl`) recording
+//! One append-only JSON-lines file (`.loom/work/telemetry/events.jsonl`) recording
 //! orchestration facts — currently, whether a spawned session received a
 //! context brief. Telemetry is an optimisation surface, never state the run
 //! depends on: [`emit`] must never fail a spawn, and [`read_events`] must
@@ -10,7 +10,7 @@
 //! saving — see the `TelemetryEvent` variants below.
 //!
 //! [`read_events`] is the store's read half. It has no production call site
-//! today — only its own unit tests exercise it — and `.work/` is deleted at
+//! today — only its own unit tests exercise it — and `.loom/work/` is deleted at
 //! plan completion, so every event currently written here goes unread. A
 //! future diagnostic (e.g. a `loom status`/`loom map` report on how often
 //! stages spawn without a context brief) would read events back through
@@ -47,7 +47,7 @@ fn events_path(work_dir: &Path) -> PathBuf {
     work_dir.join("telemetry").join("events.jsonl")
 }
 
-/// Append `event` to `.work/telemetry/events.jsonl`.
+/// Append `event` to `.loom/work/telemetry/events.jsonl`.
 ///
 /// Best-effort by contract: telemetry must never fail a spawn, so any I/O
 /// problem is logged at `tracing::debug` and reported as success.

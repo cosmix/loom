@@ -40,8 +40,8 @@ loom:
 
     assert!(plan_path.exists(), "Plan file should exist");
 
-    let work_dir = temp.path().join(".work");
-    assert!(work_dir.exists(), ".work directory should exist");
+    let work_dir = temp.path().join(".loom").join("work");
+    assert!(work_dir.exists(), ".loom/work directory should exist");
     assert!(
         work_dir.join("stages").exists(),
         "stages directory should exist"
@@ -107,7 +107,8 @@ fn test_create_signal_file() {
     create_signal_file(work_dir, "test-signal", signal_content).expect("Should create signal file");
 
     let signal_path = work_dir
-        .join(".work")
+        .join(".loom")
+        .join("work")
         .join("signals")
         .join("test-signal.md");
     assert!(signal_path.exists(), "Signal file should exist");

@@ -57,7 +57,7 @@ fn test_orchestrator_respects_max_parallel_sessions() {
 
     let temp_dir = TempDir::new().unwrap();
     let repo_root = temp_dir.path();
-    let work_dir = repo_root.join(".work");
+    let work_dir = repo_root.join(".loom").join("work");
 
     // Initialize a git repository (required for worktree creation)
     let git_init = Command::new("git")

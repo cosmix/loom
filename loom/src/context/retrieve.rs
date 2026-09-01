@@ -33,7 +33,7 @@ use std::path::{Path, PathBuf};
 /// Everything a stage-scoped retrieval needs to be reproducible.
 #[derive(Debug, Clone)]
 pub struct StageQuery {
-    /// Directory to start the `.work/` search from ([`WorkDir::new`] semantics).
+    /// Directory to start the `.loom/work/` search from ([`WorkDir::new`] semantics).
     pub work_dir_hint: PathBuf,
     /// Free text the ranker scores against.
     pub text: String,
@@ -97,7 +97,7 @@ pub(crate) struct ResolvedRoots {
     /// Canonical MAIN project root — the one [`ContextStore`] resolves its
     /// cache under, and therefore the one `.loom/config.toml` lives at.
     ///
-    /// Not the worktree's own root: in a linked worktree `.work` is a symlink
+    /// Not the worktree's own root: in a linked worktree `.loom/work` is a symlink
     /// into the main repository, and `.loom/` is not a tracked directory, so a
     /// stage resolving its config against its worktree would find nothing and
     /// silently run on defaults while the host ran on the operator's tunables.
@@ -286,7 +286,7 @@ pub fn retrieve_for_stage(query: &StageQuery, budget_tokens: usize) -> Result<Co
 
     check_require_ids(query, &catalog, graph.as_ref())?;
 
-    // The store's root, not the worktree's: it follows a worktree's `.work`
+    // The store's root, not the worktree's: it follows a worktree's `.loom/work`
     // symlink to the main project, so parallel stages share one lexical index
     // (A.13) instead of each rebuilding its own.
     let ranked = channels::rank_channels_cached(

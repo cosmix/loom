@@ -22,9 +22,9 @@ use super::recover::{
 
 /// Skip a stage
 pub fn skip(stage_id: String, reason: Option<String>) -> Result<()> {
-    let work_dir = Path::new(".work");
+    let work_dir = crate::commands::common::work_dir_path()?;
 
-    skip_stage(&stage_id, reason.clone(), work_dir)?;
+    skip_stage(&stage_id, reason.clone(), &work_dir)?;
 
     println!("Stage '{stage_id}' skipped.");
     if let Some(r) = reason {
@@ -40,7 +40,8 @@ pub fn skip(stage_id: String, reason: Option<String>) -> Result<()> {
 /// Generates a recovery signal with context when the stage was crashed or
 /// hung, or when --context is provided. Replaces the old `recover` command.
 pub fn retry(stage_id: String, force: bool, context: Option<String>) -> Result<()> {
-    let work_dir = Path::new(".work");
+    let work_dir_buf = crate::commands::common::work_dir_path()?;
+    let work_dir: &Path = &work_dir_buf;
 
     let mut stage = load_stage(&stage_id, work_dir)?;
     let original_status = stage.status.clone();

@@ -33,7 +33,7 @@ fn strip_depth_prefix(stem: &str) -> Option<&str> {
 /// in the stages directory.
 ///
 /// # Arguments
-/// * `stages_dir` - Path to the `.work/stages/` directory
+/// * `stages_dir` - Path to the `.loom/work/stages/` directory
 /// * `stage_id` - The stage ID to find
 ///
 /// # Returns

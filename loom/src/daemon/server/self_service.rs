@@ -1,8 +1,8 @@
 //! What a stage agent may ask the daemon to do about its OWN stage.
 //!
 //! A sandboxed stage agent is denied two things by design: reading
-//! `.work/user.token`, because that one credential authorizes every User RPC,
-//! and writing `.work/stages/<id>.md`, because stage state belongs to the
+//! `.loom/work/user.token`, because that one credential authorizes every User RPC,
+//! and writing `.loom/work/stages/<id>.md`, because stage state belongs to the
 //! daemon. Between them they used to leave an agent that had finished its work
 //! — or found it could not finish — with no way to say so. Peer identity
 //! (`peer_identity.rs`) reopened that door for `CompleteStage`; this module is
@@ -17,7 +17,7 @@
 //!   is refused by default rather than silently inheriting the peer-identity
 //!   path.
 //! * *Does the named session actually own the named stage?* —
-//!   [`session_owns_stage`], read from `.work/`. Peer identity proves the
+//!   [`session_owns_stage`], read from `.loom/work/`. Peer identity proves the
 //!   caller IS session A; only this proves stage X is A's to act on. Without
 //!   it, a live agent could reach across into another stage.
 

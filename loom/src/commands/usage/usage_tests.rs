@@ -56,7 +56,7 @@ fn subagent_file(path: std::path::PathBuf, session_id: &str) -> discovery::Disco
 #[test]
 fn parse_all_attaches_authoritative_agent_type_from_starts_ledger() {
     let temp = tempfile::tempdir().unwrap();
-    let work_dir = temp.path().join(".work");
+    let work_dir = temp.path().join(".loom").join("work");
     let stage_dir = work_dir.join("subagents/stage-a");
     write_start(&stage_dir, "session-1", "loom-senior-software-engineer");
     let files = vec![subagent_file(
@@ -130,7 +130,7 @@ fn parse_all_records_ledger_absence_without_disabling_prompt_fallback() {
 #[test]
 fn parse_all_does_not_join_a_start_from_another_parent_session() {
     let temp = tempfile::tempdir().unwrap();
-    let work_dir = temp.path().join(".work");
+    let work_dir = temp.path().join(".loom").join("work");
     let stage_dir = work_dir.join("subagents/stage-a");
     fs::create_dir_all(&stage_dir).unwrap();
     fs::write(

@@ -65,7 +65,7 @@ pub const HOOK_SKILL_TRIGGER: &str = include_str!("../../../../hooks/skill-trigg
 /// LearningValidator hook - validates session outcomes on Stop (memory usage checks)
 pub const HOOK_LEARNING_VALIDATOR: &str = include_str!("../../../../hooks/learning-validator.sh");
 
-/// GitAddGuard hook - blocks dangerous git add patterns (git add -A, git add ., git add .work)
+/// GitAddGuard hook - blocks dangerous git add patterns (git add -A, git add ., git add .loom)
 pub const HOOK_GIT_ADD_GUARD: &str = include_str!("../../../../hooks/git-add-guard.sh");
 
 /// WorktreeIsolation hook - enforces worktree boundaries (blocks git -C, path traversal, cross-worktree access)
@@ -155,18 +155,27 @@ pub const LOOM_HOOKS: &[(&str, &str)] = &[
 /// and all sessions share the same permission file (approvals propagate)
 pub const LOOM_PERMISSIONS: &[&str] = &[
     // Read access to loom state, plus the ONE directory agents write with a
-    // file tool. `.work/` is otherwise read-only to file tools (CLAUDE.md rule
-    // 11: state changes go through the `loom` CLI), and handoffs are the sole
-    // direct write root — the same narrowing `sandbox/settings.rs` already
+    // file tool. `.loom/work/` is otherwise read-only to file tools (CLAUDE.md
+    // rule 11: state changes go through the `loom` CLI), and handoffs are the
+    // sole direct write root — the same narrowing `sandbox/settings.rs` already
     // applies to generated stage settings (`Edit(/<abs>/handoffs/**)`).
     //
-    // Deliberately NOT `Edit(.work/**)`: this file is copied verbatim into
-    // every stage worktree's settings.json, and a broad Edit grant over the
-    // resolved `.work` root re-exposes `.work/admin.token` / `.work/user.token`
-    // (S-1, the daemon-RPC privilege escalation `git/worktree/settings.rs`
-    // documents). Nor `Write(...)` in any spelling: Claude Code's file
-    // permission check consults only `Edit(path)` rules, so a `Write(path)`
-    // grant enforces nothing and only prints a startup warning.
+    // Deliberately NOT `Edit(<state>/**)` in EITHER spelling: this file is
+    // copied verbatim into every stage worktree's settings.json, and a broad
+    // Edit grant over the resolved state root re-exposes `admin.token` /
+    // `user.token` (S-1, the daemon-RPC privilege escalation
+    // `git/worktree/settings.rs` documents). Nor `Write(...)` in any spelling:
+    // Claude Code's file permission check consults only `Edit(path)` rules, so
+    // a `Write(path)` grant enforces nothing and only prints a startup warning.
+    //
+    // Both layouts are listed because this array is layout-unaware and its
+    // entries are literal path patterns. A project whose workspace predates the
+    // move still lives at `.work/`, and loom keeps reading AND writing it there;
+    // with only the nested spelling, regenerating that project's settings.json
+    // would strip the handoff-write grant its agents depend on. The unused
+    // spelling matches nothing on either layout, so listing both costs nothing.
+    "Read(.loom/work/**)",
+    "Edit(.loom/work/handoffs/**)",
     "Read(.work/**)",
     "Edit(.work/handoffs/**)",
     // Read access to instruction files
@@ -186,13 +195,17 @@ pub const LOOM_PERMISSIONS: &[&str] = &[
 ];
 
 /// Loom permissions for WORKTREE context
-/// Worktrees are at .worktrees/stage-X/ with symlink .work -> ../../.work
+/// Worktrees are at .worktrees/stage-X/ with symlink .loom/work -> ../../../.loom/work
 pub const LOOM_PERMISSIONS_WORKTREE: &[&str] = &[
     // Access via the symlink path (how Claude sees the paths). Same shape as
-    // LOOM_PERMISSIONS above and for the same reasons: read-only over `.work/`
-    // except handoffs, no broad `Edit(.work/**)` that would re-expose the
-    // daemon tokens, and never a `Write(...)` rule (inert — Claude Code's file
-    // permission check consults only `Edit(path)`).
+    // LOOM_PERMISSIONS above and for the same reasons: read-only over the state
+    // root except handoffs, no broad `Edit(<state>/**)` in either spelling that
+    // would re-expose the daemon tokens, and never a `Write(...)` rule (inert —
+    // Claude Code's file permission check consults only `Edit(path)`). Both
+    // layouts are listed for the same reason too: a worktree of a project whose
+    // workspace predates the move symlinks `.work`, not `.loom/work`.
+    "Read(.loom/work/**)",
+    "Edit(.loom/work/handoffs/**)",
     "Read(.work/**)",
     "Edit(.work/handoffs/**)",
     // Read access to instruction files

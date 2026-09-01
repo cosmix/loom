@@ -49,7 +49,7 @@ fn session_on_disk(work: &Path, session_id: &str) -> Session {
 #[test]
 fn the_backstop_ignores_an_event_from_a_session_the_stage_has_moved_on_from() {
     let temp = handoff_work_dir();
-    let work = temp.path().join(".work");
+    let work = temp.path().join(".loom").join("work");
     executing_stage(&work);
 
     let live_session = recorded_session(&work);
@@ -96,7 +96,7 @@ fn the_backstop_ignores_an_event_from_a_session_the_stage_has_moved_on_from() {
 #[test]
 fn handoff_ignores_an_event_from_a_session_the_stage_has_moved_on_from() {
     let temp = handoff_work_dir();
-    let work = temp.path().join(".work");
+    let work = temp.path().join(".loom").join("work");
     executing_stage(&work);
 
     let live_session = recorded_session(&work);
@@ -138,7 +138,7 @@ fn handoff_ignores_an_event_from_a_session_the_stage_has_moved_on_from() {
 #[test]
 fn a_handoff_marks_the_session_it_took_down_context_exhausted() {
     let temp = handoff_work_dir();
-    let work = temp.path().join(".work");
+    let work = temp.path().join(".loom").join("work");
     executing_stage(&work);
 
     let session = recorded_session(&work);
@@ -177,7 +177,7 @@ fn a_handoff_marks_the_session_it_took_down_context_exhausted() {
 #[test]
 fn handoff_status_update_preserves_newer_persisted_heartbeat_fields() {
     let temp = handoff_work_dir();
-    let work = temp.path().join(".work");
+    let work = temp.path().join(".loom").join("work");
     executing_stage(&work);
 
     let stale = recorded_session(&work);
@@ -213,7 +213,7 @@ fn handoff_status_update_preserves_newer_persisted_heartbeat_fields() {
 #[test]
 fn handoff_status_update_preserves_a_concurrently_completed_record() {
     let temp = handoff_work_dir();
-    let work = temp.path().join(".work");
+    let work = temp.path().join(".loom").join("work");
     executing_stage(&work);
 
     let stale = recorded_session(&work);
@@ -251,7 +251,7 @@ fn handoff_status_update_preserves_a_concurrently_completed_record() {
 #[test]
 fn a_restarted_daemon_marks_a_dead_persisted_session_context_exhausted() {
     let temp = handoff_work_dir();
-    let work = temp.path().join(".work");
+    let work = temp.path().join(".loom").join("work");
     executing_stage(&work);
 
     let session = recorded_session(&work);
@@ -286,7 +286,7 @@ fn a_restarted_daemon_marks_a_dead_persisted_session_context_exhausted() {
 #[test]
 fn backstop_handoff_prefers_fresh_event_context_over_stale_records() {
     let temp = handoff_work_dir();
-    let work = temp.path().join(".work");
+    let work = temp.path().join(".loom").join("work");
     executing_stage(&work);
 
     let stale = recorded_session(&work);
@@ -328,7 +328,7 @@ fn backstop_handoff_prefers_fresh_event_context_over_stale_records() {
 #[test]
 fn a_handoff_marks_a_session_it_killed_before_it_ever_ran() {
     let temp = handoff_work_dir();
-    let work = temp.path().join(".work");
+    let work = temp.path().join(".loom").join("work");
     executing_stage(&work);
 
     let mut session = recorded_session(&work);

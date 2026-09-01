@@ -109,7 +109,7 @@ pub struct HookCommand {
 pub struct HooksConfig {
     /// Path to the loom hooks directory
     pub hooks_dir: PathBuf,
-    /// Path to the .work directory
+    /// Path to the .loom/work directory
     pub work_dir: PathBuf,
     /// Resolved Claude Code permission mode for this session.
     pub permission_mode: PermissionMode,

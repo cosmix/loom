@@ -13,16 +13,16 @@ fn write_file(root: &Path, relative: &str, contents: &str) {
     fs::write(path, contents).unwrap();
 }
 
-/// A project tree `retrieve_for_stage` can run against end to end: a `.work/`
-/// directory for [`crate::fs::work_dir::WorkDir`] to find, and a knowledge tree
-/// under `doc/loom/knowledge/` for the chunker to ingest.
+/// A project tree `retrieve_for_stage` can run against end to end: a
+/// `.loom/work/` directory for [`crate::fs::work_dir::WorkDir`] to find, and a
+/// knowledge tree under `doc/loom/knowledge/` for the chunker to ingest.
 ///
 /// `pub(super)` so sibling test modules under `context::tests` (e.g.
 /// `retrieve_source`) can reuse it instead of duplicating a fixture project.
 pub(super) fn project_with_knowledge() -> TempDir {
     let temp = TempDir::new().unwrap();
     let root = temp.path();
-    fs::create_dir_all(root.join(".work")).unwrap();
+    fs::create_dir_all(root.join(".loom").join("work")).unwrap();
     write_file(
         root,
         "doc/loom/knowledge/architecture.md",
@@ -204,7 +204,7 @@ fn retrieve_for_stage_boosts_a_chunk_named_by_stage_dependency_ids() {
 #[test]
 fn retrieve_for_stage_degrades_rather_than_failing_with_no_knowledge_tree() {
     let temp = TempDir::new().unwrap();
-    fs::create_dir_all(temp.path().join(".work")).unwrap();
+    fs::create_dir_all(temp.path().join(".loom").join("work")).unwrap();
     let query = StageQuery::new(temp.path(), "anything");
 
     let pack = retrieve_for_stage(&query, 500).expect("a missing knowledge tree is not an error");
@@ -221,7 +221,7 @@ fn retrieve_for_stage_degrades_rather_than_failing_with_no_knowledge_tree() {
 #[test]
 fn resolve_roots_still_refuses_a_project_with_no_knowledge_tree() {
     let temp = TempDir::new().unwrap();
-    fs::create_dir_all(temp.path().join(".work")).unwrap();
+    fs::create_dir_all(temp.path().join(".loom").join("work")).unwrap();
 
     let error = resolve_roots(temp.path()).unwrap_err();
     assert!(

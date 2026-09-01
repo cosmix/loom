@@ -59,7 +59,7 @@ fn restore_terminal_env(saved: Option<std::ffi::OsString>) {
 #[serial]
 fn merge_probe_failure_does_not_consume_resolver_attempt_budget() {
     let temp = tempfile::tempdir().unwrap();
-    let work_dir = temp.path().join(".work");
+    let work_dir = temp.path().join(".loom").join("work");
     let config = OrchestratorConfig {
         work_dir: work_dir.clone(),
         repo_root: temp.path().to_path_buf(),
@@ -133,7 +133,7 @@ fn already_merged_short_circuit_refuses_cleanup_for_unmerged_branch() {
     let stage_id = "unmerged-but-flagged";
     let (temp, worktree_path) = repo_with_unmerged_stage_branch(stage_id);
     let root = temp.path();
-    let work_dir = root.join(".work");
+    let work_dir = root.join(".loom").join("work");
     let branch = format!("loom/{stage_id}");
 
     let config = OrchestratorConfig {

@@ -13,12 +13,12 @@ use crate::orchestrator::terminal::native::write_test_pid_identity;
 use crate::plan::ExecutionGraph;
 use crate::verify::transitions::{load_stage, save_stage};
 
-/// Set up a `.work` directory with an Executing stage and a live agent —
+/// Set up a `.loom/work` directory with an Executing stage and a live agent —
 /// a PID file naming this process, but no session record: the daemon-death
 /// window this whole module exists to close.
 fn orphan_test_fixture() -> (TempDir, std::path::PathBuf, Session) {
     let temp = TempDir::new().unwrap();
-    let work_dir = temp.path().join(".work");
+    let work_dir = temp.path().join(".loom").join("work");
     std::fs::create_dir_all(&work_dir).unwrap();
     // Configure the tmux lane so `Orchestrator::new` does not run terminal
     // detection, which fails on a headless runner. The adopted session is

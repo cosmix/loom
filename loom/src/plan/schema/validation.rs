@@ -273,7 +273,7 @@ fn check_ceiling_minimum(
 /// The plan-level ceilings ([`LoomConfig::context_ceiling_tokens`] and
 /// [`LoomConfig::subagent_ceiling_tokens`]) get the same floor a stage's own
 /// ceiling gets: `commands/init/plan_setup.rs` persists them verbatim to
-/// `.work/config.toml`, where they become the default for every stage that
+/// `.loom/work/config.toml`, where they become the default for every stage that
 /// sets none, and the hook and the daemon backstop both read them from there.
 fn check_plan_ceiling_minimums(config: &LoomConfig, errors: &mut Vec<ValidationError>) {
     check_ceiling_minimum(
@@ -803,9 +803,9 @@ fn criterion_needs_ungrantable_resource(cmd: &str) -> Option<&'static str> {
 /// cannot grant.
 ///
 /// `loom map` / `loom knowledge context` resolve the shared context-store
-/// cache under the main project root (reached through the `.work` symlink,
-/// which no `allow_write` entry can cover), and tmux/docker are host daemons
-/// the sandbox does not expose. `loom stage complete` runs acceptance from
+/// cache under the main project root (reached through the `.loom/work`
+/// symlink, which no `allow_write` entry can cover), and tmux/docker are host
+/// daemons the sandbox does not expose. `loom stage complete` runs acceptance from
 /// inside the session, so these fail for reasons the stage's diff can never
 /// fix — stranding a finished stage rather than reporting a defect.
 fn warn_ungrantable_acceptance(stage: &super::types::StageDefinition, warnings: &mut Vec<String>) {
@@ -813,7 +813,7 @@ fn warn_ungrantable_acceptance(stage: &super::types::StageDefinition, warnings: 
         if let Some(what) = criterion_needs_ungrantable_resource(criterion.command()) {
             warnings.push(format!(
                 "Stage '{}': Acceptance criterion #{} invokes '{}', which needs a resource \
-                 the stage sandbox cannot grant (shared .work/.loom state reached through \
+                 the stage sandbox cannot grant (shared .loom state reached through \
                  the worktree symlink, or a host daemon). Prove the behavior with a test \
                  that injects the root/handle, or with an artifacts/wiring check instead.",
                 stage.id,
@@ -1256,12 +1256,12 @@ pub fn check_sandbox_recommendations(metadata: &LoomMetadata) -> Vec<String> {
         );
     }
 
-    // Check for common misconfiguration: deny_write includes .work/** but that's already default
+    // Check for common misconfiguration: deny_write includes .loom/work/** but that's already default
     let deny_write = &metadata.loom.sandbox.filesystem.deny_write;
-    if deny_write.iter().any(|p| p.contains(".work")) {
+    if deny_write.iter().any(|p| p.contains(".loom/work")) {
         // This is actually the default, but if someone explicitly adds it, mention it
         warnings.push(
-            "Note: .work/** is already denied by default in deny_write. \
+            "Note: .loom/work/** is already denied by default in deny_write. \
              Explicit entry is redundant but harmless."
                 .to_string(),
         );

@@ -41,7 +41,7 @@ pub fn cleanup_session_resources(_stage_id: &str, session_id: &str, work_dir: &P
     }
 }
 
-/// Update a session's status in .work/sessions/
+/// Update a session's status in the state directory's sessions/
 ///
 /// Reads through the shared file lock (`locked_read`) and writes through the
 /// canonical `save_session` (`locked_write` + atomic rename) so this CLI path

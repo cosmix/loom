@@ -19,6 +19,7 @@ use std::borrow::Cow;
 use std::os::unix::ffi::OsStrExt;
 use std::path::Path;
 
+use crate::fs::work_dir::WorkDir;
 use crate::models::session::{Session, SessionBackendKind, SessionStatus};
 use crate::orchestrator::terminal::native::NativeBackend;
 use crate::parser::frontmatter::parse_from_markdown;
@@ -41,12 +42,20 @@ pub const OVERVIEW_SESSION: &str = "loom-overview";
 /// used by `tests/e2e/tmux_reconcile.rs` to locate the viewer socket it
 /// builds by hand.
 pub fn viewer_socket_name(work_dir: &Path) -> String {
-    // `.work` is a SYMLINK to the main repo's `.work` in a worktree, so
+    // `.loom/work` is a SYMLINK to the main repo's `.loom/work` in a worktree, so
     // canonicalizing gives the same path from every worktree of the repo.
     let canonical = work_dir
         .canonicalize()
         .unwrap_or_else(|_| work_dir.to_path_buf());
-    let repo_root = canonical.parent().unwrap_or(&canonical);
+    // Opaque hash input — nothing opens this path, it only has to be one
+    // stable value per repository. It still goes through the single
+    // layout-aware hop count (`WorkDir::project_root`: two parents for
+    // `.loom/work`, one for a legacy `.work`) rather than a bare `parent()`,
+    // so repo identity is derived the same way here as everywhere else.
+    let repo_root = WorkDir::new(&canonical)
+        .ok()
+        .and_then(|wd| wd.project_root().map(Path::to_path_buf))
+        .unwrap_or_else(|| canonical.clone());
 
     let mut hasher = Sha256::new();
     hasher.update(repo_root.as_os_str().as_bytes());

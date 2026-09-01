@@ -8,7 +8,9 @@
 # Environment variables (set by loom worktree settings):
 #   LOOM_SESSION_ID - The session identifier
 #   LOOM_STAGE_ID   - The stage being worked on
-#   LOOM_WORK_DIR   - Path to .work/ directory
+#   LOOM_WORK_DIR   - Path to the state directory (.loom/work/, or the
+#                     legacy .work/ for a workspace that already resolved
+#                     to it)
 
 # Drain stdin to prevent blocking (hook doesn't need tool input details)
 # Cross-platform: gtimeout (macOS+coreutils), timeout (Linux), or cat
@@ -25,9 +27,16 @@ if [ -z "$LOOM_STAGE_ID" ] || [ -z "$LOOM_SESSION_ID" ]; then
 	exit 0
 fi
 
-# Change to the project directory (parent of .work/)
+# Change to the project directory (parent of the state directory). The
+# current layout nests the state dir two levels below the project root
+# (<root>/.loom/work); a workspace that already resolved to the legacy
+# layout nests it one level below (<root>/.work) - see doc/plans,
+# "Back-compat".
 if [ -n "$LOOM_WORK_DIR" ]; then
-	cd "$(dirname "$LOOM_WORK_DIR")" 2>/dev/null || exit 0
+	case "$LOOM_WORK_DIR" in
+	*/.loom/work) cd "$(dirname "$(dirname "$LOOM_WORK_DIR")")" 2>/dev/null || exit 0 ;;
+	*) cd "$(dirname "$LOOM_WORK_DIR")" 2>/dev/null || exit 0 ;;
+	esac
 fi
 
 # Mark stage as waiting for user input

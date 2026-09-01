@@ -1,26 +1,30 @@
 #!/usr/bin/env bash
-# Git pre-commit hook: Block commits containing .work or .worktrees
+# Git pre-commit hook: Block commits containing the state directory (legacy
+# .work or current .loom/work) or .worktrees
 #
 # This hook is installed by loom to prevent accidental commits of orchestration
-# state files. The .work directory in worktrees is a symlink to shared state -
+# state files. In worktrees, the state directory is a symlink to shared state -
 # committing it would corrupt the main repository.
 #
 # Installation: Appended to .git/hooks/pre-commit by `loom init`
 #
 # Exit codes:
 #   0 - Allow commit
-#   1 - Block commit (staged files contain .work or .worktrees)
+#   1 - Block commit (staged files contain the state directory or .worktrees)
 
 set -euo pipefail
 
 # Marker for loom hook section (for idempotent installation)
 # LOOM_PRE_COMMIT_HOOK_START
 
-# Check if any staged files are in .work/ or .worktrees/ directories
+# Check if any staged files are in the state directory (legacy .work or
+# current .loom/work) or .worktrees/ directories
 check_forbidden_paths() {
     local forbidden_patterns=(
         "^\.work/"
         "^\.work$"
+        "^\.loom/work/"
+        "^\.loom/work$"
         "^\.worktrees/"
         "^\.worktrees$"
     )
@@ -58,8 +62,8 @@ check_forbidden_paths() {
             echo "  - $file"
         done
         echo ""
-        echo "WHY: .work/ contains orchestration state shared across worktrees."
-        echo "     Committing it corrupts the main repository."
+        echo "WHY: .work/ and .loom/work/ contain orchestration state shared"
+        echo "     across worktrees. Committing it corrupts the main repository."
         echo ""
         echo "FIX: Unstage these files:"
         echo ""

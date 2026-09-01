@@ -20,7 +20,8 @@ pub fn human_review(
     force_complete: bool,
     reject_reason: Option<String>,
 ) -> Result<()> {
-    let work_dir = Path::new(".work");
+    let work_dir_buf = crate::commands::common::work_dir_path()?;
+    let work_dir: &Path = &work_dir_buf;
 
     let stage = load_stage(&stage_id, work_dir)?;
 

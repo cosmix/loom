@@ -3,7 +3,7 @@
 //! This command no longer mutates stage state directly. It serialises
 //! the dispute into a structured `Request::DisputeCriteria` and sends
 //! it over the daemon's Unix socket. The daemon writes
-//! `.work/disputes/<stage>/<n>/request.md`, transitions the stage to
+//! `<state-dir>/disputes/<stage>/<n>/request.md`, transitions the stage to
 //! `NeedsAdjudication`, and returns an allocated id.
 //!
 //! See `loom/src/daemon/server/dispute.rs` for the server-side handler
@@ -27,7 +27,7 @@ const FAILURE_OUTPUT_MAX_BYTES: usize = 4096;
 ///
 /// The three ways the daemon can be reached call for three different answers.
 /// With nothing listening the dispute simply cannot be filed: it is the daemon
-/// that writes `.work/disputes/<stage>/<n>/request.md` and moves the stage to
+/// that writes `<state-dir>/disputes/<stage>/<n>/request.md` and moves the stage to
 /// `NeedsAdjudication`, so there is no local fallback to take here the way
 /// `loom stage block` has one. `Unreachable` is different — it says nothing
 /// about the daemon, only that this process may not use unix sockets — so it
@@ -40,7 +40,7 @@ pub fn dispute_criteria(
     evidence_commit: Option<String>,
     failure_output_path: Option<PathBuf>,
 ) -> Result<()> {
-    let work_dir = Path::new(".work");
+    let work_dir = crate::commands::common::work_dir_path()?;
 
     let failure_output = match failure_output_path {
         Some(path) => Some(load_and_truncate_failure_output(&path)?),
@@ -48,7 +48,7 @@ pub fn dispute_criteria(
     };
 
     let req = build_request(
-        work_dir,
+        &work_dir,
         &stage_id,
         criterion_index,
         &reason,
@@ -56,13 +56,13 @@ pub fn dispute_criteria(
         &failure_output,
     );
 
-    match try_send_request(work_dir, &req)? {
+    match try_send_request(&work_dir, &req)? {
         DaemonReach::Answered(response) => {
             handle_dispute_response(&stage_id, criterion_index, &reason, response)
         }
         DaemonReach::NotListening => bail!(
-            "No daemon is listening on .work/orchestrator.sock, so the dispute cannot be \
-             filed. The criterion stands until a daemon is running."
+            "No daemon is listening on the state directory's orchestrator.sock, so the dispute \
+             cannot be filed. The criterion stands until a daemon is running."
         ),
         DaemonReach::Unreachable => queue_dispute_request(
             &stage_id,

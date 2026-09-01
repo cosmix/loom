@@ -513,7 +513,9 @@ fn test_initialize_with_plan_creates_stage_files() {
 #[test]
 fn test_cleanup_work_directory_removes_existing() {
     let temp_dir = TempDir::new().unwrap();
-    let work_dir = temp_dir.path().join(".work");
+    // No config.toml anywhere under `temp_dir`, so `cleanup_work_directory`'s internal
+    // `resolve_state_dir` resolves to the nested fallback root.
+    let work_dir = temp_dir.path().join(".loom").join("work");
 
     fs::create_dir_all(&work_dir).unwrap();
     fs::write(work_dir.join("test.txt"), "content").unwrap();
@@ -529,7 +531,7 @@ fn test_cleanup_work_directory_removes_existing() {
 #[test]
 fn test_cleanup_work_directory_nonexistent_ok() {
     let temp_dir = TempDir::new().unwrap();
-    let work_dir = temp_dir.path().join(".work");
+    let work_dir = temp_dir.path().join(".loom").join("work");
 
     assert!(!work_dir.exists());
 
@@ -623,7 +625,7 @@ fn test_cleanup_orphaned_sessions_reaps_live_only_in_clean_mode() {
     fs::create_dir_all(&socket_dir).unwrap();
 
     let repo_root = TempDir::new().unwrap();
-    let sessions_dir = repo_root.path().join(".work").join("sessions");
+    let sessions_dir = repo_root.path().join(".loom").join("work").join("sessions");
     fs::create_dir_all(&sessions_dir).unwrap();
 
     let mut live_session = Session::new();
@@ -636,7 +638,7 @@ fn test_cleanup_orphaned_sessions_reaps_live_only_in_clean_mode() {
     )
     .unwrap();
     crate::orchestrator::terminal::native::write_test_pid_identity(
-        &repo_root.path().join(".work"),
+        &repo_root.path().join(".loom").join("work"),
         &live_session,
         std::process::id(),
     )
@@ -673,7 +675,7 @@ fn test_remove_work_directory_on_failure_removes_directory() {
     use super::cleanup::remove_work_directory_on_failure;
 
     let temp_dir = TempDir::new().unwrap();
-    let work_dir = temp_dir.path().join(".work");
+    let work_dir = temp_dir.path().join(".loom").join("work");
 
     fs::create_dir_all(&work_dir).unwrap();
     fs::write(work_dir.join("test.txt"), "content").unwrap();
@@ -690,7 +692,7 @@ fn test_remove_work_directory_on_failure_nonexistent_ok() {
     use super::cleanup::remove_work_directory_on_failure;
 
     let temp_dir = TempDir::new().unwrap();
-    let work_dir = temp_dir.path().join(".work");
+    let work_dir = temp_dir.path().join(".loom").join("work");
 
     assert!(!work_dir.exists());
 

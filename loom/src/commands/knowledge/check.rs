@@ -6,7 +6,7 @@
 //! (`commands/knowledge/context.rs:29`), which calls `ContextStore::open`
 //! (`context/store.rs:49`). `open` itself only COMPUTES the cache root: it
 //! follows `WorkDir::main_project_root` OUT of a worktree, through the
-//! `.work` symlink, to the MAIN repository, and joins `.loom/cache`. The
+//! state directory symlink, to the MAIN repository, and joins `.loom/cache`. The
 //! write happens later, when `sync`'s `refresh` (`context/refresh.rs:218`)
 //! calls `ContextStore::save_catalog` (`context/store.rs:108`) against that
 //! root — a write that escapes worktree isolation, and both settings

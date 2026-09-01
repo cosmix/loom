@@ -4,7 +4,7 @@
 //! `/tmp`, joined with `tmux-<uid>`), NOT per-repository. That makes the
 //! directory shared by every loom checkout this user runs, so anything that
 //! walks it must never act on a socket it cannot positively attribute to the
-//! caller's own `.work` directory — see [`LoomSocket::attributed`].
+//! caller's own `.loom/work` directory — see [`LoomSocket::attributed`].
 
 use std::path::{Path, PathBuf};
 

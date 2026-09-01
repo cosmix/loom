@@ -3,7 +3,7 @@
 
 use anyhow::{bail, Context, Result};
 
-use crate::commands::common::find_work_dir;
+use crate::commands::common::work_dir_path;
 use crate::fs::session_files::find_session_file;
 use crate::fs::worktree_files::find_sessions_for_stage;
 use crate::models::session::Session;
@@ -15,10 +15,10 @@ pub fn list() -> Result<()> {
     println!("Active sessions:");
     println!("─────────────────────────────────────────────────────────");
 
-    let work_dir = match find_work_dir() {
+    let work_dir = match work_dir_path() {
         Ok(dir) => dir,
         Err(_) => {
-            println!("(no .work/ directory - run 'loom init' first)");
+            println!("(no state directory - run 'loom init' first)");
             return Ok(());
         }
     };
@@ -49,7 +49,7 @@ pub fn list() -> Result<()> {
 
 /// Kill one or more sessions by ID/prefix, or all sessions for a stage
 pub fn kill(session_ids: Vec<String>, stage: Option<String>) -> Result<()> {
-    let work_dir = find_work_dir()?;
+    let work_dir = work_dir_path()?;
 
     // Collect all session IDs to kill
     let mut ids_to_kill = session_ids;

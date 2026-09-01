@@ -113,7 +113,7 @@ fn test_format_signal_with_metrics() {
 #[test]
 fn test_generate_signal_with_metrics() {
     let temp_dir = TempDir::new().unwrap();
-    let work_dir = temp_dir.path().join(".work");
+    let work_dir = temp_dir.path().join(".loom").join("work");
     fs::create_dir_all(&work_dir).unwrap();
 
     let session = create_test_session();
@@ -280,7 +280,7 @@ fn test_signal_contains_knowledge_management_section_for_knowledge_stages() {
 #[test]
 fn test_signal_ultracode_section_gated() {
     let temp_dir = TempDir::new().unwrap();
-    let work_dir = temp_dir.path().join(".work");
+    let work_dir = temp_dir.path().join(".loom").join("work");
     fs::create_dir_all(&work_dir).unwrap();
 
     let session = create_test_session();
@@ -317,7 +317,7 @@ fn test_signal_ultracode_section_gated() {
 #[test]
 fn test_signal_codex_implementers_section_gated() {
     let temp_dir = TempDir::new().unwrap();
-    let work_dir = temp_dir.path().join(".work");
+    let work_dir = temp_dir.path().join(".loom").join("work");
     fs::create_dir_all(&work_dir).unwrap();
 
     let session = create_test_session();
@@ -368,11 +368,11 @@ fn test_signal_codex_implementers_section_gated() {
 
         // Blast-radius restrictions. Codex runs workspace-write with approval
         // policy "never", so these two are the only thing standing between it and
-        // shared state: `.work/` is a symlink out of the worktree, and loom's
+        // shared state: `.loom/work/` is a symlink out of the worktree, and loom's
         // hooks never see commands codex runs inside its own session.
         assert!(
-            content.contains(".work/"),
-            "the codex block must warn off .work/ - a write through that symlink \
+            content.contains(".loom/work/"),
+            "the codex block must warn off .loom/work/ - a write through that symlink \
              escapes worktree isolation into state shared with every stage"
         );
         assert!(
@@ -484,7 +484,7 @@ fn test_codex_implementers_section_unavailable_falls_back_to_sonnet() {
 #[test]
 fn test_signal_subagent_timeout_section_gated() {
     let temp_dir = TempDir::new().unwrap();
-    let work_dir = temp_dir.path().join(".work");
+    let work_dir = temp_dir.path().join(".loom").join("work");
     fs::create_dir_all(&work_dir).unwrap();
 
     let session = create_test_session();
@@ -659,7 +659,7 @@ fn test_recovery_signal_carries_codex_implementers_section() {
          codex is not its preferred lane"
     );
     assert!(
-        signal.contains(".work/") && signal.contains("git status --short"),
+        signal.contains(".loom/work/") && signal.contains("git status --short"),
         "the mixed-stage block must carry the same blast-radius warnings"
     );
 }

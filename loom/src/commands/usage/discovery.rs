@@ -299,15 +299,15 @@ fn filter_plan(files: Vec<DiscoveredFile>, plan: &str) -> Result<Vec<DiscoveredF
 }
 
 fn plan_stage_ids(plan: &str) -> Result<Option<HashSet<String>>> {
-    let work_dir = match crate::commands::common::find_work_dir() {
+    let work_dir = match crate::commands::common::work_dir_path() {
         Ok(work_dir) => work_dir,
         Err(error) => {
-            eprintln!("plan could not be resolved: no .work directory ({error})");
+            eprintln!("plan could not be resolved: no state directory ({error})");
             return Ok(None);
         }
     };
     let Some(config) = crate::fs::work_dir::load_config(&work_dir)? else {
-        eprintln!("plan could not be resolved: .work/config.toml is missing");
+        eprintln!("plan could not be resolved: config.toml is missing");
         return Ok(None);
     };
     let Some(source) = config.source_path() else {

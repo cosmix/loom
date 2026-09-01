@@ -48,7 +48,7 @@ fn stalled_stage(work: &Path) -> (Session, u32) {
 #[test]
 fn a_report_below_the_escalation_line_only_warns() {
     let temp = handoff_work_dir();
-    let work = temp.path().join(".work");
+    let work = temp.path().join(".loom").join("work");
     let (session, agent_pid) = stalled_stage(&work);
 
     let mut orchestrator = orchestrator_for(&work, temp.path());
@@ -78,7 +78,7 @@ fn a_report_below_the_escalation_line_only_warns() {
 #[test]
 fn a_silence_past_the_escalation_line_hands_the_stage_off_and_requeues_it() {
     let temp = handoff_work_dir();
-    let work = temp.path().join(".work");
+    let work = temp.path().join(".loom").join("work");
     let (session, agent_pid) = stalled_stage(&work);
 
     let mut orchestrator = orchestrator_for(&work, temp.path());
@@ -117,7 +117,7 @@ fn a_silence_past_the_escalation_line_hands_the_stage_off_and_requeues_it() {
 #[test]
 fn the_third_stall_leaves_the_stage_for_an_operator() {
     let temp = handoff_work_dir();
-    let work = temp.path().join(".work");
+    let work = temp.path().join(".loom").join("work");
     let (session, agent_pid) = stalled_stage(&work);
     update_stage("test-stage", &work, |stage| {
         stage.stall_recoveries = 2;
@@ -152,7 +152,7 @@ fn the_third_stall_leaves_the_stage_for_an_operator() {
 #[test]
 fn a_report_from_a_session_the_stage_moved_on_from_is_ignored() {
     let temp = handoff_work_dir();
-    let work = temp.path().join(".work");
+    let work = temp.path().join(".loom").join("work");
     let (session, agent_pid) = stalled_stage(&work);
 
     let mut orchestrator = orchestrator_for(&work, temp.path());
@@ -181,7 +181,7 @@ fn a_report_from_a_session_the_stage_moved_on_from_is_ignored() {
 #[test]
 fn a_report_without_a_stage_is_only_a_warning() {
     let temp = handoff_work_dir();
-    let work = temp.path().join(".work");
+    let work = temp.path().join(".loom").join("work");
     executing_stage(&work);
     let mut orchestrator = orchestrator_for(&work, temp.path());
 

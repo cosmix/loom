@@ -822,7 +822,7 @@ fn test_check_sandbox_recommendations_no_warning_without_knowledge_deny_write() 
 }
 
 /// A plan-level ceiling below the minimum wedges the run it configures: it is
-/// persisted verbatim to `.work/config.toml` and becomes the default for every
+/// persisted verbatim to `.loom/work/config.toml` and becomes the default for every
 /// stage that sets none, so the hook blocks the first tool call of every
 /// session and the daemon backstop kills each successor. `loom plan verify`
 /// must fail rather than let that plan start.

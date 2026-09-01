@@ -209,7 +209,7 @@ fn is_worktree_specific_permission(permission: &str) -> bool {
 ///
 /// # Examples
 /// - `Read(/home/x/.worktrees/s1/loom/src/**)` → `Read(loom/src/**)`
-/// - `Read(../../.work/**)` → `Read(.work/**)`
+/// - `Read(../../../.loom/work/**)` → `Read(.loom/work/**)`
 /// - `Write(../../doc/plans/**)` → `Write(doc/plans/**)`
 fn transform_worktree_path(permission: &str) -> Option<String> {
     // Only transform if it contains worktree-specific patterns
@@ -255,7 +255,7 @@ fn transform_worktree_path(permission: &str) -> Option<String> {
         // Handle any relative path that starts with ../ (single or multiple levels).
         // Resolve by stripping all ../ prefixes.
         // ../doc/**     -> doc/**
-        // ../../.work/** -> .work/**
+        // ../../../.loom/work/** -> .loom/work/**
         let mut path = path_str;
         while path.starts_with("../") {
             path = &path[3..];
@@ -508,14 +508,16 @@ mod tests {
 
     #[test]
     fn test_is_worktree_specific_permission() {
-        assert!(is_worktree_specific_permission("Read(../../.work/**)"));
+        assert!(is_worktree_specific_permission(
+            "Read(../../../.loom/work/**)"
+        ));
         assert!(is_worktree_specific_permission(
             "Write(.worktrees/stage-1/**)"
         ));
         // Single-level ../ must also be treated as worktree-specific (C-18)
         assert!(is_worktree_specific_permission("Read(../doc/**)"));
         assert!(is_worktree_specific_permission("Write(../src/**)"));
-        assert!(!is_worktree_specific_permission("Read(.work/**)"));
+        assert!(!is_worktree_specific_permission("Read(.loom/work/**)"));
         assert!(!is_worktree_specific_permission("Bash(cargo:*)"));
     }
 
@@ -558,8 +560,8 @@ mod tests {
     fn test_transform_worktree_path_relative() {
         // Relative path with ../../ should be resolved
         assert_eq!(
-            transform_worktree_path("Read(../../.work/**)"),
-            Some("Read(.work/**)".to_string())
+            transform_worktree_path("Read(../../../.loom/work/**)"),
+            Some("Read(.loom/work/**)".to_string())
         );
         assert_eq!(
             transform_worktree_path("Write(../../doc/plans/**)"),
@@ -584,7 +586,7 @@ mod tests {
     #[test]
     fn test_transform_worktree_path_unchanged() {
         // Normal path without worktree patterns should return None
-        assert_eq!(transform_worktree_path("Read(.work/**)"), None);
+        assert_eq!(transform_worktree_path("Read(.loom/work/**)"), None);
         assert_eq!(transform_worktree_path("Bash(cargo:*)"), None);
         assert_eq!(transform_worktree_path("Write(src/**)"), None);
     }
@@ -595,7 +597,7 @@ mod tests {
         let settings_path = temp_dir.path().join("settings.local.json");
 
         // A LIVE work dir must survive alongside the identity heal.
-        let live_work_dir = temp_dir.path().join(".work");
+        let live_work_dir = temp_dir.path().join(".loom").join("work");
         std::fs::create_dir_all(&live_work_dir).unwrap();
         let live_work_dir_str = live_work_dir.to_string_lossy().to_string();
 
@@ -607,7 +609,7 @@ mod tests {
                 "LOOM_SESSION_ID": "session-stale",
                 "LOOM_WORK_DIR": live_work_dir_str
             },
-            "permissions": { "allow": ["Read(.work/**)"] }
+            "permissions": { "allow": ["Read(.loom/work/**)"] }
         });
         std::fs::write(
             &settings_path,
@@ -627,7 +629,7 @@ mod tests {
         assert!(!env.contains_key("LOOM_SESSION_ID"));
         assert_eq!(env["LOOM_WORK_DIR"], live_work_dir_str);
         let allow = settings["permissions"]["allow"].as_array().unwrap();
-        assert!(allow.iter().any(|v| v == "Read(.work/**)"));
+        assert!(allow.iter().any(|v| v == "Read(.loom/work/**)"));
         assert!(allow.iter().any(|v| v == "Bash(cargo:*)"));
     }
 

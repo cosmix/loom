@@ -59,7 +59,7 @@ fn hook_recipient_id_stays_filesystem_safe_for_a_hostile_session_id() {
     // only way a black-box test can: `record_delivery` refuses anything that
     // fails validation, so a successful write IS the proof.
     let temp = TempDir::new().unwrap();
-    let work_dir = temp.path().join(".work");
+    let work_dir = temp.path().join(".loom").join("work");
 
     for hostile in [
         "../escape",
@@ -147,7 +147,7 @@ fn delivered_to_session_with_a_spawn_recipient_that_never_ran_is_empty_not_an_er
 #[test]
 fn discard_session_delivery_removes_only_the_named_recipients_record() {
     let temp = TempDir::new().unwrap();
-    let work_dir = temp.path().join(".work");
+    let work_dir = temp.path().join(".loom").join("work");
     let session_b_record = record("session-b", "epoch-a", &[("second", "h2")]);
     record_delivery(
         &work_dir,
@@ -170,7 +170,7 @@ fn discard_session_delivery_removes_only_the_named_recipients_record() {
 #[test]
 fn discard_session_delivery_on_an_absent_directory_is_a_silent_no_op() {
     let temp = TempDir::new().unwrap();
-    let work_dir = temp.path().join(".work");
+    let work_dir = temp.path().join(".loom").join("work");
 
     discard_session_delivery(&work_dir, PLAN, STAGE, "session-a").unwrap();
 
@@ -184,7 +184,7 @@ fn discard_session_delivery_on_an_absent_directory_is_a_silent_no_op() {
 #[test]
 fn discard_session_delivery_on_a_recipient_with_no_record_is_a_silent_no_op() {
     let temp = TempDir::new().unwrap();
-    let work_dir = temp.path().join(".work");
+    let work_dir = temp.path().join(".loom").join("work");
     record_delivery(
         &work_dir,
         PLAN,

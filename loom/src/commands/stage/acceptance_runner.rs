@@ -149,7 +149,7 @@ pub(crate) fn resolve_knowledge_acceptance_dir(stage: &Stage) -> Result<Option<P
 
 /// Run acceptance criteria and print standardized output.
 ///
-/// `work_dir` is the `.work` directory, used to pick up the plan-level
+/// `work_dir` is the state directory, used to pick up the plan-level
 /// command confinement default; the stage's own override still wins over it.
 ///
 /// Returns `true` when all criteria pass, `false` otherwise.

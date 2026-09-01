@@ -1,11 +1,11 @@
 //! Per-worktree spool for memory entries a sandboxed stage cannot write directly.
 //!
 //! `loom memory note` (and its siblings) normally write straight to
-//! `.work/memory/<stage>.md` via [`super::append_entry`]. Inside a sandboxed
-//! worktree that write fails: `.work` is a symlink to the main repo's
-//! `.work`, the generated sandbox grants `Read(.work/memory/**)` but no
-//! matching `Edit`, and the kernel refuses the write with EROFS or
-//! `PermissionDenied`.
+//! `.loom/work/memory/<stage>.md` via [`super::append_entry`]. Inside a
+//! sandboxed worktree that write fails: `.loom/work` is a symlink to the main
+//! repo's `.loom/work`, the generated sandbox grants
+//! `Read(.loom/work/memory/**)` but no matching `Edit`, and the kernel
+//! refuses the write with EROFS or `PermissionDenied`.
 //!
 //! This module gives the sandboxed path somewhere writable to land instead:
 //! `<worktree_root>/.loom/memory-spool.jsonl`, which sits inside the

@@ -14,7 +14,8 @@
 #   3. WARNS (never denies) when an explicit `model` escalates above the
 #      agent's defined tier, or when a loom-* subagent's prompt is missing the
 #      Rule 5 preamble.
-#   4. RECORDS every typed spawn to .work/subagents/<stage-id>/spawns.jsonl so
+#   4. RECORDS every typed spawn to $LOOM_WORK_DIR/subagents/<stage-id>/spawns.jsonl
+#      (the state directory - .loom/work, or the legacy .work) so
 #      `loom subagents` can report on model usage across a stage.
 #
 # Input: JSON from stdin - {"tool_name": "Task"|"Agent", "tool_input": {...},
@@ -295,10 +296,10 @@ emit_result
 #
 # Contract C1: `loom subagents` reads this file - key order and names below
 # must not change. Write discipline mirrors subagent-stop.sh:125-186 exactly:
-# plain mkdir/redirection (never a Rust/loom CLI path - .work is a SYMLINK
-# inside a worktree and loom's safe-write opens roots O_NOFOLLOW), a symlinked
-# target is refused, and every step is best-effort so a recording failure can
-# never change the decision already made above.
+# plain mkdir/redirection (never a Rust/loom CLI path - the state directory
+# is a SYMLINK inside a worktree and loom's safe-write opens roots
+# O_NOFOLLOW), a symlinked target is refused, and every step is best-effort
+# so a recording failure can never change the decision already made above.
 record_spawn() {
 	local work_dir="${LOOM_WORK_DIR:-}" stage_id="${LOOM_STAGE_ID:-}"
 	[[ -n "$work_dir" && -n "$stage_id" ]] || return 0

@@ -30,7 +30,7 @@
 //! prose_roots = ["doc"]
 //! ```
 //!
-//! **This is not `.work/config.toml`.** That file is loom's plan and
+//! **This is not `.loom/work/config.toml`.** That file is loom's plan and
 //! orchestration state (see [`crate::fs::work_dir`]) and has nothing to do with
 //! retrieval; the two are different files, in different directories, read by
 //! different code. Do not merge them.

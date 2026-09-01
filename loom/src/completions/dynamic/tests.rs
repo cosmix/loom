@@ -21,16 +21,16 @@ pub fn setup_test_workspace() -> TempDir {
     fs::write(plans_dir.join("PLAN-0002-feature-b.md"), "content").unwrap();
     fs::write(plans_dir.join("PLAN-0010-bugfix.md"), "content").unwrap();
 
-    // Create .work/stages with sample files
-    let stages_dir = root.join(".work/stages");
+    // Create .loom/work/stages with sample files
+    let stages_dir = root.join(".loom/work/stages");
     fs::create_dir_all(&stages_dir).unwrap();
     fs::write(stages_dir.join("01-core-architecture.md"), "content").unwrap();
     fs::write(stages_dir.join("02-math-core.md"), "content").unwrap();
     fs::write(stages_dir.join("02-ui-framework.md"), "content").unwrap();
     fs::write(stages_dir.join("03-integration.md"), "content").unwrap();
 
-    // Create .work/sessions with sample files
-    let sessions_dir = root.join(".work/sessions");
+    // Create .loom/work/sessions with sample files
+    let sessions_dir = root.join(".loom/work/sessions");
     fs::create_dir_all(&sessions_dir).unwrap();
     fs::write(sessions_dir.join("session-001.md"), "content").unwrap();
     fs::write(sessions_dir.join("session-002.md"), "content").unwrap();
@@ -277,7 +277,9 @@ fn test_complete_dynamic_stage_complete() {
 #[test]
 fn test_removed_stage_verify_has_no_dynamic_route() {
     let temp_dir = setup_test_workspace();
-    let stage_path = temp_dir.path().join(".work/stages/01-core-architecture.md");
+    let stage_path = temp_dir
+        .path()
+        .join(".loom/work/stages/01-core-architecture.md");
     fs::write(stage_path, "---\nstatus: executing\n---\n").unwrap();
 
     let results = complete_after_subcommand(temp_dir.path(), "", "stage", "verify").unwrap();

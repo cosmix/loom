@@ -281,7 +281,7 @@ const SESSION_ID_ENV: &str = "LOOM_SESSION_ID";
 ///
 /// # This is a guard rail, not the boundary
 ///
-/// The boundary is the sandbox denying `.work/admin.token`; an agent could
+/// The boundary is the sandbox denying the state directory's `admin.token`; an agent could
 /// clear this variable, so nothing here withstands a caller that is actually
 /// trying. It exists because self-authorization is now the DEFAULT rather than
 /// something a human opts into, which is right for the operator and would
@@ -305,7 +305,7 @@ fn refuse_operator_inside_a_session() -> Result<()> {
 /// # An operator is never asked to mint anything
 ///
 /// There is exactly one way to hold this capability — being able to read
-/// `.work/admin.token` — and an operator shell already can. Making them carry
+/// the state directory's `admin.token` — and an operator shell already can. Making them carry
 /// an HMAC from one command to another added no security whatsoever; the
 /// person doing it had the credential the whole time. So the ceremony is gone:
 /// a privileged command mints its own proof and proceeds.
@@ -317,8 +317,8 @@ fn refuse_operator_inside_a_session() -> Result<()> {
 /// # What still stops an agent
 ///
 /// The same two things as before, both checked below and neither of them a
-/// flag the caller chooses: `sandbox/settings.rs` denies `.work/admin.token`
-/// to every stage agent (S-1), and Claude Code's sandbox binds the whole
+/// flag the caller chooses: `sandbox/settings.rs` denies the state directory's
+/// `admin.token` to every stage agent (S-1), and Claude Code's sandbox binds the whole
 /// process tree, so a `loom` an agent spawns cannot read it either. On top of
 /// that, [`refuse_operator_inside_a_session`] closes the easy path before the
 /// read is even attempted.

@@ -175,7 +175,7 @@ fn test_migrate_removes_session_identity_from_settings_json() {
         "env": {
             "LOOM_STAGE_ID": "knowledge-bootstrap",
             "LOOM_SESSION_ID": "session-stale",
-            "LOOM_WORK_DIR": "/repo/.work"
+            "LOOM_WORK_DIR": "/repo/.loom/work"
         }
     });
     fs::write(
@@ -192,7 +192,7 @@ fn test_migrate_removes_session_identity_from_settings_json() {
     assert!(!env.contains_key("LOOM_STAGE_ID"));
     assert!(!env.contains_key("LOOM_SESSION_ID"));
     // Stable, repo-scoped value survives
-    assert_eq!(env["LOOM_WORK_DIR"], "/repo/.work");
+    assert_eq!(env["LOOM_WORK_DIR"], "/repo/.loom/work");
 }
 
 #[test]
@@ -204,7 +204,7 @@ fn test_scrub_main_repo_settings_identity_heals_both_files() {
 
     // A LIVE work dir: it must survive the identity heal alongside the
     // dead session-identity keys.
-    let live_work_dir = repo_root.join(".work");
+    let live_work_dir = repo_root.join(".loom").join("work");
     fs::create_dir_all(&live_work_dir).unwrap();
     let live_work_dir_str = live_work_dir.to_string_lossy().to_string();
 
@@ -253,7 +253,7 @@ fn test_scrub_main_repo_settings_identity_noop_cases() {
     // Clean file with a LIVE work dir → nothing healed, file byte-identical
     let claude_dir = repo_root.join(".claude");
     fs::create_dir_all(&claude_dir).unwrap();
-    let live_work_dir = repo_root.join(".work");
+    let live_work_dir = repo_root.join(".loom").join("work");
     fs::create_dir_all(&live_work_dir).unwrap();
     let clean = serde_json::to_string_pretty(&json!({
         "env": { "LOOM_WORK_DIR": live_work_dir.to_string_lossy() }

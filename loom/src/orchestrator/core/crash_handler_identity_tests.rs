@@ -67,7 +67,7 @@ fn orchestrator_for(work_dir: &Path, repo_root: &Path) -> Orchestrator {
 #[serial]
 fn a_stale_session_crash_cannot_block_a_stage_running_under_another_session() {
     let temp = tempfile::tempdir().unwrap();
-    let work_dir = temp.path().join(".work");
+    let work_dir = temp.path().join(".loom").join("work");
     let stage = executing_stage(&work_dir, "session-live");
     let mut orchestrator = orchestrator_for(&work_dir, temp.path());
     let mut live = Session::new();
@@ -108,7 +108,7 @@ fn a_stale_session_crash_cannot_block_a_stage_running_under_another_session() {
 #[serial]
 fn the_stages_own_session_crashing_still_moves_the_stage() {
     let temp = tempfile::tempdir().unwrap();
-    let work_dir = temp.path().join(".work");
+    let work_dir = temp.path().join(".loom").join("work");
     let stage = executing_stage(&work_dir, "session-live");
     let mut session = Session::new();
     session.id = "session-live".to_string();

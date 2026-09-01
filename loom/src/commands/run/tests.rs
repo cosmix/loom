@@ -14,7 +14,7 @@ use std::path::{Path, PathBuf};
 use tempfile::TempDir;
 
 /// Build markdown+frontmatter for a stage file the way `serialize_stage_to_markdown`
-/// writes a real `.work/stages/*.md` file: a fully-populated [`Stage`] (every
+/// writes a real `<state-dir>/stages/*.md` file: a fully-populated [`Stage`] (every
 /// runtime field present, e.g. `status`, `created_at`) with the given id/name.
 /// `load_stages_from_work_dir` parses this shape, not a bare `StageDefinition`,
 /// so fixtures here must be built this way rather than hand-writing plan-style
@@ -260,8 +260,8 @@ fn run_git(root: &Path, args: &[&str]) {
     );
 }
 
-/// A temp git repo with one committed file and an initialised `.work/`, as the
-/// preflight expects to find.
+/// A temp git repo with one committed file and an initialised `.loom/work/`,
+/// as the preflight expects to find.
 fn init_preflight_repo() -> TempDir {
     let temp = TempDir::new().unwrap();
     let root = temp.path();
@@ -271,7 +271,7 @@ fn init_preflight_repo() -> TempDir {
     fs::write(root.join("src.rs"), "fn main() {}\n").unwrap();
     run_git(root, &["add", "src.rs"]);
     run_git(root, &["commit", "-m", "seed"]);
-    fs::create_dir_all(root.join(".work")).unwrap();
+    fs::create_dir_all(root.join(".loom").join("work")).unwrap();
     temp
 }
 

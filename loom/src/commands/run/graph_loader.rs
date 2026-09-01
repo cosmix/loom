@@ -1,4 +1,4 @@
-//! Execution graph loading from .work/stages/ or plan file.
+//! Execution graph loading from the state directory's stages/ or plan file.
 //!
 //! This module re-exports the shared graph loading implementation from plan::graph::loader.
 

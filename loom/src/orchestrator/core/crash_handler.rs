@@ -181,7 +181,7 @@ impl Orchestrator {
             // non-zero when its prerequisites are unmet. If Remote Control is
             // currently active and a session crashed very soon after spawn,
             // treat that as "the flag is unsupported here" — write the
-            // `.work/remote_control-unsupported` marker so `resolve()` returns
+            // `.loom/work/remote_control-unsupported` marker so `resolve()` returns
             // false on the upcoming retry (which omits `--remote-control`).
             // Best-effort: marker write errors are intentionally ignored.
             self.maybe_disable_remote_control(&sid, crashed_session.as_ref());

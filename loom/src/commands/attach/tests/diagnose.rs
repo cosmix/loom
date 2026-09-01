@@ -77,10 +77,10 @@ fn orphaned_stage_ids_is_empty_when_every_executing_stage_has_a_session() {
 
 #[test]
 fn no_session_records_message_names_the_sessions_dir() {
-    let work_dir = std::path::Path::new("/tmp/example-repo/.work");
+    let work_dir = std::path::Path::new("/tmp/example-repo/.loom/work");
     let message = no_session_records_message(work_dir);
     assert!(
-        message.contains("/tmp/example-repo/.work/sessions"),
+        message.contains("/tmp/example-repo/.loom/work/sessions"),
         "{message}"
     );
 }

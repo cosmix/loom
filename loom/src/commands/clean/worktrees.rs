@@ -42,7 +42,7 @@ pub(super) fn run_bare_clean(repo_root: &Path) -> Result<()> {
         "loom clean --worktrees".dimmed()
     );
     println!(
-        "    {}    remove the .work/ state directory",
+        "    {}    remove the .loom/work/ state directory",
         "loom clean --state".dimmed()
     );
     println!(
@@ -68,7 +68,7 @@ pub(super) fn run_bare_clean(repo_root: &Path) -> Result<()> {
 /// unmerged work and no `LOOM_CLEAN_YES`).
 pub(super) fn confirm_branch_deletion(repo_root: &Path) -> Result<bool> {
     // Resolve the merge target so commits-ahead is measured against the right base.
-    let work_dir = repo_root.join(".work");
+    let work_dir = super::resolve_state_dir(repo_root);
     let config_branch = crate::fs::work_dir::load_config(&work_dir)
         .ok()
         .flatten()

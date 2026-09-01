@@ -46,7 +46,7 @@ pub struct ContinuationConfig {
 /// * `handoff_path` - Optional path to the handoff file for context restoration
 /// * `worktree` - The worktree where work will continue
 /// * `config` - Configuration for continuation (spawner settings, auto_spawn)
-/// * `work_dir` - The .work directory path
+/// * `work_dir` - The .loom/work directory path
 ///
 /// # Returns
 /// A new Session ready to continue the work

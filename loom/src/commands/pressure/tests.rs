@@ -125,7 +125,7 @@ fn test_claude_marker_path_is_inside_repo_not_temp_dir() {
         marker.display()
     );
     assert!(
-        marker.starts_with(repo.join(".work").join("pressure")),
+        marker.starts_with(repo.join(".loom").join("work").join("pressure")),
         "got: {}",
         marker.display()
     );
@@ -136,7 +136,11 @@ fn test_claude_marker_path_is_inside_repo_not_temp_dir() {
 fn test_ensure_marker_dir_creates_parent_and_is_idempotent() {
     let temp = TempDir::new().unwrap();
     let root = canonical(&temp);
-    let marker = root.join(".work").join("pressure").join("claude-1.done");
+    let marker = root
+        .join(".loom")
+        .join("work")
+        .join("pressure")
+        .join("claude-1.done");
     assert!(!marker.parent().unwrap().exists());
 
     ensure_marker_dir(&marker).unwrap();
@@ -151,7 +155,7 @@ fn test_ensure_marker_dir_creates_parent_and_is_idempotent() {
 fn test_render_dry_run_shows_real_argv() {
     let report = PathBuf::from("/repo/doc/plans/codex-PLAN-foo.md");
     let repo = Path::new("/repo");
-    let marker = PathBuf::from("/repo/.work/pressure/claude-1.done");
+    let marker = PathBuf::from("/repo/.loom/work/pressure/claude-1.done");
     let codex_log = PathBuf::from("/tmp/loom-pressure-codex-1.log");
     let out = render_dry_run(
         1,
@@ -177,12 +181,12 @@ fn test_render_dry_run_shows_real_argv() {
     // The parallel pressure step is labelled and the codex log path shown.
     assert!(out.contains("[parallel]"));
     assert!(out.contains("loom-pressure-codex-1.log"));
-    assert!(out.contains(".work/pressure/claude-1.done"));
+    assert!(out.contains(".loom/work/pressure/claude-1.done"));
 }
 
 #[test]
 fn test_claude_args_shape() {
-    let marker = PathBuf::from("/repo/.work/pressure/claude-1.done");
+    let marker = PathBuf::from("/repo/.loom/work/pressure/claude-1.done");
     let args = claude_args("/pressure doc/plans/PLAN-foo.md", &marker);
     // Interactive (no -p): keeps subscription billing. Auto permission mode.
     assert!(!args.iter().any(|a| a == "-p" || a == "--print"));
@@ -193,7 +197,7 @@ fn test_claude_args_shape() {
     // The appended system prompt names the marker so the driver can auto-close.
     let joined = args.join(" ");
     assert!(joined.contains("--append-system-prompt"));
-    assert!(joined.contains("/repo/.work/pressure/claude-1.done"));
+    assert!(joined.contains("/repo/.loom/work/pressure/claude-1.done"));
 }
 
 #[test]

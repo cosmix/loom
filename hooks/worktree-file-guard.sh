@@ -202,14 +202,21 @@ if allow_background_output "$LEXICAL_PATH"; then
 	exit 0
 fi
 
-WORK_LINK="$WORKTREE_PATH/.work"
+# The shared-state symlink is .loom/work under the current layout; a
+# worktree created from a legacy .work workspace keeps .work forever (see
+# doc/plans, "Back-compat"). Prefer .loom/work and fall back to .work.
+WORK_LINK="$WORKTREE_PATH/.loom/work"
+if [[ ! -e "$WORK_LINK" && ! -L "$WORK_LINK" ]]; then
+	WORK_LINK="$WORKTREE_PATH/.work"
+fi
 WORK_SHARED=""
 if [[ -e "$WORK_LINK" || -L "$WORK_LINK" ]]; then
 	WORK_SHARED=$(canonical_existing "$WORK_LINK" 2>/dev/null || true)
 fi
 
 # A caller-provided symlink leaf is never followed. The one exception is the
-# exact loom-owned `.work` link when used as an explicit trusted read root.
+# exact loom-owned state-directory link (.loom/work or legacy .work) when
+# used as an explicit trusted read root.
 LEAF_PATH="${LEXICAL_PATH%/}"
 if [[ -L "$LEAF_PATH" ]]; then
 	if [[ "$LEAF_PATH" == "$WORK_LINK" && "$TOOL_NAME" =~ ^(Read|Glob|Grep)$ && -n "$WORK_SHARED" ]]; then

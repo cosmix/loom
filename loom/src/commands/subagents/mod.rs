@@ -11,7 +11,7 @@
 //! recovers its final report text even when the harness never delivered it.
 //!
 //! This command is strictly read-only: it never writes to a transcript or to
-//! `.work/`. See `resolve` for how the transcript directory is located,
+//! the state directory. See `resolve` for how the transcript directory is located,
 //! `classify` for how a transcript's last entry maps to a liveness state,
 //! and `render` for the three subcommands themselves.
 

@@ -55,9 +55,9 @@ where
     anyhow::bail!("Timeout waiting for condition after {timeout_ms}ms")
 }
 
-/// Writes a signal file to .work/signals/{session_id}.md
+/// Writes a signal file to .loom/work/signals/{session_id}.md
 pub fn create_signal_file(work_dir: &Path, session_id: &str, content: &str) -> Result<()> {
-    let signals_dir = work_dir.join(".work").join("signals");
+    let signals_dir = work_dir.join(".loom").join("work").join("signals");
     std::fs::create_dir_all(&signals_dir).context("Failed to create signals directory")?;
 
     let signal_path = signals_dir.join(format!("{session_id}.md"));

@@ -27,8 +27,8 @@ fn test_orchestrator_with_manual_mode() {
     let temp_dir = create_temp_git_repo().expect("Should create git repo");
     let repo_root = temp_dir.path();
 
-    // Create .work directory structure
-    let work_dir = repo_root.join(".work");
+    // Create .loom/work directory structure
+    let work_dir = repo_root.join(".loom").join("work");
     std::fs::create_dir_all(work_dir.join("stages")).unwrap();
     std::fs::create_dir_all(work_dir.join("sessions")).unwrap();
     std::fs::create_dir_all(work_dir.join("signals")).unwrap();

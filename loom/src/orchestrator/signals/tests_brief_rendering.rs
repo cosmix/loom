@@ -1,5 +1,5 @@
 //! Brief-RENDERING tests: exercise the formatter functions directly against
-//! a hand-built `EmbeddedContext`, with no real `.work/` tree involved.
+//! a hand-built `EmbeddedContext`, with no real `.loom/work/` tree involved.
 //!
 //! The end-to-end counterpart (`tests_brief_e2e.rs`) drives the same
 //! behaviour through the real signal-generation entry points instead, which

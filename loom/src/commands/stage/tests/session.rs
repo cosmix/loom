@@ -67,7 +67,7 @@ fn test_session_to_markdown() {
 #[test]
 fn test_find_session_for_stage_found() {
     let temp_dir = setup_work_dir();
-    let work_dir = temp_dir.path().join(".work");
+    let work_dir = temp_dir.path().join(".loom").join("work");
 
     let session_content = r#"---
 id: session-1
@@ -94,7 +94,7 @@ last_active: "2024-01-01T00:00:00Z"
 #[test]
 fn test_find_session_for_stage_not_found() {
     let temp_dir = setup_work_dir();
-    let work_dir = temp_dir.path().join(".work");
+    let work_dir = temp_dir.path().join(".loom").join("work");
 
     let result = find_session_for_stage("nonexistent", &work_dir);
 
@@ -104,7 +104,7 @@ fn test_find_session_for_stage_not_found() {
 #[test]
 fn test_find_session_for_stage_different_stage() {
     let temp_dir = setup_work_dir();
-    let work_dir = temp_dir.path().join(".work");
+    let work_dir = temp_dir.path().join(".loom").join("work");
 
     let session_content = r#"---
 id: session-1
@@ -129,7 +129,7 @@ last_active: "2024-01-01T00:00:00Z"
 #[test]
 fn test_cleanup_session_resources() {
     let temp_dir = setup_work_dir();
-    let work_dir = temp_dir.path().join(".work");
+    let work_dir = temp_dir.path().join(".loom").join("work");
 
     let session = Session {
         id: "session-1".to_string(),

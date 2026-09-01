@@ -130,7 +130,7 @@ fn retired_commit_wording_is_gone() {
 #[test]
 fn recitation_carries_the_stage_end_sequence() {
     let temp_dir = TempDir::new().unwrap();
-    let work_dir = temp_dir.path().join(".work");
+    let work_dir = temp_dir.path().join(".loom").join("work");
     fs::create_dir_all(&work_dir).unwrap();
 
     let session = create_test_session();
@@ -158,7 +158,7 @@ fn recitation_carries_the_stage_end_sequence() {
 #[test]
 fn sandbox_section_names_the_package_cache_grant() {
     let temp_dir = TempDir::new().unwrap();
-    let work_dir = temp_dir.path().join(".work");
+    let work_dir = temp_dir.path().join(".loom").join("work");
     fs::create_dir_all(&work_dir).unwrap();
 
     let session = create_test_session();

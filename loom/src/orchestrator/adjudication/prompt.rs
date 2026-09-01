@@ -52,7 +52,7 @@ impl Prompt {
 /// Build the briefing for the supplied dispute.
 ///
 /// `plan_path` is the live plan markdown (used to surface acceptance criteria
-/// as the agent sees them). `work_dir` is the `.work/` root, used to resolve
+/// as the agent sees them). `work_dir` is the `.loom/work/` root, used to resolve
 /// the repository for `git show` and the directory listing. `verdict_draft` is
 /// the file the session writes its JSON verdict to before handing it to
 /// `loom stage adjudicate`.

@@ -147,7 +147,7 @@ pub fn initialize_with_plan_acknowledgement(
         current_branch(&std::env::current_dir()?).context("Failed to get current git branch")?;
 
     // Store source_path as relative to the project root so it works from
-    // both the main repo and worktrees (where .work/ is a symlink).
+    // both the main repo and worktrees (where the state directory is a symlink).
     // Falls back to canonical (absolute) if the plan is outside the repo.
     let project_root = std::env::current_dir()?;
     let relative_source_path = canonical_path
@@ -176,15 +176,15 @@ pub fn initialize_with_plan_acknowledgement(
     plan_table["base_branch"] = value(base_branch.clone());
     doc.insert("plan", Item::Table(plan_table));
 
-    work_dir::write_config(work_dir.root(), &doc).context("Failed to write .work/config.toml")?;
+    work_dir::write_config(work_dir.root(), &doc).context("Failed to write config.toml")?;
 
     // Persist plan-level sandbox snapshot so the loader fallback doesn't
-    // silently substitute defaults after .work/stages exists.
+    // silently substitute defaults after the state directory's stages exists.
     work_dir::write_plan_sandbox(work_dir.root(), &parsed_plan.metadata.loom.sandbox)
         .context("Failed to persist plan-level sandbox config")?;
 
     // Persist a default [remote_control] section so the operator has a
-    // documented, editable toggle in .work/config.toml from the start.
+    // documented, editable toggle in config.toml from the start.
     work_dir::write_remote_control_config(
         work_dir.root(),
         &crate::remote_control::RemoteControlConfig::default(),
@@ -192,7 +192,7 @@ pub fn initialize_with_plan_acknowledgement(
     .context("Failed to persist remote control config")?;
 
     // Persist the resolved [terminal] section so the operator has a
-    // documented, editable toggle in .work/config.toml from the start.
+    // documented, editable toggle in config.toml from the start.
     work_dir::write_terminal_config(
         work_dir.root(),
         &TerminalConfig {

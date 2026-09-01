@@ -2,7 +2,7 @@
 //!
 //! The adjudication session writes its JSON verdict to a file and hands that
 //! file to this command. The command validates it and writes
-//! `.work/disputes/<stage>/<n>/verdict.md`; the daemon applies the verdict on
+//! `<state-dir>/disputes/<stage>/<n>/verdict.md`; the daemon applies the verdict on
 //! its next poll.
 //!
 //! # Trust boundary
@@ -50,8 +50,8 @@ pub enum AdjudicateOutcome {
 pub fn adjudicate(stage_id: String, dispute_id: u32, verdict_path: PathBuf) -> Result<()> {
     refuse_worktree_session(std::env::var("LOOM_WORKTREE_PATH").ok().as_deref())?;
 
-    let work_dir = Path::new(".work");
-    match record_verdict(work_dir, &stage_id, dispute_id, &verdict_path)? {
+    let work_dir = crate::commands::common::work_dir_path()?;
+    match record_verdict(&work_dir, &stage_id, dispute_id, &verdict_path)? {
         AdjudicateOutcome::Recorded => {
             println!("Recorded the verdict for stage '{stage_id}' dispute {dispute_id}.");
             println!(
@@ -81,7 +81,7 @@ fn refuse_worktree_session(worktree_path: Option<&str>) -> Result<()> {
     )
 }
 
-/// The guarded write, against an explicit `.work` root so it is testable.
+/// The guarded write, against an explicit state-directory root so it is testable.
 pub fn record_verdict(
     work_dir: &Path,
     stage_id: &str,

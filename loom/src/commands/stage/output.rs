@@ -4,7 +4,6 @@
 
 use anyhow::{bail, Result};
 use serde_json::Value;
-use std::path::Path;
 
 use crate::models::stage::StageOutput;
 use crate::verify::transitions::{load_stage, update_stage};
@@ -26,7 +25,7 @@ pub fn set(
     value: String,
     description: Option<String>,
 ) -> Result<()> {
-    let work_dir = Path::new(".work");
+    let work_dir = crate::commands::common::work_dir_path()?;
 
     // Validate key format (alphanumeric, underscores, dashes)
     if !key
@@ -50,7 +49,7 @@ pub fn set(
     };
 
     let mut was_new = false;
-    update_stage(&stage_id, work_dir, |stage| {
+    update_stage(&stage_id, &work_dir, |stage| {
         was_new = stage.set_output(output);
         Ok(())
     })?;
@@ -64,9 +63,9 @@ pub fn set(
 
 /// List all outputs for a stage.
 pub fn list(stage_id: String) -> Result<()> {
-    let work_dir = Path::new(".work");
+    let work_dir = crate::commands::common::work_dir_path()?;
 
-    let stage = load_stage(&stage_id, work_dir)?;
+    let stage = load_stage(&stage_id, &work_dir)?;
 
     if stage.outputs.is_empty() {
         println!("No outputs for stage '{stage_id}'");
@@ -88,9 +87,9 @@ pub fn list(stage_id: String) -> Result<()> {
 
 /// Get a specific output value.
 pub fn get(stage_id: String, key: String) -> Result<()> {
-    let work_dir = Path::new(".work");
+    let work_dir = crate::commands::common::work_dir_path()?;
 
-    let stage = load_stage(&stage_id, work_dir)?;
+    let stage = load_stage(&stage_id, &work_dir)?;
 
     match stage.get_output(&key) {
         Some(output) => {
@@ -106,9 +105,9 @@ pub fn get(stage_id: String, key: String) -> Result<()> {
 
 /// Remove an output from a stage.
 pub fn remove(stage_id: String, key: String) -> Result<()> {
-    let work_dir = Path::new(".work");
+    let work_dir = crate::commands::common::work_dir_path()?;
 
-    update_stage(&stage_id, work_dir, |stage| {
+    update_stage(&stage_id, &work_dir, |stage| {
         if !stage.remove_output(&key) {
             bail!("Output '{key}' not found for stage '{stage_id}'");
         }

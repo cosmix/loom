@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 # A synthetic PostToolUse Write payload with a worktree-relative file_path
 # must exit 0 with EMPTY stdout, and the shell hook must never write shared
-# .work state itself - only the heartbeat file may exist under LOOM_WORK_DIR
+# state itself - only the heartbeat file may exist under LOOM_WORK_DIR
 # afterward. Edit recording is delegated to `loom context record-edit`
 # (stubbed here); the stub writes a marker OUTSIDE LOOM_WORK_DIR purely to
 # prove it was invoked with the right arguments, since the whole point of
 # this design is that the Rust binary owns the shared write, not this script.
 set -euo pipefail
 HOOK="$(dirname "$0")/../post-tool-use.sh"
-TMP=$(mktemp -d)
+TMP=$(mktemp -d "${TMPDIR:-/tmp}/loom-hooktest.XXXXXX")
 trap 'rm -rf "$TMP"' EXIT
 mkdir -p "$TMP/bin" "$TMP/work"
 MARKER="$TMP/record-edit-called"

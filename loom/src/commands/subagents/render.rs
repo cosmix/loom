@@ -22,12 +22,12 @@ enum Gathered {
     Found(Vec<SubagentSummary>),
 }
 
-/// Best-effort `.work/` root for the authoritative lifecycle and spawn-ledger
-/// paths in `classify::analyze` (see its doc). `None` when no `.work/` is
+/// Best-effort state directory root for the authoritative lifecycle and spawn-ledger
+/// paths in `classify::analyze` (see its doc). `None` when no state directory is
 /// found -- this command has no other reason to need one, so absence is
 /// silent, not an error.
 fn find_work_dir_quietly() -> Option<PathBuf> {
-    crate::commands::common::find_work_dir().ok()
+    crate::commands::common::work_dir_path().ok()
 }
 
 /// Resolve the transcript directory and classify every subagent transcript

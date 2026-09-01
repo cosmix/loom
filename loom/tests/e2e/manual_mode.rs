@@ -14,7 +14,7 @@ use std::path::PathBuf;
 use tempfile::TempDir;
 
 fn create_work_dir_structure(base: &std::path::Path) -> std::path::PathBuf {
-    let work_dir = base.join(".work");
+    let work_dir = base.join(".loom").join("work");
     fs::create_dir_all(work_dir.join("stages")).unwrap();
     fs::create_dir_all(work_dir.join("signals")).unwrap();
     fs::create_dir_all(work_dir.join("sessions")).unwrap();

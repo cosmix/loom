@@ -37,7 +37,7 @@ struct Env {
 fn setup() -> Env {
     let tmp = TempDir::new().unwrap();
     let project_root = tmp.path().to_path_buf();
-    let work_dir = project_root.join(".work");
+    let work_dir = project_root.join(".loom").join("work");
     fs::create_dir_all(work_dir.join("stages")).unwrap();
     fs::create_dir_all(project_root.join("doc").join("plans")).unwrap();
     let plan_path = project_root

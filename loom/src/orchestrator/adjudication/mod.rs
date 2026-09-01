@@ -1,6 +1,6 @@
 //! Adjudication subsystem.
 //!
-//! Disputes filed by agents land in `.work/disputes/<stage>/<n>/request.md`.
+//! Disputes filed by agents land in `.loom/work/disputes/<stage>/<n>/request.md`.
 //! The orchestrator polls these files every tick:
 //!
 //! * [`AdjudicatorRegistry::disputes_awaiting_session`] returns the disputes

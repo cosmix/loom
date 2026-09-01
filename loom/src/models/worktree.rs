@@ -72,9 +72,9 @@ impl Worktree {
         self.updated_at = Utc::now();
     }
 
-    /// Returns the path to the .work symlink in this worktree
+    /// Returns the path to the .loom/work symlink in this worktree
     pub fn get_work_symlink_path(&self) -> PathBuf {
-        self.path.join(".work")
+        self.path.join(".loom").join("work")
     }
 
     /// Sets the worktree status to Active
@@ -178,7 +178,7 @@ mod tests {
 
         assert_eq!(
             worktree.get_work_symlink_path(),
-            PathBuf::from("/repo/.worktrees/stage-1/.work")
+            PathBuf::from("/repo/.worktrees/stage-1/.loom/work")
         );
     }
 

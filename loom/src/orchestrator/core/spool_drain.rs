@@ -3,9 +3,9 @@
 //! requests (`loom stage block`, `loom stage dispute-criteria`) into the
 //! daemon's own handlers.
 //!
-//! `loom memory note` writes directly to `.work/memory/<stage>.md` via
+//! `loom memory note` writes directly to `.loom/work/memory/<stage>.md` via
 //! [`crate::fs::memory::append_entry`]. Inside a sandboxed worktree that
-//! write is refused (`.work` is a symlink out of the worktree; the sandbox
+//! write is refused (`.loom/work` is a symlink out of the worktree; the sandbox
 //! grants no write there), so the CLI falls back to appending the entry to
 //! `<worktree>/.loom/memory-spool.jsonl` instead — see [`crate::fs::memory`]
 //! for the full spool design. This module is the daemon side: on every poll
@@ -33,7 +33,7 @@ impl Orchestrator {
     /// Drain every stage's pending spools: memory entries into the canonical
     /// journal, queued control requests into the daemon's handlers.
     ///
-    /// Stages are enumerated by a disk scan of `.work/stages/`, mirroring
+    /// Stages are enumerated by a disk scan of `.loom/work/stages/`, mirroring
     /// `spawn_merge_resolution_sessions` — disk is the source of truth and
     /// this survives daemon restarts, unlike `active_worktrees` (never
     /// repopulated for stages recovered as still-Executing) or
@@ -178,7 +178,7 @@ impl Orchestrator {
     }
 
     /// Warn about a drain failure once per (stage, spool kind), so a stuck
-    /// spool - a permissions problem under `.work/memory`, a stage file that
+    /// spool - a permissions problem under `.loom/work/memory`, a stage file that
     /// won't load - doesn't flood the logs on every 5-second poll.
     fn report_drain_error(
         &mut self,

@@ -27,7 +27,7 @@ pub fn context_ceilings() -> Result<()> {
     Ok(())
 }
 
-/// Resolve only from the exact `.work` directory named by the hook protocol.
+/// Resolve only from the exact state directory named by the hook protocol.
 /// Interactive commands may search upward from a project path, but a stale
 /// hook path below another checkout must not inherit that checkout's config.
 fn requested_pair() -> Option<(u32, u32)> {
@@ -152,7 +152,7 @@ mod tests {
     #[serial]
     fn environment_path_is_exact_and_must_exist() {
         let temp = TempDir::new().unwrap();
-        let real_work = temp.path().join(".work");
+        let real_work = temp.path().join(".loom").join("work");
         fs::create_dir_all(&real_work).unwrap();
         write_stage(&real_work, "stage-a", "stage-a", Some(777));
 
@@ -172,7 +172,7 @@ mod tests {
         );
 
         // A nonexistent descendant must not search upward and rediscover the
-        // real `.work` directory above it.
+        // real state directory above it.
         std::env::set_var("LOOM_WORK_DIR", real_work.join("missing"));
         assert_eq!(requested_pair(), None);
         std::env::remove_var("LOOM_STAGE_ID");

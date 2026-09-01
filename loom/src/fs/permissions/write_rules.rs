@@ -14,26 +14,40 @@ fn strip_write_rule(rule: &str) -> Option<&str> {
 }
 
 /// Is this allow entry one of the inert `Write(...)` grants loom itself used to
-/// emit over the `.work` directory? Loom emits none of the three spellings any
+/// emit over the state directory? Loom emits none of these spellings any
 /// more, but they survive in every settings.json an older version wrote, so
-/// `ensure_loom_permissions_to` prunes them.
+/// `ensure_loom_permissions_to` prunes them on every run.
 ///
-/// Matches ONLY those three shapes. Any other `Write(...)` allow entry is the
+/// This is a CONSUMER of paths written by older loom versions, not a
+/// producer of the current one: the state root moved from `.work` to
+/// `.loom/work`, but settings.json files written before that move still
+/// carry the old spellings, so the pruner must keep recognising both layouts
+/// or the old grants become immortal. Matches both, in each of the three
+/// shapes loom historically wrote for a layout — relative, worktree-relative
+/// (from a worktree's nested `.claude/settings.json`, one `../` per
+/// directory between the worktree and the main repo root), and
+/// resolved-absolute (from `git/worktree/settings.rs`) — six shapes total.
+///
+/// Matches ONLY those six shapes. Any other `Write(...)` allow entry is the
 /// developer's own config: dropping it, or converting it to the enforceable
 /// `Edit(...)` form (which would widen what it grants), is not loom's call.
 pub(super) fn is_legacy_loom_work_write_allow(entry: &str) -> bool {
     let Some(path) = strip_write_rule(entry) else {
         return false;
     };
-    // `//<abs>/.work/**` is the resolved-absolute form (Claude Code's `//`
-    // prefix convention for absolute paths).
-    matches!(path, ".work/**" | "../../.work/**")
-        || (path.starts_with("//") && path.ends_with("/.work/**"))
+    // `//<abs>/.loom/work/**` or `//<abs>/.work/**` is the resolved-absolute
+    // form (Claude Code's `//` prefix convention for absolute paths).
+    matches!(
+        path,
+        ".loom/work/**" | "../../../.loom/work/**" | ".work/**" | "../../.work/**"
+    ) || (path.starts_with("//")
+        && (path.ends_with("/.loom/work/**") || path.ends_with("/.work/**")))
 }
 
 /// Drop every [`is_legacy_loom_work_write_allow`] entry from an allow array,
 /// returning how many went. They enforce nothing and print a startup warning
-/// every session; `Read(.work/**)` + `Edit(.work/handoffs/**)` replace them.
+/// every session; `Read(.loom/work/**)` + `Edit(.loom/work/handoffs/**)`
+/// replace them.
 pub(super) fn prune_legacy_work_write_grants(allow: &mut Vec<Value>) -> usize {
     let before = allow.len();
     allow.retain(|entry| {

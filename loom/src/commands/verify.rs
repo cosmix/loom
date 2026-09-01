@@ -18,20 +18,18 @@ use crate::verify::transitions::load_stage;
 
 /// Execute the verify command
 pub fn execute(stage_id: &str, suggest: bool) -> Result<()> {
-    // Use .work directly (works in main repo and worktrees with symlink)
-    let work_dir = Path::new(".work");
-    if !work_dir.exists() {
-        anyhow::bail!(".work directory does not exist. Run 'loom init' first.");
-    }
+    // Resolves the state directory (works in main repo and worktrees, where it
+    // is a symlink), bailing with a clear error if this is not a loom workspace.
+    let work_dir = crate::commands::common::work_dir_path()?;
 
     // Load stage
-    let stage = load_stage(stage_id, work_dir)
+    let stage = load_stage(stage_id, &work_dir)
         .with_context(|| format!("Failed to load stage '{stage_id}'"))?;
 
     // Resolve plan source path (handles both absolute and relative paths,
-    // follows .work symlink in worktrees to find the main project root)
-    let plan_path = crate::fs::resolve_source_path(work_dir)?
-        .context("No plan source path configured in .work/config.toml")?;
+    // follows the state directory symlink in worktrees to find the main project root)
+    let plan_path = crate::fs::resolve_source_path(&work_dir)?
+        .context("No plan source path configured in config.toml")?;
 
     // Parse plan to get stage definition
     let plan = parse_plan(&plan_path)
@@ -59,7 +57,7 @@ pub fn execute(stage_id: &str, suggest: bool) -> Result<()> {
         &stage,
         stage_id,
         acceptance_dir.as_deref(),
-        work_dir,
+        &work_dir,
         AcceptanceDisplayOptions {
             stage_label: None,
             show_empty_message: false,
@@ -76,7 +74,7 @@ pub fn execute(stage_id: &str, suggest: bool) -> Result<()> {
             .context("No working directory available for goal-backward verification")?;
 
         // Use shared helper for verification
-        let goal_result = run_and_verify_stage_goal(stage_id, verify_dir, work_dir)?;
+        let goal_result = run_and_verify_stage_goal(stage_id, verify_dir, &work_dir)?;
         print_goal_result(&goal_result, suggest);
 
         // Final summary
@@ -147,7 +145,7 @@ pub fn run_and_verify_stage_goal(
     work_dir: &Path,
 ) -> Result<GoalBackwardResult> {
     let plan_path = crate::fs::resolve_source_path(work_dir)?
-        .context("No plan source path configured in .work/config.toml")?;
+        .context("No plan source path configured in config.toml")?;
 
     // Parse plan to get stage definition
     let plan = parse_plan(&plan_path)

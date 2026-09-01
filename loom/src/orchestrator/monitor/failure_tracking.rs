@@ -145,7 +145,7 @@ impl FailureTracker {
             .unwrap_or(0)
     }
 
-    /// Load state from `.work/state/<stage-id>.yaml` files.
+    /// Load state from `.loom/work/state/<stage-id>.yaml` files.
     pub fn load_from_work_dir(&mut self, work_dir: &Path) -> Result<()> {
         let state_dir = work_dir.join("state");
         if !state_dir.exists() {
@@ -177,7 +177,7 @@ impl FailureTracker {
         Ok(())
     }
 
-    /// Save state to `.work/state/<stage-id>.yaml`.
+    /// Save state to `.loom/work/state/<stage-id>.yaml`.
     pub fn save_to_work_dir(&self, work_dir: &Path) -> Result<()> {
         let state_dir = work_dir.join("state");
         if !state_dir.exists() {

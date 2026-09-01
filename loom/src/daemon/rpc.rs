@@ -1,7 +1,7 @@
 //! One-shot request/response over the daemon's Unix socket, for CLI clients.
 //!
 //! Several `loom stage` commands change state that belongs to the daemon
-//! rather than to the caller's `.work/`, and each needs the same three things:
+//! rather than to the caller's `.loom/work/`, and each needs the same three things:
 //! a credential the caller may well be unable to read, the identity of the
 //! session it is running inside, and a bounded connect-write-read. Keeping
 //! them together means a fix to any of the three is a fix for all of them.
@@ -38,7 +38,7 @@ const PEER_IDENTITY_CREDENTIAL: &str = "peer-identity";
 /// A sandboxed worktree agent is denied the `user.token` read on purpose
 /// (S-1): that one token authorizes every User RPC, not just the ones a stage
 /// agent is entitled to. The read also fails by construction from inside a
-/// worktree, where `.work` is a symlink and the safe reader opens the work-dir
+/// worktree, where `.loom/work` is a symlink and the safe reader opens the work-dir
 /// root with `O_NOFOLLOW`. Either way absence is the normal case here, not an
 /// error.
 ///
@@ -84,7 +84,7 @@ pub enum DaemonReach {
     /// daemon that may well be running. Not evidence about the daemon.
     ///
     /// A caller here must not take the `NotListening` fallback: writing
-    /// `.work/stages/<id>.md` directly would BYPASS a live daemon's authority
+    /// `.loom/work/stages/<id>.md` directly would BYPASS a live daemon's authority
     /// over the transition — precisely the write the sandbox denies. Spooling
     /// the request instead DEFERS to that authority: the daemon still decides,
     /// just later, and still attributes the request to the worktree it drained

@@ -57,7 +57,7 @@ pub fn init_loom_with_plan(work_dir: &Path, plan_content: &str) -> Result<PathBu
     let plan_path = doc_plans_dir.join("PLAN-0001-test.md");
     std::fs::write(&plan_path, plan_content).context("Failed to write plan file")?;
 
-    let loom_work_dir = work_dir.join(".work");
+    let loom_work_dir = work_dir.join(".loom").join("work");
     let subdirs = [
         "runners", "tracks", "signals", "handoffs", "archive", "stages", "sessions",
     ];

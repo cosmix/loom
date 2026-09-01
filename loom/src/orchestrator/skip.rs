@@ -18,7 +18,7 @@ use crate::verify::transitions::update_stage;
 /// # Arguments
 /// * `stage_id` - The ID of the stage to skip
 /// * `reason` - Optional reason for skipping the stage
-/// * `work_dir` - Path to the `.work` directory
+/// * `work_dir` - Path to the `.loom/work` directory
 ///
 /// # Returns
 /// `Ok(())` on success
@@ -34,7 +34,7 @@ use crate::verify::transitions::update_stage;
 /// use std::path::Path;
 /// use loom::orchestrator::skip::skip_stage;
 ///
-/// let work_dir = Path::new(".work");
+/// let work_dir = Path::new(".loom/work");
 /// skip_stage("stage-1", Some("No longer needed".to_string()), work_dir)?;
 /// # Ok::<(), anyhow::Error>(())
 /// ```

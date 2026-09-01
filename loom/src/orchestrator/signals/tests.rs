@@ -57,7 +57,7 @@ pub fn create_test_worktree() -> Worktree {
 #[test]
 fn test_generate_signal_basic() {
     let temp_dir = TempDir::new().unwrap();
-    let work_dir = temp_dir.path().join(".work");
+    let work_dir = temp_dir.path().join(".loom").join("work");
     fs::create_dir_all(&work_dir).unwrap();
 
     let session = create_test_session();
@@ -87,7 +87,7 @@ fn test_signal_directs_agent_to_load_language_skill_from_files() {
     use std::io::Write;
 
     let temp_dir = TempDir::new().unwrap();
-    let work_dir = temp_dir.path().join(".work");
+    let work_dir = temp_dir.path().join(".loom").join("work");
     fs::create_dir_all(&work_dir).unwrap();
 
     // Mirror how skills are installed: ~/.claude/skills/loom-rust/SKILL.md.
@@ -134,7 +134,7 @@ fn test_signal_directs_agent_to_load_language_skill_from_files() {
 #[test]
 fn test_generate_signal_with_dependencies() {
     let temp_dir = TempDir::new().unwrap();
-    let work_dir = temp_dir.path().join(".work");
+    let work_dir = temp_dir.path().join(".loom").join("work");
     fs::create_dir_all(&work_dir).unwrap();
 
     let session = create_test_session();
@@ -162,7 +162,7 @@ fn test_generate_signal_with_dependencies() {
 #[test]
 fn test_generate_signal_with_handoff() {
     let temp_dir = TempDir::new().unwrap();
-    let work_dir = temp_dir.path().join(".work");
+    let work_dir = temp_dir.path().join(".loom").join("work");
     fs::create_dir_all(&work_dir).unwrap();
 
     let session = create_test_session();
@@ -313,7 +313,7 @@ fn test_extract_tasks_from_description() {
 #[test]
 fn test_remove_signal() {
     let temp_dir = TempDir::new().unwrap();
-    let work_dir = temp_dir.path().join(".work");
+    let work_dir = temp_dir.path().join(".loom").join("work");
     fs::create_dir_all(work_dir.join("signals")).unwrap();
 
     let signal_path = work_dir.join("signals").join("session-test-123.md");
@@ -331,7 +331,7 @@ fn test_remove_signal() {
 #[test]
 fn test_list_signals() {
     let temp_dir = TempDir::new().unwrap();
-    let work_dir = temp_dir.path().join(".work");
+    let work_dir = temp_dir.path().join(".loom").join("work");
     let signals_dir = work_dir.join("signals");
     fs::create_dir_all(&signals_dir).unwrap();
 
@@ -351,7 +351,7 @@ fn test_list_signals() {
 #[test]
 fn test_read_signal() {
     let temp_dir = TempDir::new().unwrap();
-    let work_dir = temp_dir.path().join(".work");
+    let work_dir = temp_dir.path().join(".loom").join("work");
     fs::create_dir_all(&work_dir).unwrap();
 
     let session = create_test_session();
@@ -376,7 +376,7 @@ fn test_read_signal() {
 #[test]
 fn test_update_signal_add_tasks() {
     let temp_dir = TempDir::new().unwrap();
-    let work_dir = temp_dir.path().join(".work");
+    let work_dir = temp_dir.path().join(".loom").join("work");
     fs::create_dir_all(&work_dir).unwrap();
 
     let session = create_test_session();
@@ -404,7 +404,7 @@ fn test_generate_signal_with_git_history() {
     use crate::handoff::git_handoff::{CommitInfo, GitHistory};
 
     let temp_dir = TempDir::new().unwrap();
-    let work_dir = temp_dir.path().join(".work");
+    let work_dir = temp_dir.path().join(".loom").join("work");
     fs::create_dir_all(&work_dir).unwrap();
 
     let session = create_test_session();
@@ -494,7 +494,7 @@ fn test_render_review_dimensions_empty_is_none() {
 fn test_generate_signal_renders_code_review_for_integration_verify() {
     let temp_dir = TempDir::new().unwrap();
     let project_root = temp_dir.path();
-    let work_dir = project_root.join(".work");
+    let work_dir = project_root.join(".loom").join("work");
     fs::create_dir_all(&work_dir).unwrap();
     let mut session = create_test_session();
     session.assign_to_stage("iv-stage".to_string());
@@ -529,7 +529,7 @@ fn test_generate_signal_renders_code_review_for_integration_verify() {
 fn test_generate_signal_skips_code_review_for_standard_stage() {
     let temp_dir = TempDir::new().unwrap();
     let project_root = temp_dir.path();
-    let work_dir = project_root.join(".work");
+    let work_dir = project_root.join(".loom").join("work");
     fs::create_dir_all(&work_dir).unwrap();
     // A Standard runtime stage must NOT render the review-dimensions section.
     let mut session = create_test_session();

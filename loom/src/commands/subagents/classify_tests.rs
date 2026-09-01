@@ -1,7 +1,7 @@
 //! Tests for `classify.rs`'s liveness table, including the `done` debounce,
 //! the two classifier shapes the empirical census surfaced (`thinking`-only
 //! and a `user`-role text entry), `tool-wait`'s immunity to idle time, and
-//! the `.work/subagents/.../<agentId>.json` authoritative fast path. Split
+//! the `<state-dir>/subagents/.../<agentId>.json` authoritative fast path. Split
 //! out to keep `classify.rs` itself under the 400-line ceiling (CLAUDE.md
 //! Rule 17).
 
@@ -238,7 +238,7 @@ fn tool_wait_never_debounces_even_after_30_minutes_idle() {
     assert!(summary.final_report.is_none());
 }
 
-/// An authoritative `.work/subagents/<stage>/<agentId>.json` record forces
+/// An authoritative `<state-dir>/subagents/<stage>/<agentId>.json` record forces
 /// `done` immediately, bypassing the debounce entirely -- even for a
 /// transcript whose last entry has a fresh timestamp.
 #[test]
@@ -308,14 +308,14 @@ fn missing_termination_record_falls_back_to_transcript_rule() {
     assert_eq!(summary.state, SubagentState::Generating);
 }
 
-/// A missing `.work/` root (no `subagents/` dir at all) degrades silently
+/// A missing state directory root (no `subagents/` dir at all) degrades silently
 /// rather than erroring, per the "never depend on it existing" contract.
 #[test]
 fn missing_work_dir_degrades_silently() {
     let temp = tempfile::tempdir().unwrap();
     let content = line(
         "assistant",
-        serde_json::json!([{"type": "text", "text": "no .work here"}]),
+        serde_json::json!([{"type": "text", "text": "no state directory here"}]),
     );
     let path = write_transcript(temp.path(), "agent-x.jsonl", &format!("{content}\n"));
 

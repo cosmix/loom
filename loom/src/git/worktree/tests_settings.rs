@@ -9,6 +9,10 @@ fn test_is_worktree_scaffold_path() {
     for scaffold in [
         ".work",
         ".work/",
+        ".loom",
+        ".loom/",
+        ".loom/work",
+        ".loom/work/",
         ".claude",
         ".claude/",
         ".claude/settings.local.json",
@@ -27,15 +31,16 @@ fn test_is_worktree_scaffold_path() {
     }
 
     // Agent work must never be discounted as scaffolding. In particular,
-    // .loom/ is NOT blanket-excluded: a project may legitimately track
-    // .loom/config.toml, so it must still read as agent-visible content.
+    // the bare `.loom` entry is narrower than `.loom/` as a whole: a project
+    // may legitimately track `.loom/config.toml`, so that specific path must
+    // still read as agent-visible content even though `.loom` alone (git's
+    // report for an otherwise entirely-untracked `.loom/`) is scaffold.
     for work in [
         "src/feature.rs",
         "docs/CLAUDE.md",
         ".workflows/ci.yml",
         "claude.md",
         ".loom/config.toml",
-        ".loom",
     ] {
         assert!(
             !is_worktree_scaffold_path(work),
@@ -192,12 +197,12 @@ fn test_refresh_worktree_settings_local_no_main_settings() {
 }
 
 #[test]
-fn test_create_worktree_settings_adds_resolved_work_permissions() {
+fn test_create_worktree_settings_adds_resolved_work_permissions_legacy_layout() {
     let temp_dir = TempDir::new().unwrap();
     let repo_root = temp_dir.path().join("repo");
     let worktree = temp_dir.path().join("worktree");
 
-    // Create the main .work directory (simulates the real .work state dir)
+    // Create the main .work directory (simulates a legacy .work state dir)
     let main_work = repo_root.join(".work");
     std::fs::create_dir_all(&main_work).unwrap();
 
@@ -273,6 +278,47 @@ fn test_create_worktree_settings_adds_resolved_work_permissions() {
         settings["permissions"].get("defaultMode").is_none(),
         "Base settings.json must not write defaultMode (finding #5)"
     );
+}
+
+#[test]
+fn test_create_worktree_settings_adds_resolved_work_permissions_nested_layout() {
+    let temp_dir = TempDir::new().unwrap();
+    let repo_root = temp_dir.path().join("repo");
+    let worktree = temp_dir.path().join("worktree");
+
+    // Create the main .loom/work directory (simulates the nested state dir).
+    let main_work = repo_root.join(".loom").join("work");
+    std::fs::create_dir_all(&main_work).unwrap();
+
+    // Create the worktree's real .loom/ dir and its work symlink pointing at
+    // the main repo's .loom/work — the shape `ensure_work_symlink` plants.
+    let worktree_loom = worktree.join(".loom");
+    std::fs::create_dir_all(&worktree_loom).unwrap();
+    let worktree_work_link = worktree_loom.join("work");
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(&main_work, &worktree_work_link).unwrap();
+
+    let main_claude = repo_root.join(".claude");
+    std::fs::create_dir_all(&main_claude).unwrap();
+    let main_settings_path = main_claude.join("settings.json");
+    std::fs::write(&main_settings_path, "{}").unwrap();
+
+    let worktree_settings_path = worktree.join("settings.json");
+    create_worktree_settings(&main_settings_path, &worktree_settings_path, &worktree).unwrap();
+
+    let content = std::fs::read_to_string(&worktree_settings_path).unwrap();
+    let settings: Value = serde_json::from_str(&content).unwrap();
+    let (allow, _deny) = extract_permissions(&settings);
+
+    // The nested `.loom/work` link must be the one resolved — never the
+    // absent legacy `.work` — and grant the same narrow permission set.
+    let resolved_work = worktree_work_link.canonicalize().unwrap();
+    let resolved_str = resolved_work.to_string_lossy();
+    assert!(allow.contains(&format!("Read(/{}/**)", resolved_str)));
+    assert!(allow.contains(&format!("Read(/{}/signals/**)", resolved_str)));
+    assert!(allow.contains(&format!("Read(/{}/config.toml)", resolved_str)));
+    assert!(allow.contains(&format!("Read(/{}/handoffs/**)", resolved_str)));
+    assert!(!allow.contains(&format!("Edit(/{}/**)", resolved_str)));
 }
 
 #[test]

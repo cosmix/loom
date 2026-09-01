@@ -233,7 +233,7 @@ fn a_missing_session_drops_its_stale_budget_latch() {
 #[test]
 fn poll_preserves_stage_before_session_event_order_after_latching_budget() {
     let temp = tempfile::TempDir::new().unwrap();
-    let work_dir = temp.path().join(".work");
+    let work_dir = temp.path().join(".loom").join("work");
     std::fs::create_dir_all(&work_dir).unwrap();
 
     let mut blocked = Stage::new("blocked".to_string(), None);
@@ -274,7 +274,7 @@ fn poll_preserves_stage_before_session_event_order_after_latching_budget() {
 #[test]
 fn poll_judges_the_fresh_heartbeat_instead_of_a_stale_high_session_record() {
     let temp = tempfile::TempDir::new().unwrap();
-    let work_dir = temp.path().join(".work");
+    let work_dir = temp.path().join(".loom").join("work");
     std::fs::create_dir_all(&work_dir).unwrap();
     let (mut session, mut stage) = budget_retry_pair();
     stage.status = StageStatus::Executing;

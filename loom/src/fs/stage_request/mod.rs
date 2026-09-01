@@ -2,9 +2,9 @@
 //!
 //! `loom stage block` and `loom stage dispute-criteria` are the two sanctioned
 //! moves for an agent that finds it cannot proceed, and both are daemon-owned:
-//! `.work/stages/` is read-only from a worktree, so only the daemon can apply
-//! the transition. The CLI therefore sends an RPC over
-//! `.work/orchestrator.sock` — which the caller that most needs those commands
+//! `.loom/work/stages/` is read-only from a worktree, so only the daemon can
+//! apply the transition. The CLI therefore sends an RPC over
+//! `.loom/work/orchestrator.sock` — which the caller that most needs those commands
 //! cannot do. A sandboxed process is denied AF_UNIX outright (see
 //! `daemon/server/core.rs`), and the loom binary can never be configured to run
 //! outside the host sandbox (`sandbox/settings/policy.rs` rejects
@@ -18,7 +18,7 @@
 //! (`orchestrator/core/spool_drain.rs`).
 //!
 //! Spooling DEFERS to the daemon's authority rather than bypassing it. A
-//! direct `.work/stages/<id>.md` write would decide the transition itself,
+//! direct `.loom/work/stages/<id>.md` write would decide the transition itself,
 //! which is exactly what the read-only mount forbids; a spooled request is
 //! still decided by the daemon, still refusable by it, just later.
 //!

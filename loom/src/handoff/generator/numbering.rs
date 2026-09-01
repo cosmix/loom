@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 
 /// Get the next sequential handoff number for a stage
 ///
-/// Scans existing handoff files in .work/handoffs/ and returns the next available number.
+/// Scans existing handoff files in .loom/work/handoffs/ and returns the next available number.
 pub fn get_next_handoff_number(stage_id: &str, work_dir: &Path) -> Result<u32> {
     let handoffs_dir = work_dir.join("handoffs");
 

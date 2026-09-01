@@ -6,8 +6,26 @@
 //! missing its diff is still a briefing, and the session can go and look.
 
 use anyhow::{Context, Result};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
+
+use crate::fs::work_dir::WorkDir;
+
+/// The repository root `work_dir`'s state directory sits in — the directory
+/// every one of these subprocesses runs from.
+///
+/// The hop count from the state root is layout-dependent (two for
+/// `.loom/work`, one for a legacy `.work`) and lives in exactly one place:
+/// `WorkDir::project_root`. A bare `parent()` here would be right for one
+/// layout and wrong for the other, running `find` and `git show` from
+/// `<repo>/.loom` — whose 3-deep listing is loom's own spool, not the tree the
+/// adjudicator is being briefed on.
+fn project_root_of(work_dir: &Path) -> PathBuf {
+    WorkDir::new(work_dir)
+        .ok()
+        .and_then(|wd| wd.project_root().map(Path::to_path_buf))
+        .unwrap_or_else(|| work_dir.to_path_buf())
+}
 
 pub(super) fn run_git_show(work_dir: &Path, commit: &str) -> Result<String> {
     // Defence-in-depth: the dispute RPC writes `evidence_commit` straight
@@ -21,7 +39,7 @@ pub(super) fn run_git_show(work_dir: &Path, commit: &str) -> Result<String> {
     if !is_sha {
         anyhow::bail!("refusing git show: evidence_commit is not a SHA-shaped string");
     }
-    let project_root = work_dir.parent().unwrap_or(work_dir);
+    let project_root = project_root_of(work_dir);
     let output = Command::new("git")
         .args(["show", "--no-color", "--stat", "-p", "--", commit])
         .current_dir(project_root)
@@ -35,7 +53,7 @@ pub(super) fn run_git_show(work_dir: &Path, commit: &str) -> Result<String> {
 }
 
 pub(super) fn run_listing(work_dir: &Path) -> Result<String> {
-    let project_root = work_dir.parent().unwrap_or(work_dir);
+    let project_root = project_root_of(work_dir);
     // Use `find` with maxdepth 3. If `find` is missing we degrade gracefully.
     let output = Command::new("find")
         .args([".", "-maxdepth", "3", "-not", "-path", "*/.*"])
@@ -117,7 +135,7 @@ mod tests {
         // hex string so even creative byte sequences cannot become
         // arguments after the positional `--`.
         let tmp = tempfile::tempdir().unwrap();
-        let work = tmp.path().join(".work");
+        let work = tmp.path().join(".loom").join("work");
         std::fs::create_dir_all(&work).unwrap();
         // Leading dash — classic option-injection attempt.
         let err = run_git_show(&work, "--output=/tmp/escape").unwrap_err();

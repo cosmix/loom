@@ -95,8 +95,15 @@ fn git_add_guard_blocks_flag_after_a_path() {
 #[test]
 fn git_add_guard_blocks_explicit_work_dir() {
     let (_temp, hook) = setup_hook();
+    // Legacy `.work` (a workspace created before the .loom/work migration).
     assert_eq!(run_hook(&hook, "git add .work"), 2);
     assert_eq!(run_hook(&hook, "git add src/main.rs .work/config.toml"), 2);
+    // Current `.loom/work` (Pattern 4).
+    assert_eq!(run_hook(&hook, "git add .loom/work"), 2);
+    assert_eq!(
+        run_hook(&hook, "git add src/main.rs .loom/work/config.toml"),
+        2
+    );
 }
 
 // =============================================================================
@@ -144,4 +151,11 @@ fn git_add_guard_allows_workspace_lookalike_paths() {
     let (_temp, hook) = setup_hook();
     // .workspace / .working must not be mistaken for .work
     assert_eq!(run_hook(&hook, "git add .workspace/config.toml"), 0);
+}
+
+#[test]
+fn git_add_guard_allows_loom_cache_not_mistaken_for_loom_work() {
+    let (_temp, hook) = setup_hook();
+    // .loom/cache is loom state, but not the shared .loom/work symlink.
+    assert_eq!(run_hook(&hook, "git add .loom/cache/graph.db"), 0);
 }

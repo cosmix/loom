@@ -96,12 +96,18 @@ pub fn remove_tui_marker() {
 ///
 /// Call this early in main() before dispatching any command.
 pub fn recover_terminal_if_needed() {
-    let marker = Path::new(".work/tui.pid");
+    // Resolved rather than a hardcoded literal: the state root may be
+    // `.loom/work` (nested) or `.work` (legacy), and only `WorkDir` decides
+    // which — see `fs::work_dir::WorkDir::new`.
+    let Ok(work_dir) = crate::fs::work_dir::WorkDir::new(".") else {
+        return;
+    };
+    let marker = work_dir.root().join("tui.pid");
     if !marker.exists() {
         return;
     }
 
-    let contents = match std::fs::read_to_string(marker) {
+    let contents = match std::fs::read_to_string(&marker) {
         Ok(c) => c,
         Err(_) => {
             // Can't read marker — remove it and reset just in case

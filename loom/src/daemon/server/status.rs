@@ -17,10 +17,12 @@ pub fn collect_status(work_dir: &Path) -> Result<Response> {
     let stages_dir = work_dir.join("stages");
     let sessions_dir = work_dir.join("sessions");
 
-    // Get repo root (parent of .work/)
-    let repo_root = work_dir
-        .parent()
-        .map(|p| p.to_path_buf())
+    // Get repo root. Hop count from the state root is layout-dependent
+    // (nested `.loom/work/` vs. legacy `.work/`), so this goes through
+    // `WorkDir::project_root()` rather than a bare `.parent()`.
+    let repo_root = crate::fs::work_dir::WorkDir::new(work_dir)
+        .ok()
+        .and_then(|wd| wd.project_root().map(|p| p.to_path_buf()))
         .unwrap_or_else(|| PathBuf::from("."));
 
     // P-1(c): resolve the target branch ONCE per collection. `is_manually_merged`
@@ -234,7 +236,7 @@ pub fn get_session_pid(sessions_dir: &Path, session_id: Option<&str>) -> Option<
 /// calculates total duration and success/failure counts.
 ///
 /// # Arguments
-/// * `work_dir` - The .work/ directory path
+/// * `work_dir` - The .loom/work/ directory path
 ///
 /// # Returns
 /// A CompletionSummary with all stage completion information

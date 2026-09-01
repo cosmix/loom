@@ -145,7 +145,7 @@ This is FORBIDDEN in loom worktrees because:
 Instead, you should:
   - Use relative paths WITHIN this worktree
   - All files you need are in the worktree
-  - Context is in your signal file (.work/signals/)
+  - Context is in your signal file (.loom/work/signals/, or the legacy .work/signals/)
 
 Stay within your worktree boundaries.
 ============================================================
@@ -170,7 +170,7 @@ This is FORBIDDEN because:
 Instead, you should:
   - Stay in YOUR worktree: .worktrees/${CURRENT_STAGE}/
   - Your files and context are all here
-  - Communicate via .work/ (shared state symlink)
+  - Communicate via .loom/work/ (shared state symlink; legacy workspaces use .work/)
 
 You can only access your own worktree.
 ============================================================

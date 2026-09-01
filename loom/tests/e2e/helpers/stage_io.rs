@@ -6,9 +6,9 @@ use std::path::Path;
 
 use super::yaml::extract_yaml_frontmatter;
 
-/// Writes a stage to .work/stages/{stage.id}.md
+/// Writes a stage to .loom/work/stages/{stage.id}.md
 pub fn create_stage_file(work_dir: &Path, stage: &Stage) -> Result<()> {
-    let stages_dir = work_dir.join(".work").join("stages");
+    let stages_dir = work_dir.join(".loom").join("work").join("stages");
     std::fs::create_dir_all(&stages_dir).context("Failed to create stages directory")?;
 
     let stage_path = stages_dir.join(format!("{}.md", stage.id));
@@ -58,10 +58,11 @@ pub fn create_stage_file(work_dir: &Path, stage: &Stage) -> Result<()> {
     Ok(())
 }
 
-/// Reads a stage from .work/stages/{stage_id}.md
+/// Reads a stage from .loom/work/stages/{stage_id}.md
 pub fn read_stage_file(work_dir: &Path, stage_id: &str) -> Result<Stage> {
     let stage_path = work_dir
-        .join(".work")
+        .join(".loom")
+        .join("work")
         .join("stages")
         .join(format!("{stage_id}.md"));
 

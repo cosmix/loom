@@ -270,7 +270,7 @@ fn codex_navigation_kit_wrapper_carries_and_delivers_the_preamble() {
         "loom map --impact",
         "loom knowledge context",
         "NEVER run git",
-        ".work/",
+        ".loom/work/",
     ] {
         assert!(
             HOOK_CODEX_FORWARD.contains(needle),
