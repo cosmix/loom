@@ -73,7 +73,8 @@ has. Machines where the default works are untouched, so the plugin's own `/codex
 `/codex:result` keep finding their records.
 
 Verified A/B on macOS 2026-09-02: the unmodified wrapper exits 1 on EPERM; with the redirect all
-three tiers (`gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.6-luna`) reach the model and exit 0.
+three tiers (`gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.6-luna`) reach the model and exit 0. That check
+stopped one layer too high: the same runs could not execute a single shell command (next entry).
 
 **Platform note.** This is not simply 'macOS is stricter'. The 2026-08-10 entry recorded the
 opposite — Seatbelt let these writes pass while Linux bubblewrap enforced the allowlist. The
@@ -93,3 +94,24 @@ recommended a fix that had already been applied.
 **Open follow-up:** loom's codex availability check (`codex.rs`) probes the CLI and the plugin but
 not WRITABILITY of the state root, so a stage can list codex, start, and lose every codex subagent
 mid-run instead of `loom run` warning at startup.
+
+## Verified the codex lane at the model layer, not the shell layer (2026-09-02)
+
+**What happened:** the 67b97114 redirect was accepted on "reaches the model, exits 0"; the next
+stage's five forwarders reached gpt-5.6-terra, exited 0, wrote nothing — every command codex ran,
+even `pwd`, died with `sandbox-exec: sandbox_apply: Operation not permitted`.
+
+**Why:** codex exits 0 when the model's turn ends regardless of what its tools did; the outer Bash
+sandbox is Seatbelt and macOS refuses a second profile; the layer under the one just fixed was
+never exercised, and the forwarders' own reports ("model invocation is fine") pointed at the layer
+that worked.
+
+**Prevention:** an end-to-end check of the lane must make codex run a command AND write a file from
+a sandboxed, stage-like session, then assert on the file; treat "exit 0" from codex or the companion
+as no evidence below the model. Detection rule: a codex report that reaches the model but shows
+`sandbox_apply` or zero file changes is this failure, and it is the wrapper's job, never a settings
+or `loom repair --fix` matter.
+
+**Fix:** `hooks/codex-forward.sh` probes for a nested Seatbelt and switches to a direct `codex exec
+--sandbox danger-full-access`; details in [Codex Plugin](../architecture/codex-plugin.md) under the
+2026-09-02 macOS section.

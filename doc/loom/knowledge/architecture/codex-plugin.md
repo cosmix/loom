@@ -70,7 +70,9 @@ prompt implemented all the edits itself on sonnet and nothing surfaced it. Three
    glob (`~/.claude/plugins/cache/openai-codex/codex/*/scripts/codex-companion.mjs`, highest
    version — `${CLAUDE_PLUGIN_ROOT}` is unset outside plugin agents), ONE Bash call, `--write`
    plus `--model`/`--effort` exactly as the prompt states, stdout verbatim followed by a
-   `--- LOOM-CODEX-EVIDENCE ---` trailer (`exit:` code + newest `state/*/jobs/*.json` paths).
+   `--- LOOM-CODEX-EVIDENCE ---` trailer (`exit:`, `mode:`, then either the newest
+   `state/*/jobs/*.json` paths in companion mode or the `session:` rollout path in direct mode —
+   see the macOS section below).
    On failure: report verbatim prefixed `LOOM-CODEX-FORWARD-ERROR`, never implement.
 2. **`hooks/codex-forward-guard.sh`** — PreToolUse on Bash/Edit/Write/Read/Task/Agent. Primary
    gate: payload `agent_type` ∈ {`loom-codex-forwarder`, `codex:codex-rescue`} → only a Bash
@@ -81,7 +83,8 @@ prompt implemented all the edits itself on sonnet and nothing surfaced it. Three
 3. **Signal doctrine** (`format_codex_implementers_section`, also emitted on the recovery path):
    spawn the forwarder by type, put `CODEX_FORWARD_SENTINEL` (`loom/src/codex.rs`) as the codex
    prompt's FIRST line, and accept a codex report only with the evidence trailer — verify the
-   newest listed job record for the worktree exists with `phase: done`. A report without the
+   newest listed job record for the worktree exists with `phase: done`, or, for `mode: direct`,
+   that the listed session rollout exists and postdates the spawn. A report without the
    trailer, or edits with no matching record, is a failed delegation: revert and respawn, or
    keep only after a full review.
 
@@ -139,13 +142,65 @@ can be threaded through a forward. `loom/src/codex.rs` owns detection
 (`codex_config_excludes_slash_tmp`) and the comment-preserving edit
 (`ensure_codex_config_excludes_slash_tmp`, `toml_edit`); `loom repair --fix` applies it and
 `advisory_codex_lane_preflight` (`commands/run/checks.rs`) warns at `loom run` startup when the lane
-is licensed but the key is missing. Both are Linux-gated: macOS Seatbelt needs no mountpoint mkdir,
-so there the default roots are harmless and the exclusion would only shrink codex's capability
-outside loom.
+is licensed but the key is missing. Both are Linux-gated: on macOS the question never arises,
+because inside the stage sandbox codex's Seatbelt cannot be applied at all (next section) and
+outside it the default roots are harmless.
 
 Do NOT "fix" this by adding `/tmp` to the outer sandbox's `allowWrite` instead: bwrap's mountpoint
 mkdir writes through to the host, and a stray `/tmp/.git` makes git discovery under any `/tmp`
 directory find a phantom repository.
+
+## macOS: the stage sandbox refuses a nested Seatbelt, so the wrapper runs codex exec directly (2026-09-02)
+
+**Symptom.** Five `loom-codex-forwarder` spawns in a stage session each reached gpt-5.6-terra and the
+companion exited 0, but zero files were written: every shell command codex ran, even `pwd`, died with
+`sandbox-exec: sandbox_apply: Operation not permitted`. The 67b97114 state-root redirect (previous
+section) had worked; this failure sits one layer below it.
+
+**Cause.** Stage Bash calls already run inside Claude Code's own Seatbelt sandbox on macOS. Codex's
+`workspace-write` and `read-only` modes wrap each command it runs in `sandbox-exec` too, and macOS
+refuses a second profile on an already-sandboxed process. Codex still exits 0 when the model's turn
+ends, whatever its tools did.
+
+```bash
+sandbox-exec -p '(version 1)(allow default)' /bin/pwd                # sandbox_apply: Operation not permitted, rc 71
+codex sandbox -- /bin/pwd                                            # same error
+codex sandbox -c sandbox_mode="danger-full-access" -- /bin/pwd       # prints the cwd
+```
+
+**Why no config knob helps.** The companion hardcodes
+`sandbox: request.write ? "workspace-write" : "read-only"` (`codex-companion.mjs:491`) into
+`thread/start`, overriding `~/.codex/config.toml`'s `sandbox_mode` with no flag or env override, and
+`read-only` seatbelts too. `dangerouslyDisableSandbox` is refused by the auto-mode classifier; there is
+no macOS equivalent of Linux's `exclude_slash_tmp` — the nesting itself is refused.
+
+**Fix.** `hooks/codex-forward.sh` probes `sandbox-exec -p '(version 1)(allow default)' /usr/bin/true`
+(PATH lookup, so tests can stub it) and, only when refused, bypasses the companion and runs `codex exec
+--sandbox danger-full-access --skip-git-repo-check --model <model> -c
+model_reasoning_effort="<effort>" -- "<preamble + task>"`. The outer stage sandbox — worktree plus
+granted write paths, domain allowlist, credential read denies — remains the boundary, same as a sonnet
+subagent's Bash call.
+
+The evidence trailer now always carries `exit:` and `mode:`. `mode: companion` lists the newest
+`state/*/jobs/*.json` records, globbed from the state root the companion actually used (including the
+redirected `~/.codex/plugin-data` — the earlier wrapper globbed the original root and printed `jobs:
+none found` on redirected machines). `mode: direct` lists the `session:` rollout path
+(`~/.codex/sessions/YYYY/MM/DD/rollout-<ts>-<uuid>.jsonl`) that `codex exec` writes.
+`signals/format/codex.rs` accepts either.
+
+| Platform | Where | Lane | Inner sandbox |
+| --- | --- | --- | --- |
+| Linux | inside a stage sandbox | companion | bubblewrap, nested; needs `exclude_slash_tmp` |
+| macOS | inside a stage sandbox | direct `codex exec` | none |
+| macOS | outside any sandbox | companion | codex's own Seatbelt applies |
+
+**Given up, deliberately.** No companion job record, so `/codex:status`/`/codex:result` cannot see
+direct runs. Codex's Seatbelt no longer masks `.git` on macOS, so the preamble's no-git rule and the
+orchestrator's post-run `git status --short` are the remaining guards. Codex's inner network cut-off is
+gone, but the stage sandbox's domain allowlist still applies.
+
+See [Codex Lane Rogue Wrapper](../mistakes/codex-lane-rogue-wrapper.md) for the verification gap that
+let this ship.
 
 ## Availability fallback: codex CLI/plugin not installed (2026-08-08)
 

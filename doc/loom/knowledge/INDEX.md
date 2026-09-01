@@ -23,7 +23,7 @@
 | Topic | Title | Blurb | Lines |
 | --- | --- | --- | --- |
 | [architecture/codex-concurrency.md](architecture/codex-concurrency.md) | Codex Concurrency | Codex fan-out concurrency limits, what is measured, and what degrades under load (the shared state.json sidecar). | 102 |
-| [architecture/codex-plugin.md](architecture/codex-plugin.md) | Codex Plugin | Codex plugin install and identity, the codex-rescue subagent, and the loom-codex-forwarder lane. | 303 |
+| [architecture/codex-plugin.md](architecture/codex-plugin.md) | Codex Plugin | Codex plugin install and identity, the codex-rescue subagent, and the loom-codex-forwarder lane. | 358 |
 | [architecture/context-ceiling.md](architecture/context-ceiling.md) | Context Ceiling | The absolute resident-token ceiling: resolution order, and the three independent thresholds (hook, daemon, native… | 71 |
 | [architecture/context-retrieval.md](architecture/context-retrieval.md) | Context Retrieval | The retrieval subsystem: two graphs, two lanes, query-side gating, two-tier fusion, and the persistent BM25 index. | 469 |
 | [architecture/core-abstractions.md](architecture/core-abstractions.md) | Core Abstractions | ExecutionGraph, Stage, Session, Orchestrator, TerminalBackend — plus data flow and .work/ file ownership. | 93 |
@@ -61,7 +61,7 @@
 | Topic | Title | Blurb | Lines |
 | --- | --- | --- | --- |
 | [mistakes/ambient-filesystem-trust.md](mistakes/ambient-filesystem-trust.md) | Ambient Filesystem Trust | Why an ancestor directory merely named .git is not evidence of a real repository, and the validation this requires. | 34 |
-| [mistakes/codex-lane-rogue-wrapper.md](mistakes/codex-lane-rogue-wrapper.md) | Codex Lane Rogue Wrapper | A forwarding wrapper that did the task itself instead of forwarding, and why the codex sandbox state-dir escape hatch… | 95 |
+| [mistakes/codex-lane-rogue-wrapper.md](mistakes/codex-lane-rogue-wrapper.md) | Codex Lane Rogue Wrapper | A forwarding wrapper that did the task itself instead of forwarding, and why the codex sandbox state-dir escape hatch… | 117 |
 | [mistakes/codex-navigation.md](mistakes/codex-navigation.md) | Codex Navigation | Forbidding reads instead of fixing a slow reader - a misdiagnosis and its correction. | 25 |
 | [mistakes/completion-broker-credential.md](mistakes/completion-broker-credential.md) | Completion Broker Credential | The completion broker unreachable server-side fallback, duplicate file naming, and a sandboxed completion that exits 0… | 141 |
 | [mistakes/computed-values-and-hidden-couplings.md](mistakes/computed-values-and-hidden-couplings.md) | Computed Values and Hidden Couplings | Topic notes for the mistakes knowledge area. Three lessons from the | 156 |
