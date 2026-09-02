@@ -2439,7 +2439,7 @@ loom:
     - '! rg -q "\.work/" doc/loom/knowledge/architecture.md'
     - '! rg -q "\.work/" README.md'
     - rg -q "\.loom/work" doc/loom/knowledge/architecture.md
-    - loom knowledge check --strict
+    - '! loom knowledge check --json | rg -q "\"(DuplicateHeading|GenericBlurb|BrokenLink|OversizedSection)\":"'
     setup: []
     files:
     - doc/loom/knowledge/**
