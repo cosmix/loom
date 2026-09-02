@@ -100,8 +100,10 @@ fn refresh_only_fires_once_the_interval_has_elapsed() {
         latest_version: None,
     };
     assert!(
-        !decide(Some(&future), true, 24, now, &current).refresh,
-        "clock skew into the future must count as fresh"
+        decide(Some(&future), true, 24, now, &current).refresh,
+        "a future last_checked (clock skew) must schedule a refresh rather than \
+         wedging the check forever: the writer always stamps its own `now`, so \
+         one refresh self-heals the record"
     );
 }
 
@@ -111,10 +113,23 @@ fn concurrent_stale_calls_schedule_at_most_one_refresh() {
     let now = Utc::now();
     let interval = Duration::hours(24);
 
-    assert!(schedule_refresh(dir.path(), now, interval));
+    // 8 threads racing `schedule_refresh` against the same fresh directory:
+    // exactly one may win the `O_EXCL` lock.
+    let winners: usize = std::thread::scope(|scope| {
+        let handles: Vec<_> = (0..8)
+            .map(|_| scope.spawn(|| schedule_refresh(dir.path(), now, interval)))
+            .collect();
+        handles
+            .into_iter()
+            .map(|handle| handle.join().unwrap())
+            .filter(|won| *won)
+            .count()
+    });
+    assert_eq!(winners, 1, "exactly one racer must win the refresh lock");
+
     assert!(
         !schedule_refresh(dir.path(), now, interval),
-        "a second invocation must lose the race, not fetch again"
+        "a later invocation must lose the race, not fetch again"
     );
 }
 
