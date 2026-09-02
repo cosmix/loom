@@ -30,10 +30,10 @@ file src/fs/permissions/settings.rs 470
 file src/fs/permissions/sync.rs 654
 file src/fs/plan_lifecycle.rs 610
 file src/fs/safe_fs.rs 1019
-file src/fs/work_dir.rs 826
-file src/fs/work_dir/tests.rs 880
+file src/fs/work_dir.rs 507
+file src/fs/work_dir/tests.rs 863
 file src/git/worktree/base.rs 545
-file src/git/worktree/settings.rs 683
+file src/git/worktree/settings.rs 718
 file src/hooks/tests.rs 514
 file src/models/stage/methods.rs 817
 file src/models/stage/types.rs 1231
@@ -179,7 +179,7 @@ function src/git/merge/status.rs make_test_stage 68
 function src/git/worktree/base.rs resolve_base_branch 92
 function src/git/worktree/discovery.rs find_worktree_by_prefix 55
 function src/git/worktree/operations.rs create_worktree 115
-function src/git/worktree/settings.rs create_worktree_settings 114
+function src/git/worktree/settings.rs create_worktree_settings 128
 function src/git/worktree/settings.rs refresh_worktree_settings_local 58
 function src/git/worktree/tests_settings_env.rs test_refresh_preserves_worktree_env_hooks_and_mode 59
 function src/git/worktree/tests_settings_env.rs test_worktree_gitignore_actually_hides_loom_runtime_paths 57
@@ -319,10 +319,10 @@ function tests/integration/plan_verify.rs test_json_schema_completeness_and_leve
 function tests/stage_transitions.rs test_multiple_dependencies_all_satisfied 52
 function tests/stage_transitions.rs test_stage_transition_workflow 72
 file src/commands/clean/sessions.rs 403
-file src/git/worktree/tests_settings.rs 443
+file src/git/worktree/tests_settings.rs 586
 file src/utils.rs 403
 file src/commands/repair/tests.rs 648
 function src/fs/permissions/tests/write_rules_tests.rs test_ensure_loom_permissions_prunes_legacy_work_write_grants 56
-function src/git/worktree/tests_settings.rs test_create_worktree_settings_adds_resolved_work_permissions_legacy_layout 82
+function src/git/worktree/tests_settings.rs test_create_worktree_settings_adds_resolved_work_permissions_legacy_layout 86
 function src/sandbox/settings/tests.rs test_write_settings_adds_resolved_work_symlink_permissions_legacy_layout 105
 function src/sandbox/settings/tests.rs test_write_settings_adds_resolved_work_symlink_permissions_nested_layout 73
