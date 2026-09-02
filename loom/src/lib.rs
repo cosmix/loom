@@ -27,6 +27,7 @@ pub mod telemetry;
 pub mod utils;
 pub mod validation;
 pub mod verify;
+pub mod version;
 
 /// ASCII art logo for loom CLI
 pub const LOGO: &str = "   ╷
