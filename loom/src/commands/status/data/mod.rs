@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 
 // Re-export types that consumers will need
 pub use crate::models::failure::FailureInfo;
+pub use crate::models::session::SessionType;
 pub use crate::models::stage::{StageStatus, StageType};
 
 /// Activity status derived from heartbeat and session state
@@ -109,6 +110,14 @@ pub struct StageSummary {
     pub session_alive: bool,
     /// Effective model name for this stage (explicit override or stage-type default)
     pub model: String,
+    /// The kind of session named by `stage.session`, if any. An `Executing`
+    /// stage whose session is not of its own worker kind (e.g. an
+    /// adjudication session) is not describing a working agent — see
+    /// `incoherence`.
+    pub session_type: Option<SessionType>,
+    /// Why an `Executing` stage does not describe a working agent, if it
+    /// does not. `None` for every other stage.
+    pub incoherence: Option<String>,
 }
 
 /// Session display data (test-only)

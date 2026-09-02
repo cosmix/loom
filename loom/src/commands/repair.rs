@@ -11,7 +11,6 @@ use std::fs;
 use std::path::Path;
 use std::process::Command;
 
-use crate::daemon::{DaemonServer, DaemonStatus};
 use crate::fs::permissions::LOOM_PERMISSIONS;
 use crate::fs::work_dir::{load_config, Layout, WorkDir};
 use crate::fs::work_integrity::{
@@ -539,83 +538,16 @@ fn check_all_issues(repo_root: &Path) -> Vec<RepairIssue> {
         }
     }
 
-    // Check 12: Daemon health — detect the singleton/socket failure modes
-    // documented in concerns.md (2026-05-13). These are diagnostic-only: there is
-    // no safe automatic fix (killing the wrong daemon loses orchestration state),
-    // so each is reported with manual remediation guidance.
-    {
-        let work_dir = WorkDir::new(repo_root)
-            .map(|wd| wd.root().to_path_buf())
-            .unwrap_or_else(|_| repo_root.join(".loom").join("work"));
-        if work_dir.is_dir() {
-            // (1) More than one `loom run` process alive is always wrong.
-            let run_pids = find_loom_run_pids();
-            if run_pids.len() > 1 {
-                let pid_list = run_pids
-                    .iter()
-                    .map(|p| p.to_string())
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                let lock_pid = DaemonServer::check_lock(&work_dir);
-                let keep_hint = match lock_pid {
-                    Some(pid) => format!(
-                        "Keep the lock holder (PID {pid}); stop the others with `kill <pid>`"
-                    ),
-                    None => "Stop the stale daemons with `kill <pid>` (no lock holder found)"
-                        .to_string(),
-                };
-                issues.push(RepairIssue {
-                    severity: Severity::Critical,
-                    description: format!("Multiple 'loom run' processes alive (PIDs: {pid_list})"),
-                    fix_description: keep_hint,
-                });
-            }
-
-            // (2)/(3) Lock held by a live daemon, but PID file or socket missing.
-            if let Some(lock_pid) = DaemonServer::check_lock(&work_dir) {
-                if crate::process::is_process_alive(lock_pid) {
-                    let pid_path = work_dir.join("orchestrator.pid");
-                    let socket_path = work_dir.join("orchestrator.sock");
-
-                    if !pid_path.exists() {
-                        issues.push(RepairIssue {
-                            severity: Severity::Warning,
-                            description: format!(
-                                "Daemon lock held (PID {lock_pid}) but orchestrator.pid is missing"
-                            ),
-                            fix_description:
-                                "Restart the daemon: `loom stop`, then `loom run` (PID file was lost)"
-                                    .to_string(),
-                        });
-                    }
-
-                    // Raw `Path::exists()`, not `check_status`: still sees the socket when a sandboxed `connect()` is denied.
-                    if !socket_path.exists() {
-                        issues.push(RepairIssue {
-                            severity: Severity::Critical,
-                            description: format!(
-                                "Daemon lock held (PID {lock_pid}) but orchestrator.sock is missing (daemon unreachable)"
-                            ),
-                            fix_description:
-                                "Restart the daemon: `kill <pid>` then `loom run` (control socket was lost)"
-                                    .to_string(),
-                        });
-                    }
-                }
-            } else if DaemonServer::check_status(&work_dir) == DaemonStatus::ProcessOnly {
-                // No flock holder, but a process appears alive with an unreachable socket. Checked via `== ProcessOnly`, not `Unreachable` too: our own sandboxed `connect()` denial also reads as `Unreachable` and must not restart a healthy daemon.
-                issues.push(RepairIssue {
-                    severity: Severity::Warning,
-                    description: "Daemon process appears alive but its socket is unreachable"
-                        .to_string(),
-                    fix_description: "Restart the daemon: `loom stop`, then `loom run`".to_string(),
-                });
-            }
-        }
-    }
+    // Check 12: daemon health (singleton/socket failure modes).
+    issues.extend(daemon_checks::check_daemon_health(repo_root));
 
     // Check 13: stale doc/loom/knowledge deny in .claude/settings.local.json.
     issues.extend(check_stale_knowledge_denies(repo_root));
+
+    // Check 14: incoherent Executing stages (post-hoc audit of the per-tick watchdog).
+    issues.extend(repair_coherence::check_incoherent_executing_stages(
+        repo_root,
+    ));
 
     issues
 }
@@ -801,28 +733,36 @@ fn fix_issue(repo_root: &Path, issue: &RepairIssue) -> Result<bool> {
     // Match based on description (not ideal, but works for now). The needles
     // below are the fragments that stay identical across both the nested and
     // legacy spelling of the state-directory path (see `check_all_issues`).
+    fix_workspace_issue(repo_root, issue)
+        .or_else(|| fix_settings_or_state_issue(repo_root, issue))
+        // Everything else — "marked merged but has no completed_commit" (no SHA
+        // to verify or re-merge against), "Stale:" (branch gone without a merge
+        // record), and any unknown issue — returns false so the dispatcher
+        // prints "Skipped" and the user knows to investigate manually.
+        .unwrap_or(Ok(false))
+}
+
+/// Fixes for workspace-shape issues: symlink corruption, missing gitignore
+/// entries, and missing or incomplete hook installation. `None` means this
+/// issue is not one of these.
+fn fix_workspace_issue(repo_root: &Path, issue: &RepairIssue) -> Option<Result<bool>> {
     if issue.description.contains("is a symlink (->") {
-        fix_work_symlink(repo_root)?;
-        Ok(true)
+        Some(fix_work_symlink(repo_root).map(|()| true))
     } else if issue.description.contains("exists but is neither") {
-        fix_invalid_work(repo_root)?;
-        Ok(true)
+        Some(fix_invalid_work(repo_root).map(|()| true))
     } else if issue
         .description
         .contains(".loom/work not found in .gitignore")
         || issue.description.contains(".work not found in .gitignore")
     {
-        fix_gitignore_work(repo_root)?;
-        Ok(true)
+        Some(fix_gitignore_work(repo_root).map(|()| true))
     } else if issue
         .description
         .contains(".worktrees not found in .gitignore")
     {
-        fix_gitignore_worktrees(repo_root)?;
-        Ok(true)
+        Some(fix_gitignore_worktrees(repo_root).map(|()| true))
     } else if issue.description.contains("pre-commit hook not installed") {
-        install_pre_commit_hook(repo_root)?;
-        Ok(true)
+        Some(install_pre_commit_hook(repo_root).map(|_| true))
     } else if issue
         .description
         .contains("Project .claude/settings.json incomplete")
@@ -830,46 +770,58 @@ fn fix_issue(repo_root: &Path, issue: &RepairIssue) -> Result<bool> {
             .description
             .contains("Hooks found in .claude/settings.json")
     {
-        fix_hooks(repo_root)?;
-        Ok(true)
+        Some(fix_hooks(repo_root).map(|()| true))
     } else if issue.description.contains("Loom hook scripts") {
-        crate::fs::permissions::install_loom_hooks()?;
-        Ok(true)
-    } else if let Some(result) = settings_checks::fix_settings_issue(repo_root, &issue.description)
-    {
+        Some(crate::fs::permissions::install_loom_hooks().map(|_| true))
+    } else {
+        None
+    }
+}
+
+/// Fixes for settings-file drift and stage-state issues: stale
+/// `settings.local.json` entries, old-style skill/agent references, phantom
+/// merges, and incoherent executing stages. `None` means this issue is not
+/// one of these.
+fn fix_settings_or_state_issue(repo_root: &Path, issue: &RepairIssue) -> Option<Result<bool>> {
+    if let Some(result) = settings_checks::fix_settings_issue(repo_root, &issue.description) {
         // Claims "Settings not found (.claude/settings.local.json)", "Stale
         // knowledge-directory deny in", "Stale loom session env in", and the
         // generic ".claude/settings.local.json" — see its doc comment for the
         // load-bearing order between those four.
-        result.map(|()| true)
-    } else if issue.description.contains("Old unprefixed skill") {
-        fix_old_skill(&issue.description)?;
-        Ok(true)
-    } else if issue.description.contains("Old unprefixed agent") {
-        fix_old_agent(&issue.description)?;
-        Ok(true)
-    } else if issue
+        return Some(result.map(|()| true));
+    }
+    if issue.description.contains("Old unprefixed skill") {
+        return Some(fix_old_skill(&issue.description).map(|()| true));
+    }
+    if issue.description.contains("Old unprefixed agent") {
+        return Some(fix_old_agent(&issue.description).map(|()| true));
+    }
+    if issue
         .description
         .contains("Settings.json references old-style skill names")
     {
-        fix_settings_skill_refs()?;
-        Ok(true)
-    } else if issue.description.contains("exclude_slash_tmp") {
-        settings_checks::fix_codex_slash_tmp()
-    } else if issue.description.starts_with("Phantom merge:") {
+        return Some(fix_settings_skill_refs().map(|()| true));
+    }
+    if issue.description.contains("exclude_slash_tmp") {
+        return Some(settings_checks::fix_codex_slash_tmp());
+    }
+    if issue.description.starts_with("Phantom merge:") {
         // Revert the spurious merged=true flag so the orchestrator knows the stage's work
         // has NOT landed in the target branch. We do NOT attempt a re-merge here because
         // the user likely has lost work that needs manual investigation first (e.g.,
         // cherry-pick from the stranded branch, resolve conflicts with later stages).
-        fix_phantom_merge(repo_root, &issue.description)?;
-        Ok(true)
-    } else {
-        // Everything else — "marked merged but has no completed_commit" (no SHA
-        // to verify or re-merge against), "Stale:" (branch gone without a merge
-        // record), and any unknown issue — returns false so the dispatcher
-        // prints "Skipped" and the user knows to investigate manually.
-        Ok(false)
+        return Some(fix_phantom_merge(repo_root, &issue.description).map(|()| true));
     }
+    if issue
+        .description
+        .starts_with("Incoherent executing stage '")
+    {
+        return Some(repair_coherence::fix_incoherent_executing_stage(
+            repo_root,
+            &issue.description,
+        ));
+    }
+    None
 }
 
 /// Fix a corrupted work-directory symlink in the main repo
@@ -1183,6 +1135,8 @@ fn fix_settings_skill_refs() -> Result<()> {
     Ok(())
 }
 
+mod daemon_checks;
+mod repair_coherence;
 mod settings_checks;
 
 #[cfg(test)]

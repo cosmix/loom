@@ -1,5 +1,6 @@
 use super::*;
 use crate::models::constants::DEFAULT_CONTEXT_CEILING_TOKENS;
+use crate::models::session::SessionType;
 use crate::models::stage::{Implementers, StageType};
 use chrono::Utc;
 
@@ -297,6 +298,26 @@ fn test_build_stage_summary_orphaned_when_executing_without_session() {
     let summary = build_stage_summary(&stage, &[], &work_dir);
 
     assert_eq!(summary.activity_status, ActivityStatus::Orphaned);
+}
+
+#[test]
+fn test_build_stage_summary_flags_an_adjudication_session_adopted_as_worker() {
+    // The bug this pins: a stage's own `session` pointer can end up naming an
+    // adjudication session instead of its worker. The summary must surface
+    // both the wrong session kind and the incoherence verdict so the
+    // deadlock is visible in `loom status`.
+    let tmp = tempfile::TempDir::new().unwrap();
+    let work_dir = WorkDir::new(tmp.path()).unwrap();
+    work_dir.initialize().unwrap();
+
+    let mut stage = make_test_stage("test-stage", StageStatus::Executing);
+    let adjudication = Session::new_adjudication("test-stage");
+    stage.session = Some(adjudication.id.clone());
+
+    let summary = build_stage_summary(&stage, &[adjudication], &work_dir);
+
+    assert_eq!(summary.session_type, Some(SessionType::Adjudication));
+    assert!(summary.incoherence.is_some());
 }
 
 #[test]

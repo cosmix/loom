@@ -1,5 +1,6 @@
 use super::*;
 use crate::commands::status::data::{ActivityStatus, MergeSummary, ProgressSummary, StageType};
+use crate::models::session::SessionType;
 
 fn make_stage_summary(id: &str, deps: Vec<&str>, status: StageStatus) -> StageSummary {
     StageSummary {
@@ -28,6 +29,8 @@ fn make_stage_summary(id: &str, deps: Vec<&str>, status: StageStatus) -> StageSu
         pid: None,
         session_alive: false,
         model: "opus".to_string(),
+        session_type: None,
+        incoherence: None,
     }
 }
 
@@ -271,6 +274,35 @@ fn test_non_orphaned_stage_has_no_orphaned_warning() {
     assert!(
         !output_str.contains("claims Executing with no session record"),
         "Should not show orphaned warning when activity status is not Orphaned"
+    );
+}
+
+#[test]
+fn test_executing_with_adjudication_session_shows_type_and_incoherence() {
+    // A stage that adopted an adjudication session into its worker slot must
+    // surface both that its session is the wrong kind and the incoherence
+    // verdict, so the deadlock is visible in `loom status` instead of
+    // reading as ordinary progress.
+    let mut stage = make_stage_summary("my-stage", vec![], StageStatus::Executing);
+    stage.pid = Some(56007);
+    stage.session_alive = true;
+    stage.session_type = Some(SessionType::Adjudication);
+    stage.incoherence = Some(
+        "session 'adj-1' is of kind adjudication, not the stage's worker kind stage".to_string(),
+    );
+
+    let data = make_status_data(vec![stage]);
+    let mut output = Vec::new();
+    render_graph(&mut output, &data).unwrap();
+    let output_str = String::from_utf8(output).unwrap();
+
+    assert!(
+        output_str.contains("adjudication session"),
+        "Expected the wrong-kind session type to be surfaced"
+    );
+    assert!(
+        output_str.contains("INCOHERENT:"),
+        "Expected the incoherence verdict to be surfaced"
     );
 }
 

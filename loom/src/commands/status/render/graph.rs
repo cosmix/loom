@@ -13,6 +13,7 @@ use crate::commands::graph::colors::color_by_index;
 use crate::commands::graph::indicators::status_indicator;
 use crate::commands::status::data::{ActivityStatus, StageSummary, StatusData};
 use crate::models::failure::FailureType;
+use crate::models::session::SessionType;
 use crate::models::stage::{StageStatus, StageType};
 use crate::orchestrator::{context_health, ContextHealth};
 use crate::plan::graph::levels;
@@ -76,14 +77,7 @@ fn format_stage_annotations(stage: &StageSummary) -> String {
             }
         }
 
-        // Session PID or orphaned
-        if let Some(pid) = stage.pid {
-            if stage.session_alive {
-                parts.push(format!("{}", format!("PID {pid}").dimmed()));
-            } else {
-                parts.push(format!("{}", "orphaned".red()));
-            }
-        }
+        push_session_annotations(stage, &mut parts);
     }
 
     // Held indicator
@@ -140,6 +134,40 @@ fn format_stage_annotations(stage: &StageSummary) -> String {
     } else {
         let sep = format!(" {} ", "·".dimmed());
         format!("  {}", parts.join(&sep))
+    }
+}
+
+/// Session-identity annotations for an `Executing` stage: the PID (or
+/// `orphaned`), a tag when the speaking session is not of the stage's own
+/// worker kind, and the incoherence verdict when one applies.
+fn push_session_annotations(stage: &StageSummary, parts: &mut Vec<String>) {
+    // Session PID or orphaned
+    if let Some(pid) = stage.pid {
+        if stage.session_alive {
+            parts.push(format!("{}", format!("PID {pid}").dimmed()));
+        } else {
+            parts.push(format!("{}", "orphaned".red()));
+        }
+    }
+
+    // The session speaking for this stage is not of its own worker kind
+    // (e.g. an adjudication session adopted into the worker slot) —
+    // surface it before the stronger incoherence verdict below.
+    if let Some(session_type) = stage.session_type {
+        let worker_type = if matches!(stage.stage_type, StageType::Knowledge) {
+            SessionType::Knowledge
+        } else {
+            SessionType::Stage
+        };
+        if session_type != worker_type {
+            parts.push(format!(
+                "{}",
+                format!("{session_type} session").yellow().bold()
+            ));
+        }
+    }
+    if let Some(reason) = &stage.incoherence {
+        parts.push(format!("{}", format!("INCOHERENT: {reason}").red().bold()));
     }
 }
 

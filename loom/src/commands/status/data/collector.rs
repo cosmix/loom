@@ -7,6 +7,7 @@ use crate::fs::work_dir::{load_config, resolve_context_ceiling_tokens, WorkDir};
 use crate::models::constants::STALENESS_THRESHOLD_SECS;
 use crate::models::session::{Session, SessionStatus};
 use crate::models::stage::{Stage, StageStatus, StatusBucket};
+use crate::orchestrator::coherence::executing_stage_incoherence;
 use crate::orchestrator::get_merge_point;
 use crate::orchestrator::monitor::heartbeat::{read_heartbeat, Heartbeat};
 use crate::parser::frontmatter::parse_from_markdown;
@@ -145,10 +146,24 @@ fn reported_reading(session: Option<&Session>) -> Option<&Session> {
     session.filter(|s| s.context_tokens > 0 && !s.status.is_terminal())
 }
 
+/// The record `stage.session` names, if any — an exact identity match, not
+/// `session_for_stage`'s "best guess among sessions naming this stage back"
+/// fallback. Coherence judgments must see exactly what the stage POINTS AT,
+/// including a session that does not name the stage back at all.
+fn assigned_session<'a>(stage: &Stage, sessions: &'a [Session]) -> Option<&'a Session> {
+    let session_id = stage.session.as_deref()?;
+    sessions.iter().find(|s| s.id == session_id)
+}
+
 /// Build a StageSummary from a Stage and optional associated Session.
 ///
 fn build_stage_summary(stage: &Stage, sessions: &[Session], work_dir: &WorkDir) -> StageSummary {
     let session = session_for_stage(stage, sessions);
+    let assigned = assigned_session(stage, sessions);
+    // The displayed session kind must describe the session `stage.session`
+    // names when one exists, not just the best-guess `session_for_stage`.
+    let session_type = assigned.or(session).map(|s| s.session_type);
+    let incoherence = executing_stage_incoherence(stage, assigned);
 
     // A missing or frozen reading shows a blank column, not a stale number.
     let reading = reported_reading(session);
@@ -161,21 +176,12 @@ fn build_stage_summary(stage: &Stage, sessions: &[Session], work_dir: &WorkDir) 
 
     let elapsed_secs = (Utc::now() - stage.created_at).num_seconds();
 
-    // Read heartbeat for this stage
-    let heartbeat = read_heartbeat_for_stage(&stage.id, work_dir);
-
-    // Calculate staleness (seconds since last heartbeat)
-    let staleness_secs = heartbeat.as_ref().map(|hb| {
-        let age = Utc::now().signed_duration_since(hb.timestamp);
-        age.num_seconds().max(0) as u64
-    });
-
-    // Determine activity status based on session, heartbeat, and stage status
-    let activity_status = determine_activity_status(session, staleness_secs, &stage.status);
-
-    // Extract heartbeat details
-    let last_tool = heartbeat.as_ref().and_then(|hb| hb.last_tool.clone());
-    let last_activity = heartbeat.as_ref().and_then(|hb| hb.activity.clone());
+    let HeartbeatFacts {
+        staleness_secs,
+        activity_status,
+        last_tool,
+        last_activity,
+    } = heartbeat_facts(stage, session, work_dir);
 
     StageSummary {
         id: stage.id.clone(),
@@ -203,6 +209,41 @@ fn build_stage_summary(stage: &Stage, sessions: &[Session], work_dir: &WorkDir) 
         pid,
         session_alive,
         model: stage.effective_model().to_string(),
+        session_type,
+        incoherence,
+    }
+}
+
+/// Heartbeat-derived facts for a stage's [`StageSummary`]: staleness, current
+/// activity, and the last recorded tool/activity strings. Extracted from
+/// `build_stage_summary` to keep that function within the line limit.
+struct HeartbeatFacts {
+    staleness_secs: Option<u64>,
+    activity_status: ActivityStatus,
+    last_tool: Option<String>,
+    last_activity: Option<String>,
+}
+
+fn heartbeat_facts(stage: &Stage, session: Option<&Session>, work_dir: &WorkDir) -> HeartbeatFacts {
+    let heartbeat = read_heartbeat_for_stage(&stage.id, work_dir);
+
+    // Calculate staleness (seconds since last heartbeat)
+    let staleness_secs = heartbeat.as_ref().map(|hb| {
+        let age = Utc::now().signed_duration_since(hb.timestamp);
+        age.num_seconds().max(0) as u64
+    });
+
+    // Determine activity status based on session, heartbeat, and stage status
+    let activity_status = determine_activity_status(session, staleness_secs, &stage.status);
+
+    let last_tool = heartbeat.as_ref().and_then(|hb| hb.last_tool.clone());
+    let last_activity = heartbeat.as_ref().and_then(|hb| hb.activity.clone());
+
+    HeartbeatFacts {
+        staleness_secs,
+        activity_status,
+        last_tool,
+        last_activity,
     }
 }
 
