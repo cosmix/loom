@@ -41,6 +41,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -84,9 +86,32 @@ jobs:
           path: ${{ matrix.binary_name }}
           if-no-files-found: error
 
+  verify-version:
+    name: Verify binary version matches tag
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download linux binary artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: loom-linux-x86_64
+
+      - name: Compare tag to the binary's reported version
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          set -euo pipefail
+          chmod +x loom-linux-x86_64
+          TAG_NAME=${GITHUB_REF#refs/tags/}
+          EXPECTED=${TAG_NAME#v}
+          REPORTED=$(./loom-linux-x86_64 -v | head -n1 | awk '{print $2}')
+          if [ "$REPORTED" != "$EXPECTED" ]; then
+            echo "Version mismatch: tag $TAG_NAME does not match binary version $REPORTED"
+            exit 1
+          fi
+
   sign-and-release:
     name: Sign and Release
-    needs: build
+    needs: [build, verify-version]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -220,13 +245,12 @@ jobs:
           ### What's Changed
           RELEASE_NOTES_EOF
 
-      - name: Create GitHub Release (Draft)
-        if: ${{ github.event_name != 'workflow_dispatch' || !inputs.dry_run }}
+      - name: Create GitHub Release
+        if: ${{ startsWith(github.ref, 'refs/tags/') && (github.event_name != 'workflow_dispatch' || !inputs.dry_run) }}
         uses: softprops/action-gh-release@v3
         with:
           name: loom ${{ steps.version.outputs.version }}
           tag_name: ${{ steps.version.outputs.tag }}
-          draft: true
           prerelease: false
           generate_release_notes: true
           body_path: release_notes.md

@@ -7,6 +7,18 @@ pub use super::types_ops::{
 };
 pub use super::types_stage::{OutputCommands, StageCommands};
 
+/// Rendered by `-v`/`--version`: version, commit, build date, target triple.
+const VERSION_STRING: &str = concat!(
+    env!("LOOM_VERSION"),
+    " (",
+    env!("LOOM_COMMIT"),
+    ", ",
+    env!("LOOM_BUILD_DATE"),
+    ", ",
+    env!("LOOM_TARGET"),
+    ")"
+);
+
 const HELP_TEMPLATE: &str = "
    ╷
    │  ┌─┐┌─┐┌┬┐
@@ -31,12 +43,17 @@ fn positive_usize(value: &str) -> Result<usize, String> {
 #[derive(Parser)]
 #[command(name = "loom")]
 #[command(about = "Agent orchestration CLI", long_about = None)]
-#[command(version)]
+#[command(version = VERSION_STRING)]
+#[command(disable_version_flag = true)]
 #[command(help_template = HELP_TEMPLATE)]
 #[command(subcommand_help_heading = "Commands")]
 pub struct Cli {
     #[command(subcommand)]
     pub command: Commands,
+
+    /// Print version information
+    #[arg(short = 'v', long = "version", short_alias = 'V', action = clap::ArgAction::Version)]
+    pub version: Option<bool>,
 }
 
 #[derive(Subcommand)]

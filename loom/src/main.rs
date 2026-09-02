@@ -39,9 +39,9 @@ fn main() -> Result<()> {
 /// True when `first_arg` names a [`MACHINE_PROTOCOL_COMMANDS`] subcommand.
 ///
 /// Read from argv rather than from a parsed `Cli` because the decision is made
-/// before parsing. That is exact here: `Cli` declares no global options, so the
-/// first argument is always the subcommand — or a clap built-in like `--help`,
-/// which starts with `-` and matches nothing in the list.
+/// before parsing. That is exact here: the first argument is always the
+/// subcommand, or a flag starting with `-` (`--help`, `-v`, `--version`), and
+/// anything starting with `-` matches nothing in the list.
 fn writes_a_machine_protocol(first_arg: Option<&str>) -> bool {
     first_arg.is_some_and(|arg| MACHINE_PROTOCOL_COMMANDS.contains(&arg))
 }
