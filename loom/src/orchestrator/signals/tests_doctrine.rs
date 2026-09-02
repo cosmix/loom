@@ -207,6 +207,37 @@ fn block_d_agrees_across_every_surface() {
     }
 }
 
+/// The forwarder's agent definition, read from the repo copy `install.sh`
+/// installs. Shared by the two pins below.
+fn forwarder_definition() -> String {
+    agent_definitions()
+        .into_iter()
+        .find(|(label, _)| label == "agents/loom-codex-forwarder.md")
+        .map(|(_, text)| text)
+        .expect(
+            "agents/loom-codex-forwarder.md must exist - the signal doctrine \
+             spawns codex work by that agent type",
+        )
+}
+
+/// What the orchestrator harvests is the forwarder's LAST message. Two
+/// forwarders relayed the wrapper output through `SendMessage` and closed their
+/// turn with a one-line summary (2026-09-02), so the evidence trailer never
+/// reached the harvest at all. `codex-forward-guard.sh` is now registered for
+/// `SendMessage` as well; this pins the instruction that keeps a forwarder from
+/// reaching for it in the first place.
+#[test]
+fn codex_forwarder_report_is_its_final_message() {
+    let forwarder = forwarder_definition();
+    for needle in ["Your final message IS the report.", "SendMessage"] {
+        assert!(
+            forwarder.contains(needle),
+            "agents/loom-codex-forwarder.md must state {needle:?} - a relayed \
+             report loses the evidence trailer the orchestrator checks"
+        );
+    }
+}
+
 #[test]
 fn codex_forward_sentinel_agrees_across_surfaces() {
     use crate::codex::CODEX_FORWARD_SENTINEL;
@@ -222,13 +253,7 @@ fn codex_forward_sentinel_agrees_across_surfaces() {
          nothing"
     );
 
-    let (_, forwarder) = agent_definitions()
-        .into_iter()
-        .find(|(label, _)| label == "agents/loom-codex-forwarder.md")
-        .expect(
-            "agents/loom-codex-forwarder.md must exist - the signal doctrine \
-             spawns codex work by that agent type",
-        );
+    let forwarder = forwarder_definition();
     for needle in [CODEX_FORWARD_SENTINEL, "codex-forward.sh"] {
         assert!(
             forwarder.contains(needle),

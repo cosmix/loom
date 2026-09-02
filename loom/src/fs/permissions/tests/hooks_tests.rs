@@ -29,13 +29,11 @@ fn test_hooks_config_structure() {
         ("Glob", "worktree-file-guard.sh"),
         ("Grep", "worktree-file-guard.sh"),
     ];
-    assert_eq!(pre_tool.len(), 39);
+    assert_eq!(pre_tool.len(), 40);
     for (entry, (matcher, script)) in pre_tool.iter().zip(expected_prefix) {
         assert_hook(entry, matcher, script);
     }
-    for matcher in ["Bash", "Edit", "Write", "Read", "Task", "Agent"] {
-        assert!(contains_hook(pre_tool, matcher, "codex-forward-guard.sh"));
-    }
+    assert_codex_forward_guard_matchers(pre_tool);
     assert!(contains_hook(pre_tool, "Task", "spawn-guard.sh"));
     assert!(contains_hook(pre_tool, "Agent", "spawn-guard.sh"));
     assert!(contains_hook(pre_tool, "Read", "read-guard.sh"));
@@ -83,6 +81,40 @@ fn assert_multi_edit_hooks(pre_tool: &[Value]) {
             "{script} is registered for Edit but not for MultiEdit - MultiEdit bypasses it"
         );
     }
+}
+
+/// Pins the EXACT matcher set `codex-forward-guard.sh` is registered against.
+/// The guard rejects every tool a recognized forwarder calls other than the one
+/// wrapper invocation, but it only ever runs for tools it is wired to, so a
+/// matcher missing from this list is a tool the forwarder uses unguarded.
+/// `SendMessage` is on it because a forwarder that relays codex's output as a
+/// message and ends its turn with a summary of its own strips the
+/// `--- LOOM-CODEX-EVIDENCE ---` trailer from the report the orchestrator
+/// harvests. Asserted as an exact set, not with `contains`, so a matcher cannot
+/// be dropped without this failing.
+fn assert_codex_forward_guard_matchers(pre_tool: &[Value]) {
+    let mut matchers: Vec<&str> = pre_tool
+        .iter()
+        .filter(|entry| hook_command(entry).ends_with("codex-forward-guard.sh"))
+        .map(|entry| entry["matcher"].as_str().unwrap())
+        .collect();
+    matchers.sort_unstable();
+    assert_eq!(
+        matchers,
+        [
+            "Agent",
+            "Bash",
+            "Edit",
+            "MultiEdit",
+            "NotebookEdit",
+            "Read",
+            "SendMessage",
+            "Task",
+            "Write",
+        ],
+        "codex-forward-guard.sh matcher set changed - every entry here is a \
+         tool a codex forwarder would otherwise call unguarded"
+    );
 }
 
 fn assert_notebook_edit_hooks(pre_tool: &[Value]) {

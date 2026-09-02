@@ -19,6 +19,11 @@ pub(super) fn build(hooks_dir: &str) -> Value {
 /// write tool explicitly. `MultiEdit` mutates files exactly as `Edit` does and
 /// carries the same `tool_input.file_path`, so it is registered alongside every
 /// `Edit` entry below - an unpaired `Edit` entry is a guard MultiEdit bypasses.
+///
+/// The same reasoning puts `SendMessage` under `codex-forward-guard.sh`: a
+/// forwarder that relays codex's output through a message and ends its turn
+/// with a summary strips the `--- LOOM-CODEX-EVIDENCE ---` trailer from the
+/// report the orchestrator actually harvests (observed 2026-09-02).
 fn pre_tool_hooks(hooks_dir: &str) -> Vec<Value> {
     const HOOKS: &[(&str, &str)] = &[
         ("AskUserQuestion", "ask-user-pre.sh"),
@@ -50,6 +55,7 @@ fn pre_tool_hooks(hooks_dir: &str) -> Vec<Value> {
         ("Read", "codex-forward-guard.sh"),
         ("Task", "codex-forward-guard.sh"),
         ("Agent", "codex-forward-guard.sh"),
+        ("SendMessage", "codex-forward-guard.sh"),
         ("Task", "spawn-guard.sh"),
         ("Agent", "spawn-guard.sh"),
         ("Read", "read-guard.sh"),

@@ -140,7 +140,13 @@ printf '%s\n' '#!/usr/bin/env bash' 'exit 71' >"$DIRECT_BIN_DIR/sandbox-exec"
 chmod +x "$DIRECT_BIN_DIR/sandbox-exec"
 
 CAPTURE_DIRECT="$TMP/argv-direct"
+# `codex exec` consumes an open stdin as extra prompt input and blocks until
+# EOF, so the wrapper must hand it /dev/null. The stub exits 66 when its stdin
+# is anything else, and the wrapper below is invoked with stdin on a regular
+# file - without that the case would pass by accident under any harness whose
+# own stdin is already closed.
 printf '%s\n' '#!/usr/bin/env bash' 'printf '\''%q\n'\'' "$@" >"$CAPTURE_DIRECT"' \
+	'[[ /dev/stdin -ef /dev/null ]] || exit 66' \
 	'printf '\''final message\n'\''' >"$DIRECT_BIN_DIR/codex"
 chmod +x "$DIRECT_BIN_DIR/codex"
 
@@ -164,10 +170,24 @@ ROLLOUT_A="$SESSIONS_DIR/rollout-2026-09-02T00-00-00-a.jsonl"
 printf '%s\n' '{}' >"$ROLLOUT_A"
 touch -t 202601020000 "$ROLLOUT_A"
 
+STDIN_MARKER="$TMP/stdin-marker"
+printf '%s\n' 'caller stdin left open' >"$STDIN_MARKER"
+
 STDOUT_DIRECT="$TMP/stdout-direct"
+direct_status=0
 HOME="$HOME_DIR" PATH="$DIRECT_BIN_DIR:$PATH" CAPTURE_DIRECT="$CAPTURE_DIRECT" TMP="$TMP" \
 	CODEX_HOME="$CODEX_HOME_DIR" \
-	bash "$WRAPPER" task "$prompt" --model gpt-5.6-terra --effort xhigh --write >"$STDOUT_DIRECT"
+	bash "$WRAPPER" task "$prompt" --model gpt-5.6-terra --effort xhigh --write \
+	<"$STDIN_MARKER" >"$STDOUT_DIRECT" || direct_status=$?
+
+if [[ "$direct_status" -eq 66 ]]; then
+	printf '%s\n' 'FAIL: codex exec inherited the caller stdin; the direct lane needs </dev/null'
+	exit 1
+fi
+if [[ "$direct_status" -ne 0 ]]; then
+	printf '%s\n' "FAIL: direct-mode wrapper exit status was $direct_status, expected 0"
+	exit 1
+fi
 
 [[ -f "$CAPTURE_DIRECT" ]]
 first_line=$(head -n 1 "$CAPTURE_DIRECT")

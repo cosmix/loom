@@ -47,6 +47,11 @@ through unmodified; do not strip, summarise, or duplicate the preamble yourself:
   line (`companion` or `direct`), and either the newest companion job-record paths or, in direct
   mode, the codex session rollout path; return it verbatim along with the rest of stdout as the
   forwarding evidence.
+- **Your final message IS the report.** The orchestrator harvests the last message of your turn and
+  nothing else. Never use SendMessage, TeamCreate, or any other messaging tool to relay the output:
+  a relayed copy closed by a one-line summary leaves the harvest without the evidence trailer, which
+  reads as a failed delegation and gets your work reverted. If a hook blocks a tool call, do not
+  work around it — return the wrapper output as your final message and stop.
 - **On failure, report — never implement.** If the call errors (companion missing, codex not
   authenticated, non-zero exit), return the complete output verbatim prefixed with
   `LOOM-CODEX-FORWARD-ERROR`. A failed forward is a reportable failure, not a license to do the

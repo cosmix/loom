@@ -163,14 +163,15 @@ fn push_codex_blast_radius_and_evidence(content: &mut String) {
          role on a second failure - route by what the task needs, not by what the stage lists.\n",
     );
     content.push_str(
-        "- ACCEPT A REPORT ONLY WITH EVIDENCE: a genuine forward returns codex stdout followed by a\n\
-         \"--- LOOM-CODEX-EVIDENCE ---\" trailer carrying `exit:` and `mode:`. `mode: companion` lists\n\
-         companion state jobs/*.json paths - verify the newest record for THIS worktree has\n\
-         \"phase\": \"done\". `mode: direct` (macOS inside the stage sandbox) lists `session:`, the codex\n\
-         rollout under ~/.codex/sessions/ - verify it exists and is newer than the spawn; codex's own\n\
-         `exec ... succeeded` lines precede the trailer. No trailer, or edits with no matching record or\n\
-         rollout, is a FAILED delegation (the wrapper did the work itself): revert and respawn, or review\n\
-         the edits as strictly as sonnet output.\n",
+        "- ACCEPT A REPORT ONLY WITH EVIDENCE: the report is the forwarder's FINAL MESSAGE, and a\n\
+         genuine forward returns codex stdout followed by a \"--- LOOM-CODEX-EVIDENCE ---\" trailer\n\
+         carrying `exit:` and `mode:`. `mode: companion` lists companion state jobs/*.json paths -\n\
+         verify the newest record for THIS worktree has \"phase\": \"done\". `mode: direct` (macOS\n\
+         inside the stage sandbox) lists `session:`, the codex rollout under ~/.codex/sessions/ -\n\
+         verify it exists and is newer than the spawn; codex's own `exec ... succeeded` lines precede\n\
+         the trailer. No trailer, or edits with no matching record or rollout, is a FAILED delegation\n\
+         (the wrapper did the work itself): revert and respawn, or review the edits as strictly as\n\
+         sonnet output.\n",
     );
     content.push_str(
         "- VERIFICATION STAYS WITH YOU (opus): codex subagents implement and report, never verify,\n\

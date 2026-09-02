@@ -132,8 +132,15 @@ print_newest() {
 if nested_seatbelt_refused; then
 	printf 'note: the outer sandbox refuses a nested Seatbelt profile; running codex exec with --sandbox danger-full-access (the outer sandbox is the boundary)\n' >&2
 	status=0
+	# stdin is closed deliberately: `codex exec` treats an open stdin as extra
+	# prompt input ("Reading additional input from stdin...") and blocks until
+	# EOF. Under the Bash tool stdin is already at EOF, so the hang only shows
+	# on a caller that keeps it open - which is exactly the caller that cannot
+	# report why it stalled. The companion lane needs no such redirect: it takes
+	# the prompt positionally and only falls back to stdin when that is empty,
+	# and it gives its own child pipes rather than this process's stdin.
 	codex exec --sandbox danger-full-access --skip-git-repo-check \
-		--model "$model" -c "model_reasoning_effort=\"$effort\"" -- "$task" || status=$?
+		--model "$model" -c "model_reasoning_effort=\"$effort\"" -- "$task" </dev/null || status=$?
 	printf '\n--- LOOM-CODEX-EVIDENCE ---\n'
 	printf 'exit: %s\n' "$status"
 	printf 'mode: direct (codex exec --sandbox danger-full-access; nested Seatbelt refused)\n'
