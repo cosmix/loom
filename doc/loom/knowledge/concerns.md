@@ -750,8 +750,8 @@ healthy graph. In a checkout with no `.work/` (so no context store, so no graph)
 Brief therefore prints `Structural: current` with no `DEGRADED` marker while serving
 knowledge-only results.
 
-Observed 2026-09-01 in the loom repo itself: the hook was given the query *how does
-`ensure_work_symlink` plant the worktree symlink and what calls it* — written to need the source
+Observed 2026-09-01 in the loom repo itself: the hook was given the query _how does
+`ensure_work_symlink` plant the worktree symlink and what calls it_ — written to need the source
 lane — and returned five knowledge chunks, 130 omitted, and zero `Channel::Source` items, with a
 clean status line. `loom map --outline/--find-all/--impact` all failed with
 `.work directory does not exist` at the same time.

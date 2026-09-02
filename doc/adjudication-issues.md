@@ -149,6 +149,7 @@ incumbent is a different, already-tracked session), and it cannot tell its calle
 ERROR level and returns `()`.
 
 **Fix:** two parts.
+
 1. `insert_active_session` should return a result, and `adopt_live_session_if_present` should
    roll back the stage mutation (restore prior status and session) and return `Ok(false)` or an
    error when the incumbent is a different session — an adoption that could not complete must
@@ -368,7 +369,6 @@ One further item, outside any amendment's one-stage scope: the identical
 `./hooks/tests/run-all.sh` criterion appears again at
 `doc/plans/IN_PROGRESS-PLAN-release-versioning-config-and-loom-dir.md:2332` for a later stage
 and will fail there in exactly the same way.
-
 
 ---
 
