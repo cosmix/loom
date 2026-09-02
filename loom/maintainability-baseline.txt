@@ -26,7 +26,7 @@ file src/daemon/server/status.rs 416
 file src/fs/knowledge/tests/catalog.rs 402
 file src/fs/locking.rs 499
 file src/fs/permissions/hooks.rs 446
-file src/fs/permissions/settings.rs 444
+file src/fs/permissions/settings.rs 470
 file src/fs/permissions/sync.rs 654
 file src/fs/plan_lifecycle.rs 610
 file src/fs/safe_fs.rs 1019
@@ -162,8 +162,8 @@ function src/fs/memory/export.rs format_memory_for_signal 92
 function src/fs/memory/parser.rs parse_journal 108
 function src/fs/memory/query.rs generate_summary 52
 function src/fs/permissions/hooks.rs migrate_old_hook_paths 84
-function src/fs/permissions/settings.rs ensure_loom_hooks_local 80
-function src/fs/permissions/settings.rs ensure_loom_permissions_to 90
+function src/fs/permissions/settings.rs ensure_loom_hooks_local_inner 82
+function src/fs/permissions/settings.rs ensure_loom_permissions_inner 98
 function src/fs/permissions/sync.rs merge_permissions_with_lock 70
 function src/fs/permissions/sync.rs sync_worktree_permissions_with_working_dir 75
 function src/fs/permissions/sync.rs transform_worktree_path 65
