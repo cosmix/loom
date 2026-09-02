@@ -58,22 +58,32 @@ fn print_resolved_renders_every_key_with_a_set_value_applied() {
     assert!(out.contains("[update]"), "{out}");
 }
 
-/// `execute()`'s `is_terminal()` gate makes a bare `loom config` fall through
-/// to the `(None, _) => print_resolved()?` arm whenever stdout is not a tty
-/// (a pipe, a redirect, or a non-interactive caller). `execute()` itself is
-/// not called here — whether THIS test binary's stdout is a tty depends on
-/// how it was invoked, and if it happened to be one, calling `execute()`
-/// would launch the raw-mode TUI. `print_resolved()` is the function that
-/// gate dispatches to, so covering it directly (with no key set, mirroring a
-/// truly bare invocation) covers the reachable non-tty behavior without
-/// depending on environment-fragile tty state.
+fn args(key: Option<&str>, list: bool, print: bool) -> ConfigArgs {
+    ConfigArgs {
+        key: key.map(str::to_string),
+        value: None,
+        list,
+        print,
+    }
+}
+
+/// `should_open_tui` is the gate `execute()` uses to decide between the
+/// raw-mode TUI and the non-interactive branches: only a bare invocation (no
+/// key, `--list`, or `--print`) at a real terminal opens it. Driving the
+/// function directly, with the tty state as a parameter, covers every
+/// combination without faking a terminal or risking the TUI launching inside
+/// the test binary.
 #[test]
-fn execute_non_tty_default_gate_prints_resolved_toml_with_no_flags() {
-    let (_temp, _guard) = redirect();
-    let out = print_resolved().unwrap();
-    assert!(out.contains("[update]"), "{out}");
-    assert!(out.contains("[terminal]"), "{out}");
-    assert!(out.contains("[context]"), "{out}");
+fn should_open_tui_only_for_a_bare_invocation_at_a_tty() {
+    assert!(should_open_tui(&args(None, false, false), true));
+
+    assert!(!should_open_tui(&args(None, false, false), false));
+    assert!(!should_open_tui(
+        &args(Some("update.check_interval_hours"), false, false),
+        true
+    ));
+    assert!(!should_open_tui(&args(None, true, false), true));
+    assert!(!should_open_tui(&args(None, false, true), true));
 }
 
 #[test]
