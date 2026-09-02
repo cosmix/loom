@@ -12,6 +12,9 @@ use super::types::{
     StageSandboxConfig, ValidationError,
 };
 
+mod acceptance_command;
+pub(crate) use acceptance_command::validate_acceptance_criterion;
+
 /// Reject commands listed in `excluded_commands`: command-prefix exclusions run
 /// outside the host sandbox and cannot safely authorize extensible executors,
 /// VCS, build tools, package managers, or the loom CLI. This is the single
@@ -70,43 +73,6 @@ pub fn unsafe_plan_reasons(metadata: &LoomMetadata) -> Vec<String> {
     }
 
     reasons
-}
-
-/// Validate a single acceptance criterion
-///
-/// Acceptance criteria must:
-/// - Not have an empty or whitespace-only command
-/// - Not contain control characters (except whitespace)
-/// - Have a reasonable command length (max 1024 chars)
-pub(crate) fn validate_acceptance_criterion(
-    criterion: &super::types::AcceptanceCriterion,
-) -> Result<(), String> {
-    let command = criterion.command();
-
-    // Check for empty or whitespace-only
-    let trimmed = command.trim();
-    if trimmed.is_empty() {
-        return Err("acceptance criterion command cannot be empty".to_string());
-    }
-
-    // Check length limit
-    if command.len() > 1024 {
-        return Err(format!(
-            "acceptance criterion command too long ({} chars, max 1024)",
-            command.len()
-        ));
-    }
-
-    // Check for control characters (except tab, newline, carriage return)
-    for (idx, ch) in command.chars().enumerate() {
-        if ch.is_control() && ch != '\t' && ch != '\n' && ch != '\r' {
-            return Err(format!(
-                "acceptance criterion contains control character at position {idx}"
-            ));
-        }
-    }
-
-    Ok(())
 }
 
 /// Validate a glob pattern is syntactically correct

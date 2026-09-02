@@ -37,7 +37,7 @@ fn test_validate_acceptance_criterion_empty() {
 
 #[test]
 fn test_validate_acceptance_criterion_too_long() {
-    let long_criterion = "a".repeat(1025);
+    let long_criterion = "a".repeat(4097);
     let result = validate_acceptance_criterion(&AcceptanceCriterion::Simple(long_criterion));
     assert!(result.is_err());
     assert!(result.unwrap_err().contains("too long"));

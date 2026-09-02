@@ -133,10 +133,10 @@ fn test_allowed_whitespace_in_acceptance() {
     }
 }
 
-/// Test that acceptance criteria over 1024 chars are rejected
+/// Test that acceptance criteria over 4096 chars are rejected
 #[test]
 fn test_acceptance_criterion_too_long_rejected() {
-    let long_criterion = "a".repeat(1025);
+    let long_criterion = "a".repeat(4097);
 
     let mut stage = create_valid_stage("test-stage", "Test Stage");
     stage
@@ -148,7 +148,7 @@ fn test_acceptance_criterion_too_long_rejected() {
 
     assert!(
         result.is_err(),
-        "Criterion over 1024 chars should be rejected"
+        "Criterion over 4096 chars should be rejected"
     );
     let errors = result.unwrap_err();
     assert!(errors.iter().any(|e| e.message.contains("too long")));
