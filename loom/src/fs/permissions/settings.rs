@@ -208,12 +208,28 @@ pub fn ensure_loom_permissions(repo_root: &Path) -> Result<()> {
 /// Testable variant: pass `Some(dir)` to redirect hook installation to a temp directory.
 /// Production callers use `ensure_loom_permissions` which passes `None` (installs to ~/.claude/hooks/loom/).
 pub fn ensure_loom_permissions_to(repo_root: &Path, hooks_dir: Option<&Path>) -> Result<()> {
+    ensure_loom_permissions_inner(repo_root, hooks_dir, true)
+}
+
+/// Quiet variant of [`ensure_loom_permissions_to`] for `loom init`'s
+/// unattended workspace-repair pass: does the identical work but prints
+/// nothing, so `loom init` can render its own single "Repaired: ..." line
+/// instead of these diagnostics.
+pub fn ensure_loom_permissions_quiet(repo_root: &Path) -> Result<()> {
+    ensure_loom_permissions_inner(repo_root, None, false)
+}
+
+fn ensure_loom_permissions_inner(
+    repo_root: &Path,
+    hooks_dir: Option<&Path>,
+    verbose: bool,
+) -> Result<()> {
     // Install loom hooks
     let hooks_installed = match hooks_dir {
         Some(dir) => install_loom_hooks_to(dir)?,
         None => install_loom_hooks()?,
     };
-    if hooks_installed > 0 {
+    if verbose && hooks_installed > 0 {
         println!("  Installed {hooks_installed} loom hook(s)");
     }
 
@@ -277,23 +293,27 @@ pub fn ensure_loom_permissions_to(repo_root: &Path, hooks_dir: Option<&Path>) ->
         locked_write(&settings_path, &content)
             .with_context(|| format!("Failed to write {}", settings_path.display()))?;
 
-        if added_permissions > 0 {
-            println!("  Updated .claude/settings.json with {added_permissions} loom permission(s)");
+        if verbose {
+            if added_permissions > 0 {
+                println!(
+                    "  Updated .claude/settings.json with {added_permissions} loom permission(s)"
+                );
+            }
+            if removed_permissions > 0 {
+                println!("  Removed {removed_permissions} inert .loom/work write grant(s)");
+            }
+            if migrated {
+                println!(
+                    "  Migrated hooks/env from .claude/settings.json to .claude/settings.local.json"
+                );
+            }
         }
-        if removed_permissions > 0 {
-            println!("  Removed {removed_permissions} inert .loom/work write grant(s)");
-        }
-        if migrated {
-            println!(
-                "  Migrated hooks/env from .claude/settings.json to .claude/settings.local.json"
-            );
-        }
-    } else {
+    } else if verbose {
         println!("  Claude Code permissions already configured");
     }
 
     // Write hooks and env to settings.local.json
-    ensure_loom_hooks_local(repo_root)?;
+    ensure_loom_hooks_local_inner(repo_root, verbose)?;
 
     Ok(())
 }
@@ -305,6 +325,10 @@ pub fn ensure_loom_permissions_to(repo_root: &Path, hooks_dir: Option<&Path>) ->
 /// runtime permissions). User-specific paths in hooks make this file
 /// unsuitable for committing to git.
 pub fn ensure_loom_hooks_local(repo_root: &Path) -> Result<()> {
+    ensure_loom_hooks_local_inner(repo_root, true)
+}
+
+fn ensure_loom_hooks_local_inner(repo_root: &Path, verbose: bool) -> Result<()> {
     let settings_local_path = repo_root.join(".claude").join("settings.local.json");
     let mut settings = load_settings_or_default(&settings_local_path)?;
 
@@ -375,10 +399,12 @@ pub fn ensure_loom_hooks_local(repo_root: &Path) -> Result<()> {
         locked_write(&settings_local_path, &content)
             .with_context(|| format!("Failed to write {}", settings_local_path.display()))?;
 
-        for (_, change) in changes.iter().filter(|(changed, _)| *changed) {
-            println!("  {change} in .claude/settings.local.json");
+        if verbose {
+            for (_, change) in changes.iter().filter(|(changed, _)| *changed) {
+                println!("  {change} in .claude/settings.local.json");
+            }
         }
-    } else {
+    } else if verbose {
         println!("  Hooks and env vars already configured in .claude/settings.local.json");
     }
 

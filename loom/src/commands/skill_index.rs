@@ -41,21 +41,31 @@ const STOPWORDS: &[&str] = &[
 /// Execute the skill-index command
 pub fn execute() -> Result<()> {
     let home = dirs::home_dir().context("Cannot determine home directory")?;
-    execute_in_home(&home)
+    execute_in_home(&home, true)
 }
 
-fn execute_in_home(home: &Path) -> Result<()> {
+/// Quiet variant for `loom init`'s unattended workspace-repair pass: does the
+/// identical work but prints nothing, so `loom init` can render its own
+/// single "Repaired: ..." line instead of these diagnostics.
+pub fn execute_quiet() -> Result<()> {
+    let home = dirs::home_dir().context("Cannot determine home directory")?;
+    execute_in_home(&home, false)
+}
+
+fn execute_in_home(home: &Path, verbose: bool) -> Result<()> {
     let skills_dir = home.join(".claude/skills");
     let catalog_dir = crate::skills::catalog_dir_for(&skills_dir);
     let output_dir = home.join(".claude/hooks/loom");
     let output_file = output_dir.join("skill-keywords.json");
 
     if !skills_dir.is_dir() && !catalog_dir.is_dir() {
-        println!(
-            "Skills directory not found: {} or {}",
-            skills_dir.display(),
-            catalog_dir.display()
-        );
+        if verbose {
+            println!(
+                "Skills directory not found: {} or {}",
+                skills_dir.display(),
+                catalog_dir.display()
+            );
+        }
         return Ok(());
     }
 
@@ -67,11 +77,13 @@ fn execute_in_home(home: &Path) -> Result<()> {
     fs::write(&output_file, &json)
         .with_context(|| format!("Failed to write {}", output_file.display()))?;
 
-    println!(
-        "Built skill keyword index: {} keywords from {} skills",
-        index.len(),
-        skill_count
-    );
+    if verbose {
+        println!(
+            "Built skill keyword index: {} keywords from {} skills",
+            index.len(),
+            skill_count
+        );
+    }
     Ok(())
 }
 

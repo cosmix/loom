@@ -4,11 +4,12 @@
 //! each is reported with manual remediation guidance.
 
 use std::path::Path;
+use std::process::Command;
 
 use crate::daemon::{DaemonServer, DaemonStatus};
 use crate::fs::work_dir::WorkDir;
 
-use super::{find_loom_run_pids, RepairIssue, Severity};
+use super::{RepairIssue, Severity};
 
 /// Detect daemon singleton and socket failure modes for `repo_root`.
 pub(super) fn check_daemon_health(repo_root: &Path) -> Vec<RepairIssue> {
@@ -92,4 +93,60 @@ fn check_daemon_socket_and_pid(work_dir: &Path) -> Vec<RepairIssue> {
         });
     }
     issues
+}
+
+/// Enumerate the PIDs of currently-running `loom run` processes.
+///
+/// Uses `ps aux` (portable across Linux and macOS, matching the existing
+/// process-scan pattern in `native/pid_tracking.rs`) and matches command lines
+/// containing the `loom run` invocation, excluding this `loom repair` process.
+/// On any `ps` failure returns an empty vec — the daemon-health checks degrade to
+/// "no duplicates detected" rather than failing the whole repair run.
+fn find_loom_run_pids() -> Vec<u32> {
+    let our_pid = std::process::id();
+    let output = match Command::new("ps")
+        .arg("axww")
+        .arg("-o")
+        .arg("pid=,args=")
+        .output()
+    {
+        Ok(o) if o.status.success() => o,
+        _ => return Vec::new(),
+    };
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let mut pids = Vec::new();
+    for line in stdout.lines() {
+        let line = line.trim_start();
+        let mut parts = line.splitn(2, char::is_whitespace);
+        let pid: u32 = match parts.next().and_then(|p| p.trim().parse().ok()) {
+            Some(p) => p,
+            None => continue,
+        };
+        let args = parts.next().unwrap_or("");
+        if pid == our_pid {
+            continue;
+        }
+        // Match the `loom run` invocation. Require the program component to end in
+        // `loom` and the next token to be `run` so unrelated commands that merely
+        // mention the words (e.g. an editor on this file) are not counted.
+        if is_loom_run_cmdline(args) {
+            pids.push(pid);
+        }
+    }
+    pids
+}
+
+/// Return true if `args` is a `loom run ...` command line.
+pub(super) fn is_loom_run_cmdline(args: &str) -> bool {
+    let mut tokens = args.split_whitespace();
+    let Some(program) = tokens.next() else {
+        return false;
+    };
+    // The program token may be a path like `/usr/local/bin/loom` or `loom`.
+    let prog_name = program.rsplit('/').next().unwrap_or(program);
+    if prog_name != "loom" {
+        return false;
+    }
+    tokens.next() == Some("run")
 }

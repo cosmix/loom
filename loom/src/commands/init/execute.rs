@@ -1,5 +1,6 @@
 //! Main execution entry point for loom init command.
 
+use crate::commands::repair::workspace::{repair_workspace, AppliedRepair};
 use crate::fs::permissions::{ensure_loom_permissions, migrate_legacy_trust};
 use crate::fs::work_dir::WorkDir;
 use crate::fs::work_integrity::validate_work_dir_state;
@@ -64,21 +65,27 @@ impl Drop for InitGuard {
 /// * `clean` - If true, clean up stale resources before initialization
 /// * `backend` - Terminal backend for sessions (native|tmux); `None` prompts
 ///   interactively on a TTY, or defaults to native otherwise
+/// * `no_repair` - Skip the automatic workspace repair pass
 pub fn execute(
     plan_path: Option<PathBuf>,
     clean: bool,
     backend: Option<String>,
     allow_unsafe_plan: bool,
+    no_repair: bool,
 ) -> Result<()> {
     let repo_root = std::env::current_dir()?;
     let repo_bootstrap = crate::git::ensure_repo_ready_for_worktrees(&repo_root)?;
 
-    // Validate the state directory's state before proceeding
+    // Repair the workspace BEFORE the validator judges it - see `startup_repairs`.
+    let repairs = startup_repairs(&repo_root, no_repair)?;
+
     validate_work_dir_state(&repo_root)?;
 
     print_header();
-
     print_repo_bootstrap(repo_bootstrap);
+    for line in startup_repair_lines(&repairs) {
+        println!("{line}");
+    }
 
     println!("\n{}", "Cleanup".bold());
     println!("{}", "─".repeat(40).dimmed());
@@ -193,6 +200,33 @@ pub fn execute(
     guard.disarm();
 
     Ok(())
+}
+
+/// Repair the workspace before anything judges it.
+///
+/// Placement is load-bearing: the caller runs this AFTER
+/// `ensure_repo_ready_for_worktrees` (a workspace can only be repaired inside a
+/// real repository) and BEFORE `validate_work_dir_state`, which bails on a
+/// `.loom/work` symlink in the main repo - the exact failure this pass heals.
+/// Called after the validator, it would never run on that case.
+///
+/// `no_repair` is the `--no-repair` opt-out: no checks, no fixes, nothing
+/// touched.
+pub(super) fn startup_repairs(repo_root: &Path, no_repair: bool) -> Result<Vec<AppliedRepair>> {
+    if no_repair {
+        return Ok(Vec::new());
+    }
+    repair_workspace(repo_root)
+}
+
+/// One line per repair applied - and NOTHING at all when none was. `loom init`
+/// is run constantly, and a repair banner on every invocation trains people to
+/// ignore it.
+pub(super) fn startup_repair_lines(applied: &[AppliedRepair]) -> Vec<String> {
+    applied
+        .iter()
+        .map(|repair| format!("  {} Repaired: {}", "✓".green().bold(), repair.description))
+        .collect()
 }
 
 /// Resolve the terminal backend choice for `loom init`.
