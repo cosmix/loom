@@ -200,7 +200,7 @@ fn session_records_verdict(
     let draft = verdict_draft_file(work, stage_id, dispute_id);
     std::fs::create_dir_all(draft.parent().unwrap()).unwrap();
     std::fs::write(&draft, verdict.to_string()).unwrap();
-    record_verdict(work, stage_id, dispute_id, &draft).expect("recording the verdict must succeed")
+    record_verdict(work, stage_id, dispute_id, &draft, None).expect("verdict record must succeed")
 }
 
 /// One full round trip for a dispute already on disk: the daemon offers a

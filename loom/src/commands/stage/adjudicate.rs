@@ -51,11 +51,15 @@ pub fn adjudicate(stage_id: String, dispute_id: u32, verdict_path: PathBuf) -> R
     refuse_worktree_session(std::env::var("LOOM_WORKTREE_PATH").ok().as_deref())?;
 
     let work_dir = crate::commands::common::work_dir_path()?;
-    match record_verdict(&work_dir, &stage_id, dispute_id, &verdict_path)? {
+    let session_id = std::env::var("LOOM_SESSION_ID")
+        .ok()
+        .filter(|s| !s.is_empty());
+    match record_verdict(&work_dir, &stage_id, dispute_id, &verdict_path, session_id)? {
         AdjudicateOutcome::Recorded => {
-            println!("Recorded the verdict for stage '{stage_id}' dispute {dispute_id}.");
             println!(
-                "The orchestrator applies it on its next poll; run `loom status` to watch the stage."
+                "Recorded the verdict for stage '{stage_id}' dispute {dispute_id}. The \
+                 orchestrator applies it on its next poll and then closes this session; \
+                 nothing further is needed here."
             );
         }
         AdjudicateOutcome::Escalated(reason) => {
@@ -87,6 +91,7 @@ pub fn record_verdict(
     stage_id: &str,
     dispute_id: u32,
     verdict_path: &Path,
+    session_id: Option<String>,
 ) -> Result<AdjudicateOutcome> {
     ensure_recordable(work_dir, stage_id, dispute_id)?;
 
@@ -103,6 +108,7 @@ pub fn record_verdict(
                 &v,
                 &resolve_model(work_dir),
                 attempt,
+                session_id,
             )
             .context("Failed to write the verdict record")?;
             Ok(AdjudicateOutcome::Recorded)
@@ -210,7 +216,7 @@ mod tests {
         let json = write_json(&work, &reject_json());
 
         assert_eq!(
-            record_verdict(&work, "s1", 1, &json).unwrap(),
+            record_verdict(&work, "s1", 1, &json, Some("session-test".to_string())).unwrap(),
             AdjudicateOutcome::Recorded
         );
 
@@ -222,6 +228,7 @@ mod tests {
             serde_yaml::from_str(content.split("---").nth(1).unwrap()).unwrap();
         assert_eq!(record.stage_id, "s1");
         assert_eq!(record.adjudicator_attempt_count, 1);
+        assert_eq!(record.session_id.as_deref(), Some("session-test"));
     }
 
     #[test]
@@ -229,7 +236,7 @@ mod tests {
         let (_tmp, work) = setup(StageStatus::Executing);
         write_request(&work, 1);
         let json = write_json(&work, &reject_json());
-        let err = record_verdict(&work, "s1", 1, &json).unwrap_err();
+        let err = record_verdict(&work, "s1", 1, &json, None).unwrap_err();
         assert!(format!("{err:#}").contains("not NeedsAdjudication"));
         assert!(!verdict_file(&work.join("disputes"), "s1", 1).exists());
     }
@@ -238,7 +245,7 @@ mod tests {
     fn refuses_a_verdict_for_a_dispute_that_was_never_filed() {
         let (_tmp, work) = setup(StageStatus::NeedsAdjudication);
         let json = write_json(&work, &reject_json());
-        let err = record_verdict(&work, "s1", 7, &json).unwrap_err();
+        let err = record_verdict(&work, "s1", 7, &json, None).unwrap_err();
         assert!(format!("{err:#}").contains("No readable dispute 7"));
     }
 
@@ -247,9 +254,9 @@ mod tests {
         let (_tmp, work) = setup(StageStatus::NeedsAdjudication);
         write_request(&work, 1);
         let json = write_json(&work, &reject_json());
-        record_verdict(&work, "s1", 1, &json).unwrap();
+        record_verdict(&work, "s1", 1, &json, None).unwrap();
 
-        let err = record_verdict(&work, "s1", 1, &json).unwrap_err();
+        let err = record_verdict(&work, "s1", 1, &json, None).unwrap_err();
         assert!(format!("{err:#}").contains("already been recorded"));
     }
 
@@ -264,7 +271,7 @@ mod tests {
             &serde_json::json!({"verdict": "needs-more-evidence", "questions": []}),
         );
 
-        match record_verdict(&work, "s1", 1, &json).unwrap() {
+        match record_verdict(&work, "s1", 1, &json, None).unwrap() {
             AdjudicateOutcome::Escalated(reason) => assert!(!reason.is_empty()),
             other => panic!("expected escalation, got {other:?}"),
         }
@@ -281,7 +288,7 @@ mod tests {
         std::fs::write(&path, "I could not decide.").unwrap();
 
         assert_eq!(
-            record_verdict(&work, "s1", 1, &path).unwrap(),
+            record_verdict(&work, "s1", 1, &path, None).unwrap(),
             AdjudicateOutcome::Recorded
         );
         let content =

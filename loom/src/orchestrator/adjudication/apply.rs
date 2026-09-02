@@ -24,20 +24,10 @@ use crate::models::stage::{Stage, StageStatus};
 use crate::plan::amendment::{apply_amendment, AmendmentField, AmendmentPatch, AmendmentRequest};
 use crate::verify::transitions::{load_stage, update_stage};
 
-use super::scan::{read_verdict_record, scan_pending_requests, scan_pending_verdicts};
+use super::scan::read_verdict_record;
 use super::{feedback, resolve_plan_path, AdjudicatorRegistry, MAX_EVIDENCE_ROUNDS};
 
 impl AdjudicatorRegistry {
-    /// `(stage_id, dispute_id)` pairs with a written verdict that hasn't been
-    /// applied yet (no `applied.marker`).
-    pub fn pending_verdicts(&self, work_dir: &Path) -> Result<Vec<(String, u32)>> {
-        let disputes_root = work_dir.join("disputes");
-        if !disputes_root.exists() {
-            return Ok(Vec::new());
-        }
-        scan_pending_verdicts(&disputes_root)
-    }
-
     /// Apply verdict files that haven't been applied yet (no
     /// `applied.marker`). Idempotent under crash recovery: a `.applying`
     /// marker is written before mutating stage state and removed only
@@ -327,10 +317,7 @@ fn requeue_or_hold_for_remaining_disputes(work_dir: &Path, stage: &mut Stage) ->
         );
         return Ok(());
     }
-    let remaining = scan_pending_requests(&work_dir.join("disputes"))?
-        .into_iter()
-        .filter(|(stage_id, _)| stage_id == &stage.id)
-        .count();
+    let remaining = AdjudicatorRegistry::new().unanswered_disputes(work_dir, &stage.id)?;
     if remaining == 0 {
         return transition_to_queued(stage);
     }

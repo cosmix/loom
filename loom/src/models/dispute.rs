@@ -85,6 +85,12 @@ pub struct DisputeVerdictRecord {
     pub adjudicator_attempt_count: u32,
     pub created_at: DateTime<Utc>,
     pub model: String,
+    /// The adjudication session that recorded the verdict, from
+    /// `LOOM_SESSION_ID` in the judge's environment; the daemon retires that
+    /// session once the verdict is applied. Absent on records written before
+    /// this field existed.
+    #[serde(default)]
+    pub session_id: Option<String>,
 }
 
 /// Layout helpers for the on-disk dispute directory:
@@ -146,6 +152,7 @@ mod tests {
             adjudicator_attempt_count: 1,
             created_at: Utc::now(),
             model: "claude-sonnet".to_string(),
+            session_id: Some("session-abc".to_string()),
         };
         let y = serde_yaml::to_string(&v).unwrap();
         let back: DisputeVerdictRecord = serde_yaml::from_str(&y).unwrap();

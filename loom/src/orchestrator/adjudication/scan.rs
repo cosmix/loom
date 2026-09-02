@@ -9,6 +9,8 @@ use std::path::Path;
 
 use crate::models::dispute::{DisputeRequest, DisputeVerdictRecord};
 
+use super::AdjudicatorRegistry;
+
 /// Discover `(stage_id, dispute_id)` pairs that have `request.md` but
 /// no `verdict.md`.
 pub(super) fn scan_pending_requests(disputes_root: &Path) -> Result<Vec<(String, u32)>> {
@@ -93,6 +95,45 @@ pub(super) fn scan_pending_verdicts(disputes_root: &Path) -> Result<Vec<(String,
     }
     pending.sort();
     Ok(pending)
+}
+
+impl AdjudicatorRegistry {
+    /// `(stage_id, dispute_id)` pairs with a written verdict that hasn't been
+    /// applied yet (no `applied.marker`).
+    pub fn pending_verdicts(&self, work_dir: &Path) -> Result<Vec<(String, u32)>> {
+        let disputes_root = work_dir.join("disputes");
+        if !disputes_root.exists() {
+            return Ok(Vec::new());
+        }
+        scan_pending_verdicts(&disputes_root)
+    }
+
+    /// The session id recorded in a dispute's verdict, if the record carries
+    /// one. `None` covers both "no verdict written yet" and "a verdict
+    /// written before this field existed" — callers that need to tell those
+    /// apart already have the verdict file's own existence to check.
+    pub fn verdict_session_id(
+        &self,
+        work_dir: &Path,
+        stage_id: &str,
+        dispute_id: u32,
+    ) -> Option<String> {
+        read_verdict_record(&crate::models::dispute::verdict_file(
+            &work_dir.join("disputes"),
+            stage_id,
+            dispute_id,
+        ))
+        .ok()
+        .and_then(|record| record.session_id)
+    }
+
+    /// How many disputes on `stage_id` still have no verdict on disk.
+    pub fn unanswered_disputes(&self, work_dir: &Path, stage_id: &str) -> Result<usize> {
+        Ok(scan_pending_requests(&work_dir.join("disputes"))?
+            .into_iter()
+            .filter(|(id, _)| id == stage_id)
+            .count())
+    }
 }
 
 pub(super) fn read_dispute_request(path: &Path) -> Result<DisputeRequest> {

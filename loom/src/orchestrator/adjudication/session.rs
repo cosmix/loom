@@ -219,7 +219,9 @@ pub(super) fn live_adjudication_session(work_dir: &Path, stage_id: &str) -> Opti
 /// Write `verdict.md` for a dispute.
 ///
 /// The daemon's `apply_pending_verdicts` picks the record up on its next tick;
-/// nothing here touches stage state.
+/// nothing here touches stage state. `session_id` is the adjudication
+/// session's own id, so the daemon knows which session to retire once the
+/// verdict is applied.
 pub fn persist_verdict(
     work_dir: &Path,
     stage_id: &str,
@@ -227,6 +229,7 @@ pub fn persist_verdict(
     verdict: &DisputeVerdict,
     model: &str,
     attempt: u32,
+    session_id: Option<String>,
 ) -> Result<()> {
     let path = verdict_file(&work_dir.join("disputes"), stage_id, dispute_id);
     let record = DisputeVerdictRecord {
@@ -236,6 +239,7 @@ pub fn persist_verdict(
         adjudicator_attempt_count: attempt,
         created_at: Utc::now(),
         model: model.to_string(),
+        session_id,
     };
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)
@@ -338,6 +342,7 @@ mod tests {
             },
             "opus",
             2,
+            Some("session-xyz".to_string()),
         )
         .unwrap();
         let path = verdict_file(&work.join("disputes"), "s1", 1);
@@ -346,6 +351,7 @@ mod tests {
             .expect("verdict.md must parse back as a record");
         assert_eq!(record.adjudicator_attempt_count, 2);
         assert_eq!(record.model, "opus");
+        assert_eq!(record.session_id.as_deref(), Some("session-xyz"));
     }
 
     #[test]

@@ -212,7 +212,8 @@ fn verdict_protocol(stage_id: &str, dispute_id: u32, verdict_draft: &Path) -> St
     s.push_str("```\n\n");
     s.push_str("The command validates the JSON and records the verdict; the orchestrator\n");
     s.push_str("applies it on its next poll. If it reports an error, correct the JSON and\n");
-    s.push_str("run it again. Once it succeeds, your work is done — stop there.\n\n");
+    s.push_str("run it again. Once it succeeds, your work is done — stop there. The daemon\n");
+    s.push_str("closes this session once the verdict is applied.\n\n");
     s
 }
 

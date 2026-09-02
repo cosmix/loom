@@ -72,6 +72,7 @@ pub(super) fn write_verdict(
         adjudicator_attempt_count: attempt,
         created_at: Utc::now(),
         model: "test".to_string(),
+        session_id: None,
     };
     let yaml = serde_yaml::to_string(&record).unwrap();
     let path = verdict_file(&disputes_root, stage_id, id);
