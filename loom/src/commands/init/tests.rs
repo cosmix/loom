@@ -347,7 +347,7 @@ fn test_initialize_with_plan_nonexistent_file() {
     let result = initialize_with_plan_acknowledgement(
         &work_dir,
         &nonexistent_path,
-        SessionBackendKind::Native,
+        Some(SessionBackendKind::Native),
         false,
     );
 
@@ -397,7 +397,7 @@ fn test_initialize_with_plan_creates_config() {
     let result = initialize_with_plan_acknowledgement(
         &work_dir,
         &plan_path,
-        SessionBackendKind::Native,
+        Some(SessionBackendKind::Native),
         false,
     );
     assert!(result.is_ok());
@@ -492,7 +492,7 @@ fn test_initialize_with_plan_creates_stage_files() {
     let result = initialize_with_plan_acknowledgement(
         &work_dir,
         &plan_path,
-        SessionBackendKind::Native,
+        Some(SessionBackendKind::Native),
         false,
     );
 
@@ -556,7 +556,7 @@ fn test_initialize_with_plan_invalid_yaml() {
     let result = initialize_with_plan_acknowledgement(
         &work_dir,
         &invalid_plan,
-        SessionBackendKind::Native,
+        Some(SessionBackendKind::Native),
         false,
     );
 

@@ -1,6 +1,7 @@
 pub mod attach;
 pub mod clean;
 pub mod common;
+pub mod config;
 pub mod context;
 pub mod diagnose;
 pub mod graph;

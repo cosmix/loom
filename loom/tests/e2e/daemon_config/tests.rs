@@ -9,15 +9,18 @@ use loom::plan::graph::ExecutionGraph;
 use loom::plan::schema::Implementers;
 use loom::plan::schema::SandboxConfig;
 use loom::plan::schema::StageDefinition;
+use serial_test::serial;
 use std::time::Duration;
 use tempfile::TempDir;
 
-use super::create_stage_def;
+use super::{create_stage_def, isolate_user_config};
 
 #[test]
 #[ignore] // Requires a terminal emulator - skipped in CI
+#[serial]
 fn test_orchestrator_creation_with_config() {
     let temp_dir = TempDir::new().unwrap();
+    let _home_env = isolate_user_config(&temp_dir);
     let work_dir = temp_dir.path();
     std::fs::create_dir_all(work_dir.join("stages")).unwrap();
 
@@ -131,9 +134,11 @@ fn test_auto_merge_config_cascade() {
 
 #[test]
 #[ignore] // Requires a terminal emulator - skipped in CI
+#[serial]
 fn test_orchestrator_creates_successfully() {
     // Test that the orchestrator creates with default config
     let temp_dir = TempDir::new().unwrap();
+    let _home_env = isolate_user_config(&temp_dir);
     let work_dir = temp_dir.path();
     std::fs::create_dir_all(work_dir.join("stages")).unwrap();
 
@@ -195,6 +200,7 @@ fn test_work_dir_and_repo_root_configuration() {
 /// 3. Orchestrator config `auto_merge` setting (lowest priority)
 #[test]
 #[ignore] // Integration test - run with --ignored
+#[serial]
 fn test_daemon_respects_auto_merge() {
     use loom::orchestrator::auto_merge::is_auto_merge_enabled;
 
@@ -238,6 +244,7 @@ fn test_daemon_respects_auto_merge() {
 
     // Test 4: Verify orchestrator config flows through to OrchestratorConfig
     let temp_dir = TempDir::new().unwrap();
+    let _home_env = isolate_user_config(&temp_dir);
     let work_dir = temp_dir.path();
     std::fs::create_dir_all(work_dir.join("stages")).unwrap();
 

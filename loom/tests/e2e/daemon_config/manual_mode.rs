@@ -6,9 +6,10 @@ use loom::orchestrator::OrchestratorConfig;
 use loom::plan::graph::ExecutionGraph;
 use loom::plan::schema::SandboxConfig;
 use loom::verify::transitions::save_stage;
+use serial_test::serial;
 use std::time::Duration;
 
-use super::create_stage_def;
+use super::{create_stage_def, isolate_user_config};
 
 /// Integration test: Verify manual mode sets up sessions without spawning Claude
 ///
@@ -22,9 +23,11 @@ use super::create_stage_def;
 /// `run()`, sessions are tracked, worktrees exist, but no Claude is spawned.
 #[test]
 #[ignore] // Integration test - requires git repo, run with --ignored
+#[serial]
 fn test_orchestrator_with_manual_mode() {
     // Create a git repo (required for worktree creation)
     let temp_dir = create_temp_git_repo().expect("Should create git repo");
+    let _home_env = isolate_user_config(&temp_dir);
     let repo_root = temp_dir.path();
 
     // Create .loom/work directory structure

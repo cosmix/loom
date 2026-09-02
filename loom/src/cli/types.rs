@@ -1,6 +1,7 @@
 use crate::validation::clap_id_validator;
 use clap::{Parser, Subcommand};
 
+pub use super::types_config::ConfigArgs;
 pub use super::types_memory::{KnowledgeCommands, MemoryCommands};
 pub use super::types_ops::{
     ContextCommands, HookCommands, PlanCommands, SessionsCommands, WorktreeCommands,
@@ -99,7 +100,7 @@ pub enum Commands {
         #[arg(long)]
         no_merge: bool,
 
-        /// Terminal backend for sessions (native|tmux); persisted to the [terminal] section of the loom config
+        /// Terminal backend for sessions (native|tmux); persisted to the `[terminal]` section of the loom config
         #[arg(long, value_parser = ["native", "tmux"])]
         backend: Option<String>,
     },
@@ -196,6 +197,9 @@ pub enum Commands {
 
     /// Update loom and configuration files
     SelfUpdate,
+
+    /// Read or write the user config at ~/.loom/config.toml
+    Config(ConfigArgs),
 
     /// Clean up loom resources (worktrees, sessions, state)
     Clean {

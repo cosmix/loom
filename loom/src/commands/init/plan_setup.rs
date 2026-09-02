@@ -29,7 +29,7 @@ use toml_edit::{value, Item, Table};
 pub fn initialize_with_plan_acknowledgement(
     work_dir: &WorkDir,
     plan_path: &Path,
-    terminal_backend: SessionBackendKind,
+    terminal_backend: Option<SessionBackendKind>,
     allow_unsafe_plan: bool,
 ) -> Result<usize> {
     if !plan_path.exists() {
@@ -191,32 +191,40 @@ pub fn initialize_with_plan_acknowledgement(
     )
     .context("Failed to persist remote control config")?;
 
-    // Persist the resolved [terminal] section so the operator has a
-    // documented, editable toggle in config.toml from the start.
-    work_dir::write_terminal_config(
-        work_dir.root(),
-        &TerminalConfig {
-            backend: terminal_backend,
-        },
-    )
-    .context("Failed to persist terminal config")?;
+    // Persist [terminal] only when an explicit choice was made (an
+    // operator-supplied --backend flag or an interactive prompt answer) — an
+    // absent section is what lets `~/.loom/config.toml`'s terminal.backend,
+    // then the built-in default, decide at read time (see
+    // `fs::work_dir::read_terminal_config`).
+    if let Some(backend) = terminal_backend {
+        work_dir::write_terminal_config(work_dir.root(), &TerminalConfig { backend })
+            .context("Failed to persist terminal config")?;
+    }
 
-    let context_defaults = ContextConfig::default();
-    let context_config = ContextConfig {
-        ceiling_tokens: parsed_plan
-            .metadata
-            .loom
-            .context_ceiling_tokens
-            .unwrap_or(context_defaults.ceiling_tokens),
-        subagent_ceiling_tokens: parsed_plan
-            .metadata
-            .loom
-            .subagent_ceiling_tokens
-            .unwrap_or(context_defaults.subagent_ceiling_tokens),
-        model_window_tokens: context_defaults.model_window_tokens,
-    };
-    work_dir::write_context_config(work_dir.root(), &context_config)
-        .context("Failed to persist context config")?;
+    // Persist [context] only when the plan itself set a ceiling — an absent
+    // section is what lets `~/.loom/config.toml`'s context.ceiling_tokens,
+    // then the built-in default, decide at read time (see
+    // `fs::work_dir::read_context_config`).
+    if parsed_plan.metadata.loom.context_ceiling_tokens.is_some()
+        || parsed_plan.metadata.loom.subagent_ceiling_tokens.is_some()
+    {
+        let context_defaults = ContextConfig::default();
+        let context_config = ContextConfig {
+            ceiling_tokens: parsed_plan
+                .metadata
+                .loom
+                .context_ceiling_tokens
+                .unwrap_or(context_defaults.ceiling_tokens),
+            subagent_ceiling_tokens: parsed_plan
+                .metadata
+                .loom
+                .subagent_ceiling_tokens
+                .unwrap_or(context_defaults.subagent_ceiling_tokens),
+            model_window_tokens: context_defaults.model_window_tokens,
+        };
+        work_dir::write_context_config(work_dir.root(), &context_config)
+            .context("Failed to persist context config")?;
+    }
 
     println!(
         "  {} Config saved {}",

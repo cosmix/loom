@@ -12,29 +12,7 @@ use serial_test::serial;
 use std::time::Duration;
 use tempfile::TempDir;
 
-use super::create_stage_def;
-
-struct EnvVarGuard {
-    key: &'static str,
-    original: Option<String>,
-}
-
-impl EnvVarGuard {
-    fn set(key: &'static str, value: &str) -> Self {
-        let original = std::env::var(key).ok();
-        std::env::set_var(key, value);
-        Self { key, original }
-    }
-}
-
-impl Drop for EnvVarGuard {
-    fn drop(&mut self) {
-        match &self.original {
-            Some(value) => std::env::set_var(self.key, value),
-            None => std::env::remove_var(self.key),
-        }
-    }
-}
+use super::{create_stage_def, isolate_user_config, EnvVarGuard};
 
 /// Write a minimal `.loom/work/config.toml` that includes a stale `[project_execution]`
 /// table along with a valid `[plan]` section.
@@ -66,6 +44,7 @@ fn test_orchestrator_config_ignores_stale_project_execution() {
     let _terminal_env = EnvVarGuard::set("LOOM_TERMINAL", "xterm");
 
     let temp_dir = TempDir::new().unwrap();
+    let _home_env = isolate_user_config(&temp_dir);
     let work_dir = temp_dir.path().join(".loom").join("work");
     std::fs::create_dir_all(work_dir.join("stages")).unwrap();
 

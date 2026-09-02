@@ -135,6 +135,17 @@ impl ContextConfig {
         let window_backstop = ceiling_from_window(window, DAEMON_BACKSTOP_WINDOW_FRACTION);
         multiplier_backstop.min(window_backstop)
     }
+
+    /// The built-in ceilings with `ceiling_tokens` replaced by the user-level
+    /// value from `~/.loom/config.toml`, when that file sets one. `None`
+    /// yields exactly `ContextConfig::default()`.
+    pub(crate) fn with_user_ceiling(ceiling_tokens: Option<u32>) -> Self {
+        ContextConfigRaw {
+            ceiling_tokens,
+            ..Default::default()
+        }
+        .into()
+    }
 }
 
 #[cfg(test)]

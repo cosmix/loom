@@ -198,23 +198,27 @@ pub fn execute(
 /// Resolve the terminal backend choice for `loom init`.
 ///
 /// Precedence: an explicit `--backend` flag always wins (clap's
-/// `value_parser` already constrains it to "native"/"tmux"). Otherwise, on
-/// an interactive terminal, prompt the operator. Otherwise (programmatic
-/// init, non-TTY) default to native so init never hangs.
-fn resolve_backend_choice(flag: Option<String>) -> Result<SessionBackendKind> {
+/// `value_parser` already constrains it to "native"/"tmux"), yielding
+/// `Some(kind)`. Otherwise, on an interactive terminal, prompt the operator,
+/// also yielding `Some(kind)`. Otherwise (programmatic init, non-TTY) yield
+/// `None`: nobody chose a backend, so `plan_setup` leaves the workspace
+/// `[terminal]` section out of `config.toml` entirely, letting
+/// `~/.loom/config.toml`'s `terminal.backend` — then the built-in default —
+/// decide at read time (see `fs::work_dir::read_terminal_config`).
+fn resolve_backend_choice(flag: Option<String>) -> Result<Option<SessionBackendKind>> {
     let kind = if let Some(value) = flag {
-        match value.as_str() {
+        Some(match value.as_str() {
             "native" => SessionBackendKind::Native,
             "tmux" => SessionBackendKind::Tmux,
             other => bail!("Invalid terminal backend: {other}"),
-        }
+        })
     } else if std::io::stdin().is_terminal() && std::io::stdout().is_terminal() {
-        prompt_backend_choice()?
+        Some(prompt_backend_choice()?)
     } else {
-        SessionBackendKind::Native
+        None
     };
 
-    if kind == SessionBackendKind::Tmux && which::which("tmux").is_err() {
+    if kind == Some(SessionBackendKind::Tmux) && which::which("tmux").is_err() {
         eprintln!(
             "  {} tmux backend selected but tmux was not found on PATH - install tmux \
              before running `loom run`, or re-run `loom init` with `--backend native`",
