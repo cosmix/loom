@@ -18,10 +18,18 @@
 set -euo pipefail
 
 repo_root=$(cd "$(dirname "$0")/.." && pwd)
-hooks_dir="$repo_root/hooks"
+# hooks/ and scripts/ both carry hand-written shell; a syntax error in either
+# one is the same failure mode this script exists to catch.
+script_dirs=("$repo_root/hooks" "$repo_root/scripts")
 
-if [ ! -d "$hooks_dir" ]; then
-	printf 'check-hook-syntax: no hooks directory at %s\n' "$hooks_dir" >&2
+found_a_dir=0
+for dir in "${script_dirs[@]}"; do
+	if [ -d "$dir" ]; then
+		found_a_dir=1
+	fi
+done
+if [ "$found_a_dir" -eq 0 ]; then
+	printf 'check-hook-syntax: none of the expected script directories exist (%s)\n' "${script_dirs[*]}" >&2
 	exit 1
 fi
 
@@ -41,11 +49,11 @@ while IFS= read -r script; do
 		bash -n "$script" 2>&1 | sed 's/^/    /' >&2
 		failed=$((failed + 1))
 	fi
-done < <(find "$hooks_dir" -type f -name '*.sh' | sort)
+done < <(find "${script_dirs[@]}" -type f -name '*.sh' 2>/dev/null | sort)
 
 if [ "$failed" -ne 0 ]; then
-	printf '\ncheck-hook-syntax: %d of %d shell hooks failed to parse\n' "$failed" "$checked" >&2
+	printf '\ncheck-hook-syntax: %d of %d shell scripts failed to parse\n' "$failed" "$checked" >&2
 	exit 1
 fi
 
-printf 'check-hook-syntax: %d shell hooks parse cleanly\n' "$checked"
+printf 'check-hook-syntax: %d shell scripts parse cleanly\n' "$checked"

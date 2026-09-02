@@ -27,7 +27,7 @@ mod tests;
 /// raw mode, the alternate screen, and its own frame drawing instead of
 /// returning a string here.
 pub fn execute(args: ConfigArgs) -> Result<()> {
-    if args.key.is_none() && !args.list && !args.print && std::io::stdout().is_terminal() {
+    if should_open_tui(&args, std::io::stdout().is_terminal()) {
         return tui::run();
     }
 
@@ -44,6 +44,18 @@ pub fn execute(args: ConfigArgs) -> Result<()> {
     };
     print!("{output}");
     Ok(())
+}
+
+/// Whether a bare `loom config` invocation should open the interactive TUI.
+///
+/// True only when no key, `--list`, or `--print` was given AND stdout is a
+/// tty — a person at a terminal with no flags. Any flag, or a non-tty stdout
+/// (a pipe, a redirect, or a non-interactive caller), falls through to the
+/// non-interactive branches in [`execute`] instead. `stdout_is_tty` is taken
+/// as a parameter, rather than read here, so this stays a pure function a
+/// test can drive through every combination without faking a terminal.
+fn should_open_tui(args: &ConfigArgs, stdout_is_tty: bool) -> bool {
+    args.key.is_none() && !args.list && !args.print && stdout_is_tty
 }
 
 /// `loom config -k <key>` — the bare resolved value, nothing else.

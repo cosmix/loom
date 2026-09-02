@@ -58,6 +58,34 @@ fn print_resolved_renders_every_key_with_a_set_value_applied() {
     assert!(out.contains("[update]"), "{out}");
 }
 
+fn args(key: Option<&str>, list: bool, print: bool) -> ConfigArgs {
+    ConfigArgs {
+        key: key.map(str::to_string),
+        value: None,
+        list,
+        print,
+    }
+}
+
+/// `should_open_tui` is the gate `execute()` uses to decide between the
+/// raw-mode TUI and the non-interactive branches: only a bare invocation (no
+/// key, `--list`, or `--print`) at a real terminal opens it. Driving the
+/// function directly, with the tty state as a parameter, covers every
+/// combination without faking a terminal or risking the TUI launching inside
+/// the test binary.
+#[test]
+fn should_open_tui_only_for_a_bare_invocation_at_a_tty() {
+    assert!(should_open_tui(&args(None, false, false), true));
+
+    assert!(!should_open_tui(&args(None, false, false), false));
+    assert!(!should_open_tui(
+        &args(Some("update.check_interval_hours"), false, false),
+        true
+    ));
+    assert!(!should_open_tui(&args(None, true, false), true));
+    assert!(!should_open_tui(&args(None, false, true), true));
+}
+
 #[test]
 fn an_unknown_key_is_an_error_listing_the_valid_keys() {
     let (_temp, _guard) = redirect();

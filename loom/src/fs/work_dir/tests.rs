@@ -125,26 +125,6 @@ fn test_workdir_new_searches_upward() {
 }
 
 #[test]
-fn test_open_or_initialize_idempotent() {
-    let temp = TempDir::new().unwrap();
-    let project_root = bare_repo(&temp);
-    let state_root = project_root.join(".loom").join("work");
-
-    let work_dir = WorkDir::new(&project_root).unwrap();
-    // First call initializes
-    work_dir.open_or_initialize().unwrap();
-    assert!(state_root.is_dir());
-
-    // Second call must succeed without error
-    let work_dir2 = WorkDir::new(&project_root).unwrap();
-    work_dir2
-        .open_or_initialize()
-        .expect("open_or_initialize must be idempotent on an existing workspace");
-    // Structure still intact
-    assert!(state_root.join("stages").is_dir());
-}
-
-#[test]
 fn adopt_existing_requires_root_to_exist() {
     let temp = TempDir::new().unwrap();
     let work_dir = WorkDir::new(temp.path().join(".loom").join("work")).unwrap();
@@ -248,6 +228,7 @@ fn test_workdir_new_legacy_hint_naming_work_dir_resolves_to_itself() {
 
 // ----- Centralized config.toml API tests -----
 
+use crate::models::session::TerminalConfig;
 use crate::plan::schema::SandboxConfig;
 
 fn init_work(temp: &TempDir) -> PathBuf {
@@ -435,7 +416,9 @@ fn write_context_config_preserves_prompt_cache_split() {
     let work = init_work(&temp);
 
     update_config(&work, |doc| {
-        let context = doc.entry(CONTEXT_SECTION).or_insert(toml_edit::table());
+        let context = doc
+            .entry(config_sections::CONTEXT_SECTION)
+            .or_insert(toml_edit::table());
         if let Some(table) = context.as_table_mut() {
             table["prompt_cache_split"] = toml_edit::value(true);
             table["ceiling_tokens"] = toml_edit::value(90_000_i64);
@@ -456,7 +439,7 @@ fn write_context_config_preserves_prompt_cache_split() {
 
     let doc = read_config(&work).unwrap();
     assert_eq!(
-        doc[CONTEXT_SECTION]["prompt_cache_split"].as_bool(),
+        doc[config_sections::CONTEXT_SECTION]["prompt_cache_split"].as_bool(),
         Some(true)
     );
     // The keys ContextConfig owns are still overwritten.

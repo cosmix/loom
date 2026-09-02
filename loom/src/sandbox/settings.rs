@@ -123,19 +123,14 @@ pub fn write_settings(config: &MergedSandboxConfig, worktree_path: &Path) -> Res
     let mut settings_json = generate_settings_json(&config);
 
     // Resolve the state-root symlink to its absolute target path.
-    // In worktrees, the state root is a symlink — `.loom/work` on the nested
-    // layout (-> ../../../.loom/work) or `.work` on a legacy workspace
-    // (-> ../../.work), both pointing at the main repo's shared state.
     // Claude Code resolves symlinks before checking permission patterns, so
     // the relative `.loom/work/`-scoped Read patterns below don't match the
     // resolved absolute path (which is outside the worktree boundary).
     // Adding the resolved absolute paths ensures reads/writes are
-    // auto-allowed without prompting.
-    //
-    // SECURITY (S-1): the broad `Read(/{resolved}/**)` + `Edit(/{resolved}/**)`
-    // allow used to expose `.work/admin.token` (Admin RPC capability) and
-    // `.work/user.token` (User capability) to a sandboxed worktree agent —
-    // privilege escalation across the daemon's RPC trust boundary. We now:
+    // auto-allowed without prompting. See `fs::permissions::state_root` for
+    // the shared resolution and the S-1 rationale (blanket read/write over
+    // this path exposes `admin.token` / `user.token` — a daemon RPC
+    // privilege escalation). Below:
     //   1. emit explicit `deny` rules for the resolved-absolute token paths
     //      *before* the allow (the relative forms come from default_deny_read);
     //   2. narrow the broad allow from `/**` down to read-only orchestration
@@ -145,64 +140,54 @@ pub fn write_settings(config: &MergedSandboxConfig, worktree_path: &Path) -> Res
     // IMPORTANT: Claude Code requires the // prefix for absolute filesystem paths.
     // A single / means "relative to project root", NOT absolute. See:
     // https://code.claude.com/docs/en/permissions.md
-    let work_link = {
-        let nested = worktree_path.join(".loom").join("work");
-        if nested.exists() || nested.is_symlink() {
-            nested
-        } else {
-            worktree_path.join(".work")
+    if let Some(resolved) = crate::fs::permissions::state_root::resolve_state_root(worktree_path) {
+        let resolved_str = resolved
+            .to_str()
+            .context("Resolved .work path is not valid UTF-8")?;
+        if let Some(deny_read) = settings_json
+            .pointer_mut("/sandbox/filesystem/denyRead")
+            .and_then(Value::as_array_mut)
+        {
+            for deny_path in crate::fs::permissions::state_root::token_deny_paths(resolved_str) {
+                if !deny_read.iter().any(|value| value == &deny_path) {
+                    deny_read.push(json!(deny_path));
+                }
+            }
         }
-    };
-    if work_link.exists() || work_link.is_symlink() {
-        if let Ok(resolved) = work_link.canonicalize() {
-            let resolved_str = resolved
-                .to_str()
-                .context("Resolved .work path is not valid UTF-8")?;
-            if let Some(deny_read) = settings_json
-                .pointer_mut("/sandbox/filesystem/denyRead")
-                .and_then(Value::as_array_mut)
-            {
-                for token in ["admin.token", "user.token"] {
-                    let deny_path = format!("/{resolved_str}/{token}");
-                    if !deny_read.iter().any(|value| value == &deny_path) {
-                        deny_read.push(json!(deny_path));
+        if let Some(permissions) = settings_json.get_mut("permissions") {
+            // Deny the resolved-absolute token paths first so deny wins over
+            // any (current or future) allow that might match the .work root.
+            if let Some(deny) = permissions.get_mut("deny") {
+                if let Some(deny_arr) = deny.as_array_mut() {
+                    for deny_perm in
+                        crate::fs::permissions::state_root::token_read_denies(resolved_str)
+                    {
+                        if !deny_arr.iter().any(|v| v.as_str() == Some(&deny_perm)) {
+                            deny_arr.push(json!(deny_perm));
+                        }
                     }
                 }
             }
-            if let Some(permissions) = settings_json.get_mut("permissions") {
-                // Deny the resolved-absolute token paths first so deny wins over
-                // any (current or future) allow that might match the .work root.
-                if let Some(deny) = permissions.get_mut("deny") {
-                    if let Some(deny_arr) = deny.as_array_mut() {
-                        for token in ["admin.token", "user.token"] {
-                            let deny_perm = format!("Read(/{}/{})", resolved_str, token);
-                            if !deny_arr.iter().any(|v| v.as_str() == Some(&deny_perm)) {
-                                deny_arr.push(json!(deny_perm));
-                            }
-                        }
+            if let Some(allow) = permissions.get_mut("allow") {
+                if let Some(allow_arr) = allow.as_array_mut() {
+                    // Narrowed allow: config and orchestration state are
+                    // read-only. Handoffs are the sole direct write root;
+                    // memory and disputes are written through daemon RPCs.
+                    let mut perms = vec![
+                        format!("Read(/{}/config.toml)", resolved_str),
+                        format!("Read(/{}/signals/**)", resolved_str),
+                    ];
+                    for sub in ["handoffs", "disputes", "memory"] {
+                        perms.push(format!("Read(/{}/{}/**)", resolved_str, sub));
                     }
-                }
-                if let Some(allow) = permissions.get_mut("allow") {
-                    if let Some(allow_arr) = allow.as_array_mut() {
-                        // Narrowed allow: config and orchestration state are
-                        // read-only. Handoffs are the sole direct write root;
-                        // memory and disputes are written through daemon RPCs.
-                        let mut perms = vec![
-                            format!("Read(/{}/config.toml)", resolved_str),
-                            format!("Read(/{}/signals/**)", resolved_str),
-                        ];
-                        for sub in ["handoffs", "disputes", "memory"] {
-                            perms.push(format!("Read(/{}/{}/**)", resolved_str, sub));
-                        }
-                        // NOTE: Claude Code's file permission check consults only
-                        // `Edit(path)` rules — a `Write(path)` rule parses but is
-                        // silently ignored (see doc/loom/knowledge/concerns.md
-                        // "Per-Stage Sandbox `Write(path)` Rules Are Inert").
-                        perms.push(format!("Edit(/{}/handoffs/**)", resolved_str));
-                        for perm in perms {
-                            if !allow_arr.iter().any(|v| v.as_str() == Some(&perm)) {
-                                allow_arr.push(json!(perm));
-                            }
+                    // NOTE: Claude Code's file permission check consults only
+                    // `Edit(path)` rules — a `Write(path)` rule parses but is
+                    // silently ignored (see doc/loom/knowledge/concerns.md
+                    // "Per-Stage Sandbox `Write(path)` Rules Are Inert").
+                    perms.push(format!("Edit(/{}/handoffs/**)", resolved_str));
+                    for perm in perms {
+                        if !allow_arr.iter().any(|v| v.as_str() == Some(&perm)) {
+                            allow_arr.push(json!(perm));
                         }
                     }
                 }
