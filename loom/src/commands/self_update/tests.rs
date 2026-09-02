@@ -21,6 +21,10 @@ use crate::commands::self_update::zip::{
     MAX_UNCOMPRESSED_SIZE, MAX_ZIP_SIZE,
 };
 #[cfg(test)]
+use crate::commands::self_update::{
+    checksum_asset, release_asset_for_target, releases_api_url, signature_asset_name, Asset,
+};
+#[cfg(test)]
 use crate::commands::self_update::{MAX_BINARY_SIZE, MAX_SIGNATURE_SIZE, MAX_TEXT_SIZE};
 
 // ============================================================================
@@ -487,4 +491,98 @@ fn test_parse_checksums_wrong_length() {
     let content = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b8  file.txt\n";
     let checksums = parse_checksums(content);
     assert_eq!(checksums.len(), 0);
+}
+
+// ============================================================================
+// 9. RELEASE ASSET SELECTION TESTS
+// ============================================================================
+//
+// These build a fixture inventory out of the exact ten asset names published
+// by `.github/workflows/release.yml` (lines 233-243) and run it through the
+// real selection code, since no acceptance command here can reach a live
+// release.
+
+#[cfg(test)]
+fn published_asset_inventory() -> Vec<Asset> {
+    [
+        "loom-linux-x86_64",
+        "loom-linux-x86_64.minisig",
+        "loom-darwin-x86_64",
+        "loom-darwin-x86_64.minisig",
+        "loom-darwin-arm64",
+        "loom-darwin-arm64.minisig",
+        "SHA256SUMS.txt",
+        "CLAUDE.md.template",
+        "agents.zip",
+        "skills.zip",
+    ]
+    .into_iter()
+    .map(|name| Asset {
+        name: name.to_string(),
+        browser_download_url: format!("https://example.com/{name}"),
+    })
+    .collect()
+}
+
+#[test]
+fn test_release_asset_selection_finds_binary_and_signature_for_supported_targets() {
+    let assets = published_asset_inventory();
+
+    for target in [
+        "x86_64-unknown-linux-gnu",
+        "x86_64-apple-darwin",
+        "aarch64-apple-darwin",
+    ] {
+        let binary_name = release_asset_for_target(target)
+            .unwrap_or_else(|e| panic!("expected a release asset for {target}: {e}"));
+        assert!(
+            assets.iter().any(|a| a.name == binary_name),
+            "no binary asset named {binary_name} for target {target}"
+        );
+
+        let signature_name = signature_asset_name(binary_name);
+        assert!(
+            assets.iter().any(|a| a.name == signature_name),
+            "no signature asset named {signature_name} for target {target}"
+        );
+    }
+}
+
+#[test]
+fn test_release_asset_selection_resolves_checksum_asset() {
+    let assets = published_asset_inventory();
+    let resolved = checksum_asset(&assets).expect("checksum asset should resolve");
+    assert_eq!(resolved.name, "SHA256SUMS.txt");
+}
+
+#[test]
+fn test_release_asset_selection_missing_checksum_asset_returns_none() {
+    let assets: Vec<Asset> = published_asset_inventory()
+        .into_iter()
+        .filter(|a| a.name != "SHA256SUMS.txt")
+        .collect();
+    assert!(checksum_asset(&assets).is_none());
+}
+
+#[test]
+fn test_release_asset_selection_rejects_unsupported_linux_arm64() {
+    // Built by the release workflow's matrix? No — a fourth platform
+    // get_target() recognises but the workflow never publishes for.
+    let result = release_asset_for_target("aarch64-unknown-linux-gnu");
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_release_asset_selection_rejects_unknown_target() {
+    let result = release_asset_for_target("unknown");
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_release_asset_selection_releases_api_url_names_repo() {
+    let url = releases_api_url();
+    assert_eq!(
+        url,
+        "https://api.github.com/repos/cosmix/loom/releases/latest"
+    );
 }

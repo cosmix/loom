@@ -14,8 +14,8 @@ file src/commands/plan/verify.rs 599
 file src/commands/repair.rs 1189
 file src/commands/review/generate.rs 439
 file src/commands/run/tests.rs 463
-file src/commands/self_update/mod.rs 438
-file src/commands/self_update/tests.rs 490
+file src/commands/self_update/mod.rs 465
+file src/commands/self_update/tests.rs 588
 file src/commands/stage/complete.rs 861
 file src/commands/stage/merge.rs 546
 file src/commands/stage/tests/complete.rs 583
@@ -107,8 +107,8 @@ function src/commands/run/foreground.rs execute_foreground 69
 function src/commands/run/foreground.rs print_result 58
 function src/commands/self_update/install.rs install_binary 52
 function src/commands/self_update/mod.rs download_verify_and_extract_zip 117
-function src/commands/self_update/mod.rs update_binary 67
-function src/commands/self_update/mod.rs update_config_files 88
+function src/commands/self_update/mod.rs update_binary 63
+function src/commands/self_update/mod.rs update_config_files 86
 function src/commands/self_update/zip.rs safe_extract_path 54
 function src/commands/sessions.rs kill 54
 function src/commands/sessions.rs kill_single_session 51

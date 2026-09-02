@@ -36,8 +36,41 @@ use zip::{
 use ::zip::ZipArchive;
 
 // Repository and version constants
-const GITHUB_REPO: &str = "cosmix/claude-loom";
-const CURRENT_VERSION: &str = env!("CARGO_PKG_VERSION");
+const GITHUB_REPO: &str = "cosmix/loom";
+const CURRENT_VERSION: &str = env!("LOOM_VERSION");
+
+/// Single source of truth for which platforms self-update supports and what
+/// the release workflow (`.github/workflows/release.yml`) names their
+/// binaries: (target triple, published binary asset base name).
+const RELEASE_ASSETS: &[(&str, &str)] = &[
+    ("x86_64-unknown-linux-gnu", "loom-linux-x86_64"),
+    ("x86_64-apple-darwin", "loom-darwin-x86_64"),
+    ("aarch64-apple-darwin", "loom-darwin-arm64"),
+];
+
+/// Resolve a target triple to its published release binary asset name.
+fn release_asset_for_target(target: &str) -> Result<&'static str> {
+    RELEASE_ASSETS
+        .iter()
+        .find(|(triple, _)| *triple == target)
+        .map(|(_, name)| *name)
+        .ok_or_else(|| anyhow::anyhow!("No release asset for this platform ({target})"))
+}
+
+/// Signature asset name for a given published binary asset name.
+fn signature_asset_name(binary_name: &str) -> String {
+    format!("{binary_name}.minisig")
+}
+
+/// Resolve the published checksums-file asset, if present.
+fn checksum_asset(assets: &[Asset]) -> Option<&Asset> {
+    assets.iter().find(|a| a.name == "SHA256SUMS.txt")
+}
+
+/// GitHub releases API URL for this repository's latest release.
+fn releases_api_url() -> String {
+    format!("https://api.github.com/repos/{GITHUB_REPO}/releases/latest")
+}
 
 // Download size limits (exported for tests)
 pub(crate) const MAX_BINARY_SIZE: u64 = 50 * 1024 * 1024; // 50MB for binaries
@@ -98,7 +131,7 @@ pub fn execute() -> Result<()> {
 
 /// Fetch the latest release information from GitHub.
 fn get_latest_release() -> Result<Release> {
-    let url = format!("https://api.github.com/repos/{GITHUB_REPO}/releases/latest");
+    let url = releases_api_url();
     let client = create_http_client()?;
     let response = client
         .get(&url)
@@ -142,12 +175,8 @@ fn get_target() -> &'static str {
 /// Download and install the new binary with signature verification.
 fn update_binary(release: &Release) -> Result<()> {
     let target = get_target();
-    if target == "unknown" {
-        bail!("Unsupported platform for self-update");
-    }
-
-    let binary_name = format!("loom-{target}");
-    let signature_name = format!("{binary_name}.minisig");
+    let binary_name = release_asset_for_target(target)?;
+    let signature_name = signature_asset_name(binary_name);
 
     // Find binary asset
     let binary_asset = release
@@ -220,12 +249,10 @@ fn update_config_files(release: &Release) -> Result<()> {
     let client = create_http_client()?;
 
     // Try to download checksums file for verification
-    let checksums = if let Some(checksum_asset) =
-        release.assets.iter().find(|a| a.name == "checksums.txt")
-    {
+    let checksums = if let Some(asset) = checksum_asset(&release.assets) {
         println!("  {} Downloading checksums...", "→".blue());
         let response = client
-            .get(&checksum_asset.browser_download_url)
+            .get(&asset.browser_download_url)
             .send()
             .context("Failed to download checksums")?;
         validate_response_status(&response, "Checksums download failed")?;
@@ -238,7 +265,7 @@ fn update_config_files(release: &Release) -> Result<()> {
         );
         Some(parsed)
     } else {
-        anyhow::bail!("Release is missing checksums.txt — cannot verify config file integrity. This may indicate a compromised release.");
+        anyhow::bail!("Release is missing SHA256SUMS.txt — cannot verify config file integrity. This may indicate a compromised release.");
     };
 
     // Update CLAUDE.md.template -> CLAUDE.md
@@ -257,13 +284,13 @@ fn update_config_files(release: &Release) -> Result<()> {
             download_text_with_limit(response, MAX_TEXT_SIZE, "CLAUDE.md.template download")?;
 
         // Verify checksum — a missing per-asset entry is a HARD error (fail closed),
-        // mirroring the binary's mandatory signature. checksums.txt is already required
+        // mirroring the binary's mandatory signature. SHA256SUMS.txt is already required
         // above; here we require it to contain an entry for THIS asset.
         let checksums = checksums.as_ref().ok_or_else(|| {
-            anyhow::anyhow!("Release is missing checksums.txt — cannot verify CLAUDE.md.template integrity. This may indicate a compromised release.")
+            anyhow::anyhow!("Release is missing SHA256SUMS.txt — cannot verify CLAUDE.md.template integrity. This may indicate a compromised release.")
         })?;
         let expected = checksums.get("CLAUDE.md.template").ok_or_else(|| {
-            anyhow::anyhow!("checksums.txt has no entry for CLAUDE.md.template — refusing to install unverified asset. This may indicate a compromised release.")
+            anyhow::anyhow!("SHA256SUMS.txt has no entry for CLAUDE.md.template — refusing to install unverified asset. This may indicate a compromised release.")
         })?;
         verify_checksum(content.as_bytes(), expected, "CLAUDE.md.template")?;
         println!("  {} CLAUDE.md.template checksum verified", "✓".green());
@@ -332,12 +359,12 @@ fn download_verify_and_extract_zip(
 
     // Verify checksum — a missing per-asset entry is a HARD error (fail closed),
     // mirroring the binary's mandatory signature. An attacker who can omit a row
-    // from checksums.txt must not be able to ship an unverified zip into ~/.claude/.
+    // from SHA256SUMS.txt must not be able to ship an unverified zip into ~/.claude/.
     let checksums = checksums.as_ref().ok_or_else(|| {
-        anyhow::anyhow!("Release is missing checksums.txt — cannot verify {asset_name} integrity. This may indicate a compromised release.")
+        anyhow::anyhow!("Release is missing SHA256SUMS.txt — cannot verify {asset_name} integrity. This may indicate a compromised release.")
     })?;
     let expected = checksums.get(asset_name).ok_or_else(|| {
-        anyhow::anyhow!("checksums.txt has no entry for {asset_name} — refusing to install unverified asset. This may indicate a compromised release.")
+        anyhow::anyhow!("SHA256SUMS.txt has no entry for {asset_name} — refusing to install unverified asset. This may indicate a compromised release.")
     })?;
     verify_checksum(&bytes, expected, asset_name)?;
     println!("  {} {} checksum verified", "✓".green(), asset_name);
