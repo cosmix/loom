@@ -117,7 +117,7 @@ fn start_stage_adopts_a_live_session_instead_of_spawning_a_duplicate() {
 #[test]
 fn adoption_prefers_the_stage_worker_over_a_newer_adjudication_session() {
     let temp = work_dir();
-    let work = temp.path().join(".work");
+    let work = temp.path().join(".loom").join("work");
 
     stage_at(&work, "alpha", StageStatus::Queued);
 
@@ -155,7 +155,7 @@ fn adoption_prefers_the_stage_worker_over_a_newer_adjudication_session() {
 #[test]
 fn adoption_refuses_when_a_different_session_is_already_tracked() {
     let temp = work_dir();
-    let work = temp.path().join(".work");
+    let work = temp.path().join(".loom").join("work");
 
     stage_at(&work, "alpha", StageStatus::Queued);
 

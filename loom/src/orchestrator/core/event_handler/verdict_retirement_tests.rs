@@ -35,7 +35,7 @@ fn disputing_stage(work: &std::path::Path) -> (Session, u32) {
 #[test]
 fn retiring_kills_the_disputing_agent_and_clears_the_stage_session() {
     let temp = handoff_work_dir();
-    let work = temp.path().join(".work");
+    let work = temp.path().join(".loom").join("work");
     let (session, agent_pid) = disputing_stage(&work);
 
     let mut orchestrator = orchestrator_for(&work, temp.path());
@@ -68,7 +68,7 @@ fn retiring_kills_the_disputing_agent_and_clears_the_stage_session() {
 #[test]
 fn retiring_leaves_the_adjudication_session_alone() {
     let temp = handoff_work_dir();
-    let work = temp.path().join(".work");
+    let work = temp.path().join(".loom").join("work");
     let (session, agent_pid) = disputing_stage(&work);
 
     let mut adjudication_session = Session::new_adjudication("test-stage");
@@ -99,7 +99,7 @@ fn retiring_leaves_the_adjudication_session_alone() {
 #[test]
 fn a_stage_not_under_adjudication_is_not_retired() {
     let temp = handoff_work_dir();
-    let work = temp.path().join(".work");
+    let work = temp.path().join(".loom").join("work");
     executing_stage(&work);
 
     let session = recorded_session(&work);
