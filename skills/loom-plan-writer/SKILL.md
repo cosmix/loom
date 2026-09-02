@@ -499,7 +499,7 @@ moment you size the stage.
 
 > ⚠️ **STAGES ARE EXPENSIVE** — each creates a worktree, spawns a session, costs real time and tokens. STRONGLY prefer subagents within ONE stage over additional stages.
 >
-> ⚠️ **BIAS TOWARD AS FEW SUBAGENTS AS POSSIBLE.** Fewer, larger-context subagents with well-scoped disjoint file territories beat many tiny ones — every subagent spin-up costs coordination overhead and a slice of context, and a well-specified subagent can absorb more work than a narrowly-scoped one. Before fanning out, ask whether ONE subagent (or a small number, each owning a whole disjoint territory) can do it; split further only when file territories are naturally disjoint or a single subagent's assignment would blow its own context budget.
+> ⚠️ **BIAS TOWARD AS FEW SUBAGENTS AS POSSIBLE.** Fewer, larger-context subagents with well-scoped disjoint file territories beat many tiny ones — every subagent spin-up costs coordination overhead and a slice of context, and a well-specified subagent can absorb more work than a narrowly-scoped one. Before fanning out, ask whether ONE subagent (or a small number, each owning a whole disjoint territory) can do it; split further only when a territory is a whole separate job or a single subagent's assignment would blow its own context budget. Group small tasks into ONE subagent, never one subagent per task or per file — four files with a one-line edit each is ONE subagent. The `>~6 worker tasks?` column below counts subagents after grouping, never raw tasks.
 
 Pick by criteria (not a ranking):
 

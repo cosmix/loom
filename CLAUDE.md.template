@@ -147,6 +147,8 @@ Claude subagents only; `hooks/codex-forward.sh` prepends codex's own rules to fo
 
 Team lead: TeamCreate → TaskCreate → spawn → monitor (TaskList) → shutdown, verify, complete; delegate, keep context <40%, shut down ALL teammates first.
 
+**GROUP TASKS: several small tasks go to ONE subagent, never one subagent per task or per file.** Every extra subagent costs twice — the tokens it spends orienting before it writes anything, and the disjoint file set it forces. Four files with a one-line edit each is still ONE subagent. Split only when a territory is a whole separate job, or when one assignment would exceed a subagent's context. The ≤~6 threshold in the table counts subagents after grouping, never raw tasks.
+
 Two subagents writing one file = lost work; if unavoidable, serialize in one subagent or split stages. Every prompt carries a file-ownership table:
 
 | Subagent | Files Owned (write) | Files Read-Only | Shared context — quoted in the brief, do not open |
