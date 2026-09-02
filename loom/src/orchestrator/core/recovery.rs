@@ -185,22 +185,40 @@ fn check_retry_eligibility(stage: &Stage) -> bool {
     is_backoff_elapsed(stage.last_failure_at, backoff)
 }
 
-impl Orchestrator {
-    /// Whether a graph-Blocked stage should keep the watch-mode daemon alive.
-    ///
-    /// Returns `true` when the stage file shows a crash auto-retry is still
-    /// pending (retryable failure type + retry budget remaining), regardless of
-    /// whether the backoff has elapsed. Used by `all_stages_terminal` so the
-    /// daemon does not shut down before a pending retry fires (O-1). A stage
-    /// that cannot be loaded is treated as not keeping the daemon alive (the
-    /// corrupt-file diagnostic is logged elsewhere during sync).
-    fn blocked_stage_keeps_daemon_alive(&self, stage_id: &str) -> bool {
-        match self.load_stage(stage_id) {
-            Ok(stage) => is_retry_pending(&stage),
-            Err(_) => false,
-        }
+/// Decide, from a freshly loaded stage FILE, whether it should keep the
+/// watch-mode daemon alive. Pure and exhaustive over `StageStatus` so a new
+/// variant fails to compile here instead of silently defaulting either way.
+///
+/// - `Completed`/`Skipped`/`MergeConflict`/`CompletedWithFailures`/
+///   `MergeBlocked`/`NeedsHumanReview` are always terminal.
+/// - `Blocked` is terminal unless a crash auto-retry is still pending
+///   (retryable failure type + retry budget remaining), regardless of
+///   whether the backoff has elapsed — the daemon must not shut down before
+///   that retry fires (O-1).
+/// - `Queued`/`WaitingForDeps` are terminal only when the stage is held;
+///   otherwise the daemon still needs to spawn or wait on them.
+/// - `NeedsAdjudication`/`Executing`/`WaitingForInput`/`NeedsHandoff` are
+///   never terminal: each still needs the daemon alive to spawn, watch, or
+///   close out a session (an adjudicator judge, in `NeedsAdjudication`'s
+///   case).
+fn stage_file_is_terminal(stage: &Stage) -> bool {
+    match stage.status {
+        StageStatus::Completed
+        | StageStatus::Skipped
+        | StageStatus::MergeConflict
+        | StageStatus::CompletedWithFailures
+        | StageStatus::MergeBlocked
+        | StageStatus::NeedsHumanReview => true,
+        StageStatus::Blocked => !is_retry_pending(stage),
+        StageStatus::Queued | StageStatus::WaitingForDeps => stage.held,
+        StageStatus::NeedsAdjudication
+        | StageStatus::Executing
+        | StageStatus::WaitingForInput
+        | StageStatus::NeedsHandoff => false,
     }
+}
 
+impl Orchestrator {
     /// Re-verify a `Completed + merged=true` non-knowledge stage at sync time.
     ///
     /// Derives `completed_commit` from `loom/<id>` HEAD when missing, then
@@ -1087,51 +1105,20 @@ impl Recovery for Orchestrator {
         }
 
         for node in self.graph.all_nodes() {
-            // Check graph status first
-            match node.status {
-                StageStatus::Completed => continue,
-                StageStatus::Blocked => {
-                    // A Blocked stage is NOT terminal while a crash auto-retry
-                    // is still pending (retryable failure + budget remaining),
-                    // even if its backoff has not yet elapsed. Exiting here
-                    // would kill the daemon before the retry fires (O-1).
-                    if self.blocked_stage_keeps_daemon_alive(&node.id) {
-                        return false;
-                    }
-                    continue;
-                }
-                StageStatus::Skipped => continue,
-                StageStatus::MergeConflict => continue, // Terminal until resolved
-                StageStatus::CompletedWithFailures => continue, // Terminal until retried
-                StageStatus::MergeBlocked => continue,  // Terminal until fixed
-                StageStatus::NeedsHumanReview => continue, // Waiting for human review
-                StageStatus::NeedsAdjudication => continue, // Waiting for adjudicator verdict
-                StageStatus::WaitingForDeps
-                | StageStatus::Queued
-                | StageStatus::Executing
-                | StageStatus::WaitingForInput
-                | StageStatus::NeedsHandoff => {
-                    // Need to check the actual stage file for held status
-                    if let Ok(stage) = self.load_stage(&node.id) {
-                        match stage.status {
-                            StageStatus::Blocked => {
-                                if is_retry_pending(&stage) {
-                                    return false;
-                                }
-                                continue;
-                            }
-                            StageStatus::Completed => {
-                                continue;
-                            }
-                            StageStatus::Queued | StageStatus::WaitingForDeps if stage.held => {
-                                continue
-                            }
-                            _ => return false,
-                        }
-                    } else {
-                        return false;
-                    }
-                }
+            // Completed/Skipped in the graph are terminal without needing a
+            // file read: no verdict, retry, approval, or amendment can ever
+            // un-terminal them. Every other graph status can lag the stage
+            // file by up to one tick after exactly those events, so the
+            // decision for everything else comes from the file, not the
+            // (possibly stale) graph status.
+            if matches!(node.status, StageStatus::Completed | StageStatus::Skipped) {
+                continue;
+            }
+            match self.load_stage(&node.id) {
+                Ok(stage) if stage_file_is_terminal(&stage) => continue,
+                Ok(_) => return false,
+                // An unreadable stage file cannot be judged terminal.
+                Err(_) => return false,
             }
         }
         true
@@ -1577,3 +1564,7 @@ mod recovery_adoption_tests;
 #[cfg(test)]
 #[path = "recovery_sync_tests.rs"]
 mod recovery_sync_tests;
+
+#[cfg(test)]
+#[path = "recovery_terminal_tests.rs"]
+mod recovery_terminal_tests;
