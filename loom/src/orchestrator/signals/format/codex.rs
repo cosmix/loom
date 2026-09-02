@@ -41,16 +41,31 @@ pub(crate) fn format_codex_implementers_section(
     content.push_str("## Codex Implementers\n\n");
 
     if !codex_available {
-        content.push_str(&format!(
-            "This stage lists codex in `implementers`, but the lane is UNAVAILABLE on this machine.\n\
-             Do NOT spawn `loom-codex-forwarder`; route codex-tier work to sonnet\n\
-             (`loom-software-engineer`) instead - {CODEX_IMPLEMENTER_MODEL_TERRA}'s tier (common\n\
-             implementation, integration tests) and {CODEX_IMPLEMENTER_MODEL_LUNA}'s tier\n\
-             (boilerplate, scaffolding, simple unit tests) alike.\n"
-        ));
+        push_codex_unavailable_fallback(&mut content);
         return content;
     }
 
+    push_codex_intro(&mut content, implementers);
+    push_codex_spawn_rules(&mut content);
+    push_codex_prompt_rules(&mut content);
+    push_codex_blast_radius_and_evidence(&mut content);
+
+    content
+}
+
+/// Push the fallback doctrine used when the codex lane is licensed but unavailable.
+fn push_codex_unavailable_fallback(content: &mut String) {
+    content.push_str(&format!(
+        "This stage lists codex in `implementers`, but the lane is UNAVAILABLE on this machine.\n\
+         Do NOT spawn `loom-codex-forwarder`; route codex-tier work to sonnet\n\
+         (`loom-software-engineer`) instead - {CODEX_IMPLEMENTER_MODEL_TERRA}'s tier (common\n\
+         implementation, integration tests) and {CODEX_IMPLEMENTER_MODEL_LUNA}'s tier\n\
+         (boilerplate, scaffolding, simple unit tests) alike.\n"
+    ));
+}
+
+/// Push the licensed-lanes summary and the always-applies judgment/verification paragraph.
+fn push_codex_intro(content: &mut String, implementers: &Implementers) {
     content.push_str(&format!(
         "Implementation lanes licensed for this stage: {implementers}.\n"
     ));
@@ -74,7 +89,10 @@ pub(crate) fn format_codex_implementers_section(
          loom-advisor (fable) is available on a second failure, and verification never moves off\n\
          you - see below.\n\n",
     );
+}
 
+/// Push the spawn-mechanics rules: agent type, sentinel, model/effort flags, and recovery.
+fn push_codex_spawn_rules(content: &mut String) {
     content.push_str(&format!(
         "- Spawn with the Agent tool, subagent_type: \"loom-codex-forwarder\" - never the plugin's\n\
          codex:codex-rescue directly (its tools restriction is ignored by design and it has been\n\
@@ -93,6 +111,10 @@ pub(crate) fn format_codex_implementers_section(
     content.push_str(
         "  --all` for the real job id, and cancel runaways with `codex-companion.mjs cancel <id>`.\n",
     );
+}
+
+/// Push the navigation-kit, prompt-writing, and fan-out rules.
+fn push_codex_prompt_rules(content: &mut String) {
     content.push_str(
         "- CODEX ALREADY CARRIES A NAVIGATION KIT: the wrapper prepends `loom map --find-all`,\n\
          `loom map --outline`, `loom map --impact`, and `loom knowledge context --query` anchors to\n\
@@ -120,6 +142,10 @@ pub(crate) fn format_codex_implementers_section(
          sibling's. A foreground run is one long Bash call - no PostToolUse fires, so the daemon's\n\
          \"appears hung\" warning past 300s is ADVISORY ONLY; nothing is killed or retried.\n",
     );
+}
+
+/// Push the blast-radius, lane-scope, evidence, and verification-ownership rules.
+fn push_codex_blast_radius_and_evidence(content: &mut String) {
     content.push_str(
         "- BLAST RADIUS: codex runs approval `never` - inside its own `workspace-write` sandbox where the\n\
          stage sandbox lets it nest one (Linux), or with `--sandbox danger-full-access` where it does not\n\
@@ -152,6 +178,4 @@ pub(crate) fn format_codex_implementers_section(
          six-dimension review, then commit at the end of the stage - never take a codex agent's word\n\
          its own work is correct, and never have codex review its own output.\n\n",
     );
-
-    content
 }

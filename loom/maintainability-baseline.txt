@@ -230,7 +230,6 @@ function src/orchestrator/signals/cache.rs generate_knowledge_distill_stable_pre
 function src/orchestrator/signals/cache.rs generate_knowledge_stable_prefix 66
 function src/orchestrator/signals/cache.rs test_integration_verify_stable_prefix_contains_required_sections 56
 function src/orchestrator/signals/crud.rs update_signal 69
-function src/orchestrator/signals/format/codex.rs format_codex_implementers_section 117
 function src/orchestrator/signals/format/helpers.rs format_structured_handoff 107
 function src/orchestrator/signals/format/sandbox_section.rs format_sandbox_section 68
 function src/orchestrator/signals/format/sections.rs format_dynamic_section 280
