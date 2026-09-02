@@ -16,7 +16,7 @@ use crate::plan::amendment::{AmendmentField, AmendmentPatch};
 use chrono::Utc;
 use std::path::Path;
 
-fn make_stage(id: &str) -> Stage {
+pub(super) fn make_stage(id: &str) -> Stage {
     Stage {
         id: id.to_string(),
         name: id.to_string(),
@@ -25,11 +25,16 @@ fn make_stage(id: &str) -> Stage {
     }
 }
 
-fn write_stage(work_dir: &Path, stage: &Stage) {
+pub(super) fn write_stage(work_dir: &Path, stage: &Stage) {
     crate::verify::transitions::save_stage(stage, work_dir).unwrap();
 }
 
-fn write_dispute_request(work_dir: &Path, stage_id: &str, id: u32, criterion_index: usize) {
+pub(super) fn write_dispute_request(
+    work_dir: &Path,
+    stage_id: &str,
+    id: u32,
+    criterion_index: usize,
+) {
     let disputes_root = work_dir.join("disputes");
     std::fs::create_dir_all(disputes_root.join(stage_id).join(id.to_string())).unwrap();
     let req = DisputeRequest {
@@ -51,7 +56,13 @@ fn write_dispute_request(work_dir: &Path, stage_id: &str, id: u32, criterion_ind
     .unwrap();
 }
 
-fn write_verdict(work_dir: &Path, stage_id: &str, id: u32, verdict: DisputeVerdict, attempt: u32) {
+pub(super) fn write_verdict(
+    work_dir: &Path,
+    stage_id: &str,
+    id: u32,
+    verdict: DisputeVerdict,
+    attempt: u32,
+) {
     let disputes_root = work_dir.join("disputes");
     std::fs::create_dir_all(disputes_root.join(stage_id).join(id.to_string())).unwrap();
     let record = DisputeVerdictRecord {
@@ -71,7 +82,7 @@ fn write_verdict(work_dir: &Path, stage_id: &str, id: u32, verdict: DisputeVerdi
     .unwrap();
 }
 
-fn reject_verdict() -> DisputeVerdict {
+pub(super) fn reject_verdict() -> DisputeVerdict {
     DisputeVerdict::Reject {
         citations: vec![Citation {
             file: "f".to_string(),
@@ -179,119 +190,6 @@ fn evidence_cap_escalates_before_a_session_is_offered() {
     assert_eq!(attempt_count(work, "s1", 1), 0);
 }
 
-/// A Reject is a deadlock, not a retry: the agent called the criterion
-/// impossible and the adjudicator upheld it, so re-queueing would loop the
-/// same disagreement forever.
-#[test]
-fn apply_verdict_reject_escalates_to_human_review() {
-    let tmp = tempfile::tempdir().unwrap();
-    let work = tmp.path();
-    std::fs::create_dir_all(work.join("stages")).unwrap();
-    let mut stage = make_stage("s1");
-    stage.dispute_count = 1;
-    write_stage(work, &stage);
-    write_dispute_request(work, "s1", 1, 0);
-    write_verdict(work, "s1", 1, reject_verdict(), 1);
-
-    let reg = AdjudicatorRegistry::new();
-    reg.apply_pending_verdicts(work).unwrap();
-
-    let after = crate::verify::transitions::load_stage("s1", work).unwrap();
-    assert_eq!(after.status, StageStatus::NeedsHumanReview);
-    assert!(after
-        .review_reason
-        .as_deref()
-        .unwrap_or("")
-        .contains("upheld the disputed acceptance criterion"));
-    // The reasoning is still written where the agent (and the human) read it.
-    let fb = feedback::read_feedback(work, "s1").unwrap().unwrap();
-    assert!(fb.contains("rejected"));
-    let applied = work
-        .join("disputes")
-        .join("s1")
-        .join("1")
-        .join("applied.marker");
-    assert!(applied.exists(), "applied.marker must exist after apply");
-}
-
-#[test]
-fn apply_verdict_is_idempotent() {
-    let tmp = tempfile::tempdir().unwrap();
-    let work = tmp.path();
-    std::fs::create_dir_all(work.join("stages")).unwrap();
-    let mut stage = make_stage("s1");
-    stage.dispute_count = 1;
-    write_stage(work, &stage);
-    write_dispute_request(work, "s1", 1, 0);
-    write_verdict(work, "s1", 1, reject_verdict(), 1);
-
-    let reg = AdjudicatorRegistry::new();
-    reg.apply_pending_verdicts(work).unwrap();
-    let mid = crate::verify::transitions::load_stage("s1", work).unwrap();
-
-    // Second call must not re-mutate the stage (applied.marker prevents it).
-    reg.apply_pending_verdicts(work).unwrap();
-    let after = crate::verify::transitions::load_stage("s1", work).unwrap();
-    assert_eq!(after.status, mid.status);
-}
-
-#[test]
-fn needs_more_evidence_writes_feedback_and_increments_round() {
-    let tmp = tempfile::tempdir().unwrap();
-    let work = tmp.path();
-    std::fs::create_dir_all(work.join("stages")).unwrap();
-    let mut stage = make_stage("s1");
-    stage.dispute_count = 1;
-    write_stage(work, &stage);
-    write_dispute_request(work, "s1", 1, 0);
-    write_verdict(
-        work,
-        "s1",
-        1,
-        DisputeVerdict::NeedsMoreEvidence {
-            questions: vec!["why?".to_string()],
-        },
-        1,
-    );
-
-    let reg = AdjudicatorRegistry::new();
-    reg.apply_pending_verdicts(work).unwrap();
-
-    let after = crate::verify::transitions::load_stage("s1", work).unwrap();
-    assert_eq!(after.status, StageStatus::Queued);
-    assert_eq!(after.evidence_rounds, 1);
-    let fb = feedback::read_feedback(work, "s1").unwrap().unwrap();
-    assert!(fb.contains("1. why?"));
-}
-
-#[test]
-fn evidence_loop_exhausts_to_human_review() {
-    let tmp = tempfile::tempdir().unwrap();
-    let work = tmp.path();
-    std::fs::create_dir_all(work.join("stages")).unwrap();
-    let mut stage = make_stage("s1");
-    stage.dispute_count = 3;
-    stage.evidence_rounds = MAX_EVIDENCE_ROUNDS - 1;
-    write_stage(work, &stage);
-    write_dispute_request(work, "s1", 1, 0);
-    write_verdict(
-        work,
-        "s1",
-        1,
-        DisputeVerdict::NeedsMoreEvidence {
-            questions: vec!["last chance".to_string()],
-        },
-        1,
-    );
-
-    let reg = AdjudicatorRegistry::new();
-    reg.apply_pending_verdicts(work).unwrap();
-
-    let after = crate::verify::transitions::load_stage("s1", work).unwrap();
-    assert_eq!(after.status, StageStatus::NeedsHumanReview);
-    assert_eq!(after.evidence_rounds, MAX_EVIDENCE_ROUNDS);
-}
-
 #[test]
 fn scan_pending_requests_skips_completed_verdicts() {
     let tmp = tempfile::tempdir().unwrap();
@@ -362,20 +260,4 @@ fn parse_yaml_frontmatter_round_trips() {
     let parsed: DisputeRequest = parse_yaml_frontmatter(&body).unwrap();
     assert_eq!(parsed.id, 7);
     assert_eq!(parsed.stage_id, "x");
-}
-
-#[test]
-fn apply_verdict_writes_applying_marker_then_removes_it() {
-    let tmp = tempfile::tempdir().unwrap();
-    let work = tmp.path();
-    std::fs::create_dir_all(work.join("stages")).unwrap();
-    write_stage(work, &make_stage("s1"));
-    write_dispute_request(work, "s1", 1, 0);
-    write_verdict(work, "s1", 1, reject_verdict(), 1);
-
-    let reg = AdjudicatorRegistry::new();
-    reg.apply_verdict(work, "s1", 1).unwrap();
-    let dir = work.join("disputes").join("s1").join("1");
-    assert!(dir.join("applied.marker").exists());
-    assert!(!dir.join(".applying").exists());
 }

@@ -192,10 +192,12 @@ pub(super) fn record_attempt(work_dir: &Path, stage_id: &str, dispute_id: u32) -
 ///
 /// Answered from the session record plus the backend's own liveness probe, so
 /// a session started by a previous daemon still counts and a session whose
-/// process is gone does not. A stage in `NeedsAdjudication` has at most one
-/// dispute in flight (filing another requires the stage to leave that status),
-/// so one live session per STAGE is the right granularity — and two
-/// adjudicators in the same main repository is exactly what must not happen.
+/// process is gone does not. `NeedsAdjudication -> NeedsAdjudication` is a
+/// legal filing transition, so a stage can carry several unanswered disputes
+/// at once — but `disputes_awaiting_session` hands out at most one job per
+/// stage per pass, so one live session per STAGE is still the right
+/// granularity: two adjudicators in the same main repository, judging the
+/// same stage at once, is exactly what must not happen.
 pub(super) fn live_adjudication_session(work_dir: &Path, stage_id: &str) -> Option<String> {
     let sessions =
         crate::orchestrator::session_registry::live_sessions_for_stage(work_dir, stage_id)

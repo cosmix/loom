@@ -5,9 +5,11 @@
 //! the whole autonomy contract:
 //!
 //! * `Accept` — the criterion was wrong. Amend the plan, clear the feedback,
-//!   re-queue the stage.
-//! * `NeedsMoreEvidence` — ask the agent the adjudicator's questions and
-//!   re-queue, up to [`MAX_EVIDENCE_ROUNDS`](super::MAX_EVIDENCE_ROUNDS).
+//!   then re-queue the stage, or hold it in `NeedsAdjudication` while other
+//!   disputes on it are unanswered.
+//! * `NeedsMoreEvidence` — ask the agent the adjudicator's questions, then
+//!   re-queue (or hold, per the same rule) up to
+//!   [`MAX_EVIDENCE_ROUNDS`](super::MAX_EVIDENCE_ROUNDS).
 //! * `Reject` — the criterion was right and the implementation is wrong.
 //!   This is a DEADLOCK, not a retry: the agent already judged the criterion
 //!   impossible and the adjudicator has now upheld it, so re-queueing would
@@ -22,20 +24,26 @@ use crate::models::stage::{Stage, StageStatus};
 use crate::plan::amendment::{apply_amendment, AmendmentField, AmendmentPatch, AmendmentRequest};
 use crate::verify::transitions::{load_stage, update_stage};
 
-use super::scan::{read_verdict_record, scan_pending_verdicts};
+use super::scan::{read_verdict_record, scan_pending_requests, scan_pending_verdicts};
 use super::{feedback, resolve_plan_path, AdjudicatorRegistry, MAX_EVIDENCE_ROUNDS};
 
 impl AdjudicatorRegistry {
+    /// `(stage_id, dispute_id)` pairs with a written verdict that hasn't been
+    /// applied yet (no `applied.marker`).
+    pub fn pending_verdicts(&self, work_dir: &Path) -> Result<Vec<(String, u32)>> {
+        let disputes_root = work_dir.join("disputes");
+        if !disputes_root.exists() {
+            return Ok(Vec::new());
+        }
+        scan_pending_verdicts(&disputes_root)
+    }
+
     /// Apply verdict files that haven't been applied yet (no
     /// `applied.marker`). Idempotent under crash recovery: a `.applying`
     /// marker is written before mutating stage state and removed only
     /// after `applied.marker` is in place.
     pub fn apply_pending_verdicts(&self, work_dir: &Path) -> Result<()> {
-        let disputes_root = work_dir.join("disputes");
-        if !disputes_root.exists() {
-            return Ok(());
-        }
-        for (stage_id, dispute_id) in scan_pending_verdicts(&disputes_root)? {
+        for (stage_id, dispute_id) in self.pending_verdicts(work_dir)? {
             if let Err(e) = self.apply_verdict(work_dir, &stage_id, dispute_id) {
                 tracing::warn!(
                     target: "loom::adjudication",
@@ -170,9 +178,10 @@ fn apply_accept(
     }
     resync_after_amendment(work_dir, stage);
     // Accept verdict closes the evidence loop: clear feedback and re-queue
-    // the stage so the agent can retry.
+    // the stage so the agent can retry (unless another dispute is still
+    // unanswered).
     let _ = feedback::clear_feedback(work_dir, &stage.id);
-    transition_to_queued(stage)
+    requeue_or_hold_for_remaining_disputes(work_dir, stage)
 }
 
 /// Cap exceeded: a further accepted dispute would exceed the per-stage
@@ -262,28 +271,80 @@ fn apply_needs_more_evidence(
         stage.try_request_human_review(reason).ok();
         Ok(())
     } else {
-        transition_to_queued(stage)
+        requeue_or_hold_for_remaining_disputes(work_dir, stage)
     }
 }
 
 fn transition_to_queued(stage: &mut Stage) -> Result<()> {
     let target = StageStatus::Queued;
     // try_transition refuses NeedsAdjudication → Queued unless it knows
-    // about it (the foundations stage added that transition). If the
-    // stage is somehow in a different status, fall back to a direct
-    // assignment with a warning so we don't refuse to apply a verdict
-    // because of unrelated state drift.
+    // about it (the foundations stage added that transition). If the stage
+    // is somehow in NeedsAdjudication but not recognized as a valid
+    // transition source, fall back to a direct assignment with a warning so
+    // we don't refuse to apply a verdict because of unrelated state drift.
+    //
+    // Any OTHER status must be left untouched: it means a verdict on an
+    // earlier, sibling dispute already moved the stage (e.g. a Reject to
+    // NeedsHumanReview), and forcing Queued here would silently erase that
+    // escalation.
     if stage.status.can_transition_to(&target) {
         stage.try_transition(target)?;
+    } else if stage.status == StageStatus::NeedsAdjudication {
+        tracing::warn!(
+            target: "loom::adjudication",
+            stage = %stage.id,
+            status = %stage.status,
+            "stage not recognized as transitionable to Queued from NeedsAdjudication; forcing it",
+        );
+        stage.status = target;
+        stage.updated_at = chrono::Utc::now();
     } else {
         tracing::warn!(
             target: "loom::adjudication",
             stage = %stage.id,
             status = %stage.status,
-            "stage not in NeedsAdjudication; forcing queued transition",
+            "refusing to force stage to Queued from a non-NeedsAdjudication status",
         );
-        stage.status = target;
-        stage.updated_at = chrono::Utc::now();
+    }
+    Ok(())
+}
+
+/// Re-queue the stage, unless another dispute on it still has no verdict.
+///
+/// `job_for_dispute` only schedules a dispute whose stage is
+/// `NeedsAdjudication`, so the stage must stay there until the LAST
+/// unanswered dispute is judged; only that verdict re-queues it. The
+/// dispute currently being applied already has its `verdict.md` on disk, so
+/// `scan_pending_requests` does not count it among the remainder.
+fn requeue_or_hold_for_remaining_disputes(work_dir: &Path, stage: &mut Stage) -> Result<()> {
+    if stage.status == StageStatus::NeedsHumanReview {
+        // A Reject verdict on a sibling dispute already escalated this stage;
+        // a later Accept/NeedsMoreEvidence verdict must not re-queue over it.
+        tracing::warn!(
+            target: "loom::adjudication",
+            stage = %stage.id,
+            "stage already NeedsHumanReview; not re-queueing or holding for remaining disputes",
+        );
+        return Ok(());
+    }
+    let remaining = scan_pending_requests(&work_dir.join("disputes"))?
+        .into_iter()
+        .filter(|(stage_id, _)| stage_id == &stage.id)
+        .count();
+    if remaining == 0 {
+        return transition_to_queued(stage);
+    }
+    tracing::info!(
+        target: "loom::adjudication",
+        stage = %stage.id,
+        remaining,
+        "holding stage in NeedsAdjudication: unanswered disputes remain",
+    );
+    if stage.status != StageStatus::NeedsAdjudication {
+        stage.force_status_with_reason(
+            StageStatus::NeedsAdjudication,
+            "unanswered disputes remain after a verdict",
+        );
     }
     Ok(())
 }

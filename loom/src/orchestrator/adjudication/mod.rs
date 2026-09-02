@@ -34,6 +34,8 @@ pub mod verdict;
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tests_verdicts;
 
 use anyhow::Result;
 use std::path::{Path, PathBuf};
