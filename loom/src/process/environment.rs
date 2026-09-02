@@ -20,6 +20,12 @@ const STAGE_HOST_ENV_ALLOWLIST: &[&str] = &[
     // and toolchains without them. Locations, not credentials.
     "CARGO_HOME",
     "RUSTUP_HOME",
+    // sccache locations and its wrapper binary — not credentials — so a
+    // confined acceptance run (`loom stage complete`, daemon-side
+    // verification) keeps sharing compiled dependencies across worktrees.
+    "RUSTC_WRAPPER",
+    "SCCACHE_DIR",
+    "SCCACHE_CACHE_SIZE",
     "LANG",
     "LC_ALL",
     "LC_CTYPE",
@@ -126,5 +132,24 @@ mod tests {
         assert!(environment.contains("HTTPS_PROXY=http://proxy.example:8443"));
         assert!(!environment.contains("ambient-secret-canary"));
         assert!(!environment.contains("GITHUB_TOKEN"));
+    }
+
+    #[test]
+    fn sccache_locations_and_wrapper_survive_a_confined_run() {
+        let source = [
+            ("HOME", "/safe/home"),
+            ("PATH", "/usr/bin:/bin"),
+            ("RUSTC_WRAPPER", "/opt/homebrew/bin/sccache"),
+            ("SCCACHE_DIR", "/safe/home/.cache/sccache"),
+            ("SCCACHE_CACHE_SIZE", "10G"),
+        ];
+        let mut command = Command::new("/usr/bin/env");
+        apply_stage_environment_from(&mut command, source);
+
+        let output = command.output().expect("the system env tool should run");
+        let environment = String::from_utf8(output.stdout).unwrap();
+        assert!(environment.contains("RUSTC_WRAPPER=/opt/homebrew/bin/sccache"));
+        assert!(environment.contains("SCCACHE_DIR=/safe/home/.cache/sccache"));
+        assert!(environment.contains("SCCACHE_CACHE_SIZE=10G"));
     }
 }

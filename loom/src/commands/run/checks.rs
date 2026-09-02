@@ -32,7 +32,27 @@ pub fn prepare_repo_for_run(repo_root: &Path) -> Result<()> {
         );
     }
 
+    advisory_sccache_preflight();
+
     check_for_uncommitted_changes(repo_root)
+}
+
+/// Advisory sccache preflight — never aborts startup.
+///
+/// Prints ONE line, shared verbatim with `loom doctor`
+/// (`orchestrator::terminal::native::sccache_status_line`), reporting
+/// whether sccache is available to share compiled dependencies across stage
+/// worktrees. Every stage worktree gets its own `target/`, so absent
+/// sccache each one recompiles every dependency from scratch before running
+/// a single test. Called from [`prepare_repo_for_run`] rather than
+/// alongside `advisory_codex_lane_preflight` at each `loom run` call site,
+/// so both the foreground and background start paths get it for free
+/// without needing their own call.
+fn advisory_sccache_preflight() {
+    println!(
+        "{}",
+        crate::orchestrator::terminal::native::sccache_status_line()
+    );
 }
 
 /// Advisory Codex lane preflight — never aborts startup.

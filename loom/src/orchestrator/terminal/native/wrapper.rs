@@ -202,6 +202,16 @@ fi
 /// half a contract: any terminal whose terminfo entry is not bundled into
 /// the system database (kitty is the observed instance) leaves the stage
 /// agent's inherited TERM with nowhere to resolve.
+/// RUSTC_WRAPPER/SCCACHE_DIR/SCCACHE_CACHE_SIZE forward an operator's own
+/// sccache configuration (cache location, cache size) so it survives into
+/// the session even when this machine's sccache was found some other way
+/// than [`super::build_cache::find_sccache_path`]. `sccache_env` appends its
+/// own resolved `RUSTC_WRAPPER` after `_loom_env`'s expansion in
+/// `build_wrapper_script`, so a later `env` assignment of the same name
+/// wins and the resolver's value takes precedence when both are present -
+/// `sccache_env` calls
+/// [`super::build_cache::warn_if_operator_rustc_wrapper_overridden`] so that
+/// silent override is logged rather than invisible.
 const ENV_ALLOWLIST: &str = r#"# Reconstruct the stage environment from a minimal host allowlist. In
 # particular, ambient credentials and token-shaped variables are not inherited.
 _loom_env=(
@@ -211,7 +221,8 @@ _loom_env=(
 for _loom_name in LANG LC_ALL LC_CTYPE TERM TERMINFO TERMINFO_DIRS COLORTERM \
     TERM_PROGRAM SHELL DISPLAY \
     WAYLAND_DISPLAY XAUTHORITY DBUS_SESSION_BUS_ADDRESS XDG_RUNTIME_DIR \
-    TMUX_TMPDIR TMUX TMUX_PANE TMPDIR; do
+    TMUX_TMPDIR TMUX TMUX_PANE TMPDIR \
+    RUSTC_WRAPPER SCCACHE_DIR SCCACHE_CACHE_SIZE; do
     _loom_value="${!_loom_name}"
     if [ -n "$_loom_value" ]; then
         _loom_env+=("$_loom_name=$_loom_value")
@@ -266,6 +277,21 @@ fn resource_limit_env(context_ceiling_tokens: u32) -> String {
     )
 }
 
+/// `RUSTC_WRAPPER=<path>` when sccache is available on this machine,
+/// rendered as one shell-escaped `exec env` assignment; empty when it is not
+/// (dependency crates then compile per-worktree exactly as before). Applied
+/// for EVERY session kind — a judge session runs `cargo test` too, just like
+/// a stage session.
+fn sccache_env() -> String {
+    match super::build_cache::rustc_wrapper_env() {
+        Some(assignment) => {
+            super::build_cache::warn_if_operator_rustc_wrapper_overridden();
+            format!("    {} {CONTINUATION}", escape(assignment.into()))
+        }
+        None => String::new(),
+    }
+}
+
 /// Render the wrapper script text. Pure: every path is resolved by the caller
 /// or by `absolute*`, and nothing is written.
 // Mirrors `create_wrapper_script`'s parameter list one-for-one; see that
@@ -292,6 +318,7 @@ fn build_wrapper_script(
     let pid_file = escape(absolute_target(host_pid_file).display().to_string().into());
     let pid_capture = pid_capture(&pid_file);
     let resource_limit_env = resource_limit_env(context_ceiling_tokens);
+    let sccache_env = sccache_env();
 
     format!(
         r#"#!/bin/bash
@@ -313,7 +340,7 @@ exec env -i "${{_loom_env[@]}}" \
     "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1" \
     "CLAUDE_CODE_DISABLE_AUTO_MEMORY=1" \
     "CLAUDE_REMOTE_CONTROL_SESSION_NAME_PREFIX=loom" \
-{resource_limit_env}{merge_session_env}{worktree_path_env}    {claude_cmd}
+{resource_limit_env}{sccache_env}{merge_session_env}{worktree_path_env}    {claude_cmd}
 "#
     )
 }

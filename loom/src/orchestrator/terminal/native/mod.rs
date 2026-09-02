@@ -3,6 +3,7 @@
 //! Spawns sessions in native terminal windows (kitty, alacritty, etc.)
 //! using xdg-terminal-exec or fallback detection.
 
+mod build_cache;
 mod capsule;
 mod detection;
 mod launch;
@@ -23,6 +24,10 @@ use crate::models::stage::Stage;
 use crate::models::worktree::Worktree;
 use crate::remote_control::RemoteControlInvocation;
 
+// The only build-cache piece callers outside this module need — `loom
+// doctor` and `loom run`'s preflight report it. Resolution stays internal;
+// `wrapper.rs` reaches it via `super::build_cache::`.
+pub(crate) use build_cache::sccache_status_line;
 // Re-exported so `super::session_capsule(...)` keeps resolving from `launch`.
 pub(crate) use capsule::{session_capsule, SessionCapsule};
 pub use detection::detect_terminal;

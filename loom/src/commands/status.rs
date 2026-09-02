@@ -317,6 +317,14 @@ pub fn doctor() -> Result<()> {
     issues_found += check_directory_structure(&work_dir)?;
     issues_found += check_parsing_errors(&work_dir)?;
 
+    // Informational only — never counted as an issue. Shared verbatim with
+    // `loom run`'s startup preflight, see `sccache_status_line`.
+    println!(
+        "{} {}",
+        "→".cyan().bold(),
+        crate::orchestrator::terminal::native::sccache_status_line()
+    );
+
     if issues_found == 0 {
         println!("\n{}", "No issues found!".green().bold());
     } else {
