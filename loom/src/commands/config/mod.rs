@@ -7,19 +7,30 @@
 //! opposite (read) side of the workspace/user split from this module.
 
 use anyhow::Result;
+use std::io::IsTerminal;
 
 use crate::cli::types_config::ConfigArgs;
 use crate::user_config::{keys, UserConfig};
+
+/// The interactive editor used only when a person invokes bare `loom config`.
+mod tui;
 
 #[cfg(test)]
 mod tests;
 
 /// Dispatch a parsed `loom config` invocation.
 ///
-/// The work below is split into functions that return the exact `String`
-/// they want printed rather than printing themselves, so tests can assert on
-/// output without touching stdout. This is the only function that prints.
+/// The non-interactive branches below are split into functions that return
+/// the exact `String` they want printed rather than printing themselves, so
+/// tests can assert on output without touching stdout. The bare-invocation
+/// branch is the one exception: it hands off to `tui::run()`, which owns
+/// raw mode, the alternate screen, and its own frame drawing instead of
+/// returning a string here.
 pub fn execute(args: ConfigArgs) -> Result<()> {
+    if args.key.is_none() && !args.list && !args.print && std::io::stdout().is_terminal() {
+        return tui::run();
+    }
+
     let output = if args.list {
         list()?
     } else if args.print {
