@@ -203,6 +203,54 @@ fn value_of_has_an_arm_for_every_registered_key() {
 }
 
 #[test]
+fn load_over_a_malformed_file_yields_all_defaults_without_panicking() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("config.toml");
+    std::fs::write(&path, "[update]\ncheck = \"nope\"\n").unwrap();
+    let _guard = redirect_user_config(path);
+
+    // Must not panic, and must resolve every key to its built-in default —
+    // a broken user config must never take down `loom run`.
+    assert_eq!(UserConfig::load(), UserConfig::default());
+}
+
+#[test]
+fn load_strict_over_a_type_mismatched_file_names_the_config_path() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("config.toml");
+    std::fs::write(&path, "[update]\ncheck = \"nope\"\n").unwrap();
+    let _guard = redirect_user_config(path.clone());
+
+    let err = UserConfig::load_strict().unwrap_err();
+    let rendered = format!("{err:?}");
+    assert!(
+        rendered.contains(&path.display().to_string()),
+        "error should name the config file path: {rendered}"
+    );
+}
+
+#[test]
+fn load_strict_over_syntactically_invalid_toml_retains_the_parse_position() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("config.toml");
+    // A missing closing bracket is a genuine TOML syntax error, not merely a
+    // type mismatch, so toml_edit's own parser reports a line/column.
+    std::fs::write(&path, "[update\ncheck = true\n").unwrap();
+    let _guard = redirect_user_config(path.clone());
+
+    let err = UserConfig::load_strict().unwrap_err();
+    let rendered = format!("{err:?}");
+    assert!(
+        rendered.contains(&path.display().to_string()),
+        "error should name the config file path: {rendered}"
+    );
+    assert!(
+        rendered.to_lowercase().contains("line"),
+        "error should retain toml_edit's parse position: {rendered}"
+    );
+}
+
+#[test]
 fn set_in_creates_an_absent_section() {
     let temp = tempfile::tempdir().unwrap();
     let path = temp.path().join("config.toml");

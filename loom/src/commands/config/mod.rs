@@ -44,16 +44,16 @@ fn print_key(key: &str) -> Result<String> {
 }
 
 /// `loom config -k <key> <value>` — validate, write, then report the change.
+///
+/// The old and new values come back from [`crate::user_config::set`] itself,
+/// captured inside its single locked read-modify-write, rather than from a
+/// separate load-before/load-after here — two concurrent `set_key` calls
+/// racing a bare load-set-load would otherwise be able to print an `old ->
+/// new` line naming a value neither invocation wrote.
 fn set_key(key: &str, raw_value: &str) -> Result<String> {
     let spec = keys::spec(key)?;
-    let before = UserConfig::load_strict()?;
-    let (old, _) = before.value_of(spec);
-
     let value = spec.parse(raw_value)?;
-    crate::user_config::set(spec, value)?;
-
-    let after = UserConfig::load_strict()?;
-    let (new, _) = after.value_of(spec);
+    let (old, new) = crate::user_config::set(spec, value)?;
     Ok(format!("{}: {old} -> {new}\n", spec.name))
 }
 

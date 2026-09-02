@@ -7,10 +7,11 @@ use tracing_subscriber::{fmt, EnvFilter};
 ///
 /// These are machine-to-machine entry points driven from Claude Code hooks:
 /// `loom hook user-prompt` prints a JSON object that the harness injects into an
-/// agent's context, and `loom context ...` is invoked the same way. Terminal
+/// agent's context, and `loom context ...` is invoked the same way. `loom
+/// config -k <key>` prints a bare value meant for a script to read. Terminal
 /// recovery writes ANSI escape sequences to stdout, which on these commands
 /// would be bytes inside that payload rather than a restored display.
-const MACHINE_PROTOCOL_COMMANDS: [&str; 2] = ["hook", "context"];
+const MACHINE_PROTOCOL_COMMANDS: [&str; 3] = ["hook", "context", "config"];
 
 fn main() -> Result<()> {
     // Recover terminal state if a previous TUI was killed without cleanup —

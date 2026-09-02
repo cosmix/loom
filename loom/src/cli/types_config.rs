@@ -9,7 +9,7 @@
 //! and the tuple form costs three fewer lines here.
 
 /// Flags for `loom config`.
-#[derive(clap::Args)]
+#[derive(Debug, clap::Args)]
 pub struct ConfigArgs {
     /// Config key to read, or to write when a value follows (e.g. update.check_interval_hours)
     #[arg(short = 'k', long = "key")]
@@ -19,7 +19,8 @@ pub struct ConfigArgs {
     #[arg(requires = "key")]
     pub value: Option<String>,
 
-    /// List every key with its value and origin
+    /// List every key with its value and origin (~/.loom/config.toml alone;
+    /// a workspace `[terminal]`/`[context]` section, when present, overrides it)
     #[arg(long, conflicts_with_all = ["key", "value"])]
     pub list: bool,
 

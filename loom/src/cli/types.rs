@@ -100,7 +100,7 @@ pub enum Commands {
         #[arg(long)]
         no_merge: bool,
 
-        /// Terminal backend for sessions (native|tmux); persisted to the [terminal] section of the loom config
+        /// Terminal backend for sessions (native|tmux); persisted to the `[terminal]` section of the loom config
         #[arg(long, value_parser = ["native", "tmux"])]
         backend: Option<String>,
     },

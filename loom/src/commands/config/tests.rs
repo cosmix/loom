@@ -76,3 +76,29 @@ fn a_value_failing_its_key_type_is_an_error_naming_the_key() {
         .to_string();
     assert!(err.contains("update.check_interval_hours"), "{err}");
 }
+
+/// The stage's headline invariant: a read must never create `~/.loom`. Every
+/// other test in this file redirects into a directory that already exists,
+/// which would let a directory-creating read pass silently. Redirecting into
+/// a config path whose parent (`dotloom`) does not exist yet pins both
+/// halves: `--list` and `-k <key>` create nothing, and only a set creates the
+/// directory.
+#[test]
+fn a_read_never_creates_the_user_config_directory_only_a_set_does() {
+    let temp = tempfile::tempdir().unwrap();
+    let dotloom = temp.path().join("dotloom");
+    let _guard = redirect_user_config(dotloom.join("config.toml"));
+
+    list().unwrap();
+    print_key("update.check_interval_hours").unwrap();
+    assert!(
+        !dotloom.exists(),
+        "a read must not create the user config directory"
+    );
+
+    set_key("update.check_interval_hours", "6").unwrap();
+    assert!(
+        dotloom.exists(),
+        "a set must create the user config directory"
+    );
+}
