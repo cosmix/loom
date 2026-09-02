@@ -33,6 +33,22 @@ use self::state::ConfigState;
 pub fn run() -> Result<()> {
     let state = ConfigState::load()?;
     let mut app = ConfigTui::new(state)?;
+
+    // Ctrl+C already returns from `handle_key` because raw mode delivers it
+    // as an ordinary `KeyEvent`, never as SIGINT. This handler is for
+    // termination that does not go through the terminal at all - an
+    // external `kill`, a multiplexer pane closing, or a session manager
+    // sending SIGTERM/SIGHUP - which skip unwinding entirely, so `Drop`
+    // never runs and the operator's shell is left in raw alternate-screen
+    // mode. `cleanup_terminal_crossterm` writes straight to stdout instead
+    // of through `self.terminal` because the signal can land mid-render,
+    // while `self.terminal`'s borrow is held elsewhere.
+    ctrlc::set_handler(|| {
+        crate::utils::cleanup_terminal_crossterm();
+        std::process::exit(0);
+    })
+    .context("Failed to set signal handler")?;
+
     let result = app.event_loop();
     app.cleanup_terminal();
     result
