@@ -174,6 +174,34 @@ mod tests {
         assert_eq!(derive_version(Some("v1.2.0-rc1"), None, None), "1.2.0-rc1");
     }
 
+    // Regression for a stale-stamp bug: `build.rs` used to watch only `HEAD`
+    // for `cargo:rerun-if-changed`, but on a branch checkout `HEAD` is a
+    // symref whose own mtime never changes on commit, so `LOOM_COMMIT` went
+    // stale across commits without a rebuild ever being triggered. Skips
+    // gracefully when `git` is unavailable (e.g. a release tarball build)
+    // rather than failing the suite.
+    #[test]
+    fn the_embedded_commit_matches_the_built_tree() {
+        let Ok(output) = std::process::Command::new("git")
+            .args(["rev-parse", "--short", "HEAD"])
+            .output()
+        else {
+            return;
+        };
+        if !output.status.success() {
+            return;
+        }
+        let Ok(stdout) = String::from_utf8(output.stdout) else {
+            return;
+        };
+        let expected = stdout.trim();
+        if expected.is_empty() {
+            return;
+        }
+
+        assert_eq!(env!("LOOM_COMMIT"), expected);
+    }
+
     // civil_date_from_days: expected values derived independently via
     // `date -u -r $((days * 86400)) +%Y-%m-%d` on macOS, not from the
     // algorithm under test.

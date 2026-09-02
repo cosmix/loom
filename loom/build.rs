@@ -57,12 +57,27 @@ fn run_git(args: &[&str]) -> Option<String> {
 /// because this build script's CWD is the package root (`loom/`), and in a
 /// linked git worktree `.git` is a file pointing elsewhere, not a directory —
 /// so neither path can be assumed literally.
+///
+/// On a normal branch checkout `HEAD` is a symref (`ref: refs/heads/<branch>`)
+/// and its own mtime does not change when a commit lands on that branch — the
+/// file that actually moves is the branch ref `HEAD` points at. Watching only
+/// `HEAD` would leave `LOOM_COMMIT` stale after every commit on a branch, so
+/// the resolved ref file is watched too. `symbolic-ref -q HEAD` fails on a
+/// detached HEAD, where `HEAD` itself holds the sha and is already watched
+/// above, so that case needs no extra path. A branch whose ref is packed
+/// rather than loose falls back to `packed-refs`, which is already watched.
 fn emit_rerun_keys() {
     println!("cargo:rerun-if-changed=build.rs");
     println!("cargo:rerun-if-changed=src/version/derive.rs");
 
     if let Some(head) = run_git(&["rev-parse", "--git-path", "HEAD"]) {
         emit_if_exists(Path::new(&head));
+    }
+
+    if let Some(symbolic) = run_git(&["symbolic-ref", "-q", "HEAD"]) {
+        if let Some(ref_path) = run_git(&["rev-parse", "--git-path", &symbolic]) {
+            emit_if_exists(Path::new(&ref_path));
+        }
     }
 
     if let Some(common_dir) = run_git(&["rev-parse", "--git-common-dir"]) {
