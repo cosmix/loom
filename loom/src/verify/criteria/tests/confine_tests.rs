@@ -157,6 +157,13 @@ fn working_dir_is_honored_for_both_spec_kinds() {
 #[cfg(unix)]
 #[test]
 fn spawned_child_leads_its_own_process_group() {
+    if crate::process::sandbox_probe::skip_unless(
+        crate::process::sandbox_probe::process_group_visible(),
+        "verify::criteria::tests::confine_tests::spawned_child_leads_its_own_process_group",
+        "the process-group query needs a visible process group id",
+    ) {
+        return;
+    }
     // The timeout path kills `-pgid`, which only reaches grandchildren of a
     // compound command when the child is a process group leader.
     let mut child = crate::verify::criteria::spawn_confined(

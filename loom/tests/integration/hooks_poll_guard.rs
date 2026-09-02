@@ -24,6 +24,7 @@
 use loom::fs::permissions::constants::{
     HOOK_COMMON, HOOK_POLL_GUARD, HOOK_READ_DISCIPLINE, HOOK_READ_GUARD, HOOK_READ_LEDGER,
 };
+use loom::process::sandbox_probe::{process_tree_visible, skip_unless};
 use serde_json::{json, Value};
 use std::fs;
 use std::io::Write;
@@ -207,6 +208,19 @@ fn run_bash_hook(
     run_payload(hook, &payload, session, stub_dir)
 }
 
+/// Every deny-branch test below needs the SAME probe: whether this sandbox
+/// can see its own process tree, which `is_ancestor` (`hooks/_common.sh`)
+/// depends on. `test` is the test's path under this file (a bare name, or
+/// `submodule::name`); this adds the `hooks_poll_guard::` prefix so the
+/// printed SKIP line matches `cargo test`'s own naming.
+fn skip_unless_gate_visible(test: &str) -> bool {
+    skip_unless(
+        process_tree_visible(),
+        &format!("hooks_poll_guard::{test}"),
+        "the guard's deny branch needs a visible process tree",
+    )
+}
+
 /// Extract the single `LOOM_HOOK_WARN: ...` additionalContext string from a
 /// warn response's stdout JSON.
 fn warn_context(stdout: &str) -> String {
@@ -263,6 +277,9 @@ mod gate;
 //    at 3-4, denies at 5 (switch on) / warns at 5 (switch off).
 #[test]
 fn repeated_git_status_escalates_to_deny_only_with_switch_on() {
+    if skip_unless_gate_visible("repeated_git_status_escalates_to_deny_only_with_switch_on") {
+        return;
+    }
     let (_hook_dir, hook) = setup_hook();
     let on = Session::new().with_live_main_agent();
     on.enable_deny();

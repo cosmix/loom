@@ -5,6 +5,13 @@ use tempfile::TempDir;
 /// ancestor — both without spawning anything.
 #[test]
 fn ancestry_accepts_self_and_the_real_parent_chain() {
+    if crate::process::sandbox_probe::skip_unless(
+        crate::process::sandbox_probe::process_tree_visible(),
+        "daemon::server::peer_identity::tests::ancestry_accepts_self_and_the_real_parent_chain",
+        "walking up from a real parent needs a visible process tree",
+    ) {
+        return;
+    }
     let me = std::process::id();
     assert!(is_at_or_below(me, me), "a process is at its own pid");
 

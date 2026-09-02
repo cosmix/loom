@@ -21,6 +21,7 @@
 use loom::fs::permissions::constants::{
     HOOK_COMMON, HOOK_READ_DISCIPLINE, HOOK_READ_GUARD, HOOK_READ_LEDGER,
 };
+use loom::process::sandbox_probe::{process_tree_visible, skip_unless};
 use serde_json::{json, Value};
 use std::fs;
 use std::io::Write;
@@ -221,6 +222,19 @@ fn run_read_hook(
     run_payload(hook, &payload, session, stub_dir)
 }
 
+/// Every deny-branch test below needs the SAME probe: whether this sandbox
+/// can see its own process tree, which `is_ancestor` (`hooks/_common.sh`)
+/// depends on. `test` is the test's path under this file (a bare name, or
+/// `submodule::name`); this adds the `hooks_read_guard::` prefix so the
+/// printed SKIP line matches `cargo test`'s own naming.
+fn skip_unless_gate_visible(test: &str) -> bool {
+    skip_unless(
+        process_tree_visible(),
+        &format!("hooks_read_guard::{test}"),
+        "the guard's deny branch needs a visible process tree",
+    )
+}
+
 /// Extract the single `LOOM_HOOK_WARN: ...` additionalContext string from a
 /// warn response's stdout JSON.
 fn warn_context(stdout: &str) -> String {
@@ -235,6 +249,9 @@ fn warn_context(stdout: &str) -> String {
 //    with the outline inline, and the stub's own stderr warning never leaks.
 #[test]
 fn unbounded_read_of_large_covered_file_denies_with_outline() {
+    if skip_unless_gate_visible("unbounded_read_of_large_covered_file_denies_with_outline") {
+        return;
+    }
     let (_hook_dir, hook) = setup_hook();
     let files = TempDir::new().expect("files dir");
     let stubs = TempDir::new().expect("stubs dir");
@@ -289,6 +306,9 @@ fn bounded_read_of_large_file_is_allowed() {
 //    unbounded, 401 lines is caught by rule 1.
 #[test]
 fn line_limit_boundary_is_strictly_greater_than() {
+    if skip_unless_gate_visible("line_limit_boundary_is_strictly_greater_than") {
+        return;
+    }
     let (_hook_dir, hook) = setup_hook();
     let files = TempDir::new().expect("files dir");
     let stubs = TempDir::new().expect("stubs dir");

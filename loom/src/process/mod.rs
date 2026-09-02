@@ -4,6 +4,8 @@
 
 mod environment;
 mod identity;
+#[doc(hidden)]
+pub mod sandbox_probe;
 
 use anyhow::{Context, Result};
 use nix::errno::Errno;

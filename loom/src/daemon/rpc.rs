@@ -208,21 +208,6 @@ mod tests {
         }
     }
 
-    /// Whether this process may BIND an AF_UNIX listener.
-    ///
-    /// Binding and connecting are governed separately on macOS: inside the
-    /// Claude Code Bash sandbox (Seatbelt), `connect` behaves the same as an
-    /// unsandboxed process, but `bind` fails outright with `PermissionDenied`.
-    /// So a test that needs an actual listener (not just a connect attempt)
-    /// must probe `bind` itself rather than reuse the connect-based check.
-    fn af_unix_bind_available() -> bool {
-        let temp = TempDir::new().unwrap();
-        match std::os::unix::net::UnixListener::bind(temp.path().join("probe.sock")) {
-            Ok(_) => true,
-            Err(e) => e.kind() != ErrorKind::PermissionDenied,
-        }
-    }
-
     /// Whether this sandbox denies AF_UNIX `connect` outright.
     ///
     /// Outside any sandbox, connecting to a path with nothing bound answers
@@ -255,12 +240,14 @@ mod tests {
 
     #[test]
     fn a_stale_socket_file_with_nothing_bound_is_not_listening() {
-        if !af_unix_bind_available() {
-            // Sandboxed: bind is denied before a real stale socket could even
-            // be produced, so this test can't say anything here.
+        let temp = TempDir::new().unwrap();
+        if crate::process::sandbox_probe::skip_unless(
+            crate::process::sandbox_probe::unix_socket_bindable(temp.path()),
+            "daemon::rpc::tests::a_stale_socket_file_with_nothing_bound_is_not_listening",
+            "this sandbox denies binding an AF_UNIX listener",
+        ) {
             return;
         }
-        let temp = TempDir::new().unwrap();
         // A REAL stale socket, not a plain file: a plain file answers
         // ENOTSOCK on macOS (XNU's unp_connect rejects a non-socket path)
         // rather than the ECONNREFUSED a dead daemon actually produces.
@@ -304,13 +291,14 @@ mod tests {
 
     #[test]
     fn a_live_listener_is_answered() {
-        if !af_unix_bind_available() {
-            // Sandboxed: bind fails PermissionDenied before any
-            // socket-specific behavior runs, so this test can't say
-            // anything here.
+        let temp = TempDir::new().unwrap();
+        if crate::process::sandbox_probe::skip_unless(
+            crate::process::sandbox_probe::unix_socket_bindable(temp.path()),
+            "daemon::rpc::tests::a_live_listener_is_answered",
+            "this sandbox denies binding an AF_UNIX listener",
+        ) {
             return;
         }
-        let temp = TempDir::new().unwrap();
         let listener = std::os::unix::net::UnixListener::bind(socket_path(temp.path())).unwrap();
 
         let handle = std::thread::spawn(move || {

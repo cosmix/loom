@@ -17,6 +17,13 @@ fn test_nonexistent_process_is_not_alive() {
 
 #[test]
 fn unreaped_dead_child_is_not_alive() {
+    if crate::process::sandbox_probe::skip_unless(
+        crate::process::sandbox_probe::process_tree_visible(),
+        "process::tests::unreaped_dead_child_is_not_alive",
+        "zombie detection needs process introspection this sandbox denies",
+    ) {
+        return;
+    }
     // A child that has exited but not been waited on keeps its PID entry,
     // so `kill(pid, 0)` still succeeds for it. Liveness must answer no:
     // this is the state a tmux pane process lands in under

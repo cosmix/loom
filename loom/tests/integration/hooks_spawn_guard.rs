@@ -17,6 +17,7 @@
 //! Runs the hook script directly with bash - no loom invocation.
 
 use loom::fs::permissions::constants::{HOOK_COMMON, HOOK_SPAWN_GUARD};
+use loom::process::sandbox_probe::{process_tree_visible, skip_unless};
 use serde_json::{json, Value};
 use std::fs;
 use std::io::Write;
@@ -57,6 +58,19 @@ fn setup_hook() -> (TempDir, std::path::PathBuf) {
 
 fn temp() -> TempDir {
     TempDir::new().expect("create temp dir")
+}
+
+/// Every gated test below needs the SAME probe: whether this sandbox can see
+/// its own process tree, which is what `is_ancestor` (`hooks/_common.sh`)
+/// depends on to confirm a claimed main-agent pid is a live ancestor. `test`
+/// is the bare function name; this adds the `hooks_spawn_guard::` prefix so
+/// the printed SKIP line names the test the way `cargo test` does.
+fn skip_unless_gate_visible(test: &str) -> bool {
+    skip_unless(
+        process_tree_visible(),
+        &format!("hooks_spawn_guard::{test}"),
+        "the enforcement gate needs a visible process tree",
+    )
 }
 
 /// Write `<base>/.claude/agents/<agent_type>.md` with a `model:` frontmatter
@@ -178,6 +192,9 @@ fn assert_spawn_key_order(line: &str) {
 // 1. Untyped/placeholder spawns are DENIED inside a live loom stage session.
 #[test]
 fn gated_untyped_or_placeholder_spawn_denied() {
+    if skip_unless_gate_visible("gated_untyped_or_placeholder_spawn_denied") {
+        return;
+    }
     let (_temp, hook) = setup_hook();
     let (home, cwd, work) = (temp(), temp(), temp());
 
@@ -373,28 +390,7 @@ fn non_spawn_tool_is_ignored() {
 }
 
 // 8. Missing Rule 5 preamble warns for a loom-* agent; loom-codex-forwarder
-//    is exempt (it reads AGENTS.md, never CLAUDE.md).
-#[test]
-fn missing_rule5_preamble_warns_except_for_codex_forwarder() {
-    let (_temp, hook) = setup_hook();
-    let (home, cwd, work) = (temp(), temp(), temp());
-    let no_preamble = "just do the task, no preamble here";
-
-    let warned = json!({"subagent_type": "loom-software-engineer", "prompt": no_preamble});
-    let out = gated_task(&hook, warned, cwd.path(), home.path(), work.path());
-    assert_eq!(out.code, 0, "stderr={}", out.stderr);
-    assert!(
-        out.stdout.contains("LOOM_HOOK_WARN:") && out.stdout.contains("Rule 5 preamble"),
-        "stdout={}",
-        out.stdout
-    );
-
-    let exempt = json!({"subagent_type": "loom-codex-forwarder", "prompt": no_preamble});
-    let out = gated_task(&hook, exempt, cwd.path(), home.path(), work.path());
-    assert_eq!(out.code, 0, "stderr={}", out.stderr);
-    assert!(
-        out.stdout.trim().is_empty(),
-        "loom-codex-forwarder must never get a Rule 5 preamble warning: stdout={}",
-        out.stdout
-    );
-}
+//    is exempt (it reads AGENTS.md, never CLAUDE.md) - split out purely for
+//    size, sharing this file's harness via `use super::*`.
+#[path = "hooks_spawn_guard_gate.rs"]
+mod gate;

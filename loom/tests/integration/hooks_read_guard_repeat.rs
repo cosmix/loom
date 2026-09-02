@@ -29,6 +29,9 @@ fn expect_full_read(
 //    escalate: 1st clean, 2nd warns, 3rd denies (switch on) / warns (off).
 #[test]
 fn repeat_full_reads_escalate_to_deny_only_with_switch_on() {
+    if skip_unless_gate_visible("repeat::repeat_full_reads_escalate_to_deny_only_with_switch_on") {
+        return;
+    }
     let (_hook_dir, hook) = setup_hook();
     let files = TempDir::new().expect("files dir");
     let file = write_file_with_lines(files.path(), "small.rs", 50);
@@ -281,6 +284,10 @@ fn assert_knowledge_read(
 //     denied it. A tier-2 topic file is the control - NOT exempt.
 #[test]
 fn tier1_knowledge_read_warns_never_denies_tier2_is_not_exempt() {
+    let test = "repeat::tier1_knowledge_read_warns_never_denies_tier2_is_not_exempt";
+    if skip_unless_gate_visible(test) {
+        return;
+    }
     let (_hook_dir, hook) = setup_hook();
     let files = TempDir::new().expect("files dir");
     let stubs = TempDir::new().expect("stubs dir");

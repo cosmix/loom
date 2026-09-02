@@ -33,6 +33,10 @@ fn write_stage_file(work_dir: &Path, prefix: &str, stage_id: &str, stage_type: &
 
 #[test]
 fn carve_out_refused_when_a_decoy_stage_file_also_matches() {
+    let test = "carveout::carve_out_refused_when_a_decoy_stage_file_also_matches";
+    if skip_unless_gate_visible(test) {
+        return;
+    }
     let dir = temp_dir_no_claude();
     let hook_path = install_hook(dir.path());
 
@@ -66,6 +70,10 @@ fn carve_out_refused_when_a_decoy_stage_file_also_matches() {
 
 #[test]
 fn carve_out_refused_for_a_non_integration_verify_stage() {
+    let test = "carveout::carve_out_refused_for_a_non_integration_verify_stage";
+    if skip_unless_gate_visible(test) {
+        return;
+    }
     let dir = temp_dir_no_claude();
     let hook_path = install_hook(dir.path());
 
@@ -93,6 +101,9 @@ fn carve_out_refused_for_a_non_integration_verify_stage() {
 
 #[test]
 fn carve_out_refused_when_no_stage_file_exists() {
+    if skip_unless_gate_visible("carveout::carve_out_refused_when_no_stage_file_exists") {
+        return;
+    }
     let dir = temp_dir_no_claude();
     let hook_path = install_hook(dir.path());
 

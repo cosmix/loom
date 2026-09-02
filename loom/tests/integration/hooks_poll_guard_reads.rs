@@ -14,6 +14,9 @@ use super::*;
 //    with it off; `sed -n` of the same file as a bounded range is allowed.
 #[test]
 fn bash_side_cat_gets_read_rules_sed_range_is_allowed() {
+    if skip_unless_gate_visible("reads::bash_side_cat_gets_read_rules_sed_range_is_allowed") {
+        return;
+    }
     let (_hook_dir, hook) = setup_hook();
     let files = TempDir::new().expect("files dir");
     let stubs = TempDir::new().expect("stubs dir");
@@ -95,6 +98,9 @@ fn bash_side_cat_and_read_tool_share_the_same_read_ledger() {
 //    `cat`.
 #[test]
 fn head_tail_with_count_is_range_bare_is_full() {
+    if skip_unless_gate_visible("reads::head_tail_with_count_is_range_bare_is_full") {
+        return;
+    }
     let (_hook_dir, hook) = setup_hook();
     let files = TempDir::new().expect("files dir");
     let stubs = TempDir::new().expect("stubs dir");
@@ -158,6 +164,9 @@ fn head_byte_count_and_tail_follow_skip_line_discipline() {
 // escaped rule 1 entirely by superficially looking like a bounded range.
 #[test]
 fn sed_dollar_range_is_treated_as_a_full_read() {
+    if skip_unless_gate_visible("reads::sed_dollar_range_is_treated_as_a_full_read") {
+        return;
+    }
     let (_hook_dir, hook) = setup_hook();
     let files = TempDir::new().expect("files dir");
     let stubs = TempDir::new().expect("stubs dir");

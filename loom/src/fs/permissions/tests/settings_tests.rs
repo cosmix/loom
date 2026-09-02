@@ -201,6 +201,13 @@ fn test_scrub_stale_work_dir_env_noop_missing_key() {
 #[test]
 #[serial]
 fn test_ensure_loom_permissions_adds_home_expanded_codex_forward_entry() {
+    if crate::process::sandbox_probe::skip_unless(
+        crate::process::sandbox_probe::home_dir_resolvable(),
+        "fs::permissions::tests::settings_tests::test_ensure_loom_permissions_adds_home_expanded_codex_forward_entry",
+        "the home directory is not resolvable in this sandbox",
+    ) {
+        return;
+    }
     // Drives the real write path (not just the LOOM_PERMISSIONS constant) so
     // this would actually catch the fold site being missed. This is also the
     // exact file `create_worktree_settings` copies verbatim into every new
@@ -239,6 +246,13 @@ fn test_ensure_loom_permissions_adds_home_expanded_codex_forward_entry() {
 #[test]
 #[serial]
 fn test_ensure_loom_permissions_home_expanded_entry_no_duplicates_on_rerun() {
+    if crate::process::sandbox_probe::skip_unless(
+        crate::process::sandbox_probe::home_dir_resolvable(),
+        "fs::permissions::tests::settings_tests::test_ensure_loom_permissions_home_expanded_entry_no_duplicates_on_rerun",
+        "the home directory is not resolvable in this sandbox",
+    ) {
+        return;
+    }
     let temp_dir = TempDir::new().unwrap();
     let repo_root = temp_dir.path();
     let hooks_dir = temp_dir.path().join("hooks");

@@ -35,6 +35,7 @@
 //! refusal cases in the `carveout` submodule.
 
 use loom::fs::permissions::constants::{HOOK_COMMON, HOOK_SUBAGENT_VERIFY_GUARD};
+use loom::process::sandbox_probe::{process_tree_visible, skip_unless};
 use std::fs;
 use std::io::Write;
 use std::os::unix::fs::PermissionsExt;
@@ -182,6 +183,20 @@ fn write_integration_verify_stage(work_dir: &Path, stage_id: &str) {
 
 const BLOCK_MESSAGE_SNIPPET: &str = "AT MOST ONE narrowly-scoped check";
 
+/// Every subagent-classification test below needs the SAME probe: whether
+/// this sandbox can see its own process tree, which the fake process trees
+/// here depend on to be told apart from the main agent. `test` is the test's
+/// path under this file (a bare name, or `submodule::name`); this adds the
+/// `hooks_subagent_verify_guard::` prefix so the printed SKIP line matches
+/// `cargo test`'s own naming.
+fn skip_unless_gate_visible(test: &str) -> bool {
+    skip_unless(
+        process_tree_visible(),
+        &format!("hooks_subagent_verify_guard::{test}"),
+        "distinguishing a subagent from the main agent needs a visible process tree",
+    )
+}
+
 /// Run `command` as a SUBAGENT (no carve-out env set) and return
 /// `Some(description)` describing the mismatch, or `None` if it matched
 /// `expected_exit` (and, for blocks, contained the guidance snippet).
@@ -220,6 +235,9 @@ mod cases;
 
 #[test]
 fn subagent_block_and_allow_table() {
+    if skip_unless_gate_visible("subagent_block_and_allow_table") {
+        return;
+    }
     let dir = temp_dir_no_claude();
     let hook_path = install_hook(dir.path());
 
