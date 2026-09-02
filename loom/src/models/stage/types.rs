@@ -401,11 +401,23 @@ fn default_deny_read() -> Vec<String> {
         // broad allow (deny-before-allow) — that ordering is handled by the
         // settings emitter; here we only declare the carve-out. Both relative
         // forms are listed because `.loom/work` is a symlink and Claude Code
-        // matches patterns against the path as written.
+        // matches patterns against the path as written. Both layouts
+        // (`.loom/work` and legacy `.work`) are listed too: a workspace whose
+        // `config.toml` was found under legacy `.work/` keeps that layout for
+        // reads and writes forever, so `LOOM_PERMISSIONS`/
+        // `LOOM_PERMISSIONS_WORKTREE` (`fs/permissions/constants.rs`) still
+        // grant it a broad `Read(.work/**)` for back-compat — the matching
+        // carve-out must exist in the legacy spelling too, or that broad
+        // allow leaves `admin.token`/`user.token` exposed with no deny to
+        // stop it.
         ".loom/work/admin.token".to_string(),
         ".loom/work/user.token".to_string(),
         "../.loom/work/admin.token".to_string(),
         "../.loom/work/user.token".to_string(),
+        ".work/admin.token".to_string(),
+        ".work/user.token".to_string(),
+        "../.work/admin.token".to_string(),
+        "../.work/user.token".to_string(),
         // Worktree escape prevention - block access to parent directories
         "../../**".to_string(),
         // Block access to other worktrees

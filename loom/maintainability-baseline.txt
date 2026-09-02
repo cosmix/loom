@@ -11,7 +11,7 @@ file src/commands/graph/tests.rs 425
 file src/commands/hook/tests_reconcile_graph.rs 432
 file src/commands/init/tests.rs 702
 file src/commands/plan/verify.rs 599
-file src/commands/repair.rs 1165
+file src/commands/repair.rs 1189
 file src/commands/review/generate.rs 439
 file src/commands/run/tests.rs 463
 file src/commands/self_update/mod.rs 438
@@ -37,7 +37,7 @@ file src/git/worktree/base.rs 545
 file src/git/worktree/settings.rs 683
 file src/hooks/tests.rs 514
 file src/models/stage/methods.rs 817
-file src/models/stage/types.rs 1219
+file src/models/stage/types.rs 1231
 file src/orchestrator/core/merge_handler.rs 1330
 file src/orchestrator/core/orchestrator.rs 554
 file src/orchestrator/core/recovery.rs 1618
@@ -58,9 +58,9 @@ file src/plan/schema/types.rs 466
 file src/plan/schema/validation.rs 1319
 file src/plan/tests/amendment.rs 628
 file src/remote_control.rs 599
-file src/sandbox/config.rs 817
-file src/sandbox/settings.rs 553
-file src/sandbox/settings/tests.rs 1855
+file src/sandbox/config.rs 848
+file src/sandbox/settings.rs 566
+file src/sandbox/settings/tests.rs 1872
 file src/skills/index.rs 564
 file src/verify/duplicate_detection.rs 436
 file src/verify/transitions/state.rs 433
@@ -95,7 +95,7 @@ function src/commands/knowledge/tests.rs test_parse_file_type 70
 function src/commands/plan/verify.rs execute 272
 function src/commands/plan/verify.rs print_human 110
 function src/commands/pressure/mod.rs execute 86
-function src/commands/repair.rs check_all_issues 378
+function src/commands/repair.rs check_all_issues 392
 function src/commands/repair.rs execute 99
 function src/commands/repair.rs fix_issue 74
 function src/commands/repair/tests.rs repair_fixes_a_stale_knowledge_directory_deny_in_a_worktree 62
@@ -174,7 +174,7 @@ function src/fs/permissions/tests/sync_tests.rs test_sync_preserves_other_fields
 function src/fs/plan_lifecycle.rs mark_plan_done_if_all_merged 56
 function src/fs/safe_fs.rs safe_replace_outside_workdir 138
 function src/fs/session_files.rs find_session_file 55
-function src/fs/work_integrity.rs validate_work_dir_state 55
+function src/fs/work_integrity.rs validate_work_dir_state 60
 function src/fs/worktree_files/sessions.rs cleanup_sessions_for_stage 79
 function src/git/hooks.rs install_pre_commit_hook 60
 function src/git/merge/mod.rs merge_stage 112
@@ -268,13 +268,14 @@ function src/plan/schema/tests/security_policy_tests.rs rejects_misspelled_neste
 function src/plan/schema/validation.rs check_cross_stage_wiring_coverage 66
 function src/plan/schema/validation.rs validate 411
 function src/plan/schema/validation.rs validate_structural_preflight 232
-function src/sandbox/settings.rs generate_settings_json 107
+function src/sandbox/settings.rs generate_settings_json 120
 function src/sandbox/settings.rs merge_existing_permissions 56
 function src/sandbox/settings.rs write_settings 142
 function src/sandbox/settings/policy.rs filesystem_settings 52
 function src/sandbox/settings/tests.rs every_stage_type_can_write_the_knowledge_directory 56
 function src/sandbox/settings/tests.rs test_deny_write_parent_traversal_not_in_os_sandbox 73
 function src/sandbox/settings/tests.rs test_generate_settings_emits_network_block 53
+function src/sandbox/settings/tests.rs test_generate_settings_with_filesystem 56
 function src/sandbox/settings/tests.rs test_write_settings_does_not_carry_forward_existing_allow 82
 function src/sandbox/settings/tests.rs test_write_settings_main_repo_drops_stale_escape_from_existing 76
 function src/sandbox/settings/tests.rs test_write_settings_main_repo_strips_worktree_escape_denies 54
@@ -325,8 +326,8 @@ function tests/stage_transitions.rs test_stage_transition_workflow 72
 file src/commands/clean/sessions.rs 403
 file src/git/worktree/tests_settings.rs 443
 file src/utils.rs 403
-file src/commands/repair/tests.rs 449
+file src/commands/repair/tests.rs 642
 function src/fs/permissions/tests/write_rules_tests.rs test_ensure_loom_permissions_prunes_legacy_work_write_grants 56
 function src/git/worktree/tests_settings.rs test_create_worktree_settings_adds_resolved_work_permissions_legacy_layout 82
-function src/sandbox/settings/tests.rs test_write_settings_adds_resolved_work_symlink_permissions_legacy_layout 100
+function src/sandbox/settings/tests.rs test_write_settings_adds_resolved_work_symlink_permissions_legacy_layout 105
 function src/sandbox/settings/tests.rs test_write_settings_adds_resolved_work_symlink_permissions_nested_layout 73

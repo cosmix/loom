@@ -324,12 +324,25 @@ pub fn generate_settings_json(config: &MergedSandboxConfig) -> Value {
     // legitimately touches — never the bare `.loom/work/**` that would also
     // expose `.loom/work/admin.token` / `.loom/work/user.token` (see S-1,
     // default_deny_read).
+    //
+    // Both layouts are emitted: `MergedSandboxConfig` carries no field for
+    // which layout this workspace uses, so this function can't branch on it.
+    // A workspace whose `config.toml` was found under legacy `.work/` keeps
+    // that layout forever, so its narrow rules must exist in the legacy
+    // spelling too, alongside the nested one — on either layout the unused
+    // spelling matches nothing and costs nothing.
     allow.push(json!("Read(.loom/work/config.toml)"));
     allow.push(json!("Read(.loom/work/signals/**)"));
     allow.push(json!("Read(.loom/work/handoffs/**)"));
     allow.push(json!("Edit(.loom/work/handoffs/**)"));
     allow.push(json!("Read(.loom/work/disputes/**)"));
     allow.push(json!("Read(.loom/work/memory/**)"));
+    allow.push(json!("Read(.work/config.toml)"));
+    allow.push(json!("Read(.work/signals/**)"));
+    allow.push(json!("Read(.work/handoffs/**)"));
+    allow.push(json!("Edit(.work/handoffs/**)"));
+    allow.push(json!("Read(.work/disputes/**)"));
+    allow.push(json!("Read(.work/memory/**)"));
 
     if !allow.is_empty() {
         permissions["allow"] = json!(allow);

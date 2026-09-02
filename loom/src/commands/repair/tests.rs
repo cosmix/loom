@@ -447,3 +447,196 @@ fn fix_work_symlink_removes_the_nested_symlink_not_the_legacy_workspace() {
     );
     assert!(legacy.is_dir(), "the legacy .work workspace must survive");
 }
+
+/// Regression pin: before `fix_gitignore_work` became layout-aware it always
+/// wrote the nested pair, so on a legacy repo the check that raised the issue
+/// (`is_work_dir_git_ignored`, which resolves the legacy pair here) never saw
+/// its lines added and `loom repair --fix` never converged.
+#[test]
+fn fix_gitignore_work_converges_in_one_pass_on_legacy_layout() {
+    let root = tempfile::tempdir().unwrap();
+    fs::create_dir_all(root.path().join(".work")).unwrap();
+    fs::write(root.path().join(".gitignore"), "node_modules/\n").unwrap();
+
+    assert!(!is_work_dir_git_ignored(root.path()));
+
+    fix_gitignore_work(root.path()).unwrap();
+
+    assert!(
+        is_work_dir_git_ignored(root.path()),
+        "one fix pass must be enough to satisfy the check that raised the issue"
+    );
+    let content = fs::read_to_string(root.path().join(".gitignore")).unwrap();
+    assert!(content.lines().any(|l| l.trim() == ".work/"));
+    assert!(content.lines().any(|l| l.trim() == ".work"));
+    assert!(!content.contains(".loom/work"));
+}
+
+/// No regression on the nested path: still converges in one pass, writing
+/// the nested pair.
+#[test]
+fn fix_gitignore_work_converges_in_one_pass_on_nested_layout() {
+    let root = tempfile::tempdir().unwrap();
+    fs::create_dir_all(root.path().join(".loom").join("work")).unwrap();
+    fs::write(root.path().join(".gitignore"), "node_modules/\n").unwrap();
+
+    assert!(!is_work_dir_git_ignored(root.path()));
+
+    fix_gitignore_work(root.path()).unwrap();
+
+    assert!(is_work_dir_git_ignored(root.path()));
+    let content = fs::read_to_string(root.path().join(".gitignore")).unwrap();
+    assert!(content.lines().any(|l| l.trim() == ".loom/work/"));
+    assert!(content.lines().any(|l| l.trim() == ".loom/work"));
+}
+
+#[test]
+fn fix_gitignore_work_does_not_duplicate_existing_lines() {
+    // Only the bare `.loom/work` line is present already; the fixer must add
+    // the missing `.loom/work/` line without duplicating the one that's there.
+    let root = tempfile::tempdir().unwrap();
+    fs::create_dir_all(root.path().join(".loom").join("work")).unwrap();
+    fs::write(root.path().join(".gitignore"), ".loom/work\n").unwrap();
+
+    fix_gitignore_work(root.path()).unwrap();
+
+    let content = fs::read_to_string(root.path().join(".gitignore")).unwrap();
+    assert_eq!(
+        content.lines().filter(|l| l.trim() == ".loom/work").count(),
+        1,
+        "the already-present line must not be duplicated"
+    );
+    assert_eq!(
+        content
+            .lines()
+            .filter(|l| l.trim() == ".loom/work/")
+            .count(),
+        1,
+        "the missing line must be added exactly once"
+    );
+}
+
+#[test]
+fn fix_gitignore_work_does_not_duplicate_existing_lines_legacy() {
+    let root = tempfile::tempdir().unwrap();
+    fs::create_dir_all(root.path().join(".work")).unwrap();
+    fs::write(root.path().join(".gitignore"), ".work\n").unwrap();
+
+    fix_gitignore_work(root.path()).unwrap();
+
+    let content = fs::read_to_string(root.path().join(".gitignore")).unwrap();
+    assert_eq!(
+        content.lines().filter(|l| l.trim() == ".work").count(),
+        1,
+        "the already-present line must not be duplicated"
+    );
+    assert_eq!(
+        content.lines().filter(|l| l.trim() == ".work/").count(),
+        1,
+        "the missing line must be added exactly once"
+    );
+}
+
+/// The nested spelling of this same dispatch is already pinned by
+/// `fix_work_symlink_removes_the_nested_symlink_not_the_legacy_workspace`
+/// above; this is the legacy spelling, which the old
+/// `contains(".loom/work is a symlink")` needle would have missed entirely.
+#[test]
+#[cfg(unix)]
+fn fix_issue_routes_legacy_symlink_description_to_symlink_fixer() {
+    let root = tempfile::tempdir().unwrap();
+    let target = root.path().join("target");
+    fs::create_dir(&target).unwrap();
+    std::os::unix::fs::symlink(&target, root.path().join(".work")).unwrap();
+
+    let issue = check_all_issues(root.path())
+        .into_iter()
+        .find(|issue| issue.description.starts_with(".work "))
+        .expect("a .work symlink in the main repo must be reported as an issue");
+
+    assert!(
+        fix_issue(root.path(), &issue).unwrap(),
+        "the legacy-spelled symlink issue must be claimed by a fix branch"
+    );
+    assert!(!root.path().join(".work").is_symlink());
+}
+
+/// Legacy spelling of the dispatch pinned in nested form by
+/// `fix_invalid_work_deletes_the_corrupted_path_not_the_legacy_workspace`
+/// above.
+#[test]
+fn fix_issue_routes_legacy_invalid_description_to_invalid_fixer() {
+    let root = tempfile::tempdir().unwrap();
+    fs::write(root.path().join(".work"), "not a directory").unwrap();
+
+    let issue = check_all_issues(root.path())
+        .into_iter()
+        .find(|issue| issue.description.starts_with(".work "))
+        .expect("a corrupted .work must be reported as an issue");
+
+    assert!(fix_issue(root.path(), &issue).unwrap());
+    assert!(!root.path().join(".work").exists());
+}
+
+#[test]
+fn fix_issue_routes_nested_gitignore_description_to_work_gitignore_fixer() {
+    let root = tempfile::tempdir().unwrap();
+    fs::create_dir_all(root.path().join(".loom").join("work")).unwrap();
+    fs::write(root.path().join(".gitignore"), "node_modules/\n").unwrap();
+
+    let issue = check_all_issues(root.path())
+        .into_iter()
+        .find(|issue| {
+            issue.description.starts_with(".loom/work ")
+                && issue.description.contains("not found in .gitignore")
+        })
+        .expect("a nested .loom/work missing from .gitignore must be reported as an issue");
+
+    assert!(fix_issue(root.path(), &issue).unwrap());
+    assert!(is_work_dir_git_ignored(root.path()));
+}
+
+#[test]
+fn fix_issue_routes_legacy_gitignore_description_to_work_gitignore_fixer() {
+    let root = tempfile::tempdir().unwrap();
+    fs::create_dir_all(root.path().join(".work")).unwrap();
+    fs::write(root.path().join(".gitignore"), "node_modules/\n").unwrap();
+
+    let issue = check_all_issues(root.path())
+        .into_iter()
+        .find(|issue| {
+            issue.description.starts_with(".work ")
+                && issue.description.contains("not found in .gitignore")
+        })
+        .expect("a legacy .work missing from .gitignore must be reported as an issue");
+
+    assert!(fix_issue(root.path(), &issue).unwrap());
+    assert!(is_work_dir_git_ignored(root.path()));
+}
+
+/// The needle guarding the work-gitignore fixer must not swallow the
+/// `.worktrees` issue: `.worktrees` starts with the same five characters as
+/// `.work`, so a careless needle here would route it to the wrong fixer.
+#[test]
+fn fix_issue_does_not_route_worktrees_issue_to_work_gitignore_fixer() {
+    let root = tempfile::tempdir().unwrap();
+    fs::create_dir_all(root.path().join(".loom").join("work")).unwrap();
+    fs::write(root.path().join(".gitignore"), "node_modules/\n").unwrap();
+
+    let issue = check_all_issues(root.path())
+        .into_iter()
+        .find(|issue| issue.description == ".worktrees not found in .gitignore")
+        .expect(".worktrees must be reported as missing from .gitignore");
+
+    assert!(fix_issue(root.path(), &issue).unwrap());
+
+    let content = fs::read_to_string(root.path().join(".gitignore")).unwrap();
+    assert!(content.lines().any(|l| l.trim() == ".worktrees/"));
+    assert!(content.lines().any(|l| l.trim() == ".worktrees"));
+    assert!(
+        !content
+            .lines()
+            .any(|l| l.trim() == ".loom/work/" || l.trim() == ".loom/work"),
+        "the .worktrees issue must not be routed to the work-gitignore fixer"
+    );
+}

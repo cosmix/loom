@@ -174,13 +174,18 @@ fn test_generate_settings_with_filesystem() {
     assert_eq!(deny[1], "Read(~/.claude/.credentials.json)");
     assert_eq!(deny[2], "Edit(.loom/work/**)");
 
-    // allow_write paths come first, then the narrowly-scoped .loom/work/
-    // state permissions agents need (signals/handoffs/disputes/memory). The
-    // set is deliberately scoped to subdirs an agent touches — never bare
-    // `.loom/work/**`, which would also expose `.loom/work/admin.token` /
-    // `.loom/work/user.token` (S-1).
+    // allow_write paths come first, then the narrowly-scoped state
+    // permissions agents need (signals/handoffs/disputes/memory), emitted in
+    // both layout spellings: the nested `.loom/work/...` six, then the
+    // legacy `.work/...` six. A workspace that resolved to a legacy
+    // `<repo>/.work/` root stays legacy forever, and this function cannot
+    // see which layout it is emitting for, so it emits both; on either
+    // layout the other spelling matches nothing and costs nothing. The set
+    // is deliberately scoped to subdirs an agent touches — never bare
+    // `.loom/work/**` / `.work/**`, which would also expose
+    // `admin.token` / `user.token` (S-1).
     let allow = json["permissions"]["allow"].as_array().unwrap();
-    assert_eq!(allow.len(), 7);
+    assert_eq!(allow.len(), 13);
     assert_eq!(allow[0], "Edit(src/**)");
     assert_eq!(allow[1], "Read(.loom/work/config.toml)");
     assert_eq!(allow[2], "Read(.loom/work/signals/**)");
@@ -188,6 +193,12 @@ fn test_generate_settings_with_filesystem() {
     assert_eq!(allow[4], "Edit(.loom/work/handoffs/**)");
     assert_eq!(allow[5], "Read(.loom/work/disputes/**)");
     assert_eq!(allow[6], "Read(.loom/work/memory/**)");
+    assert_eq!(allow[7], "Read(.work/config.toml)");
+    assert_eq!(allow[8], "Read(.work/signals/**)");
+    assert_eq!(allow[9], "Read(.work/handoffs/**)");
+    assert_eq!(allow[10], "Edit(.work/handoffs/**)");
+    assert_eq!(allow[11], "Read(.work/disputes/**)");
+    assert_eq!(allow[12], "Read(.work/memory/**)");
 }
 
 fn assert_filesystem_sandbox(json: &Value) {
@@ -622,8 +633,9 @@ fn test_allow_write_trims_whitespace_and_drops_empty() {
 
     // The padded entry is trimmed and emitted; the whitespace-only entry
     // contributes nothing - allow.len() is 1 (allow_write) + 6 (.loom/work/
-    // state permissions), same as a single ordinary entry would produce.
-    assert_eq!(allow.len(), 7, "got: {allow:?}");
+    // state permissions) + 6 (legacy .work/ state permissions), same as a
+    // single ordinary entry would produce.
+    assert_eq!(allow.len(), 13, "got: {allow:?}");
     assert_eq!(allow[0], "Edit(loom/src/**)");
 }
 
@@ -1157,6 +1169,11 @@ fn test_write_settings_adds_resolved_work_symlink_permissions_legacy_layout() {
 
     // Should also still have the relative permissions
     assert!(allow_strs.contains(&"Read(.loom/work/signals/**)"));
+    // The legacy spelling is emitted alongside the nested one (this fixture
+    // IS a legacy `.work` layout, so this is the rule that actually matches
+    // here) — `generate_settings_json` can't see which layout it's on, so it
+    // emits both.
+    assert!(allow_strs.contains(&"Read(.work/signals/**)"));
 }
 
 #[cfg(unix)]
