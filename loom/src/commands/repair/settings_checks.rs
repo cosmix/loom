@@ -202,7 +202,8 @@ pub(super) fn fix_settings_issue(repo_root: &Path, description: &str) -> Option<
         || description.contains("Stale knowledge-directory deny in")
     {
         return Some(
-            super::fix_sandbox_settings(repo_root).and_then(|()| fix_hooks_local(repo_root)),
+            super::sandbox_settings::fix_sandbox_settings(repo_root)
+                .and_then(|()| fix_hooks_local(repo_root)),
         );
     }
     if description.starts_with("Stale loom session env in") {

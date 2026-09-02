@@ -1,4 +1,10 @@
+use std::fs;
+
+use super::daemon_checks::is_loom_run_cmdline;
+use super::hooks::fix_hooks_with;
+use super::workspace::fix_gitignore_work;
 use super::*;
+use crate::fs::work_integrity::is_work_dir_git_ignored;
 
 #[test]
 fn hook_repair_propagates_skill_index_write_failure() {
