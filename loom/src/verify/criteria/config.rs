@@ -24,7 +24,7 @@ pub struct CriteriaConfig {
     pub plan_confinement: Option<CommandConfinement>,
 
     /// Whether the runner may consult and update the on-disk acceptance pass
-    /// cache (see [`super::cache`]). Read from `LOOM_ACCEPTANCE_CACHE` at
+    /// cache (see `super::cache`). Read from `LOOM_ACCEPTANCE_CACHE` at
     /// construction time; a caller can still force it with
     /// [`Self::with_cache_policy`].
     pub cache: CachePolicy,

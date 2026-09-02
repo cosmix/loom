@@ -1,8 +1,8 @@
 //! Budget-constrained construction of context packs.
 //!
 //! One selection rule is not purely budget-driven and lives next door in
-//! [`twins`]: a tier-1 summary and the tier-2 topic it spilled restate each
-//! other, so [`select`] spends the budget on the detail and keeps the summary
+//! `twins`: a tier-1 summary and the tier-2 topic it spilled restate each
+//! other, so `select` spends the budget on the detail and keeps the summary
 //! only as the fallback for when the detail does not fit.
 
 pub(crate) mod twins;
@@ -236,7 +236,7 @@ struct Selection {
 /// Besides not fitting, two things are skipped rather than taken: a candidate
 /// with no backing chunk or node, and a tier-1 summary whose tier-2 detail this
 /// pack already carries and which the caller did not name outright (see
-/// [`twins`]). All three are counted in `omitted`, the way the prompt hook
+/// `twins`). All three are counted in `omitted`, the way the prompt hook
 /// folds its dedupe drops into the same figure
 /// (`commands/hook/user_prompt_compose.rs:146-165`) — the Knowledge Brief's
 /// "Omitted: N weaker matches" line would otherwise tell the reader they were
@@ -287,7 +287,7 @@ fn select(
 /// Build a pack from the fused list, within `request.budget_tokens`.
 ///
 /// Every ranked candidate not included is counted as an omission — see
-/// [`select`] for the three reasons one can be.
+/// `select` for the three reasons one can be.
 pub fn pack(
     request: &PackRequest,
     ranked: &[RankedCandidate],

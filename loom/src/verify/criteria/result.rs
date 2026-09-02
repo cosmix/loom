@@ -14,7 +14,7 @@ pub struct CriterionResult {
     /// Whether the command was terminated due to timeout
     pub timed_out: bool,
     /// Whether this result came from the acceptance pass cache rather than a
-    /// real execution — see [`super::cache`]. Always `false` for results
+    /// real execution — see `super::cache`. Always `false` for results
     /// built via [`Self::new`]; only [`Self::cached`] sets it.
     pub cached: bool,
 }

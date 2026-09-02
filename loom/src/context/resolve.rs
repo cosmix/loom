@@ -17,7 +17,7 @@
 //! name is looked up only inside them. A qualifier naming nothing here is a call
 //! into a dependency, so the edge stays a gap — resolving it against a namesake
 //! elsewhere in the graph would be a fabrication. Imports are matched against
-//! file paths by the rules in [`paths`], and both only ever resolve when exactly
+//! file paths by the rules in `paths`, and both only ever resolve when exactly
 //! one candidate is left.
 //!
 //! **What it may never claim.**
