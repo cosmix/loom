@@ -71,3 +71,13 @@
 **Prevention:** Every decline-to-act branch in daemon logic should print to the daemon console rather than fail silently or log only at a level nobody watches live.
 
 **Fix:** `loom status` now renders session kind and prefixes an incoherent `Executing` state with `INCOHERENT:` (`loom/src/commands/status/render/graph.rs`).
+
+## The Judge Was Never Terminated
+
+**What happened:** An adjudication session recorded its verdict with `loom stage adjudicate`, its prompt told it to stop, and the Claude Code process then sat open at its prompt until an operator closed the window by hand. Stage sessions are killed by the daemon on completion (`loom/src/orchestrator/core/completion_handler.rs`); judges had no equivalent.
+
+**Why:** The verdict record carried no session id, so the daemon could not tell which judge wrote which verdict, and nothing in the apply path addressed the judge at all. While an idle judge lingers, `claim_session_slot` (`loom/src/orchestrator/adjudication/mod.rs`) refuses to spawn a judge for any further dispute on that stage.
+
+**Prevention:** Every session kind the daemon spawns needs a recorded completion signal and a teardown that acts on it. Recording the verdict is the judge's completion signal; the record must name the session that produced it.
+
+**Fix:** `DisputeVerdictRecord.session_id` (`loom/src/models/dispute.rs`) is filled from `LOOM_SESSION_ID` by `loom stage adjudicate`; after applying a verdict, `retire_adjudicator` (`loom/src/orchestrator/core/verdict_apply.rs`) kills that session, declares its record `Completed`, and removes its signal. A record without an id closes idle judges only when the stage has no unanswered dispute left.
