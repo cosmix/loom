@@ -915,1564 +915,1548 @@ Curate memories. Two corrections are already known and must be applied with `rep
 ```yaml
 loom:
   version: 1
+  auto_merge: null
   sandbox:
     enabled: true
     auto_allow: true
+    allow_unsandboxed_escape: false
+    excluded_commands: []
     filesystem:
-      # deny_read REPLACES the default list, it does not merge: FilesystemConfig
-      # takes the whole struct (sandbox/config.rs:99-102) and deny_read is
-      # #[serde(default = "default_deny_read")] (models/stage/types.rs:306).
-      # default_deny_read() (types.rs:388-405) carries SIX entries - the four
-      # credential dirs PLUS the two daemon IPC tokens. Listing only four here
-      # silently drops the token denies. Both spellings, because this plan runs
-      # on the installed (.work) binary and produces the .loom/work one.
       deny_read:
-        - "~/.ssh/**"
-        - "~/.aws/**"
-        - "~/.config/gcloud/**"
-        - "~/.gnupg/**"
-        - ".loom/work/admin.token"
-        - ".loom/work/user.token"
-        - ".work/admin.token"
-        - ".work/user.token"
-      # allow_write is ADDITIVE (sandbox/settings/policy.rs:141-161 emits plan
-      # entries + PACKAGE_MANAGER_CACHE_WRITE_PATHS + codex paths, and
-      # apply_knowledge_write_grant at sandbox/config.rs:138-155 adds
-      # doc/loom/knowledge/**). The worktree root and $TMPDIR come free.
-      # ~/.loom does NOT - without it every `loom config` set in acceptance
-      # hits EPERM, and config-foundation, config-tui, update-check and
-      # integration-verify all write there.
-      allow_write: ["loom/target/**", "~/.loom"]
+      - ~/.ssh/**
+      - ~/.aws/**
+      - ~/.config/gcloud/**
+      - ~/.gnupg/**
+      - .loom/work/admin.token
+      - .loom/work/user.token
+      - .work/admin.token
+      - .work/user.token
+      deny_write:
+      - ../../**
+      allow_write:
+      - loom/target/**
+      - ~/.loom
     network:
-      # api.github.com / objects.githubusercontent.com are needed by the
-      # update-check fetcher and self-update. strictAllowlist is emitted
-      # whenever the sandbox is enabled (settings/policy.rs:96-98), so an
-      # omitted host is a hard block. No cargo fetch is needed for this plan -
-      # toml_edit, dirs, semver, ratatui and crossterm are all already
-      # dependencies and there are no git dependencies.
       allowed_domains:
-        - "crates.io"
-        - "index.crates.io"
-        - "static.crates.io"
-        - "api.github.com"
-        - "objects.githubusercontent.com"
+      - crates.io
+      - index.crates.io
+      - static.crates.io
+      - api.github.com
+      - objects.githubusercontent.com
+      additional_domains: []
       allow_local_binding: false
       allow_unix_sockets: []
+      allow_all_unix_sockets: false
+    linux:
+      enable_weaker_nested: false
+    command_confinement: confined
   stages:
-    - id: loom-dir-migration
-      name: "Move shared state to .loom/work"
-      stage_type: standard
-      model: "opus"
-      reasoning_effort: "xhigh"
-      implementers: ["codex", "claude"]
-      subagent_timeout_secs: 1800
-      description: |
-        Move loom's shared orchestration state from <repo>/.work/ to <repo>/.loom/work/.
-        .worktrees/ stays at the project root. .loom/cache/ does not move.
-        Use parallel subagents and skills to maximize performance.
-
-        THE BACK-COMPAT POLICY, SETTLED - READ THIS BEFORE STEP 1. An earlier draft of
-        this plan said old .work/ workspaces stay "readable" AND that "nothing ever
-        writes .work/". THOSE TWO ARE MUTUALLY EXCLUSIVE and the second one is the one
-        that is wrong. WorkDir has exactly ONE field, root: PathBuf (work_dir.rs:89-91);
-        every accessor derives from it, mutating ones included (:280-323, write_config
-        :451-462, merge_section :471-495). There is no read-root/write-root split and you
-        are NOT adding one - that would mean copy/merge semantics for every mutable state
-        class, which is a migration, and no-migration is this plan's first non-goal.
-        THE POLICY:
-          - Resolution picks the root ONCE: .loom/work/config.toml, else
-            .work/config.toml, else a NEW root at <repo>/.loom/work.
-          - WHATEVER ROOT RESOLVED IS THE WORKSPACE, FOR READS AND FOR WRITES. A project
-            mid-plan on .work/ keeps getting signals, sessions, stage files, handoffs and
-            config writes at .work/, because that is where its state already is.
-          - LOOM NEVER CREATES A .work/. A fresh repo, and WorkDir::initialize() on a repo
-            with no config.toml anywhere, always land on .loom/work.
-        The user-visible promise is "your in-flight plan does not break", NOT "your .work/
-        directory is frozen". Any message you write about this says it that way.
-
-        BUILD FIRST. Run cargo build --manifest-path loom/Cargo.toml --all-targets
-        once, early, before you spawn anyone. Acceptance criteria have a HARD 300s
-        per-command ceiling (verify/criteria/config.rs:8) that the plan schema cannot
-        raise, and a cold worktree build of this crate (409 packages, five tree-sitter
-        C grammars) exceeds it. A timed-out criterion reads as a hang, not a slow build.
-
-        FOUNDATION STEP - do this yourself or in ONE subagent, and finish it before
-        any other subagent starts, because everything else compiles against it:
-        1. In loom/src/fs/work_dir.rs, rewrite WorkDir::new (lines 94-137). Resolution
-           order: <root>/.loom/work/config.toml, then <root>/.work/config.toml. Key on
-           the CONFIG FILE, never on directory existence - ~/.loom/config.toml exists at
-           the user level and .loom/cache/ exists in projects that ran loom map.
-        2. Bound the upward walk at the git repo root. Today it walks to the filesystem
-           root, which with ~/.loom/ present is a live hazard.
-        2b. RECORD WHICH LAYOUT RESOLVED, ON THE WorkDir. Still ONE root per the policy
-           above, but add a Layout { Nested, Legacy } field beside it, set once in
-           WorkDir::new. THREE behaviours branch on it and NONE of them can re-derive it
-           safely from a path suffix - LOOM_WORK_DIR hints, symlinks and canonicalize()
-           all blur the suffix:
-             (i)   the worktree symlink: legacy plants .worktrees/<id>/.work ->
-                   ../../.work; nested plants .worktrees/<id>/.loom/work ->
-                   ../../../.loom/work after mkdir of the worktree's .loom/.
-             (ii)  the repo-root hop count: ONE parent for legacy, TWO for nested.
-             (iii) the worktree membership probe (target_is_worktree,
-                   sandbox/settings.rs:39-47) and the teardown
-                   (git/cleanup/worktree.rs:176): .work vs .loom/work.
-           ensure_work_symlink (git/worktree/settings.rs:49-68) hard-codes BOTH halves -
-           repo_root.join(".work") at :53 and Path::new("../../.work") at :55 - and takes
-           repo_root, NOT a WorkDir, so it cannot see which layout resolved. Give it the
-           resolved state root or the Layout; do not leave it to guess. Hard-coding it to
-           the nested layout silently breaks every worktree a legacy workspace creates,
-           and this plan's OWN orchestration runs on a legacy workspace until the new
-           binary is installed.
-        3. PRESERVE THE .work-NAMED-BASE BRANCH, retargeted. work_dir.rs:131-135 ends
-           with `if base.file_name() == Some(".work") { root = base }`, under a 13-line
-           comment at :118-130 explaining why. Every hook passes LOOM_WORK_DIR, which
-           names the state directory ITSELF, absolute - set at hooks/generator.rs:91-94
-           and orchestrator/terminal/native/wrapper.rs:289, consumed by
-           commands/hook/{pre_compact.rs:100,reconcile_graph.rs:147,user_prompt.rs:192}.
-           After the move that value is <root>/.loom/work, whose file_name() is "work",
-           NOT ".work" - the branch stops firing, the resolver appends a second copy,
-           and you get <root>/.loom/work/.loom/work, the exact phantom directory the
-           comment documents. Recognize a base whose trailing TWO components are
-           .loom/work; keep the single-component .work spelling for the fallback.
-        4. STATE THE NO-CONFIG FALLBACK ROOT: <root>/.loom/work. Keying on config.toml
-           means a fresh repo matches nothing, and WorkDir::initialize()
-           (work_dir.rs:153-165) creates the directory at whatever root new() returned.
-           If the fallback stays <base>/.work, loom init keeps creating .work/ forever
-           and every acceptance criterion still passes. Same decision covers init's
-           re-entrancy path (commands/init/execute.rs:111-113, adopt_existing at
-           work_dir.rs:167-183), where the dir exists but config.toml does not yet.
-        5. Collapse FOUR duplicate resolvers onto the shared one - not two:
-           - commands/common/mod.rs:20-35 find_work_dir. THE ONE MOST EASILY MISSED.
-             Its own unbounded upward walk keyed on is_dir(), with SEVEN consumers:
-             commands/sessions.rs:18,52, attach/mod.rs:47, graph/mod.rs:57,
-             handoff/create.rs:54, subagents/render.rs:30, usage/mod.rs:107,
-             usage/discovery.rs:302. Left alone, loom handoff/attach/sessions/graph/
-             subagents/usage all silently stop finding state.
-           - commands/review/generate.rs:19 get_work_dir
-           - commands/memory/handlers/work_dir.rs:21 get_work_dir
-           - commands/memory/handlers/work_dir.rs:106 get_work_dir_readonly (returns
-             Option, so its failure is a silent None)
-           NOT resolvers, leave alone: subagents/render.rs:29 find_work_dir_quietly
-           (delegates to find_work_dir) and stage/admin_proof.rs:191 resolve_work_dir
-           (a canonicalize() helper).
-        6. BOTH project_root() AND main_project_root() take the extra hop, and the hop
-           count DEPENDS ON WHICH LAYOUT RESOLVED. main_project_root()
-           (work_dir.rs:369-392) takes one parent() at :384; project_root() (:358-360)
-           is a bare self.root.parent() with 18 call sites (map.rs:36,
-           signals/retrieval.rs:58, hook/pre_compact.rs:115, context/retrieve/graph.rs:67,
-           hook/reconcile_graph.rs:181, hook/user_prompt.rs:195,221, context/retrieve.rs:121,
-           run/checks.rs:227, context/record_edit.rs:109, status/data/collector.rs:273,294,301,
-           knowledge/check.rs:73, knowledge/mod.rs:44, fs/plan_lifecycle.rs:141,
-           work_dir.rs:216,390). Note :390 - main_project_root()'s non-symlink branch
-           delegates to project_root(), so fixing only the symlink branch leaves the
-           main-repo case wrong. TWO hops for a .loom/work root, ONE for a legacy .work
-           root. An unconditional two-hop breaks the fallback THIS PLAN'S OWN RUN
-           depends on and sites .loom/cache/context-v1 outside the project.
-           ContextStore::open (context/store.rs:56) is the consumer.
-           DECIDE THE HOP COUNT IN EXACTLY ONE PLACE. Add
-             pub fn repo_root(&self) -> Option<PathBuf>
-           on WorkDir, branching on the Layout from step 2b, and have BOTH project_root()
-           and main_project_root() delegate to it - main_project_root()'s symlink branch
-           resolving the link first and then applying the same rule, its non-symlink
-           branch (:389-391) delegating as it already does. Two separately-written hop
-           counts drift; one of them then sites the context cache outside the project for
-           one layout and no gate catches it. project_root() is also the repo root used
-           to initialize doc/loom/knowledge/ (work_dir.rs:214-218, KnowledgeDir::new) -
-           get it wrong for the nested layout and loom scaffolds a knowledge tree inside
-           .loom/. Test BOTH consumers, not just the returned path.
-        7. Add a sun_path length check. NOT at daemon/server/core.rs:93/:116 - :91 is
-           with_config(...) -> Self and :115 is check_status(...) -> DaemonStatus,
-           neither of which can return an error. Put it immediately before the bind at
-           daemon/server/lifecycle.rs:216-217, inside run_server(&self,..) -> Result<()>.
-           104 bytes on macOS; the path grows by exactly 5 (48 -> 53 for this repo),
-           leaving 74 chars of headroom for the containing directory. Copy the existing
-           pattern: orchestrator/terminal/tmux/mod.rs:160 and viewer.rs:57 already
-           budget for the limit, with an asserting test at tmux/tests.rs:11-28 that
-           measures path.as_os_str().len() - BYTES on unix, not characters, so it is
-           already right for a non-ASCII path. Copy that measurement exactly. Two things
-           it does not do and this check must: the stored pathname is NUL-TERMINATED, so
-           the budget is len() + 1 <= 104, i.e. len() < 104; and sun_path is 104 on
-           macOS/BSD against 108 on Linux, so USE THE 104 BOUND ON BOTH - it is the
-           portable one and tmux/tests.rs:22-24 already documents why. The error prints
-           the FULL PATH and its BYTE COUNT; without both, a bind failure reads as a
-           permissions problem. Unit-test the predicate AT THE BOUNDARY - 103, 104 and
-           105 bytes - not only on a realistic path, because every realistic path passes.
-        8. SHIP UNIT TESTS under fs::work_dir::tests::resolver. NINE cases, and the
-           acceptance criterion asserts a COUNT OF AT LEAST NINE - a bare filter that
-           matches nothing exits 0, and "[1-9]" passes on one surviving test:
-           (a) .loom/work/config.toml wins over a sibling .work/config.toml.
-           (b) .work/config.toml alone is the fallback root.
-           (c) a bare .loom/cache/ with no config.toml is NOT a workspace.
-           (d) the walk stops at the git repo root.
-           (e) a LOOM_WORK_DIR naming <root>/.loom/work resolves to ITSELF, not to a
-               nested <root>/.loom/work/.loom/work copy.
-           (f) main_project_root() AND project_root() both return the repo root for a
-               .loom/work root (two hops) and for a legacy .work root (one hop) - four
-               assertions, through the shared repo_root() of step 6.
-           (g) NO REPO CREATES .work: WorkDir::new on a repo with neither config.toml
-               returns a root ending .loom/work, and initialize() creates it there.
-           (h) A LEGACY ROOT IS WRITABLE: resolve a .work/config.toml workspace, then
-               write_config through it and assert the bytes landed in <repo>/.work/ and
-               that no <repo>/.loom/work was created. This is the policy stated at the
-               top of this description, and it is the one property with no other gate.
-           (i) LAYOUT DRIVES THE SYMLINK: ensure_work_symlink on a legacy workspace
-               plants .work -> ../../.work; on a nested one, .loom/work ->
-               ../../../.loom/work with the worktree's .loom/ a real directory.
-
-        THEN fan out over DISJOINT territories. Group small edits together - do NOT
-        spawn one subagent per file.
-
-        | Worker | Role | Tier | Files owned | Read-only |
-        | --- | --- | --- | --- | --- |
-        | W1 | Rust literal sweep, non-sandbox | codex gpt-5.6-terra | loom/src/** except sandbox/ and git/worktree/ | loom/src/fs/work_dir.rs |
-        | W2 | Sandbox + worktree scaffolding | codex gpt-5.6-terra | loom/src/sandbox/**, loom/src/git/worktree/** | loom/src/fs/work_dir.rs |
-        | W3 | Shell, gitignore, template, docs | codex gpt-5.6-terra | hooks/**, .gitignore, loom/.gitignore, CLAUDE.md.template, CLAUDE.md, loom/CONTRIBUTING.md, .markdownlintignore, skills/**, agents/**, scripts/** | loom/src/** |
-        | W4 | Integration and e2e fixture sweep | codex gpt-5.6-terra | loom/tests/** | loom/src/**, hooks/** |
-
-        TIER NOTE: gpt-5.6-terra and gpt-5.6-luna are the implementer tiers
-        (loom/src/codex.rs:7,10; the codex block loom generates into your signal
-        interpolates exactly those two, orchestrator/signals/format/codex.rs:47-48,86-88).
-        gpt-5.6-sol is the PRESSURE-TEST model (commands/pressure/spawn.rs:78), not an
-        implementer tier - hooks/codex-forward.sh:17 accepts the string, so naming it
-        fails silently rather than loudly. Do not use it here.
-
-        SEQUENCING - W3 AND W4 ARE NOT DISJOINT FROM W1. Every hook is include_str!'d
-        into the binary at loom/src/fs/permissions/constants.rs:4-108, so a hook edit
-        changes compiled constants that Rust tests assert against - including
-        orchestrator/signals/tests_doctrine.rs:265-273, which asserts
-        HOOK_CODEX_FORWARD.contains(".work/"). And loom/tests/integration/hooks_*.rs
-        assert hook TEXT. Run W3 to completion BEFORE W4 starts, and have W4 read the
-        post-sweep hook files. W1 owns the Rust-side assertions that W3's edits break.
-
-        W2 detail. sandbox/settings.rs:306-311 emits per-child rules -
-        Read(.work/config.toml), Read(.work/signals/**), Read(.work/handoffs/**),
-        Edit(.work/handoffs/**), Read(.work/disputes/**), Read(.work/memory/**). Each
-        becomes .loom/work/... . The deliberate ABSENCE of a blanket .work/** is a
-        security property (it keeps admin.token and user.token unreadable) and MUST
-        survive; sandbox/settings/tests.rs:1108,1113 assert it, do not weaken them.
-        settings.rs:116-192 - NOT :116-155, the cited range stops short of the allow
-        list at :166-189, which is the half whose relative twin at :306-311 is
-        enumerated above - resolves the symlink to an absolute path; it now resolves
-        .loom/work. git/worktree/settings.rs:53-68 must mkdir the worktree's .loom/
-        first, then symlink .loom/work -> ../../../.loom/work (three levels, not two:
-        the link sits at .worktrees/<id>/.loom/work, whose parent dir is
-        .worktrees/<id>/.loom/, three below the repo root; the sibling CLAUDE.md link
-        at settings.rs:90 already uses ../../../ from the same depth). It is a RELATIVE
-        link today (Path::new at :56) and stays relative. is_worktree_scaffold_path at
-        settings.rs:36-47 gains the new paths and keeps its existing .loom/cache and
-        spool entries - AND its doc comment at :31-33 ("a project may legitimately track
-        .loom/config.toml, which must NOT be discounted here") predates .loom/work/ and
-        must be corrected, not left contradicting the layout.
-
-        W2 - THREE SURFACES THAT FAIL SILENTLY IF MISSED:
-        a) target_is_worktree at sandbox/settings.rs:39-47 decides worktree membership
-           by symlink_metadata(target.join(".work")) - comment at :43: "a worktree's
-           .work is a symlink; the main repo's is a real dir." After the move a worktree
-           has NO .work, so this returns false and strip_worktree_escape_denies (:68)
-           strips the ../../** escape denies from a genuine worktree. Probe .loom/work,
-           NEVER .loom - the worktree's .loom/ is a REAL directory and only .loom/work
-           is the symlink.
-        b) git/worktree/settings.rs:415-447 is a SECOND, independent resolved-symlink
-           permission emitter: worktree_path.join(".work") at :425, canonicalize() at
-           :427, absolute grants at :442-447. Migrate one and forget the other and
-           worktree agents get no absolute-path grants on .loom/work - a permission
-           prompt on every state read. It emits a BROAD Read(/{resolved}/**) at :443;
-           that asymmetry with the narrow relative rules is pre-existing and deliberate
-           (comment at :433-441). Do NOT "fix" it while sweeping.
-        c) git/cleanup/worktree.rs:176 remove_required_symlink(worktree_path.join(".work"))
-           must become .loom/work. It is a NO-OP on a missing path (:310-318), so miss
-           it and a live `work` symlink is left inside .loom/, which remove_drained_spool
-           (:210-231) then declines to clean, and non-forced git worktree remove refuses.
-        Also in W2's territory: models/stage/types.rs:388-405 default_deny_read() names
-        .work/admin.token and .work/user.token; both become .loom/work/... .
-
-        W1 detail - fs/permissions/ IS A SWEEP SURFACE, and one entry is arithmetic:
-        constants.rs:170,196 carry Read(.work/**) literals (with S-1 comments at :163
-        and :193 explaining the deliberate absence of Edit(.work/**) - keep that);
-        write_rules.rs:30-31 hard-codes matches!(path, ".work/**" | "../../.work/**");
-        and sync.rs:212,258 transform_worktree_path rewrites Read(../../.work/**) ->
-        Read(.work/**) - THE ../../ BECOMES ../../../, the same arithmetic as the
-        symlink, pinned by tests at sync.rs:511,518,561-562. Also settings.rs:12,127,132
-        carry doc references. AND commands/repair.rs writes .gitignore:
-        fix_gitignore_work (:870) is dispatched by substring-matching English prose in
-        issue.description (:777-790), with detection at :418,524,553,846,854,1097 - the
-        strings it writes MUST match W3's swept .gitignore exactly, or loom repair --fix
-        re-adds the old entries indefinitely.
-
-        W3 detail. hooks/_common.sh HAS NO .work STATE PATHS - its five matches at
-        :1478-1498 are all .worktrees membership logic that must NOT change. Pointing a
-        sweeping worker at the 1500-line file every hook sources, for a string that is
-        only ever .worktrees there, is how .worktrees handling gets mangled. Sweep
-        instead the 22 scripts that do carry state paths (rg -l '\.work/' hooks/;
-        densest: git-add-guard.sh 31, worktree-isolation.sh 17, commit-guard.sh 17)
-        PLUS the 11 fixtures under hooks/tests/, which no acceptance criterion runs
-        today - add ./hooks/tests/run-all.sh to your own checks. .gitignore lines 45-69
-        gain .loom/work/ and .loom/work beside the existing .loom/cache/ and spool
-        patterns. CLAUDE.md.template has FIVE .work references, not one: :78 (Rule 3b),
-        :274 (Rule 10), :278 (Rule 11), :355 and :361 (orchestration reference).
-        scripts/check-hook-syntax.sh ALREADY EXISTS (51 lines, commit e40443b8) and
-        already runs as its own CI job (.github/workflows/ci.yml:191-199) - do NOT
-        recreate it; just keep it passing. It is the gate that catches a
-        heredoc-inside-$() quoting break, which is exactly the failure mode a wide hook
-        sweep can reintroduce, so run it after every edit. Also sweep the docs and
-        guidance surfaces nobody owned before: README.md is deferred to
-        knowledge-distill, but CLAUDE.md (3), loom/CONTRIBUTING.md (1), loom/.gitignore
-        (2), .markdownlintignore (2), agents/loom-codex-forwarder.md (1) and
-        skills/loom-{usage,ci-cd,rust,git-workflow,prompt-engineering,background-jobs,
-        wiring-test}/SKILL.md (24/4/3/3/2/1/1) are all yours.
-        NOTE: skills/loom-plan-writer/SKILL.md is owned by doctrine-subagent-grouping.
-        Sweep its .work references anyway - that stage runs AFTER this one and edits a
-        different section - but say so in your report.
-
-        STALE DOC COMMENTS - correct them, do not leave them asserting the old shape.
-        Three read false after this change and no test catches any of them:
-          git/worktree/settings.rs:52    "points from .worktrees/{stage_id}/.work to
-                                         ../../.work (the main repo's .work/)"
-          fs/work_dir.rs:364             "In a worktree, .work is a symlink pointing to
-                                         ../../.work (the main repo's .work)"
-          git/worktree/settings.rs:31-33 the is_worktree_scaffold_path .loom/config.toml
-                                         carve-out described in the W2 detail above
-        The knowledge base already records stale comments as the standard residue of a
-        large rename (mistakes/refactor-stragglers.md).
-
-        ALSO: fix loom/src/context/tests/store.rs:47 to canonicalize BOTH sides of the
-        path assertion. It currently fails whenever TMPDIR sits under a symlinked /tmp.
-
-        THE MAINTAINABILITY LEDGER - MAIN AGENT ONLY, AFTER EVERY SUBAGENT LANDS.
-        loom/maintainability-baseline.txt is an EXACT-MATCH, BIDIRECTIONAL line-count
-        ledger enforced by loom/tests/maintainability.rs:13, an autodiscovered target
-        that runs under this stage's own cargo test --all-targets. It errors on
-        SHRINKAGE exactly as loudly as on growth (see
-        doc/loom/knowledge/mistakes/pinned-literals-ledgers-and-wiring.md:22). This
-        stage moves at least: file src/fs/work_dir.rs 669 (:34),
-        file src/git/worktree/settings.rs 637 (:37), create_worktree_settings 104 (:185),
-        file src/sandbox/settings.rs 532 (:62), generate_settings_json 105 (:272),
-        write_settings 132 (:274), file src/commands/review/generate.rs 473 (:15) and
-        execute 162 (:103) - the resolver collapse SHRINKS the last two. Run
-        cargo test --manifest-path loom/Cargo.toml --test maintainability, then lower or
-        delete every entry whose measured value moved. A subagent REPORTS its new number
-        and never edits the baseline - no single subagent can reconcile it.
-
-        CODEX: subagents must not run git at all. Check git status --short after each
-        codex run. Never put a .work/ or .loom/ path in a codex subagent's file list.
-        State an explicit Bash timeout of 900000 ms and --effort xhigh in every
-        forwarder prompt.
-
-        MEMORY: record mistakes/decisions/surprises via loom memory immediately.
-        NEVER loom knowledge (implementation stage). NEVER Claude Code auto-memory.
-      dependencies: []
-      acceptance:
-        - "./scripts/check-hook-syntax.sh"
-        - "cargo build --manifest-path loom/Cargo.toml --all-targets"
-        - "cargo fmt --manifest-path loom/Cargo.toml -- --check"
-        - "cargo clippy --manifest-path loom/Cargo.toml --all-targets -- -D warnings"
-        - "cargo test --manifest-path loom/Cargo.toml --all-targets --no-fail-fast -- --skip daemon::rpc::tests::a_live_listener_is_answered --skip daemon::rpc::tests::a_stale_socket_file_with_nothing_bound_is_not_listening --skip daemon::server::peer_identity::tests::ancestry_accepts_self_and_the_real_parent_chain --skip process::tests::unreaped_dead_child_is_not_alive --skip verify::criteria::tests::confine_tests::spawned_child_leads_its_own_process_group --skip fs::permissions::tests::settings_tests::test_ensure_loom_permissions_adds_home_expanded_codex_forward_entry --skip fs::permissions::tests::settings_tests::test_ensure_loom_permissions_home_expanded_entry_no_duplicates_on_rerun --skip commands::attach::wait::tests::diagnose_sessions_names_the_work_dir_and_every_session"
-        - "./hooks/tests/run-all.sh"
-        # Count-asserting: a filtered cargo test that matches NOTHING exits 0, so a
-        # bare filter passes after the executor renames or deletes the test - and this
-        # stage edits that very file.
-        - 'cargo test --manifest-path loom/Cargo.toml --lib context::tests::store::open_resolves_cache_at_main_project_root_from_linked_worktree 2>&1 | rg -q "test result: ok\. 1 passed"'
-        # NINE cases (a)-(i) from step 8, so the count floor is 9. "[1-9]" would have
-        # passed on one surviving test, and the two cases with no other gate - a legacy
-        # root staying WRITABLE (h) and the layout-driven symlink (i) - are exactly the
-        # ones a partial implementation drops.
-        - 'cargo test --manifest-path loom/Cargo.toml --lib fs::work_dir::tests::resolver 2>&1 | rg -q "test result: ok\. (9|[1-9][0-9]+) passed"'
-        # The sun_path guard, boundary-tested. Nothing else in the gate reaches it: the
-        # daemon does not bind during acceptance.
-        - 'cargo test --manifest-path loom/Cargo.toml --lib daemon::server::lifecycle 2>&1 | rg -q "test result: ok\. [1-9]"'
-        - "RUSTDOCFLAGS=\"-D warnings\" cargo doc --manifest-path loom/Cargo.toml --workspace --all-features --no-deps"
-        # Anchored: a bare `rg -q "\.loom/work" .gitignore` passes on a rewritten
-        # COMMENT (.gitignore:56 and :59 both name .work in prose) without the ignore
-        # entries ever landing.
-        - 'rg -q "^\.loom/work/$" .gitignore && rg -q "^\.loom/work$" .gitignore'
-        # Negative: the literal sweep must not weaken the S-1 property by widening the
-        # per-child rules into a blanket grant.
-        - '! rg -q "Read\(\.loom/work/\*\*\)" loom/src/sandbox/settings.rs'
-        # The resolver collapse is otherwise invisible to every gate.
-        - '! rg -q "fn get_work_dir" loom/src'
-        - '! rg -q "fn find_work_dir\(" loom/src/commands/common/mod.rs'
-      files:
-        - "loom/src/**"
-        - "loom/tests/**"
-        - "loom/maintainability-baseline.txt"
-        - "hooks/**"
-        - ".gitignore"
-        - "loom/.gitignore"
-        - ".markdownlintignore"
-        - "CLAUDE.md.template"
-        - "CLAUDE.md"
-        - "loom/CONTRIBUTING.md"
-        - "skills/**"
-        - "agents/**"
-        - "scripts/**"
-      working_dir: "."
-      artifacts:
-        - "loom/src/fs/work_dir.rs"
-        - "loom/src/git/worktree/settings.rs"
-      wiring:
-        - source: "loom/src/git/worktree/settings.rs"
-          pattern: '"\.\./\.\./\.\./\.loom/work"'
-          description: "Worktree symlink points three levels up at the main repo's .loom/work - anchored on the string literal, not the doc comment above it, and not on Path::new: the nested arm may build the target through the layout branch rather than a bare Path::new call"
-        - source: "loom/src/git/worktree/settings.rs"
-          pattern: '"\.\./\.\./\.work"'
-          description: "The LEGACY arm survives. A worktree created from a .work/ workspace must still get .work -> ../../.work; deleting this literal while sweeping is how the back-compat policy dies silently, and this plan's own run is on a legacy workspace until the new binary is installed"
-        - source: "loom/src/fs/work_dir.rs"
-          pattern: 'fn repo_root'
-          description: "One layout-aware repo-root helper, which project_root() and main_project_root() both delegate to. Two separately-written hop counts drift, and one of them then sites .loom/cache/context-v1 outside the project"
-        - source: "loom/src/sandbox/settings.rs"
-          pattern: '\.loom/work/signals/\*\*'
-          description: "Sandbox grants the worktree agent read on the moved signals directory. Deliberately NOT anchored on the full Read(...) literal: collapsing the six adjacent allow.push calls into a loop is a correct refactor that would make the literal non-contiguous and block the stage"
-        - source: "loom/src/git/worktree/settings.rs"
-          pattern: '\.loom/work'
-          description: "The SECOND resolved-symlink settings generator (:415-447) migrates too - missing it leaves worktree agents with no absolute-path grants"
-        - source: "loom/src/git/cleanup/worktree.rs"
-          pattern: '\.loom/work'
-          description: "Worktree teardown removes the moved symlink; remove_required_symlink is a no-op on a missing path, so a stale target strands the worktree"
-        - source: "loom/src/daemon/server/lifecycle.rs"
-          pattern: 'sun_path|SUN_PATH_MAX'
-          description: "sun_path length is validated before the bind at :216-217, inside run_server which can actually return an error - not in with_config or check_status, neither of which returns a Result"
-        - source: "loom/src/fs/permissions/sync.rs"
-          pattern: '\.\./\.\./\.\./\.work|\.\./\.\./\.\./\.loom/work'
-          description: "transform_worktree_path's escape prefix grows a level with the nested layout"
-
-    - id: doctrine-subagent-grouping
-      name: "Subagent task-grouping doctrine"
-      stage_type: standard
-      model: "opus"
-      reasoning_effort: "high"
-      description: |
-        Add a task-grouping rule to subagent doctrine: several small tasks go to ONE
-        subagent, never one subagent per task or per file. Name both costs - the tokens
-        a subagent spends before doing any work, and the disjoint file set every extra
-        subagent forces.
-        Use parallel subagents and skills to maximize performance.
-
-        HARD STOP 6 IS UNTOUCHED. This is a grouping rule, not a licence for the
-        orchestrator to implement. Do not reword "the main agent never implements".
-
-        WHERE THE TEXT GOES. Put it in CLAUDE.md.template Rule 6 prose (the shape table
-        is at :140-146) and in the parallelization section of
-        skills/loom-plan-writer/SKILL.md. Do NOT put it in a pinned BLOCK.
-
-        THE REASON, stated correctly - an earlier draft of this plan claimed here that
-        the three equality tests assert byte-identical presence in EVERY agents/*.md.
-        THAT IS FALSE, and it is the YAML you are reading, so read this instead. Each
-        test enumerates its own fixed surface list:
-          block_a_agrees_across_every_surface (tests_doctrine.rs:109, loop :113-118) ->
-            both signal prefixes, CLAUDE.md.template, hooks/subagent-verify-guard.sh
-          block_b_agrees_across_every_surface (:129, loop :130-133) ->
-            CLAUDE.md.template, skills/loom-plan-writer/SKILL.md
-          block_d_agrees_across_every_surface (:166, loop :170-174) ->
-            both signal prefixes, CLAUDE.md.template (+ asserts ABSENCE from the two
-            knowledge prefixes at :196-207)
-        agent_definitions() (:62-86, a real fs::read_dir scan of agents/) and
-        guidance_surfaces() (:93-106) ARE consumed - but by exactly two tests, neither
-        of which a new rule trips: a RETIRED_PHRASES ABSENCE check
-        (no_guidance_surface_still_tells_a_subagent_to_verify, :332) and a codex-sentinel
-        PRESENCE check (:211).
-        The real reason to stay out of a pinned BLOCK: cache/blocks.rs declares only two
-        consts - BINDING_RULES_POINTER (:19) and KNOWLEDGE_CONSUMPTION_CONTRACT (:23) -
-        while BLOCK-A and BLOCK-D text lives in push_str literals inside its functions
-        (:46-77). Landing the rule inside either block turns a two-file edit into a
-        four-file byte-identical edit for no benefit.
-
-        Read tests_doctrine_blocks.rs first - it holds the block text - and confirm your
-        edit does not perturb any pinned string.
-
-        SIZE BUDGET - RE-MEASURE, DO NOT TRUST THIS NUMBER. CLAUDE.md.template was 27683
-        bytes against the 28672-byte ceiling at tests_size.rs:30 at HEAD, i.e. 989 bytes
-        of headroom. But loom-dir-migration runs BEFORE you and rewrites five .work
-        references in that file to .loom/work, adding roughly 25 bytes. Run wc -c
-        yourself. Fit inside the ceiling. If the text genuinely cannot fit, raise the
-        ceiling deliberately and say so in the commit message, the way it was raised for
-        BLOCK-D.
-
-        THIS STAGE IS NOT MARKDOWN-INERT - RUN THE FULL GATE. CLAUDE.md.template is
-        include_str!'d into SIX test modules: tests_doctrine.rs, tests_doctrine_blocks.rs,
-        tests_doctrine_prefixes.rs, tests_doctrine_waiting.rs, tests_size.rs, and
-        tests_commit_timing.rs - which the substring filter
-        orchestrator::signals::tests_doctrine does NOT match, and which pins Rule 4's
-        sentinel phrases byte-for-byte. With under 1 KB of headroom the likeliest way to
-        fit new text is compressing neighbouring prose, which is exactly what
-        tests_commit_timing exists to catch. skills/loom-plan-writer/SKILL.md is likewise
-        include_str!'d. A template edit cannot break cargo build; it can and does break
-        cargo test.
-
-        This is a small, exact stage. Use ONE subagent for both files rather than one
-        per file - which is the rule this stage exists to add.
-
-        MEMORY: record decisions via loom memory. NEVER loom knowledge. NEVER auto-memory.
-      dependencies: ["loom-dir-migration"]
-      acceptance:
-        - "./scripts/check-hook-syntax.sh"
-        - "cargo build --manifest-path loom/Cargo.toml --all-targets"
-        - "cargo fmt --manifest-path loom/Cargo.toml -- --check"
-        - "cargo clippy --manifest-path loom/Cargo.toml --all-targets -- -D warnings"
-        - "cargo test --manifest-path loom/Cargo.toml --all-targets --no-fail-fast -- --skip daemon::rpc::tests::a_live_listener_is_answered --skip daemon::rpc::tests::a_stale_socket_file_with_nothing_bound_is_not_listening --skip daemon::server::peer_identity::tests::ancestry_accepts_self_and_the_real_parent_chain --skip process::tests::unreaped_dead_child_is_not_alive --skip verify::criteria::tests::confine_tests::spawned_child_leads_its_own_process_group --skip fs::permissions::tests::settings_tests::test_ensure_loom_permissions_adds_home_expanded_codex_forward_entry --skip fs::permissions::tests::settings_tests::test_ensure_loom_permissions_home_expanded_entry_no_duplicates_on_rerun --skip commands::attach::wait::tests::diagnose_sessions_names_the_work_dir_and_every_session"
-        - 'cargo test --manifest-path loom/Cargo.toml --lib orchestrator::signals::tests_doctrine 2>&1 | rg -q "test result: ok\. [1-9][0-9]* passed"'
-        - 'cargo test --manifest-path loom/Cargo.toml --lib orchestrator::signals::tests_size 2>&1 | rg -q "test result: ok\. [1-9][0-9]* passed"'
-        - 'cargo test --manifest-path loom/Cargo.toml --lib orchestrator::signals::tests_commit_timing 2>&1 | rg -q "test result: ok\. [1-9][0-9]* passed"'
-        # Phrase-anchored: "one subagent per" alone also matches a sentence asserting
-        # the opposite. Verified absent from both files at HEAD, so this is a real
-        # before/after discriminator.
-        - 'rg -q "never one subagent per task" CLAUDE.md.template'
-        - 'rg -q "never one subagent per task" skills/loom-plan-writer/SKILL.md'
-        - "RUSTDOCFLAGS=\"-D warnings\" cargo doc --manifest-path loom/Cargo.toml --workspace --all-features --no-deps"
-      files:
-        - "CLAUDE.md.template"
-        - "skills/loom-plan-writer/SKILL.md"
-      working_dir: "."
-      artifacts:
-        - "CLAUDE.md.template"
-        - "skills/loom-plan-writer/SKILL.md"
-      wiring:
-        - source: "CLAUDE.md.template"
-          pattern: "never one subagent per task"
-          description: "Task-grouping rule present in Rule 6 prose"
-        - source: "skills/loom-plan-writer/SKILL.md"
-          pattern: "never one subagent per task"
-          description: "Task-grouping rule present in the plan-writer parallelization section"
-
-    - id: version-and-release
-      name: "Tag-driven version identity and live releases"
-      stage_type: standard
-      model: "opus"
-      reasoning_effort: "high"
-      implementers: ["codex", "claude"]
-      subagent_timeout_secs: 1800
-      description: |
-        Give the binary a real version, make tag pushes produce live releases, and
-        repair loom self-update's checksum asset name.
-        Use parallel subagents and skills to maximize performance.
-
-        BUILD FIRST: run cargo build --manifest-path loom/Cargo.toml --all-targets once,
-        early. Acceptance has a hard 300s per-command ceiling
-        (verify/criteria/config.rs:8) and a cold worktree build exceeds it.
-
-        1. loom/Cargo.toml: version = "0.0.0-dev". It stops moving from here on. No
-           build = key, no include/exclude, no [build-dependencies] and no workspace
-           root manifest, so cargo auto-detects the new build.rs.
-        2. THE DERIVATION LIVES IN loom/src, NOT IN build.rs. This repo has ZERO tags
-           (git tag is empty; git describe --tags returns "fatal: No names found"), so
-           the two interesting branches are UNREACHABLE in every environment this plan
-           runs in and cannot be proven end-to-end. Put
-             pub fn derive_version(describe_exact: Option<&str>,
-                                   describe: Option<&str>,
-                                   short_sha: Option<&str>) -> String
-           in loom/src/version/derive.rs, have build.rs
-             include!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/version/derive.rs"))
-           and shell out to git only. Cover all four branches by name in
-           version::derive::tests - build scripts are not test targets.
-           - git describe --tags --exact-match succeeds -> that tag verbatim, minus the
-             leading v. This is what CI builds.
-           - git describe --tags gives v0.2.0-5-gabc1234 -> 0.2.1-dev.5+abc1234: last
-             tag, patch bumped, commit count, short SHA. Semver puts this ahead of
-             0.2.0 and behind 0.2.1, which is exactly right for a build sitting on
-             commits past the last release.
-           - NO TAGS -> 0.0.0-dev+<short sha>, from git rev-parse --short HEAD,
-             INDEPENDENTLY of git describe. This is the path EVERY build takes today,
-             and integration-verify requires "loom -v prints a version carrying a
-             commit hash" - the sha must survive this branch.
-           - no git at all -> 0.0.0-dev+unknown.
-        2b. RERUN KEYS: DO NOT EMIT .git/HEAD OR .git/refs/tags. Build scripts run with
-           CWD = the package root = loom/, so ".git/HEAD" means loom/.git/HEAD, which
-           does not exist. And seven of nine stages build in .worktrees/<id>/, where
-           .git is a FILE (gitdir: ...), not a directory. Cargo treats a missing
-           rerun-if-changed path as PERMANENTLY DIRTY, not as a no-op - verified with a
-           probe crate: "Compiling" reappears on every consecutive build with no source
-           change. Under the 300s acceptance ceiling that is the likeliest way this
-           stage fails opaquely. Instead resolve the real paths:
-             git rev-parse --git-path HEAD          (per-worktree)
-             git rev-parse --git-common-dir         then refs/tags AND packed-refs
-           (tags land in packed-refs after a clone or gc; .git/refs/tags is an empty
-           directory here today). Emit cargo:rerun-if-changed for the resolved absolute
-           paths and EMIT NOTHING for a path that does not exist. Verify with two
-           consecutive cargo build runs: the second must not print "Compiling loom".
-           Also emit cargo:rustc-env=LOOM_VERSION plus commit, build date and target
-           triple.
-        3. loom/src/cli/types.rs:34 has #[command(version)], which binds -V only, and
-           CLAP CANNOT SIMPLY BE GIVEN A SHORT ALIAS. A manual
-           #[arg(short = 'v', long = "version", action = ArgAction::Version)] collides
-           with the auto-generated --version. The working shape on clap 4.6.6 is
-           #[command(version, disable_version_flag = true)] PLUS that manual arg. When
-           both version and long_version are set clap prints `version` for the SHORT
-           form, so the commit hash must be in `version`, not only long_version.
-           Nothing else claims -v at the top level (Status's -v at types.rs:101-102 is
-           a subcommand flag; propagate_version is absent so -V never propagates).
-           Render version, commit, build date, target.
-        3b. Adding a top-level flag INVALIDATES the invariant main.rs:41-44 states -
-           "Cli declares no global options, so the first argument is always the
-           subcommand" - which update-check builds on. Update that comment here.
-        3c. cli/types.rs is 377 lines against Rule 17's 400 and is NOT ledgered, so
-           crossing 400 creates a NEW violation that tests/maintainability.rs rejects
-           unless recorded. Three stages add to this file. It already splits into
-           types_ops.rs / types_stage.rs / types_memory.rs (types.rs:4-8); if you need
-           room, extract rather than grow.
-        4. Anything reading CARGO_PKG_VERSION must read the new value instead -
-           self_update/mod.rs:40 is the one production site (rg confirms exactly one).
-           Skip this and every CI-built tagged release reports 0.0.0-dev, so
-           latest_version <= current at :70 is never true and self-update offers an
-           update forever.
-        5. .github/workflows/release.yml: remove draft: true at line 229. ALSO FIX THE
-           CHECKOUT: :43 is a bare `uses: actions/checkout@v7` in the `build` job
-           (:20-85), i.e. fetch-depth 1 and fetch-tags false; the fetch-depth: 0 at :98
-           is on sign-and-release, which never compiles. Binaries are built at :63-65.
-           So git describe --tags CANNOT succeed in the job that builds and EVERY
-           published binary would ship the fallback version. Add
-           `with: { fetch-depth: 0 }` to :43. Then add a job that fails the release
-           when the git tag does not match the version THE BUILT BINARY REPORTS - not
-           steps.version.outputs.tag, which validates the workflow against itself and
-           passes on a broken build.rs. Runners are ubuntu-latest/macos-13/macos-latest
-           (:26-37), no containers, so there is no safe.directory hazard.
-        6. SELF-UPDATE IS BROKEN IN THREE INDEPENDENT WAYS, NOT ONE. An earlier draft of
-           this plan fixed only the third and still claimed the goal "loom self-update
-           works end to end". All three land together or the goal is false. Each was
-           verified against the tree:
-           6a. WRONG REPOSITORY. GITHUB_REPO = "cosmix/claude-loom" (self_update/mod.rs:39)
-               feeds https://api.github.com/repos/{GITHUB_REPO}/releases/latest (:100).
-               This repo's origin is cosmix/loom (git config --get remote.origin.url ->
-               git@github.com:cosmix/loom.git), which is where the releases this plan
-               makes live are published. The client queries a DIFFERENT REPOSITORY than
-               the workflow publishes to.
-           6b. WRONG ASSET NAMES. update_binary builds format!("loom-{target}") from
-               get_target() (:113-150), a TARGET TRIPLE - loom-aarch64-apple-darwin,
-               loom-x86_64-unknown-linux-gnu - plus {binary_name}.minisig. The workflow
-               publishes OS-ARCH names: loom-linux-x86_64, loom-darwin-x86_64,
-               loom-darwin-arm64 and their .minisig partners (release.yml:26-37,233-240).
-               NO SUPPORTED PLATFORM'S ASSET IS EVER FOUND. get_target() also recognises
-               aarch64-unknown-linux-gnu, a fourth platform the workflow does not build
-               and this plan's non-goals keep out of the matrix - map it to a clear "no
-               release asset for this platform" error, not to a 404.
-           6c. WRONG CHECKSUM ASSET. self_update/mod.rs:224 looks for a release asset
-               literally named "checksums.txt"; release.yml publishes SHA256SUMS.txt
-               (lines 148, 161, 240). Change the CLIENT to SHA256SUMS.txt - the published
-               name is conventional and already named in the release notes.
-           FIX ALL THREE AGAINST ONE SHARED SOURCE OF TRUTH, NOT TWO HAND-KEPT LISTS: a
-           single release_asset mapping (repo identifier, plus target triple -> published
-           asset base name) covering exactly the three supported targets, which the
-           client resolves against. The workflow matrix stays the declaration of what is
-           built.
-           PROVE IT WITH A FIXTURE TEST - no acceptance command can reach a real release.
-           Feed the literal ten published asset names from release.yml:233-240 to the
-           REAL selector and assert: each of the three supported targets selects both a
-           binary and its .minisig; the checksum asset resolves; the unsupported fourth
-           target ERRORS rather than selecting something; and the API URL names
-           cosmix/loom. A grep for the string SHA256SUMS.txt is not a proof of any of it.
-           TWO CORRECTIONS to how this has been described:
-           - Self-update does NOT "update nothing". update_binary runs at mod.rs:86,
-             BEFORE update_config_files at :89. The binary is swapped, then the run
-             errors, leaving a HALF-UPDATED install (new binary, stale agents.zip /
-             skills.zip / CLAUDE.md.template) and no success line (:91-95 unreached).
-           - self_update/tests.rs pins NOTHING. rg "checksums\.txt" on that file returns
-             zero hits. There is nothing to update there.
-           The literal occurs at EIGHT sites in mod.rs - :224, 241, 260, 263, 266, 335,
-           337, 340 - including two comments and four user-facing error messages.
-           Update every one; the wiring pattern covers only :224.
-
-        Group these: the version work (1-4) is one subagent, the release and
-        self-update work (5-6) is another. Do not split further.
-
-        CARGO.LOCK IS YOURS AND MUST BE COMMITTED. loom/Cargo.lock:1505-1506 records the
-        loom package at version 0.1.0. Changing Cargo.toml to 0.0.0-dev makes the lock
-        stale, and the first cargo build rewrites it - so the file WILL be dirty whether
-        or not you planned for it. It is in this stage's files:; stage and commit it.
-
-        MAINTAINABILITY LEDGER - MAIN AGENT ONLY, after both subagents land.
-        loom/maintainability-baseline.txt is EXACT-match and errors on shrinkage as
-        loudly as on growth. This stage moves file src/commands/self_update/mod.rs 438
-        (:17), file src/commands/self_update/tests.rs 490 (:18 - the release-fixture
-        test of 6c grows it) and function ... update_config_files 88 (:111). Run
-        cargo test --manifest-path loom/Cargo.toml --test maintainability and reconcile.
-
-        CODEX: no git commands in subagents; check git status --short after each run;
-        explicit Bash timeout 900000 ms and --effort xhigh in every forwarder prompt.
-
-        MEMORY: record decisions via loom memory. NEVER loom knowledge. NEVER auto-memory.
-      dependencies: ["loom-dir-migration"]
-      acceptance:
-        - "./scripts/check-hook-syntax.sh"
-        - "cargo build --manifest-path loom/Cargo.toml --all-targets"
-        - "cargo fmt --manifest-path loom/Cargo.toml -- --check"
-        - "cargo clippy --manifest-path loom/Cargo.toml --all-targets -- -D warnings"
-        - "cargo test --manifest-path loom/Cargo.toml --all-targets --no-fail-fast -- --skip daemon::rpc::tests::a_live_listener_is_answered --skip daemon::rpc::tests::a_stale_socket_file_with_nothing_bound_is_not_listening --skip daemon::server::peer_identity::tests::ancestry_accepts_self_and_the_real_parent_chain --skip process::tests::unreaped_dead_child_is_not_alive --skip verify::criteria::tests::confine_tests::spawned_child_leads_its_own_process_group --skip fs::permissions::tests::settings_tests::test_ensure_loom_permissions_adds_home_expanded_codex_forward_entry --skip fs::permissions::tests::settings_tests::test_ensure_loom_permissions_home_expanded_entry_no_duplicates_on_rerun --skip commands::attach::wait::tests::diagnose_sessions_names_the_work_dir_and_every_session"
-        # build.rs compiles as a build-script target, which `cargo clippy -- -D warnings`
-        # does NOT cover, but CI sets RUSTFLAGS: "-Dwarnings" globally (ci.yml:18).
-        - 'RUSTFLAGS="-Dwarnings" cargo build --manifest-path loom/Cargo.toml --all-targets'
-        # The derivation is unit-tested because this repo has no tags: an end-to-end
-        # `loom -v | rg dev` passes on a hardcoded constant.
-        - 'cargo test --manifest-path loom/Cargo.toml --lib version::derive::tests 2>&1 | rg -q "test result: ok\. [3-9]"'
-        - './loom/target/debug/loom -v'
-        # A commit hash, not the word "dev" - which the fallback string also contains.
-        - './loom/target/debug/loom -v | rg -q "[0-9a-f]{7}"'
-        # Proves the version comes from build.rs rather than CARGO_PKG_VERSION.
-        - 'rg -q "cargo:rustc-env=LOOM_VERSION" loom/build.rs'
-        - 'rg -q "rev-parse --git-path|rev-parse --git-common-dir" loom/build.rs'
-        - 'rg -q ''env!\("LOOM_VERSION"\)'' loom/src/commands/self_update/mod.rs'
-        - 'rg -qF "SHA256SUMS.txt" loom/src/commands/self_update/mod.rs'
-        - '! rg -qF "checksums.txt" loom/src/commands/self_update/mod.rs'
-        # THE RELEASE-FIXTURE TEST is the only proof that self-update can find anything:
-        # the repo id and the asset names were BOTH wrong at HEAD and the checksum
-        # rename fixes neither. Count-asserting because a filter matching nothing exits 0.
-        - 'cargo test --manifest-path loom/Cargo.toml --all-targets release_asset 2>&1 | rg -q "test result: ok\. [1-9]"'
-        # 6a: the client must query the repository the workflow publishes to.
-        - 'rg -qF ''"cosmix/loom"'' loom/src/commands/self_update/mod.rs'
-        - '! rg -qF "cosmix/claude-loom" loom/src/commands/self_update'
-        # 6b: os-arch asset names, not target triples. The published names are the
-        # contract; assert the three the workflow actually builds.
-        - 'rg -qF "loom-darwin-arm64" loom/src/commands/self_update'
-        - 'rg -qF "loom-linux-x86_64" loom/src/commands/self_update'
-        # RERUN KEYS: a missing rerun-if-changed path makes cargo treat the crate as
-        # permanently dirty, which under the 300s ceiling is how this stage fails
-        # opaquely. Two consecutive builds; the second must not recompile loom.
-        - 'cargo build --manifest-path loom/Cargo.toml >/dev/null 2>&1; cargo build --manifest-path loom/Cargo.toml 2>&1 | rg -q "Compiling loom "; test $? -ne 0'
-        - "RUSTDOCFLAGS=\"-D warnings\" cargo doc --manifest-path loom/Cargo.toml --workspace --all-features --no-deps"
-        # `rg -q X; test $? -ne 0` also succeeds when rg exits 2 (file missing), so
-        # deleting release.yml would pass. Assert the file exists first.
-        - 'test -f .github/workflows/release.yml && ! rg -q "draft:\s*true" .github/workflows/release.yml'
-        - 'rg -q "fetch-depth: 0" .github/workflows/release.yml'
-        # The tag-vs-version guard job was prose-only: nothing failed if it was never written.
-        - 'rg -q "tag.*does not match|version mismatch|Version mismatch" .github/workflows/release.yml'
-      files:
-        - "loom/Cargo.toml"
-        - "loom/Cargo.lock"
-        - "loom/build.rs"
-        - "loom/src/version/**"
-        - "loom/src/lib.rs"
-        - "loom/src/main.rs"
-        - "loom/src/cli/types.rs"
-        - "loom/src/commands/self_update/**"
-        - "loom/maintainability-baseline.txt"
-        - ".github/workflows/**"
-      working_dir: "."
-      artifacts:
-        - "loom/build.rs"
-        - "loom/src/version/derive.rs"
-      wiring:
-        - source: "loom/src/commands/self_update/mod.rs"
-          pattern: 'a\.name == "SHA256SUMS\.txt"'
-          description: "Self-update fetches the checksum asset the release workflow actually publishes"
-        - source: "loom/src/cli/types.rs"
-          pattern: "LOOM_VERSION"
-          description: "The version string comes from build.rs, not CARGO_PKG_VERSION"
-        - source: ".github/workflows/release.yml"
-          pattern: "fetch-depth"
-          description: "The build job fetches tags, so git describe can see them"
-        - source: "loom/src/commands/self_update/mod.rs"
-          pattern: 'cosmix/loom'
-          description: "The releases API is queried against the repository the workflow publishes to. GITHUB_REPO was cosmix/claude-loom at HEAD, so every check-for-update hit a different repository"
-        - source: "loom/Cargo.lock"
-          pattern: '0\.0\.0-dev'
-          description: "The lockfile records the new package version. It was 0.1.0 at Cargo.lock:1506 and the first build rewrites it, so an unowned lockfile leaves the stage with an uncommittable dirty file"
-
-    - id: config-foundation
-      name: "Global config and loom config -k"
-      stage_type: standard
-      model: "opus"
-      reasoning_effort: "high"
-      implementers: ["codex", "claude"]
-      subagent_timeout_secs: 1800
-      description: |
-        Add a user-level configuration file at ~/.loom/config.toml and a scalar get/set
-        CLI over it.
-        Use parallel subagents and skills to maximize performance.
-
-        A new module owns ~/.loom/: resolve the directory (dirs::home_dir, already a
-        dependency - see codex.rs:56 for the house idiom), read and write config.toml
-        through toml_edit so comments and unknown keys survive, and expose a typed key
-        registry.
-
-        Mirror the section-typed accessor style in fs/work_dir.rs:497-660 rather than
-        inventing a second one, but keep the TYPE distinct from WorkDir. These are two
-        different directories that share a name prefix, and every error message must say
-        which one it means: "user config ~/.loom/config.toml" or
-        "workspace <repo>/.loom/". Never a bare "the .loom directory".
-
-        KEYS (this is the whole surface for this plan):
-          update.check                  bool, default true
-          update.check_interval_hours   u32,  default 24
-          terminal.backend              "native" | "tmux", default native
-          context.ceiling_tokens        u32, default 800000
-                                        (DEFAULT_CONTEXT_CEILING_TOKENS,
-                                        models/constants.rs:44)
-
-        TWO OF THOSE FOUR KEYS HAVE NO PRODUCTION CONSUMER UNLESS YOU ADD ONE, and a key
-        that persists and displays a value while changing nothing is the worst thing this
-        stage could ship. An earlier draft of this plan registered both and put workspace
-        precedence out of scope, which left `loom config -k terminal.backend tmux`
-        writing a value nothing ever reads. Verified against the tree: terminal.backend is
-        read ONLY from the WORKSPACE config, by resolve_backend_flag
-        (commands/run/mod.rs:166) and SessionBackend::from_config
-        (orchestrator/terminal/backend.rs:96-97); the context ceiling likewise, by
-        Monitor::new (orchestrator/monitor/core.rs:51-52) and the hook path
-        (commands/hook/context_ceilings.rs:43).
-
-        BOTH FUNNEL THROUGH EXACTLY TWO FUNCTIONS, so the fix is small and belongs here.
-        read_terminal_config (fs/work_dir.rs:623-625) and read_context_config (:636-638)
-        are each a ONE-LINE wrapper over read_section, which returns Option<T> - None when
-        the section is absent. Add the global tier INSIDE those two wrappers and every
-        consumer above picks it up unchanged. The order:
-
-          stage override (context only) > workspace [section] when PRESENT
-                                        > ~/.loom/config.toml > built-in
-
-        PRECEDENCE IS SECTION-LEVEL, NOT KEY-LEVEL, AND THAT IS DELIBERATE. [context]
-        deserializes through ContextConfigRaw (fs/work_dir/context_config.rs:62-91), whose
-        whole purpose is to tell "the TOML set this key" apart from "the TOML left this to
-        derive" BEFORE the built-in defaults are baked in by the From impl. By the time
-        read_section::<ContextConfig> has returned, that distinction is GONE, so a
-        key-level merge would silently treat a derived default as an explicit setting. A
-        present workspace section wins WHOLE; only an absent one falls through to the user
-        config. The global tier supplies context.ceiling_tokens ONLY -
-        subagent_ceiling_tokens and model_window_tokens keep deriving from the built-ins,
-        and ContextConfig::ceiling_for's stage-override rule (context_config.rs:107-109)
-        is untouched.
-
-        This adds loom/src/fs/work_dir.rs and loom/src/fs/work_dir/context_config.rs to
-        your files:. Neither is contended - loom-dir-migration owns them in an earlier
-        wave and is merged before you start - but it DOES move
-        file src/fs/work_dir.rs 669 (maintainability-baseline.txt:34) a second time.
-
-        CLI, added to cli/types.rs and dispatched in cli/dispatch.rs (dispatch is at
-        dispatch.rs:155; there is NO existing Commands::Config variant to collide with):
-          loom config -k <key>            print the BARE VALUE on stdout, nothing else
-          loom config -k <key> <value>    set it, print the old and new values
-          loom config --list              every key, its value, and its ORIGIN: set,
-                                          global, or default
-          loom config --print             print the resolved config as TOML
-          loom config                     same as --print until config-tui re-points it
-
-        REGISTER --print HERE, NOT IN config-tui. clap subcommand flags are struct-variant
-        fields in cli/types.rs, destructured at cli/dispatch.rs:156-166 - files THIS stage
-        owns and config-tui does not. Registering it there would force config-tui to edit
-        cli/types.rs concurrently with init-auto-repair, which also owns that file in the
-        same wave. Two branches editing one file through auto-merge is lost work.
-
-        DECLARE THE MODULE. loom/src/commands/mod.rs is a flat `pub mod ...;` list with no
-        `config` entry; without adding one, commands/config/ is unreachable and the build
-        fails. loom/src/user_config/ is top-level and goes in lib.rs.
-
-        EXPOSE EXACTLY ONE ACCESSOR: user_config::load() -> UserConfig, returning fully
-        defaulted values when ~/.loom/config.toml is absent or unparseable. config-tui and
-        update-check run in the SAME WAVE, both consume the config, and NEITHER lists
-        loom/src/user_config/** in its files: - so the module must be complete here and
-        neither successor may build its own reader. The typed key registry is the single
-        validator for the -k path, the TUI's commit, and update.check's lookup.
-
-        NAME COLLISION, sharper than "distinct from WorkDir": there is already a bare
-        `pub struct Config` at fs/work_dir.rs:19 - the .work/config.toml type. Every
-        message must say WHICH directory: "user config ~/.loom/config.toml" or
-        "workspace <repo>/.loom/". Never a bare "the .loom directory", never a bare Config.
-
-        READS MUST NOT CREATE THE DIRECTORY. -k <key> and --list return defaults when the
-        file is absent; only a SET creates ~/.loom/. Without this rule this stage's own
-        acceptance writes on a read.
-
-        WRITES GO THROUGH crate::fs::locking::atomic_write_locked (fs/locking.rs:157),
-        never a bare fs::write - loom is invoked concurrently from hooks, so this is a
-        real race. A ~/.loom/config.toml that fails to parse is an ERROR naming the file
-        and the toml_edit parse position on `loom config` paths, and is treated as ABSENT
-        (all defaults, no write, no message) on every other command: a broken user config
-        must never take down loom run.
-
-        NO NEW DEPENDENCY. toml_edit = "0.25.13" (Cargo.toml:39) and dirs = "6" (:17) are
-        already direct dependencies, present in Cargo.lock. Do not cargo add anything; do
-        not hand-edit the manifest.
-
-        cli/types.rs is 377 lines against Rule 17's 400 and is not ledgered, so crossing
-        400 creates a NEW violation the maintainability test rejects. Put the Config
-        variant in a new cli/types_config.rs re-exported from types.rs, following the
-        existing types_ops.rs / types_stage.rs / types_memory.rs split at types.rs:4-8.
-
-        MAINTAINABILITY LEDGER - MAIN AGENT ONLY. Adding a Commands::Config arm grows
-        `function src/cli/dispatch.rs dispatch 123` (maintainability-baseline.txt:73),
-        which is EXACT-match: the top-level match cannot take even one more arm without
-        the baseline moving. Run cargo test --manifest-path loom/Cargo.toml --test
-        maintainability and reconcile after the subagent lands.
-
-        WRITES go to ~/.loom/config.toml only - loom config NEVER edits a workspace
-        config. READS go the other way, per the section-level precedence above. Those are
-        different directions and neither is "out of scope".
-
-        Unknown key, or a value that fails to parse for its type, is an error with a
-        non-zero exit and a message naming the valid keys.
-
-        This is one coherent piece of work. Use ONE subagent for the module and the CLI
-        together - splitting them would force a shared-contract foundation step for no
-        benefit.
-
-        CODEX: no git in subagents; check git status --short after each run; explicit
-        Bash timeout 900000 ms and --effort xhigh.
-
-        MEMORY: record decisions via loom memory. NEVER loom knowledge. NEVER auto-memory.
-      dependencies: ["version-and-release"]
-      acceptance:
-        - "./scripts/check-hook-syntax.sh"
-        - "cargo build --manifest-path loom/Cargo.toml --all-targets"
-        - "cargo fmt --manifest-path loom/Cargo.toml -- --check"
-        - "cargo clippy --manifest-path loom/Cargo.toml --all-targets -- -D warnings"
-        - "cargo test --manifest-path loom/Cargo.toml --all-targets --no-fail-fast -- --skip daemon::rpc::tests::a_live_listener_is_answered --skip daemon::rpc::tests::a_stale_socket_file_with_nothing_bound_is_not_listening --skip daemon::server::peer_identity::tests::ancestry_accepts_self_and_the_real_parent_chain --skip process::tests::unreaped_dead_child_is_not_alive --skip verify::criteria::tests::confine_tests::spawned_child_leads_its_own_process_group --skip fs::permissions::tests::settings_tests::test_ensure_loom_permissions_adds_home_expanded_codex_forward_entry --skip fs::permissions::tests::settings_tests::test_ensure_loom_permissions_home_expanded_entry_no_duplicates_on_rerun --skip commands::attach::wait::tests::diagnose_sessions_names_the_work_dir_and_every_session"
-        - "RUSTDOCFLAGS=\"-D warnings\" cargo doc --manifest-path loom/Cargo.toml --workspace --all-features --no-deps"
-        - './loom/target/debug/loom config --list'
-        - './loom/target/debug/loom config --list | rg -q "update.check"'
-        # HERMETIC. The previous gate read the developer's REAL ~/.loom/config.toml and
-        # passed on the compiled-in default, proving neither a write, a read-back, nor
-        # that the file was created. rg -q "24" also matched "1024". HOME is forwarded
-        # to confined commands (process/environment.rs:15) and dirs::home_dir() reads
-        # $HOME on unix, so this redirect is real; $TMPDIR is on the allowlist.
-        - 'H=$(mktemp -d); HOME="$H" ./loom/target/debug/loom config -k update.check_interval_hours | rg -q "^24$" && HOME="$H" ./loom/target/debug/loom config -k update.check_interval_hours 6 >/dev/null && HOME="$H" ./loom/target/debug/loom config -k update.check_interval_hours | rg -q "^6$" && rg -q "check_interval_hours" "$H/.loom/config.toml"'
-        # A read must NOT create ~/.loom/.
-        - 'H=$(mktemp -d); HOME="$H" ./loom/target/debug/loom config --list >/dev/null; test ! -e "$H/.loom"'
-        # --list reports ORIGIN, not just value. Without it a user cannot tell a key they
-        # set from one that happens to match its default, which is the whole reason the
-        # column exists.
-        - 'H=$(mktemp -d); HOME="$H" ./loom/target/debug/loom config -k update.check_interval_hours 6 >/dev/null && HOME="$H" ./loom/target/debug/loom config --list | rg -q "update\.check_interval_hours.*\bset\b" && HOME="$H" ./loom/target/debug/loom config --list | rg -q "terminal\.backend.*\bdefault\b"'
-        # Unknown key is a non-zero exit naming the valid keys.
-        - 'H=$(mktemp -d); HOME="$H" ./loom/target/debug/loom config -k update.no_such_key; test $? -ne 0'
-        - 'cargo test --manifest-path loom/Cargo.toml --lib user_config 2>&1 | rg -q "test result: ok\. [1-9]"'
-        # toml_edit is chosen so comments and unknown keys survive a set. Nothing else
-        # proves it: a serde round-trip through a plain Table would pass every gate above
-        # while silently dropping both.
-        - 'H=$(mktemp -d); mkdir -p "$H/.loom" && printf "# keep me\n[update]\ncheck = true\nmystery = 7\n" > "$H/.loom/config.toml"; HOME="$H" ./loom/target/debug/loom config -k update.check_interval_hours 12 >/dev/null && rg -q "^# keep me$" "$H/.loom/config.toml" && rg -q "mystery = 7" "$H/.loom/config.toml"'
-        # ON-PATH, not registry-only: the two keys that had NO consumer at HEAD must now
-        # reach the production readers (read_terminal_config / read_context_config), with
-        # a present workspace section still overriding the global one. Registry read/write
-        # tests would pass on a key nothing consumes, which is the defect being fixed.
-        - 'cargo test --manifest-path loom/Cargo.toml --all-targets global_config_tier 2>&1 | rg -q "test result: ok\. [2-9]"'
-      files:
-        - "loom/src/user_config/**"
-        - "loom/src/commands/config/**"
-        - "loom/src/commands/mod.rs"
-        - "loom/src/cli/types.rs"
-        - "loom/src/cli/types_config.rs"
-        - "loom/src/cli/dispatch.rs"
-        - "loom/src/fs/work_dir.rs"
-        - "loom/src/fs/work_dir/**"
-        - "loom/src/lib.rs"
-        - "loom/maintainability-baseline.txt"
-      working_dir: "."
-      artifacts:
-        - "loom/src/user_config/mod.rs"
-        - "loom/src/commands/config/mod.rs"
-      wiring:
-        - source: "loom/src/cli/dispatch.rs"
-          pattern: "Commands::Config"
-          description: "Config command reachable from CLI dispatch"
-        - source: "loom/src/fs/work_dir.rs"
-          pattern: 'user_config'
-          description: "read_terminal_config and read_context_config consult the user config when the workspace section is absent. Without this the two registered keys persist a value no production caller ever reads"
-
-    - id: config-tui
-      name: "loom config TUI"
-      stage_type: standard
-      model: "opus"
-      reasoning_effort: "high"
-      implementers: ["codex", "claude"]
-      subagent_timeout_secs: 1800
-      description: |
-        Give bare `loom config` a ratatui screen over the keys config-foundation
-        registered.
-        Use parallel subagents and skills to maximize performance.
-
-        Mirror the existing TUI in commands/status/ui/tui/ rather than inventing a
-        second shape. Read app.rs first: enable_raw_mode and EnterAlternateScreen at
-        lines 91-93, Terminal::new(backend) at 101, teardown at 296-303. That is the
-        crossterm idiom - ratatui is pinned at 0.30 and crossterm at 0.29, but this code
-        does NOT use ratatui::init()/restore(). Match what is there.
-
-        DO NOT SKIP install_crossterm_panic_hook() - it sits at app.rs:95, between
-        EnterAlternateScreen (:93) and Terminal::new (:101), and without it a panic
-        leaves the user's terminal in raw mode on the alternate screen. Teardown is at
-        :290-305, made idempotent by the cleaned_up flag at :291-293.
-
-        REACHABILITY IS SETTLED - do not re-derive it. crate::commands::status::ui::theme
-        and ::widgets are PUBLIC along the whole path: commands/mod.rs:23 `pub mod status;`,
-        commands/status.rs:6 `pub mod ui;`, commands/status/ui/mod.rs:1,4
-        `pub mod theme; pub mod widgets;` re-exported at :6 and :9. Reuse them directly.
-        The "replicate if not reachable" branch is dead; do not replicate, and do not
-        widen any visibility.
-
-        --print IS ALREADY REGISTERED by config-foundation. You do NOT edit cli/types.rs
-        or cli/dispatch.rs - init-auto-repair owns cli/types.rs in this same wave.
-
-        Screen: a list of keys with current values, arrow/j-k navigation, Enter to edit
-        the selected value inline, Esc to cancel, s to save, q to quit. Validate on
-        commit using the same typed registry the -k path uses - two validators would
-        drift.
-
-        Bare `loom config` opens the TUI. `loom config --print` keeps the TOML output
-        config-foundation added. Guard on a non-TTY stdout and fall back to --print, so
-        the command stays usable in a pipe and in tests.
-
-        ONE subagent. This is a single screen.
-
-        MEMORY: record decisions via loom memory. NEVER loom knowledge. NEVER auto-memory.
-      dependencies: ["config-foundation"]
-      acceptance:
-        - "./scripts/check-hook-syntax.sh"
-        - "cargo build --manifest-path loom/Cargo.toml --all-targets"
-        - "cargo fmt --manifest-path loom/Cargo.toml -- --check"
-        - "cargo clippy --manifest-path loom/Cargo.toml --all-targets -- -D warnings"
-        - "cargo test --manifest-path loom/Cargo.toml --all-targets --no-fail-fast -- --skip daemon::rpc::tests::a_live_listener_is_answered --skip daemon::rpc::tests::a_stale_socket_file_with_nothing_bound_is_not_listening --skip daemon::server::peer_identity::tests::ancestry_accepts_self_and_the_real_parent_chain --skip process::tests::unreaped_dead_child_is_not_alive --skip verify::criteria::tests::confine_tests::spawned_child_leads_its_own_process_group --skip fs::permissions::tests::settings_tests::test_ensure_loom_permissions_adds_home_expanded_codex_forward_entry --skip fs::permissions::tests::settings_tests::test_ensure_loom_permissions_home_expanded_entry_no_duplicates_on_rerun --skip commands::attach::wait::tests::diagnose_sessions_names_the_work_dir_and_every_session"
-        - './loom/target/debug/loom config --print | rg -q "^\[update\]"'
-        # THE REAL TEST OF THE NON-TTY FALLBACK: acceptance stdout is a pipe
-        # (Stdio::piped(), verify/criteria/confine.rs:124-126), so the BARE form here
-        # is non-TTY by construction. Without the guard this hangs in the alternate
-        # screen; with --print passed explicitly the fallback is never exercised.
-        - './loom/target/debug/loom config | rg -q "update"'
-        - 'cargo test --manifest-path loom/Cargo.toml --lib commands::config::tui 2>&1 | rg -q "test result: ok\. [1-9]"'
-        - "RUSTDOCFLAGS=\"-D warnings\" cargo doc --manifest-path loom/Cargo.toml --workspace --all-features --no-deps"
-      files:
-        - "loom/src/commands/config/**"
-      working_dir: "."
-      artifacts:
-        - "loom/src/commands/config/tui/mod.rs"
-      wiring:
-        - source: "loom/src/commands/config/mod.rs"
-          pattern: 'is_terminal\(\)'
-          description: "Bare loom config enters the TUI only on a TTY. A bare `tui::run` pattern would match a dead `use self::tui::run;` or a comment"
-        - source: "loom/src/commands/config/tui/mod.rs"
-          pattern: "fn run"
-          description: "The TUI entry point exists"
-
-    - id: update-check
-      name: "Check for updates and notify"
-      stage_type: standard
-      model: "opus"
-      reasoning_effort: "high"
-      implementers: ["codex", "claude"]
-      subagent_timeout_secs: 1800
-      description: |
-        Notice new releases and say so. NEVER install anything - loom self-update stays
-        the only installer, in every configuration.
-        Use parallel subagents and skills to maximize performance.
-
-        THE HOT PATH TAKES NO NETWORK CALL. loom is invoked constantly by Claude Code
-        hooks and by stage agents; a synchronous fetch on launch would be a latency
-        disaster.
-
-        Launch reads ~/.loom/update-state.json - a small record of {last_checked,
-        latest_version} - and nothing else. If latest_version is newer than the running
-        version, print ONE line naming both and telling the user to run loom self-update.
-        If last_checked is older than update.check_interval_hours, spawn a DETACHED
-        background process that fetches from the GitHub releases API, rewrites the state
-        file, and exits. The foreground command never waits on it.
-
-        Compare with semver (already a dependency, used at self_update/mod.rs:67-68).
-        A development version such as 0.2.1-dev.5+abc1234 is correctly BEHIND 0.2.1 and
-        AHEAD of 0.2.0, so a dev build sitting on unreleased commits is not told it is
-        out of date.
-
-        THE GATE. main.rs already has the shape: MACHINE_PROTOCOL_COMMANDS at line 13
-        (["hook", "context"]) and writes_a_machine_protocol() at line 45 read argv BEFORE
-        clap parses. Add a parallel predicate for commands that must never check or
-        notify - hook, context, complete, and run - reusing the same argv-before-parse
-        approach rather than inspecting a parsed Cli. All are real top-level variants
-        (Hook cli/types.rs:297, Context :303, Complete :310), so args().nth(1) reaches
-        them. Make it a NAMED function beside writes_a_machine_protocol and unit-test it
-        (main.rs:49-68 already carries an inline #[cfg(test)] mod tests, and
-        cargo test --all-targets covers --bins).
-
-        "THE DAEMON'S OWN RE-ENTRY" DOES NOT EXIST - do not write a case for it. The
-        daemon daemonizes in-process with fork() + setsid()
-        (daemon/server/lifecycle.rs:18, double-fork at :65,85,99,103); it never re-execs,
-        so there is no re-entry argv and the forked child inherits an already-run main().
-        The one genuine current_exe re-entry is commands/hook/reconcile_graph.rs:361,
-        which re-enters as ["hook", "reconcile-graph"] and is already covered by `hook`.
-        Exclude `run` instead - it is the parent that forks.
-
-        THE NOTIFICATION LINE GOES TO STDERR. Every loom command's stdout is somebody's
-        input - main.rs:13 exempts only hook and context, so stdout is not available to a
-        notice, and this plan's own acceptance pipes `loom -v` and `loom config` into
-        matchers. THE ARGV EXCLUSION LIST IS A SECOND LINE OF DEFENCE, NOT THE FIRST:
-        loom's machine-readable stdout is wider than any list - loom plan verify --json
-        promises JSON-only stdout (cli/types_ops.rs:13-30, "Machine-readable JSON output
-        (suppresses human text)"), loom usage exposes JSON, and scalar loom config -k
-        prints a bare value config-foundation's gates match with rg -q "^6$". Stderr is
-        what makes all of those safe at once, which is why the notice goes there rather
-        than being gated per command. PROVE IT: with a state file recording a NEWER
-        version in a scratch HOME, loom plan verify --json must still emit parseable JSON
-        on stdout and nothing else. That criterion is the real gate; loom --help is not.
-
-        THE DETACHED FETCHER'S SHAPE, all six parts - settle these here:
-        - stdio: /dev/null on ALL THREE descriptors. It must NEVER inherit the parent's
-          stdout. loom runs as a child of piped callers (acceptance criteria pipe both
-          streams, verify/criteria/confine.rs:124-126) and an inherited fd keeps that
-          pipe open after loom exits, making the collector block for
-          OUTPUT_COLLECTION_TIMEOUT = 10s per stream and substitute "[output collection
-          timed out]" (verify/criteria/executor.rs:19,155-159).
-        - session: setsid, so it survives the parent and is reparented to init. The
-          parent never waits on it - no zombie, nothing to reap.
-        - working directory: the user's home, NEVER the worktree - the worktree is
-          removed when the stage merges.
-        - concurrency: exactly ONE fetcher. loom is invoked constantly by hooks, so two
-          invocations WILL race. Take an O_EXCL lock at ~/.loom/update-check.lock before
-          spawning and drop it on exit; a lock older than the interval is stale, ignore it.
-        - state write: through crate::fs::locking::atomic_write_locked (fs/locking.rs:157),
-          the same tmp-fsync-rename path the rest of loom uses. A torn
-          ~/.loom/update-state.json must never break a loom command.
-        - failure: A FETCH THAT FAILS STILL STAMPS last_checked, leaving latest_version
-          as it was. This is the part the lock does NOT cover. The O_EXCL lock stops two
-          fetchers running AT ONCE, but if a failed fetch leaves last_checked untouched
-          the record stays stale forever and EVERY subsequent loom invocation spawns
-          another fetcher - which, with loom invoked on every Claude Code hook, is a fork
-          storm for the whole duration of a network outage. Stamping the attempt is what
-          turns the interval into real backoff.
-
-        MAKE THE WORKER TESTABLE, AND TEST IT. The fetch and the clock are the two things
-        a test cannot have: take them as INJECTED parameters (a fetch closure returning
-        the latest version, and a "now") so the state machine - fresh / stale / disabled,
-        success, failure-stamps-the-attempt, lock-held-so-skip - is unit-testable with no
-        network and no spawn. Cover concurrent stale calls scheduling AT MOST ONE refresh.
-        NO TEST MAY LEAVE A DETACHED CHILD ALIVE: exercise the DECISION ("would spawn"),
-        never the spawn itself, so the suite never forks a real fetcher into the stage
-        worktree that is about to be removed.
-
-        REUSE THE EXISTING CLIENT, do not write a second one. self_update/client.rs
-        already exports create_http_client() (:22), validate_response_status (:46) and the
-        download helpers as pub(crate), and reqwest is a dependency (Cargo.toml:14,
-        blocking + json). But get_latest_release() (self_update/mod.rs:39) and
-        struct Release / Asset (:49-51) are PRIVATE to the module - widen them to
-        pub(crate) and call get_latest_release().
-
-        CONSUME user_config::load() from config-foundation. Do NOT build a second reader
-        and do NOT edit loom/src/user_config/** - it is not in this stage's files: and
-        config-tui runs concurrently.
-
-        update.check = false disables the check entirely; the notification is otherwise
-        unconditional, subject only to the interval.
-
-        Failures are silent. A network error, an unreadable state file, or a missing
-        home directory must never make a loom command fail or print noise - this is a
-        convenience, not a feature anything depends on.
-
-        ONE subagent for the checker plus the main.rs gate.
-
-        MEMORY: record decisions via loom memory. NEVER loom knowledge. NEVER auto-memory.
-      dependencies: ["config-foundation"]
-      acceptance:
-        - "./scripts/check-hook-syntax.sh"
-        - "cargo build --manifest-path loom/Cargo.toml --all-targets"
-        - "cargo fmt --manifest-path loom/Cargo.toml -- --check"
-        - "cargo clippy --manifest-path loom/Cargo.toml --all-targets -- -D warnings"
-        - "cargo test --manifest-path loom/Cargo.toml --all-targets --no-fail-fast -- --skip daemon::rpc::tests::a_live_listener_is_answered --skip daemon::rpc::tests::a_stale_socket_file_with_nothing_bound_is_not_listening --skip daemon::server::peer_identity::tests::ancestry_accepts_self_and_the_real_parent_chain --skip process::tests::unreaped_dead_child_is_not_alive --skip verify::criteria::tests::confine_tests::spawned_child_leads_its_own_process_group --skip fs::permissions::tests::settings_tests::test_ensure_loom_permissions_adds_home_expanded_codex_forward_entry --skip fs::permissions::tests::settings_tests::test_ensure_loom_permissions_home_expanded_entry_no_duplicates_on_rerun --skip commands::attach::wait::tests::diagnose_sessions_names_the_work_dir_and_every_session"
-        - './loom/target/debug/loom --help'
-        # A corrupt state file must be silent, not fatal.
-        - 'H=$(mktemp -d); mkdir -p "$H/.loom" && printf "not json at all" > "$H/.loom/update-state.json"; HOME="$H" ./loom/target/debug/loom --help | rg -q "Commands"'
-        # A missing home must be silent too.
-        - 'H=$(mktemp -d); HOME="$H" ./loom/target/debug/loom --help | rg -q "Commands"'
-        # STDOUT PURITY, with a notice ARMED. A state file naming a far-future version is
-        # what makes the notice FIRE; `loom --help` above proves only that a BROKEN state
-        # file is harmless, which is a different property. `plan verify --json` promises
-        # JSON-only stdout (cli/types_ops.rs:13-30), so its stdout must still open with
-        # `{` and carry no notice text. The glob covers the IN_PROGRESS- prefix `loom run`
-        # adds to this plan's own filename while the plan is executing.
-        - 'set -- doc/plans/*PLAN-release-versioning-config-and-loom-dir.md; H=$(mktemp -d); mkdir -p "$H/.loom" && printf ''{"last_checked":"2099-01-01T00:00:00Z","latest_version":"99.0.0"}'' > "$H/.loom/update-state.json"; HOME="$H" ./loom/target/debug/loom plan verify "$1" --json 2>/dev/null > "$H/out.json"; rg -q "^\{" "$H/out.json" && ! rg -qi "self-update|newer version" "$H/out.json"'
-        # The worker's state machine, with an injected fetcher and clock: fresh/stale/
-        # disabled, success, FAILURE-STAMPS-THE-ATTEMPT (the backoff that stops a fork
-        # storm during an outage), and at most one refresh from concurrent stale calls.
-        - 'cargo test --manifest-path loom/Cargo.toml --all-targets update_check 2>&1 | rg -q "test result: ok\. [4-9]"'
-        - "RUSTDOCFLAGS=\"-D warnings\" cargo doc --manifest-path loom/Cargo.toml --workspace --all-features --no-deps"
-      files:
-        - "loom/src/update_check/**"
-        - "loom/src/main.rs"
-        - "loom/src/lib.rs"
-      working_dir: "."
-      artifacts:
-        - "loom/src/update_check/mod.rs"
-      wiring:
-        - source: "loom/src/main.rs"
-          pattern: "update_check::"
-          description: "Update check invoked from the binary entry point"
-        - source: "loom/src/update_check/mod.rs"
-          pattern: 'update-state\.json'
-          description: "The foreground path reads the state file rather than the network"
-        - source: "loom/src/update_check/mod.rs"
-          pattern: "check_interval_hours"
-          description: "The interval key gates the background refresh"
-        - source: "loom/src/update_check/mod.rs"
-          pattern: "setsid|Stdio::null"
-          description: "The background fetcher detaches and never inherits the caller's stdio"
-        - source: "loom/src/update_check/mod.rs"
-          pattern: "last_checked"
-          description: "The attempt timestamp exists and is written on failure as well as success. Without it a failed fetch leaves the record stale and every subsequent loom invocation spawns another fetcher - a fork storm for the whole duration of an outage, which the O_EXCL lock does not prevent"
-
-    - id: init-auto-repair
-      name: "Repair on init, and split repair.rs"
-      stage_type: standard
-      model: "opus"
-      reasoning_effort: "high"
-      implementers: ["codex", "claude"]
-      subagent_timeout_secs: 1800
-      description: |
-        Make loom init repair the workspace instead of telling the user to run
-        loom repair --fix, and bring repair.rs under the 400-line ceiling.
-        Use parallel subagents and skills to maximize performance.
-
-        1. loom init runs the full check set and applies only the WORKSPACE fixes, then
-           reports what it changed. Add --no-repair to opt out (cli/types.rs, the Init
-           variant at types.rs:45; you must also edit the destructuring at
-           cli/dispatch.rs:156-166). loom repair stays standalone, unchanged.
-
-           WHERE THE CALL GOES DECIDES WHETHER THIS STAGE WORKS AT ALL, AND THE OBVIOUS
-           PLACEMENT IS TOO LATE. init::execute calls validate_work_dir_state(&repo_root)
-           at commands/init/execute.rs:75 - BEFORE print_header(), before cleanup, before
-           anything. On the corrupted-symlink case that validator BAILS with a wall of
-           text ending "Or run: loom repair --fix" (fs/work_integrity.rs:101-121). That
-           is precisely the failure this stage exists to heal, so a repair call placed
-           anywhere after line 75 NEVER RUNS ON IT. Call the repair pass AFTER
-           ensure_repo_ready_for_worktrees (:73) and BEFORE validate_work_dir_state (:75):
-           the repository must exist before the workspace can be repaired, and the
-           workspace must be repaired before it is judged.
-
-           AND repair::execute CANNOT BE THAT CALL. It prints a logo header (repair.rs:132),
-           a DRY-RUN/FIX mode banner (:134-147), and on a clean workspace a "No issues
-           found - workspace is healthy!" line before returning (:152-158), then a summary
-           when fixes run (:186-209). Reusing it directly contradicts requirement 2 below
-           on the very first invocation. EXTRACT A NON-PRINTING API and call that:
-             pub fn repair_workspace(repo_root: &Path) -> Result<Vec<AppliedRepair>>
-           It prints NOTHING; an empty vector means the workspace was already clean. init
-           renders one line per returned repair and nothing at all for an empty vector.
-           loom repair stays exactly as it is, a presentation wrapper over the same
-           checks - its banner and summary are correct for a command a human ran
-           deliberately.
-
-           THE WIRING PATTERN CANNOT TELL ANY OF THIS APART. `repair::` in
-           init/execute.rs matches the right call, the wrong call, a call placed after the
-           validator, and a leftover import. The proof is behavioural - SCRATCH-REPO TESTS
-           covering: a clean repo (NO output, exit 0); each repair family the allow-list
-           admits; --no-repair (repairs skipped, workspace untouched); and the
-           corrupted-symlink state that fails validation at HEAD and must now be repaired
-           past. Those tests are this stage's acceptance, not the grep.
-
-           "EVERY FIX" IS THE WRONG SCOPE. execute(fix) (repair.rs:128-160) applies
-           everything silently - there is no interactive gate anywhere in the file - and
-           fix_issue (:775-843) dispatches by SUBSTRING-MATCHING ENGLISH PROSE in
-           issue.description (its own comment at :776: "not ideal, but works for now"),
-           after which fix_old_skill and fix_old_agent STRING-PARSE A FILESYSTEM PATH out
-           of that prose before deleting under $HOME:
-             fix_old_skill          :1052-1063  remove_dir_all($HOME/.claude/skills/<n>)
-             fix_old_agent          :1066-1077  remove_file($HOME/.claude/agents/<n>.md)
-             fix_settings_skill_refs :1111+     rewrites $HOME/.claude/settings.json
-             fix_phantom_merge      :1090-1105  flips merged = false on stage state
-             fix_work_symlink       :845-850    remove_file(<repo>/.work)
-             fix_invalid_work       :853-867    removes <repo>/.work
-           ALLOW-LIST what init may apply unattended: .gitignore entries
-           (fix_gitignore_work :870, fix_gitignore_worktrees :1018), hook install
-           (fix_hooks :903), the pre-commit hook, project .claude settings restore, and
-           the skill-index rebuild (:926). Init REPORTS the six above and leaves them to
-           an explicit loom repair --fix.
-           Two notes that keep this proportionate. fix_invalid_work is NOT the data-loss
-           path it looks like: it fires only on WorkDirState::Invalid - ".work exists but
-           is neither directory nor symlink" (:241-247) - and even then branches
-           is_file() -> remove_file first. Do not over-fix it; it stays off the list
-           because loom-dir-migration rewrites the shape detection it keys on. And the
-           two $HOME fixes are DENIED in a stage sandbox, where apply_fixes (:190-207)
-           COUNTS failures rather than aborting - so leaving them in scope makes loom init
-           print "Issues failed: N" on every invocation, contradicting requirement 2.
-        2. Report format: one line per repair applied, or nothing at all when the
-           workspace was already clean. Silence on a clean workspace matters - init is
-           run constantly and a repair banner on every invocation trains people to
-           ignore it.
-        3. Do NOT fold --clean into this. --clean removes worktrees, kills sessions and
-           deletes state; it stays explicit and separate.
-        4. Split commands/repair.rs (1131 lines) along the seams already present in
-           check_all_issues. The groups: workspace structure (the .work/.loom shape and
-           .gitignore entries, repair.rs:238-266), hooks and skill index (:274 and the
-           rebuild path), .claude settings and sandbox (:315-394, joining the existing
-           settings_checks.rs sibling), merge state and phantom merges (:437-498), and
-           process/daemon liveness (:544-586). Keep execute(), the RepairIssue and
-           Severity types, and the fix dispatch in the parent module.
-
-        The split is mechanical and the init wiring is small. Use ONE subagent for both
-        - this is exactly the grouping the doctrine stage adds.
-
-        MAINTAINABILITY LEDGER - MAIN AGENT ONLY, after the subagent lands.
-        loom/maintainability-baseline.txt is EXACT-match and BIDIRECTIONAL: it errors on
-        SHRINKAGE exactly as loudly as on growth
-        (mistakes/pinned-literals-ledgers-and-wiring.md:22). This stage moves
-        file src/commands/repair.rs 1131 (:14), check_all_issues 368 (:98), execute 99
-        (:99), fix_issue 68 (:100) - all shrinking or vanishing - AND
-        function src/cli/dispatch.rs dispatch 123 (:73), which grows by the --no-repair
-        field you add to the Init destructure at dispatch.rs:156-166. config-foundation
-        already moved that same entry for its Commands::Config arm; yours moves it again,
-        so re-measure rather than assuming the number you see in the plan text - and GROWS
-        function src/commands/init/execute.rs execute 129 (:85) and
-        file src/commands/init/tests.rs 700 (:12). Run
-        cargo test --manifest-path loom/Cargo.toml --test maintainability, then lower or
-        delete every entry whose measured value moved. A subagent reports its new number
-        and never edits the baseline.
-
-        cli/types.rs is 377 lines against Rule 17's 400 and is NOT ledgered, so crossing
-        400 creates a new violation. --no-repair is one field; if it does not fit,
-        extract rather than grow.
-
-        CODEX: no git in subagents; check git status --short after each run; explicit
-        Bash timeout 900000 ms and --effort xhigh.
-
-        MEMORY: record decisions via loom memory. NEVER loom knowledge. NEVER auto-memory.
-      dependencies: ["config-foundation"]
-      acceptance:
-        - "./scripts/check-hook-syntax.sh"
-        - "cargo build --manifest-path loom/Cargo.toml --all-targets"
-        - "cargo fmt --manifest-path loom/Cargo.toml -- --check"
-        - "cargo clippy --manifest-path loom/Cargo.toml --all-targets -- -D warnings"
-        - "cargo test --manifest-path loom/Cargo.toml --all-targets --no-fail-fast -- --skip daemon::rpc::tests::a_live_listener_is_answered --skip daemon::rpc::tests::a_stale_socket_file_with_nothing_bound_is_not_listening --skip daemon::server::peer_identity::tests::ancestry_accepts_self_and_the_real_parent_chain --skip process::tests::unreaped_dead_child_is_not_alive --skip verify::criteria::tests::confine_tests::spawned_child_leads_its_own_process_group --skip fs::permissions::tests::settings_tests::test_ensure_loom_permissions_adds_home_expanded_codex_forward_entry --skip fs::permissions::tests::settings_tests::test_ensure_loom_permissions_home_expanded_entry_no_duplicates_on_rerun --skip commands::attach::wait::tests::diagnose_sessions_names_the_work_dir_and_every_session"
-        - './loom/target/debug/loom init --help | rg -q "no-repair"'
-        - 'cargo test --manifest-path loom/Cargo.toml --all-targets commands::repair 2>&1 | rg -q "test result: ok\. [1-9]"'
-        # The behavioural proof the `repair::` wiring grep cannot give: init must call a
-        # NON-PRINTING repair pass, placed BEFORE validate_work_dir_state (which bails on
-        # the corrupted symlink this stage exists to heal), and print nothing on a clean
-        # workspace. Four scratch-repo cases, so the floor is 4.
-        - 'cargo test --manifest-path loom/Cargo.toml --all-targets init_repair 2>&1 | rg -q "test result: ok\. [4-9]"'
-        # The extracted API must be non-printing. A repair_workspace that shells back
-        # through the presentation wrapper would satisfy the grep and re-introduce the
-        # banner on every init.
-        - 'rg -q "fn repair_workspace" loom/src/commands/repair'
-        # Rule 17's ceiling as an actual gate, not a hope.
-        - 'test "$(rg -c "" loom/src/commands/repair.rs)" -le 400'
-        - "RUSTDOCFLAGS=\"-D warnings\" cargo doc --manifest-path loom/Cargo.toml --workspace --all-features --no-deps"
-      files:
-        - "loom/src/commands/repair.rs"
-        - "loom/src/commands/repair/**"
-        - "loom/src/commands/init/**"
-        - "loom/src/cli/types.rs"
-        - "loom/src/cli/dispatch.rs"
-        - "loom/maintainability-baseline.txt"
-      working_dir: "."
-      artifacts:
-        - "loom/src/commands/repair/workspace.rs"
-      wiring:
-        - source: "loom/src/commands/init/execute.rs"
-          pattern: "repair_workspace"
-          description: "Init calls the NON-PRINTING repair API, not repair::execute. A bare `repair::` pattern also matches a leftover import, the printing wrapper, and a call placed after validate_work_dir_state - which is the one placement that cannot heal the corrupted symlink"
-        - source: "loom/src/commands/repair/workspace.rs"
-          pattern: "fn repair_workspace"
-          description: "The non-printing API exists in the split module, returning what it applied so init renders the lines and repair renders its banner"
-
-    - id: integration-verify
-      name: "Integration Verification"
-      stage_type: integration-verify
-      model: "opus"
-      reasoning_effort: "high"
-      description: |
-        Final verification across all nine changes. Verify FUNCTIONAL INTEGRATION, not
-        just that tests pass. NEVER Claude Code auto-memory.
-        Use parallel subagents and skills to maximize performance.
-
-        CONTEXT: read this plan, loom memory show --all, and doc/loom/knowledge/*.md.
-
-        BUILD FIRST: run cargo build --manifest-path loom/Cargo.toml --all-targets once,
-        early. Acceptance has a hard 300s per-command ceiling (verify/criteria/config.rs:8).
-
-        INSTALL cargo-audit FIRST, in the SAME early step as the build:
-        cargo install cargo-audit --locked. It is NOT present on this host (cargo audit
-        --version returns "no such command"), crates.io is on this plan's sandbox
-        allowlist, and it is a canonical pre-push gate (.githooks/pre-push:99-106) that no
-        earlier stage could run for exactly this reason. Do it in your own shell with a
-        long Bash timeout - the 300s acceptance ceiling does not apply there, and the
-        acceptance criterion below assumes the binary already exists.
-
-        BUILD & TEST, zero tolerance - fix every warning and failure, nothing is
-        "pre-existing". Note that the eight tests skipped across this plan's stages are
-        skipped for host-resource reasons recorded in the plan's Verification Baseline
-        section; run them here WITHOUT the skip list and REPORT which pass in this
-        environment, so the exclusion can be narrowed or removed in a follow-up. THAT RUN
-        IS A REPORT, NOT A GATE, and deliberately so: the eight fail on the environment
-        (AF_UNIX sockets, process ancestry, zombie reaping, $HOME/.claude writes), not on
-        the code, so gating on it would fail the stage for the host. The gated command
-        below keeps the skip list. Also
-        confirm the skip list still names EXACT test paths, never a module prefix -
-        --skip is a substring filter and `--skip daemon::rpc::tests` silently removed
-        four extra tests, two of which read the user.token path this plan moves.
-
-        NEVER WRITE THE DEVELOPER'S REAL ~/.loom/. Every config proof below runs under a
-        scratch HOME=$(mktemp -d). HOME is forwarded to confined commands
-        (process/environment.rs:15) and dirs::home_dir() reads $HOME on unix, so the
-        redirect is real.
-
-        CODE REVIEW: spawn parallel loom-code-reviewer subagents - security (via
-        Skill(skill="loom-skills", args="loom-security-audit")), architecture, test
-        coverage. Fix every finding with an engineer agent; the reviewer is read-only.
-
-        FUNCTIONAL PROOF - each surface must be reachable, not merely present:
-        - loom -v prints a version carrying a commit hash.
-        - loom config --list names every registered key; loom config -k update.check
-          false round-trips through $HOME/.loom/config.toml and back, under a scratch
-          HOME - never the real one.
-        - bare `loom config` in a pipe falls back to --print instead of hanging in the
-          alternate screen.
-        - loom init on a scratch repo reports repairs and creates .loom/work/config.toml.
-        - A created worktree has .loom/work as a SYMLINK and .loom/ as a real directory.
-        - An old .work/ workspace is still resolved AND IS STILL WRITABLE. Create one by
-          hand, confirm loom status reads it, then confirm a write lands IN .work/ and
-          that NO .loom/work was created beside it. The settled policy is "whatever root
-          resolved is the workspace, for reads and for writes"; the wrong reading -
-          "read-only fallback" - is unimplementable against a single-rooted WorkDir and an
-          earlier draft of this plan asserted it. Also confirm the repo root: one parent
-          hop for a legacy .work, two for .loom/work, through the shared repo_root().
-          An unconditional two-hop sites the context cache outside the project and
-          scaffolds doc/loom/knowledge/ inside .loom/, and no other gate catches it.
-        - A worktree created from a LEGACY workspace still gets .work -> ../../.work,
-          not .loom/work. This plan's own orchestration runs on a legacy workspace until
-          the new binary is installed, so a hard-coded nested symlink breaks the run that
-          is producing it.
-        - loom self-update resolves a real release asset. Feed the ten asset names the
-          workflow publishes (release.yml:233-240) to the selector and confirm each of the
-          three supported targets picks a binary and a .minisig, that SHA256SUMS.txt
-          resolves, and that the API URL names cosmix/loom - it named cosmix/claude-loom
-          at HEAD, a repository this project does not publish to.
-        - The two global config keys with no consumer at HEAD now have one: set
-          terminal.backend and context.ceiling_tokens in a scratch ~/.loom/config.toml
-          against a workspace whose [terminal] / [context] sections are ABSENT, and
-          observe the value through read_terminal_config / read_context_config. Then add
-          the workspace section and confirm it wins.
-        - With a state file naming a far-future version in a scratch HOME, `loom plan
-          verify <plan> --json` still emits JSON-only stdout. The update notice goes to
-          stderr; a notice on stdout invalidates every machine protocol loom exposes.
-        - loom handoff / attach / sessions / graph / subagents / usage all still find
-          state: they route through commands/common/mod.rs find_work_dir, a resolver the
-          first draft of this plan did not name.
-        - The update fetch may be UNPROVABLE in-stage if the sandbox blocks GitHub.
-          Assert the state-file read path and the notification formatting against a
-          hand-written $HOME/.loom/update-state.json, and say in the report whether the
-          live fetch was reachable.
-        - bash -n passes over every shell hook.
-        - The generated worktree sandbox settings grant .loom/work/signals/** for read
-          and do NOT grant a blanket .loom/work/**.
-
-        Record discoveries to loom memory for knowledge-distill, including any knowledge
-        file the tree now contradicts: loom memory note "stale-knowledge: ...".
-      dependencies:
-        - "doctrine-subagent-grouping"
-        - "config-tui"
-        - "update-check"
-        - "init-auto-repair"
-      acceptance:
-        - "./scripts/check-hook-syntax.sh"
-        - "cargo build --manifest-path loom/Cargo.toml --all-targets"
-        - "cargo fmt --manifest-path loom/Cargo.toml -- --check"
-        - "cargo clippy --manifest-path loom/Cargo.toml --all-targets -- -D warnings"
-        - "cargo test --manifest-path loom/Cargo.toml --all-targets --no-fail-fast -- --skip daemon::rpc::tests::a_live_listener_is_answered --skip daemon::rpc::tests::a_stale_socket_file_with_nothing_bound_is_not_listening --skip daemon::server::peer_identity::tests::ancestry_accepts_self_and_the_real_parent_chain --skip process::tests::unreaped_dead_child_is_not_alive --skip verify::criteria::tests::confine_tests::spawned_child_leads_its_own_process_group --skip fs::permissions::tests::settings_tests::test_ensure_loom_permissions_adds_home_expanded_codex_forward_entry --skip fs::permissions::tests::settings_tests::test_ensure_loom_permissions_home_expanded_entry_no_duplicates_on_rerun --skip commands::attach::wait::tests::diagnose_sessions_names_the_work_dir_and_every_session"
-        - "RUSTDOCFLAGS=\"-D warnings\" cargo doc --manifest-path loom/Cargo.toml --workspace --all-features --no-deps"
-        - './loom/target/debug/loom -v | rg -q "[0-9a-f]{7}"'
-        - './loom/target/debug/loom config --list | rg -q "update.check"'
-        - './loom/target/debug/loom init --help | rg -q "no-repair"'
-        - './loom/target/debug/loom config | rg -q "update"'
-        - '! rg -q "Read\(\.loom/work/\*\*\)" loom/src/sandbox/settings.rs'
-        - '! rg -q "fn get_work_dir" loom/src'
-        - "./hooks/tests/run-all.sh"
-        # The third canonical pre-push gate (.githooks/pre-push:99-106). It runs ONLY
-        # here, after the description's `cargo install cargo-audit --locked` step - the
-        # binary is absent on this host and no earlier stage could install it inside the
-        # 300s ceiling. Dependencies do not change in this plan, so one audit at the end
-        # is the whole coverage a per-stage audit would give.
-        - "cargo audit --file loom/Cargo.lock"
-        # Behavioural, not grep-shaped: the four proofs whose only gate is a test.
-        - 'cargo test --manifest-path loom/Cargo.toml --lib fs::work_dir::tests::resolver 2>&1 | rg -q "test result: ok\. (9|[1-9][0-9]+) passed"'
-        - 'cargo test --manifest-path loom/Cargo.toml --all-targets release_asset 2>&1 | rg -q "test result: ok\. [1-9]"'
-        - 'cargo test --manifest-path loom/Cargo.toml --all-targets global_config_tier 2>&1 | rg -q "test result: ok\. [2-9]"'
-        - 'cargo test --manifest-path loom/Cargo.toml --all-targets init_repair 2>&1 | rg -q "test result: ok\. [4-9]"'
-        # Stdout stays a protocol with the update notice ARMED.
-        - 'set -- doc/plans/*PLAN-release-versioning-config-and-loom-dir.md; H=$(mktemp -d); mkdir -p "$H/.loom" && printf ''{"last_checked":"2099-01-01T00:00:00Z","latest_version":"99.0.0"}'' > "$H/.loom/update-state.json"; HOME="$H" ./loom/target/debug/loom plan verify "$1" --json 2>/dev/null > "$H/out.json"; rg -q "^\{" "$H/out.json" && ! rg -qi "self-update|newer version" "$H/out.json"'
-        # The legacy arm is not swept away. This plan's own run is on a .work/ workspace.
-        - 'rg -qF ''"../../.work"'' loom/src/git/worktree/settings.rs'
-      working_dir: "."
-      wiring:
-        - source: "loom/src/main.rs"
-          pattern: "update_check::"
-          description: "Update check reached from the entry point"
-        - source: "loom/src/cli/dispatch.rs"
-          pattern: "Commands::Config"
-          description: "Config command reached from dispatch"
-      wiring_tests:
-        # exit_code: 0 alone proved nothing. SuccessCriteria supports stdout_contains,
-        # stdout_not_contains, stderr_contains and stderr_empty
-        # (models/stage/types.rs:503-519) - use them.
-        - name: "version flag carries a commit"
-          command: "./loom/target/debug/loom -v"
-          success_criteria:
-            exit_code: 0
-            stdout_contains: ["loom"]
-            stdout_not_contains: ["0.1.0", "unknown"]
-        - name: "config get/set round-trips through a scratch home"
-          command: 'H=$(mktemp -d); HOME="$H" ./loom/target/debug/loom config -k update.check false >/dev/null && HOME="$H" ./loom/target/debug/loom config -k update.check && rg -q "check" "$H/.loom/config.toml" && echo ROUNDTRIP_OK'
-          success_criteria:
-            exit_code: 0
-            stdout_contains: ["false", "ROUNDTRIP_OK"]
-        - name: "worktree sandbox grants the moved signals dir and no blanket rule"
-          command: 'cargo test --manifest-path loom/Cargo.toml --lib sandbox::settings 2>&1 | rg "test result:"'
-          success_criteria:
-            exit_code: 0
-            stdout_contains: ["ok."]
-            stdout_not_contains: ["0 passed"]
-        - name: "a legacy .work workspace resolves and no .loom/work appears beside it"
-          command: 'B="$PWD/loom/target/debug/loom"; R=$(mktemp -d); mkdir -p "$R/.work/stages" && printf "" > "$R/.work/config.toml" && (cd "$R" && git init -q && "$B" status >/dev/null 2>&1); test -f "$R/.work/config.toml" && test ! -e "$R/.loom/work" && echo LEGACY_RESOLVED_OK'
-          success_criteria:
-            exit_code: 0
-            stdout_contains: ["LEGACY_RESOLVED_OK"]
-
-    - id: knowledge-distill
-      name: "Knowledge Distillation"
-      stage_type: knowledge-distill
-      model: "sonnet"
-      reasoning_effort: "high"
-      description: |
-        Curate all stage memories into permanent knowledge; update user docs.
-        NEVER Claude Code auto-memory.
-        SINGLE-AGENT: do NOT spawn subagents.
-
-        Read this plan, loom memory show --all, and doc/loom/knowledge/*.md.
-
-        CORRECTIONS FIRST, with loom knowledge replace-section - never with
-        loom knowledge update, which appends the fix BELOW the stale text. Two are
-        already known before the run starts:
-        - The checksums.txt / SHA256SUMS.txt asset-name mismatch, described as an open
-          defect. version-and-release fixes it. TARGET THE ### SUB-HEADING BY ITS EXACT
-          TEXT - "Release Checksum Asset-Name Mismatch (LOW PRIORITY; corrected
-          2026-07-01)" at concerns.md:26 - NOT the ## "Security Concerns" heading at
-          :24, which would replace the whole section.
-        - The same claim repeated at architecture.md:81.
-        Both must also be CORRECTED, not just marked fixed: self-update did not "update
-        nothing". update_binary ran at self_update/mod.rs:86 BEFORE update_config_files
-        at :89, so the failure left a HALF-UPDATED install - new binary, stale
-        agents.zip / skills.zip / CLAUDE.md.template - and printed no success line.
-        Then apply every stale-knowledge: memory the stages recorded.
-
-        Then sweep for .work: every knowledge file describing the old layout is now
-        wrong. rg -l "\.work" doc/loom/knowledge/ and correct each in place.
-
-        New knowledge worth writing:
-        - The heredoc-inside-command-substitution quoting trap that left two hooks
-          syntactically broken at HEAD, and scripts/check-hook-syntax.sh as the gate
-          that now catches it. This belongs in mistakes/ as a tier-2 topic.
-        - The user-directory / workspace-directory naming collision and the three guards
-          that keep it safe (config-file discriminator, repo-root-bounded walk, distinct
-          types).
-        TIER ROUTING: findings of ~40 lines or fewer go inline in the tier-1 file;
-        larger ones go to loom knowledge update <category>/<slug> with a 2-4 line tier-1
-        summary and link. INDEX.md regenerates on every knowledge write.
-
-        Then loom review to prune stale entries. Update README for the new commands
-        (loom config, loom -v) and the .loom/work layout - README.md carries SEVENTEEN
-        .work references and no other stage owns them, so this is a real sweep, not a
-        mention. Confirm rg -l "\.work" over doc/, README.md and any remaining surface
-        comes back clean or deliberately unchanged.
-      dependencies: ["integration-verify"]
-      acceptance:
-        # The old `rg -q "## "` pair passed on the UNMODIFIED files - a ## heading exists
-        # either way - and `check --strict` validates structure, not claim freshness. If
-        # both corrections were skipped, or applied with `update` (which appends BELOW
-        # the stale text), every gate stayed green. These assert content instead.
-        - '! rg -q "checksums\.txt" doc/loom/knowledge/concerns.md'
-        - '! rg -q "checksums\.txt" doc/loom/knowledge/architecture.md'
-        - '! rg -q "\.work/" doc/loom/knowledge/architecture.md'
-        - '! rg -q "\.work/" README.md'
-        - 'rg -q "\.loom/work" doc/loom/knowledge/architecture.md'
-        - "loom knowledge check --strict"
-      files:
-        - "doc/loom/knowledge/**"
-        - "README.md"
-      working_dir: "."
+  - id: loom-dir-migration
+    name: Move shared state to .loom/work
+    description: |
+      Move loom's shared orchestration state from <repo>/.work/ to <repo>/.loom/work/.
+      .worktrees/ stays at the project root. .loom/cache/ does not move.
+      Use parallel subagents and skills to maximize performance.
+
+      THE BACK-COMPAT POLICY, SETTLED - READ THIS BEFORE STEP 1. An earlier draft of
+      this plan said old .work/ workspaces stay "readable" AND that "nothing ever
+      writes .work/". THOSE TWO ARE MUTUALLY EXCLUSIVE and the second one is the one
+      that is wrong. WorkDir has exactly ONE field, root: PathBuf (work_dir.rs:89-91);
+      every accessor derives from it, mutating ones included (:280-323, write_config
+      :451-462, merge_section :471-495). There is no read-root/write-root split and you
+      are NOT adding one - that would mean copy/merge semantics for every mutable state
+      class, which is a migration, and no-migration is this plan's first non-goal.
+      THE POLICY:
+        - Resolution picks the root ONCE: .loom/work/config.toml, else
+          .work/config.toml, else a NEW root at <repo>/.loom/work.
+        - WHATEVER ROOT RESOLVED IS THE WORKSPACE, FOR READS AND FOR WRITES. A project
+          mid-plan on .work/ keeps getting signals, sessions, stage files, handoffs and
+          config writes at .work/, because that is where its state already is.
+        - LOOM NEVER CREATES A .work/. A fresh repo, and WorkDir::initialize() on a repo
+          with no config.toml anywhere, always land on .loom/work.
+      The user-visible promise is "your in-flight plan does not break", NOT "your .work/
+      directory is frozen". Any message you write about this says it that way.
+
+      BUILD FIRST. Run cargo build --manifest-path loom/Cargo.toml --all-targets
+      once, early, before you spawn anyone. Acceptance criteria have a HARD 300s
+      per-command ceiling (verify/criteria/config.rs:8) that the plan schema cannot
+      raise, and a cold worktree build of this crate (409 packages, five tree-sitter
+      C grammars) exceeds it. A timed-out criterion reads as a hang, not a slow build.
+
+      FOUNDATION STEP - do this yourself or in ONE subagent, and finish it before
+      any other subagent starts, because everything else compiles against it:
+      1. In loom/src/fs/work_dir.rs, rewrite WorkDir::new (lines 94-137). Resolution
+         order: <root>/.loom/work/config.toml, then <root>/.work/config.toml. Key on
+         the CONFIG FILE, never on directory existence - ~/.loom/config.toml exists at
+         the user level and .loom/cache/ exists in projects that ran loom map.
+      2. Bound the upward walk at the git repo root. Today it walks to the filesystem
+         root, which with ~/.loom/ present is a live hazard.
+      2b. RECORD WHICH LAYOUT RESOLVED, ON THE WorkDir. Still ONE root per the policy
+         above, but add a Layout { Nested, Legacy } field beside it, set once in
+         WorkDir::new. THREE behaviours branch on it and NONE of them can re-derive it
+         safely from a path suffix - LOOM_WORK_DIR hints, symlinks and canonicalize()
+         all blur the suffix:
+           (i)   the worktree symlink: legacy plants .worktrees/<id>/.work ->
+                 ../../.work; nested plants .worktrees/<id>/.loom/work ->
+                 ../../../.loom/work after mkdir of the worktree's .loom/.
+           (ii)  the repo-root hop count: ONE parent for legacy, TWO for nested.
+           (iii) the worktree membership probe (target_is_worktree,
+                 sandbox/settings.rs:39-47) and the teardown
+                 (git/cleanup/worktree.rs:176): .work vs .loom/work.
+         ensure_work_symlink (git/worktree/settings.rs:49-68) hard-codes BOTH halves -
+         repo_root.join(".work") at :53 and Path::new("../../.work") at :55 - and takes
+         repo_root, NOT a WorkDir, so it cannot see which layout resolved. Give it the
+         resolved state root or the Layout; do not leave it to guess. Hard-coding it to
+         the nested layout silently breaks every worktree a legacy workspace creates,
+         and this plan's OWN orchestration runs on a legacy workspace until the new
+         binary is installed.
+      3. PRESERVE THE .work-NAMED-BASE BRANCH, retargeted. work_dir.rs:131-135 ends
+         with `if base.file_name() == Some(".work") { root = base }`, under a 13-line
+         comment at :118-130 explaining why. Every hook passes LOOM_WORK_DIR, which
+         names the state directory ITSELF, absolute - set at hooks/generator.rs:91-94
+         and orchestrator/terminal/native/wrapper.rs:289, consumed by
+         commands/hook/{pre_compact.rs:100,reconcile_graph.rs:147,user_prompt.rs:192}.
+         After the move that value is <root>/.loom/work, whose file_name() is "work",
+         NOT ".work" - the branch stops firing, the resolver appends a second copy,
+         and you get <root>/.loom/work/.loom/work, the exact phantom directory the
+         comment documents. Recognize a base whose trailing TWO components are
+         .loom/work; keep the single-component .work spelling for the fallback.
+      4. STATE THE NO-CONFIG FALLBACK ROOT: <root>/.loom/work. Keying on config.toml
+         means a fresh repo matches nothing, and WorkDir::initialize()
+         (work_dir.rs:153-165) creates the directory at whatever root new() returned.
+         If the fallback stays <base>/.work, loom init keeps creating .work/ forever
+         and every acceptance criterion still passes. Same decision covers init's
+         re-entrancy path (commands/init/execute.rs:111-113, adopt_existing at
+         work_dir.rs:167-183), where the dir exists but config.toml does not yet.
+      5. Collapse FOUR duplicate resolvers onto the shared one - not two:
+         - commands/common/mod.rs:20-35 find_work_dir. THE ONE MOST EASILY MISSED.
+           Its own unbounded upward walk keyed on is_dir(), with SEVEN consumers:
+           commands/sessions.rs:18,52, attach/mod.rs:47, graph/mod.rs:57,
+           handoff/create.rs:54, subagents/render.rs:30, usage/mod.rs:107,
+           usage/discovery.rs:302. Left alone, loom handoff/attach/sessions/graph/
+           subagents/usage all silently stop finding state.
+         - commands/review/generate.rs:19 get_work_dir
+         - commands/memory/handlers/work_dir.rs:21 get_work_dir
+         - commands/memory/handlers/work_dir.rs:106 get_work_dir_readonly (returns
+           Option, so its failure is a silent None)
+         NOT resolvers, leave alone: subagents/render.rs:29 find_work_dir_quietly
+         (delegates to find_work_dir) and stage/admin_proof.rs:191 resolve_work_dir
+         (a canonicalize() helper).
+      6. BOTH project_root() AND main_project_root() take the extra hop, and the hop
+         count DEPENDS ON WHICH LAYOUT RESOLVED. main_project_root()
+         (work_dir.rs:369-392) takes one parent() at :384; project_root() (:358-360)
+         is a bare self.root.parent() with 18 call sites (map.rs:36,
+         signals/retrieval.rs:58, hook/pre_compact.rs:115, context/retrieve/graph.rs:67,
+         hook/reconcile_graph.rs:181, hook/user_prompt.rs:195,221, context/retrieve.rs:121,
+         run/checks.rs:227, context/record_edit.rs:109, status/data/collector.rs:273,294,301,
+         knowledge/check.rs:73, knowledge/mod.rs:44, fs/plan_lifecycle.rs:141,
+         work_dir.rs:216,390). Note :390 - main_project_root()'s non-symlink branch
+         delegates to project_root(), so fixing only the symlink branch leaves the
+         main-repo case wrong. TWO hops for a .loom/work root, ONE for a legacy .work
+         root. An unconditional two-hop breaks the fallback THIS PLAN'S OWN RUN
+         depends on and sites .loom/cache/context-v1 outside the project.
+         ContextStore::open (context/store.rs:56) is the consumer.
+         DECIDE THE HOP COUNT IN EXACTLY ONE PLACE. Add
+           pub fn repo_root(&self) -> Option<PathBuf>
+         on WorkDir, branching on the Layout from step 2b, and have BOTH project_root()
+         and main_project_root() delegate to it - main_project_root()'s symlink branch
+         resolving the link first and then applying the same rule, its non-symlink
+         branch (:389-391) delegating as it already does. Two separately-written hop
+         counts drift; one of them then sites the context cache outside the project for
+         one layout and no gate catches it. project_root() is also the repo root used
+         to initialize doc/loom/knowledge/ (work_dir.rs:214-218, KnowledgeDir::new) -
+         get it wrong for the nested layout and loom scaffolds a knowledge tree inside
+         .loom/. Test BOTH consumers, not just the returned path.
+      7. Add a sun_path length check. NOT at daemon/server/core.rs:93/:116 - :91 is
+         with_config(...) -> Self and :115 is check_status(...) -> DaemonStatus,
+         neither of which can return an error. Put it immediately before the bind at
+         daemon/server/lifecycle.rs:216-217, inside run_server(&self,..) -> Result<()>.
+         104 bytes on macOS; the path grows by exactly 5 (48 -> 53 for this repo),
+         leaving 74 chars of headroom for the containing directory. Copy the existing
+         pattern: orchestrator/terminal/tmux/mod.rs:160 and viewer.rs:57 already
+         budget for the limit, with an asserting test at tmux/tests.rs:11-28 that
+         measures path.as_os_str().len() - BYTES on unix, not characters, so it is
+         already right for a non-ASCII path. Copy that measurement exactly. Two things
+         it does not do and this check must: the stored pathname is NUL-TERMINATED, so
+         the budget is len() + 1 <= 104, i.e. len() < 104; and sun_path is 104 on
+         macOS/BSD against 108 on Linux, so USE THE 104 BOUND ON BOTH - it is the
+         portable one and tmux/tests.rs:22-24 already documents why. The error prints
+         the FULL PATH and its BYTE COUNT; without both, a bind failure reads as a
+         permissions problem. Unit-test the predicate AT THE BOUNDARY - 103, 104 and
+         105 bytes - not only on a realistic path, because every realistic path passes.
+      8. SHIP UNIT TESTS under fs::work_dir::tests::resolver. NINE cases, and the
+         acceptance criterion asserts a COUNT OF AT LEAST NINE - a bare filter that
+         matches nothing exits 0, and "[1-9]" passes on one surviving test:
+         (a) .loom/work/config.toml wins over a sibling .work/config.toml.
+         (b) .work/config.toml alone is the fallback root.
+         (c) a bare .loom/cache/ with no config.toml is NOT a workspace.
+         (d) the walk stops at the git repo root.
+         (e) a LOOM_WORK_DIR naming <root>/.loom/work resolves to ITSELF, not to a
+             nested <root>/.loom/work/.loom/work copy.
+         (f) main_project_root() AND project_root() both return the repo root for a
+             .loom/work root (two hops) and for a legacy .work root (one hop) - four
+             assertions, through the shared repo_root() of step 6.
+         (g) NO REPO CREATES .work: WorkDir::new on a repo with neither config.toml
+             returns a root ending .loom/work, and initialize() creates it there.
+         (h) A LEGACY ROOT IS WRITABLE: resolve a .work/config.toml workspace, then
+             write_config through it and assert the bytes landed in <repo>/.work/ and
+             that no <repo>/.loom/work was created. This is the policy stated at the
+             top of this description, and it is the one property with no other gate.
+         (i) LAYOUT DRIVES THE SYMLINK: ensure_work_symlink on a legacy workspace
+             plants .work -> ../../.work; on a nested one, .loom/work ->
+             ../../../.loom/work with the worktree's .loom/ a real directory.
+
+      THEN fan out over DISJOINT territories. Group small edits together - do NOT
+      spawn one subagent per file.
+
+      | Worker | Role | Tier | Files owned | Read-only |
+      | --- | --- | --- | --- | --- |
+      | W1 | Rust literal sweep, non-sandbox | codex gpt-5.6-terra | loom/src/** except sandbox/ and git/worktree/ | loom/src/fs/work_dir.rs |
+      | W2 | Sandbox + worktree scaffolding | codex gpt-5.6-terra | loom/src/sandbox/**, loom/src/git/worktree/** | loom/src/fs/work_dir.rs |
+      | W3 | Shell, gitignore, template, docs | codex gpt-5.6-terra | hooks/**, .gitignore, loom/.gitignore, CLAUDE.md.template, CLAUDE.md, loom/CONTRIBUTING.md, .markdownlintignore, skills/**, agents/**, scripts/** | loom/src/** |
+      | W4 | Integration and e2e fixture sweep | codex gpt-5.6-terra | loom/tests/** | loom/src/**, hooks/** |
+
+      TIER NOTE: gpt-5.6-terra and gpt-5.6-luna are the implementer tiers
+      (loom/src/codex.rs:7,10; the codex block loom generates into your signal
+      interpolates exactly those two, orchestrator/signals/format/codex.rs:47-48,86-88).
+      gpt-5.6-sol is the PRESSURE-TEST model (commands/pressure/spawn.rs:78), not an
+      implementer tier - hooks/codex-forward.sh:17 accepts the string, so naming it
+      fails silently rather than loudly. Do not use it here.
+
+      SEQUENCING - W3 AND W4 ARE NOT DISJOINT FROM W1. Every hook is include_str!'d
+      into the binary at loom/src/fs/permissions/constants.rs:4-108, so a hook edit
+      changes compiled constants that Rust tests assert against - including
+      orchestrator/signals/tests_doctrine.rs:265-273, which asserts
+      HOOK_CODEX_FORWARD.contains(".work/"). And loom/tests/integration/hooks_*.rs
+      assert hook TEXT. Run W3 to completion BEFORE W4 starts, and have W4 read the
+      post-sweep hook files. W1 owns the Rust-side assertions that W3's edits break.
+
+      W2 detail. sandbox/settings.rs:306-311 emits per-child rules -
+      Read(.work/config.toml), Read(.work/signals/**), Read(.work/handoffs/**),
+      Edit(.work/handoffs/**), Read(.work/disputes/**), Read(.work/memory/**). Each
+      becomes .loom/work/... . The deliberate ABSENCE of a blanket .work/** is a
+      security property (it keeps admin.token and user.token unreadable) and MUST
+      survive; sandbox/settings/tests.rs:1108,1113 assert it, do not weaken them.
+      settings.rs:116-192 - NOT :116-155, the cited range stops short of the allow
+      list at :166-189, which is the half whose relative twin at :306-311 is
+      enumerated above - resolves the symlink to an absolute path; it now resolves
+      .loom/work. git/worktree/settings.rs:53-68 must mkdir the worktree's .loom/
+      first, then symlink .loom/work -> ../../../.loom/work (three levels, not two:
+      the link sits at .worktrees/<id>/.loom/work, whose parent dir is
+      .worktrees/<id>/.loom/, three below the repo root; the sibling CLAUDE.md link
+      at settings.rs:90 already uses ../../../ from the same depth). It is a RELATIVE
+      link today (Path::new at :56) and stays relative. is_worktree_scaffold_path at
+      settings.rs:36-47 gains the new paths and keeps its existing .loom/cache and
+      spool entries - AND its doc comment at :31-33 ("a project may legitimately track
+      .loom/config.toml, which must NOT be discounted here") predates .loom/work/ and
+      must be corrected, not left contradicting the layout.
+
+      W2 - THREE SURFACES THAT FAIL SILENTLY IF MISSED:
+      a) target_is_worktree at sandbox/settings.rs:39-47 decides worktree membership
+         by symlink_metadata(target.join(".work")) - comment at :43: "a worktree's
+         .work is a symlink; the main repo's is a real dir." After the move a worktree
+         has NO .work, so this returns false and strip_worktree_escape_denies (:68)
+         strips the ../../** escape denies from a genuine worktree. Probe .loom/work,
+         NEVER .loom - the worktree's .loom/ is a REAL directory and only .loom/work
+         is the symlink.
+      b) git/worktree/settings.rs:415-447 is a SECOND, independent resolved-symlink
+         permission emitter: worktree_path.join(".work") at :425, canonicalize() at
+         :427, absolute grants at :442-447. Migrate one and forget the other and
+         worktree agents get no absolute-path grants on .loom/work - a permission
+         prompt on every state read. It emits a BROAD Read(/{resolved}/**) at :443;
+         that asymmetry with the narrow relative rules is pre-existing and deliberate
+         (comment at :433-441). Do NOT "fix" it while sweeping.
+      c) git/cleanup/worktree.rs:176 remove_required_symlink(worktree_path.join(".work"))
+         must become .loom/work. It is a NO-OP on a missing path (:310-318), so miss
+         it and a live `work` symlink is left inside .loom/, which remove_drained_spool
+         (:210-231) then declines to clean, and non-forced git worktree remove refuses.
+      Also in W2's territory: models/stage/types.rs:388-405 default_deny_read() names
+      .work/admin.token and .work/user.token; both become .loom/work/... .
+
+      W1 detail - fs/permissions/ IS A SWEEP SURFACE, and one entry is arithmetic:
+      constants.rs:170,196 carry Read(.work/**) literals (with S-1 comments at :163
+      and :193 explaining the deliberate absence of Edit(.work/**) - keep that);
+      write_rules.rs:30-31 hard-codes matches!(path, ".work/**" | "../../.work/**");
+      and sync.rs:212,258 transform_worktree_path rewrites Read(../../.work/**) ->
+      Read(.work/**) - THE ../../ BECOMES ../../../, the same arithmetic as the
+      symlink, pinned by tests at sync.rs:511,518,561-562. Also settings.rs:12,127,132
+      carry doc references. AND commands/repair.rs writes .gitignore:
+      fix_gitignore_work (:870) is dispatched by substring-matching English prose in
+      issue.description (:777-790), with detection at :418,524,553,846,854,1097 - the
+      strings it writes MUST match W3's swept .gitignore exactly, or loom repair --fix
+      re-adds the old entries indefinitely.
+
+      W3 detail. hooks/_common.sh HAS NO .work STATE PATHS - its five matches at
+      :1478-1498 are all .worktrees membership logic that must NOT change. Pointing a
+      sweeping worker at the 1500-line file every hook sources, for a string that is
+      only ever .worktrees there, is how .worktrees handling gets mangled. Sweep
+      instead the 22 scripts that do carry state paths (rg -l '\.work/' hooks/;
+      densest: git-add-guard.sh 31, worktree-isolation.sh 17, commit-guard.sh 17)
+      PLUS the 11 fixtures under hooks/tests/, which no acceptance criterion runs
+      today - add ./hooks/tests/run-all.sh to your own checks. .gitignore lines 45-69
+      gain .loom/work/ and .loom/work beside the existing .loom/cache/ and spool
+      patterns. CLAUDE.md.template has FIVE .work references, not one: :78 (Rule 3b),
+      :274 (Rule 10), :278 (Rule 11), :355 and :361 (orchestration reference).
+      scripts/check-hook-syntax.sh ALREADY EXISTS (51 lines, commit e40443b8) and
+      already runs as its own CI job (.github/workflows/ci.yml:191-199) - do NOT
+      recreate it; just keep it passing. It is the gate that catches a
+      heredoc-inside-$() quoting break, which is exactly the failure mode a wide hook
+      sweep can reintroduce, so run it after every edit. Also sweep the docs and
+      guidance surfaces nobody owned before: README.md is deferred to
+      knowledge-distill, but CLAUDE.md (3), loom/CONTRIBUTING.md (1), loom/.gitignore
+      (2), .markdownlintignore (2), agents/loom-codex-forwarder.md (1) and
+      skills/loom-{usage,ci-cd,rust,git-workflow,prompt-engineering,background-jobs,
+      wiring-test}/SKILL.md (24/4/3/3/2/1/1) are all yours.
+      NOTE: skills/loom-plan-writer/SKILL.md is owned by doctrine-subagent-grouping.
+      Sweep its .work references anyway - that stage runs AFTER this one and edits a
+      different section - but say so in your report.
+
+      STALE DOC COMMENTS - correct them, do not leave them asserting the old shape.
+      Three read false after this change and no test catches any of them:
+        git/worktree/settings.rs:52    "points from .worktrees/{stage_id}/.work to
+                                       ../../.work (the main repo's .work/)"
+        fs/work_dir.rs:364             "In a worktree, .work is a symlink pointing to
+                                       ../../.work (the main repo's .work)"
+        git/worktree/settings.rs:31-33 the is_worktree_scaffold_path .loom/config.toml
+                                       carve-out described in the W2 detail above
+      The knowledge base already records stale comments as the standard residue of a
+      large rename (mistakes/refactor-stragglers.md).
+
+      ALSO: fix loom/src/context/tests/store.rs:47 to canonicalize BOTH sides of the
+      path assertion. It currently fails whenever TMPDIR sits under a symlinked /tmp.
+
+      THE MAINTAINABILITY LEDGER - MAIN AGENT ONLY, AFTER EVERY SUBAGENT LANDS.
+      loom/maintainability-baseline.txt is an EXACT-MATCH, BIDIRECTIONAL line-count
+      ledger enforced by loom/tests/maintainability.rs:13, an autodiscovered target
+      that runs under this stage's own cargo test --all-targets. It errors on
+      SHRINKAGE exactly as loudly as on growth (see
+      doc/loom/knowledge/mistakes/pinned-literals-ledgers-and-wiring.md:22). This
+      stage moves at least: file src/fs/work_dir.rs 669 (:34),
+      file src/git/worktree/settings.rs 637 (:37), create_worktree_settings 104 (:185),
+      file src/sandbox/settings.rs 532 (:62), generate_settings_json 105 (:272),
+      write_settings 132 (:274), file src/commands/review/generate.rs 473 (:15) and
+      execute 162 (:103) - the resolver collapse SHRINKS the last two. Run
+      cargo test --manifest-path loom/Cargo.toml --test maintainability, then lower or
+      delete every entry whose measured value moved. A subagent REPORTS its new number
+      and never edits the baseline - no single subagent can reconcile it.
+
+      CODEX: subagents must not run git at all. Check git status --short after each
+      codex run. Never put a .work/ or .loom/ path in a codex subagent's file list.
+      State an explicit Bash timeout of 900000 ms and --effort xhigh in every
+      forwarder prompt.
+
+      MEMORY: record mistakes/decisions/surprises via loom memory immediately.
+      NEVER loom knowledge (implementation stage). NEVER Claude Code auto-memory.
+    dependencies: []
+    parallel_group: null
+    acceptance:
+    - ./scripts/check-hook-syntax.sh
+    - cargo build --manifest-path loom/Cargo.toml --all-targets
+    - cargo fmt --manifest-path loom/Cargo.toml -- --check
+    - cargo clippy --manifest-path loom/Cargo.toml --all-targets -- -D warnings
+    - cargo test --manifest-path loom/Cargo.toml --all-targets --no-fail-fast -- --skip a_live_listener_is_answered --skip a_stale_socket_file_with_nothing --skip ancestry_accepts_self --skip unreaped_dead_child --skip spawned_child_leads_its_own --skip adds_home_expanded_codex --skip home_expanded_entry_no_dup --skip diagnose_sessions_names --skip bash_side_cat_gets --skip head_tail_with --skip sed_dollar --skip deny_only_with_switch --skip line_limit_bound --skip tier1_knowledge --skip unbounded_read --skip gated_untyped_or --skip missing_rule5 --skip carve_out_ref --skip subagent_block_and
+    - bash hooks/tests/run-all.sh
+    - 'cargo test --manifest-path loom/Cargo.toml --lib context::tests::store::open_resolves_cache_at_main_project_root_from_linked_worktree 2>&1 | rg -q "test result: ok\. 1 passed"'
+    - 'cargo test --manifest-path loom/Cargo.toml --lib fs::work_dir::tests::resolver 2>&1 | rg -q "test result: ok\. (9|[1-9][0-9]+) passed"'
+    - 'cargo test --manifest-path loom/Cargo.toml --lib daemon::server::lifecycle 2>&1 | rg -q "test result: ok\. [1-9]"'
+    - RUSTDOCFLAGS="-D warnings" cargo doc --manifest-path loom/Cargo.toml --workspace --all-features --no-deps
+    - rg -q "^\.loom/work/$" .gitignore && rg -q "^\.loom/work$" .gitignore
+    - '! rg -q "Read\(\.loom/work/\*\*\)" loom/src/sandbox/settings.rs'
+    - '! rg -q "fn get_work_dir" loom/src'
+    - '! rg -q "fn find_work_dir\(" loom/src/commands/common/mod.rs'
+    setup: []
+    files:
+    - loom/src/**
+    - loom/tests/**
+    - loom/maintainability-baseline.txt
+    - hooks/**
+    - .gitignore
+    - loom/.gitignore
+    - .markdownlintignore
+    - CLAUDE.md.template
+    - CLAUDE.md
+    - loom/CONTRIBUTING.md
+    - skills/**
+    - agents/**
+    - scripts/**
+    auto_merge: null
+    working_dir: .
+    stage_type: standard
+    artifacts:
+    - loom/src/fs/work_dir.rs
+    - loom/src/git/worktree/settings.rs
+    wiring:
+    - source: loom/src/git/worktree/settings.rs
+      pattern: '"\.\./\.\./\.\./\.loom/work"'
+      description: 'Worktree symlink points three levels up at the main repo''s .loom/work - anchored on the string literal, not the doc comment above it, and not on Path::new: the nested arm may build the target through the layout branch rather than a bare Path::new call'
+    - source: loom/src/git/worktree/settings.rs
+      pattern: '"\.\./\.\./\.work"'
+      description: The LEGACY arm survives. A worktree created from a .work/ workspace must still get .work -> ../../.work; deleting this literal while sweeping is how the back-compat policy dies silently, and this plan's own run is on a legacy workspace until the new binary is installed
+    - source: loom/src/fs/work_dir.rs
+      pattern: fn repo_root
+      description: One layout-aware repo-root helper, which project_root() and main_project_root() both delegate to. Two separately-written hop counts drift, and one of them then sites .loom/cache/context-v1 outside the project
+    - source: loom/src/sandbox/settings.rs
+      pattern: \.loom/work/signals/\*\*
+      description: 'Sandbox grants the worktree agent read on the moved signals directory. Deliberately NOT anchored on the full Read(...) literal: collapsing the six adjacent allow.push calls into a loop is a correct refactor that would make the literal non-contiguous and block the stage'
+    - source: loom/src/git/worktree/settings.rs
+      pattern: \.loom/work
+      description: The SECOND resolved-symlink settings generator (:415-447) migrates too - missing it leaves worktree agents with no absolute-path grants
+    - source: loom/src/git/cleanup/worktree.rs
+      pattern: \.loom/work
+      description: Worktree teardown removes the moved symlink; remove_required_symlink is a no-op on a missing path, so a stale target strands the worktree
+    - source: loom/src/daemon/server/lifecycle.rs
+      pattern: sun_path|SUN_PATH_MAX
+      description: sun_path length is validated before the bind at :216-217, inside run_server which can actually return an error - not in with_config or check_status, neither of which returns a Result
+    - source: loom/src/fs/permissions/sync.rs
+      pattern: \.\./\.\./\.\./\.work|\.\./\.\./\.\./\.loom/work
+      description: transform_worktree_path's escape prefix grows a level with the nested layout
+    context_ceiling_tokens: null
+    sandbox: {}
+    model: opus
+    reasoning_effort: xhigh
+    ultracode: false
+    implementers:
+    - codex
+    - claude
+    subagent_timeout_secs: 1800
+  - id: doctrine-subagent-grouping
+    name: Subagent task-grouping doctrine
+    description: |
+      Add a task-grouping rule to subagent doctrine: several small tasks go to ONE
+      subagent, never one subagent per task or per file. Name both costs - the tokens
+      a subagent spends before doing any work, and the disjoint file set every extra
+      subagent forces.
+      Use parallel subagents and skills to maximize performance.
+
+      HARD STOP 6 IS UNTOUCHED. This is a grouping rule, not a licence for the
+      orchestrator to implement. Do not reword "the main agent never implements".
+
+      WHERE THE TEXT GOES. Put it in CLAUDE.md.template Rule 6 prose (the shape table
+      is at :140-146) and in the parallelization section of
+      skills/loom-plan-writer/SKILL.md. Do NOT put it in a pinned BLOCK.
+
+      THE REASON, stated correctly - an earlier draft of this plan claimed here that
+      the three equality tests assert byte-identical presence in EVERY agents/*.md.
+      THAT IS FALSE, and it is the YAML you are reading, so read this instead. Each
+      test enumerates its own fixed surface list:
+        block_a_agrees_across_every_surface (tests_doctrine.rs:109, loop :113-118) ->
+          both signal prefixes, CLAUDE.md.template, hooks/subagent-verify-guard.sh
+        block_b_agrees_across_every_surface (:129, loop :130-133) ->
+          CLAUDE.md.template, skills/loom-plan-writer/SKILL.md
+        block_d_agrees_across_every_surface (:166, loop :170-174) ->
+          both signal prefixes, CLAUDE.md.template (+ asserts ABSENCE from the two
+          knowledge prefixes at :196-207)
+      agent_definitions() (:62-86, a real fs::read_dir scan of agents/) and
+      guidance_surfaces() (:93-106) ARE consumed - but by exactly two tests, neither
+      of which a new rule trips: a RETIRED_PHRASES ABSENCE check
+      (no_guidance_surface_still_tells_a_subagent_to_verify, :332) and a codex-sentinel
+      PRESENCE check (:211).
+      The real reason to stay out of a pinned BLOCK: cache/blocks.rs declares only two
+      consts - BINDING_RULES_POINTER (:19) and KNOWLEDGE_CONSUMPTION_CONTRACT (:23) -
+      while BLOCK-A and BLOCK-D text lives in push_str literals inside its functions
+      (:46-77). Landing the rule inside either block turns a two-file edit into a
+      four-file byte-identical edit for no benefit.
+
+      Read tests_doctrine_blocks.rs first - it holds the block text - and confirm your
+      edit does not perturb any pinned string.
+
+      SIZE BUDGET - RE-MEASURE, DO NOT TRUST THIS NUMBER. CLAUDE.md.template was 27683
+      bytes against the 28672-byte ceiling at tests_size.rs:30 at HEAD, i.e. 989 bytes
+      of headroom. But loom-dir-migration runs BEFORE you and rewrites five .work
+      references in that file to .loom/work, adding roughly 25 bytes. Run wc -c
+      yourself. Fit inside the ceiling. If the text genuinely cannot fit, raise the
+      ceiling deliberately and say so in the commit message, the way it was raised for
+      BLOCK-D.
+
+      THIS STAGE IS NOT MARKDOWN-INERT - RUN THE FULL GATE. CLAUDE.md.template is
+      include_str!'d into SIX test modules: tests_doctrine.rs, tests_doctrine_blocks.rs,
+      tests_doctrine_prefixes.rs, tests_doctrine_waiting.rs, tests_size.rs, and
+      tests_commit_timing.rs - which the substring filter
+      orchestrator::signals::tests_doctrine does NOT match, and which pins Rule 4's
+      sentinel phrases byte-for-byte. With under 1 KB of headroom the likeliest way to
+      fit new text is compressing neighbouring prose, which is exactly what
+      tests_commit_timing exists to catch. skills/loom-plan-writer/SKILL.md is likewise
+      include_str!'d. A template edit cannot break cargo build; it can and does break
+      cargo test.
+
+      This is a small, exact stage. Use ONE subagent for both files rather than one
+      per file - which is the rule this stage exists to add.
+
+      MEMORY: record decisions via loom memory. NEVER loom knowledge. NEVER auto-memory.
+    dependencies:
+    - loom-dir-migration
+    parallel_group: null
+    acceptance:
+    - ./scripts/check-hook-syntax.sh
+    - cargo build --manifest-path loom/Cargo.toml --all-targets
+    - cargo fmt --manifest-path loom/Cargo.toml -- --check
+    - cargo clippy --manifest-path loom/Cargo.toml --all-targets -- -D warnings
+    - cargo test --manifest-path loom/Cargo.toml --all-targets --no-fail-fast -- --skip daemon::rpc::tests::a_live_listener_is_answered --skip daemon::rpc::tests::a_stale_socket_file_with_nothing_bound_is_not_listening --skip daemon::server::peer_identity::tests::ancestry_accepts_self_and_the_real_parent_chain --skip process::tests::unreaped_dead_child_is_not_alive --skip verify::criteria::tests::confine_tests::spawned_child_leads_its_own_process_group --skip fs::permissions::tests::settings_tests::test_ensure_loom_permissions_adds_home_expanded_codex_forward_entry --skip fs::permissions::tests::settings_tests::test_ensure_loom_permissions_home_expanded_entry_no_duplicates_on_rerun --skip commands::attach::wait::tests::diagnose_sessions_names_the_work_dir_and_every_session
+    - 'cargo test --manifest-path loom/Cargo.toml --lib orchestrator::signals::tests_doctrine 2>&1 | rg -q "test result: ok\. [1-9][0-9]* passed"'
+    - 'cargo test --manifest-path loom/Cargo.toml --lib orchestrator::signals::tests_size 2>&1 | rg -q "test result: ok\. [1-9][0-9]* passed"'
+    - 'cargo test --manifest-path loom/Cargo.toml --lib orchestrator::signals::tests_commit_timing 2>&1 | rg -q "test result: ok\. [1-9][0-9]* passed"'
+    - rg -q "never one subagent per task" CLAUDE.md.template
+    - rg -q "never one subagent per task" skills/loom-plan-writer/SKILL.md
+    - RUSTDOCFLAGS="-D warnings" cargo doc --manifest-path loom/Cargo.toml --workspace --all-features --no-deps
+    setup: []
+    files:
+    - CLAUDE.md.template
+    - skills/loom-plan-writer/SKILL.md
+    auto_merge: null
+    working_dir: .
+    stage_type: standard
+    artifacts:
+    - CLAUDE.md.template
+    - skills/loom-plan-writer/SKILL.md
+    wiring:
+    - source: CLAUDE.md.template
+      pattern: never one subagent per task
+      description: Task-grouping rule present in Rule 6 prose
+    - source: skills/loom-plan-writer/SKILL.md
+      pattern: never one subagent per task
+      description: Task-grouping rule present in the plan-writer parallelization section
+    context_ceiling_tokens: null
+    sandbox: {}
+    model: opus
+    reasoning_effort: high
+    ultracode: false
+    implementers:
+    - claude
+  - id: version-and-release
+    name: Tag-driven version identity and live releases
+    description: |
+      Give the binary a real version, make tag pushes produce live releases, and
+      repair loom self-update's checksum asset name.
+      Use parallel subagents and skills to maximize performance.
+
+      BUILD FIRST: run cargo build --manifest-path loom/Cargo.toml --all-targets once,
+      early. Acceptance has a hard 300s per-command ceiling
+      (verify/criteria/config.rs:8) and a cold worktree build exceeds it.
+
+      1. loom/Cargo.toml: version = "0.0.0-dev". It stops moving from here on. No
+         build = key, no include/exclude, no [build-dependencies] and no workspace
+         root manifest, so cargo auto-detects the new build.rs.
+      2. THE DERIVATION LIVES IN loom/src, NOT IN build.rs. This repo has ZERO tags
+         (git tag is empty; git describe --tags returns "fatal: No names found"), so
+         the two interesting branches are UNREACHABLE in every environment this plan
+         runs in and cannot be proven end-to-end. Put
+           pub fn derive_version(describe_exact: Option<&str>,
+                                 describe: Option<&str>,
+                                 short_sha: Option<&str>) -> String
+         in loom/src/version/derive.rs, have build.rs
+           include!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/version/derive.rs"))
+         and shell out to git only. Cover all four branches by name in
+         version::derive::tests - build scripts are not test targets.
+         - git describe --tags --exact-match succeeds -> that tag verbatim, minus the
+           leading v. This is what CI builds.
+         - git describe --tags gives v0.2.0-5-gabc1234 -> 0.2.1-dev.5+abc1234: last
+           tag, patch bumped, commit count, short SHA. Semver puts this ahead of
+           0.2.0 and behind 0.2.1, which is exactly right for a build sitting on
+           commits past the last release.
+         - NO TAGS -> 0.0.0-dev+<short sha>, from git rev-parse --short HEAD,
+           INDEPENDENTLY of git describe. This is the path EVERY build takes today,
+           and integration-verify requires "loom -v prints a version carrying a
+           commit hash" - the sha must survive this branch.
+         - no git at all -> 0.0.0-dev+unknown.
+      2b. RERUN KEYS: DO NOT EMIT .git/HEAD OR .git/refs/tags. Build scripts run with
+         CWD = the package root = loom/, so ".git/HEAD" means loom/.git/HEAD, which
+         does not exist. And seven of nine stages build in .worktrees/<id>/, where
+         .git is a FILE (gitdir: ...), not a directory. Cargo treats a missing
+         rerun-if-changed path as PERMANENTLY DIRTY, not as a no-op - verified with a
+         probe crate: "Compiling" reappears on every consecutive build with no source
+         change. Under the 300s acceptance ceiling that is the likeliest way this
+         stage fails opaquely. Instead resolve the real paths:
+           git rev-parse --git-path HEAD          (per-worktree)
+           git rev-parse --git-common-dir         then refs/tags AND packed-refs
+         (tags land in packed-refs after a clone or gc; .git/refs/tags is an empty
+         directory here today). Emit cargo:rerun-if-changed for the resolved absolute
+         paths and EMIT NOTHING for a path that does not exist. Verify with two
+         consecutive cargo build runs: the second must not print "Compiling loom".
+         Also emit cargo:rustc-env=LOOM_VERSION plus commit, build date and target
+         triple.
+      3. loom/src/cli/types.rs:34 has #[command(version)], which binds -V only, and
+         CLAP CANNOT SIMPLY BE GIVEN A SHORT ALIAS. A manual
+         #[arg(short = 'v', long = "version", action = ArgAction::Version)] collides
+         with the auto-generated --version. The working shape on clap 4.6.6 is
+         #[command(version, disable_version_flag = true)] PLUS that manual arg. When
+         both version and long_version are set clap prints `version` for the SHORT
+         form, so the commit hash must be in `version`, not only long_version.
+         Nothing else claims -v at the top level (Status's -v at types.rs:101-102 is
+         a subcommand flag; propagate_version is absent so -V never propagates).
+         Render version, commit, build date, target.
+      3b. Adding a top-level flag INVALIDATES the invariant main.rs:41-44 states -
+         "Cli declares no global options, so the first argument is always the
+         subcommand" - which update-check builds on. Update that comment here.
+      3c. cli/types.rs is 377 lines against Rule 17's 400 and is NOT ledgered, so
+         crossing 400 creates a NEW violation that tests/maintainability.rs rejects
+         unless recorded. Three stages add to this file. It already splits into
+         types_ops.rs / types_stage.rs / types_memory.rs (types.rs:4-8); if you need
+         room, extract rather than grow.
+      4. Anything reading CARGO_PKG_VERSION must read the new value instead -
+         self_update/mod.rs:40 is the one production site (rg confirms exactly one).
+         Skip this and every CI-built tagged release reports 0.0.0-dev, so
+         latest_version <= current at :70 is never true and self-update offers an
+         update forever.
+      5. .github/workflows/release.yml: remove draft: true at line 229. ALSO FIX THE
+         CHECKOUT: :43 is a bare `uses: actions/checkout@v7` in the `build` job
+         (:20-85), i.e. fetch-depth 1 and fetch-tags false; the fetch-depth: 0 at :98
+         is on sign-and-release, which never compiles. Binaries are built at :63-65.
+         So git describe --tags CANNOT succeed in the job that builds and EVERY
+         published binary would ship the fallback version. Add
+         `with: { fetch-depth: 0 }` to :43. Then add a job that fails the release
+         when the git tag does not match the version THE BUILT BINARY REPORTS - not
+         steps.version.outputs.tag, which validates the workflow against itself and
+         passes on a broken build.rs. Runners are ubuntu-latest/macos-13/macos-latest
+         (:26-37), no containers, so there is no safe.directory hazard.
+      6. SELF-UPDATE IS BROKEN IN THREE INDEPENDENT WAYS, NOT ONE. An earlier draft of
+         this plan fixed only the third and still claimed the goal "loom self-update
+         works end to end". All three land together or the goal is false. Each was
+         verified against the tree:
+         6a. WRONG REPOSITORY. GITHUB_REPO = "cosmix/claude-loom" (self_update/mod.rs:39)
+             feeds https://api.github.com/repos/{GITHUB_REPO}/releases/latest (:100).
+             This repo's origin is cosmix/loom (git config --get remote.origin.url ->
+             git@github.com:cosmix/loom.git), which is where the releases this plan
+             makes live are published. The client queries a DIFFERENT REPOSITORY than
+             the workflow publishes to.
+         6b. WRONG ASSET NAMES. update_binary builds format!("loom-{target}") from
+             get_target() (:113-150), a TARGET TRIPLE - loom-aarch64-apple-darwin,
+             loom-x86_64-unknown-linux-gnu - plus {binary_name}.minisig. The workflow
+             publishes OS-ARCH names: loom-linux-x86_64, loom-darwin-x86_64,
+             loom-darwin-arm64 and their .minisig partners (release.yml:26-37,233-240).
+             NO SUPPORTED PLATFORM'S ASSET IS EVER FOUND. get_target() also recognises
+             aarch64-unknown-linux-gnu, a fourth platform the workflow does not build
+             and this plan's non-goals keep out of the matrix - map it to a clear "no
+             release asset for this platform" error, not to a 404.
+         6c. WRONG CHECKSUM ASSET. self_update/mod.rs:224 looks for a release asset
+             literally named "checksums.txt"; release.yml publishes SHA256SUMS.txt
+             (lines 148, 161, 240). Change the CLIENT to SHA256SUMS.txt - the published
+             name is conventional and already named in the release notes.
+         FIX ALL THREE AGAINST ONE SHARED SOURCE OF TRUTH, NOT TWO HAND-KEPT LISTS: a
+         single release_asset mapping (repo identifier, plus target triple -> published
+         asset base name) covering exactly the three supported targets, which the
+         client resolves against. The workflow matrix stays the declaration of what is
+         built.
+         PROVE IT WITH A FIXTURE TEST - no acceptance command can reach a real release.
+         Feed the literal ten published asset names from release.yml:233-240 to the
+         REAL selector and assert: each of the three supported targets selects both a
+         binary and its .minisig; the checksum asset resolves; the unsupported fourth
+         target ERRORS rather than selecting something; and the API URL names
+         cosmix/loom. A grep for the string SHA256SUMS.txt is not a proof of any of it.
+         TWO CORRECTIONS to how this has been described:
+         - Self-update does NOT "update nothing". update_binary runs at mod.rs:86,
+           BEFORE update_config_files at :89. The binary is swapped, then the run
+           errors, leaving a HALF-UPDATED install (new binary, stale agents.zip /
+           skills.zip / CLAUDE.md.template) and no success line (:91-95 unreached).
+         - self_update/tests.rs pins NOTHING. rg "checksums\.txt" on that file returns
+           zero hits. There is nothing to update there.
+         The literal occurs at EIGHT sites in mod.rs - :224, 241, 260, 263, 266, 335,
+         337, 340 - including two comments and four user-facing error messages.
+         Update every one; the wiring pattern covers only :224.
+
+      Group these: the version work (1-4) is one subagent, the release and
+      self-update work (5-6) is another. Do not split further.
+
+      CARGO.LOCK IS YOURS AND MUST BE COMMITTED. loom/Cargo.lock:1505-1506 records the
+      loom package at version 0.1.0. Changing Cargo.toml to 0.0.0-dev makes the lock
+      stale, and the first cargo build rewrites it - so the file WILL be dirty whether
+      or not you planned for it. It is in this stage's files:; stage and commit it.
+
+      MAINTAINABILITY LEDGER - MAIN AGENT ONLY, after both subagents land.
+      loom/maintainability-baseline.txt is EXACT-match and errors on shrinkage as
+      loudly as on growth. This stage moves file src/commands/self_update/mod.rs 438
+      (:17), file src/commands/self_update/tests.rs 490 (:18 - the release-fixture
+      test of 6c grows it) and function ... update_config_files 88 (:111). Run
+      cargo test --manifest-path loom/Cargo.toml --test maintainability and reconcile.
+
+      CODEX: no git commands in subagents; check git status --short after each run;
+      explicit Bash timeout 900000 ms and --effort xhigh in every forwarder prompt.
+
+      MEMORY: record decisions via loom memory. NEVER loom knowledge. NEVER auto-memory.
+    dependencies:
+    - loom-dir-migration
+    parallel_group: null
+    acceptance:
+    - ./scripts/check-hook-syntax.sh
+    - cargo build --manifest-path loom/Cargo.toml --all-targets
+    - cargo fmt --manifest-path loom/Cargo.toml -- --check
+    - cargo clippy --manifest-path loom/Cargo.toml --all-targets -- -D warnings
+    - cargo test --manifest-path loom/Cargo.toml --all-targets --no-fail-fast -- --skip daemon::rpc::tests::a_live_listener_is_answered --skip daemon::rpc::tests::a_stale_socket_file_with_nothing_bound_is_not_listening --skip daemon::server::peer_identity::tests::ancestry_accepts_self_and_the_real_parent_chain --skip process::tests::unreaped_dead_child_is_not_alive --skip verify::criteria::tests::confine_tests::spawned_child_leads_its_own_process_group --skip fs::permissions::tests::settings_tests::test_ensure_loom_permissions_adds_home_expanded_codex_forward_entry --skip fs::permissions::tests::settings_tests::test_ensure_loom_permissions_home_expanded_entry_no_duplicates_on_rerun --skip commands::attach::wait::tests::diagnose_sessions_names_the_work_dir_and_every_session
+    - RUSTFLAGS="-Dwarnings" cargo build --manifest-path loom/Cargo.toml --all-targets
+    - 'cargo test --manifest-path loom/Cargo.toml --lib version::derive::tests 2>&1 | rg -q "test result: ok\. [3-9]"'
+    - ./loom/target/debug/loom -v
+    - ./loom/target/debug/loom -v | rg -q "[0-9a-f]{7}"
+    - rg -q "cargo:rustc-env=LOOM_VERSION" loom/build.rs
+    - rg -q "rev-parse --git-path|rev-parse --git-common-dir" loom/build.rs
+    - rg -q 'env!\("LOOM_VERSION"\)' loom/src/commands/self_update/mod.rs
+    - rg -qF "SHA256SUMS.txt" loom/src/commands/self_update/mod.rs
+    - '! rg -qF "checksums.txt" loom/src/commands/self_update/mod.rs'
+    - 'cargo test --manifest-path loom/Cargo.toml --all-targets release_asset 2>&1 | rg -q "test result: ok\. [1-9]"'
+    - rg -qF '"cosmix/loom"' loom/src/commands/self_update/mod.rs
+    - '! rg -qF "cosmix/claude-loom" loom/src/commands/self_update'
+    - rg -qF "loom-darwin-arm64" loom/src/commands/self_update
+    - rg -qF "loom-linux-x86_64" loom/src/commands/self_update
+    - cargo build --manifest-path loom/Cargo.toml >/dev/null 2>&1; cargo build --manifest-path loom/Cargo.toml 2>&1 | rg -q "Compiling loom "; test $? -ne 0
+    - RUSTDOCFLAGS="-D warnings" cargo doc --manifest-path loom/Cargo.toml --workspace --all-features --no-deps
+    - test -f .github/workflows/release.yml && ! rg -q "draft:\s*true" .github/workflows/release.yml
+    - 'rg -q "fetch-depth: 0" .github/workflows/release.yml'
+    - rg -q "tag.*does not match|version mismatch|Version mismatch" .github/workflows/release.yml
+    setup: []
+    files:
+    - loom/Cargo.toml
+    - loom/Cargo.lock
+    - loom/build.rs
+    - loom/src/version/**
+    - loom/src/lib.rs
+    - loom/src/main.rs
+    - loom/src/cli/types.rs
+    - loom/src/commands/self_update/**
+    - loom/maintainability-baseline.txt
+    - .github/workflows/**
+    auto_merge: null
+    working_dir: .
+    stage_type: standard
+    artifacts:
+    - loom/build.rs
+    - loom/src/version/derive.rs
+    wiring:
+    - source: loom/src/commands/self_update/mod.rs
+      pattern: a\.name == "SHA256SUMS\.txt"
+      description: Self-update fetches the checksum asset the release workflow actually publishes
+    - source: loom/src/cli/types.rs
+      pattern: LOOM_VERSION
+      description: The version string comes from build.rs, not CARGO_PKG_VERSION
+    - source: .github/workflows/release.yml
+      pattern: fetch-depth
+      description: The build job fetches tags, so git describe can see them
+    - source: loom/src/commands/self_update/mod.rs
+      pattern: cosmix/loom
+      description: The releases API is queried against the repository the workflow publishes to. GITHUB_REPO was cosmix/claude-loom at HEAD, so every check-for-update hit a different repository
+    - source: loom/Cargo.lock
+      pattern: 0\.0\.0-dev
+      description: The lockfile records the new package version. It was 0.1.0 at Cargo.lock:1506 and the first build rewrites it, so an unowned lockfile leaves the stage with an uncommittable dirty file
+    context_ceiling_tokens: null
+    sandbox: {}
+    model: opus
+    reasoning_effort: high
+    ultracode: false
+    implementers:
+    - codex
+    - claude
+    subagent_timeout_secs: 1800
+  - id: config-foundation
+    name: Global config and loom config -k
+    description: |
+      Add a user-level configuration file at ~/.loom/config.toml and a scalar get/set
+      CLI over it.
+      Use parallel subagents and skills to maximize performance.
+
+      A new module owns ~/.loom/: resolve the directory (dirs::home_dir, already a
+      dependency - see codex.rs:56 for the house idiom), read and write config.toml
+      through toml_edit so comments and unknown keys survive, and expose a typed key
+      registry.
+
+      Mirror the section-typed accessor style in fs/work_dir.rs:497-660 rather than
+      inventing a second one, but keep the TYPE distinct from WorkDir. These are two
+      different directories that share a name prefix, and every error message must say
+      which one it means: "user config ~/.loom/config.toml" or
+      "workspace <repo>/.loom/". Never a bare "the .loom directory".
+
+      KEYS (this is the whole surface for this plan):
+        update.check                  bool, default true
+        update.check_interval_hours   u32,  default 24
+        terminal.backend              "native" | "tmux", default native
+        context.ceiling_tokens        u32, default 800000
+                                      (DEFAULT_CONTEXT_CEILING_TOKENS,
+                                      models/constants.rs:44)
+
+      TWO OF THOSE FOUR KEYS HAVE NO PRODUCTION CONSUMER UNLESS YOU ADD ONE, and a key
+      that persists and displays a value while changing nothing is the worst thing this
+      stage could ship. An earlier draft of this plan registered both and put workspace
+      precedence out of scope, which left `loom config -k terminal.backend tmux`
+      writing a value nothing ever reads. Verified against the tree: terminal.backend is
+      read ONLY from the WORKSPACE config, by resolve_backend_flag
+      (commands/run/mod.rs:166) and SessionBackend::from_config
+      (orchestrator/terminal/backend.rs:96-97); the context ceiling likewise, by
+      Monitor::new (orchestrator/monitor/core.rs:51-52) and the hook path
+      (commands/hook/context_ceilings.rs:43).
+
+      BOTH FUNNEL THROUGH EXACTLY TWO FUNCTIONS, so the fix is small and belongs here.
+      read_terminal_config (fs/work_dir.rs:623-625) and read_context_config (:636-638)
+      are each a ONE-LINE wrapper over read_section, which returns Option<T> - None when
+      the section is absent. Add the global tier INSIDE those two wrappers and every
+      consumer above picks it up unchanged. The order:
+
+        stage override (context only) > workspace [section] when PRESENT
+                                      > ~/.loom/config.toml > built-in
+
+      PRECEDENCE IS SECTION-LEVEL, NOT KEY-LEVEL, AND THAT IS DELIBERATE. [context]
+      deserializes through ContextConfigRaw (fs/work_dir/context_config.rs:62-91), whose
+      whole purpose is to tell "the TOML set this key" apart from "the TOML left this to
+      derive" BEFORE the built-in defaults are baked in by the From impl. By the time
+      read_section::<ContextConfig> has returned, that distinction is GONE, so a
+      key-level merge would silently treat a derived default as an explicit setting. A
+      present workspace section wins WHOLE; only an absent one falls through to the user
+      config. The global tier supplies context.ceiling_tokens ONLY -
+      subagent_ceiling_tokens and model_window_tokens keep deriving from the built-ins,
+      and ContextConfig::ceiling_for's stage-override rule (context_config.rs:107-109)
+      is untouched.
+
+      This adds loom/src/fs/work_dir.rs and loom/src/fs/work_dir/context_config.rs to
+      your files:. Neither is contended - loom-dir-migration owns them in an earlier
+      wave and is merged before you start - but it DOES move
+      file src/fs/work_dir.rs 669 (maintainability-baseline.txt:34) a second time.
+
+      CLI, added to cli/types.rs and dispatched in cli/dispatch.rs (dispatch is at
+      dispatch.rs:155; there is NO existing Commands::Config variant to collide with):
+        loom config -k <key>            print the BARE VALUE on stdout, nothing else
+        loom config -k <key> <value>    set it, print the old and new values
+        loom config --list              every key, its value, and its ORIGIN: set,
+                                        global, or default
+        loom config --print             print the resolved config as TOML
+        loom config                     same as --print until config-tui re-points it
+
+      REGISTER --print HERE, NOT IN config-tui. clap subcommand flags are struct-variant
+      fields in cli/types.rs, destructured at cli/dispatch.rs:156-166 - files THIS stage
+      owns and config-tui does not. Registering it there would force config-tui to edit
+      cli/types.rs concurrently with init-auto-repair, which also owns that file in the
+      same wave. Two branches editing one file through auto-merge is lost work.
+
+      DECLARE THE MODULE. loom/src/commands/mod.rs is a flat `pub mod ...;` list with no
+      `config` entry; without adding one, commands/config/ is unreachable and the build
+      fails. loom/src/user_config/ is top-level and goes in lib.rs.
+
+      EXPOSE EXACTLY ONE ACCESSOR: user_config::load() -> UserConfig, returning fully
+      defaulted values when ~/.loom/config.toml is absent or unparseable. config-tui and
+      update-check run in the SAME WAVE, both consume the config, and NEITHER lists
+      loom/src/user_config/** in its files: - so the module must be complete here and
+      neither successor may build its own reader. The typed key registry is the single
+      validator for the -k path, the TUI's commit, and update.check's lookup.
+
+      NAME COLLISION, sharper than "distinct from WorkDir": there is already a bare
+      `pub struct Config` at fs/work_dir.rs:19 - the .work/config.toml type. Every
+      message must say WHICH directory: "user config ~/.loom/config.toml" or
+      "workspace <repo>/.loom/". Never a bare "the .loom directory", never a bare Config.
+
+      READS MUST NOT CREATE THE DIRECTORY. -k <key> and --list return defaults when the
+      file is absent; only a SET creates ~/.loom/. Without this rule this stage's own
+      acceptance writes on a read.
+
+      WRITES GO THROUGH crate::fs::locking::atomic_write_locked (fs/locking.rs:157),
+      never a bare fs::write - loom is invoked concurrently from hooks, so this is a
+      real race. A ~/.loom/config.toml that fails to parse is an ERROR naming the file
+      and the toml_edit parse position on `loom config` paths, and is treated as ABSENT
+      (all defaults, no write, no message) on every other command: a broken user config
+      must never take down loom run.
+
+      NO NEW DEPENDENCY. toml_edit = "0.25.13" (Cargo.toml:39) and dirs = "6" (:17) are
+      already direct dependencies, present in Cargo.lock. Do not cargo add anything; do
+      not hand-edit the manifest.
+
+      cli/types.rs is 377 lines against Rule 17's 400 and is not ledgered, so crossing
+      400 creates a NEW violation the maintainability test rejects. Put the Config
+      variant in a new cli/types_config.rs re-exported from types.rs, following the
+      existing types_ops.rs / types_stage.rs / types_memory.rs split at types.rs:4-8.
+
+      MAINTAINABILITY LEDGER - MAIN AGENT ONLY. Adding a Commands::Config arm grows
+      `function src/cli/dispatch.rs dispatch 123` (maintainability-baseline.txt:73),
+      which is EXACT-match: the top-level match cannot take even one more arm without
+      the baseline moving. Run cargo test --manifest-path loom/Cargo.toml --test
+      maintainability and reconcile after the subagent lands.
+
+      WRITES go to ~/.loom/config.toml only - loom config NEVER edits a workspace
+      config. READS go the other way, per the section-level precedence above. Those are
+      different directions and neither is "out of scope".
+
+      Unknown key, or a value that fails to parse for its type, is an error with a
+      non-zero exit and a message naming the valid keys.
+
+      This is one coherent piece of work. Use ONE subagent for the module and the CLI
+      together - splitting them would force a shared-contract foundation step for no
+      benefit.
+
+      CODEX: no git in subagents; check git status --short after each run; explicit
+      Bash timeout 900000 ms and --effort xhigh.
+
+      MEMORY: record decisions via loom memory. NEVER loom knowledge. NEVER auto-memory.
+    dependencies:
+    - version-and-release
+    parallel_group: null
+    acceptance:
+    - ./scripts/check-hook-syntax.sh
+    - cargo build --manifest-path loom/Cargo.toml --all-targets
+    - cargo fmt --manifest-path loom/Cargo.toml -- --check
+    - cargo clippy --manifest-path loom/Cargo.toml --all-targets -- -D warnings
+    - cargo test --manifest-path loom/Cargo.toml --all-targets --no-fail-fast -- --skip daemon::rpc::tests::a_live_listener_is_answered --skip daemon::rpc::tests::a_stale_socket_file_with_nothing_bound_is_not_listening --skip daemon::server::peer_identity::tests::ancestry_accepts_self_and_the_real_parent_chain --skip process::tests::unreaped_dead_child_is_not_alive --skip verify::criteria::tests::confine_tests::spawned_child_leads_its_own_process_group --skip fs::permissions::tests::settings_tests::test_ensure_loom_permissions_adds_home_expanded_codex_forward_entry --skip fs::permissions::tests::settings_tests::test_ensure_loom_permissions_home_expanded_entry_no_duplicates_on_rerun --skip commands::attach::wait::tests::diagnose_sessions_names_the_work_dir_and_every_session
+    - RUSTDOCFLAGS="-D warnings" cargo doc --manifest-path loom/Cargo.toml --workspace --all-features --no-deps
+    - ./loom/target/debug/loom config --list
+    - ./loom/target/debug/loom config --list | rg -q "update.check"
+    - H=$(mktemp -d); HOME="$H" ./loom/target/debug/loom config -k update.check_interval_hours | rg -q "^24$" && HOME="$H" ./loom/target/debug/loom config -k update.check_interval_hours 6 >/dev/null && HOME="$H" ./loom/target/debug/loom config -k update.check_interval_hours | rg -q "^6$" && rg -q "check_interval_hours" "$H/.loom/config.toml"
+    - H=$(mktemp -d); HOME="$H" ./loom/target/debug/loom config --list >/dev/null; test ! -e "$H/.loom"
+    - H=$(mktemp -d); HOME="$H" ./loom/target/debug/loom config -k update.check_interval_hours 6 >/dev/null && HOME="$H" ./loom/target/debug/loom config --list | rg -q "update\.check_interval_hours.*\bset\b" && HOME="$H" ./loom/target/debug/loom config --list | rg -q "terminal\.backend.*\bdefault\b"
+    - H=$(mktemp -d); HOME="$H" ./loom/target/debug/loom config -k update.no_such_key; test $? -ne 0
+    - 'cargo test --manifest-path loom/Cargo.toml --lib user_config 2>&1 | rg -q "test result: ok\. [1-9]"'
+    - H=$(mktemp -d); mkdir -p "$H/.loom" && printf "# keep me\n[update]\ncheck = true\nmystery = 7\n" > "$H/.loom/config.toml"; HOME="$H" ./loom/target/debug/loom config -k update.check_interval_hours 12 >/dev/null && rg -q "^# keep me$" "$H/.loom/config.toml" && rg -q "mystery = 7" "$H/.loom/config.toml"
+    - 'cargo test --manifest-path loom/Cargo.toml --all-targets global_config_tier 2>&1 | rg -q "test result: ok\. [2-9]"'
+    setup: []
+    files:
+    - loom/src/user_config/**
+    - loom/src/commands/config/**
+    - loom/src/commands/mod.rs
+    - loom/src/cli/types.rs
+    - loom/src/cli/types_config.rs
+    - loom/src/cli/dispatch.rs
+    - loom/src/fs/work_dir.rs
+    - loom/src/fs/work_dir/**
+    - loom/src/lib.rs
+    - loom/maintainability-baseline.txt
+    auto_merge: null
+    working_dir: .
+    stage_type: standard
+    artifacts:
+    - loom/src/user_config/mod.rs
+    - loom/src/commands/config/mod.rs
+    wiring:
+    - source: loom/src/cli/dispatch.rs
+      pattern: Commands::Config
+      description: Config command reachable from CLI dispatch
+    - source: loom/src/fs/work_dir.rs
+      pattern: user_config
+      description: read_terminal_config and read_context_config consult the user config when the workspace section is absent. Without this the two registered keys persist a value no production caller ever reads
+    context_ceiling_tokens: null
+    sandbox: {}
+    model: opus
+    reasoning_effort: high
+    ultracode: false
+    implementers:
+    - codex
+    - claude
+    subagent_timeout_secs: 1800
+  - id: config-tui
+    name: loom config TUI
+    description: |
+      Give bare `loom config` a ratatui screen over the keys config-foundation
+      registered.
+      Use parallel subagents and skills to maximize performance.
+
+      Mirror the existing TUI in commands/status/ui/tui/ rather than inventing a
+      second shape. Read app.rs first: enable_raw_mode and EnterAlternateScreen at
+      lines 91-93, Terminal::new(backend) at 101, teardown at 296-303. That is the
+      crossterm idiom - ratatui is pinned at 0.30 and crossterm at 0.29, but this code
+      does NOT use ratatui::init()/restore(). Match what is there.
+
+      DO NOT SKIP install_crossterm_panic_hook() - it sits at app.rs:95, between
+      EnterAlternateScreen (:93) and Terminal::new (:101), and without it a panic
+      leaves the user's terminal in raw mode on the alternate screen. Teardown is at
+      :290-305, made idempotent by the cleaned_up flag at :291-293.
+
+      REACHABILITY IS SETTLED - do not re-derive it. crate::commands::status::ui::theme
+      and ::widgets are PUBLIC along the whole path: commands/mod.rs:23 `pub mod status;`,
+      commands/status.rs:6 `pub mod ui;`, commands/status/ui/mod.rs:1,4
+      `pub mod theme; pub mod widgets;` re-exported at :6 and :9. Reuse them directly.
+      The "replicate if not reachable" branch is dead; do not replicate, and do not
+      widen any visibility.
+
+      --print IS ALREADY REGISTERED by config-foundation. You do NOT edit cli/types.rs
+      or cli/dispatch.rs - init-auto-repair owns cli/types.rs in this same wave.
+
+      Screen: a list of keys with current values, arrow/j-k navigation, Enter to edit
+      the selected value inline, Esc to cancel, s to save, q to quit. Validate on
+      commit using the same typed registry the -k path uses - two validators would
+      drift.
+
+      Bare `loom config` opens the TUI. `loom config --print` keeps the TOML output
+      config-foundation added. Guard on a non-TTY stdout and fall back to --print, so
+      the command stays usable in a pipe and in tests.
+
+      ONE subagent. This is a single screen.
+
+      MEMORY: record decisions via loom memory. NEVER loom knowledge. NEVER auto-memory.
+    dependencies:
+    - config-foundation
+    parallel_group: null
+    acceptance:
+    - ./scripts/check-hook-syntax.sh
+    - cargo build --manifest-path loom/Cargo.toml --all-targets
+    - cargo fmt --manifest-path loom/Cargo.toml -- --check
+    - cargo clippy --manifest-path loom/Cargo.toml --all-targets -- -D warnings
+    - cargo test --manifest-path loom/Cargo.toml --all-targets --no-fail-fast -- --skip daemon::rpc::tests::a_live_listener_is_answered --skip daemon::rpc::tests::a_stale_socket_file_with_nothing_bound_is_not_listening --skip daemon::server::peer_identity::tests::ancestry_accepts_self_and_the_real_parent_chain --skip process::tests::unreaped_dead_child_is_not_alive --skip verify::criteria::tests::confine_tests::spawned_child_leads_its_own_process_group --skip fs::permissions::tests::settings_tests::test_ensure_loom_permissions_adds_home_expanded_codex_forward_entry --skip fs::permissions::tests::settings_tests::test_ensure_loom_permissions_home_expanded_entry_no_duplicates_on_rerun --skip commands::attach::wait::tests::diagnose_sessions_names_the_work_dir_and_every_session
+    - ./loom/target/debug/loom config --print | rg -q "^\[update\]"
+    - ./loom/target/debug/loom config | rg -q "update"
+    - 'cargo test --manifest-path loom/Cargo.toml --lib commands::config::tui 2>&1 | rg -q "test result: ok\. [1-9]"'
+    - RUSTDOCFLAGS="-D warnings" cargo doc --manifest-path loom/Cargo.toml --workspace --all-features --no-deps
+    setup: []
+    files:
+    - loom/src/commands/config/**
+    auto_merge: null
+    working_dir: .
+    stage_type: standard
+    artifacts:
+    - loom/src/commands/config/tui/mod.rs
+    wiring:
+    - source: loom/src/commands/config/mod.rs
+      pattern: is_terminal\(\)
+      description: Bare loom config enters the TUI only on a TTY. A bare `tui::run` pattern would match a dead `use self::tui::run;` or a comment
+    - source: loom/src/commands/config/tui/mod.rs
+      pattern: fn run
+      description: The TUI entry point exists
+    context_ceiling_tokens: null
+    sandbox: {}
+    model: opus
+    reasoning_effort: high
+    ultracode: false
+    implementers:
+    - codex
+    - claude
+    subagent_timeout_secs: 1800
+  - id: update-check
+    name: Check for updates and notify
+    description: |
+      Notice new releases and say so. NEVER install anything - loom self-update stays
+      the only installer, in every configuration.
+      Use parallel subagents and skills to maximize performance.
+
+      THE HOT PATH TAKES NO NETWORK CALL. loom is invoked constantly by Claude Code
+      hooks and by stage agents; a synchronous fetch on launch would be a latency
+      disaster.
+
+      Launch reads ~/.loom/update-state.json - a small record of {last_checked,
+      latest_version} - and nothing else. If latest_version is newer than the running
+      version, print ONE line naming both and telling the user to run loom self-update.
+      If last_checked is older than update.check_interval_hours, spawn a DETACHED
+      background process that fetches from the GitHub releases API, rewrites the state
+      file, and exits. The foreground command never waits on it.
+
+      Compare with semver (already a dependency, used at self_update/mod.rs:67-68).
+      A development version such as 0.2.1-dev.5+abc1234 is correctly BEHIND 0.2.1 and
+      AHEAD of 0.2.0, so a dev build sitting on unreleased commits is not told it is
+      out of date.
+
+      THE GATE. main.rs already has the shape: MACHINE_PROTOCOL_COMMANDS at line 13
+      (["hook", "context"]) and writes_a_machine_protocol() at line 45 read argv BEFORE
+      clap parses. Add a parallel predicate for commands that must never check or
+      notify - hook, context, complete, and run - reusing the same argv-before-parse
+      approach rather than inspecting a parsed Cli. All are real top-level variants
+      (Hook cli/types.rs:297, Context :303, Complete :310), so args().nth(1) reaches
+      them. Make it a NAMED function beside writes_a_machine_protocol and unit-test it
+      (main.rs:49-68 already carries an inline #[cfg(test)] mod tests, and
+      cargo test --all-targets covers --bins).
+
+      "THE DAEMON'S OWN RE-ENTRY" DOES NOT EXIST - do not write a case for it. The
+      daemon daemonizes in-process with fork() + setsid()
+      (daemon/server/lifecycle.rs:18, double-fork at :65,85,99,103); it never re-execs,
+      so there is no re-entry argv and the forked child inherits an already-run main().
+      The one genuine current_exe re-entry is commands/hook/reconcile_graph.rs:361,
+      which re-enters as ["hook", "reconcile-graph"] and is already covered by `hook`.
+      Exclude `run` instead - it is the parent that forks.
+
+      THE NOTIFICATION LINE GOES TO STDERR. Every loom command's stdout is somebody's
+      input - main.rs:13 exempts only hook and context, so stdout is not available to a
+      notice, and this plan's own acceptance pipes `loom -v` and `loom config` into
+      matchers. THE ARGV EXCLUSION LIST IS A SECOND LINE OF DEFENCE, NOT THE FIRST:
+      loom's machine-readable stdout is wider than any list - loom plan verify --json
+      promises JSON-only stdout (cli/types_ops.rs:13-30, "Machine-readable JSON output
+      (suppresses human text)"), loom usage exposes JSON, and scalar loom config -k
+      prints a bare value config-foundation's gates match with rg -q "^6$". Stderr is
+      what makes all of those safe at once, which is why the notice goes there rather
+      than being gated per command. PROVE IT: with a state file recording a NEWER
+      version in a scratch HOME, loom plan verify --json must still emit parseable JSON
+      on stdout and nothing else. That criterion is the real gate; loom --help is not.
+
+      THE DETACHED FETCHER'S SHAPE, all six parts - settle these here:
+      - stdio: /dev/null on ALL THREE descriptors. It must NEVER inherit the parent's
+        stdout. loom runs as a child of piped callers (acceptance criteria pipe both
+        streams, verify/criteria/confine.rs:124-126) and an inherited fd keeps that
+        pipe open after loom exits, making the collector block for
+        OUTPUT_COLLECTION_TIMEOUT = 10s per stream and substitute "[output collection
+        timed out]" (verify/criteria/executor.rs:19,155-159).
+      - session: setsid, so it survives the parent and is reparented to init. The
+        parent never waits on it - no zombie, nothing to reap.
+      - working directory: the user's home, NEVER the worktree - the worktree is
+        removed when the stage merges.
+      - concurrency: exactly ONE fetcher. loom is invoked constantly by hooks, so two
+        invocations WILL race. Take an O_EXCL lock at ~/.loom/update-check.lock before
+        spawning and drop it on exit; a lock older than the interval is stale, ignore it.
+      - state write: through crate::fs::locking::atomic_write_locked (fs/locking.rs:157),
+        the same tmp-fsync-rename path the rest of loom uses. A torn
+        ~/.loom/update-state.json must never break a loom command.
+      - failure: A FETCH THAT FAILS STILL STAMPS last_checked, leaving latest_version
+        as it was. This is the part the lock does NOT cover. The O_EXCL lock stops two
+        fetchers running AT ONCE, but if a failed fetch leaves last_checked untouched
+        the record stays stale forever and EVERY subsequent loom invocation spawns
+        another fetcher - which, with loom invoked on every Claude Code hook, is a fork
+        storm for the whole duration of a network outage. Stamping the attempt is what
+        turns the interval into real backoff.
+
+      MAKE THE WORKER TESTABLE, AND TEST IT. The fetch and the clock are the two things
+      a test cannot have: take them as INJECTED parameters (a fetch closure returning
+      the latest version, and a "now") so the state machine - fresh / stale / disabled,
+      success, failure-stamps-the-attempt, lock-held-so-skip - is unit-testable with no
+      network and no spawn. Cover concurrent stale calls scheduling AT MOST ONE refresh.
+      NO TEST MAY LEAVE A DETACHED CHILD ALIVE: exercise the DECISION ("would spawn"),
+      never the spawn itself, so the suite never forks a real fetcher into the stage
+      worktree that is about to be removed.
+
+      REUSE THE EXISTING CLIENT, do not write a second one. self_update/client.rs
+      already exports create_http_client() (:22), validate_response_status (:46) and the
+      download helpers as pub(crate), and reqwest is a dependency (Cargo.toml:14,
+      blocking + json). But get_latest_release() (self_update/mod.rs:39) and
+      struct Release / Asset (:49-51) are PRIVATE to the module - widen them to
+      pub(crate) and call get_latest_release().
+
+      CONSUME user_config::load() from config-foundation. Do NOT build a second reader
+      and do NOT edit loom/src/user_config/** - it is not in this stage's files: and
+      config-tui runs concurrently.
+
+      update.check = false disables the check entirely; the notification is otherwise
+      unconditional, subject only to the interval.
+
+      Failures are silent. A network error, an unreadable state file, or a missing
+      home directory must never make a loom command fail or print noise - this is a
+      convenience, not a feature anything depends on.
+
+      ONE subagent for the checker plus the main.rs gate.
+
+      MEMORY: record decisions via loom memory. NEVER loom knowledge. NEVER auto-memory.
+    dependencies:
+    - config-foundation
+    parallel_group: null
+    acceptance:
+    - ./scripts/check-hook-syntax.sh
+    - cargo build --manifest-path loom/Cargo.toml --all-targets
+    - cargo fmt --manifest-path loom/Cargo.toml -- --check
+    - cargo clippy --manifest-path loom/Cargo.toml --all-targets -- -D warnings
+    - cargo test --manifest-path loom/Cargo.toml --all-targets --no-fail-fast -- --skip daemon::rpc::tests::a_live_listener_is_answered --skip daemon::rpc::tests::a_stale_socket_file_with_nothing_bound_is_not_listening --skip daemon::server::peer_identity::tests::ancestry_accepts_self_and_the_real_parent_chain --skip process::tests::unreaped_dead_child_is_not_alive --skip verify::criteria::tests::confine_tests::spawned_child_leads_its_own_process_group --skip fs::permissions::tests::settings_tests::test_ensure_loom_permissions_adds_home_expanded_codex_forward_entry --skip fs::permissions::tests::settings_tests::test_ensure_loom_permissions_home_expanded_entry_no_duplicates_on_rerun --skip commands::attach::wait::tests::diagnose_sessions_names_the_work_dir_and_every_session
+    - ./loom/target/debug/loom --help
+    - H=$(mktemp -d); mkdir -p "$H/.loom" && printf "not json at all" > "$H/.loom/update-state.json"; HOME="$H" ./loom/target/debug/loom --help | rg -q "Commands"
+    - H=$(mktemp -d); HOME="$H" ./loom/target/debug/loom --help | rg -q "Commands"
+    - set -- doc/plans/*PLAN-release-versioning-config-and-loom-dir.md; H=$(mktemp -d); mkdir -p "$H/.loom" && printf '{"last_checked":"2099-01-01T00:00:00Z","latest_version":"99.0.0"}' > "$H/.loom/update-state.json"; HOME="$H" ./loom/target/debug/loom plan verify "$1" --json 2>/dev/null > "$H/out.json"; rg -q "^\{" "$H/out.json" && ! rg -qi "self-update|newer version" "$H/out.json"
+    - 'cargo test --manifest-path loom/Cargo.toml --all-targets update_check 2>&1 | rg -q "test result: ok\. [4-9]"'
+    - RUSTDOCFLAGS="-D warnings" cargo doc --manifest-path loom/Cargo.toml --workspace --all-features --no-deps
+    setup: []
+    files:
+    - loom/src/update_check/**
+    - loom/src/main.rs
+    - loom/src/lib.rs
+    auto_merge: null
+    working_dir: .
+    stage_type: standard
+    artifacts:
+    - loom/src/update_check/mod.rs
+    wiring:
+    - source: loom/src/main.rs
+      pattern: 'update_check::'
+      description: Update check invoked from the binary entry point
+    - source: loom/src/update_check/mod.rs
+      pattern: update-state\.json
+      description: The foreground path reads the state file rather than the network
+    - source: loom/src/update_check/mod.rs
+      pattern: check_interval_hours
+      description: The interval key gates the background refresh
+    - source: loom/src/update_check/mod.rs
+      pattern: setsid|Stdio::null
+      description: The background fetcher detaches and never inherits the caller's stdio
+    - source: loom/src/update_check/mod.rs
+      pattern: last_checked
+      description: The attempt timestamp exists and is written on failure as well as success. Without it a failed fetch leaves the record stale and every subsequent loom invocation spawns another fetcher - a fork storm for the whole duration of an outage, which the O_EXCL lock does not prevent
+    context_ceiling_tokens: null
+    sandbox: {}
+    model: opus
+    reasoning_effort: high
+    ultracode: false
+    implementers:
+    - codex
+    - claude
+    subagent_timeout_secs: 1800
+  - id: init-auto-repair
+    name: Repair on init, and split repair.rs
+    description: |
+      Make loom init repair the workspace instead of telling the user to run
+      loom repair --fix, and bring repair.rs under the 400-line ceiling.
+      Use parallel subagents and skills to maximize performance.
+
+      1. loom init runs the full check set and applies only the WORKSPACE fixes, then
+         reports what it changed. Add --no-repair to opt out (cli/types.rs, the Init
+         variant at types.rs:45; you must also edit the destructuring at
+         cli/dispatch.rs:156-166). loom repair stays standalone, unchanged.
+
+         WHERE THE CALL GOES DECIDES WHETHER THIS STAGE WORKS AT ALL, AND THE OBVIOUS
+         PLACEMENT IS TOO LATE. init::execute calls validate_work_dir_state(&repo_root)
+         at commands/init/execute.rs:75 - BEFORE print_header(), before cleanup, before
+         anything. On the corrupted-symlink case that validator BAILS with a wall of
+         text ending "Or run: loom repair --fix" (fs/work_integrity.rs:101-121). That
+         is precisely the failure this stage exists to heal, so a repair call placed
+         anywhere after line 75 NEVER RUNS ON IT. Call the repair pass AFTER
+         ensure_repo_ready_for_worktrees (:73) and BEFORE validate_work_dir_state (:75):
+         the repository must exist before the workspace can be repaired, and the
+         workspace must be repaired before it is judged.
+
+         AND repair::execute CANNOT BE THAT CALL. It prints a logo header (repair.rs:132),
+         a DRY-RUN/FIX mode banner (:134-147), and on a clean workspace a "No issues
+         found - workspace is healthy!" line before returning (:152-158), then a summary
+         when fixes run (:186-209). Reusing it directly contradicts requirement 2 below
+         on the very first invocation. EXTRACT A NON-PRINTING API and call that:
+           pub fn repair_workspace(repo_root: &Path) -> Result<Vec<AppliedRepair>>
+         It prints NOTHING; an empty vector means the workspace was already clean. init
+         renders one line per returned repair and nothing at all for an empty vector.
+         loom repair stays exactly as it is, a presentation wrapper over the same
+         checks - its banner and summary are correct for a command a human ran
+         deliberately.
+
+         THE WIRING PATTERN CANNOT TELL ANY OF THIS APART. `repair::` in
+         init/execute.rs matches the right call, the wrong call, a call placed after the
+         validator, and a leftover import. The proof is behavioural - SCRATCH-REPO TESTS
+         covering: a clean repo (NO output, exit 0); each repair family the allow-list
+         admits; --no-repair (repairs skipped, workspace untouched); and the
+         corrupted-symlink state that fails validation at HEAD and must now be repaired
+         past. Those tests are this stage's acceptance, not the grep.
+
+         "EVERY FIX" IS THE WRONG SCOPE. execute(fix) (repair.rs:128-160) applies
+         everything silently - there is no interactive gate anywhere in the file - and
+         fix_issue (:775-843) dispatches by SUBSTRING-MATCHING ENGLISH PROSE in
+         issue.description (its own comment at :776: "not ideal, but works for now"),
+         after which fix_old_skill and fix_old_agent STRING-PARSE A FILESYSTEM PATH out
+         of that prose before deleting under $HOME:
+           fix_old_skill          :1052-1063  remove_dir_all($HOME/.claude/skills/<n>)
+           fix_old_agent          :1066-1077  remove_file($HOME/.claude/agents/<n>.md)
+           fix_settings_skill_refs :1111+     rewrites $HOME/.claude/settings.json
+           fix_phantom_merge      :1090-1105  flips merged = false on stage state
+           fix_work_symlink       :845-850    remove_file(<repo>/.work)
+           fix_invalid_work       :853-867    removes <repo>/.work
+         ALLOW-LIST what init may apply unattended: .gitignore entries
+         (fix_gitignore_work :870, fix_gitignore_worktrees :1018), hook install
+         (fix_hooks :903), the pre-commit hook, project .claude settings restore, and
+         the skill-index rebuild (:926). Init REPORTS the six above and leaves them to
+         an explicit loom repair --fix.
+         Two notes that keep this proportionate. fix_invalid_work is NOT the data-loss
+         path it looks like: it fires only on WorkDirState::Invalid - ".work exists but
+         is neither directory nor symlink" (:241-247) - and even then branches
+         is_file() -> remove_file first. Do not over-fix it; it stays off the list
+         because loom-dir-migration rewrites the shape detection it keys on. And the
+         two $HOME fixes are DENIED in a stage sandbox, where apply_fixes (:190-207)
+         COUNTS failures rather than aborting - so leaving them in scope makes loom init
+         print "Issues failed: N" on every invocation, contradicting requirement 2.
+      2. Report format: one line per repair applied, or nothing at all when the
+         workspace was already clean. Silence on a clean workspace matters - init is
+         run constantly and a repair banner on every invocation trains people to
+         ignore it.
+      3. Do NOT fold --clean into this. --clean removes worktrees, kills sessions and
+         deletes state; it stays explicit and separate.
+      4. Split commands/repair.rs (1131 lines) along the seams already present in
+         check_all_issues. The groups: workspace structure (the .work/.loom shape and
+         .gitignore entries, repair.rs:238-266), hooks and skill index (:274 and the
+         rebuild path), .claude settings and sandbox (:315-394, joining the existing
+         settings_checks.rs sibling), merge state and phantom merges (:437-498), and
+         process/daemon liveness (:544-586). Keep execute(), the RepairIssue and
+         Severity types, and the fix dispatch in the parent module.
+
+      The split is mechanical and the init wiring is small. Use ONE subagent for both
+      - this is exactly the grouping the doctrine stage adds.
+
+      MAINTAINABILITY LEDGER - MAIN AGENT ONLY, after the subagent lands.
+      loom/maintainability-baseline.txt is EXACT-match and BIDIRECTIONAL: it errors on
+      SHRINKAGE exactly as loudly as on growth
+      (mistakes/pinned-literals-ledgers-and-wiring.md:22). This stage moves
+      file src/commands/repair.rs 1131 (:14), check_all_issues 368 (:98), execute 99
+      (:99), fix_issue 68 (:100) - all shrinking or vanishing - AND
+      function src/cli/dispatch.rs dispatch 123 (:73), which grows by the --no-repair
+      field you add to the Init destructure at dispatch.rs:156-166. config-foundation
+      already moved that same entry for its Commands::Config arm; yours moves it again,
+      so re-measure rather than assuming the number you see in the plan text - and GROWS
+      function src/commands/init/execute.rs execute 129 (:85) and
+      file src/commands/init/tests.rs 700 (:12). Run
+      cargo test --manifest-path loom/Cargo.toml --test maintainability, then lower or
+      delete every entry whose measured value moved. A subagent reports its new number
+      and never edits the baseline.
+
+      cli/types.rs is 377 lines against Rule 17's 400 and is NOT ledgered, so crossing
+      400 creates a new violation. --no-repair is one field; if it does not fit,
+      extract rather than grow.
+
+      CODEX: no git in subagents; check git status --short after each run; explicit
+      Bash timeout 900000 ms and --effort xhigh.
+
+      MEMORY: record decisions via loom memory. NEVER loom knowledge. NEVER auto-memory.
+    dependencies:
+    - config-foundation
+    parallel_group: null
+    acceptance:
+    - ./scripts/check-hook-syntax.sh
+    - cargo build --manifest-path loom/Cargo.toml --all-targets
+    - cargo fmt --manifest-path loom/Cargo.toml -- --check
+    - cargo clippy --manifest-path loom/Cargo.toml --all-targets -- -D warnings
+    - cargo test --manifest-path loom/Cargo.toml --all-targets --no-fail-fast -- --skip daemon::rpc::tests::a_live_listener_is_answered --skip daemon::rpc::tests::a_stale_socket_file_with_nothing_bound_is_not_listening --skip daemon::server::peer_identity::tests::ancestry_accepts_self_and_the_real_parent_chain --skip process::tests::unreaped_dead_child_is_not_alive --skip verify::criteria::tests::confine_tests::spawned_child_leads_its_own_process_group --skip fs::permissions::tests::settings_tests::test_ensure_loom_permissions_adds_home_expanded_codex_forward_entry --skip fs::permissions::tests::settings_tests::test_ensure_loom_permissions_home_expanded_entry_no_duplicates_on_rerun --skip commands::attach::wait::tests::diagnose_sessions_names_the_work_dir_and_every_session
+    - ./loom/target/debug/loom init --help | rg -q "no-repair"
+    - 'cargo test --manifest-path loom/Cargo.toml --all-targets commands::repair 2>&1 | rg -q "test result: ok\. [1-9]"'
+    - 'cargo test --manifest-path loom/Cargo.toml --all-targets init_repair 2>&1 | rg -q "test result: ok\. [4-9]"'
+    - rg -q "fn repair_workspace" loom/src/commands/repair
+    - test "$(rg -c "" loom/src/commands/repair.rs)" -le 400
+    - RUSTDOCFLAGS="-D warnings" cargo doc --manifest-path loom/Cargo.toml --workspace --all-features --no-deps
+    setup: []
+    files:
+    - loom/src/commands/repair.rs
+    - loom/src/commands/repair/**
+    - loom/src/commands/init/**
+    - loom/src/cli/types.rs
+    - loom/src/cli/dispatch.rs
+    - loom/maintainability-baseline.txt
+    auto_merge: null
+    working_dir: .
+    stage_type: standard
+    artifacts:
+    - loom/src/commands/repair/workspace.rs
+    wiring:
+    - source: loom/src/commands/init/execute.rs
+      pattern: repair_workspace
+      description: Init calls the NON-PRINTING repair API, not repair::execute. A bare `repair::` pattern also matches a leftover import, the printing wrapper, and a call placed after validate_work_dir_state - which is the one placement that cannot heal the corrupted symlink
+    - source: loom/src/commands/repair/workspace.rs
+      pattern: fn repair_workspace
+      description: The non-printing API exists in the split module, returning what it applied so init renders the lines and repair renders its banner
+    context_ceiling_tokens: null
+    sandbox: {}
+    model: opus
+    reasoning_effort: high
+    ultracode: false
+    implementers:
+    - codex
+    - claude
+    subagent_timeout_secs: 1800
+  - id: integration-verify
+    name: Integration Verification
+    description: |
+      Final verification across all nine changes. Verify FUNCTIONAL INTEGRATION, not
+      just that tests pass. NEVER Claude Code auto-memory.
+      Use parallel subagents and skills to maximize performance.
+
+      CONTEXT: read this plan, loom memory show --all, and doc/loom/knowledge/*.md.
+
+      BUILD FIRST: run cargo build --manifest-path loom/Cargo.toml --all-targets once,
+      early. Acceptance has a hard 300s per-command ceiling (verify/criteria/config.rs:8).
+
+      INSTALL cargo-audit FIRST, in the SAME early step as the build:
+      cargo install cargo-audit --locked. It is NOT present on this host (cargo audit
+      --version returns "no such command"), crates.io is on this plan's sandbox
+      allowlist, and it is a canonical pre-push gate (.githooks/pre-push:99-106) that no
+      earlier stage could run for exactly this reason. Do it in your own shell with a
+      long Bash timeout - the 300s acceptance ceiling does not apply there, and the
+      acceptance criterion below assumes the binary already exists.
+
+      BUILD & TEST, zero tolerance - fix every warning and failure, nothing is
+      "pre-existing". Note that the eight tests skipped across this plan's stages are
+      skipped for host-resource reasons recorded in the plan's Verification Baseline
+      section; run them here WITHOUT the skip list and REPORT which pass in this
+      environment, so the exclusion can be narrowed or removed in a follow-up. THAT RUN
+      IS A REPORT, NOT A GATE, and deliberately so: the eight fail on the environment
+      (AF_UNIX sockets, process ancestry, zombie reaping, $HOME/.claude writes), not on
+      the code, so gating on it would fail the stage for the host. The gated command
+      below keeps the skip list. Also
+      confirm the skip list still names EXACT test paths, never a module prefix -
+      --skip is a substring filter and `--skip daemon::rpc::tests` silently removed
+      four extra tests, two of which read the user.token path this plan moves.
+
+      NEVER WRITE THE DEVELOPER'S REAL ~/.loom/. Every config proof below runs under a
+      scratch HOME=$(mktemp -d). HOME is forwarded to confined commands
+      (process/environment.rs:15) and dirs::home_dir() reads $HOME on unix, so the
+      redirect is real.
+
+      CODE REVIEW: spawn parallel loom-code-reviewer subagents - security (via
+      Skill(skill="loom-skills", args="loom-security-audit")), architecture, test
+      coverage. Fix every finding with an engineer agent; the reviewer is read-only.
+
+      FUNCTIONAL PROOF - each surface must be reachable, not merely present:
+      - loom -v prints a version carrying a commit hash.
+      - loom config --list names every registered key; loom config -k update.check
+        false round-trips through $HOME/.loom/config.toml and back, under a scratch
+        HOME - never the real one.
+      - bare `loom config` in a pipe falls back to --print instead of hanging in the
+        alternate screen.
+      - loom init on a scratch repo reports repairs and creates .loom/work/config.toml.
+      - A created worktree has .loom/work as a SYMLINK and .loom/ as a real directory.
+      - An old .work/ workspace is still resolved AND IS STILL WRITABLE. Create one by
+        hand, confirm loom status reads it, then confirm a write lands IN .work/ and
+        that NO .loom/work was created beside it. The settled policy is "whatever root
+        resolved is the workspace, for reads and for writes"; the wrong reading -
+        "read-only fallback" - is unimplementable against a single-rooted WorkDir and an
+        earlier draft of this plan asserted it. Also confirm the repo root: one parent
+        hop for a legacy .work, two for .loom/work, through the shared repo_root().
+        An unconditional two-hop sites the context cache outside the project and
+        scaffolds doc/loom/knowledge/ inside .loom/, and no other gate catches it.
+      - A worktree created from a LEGACY workspace still gets .work -> ../../.work,
+        not .loom/work. This plan's own orchestration runs on a legacy workspace until
+        the new binary is installed, so a hard-coded nested symlink breaks the run that
+        is producing it.
+      - loom self-update resolves a real release asset. Feed the ten asset names the
+        workflow publishes (release.yml:233-240) to the selector and confirm each of the
+        three supported targets picks a binary and a .minisig, that SHA256SUMS.txt
+        resolves, and that the API URL names cosmix/loom - it named cosmix/claude-loom
+        at HEAD, a repository this project does not publish to.
+      - The two global config keys with no consumer at HEAD now have one: set
+        terminal.backend and context.ceiling_tokens in a scratch ~/.loom/config.toml
+        against a workspace whose [terminal] / [context] sections are ABSENT, and
+        observe the value through read_terminal_config / read_context_config. Then add
+        the workspace section and confirm it wins.
+      - With a state file naming a far-future version in a scratch HOME, `loom plan
+        verify <plan> --json` still emits JSON-only stdout. The update notice goes to
+        stderr; a notice on stdout invalidates every machine protocol loom exposes.
+      - loom handoff / attach / sessions / graph / subagents / usage all still find
+        state: they route through commands/common/mod.rs find_work_dir, a resolver the
+        first draft of this plan did not name.
+      - The update fetch may be UNPROVABLE in-stage if the sandbox blocks GitHub.
+        Assert the state-file read path and the notification formatting against a
+        hand-written $HOME/.loom/update-state.json, and say in the report whether the
+        live fetch was reachable.
+      - bash -n passes over every shell hook.
+      - The generated worktree sandbox settings grant .loom/work/signals/** for read
+        and do NOT grant a blanket .loom/work/**.
+
+      Record discoveries to loom memory for knowledge-distill, including any knowledge
+      file the tree now contradicts: loom memory note "stale-knowledge: ...".
+    dependencies:
+    - doctrine-subagent-grouping
+    - config-tui
+    - update-check
+    - init-auto-repair
+    parallel_group: null
+    acceptance:
+    - ./scripts/check-hook-syntax.sh
+    - cargo build --manifest-path loom/Cargo.toml --all-targets
+    - cargo fmt --manifest-path loom/Cargo.toml -- --check
+    - cargo clippy --manifest-path loom/Cargo.toml --all-targets -- -D warnings
+    - cargo test --manifest-path loom/Cargo.toml --all-targets --no-fail-fast -- --skip daemon::rpc::tests::a_live_listener_is_answered --skip daemon::rpc::tests::a_stale_socket_file_with_nothing_bound_is_not_listening --skip daemon::server::peer_identity::tests::ancestry_accepts_self_and_the_real_parent_chain --skip process::tests::unreaped_dead_child_is_not_alive --skip verify::criteria::tests::confine_tests::spawned_child_leads_its_own_process_group --skip fs::permissions::tests::settings_tests::test_ensure_loom_permissions_adds_home_expanded_codex_forward_entry --skip fs::permissions::tests::settings_tests::test_ensure_loom_permissions_home_expanded_entry_no_duplicates_on_rerun --skip commands::attach::wait::tests::diagnose_sessions_names_the_work_dir_and_every_session
+    - RUSTDOCFLAGS="-D warnings" cargo doc --manifest-path loom/Cargo.toml --workspace --all-features --no-deps
+    - ./loom/target/debug/loom -v | rg -q "[0-9a-f]{7}"
+    - ./loom/target/debug/loom config --list | rg -q "update.check"
+    - ./loom/target/debug/loom init --help | rg -q "no-repair"
+    - ./loom/target/debug/loom config | rg -q "update"
+    - '! rg -q "Read\(\.loom/work/\*\*\)" loom/src/sandbox/settings.rs'
+    - '! rg -q "fn get_work_dir" loom/src'
+    - ./hooks/tests/run-all.sh
+    - cargo audit --file loom/Cargo.lock
+    - 'cargo test --manifest-path loom/Cargo.toml --lib fs::work_dir::tests::resolver 2>&1 | rg -q "test result: ok\. (9|[1-9][0-9]+) passed"'
+    - 'cargo test --manifest-path loom/Cargo.toml --all-targets release_asset 2>&1 | rg -q "test result: ok\. [1-9]"'
+    - 'cargo test --manifest-path loom/Cargo.toml --all-targets global_config_tier 2>&1 | rg -q "test result: ok\. [2-9]"'
+    - 'cargo test --manifest-path loom/Cargo.toml --all-targets init_repair 2>&1 | rg -q "test result: ok\. [4-9]"'
+    - set -- doc/plans/*PLAN-release-versioning-config-and-loom-dir.md; H=$(mktemp -d); mkdir -p "$H/.loom" && printf '{"last_checked":"2099-01-01T00:00:00Z","latest_version":"99.0.0"}' > "$H/.loom/update-state.json"; HOME="$H" ./loom/target/debug/loom plan verify "$1" --json 2>/dev/null > "$H/out.json"; rg -q "^\{" "$H/out.json" && ! rg -qi "self-update|newer version" "$H/out.json"
+    - rg -qF '"../../.work"' loom/src/git/worktree/settings.rs
+    setup: []
+    files: []
+    auto_merge: null
+    working_dir: .
+    stage_type: integration-verify
+    artifacts: []
+    wiring:
+    - source: loom/src/main.rs
+      pattern: 'update_check::'
+      description: Update check reached from the entry point
+    - source: loom/src/cli/dispatch.rs
+      pattern: Commands::Config
+      description: Config command reached from dispatch
+    wiring_tests:
+    - name: version flag carries a commit
+      command: ./loom/target/debug/loom -v
+      success_criteria:
+        exit_code: 0
+        stdout_contains:
+        - loom
+        stdout_not_contains:
+        - 0.1.0
+        - unknown
+    - name: config get/set round-trips through a scratch home
+      command: H=$(mktemp -d); HOME="$H" ./loom/target/debug/loom config -k update.check false >/dev/null && HOME="$H" ./loom/target/debug/loom config -k update.check && rg -q "check" "$H/.loom/config.toml" && echo ROUNDTRIP_OK
+      success_criteria:
+        exit_code: 0
+        stdout_contains:
+        - 'false'
+        - ROUNDTRIP_OK
+    - name: worktree sandbox grants the moved signals dir and no blanket rule
+      command: cargo test --manifest-path loom/Cargo.toml --lib sandbox::settings 2>&1 | rg "test result:"
+      success_criteria:
+        exit_code: 0
+        stdout_contains:
+        - ok.
+        stdout_not_contains:
+        - 0 passed
+    - name: a legacy .work workspace resolves and no .loom/work appears beside it
+      command: B="$PWD/loom/target/debug/loom"; R=$(mktemp -d); mkdir -p "$R/.work/stages" && printf "" > "$R/.work/config.toml" && (cd "$R" && git init -q && "$B" status >/dev/null 2>&1); test -f "$R/.work/config.toml" && test ! -e "$R/.loom/work" && echo LEGACY_RESOLVED_OK
+      success_criteria:
+        exit_code: 0
+        stdout_contains:
+        - LEGACY_RESOLVED_OK
+    context_ceiling_tokens: null
+    sandbox: {}
+    model: opus
+    reasoning_effort: high
+    ultracode: false
+    implementers:
+    - claude
+  - id: knowledge-distill
+    name: Knowledge Distillation
+    description: |
+      Curate all stage memories into permanent knowledge; update user docs.
+      NEVER Claude Code auto-memory.
+      SINGLE-AGENT: do NOT spawn subagents.
+
+      Read this plan, loom memory show --all, and doc/loom/knowledge/*.md.
+
+      CORRECTIONS FIRST, with loom knowledge replace-section - never with
+      loom knowledge update, which appends the fix BELOW the stale text. Two are
+      already known before the run starts:
+      - The checksums.txt / SHA256SUMS.txt asset-name mismatch, described as an open
+        defect. version-and-release fixes it. TARGET THE ### SUB-HEADING BY ITS EXACT
+        TEXT - "Release Checksum Asset-Name Mismatch (LOW PRIORITY; corrected
+        2026-07-01)" at concerns.md:26 - NOT the ## "Security Concerns" heading at
+        :24, which would replace the whole section.
+      - The same claim repeated at architecture.md:81.
+      Both must also be CORRECTED, not just marked fixed: self-update did not "update
+      nothing". update_binary ran at self_update/mod.rs:86 BEFORE update_config_files
+      at :89, so the failure left a HALF-UPDATED install - new binary, stale
+      agents.zip / skills.zip / CLAUDE.md.template - and printed no success line.
+      Then apply every stale-knowledge: memory the stages recorded.
+
+      Then sweep for .work: every knowledge file describing the old layout is now
+      wrong. rg -l "\.work" doc/loom/knowledge/ and correct each in place.
+
+      New knowledge worth writing:
+      - The heredoc-inside-command-substitution quoting trap that left two hooks
+        syntactically broken at HEAD, and scripts/check-hook-syntax.sh as the gate
+        that now catches it. This belongs in mistakes/ as a tier-2 topic.
+      - The user-directory / workspace-directory naming collision and the three guards
+        that keep it safe (config-file discriminator, repo-root-bounded walk, distinct
+        types).
+      TIER ROUTING: findings of ~40 lines or fewer go inline in the tier-1 file;
+      larger ones go to loom knowledge update <category>/<slug> with a 2-4 line tier-1
+      summary and link. INDEX.md regenerates on every knowledge write.
+
+      Then loom review to prune stale entries. Update README for the new commands
+      (loom config, loom -v) and the .loom/work layout - README.md carries SEVENTEEN
+      .work references and no other stage owns them, so this is a real sweep, not a
+      mention. Confirm rg -l "\.work" over doc/, README.md and any remaining surface
+      comes back clean or deliberately unchanged.
+    dependencies:
+    - integration-verify
+    parallel_group: null
+    acceptance:
+    - '! rg -q "checksums\.txt" doc/loom/knowledge/concerns.md'
+    - '! rg -q "checksums\.txt" doc/loom/knowledge/architecture.md'
+    - '! rg -q "\.work/" doc/loom/knowledge/architecture.md'
+    - '! rg -q "\.work/" README.md'
+    - rg -q "\.loom/work" doc/loom/knowledge/architecture.md
+    - loom knowledge check --strict
+    setup: []
+    files:
+    - doc/loom/knowledge/**
+    - README.md
+    auto_merge: null
+    working_dir: .
+    stage_type: knowledge-distill
+    artifacts: []
+    wiring: []
+    context_ceiling_tokens: null
+    sandbox: {}
+    model: sonnet
+    reasoning_effort: high
+    ultracode: false
+    implementers:
+    - claude
 ```
 
 <!-- END loom METADATA -->
