@@ -6,7 +6,7 @@
 use anyhow::{Context, Result};
 #[allow(unused_imports)] // Required for lock_shared() method on File
 use fs2::FileExt;
-use serde_json::{json, Value};
+use serde_json::{json, Map, Value};
 use std::collections::HashSet;
 use std::fs::File;
 use std::io::{Read, Write};
@@ -428,9 +428,14 @@ fn create_worktree_settings(
     obj.insert("hasTrustDialogAccepted".to_string(), json!(true));
 
     // Ensure a permissions object exists so the `.work` allow-list block
-    // below can attach to it. We intentionally do NOT seed `defaultMode`
-    // here — that's the sandbox-resolved value's job (see fn-level docs).
-    obj.entry("permissions").or_insert_with(|| json!({}));
+    // below can attach to it. A hand-edited settings.json can carry
+    // `permissions` as some other JSON type; normalize rather than leave it,
+    // since the S-1 token denies below depend on this being an object. We
+    // intentionally do NOT seed `defaultMode` here — that's the
+    // sandbox-resolved value's job (see fn-level docs).
+    if !matches!(obj.get("permissions"), Some(Value::Object(_))) {
+        obj.insert("permissions".to_string(), json!({}));
+    }
 
     // Scrub the copied env block: per-session identity (LOOM_MAIN_AGENT_PID,
     // LOOM_STAGE_ID, LOOM_SESSION_ID) is set dynamically by the wrapper
@@ -476,37 +481,46 @@ fn create_worktree_settings(
             // its inert stand-in until it was REMOVED rather than converted:
             // Claude Code's permission check consults only `Edit(path)`, so it
             // granted nothing and warned every session start.
+            //
+            // For the same S-1 reason, there is also no blanket
+            // `Read(/{resolved}/**)` grant: it exposed `admin.token` and
+            // `user.token` to read just as readily as a broad `Edit` would
+            // have exposed them to write. The three narrow entries below are
+            // the whole read grant.
+            //
+            // This file (`.claude/settings.json`) is written by a different
+            // code path than `settings.local.json`, so it must be safe
+            // standalone rather than depending on `sandbox::write_settings`
+            // always running afterwards to add denies to a second file.
+            // (settings.json is the team-shareable file per
+            // `fs/permissions/settings.rs`'s module doc, though `.claude/` is
+            // gitignored in this repo.) Explicit `deny`
+            // entries for the resolved-absolute token paths go in below,
+            // before the narrowed allow, mirroring `sandbox/settings.rs`'s
+            // S-1 fix: deny wins over any current or future allow that might
+            // match the state root.
+            let token_denies = ["admin.token", "user.token"]
+                .into_iter()
+                .map(|token| format!("Read(/{}/{})", resolved_str, token));
             let work_perms = vec![
-                format!("Read(/{}/**)", resolved_str),
                 format!("Read(/{}/signals/**)", resolved_str),
                 format!("Read(/{}/config.toml)", resolved_str),
                 format!("Read(/{}/handoffs/**)", resolved_str),
             ];
 
-            // Get or create the allow array within permissions
-            let permissions = settings
+            // Get or create the allow/deny arrays within permissions.
+            // `permissions` is guaranteed to be an object here (normalized
+            // above), but a hand-edited settings.json can still carry
+            // `deny`/`allow` as some other JSON type. `array_entry`
+            // normalizes those to an empty array rather than skip the
+            // token denies below.
+            if let Some(perms_obj) = settings
                 .as_object_mut()
                 .and_then(|o| o.get_mut("permissions"))
-                .and_then(|p| p.as_object_mut());
-
-            if let Some(perms_obj) = permissions {
-                let allow = perms_obj
-                    .entry("allow")
-                    .or_insert_with(|| json!([]))
-                    .as_array_mut();
-
-                if let Some(allow_arr) = allow {
-                    let existing: HashSet<String> = allow_arr
-                        .iter()
-                        .filter_map(|v| v.as_str().map(String::from))
-                        .collect();
-
-                    for perm in work_perms {
-                        if !existing.contains(&perm) {
-                            allow_arr.push(json!(perm));
-                        }
-                    }
-                }
+                .and_then(|p| p.as_object_mut())
+            {
+                push_unique_perms(array_entry(perms_obj, "deny"), token_denies);
+                push_unique_perms(array_entry(perms_obj, "allow"), work_perms);
             }
         }
     }
@@ -518,6 +532,27 @@ fn create_worktree_settings(
         .with_context(|| "Failed to write worktree settings.json")?;
 
     Ok(())
+}
+
+/// Return `key`'s array within `obj`, replacing a missing or wrong-typed
+/// value with an empty array first. A hand-edited settings.json must never
+/// cause the S-1 token denies below to be silently skipped.
+fn array_entry<'a>(obj: &'a mut Map<String, Value>, key: &str) -> &'a mut Vec<Value> {
+    if !matches!(obj.get(key), Some(Value::Array(_))) {
+        obj.insert(key.to_string(), json!([]));
+    }
+    obj.get_mut(key)
+        .and_then(|v| v.as_array_mut())
+        .expect("just inserted or verified an array")
+}
+
+/// Push each of `perms` onto `arr` unless an equal string is already present.
+fn push_unique_perms(arr: &mut Vec<Value>, perms: impl IntoIterator<Item = String>) {
+    for perm in perms {
+        if !arr.iter().any(|v| v.as_str() == Some(perm.as_str())) {
+            arr.push(json!(perm));
+        }
+    }
 }
 
 /// Configure hooks for a worktree with session context

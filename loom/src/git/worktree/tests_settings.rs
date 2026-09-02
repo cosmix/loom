@@ -250,9 +250,13 @@ fn test_create_worktree_settings_adds_resolved_work_permissions_legacy_layout() 
 
     // All resolved absolute-path permissions should be present
     // Note: // prefix is required for absolute paths in Claude Code
+    //
+    // No blanket read over the resolved `.work` root: it would expose
+    // `admin.token` and `user.token` just as a broad `Edit`/`Write` would
+    // have exposed them to write (S-1).
     assert!(
-        allow.contains(&format!("Read(/{}/**)", resolved_str)),
-        "Should contain Read(//resolved/**)"
+        !allow.contains(&format!("Read(/{}/**)", resolved_str)),
+        "Should NOT contain a blanket Read(//resolved/**)"
     );
     // No broad write grant over the resolved `.work` root, in either spelling:
     // `Edit(` would re-expose the daemon tokens (S-1); `Write(` granted nothing.
@@ -314,11 +318,150 @@ fn test_create_worktree_settings_adds_resolved_work_permissions_nested_layout() 
     // absent legacy `.work` — and grant the same narrow permission set.
     let resolved_work = worktree_work_link.canonicalize().unwrap();
     let resolved_str = resolved_work.to_string_lossy();
-    assert!(allow.contains(&format!("Read(/{}/**)", resolved_str)));
+    assert!(
+        !allow.contains(&format!("Read(/{}/**)", resolved_str)),
+        "Should NOT contain a blanket Read(//resolved/**)"
+    );
     assert!(allow.contains(&format!("Read(/{}/signals/**)", resolved_str)));
     assert!(allow.contains(&format!("Read(/{}/config.toml)", resolved_str)));
     assert!(allow.contains(&format!("Read(/{}/handoffs/**)", resolved_str)));
     assert!(!allow.contains(&format!("Edit(/{}/**)", resolved_str)));
+}
+
+#[test]
+fn create_worktree_settings_never_grants_a_blanket_read_over_the_state_root() {
+    let temp_dir = TempDir::new().unwrap();
+    let repo_root = temp_dir.path().join("repo");
+    let worktree = temp_dir.path().join("worktree");
+
+    // Nested layout: worktree/.loom/work -> repo/.loom/work.
+    let main_work = repo_root.join(".loom").join("work");
+    std::fs::create_dir_all(&main_work).unwrap();
+    let worktree_loom = worktree.join(".loom");
+    std::fs::create_dir_all(&worktree_loom).unwrap();
+    let worktree_work_link = worktree_loom.join("work");
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(&main_work, &worktree_work_link).unwrap();
+
+    let main_claude = repo_root.join(".claude");
+    std::fs::create_dir_all(&main_claude).unwrap();
+    let main_settings_path = main_claude.join("settings.json");
+    std::fs::write(&main_settings_path, "{}").unwrap();
+
+    let worktree_settings_path = worktree.join("settings.json");
+    create_worktree_settings(&main_settings_path, &worktree_settings_path, &worktree).unwrap();
+
+    let content = std::fs::read_to_string(&worktree_settings_path).unwrap();
+    let settings: Value = serde_json::from_str(&content).unwrap();
+    let (allow, deny) = extract_permissions(&settings);
+
+    let resolved = worktree_work_link.canonicalize().unwrap();
+    let resolved_str = resolved.to_string_lossy();
+    assert!(
+        !allow.contains(&format!("Read(/{}/**)", resolved_str)),
+        "create_worktree_settings must never grant a blanket read over the state root \
+         (S-1: exposes admin.token / user.token)"
+    );
+
+    // `.claude/settings.json` is written by a different code path than
+    // settings.local.json, so it must be safe standalone: explicit denies
+    // for the resolved-absolute token paths, not just a narrowed allow.
+    for token in ["admin.token", "user.token"] {
+        let deny_perm = format!("Read(/{}/{})", resolved_str, token);
+        let occurrences = deny.iter().filter(|p| *p == &deny_perm).count();
+        assert_eq!(
+            occurrences, 1,
+            "create_worktree_settings must deny {deny_perm} exactly once, got {occurrences}"
+        );
+    }
+}
+
+/// Set up a scratch repo/worktree with a `.loom/work` symlink and the given
+/// main-repo `.claude/settings.json` body, run `create_worktree_settings`,
+/// and return the resulting `(resolved_state_root, allow, deny)`.
+fn run_create_worktree_settings_with_main_json(
+    main_settings_json: &str,
+) -> (String, Vec<String>, Vec<String>) {
+    let temp_dir = TempDir::new().unwrap();
+    let repo_root = temp_dir.path().join("repo");
+    let worktree = temp_dir.path().join("worktree");
+
+    let main_work = repo_root.join(".loom").join("work");
+    std::fs::create_dir_all(&main_work).unwrap();
+    let worktree_loom = worktree.join(".loom");
+    std::fs::create_dir_all(&worktree_loom).unwrap();
+    let worktree_work_link = worktree_loom.join("work");
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(&main_work, &worktree_work_link).unwrap();
+
+    let main_claude = repo_root.join(".claude");
+    std::fs::create_dir_all(&main_claude).unwrap();
+    let main_settings_path = main_claude.join("settings.json");
+    std::fs::write(&main_settings_path, main_settings_json).unwrap();
+
+    let worktree_settings_path = worktree.join("settings.json");
+    create_worktree_settings(&main_settings_path, &worktree_settings_path, &worktree).unwrap();
+
+    let content = std::fs::read_to_string(&worktree_settings_path).unwrap();
+    let settings: Value = serde_json::from_str(&content).unwrap();
+    let (allow, deny) = extract_permissions(&settings);
+
+    let resolved = worktree_work_link.canonicalize().unwrap();
+    (resolved.to_string_lossy().into_owned(), allow, deny)
+}
+
+#[test]
+fn create_worktree_settings_normalizes_a_non_array_deny_instead_of_dropping_token_denies() {
+    let (resolved_str, allow, deny) = run_create_worktree_settings_with_main_json(
+        r#"{"permissions": {"deny": null, "allow": []}}"#,
+    );
+
+    for token in ["admin.token", "user.token"] {
+        let deny_perm = format!("Read(/{}/{})", resolved_str, token);
+        assert!(
+            deny.contains(&deny_perm),
+            "a non-array `deny` must be normalized rather than skip the token deny {deny_perm}"
+        );
+    }
+    assert!(allow.contains(&format!("Read(/{}/signals/**)", resolved_str)));
+    assert!(allow.contains(&format!("Read(/{}/config.toml)", resolved_str)));
+    assert!(allow.contains(&format!("Read(/{}/handoffs/**)", resolved_str)));
+}
+
+#[test]
+fn create_worktree_settings_normalizes_a_non_object_permissions_instead_of_dropping_token_denies() {
+    let (resolved_str, allow, deny) =
+        run_create_worktree_settings_with_main_json(r#"{"permissions": "nonsense"}"#);
+
+    for token in ["admin.token", "user.token"] {
+        let deny_perm = format!("Read(/{}/{})", resolved_str, token);
+        assert!(
+            deny.contains(&deny_perm),
+            "a non-object `permissions` must be normalized rather than skip the token deny {deny_perm}"
+        );
+    }
+    assert!(allow.contains(&format!("Read(/{}/signals/**)", resolved_str)));
+    assert!(allow.contains(&format!("Read(/{}/config.toml)", resolved_str)));
+    assert!(allow.contains(&format!("Read(/{}/handoffs/**)", resolved_str)));
+}
+
+#[test]
+fn create_worktree_settings_normalization_preserves_pre_existing_deny_entries() {
+    let (resolved_str, _allow, deny) = run_create_worktree_settings_with_main_json(
+        r#"{"permissions": {"deny": ["Read(/etc/shadow)"]}}"#,
+    );
+
+    assert!(
+        deny.contains(&"Read(/etc/shadow)".to_string()),
+        "normalization must not discard a pre-existing valid deny entry"
+    );
+    for token in ["admin.token", "user.token"] {
+        let deny_perm = format!("Read(/{}/{})", resolved_str, token);
+        assert!(
+            deny.contains(&deny_perm),
+            "the token deny {deny_perm} must still be added alongside the existing entry"
+        );
+    }
 }
 
 #[test]
