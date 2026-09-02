@@ -337,3 +337,68 @@ rg -q '^stage complete build-api --session session-123$' "$LOG"
 # 7. Existing behaviour unchanged: marker inline in the tool result -> broker
 # invoked. Already covered above (the original "valid route" assertion); no
 # duplicate case added here.
+
+# --- Structured persistedOutputPath field (real harness shape) ---------
+#
+# The wrapper-text cases above mimic an older shape. The shape actually seen
+# from the harness on 2026-09-02 carries `tool_response.persistedOutputPath`
+# as its own field alongside `stdout`, `stderr`, `interrupted`, `isImage`,
+# `noOutputExpected` and `persistedOutputSize` - `stdout` itself is only a
+# truncated prefix and contains no "Full output saved to:" text at all.
+
+structured_case_capture() {
+	local command=$1 stdout=$2 persisted_path=$3 home=$4 payload
+	payload=$(jq -n \
+		--arg command "$command" --arg stdout "$stdout" --arg path "$persisted_path" \
+		'{tool_name:"Bash",tool_input:{command:$command},tool_response:{stdout:$stdout,stderr:"",interrupted:false,isImage:false,noOutputExpected:false,persistedOutputPath:$path,persistedOutputSize:17100}}')
+	printf '%s' "$payload" |
+		env PATH="$TMP/bin:/usr/bin:/bin" HOME="$home" \
+		BROKER_LOG="$LOG" LOOM_CONTROL_TESTING=1 LOOM_CONTROL_TEST_BIN="$TMP/bin/loom" \
+		LOOM_STAGE_ID="build-api" LOOM_SESSION_ID="session-123" \
+		LOOM_WORKTREE_PATH="$WORKTREE" bash "$HOOK"
+}
+
+TRUNCATED_STDOUT='earlier verify output (truncated prefix, no wrapper text, no marker)'
+
+# 8. Marker present ONLY in the file named by tool_response.persistedOutputPath,
+# stdout carries no wrapper text -> broker IS invoked.
+home8=$(persisted_home case8)
+persisted_dir8="$home8/.claude/projects/proj/sess/tool-results"
+mkdir -p "$persisted_dir8"
+persisted_file8="$persisted_dir8/out.txt"
+printf 'earlier verify output\n%s\nlater verify output\n' "$MARKER" >"$persisted_file8"
+before=$(log_lines)
+structured_case_capture "$PINNED" "$TRUNCATED_STDOUT" "$persisted_file8" "$home8" >/dev/null
+after=$(log_lines)
+[[ "$after" == "$((before + 1))" ]] || { echo "structured persistedOutputPath case did not invoke the broker" >&2; exit 1; }
+rg -q '^stage complete build-api --session session-123$' "$LOG"
+
+# 9. persistedOutputPath points outside the trusted root (under $TMPDIR) even
+# though the file it names contains the marker -> rejected, broker NOT
+# invoked, message says the file did not validate.
+home9=$(persisted_home case9)
+outside_dir9="$TMP/outside9/tool-results"
+mkdir -p "$outside_dir9"
+outside_file9="$outside_dir9/out.txt"
+printf '%s\n' "$MARKER" >"$outside_file9"
+before=$(log_lines)
+out9=$(structured_case_capture "$PINNED" "$TRUNCATED_STDOUT" "$outside_file9" "$home9")
+after=$(log_lines)
+[[ "$after" == "$before" ]] || { echo "structured persistedOutputPath outside the trusted root reached the broker" >&2; exit 1; }
+ctx9=$(printf '%s' "$out9" | jq -r '.hookSpecificOutput.additionalContext // empty')
+[[ "$ctx9" == *"did not validate"* ]] || { echo "structured persistedOutputPath outside-root message does not say validation failed: $ctx9" >&2; exit 1; }
+
+# 10. persistedOutputPath is valid (under $HOME/.claude/projects/**/tool-results/,
+# a regular file, not a symlink) but the file it names lacks the marker ->
+# rejected, broker NOT invoked, message says the marker was absent.
+home10=$(persisted_home case10)
+persisted_dir10="$home10/.claude/projects/proj/sess/tool-results"
+mkdir -p "$persisted_dir10"
+persisted_file10="$persisted_dir10/out.txt"
+printf 'earlier verify output\nverification failed\nlater verify output\n' >"$persisted_file10"
+before=$(log_lines)
+out10=$(structured_case_capture "$PINNED" "$TRUNCATED_STDOUT" "$persisted_file10" "$home10")
+after=$(log_lines)
+[[ "$after" == "$before" ]] || { echo "structured persistedOutputPath with no marker reached the broker" >&2; exit 1; }
+ctx10=$(printf '%s' "$out10" | jq -r '.hookSpecificOutput.additionalContext // empty')
+[[ "$ctx10" == *"did not contain the marker"* ]] || { echo "structured persistedOutputPath no-marker message does not say so: $ctx10" >&2; exit 1; }

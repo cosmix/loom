@@ -191,16 +191,24 @@ HAS_MARKER=$(printf '%s' "$INPUT_JSON" | jq -r --arg marker "$MARKER" '
 
 if [[ "$HAS_MARKER" != true ]]; then
 	# Claude Code persists large tool output to a file once it crosses an
-	# internal size threshold, substituting a "<persisted-output>" wrapper
-	# that names the file and shows only a 2KB preview. A marker line sitting
-	# past that preview is invisible to the check above even though the
-	# pinned command genuinely printed it - recover it, when possible, from
-	# the full file the wrapper points at, rather than treating "not in the
-	# preview" as "verification did not pass".
+	# internal size threshold. Two shapes have been observed for how it says
+	# so: a structured `tool_response.persistedOutputPath` (or
+	# `tool_result.persistedOutputPath`) field naming the file directly,
+	# with `stdout` holding only a truncated prefix and no wrapper text at
+	# all; and an older inline "<persisted-output>" wrapper embedded in
+	# stdout that names the file and shows only a 2KB preview. A marker line
+	# sitting past what stdout actually carries is invisible to the check
+	# above either way, even though the pinned command genuinely printed it
+	# - recover it, when possible, from the full file either shape points
+	# at, rather than treating "not in the visible text" as "verification
+	# did not pass".
 	OUTPUT_TEXT=$(printf '%s' "$INPUT_JSON" | jq -r '
 	  [.tool_result.stdout, .tool_result.output, .tool_response.stdout, .tool_response.output]
 	  | map(select(type == "string")) | join("\n")')
-	PERSISTED_PATH=$(printf '%s' "$OUTPUT_TEXT" | sed -n 's/^.*Full output saved to: //p' | head -n1)
+	PERSISTED_PATH=$(printf '%s' "$INPUT_JSON" | jq -r '.tool_response.persistedOutputPath // .tool_result.persistedOutputPath // empty')
+	if [[ -z "$PERSISTED_PATH" ]]; then
+		PERSISTED_PATH=$(printf '%s' "$OUTPUT_TEXT" | sed -n 's/^.*Full output saved to: //p' | head -n1)
+	fi
 
 	# Security boundary: the pinned command's own stdout is agent-influenceable
 	# (it is verify-step output the stage agent's environment can shape), so a
