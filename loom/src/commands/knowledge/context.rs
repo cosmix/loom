@@ -20,7 +20,7 @@ use anyhow::{bail, Context, Result};
 use colored::Colorize;
 use std::path::{Path, PathBuf};
 
-/// The directory the CLI resolves `.work/` and the knowledge tree from.
+/// The directory the CLI resolves the state directory and the knowledge tree from.
 const WORK_DIR_HINT: &str = ".";
 
 /// Resolve the knowledge root and the derived-artifact store together, so the

@@ -41,13 +41,13 @@ pub struct Cli {
 
 #[derive(Subcommand)]
 pub enum Commands {
-    /// Initialize .work/ directory from a plan
+    /// Initialize .loom/work/ directory from a plan
     Init {
         /// Path to the plan file
         plan_path: String,
 
         /// Clean up stale resources before initialization
-        /// (removes old .work/, prunes worktrees, kills orphaned sessions)
+        /// (removes old .loom/work/, prunes worktrees, kills orphaned sessions)
         #[arg(long)]
         clean: bool,
 
@@ -194,12 +194,12 @@ pub enum Commands {
         #[arg(long)]
         sessions: bool,
 
-        /// Remove only .work/ state directory
+        /// Remove only .loom/work/ state directory
         #[arg(long)]
         state: bool,
     },
 
-    /// Repair loom workspace issues (corrupted .work, missing hooks, sandbox settings, etc.)
+    /// Repair loom workspace issues (corrupted .loom/work, missing hooks, sandbox settings, etc.)
     ///
     /// By default runs in dry-run mode (reports issues without fixing).
     /// Use --fix to apply repairs.

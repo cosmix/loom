@@ -69,11 +69,11 @@ fn record(recipient_id: &str, epoch: &str, delivered: &[(&str, &str)]) -> Delive
 
 #[test]
 fn delivery_dir_sits_under_the_stage_overlay() {
-    let work_dir = PathBuf::from("/project/.work");
+    let work_dir = PathBuf::from("/project/.loom/work");
     let dir = delivery_dir(&work_dir, PLAN, STAGE);
     assert_eq!(
         dir,
-        PathBuf::from("/project/.work/context/delivery-plan/delivery-stage/session-retrieval")
+        PathBuf::from("/project/.loom/work/context/delivery-plan/delivery-stage/session-retrieval")
     );
 }
 
@@ -111,7 +111,7 @@ fn from_pack_copies_every_item_in_order_and_stamps_a_unique_launch() {
 #[test]
 fn a_written_record_round_trips_through_the_delivery_directory() {
     let temp = TempDir::new().unwrap();
-    let work_dir = temp.path().join(".work");
+    let work_dir = temp.path().join(".loom").join("work");
     let written = record("session-1", "epoch-a", &[("first", "sha256:aaa")]);
 
     record_delivery(&work_dir, PLAN, STAGE, &written).unwrap();
@@ -123,7 +123,7 @@ fn a_written_record_round_trips_through_the_delivery_directory() {
 #[test]
 fn a_delivery_under_a_new_epoch_replaces_the_recipients_record() {
     let temp = TempDir::new().unwrap();
-    let work_dir = temp.path().join(".work");
+    let work_dir = temp.path().join(".loom").join("work");
 
     record_delivery(
         &work_dir,
@@ -147,7 +147,7 @@ fn a_delivery_under_a_new_epoch_replaces_the_recipients_record() {
 /// order, all under a single epoch.
 fn merged_ids(deliveries: &[&[(&str, &str)]]) -> Vec<String> {
     let temp = TempDir::new().unwrap();
-    let work_dir = temp.path().join(".work");
+    let work_dir = temp.path().join(".loom").join("work");
     for delivered in deliveries {
         let written = record("prompt-stage", "epoch-a", delivered);
         record_delivery(&work_dir, PLAN, STAGE, &written).unwrap();
@@ -201,14 +201,14 @@ fn plan_key_is_one_derivation_for_every_writer_and_reader() {
 #[test]
 fn loading_a_directory_that_was_never_written_reports_no_deliveries() {
     let temp = TempDir::new().unwrap();
-    let work_dir = temp.path().join(".work");
+    let work_dir = temp.path().join(".loom").join("work");
     assert!(load_deliveries(&work_dir, PLAN, STAGE).unwrap().is_empty());
 }
 
 #[test]
 fn a_malformed_record_is_skipped_rather_than_failing_the_read() {
     let temp = TempDir::new().unwrap();
-    let work_dir = temp.path().join(".work");
+    let work_dir = temp.path().join(".loom").join("work");
     let good = record("session-1", "epoch-a", &[("first", "sha256:aaa")]);
     record_delivery(&work_dir, PLAN, STAGE, &good).unwrap();
 
@@ -251,7 +251,7 @@ fn delivered_in_epoch_keys_on_the_hash_so_changed_bytes_re_deliver() {
 #[test]
 fn a_recipient_id_that_could_escape_the_directory_is_refused() {
     let temp = TempDir::new().unwrap();
-    let work_dir = temp.path().join(".work");
+    let work_dir = temp.path().join(".loom").join("work");
 
     // Every rejected shape, named: an id that reaches the filesystem unchecked
     // is a path-traversal write, and one that is merely sanitized files the
@@ -280,7 +280,7 @@ fn a_recipient_id_that_could_escape_the_directory_is_refused() {
 #[test]
 fn dependency_chunk_ids_unions_two_dependencies_deduplicated_and_sorted() {
     let temp = TempDir::new().unwrap();
-    let work_dir = temp.path().join(".work");
+    let work_dir = temp.path().join(".loom").join("work");
 
     record_delivery(
         &work_dir,
@@ -320,7 +320,7 @@ fn dependency_chunk_ids_unions_two_dependencies_deduplicated_and_sorted() {
 #[test]
 fn dependency_chunk_ids_ignores_a_dependency_with_no_record_on_disk() {
     let temp = TempDir::new().unwrap();
-    let work_dir = temp.path().join(".work");
+    let work_dir = temp.path().join(".loom").join("work");
 
     record_delivery(
         &work_dir,
@@ -342,7 +342,7 @@ fn dependency_chunk_ids_ignores_a_dependency_with_no_record_on_disk() {
 #[test]
 fn dependency_chunk_ids_skips_a_malformed_record_rather_than_failing() {
     let temp = TempDir::new().unwrap();
-    let work_dir = temp.path().join(".work");
+    let work_dir = temp.path().join(".loom").join("work");
 
     record_delivery(
         &work_dir,
@@ -362,7 +362,7 @@ fn dependency_chunk_ids_skips_a_malformed_record_rather_than_failing() {
 #[test]
 fn an_ordinary_recipient_id_is_accepted() {
     let temp = TempDir::new().unwrap();
-    let work_dir = temp.path().join(".work");
+    let work_dir = temp.path().join(".loom").join("work");
     let accepted = record("session-2026.08.17_abc-DEF", "epoch-a", &[]);
 
     record_delivery(&work_dir, PLAN, STAGE, &accepted).unwrap();

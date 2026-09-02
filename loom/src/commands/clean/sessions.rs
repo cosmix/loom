@@ -25,7 +25,7 @@ pub(super) enum SessionReapMode {
     /// Reap only attributed sockets whose session is no longer alive.
     OrphansOnly,
     /// Reap every attributed socket, alive or not. Selected by `execute`
-    /// whenever this invocation is about to delete `.work/`, which is the
+    /// whenever this invocation is about to delete the state directory, which is the
     /// only thing that makes a socket attributable back to this repo in the
     /// first place — reaping must happen before that record is destroyed, or
     /// a live tmux-hosted session leaks forever with no way to find it again.
@@ -86,8 +86,8 @@ fn handle_socket(work_dir: &Path, socket: &LoomSocket, mode: SessionReapMode) ->
 /// sessions kill` — with [`SessionReapMode::OrphansOnly`] (used for a bare
 /// `--sessions`), this only reaps sockets whose session is no longer alive.
 /// With [`SessionReapMode::IncludeLiveBeforeClean`] (selected by `execute`
-/// whenever this invocation is about to delete `.work/`), an attributed
-/// socket is reaped even if its session is still alive — deleting `.work/`
+/// whenever this invocation is about to delete the state directory), an attributed
+/// socket is reaped even if its session is still alive — deleting the state directory
 /// destroys the only record that lets that socket ever be attributed again,
 /// so it must be reaped NOW or it leaks forever. Unattributable sockets
 /// (which may belong to another checkout or user, since the tmux socket
@@ -97,7 +97,7 @@ fn handle_socket(work_dir: &Path, socket: &LoomSocket, mode: SessionReapMode) ->
 pub(super) fn clean_sessions(repo_root: &Path, mode: SessionReapMode) -> Result<usize> {
     print_sessions_header(mode);
 
-    let work_dir = repo_root.join(".work");
+    let work_dir = super::resolve_state_dir(repo_root);
     let mut orphaned_reaped = 0;
     let mut live_reaped = 0;
     let mut unattributed = 0;
@@ -119,7 +119,7 @@ pub(super) fn clean_sessions(repo_root: &Path, mode: SessionReapMode) -> Result<
 
 /// Remove PID and wrapper tombstones only when a session record positively
 /// attributes them to a finished stage (or when `loom clean` will remove that
-/// record together with `.work/`). Never scan the PID or wrapper directories:
+/// record together with the state directory). Never scan the PID or wrapper directories:
 /// an unparseable or otherwise unattributed entry is evidence we must retain.
 fn cleanup_terminal_tombstones(work_dir: &Path, mode: SessionReapMode) -> Result<()> {
     let sessions_dir = work_dir.join("sessions");
@@ -192,8 +192,8 @@ fn print_sessions_header(mode: SessionReapMode) {
         );
     } else {
         println!(
-            "  {} .work/ is about to be removed — reaping attributed sessions (live or not) so \
-             none leak unattributed",
+            "  {} the state directory is about to be removed — reaping attributed sessions \
+             (live or not) so none leak unattributed",
             "─".dimmed()
         );
     }
@@ -213,7 +213,7 @@ fn print_sessions_summary(orphaned_reaped: usize, live_reaped: usize, unattribut
     } else if live_reaped > 0 {
         println!(
             "  {} Reaped {} tmux session{} ({} orphaned, {} still live — about to be \
-             unattributable once .work/ is removed)",
+             unattributable once the state directory is removed)",
             "✓".green().bold(),
             total_reaped,
             if total_reaped == 1 { "" } else { "s" },
@@ -269,8 +269,8 @@ mod tests {
 
     /// Mirrors `commands::init::tests::test_cleanup_orphaned_sessions_reaps_live_only_in_clean_mode`:
     /// a live ATTRIBUTED socket must be reaped once `loom clean` is about to
-    /// destroy `.work/` (FIX 1's `IncludeLiveBeforeClean` mode), but
-    /// preserved when `.work/` is not being destroyed; an UNATTRIBUTED
+    /// destroy the state directory (FIX 1's `IncludeLiveBeforeClean` mode), but
+    /// preserved when the state directory is not being destroyed; an UNATTRIBUTED
     /// socket must be preserved in BOTH modes since the tmux socket
     /// directory is per-user and it may belong to another checkout entirely.
     #[test]
@@ -284,7 +284,9 @@ mod tests {
         fs::create_dir_all(&socket_dir).unwrap();
 
         let repo_root = TempDir::new().unwrap();
-        let sessions_dir = repo_root.path().join(".work").join("sessions");
+        // No config.toml anywhere under `repo_root`, so `clean_sessions`'s internal
+        // `resolve_state_dir` (via `WorkDir::new`) resolves to the nested fallback root.
+        let sessions_dir = repo_root.path().join(".loom").join("work").join("sessions");
         fs::create_dir_all(&sessions_dir).unwrap();
 
         let mut live_session = Session::new();
@@ -297,7 +299,7 @@ mod tests {
         )
         .unwrap();
         crate::orchestrator::terminal::native::write_test_pid_identity(
-            &repo_root.path().join(".work"),
+            &repo_root.path().join(".loom").join("work"),
             &live_session,
             std::process::id(),
         )
@@ -311,7 +313,8 @@ mod tests {
         clean_sessions(repo_root.path(), SessionReapMode::OrphansOnly).unwrap();
         assert!(
             live_socket.exists(),
-            "a live attributed session must never be reaped when .work/ is not being destroyed"
+            "a live attributed session must never be reaped when the state directory is not \
+             being destroyed"
         );
         assert!(
             unattributed_socket.exists(),
@@ -321,12 +324,12 @@ mod tests {
         clean_sessions(repo_root.path(), SessionReapMode::IncludeLiveBeforeClean).unwrap();
         assert!(
             !live_socket.exists(),
-            "a live session must be reaped before .work/ destroys its attribution"
+            "a live session must be reaped before the state directory destroys its attribution"
         );
         assert!(
             unattributed_socket.exists(),
-            "an unattributed socket must never be touched, even when .work/ is about to be \
-             destroyed"
+            "an unattributed socket must never be touched, even when the state directory is \
+             about to be destroyed"
         );
     }
 
@@ -375,7 +378,7 @@ mod tests {
         let tmux_tmpdir = TempDir::new().unwrap();
         let _guard = TmuxTmpDirGuard::set(tmux_tmpdir.path());
         let repo_root = TempDir::new().unwrap();
-        let work_dir = repo_root.path().join(".work");
+        let work_dir = repo_root.path().join(".loom").join("work");
         let sessions_dir = work_dir.join("sessions");
         fs::create_dir_all(&sessions_dir).unwrap();
         let mut finished_stage = Stage::new("finished-stage".to_string(), None);

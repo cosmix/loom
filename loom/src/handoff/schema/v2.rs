@@ -23,7 +23,7 @@ pub enum HandoffOrigin {
     /// The agent hit its own context ceiling and ran `loom handoff --trigger
     /// ceiling` to end its turn. The daemon watches for this origin: it is the
     /// only signal a sandboxed worktree session can leave, since it may write
-    /// `.work/handoffs` but not `.work/stages`.
+    /// `.loom/work/handoffs` but not `.loom/work/stages`.
     AgentCeiling,
     /// The daemon gave up on a session whose heartbeat went stale far past its
     /// response budget and recovered the stage without the agent's help.

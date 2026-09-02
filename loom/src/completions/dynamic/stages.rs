@@ -4,7 +4,7 @@ use anyhow::Result;
 use std::fs;
 use std::path::Path;
 
-/// Complete stage IDs from .work/stages/*.md
+/// Complete stage IDs from .loom/work/stages/*.md
 ///
 /// # Arguments
 ///
@@ -28,7 +28,12 @@ pub fn complete_stage_ids_filtered(
     prefix: &str,
     allowed_statuses: &[&str],
 ) -> Result<Vec<String>> {
-    let stages_dir = cwd.join(".work/stages");
+    // Resolved rather than a hardcoded `.work`/`.loom/work` literal: only
+    // `WorkDir::new` decides which layout a given project uses.
+    let Ok(work_dir) = crate::fs::work_dir::WorkDir::new(cwd) else {
+        return Ok(Vec::new());
+    };
+    let stages_dir = work_dir.stages_dir();
 
     if !stages_dir.exists() {
         return Ok(Vec::new());

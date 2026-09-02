@@ -147,7 +147,7 @@ fn operator_env_mints_daemon_stop_proof_without_retaining_secret() {
 #[test]
 #[serial]
 fn self_authorization_round_trips_and_stays_bound_to_its_flag_set() {
-    // The `--operator` path mints from `.work/admin.token` directly instead of
+    // The `--operator` path mints from the state directory's `admin.token` directly instead of
     // taking a hand-carried proof. It must produce a proof that verifies for
     // the flags it was asked for and for NO other flag set — otherwise the
     // ergonomic shortcut would quietly become a wildcard.
@@ -184,7 +184,7 @@ fn self_authorization_round_trips_and_stays_bound_to_its_flag_set() {
 #[test]
 #[serial]
 fn self_authorization_is_refused_from_inside_a_loom_session() {
-    // Guard rail, not boundary — the sandbox denying `.work/admin.token` is
+    // Guard rail, not boundary — the sandbox denying the state directory's `admin.token` is
     // what actually stops an agent. This keeps the EASY path closed: without
     // it, self-authorization being the default hands an agent the same thing
     // in one word. The token here is readable on purpose, so the refusal is

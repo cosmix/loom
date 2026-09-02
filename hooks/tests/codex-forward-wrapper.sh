@@ -2,7 +2,7 @@
 set -euo pipefail
 
 WRAPPER="$(dirname "$0")/../codex-forward.sh"
-TMP=$(mktemp -d)
+TMP=$(mktemp -d "${TMPDIR:-/tmp}/loom-hooktest.XXXXXX")
 trap 'rm -rf "$TMP"' EXIT
 
 HOME_DIR="$TMP/home"
@@ -82,7 +82,7 @@ rg -qF 'literal;' "$CAPTURE"
 rg -qF 'loom map --find-all' "$CAPTURE"
 rg -qF 'loom knowledge context' "$CAPTURE"
 rg -qF 'NEVER run git' "$CAPTURE"
-rg -qF 'NEVER write anything under .work/' "$CAPTURE"
+rg -qF 'NEVER write anything under .work/ or .loom/' "$CAPTURE"
 rg -qF 'never writes inside your worktree' "$CAPTURE"
 rg -qF 'warning: could not refresh' "$CAPTURE"
 

@@ -120,7 +120,7 @@ fn stage_overlay_dir(work_dir: &Path, plan: &str, stage: &str) -> PathBuf {
     GraphStore::new(work_dir, work_dir).overlay_dir(plan, stage)
 }
 
-/// `.work/context/<plan>/<stage>/session-retrieval/`
+/// `.loom/work/context/<plan>/<stage>/session-retrieval/`
 pub fn delivery_dir(work_dir: &Path, plan: &str, stage: &str) -> PathBuf {
     stage_overlay_dir(work_dir, plan, stage).join(DELIVERY_RELATIVE_DIR)
 }

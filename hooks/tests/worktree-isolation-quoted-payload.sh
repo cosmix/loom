@@ -13,7 +13,7 @@
 set -euo pipefail
 
 HOOK="$(cd "$(dirname "$0")/.." && pwd)/worktree-isolation.sh"
-TMP=$(mktemp -d)
+TMP=$(mktemp -d "${TMPDIR:-/tmp}/loom-hooktest.XXXXXX")
 trap 'rm -rf "$TMP"' EXIT
 
 STAGE="build-api"

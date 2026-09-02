@@ -137,7 +137,7 @@ mod tests {
             "session-new".to_string(),
             "test-stage".to_string(),
             "session-old".to_string(),
-            Some(PathBuf::from(".work/crashes/crash-123.md")),
+            Some(PathBuf::from(".loom/work/crashes/crash-123.md")),
             1,
         );
 

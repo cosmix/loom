@@ -75,7 +75,7 @@ A handoff is expensive: it discards a session with full context already loaded a
 
 ### 3b. POST-COMPACTION RECOVERY
 
-After any compaction or context loss: run `loom memory list`, read your stage's latest handoff in `.work/handoffs/`, and resume from there. Do not start fresh.
+After any compaction or context loss: run `loom memory list`, read your stage's latest handoff in `.loom/work/handoffs/`, and resume from there. Do not start fresh.
 
 ### 4. COMMIT AND COMPLETE (HOOK-ENFORCED)
 
@@ -271,11 +271,11 @@ Never create a branch (`git checkout -b`, `git switch -c`, `git branch <name>`) 
 
 ### 10. WORKTREE ISOLATION
 
-Location `.worktrees/<stage-id>/`, branch `loom/<stage-id>`; stay in it. Forbidden: `git -C`, `git --work-tree`, `cd ../..`, `../../` paths, and reading outside it. Allowed: git in the current dir, `.work/` (symlink), files within it. Need main-repo context? Read your signal file.
+Location `.worktrees/<stage-id>/`, branch `loom/<stage-id>`; stay in it. Forbidden: `git -C`, `git --work-tree`, `cd ../..`, `../../` paths, and reading outside it. Allowed: git in the current dir, `.loom/work/` (symlink), files within it. Need main-repo context? Read your signal file.
 
 ### 11. BINARY USAGE
 
-Always use `loom` from PATH, never `target/debug/loom`. Never edit `.work/` files directly — use the loom CLI.
+Always use `loom` from PATH, never `target/debug/loom`. Never edit `.loom/work/` files directly — use the loom CLI.
 
 ### 12. PROJECT KNOWLEDGE
 
@@ -352,13 +352,13 @@ The table gives examples; anything reading as a model reaching for cadence belon
 
 ## LOOM ORCHESTRATION REFERENCE
 
-**Session start:** read your Knowledge Brief, find your session ID in `.work/signals/`, scan for `EXECUTION PLAN` blocks, spawn per Rule 6; no signal, ask the user.
+**Session start:** read your Knowledge Brief, find your session ID in `.loom/work/signals/`, scan for `EXECUTION PLAN` blocks, spawn per Rule 6; no signal, ask the user.
 
 **Stage lifecycle:** `WaitingForDeps → Queued → Executing → Completed → Verified` (also `Blocked`, `NeedsHandoff`, `WaitingForInput`). Retry a failed merge with `loom stage merge <stage-id>`.
 
 **CLI:** `loom run` | `loom status` | `loom stop` | `loom check <stage-id> [--suggest]` | `loom knowledge sync` | `loom repair [--fix]`.
 
-**Handoff** (`.work/handoffs/YYYY-MM-DD-desc.md`, written by `loom handoff` per Rule 3): `# Handoff: [Description]`, `**Stage**: [id]`, `## Completed` with file:line refs, `## Next Steps` prioritized.
+**Handoff** (`.loom/work/handoffs/YYYY-MM-DD-desc.md`, written by `loom handoff` per Rule 3): `# Handoff: [Description]`, `**Stage**: [id]`, `## Completed` with file:line refs, `## Next Steps` prioritized.
 
 **References:** cite code as `src/auth.ts:45-120`, not "the auth file".
 

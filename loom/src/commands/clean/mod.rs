@@ -13,6 +13,8 @@ use std::path::Path;
 use sessions::{clean_sessions, SessionReapMode};
 use worktrees::{clean_worktrees, confirm_branch_deletion, run_bare_clean};
 
+use crate::commands::common::resolve_state_dir;
+
 /// Statistics for cleanup operations
 #[derive(Default)]
 struct CleanStats {
@@ -28,11 +30,11 @@ struct CleanStats {
 /// * `all` - Remove all loom resources
 /// * `worktrees` - Remove only worktrees
 /// * `sessions` - Kill only sessions
-/// * `state` - Remove only .work/ state directory
+/// * `state` - Remove only the `.loom/work/` (or legacy `.work/`) state directory
 ///
 /// Bare `loom clean` (no flags) is intentionally NON-destructive: it only
 /// prunes stale git worktree references and prints help. The destructive path
-/// (deleting worktrees, `loom/*` branches, and `.work/`) requires an explicit
+/// (deleting worktrees, `loom/*` branches, and the state directory) requires an explicit
 /// flag — `--all`, `--worktrees`, or `--state`. Before any `loom/*` branch with
 /// unmerged commits is deleted, the user is shown the commits-ahead counts and
 /// asked to confirm (skip the prompt with `LOOM_CLEAN_YES=1`).
@@ -72,8 +74,8 @@ pub fn execute(all: bool, worktrees: bool, sessions: bool, state: bool) -> Resul
         stats.branches_removed = br_count;
     }
 
-    // `.work/` is about to be destroyed on the `--all`/`--state` paths below,
-    // which destroys the only record (`.work/sessions/<id>.md`) that lets a
+    // The state directory is about to be destroyed on the `--all`/`--state` paths below,
+    // which destroys the only record (`<state-dir>/sessions/<id>.md`) that lets a
     // tmux socket ever be attributed back to this repo. Reap attributed
     // sockets FIRST in that case, live or not; a bare `--sessions` (with
     // neither `--all` nor `--state`) stays conservative and reaps only dead
@@ -86,7 +88,7 @@ pub fn execute(all: bool, worktrees: bool, sessions: bool, state: bool) -> Resul
     Ok(())
 }
 
-/// Runs the `--sessions` step and, if `.work/` is about to be destroyed, the
+/// Runs the `--sessions` step and, if the state directory is about to be destroyed, the
 /// `--state` step right after it. Split out of [`execute`] to keep it under
 /// the line-count cap; kept as one function (rather than two standalone
 /// helpers) because [`SessionReapMode`] selection genuinely depends on
@@ -145,26 +147,34 @@ fn print_base_graph_section(repo_root: &Path) {
     }
 }
 
-/// Remove the .work/ state directory
+/// Remove the state directory (`.loom/work/`, or a pre-move `.work/`)
+///
+/// A single recursive remove of the state root only — never `.loom/` itself,
+/// which would also take out the (expensive to rebuild) `.loom/cache/` and the
+/// memory/stage-request spools.
 ///
 /// Returns true if the directory was removed
 fn clean_state_directory(repo_root: &Path) -> Result<bool> {
-    let work_dir = repo_root.join(".work");
+    let work_dir = resolve_state_dir(repo_root);
 
     if !work_dir.exists() {
-        println!("  {} No {} directory", "─".dimmed(), ".work/".dimmed());
+        println!(
+            "  {} No {} directory",
+            "─".dimmed(),
+            work_dir.display().to_string().dimmed()
+        );
         return Ok(false);
     }
 
-    fs::remove_dir_all(&work_dir).with_context(|| {
-        format!(
-            "Failed to remove .work/ directory at {}",
-            work_dir.display()
-        )
-    })?;
-    println!("  {} Removed {}", "✓".green().bold(), ".work/".dimmed());
+    fs::remove_dir_all(&work_dir)
+        .with_context(|| format!("Failed to remove state directory at {}", work_dir.display()))?;
+    println!(
+        "  {} Removed {}",
+        "✓".green().bold(),
+        work_dir.display().to_string().dimmed()
+    );
 
-    // The .work/ this just deleted may be the one a LOOM_WORK_DIR pin in
+    // The state directory this just deleted may be the one a LOOM_WORK_DIR pin in
     // .claude/settings.local.json (or settings.json) names — left behind,
     // that pin outlives the directory it points to and shadows every future
     // WorkDir::new upward search in this repo. Best-effort: never fails
@@ -246,8 +256,10 @@ mod tests {
     #[test]
     fn test_clean_state_directory_when_exists() {
         let temp_dir = TempDir::new().unwrap();
-        let work_dir = temp_dir.path().join(".work");
-        fs::create_dir(&work_dir).unwrap();
+        // No config.toml anywhere under `temp_dir`, so `WorkDir::new` resolves to the
+        // nested fallback root regardless of layout — create the directory there.
+        let work_dir = temp_dir.path().join(".loom").join("work");
+        fs::create_dir_all(&work_dir).unwrap();
         fs::write(work_dir.join("test.txt"), "test").unwrap();
 
         let result = clean_state_directory(temp_dir.path());

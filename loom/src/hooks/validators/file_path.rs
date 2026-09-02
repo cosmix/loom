@@ -26,8 +26,12 @@ impl FilePathValidationError {
 }
 
 // Compiled regex patterns for performance
+//
+// The optional `loom/` covers both the current nested state root
+// (`.loom/work/`) and a legacy project that has not moved
+// (`.work/`) — one pattern protects either spelling.
 static PROTECTED_STATE_PATTERN: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"\.work/(stages|sessions)/").expect("Invalid regex"));
+    LazyLock::new(|| Regex::new(r"\.(?:loom/)?work/(stages|sessions)/").expect("Invalid regex"));
 static PATH_TRAVERSAL_PATTERN: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"\.\.[\\/]\.\.").expect("Invalid regex"));
 static WORKTREES_PATH_PATTERN: LazyLock<Regex> =
@@ -52,11 +56,11 @@ static WORKTREES_PATH_PATTERN: LazyLock<Regex> =
 /// assert!(result.is_allowed());
 ///
 /// // Blocked: protected state file
-/// let result = validate_file_path(".work/stages/01-my-stage.md", "my-stage");
+/// let result = validate_file_path(".loom/work/stages/01-my-stage.md", "my-stage");
 /// assert!(result.is_blocked());
 /// ```
 pub fn validate_file_path(path: &str, current_stage: &str) -> ValidationResult {
-    // Check for writes to protected state files (.work/stages/ or .work/sessions/)
+    // Check for writes to protected state files (.loom/work/stages/ or .loom/work/sessions/)
     if PROTECTED_STATE_PATTERN.is_match(path) {
         return ValidationResult::Blocked(BlockedReason::ProtectedStateFile);
     }
@@ -80,10 +84,10 @@ pub fn validate_file_path(path: &str, current_stage: &str) -> ValidationResult {
 /// Check if a path is a protected state file that should not be directly edited.
 ///
 /// Protected paths include:
-/// - `.work/stages/*` - Stage state files (managed by loom)
-/// - `.work/sessions/*` - Session tracking files (managed by loom)
+/// - `.loom/work/stages/*` (or legacy `.work/stages/*`) - Stage state files (managed by loom)
+/// - `.loom/work/sessions/*` (or legacy `.work/sessions/*`) - Session tracking files (managed by loom)
 ///
-/// Note: Other `.work/` paths (like `.work/heartbeat/`) are allowed.
+/// Note: Other `.loom/work/` paths (like `.loom/work/heartbeat/`) are allowed.
 pub fn is_protected_state_path(path: &str) -> bool {
     PROTECTED_STATE_PATTERN.is_match(path)
 }
@@ -113,9 +117,10 @@ mod tests {
             "src/main.rs",
             "Cargo.toml",
             "tests/integration/test_foo.rs",
-            ".work/heartbeat/stage.json",    // Heartbeat is allowed
-            ".work/signals/session-123.md",  // Signals are allowed
-            ".work/handoffs/handoff-001.md", // Handoffs are allowed
+            ".loom/work/heartbeat/stage.json", // Heartbeat is allowed
+            ".loom/work/signals/session-123.md", // Signals are allowed
+            ".loom/work/handoffs/handoff-001.md", // Handoffs are allowed
+            ".work/heartbeat/stage.json",      // Legacy layout, same rule
         ];
 
         for path in &paths {
@@ -131,9 +136,10 @@ mod tests {
     #[test]
     fn test_blocks_protected_stages() {
         let paths = [
-            ".work/stages/01-bootstrap.md",
-            ".work/stages/02-implementation.md",
-            "/absolute/.work/stages/stage.md",
+            ".loom/work/stages/01-bootstrap.md",
+            ".loom/work/stages/02-implementation.md",
+            "/absolute/.loom/work/stages/stage.md",
+            ".work/stages/01-bootstrap.md", // Legacy layout, same rule
         ];
 
         for path in &paths {
@@ -149,8 +155,9 @@ mod tests {
     #[test]
     fn test_blocks_protected_sessions() {
         let paths = [
-            ".work/sessions/session-abc123.md",
-            ".work/sessions/session-xyz.md",
+            ".loom/work/sessions/session-abc123.md",
+            ".loom/work/sessions/session-xyz.md",
+            ".work/sessions/session-abc123.md", // Legacy layout, same rule
         ];
 
         for path in &paths {
@@ -203,11 +210,15 @@ mod tests {
 
     #[test]
     fn test_is_protected_state_path() {
+        assert!(is_protected_state_path(".loom/work/stages/01-stage.md"));
+        assert!(is_protected_state_path(".loom/work/sessions/session.md"));
+        assert!(!is_protected_state_path(".loom/work/heartbeat/stage.json"));
+        assert!(!is_protected_state_path(".loom/work/signals/signal.md"));
+        assert!(!is_protected_state_path("src/main.rs"));
+        // Legacy layout, same rule.
         assert!(is_protected_state_path(".work/stages/01-stage.md"));
         assert!(is_protected_state_path(".work/sessions/session.md"));
         assert!(!is_protected_state_path(".work/heartbeat/stage.json"));
-        assert!(!is_protected_state_path(".work/signals/signal.md"));
-        assert!(!is_protected_state_path("src/main.rs"));
     }
 
     #[test]

@@ -509,10 +509,10 @@ fn init_repo_with_knowledge() -> TempDir {
     git_ok(root, &["add", "doc/loom/knowledge/architecture.md"]);
     git_ok(root, &["commit", "-m", "knowledge"]);
     // `refresh` resolves the graph store through `WorkDir::new(project_root)`,
-    // which yields `<root>/.work` once that directory exists. Creating it here
-    // pins the layer location instead of letting the upward search find some
-    // ancestor's `.work`.
-    std::fs::create_dir_all(root.join(".work")).unwrap();
+    // which yields `<root>/.loom/work` once that directory exists. Creating it
+    // here pins the layer location instead of letting the upward search find
+    // some ancestor's `.loom/work`.
+    std::fs::create_dir_all(root.join(".loom").join("work")).unwrap();
     temp
 }
 
@@ -521,7 +521,7 @@ fn init_repo_with_knowledge() -> TempDir {
 fn refresh_stores(root: &Path) -> (ContextStore, GraphStore) {
     let store = ContextStore::with_root(root.join("cache"));
     store.ensure().unwrap();
-    let graph_store = GraphStore::new(store.root(), &root.join(".work"));
+    let graph_store = GraphStore::new(store.root(), &root.join(".loom").join("work"));
     (store, graph_store)
 }
 

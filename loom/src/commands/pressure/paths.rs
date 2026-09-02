@@ -113,14 +113,15 @@ pub(super) fn codex_log_path() -> PathBuf {
 /// Marker path the foreground Claude agent creates as its final action to
 /// signal completion (per driver process).
 ///
-/// Deliberately inside the repo's gitignored `.work/`, NOT
+/// Deliberately inside the repo's gitignored `.loom/work/`, NOT
 /// `std::env::temp_dir()`: the agent runs under `--permission-mode auto`,
 /// whose sandbox mounts `/tmp` read-only, so a `/tmp` marker can never be
 /// created and the session would never auto-close. The child's cwd is
 /// `repo_root`, which the sandbox does allow writes to.
 pub(super) fn claude_marker_path(repo_root: &Path) -> PathBuf {
     repo_root
-        .join(".work")
+        .join(".loom")
+        .join("work")
         .join("pressure")
         .join(format!("claude-{}.done", std::process::id()))
 }

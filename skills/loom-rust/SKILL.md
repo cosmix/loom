@@ -381,7 +381,7 @@ let cfg = Config { name: "x".into(), ..Default::default() }; // future fields au
 - ⚠ **`cargo clippy` lints only the default target** — `#[cfg(test)]` modules, integration tests, examples, and benches are skipped. CI must run `cargo clippy --all-targets --all-features -- -D warnings`, else clippy failures hide in test code until they surface elsewhere.
 - Property tests: `proptest!` (shrinks failing cases) for round-trips/invariants over generated input. `mockall` for trait mocks; `insta` for snapshot tests.
 - Integration tests live in `tests/` (each file is a separate crate, sees only the public API). Doctests in `///` run under `cargo test` — mark non-compiling examples ```` ```no_run ```` or ```` ```ignore ````.
-- Loom note: many tests use `serial_test`'s `#[serial]` because they touch shared `.work/` state — they can't run in parallel.
+- Loom note: many tests use `serial_test`'s `#[serial]` because they touch shared `.loom/work/` (or legacy `.work/`) state — they can't run in parallel.
 
 ## Patterns
 

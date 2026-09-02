@@ -188,12 +188,12 @@ fn diagnose_sessions_names_the_work_dir_and_every_session() {
     // deterministically the permanent `UnrenderableIdentifier` branch.
     let hostile = stub_session("session f", "stage f", now + chrono::Duration::seconds(1));
     let sessions = vec![plain.clone(), hostile];
-    let work_dir = Path::new("/tmp/some-repo/.work");
+    let work_dir = Path::new("/tmp/some-repo/.loom/work");
 
     let report = diagnose_sessions(work_dir, &sessions);
 
     assert!(
-        report.contains("/tmp/some-repo/.work"),
+        report.contains("/tmp/some-repo/.loom/work"),
         "must name the resolved work dir: {report}"
     );
     assert!(

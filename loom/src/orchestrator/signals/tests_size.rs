@@ -104,7 +104,7 @@ fn generate_stable_prefix_stays_under_its_size_ceiling() {
 #[test]
 fn standard_signal_stable_plus_semi_stable_boilerplate_floor_stays_under_its_size_ceiling() {
     let temp_dir = TempDir::new().unwrap();
-    let work_dir = temp_dir.path().join(".work");
+    let work_dir = temp_dir.path().join(".loom").join("work");
     fs::create_dir_all(&work_dir).unwrap();
 
     let session = super::tests::create_test_session();

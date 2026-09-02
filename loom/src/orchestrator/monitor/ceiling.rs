@@ -89,7 +89,7 @@ pub(super) fn session_has_current_assignment(session: &Session, stages: &[Stage]
 /// `[context] ceiling_tokens` -> the built-in default) so this reader cannot
 /// drift from the signal, the launcher and `loom status`. It resolves against
 /// the config the monitor read once at startup rather than
-/// `resolve_context_ceiling_tokens`, which would re-read `.work/config.toml`
+/// `resolve_context_ceiling_tokens`, which would re-read `.loom/work/config.toml`
 /// for every session on every tick.
 ///
 /// A session that NAMES a stage may only be judged against THAT stage's

@@ -9,7 +9,7 @@ use std::time::Duration;
 fn test_monitor_config_default() {
     let config = MonitorConfig::default();
     assert_eq!(config.poll_interval, Duration::from_secs(5));
-    assert_eq!(config.work_dir, PathBuf::from(".work"));
+    assert_eq!(config.work_dir, PathBuf::from(".loom/work"));
     assert_eq!(
         config.context.ceiling_tokens,
         DEFAULT_CONTEXT_CEILING_TOKENS

@@ -1,5 +1,7 @@
 //! Daemon server lifecycle methods: start, stop, run.
 
+mod socket_limit;
+
 use super::admission::ByteBudget;
 use super::broadcast::{spawn_log_tailer, spawn_status_broadcaster};
 use super::client::handle_client_connection;
@@ -14,6 +16,8 @@ use super::storage::{
     ensure_private_control_dir, open_private_output, publish_private_file, remove_control_file,
 };
 use super::tokens::{ADMIN_TOKEN_FILE, USER_TOKEN_FILE};
+use socket_limit::{socket_path_fits, SUN_PATH_MAX};
+
 use anyhow::{Context, Result};
 use nix::unistd::{close, fork, pipe, setsid, ForkResult};
 use std::fs::{self, File, Permissions};
@@ -138,7 +142,7 @@ impl DaemonServer {
         .context("Failed to publish PID identity file")?;
 
         // Generate admin + user tokens and write to separate files. Both live
-        // under the per-project `.work/` directory.
+        // under the per-project `.loom/work/` directory.
         //
         // - admin.token (mode 0o600): required for privileged ops (Stop and the
         //   verification-bypass flags `--no-verify`, `--force-unsafe`,
@@ -206,6 +210,15 @@ impl DaemonServer {
     ) -> Result<()> {
         // The guard is owned for the full server lifetime.
         let _lock_guard = lock_guard;
+
+        // Before the umask twiddling below, so a bail here leaves it untouched.
+        if !socket_path_fits(&self.socket_path) {
+            anyhow::bail!(
+                "socket path '{}' ({} bytes) exceeds the {SUN_PATH_MAX}-byte sun_path limit",
+                self.socket_path.display(),
+                self.socket_path.as_os_str().len()
+            );
+        }
 
         // Set restrictive umask before socket bind to close TOCTOU window
         // between bind() and chmod(). The socket is created with permissions
@@ -380,3 +393,6 @@ impl Drop for DaemonServer {
         let _ = self.cleanup();
     }
 }
+
+#[cfg(test)]
+mod tests;

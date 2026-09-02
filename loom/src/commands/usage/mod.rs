@@ -87,9 +87,10 @@ fn parse_all(
 }
 
 /// Resolve the optional hook ledger for the project being reported. An
-/// explicit project must use its own `.work`; falling back to the caller's
-/// repository would silently attach unrelated spawn metadata. `--all`
-/// likewise spans repositories and therefore has no single safe ledger.
+/// explicit project must use its own state directory; falling back to the
+/// caller's repository would silently attach unrelated spawn metadata.
+/// `--all` likewise spans repositories and therefore has no single safe
+/// ledger.
 fn usage_work_dir(project: Option<&Path>, all: bool) -> Option<PathBuf> {
     if all {
         return None;
@@ -101,10 +102,13 @@ fn usage_work_dir(project: Option<&Path>, all: bool) -> Option<PathBuf> {
             } else {
                 std::env::current_dir().ok()?.join(project)
             };
-            let candidate = project.join(".work");
+            let candidate = crate::fs::work_dir::WorkDir::new(&project)
+                .ok()?
+                .root()
+                .to_path_buf();
             candidate.is_dir().then_some(candidate)
         }
-        None => crate::commands::common::find_work_dir().ok(),
+        None => crate::commands::common::work_dir_path().ok(),
     }
 }
 

@@ -1129,14 +1129,49 @@ loom_heartbeat_atomic_write() {
 # payload verdict is "unknown".
 #
 # is_ancestor / find_nearest_claude_ancestor / count_claude_processes_between /
-# loom_cmdline_is_claude are internal helpers - hooks should call
-# loom_is_subagent, not these.
+# loom_cmdline_is_claude / loom_proc_tree_available are internal helpers -
+# hooks should call loom_is_subagent, not these.
+
+# loom_proc_tree_available - Return 0 when a parent-pid lookup can actually be
+# performed here, 1 when the environment withholds process information.
+#
+# Every walk below reads a parent pid from /proc (Linux) or `ps` (macOS). A
+# sandbox that withholds process information denies `ps` outright
+# ("/bin/ps: Operation not permitted"), so the very first lookup yields
+# nothing and the walk stops - which is indistinguishable, at the call site,
+# from having walked the whole chain and not found the target. Probing our OWN
+# pid separates the two: $$ is always a live process, so an empty answer for it
+# means the mechanism is unavailable rather than the chain being short. The
+# answer is computed once and cached for the life of the process.
+loom_proc_tree_available() {
+    if [[ -z "${_LOOM_PROC_TREE_AVAILABLE_CACHE:-}" ]]; then
+        local probe=""
+        if [[ -r "/proc/$$/stat" ]]; then
+            probe=$(awk '{print $4}' "/proc/$$/stat" 2>/dev/null || true)
+        else
+            probe=$(ps -o ppid= -p "$$" 2>/dev/null | tr -d ' ' || true)
+        fi
+        if [[ -n "$probe" ]]; then
+            _LOOM_PROC_TREE_AVAILABLE_CACHE=1
+        else
+            _LOOM_PROC_TREE_AVAILABLE_CACHE=0
+        fi
+    fi
+    [[ "$_LOOM_PROC_TREE_AVAILABLE_CACHE" == "1" ]]
+}
 
 # is_ancestor - Check if a PID is in our ancestor chain
-# Returns 0 if found, 1 if not
+# Returns 0 if found, 1 if not, 2 if the answer is UNKNOWABLE here (no process
+# information available at all - see loom_proc_tree_available). Callers that
+# only test truth keep their old behaviour, since 2 is non-zero like 1;
+# loom_is_subagent distinguishes them.
 is_ancestor() {
     local target_pid="$1"
     local current_pid="$$"
+
+    if ! loom_proc_tree_available; then
+        return 2
+    fi
 
     while [[ "$current_pid" != "1" && "$current_pid" != "0" && -n "$current_pid" ]]; do
         if [[ "$current_pid" == "$target_pid" ]]; then
@@ -1350,7 +1385,10 @@ loom_payload_agent_verdict() {
 # an unrelated, non-loom repo would get `cargo build` / `git commit`
 # hard-blocked with no escape hatch. An agent-team teammate is NOT in the main
 # agent's process tree, so it correctly keeps returning 1 here too (it is not
-# part of a loom session at all).
+# part of a loom session at all). Where no process information exists at all
+# (`ps` denied by a sandbox, no /proc) ancestry is unknowable, and the gate
+# degrades to "the pid must still be signalable" rather than to "no loom
+# session" - see the branch on `ancestry -eq 2` below.
 #
 # PAYLOAD-FIRST CLASSIFICATION, ONCE THE GATE PASSES: with a live
 # LOOM_MAIN_AGENT_PID ancestor established, a payload argument lets
@@ -1369,10 +1407,29 @@ loom_is_subagent() {
         return 1
     fi
 
+    local ancestry=0
+    is_ancestor "$main_pid" || ancestry=$?
+
     # Stale value (from a previous session) - not in our ancestor chain
-    if ! is_ancestor "$main_pid"; then
+    if [[ $ancestry -eq 1 ]]; then
         loom_debug "DEBUG: LOOM_MAIN_AGENT_PID=$main_pid is NOT in ancestor chain - stale value, ignoring"
         return 1
+    fi
+
+    # No process information in this environment, so ancestry is unknowable.
+    # Fall back to the strongest proof left - the pid must name a process we
+    # can still signal - and treat that as satisfying the gate. A guard that
+    # cannot walk the tree must fail CLOSED and keep guarding: returning 1
+    # here would silently turn commit-filter.sh and subagent-verify-guard.sh
+    # into no-ops for every session whose sandbox withholds `ps`, which is the
+    # common case rather than an exotic one. A dead pid is still ignored, so a
+    # leaked value from an exited session cannot re-arm the gate.
+    if [[ $ancestry -eq 2 ]]; then
+        if ! kill -0 "$main_pid" 2>/dev/null; then
+            loom_debug "DEBUG: no process information available and LOOM_MAIN_AGENT_PID=$main_pid is not signalable - ignoring"
+            return 1
+        fi
+        loom_debug "DEBUG: no process information available - LOOM_MAIN_AGENT_PID=$main_pid is live, loom-session gate satisfied"
     fi
 
     if [[ -n "$payload" ]]; then

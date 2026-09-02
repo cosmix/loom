@@ -2,7 +2,7 @@
 //!
 //! `tests_user_prompt.rs` exercises composition on a hand-built pack; these
 //! tests drive `retrieve_for_prompt` — target resolution, retrieval,
-//! suppression — against a real `.work/` tree and a real source-graph
+//! suppression — against a real state-directory tree and a real source-graph
 //! overlay, which is the only way to catch the hook silently resolving no
 //! target at all. They mutate process environment and are therefore
 //! `#[serial]`.
@@ -33,11 +33,11 @@ fn distinctive_prompt() -> String {
     format!("Where is {DISTINCTIVE_SYMBOL} defined and what calls it?")
 }
 
-/// A checkout with a `.work/` directory and NO knowledge tree: an ordinary
-/// repository that `loom map` has run in but `loom init` never has.
+/// A checkout with a `.loom/work/` directory and NO knowledge tree: an
+/// ordinary repository that `loom map` has run in but `loom init` never has.
 fn mapped_project_without_knowledge() -> TempDir {
     let temp = TempDir::new().unwrap();
-    std::fs::create_dir_all(temp.path().join(".work")).unwrap();
+    std::fs::create_dir_all(temp.path().join(".loom").join("work")).unwrap();
     write_local_overlay(temp.path());
     temp
 }
@@ -209,7 +209,7 @@ fn a_hook_payload_with_no_session_id_still_answers_and_suppresses_a_repeat() {
 #[serial]
 fn a_stage_session_is_still_keyed_to_its_stage() {
     let temp = mapped_project_without_knowledge();
-    let work_dir = temp.path().join(".work");
+    let work_dir = temp.path().join(".loom").join("work");
     let stage = crate::models::stage::Stage {
         id: "prompt-hook-stage".to_string(),
         name: "Prompt Hook Stage".to_string(),

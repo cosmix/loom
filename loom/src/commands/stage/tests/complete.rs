@@ -92,7 +92,7 @@ fn restore_var(name: &str, value: &Option<String>) {
 #[serial]
 fn test_complete_with_passing_acceptance() {
     let temp_dir = setup_work_dir();
-    let work_dir_path = temp_dir.path().join(".work");
+    let work_dir_path = temp_dir.path().join(".loom").join("work");
 
     let mut stage = create_test_stage("test-stage", StageStatus::Executing);
     stage.acceptance = vec![AcceptanceCriterion::Simple("exit 0".to_string())];
@@ -137,7 +137,7 @@ fn test_complete_no_verify_refuses_zero_commits_ahead() {
     // phantom-merge that was observed for harden-container-mod.
 
     let temp_dir = setup_work_dir();
-    let work_dir_path = temp_dir.path().join(".work");
+    let work_dir_path = temp_dir.path().join(".loom").join("work");
 
     // --no-verify now requires the admin.token. Provide one for this
     // test so it reaches the zero-commits-ahead guard.
@@ -207,7 +207,7 @@ fn test_complete_no_verify_refuses_zero_commits_ahead() {
 #[serial]
 fn test_complete_with_no_verify_flag() {
     let temp_dir = setup_work_dir();
-    let work_dir_path = temp_dir.path().join(".work");
+    let work_dir_path = temp_dir.path().join(".loom").join("work");
 
     // --no-verify now requires the admin.token. Provide one for this
     // test so it reaches the (non-bypass) completion path.
@@ -240,7 +240,7 @@ fn test_complete_with_no_verify_flag() {
 #[serial]
 fn test_complete_knowledge_stage_sets_merged_true() {
     let temp_dir = setup_work_dir();
-    let work_dir_path = temp_dir.path().join(".work");
+    let work_dir_path = temp_dir.path().join(".loom").join("work");
 
     // Create a knowledge stage (no acceptance criteria)
     let mut stage = create_test_stage("knowledge-stage", StageStatus::Executing);
@@ -274,7 +274,7 @@ fn test_complete_knowledge_stage_sets_merged_true() {
 #[serial]
 fn test_complete_knowledge_stage_with_passing_acceptance() {
     let temp_dir = setup_work_dir();
-    let work_dir_path = temp_dir.path().join(".work");
+    let work_dir_path = temp_dir.path().join(".loom").join("work");
 
     // Create a knowledge stage with passing acceptance criteria
     let mut stage = create_test_stage("knowledge-stage", StageStatus::Executing);
@@ -305,7 +305,7 @@ fn test_complete_knowledge_stage_with_passing_acceptance() {
 #[serial]
 fn test_complete_knowledge_stage_with_failing_acceptance() {
     let temp_dir = setup_work_dir();
-    let work_dir_path = temp_dir.path().join(".work");
+    let work_dir_path = temp_dir.path().join(".loom").join("work");
 
     // Create a knowledge stage with failing acceptance criteria
     let mut stage = create_test_stage("knowledge-stage", StageStatus::Executing);
@@ -342,7 +342,7 @@ fn test_complete_knowledge_stage_with_failing_acceptance() {
 #[serial]
 fn test_complete_knowledge_stage_triggers_dependents() {
     let temp_dir = setup_work_dir();
-    let work_dir_path = temp_dir.path().join(".work");
+    let work_dir_path = temp_dir.path().join(".loom").join("work");
 
     // Create a knowledge stage
     let mut knowledge_stage = create_test_stage("knowledge-stage", StageStatus::Executing);
@@ -386,7 +386,7 @@ fn test_complete_knowledge_stage_triggers_dependents() {
 #[serial]
 fn no_verify_succeeds_with_matching_one_time_proof() {
     let tmp = TempDir::new().unwrap();
-    let work_dir = tmp.path().join(".work");
+    let work_dir = tmp.path().join(".loom").join("work");
     write_admin_token(&work_dir, "admin-secret-token");
 
     let proof = completion_proof("test-stage", true, false, false, "admin-gate-test1");
@@ -404,7 +404,7 @@ fn no_verify_succeeds_with_matching_one_time_proof() {
 #[serial]
 fn no_verify_rejected_when_operator_proof_absent() {
     let tmp = TempDir::new().unwrap();
-    let work_dir = tmp.path().join(".work");
+    let work_dir = tmp.path().join(".loom").join("work");
     std::fs::create_dir_all(&work_dir).unwrap();
     // No admin.token written.
 
@@ -425,7 +425,7 @@ fn no_verify_rejected_when_operator_proof_absent() {
 #[serial]
 fn force_unsafe_rejected_when_operator_proof_absent() {
     let tmp = TempDir::new().unwrap();
-    let work_dir = tmp.path().join(".work");
+    let work_dir = tmp.path().join(".loom").join("work");
     std::fs::create_dir_all(&work_dir).unwrap();
 
     let result = require_admin_capability(&work_dir, "test-stage", false, true, false, None);
@@ -446,7 +446,7 @@ fn force_unsafe_rejected_when_operator_proof_absent() {
 fn assume_merged_rejected_when_operator_proof_absent() {
     // --assume-merged path exercises the same gate.
     let tmp = TempDir::new().unwrap();
-    let work_dir = tmp.path().join(".work");
+    let work_dir = tmp.path().join(".loom").join("work");
     std::fs::create_dir_all(&work_dir).unwrap();
 
     let result = require_admin_capability(&work_dir, "test-stage", false, true, true, None);
@@ -471,7 +471,7 @@ fn verify_path_succeeds_without_admin_token() {
     // (if any) must NOT mention the admin token. Other failure modes (no git
     // repo, etc.) are acceptable — we only assert the gate did not fire.
     let temp_dir = setup_work_dir();
-    let work_dir_path = temp_dir.path().join(".work");
+    let work_dir_path = temp_dir.path().join(".loom").join("work");
     // No admin.token present in the work dir.
 
     let mut stage = create_test_stage("verify-path-stage", StageStatus::Executing);
@@ -506,7 +506,7 @@ fn verify_path_succeeds_without_admin_token() {
 #[serial]
 fn cli_without_operator_proof_fails_admin_check() {
     let tmp = TempDir::new().unwrap();
-    let work_dir = tmp.path().join(".work");
+    let work_dir = tmp.path().join(".loom").join("work");
     std::fs::create_dir_all(&work_dir).unwrap();
     // Deliberately do NOT write admin.token.
 
@@ -527,7 +527,7 @@ fn cli_without_operator_proof_fails_admin_check() {
 #[serial]
 fn test_complete_standard_stage_not_routed_to_knowledge() {
     let temp_dir = setup_work_dir();
-    let work_dir_path = temp_dir.path().join(".work");
+    let work_dir_path = temp_dir.path().join(".loom").join("work");
 
     // Create a standard stage (default stage_type)
     let mut stage = create_test_stage("standard-stage", StageStatus::Executing);

@@ -108,11 +108,11 @@ fn retrieve_for_stage_packs_a_source_node_from_a_real_overlay_on_disk() {
     assert_eq!(item.pointer.line_end, Some(14));
 }
 
-/// A checkout with a `.work/` directory and NO `doc/loom/knowledge/`: a
+/// A checkout with a `.loom/work/` directory and NO `doc/loom/knowledge/`: a
 /// repository `loom map` has run in, but which has no curated knowledge tree.
 fn project_without_knowledge() -> TempDir {
     let temp = TempDir::new().unwrap();
-    std::fs::create_dir_all(temp.path().join(".work")).unwrap();
+    std::fs::create_dir_all(temp.path().join(".loom").join("work")).unwrap();
     temp
 }
 

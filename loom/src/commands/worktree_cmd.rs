@@ -75,11 +75,8 @@ pub fn worktrees_dir() -> PathBuf {
 /// if it's the only worktree starting with "pref".
 pub fn remove(stage_id: String, force: bool, confirmation: Option<String>) -> Result<()> {
     let repo_root = std::env::current_dir()?;
-    let work_dir = repo_root.join(".work");
-
-    if !work_dir.exists() {
-        bail!(".work/ directory not found. Run 'loom init' first.");
-    }
+    let work_dir = crate::commands::common::work_dir_path()
+        .context("state directory not found. Run 'loom init' first.")?;
 
     let actual_stage_id = resolve_stage_id(&repo_root, &stage_id)?;
     print_removal_header(&actual_stage_id, force);

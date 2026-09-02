@@ -1,11 +1,11 @@
 //! Monitor module for the loom orchestrator
 //!
-//! Polls `.work/` state files to detect stage completion, context exhaustion,
+//! Polls `.loom/work/` state files to detect stage completion, context exhaustion,
 //! and session crashes. Enables event-driven orchestration without tight coupling.
 //!
 //! ## Heartbeat Protocol
 //!
-//! Sessions write heartbeat files to `.work/heartbeat/<stage-id>.json` via hooks.
+//! Sessions write heartbeat files to `.loom/work/heartbeat/<stage-id>.json` via hooks.
 //! The monitor polls these files to detect:
 //! - Crashed sessions (PID dead)
 //! - Hung sessions (PID alive but no heartbeat update for threshold duration)

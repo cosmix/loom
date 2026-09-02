@@ -109,7 +109,7 @@ fn ceiling_trigger_leaves_a_stage_that_already_moved_on() {
 }
 
 /// The defect this whole path exists for: a worktree session's sandbox
-/// grants `.work/handoffs` but not `.work/stages`, so the transition write
+/// grants the state directory's `handoffs/` but not its `stages/`, so the transition write
 /// fails while the document lands. Reporting that as a warning and exiting
 /// 0 told the agent its handoff was complete; the stage stayed `Executing`
 /// and the daemon's status-triggered recovery never armed.
@@ -122,7 +122,7 @@ fn a_failed_transition_is_an_error_that_says_the_document_stands() {
     let error = end_turn_for_handoff(
         "unwritable",
         work_dir,
-        Path::new("/w/.work/handoffs/unwritable-handoff-002.md"),
+        Path::new("/w/.loom/work/handoffs/unwritable-handoff-002.md"),
     )
     .expect_err("a transition that did not happen must not report success");
 

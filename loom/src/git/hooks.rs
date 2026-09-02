@@ -1,6 +1,6 @@
 //! Git hook installation for loom
 //!
-//! Installs git hooks to prevent accidental commits of .work/ and .worktrees/
+//! Installs git hooks to prevent accidental commits of .loom/work/ and .worktrees/
 
 use anyhow::{Context, Result};
 use std::fs;

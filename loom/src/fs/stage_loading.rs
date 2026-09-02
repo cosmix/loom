@@ -1,6 +1,6 @@
-//! Shared utilities for loading stage definitions from .work/stages/ files.
+//! Shared utilities for loading stage definitions from .loom/work/stages/ files.
 //!
-//! On-disk `.work/stages/*.md` files carry a full serialized
+//! On-disk `.loom/work/stages/*.md` files carry a full serialized
 //! [`Stage`] in their YAML frontmatter (written by
 //! `serialize_stage_to_markdown`), including runtime-only keys `StageDefinition`
 //! does not declare (`status`, `created_at`, `merged`, `fix_attempts`,
@@ -87,7 +87,7 @@ fn definition_from_stage(stage: &Stage) -> StageDefinition {
     }
 }
 
-/// Load stage definitions from .work/stages/ directory
+/// Load stage definitions from .loom/work/stages/ directory
 pub fn load_stages_from_work_dir(stages_dir: &Path) -> Result<Vec<StageDefinition>> {
     let mut stages = Vec::new();
 

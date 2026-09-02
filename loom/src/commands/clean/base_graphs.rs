@@ -31,7 +31,7 @@ use crate::context::store::{ContextStore, CACHE_RELATIVE_DIR};
 pub(super) fn prune_base_graphs(repo_root: &Path) -> Result<(usize, u64)> {
     let cache_root = repo_root.join(CACHE_RELATIVE_DIR);
     let store = ContextStore::with_root(&cache_root);
-    let graph_store = GraphStore::new(&cache_root, &repo_root.join(".work"));
+    let graph_store = GraphStore::new(&cache_root, &super::resolve_state_dir(repo_root));
     let base_dir = graph_store.base_dir();
 
     let before = base_layer_sizes(&base_dir);

@@ -108,10 +108,10 @@ fn test_sync_transforms_worktree_paths() {
     let worktree_settings = json!({
         "permissions": {
             "allow": [
-                "Read(src/**)",                     // regular - keep as-is
-                "Read(../../.work/**)",             // transformable - becomes Read(.work/**)
-                "Edit(.worktrees/stage-1/**)",      // non-transformable - filtered out
-                "Bash(cargo:*)"                     // regular - keep as-is
+                "Read(src/**)",                      // regular - keep as-is
+                "Read(../../../.loom/work/**)",      // transformable - becomes Read(.loom/work/**)
+                "Edit(.worktrees/stage-1/**)",       // non-transformable - filtered out
+                "Bash(cargo:*)"                      // regular - keep as-is
             ]
         }
     });
@@ -125,7 +125,7 @@ fn test_sync_transforms_worktree_paths() {
     let result = sync_worktree_permissions(worktree_dir.path(), main_dir.path()).unwrap();
 
     // Regular permissions + transformed permission should be synced
-    // (Read(src/**), Read(.work/**), Bash(cargo:*))
+    // (Read(src/**), Read(.loom/work/**), Bash(cargo:*))
     // Edit(.worktrees/stage-1/**) is filtered out as non-transformable
     assert_eq!(result.allow_added, 3);
 
@@ -137,8 +137,8 @@ fn test_sync_transforms_worktree_paths() {
     let allow = main_settings["permissions"]["allow"].as_array().unwrap();
     assert!(allow.iter().any(|v| v == "Read(src/**)"));
     assert!(allow.iter().any(|v| v == "Bash(cargo:*)"));
-    // Verify ../../.work/** was transformed to .work/**
-    assert!(allow.iter().any(|v| v == "Read(.work/**)"));
+    // Verify ../../../.loom/work/** was transformed to .loom/work/**
+    assert!(allow.iter().any(|v| v == "Read(.loom/work/**)"));
     // Verify no raw worktree-specific patterns remain
     assert!(!allow.iter().any(|v| v.as_str().unwrap().contains("../../")));
     assert!(!allow

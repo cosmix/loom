@@ -10,39 +10,11 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use crate::claude::find_claude_path;
+use crate::commands::common::resolve_work_dir;
 use crate::fs::memory::{list_journals, read_journal, MemoryEntry, MemoryEntryType};
 use crate::fs::work_dir::load_config;
-use crate::git::worktree::{find_repo_root_from_cwd, find_worktree_root_from_cwd};
+use crate::git::worktree::find_worktree_root_from_cwd;
 use crate::parser::frontmatter::extract_frontmatter_field;
-
-/// Find the .work directory, handling both worktree and main repo contexts.
-fn get_work_dir() -> Result<PathBuf> {
-    let cwd = env::current_dir().context("Failed to get current directory")?;
-
-    // Check if we're in a worktree first
-    if let Some(worktree_root) = find_worktree_root_from_cwd(&cwd) {
-        let work_dir = worktree_root.join(".work");
-        if work_dir.exists() {
-            return Ok(work_dir);
-        }
-    }
-
-    // Not in a worktree — find the repo root
-    if let Some(repo_root) = find_repo_root_from_cwd(&cwd) {
-        let work_dir = repo_root.join(".work");
-        if work_dir.exists() {
-            return Ok(work_dir);
-        }
-    }
-
-    // Fallback: check current directory
-    let work_dir = cwd.join(".work");
-    if work_dir.exists() {
-        return Ok(work_dir);
-    }
-
-    anyhow::bail!(".work directory not found. Run 'loom init' first.");
-}
 
 /// Information extracted from a stage file.
 struct StageInfo {
@@ -54,7 +26,7 @@ struct StageInfo {
     _filename: String,
 }
 
-/// Load all stage files from `.work/stages/` sorted by filename.
+/// Load all stage files from `.loom/work/stages/` sorted by filename.
 fn load_stage_infos(stages_dir: &Path) -> Result<Vec<StageInfo>> {
     if !stages_dir.exists() {
         return Ok(Vec::new());
@@ -280,27 +252,21 @@ fn render_stage_section(stage: &StageInfo, entries: &[&MemoryEntry]) -> String {
 /// Resolve where the review document should be written.
 ///
 /// Inside a loom worktree this is the WORKTREE root, not the main repo:
-/// `.work` is a symlink to the main repo's state dir, so resolving through it
-/// (as `main_project_root()` does) would silently write into the main repo's
+/// `.loom/work` is a symlink to the main repo's state dir, so resolving through
+/// it (as `main_project_root()` does) would silently write into the main repo's
 /// `doc/plans/` — invisible from the worktree that ran the command.
 fn resolve_output_root(cwd: &Path, project_root: &Path) -> PathBuf {
     find_worktree_root_from_cwd(cwd).unwrap_or_else(|| project_root.to_path_buf())
 }
 
 pub fn execute(ai_summary: bool) -> Result<()> {
-    let work_dir = get_work_dir()?;
+    let workspace = resolve_work_dir()?;
+    let work_dir = workspace.root().to_path_buf();
 
     // Resolve the project root (follow symlinks for worktrees)
-    let project_root: PathBuf = {
-        let work_dir_struct = crate::fs::work_dir::WorkDir::new(
-            work_dir
-                .parent()
-                .context("Failed to determine parent of .work directory")?,
-        )?;
-        work_dir_struct
-            .main_project_root()
-            .context("Could not determine project root")?
-    };
+    let project_root: PathBuf = workspace
+        .main_project_root()
+        .context("Could not determine project root")?;
 
     // Load config.toml
     let config = load_config(&work_dir)?.context("No active plan. Run 'loom init' first.")?;

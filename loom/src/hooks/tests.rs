@@ -53,11 +53,11 @@ mod config_tests {
     fn test_hooks_config_new() {
         let config = super::test_config(
             PathBuf::from("/path/to/hooks"),
-            PathBuf::from("/path/to/.work"),
+            PathBuf::from("/path/to/.loom/work"),
         );
 
         assert_eq!(config.hooks_dir, PathBuf::from("/path/to/hooks"));
-        assert_eq!(config.work_dir, PathBuf::from("/path/to/.work"));
+        assert_eq!(config.work_dir, PathBuf::from("/path/to/.loom/work"));
         assert_eq!(config.permission_mode, PermissionMode::AcceptEdits);
     }
 
@@ -125,7 +125,7 @@ mod events_tests {
     fn test_hook_event_log_with_payload() {
         let payload = HookEventPayload::PreCompact {
             context_tokens: Some(75_000),
-            transcript_path: Some(".work/transcripts/stage-1.jsonl".to_string()),
+            transcript_path: Some(".loom/work/transcripts/stage-1.jsonl".to_string()),
             handoff_file: Some("stage-1-handoff-001.md".to_string()),
         };
         let event =
@@ -142,7 +142,7 @@ mod events_tests {
             assert_eq!(*context_tokens, Some(75_000));
             assert_eq!(
                 transcript_path.as_deref(),
-                Some(".work/transcripts/stage-1.jsonl")
+                Some(".loom/work/transcripts/stage-1.jsonl")
             );
             assert_eq!(*handoff_file, Some("stage-1-handoff-001.md".to_string()));
         } else {
@@ -246,12 +246,12 @@ mod generator_tests {
 
     #[test]
     fn test_generate_hooks_settings_scrubs_stale_work_dir() {
-        // If HooksConfig.work_dir names a `.work/` that no longer exists (e.g.
+        // If HooksConfig.work_dir names a `.loom/work/` that no longer exists (e.g.
         // its worktree was deleted since the config was built), generation
         // must not persist a dead LOOM_WORK_DIR pin that would silently
         // redirect loom commands at nothing.
         let temp_dir = TempDir::new().unwrap();
-        let dead_work_dir = temp_dir.path().join("gone").join(".work");
+        let dead_work_dir = temp_dir.path().join("gone").join(".loom").join("work");
         let config = super::test_config(PathBuf::from("/hooks"), dead_work_dir);
 
         let settings = generate_hooks_settings(&config, None).unwrap();

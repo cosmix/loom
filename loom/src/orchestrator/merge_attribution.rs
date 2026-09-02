@@ -102,7 +102,7 @@ pub(super) fn reconcile_attributed_stage_record(
     Ok((prior_status, stage, status_mutated))
 }
 
-/// Read all sessions from `.work/sessions/`, returning a Vec.
+/// Read all sessions from `.loom/work/sessions/`, returning a Vec.
 ///
 /// Used by the attribution algorithm to find merge metadata. Returns an empty
 /// Vec on filesystem errors — attribution then falls back to commit-based

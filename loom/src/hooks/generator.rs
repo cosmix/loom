@@ -101,8 +101,8 @@ pub fn generate_hooks_settings(
     // (wrong-stage `loom memory` entries, heartbeats for dead sessions,
     // commit-filter misidentifying the main agent). Also scrub any stale
     // values written by older loom versions, and a stale `LOOM_WORK_DIR` pin
-    // left behind by a since-deleted `.work/` — the two heals travel together
-    // so they cannot drift apart (see `scrub_stale_work_dir_env`).
+    // left behind by a since-deleted `.loom/work/` — the two heals travel
+    // together so they cannot drift apart (see `scrub_stale_work_dir_env`).
     crate::fs::permissions::scrub_session_identity_env(&mut settings);
     crate::fs::permissions::scrub_stale_work_dir_env(&mut settings);
 
@@ -111,10 +111,11 @@ pub fn generate_hooks_settings(
         .ok_or_else(|| anyhow::anyhow!("settings must be a JSON object"))?;
 
     // Add narrow Read permissions for resolved absolute paths of shared state.
-    // In worktrees, .work/ is a symlink to ../../.work. Claude Code resolves symlinks
-    // before permission matching, so relative patterns like Read(.work/**) fail because
-    // the resolved path is outside the worktree's project root. These absolute-path
-    // permissions cover only the specific files this session needs.
+    // In worktrees, .loom/work/ is a symlink to ../../../.loom/work. Claude Code
+    // resolves symlinks before permission matching, so relative patterns like
+    // Read(.loom/work/**) fail because the resolved path is outside the worktree's
+    // project root. These absolute-path permissions cover only the specific files
+    // this session needs.
     //
     // IMPORTANT: Claude Code requires the // prefix for absolute filesystem paths.
     // A single / means "relative to project root", NOT absolute. See:
@@ -140,8 +141,12 @@ pub fn generate_hooks_settings(
         let handoffs_dir = config.work_dir.join("handoffs");
         allow_arr.push(json!(format!("Read(/{}/**)", handoffs_dir.display())));
 
-        // Plan files in the main project (doc/plans/ contains only plan markdown)
-        if let Some(project_root) = config.work_dir.parent() {
+        // Plan files in the main project (doc/plans/ contains only plan markdown).
+        // Hop count to the project root is layout-dependent (nested vs. legacy),
+        // so it goes through `WorkDir::project_root()` rather than a bare
+        // `.parent()` here.
+        let work_dir_handle = crate::fs::work_dir::WorkDir::new(&config.work_dir).ok();
+        if let Some(project_root) = work_dir_handle.as_ref().and_then(|wd| wd.project_root()) {
             let plans_dir = project_root.join("doc").join("plans");
             allow_arr.push(json!(format!("Read(/{}/**)", plans_dir.display())));
         }

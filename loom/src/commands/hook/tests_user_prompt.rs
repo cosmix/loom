@@ -342,7 +342,7 @@ fn an_item_without_an_excerpt_contributes_a_pointer_and_no_quote() {
     );
 }
 
-// End-to-end tests against a real `.work/` tree and a real source-graph
+// End-to-end tests against a real state-directory tree and a real source-graph
 // overlay are their own file — this one was over the maintainability line
 // limit with them inlined. Same idiom `tests_brief.rs` uses for its own
 // `tests_brief_e2e` child: no repeated `#[cfg(test)]`, since this whole file

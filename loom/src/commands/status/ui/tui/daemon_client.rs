@@ -49,7 +49,10 @@ pub fn connect(socket_path: &Path) -> Result<UnixStream> {
 
 /// Subscribe to status updates.
 pub fn subscribe(stream: &mut UnixStream) -> Result<()> {
-    let token = read_auth_token(Path::new(".work")).unwrap_or_default();
+    let token = crate::commands::common::work_dir_path()
+        .ok()
+        .and_then(|work_dir| read_auth_token(&work_dir))
+        .unwrap_or_default();
     write_message(stream, &Request::SubscribeStatus { auth_token: token })
         .context("Failed to send SubscribeStatus")?;
 

@@ -130,7 +130,7 @@ fn build_overview_argv_wires_each_pane_to_its_own_session() {
 #[test]
 fn build_overview_argv_targets_the_per_repo_viewer_socket() {
     let temp = TempDir::new().unwrap();
-    let work_dir = temp.path().join(".work");
+    let work_dir = temp.path().join(".loom").join("work");
     std::fs::create_dir_all(&work_dir).unwrap();
     let socket = viewer_socket_name(&work_dir);
 

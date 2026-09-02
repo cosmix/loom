@@ -9,7 +9,7 @@ use crate::orchestrator::monitor::{ContextHealth, Monitor, MonitorConfig, Monito
 
 use super::ceiling_retries::budget_retry_pair;
 
-/// `Handlers` over an empty `.work`. The temp dir comes back with them so the
+/// `Handlers` over an empty `.loom/work`. The temp dir comes back with them so the
 /// caller keeps it alive for the length of the test.
 fn ceiling_harness() -> (tempfile::TempDir, Handlers) {
     let temp_dir = tempfile::TempDir::new().unwrap();
@@ -46,7 +46,7 @@ const DECLARED_CEILING: u32 = 300_000;
 /// once already; here it is a build failure instead.
 const _: () = assert!(PLAN_WIDE_CEILING < SESSION_TOKENS && SESSION_TOKENS < DECLARED_CEILING);
 
-/// `Handlers` over a `.work` whose plan-wide `[context] ceiling_tokens` is
+/// `Handlers` over a `.loom/work` whose plan-wide `[context] ceiling_tokens` is
 /// deliberately tiny.
 ///
 /// The value is written to disk rather than taken from

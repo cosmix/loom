@@ -174,7 +174,7 @@ pub fn generate_knowledge_distill_stable_prefix() -> String {
         "**⛔ MEMORY IS A ONE-WAY DOOR — recording to `loom memory` AFTER you distill is ZERO-VALUE WASTE.**\n",
     );
     content.push_str("This is the LAST stage of the plan: the moment distillation finishes, the plan completes and the\n");
-    content.push_str("ENTIRE `.work/` directory — including EVERY `loom memory` entry — is DELETED. Nothing reads memory\n");
+    content.push_str("ENTIRE `.loom/work/` directory — including EVERY `loom memory` entry — is DELETED. Nothing reads memory\n");
     content.push_str("after this stage. Therefore:\n\n");
     content.push_str(
         "- Record ALL of your own findings to `loom memory` in step 1, BEFORE you begin step 4.\n",

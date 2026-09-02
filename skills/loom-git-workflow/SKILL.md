@@ -72,7 +72,7 @@ Guard with an atomic compare-and-swap.
 Fixes #234"
 ```
 
-⚠ Loom stages: never `git add -A` / `git add .` — that stages the `.work/` symlink. Stage specific files only.
+⚠ Loom stages: never `git add -A` / `git add .` — that stages the `.loom/work/` symlink (or the legacy `.work/` symlink). Stage specific files only.
 
 ## Rebase vs. merge — pick deliberately
 

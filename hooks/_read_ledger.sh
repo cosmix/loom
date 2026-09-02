@@ -48,8 +48,8 @@ _loom_ledger_cap() {
 # Best-effort: every failure path returns 0 rather than propagating an
 # error - a failed ledger write must never change a hook's decision or exit
 # code. Directory creation/permissions follow the loom/hooks convention
-# (plain mkdir/chmod, never the Rust CLI - .work is a symlink inside a
-# worktree; see subagent-stop.sh's header). A symlinked ledger DIRECTORY or
+# (plain mkdir/chmod, never the Rust CLI - the state directory is a symlink
+# inside a worktree; see subagent-stop.sh's header). A symlinked ledger DIRECTORY or
 # FILE is refused outright, matching subagent-stop.sh's own `[[ ! -L "$FILE"
 # ]]` guard - `mkdir -p` succeeds silently through a pre-planted directory
 # symlink (e.g. a shared /tmp with TMPDIR unset), which would otherwise

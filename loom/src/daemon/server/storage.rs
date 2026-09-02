@@ -95,7 +95,10 @@ mod tests {
     #[test]
     fn control_directory_is_created_owner_only() {
         let parent = tempfile::tempdir().unwrap();
-        let work_dir = parent.path().join(".work");
+        // `.loom` already exists (as `WorkDir::initialize()` would leave it);
+        // `ensure_private_control_dir` itself is non-recursive.
+        std::fs::create_dir(parent.path().join(".loom")).unwrap();
+        let work_dir = parent.path().join(".loom").join("work");
 
         ensure_private_control_dir(&work_dir).unwrap();
 

@@ -62,7 +62,7 @@ fn settled_completion_doctrine_present_in_all_stable_prefixes() {
 #[test]
 fn subagent_budget_is_cadence_not_deadline_in_emitted_signal() {
     let temp_dir = TempDir::new().unwrap();
-    let work_dir = temp_dir.path().join(".work");
+    let work_dir = temp_dir.path().join(".loom").join("work");
     fs::create_dir_all(&work_dir).unwrap();
 
     let session = create_test_session();

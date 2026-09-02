@@ -5,7 +5,7 @@ use tempfile::TempDir;
 
 use super::*;
 
-/// Guards against a stray `.git`/`.work` directly under `env::temp_dir()`
+/// Guards against a stray `.git`/`.loom/work` directly under `env::temp_dir()`
 /// itself (the OS-shared temp root that every `TempDir` in this suite is
 /// nested under, not any one test's own scratch directory). Cleans up
 /// whatever it finds there both before the test runs - so a leftover from
@@ -22,7 +22,7 @@ impl AmbientTempRootGuard {
         let root = env::temp_dir();
         let guard = Self {
             git: root.join(".git"),
-            work: root.join(".work"),
+            work: root.join(".loom").join("work"),
         };
         guard.clean();
         guard
@@ -40,13 +40,13 @@ impl Drop for AmbientTempRootGuard {
     }
 }
 
-/// Regression guard for the stray-`.work`-at-the-temp-root bug:
+/// Regression guard for the stray-state-directory-at-the-temp-root bug:
 /// `find_repo_root_from_cwd`'s upward walk has no ceiling, so from a cwd
 /// with no repo in its own ancestry it can climb all the way to the
 /// OS-shared temp root and, if something else left an ancestor directory
 /// there merely NAMED `.git` (no `HEAD`, no real git internals - exactly
 /// what an unrelated process sharing that root leaves behind), the old
-/// `.exists()` check accepted it as a repo root and created `.work` next to
+/// `.exists()` check accepted it as a repo root and created `.loom/work` next to
 /// it. This plants that impostor directly under `env::temp_dir()`, then
 /// runs the same "outside any repo" scenario as
 /// `note_outside_git_repo_still_fails` from a nested, git-less subdirectory,
@@ -73,5 +73,5 @@ fn note_does_not_adopt_an_impostor_git_dir_at_the_temp_root() {
         result.is_err(),
         "an impostor .git at the temp root must not be adopted as a repo root"
     );
-    assert!(!env::temp_dir().join(".work").exists());
+    assert!(!env::temp_dir().join(".loom").join("work").exists());
 }

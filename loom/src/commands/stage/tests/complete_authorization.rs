@@ -8,7 +8,7 @@ fn privileged_completion_needs_no_proof_when_there_is_no_daemon_credential() {
     // no proof is obtainable BY ANYONE. Demanding one locks the operator out of
     // their own stopped project while protecting nothing: a stage agent
     // completes through the daemon broker (which needs the daemon) or by
-    // writing `.work/stages/*.md` directly (which `denyWrite` forbids it), so
+    // writing the state directory's `stages/*.md` directly (which `denyWrite` forbids it), so
     // the daemon's absence removes its ability to act, not just its credential.
     let work = tempfile::TempDir::new().unwrap();
     assert!(

@@ -57,14 +57,14 @@ fn note_creates_work_dir_when_missing_using_ad_hoc_stage() {
     env::remove_var("LOOM_STAGE_ID");
     let repo = init_git_repo();
     env::set_current_dir(repo.path()).unwrap();
-    assert!(!repo.path().join(".work").exists());
+    assert!(!repo.path().join(".loom").join("work").exists());
 
     note("probe text".to_string(), None).unwrap();
 
-    let journal_path = repo.path().join(".work/memory/ad-hoc.md");
+    let journal_path = repo.path().join(".loom/work/memory/ad-hoc.md");
     assert!(
         journal_path.exists(),
-        ".work/memory/ad-hoc.md should be auto-created"
+        ".loom/work/memory/ad-hoc.md should be auto-created"
     );
     let content = std::fs::read_to_string(&journal_path).unwrap();
     assert!(content.contains("probe text"));
@@ -80,11 +80,11 @@ fn note_uses_loom_stage_id_env_var_over_sentinel() {
 
     note("from env".to_string(), None).unwrap();
 
-    assert!(repo.path().join(".work/memory/env-stage.md").exists());
-    assert!(!repo.path().join(".work/memory/ad-hoc.md").exists());
+    assert!(repo.path().join(".loom/work/memory/env-stage.md").exists());
+    assert!(!repo.path().join(".loom/work/memory/ad-hoc.md").exists());
 }
 
-/// A stage that can write `.work` directly (no sandbox, e.g. a main-repo
+/// A stage that can write the state directory directly (no sandbox, e.g. a main-repo
 /// knowledge stage) must be refused just as firmly as the spool path when
 /// its explicit `--stage` disagrees with `LOOM_STAGE_ID` - attribution must
 /// not be spoofable via CLI flag regardless of which write path a call
@@ -107,8 +107,8 @@ fn note_explicit_stage_mismatch_is_refused_direct_path() {
     let message = result.unwrap_err().to_string();
     assert!(message.contains("does not match"), "{message}");
     assert!(message.contains("NOT recorded"), "{message}");
-    assert!(!repo.path().join(".work/memory/cli-stage.md").exists());
-    assert!(!repo.path().join(".work/memory/env-stage.md").exists());
+    assert!(!repo.path().join(".loom/work/memory/cli-stage.md").exists());
+    assert!(!repo.path().join(".loom/work/memory/env-stage.md").exists());
 }
 
 /// With no `LOOM_STAGE_ID` (ad-hoc/interactive/operator use), there is no
@@ -124,7 +124,7 @@ fn note_explicit_stage_allowed_when_loom_stage_id_unset() {
 
     note("explicit wins".to_string(), Some("cli-stage".to_string())).unwrap();
 
-    assert!(repo.path().join(".work/memory/cli-stage.md").exists());
+    assert!(repo.path().join(".loom/work/memory/cli-stage.md").exists());
 }
 
 // `AmbientTempRootGuard` and its regression test
@@ -150,8 +150,8 @@ fn note_outside_git_repo_still_fails() {
     assert!(result
         .unwrap_err()
         .to_string()
-        .contains(".work directory not found"));
-    assert!(!plain_dir.path().join(".work").exists());
+        .contains("No loom workspace found"));
+    assert!(!plain_dir.path().join(".loom").join("work").exists());
 }
 
 #[test]
@@ -163,14 +163,14 @@ fn list_and_show_degrade_without_creating_work_dir() {
 
     assert!(list(None, None).is_ok());
     assert!(
-        !repo.path().join(".work").exists(),
-        "list must not create .work"
+        !repo.path().join(".loom").join("work").exists(),
+        "list must not create the state directory"
     );
 
     assert!(show(None, true).is_ok());
     assert!(
-        !repo.path().join(".work").exists(),
-        "show --all must not create .work"
+        !repo.path().join(".loom").join("work").exists(),
+        "show --all must not create the state directory"
     );
 }
 
@@ -181,13 +181,13 @@ fn note_reuses_existing_work_dir_without_recreating() {
     env::remove_var("LOOM_STAGE_ID");
     let repo = init_git_repo();
     env::set_current_dir(repo.path()).unwrap();
-    // Pre-existing `.work` (as a real loom plan would leave behind) must
-    // be found by `get_work_dir()` and reused, not recreated.
-    std::fs::create_dir_all(repo.path().join(".work")).unwrap();
+    // A pre-existing state directory (as a real loom plan would leave behind) must
+    // be found by `get_or_create_work_dir()` and reused, not recreated.
+    std::fs::create_dir_all(repo.path().join(".loom").join("work")).unwrap();
 
     note("reuse me".to_string(), None).unwrap();
 
-    let journal_path = repo.path().join(".work/memory/ad-hoc.md");
+    let journal_path = repo.path().join(".loom/work/memory/ad-hoc.md");
     assert!(journal_path.exists());
     let content = std::fs::read_to_string(&journal_path).unwrap();
     assert!(content.contains("reuse me"));
@@ -203,7 +203,7 @@ fn note_success_takes_direct_path_and_writes_no_spool_file() {
 
     note("direct path works".to_string(), None).unwrap();
 
-    assert!(repo.path().join(".work/memory/ad-hoc.md").exists());
+    assert!(repo.path().join(".loom/work/memory/ad-hoc.md").exists());
     assert!(
         !repo.path().join(".loom/memory-spool.jsonl").exists(),
         "a successful direct write must not fall back to the spool"
@@ -240,7 +240,7 @@ fn note_explicit_stage_mismatch_is_refused_inside_worktree() {
         "a refused forged stage claim must not spool anything"
     );
     assert!(
-        !worktree_root.join(".work").exists(),
+        !worktree_root.join(".loom").join("work").exists(),
         "the guard must fire before any work_dir resolution/creation is attempted"
     );
 }
@@ -252,7 +252,7 @@ fn read_journal_with_pending_surfaces_a_pending_entry() {
     let repo = init_git_repo();
     let stage = "pending-stage";
     let worktree_root = repo.path().join(".worktrees").join(stage);
-    let work_dir = worktree_root.join(".work");
+    let work_dir = worktree_root.join(".loom").join("work");
     std::fs::create_dir_all(&work_dir).unwrap();
     env::set_current_dir(&worktree_root).unwrap();
     env::set_var("LOOM_STAGE_ID", stage);
@@ -290,7 +290,7 @@ fn show_all_surfaces_a_spool_only_stage() {
     let repo = init_git_repo();
     let stage = "spool-only-stage";
     let worktree_root = repo.path().join(".worktrees").join(stage);
-    let work_dir = worktree_root.join(".work");
+    let work_dir = worktree_root.join(".loom").join("work");
     std::fs::create_dir_all(&work_dir).unwrap();
     env::set_current_dir(&worktree_root).unwrap();
     env::set_var("LOOM_STAGE_ID", stage);
@@ -325,7 +325,7 @@ fn list_surfaces_a_spool_only_stage() {
     let repo = init_git_repo();
     let stage = "spool-only-list-stage";
     let worktree_root = repo.path().join(".worktrees").join(stage);
-    let work_dir = worktree_root.join(".work");
+    let work_dir = worktree_root.join(".loom").join("work");
     std::fs::create_dir_all(&work_dir).unwrap();
     env::set_current_dir(&worktree_root).unwrap();
     env::set_var("LOOM_STAGE_ID", stage);

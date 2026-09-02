@@ -9,7 +9,7 @@ use crate::verify::transitions::{load_stage, save_stage};
 use std::path::{Path, PathBuf};
 use tempfile::TempDir;
 
-/// An initialized `.work` plus a worktree directory for `stage_id`, with the
+/// An initialized `.loom/work` plus a worktree directory for `stage_id`, with the
 /// stage saved in `status` and `acceptance_len` acceptance criteria.
 fn setup(
     stage_id: &str,

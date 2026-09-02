@@ -62,8 +62,8 @@ fn setup_loom(repo_root: &Path, plan_content: &str) -> Result<()> {
     let plan_path = doc_plans_dir.join("PLAN-0001-test.md");
     fs::write(&plan_path, plan_content).context("Failed to write plan file")?;
 
-    // Create .work directory structure
-    let loom_work_dir = repo_root.join(".work");
+    // Create .loom/work directory structure
+    let loom_work_dir = repo_root.join(".loom").join("work");
     let subdirs = [
         "runners", "tracks", "signals", "handoffs", "archive", "stages", "sessions", "logs",
         "crashes",

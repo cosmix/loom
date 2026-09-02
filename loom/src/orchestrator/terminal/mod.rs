@@ -2,7 +2,7 @@
 //!
 //! Spawns and manages Claude Code sessions via [`backend::SessionBackend`],
 //! which selects between the native and tmux backends according to the
-//! persisted `[terminal]` config (`.work/config.toml`).
+//! persisted `[terminal]` config (`.loom/work/config.toml`).
 //!
 //! Supports three session types:
 //! - Stage sessions: run in isolated worktrees for parallel stage execution

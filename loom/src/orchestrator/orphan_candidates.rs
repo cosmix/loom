@@ -15,7 +15,7 @@ use crate::orchestrator::terminal::tmux::socket_path_for;
 
 use super::OrphanEvidence;
 
-/// Whether `stem` (a `.work/pids/*.pid` file stem) names a live, unrecorded
+/// Whether `stem` (a `.loom/work/pids/*.pid` file stem) names a live, unrecorded
 /// `kind` agent for `stage_id`, and if so, the orphan evidence to adopt
 /// paired with the pid file's mtime.
 pub(super) fn orphan_candidate(

@@ -125,7 +125,7 @@ pub(crate) fn format_codex_implementers_section(
          stage sandbox lets it nest one (Linux), or with `--sandbox danger-full-access` where it does not\n\
          (macOS refuses a nested Seatbelt, so the wrapper falls back to a direct `codex exec`) - and either\n\
          way it edits anything under the git root (the worktree) without asking, and loom's PreToolUse\n\
-         hooks never see commands it runs in its own session. NEVER give it a path under `.work/` (a\n\
+         hooks never see commands it runs in its own session. NEVER give it a path under `.loom/work/` (a\n\
          symlink to state shared with every parallel stage); tell it not to run git at all; check\n\
          `git status --short` after each run - anything touched outside its files is yours to catch.\n",
     );

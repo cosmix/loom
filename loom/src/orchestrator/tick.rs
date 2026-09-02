@@ -21,7 +21,7 @@ use anyhow::Result;
 use chrono::{DateTime, Utc};
 use std::path::{Path, PathBuf};
 
-/// File name inside `.work/` holding the last loop tick.
+/// File name inside `.loom/work/` holding the last loop tick.
 const TICK_FILE: &str = "orchestrator.tick";
 
 /// How far behind the tick may fall before the loop is considered stalled.
@@ -96,7 +96,7 @@ fn tick_path(work_dir: &Path) -> PathBuf {
 /// Best-effort by design: this is a diagnostic, and a failed write must never
 /// interfere with scheduling. Errors are swallowed rather than logged — the
 /// write happens several times per poll interval, so a persistent failure
-/// (read-only `.work/`, full disk) would otherwise flood the log with the same
+/// (read-only `.loom/work/`, full disk) would otherwise flood the log with the same
 /// line every few seconds, and those conditions surface far more loudly
 /// elsewhere.
 pub fn record(work_dir: &Path, phase: Phase) {

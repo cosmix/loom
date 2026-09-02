@@ -37,7 +37,7 @@ pub fn generate_merge_signal(
 }
 
 /// Find a live merge resolver session for the given stage by scanning
-/// `.work/signals/` for merge signals.
+/// `.loom/work/signals/` for merge signals.
 ///
 /// For each match on `stage_id`, loads the corresponding session file and
 /// checks PID liveness. If alive -> returns `Some(session_id)`. If dead ->

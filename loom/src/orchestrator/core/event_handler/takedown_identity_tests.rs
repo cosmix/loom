@@ -46,7 +46,7 @@ fn force_kill(pid: u32) {
 #[test]
 fn handoff_never_treats_missing_pid_identity_as_confirmed_death() {
     let temp = handoff_work_dir();
-    let work = temp.path().join(".work");
+    let work = temp.path().join(".loom").join("work");
     executing_stage(&work);
     let mut session = recorded_session(&work);
     session.status = SessionStatus::Completed;
@@ -76,7 +76,7 @@ fn handoff_never_treats_missing_pid_identity_as_confirmed_death() {
 #[test]
 fn handoff_does_not_requeue_a_verified_process_that_outlives_sigterm() {
     let temp = handoff_work_dir();
-    let work = temp.path().join(".work");
+    let work = temp.path().join(".loom").join("work");
     executing_stage(&work);
     let session = recorded_session(&work);
     assign_stage_session(&work, &session.id);

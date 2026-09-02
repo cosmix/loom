@@ -274,7 +274,7 @@ fn reconcile_empty(work_dir: &Path, context: &str) {
     reconcile_viewer(work_dir, &[]).unwrap_or_else(|err| panic!("{context}: {err}"));
 }
 
-/// Steps 1-3: an isolated `.work` dir, inner server A, and the viewer built
+/// Steps 1-3: an isolated `.loom/work` dir, inner server A, and the viewer built
 /// on it, pane 0 already attached into A. Returns the guards (kept alive by
 /// the caller for the rest of the test) plus the derived paths.
 fn setup_viewer_over_server_a(
@@ -284,8 +284,8 @@ fn setup_viewer_over_server_a(
     // `work_dir` only needs to exist and be canonicalizable —
     // `reconcile_viewer` uses it solely to derive the viewer socket name.
     let repo_dir = TempDir::new().expect("tempdir creation should succeed");
-    let work_dir = repo_dir.path().join(".work");
-    std::fs::create_dir_all(&work_dir).expect(".work dir should be creatable");
+    let work_dir = repo_dir.path().join(".loom").join("work");
+    std::fs::create_dir_all(&work_dir).expect(".loom/work dir should be creatable");
     let viewer_socket = viewer_socket_name(&work_dir);
 
     let server_a = start_inner_server(socket_a, session_a);
@@ -312,7 +312,7 @@ fn reconcile_viewer_adds_new_sessions_and_kills_dead_panes_on_real_tmux() {
         return;
     }
 
-    // 1-3. An isolated `.work` dir, inner server A, and the viewer built on
+    // 1-3. An isolated `.loom/work` dir, inner server A, and the viewer built on
     // it exactly as `loom attach` would, pane 0 already attached into A.
     let socket_a = "loom-session-aaaa";
     let session_a = "key-a";

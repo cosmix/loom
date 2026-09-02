@@ -172,7 +172,7 @@ fn test_watch_mode_configuration() {
 #[test]
 fn test_work_dir_and_repo_root_configuration() {
     let temp_dir = TempDir::new().unwrap();
-    let work_dir = temp_dir.path().join(".work");
+    let work_dir = temp_dir.path().join(".loom").join("work");
     let repo_root = temp_dir.path().to_path_buf();
 
     std::fs::create_dir_all(&work_dir).unwrap();

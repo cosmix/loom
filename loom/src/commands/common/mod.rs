@@ -1,7 +1,7 @@
 //! Common utility functions shared across command implementations.
 //!
 //! This module provides utilities for:
-//! - Work directory discovery
+//! - State directory discovery
 //! - Stage ID detection from worktree branch
 //! - String truncation for display
 //! - Shared tree-rendering helpers (see [`tree`])
@@ -11,27 +11,42 @@ pub mod tree;
 use anyhow::{bail, Result};
 use std::path::PathBuf;
 
+use crate::fs::work_dir::WorkDir;
 use crate::git::branch::stage_id_from_branch;
 
-/// Find the .work directory.
+/// Resolve the workspace containing the current directory.
 ///
-/// Walks upward from the current directory looking for a `.work` directory,
-/// the same way git searches for `.git`.
-pub fn find_work_dir() -> Result<PathBuf> {
-    let mut current = std::env::current_dir()?;
-    loop {
-        let work_path = current.join(".work");
-        if work_path.exists() && work_path.is_dir() {
-            return Ok(work_path);
-        }
-
-        match current.parent() {
-            Some(parent) => current = parent.to_path_buf(),
-            None => {
-                bail!("Could not find .work directory. Are you in a loom workspace?");
-            }
-        }
+/// Resolution — the order, the layout, and the bound on the upward walk — lives
+/// in [`WorkDir::new`]; this only adds the existence check the commands need.
+/// `WorkDir::new` always succeeds, falling back to a root that may not exist
+/// yet, so a caller that requires a REAL workspace must reject that fallback.
+pub fn resolve_work_dir() -> Result<WorkDir> {
+    let work_dir = WorkDir::new(std::env::current_dir()?)?;
+    if !work_dir.root().is_dir() {
+        bail!("Could not find the .loom/work directory. Are you in a loom workspace?");
     }
+    Ok(work_dir)
+}
+
+/// Path to the state directory of the workspace containing the current
+/// directory, for callers that need nothing else from it.
+pub fn work_dir_path() -> Result<PathBuf> {
+    Ok(resolve_work_dir()?.root().to_path_buf())
+}
+
+/// Resolve the state directory rooted at `base`, without requiring it to
+/// already exist.
+///
+/// Same resolution as [`resolve_work_dir`] (nested first, then a pre-move
+/// legacy `.work/` workspace, falling back to the nested spelling for a base
+/// with neither) but for an explicit `base` rather than the current
+/// directory, and for callers — `loom clean --state`, `loom init`'s
+/// pre-run cleanup, `loom repair` — that need a path to check `.exists()` on
+/// rather than an error when the workspace is missing.
+pub fn resolve_state_dir(base: &std::path::Path) -> PathBuf {
+    WorkDir::new(base)
+        .map(|wd| wd.root().to_path_buf())
+        .unwrap_or_else(|_| base.join(".loom").join("work"))
 }
 
 /// Detect stage ID from current worktree branch.

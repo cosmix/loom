@@ -1,7 +1,7 @@
 //! Telling a PARKED stage apart from a HUNG one.
 //!
 //! Both look identical from the heartbeat alone — a live PID that has stopped
-//! writing `.work/heartbeat/<stage-id>.json` — but they need opposite
+//! writing `.loom/work/heartbeat/<stage-id>.json` — but they need opposite
 //! responses from the operator:
 //!
 //! - **Hung**: the session is stuck partway through its work. Go look at it.
@@ -33,7 +33,7 @@
 //! 2. the worktree has no uncommitted tracked changes.
 //!
 //! Untracked files are deliberately ignored: every loom worktree carries an
-//! untracked `.claude/` and a `.work` symlink, so a check that counted them
+//! untracked `.claude/` and a `.loom/work` symlink, so a check that counted them
 //! would never fire. [`has_uncommitted_changes`] already excludes them.
 //!
 //! Every probe is best-effort and every failure answers "no". A wrong `false`

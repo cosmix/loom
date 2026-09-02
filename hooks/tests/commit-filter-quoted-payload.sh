@@ -24,7 +24,7 @@ set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 HOOK="$ROOT/hooks/commit-filter.sh"
 
-TMP=$(mktemp -d)
+TMP=$(mktemp -d "${TMPDIR:-/tmp}/loom-hooktest.XXXXXX")
 trap 'rm -rf "$TMP"' EXIT
 
 # run_hook - Invoke commit-filter.sh with the given JSON payload on stdin,

@@ -37,7 +37,7 @@ impl Orchestrator {
     }
 
     /// Publish the current tick's "why isn't this stage running" snapshot to
-    /// `.work/scheduling.json` for the dashboards to read.
+    /// `.loom/work/scheduling.json` for the dashboards to read.
     ///
     /// Written every pass, including when nothing is blocked — an empty report
     /// is the signal that the previous complaint has cleared.

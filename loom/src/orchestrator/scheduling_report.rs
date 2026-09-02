@@ -21,7 +21,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
-/// File name inside `.work/` holding the report.
+/// File name inside `.loom/work/` holding the report.
 const REPORT_FILE: &str = "scheduling.json";
 
 /// How long a stage may sit unstarted before it is worth surfacing.

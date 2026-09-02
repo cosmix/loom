@@ -7,12 +7,12 @@
 //! claude.ai login based).
 //!
 //! Resolution model:
-//!   * `RemoteControlConfig` (persisted in `.work/config.toml [remote_control]`)
+//!   * `RemoteControlConfig` (persisted in `.loom/work/config.toml [remote_control]`)
 //!     carries the operator-facing on/off switch (`mode = auto | off`).
 //!   * `preflight()` combines a version probe with an auth-eligibility
 //!     heuristic and yields a `RemoteControlStatus`.
 //!   * `resolve()` is the mode/marker/preflight gate: it returns `false` when
-//!     the mode is `off`, when a `.work/remote_control-unsupported` marker
+//!     the mode is `off`, when a `.loom/work/remote_control-unsupported` marker
 //!     exists, or when the preflight is not satisfied. The marker lets the
 //!     crash handler disable Remote Control mid-run after a fast-fail crash.
 //!     Its only remaining caller is the crash handler's fast-fail check.
@@ -32,7 +32,7 @@ use std::sync::OnceLock;
 /// Minimum claude version that supports the `--remote-control` flag.
 const MIN_REMOTE_CONTROL_VERSION: (u64, u64, u64) = (2, 1, 51);
 
-/// Filename (under the `.work` directory) of the marker that disables Remote
+/// Filename (under the `.loom/work` directory) of the marker that disables Remote
 /// Control for the remainder of a run after a fast-fail crash.
 const UNSUPPORTED_MARKER: &str = "remote_control-unsupported";
 
@@ -48,7 +48,7 @@ const DISQUALIFYING_ENV_VARS: &[&str] = &[
     "CLAUDE_CODE_USE_FOUNDRY",
 ];
 
-/// Operator-facing Remote Control switch, persisted in `.work/config.toml`.
+/// Operator-facing Remote Control switch, persisted in `.loom/work/config.toml`.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "kebab-case")]
 pub enum RemoteControlMode {
@@ -59,7 +59,7 @@ pub enum RemoteControlMode {
     Off,
 }
 
-/// Persisted `[remote_control]` section of `.work/config.toml`.
+/// Persisted `[remote_control]` section of `.loom/work/config.toml`.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub struct RemoteControlConfig {
     /// The operator-facing on/off switch. Defaults to `auto`.
@@ -284,7 +284,7 @@ pub fn preflight(claude_path: &Path) -> RemoteControlStatus {
     RemoteControlStatus::Enabled
 }
 
-/// Path to the `.work/remote_control-unsupported` marker file.
+/// Path to the `.loom/work/remote_control-unsupported` marker file.
 fn unsupported_marker_path(work_dir: &Path) -> std::path::PathBuf {
     work_dir.join(UNSUPPORTED_MARKER)
 }
@@ -294,7 +294,7 @@ pub fn unsupported_marker_exists(work_dir: &Path) -> bool {
     unsupported_marker_path(work_dir).exists()
 }
 
-/// Write the `.work/remote_control-unsupported` marker.
+/// Write the `.loom/work/remote_control-unsupported` marker.
 ///
 /// Best-effort: write errors are returned to the caller, which typically
 /// ignores them (the marker is an optimization, not a correctness gate).
@@ -317,7 +317,7 @@ fn cached_preflight_enabled(claude_path: &Path) -> bool {
 ///
 /// Returns `false` when:
 ///   * the persisted `[remote_control]` mode is `off`,
-///   * the `.work/remote_control-unsupported` marker exists, or
+///   * the `.loom/work/remote_control-unsupported` marker exists, or
 ///   * the (memoized) preflight is not satisfied.
 ///
 /// Config and marker are re-read every call (both cheap) so an operator

@@ -14,10 +14,12 @@
 # Environment variables (set by loom worktree settings, PARENT session's own):
 #   LOOM_STAGE_ID    - The stage being executed
 #   LOOM_SESSION_ID  - The parent session ID
-#   LOOM_WORK_DIR    - Path to the .work directory
+#   LOOM_WORK_DIR    - Path to the state directory (.loom/work, or the
+#                      legacy .work for a workspace that already resolved
+#                      to it)
 #
 # Actions:
-#   Appends one record to .work/subagents/<stage-id>/starts.jsonl
+#   Appends one record to $LOOM_WORK_DIR/subagents/<stage-id>/starts.jsonl
 #
 # Must never block: every path below ends in `exit 0`, and every write is
 # best-effort so a failure here can never fail the subagent's start.
@@ -91,9 +93,9 @@ case "$PARENT_SESSION_ID" in
 esac
 
 # Same write discipline as subagent-stop.sh:124-137 - plain mkdir/redirection,
-# never a Rust/loom CLI path (.work is a SYMLINK inside a worktree and loom's
-# safe-write opens roots O_NOFOLLOW), a symlinked target refused, every step
-# best-effort.
+# never a Rust/loom CLI path (the state directory is a SYMLINK inside a
+# worktree and loom's safe-write opens roots O_NOFOLLOW), a symlinked target
+# refused, every step best-effort.
 SUBAGENTS_DIR="${LOOM_WORK_DIR}/subagents/${LOOM_STAGE_ID}"
 mkdir -p -m 700 "$SUBAGENTS_DIR" 2>/dev/null || {
 	loom_debug "subagent-start: skipping - cannot create $SUBAGENTS_DIR"

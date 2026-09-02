@@ -51,6 +51,7 @@ use crate::context::config::RetrievalConfig;
 use crate::context::schema::LifecycleState;
 use crate::context::source_graph::MAX_EXTRACTED_FILE_BYTES;
 use crate::fs::knowledge::chunker::{chunk_file, KnowledgeChunk};
+use crate::fs::work_dir::WorkDir;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -123,8 +124,8 @@ pub(crate) fn sources_for_knowledge_root(knowledge_root: &Path) -> Option<ProseS
 }
 
 /// The root whose `.loom/config.toml` governs prose indexing: the MAIN
-/// project root when this checkout is a linked worktree (its `.work` is a
-/// symlink into the main repository), otherwise the checkout itself.
+/// project root when this checkout is a linked worktree (its `.loom/work` is
+/// a symlink into the main repository), otherwise the checkout itself.
 ///
 /// Without this, a stage running in `.worktrees/<id>/` would silently fall
 /// back to DEFAULT prose roots while the host ran on the operator's — and
@@ -132,14 +133,25 @@ pub(crate) fn sources_for_knowledge_root(knowledge_root: &Path) -> Option<ProseS
 /// them and every retrieval on either side would rebuild the catalog the
 /// other just built.
 ///
-/// Deliberately NOT `WorkDir::new`, which searches UPWARD for a `.work` and
-/// could bind a temp-dir fixture to an unrelated enclosing project.
+/// Deliberately not `WorkDir::new(project_root)` directly, which searches
+/// UPWARD from `project_root` and could bind a temp-dir fixture to an
+/// unrelated enclosing project. Instead, only a state-dir path that IS a
+/// symlink right at `project_root` (either spelling; nested checked first)
+/// is handed to `WorkDir::new`, so the only upward search that can run
+/// starts from the symlink's already-resolved target — the hop count for
+/// either layout stays [`WorkDir::project_root`]'s call, never recomputed
+/// here.
 fn config_root(project_root: &Path) -> PathBuf {
-    let work = project_root.join(".work");
-    if work.is_symlink() {
-        if let Ok(canonical) = work.canonicalize() {
-            if let Some(parent) = canonical.parent() {
-                return parent.to_path_buf();
+    for candidate in [
+        project_root.join(".loom").join("work"),
+        project_root.join(".work"),
+    ] {
+        if candidate.is_symlink() {
+            if let Some(root) = WorkDir::new(&candidate)
+                .ok()
+                .and_then(|wd| wd.project_root().map(Path::to_path_buf))
+            {
+                return root;
             }
         }
     }

@@ -2,7 +2,7 @@
 //! registry.
 //!
 //! Every fixture here builds liveness the way the spawn path does — a PID
-//! identity file under `.work/pids/` naming the TEST's own process — because
+//! identity file under `.loom/work/pids/` naming the TEST's own process — because
 //! that file, not the session record, is what survives a daemon death and is
 //! the only evidence adoption has to work from.
 
@@ -16,7 +16,7 @@ use crate::orchestrator::terminal::tmux::viewer::live_tmux_sessions;
 use crate::verify::transitions::save_stage;
 use tempfile::TempDir;
 
-/// A `.work` directory whose configured terminal lane is tmux.
+/// A `.loom/work` directory whose configured terminal lane is tmux.
 ///
 /// The tmux setting is about the TEST HOST, not the sessions under test:
 /// `SessionBackend::from_config` eagerly constructs a `NativeBackend` when the
@@ -160,7 +160,7 @@ fn in_progress_scan_rejects_filename_and_record_identity_mismatch() {
     assert!(format!("{error:#}").contains("does not match record id"));
 }
 
-/// A `.work` directory configured for the native lane — the setting that makes
+/// A `.loom/work` directory configured for the native lane — the setting that makes
 /// `SessionBackend::from_config` build a `NativeBackend` eagerly.
 fn native_work_dir() -> TempDir {
     let temp = TempDir::new().unwrap();

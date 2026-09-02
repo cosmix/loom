@@ -64,7 +64,9 @@ DO NOT read doc/loom/knowledge/ file by file. It is a ~200k-token corpus, and
 `loom knowledge context --query` is how you query it. Ask it a question; do not read the library.
 
 WRITE ONLY THE FILES YOUR TASK ASSIGNS YOU. Everything else in the tree is read-only to you.
-NEVER write anything under .work/ - it is a symlink to state shared with other running stages.
+NEVER write anything under .work/ or .loom/ - .loom/work/ (or the legacy .work/) is a symlink to
+state shared with other running stages, and the rest of .loom/ is orchestrator-owned spool/cache
+data.
 NEVER run git: not add, not commit, not checkout, not stash, not restore.
 DO NOT VERIFY. No full build, no test suite, no linter, no formatter, no type-checker, and never
 a repeated or looping check. At most ONE narrowly-scoped check over the files you changed, run

@@ -1,7 +1,7 @@
 //! Recovering a handoff from the handoff DOCUMENT rather than the stage file.
 //!
-//! A worktree session runs sandboxed: it may write `.work/handoffs` but not
-//! `.work/stages`. So when an agent hits its context ceiling and runs
+//! A worktree session runs sandboxed: it may write `.loom/work/handoffs` but not
+//! `.loom/work/stages`. So when an agent hits its context ceiling and runs
 //! `loom handoff --trigger ceiling`, the document lands and the
 //! `Executing -> NeedsHandoff` transition does not. Everything downstream of
 //! the status — [`super::budget_latch::needs_handoff_event`], the takedown,

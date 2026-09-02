@@ -34,7 +34,7 @@ const DIRTY_PATHS_FILE: &str = "dirty-paths.json";
 /// unconditionally, while this one runs from inside a worktree where every file
 /// legitimately sits below it. Merging the two lists would silently discard
 /// every edit an orchestrated stage makes.
-const IGNORED_PREFIXES: &[&str] = &[".work", ".loom/cache", "doc/loom/knowledge"];
+const IGNORED_PREFIXES: &[&str] = &[".loom", ".work", "doc/loom/knowledge"];
 
 /// Directory names that hold dependencies or build output at any depth.
 const IGNORED_DIRECTORIES: &[&str] =

@@ -14,7 +14,6 @@
 //! every write here goes through `apply_amendment`.
 
 use anyhow::{bail, Context, Result};
-use std::path::Path;
 
 use crate::plan::amendment::is_amendment_cap_error;
 use crate::plan::{apply_amendment, AmendmentField, AmendmentPatch, AmendmentRequest};
@@ -35,10 +34,10 @@ pub fn amend(
 ) -> Result<()> {
     let reason = reason.unwrap_or_else(|| DEFAULT_REASON.to_string());
 
-    let work_dir = Path::new(".work");
-    let plan_path = crate::fs::resolve_source_path(work_dir)
-        .context("Failed to resolve plan source_path from .work/config.toml")?
-        .ok_or_else(|| anyhow::anyhow!("No plan source_path configured in .work/config.toml"))?;
+    let work_dir = crate::commands::common::work_dir_path()?;
+    let plan_path = crate::fs::resolve_source_path(&work_dir)
+        .context("Failed to resolve plan source_path from config.toml")?
+        .ok_or_else(|| anyhow::anyhow!("No plan source_path configured in config.toml"))?;
 
     let request = AmendmentRequest {
         stage_id: stage_id.clone(),
@@ -48,7 +47,7 @@ pub fn amend(
         dispute_id: None,
     };
 
-    match apply_amendment(&plan_path, work_dir, request) {
+    match apply_amendment(&plan_path, &work_dir, request) {
         Ok(result) => {
             println!(
                 "Amended stage '{}' ({:?}) -- version {}, amendments_applied {}",

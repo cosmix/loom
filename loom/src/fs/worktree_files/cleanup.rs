@@ -17,7 +17,7 @@ use super::stages::archive_stage_file;
 ///
 /// # Arguments
 /// * `stage_id` - The stage ID to clean up files for
-/// * `work_dir` - Path to the `.work/` directory
+/// * `work_dir` - Path to the `.loom/work/` directory
 /// * `config` - Cleanup configuration options
 ///
 /// # Returns

@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 
 const POLL_INTERVAL: Duration = Duration::from_millis(100);
 
-/// An exclusive OS lock held on the stable `.work/merge.lock` inode.
+/// An exclusive OS lock held on the stable `.loom/work/merge.lock` inode.
 ///
 /// The file is intentionally never unlinked. Process termination releases the
 /// OS lock, so stale-path reclamation is unnecessary and a departing owner

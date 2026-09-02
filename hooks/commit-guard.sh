@@ -25,8 +25,11 @@ fi
 # Configuration
 readonly WORKTREE_MARKER=".worktrees/"
 readonly LOOM_BRANCH_PREFIX="loom/"
-readonly WORK_DIR=".work"
-readonly STAGES_DIR="$WORK_DIR/stages"
+# The state directory name is resolved per-root, not fixed: the current
+# layout is .loom/work, but a workspace created before this migration keeps
+# the legacy .work forever (see doc/plans, "Back-compat"). Set by
+# resolve_work_dir_name() once the project root is known.
+WORK_DIR=""
 # Debug logging - enabled when LOOM_HOOK_DEBUG=1
 debug_log() {
 	if [[ "${LOOM_HOOK_DEBUG:-0}" == "1" ]]; then
@@ -66,15 +69,32 @@ detect_loom_worktree() {
 	return 1
 }
 
-# Find the project root (where .work directory is)
-# Searches upward from current directory
+# Resolve the state directory name under a given root: current .loom/work
+# takes priority, falling back to the legacy .work. Echoes empty if neither
+# exists.
+resolve_work_dir_name() {
+	local root="$1"
+	if [[ -d "$root/.loom/work" ]]; then
+		echo ".loom/work"
+	elif [[ -d "$root/.work" ]]; then
+		echo ".work"
+	fi
+}
+
+# Find the project root (where the state directory is: .loom/work, or the
+# legacy .work). Searches upward from current directory.
+#
+# Called as `project_root=$(find_project_root)`, which runs in a subshell -
+# any variable this function assigned would be lost when that subshell
+# exits, so it only communicates via stdout. Callers resolve WORK_DIR
+# separately with resolve_work_dir_name() once project_root is known.
 find_project_root() {
 	local dir
 	dir=$(pwd)
 	debug_log "Searching for project root from: $dir"
 
 	while [[ "$dir" != "/" ]]; do
-		if [[ -d "$dir/$WORK_DIR" ]]; then
+		if [[ -d "$dir/.loom/work" || -d "$dir/.work" ]]; then
 			debug_log "Found project root at: $dir"
 			echo "$dir"
 			return 0
@@ -86,14 +106,14 @@ find_project_root() {
 	dir=$(pwd)
 	if [[ "$dir" == *"$WORKTREE_MARKER"* ]]; then
 		local root="${dir%%$WORKTREE_MARKER*}"
-		if [[ -d "$root/$WORK_DIR" ]]; then
+		if [[ -d "$root/.loom/work" || -d "$root/.work" ]]; then
 			debug_log "Found project root via worktree path at: $root"
 			echo "$root"
 			return 0
 		fi
 	fi
 
-	debug_log "Could not find project root (.work directory not found)"
+	debug_log "Could not find project root (state directory not found)"
 	return 1
 }
 
@@ -185,7 +205,7 @@ get_stage_status() {
 find_stage_file() {
 	local project_root="$1"
 	local stage_id="$2"
-	local stages_path="$project_root/$STAGES_DIR"
+	local stages_path="$project_root/$WORK_DIR/stages"
 	debug_log "find_stage_file: looking for stage '$stage_id' in: $stages_path"
 
 	# Check if stages directory exists and is accessible
@@ -195,11 +215,11 @@ find_stage_file() {
 		return
 	fi
 
-	# Check if .work is a symlink and accessible
+	# Check if the state directory is a symlink and accessible
 	if [[ -L "$project_root/$WORK_DIR" ]]; then
-		debug_log "find_stage_file: .work is a symlink"
+		debug_log "find_stage_file: $WORK_DIR is a symlink"
 		if [[ ! -e "$project_root/$WORK_DIR" ]]; then
-			debug_log "find_stage_file: .work symlink is broken/inaccessible"
+			debug_log "find_stage_file: $WORK_DIR symlink is broken/inaccessible"
 			echo ""
 			return
 		fi
@@ -363,26 +383,27 @@ main() {
 	# Find project root
 	local project_root
 	if ! project_root=$(find_project_root); then
-		# Cannot find .work directory - allow stop, may be manual worktree
-		debug_log "Project root not found (.work missing), allowing stop"
+		# Cannot find the state directory - allow stop, may be manual worktree
+		debug_log "Project root not found (.loom/work and .work both missing), allowing stop"
 		exit 0
 	fi
+	WORK_DIR=$(resolve_work_dir_name "$project_root")
 
 	# Log complete state for debugging
 	debug_log "=== State Summary ==="
 	debug_log "  Stage ID: $STAGE_ID"
 	debug_log "  Project Root: $project_root"
 	if [[ -L "$project_root/$WORK_DIR" ]]; then
-		debug_log "  .work: symlink -> $(readlink -f "$project_root/$WORK_DIR" 2>/dev/null || echo 'unresolvable')"
+		debug_log "  $WORK_DIR: symlink -> $(readlink -f "$project_root/$WORK_DIR" 2>/dev/null || echo 'unresolvable')"
 		if [[ -e "$project_root/$WORK_DIR" ]]; then
-			debug_log "  .work accessible: yes"
+			debug_log "  $WORK_DIR accessible: yes"
 		else
-			debug_log "  .work accessible: NO (broken symlink)"
+			debug_log "  $WORK_DIR accessible: NO (broken symlink)"
 		fi
 	elif [[ -d "$project_root/$WORK_DIR" ]]; then
-		debug_log "  .work: directory (not symlink)"
+		debug_log "  $WORK_DIR: directory (not symlink)"
 	else
-		debug_log "  .work: does not exist"
+		debug_log "  $WORK_DIR: does not exist"
 	fi
 	debug_log "===================="
 
@@ -507,7 +528,7 @@ main() {
 
 	if [[ $has_uncommitted -eq 1 ]]; then
 		message+="\n\n1. You have uncommitted changes. Run:\n   git add <specific-files> && git commit -m 'feat: <description>'"
-		message+="\n   (NOTE: Do NOT use 'git add -A' or 'git add .' as these will stage .work)"
+		message+="\n   (NOTE: Do NOT use 'git add -A' or 'git add .' as these will stage $WORK_DIR)"
 		local changes
 		changes=$(get_uncommitted_changes)
 		if [[ -n "$changes" ]]; then

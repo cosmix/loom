@@ -14,23 +14,31 @@ use std::path::Path;
 
 use crate::fs::memory::SPOOL_RELPATH as MEMORY_SPOOL_RELPATH;
 use crate::fs::stage_request::SPOOL_RELPATH as REQUEST_SPOOL_RELPATH;
+use crate::fs::work_dir::{Layout, WorkDir};
 use crate::hooks::{setup_hooks_for_worktree, HooksConfig};
 use crate::plan::schema::PermissionMode;
 
 /// Whether a repo-relative path is worktree scaffolding loom itself creates.
 ///
-/// `create_worktree` plants `.work` (symlink), `.claude/` (dir with a CLAUDE.md
-/// symlink and generated settings) and — when the checkout has none — a root
-/// `CLAUDE.md` symlink. Repos that gitignore these see nothing; repos that do
-/// not see them as untracked. Callers reading `git status` to judge whether a
+/// `create_worktree` plants the state-root symlink (`.loom/work` under a real
+/// `.loom/` on the nested layout, `.work` on a legacy workspace — see
+/// [`crate::fs::work_dir`]), `.claude/` (dir with a CLAUDE.md symlink and
+/// generated settings) and — when the checkout has none — a root `CLAUDE.md`
+/// symlink. Repos that gitignore these see nothing; repos that do not see
+/// them as untracked. Callers reading `git status` to judge whether a
 /// worktree holds *agent work* must discount them either way.
 ///
 /// Also discounted: `.loom/memory-spool.jsonl`, `.loom/stage-request-spool.jsonl`
 /// and `.loom/cache/`, loom's own runtime paths, written lazily during a
 /// stage's execution rather than planted by `create_worktree` — but just as
-/// much loom's own output, so they discount the same way. This is narrower
-/// than `.loom/` as a whole: a project may legitimately track
-/// `.loom/config.toml`, which must NOT be discounted here.
+/// much loom's own output, so they discount the same way. The bare `.loom`
+/// entry is discounted too, for a worktree whose whole `.loom/` (holding only
+/// the `work` symlink, `cache/` and the two spools) is entirely untracked, so
+/// `git status` reports it as one line rather than enumerating its children.
+/// This is still narrower than `.loom/` as a whole: a project may
+/// legitimately track `.loom/config.toml`, which git then reports as its own
+/// individual entry once anything else under `.loom/` is tracked, and that
+/// entry is NOT matched by any arm below.
 ///
 /// Keep this in sync with the scaffold `create_worktree` writes.
 pub fn is_worktree_scaffold_path(path: &str) -> bool {
@@ -40,28 +48,47 @@ pub fn is_worktree_scaffold_path(path: &str) -> bool {
         || path == ".claude"
         || path.starts_with(".claude/")
         || path.starts_with(".work/")
+        || path == ".loom"
+        || path == ".loom/work"
+        || path.starts_with(".loom/work/")
         || path == MEMORY_SPOOL_RELPATH
         || path == REQUEST_SPOOL_RELPATH
         || path == ".loom/cache"
         || path.starts_with(".loom/cache/")
 }
 
-/// Creates or restores the .work symlink in a worktree.
+/// Creates or restores the state-root symlink in a worktree.
 ///
-/// Used during worktree creation and merge failure recovery.
-/// The symlink points from .worktrees/{stage_id}/.work to ../../.work (the main repo's .work/).
+/// Used during worktree creation and merge failure recovery. The link's
+/// spelling follows the main repo's resolved layout ([`WorkDir::layout`]):
+/// on the nested layout it points from `.worktrees/{stage_id}/.loom/work` to
+/// `../../../.loom/work` (the main repo's `.loom/work/`), with `.loom/`
+/// created as a real directory first; on a legacy workspace it points from
+/// `.worktrees/{stage_id}/.work` to `../../.work` (the main repo's `.work/`).
 pub fn ensure_work_symlink(worktree_path: &Path, repo_root: &Path) -> Result<()> {
-    let main_work_dir = repo_root.join(".work");
-    let worktree_work_link = worktree_path.join(".work");
-    let relative_work_path = Path::new("../../.work");
+    let work_dir = WorkDir::new(repo_root)?;
+    let main_state_root = work_dir.root();
+    let (link_path, target) = match work_dir.layout() {
+        Layout::Nested => (
+            worktree_path.join(".loom").join("work"),
+            Path::new("../../../.loom/work"),
+        ),
+        Layout::Legacy => (worktree_path.join(".work"), Path::new("../../.work")),
+    };
 
-    if main_work_dir.exists() && !worktree_work_link.exists() {
+    if main_state_root.exists() && !link_path.exists() {
+        if work_dir.layout() == Layout::Nested {
+            let loom_dir = worktree_path.join(".loom");
+            std::fs::create_dir_all(&loom_dir)
+                .with_context(|| format!("Failed to create {} in worktree", loom_dir.display()))?;
+        }
+
         #[cfg(unix)]
-        std::os::unix::fs::symlink(relative_work_path, &worktree_work_link)
+        std::os::unix::fs::symlink(target, &link_path)
             .with_context(|| "Failed to create .work symlink in worktree")?;
 
         #[cfg(windows)]
-        std::os::windows::fs::symlink_dir(relative_work_path, &worktree_work_link)
+        std::os::windows::fs::symlink_dir(target, &link_path)
             .with_context(|| "Failed to create .work symlink in worktree")?;
     }
     Ok(())
@@ -412,17 +439,27 @@ fn create_worktree_settings(
     crate::fs::permissions::scrub_session_identity_env(&mut settings);
     crate::fs::permissions::scrub_stale_work_dir_env(&mut settings);
 
-    // Resolve the .work symlink to its absolute target path and add permissions.
-    // In worktrees, .work is a symlink to ../../.work (the main repo's .work/).
-    // Claude Code resolves symlinks before checking permission patterns, so the
-    // relative Read(.work/**) pattern from the main repo's settings doesn't match
-    // the resolved absolute path. Adding the resolved path here ensures agents
-    // can read/write .work state files without permission prompts.
+    // Resolve the state-root symlink to its absolute target path and add
+    // permissions. In worktrees, the state root is a symlink — `.loom/work`
+    // on the nested layout (-> ../../../.loom/work) or `.work` on a legacy
+    // workspace (-> ../../.work), both pointing at the main repo's shared
+    // state. Claude Code resolves symlinks before checking permission
+    // patterns, so the relative Read(.loom/work/**) pattern from the main
+    // repo's settings doesn't match the resolved absolute path. Adding the
+    // resolved path here ensures agents can read/write state files without
+    // permission prompts.
     //
     // IMPORTANT: Claude Code requires the // prefix for absolute filesystem paths.
     // A single / means "relative to project root", NOT absolute. See:
     // https://code.claude.com/docs/en/permissions.md
-    let work_link = worktree_path.join(".work");
+    let work_link = {
+        let nested = worktree_path.join(".loom").join("work");
+        if nested.exists() || nested.is_symlink() {
+            nested
+        } else {
+            worktree_path.join(".work")
+        }
+    };
     if work_link.exists() || work_link.is_symlink() {
         if let Ok(resolved) = work_link.canonicalize() {
             let resolved_str = resolved.to_string_lossy();
@@ -596,7 +633,7 @@ pub fn add_settings_local_to_main_gitignore(repo_root: &Path) -> Result<()> {
 /// Remove worktree-specific settings and symlinks
 ///
 /// Called during worktree removal to clean up:
-/// - .work symlink
+/// - state-root symlink (`.loom/work` and/or `.work`)
 /// - .claude directory (or legacy symlink)
 /// - root CLAUDE.md symlink
 ///
@@ -607,11 +644,20 @@ pub fn add_settings_local_to_main_gitignore(repo_root: &Path) -> Result<()> {
 /// use `git::cleanup::remove_worktree_scaffold` instead, which removes only
 /// what loom planted (and leaves anything git tracks alone).
 pub fn cleanup_worktree_settings(worktree_path: &Path) {
-    // Remove the .work symlink first to avoid issues
-    let work_link = worktree_path.join(".work");
-    if work_link.exists() || work_link.is_symlink() {
-        std::fs::remove_file(&work_link).ok(); // Ignore errors
+    // Remove the state-root symlink(s) first to avoid issues. Both paths are
+    // no-ops when absent, so this is correct whichever layout planted the
+    // link — no layout lookup needed.
+    for link in [
+        worktree_path.join(".loom").join("work"),
+        worktree_path.join(".work"),
+    ] {
+        if link.exists() || link.is_symlink() {
+            std::fs::remove_file(&link).ok(); // Ignore errors
+        }
     }
+    // Tidy up `.loom/` if removing its `work` link left it empty; harmless
+    // no-op otherwise (e.g. it still holds the memory spool or cache).
+    std::fs::remove_dir(worktree_path.join(".loom")).ok();
 
     // Remove the .claude directory (it's a real directory now, not a symlink)
     let claude_dir = worktree_path.join(".claude");

@@ -63,7 +63,7 @@ fn repeated_handoff_mark_is_idempotent_without_recharging_attempt_time() {
 #[test]
 fn budget_backstop_does_not_requeue_or_amplify_handoffs_when_kill_fails() {
     let temp = handoff_work_dir();
-    let work = temp.path().join(".work");
+    let work = temp.path().join(".loom").join("work");
     executing_stage(&work);
 
     let session = recorded_session(&work);
@@ -99,7 +99,7 @@ fn budget_backstop_does_not_requeue_or_amplify_handoffs_when_kill_fails() {
 #[test]
 fn budget_handoff_and_terminal_record_use_the_fresh_event_context() {
     let temp = handoff_work_dir();
-    let work = temp.path().join(".work");
+    let work = temp.path().join(".loom").join("work");
     executing_stage(&work);
 
     let mut session = recorded_session(&work);
@@ -141,7 +141,7 @@ fn budget_handoff_and_terminal_record_use_the_fresh_event_context() {
 #[test]
 fn red_and_budget_handoffs_are_distinct_and_restart_idempotent() {
     let temp = handoff_work_dir();
-    let work = temp.path().join(".work");
+    let work = temp.path().join(".loom").join("work");
     executing_stage(&work);
 
     let mut session = recorded_session(&work);
@@ -189,7 +189,7 @@ fn red_and_budget_handoffs_are_distinct_and_restart_idempotent() {
 #[test]
 fn budget_snapshot_is_refreshed_when_a_newer_artifact_is_not_reusable() {
     let temp = handoff_work_dir();
-    let work = temp.path().join(".work");
+    let work = temp.path().join(".loom").join("work");
     executing_stage(&work);
     let session = recorded_session(&work);
     assign_stage_session(&work, &session.id);
@@ -229,7 +229,7 @@ fn budget_snapshot_is_refreshed_when_a_newer_artifact_is_not_reusable() {
 #[test]
 fn handoff_does_not_requeue_when_the_assigned_session_record_is_missing() {
     let temp = handoff_work_dir();
-    let work = temp.path().join(".work");
+    let work = temp.path().join(".loom").join("work");
     executing_stage(&work);
     assign_stage_session(&work, "missing-session");
 
@@ -257,7 +257,7 @@ fn handoff_does_not_requeue_when_the_assigned_session_record_is_missing() {
 #[test]
 fn handoff_probes_an_untracked_terminal_assigned_session() {
     let temp = handoff_work_dir();
-    let work = temp.path().join(".work");
+    let work = temp.path().join(".loom").join("work");
     executing_stage(&work);
 
     let mut session = recorded_session(&work);
@@ -291,7 +291,7 @@ fn handoff_probes_an_untracked_terminal_assigned_session() {
 #[test]
 fn handoff_does_not_kill_or_requeue_a_stage_blocked_after_begin() {
     let temp = handoff_work_dir();
-    let work = temp.path().join(".work");
+    let work = temp.path().join(".loom").join("work");
     executing_stage(&work);
     let session = recorded_session(&work);
     let session_pid = spawn_orphan_process();
@@ -330,7 +330,7 @@ fn handoff_does_not_kill_or_requeue_a_stage_blocked_after_begin() {
 #[test]
 fn handoff_does_not_kill_an_assignment_that_changed_after_begin() {
     let temp = handoff_work_dir();
-    let work = temp.path().join(".work");
+    let work = temp.path().join(".loom").join("work");
     executing_stage(&work);
 
     let predecessor = recorded_session(&work);

@@ -7,7 +7,7 @@ use super::*;
 #[test]
 fn handoff_does_not_requeue_when_persisted_session_discovery_is_uncertain() {
     let temp = handoff_work_dir();
-    let work = temp.path().join(".work");
+    let work = temp.path().join(".loom").join("work");
     executing_stage(&work);
 
     let session = recorded_session(&work);
@@ -41,7 +41,7 @@ fn handoff_does_not_requeue_when_persisted_session_discovery_is_uncertain() {
 #[test]
 fn a_restarted_backstop_writes_handoff_then_retires_the_persisted_session() {
     let temp = handoff_work_dir();
-    let work = temp.path().join(".work");
+    let work = temp.path().join(".loom").join("work");
     executing_stage(&work);
 
     let session = recorded_session(&work);

@@ -7,8 +7,14 @@ HOOK="$(dirname "$0")/../codex-forward-guard.sh"
 # code. Keeping this in sync with codex-forward-guard.sh is unavoidable for a
 # unit-level assertion on the parser's internal state. `eval`, not
 # `source <(...)`: bash 3.2 (the only bash on this machine) reads zero bytes
-# from a process-substitution fd under `source`, defining nothing.
+# from a process-substitution fd under `source`, defining nothing - a failure
+# that surfaces far below as "parse_shell_words: command not found", so assert
+# the definition took right here.
 eval "$(sed -n '/^parse_shell_words()/,/^}/p' "$HOOK")"
+if [[ "$(type -t parse_shell_words || true)" != "function" ]]; then
+    echo "FAIL: could not extract parse_shell_words from $HOOK"
+    exit 1
+fi
 
 # --- MUST BE ALLOWED (exit 0) ---------------------------------------------
 

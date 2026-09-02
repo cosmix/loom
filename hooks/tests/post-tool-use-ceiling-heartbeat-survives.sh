@@ -10,7 +10,7 @@
 # resident count recorded.
 set -euo pipefail
 HOOK="$(dirname "$0")/../post-tool-use.sh"
-TMP=$(mktemp -d)
+TMP=$(mktemp -d "${TMPDIR:-/tmp}/loom-hooktest.XXXXXX")
 trap 'rm -rf "$TMP"' EXIT
 
 # assert_heartbeat_survives_ceiling <desc> <workdir-name> <ceiling> <resident>

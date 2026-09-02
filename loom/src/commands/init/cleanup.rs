@@ -5,6 +5,7 @@ use colored::Colorize;
 use std::fs;
 use std::path::Path;
 
+use crate::commands::common::resolve_state_dir;
 use crate::git::branch::branch_name_for_stage;
 use crate::git::runner::run_git;
 use crate::orchestrator::terminal::tmux::{
@@ -48,9 +49,9 @@ pub enum SessionReapMode {
     /// longer alive. A LIVE session is left running — it still has a
     /// visible window (or, for tmux, an attachable session) somewhere.
     OrphansOnly,
-    /// `loom init --clean` is about to delete `.work/`, which is the ONLY
+    /// `loom init --clean` is about to delete the state directory, which is the ONLY
     /// thing that makes socket attribution possible (a socket is attributed
-    /// when `.work/sessions/<id>.md` exists). Reap every socket attributed
+    /// when `<state-dir>/sessions/<id>.md` exists). Reap every socket attributed
     /// to this work dir — alive or not — before that attribution is
     /// destroyed, or a live tmux-hosted session leaks forever with no way to
     /// find it again. Unattributed sockets are still never touched in this
@@ -116,10 +117,10 @@ fn handle_socket(work_dir: &Path, socket: &LoomSocket, mode: SessionReapMode) ->
 /// when its session is no longer alive. With
 /// [`SessionReapMode::IncludeLiveBeforeClean`], an attributed socket is
 /// reaped regardless of liveness — intended to run immediately before
-/// `.work/` is deleted, since deletion is what destroys the ability to ever
+/// the state directory is deleted, since deletion is what destroys the ability to ever
 /// attribute (and thus find) that socket again.
 pub fn cleanup_orphaned_sessions(repo_root: &Path, mode: SessionReapMode) -> Result<()> {
-    let work_dir = repo_root.join(".work");
+    let work_dir = resolve_state_dir(repo_root);
 
     let mut orphaned_reaped = 0;
     let mut live_reaped = 0;
@@ -168,28 +169,28 @@ pub fn cleanup_orphaned_sessions(repo_root: &Path, mode: SessionReapMode) -> Res
     Ok(())
 }
 
-/// Remove the existing .work/ directory
+/// Remove the existing state directory
 pub fn cleanup_work_directory(repo_root: &Path) -> Result<()> {
-    let work_dir = repo_root.join(".work");
+    let work_dir = resolve_state_dir(repo_root);
 
     if !work_dir.exists() {
         return Ok(());
     }
 
-    fs::remove_dir_all(&work_dir).with_context(|| {
-        format!(
-            "Failed to remove .work/ directory at {}",
-            work_dir.display()
-        )
-    })?;
-    println!("  {} Removed old {}", "✓".green().bold(), ".work/".dimmed());
+    fs::remove_dir_all(&work_dir)
+        .with_context(|| format!("Failed to remove state directory at {}", work_dir.display()))?;
+    println!(
+        "  {} Removed old {}",
+        "✓".green().bold(),
+        work_dir.display().to_string().dimmed()
+    );
 
     Ok(())
 }
 
-/// Remove the .work/ directory silently (used for cleanup on initialization failure)
+/// Remove the state directory silently (used for cleanup on initialization failure)
 pub fn remove_work_directory_on_failure(repo_root: &Path) {
-    let work_dir = repo_root.join(".work");
+    let work_dir = resolve_state_dir(repo_root);
 
     if work_dir.exists() {
         let _ = fs::remove_dir_all(&work_dir);

@@ -152,7 +152,7 @@ fn test_hooks_not_duplicated_on_rerun() {
 fn test_scrub_stale_work_dir_env_removes_dead_pin() {
     let temp_dir = TempDir::new().unwrap();
     // A path under a TempDir that was never created — guaranteed absent.
-    let dead_path = temp_dir.path().join("gone").join(".work");
+    let dead_path = temp_dir.path().join("gone").join(".loom").join("work");
 
     let mut settings = json!({
         "env": { "LOOM_WORK_DIR": dead_path.to_string_lossy() }
@@ -165,7 +165,7 @@ fn test_scrub_stale_work_dir_env_removes_dead_pin() {
 #[test]
 fn test_scrub_stale_work_dir_env_preserves_live_pin() {
     let temp_dir = TempDir::new().unwrap();
-    let live_path = temp_dir.path().join(".work");
+    let live_path = temp_dir.path().join(".loom").join("work");
     fs::create_dir_all(&live_path).unwrap();
 
     let mut settings = json!({
@@ -264,7 +264,7 @@ fn test_ensure_loom_permissions_home_expanded_entry_no_duplicates_on_rerun() {
 #[test]
 fn test_scrub_identity_and_stale_work_dir_together() {
     let temp_dir = TempDir::new().unwrap();
-    let dead_path = temp_dir.path().join("gone").join(".work");
+    let dead_path = temp_dir.path().join("gone").join(".loom").join("work");
 
     let mut settings = json!({
         "env": {

@@ -44,18 +44,21 @@ if ! command -v loom &>/dev/null; then
 fi
 
 # Fail open (no output) unless this checkout holds something to retrieve from.
-# The walk upward mirrors `WorkDir::new`, which looks for `.work` the way git
-# looks for `.git`; `doc/loom/knowledge/` and `.loom/cache/context-v1/` are the
-# other two roots the delegate can answer out of (a mapped source graph needs no
-# knowledge tree). Pure bash directory tests, no subprocesses - this runs on
-# every prompt in every repository, so it must stay close to free.
+# The walk upward mirrors `WorkDir::new`, which looks for `.loom/work` (or the
+# legacy `.work`, kept forever for a workspace that already resolved to it)
+# the way git looks for `.git`; `doc/loom/knowledge/` and
+# `.loom/cache/context-v1/` are the other two roots the delegate can answer
+# out of (a mapped source graph needs no knowledge tree). Pure bash directory
+# tests, no subprocesses - this runs on every prompt in every repository, so
+# it must stay close to free.
 has_retrievable_context() {
 	if [[ -d "${LOOM_WORK_DIR:-}" ]]; then
 		return 0
 	fi
 	local dir="$PWD"
 	while [[ -n "$dir" ]]; do
-		if [[ -d "$dir/.work" ]] ||
+		if [[ -d "$dir/.loom/work" ]] ||
+			[[ -d "$dir/.work" ]] ||
 			[[ -d "$dir/doc/loom/knowledge" ]] ||
 			[[ -d "$dir/.loom/cache/context-v1" ]]; then
 			return 0

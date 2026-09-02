@@ -154,7 +154,7 @@ fn valid_stop_proof_is_verified_before_request_and_shuts_down() {
 #[test]
 fn a_bad_user_token_defers_to_peer_identity_rather_than_denying() {
     // The deadlock this resolves: a sandboxed agent cannot read
-    // `.work/user.token` (it authorizes every User RPC), yet acting on its own
+    // `.loom/work/user.token` (it authorizes every User RPC), yet acting on its own
     // stage is the one thing it must be able to do. A failed User credential
     // therefore defers instead of refusing — but the deferral is worthless on
     // its own, since `authorize_body` admits it only for the requests

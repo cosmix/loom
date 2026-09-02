@@ -1,6 +1,6 @@
 //! Session file lookup utilities with prefix matching support
 //!
-//! Session files are stored in `.work/sessions/` with the naming pattern `{session_id}.md`.
+//! Session files are stored in `.loom/work/sessions/` with the naming pattern `{session_id}.md`.
 //! This module provides utilities for finding session files by exact ID or prefix match,
 //! as well as querying sessions by stage assignment.
 
@@ -20,7 +20,7 @@ pub use exact::{
     record_session_heartbeat_exact,
 };
 
-/// Persist a session to `.work/sessions/{id}.md`.
+/// Persist a session to `.loom/work/sessions/{id}.md`.
 ///
 /// This is the single canonical session-persistence routine: it serializes the
 /// session via [`session_to_markdown`] and writes through
@@ -70,7 +70,7 @@ pub fn session_to_markdown(session: &Session) -> String {
 /// If not found, scans the sessions directory for files starting with the given prefix.
 ///
 /// # Arguments
-/// * `work_dir` - Path to the `.work/` directory
+/// * `work_dir` - Path to the `.loom/work/` directory
 /// * `id` - The session ID or prefix to find
 ///
 /// # Returns
@@ -146,12 +146,12 @@ pub fn extract_session_id(path: &Path) -> Option<String> {
 
 /// Find a single session ID for a stage.
 ///
-/// Scans `.work/sessions/` for a session assigned to the given stage.
+/// Scans `.loom/work/sessions/` for a session assigned to the given stage.
 /// Returns the first matching session ID found.
 ///
 /// # Arguments
 /// * `stage_id` - The stage ID to search for
-/// * `work_dir` - Path to the `.work/` directory
+/// * `work_dir` - Path to the `.loom/work/` directory
 ///
 /// # Returns
 /// * `Some(session_id)` - If a session for this stage is found
@@ -162,7 +162,7 @@ pub fn extract_session_id(path: &Path) -> Option<String> {
 /// use std::path::Path;
 /// use loom::fs::session_files::find_session_for_stage;
 ///
-/// let work_dir = Path::new(".work");
+/// let work_dir = Path::new(".loom/work");
 /// if let Some(session_id) = find_session_for_stage("my-stage", work_dir) {
 ///     println!("Found session: {}", session_id);
 /// }
@@ -196,12 +196,12 @@ pub fn find_session_for_stage(stage_id: &str, work_dir: &Path) -> Option<String>
 
 /// Find all session IDs associated with a stage.
 ///
-/// Scans `.work/sessions/` and returns IDs of all sessions assigned to the given stage.
+/// Scans `.loom/work/sessions/` and returns IDs of all sessions assigned to the given stage.
 /// Useful for cleanup operations where multiple sessions may exist for a stage.
 ///
 /// # Arguments
 /// * `stage_id` - The stage ID to search for
-/// * `work_dir` - Path to the `.work/` directory
+/// * `work_dir` - Path to the `.loom/work/` directory
 ///
 /// # Returns
 /// * `Ok(Vec<String>)` - List of session IDs (may be empty)
@@ -212,7 +212,7 @@ pub fn find_session_for_stage(stage_id: &str, work_dir: &Path) -> Option<String>
 /// use std::path::Path;
 /// use loom::fs::session_files::find_sessions_for_stage;
 ///
-/// let work_dir = Path::new(".work");
+/// let work_dir = Path::new(".loom/work");
 /// let sessions = find_sessions_for_stage("my-stage", work_dir).unwrap();
 /// println!("Found {} session(s)", sessions.len());
 /// ```

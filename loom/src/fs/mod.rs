@@ -48,7 +48,7 @@ pub use plan_lifecycle::{
 /// from the plan configuration.
 ///
 /// # Arguments
-/// * `work_dir` - Path to the .work directory
+/// * `work_dir` - Path to the .loom/work directory
 ///
 /// # Returns
 /// * `Ok(Some(String))` - base_branch found in config
@@ -80,7 +80,7 @@ pub fn resolve_target_branch_from_config(work_dir: &Path, repo_root: &Path) -> R
 /// falling back to "main" if not configured.
 ///
 /// # Arguments
-/// * `work_dir` - Path to the .work directory
+/// * `work_dir` - Path to the .loom/work directory
 ///
 /// # Returns
 /// * `Ok(String)` - base_branch found in config, or "main" as default
@@ -95,7 +95,7 @@ pub fn get_merge_point(work_dir: &Path) -> Result<String> {
 /// Get the plan source path from config.toml in a work directory.
 ///
 /// # Arguments
-/// * `work_dir` - Path to the .work directory
+/// * `work_dir` - Path to the .loom/work directory
 ///
 /// # Returns
 /// * `Ok(Some(PathBuf))` - source_path found in config
@@ -110,10 +110,11 @@ pub fn get_source_path(work_dir: &Path) -> Result<Option<PathBuf>> {
 
 /// Resolve the plan source path to an absolute path.
 ///
-/// In worktrees, `.work/` is a symlink to `../../.work`. A relative `source_path`
-/// (e.g., `doc/plans/PLAN-foo.md`) must be resolved from the **main** project root,
-/// not the worktree root. This function canonicalizes the `.work/` directory to
-/// follow the symlink and find the real project root.
+/// In worktrees, `.loom/work` is a symlink to `../../../.loom/work`. A relative
+/// `source_path` (e.g., `doc/plans/PLAN-foo.md`) must be resolved from the
+/// **main** project root, not the worktree root. This function follows that
+/// symlink (via [`work_dir::WorkDir::main_project_root`], the one place the
+/// layout's hop count lives) to find the real project root.
 ///
 /// Absolute paths are returned as-is for backward compatibility.
 pub fn resolve_source_path(work_dir: &Path) -> Result<Option<PathBuf>> {
@@ -131,13 +132,19 @@ pub fn resolve_source_path(work_dir: &Path) -> Result<Option<PathBuf>> {
         return Ok(Some(source_path));
     }
 
-    // Resolve relative paths from the main project root.
-    // Canonicalize .work/ to follow the symlink in worktrees,
-    // then take its parent as the project root.
-    let real_work_dir = work_dir
-        .canonicalize()
-        .unwrap_or_else(|_| work_dir.to_path_buf());
-    let project_root = real_work_dir.parent().unwrap_or(&real_work_dir);
+    // Resolve relative paths from the main project root, following the
+    // worktree symlink and applying the resolved layout's hop count.
+    let project_root = work_dir::WorkDir::new(work_dir)
+        .ok()
+        .and_then(|wd| wd.main_project_root())
+        .and_then(|p| p.canonicalize().ok())
+        .unwrap_or_else(|| {
+            work_dir
+                .canonicalize()
+                .ok()
+                .and_then(|p| p.parent().map(Path::to_path_buf))
+                .unwrap_or_else(|| work_dir.to_path_buf())
+        });
 
     Ok(Some(project_root.join(&source_path)))
 }

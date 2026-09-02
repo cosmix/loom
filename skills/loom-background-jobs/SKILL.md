@@ -313,7 +313,7 @@ app.conf.update(
 - **Local-time schedules** → DST double/skip.
 - **Big payloads in the queue** → broker bloat or SQS size-limit rejections (up to 1 MiB; verify queue/quota); use claim-check.
 - **Shared queue for fast + slow work** → head-of-line blocking; separate by workload class.
-- **`git add`-ing the whole `.work`** — n/a here, but analogously: don't retain unbounded completed/failed sets; they exhaust Redis.
+- **`git add`-ing the whole `.loom/work`** — n/a here, but analogously: don't retain unbounded completed/failed sets; they exhaust Redis.
 - **Storing job state only in worker memory** → lost on restart; persist checkpoints.
 
 ## Checklists

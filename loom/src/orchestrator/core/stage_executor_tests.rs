@@ -14,13 +14,13 @@ use crate::verify::transitions::{load_stage, save_stage, update_stage};
 use std::path::Path;
 use tempfile::TempDir;
 
-/// A `.work` directory whose configured terminal lane is tmux, so
+/// A `.loom/work` directory whose configured terminal lane is tmux, so
 /// `Orchestrator::new` never runs real terminal detection (which fails on a
 /// headless test runner). Same trick `tests_session_registry.rs` uses for the
 /// same reason.
 fn work_dir() -> TempDir {
     let temp = TempDir::new().unwrap();
-    let work = temp.path().join(".work");
+    let work = temp.path().join(".loom").join("work");
     std::fs::create_dir_all(&work).unwrap();
     write_terminal_config(
         &work,
@@ -70,7 +70,7 @@ fn spawn_a_live_agent(work_dir: &Path, session: &Session) {
 #[test]
 fn start_stage_adopts_a_live_session_instead_of_spawning_a_duplicate() {
     let temp = work_dir();
-    let work = temp.path().join(".work");
+    let work = temp.path().join(".loom").join("work");
 
     // Simulates the post-`loom stage reset` state: back to Queued, but the
     // first agent never actually stopped.
@@ -120,7 +120,7 @@ fn start_stage_adopts_a_live_session_instead_of_spawning_a_duplicate() {
 #[test]
 fn block_and_undo_session_leaves_no_session_record_and_no_stage_link() {
     let temp = work_dir();
-    let work = temp.path().join(".work");
+    let work = temp.path().join(".loom").join("work");
 
     stage_at(&work, "alpha", StageStatus::Executing);
     let mut session = Session::new();
@@ -167,7 +167,7 @@ fn block_and_undo_session_leaves_no_session_record_and_no_stage_link() {
 #[test]
 fn insert_active_session_refuses_to_evict_an_existing_entry() {
     let temp = work_dir();
-    let work = temp.path().join(".work");
+    let work = temp.path().join(".loom").join("work");
     let mut orchestrator = orchestrator_for(&work, temp.path());
 
     let incumbent = session_for("alpha", SessionStatus::Running);

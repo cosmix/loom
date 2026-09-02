@@ -312,7 +312,8 @@ pub fn complete(
     assume_merged: bool,
     admin_proof: Option<String>,
 ) -> Result<()> {
-    let work_dir = Path::new(".work");
+    let work_dir_buf = crate::commands::common::work_dir_path()?;
+    let work_dir: &Path = &work_dir_buf;
     if handle_broker_request(
         &stage_id,
         session_id.as_deref(),

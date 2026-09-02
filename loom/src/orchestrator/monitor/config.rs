@@ -12,7 +12,7 @@ pub struct MonitorConfig {
     pub poll_interval: Duration,
     pub work_dir: PathBuf,
     /// Plan-wide context ceilings, in absolute tokens. Read once from
-    /// `.work/config.toml` when the monitor is built; a stage's own
+    /// `.loom/work/config.toml` when the monitor is built; a stage's own
     /// `context_ceiling_tokens` takes precedence over these.
     pub context: ContextConfig,
     /// Timeout for considering a session hung (no heartbeat)
@@ -25,7 +25,7 @@ impl Default for MonitorConfig {
     fn default() -> Self {
         Self {
             poll_interval: Duration::from_secs(5),
-            work_dir: PathBuf::from(".work"),
+            work_dir: PathBuf::from(".loom/work"),
             context: ContextConfig::default(),
             hung_timeout: Duration::from_secs(DEFAULT_HUNG_TIMEOUT_SECS),
             max_failures_before_escalation: 3,

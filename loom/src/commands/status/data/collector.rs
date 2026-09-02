@@ -59,7 +59,7 @@ fn determine_activity_status(
     }
 }
 
-/// Load all sessions from .work/sessions/ directory
+/// Load all sessions from the state directory's sessions/ directory
 pub fn load_all_sessions(work_dir: &WorkDir) -> Result<Vec<Session>> {
     let sessions_dir = work_dir.sessions_dir();
     if !sessions_dir.exists() {

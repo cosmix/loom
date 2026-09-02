@@ -58,7 +58,7 @@ enum Authorization {
 /// Authorize from the preface alone, which is all that has been read yet.
 ///
 /// The `PendingPeerIdentity` outcome exists because a sandboxed stage agent
-/// cannot read `.work/user.token` — deliberately, since that one credential
+/// cannot read `.loom/work/user.token` — deliberately, since that one credential
 /// authorizes every User RPC — yet completing its own stage is precisely what
 /// it is supposed to do. Deferring the decision lets the caller be identified
 /// by the connection instead of by a secret, without widening anything else:

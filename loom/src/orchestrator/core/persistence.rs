@@ -15,7 +15,7 @@ use super::Orchestrator;
 pub(super) trait Persistence {
     /// Get the work directory path
     fn persistence_work_dir(&self) -> &Path;
-    /// Load stage definition from .work/stages/
+    /// Load stage definition from .loom/work/stages/
     fn load_stage(&self, stage_id: &str) -> Result<Stage> {
         crate::verify::transitions::load_stage(stage_id, self.persistence_work_dir())
             .with_context(|| format!("Failed to load canonical stage record: {stage_id}"))
@@ -29,7 +29,7 @@ pub(super) trait Persistence {
         crate::verify::transitions::update_stage(stage_id, self.persistence_work_dir(), modify)
     }
 
-    /// Save session state to .work/sessions/
+    /// Save session state to .loom/work/sessions/
     ///
     /// Delegates to the single canonical `save_session` in `fs/session_files`
     /// so the daemon, monitor thread, and CLI all share one locked + atomic

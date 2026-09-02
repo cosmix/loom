@@ -6,7 +6,7 @@
 # agent may ignore one message.
 set -euo pipefail
 HOOK="$(dirname "$0")/../post-tool-use.sh"
-TMP=$(mktemp -d)
+TMP=$(mktemp -d "${TMPDIR:-/tmp}/loom-hooktest.XXXXXX")
 trap 'rm -rf "$TMP"' EXIT
 
 WORKDIR="$TMP/work"

@@ -134,7 +134,7 @@ Add exponential-backoff retry for failed stage executions in the orchestrator.
 ## Context
 Orchestrator loop (orchestrator/core/orchestrator.rs:45-80) polls stages then
 sleeps 5s. Conventions: anyhow::Result with .context(); config in
-.work/config.toml; serial_test for state-dependent tests.
+.loom/work/config.toml; serial_test for state-dependent tests.
 
 ## Files
 Modify: loom/src/orchestrator/retry.rs (new), .../core/orchestrator.rs
@@ -142,7 +142,7 @@ Read-only: loom/src/models/stage/types.rs
 
 ## Acceptance
 - cargo test --test retry passes; cargo clippy -- -D warnings clean
-- Retry config (max_attempts, backoff_ms) in .work/config.toml
+- Retry config (max_attempts, backoff_ms) in .loom/work/config.toml
 - Stage → Blocked after max retries
 
 ## Boundaries

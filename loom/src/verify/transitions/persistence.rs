@@ -1,7 +1,7 @@
 //! Stage persistence operations
 //!
 //! This module handles:
-//! - Loading and saving stage state to/from `.work/stages/` markdown files
+//! - Loading and saving stage state to/from `.loom/work/stages/` markdown files
 
 use anyhow::{Context, Result};
 use std::fs;
@@ -16,12 +16,12 @@ use super::serialization::{parse_stage_from_markdown, serialize_stage_to_markdow
 
 /// Load a stage from disk
 ///
-/// Finds and reads the stage file from `.work/stages/`, handling both
+/// Finds and reads the stage file from `.loom/work/stages/`, handling both
 /// prefixed (e.g., `01-stage-id.md`) and non-prefixed (`stage-id.md`) formats.
 ///
 /// # Arguments
 /// * `stage_id` - The ID of the stage to load
-/// * `work_dir` - Path to the `.work` directory
+/// * `work_dir` - Path to the `.loom/work` directory
 ///
 /// # Returns
 /// The loaded stage
@@ -97,7 +97,7 @@ pub fn create_stage(stage: &Stage, work_dir: &Path) -> Result<()> {
 ///
 /// # Arguments
 /// * `stage_id` - The ID of the stage to update
-/// * `work_dir` - Path to the `.work` directory
+/// * `work_dir` - Path to the `.loom/work` directory
 /// * `modify` - Closure applied to the freshly-read on-disk `Stage`. It may fail
 ///   (e.g. a state-machine transition is refused); on `Err` the file is left
 ///   untouched.
@@ -175,7 +175,7 @@ where
 ///
 /// # Arguments
 /// * `stage` - The stage to compute depth for
-/// * `work_dir` - Path to the `.work` directory
+/// * `work_dir` - Path to the `.loom/work` directory
 ///
 /// # Returns
 /// The depth (0-indexed)
@@ -195,13 +195,13 @@ fn compute_stage_depth(stage: &Stage, work_dir: &Path) -> Result<usize> {
     Ok(depths.get(&stage.id).copied().unwrap_or(0))
 }
 
-/// List all stages from `.work/stages/`
+/// List all stages from `.loom/work/stages/`
 ///
 /// Reads all `.md` files in the stages directory and parses them into
 /// Stage structs.
 ///
 /// # Arguments
-/// * `work_dir` - Path to the `.work` directory
+/// * `work_dir` - Path to the `.loom/work` directory
 ///
 /// # Returns
 /// List of all stages

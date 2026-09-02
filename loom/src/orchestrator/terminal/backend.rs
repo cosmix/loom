@@ -1,10 +1,10 @@
 //! `SessionBackend`: dispatches session spawn/kill/liveness across the
 //! native and tmux terminal backends according to the persisted `[terminal]`
-//! config (`.work/config.toml`).
+//! config (`.loom/work/config.toml`).
 //!
 //! # Fail-open
 //!
-//! Choosing `tmux` in `.work/config.toml` must never abort orchestration —
+//! Choosing `tmux` in `.loom/work/config.toml` must never abort orchestration —
 //! [`SessionBackend::from_config`] always succeeds as long as the config
 //! itself reads cleanly, even when tmux is not installed. Availability is
 //! resolved lazily, per spawn, by `SessionBackend::resolve_lane`: a
@@ -15,13 +15,13 @@
 //!
 //! # Fallback marker lifecycle
 //!
-//! `.work/terminal-backend-fallback` is written the first time a tmux spawn
+//! `.loom/work/terminal-backend-fallback` is written the first time a tmux spawn
 //! fails, or the first time tmux is discovered unavailable. It lives in
-//! `.work/` so it survives daemon restarts and separate `loom run`
+//! `.loom/work/` so it survives daemon restarts and separate `loom run`
 //! invocations — nothing clears it automatically. The only clearing paths
 //! are an explicit operator re-selection (`loom run --backend tmux`, see
 //! [`clear_fallback_marker`]) and `loom clean --state` (which removes
-//! `.work/` outright).
+//! `.loom/work/` outright).
 //!
 //! Because it is that sticky, it is written ONLY once the native lane is
 //! known to be constructible. On a headless host `NativeBackend::new` bails
@@ -40,7 +40,7 @@ use crate::models::worktree::Worktree;
 use super::native::NativeBackend;
 use super::tmux::TmuxBackend;
 
-/// Filename (under `.work/`) of the marker written after a tmux spawn
+/// Filename (under `.loom/work/`) of the marker written after a tmux spawn
 /// failure or unavailability, mirroring `remote_control-unsupported`.
 const TERMINAL_BACKEND_FALLBACK_MARKER: &str = "terminal-backend-fallback";
 

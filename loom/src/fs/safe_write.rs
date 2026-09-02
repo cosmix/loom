@@ -1,4 +1,4 @@
-//! Convenience re-exports for the safe `.work/` write helpers.
+//! Convenience re-exports for the safe `.loom/work/` write helpers.
 //!
 //! All real implementation lives in [`super::safe_fs`]. This module exists
 //! to give callers a familiar `safe_write` import path for the common

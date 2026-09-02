@@ -1,7 +1,7 @@
 //! One honest answer to "is an agent already running for this stage?".
 //!
 //! Every other consumer of session state — `loom attach`, orphan recovery,
-//! `loom status` — discovers sessions by reading `.work/sessions/*.md`, so the
+//! `loom status` — discovers sessions by reading `.loom/work/sessions/*.md`, so the
 //! session RECORD is the sole source of truth and it is written AFTER the
 //! agent is spawned. A daemon that dies inside that window leaves a live agent
 //! with no record: invisible to attach, invisible to recovery, unkillable
@@ -9,7 +9,7 @@
 //! agent into the same worktree.
 //!
 //! The agent's OS-level evidence outlives the daemon, in two places the spawn
-//! path writes BEFORE the record: `.work/pids/<tracking_key>-<session_id>.pid`
+//! path writes BEFORE the record: `.loom/work/pids/<tracking_key>-<session_id>.pid`
 //! from the wrapper script (`read_pid_entry`), and, on the tmux lane, a
 //! socket named `loom-<session_id>` (`socket_path_for`).
 //!
@@ -251,7 +251,7 @@ fn stage_candidates(
     candidates
 }
 
-/// `(pid-file stem, mtime)` for every `.work/pids/*.pid`. Read once per scan:
+/// `(pid-file stem, mtime)` for every `.loom/work/pids/*.pid`. Read once per scan:
 /// the stage loop below consults the whole list for each stage.
 fn list_pid_files(work_dir: &Path) -> Vec<(String, SystemTime)> {
     let Ok(entries) = std::fs::read_dir(work_dir.join("pids")) else {
@@ -343,7 +343,7 @@ pub fn adopt_orphan(work_dir: &Path, evidence: &OrphanEvidence) -> Result<Sessio
     // them being right — the parked heuristic
     // (`monitor::parked::stage_looks_finished`) declines on a missing worktree
     // path rather than guessing, and hang detection reads the agent's own
-    // `.work/heartbeat/<stage-id>.json`, not `last_active`.
+    // `.loom/work/heartbeat/<stage-id>.json`, not `last_active`.
 
     crate::fs::session_files::save_session(&session, work_dir)?;
     Ok(session)

@@ -8,7 +8,7 @@
 //! # Why this exists
 //!
 //! `CompleteStage` is the one RPC a stage agent is *supposed* to make, and it
-//! was authenticated with `.work/user.token` — a credential the agent must
+//! was authenticated with `.loom/work/user.token` — a credential the agent must
 //! read to use, and which `sandbox/settings.rs` denies it reading (S-1),
 //! because that same token also authorizes every other User-capability RPC. So
 //! the only sanctioned way for a worktree stage to complete required reading a

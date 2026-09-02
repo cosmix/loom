@@ -1,6 +1,6 @@
 //! Hook event logging for debugging and monitoring.
 //!
-//! Logs hook events to `.work/hooks/events.jsonl` for debugging
+//! Logs hook events to `.loom/work/hooks/events.jsonl` for debugging
 //! and auditing hook execution.
 
 use anyhow::{Context, Result};
@@ -108,7 +108,7 @@ impl HookEventLog {
 
 /// Log a hook event to the events file
 ///
-/// Events are appended to `.work/hooks/events.jsonl` in JSON Lines format.
+/// Events are appended to `.loom/work/hooks/events.jsonl` in JSON Lines format.
 /// Each line is a complete JSON object representing one event.
 pub fn log_hook_event(work_dir: &Path, event: HookEventLog) -> Result<()> {
     let hooks_dir = work_dir.join("hooks");

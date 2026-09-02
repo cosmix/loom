@@ -162,7 +162,7 @@ fn test_signal_contains_worktree_isolation_section() {
     // Check ALLOWED list
     assert!(content.contains("**ALLOWED:**"));
     assert!(content.contains("Files within this worktree"));
-    assert!(content.contains("`.work/` directory (via symlink)"));
+    assert!(content.contains("`.loom/work/` directory (via symlink)"));
     assert!(content.contains("Reading `CLAUDE.md` (symlinked)"));
     assert!(content.contains("Using loom CLI commands"));
 
@@ -170,7 +170,9 @@ fn test_signal_contains_worktree_isolation_section() {
     assert!(content.contains("**FORBIDDEN:**"));
     assert!(content.contains("Path traversal"));
     assert!(content.contains("Git operations targeting main repo"));
-    assert!(content.contains("Direct modification of `.work/stages/` or `.work/sessions/`"));
+    assert!(
+        content.contains("Direct modification of `.loom/work/stages/` or `.loom/work/sessions/`")
+    );
     assert!(content.contains("Attempting to merge your own branch"));
 
     // Check guidance about stopping

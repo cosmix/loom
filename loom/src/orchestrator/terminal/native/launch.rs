@@ -37,7 +37,7 @@ fn remote_control_session_name(kind: SessionType, stage: &Stage) -> String {
     }
 }
 
-/// Whether `.work/config.toml`'s `[context]` table has `prompt_cache_split =
+/// Whether `.loom/work/config.toml`'s `[context]` table has `prompt_cache_split =
 /// true`. Defaults to `false`: the split ships DISABLED by default (no env
 /// var, no heuristic) — only this explicit config key turns it on.
 fn prompt_cache_split_enabled(work_dir: &Path) -> bool {
@@ -94,7 +94,7 @@ fn resolve_prompt_cache_split_prefix_file(work_dir: &Path, stage: &Stage) -> Opt
 /// * Adjudication judges a criterion the stage's own agent could not satisfy,
 ///   and running it on the disputing stage's model would let a plan pick its
 ///   own judge — so it uses the adjudicator's own model
-///   (`.work/config.toml::[adjudication] model`, default `opus`).
+///   (`.loom/work/config.toml::[adjudication] model`, default `opus`).
 /// * Stage and knowledge sessions use the stage's effective values.
 fn model_and_effort(kind: SessionType, stage: &Stage, work_dir: &Path) -> (String, String) {
     match kind {

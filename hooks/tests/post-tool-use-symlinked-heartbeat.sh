@@ -9,7 +9,7 @@
 # whenever the heartbeat happened to be a symlink.
 set -euo pipefail
 HOOK="$(dirname "$0")/../post-tool-use.sh"
-TMP=$(mktemp -d)
+TMP=$(mktemp -d "${TMPDIR:-/tmp}/loom-hooktest.XXXXXX")
 trap 'rm -rf "$TMP"' EXIT
 mkdir -p "$TMP/bin" "$TMP/work/heartbeat"
 MARKER="$TMP/record-edit-called"

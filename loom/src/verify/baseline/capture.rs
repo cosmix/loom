@@ -59,11 +59,11 @@ pub fn capture_baseline(
     ))
 }
 
-/// Save a baseline to the stage's directory in .work/stages/{stage-id}/
+/// Save a baseline to the stage's directory in .loom/work/stages/{stage-id}/
 ///
 /// # Arguments
 /// * `baseline` - The baseline to save
-/// * `work_dir` - Path to the .work directory
+/// * `work_dir` - Path to the .loom/work directory
 pub fn save_baseline(baseline: &TestBaseline, work_dir: &Path) -> Result<()> {
     let stage_dir = work_dir.join("stages").join(&baseline.stage_id);
     fs::create_dir_all(&stage_dir)
@@ -83,7 +83,7 @@ pub fn save_baseline(baseline: &TestBaseline, work_dir: &Path) -> Result<()> {
 ///
 /// # Arguments
 /// * `stage_id` - The stage ID to load baseline for
-/// * `work_dir` - Path to the .work directory
+/// * `work_dir` - Path to the .loom/work directory
 ///
 /// # Returns
 /// Some(TestBaseline) if found, None if no baseline exists

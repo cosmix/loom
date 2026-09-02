@@ -67,8 +67,9 @@ from the previous build are silently reused.
   formats the whole crate, clobbering files another agent owns. Use
   `rustfmt --edition 2021 <file>` on your own files.
 - `cargo test` accepts exactly **one** testname filter; extra filters make it run zero tests.
-- Derived context state under `.loom/cache/` and paths reached through the `.work` symlink
-  resolve to the **main** project root, shared across worktrees. Treat them as shared state.
+- Derived context state under `.loom/cache/` and paths reached through the `.loom/work` symlink
+  (or the legacy `.work` symlink, for a workspace that already resolved to it) resolve to the
+  **main** project root, shared across worktrees. Treat them as shared state.
 
 ## Release Process
 

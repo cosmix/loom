@@ -172,7 +172,7 @@ fn test_complete_dynamic_stage_output_remove() {
 fn test_complete_stage_ids_filtered_executing() {
     let temp_dir = TempDir::new().unwrap();
     let root = temp_dir.path();
-    let stages_dir = root.join(".work/stages");
+    let stages_dir = root.join(".loom/work/stages");
     fs::create_dir_all(&stages_dir).unwrap();
 
     fs::write(
@@ -200,7 +200,7 @@ fn test_complete_stage_ids_filtered_executing() {
 fn test_complete_stage_ids_filtered_multiple_statuses() {
     let temp_dir = TempDir::new().unwrap();
     let root = temp_dir.path();
-    let stages_dir = root.join(".work/stages");
+    let stages_dir = root.join(".loom/work/stages");
     fs::create_dir_all(&stages_dir).unwrap();
 
     fs::write(
@@ -229,7 +229,7 @@ fn test_complete_stage_ids_filtered_multiple_statuses() {
 fn test_complete_stage_ids_filtered_empty_returns_all() {
     let temp_dir = TempDir::new().unwrap();
     let root = temp_dir.path();
-    let stages_dir = root.join(".work/stages");
+    let stages_dir = root.join(".loom/work/stages");
     fs::create_dir_all(&stages_dir).unwrap();
 
     fs::write(

@@ -64,7 +64,7 @@ impl Default for OrchestratorConfig {
             poll_interval: Duration::from_secs(5),
             manual_mode: false,
             watch_mode: false,
-            work_dir: PathBuf::from(".work"),
+            work_dir: PathBuf::from(".loom/work"),
             repo_root: PathBuf::from("."),
             status_update_interval: Duration::from_secs(30),
             auto_merge: true,
@@ -128,7 +128,7 @@ pub struct Orchestrator {
     ///
     /// `start_stage` records its decline reason here and clears the entry when
     /// the stage does spawn; `start_ready_stages` serialises the map to
-    /// `.work/scheduling.json` at the end of every pass. Populated fresh each
+    /// `.loom/work/scheduling.json` at the end of every pass. Populated fresh each
     /// tick, so it never reports a reason that has since gone away.
     pub(super) spawn_blocks: HashMap<String, crate::orchestrator::scheduling_report::BlockReason>,
     /// When each stage was first seen ready-but-unstarted, for "queued for X".
@@ -244,7 +244,7 @@ impl Orchestrator {
         // Record start time
         let started_at = Utc::now();
 
-        // Validate .work directory integrity before starting
+        // Validate .loom/work directory integrity before starting
         validate_work_dir_state(&self.config.repo_root)
             .context("Work directory integrity check failed")?;
 
@@ -489,7 +489,7 @@ impl Orchestrator {
         self.active_sessions.len()
     }
 
-    /// Poll `.work/disputes/` and start an adjudication session for every
+    /// Poll `.loom/work/disputes/` and start an adjudication session for every
     /// dispute that needs one. See
     /// [`AdjudicatorRegistry::start_pending_adjudications`] and
     /// [`AdjudicatorRegistry::disputes_awaiting_session`] for the guards.
@@ -517,7 +517,7 @@ impl Orchestrator {
     }
 }
 
-/// Resolve the plan source_path from `.work/config.toml` for daemon-
+/// Resolve the plan source_path from `.loom/work/config.toml` for daemon-
 /// startup recovery. Returns `None` when there is no config yet (e.g.
 /// during a test that doesn't initialise one).
 fn resolve_plan_path_for_startup(work_dir: &std::path::Path) -> Option<PathBuf> {

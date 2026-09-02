@@ -43,17 +43,18 @@ fn falls_back_to_the_peer_identity_placeholder_when_the_token_file_is_empty() {
 fn falls_back_to_the_peer_identity_placeholder_when_the_work_dir_is_a_symlink() {
     use std::os::unix::fs::symlink;
 
-    // Reproduces the production failure: a worktree's `.work` is a symlink to
-    // the real state directory, and `safe_open_dirfd` opens the work-dir root
-    // with `O_NOFOLLOW`, so `read_user_token` cannot see the token even
-    // though it is present on disk.
+    // Reproduces the production failure: a worktree's state directory is a
+    // symlink to the real state directory, and `safe_open_dirfd` opens the
+    // work-dir root with `O_NOFOLLOW`, so `read_user_token` cannot see the
+    // token even though it is present on disk.
     let real_root = tempfile::tempdir().unwrap();
-    let real_work = real_root.path().join("real").join(".work");
+    let real_work = real_root.path().join("real").join(".loom").join("work");
     std::fs::create_dir_all(&real_work).unwrap();
     std::fs::write(real_work.join("user.token"), "a".repeat(64)).unwrap();
 
     let link_root = tempfile::tempdir().unwrap();
-    let work_dir_symlink = link_root.path().join(".work");
+    let work_dir_symlink = link_root.path().join(".loom").join("work");
+    std::fs::create_dir_all(link_root.path().join(".loom")).unwrap();
     symlink(&real_work, &work_dir_symlink).unwrap();
 
     assert_eq!(

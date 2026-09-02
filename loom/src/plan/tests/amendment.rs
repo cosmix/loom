@@ -1,7 +1,7 @@
 //! Integration tests for runtime plan amendment.
 //!
 //! These tests exercise `apply_amendment` and `verify_plan_versions_consistency`
-//! end-to-end against a temp `.work/` + plan file layout.
+//! end-to-end against a temp `.loom/work/` + plan file layout.
 
 use std::fs;
 use std::path::PathBuf;
@@ -43,7 +43,7 @@ fn setup_env() -> TestEnv {
 fn setup_env_with_plan(plan_text: &str) -> TestEnv {
     let tmp = TempDir::new().unwrap();
     let project_root = tmp.path().to_path_buf();
-    let work_dir = project_root.join(".work");
+    let work_dir = project_root.join(".loom").join("work");
     fs::create_dir_all(work_dir.join("stages")).unwrap();
     fs::create_dir_all(project_root.join("doc").join("plans")).unwrap();
 
@@ -54,7 +54,7 @@ fn setup_env_with_plan(plan_text: &str) -> TestEnv {
         .join("PLAN-amendment-test.md");
     fs::write(&plan_path, plan_text).unwrap();
 
-    // .work/config.toml pointing at the plan file (absolute path).
+    // .loom/work/config.toml pointing at the plan file (absolute path).
     let cfg = format!(
         "[plan]\nsource_path = \"{}\"\nplan_id = \"x\"\nplan_name = \"X\"\nbase_branch = \"main\"\n",
         plan_path.display(),

@@ -6,7 +6,7 @@
 //! spawn-guard.sh denies that outright, fills in a typed spawn's model from the agent's own
 //! definition file (or a built-in table) when `model` is omitted, warns (never denies) on an
 //! explicit escalation above the defined tier or a missing Rule 5 preamble, and records every
-//! typed spawn to `.work/subagents/<stage-id>/spawns.jsonl`.
+//! typed spawn to `.loom/work/subagents/<stage-id>/spawns.jsonl`.
 //!
 //! Regression pinned: the hook installs globally at `~/.claude/hooks/loom/` and runs in EVERY
 //! Claude Code session, loom stage or not - it must DENY only with a LIVE LOOM_MAIN_AGENT_PID

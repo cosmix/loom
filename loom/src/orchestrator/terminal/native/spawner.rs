@@ -40,7 +40,7 @@ fn spawn_reaper_thread(mut child: std::process::Child) {
 /// * `title` - Window title for the terminal
 /// * `workdir` - Working directory for the command
 /// * `wrapper_path` - The executable wrapper to launch as one argv element
-/// * `work_dir` - Optional .work directory for PID tracking
+/// * `work_dir` - Optional .loom/work directory for PID tracking
 /// * `pid_key` - Optional per-session PID-file key (tracking_key + session.id)
 /// * `session_id` - Optional LOOM_SESSION_ID marker for `/proc`-based discovery
 ///
@@ -115,7 +115,7 @@ fn finalize_pid_identity(work_dir: &Path, pid_key: &str, pid: u32) -> Result<u32
 /// discovery — to find the process it `exec`'d into.
 ///
 /// # Arguments
-/// * `work_dir` - The `.work` directory for PID-file tracking
+/// * `work_dir` - The `.loom/work` directory for PID-file tracking
 /// * `pid_key` - The per-session PID-file key (tracking_key + session.id)
 /// * `workdir` - The spawned process's working directory (used to constrain
 ///   `/proc` discovery to this session)

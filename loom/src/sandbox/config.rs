@@ -338,22 +338,21 @@ pub fn validate_paths(config: &MergedSandboxConfig) -> Vec<PathEscapeAttempt> {
     escapes
 }
 
-/// Check if a path is a legitimate .work directory access via symlink
+/// Check if a path is a legitimate state-root directory access via symlink
 ///
-/// In worktrees, .work is a symlink to ../../.work (shared orchestration state).
-/// Access to .work/ directly (not ../..work) is legitimate.
+/// In worktrees, the state root is a symlink — `.loom/work` on the nested
+/// layout, `.work` on a legacy workspace — to the main repo's shared
+/// orchestration state. Direct access under either prefix is legitimate;
+/// escaping through the symlink's target is not.
 pub fn is_legitimate_work_access(path: &str) -> bool {
     let path_trimmed = path.trim();
 
-    // Direct access to .work/ is fine - it's a symlink
-    if path_trimmed.starts_with(".work/") || path_trimmed == ".work" {
-        // But not if it's trying to escape through the symlink's target
-        if !path_trimmed.contains("../") {
-            return true;
-        }
-    }
+    let under_state_root = path_trimmed.starts_with(".loom/work/")
+        || path_trimmed == ".loom/work"
+        || path_trimmed.starts_with(".work/")
+        || path_trimmed == ".work";
 
-    false
+    under_state_root && !path_trimmed.contains("../")
 }
 
 #[cfg(test)]
@@ -680,6 +679,37 @@ mod tests {
     }
 
     #[test]
+    fn default_deny_read_carves_out_daemon_tokens_on_both_layouts() {
+        let config = FilesystemConfig::default();
+
+        // Nested layout (.loom/work) — bare and parent-relative forms.
+        assert!(config
+            .deny_read
+            .contains(&".loom/work/admin.token".to_string()));
+        assert!(config
+            .deny_read
+            .contains(&".loom/work/user.token".to_string()));
+        assert!(config
+            .deny_read
+            .contains(&"../.loom/work/admin.token".to_string()));
+        assert!(config
+            .deny_read
+            .contains(&"../.loom/work/user.token".to_string()));
+
+        // Legacy layout (.work) — a workspace found here keeps this layout
+        // forever, so its `Read(.work/**)` back-compat allow needs the same
+        // carve-out (S-1).
+        assert!(config.deny_read.contains(&".work/admin.token".to_string()));
+        assert!(config.deny_read.contains(&".work/user.token".to_string()));
+        assert!(config
+            .deny_read
+            .contains(&"../.work/admin.token".to_string()));
+        assert!(config
+            .deny_read
+            .contains(&"../.work/user.token".to_string()));
+    }
+
+    #[test]
     fn test_default_deny_write_contains_worktree_escape_patterns() {
         let config = FilesystemConfig::default();
 
@@ -752,17 +782,24 @@ mod tests {
 
     #[test]
     fn test_legitimate_work_access_via_symlink() {
-        // Direct .work/ access is legitimate
+        // Direct .work/ access is legitimate (legacy layout)
         assert!(is_legitimate_work_access(".work/signals/session.md"));
         assert!(is_legitimate_work_access(".work/config.toml"));
         assert!(is_legitimate_work_access(".work"));
 
-        // But not escape through .work
+        // Direct .loom/work/ access is legitimate (nested layout)
+        assert!(is_legitimate_work_access(".loom/work/signals/session.md"));
+        assert!(is_legitimate_work_access(".loom/work/config.toml"));
+        assert!(is_legitimate_work_access(".loom/work"));
+
+        // But not escape through either spelling
         assert!(!is_legitimate_work_access(".work/../../../escape"));
+        assert!(!is_legitimate_work_access(".loom/work/../../../escape"));
 
         // Not other paths
         assert!(!is_legitimate_work_access("src/main.rs"));
         assert!(!is_legitimate_work_access("../../.work"));
+        assert!(!is_legitimate_work_access("../../../.loom/work"));
     }
 
     #[test]

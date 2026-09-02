@@ -9,7 +9,7 @@
 //! Contains generic permissions that apply to all Claude Code sessions in the project.
 //! This file is safe to commit because it contains no user-specific paths.
 //!
-//! - **Permissions**: File access rules (e.g., `Read(.work/**)`, `Bash(loom *)`)
+//! - **Permissions**: File access rules (e.g., `Read(.loom/work/**)`, `Bash(loom *)`)
 //!
 //! ## `settings.local.json` - User-local hooks and env (gitignored)
 //!
@@ -116,18 +116,18 @@ pub fn scrub_session_identity_env(settings: &mut Value) -> bool {
     removed
 }
 
-/// Env var name for the pinned `.work` directory path.
+/// Env var name for the pinned `.loom/work` directory path.
 const WORK_DIR_ENV_KEY: &str = "LOOM_WORK_DIR";
 
 /// Remove a stale `LOOM_WORK_DIR` pin from a settings document.
 ///
 /// `LOOM_WORK_DIR` is deliberately excluded from `SESSION_IDENTITY_ENV_KEYS`
 /// above: it is repo-stable rather than per-session, so a *live* pin (naming
-/// a `.work/` that still exists) is worth persisting — it saves every hook
-/// and CLI invocation in the repo the upward search `WorkDir::new` would
+/// a `.loom/work/` that still exists) is worth persisting — it saves every
+/// hook and CLI invocation in the repo the upward search `WorkDir::new` would
 /// otherwise perform, and callers reading it while a stage is running rely
 /// on it being there. But once the directory it names is gone — e.g. `loom
-/// repair --fix` deleted a corrupted `.work/` — the pin is strictly worse
+/// repair --fix` deleted a corrupted `.loom/work/` — the pin is strictly worse
 /// than having none at all: Claude Code's settings `env` block overrides the
 /// process environment, so the stale value shadows `WorkDir::new`'s upward
 /// search instead of falling through to it, and hooks/CLI invocations in the
@@ -281,7 +281,7 @@ pub fn ensure_loom_permissions_to(repo_root: &Path, hooks_dir: Option<&Path>) ->
             println!("  Updated .claude/settings.json with {added_permissions} loom permission(s)");
         }
         if removed_permissions > 0 {
-            println!("  Removed {removed_permissions} inert .work write grant(s)");
+            println!("  Removed {removed_permissions} inert .loom/work write grant(s)");
         }
         if migrated {
             println!(
@@ -329,7 +329,7 @@ pub fn ensure_loom_hooks_local(repo_root: &Path) -> Result<()> {
     // Drop stale per-session identity env vars left behind by older loom
     // versions (they used to be written here by knowledge-stage spawns and
     // would shadow the wrapper script's fresh exports in every later session),
-    // and a LOOM_WORK_DIR pin left behind by a since-deleted .work/ (e.g. a
+    // and a LOOM_WORK_DIR pin left behind by a since-deleted .loom/work/ (e.g. a
     // `loom repair --fix` run). Both heals are reported as one change below.
     let stale_env_removed =
         scrub_session_identity_env(&mut settings) | scrub_stale_work_dir_env(&mut settings);

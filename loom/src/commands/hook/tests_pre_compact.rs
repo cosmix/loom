@@ -32,11 +32,11 @@ fn delivered(recipient_id: &str, epoch: &str, ids: &[(&str, &str)]) -> delivery:
     }
 }
 
-/// A checkout with a `.work/` directory and no stage — an ordinary Claude
+/// A checkout with a `.loom/work/` directory and no stage — an ordinary Claude
 /// Code session in a mapped repository.
 fn mapped_checkout() -> TempDir {
     let temp = TempDir::new().unwrap();
-    std::fs::create_dir_all(temp.path().join(".work")).unwrap();
+    std::fs::create_dir_all(temp.path().join(".loom").join("work")).unwrap();
     temp
 }
 
@@ -65,7 +65,7 @@ struct ThreeRecipients {
 }
 
 fn checkout_with_three_recipients(checkout_root: &Path) -> ThreeRecipients {
-    let work_dir = checkout_root.join(".work");
+    let work_dir = checkout_root.join(".loom").join("work");
     enter_checkout(checkout_root);
 
     let (plan, stage_id) = local_overlay_key(checkout_root);
@@ -219,7 +219,7 @@ fn resets_a_stage_sessions_record_keyed_to_its_stage() {
 #[serial]
 fn an_environment_naming_no_work_dir_at_all_resets_nothing_and_creates_nothing() {
     let temp = TempDir::new().unwrap();
-    // No `.work/` under this checkout, and no stage — the environment names
+    // No state directory under this checkout, and no stage — the environment names
     // a valid directory but no delivery scope actually lives there.
     enter_checkout(temp.path());
 
@@ -227,7 +227,7 @@ fn an_environment_naming_no_work_dir_at_all_resets_nothing_and_creates_nothing()
 
     leave();
     assert!(
-        !temp.path().join(".work").exists(),
-        "resetting must never create a .work/ tree as a side effect"
+        !temp.path().join(".loom").join("work").exists(),
+        "resetting must never create a state directory tree as a side effect"
     );
 }

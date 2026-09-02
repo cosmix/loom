@@ -26,13 +26,13 @@ use tempfile::TempDir;
 /// denied reading.
 const NO_TOKEN: &str = "peer-identity";
 
-/// A work directory NAMED `.work`.
+/// A work directory NAMED `.loom/work`.
 ///
 /// The dispute handler resolves its own `WorkDir`, whose upward search would
 /// otherwise climb out of a differently-named fixture and find the real
-/// project's `.work`.
+/// project's `.loom/work`.
 fn work_root(temp: &TempDir) -> PathBuf {
-    let work_dir = temp.path().join(".work");
+    let work_dir = temp.path().join(".loom").join("work");
     std::fs::create_dir_all(work_dir.join("sessions")).unwrap();
     std::fs::create_dir_all(work_dir.join("stages")).unwrap();
     // A token exists — the point is that the caller cannot read it.
@@ -107,7 +107,7 @@ fn dispute_request(stage_id: &str, session_id: &str) -> Request {
 }
 
 /// The incident this whole path exists for: an agent that cannot read
-/// `.work/user.token` and cannot write `.work/stages/` records its own
+/// `.loom/work/user.token` and cannot write `.loom/work/stages/` records its own
 /// blockage anyway.
 #[test]
 fn a_token_less_block_from_inside_the_session_is_applied() {

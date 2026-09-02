@@ -4,6 +4,7 @@ use anyhow::{anyhow, bail, Context, Result};
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use crate::fs::work_dir::WorkDir;
 use crate::git::branch::branch_name_for_stage;
 use crate::handoff::generator::find_continuation_handoff;
 use crate::handoff::schema::{HandoffV2, ParsedHandoff};
@@ -26,7 +27,7 @@ pub struct ContinuationContext {
 ///
 /// # Arguments
 /// * `stage_id` - The ID of the stage to continue
-/// * `work_dir` - The .work directory path
+/// * `work_dir` - The .loom/work directory path
 ///
 /// # Returns
 /// ContinuationContext with stage, handoff path, worktree path, and branch
@@ -86,11 +87,30 @@ pub fn load_handoff_v2(handoff_path: &Path) -> Result<Option<HandoffV2>> {
     Ok(parsed.as_v2().cloned())
 }
 
-/// Load a stage from .work/stages/
+/// Load a stage from .loom/work/stages/
 fn load_stage(work_dir: &Path, stage_id: &str) -> Result<Stage> {
     crate::verify::transitions::load_stage(stage_id, work_dir).with_context(|| {
         format!("Stage file not found for: {stage_id}. Run 'loom stage create' first.")
     })
+}
+
+/// The project root holding `work_dir`'s state directory.
+///
+/// The hop count is layout-dependent (two for `.loom/work`, one for a legacy
+/// `.work`) and lives in exactly one place: `WorkDir::project_root`. A bare
+/// `parent()` here would land on `<repo>/.loom` under the current layout, and
+/// every worktree derived from it — `<repo>/.loom/.worktrees/<id>` — would be
+/// a path that never exists.
+fn project_root_of(work_dir: &Path) -> Result<PathBuf> {
+    WorkDir::new(work_dir)
+        .ok()
+        .and_then(|wd| wd.project_root().map(Path::to_path_buf))
+        .ok_or_else(|| {
+            anyhow!(
+                "Cannot determine project root from work_dir: {}",
+                work_dir.display()
+            )
+        })
 }
 
 /// Resolve worktree path and branch for a stage
@@ -100,26 +120,15 @@ fn resolve_worktree_info(stage: &Stage, work_dir: &Path) -> Result<(PathBuf, Str
         let branch = branch_name_for_stage(&stage.id);
         Ok((path, branch))
     } else {
-        let project_root = work_dir.parent().ok_or_else(|| {
-            anyhow!(
-                "Cannot determine project root from work_dir: {}",
-                work_dir.display()
-            )
-        })?;
-        Ok((project_root.to_path_buf(), "main".to_string()))
+        Ok((project_root_of(work_dir)?, "main".to_string()))
     }
 }
 
 /// Load worktree path from worktree ID
 fn load_worktree_path(work_dir: &Path, worktree_id: &str) -> Result<PathBuf> {
-    let project_root = work_dir.parent().ok_or_else(|| {
-        anyhow!(
-            "Cannot determine project root from work_dir: {}",
-            work_dir.display()
-        )
-    })?;
+    let project_root = project_root_of(work_dir)?;
 
-    let worktree_path = Worktree::worktree_path(project_root, worktree_id);
+    let worktree_path = Worktree::worktree_path(&project_root, worktree_id);
 
     if !worktree_path.exists() {
         bail!(

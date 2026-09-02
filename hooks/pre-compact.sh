@@ -12,7 +12,9 @@
 # Environment variables (set by loom worktree settings):
 #   LOOM_STAGE_ID    - The stage being executed
 #   LOOM_SESSION_ID  - The session ID
-#   LOOM_WORK_DIR    - Path to the .work directory
+#   LOOM_WORK_DIR    - Path to the state directory (.loom/work, or the
+#                      legacy .work for a workspace that already resolved
+#                      to it)
 #
 # Exit codes:
 #   0 = Allow compaction

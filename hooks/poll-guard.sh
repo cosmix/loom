@@ -98,13 +98,14 @@ _loom_poll_git_is_countable() {
 	return 1
 }
 
-# _loom_poll_cat_is_countable - `cat` counts only when its argument is a `.work` path.
+# _loom_poll_cat_is_countable - `cat` counts only when its argument is a
+# state-directory path (legacy `.work` or current `.loom/work`).
 _loom_poll_cat_is_countable() {
 	local j="$1"
 	local arg="${LOOM_TOKENS[$((j + 1))]:-}"
 	[[ -z "$arg" || "$arg" == "%%SEP%%" ]] && return 1
 	case "$arg" in
-	*.work/* | */.work) return 0 ;;
+	*.work/* | */.work | *.loom/work/* | */.loom/work) return 0 ;;
 	esac
 	return 1
 }

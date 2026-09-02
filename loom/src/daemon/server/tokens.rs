@@ -7,11 +7,11 @@
 
 use std::path::{Path, PathBuf};
 
-/// Filename for the user-tier token (mode 0o600, lives under `.work/`).
+/// Filename for the user-tier token (mode 0o600, lives under `.loom/work/`).
 pub(super) const USER_TOKEN_FILE: &str = "user.token";
 
 /// Filename for the admin token (mode 0o600). Lives under the per-project
-/// `.work/` directory alongside `user.token`. It is owner-only so a
+/// `.loom/work/` directory alongside `user.token`. It is owner-only so a
 /// stage-confined agent cannot read it, and being per-project means
 /// concurrent daemons for different projects never share — let alone
 /// clobber or delete — each other's token.

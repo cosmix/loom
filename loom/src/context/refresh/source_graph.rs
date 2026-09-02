@@ -52,7 +52,16 @@ pub struct SourceGraphOutcome {
 }
 
 /// Roots to never descend into: caches, worktrees, and build/dependency output.
-const EXCLUDED_ROOTS: &[&str] = &[".work", ".worktrees", "target", "node_modules", ".git"];
+/// `.loom` covers the current state root (`.loom/work`) and loom's own cache;
+/// `.work` stays listed for a legacy-layout project that has not moved.
+const EXCLUDED_ROOTS: &[&str] = &[
+    ".loom",
+    ".work",
+    ".worktrees",
+    "target",
+    "node_modules",
+    ".git",
+];
 
 /// Walk tracked files, extract or reuse each one, and persist the layer — a missing git repository is data, not a crash, see [`Freshness::never_built`].
 pub fn reconcile_source_graph(

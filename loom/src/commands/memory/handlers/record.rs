@@ -59,7 +59,7 @@ fn record(
 ///
 /// Attribution must never be spoofable via a CLI flag, on EITHER write
 /// path: this used to be checked only inside the spool fallback, so a
-/// stage that can write `.work` directly (e.g. a main-repo knowledge stage,
+/// stage that can write the state directory directly (e.g. a main-repo knowledge stage,
 /// which isn't sandboxed and never hits `is_write_denied`) could still pass
 /// `--stage <someone-else>` and land an entry in another stage's journal.
 /// Checking here, before either write is attempted, closes that regardless
@@ -84,8 +84,9 @@ fn reject_stage_forgery(stage_id: &Option<String>) -> Result<()> {
 
 /// True when `error` (or something in its cause chain) is a filesystem
 /// permission failure - what a sandboxed worktree sees when it tries to
-/// write through the `.work` symlink to the main repo, since the generated
-/// sandbox grants `Read(.work/memory/**)` but no matching `Edit`.
+/// write through the state directory symlink to the main repo, since the
+/// generated sandbox grants read access to the state directory's `memory/**`
+/// but no matching write.
 fn is_write_denied(error: &anyhow::Error) -> bool {
     error.chain().any(|cause| {
         cause
@@ -98,7 +99,7 @@ fn is_write_denied(error: &anyhow::Error) -> bool {
 }
 
 /// Fall back to the per-worktree spool (see `fs::memory::spool`) after a
-/// direct write to `.work/memory/<stage>.md` was denied.
+/// direct write to `<state-dir>/memory/<stage>.md` was denied.
 ///
 /// `original_err` is propagated unchanged whenever spooling isn't a valid
 /// option for this call, so the caller never loses the real diagnostic.
@@ -123,7 +124,8 @@ fn record_via_spool(
     append_to_spool(&worktree_root, entry)?;
 
     eprintln!(
-        "{} Recorded to the stage spool; the loom daemon will commit it to .work/memory/{stage}.md",
+        "{} Recorded to the stage spool; the loom daemon will commit it to the state \
+         directory's memory/{stage}.md",
         "ℹ".blue()
     );
     if !DaemonServer::is_running(work_dir) {

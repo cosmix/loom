@@ -13,7 +13,7 @@ use super::{create_test_session, create_test_stage, create_test_worktree};
 #[test]
 fn test_generate_merge_signal_basic() {
     let temp_dir = TempDir::new().unwrap();
-    let work_dir = temp_dir.path().join(".work");
+    let work_dir = temp_dir.path().join(".loom").join("work");
     fs::create_dir_all(&work_dir).unwrap();
 
     let session = create_test_session();
@@ -48,7 +48,7 @@ fn test_generate_merge_signal_basic() {
 #[test]
 fn test_generate_merge_signal_empty_conflicts() {
     let temp_dir = TempDir::new().unwrap();
-    let work_dir = temp_dir.path().join(".work");
+    let work_dir = temp_dir.path().join(".loom").join("work");
     fs::create_dir_all(&work_dir).unwrap();
 
     let session = create_test_session();
@@ -109,7 +109,7 @@ fn test_format_merge_signal_content_sections() {
 #[test]
 fn test_read_merge_signal() {
     let temp_dir = TempDir::new().unwrap();
-    let work_dir = temp_dir.path().join(".work");
+    let work_dir = temp_dir.path().join(".loom").join("work");
     fs::create_dir_all(&work_dir).unwrap();
 
     let session = create_test_session();
@@ -150,7 +150,7 @@ fn test_read_merge_signal() {
 #[test]
 fn test_read_merge_signal_returns_none_for_regular_signal() {
     let temp_dir = TempDir::new().unwrap();
-    let work_dir = temp_dir.path().join(".work");
+    let work_dir = temp_dir.path().join(".loom").join("work");
     fs::create_dir_all(&work_dir).unwrap();
 
     let session = create_test_session();
@@ -169,7 +169,7 @@ fn test_read_merge_signal_returns_none_for_regular_signal() {
 #[test]
 fn test_read_merge_signal_nonexistent() {
     let temp_dir = TempDir::new().unwrap();
-    let work_dir = temp_dir.path().join(".work");
+    let work_dir = temp_dir.path().join(".loom").join("work");
     fs::create_dir_all(&work_dir).unwrap();
 
     let result = read_merge_signal("nonexistent-session", &work_dir);

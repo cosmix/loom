@@ -10,7 +10,7 @@ use crate::fs::memory::{
 use crate::git::worktree::find_worktree_root_from_cwd;
 
 use super::super::formatters::{format_entry_compact, format_entry_full};
-use super::work_dir::{get_work_dir_readonly, validate_stage_id};
+use super::work_dir::{readonly_work_dir, validate_stage_id};
 
 /// `(worktree_root, stage_id)` for the worktree that owns the current
 /// working directory, if cwd is inside one. Shared by every spool lookup on
@@ -33,7 +33,7 @@ fn current_worktree_stage() -> Option<(PathBuf, String)> {
 /// worktree that owns `stage` - reading another stage's journal must not
 /// leak a third worktree's spool into it. A `read_pending` failure degrades
 /// to the journal alone rather than failing the read, matching how these
-/// read-only commands already tolerate a missing `.work` (see
+/// read-only commands already tolerate a missing state directory (see
 /// `work_dir.rs`).
 pub(super) fn read_journal_with_pending(work_dir: &Path, stage: &str) -> Result<MemoryJournal> {
     let mut journal = read_journal(work_dir, stage)?;
@@ -75,9 +75,9 @@ pub fn query(search: String, stage_id: Option<String>) -> Result<()> {
         validate_stage_id(id)?;
     }
 
-    let Some(work_dir) = get_work_dir_readonly() else {
+    let Some(work_dir) = readonly_work_dir() else {
         println!(
-            "{} No memory recorded yet (no .work directory found)",
+            "{} No memory recorded yet (no state directory found)",
             "ℹ".blue()
         );
         return Ok(());
@@ -187,9 +187,9 @@ pub fn list(stage_id: Option<String>, entry_type: Option<String>) -> Result<()> 
         validate_stage_id(id)?;
     }
 
-    let Some(work_dir) = get_work_dir_readonly() else {
+    let Some(work_dir) = readonly_work_dir() else {
         println!(
-            "{} No memory recorded yet (no .work directory found)",
+            "{} No memory recorded yet (no state directory found)",
             "ℹ".blue()
         );
         return Ok(());
@@ -277,9 +277,9 @@ fn list_all_stages(work_dir: &Path, type_filter: Option<MemoryEntryType>) -> Res
 
 /// Show full memory journal
 pub fn show(stage_id: Option<String>, all: bool) -> Result<()> {
-    let Some(work_dir) = get_work_dir_readonly() else {
+    let Some(work_dir) = readonly_work_dir() else {
         println!(
-            "{} No memory recorded yet (no .work directory found)",
+            "{} No memory recorded yet (no state directory found)",
             "ℹ".blue()
         );
         return Ok(());

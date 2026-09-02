@@ -4,7 +4,7 @@
 //! field mappings (the `working_dir` `Option<String>` -> `String` fallback,
 //! and the `stage_type` non-optional -> `Option` wrap) are unit-tested
 //! directly here via `super::*`. This file also owns [`stage_file_content`],
-//! the shared fixture builder for a realistic `.work/stages/*.md` file
+//! the shared fixture builder for a realistic `.loom/work/stages/*.md` file
 //! (`pub(super)` so the sibling `tests_stage_loading_fields.rs` and
 //! `tests_stage_loading_round_trip.rs` modules can reuse it), plus the direct
 //! regression guard for the reported bug (a realistic runtime stage file must
@@ -51,7 +51,7 @@ fn test_definition_from_stage_wraps_stage_type_in_some() {
 }
 
 /// Build markdown+frontmatter for a stage file the way `serialize_stage_to_markdown`
-/// writes a real `.work/stages/*.md` file: a fully-populated [`Stage`] (every
+/// writes a real `.loom/work/stages/*.md` file: a fully-populated [`Stage`] (every
 /// runtime field present, e.g. `status`, `created_at`), with `configure`
 /// applied on top to set the fields under test.
 ///

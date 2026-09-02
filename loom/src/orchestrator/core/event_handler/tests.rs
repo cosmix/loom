@@ -49,12 +49,12 @@ pub(super) fn create_test_graph() -> ExecutionGraph {
     ExecutionGraph::build(stages).unwrap()
 }
 
-/// A `.work` whose configured terminal lane is tmux, so `Orchestrator::new`
+/// A `.loom/work` whose configured terminal lane is tmux, so `Orchestrator::new`
 /// never runs real terminal detection (which fails on a headless test runner).
 /// Same trick `stage_executor_tests.rs` uses for the same reason.
 pub(super) fn handoff_work_dir() -> TempDir {
     let temp = TempDir::new().unwrap();
-    let work = temp.path().join(".work");
+    let work = temp.path().join(".loom").join("work");
     std::fs::create_dir_all(&work).unwrap();
     write_terminal_config(
         &work,
@@ -153,7 +153,7 @@ pub(super) fn executing_stage(work_dir: &Path) {
 #[test]
 fn budget_backstop_kills_the_agent_and_then_requeues() {
     let temp = handoff_work_dir();
-    let work = temp.path().join(".work");
+    let work = temp.path().join(".loom").join("work");
     executing_stage(&work);
 
     let session = recorded_session(&work);
@@ -202,7 +202,7 @@ fn budget_backstop_kills_the_agent_and_then_requeues() {
 #[test]
 fn handoff_does_not_requeue_while_an_untracked_agent_is_still_alive() {
     let temp = handoff_work_dir();
-    let work = temp.path().join(".work");
+    let work = temp.path().join(".loom").join("work");
     executing_stage(&work);
 
     let session = recorded_session(&work);
@@ -232,7 +232,7 @@ fn handoff_does_not_requeue_while_an_untracked_agent_is_still_alive() {
 #[test]
 fn handoff_requeues_once_the_stage_has_no_live_agent() {
     let temp = handoff_work_dir();
-    let work = temp.path().join(".work");
+    let work = temp.path().join(".loom").join("work");
     executing_stage(&work);
 
     let session = recorded_session(&work);

@@ -14,8 +14,8 @@ fn test_migrate_inert_write_denies_rewrites_drops_and_passes_through() {
         "Write(*)",                    // blanket: dropped
         "Write(../../**)",             // parent traversal: dropped
         "Write(doc/loom/knowledge/x)", // knowledge write channel: dropped
-        "Edit(.work/stages/**)",       // already enforceable: untouched
-        "Write(.work/stages/**)",      // collapses onto the Edit above
+        "Edit(.loom/work/stages/**)",  // already enforceable: untouched
+        "Write(.loom/work/stages/**)", // collapses onto the Edit above
         "Read(~/.ssh/**)",             // not a write rule: untouched
         "Bash(rm -rf:*)",              // not a file rule at all: untouched
     ]
@@ -27,7 +27,7 @@ fn test_migrate_inert_write_denies_rewrites_drops_and_passes_through() {
         migrate_inert_write_denies(&rules),
         vec![
             "Edit(~/.bashrc)",
-            "Edit(.work/stages/**)",
+            "Edit(.loom/work/stages/**)",
             "Read(~/.ssh/**)",
             "Bash(rm -rf:*)",
         ]
@@ -36,12 +36,14 @@ fn test_migrate_inert_write_denies_rewrites_drops_and_passes_through() {
 
 #[test]
 fn test_ensure_loom_permissions_prunes_legacy_work_write_grants() {
-    // Every spelling of the `.work` write grant loom itself used to emit: the
-    // relative one from LOOM_PERMISSIONS, the worktree-relative one that
-    // reached this file through `sync`, and the resolved-absolute one from
-    // `git/worktree/settings.rs`. All three are inert (Claude Code's file
-    // permission check consults only `Edit(path)`) and all three print a
-    // warning at every session start until they are removed.
+    // Every spelling of the state-directory write grant loom itself used to
+    // emit, across both the pre-migration `.work` layout and the current
+    // nested `.loom/work` layout: the relative one from LOOM_PERMISSIONS, the
+    // worktree-relative one that reached this file through `sync`, and the
+    // resolved-absolute one from `git/worktree/settings.rs`. All six are
+    // inert (Claude Code's file permission check consults only `Edit(path)`)
+    // and all six print a warning at every session start until they are
+    // removed.
     let temp_dir = TempDir::new().unwrap();
     let repo_root = temp_dir.path();
     let claude_dir = repo_root.join(".claude");
@@ -50,6 +52,9 @@ fn test_ensure_loom_permissions_prunes_legacy_work_write_grants() {
     let polluted = json!({
         "permissions": {
             "allow": [
+                "Write(.loom/work/**)",
+                "Write(../../../.loom/work/**)",
+                "Write(//home/dev/project/.loom/work/**)",
                 "Write(.work/**)",
                 "Write(../../.work/**)",
                 "Write(//home/dev/project/.work/**)",
@@ -71,19 +76,20 @@ fn test_ensure_loom_permissions_prunes_legacy_work_write_grants() {
     let allow = settings["permissions"]["allow"].as_array().unwrap();
 
     let has_legacy_grant = allow.iter().any(|v| {
-        v.as_str()
-            .is_some_and(|s| s.starts_with("Write(") && s.ends_with(".work/**)"))
+        v.as_str().is_some_and(|s| {
+            s.starts_with("Write(") && (s.ends_with(".loom/work/**)") || s.ends_with(".work/**)"))
+        })
     });
     assert!(
         !has_legacy_grant,
-        "loom's own inert .work write grants must be pruned, got: {allow:?}"
+        "loom's own inert state-directory write grants must be pruned, got: {allow:?}"
     );
     // A `Write(...)` entry that is NOT one of loom's own is the developer's
     // config: inert or not, removing it is not loom's call.
     assert!(allow.iter().any(|v| v == "Write(src/**)"));
     assert!(allow.iter().any(|v| v == "Read(src/**)"));
     // The replacement grant is in place.
-    assert!(allow.iter().any(|v| v == "Edit(.work/handoffs/**)"));
+    assert!(allow.iter().any(|v| v == "Edit(.loom/work/handoffs/**)"));
 }
 
 #[test]
@@ -99,9 +105,9 @@ fn test_ensure_loom_hooks_local_heals_inert_write_denies() {
         "permissions": {
             "deny": [
                 "Write(**)",
-                "Write(.work/sessions/**)",
-                "Edit(.work/stages/**)",
-                "Write(.work/stages/**)"
+                "Write(.loom/work/sessions/**)",
+                "Edit(.loom/work/stages/**)",
+                "Write(.loom/work/stages/**)"
             ]
         }
     });
@@ -120,7 +126,7 @@ fn test_ensure_loom_hooks_local_heals_inert_write_denies() {
 
     assert_eq!(
         deny_strs,
-        vec!["Edit(.work/sessions/**)", "Edit(.work/stages/**)"],
+        vec!["Edit(.loom/work/sessions/**)", "Edit(.loom/work/stages/**)"],
         "blanket deny dropped, the rest migrated and collapsed onto the \
          Edit(...) entry already present"
     );

@@ -3,11 +3,11 @@
 //! The load-bearing assertion here is negative: `check` must never create
 //! anything under `.loom/` (that is the whole reason it exists instead of
 //! reusing `context::resolve()` — see check.rs's module doc). Every test
-//! below builds its own temp project with a `.work/` directory PRESENT before
+//! below builds its own temp project with a state directory PRESENT before
 //! calling `check`; without it, `WorkDir::new(".")` searches upward past the
-//! temp dir and silently resolves the real repository's `.work` instead
-//! (`fs/work_dir.rs`'s upward search), which would make these tests check the
-//! wrong tree entirely.
+//! temp dir and silently resolves the real repository's state directory
+//! instead (`fs/work_dir.rs`'s upward search), which would make these tests
+//! check the wrong tree entirely.
 
 use super::*;
 use serial_test::serial;
@@ -16,10 +16,17 @@ use std::path::PathBuf;
 use tempfile::TempDir;
 
 /// Marks a temp dir as its own project root for `WorkDir::new(".")`, without
-/// pulling in the full `.work/` initialization `WorkDir::initialize` performs
-/// (irrelevant here, and it would just add unused subdirectories).
+/// pulling in the full state-directory initialization `WorkDir::initialize`
+/// performs (irrelevant here, and it would just add unused subdirectories).
+///
+/// The resolver keys on `config.toml`'s presence, not directory existence
+/// (see `fs/work_dir.rs`'s `workspace_at`), so an empty `config.toml` is
+/// what actually pins resolution to `project_root` — a bare directory alone
+/// would let the upward search walk straight past it.
 fn seed_work_marker(project_root: &std::path::Path) {
-    fs::create_dir_all(project_root.join(".work")).expect("failed to seed .work marker");
+    let work_dir = project_root.join(".loom").join("work");
+    fs::create_dir_all(&work_dir).expect("failed to seed state dir marker");
+    fs::write(work_dir.join("config.toml"), "").expect("failed to seed config.toml marker");
 }
 
 fn seed_clean_knowledge(project_root: &std::path::Path) {
@@ -62,31 +69,41 @@ fn check_never_creates_a_loom_cache_directory() {
 
     result.expect("check must succeed against a clean knowledge tree");
     assert!(
-        !project_root.join(".loom").exists(),
-        "check must not create .loom directly under the project root"
+        !project_root.join(".loom").join("cache").exists(),
+        "check must not create a .loom/cache directory under the project root"
     );
     assert!(
-        no_loom_dir_anywhere(project_root),
-        "check must not create a .loom directory anywhere under the project root"
+        no_extra_loom_entries(project_root),
+        "check must not create anything under .loom/ beyond the seeded state-directory marker"
     );
 }
 
-/// Recursively confirms no path component named `.loom` exists under `root`.
-fn no_loom_dir_anywhere(root: &std::path::Path) -> bool {
-    let entries = match fs::read_dir(root) {
+/// Confirms `.loom/` under `root` holds nothing beyond the [`seed_work_marker`]
+/// fixture (`work/config.toml`) -- i.e. `check` itself added no cache or other
+/// files there. The state directory and the context cache both now live under
+/// `.loom/`, so this can no longer assert `.loom` is absent outright (see
+/// `seed_work_marker`'s doc); it asserts the narrower, still load-bearing
+/// property that `check` writes nothing alongside the pre-existing marker.
+fn no_extra_loom_entries(root: &std::path::Path) -> bool {
+    let loom_dir = root.join(".loom");
+    let entries = match fs::read_dir(&loom_dir) {
         Ok(entries) => entries,
         Err(_) => return true,
     };
-    for entry in entries.filter_map(|entry| entry.ok()) {
-        let path = entry.path();
-        if entry.file_name() == ".loom" {
-            return false;
-        }
-        if path.is_dir() && !no_loom_dir_anywhere(&path) {
-            return false;
-        }
+    if !entries
+        .filter_map(|entry| entry.ok())
+        .all(|entry| entry.file_name() == "work")
+    {
+        return false;
     }
-    true
+
+    let work_entries = match fs::read_dir(loom_dir.join("work")) {
+        Ok(entries) => entries,
+        Err(_) => return true,
+    };
+    work_entries
+        .filter_map(|entry| entry.ok())
+        .all(|entry| entry.file_name() == "config.toml")
 }
 
 /// A real defect in the tree (a duplicate `## ` heading) is what `check`

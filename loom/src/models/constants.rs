@@ -4,7 +4,7 @@
 /// model with a 1M-token window — this is that number. It is a launch-time
 /// property, not something a session can measure: the model string recorded
 /// in a transcript is bare (`claude-opus-5`, no window marker), so a heartbeat
-/// cannot infer it. `.work/config.toml`'s `[context] model_window_tokens`
+/// cannot infer it. `.loom/work/config.toml`'s `[context] model_window_tokens`
 /// (see [`crate::fs::work_dir::ContextConfig`]) overrides this per plan, for
 /// a plan run against a smaller-window model.
 pub const DEFAULT_MODEL_CONTEXT_WINDOW_TOKENS: u32 = 1_000_000;
@@ -36,7 +36,7 @@ pub const fn ceiling_from_window(window_tokens: u32, fraction: f32) -> u32 {
 /// Ceilings are absolute token counts, not percentages: the only number a
 /// heartbeat can report honestly is how many tokens are resident, and a
 /// percentage of an unknown model window is a guess dressed as a measurement.
-/// Stages override this via `context_ceiling_tokens`; `.work/config.toml`
+/// Stages override this via `context_ceiling_tokens`; `.loom/work/config.toml`
 /// overrides it plan-wide via `[context] ceiling_tokens`.
 ///
 /// = [`DEFAULT_MODEL_CONTEXT_WINDOW_TOKENS`] (1M) x [`CONTEXT_CEILING_FRACTION`]
@@ -51,7 +51,7 @@ pub const DEFAULT_CONTEXT_CEILING_TOKENS: u32 = ceiling_from_window(
 /// Same value as [`DEFAULT_CONTEXT_CEILING_TOKENS`] by default — a subagent
 /// runs the same 1M window as its parent, so its built-in ceiling comes from
 /// the same [`CONTEXT_CEILING_FRACTION`] of the same window. The name stays
-/// distinct because `.work/config.toml`'s `[context] subagent_ceiling_tokens`
+/// distinct because `.loom/work/config.toml`'s `[context] subagent_ceiling_tokens`
 /// is still a separate, independently overridable key.
 ///
 /// = [`DEFAULT_MODEL_CONTEXT_WINDOW_TOKENS`] (1M) x [`CONTEXT_CEILING_FRACTION`]

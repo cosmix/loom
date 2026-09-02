@@ -42,8 +42,8 @@
 # is unset (`non_empty_env("LOOM_WORK_DIR")` in
 # loom/src/commands/hook/{user_prompt,reconcile_graph,pre_compact}.rs).
 # `cd`-ing into a measure root is not enough on its own: an inherited
-# `LOOM_WORK_DIR` resolves straight past the mirror's own `.work` marker to
-# the REAL `.work/`, silently defeating the isolation. Every binary
+# `LOOM_WORK_DIR` resolves straight past the mirror's own state-directory
+# marker to the REAL state directory, silently defeating the isolation. Every binary
 # invocation below MUST go through `run_bin`, the one helper that strips
 # these three before exec'ing — see its own doc comment.
 #
@@ -70,12 +70,14 @@
 # `.loom/cache/context-v1/` (so both binaries score against the identical
 # index: baseline vs current isolates the retrieval CODE, not the data).
 # Each measure root additionally gets:
-#   - an EMPTY `.work/` marker directory. `WorkDir::new`
-#     (loom/src/fs/work_dir.rs) tries `<hint>/.work` FIRST and only walks
-#     upward past it as a fallback — without this marker, a measure root
-#     living anywhere under the main checkout (or reachable by an upward
-#     walk from one) would resolve straight past it to the REAL `.work/`,
-#     defeating the isolation entirely.
+#   - EMPTY `.loom/work/` and `.work/` marker directories. `WorkDir::new`
+#     (loom/src/fs/work_dir.rs) tries the state directory at `<hint>` FIRST
+#     and only walks upward past it as a fallback — without these markers, a
+#     measure root living anywhere under the main checkout (or reachable by
+#     an upward walk from one) would resolve straight past it to the REAL
+#     state directory, defeating the isolation entirely. Both forms are
+#     planted since which one `WorkDir::new` checks first is a resolver
+#     implementation detail this harness must not assume.
 #   - `state.json` patched (`.semantic.stale = false` AND
 #     `.semantic.revision` repointed at a base layer the snapshot actually
 #     has — see BREACH 2 above) and a pre-seeded, periodically-refreshed
@@ -92,8 +94,8 @@
 #
 # Belt-and-suspenders is not proof: the run's LAST act is
 # `verify_real_checkout_untouched`, which fingerprints
-# `.loom/cache/context-v1/{catalog,state}.json` and `.work/context/`'s own
-# mtimes before seeding and again after scoring, and fails the whole run
+# `.loom/cache/context-v1/{catalog,state}.json` and the state directory's own
+# `context/` mtimes before seeding and again after scoring, and fails the whole run
 # loudly if either moved — a measurement that silently mutated its own
 # subject is worse than no measurement at all.
 #
@@ -164,7 +166,13 @@ PROMPTS_FILE="$SCRIPT_DIR/retrieval-ab-prompts.txt"
 # verify_real_checkout_untouched below and the ISOLATION CONTRACT header.
 REAL_CATALOG="$REPO_ROOT/.loom/cache/context-v1/catalog.json"
 REAL_STATE="$REPO_ROOT/.loom/cache/context-v1/state.json"
-REAL_WORK_CONTEXT="$REPO_ROOT/.work/context"
+# Prefer the current layout; fall back to the legacy one for a checkout that
+# already resolved to it (see doc/plans, "Back-compat").
+if [[ -d "$REPO_ROOT/.loom/work" ]]; then
+	REAL_WORK_CONTEXT="$REPO_ROOT/.loom/work/context"
+else
+	REAL_WORK_CONTEXT="$REPO_ROOT/.work/context"
+fi
 
 # Set by seed_measure_root (BREACH 2 fix) to the base-layer revision both
 # mirrors were pointed at, or left empty when no base layer was available to
@@ -286,7 +294,12 @@ EOF
 seed_measure_root() {
 	local mirror="$1"
 	rm -rf "$mirror"
-	mkdir -p "$mirror/doc/loom" "$mirror/.work"
+	# Both the current (.loom/work) and legacy (.work) empty markers are
+	# planted - whichever layout WorkDir::new checks first at this hint,
+	# finding an empty marker here (rather than nothing) is what stops it
+	# walking past the mirror to the REAL state directory. See the ISOLATION
+	# CONTRACT header.
+	mkdir -p "$mirror/doc/loom" "$mirror/.work" "$mirror/.loom/work"
 
 	cp -a "$REPO_ROOT/doc/loom/knowledge" "$mirror/doc/loom/knowledge"
 
@@ -777,7 +790,7 @@ verify_real_checkout_untouched() {
 	if [[ "$before_fingerprint" != "$after_fingerprint" ]]; then
 		echo "" >&2
 		echo "retrieval-ab: ISOLATION BREACH — the real checkout's own cache/work state" >&2
-		echo "  (catalog.json mtime / state.json mtime / .work/context mtime) changed" >&2
+		echo "  (catalog.json mtime / state.json mtime / state-dir context mtime) changed" >&2
 		echo "  during this run:" >&2
 		echo "    before: $before_fingerprint" >&2
 		echo "    after:  $after_fingerprint" >&2

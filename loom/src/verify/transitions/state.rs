@@ -65,14 +65,14 @@ fn dependency_mtime_fingerprint(stage: &Stage, work_dir: &Path) -> Vec<Option<Sy
 
 /// Transition a stage to a new status with validation
 ///
-/// Loads the stage from `.work/stages/{stage_id}.md`, validates and updates
+/// Loads the stage from `.loom/work/stages/{stage_id}.md`, validates and updates
 /// its status using validated transition methods, saves it back to disk,
 /// and returns the updated stage.
 ///
 /// # Arguments
 /// * `stage_id` - The ID of the stage to transition
 /// * `new_status` - The new status to assign
-/// * `work_dir` - Path to the `.work` directory
+/// * `work_dir` - Path to the `.loom/work` directory
 ///
 /// # Returns
 /// The updated stage, or an error if the transition is invalid
@@ -103,7 +103,7 @@ pub fn transition_stage(stage_id: &str, new_status: StageStatus, work_dir: &Path
 ///
 /// # Arguments
 /// * `completed_stage_id` - The ID of the stage that was just completed
-/// * `work_dir` - Path to the `.work` directory
+/// * `work_dir` - Path to the `.loom/work` directory
 /// * `repo_root` - Path to the git repository root (used for ancestry verification)
 /// * `target_branch` - The merge target branch (e.g., `main`) used for git ancestry checks
 ///
@@ -180,7 +180,7 @@ pub fn trigger_dependents(
 ///
 /// # Arguments
 /// * `stage` - The stage whose dependencies we are checking
-/// * `work_dir` - Path to the `.work` directory
+/// * `work_dir` - Path to the `.loom/work` directory
 /// * `repo_root` - Path to the git repository root (used for ancestry verification)
 /// * `target_branch` - The merge target branch (e.g., `main`)
 ///

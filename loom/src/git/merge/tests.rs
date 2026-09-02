@@ -73,7 +73,7 @@ fn merge_stage_refuses_when_merge_head_set() {
     let temp = init_repo();
     let root = temp.path();
     start_conflicting_merge(root, "loom/blockee", "branch", "main");
-    let work_dir = root.join(".work");
+    let work_dir = root.join(".loom").join("work");
     std::fs::create_dir_all(&work_dir).unwrap();
 
     assert!(merge_stage("blockee", "main", root, &work_dir).is_err());
@@ -85,7 +85,7 @@ fn get_conflicting_files_from_status_refuses_when_merge_head_set() {
     let temp = init_repo();
     let root = temp.path();
     start_conflicting_merge(root, "loom/x", "x", "y");
-    let work_dir = root.join(".work");
+    let work_dir = root.join(".loom").join("work");
     std::fs::create_dir_all(&work_dir).unwrap();
 
     assert!(get_conflicting_files_from_status("loom/x", "main", root, &work_dir).is_err());

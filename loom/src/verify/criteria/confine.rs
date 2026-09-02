@@ -147,7 +147,7 @@ pub fn resolve_confinement(
 }
 
 /// Plan-level confinement default, read from the `[plan_sandbox]` snapshot
-/// that `loom init`/`loom run` persist in `.work/config.toml`.
+/// that `loom init`/`loom run` persist in `.loom/work/config.toml`.
 ///
 /// A missing or unreadable snapshot yields `None`, leaving callers at the
 /// `Confined` default — ambiguity resolves toward the fail-safe level.

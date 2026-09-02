@@ -6,7 +6,7 @@
 //! - Signal generation recites recent memory at end
 //! - Keeps important context in attention window
 //!
-//! Memory files are stored in .work/memory/{session-id}.md
+//! Memory files are stored in .loom/work/memory/{session-id}.md
 //!
 //! Entry types:
 //! - Note: General observations and context

@@ -10,6 +10,7 @@
 
 use std::path::{Path, PathBuf};
 
+use crate::fs::work_dir::WorkDir;
 use crate::models::stage::Stage;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -25,7 +26,14 @@ pub struct ExecutionSite {
 
 impl ExecutionSite {
     pub(super) fn resolve(work_dir: &Path, stage: &Stage) -> Self {
-        let repo_root = work_dir.parent().unwrap_or(work_dir).to_path_buf();
+        // The hop count from the state root to the repo root is layout-dependent
+        // (two for `.loom/work`, one for a legacy `.work`) and lives in exactly
+        // one place: `WorkDir::project_root`. A bare `parent()` here would be
+        // right for one layout and wrong for the other.
+        let repo_root = WorkDir::new(work_dir)
+            .ok()
+            .and_then(|wd| wd.project_root().map(Path::to_path_buf))
+            .unwrap_or_else(|| work_dir.to_path_buf());
         // `stage.worktree` is the worktree id the executor recorded; it falls
         // back to the stage id, which is what `.worktrees/<stage-id>` uses.
         let worktree = repo_root
@@ -70,7 +78,7 @@ mod tests {
     fn resolves_worktree_root_plus_working_dir() {
         let tmp = tempfile::tempdir().unwrap();
         let repo = tmp.path();
-        let work = repo.join(".work");
+        let work = repo.join(".loom").join("work");
         std::fs::create_dir_all(&work).unwrap();
         std::fs::create_dir_all(repo.join(".worktrees/s1/loom")).unwrap();
 
@@ -84,7 +92,7 @@ mod tests {
     fn unset_working_dir_is_the_worktree_root() {
         let tmp = tempfile::tempdir().unwrap();
         let repo = tmp.path();
-        let work = repo.join(".work");
+        let work = repo.join(".loom").join("work");
         std::fs::create_dir_all(&work).unwrap();
         std::fs::create_dir_all(repo.join(".worktrees/s1")).unwrap();
 
@@ -99,7 +107,7 @@ mod tests {
     fn missing_worktree_falls_back_to_the_repo_root() {
         let tmp = tempfile::tempdir().unwrap();
         let repo = tmp.path();
-        let work = repo.join(".work");
+        let work = repo.join(".loom").join("work");
         std::fs::create_dir_all(&work).unwrap();
 
         let site = ExecutionSite::resolve(&work, &stage_in(None, None));
@@ -111,7 +119,7 @@ mod tests {
     fn recorded_worktree_id_wins_over_the_stage_id() {
         let tmp = tempfile::tempdir().unwrap();
         let repo = tmp.path();
-        let work = repo.join(".work");
+        let work = repo.join(".loom").join("work");
         std::fs::create_dir_all(&work).unwrap();
         std::fs::create_dir_all(repo.join(".worktrees/other-id")).unwrap();
 

@@ -31,17 +31,26 @@ pub fn apply_default_mode(settings: &mut Value, mode: PermissionMode) -> Result<
 /// Detect whether a settings target is a loom worktree (vs. the main repo root).
 ///
 /// Loom worktrees always live at `<repo>/.worktrees/<stage-id>/` and carry a
-/// `.work` symlink into the main repo's shared state; the main repo root has
-/// neither. This distinction decides whether worktree-relative escape rules
-/// (`../../**`, `../.worktrees/**`) are meaningful: inside a worktree `../..`
-/// is the repo root (the intended isolation boundary), but at the repo root
-/// `../..` is the repo's parent — typically `$HOME`.
+/// state-root symlink into the main repo's shared state (`.loom/work` on the
+/// nested layout, `.work` on a legacy workspace); the main repo root has
+/// neither as a symlink. This distinction decides whether worktree-relative
+/// escape rules (`../../**`, `../.worktrees/**`) are meaningful: inside a
+/// worktree `../..` is the repo root (the intended isolation boundary), but
+/// at the repo root `../..` is the repo's parent — typically `$HOME`.
 fn target_is_worktree(target: &Path) -> bool {
     if target.components().any(|c| c.as_os_str() == ".worktrees") {
         return true;
     }
-    // Fallback: a worktree's `.work` is a symlink; the main repo's is a real dir.
-    std::fs::symlink_metadata(target.join(".work"))
+    // Fallback: a worktree's state-root link is a symlink; the main repo's is
+    // a real directory in both spellings. Never probe bare `.loom` — the
+    // worktree's `.loom/` is a real directory (it also holds the spools and
+    // `.loom/cache/`), and so is the main repo's, so that alone proves
+    // nothing.
+    is_symlink(&target.join(".loom").join("work")) || is_symlink(&target.join(".work"))
+}
+
+fn is_symlink(path: &Path) -> bool {
+    std::fs::symlink_metadata(path)
         .map(|m| m.file_type().is_symlink())
         .unwrap_or(false)
 }
@@ -113,12 +122,15 @@ pub fn write_settings(config: &MergedSandboxConfig, worktree_path: &Path) -> Res
     // Generate new sandbox settings
     let mut settings_json = generate_settings_json(&config);
 
-    // Resolve the .work symlink to its absolute target path.
-    // In worktrees, .work is a symlink to ../../.work (the main repo's .work/).
+    // Resolve the state-root symlink to its absolute target path.
+    // In worktrees, the state root is a symlink — `.loom/work` on the nested
+    // layout (-> ../../../.loom/work) or `.work` on a legacy workspace
+    // (-> ../../.work), both pointing at the main repo's shared state.
     // Claude Code resolves symlinks before checking permission patterns, so
-    // the relative Read(.work/**) pattern doesn't match the resolved absolute
-    // path (which is outside the worktree boundary). Adding the resolved
-    // absolute paths ensures reads/writes are auto-allowed without prompting.
+    // the relative `.loom/work/`-scoped Read patterns below don't match the
+    // resolved absolute path (which is outside the worktree boundary).
+    // Adding the resolved absolute paths ensures reads/writes are
+    // auto-allowed without prompting.
     //
     // SECURITY (S-1): the broad `Read(/{resolved}/**)` + `Edit(/{resolved}/**)`
     // allow used to expose `.work/admin.token` (Admin RPC capability) and
@@ -133,7 +145,14 @@ pub fn write_settings(config: &MergedSandboxConfig, worktree_path: &Path) -> Res
     // IMPORTANT: Claude Code requires the // prefix for absolute filesystem paths.
     // A single / means "relative to project root", NOT absolute. See:
     // https://code.claude.com/docs/en/permissions.md
-    let work_link = worktree_path.join(".work");
+    let work_link = {
+        let nested = worktree_path.join(".loom").join("work");
+        if nested.exists() || nested.is_symlink() {
+            nested
+        } else {
+            worktree_path.join(".work")
+        }
+    };
     if work_link.exists() || work_link.is_symlink() {
         if let Ok(resolved) = work_link.canonicalize() {
             let resolved_str = resolved
@@ -299,10 +318,25 @@ pub fn generate_settings_json(config: &MergedSandboxConfig) -> Value {
 
     // Add narrow Read/Edit permissions for orchestration state files agents
     // need. These are the *relative* forms; `write_settings` adds matching
-    // resolved-absolute forms because `.work` is a symlink that Claude Code
-    // resolves before matching. The set is deliberately scoped to the subdirs
-    // an agent legitimately touches — never the bare `.work/**` that would also
-    // expose `.work/admin.token` / `.work/user.token` (see S-1, default_deny_read).
+    // resolved-absolute forms because `.loom/work` (or, on a legacy
+    // workspace, `.work`) is a symlink that Claude Code resolves before
+    // matching. The set is deliberately scoped to the subdirs an agent
+    // legitimately touches — never the bare `.loom/work/**` that would also
+    // expose `.loom/work/admin.token` / `.loom/work/user.token` (see S-1,
+    // default_deny_read).
+    //
+    // Both layouts are emitted: `MergedSandboxConfig` carries no field for
+    // which layout this workspace uses, so this function can't branch on it.
+    // A workspace whose `config.toml` was found under legacy `.work/` keeps
+    // that layout forever, so its narrow rules must exist in the legacy
+    // spelling too, alongside the nested one — on either layout the unused
+    // spelling matches nothing and costs nothing.
+    allow.push(json!("Read(.loom/work/config.toml)"));
+    allow.push(json!("Read(.loom/work/signals/**)"));
+    allow.push(json!("Read(.loom/work/handoffs/**)"));
+    allow.push(json!("Edit(.loom/work/handoffs/**)"));
+    allow.push(json!("Read(.loom/work/disputes/**)"));
+    allow.push(json!("Read(.loom/work/memory/**)"));
     allow.push(json!("Read(.work/config.toml)"));
     allow.push(json!("Read(.work/signals/**)"));
     allow.push(json!("Read(.work/handoffs/**)"));

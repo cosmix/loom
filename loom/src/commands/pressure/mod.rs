@@ -20,7 +20,7 @@
 //! for that marker, and then SIGTERMs the now-idle session. If the marker never
 //! appears the user can still exit manually, exactly as before.
 //!
-//! The marker lives under `<repo>/.work/pressure/`, NOT `std::env::temp_dir()`:
+//! The marker lives under `<repo>/.loom/work/pressure/`, NOT `std::env::temp_dir()`:
 //! Claude is spawned with `--permission-mode auto`, which sandboxes its Bash
 //! tool with `/tmp` mounted read-only, so a temp-dir marker could never be
 //! created and the driver would poll forever. The repo working tree is the

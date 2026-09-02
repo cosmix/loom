@@ -64,7 +64,7 @@ impl std::fmt::Display for SessionStatus {
 /// Which terminal backend hosts a session's Claude process.
 ///
 /// Persisted on the session file so kill/liveness routing survives a daemon
-/// restart (the session is reconstructed from `.work/sessions/<id>.md`).
+/// restart (the session is reconstructed from `.loom/work/sessions/<id>.md`).
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum SessionBackendKind {
@@ -84,7 +84,7 @@ impl std::fmt::Display for SessionBackendKind {
     }
 }
 
-/// Persisted `[terminal]` section of `.work/config.toml`.
+/// Persisted `[terminal]` section of `.loom/work/config.toml`.
 ///
 /// A documented, editable toggle: operators may flip `backend` by hand between
 /// runs, exactly like the `[remote_control]` section.

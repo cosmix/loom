@@ -29,7 +29,7 @@ const CONTINUATION: &str = "\\\n";
 /// 3. `exec`s the claude command under a rebuilt, allowlisted environment
 ///
 /// # Arguments
-/// * `work_dir` - The .work directory path
+/// * `work_dir` - The .loom/work directory path
 /// * `pid_key` - The per-session tracking key naming the PID file / wrapper
 ///   script (the session's stage-key + `session.id`). Distinct from `stage_id`
 ///   so two consecutive sessions for the same stage never share a PID file.

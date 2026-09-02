@@ -632,7 +632,11 @@ fn test_no_side_effects_on_target_repo() {
 
     assert_eq!(before, after, "plan repo must be unchanged after verify");
 
-    // No .work/ in caller's cwd
+    // No state dir, in either spelling, in caller's cwd
+    assert!(
+        !caller_cwd.path().join(".loom").join("work").exists(),
+        ".loom/work/ must not be created in caller's cwd"
+    );
     assert!(
         !caller_cwd.path().join(".work").exists(),
         ".work/ must not be created in caller's cwd"

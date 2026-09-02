@@ -143,9 +143,9 @@ mod tests {
         let temp_dir = TempDir::new().expect("Failed to create temp dir");
         let test_dir = temp_dir.path();
 
-        // Create a .work directory structure
-        let work_dir_path = test_dir.join(".work");
-        fs::create_dir(&work_dir_path).expect("Failed to create .work dir");
+        // Create a state directory structure
+        let work_dir_path = test_dir.join(".loom").join("work");
+        fs::create_dir_all(&work_dir_path).expect("Failed to create state dir");
 
         // Change to test directory
         let original_dir = std::env::current_dir().expect("Failed to get current dir");
@@ -167,18 +167,18 @@ mod tests {
         let temp_dir = TempDir::new().expect("Failed to create temp dir");
         let test_dir = temp_dir.path();
 
-        // Change to test directory (no .work directory)
+        // Change to test directory (no state directory)
         let original_dir = std::env::current_dir().expect("Failed to get current dir");
         std::env::set_current_dir(test_dir).expect("Failed to change dir");
 
-        // Execute stop command when .work dir doesn't exist
+        // Execute stop command when the state directory doesn't exist
         let result = execute();
 
         // Restore original directory
         std::env::set_current_dir(original_dir).expect("Failed to restore dir");
 
         // Should succeed - daemon simply reports "not running"
-        // WorkDir::new succeeds even without .work, and is_running returns false
+        // WorkDir::new succeeds even without a state directory, and is_running returns false
         assert!(result.is_ok());
     }
 
@@ -186,8 +186,8 @@ mod tests {
     #[serial]
     fn readable_admin_token_cannot_self_authorize_stop() {
         let temp_dir = TempDir::new().unwrap();
-        let work_dir = temp_dir.path().join(".work");
-        fs::create_dir(&work_dir).unwrap();
+        let work_dir = temp_dir.path().join(".loom").join("work");
+        fs::create_dir_all(&work_dir).unwrap();
         fs::write(work_dir.join("admin.token"), "readable-secret").unwrap();
         fs::write(
             work_dir.join("orchestrator.lock"),

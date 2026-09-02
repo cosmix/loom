@@ -15,10 +15,10 @@ fn stage_named(id: &str, name: &str) -> Stage {
     }
 }
 
-/// A fresh `.work/` with `[context] prompt_cache_split = <value>` set.
+/// A fresh `.loom/work/` with `[context] prompt_cache_split = <value>` set.
 fn work_dir_with_context_flag(value: bool) -> (TempDir, PathBuf) {
     let temp = TempDir::new().unwrap();
-    let work_dir = temp.path().join(".work");
+    let work_dir = temp.path().join(".loom").join("work");
     std::fs::create_dir_all(&work_dir).unwrap();
     crate::fs::work_dir::update_config(&work_dir, |doc| {
         let table = doc.entry("context").or_insert(toml_edit::table());
@@ -31,11 +31,11 @@ fn work_dir_with_context_flag(value: bool) -> (TempDir, PathBuf) {
     (temp, work_dir)
 }
 
-/// A fresh `.work/` with no `config.toml` at all — the `[context]` key is not
+/// A fresh `.loom/work/` with no `config.toml` at all — the `[context]` key is not
 /// merely false, it is absent.
 fn work_dir_without_config() -> (TempDir, PathBuf) {
     let temp = TempDir::new().unwrap();
-    let work_dir = temp.path().join(".work");
+    let work_dir = temp.path().join(".loom").join("work");
     std::fs::create_dir_all(&work_dir).unwrap();
     (temp, work_dir)
 }

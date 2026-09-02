@@ -68,8 +68,8 @@ fn attachable_panes_preserves_discovery_order() {
 fn viewer_socket_name_differs_between_repos() {
     let temp_a = TempDir::new().unwrap();
     let temp_b = TempDir::new().unwrap();
-    let work_a = temp_a.path().join(".work");
-    let work_b = temp_b.path().join(".work");
+    let work_a = temp_a.path().join(".loom").join("work");
+    let work_b = temp_b.path().join(".loom").join("work");
     std::fs::create_dir_all(&work_a).unwrap();
     std::fs::create_dir_all(&work_b).unwrap();
 
@@ -83,19 +83,20 @@ fn viewer_socket_name_differs_between_repos() {
 
 #[test]
 fn viewer_socket_name_resolves_through_a_symlinked_dot_work() {
-    // `.work` is a SYMLINK to the main repo's `.work` inside a worktree (see
-    // `viewer_socket_name`'s doc comment) — that is the whole reason
-    // `canonicalize()` is called at all. Simulate exactly that: a
-    // "worktree" temp dir whose `.work` is a symlink into a separate
-    // "main repo" temp dir's real `.work`, and assert both resolve to the
-    // SAME viewer socket — proving the worktree case lands on the one
+    // `.loom/work` is a SYMLINK to the main repo's `.loom/work` inside a
+    // worktree (see `viewer_socket_name`'s doc comment) — that is the whole
+    // reason `canonicalize()` is called at all. Simulate exactly that: a
+    // "worktree" temp dir whose `.loom/work` is a symlink into a separate
+    // "main repo" temp dir's real `.loom/work`, and assert both resolve to
+    // the SAME viewer socket — proving the worktree case lands on the one
     // socket every worktree of a repo must share.
     let main_repo = TempDir::new().unwrap();
-    let real_work_dir = main_repo.path().join(".work");
+    let real_work_dir = main_repo.path().join(".loom").join("work");
     std::fs::create_dir_all(&real_work_dir).unwrap();
 
     let worktree = TempDir::new().unwrap();
-    let symlinked_work_dir = worktree.path().join(".work");
+    std::fs::create_dir_all(worktree.path().join(".loom")).unwrap();
+    let symlinked_work_dir = worktree.path().join(".loom").join("work");
     std::os::unix::fs::symlink(&real_work_dir, &symlinked_work_dir).unwrap();
 
     let socket_via_symlink = viewer_socket_name(&symlinked_work_dir);
@@ -103,7 +104,7 @@ fn viewer_socket_name_resolves_through_a_symlinked_dot_work() {
 
     assert_eq!(
         socket_via_symlink, socket_via_real_path,
-        "a worktree's symlinked .work must resolve to the same viewer socket as the main repo's real .work"
+        "a worktree's symlinked .loom/work must resolve to the same viewer socket as the main repo's real .loom/work"
     );
 }
 
@@ -175,8 +176,8 @@ fn run_shell_with_stub_tmux(cmd: &str) -> std::process::Output {
 #[test]
 fn pane_command_neutralises_hostile_session_ids() {
     // `socket_name()`/`tracking_key` are read VERBATIM out of
-    // `.work/sessions/*.md` with no validation on the read path (only
-    // CLI args go through `validate_id`), and `.work/` is writable by
+    // `.loom/work/sessions/*.md` with no validation on the read path (only
+    // CLI args go through `validate_id`), and `.loom/work/` is writable by
     // sandboxed stage agents, while `loom attach` runs in the operator's
     // UNSANDBOXED shell. A single quote, `;`, `$`, a backtick, and a
     // space must all be neutralised.
@@ -233,7 +234,7 @@ fn pane_command_neutralises_hostile_session_ids() {
     // only fuzzed `tmux_session`. `session_socket` is
     // `format!("loom-{}", session.id)` (`orchestrator/terminal/tmux/mod.rs:41-43`)
     // where `session.id` is read off the exact same unvalidated
-    // `.work/sessions/*.md` read path — equally attacker-controlled, and
+    // `.loom/work/sessions/*.md` read path — equally attacker-controlled, and
     // would slip through untested if only `tmux_session` were ever fuzzed.
     let cmd_socket = pane_command(&hostile, "loom-test-neutralises-hostile-ids");
     let _ = run_shell_with_stub_tmux(&cmd_socket);

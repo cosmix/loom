@@ -3,7 +3,7 @@
 //! This module handles:
 //! - Transitioning stages to new statuses
 //! - Triggering dependent stages when dependencies are satisfied
-//! - Loading and saving stage state to/from `.work/stages/` markdown files
+//! - Loading and saving stage state to/from `.loom/work/stages/` markdown files
 
 mod persistence;
 mod serialization;

@@ -52,7 +52,7 @@ const ACTIVITY_MAX_HEIGHT: u16 = 10;
 /// static `loom status` prints the full list.
 const ALERT_MAX_HEIGHT: u16 = 4;
 
-/// How often the alert files are re-read from `.work/`.
+/// How often the alert files are re-read from the state directory.
 const ALERT_REFRESH_INTERVAL: Duration = Duration::from_secs(1);
 
 /// TUI application state.
@@ -75,7 +75,7 @@ pub struct TuiApp {
     plan_name: Option<String>,
     /// Scheduler alerts (loop stall, stages queued too long).
     ///
-    /// Read from `.work/` rather than from the daemon socket on purpose: the
+    /// Read from the state directory rather than from the daemon socket on purpose: the
     /// condition being reported may be a daemon whose scheduler thread has
     /// stopped, and its broadcaster would happily keep sending the last
     /// healthy-looking snapshot. A detector that depends on the component it
@@ -124,7 +124,8 @@ impl TuiApp {
 
     /// Load plan name from config.toml and the plan file (best-effort).
     fn load_plan_name() -> Option<String> {
-        let config = load_config(Path::new(".work")).ok()??;
+        let work_dir = crate::commands::common::work_dir_path().ok()?;
+        let config = load_config(&work_dir).ok()??;
         let source_path = config.source_path()?;
         let plan_path = Path::new(".").join(&source_path);
         let content = std::fs::read_to_string(plan_path).ok()?;
@@ -160,7 +161,7 @@ impl TuiApp {
 
         let result = self.run_event_loop(&mut stream, work_path);
 
-        let token = read_auth_token(std::path::Path::new(".work")).unwrap_or_default();
+        let token = read_auth_token(work_path).unwrap_or_default();
         let _ = write_message(&mut stream, &Request::Unsubscribe { auth_token: token });
 
         // ALWAYS cleanup terminal before returning - prevents terminal state
@@ -175,7 +176,7 @@ impl TuiApp {
         result
     }
 
-    /// Refresh scheduler alerts from `.work/`, at most once per second.
+    /// Refresh scheduler alerts from the state directory, at most once per second.
     ///
     /// The event loop spins every ~50ms; the alert files change at the
     /// orchestrator's 5s poll rate, so re-reading them per frame would be

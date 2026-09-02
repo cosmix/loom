@@ -48,7 +48,7 @@ fn write_test_session(work_dir: &Path, fixture: SessionFixture) {
 #[test]
 fn live_tmux_sessions_skips_native_backend_sessions() {
     let temp = TempDir::new().unwrap();
-    let work_dir = temp.path().join(".work");
+    let work_dir = temp.path().join(".loom").join("work");
     write_test_session(
         &work_dir,
         SessionFixture {
@@ -72,7 +72,7 @@ fn live_tmux_sessions_skips_native_backend_sessions() {
 #[test]
 fn live_tmux_sessions_skips_unparseable_session_files() {
     let temp = TempDir::new().unwrap();
-    let work_dir = temp.path().join(".work");
+    let work_dir = temp.path().join(".loom").join("work");
     std::fs::create_dir_all(work_dir.join("sessions")).unwrap();
     std::fs::write(
         work_dir.join("sessions").join("session-garbage.md"),
@@ -109,7 +109,7 @@ fn live_tmux_sessions_skips_dead_sessions_but_keeps_live_ones() {
     // ID, rules that out: the dead one must be filtered and the live one
     // must not be collateral damage.
     let temp = TempDir::new().unwrap();
-    let work_dir = temp.path().join(".work");
+    let work_dir = temp.path().join(".loom").join("work");
     write_test_session(
         &work_dir,
         SessionFixture {
@@ -159,7 +159,7 @@ fn live_tmux_sessions_filters_by_status_not_just_pid() {
     // of the guard: Completed must be excluded even with a live pid,
     // Spawning must be admitted.
     let temp = TempDir::new().unwrap();
-    let work_dir = temp.path().join(".work");
+    let work_dir = temp.path().join(".loom").join("work");
     write_test_session(
         &work_dir,
         SessionFixture {
@@ -247,7 +247,7 @@ fn live_tmux_sessions_orders_by_created_at_then_id() {
     // and "trust (created_at, id) order" disagree no matter which of those
     // two common traversal strategies a filesystem uses.
     let temp = TempDir::new().unwrap();
-    let work_dir = temp.path().join(".work");
+    let work_dir = temp.path().join(".loom").join("work");
     let tied_at = Utc::now();
 
     write_test_session_with_filename(

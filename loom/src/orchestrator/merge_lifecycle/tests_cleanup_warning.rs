@@ -17,7 +17,7 @@ fn a_refused_cleanup_is_recorded_on_the_stage() {
     let stage_id = "unmerged-recorded-stage";
     let (temp, head) = repo_with_stage_commit(stage_id);
     let root = temp.path();
-    let work_dir = root.join(".work");
+    let work_dir = root.join(".loom").join("work");
     write_stage_record(&work_dir, stage_id, &head);
 
     let outcome = cleanup_from_outside(root, stage_id);
@@ -41,7 +41,7 @@ fn a_successful_cleanup_clears_the_recorded_warning() {
     let stage_id = "merged-recorded-stage";
     let (temp, head) = repo_with_stage_commit(stage_id);
     let root = temp.path();
-    let work_dir = root.join(".work");
+    let work_dir = root.join(".loom").join("work");
     write_stage_record(&work_dir, stage_id, &head);
     update_stage(stage_id, &work_dir, |s| {
         s.cleanup_warning = Some("failed: earlier".to_string());
@@ -68,7 +68,7 @@ fn a_failed_removal_is_recorded_on_the_stage() {
     let stage_id = "unremovable-recorded-stage";
     let (temp, head) = repo_with_stage_commit(stage_id);
     let root = temp.path();
-    let work_dir = root.join(".work");
+    let work_dir = root.join(".loom").join("work");
     write_stage_record(&work_dir, stage_id, &head);
     merge_stage_branch(root, stage_id);
     let claude_dir = worktree_of(root, stage_id).join(".claude");

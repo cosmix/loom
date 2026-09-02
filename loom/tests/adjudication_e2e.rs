@@ -6,7 +6,7 @@
 //! the recorded verdict on a later tick. No agent is started here — the tests
 //! stand in for the session by doing exactly what it does, so both halves of
 //! the protocol (the CLI's persistence and the daemon's application) run for
-//! real against a fresh tmp `.work` directory.
+//! real against a fresh tmp `.loom/work` directory.
 
 use loom::commands::stage::{record_verdict, AdjudicateOutcome};
 use loom::models::dispute::{applied_marker, request_file, verdict_file, DisputeRequest};
@@ -408,7 +408,7 @@ fn dispute_to_amendment_to_pass() {
     let reg = AdjudicatorRegistry::new();
     drive_dispute(&reg, work, "s1", 1, &verdict_accept_delete_first());
 
-    // Snapshot exists at .work/plan_versions/1.md
+    // Snapshot exists at .loom/work/plan_versions/1.md
     let snapshot = work.join("plan_versions").join("1.md");
     assert!(
         snapshot.exists(),

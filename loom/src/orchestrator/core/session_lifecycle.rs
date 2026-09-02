@@ -75,7 +75,7 @@ impl Orchestrator {
     /// disk BEFORE the stage is marked Executing.
     ///
     /// Session discovery (`loom attach`, orphan recovery, `loom status`) all
-    /// read `.work/sessions/*.md`; writing the record only after the agent is
+    /// read `.loom/work/sessions/*.md`; writing the record only after the agent is
     /// spawned left a window where a daemon crash produced a live,
     /// unreachable agent with no record on disk at all. Invariant enforced
     /// from here on: a stage is Executing only if `stage.session` names a
@@ -190,7 +190,7 @@ impl Orchestrator {
 
     /// Mark a stage Blocked and undo an in-flight session write-ahead.
     ///
-    /// The spawn paths write `.work/sessions/<id>.md` and link
+    /// The spawn paths write `.loom/work/sessions/<id>.md` and link
     /// `stage.session` to it BEFORE a session is actually spawned (see
     /// `write_ahead_session` and `start_knowledge_stage`). A failure between
     /// that write-ahead and a successful spawn — invalid sandbox config, hook
@@ -288,7 +288,7 @@ impl Orchestrator {
 
     /// Remove `recovery-<stage_id>-*` signal files that do not belong to the
     /// session about to spawn, so stale recovery signals from prior attempts do
-    /// not accumulate in `.work/signals/` (C-5).
+    /// not accumulate in `.loom/work/signals/` (C-5).
     ///
     /// Recovery session IDs are `recovery-<stage_id>-<8hex>-<timestamp>`. We
     /// match the trailing `<8hex>-<timestamp>` shape exactly so a sibling stage

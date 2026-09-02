@@ -20,7 +20,7 @@ mod tests;
 
 use anyhow::Result;
 
-use crate::commands::common::find_work_dir;
+use crate::commands::common::work_dir_path;
 use crate::models::stage::StageStatus;
 use crate::verify::transitions::list_all_stages;
 
@@ -54,7 +54,7 @@ const ALL_STATUSES: &[StageStatus] = &[
 pub fn show() -> Result<()> {
     crate::utils::print_logo_header("Execution Graph");
 
-    let work_dir = find_work_dir()?;
+    let work_dir = work_dir_path()?;
 
     let stages = list_all_stages(&work_dir)?;
     let tree_display = build_tree_display(&stages);

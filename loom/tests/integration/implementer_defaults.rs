@@ -4,7 +4,7 @@
 //! omitting the key yields `["claude"]` rather than an empty set. These tests
 //! drive that default through the two real entry points rather than through the
 //! struct: a plan file whose YAML never mentions the key, and a
-//! `.work/stages/*.md` file loaded back off disk. The stage-file path is the one
+//! `.loom/work/stages/*.md` file loaded back off disk. The stage-file path is the one
 //! that has no other coverage — every other test constructs `Stage` in memory,
 //! where a wrong default would be masked by the constructor.
 
@@ -68,7 +68,7 @@ fn plan_yaml_without_implementers_defaults_to_claude_lane() {
     }
 }
 
-/// A `.work/stages/01-default-stage.md` file whose YAML frontmatter has no
+/// A `.loom/work/stages/01-default-stage.md` file whose YAML frontmatter has no
 /// `implementers` key, as a stage file written for a plan that never set one
 /// would look on disk.
 fn stage_file_without_implementers_field() -> &'static str {

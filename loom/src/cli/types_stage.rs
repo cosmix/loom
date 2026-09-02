@@ -274,7 +274,7 @@ pub enum StageCommands {
     /// Run by the adjudication session the orchestrator spawns for a dispute,
     /// from the main repository, once it has written its JSON verdict to a
     /// file. The command validates the JSON and writes
-    /// `.work/disputes/<stage>/<n>/verdict.md`; the orchestrator applies the
+    /// `.loom/work/disputes/<stage>/<n>/verdict.md`; the orchestrator applies the
     /// verdict on its next poll. A stage worktree session is refused: a stage
     /// may not judge its own disputed criterion.
     Adjudicate {
@@ -295,7 +295,7 @@ pub enum StageCommands {
     /// Amend a stage's acceptance or wiring array in place (operator repair).
     ///
     /// Routes through the audited plan-amendment path: writes a numbered
-    /// snapshot under .work/plan_versions/, appends an audit row, and
+    /// snapshot under .loom/work/plan_versions/, appends an audit row, and
     /// rewrites both the plan file and the stage file. Use when a criterion
     /// is impossible rather than merely failing -- an agent inside a stage
     /// should file `loom stage dispute-criteria` instead.

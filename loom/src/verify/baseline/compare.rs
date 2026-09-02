@@ -26,7 +26,7 @@ const COMPARE_COMMAND_TIMEOUT: Duration = Duration::from_secs(300);
 /// * `stage_id` - The stage ID to compare
 /// * `config` - Change impact configuration
 /// * `working_dir` - Directory to run commands from
-/// * `work_dir` - Path to .work directory (for loading baseline)
+/// * `work_dir` - Path to .loom/work directory (for loading baseline)
 /// * `confinement` - The stage's resolved level for plan-authored commands
 ///
 /// # Returns
@@ -120,7 +120,7 @@ pub fn compare_to_baseline(
 /// * `stage_id` - The stage ID
 /// * `config` - Change impact configuration
 /// * `working_dir` - Directory to run commands from
-/// * `work_dir` - Path to .work directory
+/// * `work_dir` - Path to .loom/work directory
 /// * `confinement` - The stage's resolved level for plan-authored commands
 pub fn ensure_baseline_captured(
     stage_id: &str,

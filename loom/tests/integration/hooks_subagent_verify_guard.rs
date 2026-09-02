@@ -170,7 +170,7 @@ fn bash_payload(command: &str) -> String {
 /// Write a minimal stage file that satisfies the integration-verify
 /// carve-out's glob (`${{LOOM_WORK_DIR}}/stages/*-${{LOOM_STAGE_ID}}.md`,
 /// the same one session-end.sh uses). Frontmatter shape mirrors a real
-/// file under `.work/stages/` (e.g. `02-integration-verify.md`).
+/// file under `.loom/work/stages/` (e.g. `02-integration-verify.md`).
 fn write_integration_verify_stage(work_dir: &Path, stage_id: &str) {
     let stages_dir = work_dir.join("stages");
     fs::create_dir_all(&stages_dir).expect("create stages dir");

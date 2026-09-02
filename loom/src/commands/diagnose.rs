@@ -11,7 +11,7 @@ use crate::verify::transitions::load_stage;
 
 /// Execute the diagnose command
 pub fn execute(stage_id: &str) -> Result<()> {
-    let work_dir = PathBuf::from(".work");
+    let work_dir = crate::commands::common::work_dir_path()?;
 
     // Load and validate stage
     let stage = load_stage(stage_id, &work_dir)?;

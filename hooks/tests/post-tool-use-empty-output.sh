@@ -2,7 +2,7 @@
 # Regression: even an empty tool result must not create a shared output log.
 set -euo pipefail
 HOOK="$(dirname "$0")/../post-tool-use.sh"
-TMPDIR_TEST=$(mktemp -d)
+TMPDIR_TEST=$(mktemp -d "${TMPDIR:-/tmp}/loom-hooktest.XXXXXX")
 trap 'rm -rf "$TMPDIR_TEST"' EXIT
 
 export LOOM_STAGE_ID="test-stage"

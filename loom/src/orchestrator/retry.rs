@@ -338,7 +338,7 @@ mod tests {
         // `merge`/`context`/`token`.
         assert_eq!(
             classify_failure(
-                "Session crashed - see crash report at /home/u/src/merge-tool/.work/x"
+                "Session crashed - see crash report at /home/u/src/merge-tool/.loom/work/x"
             ),
             FailureType::SessionCrash
         );

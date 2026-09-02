@@ -78,7 +78,7 @@ impl IndexChannel {
 ///
 /// Construct it from the context cache root — the same root
 /// [`crate::context::store::ContextStore::root`] resolves, which follows a
-/// worktree's `.work` symlink to the main project, so parallel stages share one
+/// worktree's `.loom/work` symlink to the main project, so parallel stages share one
 /// index rather than each building its own.
 #[derive(Debug, Clone)]
 pub struct LexicalCache {

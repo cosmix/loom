@@ -90,10 +90,10 @@ fn test_read_pid_no_file() {
 fn unreachable_status_counts_as_running() {
     // `Unreachable` is only ever produced when the singleton flock is
     // already `Held` (see `DaemonServer::check_status`), so a live daemon
-    // genuinely owns this `.work/` — the failed `connect()` is a property of
+    // genuinely owns this `.loom/work/` — the failed `connect()` is a property of
     // the sandboxed caller, not evidence the daemon died. `is_running` must
     // treat it as running so a second `loom run` cannot start against the
-    // same `.work/` (the singleton hazard recorded in
+    // same `.loom/work/` (the singleton hazard recorded in
     // doc/loom/knowledge/concerns/daemon-singleton.md). Simulating a real
     // `PermissionDenied` from `connect()` isn't practical in a unit test, so
     // this asserts the pure classification directly instead of driving it

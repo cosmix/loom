@@ -60,7 +60,7 @@ pub fn parse_plan_content(content: &str, source_path: &Path) -> Result<ParsedPla
 
 /// Load a stage definition by id from the active plan.
 ///
-/// Resolves the active plan path from `work_dir` (the `.work` directory), parses
+/// Resolves the active plan path from `work_dir` (the `.loom/work` directory), parses
 /// it, and returns the matching [`StageDefinition`](crate::plan::schema::StageDefinition).
 /// Returns `Ok(None)` when no plan source is configured or the stage id is not
 /// present. This is the single canonical "read a stage back from the plan"

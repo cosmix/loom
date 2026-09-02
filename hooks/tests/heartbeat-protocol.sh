@@ -9,7 +9,7 @@ POST_HOOK="$SCRIPT_DIR/../post-tool-use.sh"
 STOP_HOOK="$SCRIPT_DIR/../subagent-stop.sh"
 START_HOOK="$SCRIPT_DIR/../session-start.sh"
 COMMON="$SCRIPT_DIR/../_common.sh"
-TMP=$(mktemp -d)
+TMP=$(mktemp -d "${TMPDIR:-/tmp}/loom-hooktest.XXXXXX")
 trap 'rm -rf "$TMP"' EXIT
 
 heartbeat() {

@@ -21,11 +21,13 @@
 # Environment variables (set by loom worktree settings, PARENT session's own):
 #   LOOM_STAGE_ID    - The stage being executed
 #   LOOM_SESSION_ID  - The parent session ID
-#   LOOM_WORK_DIR    - Path to the .work directory
+#   LOOM_WORK_DIR    - Path to the state directory (.loom/work, or the
+#                      legacy .work for a workspace that already resolved
+#                      to it)
 #
 # Actions:
-#   1. Writes a completion record to .work/subagents/<stage-id>/<agentId>.json
-#   2. Refreshes .work/heartbeat/<stage-id>.json so the parent does not look hung
+#   1. Writes a completion record to $LOOM_WORK_DIR/subagents/<stage-id>/<agentId>.json
+#   2. Refreshes $LOOM_WORK_DIR/heartbeat/<stage-id>.json so the parent does not look hung
 #
 # Must never block and never fail the session: every path below ends in
 # `exit 0`, and every skip explains itself on the debug channel (a bare
@@ -122,16 +124,17 @@ case "$AGENT_ID" in
 esac
 
 # Ensure directories exist with plain mkdir + shell redirection - NOT loom's
-# Rust safe-read/write path. In a worktree, .work is a SYMLINK to the main
-# repo's .work, and loom's safe_open_dirfd opens roots O_NOFOLLOW (refusing a
-# symlinked root); a sandboxed hook also sees deny-listed files as zero-byte
-# char devices. That exact combination caused the completion-broker credential
-# outage (doc/loom/knowledge/mistakes/completion-broker-credential.md) - do
-# not route this write through a Rust CLI path.
+# Rust safe-read/write path. In a worktree, the state directory is a SYMLINK
+# to the main repo's state directory, and loom's safe_open_dirfd opens roots
+# O_NOFOLLOW (refusing a symlinked root); a sandboxed hook also sees
+# deny-listed files as zero-byte char devices. That exact combination caused
+# the completion-broker credential outage
+# (doc/loom/knowledge/mistakes/completion-broker-credential.md) - do not
+# route this write through a Rust CLI path.
 SUBAGENTS_DIR="${LOOM_WORK_DIR}/subagents/${LOOM_STAGE_ID}"
 HEARTBEAT_DIR="${LOOM_WORK_DIR}/heartbeat"
 mkdir -p -m 700 "$SUBAGENTS_DIR" "$HEARTBEAT_DIR" 2>/dev/null || {
-	loom_debug "subagent-stop: skipping - cannot create .work/subagents or .work/heartbeat"
+	loom_debug "subagent-stop: skipping - cannot create \$LOOM_WORK_DIR/subagents or \$LOOM_WORK_DIR/heartbeat"
 	exit 0
 }
 chmod 700 "$SUBAGENTS_DIR" "$HEARTBEAT_DIR" 2>/dev/null || true

@@ -1,17 +1,36 @@
 use super::*;
 use tempfile::TempDir;
 
+/// A project root the upward walk cannot escape: the `.git` marker bounds it,
+/// so a workspace anywhere above the temp directory can never be adopted.
+fn bare_repo(temp: &TempDir) -> PathBuf {
+    let root = temp.path().join("repo");
+    fs::create_dir_all(root.join(".git")).unwrap();
+    root
+}
+
+/// Plant a workspace of `layout` under `repo_root` and return its state root.
+/// Resolution is keyed on `config.toml`, so the file is what makes it one.
+fn plant_workspace(repo_root: &Path, layout: Layout) -> PathBuf {
+    let root = match layout {
+        Layout::Nested => repo_root.join(".loom").join("work"),
+        Layout::Legacy => repo_root.join(".work"),
+    };
+    fs::create_dir_all(&root).unwrap();
+    fs::write(root.join("config.toml"), "[plan]\nplan_id = \"p\"\n").unwrap();
+    root
+}
+
 #[test]
 fn test_main_project_root_non_symlink() {
     // Create a temporary directory structure simulating a main repo
     let temp_dir = TempDir::new().unwrap();
-    let project_root = temp_dir.path();
+    let project_root = bare_repo(&temp_dir);
 
-    // Create .work directory (not a symlink)
-    let work_dir_path = project_root.join(".work");
-    fs::create_dir(&work_dir_path).unwrap();
+    // Create the state directory (not a symlink)
+    plant_workspace(&project_root, Layout::Nested);
 
-    let work_dir = WorkDir::new(project_root).unwrap();
+    let work_dir = WorkDir::new(&project_root).unwrap();
 
     // main_project_root should return the same as project_root for non-symlink
     let main_root = work_dir.main_project_root();
@@ -26,23 +45,22 @@ fn test_main_project_root_non_symlink() {
 fn test_main_project_root_with_symlink() {
     // Create a temporary directory structure simulating main repo and worktree
     let temp_dir = TempDir::new().unwrap();
-    let base = temp_dir.path();
 
-    // Create main repo structure: base/main-repo/.work/
-    let main_repo = base.join("main-repo");
-    let main_work = main_repo.join(".work");
-    fs::create_dir_all(&main_work).unwrap();
+    // Create main repo structure: base/repo/.loom/work/
+    let main_repo = bare_repo(&temp_dir);
+    plant_workspace(&main_repo, Layout::Nested);
 
-    // Create worktree structure: base/main-repo/.worktrees/my-worktree/
+    // Create worktree structure: base/repo/.worktrees/my-worktree/.loom/
     let worktree = main_repo.join(".worktrees").join("my-worktree");
-    fs::create_dir_all(&worktree).unwrap();
+    let worktree_loom = worktree.join(".loom");
+    fs::create_dir_all(&worktree_loom).unwrap();
 
-    // Create symlink: worktree/.work -> ../../.work
-    let worktree_work = worktree.join(".work");
+    // Create symlink: worktree/.loom/work -> ../../../.loom/work
+    let worktree_work = worktree_loom.join("work");
     #[cfg(unix)]
-    std::os::unix::fs::symlink("../../.work", &worktree_work).unwrap();
+    std::os::unix::fs::symlink("../../../.loom/work", &worktree_work).unwrap();
     #[cfg(windows)]
-    std::os::windows::fs::symlink_dir("../../.work", &worktree_work).unwrap();
+    std::os::windows::fs::symlink_dir("../../../.loom/work", &worktree_work).unwrap();
 
     // Create WorkDir from worktree perspective
     let work_dir = WorkDir::new(&worktree).unwrap();
@@ -58,13 +76,13 @@ fn test_main_project_root_with_symlink() {
 
 #[test]
 fn test_main_project_root_missing_work_dir() {
-    // Create a temporary directory without .work
+    // Create a temporary directory without any workspace
     let temp_dir = TempDir::new().unwrap();
-    let project_root = temp_dir.path();
+    let project_root = bare_repo(&temp_dir);
 
-    let work_dir = WorkDir::new(project_root).unwrap();
+    let work_dir = WorkDir::new(&project_root).unwrap();
 
-    // .work doesn't exist, so is_symlink() returns false
+    // The state root doesn't exist, so is_symlink() returns false
     // project_root() should still work
     let main_root = work_dir.main_project_root();
     assert!(main_root.is_some());
@@ -77,62 +95,62 @@ fn test_main_project_root_missing_work_dir() {
 #[test]
 fn test_workdir_new_searches_upward() {
     let temp = TempDir::new().unwrap();
-    let project_root = temp.path();
+    let project_root = bare_repo(&temp);
 
-    // Create .work at project root
-    let work_dir_path = project_root.join(".work");
-    fs::create_dir(&work_dir_path).unwrap();
+    // Create the workspace at the project root
+    let work_dir_path = plant_workspace(&project_root, Layout::Nested);
 
     // Create a subdirectory (simulates agent cd'ing into loom/)
     let subdir = project_root.join("loom");
     fs::create_dir(&subdir).unwrap();
 
-    // WorkDir::new from subdirectory should find parent's .work
+    // WorkDir::new from subdirectory should find the parent's workspace
     let work_dir = WorkDir::new(&subdir).unwrap();
     assert_eq!(
         work_dir.root().canonicalize().unwrap(),
         work_dir_path.canonicalize().unwrap(),
-        "WorkDir should find .work in parent directory"
+        "WorkDir should find .loom/work in a parent directory"
     );
 }
 
 #[test]
 fn test_open_or_initialize_idempotent() {
     let temp = TempDir::new().unwrap();
-    let project_root = temp.path();
+    let project_root = bare_repo(&temp);
+    let state_root = project_root.join(".loom").join("work");
 
-    let work_dir = WorkDir::new(project_root).unwrap();
+    let work_dir = WorkDir::new(&project_root).unwrap();
     // First call initializes
     work_dir.open_or_initialize().unwrap();
-    assert!(project_root.join(".work").is_dir());
+    assert!(state_root.is_dir());
 
     // Second call must succeed without error
-    let work_dir2 = WorkDir::new(project_root).unwrap();
+    let work_dir2 = WorkDir::new(&project_root).unwrap();
     work_dir2
         .open_or_initialize()
-        .expect("open_or_initialize must be idempotent on existing .work");
+        .expect("open_or_initialize must be idempotent on an existing workspace");
     // Structure still intact
-    assert!(project_root.join(".work").join("stages").is_dir());
+    assert!(state_root.join("stages").is_dir());
 }
 
 #[test]
 fn adopt_existing_requires_root_to_exist() {
     let temp = TempDir::new().unwrap();
-    let work_dir = WorkDir::new(temp.path().join(".work")).unwrap();
+    let work_dir = WorkDir::new(temp.path().join(".loom").join("work")).unwrap();
     assert!(
         work_dir.adopt_existing().is_err(),
-        "adopt_existing must bail when .work does not exist"
+        "adopt_existing must bail when the state directory does not exist"
     );
 }
 
 #[test]
 fn adopt_existing_fills_in_layout_for_a_phantom_work_dir() {
     let temp = TempDir::new().unwrap();
-    let project_root = temp.path();
+    let project_root = bare_repo(&temp);
 
-    // Simulate the phantom .work/: only derived caches exist, no
+    // Simulate the phantom state directory: only derived caches exist, no
     // orchestration state and none of the layout initialize() creates.
-    let work_path = project_root.join(".work");
+    let work_path = project_root.join(".loom").join("work");
     fs::create_dir_all(work_path.join("context")).unwrap();
 
     let work_dir = WorkDir::new(&work_path).unwrap();
@@ -151,7 +169,7 @@ fn adopt_existing_fills_in_layout_for_a_phantom_work_dir() {
 #[test]
 fn initialize_creates_private_control_directories() {
     let temp = TempDir::new().unwrap();
-    let work_dir = WorkDir::new(temp.path()).unwrap();
+    let work_dir = WorkDir::new(bare_repo(&temp)).unwrap();
 
     work_dir.initialize().unwrap();
 
@@ -164,47 +182,49 @@ fn initialize_creates_private_control_directories() {
 #[test]
 fn disputes_dir_path_shape() {
     let temp = TempDir::new().unwrap();
-    let project_root = temp.path();
-    fs::create_dir_all(project_root.join(".work")).unwrap();
-    let wd = WorkDir::new(project_root).unwrap();
+    let project_root = bare_repo(&temp);
+    plant_workspace(&project_root, Layout::Nested);
+    let wd = WorkDir::new(&project_root).unwrap();
     assert_eq!(wd.disputes_dir(), wd.root().join("disputes"));
 }
 
 #[test]
 fn plan_versions_dir_path_shape() {
     let temp = TempDir::new().unwrap();
-    let project_root = temp.path();
-    fs::create_dir_all(project_root.join(".work")).unwrap();
-    let wd = WorkDir::new(project_root).unwrap();
+    let project_root = bare_repo(&temp);
+    plant_workspace(&project_root, Layout::Nested);
+    let wd = WorkDir::new(&project_root).unwrap();
     assert_eq!(wd.plan_versions_dir(), wd.root().join("plan_versions"));
 }
 
 #[test]
 fn test_workdir_new_falls_back_when_no_work_dir() {
     let temp = TempDir::new().unwrap();
-    let project_root = temp.path();
+    let project_root = bare_repo(&temp);
 
-    // No .work anywhere
+    // No workspace anywhere
     let subdir = project_root.join("some/nested/dir");
     fs::create_dir_all(&subdir).unwrap();
 
-    // WorkDir::new should fall back to subdir/.work
+    // WorkDir::new should fall back to subdir/.loom/work
     let work_dir = WorkDir::new(&subdir).unwrap();
     assert_eq!(
         work_dir.root(),
-        subdir.join(".work"),
-        "Without .work anywhere, should fall back to base_path/.work"
+        subdir.join(".loom").join("work"),
+        "Without a workspace anywhere, should fall back to base_path/.loom/work"
     );
+    assert_eq!(work_dir.layout(), Layout::Nested);
 }
 
 #[test]
-fn test_workdir_new_hint_naming_work_dir_resolves_to_itself() {
+fn test_workdir_new_legacy_hint_naming_work_dir_resolves_to_itself() {
     let temp = TempDir::new().unwrap();
-    let project_root = temp.path();
+    let project_root = bare_repo(&temp);
 
-    // No .work exists anywhere, and the hint itself already names the
-    // `.work` directory — mirrors a stale LOOM_WORK_DIR pin left behind
-    // after its .work/ was deleted (the phantom-.work bug).
+    // No workspace exists anywhere, and the hint itself already names a
+    // legacy `.work` directory — mirrors a stale LOOM_WORK_DIR pin left
+    // behind after its `.work/` was deleted (the phantom-.work bug). The
+    // nested spelling is covered by `resolver::state_root_shaped_base_...`.
     let hint = project_root.join(".work");
     let work_dir = WorkDir::new(&hint).unwrap();
     assert_eq!(
@@ -212,6 +232,7 @@ fn test_workdir_new_hint_naming_work_dir_resolves_to_itself() {
         hint,
         "A hint naming .work directly must resolve to itself, not <hint>/.work"
     );
+    assert_eq!(work_dir.layout(), Layout::Legacy);
 }
 
 // ----- Centralized config.toml API tests -----
@@ -219,7 +240,7 @@ fn test_workdir_new_hint_naming_work_dir_resolves_to_itself() {
 use crate::plan::schema::SandboxConfig;
 
 fn init_work(temp: &TempDir) -> PathBuf {
-    let work = temp.path().join(".work");
+    let work = temp.path().join(".loom").join("work");
     fs::create_dir_all(&work).unwrap();
     work
 }
@@ -457,4 +478,251 @@ fn resolve_context_ceiling_walks_stage_then_config_then_default() {
     // Config tier wins over the default, stage tier over both.
     assert_eq!(resolve_context_ceiling_tokens(&work, None), 250_000);
     assert_eq!(resolve_context_ceiling_tokens(&work, Some(80_000)), 80_000);
+}
+
+/// Resolution order, layout, and the hop count that follows from it.
+///
+/// Every assertion on a path that exists canonicalizes BOTH sides: on macOS a
+/// `TempDir` lives under a symlinked `/var`, so a one-sided comparison fails
+/// there for reasons that have nothing to do with resolution.
+mod resolver {
+    use super::*;
+
+    #[test]
+    fn nested_config_wins_over_a_sibling_legacy_config() {
+        let temp = TempDir::new().unwrap();
+        let repo = bare_repo(&temp);
+        let nested = plant_workspace(&repo, Layout::Nested);
+        plant_workspace(&repo, Layout::Legacy);
+
+        let wd = WorkDir::new(&repo).unwrap();
+        assert_eq!(
+            wd.root().canonicalize().unwrap(),
+            nested.canonicalize().unwrap()
+        );
+        assert_eq!(wd.layout(), Layout::Nested);
+    }
+
+    #[test]
+    fn a_lone_legacy_config_is_the_resolved_root() {
+        let temp = TempDir::new().unwrap();
+        let repo = bare_repo(&temp);
+        let legacy = plant_workspace(&repo, Layout::Legacy);
+
+        let wd = WorkDir::new(&repo).unwrap();
+        assert_eq!(
+            wd.root().canonicalize().unwrap(),
+            legacy.canonicalize().unwrap()
+        );
+        assert_eq!(wd.layout(), Layout::Legacy);
+    }
+
+    /// `.loom/cache/` exists in any project that has run `loom map`, and
+    /// `~/.loom/config.toml` at the user level. Neither marks a workspace:
+    /// resolution is keyed on `.loom/work/config.toml`, not on `.loom/`.
+    #[test]
+    fn a_bare_loom_cache_is_not_a_workspace() {
+        let temp = TempDir::new().unwrap();
+        let repo = bare_repo(&temp);
+        fs::create_dir_all(repo.join(".loom").join("cache").join("context-v1")).unwrap();
+
+        let wd = WorkDir::new(&repo).unwrap();
+        assert_eq!(wd.root(), repo.join(".loom").join("work"));
+        assert_eq!(wd.layout(), Layout::Nested);
+    }
+
+    /// The upward walk stops at the repo root, so an unrelated workspace above
+    /// the project — `~/.loom/work` being the live hazard — is never adopted.
+    #[test]
+    fn the_upward_walk_stops_at_the_git_repo_root() {
+        let temp = TempDir::new().unwrap();
+        plant_workspace(temp.path(), Layout::Nested);
+
+        let repo = bare_repo(&temp);
+        let inner = repo.join("loom").join("src");
+        fs::create_dir_all(&inner).unwrap();
+
+        let wd = WorkDir::new(&inner).unwrap();
+        assert_eq!(
+            wd.root(),
+            inner.join(".loom").join("work"),
+            "a workspace above the repo root must not be adopted from inside it"
+        );
+    }
+
+    /// With no `.git` anywhere in the ancestry there is no repository to bound
+    /// the walk at, so the walk adopts nothing — the `~/.loom/work` hazard:
+    /// one `loom init` in `$HOME` must not claim every later command issued
+    /// from a non-git directory beneath it.
+    ///
+    /// Deliberately does NOT use `bare_repo`: planting a `.git` is exactly what
+    /// hides this case, which is why none of the other resolver tests reaches
+    /// it. The direct check at `base` itself is unaffected by the bound and is
+    /// asserted here too, since it is what a hook's `LOOM_WORK_DIR` and a
+    /// non-git project root both rely on.
+    #[test]
+    fn a_workspace_above_a_git_free_directory_is_never_adopted() {
+        let temp = TempDir::new().unwrap();
+        let above = plant_workspace(temp.path(), Layout::Nested);
+
+        let inner = temp.path().join("not-a-repo").join("deeper");
+        fs::create_dir_all(&inner).unwrap();
+
+        let wd = WorkDir::new(&inner).unwrap();
+        assert_eq!(
+            wd.root(),
+            inner.join(".loom").join("work"),
+            "a workspace above a directory with no .git must not be adopted"
+        );
+        assert_eq!(wd.layout(), Layout::Nested);
+
+        // Still resolved when it IS the base, git marker or not.
+        let wd = WorkDir::new(temp.path()).unwrap();
+        assert_eq!(
+            wd.root().canonicalize().unwrap(),
+            above.canonicalize().unwrap()
+        );
+    }
+
+    /// Every hook is handed `LOOM_WORK_DIR`, which names the state directory
+    /// ITSELF. Appending a second state root under it is the phantom-directory
+    /// bug; the nested spelling's final component is the unremarkable `work`,
+    /// so the check has to look at the parent too.
+    #[test]
+    fn state_root_shaped_base_resolves_to_itself() {
+        let temp = TempDir::new().unwrap();
+        let repo = bare_repo(&temp);
+        let state = plant_workspace(&repo, Layout::Nested);
+
+        let wd = WorkDir::new(&state).unwrap();
+        assert_eq!(
+            wd.root().canonicalize().unwrap(),
+            state.canonicalize().unwrap()
+        );
+        assert_eq!(wd.layout(), Layout::Nested);
+
+        // The same shape for a pin whose directory has since been deleted:
+        // it must resolve back to that missing path, not nest under it.
+        let stale = temp.path().join("gone").join(".loom").join("work");
+        let wd = WorkDir::new(&stale).unwrap();
+        assert_eq!(wd.root(), stale);
+        assert_eq!(wd.layout(), Layout::Nested);
+    }
+
+    #[test]
+    fn project_root_applies_the_layouts_hop_count() {
+        let temp = TempDir::new().unwrap();
+
+        let nested_repo = bare_repo(&temp);
+        plant_workspace(&nested_repo, Layout::Nested);
+        let wd = WorkDir::new(&nested_repo).unwrap();
+        assert_eq!(
+            wd.project_root().unwrap().canonicalize().unwrap(),
+            nested_repo.canonicalize().unwrap()
+        );
+        assert_eq!(
+            wd.main_project_root().unwrap().canonicalize().unwrap(),
+            nested_repo.canonicalize().unwrap()
+        );
+
+        let legacy_repo = temp.path().join("legacy");
+        fs::create_dir_all(legacy_repo.join(".git")).unwrap();
+        plant_workspace(&legacy_repo, Layout::Legacy);
+        let wd = WorkDir::new(&legacy_repo).unwrap();
+        assert_eq!(
+            wd.project_root().unwrap().canonicalize().unwrap(),
+            legacy_repo.canonicalize().unwrap()
+        );
+        assert_eq!(
+            wd.main_project_root().unwrap().canonicalize().unwrap(),
+            legacy_repo.canonicalize().unwrap()
+        );
+    }
+
+    /// loom never creates a `.work/`: a repo with no config.toml anywhere
+    /// initializes at `.loom/work`, whatever spelling once existed elsewhere.
+    #[test]
+    fn a_fresh_repo_never_gets_a_legacy_work_dir() {
+        let temp = TempDir::new().unwrap();
+        let repo = bare_repo(&temp);
+
+        let wd = WorkDir::new(&repo).unwrap();
+        assert_eq!(wd.root(), repo.join(".loom").join("work"));
+        assert_eq!(wd.layout(), Layout::Nested);
+
+        wd.initialize().unwrap();
+        assert!(repo.join(".loom").join("work").join("stages").is_dir());
+        assert!(!repo.join(".work").exists());
+    }
+
+    /// The back-compat policy: whatever root resolves is the workspace for
+    /// WRITES as well as reads. A project mid-plan on `.work/` keeps getting
+    /// its config writes there, and never grows a second `.loom/work`.
+    #[test]
+    fn a_legacy_root_is_written_through_not_migrated() {
+        let temp = TempDir::new().unwrap();
+        let repo = bare_repo(&temp);
+        let legacy = plant_workspace(&repo, Layout::Legacy);
+
+        let wd = WorkDir::new(&repo).unwrap();
+        assert_eq!(wd.layout(), Layout::Legacy);
+
+        let mut doc = read_config(wd.root()).unwrap();
+        doc["plan"]["plan_id"] = toml_edit::value("legacy-stays-put");
+        write_config(wd.root(), &doc).unwrap();
+
+        let written = fs::read_to_string(legacy.join("config.toml")).unwrap();
+        assert!(
+            written.contains("legacy-stays-put"),
+            "the write must land in the resolved legacy root"
+        );
+        assert!(
+            !repo.join(".loom").exists(),
+            "a legacy workspace must not sprout a nested one"
+        );
+    }
+
+    /// The worktree symlink follows the resolved layout: one component for a
+    /// legacy workspace, `.loom/work` under a REAL `.loom/` for a nested one.
+    #[test]
+    fn the_worktree_symlink_follows_the_resolved_layout() {
+        let temp = TempDir::new().unwrap();
+
+        let legacy_repo = temp.path().join("legacy");
+        fs::create_dir_all(legacy_repo.join(".git")).unwrap();
+        plant_workspace(&legacy_repo, Layout::Legacy);
+        let legacy_worktree = legacy_repo.join(".worktrees").join("stage");
+        fs::create_dir_all(&legacy_worktree).unwrap();
+        crate::git::worktree::ensure_work_symlink(&legacy_worktree, &legacy_repo).unwrap();
+
+        let legacy_link = legacy_worktree.join(".work");
+        assert!(legacy_link.is_symlink());
+        assert_eq!(
+            fs::read_link(&legacy_link).unwrap(),
+            Path::new("../../.work")
+        );
+
+        let repo = bare_repo(&temp);
+        let state = plant_workspace(&repo, Layout::Nested);
+        let worktree = repo.join(".worktrees").join("stage");
+        fs::create_dir_all(&worktree).unwrap();
+        crate::git::worktree::ensure_work_symlink(&worktree, &repo).unwrap();
+
+        let worktree_loom = worktree.join(".loom");
+        assert!(
+            worktree_loom.is_dir() && !worktree_loom.is_symlink(),
+            "the worktree's .loom/ must be a real directory, not a link"
+        );
+        let link = worktree_loom.join("work");
+        assert!(link.is_symlink());
+        assert_eq!(
+            fs::read_link(&link).unwrap(),
+            Path::new("../../../.loom/work")
+        );
+        assert_eq!(
+            link.canonicalize().unwrap(),
+            state.canonicalize().unwrap(),
+            "the link must resolve to the main repo's state root"
+        );
+    }
 }

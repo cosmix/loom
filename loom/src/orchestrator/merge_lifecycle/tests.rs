@@ -50,7 +50,7 @@ fn git_stdout(root: &Path, args: &[&str]) -> String {
     String::from_utf8_lossy(&out.stdout).trim().to_string()
 }
 
-/// A repository with one commit on `main` and a `.work/` directory.
+/// A repository with one commit on `main` and a `.loom/work/` directory.
 fn init_repo() -> TempDir {
     let temp = TempDir::new().unwrap();
     let root = temp.path();
@@ -64,7 +64,7 @@ fn init_repo() -> TempDir {
     git_ok(root, &["commit", "-m", "initial"]);
 
     // Present so `WorkDir::new` resolves here instead of searching upward.
-    fs::create_dir_all(root.join(".work")).unwrap();
+    fs::create_dir_all(root.join(".loom").join("work")).unwrap();
 
     temp
 }
@@ -122,7 +122,7 @@ pub(super) fn write_stage_record(work_dir: &Path, stage_id: &str, completed_comm
 pub(super) fn cleanup_from_outside(root: &Path, stage_id: &str) -> CleanupOutcome {
     // `root` is never inside the worktree, so this exercises the real path
     // without depending on the test runner's process-wide cwd.
-    MergeLifecycle::new(stage_id, root, &root.join(".work")).cleanup_with_cwd(
+    MergeLifecycle::new(stage_id, root, &root.join(".loom").join("work")).cleanup_with_cwd(
         Some(root),
         "main",
         &CleanupConfig::quiet(),
@@ -153,7 +153,7 @@ fn cleanup_refuses_while_the_stage_branch_holds_commits_the_target_lacks() {
     let (temp, head) = repo_with_stage_commit(stage_id);
     let root = temp.path();
     // Recorded, but main has never seen it: ancestry cannot be established.
-    write_stage_record(&root.join(".work"), stage_id, &head);
+    write_stage_record(&root.join(".loom").join("work"), stage_id, &head);
 
     let outcome = cleanup_from_outside(root, stage_id);
 
@@ -193,7 +193,7 @@ fn cleanup_refuses_when_the_branch_advanced_past_a_verified_recorded_commit() {
     let stage_id = "advanced-stage";
     let (temp, head) = repo_with_stage_commit(stage_id);
     let root = temp.path();
-    write_stage_record(&root.join(".work"), stage_id, &head);
+    write_stage_record(&root.join(".loom").join("work"), stage_id, &head);
     merge_stage_branch(root, stage_id);
     assert!(
         verify_merge_succeeded(&head, "main", root).unwrap(),
@@ -241,7 +241,7 @@ fn an_unanswerable_git_query_refuses_instead_of_proceeding() {
     let temp = TempDir::new().unwrap();
     let root = temp.path();
     let stage_id = "no-repo-stage";
-    fs::create_dir_all(root.join(".work")).unwrap();
+    fs::create_dir_all(root.join(".loom").join("work")).unwrap();
     fs::create_dir_all(worktree_of(root, stage_id)).unwrap();
 
     let outcome = cleanup_from_outside(root, stage_id);
@@ -262,7 +262,7 @@ fn cleanup_proceeds_once_the_stage_branch_is_contained_by_the_target() {
     let stage_id = "merged-stage";
     let (temp, head) = repo_with_stage_commit(stage_id);
     let root = temp.path();
-    write_stage_record(&root.join(".work"), stage_id, &head);
+    write_stage_record(&root.join(".loom").join("work"), stage_id, &head);
     merge_stage_branch(root, stage_id);
 
     let outcome = cleanup_from_outside(root, stage_id);
@@ -288,7 +288,7 @@ fn cleanup_reports_a_removal_failure_instead_of_propagating_it() {
     let stage_id = "unremovable-stage";
     let (temp, head) = repo_with_stage_commit(stage_id);
     let root = temp.path();
-    write_stage_record(&root.join(".work"), stage_id, &head);
+    write_stage_record(&root.join(".loom").join("work"), stage_id, &head);
     merge_stage_branch(root, stage_id);
     let claude_dir = worktree_of(root, stage_id).join(".claude");
     fs::create_dir_all(&claude_dir).unwrap();
@@ -314,7 +314,7 @@ fn cleanup_defers_while_the_cwd_is_inside_the_worktree_it_would_remove() {
     let (temp, _head) = repo_with_stage_commit(stage_id);
     let root = temp.path();
     let worktree = worktree_of(root, stage_id);
-    let work_dir = root.join(".work");
+    let work_dir = root.join(".loom").join("work");
     let lifecycle = MergeLifecycle::new(stage_id, root, &work_dir);
     let quiet = CleanupConfig::quiet();
 
@@ -376,7 +376,7 @@ fn the_post_merge_tail_still_cleans_up_when_the_base_reconcile_cannot_succeed() 
     let stage_id = "tail-stage";
     let (temp, head) = repo_with_stage_commit(stage_id);
     let root = temp.path();
-    let work_dir = root.join(".work");
+    let work_dir = root.join(".loom").join("work");
     write_stage_record(&work_dir, stage_id, &head);
     merge_stage_branch(root, stage_id);
 

@@ -43,7 +43,7 @@ pub struct ContextStore {
 impl ContextStore {
     /// Resolve the cache under the canonical MAIN project root.
     ///
-    /// In a linked worktree `.work` is a symlink into the main repository, so
+    /// In a linked worktree `.loom/work` is a symlink into the main repository, so
     /// `main_project_root` follows it. Resolving relative to the worktree instead
     /// would give every parallel stage a private, immediately-stale cache.
     pub fn open(work_dir: &WorkDir) -> Result<Self> {

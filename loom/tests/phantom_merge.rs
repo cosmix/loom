@@ -82,10 +82,10 @@ fn create_loom_branch_with_commit(
     sha
 }
 
-/// Create an empty `.work/` with a minimal `config.toml` pointing at `main`.
+/// Create an empty `.loom/work/` with a minimal `config.toml` pointing at `main`.
 fn init_work_dir(repo_root: &Path) -> PathBuf {
-    let work_dir = repo_root.join(".work");
-    fs::create_dir_all(work_dir.join("stages")).expect("mkdir .work/stages");
+    let work_dir = repo_root.join(".loom").join("work");
+    fs::create_dir_all(work_dir.join("stages")).expect("mkdir .loom/work/stages");
     fs::write(work_dir.join("config.toml"), "base_branch = \"main\"\n").expect("write config.toml");
     work_dir
 }

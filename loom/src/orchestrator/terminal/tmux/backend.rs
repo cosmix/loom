@@ -19,7 +19,7 @@ use super::{
 
 /// Tmux terminal backend — spawns sessions in headless tmux servers.
 pub struct TmuxBackend {
-    /// The `.work` directory path, for PID tracking and session lookups.
+    /// The `.loom/work` directory path, for PID tracking and session lookups.
     work_dir: PathBuf,
 }
 

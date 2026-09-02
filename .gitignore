@@ -42,10 +42,18 @@ logs/
 *.temp
 .cache/
 
-# loom workspace (created by `loom init`)
-# CRITICAL: Both patterns needed - directory in main repo, symlink in worktrees
+# loom workspace state (created by `loom init`)
+# The current layout nests shared state under .loom/work - a real directory
+# in the main repo, a symlink in worktrees - alongside the two per-worktree
+# spool files and the derived context cache below. A workspace created
+# before this migration keeps the legacy .work forever (see doc/plans,
+# "Back-compat"), so both layouts stay ignored. CRITICAL: both the directory
+# and symlink forms of each are needed - git ignores a symlink by its own
+# name, not by resolving where it points.
 .work/
 .work
+.loom/work/
+.loom/work
 
 # Rust build artifacts
 target/
@@ -53,7 +61,7 @@ target/
 # loom derived context cache (rebuildable from doc/loom/knowledge/)
 .loom/cache/
 
-# per-worktree memory spool (drained into .work/memory/<stage>.md by the daemon)
+# per-worktree memory spool (drained into .loom/work/memory/<stage>.md by the daemon)
 .loom/memory-spool.jsonl
 
 # per-worktree stage-control spool (block/dispute requests the daemon applies)

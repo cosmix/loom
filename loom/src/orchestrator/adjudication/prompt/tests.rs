@@ -38,7 +38,7 @@ fn fixture(
 ) -> (std::path::PathBuf, std::path::PathBuf, std::path::PathBuf) {
     let plan = tmp.path().join("PLAN.md");
     std::fs::write(&plan, "stub plan").unwrap();
-    let work = tmp.path().join(".work");
+    let work = tmp.path().join(".loom").join("work");
     std::fs::create_dir_all(&work).unwrap();
     let draft = work.join("disputes/demo/1/verdict.json");
     (plan, work, draft)
@@ -173,7 +173,7 @@ fn truncation_keeps_total_under_budget() {
     let tmp = tempfile::tempdir().unwrap();
     let plan = tmp.path().join("PLAN.md");
     std::fs::write(&plan, "stub plan".repeat(50_000)).unwrap();
-    let work = tmp.path().join(".work");
+    let work = tmp.path().join(".loom").join("work");
     std::fs::create_dir_all(&work).unwrap();
     let stage = stage_with_criteria(vec!["cargo test"]);
     let mut req = dispute(0);

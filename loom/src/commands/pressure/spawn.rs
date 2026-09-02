@@ -51,9 +51,9 @@ pub(super) fn completion_instruction(marker: &Path) -> String {
         "AUTONOMOUS RUN: this Claude session was launched by `loom pressure`; no human will end it for you. \
          When the task is FULLY complete and the plan file is fully updated (after every subagent has finished), \
          your FINAL action MUST be to run exactly this shell command and nothing after it: touch {}. \
-         Do not run it earlier. That path is inside the repo's gitignored `.work/` because the agent sandbox \
+         Do not run it earlier. That path is inside the repo's gitignored `.loom/work/` because the agent sandbox \
          mounts /tmp read-only; creating this one marker is the sanctioned exception to the rule against \
-         writing under `.work/` directly. Once that file exists the driver closes this session.",
+         writing under `.loom/work/` directly. Once that file exists the driver closes this session.",
         marker.display()
     )
 }
@@ -139,7 +139,7 @@ pub(super) fn run_claude_foreground(
     marker: &Path,
 ) -> Result<ClaudeOutcome> {
     // Clear any stale marker from a previous step before spawning. The parent
-    // dir (`.work/pressure/`) may not exist yet in a repo without `loom init`;
+    // dir (`.loom/work/pressure/`) may not exist yet in a repo without `loom init`;
     // this driver runs unsandboxed, so it can create it.
     ensure_marker_dir(marker)?;
     delete_file(marker)?;
