@@ -4,7 +4,7 @@ use std::fs;
 use std::process::Command;
 use tempfile::TempDir;
 
-const LOOM: &str = env!("CARGO_BIN_EXE_loom");
+use super::helpers::loom_cmd;
 
 // ── Fixtures ──────────────────────────────────────────────────────────────
 
@@ -312,7 +312,7 @@ fn write_plan(dir: &std::path::Path, filename: &str, content: &str) -> std::path
 }
 
 fn run_verify(plan_path: &std::path::Path, extra_args: &[&str]) -> std::process::Output {
-    Command::new(LOOM)
+    loom_cmd()
         .args(["plan", "verify"])
         .arg(plan_path)
         .args(extra_args)
@@ -498,7 +498,7 @@ fn test_json_valid() {
 
 #[test]
 fn test_json_missing_path() {
-    let out = Command::new(LOOM)
+    let out = loom_cmd()
         .args(["plan", "verify", "--json", "/nonexistent/plan.md"])
         .output()
         .unwrap();
@@ -547,7 +547,7 @@ fn test_json_oversized_plan() {
 
 #[test]
 fn test_human_missing_path() {
-    let out = Command::new(LOOM)
+    let out = loom_cmd()
         .args(["plan", "verify", "/nonexistent/plan.md"])
         .output()
         .unwrap();
@@ -569,7 +569,7 @@ fn test_no_color_strips_ansi() {
     );
 
     // (a) CLICOLOR_FORCE=1 without --no-color: stdout should contain ANSI codes
-    let out_colored = Command::new(LOOM)
+    let out_colored = loom_cmd()
         .args(["plan", "verify"])
         .arg(&plan)
         .env("CLICOLOR_FORCE", "1")
@@ -582,7 +582,7 @@ fn test_no_color_strips_ansi() {
     );
 
     // (b) CLICOLOR_FORCE=1 WITH --no-color: stdout must contain no ANSI codes
-    let out_plain = Command::new(LOOM)
+    let out_plain = loom_cmd()
         .args(["plan", "verify", "--no-color"])
         .arg(&plan)
         .env("CLICOLOR_FORCE", "1")
@@ -620,7 +620,7 @@ fn test_no_side_effects_on_target_repo() {
     // Use a separate cwd to prove we don't pollute the caller's dir
     let caller_cwd = TempDir::new().unwrap();
 
-    Command::new(LOOM)
+    loom_cmd()
         .args(["plan", "verify"])
         .arg(&plan_path)
         .current_dir(caller_cwd.path())
@@ -963,7 +963,7 @@ fn test_complete_returns_plan_at_top_level() {
     // The dynamic backend powers the generated zsh script. Verify `loom`
     // appears as a completion target for `plan`.
     let temp = TempDir::new().unwrap();
-    let out = Command::new(LOOM)
+    let out = loom_cmd()
         .args(["complete", "zsh"])
         .arg(temp.path())
         .args(["loom ", "", "loom"])
@@ -986,7 +986,7 @@ fn test_complete_returns_plan_at_top_level() {
 fn test_complete_returns_verify_under_plan() {
     // Same backend, one level deeper: `loom plan ` must offer `verify`.
     let temp = TempDir::new().unwrap();
-    let out = Command::new(LOOM)
+    let out = loom_cmd()
         .args(["complete", "zsh"])
         .arg(temp.path())
         .args(["loom plan ", "", "plan"])
