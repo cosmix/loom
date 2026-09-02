@@ -445,83 +445,71 @@ fn create_worktree_settings(
     crate::fs::permissions::scrub_stale_work_dir_env(&mut settings);
 
     // Resolve the state-root symlink to its absolute target path and add
-    // permissions. In worktrees, the state root is a symlink — `.loom/work`
-    // on the nested layout (-> ../../../.loom/work) or `.work` on a legacy
-    // workspace (-> ../../.work), both pointing at the main repo's shared
-    // state. Claude Code resolves symlinks before checking permission
+    // permissions. Claude Code resolves symlinks before checking permission
     // patterns, so the relative Read(.loom/work/**) pattern from the main
     // repo's settings doesn't match the resolved absolute path. Adding the
     // resolved path here ensures agents can read/write state files without
-    // permission prompts.
+    // permission prompts. See `fs::permissions::state_root` for the shared
+    // resolution and the S-1 rationale (blanket read/write over this path
+    // exposes `admin.token` / `user.token` — a daemon RPC privilege
+    // escalation).
     //
     // IMPORTANT: Claude Code requires the // prefix for absolute filesystem paths.
     // A single / means "relative to project root", NOT absolute. See:
     // https://code.claude.com/docs/en/permissions.md
-    let work_link = {
-        let nested = worktree_path.join(".loom").join("work");
-        if nested.exists() || nested.is_symlink() {
-            nested
-        } else {
-            worktree_path.join(".work")
-        }
-    };
-    if work_link.exists() || work_link.is_symlink() {
-        if let Ok(resolved) = work_link.canonicalize() {
-            let resolved_str = resolved.to_string_lossy();
+    if let Some(resolved) = crate::fs::permissions::state_root::resolve_state_root(worktree_path) {
+        let resolved_str = resolved.to_string_lossy();
 
-            // Collect the permissions to add
-            // Use / prefix on absolute paths for Claude Code's // convention
-            //
-            // There is deliberately NO broad write grant over the resolved
-            // `.work` root here, in either spelling. `Edit(/{resolved}/**)`
-            // would restore the grant narrowed elsewhere (S-1, see
-            // `sandbox/settings.rs`) because it exposed `.work/admin.token`
-            // and `.work/user.token` to a sandboxed worktree agent — a daemon
-            // RPC privilege escalation. `Write(/{resolved}/**)` sat here as
-            // its inert stand-in until it was REMOVED rather than converted:
-            // Claude Code's permission check consults only `Edit(path)`, so it
-            // granted nothing and warned every session start.
-            //
-            // For the same S-1 reason, there is also no blanket
-            // `Read(/{resolved}/**)` grant: it exposed `admin.token` and
-            // `user.token` to read just as readily as a broad `Edit` would
-            // have exposed them to write. The three narrow entries below are
-            // the whole read grant.
-            //
-            // This file (`.claude/settings.json`) is written by a different
-            // code path than `settings.local.json`, so it must be safe
-            // standalone rather than depending on `sandbox::write_settings`
-            // always running afterwards to add denies to a second file.
-            // (settings.json is the team-shareable file per
-            // `fs/permissions/settings.rs`'s module doc, though `.claude/` is
-            // gitignored in this repo.) Explicit `deny`
-            // entries for the resolved-absolute token paths go in below,
-            // before the narrowed allow, mirroring `sandbox/settings.rs`'s
-            // S-1 fix: deny wins over any current or future allow that might
-            // match the state root.
-            let token_denies = ["admin.token", "user.token"]
-                .into_iter()
-                .map(|token| format!("Read(/{}/{})", resolved_str, token));
-            let work_perms = vec![
-                format!("Read(/{}/signals/**)", resolved_str),
-                format!("Read(/{}/config.toml)", resolved_str),
-                format!("Read(/{}/handoffs/**)", resolved_str),
-            ];
+        // Collect the permissions to add
+        // Use / prefix on absolute paths for Claude Code's // convention
+        //
+        // There is deliberately NO broad write grant over the resolved
+        // `.work` root here, in either spelling. `Edit(/{resolved}/**)`
+        // would restore the grant narrowed elsewhere (S-1, see
+        // `sandbox/settings.rs`) because it exposed `.work/admin.token`
+        // and `.work/user.token` to a sandboxed worktree agent — a daemon
+        // RPC privilege escalation. `Write(/{resolved}/**)` sat here as
+        // its inert stand-in until it was REMOVED rather than converted:
+        // Claude Code's permission check consults only `Edit(path)`, so it
+        // granted nothing and warned every session start.
+        //
+        // For the same S-1 reason, there is also no blanket
+        // `Read(/{resolved}/**)` grant: it exposed `admin.token` and
+        // `user.token` to read just as readily as a broad `Edit` would
+        // have exposed them to write. The three narrow entries below are
+        // the whole read grant.
+        //
+        // This file (`.claude/settings.json`) is written by a different
+        // code path than `settings.local.json`, so it must be safe
+        // standalone rather than depending on `sandbox::write_settings`
+        // always running afterwards to add denies to a second file.
+        // (settings.json is the team-shareable file per
+        // `fs/permissions/settings.rs`'s module doc, though `.claude/` is
+        // gitignored in this repo.) Explicit `deny`
+        // entries for the resolved-absolute token paths go in below,
+        // before the narrowed allow, mirroring `sandbox/settings.rs`'s
+        // S-1 fix: deny wins over any current or future allow that might
+        // match the state root.
+        let token_denies = crate::fs::permissions::state_root::token_read_denies(&resolved_str);
+        let work_perms = vec![
+            format!("Read(/{}/signals/**)", resolved_str),
+            format!("Read(/{}/config.toml)", resolved_str),
+            format!("Read(/{}/handoffs/**)", resolved_str),
+        ];
 
-            // Get or create the allow/deny arrays within permissions.
-            // `permissions` is guaranteed to be an object here (normalized
-            // above), but a hand-edited settings.json can still carry
-            // `deny`/`allow` as some other JSON type. `array_entry`
-            // normalizes those to an empty array rather than skip the
-            // token denies below.
-            if let Some(perms_obj) = settings
-                .as_object_mut()
-                .and_then(|o| o.get_mut("permissions"))
-                .and_then(|p| p.as_object_mut())
-            {
-                push_unique_perms(array_entry(perms_obj, "deny"), token_denies);
-                push_unique_perms(array_entry(perms_obj, "allow"), work_perms);
-            }
+        // Get or create the allow/deny arrays within permissions.
+        // `permissions` is guaranteed to be an object here (normalized
+        // above), but a hand-edited settings.json can still carry
+        // `deny`/`allow` as some other JSON type. `array_entry`
+        // normalizes those to an empty array rather than skip the
+        // token denies below.
+        if let Some(perms_obj) = settings
+            .as_object_mut()
+            .and_then(|o| o.get_mut("permissions"))
+            .and_then(|p| p.as_object_mut())
+        {
+            push_unique_perms(array_entry(perms_obj, "deny"), token_denies);
+            push_unique_perms(array_entry(perms_obj, "allow"), work_perms);
         }
     }
 

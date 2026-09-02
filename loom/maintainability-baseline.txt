@@ -33,7 +33,7 @@ file src/fs/safe_fs.rs 1019
 file src/fs/work_dir.rs 507
 file src/fs/work_dir/tests.rs 863
 file src/git/worktree/base.rs 545
-file src/git/worktree/settings.rs 718
+file src/git/worktree/settings.rs 706
 file src/hooks/tests.rs 514
 file src/models/stage/methods.rs 817
 file src/models/stage/types.rs 1231
@@ -58,7 +58,7 @@ file src/plan/schema/validation.rs 1285
 file src/plan/tests/amendment.rs 605
 file src/remote_control.rs 599
 file src/sandbox/config.rs 848
-file src/sandbox/settings.rs 566
+file src/sandbox/settings.rs 551
 file src/sandbox/settings/tests.rs 1872
 file src/skills/index.rs 564
 file src/verify/duplicate_detection.rs 436
@@ -179,7 +179,7 @@ function src/git/merge/status.rs make_test_stage 68
 function src/git/worktree/base.rs resolve_base_branch 92
 function src/git/worktree/discovery.rs find_worktree_by_prefix 55
 function src/git/worktree/operations.rs create_worktree 115
-function src/git/worktree/settings.rs create_worktree_settings 128
+function src/git/worktree/settings.rs create_worktree_settings 116
 function src/git/worktree/settings.rs refresh_worktree_settings_local 58
 function src/git/worktree/tests_settings_env.rs test_refresh_preserves_worktree_env_hooks_and_mode 59
 function src/git/worktree/tests_settings_env.rs test_worktree_gitignore_actually_hides_loom_runtime_paths 57
@@ -265,7 +265,7 @@ function src/plan/schema/validation.rs validate 411
 function src/plan/schema/validation.rs validate_structural_preflight 232
 function src/sandbox/settings.rs generate_settings_json 120
 function src/sandbox/settings.rs merge_existing_permissions 56
-function src/sandbox/settings.rs write_settings 142
+function src/sandbox/settings.rs write_settings 127
 function src/sandbox/settings/policy.rs filesystem_settings 52
 function src/sandbox/settings/tests.rs every_stage_type_can_write_the_knowledge_directory 56
 function src/sandbox/settings/tests.rs test_deny_write_parent_traversal_not_in_os_sandbox 73

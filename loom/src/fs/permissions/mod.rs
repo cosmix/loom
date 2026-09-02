@@ -9,6 +9,7 @@ pub mod constants;
 mod drift;
 mod hooks;
 pub(crate) mod settings;
+pub(crate) mod state_root;
 mod sync;
 mod trust;
 pub(crate) mod write_rules;
