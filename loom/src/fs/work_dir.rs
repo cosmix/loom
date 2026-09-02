@@ -810,9 +810,15 @@ pub fn write_context_config(work_dir: &Path, config: &ContextConfig) -> Result<(
 /// [`ContextConfig::ceiling_for`] instead, which is the same order without the
 /// read.
 pub fn resolve_context_ceiling_tokens(work_dir: &Path, stage_ceiling: Option<u32>) -> u32 {
-    // An unreadable or unparseable config falls back to the built-in default
-    // rather than failing: a ceiling is needed on every path that asks for one.
-    let config = read_context_config(work_dir).unwrap_or_default();
+    // An unreadable or unparseable workspace [context] section still falls
+    // through to the user config tier (then the built-in default) rather than
+    // skipping straight to the built-in — a malformed workspace section must
+    // not silently discard an operator's ~/.loom/config.toml ceiling.
+    let config = read_context_config(work_dir).unwrap_or_else(|_| {
+        ContextConfig::with_user_ceiling(
+            crate::user_config::UserConfig::load().context_ceiling_tokens_set(),
+        )
+    });
     config.ceiling_for(stage_ceiling)
 }
 

@@ -40,7 +40,14 @@ fn requested_pair() -> Option<(u32, u32)> {
 }
 
 fn resolve(work_dir: &Path, stage_id: &str) -> (u32, u32) {
-    let config = read_context_config(work_dir).unwrap_or_default();
+    // A malformed workspace [context] section still falls through to the
+    // user config tier (then the built-in default), matching
+    // `fs::work_dir::resolve_context_ceiling_tokens`'s resolution order.
+    let config = read_context_config(work_dir).unwrap_or_else(|_| {
+        crate::fs::work_dir::ContextConfig::with_user_ceiling(
+            crate::user_config::UserConfig::load().context_ceiling_tokens_set(),
+        )
+    });
     let main = load_verified_stage_ceiling(work_dir, stage_id)
         .map(|stage_ceiling| config.ceiling_for(stage_ceiling))
         .unwrap_or(0);

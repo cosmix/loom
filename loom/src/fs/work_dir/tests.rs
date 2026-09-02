@@ -567,6 +567,71 @@ fn global_config_tier_context_ceiling_ignores_the_real_home_when_no_redirect_is_
     assert_eq!(config, ContextConfig::default());
 }
 
+/// A malformed workspace `[context]` section must still fall through to the
+/// user config tier, not skip straight past it to the built-in default —
+/// `resolve_context_ceiling_tokens`'s documented resolution order names the
+/// user config as a middle tier, not a tier only reachable when the
+/// workspace section is cleanly absent.
+#[test]
+fn global_config_tier_context_ceiling_survives_a_malformed_workspace_section() {
+    let temp = TempDir::new().unwrap();
+    let path = write_user_config(&temp, "[context]\nceiling_tokens = 654321\n");
+    let _redirect = crate::user_config::redirect_user_config(path);
+
+    let work = init_work(&temp);
+    fs::write(
+        work.join("config.toml"),
+        "[context]\nceiling_tokens = \"not-a-number\"\n",
+    )
+    .unwrap();
+
+    assert_eq!(resolve_context_ceiling_tokens(&work, None), 654_321);
+}
+
+/// Regression guard against a future key-level merge: a workspace `[context]`
+/// section that sets only `subagent_ceiling_tokens` must still win WHOLE over
+/// the user config's `ceiling_tokens` — the section, not the individual key,
+/// is what "present" means for this fallback tier.
+#[test]
+fn global_config_tier_a_partial_workspace_context_section_still_wins_whole() {
+    let temp = TempDir::new().unwrap();
+    let path = write_user_config(&temp, "[context]\nceiling_tokens = 123456\n");
+    let _redirect = crate::user_config::redirect_user_config(path);
+
+    let work = init_work(&temp);
+    fs::write(
+        work.join("config.toml"),
+        "[context]\nsubagent_ceiling_tokens = 111111\n",
+    )
+    .unwrap();
+
+    let config = read_context_config(&work).unwrap();
+    assert_eq!(
+        config.ceiling_tokens,
+        crate::models::constants::DEFAULT_CONTEXT_CEILING_TOKENS
+    );
+    assert_eq!(config.subagent_ceiling_tokens, 111_111);
+}
+
+/// Same regression guard for `[terminal]`: an EMPTY workspace section is
+/// still a present section, and must win WHOLE over the user config's
+/// `terminal.backend`.
+#[test]
+fn global_config_tier_an_empty_workspace_terminal_section_still_wins_whole() {
+    let temp = TempDir::new().unwrap();
+    let path = write_user_config(&temp, "[terminal]\nbackend = \"tmux\"\n");
+    let _redirect = crate::user_config::redirect_user_config(path);
+
+    let work = init_work(&temp);
+    fs::write(work.join("config.toml"), "[terminal]\n").unwrap();
+
+    let config = read_terminal_config(&work).unwrap();
+    assert_eq!(
+        config.backend,
+        crate::models::session::SessionBackendKind::Native
+    );
+}
+
 /// Resolution order, layout, and the hop count that follows from it.
 ///
 /// Every assertion on a path that exists canonicalizes BOTH sides: on macOS a
