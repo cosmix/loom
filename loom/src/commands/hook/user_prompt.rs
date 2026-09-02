@@ -14,11 +14,12 @@
 //! Three gates stand between a prompt and a printed brief, in order:
 //! `parse_prompt` drops machine-generated payloads before retrieval even
 //! runs (task-notification XML, stopped-agent notices — see
-//! `is_machine_generated`); `user_prompt_compose.rs`'s emit floor drops a
-//! retrieval too weak to be worth saying anything about; and
-//! `DeliveryTarget::already_delivered` drops whatever THIS session — not
-//! some other session that happens to share the stage — has already been
-//! handed this epoch.
+//! `is_machine_generated`) and strips the `@` file attachments whose paths
+//! would otherwise steer retrieval (`user_prompt_attachments.rs`);
+//! `user_prompt_compose.rs`'s emit floor drops a retrieval too weak to be
+//! worth saying anything about; and `DeliveryTarget::already_delivered` drops
+//! whatever THIS session — not some other session that happens to share the
+//! stage — has already been handed this epoch.
 //!
 //! Every failure is an empty stdout and exit 0. A prompt-submit hook that
 //! reports a problem is a prompt-submit hook that interrupts the session, so
@@ -43,6 +44,9 @@ use std::path::PathBuf;
 
 #[path = "user_prompt_compose.rs"]
 mod compose;
+
+#[path = "user_prompt_attachments.rs"]
+mod attachments;
 
 /// Longest stdin payload worth parsing. Anything past it is malformed by
 /// definition, which keeps a runaway writer from being read into memory.
@@ -342,12 +346,19 @@ fn read_prompt() -> Option<(String, Option<String>)> {
 /// JSON, a missing `prompt` field, a prompt too short to have asked anything,
 /// or a prompt shaped like machine output rather than a human question (see
 /// [`is_machine_generated`]).
+///
+/// File attachments are removed before any of that (see
+/// [`attachments::strip_attachments`]), so the length check runs against what
+/// will actually be retrieved against: a prompt that was nothing but an
+/// attached file asked no question and earns no brief.
 fn parse_prompt(raw: &str) -> Option<String> {
     let payload: serde_json::Value = serde_json::from_str(raw).ok()?;
     let prompt = payload.get("prompt")?.as_str()?.trim();
     if is_machine_generated(prompt) {
         return None;
     }
+    let prompt = attachments::strip_attachments(prompt);
+    let prompt = prompt.trim();
     (prompt.chars().count() >= MIN_PROMPT_CHARS).then(|| prompt.to_string())
 }
 

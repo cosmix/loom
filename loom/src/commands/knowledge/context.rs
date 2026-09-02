@@ -198,19 +198,31 @@ fn print_freshness_line(label: &str, freshness: &Freshness) {
 /// output — including one shaped like a heading or an instruction — so each
 /// goes through [`inline_safe`] before it reaches stdout. `item.score` is a
 /// typed float, not free text, so it is left alone.
+///
+/// A confidence below High is named at the end of the line, the same rule the
+/// Knowledge Brief renders by (`orchestrator::signals::format::brief`): a
+/// score says how strongly an item ranked, never how much of that rank came
+/// from a coincidence, so a Medium hit that reads identically to a High one
+/// misleads on the one surface built to explain a result set. High says
+/// nothing, because it is what most rows are.
 fn format_item_line(item: &ContextItem) -> String {
     let anchor = if item.pointer.anchor.is_empty() {
         String::new()
     } else {
         format!("#{}", inline_safe(&item.pointer.anchor))
     };
+    let confidence = match item.confidence {
+        Confidence::High => String::new(),
+        demoted => format!("  ({})", confidence_label(demoted)),
+    };
     format!(
-        "  {:>6.2}  {}  {}{}  {}",
+        "  {:>6.2}  {}  {}{}  {}{}",
         item.score,
         inline_safe(item.id.as_str()),
         inline_safe(&item.pointer.path.display().to_string()),
         anchor,
-        inline_safe(&item.summary)
+        inline_safe(&item.summary),
+        confidence
     )
 }
 

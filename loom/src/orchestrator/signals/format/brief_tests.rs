@@ -28,7 +28,12 @@ fn item(id: &str, excerpt: Option<&str>) -> ContextItem {
         token_count: 12,
         score: 2.0,
         reasons: vec![SelectionReason::Lexical, SelectionReason::ExactPath],
-        confidence: Confidence::Medium,
+        // High is what these reasons classify to, and what every assertion
+        // below is written against: the High rendering carries no confidence
+        // label at all, so these tests double as the pin on the common case
+        // costing exactly what it did before the label existed. The demoted
+        // cases live in `brief_tests_confidence.rs`.
+        confidence: Confidence::High,
         state: LifecycleState::Active,
         content_hash: "sha256:abc".to_string(),
         excerpt: excerpt.map(str::to_string),
@@ -367,6 +372,11 @@ fn excerpt_containing_a_fence_gets_a_longer_fence_that_cannot_escape() {
 // no repeated `#[cfg(test)]`, since this whole file is already gated by it.
 #[path = "brief_tests_source.rs"]
 mod source_tests;
+
+// Confidence-label rendering (the demoted cases, and the High case that must
+// render nothing) is its own file for the same reason.
+#[path = "brief_tests_confidence.rs"]
+mod confidence_tests;
 
 // ---------------------------------------------------------------------------
 // Pure helpers

@@ -44,7 +44,7 @@
 //! producers, because this is the one point all of them pass through on the
 //! way into a signal file.
 
-use crate::context::schema::{ContextItem, ContextPack, Freshness, ItemKind, SelectionReason};
+use crate::context::schema::{Confidence, ContextItem, ContextPack, Freshness, ItemKind};
 use crate::context::untrusted::inline_safe;
 
 /// The untrusted-data sentence that must precede every quoted excerpt.
@@ -145,9 +145,10 @@ fn render_knowledge_item(item: &ContextItem) -> String {
 /// Reason/state line.
 ///
 /// The id and the pointer are untrusted and go through [`inline_safe`]. The
-/// reasons and the state do not: `SelectionReason` and `LifecycleState` are
-/// fieldless enums whose `Display` impls write one of a fixed set of literals
-/// (`schema.rs:154` and `schema.rs:221`), so neither can carry caller text.
+/// reasons, the confidence and the state do not: `SelectionReason`,
+/// `Confidence` and `LifecycleState` are fieldless enums rendered from a fixed
+/// set of literals (`schema.rs:154`, [`confidence_word`] and `schema.rs:221`),
+/// so none of them can carry caller text.
 fn render_knowledge_item_line(item: &ContextItem) -> String {
     let pointer = render_pointer(item);
     let mut line = format!("- `{}`", inline_safe(item.id.as_str()));
@@ -157,21 +158,47 @@ fn render_knowledge_item_line(item: &ContextItem) -> String {
     line.push('\n');
     line.push_str(&format!(
         "  Reason: {} | state: {}\n",
-        render_reasons(&item.reasons),
+        render_reasons(item),
         item.state
     ));
     line
 }
 
-/// Join an item's [`SelectionReason`]s the way both sections render them.
-/// Safe to print unescaped — see [`render_knowledge_item_line`]'s doc comment
-/// for why a `SelectionReason`'s `Display` impl cannot carry caller text.
-fn render_reasons(reasons: &[SelectionReason]) -> String {
-    reasons
+/// Join an item's [`SelectionReason`]s the way both sections render them,
+/// followed by `; <confidence>` when that confidence is below `High`.
+///
+/// Reasons alone do not tell the reader how much to trust the hit: the packer
+/// publishes the WEAKER of the reasons-implied confidence and the rung ceiling
+/// (`context::rank::RankedCandidate::confidence`), so a node admitted on
+/// rarity alone reads as `exact-symbol` yet is only Medium. Safe to print
+/// unescaped — see [`render_knowledge_item_line`]'s doc comment.
+///
+/// [`SelectionReason`]: crate::context::schema::SelectionReason
+fn render_reasons(item: &ContextItem) -> String {
+    let reasons = item
+        .reasons
         .iter()
         .map(|reason| reason.to_string())
         .collect::<Vec<_>>()
-        .join(", ")
+        .join(", ");
+    match confidence_word(item.confidence) {
+        Some(word) => format!("{reasons}; {word}"),
+        None => reasons,
+    }
+}
+
+/// The word naming a confidence worth flagging, or `None` for `High`.
+///
+/// High is the common case, and every token spent restating it is a token the
+/// brief's excerpts do not get: the rendering there stays byte-identical to
+/// what it was before this label existed, and only a demoted item pays for
+/// saying so.
+fn confidence_word(confidence: Confidence) -> Option<&'static str> {
+    match confidence {
+        Confidence::High => None,
+        Confidence::Medium => Some("medium"),
+        Confidence::Low => Some("low"),
+    }
 }
 
 /// `<path>`, plus the line span and the `#<anchor>` each when present.
@@ -274,14 +301,15 @@ fn render_source_group(group: &[&ContextItem]) -> String {
 /// :<span> (<reasons>) ``, or `` `<id>` :<span> (<reasons>) `` when the id
 /// does not split into `<path>#<kind>:<scope>`
 /// (`context::source_graph::node_id`) — a fallback that renders the whole id
-/// rather than inventing a name that could mislead.
+/// rather than inventing a name that could mislead. The parentheses carry a
+/// trailing `; medium` or `; low` for a demoted item — see [`render_reasons`].
 fn render_source_entry(item: &ContextItem) -> String {
     let mut parts = match parse_source_identity(item.id.as_str()) {
         Some((kind, name)) => vec![format!("`{}`", inline_safe(name)), inline_safe(kind)],
         None => vec![format!("`{}`", inline_safe(item.id.as_str()))],
     };
     parts.extend(render_span(item));
-    parts.push(format!("({})", render_reasons(&item.reasons)));
+    parts.push(format!("({})", render_reasons(item)));
     parts.join(" ")
 }
 

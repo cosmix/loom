@@ -228,6 +228,54 @@ fn a_hostile_summary_cannot_open_a_heading_in_the_rendered_item_line() {
     );
 }
 
+/// An ordinary item at `confidence`, for the default table's rendering.
+fn item_with_confidence(confidence: Confidence) -> ContextItem {
+    ContextItem {
+        id: ChunkId::from("arch#overview#1"),
+        kind: ItemKind::KnowledgeChunk,
+        pointer: SourcePointer {
+            path: PathBuf::from("doc/loom/knowledge/architecture.md"),
+            anchor: "overview".to_string(),
+            line_start: None,
+            line_end: None,
+        },
+        summary: "Architecture overview".to_string(),
+        source: Channel::Knowledge,
+        token_count: 12,
+        score: 2.0,
+        reasons: vec![SelectionReason::ExactSymbol],
+        confidence,
+        state: LifecycleState::Active,
+        content_hash: "sha256:abc".to_string(),
+        excerpt: None,
+        matched_term_count: 0,
+    }
+}
+
+/// Without `--explain` the score used to be the whole story, and a hit that
+/// ranked on a coincidence read exactly like one that ranked on identity.
+#[test]
+fn a_demoted_item_names_its_confidence_in_the_default_table() {
+    assert!(
+        format_item_line(&item_with_confidence(Confidence::Medium)).ends_with("  (medium)"),
+        "{}",
+        format_item_line(&item_with_confidence(Confidence::Medium))
+    );
+    assert!(
+        format_item_line(&item_with_confidence(Confidence::Low)).ends_with("  (low)"),
+        "{}",
+        format_item_line(&item_with_confidence(Confidence::Low))
+    );
+}
+
+/// High is what most rows are, so it costs the table nothing.
+#[test]
+fn a_high_confidence_item_renders_the_line_it_always_did() {
+    let line = format_item_line(&item_with_confidence(Confidence::High));
+    assert!(line.ends_with("Architecture overview"), "{line}");
+    assert!(!line.contains("(high)"), "{line}");
+}
+
 /// A pack carrying only the fields the observability lines read.
 fn pack_with(dropped_terms: Vec<String>, degraded: Option<String>) -> ContextPack {
     ContextPack {
