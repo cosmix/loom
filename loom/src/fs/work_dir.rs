@@ -739,10 +739,19 @@ pub fn write_remote_control_config(work_dir: &Path, config: &RemoteControlConfig
 
 /// Read the persisted terminal backend config (`[terminal]`).
 ///
-/// A missing section yields `TerminalConfig::default()` (backend = native),
-/// so callers always get a usable value.
+/// Resolution order: a present workspace `[terminal]` section wins WHOLE; an
+/// absent one falls through to `~/.loom/config.toml`'s `terminal.backend`
+/// (see [`crate::user_config::UserConfig`]), then to
+/// `TerminalConfig::default()` (native) when neither is set. So a missing
+/// section no longer means "the default" outright — it means "the user
+/// config, then the default".
 pub fn read_terminal_config(work_dir: &Path) -> Result<TerminalConfig> {
-    Ok(read_section(work_dir, TERMINAL_SECTION)?.unwrap_or_default())
+    if let Some(section) = read_section::<TerminalConfig>(work_dir, TERMINAL_SECTION)? {
+        return Ok(section);
+    }
+    Ok(TerminalConfig {
+        backend: crate::user_config::UserConfig::load().terminal_backend(),
+    })
 }
 
 /// Persist the terminal backend config (`[terminal]`).
@@ -752,10 +761,30 @@ pub fn write_terminal_config(work_dir: &Path, config: &TerminalConfig) -> Result
 
 /// Read the persisted context ceilings (`[context]`).
 ///
-/// A missing section yields `ContextConfig::default()`, so callers always get a
-/// usable ceiling without a second fallback of their own.
+/// Resolution order: a present workspace `[context]` section wins WHOLE; an
+/// absent one falls through to `~/.loom/config.toml`'s `context.ceiling_tokens`
+/// (see [`crate::user_config::UserConfig`]) when set, then to
+/// `ContextConfig::default()`. So a missing section no longer means "the
+/// default" outright — it means "the user config, then the default".
+///
+/// This fallback is SECTION-level, not key-level, and deliberately so:
+/// `[context]` deserializes through the private `ContextConfigRaw`
+/// (`context_config.rs`), whose entire purpose is to tell "the TOML set this
+/// key" apart from "the TOML left this to derive" *before* the built-in
+/// defaults are baked in by its `From` impl — by the time
+/// `read_section::<ContextConfig>` has returned, that distinction is gone, and
+/// a key-level merge would silently treat a derived default as an explicit
+/// setting. Only `ceiling_tokens` gets a user-level override here;
+/// `subagent_ceiling_tokens` and `model_window_tokens` keep deriving from the
+/// built-ins regardless of the user config, and `ContextConfig::ceiling_for`'s
+/// stage-override rule is untouched.
 pub fn read_context_config(work_dir: &Path) -> Result<ContextConfig> {
-    Ok(read_section(work_dir, CONTEXT_SECTION)?.unwrap_or_default())
+    if let Some(section) = read_section::<ContextConfig>(work_dir, CONTEXT_SECTION)? {
+        return Ok(section);
+    }
+    Ok(ContextConfig::with_user_ceiling(
+        crate::user_config::UserConfig::load().context_ceiling_tokens_set(),
+    ))
 }
 
 /// Persist the context ceilings (`[context]`).
@@ -770,9 +799,10 @@ pub fn write_context_config(work_dir: &Path, config: &ContextConfig) -> Result<(
 ///
 /// ONE resolution order, and every reader of a stage ceiling must use it:
 /// the stage's own `context_ceiling_tokens` -> `[context] ceiling_tokens` ->
-/// [`crate::models::constants::DEFAULT_CONTEXT_CEILING_TOKENS`]. Skipping the
-/// middle tier makes the signal, the governor and the daemon quote three
-/// different numbers for one session.
+/// `~/.loom/config.toml`'s `context.ceiling_tokens` ->
+/// [`crate::models::constants::DEFAULT_CONTEXT_CEILING_TOKENS`]. Skipping a
+/// middle tier makes the signal, the governor and the daemon quote different
+/// numbers for one session.
 ///
 /// Takes the stage's value rather than the `Stage` itself so `fs/` keeps no
 /// dependency on the stage model — pass `stage.context_ceiling_tokens`. A

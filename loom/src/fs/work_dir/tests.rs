@@ -1,6 +1,17 @@
 use super::*;
 use tempfile::TempDir;
 
+/// Write a `~/.loom/config.toml`-shaped file under a caller-supplied temp
+/// directory and return its path, for use with
+/// [`crate::user_config::redirect_user_config`]. Does not touch `$HOME` — the
+/// redirect is a per-thread seam inside `user_config`, not an env var, so
+/// this needs no directory layout beyond "a file somewhere in `temp`".
+fn write_user_config(temp: &TempDir, body: &str) -> PathBuf {
+    let path = temp.path().join("user-config.toml");
+    fs::write(&path, body).unwrap();
+    path
+}
+
 /// A project root the upward walk cannot escape: the `.git` marker bounds it,
 /// so a workspace anywhere above the temp directory can never be adopted.
 fn bare_repo(temp: &TempDir) -> PathBuf {
@@ -478,6 +489,82 @@ fn resolve_context_ceiling_walks_stage_then_config_then_default() {
     // Config tier wins over the default, stage tier over both.
     assert_eq!(resolve_context_ceiling_tokens(&work, None), 250_000);
     assert_eq!(resolve_context_ceiling_tokens(&work, Some(80_000)), 80_000);
+}
+
+#[test]
+fn global_config_tier_terminal_backend_falls_through_to_user_config() {
+    let temp = TempDir::new().unwrap();
+    let path = write_user_config(&temp, "[terminal]\nbackend = \"tmux\"\n");
+    let _redirect = crate::user_config::redirect_user_config(path);
+
+    let work = init_work(&temp);
+
+    // Workspace [terminal] absent: falls through to the user config.
+    let config = read_terminal_config(&work).unwrap();
+    assert_eq!(
+        config.backend,
+        crate::models::session::SessionBackendKind::Tmux
+    );
+
+    // A present workspace [terminal] wins whole, regardless of the user config.
+    write_terminal_config(
+        &work,
+        &TerminalConfig {
+            backend: crate::models::session::SessionBackendKind::Native,
+        },
+    )
+    .unwrap();
+    let config = read_terminal_config(&work).unwrap();
+    assert_eq!(
+        config.backend,
+        crate::models::session::SessionBackendKind::Native
+    );
+}
+
+#[test]
+fn global_config_tier_context_ceiling_falls_through_to_user_config() {
+    let temp = TempDir::new().unwrap();
+    let path = write_user_config(&temp, "[context]\nceiling_tokens = 123456\n");
+    let _redirect = crate::user_config::redirect_user_config(path);
+
+    let work = init_work(&temp);
+
+    // Workspace [context] absent: ceiling_tokens falls through to the user
+    // config; subagent_ceiling_tokens keeps deriving from the built-in.
+    let config = read_context_config(&work).unwrap();
+    assert_eq!(config.ceiling_tokens, 123_456);
+    assert_eq!(
+        config.subagent_ceiling_tokens,
+        crate::models::constants::DEFAULT_SUBAGENT_CEILING_TOKENS
+    );
+
+    // A present workspace [context] wins whole.
+    write_context_config(
+        &work,
+        &ContextConfig {
+            ceiling_tokens: 999_999,
+            subagent_ceiling_tokens: 111_111,
+            model_window_tokens: None,
+        },
+    )
+    .unwrap();
+    let config = read_context_config(&work).unwrap();
+    assert_eq!(config.ceiling_tokens, 999_999);
+    assert_eq!(config.subagent_ceiling_tokens, 111_111);
+}
+
+/// Regression guard for the developer's-own-home hazard: with no redirect
+/// installed, `UserConfig::load` must never fall through to a real
+/// `~/.loom/config.toml` — `loom config` is the tool that creates that file,
+/// so any lib test reaching this path without a redirect would otherwise be
+/// hermetic only on a machine that had never run it.
+#[test]
+fn global_config_tier_context_ceiling_ignores_the_real_home_when_no_redirect_is_installed() {
+    let temp = TempDir::new().unwrap();
+    let work = init_work(&temp);
+
+    let config = read_context_config(&work).unwrap();
+    assert_eq!(config, ContextConfig::default());
 }
 
 /// Resolution order, layout, and the hop count that follows from it.
