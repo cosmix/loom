@@ -29,6 +29,9 @@ use tempfile::TempDir;
 /// Exact text of spawn-guard.sh's `PREAMBLE_LINE` (hooks/spawn-guard.sh:64).
 const PREAMBLE_LINE: &str = "CLAUDE.md is already in your context; the rules below are the ones that bind you as a subagent. The knowledge you need for this task is quoted in this brief - do not open doc/loom/knowledge/ unless the brief says a pull came back empty.";
 
+/// Exact text of spawn-guard.sh's `UNTYPED_MSG` opening sentence (hooks/spawn-guard.sh:209).
+const UNTYPED_MSG_LEAD: &str = "Untyped spawn inherits the model of the spawning session.";
+
 /// Contract C1 key order (hooks/spawn-guard.sh:262).
 const SPAWN_KEYS: &[&str] = &[
     "\"ts\"",
@@ -211,8 +214,7 @@ fn gated_untyped_or_placeholder_spawn_denied() {
             out.stderr
         );
         assert!(
-            out.stderr
-                .contains("Untyped spawn inherits this session's model"),
+            out.stderr.contains(UNTYPED_MSG_LEAD),
             "subagent_type={subagent_type:?} stderr={}",
             out.stderr
         );
