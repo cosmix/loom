@@ -1,7 +1,7 @@
 //! Human review response for a stage
 //!
 //! Allows a human to respond to a stage flagged for review via dispute-criteria.
-//! Supports three actions: approve (resume), force-complete (skip acceptance), reject (block).
+//! Supports three actions: approve (queue a fresh session), force-complete (skip acceptance), reject (block).
 
 use anyhow::{bail, Context, Result};
 use std::path::Path;
@@ -69,7 +69,7 @@ fn show_review_status(stage_id: &str, stage: &crate::models::stage::Stage) -> Re
     }
     println!();
     println!("Available actions:");
-    println!("  loom stage human-review {stage_id} --approve         Resume execution with fresh fix attempts");
+    println!("  loom stage human-review {stage_id} --approve         Queue a fresh session with fresh fix attempts");
     println!("  loom stage human-review {stage_id} --force-complete  Skip acceptance and mark as completed");
     println!(
         "  loom stage human-review {stage_id} --reject <reason> Block the stage with a reason"
@@ -78,7 +78,7 @@ fn show_review_status(stage_id: &str, stage: &crate::models::stage::Stage) -> Re
     Ok(())
 }
 
-/// Approve the review: resume execution with fresh fix attempts.
+/// Approve the review: queue a fresh session with fresh fix attempts.
 fn handle_approve(stage_id: &str, work_dir: &Path) -> Result<()> {
     update_stage(stage_id, work_dir, |stage| {
         stage.try_approve_review()?;
@@ -86,7 +86,7 @@ fn handle_approve(stage_id: &str, work_dir: &Path) -> Result<()> {
         Ok(())
     })?;
 
-    println!("Stage '{stage_id}' approved. Agent can continue with fresh fix attempts.");
+    println!("Stage '{stage_id}' approved: queued for a fresh session with fresh fix attempts.");
 
     Ok(())
 }
@@ -102,10 +102,15 @@ fn handle_force_complete(stage_id: &str, work_dir: &Path) -> Result<()> {
         "WARNING: Force-completing stage '{stage_id}' without acceptance criteria verification."
     );
 
-    // Transition to Executing first so all merge-outcome transitions are legal:
+    // Transition to Executing directly (not via try_approve_review, which now
+    // targets Queued) so all merge-outcome transitions are legal:
     //   Executing → MergeConflict | MergeBlocked | Completed
     // complete_with_merge handles Completed via try_complete(None) internally.
-    let mut stage = update_stage(stage_id, work_dir, |stage| stage.try_approve_review())?;
+    let mut stage = update_stage(stage_id, work_dir, |stage| {
+        stage.try_transition(StageStatus::Executing)?;
+        stage.review_reason = None;
+        Ok(())
+    })?;
 
     let cwd = std::env::current_dir().context("Failed to get current directory")?;
     let repo_root = find_repo_root_from_cwd(&cwd).unwrap_or_else(|| cwd.clone());
@@ -172,24 +177,9 @@ mod tests {
         stage.try_approve_review().unwrap();
         stage.fix_attempts = 0;
 
-        assert_eq!(stage.status, StageStatus::Executing);
+        assert_eq!(stage.status, StageStatus::Queued);
         assert_eq!(stage.fix_attempts, 0);
         assert_eq!(stage.review_reason, None);
-    }
-
-    #[test]
-    fn test_human_review_force_complete() {
-        let temp = TempDir::new().unwrap();
-        setup_stage(&temp, StageStatus::NeedsHumanReview, Some("Bad criteria"));
-
-        let work_dir = temp.path();
-        let mut stage = load_stage("test-stage", work_dir).unwrap();
-        assert_eq!(stage.status, StageStatus::NeedsHumanReview);
-
-        stage.try_force_complete_review().unwrap();
-
-        assert_eq!(stage.status, StageStatus::Completed);
-        assert!(stage.completed_at.is_some());
     }
 
     #[test]
@@ -211,9 +201,9 @@ mod tests {
 
     #[test]
     fn test_human_review_wrong_state() {
-        // Queued -> Executing is valid via try_approve_review's inner transition,
-        // but the command-level check for NeedsHumanReview status should catch it.
-        // Test the transition method directly from a truly invalid state.
+        // Completed is terminal: try_approve_review's inner NeedsHumanReview
+        // -> Queued transition must refuse it regardless of the
+        // command-level NeedsHumanReview check tested elsewhere.
         let mut stage = Stage {
             status: StageStatus::Completed,
             ..Default::default()

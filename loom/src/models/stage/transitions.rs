@@ -15,7 +15,7 @@ impl StageStatus {
     /// - `MergeConflict` -> `Completed` | `Blocked` (when conflicts resolved or resolution fails)
     /// - `CompletedWithFailures` -> `Queued` | `Executing` | `Completed` | `MergeConflict` | `MergeBlocked` | `NeedsAdjudication` | `NeedsHumanReview` (for retry, re-verify, progressive-merge conflict/error after a fixed stage, dispute, or dispute-budget escalation)
     /// - `MergeBlocked` -> `Queued` | `Executing` (for retry)
-    /// - `NeedsHumanReview` -> `Executing` | `Completed` | `Blocked` (when approved, force-completed, or rejected)
+    /// - `NeedsHumanReview` -> `Queued` | `Executing` | `Completed` | `Blocked` (approve queues a fresh session; force-complete steps through `Executing`; reject blocks)
     /// - `NeedsAdjudication` -> `Queued` | `NeedsAdjudication` | `NeedsHumanReview` (verdict applied, evidence loop, or escalation)
     /// - `Completed` is a terminal state
     /// - `Skipped` is a terminal state
@@ -78,18 +78,17 @@ impl StageStatus {
                         | StageStatus::NeedsHumanReview
                 )
             }
-            StageStatus::MergeBlocked => {
-                matches!(
-                    new_status,
-                    StageStatus::Queued | StageStatus::Executing | StageStatus::Completed
-                )
-            }
-            StageStatus::NeedsHumanReview => {
-                matches!(
-                    new_status,
-                    StageStatus::Executing | StageStatus::Completed | StageStatus::Blocked
-                )
-            }
+            StageStatus::MergeBlocked => matches!(
+                new_status,
+                StageStatus::Queued | StageStatus::Executing | StageStatus::Completed
+            ),
+            StageStatus::NeedsHumanReview => matches!(
+                new_status,
+                StageStatus::Executing
+                    | StageStatus::Completed
+                    | StageStatus::Blocked
+                    | StageStatus::Queued
+            ),
             StageStatus::NeedsAdjudication => {
                 matches!(
                     new_status,
@@ -120,13 +119,11 @@ impl StageStatus {
     pub fn valid_transitions(&self) -> Vec<StageStatus> {
         match self {
             StageStatus::WaitingForDeps => vec![StageStatus::Queued, StageStatus::Skipped],
-            StageStatus::Queued => {
-                vec![
-                    StageStatus::Executing,
-                    StageStatus::Skipped,
-                    StageStatus::Blocked,
-                ]
-            }
+            StageStatus::Queued => vec![
+                StageStatus::Executing,
+                StageStatus::Skipped,
+                StageStatus::Blocked,
+            ],
             StageStatus::Executing => vec![
                 StageStatus::Completed,
                 StageStatus::Blocked,
@@ -168,6 +165,7 @@ impl StageStatus {
                 StageStatus::Executing,
                 StageStatus::Completed,
                 StageStatus::Blocked,
+                StageStatus::Queued,
             ],
             StageStatus::NeedsAdjudication => vec![
                 StageStatus::Queued,

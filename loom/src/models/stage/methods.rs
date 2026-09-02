@@ -395,31 +395,15 @@ impl Stage {
         Ok(())
     }
 
-    /// Approve human review and resume execution.
+    /// Approve human review and queue a fresh session.
     ///
-    /// Transitions from NeedsHumanReview back to Executing.
+    /// Transitions from NeedsHumanReview to Queued: the escalating agent's session is already gone.
     ///
     /// # Returns
     /// `Ok(())` if the transition succeeded, `Err` if invalid
     pub fn try_approve_review(&mut self) -> Result<()> {
-        self.try_transition(StageStatus::Executing)?;
+        self.try_transition(StageStatus::Queued)?;
         self.review_reason = None;
-        Ok(())
-    }
-
-    /// Force-complete a stage that is in human review.
-    ///
-    /// Transitions from NeedsHumanReview to Completed.
-    ///
-    /// # Returns
-    /// `Ok(())` if the transition succeeded, `Err` if invalid
-    pub fn try_force_complete_review(&mut self) -> Result<()> {
-        self.try_transition(StageStatus::Completed)?;
-        let now = Utc::now();
-        self.completed_at = Some(now);
-        if let Some(start) = self.started_at {
-            self.duration_secs = Some(now.signed_duration_since(start).num_seconds());
-        }
         Ok(())
     }
 

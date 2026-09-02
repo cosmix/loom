@@ -142,9 +142,9 @@ fn test_human_review_approve_workflow() {
         Some("Suspicious changes detected".to_string())
     );
 
-    // NeedsHumanReview -> Executing (approved)
+    // NeedsHumanReview -> Queued (approved: a fresh session, not a resume)
     assert!(stage.try_approve_review().is_ok());
-    assert_eq!(stage.status, StageStatus::Executing);
+    assert_eq!(stage.status, StageStatus::Queued);
     assert_eq!(stage.review_reason, None);
 }
 
@@ -164,24 +164,6 @@ fn test_human_review_reject_workflow() {
         .is_ok());
     assert_eq!(stage.status, StageStatus::Blocked);
     assert_eq!(stage.review_reason, Some("Needs refactoring".to_string()));
-}
-
-#[test]
-fn test_human_review_force_complete_workflow() {
-    let mut stage = create_test_stage(StageStatus::Executing);
-    stage.started_at = Some(chrono::Utc::now());
-
-    // Executing -> NeedsHumanReview
-    assert!(stage
-        .try_request_human_review("Minor issues found".to_string())
-        .is_ok());
-    assert_eq!(stage.status, StageStatus::NeedsHumanReview);
-
-    // NeedsHumanReview -> Completed (force-completed)
-    assert!(stage.try_force_complete_review().is_ok());
-    assert_eq!(stage.status, StageStatus::Completed);
-    assert!(stage.completed_at.is_some());
-    assert!(stage.duration_secs.is_some());
 }
 
 #[test]

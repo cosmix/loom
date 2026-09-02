@@ -158,10 +158,17 @@ fn test_needs_human_review_can_transition_to_blocked() {
 }
 
 #[test]
+fn test_needs_human_review_can_transition_to_queued() {
+    // Approve queues a fresh session rather than resuming the escalating
+    // agent's session, which the daemon has already retired.
+    let status = StageStatus::NeedsHumanReview;
+    assert!(status.can_transition_to(&StageStatus::Queued));
+}
+
+#[test]
 fn test_needs_human_review_cannot_transition_to_invalid_states() {
     let status = StageStatus::NeedsHumanReview;
     assert!(!status.can_transition_to(&StageStatus::WaitingForDeps));
-    assert!(!status.can_transition_to(&StageStatus::Queued));
     assert!(!status.can_transition_to(&StageStatus::NeedsHandoff));
     assert!(!status.can_transition_to(&StageStatus::Skipped));
 }

@@ -123,5 +123,6 @@ fn test_valid_transitions_needs_human_review() {
     assert!(transitions.contains(&StageStatus::Executing));
     assert!(transitions.contains(&StageStatus::Completed));
     assert!(transitions.contains(&StageStatus::Blocked));
-    assert_eq!(transitions.len(), 3);
+    assert!(transitions.contains(&StageStatus::Queued));
+    assert_eq!(transitions.len(), 4);
 }
