@@ -5,18 +5,17 @@
 # before this file was committed - none is invented, and `expect`/`forbid`
 # never name an id that did not actually come back for its query.
 #
-# Cases 1-5 (the two prose/symbol-collision cases, the filesystem-path case,
-# and the two machine-generated-prompt cases) are EXPECTED TO FAIL today:
-# their `forbid` ids are exactly what the live index returns for these
-# queries right now, through the failure shapes Appendix A.1-A.6 fix
-# (identifier-shaped evidence for exact rungs, query stopwording + a
-# candidacy floor, test-path downweight, magnitude-aware fusion, the emit
-# floor). They are the regression suite for that work: once A.1-A.6 land,
-# these cases should flip to PASS on their own, and a case flipping back to
-# FAIL after that is a real regression, not eval-harness noise.
+# The `forbid` cases (the three prose/symbol-collision cases, the
+# filesystem-path case, and the two machine-generated-prompt cases) were
+# seeded FAILING: their `forbid` ids are what the live index returned for
+# these queries before the failure shapes Appendix A.1-A.6/A.24 addressed
+# (identifier-shaped evidence for exact rungs, query stopwording, the source
+# channel's candidacy floor, test-path downweight, magnitude-aware fusion, the
+# emit floor). All six pass today, so any one of them going FAIL again is a
+# real regression rather than eval-harness noise.
 #
-# Cases 6-13 are current wins (`expect` hits within the top 5, most already
-# ranked 1st or 2nd) that must NOT regress while Wave 2 lands.
+# The `expect` cases are wins that must NOT regress: a hit within the top 5,
+# most of them ranked 1st.
 #
 # pass_floor is Appendix A.20's initial value; raise it once precision
 # improves so the gate keeps tracking the state of the art instead of a
@@ -37,6 +36,16 @@ cases:
     forbid:
       - "loom/src/fs/permissions/hooks.rs#function:configure_loom_hooks"
       - "entry-points.md#command-dispatch-cli-types-rs#0"
+
+  # A one-word collision, which the two above cannot reach: `remaining` is
+  # neither back-ticked nor identifier-shaped, so it was admitted by corpus
+  # rarity alone (`ExactGate::is_rare`) and led this pack at 94.7 points with an
+  # `exact-symbol` reason. Observed in a real Knowledge Brief, not constructed.
+  - name: prose-symbol-collision-remaining-knowledge-files
+    query: "read the remaining knowledge files that are relevant"
+    budget_tokens: 800
+    forbid:
+      - "loom/src/daemon/server/admission.rs#function:remaining"
 
   # --- Failure shape 2: a filesystem path extracts prose-collision terms --
   - name: filesystem-path-write-home-collision
@@ -71,10 +80,14 @@ cases:
     expect:
       - "mistakes/phantom-merges.md#phantom-merges-from-defensive-assume-merged-branches-2026-04-15#0"
 
+  # Second expect id observed at rank 4 on 2026-09-03, at this case's 1500-token
+  # budget, after the thin-survivor stopword rescue. The original chunk ranks
+  # ~29th because it never contains `rules`, the query's one high-idf survivor.
   - name: genuine-win-sandbox-settings-rules
     query: "sandbox settings rules for claude code worktree sessions"
     expect:
       - "mistakes/sandbox-and-settings.md#worktree-settings-are-a-whole-object-rebuild-unemitted-keys-vanish-2026-08-07#0"
+      - "mistakes/sandbox-and-settings.md#sandbox-contradictory-path-rules#0"
 
   - name: genuine-win-source-graph-honesty-contract
     query: "Honesty Contract"
@@ -90,6 +103,19 @@ cases:
     query: "per session identity persisted in settings env blocks goes stale"
     expect:
       - "mistakes.md#per-session-identity-persisted-in-settings-env-blocks-goes-stale-and-shadows-the-wrapper-env-2026-07-22#0"
+
+  # A tier-1 summary and the tier-2 topic it spilled share a heading verbatim
+  # (`loom knowledge update` scaffolds the topic file with it), so they scored
+  # within a rounding error of each other on this query and BOTH came back —
+  # the summary spending budget to point at text directly above it. The packer
+  # now takes the detail and drops the summary, keeping the summary only when
+  # the detail does not fit the budget (`context/pack.rs::tier1_twin`).
+  - name: tier-twin-sandbox-contradictory-path-rules
+    query: "Sandbox: Contradictory Path Rules"
+    expect:
+      - "mistakes/sandbox-and-settings.md#sandbox-contradictory-path-rules#0"
+    forbid:
+      - "mistakes.md#sandbox-contradictory-path-rules#0"
 
   # --- Symbol queries that SHOULD reach source nodes ----------------------
   - name: symbol-query-backticked-plan-key
