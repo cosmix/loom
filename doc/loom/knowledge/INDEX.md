@@ -12,9 +12,9 @@
 | [entry-points.md](entry-points.md) | Key files agents should read first | 559 |
 | [patterns.md](patterns.md) | Architectural patterns discovered in the codebase | 761 |
 | [conventions.md](conventions.md) | Coding conventions discovered in the codebase | 666 |
-| [mistakes.md](mistakes.md) | Mistakes made and lessons learned - what to avoid | 962 |
+| [mistakes.md](mistakes.md) | Mistakes made and lessons learned - what to avoid | 966 |
 | [stack.md](stack.md) | Dependencies, frameworks, and tooling used in the project | 102 |
-| [concerns.md](concerns.md) | Technical debt, warnings, and issues to address | 772 |
+| [concerns.md](concerns.md) | Technical debt, warnings, and issues to address | 776 |
 
 ## Tier 2 — Topics
 
@@ -60,6 +60,7 @@
 
 | Topic | Title | Blurb | Lines |
 | --- | --- | --- | --- |
+| [mistakes/adjudication-autonomy-deadlock.md](mistakes/adjudication-autonomy-deadlock.md) | Adjudication Autonomy Deadlock | An accepted verdict deadlocked the run: adoption by stage_id alone, requeue with unanswered disputes, a live disputing… | 73 |
 | [mistakes/ambient-filesystem-trust.md](mistakes/ambient-filesystem-trust.md) | Ambient Filesystem Trust | Why an ancestor directory merely named .git is not evidence of a real repository, and the validation this requires. | 34 |
 | [mistakes/codex-lane-rogue-wrapper.md](mistakes/codex-lane-rogue-wrapper.md) | Codex Lane Rogue Wrapper | A forwarding wrapper that did the task itself instead of forwarding, and why the codex sandbox state-dir escape hatch… | 117 |
 | [mistakes/codex-navigation.md](mistakes/codex-navigation.md) | Codex Navigation | Forbidding reads instead of fixing a slow reader - a misdiagnosis and its correction. | 25 |
@@ -98,4 +99,5 @@
 | [concerns/codex-heartbeat-starvation.md](concerns/codex-heartbeat-starvation.md) | Codex Heartbeat Starvation | Topic notes for the concerns knowledge area. | 57 |
 | [concerns/daemon-singleton.md](concerns/daemon-singleton.md) | Daemon Singleton (Resolved 2026-08-08) | Historical incident: two daemons once attached to the same `.work/`. Startup now holds an | 98 |
 | [concerns/iterm2-window-teardown.md](concerns/iterm2-window-teardown.md) | Iterm2 Window Teardown | Topic notes for the concerns knowledge area. | 48 |
+| [concerns/sandbox-protected-hooks-dir.md](concerns/sandbox-protected-hooks-dir.md) | Sandbox Protected hooks/ Directory | Claude Code's sandbox write-protects the project-root `hooks/` directory as part of its bare-git-repo rule; shell… | 43 |
 | [concerns/sandbox-write-rules-inert.md](concerns/sandbox-write-rules-inert.md) | Sandbox Write Rules Inert | Sandbox Write() rules that are inert in loom's generated stage settings and in the | 62 |

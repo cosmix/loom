@@ -770,3 +770,7 @@ avoid.
 **Fix shape if taken up:** carry the never-built case as its OWN field rather than folding it into
 `degraded`, so the status line can say it without feeding the rebuild trigger. Resolve the question
 at its own source, and default in the fail-safe direction (do not claim currency).
+
+## Claude Code Sandbox Protects the Repo's hooks/ Directory (2026-09-02)
+
+The project-root `hooks/` directory is write-protected by Claude Code's sandbox as part of its bare-git-repo rule, so shell writes there fail even when permission config would allow them. [Sandbox Protected hooks/ Directory](concerns/sandbox-protected-hooks-dir.md)

@@ -960,3 +960,7 @@ returns, and be most suspicious when it can reach a shared root where other proc
 Surfaced as 77 test failures in seven unrelated modules, which looked environmental and were not.
 
 → [Ambient Filesystem Trust](mistakes/ambient-filesystem-trust.md)
+
+## Adjudication Autonomy Deadlock (2026-09-02)
+
+Session adoption matched by `stage_id` alone, an unconditional re-queue that orphaned a sibling dispute, a disputing agent never retired, and no watchdog for "Executing with nobody working" combined into a 90-minute deadlock. [Adjudication Autonomy Deadlock](mistakes/adjudication-autonomy-deadlock.md)
