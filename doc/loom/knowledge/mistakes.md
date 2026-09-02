@@ -93,7 +93,11 @@ emulator, ambient git config leaks into shelling tests, an inherited descriptor 
 release, the maintainability ledger rejects a grown function, `TODO` in a string literal trips the
 stub checker, CI's docs job runs a rustdoc lint (`private_intra_doc_links`) that no local gate
 evaluates, CI's clippy job follows rustup `stable` so a new Rust release can redden main with no
-code change, and a reviewer's behaviour claim must be checked against the diff before acting on it.
+code change, a reviewer's behaviour claim must be checked against the diff before acting on it,
+sandbox-denied tests need a self-probe rather than a plan-level `--skip` list, the same full suite
+running once per stage/check/judge is now caught by an acceptance-result cache, dependency compiles
+are shared across worktrees via `sccache`, and the maintainability ledger is exact in both
+directions and measured after `cargo fmt`.
 
 → [Testing & Lint](mistakes/testing-and-lint.md)
 

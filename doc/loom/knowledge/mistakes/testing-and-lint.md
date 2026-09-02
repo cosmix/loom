@@ -270,3 +270,43 @@ hardcoded) and pipe `y` to stdin for `confirm_overwrites` (`install.sh:486`, whi
 stdin, not the tty) — but the run will still abort at `cleanup_backups()`'s tty read at the very
 end unless a tty is attached, so treat a `No such device or address` failure AFTER the install
 steps' own success output as a harness artifact, not evidence the install failed.
+
+## Sandbox-Sensitive Tests Carried a Skip List Into Every Plan Stage (2026-09-02)
+
+**What happened:** 22 tests cannot pass inside a Claude Code session sandbox for environmental reasons — 14 `hooks_*` integration tests whose deny branch needs `is_ancestor` to walk the process tree via `ps`, two `daemon::rpc` tests that bind an AF_UNIX socket, three that read process information, and two `fs::permissions` tests that need `dirs::home_dir()` to resolve. A plan carried `cargo test --all-targets -- --skip <22 names>` on every stage's acceptance criteria. Every stage still disputed the skip list, so each dispute cost a judge round and a full suite run, and the judges kept re-granting the same 22 names.
+
+**Why:** the tests asserted an outcome the sandbox could not produce and had no way to say so. The skip list lived in the plan text instead of in the tests themselves, so nothing in the test run distinguished "environment cannot support this" from "this failed."
+
+**Prevention:** a test that depends on a sandbox-denied capability probes for it first and skips loudly (`SKIP <test>: <why>`), the way `tests/e2e/tmux_backend.rs::skip_unless_tmux_can_bind` already did. A plan should never carry `--skip <name list>` in its acceptance criteria.
+
+**Fix:** `src/process/sandbox_probe.rs` (`process_tree_visible`, `unix_socket_bindable`, `path_writable`, `home_dir_resolvable`, `skip_unless`; `LOOM_TEST_REQUIRE_SANDBOX_FREE=1` turns a skip into a failure) guards 21 of the 22 tests. The remaining one, `commands::attach::wait::tests::diagnose_sessions_names_the_work_dir_and_every_session`, passes in the sandbox and shows no environmental dependency, so it was left unguarded.
+
+## The Same Suite Ran Once Per Stage, Per Check, Per Judge (2026-09-02)
+
+**What happened:** five stages of one plan each carried the unfiltered `cargo test --all-targets` gate as an acceptance criterion. Each copy ran once in the agent's own `loom check`, again in `loom stage complete`, and again for every adjudication of that criterion; integration-verify then ran the whole suite once more.
+
+**Why:** the plan proved the entire repository at every stage instead of proving each stage's own code, and nothing remembered a pass already recorded against an unchanged tree.
+
+**Prevention:** run the full suite once, in integration-verify. A standard stage's acceptance criterion should be `cargo test --lib <module>::`, `cargo test --test <target>`, or an equivalent name filter. `loom plan verify` now warns on a full-suite run outside integration-verify (`plan/schema/validation_suite.rs::is_full_suite_run`), and the plan-writer skill states the rule as item 6 of its acceptance checklist.
+
+**Fix:** `verify/criteria/cache.rs` caches criterion passes under `<work_dir>/acceptance-cache/<sha256>.json`, keyed by the criterion text, the acceptance directory, `git rev-parse HEAD`, the raw `git status --porcelain=v2 --untracked-files=all -z` output, and the content hash of every listed path. Failures are never cached. A command mentioning `$HOME`, `~/`, `mktemp`, or `LOOM_HOME` is never cached. `loom check --no-cache`, `loom stage complete --no-cache`, or `LOOM_ACCEPTANCE_CACHE=0` bypass the cache; a cached pass prints as `✓ passed (cached)`. A command that references any git-ignored path (a built binary under target/, for instance) is never cached, because the digest covers the tracked tree only; cargo test and cargo build stay cacheable since they rebuild from that tree.
+
+## Every Stage Worktree Compiled Its Dependencies From Scratch (2026-09-02)
+
+**What happened:** each stage worktree has its own `target/` directory, so every stage spent minutes recompiling the same dependency crates before its first test ran.
+
+**Why:** a shared `CARGO_TARGET_DIR` across worktrees is unsafe here — parallel stages would overwrite each other's `debug/loom`, which acceptance criteria invoke by relative path — and nothing else shared compiled output between worktrees.
+
+**Prevention:** share rustc output through `sccache`, which caches per input hash and leaves every worktree its own `target/` untouched.
+
+**Fix:** `orchestrator/terminal/native/build_cache.rs` locates `sccache` (`LOOM_SCCACHE=0` disables it, `LOOM_SCCACHE=<path>` pins it, otherwise `which` then `~/.cargo/bin`, `~/.local/bin`, `/opt/homebrew/bin`, `/usr/local/bin`). The session wrapper exports `RUSTC_WRAPPER=<path>` for every session kind when found, and forwards an operator's own `RUSTC_WRAPPER`, `SCCACHE_DIR`, `SCCACHE_CACHE_SIZE`; the confined acceptance environment allows the same three. `loom run` and `loom doctor` print one line stating whether sccache was found. It is not installed on the development machine as of this writing (`brew install sccache`).
+
+## The Ledger Is Exact in Both Directions and Measured After rustfmt (2026-09-02)
+
+**What happened:** two subagents packed struct fields onto one line to hold a pinned maintainability-ledger count. `cargo fmt` re-expanded the lines on the next commit, and six ledger entries reported growth.
+
+**Why:** the ledger records exact line counts, and `cargo fmt` runs before the gate measures them. A count that only holds under un-formatted source is not the count the gate will see.
+
+**Prevention:** `maintainability-baseline.txt` entries are exact in both directions — a shrink must be written back to the ledger, not left as a stale higher number, and growth is never recordable no matter how it was produced. Run `cargo fmt` before measuring a function or file for the ledger; packing arguments or fields onto one line to dodge a count does not survive the formatter.
+
+**Fix:** re-ran `cargo fmt`, remeasured the six affected entries, and wrote back their post-format line counts.

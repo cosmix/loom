@@ -318,6 +318,11 @@ The legacy `ToolEvent` reader remains able to consume an older `.work/tool-event
 
 **Both helpers are now implemented:** `disputes_dir()` → `.work/disputes/` (`fs/work_dir.rs:239`) and `plan_versions_dir()` → `.work/plan_versions/` (`fs/work_dir.rs:244`)
 
+Two more subdirectories, resolved by their own modules rather than a `WorkDir` helper:
+
+- `acceptance-cache/` — cached acceptance passes, `<sha256>.json`, keyed by criterion text and tree digest (`verify/criteria/cache.rs`)
+- `capsules/` — per-session generated Claude Code settings files (`<session-id>.settings.json`) for judge sessions, written at spawn and removed on close (`terminal/native/session_settings.rs`)
+
 ## Sandbox Settings — ANTHROPIC_API_KEY
 
 `sandbox/settings.rs:16-34` — `SENSITIVE_ENV_KEYS` array filters `ANTHROPIC_API_KEY` from agent sandbox environments.

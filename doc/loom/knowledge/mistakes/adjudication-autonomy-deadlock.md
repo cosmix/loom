@@ -141,3 +141,13 @@
 **Prevention:** when a state stops for a human, every surface that announces it (status row, attention block, daemon console, notification, the stored reason) names the exact command and the choices; test the hint text against the real subcommand.
 
 **Fix:** the attention block renders whenever a stage needs a decision (`--verbose` now expands only the `Evidence:` listing); its `NeedsHumanReview` hint is `loom stage human-review <id>` followed by the three choices (`--approve` queues a fresh session, `--force-complete`, `--reject <reason>`); the daemon line and notification add `Next: loom stage human-review <id>`; the reject reason carries the absolute `verdict.md` path and the command.
+
+## The Daemon Shut Down While the Last Stage Was Being Re-queued
+
+**What happened:** `knowledge-distill`, the last incomplete stage of a plan, filed a dispute. The judge's verdict was applied, which moved the stage on disk from `NeedsAdjudication` to `Queued`, and the judge was closed, which emptied `active_sessions`. On that same tick, before `sync_graph_with_stage_files` had re-marked the graph node, `all_stages_terminal` (`loom/src/orchestrator/core/recovery.rs`) read the node's stale `NeedsAdjudication`, treated it as terminal, printed "All stages are in terminal state", and the daemon exited with the stage sitting in `Queued` and nothing to spawn it.
+
+**Why:** the shutdown decision trusted the in-memory graph, which lags the stage file by up to a tick after any verdict, approve, retry, or amendment, and it counted `NeedsAdjudication` as terminal even though a stage waiting for a judge needs the daemon alive to spawn, watch, and close that judge.
+
+**Prevention:** a decision to exit the daemon reads the stage files, never the graph, and no state that still needs the daemon (a judge to spawn, a queued stage to start) is terminal.
+
+**Fix:** `all_stages_terminal` short-circuits only on graph `Completed`/`Skipped` and otherwise decides from the stage file through the pure `stage_file_is_terminal` (`recovery.rs`), an exhaustive match: `NeedsAdjudication`, `Executing`, `WaitingForInput`, `NeedsHandoff`, and an unheld `Queued`/`WaitingForDeps` are never terminal; `Blocked` is terminal only when no retry is pending; `NeedsHumanReview` and the merge-failure states stay terminal. `recovery_terminal_tests.rs` pins the incident shape (graph `NeedsAdjudication`, file `Queued`, no sessions).

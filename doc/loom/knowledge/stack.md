@@ -59,6 +59,7 @@
 ## External Agent Binaries (`loom pressure`)
 
 - `codex` CLI — required at runtime by `loom pressure` for the Codex review rounds. Resolved by `loom/src/codex.rs::find_codex_path` (`which::which`, then `~/.bun/bin`, `~/.local/bin`, `~/.npm-global/bin`, `~/.cargo/bin`, `/usr/local/bin`, `/opt/homebrew/bin`). Typically installed via bun/npm.
+- `sccache` — optional; when installed, loom exports `RUSTC_WRAPPER` into every session and acceptance run so dependency compiles are shared across worktrees (`orchestrator/terminal/native/build_cache.rs`).
 - `claude` CLI — likewise required by `loom pressure` (resolved by `find_claude_path`).
 
 - `tmux` — **optional** runtime dependency, required only when the terminal backend is set to `tmux`
