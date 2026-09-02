@@ -17,7 +17,7 @@ file src/commands/self_update/mod.rs 465
 file src/commands/self_update/tests.rs 588
 file src/commands/stage/complete.rs 861
 file src/commands/stage/merge.rs 546
-file src/commands/stage/tests/complete.rs 583
+file src/commands/stage/tests/complete.rs 544
 file src/commands/status/ui/tui/app.rs 410
 file src/commands/status/ui/tui/renderer.rs 414
 file src/context/refresh/tests_source_graph.rs 679
@@ -39,7 +39,7 @@ file src/models/stage/methods.rs 801
 file src/models/stage/types.rs 1231
 file src/orchestrator/core/merge_handler.rs 1330
 file src/orchestrator/core/orchestrator.rs 547
-file src/orchestrator/core/recovery.rs 1579
+file src/orchestrator/core/recovery.rs 1570
 file src/orchestrator/core/stage_executor.rs 790
 file src/orchestrator/merge_attribution.rs 543
 file src/orchestrator/signals/cache.rs 594
@@ -69,8 +69,8 @@ file tests/failure_resume.rs 468
 file tests/integration/merge_conflict_recovery.rs 412
 file tests/integration/plan_verify.rs 1028
 
-function src/cli/dispatch.rs dispatch 126
-function src/cli/dispatch_stage.rs dispatch_stage 68
+function src/cli/dispatch.rs dispatch 119
+function src/cli/dispatch_stage.rs dispatch_stage 51
 function src/commands/clean/mod.rs print_summary 52
 function src/commands/clean/sessions.rs test_clean_sessions_reaps_live_only_when_destroying_state 57
 function src/commands/clean/worktrees.rs clean_worktrees 110
@@ -111,7 +111,7 @@ function src/commands/sessions.rs kill 54
 function src/commands/sessions.rs kill_single_session 51
 function src/commands/skill_index.rs parse_skill_triggers 80
 function src/commands/stage/acceptance_runner.rs resolve_acceptance_dir 60
-function src/commands/stage/complete.rs complete 176
+function src/commands/stage/complete.rs complete 173
 function src/commands/stage/complete.rs handle_force_unsafe_completion 83
 function src/commands/stage/complete.rs route_complete_for_conflicts 159
 function src/commands/stage/complete.rs run_verification_phase 99
@@ -123,7 +123,7 @@ function src/commands/stage/progressive_complete.rs attempt_progressive_merge 11
 function src/commands/stage/progressive_complete.rs complete_with_merge 80
 function src/commands/stage/recover.rs test_determine_recovery_reason 89
 function src/commands/stage/skip_retry.rs retry 214
-function src/commands/stage/tests/complete.rs test_complete_no_verify_refuses_zero_commits_ahead 73
+function src/commands/stage/tests/complete.rs test_complete_no_verify_refuses_zero_commits_ahead 66
 function src/commands/status.rs execute_static 81
 function src/commands/status/data/collector.rs build_stage_summary 56
 function src/commands/status/data/collector_tests.rs make_test_stage 68
@@ -205,7 +205,6 @@ function src/orchestrator/core/merge_handler.rs try_auto_merge 243
 function src/orchestrator/core/merge_handler.rs verify_and_finalize_merge 68
 function src/orchestrator/core/orchestrator.rs new 67
 function src/orchestrator/core/orchestrator.rs run 246
-function src/orchestrator/core/recovery.rs all_stages_terminal 62
 function src/orchestrator/core/recovery.rs orphan_with_commits_ahead_signals_handoff_input 64
 function src/orchestrator/core/recovery.rs recover_orphaned_sessions 164
 function src/orchestrator/core/recovery.rs recovery_commit_and_merge_reconciliation_preserve_each_other 57
