@@ -1,6 +1,7 @@
 mod dispatch;
 mod dispatch_stage;
 mod types;
+pub mod types_config;
 mod types_memory;
 mod types_ops;
 mod types_stage;

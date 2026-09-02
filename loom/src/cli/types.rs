@@ -1,6 +1,7 @@
 use crate::validation::clap_id_validator;
 use clap::{Parser, Subcommand};
 
+pub use super::types_config::ConfigArgs;
 pub use super::types_memory::{KnowledgeCommands, MemoryCommands};
 pub use super::types_ops::{
     ContextCommands, HookCommands, PlanCommands, SessionsCommands, WorktreeCommands,
@@ -196,6 +197,9 @@ pub enum Commands {
 
     /// Update loom and configuration files
     SelfUpdate,
+
+    /// Read or write the user config at ~/.loom/config.toml
+    Config(ConfigArgs),
 
     /// Clean up loom resources (worktrees, sessions, state)
     Clean {

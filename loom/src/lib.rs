@@ -24,6 +24,7 @@ pub mod remote_control;
 pub mod sandbox;
 pub mod skills;
 pub mod telemetry;
+pub mod user_config;
 pub mod utils;
 pub mod validation;
 pub mod verify;
