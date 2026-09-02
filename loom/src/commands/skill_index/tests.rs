@@ -111,7 +111,7 @@ fn execute_propagates_index_write_failure() {
     .unwrap();
     std::fs::create_dir_all(home.path().join(".claude/hooks/loom/skill-keywords.json")).unwrap();
 
-    let error = execute_in_home(home.path()).unwrap_err();
+    let error = execute_in_home(home.path(), true).unwrap_err();
 
     assert!(error.to_string().contains("Failed to write"));
 }

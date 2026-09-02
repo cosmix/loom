@@ -30,9 +30,9 @@ pub use hooks::{
     loom_hooks_config,
 };
 pub use settings::{
-    ensure_loom_hooks_local, ensure_loom_permissions, ensure_loom_permissions_to,
-    scrub_main_repo_settings_identity, scrub_session_identity_env, scrub_stale_work_dir_env,
-    settings_json_has_hooks, SESSION_IDENTITY_ENV_KEYS,
+    ensure_loom_hooks_local, ensure_loom_permissions, ensure_loom_permissions_quiet,
+    ensure_loom_permissions_to, scrub_main_repo_settings_identity, scrub_session_identity_env,
+    scrub_stale_work_dir_env, settings_json_has_hooks, SESSION_IDENTITY_ENV_KEYS,
 };
 pub use sync::{sync_worktree_permissions, sync_worktree_permissions_with_working_dir, SyncResult};
 pub use trust::{migrate_legacy_trust, trust_worktree, untrust_worktree};

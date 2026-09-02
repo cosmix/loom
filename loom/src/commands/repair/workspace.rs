@@ -205,7 +205,10 @@ pub struct AppliedRepair {
 
 /// Run the full check set and apply every workspace repair that is safe to
 /// run unattended. Prints NOTHING: an empty vector means the workspace
-/// needed no unattended repair, and the caller renders the report.
+/// needed no unattended repair, and the caller renders the report. The
+/// `HooksAndSettings` fix is the only variant with output of its own; it is
+/// routed through `WorkspaceFix::apply(.., verbose: false)`, which drives it
+/// through the quiet permission/skill-index variants instead.
 pub fn repair_workspace(repo_root: &Path) -> Result<Vec<AppliedRepair>> {
     repair_workspace_from(repo_root, super::check_all_issues(repo_root))
 }
@@ -232,7 +235,7 @@ pub(crate) fn repair_workspace_from(
         if !fix.unattended() {
             continue;
         }
-        if let Ok(true) = fix.apply(repo_root) {
+        if let Ok(true) = fix.apply(repo_root, false) {
             applied.push(AppliedRepair {
                 description: issue.description.clone(),
             });
@@ -288,14 +291,16 @@ impl WorkspaceFix {
         !matches!(self, Self::InvalidWork)
     }
 
-    pub(super) fn apply(&self, repo_root: &Path) -> Result<bool> {
+    /// `verbose` only affects `HooksAndSettings`, which is the sole variant
+    /// with output of its own; every other arm ignores it.
+    pub(super) fn apply(&self, repo_root: &Path, verbose: bool) -> Result<bool> {
         match self {
             Self::WorkSymlink => fix_work_symlink(repo_root).map(|()| true),
             Self::InvalidWork => fix_invalid_work(repo_root).map(|()| true),
             Self::GitignoreWork => fix_gitignore_work(repo_root).map(|()| true),
             Self::GitignoreWorktrees => fix_gitignore_worktrees(repo_root).map(|()| true),
             Self::PreCommitHook => crate::git::install_pre_commit_hook(repo_root).map(|_| true),
-            Self::HooksAndSettings => super::hooks::fix_hooks(repo_root).map(|()| true),
+            Self::HooksAndSettings => super::hooks::fix_hooks(repo_root, verbose).map(|()| true),
             Self::HookScripts => crate::fs::permissions::install_loom_hooks().map(|_| true),
         }
     }

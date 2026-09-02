@@ -225,7 +225,7 @@ fn fix_issue(repo_root: &Path, issue: &RepairIssue) -> Result<bool> {
 /// entries, and missing or incomplete hook installation. `None` means this
 /// issue is not one of these.
 fn fix_workspace_issue(repo_root: &Path, issue: &RepairIssue) -> Option<Result<bool>> {
-    workspace::WorkspaceFix::classify(&issue.description).map(|fix| fix.apply(repo_root))
+    workspace::WorkspaceFix::classify(&issue.description).map(|fix| fix.apply(repo_root, true))
 }
 
 /// Fixes for settings-file drift and stage-state issues: stale

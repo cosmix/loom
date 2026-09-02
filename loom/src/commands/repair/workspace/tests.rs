@@ -1,4 +1,6 @@
+use std::cell::RefCell;
 use std::fs;
+use std::rc::Rc;
 
 use super::*;
 
@@ -213,4 +215,44 @@ fn workspace_repair_leaves_a_worktree_symlink_in_place() {
         worktree_root.join(".loom/work").is_symlink(),
         "the worktree symlink must survive repair"
     );
+}
+
+/// `WorkspaceFix::HooksAndSettings::apply` dispatches to `hooks::fix_hooks`,
+/// which is not directly observable from here: both its `verbose` branches
+/// call `install_loom_hooks()` unconditionally, which writes to the real
+/// `~/.claude/hooks/loom/` regardless of `repo_root` — there is no hermetic
+/// way to call `WorkspaceFix::HooksAndSettings.apply(root, false)` and assert
+/// it touched nothing outside `root`, since it always does. What IS provable
+/// without touching the real home directory is `fix_hooks_with`'s own
+/// contract (install, then permissions, then rebuild, in that order) via
+/// recording closures — this is the same seam `hook_repair_propagates_skill_index_write_failure`
+/// in `repair/tests.rs` exercises, just asserting order instead of failure
+/// propagation.
+#[test]
+fn fix_hooks_with_runs_install_then_permissions_then_rebuild_in_order() {
+    let root = tempfile::tempdir().unwrap();
+    let calls: Rc<RefCell<Vec<&'static str>>> = Rc::new(RefCell::new(Vec::new()));
+
+    let install_calls = Rc::clone(&calls);
+    let permissions_calls = Rc::clone(&calls);
+    let rebuild_calls = Rc::clone(&calls);
+
+    crate::commands::repair::hooks::fix_hooks_with(
+        root.path(),
+        move || {
+            install_calls.borrow_mut().push("install");
+            Ok(())
+        },
+        move |_repo_root| {
+            permissions_calls.borrow_mut().push("permissions");
+            Ok(())
+        },
+        move || {
+            rebuild_calls.borrow_mut().push("rebuild");
+            Ok(())
+        },
+    )
+    .unwrap();
+
+    assert_eq!(*calls.borrow(), vec!["install", "permissions", "rebuild"]);
 }

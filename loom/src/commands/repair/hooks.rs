@@ -69,15 +69,29 @@ fn has_all_loom_permissions(val: &serde_json::Value) -> bool {
         .unwrap_or(false)
 }
 
-/// Install Claude Code hooks, configure permissions, and rebuild the skill keyword index
-pub(super) fn fix_hooks(repo_root: &Path) -> Result<()> {
-    use crate::fs::permissions::{ensure_loom_permissions, install_loom_hooks};
-    fix_hooks_with(
-        repo_root,
-        || install_loom_hooks().map(|_| ()),
-        ensure_loom_permissions,
-        rebuild_skill_index,
-    )?;
+/// Install Claude Code hooks, configure permissions, and rebuild the skill
+/// keyword index. `verbose = true` (`loom repair --fix`) keeps today's
+/// per-step output; `verbose = false` (`loom init`'s unattended repair pass)
+/// does the identical work through the quiet variants and prints nothing.
+pub(super) fn fix_hooks(repo_root: &Path, verbose: bool) -> Result<()> {
+    use crate::fs::permissions::{
+        ensure_loom_permissions, ensure_loom_permissions_quiet, install_loom_hooks,
+    };
+    if verbose {
+        fix_hooks_with(
+            repo_root,
+            || install_loom_hooks().map(|_| ()),
+            ensure_loom_permissions,
+            rebuild_skill_index,
+        )?;
+    } else {
+        fix_hooks_with(
+            repo_root,
+            || install_loom_hooks().map(|_| ()),
+            ensure_loom_permissions_quiet,
+            rebuild_skill_index_quiet,
+        )?;
+    }
     Ok(())
 }
 
@@ -100,4 +114,9 @@ where
 /// Rebuild the skill keyword index using the built-in skill_index command
 fn rebuild_skill_index() -> Result<()> {
     crate::commands::skill_index::execute()
+}
+
+/// Quiet counterpart of [`rebuild_skill_index`] for the unattended repair path.
+fn rebuild_skill_index_quiet() -> Result<()> {
+    crate::commands::skill_index::execute_quiet()
 }
