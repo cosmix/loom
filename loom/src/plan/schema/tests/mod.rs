@@ -12,6 +12,7 @@ mod stage_id_tests;
 mod stage_type_tests;
 mod subagent_timeout_tests;
 mod ultracode_tests;
+mod validation_suite_tests;
 mod validation_tests;
 
 use super::types::{

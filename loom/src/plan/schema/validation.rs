@@ -11,6 +11,7 @@ use super::types::{
     FilesystemConfig, Implementer, LoomConfig, LoomMetadata, NetworkConfig, SandboxConfig,
     StageSandboxConfig, ValidationError,
 };
+use super::validation_suite::warn_full_suite_outside_integration_verify;
 
 mod acceptance_command;
 pub(crate) use acceptance_command::validate_acceptance_criterion;
@@ -765,15 +766,13 @@ fn criterion_needs_ungrantable_resource(cmd: &str) -> Option<&'static str> {
     None
 }
 
-/// Warn about acceptance criteria needing a resource the worktree sandbox
-/// cannot grant.
+/// Warn about ungrantable-resource acceptance criteria, then delegate to the full-suite check.
 ///
-/// `loom map` / `loom knowledge context` resolve the shared context-store
-/// cache under the main project root (reached through the `.loom/work`
-/// symlink, which no `allow_write` entry can cover), and tmux/docker are host
-/// daemons the sandbox does not expose. `loom stage complete` runs acceptance from
-/// inside the session, so these fail for reasons the stage's diff can never
-/// fix — stranding a finished stage rather than reporting a defect.
+/// `loom map` / `loom knowledge context` resolve the shared context-store cache under the main
+/// project root (reached through the `.loom/work` symlink, which no `allow_write` entry can
+/// cover), and tmux/docker are host daemons the sandbox does not expose. `loom stage complete`
+/// runs acceptance from inside the session, so these fail for reasons the stage's diff can
+/// never fix — stranding a finished stage rather than reporting a defect.
 fn warn_ungrantable_acceptance(stage: &super::types::StageDefinition, warnings: &mut Vec<String>) {
     for (idx, criterion) in stage.acceptance.iter().enumerate() {
         if let Some(what) = criterion_needs_ungrantable_resource(criterion.command()) {
@@ -788,6 +787,7 @@ fn warn_ungrantable_acceptance(stage: &super::types::StageDefinition, warnings: 
             ));
         }
     }
+    warn_full_suite_outside_integration_verify(stage, detect_stage_type(stage), warnings);
 }
 
 /// Validate structural aspects of the plan before execution (pre-flight checks).

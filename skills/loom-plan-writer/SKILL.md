@@ -654,6 +654,15 @@ command enters `acceptance`:
    chain with `&&` only, and never place a possibly-empty variable in `HOME=`. The same rule
    applies to `wiring_tests` commands; both arrays can be repaired at run time with
    `loom stage amend --field acceptance|wiring|wiring-tests`.
+6. **The full suite runs once, in integration-verify.** A standard stage's acceptance proves the
+   code that stage wrote: `cargo test --lib <module>::`, `cargo test --test <target>`, or a name
+   filter over its own tests, plus the build and lint lines. Do not put `cargo test --all-targets`
+   (or an unfiltered `cargo test` or `cargo nextest run`) on every stage: each copy runs the whole
+   suite in the agent's own checks, again in `loom stage complete`, and again for every
+   adjudication of that criterion.
+   Reserve the unfiltered run for the integration-verify stage, and let sandbox-sensitive tests
+   self-skip rather than carrying a `--skip` list. `loom plan verify` warns when a full-suite run
+   appears outside integration-verify.
 
 **Criteria about an artifact the stage has yet to PRODUCE — the baseline rule cannot reach them.**
 A criterion asserting a fact about a file the stage will generate MUST be red at HEAD, so "run it
@@ -748,7 +757,7 @@ loom:
         Use parallel subagents and skills to maximize performance.
       dependencies: []             # array of stage IDs
       acceptance:                  # build/test/lint + behavioral (exit 0)
-        - "cargo test"
+        - "cargo test --lib feature::"   # prove THIS stage's code; full suite is integration-verify's job
         - "myapp --help"           # behavioral smoke (was `truths`)
       files: ["src/**/*.rs"]       # optional scope
       working_dir: "."             # REQUIRED
@@ -795,7 +804,7 @@ The command may be valid shell, but YAML consumes characters before the shell se
 - id: build-check
   working_dir: "loom"          # Cargo.toml lives in loom/
   acceptance:
-    - "cargo test"
+    - "cargo test --lib feature::"     # scoped to this stage's own module
     - "./target/debug/myapp --help"    # ✅  (or bare "myapp --help" if on PATH)
   artifacts: ["src/feature.rs"]        # ✅ resolves to loom/src/feature.rs
   # ❌ "loom/src/feature.rs" would become loom/loom/src/feature.rs
@@ -982,7 +991,7 @@ loom:
         MEMORY: record mistakes/decisions/surprises via loom memory immediately;
         NEVER loom knowledge (implementation stage); NEVER auto-memory.
       dependencies: ["knowledge-bootstrap"]
-      acceptance: ["cargo test"]
+      acceptance: ["cargo test --lib feature_a::"]
       files: ["src/feature_a/**"]
       working_dir: "."
       artifacts: ["src/feature_a/mod.rs"]
@@ -996,7 +1005,7 @@ loom:
         Implement feature B. [Detailed spec as above.]
         Use parallel subagents and skills to maximize performance.
       dependencies: ["knowledge-bootstrap"]
-      acceptance: ["cargo test"]
+      acceptance: ["cargo test --lib feature_b::"]
       files: ["src/feature_b/**"]
       working_dir: "."
       artifacts: ["src/feature_b/mod.rs"]

@@ -4,6 +4,7 @@ mod detect;
 mod structural_checks;
 mod types;
 mod validation;
+mod validation_suite;
 
 #[cfg(test)]
 mod tests;
