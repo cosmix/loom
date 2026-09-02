@@ -16,7 +16,7 @@ use crate::plan::amendment::{
 use crate::plan::schema::AcceptanceCriterion;
 use crate::verify::transitions::{load_stage, save_stage, update_stage};
 
-const PLAN_CONTENT: &str = "# PLAN: Amendment Test\n\n\
+pub(super) const PLAN_CONTENT: &str = "# PLAN: Amendment Test\n\n\
 Human-readable section with **prose**, lists:\n\
 - bullet 1\n\
 - bullet 2\n\n\
@@ -26,17 +26,17 @@ fn placeholder() {}\n\
 ```\n\n\
 <!-- loom METADATA -->\n\n\
 ```yaml\n\
-loom:\n  version: 1\n  adjudication:\n    max_amendments_per_stage: 3\n  stages:\n    - id: stage-a\n      name: \"Alpha\"\n      working_dir: \".\"\n      dependencies: []\n      acceptance:\n        - \"cargo test\"\n        - \"cargo clippy\"\n      wiring:\n        - source: \"src/lib.rs\"\n          pattern: \"pub fn foo\"\n          description: \"foo is exported\"\n```\n\n\
+loom:\n  version: 1\n  adjudication:\n    max_amendments_per_stage: 3\n  stages:\n    - id: stage-a\n      name: \"Alpha\"\n      working_dir: \".\"\n      dependencies: []\n      acceptance:\n        - \"cargo test\"\n        - \"cargo clippy\"\n      wiring:\n        - source: \"src/lib.rs\"\n          pattern: \"pub fn foo\"\n          description: \"foo is exported\"\n      wiring_tests:\n        - name: \"smoke test\"\n          command: \"true\"\n```\n\n\
 <!-- END loom METADATA -->\n\n\
 Trailing prose with **more** content.\n";
 
-struct TestEnv {
+pub(super) struct TestEnv {
     _tmp: TempDir,
-    work_dir: PathBuf,
-    plan_path: PathBuf,
+    pub(super) work_dir: PathBuf,
+    pub(super) plan_path: PathBuf,
 }
 
-fn setup_env() -> TestEnv {
+pub(super) fn setup_env() -> TestEnv {
     setup_env_with_plan(PLAN_CONTENT)
 }
 
@@ -72,7 +72,7 @@ fn setup_env_with_plan(plan_text: &str) -> TestEnv {
     }
 }
 
-fn make_stage(id: &str) -> Stage {
+pub(super) fn make_stage(id: &str) -> Stage {
     Stage {
         id: id.to_string(),
         name: format!("Stage {id}"),
@@ -86,20 +86,26 @@ fn make_stage(id: &str) -> Stage {
             pattern: "pub fn foo".to_string(),
             description: "foo is exported".to_string(),
         }],
+        wiring_tests: vec![crate::models::stage::WiringTest {
+            name: "smoke test".to_string(),
+            command: "true".to_string(),
+            success_criteria: Default::default(),
+            description: None,
+        }],
         ..Stage::default()
     }
 }
 
-fn read_plan(env: &TestEnv) -> String {
+pub(super) fn read_plan(env: &TestEnv) -> String {
     fs::read_to_string(&env.plan_path).unwrap()
 }
 
-fn audit_content(env: &TestEnv) -> String {
+pub(super) fn audit_content(env: &TestEnv) -> String {
     let p = plan_versions_dir(&env.work_dir).join("audit.md");
     fs::read_to_string(p).unwrap()
 }
 
-fn snapshot_count(env: &TestEnv) -> usize {
+pub(super) fn snapshot_count(env: &TestEnv) -> usize {
     let dir = plan_versions_dir(&env.work_dir);
     if !dir.exists() {
         return 0;
@@ -118,7 +124,7 @@ fn snapshot_count(env: &TestEnv) -> usize {
         .count()
 }
 
-fn make_acceptance_yaml(cmd: &str) -> String {
+pub(super) fn make_acceptance_yaml(cmd: &str) -> String {
     // YAML body for an AcceptanceCriterion::Simple — plain string.
     format!("\"{cmd}\"")
 }
@@ -127,37 +133,8 @@ fn make_wiring_yaml(source: &str, pattern: &str, description: &str) -> String {
     format!("source: \"{source}\"\npattern: \"{pattern}\"\ndescription: \"{description}\"\n")
 }
 
-// --------------------------------------------------------------------------
-// 1. Replace acceptance
-// --------------------------------------------------------------------------
-#[test]
-fn replace_acceptance_succeeds_and_updates_plan_and_stage() {
-    let env = setup_env();
-    let req = AmendmentRequest {
-        stage_id: "stage-a".to_string(),
-        field: AmendmentField::Acceptance,
-        patch: AmendmentPatch::Replace {
-            index: 0,
-            value: make_acceptance_yaml("cargo test --release"),
-        },
-        reason: Some("env mismatch".to_string()),
-        dispute_id: Some("d-1".to_string()),
-    };
-    let result = apply_amendment(&env.plan_path, &env.work_dir, req).unwrap();
-    assert_eq!(result.version, 1);
-    assert_eq!(result.amendments_applied, 1);
-
-    // Plan file was updated.
-    let new_plan = read_plan(&env);
-    assert!(new_plan.contains("cargo test --release"));
-
-    // Stage file was updated.
-    let stage = load_stage("stage-a", &env.work_dir).unwrap();
-    assert_eq!(stage.acceptance[0].command(), "cargo test --release");
-    assert_eq!(stage.acceptance[1].command(), "cargo clippy");
-
-    // Snapshot exists.
-    assert_eq!(snapshot_count(&env), 1);
+pub(super) fn make_wiring_test_yaml(name: &str, command: &str) -> String {
+    format!("name: \"{name}\"\ncommand: \"{command}\"\n")
 }
 
 // --------------------------------------------------------------------------

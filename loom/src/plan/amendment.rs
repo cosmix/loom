@@ -7,9 +7,9 @@
 //!
 //! This module provides exactly that, subject to a tight contract:
 //!
-//! - **Scope:** only `acceptance` and `wiring` arrays on a single stage are
-//!   mutable. Everything else (stage IDs, dependencies, working_dir, plan
-//!   structure) is off-limits.
+//! - **Scope:** only `acceptance`, `wiring`, and `wiring_tests` arrays on a
+//!   single stage are mutable. Everything else (stage IDs, dependencies,
+//!   working_dir, plan structure) is off-limits.
 //! - **Versioned + atomic:** under an `flock` on
 //!   `.loom/work/plan_versions/.lock`, the amendment writes a numbered
 //!   snapshot to `.loom/work/plan_versions/<n>.md`, appends one row to
@@ -19,8 +19,8 @@
 //!   leave the runtime reading the old criteria via
 //!   `sync_graph_with_stage_files`.
 //! - **Validated:** the proposed value is deserialized into the **real**
-//!   [`AcceptanceCriterion`] / [`WiringCheck`] types before anything is
-//!   written, so a malformed patch fails fast.
+//!   [`AcceptanceCriterion`] / [`WiringCheck`] / [`WiringTest`] types before
+//!   anything is written, so a malformed patch fails fast.
 //! - **Capped:** a per-stage absolute amendment cap (default 3, override via
 //!   `loom.adjudication.max_amendments_per_stage`) bounds runaway adjudication.
 //!
@@ -44,9 +44,13 @@ use std::path::{Path, PathBuf};
 
 use crate::fs::safe_fs;
 use crate::fs::work_dir::WorkDir;
-use crate::models::stage::{Stage, WiringCheck};
+use crate::models::stage::{WiringCheck, WiringTest};
+use crate::plan::amendment_fields::{
+    apply_patch_to_runtime_stage, apply_patch_to_stage_def, current_field_len,
+    persist_amended_stage, stage_field_matches, sync_stage_from_definition,
+};
 use crate::plan::parser::{extract_yaml_metadata_with_ranges, parse_and_validate};
-use crate::plan::schema::{AcceptanceCriterion, LoomMetadata, StageDefinition};
+use crate::plan::schema::{AcceptanceCriterion, LoomMetadata};
 use crate::verify::transitions::{load_stage, update_stage};
 
 /// Which field of a stage is being amended.
@@ -57,6 +61,12 @@ pub enum AmendmentField {
     Acceptance,
     /// Mutate the `wiring` array.
     Wiring,
+    /// Mutate the `wiring_tests` array.
+    WiringTests,
+}
+
+fn field_from_name(name: &str) -> Option<AmendmentField> {
+    serde_yaml::from_str(&format!("\"{}\"", name.replace('_', "-"))).ok()
 }
 
 /// The mutation to apply within the targeted field.
@@ -255,6 +265,7 @@ impl AuditRow {
         let field = match self.field {
             AmendmentField::Acceptance => "acceptance",
             AmendmentField::Wiring => "wiring",
+            AmendmentField::WiringTests => "wiring_tests",
         };
         format!(
             "| {} | {} | {} | {} | {} | {} | {} | {} |\n",
@@ -274,8 +285,7 @@ const AUDIT_HEADER: &str = "# Plan Amendment Audit\n\n\
 | version | stage_id | field | op | index | applied_at | dispute_id | reason |\n\
 |---------|----------|-------|----|-------|------------|------------|--------|\n";
 
-/// Read every audit row currently in `.loom/work/plan_versions/audit.md`.
-/// Returns an empty vec if the file does not exist.
+/// Read every audit row from `.loom/work/plan_versions/audit.md` (empty if missing).
 fn read_audit_rows(work_dir: &Path) -> Result<Vec<AuditRow>> {
     let dir = plan_versions_dir(work_dir);
     let audit_path = dir.join(AUDIT_FILE_NAME);
@@ -303,10 +313,8 @@ fn read_audit_rows(work_dir: &Path) -> Result<Vec<AuditRow>> {
             Err(_) => continue,
         };
         let stage_id = cells[2].to_string();
-        let field = match cells[3] {
-            "acceptance" => AmendmentField::Acceptance,
-            "wiring" => AmendmentField::Wiring,
-            _ => continue,
+        let Some(field) = field_from_name(cells[3]) else {
+            continue;
         };
         let patch_op = match cells[4] {
             "replace" => "replace",
@@ -551,6 +559,16 @@ pub fn apply_amendment(
             })?;
             ParsedAmendmentValue::Wiring(v)
         }
+        (AmendmentField::WiringTests, AmendmentPatch::Replace { value, .. })
+        | (AmendmentField::WiringTests, AmendmentPatch::Insert { value, .. }) => {
+            let v: WiringTest = serde_yaml::from_str(value).with_context(|| {
+                format!(
+                    "Invalid WiringTest in amendment for stage '{}'",
+                    request.stage_id
+                )
+            })?;
+            ParsedAmendmentValue::WiringTest(v)
+        }
         (_, AmendmentPatch::Delete { .. }) => ParsedAmendmentValue::None,
     };
 
@@ -662,20 +680,9 @@ pub fn apply_amendment(
     safe_fs::safe_replace_outside_workdir(&plan_path, &project_root, new_plan_content.as_bytes())
         .with_context(|| format!("Failed to replace live plan {}", plan_path.display()))?;
 
-    // -- 10. Persist the updated stage file. Without this, the runtime keeps
-    //        the old criteria via sync_graph_with_stage_files. Re-apply ONLY the
-    //        amendment-owned fields (acceptance, wiring — the Adjudicator Scope
-    //        Convention) onto the FRESH on-disk stage, so a concurrent
-    //        dispute-thread / orchestrator write to other fields
-    //        (dispute_count, status, session, …) is not reverted (A-5).
-    let amended_acceptance = stage.acceptance.clone();
-    let amended_wiring = stage.wiring.clone();
-    update_stage(&request.stage_id, work_dir, |s| {
-        s.acceptance = amended_acceptance.clone();
-        s.wiring = amended_wiring.clone();
-        Ok(())
-    })
-    .with_context(|| format!("Failed to save amended stage '{}'", request.stage_id))?;
+    // -- 10. Persist the amended stage (acceptance/wiring/wiring_tests only,
+    //        via a fresh on-disk read — see persist_amended_stage for why).
+    persist_amended_stage(&stage, &request.stage_id, work_dir)?;
 
     Ok(AmendmentResult {
         version: next_version,
@@ -862,100 +869,11 @@ pub fn verify_plan_versions_consistency(plan_path: &Path, work_dir: &Path) -> Re
 // Helpers
 // --------------------------------------------------------------------------
 
-enum ParsedAmendmentValue {
+pub(super) enum ParsedAmendmentValue {
     Acceptance(AcceptanceCriterion),
     Wiring(WiringCheck),
+    WiringTest(WiringTest),
     None,
-}
-
-fn current_field_len(stage: &StageDefinition, field: AmendmentField) -> usize {
-    match field {
-        AmendmentField::Acceptance => stage.acceptance.len(),
-        AmendmentField::Wiring => stage.wiring.len(),
-    }
-}
-
-fn apply_patch_to_stage_def(
-    stage: &mut StageDefinition,
-    field: AmendmentField,
-    patch: &AmendmentPatch,
-    value: &ParsedAmendmentValue,
-) -> Result<()> {
-    match field {
-        AmendmentField::Acceptance => apply_patch_vec(
-            &mut stage.acceptance,
-            patch,
-            match value {
-                ParsedAmendmentValue::Acceptance(v) => Some(v.clone()),
-                _ => None,
-            },
-        ),
-        AmendmentField::Wiring => apply_patch_vec(
-            &mut stage.wiring,
-            patch,
-            match value {
-                ParsedAmendmentValue::Wiring(v) => Some(v.clone()),
-                _ => None,
-            },
-        ),
-    }
-}
-
-fn apply_patch_to_runtime_stage(
-    stage: &mut Stage,
-    field: AmendmentField,
-    patch: &AmendmentPatch,
-    value: &ParsedAmendmentValue,
-) -> Result<()> {
-    match field {
-        AmendmentField::Acceptance => apply_patch_vec(
-            &mut stage.acceptance,
-            patch,
-            match value {
-                ParsedAmendmentValue::Acceptance(v) => Some(v.clone()),
-                _ => None,
-            },
-        ),
-        AmendmentField::Wiring => apply_patch_vec(
-            &mut stage.wiring,
-            patch,
-            match value {
-                ParsedAmendmentValue::Wiring(v) => Some(v.clone()),
-                _ => None,
-            },
-        ),
-    }
-}
-
-fn apply_patch_vec<T: Clone>(
-    vec: &mut Vec<T>,
-    patch: &AmendmentPatch,
-    new_value: Option<T>,
-) -> Result<()> {
-    match patch {
-        AmendmentPatch::Replace { index, .. } => {
-            if *index >= vec.len() {
-                bail!("Replace index {} out of bounds (len {})", index, vec.len());
-            }
-            let v =
-                new_value.ok_or_else(|| anyhow::anyhow!("Replace patch missing typed value"))?;
-            vec[*index] = v;
-        }
-        AmendmentPatch::Insert { index, .. } => {
-            if *index > vec.len() {
-                bail!("Insert index {} out of bounds (len {})", index, vec.len());
-            }
-            let v = new_value.ok_or_else(|| anyhow::anyhow!("Insert patch missing typed value"))?;
-            vec.insert(*index, v);
-        }
-        AmendmentPatch::Delete { index } => {
-            if *index >= vec.len() {
-                bail!("Delete index {} out of bounds (len {})", index, vec.len());
-            }
-            vec.remove(*index);
-        }
-    }
-    Ok(())
 }
 
 fn serialize_loom_metadata(metadata: &LoomMetadata) -> Result<String> {
@@ -1036,36 +954,13 @@ fn compute_next_version(work_dir: &Path) -> Result<u64> {
     Ok(max.max(max_file) + 1)
 }
 
-fn stage_field_matches(stage: &Stage, def: &StageDefinition, field: AmendmentField) -> bool {
-    match field {
-        AmendmentField::Acceptance => stage.acceptance == def.acceptance,
-        AmendmentField::Wiring => {
-            // WiringCheck doesn't derive PartialEq; compare by serialized form.
-            let a = serde_yaml::to_string(&stage.wiring).unwrap_or_default();
-            let b = serde_yaml::to_string(&def.wiring).unwrap_or_default();
-            a == b
-        }
-    }
-}
-
-fn sync_stage_from_definition(stage: &mut Stage, def: &StageDefinition, field: AmendmentField) {
-    match field {
-        AmendmentField::Acceptance => {
-            stage.acceptance = def.acceptance.clone();
-        }
-        AmendmentField::Wiring => {
-            stage.wiring = def.wiring.clone();
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     //! Unit tests for amendment-module internals. Integration tests that
     //! exercise the full `apply_amendment` flow live under
     //! `plan::tests::amendment`.
     use super::*;
-    use crate::plan::schema::Implementers;
+    use crate::plan::schema::{Implementers, StageDefinition};
 
     #[test]
     fn audit_row_round_trip_via_markdown() {
@@ -1172,7 +1067,7 @@ mod tests {
             index: 5,
             value: String::new(),
         };
-        assert!(apply_patch_vec(&mut v, &p, Some(99)).is_err());
+        assert!(crate::plan::amendment_fields::apply_patch_vec(&mut v, &p, Some(99)).is_err());
     }
 
     #[test]
@@ -1182,7 +1077,7 @@ mod tests {
             index: 3,
             value: String::new(),
         };
-        apply_patch_vec(&mut v, &p, Some(4)).unwrap();
+        crate::plan::amendment_fields::apply_patch_vec(&mut v, &p, Some(4)).unwrap();
         assert_eq!(v, vec![1, 2, 3, 4]);
     }
 
@@ -1190,7 +1085,7 @@ mod tests {
     fn apply_patch_vec_delete_shifts() {
         let mut v: Vec<i32> = vec![1, 2, 3];
         let p = AmendmentPatch::Delete { index: 1 };
-        apply_patch_vec::<i32>(&mut v, &p, None).unwrap();
+        crate::plan::amendment_fields::apply_patch_vec::<i32>(&mut v, &p, None).unwrap();
         assert_eq!(v, vec![1, 3]);
     }
 }

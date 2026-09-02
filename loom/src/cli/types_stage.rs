@@ -16,6 +16,8 @@ pub enum AmendField {
     Acceptance,
     /// Mutate the `wiring` array.
     Wiring,
+    /// Mutate the `wiring_tests` array.
+    WiringTests,
 }
 
 /// What to do at `--index` within the field targeted by `loom stage amend`.
@@ -38,6 +40,7 @@ impl AmendField {
         match self {
             AmendField::Acceptance => AmendmentField::Acceptance,
             AmendField::Wiring => AmendmentField::Wiring,
+            AmendField::WiringTests => AmendmentField::WiringTests,
         }
     }
 }
@@ -292,7 +295,8 @@ pub enum StageCommands {
         verdict_file: std::path::PathBuf,
     },
 
-    /// Amend a stage's acceptance or wiring array in place (operator repair).
+    /// Amend a stage's acceptance, wiring, or wiring_tests array in place
+    /// (operator repair).
     ///
     /// Routes through the audited plan-amendment path: writes a numbered
     /// snapshot under .loom/work/plan_versions/, appends an audit row, and

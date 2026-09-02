@@ -6,6 +6,7 @@
 //! - Building execution graphs
 
 pub mod amendment;
+mod amendment_fields;
 pub mod graph;
 pub mod parser;
 pub mod schema;
