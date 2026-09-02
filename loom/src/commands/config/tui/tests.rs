@@ -112,3 +112,28 @@ fn save_with_nothing_pending_reports_that_nothing_was_written() {
     state.save();
     assert_eq!(state.status(), "0 keys written; nothing pending.");
 }
+
+/// A write that fails must not silently drop the edit the operator staged.
+#[test]
+fn failed_write_reports_the_key_and_leaves_the_edit_staged() {
+    let (temp, _guard, mut state) = state();
+    focus_by_name(&mut state, "update.check_interval_hours");
+    retype_focused_row(&mut state, "6");
+    state.commit_edit();
+    assert!(state.selected_row().is_modified());
+
+    // `[update]` already exists as a non-table value, so `set_in` errors
+    // with "is not a table" instead of writing `check_interval_hours`.
+    std::fs::write(
+        temp.path().join("config.toml"),
+        "update = \"not-a-table\"\n",
+    )
+    .unwrap();
+
+    state.save();
+
+    assert!(state.status_is_error());
+    assert!(state.status().contains("update.check_interval_hours"));
+    assert!(state.status().contains("0 keys written"));
+    assert!(state.selected_row().is_modified());
+}
