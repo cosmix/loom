@@ -9,6 +9,8 @@ mod plan_setup;
 mod work_state;
 
 #[cfg(test)]
+mod repair_tests;
+#[cfg(test)]
 mod tests;
 
 pub use execute::execute;

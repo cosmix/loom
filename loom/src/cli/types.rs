@@ -2,44 +2,12 @@ use crate::validation::clap_id_validator;
 use clap::{Parser, Subcommand};
 
 pub use super::types_config::ConfigArgs;
+use super::types_help::{positive_usize, HELP_TEMPLATE, VERSION_STRING};
 pub use super::types_memory::{KnowledgeCommands, MemoryCommands};
 pub use super::types_ops::{
     ContextCommands, HookCommands, PlanCommands, SessionsCommands, WorktreeCommands,
 };
 pub use super::types_stage::{OutputCommands, StageCommands};
-
-/// Rendered by `-v`/`--version`: version, commit, build date, target triple.
-const VERSION_STRING: &str = concat!(
-    env!("LOOM_VERSION"),
-    " (",
-    env!("LOOM_COMMIT"),
-    ", ",
-    env!("LOOM_BUILD_DATE"),
-    ", ",
-    env!("LOOM_TARGET"),
-    ")"
-);
-
-const HELP_TEMPLATE: &str = "
-   ╷
-   │  ┌─┐┌─┐┌┬┐
-   │  │ ││ ││││
-   ┴─┘└─┘└─┘┴ ┴
-
-{about-with-newline}
-{usage-heading} {usage}
-
-{all-args}{after-help}";
-
-fn positive_usize(value: &str) -> Result<usize, String> {
-    let parsed = value
-        .parse::<usize>()
-        .map_err(|_| format!("'{value}' is not a valid positive integer"))?;
-    if parsed == 0 {
-        return Err("value must be at least 1".to_string());
-    }
-    Ok(parsed)
-}
 
 #[derive(Parser)]
 #[command(name = "loom")]
@@ -76,6 +44,10 @@ pub enum Commands {
         /// Acknowledge and allow a plan that expands the default sandbox policy
         #[arg(long)]
         allow_unsafe_plan: bool,
+
+        /// Skip the automatic workspace repair pass
+        #[arg(long)]
+        no_repair: bool,
     },
 
     /// Run stages from a plan (starts orchestrator in background)
