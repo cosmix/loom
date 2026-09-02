@@ -271,6 +271,22 @@ impl Orchestrator {
             }
         }
     }
+
+    /// Mark `stage_id` as executing in the graph, skipping the no-op warn
+    /// when the node is already `Executing` (the common case on every tick
+    /// after the first). `mark_executing` only accepts a Queued -> Executing
+    /// transition, so this must not be called unconditionally.
+    fn sync_executing_node(&mut self, stage_id: &str) {
+        let already_executing = self
+            .graph
+            .get_node(stage_id)
+            .is_some_and(|n| n.status == StageStatus::Executing);
+        if !already_executing {
+            if let Err(e) = self.graph.mark_executing(stage_id) {
+                tracing::warn!("Failed to sync graph status for stage {}: {}", stage_id, e);
+            }
+        }
+    }
 }
 
 impl Recovery for Orchestrator {
@@ -608,14 +624,7 @@ impl Recovery for Orchestrator {
                         }
                     }
                     StageStatus::Executing => {
-                        // Mark as executing in graph to track active sessions
-                        if let Err(e) = self.graph.mark_executing(&stage.id) {
-                            tracing::warn!(
-                                "Failed to sync graph status for stage {}: {}",
-                                stage.id,
-                                e
-                            );
-                        }
+                        self.sync_executing_node(&stage.id);
                     }
                     StageStatus::Blocked => {
                         // Check if the blocked stage is eligible for automatic retry
@@ -1205,58 +1214,6 @@ mod tests {
         branch_name_for_stage, commits_ahead_of, get_branch_head, is_ancestor_of,
     };
 
-    fn restart_stage(id: &str, session_id: &str) -> Stage {
-        Stage {
-            id: id.to_string(),
-            session: Some(session_id.to_string()),
-            status: StageStatus::Executing,
-            ..Stage::default()
-        }
-    }
-
-    fn restart_session(stage_id: &str) -> Session {
-        let mut session = Session::new();
-        session.assign_to_stage(stage_id.to_string());
-        session
-    }
-
-    #[test]
-    fn restart_ignores_historical_dead_record_and_restores_current_live_session() {
-        let mut historical = restart_session("stage-a");
-        historical.id = "historical-dead".to_string();
-        historical.status = crate::models::session::SessionStatus::Crashed;
-        let mut current = restart_session("stage-a");
-        current.id = "current-live".to_string();
-        current.status = crate::models::session::SessionStatus::Running;
-        let stage = restart_stage("stage-a", &current.id);
-        let mut active = HashMap::new();
-
-        assert!(!register_live_current_session(
-            &mut active,
-            &stage,
-            &historical
-        ));
-        assert!(register_live_current_session(&mut active, &stage, &current));
-        assert_eq!(
-            active.get("stage-a").map(|s| s.id.as_str()),
-            Some("current-live")
-        );
-    }
-
-    #[test]
-    fn restart_restores_multiple_surviving_sessions_into_capacity_accounting() {
-        let mut active = HashMap::new();
-        for stage_id in ["stage-a", "stage-b", "stage-c"] {
-            let session = restart_session(stage_id);
-            let stage = restart_stage(stage_id, &session.id);
-            assert!(register_live_current_session(&mut active, &stage, &session));
-        }
-
-        let max_parallel_sessions = 4usize;
-        assert_eq!(active.len(), 3);
-        assert_eq!(max_parallel_sessions.saturating_sub(active.len()), 1);
-    }
-
     #[test]
     fn stage_enumeration_and_direct_load_remain_linear_at_scale() {
         for count in [10usize, 100, 1000] {
@@ -1616,3 +1573,7 @@ mod tests {
 #[cfg(test)]
 #[path = "recovery_adoption_tests.rs"]
 mod recovery_adoption_tests;
+
+#[cfg(test)]
+#[path = "recovery_sync_tests.rs"]
+mod recovery_sync_tests;
