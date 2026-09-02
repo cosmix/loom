@@ -66,6 +66,11 @@ fn run_git(args: &[&str]) -> Option<String> {
 /// detached HEAD, where `HEAD` itself holds the sha and is already watched
 /// above, so that case needs no extra path. A branch whose ref is packed
 /// rather than loose falls back to `packed-refs`, which is already watched.
+///
+/// `logs/HEAD` (the reflog) is watched too as a belt-and-braces trigger: it
+/// gains an entry on every commit, checkout, and reset regardless of which
+/// path above resolved it, so it catches any HEAD movement the specific
+/// cases above did not anticipate.
 fn emit_rerun_keys() {
     println!("cargo:rerun-if-changed=build.rs");
     println!("cargo:rerun-if-changed=src/version/derive.rs");
@@ -78,6 +83,10 @@ fn emit_rerun_keys() {
         if let Some(ref_path) = run_git(&["rev-parse", "--git-path", &symbolic]) {
             emit_if_exists(Path::new(&ref_path));
         }
+    }
+
+    if let Some(reflog) = run_git(&["rev-parse", "--git-path", "logs/HEAD"]) {
+        emit_if_exists(Path::new(&reflog));
     }
 
     if let Some(common_dir) = run_git(&["rev-parse", "--git-common-dir"]) {
