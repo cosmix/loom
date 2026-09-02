@@ -124,3 +124,13 @@ Both blocked a stage after all its acceptance criteria had passed.
 - `mistakes/tests-that-cannot-fail.md` — the sibling class where the pinned literal is
   an assertion rather than a path.
 - `mistakes/testing-and-lint.md` — the ledger as part of the wider lint discipline.
+
+## A Bare mktemp -d in a Criterion Writes to the Operator's Real Home
+
+**What happened:** Five acceptance criteria and two `wiring_tests` entries in one plan acquired a scratch `HOME` with a bare `mktemp -d`. Inside a stage session the sandbox denies the Darwin per-user temp dir, so `mkdtemp` failed, `H` was empty, and `HOME="$H" ./loom/target/debug/loom config -k update.check_interval_hours 6` resolved `dirs::home_dir()` to the operator's real home: `~/.loom/config.toml` was created on the operator's machine three separate times (twice during `loom check`, once during the stage's final `loom stage complete`), and the criteria passed because their follow-up `rg` read the same real file. Two of them were disputed and patched by the adjudicator; the rest were amended by the operator with `loom stage amend`, but the config-foundation amendments were recorded one minute after that stage's completion run had already used the old text.
+
+**Why:** `;` after the `mktemp` assignment let the chain continue with an empty variable, and `HOME=""` is not "no home" — it falls through to `getpwuid`.
+
+**Prevention:** In any criterion or wiring test, acquire scratch directories as `H=$(mktemp -d "${TMPDIR:-/tmp}/<name>.XXXXXX") && [ -n "$H" ] && ...`, join every step with `&&`, and never put a variable that can be empty into `HOME=`; prefer `LOOM_HOME="$H"` where the binary honours it (`user_config::config_path` does). Operator amendments to a running stage must land before the stage's `loom stage complete`; check `loom status` first.
+
+**Fix:** The seven criteria were rewritten that way; `loom stage amend` gained `--field wiring-tests` (`AmendmentField::WiringTests`, `plan/amendment_fields.rs`) so wiring tests can be repaired through the audited path too.

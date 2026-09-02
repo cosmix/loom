@@ -646,6 +646,14 @@ command enters `acceptance`:
    tmux e2e suite cannot create an `AF_UNIX` socket under a session sandbox, and says so in its
    own file header — which is exactly the kind of header a plan author must read before writing
    `--all-targets` into a gate.)
+5. **Scratch directories and `HOME` in a criterion are a sandbox trap.** A bare `mktemp -d` is
+   denied inside a stage session (the Darwin per-user temp dir is outside the sandbox), the
+   assignment fails silently after `;`, and `HOME=""` resolves to the operator's REAL home — a
+   criterion that "passes" by writing `~/.loom/config.toml` on the operator's machine did exactly
+   that in this repo. Write `H=$(mktemp -d "${TMPDIR:-/tmp}/<name>.XXXXXX") && [ -n "$H" ] && ...`,
+   chain with `&&` only, and never place a possibly-empty variable in `HOME=`. The same rule
+   applies to `wiring_tests` commands; both arrays can be repaired at run time with
+   `loom stage amend --field acceptance|wiring|wiring-tests`.
 
 **Criteria about an artifact the stage has yet to PRODUCE — the baseline rule cannot reach them.**
 A criterion asserting a fact about a file the stage will generate MUST be red at HEAD, so "run it

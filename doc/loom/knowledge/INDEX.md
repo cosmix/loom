@@ -12,7 +12,7 @@
 | [entry-points.md](entry-points.md) | Key files agents should read first | 559 |
 | [patterns.md](patterns.md) | Architectural patterns discovered in the codebase | 761 |
 | [conventions.md](conventions.md) | Coding conventions discovered in the codebase | 666 |
-| [mistakes.md](mistakes.md) | Mistakes made and lessons learned - what to avoid | 966 |
+| [mistakes.md](mistakes.md) | Mistakes made and lessons learned - what to avoid | 968 |
 | [stack.md](stack.md) | Dependencies, frameworks, and tooling used in the project | 102 |
 | [concerns.md](concerns.md) | Technical debt, warnings, and issues to address | 776 |
 
@@ -60,7 +60,7 @@
 
 | Topic | Title | Blurb | Lines |
 | --- | --- | --- | --- |
-| [mistakes/adjudication-autonomy-deadlock.md](mistakes/adjudication-autonomy-deadlock.md) | Adjudication Autonomy Deadlock | An accepted verdict deadlocked the run: adoption by stage_id alone, requeue with unanswered disputes, a live disputing… | 83 |
+| [mistakes/adjudication-autonomy-deadlock.md](mistakes/adjudication-autonomy-deadlock.md) | Adjudication Autonomy Deadlock | An accepted verdict deadlocked the run: adoption by stage_id alone, requeue with unanswered disputes, a live disputing… | 113 |
 | [mistakes/ambient-filesystem-trust.md](mistakes/ambient-filesystem-trust.md) | Ambient Filesystem Trust | Why an ancestor directory merely named .git is not evidence of a real repository, and the validation this requires. | 34 |
 | [mistakes/codex-lane-rogue-wrapper.md](mistakes/codex-lane-rogue-wrapper.md) | Codex Lane Rogue Wrapper | A forwarding wrapper that did the task itself instead of forwarding, and why the codex sandbox state-dir escape hatch… | 117 |
 | [mistakes/codex-navigation.md](mistakes/codex-navigation.md) | Codex Navigation | Forbidding reads instead of fixing a slow reader - a misdiagnosis and its correction. | 25 |
@@ -74,7 +74,7 @@
 | [mistakes/merge-cleanup-boundary.md](mistakes/merge-cleanup-boundary.md) | Merge Cleanup Boundary | A cleanup-boundary bug: what happened, why it survived undetected, and the fix shape worth reusing. | 170 |
 | [mistakes/parallel-worktree-shared-state.md](mistakes/parallel-worktree-shared-state.md) | Parallel Worktree Shared State | Cross-worktree state races: the one diagnostic question, concrete cases, and a blind-review-subagent instance. | 124 |
 | [mistakes/phantom-merges.md](mistakes/phantom-merges.md) | Phantom Merges | Seven lessons on loom's merge machinery — writing merged=true without verifying git ancestry (the costliest recurring… | 131 |
-| [mistakes/pinned-literals-ledgers-and-wiring.md](mistakes/pinned-literals-ledgers-and-wiring.md) | Pinned Literals Ledgers And Wiring | The maintainability ledger exact-match trap and goal-backward wiring checks pinning a pattern to a path. | 126 |
+| [mistakes/pinned-literals-ledgers-and-wiring.md](mistakes/pinned-literals-ledgers-and-wiring.md) | Pinned Literals Ledgers And Wiring | The maintainability ledger exact-match trap and goal-backward wiring checks pinning a pattern to a path. | 136 |
 | [mistakes/refactor-stragglers.md](mistakes/refactor-stragglers.md) | Refactor Stragglers | What a large removal or rename leaves behind: straggler initializers, stale comments, stale docs, duplicate modules. | 62 |
 | [mistakes/sandbox-and-settings.md](mistakes/sandbox-and-settings.md) | Sandbox And Settings | Sandbox path rules, permission sync, excludedCommands matching, and settings env leaking between main repo and… | 419 |
 | [mistakes/schema-reuse-and-silent-skips.md](mistakes/schema-reuse-and-silent-skips.md) | Schema Reuse And Silent Skips | deny_unknown_fields breaking a type with two deserialization sources, warn-and-continue masking total failure, and an… | 94 |

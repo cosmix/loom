@@ -682,7 +682,9 @@ The deletion question catches all of them: **delete the production line — does
 as on growth — and goal-backward wiring checks pin a literal PATTERN to a literal PATH, so
 a genuinely better refactor reports a phantom wiring gap. Three stages hit the ledger, two
 hit the wiring pins. `rg` your target paths against both BEFORE fanning out, and re-check
-the wiring patterns after every refactor round.
+the wiring patterns after every refactor round. A third defect class lives in the same
+file: a bare `mktemp -d` in an acceptance criterion or wiring test, denied by the sandbox,
+can silently write to the operator's real `HOME`.
 → [Pinned Literals, Ledgers and Wiring](mistakes/pinned-literals-ledgers-and-wiring.md)
 
 ## Parallel Worktrees Share Derived State
@@ -963,4 +965,4 @@ Surfaced as 77 test failures in seven unrelated modules, which looked environmen
 
 ## Adjudication Autonomy Deadlock (2026-09-02)
 
-Session adoption matched by `stage_id` alone, an unconditional re-queue that orphaned a sibling dispute, a disputing agent never retired, and no watchdog for "Executing with nobody working" combined into a 90-minute deadlock. [Adjudication Autonomy Deadlock](mistakes/adjudication-autonomy-deadlock.md)
+Session adoption matched by `stage_id` alone, an unconditional re-queue that orphaned a sibling dispute, a disputing agent never retired, and no watchdog for "Executing with nobody working" combined into a 90-minute deadlock. A later pass closed the matching gap for a judge that stays alive but never records a verdict, and quieted two log defects (a forced-transition ERROR line and a per-tick sync warning) that had buried the real adjudication lines in daemon output. [Adjudication Autonomy Deadlock](mistakes/adjudication-autonomy-deadlock.md)

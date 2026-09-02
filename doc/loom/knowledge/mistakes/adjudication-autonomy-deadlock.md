@@ -81,3 +81,33 @@
 **Prevention:** Every session kind the daemon spawns needs a recorded completion signal and a teardown that acts on it. Recording the verdict is the judge's completion signal; the record must name the session that produced it.
 
 **Fix:** `DisputeVerdictRecord.session_id` (`loom/src/models/dispute.rs`) is filled from `LOOM_SESSION_ID` by `loom stage adjudicate`; after applying a verdict, `retire_adjudicator` (`loom/src/orchestrator/core/verdict_apply.rs`) kills that session, declares its record `Completed`, and removes its signal. A record without an id closes idle judges only when the stage has no unanswered dispute left.
+
+## A Silent Judge Had No Watchdog
+
+**What happened:** Two operator restarts today were needed for adjudication to proceed. After those root causes were fixed — a verdict never applied, a judge never closed — the remaining way a dispute could stall forever was a judge that stays alive but never records a verdict. Nothing detected it: hung detection (`loom/src/orchestrator/monitor/detection.rs`) keys on the stage's own heartbeat file, which names the stage's worker session, so a judge always read as `NoHeartbeat` and was skipped. Judges wrote no heartbeat because `hooks/post-tool-use.sh` refuses to write unless the stage file's `session:` field names the writer, which is never the judge. The attempt budget (`MAX_ADJUDICATION_ATTEMPTS = 3`, `adjudication/session.rs`) only bounded judges that had already died, since `live_adjudication_session` refuses to spawn a second judge while one is alive.
+
+**Why:** Every watchdog assumed the only session worth watching was the stage's worker, and every completion signal for a judge was its verdict; a judge that never produced one had no signal to go stale.
+
+**Prevention:** Every session kind the daemon spawns needs its own liveness signal and its own idle budget, independent of the stage's worker bookkeeping.
+
+**Fix:** The session wrapper exports `LOOM_SESSION_TYPE` (`terminal/native/wrapper.rs`); the PostToolUse hook writes a judge heartbeat to `heartbeat/<stage>.adjudication.json` for `LOOM_SESSION_TYPE=adjudication`, skipping only the ownership gate; `HeartbeatWatcher` keeps judge heartbeats in a separate map (`monitor/heartbeat.rs::judge_heartbeat`); `Detection` emits one `MonitorEvent::AdjudicatorStalled` per judge whose last activity (heartbeat, else `created_at`) exceeds the stage's `subagent_timeout_secs` idle budget while the process is alive (`monitor/hung_latch.rs`); the handler (`core/event_handler/stalled_judge.rs`) closes the judge through the shared `Orchestrator::close_adjudication_session` (`core/judge_close.rs`, also used by `retire_adjudicator`) and leaves the stage in `NeedsAdjudication`, so the next tick respawns a judge or `escalate_attempt_cap` sends the stage to `NeedsHumanReview`. A vanished judge whose verdict is already on disk is now recorded as `Completed`, not crashed (`AdjudicatorRegistry::verdict_written_by`, `monitor/session_events.rs`).
+
+## The Verdict Hold Was Logged as a Forced Transition
+
+**What happened:** Every verdict apply logged `Forced stage status assignment bypassing transition validation` at ERROR, including the no-op hold `NeedsAdjudication -> NeedsAdjudication`, because `adjudication/apply.rs::persist_verdict_result` forced the status unconditionally.
+
+**Why:** The force was a crash-recovery safety net applied to the routine path.
+
+**Prevention:** A no-op status write should be skipped, and a transition the table already validates (`NeedsAdjudication -> Queued` is in `models/stage/transitions.rs`) should go through `try_transition`; force is the fallback only for a transition the table does not know.
+
+**Fix:** `persist_verdict_result` now does exactly that.
+
+## The Per-Tick Graph Sync Warning Buried the Adjudication Lines
+
+**What happened:** `recovery.rs` called `ExecutionGraph::mark_executing` on every tick for an Executing stage; the graph refuses it once the node is already Executing, so the daemon logged `Failed to sync graph status ... is not ready (status: Executing)` every 5 seconds — 1441 lines around 14 adjudication lines in one daemon log.
+
+**Why:** The sync path did not check the node before re-marking it.
+
+**Prevention:** Consult `graph.get_node` before a transition that is only valid from `Queued`.
+
+**Fix:** The Executing arm now skips `mark_executing` when the node is already Executing.
