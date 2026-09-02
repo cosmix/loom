@@ -35,7 +35,7 @@ file src/fs/work_dir/tests.rs 880
 file src/git/worktree/base.rs 545
 file src/git/worktree/settings.rs 683
 file src/hooks/tests.rs 514
-file src/models/stage/methods.rs 817
+file src/models/stage/methods.rs 801
 file src/models/stage/types.rs 1231
 file src/orchestrator/core/merge_handler.rs 1330
 file src/orchestrator/core/orchestrator.rs 547
@@ -127,7 +127,7 @@ function src/commands/stage/tests/complete.rs test_complete_no_verify_refuses_ze
 function src/commands/status.rs execute_static 81
 function src/commands/status/data/collector.rs build_stage_summary 56
 function src/commands/status/data/collector_tests.rs make_test_stage 68
-function src/commands/status/render/attention.rs render_problem_stage 58
+function src/commands/status/render/attention.rs render_problem_stage 53
 function src/commands/status/render/compact.rs render_compact 74
 function src/commands/status/render/completion.rs render_completion_lines 55
 function src/commands/status/render/completion.rs render_completion_screen 84
@@ -189,8 +189,8 @@ function src/hooks/generator.rs test_generate_hooks_settings_includes_global_hoo
 function src/hooks/tests.rs test_generate_hooks_merges_with_global_hooks 75
 function src/models/stage/methods.rs from_definition_copies_all_runtime_policy_fields 128
 function src/models/stage/methods.rs new 71
-function src/models/stage/transitions.rs can_transition_to 75
-function src/models/stage/transitions.rs valid_transitions 59
+function src/models/stage/transitions.rs can_transition_to 74
+function src/models/stage/transitions.rs valid_transitions 58
 function src/models/stage/types.rs default#3 69
 function src/orchestrator/auto_merge.rs attempt_auto_merge 63
 function src/orchestrator/core/completion_handler.rs handle_stage_completed 78
