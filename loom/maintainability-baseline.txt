@@ -11,7 +11,7 @@ file src/commands/graph/tests.rs 425
 file src/commands/hook/tests_reconcile_graph.rs 432
 file src/commands/init/tests.rs 702
 file src/commands/plan/verify.rs 599
-file src/commands/repair.rs 1189
+file src/commands/repair.rs 1143
 file src/commands/review/generate.rs 439
 file src/commands/run/tests.rs 463
 file src/commands/self_update/mod.rs 438
@@ -39,9 +39,9 @@ file src/hooks/tests.rs 514
 file src/models/stage/methods.rs 817
 file src/models/stage/types.rs 1231
 file src/orchestrator/core/merge_handler.rs 1330
-file src/orchestrator/core/orchestrator.rs 554
+file src/orchestrator/core/orchestrator.rs 547
 file src/orchestrator/core/recovery.rs 1618
-file src/orchestrator/core/stage_executor.rs 792
+file src/orchestrator/core/stage_executor.rs 790
 file src/orchestrator/merge_attribution.rs 543
 file src/orchestrator/signals/cache.rs 594
 file src/orchestrator/signals/format/sections.rs 798
@@ -55,7 +55,7 @@ file src/plan/amendment.rs 1196
 file src/plan/parser/extraction.rs 410
 file src/plan/schema/tests/validation_tests.rs 923
 file src/plan/schema/types.rs 466
-file src/plan/schema/validation.rs 1319
+file src/plan/schema/validation.rs 1285
 file src/plan/tests/amendment.rs 628
 file src/remote_control.rs 599
 file src/sandbox/config.rs 848
@@ -95,9 +95,8 @@ function src/commands/knowledge/tests.rs test_parse_file_type 70
 function src/commands/plan/verify.rs execute 272
 function src/commands/plan/verify.rs print_human 110
 function src/commands/pressure/mod.rs execute 86
-function src/commands/repair.rs check_all_issues 392
+function src/commands/repair.rs check_all_issues 325
 function src/commands/repair.rs execute 99
-function src/commands/repair.rs fix_issue 74
 function src/commands/repair/tests.rs repair_fixes_a_stale_knowledge_directory_deny_in_a_worktree 62
 function src/commands/resume.rs execute 57
 function src/commands/review/generate.rs execute 156
@@ -128,13 +127,13 @@ function src/commands/stage/recover.rs test_determine_recovery_reason 89
 function src/commands/stage/skip_retry.rs retry 214
 function src/commands/stage/tests/complete.rs test_complete_no_verify_refuses_zero_commits_ahead 73
 function src/commands/status.rs execute_static 81
-function src/commands/status/data/collector.rs build_stage_summary 58
+function src/commands/status/data/collector.rs build_stage_summary 56
 function src/commands/status/data/collector_tests.rs make_test_stage 68
 function src/commands/status/render/attention.rs render_problem_stage 58
 function src/commands/status/render/compact.rs render_compact 74
 function src/commands/status/render/completion.rs render_completion_lines 55
 function src/commands/status/render/completion.rs render_completion_screen 84
-function src/commands/status/render/graph.rs format_stage_annotations 97
+function src/commands/status/render/graph.rs format_stage_annotations 90
 function src/commands/status/render/graph.rs render_graph 66
 function src/commands/status/ui/tree_widget.rs build_lines 183
 function src/commands/status/ui/tree_widget_tests.rs make_stage 68
@@ -217,7 +216,7 @@ function src/orchestrator/core/recovery.rs sync_queued_status_to_files 60
 function src/orchestrator/core/recovery.rs verify_merged_true_or_revert 56
 function src/orchestrator/core/stage_executor.rs before_stage_gate_passed 62
 function src/orchestrator/core/stage_executor.rs start_knowledge_stage 99
-function src/orchestrator/core/stage_executor.rs start_ready_stages 67
+function src/orchestrator/core/stage_executor.rs start_ready_stages 65
 function src/orchestrator/core/stage_executor.rs start_stage 401
 function src/orchestrator/merge_attribution.rs attribute_main_repo_merge 101
 function src/orchestrator/merge_attribution.rs reconcile_main_repo_active_merge 64
