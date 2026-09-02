@@ -23,9 +23,9 @@
 | Topic | Title | Blurb | Lines |
 | --- | --- | --- | --- |
 | [architecture/codex-concurrency.md](architecture/codex-concurrency.md) | Codex Concurrency | Codex fan-out concurrency limits, what is measured, and what degrades under load (the shared state.json sidecar). | 102 |
-| [architecture/codex-plugin.md](architecture/codex-plugin.md) | Codex Plugin | Codex plugin install and identity, the codex-rescue subagent, and the loom-codex-forwarder lane. | 358 |
+| [architecture/codex-plugin.md](architecture/codex-plugin.md) | Codex Plugin | Codex plugin install and identity, the codex-rescue subagent, and the loom-codex-forwarder lane. | 393 |
 | [architecture/context-ceiling.md](architecture/context-ceiling.md) | Context Ceiling | The absolute resident-token ceiling: resolution order, and the three independent thresholds (hook, daemon, native… | 71 |
-| [architecture/context-retrieval.md](architecture/context-retrieval.md) | Context Retrieval | The retrieval subsystem: two graphs, two lanes, query-side gating, two-tier fusion, and the persistent BM25 index. | 469 |
+| [architecture/context-retrieval.md](architecture/context-retrieval.md) | Context Retrieval | The retrieval subsystem: two graphs, two lanes, query-side gating, two-tier fusion, and the persistent BM25 index. | 525 |
 | [architecture/core-abstractions.md](architecture/core-abstractions.md) | Core Abstractions | ExecutionGraph, Stage, Session, Orchestrator, TerminalBackend — plus data flow and .work/ file ownership. | 93 |
 | [architecture/directory-structure.md](architecture/directory-structure.md) | Directory Structure | Full loom/src module tree, the .work/ state layout, and the repo-root asset directories. | 49 |
 | [architecture/execution-containment.md](architecture/execution-containment.md) | Execution Containment | What sandboxed command containment means in loom, its two confinement levels, and what routes through spawn_confined. | 193 |

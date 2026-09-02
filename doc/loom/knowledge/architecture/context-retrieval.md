@@ -87,9 +87,15 @@ sufficient:
   capital alone (`Point`, `Widget`) does NOT count — those are ordinary
   English words Rust happens to capitalize;
 - **rare** — the name's document frequency in THIS channel's corpus is at
-  most `config.df_ident_max` (default `5`). A name absent from the frequency
-  map counts as rare — the map holds every tokenized query term, so an
-  absent name is one no query token equals at all, e.g. `Foo::Bar`.
+  most `config.df_ident_max` (default `5`), AND the name is not spelled like
+  an ordinary word. A name of nothing but lowercase ASCII letters is refused
+  outright (`evidence.rs::is_plain_word`, applied in `ExactGate::admits`):
+  rarity cannot tell an uncommon symbol from an uncommon English word, and
+  `remaining`, `relevant` and `complete` are all rare in a corpus of function
+  signatures. `Foo::Bar`, `sha256` and `Gini` still qualify — a digit or a
+  capital anywhere is a spelling the writer did not have to use. A name
+  absent from the frequency map counts as rare — the map holds every
+  tokenized query term, so an absent name is one no query token equals at all.
 
 A full relative path still fires unconditionally — a path in a prompt is
 always deliberate (`rank_source.rs::matches_path`, `PathMatch::FullPath`).
@@ -104,9 +110,23 @@ directly (`rank.rs:144-178`, `pack.rs:96-100,154-156`). See
 [Tests That Cannot Fail](../mistakes/tests-that-cannot-fail.md) for why a
 ranker-level test alone did not catch a packer that forgot this.
 
-Nothing here excludes a candidate — a word that fails every test still
-competes on its BM25 score, it just cannot buy the ~80-point exact-symbol
-boost with a coincidence.
+Nothing here excludes a candidate from the KNOWLEDGE channel — a word that
+fails every test still competes on its BM25 score, it just cannot buy the
+~80-point exact-symbol boost with a coincidence. The SOURCE channel has a
+second floor one level down, at plain lexical candidacy
+(`rank_source/candidacy.rs::admits_lexical_evidence`): a source node that
+earned no rung is a candidate only when every word of its terminal scope
+segment is a surviving query term and that name has more than one word.
+Required ids are exempt, and a one-word name falls back to the gate above, so
+`` `tokenize` `` still reaches `fn tokenize` while `what does tokenize do` no
+longer does. The reason this floor is needed on one channel and not the other
+is per-channel stopwording asymmetry: source documents are ~10-token scope and
+signature strings holding almost no prose, so the project vocabulary the
+knowledge channel drops as ubiquitous — `hooks`, `sessions`, `settings` —
+survives in the source corpus and is the most discriminating thing there.
+Measured, that let `fs/permissions/hooks.rs#function:configure_loom_hooks` win
+tier 2 of "how do I configure the hooks so sessions get the right settings" on
+`configure` and `hooks` alone.
 
 ## Corpus-Derived Query Stopwording, With a Rescue Floor
 
@@ -126,13 +146,47 @@ kept `settings`=57, `rules`=48, `sessions`=65 and returned a pack. Once A.15
 indexed project prose into the same corpus (904 docs, floor 90.4) those same
 terms inflated to 105, 93, 102 — prose is loom's own design docs, sharing the
 question's vocabulary — so EVERY term exceeded the floor and an ordinary
-question about the codebase returned an empty pack. When stopwording would
-drop every term, up to `RESCUE_LIMIT = 3` of the rarest dropped terms are put
-back, subject to a hard `stop_rescue_max_ratio` ceiling (default `0.25`): a
-term at 11% of the corpus comes back when nothing else survived; a term at
-90% never does, so a genuine stopword-only query still retrieves nothing.
-Rescued terms are removed from `dropped_terms`, which stays a truthful
-account of what was actually dropped (`stopwords.rs::rescue_rarest`).
+question about the codebase returned an empty pack. Up to `RESCUE_LIMIT = 3`
+of the rarest dropped terms are put back, subject to a hard
+`stop_rescue_max_ratio` ceiling (default `0.25`): a term at 11% of the corpus
+comes back when the query needs it; a term at 90% never does, so a genuine
+stopword-only query still retrieves nothing. Rescued terms are removed from
+`dropped_terms`, which stays a truthful account of what was actually dropped
+(`stopwords.rs::rescue_rarest`).
+
+**The floor is under a THIN surviving set, not only an empty one**
+(`stopwords.rs::over_stopworded`). The first version fired only when
+stopwording dropped every term, which left the measured query "sandbox
+settings rules for claude code worktree sessions" answered on `rules` alone:
+seven of its eight content words were above the floor, the one generic word
+that survived counted as a survivor, and the expected chunk in
+[Sandbox and Settings](../mistakes/sandbox-and-settings.md) ("Worktree
+Settings Are a Whole-Object Rebuild") never says "rules", so it was not a
+candidate at all. The rescue now
+also fires when a query of at least `RESCUE_QUERY_MIN_TERMS = 4` distinct
+content terms kept fewer DISTINCT surviving terms than `min_knowledge_terms`
+(default `2`). Both constants are chosen, not tuned:
+
+- the survivor floor REUSES `min_knowledge_terms` because that is the prompt
+  hook's emit floor (`user_prompt_compose::clears_emit_floor`) — below it no
+  purely lexical item can ever be emitted, so a query reduced under it has
+  retrieved nothing whether or not one word is still standing. An operator who
+  lowers the floor to 1 therefore turns the thin-survivor rescue off;
+- `RESCUE_QUERY_MIN_TERMS` keeps short prompts out. "Honesty Contract" left
+  with one surviving term was served well — that survivor IS the lookup — and
+  putting its neighbours back would only add noise. Four or more content words
+  is a question, and a question reduced to one generic word was answered on
+  the least of what it asked.
+
+The cap stays flat at three on both paths; sizing it to the deficit instead
+(enough to reach `min_knowledge_terms`, no more) was measured and rejected,
+because on the case above it restores `sessions` alone rather than `sessions`,
+`settings` and `sandbox` together. Note what the fix does and does not buy:
+that chunk went from not-a-candidate to a candidate ranked around 28th, and
+the rescued `sandbox`/`settings` also feed the source channel's candidacy
+rule, so two `sandbox_settings` source nodes now enter the fused top 5. The
+`genuine-win-sandbox-settings-rules` eval case still misses at hit@5 — what is
+left there is a ranking question, not a candidacy one.
 
 One document-frequency map serves both stopwording (drops the ubiquitous) and
 `ExactGate::is_rare` (admits the rare) — deliberately: excluding prose from
@@ -184,6 +238,8 @@ legitimately fill the pack with prose. A source item costs ~20-30 tokens
 against a knowledge chunk's few hundred, so an unbounded source list does not
 crowd prose out by token volume — it crowds it out by *slot*, one alternating
 rank at a time.
+
+**Tier-1 summaries never ride along with their tier-2 detail.** A tier-1 file keeps a 2-8 line summary per topic ending in a link to `<stem>/<slug>.md`, and `loom knowledge update` scaffolds that topic file with the tier-1 heading verbatim, so the pair shares an anchor and scores nearly identically on the same terms. `pack::twins::tier1_twin` maps a tier-2 chunk id to its tier-1 twin, keying strictly on the tier-2 file's parent directory equalling the tier-1 file's stem, so an unrelated pair that merely shares an anchor is never collapsed. `prose:` ids, deeper paths, empty anchors and source-node ids have no twin. While packing, `details_before_summaries` walks a detail immediately before the summary it duplicates, and `select` drops the summary once the detail is packed, counting it in `OmissionSummary::omitted`. When the detail does not fit the budget the summary is packed as before, which is what makes it a fallback rather than a deletion. A summary the caller named through `--require-id` is exempt from both halves: the request is answered literally, and its `ExplicitId` boost is not allowed to promote a weakly-ranked detail to the head of the pack.
 
 ## Persistent BM25 Index (A.13)
 

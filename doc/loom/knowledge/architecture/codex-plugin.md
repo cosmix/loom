@@ -177,9 +177,9 @@ no macOS equivalent of Linux's `exclude_slash_tmp` — the nesting itself is ref
 **Fix.** `hooks/codex-forward.sh` probes `sandbox-exec -p '(version 1)(allow default)' /usr/bin/true`
 (PATH lookup, so tests can stub it) and, only when refused, bypasses the companion and runs `codex exec
 --sandbox danger-full-access --skip-git-repo-check --model <model> -c
-model_reasoning_effort="<effort>" -- "<preamble + task>"`. The outer stage sandbox — worktree plus
-granted write paths, domain allowlist, credential read denies — remains the boundary, same as a sonnet
-subagent's Bash call.
+model_reasoning_effort="<effort>" -- "<preamble + task>" </dev/null`. The `</dev/null` is required;
+see "Direct-lane runs" below. The outer stage sandbox — worktree plus granted write paths,
+domain allowlist, credential read denies — remains the boundary, same as a sonnet subagent's Bash call.
 
 The evidence trailer now always carries `exit:` and `mode:`. `mode: companion` lists the newest
 `state/*/jobs/*.json` records, globbed from the state root the companion actually used (including the
@@ -356,3 +356,38 @@ tree. Consequence: inside a worktree the navigation kit does not show edits made
 session, including a sibling unit's earlier changes in that stage. See
 [Parallel Worktree Shared State](../mistakes/parallel-worktree-shared-state.md) for the general rule
 this instance follows.
+
+## Direct-lane runs: benign stderr, closed stdin, and what the report must be (2026-09-02)
+
+A healthy `mode: direct` run logs these repeatedly on stderr while the model call succeeds and the
+files land:
+
+```text
+codex_models_manager::manager: failed to refresh available models: Connection failed: error sending request
+rmcp::transport::worker: worker quit with fatal: Transport channel closed ... https://chatgpt.com/backend-api/ps/mcp
+```
+
+Both are benign: codex 0.152's background model-list refresh, and a ChatGPT-hosted MCP endpoint. Neither
+is a missing sandbox grant. `chatgpt.com`, `*.chatgpt.com`, `api.openai.com` and `auth.openai.com` are
+already in `CODEX_SANDBOX_DOMAINS` (`loom/src/codex.rs:42-47`) and in the generated settings, so adding
+hostnames or editing `~/.codex/config.toml` fixes nothing.
+
+**Detection rule.** Judge a forwarded run by the evidence trailer and the files, never by stderr: `exit:
+0` in the `--- LOOM-CODEX-EVIDENCE ---` trailer, a `session:` rollout newer than the spawn, and the
+task's files present and correct. Two spawns on 2026-09-02 (gpt-5.6-luna and gpt-5.6-terra, effort
+xhigh) printed the pair throughout and wrote both files byte-exact.
+
+**Stdin.** The same runs printed `Reading additional input from stdin...`. `codex exec` treats an open
+stdin as extra prompt input and blocks until EOF; under the Bash tool stdin is already at EOF, so only
+a caller that keeps it open hangs. The wrapper passes `</dev/null` on the direct-lane invocation, and
+`hooks/tests/codex-forward-wrapper.sh` stubs `codex` to exit 66 unless `/dev/stdin -ef /dev/null` while
+running the wrapper with stdin on a regular file, so dropping the redirect turns that case red. The
+companion lane needs none: it takes the prompt positionally and only falls back to stdin when that is
+empty (`readTaskPrompt`, `codex-companion.mjs:643-649`), and gives its child pipes rather than this
+process's stdin (`lib/app-server.mjs:193`).
+
+**The report is the forwarder's final message.** Both spawns relayed the wrapper output through
+`SendMessage` and ended their turn with a one-line summary, so the harvested report carried no trailer
+at all. `codex-forward-guard.sh` is now registered for `SendMessage` too
+(`loom/src/fs/permissions/hooks/config.rs`, pinned by `assert_codex_forward_guard_matchers`), and
+`agents/loom-codex-forwarder.md` states that the final message is the report.
