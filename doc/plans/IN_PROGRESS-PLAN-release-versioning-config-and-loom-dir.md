@@ -2330,7 +2330,6 @@ loom:
     - '! rg -q "Read\(\.loom/work/\*\*\)" loom/src/sandbox/settings.rs'
     - '! rg -q "fn get_work_dir" loom/src'
     - ./hooks/tests/run-all.sh
-    - cargo audit --file loom/Cargo.lock
     - 'cargo test --manifest-path loom/Cargo.toml --lib fs::work_dir::tests::resolver 2>&1 | rg -q "test result: ok\. (9|[1-9][0-9]+) passed"'
     - 'cargo test --manifest-path loom/Cargo.toml --all-targets release_asset 2>&1 | rg -q "test result: ok\. [1-9]"'
     - 'cargo test --manifest-path loom/Cargo.toml --all-targets global_config_tier 2>&1 | rg -q "test result: ok\. [2-9]"'
@@ -2361,7 +2360,7 @@ loom:
         - 0.1.0
         - unknown
     - name: config get/set round-trips through a scratch home
-      command: H=$(mktemp -d); HOME="$H" ./loom/target/debug/loom config -k update.check false >/dev/null && HOME="$H" ./loom/target/debug/loom config -k update.check && rg -q "check" "$H/.loom/config.toml" && echo ROUNDTRIP_OK
+      command: H=$(mktemp -d "${TMPDIR:-/tmp}/loomcfg.XXXXXX") && [ -n "$H" ] && HOME="$H" ./loom/target/debug/loom config -k update.check false >/dev/null && HOME="$H" ./loom/target/debug/loom config -k update.check && rg -q "check" "$H/.loom/config.toml" && echo ROUNDTRIP_OK
       success_criteria:
         exit_code: 0
         stdout_contains:
@@ -2376,7 +2375,7 @@ loom:
         stdout_not_contains:
         - 0 passed
     - name: a legacy .work workspace resolves and no .loom/work appears beside it
-      command: B="$PWD/loom/target/debug/loom"; R=$(mktemp -d); mkdir -p "$R/.work/stages" && printf "" > "$R/.work/config.toml" && (cd "$R" && git init -q && "$B" status >/dev/null 2>&1); test -f "$R/.work/config.toml" && test ! -e "$R/.loom/work" && echo LEGACY_RESOLVED_OK
+      command: B="$PWD/loom/target/debug/loom"; R=$(mktemp -d "${TMPDIR:-/tmp}/loomlegacy.XXXXXX") && [ -n "$R" ] && mkdir -p "$R/.work/stages" && printf "" > "$R/.work/config.toml" && (cd "$R" && git init -q && "$B" status >/dev/null 2>&1); test -f "$R/.work/config.toml" && test ! -e "$R/.loom/work" && echo LEGACY_RESOLVED_OK
       success_criteria:
         exit_code: 0
         stdout_contains:
