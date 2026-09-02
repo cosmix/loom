@@ -17,9 +17,11 @@ use super::{IMPORT_CONFIDENCE, UNRESOLVED_CALL_CONFIDENCE};
 struct DefinitionScopes {
     /// Span of every definition, for locating which one encloses a call site.
     spans: Vec<(Span, String)>,
-    /// Last definition of a name wins, matching how a reader resolves a
-    /// shadowed name by reading top to bottom.
-    by_name: BTreeMap<String, String>,
+    /// Every spelling a definition answers to — its bare name and each
+    /// scope-qualified suffix, so `Widget::new()` finds the `new` inside
+    /// `impl Widget` rather than any other. Last definition of a spelling wins,
+    /// matching how a reader resolves a shadowed name by reading top to bottom.
+    by_spelling: BTreeMap<String, String>,
 }
 
 /// Read-only, file-wide context every emitted definition node carries.
@@ -96,7 +98,7 @@ fn build_definitions(
     let mut open: Vec<(Span, String, String)> = Vec::new();
     let mut scopes = DefinitionScopes {
         spans: Vec::new(),
-        by_name: BTreeMap::new(),
+        by_spelling: BTreeMap::new(),
     };
 
     for definition in definitions {
@@ -121,6 +123,9 @@ fn emit_definition(
     let mut scope: Vec<String> = open.iter().map(|(_, name, _)| name.clone()).collect();
     scope.push(definition.name.clone());
     let id = node_id(ctx.path, definition.kind, &scope);
+    for spelling in spellings(&scope) {
+        scopes.by_spelling.insert(spelling, id.clone());
+    }
 
     let parent = open
         .last()
@@ -146,9 +151,14 @@ fn emit_definition(
         coverage: ctx.coverage.clone(),
     });
 
-    scopes.by_name.insert(definition.name.clone(), id.clone());
     scopes.spans.push((definition.span, id.clone()));
     open.push((definition.span, definition.name.clone(), id));
+}
+
+/// Every spelling a scope answers to, from the bare name outwards:
+/// `example::Widget::helper` is also `Widget::helper` and `helper`.
+fn spellings(scope: &[String]) -> impl Iterator<Item = String> + '_ {
+    (0..scope.len()).map(|start| scope[start..].join("::"))
 }
 
 /// Import edges: the imported file is a different translation unit; nothing
@@ -167,6 +177,11 @@ fn import_edges(imports: &[Reference], file_id: &str, edges: &mut Vec<SourceEdge
 
 /// Call edges: a callee this file defines is a parser edge, anything else is
 /// inferred and capped below full confidence.
+///
+/// A qualified callee matches only the spelling it was written with, so
+/// `Widget::new()` finds the `new` inside `impl Widget` and a path into another
+/// module (`crate::other::new()`) matches nothing here — whole-graph resolution
+/// decides that one, with evidence this file does not have.
 fn call_edges(
     calls: &[Reference],
     scopes: &DefinitionScopes,
@@ -175,7 +190,7 @@ fn call_edges(
 ) {
     for call in calls {
         let from = enclosing(&scopes.spans, call.at_byte).unwrap_or_else(|| file_id.to_string());
-        edges.push(match scopes.by_name.get(&call.symbol) {
+        edges.push(match scopes.by_spelling.get(&call.symbol) {
             Some(target) => SourceEdge::parser(
                 from,
                 target.clone(),

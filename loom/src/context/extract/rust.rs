@@ -8,7 +8,13 @@ use crate::context::extract::{
 use crate::context::source_graph::{NodeLanguage, SourceNodeKind};
 use crate::language::DetectedLanguage;
 
-/// Extracts Rust declarations, `use` paths, and direct or method calls.
+/// Extracts Rust declarations, `use` paths, and calls.
+///
+/// A call is captured however it is written: a bare `helper()`, a method
+/// `self.helper()`, and a qualified `crate::a::b()`, `super::b()` or
+/// `Widget::new()` all produce a call reference. A qualified callee keeps the
+/// path as written, minus any turbofish, so resolution can try the qualified
+/// spelling before it falls back to the bare name.
 ///
 /// It deliberately does not model closures, macros, cross-file resolution, or
 /// the semantic relationships implied by traits and implementations; the
@@ -64,6 +70,25 @@ const QUERY: &str = r#"
 (call_expression
   function: (field_expression
     field: (field_identifier) @call.name))
+
+; A qualified callee — `crate::a::b()`, `super::b()`, `Widget::new()` — is one
+; `scoped_identifier`, captured whole so the qualifier survives into resolution.
+(call_expression
+  function: (scoped_identifier) @call.name)
+
+; The same three forms carrying a turbofish: `b::<T>()`, `Widget::new::<T>()`,
+; and `value.parse::<T>()`.
+(call_expression
+  function: (generic_function
+    function: [
+      (identifier)
+      (scoped_identifier)
+    ] @call.name))
+
+(call_expression
+  function: (generic_function
+    function: (field_expression
+      field: (field_identifier) @call.name)))
 "#;
 
 impl QueryHarness for RustExtractor {
@@ -79,7 +104,7 @@ impl QueryHarness for RustExtractor {
         ExtractorIdentity {
             grammar_version: "0.24.2",
             query_digest: crate::context::source_graph::body_hash(QUERY.as_bytes()),
-            extractor_version: 1,
+            extractor_version: 2,
         }
     }
 
@@ -122,196 +147,5 @@ impl SourceGraphExtractor for RustExtractor {
 }
 
 #[cfg(test)]
-mod tests {
-    use std::path::Path;
-
-    use super::*;
-
-    const FIXTURE: &str = r#"
-mod example {
-    use crate::external::Thing;
-
-    struct Widget;
-
-    impl Widget {
-        fn call_helper(&self) {
-            self.helper();
-        }
-
-        fn helper(&self) {}
-    }
-
-    fn invoke_external() {
-        missing_api();
-    }
-
-    trait Describable {}
-}
-"#;
-
-    #[test]
-    fn extracts_the_expected_node_ids() {
-        let extraction = RustExtractor::new()
-            .extract(Path::new("src/fixture.rs"), FIXTURE.as_bytes())
-            .unwrap();
-        let mut ids: Vec<_> = extraction
-            .nodes
-            .iter()
-            .map(|node| node.id.as_str())
-            .collect();
-        ids.sort_unstable();
-
-        assert_eq!(
-            ids,
-            vec![
-                "src/fixture.rs",
-                "src/fixture.rs#function:example::Widget::call_helper",
-                "src/fixture.rs#function:example::Widget::helper",
-                "src/fixture.rs#function:example::invoke_external",
-                "src/fixture.rs#implementation:example::Widget",
-                "src/fixture.rs#interface:example::Describable",
-                "src/fixture.rs#module:example",
-                "src/fixture.rs#type:example::Widget",
-            ]
-        );
-    }
-
-    #[test]
-    fn a_type_and_its_impl_block_get_distinct_ids() {
-        let extraction = RustExtractor::new()
-            .extract(Path::new("src/fixture.rs"), FIXTURE.as_bytes())
-            .unwrap();
-
-        let type_id = extraction
-            .nodes
-            .iter()
-            .find(|node| node.kind == SourceNodeKind::Type)
-            .map(|node| node.id.as_str())
-            .unwrap();
-        let implementation_id = extraction
-            .nodes
-            .iter()
-            .find(|node| node.kind == SourceNodeKind::Implementation)
-            .map(|node| node.id.as_str())
-            .unwrap();
-
-        assert_ne!(type_id, implementation_id);
-        assert_eq!(type_id, "src/fixture.rs#type:example::Widget");
-        assert_eq!(
-            implementation_id,
-            "src/fixture.rs#implementation:example::Widget"
-        );
-    }
-
-    /// Expected edges, kept at module scope so the assertion below stays
-    /// short — the maintainability scanner budgets function bodies, not
-    /// `const` declarations.
-    const EXPECTED_EDGES: &[(&str, &str, &str, &str)] = &[
-        ("src/fixture.rs", "<unresolved>", "imports", "inferred"),
-        (
-            "src/fixture.rs",
-            "src/fixture.rs#module:example",
-            "contains",
-            "parser",
-        ),
-        (
-            "src/fixture.rs#function:example::Widget::call_helper",
-            "src/fixture.rs#function:example::Widget::helper",
-            "calls",
-            "parser",
-        ),
-        (
-            "src/fixture.rs#function:example::invoke_external",
-            "<unresolved>",
-            "calls",
-            "inferred",
-        ),
-        (
-            "src/fixture.rs#implementation:example::Widget",
-            "src/fixture.rs#function:example::Widget::call_helper",
-            "contains",
-            "parser",
-        ),
-        (
-            "src/fixture.rs#implementation:example::Widget",
-            "src/fixture.rs#function:example::Widget::helper",
-            "contains",
-            "parser",
-        ),
-        (
-            "src/fixture.rs#module:example",
-            "src/fixture.rs#function:example::invoke_external",
-            "contains",
-            "parser",
-        ),
-        (
-            "src/fixture.rs#module:example",
-            "src/fixture.rs#implementation:example::Widget",
-            "contains",
-            "parser",
-        ),
-        (
-            "src/fixture.rs#module:example",
-            "src/fixture.rs#interface:example::Describable",
-            "contains",
-            "parser",
-        ),
-        (
-            "src/fixture.rs#module:example",
-            "src/fixture.rs#type:example::Widget",
-            "contains",
-            "parser",
-        ),
-    ];
-
-    #[test]
-    fn extracts_the_expected_edges() {
-        let extraction = RustExtractor::new()
-            .extract(Path::new("src/fixture.rs"), FIXTURE.as_bytes())
-            .unwrap();
-        let mut edges: Vec<_> = extraction
-            .edges
-            .iter()
-            .map(|edge| {
-                (
-                    edge.from.as_str(),
-                    edge.to.as_str(),
-                    edge.kind.as_str(),
-                    edge.provenance.as_str(),
-                )
-            })
-            .collect();
-        edges.sort_unstable();
-
-        assert_eq!(edges, EXPECTED_EDGES);
-    }
-
-    #[test]
-    fn marks_undefined_calls_as_low_confidence_inferred_edges() {
-        let extraction = RustExtractor::new()
-            .extract(Path::new("src/fixture.rs"), FIXTURE.as_bytes())
-            .unwrap();
-        let edge = extraction
-            .edges
-            .iter()
-            .find(|edge| edge.symbol == "missing_api")
-            .unwrap();
-
-        assert_eq!(
-            edge.provenance,
-            crate::context::source_graph::EdgeProvenance::Inferred
-        );
-        assert!(edge.confidence <= 0.5);
-        assert!(edge.is_unresolved());
-    }
-
-    #[test]
-    fn syntax_errors_keep_only_the_file_node() {
-        let extraction = RustExtractor::new()
-            .extract(Path::new("src/broken.rs"), b"fn broken( {")
-            .unwrap();
-
-        assert_eq!(extraction.coverage.status(), "parse-error");
-        assert_eq!(extraction.nodes.len(), 1);
-    }
-}
+#[path = "rust/tests.rs"]
+mod tests;

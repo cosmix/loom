@@ -20,7 +20,7 @@
 //! | `@definition.<kind>`  | the whole definition, `<kind>` per [`QueryHarness::kind_for_capture`] |
 //! | `@name`               | the identifier naming the definition in that match   |
 //! | `@import.path`        | the module path of an import statement               |
-//! | `@call.name`          | the callee identifier at a call site                 |
+//! | `@call.name`          | the callee at a call site, bare or qualified         |
 //!
 //! A `@definition.*` match with no `@name` is counted toward
 //! [`FileCoverage::Partial`] rather than emitted as an anonymous node.

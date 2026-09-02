@@ -2,7 +2,7 @@
 
 use super::fixtures::*;
 use super::*;
-use crate::context::source_graph::UNRESOLVED_TARGET;
+use crate::context::source_graph::{SourceNodeKind, UNRESOLVED_TARGET};
 
 /// An unresolved edge of `kind` leaving `from`, naming `symbol`.
 fn seeking(from: &str, kind: SourceEdgeKind, symbol: &str) -> Vec<SourceEdge> {

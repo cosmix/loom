@@ -37,12 +37,31 @@ pub(crate) fn func_id(path: &str, name: &str) -> String {
 }
 
 pub(crate) fn scoped_node(path: &str, kind: SourceNodeKind, name: &str) -> SourceNode {
+    nested_node(path, kind, &[name])
+}
+
+/// A node whose scope has more than one segment — a function inside an `impl`
+/// or a `mod` — which is what a qualified call has to match against.
+pub(crate) fn nested_node(path: &str, kind: SourceNodeKind, scope: &[&str]) -> SourceNode {
+    let scope: Vec<String> = scope.iter().map(|segment| segment.to_string()).collect();
     SourceNode {
-        id: scoped_id(path, kind, name),
+        id: node_id(Path::new(path), kind, &scope),
         kind,
-        scope: vec![name.to_string()],
-        signature: format!("{kind} {name}"),
+        signature: format!("{kind} {}", scope.join("::")),
+        scope,
         ..file_node(path)
+    }
+}
+
+/// A file entry holding a file node plus the symbol nodes given.
+fn entry_of(path: &str, symbols: Vec<SourceNode>, edges: Vec<SourceEdge>) -> FileEntry {
+    let mut nodes = vec![file_node(path)];
+    nodes.extend(symbols);
+    FileEntry {
+        content_hash: "sha256:file".to_string(),
+        nodes,
+        edges,
+        coverage: FileCoverage::Full,
     }
 }
 
@@ -53,27 +72,30 @@ pub(crate) fn mixed_file(
     symbols: &[(SourceNodeKind, &str)],
     edges: Vec<SourceEdge>,
 ) -> FileEntry {
-    let mut nodes = vec![file_node(path)];
-    nodes.extend(
-        symbols
-            .iter()
-            .map(|(kind, name)| scoped_node(path, *kind, name)),
-    );
-    FileEntry {
-        content_hash: "sha256:file".to_string(),
-        nodes,
-        edges,
-        coverage: FileCoverage::Full,
-    }
+    let nodes = symbols
+        .iter()
+        .map(|(kind, name)| scoped_node(path, *kind, name))
+        .collect();
+    entry_of(path, nodes, edges)
+}
+
+/// A file entry holding one function per nested scope, for the cases where the
+/// scope is the point: `["Widget", "new"]` is `new` inside `impl Widget`.
+pub(crate) fn nested_file(path: &str, scopes: &[&[&str]], edges: Vec<SourceEdge>) -> FileEntry {
+    let nodes = scopes
+        .iter()
+        .map(|scope| nested_node(path, SourceNodeKind::Function, scope))
+        .collect();
+    entry_of(path, nodes, edges)
 }
 
 /// A file entry holding a file node plus one function node per name.
 pub(crate) fn source_file(path: &str, symbols: &[&str], edges: Vec<SourceEdge>) -> FileEntry {
-    let functions: Vec<(SourceNodeKind, &str)> = symbols
+    let nodes = symbols
         .iter()
-        .map(|name| (SourceNodeKind::Function, *name))
+        .map(|name| scoped_node(path, SourceNodeKind::Function, name))
         .collect();
-    mixed_file(path, &functions, edges)
+    entry_of(path, nodes, edges)
 }
 
 pub(crate) fn graph_of(files: Vec<(&str, FileEntry)>) -> ResolvedGraph {

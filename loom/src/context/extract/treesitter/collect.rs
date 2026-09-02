@@ -119,7 +119,7 @@ fn process_match<'tree>(
                 at_byte: capture.node.byte_range().start,
             }),
             "call.name" => calls.push(Reference {
-                symbol: text,
+                symbol: normalize_call(&text),
                 at_byte: capture.node.byte_range().start,
             }),
             other => {
@@ -179,6 +179,35 @@ fn span_of(node: Node<'_>) -> Span {
 fn node_text(node: Node<'_>, bytes: &[u8]) -> String {
     let range = node.byte_range();
     String::from_utf8_lossy(&bytes[range.start..range.end]).into_owned()
+}
+
+/// Reduce a captured callee to the spelling the graph indexes.
+///
+/// A qualified path is captured whole, so it can arrive wrapped across lines
+/// and can carry a turbofish. Whitespace is dropped, and so is everything
+/// between angle brackets: `Vec::<u8>::new` is a call to `Vec::new`, and the
+/// type it is instantiated at says nothing about which definition runs. The
+/// brackets are tracked by depth rather than per segment, or the `std::string`
+/// inside `Vec::<std::string::String>::new` would survive the split and be read
+/// as part of the path.
+fn normalize_call(text: &str) -> String {
+    let mut spelling = String::with_capacity(text.len());
+    let mut depth = 0usize;
+    for character in text.chars() {
+        match character {
+            '<' => depth += 1,
+            '>' => depth = depth.saturating_sub(1),
+            _ if depth > 0 || character.is_whitespace() => {}
+            _ => spelling.push(character),
+        }
+    }
+    // Dropping the arguments leaves the `::` that introduced them behind, so
+    // `Vec::<u8>::new` arrives here as `Vec::::new`: an empty middle segment.
+    let segments: Vec<&str> = spelling
+        .split("::")
+        .filter(|segment| !segment.is_empty())
+        .collect();
+    segments.join("::")
 }
 
 /// Strip the quotes a grammar keeps around a string-literal import path.
