@@ -6,8 +6,14 @@ use std::io::Write;
 use crate::commands::status::data::StageSummary;
 use crate::models::stage::StageStatus;
 
-/// Render detailed failure information for blocked stages
-pub fn render_attention<W: Write>(w: &mut W, stages: &[StageSummary]) -> std::io::Result<()> {
+/// Render detailed failure information for blocked stages. The status line,
+/// ID, `Reason:`, and `Hint:` always render for a problem stage; `verbose`
+/// only gates the `Evidence:` listing (see `render_failure_evidence`).
+pub fn render_attention<W: Write>(
+    w: &mut W,
+    stages: &[StageSummary],
+    verbose: bool,
+) -> std::io::Result<()> {
     let problem_stages: Vec<_> = stages
         .iter()
         .filter(|s| {
@@ -31,13 +37,44 @@ pub fn render_attention<W: Write>(w: &mut W, stages: &[StageSummary]) -> std::io
     writeln!(w, "{}", "─".repeat(50))?;
 
     for stage in problem_stages {
-        render_problem_stage(w, stage)?;
+        render_problem_stage(w, stage, verbose)?;
+        // The other problem statuses have one obvious next command; a stage
+        // stopped for a human has three, so it gets the extra lines spelling
+        // them out instead of leaving the operator to `human-review` with no
+        // flags to see them.
+        if stage.status == StageStatus::NeedsHumanReview {
+            render_human_review_choices(w)?;
+        }
     }
 
     Ok(())
 }
 
-fn render_problem_stage<W: Write>(w: &mut W, stage: &StageSummary) -> std::io::Result<()> {
+/// The three `loom stage human-review` actions, indented under the hint line
+/// `render_problem_stage` already printed for a `NeedsHumanReview` stage.
+/// Kept out of `render_problem_stage` itself so that the pinned
+/// function's line count does not grow.
+fn render_human_review_choices<W: Write>(w: &mut W) -> std::io::Result<()> {
+    const CHOICES: [(&str, &str); 3] = [
+        ("--approve", "queue a fresh session with fresh fix attempts"),
+        ("--force-complete", "skip acceptance and mark completed"),
+        ("--reject <reason>", "block the stage"),
+    ];
+    for (flag, description) in CHOICES {
+        writeln!(
+            w,
+            "          {}",
+            format!("{flag:<19}{description}").dimmed()
+        )?;
+    }
+    Ok(())
+}
+
+fn render_problem_stage<W: Write>(
+    w: &mut W,
+    stage: &StageSummary,
+    verbose: bool,
+) -> std::io::Result<()> {
     // A cleanup warning can land on any stage status (orphan cleanup also runs
     // on Skipped stages, not just Completed), so it is decided before status.
     if stage.cleanup_warning.is_some() {
@@ -61,21 +98,12 @@ fn render_problem_stage<W: Write>(w: &mut W, stage: &StageSummary) -> std::io::R
     )?;
     writeln!(w, "    ID: {}", stage.id.dimmed())?;
 
-    // Show failure details if available
+    // Show failure type unconditionally; the evidence listing is gated
+    // behind --verbose (see render_failure_evidence).
     if let Some(ref failure) = stage.failure_info {
-        // Show failure type
         writeln!(w, "    Type: {:?}", failure.failure_type)?;
-
-        if !failure.evidence.is_empty() {
-            writeln!(w, "    Evidence:")?;
-            for line in failure.evidence.iter().take(5) {
-                writeln!(w, "      {}", line.dimmed())?;
-            }
-            if failure.evidence.len() > 5 {
-                writeln!(w, "      ... {} more lines", failure.evidence.len() - 5)?;
-            }
-        }
     }
+    render_failure_evidence(w, stage, verbose)?;
 
     // Show review reason if available (NeedsHumanReview stages)
     if let Some(ref reason) = stage.review_reason {
@@ -88,11 +116,36 @@ fn render_problem_stage<W: Write>(w: &mut W, stage: &StageSummary) -> std::io::R
         StageStatus::MergeConflict => format!("loom stage merge {}", stage.id),
         StageStatus::CompletedWithFailures => format!("loom stage retry {}", stage.id),
         StageStatus::MergeBlocked => format!("loom stage merge {}", stage.id),
-        StageStatus::NeedsHumanReview => format!("loom stage resume {}", stage.id),
+        StageStatus::NeedsHumanReview => format!("loom stage human-review {}", stage.id),
         _ => "loom status".to_string(),
     };
     writeln!(w, "    {}: {}", "Hint".cyan(), hint.dimmed())?;
 
+    Ok(())
+}
+
+/// Prints the `Evidence:` listing from `stage.failure_info` (up to five
+/// lines plus an "... N more lines" tail) only when `verbose` is set. Kept
+/// out of `render_problem_stage` itself so that the pinned function's line
+/// count does not grow.
+fn render_failure_evidence<W: Write>(
+    w: &mut W,
+    stage: &StageSummary,
+    verbose: bool,
+) -> std::io::Result<()> {
+    let Some(ref failure) = stage.failure_info else {
+        return Ok(());
+    };
+    if !verbose || failure.evidence.is_empty() {
+        return Ok(());
+    }
+    writeln!(w, "    Evidence:")?;
+    for line in failure.evidence.iter().take(5) {
+        writeln!(w, "      {}", line.dimmed())?;
+    }
+    if failure.evidence.len() > 5 {
+        writeln!(w, "      ... {} more lines", failure.evidence.len() - 5)?;
+    }
     Ok(())
 }
 
@@ -119,3 +172,7 @@ fn render_cleanup_warning<W: Write>(w: &mut W, stage: &StageSummary) -> std::io:
     writeln!(w, "    {}: {}", "Hint".cyan(), hint.dimmed())?;
     Ok(())
 }
+
+#[cfg(test)]
+#[path = "attention_tests.rs"]
+mod tests;

@@ -27,11 +27,23 @@ fn apply_verdict_reject_escalates_to_human_review() {
 
     let after = crate::verify::transitions::load_stage("s1", work).unwrap();
     assert_eq!(after.status, StageStatus::NeedsHumanReview);
-    assert!(after
-        .review_reason
-        .as_deref()
-        .unwrap_or("")
-        .contains("upheld the disputed acceptance criterion"));
+    let reason = after.review_reason.as_deref().unwrap_or("");
+    assert!(reason.contains("upheld the disputed acceptance criterion"));
+    // The reason must point at the real verdict file (this repo's layout, not
+    // a hard-coded `.loom/work/...` guess) and name the operator's next step.
+    let verdict_path = work
+        .join("disputes")
+        .join("s1")
+        .join("1")
+        .join("verdict.md");
+    assert!(
+        reason.contains(&verdict_path.display().to_string()),
+        "reason: {reason}"
+    );
+    assert!(
+        reason.contains("loom stage human-review s1"),
+        "reason: {reason}"
+    );
     // The reasoning is still written where the agent (and the human) read it.
     let fb = feedback::read_feedback(work, "s1").unwrap().unwrap();
     assert!(fb.contains("rejected"));

@@ -258,10 +258,10 @@ fn execute_static(work_dir: &WorkDir, verbose: bool) -> Result<()> {
         render::render_merge_status(&mut out, &status_data.merge)?;
     }
 
-    // Verbose mode: show detailed failure information.
-    if verbose {
-        render::render_attention(&mut out, &status_data.stages)?;
-    }
+    // Stages needing a decision (blocked, failed acceptance, or awaiting human
+    // review) show regardless of --verbose: a stopped stage only helps if the
+    // operator can see why. --verbose also expands each stage's Evidence: listing.
+    render::render_attention(&mut out, &status_data.stages, verbose)?;
 
     println!();
     Ok(())

@@ -93,9 +93,10 @@ fn notification_command_succeeded(program: &str, output: &std::process::Output) 
 /// Notify the user that a stage needs human review.
 pub fn notify_needs_human_review(stage_id: &str, review_reason: Option<&str>) {
     let title = format!("loom: Stage '{}' needs review", stage_id);
-    let body = review_reason
+    let reason = review_reason
         .map(|r| truncate(r, 200))
         .unwrap_or_else(|| "A stage requires human review.".to_string());
+    let body = format!("Next: loom stage human-review {stage_id}\n{reason}");
 
     send_desktop_notification(&title, &body);
 }

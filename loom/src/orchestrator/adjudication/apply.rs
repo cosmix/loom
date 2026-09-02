@@ -233,11 +233,14 @@ fn apply_reject(
     // The reasoning and citations are what a human needs to arbitrate, so they
     // are still written for the record.
     feedback::append_rejection(work_dir, &stage.id, reasoning, citations)?;
+    let verdict_path =
+        crate::models::dispute::verdict_file(&work_dir.join("disputes"), &stage.id, dispute_id);
     let reason = format!(
         "Adjudicator upheld the disputed acceptance criterion (dispute {dispute_id}): \
          the criterion stands and the implementation is what must change. The stage \
          agent judged it impossible, so it cannot make progress unaided — read \
-         .loom/work/disputes/{}/{dispute_id}/verdict.md",
+         {} — then decide with: loom stage human-review {}",
+        verdict_path.display(),
         stage.id
     );
     // A Reject MUST leave the stage in NeedsHumanReview: re-queueing is the

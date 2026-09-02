@@ -18,5 +18,6 @@ pub(super) fn announce_needs_human_review(stage_id: &str, review_reason: Option<
         stage_id,
         reason_str
     );
+    eprintln!("    Next: loom stage human-review {stage_id}");
     crate::orchestrator::notify::notify_needs_human_review(stage_id, review_reason);
 }
