@@ -14,6 +14,7 @@ mod completion_handler;
 mod crash_handler;
 mod event_handler;
 mod heartbeat_apply;
+mod judge_close;
 mod merge_handler;
 mod orchestrator;
 mod orphan_adoption;

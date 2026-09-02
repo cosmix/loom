@@ -13,10 +13,13 @@ use super::persistence::Persistence;
 use super::Orchestrator;
 
 mod handoff_state;
+mod human_review;
 mod recover_hung;
 mod stage_takedown;
+mod stalled_judge;
 
 use handoff_state::mark_needs_handoff;
+use human_review::announce_needs_human_review;
 use recover_hung::HungReport;
 
 fn requeue_after_handoff(stage: &mut Stage) -> Result<()> {
@@ -247,23 +250,23 @@ impl Orchestrator {
             } => {
                 self.on_budget_exceeded(&session_id, &stage_id, context_tokens, ceiling_tokens)?;
             }
+            MonitorEvent::AdjudicatorStalled {
+                session_id,
+                stage_id,
+                stale_duration_secs,
+                timeout_secs,
+            } => {
+                self.on_adjudicator_stalled(
+                    &session_id,
+                    &stage_id,
+                    stale_duration_secs,
+                    timeout_secs,
+                )?;
+            }
             MonitorEvent::StageNeedsHumanReview {
                 stage_id,
                 review_reason,
-            } => {
-                clear_status_line();
-                let reason_str = review_reason.as_deref().unwrap_or("No reason provided");
-                eprintln!(
-                    "{} Stage '{}' needs human review: {}",
-                    "REVIEW NEEDED:".magenta().bold(),
-                    stage_id,
-                    reason_str
-                );
-                crate::orchestrator::notify::notify_needs_human_review(
-                    &stage_id,
-                    review_reason.as_deref(),
-                );
-            }
+            } => announce_needs_human_review(&stage_id, review_reason.as_deref()),
         }
         Ok(())
     }
@@ -381,6 +384,8 @@ mod governor_retry_tests;
 mod governor_tests;
 #[cfg(test)]
 mod recover_hung_tests;
+#[cfg(test)]
+mod stalled_judge_tests;
 #[cfg(test)]
 mod takedown_identity_tests;
 #[cfg(test)]

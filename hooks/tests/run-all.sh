@@ -68,6 +68,7 @@ run_test "subagent-stop: heartbeat refresh is serialized and cannot roll parent 
 run_test "heartbeat protocol: ownership, SessionStart lock, abandoned recovery, atomic JSON" "$SCRIPT_DIR/heartbeat-protocol.sh"
 run_test "post-tool-use: resident-token arithmetic (last record wins, torn line survives)" "$SCRIPT_DIR/post-tool-use-resident-tokens.sh"
 run_test "post-tool-use: heartbeat write survives a ceiling exit 2" "$SCRIPT_DIR/post-tool-use-ceiling-heartbeat-survives.sh"
+run_test "post-tool-use: judge writes its own heartbeat, bypassing the ownership gate" "$SCRIPT_DIR/post-tool-use-judge-heartbeat.sh"
 run_test "read-guard: offset/limit arithmetic injection is dead, well-formed reads unchanged" "$SCRIPT_DIR/read-guard-offset-injection.sh"
 run_test "session-start: heartbeat write escapes a quoted transcript_path via jq" "$SCRIPT_DIR/session-start-heartbeat-escaping.sh"
 run_test "post-tool-use: commit reminder is tokenized - heredoc body ignored, real commits fire" "$SCRIPT_DIR/post-tool-use-commit-reminder-tokenized.sh"

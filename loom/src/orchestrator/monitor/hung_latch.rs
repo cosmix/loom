@@ -12,13 +12,28 @@
 //! session that wakes up clears both latches on its next heartbeat, which is
 //! what keeps a blip from ever reaching the second report: the elapsed time
 //! restarts from zero with it.
+//!
+//! # Judges are measured here too, and reported differently
+//!
+//! An adjudication session is silent in the same observable way and needs a
+//! different answer. It does not own the stage it works on, so there is
+//! nothing to hand off and re-queue: a stalled judge is closed, and the stage
+//! it left in `NeedsAdjudication` is re-judged on the next poll under the
+//! dispute's own attempt budget. It is also latched once rather than twice —
+//! the first report already ends the session, so there is no second line to
+//! escalate to.
 
-use crate::models::session::Session;
+use chrono::{DateTime, Utc};
+use std::time::Duration;
+
+use crate::models::session::{Session, SessionStatus, SessionType};
 use crate::models::stage::Stage;
 
+use super::config::MonitorConfig;
 use super::detection::Detection;
 use super::events::MonitorEvent;
-use super::heartbeat::HeartbeatWatcher;
+use super::handlers::Handlers;
+use super::heartbeat::{HeartbeatStatus, HeartbeatWatcher};
 use super::parked::stage_looks_finished;
 
 /// The multiple of a stage's response budget at which a still-silent session
@@ -42,6 +57,162 @@ pub(crate) fn is_stall_escalation(stale_duration_secs: u64, timeout_secs: u64) -
 }
 
 impl Detection {
+    /// What one running session's silence is worth on this tick, if anything.
+    ///
+    /// The two kinds part company immediately: a judge is measured against its
+    /// own heartbeat file and reported as
+    /// [`MonitorEvent::AdjudicatorStalled`], and never falls through to the
+    /// stage-agent path, whose heartbeat it does not write and whose
+    /// recovery — handing the stage off to a successor — would be wrong for it.
+    pub(super) fn session_silence_event(
+        &mut self,
+        session: &Session,
+        stages: &[Stage],
+        heartbeat_watcher: &HeartbeatWatcher,
+        config: &MonitorConfig,
+        handlers: &Handlers,
+    ) -> Option<MonitorEvent> {
+        if session.status != SessionStatus::Running {
+            return None;
+        }
+        let stage_id = session.stage_id.as_deref()?;
+
+        // Resolve this stage's response budget. One watcher serves every
+        // stage, so the threshold is passed per check rather than held on
+        // the watcher.
+        let timeout_secs = stages
+            .iter()
+            .find(|s| s.id == *stage_id)
+            .map(|s| s.effective_subagent_timeout_secs())
+            .unwrap_or_else(|| config.hung_timeout.as_secs());
+
+        if session.session_type == SessionType::Adjudication {
+            return self.adjudicator_stall_event(
+                session,
+                stage_id,
+                heartbeat_watcher,
+                timeout_secs,
+                handlers,
+            );
+        }
+        self.stage_silence_event(
+            session,
+            stage_id,
+            stages,
+            heartbeat_watcher,
+            timeout_secs,
+            handlers,
+        )
+    }
+
+    /// A stage agent that has stopped heartbeating. Unchanged behaviour: the
+    /// first silence past the budget is reported, then one more at the
+    /// escalation line.
+    fn stage_silence_event(
+        &mut self,
+        session: &Session,
+        stage_id: &str,
+        stages: &[Stage],
+        heartbeat_watcher: &HeartbeatWatcher,
+        timeout_secs: u64,
+        handlers: &Handlers,
+    ) -> Option<MonitorEvent> {
+        // Pass the session ID so a stale heartbeat left by a previous session
+        // for the same stage does not flag this fresh session as hung.
+        let status = heartbeat_watcher.check_session_hung(
+            stage_id,
+            &session.id,
+            Duration::from_secs(timeout_secs),
+        );
+        let stale_duration_secs = match status {
+            HeartbeatStatus::Hung {
+                stale_duration_secs,
+            } => stale_duration_secs,
+            // Answering again, so the next silence starts from the first
+            // warning.
+            HeartbeatStatus::Healthy => {
+                self.clear_hung_report(&session.id);
+                return None;
+            }
+            // Normal for a session that has not reached its first tool call.
+            HeartbeatStatus::NoHeartbeat => return None,
+        };
+
+        // A dead PID is a crash, and crash detection in
+        // `detect_session_changes` owns it, so only a live one is reported hung.
+        if !self.hung_report_due(&session.id, stale_duration_secs, timeout_secs)
+            || !matches!(handlers.check_session_alive(session), Ok(Some(true)))
+        {
+            return None;
+        }
+        let event = hung_event(
+            session,
+            stage_id,
+            stages,
+            heartbeat_watcher,
+            stale_duration_secs,
+            timeout_secs,
+        );
+        self.record_hung_report(&session.id, stale_duration_secs, timeout_secs);
+        Some(event)
+    }
+
+    /// A judge that is still alive and has stopped working.
+    ///
+    /// Measured from its own heartbeat when it has written one, and from its
+    /// spawn otherwise — a judge that never reached a tool call is exactly the
+    /// case this watchdog exists for, since it is the shape a permission
+    /// prompt or an API outage takes.
+    fn adjudicator_stall_event(
+        &mut self,
+        session: &Session,
+        stage_id: &str,
+        heartbeat_watcher: &HeartbeatWatcher,
+        timeout_secs: u64,
+        handlers: &Handlers,
+    ) -> Option<MonitorEvent> {
+        // A stage may declare `subagent_timeout_secs: 0` and nothing rejects
+        // it. Zero would close every judge on its first poll, so a stage that
+        // declares no real budget gets no judge watchdog — the same rule
+        // `is_stall_escalation` applies to stage agents, for the same reason.
+        if timeout_secs == 0 || self.reported_stalled_judges.contains(&session.id) {
+            return None;
+        }
+        let idle_for = Utc::now()
+            .signed_duration_since(judge_last_activity(session, stage_id, heartbeat_watcher))
+            .num_seconds();
+        let Ok(stale_duration_secs) = u64::try_from(idle_for) else {
+            return None;
+        };
+        // A judge whose process is already gone is a crash or an ordinary
+        // exit, both of which `detect_vanished_process` owns.
+        if stale_duration_secs <= timeout_secs
+            || !matches!(handlers.check_session_alive(session), Ok(Some(true)))
+        {
+            return None;
+        }
+        self.reported_stalled_judges.insert(session.id.clone());
+        Some(MonitorEvent::AdjudicatorStalled {
+            session_id: session.id.clone(),
+            stage_id: stage_id.to_string(),
+            stale_duration_secs,
+            timeout_secs,
+        })
+    }
+
+    /// Drop the stall latch for every judge that is no longer running, so the
+    /// next judge on the same stage is measured from scratch. Keyed by session
+    /// id, so this only ever forgets sessions that have already ended.
+    pub(super) fn clear_finished_judge_latches(&mut self, sessions: &[Session]) {
+        let running: std::collections::HashSet<_> = sessions
+            .iter()
+            .filter(|session| session.status == SessionStatus::Running)
+            .map(|session| session.id.as_str())
+            .collect();
+        self.reported_stalled_judges
+            .retain(|session_id| running.contains(session_id.as_str()));
+    }
+
     /// Whether this silence is worth an event: the first one for the session,
     /// then one more when it crosses the escalation line.
     pub(super) fn hung_report_due(
@@ -88,6 +259,23 @@ impl Detection {
     ) {
         (&self.reported_hung_sessions, &self.escalated_hung_sessions)
     }
+}
+
+/// When a judge was last seen working.
+///
+/// A heartbeat naming a DIFFERENT session is a previous judge's, left on the
+/// stage's adjudication key after that judge was closed. It says nothing about
+/// this one, so this one is measured from its spawn instead — the same rule
+/// [`HeartbeatWatcher::check_session_hung`] applies to stage agents.
+fn judge_last_activity(
+    session: &Session,
+    stage_id: &str,
+    heartbeat_watcher: &HeartbeatWatcher,
+) -> DateTime<Utc> {
+    heartbeat_watcher
+        .judge_heartbeat(stage_id)
+        .filter(|heartbeat| heartbeat.session_id == session.id)
+        .map_or(session.created_at, |heartbeat| heartbeat.timestamp)
 }
 
 /// Build the `SessionHung` event for a session whose heartbeat has gone stale.

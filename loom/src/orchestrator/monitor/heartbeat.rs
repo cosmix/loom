@@ -24,6 +24,11 @@ pub const DEFAULT_HUNG_TIMEOUT_SECS: u64 = 300;
 /// Default polling interval for heartbeat checks (10 seconds)
 pub const DEFAULT_HEARTBEAT_POLL_SECS: u64 = 10;
 
+/// File-stem suffix marking a heartbeat as an adjudication session's rather
+/// than a stage agent's: `<stage-id>.adjudication.json`. A judge works on a
+/// stage it does not own, so it gets a file of its own on the same stage key.
+const JUDGE_STEM_SUFFIX: &str = ".adjudication";
+
 /// Heartbeat data written by Claude Code hooks
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Heartbeat {
@@ -127,6 +132,11 @@ pub enum HeartbeatStatus {
 pub struct HeartbeatWatcher {
     /// Cached heartbeats by stage ID
     heartbeats: HashMap<String, Heartbeat>,
+    /// Cached adjudication-session heartbeats, keyed by the stage the judge
+    /// was spawned for. Held apart from `heartbeats` because one map would let
+    /// a judge's timestamp answer for the stage agent's silence, and the stage
+    /// agent's for the judge's.
+    judge_heartbeats: HashMap<String, Heartbeat>,
 }
 
 /// Hook timestamps have whole-second precision, so every heartbeat field is
@@ -141,6 +151,7 @@ impl HeartbeatWatcher {
     pub fn new() -> Self {
         Self {
             heartbeats: HashMap::new(),
+            judge_heartbeats: HashMap::new(),
         }
     }
 
@@ -160,12 +171,12 @@ impl HeartbeatWatcher {
             if path.extension().and_then(|s| s.to_str()) != Some("json") {
                 continue;
             }
-
-            let stage_id = path
-                .file_stem()
-                .and_then(|s| s.to_str())
-                .unwrap_or("")
-                .to_string();
+            let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
+            if let Some(stage_id) = stem.strip_suffix(JUDGE_STEM_SUFFIX) {
+                self.cache_judge_heartbeat(stage_id, &path);
+                continue;
+            }
+            let stage_id = stem.to_string();
 
             match read_heartbeat(&path) {
                 Ok(heartbeat) => {
@@ -196,9 +207,40 @@ impl HeartbeatWatcher {
         Ok(updates)
     }
 
+    /// Cache one judge's heartbeat under the stage it is adjudicating.
+    ///
+    /// Deliberately produces no [`HeartbeatUpdate`]: an update is applied to
+    /// the STAGE's session record, and the judge is not that session. Emitting
+    /// one would write the judge's context reading and transcript path onto
+    /// the stage agent's record.
+    fn cache_judge_heartbeat(&mut self, stage_id: &str, path: &Path) {
+        match read_heartbeat(path) {
+            Ok(heartbeat) => {
+                self.judge_heartbeats
+                    .insert(stage_id.to_string(), heartbeat);
+            }
+            Err(e) => eprintln!(
+                "Warning: Failed to read heartbeat {}: {}",
+                path.display(),
+                e
+            ),
+        }
+    }
+
     /// Get the heartbeat for a stage
     pub fn get_heartbeat(&self, stage_id: &str) -> Option<&Heartbeat> {
         self.heartbeats.get(stage_id)
+    }
+
+    /// The heartbeat last written by the adjudication session working on
+    /// `stage_id`, if that judge has made a tool call at all.
+    pub fn judge_heartbeat(&self, stage_id: &str) -> Option<&Heartbeat> {
+        self.judge_heartbeats.get(stage_id)
+    }
+
+    /// Forget a stage's judge heartbeat, when that judge is closed.
+    pub fn remove_judge(&mut self, stage_id: &str) {
+        self.judge_heartbeats.remove(stage_id);
     }
 
     /// Check if a session is hung based on heartbeat staleness.
@@ -312,6 +354,33 @@ pub fn remove_heartbeat(work_dir: &Path, stage_id: &str) -> Result<()> {
 /// Get heartbeat path for a stage
 pub fn heartbeat_path(work_dir: &Path, stage_id: &str) -> PathBuf {
     work_dir.join("heartbeat").join(format!("{stage_id}.json"))
+}
+
+/// Get the adjudication heartbeat path for a stage — the file the stage's
+/// judge writes, distinct from the stage agent's own.
+pub fn judge_heartbeat_path(work_dir: &Path, stage_id: &str) -> PathBuf {
+    work_dir
+        .join("heartbeat")
+        .join(format!("{stage_id}{JUDGE_STEM_SUFFIX}.json"))
+}
+
+/// Remove a stage's judge heartbeat file.
+///
+/// A missing file is success, not an error: a judge that was closed before it
+/// ever made a tool call never wrote one.
+pub fn cleanup_judge_heartbeat(work_dir: &Path, stage_id: &str) {
+    let path = judge_heartbeat_path(work_dir, stage_id);
+    if let Err(error) = std::fs::remove_file(&path) {
+        if error.kind() != std::io::ErrorKind::NotFound {
+            tracing::warn!(
+                target: "loom::adjudication",
+                stage = %stage_id,
+                path = %path.display(),
+                %error,
+                "failed to remove the judge heartbeat",
+            );
+        }
+    }
 }
 
 /// Read the resident-token count from a stage's latest heartbeat file.

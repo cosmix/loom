@@ -375,6 +375,8 @@ impl NativeBackend {
 mod tests;
 #[cfg(test)]
 mod tests_capsule;
+#[cfg(test)]
+mod tests_wrapper_env;
 // Sibling test modules across the crate reach this helper as
 // `native::write_test_pid_identity`; the re-export keeps that path stable.
 #[cfg(test)]

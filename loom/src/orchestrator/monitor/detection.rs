@@ -1,7 +1,6 @@
 //! Change detection for stages and sessions
 
 use std::collections::{HashMap, HashSet};
-use std::time::Duration;
 
 use crate::fs::work_dir::ContextConfig;
 use crate::models::session::{Session, SessionStatus};
@@ -18,8 +17,7 @@ use super::context::{context_health, ContextHealth};
 use super::events::MonitorEvent;
 use super::handlers::Handlers;
 use super::handoff_watch::HandoffWatch;
-use super::heartbeat::{HeartbeatStatus, HeartbeatWatcher};
-use super::hung_latch::hung_event;
+use super::heartbeat::HeartbeatWatcher;
 
 /// Detection state for tracking changes
 pub struct Detection {
@@ -31,6 +29,9 @@ pub struct Detection {
     /// Sessions whose silence has already been reported a second time, at the
     /// escalation line. See [`super::hung_latch`].
     pub(super) escalated_hung_sessions: HashSet<String>,
+    /// Adjudication sessions already reported stalled. One report each: the
+    /// report closes the judge, so there is no second line to escalate to.
+    pub(super) reported_stalled_judges: HashSet<String>,
     /// Red handoffs successfully written or found during this daemon run.
     /// A failed write remains absent so an unchanged-Red poll retries it.
     pub red_handoff_ready: HashSet<String>,
@@ -51,6 +52,7 @@ impl Detection {
             last_context_levels: HashMap::new(),
             reported_hung_sessions: HashSet::new(),
             escalated_hung_sessions: HashSet::new(),
+            reported_stalled_judges: HashSet::new(),
             red_handoff_ready: HashSet::new(),
             last_budget_exceeded: HashMap::new(),
             handoff_watch: HandoffWatch::default(),
@@ -125,6 +127,7 @@ impl Detection {
         let mut events = Vec::new();
 
         self.clear_inactive_latches(sessions);
+        self.clear_finished_judge_latches(sessions);
 
         for session in sessions {
             let status = self.detect_session_status(session, stages, handlers);
@@ -298,66 +301,14 @@ impl Detection {
             }
         }
 
-        // Check each running session for hung status
+        // Check each running session for silence. Which budget it is measured
+        // against, and what its silence means, both live in `hung_latch` —
+        // stage agents and judges answer that question differently.
         for session in sessions {
-            if session.status != SessionStatus::Running {
-                continue;
-            }
-
-            let stage_id = match &session.stage_id {
-                Some(id) => id,
-                None => continue,
-            };
-
-            // Resolve this stage's response budget. One watcher serves every
-            // stage, so the threshold is passed per check rather than held on
-            // the watcher.
-            let timeout_secs = stages
-                .iter()
-                .find(|s| s.id == *stage_id)
-                .map(|s| s.effective_subagent_timeout_secs())
-                .unwrap_or_else(|| config.hung_timeout.as_secs());
-
-            // Check heartbeat status for this stage. Pass the session ID so a
-            // stale heartbeat left by a previous session for the same stage
-            // does not flag this fresh session as hung (treated as NoHeartbeat).
-            let heartbeat_status = heartbeat_watcher.check_session_hung(
-                stage_id,
-                &session.id,
-                Duration::from_secs(timeout_secs),
-            );
-
-            match heartbeat_status {
-                HeartbeatStatus::Hung {
-                    stale_duration_secs,
-                } => {
-                    // The first silence past the budget is reported, then one
-                    // more at the escalation line; `hung_latch` owns that
-                    // decision. A dead PID is a crash, and crash detection in
-                    // `detect_session_changes` owns it, so only a live one is
-                    // reported hung.
-                    if self.hung_report_due(&session.id, stale_duration_secs, timeout_secs)
-                        && matches!(handlers.check_session_alive(session), Ok(Some(true)))
-                    {
-                        events.push(hung_event(
-                            session,
-                            stage_id,
-                            stages,
-                            heartbeat_watcher,
-                            stale_duration_secs,
-                            timeout_secs,
-                        ));
-                        self.record_hung_report(&session.id, stale_duration_secs, timeout_secs);
-                    }
-                }
-                HeartbeatStatus::Healthy => {
-                    // Session is healthy, clear any hung report
-                    self.clear_hung_report(&session.id);
-                }
-                HeartbeatStatus::NoHeartbeat => {
-                    // No heartbeat yet - session may not have started heartbeat protocol
-                    // This is normal for new sessions or sessions before hooks are set up
-                }
+            if let Some(event) =
+                self.session_silence_event(session, stages, heartbeat_watcher, config, handlers)
+            {
+                events.push(event);
             }
         }
 

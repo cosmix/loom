@@ -77,30 +77,10 @@ impl Orchestrator {
     fn retire_adjudicator(&mut self, stage_id: &str, dispute_id: u32, judge: Option<&str>) {
         let work_dir = self.config.work_dir.clone();
         for session in self.sessions_to_retire(&work_dir, stage_id, dispute_id, judge) {
-            if let Err(error) = self.backend.kill_session(&session) {
-                tracing::warn!(
-                    target: "loom::adjudication",
-                    stage = %stage_id,
-                    dispute = dispute_id,
-                    session = %session.id,
-                    %error,
-                    "failed to kill the adjudication session",
-                );
-            }
-            self.monitor
-                .handlers()
-                .persist_session_status(&session, SessionStatus::Completed);
-            if let Err(error) = crate::orchestrator::signals::remove_signal(&session.id, &work_dir)
-            {
-                tracing::warn!(
-                    target: "loom::adjudication",
-                    stage = %stage_id,
-                    dispute = dispute_id,
-                    session = %session.id,
-                    %error,
-                    "failed to remove the adjudication session's signal file",
-                );
-            }
+            // Shared with the stalled-judge watchdog: both paths have to leave
+            // identical state behind, or a stage stays blocked on a judge that
+            // only looks live. See `super::judge_close`.
+            self.close_adjudication_session(&session, SessionStatus::Completed);
             clear_status_line();
             eprintln!(
                 "Closed adjudication session '{}' for stage '{stage_id}' dispute {dispute_id}",

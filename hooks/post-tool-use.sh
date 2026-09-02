@@ -312,6 +312,12 @@ fi
 # NOT a whole-script exit: the matcher blocks below (post-commit reminder,
 # edit recording) are unrelated to the heartbeat and must still run.
 HEARTBEAT_FILE="${HEARTBEAT_DIR}/${LOOM_STAGE_ID}.json"
+# A judge (LOOM_SESSION_TYPE=adjudication) writes its own heartbeat file,
+# separate from the stage session's, since a stage's session: frontmatter
+# never names the judge.
+if [[ "${LOOM_SESSION_TYPE:-}" == "adjudication" ]]; then
+	HEARTBEAT_FILE="${HEARTBEAT_DIR}/${LOOM_STAGE_ID}.adjudication.json"
+fi
 HEARTBEAT_LOCK_DIR="${HEARTBEAT_FILE}.lock"
 if loom_heartbeat_lock_acquire "$HEARTBEAT_LOCK_DIR"; then
 	trap 'loom_heartbeat_lock_release "$HEARTBEAT_LOCK_DIR"' EXIT
@@ -321,7 +327,10 @@ if loom_heartbeat_lock_acquire "$HEARTBEAT_LOCK_DIR"; then
 		loom_debug "post-tool-use: skipping heartbeat refresh - $HEARTBEAT_FILE is a symlink"
 		loom_heartbeat_lock_release "$HEARTBEAT_LOCK_DIR"
 		trap - EXIT
-	elif ! loom_heartbeat_owner_is_current "$LOOM_WORK_DIR" "$LOOM_STAGE_ID" "$LOOM_SESSION_ID" "$HEARTBEAT_FILE"; then
+	# A judge's ownership is already implied by LOOM_SESSION_TYPE alone: the
+	# daemon enforces one live judge per stage, so the ownership gate below
+	# applies only to non-judge (stage) sessions.
+	elif [[ "${LOOM_SESSION_TYPE:-}" != "adjudication" ]] && ! loom_heartbeat_owner_is_current "$LOOM_WORK_DIR" "$LOOM_STAGE_ID" "$LOOM_SESSION_ID" "$HEARTBEAT_FILE"; then
 		loom_debug "post-tool-use: skipping stale heartbeat refresh for session $LOOM_SESSION_ID"
 	else
 	# The heartbeat's context_tokens/transcript_path belong to the MAIN

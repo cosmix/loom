@@ -134,6 +134,55 @@ impl AdjudicatorRegistry {
             .filter(|(id, _)| id == stage_id)
             .count())
     }
+
+    /// Whether any verdict already recorded for `stage_id` names
+    /// `session_id` as the judge that wrote it. A judge that already wrote
+    /// its verdict via `loom stage adjudicate` has finished its job: its own
+    /// process exiting afterward is an ordinary completion, not a crash —
+    /// `orchestrator::monitor::session_events::finished_adjudication_session`
+    /// uses this to tell the two apart. `scan` is a private module, so this
+    /// method on the already-public `AdjudicatorRegistry` is the path
+    /// callers outside `adjudication` reach it through.
+    ///
+    /// An unreadable or unparseable verdict file is simply not a match; this
+    /// never propagates an error and never panics. `false` when the stage
+    /// has no dispute directory at all.
+    pub fn verdict_written_by(&self, work_dir: &Path, stage_id: &str, session_id: &str) -> bool {
+        let disputes_root = work_dir.join("disputes");
+        let stage_dir = disputes_root.join(stage_id);
+        if !stage_dir.exists() {
+            return false;
+        }
+        dispute_ids(&stage_dir).into_iter().any(|id| {
+            read_verdict_record(&crate::models::dispute::verdict_file(
+                &disputes_root,
+                stage_id,
+                id,
+            ))
+            .ok()
+            .and_then(|record| record.session_id)
+            .as_deref()
+                == Some(session_id)
+        })
+    }
+}
+
+/// The numbered dispute subdirectories under one stage's dispute directory,
+/// walked the same way as [`scan_pending_verdicts`].
+fn dispute_ids(stage_dir: &Path) -> Vec<u32> {
+    let Ok(entries) = std::fs::read_dir(stage_dir) else {
+        return Vec::new();
+    };
+    entries
+        .filter_map(Result::ok)
+        .filter(|entry| entry.path().is_dir())
+        .filter_map(|entry| {
+            entry
+                .file_name()
+                .to_str()
+                .and_then(|s| s.parse::<u32>().ok())
+        })
+        .collect()
 }
 
 pub(super) fn read_dispute_request(path: &Path) -> Result<DisputeRequest> {

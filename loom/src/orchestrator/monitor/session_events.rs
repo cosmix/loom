@@ -8,8 +8,9 @@
 
 use std::path::Path;
 
-use crate::models::session::{Session, SessionStatus};
+use crate::models::session::{Session, SessionStatus, SessionType};
 use crate::models::stage::{Stage, StageStatus};
+use crate::orchestrator::adjudication::AdjudicatorRegistry;
 
 use super::detection::Detection;
 use super::events::MonitorEvent;
@@ -209,6 +210,7 @@ impl Detection {
             return None;
         }
         self.finished_merge_session(session, stages, handlers)
+            .or_else(|| self.finished_adjudication_session(session, stages, handlers))
             .or_else(|| self.exited_after_stage_finished(session, stages, handlers))
             .or_else(|| Some(self.record_crash(session, stages, handlers)))
     }
@@ -230,6 +232,37 @@ impl Detection {
         }];
         self.mark_finished(session, stages, handlers);
         Some(SessionStatusEvents::terminal(events))
+    }
+
+    /// The judge for a dispute (`session_type == Adjudication`) whose verdict
+    /// is already on disk has finished its job. `loom stage adjudicate`
+    /// writes the verdict and stamps it with the judge's own session id; the
+    /// daemon applies the verdict and closes the session on a later tick.
+    /// But if the daemon restarts between those two steps, or an operator
+    /// closes the judge's terminal window, the session record is left
+    /// `Running` with no process behind it. Without this check that gets
+    /// filed as a crash — a misleading "Preserved stage memory" copy for a
+    /// stage that is perfectly healthy — even though the judge's exit is as
+    /// ordinary as a merge session's.
+    fn finished_adjudication_session(
+        &mut self,
+        session: &Session,
+        stages: &[Stage],
+        handlers: &Handlers,
+    ) -> Option<SessionStatusEvents> {
+        if session.session_type != SessionType::Adjudication {
+            return None;
+        }
+        let stage_id = session.stage_id.as_ref()?;
+        if !AdjudicatorRegistry::new().verdict_written_by(
+            handlers.work_dir(),
+            stage_id,
+            &session.id,
+        ) {
+            return None;
+        }
+        self.mark_finished(session, stages, handlers);
+        Some(SessionStatusEvents::terminal(Vec::new()))
     }
 
     /// The session exited normally after its stage already reached a terminal

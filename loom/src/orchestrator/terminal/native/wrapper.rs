@@ -42,8 +42,9 @@ const CONTINUATION: &str = "\\\n";
 /// * `session_id` - The session identifier (for LOOM_SESSION_ID env var)
 /// * `claude_cmd` - The claude command to execute (e.g., "claude 'prompt here'")
 /// * `working_dir` - The working directory to cd into before running claude
-/// * `kind` - The session kind. Drives the two env vars that are NOT derivable
-///   from `stage_id`; see `kind_env`.
+/// * `kind` - The session kind. Exported directly as `LOOM_SESSION_TYPE`, and
+///   also drives the two conditional env vars that are NOT derivable from
+///   `stage_id`; see `kind_env`.
 /// * `context_ceiling_tokens` - The session's resolved context ceiling
 ///   (tokens), used to size `CLAUDE_CODE_AUTO_COMPACT_WINDOW`; see
 ///   `auto_compact_window_tokens`.
@@ -285,6 +286,7 @@ fn build_wrapper_script(
 
     // Shell-escape complete NAME=value words so quotes never nest incorrectly.
     let session_env = escape(format!("LOOM_SESSION_ID={session_id}").into());
+    let session_type_env = escape(format!("LOOM_SESSION_TYPE={kind}").into());
     let stage_env = escape(format!("LOOM_STAGE_ID={stage_id}").into());
     let work_dir_env = escape(format!("LOOM_WORK_DIR={}", absolute(work_dir).display()).into());
     let pid_file = escape(absolute_target(host_pid_file).display().to_string().into());
@@ -304,6 +306,7 @@ fn build_wrapper_script(
 # Replace this process with claude under only the explicit stage contract.
 exec env -i "${{_loom_env[@]}}" \
     {session_env} \
+    {session_type_env} \
     {stage_env} \
     {work_dir_env} \
     "LOOM_MAIN_AGENT_PID=$$" \
