@@ -558,7 +558,3 @@ Plan YAML gained `command_confinement: confined | inherit` at plan level
 and `--focus` are gone, along with `map/{analyzer,detectors,knowledge_sync}.rs`. Note
 that the GLOBAL agent doctrine file still documents `loom map [--deep] [--focus <area>]`
 — that text is stale against this repo.
-
-## New Section
-
-- New entry

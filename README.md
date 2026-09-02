@@ -87,7 +87,7 @@ Thirteen stage states make "needs a person" a first-class outcome rather than a 
 
 - Linux: primary development and full CI test runs
 - macOS: supported for build/terminal integration, CI does build-only verification
-- Windows: not supported (WSL may work but is best-effort)
+- Windows: unsupported/best-effott, tmux backend under WSL may work.
 - Headless (SSH, no terminal emulator): supported via the tmux backend — see [Terminal Backends](#terminal-backends)
 
 ## Quick Start

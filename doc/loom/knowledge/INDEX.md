@@ -9,7 +9,7 @@
 | File | Description | Lines |
 | --- | --- | --- |
 | [architecture.md](architecture.md) | High-level component relationships, data flow, module dependencies | 522 |
-| [entry-points.md](entry-points.md) | Key files agents should read first | 564 |
+| [entry-points.md](entry-points.md) | Key files agents should read first | 560 |
 | [patterns.md](patterns.md) | Architectural patterns discovered in the codebase | 761 |
 | [conventions.md](conventions.md) | Coding conventions discovered in the codebase | 666 |
 | [mistakes.md](mistakes.md) | Mistakes made and lessons learned - what to avoid | 972 |
