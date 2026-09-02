@@ -79,8 +79,8 @@ pub(crate) const MAX_SIGNATURE_SIZE: u64 = 4 * 1024; // 4KB for signature files
 
 /// GitHub release information.
 #[derive(serde::Deserialize)]
-struct Release {
-    tag_name: String,
+pub(crate) struct Release {
+    pub(crate) tag_name: String,
     assets: Vec<Asset>,
 }
 
@@ -130,7 +130,7 @@ pub fn execute() -> Result<()> {
 }
 
 /// Fetch the latest release information from GitHub.
-fn get_latest_release() -> Result<Release> {
+pub(crate) fn get_latest_release() -> Result<Release> {
     let url = releases_api_url();
     let client = create_http_client()?;
     let response = client

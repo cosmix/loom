@@ -1,0 +1,188 @@
+use super::*;
+
+#[test]
+fn disabled_check_yields_no_notice_and_no_refresh() {
+    let now = Utc::now();
+    let current = Version::parse("0.2.0").unwrap();
+    let state = UpdateState {
+        last_checked: None,
+        latest_version: Some("9.9.9".to_string()),
+    };
+
+    let action = decide(Some(&state), false, 24, now, &current);
+
+    assert!(action.notice.is_none());
+    assert!(!action.refresh);
+}
+
+#[test]
+fn newer_latest_version_produces_one_notice_naming_both_versions() {
+    let now = Utc::now();
+    let current = Version::parse("0.2.0").unwrap();
+    let state = UpdateState {
+        last_checked: Some(now),
+        latest_version: Some("0.3.0".to_string()),
+    };
+
+    let action = decide(Some(&state), true, 24, now, &current);
+
+    let notice = action.notice.expect("a newer release should notice");
+    assert!(notice.contains("0.2.0"), "{notice}");
+    assert!(notice.contains("0.3.0"), "{notice}");
+}
+
+#[test]
+fn dev_build_is_compared_by_semver_precedence() {
+    let now = Utc::now();
+    let current = Version::parse("0.2.1-dev.5+abc1234").unwrap();
+
+    let behind = UpdateState {
+        last_checked: Some(now),
+        latest_version: Some("0.2.1".to_string()),
+    };
+    assert!(
+        decide(Some(&behind), true, 24, now, &current)
+            .notice
+            .is_some(),
+        "a dev build ahead of unreleased commits is still behind the actual release"
+    );
+
+    let ahead = UpdateState {
+        last_checked: Some(now),
+        latest_version: Some("0.2.0".to_string()),
+    };
+    assert!(
+        decide(Some(&ahead), true, 24, now, &current)
+            .notice
+            .is_none(),
+        "a dev build must not be told it is behind an older release"
+    );
+}
+
+#[test]
+fn absent_or_corrupt_state_both_schedule_a_refresh_silently() {
+    let dir = tempfile::tempdir().unwrap();
+    let now = Utc::now();
+    let current = Version::parse("0.2.0").unwrap();
+
+    assert!(read_state(dir.path()).is_none(), "no state file yet");
+    let action = decide(None, true, 24, now, &current);
+    assert!(action.refresh);
+    assert!(action.notice.is_none());
+
+    std::fs::create_dir_all(dir.path()).unwrap();
+    std::fs::write(state_path(dir.path()), "not valid json").unwrap();
+    assert!(
+        read_state(dir.path()).is_none(),
+        "a torn state file must read as absent, not error"
+    );
+}
+
+#[test]
+fn refresh_only_fires_once_the_interval_has_elapsed() {
+    let now = Utc::now();
+    let current = Version::parse("0.2.0").unwrap();
+
+    let fresh = UpdateState {
+        last_checked: Some(now - Duration::hours(1)),
+        latest_version: None,
+    };
+    assert!(!decide(Some(&fresh), true, 24, now, &current).refresh);
+
+    let stale = UpdateState {
+        last_checked: Some(now - Duration::hours(25)),
+        latest_version: None,
+    };
+    assert!(decide(Some(&stale), true, 24, now, &current).refresh);
+
+    let future = UpdateState {
+        last_checked: Some(now + Duration::hours(10)),
+        latest_version: None,
+    };
+    assert!(
+        !decide(Some(&future), true, 24, now, &current).refresh,
+        "clock skew into the future must count as fresh"
+    );
+}
+
+#[test]
+fn concurrent_stale_calls_schedule_at_most_one_refresh() {
+    let dir = tempfile::tempdir().unwrap();
+    let now = Utc::now();
+    let interval = Duration::hours(24);
+
+    assert!(schedule_refresh(dir.path(), now, interval));
+    assert!(
+        !schedule_refresh(dir.path(), now, interval),
+        "a second invocation must lose the race, not fetch again"
+    );
+}
+
+#[test]
+fn a_stale_lock_is_taken_over() {
+    let dir = tempfile::tempdir().unwrap();
+    let now = Utc::now();
+    let interval = Duration::hours(24);
+
+    // A lock stamped well outside the interval simulates an owner that
+    // crashed before releasing it.
+    assert!(schedule_refresh(
+        dir.path(),
+        now - Duration::hours(48),
+        interval
+    ));
+    assert!(schedule_refresh(dir.path(), now, interval));
+
+    // `update.check_interval_hours = 0` means "check every invocation", not
+    // "every racer may take over a live lock": the lock keeps its own minimum
+    // lifetime, so a second invocation an instant later still backs off.
+    let zero = tempfile::tempdir().unwrap();
+    assert!(schedule_refresh(zero.path(), now, Duration::zero()));
+    assert!(
+        !schedule_refresh(zero.path(), now + Duration::seconds(1), Duration::zero()),
+        "a zero check interval must not defeat the one-fetcher lock"
+    );
+}
+
+#[test]
+fn perform_refresh_stamps_the_attempt_even_when_the_fetch_fails() {
+    let dir = tempfile::tempdir().unwrap();
+    let now = Utc::now();
+
+    let prior = UpdateState {
+        last_checked: Some(now - Duration::hours(48)),
+        latest_version: Some("0.1.0".to_string()),
+    };
+    std::fs::create_dir_all(dir.path()).unwrap();
+    std::fs::write(
+        state_path(dir.path()),
+        serde_json::to_string(&prior).unwrap(),
+    )
+    .unwrap();
+    assert!(schedule_refresh(dir.path(), now, Duration::hours(24)));
+
+    perform_refresh(dir.path(), now, || {
+        Err(anyhow::anyhow!("network unreachable"))
+    });
+
+    let state = read_state(dir.path()).expect("perform_refresh always writes a state file");
+    assert_eq!(state.last_checked, Some(now));
+    assert_eq!(
+        state.latest_version.as_deref(),
+        Some("0.1.0"),
+        "a failed fetch must preserve the previous latest_version"
+    );
+    assert!(
+        !lock_path(dir.path()).exists(),
+        "the lock must be released on both the failure and success paths"
+    );
+
+    assert!(schedule_refresh(dir.path(), now, Duration::hours(24)));
+    perform_refresh(dir.path(), now, || {
+        Version::parse("0.4.0").map_err(Into::into)
+    });
+
+    let state = read_state(dir.path()).expect("perform_refresh always writes a state file");
+    assert_eq!(state.latest_version.as_deref(), Some("0.4.0"));
+    assert!(!lock_path(dir.path()).exists());
+}
