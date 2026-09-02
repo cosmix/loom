@@ -8,6 +8,7 @@ mod detection;
 mod launch;
 mod pid_guard;
 mod pid_tracking;
+mod session_settings;
 mod spawner;
 mod window_ops;
 mod wrapper;
@@ -30,6 +31,13 @@ pub(crate) use pid_guard::{
     pid_only_is_alive, pid_only_terminate, session_process_status, SessionProcessStatus,
 };
 pub use pid_tracking::{cleanup_stage_files, discover_claude_pid, read_pid_entry};
+// Called from `orchestrator::core::judge_close` on judge close.
+pub(crate) use session_settings::cleanup_session_settings;
+// Test-only: lets tests elsewhere in the crate locate a session's generated
+// settings capsule without duplicating its naming convention (see
+// `core/event_handler/stalled_judge_tests.rs`).
+#[cfg(test)]
+pub(crate) use session_settings::session_settings_path;
 pub(crate) use spawner::await_session_pid;
 pub use spawner::spawn_in_terminal;
 pub use window_ops::{close_window_by_title, window_exists_by_title};
@@ -375,6 +383,8 @@ impl NativeBackend {
 mod tests;
 #[cfg(test)]
 mod tests_capsule;
+#[cfg(test)]
+mod tests_session_settings;
 #[cfg(test)]
 mod tests_wrapper_env;
 // Sibling test modules across the crate reach this helper as

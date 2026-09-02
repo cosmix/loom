@@ -127,7 +127,14 @@ pub(super) fn resolved_settings_file(cwd: &Path) -> Option<String> {
         .flatten()
 }
 
-/// Build the capsule for a session whose working directory is `cwd`.
+/// Build the capsule from an already-resolved `--settings` path.
+///
+/// `settings_file` is resolved by the CALLER — [`resolved_settings_file`] for
+/// the ordinary case of a session's own `cwd`, or a generated per-session
+/// capsule for the one kind that runs outside any worktree (see
+/// `native::session_settings::resolve_settings_file`) — rather than computed
+/// here, so this stays a thin wrapper around the claude-support probe and the
+/// interlock in [`capsule_from`].
 ///
 /// `append_system_prompt_file` is the stable-prefix file path already
 /// resolved by the caller (`Some` only when the prompt-cache split is
@@ -135,7 +142,7 @@ pub(super) fn resolved_settings_file(cwd: &Path) -> Option<String> {
 /// installed claude does not support `--append-system-prompt-file`.
 pub(crate) fn session_capsule(
     claude_path: &Path,
-    cwd: &Path,
+    settings_file: Option<String>,
     append_system_prompt_file: Option<String>,
 ) -> SessionCapsule {
     let (
@@ -144,8 +151,6 @@ pub(crate) fn session_capsule(
         strict_mcp_supported,
         append_system_prompt_file_supported,
     ) = probed_capsule_support(claude_path);
-
-    let settings_file = resolved_settings_file(cwd);
 
     capsule_from(
         settings_supported,

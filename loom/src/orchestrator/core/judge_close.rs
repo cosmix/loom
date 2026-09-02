@@ -11,6 +11,7 @@
 
 use crate::models::session::{Session, SessionStatus};
 use crate::orchestrator::monitor::heartbeat::cleanup_judge_heartbeat;
+use crate::orchestrator::terminal::native::cleanup_session_settings;
 
 use super::Orchestrator;
 
@@ -52,5 +53,6 @@ impl Orchestrator {
         if let Some(stage_id) = session.stage_id.as_deref() {
             cleanup_judge_heartbeat(&work_dir, stage_id);
         }
+        cleanup_session_settings(&work_dir, &session.id);
     }
 }

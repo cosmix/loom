@@ -16,6 +16,8 @@ use crate::claude::find_claude_path;
 use crate::models::session::{Session, SessionType};
 use crate::models::stage::Stage;
 
+use super::session_settings::capsule_for;
+
 /// Derive the Remote Control session name for a spawn, prefixed by kind.
 ///
 /// Base is `stage.name` (required by the plan schema); falls back to
@@ -215,8 +217,8 @@ pub(crate) fn prepare_session_launch(
     let claude_path = find_claude_path()?;
     let rc_name = remote_control_session_name(kind, stage);
     let remote_control = crate::remote_control::resolve_invocation(work_dir, &rc_name);
-    let append_system_prompt_file = resolve_prompt_cache_split_prefix_file(work_dir, stage);
-    let capsule = super::session_capsule(&claude_path, cwd, append_system_prompt_file);
+    let prefix_file = resolve_prompt_cache_split_prefix_file(work_dir, stage);
+    let capsule = capsule_for(&claude_path, cwd, work_dir, &session, prefix_file)?;
     let claude_cmd = super::build_claude_command(
         &claude_path.display().to_string(),
         &model,
@@ -258,3 +260,6 @@ pub(crate) fn prepare_session_launch(
 #[cfg(test)]
 #[path = "tests_launch.rs"]
 mod tests;
+#[cfg(test)]
+#[path = "tests_launch_capsule.rs"]
+mod tests_launch_capsule;

@@ -13,7 +13,7 @@ use crate::models::session::{
 use crate::models::stage::{Stage, StageStatus};
 use crate::orchestrator::core::{Orchestrator, OrchestratorConfig};
 use crate::orchestrator::monitor::heartbeat::judge_heartbeat_path;
-use crate::orchestrator::terminal::native::write_test_pid_identity;
+use crate::orchestrator::terminal::native::{session_settings_path, write_test_pid_identity};
 use crate::plan::ExecutionGraph;
 use crate::verify::transitions::{create_stage, load_stage, update_stage};
 use tempfile::TempDir;
@@ -111,6 +111,9 @@ fn a_stalled_judge_is_closed_and_the_stage_stays_under_adjudication() {
     let heartbeat = judge_heartbeat_path(&work, "test-stage");
     std::fs::create_dir_all(heartbeat.parent().unwrap()).unwrap();
     std::fs::write(&heartbeat, "{}").unwrap();
+    let capsule = session_settings_path(&work, &judge.id);
+    std::fs::create_dir_all(capsule.parent().unwrap()).unwrap();
+    std::fs::write(&capsule, "{}").unwrap();
 
     let mut orchestrator = orchestrator_for(&work, temp.path());
     orchestrator
@@ -129,6 +132,10 @@ fn a_stalled_judge_is_closed_and_the_stage_stays_under_adjudication() {
     assert!(
         !heartbeat.exists(),
         "the judge's heartbeat must be removed, or it outlives the judge"
+    );
+    assert!(
+        !capsule.exists(),
+        "the judge's generated settings capsule must be removed, or it outlives the judge"
     );
     assert_eq!(
         load_stage("test-stage", &work).unwrap().status,
