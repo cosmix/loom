@@ -11,7 +11,6 @@ file src/commands/graph/tests.rs 425
 file src/commands/hook/tests_reconcile_graph.rs 432
 file src/commands/init/tests.rs 702
 file src/commands/plan/verify.rs 599
-file src/commands/repair.rs 1143
 file src/commands/review/generate.rs 439
 file src/commands/run/tests.rs 463
 file src/commands/self_update/mod.rs 465
@@ -70,7 +69,7 @@ file tests/failure_resume.rs 468
 file tests/integration/merge_conflict_recovery.rs 412
 file tests/integration/plan_verify.rs 1028
 
-function src/cli/dispatch.rs dispatch 124
+function src/cli/dispatch.rs dispatch 126
 function src/cli/dispatch_stage.rs dispatch_stage 68
 function src/commands/clean/mod.rs print_summary 52
 function src/commands/clean/sessions.rs test_clean_sessions_reaps_live_only_when_destroying_state 57
@@ -82,7 +81,7 @@ function src/commands/graph/display.rs build_graph_display 52
 function src/commands/graph/tests.rs test_build_graph_display_shows_all_deps 70
 function src/commands/graph/tree.rs build_tree_display 57
 function src/commands/handoff/create.rs execute 88
-function src/commands/init/execute.rs execute 130
+function src/commands/init/execute.rs execute 135
 function src/commands/init/plan_setup.rs initialize_with_plan_acknowledgement 251
 function src/commands/init/tests.rs test_cleanup_orphaned_sessions_reaps_live_only_in_clean_mode 76
 function src/commands/init/tests.rs test_create_stage_from_definition_no_dependencies 88
@@ -95,7 +94,6 @@ function src/commands/knowledge/tests.rs test_parse_file_type 70
 function src/commands/plan/verify.rs execute 272
 function src/commands/plan/verify.rs print_human 110
 function src/commands/pressure/mod.rs execute 86
-function src/commands/repair.rs check_all_issues 325
 function src/commands/repair.rs execute 99
 function src/commands/repair/tests.rs repair_fixes_a_stale_knowledge_directory_deny_in_a_worktree 62
 function src/commands/resume.rs execute 57
@@ -324,7 +322,7 @@ function tests/stage_transitions.rs test_stage_transition_workflow 72
 file src/commands/clean/sessions.rs 403
 file src/git/worktree/tests_settings.rs 443
 file src/utils.rs 403
-file src/commands/repair/tests.rs 642
+file src/commands/repair/tests.rs 648
 function src/fs/permissions/tests/write_rules_tests.rs test_ensure_loom_permissions_prunes_legacy_work_write_grants 56
 function src/git/worktree/tests_settings.rs test_create_worktree_settings_adds_resolved_work_permissions_legacy_layout 82
 function src/sandbox/settings/tests.rs test_write_settings_adds_resolved_work_symlink_permissions_legacy_layout 105
