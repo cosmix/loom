@@ -111,11 +111,19 @@ impl AdjudicatorRegistry {
 /// review_reason via try_request_human_review), evidence_rounds,
 /// amendments_applied, and acceptance/wiring (the latter two were already
 /// written to disk by apply_amendment's own locked update; re-applying the
-/// in-memory copy keeps them coherent under this lock). force_status_with_reason
-/// is used because the in-memory `stage` already holds the verdict's resolved
-/// status and the on-disk status is re-read here — re-validating the
-/// transition would risk a spurious refusal against an intermediate on-disk
-/// state.
+/// in-memory copy keeps them coherent under this lock).
+///
+/// The status write itself is skipped entirely when the on-disk status
+/// already matches (the common "hold in NeedsAdjudication while a sibling
+/// dispute is unanswered" no-op — logging a forced transition for a status
+/// that never changed is pure noise), and goes through the validated
+/// `try_transition` when the on-disk status legally allows it (e.g.
+/// `NeedsAdjudication -> Queued`, which the transition table already knows
+/// about). `force_status_with_reason` remains the fallback for the case the
+/// on-disk status does NOT recognize the move — the in-memory `stage` already
+/// holds the verdict's resolved status and the on-disk status is re-read
+/// here, so re-validating unconditionally would risk a spurious refusal
+/// against an intermediate on-disk state.
 fn persist_verdict_result(
     work_dir: &Path,
     stage_id: &str,
@@ -131,7 +139,13 @@ fn persist_verdict_result(
     let verdict_acceptance = stage.acceptance.clone();
     let verdict_wiring = stage.wiring.clone();
     update_stage(stage_id, work_dir, |s| {
-        s.force_status_with_reason(verdict_status.clone(), "adjudicator verdict applied");
+        if s.status != verdict_status {
+            if s.status.can_transition_to(&verdict_status) {
+                let _ = s.try_transition(verdict_status.clone());
+            } else {
+                s.force_status_with_reason(verdict_status.clone(), "adjudicator verdict applied");
+            }
+        }
         s.review_reason = verdict_review_reason.clone();
         s.evidence_rounds = verdict_evidence_rounds;
         s.amendments_applied = verdict_amendments_applied;
