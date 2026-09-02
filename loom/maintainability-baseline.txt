@@ -31,8 +31,8 @@ file src/fs/permissions/settings.rs 444
 file src/fs/permissions/sync.rs 654
 file src/fs/plan_lifecycle.rs 610
 file src/fs/safe_fs.rs 1019
-file src/fs/work_dir.rs 790
-file src/fs/work_dir/tests.rs 728
+file src/fs/work_dir.rs 820
+file src/fs/work_dir/tests.rs 815
 file src/git/worktree/base.rs 545
 file src/git/worktree/settings.rs 683
 file src/hooks/tests.rs 514
@@ -70,7 +70,7 @@ file tests/failure_resume.rs 468
 file tests/integration/merge_conflict_recovery.rs 412
 file tests/integration/plan_verify.rs 1028
 
-function src/cli/dispatch.rs dispatch 123
+function src/cli/dispatch.rs dispatch 124
 function src/cli/dispatch_stage.rs dispatch_stage 68
 function src/commands/clean/mod.rs print_summary 52
 function src/commands/clean/sessions.rs test_clean_sessions_reaps_live_only_when_destroying_state 57
