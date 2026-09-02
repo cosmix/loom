@@ -498,7 +498,7 @@ fn test_parse_checksums_wrong_length() {
 // ============================================================================
 //
 // These build a fixture inventory out of the exact ten asset names published
-// by `.github/workflows/release.yml` (lines 233-243) and run it through the
+// by `.github/workflows/release.yml` (lines 257-266) and run it through the
 // real selection code, since no acceptance command here can reach a live
 // release.
 

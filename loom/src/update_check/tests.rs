@@ -59,6 +59,43 @@ fn dev_build_is_compared_by_semver_precedence() {
     );
 }
 
+/// `notice_for` is the formatter `notify_and_maybe_refresh` prints straight
+/// to stderr (never stdout — see the module doc). Covers the reachable part
+/// of that print without capturing real process stderr or spawning anything.
+#[test]
+fn notice_for_names_both_versions_and_self_update_only_when_newer() {
+    let current = Version::parse("0.2.0").unwrap();
+
+    let newer = UpdateState {
+        last_checked: None,
+        latest_version: Some("0.3.0".to_string()),
+    };
+    let notice = notice_for(Some(&newer), &current).expect("a newer release should notice");
+    assert!(notice.contains("0.2.0"), "{notice}");
+    assert!(notice.contains("0.3.0"), "{notice}");
+    assert!(notice.contains("self-update"), "{notice}");
+
+    let older = UpdateState {
+        last_checked: None,
+        latest_version: Some("0.1.0".to_string()),
+    };
+    assert!(notice_for(Some(&older), &current).is_none());
+
+    let equal = UpdateState {
+        last_checked: None,
+        latest_version: Some("0.2.0".to_string()),
+    };
+    assert!(notice_for(Some(&equal), &current).is_none());
+
+    let unparseable = UpdateState {
+        last_checked: None,
+        latest_version: Some("not-a-version".to_string()),
+    };
+    assert!(notice_for(Some(&unparseable), &current).is_none());
+
+    assert!(notice_for(None, &current).is_none());
+}
+
 #[test]
 fn absent_or_corrupt_state_both_schedule_a_refresh_silently() {
     let dir = tempfile::tempdir().unwrap();
