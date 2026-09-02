@@ -27,7 +27,7 @@
 //! is the ONLY path that may create `~/.loom/`. loom is invoked concurrently
 //! from shell hooks, so this race is real.
 //!
-//! # The lib test binary never reads or writes the real home
+//! # Hermeticity: two different seams, two different scopes
 //!
 //! [`UserConfig::load`]/[`UserConfig::load_strict`] resolve their path
 //! through `read_config_path`, and [`set`] through `write_config_path`.
@@ -38,12 +38,19 @@
 //! per-thread redirect (`redirect_user_config`, itself test-only) that defaults
 //! to "no user config" when unset. Sharing one redirect between the read and
 //! write seams lets a test do a real set/read round trip against a temp path.
-//! Any lib test that reaches a loader without installing a redirect therefore
-//! sees an all-default [`UserConfig`], never `~/.loom/config.toml`. This
-//! matters because `loom config` (`crate::commands::config`) is the tool that
-//! CREATES that file: without this seam, the whole suite would depend on the
-//! developer running these tests never having run `loom config`, and would
-//! start failing the moment they had.
+//! Any lib **unit** test that reaches a loader without installing a redirect
+//! therefore sees an all-default [`UserConfig`], never `~/.loom/config.toml`.
+//! This matters because `loom config` (`crate::commands::config`) is the tool
+//! that CREATES that file: without this seam, the whole lib unit-test binary
+//! would depend on the developer running these tests never having run `loom
+//! config`, and would start failing the moment they had.
+//!
+//! That `#[cfg(test)]` redirect covers the lib's own unit-test binary ONLY.
+//! `loom/tests/**` links this lib WITHOUT `cfg(test)`, so `read_config_path`
+//! resolves through plain `config_path()` there — a test under `loom/tests/`
+//! that wants isolation from the operator's real `~/.loom/config.toml` sets
+//! `LOOM_HOME` instead (see `config_path`'s doc comment and
+//! `loom/tests/e2e/daemon_config/mod.rs::isolate_user_config`).
 
 use std::path::{Path, PathBuf};
 
@@ -56,6 +63,8 @@ use crate::models::session::SessionBackendKind;
 pub mod keys;
 
 use keys::KeySpec;
+
+mod parse;
 
 #[cfg(test)]
 mod redirect;
@@ -110,9 +119,20 @@ pub struct UserConfig {
 
 /// The absolute path to `~/.loom/config.toml`.
 ///
-/// Errors only when the home directory cannot be resolved. Never creates
-/// anything — this is a pure path computation.
+/// Honors `LOOM_HOME` when set to a non-empty value: the returned path is
+/// then `$LOOM_HOME/config.toml` instead of `~/.loom/config.toml`. `LOOM_HOME`
+/// names the loom user directory itself (the `.loom` directory, not the home
+/// directory above it) — the same shape as `LOOM_HOOKS_DIR`
+/// (`hooks/generator.rs`). This is the seam a caller outside `#[cfg(test)]`
+/// uses to keep a test or a scratch run off the operator's real config; see
+/// `loom/tests/e2e/daemon_config/mod.rs::isolate_user_config`.
+///
+/// Errors only when neither `LOOM_HOME` is set nor the home directory can be
+/// resolved. Never creates anything — this is a pure path computation.
 pub fn config_path() -> Result<PathBuf> {
+    if let Some(dir) = std::env::var_os("LOOM_HOME").filter(|value| !value.is_empty()) {
+        return Ok(PathBuf::from(dir).join("config.toml"));
+    }
     dirs::home_dir()
         .map(|home| home.join(".loom").join("config.toml"))
         .ok_or_else(|| {
@@ -281,84 +301,43 @@ impl UserConfig {
 pub(crate) fn parse_document(text: &str) -> Result<UserConfig> {
     let doc: DocumentMut = text.parse().context("invalid TOML")?;
     Ok(UserConfig {
-        update_check: get_bool(&doc, "update", "check")?,
-        update_check_interval_hours: get_u32(&doc, "update", "check_interval_hours")?,
-        terminal_backend: get_backend(&doc)?,
-        context_ceiling_tokens: get_u32(&doc, "context", "ceiling_tokens")?,
+        update_check: parse::get_bool(&doc, "update", "check")?,
+        update_check_interval_hours: parse::get_u32(&doc, "update", "check_interval_hours")?,
+        terminal_backend: parse::get_backend(&doc)?,
+        context_ceiling_tokens: parse::get_u32(&doc, "context", "ceiling_tokens")?,
     })
-}
-
-fn section_item<'a>(
-    doc: &'a DocumentMut,
-    section: &str,
-    field: &str,
-) -> Option<&'a toml_edit::Item> {
-    doc.get(section)?.get(field)
-}
-
-fn get_bool(doc: &DocumentMut, section: &str, field: &str) -> Result<Option<bool>> {
-    match section_item(doc, section, field) {
-        None => Ok(None),
-        Some(item) => item.as_bool().map(Some).ok_or_else(|| {
-            anyhow::anyhow!(
-                "{section}.{field}: expected a bool, found {}",
-                item.type_name()
-            )
-        }),
-    }
-}
-
-fn get_u32(doc: &DocumentMut, section: &str, field: &str) -> Result<Option<u32>> {
-    match section_item(doc, section, field) {
-        None => Ok(None),
-        Some(item) => {
-            let int = item.as_integer().ok_or_else(|| {
-                anyhow::anyhow!(
-                    "{section}.{field}: expected an integer, found {}",
-                    item.type_name()
-                )
-            })?;
-            u32::try_from(int)
-                .map(Some)
-                .map_err(|_| anyhow::anyhow!("{section}.{field}: {int} is out of range for a u32"))
-        }
-    }
-}
-
-fn get_backend(doc: &DocumentMut) -> Result<Option<SessionBackendKind>> {
-    match section_item(doc, "terminal", "backend") {
-        None => Ok(None),
-        Some(item) => {
-            let raw = item.as_str().ok_or_else(|| {
-                anyhow::anyhow!(
-                    "terminal.backend: expected a string, found {}",
-                    item.type_name()
-                )
-            })?;
-            match raw {
-                "native" => Ok(Some(SessionBackendKind::Native)),
-                "tmux" => Ok(Some(SessionBackendKind::Tmux)),
-                other => Err(anyhow::anyhow!(
-                    "terminal.backend: {other:?} is not one of native, tmux"
-                )),
-            }
-        }
-    }
 }
 
 /// Read-modify-write `spec`'s section/field in `~/.loom/config.toml`,
 /// creating the section if absent. Comments and unrelated keys are preserved
 /// verbatim (`toml_edit::DocumentMut`). This is the only path that may create
 /// `~/.loom/` — see the module docs on why the read path must not.
-pub fn set(spec: &KeySpec, value: toml_edit::Value) -> Result<()> {
+///
+/// Returns the rendered value `spec` resolved to just before and just after
+/// the write, both captured inside the same locked read-modify-write. A
+/// caller that instead re-read the config before and after this call
+/// (`commands::config::set_key` used to) could report a value written by a
+/// concurrent `set` that raced it — `loom` is invoked concurrently from shell
+/// hooks, so that race is real.
+pub fn set(spec: &KeySpec, value: toml_edit::Value) -> Result<(String, String)> {
     set_in(&write_config_path()?, spec, value)
 }
 
 /// [`set`] factored over an explicit path so tests can exercise the
 /// read-modify-write behavior against a temp file instead of the real
 /// `~/.loom/config.toml`.
-pub(crate) fn set_in(path: &Path, spec: &KeySpec, value: toml_edit::Value) -> Result<()> {
+pub(crate) fn set_in(
+    path: &Path,
+    spec: &KeySpec,
+    value: toml_edit::Value,
+) -> Result<(String, String)> {
+    let mut old_new: Option<(String, String)> = None;
     crate::fs::locking::locked_update(path, |existing| {
+        let old = parse_document(&existing)
+            .unwrap_or_default()
+            .value_of(spec)
+            .0;
+
         let mut doc: DocumentMut = existing.parse().with_context(|| {
             format!(
                 "refusing to rewrite unparseable user config at {}",
@@ -373,6 +352,14 @@ pub(crate) fn set_in(path: &Path, spec: &KeySpec, value: toml_edit::Value) -> Re
                 anyhow::anyhow!("[{}] in {} is not a table", spec.section, path.display())
             })?;
         table.insert(spec.field, toml_edit::Item::Value(value));
+
+        let new = parse_document(&doc.to_string())
+            .unwrap_or_default()
+            .value_of(spec)
+            .0;
+        old_new = Some((old, new));
         Ok(doc.to_string())
-    })
+    })?;
+    old_new
+        .ok_or_else(|| anyhow::anyhow!("set_in: locked_update returned without a captured value"))
 }

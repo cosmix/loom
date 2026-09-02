@@ -5,10 +5,11 @@ use loom::orchestrator::{Orchestrator, OrchestratorConfig};
 use loom::plan::graph::ExecutionGraph;
 use loom::plan::schema::SandboxConfig;
 use loom::verify::transitions::save_stage;
+use serial_test::serial;
 use std::time::Duration;
 use tempfile::TempDir;
 
-use super::create_stage_def;
+use super::{create_stage_def, isolate_user_config};
 
 #[test]
 fn test_execution_graph_with_parallel_stages() {
@@ -52,10 +53,12 @@ fn test_max_parallel_sessions_configuration() {
 /// not just configuration storage.
 #[test]
 #[ignore] // Integration test - run with --ignored
+#[serial]
 fn test_orchestrator_respects_max_parallel_sessions() {
     use std::process::Command;
 
     let temp_dir = TempDir::new().unwrap();
+    let _home_env = isolate_user_config(&temp_dir);
     let repo_root = temp_dir.path();
     let work_dir = repo_root.join(".loom").join("work");
 
