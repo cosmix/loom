@@ -178,6 +178,12 @@ const LOOM: &str = env!("CARGO_BIN_EXE_loom");
 /// developer's own `update-state.json`, leak an orphaned fetcher, and print an
 /// update notice into the stderr these tests assert on. `LOOM_HOME` is the same
 /// seam `tests/e2e/daemon_config/mod.rs` uses to stay off the real user config.
+///
+/// The `TempDir` lives in a `static OnceLock` so every test in this binary
+/// shares one scratch home; since statics are never destructed at process
+/// exit, that directory is never cleaned up and is left behind in the system
+/// temp dir after each test run — an accepted trade for a process-wide shared
+/// home, not a leak to fix.
 pub fn loom_cmd() -> Command {
     static SCRATCH_HOME: OnceLock<TempDir> = OnceLock::new();
     let home = SCRATCH_HOME.get_or_init(|| {
