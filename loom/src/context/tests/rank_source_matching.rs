@@ -67,7 +67,10 @@ fn test_full_path_matches_exact_path() {
     );
 }
 
-/// A bare file stem (no directory, no extension) also fires `ExactPath`.
+/// A bare file stem (no directory, no extension) also fires `ExactPath` — but
+/// only through the gate, since a stem is just a word. `pack` is one lowercase
+/// word, so back-ticks are what make this occurrence a code reference; written
+/// bare it would be the English verb and earn nothing.
 #[test]
 fn test_bare_path_stem_matches_exact_path() {
     let mut stem_node = full_node(
@@ -78,7 +81,7 @@ fn test_bare_path_stem_matches_exact_path() {
     );
     stem_node.span.line_start = 1;
     let query = RankQuery {
-        text: "pack budgets by score".to_string(),
+        text: "`pack` budgets by score".to_string(),
         ..RankQuery::default()
     };
 
@@ -162,7 +165,7 @@ fn test_file_kind_nodes_are_excluded() {
 #[test]
 fn test_node_with_no_fired_reason_is_excluded() {
     let query = RankQuery {
-        text: "completely unrelated query text about pack".to_string(),
+        text: "completely unrelated query text about `pack`".to_string(),
         ..RankQuery::default()
     };
     let unrelated = full_node(

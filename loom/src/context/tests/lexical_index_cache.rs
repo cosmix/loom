@@ -317,8 +317,12 @@ fn warm_cache() -> (TempDir, ResolvedGraph, RetrievalConfig, ChannelRanking) {
 /// One fixed query, shared by the failure-mode tests so their assertions are
 /// about the file on disk and nothing else.
 fn query_text() -> RankQuery {
+    // Both words of `parse_manifest` and both of `collect_tokens`, spelled with
+    // spaces: `rank_source::candidacy` admits a rung-less node only when the
+    // prompt named it in full, and `render_manifest` — half-named, since nothing
+    // here says `render` — is the control that stays out.
     RankQuery {
-        text: "manifest tokens".to_string(),
+        text: "parse manifest and collect tokens".to_string(),
         ..RankQuery::default()
     }
 }

@@ -7,7 +7,9 @@
 //! mostly meant they used an English word that some symbol is also named after.
 
 use super::rank_fixtures::{chunk, rank_text};
-use crate::context::lexical::{admits_exact, backtick_spans, is_shaped, TermEvidence};
+use crate::context::lexical::{
+    admits_exact, backtick_spans, is_plain_word, is_shaped, TermEvidence,
+};
 use crate::context::schema::{Confidence, KnowledgeChunk, SelectionReason};
 
 /// Eight chunks that all talk about points, so `df("point") = 8` puts the word
@@ -112,14 +114,16 @@ fn a_shaped_name_earns_the_rung_at_high_confidence() {
 /// because "uncommon in this corpus" is real evidence and weaker evidence.
 ///
 /// The proposal's own example for this rule, `repairGini`, does not actually
-/// exercise it: `repairGini` is camelCase and so shaped. `gini` is the part of
-/// it that rests on rarity alone.
+/// exercise it: `repairGini` is camelCase and so shaped. `Gini` is the part of
+/// it that rests on rarity alone. Capitalized deliberately — a name spelled
+/// `gini`, all lowercase letters, is one `lexical::is_plain_word` refuses to let
+/// rarity vouch for at all, which the test below pins.
 #[test]
 fn a_rare_only_match_is_admitted_but_demoted_to_medium() {
     let mut corpus = point_corpus();
-    corpus[0].symbols = vec!["gini".to_string()];
+    corpus[0].symbols = vec!["Gini".to_string()];
 
-    let ranked = rank_text("where is gini used", &corpus);
+    let ranked = rank_text("where is Gini used", &corpus);
 
     let rare = ranked
         .iter()
@@ -135,6 +139,59 @@ fn a_rare_only_match_is_admitted_but_demoted_to_medium() {
         "rarity alone must not publish a `high` claim: {rare:?}"
     );
     assert_eq!(rare.confidence_ceiling, Some(Confidence::Medium));
+}
+
+/// The rarity signal's own hole, measured: `read the remaining knowledge files
+/// that are relevant` put `daemon/server/admission.rs#function:remaining` first
+/// at 94.7 points with an `exact-symbol` reason, because `remaining` occurs in
+/// few enough documents to look corpus-rare. Rarity cannot distinguish an
+/// uncommon symbol from an uncommon English word; spelling can.
+#[test]
+fn a_rare_but_plainly_spelled_word_is_not_admitted_by_rarity() {
+    let mut corpus: Vec<KnowledgeChunk> = (0..8)
+        .map(|index| chunk(&format!("filler-{index}"), "an unrelated body", 10))
+        .collect();
+    corpus[0].symbols = vec!["remaining".to_string()];
+    corpus[0].body = "the admission queue drains what is remaining".to_string();
+
+    let ranked = rank_text(
+        "read the remaining knowledge files that are relevant",
+        &corpus,
+    );
+
+    let admission = ranked
+        .iter()
+        .find(|candidate| candidate.id.as_str() == "filler-0")
+        .expect("the chunk still matches lexically and stays a candidate");
+    assert!(
+        !admission.reasons.contains(&SelectionReason::ExactSymbol),
+        "a rare lowercase word must not claim an exact symbol: {admission:?}"
+    );
+    assert_eq!(
+        admission.reasons,
+        vec![SelectionReason::Lexical],
+        "what it loses is the rung, not its place in the results: {admission:?}"
+    );
+}
+
+/// The inverse of the rule above, so it cannot be satisfied by rejecting
+/// everything: the names rarity exists for are the ones the tokenizer never
+/// emits as a term, because they carry punctuation or digits.
+#[test]
+fn spelling_decides_which_names_rarity_may_vouch_for() {
+    for word in ["remaining", "point", "write", "doc", "gini"] {
+        assert!(
+            is_plain_word(word),
+            "{word} is spelled exactly like an English word"
+        );
+    }
+    for name in ["Gini", "Foo::Bar", "sha256", "kebab-case", "QUALITY", "_"] {
+        assert!(
+            !is_plain_word(name),
+            "{name} carries a spelling no prompt types by accident"
+        );
+    }
+    assert!(!is_plain_word(""), "an empty name is nothing at all");
 }
 
 /// The second measured specimen: "write the recommendation in

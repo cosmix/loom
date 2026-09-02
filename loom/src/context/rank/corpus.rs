@@ -156,6 +156,18 @@ pub(crate) struct LexicalCorpus {
 }
 
 impl LexicalCorpus {
+    /// The query terms this pass scores, repeats intact and in query order.
+    ///
+    /// Exposed for a candidacy question rather than a scoring one: the source
+    /// channel asks whether the prompt supplied every word of a node's own name
+    /// (`rank_source::candidacy`), and a name part that stopwording dropped was
+    /// never going to match anything, so counting it as supplied would admit a
+    /// node on evidence no document ever saw. `score` remains the only way to
+    /// turn these into a number.
+    pub(crate) fn surviving_terms(&self) -> &[String] {
+        &self.query_terms
+    }
+
     /// BM25 score and distinct-matched-term count for the document at `index`.
     ///
     /// The one way to score a prepared corpus. Both arms feed the same

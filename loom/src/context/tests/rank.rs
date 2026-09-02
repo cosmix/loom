@@ -95,9 +95,11 @@ fn rule_9_weighted_fields_contribute_their_assigned_weights() {
     .score;
     // The BM25 component is 1.391_353. This fixture puts "alpha" in both
     // `source_paths` and `symbols`, and the query is literally "alpha", so the
-    // exact-path (+100.0) and exact-symbol (+80.0) rungs of the ladder fire too
-    // — they are additive and independent of the field weighting under test.
-    assert!((got - 181.391_36).abs() < 1e-4, "got {got}");
+    // exact-path rung (+100.0) fires too — additive and independent of the field
+    // weighting under test. The exact-symbol rung does NOT: `alpha` is one
+    // lowercase word, and since `lexical::is_plain_word` such a name can only be
+    // admitted by back-ticks or spelling, never by being rare here.
+    assert!((got - 101.391_36).abs() < 1e-4, "got {got}");
 }
 
 #[test]

@@ -11,16 +11,20 @@
 //! One case the generator cannot reach: a query whose every term is dropped and
 //! then rescued (A.16), since an unseen word has a df of 0 and always survives.
 //! That agreement is asserted in `rank_stopwords.rs`, over the fixture below.
+//!
+//! Two neighbours share this file's generators through `use
+//! super::lexical_index::...`: `lexical_index_cache.rs` holds the cases about
+//! the file on disk being wrong, and `lexical_index_frequencies.rs` the ones
+//! about a dropped term's document frequency reaching the exact-rung gate.
 
 use super::source_fixtures::{full_node, graph};
 use crate::context::config::RetrievalConfig;
 use crate::context::graph_store::ResolvedGraph;
-use crate::context::lexical_index::{
-    source_layer_key, LexicalCache, LexicalIndex, LEXICAL_RELATIVE_DIR,
-};
-use crate::context::rank::{tokenize, ChannelRanking, RankQuery};
+use crate::context::lexical::name_parts;
+use crate::context::lexical_index::{source_layer_key, LexicalCache, LEXICAL_RELATIVE_DIR};
+use crate::context::rank::{ChannelRanking, RankQuery};
 use crate::context::rank_source::{rank_source_channel, rank_source_channel_cached};
-use crate::context::schema::{SelectionReason, SourceNode, SourceNodeKind};
+use crate::context::schema::{SourceNode, SourceNodeKind};
 use std::path::{Path, PathBuf};
 use tempfile::TempDir;
 
@@ -101,7 +105,15 @@ pub(super) fn random_graph(rng: &mut Lcg, files: usize) -> ResolvedGraph {
         let node_count = 1 + rng.below(3);
         let mut nodes = Vec::new();
         for symbol in 0..node_count {
-            let name = format!("symbol_{file}_{symbol}");
+            // Two words, one drawn from the long tail and one unique to this
+            // node: `random_query` spells a drawn name out with spaces, and a
+            // name has to be reachable that way for the node to clear
+            // `rank_source::candidacy`'s floor at all. Both halves are drawn
+            // from the tail rather than from `common` because the floor tests
+            // name parts against the SURVIVING terms, and a common word is
+            // exactly the one stopwording drops. The unique half carries no
+            // underscore, so it survives tokenization as a single term.
+            let name = format!("{}_uniq{file}x{symbol}", pick(rng, &rare));
             let mut scope = vec![pick(rng, &common).to_string(), pick(rng, &rare).to_string()];
             scope.push(name.clone());
             let mut words: Vec<&str> = Vec::new();
@@ -128,8 +140,17 @@ pub(super) fn random_graph(rng: &mut Lcg, files: usize) -> ResolvedGraph {
 /// A query mixing ubiquitous words (which stopwording drops), tail words (which
 /// survive and actually rank something), the occasional word no corpus contains
 /// and the occasional backticked one, so the partition and the exact-rung gate
-/// both see varied input.
-fn random_query(rng: &mut Lcg) -> RankQuery {
+/// both see varied input — and, three times in four, the words of one node's
+/// own name.
+///
+/// That last part is not decoration. Since `rank_source::candidacy` a node with
+/// no exact rung is a candidate only when the prompt supplied every word of its
+/// name, and a query drawn purely from the vocabulary names nothing, so the
+/// property test would spend every iteration comparing two empty rankings. The
+/// name is spelled with SPACES, which admits it through the candidacy floor
+/// while leaving the exact-symbol rung unfired — the case worth generating,
+/// since a rung would decide candidacy before the floor was ever consulted.
+fn random_query(rng: &mut Lcg, graph: &ResolvedGraph) -> RankQuery {
     let common = common_vocabulary();
     let rare = rare_vocabulary();
     let unseen: Vec<String> = UNSEEN.iter().map(|word| (*word).to_string()).collect();
@@ -146,10 +167,22 @@ fn random_query(rng: &mut Lcg) -> RankQuery {
             words.push(word.to_string());
         }
     }
+    if rng.below(4) != 0 {
+        if let Some(name) = random_symbol_name(rng, graph) {
+            words.extend(name_parts(&name));
+        }
+    }
     RankQuery {
         text: words.join(" "),
         ..RankQuery::default()
     }
+}
+
+/// One node's terminal scope segment, drawn uniformly. `None` only for a graph
+/// with no symbol nodes at all, which [`random_graph`] never produces.
+fn random_symbol_name(rng: &mut Lcg, graph: &ResolvedGraph) -> Option<String> {
+    let names: Vec<&String> = graph.nodes().filter_map(|node| node.scope.last()).collect();
+    (!names.is_empty()).then(|| names[rng.below(names.len())].clone())
 }
 
 /// The document identities `rank_source` derives, in corpus order — the same
@@ -242,7 +275,7 @@ fn indexed_scoring_equals_scan_scoring_over_random_corpora() {
     for iteration in 0..50 {
         let files = 2 + rng.below(9);
         let graph = random_graph(&mut rng, files);
-        let query = random_query(&mut rng);
+        let query = random_query(&mut rng, &graph);
         let temp = TempDir::new().unwrap();
         let cache = LexicalCache::source(temp.path(), &graph);
 
@@ -276,123 +309,35 @@ fn indexed_scoring_equals_scan_scoring_over_random_corpora() {
     );
 }
 
-/// A corpus term the query mentions must keep its document frequency in the
-/// map even after stopwording drops it, because `lexical::ExactGate` reads that
-/// same map to decide whether a candidate's NAME is corpus-rare. Asserted
-/// directly: nothing in the type system connects the two ends.
-#[test]
-fn dropped_terms_keep_their_document_frequencies_through_the_index() {
-    let documents: Vec<Vec<(String, f32)>> = (0..20)
-        .map(|_| vec![("point".to_string(), 2.0), ("write".to_string(), 1.0)])
-        .collect();
-    let ids: Vec<String> = (0..20).map(|index| format!("node-{index}")).collect();
-    let doc_ids: Vec<&str> = ids.iter().map(String::as_str).collect();
-
-    let index = LexicalIndex::build("rev", &doc_ids, &documents);
-    let frequencies = index.document_frequencies(&tokenize("the point is written"));
-
-    assert_eq!(
-        frequencies.get("point"),
-        Some(&20),
-        "a term ubiquitous enough to be dropped must still report its real df"
-    );
-    assert_eq!(
-        frequencies.get("the"),
-        Some(&0),
-        "a query term absent from the corpus is recorded as 0, not omitted"
-    );
-    assert!(
-        !frequencies.contains_key("write"),
-        "the map covers query terms only; widening it to the whole vocabulary \
-         would change what the exact-rung gate rejects"
-    );
-}
-
-/// The same coupling, end to end: a symbol named after a corpus-ubiquitous word
-/// must not claim an exact-symbol rung on a cache hit when it cannot claim one
-/// on a scan.
-#[test]
-fn a_ubiquitous_symbol_name_claims_no_rung_on_a_cache_hit() {
-    let config = RetrievalConfig::default();
-    let temp = TempDir::new().unwrap();
-    let graph = ubiquitous_symbol_graph();
-    let query = RankQuery {
-        text: "the point is in collect_tokens".to_string(),
-        ..RankQuery::default()
-    };
-    let cache = LexicalCache::source(temp.path(), &graph);
-
-    let scanned = rank_source_channel(&query, &graph, &config);
-    rank_source_channel_cached(&query, &graph, &config, Some(&cache));
-    let hit = rank_source_channel_cached(&query, &graph, &config, Some(&cache));
-
-    assert!(
-        scanned.dropped_terms.contains(&"point".to_string()),
-        "the fixture must actually drop the term: {:?}",
-        scanned.dropped_terms
-    );
-    assert_identical(&scanned, &hit, "ubiquitous symbol name");
-    assert!(
-        !hit.candidates.is_empty(),
-        "the rare symbol must rank, or the assertion below tests nothing"
-    );
-    assert!(
-        hit.candidates
-            .iter()
-            .filter(|candidate| candidate.id.as_str().ends_with(":point"))
-            .all(|candidate| !candidate.reasons.contains(&SelectionReason::ExactSymbol)),
-        "a df of 0 for a dropped term would readmit the rung the gate exists to reject"
-    );
-}
-
-/// Forty single-node files, `Manifest` returned by eight of them and `Tokens`
-/// by seven, against a floor of `max(40 * 0.10, 5) = 5` and a rescue ceiling of
-/// 10: both terms of the query `manifest tokens` are ubiquitous enough to drop
-/// and rare enough for the rescue floor (A.16) to put back.
+/// Forty single-node files, eight of them naming and returning both `Manifest`
+/// and `Tokens`, against a floor of `max(40 * 0.10, 5) = 5` and a rescue ceiling
+/// of 10: both terms of the query `manifest tokens` are ubiquitous enough to
+/// drop and rare enough for the rescue floor (A.16) to put back.
+///
+/// Those eight share ONE name, `manifest_tokens`, so that the rescued terms are
+/// also the two words of the name — under `rank_source::candidacy` a node the
+/// query has not named is no candidate however its terms were rescued, and a
+/// fixture of `item0`-style names would rank nothing at all and quietly compare
+/// three empty rankings. Their ids stay distinct because each lives in its own
+/// file. The other thirty-two say neither word, which is what keeps both
+/// document frequencies inside the rescue window.
 pub(super) fn rescued_source_graph() -> ResolvedGraph {
     let mut paths = Vec::new();
     let mut per_file = Vec::new();
     for file in 0..40 {
         let path = format!("src/rescue/m{file}.rs");
-        let returns = match file {
-            0..=7 => "Manifest",
-            8..=14 => "Tokens",
-            _ => "Value",
+        let (name, returns) = if file < 8 {
+            ("manifest_tokens", "Manifest")
+        } else {
+            ("item", "Value")
         };
-        let name = format!("item{file}");
         per_file.push(vec![full_node(
             &format!("{path}#function:{name}"),
             &path,
-            &[name.as_str()],
+            &[name],
             &format!("fn {name}(raw: &str) -> {returns}"),
         )]);
         paths.push(path);
     }
-    graph(paths.iter().map(String::as_str).zip(per_file).collect())
-}
-
-/// Sixty files whose every symbol is named `point` — a real file stem and a
-/// real English word — plus one corpus-rare symbol so the ranking is not empty.
-fn ubiquitous_symbol_graph() -> ResolvedGraph {
-    let mut paths = Vec::new();
-    let mut per_file = Vec::new();
-    for file in 0..60 {
-        let path = format!("src/generated/file_{file}.rs");
-        let node = full_node(
-            &format!("{path}#function:point"),
-            &path,
-            &["point"],
-            "fn point()",
-        );
-        paths.push(path);
-        per_file.push(vec![node]);
-    }
-    paths.push("src/generated/rare.rs".to_string());
-    per_file.push(vec![full_node(
-        "src/generated/rare.rs#function:collect_tokens",
-        "src/generated/rare.rs",
-        &["collect_tokens"],
-        "fn collect_tokens()",
-    )]);
     graph(paths.iter().map(String::as_str).zip(per_file).collect())
 }

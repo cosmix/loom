@@ -5,14 +5,15 @@ mod evidence;
 pub use evidence::{backtick_spans, TermEvidence};
 pub(crate) use evidence::{occurs_backticked, ExactGate};
 
-/// `admits_exact` and `is_shaped` are `pub` because they are the exact-rung
-/// PREDICATE that A.1 rests on and the unit tests pin them directly, one input
-/// at a time — a rule this load-bearing is not allowed to be reachable only
-/// through the 8,500-candidate path that uses it. Production calls them solely
-/// via [`ExactGate::admits`], which is why the re-export is test-only: outside
-/// tests nothing should reach past the gate to re-derive the decision itself.
+/// `admits_exact`, `is_shaped` and `is_plain_word` are `pub` because together
+/// they are the exact-rung PREDICATE that A.1 rests on and the unit tests pin
+/// them directly, one input at a time — a rule this consequential is not
+/// allowed to be reachable only through the 8,500-candidate path that uses it.
+/// Production calls them solely via [`ExactGate::admits`], which is why the
+/// re-export is test-only: outside tests nothing should reach past the gate to
+/// re-derive the decision itself.
 #[cfg(test)]
-pub use evidence::{admits_exact, is_shaped};
+pub use evidence::{admits_exact, is_plain_word, is_shaped};
 
 use crate::context::schema::KnowledgeChunk;
 use std::path::{Component, Path, PathBuf};
@@ -75,6 +76,58 @@ pub fn tokenize(text: &str) -> Vec<String> {
     }
     emit(&raw);
     terms
+}
+
+/// The word parts of a symbol name, lowercased and in order:
+/// `configure_loom_hooks` → `configure, loom, hooks`, `ResidentPoint` →
+/// `resident, point`, `Foo::Bar` → `foo, bar`, `remaining` → `remaining`.
+///
+/// [`tokenize`]'s parts WITHOUT the compound token it also emits, which is the
+/// whole reason this exists as its own function. `tokenize("configure_loom_hooks")`
+/// leads with `configure_loom_hooks` itself, and a caller asking "did the prompt
+/// name every word of this symbol?" must not be handed a term that only a prompt
+/// spelling the identifier out could ever supply — that question already has an
+/// answer, and it is the exact-symbol rung.
+///
+/// Splits on the same two boundaries `tokenize` does — any non-alphanumeric
+/// run, and an interior lowercase→uppercase transition — so a part is always a
+/// term a QUERY can produce. `_` is a separator here rather than part of a
+/// token, which follows from dropping the compound.
+///
+/// It is not, however, always a term the DOCUMENT built from the same name
+/// holds. `tokenize`'s camel-case scan runs over the whole raw token without
+/// restarting at `_`, so `foo_barBaz` tokenizes to `foo_barbaz, foo, barbaz,
+/// foo_bar, baz` and never emits a bare `bar`, while this returns `foo, bar,
+/// baz`. A prompt saying "foo bar baz" therefore NAMES such a node under
+/// [`crate::context::rank_source`]'s candidacy floor while BM25 can only score
+/// it on `foo` and `baz`. That asymmetry is deliberate on this side: the writer
+/// did name the symbol, and the missing term is a limitation of the tokenizer,
+/// not evidence against the node. Closing it would mean changing `tokenize`,
+/// which re-scores every corpus and forces an `INDEX_VERSION` bump.
+pub(crate) fn name_parts(name: &str) -> Vec<String> {
+    let mut parts: Vec<String> = Vec::new();
+    let mut current = String::new();
+    let mut previous: Option<char> = None;
+
+    for character in name.chars() {
+        if !character.is_ascii_alphanumeric() {
+            if !current.is_empty() {
+                parts.push(std::mem::take(&mut current));
+            }
+            previous = None;
+            continue;
+        }
+        if character.is_ascii_uppercase() && previous.is_some_and(|last| last.is_ascii_lowercase())
+        {
+            parts.push(std::mem::take(&mut current));
+        }
+        current.push(character.to_ascii_lowercase());
+        previous = Some(character);
+    }
+    if !current.is_empty() {
+        parts.push(current);
+    }
+    parts
 }
 
 /// Tokenize every weighted field of a chunk (heading, aliases, anchor,

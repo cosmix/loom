@@ -159,17 +159,21 @@ fn rule_29_a_long_signature_excerpt_is_truncated_and_marked() {
 }
 
 /// Two nodes that differ only in whether their name can be an English word:
-/// `gini` is short and unshaped, `pruneEvictionWindow` is camelCase. Both are
+/// `Gini` is short and unshaped, `pruneEvictionWindow` is camelCase. Both are
 /// corpus-rare, so rarity alone cannot tell them apart — which is the point.
+///
+/// `Gini` and not `gini`: `lexical::is_plain_word` refuses rarity to a name
+/// written in nothing but lowercase letters, so an all-lowercase probe would
+/// earn no rung at all and there would be no `medium` to publish.
 fn confidence_probe_graph() -> ResolvedGraph {
     graph(vec![
         (
             "src/gini.rs",
             vec![full_node(
-                "src/gini.rs#function:gini",
+                "src/gini.rs#type:Gini",
                 "src/gini.rs",
-                &["gini"],
-                "fn gini()",
+                &["Gini"],
+                "struct Gini",
             )],
         ),
         (
@@ -215,8 +219,8 @@ fn published_confidence(text: &str, id: &str) -> Confidence {
 fn a_rare_only_exact_match_is_published_as_medium() {
     assert_eq!(
         published_confidence(
-            "where is gini and pruneEvictionWindow used",
-            "src/gini.rs#function:gini"
+            "where is Gini and pruneEvictionWindow used",
+            "src/gini.rs#type:Gini"
         ),
         Confidence::Medium,
         "an ordinary-looking name admitted only by rarity must not claim `high`"
@@ -224,24 +228,24 @@ fn a_rare_only_exact_match_is_published_as_medium() {
 }
 
 /// The other side of the same prompt: a camelCase name is evidence in itself,
-/// so it keeps `high` even though it is exactly as rare as `gini`.
+/// so it keeps `high` even though it is exactly as rare as `Gini`.
 #[test]
 fn a_shaped_exact_match_is_published_as_high() {
     assert_eq!(
         published_confidence(
-            "where is gini and pruneEvictionWindow used",
+            "where is Gini and pruneEvictionWindow used",
             "src/prune.rs#function:pruneEvictionWindow"
         ),
         Confidence::High
     );
 }
 
-/// Backticks are full-strength evidence too: the same `gini` the first test
+/// Backticks are full-strength evidence too: the same `Gini` the first test
 /// demotes comes back `high` once the writer marks it as code.
 #[test]
 fn a_backticked_exact_match_is_published_as_high() {
     assert_eq!(
-        published_confidence("where is `gini` used", "src/gini.rs#function:gini"),
+        published_confidence("where is `Gini` used", "src/gini.rs#type:Gini"),
         Confidence::High
     );
 }

@@ -1,4 +1,11 @@
 //! Budget-constrained construction of context packs.
+//!
+//! One selection rule is not purely budget-driven and lives next door in
+//! [`twins`]: a tier-1 summary and the tier-2 topic it spilled restate each
+//! other, so [`select`] spends the budget on the detail and keeps the summary
+//! only as the fallback for when the detail does not fit.
+
+pub(crate) mod twins;
 
 use crate::context::graph_store::ResolvedGraph;
 use crate::context::rank::RankedCandidate;
@@ -7,7 +14,9 @@ use crate::context::schema::{
     KnowledgeChunk, LifecycleState, OmissionSummary, SourceNode, SourcePointer,
     BYTES_PER_TOKEN_ESTIMATE, EXCERPT_MAX_TOKENS, EXCERPT_TRUNCATION_MARKER,
 };
-use std::collections::BTreeMap;
+use twins::{details_before_summaries, explicitly_required, knowledge_twin};
+
+use std::collections::{BTreeMap, BTreeSet};
 
 /// Everything the packer needs besides the ranked list.
 #[derive(Debug, Clone)]
@@ -215,11 +224,70 @@ fn build_item(
     }
 }
 
+/// What one budget-constrained walk of the fused list produced.
+struct Selection {
+    items: Vec<ContextItem>,
+    estimated_tokens: usize,
+    omitted: usize,
+}
+
 /// Walk the fused list in order, taking whole items while they fit the budget.
 ///
-/// Every ranked candidate not included is counted as an omission, whether
-/// because it fell outside `chunks`/`graph` or because it did not fit the
-/// remaining budget.
+/// Besides not fitting, two things are skipped rather than taken: a candidate
+/// with no backing chunk or node, and a tier-1 summary whose tier-2 detail this
+/// pack already carries and which the caller did not name outright (see
+/// [`twins`]). All three are counted in `omitted`, the way the prompt hook
+/// folds its dedupe drops into the same figure
+/// (`commands/hook/user_prompt_compose.rs:146-165`) — the Knowledge Brief's
+/// "Omitted: N weaker matches" line would otherwise tell the reader they were
+/// handed everything retrieval found.
+fn select(
+    budget_tokens: usize,
+    ranked: &[RankedCandidate],
+    chunks: &BTreeMap<&str, &KnowledgeChunk>,
+    nodes: &BTreeMap<&str, &SourceNode>,
+) -> Selection {
+    let mut items = Vec::new();
+    let mut estimated_tokens = 0;
+    let mut omitted = 0;
+    let mut superseded: BTreeSet<String> = BTreeSet::new();
+
+    for candidate in details_before_summaries(ranked) {
+        if superseded.contains(candidate.id.as_str()) && !explicitly_required(candidate) {
+            tracing::debug!(
+                id = candidate.id.as_str(),
+                "tier-1 summary omitted: its tier-2 detail is already in the pack"
+            );
+            omitted += 1;
+            continue;
+        }
+        let Some(item) = build_item(candidate, chunks, nodes) else {
+            omitted += 1;
+            continue;
+        };
+        let remaining = budget_tokens - estimated_tokens;
+        if budget_tokens == 0 || candidate.token_count > remaining {
+            omitted += 1;
+            continue;
+        }
+        estimated_tokens += candidate.token_count;
+        if let Some(twin) = knowledge_twin(candidate) {
+            superseded.insert(twin);
+        }
+        items.push(item);
+    }
+
+    Selection {
+        items,
+        estimated_tokens,
+        omitted,
+    }
+}
+
+/// Build a pack from the fused list, within `request.budget_tokens`.
+///
+/// Every ranked candidate not included is counted as an omission — see
+/// [`select`] for the three reasons one can be.
 pub fn pack(
     request: &PackRequest,
     ranked: &[RankedCandidate],
@@ -235,33 +303,17 @@ pub fn pack(
         .flat_map(|graph| graph.nodes())
         .map(|node| (node.id.as_str(), node))
         .collect();
-    let mut items = Vec::new();
-    let mut estimated_tokens = 0;
-    let mut omitted = 0;
+    let selected = select(request.budget_tokens, ranked, &chunk_lookup, &node_lookup);
 
-    for candidate in ranked {
-        let Some(item) = build_item(candidate, &chunk_lookup, &node_lookup) else {
-            omitted += 1;
-            continue;
-        };
-        let remaining = request.budget_tokens - estimated_tokens;
-        if request.budget_tokens == 0 || candidate.token_count > remaining {
-            omitted += 1;
-            continue;
-        }
-        estimated_tokens += candidate.token_count;
-        items.push(item);
-    }
-
-    let omitted_summary = build_omission_summary(ranked, &items, omitted);
+    let omitted_summary = build_omission_summary(ranked, &selected.items, selected.omitted);
     ContextPack {
         query: request.query.clone(),
         scope: request.scope.clone(),
         budget_tokens: request.budget_tokens,
-        estimated_tokens,
+        estimated_tokens: selected.estimated_tokens,
         structural_freshness: request.structural_freshness.clone(),
         semantic_freshness: request.semantic_freshness.clone(),
-        items,
+        items: selected.items,
         omitted: omitted_summary,
         dropped_terms: request.dropped_terms.clone(),
         degraded: request.degraded.clone(),

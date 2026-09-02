@@ -31,9 +31,23 @@ use std::collections::{BTreeMap, BTreeSet};
 ///
 /// It does have to stay at or above `min_knowledge_terms` (2), though: the
 /// prompt hook only emits a pack when some knowledge item matched that many
-/// DISTINCT surviving terms (`commands/hook/user_prompt_compose.rs:84`), so a
+/// DISTINCT surviving terms (`commands/hook/user_prompt_compose.rs:104`), so a
 /// rescue of one term could restore candidates and still leave the hook silent.
 const RESCUE_LIMIT: usize = 3;
+
+/// How many distinct content terms a query must have before a thin surviving
+/// set counts as over-stopwording rather than as a precise question.
+///
+/// Four, because that is where the two readings of a thin survivor separate. A
+/// two- or three-word prompt — "Honesty Contract", "reconcile source graph" —
+/// that comes out with one surviving term has been served well: the survivor IS
+/// the query's discriminating word, and putting its neighbours back would only
+/// add noise to a lookup that already knows what it wants. A prompt of four or
+/// more content words is a question, and a question reduced to a single generic
+/// word has been answered on the least of what it asked. Not a tunable: no
+/// property of a corpus makes five right, and the ratios above already give an
+/// operator the two knobs that decide what "generic" means here.
+const RESCUE_QUERY_MIN_TERMS: usize = 4;
 
 /// Split the tokenized query into the terms worth scoring and the terms that
 /// are not, returning `(surviving, dropped)`.
@@ -55,11 +69,15 @@ pub(super) fn partition_terms(
 
     let mut surviving = Vec::new();
     let mut dropped = Vec::new();
+    let mut content_terms = BTreeSet::new();
     for term in query_terms {
         let backticked = occurs_backticked(&lower_query, &spans, term);
         let frequency = document_frequencies.get(term).copied().unwrap_or(0);
-        let keep =
-            backticked || (term.len() >= config.min_query_token_len && frequency as f32 <= floor);
+        let long_enough = term.len() >= config.min_query_token_len;
+        if backticked || long_enough {
+            content_terms.insert(term);
+        }
+        let keep = backticked || (long_enough && frequency as f32 <= floor);
         if keep {
             surviving.push(term.clone());
         } else if !dropped.contains(term) {
@@ -67,17 +85,9 @@ pub(super) fn partition_terms(
         }
     }
 
-    if surviving.is_empty() {
+    if over_stopworded(&surviving, content_terms.len(), config) {
         let rescued = rescue_rarest(&dropped, document_frequencies, corpus_size, config);
-        // Rebuilt from the query rather than collected out of `rescued` so a
-        // term the prompt said twice is still scored twice, and so the order is
-        // the query's: `dropped` is deduplicated for display, `surviving`
-        // deliberately is not.
-        surviving = query_terms
-            .iter()
-            .filter(|term| rescued.contains(*term))
-            .cloned()
-            .collect();
+        surviving = readmit(query_terms, &surviving, &rescued);
         // A rescued term was not dropped, and `ContextPack::dropped_terms` is
         // observability an agent reads back — it must describe what this pass
         // actually scored, not what it nearly did.
@@ -86,8 +96,68 @@ pub(super) fn partition_terms(
     (surviving, dropped)
 }
 
-/// The rarest dropped terms to put back when stopwording dropped them ALL —
-/// empty when nothing dropped is rare enough to deserve it.
+/// Whether stopwording left this query too thin to answer, and the rescue floor
+/// should run.
+///
+/// Two shapes qualify, and the second is the one measured after the first was
+/// fixed. An EMPTY surviving set is unanswerable by construction: nothing is
+/// scored, so nothing is a candidate. A surviving set holding fewer DISTINCT
+/// terms than `min_knowledge_terms` is unanswerable one step later — the prompt
+/// hook emits a pack only for an item that matched that many distinct surviving
+/// terms or carried an exact rung (`clears_emit_floor`), so on a purely lexical
+/// query no item can ever clear the floor and the pack is dropped whole. A
+/// query reduced below the floor has therefore retrieved nothing, whether or
+/// not the reduction left one word standing.
+///
+/// [`RESCUE_QUERY_MIN_TERMS`] is what keeps the second shape from swallowing
+/// the first's discipline: it applies only to a query long enough that a
+/// surviving set under the floor means the filter ate the question, never to a
+/// short precise lookup.
+/// Reusing `min_knowledge_terms` rather than a private constant is deliberate —
+/// the threshold this rescue exists to clear is that floor, so an operator who
+/// lowers the floor to 1 correctly turns the thin-survivor rescue off, and one
+/// who raises it gets a rescue that aims at the raised floor.
+fn over_stopworded(surviving: &[String], content_terms: usize, config: &RetrievalConfig) -> bool {
+    if surviving.is_empty() {
+        return true;
+    }
+    let distinct: BTreeSet<&String> = surviving.iter().collect();
+    content_terms >= RESCUE_QUERY_MIN_TERMS && distinct.len() < config.min_knowledge_terms
+}
+
+/// The scored term list after a rescue: everything that already survived, plus
+/// everything rescued, in the query's own order.
+///
+/// Rebuilt from the query rather than concatenated so a term the prompt said
+/// twice is still scored twice and the order is the query's — `dropped` is
+/// deduplicated for display, `surviving` deliberately is not. A term cannot be
+/// in both inputs: the keep decision depends only on the term itself, so every
+/// occurrence of one term lands on the same side.
+fn readmit(
+    query_terms: &[String],
+    surviving: &[String],
+    rescued: &BTreeSet<String>,
+) -> Vec<String> {
+    let kept: BTreeSet<&String> = surviving.iter().collect();
+    query_terms
+        .iter()
+        .filter(|term| kept.contains(*term) || rescued.contains(*term))
+        .cloned()
+        .collect()
+}
+
+/// The rarest dropped terms to put back once [`over_stopworded`] has judged the
+/// query unanswerable — empty when nothing dropped is rare enough to deserve it.
+///
+/// At most [`RESCUE_LIMIT`] terms come back however thin the survivors are, so
+/// the cap is the same for a query that lost every term and one that kept a
+/// single generic word. Sizing it to the deficit instead — enough to reach
+/// `min_knowledge_terms` and no more — was considered and rejected: on the
+/// measured case ("sandbox settings rules for claude code worktree sessions",
+/// where only `rules` survived) it would restore `sessions` alone and leave the
+/// question still answered on two of its weakest words, while the flat cap
+/// restores `sessions`, `settings` and `sandbox` together, which is what the
+/// asker actually asked about.
 ///
 /// A.2 allowed the surviving set to be empty, reasoning that a query of pure
 /// stopwords describes nothing and should retrieve nothing. That reasoning
@@ -105,15 +175,16 @@ pub(super) fn partition_terms(
 /// The ceiling is what keeps this from being an undo. A term above
 /// `stop_rescue_max_ratio` of the corpus is ubiquitous under any reading and
 /// stays dropped however empty the query gets: `the` at 90% of the corpus is
-/// never resurrected, `settings` at 11.6% is, but only when nothing else
-/// survived. On a corpus small enough that the ceiling falls below
+/// never resurrected, `settings` at 11.6% is, but only for a query
+/// [`over_stopworded`] judged unanswerable. On a corpus small enough that the
+/// ceiling falls below
 /// [`ubiquity_floor`] the rescue is simply vacuous — nothing dropped for
 /// ubiquity can clear it — which is the right outcome, because on a small corpus
 /// the floor's `df_ident_max` arm has already kept the query's terms.
 ///
 /// The alternative — computing document frequencies over the curated documents
 /// only, leaving prose out of the statistics — was considered and rejected.
-/// `ExactGate::is_rare` (`context/lexical/evidence.rs:185`) reads THIS SAME df
+/// `ExactGate::is_rare` (`context/lexical/evidence.rs:227`) reads THIS SAME df
 /// map from the opposite end, to decide whether a candidate's name is
 /// corpus-rare enough to claim an exact-match rung on its own. Two different
 /// notions of "rare", one counting prose and one not, would let a single term be

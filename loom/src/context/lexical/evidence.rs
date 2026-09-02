@@ -23,7 +23,20 @@
 //! - **shaped** — the name itself cannot be an English word (`snake_case`,
 //!   `camelCase`, `Foo::Bar`);
 //! - **rare** — the name occurs in so few documents that it cannot be the
-//!   ordinary vocabulary of this corpus.
+//!   ordinary vocabulary of this corpus, AND it is not spelled like an ordinary
+//!   word ([`is_plain_word`]).
+//!
+//! That second half of the rarity test is the one this file learned last, and
+//! the hole it closes was measured: `read the remaining knowledge files that
+//! are relevant` put `daemon/server/admission.rs#function:remaining` FIRST, at
+//! 94.7 points, because `remaining` occurs in few enough source nodes to look
+//! corpus-rare. Rarity cannot tell an uncommon symbol from an uncommon English
+//! word — only spelling can, and `remaining` is spelled like a word. Rarity is
+//! therefore left to do the job it was added for: admitting a name the
+//! tokenizer never emits as a term at all, because it carries punctuation or
+//! digits (`Foo::Bar`, `kebab-case`, `sha256`). Such a name is absent from the
+//! document-frequency map, counts as frequency `0`, and is not something a
+//! prompt says by accident.
 //!
 //! Nothing here excludes a candidate from the results. A word that fails every
 //! test still competes on its BM25 score; it just cannot buy an 80-point boost
@@ -40,7 +53,8 @@ pub struct TermEvidence {
     /// The matched name is identifier-shaped: contains `_`, or an interior
     /// lowercase→uppercase transition (camelCase), or `::`.
     pub shaped: bool,
-    /// Document frequency in this channel's corpus is at most `df_ident_max`.
+    /// Document frequency in this channel's corpus is at most `df_ident_max`,
+    /// and the name is not spelled like an ordinary word ([`is_plain_word`]).
     pub rare: bool,
 }
 
@@ -69,6 +83,27 @@ pub fn is_shaped(name: &str) -> bool {
     let bytes = name.as_bytes();
     (1..bytes.len())
         .any(|index| bytes[index - 1].is_ascii_lowercase() && bytes[index].is_ascii_uppercase())
+}
+
+/// True when `name` is spelled the way an English word is: ASCII letters only,
+/// none of them capital.
+///
+/// The complement of what [`ExactGate::is_rare`] may vouch for. Rarity is a
+/// statement about a CORPUS ("few documents hold this"), and an uncommon
+/// English word satisfies it exactly as well as an uncommon symbol does —
+/// `remaining`, `relevant` and `complete` are all rare in a corpus of function
+/// signatures. Spelling is the only evidence that separates them, so a name
+/// that survives lowercasing unchanged and holds nothing but letters is left to
+/// the other two signals: back-tick it, or spell it the way code is spelled.
+///
+/// A capital anywhere makes the name non-plain, `Widget` included. That is
+/// weaker evidence than [`is_shaped`] demands, deliberately: `is_shaped` is
+/// asking whether a name is UNAMBIGUOUSLY code and answers no for a leading
+/// capital, while this is only asking whether rarity is allowed to speak at
+/// all, and a capitalized name in a lowercase prompt is at least a spelling the
+/// writer did not have to use.
+pub fn is_plain_word(name: &str) -> bool {
+    !name.is_empty() && name.chars().all(|character| character.is_ascii_lowercase())
 }
 
 /// Byte ranges of the `` `…` `` spans in `raw`, scanned once.
@@ -169,7 +204,7 @@ impl<'a> ExactGate<'a> {
                     .any(|(span_start, span_end)| start >= span_start && end <= span_end)
             }),
             shaped: is_shaped(name),
-            rare: self.is_rare(&lower_name),
+            rare: !is_plain_word(name) && self.is_rare(&lower_name),
         };
         admits_exact(&evidence).then_some(evidence)
     }
@@ -184,6 +219,11 @@ impl<'a> ExactGate<'a> {
     /// cannot be the English word this gate exists to reject, because an
     /// English word in the prompt would have tokenized to itself and been
     /// counted.
+    ///
+    /// Asked ONLY of a name [`is_plain_word`] rejected, and the caller's guard
+    /// is what makes the paragraph above true rather than merely usual: a name
+    /// that IS in the map and IS spelled like a word never reaches here, so a
+    /// low frequency can no longer stand in for "this is a symbol".
     fn is_rare(&self, lower_name: &str) -> bool {
         self.document_frequencies
             .get(lower_name)

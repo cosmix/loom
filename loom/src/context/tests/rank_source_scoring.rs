@@ -10,7 +10,13 @@ use crate::context::schema::{Confidence, SelectionReason, SourceNode};
 
 /// The signature every fixture node shares, so two nodes differ only in the
 /// thing under test and their BM25 scores are genuinely identical.
-const SHARED_SIGNATURE: &str = "fn render(frame: Frame)";
+const SHARED_SIGNATURE: &str = "fn render_frame(frame: Frame)";
+
+/// The query those fixtures are scored against. It spells out both words of
+/// `render_frame` because since `rank_source::candidacy` a node with no exact
+/// rung is a candidate only when the prompt named its symbol — and every
+/// comparison below needs two nodes that both survive to be compared.
+const NAMES_THE_SYMBOL: &str = "which render frame is drawn";
 
 /// Rank `nodes` — each in its own file — against a plain text query.
 fn rank_nodes(text: &str, nodes: Vec<SourceNode>) -> Vec<RankedCandidate> {
@@ -79,6 +85,12 @@ fn prose_named_nodes() -> Vec<SourceNode> {
 /// `home()` functions at `high` confidence. Every one of those matches came
 /// from a word the writer used as English, two of them lifted straight out of
 /// a filesystem path.
+///
+/// The prompt now buys them nothing at all, not merely no rung: each of `write`,
+/// `home` and `doc` is one lowercase word, so `rank_source::candidacy` refuses
+/// them lexical candidacy too, and the six `helperN` nodes were never named. The
+/// next test is the proof this silence is the gate rather than a fixture that
+/// matches nothing.
 #[test]
 fn prose_words_and_path_segments_earn_no_exact_rung() {
     let candidates = rank_nodes(
@@ -94,6 +106,10 @@ fn prose_words_and_path_segments_earn_no_exact_rung() {
                 SelectionReason::ExactSymbol | SelectionReason::ExactPath
             ))),
         "no ordinary word may claim an exact rung: {candidates:?}"
+    );
+    assert!(
+        candidates.is_empty(),
+        "nor may it make an unnamed symbol a candidate: {candidates:?}"
     );
 }
 
@@ -116,17 +132,21 @@ fn the_same_word_backticked_earns_the_exact_symbol_rung() {
 
 /// The cap is per-CANDIDATE, not per-rung: one full-strength rung restores
 /// `High` even when a weaker rung fired alongside it. A writer who spells out
-/// `src/gini.rs` has said what they meant, and the fact that `gini` on its own
+/// `src/gini.rs` has said what they meant, and the fact that `Gini` on its own
 /// would only have been admitted by rarity takes nothing away from that.
+///
+/// `Gini` and not `gini`: `lexical::is_plain_word` refuses rarity to a name
+/// spelled in nothing but lowercase letters, so an all-lowercase fixture would
+/// fire one rung instead of the two this test is about.
 #[test]
 fn a_full_path_match_is_not_demoted_by_a_rare_only_rung_beside_it() {
     let candidates = rank_nodes(
-        "look at src/gini.rs where gini is used",
+        "look at src/gini.rs where Gini is used",
         vec![full_node(
-            "src/gini.rs#function:gini",
+            "src/gini.rs#type:Gini",
             "src/gini.rs",
-            &["gini"],
-            "fn gini()",
+            &["Gini"],
+            "struct Gini",
         )],
     );
 
@@ -147,18 +167,18 @@ fn a_full_path_match_is_not_demoted_by_a_rare_only_rung_beside_it() {
 #[test]
 fn a_test_file_twin_is_downweighted_below_its_implementation() {
     let candidates = rank_nodes(
-        "which frame is rendered",
+        NAMES_THE_SYMBOL,
         vec![
             full_node(
-                "src/widget.ts#function:render",
+                "src/widget.ts#function:render_frame",
                 "src/widget.ts",
-                &["render"],
+                &["render_frame"],
                 SHARED_SIGNATURE,
             ),
             full_node(
-                "src/widget.test.ts#function:render",
+                "src/widget.test.ts#function:render_frame",
                 "src/widget.test.ts",
-                &["render"],
+                &["render_frame"],
                 SHARED_SIGNATURE,
             ),
         ],
@@ -166,11 +186,11 @@ fn a_test_file_twin_is_downweighted_below_its_implementation() {
 
     assert_eq!(
         candidates[0].id.as_str(),
-        "src/widget.ts#function:render",
+        "src/widget.ts#function:render_frame",
         "the implementation must lead: {candidates:?}"
     );
-    let implementation = score_of(&candidates, "src/widget.ts#function:render");
-    let twin = score_of(&candidates, "src/widget.test.ts#function:render");
+    let implementation = score_of(&candidates, "src/widget.ts#function:render_frame");
+    let twin = score_of(&candidates, "src/widget.test.ts#function:render_frame");
     assert!(
         (twin - implementation * RetrievalConfig::default().test_path_factor).abs() < 1e-6,
         "the twin must score exactly test_path_factor of the implementation: \
@@ -183,11 +203,11 @@ fn a_test_file_twin_is_downweighted_below_its_implementation() {
 #[test]
 fn a_test_file_that_is_the_only_match_still_appears() {
     let candidates = rank_nodes(
-        "which frame is rendered",
+        NAMES_THE_SYMBOL,
         vec![full_node(
-            "tests/widget_test.go#function:render",
+            "tests/widget_test.go#function:render_frame",
             "tests/widget_test.go",
-            &["render"],
+            &["render_frame"],
             SHARED_SIGNATURE,
         )],
     );
@@ -201,25 +221,25 @@ fn a_test_file_that_is_the_only_match_still_appears() {
 #[test]
 fn a_rust_tests_module_is_downweighted_without_a_test_path() {
     let candidates = rank_nodes(
-        "which frame is rendered",
+        NAMES_THE_SYMBOL,
         vec![
             full_node(
-                "src/a.rs#function:render",
+                "src/a.rs#function:render_frame",
                 "src/a.rs",
-                &["helper", "render"],
+                &["helper", "render_frame"],
                 SHARED_SIGNATURE,
             ),
             full_node(
-                "src/b.rs#function:render",
+                "src/b.rs#function:render_frame",
                 "src/b.rs",
-                &["tests", "render"],
+                &["tests", "render_frame"],
                 SHARED_SIGNATURE,
             ),
         ],
     );
 
-    let implementation = score_of(&candidates, "src/a.rs#function:render");
-    let in_tests_module = score_of(&candidates, "src/b.rs#function:render");
+    let implementation = score_of(&candidates, "src/a.rs#function:render_frame");
+    let in_tests_module = score_of(&candidates, "src/b.rs#function:render_frame");
     assert!(
         (in_tests_module - implementation * RetrievalConfig::default().test_path_factor).abs()
             < 1e-6,
@@ -234,21 +254,21 @@ fn a_rust_tests_module_is_downweighted_without_a_test_path() {
 fn a_dependency_owned_file_outranks_an_unrelated_one() {
     let candidates = rank_with(
         RankQuery {
-            text: "which frame is rendered".to_string(),
+            text: NAMES_THE_SYMBOL.to_string(),
             dependency_paths: vec!["./src/foo.ts".to_string()],
             ..RankQuery::default()
         },
         vec![
             full_node(
-                "src/foo.ts#function:bar",
+                "src/foo.ts#function:render_frame",
                 "src/foo.ts",
-                &["bar"],
+                &["render_frame"],
                 SHARED_SIGNATURE,
             ),
             full_node(
-                "src/unrelated.ts#function:baz",
+                "src/unrelated.ts#function:render_frame",
                 "src/unrelated.ts",
-                &["baz"],
+                &["render_frame"],
                 SHARED_SIGNATURE,
             ),
         ],
@@ -256,14 +276,14 @@ fn a_dependency_owned_file_outranks_an_unrelated_one() {
 
     assert_eq!(
         candidates[0].id.as_str(),
-        "src/foo.ts#function:bar",
+        "src/foo.ts#function:render_frame",
         "the dependency's file must lead: {candidates:?}"
     );
     assert!(candidates[0]
         .reasons
         .contains(&SelectionReason::StageDependency));
-    let owned = score_of(&candidates, "src/foo.ts#function:bar");
-    let unrelated = score_of(&candidates, "src/unrelated.ts#function:baz");
+    let owned = score_of(&candidates, "src/foo.ts#function:render_frame");
+    let unrelated = score_of(&candidates, "src/unrelated.ts#function:render_frame");
     assert!(
         (owned - unrelated - 30.0).abs() < 1e-4,
         "the boost is additive and worth exactly 30: {owned} vs {unrelated}"
@@ -276,14 +296,14 @@ fn a_dependency_owned_file_outranks_an_unrelated_one() {
 fn a_dependency_directory_prefix_boosts_nothing() {
     let candidates = rank_with(
         RankQuery {
-            text: "which frame is rendered".to_string(),
+            text: NAMES_THE_SYMBOL.to_string(),
             dependency_paths: vec!["src/".to_string(), "src/**/*.ts".to_string()],
             ..RankQuery::default()
         },
         vec![full_node(
-            "src/foo.ts#function:bar",
+            "src/foo.ts#function:render_frame",
             "src/foo.ts",
-            &["bar"],
+            &["render_frame"],
             SHARED_SIGNATURE,
         )],
     );

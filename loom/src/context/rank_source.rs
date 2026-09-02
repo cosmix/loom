@@ -7,6 +7,12 @@
 //! the two lists are directly comparable when [`crate::context::fuse`] merges
 //! them by reciprocal rank.
 //!
+//! What it does NOT share with the knowledge ranker is who may become a
+//! candidate. A curated chunk is prose and answers a question asked in prose; a
+//! source node is a pointer into the code and answers a question that named the
+//! code. `candidacy` is that difference written down — see that module's doc
+//! for the three measured collisions that made it necessary.
+//!
 //! ## Note for whoever next touches `fuse`
 //!
 //! Fusion keys its accumulator by [`ChunkId`] *across* channels. Knowledge ids
@@ -19,6 +25,7 @@
 //! not "simplify" that dispatch into trying both maps: it would hide the
 //! collision instead of surfacing it.
 
+mod candidacy;
 mod paths;
 
 pub use paths::normalize_dependency_path;
@@ -34,8 +41,10 @@ use crate::context::rank::{
 use crate::context::schema::{
     Channel, ChunkId, FileCoverage, SelectionReason, SourceNode, SourceNodeKind,
 };
+use candidacy::admits_lexical_evidence;
 use paths::{apply_test_path_factor, matches_path, names_dependency_path, PathMatch};
 use std::cmp::Ordering;
+use std::collections::BTreeSet;
 use std::path::Path;
 
 /// Most source candidates one ranking pass hands to fusion.
@@ -169,16 +178,31 @@ fn score_nodes<'a>(
     config: &RetrievalConfig,
 ) -> Vec<ScoredNode<'a>> {
     let corpus_size = nodes.len() as f32;
+    // Collected once per pass, not once per node: the candidacy test below asks
+    // this set a question per name part, across every node in the graph.
+    let surviving: BTreeSet<&str> = corpus
+        .surviving_terms()
+        .iter()
+        .map(String::as_str)
+        .collect();
     nodes
         .iter()
         .copied()
         .enumerate()
         .filter_map(|(index, node)| {
-            score_node(query, node, corpus, gate, config, corpus_size, index).map(|candidate| {
-                ScoredNode {
-                    candidate,
-                    order: (node.path.as_path(), node.span.line_start),
-                }
+            score_node(
+                query,
+                node,
+                corpus,
+                gate,
+                config,
+                &surviving,
+                corpus_size,
+                index,
+            )
+            .map(|candidate| ScoredNode {
+                candidate,
+                order: (node.path.as_path(), node.span.line_start),
             })
         })
         .collect()
@@ -193,6 +217,7 @@ fn score_node(
     corpus: &LexicalCorpus,
     gate: &ExactGate<'_>,
     config: &RetrievalConfig,
+    surviving: &BTreeSet<&str>,
     corpus_size: f32,
     index: usize,
 ) -> Option<RankedCandidate> {
@@ -204,7 +229,12 @@ fn score_node(
         rungs.award(BOOST_STAGE_DEPENDENCY, SelectionReason::StageDependency);
     }
     let (lexical_score, matched_term_count) = corpus.score(corpus_size, index);
-    if matched_term_count > 0 {
+    // A rung already established that the query pointed at this node, so its
+    // lexical score rides along unexamined; without one, `candidacy` decides
+    // whether ordinary words matching a ~10-token document mean anything.
+    let lexical_admitted = matched_term_count > 0
+        && (!rungs.is_empty() || admits_lexical_evidence(query, node, surviving, gate));
+    if lexical_admitted {
         rungs.reasons.push(SelectionReason::Lexical);
         rungs.score += lexical_score;
     }

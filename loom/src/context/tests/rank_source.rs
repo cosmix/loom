@@ -7,6 +7,12 @@ use crate::context::schema::{Confidence, FileCoverage, SelectionReason, SourceNo
 
 /// A node whose terminal scope segment appears in the query text earns the
 /// exact-symbol boost and must outrank a node that only shares a lexical term.
+///
+/// The lexical-only node is named `cache_behavior` rather than `helper` because
+/// since `rank_source::candidacy` a node with no rung has to be NAMED by the
+/// prompt to be a candidate at all — "cache" and "behavior" are both in this
+/// query, so it clears that floor and the comparison under test still has two
+/// sides.
 #[test]
 fn test_exact_symbol_outranks_lexical_only() {
     let query = RankQuery {
@@ -21,10 +27,10 @@ fn test_exact_symbol_outranks_lexical_only() {
     );
     exact.span.line_start = 10;
     let mut lexical = full_node(
-        "src/b.rs#function:helper",
+        "src/b.rs#function:cache_behavior",
         "src/b.rs",
-        &["helper"],
-        "fn helper(cache: bool)",
+        &["cache_behavior"],
+        "fn cache_behavior(cache: bool)",
     );
     lexical.span.line_start = 20;
 
@@ -141,26 +147,30 @@ fn test_explicit_id_on_non_full_coverage_is_not_high() {
 /// Three nodes with identical scope/signature text — so their BM25 documents,
 /// and therefore their scores, are genuinely identical — but distinct
 /// `(path, line_start)`, so the tie-break actually has ties to decide.
+///
+/// The shared name is two words, both of them in the query, so all three clear
+/// `rank_source::candidacy`'s floor on lexical evidence alone. That is what this
+/// fixture needs: a one-word name would leave nothing to tie-break.
 fn tied_nodes_graph() -> ResolvedGraph {
     let mut node_b = full_node(
-        "src/b.rs#function:helper1",
+        "src/b.rs#function:helper_value1",
         "src/b.rs",
-        &["helper"],
-        "fn helper(value: i32)",
+        &["helper_value"],
+        "fn helper_value(value: i32)",
     );
     node_b.span.line_start = 50;
     let mut node_a5 = full_node(
-        "src/a.rs#function:helper5",
+        "src/a.rs#function:helper_value5",
         "src/a.rs",
-        &["helper"],
-        "fn helper(value: i32)",
+        &["helper_value"],
+        "fn helper_value(value: i32)",
     );
     node_a5.span.line_start = 5;
     let mut node_a1 = full_node(
-        "src/a.rs#function:helper1",
+        "src/a.rs#function:helper_value1",
         "src/a.rs",
-        &["helper"],
-        "fn helper(value: i32)",
+        &["helper_value"],
+        "fn helper_value(value: i32)",
     );
     node_a1.span.line_start = 1;
     graph(vec![
@@ -194,9 +204,9 @@ fn test_ordering_is_deterministic_across_runs() {
         "the three candidates must be genuinely tied on score: {first:?}"
     );
     let expected_order = [
-        "src/a.rs#function:helper1",
-        "src/a.rs#function:helper5",
-        "src/b.rs#function:helper1",
+        "src/a.rs#function:helper_value1",
+        "src/a.rs#function:helper_value5",
+        "src/b.rs#function:helper_value1",
     ];
     let ids: Vec<&str> = first
         .iter()
