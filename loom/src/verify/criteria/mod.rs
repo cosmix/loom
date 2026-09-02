@@ -45,6 +45,8 @@
 //! - The criterion is marked as failed with a timeout-specific error message
 //! - Subsequent criteria continue to execute (fail-fast is not the default)
 
+mod cache;
+mod cache_ignore;
 mod config;
 mod confine;
 mod executor;
@@ -55,6 +57,7 @@ mod runner;
 mod tests;
 
 // Re-export public types and functions
+pub use cache::CachePolicy;
 pub use config::{CriteriaConfig, DEFAULT_COMMAND_TIMEOUT};
 pub use confine::{plan_confinement, resolve_confinement, spawn_confined, CommandSpec};
 pub use executor::{

@@ -26,6 +26,8 @@ use super::session::cleanup_session_resources;
 
 #[path = "complete_authorization.rs"]
 pub(super) mod complete_authorization;
+#[path = "complete_cache.rs"]
+mod complete_cache;
 #[path = "complete_verification.rs"]
 mod complete_verification;
 #[path = "control_complete.rs"]
@@ -34,6 +36,7 @@ mod control_complete;
 mod control_session;
 
 use complete_authorization::authorize_privileged_completion;
+use complete_cache::bypass_acceptance_cache;
 use control_session::{handle_broker_request, sandbox_control_session};
 
 pub(crate) use super::admin_proof::{
@@ -310,16 +313,13 @@ pub fn complete(
     no_verify: bool,
     force_unsafe: bool,
     assume_merged: bool,
+    no_cache: bool,
     admin_proof: Option<String>,
 ) -> Result<()> {
     let work_dir_buf = crate::commands::common::work_dir_path()?;
     let work_dir: &Path = &work_dir_buf;
-    if handle_broker_request(
-        &stage_id,
-        session_id.as_deref(),
-        no_verify || force_unsafe || assume_merged,
-        work_dir,
-    )? {
+    let is_privileged = no_verify || force_unsafe || assume_merged;
+    if handle_broker_request(&stage_id, session_id.as_deref(), is_privileged, work_dir)? {
         return Ok(());
     }
     authorize_privileged_completion(
@@ -332,7 +332,7 @@ pub fn complete(
     )?;
 
     let mut stage = load_stage(&stage_id, work_dir)?;
-
+    bypass_acceptance_cache(no_cache);
     let control_session =
         sandbox_control_session(&stage, &stage_id, session_id.as_deref(), work_dir)?;
 

@@ -87,6 +87,10 @@ pub enum StageCommands {
         /// Without this, dependent stages will NOT be triggered.
         #[arg(long = "assume-merged", requires = "force_unsafe")]
         assume_merged: bool,
+
+        /// Re-run every acceptance criterion even when a pass is cached for this tree
+        #[arg(long)]
+        no_cache: bool,
     },
 
     /// Mint a one-time proof for a trusted broker to hand to another process.

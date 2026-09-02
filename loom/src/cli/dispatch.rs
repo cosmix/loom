@@ -157,6 +157,45 @@ fn dispatch_hook(command: HookCommands) -> Result<()> {
     }
 }
 
+/// `loom check` dispatch, extracted so `--no-cache` can toggle the acceptance
+/// pass cache before running verification without growing the already
+/// oversized `dispatch` match arm.
+fn run_check(stage_id: String, suggest: bool, no_cache: bool) -> Result<()> {
+    if no_cache {
+        // Single-threaded at this point in a one-shot CLI invocation — no
+        // concurrent reader of the environment exists yet — so a plain
+        // process-wide set is safe, the same reasoning
+        // `daemon::server::environment::apply` relies on.
+        // `CriteriaConfig::default()` (built inside
+        // `run_acceptance_with_display`) reads this once.
+        std::env::set_var("LOOM_ACCEPTANCE_CACHE", "0");
+    }
+    verify::execute(&stage_id, suggest)
+}
+
+/// `loom {sessions,worktree} <subcommand>` dispatch.
+///
+/// Extracted for the same reason as `dispatch_knowledge`: grouping these two
+/// small, self-contained command groups keeps the top-level `dispatch` match
+/// under its line ceiling as new commands are added elsewhere.
+fn dispatch_tools(command: Commands) -> Result<()> {
+    match command {
+        Commands::Sessions { command } => match command {
+            SessionsCommands::List => sessions::list(),
+            SessionsCommands::Kill { session_ids, stage } => sessions::kill(session_ids, stage),
+        },
+        Commands::Worktree { command } => match command {
+            WorktreeCommands::List => worktree_cmd::list(),
+            WorktreeCommands::Remove {
+                stage_id,
+                force,
+                confirmation,
+            } => worktree_cmd::remove(stage_id, force, confirmation),
+        },
+        _ => unreachable!("dispatch routes only the sessions/worktree group here"),
+    }
+}
+
 pub fn dispatch(command: Commands) -> Result<()> {
     match command {
         Commands::Init {
@@ -193,19 +232,8 @@ pub fn dispatch(command: Commands) -> Result<()> {
             verbose,
         } => status::execute(live, compact, verbose),
         Commands::Resume { stage_id } => resume::execute(stage_id),
-        Commands::Sessions { command } => match command {
-            SessionsCommands::List => sessions::list(),
-            SessionsCommands::Kill { session_ids, stage } => sessions::kill(session_ids, stage),
-        },
+        cmd @ (Commands::Sessions { .. } | Commands::Worktree { .. }) => dispatch_tools(cmd),
         Commands::Attach { stage_id } => attach::execute(stage_id),
-        Commands::Worktree { command } => match command {
-            WorktreeCommands::List => worktree_cmd::list(),
-            WorktreeCommands::Remove {
-                stage_id,
-                force,
-                confirmation,
-            } => worktree_cmd::remove(stage_id, force, confirmation),
-        },
         Commands::Graph => graph::show(),
         Commands::Handoff {
             stage,
@@ -249,7 +277,11 @@ pub fn dispatch(command: Commands) -> Result<()> {
         Commands::Stop => stop::execute(),
         Commands::Diagnose { stage_id } => diagnose::execute(&stage_id),
         Commands::Plan { command } => dispatch_plan(command),
-        Commands::Check { stage_id, suggest } => verify::execute(&stage_id, suggest),
+        Commands::Check {
+            stage_id,
+            suggest,
+            no_cache,
+        } => run_check(stage_id, suggest, no_cache),
         Commands::SkillIndex => skill_index::execute(),
         Commands::Completions {
             shell,

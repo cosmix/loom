@@ -8,9 +8,26 @@ use super::{create_test_stage, save_test_stage, setup_work_dir};
 use crate::models::stage::{StageStatus, StageType};
 use crate::plan::schema::AcceptanceCriterion;
 use crate::verify::transitions::load_stage;
+use anyhow::Result;
 use serial_test::serial;
 use std::path::Path;
 use tempfile::TempDir;
+
+/// Calls `complete()` with the session, `force_unsafe`, `assume_merged`, and
+/// `no_cache` arguments at the defaults every call site in this file needs
+/// (`None`, `false`, `false`, `false`) — only `no_verify` and `admin_proof`
+/// vary across the routing/acceptance/knowledge-path tests below.
+fn complete_stage(stage_id: &str, no_verify: bool, admin_proof: Option<String>) -> Result<()> {
+    complete(
+        stage_id.to_string(),
+        None,
+        no_verify,
+        false,
+        false,
+        false,
+        admin_proof,
+    )
+}
 
 /// Test helper: write `<work_dir>/admin.token` with the given content.
 fn write_admin_token(work_dir: &Path, content: &str) {
@@ -101,7 +118,7 @@ fn test_complete_with_passing_acceptance() {
     let _guard = EnvGuard::new();
     std::env::set_current_dir(temp_dir.path()).unwrap();
 
-    let result = complete("test-stage".to_string(), None, false, false, false, None);
+    let result = complete_stage("test-stage", false, None);
 
     // Acceptance passes but the test setup has no real git repo or stage branch,
     // so progressive merge correctly hits MergeOutcome::Blocked (no `loom/test-stage`
@@ -170,14 +187,7 @@ fn test_complete_no_verify_refuses_zero_commits_ahead() {
     std::env::set_current_dir(repo).unwrap();
 
     let proof = completion_proof("test-stage", true, false, false, "zero-commits-0001");
-    let result = complete(
-        "test-stage".to_string(),
-        None,
-        true,
-        false,
-        false,
-        Some(proof),
-    );
+    let result = complete_stage("test-stage", true, Some(proof));
 
     assert!(
         result.is_err(),
@@ -221,14 +231,7 @@ fn test_complete_with_no_verify_flag() {
     std::env::set_current_dir(temp_dir.path()).unwrap();
 
     let proof = completion_proof("test-stage", true, false, false, "no-verify-test-01");
-    let result = complete(
-        "test-stage".to_string(),
-        None,
-        true,
-        false,
-        false,
-        Some(proof),
-    );
+    let result = complete_stage("test-stage", true, Some(proof));
 
     assert!(result.is_ok());
 
@@ -250,14 +253,7 @@ fn test_complete_knowledge_stage_sets_merged_true() {
     let _guard = EnvGuard::new();
     std::env::set_current_dir(temp_dir.path()).unwrap();
 
-    let result = complete(
-        "knowledge-stage".to_string(),
-        None,
-        false,
-        false,
-        false,
-        None,
-    );
+    let result = complete_stage("knowledge-stage", false, None);
 
     assert!(result.is_ok(), "complete() failed: {:?}", result.err());
 
@@ -285,14 +281,7 @@ fn test_complete_knowledge_stage_with_passing_acceptance() {
     let _guard = EnvGuard::new();
     std::env::set_current_dir(temp_dir.path()).unwrap();
 
-    let result = complete(
-        "knowledge-stage".to_string(),
-        None,
-        false,
-        false,
-        false,
-        None,
-    );
+    let result = complete_stage("knowledge-stage", false, None);
 
     assert!(result.is_ok(), "complete() failed: {:?}", result.err());
 
@@ -316,14 +305,7 @@ fn test_complete_knowledge_stage_with_failing_acceptance() {
     let _guard = EnvGuard::new();
     std::env::set_current_dir(temp_dir.path()).unwrap();
 
-    let result = complete(
-        "knowledge-stage".to_string(),
-        None,
-        false,
-        false,
-        false,
-        None,
-    );
+    let result = complete_stage("knowledge-stage", false, None);
 
     // New behavior: acceptance failure returns Err and stage stays Executing
     assert!(
@@ -357,14 +339,7 @@ fn test_complete_knowledge_stage_triggers_dependents() {
     let _guard = EnvGuard::new();
     std::env::set_current_dir(temp_dir.path()).unwrap();
 
-    let result = complete(
-        "knowledge-stage".to_string(),
-        None,
-        false,
-        false,
-        false,
-        None,
-    );
+    let result = complete_stage("knowledge-stage", false, None);
 
     assert!(result.is_ok(), "complete() failed: {:?}", result.err());
 
@@ -481,14 +456,7 @@ fn verify_path_succeeds_without_admin_token() {
     let _guard = EnvGuard::new();
     std::env::set_current_dir(temp_dir.path()).unwrap();
 
-    let result = complete(
-        "verify-path-stage".to_string(),
-        None,
-        false, // no_verify
-        false, // force_unsafe
-        false, // assume_merged
-        None,  // admin_proof
-    );
+    let result = complete_stage("verify-path-stage", false, None);
 
     // We don't require Ok — the test setup has no real git repo and other
     // checks may fail. The critical invariant: the admin-token gate must
@@ -539,14 +507,7 @@ fn test_complete_standard_stage_not_routed_to_knowledge() {
     let _guard = EnvGuard::new();
     std::env::set_current_dir(temp_dir.path()).unwrap();
 
-    let result = complete(
-        "standard-stage".to_string(),
-        None,
-        false,
-        false,
-        false,
-        None,
-    );
+    let result = complete_stage("standard-stage", false, None);
 
     // The point of this test is routing: confirm the standard path is taken,
     // NOT the knowledge auto-merge path. Knowledge stages auto-set merged=true

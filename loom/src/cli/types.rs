@@ -266,6 +266,11 @@ pub enum Commands {
         /// Generate fix suggestions for gaps
         #[arg(long)]
         suggest: bool,
+
+        /// Skip the acceptance-criterion pass cache: run every criterion for
+        /// real regardless of whether an identical tree already passed it.
+        #[arg(long = "no-cache")]
+        no_cache: bool,
     },
 
     /// Build skill keyword index for skill-trigger hook

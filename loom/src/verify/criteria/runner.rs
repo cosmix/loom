@@ -4,11 +4,12 @@ use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
+use super::cache::{self, CachePolicy};
 use super::config::CriteriaConfig;
 use super::confine::{resolve_confinement, CommandSpec};
 use super::executor::run_spec_with_timeout;
 use super::result::{AcceptanceResult, CriterionResult};
-use crate::models::stage::Stage;
+use crate::models::stage::{CommandConfinement, Stage};
 use crate::plan::schema::{AcceptanceCriterion, TruthCheck};
 use crate::verify::context::CriteriaContext;
 
@@ -88,7 +89,7 @@ pub fn run_acceptance_with_config(
         };
 
         let spec = CommandSpec::shell(full_command);
-        let result = run_spec_with_timeout(&spec, working_dir, timeout, confinement)
+        let result = run_with_cache(&spec, working_dir, timeout, confinement, config)
             .with_context(|| format!("Failed to execute criterion: {command_str}"))?;
 
         // Check success based on criterion type
@@ -145,6 +146,65 @@ pub fn run_acceptance_with_config(
     } else {
         Ok(AcceptanceResult::Failed { results, failures })
     }
+}
+
+/// Execute one criterion's command, consulting the on-disk pass cache first
+/// and recording a fresh pass afterward.
+///
+/// A cache hit short-circuits execution entirely: no process is spawned, and
+/// the synthesized result carries `cached: true`. A miss — or caching being
+/// disabled, ineligible for the command, or bypassed via `config.cache` —
+/// runs the command for real; only a real success is ever stored (see
+/// [`cache`]'s module docs for why failures are never cached).
+fn run_with_cache(
+    spec: &CommandSpec,
+    working_dir: Option<&Path>,
+    timeout: Duration,
+    confinement: CommandConfinement,
+    config: &CriteriaConfig,
+) -> Result<CriterionResult> {
+    let run_for_real = || run_spec_with_timeout(spec, working_dir, timeout, confinement);
+
+    let Some(cache_dir) = config
+        .cache_dir
+        .as_deref()
+        .filter(|_| config.cache == CachePolicy::Use)
+    else {
+        return run_for_real();
+    };
+
+    let command_text = spec.to_string();
+    let acceptance_dir = working_dir.unwrap_or_else(|| Path::new("."));
+    if !cache::is_cacheable(&command_text, acceptance_dir) {
+        return run_for_real();
+    }
+
+    let Some(key) = cache::compute_cache_key(&command_text, acceptance_dir) else {
+        return run_for_real();
+    };
+
+    if let Some(record) = cache::lookup_pass(cache_dir, &key.digest) {
+        return Ok(CriterionResult::cached(
+            command_text,
+            Duration::from_millis(record.duration_ms),
+        ));
+    }
+
+    let result = run_for_real()?;
+    if result.success {
+        let record = cache::CachedPass::from_result(
+            &command_text,
+            acceptance_dir,
+            &key.tree_head,
+            &result.stdout,
+            &result.stderr,
+            u64::try_from(result.duration.as_millis()).unwrap_or(u64::MAX),
+        );
+        // Best-effort: a store failure must not fail acceptance for a
+        // criterion that genuinely just passed.
+        let _ = cache::store_pass(cache_dir, &key.digest, &record);
+    }
+    Ok(result)
 }
 
 /// Evaluate an extended criterion's success criteria against what its command

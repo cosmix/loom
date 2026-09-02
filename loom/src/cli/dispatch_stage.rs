@@ -81,30 +81,40 @@ fn dispatch_stage_criteria(command: StageCommands) -> Result<()> {
     }
 }
 
+/// `loom stage complete` dispatch, broken out of `dispatch_stage` so its
+/// seven-field destructure doesn't grow the parent match past its line
+/// ceiling.
+fn dispatch_complete(command: StageCommands) -> Result<()> {
+    let StageCommands::Complete {
+        stage_id,
+        session,
+        no_verify,
+        force_unsafe,
+        assume_merged,
+        no_cache,
+    } = command
+    else {
+        unreachable!("dispatch_stage routes only Complete here");
+    };
+    let admin_proof = resolve_completion_proof(&stage_id, no_verify, force_unsafe, assume_merged)?;
+    stage::complete(
+        stage_id,
+        session,
+        no_verify,
+        force_unsafe,
+        assume_merged,
+        no_cache,
+        admin_proof,
+    )
+}
+
 /// `loom stage <subcommand>` dispatch.
 ///
 /// Extracted for the same reason as `dispatch_knowledge`: the stage group is
 /// the largest arm in the top-level match, which sits at its line ceiling.
 pub(super) fn dispatch_stage(command: StageCommands) -> Result<()> {
     match command {
-        StageCommands::Complete {
-            stage_id,
-            session,
-            no_verify,
-            force_unsafe,
-            assume_merged,
-        } => {
-            let admin_proof =
-                resolve_completion_proof(&stage_id, no_verify, force_unsafe, assume_merged)?;
-            stage::complete(
-                stage_id,
-                session,
-                no_verify,
-                force_unsafe,
-                assume_merged,
-                admin_proof,
-            )
-        }
+        cmd @ StageCommands::Complete { .. } => dispatch_complete(cmd),
         StageCommands::AdminProof {
             stage_id,
             daemon_stop,

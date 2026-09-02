@@ -8,7 +8,9 @@ use std::path::{Path, PathBuf};
 
 use crate::git::worktree::{find_repo_root_from_cwd, find_worktree_root_from_cwd};
 use crate::models::stage::Stage;
-use crate::verify::criteria::{plan_confinement, run_acceptance_with_config, CriteriaConfig};
+use crate::verify::criteria::{
+    plan_confinement, run_acceptance_with_config, CriteriaConfig, CriterionResult,
+};
 
 /// Resolved execution paths for a standard stage.
 #[derive(Debug, Clone)]
@@ -174,7 +176,9 @@ pub(crate) fn run_acceptance_with_display(
         println!("  (working directory: {})", dir.display());
     }
 
-    let config = CriteriaConfig::default().with_plan_confinement(plan_confinement(work_dir));
+    let config = CriteriaConfig::default()
+        .with_plan_confinement(plan_confinement(work_dir))
+        .with_cache_dir(work_dir);
     let result = run_acceptance_with_config(stage, acceptance_dir, &config)
         .context("Failed to run acceptance criteria")?;
 
@@ -182,19 +186,7 @@ pub(crate) fn run_acceptance_with_display(
     // one CriterionResult per criterion, in loop order) and is what
     // `loom stage dispute-criteria --criterion-index` takes as an argument.
     for (index, criterion_result) in result.results().iter().enumerate() {
-        if criterion_result.success {
-            println!("  ✓ passed: {}", criterion_result.command);
-        } else if criterion_result.timed_out {
-            println!(
-                "  ✗ TIMEOUT [criterion {index}]: {}",
-                criterion_result.command
-            );
-        } else {
-            println!(
-                "  ✗ FAILED [criterion {index}]: {}",
-                criterion_result.command
-            );
-        }
+        print_criterion_result(index, criterion_result);
     }
 
     if result.all_passed() {
@@ -202,6 +194,26 @@ pub(crate) fn run_acceptance_with_display(
     }
 
     Ok(result.all_passed())
+}
+
+/// Print one criterion's pass/fail/timeout line. `index` is the same index
+/// `loom stage dispute-criteria --criterion-index` takes.
+fn print_criterion_result(index: usize, criterion_result: &CriterionResult) {
+    if criterion_result.success && criterion_result.cached {
+        println!("  ✓ passed (cached): {}", criterion_result.command);
+    } else if criterion_result.success {
+        println!("  ✓ passed: {}", criterion_result.command);
+    } else if criterion_result.timed_out {
+        println!(
+            "  ✗ TIMEOUT [criterion {index}]: {}",
+            criterion_result.command
+        );
+    } else {
+        println!(
+            "  ✗ FAILED [criterion {index}]: {}",
+            criterion_result.command
+        );
+    }
 }
 
 /// Print what to do about a failed acceptance criterion: fix it, or, when it

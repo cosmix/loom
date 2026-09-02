@@ -13,6 +13,10 @@ pub struct CriterionResult {
     pub duration: Duration,
     /// Whether the command was terminated due to timeout
     pub timed_out: bool,
+    /// Whether this result came from the acceptance pass cache rather than a
+    /// real execution — see [`super::cache`]. Always `false` for results
+    /// built via [`Self::new`]; only [`Self::cached`] sets it.
+    pub cached: bool,
 }
 
 impl CriterionResult {
@@ -34,6 +38,25 @@ impl CriterionResult {
             exit_code,
             duration,
             timed_out,
+            cached: false,
+        }
+    }
+
+    /// Build a synthesized "passed" result for a cache hit — no process ran.
+    /// `duration` carries the ORIGINAL run's duration (from the stored
+    /// record), not the near-zero cost of the cache lookup, so
+    /// `AcceptanceResult::total_duration` still reflects what the command
+    /// actually costs when it runs for real.
+    pub fn cached(command: String, duration: Duration) -> Self {
+        Self {
+            command,
+            success: true,
+            stdout: String::new(),
+            stderr: String::new(),
+            exit_code: Some(0),
+            duration,
+            timed_out: false,
+            cached: true,
         }
     }
 
