@@ -3,6 +3,7 @@
 use std::fs;
 use std::path::Path;
 use std::process::Command;
+use std::sync::OnceLock;
 use tempfile::TempDir;
 
 use loom::plan::graph::ExecutionGraph;
@@ -162,4 +163,36 @@ pub fn delete_branch(branch: &str, repo_root: &Path) {
         .current_dir(repo_root)
         .output()
         .expect("Failed to delete branch");
+}
+
+/// Path to the `loom` binary this test run built.
+const LOOM: &str = env!("CARGO_BIN_EXE_loom");
+
+/// A `loom` command whose user directory is a scratch `LOOM_HOME` with the
+/// update check switched off.
+///
+/// These tests spawn the real binary, and every loom invocation that is not on
+/// `main.rs`'s update-check exclusion list reads the user's `~/.loom` and, when
+/// that record is stale, spawns a detached child that makes a real network
+/// request (see `loom::update_check`). Left alone, the suite would refresh the
+/// developer's own `update-state.json`, leak an orphaned fetcher, and print an
+/// update notice into the stderr these tests assert on. `LOOM_HOME` is the same
+/// seam `tests/e2e/daemon_config/mod.rs` uses to stay off the real user config.
+///
+/// The `TempDir` lives in a `static OnceLock` so every test in this binary
+/// shares one scratch home; since statics are never destructed at process
+/// exit, that directory is never cleaned up and is left behind in the system
+/// temp dir after each test run — an accepted trade for a process-wide shared
+/// home, not a leak to fix.
+pub fn loom_cmd() -> Command {
+    static SCRATCH_HOME: OnceLock<TempDir> = OnceLock::new();
+    let home = SCRATCH_HOME.get_or_init(|| {
+        let dir = TempDir::new().expect("create scratch LOOM_HOME");
+        fs::write(dir.path().join("config.toml"), "[update]\ncheck = false\n")
+            .expect("write scratch user config");
+        dir
+    });
+    let mut command = Command::new(LOOM);
+    command.env("LOOM_HOME", home.path());
+    command
 }
