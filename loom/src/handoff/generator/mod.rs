@@ -79,7 +79,8 @@ pub fn ensure_handoff(
             // snapshot, so the snapshot no longer describes it.
             HandoffOrigin::BudgetExceeded
             | HandoffOrigin::Stalled
-            | HandoffOrigin::AgentCeiling => {
+            | HandoffOrigin::AgentCeiling
+            | HandoffOrigin::Retired => {
                 matching.is_some() && matching == find_latest_handoff(&stage.id, work_dir)?
             }
         };

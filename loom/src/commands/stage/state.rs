@@ -151,6 +151,12 @@ impl LiveAgent {
 fn live_agents_for(work_dir: &Path, stage_id: &str) -> Result<Vec<LiveAgent>> {
     let mut agents: Vec<LiveAgent> = live_sessions_for_stage(work_dir, stage_id)?
         .into_iter()
+        // The judge is not an agent working the stage: it must neither block
+        // a reset nor be killed by one, and this is also what lets an
+        // adjudicator run the reset it diagnoses. Orphan evidence never
+        // carries adjudication sessions (`SESSION_KINDS` omits it), so only
+        // this `Known` arm needs the filter.
+        .filter(|session| session.session_type != crate::models::session::SessionType::Adjudication)
         .map(LiveAgent::Known)
         .collect();
     agents.extend(
@@ -379,3 +385,7 @@ fn apply_reset(stage: &mut Stage) {
     stage.session = None;
     stage.updated_at = chrono::Utc::now();
 }
+
+#[cfg(test)]
+#[path = "state_tests.rs"]
+mod state_tests;

@@ -10,7 +10,9 @@ use std::time::{Duration, Instant};
 use anyhow::{bail, Context, Result};
 
 use crate::fs::session_files::{load_session_exact, mark_session_context_exhausted};
-use crate::models::session::Session;
+use crate::handoff::HandoffOrigin;
+use crate::models::session::{Session, SessionType};
+use crate::models::stage::{Stage, StageStatus};
 use crate::orchestrator::session_registry::in_progress_sessions_for_stage;
 use crate::orchestrator::signals::remove_signal;
 use crate::orchestrator::terminal::native::{session_process_status, SessionProcessStatus};
@@ -116,7 +118,7 @@ impl Orchestrator {
             stage.session
         );
         anyhow::ensure!(
-            stage.status == crate::models::stage::StageStatus::NeedsHandoff,
+            stage.status == StageStatus::NeedsHandoff,
             "stage '{stage_id}' moved out of NeedsHandoff to {:?}; refusing destructive takedown",
             stage.status
         );
@@ -182,7 +184,22 @@ impl Orchestrator {
         expected_session_id: &str,
     ) -> Result<Vec<String>> {
         let agents = self.stage_agents(stage_id, expected_session_id)?;
+        self.take_down_agents(stage_id, agents)
+    }
 
+    /// Kill every session in `agents`, all understood to belong to
+    /// `stage_id`; return the ids of any that are still alive afterwards.
+    ///
+    /// Split out of `take_down_stage_agents` so a caller that has already
+    /// assembled its own agent list (see `retire_disputing_agents`, which
+    /// excludes the stage's adjudication session) can drive the same kill
+    /// loop without going through the `NeedsHandoff`-only lookup in
+    /// `stage_agents`.
+    pub(super) fn take_down_agents(
+        &mut self,
+        stage_id: &str,
+        agents: Vec<Session>,
+    ) -> Result<Vec<String>> {
         let mut survivors = Vec::new();
         for session in &agents {
             // Capture whether identity evidence existed BEFORE teardown. A
@@ -253,5 +270,97 @@ impl Orchestrator {
             }
             std::thread::sleep(KILL_CONFIRM_POLL_INTERVAL);
         }
+    }
+
+    /// Retire every agent working `stage_id` before a verdict is applied to
+    /// it.
+    ///
+    /// The agent that filed the dispute ended its turn by filing it: it is
+    /// idle, has never read the amended criteria, and if left alive the
+    /// executor adopts it instead of spawning a successor. Its handoff is
+    /// written, it is killed, and `stage.session` is cleared once every
+    /// agent is confirmed gone. The adjudication session judging the stage
+    /// shares its `stage_id` and is never touched. Returns the ids of
+    /// agents that survived the kill; the caller must not apply the verdict
+    /// while any remain.
+    pub(crate) fn retire_disputing_agents(&mut self, stage_id: &str) -> Result<Vec<String>> {
+        let stage = self.load_stage(stage_id)?;
+        if stage.status != StageStatus::NeedsAdjudication {
+            return Ok(Vec::new());
+        }
+        let agents = self.disputing_agents(stage_id, &stage)?;
+        for agent in &agents {
+            match self.monitor.handlers().ensure_context_handoff(
+                agent,
+                &stage,
+                HandoffOrigin::Retired,
+            ) {
+                Ok(Some(path)) => {
+                    eprintln!("Generated retirement handoff at: {}", path.display())
+                }
+                Ok(None) => {}
+                Err(error) => tracing::warn!(
+                    target: "loom::adjudication",
+                    stage = %stage_id,
+                    session = %agent.id,
+                    %error,
+                    "could not write a retirement handoff for a disputing agent",
+                ),
+            }
+        }
+
+        let survivors = self.take_down_agents(stage_id, agents)?;
+        if survivors.is_empty() {
+            self.update_stage(stage_id, |s| {
+                if s.status == StageStatus::NeedsAdjudication {
+                    s.release_session();
+                }
+                Ok(())
+            })?;
+        }
+        Ok(survivors)
+    }
+
+    /// Every agent to retire for a disputing stage: the in-memory tracked
+    /// session (if any), every persisted `Running`/`Spawning` record for the
+    /// stage not already present, and — if it names something not yet in the
+    /// list — the record `stage.session` points at. Filters out the
+    /// adjudication session judging this stage, which shares `stage_id` but
+    /// must never be killed by this path.
+    fn disputing_agents(&self, stage_id: &str, stage: &Stage) -> Result<Vec<Session>> {
+        let mut agents: Vec<Session> = self
+            .active_sessions
+            .get(stage_id)
+            .cloned()
+            .into_iter()
+            .collect();
+        let persisted = in_progress_sessions_for_stage(&self.config.work_dir, stage_id)
+            .with_context(|| format!("discovering every session attached to stage '{stage_id}'"))?;
+        let tracked: HashSet<String> = agents.iter().map(|s| s.id.clone()).collect();
+        agents.extend(
+            persisted
+                .into_iter()
+                .filter(|session| !tracked.contains(&session.id)),
+        );
+        if let Some(assigned_id) = stage.session.as_deref() {
+            if !agents.iter().any(|s| s.id == assigned_id) {
+                match load_session_exact(&self.config.work_dir, assigned_id)? {
+                    Some(assigned) if assigned.stage_id.as_deref() == Some(stage_id) => {
+                        agents.push(assigned);
+                    }
+                    Some(_) => {}
+                    None => tracing::warn!(
+                        target: "loom::adjudication",
+                        stage = %stage_id,
+                        session = %assigned_id,
+                        "stage names a session with no record; continuing without it",
+                    ),
+                }
+            }
+        }
+        Ok(agents
+            .into_iter()
+            .filter(|s| s.session_type != SessionType::Adjudication)
+            .collect())
     }
 }

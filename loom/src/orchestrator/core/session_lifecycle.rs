@@ -1,11 +1,12 @@
 //! Session lifecycle helpers for stage spawn.
 //!
 //! Extracted from `stage_executor.rs` to keep that file under the
-//! maintainability limit. Covers: refusing to spawn a duplicate agent over a
-//! live session a crashed daemon lost track of, writing a session's record to
-//! disk before the stage is marked Executing, and the Blocked-transition
-//! cleanup that undoes an in-flight write-ahead. Behavior is unchanged from
-//! before the move.
+//! maintainability limit. Covers: writing a session's record to disk before
+//! the stage is marked Executing, and the Blocked-transition cleanup that
+//! undoes an in-flight write-ahead. Live-session adoption (refusing to spawn
+//! a duplicate agent over one a crashed daemon lost track of) lives in the
+//! sibling `session_adoption.rs`, split out to keep this file under the
+//! maintainability limit too. Behavior is unchanged from before the move.
 
 use anyhow::{Context, Result};
 use chrono::Utc;
@@ -18,58 +19,6 @@ use super::persistence::Persistence;
 use super::Orchestrator;
 
 impl Orchestrator {
-    /// Refuse to spawn a second agent over one that is still alive. A daemon
-    /// crash can leave a stage `Executing` with a session that is
-    /// unreachable (e.g. an orphaned tmux server) but still running; if the
-    /// stage is later requeued (`loom stage reset`, or any other path that
-    /// walks it back to `Queued`), scheduling it again here would spawn a
-    /// duplicate agent into the same worktree alongside the first. Adopt the
-    /// live session instead of spawning a duplicate.
-    ///
-    /// Returns `Ok(true)` if a live session was found (and the spawn attempt
-    /// should stop here, whether or not the adoption itself fully
-    /// succeeded), `Ok(false)` if there is no live session to adopt.
-    pub(super) fn adopt_live_session_if_present(&mut self, stage_id: &str) -> Result<bool> {
-        let live_sessions = crate::orchestrator::session_registry::live_sessions_for_stage(
-            &self.config.work_dir,
-            stage_id,
-        )?;
-        let Some(newest) = live_sessions.into_iter().max_by_key(|s| s.created_at) else {
-            return Ok(false);
-        };
-        let session_id = newest.id.clone();
-        tracing::warn!(
-            stage_id = %stage_id,
-            session_id = %session_id,
-            "Adopting live session instead of spawning a duplicate agent"
-        );
-        if let Err(e) = self.update_stage(stage_id, |current| {
-            current.assign_session(session_id.clone());
-            if current.status != StageStatus::Executing {
-                current.try_mark_executing()?;
-                current.begin_attempt(Utc::now());
-            }
-            Ok(())
-        }) {
-            tracing::error!(
-                stage_id = %stage_id,
-                session_id = %session_id,
-                error = %e,
-                "Failed to adopt live session"
-            );
-            return Ok(true);
-        }
-        if let Err(e) = self.graph.mark_executing(stage_id) {
-            tracing::warn!(
-                stage_id = %stage_id,
-                error = %e,
-                "Graph state out of sync while adopting a live session"
-            );
-        }
-        self.insert_active_session(stage_id, newest);
-        Ok(true)
-    }
-
     /// Resolve the session for this spawn attempt (reusing a pending
     /// recovery signal's session ID if one exists) and write its record to
     /// disk BEFORE the stage is marked Executing.
@@ -250,7 +199,10 @@ impl Orchestrator {
     /// the daemon had on the live agent, was simply dropped. Once a stage has
     /// a tracked session, only its own removal (completion, crash, merge)
     /// may replace it.
-    pub(super) fn insert_active_session(&mut self, stage_id: &str, session: Session) {
+    ///
+    /// Returns `true` if the session was inserted, `false` if refused because
+    /// an entry already existed.
+    pub(super) fn insert_active_session(&mut self, stage_id: &str, session: Session) -> bool {
         if let Some(existing) = self.active_sessions.get(stage_id) {
             tracing::error!(
                 stage_id = %stage_id,
@@ -258,9 +210,10 @@ impl Orchestrator {
                 rejected_session = %session.id,
                 "Refusing to evict an already-tracked active session"
             );
-            return;
+            return false;
         }
         self.active_sessions.insert(stage_id.to_string(), session);
+        true
     }
 
     /// If the stage's recorded session points at an existing `recovery-*` signal

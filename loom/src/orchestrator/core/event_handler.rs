@@ -385,3 +385,5 @@ mod recover_hung_tests;
 mod takedown_identity_tests;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod verdict_retirement_tests;

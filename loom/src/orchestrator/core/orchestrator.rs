@@ -508,13 +508,6 @@ impl Orchestrator {
         }
         Ok(())
     }
-
-    /// Apply verdict files written by adjudication sessions to the
-    /// stage state. See [`AdjudicatorRegistry::apply_pending_verdicts`].
-    pub(crate) fn apply_pending_verdicts(&mut self) -> Result<()> {
-        let work_dir = self.config.work_dir.clone();
-        self.adjudicators.apply_pending_verdicts(&work_dir)
-    }
 }
 
 /// Resolve the plan source_path from `.loom/work/config.toml` for daemon-

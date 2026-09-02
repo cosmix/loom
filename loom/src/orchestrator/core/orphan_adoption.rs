@@ -20,6 +20,12 @@ use super::{clear_status_line, Orchestrator};
 pub(super) fn session_is_current_for_stage(stage: &Stage, session: &Session) -> bool {
     stage.session.as_deref() == Some(session.id.as_str())
         && session.stage_id.as_deref() == Some(stage.id.as_str())
+        // An adjudication session carries the stage's own `stage_id` too, but
+        // it is never the stage's worker: daemon-restart recovery must not
+        // register or delete it as if it were the agent doing the work.
+        // Merge sessions ARE current for a stage in `MergeConflict` /
+        // `MergeBlocked`, so only `Adjudication` is excluded here.
+        && session.session_type != crate::models::session::SessionType::Adjudication
 }
 
 pub(super) fn register_live_current_session(

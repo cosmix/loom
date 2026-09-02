@@ -227,5 +227,30 @@ fn live_sessions_for_stage_is_empty_before_any_session_exists() {
         .is_empty());
 }
 
+/// An adjudication session carries the stage's own `stage_id`, so a scan
+/// keyed on the stage alone cannot tell it apart from the stage's worker.
+/// Adoption of the worker slot must use the typed lookup, not the untyped
+/// one status rendering and attach still rely on.
+#[test]
+fn typed_lookup_excludes_a_live_adjudication_session() {
+    let temp = work_dir();
+    let work = temp.path();
+
+    let worker = session_for("alpha", SessionStatus::Running);
+    spawn_a_live_agent(work, &worker);
+    save_session(&worker, work).unwrap();
+
+    let mut adjudication = Session::new_adjudication("alpha");
+    adjudication.status = SessionStatus::Running;
+    spawn_a_live_agent(work, &adjudication);
+    save_session(&adjudication, work).unwrap();
+
+    let typed = live_sessions_for_stage_of_type(work, "alpha", SessionType::Stage).unwrap();
+    assert_eq!(ids(&typed), vec![worker.id.as_str()]);
+
+    let untyped = live_sessions_for_stage(work, "alpha").unwrap();
+    assert_eq!(untyped.len(), 2);
+}
+
 #[path = "tests_session_registry_adoption.rs"]
 mod adoption_tests;

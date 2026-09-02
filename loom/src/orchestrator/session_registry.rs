@@ -103,6 +103,21 @@ pub fn live_sessions_for_stage(work_dir: &Path, stage_id: &str) -> Result<Vec<Se
     Ok(live_sessions_with_probe(&probe, work_dir, stage_id))
 }
 
+/// [`live_sessions_for_stage`] narrowed to one session kind. Adoption of a
+/// stage's worker must use this with the stage's worker type: an
+/// adjudication session carries the stage's own `stage_id` and would
+/// otherwise be adopted as if it were the agent.
+pub fn live_sessions_for_stage_of_type(
+    work_dir: &Path,
+    stage_id: &str,
+    session_type: SessionType,
+) -> Result<Vec<Session>> {
+    Ok(live_sessions_for_stage(work_dir, stage_id)?
+        .into_iter()
+        .filter(|s| s.session_type == session_type)
+        .collect())
+}
+
 /// [`live_sessions_for_stage`] against an already-resolved probe, so a scan
 /// over many stages pays terminal detection at most once.
 fn live_sessions_with_probe(

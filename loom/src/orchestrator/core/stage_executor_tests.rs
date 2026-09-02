@@ -111,6 +111,83 @@ fn start_stage_adopts_a_live_session_instead_of_spawning_a_duplicate() {
     );
 }
 
+/// Adoption must use the stage's OWN worker kind, not "newest live session
+/// found": an adjudication session carries the stage's own `stage_id` and
+/// would otherwise win by being spawned later.
+#[test]
+fn adoption_prefers_the_stage_worker_over_a_newer_adjudication_session() {
+    let temp = work_dir();
+    let work = temp.path().join(".work");
+
+    stage_at(&work, "alpha", StageStatus::Queued);
+
+    let stage_session = session_for("alpha", SessionStatus::Running);
+    spawn_a_live_agent(&work, &stage_session);
+    save_session(&stage_session, &work).unwrap();
+
+    let mut adjudication = Session::new_adjudication("alpha");
+    adjudication.status = SessionStatus::Running;
+    adjudication.created_at = stage_session.created_at + chrono::Duration::seconds(60);
+    spawn_a_live_agent(&work, &adjudication);
+    save_session(&adjudication, &work).unwrap();
+
+    let mut orchestrator = orchestrator_for(&work, temp.path());
+    orchestrator.start_stage("alpha").unwrap();
+
+    let after = load_stage("alpha", &work).unwrap();
+    assert_eq!(
+        after.session.as_deref(),
+        Some(stage_session.id.as_str()),
+        "the stage's own worker must be adopted, not the newer adjudication session"
+    );
+    assert_eq!(
+        orchestrator
+            .active_sessions
+            .get("alpha")
+            .map(|s| s.id.as_str()),
+        Some(stage_session.id.as_str())
+    );
+}
+
+/// A different session already tracked in memory than the newest live
+/// session found on disk must escalate, not silently pick a side — two
+/// agents may be working the same worktree.
+#[test]
+fn adoption_refuses_when_a_different_session_is_already_tracked() {
+    let temp = work_dir();
+    let work = temp.path().join(".work");
+
+    stage_at(&work, "alpha", StageStatus::Queued);
+
+    let stage_session = session_for("alpha", SessionStatus::Running);
+    spawn_a_live_agent(&work, &stage_session);
+    save_session(&stage_session, &work).unwrap();
+
+    let mut orchestrator = orchestrator_for(&work, temp.path());
+    let other = session_for("alpha", SessionStatus::Running);
+    orchestrator
+        .active_sessions
+        .insert("alpha".to_string(), other.clone());
+
+    orchestrator.start_stage("alpha").unwrap();
+
+    let after = load_stage("alpha", &work).unwrap();
+    assert_eq!(after.status, StageStatus::Blocked);
+    assert_eq!(
+        after.failure_info.map(|f| f.failure_type),
+        Some(FailureType::InfrastructureError)
+    );
+    assert!(after.session.is_none());
+    assert_eq!(
+        orchestrator
+            .active_sessions
+            .get("alpha")
+            .map(|s| s.id.as_str()),
+        Some(other.id.as_str()),
+        "the already-tracked session must survive the refused adoption"
+    );
+}
+
 /// The write-ahead invariant's failure side: every failure between the
 /// write-ahead `save_session` and a successful spawn must undo it, leaving no
 /// session record and no `stage.session` link — never a stage pointing at a

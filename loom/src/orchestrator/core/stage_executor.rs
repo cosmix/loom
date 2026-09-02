@@ -110,10 +110,8 @@ pub(super) trait StageExecutor: Persistence {
 
 impl StageExecutor for Orchestrator {
     fn start_ready_stages(&mut self) -> Result<usize> {
-        // Privileged completion capabilities are command-scoped and must never
-        // cross into an agent runtime, even if the daemon itself was launched
-        // from a shell that happened to carry them.
-        crate::commands::stage::complete::strip_privileged_env_for_runtime();
+        // Watchdog + runtime-safety pass; see `coherence::begin_scheduling_pass`.
+        self.begin_scheduling_pass();
 
         let running = self.active_sessions.len();
         let available_slots = self.config.max_parallel_sessions.saturating_sub(running);

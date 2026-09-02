@@ -28,6 +28,9 @@ pub enum HandoffOrigin {
     /// The daemon gave up on a session whose heartbeat went stale far past its
     /// response budget and recovered the stage without the agent's help.
     Stalled,
+    /// The daemon retired the agent after the dispute it filed was
+    /// adjudicated; its successor starts against the amended criteria.
+    Retired,
 }
 
 /// Structured handoff schema V2.

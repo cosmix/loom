@@ -9,6 +9,7 @@
 
 use std::io::{self, Write};
 
+mod coherence;
 mod completion_handler;
 mod crash_handler;
 mod event_handler;
@@ -18,12 +19,14 @@ mod orchestrator;
 mod orphan_adoption;
 mod persistence;
 mod recovery;
+mod session_adoption;
 mod session_lifecycle;
 mod spawn_setup;
 mod spool_drain;
 mod stage_executor;
 mod stage_handoff;
 mod stage_telemetry;
+mod verdict_apply;
 
 pub use orchestrator::{Orchestrator, OrchestratorConfig, OrchestratorResult};
 

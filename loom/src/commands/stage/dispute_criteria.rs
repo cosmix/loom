@@ -141,8 +141,11 @@ fn handle_dispute_response(
             println!("Reason: {reason}");
             println!();
             println!(
-                "The stage is now in NeedsAdjudication. The adjudicator will issue a \
-                 verdict; run `loom status` to monitor."
+                "The stage is now in NeedsAdjudication and this session's turn is over. When \
+                 the verdict is applied, the daemon writes this session's handoff, retires it, \
+                 and starts a fresh session against the amended criteria. Do not continue \
+                 working the stage and do not run `loom stage complete` — this session may end \
+                 now."
             );
             Ok(())
         }
