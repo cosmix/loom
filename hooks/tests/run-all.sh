@@ -29,6 +29,7 @@ run_test "post-tool-use does not persist tool output" "$SCRIPT_DIR/post-tool-use
 run_test "loom-control-complete: exact verified route only" "$SCRIPT_DIR/loom-control-complete.sh"
 run_test "loom-control-complete: tokenized pre-filter catches forged quoting, ignores prose" "$SCRIPT_DIR/loom-control-tokenized-prefilter.sh"
 run_test "session-start: compact source emits re-anchor" "$SCRIPT_DIR/session-start-compact.sh"
+run_test "session-end: records the SessionEnd reason from stdin" "$SCRIPT_DIR/session-end-reason.sh"
 run_test "worktree-file-guard: malformed non-empty input is blocked" "$SCRIPT_DIR/worktree-file-guard-truncated-input.sh"
 run_test "worktree-file-guard: MultiEdit honours the worktree boundary" "$SCRIPT_DIR/worktree-file-guard-multiedit.sh"
 run_test "plans-path-guard: blocks ~/.claude/plans write" "$SCRIPT_DIR/plans-path-guard-blocks-claude-plans.sh"

@@ -3,7 +3,8 @@
 #
 # Called when a Claude Code session ends normally.
 #
-# Input: JSON from stdin (if any - hook doesn't need it)
+# Input: JSON from stdin - the `reason` field (clear/resume/logout/
+# prompt_input_exit/other) is extracted and recorded in the logged event.
 #
 # Environment variables (set by loom worktree settings):
 #   LOOM_STAGE_ID    - The stage being executed
@@ -19,14 +20,14 @@
 
 set -euo pipefail
 
-# Drain stdin to prevent blocking
+# Read stdin JSON (for the `reason` field)
 # Cross-platform: gtimeout (macOS+coreutils), timeout (Linux), or cat
 if command -v gtimeout &>/dev/null; then
-	gtimeout 1 cat >/dev/null 2>&1 || true
+	INPUT_JSON=$(gtimeout 1 cat 2>/dev/null || true)
 elif command -v timeout &>/dev/null; then
-	timeout 1 cat >/dev/null 2>&1 || true
+	INPUT_JSON=$(timeout 1 cat 2>/dev/null || true)
 else
-	cat >/dev/null 2>&1 || true
+	INPUT_JSON=$(cat 2>/dev/null || true)
 fi
 
 # Validate required environment variables
@@ -54,7 +55,13 @@ TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%S.000Z")
 
 # Check if stage was already completed
 # Stage files have depth prefix: e.g., 02-implement-handoff-fix.md
-STAGE_FILE=$(ls "${LOOM_WORK_DIR}/stages/"*"-${LOOM_STAGE_ID}.md" 2>/dev/null | head -1)
+STAGE_FILE=""
+for candidate in "${LOOM_WORK_DIR}/stages/"*"-${LOOM_STAGE_ID}.md"; do
+	if [[ -f "$candidate" ]]; then
+		STAGE_FILE="$candidate"
+		break
+	fi
+done
 # Fallback to exact match (no prefix)
 if [[ -z "$STAGE_FILE" ]]; then
 	STAGE_FILE="${LOOM_WORK_DIR}/stages/${LOOM_STAGE_ID}.md"
@@ -72,11 +79,22 @@ if [[ "$COMPLETED" != "true" ]] && command -v loom &>/dev/null; then
 	loom handoff --stage "${LOOM_STAGE_ID}" --session "${LOOM_SESSION_ID}" --trigger session_end 2>/dev/null || true
 fi
 
-# Build payload
-PAYLOAD="{\"type\":\"SessionEnd\",\"completed\":${COMPLETED}}"
+# Extract the reason Claude Code ended the session (clear/resume/logout/
+# prompt_input_exit/other) - empty when jq is unavailable or stdin wasn't JSON
+REASON=""
+if command -v jq &>/dev/null; then
+	REASON=$(printf '%s' "$INPUT_JSON" | jq -r '.reason // empty' 2>/dev/null || true)
+fi
 
-cat >>"$EVENTS_FILE" <<EOF
-{"timestamp":"${TIMESTAMP}","stage_id":"${LOOM_STAGE_ID}","session_id":"${LOOM_SESSION_ID}","event":"SessionEnd","payload":${PAYLOAD}}
-EOF
+# Build the full event line. When jq is available it builds the whole line,
+# so stage/session ids and the reason are JSON-escaped rather than
+# interpolated raw into a heredoc.
+if command -v jq &>/dev/null; then
+	EVENT_LINE=$(jq -cn --arg ts "$TIMESTAMP" --arg stage "$LOOM_STAGE_ID" --arg session "$LOOM_SESSION_ID" --argjson completed "$COMPLETED" --arg reason "$REASON" \
+		'{timestamp:$ts,stage_id:$stage,session_id:$session,event:"SessionEnd",payload:{type:"SessionEnd",completed:$completed,reason:$reason}}')
+else
+	EVENT_LINE="{\"timestamp\":\"${TIMESTAMP}\",\"stage_id\":\"${LOOM_STAGE_ID}\",\"session_id\":\"${LOOM_SESSION_ID}\",\"event\":\"SessionEnd\",\"payload\":{\"type\":\"SessionEnd\",\"completed\":${COMPLETED},\"reason\":\"\"}}"
+fi
+printf '%s\n' "$EVENT_LINE" >>"$EVENTS_FILE"
 
 exit 0
