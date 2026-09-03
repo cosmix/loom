@@ -41,7 +41,7 @@ const STOPWORDS: &[&str] = &[
 /// Execute the skill-index command
 pub fn execute() -> Result<()> {
     let home = dirs::home_dir().context("Cannot determine home directory")?;
-    execute_in_home(&home, true)
+    execute_in_claude_dir(&home.join(".claude"), true)
 }
 
 /// Quiet variant for `loom init`'s unattended workspace-repair pass: does the
@@ -49,13 +49,13 @@ pub fn execute() -> Result<()> {
 /// single "Repaired: ..." line instead of these diagnostics.
 pub fn execute_quiet() -> Result<()> {
     let home = dirs::home_dir().context("Cannot determine home directory")?;
-    execute_in_home(&home, false)
+    execute_in_claude_dir(&home.join(".claude"), false)
 }
 
-fn execute_in_home(home: &Path, verbose: bool) -> Result<()> {
-    let skills_dir = home.join(".claude/skills");
+pub fn execute_in_claude_dir(claude_dir: &Path, verbose: bool) -> Result<()> {
+    let skills_dir = claude_dir.join("skills");
     let catalog_dir = crate::skills::catalog_dir_for(&skills_dir);
-    let output_dir = home.join(".claude/hooks/loom");
+    let output_dir = claude_dir.join("hooks/loom");
     let output_file = output_dir.join("skill-keywords.json");
 
     if !skills_dir.is_dir() && !catalog_dir.is_dir() {

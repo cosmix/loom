@@ -29,7 +29,7 @@ pub fn install_path(shell: super::generator::Shell) -> Result<PathBuf> {
         Shell::Bash => {
             let data_dir = match std::env::var_os("XDG_DATA_HOME") {
                 Some(path) => PathBuf::from(path),
-                None => home_dir()?.join(".local/share"),
+                None => return Ok(default_install_path(&home_dir()?, shell)),
             };
             Ok(data_dir.join("bash-completion/completions/loom"))
         }
@@ -37,10 +37,20 @@ pub fn install_path(shell: super::generator::Shell) -> Result<PathBuf> {
         Shell::Fish => {
             let config_dir = match std::env::var_os("XDG_CONFIG_HOME") {
                 Some(path) => PathBuf::from(path),
-                None => home_dir()?.join(".config"),
+                None => return Ok(default_install_path(&home_dir()?, shell)),
             };
             Ok(config_dir.join("fish/completions/loom.fish"))
         }
+    }
+}
+
+fn default_install_path(home: &Path, shell: super::generator::Shell) -> PathBuf {
+    use super::generator::Shell;
+
+    match shell {
+        Shell::Bash => home.join(".local/share/bash-completion/completions/loom"),
+        Shell::Zsh => home.join(".zfunc/_loom"),
+        Shell::Fish => home.join(".config/fish/completions/loom.fish"),
     }
 }
 
@@ -59,7 +69,29 @@ fn zsh_install_path() -> Result<PathBuf> {
 
     // No writable fpath dir found — use ~/.zfunc (will be configured in .zshrc)
     let home = home_dir()?;
-    Ok(home.join(".zfunc/_loom"))
+    Ok(default_install_path(&home, super::generator::Shell::Zsh))
+}
+
+/// Rewrite completion files already installed below `home` without creating any.
+pub fn refresh_existing_in(home: &Path) -> Result<usize> {
+    use super::generator::Shell;
+
+    let mut refreshed = 0;
+    for shell in [Shell::Bash, Shell::Zsh, Shell::Fish] {
+        let path = default_install_path(home, shell);
+        if !path.is_file() {
+            continue;
+        }
+        std::fs::write(&path, completion_content(shell))
+            .with_context(|| format!("Failed to write completions to: {}", path.display()))?;
+        refreshed += 1;
+    }
+    Ok(refreshed)
+}
+
+/// Rewrite existing completion files in the operator's home directory.
+pub fn refresh_existing() -> Result<usize> {
+    refresh_existing_in(&home_dir()?)
 }
 
 /// Check if a directory is writable by attempting to create a temp file.
@@ -354,19 +386,5 @@ fn completion_file_paths(home: &Path) -> Vec<PathBuf> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use tempfile::TempDir;
-
-    #[test]
-    fn bash_rc_uses_shell_quoted_completion_path() {
-        let home = TempDir::new().unwrap();
-        let completion_path = home.path().join("dir with spaces/loom;touch-pwned");
-
-        ensure_bashrc_completion(home.path(), &completion_path).unwrap();
-
-        let bashrc = std::fs::read_to_string(home.path().join(".bashrc")).unwrap();
-        let quoted = quote_bash_path(&completion_path).unwrap();
-        assert!(bashrc.contains(&format!("[ -f {quoted} ] && source {quoted}")));
-    }
-}
+#[path = "install/tests.rs"]
+mod tests;
