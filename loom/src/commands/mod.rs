@@ -8,6 +8,7 @@ pub mod graph;
 pub mod handoff;
 pub mod hook;
 pub mod init;
+pub mod install_assets;
 pub mod knowledge;
 pub mod map;
 pub mod memory;

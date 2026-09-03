@@ -1,0 +1,87 @@
+# Working doctrine
+
+These rules apply in every repository unless a section explicitly limits itself to loom work.
+Repository instructions and the user's task may add narrower requirements.
+
+## Navigate before reading
+
+In a loom repository, use the source graph before paging through files. Start with the smallest
+query that can identify the relevant symbol, call path, or source range:
+
+```text
+loom map --find-all <symbol>
+loom map --outline <file>
+loom map --impact <symbol|path>
+loom knowledge context --query "<question>" --budget-tokens 1500
+rg -n '<pattern>' <path>
+sed -n '<first>,<last>p' <file>
+```
+
+`--find-all` locates definitions, `--outline` gives a file's symbols and line ranges, and
+`--impact` shows what reaches a symbol or path. Use the knowledge query for project questions,
+`rg` for literal text, and `sed` only for the range a lookup identified. Read a whole file only
+when the task requires all of it.
+
+Inside a worktree, graph and knowledge commands may print `warning: could not refresh ...` or
+`warning: failed to refresh the context cache ...`. These warnings are expected: the command
+still answers from the published base layer. Do not retry or report them as blockers. That layer
+reflects the branch point and cannot see edits made during the current session; read an already
+edited file directly.
+
+Do not read `CLAUDE.md`; it instructs a different agent. Do not read `doc/loom/knowledge/` file by
+file. It is a roughly 200k-token corpus queried through `loom knowledge context --query`.
+
+## Loom stage boundaries
+
+When a task comes from a loom stage, its worktree is the complete boundary. Follow the task brief
+and write only the files it assigns. Treat every other path as read-only. Never write under
+`.loom/` or the legacy `.work/`; `.loom/work/` is a symlink to orchestrator state shared with
+parallel stages. Stay inside the worktree.
+
+Never run `git` during a loom stage: no add, commit, checkout, stash, restore, or status. The
+orchestrator owns version-control operations.
+
+Do not perform verification for a loom stage. This includes full builds, test suites, linters,
+formatters, and type-checkers. Never run a repeated or looping check. At most, run one
+narrowly-scoped check over the files you changed, exactly once, and skip it when unsure. The
+orchestrator performs integration verification.
+
+Finish a loom task by reporting the files changed, assumptions made, and anything unresolved.
+
+## Tools and dependencies
+
+Prefer `rg` to `grep` and `fd` to `find`. Use `uv` for Python packages and `bun` or `bunx` for
+JavaScript and TypeScript packages; do not use `pip` or `npm`.
+
+Never hand-edit a dependency manifest. Use the ecosystem command so manifests and lockfiles stay
+consistent: `cargo add`, `bun add`, `uv add`, or `go get`.
+
+## Implementation discipline
+
+Deliver complete code. Do not leave placeholders, stubs, `pass` bodies, empty functions, or
+pseudocode. If a unit is too large to implement cleanly, decompose it into complete units.
+
+Keep files at or below 400 lines, functions at or below 50 lines, and classes at or below 300
+lines. Refactor when an edit would exceed a limit.
+
+In loom repositories, place plans in `./doc/plans/`. Never put plans in `~/.claude/plans/` or any
+`.claude/plans` path.
+
+When authorized to commit outside a loom-orchestrated stage, use Conventional Commits:
+`type(scope): description`.
+
+## Memory and attribution
+
+For durable loom project knowledge, use `loom memory note` and `loom memory decision`. Never use
+an editor-managed auto-memory directory.
+
+Never add AI-system attribution or AI-generated boilerplate to code, commits, documentation, or
+comments.
+
+## Writing
+
+Write laconically by default. Start with the useful result. Avoid throat-clearing, fake candour,
+contrastive “not X, but Y” constructions, and closing summaries that merely restate the preceding
+paragraph. Preserve necessary caveats, failures, and unresolved details even when writing briefly.
+
+Every fenced code block must specify a language.

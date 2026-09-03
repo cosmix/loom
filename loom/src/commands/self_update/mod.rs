@@ -20,6 +20,7 @@ use std::fs;
 use std::io::Cursor;
 use std::path::{Path, PathBuf};
 
+use crate::assets::install::write_managed_file;
 use client::{
     create_http_client, download_text_with_limit, download_with_limit, validate_response_status,
 };
@@ -32,7 +33,6 @@ use zip::{
     MAX_UNCOMPRESSED_SIZE,
 };
 
-// Import ZipArchive from the zip crate for in-memory extraction
 use ::zip::ZipArchive;
 
 // Repository and version constants
@@ -284,8 +284,7 @@ fn update_config_files(release: &Release) -> Result<()> {
             download_text_with_limit(response, MAX_TEXT_SIZE, "CLAUDE.md.template download")?;
 
         // Verify checksum — a missing per-asset entry is a HARD error (fail closed),
-        // mirroring the binary's mandatory signature. SHA256SUMS.txt is already required
-        // above; here we require it to contain an entry for THIS asset.
+        // mirroring the binary's signature. SHA256SUMS.txt must hold an entry for THIS asset.
         let checksums = checksums.as_ref().ok_or_else(|| {
             anyhow::anyhow!("Release is missing SHA256SUMS.txt — cannot verify CLAUDE.md.template integrity. This may indicate a compromised release.")
         })?;
@@ -295,8 +294,9 @@ fn update_config_files(release: &Release) -> Result<()> {
         verify_checksum(content.as_bytes(), expected, "CLAUDE.md.template")?;
         println!("  {} CLAUDE.md.template checksum verified", "✓".green());
 
-        // Save with timestamp header
-        save_with_header(&content, &claude_dir.join("CLAUDE.md"))?;
+        if let Some(backup) = write_managed_file(&claude_dir.join("CLAUDE.md"), &content)? {
+            println!("  {} backup: {}", "✓".green(), backup.display());
+        }
         println!("  {} CLAUDE.md updated", "✓".green());
     }
 
@@ -328,20 +328,6 @@ fn update_config_files(release: &Release) -> Result<()> {
         crate::skills::apply_install_layout(&claude_dir)?;
     }
 
-    Ok(())
-}
-
-/// Save text content with a timestamp header.
-fn save_with_header(content: &str, dest: &Path) -> Result<()> {
-    let timestamp = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S");
-    let full_content = format!(
-        "# ───────────────────────────────────────────────────────────\n\
-         # claude-loom | updated {timestamp}\n\
-         # ───────────────────────────────────────────────────────────\n\n\
-         {content}"
-    );
-
-    fs::write(dest, full_content).context("Failed to write file")?;
     Ok(())
 }
 

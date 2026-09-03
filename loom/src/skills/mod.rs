@@ -29,10 +29,10 @@ mod types;
 
 pub use index::SkillIndex;
 // Only names with a consumer outside `src/skills/` are re-exported here.
-// `core_skill_names`, `is_core_skill`, `load_from_roots`, `CATALOG_DIR_NAME`,
-// and `SkillLayout` are reached in-crate by their own module paths (e.g.
-// `super::index_catalog::is_core_skill` from `install_layout.rs`); adding
-// them here would be API surface with no caller (Engineering Discipline B).
-pub use index_catalog::{catalog_dir_for, load_with_catalog, skill_invocation};
-pub use install_layout::apply_install_layout;
+// `crate::assets::install` consumes the placement layout and catalog names;
+// other internal callers continue to use their local module paths.
+pub use index_catalog::{
+    catalog_dir_for, is_core_skill, load_with_catalog, skill_invocation, CATALOG_DIR_NAME,
+};
+pub use install_layout::{apply_install_layout, SkillLayout};
 pub use types::{SkillMatch, SkillMetadata};

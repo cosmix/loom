@@ -1,5 +1,6 @@
 use crate::validation::clap_id_validator;
 use clap::{Parser, Subcommand};
+use std::path::PathBuf;
 
 pub use super::types_config::ConfigArgs;
 use super::types_help::{positive_usize, HELP_TEMPLATE, VERSION_STRING};
@@ -169,6 +170,21 @@ pub enum Commands {
 
     /// Update loom and configuration files
     SelfUpdate,
+
+    /// Install loom's agents, skills, commands, hooks and doctrine files
+    InstallAssets {
+        /// Claude configuration directory (default: ~/.claude)
+        #[arg(long)]
+        claude_dir: Option<PathBuf>,
+
+        /// Codex configuration directory (default: ~/.codex)
+        #[arg(long)]
+        codex_dir: Option<PathBuf>,
+
+        /// Skill layout to apply (default: the layout recorded in loom-install.toml)
+        #[arg(long, value_enum)]
+        skills: Option<crate::skills::SkillLayout>,
+    },
 
     /// Read or write the user config at ~/.loom/config.toml
     Config(ConfigArgs),

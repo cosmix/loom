@@ -12,12 +12,13 @@ use std::fs;
 use std::path::Path;
 
 use anyhow::{Context, Result};
+use clap::ValueEnum;
 use colored::Colorize;
 
 use super::index_catalog::{is_core_skill, CATALOG_DIR_NAME};
 
 /// Which skill layout an install chose, recorded in ~/.claude/loom-install.toml.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 pub enum SkillLayout {
     /// Only the loom mechanics skills are indexed; the rest live in the catalog.
     Core,
