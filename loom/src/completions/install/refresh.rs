@@ -21,8 +21,10 @@ pub fn refresh_existing_in(home: &Path) -> Result<usize> {
 
 /// Candidate completion file locations under `home` for `shell`: the default
 /// path, plus for bash/fish an XDG-derived path when it actually resolves
-/// under `home` (an XDG variable pointing outside `home` is discarded, which
-/// keeps today's behavior — the safe direction).
+/// under `home` once both sides are canonicalised (an XDG variable pointing
+/// outside `home` — including one that only escapes via a `..` component,
+/// such as `XDG_DATA_HOME=$HOME/../../tmp/x` — is discarded, which keeps
+/// today's behavior — the safe direction).
 ///
 /// zsh is intentionally left on its default `~/.zfunc/_loom` path only. Its
 /// install-time equivalent, `zsh_install_path`, probes `FPATH` entries by
@@ -41,9 +43,34 @@ fn refresh_candidates(home: &Path, shell: super::super::generator::Shell) -> Vec
         Shell::Zsh => None,
     };
     if let Some(path) = xdg {
-        if path.starts_with(home) && !candidates.contains(&path) {
+        if is_under_home(&path, home) && !candidates.contains(&path) {
             candidates.push(path);
         }
     }
     candidates
+}
+
+/// Whether `path` resolves under `home` once both are canonicalised.
+///
+/// A lexical `path.starts_with(home)` accepts a `..`-laden path whose
+/// components merely begin with `home`'s, even though it resolves somewhere
+/// else entirely (`$HOME/../../tmp/x` "starts with" `$HOME` lexically while
+/// resolving outside it). Canonicalising both sides first closes that gap. A
+/// candidate that does not exist yet — the common case, since most shells'
+/// completion files are simply absent — fails to canonicalise and is
+/// discarded here rather than trusted; the caller's own `is_file()` check
+/// would have discarded it anyway.
+///
+/// Canonicalising also discards a candidate that is itself a symlink into a
+/// directory outside `home` - the pre-canonicalisation lexical check would
+/// have refreshed it - and this function only ever runs on the XDG
+/// candidate; the default (non-XDG) path from `default_install_path` is
+/// never checked against `home` at all, so a symlinked
+/// `~/.local/share/.../loom` completion is still written through. Discarding
+/// is the safe direction in both cases, so neither is fixed here.
+fn is_under_home(path: &Path, home: &Path) -> bool {
+    let (Ok(home), Ok(path)) = (home.canonicalize(), path.canonicalize()) else {
+        return false;
+    };
+    path.starts_with(home)
 }

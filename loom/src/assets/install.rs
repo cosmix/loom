@@ -2,7 +2,9 @@
 // or `codex::` inside this module resolves to the sibling below, not to them.
 mod claude;
 mod codex;
-mod placement;
+// `pub(in crate::assets)`: the symlink-escape regression test in
+// `assets::tests` calls `place_skill` directly with a synthetic asset table.
+pub(in crate::assets) mod placement;
 
 use anyhow::{bail, ensure, Context, Result};
 use std::fs;
@@ -42,6 +44,12 @@ pub fn default_paths() -> Result<InstallPaths> {
 }
 
 /// Place every embedded asset into the supplied Claude and Codex directories.
+///
+/// A failure between skill placement and `write_layout` leaves the recorded
+/// layout stale: the tree has already moved to the new layout, but the next
+/// run without `--skills` reads the old record and moves it back rather than
+/// forward; placement is idempotent, so nothing is corrupted, but the
+/// requested layout can silently revert.
 pub fn install_all(
     paths: &InstallPaths,
     layout: Option<SkillLayout>,
@@ -49,7 +57,7 @@ pub fn install_all(
 ) -> Result<InstallReport> {
     ensure_distinct_dirs(&paths.claude_dir, &paths.codex_dir)?;
     let layout = layout.unwrap_or_else(|| SkillLayout::read(&paths.claude_dir));
-    let (agents, commands) = claude::install_files(
+    let (agents, commands, mut backups) = claude::install_files(
         &paths.claude_dir,
         crate::assets::CLAUDE_AGENTS,
         crate::assets::CLAUDE_COMMANDS,
@@ -63,7 +71,7 @@ pub fn install_all(
         crate::assets::CODEX_SKILLS,
         layout,
     )?;
-    let backups = install_doctrine(paths)?;
+    backups.extend(install_doctrine(paths)?);
     claude::write_layout(&paths.claude_dir, layout)?;
     skill_index::execute_in_claude_dir(&paths.claude_dir, false)?;
     if refresh_completions {
@@ -127,19 +135,11 @@ fn install_doctrine(paths: &InstallPaths) -> Result<Vec<PathBuf>> {
 /// A symlink whose target is gone is refused rather than written through: the
 /// write would follow the link and create a file outside the tree loom was
 /// asked to install into, with no backup taken and nothing reported.
-pub(crate) fn write_managed_file(dest: &Path, body: &str) -> Result<Option<PathBuf>> {
-    let Some(metadata) = placement::symlink_metadata(dest)? else {
+fn write_managed_file(dest: &Path, body: &str) -> Result<Option<PathBuf>> {
+    ensure_not_dangling_symlink(dest)?;
+    if placement::symlink_metadata(dest)?.is_none() {
         write_headered(dest, body)?;
         return Ok(None);
-    };
-    if metadata.is_symlink() && !dest.exists() {
-        let target = fs::read_link(dest)
-            .with_context(|| format!("Failed to read the symlink {}", dest.display()))?;
-        bail!(
-            "{} is a symlink to {}, which does not exist; repoint or remove it, then reinstall",
-            dest.display(),
-            target.display()
-        );
     }
     let existing =
         fs::read_to_string(dest).with_context(|| format!("Failed to read {}", dest.display()))?;
@@ -153,12 +153,47 @@ pub(crate) fn write_managed_file(dest: &Path, body: &str) -> Result<Option<PathB
 }
 
 /// Preserve the operator's own file beside itself, then write the managed one.
+fn back_up_and_replace(dest: &Path, body: &str) -> Result<PathBuf> {
+    let backup = back_up_existing(dest)?;
+    write_headered(dest, body)?;
+    Ok(backup)
+}
+
+/// Back up `dest`, unless an earlier install already preserved whatever was
+/// there.
+///
+/// `back_up_existing`'s rotation (delete every prior `.bak.`, keep only the
+/// newest) is right for the doctrine files: they carry a banner, so a stale
+/// one is rewritten in place with no backup at all, and the only time this
+/// runs is when the content differs from what loom itself last wrote there -
+/// in which case the prior backup holds a now-superseded copy of loom's own
+/// output. Agent and command assets carry no banner (frontmatter leaves no
+/// room for one), so `write_assets` cannot tell "operator's file" from
+/// "loom's own previous release" apart the same way; it can only tell "no
+/// backup exists yet" from "one already does". The first backup beside a
+/// destination is therefore the only one that can hold a file loom did not
+/// write - every later divergence is loom's own prior output - so it is the
+/// one worth keeping, and once it exists, `write_assets` overwrites `dest`
+/// without ever touching it.
+fn back_up_existing_once(dest: &Path) -> Result<Option<PathBuf>> {
+    if has_existing_backup(dest)? {
+        return Ok(None);
+    }
+    back_up_existing(dest).map(Some)
+}
+
+/// Move whatever is at `dest` to a fresh backup path, so a caller can then
+/// write new content without destroying it. Shared by the doctrine files and
+/// by `claude::write_assets`, so the one-backup-per-file cap and the
+/// `<name>.bak.<8 digits>-<6 digits>` naming stay identical everywhere loom
+/// preserves a file it did not write.
 ///
 /// A symlinked destination is copied rather than renamed, and written through:
 /// `~/.claude/CLAUDE.md` is commonly a link into a dotfiles repository, and
 /// renaming the link would replace it with a regular file, then delete it as a
-/// stale backup on the next install.
-fn back_up_and_replace(dest: &Path, body: &str) -> Result<PathBuf> {
+/// stale backup on the next install. The symlink itself is left in place, so
+/// the caller's write lands through it, at the link's target.
+fn back_up_existing(dest: &Path) -> Result<PathBuf> {
     remove_old_backups(dest)?;
     let backup = backup_path(dest)?;
     let metadata = dest
@@ -176,8 +211,32 @@ fn back_up_and_replace(dest: &Path, body: &str) -> Result<PathBuf> {
             backup.display()
         )
     })?;
-    write_headered(dest, body)?;
     Ok(backup)
+}
+
+/// Refuse a `dest` that is a symlink whose target no longer exists.
+///
+/// Reading or writing through it would follow the link and land outside the
+/// tree loom was asked to install into - `fs::read`/`fs::write` do not
+/// distinguish that from a plain missing file, so without this check a
+/// dangling link would silently create a file at the link's target, with no
+/// backup taken and nothing reported. Shared by the doctrine files
+/// (`write_managed_file`) and `claude::write_assets`, so both refuse it with
+/// the same message.
+fn ensure_not_dangling_symlink(dest: &Path) -> Result<()> {
+    let Some(metadata) = placement::symlink_metadata(dest)? else {
+        return Ok(());
+    };
+    if metadata.is_symlink() && !dest.exists() {
+        let target = fs::read_link(dest)
+            .with_context(|| format!("Failed to read the symlink {}", dest.display()))?;
+        bail!(
+            "{} is a symlink to {}, which does not exist; repoint or remove it, then reinstall",
+            dest.display(),
+            target.display()
+        );
+    }
+    Ok(())
 }
 
 /// The body of a document loom itself wrote, if `content` is one.
@@ -223,6 +282,25 @@ fn backup_path(dest: &Path) -> Result<PathBuf> {
 }
 
 fn remove_old_backups(dest: &Path) -> Result<()> {
+    for path in existing_backups(dest)? {
+        // Only ever a regular file loom wrote: `remove_file` on a directory
+        // fails and would abort the install with the tree half written.
+        fs::remove_file(&path).with_context(|| format!("Failed to remove {}", path.display()))?;
+    }
+    Ok(())
+}
+
+/// Whether `dest` already has a loom-made backup beside it, from an earlier
+/// install. See `back_up_existing_once` for why that is the question that
+/// matters for agent and command assets.
+fn has_existing_backup(dest: &Path) -> Result<bool> {
+    Ok(!existing_backups(dest)?.is_empty())
+}
+
+/// Every loom-made backup file currently sitting beside `dest`, shared by
+/// `remove_old_backups` (which deletes them) and `has_existing_backup` (which
+/// only asks whether any exist).
+fn existing_backups(dest: &Path) -> Result<Vec<PathBuf>> {
     let parent = dest
         .parent()
         .context("Managed asset destination has no parent directory")?;
@@ -231,6 +309,7 @@ fn remove_old_backups(dest: &Path) -> Result<()> {
         .and_then(|name| name.to_str())
         .context("Managed asset destination has no UTF-8 file name")?;
     let prefix = format!("{name}.bak.");
+    let mut backups = Vec::new();
     for entry in
         fs::read_dir(parent).with_context(|| format!("Failed to read {}", parent.display()))?
     {
@@ -239,14 +318,11 @@ fn remove_old_backups(dest: &Path) -> Result<()> {
             .file_type()
             .with_context(|| format!("Failed to inspect {}", entry.path().display()))?;
         let file_name = entry.file_name();
-        // Only ever a regular file loom wrote: `remove_file` on a directory
-        // fails and would abort the install with the tree half written.
         if file_type.is_file() && is_loom_backup(file_name.to_string_lossy().as_ref(), &prefix) {
-            fs::remove_file(entry.path())
-                .with_context(|| format!("Failed to remove {}", entry.path().display()))?;
+            backups.push(entry.path());
         }
     }
-    Ok(())
+    Ok(backups)
 }
 
 fn is_loom_backup(name: &str, prefix: &str) -> bool {

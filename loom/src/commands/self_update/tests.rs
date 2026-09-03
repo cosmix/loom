@@ -1,21 +1,27 @@
 //! Tests for self-update functionality.
 
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 
 use tempfile::TempDir;
 
-use crate::commands::self_update::client::{
-    create_http_client, HTTP_CONNECT_TIMEOUT_SECS, HTTP_REQUEST_TIMEOUT_SECS,
+use crate::commands::self_update::client::create_http_client;
+use crate::commands::self_update::signature::{
+    compute_sha256_checksum, verify_binary_signature, MINISIGN_PUBLIC_KEY,
 };
-use crate::commands::self_update::signature::{compute_sha256_checksum, verify_binary_signature};
 use crate::commands::self_update::{
     release_asset_for_target, releases_api_url, run_asset_install, signature_asset_name, Asset,
-    MAX_BINARY_SIZE, MAX_SIGNATURE_SIZE,
 };
+
+#[path = "tests/install_binary.rs"]
+mod install_binary;
+#[path = "tests/release_payload.rs"]
+mod release_payload;
+#[path = "tests/verify_version.rs"]
+mod verify_version;
 
 #[test]
 fn test_rejects_invalid_signature_format() {
@@ -23,9 +29,8 @@ fn test_rejects_invalid_signature_format() {
         b"valid binary content",
         "not a valid minisign signature format",
     );
-    assert!(result.is_err());
     let message = result.unwrap_err().to_string();
-    assert!(message.contains("signature") || message.contains("Invalid"));
+    assert!(message.starts_with("Invalid signature format"), "{message}");
 }
 
 #[test]
@@ -37,6 +42,14 @@ fn test_rejects_empty_signature() {
 fn test_rejects_malformed_public_key() {
     let result = verify_binary_signature(b"binary content", "untrusted signature: RWT1234567890");
     assert!(result.is_err());
+}
+
+/// A corrupted `MINISIGN_PUBLIC_KEY` would otherwise pass the whole suite:
+/// every other signature test only asserts rejection, so a broken key still
+/// fails those "correctly". This is the one positive case.
+#[test]
+fn embedded_public_key_parses() {
+    assert!(minisign_verify::PublicKey::from_base64(MINISIGN_PUBLIC_KEY).is_ok());
 }
 
 #[test]
@@ -55,20 +68,24 @@ fn test_compute_sha256_checksum_different_data() {
 }
 
 #[test]
-fn test_download_size_constants_are_reasonable() {
-    assert_eq!(MAX_BINARY_SIZE, 50 * 1024 * 1024);
-    assert_eq!(MAX_SIGNATURE_SIZE, 4 * 1024);
-}
-
-#[test]
-fn test_http_timeout_constants() {
-    assert_eq!(HTTP_CONNECT_TIMEOUT_SECS, 10);
-    assert_eq!(HTTP_REQUEST_TIMEOUT_SECS, 120);
-}
-
-#[test]
 fn test_create_http_client_succeeds() {
     assert!(create_http_client().is_ok());
+}
+
+/// An `https_only` client must reject a plaintext URL before dialling out -
+/// this is what stops a scheme-downgraded redirect (or a caller mistake)
+/// from ever opening an unencrypted connection. Port 1 on the loopback
+/// address is never listening, so a client that did attempt to connect would
+/// fail with a connection error instead of the scheme rejection asserted
+/// here.
+#[test]
+fn http_client_refuses_a_plaintext_url() {
+    let client = create_http_client().unwrap();
+    let result = client.get("http://127.0.0.1:1/x").send();
+    assert!(
+        result.is_err(),
+        "expected the https-only client to refuse a plaintext URL"
+    );
 }
 
 /// Fixture inventory for the binary and signature assets the updater consumes.
@@ -135,22 +152,26 @@ fn write_stub(temp_dir: &TempDir, body: &str) -> PathBuf {
 /// Execs of a just-written script transiently fail with `ETXTBSY` when a sibling
 /// test thread forks between the write and the spawn: the child holds a duplicate
 /// of the write fd until its own exec closes it. Retry until that window passes.
+///
+/// Generic over the fallible operation so every test in this module that
+/// execs a just-written `write_stub` script - not just `run_asset_install` -
+/// can reuse the same retry.
 #[cfg(unix)]
-fn run_asset_install_past_etxtbsy(exe: &Path) -> anyhow::Result<()> {
+fn retry_past_etxtbsy<T>(mut attempt: impl FnMut() -> anyhow::Result<T>) -> anyhow::Result<T> {
     const ETXTBSY: i32 = 26; // "Text file busy"
     const MAX_ATTEMPTS: u32 = 50;
 
-    let mut attempt = 0;
+    let mut attempts = 0;
     loop {
-        attempt += 1;
-        match run_asset_install(exe) {
-            Ok(()) => return Ok(()),
+        attempts += 1;
+        match attempt() {
+            Ok(value) => return Ok(value),
             Err(error) => {
                 let is_etxtbsy = error
                     .chain()
                     .filter_map(|cause| cause.downcast_ref::<std::io::Error>())
                     .any(|io_error| io_error.raw_os_error() == Some(ETXTBSY));
-                if !is_etxtbsy || attempt >= MAX_ATTEMPTS {
+                if !is_etxtbsy || attempts >= MAX_ATTEMPTS {
                     return Err(error);
                 }
                 std::thread::sleep(std::time::Duration::from_millis(10));
@@ -168,7 +189,7 @@ fn run_asset_install_invokes_install_assets() {
         "printf '%s\\n' \"$@\" > \"$(dirname \"$0\")/argv\"",
     );
 
-    run_asset_install_past_etxtbsy(&stub).unwrap();
+    retry_past_etxtbsy(|| run_asset_install(&stub)).unwrap();
 
     assert_eq!(
         fs::read_to_string(temp_dir.path().join("argv")).unwrap(),
@@ -182,7 +203,7 @@ fn run_asset_install_reports_nonzero_exit() {
     let temp_dir = TempDir::new().unwrap();
     let stub = write_stub(&temp_dir, "exit 7");
 
-    let error = run_asset_install_past_etxtbsy(&stub)
+    let error = retry_past_etxtbsy(|| run_asset_install(&stub))
         .unwrap_err()
         .to_string();
 

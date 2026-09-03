@@ -18,6 +18,7 @@ pub mod hooks_read_guard;
 pub mod hooks_spawn_guard;
 pub mod hooks_subagent_verify_guard;
 pub mod implementer_defaults;
+pub mod install_assets;
 pub mod merge_conflict_recovery;
 pub mod plan_verify;
 pub mod source_graph_fixtures;

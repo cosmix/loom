@@ -14,22 +14,29 @@ pub fn execute(
     skills: Option<SkillLayout>,
 ) -> Result<()> {
     let refresh_completions = claude_dir.is_none() && codex_dir.is_none();
-    let claude_dir = match claude_dir {
-        Some(dir) => dir,
-        None => default_paths()?.claude_dir,
-    };
-    let codex_dir = match codex_dir {
-        Some(dir) => dir,
-        None => default_paths()?.codex_dir,
-    };
-    let paths = InstallPaths {
-        claude_dir,
-        codex_dir,
-    };
+    let paths = resolve_paths(claude_dir, codex_dir)?;
     let layout = resolve_layout(&paths.claude_dir, skills);
     let report = install_all(&paths, layout, refresh_completions)?;
     print_summary(&report);
     Ok(())
+}
+
+/// Fill in whichever directory was not passed explicitly, resolving the
+/// shared default paths at most once rather than once per missing directory.
+fn resolve_paths(claude_dir: Option<PathBuf>, codex_dir: Option<PathBuf>) -> Result<InstallPaths> {
+    match (claude_dir, codex_dir) {
+        (Some(claude_dir), Some(codex_dir)) => Ok(InstallPaths {
+            claude_dir,
+            codex_dir,
+        }),
+        (claude_dir, codex_dir) => {
+            let defaults = default_paths()?;
+            Ok(InstallPaths {
+                claude_dir: claude_dir.unwrap_or(defaults.claude_dir),
+                codex_dir: codex_dir.unwrap_or(defaults.codex_dir),
+            })
+        }
+    }
 }
 
 /// Select an explicit layout or preserve the layout of an existing tree.
@@ -69,5 +76,35 @@ fn print_summary(report: &InstallReport) {
     );
     for backup in &report.backups {
         println!("  {} backup: {}", "✓".green(), backup.display());
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::resolve_layout;
+    use crate::skills::SkillLayout;
+    use std::fs;
+    use tempfile::TempDir;
+
+    #[test]
+    fn resolve_layout_defaults_to_core_on_a_fresh_tree() {
+        let temp = TempDir::new().unwrap();
+        assert_eq!(resolve_layout(temp.path(), None), Some(SkillLayout::Core));
+    }
+
+    #[test]
+    fn resolve_layout_returns_none_when_a_tree_already_exists() {
+        let temp = TempDir::new().unwrap();
+        fs::create_dir_all(temp.path().join("skills")).unwrap();
+        assert_eq!(resolve_layout(temp.path(), None), None);
+    }
+
+    #[test]
+    fn resolve_layout_honours_an_explicit_flag() {
+        let temp = TempDir::new().unwrap();
+        assert_eq!(
+            resolve_layout(temp.path(), Some(SkillLayout::All)),
+            Some(SkillLayout::All)
+        );
     }
 }

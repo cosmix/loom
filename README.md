@@ -283,6 +283,7 @@ loom hook user-prompt                                                        # U
 loom repair [--fix]
 loom clean [--all|--worktrees|--sessions|--state]
 loom update
+loom install-assets [--claude-dir <path>] [--codex-dir <path>] [--skills core|all]  # Install loom's agents, skills, commands, hooks and doctrine files
 loom completions [<shell>] [--install] [--migrate]
 ```
 

@@ -8,6 +8,14 @@ use tempfile::TempDir;
 
 #[path = "tests/doctrine.rs"]
 mod doctrine;
+#[path = "tests/hooks.rs"]
+mod hooks;
+#[path = "tests/layout.rs"]
+mod layout;
+#[path = "tests/placement.rs"]
+mod placement;
+#[path = "tests/write_assets.rs"]
+mod write_assets;
 
 fn paths(temp: &TempDir) -> InstallPaths {
     InstallPaths {
@@ -53,6 +61,24 @@ fn collect_files(root: &Path, dir: &Path, files: &mut BTreeMap<PathBuf, Vec<u8>>
 }
 
 fn backup_count(dir: &Path, name: &str) -> usize {
+    backup_paths(dir, name).len()
+}
+
+/// The single backup file for `name` under `dir`. Panics unless exactly one
+/// exists, since every caller of this helper is asserting that a prior
+/// install already created the one backup it expects to find.
+fn the_backup(dir: &Path, name: &str) -> PathBuf {
+    let mut found = backup_paths(dir, name);
+    assert_eq!(
+        found.len(),
+        1,
+        "expected exactly one backup of {name} under {}",
+        dir.display()
+    );
+    found.remove(0)
+}
+
+fn backup_paths(dir: &Path, name: &str) -> Vec<PathBuf> {
     fs::read_dir(dir)
         .unwrap()
         .flatten()
@@ -62,7 +88,8 @@ fn backup_count(dir: &Path, name: &str) -> usize {
                 .to_string_lossy()
                 .starts_with(&format!("{name}.bak."))
         })
-        .count()
+        .map(|entry| entry.path())
+        .collect()
 }
 
 fn seed_user_assets(paths: &InstallPaths) {
@@ -139,6 +166,7 @@ fn codex_pressure_is_resident_under_both_layouts() {
             .codex_dir
             .join("skills/pressure/SKILL.md")
             .is_file());
+        assert!(!paths(&temp).claude_dir.join("skills/pressure").exists());
     }
 }
 

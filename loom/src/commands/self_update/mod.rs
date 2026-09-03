@@ -110,15 +110,15 @@ pub fn execute() -> Result<()> {
         }
     })?;
 
-    println!(
-        "{} Updated successfully to {}",
-        "✓".green().bold(),
-        if updated {
-            latest.tag_name.as_str()
-        } else {
-            CURRENT_VERSION
-        }
-    );
+    if updated {
+        println!(
+            "{} Updated successfully to {}",
+            "✓".green().bold(),
+            latest.tag_name
+        );
+    } else {
+        println!("{} Assets refreshed", "✓".green().bold());
+    }
     Ok(())
 }
 
