@@ -134,7 +134,7 @@ Used for complex struct construction: `fn builder() -> Self { Self::default() }`
 
 Directory: `skills/<skill-name>/SKILL.md`
 
-Frontmatter fields: `name` (kebab-case, required), `description` (required), `triggers` (YAML array, highest priority), `trigger-keywords` (CSV string, fallback), `allowed-tools` (optional CSV).
+Frontmatter fields: `name` (kebab-case, required), `description` (required; one inline scalar, never a `|`/`>` block, and the whole `description:` line at most 160 bytes because core-skill descriptions sit resident in every request; enforced over every `skills/loom-*/SKILL.md` by `no_skill_description_exceeds_the_resident_cost_cap` in `loom/src/skills/index_catalog.rs`; keywords go in `triggers`, description prose is not a trigger source), `triggers` (YAML array, highest priority), `trigger-keywords` (CSV string, fallback), `allowed-tools` (optional CSV).
 
 Trigger priority: (1) triggers YAML array, (2) trigger-keywords CSV, (3) "TRIGGERS:"/"Trigger keywords:" in description text. Matching: phrase=2pts, word=1pt, threshold 2.0, max 5 per signal.
 

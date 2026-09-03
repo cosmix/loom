@@ -61,6 +61,11 @@ triggers:
   - translation namespace
   - Intl.Collator
   - Intl.PluralRules
+  - L10N.md
+  - localization charter
+  - do-not-translate
+  - glossary
+  - brand terms
 ---
 
 # Internationalization (i18n)
@@ -68,6 +73,18 @@ triggers:
 ## Overview
 
 Designing software to adapt to languages/regions without code changes (i18n), then adapting it per-locale (l10n). Covers translation architecture, ICU pluralization, `Intl`-based formatting, RTL/bidi, and libraries (i18next, react-intl/FormatJS, gettext).
+
+## First: Check for an L10N.md Charter
+
+Before writing or translating any string, check the project root for `L10N.md`. When it exists, it is the project's authoritative localization charter — read it in full and let it override the generic guidance in this skill wherever the two conflict. Derive from it:
+
+- **Project context** — the domain the product operates in (financial, technological, medical, …). Domain dictates terminology register and tone: "credit" means one thing in a banking app and another in a game, and a payments product cannot afford a casual mistranslation of a regulated term.
+- **What to translate directly and what not** — the charter's do-not-translate list: brand and product names, trademarks, legal or regulated terms, technical identifiers. Never translate an entry on that list, even when a natural target-language equivalent exists.
+- **Branding and glossary** — approved per-locale renderings of recurring product terms. Reuse them verbatim; inventing a second translation for an established term fragments the product's voice across locales.
+
+Only the **root** `L10N.md` is read. Some projects nest per-area charters (`server/L10N.md`) or per-locale overrides (`L10N/es.md`); those are not consulted here, so anything that must always apply belongs in the root file.
+
+When `L10N.md` does not exist, skip this step entirely — proceed with the generic guidance below, and do not create the file unasked.
 
 ## The Rules That Prevent Rework
 
@@ -262,6 +279,7 @@ Also test: longest language (German/Finnish) for overflow; a real RTL locale for
 
 ## Verify Before Done
 
+- [ ] If `L10N.md` exists at the project root: translations follow its project context, do-not-translate list, and glossary
 - [ ] Zero hardcoded user-facing strings (pseudoloc pass is clean)
 - [ ] No concatenated sentence fragments; each message is one key with named placeholders
 - [ ] Plurals use ICU/`PluralRules` categories (every category the language needs), not `count === 1`
