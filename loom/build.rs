@@ -11,6 +11,25 @@ include!(concat!(
     "/src/version/derive.rs"
 ));
 
+const AGENTS_ROOT: &str = "agents";
+const COMMANDS_ROOT: &str = "commands";
+const SKILLS_ROOT: &str = "skills";
+const CODEX_SKILLS_ROOT: &str = "codex/skills";
+const CLAUDE_TEMPLATE: &str = "CLAUDE.md.template";
+const AGENTS_TEMPLATE: &str = "AGENTS.md.template";
+
+/// The six asset roots embedded into the binary. Named once here so
+/// `emit_asset_rerun_keys` (rerun-if-changed watchers) and
+/// `generate_embedded_assets` (the actual embed) cannot drift apart.
+const ASSET_ROOTS: [&str; 6] = [
+    AGENTS_ROOT,
+    COMMANDS_ROOT,
+    SKILLS_ROOT,
+    CODEX_SKILLS_ROOT,
+    CLAUDE_TEMPLATE,
+    AGENTS_TEMPLATE,
+];
+
 fn main() {
     let describe_exact = run_git(&["describe", "--tags", "--exact-match"]);
     let describe = run_git(&["describe", "--tags"]);
@@ -48,25 +67,22 @@ fn repository_root() -> PathBuf {
 }
 
 fn emit_asset_rerun_keys(repo_root: &Path) {
-    for root in [
-        "agents",
-        "commands",
-        "skills",
-        "codex/skills",
-        "CLAUDE.md.template",
-        "AGENTS.md.template",
-    ] {
-        emit_if_exists(&repo_root.join(root));
+    for root in ASSET_ROOTS {
+        let path = repo_root.join(root);
+        if !path.exists() {
+            panic!("asset root is missing: {}", path.display());
+        }
+        emit_if_exists(&path);
     }
 }
 
 /// Generate assets from the working tree, not the git index: local builds
 /// deliberately embed operator files, while CI's clean checkout is reproducible.
 fn generate_embedded_assets(repo_root: &Path) {
-    let agents = repo_root.join("agents");
-    let commands = repo_root.join("commands");
-    let skills = repo_root.join("skills");
-    let codex_skills = repo_root.join("codex/skills");
+    let agents = repo_root.join(AGENTS_ROOT);
+    let commands = repo_root.join(COMMANDS_ROOT);
+    let skills = repo_root.join(SKILLS_ROOT);
+    let codex_skills = repo_root.join(CODEX_SKILLS_ROOT);
     let mut generated = String::new();
 
     emit_group(
@@ -74,29 +90,38 @@ fn generate_embedded_assets(repo_root: &Path) {
         "CLAUDE_AGENTS",
         &agents,
         top_level_markdown(&agents),
+        KeyShape::Flat,
     );
     emit_group(
         &mut generated,
         "CLAUDE_COMMANDS",
         &commands,
         top_level_markdown(&commands),
+        KeyShape::Flat,
     );
-    emit_group(&mut generated, "SKILLS", &skills, loom_skill_files(&skills));
+    emit_group(
+        &mut generated,
+        "SKILLS",
+        &skills,
+        loom_skill_files(&skills),
+        KeyShape::Nested,
+    );
     emit_group(
         &mut generated,
         "CODEX_SKILLS",
         &codex_skills,
         walk_files(&codex_skills),
+        KeyShape::Nested,
     );
     emit_scalar(
         &mut generated,
         "CLAUDE_MD_TEMPLATE",
-        &repo_root.join("CLAUDE.md.template"),
+        &repo_root.join(CLAUDE_TEMPLATE),
     );
     emit_scalar(
         &mut generated,
         "AGENTS_MD_TEMPLATE",
-        &repo_root.join("AGENTS.md.template"),
+        &repo_root.join(AGENTS_TEMPLATE),
     );
 
     let output = PathBuf::from(std::env::var("OUT_DIR").expect("OUT_DIR must be set"))
@@ -190,11 +215,35 @@ fn validate_utf8(path: &Path) {
         .unwrap_or_else(|_| panic!("asset file is not valid UTF-8: {}", path.display()));
 }
 
-fn emit_group(output: &mut String, name: &str, root: &Path, files: Vec<PathBuf>) {
+/// Whether a group's asset keys are bare file names (`CLAUDE_AGENTS`,
+/// `CLAUDE_COMMANDS`) or must be nested inside a directory (`SKILLS`,
+/// `CODEX_SKILLS`). `Nested` enforces the installer's invariant that a key
+/// derived by splitting on the first `/` names a real skill directory. A key
+/// with no `/` would be embedded here and then silently dropped at install
+/// time, so `Nested` panics the build instead.
+enum KeyShape {
+    Flat,
+    Nested,
+}
+
+fn emit_group(
+    output: &mut String,
+    name: &str,
+    root: &Path,
+    files: Vec<PathBuf>,
+    key_shape: KeyShape,
+) {
     let mut rows: Vec<_> = files
         .into_iter()
         .map(|path| (asset_key(root, &path), absolute_path(&path)))
         .collect();
+    if matches!(key_shape, KeyShape::Nested) {
+        for (key, path) in &rows {
+            if !key.contains('/') {
+                panic!("asset must live inside a skill directory: {path}");
+            }
+        }
+    }
     rows.sort_by(|left, right| left.0.cmp(&right.0));
 
     output.push_str(&format!("pub const {name}: &[Asset] = &[\n"));
