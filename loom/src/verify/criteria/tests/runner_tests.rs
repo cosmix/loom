@@ -111,7 +111,14 @@ fn test_run_acceptance_caches_pass_and_skips_second_execution() {
         "echo x >> \"${CACHE_TEST_MARKER_ENV_VAR}\""
     )));
 
-    let config = CriteriaConfig::default().with_cache_dir(work_dir.path());
+    // Pin the policy instead of reading it from the environment:
+    // `cache_tests::cache_policy_bypass_from_env` sets
+    // `LOOM_ACCEPTANCE_CACHE=0` process-wide for its duration, and this test
+    // is not `#[serial]`, so `CriteriaConfig::default()` can observe that
+    // value when the two overlap and the second run then never hits the cache.
+    let config = CriteriaConfig::default()
+        .with_cache_dir(work_dir.path())
+        .with_cache_policy(CachePolicy::Use);
 
     let first = run_acceptance_with_config(&stage, Some(repo.path()), &config).unwrap();
     assert!(first.all_passed());
