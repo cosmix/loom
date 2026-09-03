@@ -201,16 +201,20 @@ pub(super) fn fix_hooks_local(repo_root: &Path) -> Result<()> {
 /// `description` names none of them, so `fix_issue` can fall through to its
 /// remaining arms.
 ///
-/// Order is load-bearing:
+/// The order between the arms decides which fix claims an issue:
 /// 1. "Settings not found (.claude/settings.local.json)" and "Stale
 ///    knowledge-directory deny in" both regenerate the sandbox settings and
-///    rewrite hooks/env — matched together, ahead of the two arms below.
-/// 2. `starts_with("Stale loom session env in")` must precede the generic
+///    rewrite hooks/env — matched together, ahead of the arms below.
+/// 2. `starts_with("Stale token deny shape in")` must precede the generic
+///    ".claude/settings.local.json" arm, whose needle would otherwise swallow
+///    a description naming that file; `fix_hooks_local` would leave the deny
+///    rules exactly as they are.
+/// 3. `starts_with("Stale loom session env in")` must precede the generic
 ///    ".claude/settings.local.json" arm: a settings.local.json copy's
 ///    description names that file too, and the generic arm's
 ///    `fix_hooks_local` never touches settings.json, so the settings.json
 ///    copy would go unhealed if the generic arm claimed it first.
-/// 3. The generic ".claude/settings.local.json" arm catches everything else
+/// 4. The generic ".claude/settings.local.json" arm catches everything else
 ///    that names this file — missing hooks/env, missing codex sandbox
 ///    allowances — by rewriting it. The file-absent case is claimed by arm 1,
 ///    which runs first.
@@ -222,6 +226,9 @@ pub(super) fn fix_settings_issue(repo_root: &Path, description: &str) -> Option<
             super::sandbox_settings::fix_sandbox_settings(repo_root)
                 .and_then(|()| fix_hooks_local(repo_root)),
         );
+    }
+    if description.starts_with("Stale token deny shape in") {
+        return Some(super::sandbox_settings::fix_stale_token_denies(repo_root));
     }
     if description.starts_with("Stale loom session env in") {
         scrub_main_repo_settings_identity(repo_root);

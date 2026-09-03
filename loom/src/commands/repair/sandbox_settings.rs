@@ -1,5 +1,5 @@
-//! `.claude/settings.local.json` sandbox regeneration, and the stale
-//! doc/loom/knowledge deny check/fix.
+//! `.claude/settings.local.json` sandbox regeneration, the stale
+//! doc/loom/knowledge deny check/fix, and the stale token-deny-shape one.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 
 use super::{RepairIssue, Severity};
+use crate::fs::permissions::state_root::{self, is_parent_glob_token_deny, is_token_read_deny};
 
 /// Check 13: stale doc/loom/knowledge deny in .claude/settings.local.json.
 ///
@@ -176,4 +177,149 @@ pub(super) fn fix_sandbox_settings(repo_root: &Path) -> Result<()> {
     }
 
     Ok(())
+}
+
+/// Check 14: token deny rules in a shape that prompts on every search.
+///
+/// Claude Code's `deniedPathInsideDirectory` check refuses `rg`, `grep`,
+/// `diff`, `git`, `cp` and `mv` over any directory that contains a `Read(...)`
+/// deny rule's location — the rule's path up to its first wildcard — and that
+/// refusal is bypass-immune and not classifier-approvable. A settings file
+/// written before loom globbed the project directory out of its token denies
+/// (`state_root::token_read_denies`) puts that location inside the project, so
+/// every search from the project root stalls auto mode on an operator prompt.
+/// Checked in the main repo's two settings files and in every worktree's.
+pub(super) fn check_stale_token_denies(repo_root: &Path) -> Vec<RepairIssue> {
+    token_deny_settings_files(repo_root)
+        .into_iter()
+        .filter(|settings_path| has_stale_token_deny(settings_path))
+        .map(|settings_path| RepairIssue {
+            severity: Severity::Warning,
+            description: format!("Stale token deny shape in {}", settings_path.display()),
+            fix_description: "Rewrite the daemon token deny rules so rg and grep stop \
+                              prompting for approval"
+                .to_string(),
+        })
+        .collect()
+}
+
+/// Every existing settings file that can carry a token deny: the main repo's
+/// `settings.local.json` and `settings.json`, plus both spellings in each
+/// worktree. `git::worktree::settings` writes a worktree's `settings.json`,
+/// `sandbox::write_settings` its `settings.local.json`, so both can hold a
+/// stale shape.
+fn token_deny_settings_files(repo_root: &Path) -> Vec<PathBuf> {
+    let mut paths = Vec::new();
+    let mut push_existing = |path: PathBuf| {
+        if path.exists() {
+            paths.push(path);
+        }
+    };
+
+    push_existing(repo_root.join(".claude/settings.local.json"));
+    push_existing(repo_root.join(".claude/settings.json"));
+
+    if let Ok(entries) = fs::read_dir(repo_root.join(".worktrees")) {
+        for entry in entries.flatten().filter(|entry| entry.path().is_dir()) {
+            push_existing(entry.path().join(".claude/settings.local.json"));
+            push_existing(entry.path().join(".claude/settings.json"));
+        }
+    }
+
+    paths
+}
+
+/// A token deny loom would no longer write: any spelling other than the
+/// current parent-glob one. Shared by the detector and the fix so the two
+/// cannot drift on what counts as stale.
+fn is_stale_token_deny(entry: &str) -> bool {
+    is_token_read_deny(entry) && !is_parent_glob_token_deny(entry)
+}
+
+/// Whether a settings file at `path` carries a stale token deny. Any read or
+/// parse failure is treated as "no issue", the same diagnostic-nudge posture
+/// as `settings_local_has_stale_knowledge_deny`.
+fn has_stale_token_deny(path: &Path) -> bool {
+    let Ok(content) = fs::read_to_string(path) else {
+        return false;
+    };
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(&content) else {
+        return false;
+    };
+    value["permissions"]["deny"]
+        .as_array()
+        .map(|deny| {
+            deny.iter()
+                .any(|entry| entry.as_str().is_some_and(is_stale_token_deny))
+        })
+        .unwrap_or(false)
+}
+
+/// Fix for check 14. The main repo's `settings.local.json` is regenerated —
+/// `carry_forward_denies` prunes the stale entries and the generator emits the
+/// current shape. Every other stale file is treated with the scalpel
+/// `strip_stale_knowledge_denies` documents: the offending entries are removed
+/// and, for a worktree file, the correct rules pushed back, with every other
+/// key untouched. The main repo's `settings.json` only gets the removal; its
+/// `settings.local.json` is where loom writes the rules.
+pub(super) fn fix_stale_token_denies(repo_root: &Path) -> Result<()> {
+    write_default_sandbox_settings(repo_root)?;
+
+    let main_local = repo_root.join(".claude/settings.local.json");
+    for settings_path in token_deny_settings_files(repo_root) {
+        if settings_path == main_local || !has_stale_token_deny(&settings_path) {
+            continue;
+        }
+        let worktree = owning_worktree(repo_root, &settings_path);
+        rewrite_token_denies(&settings_path, worktree.as_deref())?;
+    }
+
+    Ok(())
+}
+
+/// The worktree root a settings file belongs to, or `None` when it is one of
+/// the main repo's own files.
+fn owning_worktree(repo_root: &Path, settings_path: &Path) -> Option<PathBuf> {
+    let root = settings_path.parent()?.parent()?;
+    (root != repo_root).then(|| root.to_path_buf())
+}
+
+/// Strip stale token denies from `path` in place and, for a worktree file,
+/// push the current parent-glob rules back. A worktree whose state-root
+/// symlink no longer resolves keeps the removal and gets no replacement — the
+/// next stage spawn rewrites the file anyway.
+fn rewrite_token_denies(path: &Path, worktree: Option<&Path>) -> Result<()> {
+    let content =
+        fs::read_to_string(path).with_context(|| format!("Failed to read {}", path.display()))?;
+    let mut value: serde_json::Value = serde_json::from_str(&content)
+        .with_context(|| format!("Failed to parse {}", path.display()))?;
+
+    if let Some(deny) = value
+        .pointer_mut("/permissions/deny")
+        .and_then(|entries| entries.as_array_mut())
+    {
+        deny.retain(|entry| !entry.as_str().is_some_and(is_stale_token_deny));
+        for rule in current_token_denies(worktree) {
+            if !deny
+                .iter()
+                .any(|entry| entry.as_str() == Some(rule.as_str()))
+            {
+                deny.push(serde_json::Value::String(rule));
+            }
+        }
+    }
+
+    let updated = serde_json::to_string_pretty(&value)
+        .with_context(|| format!("Failed to serialize {}", path.display()))?;
+    fs::write(path, updated).with_context(|| format!("Failed to write {}", path.display()))?;
+    Ok(())
+}
+
+/// The rules a worktree's settings file should carry, empty for a main-repo
+/// file or a symlink that no longer resolves.
+fn current_token_denies(worktree: Option<&Path>) -> Vec<String> {
+    worktree
+        .and_then(state_root::resolve_state_root)
+        .map(|resolved| state_root::token_read_denies(&resolved.to_string_lossy()).to_vec())
+        .unwrap_or_default()
 }
