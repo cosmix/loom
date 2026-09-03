@@ -2,6 +2,7 @@
 
 use std::collections::BTreeSet;
 use std::fs;
+use std::path::PathBuf;
 use std::process::Command;
 
 use serde_json::Value;
@@ -67,196 +68,179 @@ fn loom_permission_constants_never_grant_a_write_rule() {
     }
 }
 
-/// A hook script has up to FIVE registration sites; missing any one of them
+/// A hook script has up to THREE registration sites; missing any one of them
 /// is a silent-death bug -- the script never runs even though every other
 /// site looks correct. The checklist for the next hook added:
 ///
 ///  1. `fs/permissions/constants.rs`: a `HOOK_*` constant (`include_str!`)
 ///  2. `fs/permissions/constants.rs`: a `LOOM_HOOKS` row naming that constant
-///  3. `install.sh`: `install_hooks_remote()`'s `all_hooks` array
-///  4. `install.sh`: `install_hooks()`'s `all_hooks` array
-///  5. EITHER `fs/permissions/hooks/config.rs`'s `pre_tool_hooks()` (a global
+///  3. EITHER `fs/permissions/hooks/config.rs`'s `pre_tool_hooks()` (a global
 ///     PreToolUse hook) OR `hooks/config.rs`'s `HookEvent` enum + `all()` (a
 ///     per-session hook) -- whichever kind this hook is. A sourced LIBRARY
-///     (`_common.sh`, `_read_discipline.sh`, `_read_ledger.sh`) is never
-///     invoked directly and needs none of site 5.
+///     (`_common.sh`, `_read_discipline.sh`, `_read_ledger.sh`) is never invoked
+///     directly and needs no third site.
 ///
-/// `install_sh_hook_arrays_match_loom_hooks_exactly` pins sites 1-4 below;
-/// `loom_hooks_config_only_names_embedded_hooks` pins site 5's global half
+/// `loom_hooks_config_only_names_embedded_hooks` pins site 3's global half
 /// against sites 1-2; `hooks_tests.rs::test_hook_event_scripts_are_all_embedded`
-/// pins site 5's per-session half against sites 1-2.
-fn install_sh_hook_arrays() -> Vec<Vec<String>> {
-    let mut arrays = Vec::new();
-    let mut rest = INSTALL_SH;
-    while let Some(start) = rest.find("all_hooks=(") {
-        let after_start = &rest[start + "all_hooks=(".len()..];
-        let end = after_start
-            .find(')')
-            .expect("unterminated all_hooks=( ... ) block in install.sh");
-        let hooks: Vec<String> = after_start[..end]
-            .lines()
-            .filter_map(|line| {
-                let line = line.trim();
-                line.strip_prefix('"')
-                    .and_then(|s| s.strip_suffix('"'))
-                    .map(str::to_string)
-            })
-            .collect();
-        arrays.push(hooks);
-        rest = &after_start[end + 1..];
-    }
-    arrays
-}
-
+/// pins site 3's per-session half against sites 1-2.
+// Per-asset preservation coverage moved to loom/src/assets/tests.rs when
+// install.sh began delegating asset placement to the binary.
 #[test]
-fn installer_does_not_delete_legacy_unprefixed_names() {
-    assert!(
-        !INSTALL_SH.contains("name#loom-"),
-        "install.sh must never derive a bare skill or agent name from a Loom-owned name"
+fn install_sh_delegates_asset_placement_to_the_binary() {
+    assert_eq!(
+        INSTALL_SH
+            .matches(r#""$loom_bin" install-assets --skills "$SKILLS_MODE""#)
+            .count(),
+        1,
+        "install.sh must contain exactly one literal asset-placement delegation"
     );
-    assert!(
-        !INSTALL_SH.contains("skills/$old_name") && !INSTALL_SH.contains("agents/$old_name"),
-        "bare names such as rust and custom agent names are user-owned"
+    assert_eq!(
+        INSTALL_SH.matches("install-assets --skills").count(),
+        1,
+        "install.sh must contain install-assets --skills exactly once"
     );
 }
 
 #[test]
-fn local_skill_install_preserves_bare_rust_and_custom_skill() {
+fn install_sh_carries_no_per_asset_copy_loops() {
+    assert!(
+        !INSTALL_SH.contains("all_hooks"),
+        "all_hooks reappeared in install.sh"
+    );
+    assert!(
+        !INSTALL_SH.contains("agents.zip"),
+        "agents.zip reappeared in install.sh"
+    );
+    assert!(
+        !INSTALL_SH.contains("skills.zip"),
+        "skills.zip reappeared in install.sh"
+    );
+    assert!(
+        !INSTALL_SH.contains("download_and_extract_zip"),
+        "download_and_extract_zip reappeared in install.sh"
+    );
+    assert!(
+        !INSTALL_SH.contains("update_completions"),
+        "update_completions reappeared in install.sh"
+    );
+    assert!(
+        !INSTALL_SH.contains("cleanup_backups"),
+        "cleanup_backups reappeared in install.sh"
+    );
+}
+
+#[test]
+fn install_sh_still_validates_the_skills_flag() {
     let temp = TempDir::new().unwrap();
-    let claude_dir = temp.path().join(".claude");
-    let source_dir = temp.path().join("source-skills");
-    fs::create_dir_all(claude_dir.join("skills/rust")).unwrap();
-    fs::create_dir_all(claude_dir.join("skills/my-custom-skill")).unwrap();
-    fs::create_dir_all(source_dir.join("loom-rust")).unwrap();
-    fs::write(claude_dir.join("skills/rust/SKILL.md"), "user rust").unwrap();
-    fs::write(claude_dir.join("skills/my-custom-skill/SKILL.md"), "custom").unwrap();
-    fs::write(source_dir.join("loom-rust/SKILL.md"), "loom rust").unwrap();
-    let manifest = source_dir.join("core-skills.txt");
-    fs::write(&manifest, "loom-rust\n").unwrap();
+    let installer_path = temp.path().join("install.sh");
+    let home = temp.path().join("home");
+    fs::write(&installer_path, INSTALL_SH).unwrap();
+    fs::create_dir_all(&home).unwrap();
+
+    let bogus = Command::new("bash")
+        .arg("-c")
+        .arg(r#"source "$INSTALL_SH_PATH"; parse_args --skills bogus"#)
+        .env("HOME", &home)
+        .env("INSTALL_SH_PATH", &installer_path)
+        .env("LOOM_INSTALL_LIB_ONLY", "1")
+        .output()
+        .unwrap();
+    assert!(
+        !bogus.status.success(),
+        "parse_args must reject an invalid --skills value; stderr: {}",
+        String::from_utf8_lossy(&bogus.stderr)
+    );
+
+    let all = Command::new("bash")
+        .arg("-c")
+        .arg(r#"source "$INSTALL_SH_PATH"; parse_args --skills all; printf '%s' "$SKILLS_MODE""#)
+        .env("HOME", &home)
+        .env("INSTALL_SH_PATH", &installer_path)
+        .env("LOOM_INSTALL_LIB_ONLY", "1")
+        .output()
+        .unwrap();
+    assert!(
+        all.status.success(),
+        "parse_args must accept --skills all; stderr: {}",
+        String::from_utf8_lossy(&all.stderr)
+    );
+    assert_eq!(all.stdout, b"all", "--skills all must set SKILLS_MODE=all");
+}
+
+/// Materialize a copy of `install.sh`, a stub `loom` binary that logs its
+/// argv, and the `$HOME` both run under. Returns `(temp, installer_path,
+/// home, argv_log)`; the caller must keep `temp` alive for the paths to
+/// remain valid.
+#[cfg(unix)]
+fn stage_install_sh_with_stub_binary() -> (TempDir, PathBuf, PathBuf, PathBuf) {
+    use std::os::unix::fs::PermissionsExt;
+
+    let temp = TempDir::new().unwrap();
+    let installer_path = temp.path().join("install.sh");
+    let home = temp.path().join("home");
+    let loom_bin = home.join(".local/bin/loom");
+    let argv_log = temp.path().join("argv");
+    fs::write(&installer_path, INSTALL_SH).unwrap();
+    fs::create_dir_all(loom_bin.parent().unwrap()).unwrap();
+    fs::write(
+        &loom_bin,
+        r#"#!/usr/bin/env bash
+echo "$@" >> "$LOOM_STUB_ARGV_LOG"
+"#,
+    )
+    .unwrap();
+    fs::set_permissions(&loom_bin, fs::Permissions::from_mode(0o755)).unwrap();
+
+    (temp, installer_path, home, argv_log)
+}
+
+#[test]
+fn install_sh_invokes_the_binary_exactly_once_with_the_resolved_mode() {
+    let (_temp, installer_path, home, argv_log) = stage_install_sh_with_stub_binary();
 
     let output = Command::new("bash")
         .arg("-c")
         .arg(
-            "source \"$INSTALL_SH_PATH\"; \
-             CLAUDE_DIR=\"$TEST_CLAUDE_DIR\"; SKILLS_MODE=all; \
-             install_skills_from_source \"$TEST_SOURCE_DIR\" \"$TEST_MANIFEST\" false",
+            r#"source "$INSTALL_SH_PATH"; install_loom_local() { :; }; install_loom_remote() { :; }; confirm_overwrites() { return 0; }; main --skills core"#,
         )
+        .env("HOME", &home)
+        .env("INSTALL_SH_PATH", &installer_path)
         .env("LOOM_INSTALL_LIB_ONLY", "1")
-        .env(
-            "INSTALL_SH_PATH",
-            concat!(env!("CARGO_MANIFEST_DIR"), "/../install.sh"),
-        )
-        .env("TEST_CLAUDE_DIR", &claude_dir)
-        .env("TEST_SOURCE_DIR", &source_dir)
-        .env("TEST_MANIFEST", &manifest)
+        .env("LOOM_STUB_ARGV_LOG", &argv_log)
         .output()
         .unwrap();
-
     assert!(
         output.status.success(),
-        "install function failed: {}",
+        "main --skills core failed: {}",
         String::from_utf8_lossy(&output.stderr)
     );
-    assert_eq!(
-        fs::read_to_string(claude_dir.join("skills/rust/SKILL.md")).unwrap(),
-        "user rust"
-    );
-    assert_eq!(
-        fs::read_to_string(claude_dir.join("skills/my-custom-skill/SKILL.md")).unwrap(),
-        "custom"
-    );
-    assert_eq!(
-        fs::read_to_string(claude_dir.join("skills/loom-rust/SKILL.md")).unwrap(),
-        "loom rust"
-    );
-}
 
-#[test]
-fn local_agent_install_preserves_bare_and_custom_agents() {
-    let temp = TempDir::new().unwrap();
-    let claude_dir = temp.path().join(".claude");
-    fs::create_dir_all(claude_dir.join("agents")).unwrap();
-    fs::write(
-        claude_dir.join("agents/software-engineer.md"),
-        "user-owned bare agent",
-    )
-    .unwrap();
-    fs::write(
-        claude_dir.join("agents/my-custom-agent.md"),
-        "user-owned custom agent",
-    )
-    .unwrap();
-
-    let output = Command::new("bash")
-        .arg("-c")
-        .arg(
-            "source \"$INSTALL_SH_PATH\"; \
-             CLAUDE_DIR=\"$TEST_CLAUDE_DIR\"; install_agents",
-        )
-        .env("LOOM_INSTALL_LIB_ONLY", "1")
-        .env(
-            "INSTALL_SH_PATH",
-            concat!(env!("CARGO_MANIFEST_DIR"), "/../install.sh"),
-        )
-        .env("TEST_CLAUDE_DIR", &claude_dir)
-        .output()
-        .unwrap();
-
-    assert!(
-        output.status.success(),
-        "agent install failed: {}",
-        String::from_utf8_lossy(&output.stderr)
+    let calls = fs::read_to_string(&argv_log)
+        .expect("the temporary loom stub must receive installer invocations")
+        .lines()
+        .map(str::to_owned)
+        .collect::<Vec<_>>();
+    assert_eq!(
+        calls.last().map(String::as_str),
+        Some("install-assets --skills core"),
+        "the final loom invocation must delegate assets using the resolved skills mode"
     );
     assert_eq!(
-        fs::read_to_string(claude_dir.join("agents/software-engineer.md")).unwrap(),
-        "user-owned bare agent"
-    );
-    assert_eq!(
-        fs::read_to_string(claude_dir.join("agents/my-custom-agent.md")).unwrap(),
-        "user-owned custom agent"
-    );
-    assert!(claude_dir
-        .join("agents/loom-software-engineer.md")
-        .is_file());
-}
-
-#[test]
-fn install_sh_hook_arrays_match_loom_hooks_exactly() {
-    let arrays = install_sh_hook_arrays();
-    assert_eq!(
-        arrays.len(),
-        2,
-        "expected exactly 2 `all_hooks=( ... )` blocks in install.sh \
-         (install_hooks_remote and install_hooks) - found {}",
-        arrays.len()
+        calls
+            .iter()
+            .filter(|call| call.contains("install-assets --skills"))
+            .count(),
+        1,
+        "install.sh must invoke install-assets --skills exactly once"
     );
 
-    let loom_hooks: BTreeSet<&str> = LOOM_HOOKS.iter().map(|(name, _)| *name).collect();
-
-    for (i, hooks) in arrays.iter().enumerate() {
-        let hook_set: BTreeSet<&str> = hooks.iter().map(String::as_str).collect();
-        let missing: Vec<_> = loom_hooks.difference(&hook_set).collect();
-        let extra: Vec<_> = hook_set.difference(&loom_hooks).collect();
+    for asset_dir in [home.join(".claude"), home.join(".codex")] {
         assert!(
-            missing.is_empty() && extra.is_empty(),
-            "install.sh all_hooks block #{} does not match LOOM_HOOKS - missing \
-             from install.sh: {missing:?}, present in install.sh but not in \
-             LOOM_HOOKS: {extra:?}. Fix install.sh's all_hooks array (both \
-             install_hooks_remote() and install_hooks()) to match \
-             fs/permissions/constants.rs's LOOM_HOOKS.",
-            i + 1
+            !asset_dir.exists() || fs::read_dir(&asset_dir).unwrap().next().is_none(),
+            "the shell installer must not create assets at {}",
+            asset_dir.display()
         );
     }
-
-    let set0: BTreeSet<&str> = arrays[0].iter().map(String::as_str).collect();
-    let set1: BTreeSet<&str> = arrays[1].iter().map(String::as_str).collect();
-    assert_eq!(
-        set0, set1,
-        "install.sh's two all_hooks arrays differ: install_hooks_remote() has \
-         {set0:?} but install_hooks() has {set1:?} - a hook present in one and \
-         not the other installs on only one of the two install paths (remote \
-         curl-pipe vs local clone). Keep both arrays identical."
-    );
 }
 
 /// Regression test for a typo in `fs/permissions/hooks/config.rs`'s global
