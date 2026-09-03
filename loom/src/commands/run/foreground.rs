@@ -46,6 +46,18 @@ pub fn execute(
     execute_foreground(manual, max_parallel, watch, auto_merge, &work_dir)
 }
 
+/// Startup preflights, in order: advisory Remote Control, the hard
+/// sandbox-prerequisite check (like `require_jq`: a missing `bwrap`/`socat` or
+/// WSL1 makes every session exit at startup), then the advisory codex lane.
+fn run_preflights(work_dir: &WorkDir) -> Result<()> {
+    if let Ok(claude_path) = crate::claude::find_claude_path() {
+        crate::remote_control::run_startup_preflight(&claude_path, work_dir.root());
+    }
+    super::sandbox_preflight::require_sandbox_prerequisites(work_dir.root())?;
+    super::checks::advisory_codex_lane_preflight(work_dir.root());
+    Ok(())
+}
+
 /// Execute orchestrator in foreground mode (for debugging)
 fn execute_foreground(
     manual: bool,
@@ -54,15 +66,9 @@ fn execute_foreground(
     auto_merge: bool,
     work_dir: &WorkDir,
 ) -> Result<()> {
-    // Advisory Remote Control preflight — never aborts startup.
-    if let Ok(claude_path) = crate::claude::find_claude_path() {
-        crate::remote_control::run_startup_preflight(&claude_path, work_dir.root());
-    }
+    run_preflights(work_dir)?;
 
     let (graph, plan_sandbox) = build_execution_graph(work_dir)?;
-
-    // Advisory Codex lane preflight — never aborts startup.
-    super::checks::advisory_codex_lane_preflight(work_dir.root());
 
     // Parse config.toml to extract base_branch
     let base_branch = crate::fs::parse_base_branch_from_config(work_dir.root())?;

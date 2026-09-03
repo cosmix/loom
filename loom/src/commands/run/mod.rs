@@ -6,6 +6,7 @@
 pub(crate) mod checks;
 mod foreground;
 mod graph_loader;
+mod sandbox_preflight;
 
 #[cfg(test)]
 mod tests;
@@ -90,6 +91,11 @@ fn prepare_background_run(backend: Option<String>) -> Result<WorkDir> {
     work_dir.load()?;
 
     resolve_backend_flag(&work_dir, backend, "loom run")?;
+
+    // Hard requirement — like `require_jq`: a missing sandbox prerequisite on
+    // Linux/WSL makes every session exit at startup, so fail here instead of
+    // burning the retry budget on a deterministic startup refusal.
+    sandbox_preflight::require_sandbox_prerequisites(work_dir.root())?;
 
     // Advisory Remote Control preflight — never aborts startup.
     if let Ok(claude_path) = crate::claude::find_claude_path() {
