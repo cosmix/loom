@@ -1,7 +1,10 @@
+// `crate::claude` and `crate::codex` also exist, so an unqualified `claude::`
+// or `codex::` inside this module resolves to the sibling below, not to them.
 mod claude;
 mod codex;
+mod placement;
 
-use anyhow::{Context, Result};
+use anyhow::{bail, ensure, Context, Result};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -10,7 +13,7 @@ use crate::completions;
 use crate::fs::permissions::install_loom_hooks_to;
 use crate::skills::SkillLayout;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug)]
 pub struct InstallPaths {
     pub claude_dir: PathBuf,
     pub codex_dir: PathBuf,
@@ -44,6 +47,7 @@ pub fn install_all(
     layout: Option<SkillLayout>,
     refresh_completions: bool,
 ) -> Result<InstallReport> {
+    ensure_distinct_dirs(&paths.claude_dir, &paths.codex_dir)?;
     let layout = layout.unwrap_or_else(|| SkillLayout::read(&paths.claude_dir));
     let (agents, commands) = claude::install_files(
         &paths.claude_dir,
@@ -79,6 +83,21 @@ pub fn install_all(
     })
 }
 
+/// Reject a Claude and Codex directory that resolve to the same place: the
+/// second tree's install would silently overwrite the first's.
+fn ensure_distinct_dirs(claude_dir: &Path, codex_dir: &Path) -> Result<()> {
+    let same = match (claude_dir.canonicalize(), codex_dir.canonicalize()) {
+        (Ok(claude), Ok(codex)) => claude == codex,
+        _ => claude_dir == codex_dir,
+    };
+    ensure!(
+        !same,
+        "--claude-dir and --codex-dir both resolve to {}; each install tree needs its own directory",
+        claude_dir.display()
+    );
+    Ok(())
+}
+
 /// Write the two managed doctrine files, returning any backups they displaced.
 fn install_doctrine(paths: &InstallPaths) -> Result<Vec<PathBuf>> {
     let mut backups = Vec::new();
@@ -99,35 +118,86 @@ fn install_doctrine(paths: &InstallPaths) -> Result<Vec<PathBuf>> {
     Ok(backups)
 }
 
-fn write_managed_file(dest: &Path, body: &str) -> Result<Option<PathBuf>> {
-    if dest.exists() {
-        let existing = fs::read_to_string(dest)
-            .with_context(|| format!("Failed to read {}", dest.display()))?;
-        if managed_body(&existing) == Some(body) {
-            return Ok(None);
-        }
-        remove_old_backups(dest)?;
-        let backup = backup_path(dest)?;
-        fs::rename(dest, &backup).with_context(|| {
-            format!(
-                "Failed to back up {} to {}",
-                dest.display(),
-                backup.display()
-            )
-        })?;
+/// Write the managed document at `dest`, returning the backup it displaced.
+///
+/// A file still carrying loom's header is loom's own output, so a stale one is
+/// refreshed in place: backing it up would preserve nothing but an older copy
+/// of the same template. Only a file loom did not write is ever backed up.
+///
+/// A symlink whose target is gone is refused rather than written through: the
+/// write would follow the link and create a file outside the tree loom was
+/// asked to install into, with no backup taken and nothing reported.
+pub(crate) fn write_managed_file(dest: &Path, body: &str) -> Result<Option<PathBuf>> {
+    let Some(metadata) = placement::symlink_metadata(dest)? else {
         write_headered(dest, body)?;
-        return Ok(Some(backup));
+        return Ok(None);
+    };
+    if metadata.is_symlink() && !dest.exists() {
+        let target = fs::read_link(dest)
+            .with_context(|| format!("Failed to read the symlink {}", dest.display()))?;
+        bail!(
+            "{} is a symlink to {}, which does not exist; repoint or remove it, then reinstall",
+            dest.display(),
+            target.display()
+        );
     }
-    write_headered(dest, body)?;
-    Ok(None)
+    let existing =
+        fs::read_to_string(dest).with_context(|| format!("Failed to read {}", dest.display()))?;
+    if let Some(existing_body) = managed_body(&existing) {
+        if existing_body != body {
+            write_headered(dest, body)?;
+        }
+        return Ok(None);
+    }
+    back_up_and_replace(dest, body).map(Some)
 }
 
+/// Preserve the operator's own file beside itself, then write the managed one.
+///
+/// A symlinked destination is copied rather than renamed, and written through:
+/// `~/.claude/CLAUDE.md` is commonly a link into a dotfiles repository, and
+/// renaming the link would replace it with a regular file, then delete it as a
+/// stale backup on the next install.
+fn back_up_and_replace(dest: &Path, body: &str) -> Result<PathBuf> {
+    remove_old_backups(dest)?;
+    let backup = backup_path(dest)?;
+    let metadata = dest
+        .symlink_metadata()
+        .with_context(|| format!("Failed to inspect {}", dest.display()))?;
+    let outcome = if metadata.is_symlink() {
+        fs::copy(dest, &backup).map(|_| ())
+    } else {
+        fs::rename(dest, &backup)
+    };
+    outcome.with_context(|| {
+        format!(
+            "Failed to back up {} to {}",
+            dest.display(),
+            backup.display()
+        )
+    })?;
+    write_headered(dest, body)?;
+    Ok(backup)
+}
+
+/// The body of a document loom itself wrote, if `content` is one.
+///
+/// `install.sh` stamps `installed` where this module stamps `updated`; both are
+/// loom's own output, and a machine bootstrapped by the script would otherwise
+/// have its `CLAUDE.md` backed up as if an operator had written it.
 fn managed_body(content: &str) -> Option<&str> {
     let (header, body) = content.split_once("\n\n")?;
-    let marker = "# claude-loom | updated ";
-    (header.starts_with("# ─") && header.lines().nth(1)?.starts_with(marker)).then_some(body)
+    let stamp = header.lines().nth(1)?;
+    let managed = ["# claude-loom | updated ", "# claude-loom | installed "]
+        .iter()
+        .any(|marker| stamp.starts_with(marker));
+    (header.starts_with("# ─") && managed).then_some(body)
 }
 
+/// Write `body` under loom's managed-file banner.
+///
+/// The single writer of that banner: `managed_body` recognises files by it, so
+/// a second emitter anywhere in the tree would drift out of step with it.
 fn write_headered(dest: &Path, body: &str) -> Result<()> {
     let parent = dest
         .parent()
@@ -165,8 +235,13 @@ fn remove_old_backups(dest: &Path) -> Result<()> {
         fs::read_dir(parent).with_context(|| format!("Failed to read {}", parent.display()))?
     {
         let entry = entry.with_context(|| format!("Failed to inspect {}", parent.display()))?;
+        let file_type = entry
+            .file_type()
+            .with_context(|| format!("Failed to inspect {}", entry.path().display()))?;
         let file_name = entry.file_name();
-        if is_loom_backup(file_name.to_string_lossy().as_ref(), &prefix) {
+        // Only ever a regular file loom wrote: `remove_file` on a directory
+        // fails and would abort the install with the tree half written.
+        if file_type.is_file() && is_loom_backup(file_name.to_string_lossy().as_ref(), &prefix) {
             fs::remove_file(entry.path())
                 .with_context(|| format!("Failed to remove {}", entry.path().display()))?;
         }

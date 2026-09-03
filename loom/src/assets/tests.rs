@@ -6,6 +6,9 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use tempfile::TempDir;
 
+#[path = "tests/doctrine.rs"]
+mod doctrine;
+
 fn paths(temp: &TempDir) -> InstallPaths {
     InstallPaths {
         claude_dir: temp.path().join("claude"),
@@ -34,16 +37,17 @@ fn snapshot(root: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
     files
 }
 
+/// Directories are recorded alongside files (with an empty value), so a stray
+/// empty directory created or removed by a second install is visible too.
 fn collect_files(root: &Path, dir: &Path, files: &mut BTreeMap<PathBuf, Vec<u8>>) {
     for entry in fs::read_dir(dir).unwrap() {
         let path = entry.unwrap().path();
+        let relative = path.strip_prefix(root).unwrap().to_path_buf();
         if path.is_dir() {
+            files.insert(relative, Vec::new());
             collect_files(root, &path, files);
         } else {
-            files.insert(
-                path.strip_prefix(root).unwrap().to_path_buf(),
-                fs::read(&path).unwrap(),
-            );
+            files.insert(relative, fs::read(&path).unwrap());
         }
     }
 }
@@ -149,6 +153,15 @@ fn hooks_and_managed_documents_have_expected_form() {
         fs::metadata(hook).unwrap().permissions().mode() & 0o777,
         0o755
     );
+    assert!(paths
+        .claude_dir
+        .join("agents/loom-software-engineer.md")
+        .is_file());
+    assert!(paths.claude_dir.join("commands/pressure.md").is_file());
+    assert!(paths
+        .claude_dir
+        .join("hooks/loom/skill-keywords.json")
+        .is_file());
     for (path, template) in [
         (
             paths.claude_dir.join("CLAUDE.md"),
@@ -175,33 +188,6 @@ fn reinstall_is_idempotent() {
 
     assert!(report.backups.is_empty());
     assert_eq!(snapshot(temp.path()), before);
-}
-
-#[test]
-fn changed_managed_body_keeps_only_one_backup() {
-    let temp = TempDir::new().unwrap();
-    let paths = paths(&temp);
-    install_all(&paths, Some(SkillLayout::Core), false).unwrap();
-    fs::write(paths.claude_dir.join("CLAUDE.md"), "first change").unwrap();
-
-    assert_eq!(
-        install_all(&paths, Some(SkillLayout::Core), false)
-            .unwrap()
-            .backups
-            .len(),
-        1
-    );
-    assert_eq!(backup_count(&paths.claude_dir, "CLAUDE.md"), 1);
-    fs::write(paths.claude_dir.join("CLAUDE.md"), "second change").unwrap();
-
-    assert_eq!(
-        install_all(&paths, Some(SkillLayout::Core), false)
-            .unwrap()
-            .backups
-            .len(),
-        1
-    );
-    assert_eq!(backup_count(&paths.claude_dir, "CLAUDE.md"), 1);
 }
 
 #[test]
@@ -291,4 +277,86 @@ fn user_owned_assets_survive() {
             .join("loom-skill-catalog/loom-mine")
             .is_dir());
     }
+}
+
+#[test]
+fn skill_directory_replaces_a_stale_file_at_either_root() {
+    let temp = TempDir::new().unwrap();
+    let paths = paths(&temp);
+    let resident = paths.claude_dir.join("skills/loom-plan-writer");
+    let catalogued = paths.claude_dir.join("loom-skill-catalog/loom-rust");
+    for path in [&resident, &catalogued] {
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(path, "a file where a skill directory belongs").unwrap();
+    }
+
+    install_all(&paths, Some(SkillLayout::Core), false).unwrap();
+
+    assert!(resident.join("SKILL.md").is_file());
+    assert!(catalogued.join("SKILL.md").is_file());
+}
+
+#[test]
+fn dropped_skill_files_are_pruned() {
+    let temp = TempDir::new().unwrap();
+    let paths = paths(&temp);
+    install_all(&paths, Some(SkillLayout::Core), false).unwrap();
+    let skill = paths.claude_dir.join("skills/loom-plan-writer");
+    fs::write(skill.join("stray.md"), "dropped upstream").unwrap();
+
+    install_all(&paths, Some(SkillLayout::Core), false).unwrap();
+
+    assert!(!skill.join("stray.md").exists());
+    assert!(skill.join("SKILL.md").is_file());
+}
+
+/// A skill directory is pruned, so a link inside one is unlinked rather than
+/// followed: pruning through it would delete files loom does not own.
+#[test]
+fn symlinked_subdirectory_inside_a_skill_tree_is_pruned() {
+    let temp = TempDir::new().unwrap();
+    let paths = paths(&temp);
+    install_all(&paths, Some(SkillLayout::Core), false).unwrap();
+    let target = temp.path().join("operator-notes");
+    fs::create_dir_all(&target).unwrap();
+    fs::write(target.join("keep.md"), "operator content").unwrap();
+    let link = paths.claude_dir.join("skills/loom-plan-writer/linked");
+    std::os::unix::fs::symlink(&target, &link).unwrap();
+
+    install_all(&paths, Some(SkillLayout::Core), false).unwrap();
+
+    assert!(link.symlink_metadata().is_err());
+    assert!(target.join("keep.md").is_file());
+}
+
+/// The link is unlinked, not written through: `prune_skill` would otherwise
+/// delete whatever the operator keeps at its target.
+#[test]
+fn symlinked_skill_directory_is_replaced_by_a_real_one() {
+    let temp = TempDir::new().unwrap();
+    let paths = paths(&temp);
+    let target = temp.path().join("elsewhere/loom-plan-writer");
+    fs::create_dir_all(&target).unwrap();
+    fs::write(target.join("operator.md"), "operator content").unwrap();
+    let dest = paths.claude_dir.join("skills/loom-plan-writer");
+    fs::create_dir_all(dest.parent().unwrap()).unwrap();
+    std::os::unix::fs::symlink(&target, &dest).unwrap();
+
+    install_all(&paths, Some(SkillLayout::Core), false).unwrap();
+
+    assert!(!dest.symlink_metadata().unwrap().file_type().is_symlink());
+    assert!(dest.join("SKILL.md").is_file());
+    assert!(target.join("operator.md").is_file());
+    assert!(!target.join("SKILL.md").exists());
+}
+
+#[test]
+fn install_all_rejects_identical_trees() {
+    let temp = TempDir::new().unwrap();
+    let paths = InstallPaths {
+        claude_dir: temp.path().join("both"),
+        codex_dir: temp.path().join("both"),
+    };
+
+    assert!(install_all(&paths, Some(SkillLayout::Core), false).is_err());
 }

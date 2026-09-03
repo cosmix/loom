@@ -1,8 +1,7 @@
-use anyhow::{Context, Result};
-use std::collections::BTreeSet;
-use std::fs;
+use anyhow::Result;
 use std::path::Path;
 
+use super::placement::{place_skill, remove_empty_catalog, skill_names};
 use crate::assets::Asset;
 use crate::skills::{is_core_skill, SkillLayout, CATALOG_DIR_NAME};
 
@@ -37,62 +36,4 @@ pub(super) fn install_skills(
         remove_empty_catalog(&catalog_dir)?;
     }
     Ok((resident, catalogued))
-}
-
-fn skill_names(assets: &[Asset]) -> BTreeSet<&'static str> {
-    assets
-        .iter()
-        .filter_map(|(path, _)| path.split_once('/').map(|(name, _)| name))
-        .collect()
-}
-
-fn place_skill(
-    name: &str,
-    assets: &[Asset],
-    skills_dir: &Path,
-    catalog_dir: &Path,
-    in_skills: bool,
-) -> Result<()> {
-    let (dest, other) = if in_skills {
-        (skills_dir.join(name), catalog_dir.join(name))
-    } else {
-        (catalog_dir.join(name), skills_dir.join(name))
-    };
-    if other.exists() {
-        fs::remove_dir_all(&other)
-            .with_context(|| format!("Failed to remove {}", other.display()))?;
-    }
-    write_skill(&dest, assets, name)
-}
-
-fn write_skill(root: &Path, assets: &[Asset], name: &str) -> Result<()> {
-    for &(path, content) in assets {
-        let Some((asset_name, relative)) = path.split_once('/') else {
-            continue;
-        };
-        if asset_name == name {
-            let dest = root.join(relative);
-            let parent = dest
-                .parent()
-                .context("Embedded skill destination has no parent directory")?;
-            fs::create_dir_all(parent)
-                .with_context(|| format!("Failed to create {}", parent.display()))?;
-            fs::write(&dest, content)
-                .with_context(|| format!("Failed to write {}", dest.display()))?;
-        }
-    }
-    Ok(())
-}
-
-fn remove_empty_catalog(catalog_dir: &Path) -> Result<()> {
-    if catalog_dir.is_dir()
-        && fs::read_dir(catalog_dir)
-            .with_context(|| format!("Failed to read {}", catalog_dir.display()))?
-            .next()
-            .is_none()
-    {
-        fs::remove_dir(catalog_dir)
-            .with_context(|| format!("Failed to remove {}", catalog_dir.display()))?;
-    }
-    Ok(())
 }
