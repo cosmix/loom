@@ -347,6 +347,15 @@ mode-0600 creation beneath the mode-0700 `.work/` directory. The user secret aut
 status/log subscriptions, Unsubscribe, and DisputeCriteria. Authentication is checked from a fixed,
 allocation-free request preface before the bounded JSON body is accepted.
 
+Startup also publishes `.ignore` and `ripgreprc` at the state root, before either token, via
+`daemon/server/tokens.rs::publish_fresh_tokens`. The session wrapper
+(`orchestrator/terminal/native/wrapper.rs`) exports `RIPGREP_CONFIG_PATH` pointing at the published
+`ripgreprc`, but only when that file already exists at spawn time; a `loom run --foreground`
+orchestrator runs no daemon, so it publishes neither tokens nor exclusions and its sessions get no
+export. A sandboxed agent's `rg`/`fd`/`ag` opening `admin.token` or `user.token` hits the sandbox's
+own deny rule and stalls auto mode on an operator prompt, so both files keep ordinary sweeps and
+`-uu`/`--no-ignore` sweeps away from the credential files.
+
 Privileged actions do not treat the mere presence of `.work/admin.token` as authorization. The
 operator supplies that secret only to the proof-minting process through `LOOM_ADMIN_TOKEN`; the
 target command receives an action-bound proof through `LOOM_ADMIN_PROOF` and never reads the token.

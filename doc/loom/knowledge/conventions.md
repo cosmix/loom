@@ -664,3 +664,9 @@ reader falls back to the scan and rewrites the file — so bumping the version
 costs nothing but a few extra scans on the next prompt per revision, while
 forgetting it costs a silent, hit-only scoring divergence that no test
 currently pins.
+
+## Never Read the Daemon Credential Files
+
+`.work/admin.token` and `.work/user.token` (and their `.loom/work/` equivalents) are operator secrets. Never read them, never run a command whose output could include them, and never widen a shell command into a directory sweep. On 2026-09-03 the operator rejected two batched commands as attempts to read the admin token: one combined `rg`/`fd` sweeps over `hooks/tests` and `loom/tests` with a whole-file `rg -n "" hooks/<script>`; the other combined `loom plan verify` with `rg` sweeps over `doc/plans/briefs/<plan>/`. Run `loom plan verify` on its own, or ask the operator to run it with the `!` prefix; search with `rg -n <pattern> <explicit file>` on named files, never on directories that may hold fixtures or state; read hook scripts through narrow `rg -n <pattern> -A <n> hooks/<file>` queries, never a whole-file dump.
+
+`rg` and `fd` skip the token files through the state root's `.ignore`; sessions the daemon spawns additionally get `RIPGREP_CONFIG_PATH`, which backstops `rg` alone, so `rg -uu` sweeps skip them too. The daemon publishes both `.ignore` and `ripgreprc` before either token exists (`daemon/server/tokens.rs::publish_fresh_tokens`), and the wrapper only exports `RIPGREP_CONFIG_PATH` when `ripgreprc` is already on disk, so a `loom run --foreground` session — which has no daemon, no tokens, and no exclusion files — never exports it either.
