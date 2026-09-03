@@ -111,6 +111,21 @@ check_dependencies() {
 	fi
 }
 
+check_runtime_tools() {
+	if ! command -v jq &>/dev/null; then
+		err "jq is required by loom's Claude Code hooks but is not installed"
+		info "install with: apt install jq / brew install jq"
+		exit 1
+	fi
+	local missing_tools=()
+	command -v rg &>/dev/null || missing_tools+=("ripgrep (rg)")
+	command -v fd &>/dev/null || missing_tools+=("fd")
+	if ((${#missing_tools[@]} > 0)); then
+		warn "search tools missing: ${missing_tools[*]} - the installed CLAUDE.md steers agents to rg/fd over grep/find"
+		info "install with: apt install ripgrep fd-find (then symlink fdfind to fd) / brew install ripgrep fd"
+	fi
+}
+
 download_file() {
 	local url="$1"
 	local dest="$2"
@@ -790,6 +805,7 @@ main() {
 	parse_args "$@"
 	print_banner
 	print_components
+	check_runtime_tools
 
 	if is_curl_pipe; then
 		info "downloading from github"
