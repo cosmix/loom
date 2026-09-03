@@ -182,8 +182,8 @@ pub enum Commands {
         codex_dir: Option<PathBuf>,
 
         /// Skill layout to apply (default: the layout recorded in loom-install.toml)
-        #[arg(long, value_parser = ["core", "all"])]
-        skills: Option<String>,
+        #[arg(long, value_enum)]
+        skills: Option<crate::skills::SkillLayout>,
     },
 
     /// Read or write the user config at ~/.loom/config.toml
