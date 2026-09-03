@@ -148,7 +148,7 @@ Three-component: path transformation (absolute->relative, parent traversal resol
 
 ## Sandbox Config Merging
 
-Plan-level `SandboxConfig` merges with stage-level policy, with stage values overriding plan values. Plan-configured `excluded_commands` are rejected outright; sandbox disablement and unsandboxed escape require explicit policy acknowledgement or are rejected. Generated settings emit OS-level `denyRead` for sensitive paths and set `failIfUnavailable: true` whenever the sandbox is enabled. A settings-write failure blocks the stage before spawn. Loom, Git, interpreters, build tools, and package managers are never granted prefix-wide unsandboxed Bash access.
+Plan-level `SandboxConfig` merges with stage-level policy, with stage values overriding plan values. Plan-configured `excluded_commands` are rejected outright; sandbox disablement and unsandboxed escape require explicit policy acknowledgement or are rejected. Generated settings emit OS-level `denyRead` for sensitive paths and set `failIfUnavailable: true` whenever the sandbox is enabled, and `loom run` refuses to start on Linux/WSL when `bwrap`/`socat` are missing or the kernel is WSL1, since that setting would otherwise make every session exit at startup. A settings-write failure blocks the stage before spawn. Loom, Git, interpreters, build tools, and package managers are never granted prefix-wide unsandboxed Bash access.
 
 ## Directory Hierarchy Pattern
 
