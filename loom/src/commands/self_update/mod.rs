@@ -1,12 +1,11 @@
-//! Self-update functionality for the loom CLI.
+//! Binary self-update functionality for the loom CLI.
 //!
-//! This module handles checking for updates, downloading new versions,
-//! verifying signatures, and installing updates with rollback support.
+//! This module backs the `loom update` subcommand. It checks for updates,
+//! verifies signatures, and installs new binaries with rollback support.
 
 pub(crate) mod client;
 pub(crate) mod install;
 pub(crate) mod signature;
-pub(crate) mod zip;
 
 #[cfg(test)]
 mod tests;
@@ -14,26 +13,15 @@ mod tests;
 use anyhow::{bail, Context, Result};
 use colored::Colorize;
 use semver::Version;
-use std::collections::HashMap;
 use std::env;
-use std::fs;
-use std::io::Cursor;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 
-use crate::assets::install::write_managed_file;
 use client::{
     create_http_client, download_text_with_limit, download_with_limit, validate_response_status,
 };
 use install::install_binary;
-use signature::{
-    compute_sha256_checksum, parse_checksums, verify_binary_signature, verify_checksum,
-};
-use zip::{
-    safe_extract_path, validate_zip_entry, LimitedReader, MAX_TOTAL_EXTRACTED_SIZE,
-    MAX_UNCOMPRESSED_SIZE,
-};
-
-use ::zip::ZipArchive;
+use signature::{compute_sha256_checksum, verify_binary_signature};
 
 // Repository and version constants
 const GITHUB_REPO: &str = "cosmix/loom";
@@ -62,11 +50,6 @@ fn signature_asset_name(binary_name: &str) -> String {
     format!("{binary_name}.minisig")
 }
 
-/// Resolve the published checksums-file asset, if present.
-fn checksum_asset(assets: &[Asset]) -> Option<&Asset> {
-    assets.iter().find(|a| a.name == "SHA256SUMS.txt")
-}
-
 /// GitHub releases API URL for this repository's latest release.
 fn releases_api_url() -> String {
     format!("https://api.github.com/repos/{GITHUB_REPO}/releases/latest")
@@ -74,7 +57,6 @@ fn releases_api_url() -> String {
 
 // Download size limits (exported for tests)
 pub(crate) const MAX_BINARY_SIZE: u64 = 50 * 1024 * 1024; // 50MB for binaries
-pub(crate) const MAX_TEXT_SIZE: u64 = 10 * 1024 * 1024; // 10MB for text files
 pub(crate) const MAX_SIGNATURE_SIZE: u64 = 4 * 1024; // 4KB for signature files
 
 /// GitHub release information.
@@ -91,41 +73,99 @@ struct Asset {
     browser_download_url: String,
 }
 
-/// Execute self-update command.
+/// Execute the update command.
 pub fn execute() -> Result<()> {
-    crate::utils::print_logo_header("Self Update");
+    crate::utils::print_logo_header("Update");
     println!("{}", "Checking for updates...".blue());
 
     let latest = get_latest_release()?;
     let current = Version::parse(CURRENT_VERSION)?;
     let latest_version = Version::parse(latest.tag_name.trim_start_matches('v'))?;
-
-    if latest_version <= current {
+    let updated = latest_version > current;
+    let exe = if updated {
         println!(
-            "{} You're running the latest version ({})",
+            "New version available: {} → {}",
+            CURRENT_VERSION.dimmed(),
+            latest.tag_name.green().bold()
+        );
+        update_binary(&latest)?
+    } else {
+        println!(
+            "{} You're running the latest version ({}); refreshing installed assets",
             "✓".green().bold(),
             CURRENT_VERSION
         );
-        return Ok(());
+        env::current_exe().context("Failed to get current executable path")?
+    };
+
+    if updated {
+        verify_installed_version(&exe, &latest.tag_name)
+            .map_err(|error| assets_not_refreshed_error(&exe, error))?;
     }
-
-    println!(
-        "New version available: {} → {}",
-        CURRENT_VERSION.dimmed(),
-        latest.tag_name.green().bold()
-    );
-
-    // Update binary
-    update_binary(&latest)?;
-
-    // Update agents, skills, CLAUDE.md
-    update_config_files(&latest)?;
+    run_asset_install(&exe).map_err(|error| {
+        if updated {
+            assets_not_refreshed_error(&exe, error)
+        } else {
+            error
+        }
+    })?;
 
     println!(
         "{} Updated successfully to {}",
         "✓".green().bold(),
-        latest.tag_name
+        if updated {
+            latest.tag_name.as_str()
+        } else {
+            CURRENT_VERSION
+        }
     );
+    Ok(())
+}
+
+/// Return an error that describes an asset refresh failure after a binary swap.
+fn assets_not_refreshed_error(exe: &Path, error: anyhow::Error) -> anyhow::Error {
+    error.context(format!(
+        "Binary at {} was updated, but assets were not refreshed; run `loom install-assets`",
+        exe.display()
+    ))
+}
+
+/// Re-executes `exe install-assets` and reports spawn and exit failures separately.
+fn run_asset_install(exe: &Path) -> Result<()> {
+    let status = Command::new(exe)
+        .arg("install-assets")
+        .status()
+        .with_context(|| format!("Failed to start {} install-assets", exe.display()))?;
+    if !status.success() {
+        bail!(
+            "{} install-assets exited unsuccessfully with {status}",
+            exe.display()
+        );
+    }
+    Ok(())
+}
+
+/// Check that the binary just installed identifies itself as the release version.
+fn verify_installed_version(exe: &Path, release_version: &str) -> Result<()> {
+    let output = Command::new(exe)
+        .arg("--version")
+        .output()
+        .with_context(|| format!("Failed to run {} --version", exe.display()))?;
+    if !output.status.success() {
+        bail!(
+            "{} --version exited unsuccessfully with {}",
+            exe.display(),
+            output.status
+        );
+    }
+    let expected = release_version.trim_start_matches('v');
+    let version = String::from_utf8_lossy(&output.stdout);
+    if !version.contains(expected) {
+        bail!(
+            "{} --version did not report the installed release version {expected}",
+            exe.display()
+        );
+    }
     Ok(())
 }
 
@@ -172,24 +212,20 @@ fn get_target() -> &'static str {
     }
 }
 
-/// Download and install the new binary with signature verification.
-fn update_binary(release: &Release) -> Result<()> {
+/// Download and install a signed binary, returning the path captured before its swap.
+fn update_binary(release: &Release) -> Result<PathBuf> {
     let target = get_target();
     let binary_name = release_asset_for_target(target)?;
     let signature_name = signature_asset_name(binary_name);
-
-    // Find binary asset
     let binary_asset = release
         .assets
         .iter()
-        .find(|a| a.name == binary_name)
+        .find(|asset| asset.name == binary_name)
         .ok_or_else(|| anyhow::anyhow!("No binary found for {target}"))?;
-
-    // Find signature asset - REQUIRED for security
     let signature_asset = release
         .assets
         .iter()
-        .find(|a| a.name == signature_name)
+        .find(|asset| asset.name == signature_name)
         .ok_or_else(|| {
             anyhow::anyhow!(
                 "No signature file found for {target}. Release must include {signature_name}"
@@ -197,255 +233,39 @@ fn update_binary(release: &Release) -> Result<()> {
         })?;
 
     let client = create_http_client()?;
-
-    // Download binary
     println!("  {} Downloading binary...", "→".blue());
-    let binary_response = client
+    let response = client
         .get(&binary_asset.browser_download_url)
         .send()
         .context("Failed to download binary")?;
-    validate_response_status(&binary_response, "Binary download failed")?;
-    let binary_bytes = download_with_limit(binary_response, MAX_BINARY_SIZE, "Binary download")?;
+    validate_response_status(&response, "Binary download failed")?;
+    let binary = download_with_limit(response, MAX_BINARY_SIZE, "Binary download")?;
 
-    // Download signature
     println!("  {} Downloading signature...", "→".blue());
-    let sig_response = client
+    let response = client
         .get(&signature_asset.browser_download_url)
         .send()
         .context("Failed to download signature")?;
-    validate_response_status(&sig_response, "Signature download failed")?;
-    let signature_content =
-        download_text_with_limit(sig_response, MAX_SIGNATURE_SIZE, "Signature download")?;
+    validate_response_status(&response, "Signature download failed")?;
+    let signature = download_text_with_limit(response, MAX_SIGNATURE_SIZE, "Signature download")?;
+    verify_and_install_binary(&binary, &signature)
+}
 
-    // CRITICAL: Verify signature BEFORE writing binary to disk
+/// Verify the downloaded binary before writing it, then atomically install it.
+fn verify_and_install_binary(binary: &[u8], signature: &str) -> Result<PathBuf> {
     println!("  {} Verifying cryptographic signature...", "→".blue());
-    verify_binary_signature(&binary_bytes, &signature_content)
+    verify_binary_signature(binary, signature)
         .context("SECURITY ERROR: Binary signature verification failed")?;
     println!("  {} Signature verified successfully", "✓".green());
+    println!(
+        "  {} SHA-256: {}",
+        "ℹ".blue(),
+        compute_sha256_checksum(binary).dimmed()
+    );
 
-    // Compute and log checksum for defense-in-depth auditing
-    let checksum = compute_sha256_checksum(&binary_bytes);
-    println!("  {} SHA-256: {}", "ℹ".blue(), checksum.dimmed());
-
-    // Get current executable path
+    // Capture this before the swap: Linux then points /proc/self/exe at a deleted backup inode.
     let current_exe = env::current_exe().context("Failed to get current executable path")?;
-
-    // Install the new binary with rollback mechanism
-    install_binary(&binary_bytes, &current_exe)?;
-
+    install_binary(binary, &current_exe)?;
     println!("  {} Binary updated", "✓".green());
-    Ok(())
-}
-
-/// Get the Claude configuration directory path.
-fn get_claude_dir() -> Result<PathBuf> {
-    let home = dirs::home_dir().ok_or_else(|| anyhow::anyhow!("Cannot find home directory"))?;
-    Ok(home.join(".claude"))
-}
-
-/// Update configuration files (CLAUDE.md, agents, skills).
-fn update_config_files(release: &Release) -> Result<()> {
-    let claude_dir = get_claude_dir()?;
-    let client = create_http_client()?;
-
-    // Try to download checksums file for verification
-    let checksums = if let Some(asset) = checksum_asset(&release.assets) {
-        println!("  {} Downloading checksums...", "→".blue());
-        let response = client
-            .get(&asset.browser_download_url)
-            .send()
-            .context("Failed to download checksums")?;
-        validate_response_status(&response, "Checksums download failed")?;
-        let content = download_text_with_limit(response, MAX_TEXT_SIZE, "Checksums download")?;
-        let parsed = parse_checksums(&content);
-        println!(
-            "  {} Checksums loaded ({} entries)",
-            "✓".green(),
-            parsed.len()
-        );
-        Some(parsed)
-    } else {
-        anyhow::bail!("Release is missing SHA256SUMS.txt — cannot verify config file integrity. This may indicate a compromised release.");
-    };
-
-    // Update CLAUDE.md.template -> CLAUDE.md
-    if let Some(asset) = release
-        .assets
-        .iter()
-        .find(|a| a.name == "CLAUDE.md.template")
-    {
-        println!("  {} Downloading CLAUDE.md.template...", "→".blue());
-        let response = client
-            .get(&asset.browser_download_url)
-            .send()
-            .context("Failed to download CLAUDE.md.template")?;
-        validate_response_status(&response, "CLAUDE.md.template download failed")?;
-        let content =
-            download_text_with_limit(response, MAX_TEXT_SIZE, "CLAUDE.md.template download")?;
-
-        // Verify checksum — a missing per-asset entry is a HARD error (fail closed),
-        // mirroring the binary's signature. SHA256SUMS.txt must hold an entry for THIS asset.
-        let checksums = checksums.as_ref().ok_or_else(|| {
-            anyhow::anyhow!("Release is missing SHA256SUMS.txt — cannot verify CLAUDE.md.template integrity. This may indicate a compromised release.")
-        })?;
-        let expected = checksums.get("CLAUDE.md.template").ok_or_else(|| {
-            anyhow::anyhow!("SHA256SUMS.txt has no entry for CLAUDE.md.template — refusing to install unverified asset. This may indicate a compromised release.")
-        })?;
-        verify_checksum(content.as_bytes(), expected, "CLAUDE.md.template")?;
-        println!("  {} CLAUDE.md.template checksum verified", "✓".green());
-
-        if let Some(backup) = write_managed_file(&claude_dir.join("CLAUDE.md"), &content)? {
-            println!("  {} backup: {}", "✓".green(), backup.display());
-        }
-        println!("  {} CLAUDE.md updated", "✓".green());
-    }
-
-    // Update agents
-    if let Some(asset) = release.assets.iter().find(|a| a.name == "agents.zip") {
-        println!("  {} Downloading agents...", "→".blue());
-        let agents_dir = claude_dir.join("agents");
-        download_verify_and_extract_zip(
-            &client,
-            &asset.browser_download_url,
-            &agents_dir,
-            "agents.zip",
-            &checksums,
-        )?;
-        println!("  {} agents/ updated", "✓".green());
-    }
-
-    // Update skills, then re-apply the layout recorded in ~/.claude/loom-install.toml
-    if let Some(asset) = release.assets.iter().find(|a| a.name == "skills.zip") {
-        println!("  {} Downloading skills...", "→".blue());
-        let skills_dir = claude_dir.join("skills");
-        download_verify_and_extract_zip(
-            &client,
-            &asset.browser_download_url,
-            &skills_dir,
-            "skills.zip",
-            &checksums,
-        )?;
-        crate::skills::apply_install_layout(&claude_dir)?;
-    }
-
-    Ok(())
-}
-
-/// Download, verify checksum, and extract a zip file.
-fn download_verify_and_extract_zip(
-    client: &reqwest::blocking::Client,
-    url: &str,
-    dest: &Path,
-    asset_name: &str,
-    checksums: &Option<HashMap<String, String>>,
-) -> Result<()> {
-    let response = client.get(url).send().context("Failed to download zip")?;
-    validate_response_status(&response, "Zip download failed")?;
-    let bytes = download_with_limit(response, zip::MAX_ZIP_SIZE, asset_name)?;
-
-    // Verify checksum — a missing per-asset entry is a HARD error (fail closed),
-    // mirroring the binary's mandatory signature. An attacker who can omit a row
-    // from SHA256SUMS.txt must not be able to ship an unverified zip into ~/.claude/.
-    let checksums = checksums.as_ref().ok_or_else(|| {
-        anyhow::anyhow!("Release is missing SHA256SUMS.txt — cannot verify {asset_name} integrity. This may indicate a compromised release.")
-    })?;
-    let expected = checksums.get(asset_name).ok_or_else(|| {
-        anyhow::anyhow!("SHA256SUMS.txt has no entry for {asset_name} — refusing to install unverified asset. This may indicate a compromised release.")
-    })?;
-    verify_checksum(&bytes, expected, asset_name)?;
-    println!("  {} {} checksum verified", "✓".green(), asset_name);
-
-    // Extract using zip crate directly (replicating safe extraction from zip.rs)
-    let cursor = Cursor::new(&bytes);
-    let mut archive = ZipArchive::new(cursor).context("Failed to open zip archive")?;
-
-    // Pre-validate all entries before extraction (fail fast on malicious archives)
-    let mut total_uncompressed_size: u64 = 0;
-    for i in 0..archive.len() {
-        let file = archive.by_index(i).context("Failed to read zip entry")?;
-
-        // Validate against zip bombs
-        validate_zip_entry(&file)?;
-
-        // Track total size with overflow protection
-        total_uncompressed_size = total_uncompressed_size
-            .checked_add(file.size())
-            .ok_or_else(|| {
-                anyhow::anyhow!("Total uncompressed size overflow - possible zip bomb")
-            })?;
-
-        if total_uncompressed_size > MAX_TOTAL_EXTRACTED_SIZE {
-            bail!(
-                "Total uncompressed size {} exceeds maximum {} bytes - possible zip bomb",
-                total_uncompressed_size,
-                MAX_TOTAL_EXTRACTED_SIZE
-            );
-        }
-
-        // Validate path safety
-        let entry_name = file
-            .enclosed_name()
-            .map(|p| p.to_string_lossy().to_string())
-            .unwrap_or_else(|| file.mangled_name().to_string_lossy().to_string());
-
-        if !entry_name.is_empty() {
-            safe_extract_path(dest, &entry_name)?;
-        }
-    }
-
-    // Backup existing directory (only after validation passes)
-    if dest.exists() {
-        let backup = dest.with_extension("bak");
-        if backup.exists() {
-            fs::remove_dir_all(&backup).ok();
-        }
-        fs::rename(dest, &backup).context("Failed to backup directory")?;
-    }
-
-    // Re-open archive for extraction (we consumed it during validation)
-    let cursor = Cursor::new(&bytes);
-    let mut archive = ZipArchive::new(cursor).context("Failed to reopen zip archive")?;
-
-    fs::create_dir_all(dest)?;
-
-    // Extract with validated paths
-    for i in 0..archive.len() {
-        let mut file = archive.by_index(i)?;
-
-        // Get safe entry name
-        let entry_name = file
-            .enclosed_name()
-            .map(|p| p.to_string_lossy().to_string())
-            .unwrap_or_else(|| file.mangled_name().to_string_lossy().to_string());
-
-        if entry_name.is_empty() {
-            continue;
-        }
-
-        let outpath = safe_extract_path(dest, &entry_name)?;
-
-        if file.name().ends_with('/') {
-            fs::create_dir_all(&outpath)?;
-        } else {
-            if let Some(parent) = outpath.parent() {
-                fs::create_dir_all(parent)?;
-            }
-
-            // Extract with size limit enforcement during decompression
-            let mut outfile = fs::File::create(&outpath)
-                .with_context(|| format!("Failed to create file: {}", outpath.display()))?;
-
-            let mut limited_reader = LimitedReader::new(&mut file, MAX_UNCOMPRESSED_SIZE);
-            std::io::copy(&mut limited_reader, &mut outfile)
-                .with_context(|| format!("Failed to extract file: {}", entry_name))?;
-        }
-    }
-
-    // Cleanup backup
-    let backup = dest.with_extension("bak");
-    if backup.exists() {
-        fs::remove_dir_all(&backup).ok();
-    }
-
-    Ok(())
+    Ok(current_exe)
 }

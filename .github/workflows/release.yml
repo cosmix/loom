@@ -174,19 +174,6 @@ jobs:
           echo "=== SHA256SUMS.txt ==="
           cat SHA256SUMS.txt
 
-      - name: Package additional assets
-        run: |
-          cp CLAUDE.md.template release/
-          cd agents && zip -r ../release/agents.zip . && cd ..
-          cd skills && zip -r ../release/skills.zip . && cd ..
-
-      - name: Add asset checksums
-        run: |
-          cd release
-          sha256sum CLAUDE.md.template agents.zip skills.zip >> SHA256SUMS.txt
-          echo "=== Final SHA256SUMS.txt ==="
-          cat SHA256SUMS.txt
-
       - name: Extract version from tag
         id: version
         run: |
@@ -262,9 +249,6 @@ jobs:
             release/loom-darwin-arm64
             release/loom-darwin-arm64.minisig
             release/SHA256SUMS.txt
-            release/CLAUDE.md.template
-            release/agents.zip
-            release/skills.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

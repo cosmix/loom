@@ -13,20 +13,12 @@ N='\033[0m'    # reset
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CLAUDE_DIR="$HOME/.claude"
 CODEX_DIR="$HOME/.codex"
-TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 
 GITHUB_REPO="cosmix/loom"
 GITHUB_RELEASES="https://github.com/${GITHUB_REPO}/releases/latest/download"
 
-# Component counts (updated during install)
-COUNT_AGENTS=0
-COUNT_SKILLS=0
-COUNT_CATALOG_SKILLS=0
-COUNT_HOOKS=0
-COUNT_COMMANDS=0
 SKILLS_MODE=""
 SKILLS_MODE_EXPLICIT=0
-CORE_SKILLS=()
 
 print_banner() {
 	cat <<'EOF'
@@ -83,32 +75,9 @@ info() {
 	echo -e "     ${D}$1${N}"
 }
 
-backup_msg() {
-	echo -e "     ${D}backed up → $1${N}"
-}
-
-backup_if_exists() {
-	local path="$1"
-	if [[ -e "$path" ]]; then
-		local backup_path="${path}.bak.${TIMESTAMP}"
-		mv "$path" "$backup_path"
-		backup_msg "$(basename "$backup_path")"
-		return 0
-	fi
-	return 1
-}
-
 is_curl_pipe() {
 	# Check if running from curl pipe (SCRIPT_DIR won't have our files)
 	[[ ! -d "$SCRIPT_DIR/agents" ]] && [[ ! -d "$SCRIPT_DIR/skills" ]]
-}
-
-check_dependencies() {
-	if ! command -v unzip &>/dev/null; then
-		err "unzip is required but not installed"
-		info "install with: apt install unzip / brew install unzip"
-		exit 1
-	fi
 }
 
 check_runtime_tools() {
@@ -138,24 +107,6 @@ download_file() {
 		err "neither curl nor wget available"
 		return 1
 	fi
-}
-
-download_and_extract_zip() {
-	local url="$1"
-	local dest_dir="$2"
-	local temp_zip="/tmp/loom_temp_$$.zip"
-
-	download_file "$url" "$temp_zip" || return 1
-
-	mkdir -p "$dest_dir"
-	unzip -q -o "$temp_zip" -d "$dest_dir"
-	rm -f "$temp_zip"
-}
-
-build_skill_index() {
-	# Use the loom binary to build the index (faster, more robust than bash)
-	local loom_bin="$HOME/.local/bin/loom"
-	[[ -x "$loom_bin" ]] && "$loom_bin" skill-index >/dev/null 2>&1 || true
 }
 
 read_recorded_skills_mode() {
@@ -224,256 +175,25 @@ parse_args() {
 	esac
 }
 
-write_install_config() {
-	{
-		printf '%s\n' '# Managed by loom install.sh. Delete this file to reset the skills layout.'
-		printf 'skills = "%s"\n' "$SKILLS_MODE"
-	} > "$CLAUDE_DIR/loom-install.toml"
-}
-
-load_core_skills() {
-	local manifest="$1"
-	local line
-
-	[[ -f "$manifest" ]] || return 1
-	CORE_SKILLS=()
-
-	while IFS= read -r line || [[ -n "$line" ]]; do
-		line="${line#"${line%%[![:space:]]*}"}"
-		line="${line%"${line##*[![:space:]]}"}"
-		[[ -z "$line" || "$line" == \#* ]] && continue
-		CORE_SKILLS+=("$line")
-	done < "$manifest"
-}
-
-is_core_skill() {
-	local name="$1"
-	local core_skill
-
-	for core_skill in ${CORE_SKILLS[@]+"${CORE_SKILLS[@]}"}; do
-		[[ "$core_skill" == "$name" ]] && return 0
-	done
-	return 1
-}
-
-install_skills_from_source() {
-	local source_dir="$1"
-	local manifest="$2"
-	local allow_missing_manifest="$3"
-	local placement_mode="$SKILLS_MODE"
-	local catalog_dir="$CLAUDE_DIR/loom-skill-catalog"
-	local skill_dir name destination_dir
-	local installed_skills=0
-	local catalogued_skills=0
-
-	step "skills"
-
-	if ! load_core_skills "$manifest"; then
-		if [[ "$allow_missing_manifest" == "true" ]]; then
-			warn "core-skills.txt missing from release; installing all skills"
-			placement_mode="all"
-			# Propagate the actual layout to the global so write_install_config
-			# (which runs after this function) records what was really placed.
-			SKILLS_MODE="all"
-		else
-			err "core-skills.txt not found: $manifest"
-			return 1
-		fi
-	fi
-
-	mkdir -p "$CLAUDE_DIR/skills"
-	if [[ "$placement_mode" == "core" ]]; then
-		mkdir -p "$catalog_dir"
-	else
-		rm -rf "$catalog_dir"
-	fi
-
-	for skill_dir in "$source_dir"/loom-*/; do
-		[[ -d "$skill_dir" ]] || continue
-		name=$(basename "$skill_dir")
-		[[ "$name" == loom-* ]] || continue
-
-		if [[ "$placement_mode" == "core" ]] && ! is_core_skill "$name"; then
-			destination_dir="$catalog_dir"
-			((++catalogued_skills))
-		else
-			destination_dir="$CLAUDE_DIR/skills"
-			((++installed_skills))
-		fi
-
-		# Every generated destination is a verified loom-* directory.
-		# The trailing slash must be stripped: BSD cp copies a directory's
-		# CONTENTS when the source ends in `/`, which on macOS would splatter
-		# every SKILL.md straight into the destination root.
-		rm -rf "$destination_dir/$name"
-		cp -R "${skill_dir%/}" "$destination_dir/"
-	done
-
-	if [[ "$placement_mode" == "core" ]]; then
-		# Only loom-* directories are considered for resident/catalog cleanup.
-		for skill_dir in "$CLAUDE_DIR/skills"/loom-*/; do
-			[[ -d "$skill_dir" ]] || continue
-			name=$(basename "$skill_dir")
-			if ! is_core_skill "$name"; then
-				rm -rf "${skill_dir%/}"
-			fi
-		done
-
-		for skill_dir in "$catalog_dir"/loom-*/; do
-			[[ -d "$skill_dir" ]] || continue
-			name=$(basename "$skill_dir")
-			if is_core_skill "$name"; then
-				rm -rf "${skill_dir%/}"
-			fi
-		done
-	fi
-
-	COUNT_SKILLS="$installed_skills"
-	COUNT_CATALOG_SKILLS="$catalogued_skills"
-	if [[ "$placement_mode" == "core" ]]; then
-		ok "$COUNT_SKILLS skills, $COUNT_CATALOG_SKILLS catalogued"
-	else
-		ok "$COUNT_SKILLS skills"
-	fi
-}
-
-install_agents_remote() {
-	step "agents"
-
-	mkdir -p "$CLAUDE_DIR/agents"
-	download_and_extract_zip "${GITHUB_RELEASES}/agents.zip" "/tmp/loom_agents_$$" || {
-		warn "failed to download agents"
-		return 1
-	}
-
-	for agent_file in /tmp/loom_agents_$$/loom-*.md; do
-		[ -f "$agent_file" ] || continue
-		cp "$agent_file" "$CLAUDE_DIR/agents/"
-	done
-	rm -rf "/tmp/loom_agents_$$"
-
-	COUNT_AGENTS=$(find "$CLAUDE_DIR/agents" -name "loom-*.md" 2>/dev/null | wc -l | tr -d ' ')
-	ok "$COUNT_AGENTS agents"
-}
-
-install_skills_remote() {
-	download_and_extract_zip "${GITHUB_RELEASES}/skills.zip" "/tmp/loom_skills_$$" || {
-		warn "failed to download skills"
-		return 1
-	}
-
-	install_skills_from_source "/tmp/loom_skills_$$" "/tmp/loom_skills_$$/core-skills.txt" "true"
-	rm -rf "/tmp/loom_skills_$$"
-}
-
-install_claude_md_remote() {
-	step "config"
-
-	local claude_md="$CLAUDE_DIR/CLAUDE.md"
-	local temp_file="/tmp/CLAUDE.md.template.$$"
-
-	backup_if_exists "$claude_md" || true
-
-	download_file "${GITHUB_RELEASES}/CLAUDE.md.template" "$temp_file" || {
-		warn "failed to download config"
-		return 1
-	}
-
-	{
-		echo "# ───────────────────────────────────────────────────────────"
-		echo "# claude-loom | installed $(date '+%Y-%m-%d %H:%M:%S')"
-		echo "# ───────────────────────────────────────────────────────────"
-		echo ""
-		cat "$temp_file"
-	} >"$claude_md"
-
-	rm -f "$temp_file"
-	ok "CLAUDE.md"
-}
-
-install_hooks_remote() {
-	step "hooks"
-
-	# All hooks go to loom/ subdirectory to keep them separate from user hooks
-	local hooks_dir="$CLAUDE_DIR/hooks/loom"
-	mkdir -p "$hooks_dir"
-
-	# All loom hooks
-	local all_hooks=(
-		"_common.sh"
-		"_read_discipline.sh"
-		"_read_ledger.sh"
-		"session-start.sh"
-		"post-tool-use.sh"
-		"pre-compact.sh"
-		"session-end.sh"
-		"subagent-stop.sh"
-		"subagent-start.sh"
-		"learning-validator.sh"
-		"commit-guard.sh"
-		"commit-filter.sh"
-		"subagent-verify-guard.sh"
-		"ask-user-pre.sh"
-		"ask-user-post.sh"
-		"prefer-modern-tools.sh"
-		"skill-trigger.sh"
-		"user-prompt-context.sh"
-		"git-add-guard.sh"
-		"worktree-isolation.sh"
-		"worktree-file-guard.sh"
-		"plans-path-guard.sh"
-		"no-preexisting-failures.sh"
-		"codex-forward-guard.sh"
-		"codex-forward.sh"
-		"loom-control-complete.sh"
-		"stage-terminal-guard.sh"
-		"spawn-guard.sh"
-		"read-guard.sh"
-		"poll-guard.sh"
-	)
-
-	for hook in "${all_hooks[@]}"; do
-		if download_file "${GITHUB_RELEASES}/$hook" "$hooks_dir/$hook" 2>/dev/null; then
-			chmod +x "$hooks_dir/$hook"
-			((++COUNT_HOOKS))
-		fi
-	done
-
-	if [[ $COUNT_HOOKS -eq 0 ]]; then
-		warn "failed to download hooks"
-		return 1
-	fi
-
-	ok "$COUNT_HOOKS hooks"
-
-	# Remove replaced bash script (now handled by loom skill-index)
-	rm -f "$hooks_dir/skill-index-builder.sh"
-
-	# Build skill keyword index
-	build_skill_index
-}
-
 check_requirements() {
-	[[ -d "$SCRIPT_DIR/agents" ]] || { err "agents/ not found"; exit 1; }
-	[[ -d "$SCRIPT_DIR/skills" ]] || { err "skills/ not found"; exit 1; }
-	[[ -f "$SCRIPT_DIR/skills/core-skills.txt" ]] || { err "skills/core-skills.txt not found"; exit 1; }
-	[[ -f "$SCRIPT_DIR/CLAUDE.md.template" ]] || { err "CLAUDE.md.template not found"; exit 1; }
-	[[ -f "$SCRIPT_DIR/commands/pressure.md" ]] || { err "commands/pressure.md not found"; exit 1; }
-	[[ -f "$SCRIPT_DIR/commands/address.md" ]] || { err "commands/address.md not found"; exit 1; }
-	[[ -f "$SCRIPT_DIR/commands/distill.md" ]] || { err "commands/distill.md not found"; exit 1; }
-	[[ -f "$SCRIPT_DIR/codex/skills/pressure/SKILL.md" ]] || { err "codex/skills/pressure/SKILL.md not found"; exit 1; }
+	[[ -d "$SCRIPT_DIR/loom" ]] || { err "loom/ not found"; exit 1; }
 }
 
 confirm_overwrites() {
 	local found=()
 
-	[[ -d "$CLAUDE_DIR/agents" ]] && found+=("agents/ (loom-* only)")
-	[[ -d "$CLAUDE_DIR/skills" ]] && found+=("skills/ (loom-* only)")
-	[[ -f "$CLAUDE_DIR/CLAUDE.md" ]] && found+=("CLAUDE.md")
-	[[ -d "$CLAUDE_DIR/commands" ]] && found+=("commands/ (loom-owned commands)")
+	[[ -d "$CLAUDE_DIR/agents" ]] && found+=("~/.claude/agents/ (loom-* only)")
+	[[ -d "$CLAUDE_DIR/skills" ]] && found+=("~/.claude/skills/ (loom-* only)")
+	[[ -d "$CLAUDE_DIR/loom-skill-catalog" ]] && found+=("~/.claude/loom-skill-catalog/")
+	[[ -f "$CLAUDE_DIR/CLAUDE.md" ]] && found+=("~/.claude/CLAUDE.md")
+	[[ -f "$CLAUDE_DIR/loom-install.toml" ]] && found+=("~/.claude/loom-install.toml")
+	[[ -d "$CLAUDE_DIR/commands" ]] && found+=("~/.claude/commands/ (loom-owned commands)")
+	[[ -d "$CLAUDE_DIR/hooks/loom" ]] && found+=("~/.claude/hooks/loom")
 
 	local found_other=()
-	[[ -d "$CODEX_DIR/skills/pressure" ]] && found_other+=("~/.codex/skills/pressure")
+	[[ -f "$CODEX_DIR/AGENTS.md" ]] && found_other+=("~/.codex/AGENTS.md")
+	[[ -d "$CODEX_DIR/skills" ]] && found_other+=("~/.codex/skills")
+	[[ -d "$CODEX_DIR/loom-skill-catalog" ]] && found_other+=("~/.codex/loom-skill-catalog")
 
 	if [[ ${#found[@]} -eq 0 ]] && [[ ${#found_other[@]} -eq 0 ]]; then
 		return 0
@@ -485,7 +205,7 @@ confirm_overwrites() {
 	# under `set -u`, so a bare "${a[@]}" aborts. Never write `${#a[@]-0}` here —
 	# the length form takes no default and bash 5 rejects it as bad substitution.
 	for item in ${found[@]+"${found[@]}"}; do
-		echo -e "     ${D}~/.claude/$item${N}"
+		echo -e "     ${D}$item${N}"
 	done
 	for item in ${found_other[@]+"${found_other[@]}"}; do
 		echo -e "     ${D}$item${N}"
@@ -498,141 +218,6 @@ confirm_overwrites() {
 		info "cancelled"
 		exit 0
 	fi
-}
-
-ensure_claude_dir() {
-	mkdir -p "$CLAUDE_DIR"
-}
-
-install_agents() {
-	step "agents"
-
-	mkdir -p "$CLAUDE_DIR/agents"
-	for agent_file in "$SCRIPT_DIR/agents"/loom-*.md; do
-		[ -f "$agent_file" ] || continue
-		cp "$agent_file" "$CLAUDE_DIR/agents/"
-	done
-
-	COUNT_AGENTS=$(find "$CLAUDE_DIR/agents" -name "loom-*.md" 2>/dev/null | wc -l | tr -d ' ')
-	ok "$COUNT_AGENTS agents"
-}
-
-install_skills() {
-	install_skills_from_source "$SCRIPT_DIR/skills" "$SCRIPT_DIR/skills/core-skills.txt" "false"
-}
-
-install_commands() {
-	step "commands"
-
-	mkdir -p "$CLAUDE_DIR/commands"
-	for cmd_file in "$SCRIPT_DIR/commands"/*.md; do
-		[ -f "$cmd_file" ] || continue
-		cp "$cmd_file" "$CLAUDE_DIR/commands/"
-		((++COUNT_COMMANDS))
-	done
-
-	# Assert required command files were present in source and thus copied
-	local missing=0
-	for required in commands/pressure.md commands/address.md commands/distill.md; do
-		[[ -f "$SCRIPT_DIR/$required" ]] || { err "$required not found in source"; missing=1; }
-	done
-	[[ $missing -eq 0 ]] || exit 1
-
-	ok "$COUNT_COMMANDS commands"
-}
-
-install_codex_skill() {
-	step "codex skill"
-
-	# Assert source exists before touching the destination
-	[[ -f "$SCRIPT_DIR/codex/skills/pressure/SKILL.md" ]] || {
-		err "codex/skills/pressure/SKILL.md not found"
-		exit 1
-	}
-
-	mkdir -p "$CODEX_DIR/skills/pressure"
-	cp "$SCRIPT_DIR/codex/skills/pressure/SKILL.md" "$CODEX_DIR/skills/pressure/"
-
-	ok "pressure skill"
-}
-
-install_claude_md() {
-	step "config"
-
-	local claude_md="$CLAUDE_DIR/CLAUDE.md"
-
-	backup_if_exists "$claude_md" || true
-
-	{
-		echo "# ───────────────────────────────────────────────────────────"
-		echo "# claude-loom | installed $(date '+%Y-%m-%d %H:%M:%S')"
-		echo "# ───────────────────────────────────────────────────────────"
-		echo ""
-		cat "$SCRIPT_DIR/CLAUDE.md.template"
-	} >"$claude_md"
-
-	ok "CLAUDE.md"
-}
-
-install_hooks() {
-	step "hooks"
-
-	# All hooks go to loom/ subdirectory to keep them separate from user hooks
-	local hooks_dir="$CLAUDE_DIR/hooks/loom"
-	mkdir -p "$hooks_dir"
-
-	# All loom hooks
-	local all_hooks=(
-		"_common.sh"
-		"_read_discipline.sh"
-		"_read_ledger.sh"
-		"session-start.sh"
-		"post-tool-use.sh"
-		"pre-compact.sh"
-		"session-end.sh"
-		"subagent-stop.sh"
-		"subagent-start.sh"
-		"learning-validator.sh"
-		"commit-guard.sh"
-		"commit-filter.sh"
-		"subagent-verify-guard.sh"
-		"ask-user-pre.sh"
-		"ask-user-post.sh"
-		"prefer-modern-tools.sh"
-		"skill-trigger.sh"
-		"user-prompt-context.sh"
-		"git-add-guard.sh"
-		"worktree-isolation.sh"
-		"worktree-file-guard.sh"
-		"plans-path-guard.sh"
-		"no-preexisting-failures.sh"
-		"codex-forward-guard.sh"
-		"codex-forward.sh"
-		"loom-control-complete.sh"
-		"stage-terminal-guard.sh"
-		"spawn-guard.sh"
-		"read-guard.sh"
-		"poll-guard.sh"
-	)
-
-	if [[ -d "$SCRIPT_DIR/hooks" ]]; then
-		for hook_name in "${all_hooks[@]}"; do
-			local hook="$SCRIPT_DIR/hooks/$hook_name"
-			if [[ -f "$hook" ]]; then
-				cp "$hook" "$hooks_dir/"
-				chmod +x "$hooks_dir/$hook_name"
-				((++COUNT_HOOKS))
-			fi
-		done
-	fi
-
-	ok "$COUNT_HOOKS hooks"
-
-	# Remove replaced bash script (now handled by loom skill-index)
-	rm -f "$hooks_dir/skill-index-builder.sh"
-
-	# Build skill keyword index
-	build_skill_index
 }
 
 install_loom_local() {
@@ -657,8 +242,8 @@ install_loom_local() {
 		return 0
 	fi
 
-	# No local binary, fall back to download
-	info "no local build, downloading..."
+	# No local binary, fall back to the released binary and its embedded assets.
+	info "no local build; downloading the release binary and using its embedded assets"
 	install_loom_remote
 }
 
@@ -748,49 +333,21 @@ install_loom_remote() {
 	fi
 }
 
-cleanup_backups() {
-	local backups=()
-
-	# Find all backups created during this installation
-	while IFS= read -r -d '' file; do
-		backups+=("$file")
-	done < <(find "$CLAUDE_DIR" -maxdepth 2 -name "*.bak.${TIMESTAMP}" -print0 2>/dev/null)
-
-	if [[ ${#backups[@]} -eq 0 ]]; then
-		return 0
-	fi
-
-	echo ""
-	echo -en "   ${B}delete backup files? [y/N]${N} "
-	read -r response </dev/tty
-	if [[ "$response" =~ ^[Yy]$ ]]; then
-		for backup in "${backups[@]}"; do
-			rm -rf "$backup"
-		done
-		ok "backups deleted"
-	else
-		info "backups kept at ~/.claude/*.bak.${TIMESTAMP}"
-	fi
-}
-
 print_summary() {
 	echo ""
 	echo -e "   ${G}installed${N}"
 	echo ""
 	echo -e "   ${D}~/.claude/${N}"
-	echo -e "     agents/     ${D}$COUNT_AGENTS specialized subagents${N}"
-	if [[ "$COUNT_CATALOG_SKILLS" -gt 0 ]]; then
-		echo -e "     skills/     ${D}$COUNT_SKILLS indexed orchestration mechanics skills${N}"
-		echo -e "     loom-skill-catalog/ ${D}$COUNT_CATALOG_SKILLS catalogued domain knowledge modules${N}"
-	else
-		echo -e "     skills/     ${D}$COUNT_SKILLS indexed orchestration and domain skills${N}"
-	fi
-	echo -e "     hooks/      ${D}$COUNT_HOOKS lifecycle event handlers${N}"
-	echo -e "     commands/   ${D}$COUNT_COMMANDS slash commands${N}"
+	echo -e "     agents/     ${D}managed agents${N}"
+	echo -e "     skills/     ${D}managed skills${N}"
+	echo -e "     loom-skill-catalog/ ${D}catalogued skills${N}"
+	echo -e "     hooks/      ${D}managed lifecycle event handlers${N}"
+	echo -e "     commands/   ${D}managed slash commands${N}"
 	echo -e "     CLAUDE.md   ${D}orchestration rules${N}"
 	echo ""
 	echo -e "   ${D}~/.codex/${N}"
-	echo -e "     skills/     ${D}pressure skill${N}"
+	echo -e "     skills/     ${D}managed skills${N}"
+	echo -e "     AGENTS.md   ${D}orchestration rules${N}"
 	echo ""
 	echo -e "   ${D}~/.local/bin/${N}"
 	echo -e "     loom        ${D}parallel work orchestrator${N}"
@@ -810,61 +367,26 @@ main() {
 	if is_curl_pipe; then
 		info "downloading from github"
 		echo ""
-		check_dependencies
-		ensure_claude_dir
 		install_loom_remote
-		install_agents_remote
-		install_skills_remote
 	else
 		check_requirements
 		confirm_overwrites
-		ensure_claude_dir
 		install_loom_local
-		install_agents
-		install_skills
 	fi
 
-	write_install_config
+	loom_bin="$HOME/.local/bin/loom"
+	[[ -x "$loom_bin" ]] || {
+		err "loom binary was not installed at $loom_bin"
+		exit 1
+	}
 
-	if is_curl_pipe; then
-		install_hooks_remote
-		install_claude_md_remote
-	else
-		install_hooks
-		install_claude_md
-		install_commands
-		install_codex_skill
-		cleanup_backups
-	fi
+	"$loom_bin" install-assets --help >/dev/null 2>&1 || {
+		err "installed loom binary does not support install-assets (version skew; update the binary and rerun install.sh)"
+		exit 1
+	}
 
-	update_completions
+	"$loom_bin" install-assets --skills "$SKILLS_MODE"
 	print_summary
-}
-
-update_completions() {
-	local loom_bin="$HOME/.local/bin/loom"
-	[[ -x "$loom_bin" ]] || return 0
-
-	local updated=0
-	local shell path
-
-	# Check each shell's known completion file location
-	for shell in zsh bash fish; do
-		case "$shell" in
-			zsh)  path="$HOME/.zfunc/_loom" ;;
-			bash) path="$HOME/.local/share/bash-completion/completions/loom" ;;
-			fish) path="$HOME/.config/fish/completions/loom.fish" ;;
-		esac
-
-		if [[ -f "$path" ]]; then
-			"$loom_bin" completions "$shell" > "$path"
-			((++updated))
-		fi
-	done
-
-	if [[ $updated -gt 0 ]]; then
-		ok "updated $updated shell completion file(s)"
-	fi
 }
 
 if [[ "${LOOM_INSTALL_LIB_ONLY:-0}" != "1" ]]; then

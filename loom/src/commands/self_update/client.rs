@@ -28,7 +28,7 @@ pub(crate) fn create_http_client() -> Result<Client> {
         .https_only(true)
         // Bounded redirect policy that rejects an https->http downgrade. A scheme
         // downgrade on redirect is the MITM precondition that would let a tampered
-        // asset/checksums file be served, so we refuse it rather than follow it.
+        // binary or signature be served, so we refuse it rather than follow it.
         .redirect(reqwest::redirect::Policy::custom(|attempt| {
             if attempt.previous().len() >= MAX_REDIRECTS {
                 return attempt.error("too many redirects");

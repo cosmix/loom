@@ -257,7 +257,7 @@ pub fn dispatch(command: Commands) -> Result<()> {
             MemoryCommands::Show { stage, all } => memory::show(stage, all),
         },
         Commands::Review { ai_summary } => review::execute(ai_summary),
-        Commands::SelfUpdate => self_update::execute(),
+        Commands::Update => self_update::execute(),
         Commands::InstallAssets {
             claude_dir,
             codex_dir,

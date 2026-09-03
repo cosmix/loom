@@ -282,7 +282,7 @@ loom context record-edit --stage <id> --path <path> [--path <path>...]       # K
 loom hook user-prompt                                                        # UserPromptSubmit entry point; invoked by loom's hooks
 loom repair [--fix]
 loom clean [--all|--worktrees|--sessions|--state]
-loom self-update
+loom update
 loom completions [<shell>] [--install] [--migrate]
 ```
 

@@ -34,5 +34,5 @@ pub use index::SkillIndex;
 pub use index_catalog::{
     catalog_dir_for, is_core_skill, load_with_catalog, skill_invocation, CATALOG_DIR_NAME,
 };
-pub use install_layout::{apply_install_layout, SkillLayout};
+pub use install_layout::SkillLayout;
 pub use types::{SkillMatch, SkillMetadata};

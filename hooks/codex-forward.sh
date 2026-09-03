@@ -29,10 +29,10 @@ low | medium | high | xhigh | max | ultra) ;;
 	;;
 esac
 
-# codex reads AGENTS.md, never CLAUDE.md, and loom ships no AGENTS.md - this wrapper
-# is the only place the codex lane's doctrine cannot be forgotten by an orchestrator
-# writing a prompt, so it is prepended here on every forwarded task rather than left
-# to each caller to remember.
+# codex reads AGENTS.md, never CLAUDE.md; loom install-assets writes ~/.codex/AGENTS.md as
+# standing doctrine, but this preamble remains the per-task stage contract - the only place
+# the codex lane's doctrine cannot be forgotten by an orchestrator writing a prompt, so it is
+# prepended here on every forwarded task rather than left to each caller to remember.
 preamble=$(cat <<'CODEX_PREAMBLE'
 === LOOM CONTEXT (prepended automatically; your task follows the TASK marker) ===
 

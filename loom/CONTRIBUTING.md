@@ -121,7 +121,7 @@ minisign -Vm loom-x86_64-unknown-linux-gnu -P 'RWTxxxxxx...'
 3. **Upload both binary and `.minisig` file** to the GitHub release.
 
 4. **Update public key** in:
-   - `src/commands/self_update.rs:18` (`MINISIGN_PUBLIC_KEY` constant)
+   - `src/commands/self_update/signature.rs` (`MINISIGN_PUBLIC_KEY` constant)
    - This file (CONTRIBUTING.md)
 
 ### CI/CD Integration
