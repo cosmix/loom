@@ -2,46 +2,19 @@
 
 use anyhow::Result;
 use chrono::Utc;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::models::failure::FailureInfo;
 use crate::models::session::Session;
 use crate::models::stage::{Stage, StageStatus};
-use crate::orchestrator::retry::{calculate_backoff, classify_failure, should_auto_retry};
+use crate::orchestrator::retry::{calculate_backoff, should_auto_retry};
 
+use super::crash_classification::{
+    is_remote_control_fast_fail, is_startup_refusal, ordinary_crash, startup_refusal_crash,
+    CrashClassification, FAST_FAIL_WINDOW_SECS,
+};
 use super::persistence::Persistence;
 use super::{clear_status_line, Orchestrator};
-
-const FAST_FAIL_WINDOW_SECS: i64 = 15;
-
-/// Whether a crash should be read as "`--remote-control` is unsupported here"
-/// rather than as an ordinary stage failure.
-///
-/// # Why a verified PID, and not the backend
-///
-/// This was gated on `backend == Native`, to stop a tmux *hosting* failure
-/// being misattributed to Remote Control. That reasoning does not survive
-/// contact with the spawn path: every tmux hosting failure returns `Err` from
-/// `TmuxBackend::spawn` and tears its PID file down, so it never produces a
-/// tracked session that can later be reported as crashed. Both lanes reach
-/// `Running` only after `await_session_pid` observes a real process. A
-/// recorded PID is therefore the evidence that hosting succeeded — which is
-/// what the backend check was reaching for — and it is available on both
-/// lanes.
-///
-/// The gate's real effect was to deny the fallback to the tmux lane
-/// entirely: a `--remote-control` that claude rejects exits at startup, the
-/// retry re-spawns with identical flags, and the stage burns its whole
-/// attempt budget on a flag that was never going to work — on the backend
-/// loom uses when there is no GUI terminal to fall back to.
-///
-/// Latent, not observed. This was found while investigating a crash run that
-/// turned out to have a different cause; no reproduction of the crash-loop
-/// exists. It is fixed because the fallback provably cannot fire on the tmux
-/// lane, not because it is known to have fired.
-fn is_remote_control_fast_fail(session_age_secs: i64, has_verified_pid: bool) -> bool {
-    session_age_secs <= FAST_FAIL_WINDOW_SECS && has_verified_pid
-}
 
 impl Orchestrator {
     /// The stage this crash may act on, or `None` when it must be ignored.
@@ -116,9 +89,13 @@ impl Orchestrator {
         }
     }
 
-    fn maybe_disable_remote_control(&self, sid: &str, crashed_session: Option<&Session>) {
+    /// Returns whether THIS call wrote the unsupported marker — i.e. whether
+    /// the upcoming retry will spawn with different arguments than the session
+    /// that just died. `is_startup_refusal` reads that answer to decide if a
+    /// retry is worth making at all.
+    fn maybe_disable_remote_control(&self, sid: &str, crashed_session: Option<&Session>) -> bool {
         let Some(session) = crashed_session else {
-            return;
+            return false;
         };
         if is_remote_control_fast_fail(
             (Utc::now() - session.created_at).num_seconds(),
@@ -131,6 +108,35 @@ impl Orchestrator {
                 "Stage '{sid}' crashed within {FAST_FAIL_WINDOW_SECS}s of spawn; \
                  disabling Remote Control for the rest of this run."
             );
+            return true;
+        }
+        false
+    }
+
+    /// Read the crash: a startup refusal when claude died before doing any
+    /// work, an ordinary (retryable) crash otherwise.
+    ///
+    /// A `None` session — the daemon restarted since the spawn, so the handle
+    /// is gone — leaves no spawn time to measure against the window. No
+    /// fast-fail evaluation happens then, exactly as before.
+    fn classify_crash(
+        &self,
+        crashed_session: Option<&Session>,
+        crash_report_path: Option<&Path>,
+        remote_control_fallback_applied: bool,
+    ) -> CrashClassification {
+        let refusal = crashed_session.filter(|session| {
+            is_startup_refusal(
+                (Utc::now() - session.created_at).num_seconds(),
+                session.pid.is_some(),
+                remote_control_fallback_applied,
+            )
+        });
+        match refusal {
+            Some(session) => {
+                startup_refusal_crash(&self.config.work_dir, session, crash_report_path)
+            }
+            None => ordinary_crash(crash_report_path),
         }
     }
 
@@ -184,25 +190,22 @@ impl Orchestrator {
             // `.loom/work/remote_control-unsupported` marker so `resolve()` returns
             // false on the upcoming retry (which omits `--remote-control`).
             // Best-effort: marker write errors are intentionally ignored.
-            self.maybe_disable_remote_control(&sid, crashed_session.as_ref());
+            let fallback_applied =
+                self.maybe_disable_remote_control(&sid, crashed_session.as_ref());
 
             clear_status_line();
             eprintln!("Session '{session_id}' crashed for stage '{sid}'");
 
-            // Classify from a path-FREE reason. The crash-report path embeds
-            // `path.display()` (under the user's repo); a repo path containing
-            // "merge"/"token" would otherwise reclassify a crash as
-            // MergeConflict/ContextExhausted (which `should_auto_retry` rejects),
-            // permanently blocking auto-retry. See O-12.
-            let classification_reason = "Session crashed";
-            let failure_type = classify_failure(classification_reason);
-
-            // Build the human-facing failure reason (may include the path).
-            let reason = crash_report_path
-                .as_ref()
-                .map(|p| format!("Session crashed - see crash report at {}", p.display()))
-                .unwrap_or_else(|| classification_reason.to_string());
-
+            let CrashClassification {
+                failure_type,
+                reason,
+                evidence,
+                console_note,
+            } = self.classify_crash(
+                crashed_session.as_ref(),
+                crash_report_path.as_deref(),
+                fallback_applied,
+            );
             if let Some(path) = crash_report_path {
                 eprintln!("Crash report generated: {}", path.display());
             }
@@ -220,7 +223,7 @@ impl Orchestrator {
                 current.failure_info = Some(FailureInfo {
                     failure_type: failure_type.clone(),
                     detected_at,
-                    evidence: vec![reason.clone()],
+                    evidence,
                 });
                 current.last_failure_at = Some(detected_at);
                 current.retry_count += 1;
@@ -253,6 +256,9 @@ impl Orchestrator {
                     max,
                     backoff.as_secs()
                 );
+            } else if let Some(note) = console_note {
+                clear_status_line();
+                eprintln!("Stage '{sid}': {note}");
             } else if updated.retry_count >= max {
                 clear_status_line();
                 eprintln!(
@@ -283,48 +289,3 @@ impl Orchestrator {
 #[cfg(test)]
 #[path = "crash_handler_identity_tests.rs"]
 mod crash_handler_identity_tests;
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn fast_fail_fallback_applies_to_every_backend_not_just_native() {
-        // THE regression: this was gated on `backend == Native`, so on the
-        // tmux lane a `--remote-control` claude rejects crashed at startup,
-        // the retry re-spawned with identical flags, and the stage burned its
-        // entire attempt budget without the marker ever being written.
-        // Backend is not an input here precisely because it must not be one.
-        assert!(
-            is_remote_control_fast_fail(1, true),
-            "a fast crash with a verified pid must trigger the fallback on any backend"
-        );
-    }
-
-    #[test]
-    fn a_session_that_never_reached_a_pid_is_a_hosting_failure_not_a_flag_rejection() {
-        // What the old backend check was reaching for. A hosting failure must
-        // not disable Remote Control for the rest of the run, and the honest
-        // signal is the absence of a verified process — not which lane
-        // spawned it.
-        assert!(
-            !is_remote_control_fast_fail(1, false),
-            "no verified pid means hosting failed; Remote Control must not be blamed"
-        );
-    }
-
-    #[test]
-    fn a_crash_outside_the_window_is_an_ordinary_failure() {
-        // The window separates "the flag was rejected at startup" from "the
-        // agent ran, then died". Without it every late crash would silently
-        // disable Remote Control for the rest of the run.
-        assert!(!is_remote_control_fast_fail(
-            FAST_FAIL_WINDOW_SECS + 1,
-            true
-        ));
-        assert!(
-            is_remote_control_fast_fail(FAST_FAIL_WINDOW_SECS, true),
-            "the boundary itself is inside the window"
-        );
-    }
-}

@@ -14,7 +14,10 @@ use crate::models::stage::Stage;
 use crate::orchestrator::continuation::save_session;
 use crate::orchestrator::liveness::LivenessService;
 use crate::orchestrator::signals::read_merge_signal;
-use crate::orchestrator::spawner::{generate_crash_report, CrashReport};
+use crate::orchestrator::spawner::{
+    generate_crash_report, read_log_tail, CrashReport, CRASH_LOG_TAIL_LINES,
+};
+use crate::orchestrator::terminal::native::stderr_log_path;
 
 use super::config::MonitorConfig;
 
@@ -159,12 +162,24 @@ impl Handlers {
     ///
     /// Called when a session crash is detected.
     /// Creates a CrashReport, generates the crash report file, and preserves stage memory.
+    ///
+    /// The wrapper script tees claude's stderr into `logs/<session-id>.stderr.log`
+    /// (see `terminal::native::wrapper`), so a session that refused to start
+    /// still left its reason on disk after its terminal pane died. That tail is
+    /// attached here; without it the report says only "no log output captured",
+    /// which is what once sent a sandbox refusal through three identical
+    /// retries.
     pub fn handle_session_crash(&self, session: &Session, reason: &str) -> Option<PathBuf> {
-        let report = CrashReport::new(
+        let mut report = CrashReport::new(
             session.id.clone(),
             session.stage_id.clone(),
             reason.to_string(),
         );
+
+        let log_path = stderr_log_path(&self.config.work_dir, &session.id);
+        if let Some(tail) = read_log_tail(&log_path, CRASH_LOG_TAIL_LINES) {
+            report = report.with_log_path(log_path).with_log_tail(tail);
+        }
 
         // Preserve stage memory for recovery
         let stage_id = session.stage_id.as_deref().unwrap_or(&session.id);

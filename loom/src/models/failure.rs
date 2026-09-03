@@ -42,6 +42,12 @@ pub enum FailureType {
     /// would run the agent unconfined.
     SandboxSetupFailure,
 
+    /// Claude exited within seconds of spawn without doing any work — a
+    /// rejected flag, a refused sandbox, an auth failure. Identical arguments
+    /// cannot succeed, so this is never retried; the stderr tail in the crash
+    /// report says why.
+    StartupRefusal,
+
     /// Unknown or unclassified failure
     Unknown,
 }

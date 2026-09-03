@@ -179,6 +179,98 @@ fn worktree_path_is_exported_only_for_stage_sessions() {
     assert!(stage_content.contains("/tmp/repo/.worktrees/build-api"));
 }
 
+/// A session that dies seconds after spawn takes its terminal pane — and every
+/// word claude printed there — with it. The tee is what makes the refusal
+/// readable afterwards, so its exact placement is pinned: on the claude command
+/// line itself (on any earlier continuation line it would attach to `env`),
+/// covering stderr ONLY (stdout carries the TUI and must stay a TTY).
+#[test]
+fn wrapper_tees_claude_stderr_into_the_session_log() {
+    let temp_dir = TempDir::new().unwrap();
+    let work_dir = temp_dir.path();
+    let session_id = "session-stderr-1234567890";
+    let claude_cmd = "claude 'test prompt'";
+
+    let wrapper_path = create_wrapper_script(
+        work_dir,
+        "loom-test-stage-session-stderr-1234567890",
+        "test-stage",
+        session_id,
+        claude_cmd,
+        None,
+        SessionType::Stage,
+        150_000,
+    )
+    .unwrap();
+
+    assert!(work_dir.join("logs").is_dir());
+
+    let content = fs::read_to_string(&wrapper_path).unwrap();
+    let exec_line = content
+        .lines()
+        .rev()
+        .find(|line| !line.trim().is_empty())
+        .unwrap();
+
+    let expected_log = fs::canonicalize(work_dir.join("logs"))
+        .unwrap()
+        .join(format!("{session_id}.stderr.log"));
+    let expected_log = escape(expected_log.display().to_string().into());
+
+    assert!(exec_line.contains(claude_cmd), "{exec_line}");
+    assert!(
+        exec_line.ends_with(&format!(
+            "2> >(env -i \"${{_loom_env[@]}}\" tee -a {expected_log})"
+        )),
+        "{exec_line}"
+    );
+    // stdout is left alone: redirecting it would cost the session its TTY.
+    assert!(!exec_line.contains("1>"), "{exec_line}");
+}
+
+/// The assertion above pins the text of the redirection; this one pins its
+/// behaviour by running the wrapper and reading the log back. A malformed
+/// process substitution would still satisfy a string match while breaking the
+/// script for every session loom spawns.
+///
+/// Note where the captured text surfaces: `tee` inherits the wrapper's fd 1, so
+/// the message reaches the log AND the process's stdout. In a terminal both
+/// streams are the same pane, which is the point — the operator still sees the
+/// refusal live, and loom still has it on disk afterwards.
+#[test]
+fn wrapper_stderr_capture_survives_execution() {
+    let temp_dir = TempDir::new().unwrap();
+    let work_dir = temp_dir.path();
+    let session_id = "session-exec-stderr-1";
+
+    let wrapper_path = create_wrapper_script(
+        work_dir,
+        "loom-exec-stage-session-exec-stderr-1",
+        "exec-stage",
+        session_id,
+        "sh -c 'echo refusal-canary >&2; echo tui-canary'",
+        None,
+        SessionType::Stage,
+        150_000,
+    )
+    .unwrap();
+
+    // `output()` reads the pipes to EOF before returning, and `tee` holds fd 1
+    // open until it has flushed, so the log is complete by the time this call
+    // comes back.
+    let output = std::process::Command::new(&wrapper_path).output().unwrap();
+    assert!(output.status.success());
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("tui-canary"), "{stdout}");
+    assert!(stdout.contains("refusal-canary"), "{stdout}");
+
+    let log = fs::read_to_string(stderr_log_path(work_dir, session_id)).unwrap();
+    assert!(log.contains("refusal-canary"), "{log}");
+    // Only stderr is teed — the TUI's own stream never reaches the log.
+    assert!(!log.contains("tui-canary"), "{log}");
+}
+
 #[test]
 fn wrapper_executes_with_minimal_environment_and_no_ambient_secret() {
     let temp_dir = TempDir::new().unwrap();

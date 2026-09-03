@@ -9,6 +9,7 @@ mod detection;
 mod launch;
 mod pid_guard;
 mod pid_tracking;
+mod session_log;
 mod session_settings;
 mod spawner;
 mod window_ops;
@@ -24,9 +25,8 @@ use crate::models::stage::Stage;
 use crate::models::worktree::Worktree;
 use crate::remote_control::RemoteControlInvocation;
 
-// The only build-cache piece callers outside this module need — `loom
-// doctor` and `loom run`'s preflight report it. Resolution stays internal;
-// `wrapper.rs` reaches it via `super::build_cache::`.
+// The only build-cache piece callers outside this module need — `loom doctor` and `loom run`'s
+// preflight report it. Resolution stays internal; `wrapper.rs` reaches it via `super::build_cache::`.
 pub(crate) use build_cache::sccache_status_line;
 // Re-exported so `super::session_capsule(...)` keeps resolving from `launch`.
 pub(crate) use capsule::{session_capsule, SessionCapsule};
@@ -35,12 +35,14 @@ pub(crate) use launch::prepare_session_launch;
 pub(crate) use pid_guard::{
     pid_only_is_alive, pid_only_terminate, session_process_status, SessionProcessStatus,
 };
-pub use pid_tracking::{cleanup_stage_files, discover_claude_pid, read_pid_entry};
+pub use pid_tracking::{
+    cleanup_stage_files, discover_claude_pid, read_pid_entry, wrapper_script_path,
+};
+pub use session_log::stderr_log_path;
 // Called from `orchestrator::core::judge_close` on judge close.
 pub(crate) use session_settings::cleanup_session_settings;
-// Test-only: lets tests elsewhere in the crate locate a session's generated
-// settings capsule without duplicating its naming convention (see
-// `core/event_handler/stalled_judge_tests.rs`).
+// Test-only: lets tests elsewhere in the crate locate a session's generated settings capsule
+// without duplicating its naming convention (see `core/event_handler/stalled_judge_tests.rs`).
 #[cfg(test)]
 pub(crate) use session_settings::session_settings_path;
 pub(crate) use spawner::await_session_pid;

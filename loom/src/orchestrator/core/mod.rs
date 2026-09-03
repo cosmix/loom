@@ -11,6 +11,7 @@ use std::io::{self, Write};
 
 mod coherence;
 mod completion_handler;
+mod crash_classification;
 mod crash_handler;
 mod event_handler;
 mod heartbeat_apply;

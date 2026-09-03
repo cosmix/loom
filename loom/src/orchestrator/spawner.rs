@@ -10,7 +10,22 @@
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
+
+/// Lines of captured session output embedded in a crash report. Named once
+/// because the report's own heading quotes the number.
+pub const CRASH_LOG_TAIL_LINES: usize = 100;
+
+/// Bytes read from the END of a log before it is split into lines. Bounds the
+/// daemon's allocation against a long-lived session that wrote to stderr for
+/// hours: only the end of that file can explain how the session ended.
+const MAX_LOG_READ_BYTES: u64 = 256 * 1024;
+
+/// Bytes of tail kept in the report. A session stuck printing the same error
+/// must not bury the rest of the diagnosis under its own output, and the last
+/// words are the ones that matter, so the cut is made from the front.
+const MAX_LOG_TAIL_BYTES: usize = 16 * 1024;
 
 // ============================================================================
 // Crash Reporting (retained functionality)
@@ -66,6 +81,56 @@ impl CrashReport {
         self.log_path = Some(log_path);
         self
     }
+}
+
+/// The last `max_lines` lines of `path`, ready to embed in a crash report.
+///
+/// `None` when the file is missing, unreadable, or holds nothing but
+/// whitespace: the caller then leaves the report's log section as it was
+/// rather than presenting an empty capture as evidence. Invalid UTF-8 is
+/// replaced rather than rejected — one bad byte must not cost the operator the
+/// whole diagnosis. The read itself seeks to the last [`MAX_LOG_READ_BYTES`]
+/// by byte offset, so on a log larger than that the first line emitted here
+/// can be a truncated fragment rather than a complete line; that is
+/// acceptable for evidence text, where later lines matter more than the first.
+pub fn read_log_tail(path: &Path, max_lines: usize) -> Option<String> {
+    let bytes = read_trailing_bytes(path, MAX_LOG_READ_BYTES)?;
+    let contents = String::from_utf8_lossy(&bytes);
+    if contents.trim().is_empty() {
+        return None;
+    }
+
+    let lines: Vec<&str> = contents.lines().collect();
+    let first = lines.len().saturating_sub(max_lines);
+    Some(clamp_from_front(
+        lines[first..].join("\n"),
+        MAX_LOG_TAIL_BYTES,
+    ))
+}
+
+/// The last `max_bytes` of `path`, or the whole file when it is smaller.
+fn read_trailing_bytes(path: &Path, max_bytes: u64) -> Option<Vec<u8>> {
+    let mut file = std::fs::File::open(path).ok()?;
+    let len = file.metadata().ok()?.len();
+    if len > max_bytes {
+        file.seek(SeekFrom::Start(len - max_bytes)).ok()?;
+    }
+    let mut bytes = Vec::new();
+    file.read_to_end(&mut bytes).ok()?;
+    Some(bytes)
+}
+
+/// `text` reduced to at most `max_bytes` by dropping from the FRONT, landing on
+/// a character boundary so the result is still valid UTF-8.
+fn clamp_from_front(text: String, max_bytes: usize) -> String {
+    if text.len() <= max_bytes {
+        return text;
+    }
+    let mut cut = text.len() - max_bytes;
+    while !text.is_char_boundary(cut) {
+        cut += 1;
+    }
+    text[cut..].to_string()
 }
 
 /// Generate a crash report file in the crashes directory
@@ -141,7 +206,7 @@ pub fn generate_crash_report(report: &CrashReport, crashes_dir: &Path) -> Result
     content.push('\n');
 
     if let Some(tail) = &log_tail {
-        content.push_str("## Last 100 Lines of Log\n\n");
+        content.push_str(&format!("## Last {CRASH_LOG_TAIL_LINES} Lines of Log\n\n"));
         content.push_str("```\n");
         content.push_str(tail);
         if !tail.ends_with('\n') {
@@ -231,5 +296,48 @@ mod tests {
         assert!(content.contains("session-123"));
         assert!(content.contains("stage-1"));
         assert!(content.contains("Test crash"));
+    }
+
+    #[test]
+    fn read_log_tail_returns_only_the_last_lines() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let log = temp.path().join("session.stderr.log");
+        let body: String = (1..=150).map(|n| format!("line {n}\n")).collect();
+        std::fs::write(&log, body).unwrap();
+
+        let tail = read_log_tail(&log, 100).unwrap();
+        let lines: Vec<&str> = tail.lines().collect();
+        assert_eq!(lines.len(), 100);
+        assert_eq!(lines.first(), Some(&"line 51"));
+        assert_eq!(lines.last(), Some(&"line 150"));
+    }
+
+    /// A crash report claims a capture only when there is something to show.
+    /// An empty or whitespace-only log means the wrapper created the file and
+    /// claude printed nothing — reporting that as evidence would be a lie.
+    #[test]
+    fn read_log_tail_declines_missing_empty_and_blank_logs() {
+        let temp = tempfile::TempDir::new().unwrap();
+        assert!(read_log_tail(&temp.path().join("absent.log"), 100).is_none());
+
+        let empty = temp.path().join("empty.log");
+        std::fs::write(&empty, "").unwrap();
+        assert!(read_log_tail(&empty, 100).is_none());
+
+        let blank = temp.path().join("blank.log");
+        std::fs::write(&blank, "\n   \n\t\n").unwrap();
+        assert!(read_log_tail(&blank, 100).is_none());
+    }
+
+    #[test]
+    fn read_log_tail_caps_a_runaway_log() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let log = temp.path().join("runaway.stderr.log");
+        // One long line, so the line cap cannot do the trimming and the byte
+        // cap is the only thing standing between the report and the file.
+        std::fs::write(&log, "x".repeat(MAX_LOG_TAIL_BYTES * 4)).unwrap();
+
+        let tail = read_log_tail(&log, 100).unwrap();
+        assert_eq!(tail.len(), MAX_LOG_TAIL_BYTES);
     }
 }

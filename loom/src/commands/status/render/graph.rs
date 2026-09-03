@@ -45,6 +45,24 @@ fn compute_stage_levels(stages: &[StageSummary]) -> HashMap<String, usize> {
     levels::compute_all_levels(stages, |s| s.id.as_str(), |s| &s.dependencies)
 }
 
+/// Short status-line label for a blocked stage's failure type.
+fn failure_label(failure_type: &FailureType) -> &'static str {
+    match failure_type {
+        FailureType::SessionCrash => "crash",
+        FailureType::TestFailure => "test",
+        FailureType::BuildFailure => "build",
+        FailureType::CodeError => "code",
+        FailureType::Timeout => "timeout",
+        FailureType::ContextExhausted => "context",
+        FailureType::UserBlocked => "user",
+        FailureType::MergeConflict => "merge",
+        FailureType::InfrastructureError => "infra",
+        FailureType::SandboxSetupFailure => "sandbox",
+        FailureType::StartupRefusal => "startup",
+        FailureType::Unknown => "error",
+    }
+}
+
 /// Format inline annotations for a stage (session, failure, merge, held)
 fn format_stage_annotations(stage: &StageSummary) -> String {
     let mut parts: Vec<String> = Vec::new();
@@ -91,19 +109,7 @@ fn format_stage_annotations(stage: &StageSummary) -> String {
         let failure_label = stage
             .failure_info
             .as_ref()
-            .map(|i| match i.failure_type {
-                FailureType::SessionCrash => "crash",
-                FailureType::TestFailure => "test",
-                FailureType::BuildFailure => "build",
-                FailureType::CodeError => "code",
-                FailureType::Timeout => "timeout",
-                FailureType::ContextExhausted => "context",
-                FailureType::UserBlocked => "user",
-                FailureType::MergeConflict => "merge",
-                FailureType::InfrastructureError => "infra",
-                FailureType::SandboxSetupFailure => "sandbox",
-                FailureType::Unknown => "error",
-            })
+            .map(|i| failure_label(&i.failure_type))
             .unwrap_or("error");
         parts.push(format!(
             "{}",

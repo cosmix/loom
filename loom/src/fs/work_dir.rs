@@ -283,11 +283,10 @@ impl WorkDir {
     /// so `adopt_existing()` can call it against a state root that already
     /// holds some (but not all) of this layout.
     fn ensure_layout(&self) -> Result<()> {
-        // Includes `memory`, `wrappers`, `pids` — session wrapper scripts,
-        // PID tracking files, and the memory journal all live under these.
+        // Session wrappers, PID files, captured stderr and the memory journal live here.
         let subdirs = [
             "signals", "handoffs", "archive", "stages", "sessions", "crashes", "memory",
-            "wrappers", "pids",
+            "wrappers", "pids", "logs",
         ];
 
         for subdir in &subdirs {
@@ -334,7 +333,7 @@ impl WorkDir {
     fn validate_structure(&self) -> Result<()> {
         let required_dirs = [
             "signals", "handoffs", "archive", "stages", "sessions", "crashes", "memory",
-            "wrappers", "pids",
+            "wrappers", "pids", "logs",
         ];
 
         for dir in &required_dirs {
@@ -366,6 +365,7 @@ This directory is managed by loom CLI and contains:
 - `stages/` - Stage definitions and status
 - `sessions/` - Active session tracking
 - `crashes/` - Crash reports and diagnostics
+- `logs/` - Per-session captured stderr (`<session-id>.stderr.log`)
 - `knowledge/` - Curated codebase knowledge (entry points, patterns, conventions)
 
 Do not manually edit these files unless you know what you're doing.

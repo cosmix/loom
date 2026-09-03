@@ -10,6 +10,7 @@
 use super::pid_tracking::{
     create_pid_dir, create_wrappers_dir, pid_file_path, wrapper_script_path,
 };
+use super::session_log::{create_logs_dir, stderr_log_path};
 use crate::fs::permissions::state_root::RIPGREP_CONFIG_FILE;
 use crate::models::session::SessionType;
 use anyhow::{Context, Result};
@@ -27,7 +28,9 @@ const CONTINUATION: &str = "\\\n";
 ///    can't reliably set cwd before spawning)
 /// 2. Writes its own PID (`$$`) — and, on Linux, its start-time — to the PID
 ///    file, so liveness probes can detect PID reuse
-/// 3. `exec`s the claude command under a rebuilt, allowlisted environment
+/// 3. `exec`s the claude command under a rebuilt, allowlisted environment,
+///    with claude's stderr teed into `logs/<session_id>.stderr.log` so a
+///    refusal to start outlives the terminal pane that showed it
 ///
 /// # Arguments
 /// * `work_dir` - The .loom/work directory path
@@ -68,6 +71,7 @@ pub fn create_wrapper_script(
     context_ceiling_tokens: u32,
 ) -> Result<PathBuf> {
     create_wrappers_dir(work_dir)?;
+    create_logs_dir(work_dir)?;
     create_pid_dir(work_dir)?;
 
     let wrapper_path = wrapper_script_path(work_dir, pid_key);
@@ -257,6 +261,20 @@ for _loom_name in LANG LC_ALL LC_CTYPE TERM TERMINFO TERMINFO_DIRS COLORTERM \
 done
 "#;
 
+/// Rendered above the exec line; own constant, like `ENV_ALLOWLIST`, to keep `build_wrapper_script`'s body under its line cap.
+const EXEC_COMMENT: &str = r#"# Loom stages record knowledge through `loom memory` / `loom knowledge`; Claude
+# Code auto-memory writes to a location invisible to orchestration, so disable
+# it at the process boundary rather than by instruction alone.
+#
+# claude renders its TUI on stdout and prints refusals/fatal errors on
+# stderr; teeing only stderr keeps the pane's TTY intact while preserving
+# claude's last words after the pane is gone. The tee runs under its own
+# `env -i "${_loom_env[@]}"` — the process substitution forks before the
+# `exec env -i` below runs, so without it tee would keep the operator's full
+# host environment for the whole session, readable from /proc/<tee pid>/environ.
+# Replace this process with claude under only the explicit stage contract.
+"#;
+
 /// Upper clamp applied to `CLAUDE_CODE_AUTO_COMPACT_WINDOW` before export.
 /// The installed binary re-clamps to `[1, 1_000_000]` and then again to the
 /// model's own context window, so only this upper bound needs applying here
@@ -304,6 +322,18 @@ fn resource_limit_env(context_ceiling_tokens: u32) -> String {
     )
 }
 
+/// Shell-escaped absolute path to this session's stderr capture log, used in
+/// the `tee` redirect at the end of the exec line.
+fn stderr_log_escaped(work_dir: &Path, session_id: &str) -> String {
+    escape(
+        absolute_target(&stderr_log_path(work_dir, session_id))
+            .display()
+            .to_string()
+            .into(),
+    )
+    .into_owned()
+}
+
 /// `RUSTC_WRAPPER=<path>` when sccache is available on this machine,
 /// rendered as one shell-escaped `exec env` assignment; empty when it is not
 /// (dependency crates then compile per-worktree exactly as before). Applied
@@ -336,17 +366,15 @@ fn build_wrapper_script(
 ) -> String {
     let cd_section = cd_section(working_dir);
     let (merge_session_env, worktree_path_env) = kind_env(kind, working_dir);
-
-    // Shell-escape complete NAME=value words so quotes never nest incorrectly.
     let session_env = escape(format!("LOOM_SESSION_ID={session_id}").into());
     let session_type_env = escape(format!("LOOM_SESSION_TYPE={kind}").into());
     let stage_env = escape(format!("LOOM_STAGE_ID={stage_id}").into());
     let work_dir_env = work_dir_env(work_dir);
     let pid_file = escape(absolute_target(host_pid_file).display().to_string().into());
     let pid_capture = pid_capture(&pid_file);
+    let stderr_log = stderr_log_escaped(work_dir, session_id);
     let resource_limit_env = resource_limit_env(context_ceiling_tokens);
     let sccache_env = sccache_env();
-
     format!(
         r#"#!/bin/bash
 # Loom stage wrapper
@@ -354,10 +382,7 @@ fn build_wrapper_script(
 
 {cd_section}{pid_capture}
 {ENV_ALLOWLIST}
-# Loom stages record knowledge through `loom memory` / `loom knowledge`; Claude
-# Code auto-memory writes to a location invisible to orchestration, so disable
-# it at the process boundary rather than by instruction alone.
-# Replace this process with claude under only the explicit stage contract.
+{EXEC_COMMENT}
 exec env -i "${{_loom_env[@]}}" \
     {session_env} \
     {session_type_env} \
@@ -366,7 +391,7 @@ exec env -i "${{_loom_env[@]}}" \
     "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1" \
     "CLAUDE_CODE_DISABLE_AUTO_MEMORY=1" \
     "CLAUDE_REMOTE_CONTROL_SESSION_NAME_PREFIX=loom" \
-{resource_limit_env}{sccache_env}{merge_session_env}{worktree_path_env}    {claude_cmd}
+{resource_limit_env}{sccache_env}{merge_session_env}{worktree_path_env}    {claude_cmd} 2> >(env -i "${{_loom_env[@]}}" tee -a {stderr_log})
 "#
     )
 }
