@@ -1,6 +1,7 @@
 //! Tests for `git/worktree/settings.rs`.
 
 use super::*;
+use crate::fs::permissions::state_root::{is_parent_glob_token_deny, token_read_denies};
 use tempfile::TempDir;
 
 #[test]
@@ -366,8 +367,8 @@ fn create_worktree_settings_never_grants_a_blanket_read_over_the_state_root() {
     // `.claude/settings.json` is written by a different code path than
     // settings.local.json, so it must be safe standalone: explicit denies
     // for the resolved-absolute token paths, not just a narrowed allow.
-    for token in ["admin.token", "user.token"] {
-        let deny_perm = format!("Read(/{}/{})", resolved_str, token);
+    for deny_perm in token_read_denies(&resolved_str) {
+        assert!(is_parent_glob_token_deny(&deny_perm), "{deny_perm}");
         let occurrences = deny.iter().filter(|p| *p == &deny_perm).count();
         assert_eq!(
             occurrences, 1,
@@ -416,10 +417,9 @@ fn create_worktree_settings_normalizes_a_non_array_deny_instead_of_dropping_toke
         r#"{"permissions": {"deny": null, "allow": []}}"#,
     );
 
-    for token in ["admin.token", "user.token"] {
-        let deny_perm = format!("Read(/{}/{})", resolved_str, token);
+    for deny_perm in token_read_denies(&resolved_str) {
         assert!(
-            deny.contains(&deny_perm),
+            deny.contains(&deny_perm) && is_parent_glob_token_deny(&deny_perm),
             "a non-array `deny` must be normalized rather than skip the token deny {deny_perm}"
         );
     }
@@ -433,10 +433,9 @@ fn create_worktree_settings_normalizes_a_non_object_permissions_instead_of_dropp
     let (resolved_str, allow, deny) =
         run_create_worktree_settings_with_main_json(r#"{"permissions": "nonsense"}"#);
 
-    for token in ["admin.token", "user.token"] {
-        let deny_perm = format!("Read(/{}/{})", resolved_str, token);
+    for deny_perm in token_read_denies(&resolved_str) {
         assert!(
-            deny.contains(&deny_perm),
+            deny.contains(&deny_perm) && is_parent_glob_token_deny(&deny_perm),
             "a non-object `permissions` must be normalized rather than skip the token deny {deny_perm}"
         );
     }
@@ -455,10 +454,9 @@ fn create_worktree_settings_normalization_preserves_pre_existing_deny_entries() 
         deny.contains(&"Read(/etc/shadow)".to_string()),
         "normalization must not discard a pre-existing valid deny entry"
     );
-    for token in ["admin.token", "user.token"] {
-        let deny_perm = format!("Read(/{}/{})", resolved_str, token);
+    for deny_perm in token_read_denies(&resolved_str) {
         assert!(
-            deny.contains(&deny_perm),
+            deny.contains(&deny_perm) && is_parent_glob_token_deny(&deny_perm),
             "the token deny {deny_perm} must still be added alongside the existing entry"
         );
     }

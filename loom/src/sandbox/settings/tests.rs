@@ -1,4 +1,5 @@
 use super::*;
+use crate::fs::permissions::state_root::token_read_denies;
 use crate::models::stage::{Implementer, Implementers};
 use crate::plan::schema::{
     CommandConfinement, FilesystemConfig, LinuxConfig, NetworkConfig, SandboxConfig,
@@ -6,7 +7,7 @@ use crate::plan::schema::{
 };
 use crate::sandbox::{merge_config, PACKAGE_MANAGER_CACHE_WRITE_PATHS};
 
-fn default_config() -> MergedSandboxConfig {
+pub(super) fn default_config() -> MergedSandboxConfig {
     MergedSandboxConfig {
         enabled: true,
         auto_allow: true,
@@ -1144,21 +1145,21 @@ fn test_write_settings_adds_resolved_work_symlink_permissions_legacy_layout() {
         allow_strs
     );
 
-    // S-1: the daemon tokens must be explicitly denied in resolved-absolute form.
+    // S-1: the daemon tokens must be denied, in the parent-glob shape that
+    // keeps `rg` inside the project from prompting (see state_root).
     let deny = result["permissions"]["deny"].as_array().unwrap();
     let deny_strs: Vec<&str> = deny.iter().filter_map(|v| v.as_str()).collect();
-    let deny_admin = format!("Read(/{}/admin.token)", resolved_str);
-    let deny_user = format!("Read(/{}/user.token)", resolved_str);
-    assert!(
-        deny_strs.contains(&deny_admin.as_str()),
-        "admin.token must be denied (resolved-absolute), got: {:?}",
-        deny_strs
-    );
-    assert!(
-        deny_strs.contains(&deny_user.as_str()),
-        "user.token must be denied (resolved-absolute), got: {:?}",
-        deny_strs
-    );
+    for expected in token_read_denies(&resolved_str) {
+        assert!(
+            expected.contains("/*/"),
+            "the token deny must glob the project directory, got: {expected}"
+        );
+        assert!(
+            deny_strs.contains(&expected.as_str()),
+            "{expected} must be denied, got: {deny_strs:?}"
+        );
+    }
+    // The OS-level deny list keeps naming the concrete resolved paths.
     let os_deny = result["sandbox"]["filesystem"]["denyRead"]
         .as_array()
         .unwrap();
@@ -1244,10 +1245,10 @@ fn test_write_settings_adds_resolved_work_symlink_permissions_nested_layout() {
 
     let deny = result["permissions"]["deny"].as_array().unwrap();
     let deny_strs: Vec<&str> = deny.iter().filter_map(|v| v.as_str()).collect();
-    let deny_admin = format!("Read(/{}/admin.token)", resolved_str);
-    let deny_user = format!("Read(/{}/user.token)", resolved_str);
-    assert!(deny_strs.contains(&deny_admin.as_str()));
-    assert!(deny_strs.contains(&deny_user.as_str()));
+    for expected in token_read_denies(&resolved_str) {
+        assert!(expected.contains("/*/"), "must glob: {expected}");
+        assert!(deny_strs.contains(&expected.as_str()), "{deny_strs:?}");
+    }
 
     assert!(allow_strs.contains(&"Read(.loom/work/signals/**)"));
 }

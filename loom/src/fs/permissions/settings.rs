@@ -28,7 +28,9 @@ use std::path::Path;
 
 use super::constants::LOOM_PERMISSIONS;
 use super::hooks::{configure_loom_hooks, install_loom_hooks, install_loom_hooks_to};
-use super::write_rules::{heal_inert_write_denies, prune_legacy_work_write_grants};
+use super::write_rules::{
+    heal_inert_write_denies, prune_legacy_work_write_grants, prune_stale_token_denies,
+};
 use crate::fs::locking::locked_write;
 
 /// Read a settings file into a JSON value, creating its `.claude` directory and
@@ -377,10 +379,10 @@ fn ensure_loom_hooks_local_inner(repo_root: &Path, verbose: bool) -> Result<()> 
 
     let codex_configured = super::codex_sandbox::merge_allowances(settings_obj);
 
-    // Heal `Write(...)` denies an older loom carried forward here. Waiting for
-    // the next stage spawn to regenerate this file would leave the startup
-    // warnings in place for every interactive session until then.
-    let denies_migrated = heal_inert_write_denies(settings_obj);
+    // Heal deny rules an older loom left here — inert `Write(...)` spellings
+    // and token denies in the shape that makes every `rg`/`grep` prompt.
+    let denies_migrated =
+        heal_inert_write_denies(settings_obj) | prune_stale_token_denies(settings_obj);
 
     let changes = [
         (hooks_configured, "Configured loom hooks"),
@@ -388,7 +390,7 @@ fn ensure_loom_hooks_local_inner(repo_root: &Path, verbose: bool) -> Result<()> 
         (worktree_configured, "Disabled worktree isolation"),
         (codex_configured, "Granted codex + cache sandbox access"),
         (stale_env_removed, "Removed stale session env vars"),
-        (denies_migrated, "Migrated inert Write(...) deny rules"),
+        (denies_migrated, "Healed stale deny rules"),
     ];
 
     // Write back if we made any changes

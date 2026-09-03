@@ -13,6 +13,7 @@ use std::fs::{self, OpenOptions};
 use std::io::{Read, Seek, Write};
 use std::path::{Path, PathBuf};
 
+use super::state_root::is_token_read_deny;
 use super::write_rules::is_inert_write_permission;
 use crate::git::worktree::refresh_worktree_settings_local;
 
@@ -185,6 +186,10 @@ fn portable_permissions(perms: Vec<String>) -> Vec<String> {
     perms
         .into_iter()
         .filter(|p| !is_inert_write_permission(p))
+        // The main file's own writers own the token deny rules; syncing a
+        // worktree's copy, in any spelling, reinstates the search-prompt
+        // regression the current spelling fixed.
+        .filter(|p| !is_token_read_deny(p))
         .filter_map(|p| {
             if is_worktree_specific_permission(&p) {
                 transform_worktree_path(&p)

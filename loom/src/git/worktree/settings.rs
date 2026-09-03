@@ -485,11 +485,11 @@ fn create_worktree_settings(
         // always running afterwards to add denies to a second file.
         // (settings.json is the team-shareable file per
         // `fs/permissions/settings.rs`'s module doc, though `.claude/` is
-        // gitignored in this repo.) Explicit `deny`
-        // entries for the resolved-absolute token paths go in below,
-        // before the narrowed allow, mirroring `sandbox/settings.rs`'s
-        // S-1 fix: deny wins over any current or future allow that might
-        // match the state root.
+        // gitignored in this repo.) Explicit token `deny` entries go in
+        // below in the parent-glob shape `//<parent>/*/<layout>/<token>`
+        // (`state_root::token_read_denies`), before the narrowed allow,
+        // mirroring `sandbox/settings.rs`'s S-1 fix: deny wins over any
+        // current or future allow that might match the state root.
         let token_denies = crate::fs::permissions::state_root::token_read_denies(&resolved_str);
         let work_perms = vec![
             format!("Read(/{}/signals/**)", resolved_str),

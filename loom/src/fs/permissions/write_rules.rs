@@ -6,6 +6,7 @@
 //! then ignored — so a `Write(...)` grant grants nothing and a `Write(...)`
 //! deny denies nothing.
 
+use super::state_root::{is_parent_glob_token_deny, is_token_read_deny};
 use serde_json::{json, Map, Value};
 
 /// The path argument of a `Write(<path>)` rule, or `None` for any other rule.
@@ -142,4 +143,32 @@ pub(super) fn heal_inert_write_denies(settings_obj: &mut Map<String, Value>) -> 
         .chain(non_strings)
         .collect();
     true
+}
+
+/// Drop `permissions.deny` entries naming a daemon token in any spelling
+/// other than the current parent-glob one (`state_root::token_read_denies`).
+///
+/// The older spellings put the rule's location inside the project, and Claude
+/// Code then refuses every `rg`, `grep`, `diff`, `git`, `cp` and `mv` run from
+/// the project root until the operator approves it by hand. `loom init` heals
+/// `settings.local.json` here rather than leaving the prompts in place for
+/// every interactive session until the next stage spawn regenerates the file;
+/// `loom repair --fix` (check 14) heals the other settings files and re-adds
+/// the current rules where they belong. An absent `permissions.deny` is left
+/// absent. Returns `true` when an entry was removed.
+pub(crate) fn prune_stale_token_denies(settings_obj: &mut Map<String, Value>) -> bool {
+    let Some(deny) = settings_obj
+        .get_mut("permissions")
+        .and_then(|permissions| permissions.get_mut("deny"))
+        .and_then(|deny| deny.as_array_mut())
+    else {
+        return false;
+    };
+    let before = deny.len();
+    deny.retain(|entry| {
+        !entry
+            .as_str()
+            .is_some_and(|rule| is_token_read_deny(rule) && !is_parent_glob_token_deny(rule))
+    });
+    deny.len() != before
 }
