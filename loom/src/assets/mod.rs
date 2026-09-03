@@ -100,6 +100,29 @@ mod tests_table {
                 !key.contains("__pycache__") && !key.contains('\\'),
                 "{name} contains an invalid key: {key}"
             );
+            assert!(!key.starts_with('/'), "{name} key must be relative: {key}");
+            assert!(
+                key.split('/').all(|part| part != ".." && part != "."),
+                "{name} key must not contain a . or .. component: {key}"
+            );
+        }
+    }
+
+    /// A skill directory renamed without updating `core-skills.txt` (or vice
+    /// versa) would silently demote a core skill into the catalog: the
+    /// manifest and `SKILLS` are two independent lists with nothing else
+    /// tying them together.
+    #[test]
+    fn every_core_skill_name_is_present_in_the_embedded_skills_table() {
+        let resident: std::collections::BTreeSet<&str> = SKILLS
+            .iter()
+            .filter_map(|(key, _)| key.split_once('/').map(|(name, _)| name))
+            .collect();
+        for name in crate::skills::core_skill_names() {
+            assert!(
+                resident.contains(name),
+                "core skill {name} is missing from SKILLS; was its directory renamed?"
+            );
         }
     }
 

@@ -5,7 +5,7 @@
 use anyhow::{ensure, Context, Result};
 use std::collections::BTreeSet;
 use std::fs;
-use std::path::Path;
+use std::path::{Component, Path};
 
 use crate::assets::Asset;
 
@@ -26,7 +26,7 @@ pub(super) fn skill_names(assets: &[Asset]) -> BTreeSet<&'static str> {
 /// opposite of the doctrine files, which are deliberately written through their
 /// link. The two differ because a skill directory is pruned: following the link
 /// would let `prune_dir` delete files outside the tree loom was asked to write.
-pub(super) fn place_skill(
+pub(in crate::assets) fn place_skill(
     name: &str,
     assets: &[Asset],
     skills_dir: &Path,
@@ -58,10 +58,52 @@ fn write_skill(root: &Path, assets: &[Asset], name: &str) -> Result<()> {
             let parent = dest
                 .parent()
                 .context("Embedded skill destination has no parent directory")?;
+            clear_non_directory_ancestors(root, parent)?;
             fs::create_dir_all(parent)
                 .with_context(|| format!("Failed to create {}", parent.display()))?;
             fs::write(&dest, content)
                 .with_context(|| format!("Failed to write {}", dest.display()))?;
+        }
+    }
+    Ok(())
+}
+
+/// Unlink any non-directory sitting where a subdirectory belongs, between
+/// `root` and `parent`, before `create_dir_all` walks the same path.
+///
+/// `create_dir_all` follows an existing symlinked directory rather than
+/// replacing it, so a subdirectory that happens to be a symlink would send
+/// every asset under it to wherever the link points, outside the tree loom
+/// was asked to write. `place_skill` already applies this unlink-and-replace
+/// policy to the skill root itself; this extends it to every component below
+/// it, which today's asset table never nests deep enough to exercise, but a
+/// future skill with a subdirectory would otherwise hit silently.
+fn clear_non_directory_ancestors(root: &Path, parent: &Path) -> Result<()> {
+    let relative = parent
+        .strip_prefix(root)
+        .context("Skill destination parent is not under its root")?;
+    // `strip_prefix` only rejects an absolute asset key; a relative one
+    // containing a `..` component still lexically "starts with" `root`
+    // (`root/..` is itself a real directory), so it passes `strip_prefix` and
+    // would send `create_dir_all`/`fs::write` below outside `root` with
+    // nothing here to stop them. Requiring every remaining component to be
+    // `Normal` closes that gap at runtime, alongside the compile-time
+    // `assert_clean_keys` check on the embedded tables themselves.
+    ensure!(
+        relative
+            .components()
+            .all(|component| matches!(component, Component::Normal(_))),
+        "Skill destination {} escapes its root {} via a non-normal path component",
+        parent.display(),
+        root.display()
+    );
+    let mut current = root.to_path_buf();
+    for component in relative.components() {
+        current.push(component);
+        if let Some(metadata) = symlink_metadata(&current)? {
+            if !metadata.is_dir() {
+                remove_any(&current)?;
+            }
         }
     }
     Ok(())

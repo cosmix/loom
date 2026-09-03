@@ -34,5 +34,13 @@ pub use index::SkillIndex;
 pub use index_catalog::{
     catalog_dir_for, is_core_skill, load_with_catalog, skill_invocation, CATALOG_DIR_NAME,
 };
+// `#[cfg(test)] pub(crate)`, not `pub`: its only consumer is the
+// `#[cfg(test)]` check in `assets::tests_table` that every core skill name
+// appears in the embedded SKILLS table. A `pub` re-export here would
+// suppress the dead-code lint entirely, so nothing would flag this if that
+// test were ever removed; gating the import the same way its consumer is
+// gated keeps the lint live.
+#[cfg(test)]
+pub(crate) use index_catalog::core_skill_names;
 pub use install_layout::SkillLayout;
 pub use types::{SkillMatch, SkillMetadata};
