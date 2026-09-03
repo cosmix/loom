@@ -225,6 +225,18 @@ orchestrator after the shared `SessionBackend` is constructed. Backend liveness 
 on `Session.backend` and verified process identity; missing identity is unverifiable, not permission to
 fall back to a raw PID signal.
 
+## Status Data Model [DETAILED]
+
+Where every field `loom status` can show comes from: static/compact reads `StatusData` off
+`collect_status_data`, while `--live` subscribes to the daemon's push channel instead of polling
+it, and the two paths carry different fields — the live `StageInfo` payload is strictly narrower
+than the static `StageSummary` (no context tokens, no heartbeat/activity, no retry count). Covers
+the 13 `StageStatus` variants, the `Stage`/`Session`/`Heartbeat` fields worth surfacing, merge and
+retry state, and what does not exist on the status path today (subagent state, cost/request
+counts, per-criterion acceptance results).
+
+→ [Status Data Model](architecture/status-data-model.md)
+
 ## Status Command Architecture (commands/status/)
 
 The status command is organized as a sub-module tree:
