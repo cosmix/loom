@@ -71,6 +71,19 @@
   loom warns and falls back to the native lane, never aborts. Version note: the overview's nested-attach
   and layout behaviour was verified against tmux 3.7b.
 
+## Hook Runtime Dependencies (jq, rg, fd)
+
+`jq` is a hard requirement: every hook under `hooks/` parses the Claude Code hook payload with it.
+Checked by `install.sh check_runtime_tools` (exits 1 if absent), `loom/src/commands/run/checks.rs::require_jq`
+(hard-fails `loom run`), and `loom/src/commands/repair/settings_checks.rs::jq_missing_issue` (reports it,
+no auto-fixer). In the hooks themselves, blocking guards call `loom_require_jq` (`hooks/_common.sh`,
+exit 2, fail closed) and advisory hooks call `loom_warn_no_jq` (exit 1, non-blocking); lifecycle hooks
+(`session-start.sh`, `post-tool-use.sh`, `subagent-start.sh`, `subagent-stop.sh`) keep their own
+pre-existing `command -v jq` skip instead. `rg`/`fd` are doctrine dependencies only (CLAUDE.md rule 8):
+`install.sh` and `loom run`'s `advisory_search_tools_preflight` warn when either is missing, and
+`hooks/prefer-modern-tools.sh` allows `grep`/`find` through with a warning rather than blocking when the
+preferred replacement is not installed.
+
 ## Tree-sitter Source Extraction (2026-08-17)
 
 Six optional dependencies behind ONE default-on cargo feature, `source-graph`

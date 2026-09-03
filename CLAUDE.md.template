@@ -261,6 +261,8 @@ Keep each assignment small — exact paths, signatures, patterns to match, expli
 | `sed`, `awk` | Edit tool |
 | `echo >`, `tee` | Write tool |
 
+`rg` and `fd` must be installed for the two search rows to apply. When the prefer-modern-tools hook reports one is missing, use `grep`/`find` for that search and tell the user to install ripgrep/fd; `loom run` and `install.sh` also report the gap.
+
 Package managers: `uv`, `bun`/`bunx` — never `npm`, `pip`. Every fenced code block specifies a language (` ```rust `, ` ```yaml `, ` ```text `) in all markdown: plans, knowledge files, handoffs, comments.
 
 ### 9. NO ATTRIBUTION

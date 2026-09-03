@@ -59,6 +59,13 @@ Used by hooks to inject context into Claude's next turn:
 
 **Construction:** Always use `jq -nc --arg ctx "..."  '{hookSpecificOutput: {hookEventName: "...", additionalContext: $ctx}}'` — never manually escape JSON strings.
 
+**jq availability:** a hook must never fail open just because jq is missing. Blocking guards
+(header documents exit 2) call `loom_require_jq` at the top of the script, right after sourcing
+`_common.sh`; advisory hooks call `loom_warn_no_jq` instead — both defined in `hooks/_common.sh`.
+Lifecycle hooks (`session-start.sh`, `post-tool-use.sh`, `subagent-start.sh`, `subagent-stop.sh`)
+keep their own explicit `command -v jq` skip rather than either helper. See
+[stack.md](../stack.md#hook-runtime-dependencies-jq-rg-fd) for the Rust-side preflight/repair checks.
+
 ### PostToolUse context-ceiling boundary
 
 `hooks/post-tool-use.sh` owns transcript-tail usage measurement and threshold messaging, but it owns no

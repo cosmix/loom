@@ -94,6 +94,19 @@ Thirteen stage states make "needs a person" a first-class outcome rather than a 
 
 Loom is under active development and not yet published to GitHub Releases. You need to build locally with the Rust toolchain installed.
 
+### Prerequisites
+
+| Tool                       | Needed for                                                        | Required?                                                                               |
+| -------------------------- | ----------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| Rust toolchain (`cargo`)   | building the `loom` binary                                        | yes                                                                                     |
+| `git`                      | worktrees, merges, crash reports                                  | yes                                                                                     |
+| `claude` (Claude Code CLI) | every orchestrated session                                        | yes                                                                                     |
+| `jq`                       | every loom hook parses the Claude Code hook payload with it       | yes; `install.sh` and `loom run` refuse to proceed without it, `loom repair` reports it |
+| `rg` (ripgrep) and `fd`    | the installed CLAUDE.md steers agents to these over `grep`/`find` | recommended; `install.sh` and `loom run` warn when missing                              |
+| `tmux`                     | the tmux terminal backend                                         | optional                                                                                |
+| `sccache`                  | shared dependency compiles across stage worktrees                 | optional                                                                                |
+| `codex` CLI                | the codex implementer lane and `loom pressure`                    | optional                                                                                |
+
 ### 1. Install Loom
 
 ```bash
