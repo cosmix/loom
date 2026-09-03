@@ -101,3 +101,16 @@ rust+terraform returned `/loom-skills` as the third suggestion, DISPLACING a rea
 `apply_install_layout`) had any external caller. `pub` items in a lib crate are never
 dead-code-warned, so `cargo clippy` misses an unused re-export entirely — this class of debt needs
 a deliberate sweep (`rg` each re-exported name for callers outside its own module), not a linter.
+
+## A Skill Description Is Capped at 160 Characters; Keywords Belong in `triggers:`
+
+`loom/src/skills/index_catalog.rs:146` sets `MAX_RESIDENT_DESCRIPTION_LEN: usize = 160`, and the
+test `no_skill_description_exceeds_the_resident_cost_cap` (`index_catalog.rs:179`) walks the REAL
+repo-root `skills/` directory — every `loom-*/SKILL.md` on disk, not a fixture — asserting the raw
+`description:` line is at most 160 chars and is not a block scalar (`|`/`>`), because a block
+scalar's length cannot be capped by the test. This matters when porting a skill in from the
+upstream Claude Code format, where the convention is one keyword-stuffed `description:` (the
+`dotclaude/skills/i18n` original ran ~1450 chars). That shape hard-fails the gate. Loom splits the
+two concerns instead: a one-sentence `description:` under the cap, and every keyword as its own
+entry in the `triggers:` list, which is what `skills/matcher.rs` scores against anyway. Porting a
+skill body across is a straight copy; the frontmatter always has to be rewritten into loom's shape.
