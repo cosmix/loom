@@ -63,13 +63,13 @@ fn test_json_stdout_stays_pure_when_an_update_notice_is_pending() {
 
     serde_json::from_str::<serde_json::Value>(&stdout)
         .expect("stdout must be pure JSON even with a pending update notice");
-    assert!(!stdout.contains("self-update"), "stdout: {stdout}");
+    assert!(!stdout.contains("loom update"), "stdout: {stdout}");
     assert!(!stdout.contains("newer version"), "stdout: {stdout}");
 
     // Prove the notice actually fired, so the assertions above are not
     // vacuously true because the notice never ran at all.
     assert!(
-        stderr.contains("self-update"),
+        stderr.contains("loom update"),
         "expected the update notice on stderr, got: {stderr}"
     );
 }

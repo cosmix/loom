@@ -166,7 +166,7 @@ pub fn execute(
             println!("  {} ~/.claude/CLAUDE.md not found", "!".yellow().bold());
             println!(
                 "    {}",
-                "Run install.sh or loom self-update to install loom rules.".dimmed()
+                "Run install.sh or loom update to install loom rules.".dimmed()
             );
         }
     }

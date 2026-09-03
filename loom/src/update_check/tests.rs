@@ -63,7 +63,7 @@ fn dev_build_is_compared_by_semver_precedence() {
 /// to stderr (never stdout — see the module doc). Covers the reachable part
 /// of that print without capturing real process stderr or spawning anything.
 #[test]
-fn notice_for_names_both_versions_and_self_update_only_when_newer() {
+fn notice_for_names_both_versions_and_update_only_when_newer() {
     let current = Version::parse("0.2.0").unwrap();
 
     let newer = UpdateState {
@@ -73,7 +73,7 @@ fn notice_for_names_both_versions_and_self_update_only_when_newer() {
     let notice = notice_for(Some(&newer), &current).expect("a newer release should notice");
     assert!(notice.contains("0.2.0"), "{notice}");
     assert!(notice.contains("0.3.0"), "{notice}");
-    assert!(notice.contains("self-update"), "{notice}");
+    assert!(notice.contains("loom update"), "{notice}");
 
     let older = UpdateState {
         last_checked: None,

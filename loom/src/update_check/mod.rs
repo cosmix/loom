@@ -1,5 +1,5 @@
 //! Update notification — a stderr line when a newer release exists, never an
-//! installer. `loom self-update` (`crate::commands::self_update`) stays the
+//! installer. `loom update` (`crate::commands::self_update`) stays the
 //! only thing that writes a new binary; this module only reads a small state
 //! file and, at most, spawns a detached child to refresh it.
 //!
@@ -94,7 +94,7 @@ fn notice_for(state: Option<&UpdateState>, current: &Version) -> Option<String> 
         .filter(|latest| latest > current)
         .map(|latest| {
             format!(
-                "loom {current} is out of date (latest {latest}) - run `loom self-update` to upgrade."
+                "loom {current} is out of date (latest {latest}) - run `loom update` to upgrade."
             )
         })
 }

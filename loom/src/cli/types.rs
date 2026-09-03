@@ -168,8 +168,8 @@ pub enum Commands {
         ai_summary: bool,
     },
 
-    /// Update loom and configuration files
-    SelfUpdate,
+    /// Update loom and everything it installs
+    Update,
 
     /// Install loom's agents, skills, commands, hooks and doctrine files
     InstallAssets {
