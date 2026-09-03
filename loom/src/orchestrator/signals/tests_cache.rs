@@ -385,7 +385,7 @@ fn test_signal_codex_implementers_section_gated() {
         // silent: the run still "works", it just costs minutes or strands its
         // result, so nothing surfaces them except this doctrine.
         assert!(
-            content.contains("900000"),
+            content.contains("600000"),
             "the codex block must tell the orchestrator to state an explicit Bash \
              timeout; the wrapper never raises the 120s default and the harness \
              then backgrounds the run"

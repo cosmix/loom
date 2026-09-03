@@ -352,7 +352,7 @@ If the user picks Codex:
    `loom-codex-forwarder` subagents in the FOREGROUND, each with the tier-appropriate model —
    `--model gpt-5.6-terra` (common implementation, integration tests) or `--model gpt-5.6-luna`
    (boilerplate, scaffolding, simple unit tests) — always `--effort xhigh`, an explicit Bash
-   timeout of 900000 ms, and a DISJOINT file set; verify and commit yourself." (The forwarder is
+   timeout of 600000 ms (the Bash tool's maximum), and a DISJOINT file set; verify and commit yourself." (The forwarder is
    loom's own shim; never spawn the plugin's `codex:codex-rescue`
    directly — plugin agents' tools restriction is ignored by design, so that wrapper runs
    unrestricted. The orchestrator's signal carries the sentinel and evidence-trailer protocol;
@@ -1152,7 +1152,7 @@ description: |
 □ Every stage: model: "opus" + reasoning_effort: high (xhigh reserved for design-hard stages) + stage_type + working_dir set
 □ Codex opt-in asked and answered; `implementers:` lists codex only where routine implementation is delegated, only if the plugin is installed, and never on bookend stages; every list is a non-empty YAML sequence with no repeated lane
 □ Every codex unit names its anchors — files owned/read, entry points by symbol name, done-condition and proof command, and any constraint the graph can't show. An unanchored codex block ("refactor the merge path") is underspecified regardless of length: codex has the source-graph navigation kit (`loom map`, `loom knowledge context`) but not your intent
-□ Every codex subagent prompt states an explicit Bash timeout (900000 ms) alongside the tier-appropriate model — `--model gpt-5.6-terra` (common implementation, integration tests) or `--model gpt-5.6-luna` (boilerplate, scaffolding, simple unit tests) — always `--effort xhigh`; without it the wrapper's single Bash call hits the 120s default and the harness backgrounds the run
+□ Every codex subagent prompt states an explicit Bash timeout (600000 ms, the tool's maximum) alongside the tier-appropriate model — `--model gpt-5.6-terra` (common implementation, integration tests) or `--model gpt-5.6-luna` (boilerplate, scaffolding, simple unit tests) — always `--effort xhigh`; without it the wrapper's single Bash call hits the 120s default and the harness backgrounds the run
 □ Standard/IV stages: acceptance OR ≥1 goal-backward check (artifacts/wiring/wiring_tests/dead_code_check); wiring targets the CONSUMER; no leftover `truths:` block
 □ Every stage's acceptance carries the repo's FULL canonical gate covering its OWN files (not a scoped subset, not deferred downstream)
 □ Every acceptance command was RUN at HEAD, from a worktree under the stage's own sandbox, and OBSERVED green — the baseline is recorded in the plan prose; any red target is either repaired by a stage of this plan or excluded by a narrow, noted filter

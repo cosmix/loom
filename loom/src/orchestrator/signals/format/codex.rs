@@ -104,7 +104,7 @@ fn push_codex_spawn_rules(content: &mut String) {
         "- State the model/effort IN THE PROMPT: \"--model {CODEX_IMPLEMENTER_MODEL_TERRA} --effort\n\
          {CODEX_IMPLEMENTER_EFFORT} <task>\" for common implementation/integration tests, or\n\
          \"--model {CODEX_IMPLEMENTER_MODEL_LUNA} --effort {CODEX_IMPLEMENTER_EFFORT} <task>\" for\n\
-         boilerplate/scaffolding/simple unit tests, plus an explicit Bash timeout (e.g. 900000 ms) -\n\
+         boilerplate/scaffolding/simple unit tests, plus an explicit Bash timeout (600000 ms, the tool's maximum) -\n\
          the forwarder makes ONE Bash call and never raises the tool's 120s default, so a longer run\n\
          backgrounds under a CLAUDE CODE task id, not a codex job id. Recover with `codex-companion.mjs status\n"
     ));
