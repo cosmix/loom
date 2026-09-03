@@ -15,14 +15,16 @@
 # Input: JSON from stdin - {"tool_name": "Bash", "tool_input": {"command":
 # ...}, "agent_id": ..., "session_id": ...}
 # Exit codes: 0 = allow (optionally with a LOOM_HOOK_WARN additionalContext
-# joining every rule that fired), 2 = deny with guidance on stderr (only
-# when the deny switch is enabled AND a live loom session is running above
-# this process - see loom_hook_deny_or_warn in _read_discipline.sh).
+# joining every rule that fired), 1 = jq not installed (non-blocking error),
+# 2 = deny with guidance on stderr (only when the deny switch is enabled AND
+# a live loom session is running above this process - see
+# loom_hook_deny_or_warn in _read_discipline.sh).
 
 set -euo pipefail
 
 source "$(dirname "$0")/_common.sh"
 source "$(dirname "$0")/_read_discipline.sh"
+loom_warn_no_jq "poll-guard.sh"
 
 # --- Rule 1: long sleep -------------------------------------------------
 

@@ -13,6 +13,7 @@
 # ..., "offset": ..., "limit": ..., "pages": ...}, "agent_id": ...,
 # "session_id": ...}
 # Exit codes: 0 = allow (optionally with a LOOM_HOOK_WARN additionalContext),
+# 1 = jq not installed (non-blocking error),
 # 2 = deny with guidance on stderr (only when the deny switch is enabled AND
 # a live loom session is running above this process - see
 # loom_hook_deny_or_warn in _read_discipline.sh; absent either, every
@@ -22,6 +23,7 @@ set -euo pipefail
 
 source "$(dirname "$0")/_common.sh"
 source "$(dirname "$0")/_read_discipline.sh"
+loom_warn_no_jq "read-guard.sh"
 
 # Read stdin under gtimeout (macOS+coreutils), timeout (Linux), or bare cat.
 if command -v gtimeout &>/dev/null; then

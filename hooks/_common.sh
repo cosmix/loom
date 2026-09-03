@@ -852,6 +852,38 @@ loom_debug() {
     return 0
 }
 
+# loom_jq_missing_message <hook-name>
+#
+# The one sentence every hook prints when jq is absent, so the user sees the
+# same diagnosis whichever hook fires first. Printed to stdout; callers
+# redirect to stderr.
+loom_jq_missing_message() {
+    printf 'LOOM_HOOK_ERROR: jq is not installed, so %s cannot read the Claude Code hook payload. jq is a required loom dependency: install it (apt install jq / brew install jq / https://jqlang.github.io/jq/download/) and start a new session.\n' "$1"
+}
+
+# loom_require_jq <hook-name>
+#
+# For BLOCKING guards (any hook whose header documents exit 2). A guard that
+# cannot parse its payload must not silently allow, so when jq is absent this
+# prints the shared message on stderr and exits 2 (deny). Returns 0 when jq
+# is present. Call it right after sourcing this file, before reading stdin.
+loom_require_jq() {
+    command -v jq &>/dev/null && return 0
+    loom_jq_missing_message "$1" >&2
+    exit 2
+}
+
+# loom_warn_no_jq <hook-name>
+#
+# For ADVISORY hooks (header says exit 0 always, or deny-or-warn). Exit 1 is
+# Claude Code's non-blocking hook error: stderr is shown to the user and the
+# tool call proceeds. Returns 0 when jq is present.
+loom_warn_no_jq() {
+    command -v jq &>/dev/null && return 0
+    loom_jq_missing_message "$1" >&2
+    exit 1
+}
+
 # loom_find_stage_file <work-dir> <stage-id>
 #
 # Echo the one canonical stage document matching Rust's `{depth}-{id}.md` or

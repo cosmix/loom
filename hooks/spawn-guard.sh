@@ -20,7 +20,8 @@
 #
 # Input: JSON from stdin - {"tool_name": "Task"|"Agent", "tool_input": {...},
 #        "agent_id": ..., "agent_type": ...}
-# Exit codes: 0 = allow (optionally with a warning/rewrite), 2 = block
+# Exit codes: 0 = allow (optionally with a warning/rewrite), 1 = jq not
+# installed (non-blocking error), 2 = block
 #
 # Output (allow, no issue): nothing on stdout.
 # Output (allow, model filled in and/or a warning): one JSON object -
@@ -34,6 +35,7 @@
 set -euo pipefail
 
 source "$(dirname "$0")/_common.sh"
+loom_warn_no_jq "spawn-guard.sh"
 
 if command -v gtimeout &>/dev/null; then
 	INPUT_JSON=$(gtimeout 1 cat 2>/dev/null || true)

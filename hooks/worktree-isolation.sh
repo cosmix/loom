@@ -49,6 +49,7 @@
 # Exit codes:
 #   0 - Allow the operation
 #   2 - Block with guidance message
+#   2 - jq not installed (fail closed)
 #
 # Environment:
 #   LOOM_STAGE_ID - Current stage ID (set by loom)
@@ -56,6 +57,7 @@
 
 set -euo pipefail
 source "$(dirname "$0")/_common.sh"
+loom_require_jq "worktree-isolation.sh"
 
 debug() {
     [[ "${WORKTREE_ISOLATION_DEBUG:-}" == "1" ]] || return 0

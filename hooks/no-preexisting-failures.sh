@@ -22,7 +22,8 @@
 #   {"tool_name": "...", "tool_input": {...}, ...}
 #
 # Exit codes:
-#   0 - Always. Advisory only.
+#   0 - Always, unless jq is not installed. Advisory only.
+#   1 - jq not installed (non-blocking error)
 #
 # Output format when warning:
 #   {"hookSpecificOutput": {"hookEventName": "PreToolUse", "additionalContext": "LOOM_HOOK_WARN: ..."}}
@@ -31,6 +32,7 @@ set -euo pipefail
 
 # Debug tracing comes from _common.sh (`loom_debug`), gated on LOOM_HOOK_DEBUG=1.
 source "$(dirname "$0")/_common.sh"
+loom_warn_no_jq "no-preexisting-failures.sh"
 
 if command -v gtimeout &>/dev/null; then
 	INPUT_JSON=$(gtimeout 1 cat 2>/dev/null || true)

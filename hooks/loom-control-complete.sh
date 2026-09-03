@@ -20,6 +20,8 @@ fail_closed() {
 	exit 2
 }
 
+command -v jq &>/dev/null || fail_closed "$(loom_jq_missing_message loom-control-complete.sh)"
+
 resolve_trusted_loom() {
 	local candidate resolved
 	if [[ ${LOOM_CONTROL_TESTING:-} == 1 && -d "$(dirname "$0")/tests" ]]; then

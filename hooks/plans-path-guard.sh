@@ -17,8 +17,12 @@
 # Exit codes:
 #   0 - Allow the operation
 #   2 - Block with guidance message
+#   2 - jq not installed (fail closed)
 
 set -euo pipefail
+
+source "$(dirname "$0")/_common.sh"
+loom_require_jq "plans-path-guard.sh"
 
 # Read stdin JSON (Claude Code provides tool input)
 # Cross-platform timeout: gtimeout (macOS+coreutils), timeout (Linux), or plain cat

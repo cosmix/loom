@@ -10,6 +10,7 @@
 # Exit codes:
 #   0 - Allow the command
 #   2 - Block with guidance message
+#   2 - jq not installed (fail closed)
 #
 # Debug mode:
 #   Set GIT_ADD_GUARD_DEBUG=1 to see what patterns are being checked
@@ -50,6 +51,7 @@ set -euo pipefail
 
 # Source shared utilities for strip_embedded_content()
 source "$(dirname "$0")/_common.sh"
+loom_require_jq "git-add-guard.sh"
 
 # Debug helper
 debug() {

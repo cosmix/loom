@@ -9,11 +9,12 @@
 #
 # Input: JSON from stdin - {"tool_name": ..., "tool_input": ...,
 #        "agent_type": ..., "transcript_path": ...}
-# Exit codes: 0 = allow, 2 = block
+# Exit codes: 0 = allow, 2 = block (also jq not installed - fail closed)
 
 set -euo pipefail
 
 source "$(dirname "$0")/_common.sh"
+loom_require_jq "codex-forward-guard.sh"
 
 if command -v gtimeout &>/dev/null; then
 	INPUT_JSON=$(gtimeout 1 cat 2>/dev/null || true)

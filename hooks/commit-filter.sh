@@ -33,6 +33,7 @@
 # Exit codes:
 #   0 - Allow the command to proceed
 #   2 - Block the command and return guidance to Claude
+#   2 - jq not installed (fail closed)
 #
 # Output format when blocking:
 #   Guidance message to stderr, then exit 2
@@ -40,6 +41,7 @@
 set -euo pipefail
 
 source "$(dirname "$0")/_common.sh"
+loom_require_jq "commit-filter.sh"
 
 # Debug tracing comes from _common.sh (`loom_debug`), gated on
 # LOOM_HOOK_DEBUG=1 or the legacy COMMIT_FILTER_DEBUG=1.

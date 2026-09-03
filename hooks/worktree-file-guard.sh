@@ -7,10 +7,11 @@
 # sharing the worktree's string prefix cannot cross the boundary.
 #
 # Input: JSON from stdin (Claude Code passes tool info via stdin)
-# Exit codes: 0 = allow, 2 = block
+# Exit codes: 0 = allow, 2 = block (including jq not installed - fail closed)
 
 set -euo pipefail
 source "$(dirname "$0")/_common.sh"
+loom_require_jq "worktree-file-guard.sh"
 
 if command -v gtimeout &>/dev/null; then
 	INPUT_JSON=$(gtimeout 5 cat 2>/dev/null || true)

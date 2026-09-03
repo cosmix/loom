@@ -35,11 +35,13 @@
 # durable guarantee is doctrinal, and this hook only raises the cost.
 #
 # Input: JSON from stdin - {"tool_name": "Bash", "tool_input": {"command": ...}}
-# Exit codes: 0 = allow, 2 = block with guidance on stderr
+# Exit codes: 0 = allow, 2 = block with guidance on stderr (also jq not
+# installed - fail closed)
 
 set -euo pipefail
 
 source "$(dirname "$0")/_common.sh"
+loom_require_jq "subagent-verify-guard.sh"
 
 # Read stdin under gtimeout (macOS+coreutils), timeout (Linux), or bare cat
 if command -v gtimeout &>/dev/null; then

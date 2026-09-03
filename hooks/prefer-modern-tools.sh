@@ -22,11 +22,17 @@
 # neither ever invoked the real command. Token scanning also correctly
 # leaves 'rg' alone, since it never matches the 'grep' basename.
 #
+# rg/fd are doctrine dependencies, not hard requirements: when the command
+# invokes grep/find but the preferred replacement is not installed on this
+# machine, the hook allows the original command through with a warning that
+# names the gap instead of steering toward a tool that would just fail.
+#
 # Input: JSON from stdin (Claude Code passes tool info via stdin)
 #   {"tool_name": "Bash", "tool_input": {"command": "..."}, ...}
 #
 # Exit codes:
-#   0 - Allow the command to proceed (always; this hook is advisory only)
+#   0 - Allow the command to proceed (this hook is advisory only)
+#   1 - jq not installed (non-blocking error)
 #
 # Output format when warning:
 #   {"hookSpecificOutput": {"hookEventName": "PreToolUse", "additionalContext": "LOOM_HOOK_WARN: ..."}}
@@ -36,6 +42,7 @@ set -euo pipefail
 # Source shared utilities for strip_embedded_content(), loom_tokenize_command(),
 # and loom_tokens_invoke()
 source "$(dirname "$0")/_common.sh"
+loom_warn_no_jq "prefer-modern-tools.sh"
 
 debug() {
 	[[ "${PREFER_MODERN_TOOLS_DEBUG:-}" == "1" ]] || return 0
@@ -146,16 +153,30 @@ uses_find() {
 	echo "$cmd" | grep -qE '(^|[|;&[:space:]])(\/usr\/bin\/|\/bin\/)?find[[:space:]]'
 }
 
-# Check for grep usage - warn and guide to rg (ripgrep)
+# Check for grep usage - warn and guide to rg (ripgrep), unless rg itself is
+# not installed on this machine (then proceeding with grep is the only option).
 if uses_grep "$STRIPPED_COMMAND"; then
+	if ! command -v rg &>/dev/null; then
+		debug "WARNED: grep detected, but rg is not installed"
+		jq -nc --arg ctx "LOOM_HOOK_WARN: CLAUDE.md rule 8 prefers 'rg' (ripgrep) over 'grep', but ripgrep is not installed on this machine. Proceed with grep for this search and tell the user to install ripgrep (apt install ripgrep / brew install ripgrep)." \
+			'{hookSpecificOutput: {hookEventName: "PreToolUse", additionalContext: $ctx}}'
+		exit 0
+	fi
 	debug "WARNED: grep detected"
 	jq -nc --arg ctx "LOOM_HOOK_WARN: STOP — do NOT run this 'grep' command. CLAUDE.md rule 8 bans 'grep' in this project. Cancel it and redo the search NOW with 'rg' (ripgrep). Translate before retrying: grep -rn \"pat\" path → rg -n \"pat\" path" \
 		'{hookSpecificOutput: {hookEventName: "PreToolUse", additionalContext: $ctx}}'
 	exit 0
 fi
 
-# Check for find usage - warn and guide to fd
+# Check for find usage - warn and guide to fd, unless fd itself is not
+# installed on this machine (then proceeding with find is the only option).
 if uses_find "$STRIPPED_COMMAND"; then
+	if ! command -v fd &>/dev/null; then
+		debug "WARNED: find detected, but fd is not installed"
+		jq -nc --arg ctx "LOOM_HOOK_WARN: CLAUDE.md rule 8 prefers 'fd' over 'find', but fd is not installed on this machine. Proceed with find for this search and tell the user to install fd (apt install fd-find, then symlink fdfind to fd / brew install fd)." \
+			'{hookSpecificOutput: {hookEventName: "PreToolUse", additionalContext: $ctx}}'
+		exit 0
+	fi
 	debug "WARNED: find detected"
 	jq -nc --arg ctx "LOOM_HOOK_WARN: STOP — do NOT run this 'find' command. CLAUDE.md rule 8 bans 'find' in this project. Cancel it and redo the search NOW with 'fd'. Translate before retrying: find . -name \"*.txt\" → fd -e txt" \
 		'{hookSpecificOutput: {hookEventName: "PreToolUse", additionalContext: $ctx}}'
