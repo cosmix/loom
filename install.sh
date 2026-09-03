@@ -95,20 +95,6 @@ check_runtime_tools() {
 	fi
 }
 
-download_file() {
-	local url="$1"
-	local dest="$2"
-
-	if command -v curl &>/dev/null; then
-		curl -fsSL "$url" -o "$dest"
-	elif command -v wget &>/dev/null; then
-		wget -q "$url" -O "$dest"
-	else
-		err "neither curl nor wget available"
-		return 1
-	fi
-}
-
 read_recorded_skills_mode() {
 	local config_file="$CLAUDE_DIR/loom-install.toml"
 	local line
@@ -187,7 +173,7 @@ confirm_overwrites() {
 	[[ -d "$CLAUDE_DIR/loom-skill-catalog" ]] && found+=("~/.claude/loom-skill-catalog/")
 	[[ -f "$CLAUDE_DIR/CLAUDE.md" ]] && found+=("~/.claude/CLAUDE.md")
 	[[ -f "$CLAUDE_DIR/loom-install.toml" ]] && found+=("~/.claude/loom-install.toml")
-	[[ -d "$CLAUDE_DIR/commands" ]] && found+=("~/.claude/commands/ (loom-owned commands)")
+	[[ -d "$CLAUDE_DIR/commands" ]] && found+=("~/.claude/commands/ (address.md, distill.md, pressure.md)")
 	[[ -d "$CLAUDE_DIR/hooks/loom" ]] && found+=("~/.claude/hooks/loom")
 
 	local found_other=()
@@ -221,8 +207,6 @@ confirm_overwrites() {
 }
 
 install_loom_local() {
-	step "cli"
-
 	local install_dir="$HOME/.local/bin"
 	local loom_bin="$install_dir/loom"
 	local local_loom="$SCRIPT_DIR/loom/target/release/loom"
@@ -248,14 +232,15 @@ install_loom_local() {
 }
 
 install_loom_remote() {
-	step "cli"
-
 	local install_dir="$HOME/.local/bin"
 	local loom_bin="$install_dir/loom"
 
 	mkdir -p "$install_dir"
 
-	# Detect platform and architecture
+	# Detect platform and architecture. The release workflow
+	# (.github/workflows/release.yml) publishes exactly three binaries; the
+	# updater's RELEASE_ASSETS (loom/src/commands/self_update/mod.rs)
+	# is the other place naming them. Change all three together.
 	local os arch target
 	os="$(uname -s)"
 	arch="$(uname -m)"
@@ -263,41 +248,22 @@ install_loom_remote() {
 	case "$os" in
 	Linux)
 		case "$arch" in
-		x86_64)
-			if ldd --version 2>&1 | grep -q musl; then
-				target="loom-x86_64-unknown-linux-musl"
-			else
-				target="loom-x86_64-unknown-linux-gnu"
-			fi
-			;;
-		aarch64 | arm64)
-			target="loom-aarch64-unknown-linux-gnu"
-			;;
-		*)
-			warn "unsupported arch: $arch"
-			return 0
-			;;
+		x86_64) target="loom-linux-x86_64" ;;
 		esac
 		;;
 	Darwin)
 		case "$arch" in
-		x86_64)
-			target="loom-x86_64-apple-darwin"
-			;;
-		arm64 | aarch64)
-			target="loom-aarch64-apple-darwin"
-			;;
-		*)
-			warn "unsupported arch: $arch"
-			return 0
-			;;
+		x86_64) target="loom-darwin-x86_64" ;;
+		arm64 | aarch64) target="loom-darwin-arm64" ;;
 		esac
 		;;
-	*)
-		warn "unsupported platform: $os"
-		return 0
-		;;
 	esac
+
+	if [[ -z "${target:-}" ]]; then
+		err "no published loom binary for $os/$arch"
+		info "build from source: git clone https://github.com/${GITHUB_REPO} && cd loom/loom && cargo build --release && cd .., then rerun install.sh"
+		exit 1
+	fi
 
 	local download_url="${GITHUB_RELEASES}/$target"
 	local temp_bin="${loom_bin}.tmp.$$"
@@ -305,20 +271,20 @@ install_loom_remote() {
 	if command -v curl &>/dev/null; then
 		if ! curl -fsSL "$download_url" -o "$temp_bin"; then
 			rm -f "$temp_bin"
-			warn "download failed"
+			err "download failed"
 			info "manual install: $download_url"
-			return 0
+			exit 1
 		fi
 	elif command -v wget &>/dev/null; then
 		if ! wget -q "$download_url" -O "$temp_bin"; then
 			rm -f "$temp_bin"
-			warn "download failed"
+			err "download failed"
 			info "manual install: $download_url"
-			return 0
+			exit 1
 		fi
 	else
-		warn "curl or wget required"
-		return 0
+		err "curl or wget required"
+		exit 1
 	fi
 
 	# Remove old binary first to avoid "Text file busy" when loom is running
@@ -364,6 +330,7 @@ main() {
 	print_components
 	check_runtime_tools
 
+	step "cli"
 	if is_curl_pipe; then
 		info "downloading from github"
 		echo ""
@@ -374,7 +341,7 @@ main() {
 		install_loom_local
 	fi
 
-	loom_bin="$HOME/.local/bin/loom"
+	local loom_bin="$HOME/.local/bin/loom"
 	[[ -x "$loom_bin" ]] || {
 		err "loom binary was not installed at $loom_bin"
 		exit 1

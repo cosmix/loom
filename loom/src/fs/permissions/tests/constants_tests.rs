@@ -2,7 +2,7 @@
 
 use std::collections::BTreeSet;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use serde_json::Value;
@@ -194,28 +194,21 @@ echo "$@" >> "$LOOM_STUB_ARGV_LOG"
     (temp, installer_path, home, argv_log)
 }
 
-#[test]
-fn install_sh_invokes_the_binary_exactly_once_with_the_resolved_mode() {
-    let (_temp, installer_path, home, argv_log) = stage_install_sh_with_stub_binary();
-
-    let output = Command::new("bash")
-        .arg("-c")
-        .arg(
-            r#"source "$INSTALL_SH_PATH"; install_loom_local() { :; }; install_loom_remote() { :; }; confirm_overwrites() { return 0; }; main --skills core"#,
-        )
-        .env("HOME", &home)
-        .env("INSTALL_SH_PATH", &installer_path)
-        .env("LOOM_INSTALL_LIB_ONLY", "1")
-        .env("LOOM_STUB_ARGV_LOG", &argv_log)
-        .output()
-        .unwrap();
+/// Shared invariants for the two `main` invocation tests below: exactly one
+/// `install-assets --skills <mode>` call, it is the last loom invocation, and
+/// neither asset directory was created by the shell installer itself.
+fn assert_single_install_assets_delegation(
+    output: &std::process::Output,
+    argv_log: &Path,
+    home: &Path,
+) {
     assert!(
         output.status.success(),
         "main --skills core failed: {}",
         String::from_utf8_lossy(&output.stderr)
     );
 
-    let calls = fs::read_to_string(&argv_log)
+    let calls = fs::read_to_string(argv_log)
         .expect("the temporary loom stub must receive installer invocations")
         .lines()
         .map(str::to_owned)
@@ -241,6 +234,53 @@ fn install_sh_invokes_the_binary_exactly_once_with_the_resolved_mode() {
             asset_dir.display()
         );
     }
+}
+
+#[test]
+fn install_sh_invokes_the_binary_exactly_once_with_the_resolved_mode() {
+    let (_temp, installer_path, home, argv_log) = stage_install_sh_with_stub_binary();
+
+    let output = Command::new("bash")
+        .arg("-c")
+        .arg(
+            r#"source "$INSTALL_SH_PATH"; check_runtime_tools() { :; }; install_loom_local() { :; }; install_loom_remote() { :; }; confirm_overwrites() { return 0; }; main --skills core"#,
+        )
+        .env("HOME", &home)
+        .env("INSTALL_SH_PATH", &installer_path)
+        .env("LOOM_INSTALL_LIB_ONLY", "1")
+        .env("LOOM_STUB_ARGV_LOG", &argv_log)
+        .output()
+        .unwrap();
+
+    assert_single_install_assets_delegation(&output, &argv_log, &home);
+}
+
+/// Same invariants, but from a local checkout (SCRIPT_DIR has `agents/` and
+/// `skills/` beside install.sh) so `is_curl_pipe` is false and `main` takes
+/// the `install_loom_local`/`confirm_overwrites` branch instead of the
+/// curl-pipe/remote branch the test above exercises.
+#[test]
+fn install_sh_invokes_the_binary_exactly_once_from_a_local_checkout() {
+    let (_temp, installer_path, home, argv_log) = stage_install_sh_with_stub_binary();
+    let script_dir = installer_path.parent().unwrap();
+    fs::create_dir_all(script_dir.join("agents")).unwrap();
+    fs::create_dir_all(script_dir.join("skills")).unwrap();
+    // check_requirements() requires SCRIPT_DIR/loom to exist on the local-checkout path.
+    fs::create_dir_all(script_dir.join("loom")).unwrap();
+
+    let output = Command::new("bash")
+        .arg("-c")
+        .arg(
+            r#"source "$INSTALL_SH_PATH"; check_runtime_tools() { :; }; install_loom_local() { :; }; install_loom_remote() { :; }; confirm_overwrites() { return 0; }; main --skills core"#,
+        )
+        .env("HOME", &home)
+        .env("INSTALL_SH_PATH", &installer_path)
+        .env("LOOM_INSTALL_LIB_ONLY", "1")
+        .env("LOOM_STUB_ARGV_LOG", &argv_log)
+        .output()
+        .unwrap();
+
+    assert_single_install_assets_delegation(&output, &argv_log, &home);
 }
 
 /// Regression test for a typo in `fs/permissions/hooks/config.rs`'s global
