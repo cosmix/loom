@@ -72,27 +72,9 @@ fn zsh_install_path() -> Result<PathBuf> {
     Ok(default_install_path(&home, super::generator::Shell::Zsh))
 }
 
-/// Rewrite completion files already installed below `home` without creating any.
-pub fn refresh_existing_in(home: &Path) -> Result<usize> {
-    use super::generator::Shell;
-
-    let mut refreshed = 0;
-    for shell in [Shell::Bash, Shell::Zsh, Shell::Fish] {
-        let path = default_install_path(home, shell);
-        if !path.is_file() {
-            continue;
-        }
-        std::fs::write(&path, completion_content(shell))
-            .with_context(|| format!("Failed to write completions to: {}", path.display()))?;
-        refreshed += 1;
-    }
-    Ok(refreshed)
-}
-
-/// Rewrite existing completion files in the operator's home directory.
-pub fn refresh_existing() -> Result<usize> {
-    refresh_existing_in(&home_dir()?)
-}
+#[path = "install/refresh.rs"]
+mod refresh;
+pub use refresh::refresh_existing_in;
 
 /// Check if a directory is writable by attempting to create a temp file.
 fn is_writable(dir: &Path) -> bool {
