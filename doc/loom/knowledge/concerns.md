@@ -760,3 +760,22 @@ at its own source, and default in the fail-safe direction (do not claim currency
 ## Claude Code Sandbox Protects the Repo's hooks/ Directory (2026-09-02)
 
 The project-root `hooks/` directory is write-protected by Claude Code's sandbox as part of its bare-git-repo rule, so shell writes there fail even when permission config would allow them. [Sandbox Protected hooks/ Directory](concerns/sandbox-protected-hooks-dir.md)
+
+## Read Deny Rules Under the Project Root Prompt on Every Search (2026-09-03)
+
+Claude Code's `deniedPathInsideDirectory` check compares each path argument of `grep`, `rg`, `diff`,
+`git`, `cp` and `mv` (`rg` with no path means `.`) against every `Read(...)` deny rule's location:
+the rule's path up to its first wildcard, joined to the rule's root. A location inside or equal to
+the searched directory returns `ask`, bypass-immune and not classifier-approvable, so a token deny
+naming the project's own state root made every `rg` from the project root stall auto mode.
+
+`fs/permissions/state_root.rs::token_read_denies` globs the project directory out —
+`Read(//home/you/src/*/.work/admin.token)` — putting the wildcard-free prefix on the project's
+PARENT, which no in-project search covers, while one `*` still matches the resolved token path in
+the main repo and every worktree (Claude Code resolves the symlink first). A `**` anchored at `/` or
+`~` is not an option: on Linux each deny rule is fed to the OS sandbox, which expands wildcards
+against the real filesystem. The concrete paths stay in `sandbox.filesystem.denyRead`, which is not
+a permission rule. `no_generated_read_deny_puts_its_location_inside_the_project`
+(`sandbox/settings/tests_token_rules.rs`) pins the property; `loom repair` check 14 rewrites older
+files. `fs/permissions/sync.rs::portable_permissions` never promotes a worktree's token deny, in any
+spelling, into the main repo's settings.
