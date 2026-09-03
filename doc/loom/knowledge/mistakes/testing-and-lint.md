@@ -312,3 +312,13 @@ steps' own success output as a harness artifact, not evidence the install failed
 **Prevention:** `maintainability-baseline.txt` entries are exact in both directions — a shrink must be written back to the ledger, not left as a stale higher number, and growth is never recordable no matter how it was produced. Run `cargo fmt` before measuring a function or file for the ledger; packing arguments or fields onto one line to dodge a count does not survive the formatter.
 
 **Fix:** re-ran `cargo fmt`, remeasured the six affected entries, and wrote back their post-format line counts.
+
+## A Non-Serial Test Read an Env Var a `#[serial]` Sibling Mutates (2026-09-03)
+
+**What happened:** `verify::criteria::tests::runner_tests::test_run_acceptance_caches_pass_and_skips_second_execution` failed the pre-push gate on one machine at `assertion failed: second.results()[0].cached`, and passed on the same tree in another environment.
+
+**Why:** `cache_tests::cache_policy_bypass_from_env` sets `LOOM_ACCEPTANCE_CACHE=0` process-wide for its duration under `#[serial]`. The runner test was not `#[serial]`, so nothing kept the two apart, and it read the ambient value via `CriteriaConfig::default()` and `CachePolicy::from_env()`. Whether the two overlap depends on core count and scheduling, so the failure reproduces on one machine and never shows on another.
+
+**Prevention:** a test whose subject reads the process environment must either pin the value through the config surface (`with_cache_policy`) or be `#[serial]` alongside every test that mutates that variable. `#[serial]` only serialises against other `#[serial]` tests; it does nothing for a non-serial reader.
+
+**Fix:** the runner test pins `CachePolicy::Use` (`verify/criteria/tests/runner_tests.rs`), matching its bypass sibling, so it no longer reads the environment at all.

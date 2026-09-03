@@ -83,7 +83,7 @@
 | [mistakes/shell-command-matchers.md](mistakes/shell-command-matchers.md) | Shell Command Matchers | Separators that never become tokens, forgeable glob lookups, env leakage in hook tests, and three Bash traps. | 246 |
 | [mistakes/store-without-consumer.md](mistakes/store-without-consumer.md) | Store Without Consumer | A store that was written but never read - what happened, why it stayed invisible, and the concrete trail. | 94 |
 | [mistakes/subagent-orchestration.md](mistakes/subagent-orchestration.md) | Subagent Orchestration | Liveness signals for subagents, when a missing report is not a missing result, and the one-background-watch doctrine. | 263 |
-| [mistakes/testing-and-lint.md](mistakes/testing-and-lint.md) | Testing And Lint | Lint and test discipline: --all-targets, --no-fail-fast, headless CI, ambient git config and inherited descriptors in… | 314 |
+| [mistakes/testing-and-lint.md](mistakes/testing-and-lint.md) | Testing And Lint | Lint and test discipline: --all-targets, --no-fail-fast, headless CI, ambient git config and inherited descriptors in… | 324 |
 | [mistakes/tests-that-cannot-fail.md](mistakes/tests-that-cannot-fail.md) | Tests That Cannot Fail | Tests that pass regardless of whether the bug they exist to catch is present, and how to spot the shape. | 191 |
 | [mistakes/tmux-backend.md](mistakes/tmux-backend.md) | Tmux Backend | tmux spawn-failure exit codes, cleanup-on-every-error-path discipline, and PID reuse across a retried session id. | 120 |
 | [mistakes/untrusted-value-boundaries.md](mistakes/untrusted-value-boundaries.md) | Untrusted Value Boundaries | Enumerating every producer of a rendered field, not just the field, and why containment at one render site alone is not… | 117 |
