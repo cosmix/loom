@@ -34,6 +34,38 @@ fn wrapper_script_exports_session_type() {
     assert!(script.contains("LOOM_SESSION_TYPE=stage"), "{script}");
 }
 
+#[test]
+fn wrapper_script_exports_ripgrep_config_path_when_published() {
+    let work_dir = TempDir::new().unwrap();
+    std::fs::write(work_dir.path().join("ripgreprc"), "").unwrap();
+    let path = create_wrapper_script(
+        work_dir.path(),
+        "loom-test-session",
+        "feature",
+        "session1",
+        "claude 'prompt'",
+        None,
+        SessionType::Stage,
+        100_000,
+    )
+    .unwrap();
+    let script = std::fs::read_to_string(path).unwrap();
+
+    let line = script
+        .lines()
+        .find(|line| line.contains("RIPGREP_CONFIG_PATH="))
+        .unwrap_or_else(|| panic!("no RIPGREP_CONFIG_PATH line in script: {script}"));
+    assert!(line.contains("/ripgreprc"), "{line}");
+    assert!(script.contains("LOOM_WORK_DIR="), "{script}");
+}
+
+#[test]
+fn wrapper_script_omits_ripgrep_config_path_when_unpublished() {
+    let script = wrapper_script_for(SessionType::Stage);
+    assert!(!script.contains("RIPGREP_CONFIG_PATH="), "{script}");
+    assert!(script.contains("LOOM_WORK_DIR="), "{script}");
+}
+
 /// Pins `LOOM_SCCACHE` for a test's duration and restores it on drop. Process-
 /// global, so both tests below run `#[serial]` (same convention as
 /// `commands::stage::tests::state::EnvVarGuard`).

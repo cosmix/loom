@@ -10,6 +10,7 @@
 use super::pid_tracking::{
     create_pid_dir, create_wrappers_dir, pid_file_path, wrapper_script_path,
 };
+use crate::fs::permissions::state_root::RIPGREP_CONFIG_FILE;
 use crate::models::session::SessionType;
 use anyhow::{Context, Result};
 use shell_escape::escape;
@@ -191,6 +192,32 @@ fi
     )
 }
 
+/// `LOOM_WORK_DIR`, plus `RIPGREP_CONFIG_PATH` when the daemon has published
+/// `<work_dir>/ripgreprc` (`daemon::server::storage::publish_search_exclusions`),
+/// rendered as shell-escaped `exec env` assignments. The config excludes
+/// `admin.token`/`user.token` from every `rg` in the session, `-uu` and
+/// `--no-ignore` included, so a sandboxed agent never trips the read-deny rule
+/// and stalls auto mode on an operator prompt. The export is gated on the
+/// file: `loom run --foreground` runs no daemon, publishes no tokens and no
+/// config, and an rg pointed at a missing config prints an error on every
+/// call. The host's own `RIPGREP_CONFIG_PATH` is deliberately absent from
+/// `ENV_ALLOWLIST`.
+fn work_dir_env(work_dir: &Path) -> String {
+    let work_dir = absolute(work_dir);
+    let mut block = format!(
+        "    {} {CONTINUATION}",
+        escape(format!("LOOM_WORK_DIR={}", work_dir.display()).into())
+    );
+    let ripgrep_config = work_dir.join(RIPGREP_CONFIG_FILE);
+    if ripgrep_config.is_file() {
+        block.push_str(&format!(
+            "    {} {CONTINUATION}",
+            escape(format!("RIPGREP_CONFIG_PATH={}", ripgrep_config.display()).into())
+        ));
+    }
+    block
+}
+
 /// Rebuilds the child environment from a minimal host allowlist rather than
 /// inheriting it, so ambient credentials and token-shaped variables never
 /// reach a stage session. Fully static — no interpolation.
@@ -314,7 +341,7 @@ fn build_wrapper_script(
     let session_env = escape(format!("LOOM_SESSION_ID={session_id}").into());
     let session_type_env = escape(format!("LOOM_SESSION_TYPE={kind}").into());
     let stage_env = escape(format!("LOOM_STAGE_ID={stage_id}").into());
-    let work_dir_env = escape(format!("LOOM_WORK_DIR={}", absolute(work_dir).display()).into());
+    let work_dir_env = work_dir_env(work_dir);
     let pid_file = escape(absolute_target(host_pid_file).display().to_string().into());
     let pid_capture = pid_capture(&pid_file);
     let resource_limit_env = resource_limit_env(context_ceiling_tokens);
@@ -335,8 +362,7 @@ exec env -i "${{_loom_env[@]}}" \
     {session_env} \
     {session_type_env} \
     {stage_env} \
-    {work_dir_env} \
-    "LOOM_MAIN_AGENT_PID=$$" \
+{work_dir_env}    "LOOM_MAIN_AGENT_PID=$$" \
     "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1" \
     "CLAUDE_CODE_DISABLE_AUTO_MEMORY=1" \
     "CLAUDE_REMOTE_CONTROL_SESSION_NAME_PREFIX=loom" \

@@ -150,7 +150,7 @@ function src/daemon/server/broadcast.rs run_status_broadcaster 80
 function src/daemon/server/client.rs handle_client_connection 112
 function src/daemon/server/dispute.rs handle_dispute_criteria 176
 function src/daemon/server/lifecycle.rs run_server 134
-function src/daemon/server/lifecycle.rs start 141
+function src/daemon/server/lifecycle.rs start 117
 function src/daemon/server/orchestrator.rs run_orchestrator 94
 function src/daemon/server/status.rs collect_completion_summary 97
 function src/daemon/server/status.rs collect_status 80

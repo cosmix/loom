@@ -1,5 +1,8 @@
 //! No-follow creation and publication of daemon control-plane files.
 
+use crate::fs::permissions::state_root::{
+    ripgrep_config_body, search_ignore_body, RIPGREP_CONFIG_FILE, SEARCH_IGNORE_FILE,
+};
 use anyhow::{Context, Result};
 use std::fs::{self, File};
 use std::os::fd::{AsRawFd, OwnedFd};
@@ -67,6 +70,26 @@ pub(super) fn open_private_output(work_dir: &Path, relative: &Path) -> Result<Fi
     let file = File::from(descriptor);
     file.set_permissions(fs::Permissions::from_mode(PRIVATE_FILE_MODE))?;
     Ok(file)
+}
+
+/// Publish the two search-exclusion files (`.ignore`, `ripgreprc`) that keep
+/// `rg`/`fd` away from the credential files. Written before the tokens so
+/// there is never a window where a token exists without its exclusion, and
+/// never removed on shutdown.
+pub(super) fn publish_search_exclusions(work_dir: &Path) -> Result<()> {
+    publish_private_file(
+        work_dir,
+        Path::new(SEARCH_IGNORE_FILE),
+        search_ignore_body().as_bytes(),
+    )
+    .context("Failed to publish search-ignore file")?;
+    publish_private_file(
+        work_dir,
+        Path::new(RIPGREP_CONFIG_FILE),
+        ripgrep_config_body().as_bytes(),
+    )
+    .context("Failed to publish ripgrep config file")?;
+    Ok(())
 }
 
 pub(super) fn remove_control_file(work_dir: &Path, relative: &Path) -> Result<()> {
@@ -148,5 +171,31 @@ mod tests {
 
         let metadata = fs::metadata(work_dir.path().join("orchestrator.log")).unwrap();
         assert_eq!(metadata.mode() & 0o777, 0o600);
+    }
+
+    #[test]
+    fn search_exclusions_name_both_token_files() {
+        let work_dir = tempfile::tempdir().unwrap();
+
+        publish_search_exclusions(work_dir.path()).unwrap();
+
+        let ignore = fs::read_to_string(work_dir.path().join(".ignore")).unwrap();
+        assert!(ignore.lines().any(|line| line == "admin.token"));
+        assert!(ignore.lines().any(|line| line == "user.token"));
+
+        let ripgreprc = fs::read_to_string(work_dir.path().join("ripgreprc")).unwrap();
+        assert!(ripgreprc.lines().any(|line| line == "--glob=!admin.token"));
+        assert!(ripgreprc.lines().any(|line| line == "--glob=!user.token"));
+    }
+
+    #[test]
+    fn search_exclusions_are_idempotent() {
+        let work_dir = tempfile::tempdir().unwrap();
+
+        publish_search_exclusions(work_dir.path()).unwrap();
+        publish_search_exclusions(work_dir.path()).unwrap();
+
+        assert!(work_dir.path().join(".ignore").exists());
+        assert!(work_dir.path().join("ripgreprc").exists());
     }
 }
