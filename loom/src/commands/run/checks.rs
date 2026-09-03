@@ -17,6 +17,8 @@ use crate::git::{get_uncommitted_changes_summary, has_uncommitted_changes};
 
 /// Ensure the repository is ready for Loom's git worktree operations.
 pub fn prepare_repo_for_run(repo_root: &Path) -> Result<()> {
+    require_jq()?;
+
     let repo_bootstrap = crate::git::ensure_repo_ready_for_worktrees(repo_root)?;
     print_repo_bootstrap(repo_bootstrap);
 
@@ -33,8 +35,60 @@ pub fn prepare_repo_for_run(repo_root: &Path) -> Result<()> {
     }
 
     advisory_sccache_preflight();
+    advisory_search_tools_preflight();
 
     check_for_uncommitted_changes(repo_root)
+}
+
+/// Hard requirement — aborts startup. Every loom hook parses the Claude Code
+/// hook payload with `jq` (see `hooks/_common.sh`'s `loom_require_jq`); without
+/// it the blocking guards cannot read their input and fail closed one by one,
+/// and `loom stage complete` is never applied by the completion bridge. Failing
+/// here, before any worktree or session is created, surfaces the real missing
+/// dependency instead of a run that silently misbehaves stage by stage.
+pub fn require_jq() -> Result<()> {
+    if which::which("jq").is_err() {
+        bail!(
+            "jq is not installed. Every loom hook parses the Claude Code hook payload with jq; \
+             without it the guards cannot read their input and stage completion is never applied. \
+             Install jq (apt install jq / brew install jq) and run loom again."
+        );
+    }
+    Ok(())
+}
+
+/// Advisory rg/fd preflight — never aborts startup.
+///
+/// The installed CLAUDE.md steers every agent toward `rg`/`fd` over
+/// `grep`/`find` (Rule 8). Neither is a hard requirement: when one is missing,
+/// the `prefer-modern-tools` hook allows the legacy tool through with a
+/// warning rather than blocking the session, so this is notice, not
+/// enforcement — same posture as [`advisory_codex_lane_preflight`].
+fn advisory_search_tools_preflight() {
+    let mut missing: Vec<&str> = Vec::new();
+    if which::which("rg").is_err() {
+        missing.push("rg (ripgrep)");
+    }
+    if which::which("fd").is_err() {
+        missing.push("fd");
+    }
+    if let Some(warning) = format_search_tools_warning(&missing) {
+        println!("{warning}");
+    }
+}
+
+/// Pure formatter for [`advisory_search_tools_preflight`]'s warning line, so
+/// its wording is unit-testable without depending on the machine's actual
+/// PATH. Returns `None` for an empty `missing` list.
+pub(super) fn format_search_tools_warning(missing: &[&str]) -> Option<String> {
+    if missing.is_empty() {
+        return None;
+    }
+    Some(format!(
+        "⚠ Search tools missing: {} - CLAUDE.md prefers these over grep/find; the \
+         prefer-modern-tools hook will allow the legacy commands until they are installed",
+        missing.join(", ")
+    ))
 }
 
 /// Advisory sccache preflight — never aborts startup.

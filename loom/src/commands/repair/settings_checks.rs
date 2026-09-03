@@ -30,6 +30,7 @@ pub(super) fn check(repo_root: &Path) -> Vec<RepairIssue> {
 
     issues.extend(codex_slash_tmp_issue());
     issues.extend(hook_scripts_issue());
+    issues.extend(jq_missing_issue());
     issues.extend(identity_drift_issues(repo_root));
 
     if !repo_root.join(".claude/settings.local.json").exists() {
@@ -80,6 +81,22 @@ fn hook_scripts_issue() -> Option<RepairIssue> {
             LOOM_HOOKS.len()
         ),
         fix_description: "Reinstall loom hook scripts".to_string(),
+    })
+}
+
+/// jq is what every hook script parses its Claude Code payload with. Without
+/// it the blocking guards deny every tool call and the lifecycle hooks skip
+/// silently, so a missing binary is a broken install even when every hook
+/// file is present and current.
+fn jq_missing_issue() -> Option<RepairIssue> {
+    if which::which("jq").is_ok() {
+        return None;
+    }
+    Some(RepairIssue {
+        severity: Severity::Critical,
+        description: "jq is not installed (every loom hook needs it to parse Claude Code payloads)"
+            .to_string(),
+        fix_description: "Install jq: apt install jq / brew install jq".to_string(),
     })
 }
 

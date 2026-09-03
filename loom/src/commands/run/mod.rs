@@ -9,6 +9,8 @@ mod graph_loader;
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tests_checks;
 
 use anyhow::{bail, Result};
 use colored::Colorize;
