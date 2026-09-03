@@ -1,7 +1,7 @@
 # Adjudication Autonomy Failure — Findings
 
 **Date:** 2026-09-02
-**Plan:** `doc/plans/IN_PROGRESS-PLAN-release-versioning-config-and-loom-dir.md`
+**Plan:** `doc/plans/DONE-PLAN-release-versioning-config-and-loom-dir.md`
 **Stage:** `loom-dir-migration`
 **Outcome:** a correct `accept` verdict was recorded and applied, and the run still
 deadlocked. The stage has been sitting `Executing` with no agent since
@@ -367,7 +367,7 @@ in the agent's judgement.
 
 One further item, outside any amendment's one-stage scope: the identical
 `./hooks/tests/run-all.sh` criterion appears again at
-`doc/plans/IN_PROGRESS-PLAN-release-versioning-config-and-loom-dir.md:2332` for a later stage
+`doc/plans/DONE-PLAN-release-versioning-config-and-loom-dir.md:2332` for a later stage
 and will fail there in exactly the same way.
 
 ---

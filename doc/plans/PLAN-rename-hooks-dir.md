@@ -2,7 +2,7 @@
 
 **Date:** 2026-09-02
 **Kind:** manual plan (no loom orchestration)
-**Precondition:** `IN_PROGRESS-PLAN-release-versioning-config-and-loom-dir.md` has reached
+**Precondition:** `DONE-PLAN-release-versioning-config-and-loom-dir.md` has reached
 `DONE-`. Two of its remaining stages, `doctrine-subagent-grouping` and `integration-verify`,
 carry `hooks/` paths in their tasks and acceptance criteria; renaming before they run would
 fail those criteria against a directory that no longer exists.
