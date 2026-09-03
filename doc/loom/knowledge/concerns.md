@@ -21,20 +21,6 @@ Critical violations where lower layers import from higher layers:
 - git/worktree imports orchestrator (hook config)
 - models imports plan/schema (type definitions)
 
-## Security Concerns
-
-### Release Checksum Asset-Name Mismatch (LOW PRIORITY; corrected 2026-07-01)
-
-> An earlier note here claimed `agents.zip`/`skills.zip`/`CLAUDE.md.template` "lack verification." That is STALE and WRONG — corrected below.
-
-Self-update DOES SHA256-verify all three non-binary assets via `download_verify_and_extract_zip` (loom/src/commands/self_update/mod.rs:277-340) and `verify_checksum` (signature.rs:77), and it REFUSES to install any asset that has no checksum entry.
-
-The real defect is an **asset-name mismatch**: self-update fetches the digests from a release asset literally named `checksums.txt` (mod.rs:224), but the release workflow publishes them as `SHA256SUMS.txt` (.github/workflows/release.yml:148,161,240). At runtime self-update therefore bails with "Release is missing checksums.txt" and cannot update these assets at all.
-
-Deferred: self-update is not in use yet; development installs use `dev-install.sh`.
-
-**Fix:** reconcile the names — rename the published asset to `checksums.txt`, or have self-update look for `SHA256SUMS.txt`.
-
 ## Code Quality Concerns
 
 ### Oversized Rust Units Remain Controlled Debt (2026-08-09)
