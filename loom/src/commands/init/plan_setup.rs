@@ -6,7 +6,7 @@ use crate::git::branch::current_branch;
 use crate::models::session::{SessionBackendKind, TerminalConfig};
 use crate::models::stage::Stage;
 use crate::plan::graph::levels::compute_all_levels;
-use crate::plan::parser::parse_plan;
+use crate::plan::parser::{parse_plan, ParsedPlan};
 use crate::plan::schema::{
     check_knowledge_recommendations, check_sandbox_recommendations, detect_stage_type,
     unsafe_plan_reasons, validate_structural_preflight, StageDefinition,
@@ -18,20 +18,30 @@ use crate::verify::serialize_stage_to_markdown;
 use anyhow::{Context, Result};
 use colored::Colorize;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use toml_edit::{value, Item, Table};
 
 // Plan / config writes go through the centralized `fs::work_dir` API using
 // `toml_edit`, which preserves comments and unknown keys across edits.
 
-/// Initialize from a plan, allowing an operator to explicitly acknowledge
-/// sandbox disablement or unsandboxed escape in that plan.
-pub fn initialize_with_plan_acknowledgement(
-    work_dir: &WorkDir,
-    plan_path: &Path,
-    terminal_backend: Option<SessionBackendKind>,
-    allow_unsafe_plan: bool,
-) -> Result<usize> {
+/// A plan that has been parsed and had every check that can FAIL run against
+/// it, before `loom init` creates or edits anything on disk. Produced by
+/// `preflight_plan` and consumed by `initialize_with_plan`.
+#[derive(Debug)]
+pub struct PreflightedPlan {
+    canonical_path: PathBuf,
+    parsed_plan: ParsedPlan,
+}
+
+/// Parse a plan and run every check on it that can fail, without printing or
+/// writing anything. `execute()` calls this before it bootstraps the repo or
+/// creates the state directory, so a rejected plan never leaves behind a
+/// half-initialized state directory, an installed pre-commit hook, or an
+/// operator-answered backend prompt that then has to be answered again.
+///
+/// `allow_unsafe_plan` is the operator's explicit acknowledgement of a plan
+/// that expands the sandbox policy (see `require_unsafe_plan_acknowledgement`).
+pub fn preflight_plan(plan_path: &Path, allow_unsafe_plan: bool) -> Result<PreflightedPlan> {
     if !plan_path.exists() {
         anyhow::bail!("Plan file does not exist: {}", plan_path.display());
     }
@@ -47,6 +57,50 @@ pub fn initialize_with_plan_acknowledgement(
 
     let unsafe_reasons = unsafe_plan_reasons(&parsed_plan.metadata);
     require_unsafe_plan_acknowledgement(&unsafe_reasons, allow_unsafe_plan)?;
+
+    // Validate every stage's resolved sandbox configuration at init time.
+    // This catches incompatible combinations (e.g. bypass-permissions) before
+    // the repo is even bootstrapped, not just before the daemon ever tries to
+    // spawn a session.
+    let plan_sandbox = &parsed_plan.metadata.loom.sandbox;
+    for stage_def in &parsed_plan.stages {
+        let stage_type = detect_stage_type(stage_def);
+        let merged = merge_sandbox_config(
+            plan_sandbox,
+            &stage_def.sandbox,
+            stage_type,
+            &stage_def.implementers,
+        );
+        validate_sandbox(&merged).with_context(|| {
+            format!(
+                "Stage '{}' has an incompatible sandbox configuration",
+                stage_def.id
+            )
+        })?;
+        validate_emittable(&merged).with_context(|| {
+            format!(
+                "Stage '{}' has a sandbox policy that cannot be enforced",
+                stage_def.id
+            )
+        })?;
+    }
+
+    Ok(PreflightedPlan {
+        canonical_path,
+        parsed_plan,
+    })
+}
+
+/// Initialize the state directory from an already-preflighted plan (see
+/// `preflight_plan`). Everything here PRINTS or WRITES, so it stays in the
+/// same place in `execute()`'s flow as before the preflight split.
+pub fn initialize_with_plan(
+    work_dir: &WorkDir,
+    plan: &PreflightedPlan,
+    terminal_backend: Option<SessionBackendKind>,
+) -> Result<usize> {
+    let canonical_path = &plan.canonical_path;
+    let parsed_plan = &plan.parsed_plan;
 
     println!(
         "  {} Plan parsed: {}",
@@ -117,32 +171,6 @@ pub fn initialize_with_plan_acknowledgement(
         println!("  {} {}", "⚠".yellow().bold(), warning.yellow());
     }
 
-    // Validate every stage's resolved sandbox configuration at init time.
-    // This catches incompatible combinations (e.g. bypass-permissions) before
-    // the daemon ever tries to spawn a session.
-    let plan_sandbox = &parsed_plan.metadata.loom.sandbox;
-    for stage_def in &stages {
-        let stage_type = detect_stage_type(stage_def);
-        let merged = merge_sandbox_config(
-            plan_sandbox,
-            &stage_def.sandbox,
-            stage_type,
-            &stage_def.implementers,
-        );
-        validate_sandbox(&merged).with_context(|| {
-            format!(
-                "Stage '{}' has an incompatible sandbox configuration",
-                stage_def.id
-            )
-        })?;
-        validate_emittable(&merged).with_context(|| {
-            format!(
-                "Stage '{}' has a sandbox policy that cannot be enforced",
-                stage_def.id
-            )
-        })?;
-    }
-
     let base_branch =
         current_branch(&std::env::current_dir()?).context("Failed to get current git branch")?;
 
@@ -152,7 +180,7 @@ pub fn initialize_with_plan_acknowledgement(
     let project_root = std::env::current_dir()?;
     let relative_source_path = canonical_path
         .strip_prefix(&project_root)
-        .unwrap_or(&canonical_path);
+        .unwrap_or(canonical_path);
 
     // Build config using the centralized fs::work_dir API. We start from an
     // existing document (preserving comments / unknown keys) and write the

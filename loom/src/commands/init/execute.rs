@@ -15,7 +15,7 @@ use super::cleanup::{
     cleanup_orphaned_sessions, cleanup_work_directory, cleanup_worktrees_directory,
     prune_stale_worktrees, remove_work_directory_on_failure, SessionReapMode,
 };
-use super::plan_setup::initialize_with_plan_acknowledgement;
+use super::plan_setup::{initialize_with_plan, preflight_plan, PreflightedPlan};
 use super::work_state::holds_orchestration_state;
 
 /// RAII guard that cleans up the state directory on drop unless disarmed.
@@ -74,6 +74,7 @@ pub fn execute(
     no_repair: bool,
 ) -> Result<()> {
     let repo_root = std::env::current_dir()?;
+    let preflighted = preflight_plan_if_given(plan_path.as_deref(), allow_unsafe_plan)?;
     let repo_bootstrap = crate::git::ensure_repo_ready_for_worktrees(&repo_root)?;
 
     // Repair the workspace BEFORE the validator judges it - see `startup_repairs`.
@@ -176,15 +177,10 @@ pub fn execute(
         eprintln!("  {} Legacy trust migration: {}", "!".yellow().bold(), e);
     }
 
-    if let Some(path) = plan_path {
+    if let Some(preflighted) = preflighted {
         let terminal_backend = resolve_backend_choice(backend)?;
-        let stage_count = initialize_with_plan_acknowledgement(
-            &work_dir,
-            &path,
-            terminal_backend,
-            allow_unsafe_plan,
-        )?;
-        print_summary(Some(&path), stage_count);
+        let stage_count = initialize_with_plan(&work_dir, &preflighted, terminal_backend)?;
+        print_summary(plan_path.as_deref(), stage_count);
     } else {
         print_summary(None, 0);
     }
@@ -200,6 +196,22 @@ pub fn execute(
     guard.disarm();
 
     Ok(())
+}
+
+/// Parse and policy-check the plan, when one was given, before `execute`
+/// creates or writes anything.
+///
+/// The ordering matters: `InitGuard` only ever removes the state directory, so
+/// a plan that fails any later leaves the pre-commit hook and the
+/// `.claude/settings.local.json` edits behind, and makes the operator answer
+/// the backend prompt a second time.
+fn preflight_plan_if_given(
+    plan_path: Option<&Path>,
+    allow_unsafe_plan: bool,
+) -> Result<Option<PreflightedPlan>> {
+    plan_path
+        .map(|path| preflight_plan(path, allow_unsafe_plan))
+        .transpose()
 }
 
 /// Repair the workspace before anything judges it.

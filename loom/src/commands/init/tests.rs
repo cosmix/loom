@@ -1,7 +1,7 @@
 //! Tests for loom init command.
 
 use super::cleanup::{cleanup_work_directory, prune_stale_worktrees};
-use super::plan_setup::{create_stage_from_definition, initialize_with_plan_acknowledgement};
+use super::plan_setup::{create_stage_from_definition, initialize_with_plan, preflight_plan};
 use crate::fs::work_dir::WorkDir;
 use crate::models::session::SessionBackendKind;
 use crate::models::stage::{
@@ -340,16 +340,9 @@ fn test_serialize_stage_to_markdown_with_all_fields() {
 #[test]
 fn test_initialize_with_plan_nonexistent_file() {
     let temp_dir = TempDir::new().unwrap();
-    let work_dir = WorkDir::new(temp_dir.path()).unwrap();
-    work_dir.initialize().unwrap();
     let nonexistent_path = temp_dir.path().join("nonexistent.md");
 
-    let result = initialize_with_plan_acknowledgement(
-        &work_dir,
-        &nonexistent_path,
-        Some(SessionBackendKind::Native),
-        false,
-    );
+    let result = preflight_plan(&nonexistent_path, false);
 
     assert!(result.is_err());
     assert!(result.unwrap_err().to_string().contains("does not exist"));
@@ -394,12 +387,8 @@ fn test_initialize_with_plan_creates_config() {
         subagent_timeout_secs: None,
     };
     let plan_path = create_test_plan(temp_dir.path(), vec![stage_def]);
-    let result = initialize_with_plan_acknowledgement(
-        &work_dir,
-        &plan_path,
-        Some(SessionBackendKind::Native),
-        false,
-    );
+    let preflighted = preflight_plan(&plan_path, false).unwrap();
+    let result = initialize_with_plan(&work_dir, &preflighted, Some(SessionBackendKind::Native));
     assert!(result.is_ok());
     let config_path = work_dir.root().join("config.toml");
     assert!(config_path.exists());
@@ -489,12 +478,8 @@ fn test_initialize_with_plan_creates_stage_files() {
 
     let plan_path = create_test_plan(temp_dir.path(), stages);
 
-    let result = initialize_with_plan_acknowledgement(
-        &work_dir,
-        &plan_path,
-        Some(SessionBackendKind::Native),
-        false,
-    );
+    let preflighted = preflight_plan(&plan_path, false).unwrap();
+    let result = initialize_with_plan(&work_dir, &preflighted, Some(SessionBackendKind::Native));
 
     assert!(result.is_ok());
 
@@ -540,11 +525,12 @@ fn test_cleanup_work_directory_nonexistent_ok() {
     assert!(result.is_ok());
 }
 
+/// A plan that fails preflight must leave no trace: `loom init` runs
+/// `preflight_plan` before it ever creates the state directory, precisely so
+/// a rejected plan needs no cleanup.
 #[test]
 fn test_initialize_with_plan_invalid_yaml() {
     let temp_dir = TempDir::new().unwrap();
-    let work_dir = WorkDir::new(temp_dir.path()).unwrap();
-    work_dir.initialize().unwrap();
 
     let invalid_plan = temp_dir.path().join("invalid.md");
     fs::write(
@@ -553,15 +539,14 @@ fn test_initialize_with_plan_invalid_yaml() {
     )
     .unwrap();
 
-    let result = initialize_with_plan_acknowledgement(
-        &work_dir,
-        &invalid_plan,
-        Some(SessionBackendKind::Native),
-        false,
-    );
+    let result = preflight_plan(&invalid_plan, false);
 
     assert!(result.is_err());
     assert!(result.unwrap_err().to_string().contains("parse"));
+    assert!(
+        !temp_dir.path().join(".loom").join("work").exists(),
+        "a rejected plan must never create the state directory"
+    );
 }
 
 #[test]
