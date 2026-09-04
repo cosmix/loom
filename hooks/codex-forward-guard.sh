@@ -119,12 +119,70 @@ is_exact_forward_command() {
 	[[ "${PARSED_WORDS[7]}" == --write ]]
 }
 
+# record_codex_task <model> <effort> - Append one row to
+# $LOOM_WORK_DIR/subagents/<stage-id>/codex.jsonl recording the codex model
+# and effort an AUTHORIZED forward is about to run with. Called from
+# enforce_forwarder only after is_exact_forward_command has already
+# succeeded, so a blocked command never reaches here and records nothing.
+#
+# This hook is a PreToolUse hook, so - like spawn-guard.sh's record_spawn -
+# it runs OUTSIDE the stage session's Bash sandbox and can reach the state
+# directory even though it is a symlink into the main repo from inside a
+# worktree. codex-forward.sh itself cannot do this recording: it runs INSIDE
+# that sandbox, where the append through the worktree's symlink is denied and
+# silently swallowed.
+#
+# Write discipline mirrors spawn-guard.sh:305-348 (record_spawn) exactly:
+# plain mkdir/redirection and never the loom CLI (the state directory is a
+# SYMLINK inside a worktree and loom's safe-write opens roots O_NOFOLLOW), a
+# symlinked target file is refused, every step is best-effort so a recording
+# failure can never change the decision already made, and it never writes to
+# stdout (this hook's stdout is hook protocol).
+record_codex_task() {
+	local model="$1" effort="$2"
+	local work_dir="${LOOM_WORK_DIR:-}" stage_id="${LOOM_STAGE_ID:-}"
+	[[ -n "$work_dir" && -n "$stage_id" ]] || return 0
+
+	case "$stage_id" in
+	*[!A-Za-z0-9._-]* | "" | "." | "..")
+		return 0
+		;;
+	esac
+
+	local dir="${work_dir}/subagents/${stage_id}"
+	mkdir -p -m 700 "$dir" 2>/dev/null || return 0
+	chmod 700 "$dir" 2>/dev/null || true
+
+	local file="${dir}/codex.jsonl"
+	if [[ -L "$file" ]]; then
+		return 0
+	fi
+
+	local ts line
+	ts=$(date -u +"%Y-%m-%dT%H:%M:%S.000Z") || return 0
+	line=$(jq -nc \
+		--arg ts "$ts" \
+		--arg stage_id "$stage_id" \
+		--arg session_id "${LOOM_SESSION_ID:-}" \
+		--arg model "$model" \
+		--arg effort "$effort" \
+		'{ts: $ts, stage_id: $stage_id, session_id: $session_id, model: $model, effort: $effort}' \
+		2>/dev/null) || return 0
+
+	if [[ -n "$line" ]]; then
+		{ printf '%s\n' "$line" >>"$file"; } 2>/dev/null || return 0
+		chmod 600 "$file" 2>/dev/null || true
+	fi
+	return 0
+}
+
 enforce_forwarder() {
 	[[ "$TOOL_NAME" == "Bash" ]] || block_forwarder "forwarders may use Bash only"
 	local command
 	command=$(printf '%s' "$INPUT_JSON" | jq -r '.tool_input.command // empty' 2>/dev/null || true)
 	[[ -n "$command" ]] || block_forwarder "Bash command metadata is missing"
 	is_exact_forward_command "$command" || block_forwarder "command is not an exact forwarding-wrapper invocation"
+	record_codex_task "${PARSED_WORDS[4]}" "${PARSED_WORDS[6]}"
 	exit 0
 }
 

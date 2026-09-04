@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-WRAPPER="$(cd "$(dirname "$0")/.." && pwd)/codex-forward.sh"
+# Run from the real hooks/ directory (not a copy) so codex-forward-guard.sh
+# finds _common.sh beside it.
+GUARD="$(cd "$(dirname "$0")/.." && pwd)/codex-forward-guard.sh"
 if ! TMP=$(mktemp -d "${TMPDIR:-/tmp}/loom-hooktest.XXXXXX") || [ -z "$TMP" ]; then
 	printf '%s\n' 'FAIL: mktemp failed to create a scratch directory'
 	exit 1
@@ -9,28 +11,19 @@ fi
 trap 'rm -rf "$TMP"' EXIT
 
 HOME_DIR="$TMP/home"
-BIN_DIR="$TMP/bin"
-STDOUT="$TMP/stdout"
-COMPANION_DIR="$HOME_DIR/.claude/plugins/cache/openai-codex/codex/1.0.6/scripts"
-mkdir -p "$BIN_DIR" "$COMPANION_DIR"
-printf '%s\n' '// fixture' >"$COMPANION_DIR/codex-companion.mjs"
+mkdir -p "$HOME_DIR"
 
-printf '%s\n' '#!/usr/bin/env bash' 'exit 0' >"$BIN_DIR/node"
-chmod +x "$BIN_DIR/node"
+VALID_CMD='~/.claude/hooks/loom/codex-forward.sh task hello --model gpt-5.6-terra --effort xhigh --write'
+VALID_PAYLOAD=$(jq -nc --arg c "$VALID_CMD" \
+	'{tool_name:"Bash",tool_input:{command:$c},agent_type:"loom-codex-forwarder"}')
 
-# Exercise the companion lane regardless of whether the harness running this
-# test is itself inside a sandbox that already refuses a nested Seatbelt
-# profile.
-printf '%s\n' '#!/usr/bin/env bash' 'exit 0' >"$BIN_DIR/sandbox-exec"
-chmod +x "$BIN_DIR/sandbox-exec"
-
+# Case 1: a valid stage id records exactly one row with the expected fields.
 WORK_DIR="$TMP/work"
 LEDGER="$WORK_DIR/subagents/my-stage/codex.jsonl"
 
-# Case 1: a valid stage id records exactly one row with the expected fields.
-HOME="$HOME_DIR" PATH="$BIN_DIR:$PATH" LOOM_WORK_DIR="$WORK_DIR" \
+printf '%s' "$VALID_PAYLOAD" | HOME="$HOME_DIR" LOOM_WORK_DIR="$WORK_DIR" \
 	LOOM_STAGE_ID="my-stage" LOOM_SESSION_ID="session-abc" \
-	bash "$WRAPPER" task hello --model gpt-5.6-terra --effort xhigh --write >"$STDOUT"
+	bash "$GUARD" >/dev/null
 
 if [[ ! -f "$LEDGER" ]]; then
 	printf '%s\n' "FAIL: ledger file was not created at $LEDGER"
@@ -68,27 +61,25 @@ if [[ -z "$ts" || "$ts" == 'null' ]]; then
 	exit 1
 fi
 
-# Case 2: a second run appends rather than truncating.
-HOME="$HOME_DIR" PATH="$BIN_DIR:$PATH" LOOM_WORK_DIR="$WORK_DIR" \
+# Case 2: a second identical call appends a second line rather than truncating.
+printf '%s' "$VALID_PAYLOAD" | HOME="$HOME_DIR" LOOM_WORK_DIR="$WORK_DIR" \
 	LOOM_STAGE_ID="my-stage" LOOM_SESSION_ID="session-abc" \
-	bash "$WRAPPER" task hello --model gpt-5.6-terra --effort xhigh --write >"$STDOUT"
+	bash "$GUARD" >/dev/null
 
 if [[ $(wc -l <"$LEDGER") -ne 2 ]]; then
-	printf '%s\n' "FAIL: expected 2 ledger lines after second run, got $(wc -l <"$LEDGER")"
+	printf '%s\n' "FAIL: expected 2 ledger lines after second call, got $(wc -l <"$LEDGER")"
 	exit 1
 fi
 
-# Case 3: an unsafe stage id must not create any ledger file or directory.
-# `set -e` would abort the whole script the instant the wrapper exited
-# nonzero, so `|| status=$?` is required to make the "expected 0" check
-# below reachable at all.
+# Case 3: an unsafe stage id must not create any ledger file or directory,
+# even though the command itself is still authorized (exit 0).
 status=0
-HOME="$HOME_DIR" PATH="$BIN_DIR:$PATH" LOOM_WORK_DIR="$WORK_DIR" \
+printf '%s' "$VALID_PAYLOAD" | HOME="$HOME_DIR" LOOM_WORK_DIR="$WORK_DIR" \
 	LOOM_STAGE_ID="bad/stage" LOOM_SESSION_ID="session-abc" \
-	bash "$WRAPPER" task hello --model gpt-5.6-terra --effort xhigh --write >"$STDOUT" || status=$?
+	bash "$GUARD" >/dev/null || status=$?
 
 if [[ "$status" -ne 0 ]]; then
-	printf '%s\n' "FAIL: wrapper with unsafe stage id exited $status, expected 0"
+	printf '%s\n' "FAIL: guard with unsafe stage id exited $status, expected 0"
 	exit 1
 fi
 if [[ -e "$WORK_DIR/subagents/bad" || -e "$WORK_DIR/subagents/bad/stage" ]]; then
@@ -97,21 +88,21 @@ if [[ -e "$WORK_DIR/subagents/bad" || -e "$WORK_DIR/subagents/bad/stage" ]]; the
 fi
 
 # Case 4: an empty LOOM_WORK_DIR must not create a "subagents" directory,
-# whether the wrapper resolved it as an absolute path or (were the empty-string
-# guard ever weakened) relative to the wrapper's own working directory. Run
-# from a dedicated cwd so that second possibility has somewhere to be checked.
+# whether resolved as an absolute path or relative to the guard's own working
+# directory. Run from a dedicated cwd so the second possibility has somewhere
+# to be checked.
 CASE4_CWD="$TMP/case4-cwd"
 mkdir -p "$CASE4_CWD"
 status=0
 (
 	cd "$CASE4_CWD"
-	HOME="$HOME_DIR" PATH="$BIN_DIR:$PATH" LOOM_WORK_DIR= \
+	printf '%s' "$VALID_PAYLOAD" | HOME="$HOME_DIR" LOOM_WORK_DIR= \
 		LOOM_STAGE_ID="my-stage" LOOM_SESSION_ID="session-abc" \
-		bash "$WRAPPER" task hello --model gpt-5.6-terra --effort xhigh --write >"$STDOUT"
+		bash "$GUARD" >/dev/null
 ) || status=$?
 
 if [[ "$status" -ne 0 ]]; then
-	printf '%s\n' "FAIL: wrapper with empty LOOM_WORK_DIR exited $status, expected 0"
+	printf '%s\n' "FAIL: guard with empty LOOM_WORK_DIR exited $status, expected 0"
 	exit 1
 fi
 if [[ -e "$CASE4_CWD/subagents" ]]; then
@@ -121,19 +112,19 @@ fi
 
 # Case 5: LOOM_STAGE_ID=".." must not escape subagents/<stage_id> - it must
 # neither append to work_dir/codex.jsonl (subagents/.. resolves to work_dir
-# itself) nor chmod the work dir via the `mkdir -p -m 700`/`chmod 700` calls
-# that target that resolved directory.
+# itself) nor create a subagents directory nor change the work dir's mode via
+# the `mkdir -p -m 700`/`chmod 700` calls that target that resolved directory.
 DOTDOT_WORK_DIR="$TMP/work-dotdot"
 mkdir -m 750 "$DOTDOT_WORK_DIR"
 mode_before=$(stat -c '%a' "$DOTDOT_WORK_DIR" 2>/dev/null || stat -f '%Lp' "$DOTDOT_WORK_DIR")
 
 status=0
-HOME="$HOME_DIR" PATH="$BIN_DIR:$PATH" LOOM_WORK_DIR="$DOTDOT_WORK_DIR" \
+printf '%s' "$VALID_PAYLOAD" | HOME="$HOME_DIR" LOOM_WORK_DIR="$DOTDOT_WORK_DIR" \
 	LOOM_STAGE_ID=".." LOOM_SESSION_ID="session-abc" \
-	bash "$WRAPPER" task hello --model gpt-5.6-terra --effort xhigh --write >"$STDOUT" || status=$?
+	bash "$GUARD" >/dev/null || status=$?
 
 if [[ "$status" -ne 0 ]]; then
-	printf '%s\n' "FAIL: wrapper with LOOM_STAGE_ID=.. exited $status, expected 0"
+	printf '%s\n' "FAIL: guard with LOOM_STAGE_ID=.. exited $status, expected 0"
 	exit 1
 fi
 if [[ -e "$DOTDOT_WORK_DIR/codex.jsonl" ]]; then
@@ -150,7 +141,41 @@ if [[ "$mode_after" != "$mode_before" ]]; then
 	exit 1
 fi
 
-# Case 6: the stdout trailer is unaffected by ledger recording.
-rg -qF 'mode: companion' "$STDOUT"
+# Case 6: a command that FAILS validation is blocked (exit 2) and records
+# nothing - only an AUTHORIZED forward may ever be recorded.
+BLOCKED_WORK_DIR="$TMP/work-blocked"
+BAD_CMD='~/.claude/hooks/loom/codex-forward.sh task hello --model gpt-4 --effort xhigh --write'
+BAD_PAYLOAD=$(jq -nc --arg c "$BAD_CMD" \
+	'{tool_name:"Bash",tool_input:{command:$c},agent_type:"loom-codex-forwarder"}')
+status=0
+printf '%s' "$BAD_PAYLOAD" | HOME="$HOME_DIR" LOOM_WORK_DIR="$BLOCKED_WORK_DIR" \
+	LOOM_STAGE_ID="blocked-stage" LOOM_SESSION_ID="session-abc" \
+	bash "$GUARD" >/dev/null 2>/dev/null || status=$?
+
+if [[ "$status" -ne 2 ]]; then
+	printf '%s\n' "FAIL: expected exit 2 for an unsupported model, got exit $status"
+	exit 1
+fi
+if [[ -e "$BLOCKED_WORK_DIR" ]]; then
+	printf '%s\n' 'FAIL: a blocked command created ledger artifacts'
+	exit 1
+fi
+
+INJECT_CMD='~/.claude/hooks/loom/codex-forward.sh task hello --model gpt-5.6-terra --effort xhigh --write && echo hi'
+INJECT_PAYLOAD=$(jq -nc --arg c "$INJECT_CMD" \
+	'{tool_name:"Bash",tool_input:{command:$c},agent_type:"loom-codex-forwarder"}')
+status=0
+printf '%s' "$INJECT_PAYLOAD" | HOME="$HOME_DIR" LOOM_WORK_DIR="$BLOCKED_WORK_DIR" \
+	LOOM_STAGE_ID="blocked-stage" LOOM_SESSION_ID="session-abc" \
+	bash "$GUARD" >/dev/null 2>/dev/null || status=$?
+
+if [[ "$status" -ne 2 ]]; then
+	printf '%s\n' "FAIL: expected exit 2 for a trailing && echo hi, got exit $status"
+	exit 1
+fi
+if [[ -e "$BLOCKED_WORK_DIR" ]]; then
+	printf '%s\n' 'FAIL: a blocked command with a trailing operator created ledger artifacts'
+	exit 1
+fi
 
 printf '%s\n' 'PASS'
