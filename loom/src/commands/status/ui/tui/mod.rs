@@ -3,16 +3,18 @@
 //! This module provides the ratatui-based terminal UI for displaying
 //! live status updates from the loom daemon.
 //!
-//! Layout (unified design):
+//! Layout (ledger dashboard):
 //! - Compact header with spinner, title, and inline progress
-//! - Execution graph (scrollable DAG visualization)
-//! - Unified stage table with all columns (status, name, merged, deps, elapsed)
-//! - Simplified footer with keybinds and errors
+//! - Scheduler alert band, when there are alerts to show
+//! - Scrollable stage table with all columns (status, name, merged, deps, elapsed)
+//! - Needs-attention and activity panels
+//! - One-line footer with the status legend, keybinds, and errors
+//! - A legend overlay, toggled with `?`, describing every stage state
 
 mod app;
 mod daemon_client;
 mod event_handler;
-mod layout;
+pub(crate) mod ledger;
 mod renderer;
 mod state;
 
