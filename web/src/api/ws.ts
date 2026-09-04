@@ -34,9 +34,13 @@ class StatusSocketConnection {
   constructor(store: Store, deps: SocketDeps) {
     this.store = store;
     this.Socket = deps.WebSocket ?? globalThis.WebSocket;
-    this.request = deps.fetch ?? globalThis.fetch;
-    this.schedule = deps.setTimeout ?? globalThis.setTimeout;
-    this.cancel = deps.clearTimeout ?? globalThis.clearTimeout;
+    // Bound: an unbound `globalThis.fetch`/`setTimeout`/`clearTimeout` called
+    // as `this.request(...)` etc. runs with `this` set to the client
+    // instance rather than `globalThis`, which native implementations reject
+    // with "Illegal invocation" in a real browser (only mocked in jsdom/tests).
+    this.request = deps.fetch ?? globalThis.fetch.bind(globalThis);
+    this.schedule = deps.setTimeout ?? globalThis.setTimeout.bind(globalThis);
+    this.cancel = deps.clearTimeout ?? globalThis.clearTimeout.bind(globalThis);
     const location = deps.location ?? globalThis.location;
     const scheme = location.protocol === "https:" ? "wss" : "ws";
     const host = location.host;

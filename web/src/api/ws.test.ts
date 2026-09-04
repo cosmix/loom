@@ -199,6 +199,47 @@ describe("status socket", () => {
     expect(FakeSocket.instances).toHaveLength(6);
   });
 
+  it("binds the global fetch/setTimeout/clearTimeout fallbacks to globalThis, not the client instance", () => {
+    const originalFetch = globalThis.fetch;
+    const originalSetTimeout = globalThis.setTimeout;
+    const originalClearTimeout = globalThis.clearTimeout;
+    const receivers: { fetch?: unknown; setTimeout?: unknown; clearTimeout?: unknown } = {};
+
+    globalThis.fetch = function (this: unknown) {
+      receivers.fetch = this;
+      return Promise.resolve({ json: async () => fixture });
+    } as unknown as typeof fetch;
+    globalThis.setTimeout = function (this: unknown) {
+      receivers.setTimeout = this;
+      return 1;
+    } as unknown as typeof setTimeout;
+    globalThis.clearTimeout = function (this: unknown) {
+      receivers.clearTimeout = this;
+    } as unknown as typeof clearTimeout;
+
+    try {
+      const store = createStore();
+      const dispose = connectStatusSocket(store, {
+        WebSocket: FakeSocket as unknown as typeof WebSocket,
+        location: { protocol: "http:", host: "127.0.0.1:7373" },
+      });
+      const socket = FakeSocket.instances[0];
+
+      // Triggers the initial fetch, a reconnect (setTimeout), then dispose
+      // (clearTimeout), exercising all three fallbacks the same way.
+      socket.closeFromServer("lost connection");
+      dispose();
+
+      expect(receivers.fetch).toBe(globalThis);
+      expect(receivers.setTimeout).toBe(globalThis);
+      expect(receivers.clearTimeout).toBe(globalThis);
+    } finally {
+      globalThis.fetch = originalFetch;
+      globalThis.setTimeout = originalSetTimeout;
+      globalThis.clearTimeout = originalClearTimeout;
+    }
+  });
+
   it("reconnects after a socket error without double-scheduling its close", () => {
     const store = createStore();
     const dispose = connectStatusSocket(store, dependencies());
