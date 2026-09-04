@@ -417,3 +417,28 @@ watches `.work/handoffs` for a document naming the current stage and session wit
 `origin: agent_ceiling` and drives the existing takedown-and-requeue from it, which is the one
 signal a sandboxed session can always leave. `SessionHung` now recovers the stage, bounded at two
 stall recoveries.
+
+## A `Read(...)` Deny Reshaped to Dodge One Check Froze the TUI and Missed the Other (2026-09-04)
+
+**What happened:** auto mode kept prompting on `rg`/`grep` from the project root because the
+daemon token `Read(...)` denies sat inside the project. The 2026-09-03 fix globbed the project
+directory out (`Read(//home/you/src/*/.loom/work/admin.token)`) so the rule's wildcard-free prefix
+left the project. The prompts continued on every `cd X && rg pattern relative/dir`, and Claude Code
+began freezing for long stretches: the operator could not type.
+
+**Why:** two separate defects in one reading of the binary. The prompt has a second branch that
+fires on the mere existence of any `Read(` deny in any settings source whenever the compound
+command contains a `cd` and the path is relative, so no shape avoids it. And on Linux every
+`Read(...)` deny is fed to the OS sandbox, whose glob expander does a synchronous recursive
+`readdirSync` of the wildcard-free prefix, here all of `~/src` (2.7 million inodes), per Bash
+command. The 09-03 analysis knew about the expansion and only ruled out `**` at `/` or `~`, not a
+`*` one level below the home directory.
+
+**Prevention:** when a harness check is bypass-immune, read the WHOLE predicate before choosing a
+rule shape, and search for every branch that returns the same `circuitBreaker`. Before emitting any
+glob into a sandbox list, name the directory the expander will walk and reject it if that directory
+is not small and owned by the project. A fix for an operator prompt is verified only by running the
+exact command that prompted, with a `cd` in front of it, not by re-reading rule text.
+
+**Fix:** no `Read(` deny is ever written; `denyRead` plus `hooks/credential-guard.sh` keep the
+boundary. See concerns.md § "No `Read(...)` Deny Rule May Exist in Any Settings File".

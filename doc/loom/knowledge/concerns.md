@@ -761,21 +761,47 @@ at its own source, and default in the fail-safe direction (do not claim currency
 
 The project-root `hooks/` directory is write-protected by Claude Code's sandbox as part of its bare-git-repo rule, so shell writes there fail even when permission config would allow them. [Sandbox Protected hooks/ Directory](concerns/sandbox-protected-hooks-dir.md)
 
-## Read Deny Rules Under the Project Root Prompt on Every Search (2026-09-03)
+## No `Read(...)` Deny Rule May Exist in Any Settings File (2026-09-04)
 
-Claude Code's `deniedPathInsideDirectory` check compares each path argument of `grep`, `rg`, `diff`,
-`git`, `cp` and `mv` (`rg` with no path means `.`) against every `Read(...)` deny rule's location:
-the rule's path up to its first wildcard, joined to the rule's root. A location inside or equal to
-the searched directory returns `ask`, bypass-immune and not classifier-approvable, so a token deny
-naming the project's own state root made every `rg` from the project root stall auto mode.
+Claude Code (verified against 2.1.259) runs two checks on `rg`, `grep`, `egrep`, `fgrep`, `diff`,
+`git`, `cp` and `mv`. Both return `ask` with `circuitBreaker: deniedPathInsideDirectory`,
+bypass-immune and not classifier-approvable, so auto mode stalls on an operator prompt:
 
-`fs/permissions/state_root.rs::token_read_denies` globs the project directory out —
-`Read(//home/you/src/*/.work/admin.token)` — putting the wildcard-free prefix on the project's
-PARENT, which no in-project search covers, while one `*` still matches the resolved token path in
-the main repo and every worktree (Claude Code resolves the symlink first). A `**` anchored at `/` or
-`~` is not an option: on Linux each deny rule is fed to the OS sandbox, which expands wildcards
-against the real filesystem. The concrete paths stay in `sandbox.filesystem.denyRead`, which is not
-a permission rule. `no_generated_read_deny_puts_its_location_inside_the_project`
-(`sandbox/settings/tests_token_rules.rs`) pins the property; `loom repair` check 14 rewrites older
-files. `fs/permissions/sync.rs::portable_permissions` never promotes a worktree's token deny, in any
-spelling, into the main repo's settings.
+1. **Location check.** Each path argument (`rg` with no path means `.`) is compared with every
+   `Read(...)` deny rule's location, the rule's path up to its first wildcard. A location inside or
+   equal to the searched directory prompts, so a concrete token rule such as
+   `Read(//home/you/src/app/.loom/work/admin.token)` prompts on every search rooted at the project.
+2. **`cd` check.** If the compound command contains a `cd` anywhere, even `cd /absolute/path`, and
+   the path argument is relative, the location is treated as unknowable and the check prompts
+   whenever ANY `Read` or `Read(...)` entry exists under `permissions.deny` in ANY settings source
+   (user, project, local, worktree). Shape and location are irrelevant. The predicate is
+   `Object.values(alwaysDenyRules).flat().some(r => r === "Read" || r.startsWith("Read("))`.
+
+The 2026-09-03 mitigation, token rules with the project directory globbed out
+(`Read(//home/you/src/*/.loom/work/admin.token)`), defeated only check 1 and added a worse defect: on
+Linux every `Read(...)` deny is fed to the OS sandbox, whose glob expander takes the wildcard-free
+prefix (`/home/you/src`), runs `readdirSync(prefix, {recursive: true})` synchronously on the main
+thread and regex-tests every entry, per sandboxed Bash command. Only a prefix of exactly `/` is
+refused as too broad. On a `~/src` holding 2.7 million inodes that froze the TUI for long stretches.
+
+Loom therefore never writes a `Read(` entry under `permissions.deny`, anywhere.
+`sandbox::settings::generate_settings_json`, `write_settings` and `git::worktree::settings` emit
+none; `carry_forward_denies` and the worktree refresh drop every `Read(` deny on shape alone;
+`fs::permissions::sync` never promotes one; `fs/permissions/write_rules.rs::prune_loom_read_denies`
+strips loom-written ones (token denies in any spelling, and mirrors of
+`state_root::CREDENTIAL_DENY_READ_PATHS`) from both `.claude/settings.json` and
+`.claude/settings.local.json` on `loom init`; `loom repair` check 14 (`check_read_denies`) strips
+them from every loom-written file and reports, warn-only, an operator-authored `Read(...)` deny it
+will not remove. `generated_settings_carry_no_read_deny_rules`
+(`sandbox/settings/tests_token_rules.rs`) pins the property.
+
+The boundary those rules described is kept by two other layers. `sandbox.filesystem.denyRead` is an
+OS list, not a permission rule: it triggers neither check and keeps Bash out of the credential
+directories and both tokens (`policy::MANDATORY_DENY_READ` now carries all five credential paths, so
+a plan's `deny_read` cannot drop them). `hooks/credential-guard.sh` is a PreToolUse guard on Read,
+Glob, Grep, Edit, MultiEdit, Write and NotebookEdit that blocks `admin.token`/`user.token` under any
+state root unconditionally and applies the project's `denyRead` list to the file tools. A hook can be
+switched off by `disableAllHooks` and shares the check-then-open race noted under "PreToolUse File
+Guards Cannot Eliminate Path-Swap Races"; that is the accepted trade for a prompt-free auto mode.
+Never reintroduce a `Read(...)` deny of any shape, and never emit a `denyRead` glob whose
+wildcard-free prefix lies above the project or above a small home subdirectory.

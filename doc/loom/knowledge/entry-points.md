@@ -354,9 +354,10 @@ Startup also publishes `.ignore` and `ripgreprc` at the state root, before eithe
 orchestrator runs no daemon, so it publishes neither tokens nor exclusions and its sessions get no
 export. A sandboxed agent's `rg`/`fd`/`ag` opening `admin.token` or `user.token` hits the sandbox's
 own deny rule and stalls auto mode on an operator prompt, so both files keep ordinary sweeps and
-`-uu`/`--no-ignore` sweeps away from the credential files. The `Read(...)` deny rules for those
-tokens are written with the project directory globbed out, for the reason in concerns.md § "Read
-Deny Rules Under the Project Root Prompt on Every Search".
+`-uu`/`--no-ignore` sweeps away from the credential files. No `Read(...)` permission deny is
+written for the tokens at all; the OS-level `sandbox.filesystem.denyRead` list and
+`hooks/credential-guard.sh` cover them, for the reason in concerns.md § "No `Read(...)` Deny Rule
+May Exist in Any Settings File".
 
 Privileged actions do not treat the mere presence of `.work/admin.token` as authorization. The
 operator supplies that secret only to the proof-minting process through `LOOM_ADMIN_TOKEN`; the
