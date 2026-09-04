@@ -1108,3 +1108,26 @@ single Bash-tool invocation. Two ways out: (1) rephrase to avoid the literal tri
 meaning survives, or (2) extract dynamic values (like an exact section heading containing the
 phrase) via a prior command substitution (`HEADING=$(rg ... )`) so the literal trigger text never
 appears in the Bash tool's own command argument — only the resolved variable does.
+
+## A Test Substring That Crosses a `colored` Segment Boundary Passes Under a Pipe and Fails in the Pre-Push Hook
+
+**What happened:** `cleanup_warning_renders_as_a_single_line_with_a_stage_file_hint` in
+`loom/src/commands/status/render/attention_tests.rs` passed under plain `cargo test` and in CI but
+failed inside the pre-push hook, blocking `git push`. Its assertion looked for `"Cleanup warning:
+failed: worktree busy\nretrying next cycle"`, a substring that starts in the plain label and
+continues into the `warning.yellow()` argument.
+
+**Why:** the `colored` crate emits ANSI escapes whenever stdout is a terminal and
+`CLICOLOR`/`NO_COLOR` are unset. Git runs hook stdout on the terminal, so `cargo test` inside
+`loom/.githooks/pre-push` renders with colors and an escape sequence lands between the label and the
+text. Under a pipe, a sandbox, or CI the same test sees no escapes and passes, so the failure
+surfaces only at push time.
+
+**Prevention:** in a test that renders through `colored`, assert on substrings that lie wholly inside
+one colored segment or wholly in plain text, never across the boundary between a label and a
+`.yellow()`/`.dimmed()`/etc. argument. To reproduce the hook's environment locally, run
+`CLICOLOR_FORCE=1 cargo test --lib <test-name>`. `loom/src/commands/graph/tests.rs` has a private
+`strip_ansi` helper if a test genuinely must match across segments.
+
+**Fix:** split the assertion into `contains("Cleanup warning: ")` and `contains("failed: worktree
+busy\nretrying next cycle")`.
