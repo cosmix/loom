@@ -73,72 +73,84 @@ from the previous build are silently reused.
 
 ## Release Process
 
-### Binary Signing with Minisign
+Releases are cut by tag. `.github/workflows/release.yml` does the rest - building,
+signing, verifying and publishing. Nothing is signed or uploaded by hand.
 
-All release binaries are cryptographically signed using [minisign](https://jedisct1.github.io/minisign/).
-
-#### Public Key
-
-```text
-RWTxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-```
-
-> **Note:** Replace with actual public key after keypair generation.
-
-#### Verifying a Release
-
-Users can verify downloaded binaries:
+### Cutting a release
 
 ```bash
-# Install minisign
+git tag -a vX.Y.Z -m "loom X.Y.Z"
+git push origin vX.Y.Z
+```
+
+The version is derived from the tag by `build.rs` (`derive_version` in
+`src/version/derive.rs`) and embedded as `LOOM_VERSION`. The `version` field in
+`Cargo.toml` is not the source and needs no bump. A `verify-version` job compares
+`loom -v` against the tag and fails the release on a mismatch.
+
+To exercise the pipeline without publishing, run the workflow manually with
+`dry_run: true` (Actions -> Release -> Run workflow, or
+`gh workflow run release.yml -f dry_run=true`). Building, signing and signature
+verification all run; release creation is additionally gated on a tag ref, so a
+manual dispatch cannot publish.
+
+### Published assets
+
+| Asset | Target |
+| ------------------- | -------------------------- |
+| `loom-linux-x86_64` | `x86_64-unknown-linux-gnu` |
+| `loom-darwin-arm64` | `aarch64-apple-darwin`     |
+
+Each ships with a `.minisig` signature, alongside a `SHA256SUMS.txt` covering both.
+
+Three places name these assets and change together: the workflow's build matrix and
+release `files:` list, the platform cases in `install.sh`, and `RELEASE_ASSETS` in
+`src/commands/self_update/mod.rs`. A platform absent from `RELEASE_ASSETS` is still
+detected by `get_target()`, so `loom update` reports the triple it could not serve
+rather than failing anonymously.
+
+### Signing
+
+Binaries are signed with [minisign](https://jedisct1.github.io/minisign/) using the
+`MINISIGN_PRIVATE_KEY` repository secret (Settings -> Secrets and variables ->
+Actions).
+
+The secret must hold a **password-less** secret key - the whole key file, comment
+line included. The workflow pipes it straight into `minisign -Sm` with nothing on
+stdin, so a password-protected key stalls the job. Generate one with `-W`:
+
+```bash
+minisign -G -W -p loom.pub -s loom.key
+```
+
+The matching public key lives in `src/commands/self_update/signature.rs` as
+`MINISIGN_PUBLIC_KEY`, and that constant is the single source of truth. After
+signing, the workflow reads the key out of that file, verifies every binary against
+it, and quotes the same value in the release notes. A secret from a different
+keypair fails the run before anything is published.
+
+### Rotating the signing key
+
+The public key is compiled into every binary, so a released binary only accepts
+updates signed by the key it shipped with. Rotating breaks `loom update` for
+everyone already installed - they have to reinstall. Rotate only when the private
+key is compromised or lost, and change the secret and `MINISIGN_PUBLIC_KEY`
+together.
+
+### Verifying a release
+
+```bash
 # macOS: brew install minisign
 # Linux: apt install minisign
 
-# Download binary and signature
-curl -LO https://github.com/cosmix/loom/releases/download/vX.Y.Z/loom-x86_64-unknown-linux-gnu
-curl -LO https://github.com/cosmix/loom/releases/download/vX.Y.Z/loom-x86_64-unknown-linux-gnu.minisig
+curl -LO https://github.com/cosmix/loom/releases/download/vX.Y.Z/loom-linux-x86_64
+curl -LO https://github.com/cosmix/loom/releases/download/vX.Y.Z/loom-linux-x86_64.minisig
 
-# Verify signature
-minisign -Vm loom-x86_64-unknown-linux-gnu -P 'RWTxxxxxx...'
+minisign -Vm loom-linux-x86_64 -P <public key from the release notes>
 ```
 
-#### Release Signing (Maintainers Only)
-
-1. **One-time setup** - Generate keypair (store private key securely):
-
-   ```bash
-   minisign -G -p loom.pub -s loom.key
-   ```
-
-2. **Sign release binaries**:
-
-   ```bash
-   minisign -Sm loom-x86_64-unknown-linux-gnu -s loom.key
-   minisign -Sm loom-x86_64-apple-darwin -s loom.key
-   minisign -Sm loom-x86_64-pc-windows-msvc.exe -s loom.key
-   ```
-
-3. **Upload both binary and `.minisig` file** to the GitHub release.
-
-4. **Update public key** in:
-   - `src/commands/self_update/signature.rs` (`MINISIGN_PUBLIC_KEY` constant)
-   - This file (CONTRIBUTING.md)
-
-### CI/CD Integration
-
-For automated releases, store the private key as a GitHub secret and add to your workflow:
-
-```yaml
-- name: Sign release binaries
-  env:
-    MINISIGN_KEY: ${{ secrets.MINISIGN_PRIVATE_KEY }}
-  run: |
-    echo "$MINISIGN_KEY" > loom.key
-    for binary in loom-*; do
-      minisign -Sm "$binary" -s loom.key
-    done
-    rm loom.key
-```
+`loom update` performs the same check automatically, against the key embedded in
+the running binary.
 
 ## Security
 
