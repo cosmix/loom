@@ -12,13 +12,13 @@ use crate::commands::common::tree::{compute_connector, format_dep_annotation};
 use crate::commands::graph::colors::color_by_index;
 use crate::commands::graph::indicators::status_indicator;
 use crate::commands::status::data::{ActivityStatus, StageSummary, StatusData};
-use crate::models::failure::FailureType;
 use crate::models::session::SessionType;
 use crate::models::stage::{StageStatus, StageType};
 use crate::orchestrator::{context_health, ContextHealth};
 use crate::plan::graph::levels;
 use crate::utils::format_elapsed;
 
+use super::attention_model::failure_label;
 use super::render_orphaned_warning;
 
 /// All `StageStatus` variants in display order for legend generation.
@@ -43,24 +43,6 @@ const LEGEND_STATUSES: &[StageStatus] = &[
 /// Compute topological level for each stage (level = max(dep_levels) + 1)
 fn compute_stage_levels(stages: &[StageSummary]) -> HashMap<String, usize> {
     levels::compute_all_levels(stages, |s| s.id.as_str(), |s| &s.dependencies)
-}
-
-/// Short status-line label for a blocked stage's failure type.
-fn failure_label(failure_type: &FailureType) -> &'static str {
-    match failure_type {
-        FailureType::SessionCrash => "crash",
-        FailureType::TestFailure => "test",
-        FailureType::BuildFailure => "build",
-        FailureType::CodeError => "code",
-        FailureType::Timeout => "timeout",
-        FailureType::ContextExhausted => "context",
-        FailureType::UserBlocked => "user",
-        FailureType::MergeConflict => "merge",
-        FailureType::InfrastructureError => "infra",
-        FailureType::SandboxSetupFailure => "sandbox",
-        FailureType::StartupRefusal => "startup",
-        FailureType::Unknown => "error",
-    }
 }
 
 /// Format inline annotations for a stage (session, failure, merge, held)

@@ -31,6 +31,10 @@ fn make_stage_summary(id: &str, deps: Vec<&str>, status: StageStatus) -> StageSu
         model: "opus".to_string(),
         session_type: None,
         incoherence: None,
+        execution_models: vec![],
+        dispute_count: 0,
+        judge_heartbeat_secs: None,
+        session_backend: None,
     }
 }
 
