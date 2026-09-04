@@ -167,6 +167,30 @@ jobs:
 
           ls -la
 
+      # The public key is read out of the source that `loom update` trusts, so a
+      # signing secret from a different keypair fails the release here instead of
+      # after publishing - and the release notes below quote the same value rather
+      # than a copy that can drift. `grep` rather than `rg`: the runner image
+      # guarantees only POSIX tools.
+      - name: Verify signatures against the embedded public key
+        id: pubkey
+        run: |
+          set -euo pipefail
+
+          PUBKEY=$(grep -oE -m1 'RW[A-Za-z0-9+/=]{40,}' loom/src/commands/self_update/signature.rs) || {
+            echo "Could not read MINISIGN_PUBLIC_KEY from loom/src/commands/self_update/signature.rs"
+            exit 1
+          }
+          echo "public_key=${PUBKEY}" >> "$GITHUB_OUTPUT"
+
+          cd release
+          for binary in loom-*; do
+            if [ -f "$binary" ] && [ ! "${binary##*.}" = "minisig" ]; then
+              echo "Verifying $binary..."
+              minisign -Vm "$binary" -P "$PUBKEY"
+            fi
+          done
+
       - name: Generate SHA256 checksums
         run: |
           cd release
@@ -228,13 +252,11 @@ jobs:
 
           ### Verify Signature
 
-          Every binary ships with a minisign signature. Verify against the release
-          signing key (key ID `8E9D22D875357EC7`):
+          Each binary ships with a minisign signature, already checked in CI against
+          the public key `loom update` has embedded:
           ```bash
-          minisign -Vm loom-linux-x86_64 -P RWTHfjV12CKdjuXF6DPYXsOoneV6zG4nt4Qd1DFe7JzSIXTXKfRJPHjJ
+          minisign -Vm loom-linux-x86_64 -P ${{ steps.pubkey.outputs.public_key }}
           ```
-
-          `loom update` checks the same signature against the key embedded in the binary.
 
           ### Checksums
 
