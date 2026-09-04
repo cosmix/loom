@@ -64,7 +64,7 @@ file tests/failure_resume.rs 468
 file tests/integration/merge_conflict_recovery.rs 412
 file tests/integration/plan_verify.rs 1028
 
-function src/cli/dispatch.rs dispatch 124
+function src/cli/dispatch.rs dispatch 128
 function src/cli/dispatch_stage.rs dispatch_stage 51
 function src/commands/clean/mod.rs print_summary 52
 function src/commands/clean/sessions.rs test_clean_sessions_reaps_live_only_when_destroying_state 57

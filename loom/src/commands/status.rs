@@ -5,6 +5,7 @@ pub mod merge_status;
 pub mod render;
 pub mod ui;
 mod validation;
+pub mod web;
 
 use crate::daemon::{DaemonServer, DaemonStatus};
 use crate::fs::work_dir::WorkDir;

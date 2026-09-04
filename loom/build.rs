@@ -5,19 +5,17 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
-
 include!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/src/version/derive.rs"
 ));
-
 const AGENTS_ROOT: &str = "agents";
 const COMMANDS_ROOT: &str = "commands";
 const SKILLS_ROOT: &str = "skills";
 const CODEX_SKILLS_ROOT: &str = "codex/skills";
+const WEB_DIST_ROOT: &str = "web/dist";
 const CLAUDE_TEMPLATE: &str = "CLAUDE.md.template";
 const AGENTS_TEMPLATE: &str = "AGENTS.md.template";
-
 /// The six asset roots embedded into the binary. Named once here so
 /// `emit_asset_rerun_keys` (rerun-if-changed watchers) and
 /// `generate_embedded_assets` (the actual embed) cannot drift apart.
@@ -29,12 +27,10 @@ const ASSET_ROOTS: [&str; 6] = [
     CLAUDE_TEMPLATE,
     AGENTS_TEMPLATE,
 ];
-
 fn main() {
     let describe_exact = run_git(&["describe", "--tags", "--exact-match"]);
     let describe = run_git(&["describe", "--tags"]);
     let short_sha = run_git(&["rev-parse", "--short", "HEAD"]);
-
     let version = derive_version(
         describe_exact.as_deref(),
         describe.as_deref(),
@@ -42,23 +38,19 @@ fn main() {
     );
     let commit = short_sha.unwrap_or_else(|| "unknown".to_string());
     let target = std::env::var("TARGET").unwrap_or_else(|_| "unknown".to_string());
-
     println!("cargo:rustc-env=LOOM_VERSION={version}");
     println!("cargo:rustc-env=LOOM_COMMIT={commit}");
     println!("cargo:rustc-env=LOOM_BUILD_DATE={}", build_date());
     println!("cargo:rustc-env=LOOM_TARGET={target}");
-
     emit_rerun_keys();
-
     let repo_root = repository_root();
     emit_asset_rerun_keys(&repo_root);
     generate_embedded_assets(&repo_root);
+    generate_web_assets(&repo_root);
 }
-
 fn repository_root() -> PathBuf {
     let manifest_dir =
         PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR must be set"));
-
     manifest_dir
         .parent()
         .expect("loom package must have a repository parent")
@@ -84,7 +76,6 @@ fn generate_embedded_assets(repo_root: &Path) {
     let skills = repo_root.join(SKILLS_ROOT);
     let codex_skills = repo_root.join(CODEX_SKILLS_ROOT);
     let mut generated = String::new();
-
     emit_group(
         &mut generated,
         "CLAUDE_AGENTS",
@@ -123,13 +114,45 @@ fn generate_embedded_assets(repo_root: &Path) {
         "AGENTS_MD_TEMPLATE",
         &repo_root.join(AGENTS_TEMPLATE),
     );
-
     let output = PathBuf::from(std::env::var("OUT_DIR").expect("OUT_DIR must be set"))
         .join("embedded_assets.rs");
     fs::write(&output, generated)
         .unwrap_or_else(|error| panic!("failed to write {}: {error}", output.display()));
 }
-
+fn generate_web_assets(repo_root: &Path) {
+    let dist = repo_root.join(WEB_DIST_ROOT);
+    // Unconditional: a missing web/dist must keep build.rs permanently dirty so
+    // the first `bun run build` triggers a re-embed. emit_if_exists() would emit
+    // nothing here and silently freeze an empty table (build.rs:302-305).
+    println!("cargo:rerun-if-changed={}", dist.display());
+    let mut generated = String::new();
+    if dist.join("index.html").exists() {
+        emit_web_assets(&mut generated, &dist);
+    } else {
+        generated.push_str("pub const WEB_ASSETS: &[WebAsset] = &[];\n");
+        println!("cargo:warning=web/dist is missing; `loom status --web` will answer 503. Build it with: cd web && bun install && bun run build");
+    }
+    let output =
+        PathBuf::from(std::env::var("OUT_DIR").expect("OUT_DIR must be set")).join("web_assets.rs");
+    fs::write(&output, generated)
+        .unwrap_or_else(|error| panic!("failed to write {}: {error}", output.display()));
+}
+fn emit_web_assets(output: &mut String, dist: &Path) {
+    let mut rows: Vec<_> = walk_files_with(dist, false)
+        .into_iter()
+        .map(|path| (asset_key(dist, &path), absolute_path(&path)))
+        .collect();
+    rows.sort_by(|left, right| left.0.cmp(&right.0));
+    output.push_str("pub const WEB_ASSETS: &[WebAsset] = &[\n");
+    for (key, path) in rows {
+        output.push_str(&format!(
+            "    ({}, include_bytes!({})),\n",
+            rust_literal(&key),
+            rust_literal(&path)
+        ));
+    }
+    output.push_str("];\n");
+}
 fn top_level_markdown(root: &Path) -> Vec<PathBuf> {
     let mut files = Vec::new();
     for entry in read_dir(root) {
@@ -149,7 +172,6 @@ fn top_level_markdown(root: &Path) -> Vec<PathBuf> {
     }
     files
 }
-
 fn loom_skill_files(root: &Path) -> Vec<PathBuf> {
     let mut files = Vec::new();
     for entry in read_dir(root) {
@@ -174,12 +196,16 @@ fn loom_skill_files(root: &Path) -> Vec<PathBuf> {
 }
 
 fn walk_files(root: &Path) -> Vec<PathBuf> {
+    walk_files_with(root, true)
+}
+
+fn walk_files_with(root: &Path, validate: bool) -> Vec<PathBuf> {
     let mut files = Vec::new();
-    walk_files_inner(root, &mut files);
+    walk_files_inner(root, &mut files, validate);
     files
 }
 
-fn walk_files_inner(root: &Path, files: &mut Vec<PathBuf>) {
+fn walk_files_inner(root: &Path, files: &mut Vec<PathBuf>, validate: bool) {
     for entry in read_dir(root) {
         let entry =
             entry.unwrap_or_else(|error| panic!("failed to read {}: {error}", root.display()));
@@ -190,9 +216,11 @@ fn walk_files_inner(root: &Path, files: &mut Vec<PathBuf>) {
 
         let file_type = entry.file_type().expect("asset type must be readable");
         if file_type.is_dir() {
-            walk_files_inner(&path, files);
+            walk_files_inner(&path, files, validate);
         } else if file_type.is_file() {
-            validate_utf8(&path);
+            if validate {
+                validate_utf8(&path);
+            }
             files.push(path);
         }
     }
@@ -330,13 +358,11 @@ fn emit_rerun_keys() {
     if let Some(head) = run_git(&["rev-parse", "--git-path", "HEAD"]) {
         emit_if_exists(Path::new(&head));
     }
-
     if let Some(symbolic) = run_git(&["symbolic-ref", "-q", "HEAD"]) {
         if let Some(ref_path) = run_git(&["rev-parse", "--git-path", &symbolic]) {
             emit_if_exists(Path::new(&ref_path));
         }
     }
-
     if let Some(reflog) = run_git(&["rev-parse", "--git-path", "logs/HEAD"]) {
         emit_if_exists(Path::new(&reflog));
     }
