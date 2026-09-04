@@ -220,29 +220,39 @@ jobs:
 
           ### Installation
 
-          **Linux (x86_64):**
-          ```bash
-          curl -sL https://github.com/${{ github.repository }}/releases/download/${{ steps.version.outputs.tag }}/loom-linux-x86_64 -o loom
-          chmod +x loom
-          sudo mv loom /usr/local/bin/
-          ```
+          The binary alone is not a working loom install. Loom's agents, skills, commands, hooks and orchestration rules are embedded in it and get written to `~/.claude/` and `~/.codex/` by `loom install-assets`, which the installer below runs for you.
 
-          **Windows (WSL2):** supported — use the Linux x86_64 binary above. Run stages on the
+          **Recommended (Linux x86_64 and macOS Apple Silicon):**
+          ```bash
+          curl -fsSL https://raw.githubusercontent.com/${{ github.repository }}/main/install.sh | bash
+          ```
+          This downloads the signed binary for your platform to `~/.local/bin/loom` (make sure that directory is on your `PATH`) and runs `loom install-assets`. Requires `jq`; `ripgrep` and `fd` are recommended.
+
+          **Windows (WSL2):** supported — the installer above picks the Linux x86_64 binary. Run stages on the
           tmux backend (`loom run --backend tmux`); a stock WSL install ships no Linux GUI stack,
           so the native backend has no terminal emulator to detect. Details:
           [Running under WSL](https://github.com/${{ github.repository }}/blob/${{ steps.version.outputs.tag }}/README.md#running-under-wsl).
 
-          **macOS (Apple Silicon):**
+          **Manual, pinned to this release (Linux x86_64):**
           ```bash
-          curl -sL https://github.com/${{ github.repository }}/releases/download/${{ steps.version.outputs.tag }}/loom-darwin-arm64 -o loom
-          chmod +x loom
-          sudo mv loom /usr/local/bin/
+          mkdir -p ~/.local/bin
+          curl -fsSL https://github.com/${{ github.repository }}/releases/download/${{ steps.version.outputs.tag }}/loom-linux-x86_64 -o ~/.local/bin/loom
+          chmod +x ~/.local/bin/loom
+          ~/.local/bin/loom install-assets
+          ```
+
+          **Manual, pinned to this release (macOS Apple Silicon):**
+          ```bash
+          mkdir -p ~/.local/bin
+          curl -fsSL https://github.com/${{ github.repository }}/releases/download/${{ steps.version.outputs.tag }}/loom-darwin-arm64 -o ~/.local/bin/loom
+          chmod +x ~/.local/bin/loom
+          ~/.local/bin/loom install-assets
           ```
 
           ### Verify Signature
 
           Each binary ships with a minisign signature, already checked in CI against
-          the public key `loom update` has embedded:
+          the public key `loom update` has embedded. Later upgrades via `loom update` verify the signature automatically.
           ```bash
           minisign -Vm loom-linux-x86_64 -P ${{ steps.pubkey.outputs.public_key }}
           ```
