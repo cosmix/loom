@@ -12,49 +12,25 @@ export type Tone =
   | "neutral";
 
 export interface StateMeta {
-  icon: string;
-  label: string;
   tone: Tone;
   bold: boolean;
 }
 
 const STATE_META: Record<StageStatus, StateMeta> = {
-  "waiting-for-deps": { icon: "○", label: "Waiting", tone: "pending", bold: false },
-  queued: { icon: "▶", label: "Queued", tone: "queued", bold: true },
-  executing: { icon: "●", label: "Executing", tone: "executing", bold: true },
-  "waiting-for-input": { icon: "?", label: "Input", tone: "warning", bold: true },
-  blocked: { icon: "✗", label: "Blocked", tone: "blocked", bold: true },
-  completed: { icon: "✓", label: "Completed", tone: "completed", bold: true },
-  "needs-handoff": { icon: "⟳", label: "Handoff", tone: "warning", bold: true },
-  skipped: { icon: "⊘", label: "Skipped", tone: "dimmed", bold: false },
-  "merge-conflict": { icon: "⚡", label: "Conflict", tone: "warning", bold: true },
-  "completed-with-failures": { icon: "⚠", label: "Failed", tone: "blocked", bold: true },
-  "merge-blocked": { icon: "⊗", label: "MergeBlk", tone: "blocked", bold: true },
-  "needs-human-review": { icon: "⏸", label: "Review", tone: "warning", bold: false },
-  "needs-adjudication": { icon: "⚖", label: "Adjudicate", tone: "warning", bold: true },
+  "waiting-for-deps": { tone: "pending", bold: false },
+  queued: { tone: "queued", bold: true },
+  executing: { tone: "executing", bold: true },
+  "waiting-for-input": { tone: "warning", bold: true },
+  blocked: { tone: "blocked", bold: true },
+  completed: { tone: "completed", bold: true },
+  "needs-handoff": { tone: "warning", bold: true },
+  skipped: { tone: "dimmed", bold: false },
+  "merge-conflict": { tone: "warning", bold: true },
+  "completed-with-failures": { tone: "blocked", bold: true },
+  "merge-blocked": { tone: "blocked", bold: true },
+  "needs-human-review": { tone: "warning", bold: false },
+  "needs-adjudication": { tone: "warning", bold: true },
 };
-
-export const LEGEND: ReadonlyArray<{ status: StageStatus; meaning: string }> = [
-  { status: "waiting-for-deps", meaning: "waiting for its dependencies to complete and merge" },
-  { status: "queued", meaning: "ready; the daemon spawns a session when a slot frees up" },
-  { status: "executing", meaning: "a session is working in the stage's worktree" },
-  { status: "waiting-for-input", meaning: "the agent is waiting for an answer in its session" },
-  { status: "needs-handoff", meaning: "context ceiling reached; a fresh session resumes it" },
-  { status: "completed", meaning: "work done and verified — may still be unmerged" },
-  { status: "skipped", meaning: "skipped by you; does not satisfy its dependents" },
-  { status: "blocked", meaning: "errored; needs intervention → loom stage retry <id>" },
-  {
-    status: "completed-with-failures",
-    meaning: "acceptance failed; retried automatically up to the limit",
-  },
-  { status: "merge-conflict", meaning: "merge conflict → loom stage merge <id>" },
-  { status: "merge-blocked", meaning: "merge errored (not a conflict) → loom stage merge <id>" },
-  { status: "needs-human-review", meaning: "asked for a decision → loom stage human-review <id>" },
-  {
-    status: "needs-adjudication",
-    meaning: "a disputed acceptance criterion awaits the judge's verdict",
-  },
-];
 
 export function formatElapsed(seconds: number): string {
   if (seconds < 60) {

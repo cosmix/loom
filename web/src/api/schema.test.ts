@@ -20,15 +20,24 @@ describe("snapshot schema", () => {
     expect(snapshotSchema.safeParse(invalid).success).toBe(false);
   });
 
-  it("accepts fixtures without cleanup warnings", () => {
-    const withoutCleanupWarnings = structuredClone(fixtureJson) as {
+  it("parses a stage's cleanup_warning when present, and still parses when it's absent", () => {
+    // The fixture's stages never carry the key (Rust's skip_serializing_if
+    // omits it when None), so this is the only place the present case is
+    // exercised for a *stage* (WebAttention entries pin the null case).
+    const withWarning = structuredClone(fixtureJson) as {
       status: { stages: Array<Record<string, unknown>> };
     };
-    for (const stage of withoutCleanupWarnings.status.stages) {
+    withWarning.status.stages[0].cleanup_warning = "leftover";
+    const parsed = snapshotSchema.parse(withWarning);
+    expect(parsed.status.stages[0].cleanup_warning).toBe("leftover");
+
+    const withoutKey = structuredClone(fixtureJson) as {
+      status: { stages: Array<Record<string, unknown>> };
+    };
+    for (const stage of withoutKey.status.stages) {
       delete stage.cleanup_warning;
     }
-
-    expect(snapshotSchema.safeParse(withoutCleanupWarnings).success).toBe(true);
+    expect(snapshotSchema.safeParse(withoutKey).success).toBe(true);
   });
 
   it("accepts an omitted healthy-case notice", () => {

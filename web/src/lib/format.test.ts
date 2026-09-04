@@ -14,7 +14,6 @@ import {
   daemonLine,
   failureLabel,
   formatElapsed,
-  LEGEND,
   mergeText,
   modelsOf,
   progressPercent,
@@ -23,7 +22,6 @@ import {
   timeText,
   type Tone,
 } from "@/lib/format";
-import { LEGEND as SHARED_LEGEND } from "@/lib/states";
 
 const fixture = snapshotSchema.parse(fixtureJson);
 const stages = new Map(fixture.status.stages.map((stage) => [stage.id, stage]));
@@ -45,28 +43,22 @@ describe("TUI formatter ports", () => {
     expect(formatElapsed(seconds)).toBe(expected);
   });
 
-  it.each<readonly [StageStatus, string, string, Tone, boolean]>([
-    ["waiting-for-deps", "○", "Waiting", "pending", false],
-    ["queued", "▶", "Queued", "queued", true],
-    ["executing", "●", "Executing", "executing", true],
-    ["waiting-for-input", "?", "Input", "warning", true],
-    ["blocked", "✗", "Blocked", "blocked", true],
-    ["completed", "✓", "Completed", "completed", true],
-    ["needs-handoff", "⟳", "Handoff", "warning", true],
-    ["skipped", "⊘", "Skipped", "dimmed", false],
-    ["merge-conflict", "⚡", "Conflict", "warning", true],
-    ["completed-with-failures", "⚠", "Failed", "blocked", true],
-    ["merge-blocked", "⊗", "MergeBlk", "blocked", true],
-    ["needs-human-review", "⏸", "Review", "warning", false],
-    ["needs-adjudication", "⚖", "Adjudicate", "warning", true],
-  ])("maps %s to its TUI state metadata", (status, icon, label, tone, bold) => {
-    expect(stateMeta(status)).toEqual({ icon, label, tone, bold });
-  });
-
-  it("keeps the formatter legend in lockstep with the shared status table", () => {
-    expect(LEGEND).toEqual(
-      SHARED_LEGEND.map(({ status, legend }) => ({ status, meaning: legend })),
-    );
+  it.each<readonly [StageStatus, Tone, boolean]>([
+    ["waiting-for-deps", "pending", false],
+    ["queued", "queued", true],
+    ["executing", "executing", true],
+    ["waiting-for-input", "warning", true],
+    ["blocked", "blocked", true],
+    ["completed", "completed", true],
+    ["needs-handoff", "warning", true],
+    ["skipped", "dimmed", false],
+    ["merge-conflict", "warning", true],
+    ["completed-with-failures", "blocked", true],
+    ["merge-blocked", "blocked", true],
+    ["needs-human-review", "warning", false],
+    ["needs-adjudication", "warning", true],
+  ])("maps %s to its TUI state metadata", (status, tone, bold) => {
+    expect(stateMeta(status)).toEqual({ tone, bold });
   });
 
   it.each<readonly [FailureType, string]>([

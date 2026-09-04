@@ -74,13 +74,27 @@ class StatusSocketConnection {
     }
     const socket = new this.Socket(this.url);
     this.socket = socket;
+    // Every handler checks it's still the current socket: a superseded
+    // socket can fire onclose/onerror after a later reconnect has already
+    // opened a fresh one, and reacting to that stale event would schedule a
+    // second, untracked reconnect loop.
     socket.onopen = () => {
+      if (this.socket !== socket) return;
       this.attempts = 0;
       this.setConnection("live");
     };
-    socket.onmessage = (event) => this.receiveMessage(event.data);
-    socket.onclose = (event) => this.reconnect(event.reason || "socket closed");
-    socket.onerror = () => this.reconnect("socket error");
+    socket.onmessage = (event) => {
+      if (this.socket !== socket) return;
+      this.receiveMessage(event.data);
+    };
+    socket.onclose = (event) => {
+      if (this.socket !== socket) return;
+      this.reconnect(event.reason || "socket closed");
+    };
+    socket.onerror = () => {
+      if (this.socket !== socket) return;
+      this.reconnect("socket error");
+    };
   }
 
   private receiveMessage(data: unknown): void {

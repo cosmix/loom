@@ -48,6 +48,10 @@ describe("ledger route", () => {
       expect(screen.getAllByText(label).length).toBeGreaterThan(0);
     }
     expect(screen.getByRole("img", { name: "loom" })).toBeTruthy();
+    expect(screen.getByText("orchestrator loop stalled 75s")).toBeTruthy();
+    // The "server" stage is the only one with context tokens in the fixture
+    // (312000 of an 800000 ceiling).
+    expect(screen.getByText("39%")).toBeTruthy();
   });
 });
 
