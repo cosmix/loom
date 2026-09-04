@@ -16,11 +16,8 @@ file src/commands/run/tests.rs 463
 file src/commands/stage/complete.rs 861
 file src/commands/stage/merge.rs 546
 file src/commands/stage/tests/complete.rs 544
-file src/commands/status/ui/tui/app.rs 410
-file src/commands/status/ui/tui/renderer.rs 414
 file src/context/refresh/tests_source_graph.rs 679
 file src/daemon/server/dispute.rs 510
-file src/daemon/server/status.rs 416
 file src/fs/knowledge/tests/catalog.rs 402
 file src/fs/locking.rs 499
 file src/fs/permissions/hooks.rs 446
@@ -119,9 +116,8 @@ function src/commands/stage/recover.rs test_determine_recovery_reason 89
 function src/commands/stage/skip_retry.rs retry 214
 function src/commands/stage/tests/complete.rs test_complete_no_verify_refuses_zero_commits_ahead 66
 function src/commands/status.rs execute_static 81
-function src/commands/status/data/collector.rs build_stage_summary 56
+function src/commands/status/data/collector.rs build_stage_summary 52
 function src/commands/status/data/collector_tests.rs make_test_stage 68
-function src/commands/status/render/attention.rs render_problem_stage 53
 function src/commands/status/render/compact.rs render_compact 74
 function src/commands/status/render/completion.rs render_completion_lines 55
 function src/commands/status/render/completion.rs render_completion_screen 84
@@ -129,11 +125,10 @@ function src/commands/status/render/graph.rs format_stage_annotations 78
 function src/commands/status/render/graph.rs render_graph 66
 function src/commands/status/ui/tree_widget.rs build_lines 183
 function src/commands/status/ui/tree_widget_tests.rs make_stage 68
-function src/commands/status/ui/tui/app.rs render 86
+function src/commands/status/ui/tui/app.rs render 66
 function src/commands/status/ui/tui/app.rs run_event_loop 56
 function src/commands/status/ui/tui/renderer.rs render_completion 128
-function src/commands/status/ui/tui/renderer.rs stage_info_to_stage 76
-function src/commands/status/ui/tui/state.rs test_live_status_compute_levels 54
+function src/commands/status/ui/tui/renderer.rs stage_summary_to_stage 71
 function src/commands/status/ui/tui/state.rs update 57
 function src/commands/usage/transcript_tests.rs ephemeral_split_always_reconciles_to_cache_creation 57
 function src/commands/verify.rs execute 89
@@ -147,7 +142,6 @@ function src/daemon/server/lifecycle.rs run_server 134
 function src/daemon/server/lifecycle.rs start 117
 function src/daemon/server/orchestrator.rs run_orchestrator 94
 function src/daemon/server/status.rs collect_completion_summary 97
-function src/daemon/server/status.rs collect_status 80
 function src/daemon/server/tests.rs test_collect_status_with_stages 77
 function src/diagnosis/signal.rs generate_diagnosis_signal 124
 function src/fs/knowledge/templates.rs default_content 62
