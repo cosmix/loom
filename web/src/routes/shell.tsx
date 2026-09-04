@@ -1,11 +1,15 @@
+import { cn } from "cn";
 import { useAtomValue } from "jotai/react";
 import { useEffect, useState } from "react";
 import { Outlet } from "react-router";
 
 import { Header } from "@/components/header";
+import { useNow } from "@/components/hooks/use-now";
 import { LegendDialog } from "@/components/legend-dialog";
+import { QuotaMeters } from "@/components/quota-meters";
 import { Kbd } from "@/components/ui/kbd";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { providerRows } from "@/lib/quota";
 import { snapshotAtom } from "@/state/atoms";
 
 /// Header, routed body, footer, and the legend dialog with its `?` shortcut.
@@ -42,18 +46,36 @@ function isTyping(target: EventTarget | null): boolean {
   return target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName);
 }
 
+/// Sticky status bar: provider quota gauges on the left, the legend hint and
+/// the snapshot's source and time on the right. Without quota data it is the
+/// plain one-line footer with the hint on the left.
 function Footer() {
   const snapshot = useAtomValue(snapshotAtom);
+  const nowSecs = Math.floor(useNow(30_000) / 1000);
+  const quota = snapshot?.status.quota ?? null;
+  const hasQuota = quota !== null && providerRows(quota).length > 0;
   return (
-    <footer className="mx-auto flex w-full max-w-[1440px] flex-wrap items-center gap-x-4 gap-y-1 px-4 py-3 text-xs text-muted-foreground sm:px-6">
-      <span className="inline-flex items-center gap-1.5">
-        <Kbd>?</Kbd> legend
-      </span>
-      {snapshot && (
-        <span className="ml-auto font-mono tabular-nums">
-          {snapshot.source} · {new Date(snapshot.generated_at).toLocaleTimeString()}
+    <footer className="sticky bottom-0 z-10 border-t border-border bg-background/90 backdrop-blur-sm">
+      <div className="mx-auto flex w-full max-w-[1440px] flex-wrap items-center gap-x-4 gap-y-1 px-4 py-3 text-xs text-muted-foreground sm:px-6">
+        {quota && (
+          <QuotaMeters snapshot={quota} nowSecs={nowSecs} className="max-[899px]:basis-full" />
+        )}
+        <span
+          className={cn(
+            "inline-flex items-center gap-4",
+            hasQuota ? "ml-auto" : "flex-1 justify-between",
+          )}
+        >
+          <span className="inline-flex items-center gap-1.5">
+            <Kbd>?</Kbd> legend
+          </span>
+          {snapshot && (
+            <span className="font-mono tabular-nums">
+              {snapshot.source} · {new Date(snapshot.generated_at).toLocaleTimeString()}
+            </span>
+          )}
         </span>
-      )}
+      </div>
     </footer>
   );
 }

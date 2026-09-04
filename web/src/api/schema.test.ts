@@ -34,4 +34,30 @@ describe("snapshot schema", () => {
   it("accepts an omitted healthy-case notice", () => {
     expect(snapshotSchema.parse(fixtureJson).notice).toBeUndefined();
   });
+
+  it("parses the quota block", () => {
+    const quota = snapshotSchema.parse(fixtureJson).status.quota;
+
+    expect(quota.claude?.windows.map((window) => window.kind)).toEqual(["five-hour", "seven-day"]);
+    expect(quota.codex?.windows).toHaveLength(1);
+    expect(quota.codex?.plan).toBe("pro");
+  });
+
+  it("rejects a status without quota", () => {
+    const withoutQuota = structuredClone(fixtureJson) as {
+      status: Record<string, unknown>;
+    };
+    delete withoutQuota.status.quota;
+
+    expect(snapshotSchema.safeParse(withoutQuota).success).toBe(false);
+  });
+
+  it("accepts a provider with no data", () => {
+    const withoutCodex = structuredClone(fixtureJson) as {
+      status: { quota: { codex: unknown } };
+    };
+    withoutCodex.status.quota.codex = null;
+
+    expect(snapshotSchema.safeParse(withoutCodex).success).toBe(true);
+  });
 });

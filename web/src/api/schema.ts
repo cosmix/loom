@@ -95,11 +95,28 @@ export const progressSummarySchema = z.object({
   pending: z.number().int(),
   blocked: z.number().int(),
 });
+export const windowKindSchema = z.enum(["five-hour", "seven-day"]);
+export const quotaWindowSchema = z.object({
+  kind: windowKindSchema,
+  used_percent: z.number(),
+  resets_at: z.number().int().nullable(),
+});
+export const providerQuotaSchema = z.object({
+  observed_at: z.number().int(),
+  windows: z.array(quotaWindowSchema),
+  plan: z.string().nullable(),
+  error: z.string().nullable(),
+});
+export const quotaSnapshotSchema = z.object({
+  claude: providerQuotaSchema.nullable(),
+  codex: providerQuotaSchema.nullable(),
+});
 export const statusDataSchema = z.object({
   stages: z.array(stageSummarySchema),
   merge: mergeSummarySchema,
   progress: progressSummarySchema,
   plan_name: z.string().nullable(),
+  quota: quotaSnapshotSchema,
 });
 export const attentionSchema = z.object({
   id: z.string(),
@@ -140,3 +157,7 @@ export type DaemonState = z.infer<typeof daemonStateSchema>;
 export type FailureType = z.infer<typeof failureTypeSchema>;
 export type ActivityStatus = z.infer<typeof activityStatusSchema>;
 export type Snapshot = z.infer<typeof snapshotSchema>;
+export type WindowKind = z.infer<typeof windowKindSchema>;
+export type QuotaWindow = z.infer<typeof quotaWindowSchema>;
+export type ProviderQuota = z.infer<typeof providerQuotaSchema>;
+export type QuotaSnapshot = z.infer<typeof quotaSnapshotSchema>;

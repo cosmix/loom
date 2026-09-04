@@ -260,3 +260,29 @@
     animation: none;
   }
 }
+
+/* Footer quota gauges: ten hairline notches ruled over the usage fill, and
+ * a width transition for the fill and the reset track under it. */
+@layer components {
+  .quota-bar::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: repeating-linear-gradient(
+      to right,
+      transparent 0,
+      transparent calc(10% - 1px),
+      var(--background) calc(10% - 1px),
+      var(--background) 10%
+    );
+  }
+  .quota-fill {
+    transition: width 600ms ease-out;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .quota-fill {
+    transition: none;
+  }
+}
