@@ -247,7 +247,10 @@ loom:
 
 #[test]
 fn test_retired_truth_fields_are_rejected() {
-    // Retired verification fields must fail loudly instead of disappearing.
+    // Retired verification fields must fail loudly instead of disappearing,
+    // and the error must say where the check moved. `parse_and_validate` is
+    // the layer under test here (not raw `serde_yaml::from_str`), since the
+    // migration guidance is attached there.
     for field in ["truths", "truth_checks"] {
         let yaml = format!(
             r#"
@@ -266,12 +269,16 @@ loom:
         - "README.md"
 "#
         );
-        let result: Result<crate::plan::schema::types::LoomMetadata, _> =
-            serde_yaml::from_str(&yaml);
-        let error = result.unwrap_err().to_string();
+        let error = crate::plan::parser::parse_and_validate(&yaml)
+            .unwrap_err()
+            .to_string();
         assert!(
             error.contains(&format!("unknown field `{field}`")),
             "{error}"
+        );
+        assert!(
+            error.contains("acceptance"),
+            "guidance must point at the replacement field: {error}"
         );
     }
 }
