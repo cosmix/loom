@@ -29,7 +29,7 @@ fn test_hooks_config_structure() {
         ("Glob", "worktree-file-guard.sh"),
         ("Grep", "worktree-file-guard.sh"),
     ];
-    assert_eq!(pre_tool.len(), 40);
+    assert_eq!(pre_tool.len(), 47);
     for (entry, (matcher, script)) in pre_tool.iter().zip(expected_prefix) {
         assert_hook(entry, matcher, script);
     }
@@ -206,6 +206,35 @@ fn assert_hook(entry: &Value, matcher: &str, script: &str) {
 
 fn hook_command(entry: &Value) -> &str {
     entry["hooks"][0]["command"].as_str().unwrap()
+}
+
+/// `credential-guard.sh` is what replaced the `Read(...)` permission deny
+/// rules loom used to write. Those rules covered every path a file tool
+/// could name, so a matcher missing here is a credential file the file
+/// tools can reach again - and nothing else would notice, since
+/// `sandbox.filesystem.denyRead` only ever bound Bash.
+#[test]
+fn test_credential_guard_registered_for_every_file_tool() {
+    let hooks = loom_hooks_config();
+    let pre_tool = hooks["PreToolUse"].as_array().unwrap();
+
+    for tool in [
+        "Read",
+        "Glob",
+        "Grep",
+        "Edit",
+        "MultiEdit",
+        "Write",
+        "NotebookEdit",
+    ] {
+        let found = pre_tool.iter().any(|entry| {
+            entry["matcher"] == tool && hook_command(entry).ends_with("credential-guard.sh")
+        });
+        assert!(
+            found,
+            "credential-guard.sh not registered as PreToolUse hook for matcher '{tool}'"
+        );
+    }
 }
 
 const FOREIGN_COMMAND: &str = "/home/user/.claude/hooks/my-custom-hook.sh";

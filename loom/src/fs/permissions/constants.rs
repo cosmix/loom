@@ -75,6 +75,16 @@ pub const HOOK_WORKTREE_ISOLATION: &str = include_str!("../../../../hooks/worktr
 /// Validates target paths are within worktree boundary using LOOM_WORKTREE_PATH
 pub const HOOK_WORKTREE_FILE_GUARD: &str = include_str!("../../../../hooks/worktree-file-guard.sh");
 
+/// CredentialGuard hook - keeps the file tools (Read, Glob, Grep, Edit,
+/// MultiEdit, Write, NotebookEdit) out of credential files. This is the
+/// replacement for the `Read(...)` permission deny rules loom used to write:
+/// any settings file carrying a `permissions.deny` entry that starts with
+/// `Read(` makes Claude Code's Bash path validator prompt on every
+/// relative-path `rg`/`grep`/`diff`/`git`/`cp`/`mv` issued after a `cd`.
+/// `sandbox.filesystem.denyRead` is unaffected and still binds Bash; this hook
+/// is the file-tool half of the same boundary.
+pub const HOOK_CREDENTIAL_GUARD: &str = include_str!("../../../../hooks/credential-guard.sh");
+
 /// NoPreexistingFailures hook - advisory pushback when an agent writes off a
 /// red gate as pre-existing/flaky/environmental (CLAUDE.md rule 15)
 pub const HOOK_NO_PREEXISTING_FAILURES: &str =
@@ -137,6 +147,7 @@ pub const LOOM_HOOKS: &[(&str, &str)] = &[
     ("git-add-guard.sh", HOOK_GIT_ADD_GUARD),
     ("worktree-isolation.sh", HOOK_WORKTREE_ISOLATION),
     ("worktree-file-guard.sh", HOOK_WORKTREE_FILE_GUARD),
+    ("credential-guard.sh", HOOK_CREDENTIAL_GUARD),
     ("plans-path-guard.sh", HOOK_PLANS_PATH_GUARD),
     ("no-preexisting-failures.sh", HOOK_NO_PREEXISTING_FAILURES),
     ("codex-forward-guard.sh", HOOK_CODEX_FORWARD_GUARD),
