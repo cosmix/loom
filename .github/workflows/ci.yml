@@ -7,10 +7,14 @@ on:
       - master
     paths:
       - "loom/**"
+      - "web/**"
+      - "scripts/**"
       - ".github/workflows/ci.yml"
   pull_request:
     paths:
       - "loom/**"
+      - "web/**"
+      - "scripts/**"
       - ".github/workflows/ci.yml"
 
 env:
@@ -228,3 +232,60 @@ jobs:
         with:
           manifest-path: loom/Cargo.toml
           command: check
+
+  web:
+    name: Web dashboard
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Install bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Install dependencies
+        working-directory: web
+        run: bun install --frozen-lockfile
+
+      - name: Typecheck, lint, format, and test
+        working-directory: web
+        run: bun run check
+
+      - name: Verify the committed bundle is current
+        working-directory: web
+        run: |
+          bun run build
+          test -z "$(git status --short --untracked-files=all dist)"
+
+  smoke-web-dashboard:
+    name: Web dashboard smoke test
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Restore Cargo cache
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            loom/target/
+          key: ${{ runner.os }}-cargo-v2-${{ hashFiles('loom/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-v2-
+
+      - name: Install ripgrep
+        run: sudo apt-get update && sudo apt-get install -y ripgrep
+
+      - name: Build the loom binary
+        working-directory: loom
+        run: cargo build --bin loom
+
+      - name: Run the web dashboard smoke test
+        run: ./scripts/smoke-web-dashboard.sh loom/target/debug/loom
