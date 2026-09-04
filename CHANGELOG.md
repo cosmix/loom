@@ -5,7 +5,7 @@ All notable changes to loom are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.5.0] - 2026-09-04
+## [0.5.1] - 2026-09-04
 
 First published release.
 
@@ -33,5 +33,3 @@ First published release.
 - Windows is supported through WSL2: the Linux x86_64 binary runs unmodified, with the tmux backend covering the GUI terminal a stock WSL install lacks.
 - Linux ARM64 builds from source; no binary is published yet.
 - macOS Intel builds from source; no binary is published.
-
-[0.5.0]: https://github.com/cosmix/loom/releases/tag/v0.5.0
