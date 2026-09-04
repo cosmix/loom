@@ -23,10 +23,14 @@ fn config() -> MergedSandboxConfig {
     }
 }
 
+/// Every credential path is mandatory, not just the OAuth token: the four
+/// directories `default_deny_read` supplies must survive a plan that omitted
+/// them. A path the plan already lists is not duplicated, and parent-traversal
+/// entries never reach the OS sandbox, where they resolve too broadly.
 #[test]
 fn adds_mandatory_credentials_and_filters_parent_traversal() {
     let paths = deny_read_patterns(&config());
-    assert_eq!(paths, vec!["~/.ssh/**", "~/.claude/.credentials.json"]);
+    assert_eq!(paths, CREDENTIAL_DENY_READ_PATHS.to_vec());
 }
 
 #[test]

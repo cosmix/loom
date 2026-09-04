@@ -1,8 +1,27 @@
 //! Tests for `git/worktree/settings.rs`.
 
 use super::*;
-use crate::fs::permissions::state_root::{is_parent_glob_token_deny, token_read_denies};
 use tempfile::TempDir;
+
+/// Assert `deny` carries no `Read(` rule, of any shape; see
+/// doc/loom/knowledge/concerns.md § "No Read(...) Deny Rule May Exist".
+fn assert_no_read_deny(deny: &[String], context: &str) {
+    assert!(
+        !deny.iter().any(|entry| entry.starts_with("Read(")),
+        "{context} must carry no Read( deny rule, got: {deny:?}"
+    );
+}
+
+/// Assert the narrow state-root read grant survived (now the whole read grant).
+fn assert_narrow_state_root_allows(allow: &[String], resolved_str: &str) {
+    for expected in [
+        format!("Read(/{resolved_str}/signals/**)"),
+        format!("Read(/{resolved_str}/config.toml)"),
+        format!("Read(/{resolved_str}/handoffs/**)"),
+    ] {
+        assert!(allow.contains(&expected), "missing narrow allow {expected}");
+    }
+}
 
 #[test]
 fn test_is_worktree_scaffold_path() {
@@ -364,17 +383,10 @@ fn create_worktree_settings_never_grants_a_blanket_read_over_the_state_root() {
          (S-1: exposes admin.token / user.token)"
     );
 
-    // `.claude/settings.json` is written by a different code path than
-    // settings.local.json, so it must be safe standalone: explicit denies
-    // for the resolved-absolute token paths, not just a narrowed allow.
-    for deny_perm in token_read_denies(&resolved_str) {
-        assert!(is_parent_glob_token_deny(&deny_perm), "{deny_perm}");
-        let occurrences = deny.iter().filter(|p| *p == &deny_perm).count();
-        assert_eq!(
-            occurrences, 1,
-            "create_worktree_settings must deny {deny_perm} exactly once, got {occurrences}"
-        );
-    }
+    // Written by a different code path than settings.local.json, so this file
+    // must carry no read deny either; the narrow allow below is the whole grant.
+    assert_no_read_deny(&deny, "the worktree settings.json");
+    assert_narrow_state_root_allows(&allow, &resolved_str);
 }
 
 /// Set up a scratch repo/worktree with a `.loom/work` symlink and the given
@@ -411,55 +423,43 @@ fn run_create_worktree_settings_with_main_json(
     (resolved.to_string_lossy().into_owned(), allow, deny)
 }
 
+/// A hand-edited `allow` of the wrong JSON type is normalized to an array
+/// rather than silently skipping the narrow state-root grant — which, with no
+/// deny rule backing it, is now the only thing standing between the agent and
+/// a permission prompt on every signal read.
 #[test]
-fn create_worktree_settings_normalizes_a_non_array_deny_instead_of_dropping_token_denies() {
+fn create_worktree_settings_normalizes_a_non_array_allow() {
     let (resolved_str, allow, deny) = run_create_worktree_settings_with_main_json(
-        r#"{"permissions": {"deny": null, "allow": []}}"#,
+        r#"{"permissions": {"deny": null, "allow": null}}"#,
     );
 
-    for deny_perm in token_read_denies(&resolved_str) {
-        assert!(
-            deny.contains(&deny_perm) && is_parent_glob_token_deny(&deny_perm),
-            "a non-array `deny` must be normalized rather than skip the token deny {deny_perm}"
-        );
-    }
-    assert!(allow.contains(&format!("Read(/{}/signals/**)", resolved_str)));
-    assert!(allow.contains(&format!("Read(/{}/config.toml)", resolved_str)));
-    assert!(allow.contains(&format!("Read(/{}/handoffs/**)", resolved_str)));
+    assert_narrow_state_root_allows(&allow, &resolved_str);
+    assert_no_read_deny(&deny, "a settings.json with a non-array allow");
 }
 
+/// Same, one level up: a `permissions` value that is not an object at all.
 #[test]
-fn create_worktree_settings_normalizes_a_non_object_permissions_instead_of_dropping_token_denies() {
+fn create_worktree_settings_normalizes_a_non_object_permissions() {
     let (resolved_str, allow, deny) =
         run_create_worktree_settings_with_main_json(r#"{"permissions": "nonsense"}"#);
 
-    for deny_perm in token_read_denies(&resolved_str) {
-        assert!(
-            deny.contains(&deny_perm) && is_parent_glob_token_deny(&deny_perm),
-            "a non-object `permissions` must be normalized rather than skip the token deny {deny_perm}"
-        );
-    }
-    assert!(allow.contains(&format!("Read(/{}/signals/**)", resolved_str)));
-    assert!(allow.contains(&format!("Read(/{}/config.toml)", resolved_str)));
-    assert!(allow.contains(&format!("Read(/{}/handoffs/**)", resolved_str)));
+    assert_narrow_state_root_allows(&allow, &resolved_str);
+    assert_no_read_deny(&deny, "a settings.json with a non-object permissions");
 }
 
+/// An operator's own deny entries are copied forward untouched; this writer adds none of its own.
 #[test]
 fn create_worktree_settings_normalization_preserves_pre_existing_deny_entries() {
-    let (resolved_str, _allow, deny) = run_create_worktree_settings_with_main_json(
-        r#"{"permissions": {"deny": ["Read(/etc/shadow)"]}}"#,
+    let (resolved_str, allow, deny) = run_create_worktree_settings_with_main_json(
+        r#"{"permissions": {"deny": ["Read(/etc/shadow)", "Edit(/etc/**)"]}}"#,
     );
 
-    assert!(
-        deny.contains(&"Read(/etc/shadow)".to_string()),
-        "normalization must not discard a pre-existing valid deny entry"
+    assert_eq!(
+        deny,
+        vec!["Read(/etc/shadow)".to_string(), "Edit(/etc/**)".to_string()],
+        "normalization must neither discard the operator's deny entries nor add any of its own"
     );
-    for deny_perm in token_read_denies(&resolved_str) {
-        assert!(
-            deny.contains(&deny_perm) && is_parent_glob_token_deny(&deny_perm),
-            "the token deny {deny_perm} must still be added alongside the existing entry"
-        );
-    }
+    assert_narrow_state_root_allows(&allow, &resolved_str);
 }
 
 #[test]

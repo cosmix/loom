@@ -1,5 +1,5 @@
 //! Shared resolution of a worktree's state-root symlink and the S-1 token
-//! deny-list every settings writer must attach to it.
+//! paths every settings writer must protect on it.
 //!
 //! In a worktree, the state root is a symlink — `.loom/work` on the nested
 //! layout (-> `../../../.loom/work`) or `.work` on a legacy workspace
@@ -13,29 +13,44 @@
 //! `user.token` (User capability) to a sandboxed worktree agent — a daemon
 //! RPC privilege escalation. Both settings writers (`.claude/settings.json`
 //! in `git::worktree::settings` and `.claude/settings.local.json` in
-//! `sandbox::settings`) instead emit explicit `deny` rules naming the token
-//! files *before* any narrower allow, so deny wins over any current or future
-//! allow that might match the state root. This module is the one place those
-//! token paths are named, so a third token is added in exactly one place and
-//! both writers pick it up.
+//! `sandbox::settings`) therefore grant only narrow allows over the state
+//! root, never a blanket one. This module is the one place the token paths
+//! are named, so a third token is added in exactly one place and both writers
+//! pick it up.
 //!
-//! Those deny rules are spelled with the project directory globbed out —
-//! `Read(//home/you/src/*/.work/admin.token)`, not the resolved-absolute
-//! path. Claude Code's `deniedPathInsideDirectory` check refuses `rg`, `grep`,
-//! `diff`, `git`, `cp` and `mv` over any directory that contains a `Read(...)`
-//! deny's wildcard-free prefix, so a rule whose prefix lies under the project
-//! root makes every search from the project root prompt the operator. Putting
-//! the `*` where the project name goes moves that prefix up to the project's
-//! parent, which no in-project search covers. A `**` anchored at `/` or `~`
-//! would move it further still, but every deny rule is also fed to the Linux
-//! sandbox, which expands wildcards against the real filesystem — so exactly
-//! one `*` keeps that expansion to a single directory listing.
+//! Loom writes NO `Read(...)` entry under `permissions.deny`, in any shape.
+//! Claude Code's Bash path validator refuses `rg`, `grep`, `egrep`, `fgrep`,
+//! `diff`, `git`, `cp` and `mv` on a relative path issued after a `cd` in the
+//! same compound command whenever ANY settings file carries ANY `Read(` deny
+//! rule — bypass-immune, not classifier-approvable, and independent of the
+//! rule's path shape, so no spelling avoids it. The tokens are instead denied
+//! to Bash by the OS-level `sandbox.filesystem.denyRead` list
+//! ([`token_deny_paths`]), which is not a permission rule and does not feed
+//! that check, and to the native file tools by the `hooks/credential-guard.sh`
+//! PreToolUse hook. The recognisers here ([`is_token_read_deny`],
+//! [`is_loom_written_read_deny`]) exist only to strip the deny rules older
+//! loom versions wrote.
 
 use std::path::{Path, PathBuf};
 
 /// Token files a sandboxed worktree agent must never be granted a blanket
 /// `Read` over (S-1). Add a new one here — nowhere else.
 pub(crate) const STATE_ROOT_TOKEN_FILES: [&str; 2] = ["admin.token", "user.token"];
+
+/// Credential paths loom's own sandbox denies at the OS level
+/// (`sandbox.filesystem.denyRead`). Loom never mirrors any of them into
+/// `permissions.deny` as a `Read(...)` rule - see the module docs - so this
+/// is also the list [`is_loom_written_read_deny`] uses to recognise the
+/// mirrors older loom versions did write. Named once here so
+/// `models::stage::types::default_deny_read`, `sandbox::settings::policy`'s
+/// mandatory list, and that recogniser cannot drift apart.
+pub(crate) const CREDENTIAL_DENY_READ_PATHS: [&str; 5] = [
+    "~/.ssh/**",
+    "~/.aws/**",
+    "~/.config/gcloud/**",
+    "~/.gnupg/**",
+    "~/.claude/.credentials.json",
+];
 
 /// State-root layout a project's `config.toml` was found under: the current
 /// nested spelling, and the legacy workspace one a project keeps forever once
@@ -71,96 +86,39 @@ pub(crate) fn resolve_state_root(worktree_path: &Path) -> Option<PathBuf> {
     work_link.canonicalize().ok()
 }
 
-/// Build the two token deny-permission strings for the S-1 guard, with the
-/// project directory replaced by a single `*` so the rule's wildcard-free
-/// prefix lands on the project's PARENT (see module docs for why):
-/// `/home/you/src/app/.work` yields `Read(//home/you/src/*/.work/admin.token)`.
-///
-/// A `resolved` path ending in neither known layout keeps the concrete
-/// `Read(/{resolved}/{token})` spelling — a shape this module cannot take
-/// apart must still be denied.
-///
-/// `resolved` is the caller's own string form of the canonical state-root
-/// path, so extracting this does not shift either call site's existing
-/// UTF-8 handling (one hard-errors on non-UTF8, the other uses a lossy
-/// conversion).
-pub(crate) fn token_read_denies(resolved: &str) -> [String; 2] {
-    let [a, b] = STATE_ROOT_TOKEN_FILES;
-    let Some((project_root, layout)) = split_state_root(Path::new(resolved)) else {
-        return [
-            format!("Read(/{resolved}/{a})"),
-            format!("Read(/{resolved}/{b})"),
-        ];
-    };
-    let any_sibling_project = project_root
-        .parent()
-        .unwrap_or_else(|| Path::new("/"))
-        .join("*")
-        .join(layout);
-    [
-        format!("Read(/{})", any_sibling_project.join(a).display()),
-        format!("Read(/{})", any_sibling_project.join(b).display()),
-    ]
-}
-
-/// Split a resolved state root into its project root and layout, e.g.
-/// `/srv/app/.loom/work` into `/srv/app` and `.loom/work`. `None` when the
-/// path ends in neither layout.
-fn split_state_root(resolved: &Path) -> Option<(PathBuf, &'static str)> {
-    let name = resolved.file_name()?.to_str()?;
-    let parent = resolved.parent()?;
-    if name == LEGACY_LAYOUT {
-        return Some((parent.to_path_buf(), LEGACY_LAYOUT));
-    }
-    if name == "work" && parent.file_name().and_then(|n| n.to_str()) == Some(".loom") {
-        return Some((parent.parent()?.to_path_buf(), NESTED_LAYOUT));
-    }
-    None
-}
-
-/// Whether a bare path (not a `Read(...)` rule) names one of the token files.
-pub(crate) fn names_a_token_file(path: &str) -> bool {
-    Path::new(path)
-        .file_name()
-        .and_then(|name| name.to_str())
-        .is_some_and(|name| STATE_ROOT_TOKEN_FILES.contains(&name))
-}
-
 /// Strip a `Read(...)` permission rule down to the path inside it.
 fn read_rule_path(entry: &str) -> Option<&str> {
     entry.strip_prefix("Read(")?.strip_suffix(')')
 }
 
-/// Split a `Read(...)` rule that names a token file under a known state-root
-/// layout into that rule's directory and the layout it ends with. `None` for
-/// every other rule. Covers all spellings loom has ever emitted: resolved
-/// absolute, parent-glob, and the worktree-relative forms with or without
-/// `../` prefixes.
-fn split_token_deny(entry: &str) -> Option<(&str, &'static str)> {
-    let path = read_rule_path(entry)?;
-    let dir = STATE_ROOT_TOKEN_FILES
-        .into_iter()
-        .find_map(|token| path.strip_suffix(token)?.strip_suffix('/'))?;
-    let layout = [NESTED_LAYOUT, LEGACY_LAYOUT]
-        .into_iter()
-        .find(|layout| dir == *layout || dir.ends_with(&format!("/{layout}")))?;
-    Some((dir, layout))
-}
-
-/// Whether a `permissions.deny` entry names one of the token files, in any
-/// spelling loom has ever written.
+/// Whether a `permissions.deny` entry is a `Read(...)` rule naming a token
+/// file under a known state-root layout — every spelling loom has ever
+/// emitted: resolved absolute, parent-glob, and the worktree-relative forms
+/// with or without `../` prefixes.
 pub(crate) fn is_token_read_deny(entry: &str) -> bool {
-    split_token_deny(entry).is_some()
-}
-
-/// Whether a token deny is in the parent-glob spelling this module now emits.
-/// An entry `is_token_read_deny` accepts and this rejects is a stale shape
-/// that makes every `rg`/`grep` from the project root prompt the operator.
-pub(crate) fn is_parent_glob_token_deny(entry: &str) -> bool {
-    let Some((dir, layout)) = split_token_deny(entry) else {
+    let Some(path) = read_rule_path(entry) else {
         return false;
     };
-    dir.starts_with("//") && dir.strip_suffix(layout).is_some_and(|p| p.ends_with("/*/"))
+    let Some(dir) = STATE_ROOT_TOKEN_FILES
+        .into_iter()
+        .find_map(|token| path.strip_suffix(token)?.strip_suffix('/'))
+    else {
+        return false;
+    };
+    [NESTED_LAYOUT, LEGACY_LAYOUT]
+        .into_iter()
+        .any(|layout| dir == layout || dir.ends_with(&format!("/{layout}")))
+}
+
+/// A `permissions.deny` entry loom itself wrote in some earlier version:
+/// a daemon token deny in any spelling, or a `Read(...)` mirror of one of
+/// the credential paths the OS sandbox denies. Everything else in a deny
+/// list is the operator's and is never removed by loom.
+pub(crate) fn is_loom_written_read_deny(entry: &str) -> bool {
+    if is_token_read_deny(entry) {
+        return true;
+    }
+    read_rule_path(entry).is_some_and(|path| CREDENTIAL_DENY_READ_PATHS.contains(&path.trim()))
 }
 
 /// Build the two plain absolute token paths (`/{resolved}/{token}`), for
@@ -220,63 +178,50 @@ mod tests {
     }
 
     #[test]
-    fn token_denies_glob_the_project_directory_on_both_layouts() {
-        assert_eq!(
-            token_read_denies("/home/you/src/app/.work"),
-            [
-                "Read(//home/you/src/*/.work/admin.token)".to_string(),
-                "Read(//home/you/src/*/.work/user.token)".to_string(),
-            ]
-        );
-        assert_eq!(
-            token_read_denies("/home/you/src/app/.loom/work"),
-            [
-                "Read(//home/you/src/*/.loom/work/admin.token)".to_string(),
-                "Read(//home/you/src/*/.loom/work/user.token)".to_string(),
-            ]
-        );
-    }
-
-    #[test]
-    fn a_project_at_the_filesystem_root_gets_no_triple_slash() {
-        assert_eq!(
-            token_read_denies("/app/.work")[0],
-            "Read(//*/.work/admin.token)"
-        );
-    }
-
-    #[test]
-    fn an_unknown_layout_keeps_the_concrete_paths() {
-        assert_eq!(
-            token_read_denies("/var/lib/loom-state"),
-            [
-                "Read(//var/lib/loom-state/admin.token)".to_string(),
-                "Read(//var/lib/loom-state/user.token)".to_string(),
-            ]
-        );
-    }
-
-    #[test]
-    fn every_token_deny_spelling_is_recognized_and_only_the_glob_is_current() {
-        let stale = [
+    fn every_token_deny_spelling_loom_ever_wrote_is_still_recognized() {
+        for entry in [
+            // resolved-absolute, both layouts
             "Read(//home/you/src/app/.work/admin.token)",
             "Read(//home/you/src/app/.loom/work/user.token)",
+            // worktree-relative, with and without the `../` prefix
             "Read(.work/admin.token)",
             "Read(.loom/work/user.token)",
             "Read(../.work/user.token)",
             "Read(../.loom/work/admin.token)",
-        ];
-        for entry in stale {
+            // the parent-glob shape the last version emitted
+            "Read(//home/you/src/*/.loom/work/admin.token)",
+            "Read(//home/you/src/*/.work/user.token)",
+        ] {
             assert!(is_token_read_deny(entry), "{entry} must be recognized");
+            assert!(is_loom_written_read_deny(entry), "{entry} is loom's own");
+        }
+    }
+
+    #[test]
+    fn loom_written_denies_cover_the_credential_mirrors_and_nothing_of_the_operators() {
+        for path in CREDENTIAL_DENY_READ_PATHS {
+            let entry = format!("Read({path})");
             assert!(
-                !is_parent_glob_token_deny(entry),
-                "{entry} is the shape that prompts, not the current one"
+                is_loom_written_read_deny(&entry),
+                "{entry} is a mirror loom used to write"
             );
         }
+        assert!(is_loom_written_read_deny(
+            "Read(//home/you/src/app/.loom/work/admin.token)"
+        ));
 
-        for entry in token_read_denies("/home/you/src/app/.loom/work") {
-            assert!(is_token_read_deny(&entry));
-            assert!(is_parent_glob_token_deny(&entry));
+        for entry in [
+            // the operator's own rules
+            "Read(secrets/**)",
+            // no glob, so not one of ours
+            "Read(~/.ssh)",
+            // not a Read rule at all
+            "Edit(~/.ssh/**)",
+        ] {
+            assert!(
+                !is_loom_written_read_deny(entry),
+                "{entry} must not be claimed as loom's"
+            );
         }
     }
 
@@ -288,7 +233,6 @@ mod tests {
             "Read(//home/you/src/app/.work/signals/**)",
         ] {
             assert!(!is_token_read_deny(entry), "{entry} must not be claimed");
-            assert!(!is_parent_glob_token_deny(entry));
         }
     }
 

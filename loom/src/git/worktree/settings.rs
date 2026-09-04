@@ -265,15 +265,15 @@ pub fn refresh_worktree_settings_local(worktree_path: &Path, repo_root: &Path) -
 
     // Merge permissions (union with deduplication)
     let merged_allow = merge_permission_vecs(main_allow, wt_allow);
-    let merged_deny = merge_permission_vecs(main_deny, wt_deny);
+    let mut merged_deny = merge_permission_vecs(main_deny, wt_deny);
+    merged_deny.retain(|perm| !perm.starts_with("Read("));
 
-    // Build merged settings. The base MUST be the worktree's own settings when
-    // they exist: they carry session-specific hooks and the stage-resolved
-    // permission mode. Using the main repo's settings as base (as this
-    // function once did) clobbered all of that mid-session with whatever the
-    // last main-repo session left behind. Only permissions are refreshed from
-    // the main repo. When the worktree has no settings yet, fall back to the
-    // main copy, scrubbed of per-session identity env vars.
+    // Build merged settings. The base MUST be the worktree's own settings when they exist:
+    // they carry session-specific hooks and the stage-resolved permission mode. Using the main
+    // repo's settings as base (as this function once did) clobbered all of that mid-session
+    // with whatever the last main-repo session left behind. Only permissions are refreshed
+    // from the main repo. When the worktree has no settings yet, fall back to the main copy,
+    // scrubbed of per-session identity env vars.
     let mut merged = if worktree_settings_local.exists() {
         worktree_settings
     } else {
@@ -427,12 +427,11 @@ fn create_worktree_settings(
     // Set hasTrustDialogAccepted to skip the trust prompt
     obj.insert("hasTrustDialogAccepted".to_string(), json!(true));
 
-    // Ensure a permissions object exists so the `.work` allow-list block
-    // below can attach to it. A hand-edited settings.json can carry
-    // `permissions` as some other JSON type; normalize rather than leave it,
-    // since the S-1 token denies below depend on this being an object. We
-    // intentionally do NOT seed `defaultMode` here — that's the
-    // sandbox-resolved value's job (see fn-level docs).
+    // Ensure a permissions object exists so the `.work` allow-list block below can attach to it.
+    // A hand-edited settings.json can carry `permissions` as some other JSON type; normalize
+    // rather than leave it, since the state-root allow block below depends on this being an
+    // object. We intentionally do NOT seed `defaultMode` here — that's the sandbox-resolved
+    // value's job (see fn-level docs).
     if !matches!(obj.get("permissions"), Some(Value::Object(_))) {
         obj.insert("permissions".to_string(), json!({}));
     }
@@ -482,33 +481,34 @@ fn create_worktree_settings(
         // This file (`.claude/settings.json`) is written by a different
         // code path than `settings.local.json`, so it must be safe
         // standalone rather than depending on `sandbox::write_settings`
-        // always running afterwards to add denies to a second file.
-        // (settings.json is the team-shareable file per
-        // `fs/permissions/settings.rs`'s module doc, though `.claude/` is
-        // gitignored in this repo.) Explicit token `deny` entries go in
-        // below in the parent-glob shape `//<parent>/*/<layout>/<token>`
-        // (`state_root::token_read_denies`), before the narrowed allow,
-        // mirroring `sandbox/settings.rs`'s S-1 fix: deny wins over any
-        // current or future allow that might match the state root.
-        let token_denies = crate::fs::permissions::state_root::token_read_denies(&resolved_str);
+        // always running afterwards. (settings.json is the team-shareable
+        // file per `fs/permissions/settings.rs`'s module doc, though
+        // `.claude/` is gitignored in this repo.)
+        //
+        // It carries no `Read(...)` deny either, in any shape: Claude Code reads
+        // EVERY settings file when deciding whether a Bash command touches a
+        // denied path, and one `Read(` deny rule anywhere makes every
+        // relative-path `rg`/`grep`/`diff`/`git`/`cp`/`mv` after a `cd` prompt the
+        // operator. The token files are protected instead by the OS-level
+        // `sandbox.filesystem.denyRead` list written into `settings.local.json`
+        // and by `hooks/credential-guard.sh` for the native file tools. The narrow
+        // entries below are the whole read grant.
         let work_perms = vec![
             format!("Read(/{}/signals/**)", resolved_str),
             format!("Read(/{}/config.toml)", resolved_str),
             format!("Read(/{}/handoffs/**)", resolved_str),
         ];
 
-        // Get or create the allow/deny arrays within permissions.
+        // Get or create the allow array within permissions.
         // `permissions` is guaranteed to be an object here (normalized
-        // above), but a hand-edited settings.json can still carry
-        // `deny`/`allow` as some other JSON type. `array_entry`
-        // normalizes those to an empty array rather than skip the
-        // token denies below.
+        // above), but a hand-edited settings.json can still carry `allow`
+        // as some other JSON type. `array_entry` normalizes that to an
+        // empty array rather than skip the state-root grant below.
         if let Some(perms_obj) = settings
             .as_object_mut()
             .and_then(|o| o.get_mut("permissions"))
             .and_then(|p| p.as_object_mut())
         {
-            push_unique_perms(array_entry(perms_obj, "deny"), token_denies);
             push_unique_perms(array_entry(perms_obj, "allow"), work_perms);
         }
     }
@@ -524,7 +524,7 @@ fn create_worktree_settings(
 
 /// Return `key`'s array within `obj`, replacing a missing or wrong-typed
 /// value with an empty array first. A hand-edited settings.json must never
-/// cause the S-1 token denies below to be silently skipped.
+/// cause the narrow state-root allow entries to be silently skipped.
 fn array_entry<'a>(obj: &'a mut Map<String, Value>, key: &str) -> &'a mut Vec<Value> {
     if !matches!(obj.get(key), Some(Value::Array(_))) {
         obj.insert(key.to_string(), json!([]));

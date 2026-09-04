@@ -13,7 +13,6 @@ use std::fs::{self, OpenOptions};
 use std::io::{Read, Seek, Write};
 use std::path::{Path, PathBuf};
 
-use super::state_root::is_token_read_deny;
 use super::write_rules::is_inert_write_permission;
 use crate::git::worktree::refresh_worktree_settings_local;
 
@@ -103,8 +102,8 @@ pub fn sync_worktree_permissions_with_working_dir(
     all_deny_perms.sort();
     all_deny_perms.dedup();
 
-    let filtered_allow = portable_permissions(all_allow_perms);
-    let filtered_deny = portable_permissions(all_deny_perms);
+    let filtered_allow = portable_permissions(all_allow_perms, false);
+    let filtered_deny = portable_permissions(all_deny_perms, true);
 
     // If nothing to sync, return early
     if filtered_allow.is_empty() && filtered_deny.is_empty() {
@@ -182,14 +181,15 @@ fn extract_permissions(settings: &Value) -> (Vec<String>, Vec<String>) {
 
 /// Drop inert `Write(...)` rules, then rewrite worktree-specific paths to their
 /// portable form, keeping every other rule as it is.
-fn portable_permissions(perms: Vec<String>) -> Vec<String> {
+///
+/// `drop_read_denies` is true only for the deny-list call: a `Read(...)` grant must still sync,
+/// but no `Read(...)` deny is ever promoted out of a worktree. See
+/// doc/loom/knowledge/concerns.md § "No Read(...) Deny Rule May Exist in Any Settings File".
+fn portable_permissions(perms: Vec<String>, drop_read_denies: bool) -> Vec<String> {
     perms
         .into_iter()
         .filter(|p| !is_inert_write_permission(p))
-        // The main file's own writers own the token deny rules; syncing a
-        // worktree's copy, in any spelling, reinstates the search-prompt
-        // regression the current spelling fixed.
-        .filter(|p| !is_token_read_deny(p))
+        .filter(|p| !drop_read_denies || !p.starts_with("Read("))
         .filter_map(|p| {
             if is_worktree_specific_permission(&p) {
                 transform_worktree_path(&p)

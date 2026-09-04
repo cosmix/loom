@@ -1,5 +1,4 @@
 use super::config::MergedSandboxConfig;
-use crate::fs::permissions::state_root::is_token_read_deny;
 use crate::fs::permissions::write_rules::migrate_inert_write_denies;
 use crate::plan::schema::PermissionMode;
 use anyhow::{Context, Result};
@@ -130,10 +129,15 @@ pub fn write_settings(config: &MergedSandboxConfig, worktree_path: &Path) -> Res
     // See `fs::permissions::state_root` for the shared resolution and the S-1
     // rationale (blanket read/write over this path exposes `admin.token` /
     // `user.token` — a daemon RPC privilege escalation). Below:
-    //   1. emit explicit token `deny` rules *before* the allow, in the
-    //      parent-glob shape `//<project parent>/*/<layout>/<token>`, which
-    //      keeps their wildcard-free prefix outside the project root so
-    //      `rg`/`grep` there never trips `deniedPathInsideDirectory`;
+    //   1. NO `Read(...)` deny is written, here or anywhere else. The tokens
+    //      are denied to Bash through the OS-level
+    //      `sandbox.filesystem.denyRead` list (pushed just below) and to the
+    //      native file tools by `hooks/credential-guard.sh`. A permission-rule
+    //      deny is not an option at any path shape: Claude Code's Bash path
+    //      validator prompts the operator for every relative-path `rg`,
+    //      `grep`, `diff`, `git`, `cp` or `mv` issued after a `cd` in the same
+    //      compound command while ANY settings file carries ANY `Read(` deny
+    //      rule, and that prompt is neither bypassable nor auto-approvable;
     //   2. narrow the broad allow from `/**` down to read-only orchestration
     //      state plus handoff writes. Memory and dispute state are daemon-owned,
     //      so direct file-tool writes must never be authorized.
@@ -156,19 +160,6 @@ pub fn write_settings(config: &MergedSandboxConfig, worktree_path: &Path) -> Res
             }
         }
         if let Some(permissions) = settings_json.get_mut("permissions") {
-            // Deny the resolved-absolute token paths first so deny wins over
-            // any (current or future) allow that might match the .work root.
-            if let Some(deny) = permissions.get_mut("deny") {
-                if let Some(deny_arr) = deny.as_array_mut() {
-                    for deny_perm in
-                        crate::fs::permissions::state_root::token_read_denies(resolved_str)
-                    {
-                        if !deny_arr.iter().any(|v| v.as_str() == Some(&deny_perm)) {
-                            deny_arr.push(json!(deny_perm));
-                        }
-                    }
-                }
-            }
             if let Some(allow) = permissions.get_mut("allow") {
                 if let Some(allow_arr) = allow.as_array_mut() {
                     // Narrowed allow: config and orchestration state are
@@ -240,21 +231,19 @@ fn push_allow_write_rules(allow: &mut Vec<Value>, config: &MergedSandboxConfig) 
 /// Generate Claude Code settings JSON from sandbox config
 pub fn generate_settings_json(config: &MergedSandboxConfig) -> Value {
     let mut settings = json!({});
-    let deny_read = policy::permission_deny_read_patterns(config);
     settings["sandbox"] = policy::sandbox_settings(config);
 
     // Build permissions block for file tool restrictions (Read/Write/Edit prompting)
     // These still work for prompting even though they don't provide OS-level isolation
+    //
+    // No `Read(...)` deny is ever emitted here — read denial is entirely the
+    // OS sandbox's job (`sandbox.filesystem.denyRead`, above) plus
+    // `hooks/credential-guard.sh` for the native file tools. See
+    // `write_settings` for why a `Read(` deny rule of any shape is
+    // unacceptable.
     let mut permissions = json!({});
     let mut deny: Vec<Value> = Vec::new();
     let mut allow: Vec<Value> = Vec::new();
-
-    // Add deny_read paths (prompts before allowing Read tool on these); the
-    // token files are filtered out by `policy::permission_deny_read_patterns`
-    // (see its doc comment). Parent-traversal paths are already dropped too.
-    for path in &deny_read {
-        deny.push(json!(format!("Read({})", path)));
-    }
 
     // Add deny_write paths (prompts before allowing Write/Edit tools on these).
     //
@@ -394,9 +383,16 @@ pub fn generate_settings_json(config: &MergedSandboxConfig) -> Value {
 ///
 /// Stale entries that would be harmful if leaked into the OS sandbox are
 /// dropped first:
-/// - `Read()` with parent-traversal (`../`) resolves too broadly, and `Read()`
-///   with an absolute home path from an old loom version gets mangled by Claude
-///   Code (project root prepended);
+/// - EVERY `Read(...)` entry, whatever its path. `settings.local.json` is
+///   loom-generated and this generator emits no read deny at all, so anything
+///   found there is from an older version; carrying one forward in any shape
+///   reintroduces the Bash search prompt described in `write_settings`. This
+///   is deliberately blunter than the healers that act on files loom does not
+///   own end to end — `write_rules::prune_loom_read_denies` and
+///   `commands::repair::sandbox_settings::fix_read_denies` remove only the
+///   entries loom itself wrote and report an operator's own rule instead. Here
+///   there is no operator rule to preserve: the file is regenerated wholesale
+///   on every stage spawn, so nothing hand-added to it survives anyway;
 /// - for the MAIN repo, worktree-relative escape rules and cross-worktree refs
 ///   on the write side too: at the repo root `../..` is `$HOME`, so a stale
 ///   `Write(../../**)` would deny writes across the entire home directory;
@@ -405,20 +401,14 @@ pub fn generate_settings_json(config: &MergedSandboxConfig) -> Value {
 ///   only narrows what a stale rule denies). `merge_config` /
 ///   `generate_settings_json` never re-add it, but this merge would union it
 ///   back in from disk on every write, permanently blocking the `loom knowledge
-///   update` CLI subprocess for that worktree;
-/// - a token deny in any spelling — `write_settings` re-adds the current
-///   parent-glob shape on every write, and carrying an older spelling forward
-///   would reinstate the rule that makes `rg` prompt.
+///   update` CLI subprocess for that worktree.
 ///
 /// What survives is then migrated out of the inert `Write(...)` spelling — see
 /// `migrate_inert_write_denies` for that policy.
 fn carry_forward_denies(existing_deny: Vec<String>, is_worktree: bool) -> Vec<String> {
     let kept: Vec<String> = existing_deny
         .into_iter()
-        .filter(|perm| {
-            !(perm.starts_with("Read(") && (perm.contains("../") || perm.starts_with("Read(/")))
-                && !is_token_read_deny(perm)
-        })
+        .filter(|perm| !perm.starts_with("Read("))
         .filter(|perm| is_worktree || !(perm.contains("../") || perm.contains(".worktrees")))
         .filter(|perm| {
             !((perm.starts_with("Edit(") || perm.starts_with("Write("))
@@ -547,5 +537,7 @@ fn preserve_unowned_keys(
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tests_read_denies;
 #[cfg(test)]
 mod tests_token_rules;

@@ -118,12 +118,13 @@ fn test_ensure_loom_permissions_preserves_existing_settings_local() {
     assert_eq!(settings["env"]["CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS"], "1");
 }
 
-/// `loom init` on an existing project must drop the token deny spellings that
-/// make Claude Code prompt on every `rg`/`grep`, and leave every other deny
-/// entry alone. The current parent-glob rules are re-added by the next
-/// `write_settings` or by `loom repair --fix`.
+/// `loom init` on an existing project must drop every `Read(...)` deny loom
+/// itself ever wrote — stale token spellings, the current parent-glob token
+/// spelling, and the OS-sandbox credential mirrors — because any one of them
+/// makes Claude Code prompt on every `rg`/`grep`/`diff`/`git`/`cp`/`mv`. An
+/// operator's own `Read(...)` deny is left alone.
 #[test]
-fn test_ensure_loom_permissions_drops_prompting_token_denies() {
+fn test_ensure_loom_permissions_drops_prompting_read_denies() {
     let temp_dir = TempDir::new().unwrap();
     let repo_root = temp_dir.path();
     let hooks_dir = temp_dir.path().join("hooks");
@@ -136,7 +137,8 @@ fn test_ensure_loom_permissions_drops_prompting_token_denies() {
                 "Read(//home/you/src/app/.work/admin.token)",
                 "Read(.loom/work/user.token)",
                 "Read(//home/you/src/*/.work/user.token)",
-                "Read(~/.ssh/**)"
+                "Read(~/.ssh/**)",
+                "Read(secrets/**)"
             ]
         }
     });
@@ -159,8 +161,51 @@ fn test_ensure_loom_permissions_drops_prompting_token_denies() {
 
     assert_eq!(
         deny,
-        vec!["Read(//home/you/src/*/.work/user.token)", "Read(~/.ssh/**)"],
-        "only the prompting token spellings may be dropped, got: {deny:?}"
+        vec!["Read(secrets/**)"],
+        "every loom-written Read(...) deny is dropped, only the operator's own survives, got: {deny:?}"
+    );
+}
+
+/// The same heal must reach `.claude/settings.json`, not only
+/// `settings.local.json` — a `Read(...)` deny there prompts just as hard, and
+/// `.claude/settings.json` was previously healed only by `loom repair --fix`.
+#[test]
+fn test_ensure_loom_permissions_drops_prompting_read_denies_from_settings_json() {
+    let temp_dir = TempDir::new().unwrap();
+    let repo_root = temp_dir.path();
+    let hooks_dir = temp_dir.path().join("hooks");
+    let claude_dir = repo_root.join(".claude");
+    fs::create_dir_all(&claude_dir).unwrap();
+
+    let existing = json!({
+        "permissions": {
+            "deny": [
+                "Read(//home/you/src/*/.loom/work/admin.token)",
+                "Read(secrets/**)"
+            ]
+        }
+    });
+    fs::write(
+        claude_dir.join("settings.json"),
+        serde_json::to_string_pretty(&existing).unwrap(),
+    )
+    .unwrap();
+
+    ensure_loom_permissions_to(repo_root, Some(&hooks_dir)).unwrap();
+
+    let content = fs::read_to_string(claude_dir.join("settings.json")).unwrap();
+    let settings: Value = serde_json::from_str(&content).unwrap();
+    let deny: Vec<&str> = settings["permissions"]["deny"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|entry| entry.as_str())
+        .collect();
+
+    assert_eq!(
+        deny,
+        vec!["Read(secrets/**)"],
+        "only the operator's own Read(...) deny may survive in .claude/settings.json, got: {deny:?}"
     );
 }
 

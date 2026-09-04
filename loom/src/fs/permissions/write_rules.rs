@@ -6,7 +6,7 @@
 //! then ignored — so a `Write(...)` grant grants nothing and a `Write(...)`
 //! deny denies nothing.
 
-use super::state_root::{is_parent_glob_token_deny, is_token_read_deny};
+use super::state_root::is_loom_written_read_deny;
 use serde_json::{json, Map, Value};
 
 /// The path argument of a `Write(<path>)` rule, or `None` for any other rule.
@@ -145,18 +145,29 @@ pub(super) fn heal_inert_write_denies(settings_obj: &mut Map<String, Value>) -> 
     true
 }
 
-/// Drop `permissions.deny` entries naming a daemon token in any spelling
-/// other than the current parent-glob one (`state_root::token_read_denies`).
+/// Drop every `permissions.deny` entry loom itself ever wrote in the
+/// `Read(...)` shape.
 ///
-/// The older spellings put the rule's location inside the project, and Claude
-/// Code then refuses every `rg`, `grep`, `diff`, `git`, `cp` and `mv` run from
-/// the project root until the operator approves it by hand. `loom init` heals
-/// `settings.local.json` here rather than leaving the prompts in place for
-/// every interactive session until the next stage spawn regenerates the file;
-/// `loom repair --fix` (check 14) heals the other settings files and re-adds
-/// the current rules where they belong. An absent `permissions.deny` is left
-/// absent. Returns `true` when an entry was removed.
-pub(crate) fn prune_stale_token_denies(settings_obj: &mut Map<String, Value>) -> bool {
+/// Claude Code's Bash path validator refuses `rg`, `grep`, `diff`, `git`,
+/// `cp` and `mv` on a relative path issued after a `cd` — with a
+/// bypass-immune operator prompt — whenever ANY settings file carries ANY
+/// `Read(...)` deny rule, regardless of the rule's path shape. Loom therefore
+/// no longer writes a `Read(...)` deny anywhere: the daemon token files stay
+/// protected by the OS-level `sandbox.filesystem.denyRead` list
+/// (`state_root::token_deny_paths`) and, for the native file tools, by the
+/// `hooks/credential-guard.sh` PreToolUse guard. This prunes what OLDER loom
+/// versions left behind — both the stale-shaped token denies and the current
+/// parent-glob ones, since even the current shape now makes searches prompt —
+/// via [`is_loom_written_read_deny`]. An operator's own `Read(...)` deny is
+/// never loom's to remove; it is left in place, and `loom repair` reports it
+/// separately so the operator can decide.
+///
+/// `loom init` heals `settings.local.json` and `settings.json` here rather
+/// than leaving the prompts in place for every interactive session until the
+/// next stage spawn regenerates the file; `loom repair --fix` heals worktree
+/// copies. An absent `permissions.deny` is left absent. Returns `true` when
+/// an entry was removed.
+pub(crate) fn prune_loom_read_denies(settings_obj: &mut Map<String, Value>) -> bool {
     let Some(deny) = settings_obj
         .get_mut("permissions")
         .and_then(|permissions| permissions.get_mut("deny"))
@@ -165,10 +176,22 @@ pub(crate) fn prune_stale_token_denies(settings_obj: &mut Map<String, Value>) ->
         return false;
     };
     let before = deny.len();
-    deny.retain(|entry| {
-        !entry
-            .as_str()
-            .is_some_and(|rule| is_token_read_deny(rule) && !is_parent_glob_token_deny(rule))
-    });
+    deny.retain(|entry| !entry.as_str().is_some_and(is_loom_written_read_deny));
     deny.len() != before
+}
+
+/// [`prune_loom_read_denies`], plus the standard verbose notice when it
+/// removed something. Shared by both `.claude/settings.json` and
+/// `.claude/settings.local.json` call sites so each stays a one-liner.
+pub(crate) fn prune_read_denies_verbose(
+    settings_obj: &mut Map<String, Value>,
+    verbose: bool,
+) -> bool {
+    let denies_removed = prune_loom_read_denies(settings_obj);
+    if verbose && denies_removed {
+        println!(
+            "  Removed Read deny rule(s) that make searches prompt from .claude/settings.json"
+        );
+    }
+    denies_removed
 }

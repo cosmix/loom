@@ -1,7 +1,7 @@
 //! Tests for `Write(...)` rule pruning and deny migration.
 
 use crate::fs::permissions::settings::{ensure_loom_hooks_local, ensure_loom_permissions_to};
-use crate::fs::permissions::write_rules::migrate_inert_write_denies;
+use crate::fs::permissions::write_rules::{migrate_inert_write_denies, prune_loom_read_denies};
 use serde_json::{json, Value};
 use std::fs;
 use tempfile::TempDir;
@@ -90,6 +90,45 @@ fn test_ensure_loom_permissions_prunes_legacy_work_write_grants() {
     assert!(allow.iter().any(|v| v == "Read(src/**)"));
     // The replacement grant is in place.
     assert!(allow.iter().any(|v| v == "Edit(.loom/work/handoffs/**)"));
+}
+
+#[test]
+fn test_prune_loom_read_denies_removes_every_loom_written_shape() {
+    // Every `Read(...)` deny loom has ever written: the current parent-glob
+    // token deny, a stale plain-absolute one, a stale relative one, and the
+    // five OS-sandbox credential mirrors. An operator's own `Read(...)` deny,
+    // and every non-`Read` entry, must survive untouched.
+    let mut settings = json!({
+        "permissions": {
+            "deny": [
+                "Read(//home/you/src/*/.loom/work/admin.token)",
+                "Read(//home/you/src/app/.loom/work/admin.token)",
+                "Read(.loom/work/user.token)",
+                "Read(~/.ssh/**)",
+                "Read(~/.aws/**)",
+                "Read(~/.config/gcloud/**)",
+                "Read(~/.gnupg/**)",
+                "Read(~/.claude/.credentials.json)",
+                "Read(secrets/**)",
+                "Bash(rm -rf:*)"
+            ]
+        }
+    });
+
+    let changed = prune_loom_read_denies(settings.as_object_mut().unwrap());
+    assert!(changed);
+
+    let deny: Vec<&str> = settings["permissions"]["deny"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|v| v.as_str())
+        .collect();
+    assert_eq!(
+        deny,
+        vec!["Read(secrets/**)", "Bash(rm -rf:*)"],
+        "only loom-written Read(...) denies may be pruned, got: {deny:?}"
+    );
 }
 
 #[test]

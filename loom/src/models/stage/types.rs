@@ -386,43 +386,43 @@ where
 }
 
 fn default_deny_read() -> Vec<String> {
-    vec![
-        // Sensitive credential directories
-        "~/.ssh/**".to_string(),
-        "~/.aws/**".to_string(),
-        "~/.config/gcloud/**".to_string(),
-        "~/.gnupg/**".to_string(),
-        // Daemon IPC tokens — must never be readable by a sandboxed worktree
-        // agent. The broad `.loom/work/**` allow (emitted to grant the
-        // worktree its EROFS exemption) would otherwise expose
-        // `.loom/work/admin.token` (Admin capability) and
-        // `.loom/work/user.token` (User capability), defeating the RPC
-        // privilege split. These deny entries must be emitted *before* the
-        // broad allow (deny-before-allow) — that ordering is handled by the
-        // settings emitter; here we only declare the carve-out. Both relative
-        // forms are listed because `.loom/work` is a symlink and Claude Code
-        // matches patterns against the path as written. Both layouts
-        // (`.loom/work` and legacy `.work`) are listed too: a workspace whose
-        // `config.toml` was found under legacy `.work/` keeps that layout for
-        // reads and writes forever, so `LOOM_PERMISSIONS`/
-        // `LOOM_PERMISSIONS_WORKTREE` (`fs/permissions/constants.rs`) still
-        // grant it a broad `Read(.work/**)` for back-compat — the matching
-        // carve-out must exist in the legacy spelling too, or that broad
-        // allow leaves `admin.token`/`user.token` exposed with no deny to
-        // stop it.
-        ".loom/work/admin.token".to_string(),
-        ".loom/work/user.token".to_string(),
-        "../.loom/work/admin.token".to_string(),
-        "../.loom/work/user.token".to_string(),
-        ".work/admin.token".to_string(),
-        ".work/user.token".to_string(),
-        "../.work/admin.token".to_string(),
-        "../.work/user.token".to_string(),
-        // Worktree escape prevention - block access to parent directories
-        "../../**".to_string(),
-        // Block access to other worktrees
-        "../.worktrees/**".to_string(),
-    ]
+    // Credential paths come from `state_root::CREDENTIAL_DENY_READ_PATHS`.
+    let mut paths: Vec<String> = crate::fs::permissions::state_root::CREDENTIAL_DENY_READ_PATHS
+        .iter()
+        .map(|path| (*path).to_string())
+        .collect();
+    paths.extend(
+        [
+            // Daemon IPC tokens — must never be readable by a sandboxed worktree agent, or
+            // the RPC privilege split collapses: `admin.token` carries the Admin capability
+            // and `user.token` the User one. These reach the OS-level
+            // `sandbox.filesystem.denyRead` list and NOTHING else: loom emits no `Read(...)`
+            // permission rule in any settings file, because one of those anywhere makes
+            // Claude Code prompt on every relative-path `rg`/`grep`/`diff`/`git`/`cp`/`mv`
+            // issued after a `cd` — see doc/loom/knowledge/concerns.md § "No Read(...) Deny
+            // Rule May Exist in Any Settings File". The native file tools, which the OS list
+            // does not cover, are held off the tokens by `hooks/credential-guard.sh` instead
+            // — that hook, not a deny rule, is what now carves them out of the broad
+            // `Read(.work/**)` grant in `LOOM_PERMISSIONS` / `LOOM_PERMISSIONS_WORKTREE`
+            // (`fs/permissions/constants.rs`). Both relative forms and both
+            // `.loom/work`/legacy `.work` layouts are listed; see
+            // `fs::permissions::state_root`'s module docs.
+            ".loom/work/admin.token",
+            ".loom/work/user.token",
+            "../.loom/work/admin.token",
+            "../.loom/work/user.token",
+            ".work/admin.token",
+            ".work/user.token",
+            "../.work/admin.token",
+            "../.work/user.token",
+            // Worktree escape prevention - block access to parent directories
+            "../../**",
+            // Block access to other worktrees
+            "../.worktrees/**",
+        ]
+        .map(String::from),
+    );
+    paths
 }
 
 fn default_deny_write() -> Vec<String> {

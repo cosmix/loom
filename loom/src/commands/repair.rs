@@ -151,8 +151,8 @@ pub fn execute(fix: bool) -> Result<()> {
 /// preserved: workspace shape and gitignore, then hooks and settings.json
 /// permissions, then the `.claude` settings drift checks, then the
 /// `$HOME/.claude` asset checks, then the phantom-merge audit, daemon
-/// health, the stale knowledge-directory deny, the stale token-deny shape,
-/// and finally incoherent executing stages.
+/// health, the stale knowledge-directory deny, the `Read(...)` deny rules
+/// that make every search prompt, and finally incoherent executing stages.
 fn check_all_issues(repo_root: &Path) -> Vec<RepairIssue> {
     let mut issues = Vec::new();
 
@@ -163,7 +163,7 @@ fn check_all_issues(repo_root: &Path) -> Vec<RepairIssue> {
     issues.extend(merge_state::check(repo_root));
     issues.extend(daemon_checks::check_daemon_health(repo_root));
     issues.extend(sandbox_settings::check_stale_knowledge_denies(repo_root));
-    issues.extend(sandbox_settings::check_stale_token_denies(repo_root));
+    issues.extend(sandbox_settings::check_read_denies(repo_root));
     issues.extend(repair_coherence::check_incoherent_executing_stages(
         repo_root,
     ));
@@ -236,9 +236,12 @@ fn fix_workspace_issue(repo_root: &Path, issue: &RepairIssue) -> Option<Result<b
 fn fix_settings_or_state_issue(repo_root: &Path, issue: &RepairIssue) -> Option<Result<bool>> {
     if let Some(result) = settings_checks::fix_settings_issue(repo_root, &issue.description) {
         // Claims "Settings not found (.claude/settings.local.json)", "Stale
-        // knowledge-directory deny in", "Stale token deny shape in", "Stale
-        // loom session env in", and the generic ".claude/settings.local.json"
-        // — see its doc comment for the required order between those five.
+        // knowledge-directory deny in", "Read deny rule in", "Stale loom
+        // session env in", and the generic ".claude/settings.local.json" —
+        // see its doc comment for the required order between those five.
+        // "Operator-authored Read deny rule" deliberately falls through with
+        // `None`: loom never removes an operator's own rule, so the chain
+        // below reaches `Ok(false)` and the issue prints as skipped.
         return Some(result.map(|()| true));
     }
     if issue.description.contains("Old unprefixed skill") {

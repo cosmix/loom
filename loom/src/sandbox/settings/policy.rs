@@ -1,14 +1,16 @@
 //! Security policy helpers for Claude settings generation.
 
 use crate::codex::{CODEX_SANDBOX_DOMAINS, CODEX_SANDBOX_WRITE_PATHS};
-use crate::fs::permissions::state_root::names_a_token_file;
+use crate::fs::permissions::state_root::CREDENTIAL_DENY_READ_PATHS;
 use crate::sandbox::{MergedSandboxConfig, PACKAGE_MANAGER_CACHE_WRITE_PATHS};
 use anyhow::{bail, Result};
 use serde_json::{json, Value};
 use std::collections::HashSet;
 
-/// Credential files that must be denied even when an older plan omitted them.
-const MANDATORY_DENY_READ: &[&str] = &["~/.claude/.credentials.json"];
+/// Credential paths that must be denied even when an older plan omitted them.
+/// The same list `models::stage::types::default_deny_read` supplies, so a plan
+/// carrying the defaults adds nothing here — `deny_read_patterns` dedupes.
+const MANDATORY_DENY_READ: &[&str] = &CREDENTIAL_DENY_READ_PATHS;
 
 /// Reject policy that cannot be represented without a sandbox escape.
 pub(crate) fn validate_emittable(config: &MergedSandboxConfig) -> Result<()> {
@@ -45,14 +47,6 @@ pub(super) fn deny_read_patterns(config: &MergedSandboxConfig) -> Vec<String> {
         .filter(|path| seen.insert((*path).to_string()))
         .map(str::to_string)
         .collect()
-}
-
-/// `deny_read_patterns` minus the daemon token files (kept OS-enforced only,
-/// via `sandbox_settings`/`state_root::token_read_denies` — see settings.rs).
-pub(super) fn permission_deny_read_patterns(config: &MergedSandboxConfig) -> Vec<String> {
-    let mut patterns = deny_read_patterns(config);
-    patterns.retain(|path| !names_a_token_file(path));
-    patterns
 }
 
 /// Build the host sandbox portion of Claude's settings.

@@ -9,6 +9,8 @@ mod install_tests;
 #[cfg(test)]
 mod settings_tests;
 #[cfg(test)]
+mod sync_read_deny_tests;
+#[cfg(test)]
 mod sync_tests;
 #[cfg(test)]
 mod write_rules_tests;

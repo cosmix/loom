@@ -1,11 +1,23 @@
 use super::*;
-use crate::fs::permissions::state_root::token_read_denies;
+use crate::fs::permissions::state_root::CREDENTIAL_DENY_READ_PATHS;
 use crate::models::stage::{Implementer, Implementers};
 use crate::plan::schema::{
     CommandConfinement, FilesystemConfig, LinuxConfig, NetworkConfig, SandboxConfig,
     StageSandboxConfig, StageType,
 };
 use crate::sandbox::{merge_config, PACKAGE_MANAGER_CACHE_WRITE_PATHS};
+
+/// Whether any `permissions.deny` entry is a `Read(` rule; tolerates an absent key. Must
+/// always be false — see doc/loom/knowledge/concerns.md § "No Read(...) Deny Rule May Exist".
+pub(super) fn has_read_deny(settings: &Value) -> bool {
+    settings["permissions"]["deny"]
+        .as_array()
+        .is_some_and(|entries| {
+            entries
+                .iter()
+                .any(|v| v.as_str().is_some_and(|s| s.starts_with("Read(")))
+        })
+}
 
 pub(super) fn default_config() -> MergedSandboxConfig {
     MergedSandboxConfig {
@@ -166,14 +178,13 @@ fn test_generate_settings_with_filesystem() {
     let json = generate_settings_json(&config);
     assert_filesystem_sandbox(&json);
 
-    // Permissions for file tool restrictions
-    // Parent-traversal deny_read paths (../../**) are filtered out because
-    // Claude Code leaks them into the OS sandbox where they resolve too broadly
+    // Permissions for file tool restrictions. `deny_read` contributes NOTHING
+    // here — read denial is the OS sandbox's job (`denyRead`, asserted above)
+    // plus `hooks/credential-guard.sh`, because one `Read(` deny rule makes
+    // Claude Code prompt on every relative-path search issued after a `cd`.
     let deny = json["permissions"]["deny"].as_array().unwrap();
-    assert_eq!(deny.len(), 3);
-    assert_eq!(deny[0], "Read(~/.ssh/**)");
-    assert_eq!(deny[1], "Read(~/.claude/.credentials.json)");
-    assert_eq!(deny[2], "Edit(.loom/work/**)");
+    assert_eq!(deny.len(), 1);
+    assert_eq!(deny[0], "Edit(.loom/work/**)");
 
     // allow_write paths come first, then the narrowly-scoped state
     // permissions agents need (signals/handoffs/disputes/memory), emitted in
@@ -406,7 +417,11 @@ fn test_generate_settings_keeps_mandatory_credential_deny_when_empty() {
     let json = generate_settings_json(&config);
     assert_eq!(
         json["sandbox"]["filesystem"]["denyRead"],
-        json!(["~/.claude/.credentials.json"])
+        json!(CREDENTIAL_DENY_READ_PATHS)
+    );
+    assert!(
+        !has_read_deny(&json),
+        "the mandatory credential list is OS-enforced only, never a Read( rule"
     );
 }
 
@@ -469,19 +484,14 @@ fn test_deny_read_is_enforced_in_os_sandbox() {
     assert!(!os_deny_strs.contains(&"../../**"));
     assert!(!os_deny_strs.contains(&"../.worktrees/**"));
 
-    // permissions.deny should have non-traversal paths only
-    let deny = json["permissions"]["deny"].as_array().unwrap();
-    let deny_strs: Vec<&str> = deny.iter().filter_map(|v| v.as_str()).collect();
-    assert!(deny_strs.contains(&"Read(~/.ssh/**)"));
-    // Parent-traversal paths must NOT be in permissions.deny because Claude Code
-    // leaks them into the OS sandbox where they resolve too broadly
+    // `deny_read` is OS-enforced and nothing else: no entry of it, traversal
+    // or not, may become a `permissions.deny` rule. One `Read(` deny anywhere
+    // makes Claude Code prompt on every relative-path `rg`/`grep`/`diff`/
+    // `git`/`cp`/`mv` issued after a `cd` in the same command.
     assert!(
-        !deny_strs.contains(&"Read(../../**)"),
-        "../../** must NOT be in permissions.deny Read() (leaks into OS sandbox)"
-    );
-    assert!(
-        !deny_strs.contains(&"Read(../.worktrees/**)"),
-        "../.worktrees/** must NOT be in permissions.deny Read() (leaks into OS sandbox)"
+        !has_read_deny(&json),
+        "deny_read must never reach permissions.deny, got: {:?}",
+        json["permissions"]["deny"]
     );
 }
 
@@ -1053,12 +1063,12 @@ fn test_write_settings_no_existing_file() {
     assert!(allow_strs.contains(&"Edit(src/**)"));
     assert!(allow_strs.contains(&"Read(.loom/work/signals/**)"));
 
-    // permissions.deny includes non-traversal deny_read paths
-    let deny = result["permissions"]["deny"].as_array().unwrap();
-    let deny_strs: Vec<&str> = deny.iter().filter_map(|v| v.as_str()).collect();
-    assert!(deny_strs.contains(&"Read(~/.ssh/**)"));
-    // Parent-traversal paths filtered out (leaked into OS sandbox otherwise)
-    assert!(!deny_strs.contains(&"Read(../../**)"));
+    // `deny_read` reaches the OS sandbox only, never a `permissions.deny` read rule.
+    assert!(
+        !has_read_deny(&result),
+        "got: {:?}",
+        result["permissions"]["deny"]
+    );
 
     let os_deny = result["sandbox"]["filesystem"]["denyRead"]
         .as_array()
@@ -1145,20 +1155,14 @@ fn test_write_settings_adds_resolved_work_symlink_permissions_legacy_layout() {
         allow_strs
     );
 
-    // S-1: the daemon tokens must be denied, in the parent-glob shape that
-    // keeps `rg` inside the project from prompting (see state_root).
-    let deny = result["permissions"]["deny"].as_array().unwrap();
-    let deny_strs: Vec<&str> = deny.iter().filter_map(|v| v.as_str()).collect();
-    for expected in token_read_denies(&resolved_str) {
-        assert!(
-            expected.contains("/*/"),
-            "the token deny must glob the project directory, got: {expected}"
-        );
-        assert!(
-            deny_strs.contains(&expected.as_str()),
-            "{expected} must be denied, got: {deny_strs:?}"
-        );
-    }
+    // S-1: the daemon tokens are denied at the OS level and by
+    // `hooks/credential-guard.sh`, never as a `Read(...)` permission rule —
+    // one of those anywhere makes `rg` inside the project prompt.
+    assert!(
+        !has_read_deny(&result),
+        "got: {:?}",
+        result["permissions"]["deny"]
+    );
     // The OS-level deny list keeps naming the concrete resolved paths.
     let os_deny = result["sandbox"]["filesystem"]["denyRead"]
         .as_array()
@@ -1175,82 +1179,6 @@ fn test_write_settings_adds_resolved_work_symlink_permissions_legacy_layout() {
     // here) — `generate_settings_json` can't see which layout it's on, so it
     // emits both.
     assert!(allow_strs.contains(&"Read(.work/signals/**)"));
-}
-
-#[cfg(unix)]
-#[test]
-fn test_write_settings_adds_resolved_work_symlink_permissions_nested_layout() {
-    use tempfile::TempDir;
-
-    let temp_dir = TempDir::new().unwrap();
-    let base = temp_dir.path();
-
-    // Simulate the nested layout: repo_root/.loom/work and
-    // repo_root/.worktrees/stage/.loom/work (a real .loom/ holding the link).
-    let work_dir = base.join(".loom").join("work");
-    fs::create_dir_all(&work_dir).unwrap();
-    fs::create_dir_all(work_dir.join("signals")).unwrap();
-
-    let worktree_path = base.join(".worktrees").join("my-stage");
-    let worktree_loom = worktree_path.join(".loom");
-    fs::create_dir_all(&worktree_loom).unwrap();
-
-    // Create the symlink: .worktrees/my-stage/.loom/work -> ../../../.loom/work
-    std::os::unix::fs::symlink("../../../.loom/work", worktree_loom.join("work")).unwrap();
-
-    let config = MergedSandboxConfig {
-        enabled: true,
-        auto_allow: true,
-        allow_unsandboxed_escape: false,
-        excluded_commands: vec![],
-        filesystem: FilesystemConfig::default(),
-        network: NetworkConfig::default(),
-        linux: LinuxConfig::default(),
-        permission_mode: PermissionMode::Auto,
-        implementers: Implementers::default(),
-        command_confinement: CommandConfinement::default(),
-    };
-
-    write_settings(&config, &worktree_path).unwrap();
-
-    let settings_path = worktree_path.join(".claude/settings.local.json");
-    let result_content = fs::read_to_string(&settings_path).unwrap();
-    let result: Value = serde_json::from_str(&result_content).unwrap();
-
-    let allow = result["permissions"]["allow"].as_array().unwrap();
-    let allow_strs: Vec<&str> = allow.iter().filter_map(|v| v.as_str()).collect();
-
-    let resolved_work = work_dir.canonicalize().unwrap();
-    let resolved_str = resolved_work.to_string_lossy();
-
-    // The nested `.loom/work` link must be the one resolved: same narrow
-    // grants as the legacy arm, no broad `**` allow (S-1).
-    let broad_read = format!("Read(/{}/**)", resolved_str);
-    let broad_edit = format!("Edit(/{}/**)", resolved_str);
-    assert!(!allow_strs.contains(&broad_read.as_str()));
-    assert!(!allow_strs.contains(&broad_edit.as_str()));
-
-    let expected_read_signals = format!("Read(/{}/signals/**)", resolved_str);
-    let expected_edit_handoffs = format!("Edit(/{}/handoffs/**)", resolved_str);
-    assert!(
-        allow_strs.contains(&expected_read_signals.as_str()),
-        "Should have resolved .loom/work/signals read permission, got: {:?}",
-        allow_strs
-    );
-    assert!(
-        allow_strs.contains(&expected_edit_handoffs.as_str()),
-        "Should have resolved .loom/work/handoffs edit permission, got: {:?}",
-        allow_strs
-    );
-
-    let deny = result["permissions"]["deny"].as_array().unwrap();
-    let deny_strs: Vec<&str> = deny.iter().filter_map(|v| v.as_str()).collect();
-    for expected in token_read_denies(&resolved_str) {
-        assert!(expected.contains("/*/"), "must glob: {expected}");
-        assert!(deny_strs.contains(&expected.as_str()), "{deny_strs:?}");
-    }
-
-    assert!(allow_strs.contains(&"Read(.loom/work/signals/**)"));
 }
 
 #[test]
@@ -1344,62 +1272,6 @@ fn test_target_is_worktree_detection() {
 }
 
 #[test]
-fn test_write_settings_main_repo_strips_worktree_escape_denies() {
-    use tempfile::TempDir;
-
-    // A plain repo root (not under .worktrees, no `.work` symlink) is the main
-    // repo: worktree-relative escape rules must be stripped, because `../..`
-    // resolves to `$HOME` there and would deny the entire home directory.
-    let temp_dir = TempDir::new().unwrap();
-    let repo_root = temp_dir.path();
-
-    let config = MergedSandboxConfig {
-        enabled: true,
-        auto_allow: true,
-        allow_unsandboxed_escape: false,
-        excluded_commands: vec![],
-        // FilesystemConfig::default() includes ../../** (deny_read also has
-        // ../.worktrees/**). An explicit non-traversal entry stands in for a
-        // plan-authored deny_write path, to prove non-traversal entries
-        // survive alongside the stripped traversal ones.
-        filesystem: FilesystemConfig {
-            deny_write: {
-                let mut deny_write = FilesystemConfig::default().deny_write;
-                deny_write.push("some/plan/path/**".to_string());
-                deny_write
-            },
-            ..FilesystemConfig::default()
-        },
-        network: NetworkConfig::default(),
-        linux: LinuxConfig::default(),
-        permission_mode: PermissionMode::Auto,
-        implementers: Implementers::default(),
-        command_confinement: CommandConfinement::default(),
-    };
-
-    write_settings(&config, repo_root).unwrap();
-
-    let result: Value = serde_json::from_str(
-        &fs::read_to_string(repo_root.join(".claude/settings.local.json")).unwrap(),
-    )
-    .unwrap();
-    let deny = result["permissions"]["deny"].as_array().unwrap();
-    let deny_strs: Vec<&str> = deny.iter().filter_map(|v| v.as_str()).collect();
-
-    assert!(
-        !deny_strs.iter().any(|p| p.contains("../")),
-        "main repo deny must not contain parent-traversal rules, got: {deny_strs:?}"
-    );
-    assert!(
-        !deny_strs.iter().any(|p| p.contains(".worktrees")),
-        "main repo deny must not reference .worktrees, got: {deny_strs:?}"
-    );
-    // Non-traversal protections survive.
-    assert!(deny_strs.contains(&"Read(~/.ssh/**)"));
-    assert!(deny_strs.contains(&"Edit(some/plan/path/**)"));
-}
-
-#[test]
 fn test_write_settings_worktree_drops_escape_write_deny_from_edit_rule() {
     use tempfile::TempDir;
 
@@ -1454,84 +1326,6 @@ fn test_write_settings_worktree_drops_escape_write_deny_from_edit_rule() {
     assert!(
         deny_strs.contains(&"Edit(some/plan/path/**)"),
         "the non-traversal deny_write entry must still be emitted, got: {deny_strs:?}"
-    );
-}
-
-#[test]
-fn test_write_settings_main_repo_drops_stale_escape_from_existing() {
-    use tempfile::TempDir;
-
-    // Simulate a main-repo settings.local.json written by an OLDER loom
-    // version that leaked worktree-relative escape rules. Re-running the
-    // generator on the main repo must scrub them (both Read and Write sides),
-    // even though the merge preserves other user-approved permissions.
-    //
-    // `Write(~/.bashrc)` stands in for a legitimate user-authored deny
-    // entry unrelated to loom's own rules — its INTENT must survive the
-    // merge, pinning that loom does not silently discard rules it inherits
-    // (mirrors the sibling fixture in
-    // `test_write_settings_preserves_existing_deny_but_not_allow`). What
-    // it survives as is `Edit(~/.bashrc)`: the `Write(...)` spelling is
-    // inert at the tool layer, so carrying it verbatim would keep the
-    // startup warning and none of the protection. A stale
-    // `Write(doc/loom/knowledge/**)` is deliberately NOT used here: that
-    // specific entry is dropped rather than migrated — see
-    // `merge_existing_permissions`'s knowledge-dir carve-out, exercised
-    // separately below.
-    let temp_dir = TempDir::new().unwrap();
-    let repo_root = temp_dir.path();
-    let claude_dir = repo_root.join(".claude");
-    fs::create_dir_all(&claude_dir).unwrap();
-
-    let stale = json!({
-        "permissions": {
-            "deny": [
-                "Read(../../**)",
-                "Read(../.worktrees/**)",
-                "Write(../../**)",
-                "Write(~/.bashrc)"
-            ]
-        }
-    });
-    fs::write(
-        claude_dir.join("settings.local.json"),
-        serde_json::to_string_pretty(&stale).unwrap(),
-    )
-    .unwrap();
-
-    let config = MergedSandboxConfig {
-        enabled: true,
-        auto_allow: true,
-        allow_unsandboxed_escape: false,
-        excluded_commands: vec![],
-        filesystem: FilesystemConfig::default(),
-        network: NetworkConfig::default(),
-        linux: LinuxConfig::default(),
-        permission_mode: PermissionMode::Auto,
-        implementers: Implementers::default(),
-        command_confinement: CommandConfinement::default(),
-    };
-
-    write_settings(&config, repo_root).unwrap();
-
-    let result: Value =
-        serde_json::from_str(&fs::read_to_string(claude_dir.join("settings.local.json")).unwrap())
-            .unwrap();
-    let deny = result["permissions"]["deny"].as_array().unwrap();
-    let deny_strs: Vec<&str> = deny.iter().filter_map(|v| v.as_str()).collect();
-
-    assert!(
-        !deny_strs
-            .iter()
-            .any(|p| p.contains("../") || p.contains(".worktrees")),
-        "stale escape rules must be scrubbed from the main repo file, got: {deny_strs:?}"
-    );
-    // A legitimate, unrelated user-authored deny entry is preserved — in
-    // the enforceable spelling.
-    assert!(deny_strs.contains(&"Edit(~/.bashrc)"), "got: {deny_strs:?}");
-    assert!(
-        !deny_strs.iter().any(|p| p.starts_with("Write(")),
-        "no inert Write(...) deny may survive regeneration, got: {deny_strs:?}"
     );
 }
 

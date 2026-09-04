@@ -205,16 +205,21 @@ pub(super) fn fix_hooks_local(repo_root: &Path) -> Result<()> {
 /// 1. "Settings not found (.claude/settings.local.json)" and "Stale
 ///    knowledge-directory deny in" both regenerate the sandbox settings and
 ///    rewrite hooks/env — matched together, ahead of the arms below.
-/// 2. `starts_with("Stale token deny shape in")` must precede the generic
+/// 2. `starts_with("Read deny rule in")` must precede the generic
 ///    ".claude/settings.local.json" arm, whose needle would otherwise swallow
 ///    a description naming that file; `fix_hooks_local` would leave the deny
-///    rules exactly as they are.
-/// 3. `starts_with("Stale loom session env in")` must precede the generic
+///    rule exactly as it is.
+/// 3. `starts_with("Operator-authored Read deny rule")` must also precede the
+///    generic arm, for the same reason, and returns `None` explicitly rather
+///    than `Some(Ok(()))` — loom never removes an operator's own deny rule,
+///    and the generic arm's `fix_hooks_local` would otherwise get credited
+///    with a fix it did not make.
+/// 4. `starts_with("Stale loom session env in")` must precede the generic
 ///    ".claude/settings.local.json" arm: a settings.local.json copy's
 ///    description names that file too, and the generic arm's
 ///    `fix_hooks_local` never touches settings.json, so the settings.json
 ///    copy would go unhealed if the generic arm claimed it first.
-/// 4. The generic ".claude/settings.local.json" arm catches everything else
+/// 5. The generic ".claude/settings.local.json" arm catches everything else
 ///    that names this file — missing hooks/env, missing codex sandbox
 ///    allowances — by rewriting it. The file-absent case is claimed by arm 1,
 ///    which runs first.
@@ -227,8 +232,12 @@ pub(super) fn fix_settings_issue(repo_root: &Path, description: &str) -> Option<
                 .and_then(|()| fix_hooks_local(repo_root)),
         );
     }
-    if description.starts_with("Stale token deny shape in") {
-        return Some(super::sandbox_settings::fix_stale_token_denies(repo_root));
+    if description.starts_with("Read deny rule in") {
+        return Some(super::sandbox_settings::fix_read_denies(repo_root));
+    }
+    if description.starts_with("Operator-authored Read deny rule") {
+        // loom never removes an operator's own deny rule — nothing to fix.
+        return None;
     }
     if description.starts_with("Stale loom session env in") {
         scrub_main_repo_settings_identity(repo_root);

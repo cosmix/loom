@@ -67,11 +67,15 @@ fn generated_settings_use_edit_rules_not_write_rules() {
         .and_then(Value::as_object)
         .expect("generated settings should contain permissions");
 
+    let empty = Vec::new();
     for section in ["allow", "deny"] {
+        // The generator omits a section entirely when it would be empty, so
+        // an absent section is equivalent to an empty array here, not a
+        // failure to assert against.
         let entries = permissions
             .get(section)
             .and_then(Value::as_array)
-            .expect("generated permissions should contain allow and deny arrays");
+            .unwrap_or(&empty);
         assert!(entries.iter().all(|entry| {
             entry
                 .as_str()

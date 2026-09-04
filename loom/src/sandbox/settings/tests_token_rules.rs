@@ -1,11 +1,31 @@
 use super::tests::default_config;
 use super::*;
-use std::path::{Component, PathBuf};
+use crate::fs::permissions::state_root::CREDENTIAL_DENY_READ_PATHS;
+
+/// `permissions.deny` entries of a settings value, tolerating an absent key —
+/// with no `Read(...)` rules left to emit, a config whose `deny_write` is all
+/// parent-traversal produces no `deny` array at all.
+fn deny_entries(settings: &Value) -> Vec<String> {
+    settings["permissions"]["deny"]
+        .as_array()
+        .map(|entries| {
+            entries
+                .iter()
+                .filter_map(|value| value.as_str().map(String::from))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn read_settings_local(project_root: &Path) -> Value {
+    let content = fs::read_to_string(project_root.join(".claude/settings.local.json")).unwrap();
+    serde_json::from_str(&content).unwrap()
+}
 
 /// The relative token paths stay in `sandbox.filesystem.denyRead` for OS
-/// enforcement, but must never be written as `permissions.deny` rules: their
-/// location sits inside the project, and Claude Code then refuses every
-/// `rg`/`grep` run from the project root until the operator approves it.
+/// enforcement, but must never be written as `permissions.deny` rules: Claude
+/// Code refuses every relative-path `rg`/`grep`/`diff`/`git`/`cp`/`mv` issued
+/// after a `cd` while ANY `Read(` deny rule exists, whatever its path.
 #[test]
 fn token_denies_are_os_rules_only_never_project_relative_permission_rules() {
     use tempfile::TempDir;
@@ -14,17 +34,11 @@ fn token_denies_are_os_rules_only_never_project_relative_permission_rules() {
     let repo_root = temp_dir.path();
     write_settings(&default_config(), repo_root).unwrap();
 
-    let content = fs::read_to_string(repo_root.join(".claude/settings.local.json")).unwrap();
-    let settings: Value = serde_json::from_str(&content).unwrap();
-    let deny: Vec<&str> = settings["permissions"]["deny"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .filter_map(|value| value.as_str())
-        .collect();
+    let settings = read_settings_local(repo_root);
+    let deny = deny_entries(&settings);
     assert!(
-        !deny.iter().any(|entry| is_token_read_deny(entry)),
-        "a repo with no state root must carry no token permission rule, got: {deny:?}"
+        !deny.iter().any(|entry| entry.starts_with("Read(")),
+        "a repo must carry no read permission rule at all, got: {deny:?}"
     );
 
     let os_deny = settings["sandbox"]["filesystem"]["denyRead"]
@@ -38,45 +52,23 @@ fn token_denies_are_os_rules_only_never_project_relative_permission_rules() {
     }
 }
 
-/// The directory Claude Code's `deniedPathInsideDirectory` check derives from
-/// a `Read(...)` deny rule: the rule's path up to its first wildcard, joined
-/// to the project root for the relative spellings and normalized. `None` for
-/// non-`Read` rules and for home-relative ones, which never land in a project.
-fn deny_rule_location(entry: &str, project_root: &Path) -> Option<PathBuf> {
-    let path = entry.strip_prefix("Read(")?.strip_suffix(')')?;
-    if path.starts_with('~') {
-        return None;
-    }
-    let joined = match path.strip_prefix("//") {
-        Some(absolute) => PathBuf::from("/").join(absolute),
-        None => project_root.join(path.trim_start_matches('/')),
-    };
-    let mut location = PathBuf::new();
-    for component in joined.components() {
-        if component
-            .as_os_str()
-            .to_string_lossy()
-            .contains(['*', '?', '[', ']'])
-        {
-            break;
-        }
-        if component == Component::ParentDir {
-            location.pop();
-        } else {
-            location.push(component);
-        }
-    }
-    Some(location)
-}
-
-/// Regression guard for the property Claude Code actually enforces: it refuses
-/// `rg`, `grep`, `diff`, `git`, `cp` and `mv` over any directory containing a
-/// `Read(...)` deny rule's location, bypass-immune and not classifier-
-/// approvable. A rule whose location falls inside the project root therefore
-/// stalls auto mode on the first search. Covers both generated files.
+/// Regression guard for the property Claude Code actually enforces: one
+/// `Read(...)` entry under `permissions.deny` in ANY settings file makes it
+/// refuse every relative-path `rg`, `grep`, `diff`, `git`, `cp` and `mv`
+/// issued after a `cd` in the same compound command — bypass-immune, not
+/// classifier-approvable, and independent of the rule's path shape. So the
+/// generated files carry none, at the repo root and inside a worktree alike,
+/// while the OS-level `denyRead` list (which is not a permission rule and does
+/// not feed that check) keeps every credential path.
+///
+/// The sibling `.claude/settings.json` writer is covered by
+/// `git::worktree::tests_settings`
+/// (`create_worktree_settings_never_grants_a_blanket_read_over_the_state_root`
+/// and the normalization tests beside it) — `create_worktree_settings` is
+/// private to that module, so it cannot be driven from here.
 #[cfg(unix)]
 #[test]
-fn no_generated_read_deny_puts_its_location_inside_the_project() {
+fn generated_settings_carry_no_read_deny_rules() {
     use tempfile::TempDir;
 
     let temp_dir = TempDir::new().unwrap();
@@ -87,20 +79,34 @@ fn no_generated_read_deny_puts_its_location_inside_the_project() {
     fs::create_dir_all(&worktree_path).unwrap();
     std::os::unix::fs::symlink(&work_dir, worktree_path.join(".work")).unwrap();
 
-    for project_root in [base.to_path_buf(), worktree_path] {
-        write_settings(&default_config(), &project_root).unwrap();
-        let settings_path = project_root.join(".claude/settings.local.json");
-        let settings: Value =
-            serde_json::from_str(&fs::read_to_string(settings_path).unwrap()).unwrap();
-        let deny = settings["permissions"]["deny"].as_array().unwrap();
-        for entry in deny.iter().filter_map(|value| value.as_str()) {
-            let Some(location) = deny_rule_location(entry, &project_root) else {
-                continue;
-            };
+    for project_root in [base, worktree_path.as_path()] {
+        write_settings(&default_config(), project_root).unwrap();
+        let settings = read_settings_local(project_root);
+
+        let deny = deny_entries(&settings);
+        assert!(
+            !deny.iter().any(|entry| entry.starts_with("Read(")),
+            "{} must carry no Read( deny rule, got: {deny:?}",
+            project_root.display()
+        );
+
+        let os_deny: Vec<&str> = settings["sandbox"]["filesystem"]["denyRead"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|value| value.as_str())
+            .collect();
+        for relative in [".work/admin.token", ".work/user.token"] {
             assert!(
-                !location.starts_with(&project_root),
-                "{entry} locates at {} inside {}, so every search there prompts",
-                location.display(),
+                os_deny.contains(&relative),
+                "{} lost the OS deny for {relative}, got: {os_deny:?}",
+                project_root.display()
+            );
+        }
+        for credential in CREDENTIAL_DENY_READ_PATHS {
+            assert!(
+                os_deny.contains(&credential),
+                "{} lost the OS deny for {credential}, got: {os_deny:?}",
                 project_root.display()
             );
         }

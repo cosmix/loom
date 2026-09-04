@@ -29,9 +29,11 @@ use std::path::Path;
 use super::constants::LOOM_PERMISSIONS;
 use super::hooks::{configure_loom_hooks, install_loom_hooks, install_loom_hooks_to};
 use super::write_rules::{
-    heal_inert_write_denies, prune_legacy_work_write_grants, prune_stale_token_denies,
+    heal_inert_write_denies, prune_legacy_work_write_grants, prune_loom_read_denies,
 };
 use crate::fs::locking::locked_write;
+
+mod report;
 
 /// Read a settings file into a JSON value, creating its `.claude` directory and
 /// defaulting to an empty object when the file does not exist yet.
@@ -272,11 +274,10 @@ fn ensure_loom_permissions_inner(
         }
     }
 
-    // Additive: also allow the home-expanded spelling of the codex forwarding
-    // wrapper (see `codex_forward_home_allow_entry` for why this can't live
-    // in the static LOOM_PERMISSIONS array above). Skipped silently if the
-    // home directory can't be resolved — never fail the whole permission
-    // write over it.
+    // Additive: also allow the home-expanded spelling of the codex forwarding wrapper (see
+    // `codex_forward_home_allow_entry` for why this can't live in the static LOOM_PERMISSIONS
+    // array above). Skipped silently if the home directory can't be resolved — never fail the
+    // whole permission write over it.
     if let Some(home_entry) = codex_forward_home_allow_entry() {
         if !existing.contains(home_entry.as_str()) {
             allow_arr.push(json!(home_entry));
@@ -286,9 +287,10 @@ fn ensure_loom_permissions_inner(
 
     // Migrate: remove hooks and env from settings.json (they belong in settings.local.json)
     let migrated = migrate_hooks_to_local(settings_obj);
+    let denies_removed = super::write_rules::prune_read_denies_verbose(settings_obj, verbose);
 
     // Write back if we made any changes
-    if added_permissions > 0 || removed_permissions > 0 || migrated {
+    if added_permissions > 0 || removed_permissions > 0 || migrated || denies_removed {
         let content = serde_json::to_string_pretty(&settings)
             .context("Failed to serialize settings to JSON")?;
 
@@ -379,10 +381,10 @@ fn ensure_loom_hooks_local_inner(repo_root: &Path, verbose: bool) -> Result<()> 
 
     let codex_configured = super::codex_sandbox::merge_allowances(settings_obj);
 
-    // Heal deny rules an older loom left here — inert `Write(...)` spellings
-    // and token denies in the shape that makes every `rg`/`grep` prompt.
+    // Heals inert `Write(...)` spellings and loom-written `Read(...)` denies;
+    // see doc/loom/knowledge/concerns.md § "No Read(...) Deny Rule May Exist".
     let denies_migrated =
-        heal_inert_write_denies(settings_obj) | prune_stale_token_denies(settings_obj);
+        heal_inert_write_denies(settings_obj) | prune_loom_read_denies(settings_obj);
 
     let changes = [
         (hooks_configured, "Configured loom hooks"),
@@ -390,27 +392,13 @@ fn ensure_loom_hooks_local_inner(repo_root: &Path, verbose: bool) -> Result<()> 
         (worktree_configured, "Disabled worktree isolation"),
         (codex_configured, "Granted codex + cache sandbox access"),
         (stale_env_removed, "Removed stale session env vars"),
-        (denies_migrated, "Healed stale deny rules"),
+        (
+            denies_migrated,
+            "Removed Read deny rules that make searches prompt",
+        ),
     ];
 
-    // Write back if we made any changes
-    if changes.iter().any(|(changed, _)| *changed) {
-        let content = serde_json::to_string_pretty(&settings)
-            .context("Failed to serialize settings.local.json to JSON")?;
-
-        locked_write(&settings_local_path, &content)
-            .with_context(|| format!("Failed to write {}", settings_local_path.display()))?;
-
-        if verbose {
-            for (_, change) in changes.iter().filter(|(changed, _)| *changed) {
-                println!("  {change} in .claude/settings.local.json");
-            }
-        }
-    } else if verbose {
-        println!("  Hooks and env vars already configured in .claude/settings.local.json");
-    }
-
-    Ok(())
+    report::write_settings_local_if_changed(&settings, &settings_local_path, &changes, verbose)
 }
 
 /// Migrate hooks and env from settings.json to settings.local.json
