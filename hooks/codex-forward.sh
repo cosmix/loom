@@ -29,6 +29,51 @@ low | medium | high | xhigh | max | ultra) ;;
 	;;
 esac
 
+# Record the codex model/effort this forwarded task actually ran with. A
+# `loom-codex-forwarder` spawn's `model` in spawns.jsonl (spawn-guard.sh:305-348,
+# `record_spawn`) is the shim's own tier, not the codex model validated above -
+# that value is written nowhere else, so `loom subagents` cannot report it
+# without this sibling ledger. Write discipline mirrors record_spawn exactly:
+# best-effort, every path returns 0, never touches stdout (the wrapper's
+# stdout is parsed for the LOOM-CODEX-EVIDENCE trailer), never fails the run.
+record_codex_task() {
+	local work_dir="${LOOM_WORK_DIR:-}" stage_id="${LOOM_STAGE_ID:-}"
+	[[ -n "$work_dir" && -n "$stage_id" ]] || return 0
+
+	case "$stage_id" in
+	*[!A-Za-z0-9._-]* | "")
+		return 0
+		;;
+	esac
+
+	local dir="${work_dir}/subagents/${stage_id}"
+	mkdir -p -m 700 "$dir" 2>/dev/null || return 0
+	chmod 700 "$dir" 2>/dev/null || true
+
+	local file="${dir}/codex.jsonl"
+	if [[ -L "$file" ]]; then
+		return 0
+	fi
+
+	local ts line
+	ts=$(date -u +"%Y-%m-%dT%H:%M:%S.000Z") || return 0
+	line=$(jq -nc \
+		--arg ts "$ts" \
+		--arg stage_id "$stage_id" \
+		--arg session_id "${LOOM_SESSION_ID:-}" \
+		--arg model "$model" \
+		--arg effort "$effort" \
+		'{ts: $ts, stage_id: $stage_id, session_id: $session_id, model: $model, effort: $effort}' \
+		2>/dev/null) || return 0
+
+	if [[ -n "$line" ]]; then
+		{ printf '%s\n' "$line" >>"$file"; } 2>/dev/null || return 0
+		chmod 600 "$file" 2>/dev/null || true
+	fi
+	return 0
+}
+record_codex_task
+
 # codex reads AGENTS.md, never CLAUDE.md; loom install-assets writes ~/.codex/AGENTS.md as
 # standing doctrine, but this preamble remains the per-task stage contract - the only place
 # the codex lane's doctrine cannot be forgotten by an orchestrator writing a prompt, so it is
