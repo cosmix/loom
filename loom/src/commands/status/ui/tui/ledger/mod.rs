@@ -20,10 +20,14 @@ pub mod layout;
 pub mod legend;
 /// Ledger dashboard attention panels.
 pub mod panels;
+/// Provider quota line in the footer.
+pub mod quota;
 /// Ledger dashboard row rendering.
 pub mod rows;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tests_alignment;
 #[cfg(test)]
 mod tests_viewport;
 /// Cell width and truncation helpers.
@@ -93,6 +97,10 @@ pub struct LedgerView<'a> {
     pub tick_age_secs: Option<i64>,
     /// The most recent error, if any.
     pub last_error: Option<&'a str>,
+    /// Epoch seconds when this frame was built; drives quota countdowns and staleness.
+    pub now_epoch: i64,
+    /// Whether the stage table overflows its viewport, so `↑↓ scroll` is meaningful.
+    pub scrollable: bool,
 }
 
 /// What `render` reports back so the app can bound scrolling.

@@ -1,6 +1,7 @@
 use super::*;
 use crate::commands::status::data::StageSummary;
 use crate::models::stage::StageStatus;
+use crate::quota::{ProviderQuota, QuotaSnapshot, QuotaWindow, WindowKind};
 use chrono::TimeZone;
 
 #[path = "model_tests_stages.rs"]
@@ -30,6 +31,35 @@ fn fixture_status(stages: Vec<StageSummary>) -> StatusData {
             blocked: 2,
         },
         plan_name: Some("Web Dashboard Fixture".to_owned()),
+        quota: QuotaSnapshot {
+            claude: Some(ProviderQuota {
+                observed_at: 1_788_523_200,
+                windows: vec![
+                    QuotaWindow {
+                        kind: WindowKind::FiveHour,
+                        used_percent: 48.0,
+                        resets_at: Some(1_788_531_180),
+                    },
+                    QuotaWindow {
+                        kind: WindowKind::SevenDay,
+                        used_percent: 31.0,
+                        resets_at: Some(1_788_876_000),
+                    },
+                ],
+                plan: None,
+                error: None,
+            }),
+            codex: Some(ProviderQuota {
+                observed_at: 1_788_522_960,
+                windows: vec![QuotaWindow {
+                    kind: WindowKind::SevenDay,
+                    used_percent: 63.0,
+                    resets_at: Some(1_788_728_400),
+                }],
+                plan: Some("pro".to_owned()),
+                error: None,
+            }),
+        },
     }
 }
 

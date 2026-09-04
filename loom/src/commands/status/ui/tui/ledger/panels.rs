@@ -8,6 +8,7 @@ use ratatui::{
 
 use super::legend::LEGEND;
 use super::text::{self, cut_line, spans_width};
+use super::{quota, LedgerView};
 use crate::commands::status::render::attention_model::{failure_label, AttentionEntry};
 use crate::commands::status::ui::theme::{StatusColors, Theme};
 use crate::commands::status::ui::tui::state::TuiActivityLog;
@@ -42,15 +43,19 @@ pub fn render_activity(frame: &mut Frame, area: Rect, log: &TuiActivityLog) {
     frame.render_widget(Paragraph::new(lines), area);
 }
 
-/// Render the one-line footer.
-pub fn render_footer(
-    frame: &mut Frame,
-    area: Rect,
-    present: &[StageStatus],
-    last_error: Option<&str>,
-) {
-    let line = last_error.map_or_else(
-        || footer_line(present, area.width),
+/// Render the footer: the quota line when the area has a row for it, above the legend
+/// strip with its key hints, or the last error in the strip's place.
+pub fn render_footer(frame: &mut Frame, area: Rect, present: &[StageStatus], view: &LedgerView) {
+    let mut lines = Vec::new();
+    if area.height >= 2 {
+        lines.push(quota::quota_line(
+            &view.data.quota,
+            view.now_epoch,
+            area.width,
+        ));
+    }
+    lines.push(view.last_error.map_or_else(
+        || footer_line(present, area.width, view.scrollable),
         |message| {
             cut_line(
                 Line::from(Span::styled(
@@ -60,8 +65,8 @@ pub fn render_footer(
                 area.width,
             )
         },
-    );
-    frame.render_widget(Paragraph::new(line), area);
+    ));
+    frame.render_widget(Paragraph::new(lines), area);
 }
 
 /// Build the needs-attention title and detailed entry lines.
@@ -79,9 +84,10 @@ pub fn attention_lines(entries: &[AttentionEntry], width: u16) -> Vec<Line<'stat
     lines
 }
 
-/// Build the legend strip and right-aligned key hints for the footer.
-pub fn footer_line(present: &[StageStatus], width: u16) -> Line<'static> {
-    let keys = key_hints();
+/// Build the legend strip and right-aligned key hints for the footer; the scroll hint
+/// is only offered when the table overflows its viewport.
+pub fn footer_line(present: &[StageStatus], width: u16, scrollable: bool) -> Line<'static> {
+    let keys = key_hints(scrollable);
     let key_width = spans_width(&keys);
     let mut entries: Vec<_> = LEGEND
         .iter()
@@ -196,17 +202,21 @@ fn footer_label(status: &StageStatus) -> String {
     }
 }
 
-fn key_hints() -> Vec<Span<'static>> {
-    vec![
-        Span::styled("?", Style::default().add_modifier(Modifier::BOLD)),
+fn key_hints(scrollable: bool) -> Vec<Span<'static>> {
+    let key = Style::default().add_modifier(Modifier::BOLD);
+    let mut spans = vec![
+        Span::styled("?", key),
         Span::styled(" legend", Theme::dimmed()),
-        Span::styled(" · ", Theme::dimmed()),
-        Span::styled("↑↓", Style::default().add_modifier(Modifier::BOLD)),
-        Span::styled(" scroll", Theme::dimmed()),
-        Span::styled(" · ", Theme::dimmed()),
-        Span::styled("q", Style::default().add_modifier(Modifier::BOLD)),
-        Span::styled(" quit", Theme::dimmed()),
-    ]
+    ];
+    if scrollable {
+        spans.push(Span::styled(" · ", Theme::dimmed()));
+        spans.push(Span::styled("↑↓", key));
+        spans.push(Span::styled(" scroll", Theme::dimmed()));
+    }
+    spans.push(Span::styled(" · ", Theme::dimmed()));
+    spans.push(Span::styled("q", key));
+    spans.push(Span::styled(" quit", Theme::dimmed()));
+    spans
 }
 
 fn join_entries(entries: Vec<Vec<Span<'static>>>) -> Vec<Span<'static>> {
@@ -283,10 +293,22 @@ mod tests {
     #[test]
     fn footer_only_lists_present_statuses_and_keeps_quit_hint() {
         let present = [StageStatus::Executing, StageStatus::Completed];
-        let line = footer_line(&present, 100).to_string();
+        let line = footer_line(&present, 100, true).to_string();
         assert!(line.contains("executing"));
         assert!(line.contains("done"));
         assert!(!line.contains("queued"));
-        assert!(footer_line(&present, 40).to_string().ends_with("q quit"));
+        assert!(footer_line(&present, 40, true)
+            .to_string()
+            .ends_with("q quit"));
+    }
+
+    #[test]
+    fn scroll_hint_appears_only_when_the_table_overflows() {
+        let present = [StageStatus::Executing];
+        let scrollable = footer_line(&present, 100, true).to_string();
+        let fixed = footer_line(&present, 100, false).to_string();
+        assert!(scrollable.contains("↑↓ scroll"));
+        assert!(!fixed.contains("↑↓"));
+        assert!(fixed.ends_with("? legend · q quit"));
     }
 }

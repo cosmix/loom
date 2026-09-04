@@ -255,7 +255,7 @@ pub enum Response {
     },
     AuthenticationFailed,
     StatusUpdate {
-        data: crate::commands::status::data::StatusData,
+        data: Box<crate::commands::status::data::StatusData>,
     },
     /// Orchestration has completed (all stages terminal)
     OrchestrationComplete {

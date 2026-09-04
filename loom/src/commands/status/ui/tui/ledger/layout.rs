@@ -7,15 +7,25 @@ use ratatui::{
     Frame,
 };
 
-use super::{columns, header, legend, panels, rows, LedgerView, RenderOutcome, MIN_COLS, MIN_ROWS};
+use super::{
+    columns, header, legend, panels, quota, rows, LedgerView, RenderOutcome, MIN_COLS, MIN_ROWS,
+};
 use crate::commands::status::ui::theme::Theme;
 use crate::commands::status::ui::tui::renderer;
 use crate::models::stage::StageStatus;
 
 const HEADER_HEIGHT: u16 = 4;
-const FOOTER_HEIGHT: u16 = 1;
 const ALERT_MAX_HEIGHT: u16 = 4;
 const TABLE_MIN_HEIGHT: u16 = 6;
+
+/// The footer is the legend strip alone, or the quota line above it.
+fn footer_height(has_quota: bool) -> u16 {
+    if has_quota {
+        2
+    } else {
+        1
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct Budget {
@@ -50,6 +60,7 @@ pub fn render(frame: &mut Frame, view: &LedgerView) -> RenderOutcome {
         view.alerts.len(),
         view.attention.len(),
         view.activity.len(),
+        quota::has_quota(&view.data.quota),
     );
     render_dashboard(frame, area, view, budget);
     if view.legend_open {
@@ -60,24 +71,36 @@ pub fn render(frame: &mut Frame, view: &LedgerView) -> RenderOutcome {
     }
 }
 
-fn budget(height: u16, alerts: usize, attention_entries: usize, activity_len: usize) -> Budget {
+fn budget(
+    height: u16,
+    alerts: usize,
+    attention_entries: usize,
+    activity_len: usize,
+    has_quota: bool,
+) -> Budget {
     let alerts = (alerts.min(ALERT_MAX_HEIGHT as usize)) as u16;
     let mut attention = attention_height(attention_entries);
     let mut activity = activity_height(activity_len);
+    let mut footer = footer_height(has_quota);
     let mut compact = false;
-    let mut table = available_table_height(height, alerts, attention, activity, compact);
+    let mut table = available_table_height(height, alerts, attention, activity, footer, compact);
 
     if table < TABLE_MIN_HEIGHT {
         activity = 0;
-        table = available_table_height(height, alerts, attention, activity, compact);
+        table = available_table_height(height, alerts, attention, activity, footer, compact);
     }
     if table < TABLE_MIN_HEIGHT {
         attention = attention.min(4);
-        table = available_table_height(height, alerts, attention, activity, compact);
+        table = available_table_height(height, alerts, attention, activity, footer, compact);
     }
     if table < TABLE_MIN_HEIGHT {
         compact = true;
-        table = available_table_height(height, alerts, attention, activity, compact);
+        table = available_table_height(height, alerts, attention, activity, footer, compact);
+    }
+    if table < TABLE_MIN_HEIGHT {
+        // The quota line is the last thing to yield before the stages themselves.
+        footer = footer_height(false);
+        table = available_table_height(height, alerts, attention, activity, footer, compact);
     }
 
     Budget {
@@ -85,7 +108,7 @@ fn budget(height: u16, alerts: usize, attention_entries: usize, activity_len: us
         table,
         attention,
         activity,
-        footer: FOOTER_HEIGHT,
+        footer,
         compact,
     }
 }
@@ -111,6 +134,7 @@ fn available_table_height(
     alerts: u16,
     attention: u16,
     activity: u16,
+    footer: u16,
     compact: bool,
 ) -> u16 {
     let alert_gap = if alerts > 0 { 1 } else { 0 };
@@ -126,7 +150,7 @@ fn available_table_height(
         + attention_gap
         + activity
         + activity_gap
-        + FOOTER_HEIGHT;
+        + footer;
     height.saturating_sub(reserved)
 }
 
@@ -139,7 +163,7 @@ fn render_dashboard(frame: &mut Frame, area: Rect, view: &LedgerView, budget: Bu
     panels::render_activity(frame, areas.activity, view.activity);
 
     let present = present_statuses(view);
-    panels::render_footer(frame, areas.footer, &present, view.last_error);
+    panels::render_footer(frame, areas.footer, &present, view);
 }
 
 fn areas(area: Rect, budget: Budget) -> Areas {
@@ -229,7 +253,7 @@ mod tests {
 
     #[test]
     fn budget_leaves_the_remainder_for_the_table() {
-        let budget = budget(40, 8, 3, 8);
+        let budget = budget(40, 8, 3, 8, false);
 
         assert_eq!(budget.alerts, 4);
         assert_eq!(budget.attention, 10);
@@ -239,11 +263,40 @@ mod tests {
 
     #[test]
     fn budget_preserves_a_minimum_table_before_panels() {
-        let budget = budget(16, 0, 2, 3);
+        let budget = budget(16, 0, 2, 3, false);
 
         assert_eq!(budget.activity, 0);
         assert_eq!(budget.attention, 4);
         assert!(budget.table >= TABLE_MIN_HEIGHT);
+    }
+
+    #[test]
+    fn footer_takes_a_second_row_only_with_quota_data() {
+        let without = budget(40, 0, 0, 0, false);
+        let with = budget(40, 0, 0, 0, true);
+
+        assert_eq!(without.footer, 1);
+        assert_eq!(with.footer, 2);
+        assert_eq!(with.table, without.table - 1);
+    }
+
+    #[test]
+    fn quota_line_yields_to_the_table_at_minimum_height() {
+        // Header 4 + gap 1 + full alert band 4 + gap 1 + footer 2 = 12 reserved rows
+        // even in compact mode, leaving 4 for the table at height 16; the footer then
+        // drops back to one row so the table matches the no-quota budget.
+        let with_alerts = budget(16, 4, 0, 0, true);
+        assert_eq!(with_alerts.footer, 1);
+        assert_eq!(with_alerts.table, budget(16, 4, 0, 0, false).table);
+
+        // At 17 the two-row footer would still leave the table one short; at 18 the
+        // quota line has room again above a minimum-height table.
+        let still_short = budget(17, 4, 0, 0, true);
+        assert_eq!(still_short.footer, 1);
+        assert_eq!(still_short.table, TABLE_MIN_HEIGHT);
+        let roomy = budget(18, 4, 0, 0, true);
+        assert_eq!(roomy.footer, 2);
+        assert_eq!(roomy.table, TABLE_MIN_HEIGHT);
     }
 
     #[test]
@@ -253,7 +306,7 @@ mod tests {
         // with a full alert band the table drops below TABLE_MIN_HEIGHT. Nothing panics
         // and ratatui clips safely, but this pins the actual behaviour rather than the
         // spec's minimum.
-        let no_panels = budget(16, 4, 0, 0);
+        let no_panels = budget(16, 4, 0, 0, false);
         assert_eq!(no_panels.alerts, 4);
         assert_eq!(no_panels.attention, 0);
         assert_eq!(no_panels.activity, 0);
@@ -262,7 +315,7 @@ mod tests {
             no_panels.alerts + no_panels.table + no_panels.attention + no_panels.activity <= 16
         );
 
-        let with_panels = budget(16, 4, 2, 3);
+        let with_panels = budget(16, 4, 2, 3, false);
         assert_eq!(with_panels.alerts, 4);
         assert_eq!(with_panels.attention, 4);
         assert_eq!(with_panels.activity, 0);
@@ -293,6 +346,8 @@ mod tests {
             legend_open: false,
             tick_age_secs: None,
             last_error: None,
+            now_epoch: 1_788_523_200,
+            scrollable: false,
         };
         let mut terminal = Terminal::new(TestBackend::new(60, 20)).unwrap();
 

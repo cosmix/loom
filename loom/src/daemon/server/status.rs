@@ -14,7 +14,9 @@ pub fn collect_status(work_dir: &Path) -> Result<Response> {
     let wd = crate::fs::work_dir::WorkDir::new(work_dir)
         .with_context(|| format!("Failed to resolve work dir: {}", work_dir.display()))?;
     let data = crate::commands::status::data::collect_status_data(&wd)?;
-    Ok(Response::StatusUpdate { data })
+    Ok(Response::StatusUpdate {
+        data: Box::new(data),
+    })
 }
 
 /// Collect completion summary from all stage files.

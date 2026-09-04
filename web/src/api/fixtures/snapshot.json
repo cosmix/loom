@@ -246,7 +246,24 @@
       "pending": 3,
       "blocked": 2
     },
-    "plan_name": "Web Dashboard Fixture"
+    "plan_name": "Web Dashboard Fixture",
+    "quota": {
+      "claude": {
+        "observed_at": 1788523200,
+        "windows": [
+          { "kind": "five-hour", "used_percent": 48.0, "resets_at": 1788531180 },
+          { "kind": "seven-day", "used_percent": 31.0, "resets_at": 1788876000 }
+        ],
+        "plan": null,
+        "error": null
+      },
+      "codex": {
+        "observed_at": 1788522960,
+        "windows": [{ "kind": "seven-day", "used_percent": 63.0, "resets_at": 1788728400 }],
+        "plan": "pro",
+        "error": null
+      }
+    }
   },
   "attention": [
     {

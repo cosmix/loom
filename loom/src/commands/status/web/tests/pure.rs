@@ -115,7 +115,7 @@ fn oversized_daemon_response_is_degraded() {
         broadcast::classify_response(
             work_dir.root(),
             Response::StatusUpdate {
-                data: StatusData::default(),
+                data: Box::new(StatusData::default()),
             },
         ),
         Ok(DaemonStep::Frame(_))

@@ -147,7 +147,7 @@ pub fn snapshot_frame(
 pub fn classify_response(work_path: &Path, response: Response) -> Result<DaemonStep> {
     match response {
         Response::StatusUpdate { data } => {
-            snapshot_frame(work_path, data, SnapshotSource::Daemon).map(DaemonStep::Frame)
+            snapshot_frame(work_path, *data, SnapshotSource::Daemon).map(DaemonStep::Frame)
         }
         Response::Error { message } => Ok(DaemonStep::Degraded(message)),
         _ => Ok(DaemonStep::Ignore),
