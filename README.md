@@ -85,20 +85,21 @@ Thirteen stage states make "needs a person" a first-class outcome rather than a 
 
 ## Platform Support
 
-- Linux: primary development and full CI test runs
-- macOS: supported for build/terminal integration, CI does build-only verification
-- Windows: unsupported/best-effott, tmux backend under WSL may work.
+- Linux x86_64: primary development and full CI test runs; signed release binary
+- macOS (Apple Silicon and Intel): supported for build/terminal integration, CI does build-only verification; signed release binaries
+- Windows via WSL2: supported — WSL2 runs the Linux x86_64 binary unmodified. Use the tmux backend, since a stock WSL install has no GUI terminal emulator for the native backend to find — see [Running under WSL](#running-under-wsl). Native Windows, outside WSL, is unsupported.
+- Linux ARM64: builds from source; no release binary is published yet
 - Headless (SSH, no terminal emulator): supported via the tmux backend — see [Terminal Backends](#terminal-backends)
 
 ## Quick Start
 
-Loom is under active development and not yet published to GitHub Releases. You need to build locally with the Rust toolchain installed.
+Loom is under active development. Signed binaries are published for Linux x86_64 and macOS (Apple Silicon and Intel); every other platform builds from source with the Rust toolchain installed.
 
 ### Prerequisites
 
 | Tool                       | Needed for                                                        | Required?                                                                               |
 | -------------------------- | ----------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| Rust toolchain (`cargo`)   | building the `loom` binary                                        | yes                                                                                     |
+| Rust toolchain (`cargo`)   | building the `loom` binary                                        | only when building from source                                                          |
 | `git`                      | worktrees, merges, crash reports                                  | yes                                                                                     |
 | `claude` (Claude Code CLI) | every orchestrated session                                        | yes                                                                                     |
 | `jq`                       | every loom hook parses the Claude Code hook payload with it       | yes; `install.sh` and `loom run` refuse to proceed without it, `loom repair` reports it |
@@ -108,6 +109,14 @@ Loom is under active development and not yet published to GitHub Releases. You n
 | `codex` CLI                | the codex implementer lane and `loom pressure`                    | optional                                                                                |
 
 ### 1. Install Loom
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/cosmix/loom/main/install.sh | bash
+```
+
+This downloads the signed release binary for your platform to `~/.local/bin/loom`, then installs loom's agents, skills, commands, hooks and orchestration rules into `~/.claude/` and `~/.codex/` from the assets embedded in that binary.
+
+To build from source instead — required on Linux ARM64, and what you want when working on loom itself:
 
 ```bash
 git clone https://github.com/cosmix/loom.git
@@ -166,8 +175,6 @@ loom stop
 | `~/.claude/CLAUDE.md`        | Orchestration rules                                       |
 | `~/.codex/skills/pressure/`  | Codex pressure-testing skill (`$pressure`)                |
 | `~/.local/bin/loom`          | Loom CLI                                                  |
-
-> The `~/.claude/commands/` and `~/.codex/skills/pressure/` entries are installed only by the local `install.sh` (cloned repo); the `curl | bash` install does not ship them yet.
 
 ## Core Workflow
 
@@ -677,6 +684,41 @@ re-run with `--backend`. Selecting a backend takes effect on the next spawn.
 
 If tmux is selected but not installed, loom prints an advisory warning at `loom init` and at
 `loom run` startup and **never aborts** — sessions fall back to the native lane.
+
+### Running under WSL
+
+WSL2 runs the published `loom-linux-x86_64` binary unmodified — it is an ordinary glibc ELF, and git
+worktrees, the `.work/` Unix socket and PID liveness checks all behave as they do on native Linux.
+
+What does not carry over is the `native` backend. It opens a real terminal-emulator window per
+session, and a stock WSL install ships no Linux GUI stack — without WSLg or an X server there is no
+emulator to detect. Select tmux explicitly:
+
+```bash
+sudo apt install tmux jq          # both required; ripgrep and fd are recommended
+loom init doc/plans/PLAN-<name>.md --backend tmux
+loom run --backend tmux
+```
+
+Sessions then run in detached tmux servers, and you watch them from a Windows Terminal tab:
+
+```bash
+loom status --live       # live ledger dashboard
+loom attach              # tiled overview of every live session
+loom attach <stage-id>   # attach to one stage
+```
+
+On Windows 11 with WSLg, an emulator installed inside WSL is detectable and the native backend does
+work, but tmux remains the better fit: a run survives closing the window, and `loom attach`
+reconnects to one already in progress.
+
+Two WSL-specific notes:
+
+- **Keep the repository on the Linux filesystem** (`~/src/…`), not under `/mnt/c`. Loom creates a
+  worktree per parallel stage and the daemon polls stage files every 5s; 9p latency across the
+  Windows drive makes both crawl.
+- **ARM64 Windows** has no published Linux ARM64 binary. Install the Rust toolchain inside WSL and
+  build from source.
 
 ### One tmux server per session
 
