@@ -15,6 +15,7 @@ use crate::plan::parser::extract_plan_name;
 use crate::verify::transitions::list_all_stages;
 
 use super::sanitize::{sanitize_stage_summary, valid_stage_id};
+use super::timing::execution_secs_live;
 use super::{
     execution_models_for_stage, ActivityStatus, MergeSummary, ProgressSummary, StageSummary,
     StatusData,
@@ -186,7 +187,7 @@ fn build_stage_summary(stage: &Stage, sessions: &[Session], work_dir: &WorkDir) 
     let pid = session.and_then(|s| s.pid);
     let session_alive = pid.map(crate::process::is_process_alive).unwrap_or(false);
 
-    let elapsed_secs = (Utc::now() - stage.created_at).num_seconds();
+    let now = Utc::now();
 
     let heartbeat = heartbeat_facts(stage, session, work_dir);
     let extras = stage_extras(stage, work_dir);
@@ -198,8 +199,8 @@ fn build_stage_summary(stage: &Stage, sessions: &[Session], work_dir: &WorkDir) 
         stage_type: stage.stage_type,
         dependencies: stage.dependencies.clone(),
         context_tokens,
-        elapsed_secs: Some(elapsed_secs),
-        execution_secs: stage.execution_secs,
+        elapsed_secs: Some((now - stage.created_at).num_seconds()),
+        execution_secs: execution_secs_live(stage, now),
         base_branch: stage.base_branch.clone(),
         base_merged_from: stage.base_merged_from.clone(),
         failure_info: stage.failure_info.clone(),

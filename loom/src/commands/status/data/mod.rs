@@ -1,6 +1,7 @@
 mod collector;
 mod execution_models;
 mod sanitize;
+mod timing;
 
 pub use collector::{collect_status_data, load_all_sessions};
 pub use execution_models::execution_models_for_stage;
@@ -79,7 +80,9 @@ pub struct StageSummary {
     /// Resident context tokens for the active session.
     pub context_tokens: Option<u32>,
     pub elapsed_secs: Option<i64>,
-    /// Accumulated execution time (excludes wait/backoff time)
+    /// Accumulated execution time (excludes wait/backoff time). For an
+    /// `Executing` stage this includes the attempt currently in flight, not
+    /// just the time banked by prior attempts.
     pub execution_secs: Option<i64>,
     pub base_branch: Option<String>,
     pub base_merged_from: Vec<String>,
