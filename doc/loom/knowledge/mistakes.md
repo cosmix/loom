@@ -1131,3 +1131,26 @@ one colored segment or wholly in plain text, never across the boundary between a
 
 **Fix:** split the assertion into `contains("Cleanup warning: ")` and `contains("failed: worktree
 busy\nretrying next cycle")`.
+
+## The Live Dashboard Rendered a Frozen Accumulator as a Clock
+
+**What happened:** the TIME column of the ledger behind `loom status --live` showed `0s` for every
+executing stage, for the whole of the run, and only jumped to a real number once the stage finished.
+
+**Why:** `Stage::execution_secs` is a bank, not a clock. `begin_attempt`
+(`loom/src/models/stage/methods.rs:573`) seeds it to `Some(0)`, and only `accumulate_attempt_time`
+(`methods.rs:585`) credits an attempt's seconds — when that attempt ENDS, on completion, crash or
+handoff. `time_cell` (`loom/src/commands/status/ui/tui/ledger/cells.rs:301`) rendered
+`execution_secs.or(elapsed_secs)`, and because the frozen value is `Some(0)` rather than `None`, the
+`elapsed_secs` fallback could never fire. A regression from cad9ee4b: the tree renderer the ledger
+replaced computed executing time as `now - started_at`, which ticked.
+
+**Prevention:** before displaying a persisted duration field as a live number, read where it is
+WRITTEN, not just where it is declared. A field credited at the end of a unit of work reads frozen
+for the whole of that work, and an `Option` fallback chain rescues nothing when the frozen value is
+`Some(0)`.
+
+**Fix:** `loom/src/commands/status/data/timing.rs` — `execution_secs_live` adds the in-flight
+attempt (`now - attempt_started_at`, falling back to `started_at`) on top of the banked total, for
+`Executing` stages only, and `build_stage_summary` calls it, so every status surface fed by
+`collect_status_data` ticks.
