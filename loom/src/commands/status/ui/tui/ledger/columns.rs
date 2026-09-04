@@ -83,6 +83,11 @@ fn expand_columns(cols: &mut [Column], width: u16) {
     let stage_extra = extra.min(15);
     add_width(cols, ColumnKind::Stage, stage_extra);
     extra -= stage_extra;
+
+    let models_extra = extra.min(8);
+    add_width(cols, ColumnKind::Models, models_extra);
+    extra -= models_extra;
+
     add_width(cols, ColumnKind::DependsOn, extra);
 }
 
@@ -158,11 +163,31 @@ mod tests {
     }
 
     #[test]
-    fn surplus_widens_stage_then_dependencies() {
+    fn surplus_widens_stage_then_models() {
         let cols = columns_for_width(140);
-        assert_eq!(cols[1].width, 40);
-        assert_eq!(cols[2].width, 21);
+        assert_eq!(cols[1].width, 40); // Stage: 25 + 15 (capped)
+        assert_eq!(cols[3].width, 21); // Models: 16 + 5 (remaining surplus)
+        assert_eq!(cols[2].width, 16); // DependsOn: no surplus left, unchanged
         assert_eq!(total(&cols), 140);
+    }
+
+    #[test]
+    fn large_surplus_caps_models_then_widens_dependencies() {
+        let cols = columns_for_width(160);
+        assert_eq!(cols[1].width, 40); // Stage: 25 + 15 (capped)
+        assert_eq!(cols[3].width, 24); // Models: 16 + 8 (capped)
+        assert_eq!(cols[2].width, 33); // DependsOn: 16 + 17 (remaining surplus)
+        assert_eq!(total(&cols), 160);
+    }
+
+    #[test]
+    fn exact_full_width_leaves_models_at_designed_width() {
+        let cols = columns_for_width(FULL_WIDTH);
+        let models = cols
+            .iter()
+            .find(|column| column.kind == ColumnKind::Models)
+            .unwrap();
+        assert_eq!(models.width, 16);
     }
 
     #[test]

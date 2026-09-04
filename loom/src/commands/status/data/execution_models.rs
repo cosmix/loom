@@ -120,7 +120,7 @@ fn normalize_model(model: &str) -> String {
     let display_name = strip_date_suffix(display_name);
 
     match display_name.strip_prefix("gpt-5.6-") {
-        Some(name) => name.to_string(),
+        Some(name) => format!("gpt-{name}"),
         None => display_name.to_string(),
     }
 }
@@ -182,7 +182,7 @@ mod tests {
 
         assert_eq!(
             execution_models_for_stage(&work_dir, "s1"),
-            ["sonnet", "opus", "terra", "luna"]
+            ["sonnet", "opus", "gpt-terra", "gpt-luna"]
         );
     }
 
@@ -211,7 +211,7 @@ mod tests {
 
         assert_eq!(
             execution_models_for_stage(&work_dir, "s1"),
-            ["haiku-4-5", "sonnet", "terra"]
+            ["haiku-4-5", "sonnet", "gpt-terra"]
         );
     }
 
