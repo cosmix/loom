@@ -141,6 +141,14 @@ pub fn spawn_status_broadcaster(server: &DaemonServer) -> JoinHandle<()> {
     })
 }
 
+/// Spawn the quota-polling thread.
+pub fn spawn_quota_poller(server: &DaemonServer) -> JoinHandle<()> {
+    crate::quota::poller::spawn_quota_poller(
+        server.work_dir.clone(),
+        Arc::clone(&server.shutdown_flag),
+    )
+}
+
 /// What the broadcaster loop remembers between ticks.
 ///
 /// Both fields are one-shot latches rather than counters: the completion

@@ -21,6 +21,7 @@ pub mod orchestrator;
 pub mod parser;
 pub mod plan;
 pub mod process;
+pub mod quota;
 pub mod remote_control;
 pub mod sandbox;
 pub mod skills;
