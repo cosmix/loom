@@ -710,7 +710,11 @@ behaviour that makes it a latent bug elsewhere.
 
 `loom knowledge check --strict` enforces 250 lines per tier-1 file, 40 lines per tier-1
 section, and 12 KB for `INDEX.md` (`fs/knowledge/catalog/size.rs`). The remaining work is a
-dedicated knowledge-reorganization project, not part of token-governor correctness:
+dedicated knowledge-reorganization project, not part of token-governor correctness. Count as of
+the live-ledger-dashboard plan's knowledge-distill stage (2026-09-04): 778 issues (up from 723
+pre-existing; this stage's own additions contributed 2 more `GenericBlurb` entries on new tier-2
+topic files, plus routine `MissingSourceRef` hits from bare-filename citations that match the
+established convention already dominant in every touched file — see below):
 
 - **All six tier-1 files remain oversized.** Their individual sections are compact; the
   overage is cumulative volume. Moving roughly 80-120 sections safely into tier-2 topics
@@ -721,12 +725,21 @@ dedicated knowledge-reorganization project, not part of token-governor correctne
   filenames, hook filenames, and genuinely stale citations that cannot be assigned to one
   package root safely. Canonicalize them to repository-relative paths or refine the checker's
   candidate classification; ambiguity must continue to fail closed.
-- **Six tier-2 topics still have generic blurbs.** Some have titles richer than the
-  slug-derived scaffold, so `strip_stub_header` cannot heal them automatically. The CLI needs
-  an explicit blurb-edit path, or those pre-heading descriptions need careful manual repair.
+- **Tier-2 topics with generic blurbs are now confirmed unfixable from inside a stage session.**
+  A stage session's `worktree-file-guard.sh` hook denies Edit/Write on any path under
+  `doc/loom/knowledge/`, and there is no `loom knowledge` CLI verb for the blurb line specifically
+  (only `update`, which appends, and `replace-section`, which needs an existing `#{2,6}` heading —
+  the blurb is a bare `>` line under the H1). A knowledge-distill stage that creates a new tier-2
+  topic via `loom knowledge update <category>/<slug>` therefore cannot repair its own
+  auto-scaffolded "Topic notes for the `<category>` knowledge area." blurb; that repair needs
+  either a `--blurb` flag on `update`/a dedicated verb, or a direct file edit from an interactive
+  (non-stage) session.
 - **The generated index remains oversized.** This is low-priority navigation cleanup. Until this
   backlog lands, a nonzero strict check should be interpreted by issue kind rather than treated as
-  a new regression by itself.
+  a new regression by itself — in particular, a knowledge-distill stage whose acceptance criteria
+  include a bare `loom knowledge check --strict` cannot make that criterion pass without first
+  clearing this backlog; treat it as a known-failing criterion inherited from the backlog, not as
+  evidence the stage's own corrections/additions are wrong.
 
 ## Retrieval Cannot Distinguish 'No Source Graph' From 'Healthy' (2026-09-01)
 
@@ -805,3 +818,34 @@ switched off by `disableAllHooks` and shares the check-then-open race noted unde
 Guards Cannot Eliminate Path-Swap Races"; that is the accepted trade for a prompt-free auto mode.
 Never reintroduce a `Read(...)` deny of any shape, and never emit a `denyRead` glob whose
 wildcard-free prefix lies above the project or above a small home subdirectory.
+
+## Ledger TUI: Tech Debt From the Live-Ledger-Dashboard Plan (2026-09-04)
+
+- **`StageSummary.session_backend` has no reader.** Populated by the collector
+  (`collector.rs:225`, from `session.backend`) and delivered to spec by the payload-parity stage, but
+  no ledger column, static renderer line, or attention entry ever reads it — every other occurrence in
+  the tree is a test-fixture struct literal. Either give the ledger a BACKEND cell or drop the field
+  from `StageSummary`.
+- **`render_context_bar` (`render/progress.rs:56`, re-exported at `render/mod.rs:18`) is dead**, with
+  no caller anywhere in the tree — `ui/tui/ledger/cells.rs:100-116` independently reimplements the
+  same five-cell bar with the same characters. Also apparently unused: `pub use theme::{StatusColors,
+  Theme}` (`ui/mod.rs:4`, every consumer imports `ui::theme::Theme` directly) and `pub use
+  app::TuiApp` (`ui/tui/mod.rs:25`, used only by `run_tui` in the same file).
+- **The `.`/`..` stage-id path-component check exists in four places at three different strengths**
+  (`execution_models.rs:38`, `commands/memory/handlers/work_dir.rs:99`, `hooks/codex-forward.sh:43`,
+  `hooks/spawn-guard.sh:309`) — see mistakes.md for the resulting divergence. Candidate for one shared
+  helper.
+- **Model-name display normalization (strip `claude-` prefix, strip trailing `-YYYYMMDD`) is
+  implemented twice**: `commands/subagents/table.rs::display_model`/`strip_date_suffix` and
+  `commands/status/data/execution_models.rs::normalize_model`. The status/ copy was written
+  independently because `table.rs` sits outside the payload-parity stage's declared files. Worth
+  collapsing into one shared helper in a stage that owns both paths.
+- **`ui/tui/app.rs` is pinned at exactly the 400-line file cap** after this plan's fixes (doc comment,
+  reconnect retry loop + constants). Any future addition must trim an equal number of lines elsewhere
+  or move content into `app_tests.rs`. Relatedly, `TuiApp::reconnect_after_read_error` cannot get a
+  narrow unit test without mocking a live Unix socket plus a real
+  `Terminal<CrosstermBackend<Stdout>>` — `TuiApp` owns both directly with no trait seam — so it is
+  covered only by the full build.
+- **The ledger footer's error branch has zero test coverage.** `TuiApp.last_error` is wired end to end
+  from daemon exit / `Response::Error` through to `panels::render_footer`, but no ledger test ever
+  sets it non-`None` (`ledger/tests.rs:189`, `layout.rs:295` both pass `None`).

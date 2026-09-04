@@ -977,3 +977,110 @@ Session adoption matched by `stage_id` alone, an unconditional re-queue that orp
 **Why:** Generated settings set `sandbox.failIfUnavailable: true` whenever the plan sandbox is enabled, and Claude Code refuses to start when its Linux sandbox cannot initialize (missing `bwrap`/`socat`, or WSL1). Nothing in `loom run` checked those prerequisites; the tmux backend captured no pane output; `hooks/session-end.sh` discarded the SessionEnd `reason`; and the crash handler retried an exit that identical arguments could never fix.
 **Prevention:** `loom run` now refuses to start on Linux/WSL when `bwrap` or `socat` is missing or the kernel is WSL1 (`commands/run/sandbox_preflight.rs`); the wrapper tees Claude's stderr to `.loom/work/logs/<session>.stderr.log` and the crash report embeds its tail; a crash inside the fast-fail window with no remote-control fallback left to apply is a `StartupRefusal` and is never retried.
 **Fix:** On the host, `sudo apt install bubblewrap socat`, confirm `uname -r` contains `WSL2`, then `loom stage retry <stage-id>`. To see Claude's own error for any instant exit, run the stage's wrapper by hand: `bash .loom/work/wrappers/<pid-key>-wrapper.sh`.
+
+## Status Broadcast Hardening: Frame-Overflow Eviction and Read-Timeout Desync
+
+Widening the daemon's status push to the full `StatusData` exposed two latent defects: an oversized
+payload silently evicted every socket subscriber instead of erroring, and a 50ms read timeout could
+desync the stream permanently with no visible fault. Both were found only by an opus-tier review
+after a sonnet-tier pass called the same diff clean. [Status Broadcast Hardening](mistakes/status-broadcast-hardening.md)
+
+## Ledger TUI: Wide Glyphs, Fan-Out Duplication, and Latent Panics
+
+Five workers fanning the ledger TUI out by file each reimplemented cell-padding and truncation
+independently, and two of the copies used `chars().count()` instead of `Span::width()` against a
+status set that includes an East-Asian Wide icon. Two more latent panics (LOGO indexing, asymmetric
+saturating arithmetic) shipped with no test reaching them. [Ledger TUI Rendering](mistakes/ledger-tui-rendering.md)
+
+## Untracked Plan and Worker Briefs Leave a Worktree Stage Blind
+
+**What happened:** two separate stages of the same plan (`status-payload-parity`, `ledger-tui`) hit
+the same gap: the plan file and its worker briefs under `doc/plans/briefs/<plan>/<stage>/` were
+untracked in the main checkout, so the worktree branch cut from main HEAD carried neither. Only
+truncated excerpts survived in the signal's Knowledge Brief; `loom knowledge context` from inside the
+worktree cannot serve the rest either, because it rebuilds an in-memory catalog from the worktree
+tree and the shared cache under the main repo's `.loom/cache` is not writable from a stage sandbox.
+
+**Why:** `git worktree` branches from a commit, not from the working tree's untracked files —
+committing the plan late does not retroactively appear in a worktree already cut from an earlier
+commit.
+
+**Prevention:** plan authors must commit `doc/plans/**` (the plan file and its briefs) before
+`loom run`. A stage that discovers its briefs missing mid-session must reconstruct them inline from
+the signal's spec plus the tree rather than guessing, and should not commit the plan/briefs itself if
+they fall outside its own `files` scope — flag it so whoever owns the plan commits it on `main`.
+
+## Byte-Index Slicing Panics on a Multi-Byte String From an Untrusted Source
+
+**What happened:** `execution_models.rs::normalize_model` stripped a trailing `-YYYYMMDD` stamp by
+slicing a `&str` at a fixed byte offset (`len - 9`). The model name comes from `spawns.jsonl`, written
+verbatim from a caller-controlled tool argument (`hooks/spawn-guard.sh::record_spawn`), and
+`execution_models_for_stage` runs inside `collect_status_data`, which backs both `loom status` and
+the daemon's broadcast — a single crafted spawn row with a multi-byte character near that offset
+would panic the whole status subsystem.
+
+**Why:** a fixed byte offset is not guaranteed to land on a UTF-8 character boundary; slicing at one
+that doesn't panics at runtime, not compile time.
+
+**Prevention:** strip a known-ASCII suffix/prefix with `rsplit_once`/`strip_suffix`/`char_indices`,
+never a byte-offset slice, on any string that did not originate as a Rust literal you wrote yourself.
+
+**Fix:** replaced the slice with `rsplit_once('-')`, which splits on a char boundary by construction.
+
+## A Character-Class Allowlist Is Not a Path-Component Allowlist
+
+**What happened:** `hooks/codex-forward.sh` and `hooks/spawn-guard.sh` both validate a stage id with
+a character-class case (`case $stage_id in *[!A-Za-z0-9._-]* | "") return 0`), which ACCEPTS `.` and
+`..` because both are made only of allowed characters. The resulting ledger path
+`${work_dir}/subagents/${stage_id}` then resolves to the work dir itself for a `..` id — `chmod 700`
+changes the work dir's own mode and the ledger row lands one level outside its per-stage directory.
+The Rust reader (`commands/status/data/sanitize.rs::valid_stage_id`) gets this right by explicitly
+rejecting `..`, so the two sides of the same boundary disagree, and the same check now exists in four
+places at three different strengths (`execution_models.rs:38`, `commands/memory/handlers/work_dir.rs:99`,
+`codex-forward.sh:43`, `spawn-guard.sh:309`).
+
+**Prevention:** when validating a value that becomes a path COMPONENT, reject `.` and `..` by name
+explicitly — a charset check alone is not a path-component allowlist, whatever language it's written
+in. For concerns.md: the four copies are a shared-helper candidate.
+
+## `loom stage complete`'s Unwired-File Check Has a False Positive on `#[path]` Test Modules
+
+**What happened:** `loom/src/commands/status/render/attention_model_tests.rs` is wired at
+`attention_model.rs`'s tail as `#[cfg(test)] #[path = "attention_model_tests.rs"] mod tests;` — the
+same pattern `attention.rs`/`attention_tests.rs` and `collector.rs`/`collector_tests.rs` already use —
+but `loom stage complete`'s unwired-file checker looks for a `mod attention_model_tests;` declaration
+and finds none, so it flags the file as unwired even though `cargo test --lib
+commands::status::render::attention_model::tests::` reaches it fine.
+
+**Prevention:** when a stage adds a `#[path]`-included test file, record a note before running `loom
+stage complete` so the false flag isn't mistaken for a real gap; the checker itself is the thing that
+needs fixing, not the file.
+
+## Registering a New Global PreToolUse Hook Has a Fourth Site Beyond the Documented Three
+
+**What happened:** adding a global `PreToolUse` hook has a documented three-site checklist
+(`fs/permissions/tests/constants_tests.rs:71`), but `fs/permissions/tests/hooks_tests.rs:32` also
+hardcodes `assert_eq!(pre_tool.len(), N)` over the whole `pre_tool_hooks` list. Miss the fourth site
+and the new hook compiles, installs, and runs correctly — the only symptom is
+`test_hooks_config_structure` failing on a bare count mismatch that names no hook.
+
+**Prevention:** when adding or removing a global hook, grep for every hardcoded count of
+`pre_tool_hooks`/`post_tool_use`/similar lists, not just the documented checklist — a passing count
+assertion elsewhere is a silent fourth site.
+
+## Maintainability Baseline: Moving or Growing Past a Ledger Function Needs Care Beyond `wc -l`
+
+Three mechanics not covered by the existing "fails on shrinkage too" entry above:
+
+- **Baseline entries are exact-match, both directions, at once.** `validate_recorded_entries` errors
+  on a measured count either ABOVE or BELOW the recorded value against the SAME baseline row — only
+  landing exactly on it (or dropping fully under the general 400/50 threshold and removing the row)
+  avoids both errors. Comment reflow (never content deletion) is a legitimate way to land exactly on
+  a target line count.
+- **Relocating an oversized function to a new file needs a NEW baseline entry at the new path** — the
+  function's own line count doesn't change when it moves, so a violation that already had a recorded
+  entry at the old path is a fresh "unrecorded violation" at the new one; `find_unrecorded_violations`
+  flags it regardless of whether the same violation existed elsewhere before.
+- **`rustfmt` always splits `#[cfg(test)] mod x;` onto two lines**, even written on one — registering
+  a new test submodule costs 2 lines with no way around it; that's real structural cost to budget into
+  a baseline update, not padding to trim away.

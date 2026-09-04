@@ -612,16 +612,22 @@ Any sweep that kills or deletes must resolve _uncertainty_ toward inaction:
 
 ## One Flattener for an Untrusted Value Rendered on Many Surfaces
 
-`context/untrusted.rs::inline_safe` is the single definition both agent-facing renderers
-call — the Knowledge Brief (`signals/format/brief.rs`) and `loom knowledge context`'s stdout
-(`commands/knowledge/context.rs`). Its docstring states outright that a second copy would
-duplicate a security rule that must never drift.
+`context/untrusted.rs::inline_safe` is the single definition now shared by THREE surfaces: the two
+agent-facing renderers — the Knowledge Brief (`signals/format/brief.rs`) and `loom knowledge context`'s
+stdout (`commands/knowledge/context.rs`) — plus one operator-facing surface added later, the `loom
+status` payload (`commands/status/data/sanitize.rs`, applied via `collector.rs:364` to every untrusted
+string reaching `StatusData`: stage/session ids, `model`, `last_tool`, `last_activity`, evidence lines).
+Its docstring states outright that a second copy would duplicate a security rule that must never drift.
 
 The generalisable shape: when the same escaping or fencing rule must hold on N surfaces,
 put it in one function that all N import, and say so in the docstring — because the failure
 mode is not a wrong implementation, it is a second implementation. And remember the surface
 set is larger than it looks: a brief whose footer advertises a command extends the boundary
-to that command's output. See `mistakes/untrusted-value-boundaries.md`.
+to that command's output, and a rendered UI extends it again — a width-bounded TUI column is
+NOT a substitute for `inline_safe`. `Span::width()` (unicode-width aware) is 0 for C0 controls
+and for the Cf/bidi/zero-width set, so a display-width budget bounds nothing against a hostile
+string; sanitize at the collector boundary that constructs the shared payload, not in a renderer
+that only measures cells. See `mistakes/untrusted-value-boundaries.md`.
 
 ## Confidence Ceilings as Named Constants
 
@@ -759,3 +765,45 @@ listening, and a worktree spool when the sandbox denies AF_UNIX outright. Covers
 alone cannot reach a sandboxed stage, and why a spooled request carries no stage id.
 
 → [Stage-to-Daemon Channels](patterns/stage-daemon-channels.md)
+
+## Prove a Regression Guard Guards by Reverting It and Watching Red
+
+A green full suite is not evidence a fix is protected — a fix can ship with zero tests reaching it
+and a 3950-test suite stays green if reverted. The check: copy the file aside, restore the pre-fix
+body, run the narrow test target for that module, confirm it goes red, restore the file
+byte-identically (`diff -q`), re-run to confirm green again. Cheap (about two minutes) and worth doing
+for every regression guard accepted from a subagent rather than trusting its own claim to have
+checked. A module with no `#[cfg(test)] mod tests` at all is the tell that nobody has ever had to
+test it. See [Status Broadcast Hardening](mistakes/status-broadcast-hardening.md) for the case this
+caught.
+
+## A Sandboxed Worktree Session Can Prove the Static Status Renderer End to End
+
+`mktemp -d` a fixture dir, `mkdir .loom/work`, copy the real `stages/`, `sessions/`, `config.toml`
+into it with `cp -rL` (the `.loom/work` symlink needs `-L`), delete `orchestrator.sock` and
+`orchestrator.pid`, then run the built binary with that dir as cwd. It renders the full dashboard,
+the legend line, and the Requires Attention blocks (exercising `attention_entries` via
+`render/attention.rs`) and reports "daemon stopped" — no shared state is touched. The live `--live`
+TUI still cannot be proven this way: it needs both a daemon socket and a TTY. Reach for this fixture
+instead of skipping functional verification of the static path.
+
+## Fanning a UI Out by File: Give the Foundation Module the Shared Helpers First
+
+When a plan splits UI work across parallel workers by disjoint file ownership, a width/truncation/
+padding helper written by one worker is invisible to a sibling writing a different file at the same
+time — the same defect class gets reimplemented independently in each file that needs it. Have the
+worker who runs first and alone (the "W0" foundation module in a staged fan-out) own those shared
+helpers explicitly, and name them by path in every later worker's brief. Absent that, budget an
+orchestrator convergence pass after the fan-out returns rather than assuming disjoint files stayed
+consistent. See [Ledger TUI Rendering](mistakes/ledger-tui-rendering.md) for three independent
+instances of this in one stage.
+
+## Two Guards That Disagree on the One Behavior That Matters Stay Separate
+
+`hooks/worktree-file-guard.sh` and `hooks/credential-guard.sh` share almost all of their
+canonicalization logic but diverge on the one thing that decides correctness: `worktree-file-guard`
+must REJECT a symlink leaf, `credential-guard` must FOLLOW one (so a worktree's `.loom/work/admin.token`
+resolves through the state-root symlink to the main repo's real file). A shared helper with two
+callers that disagree on that behavior would need a mode flag threading through every call site.
+When two near-duplicate pieces of logic differ only on the safety-relevant branch, duplicating the
+few lines that matter is clearer than parameterizing a shared function to hide the disagreement.
