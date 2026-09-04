@@ -155,4 +155,7 @@ the running binary.
 ## Security
 
 - Report security vulnerabilities privately via GitHub Security Advisories
-- See `doc/plans/PLAN-0002-loom-security-remediation.md` for security audit details
+- Known security-relevant limitations are tracked in `doc/loom/knowledge/concerns.md`
+- The `sandbox:` block bounds the agent session. `command_confinement` scrubs the
+  environment of the commands loom runs from a plan and is not an isolation
+  boundary - see "Sandbox Configuration" in the README
