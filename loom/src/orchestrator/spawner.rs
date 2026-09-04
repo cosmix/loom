@@ -89,7 +89,7 @@ impl CrashReport {
 /// whitespace: the caller then leaves the report's log section as it was
 /// rather than presenting an empty capture as evidence. Invalid UTF-8 is
 /// replaced rather than rejected — one bad byte must not cost the operator the
-/// whole diagnosis. The read itself seeks to the last [`MAX_LOG_READ_BYTES`]
+/// whole diagnosis. The read itself seeks to the last `MAX_LOG_READ_BYTES`
 /// by byte offset, so on a log larger than that the first line emitted here
 /// can be a truncated fragment rather than a complete line; that is
 /// acceptable for evidence text, where later lines matter more than the first.
