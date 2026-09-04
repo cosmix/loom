@@ -112,8 +112,11 @@ pub fn unix_socket_bindable(dir: &Path) -> bool {
 }
 
 /// Whether this process may bind a TCP listener on the loopback interface.
+/// Memoized like [`process_tree_visible`]: a fact about the sandbox, not
+/// about any one test.
 pub fn loopback_bindable() -> bool {
-    std::net::TcpListener::bind("127.0.0.1:0").is_ok()
+    static RESULT: OnceLock<bool> = OnceLock::new();
+    *RESULT.get_or_init(|| std::net::TcpListener::bind("127.0.0.1:0").is_ok())
 }
 
 /// Returns true if this process may create and remove a file under `dir`.
