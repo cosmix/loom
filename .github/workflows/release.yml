@@ -189,6 +189,9 @@ jobs:
           echo "tag=${TAG}" >> $GITHUB_OUTPUT
           echo "Version: $VERSION, Tag: $TAG"
 
+      # The trailing "What's Changed" heading is deliberately absent: the release
+      # is created with `generate_release_notes: true`, and GitHub appends its own
+      # "## What's Changed" section after this body. Adding one here duplicates it.
       - name: Generate release notes
         id: release_notes
         run: |
@@ -203,6 +206,11 @@ jobs:
           chmod +x loom
           sudo mv loom /usr/local/bin/
           ```
+
+          **Windows (WSL2):** supported — use the Linux x86_64 binary above. Run stages on the
+          tmux backend (`loom run --backend tmux`); a stock WSL install ships no Linux GUI stack,
+          so the native backend has no terminal emulator to detect. Details:
+          [Running under WSL](https://github.com/${{ github.repository }}/blob/${{ steps.version.outputs.tag }}/README.md#running-under-wsl).
 
           **macOS (Apple Silicon):**
           ```bash
@@ -220,16 +228,27 @@ jobs:
 
           ### Verify Signature
 
-          Download the `.minisig` file alongside the binary and verify:
+          Every binary ships with a minisign signature. Verify against the release
+          signing key (key ID `8E9D22D875357EC7`):
           ```bash
-          minisign -Vm loom-linux-x86_64 -P <PUBLIC_KEY>
+          minisign -Vm loom-linux-x86_64 -P RWTHfjV12CKdjuXF6DPYXsOoneV6zG4nt4Qd1DFe7JzSIXTXKfRJPHjJ
           ```
+
+          `loom update` checks the same signature against the key embedded in the binary.
 
           ### Checksums
 
-          See `SHA256SUMS.txt` for SHA256 checksums of all release artifacts.
+          ```bash
+          # Linux
+          sha256sum -c SHA256SUMS.txt --ignore-missing
 
-          ### What's Changed
+          # macOS - check the one binary you downloaded
+          grep loom-darwin-arm64 SHA256SUMS.txt | shasum -a 256 -c
+          ```
+
+          ### Changelog
+
+          [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/${{ steps.version.outputs.tag }}/CHANGELOG.md)
           RELEASE_NOTES_EOF
 
       - name: Create GitHub Release
