@@ -8,7 +8,7 @@
 
 | File | Description | Lines |
 | --- | --- | --- |
-| [architecture.md](architecture.md) | High-level component relationships, data flow, module dependencies | 534 |
+| [architecture.md](architecture.md) | High-level component relationships, data flow, module dependencies | 538 |
 | [entry-points.md](entry-points.md) | Key files agents should read first | 572 |
 | [patterns.md](patterns.md) | Architectural patterns discovered in the codebase | 799 |
 | [conventions.md](conventions.md) | Coding conventions discovered in the codebase | 682 |
@@ -33,6 +33,7 @@
 | [architecture/knowledge-hierarchy.md](architecture/knowledge-hierarchy.md) | Knowledge Hierarchy | Tier-1/tier-2 knowledge mechanics: layout predicate, target parsing, INDEX.md generation, audit link rules, coverage… | 144 |
 | [architecture/memory-spool.md](architecture/memory-spool.md) | Memory Spool and Drain | Topic notes for the architecture knowledge area. | 105 |
 | [architecture/merge-flow.md](architecture/merge-flow.md) | Merge Flow | Topic notes for the architecture knowledge area. | 7 |
+| [architecture/quota-poller.md](architecture/quota-poller.md) | Quota Poller | How loom learns the operator's Claude and Codex subscription budget, where it caches it, and what the two dashboards do… | 29 |
 | [architecture/remote-control.md](architecture/remote-control.md) | Remote Control | Capability detection, preflight, resolution, and per-kind session naming for driving external agent binaries. | 64 |
 | [architecture/signal-generation.md](architecture/signal-generation.md) | Signal Generation | How a stage signal is assembled: stable-prefix cache, shared append_* helpers, per-stage-type prefixes, soft signals. | 175 |
 | [architecture/skill-catalog.md](architecture/skill-catalog.md) | Skill Catalog | The two skill roots, why 53 skills live outside `~/.claude/skills`, and the install/hook-exemption hazards that came… | 103 |
@@ -44,7 +45,7 @@
 
 | Topic | Title | Blurb | Lines |
 | --- | --- | --- | --- |
-| [entry-points/hooks.md](entry-points/hooks.md) | Hooks | Every hook script and the event it binds to, _common.sh's command-matching and subagent-detection helpers, and the… | 112 |
+| [entry-points/hooks.md](entry-points/hooks.md) | Hooks | Every hook script and the event it binds to, _common.sh's command-matching and subagent-detection helpers, and the… | 111 |
 | [entry-points/remote-control.md](entry-points/remote-control.md) | Remote Control | Files and call sites for remote-control capability detection and permission-mode resolution. | 97 |
 
 ### patterns

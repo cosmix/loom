@@ -532,3 +532,7 @@ signal generation already wrote — no second retrieval. `read_events` has **no
 production caller** today, and `.work/` is removed when the plan finishes, so
 events currently go unread; the intended reader is a future `loom status`/`loom map`
 diagnostic.
+
+## Quota Poller
+
+A daemon thread (`loom/src/quota/poller.rs`) polls the Claude OAuth usage endpoint and `codex app-server` every 180 s and caches one `ProviderQuota` per provider under `.loom/work/quota/`; `StatusData.quota` is read from that cache, never polled, and rendered in the `--live` and `--web` footers. Sources, backoff, cache hygiene, and the token-handling rules: [architecture/quota-poller.md](architecture/quota-poller.md).

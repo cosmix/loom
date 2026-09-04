@@ -8,7 +8,7 @@
 ## Core Stack
 
 - **Language:** Rust (~15K lines)
-- **Async Runtime:** tokio (daemon, socket handling)
+- **Concurrency:** std threads only. The daemon is thread-based: a Unix socket accept loop, a client worker pool, and the orchestrator, log-tailer, status-broadcaster, and quota-poller threads, each joined with a 5 s timeout on shutdown (`loom/src/daemon/server/lifecycle.rs`). `loom/Cargo.toml` has no tokio and no async runtime; this line used to claim tokio.
 - **CLI Framework:** clap with `#[derive(Parser)]`
 - **Serialization:** serde, serde_yaml, toml
 - **Error Handling:** `anyhow` at application/orchestration boundaries with context chaining; typed
@@ -22,7 +22,7 @@
 | serde       | Serialization framework            |
 | serde_yaml  | YAML parsing for frontmatter       |
 | anyhow      | Application errors and context     |
-| tokio       | Async runtime (daemon)             |
+| reqwest     | Blocking HTTP (self-update, quota) |
 | toml        | Config file parsing                |
 | chrono      | Timestamps                         |
 | minisign    | Self-update signature verification |
