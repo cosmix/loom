@@ -14,17 +14,12 @@ use super::{
     assert_security_headers, body, request, skip_without_loopback, start, stop, workspace,
 };
 use crate::commands::status::web::broadcast::Broadcaster;
+use crate::commands::status::web::http;
+use crate::commands::status::web::limits::MAX_CONNECTIONS;
 use crate::commands::status::web::model::{DaemonState, SnapshotSource, WebSnapshot};
-use crate::commands::status::web::{assets, http};
-use crate::process::sandbox_probe::{loopback_bindable, skip_unless};
-
-fn skip_without_assets(test_name: &str) -> bool {
-    skip_unless(
-        loopback_bindable() && !assets::WEB_ASSETS.is_empty(),
-        test_name,
-        "embedded assets are absent or loopback TCP is unavailable",
-    )
-}
+use crate::fs::work_dir::WorkDir;
+use crate::models::stage::Stage;
+use crate::verify::transitions::create_stage;
 
 fn split_request(port: u16, first: &str, headers: &str) -> TcpStream {
     let mut stream = TcpStream::connect(("127.0.0.1", port)).expect("connect split request");
@@ -136,25 +131,25 @@ fn api_status_rejects_foreign_origin() {
 }
 
 #[test]
-fn index_reports_missing_assets() {
-    if skip_unless(
-        loopback_bindable() && assets::WEB_ASSETS.is_empty(),
-        "index_reports_missing_assets",
-        "embedded assets are present or loopback TCP is unavailable",
-    ) {
+fn api_status_rejects_a_rebound_host() {
+    if skip_without_loopback("api_status_rejects_a_rebound_host") {
         return;
     }
     let (_temp, base) = workspace();
     let (port, running) = start(base);
-    let response = request(port, "GET / HTTP/1.1\r\nHost: localhost\r\n\r\n");
+    let response = request(
+        port,
+        "GET /api/status HTTP/1.1\r\nHost: evil.example\r\n\r\n",
+    );
     stop(running);
-    assert!(response.starts_with("HTTP/1.1 503"));
+    assert!(response.starts_with("HTTP/1.1 403"), "{response}");
+    assert_eq!(body(&response), "host not allowed");
     assert_security_headers(&response);
 }
 
 #[test]
 fn index_serves_embedded_page() {
-    if skip_without_assets("index_serves_embedded_page") {
+    if skip_without_loopback("index_serves_embedded_page") {
         return;
     }
     let (_temp, base) = workspace();
@@ -176,13 +171,8 @@ fn index_serves_embedded_page() {
     assert!(missing.starts_with("HTTP/1.1 404"));
 }
 
-#[test]
-fn websocket_delivers_a_snapshot() {
-    if skip_without_loopback("websocket_delivers_a_snapshot") {
-        return;
-    }
-    let (_temp, base) = workspace();
-    let (port, running) = start(base);
+/// Complete a WebSocket handshake against a test server.
+fn connect_websocket(port: u16) -> tungstenite::WebSocket<TcpStream> {
     let url = format!("ws://127.0.0.1:{port}/ws");
     let request = url
         .as_str()
@@ -193,14 +183,82 @@ fn websocket_delivers_a_snapshot() {
         tungstenite::client(request, stream).expect("complete WebSocket handshake");
     socket
         .get_mut()
-        .set_read_timeout(Some(Duration::from_secs(5)))
+        // Generous: a republished frame waits out one file-poll interval.
+        .set_read_timeout(Some(Duration::from_secs(10)))
         .expect("set WebSocket timeout");
+    socket
+}
+
+fn read_snapshot(socket: &mut tungstenite::WebSocket<TcpStream>) -> WebSnapshot {
     let frame = socket.read().expect("read snapshot frame");
-    let snapshot: WebSnapshot =
-        serde_json::from_str(frame.to_text().expect("text frame")).expect("snapshot JSON");
-    assert_eq!(snapshot.source, SnapshotSource::Files);
+    serde_json::from_str(frame.to_text().expect("text frame")).expect("snapshot JSON")
+}
+
+#[test]
+fn websocket_delivers_a_snapshot() {
+    if skip_without_loopback("websocket_delivers_a_snapshot") {
+        return;
+    }
+    let (_temp, base) = workspace();
+    let (port, running) = start(base);
+    let mut socket = connect_websocket(port);
+    assert_eq!(read_snapshot(&mut socket).source, SnapshotSource::Files);
     let _ = socket.close(None);
     stop(running);
+}
+
+/// The live-update loop must keep publishing past the first paint: a `handle`
+/// that returned after one send would freeze the dashboard with every
+/// single-frame test still passing.
+#[test]
+fn websocket_delivers_successive_frames() {
+    if skip_without_loopback("websocket_delivers_successive_frames") {
+        return;
+    }
+    let (_temp, base) = workspace();
+    let work_root = WorkDir::new(&base)
+        .expect("build work dir")
+        .root()
+        .to_path_buf();
+    let (port, running) = start(base);
+    let mut socket = connect_websocket(port);
+    let first = read_snapshot(&mut socket);
+    assert!(first.status.stages.is_empty());
+    // An unchanged body is suppressed, so a second frame arrives only because
+    // this stage changed the serialized tree.
+    create_stage(&Stage::new("Live Update".to_owned(), None), &work_root).expect("create stage");
+    let second = read_snapshot(&mut socket);
+    stop(running);
+    assert_eq!(second.status.stages.len(), 1);
+    assert!(
+        second.generated_at > first.generated_at,
+        "the second frame must be newer than the first"
+    );
+}
+
+#[test]
+fn websocket_closes_on_client_close() {
+    if skip_without_loopback("websocket_closes_on_client_close") {
+        return;
+    }
+    let (_temp, base) = workspace();
+    let (port, running) = start(base);
+    let mut socket = connect_websocket(port);
+    let _ = read_snapshot(&mut socket);
+    let peer = socket.get_mut();
+    // A masked, empty close frame, written past tungstenite so the read below
+    // observes the server's own close rather than client-side bookkeeping.
+    peer.write_all(&[0x88, 0x80, 0, 0, 0, 0])
+        .expect("send close frame");
+    let mut byte = [0_u8; 1];
+    let closed = peer.read(&mut byte);
+    stop(running);
+    match closed {
+        Ok(0) => {}
+        Ok(_) => panic!("server sent data after the client's close frame"),
+        Err(error) if error.kind() == std::io::ErrorKind::ConnectionReset => {}
+        Err(error) => panic!("server did not close after the client's close frame: {error}"),
+    }
 }
 
 #[test]
@@ -258,7 +316,7 @@ fn handshake_survives_a_split_head() {
 
 #[test]
 fn split_head_get_is_routed_normally() {
-    if skip_without_assets("split_head_get_is_routed_normally") {
+    if skip_without_loopback("split_head_get_is_routed_normally") {
         return;
     }
     let (_temp, base) = workspace();
@@ -268,4 +326,35 @@ fn split_head_get_is_routed_normally() {
     stop(running);
     assert!(response.starts_with("HTTP/1.1 200"));
     assert_security_headers(&response);
+}
+
+#[test]
+fn a_connection_past_the_cap_is_answered_503() {
+    if skip_without_loopback("a_connection_past_the_cap_is_answered_503") {
+        return;
+    }
+    let (_temp, base) = workspace();
+    let (port, running) = start(base);
+
+    // Silent clients hold their slots for the whole head timeout, and the
+    // accept loop takes connections in the order they were opened, so the
+    // request below always arrives at a full pool.
+    let held = (0..MAX_CONNECTIONS)
+        .map(|index| {
+            TcpStream::connect(("127.0.0.1", port))
+                .unwrap_or_else(|error| panic!("hold connection {index}: {error}"))
+        })
+        .collect::<Vec<_>>();
+    let response = request(port, "GET / HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n");
+    drop(held);
+    stop(running);
+
+    assert!(
+        response.starts_with("HTTP/1.1 503 Service Unavailable"),
+        "{response}"
+    );
+    assert!(
+        body(&response).contains("connection limit reached"),
+        "{response}"
+    );
 }

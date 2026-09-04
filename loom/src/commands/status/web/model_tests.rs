@@ -132,17 +132,15 @@ fn attention_conversion_keeps_failure_label() {
     assert_eq!(attention.failure_label.as_deref(), Some("test"));
 }
 
-#[test]
-fn statuses_fixture_matches_stage_status() {
-    #[derive(Deserialize)]
-    struct StatusFixtureEntry {
-        status: StageStatus,
-        icon: String,
-        label: String,
-        legend: String,
-    }
-    let fixture = serde_json::from_str::<Vec<StatusFixtureEntry>>(STATUSES_FIXTURE).unwrap();
-    let statuses = [
+/// Every [`StageStatus`], ordered as `web/src/api/fixtures/statuses.json` lists
+/// them.
+///
+/// The `match` below is exhaustive and has no wildcard arm, so a new variant
+/// stops the build here. Without it the variant compiles cleanly, the page's
+/// `stageStatusSchema` then rejects the whole snapshot at runtime, and the
+/// dashboard renders nothing.
+fn every_stage_status() -> Vec<StageStatus> {
+    let statuses = vec![
         StageStatus::WaitingForDeps,
         StageStatus::Queued,
         StageStatus::Executing,
@@ -157,6 +155,37 @@ fn statuses_fixture_matches_stage_status() {
         StageStatus::NeedsHumanReview,
         StageStatus::NeedsAdjudication,
     ];
+    for status in &statuses {
+        match status {
+            StageStatus::WaitingForDeps
+            | StageStatus::Queued
+            | StageStatus::Executing
+            | StageStatus::WaitingForInput
+            | StageStatus::NeedsHandoff
+            | StageStatus::Completed
+            | StageStatus::Skipped
+            | StageStatus::Blocked
+            | StageStatus::CompletedWithFailures
+            | StageStatus::MergeConflict
+            | StageStatus::MergeBlocked
+            | StageStatus::NeedsHumanReview
+            | StageStatus::NeedsAdjudication => {}
+        }
+    }
+    statuses
+}
+
+#[test]
+fn statuses_fixture_matches_stage_status() {
+    #[derive(Deserialize)]
+    struct StatusFixtureEntry {
+        status: StageStatus,
+        icon: String,
+        label: String,
+        legend: String,
+    }
+    let fixture = serde_json::from_str::<Vec<StatusFixtureEntry>>(STATUSES_FIXTURE).unwrap();
+    let statuses = every_stage_status();
     let legend = &crate::commands::status::ui::tui::ledger::legend::LEGEND;
     assert_eq!(fixture.len(), statuses.len());
     for (status, entry) in statuses.iter().zip(fixture.iter()) {
