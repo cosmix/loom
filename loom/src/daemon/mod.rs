@@ -5,7 +5,7 @@ mod wire;
 
 pub use protocol::{
     read_message, write_message, Capability, CompletionSummary, DaemonConfig, Request, Response,
-    StageCompletionInfo, StageInfo, WireMessage,
+    StageCompletionInfo, WireMessage,
 };
 pub use rpc::{current_session_id, send_request, try_send_request, user_credential, DaemonReach};
 pub use server::{

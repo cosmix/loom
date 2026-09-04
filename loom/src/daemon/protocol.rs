@@ -1,9 +1,7 @@
-use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
 use crate::models::stage::StageStatus;
-use crate::models::worktree::WorktreeStatus;
 
 /// Information about a single stage's completion status.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -257,10 +255,7 @@ pub enum Response {
     },
     AuthenticationFailed,
     StatusUpdate {
-        stages_executing: Vec<StageInfo>,
-        stages_pending: Vec<StageInfo>,
-        stages_completed: Vec<StageInfo>,
-        stages_blocked: Vec<StageInfo>,
+        data: crate::commands::status::data::StatusData,
     },
     /// Orchestration has completed (all stages terminal)
     OrchestrationComplete {
@@ -274,30 +269,6 @@ pub enum Response {
     DisputeCreated {
         id: u32,
     },
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct StageInfo {
-    pub id: String,
-    pub name: String,
-    pub session_pid: Option<u32>,
-    pub started_at: DateTime<Utc>,
-    pub completed_at: Option<DateTime<Utc>>,
-    pub worktree_status: Option<WorktreeStatus>,
-    /// Current status of the stage in the execution lifecycle
-    pub status: StageStatus,
-    /// Whether this stage's changes have been merged to the merge point
-    #[serde(default)]
-    pub merged: bool,
-    /// IDs of stages this stage depends on
-    #[serde(default)]
-    pub dependencies: Vec<String>,
-    /// Effective model name for this stage (explicit override or stage-type default)
-    #[serde(default)]
-    pub model: String,
-    /// Why post-merge worktree/branch cleanup failed or was refused, when it did.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub cleanup_warning: Option<String>,
 }
 
 pub use super::wire::{
