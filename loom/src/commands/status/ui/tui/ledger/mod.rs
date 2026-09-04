@@ -24,6 +24,8 @@ pub mod panels;
 pub mod rows;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tests_viewport;
 /// Cell width and truncation helpers.
 pub mod text;
 

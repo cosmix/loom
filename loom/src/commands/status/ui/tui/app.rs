@@ -37,6 +37,12 @@ const COMPLETION_EXIT_DELAY: Duration = Duration::from_millis(500);
 /// How often the alert files are re-read from the state directory.
 const ALERT_REFRESH_INTERVAL: Duration = Duration::from_secs(1);
 
+/// Connect attempts before giving up - a busy `accept()` can fail once without being dead.
+const RECONNECT_ATTEMPTS: u32 = 3;
+
+/// Backoff between attempts - well under the 100ms input-poll interval.
+const RECONNECT_BACKOFF: Duration = Duration::from_millis(80);
+
 /// TUI application state.
 pub struct TuiApp {
     terminal: Terminal<CrosstermBackend<Stdout>>,
@@ -166,7 +172,7 @@ impl TuiApp {
                 break;
             }
 
-            if self.completion_delay_elapsed() || self.receive_response(stream)? {
+            if self.completion_delay_elapsed() || self.receive_response(stream, work_path)? {
                 break;
             }
             self.handle_input()?;
@@ -184,7 +190,16 @@ impl TuiApp {
             .is_some_and(|received_at| received_at.elapsed() >= COMPLETION_EXIT_DELAY)
     }
 
-    fn receive_response(&mut self, stream: &mut UnixStream) -> Result<bool> {
+    /// Read one daemon response and apply it. A read timeout with nothing
+    /// consumed is the normal idle case (~20x/second) and stays silent -
+    /// `is_read_timeout` is load-bearing here. It also swallows a timeout
+    /// landing mid-frame (`read_exact` cannot tell the two apart), losing one
+    /// frame; recovery happens on the *next* read, once the misaligned stream
+    /// makes `read_frame_length` (`daemon/wire.rs:190-199`) decode a length
+    /// `>= 0x20000000` from JSON body bytes - past `MAX_RESPONSE_BYTES` (2
+    /// MiB) - reaching `reconnect_after_read_error` below (pinned by
+    /// `app_tests.rs:24-32`).
+    fn receive_response(&mut self, stream: &mut UnixStream, work_path: &Path) -> Result<bool> {
         match read_message::<Response, _>(stream) {
             Ok(response) => self.handle_response(response),
             Err(error) if is_socket_disconnected(&error) => {
@@ -196,9 +211,34 @@ impl TuiApp {
                 std::thread::sleep(Duration::from_millis(500));
                 return Ok(true);
             }
-            Err(_) => {}
+            Err(error) if is_read_timeout(&error) => {}
+            Err(error) => return self.reconnect_after_read_error(&error, stream, work_path),
         }
         Ok(false)
+    }
+
+    /// Tear down the stream and resubscribe; reports the daemon dead only
+    /// after `RECONNECT_ATTEMPTS` straight attempts fail.
+    fn reconnect_after_read_error(
+        &mut self,
+        error: &anyhow::Error,
+        stream: &mut UnixStream,
+        work_path: &Path,
+    ) -> Result<bool> {
+        self.last_error = Some(format!("Reconnecting after a status read error: {error}"));
+        for attempt in 1..=RECONNECT_ATTEMPTS {
+            if let Ok(new_stream) = Self::connect_and_subscribe(work_path) {
+                *stream = new_stream;
+                return Ok(false);
+            }
+            if attempt < RECONNECT_ATTEMPTS {
+                std::thread::sleep(RECONNECT_BACKOFF);
+            }
+        }
+        self.last_error = Some("Daemon exited".to_string());
+        self.render()?;
+        std::thread::sleep(Duration::from_millis(500));
+        Ok(true)
     }
 
     fn handle_input(&mut self) -> Result<()> {
@@ -284,7 +324,7 @@ impl TuiApp {
         }
 
         let levels = self.status.compute_levels();
-        let ordered = self.status.all_stages();
+        let ordered = self.status.all_stages_with_levels(&levels);
         let attention = attention_entries(&self.status.data.stages);
         let view = LedgerView {
             data: &self.status.data,
@@ -318,6 +358,25 @@ impl TuiApp {
     }
 }
 
+/// True when `error`'s underlying `io::Error` is a read timeout
+/// (`WouldBlock`/`TimedOut`) - the kind a 50ms socket read timeout produces
+/// both for the ordinary idle case and for a timeout that landed mid-frame.
+/// `daemon_client::is_socket_disconnected` answers a different question (is
+/// this a real disconnect) and returns false for both timeout kinds too, so
+/// it cannot serve here.
+fn is_read_timeout(error: &anyhow::Error) -> bool {
+    error.chain().any(|cause| {
+        cause
+            .downcast_ref::<std::io::Error>()
+            .is_some_and(|io_error| {
+                matches!(
+                    io_error.kind(),
+                    std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
+                )
+            })
+    })
+}
+
 fn is_scroll_key(code: KeyCode) -> bool {
     matches!(
         code,
@@ -335,3 +394,7 @@ impl Drop for TuiApp {
         self.cleanup_terminal();
     }
 }
+
+#[cfg(test)]
+#[path = "app_tests.rs"]
+mod tests;

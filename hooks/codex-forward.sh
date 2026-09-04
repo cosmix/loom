@@ -41,7 +41,7 @@ record_codex_task() {
 	[[ -n "$work_dir" && -n "$stage_id" ]] || return 0
 
 	case "$stage_id" in
-	*[!A-Za-z0-9._-]* | "")
+	*[!A-Za-z0-9._-]* | "" | "." | "..")
 		return 0
 		;;
 	esac

@@ -82,6 +82,15 @@ mod tests {
                 assert_eq!(activity_cell(&stage, 40).text, $expected);
             }
         };
+        ($name:ident, $status:expr, $activity:expr, $expected:expr, judge: $judge:expr) => {
+            #[test]
+            fn $name() {
+                let mut stage = summary($status);
+                stage.activity_status = $activity;
+                stage.judge_heartbeat_secs = $judge;
+                assert_eq!(activity_cell(&stage, 40).text, $expected);
+            }
+        };
     }
 
     activity_case!(
@@ -167,6 +176,20 @@ mod tests {
         StageStatus::NeedsAdjudication,
         ActivityStatus::Idle,
         "dispute 0 · judge none"
+    );
+    activity_case!(
+        adjudication_activity_judge_working,
+        StageStatus::NeedsAdjudication,
+        ActivityStatus::Idle,
+        "dispute 0 · judge working",
+        judge: Some(300)
+    );
+    activity_case!(
+        adjudication_activity_judge_stale,
+        StageStatus::NeedsAdjudication,
+        ActivityStatus::Idle,
+        "dispute 0 · judge stale",
+        judge: Some(301)
     );
 
     #[test]

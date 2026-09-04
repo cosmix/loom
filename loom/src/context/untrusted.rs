@@ -16,7 +16,16 @@
 //! surface's own text, in output an agent may treat as instructions or
 //! assignment.
 //!
-//! This is the ONE definition both surfaces call. A second copy would
+//! A third surface calls it for the same reason on different data: the status
+//! payload (`commands::status::data::sanitize`) flattens the model names,
+//! heartbeat activity, review reasons and crash evidence a `StageSummary`
+//! carries before the daemon broadcasts them. There the structure being
+//! injected into is a terminal rather than a markdown document — an ESC that
+//! survives is an ANSI sequence the operator's terminal obeys — and the
+//! renderers cannot stop it, because they bound columns by display width and
+//! every character that matters here has a width of zero.
+//!
+//! This is the ONE definition all three surfaces call. A second copy would
 //! duplicate a security rule that must never drift between them.
 
 /// Longest inline value either surface renders before eliding the rest.

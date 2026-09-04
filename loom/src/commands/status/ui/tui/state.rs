@@ -28,7 +28,7 @@ impl GraphState {
             self.scroll_y = self.scroll_y.saturating_sub((-delta) as u16);
         } else {
             let max_scroll = self.total_lines.saturating_sub(self.viewport_height);
-            self.scroll_y = (self.scroll_y + delta as u16).min(max_scroll);
+            self.scroll_y = self.scroll_y.saturating_add(delta as u16).min(max_scroll);
         }
     }
 
@@ -57,7 +57,12 @@ impl LiveStatus {
 
     /// Collect all stages into a deduplicated list, sorted by level then id.
     pub fn all_stages(&self) -> Vec<&StageSummary> {
-        let levels = self.compute_levels();
+        self.all_stages_with_levels(&self.compute_levels())
+    }
+
+    /// Same as `all_stages`, but reuses an already-computed level map instead
+    /// of recomputing it - the caller already needs both.
+    pub fn all_stages_with_levels(&self, levels: &HashMap<String, usize>) -> Vec<&StageSummary> {
         let mut stages = Vec::new();
         let mut seen: HashSet<String> = HashSet::new();
 

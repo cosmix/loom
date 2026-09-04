@@ -136,3 +136,59 @@ fn evidence_listing_is_gated_behind_verbose() {
         "output: {verbose_str}"
     );
 }
+
+#[test]
+fn adjudication_reason_includes_the_judge_heartbeat_when_known() {
+    let mut stage = make_stage_summary("s-adjudicate", StageStatus::NeedsAdjudication);
+    stage.dispute_count = 2;
+    stage.judge_heartbeat_secs = Some(42);
+    let stages = vec![stage];
+    let mut output = Vec::new();
+    render_attention(&mut output, &stages, false).unwrap();
+    let output_str = String::from_utf8(output).unwrap();
+
+    assert!(
+        output_str.contains("2 disputes filed; judge heartbeat 42s ago"),
+        "output: {output_str}"
+    );
+}
+
+#[test]
+fn cleanup_warning_renders_as_a_single_line_with_a_stage_file_hint() {
+    // `sanitize_stage_summary` always flattens `cleanup_warning` to one line
+    // before it reaches a real `AttentionEntry`, but this test bypasses that
+    // and feeds an embedded newline directly to prove `render_cleanup_warning`
+    // itself no longer special-cases multiple lines - the dead `.lines()`
+    // loop this pins the removal of would otherwise indent each line again.
+    let mut stage = make_stage_summary("cleanup-stage", StageStatus::Completed);
+    stage.cleanup_warning = Some("failed: worktree busy\nretrying next cycle".to_string());
+    let stages = vec![stage];
+    let mut output = Vec::new();
+    render_attention(&mut output, &stages, false).unwrap();
+    let output_str = String::from_utf8(output).unwrap();
+
+    assert!(
+        output_str.contains("Cleanup warning: failed: worktree busy\nretrying next cycle"),
+        "output: {output_str}"
+    );
+    assert!(
+        output_str.contains("full text in the stage file"),
+        "output: {output_str}"
+    );
+}
+
+#[test]
+fn adjudication_reason_omits_the_heartbeat_when_unknown() {
+    let mut stage = make_stage_summary("s-adjudicate", StageStatus::NeedsAdjudication);
+    stage.dispute_count = 2;
+    stage.judge_heartbeat_secs = None;
+    let stages = vec![stage];
+    let mut output = Vec::new();
+    render_attention(&mut output, &stages, false).unwrap();
+    let output_str = String::from_utf8(output).unwrap();
+
+    assert!(
+        output_str.contains("2 disputes filed") && !output_str.contains("judge heartbeat"),
+        "output: {output_str}"
+    );
+}

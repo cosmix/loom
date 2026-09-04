@@ -21,15 +21,16 @@ fn header_lines(view: &LedgerView, width: u16) -> Vec<Line<'static>> {
     let queued = count_status(&data.stages, StageStatus::Queued);
     let waiting = count_status(&data.stages, StageStatus::WaitingForDeps);
     let logos: Vec<_> = crate::LOGO.lines().collect();
+    let logo = |n: usize| logos.get(n).copied().unwrap_or("");
     vec![
         top_line(
-            logos[0],
+            logo(0),
             data.plan_name.as_deref(),
             view.tick_age_secs,
             width,
         ),
         logo_line(
-            logos[1],
+            logo(1),
             progress_line(
                 view.spinner,
                 data.progress.completed,
@@ -39,7 +40,7 @@ fn header_lines(view: &LedgerView, width: u16) -> Vec<Line<'static>> {
             width,
         ),
         logo_line(
-            logos[2],
+            logo(2),
             summary_line(
                 data.progress.executing,
                 queued,
@@ -49,7 +50,7 @@ fn header_lines(view: &LedgerView, width: u16) -> Vec<Line<'static>> {
             ),
             width,
         ),
-        logo_line(logos[3], merge_line(data, width), width),
+        logo_line(logo(3), merge_line(data, width), width),
     ]
 }
 

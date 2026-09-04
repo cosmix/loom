@@ -3,6 +3,7 @@ use crate::commands::status::data::{
     ActivityStatus, MergeSummary, ProgressSummary, StageSummary, StageType, StatusData,
 };
 use crate::daemon::protocol::{CompletionSummary, DaemonConfig, StageCompletionInfo};
+use crate::models::session::SessionBackendKind;
 use crate::models::stage::StageStatus;
 use std::io::{Cursor, Read};
 
@@ -56,6 +57,16 @@ fn status_update_round_trip() {
         Response::StatusUpdate { data } => {
             assert_eq!(data.stages[0].id, "stage-1");
             assert_eq!(data.stages[0].status, StageStatus::Executing);
+            // The four fields the ledger dashboard added. Asserted with
+            // non-default values: at their defaults a field that never
+            // reached the wire at all would decode identically.
+            assert_eq!(data.stages[0].execution_models, ["opus", "terra"]);
+            assert_eq!(data.stages[0].dispute_count, 3);
+            assert_eq!(data.stages[0].judge_heartbeat_secs, Some(42));
+            assert_eq!(
+                data.stages[0].session_backend,
+                Some(SessionBackendKind::Tmux)
+            );
             assert_eq!(data.stages[1].id, "stage-2");
             assert_eq!(data.stages[1].status, StageStatus::WaitingForDeps);
         }
@@ -100,9 +111,15 @@ fn stage_summary(id: &str, status: StageStatus) -> StageSummary {
 }
 
 fn status_data() -> StatusData {
+    let mut executing = stage_summary("stage-1", StageStatus::Executing);
+    executing.execution_models = vec!["opus".to_string(), "terra".to_string()];
+    executing.dispute_count = 3;
+    executing.judge_heartbeat_secs = Some(42);
+    executing.session_backend = Some(SessionBackendKind::Tmux);
+
     StatusData {
         stages: vec![
-            stage_summary("stage-1", StageStatus::Executing),
+            executing,
             stage_summary("stage-2", StageStatus::WaitingForDeps),
         ],
         merge: MergeSummary::default(),

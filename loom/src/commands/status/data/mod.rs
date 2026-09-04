@@ -1,5 +1,6 @@
 mod collector;
 mod execution_models;
+mod sanitize;
 
 pub use collector::{collect_status_data, load_all_sessions};
 pub use execution_models::execution_models_for_stage;

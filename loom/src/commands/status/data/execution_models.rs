@@ -5,11 +5,29 @@
 
 use std::collections::HashSet;
 use std::fs;
+use std::io::Read;
 use std::path::Path;
 
 use serde_json::Value;
 
+use super::sanitize::valid_stage_id;
+use crate::context::untrusted::inline_safe;
 use crate::fs::work_dir::WorkDir;
+
+/// Most of one ledger the collector reads.
+///
+/// The collector re-reads both ledgers for every stage once a second, so an
+/// unbounded read is an unbounded per-second allocation. A spawn row is a few
+/// hundred bytes, so 256 KiB covers several hundred subagents on a single
+/// stage — far past anything a real stage records — while capping the read.
+const MAX_LEDGER_BYTES: u64 = 256 * 1024;
+
+/// Most distinct model names kept for one stage.
+///
+/// A stage runs a handful of tiers; there are fewer than eight model names in
+/// the whole allocation table. Past that the list has stopped identifying who
+/// did the work and started being a payload a ledger file's author controls.
+const MAX_EXECUTION_MODELS: usize = 8;
 
 /// Return distinct execution model display names recorded for one stage.
 pub fn execution_models_for_stage(work_dir: &WorkDir, stage_id: &str) -> Vec<String> {
@@ -35,14 +53,6 @@ pub fn execution_models_for_stage(work_dir: &WorkDir, stage_id: &str) -> Vec<Str
     models
 }
 
-fn valid_stage_id(stage_id: &str) -> bool {
-    !stage_id.is_empty()
-        && !stage_id.contains("..")
-        && stage_id
-            .chars()
-            .all(|character| character.is_ascii_alphanumeric() || ".-_".contains(character))
-}
-
 fn append_models(
     path: &Path,
     skip_forwarders: bool,
@@ -50,6 +60,10 @@ fn append_models(
     models: &mut Vec<String>,
 ) {
     for row in json_lines(path) {
+        if models.len() >= MAX_EXECUTION_MODELS {
+            return;
+        }
+
         if skip_forwarders
             && row
                 .get("agent_type")
@@ -62,24 +76,39 @@ fn append_models(
         let Some(model) = row.get("model").and_then(Value::as_str) else {
             continue;
         };
-        let model = model.trim();
-        if model.is_empty() {
+
+        // Flatten BEFORE the dedup key is taken. The renderers only ever show
+        // the flattened form, so `"sonnet\u{200B}"` and `"sonnet "` are one
+        // display name; deduping on the raw name let both through and drew two
+        // rows reading `sonnet`. Flattening first also trims, and keeps a
+        // trailing zero-width character from hiding a `-YYYYMMDD` date stamp
+        // from `strip_date_suffix`.
+        let display_name = normalize_model(&inline_safe(model));
+        if display_name.is_empty() {
             continue;
         }
-
-        let display_name = normalize_model(model);
         if seen.insert(display_name.clone()) {
             models.push(display_name);
         }
     }
 }
 
+/// Parse the rows of a JSONL ledger, reading at most [`MAX_LEDGER_BYTES`].
+///
+/// A cap truncates the last row rather than the file, and a truncated row
+/// fails to parse and is dropped like any other malformed one; the bytes are
+/// decoded lossily so a cut multi-byte character costs that row alone and not
+/// the whole read.
 fn json_lines(path: &Path) -> Vec<Value> {
-    let Ok(content) = fs::read_to_string(path) else {
+    let Ok(file) = fs::File::open(path) else {
         return Vec::new();
     };
+    let mut bytes = Vec::new();
+    if file.take(MAX_LEDGER_BYTES).read_to_end(&mut bytes).is_err() {
+        return Vec::new();
+    }
 
-    content
+    String::from_utf8_lossy(&bytes)
         .lines()
         .filter(|line| !line.trim().is_empty())
         .filter_map(|line| serde_json::from_str::<Value>(line).ok())
@@ -191,7 +220,34 @@ mod tests {
         let (_temp, work_dir) = test_work_dir();
 
         assert!(execution_models_for_stage(&work_dir, "bad/stage").is_empty());
+        assert!(execution_models_for_stage(&work_dir, ".").is_empty());
         assert!(execution_models_for_stage(&work_dir, "..").is_empty());
+    }
+
+    #[test]
+    fn names_differing_only_in_invisible_characters_are_one_model() {
+        let (_temp, work_dir) = test_work_dir();
+        let stage_dir = work_dir.root().join("subagents").join("s1");
+        std::fs::create_dir_all(&stage_dir).unwrap();
+        std::fs::write(
+            stage_dir.join("spawns.jsonl"),
+            concat!(
+                r#"{"model":"sonnet\u200b"}"#,
+                "\n",
+                r#"{"model":"sonnet "}"#,
+                "\n",
+                r#"{"model":"   "}"#,
+                "\n",
+                r#"{"model":"claude-haiku-4-5-20251001\u200b"}"#,
+                "\n",
+            ),
+        )
+        .unwrap();
+
+        assert_eq!(
+            execution_models_for_stage(&work_dir, "s1"),
+            ["sonnet", "haiku-4-5"]
+        );
     }
 
     #[test]
