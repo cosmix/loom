@@ -1154,3 +1154,29 @@ for the whole of that work, and an `Option` fallback chain rescues nothing when 
 attempt (`now - attempt_started_at`, falling back to `started_at`) on top of the banked total, for
 `Executing` stages only, and `build_stage_summary` calls it, so every status surface fed by
 `collect_status_data` ticks.
+
+## A Ledger Written From Inside the Bash Sandbox Silently Never Filled
+
+**What happened:** the MODELS column of `loom status --live` never showed a codex tier on any
+stage — every row read `opus›sonnet,opus` — while Claude subagents always appeared. The codex lane
+was installed and licensed on the stages that ran.
+
+**Why:** `.loom/work/subagents/<stage-id>/codex.jsonl` was appended by `hooks/codex-forward.sh`,
+which the forwarder subagent invokes through the Bash tool — so it ran INSIDE the stage's Bash
+sandbox. From a worktree that append resolves through the `.loom/work` symlink into the main repo,
+outside the sandbox's write allow-list (handoffs and `doc/loom/knowledge`, `sandbox/settings.rs:295-311`).
+`record_codex_task` was best-effort and returned 0 on every failure path, so the denial was logged
+nowhere. Its sibling `spawns.jsonl` filled normally because `hooks/spawn-guard.sh` is a PreToolUse
+hook, and hook processes are not under that sandbox. The display could not fall back either: the
+forwarder's own `spawns.jsonl` row carries the shim's sonnet tier and is skipped on purpose, so a
+codex run left NO trace at all.
+
+**Prevention:** decide where a recorder RUNS before deciding what it writes. Anything the agent
+invokes through Bash is inside the stage sandbox and reaches only the worktree, handoffs and the
+knowledge dir; a hook process is not. A best-effort writer that returns 0 on every failure will
+never report its own breakage, so its write path has to be checked when it is written, not when it
+is missed.
+
+**Fix:** moved the row into `hooks/codex-forward-guard.sh`, the PreToolUse hook that already parses
+and validates the forwarding command, so only an authorized forward records. Widening the sandbox
+was rejected: a ledger of what the agent did must not be writable by the agent.
