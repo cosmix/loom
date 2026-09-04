@@ -9,11 +9,12 @@ use crate::models::session::{Session, SessionStatus};
 use crate::models::stage::{Stage, StageStatus, StatusBucket};
 use crate::orchestrator::coherence::executing_stage_incoherence;
 use crate::orchestrator::get_merge_point;
-use crate::orchestrator::monitor::heartbeat::{read_heartbeat, Heartbeat};
+use crate::orchestrator::monitor::heartbeat::{judge_heartbeat_path, read_heartbeat, Heartbeat};
 use crate::parser::frontmatter::parse_from_markdown;
 use crate::plan::parser::extract_plan_name;
 use crate::verify::transitions::list_all_stages;
 
+use super::sanitize::{sanitize_stage_summary, valid_stage_id};
 use super::{
     execution_models_for_stage, ActivityStatus, MergeSummary, ProgressSummary, StageSummary,
     StatusData,
@@ -24,27 +25,29 @@ use super::SessionSummary;
 #[cfg(test)]
 use crate::process::is_process_alive;
 
-/// Read heartbeat for a specific stage from the heartbeat directory
+/// Read one of a stage's heartbeat files from the heartbeat directory.
+///
+/// Both callers join `stage_id` into the path, and the id comes from a stage
+/// file's frontmatter, so it is validated here: an id carrying `../` would
+/// otherwise make the daemon read an arbitrary `*.json` and put its strings in
+/// the payload every subscriber renders.
+fn read_stage_heartbeat(stage_id: &str, path: &std::path::Path) -> Option<Heartbeat> {
+    if !valid_stage_id(stage_id) || !path.exists() {
+        return None;
+    }
+    read_heartbeat(path).ok()
+}
+
 fn read_heartbeat_for_stage(stage_id: &str, work_dir: &WorkDir) -> Option<Heartbeat> {
-    let heartbeat_path = work_dir
+    let path = work_dir
         .root()
         .join("heartbeat")
         .join(format!("{stage_id}.json"));
-    if heartbeat_path.exists() {
-        read_heartbeat(&heartbeat_path).ok()
-    } else {
-        None
-    }
+    read_stage_heartbeat(stage_id, &path)
 }
 
 fn read_judge_heartbeat_for_stage(stage_id: &str, work_dir: &WorkDir) -> Option<Heartbeat> {
-    let heartbeat_path =
-        crate::orchestrator::monitor::heartbeat::judge_heartbeat_path(work_dir.root(), stage_id);
-    if heartbeat_path.exists() {
-        read_heartbeat(&heartbeat_path).ok()
-    } else {
-        None
-    }
+    read_stage_heartbeat(stage_id, &judge_heartbeat_path(work_dir.root(), stage_id))
 }
 
 /// Calculate activity status from session state, heartbeat staleness, and the
@@ -352,11 +355,13 @@ pub fn collect_status_data(work_dir: &WorkDir) -> Result<StatusData> {
     // Load all sessions
     let sessions = load_all_sessions(work_dir)?;
 
-    // Build stage summaries
-    let stage_summaries: Vec<StageSummary> = stages
+    // Build stage summaries, then flatten the untrusted strings on them before
+    // they reach a subscriber's terminal (see `sanitize`).
+    let mut stage_summaries: Vec<StageSummary> = stages
         .iter()
         .map(|stage| build_stage_summary(stage, &sessions, work_dir))
         .collect();
+    stage_summaries.iter_mut().for_each(sanitize_stage_summary);
 
     // Get merge point for merge report
     let merge_point = if let Some(project_root) = work_dir.project_root() {
