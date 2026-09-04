@@ -115,3 +115,27 @@ nothing looks omitted.
 - `architecture/context-retrieval.md` — where `inline_safe` sits in the pipeline.
 - `patterns/doctrine-cross-surface.md` — the general problem of one rule across many
   surfaces.
+
+## Display-Width Truncation Is Not a Containment Bound (2026-09-04)
+
+A new instance of "classify by destination, not origin": `commands/status/ui/tui/ledger/text.rs`'s `truncate`/`cut_line`
+budget against `Span::width()`, which is 0 for C0 controls (ESC included) and for the Cf/bidi/
+zero-width set — so `used + character_width > budget` is never true for a zero-width character and
+a 10,000-character ESC/ZWSP string passes a 16-cell column fully intact. The strings reaching those
+cells are not all trusted: `stage.model`/`execution_models` come from the spawn ledger's
+caller-controlled `.tool_input.model` (`hooks/spawn-guard.sh:334`), and `last_tool`/`last_activity`
+come from heartbeat JSON (`commands/status/data/collector.rs:266-267`). A width-bounded renderer cannot do sanitization's
+job — it does not even try, it just measures cells. The fix sanitizes once, at the collector boundary
+that constructs the shared `StatusData` (`commands/status/data/sanitize.rs`, wired at
+`commands/status/data/collector.rs:364`), using the same `inline_safe` from this file's main lesson — that one boundary
+covers the wire, the static renderer, and the ledger TUI at once, where fixing each renderer
+separately would not.
+
+A second bug rode on the same code: `commands/status/data/execution_models.rs` deduped model names on the RAW ledger
+string while flattening happened later, so `"sonnet<ZWSP>"` and `"sonnet "` passed dedup as distinct
+and rendered as two identical-looking rows — and a trailing zero-width character could hide a
+`-YYYYMMDD` date stamp from the suffix stripper. Fixed by calling `inline_safe` BEFORE
+`normalize_model`, so the dedup key is the already-flattened display name. **Prevention:** when
+flattening and deduping/normalizing both apply to the same value, flatten first — dedup/normalize
+logic that runs on a not-yet-flattened string treats cosmetically-different byte sequences as
+distinct keys.

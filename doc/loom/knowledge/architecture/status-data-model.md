@@ -4,7 +4,7 @@
 
 ## Sources of Truth
 
-Static and compact `loom status` read `StatusData`, built by `collect_status_data` (`loom/src/commands/status/data/collector.rs`). `loom status --live` does not poll it: the TUI subscribes to the daemon's push channel over the Unix socket (`SubscribeStatus`, `loom/src/commands/status/ui/tui/daemon_client.rs:15-71`; daemon side registers the subscriber in `status_subscribers`, `loom/src/daemon/server/core.rs:62`). The TUI event loop separately polls terminal input every 100ms (`POLL_TIMEOUT`, `loom/src/commands/status/ui/tui/app.rs:38`) and re-reads scheduler alerts from files at most once a second (`ALERT_REFRESH_INTERVAL`, `app.rs:56`; `refresh_alerts`, `app.rs:184-195`).
+Static and compact `loom status` read `StatusData`, built by `collect_status_data` (`loom/src/commands/status/data/collector.rs`). `loom status --live` does not poll it: the TUI subscribes to the daemon's push channel over the Unix socket (`SubscribeStatus`, `loom/src/commands/status/ui/tui/daemon_client.rs:15-71`; daemon side registers the subscriber in `status_subscribers`, `loom/src/daemon/server/core.rs:62`). Since the payload swap, the pushed value IS a `StatusData` built by the same collector, so static, compact and live all read one model; only the transport differs (file poll vs socket push). The TUI event loop separately polls terminal input every 100ms (`POLL_TIMEOUT`, `loom/src/commands/status/ui/tui/app.rs:38`) and re-reads scheduler alerts from files at most once a second (`ALERT_REFRESH_INTERVAL`, `app.rs:56`; `refresh_alerts`, `app.rs:184-195`); the same throttle also refreshes `TuiApp::tick_age_secs` from `orchestrator::tick::read`.
 
 Stage files `.loom/work/stages/<id>.md` and session files `.loom/work/sessions/<id>.md` are the `Stage`/`Session` structs serialized directly as frontmatter — there is no reduced on-disk schema for status (`loom/src/fs/stage_loading.rs:91`, `collector.rs:99-105`).
 
@@ -90,15 +90,15 @@ A context reading is shown only when `context_tokens > 0` and the session is not
 
 ## Payload Shapes
 
-**`StageSummary`** (`data/mod.rs:66-121`, static/compact view): id, name, status, stage_type, dependencies, context_tokens, elapsed_secs (since created_at), execution_secs, base_branch, base_merged_from, failure_info, activity_status, last_tool, last_activity, staleness_secs, context_ceiling_tokens, review_reason, merged, cleanup_warning, held, retry_count, max_retries, pid, session_alive, model, session_type, incoherence (`data/mod.rs:107-120`).
+**`StageSummary`** (`data/mod.rs:71-139`, static/compact/live view — all three read the same struct): id, name, status, stage_type, dependencies, context_tokens, elapsed_secs (since created_at), execution_secs, base_branch, base_merged_from, failure_info, activity_status, last_tool, last_activity, staleness_secs, context_ceiling_tokens, review_reason, merged, cleanup_warning, held, retry_count, max_retries, pid, session_alive, model, session_type, incoherence (`data/mod.rs:107-120`), execution_models, dispute_count, judge_heartbeat_secs, session_backend (`data/mod.rs:128-138`).
 
-**`StatusData`** (`data/mod.rs:56-64`): stages, merge (`MergeSummary`: merged, pending, conflicts, `data/mod.rs:136-141`), progress (`ProgressSummary`: total, completed, executing, pending, blocked, `data/mod.rs:144-151`), plan_name (the first H1 heading of the plan file, `collector.rs:311-318`).
+`execution_models: Vec<String>` is distinct execution-model display names observed for the stage's subagents, first-seen order (spawn ledger then codex ledger), empty until a subagent spawns — see "Execution-Model Ledgers" below. `dispute_count` and `judge_heartbeat_secs` surface adjudication state. `session_backend: Option<SessionBackendKind>` (Native/Tmux) is populated by the collector but has no reader anywhere in the tree today — see concerns.md.
 
-**Live-mode daemon push**: `Response::StatusUpdate` (`loom/src/daemon/protocol.rs:259-264`) carries four `Vec<StageInfo>` (one per bucket). `StageInfo` (`protocol.rs:280-301`): id, name, session_pid, started_at, completed_at, worktree_status, status, merged, dependencies, model, cleanup_warning.
+**`StatusData`** (`data/mod.rs:61-67`): stages, merge (`MergeSummary`: merged, pending, conflicts, `data/mod.rs:136-141`), progress (`ProgressSummary`: total, completed, executing, pending, blocked, `data/mod.rs:144-151`), plan_name (the first H1 heading of the plan file, `collector.rs:311-318`).
 
-`StageInfo` is strictly narrower than `StageSummary`: no context_tokens, no heartbeat/activity fields, no retry_count, no review_reason reach the live TUI today. A field present in static/compact status is not automatically present in `--live`.
+**Live-mode daemon push**: `Response::StatusUpdate` (`loom/src/daemon/protocol.rs:257-259`) carries one field, `data: StatusData` — the identical model the static and compact views build. `collect_status` (`loom/src/daemon/server/status.rs`) calls the same collector, so every `StageSummary` field reaches the live TUI; there is no narrower live payload and no per-bucket split. The `StageInfo` type this section used to describe, and the four-`Vec`-per-bucket push it used, are gone from the tree.
 
-`Response::OrchestrationComplete` carries `CompletionSummary` (`protocol.rs:36-48`; per-stage `StageCompletionInfo`, `protocol.rs:10-30`). `DaemonConfig` (`protocol.rs:60-69`: manual_mode, max_parallel, watch_mode, auto_merge) exists on the wire but nothing under `commands/status` reads it.
+`Response::OrchestrationComplete` carries a completion summary (`protocol.rs:36-48`; per-stage completion info, `protocol.rs:10-30`). `DaemonConfig` (`protocol.rs:60-69`: manual_mode, max_parallel, watch_mode, auto_merge) exists on the wire but nothing under `commands/status` reads it.
 
 ## Daemon Liveness and Loop Health
 
@@ -124,40 +124,49 @@ There is no persisted next-retry timestamp on disk; the backoff window is recomp
 
 ## Attention Rendering (Static View)
 
-`render/attention.rs` renders one block per stage needing a human, with a title per status: BLOCKED, MERGE CONFLICT, ACCEPTANCE FAILED, MERGE ERROR, NEEDS REVIEW (`attention.rs:84-88`).
+Despite the heading (kept because `loom knowledge` cannot rename a section — see concerns.md), this section is now shared by both views. `attention_entries(stages: &[StageSummary]) -> Vec<AttentionEntry>` (`commands/status/render/attention_model.rs:27`) is the single place a stage is judged to need a human; it is re-exported from `commands/status/render/mod.rs:13`. `render/attention.rs` consumes it for the static blocks (`attention.rs:8,18`) and `TuiApp::render` consumes it for the ledger's attention panel (`app.rs:24,288`, feeding `LedgerView.attention`, rendered by `commands/status/ui/tui/ledger/panels.rs`) — the two views cannot diverge on which stages get flagged.
 
-Hints shown per status (`attention.rs:115-119`): `loom stage retry <id>` for Blocked and CompletedWithFailures; `loom stage merge <id>` for MergeConflict and MergeBlocked; `loom stage human-review <id>` for NeedsHumanReview, which itself takes `--approve`, `--force-complete`, or `--reject <reason>` (`attention.rs:45-71,108-111`).
+Each block/entry carries a title per status: BLOCKED, MERGE CONFLICT, ACCEPTANCE FAILED, MERGE ERROR, NEEDS REVIEW (`attention.rs:84-88`).
 
-Evidence lines are capped at 5 (`attention.rs:127-150`). A cleanup hint (`loom worktree remove <id>`) is shown when `cleanup_warning` is set (`attention.rs:171`).
+Hints shown per status (`attention.rs:115-119`): a retry hint for Blocked and stages that finished with failures; a merge hint for MergeConflict and MergeBlocked; a human-review hint for NeedsHumanReview, whose review command takes an approve flag, a force-finish flag, or a reject flag with a reason (`attention.rs:45-71,108-111`).
 
-The static execution graph's legend comes from `render_legend` (`render/graph.rs:312-325`), driven by `LEGEND_STATUSES` (`graph.rs:27-41`).
+Evidence lines are capped at `MAX_EVIDENCE_LINES=32` (`commands/status/data/sanitize.rs:30`, raised from an original 20 that silently dropped the last line of a full startup-refusal crash — `loom/src/orchestrator/core/crash_classification.rs:210-211` builds up to 21 evidence lines). A cap that bites now pushes an explicit truncation marker rather than staying silent. A cleanup hint (worktree removal) is shown when `cleanup_warning` is set (`attention.rs:171`).
+
+The static execution graph's legend comes from `render_legend` (`render/graph.rs:312-325`), driven by `LEGEND_STATUSES` (`graph.rs:27-41`); the live ledger's on-demand legend overlay is separate (`commands/status/ui/tui/ledger/legend.rs`, toggled by `?`).
 
 ## What the Live TUI Renders Today
 
-Layout is vertical only, no responsive breakpoints beyond in-row truncation (`app.rs:357-367`; truncation logic at `ui/tree_widget.rs:102-112,207-265`):
+The live TUI is a responsive TABLE (the "ledger"), one row per stage, built under `loom/src/commands/status/ui/tui/ledger/` (nine modules: `cells`, `columns`, `header`, `layout`, `legend`, `mod`, `panels`, `rows`, `text`). Entry point `ledger::render` is re-exported from `commands/status/ui/tui/ledger/layout.rs:41` via `commands/status/ui/tui/ledger/mod.rs`, and called from `TuiApp::render` at `app.rs:344`.
 
-- **Header** (fixed 5 rows): 4 logo lines from `crate::LOGO` (`loom/src/lib.rs:35-38`) plus one progress line — spinner, completed/total, a 20-cell bar, and the plan name (`renderer.rs:20-53`).
-- **Scheduler alert band** (1-4 rows): `renderer.rs:60-85`.
-- **Execution graph panel** (minimum 6 rows, bordered "Execution Graph"): built by `TreeWidget::build_lines` (`ui/tree_widget.rs:141-323`). Each row reads `<connector><icon> <id>[<model>] <elapsed> <merge tag> <- <deps>`; it is a level-sorted list with `├──`/`└──` prefixes, not a real parent-child tree. Executing and Queued rows get a `Base: ...` sub-line.
-- **Activity panel** (5-10 rows, bordered "Activity"): sourced from the in-memory `TuiActivityLog` (`ui/tui/state.rs:119-223`), a diff of successive polls capped at 20 entries, never persisted to disk.
-- **Footer** (1 row): key legend only.
+Eight columns (`ColumnKind`, `commands/status/ui/tui/ledger/mod.rs:44-61`): State, Stage, DependsOn, Models, Activity, Context, Time, Merge, laid out at designed width when `FULL_WIDTH=120` (`ledger/mod.rs:40`) and dropped in priority order as terminal width shrinks. Below `MIN_COLS=64` or `MIN_ROWS=16` (`ledger/mod.rs:36,38`) a notice replaces the dashboard entirely (`commands/status/ui/tui/ledger/layout.rs:41-43`). The MODELS column is 16 cells wide, pinned by the `FULL_WIDTH=120` budget and the drop-order termination proof at 64; content wider than that truncates (e.g. `opus›sonnet+1`).
 
-Keyboard input (`ui/tui/event_handler.rs`): `q`/Esc/Ctrl-C quits; Up/Down scroll by 2; Home/End jump; PgUp/PgDn move 80% of a page; mouse wheel scrolls by 4. There is no row selection and no detail view, and the live TUI shows no legend (unlike the static graph).
+`layout::budget(height, alerts, attention_entries, activity_len)` (`commands/status/ui/tui/ledger/layout.rs:63`) apportions rows across the alert band, attention panel, activity panel, and the table itself; `render` returns a `RenderOutcome` whose `table_viewport_rows` the app writes back into `graph_state.viewport_height`.
 
-The completion screen replaces the dashboard on `OrchestrationComplete` and exits automatically after 500ms (`app.rs:41,209-213,311-317`).
+A legend is available on demand (not shown by default): `TuiApp.legend_open: bool`, toggled by `?` (`KeyCode::Char('?') => KeyEventResult::ToggleLegend`, `ui/tui/event_handler.rs:33`), rendered as an overlay listing every state by `commands/status/ui/tui/ledger/legend.rs`.
 
-Color comes from two independent sources: the theme palette (`ui/theme.rs:8-33`, named ANSI colors plus a `Rgb(100,180,100)` MERGED color) supplies the base palette, but per-status colors actually used come from `StageStatus::tui_style()`. `STAGE_COLORS` (`tree_widget.rs:22-39`) is an unrelated 16-color cycle keyed on stage id, used to keep same-stage elements visually grouped.
+The footer error line is wired end to end: `TuiApp.last_error` (`app.rs:46`) is set on daemon exit and on `Response::Error`, cleared on every successful `StatusUpdate`, passed through `LedgerView.last_error` and rendered by `panels::render_footer` (`commands/status/ui/tui/ledger/layout.rs:142`, `commands/status/ui/tui/ledger/panels.rs:50-52`).
 
-`context_bar`/`context_gauge` widgets exist (`ui/widgets.rs:51-115`) but nothing in the live TUI's render path calls them — no context gauge is rendered live today, even though the static/compact views can show `context_tokens`/`context_ceiling_tokens`.
+The header's liveness indicator ("daemon running, tick Ns ago") is computed CLIENT-side from `.loom/work/orchestrator.tick`, not from the daemon broadcast (`app.rs` `refresh_alerts`) — it can keep asserting health while the daemon is failing to push status at all. A daemon-side "skip this broadcast" branch (oversized-payload guard) now sends `Response::Error` instead of silently skipping, specifically so the footer can show the fault; see mistakes.md for why a silent skip was the wrong shape here.
+
+TUI cell padding measures with `Span::width()` (unicode-width aware, `commands/status/ui/tui/ledger/header.rs`'s `text_width()` and `commands/status/ui/tui/ledger/text.rs`), never `chars().count()` — at least one status icon (`⚡` MergeConflict, U+26A1) is East-Asian Wide (one char, two terminal cells), and a char-count pad shifts every later column by one cell on that row.
+
+Colors and icons for `StageStatus` are unchanged from `loom/src/models/stage/types.rs:986-1096` (see "StageStatus — 13 Variants" above); the ledger has no separate per-stage color cycle.
 
 ## What Does Not Exist on the Status Path
 
 Stated explicitly because these are natural things to expect and go looking for:
 
-- **Subagent state.** `loom subagents` (`loom/src/commands/subagents/`) classifies transcripts on demand (Done, ToolWait, Generating, Unknown; `classify.rs:83-99`; `SubagentSummary`, `classify.rs:114-139`) but is never read by the status path. Its submodules are private (`mod.rs:18-27`); only `SubagentsArgs` and `execute` are public.
-- **Cost or request counts** on `Stage` or `Session`. `peak_resident_tokens`/`request_count` exist only inside the subagent classification path, not on the status models.
+- **Subagent state.** Subagent STATE (Done/ToolWait/Generating classification from `loom subagents`, `classify.rs:83-99`) is still never read by the status path, and `peak_resident_tokens`/`request_count` remain outside the status models. What the status path DOES now read from `.loom/work/subagents` is the spawn ledger (`spawns.jsonl`) and the codex ledger (`codex.jsonl`), for `StageSummary.execution_models` — distinct execution-model display names in first-seen order, empty until a subagent spawns (see "Execution-Model Ledgers" below). Those ledgers are only writable where the sandbox allows it, so `execution_models` can legitimately be empty in a worktree stage session even after a subagent has spawned.
 - **Per-criterion acceptance results.** `CriterionResult`/`AcceptanceResult` (`loom/src/verify/criteria/result.rs:7-20,87-95`) are never serialized to disk; only `failure_info.evidence` survives a run. The pass cache (`verify/criteria/cache.rs:93,369-386`) is keyed by command digest and is not read by status.
 - **Historical handoff counts.** Status only checks that the handoffs directory exists (`diagnostics.rs:11,37`); compact mode counts stages currently in `NeedsHandoff`, not historical handoff events (`render/compact.rs:30-37`).
 - **A persisted orchestrator event log.** There is none.
 - **`plan_id`, the plan's source path, the IN_PROGRESS/DONE filename prefix, or a run start time** on `StatusData`.
 - **A `RemoteControl` struct on the status path.** Only `[remote_control]` and `[terminal]` config sections exist in `.work/config.toml`.
+
+## Execution-Model Ledgers
+
+`StageSummary.execution_models` is populated by `execution_models_for_stage(work_dir, stage_id)` (`commands/status/data/execution_models.rs:33-54`), which reads two append-only ledgers under `.loom/work/subagents/<stage_id>/`: `spawns.jsonl` (written by the `hooks/spawn-guard.sh` PreToolUse hook, running outside the stage's Bash sandbox) and `codex.jsonl` (written by `hooks/codex-forward.sh`, running INSIDE the stage's Bash sandbox — so it only fills where the sandbox's write allow-list covers `.loom/work/subagents`, unlike `spawns.jsonl`). Each ledger is capped at `MAX_LEDGER_BYTES=256*1024` (`commands/status/data/execution_models.rs:23`) and the result at `MAX_EXECUTION_MODELS=8` distinct names (`commands/status/data/execution_models.rs:30`).
+
+Row values are untrusted: the `model` field is the caller-controlled `.tool_input.model` written verbatim by the hook. `normalize_model`/`strip_date_suffix` (`commands/status/data/execution_models.rs:118-140`) strip a `claude-` prefix and a trailing `-YYYYMMDD` stamp using `rsplit_once('-')` (byte-index slicing panicked on a multi-byte model name before this fix). Flattening (`context::untrusted::inline_safe`) runs BEFORE dedup/normalize, not after — deduping on the raw ledger string let `sonnet` and `sonnet<zero-width char>` count as two distinct models.
+
+`valid_stage_id` guards the ledger path on both sides of the read/write boundary, but at different strengths: the Rust reader (`commands/status/data/sanitize.rs:84`) explicitly rejects `.` and `..`; the shell writers (`hooks/spawn-guard.sh:309`, `hooks/codex-forward.sh:43`) are character-class allowlists (`[A-Za-z0-9._-]`) that accept `.` and `..` because both are made only of allowed characters — a stage id of `..` resolves the ledger directory to the work dir itself. See concerns.md for the outstanding shared-helper cleanup.
