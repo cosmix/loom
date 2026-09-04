@@ -130,6 +130,9 @@ fn entry_lines(entry: &AttentionEntry, width: u16) -> Vec<Line<'static>> {
     lines
 }
 
+/// `cleanup_warning` is already flattened to one line (and capped at
+/// `MAX_INLINE_CHARS`) by `context::untrusted::inline_safe` before it reaches
+/// a `StageSummary`, so it is used directly rather than split on newlines.
 fn attention_detail(entry: &AttentionEntry) -> String {
     entry
         .review_reason
@@ -141,13 +144,7 @@ fn attention_detail(entry: &AttentionEntry) -> String {
                 .map(failure_label)
                 .map(str::to_owned)
         })
-        .or_else(|| {
-            entry
-                .cleanup_warning
-                .as_deref()
-                .and_then(|warning| warning.lines().next())
-                .map(str::to_owned)
-        })
+        .or_else(|| entry.cleanup_warning.clone())
         .unwrap_or_default()
 }
 

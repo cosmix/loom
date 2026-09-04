@@ -9,7 +9,7 @@ use crate::commands::status::ui::tui::state::TuiActivityLog;
 use crate::models::stage::{StageStatus, StageType, StatusBucket};
 use crate::plan::graph::levels;
 
-fn screen(width: u16, height: u16, view: &LedgerView) -> Vec<String> {
+pub(super) fn screen(width: u16, height: u16, view: &LedgerView) -> Vec<String> {
     let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
     terminal
         .draw(|frame| {
@@ -32,11 +32,11 @@ fn screen(width: u16, height: u16, view: &LedgerView) -> Vec<String> {
         .collect()
 }
 
-fn contains(rows: &[String], needle: &str) -> bool {
+pub(super) fn contains(rows: &[String], needle: &str) -> bool {
     rows.iter().any(|row| row.contains(needle))
 }
 
-fn make_stage(id: &str, status: StageStatus) -> StageSummary {
+pub(super) fn make_stage(id: &str, status: StageStatus) -> StageSummary {
     StageSummary {
         id: id.to_owned(),
         name: id.to_owned(),
@@ -141,7 +141,7 @@ fn progress_summary(stages: &[StageSummary]) -> ProgressSummary {
     progress
 }
 
-fn fixture() -> StatusData {
+pub(super) fn fixture() -> StatusData {
     let mut stages = plain_stages();
     apply_stage_detail(&mut stages);
     let progress = progress_summary(&stages);
@@ -158,7 +158,12 @@ fn fixture() -> StatusData {
     }
 }
 
-fn render_view(data: &StatusData, width: u16, height: u16, legend_open: bool) -> Vec<String> {
+pub(super) fn render_view(
+    data: &StatusData,
+    width: u16,
+    height: u16,
+    legend_open: bool,
+) -> Vec<String> {
     let levels = levels::compute_all_levels(
         &data.stages,
         |stage| stage.id.as_str(),

@@ -134,6 +134,12 @@ fn render_adjudication_reason<W: Write>(w: &mut W, entry: &AttentionEntry) -> st
 /// the whole presentation regardless of `stage.status` — cleanup runs on
 /// Skipped stages too, not just Completed. Only called when
 /// `stage.cleanup_warning` is `Some`.
+///
+/// `cleanup_warning` is flattened to one line and capped at
+/// `MAX_INLINE_CHARS` by `context::untrusted::inline_safe` before it ever
+/// reaches here (git's stderr is otherwise multi-line and can carry an ANSI
+/// escape), so there is only ever one line to print — the hint below points
+/// at the stage file for the untruncated text.
 fn render_cleanup_warning<W: Write>(w: &mut W, entry: &AttentionEntry) -> std::io::Result<()> {
     writeln!(
         w,
@@ -143,12 +149,14 @@ fn render_cleanup_warning<W: Write>(w: &mut W, entry: &AttentionEntry) -> std::i
     )?;
     writeln!(w, "    ID: {}", entry.id.dimmed())?;
     if let Some(ref warning) = entry.cleanup_warning {
-        writeln!(w, "    Cleanup warning:")?;
-        for line in warning.lines() {
-            writeln!(w, "      {}", line.yellow())?;
-        }
+        writeln!(w, "    Cleanup warning: {}", warning.yellow())?;
     }
-    writeln!(w, "    {}: {}", "Hint".cyan(), entry.hint.dimmed())?;
+    writeln!(
+        w,
+        "    {}: {} (full text in the stage file)",
+        "Hint".cyan(),
+        entry.hint.dimmed()
+    )?;
     Ok(())
 }
 
