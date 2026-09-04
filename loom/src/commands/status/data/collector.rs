@@ -14,7 +14,10 @@ use crate::parser::frontmatter::parse_from_markdown;
 use crate::plan::parser::extract_plan_name;
 use crate::verify::transitions::list_all_stages;
 
-use super::{ActivityStatus, MergeSummary, ProgressSummary, StageSummary, StatusData};
+use super::{
+    execution_models_for_stage, ActivityStatus, MergeSummary, ProgressSummary, StageSummary,
+    StatusData,
+};
 
 #[cfg(test)]
 use super::SessionSummary;
@@ -27,6 +30,16 @@ fn read_heartbeat_for_stage(stage_id: &str, work_dir: &WorkDir) -> Option<Heartb
         .root()
         .join("heartbeat")
         .join(format!("{stage_id}.json"));
+    if heartbeat_path.exists() {
+        read_heartbeat(&heartbeat_path).ok()
+    } else {
+        None
+    }
+}
+
+fn read_judge_heartbeat_for_stage(stage_id: &str, work_dir: &WorkDir) -> Option<Heartbeat> {
+    let heartbeat_path =
+        crate::orchestrator::monitor::heartbeat::judge_heartbeat_path(work_dir.root(), stage_id);
     if heartbeat_path.exists() {
         read_heartbeat(&heartbeat_path).ok()
     } else {
@@ -160,12 +173,8 @@ fn assigned_session<'a>(stage: &Stage, sessions: &'a [Session]) -> Option<&'a Se
 fn build_stage_summary(stage: &Stage, sessions: &[Session], work_dir: &WorkDir) -> StageSummary {
     let session = session_for_stage(stage, sessions);
     let assigned = assigned_session(stage, sessions);
-    // The displayed session kind must describe the session `stage.session`
-    // names when one exists, not just the best-guess `session_for_stage`.
     let session_type = assigned.or(session).map(|s| s.session_type);
     let incoherence = executing_stage_incoherence(stage, assigned);
-
-    // A missing or frozen reading shows a blank column, not a stale number.
     let reading = reported_reading(session);
     let context_tokens = reading.map(|s| s.context_tokens);
     let context_ceiling_tokens = reading
@@ -176,12 +185,8 @@ fn build_stage_summary(stage: &Stage, sessions: &[Session], work_dir: &WorkDir) 
 
     let elapsed_secs = (Utc::now() - stage.created_at).num_seconds();
 
-    let HeartbeatFacts {
-        staleness_secs,
-        activity_status,
-        last_tool,
-        last_activity,
-    } = heartbeat_facts(stage, session, work_dir);
+    let heartbeat = heartbeat_facts(stage, session, work_dir);
+    let extras = stage_extras(stage, work_dir);
 
     StageSummary {
         id: stage.id.clone(),
@@ -195,10 +200,10 @@ fn build_stage_summary(stage: &Stage, sessions: &[Session], work_dir: &WorkDir) 
         base_branch: stage.base_branch.clone(),
         base_merged_from: stage.base_merged_from.clone(),
         failure_info: stage.failure_info.clone(),
-        activity_status,
-        last_tool,
-        last_activity,
-        staleness_secs,
+        activity_status: heartbeat.activity_status,
+        last_tool: heartbeat.last_tool,
+        last_activity: heartbeat.last_activity,
+        staleness_secs: heartbeat.staleness_secs,
         context_ceiling_tokens,
         review_reason: stage.review_reason.clone(),
         merged: stage.merged,
@@ -211,6 +216,10 @@ fn build_stage_summary(stage: &Stage, sessions: &[Session], work_dir: &WorkDir) 
         model: stage.effective_model().to_string(),
         session_type,
         incoherence,
+        execution_models: extras.execution_models,
+        dispute_count: stage.dispute_count,
+        judge_heartbeat_secs: extras.judge_heartbeat_secs,
+        session_backend: session.map(|s| s.backend),
     }
 }
 
@@ -222,6 +231,24 @@ struct HeartbeatFacts {
     activity_status: ActivityStatus,
     last_tool: Option<String>,
     last_activity: Option<String>,
+}
+
+struct StageExtras {
+    execution_models: Vec<String>,
+    judge_heartbeat_secs: Option<u64>,
+}
+
+fn stage_extras(stage: &Stage, work_dir: &WorkDir) -> StageExtras {
+    let judge_heartbeat_secs = read_judge_heartbeat_for_stage(&stage.id, work_dir).map(|hb| {
+        Utc::now()
+            .signed_duration_since(hb.timestamp)
+            .num_seconds()
+            .max(0) as u64
+    });
+    StageExtras {
+        execution_models: execution_models_for_stage(work_dir, &stage.id),
+        judge_heartbeat_secs,
+    }
 }
 
 fn heartbeat_facts(stage: &Stage, session: Option<&Session>, work_dir: &WorkDir) -> HeartbeatFacts {

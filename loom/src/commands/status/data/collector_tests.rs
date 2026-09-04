@@ -73,6 +73,14 @@ fn make_test_stage(id: &str, status: StageStatus) -> Stage {
     }
 }
 
+/// A fresh, initialized `.loom/work`-style temp directory for tests that
+/// call `build_stage_summary` and need a real `WorkDir` to read from.
+fn temp_work_dir() -> (tempfile::TempDir, WorkDir) {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let work_dir = WorkDir::new(tmp.path()).unwrap();
+    work_dir.initialize().unwrap();
+    (tmp, work_dir)
+}
 #[test]
 fn test_calculate_progress() {
     let stages = vec![
@@ -91,7 +99,6 @@ fn test_calculate_progress() {
     assert_eq!(progress.pending, 2); // WaitingForDeps + Queued
     assert_eq!(progress.blocked, 1);
 }
-
 #[test]
 fn test_calculate_progress_with_needs_handoff() {
     let stages = vec![
@@ -121,9 +128,7 @@ fn test_calculate_progress_with_failures() {
 
 #[test]
 fn test_build_stage_summary_with_session() {
-    let tmp = tempfile::TempDir::new().unwrap();
-    let work_dir = WorkDir::new(tmp.path()).unwrap();
-    work_dir.initialize().unwrap();
+    let (_tmp, work_dir) = temp_work_dir();
 
     let mut stage = make_test_stage("test-stage", StageStatus::Executing);
     stage.dependencies = vec!["dep-1".to_string()];
@@ -151,9 +156,7 @@ fn test_build_stage_summary_with_session() {
 
 #[test]
 fn test_build_stage_summary_without_session() {
-    let tmp = tempfile::TempDir::new().unwrap();
-    let work_dir = WorkDir::new(tmp.path()).unwrap();
-    work_dir.initialize().unwrap();
+    let (_tmp, work_dir) = temp_work_dir();
 
     let stage = make_test_stage("test-stage", StageStatus::WaitingForDeps);
 
@@ -169,15 +172,40 @@ fn test_build_stage_summary_without_session() {
 }
 
 #[test]
+fn judge_heartbeat_secs_reads_adjudication_file() {
+    let temp = tempfile::tempdir().unwrap();
+    let work_dir = WorkDir::new(temp.path().join(".loom/work")).unwrap();
+    let stage = make_test_stage("judge-stage", StageStatus::Executing);
+    let heartbeat_path =
+        crate::orchestrator::monitor::heartbeat::judge_heartbeat_path(work_dir.root(), &stage.id);
+    std::fs::create_dir_all(heartbeat_path.parent().unwrap()).unwrap();
+    let heartbeat = crate::orchestrator::monitor::heartbeat::Heartbeat {
+        stage_id: stage.id.clone(),
+        session_id: "judge-session".to_string(),
+        timestamp: Utc::now(),
+        context_tokens: None,
+        transcript_path: None,
+        last_tool: None,
+        activity: None,
+    };
+    std::fs::write(heartbeat_path, serde_json::to_string(&heartbeat).unwrap()).unwrap();
+    let summary = build_stage_summary(&stage, &[], &work_dir);
+    assert!(matches!(summary.judge_heartbeat_secs, Some(seconds) if seconds <= 5));
+    let missing = build_stage_summary(
+        &make_test_stage("no-judge", StageStatus::Executing),
+        &[],
+        &work_dir,
+    );
+    assert_eq!(missing.judge_heartbeat_secs, None);
+}
+#[test]
 fn stage_summary_reads_the_stages_own_session_not_a_corpse() {
     // A retried stage leaves every previous session file on disk with
     // `stage_id` still set. Picking the first match in `read_dir` order (as
     // the old code did) can surface a crashed corpse's frozen token count
     // rendered against the live stage's ceiling - a lie the dashboard would
     // tell every retried stage. The stage's own `session` claim must win.
-    let tmp = tempfile::TempDir::new().unwrap();
-    let work_dir = WorkDir::new(tmp.path()).unwrap();
-    work_dir.initialize().unwrap();
+    let (_tmp, work_dir) = temp_work_dir();
 
     let mut stage = make_test_stage("test-stage", StageStatus::Executing);
     stage.session = Some("live-session".to_string());
@@ -207,9 +235,7 @@ fn stage_summary_hides_a_session_that_has_not_reported_a_reading() {
     // A freshly spawned agent has not sent a heartbeat with a context reading
     // yet. Rendering `0 / 150000` is a confident lie; the column should be
     // blank instead, while the stage still shows as actively worked.
-    let tmp = tempfile::TempDir::new().unwrap();
-    let work_dir = WorkDir::new(tmp.path()).unwrap();
-    work_dir.initialize().unwrap();
+    let (_tmp, work_dir) = temp_work_dir();
 
     let mut stage = make_test_stage("test-stage", StageStatus::Executing);
     stage.session = Some("live-session".to_string());
@@ -234,9 +260,7 @@ fn stage_summary_ignores_a_named_session_that_belongs_to_another_stage() {
     // tokens here - the same wrong-row attribution the corpse case makes, with
     // a live session doing the lying. The named session must also name this
     // stage back.
-    let tmp = tempfile::TempDir::new().unwrap();
-    let work_dir = WorkDir::new(tmp.path()).unwrap();
-    work_dir.initialize().unwrap();
+    let (_tmp, work_dir) = temp_work_dir();
 
     let mut stage = make_test_stage("test-stage", StageStatus::Executing);
     stage.session = Some("shared-id".to_string());
@@ -263,9 +287,7 @@ fn stage_summary_reports_a_crashed_only_session_without_its_frozen_reading() {
     // narrowing the pick to live sessions alone would silently downgrade it to
     // `Orphaned`. The corpse still speaks for the ACTIVITY - but not for the
     // reading, which stopped tracking the stage when the agent died.
-    let tmp = tempfile::TempDir::new().unwrap();
-    let work_dir = WorkDir::new(tmp.path()).unwrap();
-    work_dir.initialize().unwrap();
+    let (_tmp, work_dir) = temp_work_dir();
 
     let stage = make_test_stage("test-stage", StageStatus::Executing);
 
@@ -287,9 +309,7 @@ fn stage_summary_reports_a_crashed_only_session_without_its_frozen_reading() {
 
 #[test]
 fn test_build_stage_summary_orphaned_when_executing_without_session() {
-    let tmp = tempfile::TempDir::new().unwrap();
-    let work_dir = WorkDir::new(tmp.path()).unwrap();
-    work_dir.initialize().unwrap();
+    let (_tmp, work_dir) = temp_work_dir();
 
     // Stage claims Executing but no session names it - a killed daemon
     // or lost session file, not a quiet stage.
@@ -306,9 +326,7 @@ fn test_build_stage_summary_flags_an_adjudication_session_adopted_as_worker() {
     // adjudication session instead of its worker. The summary must surface
     // both the wrong session kind and the incoherence verdict so the
     // deadlock is visible in `loom status`.
-    let tmp = tempfile::TempDir::new().unwrap();
-    let work_dir = WorkDir::new(tmp.path()).unwrap();
-    work_dir.initialize().unwrap();
+    let (_tmp, work_dir) = temp_work_dir();
 
     let mut stage = make_test_stage("test-stage", StageStatus::Executing);
     let adjudication = Session::new_adjudication("test-stage");
