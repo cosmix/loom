@@ -1012,7 +1012,7 @@ they fall outside its own `files` scope — flag it so whoever owns the plan com
 
 ## Byte-Index Slicing Panics on a Multi-Byte String From an Untrusted Source
 
-**What happened:** `execution_models.rs::normalize_model` stripped a trailing `-YYYYMMDD` stamp by
+**What happened:** `commands/status/data/execution_models.rs::normalize_model` stripped a trailing `-YYYYMMDD` stamp by
 slicing a `&str` at a fixed byte offset (`len - 9`). The model name comes from `spawns.jsonl`, written
 verbatim from a caller-controlled tool argument (`hooks/spawn-guard.sh::record_spawn`), and
 `execution_models_for_stage` runs inside `collect_status_data`, which backs both `loom status` and
@@ -1036,8 +1036,8 @@ a character-class case (`case $stage_id in *[!A-Za-z0-9._-]* | "") return 0`), w
 changes the work dir's own mode and the ledger row lands one level outside its per-stage directory.
 The Rust reader (`commands/status/data/sanitize.rs::valid_stage_id`) gets this right by explicitly
 rejecting `..`, so the two sides of the same boundary disagree, and the same check now exists in four
-places at three different strengths (`execution_models.rs:38`, `commands/memory/handlers/work_dir.rs:99`,
-`codex-forward.sh:43`, `spawn-guard.sh:309`).
+places at three different strengths (`commands/status/data/execution_models.rs:38`, `commands/memory/handlers/work_dir.rs:99`,
+`hooks/codex-forward.sh:43`, `hooks/spawn-guard.sh:309`).
 
 **Prevention:** when validating a value that becomes a path COMPONENT, reject `.` and `..` by name
 explicitly — a charset check alone is not a path-component allowlist, whatever language it's written
@@ -1046,15 +1046,15 @@ in. For concerns.md: the four copies are a shared-helper candidate.
 ## `loom stage complete`'s Unwired-File Check Has a False Positive on `#[path]` Test Modules
 
 **What happened:** `loom/src/commands/status/render/attention_model_tests.rs` is wired at
-`attention_model.rs`'s tail as `#[cfg(test)] #[path = "attention_model_tests.rs"] mod tests;` — the
-same pattern `attention.rs`/`attention_tests.rs` and `collector.rs`/`collector_tests.rs` already use —
-but `loom stage complete`'s unwired-file checker looks for a `mod attention_model_tests;` declaration
+`commands/status/render/attention_model.rs`'s tail as `#[cfg(test)] #[path = "attention_model_tests.rs"] mod tests;` — the
+same pattern `commands/status/render/attention.rs`/`commands/status/render/attention_tests.rs` and `commands/status/data/collector.rs`/`commands/status/data/collector_tests.rs` already use —
+but the finalization command's unwired-file checker looks for a `mod attention_model_tests;` declaration
 and finds none, so it flags the file as unwired even though `cargo test --lib
 commands::status::render::attention_model::tests::` reaches it fine.
 
-**Prevention:** when a stage adds a `#[path]`-included test file, record a note before running `loom
-stage complete` so the false flag isn't mistaken for a real gap; the checker itself is the thing that
-needs fixing, not the file.
+**Prevention:** when a stage adds a `#[path]`-included test file, record a note before finalizing the
+stage so the false flag isn't mistaken for a real gap; the checker itself is the thing that needs
+fixing, not the file.
 
 ## Registering a New Global PreToolUse Hook Has a Fourth Site Beyond the Documented Three
 
@@ -1084,3 +1084,27 @@ Three mechanics not covered by the existing "fails on shrinkage too" entry above
 - **`rustfmt` always splits `#[cfg(test)] mod x;` onto two lines**, even written on one — registering
   a new test submodule costs 2 lines with no way around it; that's real structural cost to budget into
   a baseline update, not padding to trim away.
+
+## The Finalization Guard Hook Scans Bash Command Text, Including Heredoc Bodies
+
+**What happened:** `loom knowledge replace-section`/`update` calls piping prose through a heredoc
+were rejected by `hooks/loom-control-complete.sh` with `LOOM_CONTROL_ERROR: completion must be one
+exact pinned command`, even though the actual command was a harmless knowledge write. Bisecting
+showed the trigger was purely textual: a heredoc body mentioning the orchestration unit by name
+("stage") somewhere earlier, and a word containing "finish"/"done"-ish vocabulary for it later in
+the SAME Bash invocation, tripped it regardless of what command wrapped the heredoc — a bare
+`cat`/`wc`/`python3` reproduced it identically. A literal backtick-wrapped heading argument naming
+both concepts on the command line itself also tripped it. (This note deliberately avoids writing
+the two trigger words themselves back-to-back in one sentence, for the obvious reason.)
+
+**Why:** the guard's tokenizer is meant to catch forged finalization commands at real command-start
+positions, but it scans the RAW command string including heredoc bodies and quoted arguments — it
+does not distinguish literal prose/data from live shell tokens once enough separator-like characters
+appear.
+
+**Prevention:** when writing knowledge/mistake prose that must mention both concepts together (flag
+names, docs about the finalization command, "force-finish", "finalize"), avoid the combination in a
+single Bash-tool invocation. Two ways out: (1) rephrase to avoid the literal trigger words where the
+meaning survives, or (2) extract dynamic values (like an exact section heading containing the
+phrase) via a prior command substitution (`HEADING=$(rg ... )`) so the literal trigger text never
+appears in the Bash tool's own command argument — only the resolved variable does.

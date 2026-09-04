@@ -613,21 +613,11 @@ Any sweep that kills or deletes must resolve _uncertainty_ toward inaction:
 ## One Flattener for an Untrusted Value Rendered on Many Surfaces
 
 `context/untrusted.rs::inline_safe` is the single definition now shared by THREE surfaces: the two
-agent-facing renderers — the Knowledge Brief (`signals/format/brief.rs`) and `loom knowledge context`'s
+agent-facing renderers — the Knowledge Brief (`orchestrator/signals/format/brief.rs`) and `loom knowledge context`'s
 stdout (`commands/knowledge/context.rs`) — plus one operator-facing surface added later, the `loom
-status` payload (`commands/status/data/sanitize.rs`, applied via `collector.rs:364` to every untrusted
+status` payload (`commands/status/data/sanitize.rs`, applied via `commands/status/data/collector.rs:364` to every untrusted
 string reaching `StatusData`: stage/session ids, `model`, `last_tool`, `last_activity`, evidence lines).
 Its docstring states outright that a second copy would duplicate a security rule that must never drift.
-
-The generalisable shape: when the same escaping or fencing rule must hold on N surfaces,
-put it in one function that all N import, and say so in the docstring — because the failure
-mode is not a wrong implementation, it is a second implementation. And remember the surface
-set is larger than it looks: a brief whose footer advertises a command extends the boundary
-to that command's output, and a rendered UI extends it again — a width-bounded TUI column is
-NOT a substitute for `inline_safe`. `Span::width()` (unicode-width aware) is 0 for C0 controls
-and for the Cf/bidi/zero-width set, so a display-width budget bounds nothing against a hostile
-string; sanitize at the collector boundary that constructs the shared payload, not in a renderer
-that only measures cells. See `mistakes/untrusted-value-boundaries.md`.
 
 ## Confidence Ceilings as Named Constants
 
@@ -779,11 +769,11 @@ caught.
 
 ## A Sandboxed Worktree Session Can Prove the Static Status Renderer End to End
 
-`mktemp -d` a fixture dir, `mkdir .loom/work`, copy the real `stages/`, `sessions/`, `config.toml`
-into it with `cp -rL` (the `.loom/work` symlink needs `-L`), delete `orchestrator.sock` and
+`mktemp -d` a fixture dir, `mkdir .loom/work`, copy the real `stages/`, `sessions/`, and config
+files into it with `cp -rL` (the `.loom/work` symlink needs `-L`), delete `orchestrator.sock` and
 `orchestrator.pid`, then run the built binary with that dir as cwd. It renders the full dashboard,
 the legend line, and the Requires Attention blocks (exercising `attention_entries` via
-`render/attention.rs`) and reports "daemon stopped" — no shared state is touched. The live `--live`
+`commands/status/render/attention.rs`) and reports "daemon stopped" — no shared state is touched. The live `--live`
 TUI still cannot be proven this way: it needs both a daemon socket and a TTY. Reach for this fixture
 instead of skipping functional verification of the static path.
 
