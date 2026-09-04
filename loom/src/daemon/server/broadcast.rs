@@ -1,6 +1,7 @@
 //! Log tailing and status broadcasting threads.
 
 use super::super::protocol::{write_message, Response};
+use super::super::wire::MAX_RESPONSE_BYTES;
 use super::core::DaemonServer;
 use super::status::{collect_completion_summary, collect_status};
 use anyhow::{Context, Result};
@@ -54,6 +55,7 @@ fn run_log_tailer(
     let (mut reader, mut current_inode) = open_log_file(log_path)?;
     let mut line = String::new();
     let mut iteration_count: u32 = 0;
+    let mut oversized_logged = false;
 
     while !shutdown_flag.load(Ordering::Relaxed) {
         // Periodically check for log rotation or truncation
@@ -77,7 +79,7 @@ fn run_log_tailer(
                 let response = Response::LogLine {
                     line: line.trim_end().to_string(),
                 };
-                broadcast_to_subscribers(&log_subscribers, &response);
+                broadcast_to_subscribers(&log_subscribers, &response, &mut oversized_logged);
             }
             Err(e) => {
                 eprintln!("Error reading log file: {e}");
@@ -139,6 +141,19 @@ pub fn spawn_status_broadcaster(server: &DaemonServer) -> JoinHandle<()> {
     })
 }
 
+/// What the broadcaster loop remembers between ticks.
+///
+/// Both fields are one-shot latches rather than counters: the completion
+/// summary is sent once, and the oversized-payload line is logged once per
+/// entry into the condition. Without the second latch a payload that stays over
+/// the frame limit writes one line per second into `orchestrator.log`, which
+/// only rotates when the daemon restarts.
+#[derive(Default)]
+struct BroadcastState {
+    completion_sent: bool,
+    oversized_logged: bool,
+}
+
 /// Run the status broadcaster loop (static method for thread).
 fn run_status_broadcaster(
     work_dir: &Path,
@@ -146,7 +161,7 @@ fn run_status_broadcaster(
     status_subscribers: Arc<Mutex<Vec<UnixStream>>>,
 ) {
     let completion_marker_path = work_dir.join("orchestrator.complete");
-    let mut completion_sent = false;
+    let mut state = BroadcastState::default();
 
     while !shutdown_flag.load(Ordering::Relaxed) {
         // P-1: short-circuit BEFORE collecting status. `collect_status` re-parses
@@ -166,9 +181,9 @@ fn run_status_broadcaster(
 
         // Collect data outside of the lock to minimize lock hold time. Only
         // reached when at least one subscriber is connected.
-        let completion_response = if !completion_sent && completion_marker_path.exists() {
+        let completion_response = if !state.completion_sent && completion_marker_path.exists() {
             collect_completion_summary(work_dir).ok().map(|summary| {
-                completion_sent = true;
+                state.completion_sent = true;
                 Response::OrchestrationComplete { summary }
             })
         } else {
@@ -187,12 +202,12 @@ fn run_status_broadcaster(
             } else {
                 // Send completion notification if we have one
                 if let Some(ref response) = completion_response {
-                    subs.retain_mut(|stream| write_message(stream, response).is_ok());
+                    broadcast_retaining_live(&mut subs, response, &mut state.oversized_logged);
                 }
 
                 // Send regular status update
                 if let Some(ref response) = status_response {
-                    subs.retain_mut(|stream| write_message(stream, response).is_ok());
+                    broadcast_retaining_live(&mut subs, response, &mut state.oversized_logged);
                 }
 
                 subs.len()
@@ -208,11 +223,11 @@ fn run_status_broadcaster(
     }
 
     // Final completion check before exiting - handles race with shutdown_flag
-    if !completion_sent && completion_marker_path.exists() {
+    if !state.completion_sent && completion_marker_path.exists() {
         if let Ok(summary) = collect_completion_summary(work_dir) {
             let response = Response::OrchestrationComplete { summary };
             let mut subs = lock_or_recover(&status_subscribers);
-            subs.retain_mut(|stream| write_message(stream, &response).is_ok());
+            broadcast_retaining_live(&mut subs, &response, &mut state.oversized_logged);
             println!(
                 "Orchestration complete (final) - notified {} subscriber(s)",
                 subs.len()
@@ -222,9 +237,67 @@ fn run_status_broadcaster(
 }
 
 /// Broadcast a response to all subscribers, removing any that fail.
-fn broadcast_to_subscribers(subscribers: &Arc<Mutex<Vec<UnixStream>>>, response: &Response) {
+fn broadcast_to_subscribers(
+    subscribers: &Arc<Mutex<Vec<UnixStream>>>,
+    response: &Response,
+    oversized_logged: &mut bool,
+) {
     let mut subs = lock_or_recover(subscribers);
-    subs.retain_mut(|stream| write_message(stream, response).is_ok());
+    broadcast_retaining_live(&mut subs, response, oversized_logged);
+}
+
+/// Send `response` to every subscriber, dropping only those whose own stream
+/// failed to write.
+///
+/// The frame limit is checked once, up front, because `write_json_frame`
+/// refuses an oversized frame BEFORE writing any bytes and returns the same
+/// `Err` a dead peer returns. Retaining on `write_message(..).is_ok()` alone
+/// therefore evicted EVERY subscriber over what is the daemon's own bug — and
+/// evicted each dashboard again the moment it reconnected, so no live view
+/// could recover until the payload shrank on its own.
+///
+/// A response that will not fit is replaced by a [`Response::Error`] carrying
+/// the size and the cap, not silently dropped: the dashboard reads
+/// `tick_age_secs` off `orchestrator.tick` rather than off the broadcast, so a
+/// skipped tick otherwise leaves the header reporting a healthy daemon above
+/// rows that have stopped moving. The TUI routes `Response::Error` into the
+/// footer. The notice is a short constant-shaped string, so it fits by
+/// construction and no second size check — and no recursion — is needed.
+fn broadcast_retaining_live(
+    subscribers: &mut Vec<UnixStream>,
+    response: &Response,
+    oversized_logged: &mut bool,
+) {
+    let Some(notice) = frame_overflow(response) else {
+        *oversized_logged = false;
+        subscribers.retain_mut(|stream| write_message(stream, response).is_ok());
+        return;
+    };
+
+    // Log on entry into the condition only: it holds for as long as the payload
+    // stays oversized, and `orchestrator.log` rotates only on daemon restart.
+    if !*oversized_logged {
+        eprintln!("{notice}");
+        *oversized_logged = true;
+    }
+
+    let notice = Response::Error { message: notice };
+    subscribers.retain_mut(|stream| write_message(stream, &notice).is_ok());
+}
+
+/// The operator-facing reason `response` cannot be broadcast, or `None` when it
+/// serializes within the wire's response frame.
+fn frame_overflow(response: &Response) -> Option<String> {
+    match serde_json::to_vec(response) {
+        Ok(json) if json.len() <= MAX_RESPONSE_BYTES => None,
+        Ok(json) => Some(format!(
+            "Broadcast skipped: {} bytes exceeds the {MAX_RESPONSE_BYTES} byte frame limit",
+            json.len()
+        )),
+        Err(error) => Some(format!(
+            "Broadcast skipped: failed to serialize response: {error}"
+        )),
+    }
 }
 
 /// Lock a mutex, recovering from poison if necessary.
@@ -235,3 +308,7 @@ fn lock_or_recover<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
         poisoned.into_inner()
     })
 }
+
+#[cfg(test)]
+#[path = "broadcast_tests.rs"]
+mod tests;
