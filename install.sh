@@ -238,7 +238,7 @@ install_loom_remote() {
 	mkdir -p "$install_dir"
 
 	# Detect platform and architecture. The release workflow
-	# (.github/workflows/release.yml) publishes exactly three binaries; the
+	# (.github/workflows/release.yml) publishes exactly two binaries; the
 	# updater's RELEASE_ASSETS (loom/src/commands/self_update/mod.rs)
 	# is the other place naming them. Change all three together.
 	local os arch target
@@ -253,7 +253,6 @@ install_loom_remote() {
 		;;
 	Darwin)
 		case "$arch" in
-		x86_64) target="loom-darwin-x86_64" ;;
 		arm64 | aarch64) target="loom-darwin-arm64" ;;
 		esac
 		;;

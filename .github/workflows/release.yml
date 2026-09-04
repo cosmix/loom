@@ -27,10 +27,6 @@ jobs:
             target: x86_64-unknown-linux-gnu
             os: ubuntu-latest
             binary_name: loom-linux-x86_64
-          - name: darwin-x86_64
-            target: x86_64-apple-darwin
-            os: macos-13
-            binary_name: loom-darwin-x86_64
           - name: darwin-arm64
             target: aarch64-apple-darwin
             os: macos-latest
@@ -243,13 +239,6 @@ jobs:
           sudo mv loom /usr/local/bin/
           ```
 
-          **macOS (Intel):**
-          ```bash
-          curl -sL https://github.com/${{ github.repository }}/releases/download/${{ steps.version.outputs.tag }}/loom-darwin-x86_64 -o loom
-          chmod +x loom
-          sudo mv loom /usr/local/bin/
-          ```
-
           ### Verify Signature
 
           Each binary ships with a minisign signature, already checked in CI against
@@ -285,8 +274,6 @@ jobs:
           files: |
             release/loom-linux-x86_64
             release/loom-linux-x86_64.minisig
-            release/loom-darwin-x86_64
-            release/loom-darwin-x86_64.minisig
             release/loom-darwin-arm64
             release/loom-darwin-arm64.minisig
             release/SHA256SUMS.txt

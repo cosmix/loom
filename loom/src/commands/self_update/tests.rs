@@ -93,8 +93,6 @@ fn published_binary_assets() -> Vec<Asset> {
     [
         "loom-linux-x86_64",
         "loom-linux-x86_64.minisig",
-        "loom-darwin-x86_64",
-        "loom-darwin-x86_64.minisig",
         "loom-darwin-arm64",
         "loom-darwin-arm64.minisig",
     ]
@@ -109,11 +107,7 @@ fn published_binary_assets() -> Vec<Asset> {
 #[test]
 fn test_release_asset_selection_finds_binary_and_signature_for_supported_targets() {
     let assets = published_binary_assets();
-    for target in [
-        "x86_64-unknown-linux-gnu",
-        "x86_64-apple-darwin",
-        "aarch64-apple-darwin",
-    ] {
+    for target in ["x86_64-unknown-linux-gnu", "aarch64-apple-darwin"] {
         let binary_name = release_asset_for_target(target).unwrap();
         assert!(assets.iter().any(|asset| asset.name == binary_name));
         let signature_name = signature_asset_name(binary_name);
@@ -124,6 +118,11 @@ fn test_release_asset_selection_finds_binary_and_signature_for_supported_targets
 #[test]
 fn test_release_asset_selection_rejects_unsupported_linux_arm64() {
     assert!(release_asset_for_target("aarch64-unknown-linux-gnu").is_err());
+}
+
+#[test]
+fn test_release_asset_selection_rejects_unsupported_macos_intel() {
+    assert!(release_asset_for_target("x86_64-apple-darwin").is_err());
 }
 
 #[test]

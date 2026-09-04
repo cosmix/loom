@@ -32,7 +32,6 @@ const CURRENT_VERSION: &str = env!("LOOM_VERSION");
 /// binaries: (target triple, published binary asset base name).
 const RELEASE_ASSETS: &[(&str, &str)] = &[
     ("x86_64-unknown-linux-gnu", "loom-linux-x86_64"),
-    ("x86_64-apple-darwin", "loom-darwin-x86_64"),
     ("aarch64-apple-darwin", "loom-darwin-arm64"),
 ];
 

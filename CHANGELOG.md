@@ -29,8 +29,9 @@ First published release.
 
 ### Platforms
 
-- Signed binaries for Linux x86_64, macOS Apple Silicon and macOS Intel, published on the GitHub release with `.minisig` signatures and `SHA256SUMS.txt`.
+- Signed binaries for Linux x86_64 and macOS Apple Silicon, published on the GitHub release with `.minisig` signatures and `SHA256SUMS.txt`.
 - Windows is supported through WSL2: the Linux x86_64 binary runs unmodified, with the tmux backend covering the GUI terminal a stock WSL install lacks.
 - Linux ARM64 builds from source; no binary is published yet.
+- macOS Intel builds from source; no binary is published.
 
 [0.5.0]: https://github.com/cosmix/loom/releases/tag/v0.5.0

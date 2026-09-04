@@ -86,14 +86,15 @@ Thirteen stage states make "needs a person" a first-class outcome rather than a 
 ## Platform Support
 
 - Linux x86_64: primary development and full CI test runs; signed release binary
-- macOS (Apple Silicon and Intel): supported for build/terminal integration, CI does build-only verification; signed release binaries
+- macOS (Apple Silicon): supported for build/terminal integration, CI does build-only verification; signed release binary
+- macOS (Intel): builds from source; no release binary is published
 - Windows via WSL2: supported — WSL2 runs the Linux x86_64 binary unmodified. Use the tmux backend, since a stock WSL install has no GUI terminal emulator for the native backend to find — see [Running under WSL](#running-under-wsl). Native Windows, outside WSL, is unsupported.
 - Linux ARM64: builds from source; no release binary is published yet
 - Headless (SSH, no terminal emulator): supported via the tmux backend — see [Terminal Backends](#terminal-backends)
 
 ## Quick Start
 
-Loom is under active development. Signed binaries are published for Linux x86_64 and macOS (Apple Silicon and Intel); every other platform builds from source with the Rust toolchain installed.
+Loom is under active development. Signed binaries are published for Linux x86_64 and macOS Apple Silicon; every other platform builds from source with the Rust toolchain installed.
 
 ### Prerequisites
 
