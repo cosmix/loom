@@ -13,17 +13,14 @@ use crossterm::{
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
-use ratatui::{
-    backend::CrosstermBackend,
-    layout::{Constraint, Direction, Layout},
-    Terminal,
-};
+use ratatui::{backend::CrosstermBackend, Terminal};
 
 use super::daemon_client::{connect, is_socket_disconnected, subscribe};
 use super::event_handler::{handle_key_event, handle_mouse_event, KeyEventResult};
+use super::layout::layout_chunks;
 use super::renderer::{
     render_activity_log, render_compact_footer, render_compact_header, render_completion,
-    render_scheduler_alerts, render_tree_graph, stage_info_to_stage,
+    render_scheduler_alerts, render_tree_graph, stage_summary_to_stage,
 };
 use super::state::{GraphState, LiveStatus, TuiActivityLog};
 use crate::commands::status::render::print_completion_summary;
@@ -39,18 +36,6 @@ const POLL_TIMEOUT: Duration = Duration::from_millis(100);
 
 /// Delay before auto-exit after completion (500ms).
 const COMPLETION_EXIT_DELAY: Duration = Duration::from_millis(500);
-
-/// Minimum height for the activity log area.
-const ACTIVITY_MIN_HEIGHT: u16 = 5;
-
-/// Maximum height for the activity log area.
-const ACTIVITY_MAX_HEIGHT: u16 = 10;
-
-/// Maximum rows the scheduler alert band may occupy.
-///
-/// Bounded so a plan with many blocked stages cannot crowd out the graph; the
-/// static `loom status` prints the full list.
-const ALERT_MAX_HEIGHT: u16 = 4;
 
 /// How often the alert files are re-read from the state directory.
 const ALERT_REFRESH_INTERVAL: Duration = Duration::from_secs(1);
@@ -255,23 +240,10 @@ impl TuiApp {
     /// Handle a response from the daemon.
     fn handle_response(&mut self, response: Response) {
         match response {
-            Response::StatusUpdate {
-                stages_executing,
-                stages_pending,
-                stages_completed,
-                stages_blocked,
-            } => {
-                self.status = LiveStatus {
-                    executing: stages_executing,
-                    pending: stages_pending,
-                    completed: stages_completed,
-                    blocked: stages_blocked,
-                };
-
-                // Update activity log by detecting state transitions
+            Response::StatusUpdate { data } => {
+                self.status = LiveStatus { data };
                 let all_stages = self.status.all_stages();
                 self.activity_log.update(&all_stages);
-
                 self.last_error = None;
             }
             Response::OrchestrationComplete { summary } => {
@@ -322,11 +294,14 @@ impl TuiApp {
 
         let pct = status.progress_pct();
         let total = status.total();
-        let completed_count = status.completed.len();
+        let completed_count = status.data.progress.completed;
 
         // Convert all stages to Stage structs for tree widget
         let all_stages = status.all_stages();
-        let stages_for_graph: Vec<_> = all_stages.iter().map(|s| stage_info_to_stage(s)).collect();
+        let stages_for_graph: Vec<_> = all_stages
+            .iter()
+            .map(|s| stage_summary_to_stage(s))
+            .collect();
 
         // Count lines for scroll tracking
         let total_lines = stages_for_graph.len() as u16;
@@ -334,38 +309,15 @@ impl TuiApp {
 
         let scroll_y = self.graph_state.scroll_y;
 
-        // Calculate activity log height (adaptive)
-        let activity_count = self.activity_log.len();
-        let activity_height = if activity_count == 0 {
-            ACTIVITY_MIN_HEIGHT
-        } else {
-            // Inner height = entries shown + 2 (borders)
-            ((activity_count as u16) + 2).clamp(ACTIVITY_MIN_HEIGHT, ACTIVITY_MAX_HEIGHT)
-        };
-
         let activity_log = &self.activity_log;
         let plan_name = self.plan_name.as_deref();
-
-        // The alert band replaces the header spacer: one line when quiet, one
-        // line per alert (capped) when the scheduler has something to say.
         let alerts = &self.alerts;
-        let alert_height = (alerts.len() as u16).clamp(1, ALERT_MAX_HEIGHT);
+
+        let area = self.terminal.size()?.into();
+        let (chunks, activity_height) =
+            layout_chunks(area, self.activity_log.len(), self.alerts.len());
 
         self.terminal.draw(|frame| {
-            let area = frame.area();
-
-            let chunks = Layout::default()
-                .direction(Direction::Vertical)
-                .constraints([
-                    Constraint::Length(5),               // Header (logo + progress)
-                    Constraint::Length(alert_height),    // Scheduler alerts / spacer
-                    Constraint::Min(6),                  // Graph (adaptive, takes remaining)
-                    Constraint::Length(1),               // Spacer
-                    Constraint::Length(activity_height), // Activity log
-                    Constraint::Length(1),               // Footer
-                ])
-                .split(area);
-
             render_scheduler_alerts(frame, chunks[1], alerts);
 
             render_compact_header(
