@@ -307,7 +307,7 @@ record_spawn() {
 	[[ -n "$work_dir" && -n "$stage_id" ]] || return 0
 
 	case "$stage_id" in
-	*[!A-Za-z0-9._-]* | "")
+	*[!A-Za-z0-9._-]* | "" | "." | "..")
 		loom_debug "spawn-guard: skipping record - LOOM_STAGE_ID has unsafe characters: $stage_id"
 		return 0
 		;;

@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-WRAPPER="$(dirname "$0")/../codex-forward.sh"
-TMP=$(mktemp -d "${TMPDIR:-/tmp}/loom-hooktest.XXXXXX")
+WRAPPER="$(cd "$(dirname "$0")/.." && pwd)/codex-forward.sh"
+if ! TMP=$(mktemp -d "${TMPDIR:-/tmp}/loom-hooktest.XXXXXX") || [ -z "$TMP" ]; then
+	printf '%s\n' 'FAIL: mktemp failed to create a scratch directory'
+	exit 1
+fi
 trap 'rm -rf "$TMP"' EXIT
 
 HOME_DIR="$TMP/home"
@@ -76,10 +79,13 @@ if [[ $(wc -l <"$LEDGER") -ne 2 ]]; then
 fi
 
 # Case 3: an unsafe stage id must not create any ledger file or directory.
+# `set -e` would abort the whole script the instant the wrapper exited
+# nonzero, so `|| status=$?` is required to make the "expected 0" check
+# below reachable at all.
+status=0
 HOME="$HOME_DIR" PATH="$BIN_DIR:$PATH" LOOM_WORK_DIR="$WORK_DIR" \
 	LOOM_STAGE_ID="bad/stage" LOOM_SESSION_ID="session-abc" \
-	bash "$WRAPPER" task hello --model gpt-5.6-terra --effort xhigh --write >"$STDOUT"
-status=$?
+	bash "$WRAPPER" task hello --model gpt-5.6-terra --effort xhigh --write >"$STDOUT" || status=$?
 
 if [[ "$status" -ne 0 ]]; then
 	printf '%s\n' "FAIL: wrapper with unsafe stage id exited $status, expected 0"
@@ -90,23 +96,61 @@ if [[ -e "$WORK_DIR/subagents/bad" || -e "$WORK_DIR/subagents/bad/stage" ]]; the
 	exit 1
 fi
 
-# Case 4: an empty LOOM_WORK_DIR must not create any ledger.
-EMPTY_WORK_DIR="$TMP/work-unset"
-HOME="$HOME_DIR" PATH="$BIN_DIR:$PATH" LOOM_WORK_DIR= \
-	LOOM_STAGE_ID="my-stage" LOOM_SESSION_ID="session-abc" \
-	bash "$WRAPPER" task hello --model gpt-5.6-terra --effort xhigh --write >"$STDOUT"
-status=$?
+# Case 4: an empty LOOM_WORK_DIR must not create a "subagents" directory,
+# whether the wrapper resolved it as an absolute path or (were the empty-string
+# guard ever weakened) relative to the wrapper's own working directory. Run
+# from a dedicated cwd so that second possibility has somewhere to be checked.
+CASE4_CWD="$TMP/case4-cwd"
+mkdir -p "$CASE4_CWD"
+status=0
+(
+	cd "$CASE4_CWD"
+	HOME="$HOME_DIR" PATH="$BIN_DIR:$PATH" LOOM_WORK_DIR= \
+		LOOM_STAGE_ID="my-stage" LOOM_SESSION_ID="session-abc" \
+		bash "$WRAPPER" task hello --model gpt-5.6-terra --effort xhigh --write >"$STDOUT"
+) || status=$?
 
 if [[ "$status" -ne 0 ]]; then
 	printf '%s\n' "FAIL: wrapper with empty LOOM_WORK_DIR exited $status, expected 0"
 	exit 1
 fi
-if [[ -e "$EMPTY_WORK_DIR" ]]; then
-	printf '%s\n' 'FAIL: empty LOOM_WORK_DIR unexpectedly created a directory'
+if [[ -e "$CASE4_CWD/subagents" ]]; then
+	printf '%s\n' 'FAIL: empty LOOM_WORK_DIR created a subagents directory relative to cwd'
 	exit 1
 fi
 
-# Case 5: the stdout trailer is unaffected by ledger recording.
+# Case 5: LOOM_STAGE_ID=".." must not escape subagents/<stage_id> - it must
+# neither append to work_dir/codex.jsonl (subagents/.. resolves to work_dir
+# itself) nor chmod the work dir via the `mkdir -p -m 700`/`chmod 700` calls
+# that target that resolved directory.
+DOTDOT_WORK_DIR="$TMP/work-dotdot"
+mkdir -m 750 "$DOTDOT_WORK_DIR"
+mode_before=$(stat -c '%a' "$DOTDOT_WORK_DIR" 2>/dev/null || stat -f '%Lp' "$DOTDOT_WORK_DIR")
+
+status=0
+HOME="$HOME_DIR" PATH="$BIN_DIR:$PATH" LOOM_WORK_DIR="$DOTDOT_WORK_DIR" \
+	LOOM_STAGE_ID=".." LOOM_SESSION_ID="session-abc" \
+	bash "$WRAPPER" task hello --model gpt-5.6-terra --effort xhigh --write >"$STDOUT" || status=$?
+
+if [[ "$status" -ne 0 ]]; then
+	printf '%s\n' "FAIL: wrapper with LOOM_STAGE_ID=.. exited $status, expected 0"
+	exit 1
+fi
+if [[ -e "$DOTDOT_WORK_DIR/codex.jsonl" ]]; then
+	printf '%s\n' 'FAIL: LOOM_STAGE_ID=.. appended to work_dir/codex.jsonl'
+	exit 1
+fi
+if [[ -e "$DOTDOT_WORK_DIR/subagents" ]]; then
+	printf '%s\n' 'FAIL: LOOM_STAGE_ID=.. created a subagents directory'
+	exit 1
+fi
+mode_after=$(stat -c '%a' "$DOTDOT_WORK_DIR" 2>/dev/null || stat -f '%Lp' "$DOTDOT_WORK_DIR")
+if [[ "$mode_after" != "$mode_before" ]]; then
+	printf '%s\n' "FAIL: LOOM_STAGE_ID=.. changed the work dir's mode from $mode_before to $mode_after"
+	exit 1
+fi
+
+# Case 6: the stdout trailer is unaffected by ledger recording.
 rg -qF 'mode: companion' "$STDOUT"
 
 printf '%s\n' 'PASS'
