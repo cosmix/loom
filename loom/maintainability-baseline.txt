@@ -123,12 +123,7 @@ function src/commands/status/render/completion.rs render_completion_lines 55
 function src/commands/status/render/completion.rs render_completion_screen 84
 function src/commands/status/render/graph.rs format_stage_annotations 78
 function src/commands/status/render/graph.rs render_graph 66
-function src/commands/status/ui/tree_widget.rs build_lines 183
-function src/commands/status/ui/tree_widget_tests.rs make_stage 68
-function src/commands/status/ui/tui/app.rs render 66
-function src/commands/status/ui/tui/app.rs run_event_loop 56
 function src/commands/status/ui/tui/renderer.rs render_completion 128
-function src/commands/status/ui/tui/renderer.rs stage_summary_to_stage 71
 function src/commands/status/ui/tui/state.rs update 57
 function src/commands/usage/transcript_tests.rs ephemeral_split_always_reconciles_to_cache_creation 57
 function src/commands/verify.rs execute 89

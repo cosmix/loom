@@ -14,6 +14,10 @@ pub const PAGE_SCROLL_FACTOR: f64 = 0.8;
 pub enum KeyEventResult {
     /// User requested exit.
     Exit,
+    /// User toggled the stage-state legend.
+    ToggleLegend,
+    /// User requested that the legend close, or to exit when it is already closed.
+    CloseLegend,
     /// Continue running.
     Continue,
 }
@@ -25,7 +29,9 @@ pub fn handle_key_event(
     graph_state: &mut GraphState,
 ) -> KeyEventResult {
     match code {
-        KeyCode::Char('q') | KeyCode::Esc => KeyEventResult::Exit,
+        KeyCode::Char('q') => KeyEventResult::Exit,
+        KeyCode::Char('?') => KeyEventResult::ToggleLegend,
+        KeyCode::Esc => KeyEventResult::CloseLegend,
         KeyCode::Char('c') if modifiers.contains(KeyModifiers::CONTROL) => KeyEventResult::Exit,
 
         KeyCode::Up => {

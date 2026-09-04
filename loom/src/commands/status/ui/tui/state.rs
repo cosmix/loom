@@ -50,19 +50,6 @@ pub struct LiveStatus {
 }
 
 impl LiveStatus {
-    pub fn total(&self) -> usize {
-        self.data.progress.total
-    }
-
-    pub fn progress_pct(&self) -> f64 {
-        let total = self.data.progress.total;
-        if total == 0 {
-            0.0
-        } else {
-            self.data.progress.completed as f64 / total as f64
-        }
-    }
-
     /// Compute execution levels for all stages based on dependencies.
     pub fn compute_levels(&self) -> HashMap<String, usize> {
         levels::compute_all_levels(&self.data.stages, |s| s.id.as_str(), |s| &s.dependencies)
@@ -214,7 +201,6 @@ impl Default for TuiActivityLog {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::commands::status::data::ProgressSummary;
 
     fn summary(id: &str, status: StageStatus, deps: &[&str]) -> StageSummary {
         StageSummary {
@@ -294,29 +280,6 @@ mod tests {
 
         state.scroll_to_start();
         assert_eq!(state.scroll_y, 0);
-    }
-
-    #[test]
-    fn test_live_status_progress() {
-        let empty = LiveStatus::default();
-        assert_eq!(empty.total(), 0);
-        assert_eq!(empty.progress_pct(), 0.0);
-        let status = LiveStatus {
-            data: StatusData {
-                stages: vec![
-                    summary("a", StageStatus::WaitingForDeps, &[]),
-                    summary("b", StageStatus::Completed, &[]),
-                ],
-                progress: ProgressSummary {
-                    total: 2,
-                    completed: 1,
-                    ..Default::default()
-                },
-                ..Default::default()
-            },
-        };
-        assert_eq!(status.total(), 2);
-        assert_eq!(status.progress_pct(), 0.5);
     }
 
     #[test]

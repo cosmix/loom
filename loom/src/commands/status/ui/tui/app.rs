@@ -8,8 +8,9 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
+use chrono::Utc;
 use crossterm::{
-    event::{self, Event, KeyEventKind},
+    event::{self, Event, KeyCode, KeyEventKind, KeyModifiers},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
@@ -17,19 +18,15 @@ use ratatui::{backend::CrosstermBackend, Terminal};
 
 use super::daemon_client::{connect, is_socket_disconnected, subscribe};
 use super::event_handler::{handle_key_event, handle_mouse_event, KeyEventResult};
-use super::layout::layout_chunks;
-use super::renderer::{
-    render_activity_log, render_compact_footer, render_compact_header, render_completion,
-    render_scheduler_alerts, render_tree_graph, stage_summary_to_stage,
-};
+use super::ledger::{self, LedgerView};
+use super::renderer::render_completion;
 use super::state::{GraphState, LiveStatus, TuiActivityLog};
+use crate::commands::status::render::attention_model::attention_entries;
 use crate::commands::status::render::print_completion_summary;
 use crate::daemon::{
     read_auth_token, read_message, write_message, CompletionSummary, Request, Response,
 };
-use crate::fs::work_dir::load_config;
 use crate::orchestrator::scheduling_report::{self, Alert};
-use crate::plan::parser::extract_plan_name;
 
 /// Poll timeout for event loop (100ms for responsive UI).
 const POLL_TIMEOUT: Duration = Duration::from_millis(100);
@@ -49,6 +46,8 @@ pub struct TuiApp {
     last_error: Option<String>,
     graph_state: GraphState,
     activity_log: TuiActivityLog,
+    legend_open: bool,
+    tick_age_secs: Option<i64>,
     mouse_enabled: bool,
     exiting: bool,
     completion_summary: Option<CompletionSummary>,
@@ -56,17 +55,7 @@ pub struct TuiApp {
     completion_received_at: Option<Instant>,
     /// Flag to prevent double cleanup in Drop.
     cleaned_up: bool,
-    /// Extracted plan name from the plan file.
-    plan_name: Option<String>,
-    /// Scheduler alerts (loop stall, stages queued too long).
-    ///
-    /// Read from the state directory rather than from the daemon socket on purpose: the
-    /// condition being reported may be a daemon whose scheduler thread has
-    /// stopped, and its broadcaster would happily keep sending the last
-    /// healthy-looking snapshot. A detector that depends on the component it
-    /// is watching is not a detector.
     alerts: Vec<Alert>,
-    /// When the alert files were last read, for throttling.
     alerts_refreshed_at: Option<Instant>,
 }
 
@@ -85,9 +74,6 @@ impl TuiApp {
         let backend = CrosstermBackend::new(stdout);
         let terminal = Terminal::new(backend).context("Failed to create terminal")?;
 
-        // Load plan name from config.toml (best-effort)
-        let plan_name = Self::load_plan_name();
-
         Ok(Self {
             terminal,
             running: Arc::new(AtomicBool::new(true)),
@@ -96,69 +82,55 @@ impl TuiApp {
             last_error: None,
             graph_state: GraphState::default(),
             activity_log: TuiActivityLog::new(),
+            legend_open: false,
+            tick_age_secs: None,
             mouse_enabled,
             exiting: false,
             completion_summary: None,
             completion_received_at: None,
             cleaned_up: false,
-            plan_name,
             alerts: Vec::new(),
             alerts_refreshed_at: None,
         })
     }
 
-    /// Load plan name from config.toml and the plan file (best-effort).
-    fn load_plan_name() -> Option<String> {
-        let work_dir = crate::commands::common::work_dir_path().ok()?;
-        let config = load_config(&work_dir).ok()??;
-        let source_path = config.source_path()?;
-        let plan_path = Path::new(".").join(&source_path);
-        let content = std::fs::read_to_string(plan_path).ok()?;
-        extract_plan_name(&content).ok()
-    }
-
     /// Run the TUI event loop.
     pub fn run(&mut self, work_path: &Path) -> Result<()> {
-        let socket_path = work_path.join("orchestrator.sock");
-        let mut stream = connect(&socket_path)?;
-        subscribe(&mut stream)?;
-
-        stream
-            .set_read_timeout(Some(Duration::from_millis(50)))
-            .ok();
-
-        // Write TUI marker so we can detect unclean exits (SIGKILL, OOM, etc.)
+        let mut stream = Self::connect_and_subscribe(work_path)?;
         crate::utils::write_tui_marker(work_path);
-
-        // Install Ctrl+C/SIGTERM handler to ensure terminal cleanup on signal
-        let running = self.running.clone();
-
-        ctrlc::set_handler(move || {
-            running.store(false, Ordering::SeqCst);
-
-            // Cleanup crossterm state - must be done in signal handler
-            // since Drop may not run on process exit
-            crate::utils::cleanup_terminal_crossterm();
-
-            std::process::exit(0);
-        })
-        .context("Failed to set Ctrl+C handler")?;
-
+        self.install_exit_handler()?;
         let result = self.run_event_loop(&mut stream, work_path);
-
-        let token = read_auth_token(work_path).unwrap_or_default();
-        let _ = write_message(&mut stream, &Request::Unsubscribe { auth_token: token });
-
-        // ALWAYS cleanup terminal before returning - prevents terminal state
-        // corruption when daemon dies without sending OrchestrationComplete
+        self.unsubscribe(&mut stream, work_path);
         self.cleanup_terminal();
-
-        // Print completion summary AFTER cleanup since it needs normal terminal
         if let Some(summary) = self.completion_summary.take() {
             print_completion_summary(&summary);
         }
-
         result
+    }
+
+    fn connect_and_subscribe(work_path: &Path) -> Result<UnixStream> {
+        let socket_path = work_path.join("orchestrator.sock");
+        let mut stream = connect(&socket_path)?;
+        subscribe(&mut stream)?;
+        stream
+            .set_read_timeout(Some(Duration::from_millis(50)))
+            .ok();
+        Ok(stream)
+    }
+
+    fn install_exit_handler(&self) -> Result<()> {
+        let running = self.running.clone();
+        ctrlc::set_handler(move || {
+            running.store(false, Ordering::SeqCst);
+            crate::utils::cleanup_terminal_crossterm();
+            std::process::exit(0);
+        })
+        .context("Failed to set Ctrl+C handler")
+    }
+
+    fn unsubscribe(&self, stream: &mut UnixStream, work_path: &Path) {
+        let token = read_auth_token(work_path).unwrap_or_default();
+        let _ = write_message(stream, &Request::Unsubscribe { auth_token: token });
     }
 
     /// Refresh scheduler alerts from the state directory, at most once per second.
@@ -176,6 +148,10 @@ impl TuiApp {
 
         // The TUI only runs against a live daemon, so the stall check applies.
         self.alerts = scheduling_report::alerts(work_path, true);
+        self.tick_age_secs = crate::orchestrator::tick::read(work_path)
+            .ok()
+            .flatten()
+            .map(|tick| tick.age_secs(Utc::now()));
         self.alerts_refreshed_at = Some(Instant::now());
     }
 
@@ -190,44 +166,10 @@ impl TuiApp {
                 break;
             }
 
-            // Check if completion delay has elapsed for auto-exit
-            if let Some(received_at) = self.completion_received_at {
-                if received_at.elapsed() >= COMPLETION_EXIT_DELAY {
-                    break;
-                }
+            if self.completion_delay_elapsed() || self.receive_response(stream)? {
+                break;
             }
-
-            match read_message::<Response, _>(stream) {
-                Ok(response) => {
-                    self.handle_response(response);
-                }
-                Err(e) => {
-                    if is_socket_disconnected(&e) {
-                        if self.completion_summary.is_some() {
-                            break;
-                        }
-                        self.last_error = Some("Daemon exited".to_string());
-                        self.render()?;
-                        std::thread::sleep(Duration::from_millis(500));
-                        break;
-                    }
-                }
-            }
-
-            if event::poll(POLL_TIMEOUT)? {
-                match event::read()? {
-                    Event::Key(key) if key.kind == KeyEventKind::Press => {
-                        match handle_key_event(key.code, key.modifiers, &mut self.graph_state) {
-                            KeyEventResult::Exit => self.exiting = true,
-                            KeyEventResult::Continue => {}
-                        }
-                    }
-                    Event::Mouse(mouse) => {
-                        handle_mouse_event(mouse.kind, &mut self.graph_state);
-                    }
-                    _ => {}
-                }
-            }
+            self.handle_input()?;
 
             self.spinner_frame = (self.spinner_frame + 1) % 10;
 
@@ -235,6 +177,59 @@ impl TuiApp {
         }
 
         Ok(())
+    }
+
+    fn completion_delay_elapsed(&self) -> bool {
+        self.completion_received_at
+            .is_some_and(|received_at| received_at.elapsed() >= COMPLETION_EXIT_DELAY)
+    }
+
+    fn receive_response(&mut self, stream: &mut UnixStream) -> Result<bool> {
+        match read_message::<Response, _>(stream) {
+            Ok(response) => self.handle_response(response),
+            Err(error) if is_socket_disconnected(&error) => {
+                if self.completion_summary.is_some() {
+                    return Ok(true);
+                }
+                self.last_error = Some("Daemon exited".to_string());
+                self.render()?;
+                std::thread::sleep(Duration::from_millis(500));
+                return Ok(true);
+            }
+            Err(_) => {}
+        }
+        Ok(false)
+    }
+
+    fn handle_input(&mut self) -> Result<()> {
+        if !event::poll(POLL_TIMEOUT)? {
+            return Ok(());
+        }
+        match event::read()? {
+            Event::Key(key) if key.kind == KeyEventKind::Press => {
+                self.handle_key(key.code, key.modifiers);
+            }
+            Event::Mouse(mouse) if !self.legend_open => {
+                handle_mouse_event(mouse.kind, &mut self.graph_state)
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+
+    fn handle_key(&mut self, code: KeyCode, modifiers: KeyModifiers) {
+        let result = if self.legend_open && is_scroll_key(code) {
+            KeyEventResult::Continue
+        } else {
+            handle_key_event(code, modifiers, &mut self.graph_state)
+        };
+        match result {
+            KeyEventResult::Exit => self.exiting = true,
+            KeyEventResult::ToggleLegend => self.legend_open = !self.legend_open,
+            KeyEventResult::CloseLegend if self.legend_open => self.legend_open = false,
+            KeyEventResult::CloseLegend => self.exiting = true,
+            KeyEventResult::Continue => {}
+        }
     }
 
     /// Handle a response from the daemon.
@@ -288,59 +283,27 @@ impl TuiApp {
             return Ok(());
         }
 
-        let spinner = self.spinner_char();
-        let status = &self.status;
-        let last_error = self.last_error.clone();
-
-        let pct = status.progress_pct();
-        let total = status.total();
-        let completed_count = status.data.progress.completed;
-
-        // Convert all stages to Stage structs for tree widget
-        let all_stages = status.all_stages();
-        let stages_for_graph: Vec<_> = all_stages
-            .iter()
-            .map(|s| stage_summary_to_stage(s))
-            .collect();
-
-        // Count lines for scroll tracking
-        let total_lines = stages_for_graph.len() as u16;
-        self.graph_state.total_lines = total_lines;
-
-        let scroll_y = self.graph_state.scroll_y;
-
-        let activity_log = &self.activity_log;
-        let plan_name = self.plan_name.as_deref();
-        let alerts = &self.alerts;
-
-        let area = self.terminal.size()?.into();
-        let (chunks, activity_height) =
-            layout_chunks(area, self.activity_log.len(), self.alerts.len());
-
-        self.terminal.draw(|frame| {
-            render_scheduler_alerts(frame, chunks[1], alerts);
-
-            render_compact_header(
-                frame,
-                chunks[0],
-                spinner,
-                pct,
-                completed_count,
-                total,
-                plan_name,
-            );
-
-            render_tree_graph(frame, chunks[2], &stages_for_graph, scroll_y);
-
-            render_activity_log(frame, chunks[4], activity_log);
-
-            render_compact_footer(frame, chunks[5], &last_error);
-        })?;
-
-        // Update viewport height for scroll bounds (graph inner height)
-        let graph_height = self.terminal.size()?.height;
-        let graph_inner = graph_height.saturating_sub(5 + 1 + 1 + activity_height + 1 + 2); // borders
-        self.graph_state.viewport_height = graph_inner;
+        let levels = self.status.compute_levels();
+        let ordered = self.status.all_stages();
+        let attention = attention_entries(&self.status.data.stages);
+        let view = LedgerView {
+            data: &self.status.data,
+            levels: &levels,
+            ordered: &ordered,
+            attention: &attention,
+            activity: &self.activity_log,
+            alerts: &self.alerts,
+            spinner: self.spinner_char(),
+            scroll_y: self.graph_state.scroll_y,
+            legend_open: self.legend_open,
+            tick_age_secs: self.tick_age_secs,
+            last_error: self.last_error.as_deref(),
+        };
+        let mut outcome = ledger::RenderOutcome::default();
+        self.terminal
+            .draw(|frame| outcome = ledger::render(frame, &view))?;
+        self.graph_state.total_lines = ordered.len().min(u16::MAX as usize) as u16;
+        self.graph_state.viewport_height = outcome.table_viewport_rows;
 
         Ok(())
     }
@@ -353,6 +316,18 @@ impl TuiApp {
         ];
         SPINNER[self.spinner_frame % SPINNER.len()]
     }
+}
+
+fn is_scroll_key(code: KeyCode) -> bool {
+    matches!(
+        code,
+        KeyCode::Up
+            | KeyCode::Down
+            | KeyCode::Home
+            | KeyCode::End
+            | KeyCode::PageUp
+            | KeyCode::PageDown
+    )
 }
 
 impl Drop for TuiApp {
