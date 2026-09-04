@@ -214,6 +214,8 @@ loom pressure <plan-path> [--rounds N] [--dry-run]
 
 `loom pressure` hardens a plan before you run it by combining two external agents over `--rounds` rounds (default 2). Each round runs both pressure-tests in parallel: Claude `/pressure` edits the plan in place in the foreground (you watch it live), while Codex `$pressure` writes an independent review next to it (`codex-<plan>.md`) in the background (its output is captured to a temp log to keep the terminal clean). Once both finish, Claude `/address` folds the review back in. Claude stays interactive (subscription billing) and auto-closes when done; Codex runs from the repo root. Requires both the `claude` and `codex` CLIs on PATH. `--dry-run` prints the exact commands without spawning anything.
 
+`loom status --live` renders a live ledger dashboard: one row per stage across eight columns (STATE, STAGE, DEPENDS ON, MODELS, ACTIVITY, CONTEXT, TIME, MERGE). MODELS lists the orchestrator's own model first, then the models any subagents it spawned ran on. Columns drop in priority order as the terminal narrows; below a 64x16 (columns x rows) terminal a notice replaces the dashboard entirely. Press `?` to toggle a legend overlay explaining every state icon.
+
 ### Plan Commands
 
 ```bash
