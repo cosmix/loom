@@ -1,12 +1,14 @@
 mod collector;
+mod execution_models;
 
 pub use collector::{collect_status_data, load_all_sessions};
+pub use execution_models::execution_models_for_stage;
 
 use serde::{Deserialize, Serialize};
 
 // Re-export types that consumers will need
 pub use crate::models::failure::FailureInfo;
-pub use crate::models::session::SessionType;
+pub use crate::models::session::{SessionBackendKind, SessionType};
 pub use crate::models::stage::{StageStatus, StageType};
 
 /// Activity status derived from heartbeat and session state
@@ -54,7 +56,7 @@ impl ActivityStatus {
 }
 
 /// Main struct aggregating all displayable status information
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct StatusData {
     pub stages: Vec<StageSummary>,
     pub merge: MergeSummary,
@@ -118,6 +120,21 @@ pub struct StageSummary {
     /// Why an `Executing` stage does not describe a working agent, if it
     /// does not. `None` for every other stage.
     pub incoherence: Option<String>,
+    /// Distinct execution-model display names observed for this stage's subagents,
+    /// in first-seen order (spawn ledger, then codex ledger). Empty until a
+    /// subagent spawns.
+    #[serde(default)]
+    pub execution_models: Vec<String>,
+    /// Disputes filed against this stage's acceptance criteria.
+    #[serde(default)]
+    pub dispute_count: u32,
+    /// Age in seconds of the adjudication session's heartbeat for this stage.
+    /// `None` when no judge has written one.
+    #[serde(default)]
+    pub judge_heartbeat_secs: Option<u64>,
+    /// Which terminal backend hosts this stage's session, when one is known.
+    #[serde(default)]
+    pub session_backend: Option<crate::models::session::SessionBackendKind>,
 }
 
 /// Session display data (test-only)
@@ -133,7 +150,7 @@ pub struct SessionSummary {
 }
 
 /// Merge state summary
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct MergeSummary {
     pub merged: Vec<String>,
     pub pending: Vec<String>,
@@ -141,7 +158,7 @@ pub struct MergeSummary {
 }
 
 /// Progress counts
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ProgressSummary {
     pub total: usize,
     pub completed: usize,

@@ -5,8 +5,8 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use ratatui::style::Style;
 use ratatui::text::{Line, Span};
 
+use crate::commands::status::data::{StageSummary, StatusData};
 use crate::commands::status::ui::theme::Theme;
-use crate::daemon::StageInfo;
 use crate::models::stage::StageStatus;
 use crate::plan::graph::levels;
 
@@ -46,52 +46,35 @@ impl GraphState {
 /// Live status data received from daemon.
 #[derive(Default)]
 pub struct LiveStatus {
-    pub executing: Vec<StageInfo>,
-    pub pending: Vec<StageInfo>,
-    pub completed: Vec<StageInfo>,
-    pub blocked: Vec<StageInfo>,
+    pub data: StatusData,
 }
 
 impl LiveStatus {
     pub fn total(&self) -> usize {
-        self.executing.len() + self.pending.len() + self.completed.len() + self.blocked.len()
+        self.data.progress.total
     }
 
     pub fn progress_pct(&self) -> f64 {
-        let total = self.total();
+        let total = self.data.progress.total;
         if total == 0 {
             0.0
         } else {
-            self.completed.len() as f64 / total as f64
+            self.data.progress.completed as f64 / total as f64
         }
     }
 
     /// Compute execution levels for all stages based on dependencies.
     pub fn compute_levels(&self) -> HashMap<String, usize> {
-        let all_stages: Vec<&StageInfo> = self
-            .executing
-            .iter()
-            .chain(self.pending.iter())
-            .chain(self.completed.iter())
-            .chain(self.blocked.iter())
-            .collect();
-
-        levels::compute_all_levels(&all_stages, |s| s.id.as_str(), |s| &s.dependencies)
+        levels::compute_all_levels(&self.data.stages, |s| s.id.as_str(), |s| &s.dependencies)
     }
 
     /// Collect all stages into a deduplicated list, sorted by level then id.
-    pub fn all_stages(&self) -> Vec<&StageInfo> {
+    pub fn all_stages(&self) -> Vec<&StageSummary> {
         let levels = self.compute_levels();
         let mut stages = Vec::new();
         let mut seen: HashSet<String> = HashSet::new();
 
-        for stage in self
-            .executing
-            .iter()
-            .chain(self.completed.iter())
-            .chain(self.pending.iter())
-            .chain(self.blocked.iter())
-        {
+        for stage in &self.data.stages {
             if seen.insert(stage.id.clone()) {
                 stages.push(stage);
             }
@@ -133,7 +116,7 @@ impl TuiActivityLog {
 
     /// Update the log by comparing current stage statuses against previous.
     /// Only logs meaningful transitions (started, completed, blocked, ready).
-    pub fn update(&mut self, stages: &[&StageInfo]) {
+    pub fn update(&mut self, stages: &[&StageSummary]) {
         let now = chrono::Utc::now();
 
         for stage in stages {
@@ -231,6 +214,43 @@ impl Default for TuiActivityLog {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::commands::status::data::ProgressSummary;
+
+    fn summary(id: &str, status: StageStatus, deps: &[&str]) -> StageSummary {
+        StageSummary {
+            id: id.to_string(),
+            name: id.to_string(),
+            status,
+            stage_type: Default::default(),
+            dependencies: deps.iter().map(|dep| (*dep).to_string()).collect(),
+            context_tokens: None,
+            elapsed_secs: None,
+            execution_secs: None,
+            base_branch: None,
+            base_merged_from: vec![],
+            failure_info: None,
+            activity_status: Default::default(),
+            last_tool: None,
+            last_activity: None,
+            staleness_secs: None,
+            context_ceiling_tokens: None,
+            review_reason: None,
+            merged: false,
+            cleanup_warning: None,
+            held: false,
+            retry_count: 0,
+            max_retries: None,
+            pid: None,
+            session_alive: false,
+            model: String::new(),
+            session_type: None,
+            incoherence: None,
+            execution_models: vec![],
+            dispute_count: 0,
+            judge_heartbeat_secs: None,
+            session_backend: None,
+        }
+    }
 
     #[test]
     fn test_graph_state_default() {
@@ -278,37 +298,23 @@ mod tests {
 
     #[test]
     fn test_live_status_progress() {
-        let mut status = LiveStatus::default();
-        assert_eq!(status.total(), 0);
-        assert_eq!(status.progress_pct(), 0.0);
-
-        status.pending = vec![StageInfo {
-            id: "a".to_string(),
-            name: "Stage A".to_string(),
-            session_pid: None,
-            started_at: chrono::Utc::now(),
-            completed_at: None,
-            worktree_status: None,
-            status: StageStatus::WaitingForDeps,
-            merged: false,
-            dependencies: vec![],
-            model: String::new(),
-            cleanup_warning: None,
-        }];
-        status.completed = vec![StageInfo {
-            id: "b".to_string(),
-            name: "Stage B".to_string(),
-            session_pid: None,
-            started_at: chrono::Utc::now(),
-            completed_at: Some(chrono::Utc::now()),
-            worktree_status: None,
-            status: StageStatus::Completed,
-            merged: true,
-            dependencies: vec![],
-            model: String::new(),
-            cleanup_warning: None,
-        }];
-
+        let empty = LiveStatus::default();
+        assert_eq!(empty.total(), 0);
+        assert_eq!(empty.progress_pct(), 0.0);
+        let status = LiveStatus {
+            data: StatusData {
+                stages: vec![
+                    summary("a", StageStatus::WaitingForDeps, &[]),
+                    summary("b", StageStatus::Completed, &[]),
+                ],
+                progress: ProgressSummary {
+                    total: 2,
+                    completed: 1,
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+        };
         assert_eq!(status.total(), 2);
         assert_eq!(status.progress_pct(), 0.5);
     }
@@ -316,50 +322,14 @@ mod tests {
     #[test]
     fn test_live_status_compute_levels() {
         let status = LiveStatus {
-            executing: vec![],
-            pending: vec![
-                StageInfo {
-                    id: "a".to_string(),
-                    name: "A".to_string(),
-                    session_pid: None,
-                    started_at: chrono::Utc::now(),
-                    completed_at: None,
-                    worktree_status: None,
-                    status: StageStatus::WaitingForDeps,
-                    merged: false,
-                    dependencies: vec![],
-                    model: String::new(),
-                    cleanup_warning: None,
-                },
-                StageInfo {
-                    id: "b".to_string(),
-                    name: "B".to_string(),
-                    session_pid: None,
-                    started_at: chrono::Utc::now(),
-                    completed_at: None,
-                    worktree_status: None,
-                    status: StageStatus::WaitingForDeps,
-                    merged: false,
-                    dependencies: vec!["a".to_string()],
-                    model: String::new(),
-                    cleanup_warning: None,
-                },
-                StageInfo {
-                    id: "c".to_string(),
-                    name: "C".to_string(),
-                    session_pid: None,
-                    started_at: chrono::Utc::now(),
-                    completed_at: None,
-                    worktree_status: None,
-                    status: StageStatus::WaitingForDeps,
-                    merged: false,
-                    dependencies: vec!["a".to_string(), "b".to_string()],
-                    model: String::new(),
-                    cleanup_warning: None,
-                },
-            ],
-            completed: vec![],
-            blocked: vec![],
+            data: StatusData {
+                stages: vec![
+                    summary("a", StageStatus::WaitingForDeps, &[]),
+                    summary("b", StageStatus::WaitingForDeps, &["a"]),
+                    summary("c", StageStatus::WaitingForDeps, &["a", "b"]),
+                ],
+                ..Default::default()
+            },
         };
 
         let levels = status.compute_levels();

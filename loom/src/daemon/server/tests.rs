@@ -2,8 +2,8 @@
 
 use super::super::protocol::Response;
 use super::core::{daemon_running_from_status, DaemonServer, DaemonStatus};
-use super::status::{collect_status, detect_worktree_status, is_manually_merged};
-use crate::models::worktree::WorktreeStatus;
+use super::status::collect_status;
+use crate::models::stage::StageStatus;
 use std::fs;
 use std::sync::atomic::Ordering;
 use tempfile::TempDir;
@@ -125,23 +125,14 @@ fn test_shutdown_flag() {
 #[test]
 fn test_collect_status_empty_dir() {
     let temp_dir = TempDir::new().expect("Failed to create temp dir");
-    let work_dir = temp_dir.path();
+    let wd = crate::fs::work_dir::WorkDir::new(temp_dir.path().join(".loom/work")).unwrap();
+    fs::create_dir_all(wd.root().join("stages")).unwrap();
 
-    let result = collect_status(work_dir);
+    let result = collect_status(wd.root());
     assert!(result.is_ok());
 
     match result.unwrap() {
-        Response::StatusUpdate {
-            stages_executing,
-            stages_pending,
-            stages_completed,
-            stages_blocked,
-        } => {
-            assert!(stages_executing.is_empty());
-            assert!(stages_pending.is_empty());
-            assert!(stages_completed.is_empty());
-            assert!(stages_blocked.is_empty());
-        }
+        Response::StatusUpdate { data } => assert!(data.stages.is_empty()),
         _ => panic!("Expected StatusUpdate response"),
     }
 }
@@ -149,8 +140,8 @@ fn test_collect_status_empty_dir() {
 #[test]
 fn test_collect_status_with_stages() {
     let temp_dir = TempDir::new().expect("Failed to create temp dir");
-    let work_dir = temp_dir.path();
-    let stages_dir = work_dir.join("stages");
+    let wd = crate::fs::work_dir::WorkDir::new(temp_dir.path().join(".loom/work")).unwrap();
+    let stages_dir = wd.root().join("stages");
     fs::create_dir_all(&stages_dir).expect("Failed to create stages dir");
 
     // Create a pending stage
@@ -203,70 +194,24 @@ updated_at: "2024-01-01T00:00:00Z"
     fs::write(stages_dir.join("stage-completed.md"), completed_stage)
         .expect("Failed to write stage");
 
-    let result = collect_status(work_dir);
+    let result = collect_status(wd.root());
     assert!(result.is_ok());
 
     match result.unwrap() {
-        Response::StatusUpdate {
-            stages_executing,
-            stages_pending,
-            stages_completed,
-            stages_blocked,
-        } => {
-            assert_eq!(stages_executing.len(), 1);
-            assert_eq!(stages_executing[0].id, "stage-executing");
-            assert_eq!(stages_pending.len(), 1);
-            assert!(stages_pending.iter().any(|s| s.id == "stage-pending"));
-            assert_eq!(stages_completed.len(), 1);
-            assert!(stages_completed.iter().any(|s| s.id == "stage-completed"));
-            assert!(stages_blocked.is_empty());
+        Response::StatusUpdate { data } => {
+            assert_eq!(data.stages.len(), 3);
+            assert!(data.stages.iter().any(
+                |stage| stage.id == "stage-executing" && stage.status == StageStatus::Executing
+            ));
+            assert!(data
+                .stages
+                .iter()
+                .any(|stage| stage.id == "stage-pending"
+                    && stage.status == StageStatus::WaitingForDeps));
+            assert!(data.stages.iter().any(
+                |stage| stage.id == "stage-completed" && stage.status == StageStatus::Completed
+            ));
         }
         _ => panic!("Expected StatusUpdate response"),
     }
 }
-
-#[test]
-fn test_detect_worktree_status_no_worktree() {
-    let temp_dir = TempDir::new().expect("Failed to create temp dir");
-    let repo_root = temp_dir.path();
-
-    // When worktree doesn't exist, should return None
-    let status = detect_worktree_status("nonexistent-stage", repo_root, repo_root);
-    assert!(status.is_none());
-}
-
-#[test]
-fn test_detect_worktree_status_active() {
-    let temp_dir = TempDir::new().expect("Failed to create temp dir");
-    let repo_root = temp_dir.path();
-
-    // Create a worktree directory (without git operations)
-    let worktree_path = repo_root.join(".worktrees").join("test-stage");
-    fs::create_dir_all(&worktree_path).expect("Failed to create worktree dir");
-
-    // Create a .git file pointing to a gitdir (simulating a worktree)
-    let git_file = worktree_path.join(".git");
-    fs::write(&git_file, "gitdir: /nonexistent/path").expect("Failed to write .git file");
-
-    // Since this is not a real git repo, is_manually_merged will return false
-    // and there's no MERGE_HEAD, so status should be Active
-    let status = detect_worktree_status("test-stage", repo_root, repo_root);
-    assert_eq!(status, Some(WorktreeStatus::Active));
-}
-
-#[test]
-fn test_is_manually_merged_no_git_repo() {
-    let temp_dir = TempDir::new().expect("Failed to create temp dir");
-    let repo_root = temp_dir.path();
-
-    // When not in a git repo, is_manually_merged should gracefully return false
-    let result = is_manually_merged("test-stage", repo_root, repo_root);
-    assert!(!result);
-}
-
-// Note: Testing is_manually_merged with a real git repo and merged branches
-// requires complex setup and is better suited for e2e tests.
-// The function:
-// 1. Gets the default branch (main/master)
-// 2. Checks if loom/{stage_id} is in `git branch --merged {target}`
-// 3. Returns true if the branch has been merged, false otherwise

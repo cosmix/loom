@@ -12,6 +12,7 @@
 mod app;
 mod daemon_client;
 mod event_handler;
+mod layout;
 mod renderer;
 mod state;
 

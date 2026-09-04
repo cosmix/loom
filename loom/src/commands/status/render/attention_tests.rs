@@ -1,6 +1,7 @@
 use super::*;
 use crate::commands::status::data::{ActivityStatus, StageType};
 use crate::models::failure::{FailureInfo, FailureType};
+use crate::models::stage::StageStatus;
 use chrono::Utc;
 
 fn make_stage_summary(id: &str, status: StageStatus) -> StageSummary {
@@ -32,6 +33,10 @@ fn make_stage_summary(id: &str, status: StageStatus) -> StageSummary {
         model: "opus".to_string(),
         session_type: None,
         incoherence: None,
+        execution_models: vec![],
+        dispute_count: 0,
+        judge_heartbeat_secs: None,
+        session_backend: None,
     }
 }
 

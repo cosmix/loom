@@ -1,8 +1,9 @@
 use super::*;
-use crate::daemon::protocol::{CompletionSummary, DaemonConfig, StageCompletionInfo, StageInfo};
+use crate::commands::status::data::{
+    ActivityStatus, MergeSummary, ProgressSummary, StageSummary, StageType, StatusData,
+};
+use crate::daemon::protocol::{CompletionSummary, DaemonConfig, StageCompletionInfo};
 use crate::models::stage::StageStatus;
-use crate::models::worktree::WorktreeStatus;
-use chrono::Utc;
 use std::io::{Cursor, Read};
 
 struct CountingReader<R> {
@@ -43,12 +44,8 @@ fn response_round_trip_uses_bounded_frame() {
 
 #[test]
 fn status_update_round_trip() {
-    let now = Utc::now();
     let response = Response::StatusUpdate {
-        stages_executing: vec![stage_info("stage-1", StageStatus::Executing, now)],
-        stages_pending: vec![stage_info("stage-2", StageStatus::WaitingForDeps, now)],
-        stages_completed: vec![stage_info("stage-0", StageStatus::Completed, now)],
-        stages_blocked: vec![],
+        data: status_data(),
     };
     let mut buffer = Vec::new();
     write_message(&mut buffer, &response).unwrap();
@@ -56,26 +53,66 @@ fn status_update_round_trip() {
     let decoded: Response = read_message(&mut Cursor::new(buffer)).unwrap();
 
     match decoded {
-        Response::StatusUpdate {
-            stages_executing, ..
-        } => assert_eq!(stages_executing[0].id, "stage-1"),
+        Response::StatusUpdate { data } => {
+            assert_eq!(data.stages[0].id, "stage-1");
+            assert_eq!(data.stages[0].status, StageStatus::Executing);
+            assert_eq!(data.stages[1].id, "stage-2");
+            assert_eq!(data.stages[1].status, StageStatus::WaitingForDeps);
+        }
         _ => panic!("expected status update"),
     }
 }
 
-fn stage_info(id: &str, status: StageStatus, now: chrono::DateTime<Utc>) -> StageInfo {
-    StageInfo {
+fn stage_summary(id: &str, status: StageStatus) -> StageSummary {
+    StageSummary {
         id: id.to_string(),
         name: id.to_string(),
-        session_pid: None,
-        started_at: now,
-        completed_at: None,
-        worktree_status: Some(WorktreeStatus::Active),
         status,
-        merged: false,
+        stage_type: StageType::Standard,
         dependencies: vec![],
-        model: "test".to_string(),
+        context_tokens: None,
+        elapsed_secs: None,
+        execution_secs: None,
+        base_branch: None,
+        base_merged_from: vec![],
+        failure_info: None,
+        activity_status: ActivityStatus::Idle,
+        last_tool: None,
+        last_activity: None,
+        staleness_secs: None,
+        context_ceiling_tokens: None,
+        review_reason: None,
+        merged: false,
         cleanup_warning: None,
+        held: false,
+        retry_count: 0,
+        max_retries: None,
+        pid: None,
+        session_alive: false,
+        model: "test".to_string(),
+        session_type: None,
+        incoherence: None,
+        execution_models: vec![],
+        dispute_count: 0,
+        judge_heartbeat_secs: None,
+        session_backend: None,
+    }
+}
+
+fn status_data() -> StatusData {
+    StatusData {
+        stages: vec![
+            stage_summary("stage-1", StageStatus::Executing),
+            stage_summary("stage-2", StageStatus::WaitingForDeps),
+        ],
+        merge: MergeSummary::default(),
+        progress: ProgressSummary {
+            total: 2,
+            executing: 1,
+            pending: 1,
+            ..Default::default()
+        },
+        plan_name: Some("Test plan".to_string()),
     }
 }
 
