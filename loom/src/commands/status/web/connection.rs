@@ -3,23 +3,52 @@
 use std::io::Read;
 use std::net::TcpStream;
 use std::path::Path;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::AtomicBool;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use super::assets;
 use super::broadcast::{self, Broadcaster};
-use super::http::{self, RequestHead, MAX_HEAD_BYTES};
+use super::head::complete as complete_head;
+use super::http::{self, RequestHead};
+use super::limits::{Lane, Limits, Slot};
 use super::ws;
 
 /// How long a single peek may block, bounding how long a connection thread
 /// ignores a shutdown request.
 const PEEK_TIMEOUT: Duration = Duration::from_millis(250);
 
-/// Total budget for a client to deliver a complete request head.
-const HEAD_TIMEOUT: Duration = Duration::from_secs(5);
+/// How long a single blocked `write` syscall may hold the connection thread.
+///
+/// `set_write_timeout` bounds one syscall, not a whole response, so this is
+/// not a budget for serving `index.js`: a client that acknowledges a few bytes
+/// just inside the timeout keeps `write_all` looping for far longer. What it
+/// does rule out is the thread parking in `write_all` for good once a client
+/// that stopped reading altogether fills its receive window — the same hazard
+/// the WebSocket lane guards against. The whole-response bound comes from the
+/// connection cap instead: a slow reader occupies one of [`MAX_CONNECTIONS`]
+/// slots and no more. The budget is looser than the WebSocket lane's because
+/// this one writes whole bundle assets rather than one small snapshot frame.
+///
+/// [`MAX_CONNECTIONS`]: super::limits::MAX_CONNECTIONS
+const WRITE_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// Body returned when the work directory cannot produce a snapshot. The
+/// underlying error names absolute work-directory paths, so it is logged
+/// rather than served.
+const SNAPSHOT_UNAVAILABLE: &[u8] = b"status snapshot unavailable";
 
 /// Bytes drained from an unfinished request before an error response.
 const MAX_DRAIN_BYTES: usize = 64 * 1024;
+
+/// Wall-clock bound on that drain.
+///
+/// The byte cap alone bounds nothing in time: a client trickling one byte per
+/// read timeout satisfies every read, so the loop can run for as many
+/// iterations as [`MAX_DRAIN_BYTES`] allows. [`reject_overloaded`] performs
+/// that drain on the accept loop, where stalling stops the server answering
+/// anyone at all, so the drain gives up on whichever bound it reaches first.
+const DRAIN_DEADLINE: Duration = Duration::from_millis(300);
 
 /// The non-WebSocket target selected from a request path.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -34,15 +63,33 @@ pub(super) enum Route {
 }
 
 /// Handle one accepted connection to completion, or until `running` clears.
-pub fn handle(mut stream: TcpStream, broadcaster: &Broadcaster, base: &Path, running: &AtomicBool) {
-    if stream.set_read_timeout(Some(PEEK_TIMEOUT)).is_err() {
+///
+/// `_slot` is the connection's reservation: holding it here releases it when
+/// this thread ends, panic included.
+pub(super) fn handle(
+    mut stream: TcpStream,
+    broadcaster: &Broadcaster,
+    base: &Path,
+    running: &AtomicBool,
+    limits: &Arc<Limits>,
+    _slot: Slot,
+) {
+    if stream.set_read_timeout(Some(PEEK_TIMEOUT)).is_err()
+        || stream.set_write_timeout(Some(WRITE_TIMEOUT)).is_err()
+    {
         return;
     }
     let Some(peeked) = complete_head(&mut stream, running) else {
         return;
     };
+    // Ahead of routing, so the gate covers `/ws`, `/api/status` and the
+    // embedded assets alike.
+    if !http::host_allowed(peeked.host.as_deref()) {
+        fail(&mut stream, 403, "Forbidden", b"host not allowed");
+        return;
+    }
     if peeked.path == "/ws" && peeked.upgrade_websocket {
-        handle_websocket_upgrade(stream, &peeked, broadcaster, running);
+        handle_websocket_upgrade(stream, &peeked, broadcaster, running, limits);
         return;
     }
 
@@ -57,20 +104,32 @@ pub fn handle(mut stream: TcpStream, broadcaster: &Broadcaster, base: &Path, run
     handle_route(&mut stream, &head, broadcaster, base);
 }
 
-/// Upgrade an accepted `/ws` connection, or reject it if the origin check
-/// fails. `stream`'s head was only peeked, not consumed, above; on success
-/// that leaves the handshake bytes unread for `tungstenite::accept` to
-/// parse itself.
+/// Upgrade an accepted `/ws` connection, or reject it if the origin check or
+/// the WebSocket sub-cap turns it away. `stream`'s head was only peeked, not
+/// consumed, above; on success that leaves the handshake bytes unread for
+/// `tungstenite::accept` to parse itself.
 fn handle_websocket_upgrade(
     mut stream: TcpStream,
     peeked: &RequestHead,
     broadcaster: &Broadcaster,
     running: &AtomicBool,
+    limits: &Arc<Limits>,
 ) {
     if !http::origin_allowed(peeked.origin.as_deref()) {
         fail(&mut stream, 403, "Forbidden", b"origin not allowed");
         return;
     }
+    // Held until this subscription ends, so open tabs cannot consume the
+    // connection slots ordinary requests need.
+    let Some(_slot) = Slot::acquire(limits, Lane::WebSocket) else {
+        fail(
+            &mut stream,
+            503,
+            "Service Unavailable",
+            b"dashboard subscription limit reached",
+        );
+        return;
+    };
     if stream.set_read_timeout(None).is_ok() {
         ws::handle(stream, broadcaster.subscribe(), running);
     }
@@ -94,7 +153,8 @@ fn drain_pending(stream: &mut TcpStream) {
     }
     let mut chunk = [0_u8; 4096];
     let mut drained = 0;
-    while drained < MAX_DRAIN_BYTES {
+    let deadline = Instant::now() + DRAIN_DEADLINE;
+    while drained < MAX_DRAIN_BYTES && Instant::now() < deadline {
         match stream.read(&mut chunk) {
             Ok(0) | Err(_) => return,
             Ok(read) => drained += read,
@@ -102,8 +162,22 @@ fn drain_pending(stream: &mut TcpStream) {
     }
 }
 
+/// Turn a connection away because no connection slot was free, without
+/// occupying one. Runs on the accept loop, so it only drains and answers.
+pub(super) fn reject_overloaded(stream: &mut TcpStream) {
+    if stream.set_write_timeout(Some(WRITE_TIMEOUT)).is_err() {
+        return;
+    }
+    fail(
+        stream,
+        503,
+        "Service Unavailable",
+        b"dashboard connection limit reached",
+    );
+}
+
 /// Drain the unread request bytes, then write a plain-text error response.
-fn fail(stream: &mut TcpStream, status: u16, reason: &str, body: &[u8]) {
+pub(super) fn fail(stream: &mut TcpStream, status: u16, reason: &str, body: &[u8]) {
     drain_pending(stream);
     let _ = http::write_response(
         stream,
@@ -113,86 +187,6 @@ fn fail(stream: &mut TcpStream, status: u16, reason: &str, body: &[u8]) {
         body,
         true,
     );
-}
-
-/// Outcome of one peek-and-parse attempt for a request head.
-enum HeadAttempt {
-    /// The peeked bytes hold a complete head.
-    Ready(RequestHead),
-    /// The head is still partial; peek again after a short sleep.
-    Retry,
-    /// The head can never complete (too large, timed out, or malformed); an
-    /// HTTP error response has already been written to `stream`.
-    Failed,
-}
-
-/// Write a plain-text HTTP error response and report the head as failed.
-fn fail_head(stream: &mut TcpStream, status: u16, reason: &str, body: &[u8]) -> HeadAttempt {
-    fail(stream, status, reason, body);
-    HeadAttempt::Failed
-}
-
-/// Peek up to `MAX_HEAD_BYTES` without consuming them, so `/ws` can later hand
-/// the socket to `tungstenite::accept` with the handshake bytes still unread,
-/// and classify the result as complete, retryable, or a terminal failure.
-fn peek_head(stream: &mut TcpStream, buffer: &mut [u8], started: Instant) -> HeadAttempt {
-    match stream.peek(buffer) {
-        Ok(0) => {
-            tracing::debug!("dashboard client closed before sending a request head");
-            HeadAttempt::Failed
-        }
-        Ok(read) => match http::parse_head(&buffer[..read]) {
-            Ok(Some(head)) => HeadAttempt::Ready(head),
-            Ok(None) if read >= MAX_HEAD_BYTES => fail_head(
-                stream,
-                431,
-                "Request Header Fields Too Large",
-                b"request head too large",
-            ),
-            Ok(None) if started.elapsed() >= HEAD_TIMEOUT => {
-                fail_head(stream, 408, "Request Timeout", b"request head timed out")
-            }
-            Ok(None) => HeadAttempt::Retry,
-            Err(error) => {
-                tracing::debug!("dashboard request head was invalid: {error}");
-                fail_head(stream, 400, "Bad Request", b"bad request")
-            }
-        },
-        // A client that connects and then says nothing times out every peek;
-        // once the budget is spent it gets the 408 this branch advertises.
-        Err(error)
-            if matches!(
-                error.kind(),
-                std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
-            ) =>
-        {
-            if started.elapsed() < HEAD_TIMEOUT {
-                HeadAttempt::Retry
-            } else {
-                fail_head(stream, 408, "Request Timeout", b"request head timed out")
-            }
-        }
-        Err(error) => {
-            tracing::debug!("dashboard request peek failed: {error}");
-            HeadAttempt::Failed
-        }
-    }
-}
-
-/// Peek-retry until the request head is complete, times out, overflows the
-/// head budget, or fails to parse; on any terminal outcome besides success,
-/// the caller has already had an HTTP error response written for it.
-fn complete_head(stream: &mut TcpStream, running: &AtomicBool) -> Option<RequestHead> {
-    let started = Instant::now();
-    let mut buffer = [0_u8; MAX_HEAD_BYTES];
-    while running.load(Ordering::SeqCst) {
-        match peek_head(stream, &mut buffer, started) {
-            HeadAttempt::Ready(head) => return Some(head),
-            HeadAttempt::Retry => std::thread::sleep(Duration::from_millis(5)),
-            HeadAttempt::Failed => return None,
-        }
-    }
-    None
 }
 
 fn handle_route(
@@ -242,29 +236,39 @@ fn serve_api(stream: &mut TcpStream, head: &RequestHead, broadcaster: &Broadcast
             "application/json; charset=utf-8",
             frame.as_bytes(),
         ),
-        Err(error) => respond(
-            stream,
-            head,
-            500,
-            "Internal Server Error",
-            "text/plain; charset=utf-8",
-            error.to_string().as_bytes(),
-        ),
+        Err(error) => {
+            tracing::warn!("dashboard could not collect a status snapshot: {error}");
+            respond(
+                stream,
+                head,
+                500,
+                "Internal Server Error",
+                "text/plain; charset=utf-8",
+                SNAPSHOT_UNAVAILABLE,
+            );
+        }
     }
 }
 
-fn serve_index(stream: &mut TcpStream, head: &RequestHead) {
-    match assets::index_html() {
-        Some(body) => respond(stream, head, 200, "OK", "text/html; charset=utf-8", body),
-        None => respond(
-            stream,
-            head,
+/// The response for the SPA entry page: the embedded page, or a 503 naming
+/// what to build when the bundle is absent.
+pub(super) fn index_response(
+    page: Option<&'static [u8]>,
+) -> (u16, &'static str, &'static str, &'static [u8]) {
+    match page {
+        Some(body) => (200, "OK", "text/html; charset=utf-8", body),
+        None => (
             503,
             "Service Unavailable",
             "text/plain; charset=utf-8",
             b"dashboard assets are not embedded; build web/dist and rebuild loom",
         ),
     }
+}
+
+fn serve_index(stream: &mut TcpStream, head: &RequestHead) {
+    let (status, reason, content_type, body) = index_response(assets::index_html());
+    respond(stream, head, status, reason, content_type, body);
 }
 
 /// Answer a routed request, omitting the body when the client sent HEAD.

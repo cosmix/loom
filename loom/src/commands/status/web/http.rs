@@ -16,6 +16,30 @@ pub struct RequestHead {
     pub path: String,
     pub upgrade_websocket: bool,
     pub origin: Option<String>,
+    pub host: Option<String>,
+}
+
+/// Read one header's value as UTF-8, if the request carries it.
+///
+/// A second copy of the header is an error rather than a first-one-wins pick.
+/// Both headers read here gate access, and RFC 9112 section 3.2 forbids a
+/// duplicate `Host` outright; taking the first value would let a request that
+/// pairs a loopback `Host` with an attacker's own pass the rebinding gate on
+/// the strength of a header the far end may never have intended to send.
+fn header_value(request: &httparse::Request<'_, '_>, name: &str) -> Result<Option<String>> {
+    let mut matching = request
+        .headers
+        .iter()
+        .filter(|header| header.name.eq_ignore_ascii_case(name));
+    let Some(header) = matching.next() else {
+        return Ok(None);
+    };
+    if matching.next().is_some() {
+        bail!("request carries more than one {name} header");
+    }
+    std::str::from_utf8(header.value)
+        .with_context(|| format!("{name} header is not UTF-8"))
+        .map(|value| Some(value.to_owned()))
 }
 
 /// Parse a complete request head, or return `None` while it remains partial.
@@ -42,18 +66,12 @@ pub fn parse_head(buf: &[u8]) -> Result<Option<RequestHead>> {
             && std::str::from_utf8(header.value)
                 .is_ok_and(|value| value.eq_ignore_ascii_case("websocket"))
     });
-    let origin = request
-        .headers
-        .iter()
-        .find(|header| header.name.eq_ignore_ascii_case("origin"))
-        .map(|header| std::str::from_utf8(header.value).context("Origin header is not UTF-8"))
-        .transpose()?
-        .map(str::to_owned);
     Ok(Some(RequestHead {
         method,
         path,
         upgrade_websocket,
-        origin,
+        origin: header_value(&request, "Origin")?,
+        host: header_value(&request, "Host")?,
     }))
 }
 
@@ -92,6 +110,25 @@ fn origin_host(authority: &str) -> &str {
     }
 }
 
+/// Whether `host` names the loopback interface.
+fn is_loopback_host(host: &str) -> bool {
+    LOOPBACK_HOSTS
+        .iter()
+        .any(|allowed| host.eq_ignore_ascii_case(allowed))
+}
+
+/// Whether the request's `Host` authority names the loopback interface.
+///
+/// This is the DNS-rebinding gate. A browser sends no `Origin` on a same-origin
+/// GET, so [`origin_allowed`] alone lets a page served from an attacker-owned
+/// name whose DNS record has been flipped to 127.0.0.1 read the ledger. That
+/// request still carries the attacker's name in `Host`. HTTP/1.1 mandates a
+/// `Host` header (RFC 9112 section 3.2), so an absent one is rejected rather
+/// than waved through.
+pub fn host_allowed(host: Option<&str>) -> bool {
+    host.is_some_and(|host| is_loopback_host(origin_host(host)))
+}
+
 /// Whether an absent or loopback HTTP(S) origin is permitted.
 pub fn origin_allowed(origin: Option<&str>) -> bool {
     let Some(origin) = origin else {
@@ -107,17 +144,23 @@ pub fn origin_allowed(origin: Option<&str>) -> bool {
     if authority.is_empty() || authority.contains('@') {
         return false;
     }
-    let host = origin_host(authority);
-    LOOPBACK_HOSTS
-        .iter()
-        .any(|allowed| host.eq_ignore_ascii_case(allowed))
+    is_loopback_host(origin_host(authority))
 }
+
+/// The dashboard's Content-Security-Policy.
+///
+/// `base-uri`, `form-action` and `frame-ancestors` have no `default-src`
+/// fallback, so each is stated. `connect-src 'self'` covers the page's
+/// WebSocket: CSP3 matches a same-origin `ws://` URL against `'self'`, and
+/// `web/src/api/ws.ts` builds its URL from `location`. `style-src` keeps
+/// `'unsafe-inline'` for React's inline styles.
+const CONTENT_SECURITY_POLICY: &str = "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
 
 /// Encode the status line and the dashboard's fixed security headers for a
 /// body of `content_length` bytes.
 fn response_head(status: u16, reason: &str, content_type: &str, content_length: usize) -> String {
     format!(
-        "HTTP/1.1 {status} {reason}\r\nContent-Length: {content_length}\r\nContent-Type: {content_type}\r\nCache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\nX-Frame-Options: DENY\r\nContent-Security-Policy: default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self' ws://127.0.0.1:* ws://localhost:*\r\nConnection: close\r\n\r\n"
+        "HTTP/1.1 {status} {reason}\r\nContent-Length: {content_length}\r\nContent-Type: {content_type}\r\nCache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\nX-Frame-Options: DENY\r\nContent-Security-Policy: {CONTENT_SECURITY_POLICY}\r\nConnection: close\r\n\r\n"
     )
 }
 

@@ -6,8 +6,8 @@
 //! `status::ui::tui::daemon_client` presents. The dashboard
 //! holds that token on the operator's behalf and then serves the same status
 //! data over `/api/status` and `/ws` to any process on the host that can reach
-//! 127.0.0.1 - including other local users - with only an `Origin` check to
-//! keep a browser on another site from reading it. That is the intended
+//! 127.0.0.1 - including other local users - with only `Host` and `Origin`
+//! checks to keep a browser on another site from reading it. That is the intended
 //! trade-off for an operator-run localhost dashboard, but it is a deliberate
 //! downgrade of the daemon's authentication model, not an oversight: do not
 //! bind this server to a non-loopback address without adding authentication.
@@ -15,7 +15,9 @@
 mod assets;
 mod broadcast;
 mod connection;
+mod head;
 mod http;
+mod limits;
 pub mod model;
 #[cfg(test)]
 mod tests;
@@ -67,22 +69,30 @@ pub fn execute(port: u16) -> Result<()> {
 pub fn serve(listener: TcpListener, base: PathBuf, running: Arc<AtomicBool>) -> Result<()> {
     listener.set_nonblocking(true)?;
     let broadcaster = broadcast::Broadcaster::spawn(base.clone(), running.clone());
+    let limits = limits::Limits::new();
     while running.load(Ordering::SeqCst) {
         match listener.accept() {
-            Ok((stream, _)) => {
+            Ok((mut stream, _)) => {
                 if let Err(error) = stream.set_nonblocking(false) {
                     tracing::warn!("dashboard could not configure a client socket: {error}");
                     continue;
                 }
+                let Some(slot) = limits::Slot::acquire(&limits, limits::Lane::Connection) else {
+                    connection::reject_overloaded(&mut stream);
+                    continue;
+                };
                 let broadcaster = broadcaster.clone();
                 let base = base.clone();
                 let running = running.clone();
+                let limits = limits.clone();
                 // One thread per connection, and the OS may refuse it; dropping
                 // that one client beats panicking the accept loop out from under
                 // every other.
                 if let Err(error) = thread::Builder::new()
                     .name("loom-dashboard-conn".to_owned())
-                    .spawn(move || connection::handle(stream, &broadcaster, &base, &running))
+                    .spawn(move || {
+                        connection::handle(stream, &broadcaster, &base, &running, &limits, slot)
+                    })
                 {
                     tracing::warn!("dashboard could not spawn a connection thread: {error}");
                 }

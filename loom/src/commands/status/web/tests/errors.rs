@@ -79,6 +79,26 @@ fn a_silent_client_is_answered_with_a_408() {
 }
 
 #[test]
+fn an_unreadable_work_dir_is_answered_with_a_500_that_names_no_path() {
+    if skip_without_loopback("an_unreadable_work_dir_is_answered_with_a_500_that_names_no_path") {
+        return;
+    }
+    let temp = tempfile::tempdir().expect("create temporary workspace");
+    // Never initialized, and never even created: no frame can be cached and no
+    // fresh file snapshot can be collected, which is the 500's only trigger.
+    let (port, running) = start(temp.path().join("missing"));
+    let response = request(port, "GET /api/status HTTP/1.1\r\nHost: localhost\r\n\r\n");
+    stop(running);
+    assert!(response.starts_with("HTTP/1.1 500"), "{response}");
+    assert_eq!(body(&response), "status snapshot unavailable");
+    assert!(
+        !response.contains(&temp.path().display().to_string()),
+        "the 500 body leaked a work-directory path: {response}"
+    );
+    assert_security_headers(&response);
+}
+
+#[test]
 fn head_omits_the_body_but_keeps_the_length() {
     if skip_without_loopback("head_omits_the_body_but_keeps_the_length") {
         return;

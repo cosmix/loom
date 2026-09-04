@@ -93,6 +93,13 @@ fn a_persistent_overflow_is_logged_once_and_clears_when_it_ends() {
 fn a_dead_peer_is_evicted_while_a_live_one_is_kept() {
     let (live_writer, mut live_reader) = UnixStream::pair().unwrap();
     let (dead_writer, dead_reader) = UnixStream::pair().unwrap();
+    // A bare `drop` only releases this thread's reference to the reader fd;
+    // another test thread can `fork` (via `std::process::Command`) at any
+    // moment and inherit a duplicate that keeps the socket alive until that
+    // child reaches its own `exec`, making eviction flaky. `shutdown` marks
+    // the socket itself as closed, so the write below fails deterministically
+    // no matter how many forked copies of the fd exist.
+    dead_reader.shutdown(std::net::Shutdown::Both).unwrap();
     drop(dead_reader);
     let mut subscribers = vec![live_writer, dead_writer];
     let mut oversized_logged = false;
@@ -108,6 +115,10 @@ fn a_dead_peer_is_evicted_while_a_live_one_is_kept() {
 fn a_dead_peer_is_evicted_even_while_the_payload_is_oversized() {
     let (live_writer, _live_reader) = UnixStream::pair().unwrap();
     let (dead_writer, dead_reader) = UnixStream::pair().unwrap();
+    // See the comment in `a_dead_peer_is_evicted_while_a_live_one_is_kept`: a
+    // concurrent `fork` elsewhere can hold a duplicate of this fd, so a bare
+    // `drop` alone would not make the write below fail deterministically.
+    dead_reader.shutdown(std::net::Shutdown::Both).unwrap();
     drop(dead_reader);
     let mut subscribers = vec![live_writer, dead_writer];
     let mut oversized_logged = false;

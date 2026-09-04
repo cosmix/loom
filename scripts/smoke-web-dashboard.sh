@@ -3,10 +3,17 @@
 set -euo pipefail
 
 bin=${1:?usage: $0 <loom-binary>}
+# `loom status --web` resolves its work directory from the current directory and
+# exits before binding when there is none. `.loom/work` is gitignored, so a clean
+# checkout has no such directory: the server runs from a scratch workspace of its
+# own rather than from wherever the caller happens to stand. That makes the
+# binary path relative to the caller, so resolve it before the subshell moves.
+bin=$(cd "$(dirname "$bin")" && pwd)/$(basename "$bin")
 out=$(mktemp "${TMPDIR:-/tmp}/loom-web-smoke.XXXXXX")
-"$bin" status --web 0 >"$out" 2>&1 &
+work=$(mktemp -d "${TMPDIR:-/tmp}/loom-web-smoke-work.XXXXXX") && [ -n "$work" ] && mkdir -p "$work/.loom/work"
+(cd "$work" && exec "$bin" status --web 0) >"$out" 2>&1 &
 pid=$!
-trap 'kill "$pid" 2>/dev/null || true; rm -f "$out"' EXIT
+trap 'kill "$pid" 2>/dev/null || true; rm -f "$out"; rm -rf "$work"' EXIT
 
 port=""
 for _ in $(seq 1 100); do
@@ -27,4 +34,6 @@ code=$(curl -s -o /dev/null -w '%{http_code}' "$base/assets/nope.js")
 [ "$code" = "404" ] || { echo "expected 404 for a missing asset, got $code"; exit 1; }
 code=$(curl -s -o /dev/null -w '%{http_code}' -H 'Origin: http://evil.example' "$base/api/status")
 [ "$code" = "403" ] || { echo "expected 403 for a foreign origin, got $code"; exit 1; }
+code=$(curl -s -o /dev/null -w '%{http_code}' -H 'Host: evil.example' "$base/api/status")
+[ "$code" = "403" ] || { echo "expected 403 for a rebound host, got $code"; exit 1; }
 echo "smoke-web-dashboard: ok on port $port"

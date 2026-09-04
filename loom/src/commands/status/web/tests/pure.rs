@@ -2,6 +2,7 @@
 //! lookup, routing, and daemon-response classification. None of these open a
 //! socket.
 
+use std::panic::AssertUnwindSafe;
 use std::sync::mpsc::TryRecvError;
 use std::time::Duration;
 
@@ -12,6 +13,7 @@ use crate::cli::Cli;
 use crate::commands::status::data::StatusData;
 use crate::commands::status::web::broadcast::{self, DaemonStep, SUBSCRIBER_QUEUE_DEPTH};
 use crate::commands::status::web::connection::{self, Route};
+use crate::commands::status::web::limits::{Lane, Limits, Slot, MAX_CONNECTIONS, MAX_WEBSOCKETS};
 use crate::commands::status::web::model::{SnapshotSource, WebSnapshot};
 use crate::commands::status::web::{assets, http, DEFAULT_PORT};
 use crate::daemon::Response;
@@ -27,6 +29,7 @@ fn parse_head_reads_method_path_and_upgrade() {
     assert_eq!(head.path, "/ws");
     assert!(head.upgrade_websocket);
     assert_eq!(head.origin.as_deref(), Some("http://127.0.0.1:7373"));
+    assert_eq!(head.host.as_deref(), Some("a"));
 }
 
 #[test]
@@ -34,6 +37,19 @@ fn parse_head_returns_none_on_partial() {
     assert!(http::parse_head(b"GET / HTTP/1.1\r\nHost: localhost\r\n")
         .expect("parse partial request")
         .is_none());
+}
+
+#[test]
+fn parse_head_rejects_duplicate_gate_headers() {
+    for request in [
+        b"GET / HTTP/1.1\r\nHost: 127.0.0.1\r\nHost: evil.example\r\n\r\n".as_slice(),
+        b"GET / HTTP/1.1\r\nHost: 127.0.0.1\r\nOrigin: http://127.0.0.1\r\nOrigin: http://evil.example\r\n\r\n".as_slice(),
+    ] {
+        assert!(
+            http::parse_head(request).is_err(),
+            "a duplicated gate header must not resolve to its first value"
+        );
+    }
 }
 
 #[test]
@@ -59,6 +75,24 @@ fn origin_allowed_accepts_loopback_and_rejects_foreign() {
 }
 
 #[test]
+fn host_allowed_accepts_loopback_and_rejects_everything_else() {
+    for host in [
+        "127.0.0.1:41599",
+        "127.0.0.1",
+        "localhost",
+        "LOCALHOST",
+        "[::1]:7373",
+    ] {
+        assert!(http::host_allowed(Some(host)), "{host}");
+    }
+    for host in ["evil.example", "127.0.0.1.evil.example", "loom.test:7373"] {
+        assert!(!http::host_allowed(Some(host)), "{host}");
+    }
+    // HTTP/1.1 mandates Host, so an absent one is a rejection.
+    assert!(!http::host_allowed(None));
+}
+
+#[test]
 fn mime_for_known_extensions() {
     assert_eq!(
         assets::mime_for("assets/index.js"),
@@ -72,8 +106,29 @@ fn mime_for_known_extensions() {
 #[test]
 fn route_prefers_assets_then_api_then_spa_fallback() {
     assert_eq!(connection::route("/api/status"), Route::Api);
+    assert_eq!(connection::route("/api/bogus"), Route::Missing);
     assert_eq!(connection::route("/assets/nope.js"), Route::Missing);
     assert_eq!(connection::route("/stages/anything"), Route::Spa);
+}
+
+#[test]
+fn index_response_reports_a_missing_bundle() {
+    let (status, _, content_type, body) = connection::index_response(None);
+    assert_eq!(status, 503);
+    assert_eq!(content_type, "text/plain; charset=utf-8");
+    assert!(String::from_utf8_lossy(body).contains("web/dist"));
+    let (status, _, content_type, body) = connection::index_response(Some(b"<div id=\"root\">"));
+    assert_eq!(status, 200);
+    assert_eq!(content_type, "text/html; charset=utf-8");
+    assert_eq!(body, b"<div id=\"root\">");
+}
+
+#[test]
+fn embedded_bundle_is_not_empty() {
+    assert!(
+        !assets::WEB_ASSETS.is_empty(),
+        "the dashboard bundle is not embedded; run `cd web && bun install && bun run build`, then rebuild loom"
+    );
 }
 
 #[test]
@@ -139,6 +194,26 @@ fn publish_skips_an_unchanged_tree() {
 }
 
 #[test]
+fn poll_files_once_carries_the_degrade_notice() {
+    let (_temp, base) = workspace();
+    let work_dir = WorkDir::new(&base).expect("build work dir");
+    let broadcaster = broadcast::Broadcaster::new();
+    let receiver = broadcaster.subscribe();
+    broadcast::poll_files_once(
+        &broadcaster,
+        &work_dir,
+        work_dir.root(),
+        Some("daemon lane degraded"),
+    )
+    .expect("file poll carrying a notice");
+    let frame = receiver
+        .recv_timeout(Duration::from_secs(1))
+        .expect("degraded frame");
+    let snapshot: WebSnapshot = serde_json::from_str(&frame).expect("snapshot JSON");
+    assert_eq!(snapshot.notice.as_deref(), Some("daemon lane degraded"));
+}
+
+#[test]
 fn a_stalled_subscriber_is_dropped_once_its_queue_fills() {
     let broadcaster = broadcast::Broadcaster::new();
     let receiver = broadcaster.subscribe();
@@ -182,5 +257,79 @@ fn every_http_response_carries_the_security_headers() {
             String::from_utf8(http::response_bytes(status, reason, "text/plain", b"body"))
                 .expect("response bytes are UTF-8");
         assert_security_headers(&response);
+        for directive in [
+            "connect-src 'self';",
+            "base-uri 'none';",
+            "form-action 'none';",
+            "frame-ancestors 'none'",
+        ] {
+            assert!(response.contains(directive), "missing {directive}");
+        }
+        assert!(
+            !response.contains("ws://"),
+            "connect-src must not name loopback WebSocket ports"
+        );
     }
+}
+
+#[test]
+fn connection_slots_are_admitted_to_the_cap_and_refused_past_it() {
+    let limits = Limits::new();
+    let held = (0..MAX_CONNECTIONS)
+        .map(|index| {
+            Slot::acquire(&limits, Lane::Connection)
+                .unwrap_or_else(|| panic!("connection slot {index} should be free"))
+        })
+        .collect::<Vec<_>>();
+
+    assert!(Slot::acquire(&limits, Lane::Connection).is_none());
+    drop(held);
+    assert!(Slot::acquire(&limits, Lane::Connection).is_some());
+}
+
+#[test]
+fn websocket_subscriptions_leave_connection_slots_for_the_page() {
+    let limits = Limits::new();
+    // A live `/ws` thread holds a slot in both lanes, so the fixture does too.
+    let subscriptions = (0..MAX_WEBSOCKETS)
+        .map(|index| {
+            (
+                Slot::acquire(&limits, Lane::Connection)
+                    .unwrap_or_else(|| panic!("connection slot {index} should be free")),
+                Slot::acquire(&limits, Lane::WebSocket)
+                    .unwrap_or_else(|| panic!("websocket slot {index} should be free")),
+            )
+        })
+        .collect::<Vec<_>>();
+
+    assert!(Slot::acquire(&limits, Lane::WebSocket).is_none());
+    let reserve = (0..MAX_CONNECTIONS - MAX_WEBSOCKETS)
+        .map(|index| {
+            Slot::acquire(&limits, Lane::Connection)
+                .unwrap_or_else(|| panic!("reserved slot {index} should be free"))
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(reserve.len(), MAX_CONNECTIONS - MAX_WEBSOCKETS);
+    drop(subscriptions);
+}
+
+#[test]
+fn a_panicking_connection_thread_returns_its_slot() {
+    let limits = Limits::new();
+    let held = (0..MAX_CONNECTIONS - 1)
+        .map(|index| {
+            Slot::acquire(&limits, Lane::Connection)
+                .unwrap_or_else(|| panic!("connection slot {index} should be free"))
+        })
+        .collect::<Vec<_>>();
+
+    let outcome = std::panic::catch_unwind(AssertUnwindSafe(|| {
+        let _slot = Slot::acquire(&limits, Lane::Connection).expect("last slot should be free");
+        assert!(Slot::acquire(&limits, Lane::Connection).is_none());
+        panic!("connection thread panicked while holding a slot");
+    }));
+
+    assert!(outcome.is_err(), "the closure was expected to panic");
+    assert!(Slot::acquire(&limits, Lane::Connection).is_some());
+    drop(held);
 }

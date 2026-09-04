@@ -50,39 +50,41 @@ export const failureInfoSchema = z.object({
   detected_at: z.string(),
   evidence: z.array(z.string()),
 });
-export const stageSummarySchema = z.object({
-  id: z.string(),
-  name: z.string(),
-  status: stageStatusSchema,
-  stage_type: stageTypeSchema,
-  dependencies: z.array(z.string()),
-  context_tokens: z.number().int().nullable(),
-  elapsed_secs: z.number().int().nullable(),
-  execution_secs: z.number().int().nullable(),
-  base_branch: z.string().nullable(),
-  base_merged_from: z.array(z.string()),
-  failure_info: failureInfoSchema.nullable(),
-  activity_status: activityStatusSchema,
-  last_tool: z.string().nullable(),
-  last_activity: z.string().nullable(),
-  staleness_secs: z.number().int().nullable(),
-  context_ceiling_tokens: z.number().int().nullable(),
-  review_reason: z.string().nullable(),
-  merged: z.boolean(),
-  cleanup_warning: z.string().nullable().optional(),
-  held: z.boolean(),
-  retry_count: z.number().int(),
-  max_retries: z.number().int().nullable(),
-  pid: z.number().int().nullable(),
-  session_alive: z.boolean(),
-  model: z.string(),
-  session_type: sessionTypeSchema.nullable(),
-  incoherence: z.string().nullable(),
-  execution_models: z.array(z.string()),
-  dispute_count: z.number().int(),
-  judge_heartbeat_secs: z.number().int().nullable(),
-  session_backend: sessionBackendSchema.nullable(),
-});
+export const stageSummarySchema = z
+  .object({
+    id: z.string(),
+    name: z.string(),
+    status: stageStatusSchema,
+    stage_type: stageTypeSchema,
+    dependencies: z.array(z.string()),
+    context_tokens: z.number().int().nullable(),
+    elapsed_secs: z.number().int().nullable(),
+    execution_secs: z.number().int().nullable(),
+    base_branch: z.string().nullable(),
+    base_merged_from: z.array(z.string()),
+    failure_info: failureInfoSchema.nullable(),
+    activity_status: activityStatusSchema,
+    last_tool: z.string().nullable(),
+    last_activity: z.string().nullable(),
+    staleness_secs: z.number().int().nullable(),
+    context_ceiling_tokens: z.number().int().nullable(),
+    review_reason: z.string().nullable(),
+    merged: z.boolean(),
+    cleanup_warning: z.string().nullable().optional(),
+    held: z.boolean(),
+    retry_count: z.number().int(),
+    max_retries: z.number().int().nullable(),
+    pid: z.number().int().nullable(),
+    session_alive: z.boolean(),
+    model: z.string(),
+    session_type: sessionTypeSchema.nullable(),
+    incoherence: z.string().nullable(),
+    execution_models: z.array(z.string()),
+    dispute_count: z.number().int(),
+    judge_heartbeat_secs: z.number().int().nullable(),
+    session_backend: sessionBackendSchema.nullable(),
+  })
+  .strict();
 export const mergeSummarySchema = z.object({
   merged: z.array(z.string()),
   pending: z.array(z.string()),
@@ -137,16 +139,18 @@ export const alertSchema = z.object({
   text: z.string(),
 });
 export const daemonStateSchema = z.enum(["running", "process-only", "not-running", "unreachable"]);
-export const snapshotSchema = z.object({
-  status: statusDataSchema,
-  attention: z.array(attentionSchema),
-  alerts: z.array(alertSchema),
-  daemon: daemonStateSchema,
-  tick_age_secs: z.number().int().nullable(),
-  source: z.enum(["daemon", "files"]),
-  notice: z.string().optional(),
-  generated_at: z.string(),
-});
+export const snapshotSchema = z
+  .object({
+    status: statusDataSchema,
+    attention: z.array(attentionSchema),
+    alerts: z.array(alertSchema),
+    daemon: daemonStateSchema,
+    tick_age_secs: z.number().int().nullable(),
+    source: z.enum(["daemon", "files"]),
+    notice: z.string().optional(),
+    generated_at: z.string(),
+  })
+  .strict();
 
 export type StageStatus = z.infer<typeof stageStatusSchema>;
 export type StageSummary = z.infer<typeof stageSummarySchema>;

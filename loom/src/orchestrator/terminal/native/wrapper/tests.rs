@@ -1,6 +1,33 @@
 use super::*;
 use tempfile::TempDir;
 
+/// Execs of a just-written wrapper script transiently fail with `ETXTBSY` when
+/// a sibling test thread forks between the write and the spawn: the child
+/// holds a duplicate of the write fd until its own exec closes it. Retry until
+/// that window passes.
+///
+/// Sibling of `retry_past_etxtbsy` in `commands/self_update/tests.rs` - that
+/// one is `anyhow::Result`-based for its callers; this one works directly on
+/// the `std::io::Result` that `Command::output`/`Command::status` return.
+fn retry_past_etxtbsy<T>(mut attempt: impl FnMut() -> std::io::Result<T>) -> std::io::Result<T> {
+    const ETXTBSY: i32 = 26; // "Text file busy"
+    const MAX_ATTEMPTS: u32 = 50;
+
+    let mut attempts = 0;
+    loop {
+        attempts += 1;
+        match attempt() {
+            Ok(value) => return Ok(value),
+            Err(error) => {
+                if error.raw_os_error() != Some(ETXTBSY) || attempts >= MAX_ATTEMPTS {
+                    return Err(error);
+                }
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+        }
+    }
+}
+
 #[test]
 fn test_wrapper_script_creation() {
     let temp_dir = TempDir::new().unwrap();
@@ -258,7 +285,7 @@ fn wrapper_stderr_capture_survives_execution() {
     // `output()` reads the pipes to EOF before returning, and `tee` holds fd 1
     // open until it has flushed, so the log is complete by the time this call
     // comes back.
-    let output = std::process::Command::new(&wrapper_path).output().unwrap();
+    let output = retry_past_etxtbsy(|| std::process::Command::new(&wrapper_path).output()).unwrap();
     assert!(output.status.success());
 
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -289,11 +316,13 @@ fn wrapper_executes_with_minimal_environment_and_no_ambient_secret() {
     )
     .unwrap();
 
-    let status = std::process::Command::new(&wrapper)
-        .env("ANTHROPIC_API_KEY", "ambient-secret-canary")
-        .env("GITHUB_TOKEN", "ambient-secret-canary")
-        .status()
-        .unwrap();
+    let status = retry_past_etxtbsy(|| {
+        std::process::Command::new(&wrapper)
+            .env("ANTHROPIC_API_KEY", "ambient-secret-canary")
+            .env("GITHUB_TOKEN", "ambient-secret-canary")
+            .status()
+    })
+    .unwrap();
     assert!(status.success());
 
     let environment = fs::read_to_string(output_path).unwrap();

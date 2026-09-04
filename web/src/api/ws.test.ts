@@ -93,7 +93,7 @@ afterEach(() => {
 });
 
 describe("status socket", () => {
-  it("fetches the initial status and opens the expected socket URL", () => {
+  it("fetches the initial status and opens the expected socket URL", async () => {
     const store = createStore();
     const fetchImpl = vi.fn(async () => ({ json: async () => fixture })) as unknown as typeof fetch;
     const dispose = connectStatusSocket(store, dependencies(fetchImpl));
@@ -102,8 +102,29 @@ describe("status socket", () => {
     expect(FakeSocket.instances[0].url).toBe("ws://127.0.0.1:7373/ws");
     expect(fetchImpl).toHaveBeenCalledWith("/api/status", { cache: "no-store" });
 
+    // Flush the fetch().then(json).then(receiveSnapshot) chain before the
+    // socket's first frame arrives.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(store.get(snapshotAtom)?.status.plan_name).toBe("Web Dashboard Fixture");
+
     FakeSocket.instances[0].open();
     expect(store.get(connectionAtom).phase).toBe("live");
+    dispose();
+  });
+
+  it("logs and leaves the snapshot empty when the initial status fetch fails", async () => {
+    const store = createStore();
+    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const failing = vi.fn(async () => {
+      throw new Error("network down");
+    }) as unknown as typeof fetch;
+    const dispose = connectStatusSocket(store, dependencies(failing));
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(error).toHaveBeenCalledWith("dashboard: status fetch failed", expect.any(Error));
+    expect(store.get(snapshotAtom)).toBeNull();
+    error.mockRestore();
     dispose();
   });
 
@@ -238,6 +259,27 @@ describe("status socket", () => {
       globalThis.setTimeout = originalSetTimeout;
       globalThis.clearTimeout = originalClearTimeout;
     }
+  });
+
+  it("ignores a stale socket's close event once a newer socket has already opened", () => {
+    const store = createStore();
+    const dispose = connectStatusSocket(store, dependencies());
+    const first = FakeSocket.instances[0];
+
+    first.open();
+    first.closeFromServer("lost connection");
+    expect(timers).toHaveLength(1);
+
+    // The reconnect timer fires and opens a fresh socket before the stale
+    // socket's own close event arrives.
+    fireNextTimer();
+    expect(FakeSocket.instances).toHaveLength(2);
+
+    first.closeFromServer("stale close, arrives late");
+
+    expect(FakeSocket.instances).toHaveLength(2);
+    expect(timers).toHaveLength(1);
+    dispose();
   });
 
   it("reconnects after a socket error without double-scheduling its close", () => {
