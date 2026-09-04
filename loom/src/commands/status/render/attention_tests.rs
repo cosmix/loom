@@ -160,6 +160,10 @@ fn cleanup_warning_renders_as_a_single_line_with_a_stage_file_hint() {
     // and feeds an embedded newline directly to prove `render_cleanup_warning`
     // itself no longer special-cases multiple lines - the dead `.lines()`
     // loop this pins the removal of would otherwise indent each line again.
+    // The assertion below is split in two because `warning.yellow()` inserts
+    // an escape sequence between the label and the text when stdout is a
+    // terminal (as in the pre-push hook), and a substring spanning that
+    // boundary only matches under a pipe.
     let mut stage = make_stage_summary("cleanup-stage", StageStatus::Completed);
     stage.cleanup_warning = Some("failed: worktree busy\nretrying next cycle".to_string());
     let stages = vec![stage];
@@ -168,7 +172,11 @@ fn cleanup_warning_renders_as_a_single_line_with_a_stage_file_hint() {
     let output_str = String::from_utf8(output).unwrap();
 
     assert!(
-        output_str.contains("Cleanup warning: failed: worktree busy\nretrying next cycle"),
+        output_str.contains("Cleanup warning: "),
+        "output: {output_str}"
+    );
+    assert!(
+        output_str.contains("failed: worktree busy\nretrying next cycle"),
         "output: {output_str}"
     );
     assert!(
