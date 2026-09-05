@@ -167,17 +167,20 @@ function Canvas({ stages }: { stages: StageSummary[] }) {
 }
 
 /// The ids the focus emphasises, or null when nothing is focused. A pinned
-/// stage that has since left the snapshot focuses nothing.
+/// stage that has since left the snapshot focuses nothing, and neither does
+/// a hovered status chip that has lost its last stage and unmounted under
+/// the pointer without firing its mouse-leave.
 function tracedIds(stages: readonly StageSummary[], focus: Focus): Set<string> | null {
   if (focus === null) return null;
   if (focus.kind === "status") {
-    return new Set(stages.filter((stage) => stage.status === focus.status).map((s) => s.id));
+    const traced = stages.filter((stage) => stage.status === focus.status).map((s) => s.id);
+    return traced.length === 0 ? null : new Set(traced);
   }
   if (!stages.some((stage) => stage.id === focus.id)) return null;
   return lineage(stages, focus.id);
 }
 
-function buildNodes(
+export function buildNodes(
   layout: GraphLayout,
   stages: readonly StageSummary[],
   focus: Focus,
@@ -189,11 +192,18 @@ function buildNodes(
   const sweep = [...layout.nodes].sort((a, b) => a.y - b.y || a.x - b.x);
   const index = new Map(sweep.map((node, position) => [node.stage.id, position]));
 
+  // Every node declares the size it renders at: React Flow drops a node's
+  // handle bounds when a node object arrives without `measured`, and it draws
+  // no edge without handle bounds on both ends — and every snapshot frame
+  // rebuilds these objects.
   const captions: RankNodeType[] = layout.ranks.map(({ rank, y }) => ({
     id: `rank:${rank}`,
     type: "rank",
     position: { x: layout.left - CAPTION_WIDTH - CAPTION_GAP, y: y - CAPTION_HEIGHT / 2 },
     data: { rank },
+    width: CAPTION_WIDTH,
+    height: CAPTION_HEIGHT,
+    measured: { width: CAPTION_WIDTH, height: CAPTION_HEIGHT },
     selectable: false,
     focusable: false,
     draggable: false,
@@ -206,12 +216,13 @@ function buildNodes(
     position: { x, y },
     width,
     height,
+    measured: { width, height },
     data: { stage, index: index.get(stage.id) ?? 0, emphasis: emphasis(stage.id) },
   }));
   return [...captions, ...cards];
 }
 
-function buildEdges(
+export function buildEdges(
   layout: GraphLayout,
   stages: readonly StageSummary[],
   focus: Focus,
