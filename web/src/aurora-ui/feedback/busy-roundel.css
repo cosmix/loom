@@ -1,0 +1,173 @@
+/**
+ * Styling for `BusyRoundel` (`feedback/BusyRoundel.tsx`). Import once:
+ * `@import "./feedback/busy-roundel.css";`
+ */
+
+.aurora-roundel-wrap {
+  /*
+   * Recipe-local knobs live HERE, on the wrapper, rather than on
+   * `.aurora-roundel` itself — this is the element the component's `style`
+   * prop (from the `size` prop) and `className` actually reach. A custom
+   * property declared directly on `.aurora-roundel` would be the element's
+   * OWN declaration, and an element's own declaration always beats a value
+   * inherited from an ancestor — so an inline override or a scoped selector
+   * on the wrapper would have no effect on the disc. Declaring the defaults
+   * up here is what lets an override actually win.
+   *
+   * The colour pair is a consumer override too
+   * (`style={{ '--aurora-roundel-a': ... }}` or a scoped selector), but the
+   * defaults are deliberately theme-independent LITERALS, not
+   * `--foreground`/`--background` tokens. The disc is monochrome by design,
+   * and its whole legibility argument is maximum separation over whatever
+   * imagery sits underneath it — flipping the pair with a light theme would
+   * undo that. Whatever the surrounding art looks like, one of the two
+   * quadrant colours is always far from it, so the disc can never sink into
+   * the background the way a single mid-tone would. The cost is that the
+   * quadrants no longer read as one object of near-equal lightness turning,
+   * so the gloss overlay below does that job instead, shading the disc as a
+   * bead lit from above. No border: the quadrants alone form the circle.
+   */
+  --aurora-roundel-size: 1rem;
+  --aurora-roundel-a: #f2f5f8;
+  --aurora-roundel-b: #070a0f;
+
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/*
+ * The classic OS "busy disc": four alternating quadrants in one
+ * `conic-gradient` declaration, and nothing else. No ring, and no drawn
+ * cross — the quadrant boundaries ARE the cross, and an explicit hairline
+ * cross plus a 1px border only makes a 16px disc look fussy.
+ * `--aurora-roundel-size` is a recipe-local custom property (declared on
+ * `.aurora-roundel-wrap`, consumed here) so the disc's size is one edit.
+ *
+ * IDLE RESTS UPRIGHT. The animation is added by the `data-busy` selector and
+ * REMOVED when idle, rather than merely paused: pausing freezes the disc at
+ * whatever arbitrary angle the last frame left it on, so a stopped indicator
+ * sits visibly askew. With the animation gone the transform falls back to
+ * this rule's own `rotate(0turn)`, and the `transform` transition eases it
+ * there — the quadrant boundaries land on the vertical/horizontal axes,
+ * which is the upright cross a stopped disc should show. The cost is that a
+ * rapid busy→idle→busy flicker restarts the spin from 0° instead of
+ * resuming; that is the right trade, since the resting state is the one a
+ * user actually stops to look at.
+ */
+.aurora-roundel {
+  position: relative;
+  display: block;
+  width: var(--aurora-roundel-size);
+  height: var(--aurora-roundel-size);
+  border-radius: 50%;
+  background: conic-gradient(
+    var(--aurora-roundel-a) 0deg 90deg,
+    var(--aurora-roundel-b) 90deg 180deg,
+    var(--aurora-roundel-a) 180deg 270deg,
+    var(--aurora-roundel-b) 270deg 360deg
+  );
+  /* The ring used to carry edge definition against imagery; with it gone, a
+     tight dark drop-shadow does that job without drawing a visible outline. */
+  filter: drop-shadow(0 1px 2px rgb(0 0 0 / 0.85));
+  opacity: 0.6;
+  transform: rotate(0turn);
+  /* The kit has no shared motion-duration tokens (see `top-menu/app-header.css`,
+     which writes plain `150ms ease`), so these are literal rather than
+     `var(--dur-base)`/`var(--ease-out)` references. */
+  transition:
+    opacity 220ms cubic-bezier(0.16, 1, 0.3, 1),
+    transform 220ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.aurora-roundel[data-busy='true'] {
+  opacity: 1;
+  animation: aurora-roundel-spin 1.6s linear infinite;
+}
+
+@keyframes aurora-roundel-spin {
+  from {
+    transform: rotate(0turn);
+  }
+  to {
+    transform: rotate(1turn);
+  }
+}
+
+/*
+ * The gloss — a SEPARATE, NON-ROTATING overlay stacked on the disc.
+ *
+ * It cannot be a pseudo-element on the disc itself: the disc carries the spin
+ * transform, which applies to its pseudo-elements too, so the highlight would
+ * travel around with the quadrants and read as a fifth moving part rather than
+ * as light falling on a bead. It sits in the wrapper instead, which never
+ * transforms, so the sheen stays pinned to the top edge while the disc turns
+ * underneath it. A real sibling element rather than `.aurora-roundel-wrap::after`
+ * so the idle dimming below can be a plain sibling selector off `data-busy`.
+ *
+ * Two achromatic, alpha-only layers: the sheen over the top half, and a light
+ * occlusion along the bottom.
+ *
+ * THE SHEEN IS A SHAPE, NOT A GLOW — that is the whole difference between
+ * this reading as glass and reading as a mistake. A soft-edged highlight near
+ * the top has a real fault: a highlight that fades out has no edge, so on the
+ * white quadrants there is nothing to see at all, and the disc looks like one
+ * quadrant picked up dirt rather than like a lit object.
+ *
+ * So the sheen runs from the top rim down to just ABOVE the equator and stops
+ * there on a defined edge: the near-coincident 69%/70% stops turn what would
+ * be a fade into a boundary. Ending a little high is deliberate — a
+ * reflection that stops exactly on the equator halves the disc and reads as a
+ * two-tone paint job rather than as light on a curved surface. That boundary
+ * is a step in lightness, which means it is visible over a white quadrant and
+ * a black one alike — the reflection survives every quarter turn instead of
+ * appearing and vanishing. It peaks near half alpha rather than at white so
+ * the quadrant colour still reads THROUGH it, which is the other half of what
+ * says glass rather than paint.
+ *
+ * The 180%-wide radius is what keeps that edge ALMOST HORIZONTAL. The
+ * gradient ellipse is far wider than the disc, so only its flattest arc
+ * crosses the visible circle — the edge sags about 5% from centre to rim
+ * instead of curving into an obvious oval sitting on top of the artwork.
+ * A tighter ellipse reads as a pasted-on lens; a dead-straight line reads as
+ * a crop. The slight sag is the dome.
+ *
+ * The bottom occlusion then does for the lower half what the sheen does for
+ * the upper: without it the disc below the equator is flat, and a dome lit
+ * only from above with no falloff underneath reads as a sticker.
+ */
+.aurora-roundel-gloss {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border-radius: 50%;
+  background:
+    radial-gradient(
+      180% 81% at 50% -12%,
+      rgb(255 255 255 / 0.5),
+      rgb(255 255 255 / 0.3) 55%,
+      rgb(255 255 255 / 0.22) 69%,
+      transparent 70%
+    ),
+    radial-gradient(80% 55% at 50% 112%, rgb(0 0 0 / 0.22), transparent 58%);
+  /* Tracks the disc's own idle dimming, and eases on the same curve: a
+     full-strength highlight over a dimmed disc stops looking like the disc's
+     own surface and starts looking like a separate mark sitting on top of it. */
+  opacity: 0.6;
+  transition: opacity 220ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.aurora-roundel[data-busy='true'] ~ .aurora-roundel-gloss {
+  opacity: 1;
+}
+
+/* Rotation stops entirely under reduced motion; the busy/idle OPACITY signal
+   stays, so presence still honestly communicates state without motion. */
+@media (prefers-reduced-motion: reduce) {
+  .aurora-roundel,
+  .aurora-roundel[data-busy='true'] {
+    animation: none;
+    transition: opacity 220ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+}

@@ -46,6 +46,25 @@ export function stateMeta(status: StageStatus): StateMeta {
   return STATE_META[status];
 }
 
+/// Which caution tape a state wears: red for a failure the daemon could not
+/// get past, amber for a state waiting on a person or a merge, none otherwise.
+export function hazardTone(status: StageStatus): "error" | "warning" | null {
+  switch (status) {
+    case "blocked":
+    case "completed-with-failures":
+    case "merge-blocked":
+      return "error";
+    case "merge-conflict":
+    case "needs-human-review":
+    case "needs-adjudication":
+    case "waiting-for-input":
+    case "needs-handoff":
+      return "warning";
+    default:
+      return null;
+  }
+}
+
 export function failureLabel(type: FailureType): string {
   const labels: Record<FailureType, string> = {
     "session-crash": "crash",
@@ -152,6 +171,8 @@ export function contextUsage(stage: StageSummary): {
   tokens: number;
   ceiling: number;
   percent: number;
+  /// Segments of the five-cell meter to light: a cell lights once usage
+  /// passes its midpoint, so 39% shows two cells, not one.
   filled: number;
   health: "green" | "yellow" | "red";
 } | null {
@@ -166,7 +187,7 @@ export function contextUsage(stage: StageSummary): {
     tokens,
     ceiling,
     percent: Math.round(ratio * 100),
-    filled: Math.max(0, Math.min(5, Math.floor(ratio * 5))),
+    filled: Math.max(0, Math.min(5, Math.round(ratio * 5))),
     health: ratio >= 0.9 ? "red" : ratio >= 0.6 ? "yellow" : "green",
   };
 }

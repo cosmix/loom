@@ -2,6 +2,7 @@ import { cn } from "cn";
 import { Link, useNavigate } from "react-router";
 
 import type { StageSummary } from "@/api/schema";
+import { ActivityRoundel } from "@/components/activity-roundel";
 import { ContextMeter } from "@/components/context-meter";
 import { stageHref } from "@/components/stage-href";
 import { StateBadge, toneClass } from "@/components/state-badge";
@@ -47,7 +48,12 @@ export function LedgerRow({ stage, level }: { stage: StageSummary; level: number
         data-label="activity"
         className={cn("text-xs", activity && toneClass(activity.tone))}
       >
-        {activity?.text}
+        {activity && (
+          <span className="inline-flex items-center gap-1.5">
+            <ActivityRoundel stage={stage} size={14} />
+            {activity.text}
+          </span>
+        )}
       </TableCell>
       <TableCell data-label="context">
         <ContextMeter stage={stage} />

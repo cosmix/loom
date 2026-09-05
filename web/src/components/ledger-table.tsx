@@ -1,4 +1,7 @@
 import { useAtomValue } from "jotai/react";
+import { Rows3Icon } from "lucide-react";
+
+import { EmptyState } from "@/aurora-ui/feedback/EmptyState";
 
 import { LedgerRow } from "@/components/ledger-row";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -25,9 +28,12 @@ export function LedgerTable() {
   if (snapshot === null) return <LedgerSkeleton />;
   if (ordered.length === 0) {
     return (
-      <p className="rounded-lg border border-dashed border-hairline px-4 py-10 text-center text-sm text-muted-foreground">
-        no stages in this workspace
-      </p>
+      <EmptyState
+        icon={Rows3Icon}
+        title="No stages in this workspace"
+        description="Run a plan with loom run and its stages will fill the ledger."
+        tone="muted"
+      />
     );
   }
 

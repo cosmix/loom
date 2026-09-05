@@ -1,0 +1,454 @@
+/*
+ * The sheet: the plan drawn as index cards on ruled paper, joined by
+ * threads. Every colour is a token from index.css; `--tone` is set by the
+ * tone class on the card, the edge group, the chip, or the strip segment.
+ */
+:root {
+  --sheet-rule: color-mix(in oklch, var(--foreground) 5%, transparent);
+  --sheet-rule-strong: color-mix(in oklch, var(--foreground) 9%, transparent);
+  --sheet-h: clamp(26rem, calc(100dvh - 22rem), 48rem);
+}
+
+.dark {
+  --sheet-rule: color-mix(in oklch, var(--foreground) 4%, transparent);
+  --sheet-rule-strong: color-mix(in oklch, var(--foreground) 8%, transparent);
+}
+
+@layer components {
+  .sheet-frame {
+    position: relative;
+    height: var(--sheet-h);
+    min-height: 26rem;
+    overflow: hidden;
+    border-radius: 0.75rem;
+    border: 1px solid var(--hairline);
+    background: var(--card);
+    box-shadow: inset 0 1px 0 color-mix(in oklch, var(--foreground) 4%, transparent);
+  }
+  /* Beside the rail the sheet takes the frame's full height. */
+  @media (min-width: 80rem) {
+    .sheet-frame {
+      height: 100%;
+    }
+  }
+
+  /* The card. `--i` staggers the first paint; `data-emphasis` fades what is
+   * off the traced thread; `data-live` breathes; a status change re-keys the
+   * inner card so its wash runs again. */
+  .stage-node {
+    position: relative;
+    display: flex;
+    animation: node-reveal 520ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+    animation-delay: calc(var(--i, 0) * 45ms);
+    transition:
+      opacity 240ms ease,
+      filter 240ms ease;
+  }
+  .stage-node[data-emphasis="dim"] {
+    opacity: 0.3;
+    filter: saturate(0.2);
+  }
+  .stage-card {
+    position: relative;
+    display: flex;
+    min-width: 0;
+    flex: 1;
+    flex-direction: column;
+    border-radius: 10px;
+    background: var(--card);
+    padding: 10px 12px 9px 15px;
+    box-shadow:
+      0 0 0 1px var(--hairline),
+      0 1px 2px rgb(0 0 0 / 0.04),
+      0 12px 28px -18px rgb(0 0 0 / 0.28);
+    transition: box-shadow 200ms ease;
+  }
+  .stage-card::before {
+    content: "";
+    position: absolute;
+    top: 9px;
+    bottom: 9px;
+    left: 0;
+    width: 3px;
+    border-radius: 0 2px 2px 0;
+    background: var(--tone);
+  }
+  .stage-card::after {
+    content: "";
+    pointer-events: none;
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: color-mix(in oklch, var(--tone) 16%, transparent);
+    animation: wash-fade 1.6s ease-out forwards;
+  }
+  .stage-node[data-attention] .stage-card {
+    background: color-mix(in oklch, var(--tone) 7%, var(--card));
+  }
+  /* A stage that needs a person wears the kit's caution tape on its rail. */
+  .stage-node[data-hazard] .stage-card::before {
+    width: 8px;
+    border-radius: 0 3px 3px 0;
+    background-color: transparent;
+    background-image: repeating-linear-gradient(
+      -45deg,
+      color-mix(in oklab, var(--tone) 55%, transparent) 0 4px,
+      color-mix(in oklab, var(--tone) 12%, transparent) 4px 8px
+    );
+  }
+  .stage-node[data-live] .stage-card {
+    animation: node-breathe 3.2s ease-in-out infinite;
+  }
+  .stage-node[data-emphasis="traced"] .stage-card,
+  .stage-node:hover .stage-card {
+    box-shadow:
+      0 0 0 1.5px color-mix(in oklch, var(--tone) 70%, transparent),
+      0 14px 32px -16px color-mix(in oklch, var(--tone) 45%, transparent);
+  }
+  .stage-node[data-live][data-emphasis="traced"] .stage-card {
+    animation: none;
+  }
+  .stage-tag {
+    display: inline-block;
+    border: 1px solid color-mix(in oklch, currentColor 35%, transparent);
+    border-radius: 4px;
+    padding: 0 5px;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    line-height: 15px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted-foreground);
+  }
+  .stage-tag.tone-warning,
+  .stage-tag.tone-blocked {
+    color: var(--tone);
+  }
+  .stage-open {
+    display: inline-flex;
+    margin-left: auto;
+    height: 20px;
+    width: 20px;
+    align-items: center;
+    justify-content: center;
+    border-radius: 5px;
+    color: var(--muted-foreground);
+    opacity: 0;
+    transition:
+      opacity 150ms ease,
+      background-color 150ms ease;
+  }
+  .stage-node:hover .stage-open,
+  .stage-open:focus-visible {
+    opacity: 1;
+  }
+  .stage-open:hover {
+    background: var(--muted);
+    color: var(--foreground);
+  }
+
+  /* Row captions in the margin beside each dependency level. */
+  .rank-caption {
+    width: 64px;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    line-height: 16px;
+    letter-spacing: 0.14em;
+    text-align: right;
+    text-transform: uppercase;
+    color: var(--muted-foreground);
+    opacity: 0.75;
+  }
+
+  /* The key and the hint float over the sheet's top corners. */
+  .key {
+    display: flex;
+    max-width: min(60vw, 40rem);
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+  .key-chip {
+    display: inline-flex;
+    height: 22px;
+    align-items: center;
+    gap: 5px;
+    border-radius: 999px;
+    background: color-mix(in oklch, var(--card) 88%, transparent);
+    padding: 0 8px 0 6px;
+    font-size: 11px;
+    color: var(--foreground);
+    box-shadow: 0 0 0 1px var(--hairline);
+    backdrop-filter: blur(4px);
+    cursor: default;
+    transition:
+      box-shadow 150ms ease,
+      background-color 150ms ease;
+  }
+  .key-chip:hover,
+  .key-chip:focus-visible,
+  .key-chip[data-pinned] {
+    outline: none;
+    background: color-mix(in oklch, var(--tone) 10%, var(--card));
+    box-shadow: 0 0 0 1.5px var(--tone);
+  }
+  .key-count {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--muted-foreground);
+  }
+  .sheet-hint {
+    border-radius: 999px;
+    background: color-mix(in oklch, var(--card) 80%, transparent);
+    padding: 3px 9px;
+    font-size: 11px;
+    color: var(--muted-foreground);
+    box-shadow: 0 0 0 1px var(--hairline);
+    backdrop-filter: blur(4px);
+  }
+
+  /* Header: view switch and the warp strip. */
+  .view-switch {
+    display: inline-flex;
+    border-radius: 999px;
+    background: var(--muted);
+    padding: 2px;
+    box-shadow: inset 0 0 0 1px var(--hairline);
+  }
+  .view-tab {
+    display: inline-flex;
+    height: 24px;
+    align-items: center;
+    gap: 5px;
+    border-radius: 999px;
+    padding: 0 10px;
+    font-size: 12px;
+    color: var(--muted-foreground);
+    transition:
+      color 150ms ease,
+      background-color 150ms ease;
+  }
+  .view-tab:hover {
+    color: var(--foreground);
+  }
+  .view-tab.is-active {
+    background: var(--card);
+    color: var(--foreground);
+    box-shadow:
+      0 1px 2px rgb(0 0 0 / 0.08),
+      0 0 0 1px var(--hairline);
+  }
+  .stage-strip {
+    display: flex;
+    height: 8px;
+    width: 12rem;
+    max-width: 40vw;
+    gap: 2px;
+  }
+  .stage-strip li {
+    display: flex;
+    min-width: 3px;
+    flex: 1;
+  }
+  .stage-strip-seg {
+    flex: 1;
+    border-radius: 2px;
+    background: var(--tone);
+    opacity: 0.85;
+    transition:
+      transform 150ms ease,
+      opacity 150ms ease;
+  }
+  .stage-strip-seg:hover,
+  .stage-strip-seg:focus-visible {
+    transform: scaleY(1.6);
+    opacity: 1;
+    outline: none;
+  }
+  .stage-strip-seg[data-live] {
+    animation: seg-pulse 2.4s ease-in-out infinite;
+  }
+
+  /* The stage dialog: a toned band over the title, chips along the thread. */
+  .stage-modal-head {
+    border-bottom: 1px solid var(--hairline);
+    background: linear-gradient(
+      to bottom,
+      color-mix(in oklch, var(--tone) 10%, var(--popover)),
+      var(--popover)
+    );
+  }
+  .thread-chip {
+    display: inline-flex;
+    height: 22px;
+    align-items: center;
+    gap: 5px;
+    border-radius: 6px;
+    background: var(--card);
+    padding: 0 8px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--foreground);
+    box-shadow: 0 0 0 1px var(--hairline);
+    transition:
+      box-shadow 150ms ease,
+      background-color 150ms ease;
+  }
+  .thread-chip:hover:enabled,
+  .thread-chip:focus-visible {
+    outline: none;
+    background: var(--muted);
+    box-shadow: 0 0 0 1.5px var(--ring);
+  }
+  .thread-chip:disabled {
+    color: var(--muted-foreground);
+  }
+}
+
+/*
+ * React Flow ships an unlayered stylesheet, so overrides of its classes (and
+ * the thread paths, which carry `react-flow__edge-path`) must be unlayered too:
+ * a rule inside a cascade layer loses to any unlayered rule regardless of
+ * specificity.
+ */
+.sheet .react-flow {
+  --xy-background-color: transparent;
+  --xy-edge-stroke: var(--hairline);
+  --xy-node-border-radius: 10px;
+  --xy-node-boxshadow-selected: none;
+  --xy-controls-button-background-color: var(--card);
+  --xy-controls-button-background-color-hover: var(--muted);
+  --xy-controls-button-color: var(--muted-foreground);
+  --xy-controls-button-color-hover: var(--foreground);
+  --xy-controls-button-border-color: var(--hairline);
+  --xy-controls-box-shadow: 0 1px 2px rgb(0 0 0 / 0.06);
+  --xy-attribution-background-color: transparent;
+  font-family: var(--font-sans);
+}
+/* A stage that moves when the layout changes glides to its new place. */
+.sheet .react-flow__node {
+  transition: transform 420ms cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+.sheet .react-flow__node-stage:focus,
+.sheet .react-flow__node-stage:focus-visible {
+  outline: none;
+}
+.sheet .react-flow__node-stage:focus-visible .stage-card {
+  box-shadow:
+    0 0 0 1px var(--hairline),
+    0 0 0 3px var(--ring);
+}
+.sheet .react-flow__controls {
+  overflow: hidden;
+  border-radius: 0.5rem;
+}
+.sheet .react-flow__attribution {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  color: var(--muted-foreground);
+  opacity: 0.6;
+}
+.sheet .react-flow__attribution a {
+  color: inherit;
+}
+.sheet .react-flow__handle.stage-handle {
+  width: 9px;
+  height: 9px;
+  min-width: 0;
+  min-height: 0;
+  border: 1.5px solid var(--tone);
+  background: var(--card);
+  pointer-events: none;
+}
+
+/* Threads. The base line takes the source stage's tone; a running thread
+ * fades its base and carries a moving dash. */
+.thread-base {
+  fill: none;
+  stroke: var(--tone);
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  transition:
+    opacity 240ms ease,
+    stroke-width 240ms ease;
+}
+g[data-thread="hairline"] .thread-base {
+  stroke: color-mix(in oklch, var(--muted-foreground) 60%, transparent);
+  stroke-width: 2;
+  stroke-dasharray: 3 6;
+}
+g[data-thread="dashed"] .thread-base {
+  stroke-dasharray: 7 6;
+}
+g[data-thread="running"] .thread-base {
+  opacity: 0.4;
+}
+.thread-run {
+  fill: none;
+  stroke: var(--tone);
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-dasharray: 9 14;
+  animation: thread-run 1.4s linear infinite;
+}
+g[data-emphasis="dim"] {
+  opacity: 0.18;
+}
+g[data-emphasis="traced"] .thread-base {
+  stroke-width: 3.5;
+}
+
+@keyframes node-reveal {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes wash-fade {
+  to {
+    opacity: 0;
+  }
+}
+@keyframes node-breathe {
+  0%,
+  100% {
+    box-shadow:
+      0 0 0 1px var(--hairline),
+      0 0 0 0 color-mix(in oklch, var(--tone) 40%, transparent);
+  }
+  55% {
+    box-shadow:
+      0 0 0 1px var(--hairline),
+      0 0 0 10px transparent;
+  }
+}
+@keyframes thread-run {
+  to {
+    stroke-dashoffset: -22;
+  }
+}
+@keyframes seg-pulse {
+  0%,
+  100% {
+    opacity: 0.85;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stage-node,
+  .stage-card,
+  .stage-card::after,
+  .thread-run,
+  .stage-strip-seg[data-live] {
+    animation: none;
+  }
+  .sheet .react-flow__node {
+    transition: none;
+  }
+}

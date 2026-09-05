@@ -1,188 +1,226 @@
-import { Link } from "react-router";
+import { cn } from "cn";
 
 import type { StageSummary } from "@/api/schema";
+import { HazardPanel } from "@/aurora-ui/feedback/HazardPanel";
 import { ContextMeter } from "@/components/context-meter";
-import { Field, Section, secs, tokens, yesNo } from "@/components/stage-detail";
-import { stageHref } from "@/components/stage-href";
-import { Badge } from "@/components/ui/badge";
-import { failureLabel, modelsOf } from "@/lib/format";
+import {
+  present,
+  row,
+  Rows,
+  Section,
+  secs,
+  tokens,
+  yesNo,
+  type SectionSpec,
+} from "@/components/stage-detail";
+import { contextUsage, failureLabel } from "@/lib/format";
 
-export function IdentitySection({ stage }: { stage: StageSummary }) {
-  const models = modelsOf(stage);
+/// What each field means, in the words a person reading the ledger needs.
+const HINT = {
+  type: "What the stage is for: standard work, a knowledge bootstrap, the integration-verify gate, or a knowledge distillation. It decides what the stage's signal asks of the agent.",
+  level:
+    "Dependency depth: the longest chain of dependencies above this stage. Level 0 stages start first.",
+  model: "The model the stage's own session runs, from the plan or the stage type's default.",
+  executionModels:
+    "Models the stage's subagents have run on, first seen first. Empty until a subagent spawns.",
+  elapsed: "Wall-clock time since the stage was created.",
+  execution:
+    "Time spent in a session, excluding waits and retry backoff. For an executing stage it counts the attempt in flight.",
+  tokens: "Resident tokens in the active session's context window, as the hook last reported them.",
+  ceiling: "The resident-token count at which the session hands off to a fresh one.",
+  usage: "Tokens against the ceiling: amber from 60%, red from 90%.",
+  pid: "Process id of the stage's session.",
+  alive: "Whether that process is still running.",
+  backend: "Where the session runs: a native terminal window or a tmux pane.",
+  sessionType:
+    "What the session was spawned to do: stage work, a merge, a base-conflict fix, knowledge, or adjudication.",
+  activity:
+    "Working: a tool ran recently. Idle: alive, nothing happening. Stale: no heartbeat for 5 min. Orphaned: executing with no session record. Error: the process died.",
+  lastTool: "The tool the session used most recently, from its heartbeat.",
+  lastActivity: "The heartbeat's description of what the session last did.",
+  staleness: "Time since the last heartbeat.",
+  retries: "Automatic retries so far, of the stage's limit.",
+  disputes: "Acceptance criteria the stage's agent disputed. A judge session settles them.",
+  judge: "Time since the adjudication judge for this stage last reported in.",
+  merged: "Whether the stage's branch has been merged into the merge point.",
+  baseBranch:
+    "The branch the stage's worktree was cut from: the target branch, or a base built by merging several dependencies.",
+  baseMergedFrom:
+    "The dependencies merged together to build that base, when there was more than one.",
+  cleanup: "The worktree or branch could not be removed after the merge and is still on disk.",
+  reviewReason: "Why the stage asked a person for a decision.",
+  incoherence:
+    "Why an executing stage does not describe a working agent, for example because its session is an adjudication session.",
+  held: "Held by you: the daemon leaves the stage alone until you release it.",
+  failureType: "How the daemon classified the failure.",
+  detectedAt: "When the daemon detected it.",
+  evidence: "Lines the daemon kept as evidence. Untrusted text, shown verbatim.",
+} as const;
+
+const FAILURE_STATES = new Set<StageSummary["status"]>(["blocked", "completed-with-failures"]);
+const MERGE_STATES = new Set<StageSummary["status"]>([
+  "completed",
+  "merge-conflict",
+  "merge-blocked",
+]);
+
+function identityRows(stage: StageSummary, level: number | null) {
+  return present([
+    row("type", HINT.type, stage.stage_type, true),
+    row("level", HINT.level, level === null ? null : String(level), true),
+    row("model", HINT.model, stage.model, true),
+    row("execution models", HINT.executionModels, stage.execution_models.join(", "), true),
+  ]);
+}
+
+function timingRows(stage: StageSummary) {
+  return present([
+    row("elapsed", HINT.elapsed, secs(stage.elapsed_secs), true),
+    row("execution", HINT.execution, secs(stage.execution_secs), true),
+  ]);
+}
+
+function contextRows(stage: StageSummary) {
+  return present([
+    row("tokens", HINT.tokens, tokens(stage.context_tokens), true),
+    row("ceiling", HINT.ceiling, tokens(stage.context_ceiling_tokens), true),
+    row("usage", HINT.usage, contextUsage(stage) && <ContextMeter stage={stage} detail />),
+  ]);
+}
+
+function sessionRows(stage: StageSummary) {
+  const hasSession =
+    stage.pid !== null ||
+    stage.session_type !== null ||
+    stage.last_tool !== null ||
+    stage.last_activity !== null;
+  if (!hasSession) return [];
+  return present([
+    row("pid", HINT.pid, stage.pid === null ? null : String(stage.pid), true),
+    row("alive", HINT.alive, yesNo(stage.session_alive)),
+    row("backend", HINT.backend, stage.session_backend, true),
+    row("session type", HINT.sessionType, stage.session_type, true),
+    row("activity", HINT.activity, stage.activity_status, true),
+    row("last tool", HINT.lastTool, stage.last_tool, true),
+    row("last activity", HINT.lastActivity, stage.last_activity, true),
+    row("staleness", HINT.staleness, secs(stage.staleness_secs), true),
+  ]);
+}
+
+function retryRows(stage: StageSummary) {
+  if (stage.retry_count === 0 && !FAILURE_STATES.has(stage.status)) return [];
+  return present([
+    row("retries", HINT.retries, `${stage.retry_count} of ${stage.max_retries ?? 3}`, true),
+  ]);
+}
+
+function adjudicationRows(stage: StageSummary) {
+  const applies =
+    stage.status === "needs-adjudication" ||
+    stage.dispute_count > 0 ||
+    stage.judge_heartbeat_secs !== null;
+  if (!applies) return [];
+  return present([
+    row("disputes", HINT.disputes, String(stage.dispute_count), true),
+    row(
+      "judge heartbeat",
+      HINT.judge,
+      stage.judge_heartbeat_secs === null ? null : `${secs(stage.judge_heartbeat_secs)} ago`,
+      true,
+    ),
+  ]);
+}
+
+function mergeRows(stage: StageSummary) {
+  const applies =
+    MERGE_STATES.has(stage.status) ||
+    stage.merged ||
+    stage.base_branch !== null ||
+    stage.base_merged_from.length > 0 ||
+    Boolean(stage.cleanup_warning);
+  if (!applies) return [];
+  return present([
+    row(
+      "merged",
+      HINT.merged,
+      MERGE_STATES.has(stage.status) || stage.merged ? yesNo(stage.merged) : null,
+    ),
+    row("base branch", HINT.baseBranch, stage.base_branch, true),
+    row("base merged from", HINT.baseMergedFrom, stage.base_merged_from.join(", "), true),
+    row("cleanup warning", HINT.cleanup, stage.cleanup_warning ?? null),
+  ]);
+}
+
+function noteRows(stage: StageSummary) {
+  return present([
+    row("review reason", HINT.reviewReason, stage.review_reason),
+    row("incoherence", HINT.incoherence, stage.incoherence, true),
+    row("held", HINT.held, stage.held ? "yes" : null),
+  ]);
+}
+
+/// Every section that has something to say about this stage.
+export function stageSections(stage: StageSummary, level: number | null): SectionSpec[] {
+  return [
+    { title: "identity", rows: identityRows(stage, level) },
+    { title: "timing", rows: timingRows(stage) },
+    { title: "context", rows: contextRows(stage) },
+    { title: "session", rows: sessionRows(stage) },
+    { title: "retries", rows: retryRows(stage) },
+    { title: "adjudication", rows: adjudicationRows(stage) },
+    { title: "merge", rows: mergeRows(stage) },
+    { title: "notes", rows: noteRows(stage) },
+  ].filter((section) => section.rows.length > 0);
+}
+
+/// The sections as cards; `wide` adds the third column the page has room for.
+export function StageSectionGrid({
+  stage,
+  level,
+  wide = false,
+}: {
+  stage: StageSummary;
+  level: number | null;
+  wide?: boolean;
+}) {
   return (
-    <Section title="identity">
-      <Field label="name">{stage.name}</Field>
-      <Field label="id" mono>
-        {stage.id}
-      </Field>
-      <Field label="type" mono>
-        {stage.stage_type}
-      </Field>
-      <Field label="model" mono>
-        {models.model}
-      </Field>
-      <Field label="execution models" mono>
-        {models.execution.length > 0 ? models.execution.join(", ") : null}
-      </Field>
-    </Section>
+    <div className={cn("grid gap-4 md:grid-cols-2", wide && "xl:grid-cols-3")}>
+      {stageSections(stage, level).map((section) => (
+        <Section key={section.title} {...section} />
+      ))}
+      {stage.failure_info && (
+        <div className={cn("md:col-span-2", wide && "xl:col-span-3")}>
+          <FailureSection failure={stage.failure_info} />
+        </div>
+      )}
+    </div>
   );
 }
 
-export function GraphSection({ stage, level }: { stage: StageSummary; level: number | null }) {
+/// The failure under the kit's red caution tape. Evidence is untrusted
+/// text: rendered as text nodes only.
+function FailureSection({ failure }: { failure: NonNullable<StageSummary["failure_info"]> }) {
   return (
-    <Section title="graph">
-      <Field label="depends on">
-        {stage.dependencies.length > 0 ? (
-          <span className="flex flex-wrap gap-1">
-            {stage.dependencies.map((id) => (
-              <Badge
-                key={id}
-                variant="secondary"
-                asChild
-                className="font-mono text-[11px] font-normal"
-              >
-                <Link to={stageHref(id)}>{id}</Link>
-              </Badge>
-            ))}
-          </span>
-        ) : null}
-      </Field>
-      <Field label="level" mono>
-        {level === null ? null : String(level)}
-      </Field>
-    </Section>
-  );
-}
-
-export function TimingSection({ stage }: { stage: StageSummary }) {
-  return (
-    <Section title="timing">
-      <Field label="elapsed" mono>
-        {secs(stage.elapsed_secs)}
-      </Field>
-      <Field label="execution" mono>
-        {secs(stage.execution_secs)}
-      </Field>
-    </Section>
-  );
-}
-
-export function ContextSection({ stage }: { stage: StageSummary }) {
-  return (
-    <Section title="context">
-      <Field label="tokens" mono>
-        {tokens(stage.context_tokens)}
-      </Field>
-      <Field label="ceiling" mono>
-        {tokens(stage.context_ceiling_tokens)}
-      </Field>
-      <Field label="usage">
-        <ContextMeter stage={stage} detail />
-      </Field>
-    </Section>
-  );
-}
-
-export function SessionSection({ stage }: { stage: StageSummary }) {
-  return (
-    <Section title="session">
-      <Field label="pid" mono>
-        {stage.pid === null ? null : String(stage.pid)}
-      </Field>
-      <Field label="alive">{yesNo(stage.session_alive)}</Field>
-      <Field label="backend" mono>
-        {stage.session_backend}
-      </Field>
-      <Field label="session type" mono>
-        {stage.session_type}
-      </Field>
-      <Field label="activity" mono>
-        {stage.activity_status}
-      </Field>
-      <Field label="last tool" mono>
-        {stage.last_tool}
-      </Field>
-      <Field label="last activity" mono>
-        {stage.last_activity}
-      </Field>
-      <Field label="staleness" mono>
-        {secs(stage.staleness_secs)}
-      </Field>
-    </Section>
-  );
-}
-
-export function RetriesSection({ stage }: { stage: StageSummary }) {
-  return (
-    <Section title="retries">
-      <Field label="retry count" mono>
-        {String(stage.retry_count)}
-      </Field>
-      <Field label="max retries" mono>
-        {stage.max_retries === null ? null : String(stage.max_retries)}
-      </Field>
-    </Section>
-  );
-}
-
-export function AdjudicationSection({ stage }: { stage: StageSummary }) {
-  return (
-    <Section title="adjudication">
-      <Field label="disputes" mono>
-        {String(stage.dispute_count)}
-      </Field>
-      <Field label="judge heartbeat" mono>
-        {stage.judge_heartbeat_secs === null ? null : `${secs(stage.judge_heartbeat_secs)} ago`}
-      </Field>
-    </Section>
-  );
-}
-
-export function MergeSection({ stage }: { stage: StageSummary }) {
-  return (
-    <Section title="merge">
-      <Field label="merged">{yesNo(stage.merged)}</Field>
-      <Field label="base branch" mono>
-        {stage.base_branch}
-      </Field>
-      <Field label="base merged from" mono>
-        {stage.base_merged_from.length > 0 ? stage.base_merged_from.join(", ") : null}
-      </Field>
-      <Field label="cleanup warning">{stage.cleanup_warning ?? null}</Field>
-    </Section>
-  );
-}
-
-export function NotesSection({ stage }: { stage: StageSummary }) {
-  return (
-    <Section title="notes">
-      <Field label="review reason">{stage.review_reason}</Field>
-      <Field label="incoherence" mono>
-        {stage.incoherence}
-      </Field>
-      <Field label="held">{yesNo(stage.held)}</Field>
-    </Section>
-  );
-}
-
-/// Evidence is untrusted text: rendered as text nodes only.
-export function FailureSection({ stage }: { stage: StageSummary }) {
-  const failure = stage.failure_info;
-  return (
-    <Section title="failure">
-      <Field label="type" mono>
-        {failure ? `${failure.failure_type} (${failureLabel(failure.failure_type)})` : null}
-      </Field>
-      <Field label="detected at" mono>
-        {failure?.detected_at ?? null}
-      </Field>
-      <Field label="evidence">
-        {failure && failure.evidence.length > 0 ? (
-          <pre className="max-h-64 overflow-auto rounded-md border border-hairline bg-background p-2.5 text-[11px] leading-relaxed whitespace-pre-wrap">
-            {failure.evidence.join("\n")}
-          </pre>
-        ) : null}
-      </Field>
-    </Section>
+    <HazardPanel
+      tone="error"
+      title={`failure · ${failureLabel(failure.failure_type)}`}
+      className="bg-card"
+    >
+      <Rows
+        rows={present([
+          row("type", HINT.failureType, failure.failure_type, true),
+          row("detected at", HINT.detectedAt, failure.detected_at, true),
+          row(
+            "evidence",
+            HINT.evidence,
+            failure.evidence.length > 0 && (
+              <pre className="max-h-64 overflow-auto rounded-md border border-hairline bg-background p-2.5 text-[11px] leading-relaxed whitespace-pre-wrap">
+                {failure.evidence.join("\n")}
+              </pre>
+            ),
+          ),
+        ])}
+      />
+    </HazardPanel>
   );
 }

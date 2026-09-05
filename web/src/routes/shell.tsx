@@ -1,20 +1,26 @@
 import { cn } from "cn";
 import { useAtomValue } from "jotai/react";
 import { useEffect, useState } from "react";
-import { Outlet } from "react-router";
+import { Outlet, useLocation } from "react-router";
+
+import { ErrorBoundary } from "@/aurora-ui/feedback/ErrorBoundary";
 
 import { Header } from "@/components/header";
 import { useNow } from "@/components/hooks/use-now";
 import { LegendDialog } from "@/components/legend-dialog";
 import { QuotaMeters } from "@/components/quota-meters";
+import { StageModal } from "@/components/stage-modal";
 import { Kbd } from "@/components/ui/kbd";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { providerRows } from "@/lib/quota";
 import { snapshotAtom } from "@/state/atoms";
 
-/// Header, routed body, footer, and the legend dialog with its `?` shortcut.
+/// Header, routed body, footer, the stage dialog (`?stage=<id>` on any
+/// route), and the legend dialog with its `?` shortcut. Each route sets its
+/// own width: the overview runs wide, the ledger and stage pages are bounded.
 export function Shell() {
   const [legendOpen, setLegendOpen] = useState(false);
+  const { pathname } = useLocation();
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -29,12 +35,15 @@ export function Shell() {
 
   return (
     <TooltipProvider delayDuration={250}>
-      <div className="flex min-h-dvh flex-col">
+      <div className="flex h-dvh flex-col">
         <Header onOpenLegend={() => setLegendOpen(true)} />
-        <main className="mx-auto w-full max-w-[1440px] flex-1 px-4 py-5 sm:px-6">
-          <Outlet />
+        <main className="flex min-h-0 w-full flex-1 flex-col overflow-y-auto">
+          <ErrorBoundary resetKey={pathname}>
+            <Outlet />
+          </ErrorBoundary>
         </main>
         <Footer />
+        <StageModal />
         <LegendDialog open={legendOpen} onOpenChange={setLegendOpen} />
       </div>
     </TooltipProvider>
@@ -55,7 +64,7 @@ function Footer() {
   const quota = snapshot?.status.quota ?? null;
   const hasQuota = quota !== null && providerRows(quota).length > 0;
   return (
-    <footer className="sticky bottom-0 z-10 border-t border-border bg-background/90 backdrop-blur-sm">
+    <footer className="z-10 border-t border-border bg-background/90 backdrop-blur-sm">
       <div className="mx-auto flex w-full max-w-[1440px] flex-wrap items-center gap-x-4 gap-y-1 px-4 py-3 text-xs text-muted-foreground sm:px-6">
         {quota && (
           <QuotaMeters snapshot={quota} nowSecs={nowSecs} className="max-[899px]:basis-full" />

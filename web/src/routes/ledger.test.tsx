@@ -2,7 +2,7 @@ import { cleanup, render, screen } from "@testing-library/react";
 import { createStore } from "jotai";
 import { Provider } from "jotai/react";
 import { createMemoryRouter, RouterProvider } from "react-router";
-import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 
 import fixture from "@/api/fixtures/snapshot.json";
 import { snapshotSchema } from "@/api/schema";
@@ -22,23 +22,11 @@ function renderAt(path: string) {
   );
 }
 
-beforeAll(() => {
-  // jsdom has no ResizeObserver; the shadcn ScrollArea asks for one on mount.
-  if (!("ResizeObserver" in window)) {
-    class ResizeObserverStub {
-      observe() {}
-      unobserve() {}
-      disconnect() {}
-    }
-    Object.defineProperty(window, "ResizeObserver", { value: ResizeObserverStub });
-  }
-});
-
 afterEach(cleanup);
 
 describe("ledger route", () => {
   it("renders the fixture: plan name, every stage, attention labels, logo", () => {
-    renderAt("/");
+    renderAt("/ledger");
 
     expect(screen.getByText("Web Dashboard Fixture")).toBeTruthy();
     for (const stage of snapshot.status.stages) {

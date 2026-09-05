@@ -1,0 +1,7 @@
+.hazard-warning { background-image: repeating-linear-gradient(-45deg,
+  color-mix(in oklab, var(--hazard-warning) 16%, transparent) 0 10px, transparent 10px 20px); }
+.hazard-error { background-image: repeating-linear-gradient(-45deg,
+  color-mix(in oklab, var(--hazard-error) 16%, transparent) 0 10px, transparent 10px 20px); }
+.hazard-text { color: #000; background-color: var(--card); border-radius: 0.25rem;
+  padding: 0.1em 0.35em; -webkit-box-decoration-break: clone; box-decoration-break: clone; }
+.dark .hazard-text { color: #fff; }

@@ -2,12 +2,15 @@ import { useAtomValue } from "jotai/react";
 import { Link } from "react-router";
 import { CircleHelpIcon } from "lucide-react";
 
+import { ThemeToggle } from "@/aurora-ui/theme/ThemeToggle";
+import { WorkRoundel } from "@/components/activity-roundel";
 import { ConnectionBadge } from "@/components/connection-badge";
 import { DaemonLine, MergeLine, ProgressLine, SummaryLine } from "@/components/header-lines";
 import { Logo } from "@/components/logo";
 import { Button } from "@/components/ui/button";
 import { Kbd } from "@/components/ui/kbd";
 import { Skeleton } from "@/components/ui/skeleton";
+import { ViewSwitch } from "@/components/view-switch";
 import { attentionAtom, snapshotAtom } from "@/state/atoms";
 
 /// The TUI's header block: the logo on the left spanning four lines, the plan
@@ -19,15 +22,18 @@ export function Header({ onOpenLegend }: { onOpenLegend: () => void }) {
 
   return (
     <header className="border-b border-hairline bg-linear-to-b from-card to-background">
-      <div className="mx-auto grid max-w-[1440px] grid-cols-[auto_1fr] gap-x-5 px-4 py-4 sm:px-6">
-        <Link to="/" className="row-span-2 self-start pt-1 text-foreground" aria-label="ledger">
+      <div className="mx-auto grid max-w-[1920px] grid-cols-[auto_1fr] gap-x-5 px-4 py-4 sm:px-6">
+        <Link to="/" className="row-span-2 self-start pt-1 text-foreground" aria-label="overview">
           <Logo className="h-10 w-auto sm:h-12" />
         </Link>
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
           <PlanName name={snapshot?.status.plan_name} loading={snapshot === null} />
           <div className="ml-auto flex items-center gap-2">
+            {snapshot && <WorkRoundel />}
             {snapshot && <DaemonLine snapshot={snapshot} />}
             <ConnectionBadge />
+            <ViewSwitch />
+            <ThemeToggle />
             <Button variant="ghost" size="sm" onClick={onOpenLegend} aria-label="open legend">
               <CircleHelpIcon />
               <span className="hidden sm:inline">legend</span>

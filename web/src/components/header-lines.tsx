@@ -1,7 +1,7 @@
 import { cn } from "cn";
 
 import type { Snapshot, StageStatus } from "@/api/schema";
-import { Progress } from "@/components/ui/progress";
+import { StageStrip } from "@/components/stage-strip";
 import { StateGlyph, toneClass } from "@/components/state-badge";
 import { daemonLine, progressPercent, summaryCounts } from "@/lib/format";
 
@@ -17,7 +17,7 @@ export function DaemonLine({ snapshot }: { snapshot: Snapshot }) {
   );
 }
 
-/// "1 of 7 stages complete" with the bar and percent.
+/// "1 of 7 stages complete", the warp strip, and the percent.
 export function ProgressLine({ snapshot }: { snapshot: Snapshot }) {
   const { completed, total } = snapshot.status.progress;
   const percent = progressPercent(completed, total);
@@ -26,11 +26,7 @@ export function ProgressLine({ snapshot }: { snapshot: Snapshot }) {
       <span className="tabular-nums">
         {completed} of {total} stages complete
       </span>
-      <Progress
-        value={percent}
-        aria-label={`${percent}% of stages complete`}
-        className="h-1.5 w-40 max-w-[40vw] bg-muted [&>[data-slot=progress-indicator]]:bg-(--tone-completed)"
-      />
+      <StageStrip />
       <span className="text-xs tabular-nums text-muted-foreground">{percent}%</span>
     </div>
   );

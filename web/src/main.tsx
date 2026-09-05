@@ -5,6 +5,7 @@ import { RouterProvider } from "react-router";
 
 import "@/index.css";
 import { connectStatusSocket } from "@/api/ws";
+import { ThemeProvider } from "@/aurora-ui/theme/ThemeProvider";
 import { router } from "@/router";
 import { store } from "@/state/store";
 
@@ -16,7 +17,9 @@ connectStatusSocket(store);
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <Provider store={store}>
-      <RouterProvider router={router} />
+      <ThemeProvider>
+        <RouterProvider router={router} />
+      </ThemeProvider>
     </Provider>
   </StrictMode>,
 );

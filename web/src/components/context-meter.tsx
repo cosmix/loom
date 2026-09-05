@@ -12,8 +12,9 @@ const HEALTH_TONE: Record<"green" | "yellow" | "red", Tone> = {
 
 const SEGMENTS = [0, 1, 2, 3, 4] as const;
 
-/// The TUI's five-segment context meter (`━━━╌╌ 39%`) as bars plus a percent.
-/// Renders nothing when the stage has no applicable context reading.
+/// The TUI's five-segment context meter (`━━━╌╌ 39%`) as cells plus a
+/// percent; a cell lights once usage passes its midpoint. Renders nothing
+/// when the stage has no applicable context reading.
 export function ContextMeter({
   stage,
   className,

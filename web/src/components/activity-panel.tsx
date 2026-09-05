@@ -1,5 +1,8 @@
 import { useAtomValue } from "jotai/react";
+import { ActivityIcon } from "lucide-react";
 import { Link } from "react-router";
+
+import { EmptyState } from "@/aurora-ui/feedback/EmptyState";
 
 import { useNow } from "@/components/hooks/use-now";
 import { stageHref } from "@/components/stage-href";
@@ -7,7 +10,8 @@ import { StateGlyph } from "@/components/state-badge";
 import { formatElapsed } from "@/lib/format";
 import { activityLogAtom } from "@/state/atoms";
 
-/// The last stage transitions, newest first, each with its glyph and age.
+/// The stage transitions this page has seen, newest first, each with its
+/// glyph and age. The first frame is a baseline, so the list starts empty.
 export function ActivityPanel() {
   const log = useAtomValue(activityLogAtom);
   const now = useNow();
@@ -19,7 +23,13 @@ export function ActivityPanel() {
         activity
       </h2>
       {newestFirst.length === 0 ? (
-        <p className="text-sm text-muted-foreground">Waiting for events…</p>
+        <EmptyState
+          icon={ActivityIcon}
+          title="Nothing has changed since this page opened"
+          description="Stage transitions land here as the daemon reports them."
+          tone="muted"
+          size="sm"
+        />
       ) : (
         <ol className="flex flex-col divide-y divide-hairline rounded-lg border border-hairline bg-card text-sm">
           {newestFirst.map((entry) => (

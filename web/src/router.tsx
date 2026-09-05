@@ -2,6 +2,7 @@ import { createBrowserRouter, type RouteObject } from "react-router";
 
 import { RouteError } from "@/routes/error";
 import { Ledger } from "@/routes/ledger";
+import { Overview } from "@/routes/overview";
 import { Shell } from "@/routes/shell";
 import { StagePage } from "@/routes/stage";
 
@@ -12,7 +13,8 @@ export const routes: RouteObject[] = [
     element: <Shell />,
     errorElement: <RouteError />,
     children: [
-      { index: true, element: <Ledger /> },
+      { index: true, element: <Overview /> },
+      { path: "ledger", element: <Ledger /> },
       { path: "stages/:stageId", element: <StagePage /> },
     ],
   },

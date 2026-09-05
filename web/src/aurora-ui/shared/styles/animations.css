@@ -1,0 +1,149 @@
+/*
+ * animations.css — Reusable keyframe animations and their helper classes.
+ *
+ * CONSUMER IMPORT ORDER (in your root stylesheet):
+ *   1. @import "tailwindcss";
+ *   2. @import "tw-animate-css";
+ *   3. @import "shadcn/tailwind.css";
+ *   4. @import "./tokens.css";
+ *   5. @import "./animations.css";    ← this file
+ *
+ * Assumptions: Tailwind v4, tw-animate-css, and shadcn/tailwind.css are
+ * already imported before this file. The helper classes below use plain CSS
+ * so they work without Tailwind utilities.
+ *
+ * NOTE: The touch-device hover-reveal block at the bottom is included because
+ * it is broadly applicable to any UI that uses Tailwind group-hover utilities
+ * to hide controls. Remove it if your app does not use that pattern.
+ */
+
+/* ── Stagger-reveal helpers ─────────────────────────────────────────────── */
+
+/* Generic fade-up reveal — apply with animation-delay for staggering */
+.login-reveal {
+  opacity: 0;
+  animation: loginReveal 0.7s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+@keyframes loginReveal {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Card entrance — slightly scaled for depth */
+.idea-card {
+  opacity: 0;
+  animation: ideaCardIn 0.5s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+@keyframes ideaCardIn {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* Column entrance — simple fade-up */
+.ost-column {
+  opacity: 0;
+  animation: ostColumnIn 0.5s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+@keyframes ostColumnIn {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ── Mac OS X "poof" cloud sprite animation ─────────────────────────────── */
+/*
+ * Requires a 128×512 px sprite sheet (4 frames, each 128×128 px) set as the
+ * element's background-image. The animation steps through the frames by
+ * translating background-position vertically.
+ */
+.poof-animation {
+  animation: poof-frames 350ms steps(4, end) forwards;
+}
+
+@keyframes poof-frames {
+  from {
+    background-position: 0 0;
+  }
+  to {
+    background-position: 0 -512px;
+  }
+}
+
+/* ── Loading / typing indicator ─────────────────────────────────────────── */
+@keyframes bounce-dot {
+  0%, 80%, 100% {
+    transform: scale(0.6);
+    opacity: 0.4;
+  }
+  40% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+/* ── Progress / timer bar ───────────────────────────────────────────────── */
+@keyframes shrink {
+  from { transform: scaleX(1); }
+  to { transform: scaleX(0); }
+}
+
+/* ── Touch-device hover-reveal ──────────────────────────────────────────── */
+/*
+ * Touch devices can't hover — reveal hover-gated controls so users can
+ * discover them. Covers plain group-hover variants AND named-group variants
+ * (group-hover/<name>:…). Also reveals elements hidden via `display:none`
+ * that use group-hover to set a display value.
+ *
+ * Ordering for display rules is least-specific first so more-specific
+ * substrings win via cascade (e.g. "inline" is a substring of "inline-flex";
+ * putting inline-flex later lets it override).
+ */
+@media (hover: none) {
+  /* opacity-0 gated by any group-hover variant (plain or named-group) */
+  .opacity-0[class*="group-hover:opacity-"],
+  .opacity-0[class*="group-hover/"][class*=":opacity-"] {
+    opacity: 1;
+  }
+
+  /* hidden + group-hover display variants — least-specific substrings first */
+  .hidden[class*="group-hover:inline"],
+  .hidden[class*="group-hover/"][class*=":inline"] { display: inline; }
+
+  .hidden[class*="group-hover:block"],
+  .hidden[class*="group-hover/"][class*=":block"] { display: block; }
+
+  .hidden[class*="group-hover:flex"],
+  .hidden[class*="group-hover/"][class*=":flex"] { display: flex; }
+
+  .hidden[class*="group-hover:grid"],
+  .hidden[class*="group-hover/"][class*=":grid"] { display: grid; }
+
+  .hidden[class*="group-hover:inline-block"],
+  .hidden[class*="group-hover/"][class*=":inline-block"] { display: inline-block; }
+
+  .hidden[class*="group-hover:inline-flex"],
+  .hidden[class*="group-hover/"][class*=":inline-flex"] { display: inline-flex; }
+
+  .hidden[class*="group-hover:inline-grid"],
+  .hidden[class*="group-hover/"][class*=":inline-grid"] { display: inline-grid; }
+}

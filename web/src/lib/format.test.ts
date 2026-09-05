@@ -80,10 +80,13 @@ describe("TUI formatter ports", () => {
 
   it.each([
     [0, 0, "green"],
-    [0.59, 2, "green"],
+    [0.09, 0, "green"],
+    [0.1, 1, "green"],
+    [0.39, 2, "green"],
+    [0.59, 3, "green"],
     [0.6, 3, "yellow"],
     [0.89, 4, "yellow"],
-    [0.9, 4, "red"],
+    [0.9, 5, "red"],
     [1, 5, "red"],
   ] as const)("uses the correct %s context band", (ratio, filled, health) => {
     const reading = contextUsage(
