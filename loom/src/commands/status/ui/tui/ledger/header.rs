@@ -142,18 +142,24 @@ fn status_count(status: StageStatus, count: usize, label: &str) -> Vec<Span<'sta
 }
 
 fn merge_line(data: &crate::commands::status::data::StatusData, width: u16) -> Line<'static> {
-    cut_line(
-        Line::from(Span::styled(
-            format!(
-                "merged {} · unmerged {} · conflicts {}",
-                data.merge.merged.len(),
-                data.merge.pending.len(),
-                data.merge.conflicts.len()
-            ),
-            Theme::dimmed(),
-        )),
-        width.saturating_sub(19),
-    )
+    let budget = width.saturating_sub(19);
+    let mut spans = vec![Span::styled(
+        format!(
+            "merged {} · unmerged {} · conflicts {}",
+            data.merge.merged.len(),
+            data.merge.pending.len(),
+            data.merge.conflicts.len()
+        ),
+        Theme::dimmed(),
+    )];
+    let label = vec![Span::styled(crate::version::LABEL, Theme::dimmed())];
+    let room = budget as usize;
+    if spans_width(&spans) + 1 + spans_width(&label) <= room {
+        let gap = room.saturating_sub(spans_width(&spans) + spans_width(&label));
+        spans.push(Span::raw(" ".repeat(gap)));
+        spans.extend(label);
+    }
+    cut_line(Line::from(spans), budget)
 }
 
 fn logo_line(logo: &str, line: Line<'static>, width: u16) -> Line<'static> {
@@ -204,7 +210,9 @@ fn percentage(completed: usize, total: usize) -> usize {
 
 #[cfg(test)]
 mod tests {
-    use super::summary_line;
+    use super::{merge_line, summary_line};
+    use crate::commands::status::data::{MergeSummary, ProgressSummary, StatusData};
+    use crate::quota::QuotaSnapshot;
 
     #[test]
     fn summary_row_reports_stage_counts() {
@@ -213,5 +221,43 @@ mod tests {
             line.to_string(),
             "● 2 executing · ▶ 1 queued · ○ 3 waiting · 2 need attention · ✓ 2 done"
         );
+    }
+
+    fn merge_line_fixture() -> StatusData {
+        StatusData {
+            stages: vec![],
+            merge: MergeSummary {
+                merged: vec!["a".to_owned()],
+                pending: vec![],
+                conflicts: vec![],
+            },
+            progress: ProgressSummary {
+                total: 0,
+                completed: 0,
+                executing: 0,
+                pending: 0,
+                blocked: 0,
+            },
+            plan_name: None,
+            quota: QuotaSnapshot {
+                claude: None,
+                codex: None,
+            },
+        }
+    }
+
+    #[test]
+    fn merge_line_shows_the_version_when_there_is_room() {
+        let data = merge_line_fixture();
+        let line = merge_line(&data, 120).to_string();
+        assert!(line.starts_with("merged 1 · unmerged 0 · conflicts 0"));
+        assert!(line.ends_with(crate::version::LABEL));
+    }
+
+    #[test]
+    fn merge_line_drops_the_version_when_too_narrow() {
+        let data = merge_line_fixture();
+        let line = merge_line(&data, 40).to_string();
+        assert!(!line.contains(crate::version::LABEL));
     }
 }

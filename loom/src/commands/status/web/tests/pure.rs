@@ -211,6 +211,9 @@ fn poll_files_once_carries_the_degrade_notice() {
         .expect("degraded frame");
     let snapshot: WebSnapshot = serde_json::from_str(&frame).expect("snapshot JSON");
     assert_eq!(snapshot.notice.as_deref(), Some("daemon lane degraded"));
+    // Pins the real publish path (not just the fixture helper) to the
+    // build's tag-derived version.
+    assert_eq!(snapshot.version, crate::version::VERSION);
 }
 
 #[test]

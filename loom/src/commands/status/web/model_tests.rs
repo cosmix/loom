@@ -97,6 +97,7 @@ fn fixture_snapshot() -> WebSnapshot {
         source: SnapshotSource::Daemon,
         notice: None,
         generated_at: fixed_time(),
+        version: "0.0.0-fixture".to_owned(),
     }
 }
 

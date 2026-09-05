@@ -32,6 +32,8 @@ pub struct WebSnapshot {
     pub notice: Option<String>,
     /// Time at which this frame was generated.
     pub generated_at: DateTime<Utc>,
+    /// The version of the loom build serving the dashboard.
+    pub version: String,
 }
 
 /// The daemon state represented on the dashboard wire.
@@ -193,6 +195,7 @@ pub fn collect_snapshot(
         source,
         notice: None,
         generated_at: Utc::now(),
+        version: crate::version::VERSION.to_owned(),
     }
 }
 

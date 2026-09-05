@@ -59,4 +59,9 @@ describe("overview route", () => {
     renderAt("/?stage=nope");
     expect(screen.getByText("No such stage")).toBeTruthy();
   });
+
+  it("shows the loom version beside the plan name", () => {
+    renderAt("/");
+    expect(screen.getByText(`v${snapshot.version}`)).toBeTruthy();
+  });
 });

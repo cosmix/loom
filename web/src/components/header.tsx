@@ -14,8 +14,8 @@ import { ViewSwitch } from "@/components/view-switch";
 import { attentionAtom, snapshotAtom } from "@/state/atoms";
 
 /// The TUI's header block: the logo on the left spanning four lines, the plan
-/// name, progress, counts and merge lines beside it, daemon and socket state
-/// on the right.
+/// name and loom version, progress, counts and merge lines beside it, daemon
+/// and socket state on the right.
 export function Header({ onOpenLegend }: { onOpenLegend: () => void }) {
   const snapshot = useAtomValue(snapshotAtom);
   const attention = useAtomValue(attentionAtom);
@@ -28,6 +28,11 @@ export function Header({ onOpenLegend }: { onOpenLegend: () => void }) {
         </Link>
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
           <PlanName name={snapshot?.status.plan_name} loading={snapshot === null} />
+          {snapshot && (
+            <span className="font-mono text-xs text-muted-foreground" title="loom version">
+              v{snapshot.version}
+            </span>
+          )}
           <div className="ml-auto flex items-center gap-2">
             {snapshot && <WorkRoundel />}
             {snapshot && <DaemonLine snapshot={snapshot} />}

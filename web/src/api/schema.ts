@@ -149,6 +149,7 @@ export const snapshotSchema = z
     source: z.enum(["daemon", "files"]),
     notice: z.string().optional(),
     generated_at: z.string(),
+    version: z.string(),
   })
   .strict();
 

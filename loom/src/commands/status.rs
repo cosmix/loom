@@ -195,8 +195,8 @@ fn execute_static(work_dir: &WorkDir, verbose: bool) -> Result<()> {
     let stage_count = count_files(&work_dir.stages_dir())?;
     let daemon_status = DaemonServer::check_status(work_dir.root());
 
-    // Logo: prints a blank line above and below the ASCII art.
-    crate::utils::print_logo_header("");
+    // Logo: blank line, ASCII art, dimmed version subtitle, blank line.
+    crate::utils::print_logo_header(crate::version::LABEL);
 
     // Plan title on its own line, bold.
     if let Some(ref name) = status_data.plan_name {
