@@ -13,7 +13,7 @@ import {
   yesNo,
   type SectionSpec,
 } from "@/components/stage-detail";
-import { contextUsage, failureLabel } from "@/lib/format";
+import { contextUsage, failureLabel, formatStamp } from "@/lib/format";
 
 /// What each field means, in the words a person reading the ledger needs.
 const HINT = {
@@ -209,7 +209,7 @@ function FailureSection({ failure }: { failure: NonNullable<StageSummary["failur
       <Rows
         rows={present([
           row("type", HINT.failureType, failure.failure_type, true),
-          row("detected at", HINT.detectedAt, failure.detected_at, true),
+          row("detected at", HINT.detectedAt, formatStamp(failure.detected_at), true),
           row(
             "evidence",
             HINT.evidence,

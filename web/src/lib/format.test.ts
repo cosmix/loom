@@ -13,7 +13,9 @@ import {
   contextUsage,
   daemonLine,
   failureLabel,
+  formatClock,
   formatElapsed,
+  formatStamp,
   mergeText,
   modelsOf,
   progressPercent,
@@ -231,13 +233,46 @@ describe("TUI formatter ports", () => {
   });
 
   it.each([
-    ["running", 75, { text: "loop stalled 75s", tone: "warning" }],
-    ["unreachable", 59, { text: "daemon running", detail: "tick 59s ago", tone: "completed" }],
-    ["running", null, { text: "daemon running", detail: "tick unknown", tone: "completed" }],
-    ["process-only", 4, { text: "daemon process alive, socket missing", tone: "warning" }],
-    ["not-running", 4, { text: "daemon stopped", tone: "dimmed" }],
-  ] as const)("formats daemon %s", (daemon, age, expected) => {
-    expect(daemonLine(daemon, age)).toEqual(expected);
+    ["running", 75, null, { text: "loop stalled 1m15s", tone: "warning" }],
+    ["running", null, null, { text: "daemon running", detail: "tick unknown", tone: "completed" }],
+    ["running", 59, null, { text: "daemon running", detail: "tick 59s ago", tone: "completed" }],
+    [
+      "unreachable",
+      59,
+      null,
+      { text: "daemon running", detail: "socket unreachable", tone: "warning" },
+    ],
+    ["unreachable", 75, null, { text: "loop stalled 1m15s", tone: "warning" }],
+    ["process-only", 4, null, { text: "daemon process alive, socket missing", tone: "warning" }],
+    ["not-running", 4, null, { text: "daemon stopped", tone: "dimmed" }],
+    ["running", 2, 130, { text: "daemon unknown", detail: "no data for 2m10s", tone: "dimmed" }],
+    ["unreachable", null, 5, { text: "daemon unknown", detail: "no data for 5s", tone: "dimmed" }],
+    ["process-only", null, 0, { text: "daemon unknown", detail: "no data for 0s", tone: "dimmed" }],
+    [
+      "not-running",
+      null,
+      45,
+      { text: "daemon unknown", detail: "no data for 45s", tone: "dimmed" },
+    ],
+  ] as const)("formats daemon %s (tick %s, stale %s)", (daemon, tickAge, staleSecs, expected) => {
+    expect(daemonLine(daemon, tickAge, staleSecs)).toEqual(expected);
+  });
+
+  describe("formatClock / formatStamp", () => {
+    it("renders a 24-hour clock", () => {
+      expect(formatClock(0)).toMatch(/^\d{2}:\d{2}:\d{2}$/);
+    });
+
+    it("renders a 24-hour date and time, never AM/PM", () => {
+      const result = formatStamp(0);
+      expect(result).toMatch(/\d{2}:\d{2}:\d{2}/);
+      expect(result).not.toMatch(/[AP]M/i);
+    });
+
+    it.each([formatClock, formatStamp])("returns — for an unparseable input", (fn) => {
+      expect(fn("not a date")).toBe("—");
+      expect(fn(Number.NaN)).toBe("—");
+    });
   });
 
   it("counts the same summary statuses as the TUI header", () => {

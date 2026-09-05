@@ -3,7 +3,7 @@ import { cn } from "cn";
 import type { ProviderQuota, QuotaSnapshot, WindowKind } from "@/api/schema";
 import { toneClass } from "@/components/state-badge";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import type { Tone } from "@/lib/format";
+import { formatStamp, type Tone } from "@/lib/format";
 import {
   ageText,
   displayPercent,
@@ -26,7 +26,7 @@ const WINDOW_KINDS: readonly WindowKind[] = ["five-hour", "seven-day"];
 const WINDOW_SECS: Record<WindowKind, number> = { "five-hour": 18000, "seven-day": 604800 };
 
 function localTime(epochSecs: number): string {
-  return new Date(epochSecs * 1000).toLocaleString();
+  return formatStamp(epochSecs * 1000);
 }
 
 /// Provider quota for the status bar: one group per provider, each with a

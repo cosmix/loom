@@ -1,13 +1,26 @@
 import { cn } from "cn";
+import { useAtomValue } from "jotai/react";
 
 import type { Snapshot, StageStatus } from "@/api/schema";
+import { useNow } from "@/components/hooks/use-now";
 import { StageStrip } from "@/components/stage-strip";
 import { StateGlyph, toneClass } from "@/components/state-badge";
 import { daemonLine, progressPercent, summaryCounts } from "@/lib/format";
+import { connectionAtom } from "@/state/atoms";
 
-/// "● daemon running · tick 4s ago", toned by `daemonLine`.
+/// "● daemon running · tick 4s ago", toned by `daemonLine`. Once the feed
+/// drops, the daemon's real state is unknown regardless of the frozen
+/// snapshot, so staleness (derived from the connection phase, not frame age -
+/// the server suppresses unchanged frames) overrides it.
 export function DaemonLine({ snapshot }: { snapshot: Snapshot }) {
-  const line = daemonLine(snapshot.daemon, snapshot.tick_age_secs);
+  const connection = useAtomValue(connectionAtom);
+  const now = useNow();
+  const stale =
+    connection.phase === "reconnecting" ||
+    connection.phase === "offline" ||
+    connection.phase === "error";
+  const staleSecs = stale ? Math.max(0, Math.round((now - connection.since) / 1000)) : null;
+  const line = daemonLine(snapshot.daemon, snapshot.tick_age_secs, staleSecs);
   return (
     <span className={cn("inline-flex items-center gap-1.5 text-xs", toneClass(line.tone))}>
       <span aria-hidden="true" className="size-2 rounded-full bg-(--tone)" />

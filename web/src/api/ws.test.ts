@@ -224,6 +224,53 @@ describe("status socket", () => {
     expect(FakeSocket.instances).toHaveLength(6);
   });
 
+  it("keeps a fixed since across successive reconnect attempts within one outage", () => {
+    const store = createStore();
+    const dispose = connectStatusSocket(store, dependencies());
+    let socket = FakeSocket.instances[0];
+
+    socket.open();
+    socket.closeFromServer("lost connection");
+    expect(store.get(connectionAtom).phase).toBe("reconnecting");
+    const since = store.get(connectionAtom).since;
+
+    for (let i = 0; i < 3; i++) {
+      fireNextTimer();
+      socket = FakeSocket.instances.at(-1)!;
+      socket.closeFromServer();
+      expect(store.get(connectionAtom).phase).toBe("reconnecting");
+      expect(store.get(connectionAtom).since).toBe(since);
+    }
+
+    dispose();
+  });
+
+  it("flips to offline on the 5th consecutive reconnect failure, keeping since fixed", () => {
+    const store = createStore();
+    const dispose = connectStatusSocket(store, dependencies());
+    let socket = FakeSocket.instances[0];
+
+    socket.open();
+    socket.closeFromServer("lost connection"); // failure 1: reconnecting
+    const since = store.get(connectionAtom).since;
+
+    for (let i = 0; i < 3; i++) {
+      fireNextTimer();
+      socket = FakeSocket.instances.at(-1)!;
+      socket.closeFromServer(); // failures 2-4: still reconnecting
+      expect(store.get(connectionAtom).phase).toBe("reconnecting");
+    }
+
+    fireNextTimer();
+    socket = FakeSocket.instances.at(-1)!;
+    socket.closeFromServer(); // failure 5: offline
+
+    expect(store.get(connectionAtom).phase).toBe("offline");
+    expect(store.get(connectionAtom).since).toBe(since);
+
+    dispose();
+  });
+
   it("binds the global fetch/setTimeout/clearTimeout fallbacks to globalThis, not the client instance", () => {
     const originalFetch = globalThis.fetch;
     const originalSetTimeout = globalThis.setTimeout;

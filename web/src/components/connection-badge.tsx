@@ -7,12 +7,13 @@ import { toneClass } from "@/components/state-badge";
 import { formatElapsed, type Tone } from "@/lib/format";
 import { connectionAtom, snapshotAtom } from "@/state/atoms";
 
-type Phase = "connecting" | "live" | "reconnecting" | "error";
+type Phase = "connecting" | "live" | "reconnecting" | "offline" | "error";
 
 const PHASE: Record<Phase, { tone: Tone; label: string }> = {
   connecting: { tone: "dimmed", label: "connecting" },
   live: { tone: "completed", label: "live" },
   reconnecting: { tone: "warning", label: "reconnecting" },
+  offline: { tone: "blocked", label: "offline" },
   error: { tone: "blocked", label: "error" },
 };
 

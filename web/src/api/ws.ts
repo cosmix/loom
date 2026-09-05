@@ -12,6 +12,12 @@ export interface SocketDeps {
 }
 
 const BACKOFF_MS = [1000, 2000, 4000, 8000, 10000] as const;
+// Not a timer: a cumulative-delay floor. By the 5th consecutive reconnect
+// failure the outage has already burned through the first four backoff
+// delays (1s+2s+4s+8s = 15s), so from that failure on the feed is stale
+// enough that showing it as merely "reconnecting" is misleading - it's
+// "offline" until a socket actually opens again.
+const OFFLINE_AFTER_ATTEMPTS = 4;
 
 function issueMessage(issues: { path: PropertyKey[]; message: string }[]): string {
   const issue = issues[0];
@@ -132,13 +138,28 @@ class StatusSocketConnection {
     if (this.stopped || this.reconnectTimer !== undefined) {
       return;
     }
-    this.setConnection("reconnecting", message);
+    const phase = this.attempts >= OFFLINE_AFTER_ATTEMPTS ? "offline" : "reconnecting";
+    this.setOutagePhase(phase, message);
     const delay = BACKOFF_MS[Math.min(this.attempts, BACKOFF_MS.length - 1)];
     this.attempts += 1;
     this.reconnectTimer = this.schedule(() => {
       this.reconnectTimer = undefined;
       this.openSocket();
     }, delay);
+  }
+
+  // An outage - "reconnecting" then "offline" - is one event with one
+  // `since`, stamped when the feed first dropped: preserve it across
+  // retries and across the reconnecting -> offline flip, and only stamp a
+  // fresh `since` when this failure is what starts the outage.
+  private setOutagePhase(phase: "reconnecting" | "offline", message: string): void {
+    const current = this.store.get(connectionAtom);
+    const inOutage = current.phase === "reconnecting" || current.phase === "offline";
+    this.store.set(connectionAtom, {
+      phase,
+      since: inOutage ? current.since : Date.now(),
+      message,
+    });
   }
 }
 

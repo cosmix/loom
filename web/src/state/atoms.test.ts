@@ -47,6 +47,14 @@ describe("dashboard atoms", () => {
   });
 
   it("starts with the connecting connection state", () => {
-    expect(createStore().get(connectionAtom)).toEqual({ phase: "connecting", since: 0 });
+    // `since` is stamped once, at module load (the atom's initial value is
+    // created a single time and shared by every store), so it predates this
+    // test rather than `Date.now()` called here - just check it's a sane
+    // timestamp, not a hardcoded 0 that would render as "connecting since
+    // the epoch" if read before connectStatusSocket ever starts.
+    const connection = createStore().get(connectionAtom);
+    expect(connection.phase).toBe("connecting");
+    expect(connection.since).toBeGreaterThan(0);
+    expect(connection.since).toBeLessThanOrEqual(Date.now());
   });
 });

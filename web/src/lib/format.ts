@@ -233,24 +233,70 @@ export function progressPercent(completed: number, total: number): number {
   return Math.trunc((completed * 100 + Math.trunc(total / 2)) / total);
 }
 
+/// `staleSecs` is null while the page has a live feed; a number is how long
+/// the page has been without one, in which case the daemon's real state is
+/// unknown and must not be reported as running.
 export function daemonLine(
   daemon: DaemonState,
   tickAgeSecs: number | null,
+  staleSecs: number | null,
 ): { text: string; detail?: string; tone: Tone } {
+  if (staleSecs !== null) {
+    return {
+      text: "daemon unknown",
+      detail: `no data for ${formatElapsed(staleSecs)}`,
+      tone: "dimmed",
+    };
+  }
   if (daemon === "process-only") {
     return { text: "daemon process alive, socket missing", tone: "warning" };
   }
   if (daemon === "not-running") {
     return { text: "daemon stopped", tone: "dimmed" };
   }
+  // The stall check comes before `unreachable`: the tick file is read from
+  // disk either way, so a stalled loop is a fact this caller can still see,
+  // and it is the more urgent one.
   if (tickAgeSecs !== null && tickAgeSecs >= 60) {
-    return { text: `loop stalled ${tickAgeSecs}s`, tone: "warning" };
+    return { text: `loop stalled ${formatElapsed(tickAgeSecs)}`, tone: "warning" };
+  }
+  if (daemon === "unreachable") {
+    return { text: "daemon running", detail: "socket unreachable", tone: "warning" };
   }
   return {
     text: "daemon running",
     detail: tickAgeSecs === null ? "tick unknown" : `tick ${tickAgeSecs}s ago`,
     tone: "completed",
   };
+}
+
+const CLOCK_FORMAT = new Intl.DateTimeFormat(undefined, {
+  hour: "2-digit",
+  minute: "2-digit",
+  second: "2-digit",
+  hourCycle: "h23",
+});
+
+const STAMP_FORMAT = new Intl.DateTimeFormat(undefined, {
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+  second: "2-digit",
+  hourCycle: "h23",
+});
+
+/// 24-hour "14:03:22"; "—" for an unparseable input.
+export function formatClock(value: string | number | Date): string {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "—" : CLOCK_FORMAT.format(date);
+}
+
+/// 24-hour date + time; "—" for an unparseable input.
+export function formatStamp(value: string | number | Date): string {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "—" : STAMP_FORMAT.format(date);
 }
 
 export function summaryCounts(

@@ -9,9 +9,11 @@ import { Header } from "@/components/header";
 import { useNow } from "@/components/hooks/use-now";
 import { LegendDialog } from "@/components/legend-dialog";
 import { QuotaMeters } from "@/components/quota-meters";
+import { toneClass } from "@/components/state-badge";
 import { StageModal } from "@/components/stage-modal";
 import { Kbd } from "@/components/ui/kbd";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { formatClock, formatElapsed } from "@/lib/format";
 import { providerRows } from "@/lib/quota";
 import { snapshotAtom } from "@/state/atoms";
 
@@ -60,9 +62,14 @@ function isTyping(target: EventTarget | null): boolean {
 /// plain one-line footer with the hint on the left.
 function Footer() {
   const snapshot = useAtomValue(snapshotAtom);
-  const nowSecs = Math.floor(useNow(30_000) / 1000);
+  const now = useNow();
+  const nowSecs = Math.floor(now / 1000);
   const quota = snapshot?.status.quota ?? null;
   const hasQuota = quota !== null && providerRows(quota).length > 0;
+  const ageSecs = snapshot
+    ? Math.max(0, Math.floor((now - Date.parse(snapshot.generated_at)) / 1000))
+    : 0;
+  const degraded = snapshot?.source === "files";
   return (
     <footer className="z-10 border-t border-border bg-background/90 backdrop-blur-sm">
       <div className="mx-auto flex w-full max-w-[1440px] flex-wrap items-center gap-x-4 gap-y-1 px-4 py-3 text-xs text-muted-foreground sm:px-6">
@@ -80,7 +87,8 @@ function Footer() {
           </span>
           {snapshot && (
             <span className="font-mono tabular-nums">
-              {snapshot.source} · {new Date(snapshot.generated_at).toLocaleTimeString()}
+              updated {formatClock(snapshot.generated_at)} · {formatElapsed(ageSecs)} ago · via{" "}
+              <span className={cn(degraded && toneClass("warning"))}>{snapshot.source}</span>
             </span>
           )}
         </span>
