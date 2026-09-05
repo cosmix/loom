@@ -277,3 +277,29 @@ start-time line. It verifies as `Unverifiable`, which counts as ALIVE for probin
 the verified-kill path REFUSES to signal an unverifiable identity — so a test can point this at its
 own PID with zero risk of the test killing itself. `Some(u64::MAX)` as the start time gives the
 deterministic dead case for the opposite branch.
+
+## The Judge-Close Path Persisted Its Record on an Unconfirmed Kill (2026-09-05)
+
+**What happened:** `a_judge_for_another_dispute_is_left_alone` failed on nearly every CI push while
+passing locally. `close_adjudication_session` (`judge_close.rs`) sent `SIGTERM` through
+`kill_session`, wrote the session record, and returned; the tests probed `is_process_alive` on the
+very next line, so any delay between the signal and the victim's exit fails the assert. On this
+32-core developer machine the window never opened, even with the test binary and six spinners
+pinned to two CPUs with `taskset -c 0,1` for 100 runs, while a GitHub-hosted 4-vCPU runner is an
+oversubscribed VM where a woken process can wait on the hypervisor long enough for the probe to run
+first.
+
+**Why:** the takedown path in `stage_takedown.rs` already confirmed kills through
+`confirm_session_gone` (see the "Re-Queueing a Stage Without a CONFIRMED Kill" entry above), but the
+judge-close path was written separately and probed nothing before persisting. A second kill path was
+added without the first path's confirmation step.
+
+**Prevention:** every path that signals a process and then writes a terminal status must confirm
+death through the shared bounded poll before the write. A test that kills a real process and asserts
+on its death belongs in `scripts/flake-check.sh`'s default filters. A kill-then-probe race can be
+impossible to reproduce on a developer machine even pinned to two CPUs under load, so do not wait
+for a local reproduction before applying the confirmed-kill rule to a path that signals and then
+writes state.
+
+**Fix:** `close_adjudication_session` calls `confirm_session_gone` (now `pub(crate)`) before
+persisting the session status; the judge test modules run under the flake-check job.
