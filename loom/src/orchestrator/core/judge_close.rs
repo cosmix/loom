@@ -7,7 +7,9 @@
 //! whose record still says `Running`, or whose signal file survives, is
 //! indistinguishable from a working judge, and the stage waits on it forever.
 //!
-//! So the sequence lives here once rather than in each caller.
+//! So the sequence lives here once rather than in each caller. The kill itself
+//! only signals; because `SIGTERM` returns before the target has actually
+//! exited, the close waits for confirmed death before writing that state down.
 
 use crate::models::session::{Session, SessionStatus};
 use crate::orchestrator::monitor::heartbeat::cleanup_judge_heartbeat;
@@ -27,6 +29,14 @@ impl Orchestrator {
     /// fails still has to be followed by the record and signal cleanup, or a
     /// judge that is already gone keeps its stage blocked on the strength of
     /// its own leftovers.
+    ///
+    /// The kill is confirmed through the same bounded poll `take_down_agents`
+    /// uses (`confirm_session_gone`, `event_handler/stage_takedown.rs`) before
+    /// the record is written: `SIGTERM` is asynchronous, so a probe taken right
+    /// after `kill_session` can still see a judge that is in the process of
+    /// dying, and a record written before confirmed death describes a judge
+    /// that may still be running. Once this returns, callers — and the tests
+    /// that assert on the judge's process — may treat it as gone.
     pub(crate) fn close_adjudication_session(&mut self, session: &Session, status: SessionStatus) {
         if let Err(error) = self.backend.kill_session(session) {
             tracing::warn!(
@@ -36,6 +46,22 @@ impl Orchestrator {
                 %error,
                 "failed to kill the adjudication session",
             );
+        }
+        match self.confirm_session_gone(session) {
+            Ok(true) => {}
+            Ok(false) => tracing::warn!(
+                target: "loom::adjudication",
+                session = %session.id,
+                stage = ?session.stage_id,
+                "adjudication session survived its kill; retiring its record anyway",
+            ),
+            Err(error) => tracing::warn!(
+                target: "loom::adjudication",
+                session = %session.id,
+                stage = ?session.stage_id,
+                %error,
+                "could not confirm the adjudication session is gone; retiring its record anyway",
+            ),
         }
         let work_dir = self.config.work_dir.clone();
         self.monitor

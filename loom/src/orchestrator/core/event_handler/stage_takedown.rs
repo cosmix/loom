@@ -20,7 +20,9 @@ use crate::orchestrator::terminal::native::{session_process_status, SessionProce
 use super::super::{persistence::Persistence, Orchestrator};
 
 /// How long a takedown waits for a signalled agent to actually exit before
-/// calling it a survivor. See [`Orchestrator::confirm_session_gone`].
+/// calling it a survivor. See [`Orchestrator::confirm_session_gone`], which is
+/// also the poll `close_adjudication_session` (`judge_close.rs`) uses to confirm
+/// a killed judge before its record is written.
 const KILL_CONFIRM_TIMEOUT: Duration = Duration::from_secs(2);
 const KILL_CONFIRM_POLL_INTERVAL: Duration = Duration::from_millis(50);
 
@@ -254,7 +256,7 @@ impl Orchestrator {
     /// A probe error is uncertainty, not proof of death. Propagating it keeps
     /// the stage in `NeedsHandoff`, where an operator can retry safely without
     /// ever admitting a second writer to the worktree.
-    fn confirm_session_gone(&self, session: &Session) -> Result<bool> {
+    pub(crate) fn confirm_session_gone(&self, session: &Session) -> Result<bool> {
         let deadline = Instant::now() + KILL_CONFIRM_TIMEOUT;
         loop {
             if !self.backend.is_session_alive(session).with_context(|| {
