@@ -11,7 +11,7 @@
 | [architecture.md](architecture.md) | High-level component relationships, data flow, module dependencies | 542 |
 | [entry-points.md](entry-points.md) | Key files agents should read first | 572 |
 | [patterns.md](patterns.md) | Architectural patterns discovered in the codebase | 799 |
-| [conventions.md](conventions.md) | Coding conventions discovered in the codebase | 682 |
+| [conventions.md](conventions.md) | Coding conventions discovered in the codebase | 697 |
 | [mistakes.md](mistakes.md) | Mistakes made and lessons learned - what to avoid | 1186 |
 | [stack.md](stack.md) | Dependencies, frameworks, and tooling used in the project | 116 |
 | [concerns.md](concerns.md) | Technical debt, warnings, and issues to address | 857 |
@@ -38,7 +38,7 @@
 | [architecture/signal-generation.md](architecture/signal-generation.md) | Signal Generation | How a stage signal is assembled: stable-prefix cache, shared append_* helpers, per-stage-type prefixes, soft signals. | 175 |
 | [architecture/skill-catalog.md](architecture/skill-catalog.md) | Skill Catalog | The two skill roots, why 53 skills live outside `~/.claude/skills`, and the install/hook-exemption hazards that came… | 103 |
 | [architecture/source-graph.md](architecture/source-graph.md) | Source Graph | What the source graph is and is not, its honesty contract, extractor trait, node/edge and cache identity, and lifecycle. | 244 |
-| [architecture/status-data-model.md](architecture/status-data-model.md) | Status Data Model | Where each field shown by `loom status` (static, compact, and `--live`) comes from, and what the live TUI does not yet… | 174 |
+| [architecture/status-data-model.md](architecture/status-data-model.md) | Status Data Model | Where each field shown by `loom status` (static, compact, and `--live`) comes from, and what the live TUI does not yet… | 176 |
 | [architecture/terminal-backends.md](architecture/terminal-backends.md) | Terminal Backends | The native and tmux session backends behind one dispatcher, lane resolution, and session-recorded dispatch. | 251 |
 | [architecture/web-dashboard.md](architecture/web-dashboard.md) | Web Dashboard | `loom status --web [PORT]` — a read-only HTTP/WebSocket server (port 7373 default, `127.0.0.1` only) that serves an… | 31 |
 
@@ -94,7 +94,7 @@
 | [mistakes/untrusted-value-boundaries.md](mistakes/untrusted-value-boundaries.md) | Untrusted Value Boundaries | Enumerating every producer of a rendered field, not just the field, and why containment at one render site alone is not… | 141 |
 | [mistakes/verification-harness.md](mistakes/verification-harness.md) | Verification Harness | When every check fails at once, suspect the harness; the PATH binary is not your build; silent subagents are failed… | 149 |
 | [mistakes/visibility-and-reachability.md](mistakes/visibility-and-reachability.md) | Visibility And Reachability | pub(crate) is not nameable by itself - visibility is capped by path reachability - plus sibling traps around wrapper… | 98 |
-| [mistakes/web-dashboard-server.md](mistakes/web-dashboard-server.md) | Web Dashboard Server (loom status --web) | Concurrency, security and testing lessons from building the hand-rolled HTTP/WebSocket | 105 |
+| [mistakes/web-dashboard-server.md](mistakes/web-dashboard-server.md) | Web Dashboard Server (loom status --web) | Concurrency, security and testing lessons from building the hand-rolled HTTP/WebSocket | 152 |
 | [mistakes/writer-reader-address.md](mistakes/writer-reader-address.md) | Writer/Reader Address | Topic notes for the mistakes knowledge area. | 71 |
 
 ### concerns

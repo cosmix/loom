@@ -680,3 +680,18 @@ and non-obvious. Convention in this repo's hook scripts: have the function retur
 status and let the CALL SITE do `if ! X=$(normalize_lexical ...); then block_target; exit 2; fi` — an
 `if`-tested command is explicitly exempt from `set -e`, so this is both correct and matches the rest
 of the file's style.
+
+## Version and Release Identity
+
+The product version is the git tag, and nothing else. `loom/Cargo.toml`'s `version = "0.0.0-dev"`
+is a deliberate placeholder, so **`env!("CARGO_PKG_VERSION")` evaluates to the literal string
+`0.0.0-dev` in every build, released ones included** — never use it for anything a user or an
+external service sees. Use `crate::version::VERSION` (or `LABEL` for a `v`-prefixed display
+string), which `loom/build.rs` derives from `git describe --tags --exact-match` via
+`derive_version` (`loom/src/version/derive.rs`) and emits as the `LOOM_VERSION` env var.
+
+The chain that keeps it honest: a release is cut by pushing a `v*.*.*` tag;
+`.github/workflows/release.yml` checks out with `fetch-depth: 0` so the tag is present at build
+time, and its `verify-version` job runs `loom -v` on the built binary and fails the release unless
+the reported version equals the tag minus its leading `v`. A build with no tags reachable degrades
+to `0.0.0-dev+<sha>` rather than lying.
