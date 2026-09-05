@@ -82,6 +82,38 @@ jobs:
           path: ${{ matrix.binary_name }}
           if-no-files-found: error
 
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo dependencies
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            loom/target/
+          key: ${{ runner.os }}-cargo-v2-${{ hashFiles('loom/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-v2-
+
+      - name: Install tmux
+        run: sudo apt-get update && sudo apt-get install -y tmux
+
+      - name: Run tests
+        working-directory: loom
+        run: cargo test --all-targets
+
+      - name: Re-run the timing-sensitive tests under load
+        run: ./scripts/flake-check.sh
+
   verify-version:
     name: Verify binary version matches tag
     needs: build
@@ -107,7 +139,7 @@ jobs:
 
   sign-and-release:
     name: Sign and Release
-    needs: [build, verify-version]
+    needs: [build, verify-version, test]
     runs-on: ubuntu-latest
     permissions:
       contents: write
