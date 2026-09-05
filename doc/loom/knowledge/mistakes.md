@@ -1183,4 +1183,4 @@ was rejected: a ledger of what the agent did must not be writable by the agent.
 
 ## Web Dashboard Server
 
-Concurrency bugs (never_loop drain bug, unbounded-channel growth, a subscribe/publish lock-ordering race), a cross-worker field-semantics bug, a browser-vs-jsdom `Illegal invocation` gotcha, and an ambient-`.loom/work` CI smoke-script failure, all from building `loom/src/commands/status/web/`. Full detail: [mistakes/web-dashboard-server.md](mistakes/web-dashboard-server.md).
+Concurrency bugs (never_loop drain bug, unbounded-channel growth, a subscribe/publish lock-ordering race), a cross-worker field-semantics bug, a browser-vs-jsdom `Illegal invocation` gotcha, an ambient-`.loom/work` CI smoke-script failure, and the two ways the graph view lost its edges (React Flow discarding handle bounds for rebuilt nodes, and a hover focus outliving its chip), all from `loom/src/commands/status/web/` and `web/`. Full detail: [mistakes/web-dashboard-server.md](mistakes/web-dashboard-server.md).

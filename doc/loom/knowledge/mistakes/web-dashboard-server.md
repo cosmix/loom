@@ -103,3 +103,50 @@ checkout, where `.loom/work` is gitignored and never exists.
 distinguishes "works" from "works because my working copy has state CI will not have."
 Fixed by having the script build its own scratch workspace (`mktemp -d`, create
 `.loom/work` there, run from it).
+
+## React Flow Dropped Every Edge Because Rebuilt Nodes Carried No `measured` (2026-09-05)
+
+**What happened:** the graph view rebuilds React Flow's `nodes` array from the snapshot on
+every frame (`buildNodes`, `web/src/components/graph/stage-graph.tsx`). `adoptUserNodes`
+(`@xyflow/system` 0.0.82) rebuilds the internal node for any object it has not seen by
+reference, and its `parseHandles` keeps the measured handle bounds only when the incoming
+node carries `measured`. Ours carried `width`/`height` but no `measured`, so every frame
+wiped every node's handle bounds; `getEdgePosition` returns null without them, so all edges
+dropped until a ResizeObserver round-trip restored them. When a frame landed inside that
+round-trip, `useNodeObserver`'s `isInitialized` read false on two consecutive renders, its
+effect (deps `[isInitialized, node.hidden]`) did not re-run, the observed element's size had
+not changed, and nothing re-measured: the edges stayed gone until a card resized. Reported as
+"occasionally, after the dashboard has been open a while, the edges disappear".
+
+**Why:** rebuilding a prop every frame looks free for a controlled component, but React Flow
+keeps per-node measurement state keyed by object identity, and hands it back only to an
+object that declares it was measured.
+
+**Prevention:** when a library keeps measured state for objects you hand it, either keep the
+object identity stable across frames or declare the measurement on the object you pass.
+`web/src/lib/graph.ts` already lays each card out at exactly the size it renders at, so
+`measured: { width, height }` costs nothing and makes the graph independent of the observer.
+
+**Fix:** `measured` on both node kinds in `buildNodes`. The regression test
+(`web/src/components/graph/stage-graph.test.ts`) drives `adoptUserNodes` twice with freshly
+built arrays and asserts the handle bounds survive — a jsdom render cannot catch this, since
+the inert `ResizeObserver` stub never measures at all and a synchronous stub always recovers
+before the assertion, so the test pins the library contract instead of the DOM.
+
+## A Hover Focus Outlived the Chip That Set It (2026-09-05)
+
+**What happened:** `StateKey` renders one chip per state present in the plan. A chip whose
+last stage leaves that state unmounts under the pointer and never fires its `onMouseLeave`,
+so `Canvas`'s `hovered` focus stayed on a state no stage was in. `tracedIds` returned an
+empty set, which dims everything: nodes to 0.3 opacity, edges to 0.18 (`web/src/graph.css`).
+That also reads as the edges disappearing.
+
+**Why:** the focus was validated for one of the two shapes it can take — a pinned stage id
+was checked against the snapshot, a status was not.
+
+**Prevention:** state naming something in the data (an id, a status) needs re-validating
+against each new snapshot, for every shape it can take, not just the shape whose staleness
+was noticed first.
+
+**Fix:** the status branch of `tracedIds` returns null when no stage has that status, the
+same as the stage branch already did.
