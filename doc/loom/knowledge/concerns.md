@@ -731,6 +731,17 @@ dedicated knowledge-reorganization project, not part of token-governor correctne
   notes for the `<category>` knowledge area." blurb; that repair needs either a `--blurb` flag on
   `update`/a dedicated verb, or a direct file edit from an interactive (non-stage) session.
 - **The generated index remains oversized.** This is low-priority navigation cleanup.
+- **2026-09-04 reconfirmation (web-dashboard plan's knowledge-distill stage):** the backlog is at
+  728 `MissingSourceRef`/oversized-file issues under `./doc/loom/knowledge` on a tree with none of
+  this plan's own additions applied (verified against the unmodified HEAD tree via a temporary
+  stash), essentially unchanged from prior counts. This plan's own new/edited knowledge content adds
+  ZERO net new issues (verified: every bare filename this stage introduced was corrected to its
+  fully-qualified src-relative path before completion). `loom knowledge check --strict` — the
+  canonical knowledge-distill acceptance criterion per `skills/loom-plan-writer/SKILL.md` — therefore
+  still fails on this tree for reasons entirely predating this plan; fixing the backlog itself needs
+  the dedicated reorganization project named above, not a per-plan knowledge-distill stage. A stage
+  hitting this should confirm (as here) that its own additions are clean, then treat the residual
+  count as this pre-existing, already-tracked concern rather than attempting to clear it inline.
 
 ## Retrieval Cannot Distinguish 'No Source Graph' From 'Healthy' (2026-09-01)
 
@@ -840,3 +851,7 @@ wildcard-free prefix lies above the project or above a small home subdirectory.
 - **The ledger footer's error branch has zero test coverage.** `TuiApp.last_error` is wired end to end
   from daemon exit / `Response::Error` through to `panels::render_footer`, but no ledger test ever
   sets it non-`None` (`commands/status/ui/tui/ledger/tests.rs:189`, `commands/status/ui/tui/ledger/layout.rs:295` both pass `None`).
+
+## Web Dashboard Latent Issues
+
+Five issues reviewed and deliberately left unchanged in `loom/src/commands/status/web/`: a mutex-poisoning cascade risk, a cosmetic `GET /ws` status-code mismatch, a dead-looking-but-pinned `DEFAULT_PORT` literal, an inherited partial-frame truncation risk shared with the TUI, and a left-in-place bundle-size warning. Detail: [concerns/web-dashboard-latent-issues.md](concerns/web-dashboard-latent-issues.md).
