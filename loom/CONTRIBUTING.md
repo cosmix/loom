@@ -61,6 +61,16 @@ host with no C toolchain can still build loom. If you change a grammar pin, the 
 or the shape of the tree-sitter walk, bump `ExtractorIdentity` — otherwise cached extractions
 from the previous build are silently reused.
 
+### Web dashboard
+
+`web/` is a Bun + Vite React project backing `loom status --web`. `web/dist` is committed and
+embedded into the loom binary at compile time by `build.rs`, so the shipped binary needs no
+Node toolchain. Rebuild and commit `dist/` together with any change under `web/src/`:
+
+```bash
+cd web && bun install && bun run build
+```
+
 ### Working in a loom worktree
 
 - **Do not run `cargo fmt` while sibling agents are working.** It ignores path arguments and
