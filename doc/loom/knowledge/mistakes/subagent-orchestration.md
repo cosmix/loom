@@ -261,3 +261,24 @@ a failed unit of work rather than a report.
 **Fix:** BLOCK-D in `CLAUDE.md.template` and `orchestrator/signals/cache/blocks.rs` now carries
 that rule, pinned byte-identical across surfaces by `tests_doctrine.rs`. The ceiling itself moved
 from 150,000 to 800,000 for main agents and subagents alike, 0.80 of the 1M window both run.
+
+## A Codex Forwarder Reports "done" While Its Codex Job Is Still Editing Files (2026-09-04)
+
+**What happened:** a `loom-codex-forwarder` subagent's single Bash call exceeded the tool's
+600000ms maximum, backgrounded under a Claude Code task id, and the forwarder's TURN ENDED —
+so `loom subagents watch` printed "settled: every subagent is done" and `loom subagents list`
+showed `state=done`, while `codex-companion.mjs status --all` showed the job still `running`,
+phase `editing`, emitting "Applying N file change(s)".
+
+**Why:** "done but silent -> harvest and proceed immediately" (the general rule for a
+finished Claude subagent) is WRONG for the codex lane specifically: the forwarder's turn
+ending only means the wrapper's Bash call returned control, not that codex finished writing.
+Acting on it spawns the next wave into a tree codex is still mutating — the exact two-writers-
+one-file hazard ownership tables exist to prevent.
+
+**Prevention:** for any `loom-codex-forwarder` subagent, the authoritative liveness signal is
+the companion job status, never `loom subagents`. Poll
+`node <plugin>/scripts/codex-companion.mjs status --all` until the job leaves `running`
+before spawning anything that touches its files. Companion at
+`~/.claude/plugins/cache/openai-codex/codex/<ver>/scripts/codex-companion.mjs`; per-job log
+at `~/.claude/plugins/data/codex-openai-codex/state/<worktree>-<hash>/jobs/<job>.log`.

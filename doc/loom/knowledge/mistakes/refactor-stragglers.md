@@ -60,3 +60,23 @@
 3. Table cells in markdown files, knowledge docs, and SKILL.md files
 
 Use `rg -i "container\|docker\|dispatcher" loom/src/ --include="*.rs"` to catch all forms.
+
+## A Subagent That Splits a File Leaves an Untracked Straggler No Local Check Catches (2026-09-04)
+
+**What happened:** a stage nearly shipped a branch whose committed tree could not compile.
+The first commit was staged with an EXPLICIT file list taken from the subagent's report, but
+the subagent had split `loom/src/commands/status/web/connection.rs` and created
+`loom/src/commands/status/web/head.rs`, which its report never named.
+`loom/src/commands/status/web/mod.rs` (committed) carried `mod head;` while the split-off
+file stayed untracked — HEAD referenced a file not in git. `cargo build`, clippy, the full
+test suite, the smoke script and the pre-commit hook all read the WORKING TREE, where the
+file exists, so all of them passed; only `git status --short` showed the untracked `??` line.
+
+**Prevention:** after the last commit of a stage, `git status --short` must be EMPTY — an
+untracked `??` line under a source directory is a straggler, not noise. Never derive a
+staging list from a subagent's report alone; derive it from `git status`. Stronger check
+worth the ~70 seconds: `git clone --no-hardlinks --branch <branch> . $TMPDIR/x && cargo build
+--all-targets` — the only thing that tests what the COMMIT contains rather than the disk.
+
+**Fix:** `git reset --soft` to the pre-stage commit, then re-commit the same groups with the
+missing file included — content was never at risk since a soft reset keeps the working tree.

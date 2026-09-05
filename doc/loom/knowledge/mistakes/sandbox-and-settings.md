@@ -442,3 +442,75 @@ exact command that prompted, with a `cd` in front of it, not by re-reading rule 
 
 **Fix:** no `Read(` deny is ever written; `denyRead` plus `hooks/credential-guard.sh` keep the
 boundary. See concerns.md § "No `Read(...)` Deny Rule May Exist in Any Settings File".
+
+## The Sandbox's AF_UNIX Denial Also Kills sccache, Breaking Every Cargo Command (2026-09-04)
+
+**What happened:** loom exports `RUSTC_WRAPPER=/usr/bin/sccache` into every stage session
+and into the confined acceptance environment (`process/environment.rs` allowlists
+`RUSTC_WRAPPER`) whenever sccache is found on the host. Every `cargo build`/`clippy`/`doc`/
+`test` then fails before a single crate compiles: `error: process didn't exit successfully:
+/usr/bin/sccache rustc -vV` / `sccache: error: Operation not permitted (os error 1)`.
+
+**Why:** the same AF_UNIX `socket()` denial documented above — sccache's client reaches its
+server over a Unix domain socket, and `sccache --start-server` cannot even bind one.
+`find_sccache_path()` (`orchestrator/terminal/native/build_cache.rs`) only proves the binary
+EXISTS, never that it can run where it is being exported to. NOT a cache-directory
+permission issue: a writable `SCCACHE_DIR` fails identically. Note `sccache --version`
+SUCCEEDS, so any probe weaker than starting the server passes and proves nothing.
+
+**Detection:** a cargo failure whose FIRST line names sccache, before any "Compiling" line,
+is this — not a build defect.
+
+**Workaround inside a session (no daemon change):** prefix the command with
+`env -u RUSTC_WRAPPER`. This also fixes `git commit`/`git push`, since `loom/.githooks/
+pre-commit` and `pre-push` run cargo without that prefix and git hooks inherit the git
+process's environment — `env -u RUSTC_WRAPPER git commit ...` is enough.
+
+**Fix that needs an operator, not the stage session:** restart `loom run` with
+`LOOM_SCCACHE=0` so the daemon stops exporting the wrapper at all — the acceptance criteria
+themselves carry no prefix and the completion-guard hook pins the stage-completion command
+to one exact invocation, so nothing inside the session can add a prefix there. Never amend a
+shared plan's criteria to carry the prefix; that bakes a machine-specific workaround into the
+plan.
+
+## `cargo audit` and `cargo deny` Fail in a Stage Sandbox for Two Unrelated Reasons (2026-09-04)
+
+**What happened:** `cargo audit -f Cargo.lock -d target/advisory-db` and `cargo deny check`
+both fail verbatim in a stage session, and neither failure is the sccache/AF_UNIX one above.
+
+**`cargo audit`:** the operator's global `~/.gitconfig` carries `url.ssh://git@github.com/
+.insteadof https://github.com/`, so `cargo audit`'s https clone of `RustSec/advisory-db` is
+silently rewritten to `ssh://`, and the sandbox has no ssh key or `known_hosts`:
+`ssh_askpass: exec(/usr/bin/ssh-askpass): No such file or directory` / `Host key
+verification failed`. Detection: an https git fetch failing with `ssh_askpass` or "Host key
+verification failed" is an `insteadOf` rewrite, never a proxy/allowlist denial —
+`git ls-remote https://github.com/...` succeeds once the rewrite is off. Workaround:
+`GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null <command>` (`GIT_CONFIG_COUNT`/
+`GIT_CONFIG_KEY_0` do NOT work — `insteadOf` picks the longest matching prefix and the
+existing rule still wins).
+
+**`cargo deny`:** not installed, and `cargo install cargo-deny --locked` fails with
+`Read-only file system (os error 30)` — the sandbox allows `~/.cargo/registry` and
+`~/.cargo/git` but not `~/.cargo/bin`. Install with `--root $TMPDIR/tools` (and
+`CARGO_TARGET_DIR` under `$TMPDIR`), prepend to `PATH`. Once running, `cargo-deny` shells out
+to `cargo metadata`, which inherits `RUSTC_WRAPPER` and dies on the same sccache EPERM —
+`cargo-deny` reports that as "failed to fetch crates", which reads like a network denial and
+is not one; prefix with `env -u RUSTC_WRAPPER` too.
+
+**Prevention:** when N acceptance criteria fail together, attribute each one INDIVIDUALLY —
+a shared symptom ("all cargo commands fail") is not a shared cause, and inheriting a prior
+session's attribution without re-testing propagates a wrong diagnosis.
+
+## A Bash Tool Call Is Its Own Network Namespace — a Server Started in One Call Is Unreachable From Another (2026-09-04)
+
+**What happened:** a server started with `cargo run status --web` (or `bun run dev`) in one
+Bash call is unreachable from a later Bash call, and from a Playwright MCP browser, because
+each Bash invocation gets its own network namespace.
+
+**Prevention:** for any visual/browser check of a locally-served app, start the server AND
+make every request against it inside ONE shell invocation
+(`(loom status --web PORT & sleep 2; curl ...; kill $!)`), or serve pre-captured content to
+the browser directly — e.g. build to `$TMPDIR/dist` and have the Playwright process itself
+serve fixtures via `page.route`/`page.routeWebSocket` rather than proxying to a live server
+in a different Bash call. `browser_run_code_unsafe`-style sandboxes have no
+`process`/`require`/`import`, only `page`.

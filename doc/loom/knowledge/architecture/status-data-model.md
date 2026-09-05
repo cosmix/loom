@@ -152,6 +152,8 @@ TUI cell padding measures with `Span::width()` (unicode-width aware, `commands/s
 
 Colors and icons for `StageStatus` are unchanged from `loom/src/models/stage/types.rs:986-1096` (see "StageStatus — 13 Variants" above); the ledger has no separate per-stage color cycle.
 
+**2026-09-04 correction — a third consumer exists.** `loom status --web [PORT]` (see [web-dashboard.md](web-dashboard.md)) is a second live renderer of the identical `StatusData`/`StageSummary` payload described in this file, alongside the compact view and this TUI ledger. It does not reimplement the Rust-side derivation: it reuses `render::attention_entries`, `render::failure_label`, `scheduling_report::alerts`, `tick::read`, and `data::collect_status_data` directly, and ports only the TUI's display semantics (icons, labels, legend text) to TypeScript in `web/src/lib/format.ts`, pinned against this file's serde output by `loom/src/commands/status/web/model_tests.rs`.
+
 ## What Does Not Exist on the Status Path
 
 Stated explicitly because these are natural things to expect and go looking for:

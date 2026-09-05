@@ -536,3 +536,7 @@ diagnostic.
 ## Quota Poller
 
 A daemon thread (`loom/src/quota/poller.rs`) polls the Claude OAuth usage endpoint and `codex app-server` every 180 s and caches one `ProviderQuota` per provider under `.loom/work/quota/`; `StatusData.quota` is read from that cache, never polled, and rendered in the `--live` and `--web` footers. Sources, backoff, cache hygiene, and the token-handling rules: [architecture/quota-poller.md](architecture/quota-poller.md).
+
+## Web Dashboard
+
+`loom status --web [PORT]` serves an embedded React SPA over HTTP/WebSocket (127.0.0.1, port 7373 default), streaming the same `StatusData` the live TUI renders and reusing its collection/derivation code rather than reimplementing it. Server shape, broadcaster fallback, the Rust/TS fixture contract, and the committed-dist/build.rs embedding: [architecture/web-dashboard.md](architecture/web-dashboard.md).

@@ -301,7 +301,9 @@ steps' own success output as a harness artifact, not evidence the install failed
 
 **Prevention:** share rustc output through `sccache`, which caches per input hash and leaves every worktree its own `target/` untouched.
 
-**Fix:** `orchestrator/terminal/native/build_cache.rs` locates `sccache` (`LOOM_SCCACHE=0` disables it, `LOOM_SCCACHE=<path>` pins it, otherwise `which` then `~/.cargo/bin`, `~/.local/bin`, `/opt/homebrew/bin`, `/usr/local/bin`). The session wrapper exports `RUSTC_WRAPPER=<path>` for every session kind when found, and forwards an operator's own `RUSTC_WRAPPER`, `SCCACHE_DIR`, `SCCACHE_CACHE_SIZE`; the confined acceptance environment allows the same three. `loom run` and `loom doctor` print one line stating whether sccache was found. It is not installed on the development machine as of this writing (`brew install sccache`).
+**Fix:** `orchestrator/terminal/native/build_cache.rs` locates `sccache` (`LOOM_SCCACHE=0` disables it, `LOOM_SCCACHE=<path>` pins it, otherwise `which` then `~/.cargo/bin`, `~/.local/bin`, `/opt/homebrew/bin`, `/usr/local/bin`). The session wrapper exports `RUSTC_WRAPPER=<path>` for every session kind when found, and forwards an operator's own `RUSTC_WRAPPER`, `SCCACHE_DIR`, `SCCACHE_CACHE_SIZE`; the confined acceptance environment allows the same three. `loom run` and `loom doctor` print one line stating whether sccache was found.
+
+**2026-09-04 correction:** sccache IS installed on this machine (0.7.7 at `/usr/bin/sccache`) and IS exported into every session, but it fails closed inside the stage sandbox — see "The Sandbox's AF_UNIX Denial Also Kills sccache" in [sandbox-and-settings.md](sandbox-and-settings.md) for the root cause and the `env -u RUSTC_WRAPPER` / `LOOM_SCCACHE=0` workarounds. The prior "not installed" note was wrong and led two separate stages to misattribute the same failure.
 
 ## The Ledger Is Exact in Both Directions and Measured After rustfmt (2026-09-02)
 
@@ -322,3 +324,80 @@ steps' own success output as a harness artifact, not evidence the install failed
 **Prevention:** a test whose subject reads the process environment must either pin the value through the config surface (`with_cache_policy`) or be `#[serial]` alongside every test that mutates that variable. `#[serial]` only serialises against other `#[serial]` tests; it does nothing for a non-serial reader.
 
 **Fix:** the runner test pins `CachePolicy::Use` (`verify/criteria/tests/runner_tests.rs`), matching its bypass sibling, so it no longer reads the environment at all.
+
+## ETXTBSY Is a Fork/Exec Race Under Concurrent Tests, Not a Permissions Bug (2026-09-04)
+
+**What happened:** three independent test failures across two stages, all `Os { code: 26,
+kind: ExecutableFileBusy, message: "Text file busy" }`, all only under concurrent/
+`--all-targets` runs and never when the failing test ran alone:
+`orchestrator::terminal::native::wrapper::tests` (two exec sites, ~18% of 17 runs), and a
+hand-rolled subprocess test fixture in `quota/codex.rs`'s `poll_once` tests spawning a
+freshly-written+chmod'd script.
+
+**Why:** the classic Linux ETXTBSY fork/exec race — the kernel refuses `exec` while ANY
+process holds a write fd on that inode. In a multi-thousand-test multi-threaded binary,
+another thread's `fork`+`exec` of a just-written script can race a thread still holding the
+file open for write; the failure rate scales with concurrency.
+
+**Detection:** a test that passes alone and fails only under `--all-targets`, with error code
+26 naming the just-written executable, is this race — never a chmod/permissions problem, and
+never specific to one test's script (it hit two independent exec sites in different modules).
+
+**Prevention:** wrap `Command::spawn` in a bounded retry (5 attempts, ~20ms sleep) on
+`raw_os_error() == Some(libc::ETXTBSY)` — keep the retry in PRODUCTION code too if a real
+external tool self-updating mid-spawn is the same failure mode (`spawn_retrying_text_busy`).
+Verify a flake fix by REPETITION, not one green run: 0 failures in 11 full-suite runs after
+the fix, against ~18% before, is the only way to know it held — a single green gate run
+proves nothing about a flake.
+
+## A Test That "Kills" a Peer by Dropping an fd Is Racy Under Concurrent Process Spawns (2026-09-04)
+
+**What happened:** `daemon::server::broadcast::tests::a_dead_peer_is_evicted_while_a_live_one
+_is_kept` failed 2 of 10 full runs: the write to the supposedly-dead peer SUCCEEDED.
+
+**Why:** the test simulated a closed peer with `drop(dead_reader)`, but closing an fd only
+releases ONE reference to the socket. A concurrent `std::process::Command` fork in another
+test thread can inherit a duplicate of that fd and keep the socket alive until the child
+reaches its own exec — so `write_message()` on the "dead" peer doesn't return `EPIPE`. The
+production code was never wrong.
+
+**Prevention:** in a test binary that also spawns processes, any test simulating a closed
+peer by dropping an fd is racy. Assert on socket state instead: `dead_reader.shutdown
+(Shutdown::Both)` before the drop marks the SOCKET itself dead, which no forked fd copy can
+undo.
+
+## An Acceptance Criterion That Greps a Colorized Tool Summary Fails Only Inside the Confined Runner (2026-09-04)
+
+**What happened:** `cd web && bunx vitest run ... | rg -q "Tests +[1-9]"`-shaped criteria, and
+a criterion grepping cargo's own summary line, pass under an interactive shell and fail when
+run through the stage's own confined completion check — twice, on two different tools.
+
+**Why:** the confined acceptance environment (`process/environment.rs`
+`STAGE_HOST_ENV_ALLOWLIST`) does not include `NO_COLOR`, and both `vitest` and `cargo`
+colorize their summary line whenever `NO_COLOR` is unset — even writing to a file, not a TTY.
+The ANSI escapes land BETWEEN the label and the digits (`Tests \e[22m\e[1m\e[32m3 passed`),
+so a regex requiring a space immediately before the digit cannot match, even though the
+underlying test run is fully green.
+
+**Detection:** a criterion whose command succeeds but whose `rg -q` fails is almost always a
+formatting difference — reproduce with `env -i HOME PATH TMPDIR <criterion>` (or the exact
+`STAGE_HOST_ENV_ALLOWLIST` set) before assuming a code defect, and pipe through `cat -v` to
+see the escapes a terminal hides.
+
+**Prevention for plan authors:** never grep a human-readable summary line for a count. Set
+`NO_COLOR=1` in the criterion, or assert against a JSON/basic reporter instead.
+
+## Fake Subprocess Test Fixtures Need To Read stdin and Budget Teardown Grace (2026-09-04)
+
+**What happened:** two subprocess-test gotchas in `quota/codex.rs`'s `poll_once` tests.
+(1) A fake script that never reads stdin and exits immediately after printing can race the
+parent's write — if the script exits before all writes land, the parent sees `Broken pipe
+(os error 32)` instead of a clean write. (2) Teardown always calls
+`child.wait_timeout(Duration::from_secs(2))` before killing, on every exit path including
+shutdown; against a script that ignores stdin closing (e.g. `sleep 30`), this adds a full
+~2s to the test's elapsed time even after the reply-wait loop gave up early.
+
+**Prevention:** have fake subprocess scripts background a stdin drain (`cat >/dev/null &`)
+before producing output, so a reader is always present. Any test asserting a tight "returns
+within Xs" bound on code with an unconditional teardown grace window must budget that grace
+on top of the deadline/shutdown latency.
