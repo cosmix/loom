@@ -391,17 +391,46 @@ see the escapes a terminal hides.
 **Prevention for plan authors:** never grep a human-readable summary line for a count. Set
 `NO_COLOR=1` in the criterion, or assert against a JSON/basic reporter instead.
 
-## Fake Subprocess Test Fixtures Need To Read stdin and Budget Teardown Grace (2026-09-04)
+## A Backgrounded `cat` Never Drains a Fake Subprocess's stdin (2026-09-05)
 
-**What happened:** two subprocess-test gotchas in `quota/codex.rs`'s `poll_once` tests.
-(1) A fake script that never reads stdin and exits immediately after printing can race the
-parent's write — if the script exits before all writes land, the parent sees `Broken pipe
-(os error 32)` instead of a clean write. (2) Teardown always calls
-`child.wait_timeout(Duration::from_secs(2))` before killing, on every exit path including
-shutdown; against a script that ignores stdin closing (e.g. `sleep 30`), this adds a full
-~2s to the test's elapsed time even after the reply-wait loop gave up early.
+**What happened:** two subprocess-test gotchas in `quota/codex.rs`'s `poll_once` tests — and the
+first recorded prevention for one of them was itself wrong, which is how the flake reached CI.
 
-**Prevention:** have fake subprocess scripts background a stdin drain (`cat >/dev/null &`)
-before producing output, so a reader is always present. Any test asserting a tight "returns
-within Xs" bound on code with an unconditional teardown grace window must budget that grace
-on top of the deadline/shutdown latency.
+1. A fake script that never reads stdin and exits immediately races the parent's writes: if the
+   script exits first the parent gets `Broken pipe (os error 32)` rather than a clean write.
+   The prevention recorded here on 2026-09-04 — "background a stdin drain (`cat >/dev/null &`)"
+   — **does not drain anything**. POSIX assigns `/dev/null` to the standard input of an
+   asynchronous list in a shell without job control, before any explicit redirection, and
+   `/bin/sh` is `dash` on Ubuntu CI. The backgrounded `cat` reads `/dev/null`, exits at once,
+   and the script exits behind it. All it bought was the fork+exec delay, which hid the race
+   locally and left it live in CI: `the_child_exiting_without_ever_replying_is_reported_precisely`
+   failed 0/40 unloaded runs but 2/30 under 32 busy loops, asserting
+   `"failed to write to codex app-server stdin"` against
+   `"codex app-server closed without replying"`.
+2. Teardown always calls `child.wait_timeout(Duration::from_secs(2))` before killing, on every
+   exit path including shutdown; against a script that ignores stdin closing (e.g. `sleep 30`),
+   this adds a full ~2s to the test's elapsed time even after the reply-wait loop gave up early.
+
+**Why:** a fixture cannot paper over a production defect. `poll_once` treated any write failure
+as fatal, so a child that died before reading its request was reported as a loom-side write
+error instead of by what it printed — the same misreport a real `codex app-server` crashing on
+startup would produce. Every attempt to keep a reader alive in the fixture was working around
+that, and the cheapest-looking workaround happened not to work at all.
+
+**Prevention:** fix the code, not the fixture. A `BrokenPipe` on a request write to a child is
+not an outcome worth reporting: the child's stdout (a reply, a JSON-RPC error, or EOF) is.
+`poll_once` now reports only write errors whose `ErrorKind` is not `BrokenPipe` and otherwise
+falls through to `await_reply`, so both orderings of the race produce the same verdict.
+If a fixture genuinely must hold the read end open, the shell must save the descriptor before
+backgrounding — `exec 3<&0; cat <&3 >/dev/null &` — or stay alive itself (`sleep 30`).
+`cat <&0 >/dev/null &` fails too: fd 0 is already `/dev/null` by the time the duplication runs.
+Check any such claim with `printf 'x\n' | sh -c 'cat > out & wait'`; an empty `out` means the
+drain never ran. And any test asserting a tight "returns within Xs" bound on code with an
+unconditional teardown grace window must budget that grace on top of the deadline/shutdown
+latency.
+
+**Fix:** `loom/src/quota/codex.rs` — `write_requests` returns `std::io::Result<()>` and
+`poll_once` matches `Err(e) if e.kind() != ErrorKind::BrokenPipe` for the only fatal case; the
+five dead `cat >/dev/null &` drains are gone from `codex_tests.rs`. A race that only fires under
+load needs a loaded runner to catch: `scripts/flake-check.sh` re-runs `quota::` and `process::`
+under CPU contention, wired into CI and into the release workflow's publish gate.
