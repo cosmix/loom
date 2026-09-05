@@ -81,3 +81,17 @@ pub fn handle_mouse_event(kind: MouseEventKind, graph_state: &mut GraphState) {
         _ => {}
     }
 }
+
+/// Whether `code` is a legend-scrolling key, so the legend can consume it
+/// instead of the app's usual key handling while it is open.
+pub(super) fn is_scroll_key(code: KeyCode) -> bool {
+    matches!(
+        code,
+        KeyCode::Up
+            | KeyCode::Down
+            | KeyCode::Home
+            | KeyCode::End
+            | KeyCode::PageUp
+            | KeyCode::PageDown
+    )
+}

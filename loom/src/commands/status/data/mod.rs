@@ -65,6 +65,11 @@ pub struct StatusData {
     pub progress: ProgressSummary,
     /// Extracted plan name (first H1 header from the plan file)
     pub plan_name: Option<String>,
+    /// Cached provider quota usage, read independently of the poll that
+    /// populates it - always present on the wire, `None` per-provider when
+    /// no cache entry exists yet.
+    #[serde(default)]
+    pub quota: crate::quota::QuotaSnapshot,
 }
 
 /// Stage display data

@@ -1,0 +1,80 @@
+[
+  {
+    "status": "waiting-for-deps",
+    "icon": "○",
+    "label": "Waiting",
+    "legend": "waiting for its dependencies to complete and merge"
+  },
+  {
+    "status": "queued",
+    "icon": "▶",
+    "label": "Queued",
+    "legend": "ready; the daemon spawns a session when a slot frees up"
+  },
+  {
+    "status": "executing",
+    "icon": "●",
+    "label": "Executing",
+    "legend": "a session is working in the stage's worktree"
+  },
+  {
+    "status": "waiting-for-input",
+    "icon": "?",
+    "label": "Input",
+    "legend": "the agent is waiting for an answer in its session"
+  },
+  {
+    "status": "needs-handoff",
+    "icon": "⟳",
+    "label": "Handoff",
+    "legend": "context ceiling reached; a fresh session resumes it"
+  },
+  {
+    "status": "completed",
+    "icon": "✓",
+    "label": "Completed",
+    "legend": "work done and verified — may still be unmerged"
+  },
+  {
+    "status": "skipped",
+    "icon": "⊘",
+    "label": "Skipped",
+    "legend": "skipped by you; does not satisfy its dependents"
+  },
+  {
+    "status": "blocked",
+    "icon": "✗",
+    "label": "Blocked",
+    "legend": "errored; needs intervention → loom stage retry <id>"
+  },
+  {
+    "status": "completed-with-failures",
+    "icon": "⚠",
+    "label": "Failed",
+    "legend": "acceptance failed; retried automatically up to the limit"
+  },
+  {
+    "status": "merge-conflict",
+    "icon": "⚡",
+    "label": "Conflict",
+    "legend": "merge conflict → loom stage merge <id>"
+  },
+  {
+    "status": "merge-blocked",
+    "icon": "⊗",
+    "label": "MergeBlk",
+    "legend": "merge errored (not a conflict) → loom stage merge <id>"
+  },
+  {
+    "status": "needs-human-review",
+    "icon": "⏸",
+    "label": "Review",
+    "legend": "asked for a decision → loom stage human-review <id>"
+  },
+  {
+    "status": "needs-adjudication",
+    "icon": "⚖",
+    "label": "Adjudicate",
+    "legend": "a disputed acceptance criterion awaits the judge's verdict"
+  }
+]

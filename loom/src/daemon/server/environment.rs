@@ -37,6 +37,12 @@ const HOST_ENV_ALLOWLIST: &[&str] = &[
     "TMPDIR",
     "TMP",
     "TEMP",
+    // The quota poller is the daemon's first outbound HTTP caller (it polls
+    // the claude.ai usage endpoint); without these a proxied network cannot
+    // be reached from inside the daemon's stripped environment.
+    "HTTP_PROXY",
+    "HTTPS_PROXY",
+    "NO_PROXY",
 ];
 
 const LOOM_CONTROL_ALLOWLIST: &[&str] = &["LOOM_HOOKS_DIR", "LOOM_TERMINAL"];
@@ -102,6 +108,9 @@ mod tests {
             ("TERMINFO", "/home/user/.local/kitty.app/lib/kitty/terminfo"),
             ("TERMINFO_DIRS", "/usr/share/terminfo:/etc/terminfo"),
             ("LOOM_TERMINAL", "kitty"),
+            ("HTTP_PROXY", "http://proxy.internal:8080"),
+            ("HTTPS_PROXY", "http://proxy.internal:8080"),
+            ("NO_PROXY", "localhost,127.0.0.1"),
             ("LOOM_ADMIN_TOKEN", "secret-canary"),
             ("LOOM_ADMIN_PROOF", "secret-canary"),
             ("LOOM_STAGE_ID", "ambient-stage"),
@@ -123,6 +132,11 @@ mod tests {
         assert!(keys.contains(&OsStr::new("TERMINFO")));
         assert!(keys.contains(&OsStr::new("TERMINFO_DIRS")));
         assert!(keys.contains(&OsStr::new("LOOM_TERMINAL")));
+        // The quota poller's outbound HTTP requests need these to honor a
+        // proxied network from inside the daemon's stripped environment.
+        assert!(keys.contains(&OsStr::new("HTTP_PROXY")));
+        assert!(keys.contains(&OsStr::new("HTTPS_PROXY")));
+        assert!(keys.contains(&OsStr::new("NO_PROXY")));
         assert!(!keys.contains(&OsStr::new("LOOM_ADMIN_TOKEN")));
         assert!(!keys.contains(&OsStr::new("LOOM_ADMIN_PROOF")));
         assert!(!keys.contains(&OsStr::new("LOOM_STAGE_ID")));

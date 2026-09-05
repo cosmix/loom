@@ -1,0 +1,288 @@
+@import "@fontsource/ibm-plex-mono/latin-400.css";
+@import "@fontsource/ibm-plex-mono/latin-500.css";
+@import "@fontsource/ibm-plex-mono/latin-600.css";
+@import "tailwindcss" source(none);
+@source "./";
+@source "../index.html";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@font-face {
+  font-family: "Inter Variable";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 900;
+  src: url("@fontsource-variable/inter/files/inter-latin-wght-normal.woff2")
+    format("woff2-variations");
+}
+
+/*
+ * Palette: warm paper in light, deep slate in dark. Every state colour is a
+ * `--tone-*` token read through `toneClass()` in state-badge.tsx; components
+ * never name a literal colour.
+ */
+:root {
+  --background: oklch(0.985 0.005 90);
+  --foreground: oklch(0.22 0.018 260);
+  --card: oklch(0.995 0.003 90);
+  --card-foreground: oklch(0.22 0.018 260);
+  --popover: oklch(0.995 0.003 90);
+  --popover-foreground: oklch(0.22 0.018 260);
+  --primary: oklch(0.34 0.08 258);
+  --primary-foreground: oklch(0.985 0.004 95);
+  --secondary: oklch(0.94 0.012 255);
+  --secondary-foreground: oklch(0.28 0.04 258);
+  --muted: oklch(0.945 0.008 90);
+  --muted-foreground: oklch(0.5 0.024 258);
+  --accent: oklch(0.93 0.02 90);
+  --accent-foreground: oklch(0.28 0.06 190);
+  --destructive: oklch(0.55 0.19 25);
+  --border: oklch(0.885 0.012 90);
+  --input: oklch(0.87 0.015 255);
+  --ring: oklch(0.55 0.11 220);
+  --chart-1: oklch(0.62 0.13 220);
+  --chart-2: oklch(0.62 0.12 155);
+  --chart-3: oklch(0.64 0.15 85);
+  --chart-4: oklch(0.61 0.16 305);
+  --chart-5: oklch(0.62 0.18 25);
+  --radius: 0.5rem;
+  --tone-executing: oklch(0.52 0.16 250);
+  --tone-completed: oklch(0.5 0.13 150);
+  --tone-blocked: oklch(0.55 0.19 25);
+  --tone-pending: oklch(0.55 0.02 255);
+  --tone-queued: oklch(0.55 0.12 200);
+  --tone-warning: oklch(0.6 0.14 70);
+  --tone-merged: oklch(0.55 0.08 150);
+  --tone-dimmed: oklch(0.6 0.018 255);
+  --tone-neutral: var(--foreground);
+  --hairline: oklch(0.86 0.012 90);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-hairline: var(--hairline);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --font-sans: "Inter Variable", sans-serif;
+  --font-mono: "IBM Plex Mono", monospace;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: oklch(0.17 0.016 255);
+    --foreground: oklch(0.92 0.012 255);
+    --card: oklch(0.2 0.018 255);
+    --card-foreground: oklch(0.92 0.012 255);
+    --popover: oklch(0.22 0.02 255);
+    --popover-foreground: oklch(0.93 0.012 255);
+    --primary: oklch(0.78 0.1 205);
+    --primary-foreground: oklch(0.2 0.03 255);
+    --secondary: oklch(0.28 0.024 255);
+    --secondary-foreground: oklch(0.9 0.015 255);
+    --muted: oklch(0.26 0.022 255);
+    --muted-foreground: oklch(0.68 0.022 255);
+    --accent: oklch(0.27 0.03 255);
+    --accent-foreground: oklch(0.88 0.04 190);
+    --destructive: oklch(0.7 0.15 25);
+    --border: oklch(0.3 0.024 255);
+    --input: oklch(0.34 0.028 255);
+    --ring: oklch(0.7 0.09 205);
+    --tone-executing: oklch(0.76 0.12 240);
+    --tone-completed: oklch(0.74 0.12 155);
+    --tone-blocked: oklch(0.75 0.15 25);
+    --tone-pending: oklch(0.66 0.02 255);
+    --tone-queued: oklch(0.77 0.1 200);
+    --tone-warning: oklch(0.8 0.13 80);
+    --tone-merged: oklch(0.7 0.08 155);
+    --tone-dimmed: oklch(0.58 0.022 255);
+    --hairline: oklch(0.29 0.022 255);
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  html {
+    color-scheme: light dark;
+  }
+  body {
+    @apply bg-background text-foreground font-sans;
+    margin: 0;
+    min-width: 320px;
+    font-feature-settings: "cv11", "ss03";
+    -webkit-font-smoothing: antialiased;
+  }
+  button,
+  a {
+    -webkit-tap-highlight-color: transparent;
+  }
+  code,
+  kbd,
+  pre {
+    @apply font-mono;
+  }
+}
+
+/* Small-caps column heads and section titles, as in the TUI's ruled header. */
+@utility eyebrow {
+  @apply text-[11px] font-medium tracking-[0.12em] uppercase text-muted-foreground;
+}
+
+/* One class per tone: sets the text colour and exposes it as `--tone` so a
+ * wrapper can tint its own background, border, or meter from the same token. */
+@layer components {
+  .tone-executing {
+    --tone: var(--tone-executing);
+    color: var(--tone);
+  }
+  .tone-completed {
+    --tone: var(--tone-completed);
+    color: var(--tone);
+  }
+  .tone-blocked {
+    --tone: var(--tone-blocked);
+    color: var(--tone);
+  }
+  .tone-pending {
+    --tone: var(--tone-pending);
+    color: var(--tone);
+  }
+  .tone-queued {
+    --tone: var(--tone-queued);
+    color: var(--tone);
+  }
+  .tone-warning {
+    --tone: var(--tone-warning);
+    color: var(--tone);
+  }
+  .tone-merged {
+    --tone: var(--tone-merged);
+    color: var(--tone);
+  }
+  .tone-dimmed {
+    --tone: var(--tone-dimmed);
+    color: var(--tone);
+  }
+  .tone-neutral {
+    --tone: var(--tone-neutral);
+    color: var(--tone);
+  }
+
+  /* A row whose state just changed re-mounts and washes in with its tone. */
+  .row-wash {
+    animation: row-wash 1.8s ease-out 1;
+  }
+  .dot-live {
+    animation: dot-live 2.4s ease-in-out infinite;
+  }
+
+  /* Below ~900px the ledger folds each row into a labelled card instead of
+   * scrolling the page sideways. */
+  @media (max-width: 899px) {
+    .ledger table,
+    .ledger tbody {
+      display: block;
+    }
+    .ledger thead {
+      @apply sr-only;
+    }
+    .ledger tbody tr {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 0.25rem 1rem;
+      padding: 0.75rem 0.5rem;
+    }
+    .ledger tbody td {
+      display: block;
+      padding: 0;
+      height: auto;
+    }
+    .ledger tbody td[data-label]::before {
+      content: attr(data-label);
+      @apply eyebrow block text-[10px] mb-0.5;
+    }
+    .ledger tbody td[data-span] {
+      grid-column: 1 / -1;
+    }
+    .ledger tbody td:empty {
+      display: none;
+    }
+  }
+}
+
+@keyframes row-wash {
+  from {
+    background-color: color-mix(in oklch, var(--tone, var(--foreground)) 16%, transparent);
+  }
+  to {
+    background-color: transparent;
+  }
+}
+
+@keyframes dot-live {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in oklch, var(--tone) 45%, transparent);
+  }
+  60% {
+    box-shadow: 0 0 0 5px transparent;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .row-wash,
+  .dot-live {
+    animation: none;
+  }
+}
+
+/* Footer quota gauges: ten hairline notches ruled over the usage fill, and
+ * a width transition for the fill and the reset track under it. */
+@layer components {
+  .quota-bar::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: repeating-linear-gradient(
+      to right,
+      transparent 0,
+      transparent calc(10% - 1px),
+      var(--background) calc(10% - 1px),
+      var(--background) 10%
+    );
+  }
+  .quota-fill {
+    transition: width 600ms ease-out;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .quota-fill {
+    transition: none;
+  }
+}

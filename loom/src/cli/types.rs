@@ -10,6 +10,10 @@ pub use super::types_ops::{
 };
 pub use super::types_stage::{OutputCommands, StageCommands};
 
+#[path = "types_status_web.rs"]
+mod status_web;
+use status_web::StatusWebArgs;
+
 #[derive(Parser)]
 #[command(name = "loom")]
 #[command(about = "Agent orchestration CLI", long_about = None)]
@@ -91,6 +95,9 @@ pub enum Commands {
         /// Verbose mode: show detailed failure information
         #[arg(short, long)]
         verbose: bool,
+
+        #[command(flatten)]
+        web_args: StatusWebArgs,
     },
 
     /// Resume work on a stage

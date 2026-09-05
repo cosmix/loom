@@ -12,7 +12,7 @@
 //! - A legend overlay, toggled with `?`, describing every stage state
 
 mod app;
-mod daemon_client;
+pub(crate) mod daemon_client;
 mod event_handler;
 pub(crate) mod ledger;
 mod renderer;

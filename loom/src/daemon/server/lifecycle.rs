@@ -3,7 +3,7 @@
 mod socket_limit;
 
 use super::admission::ByteBudget;
-use super::broadcast::{spawn_log_tailer, spawn_status_broadcaster};
+use super::broadcast::{spawn_log_tailer, spawn_quota_poller, spawn_status_broadcaster};
 use super::client::handle_client_connection;
 use super::core::{
     DaemonServer, CLIENT_QUEUE_CAPACITY, CLIENT_WORKERS, MAX_IN_FLIGHT_REQUEST_BYTES,
@@ -222,11 +222,9 @@ impl DaemonServer {
         // Spawn the orchestrator thread to actually run stages
         let orchestrator_handle = spawn_orchestrator(self);
 
-        // Spawn log tailing thread
         let log_tail_handle = spawn_log_tailer(self);
-
-        // Spawn status broadcasting thread
         let status_broadcast_handle = spawn_status_broadcaster(self);
+        let quota_poller_handle = spawn_quota_poller(self);
         let client_pool = WorkerPool::new(CLIENT_WORKERS, CLIENT_QUEUE_CAPACITY);
         let byte_budget = ByteBudget::new(MAX_IN_FLIGHT_REQUEST_BYTES);
 
@@ -292,6 +290,7 @@ impl DaemonServer {
             wait_with_timeout(handle, "log_tail");
         }
         wait_with_timeout(status_broadcast_handle, "status_broadcast");
+        wait_with_timeout(quota_poller_handle, "quota_poller");
 
         self.cleanup()?;
         Ok(())

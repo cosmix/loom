@@ -230,7 +230,11 @@ pub fn dispatch(command: Commands) -> Result<()> {
             live,
             compact,
             verbose,
-        } => status::execute(live, compact, verbose),
+            web_args,
+        } => match web_args.web {
+            Some(port) => status::web::execute(port),
+            None => status::execute(live, compact, verbose),
+        },
         Commands::Resume { stage_id } => resume::execute(stage_id),
         cmd @ (Commands::Sessions { .. } | Commands::Worktree { .. }) => dispatch_tools(cmd),
         Commands::Attach { stage_id } => attach::execute(stage_id),

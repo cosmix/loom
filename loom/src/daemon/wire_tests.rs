@@ -46,7 +46,7 @@ fn response_round_trip_uses_bounded_frame() {
 #[test]
 fn status_update_round_trip() {
     let response = Response::StatusUpdate {
-        data: status_data(),
+        data: Box::new(status_data()),
     };
     let mut buffer = Vec::new();
     write_message(&mut buffer, &response).unwrap();
@@ -130,6 +130,7 @@ fn status_data() -> StatusData {
             ..Default::default()
         },
         plan_name: Some("Test plan".to_string()),
+        quota: crate::quota::QuotaSnapshot::default(),
     }
 }
 

@@ -49,6 +49,8 @@ fn render_view_with(
         legend_open: false,
         tick_age_secs: Some(2),
         last_error,
+        now_epoch: 1_788_523_200,
+        scrollable: false,
     };
     screen(width, height, &view)
 }
@@ -73,6 +75,7 @@ fn data_without_attention() -> StatusData {
             ..ProgressSummary::default()
         },
         plan_name: Some("no-attention".to_owned()),
+        quota: crate::quota::QuotaSnapshot::default(),
     }
 }
 
@@ -91,6 +94,8 @@ fn table_viewport_rows_matches_the_computed_table_budget() {
         legend_open: false,
         tick_age_secs: None,
         last_error: None,
+        now_epoch: 1_788_523_200,
+        scrollable: false,
     };
     let mut terminal = Terminal::new(TestBackend::new(120, 40)).unwrap();
     let mut outcome = RenderOutcome::default();
@@ -102,6 +107,38 @@ fn table_viewport_rows_matches_the_computed_table_budget() {
     // the gap under it (1), the table's own top gap (1), and the footer (1),
     // so budget.table = 40 - 7 = 33, and table_viewport_rows = 33 - 2.
     assert_eq!(outcome.table_viewport_rows, 31);
+}
+
+#[test]
+fn a_long_plan_at_minimum_height_overflows_the_viewport() {
+    // `app.rs` derives `scrollable` from `ordered.len() > table_viewport_rows`;
+    // twenty stages in sixteen rows must leave the table short of them.
+    let stages = many_stages(20);
+    let ordered: Vec<&StageSummary> = stages.iter().collect();
+    let data = StatusData::default();
+    let view = LedgerView {
+        data: &data,
+        levels: &Default::default(),
+        ordered: &ordered,
+        attention: &[],
+        activity: &TuiActivityLog::new(),
+        alerts: &[],
+        spinner: '⠋',
+        scroll_y: 0,
+        legend_open: false,
+        tick_age_secs: None,
+        last_error: None,
+        now_epoch: 1_788_523_200,
+        scrollable: true,
+    };
+    let mut terminal = Terminal::new(TestBackend::new(120, 16)).unwrap();
+    let mut outcome = RenderOutcome::default();
+    terminal
+        .draw(|frame| outcome = render(frame, &view))
+        .unwrap();
+
+    assert!(outcome.table_viewport_rows > 0);
+    assert!(usize::from(outcome.table_viewport_rows) < ordered.len());
 }
 
 #[test]

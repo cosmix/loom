@@ -212,7 +212,7 @@ Everything else is an explicit, inspectable outcome rather than a hang:
 ```bash
 loom init <plan-path> [--clean] [--backend native|tmux]
 loom run [--manual] [--max-parallel N] [--foreground] [--watch] [--no-merge] [--backend native|tmux]
-loom status [--live] [--compact] [--verbose]
+loom status [--live] [--compact] [--verbose] [--web [PORT]]
 loom stop
 loom resume <stage-id>
 loom check <stage-id> [--suggest]
@@ -223,6 +223,8 @@ loom pressure <plan-path> [--rounds N] [--dry-run]
 `loom pressure` hardens a plan before you run it by combining two external agents over `--rounds` rounds (default 2). Each round runs both pressure-tests in parallel: Claude `/pressure` edits the plan in place in the foreground (you watch it live), while Codex `$pressure` writes an independent review next to it (`codex-<plan>.md`) in the background (its output is captured to a temp log to keep the terminal clean). Once both finish, Claude `/address` folds the review back in. Claude stays interactive (subscription billing) and auto-closes when done; Codex runs from the repo root. Requires both the `claude` and `codex` CLIs on PATH. `--dry-run` prints the exact commands without spawning anything.
 
 `loom status --live` renders a live ledger dashboard: one row per stage across eight columns (STATE, STAGE, DEPENDS ON, MODELS, ACTIVITY, CONTEXT, TIME, MERGE). MODELS lists the orchestrator's own model first, then the models any subagents it spawned ran on. Columns drop in priority order as the terminal narrows; below a 64x16 (columns x rows) terminal a notice replaces the dashboard entirely. Press `?` to toggle a legend overlay explaining every state icon.
+
+`loom status --web [PORT]` starts a read-only web dashboard bound to `127.0.0.1` (port 7373 by default) and serves the same live ledger over a WebSocket in the browser. It works without the daemon by polling `.work/` files directly when the daemon socket is unreachable.
 
 ### Plan Commands
 
@@ -705,6 +707,7 @@ Sessions then run in detached tmux servers, and you watch them from a Windows Te
 
 ```bash
 loom status --live       # live ledger dashboard
+loom status --web        # browser dashboard on 127.0.0.1:7373
 loom attach              # tiled overview of every live session
 loom attach <stage-id>   # attach to one stage
 ```

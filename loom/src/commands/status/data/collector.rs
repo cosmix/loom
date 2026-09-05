@@ -391,6 +391,7 @@ pub fn collect_status_data(work_dir: &WorkDir) -> Result<StatusData> {
         merge: merge_summary,
         progress,
         plan_name,
+        quota: crate::quota::read_snapshot(work_dir.root()),
     })
 }
 

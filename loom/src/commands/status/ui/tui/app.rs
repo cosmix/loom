@@ -17,7 +17,7 @@ use crossterm::{
 use ratatui::{backend::CrosstermBackend, Terminal};
 
 use super::daemon_client::{connect, is_socket_disconnected, subscribe};
-use super::event_handler::{handle_key_event, handle_mouse_event, KeyEventResult};
+use super::event_handler::{handle_key_event, handle_mouse_event, is_scroll_key, KeyEventResult};
 use super::ledger::{self, LedgerView};
 use super::renderer::render_completion;
 use super::state::{GraphState, LiveStatus, TuiActivityLog};
@@ -276,7 +276,7 @@ impl TuiApp {
     fn handle_response(&mut self, response: Response) {
         match response {
             Response::StatusUpdate { data } => {
-                self.status = LiveStatus { data };
+                self.status = LiveStatus { data: *data };
                 let all_stages = self.status.all_stages();
                 self.activity_log.update(&all_stages);
                 self.last_error = None;
@@ -338,6 +338,9 @@ impl TuiApp {
             legend_open: self.legend_open,
             tick_age_secs: self.tick_age_secs,
             last_error: self.last_error.as_deref(),
+            now_epoch: Utc::now().timestamp(),
+            // The previous frame's viewport; one frame of lag is fine.
+            scrollable: ordered.len() > usize::from(self.graph_state.viewport_height),
         };
         let mut outcome = ledger::RenderOutcome::default();
         self.terminal
@@ -375,18 +378,6 @@ fn is_read_timeout(error: &anyhow::Error) -> bool {
                 )
             })
     })
-}
-
-fn is_scroll_key(code: KeyCode) -> bool {
-    matches!(
-        code,
-        KeyCode::Up
-            | KeyCode::Down
-            | KeyCode::Home
-            | KeyCode::End
-            | KeyCode::PageUp
-            | KeyCode::PageDown
-    )
 }
 
 impl Drop for TuiApp {

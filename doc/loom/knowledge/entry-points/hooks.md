@@ -94,13 +94,12 @@ Public helpers hooks may call. Everything prefixed `_loom_*`, plus
 
 ### Registration Sites for a New Hook
 
-A hook that Claude Code itself invokes (a `PreToolUse` guard, or a session-lifecycle `HookEvent`) needs FIVE integration surfaces. `dev-install.sh` has no separate inventory: it builds the binary and delegates to `install.sh`. A SOURCED LIBRARY (like `hooks/_common.sh`, `hooks/_read_discipline.sh`, `hooks/_read_ledger.sh` — embedded and installed, but never invoked directly by the harness) needs every applicable surface below except a trigger:
+A hook that Claude Code itself invokes (a `PreToolUse` guard, or a session-lifecycle `HookEvent`) needs FOUR integration surfaces; the installer is not one of them. `install.sh` carries no hook inventory any more: it delegates to `loom install-assets` (`install.sh:349-354`), which installs every hook embedded through `LOOM_HOOKS`, and `dev-install.sh` builds the binary and delegates to `install.sh`. (This section used to list two `all_hooks` arrays in `install.sh` as a fifth surface; those arrays are gone.) A SOURCED LIBRARY (like `hooks/_common.sh`, `hooks/_read_discipline.sh`, `hooks/_read_ledger.sh` — embedded and installed, but never invoked directly by the harness) needs every applicable surface below except a trigger:
 
 1. The executable or sourced file under `hooks/`.
 2. An `include_str!` const plus a `LOOM_HOOKS` entry in `fs/permissions/constants.rs`.
 3. Its trigger: for a `PreToolUse` guard, an entry in the config builder `fs/permissions/hooks.rs::loom_hooks_config_for_dir`; for a session-lifecycle hook, a `HookEvent` variant in `hooks/config.rs` (`to_settings_hooks()` derives the emitted map from `HookEvent::all()`, so adding the variant is enough — no hand-written block to update). A sourced library has neither — it carries no independent trigger.
-4. **Both** `all_hooks` arrays in `install.sh` — there are two independent copies, and `dev-install.sh` reaches them by delegation.
-5. Tests: `fs/permissions/tests/hooks_tests.rs::test_hooks_config_structure` asserts the exact
+4. Tests: `fs/permissions/tests/hooks_tests.rs::test_hooks_config_structure` asserts the exact
    `PreToolUse` array length and per-index order (currently 39 entries) — or, for a session hook,
    `fs/permissions/tests/hooks_tests.rs::test_hook_event_surface_has_seven_events` / `hooks/tests.rs`'s
    `all().len()==7` — plus a `hooks/tests/` case registered in `hooks/tests/run-all.sh`, and the

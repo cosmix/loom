@@ -75,6 +75,7 @@ doc/plans/REVIEW-*
 # CRITICAL: Both patterns needed - directory form and symlink form
 .worktrees/
 .worktrees
+web/node_modules/
 ISSUES.md
 
 data/*

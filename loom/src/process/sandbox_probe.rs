@@ -1,5 +1,5 @@
 //! Environment probes for tests that cannot pass inside a sandbox withholding
-//! process-tree visibility, `AF_UNIX` binding, filesystem writes, or a
+//! process-tree visibility, `AF_UNIX` or loopback TCP binding, filesystem writes, or a
 //! resolvable home directory, for reasons that have nothing to do with the
 //! code under test.
 //!
@@ -109,6 +109,14 @@ pub fn unix_socket_bindable(dir: &Path) -> bool {
         let _ = std::fs::remove_file(&probe_path);
         bound
     })
+}
+
+/// Whether this process may bind a TCP listener on the loopback interface.
+/// Memoized like [`process_tree_visible`]: a fact about the sandbox, not
+/// about any one test.
+pub fn loopback_bindable() -> bool {
+    static RESULT: OnceLock<bool> = OnceLock::new();
+    *RESULT.get_or_init(|| std::net::TcpListener::bind("127.0.0.1:0").is_ok())
 }
 
 /// Returns true if this process may create and remove a file under `dir`.

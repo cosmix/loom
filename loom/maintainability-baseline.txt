@@ -64,7 +64,7 @@ file tests/failure_resume.rs 468
 file tests/integration/merge_conflict_recovery.rs 412
 file tests/integration/plan_verify.rs 1028
 
-function src/cli/dispatch.rs dispatch 124
+function src/cli/dispatch.rs dispatch 128
 function src/cli/dispatch_stage.rs dispatch_stage 51
 function src/commands/clean/mod.rs print_summary 52
 function src/commands/clean/sessions.rs test_clean_sessions_reaps_live_only_when_destroying_state 57
@@ -133,7 +133,7 @@ function src/context/refresh/tests_source_graph.rs an_unreadable_file_survives_a
 function src/daemon/server/broadcast.rs run_status_broadcaster 80
 function src/daemon/server/client.rs handle_client_connection 112
 function src/daemon/server/dispute.rs handle_dispute_criteria 176
-function src/daemon/server/lifecycle.rs run_server 134
+function src/daemon/server/lifecycle.rs run_server 133
 function src/daemon/server/lifecycle.rs start 117
 function src/daemon/server/orchestrator.rs run_orchestrator 94
 function src/daemon/server/status.rs collect_completion_summary 97

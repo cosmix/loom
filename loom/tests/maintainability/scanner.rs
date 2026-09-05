@@ -28,9 +28,12 @@ impl FunctionMeasurement {
 
 pub fn scan_repository(crate_root: &Path) -> Result<Vec<SourceMeasurement>, String> {
     let mut files = Vec::new();
-    for root in ["src", "tests"] {
+    for root in ["build", "src", "tests"] {
         collect_rust_files(&crate_root.join(root), &mut files)?;
     }
+    // The build script is a loose file at the crate root rather than a
+    // directory, so the size limits reach it only by naming it.
+    files.push(crate_root.join("build.rs"));
     files.sort();
 
     files
