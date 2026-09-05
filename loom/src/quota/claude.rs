@@ -36,7 +36,7 @@ pub fn build_client() -> Result<reqwest::blocking::Client> {
         .https_only(true)
         .connect_timeout(CONNECT_TIMEOUT)
         .timeout(REQUEST_TIMEOUT)
-        .user_agent(concat!("loom/", env!("CARGO_PKG_VERSION")))
+        .user_agent(concat!("loom/", env!("LOOM_VERSION")))
         .build()
         .context("failed to build the claude usage http client")
 }

@@ -167,7 +167,7 @@ fn spawn_retrying_text_busy(command: &mut Command) -> std::io::Result<Child> {
 }
 
 fn write_requests(stdin: &mut ChildStdin) -> Result<()> {
-    let version = env!("CARGO_PKG_VERSION");
+    let version = env!("LOOM_VERSION");
     let frames = [
         serde_json::json!({
             "id": 0,
