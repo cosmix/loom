@@ -7,15 +7,25 @@
 # filters --runs times under --load background CPU spinners reproduces the
 # contention needed to flush the race out.
 #
-# Usage: scripts/flake-check.sh [--runs N] [--load N] [filter ...]
+# A GitHub-hosted runner has 4 vCPUs; a workstation with spare cores can run
+# the same filters without ever hitting the contention that fails there. When
+# taskset is available (Linux) we pin the spinners and every test invocation
+# to --cpus CPUs (default 4) so a local run reproduces CI's contention instead
+# of a workstation's. macOS has no taskset, so there we run unpinned as
+# before.
+#
+# Usage: scripts/flake-check.sh [--runs N] [--load N] [--cpus N] [filter ...]
 set -euo pipefail
 
 usage() {
   cat <<'EOF'
-Usage: flake-check.sh [--runs N] [--load N] [filter ...]
+Usage: flake-check.sh [--runs N] [--load N] [--cpus N] [filter ...]
 
   --runs N   repetitions per filter (default: 20)
-  --load N   number of background CPU spinners (default: nproc, else 4)
+  --load N   number of background CPU spinners (default: 2x --cpus when
+             pinning is active, else nproc, else 4)
+  --cpus N   number of CPUs to pin to via taskset, clamped to nproc
+             (default: 4; ignored when taskset is unavailable, e.g. macOS)
   filter...  libtest name filters (default: "quota::" "process::"
              "verdict_apply_tests::" "stalled_judge_tests::")
   --help     show this help and exit
@@ -23,11 +33,9 @@ EOF
 }
 
 runs=20
-if load=$(nproc 2>/dev/null); then
-  :
-else
-  load=4
-fi
+cpus=4
+load=
+load_explicit=0
 filters=()
 
 while [ $# -gt 0 ]; do
@@ -38,6 +46,11 @@ while [ $# -gt 0 ]; do
       ;;
     --load)
       load=$2
+      load_explicit=1
+      shift 2
+      ;;
+    --cpus)
+      cpus=$2
       shift 2
       ;;
     --help)
@@ -57,6 +70,28 @@ done
 
 [ ${#filters[@]} -eq 0 ] && filters=("quota::" "process::" "verdict_apply_tests::" "stalled_judge_tests::")
 
+pin=()
+if command -v taskset >/dev/null 2>&1; then
+  if nproc_count=$(nproc 2>/dev/null) && [ "$cpus" -gt "$nproc_count" ]; then
+    cpus=$nproc_count
+  fi
+  cpu_list="0-$((cpus - 1))"
+  pin=(taskset -c "$cpu_list")
+  if [ "$load_explicit" -eq 0 ]; then
+    load=$((2 * cpus))
+  fi
+  echo "pinning to CPUs $cpu_list (taskset); load=$load"
+else
+  if [ "$load_explicit" -eq 0 ]; then
+    if load=$(nproc 2>/dev/null); then
+      :
+    else
+      load=4
+    fi
+  fi
+  echo "taskset unavailable; running unpinned; load=$load"
+fi
+
 repo_root=$(cd "$(dirname "$0")/.." && pwd)
 cd "$repo_root/loom"
 
@@ -74,7 +109,7 @@ trap cleanup EXIT
 if [ "$load" -gt 0 ]; then
   echo "starting $load CPU spinner(s)..."
   for _ in $(seq 1 "$load"); do
-    (while :; do :; done) &
+    ${pin[@]+"${pin[@]}"} sh -c 'while :; do :; done' &
     spinner_pids+=("$!")
   done
 fi
@@ -83,7 +118,7 @@ for filter in "${filters[@]}"; do
   echo "== $filter: $runs run(s) under load=$load =="
   for i in $(seq 1 "$runs"); do
     out=$(mktemp "${TMPDIR:-/tmp}/flake-check.XXXXXX")
-    if ! cargo test --lib -- "$filter" >"$out" 2>&1; then
+    if ! ${pin[@]+"${pin[@]}"} cargo test --lib -- "$filter" >"$out" 2>&1; then
       cleanup
       echo
       echo "FAILED: filter '$filter', run $i/$runs"
