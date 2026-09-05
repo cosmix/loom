@@ -150,3 +150,13 @@ was noticed first.
 
 **Fix:** the status branch of `tracedIds` returns null when no stage has that status, the
 same as the stage branch already did.
+
+## A push-fed page read liveness out of the payload, not the transport
+
+**What happened:** The dashboard header rendered `daemonLine(snapshot.daemon, snapshot.tick_age_secs)` straight off `snapshotAtom`. When the feed stopped — the serving process gone, not just the daemon — React kept the last frame, so the page claimed `daemon running · tick 3s ago` for as long as the tab stayed open, and the badge sat on `reconnecting` forever because `ConnectionState.since` was re-stamped on every retry.
+
+**Why:** Every liveness field on the wire (`daemon`, `tick_age_secs`, `generated_at`) is a statement about the moment the frame was generated. A frame is evidence of the past; only the socket is evidence of the present. Nothing in the payload can report its own staleness.
+
+**Prevention:** In a push-fed UI, derive "is this current?" from the transport state (`connectionAtom.phase`), never from the frame's contents. Frame AGE is also the wrong signal here — `web/src/commands/status/web/broadcast.rs` suppresses unchanged frames, so a quiet live feed looks old while being perfectly current. Model an outage as one event with one start time held across retries, or every reconnect resets the age the operator is reading.
+
+**Fix:** `daemonLine` took a third `staleSecs` argument that wins over every daemon state (`web/src/lib/format.ts`); `DaemonLine` computes it from the connection phase — stale for `reconnecting`/`offline`/`error`, not for `connecting` (the initial `/api/status` fetch lands during that phase). `ws.ts` preserves the outage `since` across retries and flips to a new `offline` phase after the fourth consecutive failure. `web/src/routes/shell.test.tsx` pins the wiring at the rendered-page level, which is the layer the unit tests could not reach: `daemonLine` and the socket state machine were both individually correct while the page was wrong.

@@ -94,7 +94,7 @@
 | [mistakes/untrusted-value-boundaries.md](mistakes/untrusted-value-boundaries.md) | Untrusted Value Boundaries | Enumerating every producer of a rendered field, not just the field, and why containment at one render site alone is not… | 141 |
 | [mistakes/verification-harness.md](mistakes/verification-harness.md) | Verification Harness | When every check fails at once, suspect the harness; the PATH binary is not your build; silent subagents are failed… | 149 |
 | [mistakes/visibility-and-reachability.md](mistakes/visibility-and-reachability.md) | Visibility And Reachability | pub(crate) is not nameable by itself - visibility is capped by path reachability - plus sibling traps around wrapper… | 98 |
-| [mistakes/web-dashboard-server.md](mistakes/web-dashboard-server.md) | Web Dashboard Server (loom status --web) | Concurrency, security and testing lessons from building the hand-rolled HTTP/WebSocket | 152 |
+| [mistakes/web-dashboard-server.md](mistakes/web-dashboard-server.md) | Web Dashboard Server (loom status --web) | Concurrency, security and testing lessons from building the hand-rolled HTTP/WebSocket | 162 |
 | [mistakes/writer-reader-address.md](mistakes/writer-reader-address.md) | Writer/Reader Address | Topic notes for the mistakes knowledge area. | 71 |
 
 ### concerns
