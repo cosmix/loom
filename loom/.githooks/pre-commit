@@ -46,4 +46,19 @@ if ! cargo test --quiet --test maintainability 2>&1; then
     exit 1
 fi
 
+# Rustdoc gate, fired only when the staged diff adds or edits a doc comment.
+# rustdoc lints (private intra-doc links above all) are invisible to cargo
+# build, clippy and test, so without this they surface at push time or in CI.
+if git diff --cached --diff-filter=ACM -U0 -- '*.rs' | grep -qE '^\+[[:space:]]*(///|//!)'; then
+    echo "Checking rustdoc (doc comments changed)..."
+    if ! RUSTDOCFLAGS="-D warnings" cargo doc --workspace --all-features --no-deps 2>&1; then
+        echo ""
+        echo "ERROR: rustdoc found issues (private intra-doc links, etc.)."
+        echo "A [\`name\`] link in a doc comment must resolve as a public path;"
+        echo "for a private fn, const or field write a plain code span \`name\`."
+        echo ""
+        exit 1
+    fi
+fi
+
 echo "Pre-commit formatting complete."
