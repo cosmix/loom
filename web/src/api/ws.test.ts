@@ -134,9 +134,13 @@ describe("status socket", () => {
     const socket = FakeSocket.instances[0];
 
     socket.receive(JSON.stringify(fixture));
+    const next = structuredClone(fixture);
+    next.generated_at = "2026-09-04T12:00:01Z";
+    next.status.stages.find((stage) => stage.id === "server")!.status = "completed";
+    socket.receive(JSON.stringify(next));
 
     expect(store.get(snapshotAtom)?.status.plan_name).toBe("Web Dashboard Fixture");
-    expect(store.get(activityLogAtom)).toHaveLength(2);
+    expect(store.get(activityLogAtom).map((entry) => entry.message)).toEqual(["server completed"]);
     dispose();
   });
 

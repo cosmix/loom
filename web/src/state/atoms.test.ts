@@ -30,7 +30,15 @@ describe("dashboard atoms", () => {
       "integration-verify",
     ]);
     expect(store.get(alertsAtom)).toHaveLength(3);
-    expect(store.get(activityLogAtom)).toHaveLength(2);
+    // The first frame is the baseline; the log records later transitions.
+    expect(store.get(activityLogAtom)).toHaveLength(0);
+    const next = structuredClone(fixture);
+    next.generated_at = "2026-09-04T12:00:01Z";
+    next.status.stages.find((stage) => stage.id === "server")!.status = "completed";
+    applySnapshot(store, next, 500);
+    expect(store.get(activityLogAtom)).toEqual([
+      { at: 500, stageId: "server", status: "completed", message: "server completed" },
+    ]);
   });
 
   it("selects a stage from a nullable snapshot", () => {

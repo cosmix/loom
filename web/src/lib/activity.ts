@@ -31,13 +31,22 @@ function statusesById(snapshot: Snapshot | null): Map<string, StageStatus> {
   return statuses;
 }
 
-/** Append meaningful stage transitions while retaining the newest twenty entries. */
+/**
+ * Append meaningful stage transitions while retaining the newest twenty
+ * entries. The first frame is a baseline, not a burst of transitions: the
+ * wire carries no timestamps for what happened before the page opened, so
+ * stamping every stage with the load time would show the same wrong age on
+ * every row. Only changes the page itself observes are logged.
+ */
 export function appendTransitions(
   log: readonly ActivityEntry[],
   previous: Snapshot | null,
   next: Snapshot,
   now: number,
 ): ActivityEntry[] {
+  if (previous === null) {
+    return [...log];
+  }
   const entries = [...log];
   const previousStatuses = statusesById(previous);
 

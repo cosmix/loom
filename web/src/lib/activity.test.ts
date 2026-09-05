@@ -12,15 +12,18 @@ function snapshotWithStatus(status: StageSummary["status"]): Snapshot {
 }
 
 describe("activity transitions", () => {
-  it("logs only meaningful initial fixture states", () => {
-    expect(appendTransitions([], null, fixture, 100)).toEqual([
-      {
-        at: 100,
-        stageId: "knowledge-bootstrap",
-        status: "completed",
-        message: "knowledge-bootstrap completed",
-      },
-      { at: 100, stageId: "server", status: "executing", message: "server started" },
+  it("treats the first frame as a baseline and logs nothing for it", () => {
+    expect(appendTransitions([], null, fixture, 100)).toEqual([]);
+  });
+
+  it("logs meaningful transitions observed after the baseline, at the observed time", () => {
+    const next = structuredClone(fixture);
+    next.status.stages.find((stage) => stage.id === "server")!.status = "completed";
+    next.status.stages.find((stage) => stage.id === "design")!.status = "executing";
+
+    expect(appendTransitions([], fixture, next, 250)).toEqual([
+      { at: 250, stageId: "server", status: "completed", message: "server completed" },
+      { at: 250, stageId: "design", status: "executing", message: "design started" },
     ]);
   });
 
@@ -45,7 +48,8 @@ describe("activity transitions", () => {
   it("remembers unlogged statuses between snapshots", () => {
     const executing = snapshotWithStatus("executing");
     const waiting = snapshotWithStatus("waiting-for-input");
-    const first = appendTransitions([], null, executing, 100);
+    const queued = snapshotWithStatus("queued");
+    const first = appendTransitions([], queued, executing, 100);
     const middle = appendTransitions(first, executing, waiting, 200);
     const final = appendTransitions(middle, waiting, executing, 300);
 
@@ -87,8 +91,15 @@ describe("activity transitions", () => {
       status: "executing" as const,
       dependencies: [],
     }));
+    const previous: Snapshot = {
+      ...fixture,
+      status: {
+        ...fixture.status,
+        stages: stages.map((stage) => ({ ...stage, status: "queued" as const })),
+      },
+    };
     const next: Snapshot = { ...fixture, status: { ...fixture.status, stages } };
-    const entries = appendTransitions([], null, next, 100);
+    const entries = appendTransitions([], previous, next, 100);
 
     expect(entries).toHaveLength(MAX_ACTIVITY_ENTRIES);
     expect(entries[0].stageId).toBe("stage-05");
