@@ -50,12 +50,7 @@ fn write_fake_codex(dir: &std::path::Path, script: &str) -> std::path::PathBuf {
 #[cfg(unix)]
 fn a_successful_exchange_parses_both_windows_and_the_plan() {
     let dir = tempdir().unwrap();
-    // Backgrounds a stdin drain before printing: this script never reads
-    // its own stdin, and without a reader present the exchange races
-    // `poll_once`'s writes against the script exiting - an early exit
-    // closes the pipe's read end and turns the write into a broken pipe.
     let script = "#!/bin/sh\n\
-        cat >/dev/null &\n\
         printf '%s\\n' '{\"id\":0,\"result\":{}}'\n\
         printf '%s\\n' '{\"method\":\"foo\",\"params\":{}}'\n\
         printf '%s\\n' '{\"id\":1,\"result\":{\"rateLimits\":{\"primary\":{\"usedPercent\":42,\"windowDurationMins\":300,\"resetsAt\":1788531180},\"secondary\":{\"usedPercent\":63.5,\"windowDurationMins\":10080,\"resetsAt\":1788728400000},\"planType\":\"pro\"}}}'\n";
@@ -77,7 +72,7 @@ fn a_successful_exchange_parses_both_windows_and_the_plan() {
 #[cfg(unix)]
 fn a_json_rpc_error_reply_surfaces_the_message() {
     let dir = tempdir().unwrap();
-    let script = "#!/bin/sh\ncat >/dev/null &\n\
+    let script = "#!/bin/sh\n\
         printf '%s\\n' '{\"id\":1,\"error\":{\"code\":-32000,\"message\":\"not logged in\"}}'\n";
     let codex_bin = write_fake_codex(dir.path(), script);
     let shutdown = AtomicBool::new(false);
@@ -91,7 +86,6 @@ fn a_json_rpc_error_reply_surfaces_the_message() {
 fn garbage_and_an_over_long_line_are_skipped_before_the_reply() {
     let dir = tempdir().unwrap();
     let script = "#!/bin/bash\n\
-        cat >/dev/null &\n\
         printf '%s\\n' 'hello'\n\
         printf 'x%.0s' {1..70000}\n\
         printf '\\n'\n\
@@ -147,7 +141,7 @@ fn a_flood_of_notifications_after_the_reply_does_not_hang_the_reader_join() {
     let noise = "printf '%s\\n' '{\"id\":1,\"result\":{\"rateLimits\":{}}}'\n\
         for i in $(seq 40); do echo '{\"method\":\"noise\",\"params\":{}}'; done\n";
     let script = format!(
-        "#!/bin/sh\necho $$ > {pid}\ncat >/dev/null &\n{noise}sleep 30\n",
+        "#!/bin/sh\necho $$ > {pid}\n{noise}sleep 30\n",
         pid = pid_file.display(),
     );
     let codex_bin = write_fake_codex(dir.path(), &script);
@@ -172,7 +166,10 @@ fn a_flood_of_notifications_after_the_reply_does_not_hang_the_reader_join() {
 #[cfg(unix)]
 fn the_child_exiting_without_ever_replying_is_reported_precisely() {
     let dir = tempdir().unwrap();
-    let script = "#!/bin/sh\ncat >/dev/null &\nprintf '%s\\n' '{\"id\":0,\"result\":{}}'\n";
+    // This script exits without ever reading stdin, so the parent's writes
+    // may or may not win the race against its exit - the assertion holds
+    // either way, which is the point of the fix.
+    let script = "#!/bin/sh\nprintf '%s\\n' '{\"id\":0,\"result\":{}}'\n";
     let codex_bin = write_fake_codex(dir.path(), script);
     let shutdown = AtomicBool::new(false);
 
@@ -182,6 +179,24 @@ fn the_child_exiting_without_ever_replying_is_reported_precisely() {
         error.to_string(),
         "codex app-server closed without replying"
     );
+}
+
+#[test]
+#[cfg(unix)]
+fn a_child_that_closes_stdin_before_the_request_still_yields_its_reply() {
+    let dir = tempdir().unwrap();
+    // `exec 0<&-` drops the read end of the request pipe, so the writes in
+    // `poll_once` hit a broken pipe whenever they lose the race to it. The
+    // reply is still on stdout, and a broken request pipe must not discard it.
+    let script = "#!/bin/sh\nexec 0<&-\n\
+        printf '%s\\n' '{\"id\":1,\"result\":{\"rateLimits\":{\"primary\":{\"usedPercent\":10,\"windowDurationMins\":300,\"resetsAt\":null}}}}'\n";
+    let codex_bin = write_fake_codex(dir.path(), script);
+    let shutdown = AtomicBool::new(false);
+
+    let quota = poll_once(&codex_bin, Duration::from_secs(5), &shutdown, 0).unwrap();
+
+    assert_eq!(quota.windows.len(), 1);
+    assert_eq!(quota.windows[0].used_percent, 10.0);
 }
 
 #[test]

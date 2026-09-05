@@ -5,7 +5,7 @@ use crate::quota::model::{self, ProviderQuota, QuotaWindow, WindowKind};
 use anyhow::{anyhow, Context, Result};
 use std::io::{BufRead, BufReader, Write};
 use std::path::Path;
-use std::process::{Child, ChildStdin, Command, Stdio};
+use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::thread::{self, JoinHandle};
@@ -91,19 +91,10 @@ fn extract_window(value: Option<&serde_json::Value>) -> Option<QuotaWindow> {
     })
 }
 
-/// Run one `codex app-server` exchange over a fresh subprocess: send
-/// `initialize`, `initialized`, then `account/rateLimits/read`, and wait for
-/// the reply to the last request.
-///
-/// The child is killed as a process group on every exit path (success,
-/// error, deadline, or `shutdown` flipping true) so a hung or misbehaving
-/// `codex` binary never outlives the poll that spawned it.
-pub fn poll_once(
-    codex_bin: &Path,
-    deadline: Duration,
-    shutdown: &AtomicBool,
-    now: i64,
-) -> Result<ProviderQuota> {
+/// Spawn `codex app-server` in its own process group with both pipes taken,
+/// so the caller owns the request and reply ends and can still kill the whole
+/// group on any exit path.
+fn spawn_app_server(codex_bin: &Path) -> Result<(Child, ChildStdin, ChildStdout)> {
     let mut command = Command::new(codex_bin);
     command.arg("app-server");
     command.stdin(Stdio::piped());
@@ -117,7 +108,7 @@ pub fn poll_once(
 
     let mut child = spawn_retrying_text_busy(&mut command)
         .with_context(|| format!("failed to spawn {}", codex_bin.display()))?;
-    let mut stdin = child
+    let stdin = child
         .stdin
         .take()
         .context("codex app-server: missing stdin")?;
@@ -125,13 +116,41 @@ pub fn poll_once(
         .stdout
         .take()
         .context("codex app-server: missing stdout")?;
+    Ok((child, stdin, stdout))
+}
+
+/// Run one `codex app-server` exchange over a fresh subprocess: send
+/// `initialize`, `initialized`, then `account/rateLimits/read`, and wait for
+/// the reply to the last request.
+///
+/// The child is killed as a process group on every exit path (success,
+/// error, deadline, or `shutdown` flipping true) so a hung or misbehaving
+/// `codex` binary never outlives the poll that spawned it.
+///
+/// A child that exits before reading the request sees those writes fail
+/// with a broken pipe; that is reported from whatever the child printed
+/// on stdout (or the lack of it), not as a write failure.
+pub fn poll_once(
+    codex_bin: &Path,
+    deadline: Duration,
+    shutdown: &AtomicBool,
+    now: i64,
+) -> Result<ProviderQuota> {
+    let (child, mut stdin, stdout) = spawn_app_server(codex_bin)?;
 
     let write_result = write_requests(&mut stdin);
     let (receiver, reader_handle) = spawn_reader(stdout);
 
+    // A child that exits before reading its stdin turns these writes into
+    // `EPIPE`, and that is not a loom-side failure to report: whatever it
+    // printed before exiting - a reply, a JSON-RPC error, or nothing at all -
+    // is the outcome, and `await_reply` names it precisely once the reader
+    // reaches EOF. Any other write error is real and surfaces as itself.
     let outcome = match write_result {
-        Ok(()) => await_reply(&receiver, deadline, shutdown, now),
-        Err(e) => Err(e),
+        Err(e) if e.kind() != std::io::ErrorKind::BrokenPipe => {
+            Err(anyhow::Error::new(e).context("failed to write to codex app-server stdin"))
+        }
+        _ => await_reply(&receiver, deadline, shutdown, now),
     };
 
     // Dropped before the join below: `spawn_reader`'s channel has a capacity
@@ -166,7 +185,7 @@ fn spawn_retrying_text_busy(command: &mut Command) -> std::io::Result<Child> {
     unreachable!("loop always returns on its final attempt")
 }
 
-fn write_requests(stdin: &mut ChildStdin) -> Result<()> {
+fn write_requests(stdin: &mut ChildStdin) -> std::io::Result<()> {
     let version = env!("LOOM_VERSION");
     let frames = [
         serde_json::json!({
@@ -178,14 +197,12 @@ fn write_requests(stdin: &mut ChildStdin) -> Result<()> {
         serde_json::json!({ "id": 1, "method": "account/rateLimits/read", "params": {} }),
     ];
     for frame in &frames {
-        writeln!(stdin, "{frame}").context("failed to write to codex app-server stdin")?;
+        writeln!(stdin, "{frame}")?;
     }
-    stdin
-        .flush()
-        .context("failed to flush codex app-server stdin")
+    stdin.flush()
 }
 
-fn spawn_reader(stdout: std::process::ChildStdout) -> (mpsc::Receiver<String>, JoinHandle<()>) {
+fn spawn_reader(stdout: ChildStdout) -> (mpsc::Receiver<String>, JoinHandle<()>) {
     let (sender, receiver) = mpsc::sync_channel(16);
     let handle = thread::spawn(move || {
         let mut reader = BufReader::new(stdout);
