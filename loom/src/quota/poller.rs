@@ -1,8 +1,8 @@
 //! Daemon-side background thread that keeps the on-disk quota cache warm.
 //!
 //! One thread polls both providers on independent schedules: each starts at
-//! [`POLL_INTERVAL`] and backs off (doubling, capped at [`MAX_BACKOFF`]) on
-//! consecutive failures, resetting to [`POLL_INTERVAL`] on success. A 429
+//! `POLL_INTERVAL` and backs off (doubling, capped at `MAX_BACKOFF`) on
+//! consecutive failures, resetting to `POLL_INTERVAL` on success. A 429
 //! from Claude uses the server's own `Retry-After` instead of the doubling
 //! backoff. Nothing here is persisted across a daemon restart.
 
@@ -28,7 +28,7 @@ const SLEEP_SLICE: Duration = Duration::from_millis(250);
 /// `work_root` is the `.loom/work` directory (the same path
 /// `collect_status_data` resolves a `WorkDir` from); results are written
 /// under `work_root/quota/`. The thread notices `shutdown` within one
-/// [`SLEEP_SLICE`] between polls; a Claude request already in flight can
+/// `SLEEP_SLICE` between polls; a Claude request already in flight can
 /// hold it for up to the HTTP request timeout (10s), a codex exchange for up
 /// to `RECV_SLICE` plus the 2-second child grace, after which the daemon's
 /// 5-second join abandons the thread and exits anyway.
@@ -41,7 +41,7 @@ pub fn spawn_quota_poller(work_root: PathBuf, shutdown: Arc<AtomicBool>) -> Join
 
 /// Per-provider scheduling and backoff state. Lives only in the poller
 /// thread's stack, so a daemon restart starts every provider's backoff over
-/// from [`POLL_INTERVAL`].
+/// from `POLL_INTERVAL`.
 struct ProviderState {
     next_due: Instant,
     interval: Duration,
@@ -79,8 +79,8 @@ fn epoch_now() -> i64 {
 }
 
 /// The next poll interval given the current one and whether this poll
-/// failed: unchanged on success (resets to [`POLL_INTERVAL`]), doubled and
-/// capped at [`MAX_BACKOFF`] on failure.
+/// failed: unchanged on success (resets to `POLL_INTERVAL`), doubled and
+/// capped at `MAX_BACKOFF` on failure.
 fn next_interval(current: Duration, failed: bool) -> Duration {
     if !failed {
         return POLL_INTERVAL;
@@ -162,7 +162,7 @@ fn poll_claude(work_root: &Path, state: &mut ProviderState) {
 
 /// Cache a successful poll and reset the provider's backoff, or - on a cache
 /// write failure - treat it as a poll failure so a bad disk state still
-/// backs off rather than spinning at [`POLL_INTERVAL`].
+/// backs off rather than spinning at `POLL_INTERVAL`.
 fn finish_poll(
     provider: &str,
     work_root: &Path,
