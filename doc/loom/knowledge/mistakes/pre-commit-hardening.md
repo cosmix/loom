@@ -38,11 +38,11 @@ against the tree rather than assumed:
 
 ## Why the Hook Was Never Syntax-Checked (fixed 2026-09-12)
 
-`scripts/check-hook-syntax.sh` only parsed `*.sh` under `hooks/` and `scripts/`; a git hook has no
+`scripts/check-hook-syntax.sh` only parsed `*.sh` under `loom-hooks/` and `scripts/`; a git hook has no
 extension, so `loom/.githooks/pre-commit` was invisible to it and to the CI hook-syntax step. The
 partial-staging fixture's fully-staged path was the only thing that ever ran the hook to its last
 line. Fixed by adding a second `find` pass over `loom/.githooks` for executable files
-(`scripts/check-hook-syntax.sh:25,54`).
+(`scripts/check-hook-syntax.sh:23,49`).
 
 ## Test Design: a Space in a Filename Does Not Prove NUL-Safety
 
