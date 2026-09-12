@@ -78,6 +78,12 @@ Probes from a sandboxed session: `hooks/`, `hooks/tests/`, and `.git/hooks/` are
    repo path). `$(dirname "$0")` references need nothing. Run
    `bash loom-hooks/tests/run-all.sh`.
 
+   Update `scripts/check-hook-syntax.sh` so `script_dirs` names
+   `"$repo_root/loom-hooks"` alongside `"$repo_root/scripts"`. Require the hook directory
+   to exist before scanning: accepting only the scripts directory would silently omit hooks.
+   Verify the literal reference with `rg -q 'repo_root/loom-hooks' scripts/check-hook-syntax.sh`
+   and run `bash scripts/check-hook-syntax.sh` from the repository root.
+
 4. **Doctrine and prose.** Update `CLAUDE.md`, `CLAUDE.md.template`, `agents/*.md`, `skills/**`
    with the same pattern. For `doc/loom/knowledge/**`, replace the repo-directory references
    and leave install-target references alone, then run `loom knowledge sync` so `INDEX.md`
