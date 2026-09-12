@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 # Pre-commit hook: auto-format Rust and markdown files
 
+# An inherited GIT_LITERAL_PATHSPECS disables the ":(literal)" magic below, so the partial-staging guard would match nothing and let a partial index through.
+unset GIT_LITERAL_PATHSPECS GIT_GLOB_PATHSPECS GIT_NOGLOB_PATHSPECS GIT_ICASE_PATHSPECS
+
 # Get the repo root (where .git is)
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 
@@ -56,9 +59,8 @@ cargo fmt
 # Auto-fix tracked markdown files only
 echo "Linting markdown files..."
 cd "$REPO_ROOT" || exit 1
-MD_FILES=$(git ls-files '*.md')
-if [ -n "$MD_FILES" ]; then
-    echo "$MD_FILES" | xargs bunx markdownlint-cli2 --fix 2>/dev/null || true
+if [ -n "$(git ls-files -- '*.md')" ]; then
+    git ls-files -z -- '*.md' | xargs -0 bunx markdownlint-cli2 --fix 2>/dev/null || true
 fi
 
 # Re-add any staged files that were modified by formatting
