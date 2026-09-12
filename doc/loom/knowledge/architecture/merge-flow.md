@@ -57,9 +57,22 @@ Nothing on the daemon path ever writes `merged: true` without `is_ancestor_of` r
 Until 2026-09-06 the command refused `Completed` stages while the daemon log and the status UI
 both pointed at it, which is why operators fell back to `git merge loom/<id>` by hand.
 
-The merge runs in the operator's main checkout. Tracked modifications or untracked files that the
-merge would overwrite make `git merge` refuse, and that is the most likely cause when a
-knowledge-distill stage, which touches `doc/loom/knowledge/**` and `README.md`, ends up blocked.
+The merge runs in the operator's main checkout. `git merge` refuses when it would overwrite
+tracked modifications or untracked files, and it ALSO refuses whenever anything is staged in that
+checkout's index, even on paths the merge never touches. The error lists the staged paths as
+"local changes ... would be overwritten by merge", which reads as an overlap when there is none.
+An earlier version of this section named only the overwrite case. On 2026-09-13 a knowledge-distill
+merge failed this way because another agent staged a `hooks/` to `loom-hooks/` rename in the main
+checkout in the same second the daemon merged.
+
+When agents share the main checkout, do not stash or reset their work. Wait until it is committed,
+then merge the target INTO `loom/<id>` inside the stage worktree, resolve conflicts there, rerun
+the stage's acceptance, commit, and run `loom stage merge <id>`; the shared checkout never holds a
+conflicted merge. `loom stage merge` leaves the worktree and branch in place. `loom worktree remove
+<id>` removes them but refuses while the worktree holds ignored files such as `loom/target/` or a
+generated `REVIEW-PLAN-*.md` (move the review into the main `doc/plans/` first). From a sandboxed
+session git cannot delete `.git/worktrees/<id>` (`Device or resource busy`); run `git worktree
+prune` from an operator shell.
 
 ## Merge Lock (git/merge/lock.rs)
 

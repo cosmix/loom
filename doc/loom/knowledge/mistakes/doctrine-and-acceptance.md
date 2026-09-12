@@ -237,3 +237,12 @@ takeover phrases are pinned in `tests_doctrine.rs::RETIRED_PHRASES`.
 **Fix:** Complete only a settled stage (subagents absorbed, defects fixed, tree clean) and run
 nothing after `loom stage complete`; re-arm bounded checks on live subagents and take over only
 on positive evidence of death.
+
+## A `setup` Line Cannot Create a Sandbox Grant (2026-09-13)
+
+A path in `sandbox.filesystem.allow_write` is bound only if it already exists on the host when the
+session starts. A stage `setup` command such as `mkdir -p /tmp/<dir>` for that path runs inside the
+same sandbox: if the directory is missing it fails with `Read-only file system`, and if it exists
+it does nothing. The line can only hurt, and because setup is prepended to every criterion it takes
+all of them down with it. Create the directory on the host before the stage's session starts and
+record that prerequisite in the plan prose.

@@ -265,3 +265,19 @@ filter and inspects `${PIPESTATUS[0]}` loses its exit code every time.
 
 **Prevention:** wrap any check that needs bash-specific semantics in `bash -c '...'`, or avoid the
 pipe entirely (`cmd >out 2>&1; echo "exit=$?"`).
+
+## A Failing `setup` Line Fails Every Criterion, and the Runner Hid Why (2026-09-13)
+
+**What happened:** `integration-verify` of the pre-commit hardening plan reported all 10 criteria
+`FAILED` with no output, including `git config --get core.hooksPath | rg -qx "loom/.githooks"`,
+which touches nothing on disk. The stage's `setup: ["mkdir -p /tmp/loom-pre-commit-plan"]` is
+prepended with `&&` to every criterion (`verify/criteria/runner.rs`), and inside the session that
+`mkdir` failed with `Read-only file system` because the sandbox had not bound the missing grant.
+`print_criterion_result` printed only the label, so a whole session was spent re-running criteria
+by hand, where each one passed.
+
+**Fix:** a failed or timed-out criterion now prints its exit code, the setup commands and the last
+20 lines of stderr and stdout (`commands/stage/criterion_output.rs`).
+
+**Detection:** when every criterion fails instantly, including ones that cannot fail, suspect the
+shared prefix and read the stage's `setup` first.

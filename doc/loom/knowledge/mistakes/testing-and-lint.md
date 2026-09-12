@@ -574,3 +574,29 @@ sandbox), never a fresh in-worktree path the offline run cannot populate itself.
 copying a gate list between plans, re-check each criterion against the destination
 stage's own sandbox network policy — a criterion that passed in the source plan is not
 evidence it will pass in the copy.
+
+## `pre_compact_always_returns_ok` Blocks When the Test Process Has an Open Stdin (2026-09-13)
+
+**What happened:** a full `cargo test --all-targets` run launched as a background shell job stopped
+making progress at `commands::hook::pre_compact::tests::pre_compact_always_returns_ok`, which
+libtest reported as running for over 60 seconds, and the run never finished. The test calls
+`pre_compact()` (`commands/hook/pre_compact.rs`), which reads stdin to end-of-file. That background
+job's stdin stayed open, so the read never returned. CI, the pre-commit hook and loom's acceptance
+runner start tests with stdin at end-of-file, where the same test returns at once.
+
+**Workaround:** from any harness whose stdin may stay open (a background job, an agent's shell, an
+interactive terminal), run the suite as `cargo test ... < /dev/null`.
+
+**Not fixed:** the test reads the real process stdin; `reset_for_payload` exists so tests can drive
+the hook without it, and this test could use it or be removed, since `pre_compact()` returns
+`Ok(())` by construction.
+
+## Re-Verify a Test-Only Fix With Its Target, Not the Whole Suite (2026-09-13)
+
+**What happened:** a full `cargo test --all-targets --no-fail-fast` run failed on one integration
+test whose fixture a follow-up change had broken. The fix was one fixture line, confirmed by
+`cargo test --test integration hooks_skill_project::`. A second full-suite run was started anyway;
+the operator stopped it, because every other target had just passed on the same tree.
+
+**Rule:** after a full run, a change confined to test code is verified by re-running the target
+that failed. Re-run the whole suite only when production code changed after that full run.

@@ -191,3 +191,20 @@ produced.
 | `loom/src/sandbox/settings.rs` | per-stage session sandbox emission |
 | `loom/src/orchestrator/terminal/native/wrapper.rs:181` | the **second**, diverging copy of the allowlist (see `concerns.md`) |
 | `loom/src/verify/criteria/tests/confine_tests.rs` | the matched-control test pattern |
+
+## Missing Grants Are Reported Before the Session Starts (2026-09-13)
+
+A plan or stage `allow_write` path that does not exist on the host when a session starts is not
+bound, and a `mkdir` inside the session cannot create it: the directory it would create is the one
+the sandbox skipped, so the call fails with `Read-only file system`. `sandbox::missing_grant_paths`
+(`sandbox/grant_paths.rs`) resolves each absolute or `~/` entry, skips globs and relative entries,
+and returns the ones missing on the host. Both consumers read the merged plan and stage grants:
+
+- `write_required_sandbox_settings` (`orchestrator/core/sandbox_grants.rs`) logs one warning per
+  missing path at spawn, for worktree and knowledge stages alike.
+- The stage signal lists them under "Missing on the host, so NOT writable this session" with a
+  stop-and-report instruction, whether or not the stage has deny rules
+  (`missing_allow_write_from_merged` in `orchestrator/signals/generate.rs`).
+
+The remedy is always on the host: create the path, then restart the stage's session.
+Package-manager cache paths are not checked here; their own signal note covers them.

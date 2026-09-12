@@ -29,11 +29,11 @@
 | [context-retrieval](architecture/context-retrieval.md) | The retrieval subsystem: two graphs, two lanes, query-side gating, two-tier… | 674 |
 | [core-abstractions](architecture/core-abstractions.md) | ExecutionGraph, Stage, Session, Orchestrator, TerminalBackend — plus data flow… | 136 |
 | [directory-structure](architecture/directory-structure.md) | Full loom/src module tree, the .work/ state layout, and the repo-root asset… | 49 |
-| [execution-containment](architecture/execution-containment.md) | What sandboxed command containment means in loom, its two confinement levels… | 193 |
+| [execution-containment](architecture/execution-containment.md) | What sandboxed command containment means in loom, its two confinement levels… | 210 |
 | [hook-system](architecture/hook-system.md) | Hook embedding and install, the SessionStart hookSpecificOutput contract, and… | 243 |
 | [knowledge-hierarchy](architecture/knowledge-hierarchy.md) | Read before touching fs/knowledge: targets, INDEX.md, checks, size limits | 235 |
 | [memory-spool](architecture/memory-spool.md) | Read before touching loom memory: spool/drain, ids, receipts, pending, archive | 159 |
-| [merge-flow](architecture/merge-flow.md) | How a completed worktree stage reaches the target branch: the daemon writes… | 66 |
+| [merge-flow](architecture/merge-flow.md) | How a completed worktree stage reaches the target branch: the daemon writes… | 79 |
 | [orchestrator-loop](architecture/orchestrator-loop.md) | Daemon main-loop tick order, Monitor subsystem, heartbeat liveness. | 56 |
 | [plan-lifecycle-and-fields](architecture/plan-lifecycle-and-fields.md) | Plan field checklist, goal-backward layers, schema fields, amendment. | 107 |
 | [quota-poller](architecture/quota-poller.md) | How loom learns the operator's Claude and Codex subscription budget, where it… | 29 |
@@ -91,14 +91,14 @@
 | Topic | Blurb | Lines |
 | --- | --- | --- |
 | [adjudication-autonomy-deadlock](mistakes/adjudication-autonomy-deadlock.md) | An accepted verdict deadlocked the run: adoption by stage_id alone, requeue… | 188 |
-| [ambient-filesystem-trust](mistakes/ambient-filesystem-trust.md) | Why a directory named .git is not evidence of a real repository, the validation… | 117 |
+| [ambient-filesystem-trust](mistakes/ambient-filesystem-trust.md) | Why a directory named .git is not evidence of a real repository, the validation… | 141 |
 | [codex-lane-rogue-wrapper](mistakes/codex-lane-rogue-wrapper.md) | A forwarding wrapper that did the task itself instead of forwarding, and why… | 117 |
 | [codex-navigation](mistakes/codex-navigation.md) | Forbidding reads instead of fixing a slow reader - a misdiagnosis and its… | 32 |
 | [completion-broker-credential](mistakes/completion-broker-credential.md) | The completion broker unreachable server-side fallback, duplicate file naming… | 141 |
 | [computed-values-and-hidden-couplings](mistakes/computed-values-and-hidden-couplings.md) | Values computed right but unread downstream; hidden coupling bugs | 184 |
 | [concurrency-and-locking](mistakes/concurrency-and-locking.md) | Locked-handle writes and read-mutate-save races that lose concurrent updates. | 22 |
 | [detached-spawn-in-tests](mistakes/detached-spawn-in-tests.md) | Never spawn a process from a test that can outlive the test process. | 45 |
-| [doctrine-and-acceptance](mistakes/doctrine-and-acceptance.md) | Why a one-phrase grep proves presence but never agreement, and how doctrine… | 239 |
+| [doctrine-and-acceptance](mistakes/doctrine-and-acceptance.md) | Why a one-phrase grep proves presence but never agreement, and how doctrine… | 248 |
 | [hooks-shell-portability](mistakes/hooks-shell-portability.md) | gawk/bash portability traps and heredoc-scanning gotchas in the repo's hooks. | 75 |
 | [knowledge-base-drift](mistakes/knowledge-base-drift.md) | How the knowledge base itself goes stale: plan-authoring notes frozen as… | 157 |
 | [knowledge-cli-invariants](mistakes/knowledge-cli-invariants.md) | Invariants belong in the fs constructor, not the CLI handler; lock ordering for… | 130 |
@@ -110,7 +110,7 @@
 | [pinned-literals-ledgers-and-wiring](mistakes/pinned-literals-ledgers-and-wiring.md) | The maintainability ledger exact-match trap and goal-backward wiring checks… | 196 |
 | [pre-commit-hardening](mistakes/pre-commit-hardening.md) | Partial-staging guard decisions, edge cases, mutant-settled git defaults | 53 |
 | [refactor-stragglers](mistakes/refactor-stragglers.md) | What a large removal or rename leaves behind: straggler initializers, stale… | 94 |
-| [sandbox-and-settings](mistakes/sandbox-and-settings.md) | Sandbox path rules, permission sync, excludedCommands matching, and settings… | 652 |
+| [sandbox-and-settings](mistakes/sandbox-and-settings.md) | Sandbox path rules, permission sync, excludedCommands matching, and settings… | 668 |
 | [schema-reuse-and-silent-skips](mistakes/schema-reuse-and-silent-skips.md) | deny_unknown_fields breaking a type with two deserialization sources… | 130 |
 | [session-identity-env](mistakes/session-identity-env.md) | The wrapper script's `LOOM_*` exports are a contract read by hooks, the CLI and… | 90 |
 | [sessions-and-liveness](mistakes/sessions-and-liveness.md) | Session identity, liveness routing, spawn-site coverage, and the blast radius… | 344 |
@@ -118,11 +118,11 @@
 | [status-broadcast-hardening](mistakes/status-broadcast-hardening.md) | Frame-overflow eviction and read-timeout desync from a widened status broadcast. | 74 |
 | [store-without-consumer](mistakes/store-without-consumer.md) | A store that was written but never read - what happened, why it stayed… | 94 |
 | [subagent-orchestration](mistakes/subagent-orchestration.md) | Liveness signals for subagents, when a missing report is not a missing result… | 471 |
-| [testing-and-lint](mistakes/testing-and-lint.md) | Lint and test discipline: --all-targets, --no-fail-fast, headless CI, ambient… | 576 |
+| [testing-and-lint](mistakes/testing-and-lint.md) | Lint and test discipline: --all-targets, --no-fail-fast, headless CI, ambient… | 602 |
 | [tests-that-cannot-fail](mistakes/tests-that-cannot-fail.md) | Tests that pass regardless of whether the bug they exist to catch is present… | 223 |
 | [tmux-backend](mistakes/tmux-backend.md) | tmux spawn-failure exit codes, cleanup-on-every-error-path discipline, and PID… | 120 |
 | [untrusted-value-boundaries](mistakes/untrusted-value-boundaries.md) | Enumerating every producer of a rendered field, not just the field, and why… | 188 |
-| [verification-harness](mistakes/verification-harness.md) | When every check fails at once, suspect the harness; the PATH binary is not… | 267 |
+| [verification-harness](mistakes/verification-harness.md) | When every check fails at once, suspect the harness; the PATH binary is not… | 283 |
 | [visibility-and-reachability](mistakes/visibility-and-reachability.md) | pub(crate) is not nameable by itself - visibility is capped by path… | 115 |
 | [web-dashboard-server](mistakes/web-dashboard-server.md) | Concurrency, security and testing lessons from building the hand-rolled… | 273 |
 | [writer-reader-address](mistakes/writer-reader-address.md) | A layer written under a key its reader ignores looks identical to no-op. | 73 |

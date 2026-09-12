@@ -650,3 +650,19 @@ stage session starts if the plan was already running; a plan's Verified Baseline
 include one sandboxed check run so this surfaces before execution, not after. This is a different
 failure than the bare `mktemp -d` case above — that one produces an empty `HOME`; this one
 produces a grant path the sandbox never binds at all.
+
+## An Absolute `allow_write` Entry Became a Project-Relative `Edit` Rule (2026-09-13)
+
+**What happened:** `push_allow_write_rules` (`sandbox/settings.rs`) turned the plan `allow_write`
+entry `/tmp/loom-pre-commit-plan` into `Edit(/tmp/loom-pre-commit-plan)`. In a permission rule a
+single leading `/` is relative to the project root, so the rule granted
+`<project>/tmp/loom-pre-commit-plan`; once the rule reached the main repo's
+`.claude/settings.local.json`, the operator's own sandbox listed exactly that path.
+`sandbox.filesystem.allowWrite` reads `/abs` as absolute, so the OS grant itself was right.
+
+**Fix:** `sandbox/grant_paths.rs::edit_rule` rewrites a single leading `/` to `//`; `//abs`, `~/`
+and relative entries pass through unchanged.
+
+**Prevention:** the two settings surfaces read a leading `/` in opposite ways, so any code that
+copies a path from one into the other must translate it, and a test must assert the emitted rule
+literally.

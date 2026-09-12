@@ -115,3 +115,27 @@ containing `HEAD`, or a `.git` file starting with `gitdir:`) instead of bare exi
 would stop a bare `.git` from silently re-bounding the walk for everything beneath it, but the
 existing `bare_repo` test helper plants exactly such an empty directory and would need updating
 alongside the change.
+
+## Two More Walkers Trusted an Empty `.git`, and the Sandbox Temp Root Held One (2026-09-13)
+
+**What happened:** `fs/work_dir.rs::nearest_git_root` bounded the upward workspace search at any
+ancestor holding a `.git` entry, and `skills/project/scan.rs::checkout_root` used the same
+existence test to choose the project-scan root. During one session `/tmp/claude-1000/.git` existed
+as an empty directory under Claude Code's per-user sandbox temp root (`$TMPDIR` when sandboxed) and
+later vanished. While it existed, every `TempDir` there saw `/tmp/claude-1000` as its repository, and
+`skills::project::tests::infrastructure_markers_remain_detectable` picked up a `typescript` marker
+from unrelated files elsewhere in the temp root.
+
+**Fix:** `is_real_git_dir` moved to `fs/git_marker.rs`; `nearest_git_root`, `checkout_root` and the
+scan's nested-checkout skip all use it. Fixtures that plant `.git` as an empty directory now also
+write `HEAD`.
+
+**Second trap in the same walk:** when no real `.git` is found, `checkout_root` falls back to the
+nearest ancestor that is a package boundary. Another session left `/tmp/claude-1000/package.json`,
+so a test repo with neither a `.git` nor a manifest of its own still climbed to the shared temp
+root. The fallback is right for real non-git projects; the test was not hermetic. A test that calls
+`ProjectProfile::discover` gives its `TempDir` a real `.git/HEAD` or a manifest.
+
+**Prevention:** every upward walk that stops at a `.git` goes through
+`fs::git_marker::is_real_git_dir`. A test that can reach its `TMPDIR`'s ancestors is exposed to
+whatever other processes leave there, so bound the walk inside the test's own directory.
