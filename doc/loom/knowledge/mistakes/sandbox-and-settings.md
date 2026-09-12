@@ -634,3 +634,19 @@ the scratchpad (its crashpad handler writes to `~/.config` and dumps core otherw
 and the Read tool's worktree guard only opens images inside the worktree — a
 screenshot directory under `node_modules/` gets ignored by tools that read images, so
 write screenshots inside the worktree proper.
+
+`mkdir -p /tmp/loom-pre-commit-plan` was placed in the plan's `integration-verify` stage `setup:`
+list, and `stage_executor.rs` prepends `setup:` with `&&` to *every* acceptance criterion. Inside
+the stage sandbox the `mkdir` failed with `Read-only file system`: the sandbox only binds a
+`sandbox.filesystem.allow_write` grant path that already **exists at session start** — a path a
+plan step creates for the first time is never bound, `setup:` included. All 10 criteria therefore
+failed instantly under the stage-completion and stage-check commands, each printing only `FAILED
+[criterion n]` with no stdout/stderr (`acceptance_runner.rs:201-216`), while every one passed when
+run by hand outside the sandbox.
+
+**Prevention:** never create a sandbox grant path in a plan's `setup:` (or anywhere else inside a
+stage). The operator must create the directory on the host before the run starts, or before the
+stage session starts if the plan was already running; a plan's Verified Baseline section should
+include one sandboxed check run so this surfaces before execution, not after. This is a different
+failure than the bare `mktemp -d` case above — that one produces an empty `HOME`; this one
+produces a grant path the sandbox never binds at all.

@@ -41,3 +41,12 @@ Neither an `allowWrite` rule nor an `Edit(...)` allow rule in `.claude/settings.
 ## Recommended Fix
 
 Rename the directory (for example to `loom-hooks/`) once the current plan completes. Two of its remaining stages still reference `hooks/` paths, so renaming mid-plan would break them.
+
+- **Refinement (2026-09-12):** a new file created under `hooks/tests/` with the Write tool lands
+  as `100644`; a plain shell `chmod +x` on it fails with the same sandbox denial as above, even
+  though the Write itself succeeded. This is not actually blocking — `run-all.sh` invokes every
+  test file through `bash`, and many committed `hooks/tests/*.sh` are already `100644` (checked
+  via `git ls-files -s hooks/tests`). A prior claim that all sibling test files are `100755` was
+  wrong; do not assume mode parity with siblings without checking `git ls-files -s`. The
+  orchestrator can still set the mode outside the sandbox, or with `git add --chmod=+x`, but a new
+  hook test that stays `100644` will run correctly regardless.

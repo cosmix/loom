@@ -93,3 +93,25 @@ unparseable `config` block it; an empty `config`, a junk `config.worktree` and `
 whose config was corrupted, history intact. `install_pre_commit_hook` bails when `.git` is not a
 directory and repair raises the hook issue only inside one; `loom init` bootstraps git before its
 startup repair installs the hook.
+
+## An Empty `.git` Left at a Shared TMPDIR Root Re-Bounds Every Test Beneath It (2026-09-12)
+
+An empty `.git` directory (no `HEAD`, `config`, or `objects`; not created by any stage script)
+appeared at the sandbox's `TMPDIR` root itself (e.g. `/tmp/claude-1000`). `fs::work_dir`'s
+`nearest_git_root` treats any `.git` entry as a repo boundary regardless of contents, so
+`fs::work_dir::tests::resolver::a_workspace_above_a_git_free_directory_is_never_adopted` failed
+deterministically for any `TMPDIR` nested under it — 30/30 runs after the directory appeared,
+against 2/2 full runs and 19/20 isolated runs clean before. `fd`/directory listings inside the
+temp root never surface the root's own `.git`; the fix was to `stat` every ancestor of `TMPDIR`
+for a `.git` entry, not just search inside it.
+
+**Prevention:** run `cargo test` with `TMPDIR` at a path whose ancestors hold no `.git` (a plan's
+dedicated sandbox grant, e.g. `/tmp/loom-pre-commit-plan`, works if nothing has left one there).
+Before treating a resolver test as flaky, check every ancestor of the active `TMPDIR` for a
+stray `.git` first.
+
+**Open question:** should `nearest_git_root` require a real repository marker (a `.git` dir
+containing `HEAD`, or a `.git` file starting with `gitdir:`) instead of bare existence? That
+would stop a bare `.git` from silently re-bounding the walk for everything beneath it, but the
+existing `bare_repo` test helper plants exactly such an empty directory and would need updating
+alongside the change.
