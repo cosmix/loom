@@ -7,6 +7,7 @@ pub(crate) mod admin_hmac;
 pub(crate) mod admin_proof;
 mod amend;
 pub mod complete;
+mod criterion_output;
 mod dispute_criteria;
 mod human_review;
 mod knowledge_complete;
