@@ -46,3 +46,19 @@ Two write sites, both targeting `settings.local.json` (never the committed
 - **Main-repo sessions** (knowledge stages, interactive) —
   `fs/permissions/settings.rs:ensure_loom_hooks_local()` sets it idempotently
   alongside the agent-teams env var.
+
+## Worktree Membership Is Anchored to the END of the Path (2026-09-12)
+
+`hooks/_common.sh`'s `loom_current_worktree` and `hooks/loom-control-complete.sh` used an
+unanchored pattern (`.worktrees/[^/]+`) to decide whether a path is inside a loom worktree, and
+Rust's `is_loom_worktree_path` only checked that a `.worktrees` segment appeared somewhere in the
+path. Because `LOOM_WORKTREE_PATH` is always the worktree root end-to-end (`stage_executor.rs`'s
+`resolve_worktree` → `spawn_setup.rs`'s `get_or_create_worktree` → `operations.rs`'s
+`repo_root/.worktrees/<stage_id>`, passed as the spawned session's `cwd`), any path *nested
+inside* that root — the repository checked out again a level down, or a `TMPDIR` placed there —
+also matched and was miscounted as its own worktree root.
+
+**Fix:** anchor the pattern to the end of the path — `/\.worktrees/[^/]+/?$` in the shell hooks,
+and "parent directory is literally named `.worktrees`" in `is_loom_worktree_path`. A path several
+segments below a real worktree root no longer counts as one; nested worktree resolution now
+selects the innermost stage.
