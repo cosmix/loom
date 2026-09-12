@@ -28,9 +28,15 @@ const SKIP_DIRS: &[&str] = &[
 ];
 
 /// This marker is only a traversal boundary; it grants no repository authority.
+///
+/// Checked with `is_real_git_dir` rather than bare existence: an ancestor
+/// directory can hold an empty `.git` directory left behind by an unrelated
+/// process sharing the same OS temp root (observed under `/tmp/claude-*`),
+/// which would otherwise make every scan below it treat that unrelated
+/// directory as the checkout root and pick up its unrelated files.
 pub(super) fn checkout_root(cwd: &Path) -> PathBuf {
     for ancestor in cwd.ancestors() {
-        if ancestor.join(".git").symlink_metadata().is_ok() {
+        if crate::fs::git_marker::is_real_git_dir(&ancestor.join(".git")) {
             return ancestor.to_path_buf();
         }
     }
@@ -90,8 +96,10 @@ fn children(dir: &Path, remaining: &mut usize) -> (Vec<PathBuf>, bool) {
             continue;
         }
         if entry.file_type().is_ok_and(|kind| kind.is_dir()) {
-            // Nested checkouts belong to a different project.
-            if !entry.path().join(".git").exists() {
+            // Nested checkouts belong to a different project. An empty `.git`
+            // directory left behind by an unrelated process does not count
+            // (see `checkout_root`), so this subtree is still scanned.
+            if !crate::fs::git_marker::is_real_git_dir(&entry.path().join(".git")) {
                 children.push(entry.path());
             }
         }

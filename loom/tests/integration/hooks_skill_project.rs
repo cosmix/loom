@@ -25,6 +25,7 @@ impl Fixture {
         let home = TempDir::new().unwrap();
         let repo = TempDir::new().unwrap();
         fs::create_dir(repo.path().join(".git")).unwrap();
+        fs::write(repo.path().join(".git/HEAD"), "ref: refs/heads/main\n").unwrap();
         write(repo.path(), "backend/Cargo.toml", "[package]");
         write(
             repo.path(),

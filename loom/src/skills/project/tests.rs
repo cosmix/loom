@@ -15,6 +15,7 @@ fn write(root: &Path, path: &str, content: &str) {
 fn monorepo() -> TempDir {
     let temp = TempDir::new().unwrap();
     fs::create_dir(temp.path().join(".git")).unwrap();
+    fs::write(temp.path().join(".git/HEAD"), "ref: refs/heads/main\n").unwrap();
     write(
         temp.path(),
         "backend/Cargo.toml",
@@ -164,6 +165,7 @@ fn depth_limit_is_visible_in_the_profile() {
 fn unsupported_child_package_does_not_inherit_parent_workspace_language() {
     let repo = TempDir::new().unwrap();
     fs::create_dir(repo.path().join(".git")).unwrap();
+    fs::write(repo.path().join(".git/HEAD"), "ref: refs/heads/main\n").unwrap();
     write(repo.path(), "Cargo.toml", "[workspace]");
     write(repo.path(), "tools/package.json", r#"{"name":"plain-js"}"#);
     let profile = ProjectProfile::discover(repo.path());
@@ -184,8 +186,48 @@ fn unrelated_slashes_in_prose_do_not_disable_project_discovery() {
 }
 
 #[test]
+fn empty_ancestor_git_directory_is_not_treated_as_a_checkout_root() {
+    // Sandbox debris: an ancestor `.git` directory with no `HEAD` file
+    // (see `is_real_git_dir`) must not anchor `checkout_root` there, or a
+    // scan below it would pull in files from that unrelated directory - here,
+    // the outer marker would leak into a discovery rooted at `inner`.
+    let outer = TempDir::new().unwrap();
+    fs::create_dir(outer.path().join(".git")).unwrap();
+    write(outer.path(), "Cargo.toml", "[package]\nname = 'outer'\n");
+    let inner = outer.path().join("inner");
+    write(&inner, "go.mod", "module inner");
+
+    let profile = ProjectProfile::discover(&inner);
+
+    assert_eq!(profile.root, inner.canonicalize().unwrap());
+    assert_eq!(kinds(&profile.types), BTreeSet::from(["golang"]));
+}
+
+#[test]
+fn real_ancestor_git_directory_is_treated_as_a_checkout_root() {
+    // Positive control for the test above: a real `.git` (with `HEAD`) at
+    // `outer` is still honored as the checkout root, so discovery from
+    // `inner` reports both the outer and inner markers.
+    let outer = TempDir::new().unwrap();
+    fs::create_dir(outer.path().join(".git")).unwrap();
+    fs::write(outer.path().join(".git/HEAD"), "ref: refs/heads/main\n").unwrap();
+    write(outer.path(), "Cargo.toml", "[package]\nname = 'outer'\n");
+    let inner = outer.path().join("inner");
+    write(&inner, "go.mod", "module inner");
+
+    let profile = ProjectProfile::discover(&inner);
+
+    assert_eq!(profile.root, outer.path().canonicalize().unwrap());
+    assert_eq!(kinds(&profile.types), BTreeSet::from(["golang", "rust"]));
+}
+
+#[test]
 fn infrastructure_markers_remain_detectable() {
     let repo = TempDir::new().unwrap();
+    // A real `.git` keeps discovery inside the temp repo; otherwise it could
+    // climb to a package manifest above `TMPDIR`.
+    fs::create_dir(repo.path().join(".git")).unwrap();
+    fs::write(repo.path().join(".git/HEAD"), "ref: refs/heads/main\n").unwrap();
     write(repo.path(), "infra/kustomization.yaml", "resources: []");
     write(repo.path(), "infra/versions.tf", "terraform {}");
     write(repo.path(), "Dockerfile", "FROM scratch");

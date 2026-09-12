@@ -45,6 +45,7 @@ fn detected_skill_is_promoted_even_when_keywords_already_matched() {
 fn react_stage_receives_both_framework_and_language_without_backend_skill() {
     let root = TempDir::new().unwrap();
     fs::create_dir(root.path().join(".git")).unwrap();
+    fs::write(root.path().join(".git/HEAD"), "ref: refs/heads/main\n").unwrap();
     fs::write(root.path().join("Cargo.toml"), "[workspace]").unwrap();
     fs::create_dir(root.path().join("web")).unwrap();
     fs::write(
