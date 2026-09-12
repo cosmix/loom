@@ -1571,8 +1571,11 @@ loom_deny_enabled() {
 #
 # A session counts as inside a worktree when either:
 #   (a) the current working directory is inside `.worktrees/<stage>/`, or
-#   (b) LOOM_WORKTREE_PATH points into `.worktrees/` AND that directory still
-#       exists on disk (the on-disk check rejects a stale, leaked value).
+#   (b) LOOM_WORKTREE_PATH names a worktree root - it ENDS at
+#       `.worktrees/<stage>`, which is what the wrapper exports, so a repo that
+#       itself lives under an outer worktree does not count - AND that
+#       directory still exists on disk (the on-disk check rejects a stale,
+#       leaked value).
 #
 # Returns the worktree root on stdout.
 loom_current_worktree() {
@@ -1584,7 +1587,7 @@ loom_current_worktree() {
     fi
 
     local wt="${LOOM_WORKTREE_PATH:-}"
-    if [[ -n "$wt" && -d "$wt" && "$wt" =~ /\.worktrees/[^/]+ ]]; then
+    if [[ -n "$wt" && -d "$wt" && "$wt" =~ /\.worktrees/[^/]+/?$ ]]; then
         printf '%s' "$wt"
         return 0
     fi

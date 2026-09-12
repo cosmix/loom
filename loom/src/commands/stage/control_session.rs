@@ -48,20 +48,18 @@ fn require_wrapper_identity(stage_id: &str, session_id: &str) -> Result<()> {
     Ok(())
 }
 
-/// Whether `path` names a loom worktree — `<repo>/.worktrees/<stage-id>`.
+/// Whether `path` names a loom worktree root — `<repo>/.worktrees/<stage-id>`.
 ///
 /// Purely structural (no filesystem access) because it decides *routing*, not
 /// authorization: [`sandbox_control_session`] still canonicalizes the path and
-/// requires the working directory to sit inside it. Requiring a component
-/// after `.worktrees` keeps the bare container directory out.
+/// requires the working directory to sit inside it. The path must END at the
+/// stage id, which is exactly what the wrapper exports: the bare container
+/// directory is out, and so is a repo that itself lives under an outer
+/// `.worktrees/<id>/`. Same anchored rule as `hooks/loom-control-complete.sh`.
 pub(super) fn is_loom_worktree_path(path: &Path) -> bool {
-    let mut components = path.components();
-    while let Some(component) = components.next() {
-        if component.as_os_str() == ".worktrees" {
-            return components.next().is_some();
-        }
-    }
-    false
+    path.parent()
+        .and_then(Path::file_name)
+        .is_some_and(|dir| dir == ".worktrees")
 }
 
 /// The session id this completion is acting for, when it is a sandboxed
@@ -129,18 +127,29 @@ mod tests {
     /// criterion green.
     #[test]
     fn worktree_membership_is_structural_not_presence() {
-        // Real loom worktrees.
+        // Real loom worktree roots — what the wrapper exports.
         assert!(is_loom_worktree_path(Path::new(
             "/home/dev/repo/.worktrees/build-api"
         )));
+        // A worktree root whose repo itself lives inside an outer worktree.
         assert!(is_loom_worktree_path(Path::new(
-            "/home/dev/repo/.worktrees/build-api/src/nested"
+            "/home/dev/outer/.worktrees/outer-stage/repo/.worktrees/build-api"
         )));
 
         // Main-repo session working directories — knowledge, merge and
         // base-conflict sessions all `cd` here.
         assert!(!is_loom_worktree_path(Path::new("/home/dev/repo")));
         assert!(!is_loom_worktree_path(Path::new("/")));
+        // Including a main repo under an outer worktree: only a path that
+        // ENDS at `.worktrees/<id>` counts.
+        assert!(!is_loom_worktree_path(Path::new(
+            "/home/dev/outer/.worktrees/outer-stage/repo"
+        )));
+
+        // A directory below a worktree root is not itself a root.
+        assert!(!is_loom_worktree_path(Path::new(
+            "/home/dev/repo/.worktrees/build-api/src/nested"
+        )));
 
         // The bare container directory is not itself a worktree.
         assert!(!is_loom_worktree_path(Path::new(
