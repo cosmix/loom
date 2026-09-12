@@ -4,7 +4,7 @@
 //! DIFFERENT languages, so no compiler or linter relates them: BLOCK-A (the
 //! no-verify rule) appears in the signal prefixes from `cache.rs`, in
 //! `CLAUDE.md.template` (Rule 5 and worker preambles), and in the stderr of
-//! `hooks/subagent-verify-guard.sh`; BLOCK-B (the model playbook) appears in
+//! `loom-hooks/subagent-verify-guard.sh`; BLOCK-B (the model playbook) appears in
 //! `CLAUDE.md.template` (Rule 7) and `skills/loom-plan-writer/SKILL.md`. If
 //! the copies drift, one surface teaches a rule the others contradict, and a
 //! subagent obeying the wrong copy is blocked by the hook with no allowed
@@ -114,7 +114,10 @@ fn block_a_agrees_across_every_surface() {
         ("signal stable prefix", signal_prefix.as_str()),
         ("signal integration-verify prefix", iv_prefix.as_str()),
         ("CLAUDE.md.template", CLAUDE_MD_TEMPLATE),
-        ("hooks/subagent-verify-guard.sh", HOOK_SUBAGENT_VERIFY_GUARD),
+        (
+            "loom-hooks/subagent-verify-guard.sh",
+            HOOK_SUBAGENT_VERIFY_GUARD,
+        ),
     ] {
         assert!(
             text.contains(BLOCK_A),
@@ -180,7 +183,7 @@ fn block_d_agrees_across_every_surface() {
         );
     }
 
-    // The literal hook string, spelled exactly as `hooks/post-tool-use.sh`
+    // The literal hook string, spelled exactly as `loom-hooks/post-tool-use.sh`
     // emits it - a paraphrase here would leave a subagent unable to
     // recognize the ONE signal that means it has actually reached the
     // ceiling.
@@ -248,7 +251,7 @@ fn codex_forward_sentinel_agrees_across_surfaces() {
     // the constant); this side pins the shell literal to the same constant.
     assert!(
         HOOK_CODEX_FORWARD_GUARD.contains(CODEX_FORWARD_SENTINEL),
-        "hooks/codex-forward-guard.sh must grep for CODEX_FORWARD_SENTINEL \
+        "loom-hooks/codex-forward-guard.sh must grep for CODEX_FORWARD_SENTINEL \
          ({CODEX_FORWARD_SENTINEL}); a hook keyed on a drifted token enforces \
          nothing"
     );
@@ -299,7 +302,7 @@ fn codex_navigation_kit_wrapper_carries_and_delivers_the_preamble() {
     ] {
         assert!(
             HOOK_CODEX_FORWARD.contains(needle),
-            "hooks/codex-forward.sh must still carry {needle:?} - the signal \
+            "loom-hooks/codex-forward.sh must still carry {needle:?} - the signal \
              doctrine tells the orchestrator this navigation kit and these \
              prohibitions already reach every codex prompt, so the wrapper \
              dropping any of them would leave that promise false"
@@ -313,14 +316,14 @@ fn codex_navigation_kit_wrapper_carries_and_delivers_the_preamble() {
     // separate lines neither needle touches. Pin those too.
     assert!(
         HOOK_CODEX_FORWARD.contains("task=\"${preamble}"),
-        "hooks/codex-forward.sh must still compose the preamble onto the task \
+        "loom-hooks/codex-forward.sh must still compose the preamble onto the task \
          via `task=\"${{preamble}}...` - the navigation kit only reaches codex \
          if the wrapper actually splices it onto the caller's prompt, not \
          merely if the preamble text still sits in the file"
     );
     assert!(
         HOOK_CODEX_FORWARD.contains("task \"$task\""),
-        "hooks/codex-forward.sh must still hand the COMPOSED `$task` - not the \
+        "loom-hooks/codex-forward.sh must still hand the COMPOSED `$task` - not the \
          bare `$prompt` - to the companion runtime: reverting `task \"$task\"` \
          to `task \"$prompt\"` silently drops the navigation kit from every \
          codex prompt while the preamble text stays in the file and every \
@@ -382,7 +385,7 @@ fn no_guidance_surface_still_tells_a_subagent_to_verify() {
     assert!(
         leftovers.is_empty(),
         "guidance surfaces still carry phrasing the no-verify rule retired, so a \
-         subagent obeying them would be blocked by hooks/subagent-verify-guard.sh \
+         subagent obeying them would be blocked by loom-hooks/subagent-verify-guard.sh \
          with no allowed alternative:\n  {}",
         leftovers.join("\n  ")
     );

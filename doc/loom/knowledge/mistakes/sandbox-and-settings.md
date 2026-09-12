@@ -30,7 +30,7 @@ These stale entries would have misled future agents into using `permission_mode:
 2. Correct each stale entry in place with `loom knowledge replace-section <file> "<heading>"
    "<body>"` — `loom knowledge update` only appends and would leave the old value above the new
    one. Inside a worktree stage the knowledge files stay closed to Write/Edit
-   (`hooks/worktree-file-guard.sh`), but the CLI writes through: the sandbox grants
+   (`loom-hooks/worktree-file-guard.sh`), but the CLI writes through: the sandbox grants
    `doc/loom/knowledge/**` unconditionally (`sandbox::config::apply_knowledge_write_grant`). A
    non-knowledge stage records the find as a `stale-knowledge:` memory instead, for the
    knowledge-distill stage to apply (CLAUDE.md Rule 12)
@@ -64,7 +64,7 @@ These stale entries would have misled future agents into using `permission_mode:
 
 **Prevention:** Decide worktree membership from the working directory (cwd inside `.worktrees/<stage>/`), or from `LOOM_WORKTREE_PATH` only when it points at an existing `.worktrees/` dir. Never gate isolation enforcement on `LOOM_STAGE_ID` alone. Derive the current stage from the worktree path (`basename`), not from the possibly-stale env var.
 
-**Fix:** Added `loom_current_worktree()` to `hooks/_common.sh` (returns the worktree root by cwd/`LOOM_WORKTREE_PATH`, else non-zero). Both `worktree-isolation.sh` and `worktree-file-guard.sh` now gate on it and derive the stage from the path. `worktree-file-guard.sh` now also sources `_common.sh`. Remember to reinstall hooks (`install.sh`) after editing — the runtime copy lives at `~/.claude/hooks/loom/`, separate from the repo source (see "Source vs Installed: Editing Wrong File").
+**Fix:** Added `loom_current_worktree()` to `loom-hooks/_common.sh` (returns the worktree root by cwd/`LOOM_WORKTREE_PATH`, else non-zero). Both `worktree-isolation.sh` and `worktree-file-guard.sh` now gate on it and derive the stage from the path. `worktree-file-guard.sh` now also sources `_common.sh`. Remember to reinstall hooks (`install.sh`) after editing — the runtime copy lives at `~/.claude/hooks/loom/`, separate from the repo source (see "Source vs Installed: Editing Wrong File").
 
 ## Worktree-Relative Escape Deny Rules Leak Into Main-Repo settings.local.json (2026-06-02)
 
@@ -208,7 +208,7 @@ sandbox, not a tmux bug.
 
 ## A Credential That Must Be Read Cannot Express a Narrow Capability (2026-08-11)
 
-**What happened:** no worktree stage could complete through its only sanctioned path. `hooks/loom-control-complete.sh` runs the completion broker, which called `read_user_token()`, which `sandbox/settings.rs` denies to every worktree agent (S-1). The failure surfaced as `trusted completion broker could not read .work/user.token`, and the stage simply could not finish.
+**What happened:** no worktree stage could complete through its only sanctioned path. `loom-hooks/loom-control-complete.sh` runs the completion broker, which called `read_user_token()`, which `sandbox/settings.rs` denies to every worktree agent (S-1). The failure surfaced as `trusted completion broker could not read .work/user.token`, and the stage simply could not finish.
 
 **Why:** both halves were individually correct and nobody reconciled them. `.work/user.token` authorizes EVERY User-capability RPC, so handing it to a stage agent is privilege escalation and denying it is right. But completing its own stage is the one RPC that agent is supposed to make. One global secret cannot say "this caller may complete its own stage, and nothing else" — the capability it grants is fixed by the token, not by who presents it.
 
@@ -441,7 +441,7 @@ glob into a sandbox list, name the directory the expander will walk and reject i
 is not small and owned by the project. A fix for an operator prompt is verified only by running the
 exact command that prompted, with a `cd` in front of it, not by re-reading rule text.
 
-**Fix:** no `Read(` deny is ever written; `denyRead` plus `hooks/credential-guard.sh` keep the
+**Fix:** no `Read(` deny is ever written; `denyRead` plus `loom-hooks/credential-guard.sh` keep the
 boundary. See concerns.md § "No `Read(...)` Deny Rule May Exist in Any Settings File".
 
 ## The Sandbox's AF_UNIX Denial Also Kills sccache, Breaking Every Cargo Command (2026-09-04)
@@ -521,7 +521,7 @@ in a different Bash call. `browser_run_code_unsafe`-style sandboxes have no
 **What happened:** a merge-resolver session ran `git merge loom/memory-events` in the main
 checkout. Git failed with `unable to unlink old '.gitignore': Device or resource busy` (and the
 same for `CLAUDE.md.template`, `commands/distill.md`, `skills/loom-plan-writer/SKILL.md`, plus
-`Read-only file system` for `hooks/pre-compact.sh`) and printed `Merge with strategy ort
+`Read-only file system` for `loom-hooks/pre-compact.sh`) and printed `Merge with strategy ort
 failed.` HEAD, the index and every tracked file were unchanged, but the ten files the branch
 ADDS had already been written as untracked files. The later `git merge --ff-only` aborted with
 `untracked working tree files would be overwritten by merge`.
@@ -577,12 +577,12 @@ working. Install dependencies in the worktree, then re-run the tests.
 stage — every row read `opus›sonnet,opus` — while Claude subagents always appeared. The codex lane
 was installed and licensed on the stages that ran.
 
-**Why:** `.loom/work/subagents/<stage-id>/codex.jsonl` was appended by `hooks/codex-forward.sh`,
+**Why:** `.loom/work/subagents/<stage-id>/codex.jsonl` was appended by `loom-hooks/codex-forward.sh`,
 which the forwarder subagent invokes through the Bash tool — so it ran INSIDE the stage's Bash
 sandbox. From a worktree that append resolves through the `.loom/work` symlink into the main repo,
 outside the sandbox's write allow-list (handoffs and `doc/loom/knowledge`, `sandbox/settings.rs:295-311`).
 `record_codex_task` was best-effort and returned 0 on every failure path, so the denial was logged
-nowhere. Its sibling `spawns.jsonl` filled normally because `hooks/spawn-guard.sh` is a PreToolUse
+nowhere. Its sibling `spawns.jsonl` filled normally because `loom-hooks/spawn-guard.sh` is a PreToolUse
 hook, and hook processes are not under that sandbox. The display could not fall back either: the
 forwarder's own `spawns.jsonl` row carries the shim's sonnet tier and is skipped on purpose, so a
 codex run left NO trace at all.
@@ -593,7 +593,7 @@ knowledge dir; a hook process is not. A best-effort writer that returns 0 on eve
 never report its own breakage, so its write path has to be checked when it is written, not when it
 is missed.
 
-**Fix:** moved the row into `hooks/codex-forward-guard.sh`, the PreToolUse hook that already parses
+**Fix:** moved the row into `loom-hooks/codex-forward-guard.sh`, the PreToolUse hook that already parses
 and validates the forwarding command, so only an authorized forward records. Widening the sandbox
 was rejected: a ledger of what the agent did must not be writable by the agent.
 
@@ -636,7 +636,7 @@ screenshot directory under `node_modules/` gets ignored by tools that read image
 write screenshots inside the worktree proper.
 
 `mkdir -p /tmp/loom-pre-commit-plan` was placed in the plan's `integration-verify` stage `setup:`
-list, and `stage_executor.rs` prepends `setup:` with `&&` to *every* acceptance criterion. Inside
+list, and `stage_executor.rs` prepends `setup:` with `&&` to _every_ acceptance criterion. Inside
 the stage sandbox the `mkdir` failed with `Read-only file system`: the sandbox only binds a
 `sandbox.filesystem.allow_write` grant path that already **exists at session start** — a path a
 plan step creates for the first time is never bound, `setup:` included. All 10 criteria therefore

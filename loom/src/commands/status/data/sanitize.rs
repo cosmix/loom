@@ -80,7 +80,7 @@ fn cap_evidence(evidence: &mut Vec<String>) {
 ///
 /// `.` is rejected alongside `..`: joined onto the subagents directory it names
 /// that directory itself, which is not a stage, and both shell spawn guards
-/// (`hooks/spawn-guard.sh`, `hooks/codex-forward.sh`) reject it explicitly.
+/// (`loom-hooks/spawn-guard.sh`, `loom-hooks/codex-forward.sh`) reject it explicitly.
 pub(super) fn valid_stage_id(stage_id: &str) -> bool {
     !stage_id.is_empty()
         && stage_id != "."

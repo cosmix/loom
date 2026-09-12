@@ -66,7 +66,7 @@ impl<'a> SourceRefContext<'a> {
 /// but knowledge prose can also use a module-relative Rust path
 /// (`models/constants.rs`), a bare basename (`constants.rs`), or a path
 /// rooted somewhere other than the project or a cargo package (a shell
-/// script under `hooks/`, a fixture nested inside `tests/`). The first two
+/// script under `loom-hooks/`, a fixture nested inside `tests/`). The first two
 /// forms resolve exactly, through `project_root` or a source root declared
 /// by an actual Cargo package (see [`cargo_package_source_roots`]). The rest
 /// fall through to `project_files`, which knows every file in the project.

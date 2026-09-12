@@ -3,7 +3,7 @@
 //! poll-guard.sh discourages wasted turns (CLAUDE.md rule 14, rule 6): a
 //! long `sleep`, a read-only command line repeated past reason, a Bash-side
 //! cat/head/tail/sed full-file read (reusing read-guard.sh's own rules 1-3
-//! via hooks/_read_discipline.sh, so the two hooks can never drift apart),
+//! via loom-hooks/_read_discipline.sh, so the two hooks can never drift apart),
 //! and a pathless `git show`/`git diff`. The repeated-command escalation and
 //! the shared read-discipline rules are both gated by the same `[hooks]
 //! deny_enabled` switch as read-guard.sh; these tests exercise the
@@ -209,7 +209,7 @@ fn run_bash_hook(
 }
 
 /// Every deny-branch test below needs the SAME probe: whether this sandbox
-/// can see its own process tree, which `is_ancestor` (`hooks/_common.sh`)
+/// can see its own process tree, which `is_ancestor` (`loom-hooks/_common.sh`)
 /// depends on. `test` is the test's path under this file (a bare name, or
 /// `submodule::name`); this adds the `hooks_poll_guard::` prefix so the
 /// printed SKIP line matches `cargo test`'s own naming.

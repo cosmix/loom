@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Run from the real hooks/ directory (not a copy) so codex-forward-guard.sh
+# Run from the real loom-hooks/ directory (not a copy) so codex-forward-guard.sh
 # finds _common.sh beside it.
 GUARD="$(cd "$(dirname "$0")/.." && pwd)/codex-forward-guard.sh"
 if ! TMP=$(mktemp -d "${TMPDIR:-/tmp}/loom-hooktest.XXXXXX") || [ -z "$TMP" ]; then

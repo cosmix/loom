@@ -269,7 +269,7 @@ fn is_stopword(normalized: &str, stopwords: &HashSet<&str>) -> bool {
 
 /// True when `keyword` strongly identifies `skill_name`.
 ///
-/// Mirrors the logic in hooks/skill-trigger.sh so a stopword-exempt
+/// Mirrors the logic in loom-hooks/skill-trigger.sh so a stopword-exempt
 /// indexed keyword will also pick up the name-match weight boost at
 /// lookup time. Strips the `loom-` prefix every shipped skill uses.
 fn is_skill_name_match(keyword: &str, skill_name: &str) -> bool {

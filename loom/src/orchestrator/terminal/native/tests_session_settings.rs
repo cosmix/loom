@@ -12,7 +12,7 @@ use std::path::Path;
 use tempfile::TempDir;
 
 /// Sets `LOOM_HOOKS_DIR` for the duration of the guard and restores it on
-/// drop (including on panic), the same discipline `hooks/tests.rs`'s env-var
+/// drop (including on panic), the same discipline `loom/src/hooks/tests.rs`'s env-var
 /// test uses for `find_hooks_dir`'s override.
 struct HooksDirGuard {
     original: Option<std::ffi::OsString>,

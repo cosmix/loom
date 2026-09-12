@@ -88,8 +88,8 @@ fn rule_8c_bare_basename_resolves_against_any_project_file() {
     let project = temp.path().join("project");
     let root = project.join("doc/loom/knowledge");
     fs::create_dir_all(&root).unwrap();
-    fs::create_dir_all(project.join("hooks")).unwrap();
-    fs::write(project.join("hooks/commit-guard.sh"), "#!/bin/sh\n").unwrap();
+    fs::create_dir_all(project.join("loom-hooks")).unwrap();
+    fs::write(project.join("loom-hooks/commit-guard.sh"), "#!/bin/sh\n").unwrap();
     fs::write(root.join("notes.md"), "## Topic\n`commit-guard.sh`\n").unwrap();
 
     let catalog = build(&root).unwrap();

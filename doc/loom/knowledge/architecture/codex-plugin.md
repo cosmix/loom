@@ -75,7 +75,7 @@ prompt implemented all the edits itself on sonnet and nothing surfaced it. Three
    `state/*/jobs/*.json` paths in companion mode or the `session:` rollout path in direct mode —
    see the macOS section below).
    On failure: report verbatim prefixed `LOOM-CODEX-FORWARD-ERROR`, never implement.
-2. **`hooks/codex-forward-guard.sh`** — PreToolUse on Bash/Edit/Write/Read/Task/Agent. Primary
+2. **`loom-hooks/codex-forward-guard.sh`** — PreToolUse on Bash/Edit/Write/Read/Task/Agent. Primary
    gate: payload `agent_type` ∈ {`loom-codex-forwarder`, `codex:codex-rescue`} → only a Bash
    command containing `codex-companion.mjs` passes; everything else exits 2 with forwarding
    doctrine on stderr. Fallback gate: `transcript_path` under `*/subagents/agent-*.jsonl` whose
@@ -175,7 +175,7 @@ codex sandbox -c sandbox_mode="danger-full-access" -- /bin/pwd       # prints th
 `read-only` seatbelts too. `dangerouslyDisableSandbox` is refused by the auto-mode classifier; there is
 no macOS equivalent of Linux's `exclude_slash_tmp` — the nesting itself is refused.
 
-**Fix.** `hooks/codex-forward.sh` probes `sandbox-exec -p '(version 1)(allow default)' /usr/bin/true`
+**Fix.** `loom-hooks/codex-forward.sh` probes `sandbox-exec -p '(version 1)(allow default)' /usr/bin/true`
 (PATH lookup, so tests can stub it) and, only when refused, bypasses the companion and runs `codex exec
 --sandbox danger-full-access --skip-git-repo-check --model <model> -c
 model_reasoning_effort="<effort>" -- "<preamble + task>" </dev/null`. The `</dev/null` is required;
@@ -326,7 +326,7 @@ Two consequences:
 
 - Codex still starts every run with no doctrine beyond what a project's `~/.codex/AGENTS.md` and
   the prompt carry, since a scratch repo or one that never ran `loom install-assets` has neither.
-  `hooks/codex-forward.sh` still prepends its own per-task stage contract on every forwarded task —
+  `loom-hooks/codex-forward.sh` still prepends its own per-task stage contract on every forwarded task —
   the one channel an orchestrator writing a prompt cannot forget, and the standing `~/.codex/AGENTS.md`
   does not make it redundant.
 - The old signal doctrine's claim that codex "inherits CLAUDE.md's knowledge-first rule" named the
@@ -389,7 +389,7 @@ xhigh) printed the pair throughout and wrote both files byte-exact.
 **Stdin.** The same runs printed `Reading additional input from stdin...`. `codex exec` treats an open
 stdin as extra prompt input and blocks until EOF; under the Bash tool stdin is already at EOF, so only
 a caller that keeps it open hangs. The wrapper passes `</dev/null` on the direct-lane invocation, and
-`hooks/tests/codex-forward-wrapper.sh` stubs `codex` to exit 66 unless `/dev/stdin -ef /dev/null` while
+`loom-hooks/tests/codex-forward-wrapper.sh` stubs `codex` to exit 66 unless `/dev/stdin -ef /dev/null` while
 running the wrapper with stdin on a regular file, so dropping the redirect turns that case red. The
 companion lane needs none: it takes the prompt positionally and only falls back to stdin when that is
 empty (`readTaskPrompt`, `codex-companion.mjs:643-649`), and gives its child pipes rather than this

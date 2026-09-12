@@ -121,7 +121,7 @@ fn git_add_guard_allows_multiline_message_mentioning_attribution() {
     let (_temp, hook) = setup_hook();
     // "Co-Authored-By" contains "-A". Before the fix the unbounded `.*` reached
     // it across the newline and blocked the staging.
-    let cmd = "git add hooks/commit-filter.sh\n\
+    let cmd = "git add loom-hooks/commit-filter.sh\n\
                git commit -q -m \"fix(hooks): tighten the guard\n\
                \n\
                Explain that a Co-Authored-By trailer must never be added.\"";

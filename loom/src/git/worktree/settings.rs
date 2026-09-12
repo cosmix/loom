@@ -496,7 +496,7 @@ fn create_worktree_settings(
         // relative-path `rg`/`grep`/`diff`/`git`/`cp`/`mv` after a `cd` prompt the
         // operator. The token files are protected instead by the OS-level
         // `sandbox.filesystem.denyRead` list written into `settings.local.json`
-        // and by `hooks/credential-guard.sh` for the native file tools. The narrow
+        // and by `loom-hooks/credential-guard.sh` for the native file tools. The narrow
         // entries below are the whole read grant.
         let work_perms = vec![
             format!("Read(/{}/signals/**)", resolved_str),

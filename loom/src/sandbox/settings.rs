@@ -132,7 +132,7 @@ pub fn write_settings(config: &MergedSandboxConfig, worktree_path: &Path) -> Res
     //   1. NO `Read(...)` deny is written, here or anywhere else. The tokens
     //      are denied to Bash through the OS-level
     //      `sandbox.filesystem.denyRead` list (pushed just below) and to the
-    //      native file tools by `hooks/credential-guard.sh`. A permission-rule
+    //      native file tools by `loom-hooks/credential-guard.sh`. A permission-rule
     //      deny is not an option at any path shape: Claude Code's Bash path
     //      validator prompts the operator for every relative-path `rg`,
     //      `grep`, `diff`, `git`, `cp` or `mv` issued after a `cd` in the same
@@ -238,7 +238,7 @@ pub fn generate_settings_json(config: &MergedSandboxConfig) -> Value {
     //
     // No `Read(...)` deny is ever emitted here — read denial is entirely the
     // OS sandbox's job (`sandbox.filesystem.denyRead`, above) plus
-    // `hooks/credential-guard.sh` for the native file tools. See
+    // `loom-hooks/credential-guard.sh` for the native file tools. See
     // `write_settings` for why a `Read(` deny rule of any shape is
     // unacceptable.
     let mut permissions = json!({});
@@ -266,8 +266,8 @@ pub fn generate_settings_json(config: &MergedSandboxConfig) -> Value {
     // emitted as an enforceable `Edit` rule — deny wins over allow, so it would
     // refuse the agent's very first edit to its own source tree. Dropping it
     // here loses no protection: worktree write-escape is enforced independently
-    // by the OS sandbox's `allowOnly` list, `hooks/worktree-file-guard.sh`, and
-    // `hooks/worktree-isolation.sh`.
+    // by the OS sandbox's `allowOnly` list, `loom-hooks/worktree-file-guard.sh`, and
+    // `loom-hooks/worktree-isolation.sh`.
     //
     // Also skip the knowledge directory: `merge_config` already strips it via
     // `apply_knowledge_write_grant`, but this is defense-in-depth for any

@@ -1,7 +1,7 @@
 //! Locates the `subagents/` transcript directory `loom subagents` reads.
 //!
 //! Layout (verified empirically against live transcripts, mirrored by
-//! `hooks/_common.sh:1010-1043`'s own classification of the same paths):
+//! `loom-hooks/_common.sh:1010-1043`'s own classification of the same paths):
 //!
 //! ```text
 //! ~/.claude/projects/<project-slug>/<session-uuid>/subagents/agent-<agentId>.jsonl

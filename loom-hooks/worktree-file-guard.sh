@@ -263,7 +263,7 @@ fi
 # SKIPPED outright rather than compared as a raw string, which would reopen
 # the escape closed above.
 #
-# hooks/_read_discipline.sh:105's `_loom_is_skill_md_path` keeps the looser
+# loom-hooks/_read_discipline.sh:105's `_loom_is_skill_md_path` keeps the looser
 # suffix-glob shape deliberately - it gates a read-discipline WARNING, not
 # worktree containment, so the wider match there is not a boundary widening.
 # The two diverge on purpose; keep both in mind when touching either.

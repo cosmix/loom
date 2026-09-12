@@ -5,7 +5,7 @@
 #
 # All three rules (unbounded read of a large file -> outline instead, repeat
 # reads of the same path, and a tier-1 knowledge read in a stage session)
-# live in the shared core hooks/_read_discipline.sh, so this hook and
+# live in the shared core loom-hooks/_read_discipline.sh, so this hook and
 # poll-guard.sh's Bash-side file reads can never drift apart - see that
 # file's header for the full rule description.
 #

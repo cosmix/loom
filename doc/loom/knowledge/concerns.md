@@ -161,9 +161,9 @@ support, and `loom memory`'s pre-2026-08-11 usability gap.
 
 → [Knowledge CLI Gaps](concerns/knowledge-cli-gaps.md)
 
-## Claude Code Sandbox Protects the Repo's hooks/ Directory (2026-09-02)
+## Hook Source Directory Sandbox Collision Resolved (2026-09-13)
 
-The project-root `hooks/` directory is write-protected by Claude Code's sandbox as part of its bare-git-repo rule, so shell writes there fail even when permission config would allow them. [Sandbox Protected hooks/ Directory](concerns/sandbox-protected-hooks-dir.md)
+The source directory was renamed to `loom-hooks/` on 2026-09-13 to avoid Claude Code's protected bare-git directory name. Installed hook paths and Rust's `loom/src/hooks/` module remain unchanged. [Rename and historical sandbox probes](concerns/sandbox-protected-hooks-dir.md)
 
 ## Web Dashboard Latent Issues
 

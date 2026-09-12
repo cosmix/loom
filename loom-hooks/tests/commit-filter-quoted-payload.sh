@@ -22,7 +22,7 @@
 set -euo pipefail
 
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
-HOOK="$ROOT/hooks/commit-filter.sh"
+HOOK="$ROOT/loom-hooks/commit-filter.sh"
 
 TMP=$(mktemp -d "${TMPDIR:-/tmp}/loom-hooktest.XXXXXX")
 trap 'rm -rf "$TMP"' EXIT
@@ -137,7 +137,7 @@ expect_exit "(i) env -u unsetting the gate variable is blocked" \
 # (j) THE A1 REGRESSION: merely SEARCHING for the gate variable's name is a
 # bare argv word, not an operand of `unset`/`env -u` - must be allowed.
 expect_exit "(j) 'rg -n <gatevar> file' (bare mention, no unset/env -u) is allowed" \
-	0 "$(plain_payload "rg -n ${GATE_VAR_NAME} hooks/_common.sh")"
+	0 "$(plain_payload "rg -n ${GATE_VAR_NAME} loom-hooks/_common.sh")"
 
 # (k) A standalone `unset <gatevar>` (no git involved at all) must still be
 # blocked - the anti-evasion guard applies to ALL Bash calls, not just ones

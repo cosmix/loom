@@ -60,7 +60,7 @@ reading call sites to infer semantics.
 
 **What happened:** in a directory that was not yet a repository, `loom repair --fix` followed by
 `loom init <plan>` failed with `git init failed ... could not lock config file .git/config: File
-exists`. The project's `.git/` held `hooks/pre-commit`, three 0-byte files (`config`,
+exists`. The project's `.git/` held `loom-hooks/pre-commit`, three 0-byte files (`config`,
 `config.lock`, `config.worktree`) and no `objects/`.
 
 **Why (three links):**

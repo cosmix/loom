@@ -341,7 +341,7 @@ by nothing: the runtime signal prose in `orchestrator/signals/cache.rs` and
 `patterns.md`. Those still told every spawning orchestrator "fable (major bugs, …)" — the exact
 exception the change existed to close, on the surface an agent actually reads at run time. Editing a
 doctrine block means `rg` for a distinctive phrase of the OLD wording across `loom/src`, `skills/`,
-`agents/`, `hooks/` and `doc/loom/knowledge/` before committing; a green `tests_doctrine` proves the
+`agents/`, `loom-hooks/` and `doc/loom/knowledge/` before committing; a green `tests_doctrine` proves the
 two pinned surfaces agree, not that the doctrine is consistent.
 
 ## A Coordinator Wave for a Mid-Sized Feature Cost Forty Minutes (2026-09-12)

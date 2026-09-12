@@ -155,7 +155,7 @@ pub(super) fn heal_inert_write_denies(settings_obj: &mut Map<String, Value>) -> 
 /// no longer writes a `Read(...)` deny anywhere: the daemon token files stay
 /// protected by the OS-level `sandbox.filesystem.denyRead` list
 /// (`state_root::token_deny_paths`) and, for the native file tools, by the
-/// `hooks/credential-guard.sh` PreToolUse guard. This prunes what OLDER loom
+/// `loom-hooks/credential-guard.sh` PreToolUse guard. This prunes what OLDER loom
 /// versions left behind — both the stale-shaped token denies and the current
 /// parent-glob ones, since even the current shape now makes searches prompt —
 /// via [`is_loom_written_read_deny`]. An operator's own `Read(...)` deny is

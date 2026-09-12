@@ -1,6 +1,6 @@
 //! `loom hook pre-compact` — reopen delivery suppression for a compacting session.
 //!
-//! `hooks/pre-compact.sh` already runs a block-then-allow handoff protocol on
+//! `loom-hooks/pre-compact.sh` already runs a block-then-allow handoff protocol on
 //! every PreCompact event (see that script's own header); this delegate rides
 //! alongside it, deleting exactly one delivery record so retrieval stops
 //! assuming the compacting session still holds what it was already given.

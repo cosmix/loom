@@ -118,7 +118,7 @@ export. A sandboxed agent's `rg`/`fd`/`ag` opening `admin.token` or `user.token`
 own deny rule and stalls auto mode on an operator prompt, so both files keep ordinary sweeps and
 `-uu`/`--no-ignore` sweeps away from the credential files. No `Read(...)` permission deny is
 written for the tokens at all; the OS-level `sandbox.filesystem.denyRead` list and
-`hooks/credential-guard.sh` cover them, for the reason in concerns.md § "No `Read(...)` Deny Rule
+`loom-hooks/credential-guard.sh` cover them, for the reason in concerns.md § "No `Read(...)` Deny Rule
 May Exist in Any Settings File".
 
 Privileged actions do not treat the mere presence of `.work/admin.token` as authorization. The
@@ -186,8 +186,8 @@ Alongside it on the `Stage` struct (all shipped): `dispute_count` (600), `eviden
 
 | Path                                                             | Role                                                                                                   |
 | -------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| `hooks/subagent-verify-guard.sh`                                 | PreToolUse:Bash guard — blocks project-wide verification for subagents (over the Rule 17 400-line cap — see [concerns.md](../concerns.md)) |
-| `hooks/_common.sh`                                               | `loom_is_subagent()` — payload-first detection gate, process-tree walk as fallback; 619 lines, also over the Rule 17 cap — see [concerns.md](../concerns.md) |
+| `loom-hooks/subagent-verify-guard.sh`                                 | PreToolUse:Bash guard — blocks project-wide verification for subagents (over the Rule 17 400-line cap — see [concerns.md](../concerns.md)) |
+| `loom-hooks/_common.sh`                                               | `loom_is_subagent()` — payload-first detection gate, process-tree walk as fallback; 619 lines, also over the Rule 17 cap — see [concerns.md](../concerns.md) |
 | `loom/src/orchestrator/signals/tests_doctrine.rs`                | pins the doctrine blocks byte-for-byte across signal, template, and hook                               |
 | `loom/tests/integration/hooks_subagent_verify_guard.rs`          | harness: process-tree construction, env scrubbing, payload building                                    |
 | `loom/tests/integration/hooks_subagent_verify_guard_cases.rs`    | `BLOCK_CASES` / `ALLOW_CASES` table data                                                               |
@@ -198,7 +198,7 @@ so the children reach the parent's private helpers via `use super::*` without wi
 
 ## Post-Tool Heartbeat
 
-`hooks/post-tool-use.sh` writes only private heartbeat metadata under `.work/heartbeat/`. It does not persist tool names, commands, output, byte counts, or previews. This prevents credentials and private source printed by tools from becoming durable shared state.
+`loom-hooks/post-tool-use.sh` writes only private heartbeat metadata under `.work/heartbeat/`. It does not persist tool names, commands, output, byte counts, or previews. This prevents credentials and private source printed by tools from becoming durable shared state.
 
 The legacy `ToolEvent` reader remains able to consume an older `.work/tool-events.jsonl`, but no production hook creates or appends that file. New stuck detection therefore relies on heartbeat/session liveness rather than tool-output heuristics. If event observability is restored, it must use a bounded no-follow Rust writer and metadata-only records.
 

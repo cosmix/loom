@@ -32,7 +32,7 @@ fn cached_path_probe(
 }
 
 /// Whether `ps -o ppid=` can read this process's own parent pid. Mirrors
-/// `hooks/_common.sh::loom_proc_tree_available` exactly, since both exist to
+/// `loom-hooks/_common.sh::loom_proc_tree_available` exactly, since both exist to
 /// explain the SAME class of failure: a sandbox that denies `ps`/`/proc`
 /// makes every ancestry or process-status check in this codebase degrade the
 /// same way, whether it walks a chain of pids or reads a single child's

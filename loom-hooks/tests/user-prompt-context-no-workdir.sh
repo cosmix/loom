@@ -12,7 +12,7 @@
 # the repository's retrieval roots during the upward walk.
 set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
-HOOK="$ROOT/hooks/user-prompt-context.sh"
+HOOK="$ROOT/loom-hooks/user-prompt-context.sh"
 TMP=$(mktemp -d "${TMPDIR:-/tmp}/loom-hooktest.XXXXXX")
 trap 'rm -rf "$TMP"' EXIT
 mkdir -p "$TMP/bin"

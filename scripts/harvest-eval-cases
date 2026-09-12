@@ -18,9 +18,9 @@
 #
 # What it looks for: every UserPromptSubmit `hook_additional_context`
 # attachment whose content starts with "## Knowledge Brief" (the marker
-# `orchestrator/signals/format/brief.rs` and `hooks/user-prompt-context.sh`
+# `orchestrator/signals/format/brief.rs` and `loom-hooks/user-prompt-context.sh`
 # both emit) — this excludes the OTHER UserPromptSubmit hook attachment,
-# `hooks/skill-trigger.sh`'s skill suggestions, which share the same
+# `loom-hooks/skill-trigger.sh`'s skill suggestions, which share the same
 # attachment shape but never carry retrieval ids. Each brief attachment's
 # `parentUuid` chain is walked back to the real `type: "user"` prompt entry
 # that triggered it (the two are rarely adjacent lines: other attachments,

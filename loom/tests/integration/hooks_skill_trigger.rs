@@ -1,6 +1,6 @@
 //! Integration tests for the skill-trigger UserPromptSubmit hook.
 //!
-//! `hooks/skill-trigger.sh` scores skills from an inverted keyword index and
+//! `loom-hooks/skill-trigger.sh` scores skills from an inverted keyword index and
 //! prints a `hookSpecificOutput.additionalContext` block suggesting them.
 //! These tests cover the defects fixed alongside this file: every qualifying
 //! skill is listed (not just the top 3), ranking is deterministic across

@@ -39,7 +39,7 @@ its exact `LOOM_HOOKS` inventory before an atomic replacement, and add a clean-i
 
 The doctrine block must stay byte-identical across the signal, the template, and the hook's
 refusal message, so it carries a single scoped-command example — a `cargo` one. A blocked Python
-or Go subagent is shown a Rust example. `hooks/subagent-verify-guard.sh` is at the 400-line cap
+or Go subagent is shown a Rust example. `loom-hooks/subagent-verify-guard.sh` is at the 400-line cap
 with no slack, so the fix is to append language-specific examples **after** the pinned block as
 explicitly hook-local guidance, the same way the `BLOCKED:` framing line already sits outside it.
 
@@ -47,7 +47,7 @@ explicitly hook-local guidance, the same way the `BLOCKED:` framing line already
 
 It is the last hook that matches patterns against the raw command string, so it still cannot tell
 an argument's _value_ from an argument's _mention_: text quoted inside a command is scanned as if
-it were shell. The shared `loom_tokens_*` helpers it needs already exist in `hooks/_common.sh`.
+it were shell. The shared `loom_tokens_*` helpers it needs already exist in `loom-hooks/_common.sh`.
 
 It was left for last because its failure direction is the mild one — it blocks project-wide
 build/test/lint runs by subagents, so a false positive strands a subagent rather than admitting a
@@ -65,9 +65,9 @@ Over CLAUDE.md Rule 17's 400-line file limit (`wc -l`, 2026-08-26):
 
 | File                             | Lines |
 | -------------------------------- | ----- |
-| `hooks/_common.sh`               | 1197  |
-| `hooks/commit-filter.sh`         | 489   |
-| `hooks/subagent-verify-guard.sh` | 416   |
+| `loom-hooks/_common.sh`               | 1197  |
+| `loom-hooks/commit-filter.sh`         | 489   |
+| `loom-hooks/subagent-verify-guard.sh` | 416   |
 
 `_common.sh` roughly doubled when the token-scanning helpers landed; it was already over the cap
 before that.
@@ -156,8 +156,8 @@ any file at or near its ledger cap must be refactored in the same change that gr
   Theme}` (`commands/status/ui/mod.rs:4`, every consumer imports `ui::theme::Theme` directly) and `pub use
   app::TuiApp` (`commands/status/ui/tui/mod.rs:25`, used only by `run_tui` in the same file).
 - **The `.`/`..` stage-id path-component check exists in four places at three different strengths**
-  (`commands/status/data/execution_models.rs:38`, `commands/memory/handlers/work_dir.rs:99`, `hooks/codex-forward.sh:43`,
-  `hooks/spawn-guard.sh:309`) — see mistakes.md for the resulting divergence. Candidate for one shared
+  (`commands/status/data/execution_models.rs:38`, `commands/memory/handlers/work_dir.rs:99`, `loom-hooks/codex-forward.sh:43`,
+  `loom-hooks/spawn-guard.sh:309`) — see mistakes.md for the resulting divergence. Candidate for one shared
   helper.
 - **Model-name display normalization (strip `claude-` prefix, strip trailing `-YYYYMMDD`) is
   implemented twice**: `commands/subagents/table.rs::display_model`/`strip_date_suffix` and

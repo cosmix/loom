@@ -20,7 +20,7 @@ nothing ever told codex those commands existed.
 and what cheaper channel already exists before taking the capability away. A prohibition that has
 to be compensated by force-feeding is evidence the prohibition is the wrong fix.
 
-**Fix:** `hooks/codex-forward.sh` prepends the navigation kit and the lane's prohibitions to every
+**Fix:** `loom-hooks/codex-forward.sh` prepends the navigation kit and the lane's prohibitions to every
 forwarded prompt; the signal doctrine and `/loom-plan-writer` now ask for anchors instead of
 transcripts. See [Codex Plugin](../architecture/codex-plugin.md).
 

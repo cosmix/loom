@@ -15,7 +15,7 @@
 #
 # Input: JSON from stdin, e.g.
 #   {"transcript_path": ".../subagents/agent-<agentId>.jsonl", "session_id": "...", ...}
-# (the finishing subagent's OWN transcript - see hooks/_common.sh's
+# (the finishing subagent's OWN transcript - see loom-hooks/_common.sh's
 # loom_payload_agent_verdict documentation, ~lines 1010-1039, for this shape)
 #
 # Environment variables (set by loom worktree settings, PARENT session's own):
@@ -97,7 +97,7 @@ if [[ "$VERDICT" != "subagent" ]]; then
 fi
 
 # Extract the agent id from the transcript path. Same shape documented at
-# hooks/_common.sh's loom_payload_agent_verdict: a subagent's transcript
+# loom-hooks/_common.sh's loom_payload_agent_verdict: a subagent's transcript
 # lives at .../subagents/agent-<agentId>.jsonl.
 case "$TRANSCRIPT_PATH" in
 */subagents/agent-*.jsonl)

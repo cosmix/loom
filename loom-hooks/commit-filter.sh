@@ -163,7 +163,7 @@ indirection_intent() {
 # immediately after a literal `-u` flag (the `env -u NAME` form). A bare
 # loom_tokens_word_matches check on the variable name is too broad - it
 # fires on ANY standalone argv word equal to the gate variable, including
-# something as innocuous as `rg -n LOOM_MAIN_AGENT_PID hooks/_common.sh`
+# something as innocuous as `rg -n LOOM_MAIN_AGENT_PID loom-hooks/_common.sh`
 # searching this very file for the name.
 #
 # The `unset` form is expressible via loom_tokens_cmd_has_arg, which already
@@ -220,7 +220,7 @@ if [[ $TOKENS_OK -eq 1 ]]; then
 	# is suspicious regardless of what else the command does.
 	# gate_var_unset_intent requires the variable to actually be the OPERAND
 	# of `unset` or of `env -u`, not merely a bare argv word anywhere in the
-	# command - so a `rg -n LOOM_MAIN_AGENT_PID hooks/_common.sh` search, a
+	# command - so a `rg -n LOOM_MAIN_AGENT_PID loom-hooks/_common.sh` search, a
 	# legitimate `$LOOM_MAIN_AGENT_PID` expansion, or prose sitting inside
 	# one whitespace-bearing quoted token can never trip this.
 	if gate_var_unset_intent; then

@@ -540,7 +540,7 @@ An agent that genuinely believes a criterion is wrong or impossible has a sancti
 
 Subagents do not verify. A subagent may run **at most one narrowly-scoped check** covering the files it just changed; project-wide builds, full test suites, and repo-wide lint or typecheck runs belong to the main agent — the only party that can see the whole tree and act on the result.
 
-This is enforced, not just advised: `hooks/subagent-verify-guard.sh` (a `PreToolUse:Bash` hook) blocks project-wide runners — `cargo build`, `cargo test`, `make test`, `tsc`, `go build` and friends — when the caller is detected as a subagent. Scoped invocations pass, quoted mentions are ignored, and unrecognised commands are always allowed: a false block would strand a subagent mid-task.
+This is enforced, not just advised: `loom-hooks/subagent-verify-guard.sh` (a `PreToolUse:Bash` hook) blocks project-wide runners — `cargo build`, `cargo test`, `make test`, `tsc`, `go build` and friends — when the caller is detected as a subagent. Scoped invocations pass, quoted mentions are ignored, and unrecognised commands are always allowed: a false block would strand a subagent mid-task.
 
 Two things worth knowing:
 

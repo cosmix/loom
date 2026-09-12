@@ -26,7 +26,7 @@
 //! rule's path shape, so no spelling avoids it. The tokens are instead denied
 //! to Bash by the OS-level `sandbox.filesystem.denyRead` list
 //! ([`token_deny_paths`]), which is not a permission rule and does not feed
-//! that check, and to the native file tools by the `hooks/credential-guard.sh`
+//! that check, and to the native file tools by the `loom-hooks/credential-guard.sh`
 //! PreToolUse hook. The recognisers here ([`is_token_read_deny`],
 //! [`is_loom_written_read_deny`]) exist only to strip the deny rules older
 //! loom versions wrote.

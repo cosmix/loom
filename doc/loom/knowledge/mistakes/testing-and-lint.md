@@ -28,7 +28,7 @@ Not `cargo clippy -- -D warnings`. The `--workspace` flag is also useful in mono
 
 ## Reviewer False Alarm: Verify Behavior Changes Against the Diff (2026-05-12)
 
-**What happened:** An integration-verify reviewer flagged a "HIGH native regression" in `hooks/generator.rs`, claiming the new backend match arm introduced double-firing of global hooks on native worktrees. The claim was false — the native branch was already unconditionally calling `configure_loom_hooks(obj)` before the change; the new commit only added the container arm.
+**What happened:** An integration-verify reviewer flagged a "HIGH native regression" in `loom/src/hooks/generator.rs`, claiming the new backend match arm introduced double-firing of global hooks on native worktrees. The claim was false — the native branch was already unconditionally calling `configure_loom_hooks(obj)` before the change; the new commit only added the container arm.
 
 **Why:** The reviewer analyzed the stage description's framing rather than the actual diff. The description said "branching on config.backend" which sounds like it changes native behavior; the diff showed the native arm was structurally identical to the pre-existing unconditional call.
 

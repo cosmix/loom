@@ -11,8 +11,8 @@ use std::path::Path;
 const LOOM_HOOK_START_MARKER: &str = "# LOOM_PRE_COMMIT_HOOK_START";
 const LOOM_HOOK_END_MARKER: &str = "# LOOM_PRE_COMMIT_HOOK_END";
 
-/// The pre-commit hook script content (embedded from hooks/git-pre-commit-hook.sh)
-const PRE_COMMIT_HOOK_CONTENT: &str = include_str!("../../../hooks/git-pre-commit-hook.sh");
+/// The pre-commit hook script content (embedded from loom-hooks/git-pre-commit-hook.sh)
+const PRE_COMMIT_HOOK_CONTENT: &str = include_str!("../../../loom-hooks/git-pre-commit-hook.sh");
 
 /// Install the pre-commit hook to the repository's .git/hooks directory
 ///

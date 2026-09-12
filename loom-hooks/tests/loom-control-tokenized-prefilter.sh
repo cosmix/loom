@@ -13,7 +13,7 @@
 set -euo pipefail
 
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
-HOOK="$ROOT/hooks/loom-control-complete.sh"
+HOOK="$ROOT/loom-hooks/loom-control-complete.sh"
 TMP=$(mktemp -d "${TMPDIR:-/tmp}/loom-hooktest.XXXXXX")
 trap 'rm -rf "$TMP"' EXIT
 
@@ -76,9 +76,9 @@ expect_allowed 'loom memory note "gotcha: never run loom stage complete early"' 
 	"a memory note quoting the verb"
 expect_allowed "loom memory note 'mistake: stage complete ran before the subagents returned'" \
 	"a single-quoted memory note"
-expect_allowed 'rg -n "pre_tool_hooks" hooks/loom-control-complete.sh' \
+expect_allowed 'rg -n "pre_tool_hooks" loom-hooks/loom-control-complete.sh' \
 	"an rg naming this hook's file"
-expect_allowed 'cat hooks/loom-control-complete.sh' "a path argument naming this hook"
+expect_allowed 'cat loom-hooks/loom-control-complete.sh' "a path argument naming this hook"
 expect_allowed 'git commit -m "fix: complete the loom stage guard"' \
 	"a commit message quoting the words"
 expect_allowed 'loom stage list' "an unrelated loom stage subcommand"

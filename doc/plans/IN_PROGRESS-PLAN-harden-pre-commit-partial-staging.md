@@ -47,7 +47,7 @@ Observed on the current checkout before authoring this plan:
 
 - `loom repair` (dry run): workspace healthy.
 - `./scripts/check-hook-syntax.sh`: 104 shell scripts parsed cleanly.
-- `bash hooks/tests/run-all.sh`: 63 passed, 0 failed.
+- `bash loom-hooks/tests/run-all.sh`: 63 passed, 0 failed.
 - `cargo build --all-targets`, `cargo fmt --check`,
   `cargo clippy --all-targets -- -D warnings`, and rustdoc with warnings denied: passed.
 - `cargo audit --no-fetch -d "$HOME/.cargo/advisory-db"`: 387 dependencies scanned against
@@ -253,7 +253,7 @@ loom:
       acceptance:
         - 'mkdir -p target/tmp && TMPDIR="$PWD/target/tmp" ./scripts/test-pre-commit-partial-staging.sh'
         - "./scripts/check-hook-syntax.sh"
-        - 'mkdir -p target/tmp && TMPDIR="$PWD/target/tmp" bash hooks/tests/run-all.sh'
+        - 'mkdir -p target/tmp && TMPDIR="$PWD/target/tmp" bash loom-hooks/tests/run-all.sh'
         - "cd loom && env -u RUSTC_WRAPPER cargo build --all-targets"
         - "cd loom && cargo fmt --check"
         - "cd loom && env -u RUSTC_WRAPPER cargo clippy --all-targets -- -D warnings"

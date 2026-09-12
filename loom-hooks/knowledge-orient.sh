@@ -4,7 +4,7 @@
 # checkout's curated knowledge index, doc/loom/knowledge/INDEX.md.
 #
 # Registered globally by fs/permissions/hooks/config.rs::build, unlike
-# hooks/session-start.sh which is a WORKTREE-only hook wired up at loom stage
+# loom-hooks/session-start.sh which is a WORKTREE-only hook wired up at loom stage
 # creation time (loom/src/hooks/config.rs). Without this, an ordinary
 # interactive session in a repository that keeps a knowledge tree has nothing
 # telling it the tree exists - CLAUDE.md rule 12's knowledge-first doctrine
@@ -19,7 +19,7 @@
 #
 # Skipped entirely when:
 #   - LOOM_STAGE_ID is set - a stage session reads its signal's Knowledge
-#     Brief instead, and hooks/session-start.sh (worktree-only) handles its
+#     Brief instead, and loom-hooks/session-start.sh (worktree-only) handles its
 #     own re-anchor on compact/resume.
 #   - `jq` is not on PATH - nothing here can safely parse the input or build
 #     the output without it.
@@ -42,7 +42,7 @@ else
 	INPUT_JSON=$(cat 2>/dev/null || true)
 fi
 
-# A stage session reads its signal's Knowledge Brief; hooks/session-start.sh
+# A stage session reads its signal's Knowledge Brief; loom-hooks/session-start.sh
 # (the worktree-only hook) handles its own re-anchor on compact/resume.
 if [[ -n "${LOOM_STAGE_ID:-}" ]]; then
 	exit 0

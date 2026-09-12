@@ -82,7 +82,7 @@ Repeatable failure modes: plan-authoring notes frozen as architecture facts, `[U
 
 ## Codex Lane Rogue Wrapper (2026-08-07)
 
-A `codex:codex-rescue` spawn received a codex prompt and implemented all 26 edits itself on sonnet instead of forwarding — plugin agents' `tools:` field is ignored by design. Now pinned by `hooks/codex-forward-guard.sh` + the `loom-codex-forwarder` agent + the evidence-trailer rule.
+A `codex:codex-rescue` spawn received a codex prompt and implemented all 26 edits itself on sonnet instead of forwarding — plugin agents' `tools:` field is ignored by design. Now pinned by `loom-hooks/codex-forward-guard.sh` + the `loom-codex-forwarder` agent + the evidence-trailer rule.
 
 → [Codex Lane Rogue Wrapper](mistakes/codex-lane-rogue-wrapper.md)
 
@@ -214,7 +214,7 @@ bridge lessons, all from `loom/src/commands/status/web/` and `web/`.
 The guard that stops the pre-commit hook from silently replacing a partially staged file with
 its full working-tree content (see the incident above) has its own settled disputes: git's
 default rename detection, why `git commit -a`/`git commit <path>` can't false-positive it (and
-where `--only` still can't catch a *different* partially staged file), and a test-fixture trap
+where `--only` still can't catch a _different_ partially staged file), and a test-fixture trap
 where a space in a filename doesn't prove NUL-safety.
 
 → [Pre-Commit Hardening](mistakes/pre-commit-hardening.md)

@@ -140,7 +140,7 @@ pub struct UserConfig {
 /// then `$LOOM_HOME/config.toml` instead of `~/.loom/config.toml`. `LOOM_HOME`
 /// names the loom user directory itself (the `.loom` directory, not the home
 /// directory above it) — the same shape as `LOOM_HOOKS_DIR`
-/// (`hooks/generator.rs`). This is the seam a caller outside `#[cfg(test)]`
+/// (`loom/src/hooks/generator.rs`). This is the seam a caller outside `#[cfg(test)]`
 /// uses to keep a test or a scratch run off the operator's real config; see
 /// `loom/tests/e2e/daemon_config/mod.rs::isolate_user_config`.
 ///

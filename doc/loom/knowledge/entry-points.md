@@ -75,8 +75,8 @@ tiered knowledge-base module layout.
 
 ## Hooks
 
-The full hook roster — every script in `hooks/`, the event it binds to, what it blocks — plus
-`hooks/_common.sh`'s shared helpers and the registration sites a new hook must be added to.
+The full hook roster — every script in `loom-hooks/`, the event it binds to, what it blocks — plus
+`loom-hooks/_common.sh`'s shared helpers and the registration sites a new hook must be added to.
 
 → [Hook Entry Points](entry-points/hooks.md)
 

@@ -108,7 +108,7 @@ Known violations (all four are pre-existing, none introduced by the context work
 
 - daemon imports commands (mark_plan_done_if_all_merged) -- fix: move to fs/plan_lifecycle.rs
 - orchestrator imports commands (check_merge_state) -- fix: move to git/merge/status.rs
-- git/worktree imports orchestrator (hook config) -- fix: extract hooks/ as top-level
+- git/worktree imports orchestrator (hook config) -- fix: extract loom-hooks/ as top-level
 - models imports plan/schema (WiringCheck, StageType) -- fix: move types to models/
 
 ### The newer modules are clean (verified 2026-08-17)

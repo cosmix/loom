@@ -54,13 +54,13 @@
 
 ## The Completion Bridge Parsed a Wrapper the Harness No Longer Sends
 
-**What happened:** For a 17.1KB verify output, the harness's actual hook input carried the full path in a structured `tool_response.persistedOutputPath` field, with `stdout` truncated to a prefix and no "Full output saved to:" wrapper text anywhere. `hooks/loom-control-complete.sh`'s persisted-output recovery only looked for that wrapper text, found none, and reported the verification marker missing — an operator had to complete the stage manually with `--no-verify`.
+**What happened:** For a 17.1KB verify output, the harness's actual hook input carried the full path in a structured `tool_response.persistedOutputPath` field, with `stdout` truncated to a prefix and no "Full output saved to:" wrapper text anywhere. `loom-hooks/loom-control-complete.sh`'s persisted-output recovery only looked for that wrapper text, found none, and reported the verification marker missing — an operator had to complete the stage manually with `--no-verify`.
 
 **Why:** The hook's fixture-driven recovery logic was written against an assumed shape of the harness's tool-output payload rather than a shape captured from a real transcript, and the harness's actual behavior had already diverged from it.
 
 **Prevention:** Hook fixtures must be recorded from real transcripts (`~/.claude/projects/<project>/<session>.jsonl`, the `toolUseResult` field), never hand-written against an assumed shape.
 
-**Fix:** `hooks/loom-control-complete.sh` now derives `PERSISTED_PATH` first from `tool_response.persistedOutputPath` / `tool_result.persistedOutputPath` via `jq`, falling back to the wrapper-text `sed` extraction only when that structured field is empty. Every downstream validity check on the resolved path — absolute, under `$HOME/.claude/projects/`, a `/tool-results/` segment, no `..` segment, a regular file, not a symlink — is unchanged.
+**Fix:** `loom-hooks/loom-control-complete.sh` now derives `PERSISTED_PATH` first from `tool_response.persistedOutputPath` / `tool_result.persistedOutputPath` via `jq`, falling back to the wrapper-text `sed` extraction only when that structured field is empty. Every downstream validity check on the resolved path — absolute, under `$HOME/.claude/projects/`, a `/tool-results/` segment, no `..` segment, a regular file, not a symlink — is unchanged.
 
 ## Four Silent Guards Made a 90-Minute Deadlock Invisible
 
@@ -84,7 +84,7 @@
 
 ## A Silent Judge Had No Watchdog
 
-**What happened:** Two operator restarts today were needed for adjudication to proceed. After those root causes were fixed — a verdict never applied, a judge never closed — the remaining way a dispute could stall forever was a judge that stays alive but never records a verdict. Nothing detected it: hung detection (`loom/src/orchestrator/monitor/detection.rs`) keys on the stage's own heartbeat file, which names the stage's worker session, so a judge always read as `NoHeartbeat` and was skipped. Judges wrote no heartbeat because `hooks/post-tool-use.sh` refuses to write unless the stage file's `session:` field names the writer, which is never the judge. The attempt budget (`MAX_ADJUDICATION_ATTEMPTS = 3`, `adjudication/session.rs`) only bounded judges that had already died, since `live_adjudication_session` refuses to spawn a second judge while one is alive.
+**What happened:** Two operator restarts today were needed for adjudication to proceed. After those root causes were fixed — a verdict never applied, a judge never closed — the remaining way a dispute could stall forever was a judge that stays alive but never records a verdict. Nothing detected it: hung detection (`loom/src/orchestrator/monitor/detection.rs`) keys on the stage's own heartbeat file, which names the stage's worker session, so a judge always read as `NoHeartbeat` and was skipped. Judges wrote no heartbeat because `loom-hooks/post-tool-use.sh` refuses to write unless the stage file's `session:` field names the writer, which is never the judge. The attempt budget (`MAX_ADJUDICATION_ATTEMPTS = 3`, `adjudication/session.rs`) only bounded judges that had already died, since `live_adjudication_session` refuses to spawn a second judge while one is alive.
 
 **Why:** Every watchdog assumed the only session worth watching was the stage's worker, and every completion signal for a judge was its verdict; a judge that never produced one had no signal to go stale.
 
@@ -114,7 +114,7 @@
 
 ## The Judge Never Ran the Heartbeat Hook
 
-**What happened:** the judge watchdog added earlier today (`heartbeat/<stage>.adjudication.json`, written by `hooks/post-tool-use.sh` when `LOOM_SESSION_TYPE=adjudication`) never saw a heartbeat from a live judge: the wrapper exported the variable, the installed hook handled it, an isolated reproduction wrote the file, yet the real judge made thirteen tool calls and the heartbeat directory's mtime never moved. The hook was never registered for the judge. Stage sessions run in a worktree whose `.claude/settings.local.json` is generated by `hooks::generator::setup_hooks_for_worktree` and carries the session lifecycle hooks; a judge runs in the main repository, and `session_capsule` (`orchestrator/terminal/native/capsule.rs`) resolved `<cwd>/.claude/settings.local.json`, the operator's loom-managed file, whose PostToolUse set is `ask-user-post.sh` and `loom-control-complete.sh` only.
+**What happened:** the judge watchdog added earlier today (`heartbeat/<stage>.adjudication.json`, written by `loom-hooks/post-tool-use.sh` when `LOOM_SESSION_TYPE=adjudication`) never saw a heartbeat from a live judge: the wrapper exported the variable, the installed hook handled it, an isolated reproduction wrote the file, yet the real judge made thirteen tool calls and the heartbeat directory's mtime never moved. The hook was never registered for the judge. Stage sessions run in a worktree whose `.claude/settings.local.json` is generated by `hooks::generator::setup_hooks_for_worktree` and carries the session lifecycle hooks; a judge runs in the main repository, and `session_capsule` (`orchestrator/terminal/native/capsule.rs`) resolved `<cwd>/.claude/settings.local.json`, the operator's loom-managed file, whose PostToolUse set is `ask-user-post.sh` and `loom-control-complete.sh` only.
 
 **Why:** the hook set a session received was tied to WHERE it runs (worktree or main repo), not to WHAT it is. Every session kind except stage inherited the main repo's file and therefore no lifecycle hooks.
 

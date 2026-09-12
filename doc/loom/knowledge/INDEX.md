@@ -140,6 +140,6 @@
 | [merge-and-recovery-edge-cases](concerns/merge-and-recovery-edge-cases.md) | Merge/retry/completion edge cases: phantom merges, stale started_at, nonces | 70 |
 | [runtime-and-session-safety](concerns/runtime-and-session-safety.md) | Runtime edge cases: tmux warning, attach lifetime, orphan adoption, guards | 145 |
 | [sandbox-and-confinement-gaps](concerns/sandbox-and-confinement-gaps.md) | Sandbox gaps: no E2E canary, diverging env allowlists, uncalled validators | 144 |
-| [sandbox-protected-hooks-dir](concerns/sandbox-protected-hooks-dir.md) | Claude Code's sandbox write-protects the project-root `hooks/` directory as… | 52 |
+| [sandbox-protected-hooks-dir](concerns/sandbox-protected-hooks-dir.md) | Resolved on 2026-09-13 by moving repository hook sources to `loom-hooks/`; the… | 47 |
 | [sandbox-write-rules-inert](concerns/sandbox-write-rules-inert.md) | Sandbox Write() rules that are inert in loom's generated stage settings and in… | 62 |
 | [web-dashboard-latent-issues](concerns/web-dashboard-latent-issues.md) | Issues reviewed in `loom/src/commands/status/web/` during integration-verify and | 63 |

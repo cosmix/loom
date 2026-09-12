@@ -60,9 +60,9 @@ surfaces agree. Two independently-worded copies both pass.
    in `tests_doctrine.rs` is asserted absent from `guidance_surfaces()` — CLAUDE.md.template +
    `skills/loom-plan-writer/SKILL.md` + every `agents/*.md` + `generate_stable_prefix()`'s
    generated text — so retiring a phrase from the canonical block is checked, not just remembered.
-   `hooks/` is NOT covered by `guidance_surfaces()` — a retired phrase can still live on in a hook's
-   own prose (e.g. `hooks/spawn-guard.sh`'s literal `PREAMBLE_LINE` constant), so a doctrine
-   retirement must ALSO `rg` `hooks/` by hand.
+   `loom-hooks/` is NOT covered by `guidance_surfaces()` — a retired phrase can still live on in a hook's
+   own prose (e.g. `loom-hooks/spawn-guard.sh`'s literal `PREAMBLE_LINE` constant), so a doctrine
+   retirement must ALSO `rg` `loom-hooks/` by hand.
 
 **Counting the blocks is itself a drift surface.** This section is where an agent checks how many
 there are, so an added block that is not added HERE reads as "does not exist" to the next reader.

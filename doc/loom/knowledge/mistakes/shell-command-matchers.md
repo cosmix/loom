@@ -4,7 +4,7 @@
 
 ## Token-Based Shell Matchers: Separators That Never Become Tokens (SYSTEMIC, 2026-07-28)
 
-**What happened:** `hooks/subagent-verify-guard.sh` classifies a Bash command by splitting it
+**What happened:** `loom-hooks/subagent-verify-guard.sh` classifies a Bash command by splitting it
 into tokens and deciding whether a "runner" token sits in command position. Three separate
 bypass classes shipped and were fixed across two stages, each the same root cause.
 
@@ -29,7 +29,7 @@ normalizer looks correct. For any hook that classifies shell commands by tokenis
    the repo's own documented command forms — the piped `2>&1 | tail -50` shape that global
    CLAUDE.md Rule 14 mandates is the single most likely real-world bypass.
 
-**Fix:** normalisation lives in one place in `hooks/subagent-verify-guard.sh`; regression cases
+**Fix:** normalisation lives in one place in `loom-hooks/subagent-verify-guard.sh`; regression cases
 are table-driven in `loom/tests/integration/hooks_subagent_verify_guard_cases.rs`.
 
 ## Glob + `head -1` Is Forgeable in a Security Gate (2026-07-28)
@@ -47,7 +47,7 @@ because whoever plants the decoy also writes its `id:`. The durable rule for any
 grants a privilege by reading a `.work` file: **more than one glob match means ambiguous; fail
 safe and do not grant the relaxation.** Consult the file only when exactly one match exists.
 
-**Fix:** ambiguity check in `hooks/subagent-verify-guard.sh`; refusal directions pinned in
+**Fix:** ambiguity check in `loom-hooks/subagent-verify-guard.sh`; refusal directions pinned in
 `loom/tests/integration/hooks_subagent_verify_guard_carveout.rs`.
 
 ## A Fail-Safe Fix Needs a Test That Asserts the REFUSAL (2026-07-28)
@@ -74,7 +74,7 @@ intentional `extra_env` **after** the removal so opt-in cases still work.
 
 **What happened:** in this harness `$TMPDIR` is `/tmp/claude-1000`, so `TempDir::new()` puts
 every spawned test process's cmdline under a path containing `claude`. The name-based subagent
-detector in `hooks/_common.sh` then matches even for non-claude-named scripts, and the hook
+detector in `loom-hooks/_common.sh` then matches even for non-claude-named scripts, and the hook
 falsely fires against itself.
 
 **Fix:** build the temp tree under a claude-free path — `tempfile::Builder::new().tempdir_in()`
@@ -111,7 +111,7 @@ holds. **Detection:** exercise a hook regex with _every literal variant_, not ju
 
 ## `strip_embedded_content` Cannot Strip a Multi-Line `-m` Body (PRE-EXISTING)
 
-**What happened:** phase 2 of `strip_embedded_content` in `hooks/_common.sh` is a line-oriented
+**What happened:** phase 2 of `strip_embedded_content` in `loom-hooks/_common.sh` is a line-oriented
 pattern for `-m` followed by a quoted run, so a quoted body spanning newlines never matches and
 survives into the "stripped" string. `git-add-guard.sh` Pattern 1 then matches the staging verb
 followed by an unanchored `.*` spanning the whole line — wrongly blocking a legitimate
@@ -149,11 +149,11 @@ about. A quoted mention is one token belonging to `echo`; a quoted real flag kee
 is still caught. When a guard has a loud false positive, look for the quiet false negatives of
 the same root cause before fixing only the loud one.
 
-**Fix:** `loom_tokenize_command` in `hooks/_common.sh` (permissive: tolerates any shell text,
+**Fix:** `loom_tokenize_command` in `loom-hooks/_common.sh` (permissive: tolerates any shell text,
 returns non-zero only on an unterminated quote) plus `scan_git_add_tokens` in
-`hooks/git-add-guard.sh`; the old regex block is retained solely as the unterminated-quote
+`loom-hooks/git-add-guard.sh`; the old regex block is retained solely as the unterminated-quote
 fallback so protection never drops below its previous level. Cases in
-`hooks/tests/git-add-guard-quoting.sh`.
+`loom-hooks/tests/git-add-guard-quoting.sh`.
 
 **Swept 2026-08-26 (was "deliberately NOT swept").** The deferral above cost real work: the three
 deferred hooks kept blocking codex briefs for months, and the deferral note is what identified
@@ -174,7 +174,7 @@ the ones typed inline were evaluated by the session's **interactive zsh**, where
 1-based, so every index computed by the walker was off by one and the token dumps were
 meaningless. Nearly led to a fabricated "non-deterministic tokenizer" bug report.
 
-**Why:** the default shell here is zsh; `hooks/*.sh` are all `#!/usr/bin/env bash` and are only
+**Why:** the default shell here is zsh; `loom-hooks/*.sh` are all `#!/usr/bin/env bash` and are only
 ever executed by bash in production. Sourcing one into zsh runs bash-targeted array code under
 different semantics with no error.
 
@@ -211,10 +211,10 @@ and still returned success, so a triple-nested payload was trusted as fully walk
 budget now returns failure, which routes callers to the stricter raw-regex fallback. Any fixed
 bound has a next level; what matters is which way it fails.
 
-**Fix:** `hooks/_common.sh` — `sh -c` payloads spliced (real shells only: `grep -c`, `sort -c`,
+**Fix:** `loom-hooks/_common.sh` — `sh -c` payloads spliced (real shells only: `grep -c`, `sort -c`,
 `wc -c` must not match), transparent keywords and command-prefix builtins, arg-taking wrapper
 flags, ANSI-C quoting, a substitution-state stack so `$(` inside double quotes no longer aborts
-the parse, and the depth-budget fail-safe. Cases in `hooks/tests/common-token-helpers.sh`.
+the parse, and the depth-budget fail-safe. Cases in `loom-hooks/tests/common-token-helpers.sh`.
 
 **Two residuals, both pre-existing (the old regex allowed them too, so not regressions):**
 `${GITBIN} commit` (parameter expansion at a command position) and `git $'\x63ommit'` (ANSI-C hex
@@ -222,7 +222,7 @@ escape). Verify any future "bypass" against the OLD pattern before calling it a 
 
 ## Bash: `'\\'` in a `case` Pattern Never Matches a Lone Backslash (2026-08-11)
 
-**What happened:** `parse_shell_words` in `hooks/codex-forward-guard.sh` used `'\\')` as the
+**What happened:** `parse_shell_words` in `loom-hooks/codex-forward-guard.sh` used `'\\')` as the
 `case` arm meant to catch a backslash, in three places. In a `case` pattern a quoted string has
 its metacharacters disabled, so `'\\'` is the literal **two-character** string `\\` and can never
 match the single backslash the parser iterates over. Both the `escape` and `double_escape` states
@@ -241,6 +241,6 @@ fall-through arm produces plausible output. When adding a state, assert the stat
 entered (parse a known input and check the **parsed words**, not just the exit code) — a
 pass/fail exit code cannot distinguish "handled correctly" from "never reached".
 
-**Fix:** three patterns in `hooks/codex-forward-guard.sh`; round-trip cases (apostrophe idiom,
-`\$`, `\"`, `\\`, trailing lone backslash) in `hooks/tests/codex-forward-guard-quoting.sh`, which
+**Fix:** three patterns in `loom-hooks/codex-forward-guard.sh`; round-trip cases (apostrophe idiom,
+`\$`, `\"`, `\\`, trailing lone backslash) in `loom-hooks/tests/codex-forward-guard-quoting.sh`, which
 asserts the parsed word content, not merely the hook's exit code.

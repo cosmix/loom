@@ -40,9 +40,9 @@
 set -euo pipefail
 
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
-COMMIT_FILTER="$ROOT/hooks/commit-filter.sh"
-VERIFY_GUARD="$ROOT/hooks/subagent-verify-guard.sh"
-COMMON="$ROOT/hooks/_common.sh"
+COMMIT_FILTER="$ROOT/loom-hooks/commit-filter.sh"
+VERIFY_GUARD="$ROOT/loom-hooks/subagent-verify-guard.sh"
+COMMON="$ROOT/loom-hooks/_common.sh"
 
 TMP=$(mktemp -d "${TMPDIR:-/tmp}/loom-hooktest.XXXXXX")
 trap 'rm -rf "$TMP"' EXIT

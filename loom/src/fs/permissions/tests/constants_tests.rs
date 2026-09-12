@@ -75,7 +75,7 @@ fn loom_permission_constants_never_grant_a_write_rule() {
 ///  1. `fs/permissions/constants.rs`: a `HOOK_*` constant (`include_str!`)
 ///  2. `fs/permissions/constants.rs`: a `LOOM_HOOKS` row naming that constant
 ///  3. EITHER `fs/permissions/hooks/config.rs`'s `pre_tool_hooks()` (a global
-///     PreToolUse hook) OR `hooks/config.rs`'s `HookEvent` enum + `all()` (a
+///     PreToolUse hook) OR `loom/src/hooks/config.rs`'s `HookEvent` enum + `all()` (a
 ///     per-session hook) -- whichever kind this hook is. A sourced LIBRARY
 ///     (`_common.sh`, `_read_discipline.sh`, `_read_ledger.sh`) is never invoked
 ///     directly and needs no third site.

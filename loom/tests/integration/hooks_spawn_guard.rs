@@ -26,13 +26,13 @@ use std::path::Path;
 use std::process::{Command, Stdio};
 use tempfile::TempDir;
 
-/// Exact text of spawn-guard.sh's `PREAMBLE_LINE` (hooks/spawn-guard.sh:64).
+/// Exact text of spawn-guard.sh's `PREAMBLE_LINE` (loom-hooks/spawn-guard.sh:64).
 const PREAMBLE_LINE: &str = "CLAUDE.md is already in your context; the rules below are the ones that bind you as a subagent. The knowledge you need for this task is quoted in this brief - do not open doc/loom/knowledge/ unless the brief says a pull came back empty.";
 
-/// Exact text of spawn-guard.sh's `UNTYPED_MSG` opening sentence (hooks/spawn-guard.sh:209).
+/// Exact text of spawn-guard.sh's `UNTYPED_MSG` opening sentence (loom-hooks/spawn-guard.sh:209).
 const UNTYPED_MSG_LEAD: &str = "Untyped spawn inherits the model of the spawning session.";
 
-/// Contract C1 key order (hooks/spawn-guard.sh:262).
+/// Contract C1 key order (loom-hooks/spawn-guard.sh:262).
 const SPAWN_KEYS: &[&str] = &[
     "\"ts\"",
     "\"stage_id\"",
@@ -64,7 +64,7 @@ fn temp() -> TempDir {
 }
 
 /// Every gated test below needs the SAME probe: whether this sandbox can see
-/// its own process tree, which is what `is_ancestor` (`hooks/_common.sh`)
+/// its own process tree, which is what `is_ancestor` (`loom-hooks/_common.sh`)
 /// depends on to confirm a claimed main-agent pid is a live ancestor. `test`
 /// is the bare function name; this adds the `hooks_spawn_guard::` prefix so
 /// the printed SKIP line names the test the way `cargo test` does.

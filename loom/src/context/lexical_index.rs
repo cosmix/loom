@@ -7,7 +7,7 @@
 //! channel: ~656 knowledge chunks and ~7,900 source nodes tokenized from
 //! scratch, then scanned once more per query term to count document
 //! frequencies. That is paid on EVERY prompt, inside a hook with a hard
-//! five-second wall-clock ceiling (`hooks/user-prompt-context.sh`), and it
+//! five-second wall-clock ceiling (`loom-hooks/user-prompt-context.sh`), and it
 //! grows with the size of the repository rather than with the query.
 //!
 //! The corpus itself only changes when the catalog revision or the resolved

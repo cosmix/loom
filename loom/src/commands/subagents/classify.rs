@@ -2,7 +2,7 @@
 //! structural shape of its last entry -- never by `message.stop_reason`,
 //! which is `null` on every current-format entry (older transcripts carry
 //! `end_turn`, but structural classification is version-independent while
-//! `stop_reason` is not). See `hooks/_common.sh:1010-1043` for the same
+//! `stop_reason` is not). See `loom-hooks/_common.sh:1010-1043` for the same
 //! design constraint applied to hook-side main-vs-subagent classification.
 //!
 //! | Last entry                                                | State        |

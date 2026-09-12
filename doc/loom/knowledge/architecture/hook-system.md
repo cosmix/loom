@@ -2,16 +2,16 @@
 
 > Hook embedding and install, the SessionStart hookSpecificOutput contract, and the two subagent enforcement hooks.
 
-## Hook System Architecture (hooks/)
+## Hook System Architecture (loom/src/hooks/)
 
-The `hooks/` module provides Claude Code hooks integration for session lifecycle management, plus a Codex-native subset installed through `fs/permissions/codex_hooks.rs`. It is a **top-level module** — currently imported by `orchestrator/` and `git/worktree/`, which is a known layering violation (both should import a stable hooks interface instead).
+The `loom/src/hooks/` module provides Claude Code hooks integration for session lifecycle management, plus a Codex-native subset installed through `fs/permissions/codex_hooks.rs`. It is a **top-level module** — currently imported by `orchestrator/` and `git/worktree/`, which is a known layering violation (both should import a stable hooks interface instead).
 
-**Layering:** `hooks/` is used by `orchestrator/core/stage_executor.rs` (worktree hook setup) and `git/worktree/settings.rs` (settings injection). The intended fix is to extract hooks as a fully independent top-level module with no reverse imports.
+**Layering:** `loom/src/hooks/` is used by `orchestrator/core/stage_executor.rs` (worktree hook setup) and `git/worktree/settings.rs` (settings injection). The intended fix is to extract hooks as a fully independent top-level module with no reverse imports.
 
 **Global vs session hooks distinction:**
 
 - **Global hooks** include commit filtering, Git-add protection, Bash isolation, the canonical five-tool file guard, plan-path protection, `prefer-modern-tools.sh`, and the forwarding guard. They are installed under `~/.claude/hooks/loom/` and registered by `fs/permissions/hooks.rs`, so they persist across sessions. `prefer-modern-tools.sh` lives here as a global `PreToolUse:Bash` hook (`fs/permissions/hooks/config.rs:25`) — there is no `PreferModernTools` `HookEvent` variant (deleted); it never was one of the session hooks below.
-- **Session hooks** (session-start.sh, post-tool-use.sh, pre-compact.sh, session-end.sh, learning-validator.sh, subagent-start.sh, subagent-stop.sh): generated fresh per-session by `hooks/generator.rs:generate_hooks_settings()` from the **7** `HookEvent`s that `HooksConfig::to_settings_hooks()` (`hooks/config.rs:183`) emits, derived by iterating `HookEvent::all()` rather than seven hand-written blocks. Merged into worktree's `settings.local.json` with duplicate detection.
+- **Session hooks** (session-start.sh, post-tool-use.sh, pre-compact.sh, session-end.sh, learning-validator.sh, subagent-start.sh, subagent-stop.sh): generated fresh per-session by `loom/src/hooks/generator.rs:generate_hooks_settings()` from the **7** `HookEvent`s that `HooksConfig::to_settings_hooks()` (`loom/src/hooks/config.rs:183`) emits, derived by iterating `HookEvent::all()` rather than seven hand-written blocks. Merged into worktree's `settings.local.json` with duplicate detection.
 
 `LOOM_HOOKS` (the full inventory: session hooks, global `PreToolUse` guards, compatibility bridges, and sourced-library hooks like `_common.sh`/`_read_discipline.sh`/`_read_ledger.sh`) is 33 rows; Claude's global `PreToolUse` registration alone is 47 entries, including `spawn-guard.sh` (Task+Agent), `read-guard.sh` (Read), and `poll-guard.sh` (Bash). Installers iterate `LOOM_HOOKS`; trigger configuration and tests remain separate registration surfaces — see [Registration Sites for a New Hook](../entry-points/hooks.md).
 
@@ -77,14 +77,14 @@ Used by hooks to inject context into Claude's next turn:
 
 **jq availability:** a hook must never fail open just because jq is missing. Blocking guards
 (header documents exit 2) call `loom_require_jq` at the top of the script, right after sourcing
-`_common.sh`; advisory hooks call `loom_warn_no_jq` instead — both defined in `hooks/_common.sh`.
+`_common.sh`; advisory hooks call `loom_warn_no_jq` instead — both defined in `loom-hooks/_common.sh`.
 Lifecycle hooks (`session-start.sh`, `post-tool-use.sh`, `subagent-start.sh`, `subagent-stop.sh`)
 keep their own explicit `command -v jq` skip rather than either helper. See
 [stack.md](../stack.md#hook-runtime-dependencies-jq-rg-fd) for the Rust-side preflight/repair checks.
 
 ### PostToolUse context-ceiling boundary
 
-`hooks/post-tool-use.sh` owns transcript-tail usage measurement and threshold messaging, but it owns no
+`loom-hooks/post-tool-use.sh` owns transcript-tail usage measurement and threshold messaging, but it owns no
 configuration parsing. It calls the hidden, deterministic `loom hook context-ceilings` command,
 which uses Rust's stage loader and `ContextConfig` TOML deserializer and returns
 `<main>:<subagent>`. The hook validates and caches that complete pair per Loom session before
@@ -122,7 +122,7 @@ runtime.
 `fs/permissions/hooks/config.rs`:
 
 ```text
-34 top-level scripts in hooks/
+34 top-level scripts in loom-hooks/
  −1  git-pre-commit-hook.sh    (excluded from LOOM_HOOKS; appended to .git/hooks/pre-commit by loom init)
  ───
  33  LOOM_HOOKS entries installed to ~/.claude/hooks/loom/
@@ -156,7 +156,7 @@ Three-layer defense: documentation (CLAUDE.md Rule 5), signal injection (cache.r
 | `subagent-verify-guard.sh` | **still matches raw command strings** (see concerns.md). subagents may not run project-wide build/test/lint/typecheck suites — at most one narrowly-scoped check. `integration-verify` stages are carved out and may run the full suite. Deliberately has **no opt-out env var** |
 
 **Detection is payload-first, not a PPID comparison.** Both hooks gate on `loom_is_subagent()` in
-`hooks/_common.sh`, which first requires `LOOM_MAIN_AGENT_PID` to be a **live ancestor** of the
+`loom-hooks/_common.sh`, which first requires `LOOM_MAIN_AGENT_PID` to be a **live ancestor** of the
 current process — this scopes the globally-installed hooks to a loom stage session. Once that
 passes, it classifies the caller from the hook's stdin JSON payload via `loom_payload_agent_verdict`
 (`.agent_type` / `.transcript_path` / `.session_id`, which the caller cannot forge): a Task-spawned
@@ -170,7 +170,7 @@ FALLBACK ONLY, a 2-level claude chain is classified MAIN AGENT and a 3-level cha
 **Consequence worth knowing:** agent-team _teammates_ are not in the main agent's process tree,
 so `LOOM_MAIN_AGENT_PID` is set but is not a live ancestor and `loom_is_subagent` returns false
 for them before either check runs. Globally installed enforcement hooks gated on it therefore do
-**not** fire inside teammates. The per-session `hooks/post-tool-use.sh` is intentionally different: its
+**not** fire inside teammates. The per-session `loom-hooks/post-tool-use.sh` is intentionally different: its
 validated `LOOM_*` identity already scopes it to the stage, so a positive payload verdict marks a
 teammate as a subagent before ancestry. That keeps the parent heartbeat intact and applies the
 subagent ceiling. A Task-tool subagent, by contrast, runs **in-process** (the same claude process
@@ -179,7 +179,7 @@ and `LOOM_MAIN_AGENT_PID` — payload identity is what classifies both shapes co
 
 ### Heartbeat writer protocol
 
-`hooks/session-start.sh`, `hooks/post-tool-use.sh`, and `hooks/subagent-stop.sh` all write the same stage-keyed
+`loom-hooks/session-start.sh`, `loom-hooks/post-tool-use.sh`, and `loom-hooks/subagent-stop.sh` all write the same stage-keyed
 heartbeat. Every writer acquires a portable `mkdir` lock, validates the stage's current
 `session:` owner while holding it, and replaces the JSON via a same-directory temp-file rename.
 Late hooks from an old session therefore cannot overwrite a successor, concurrent subagent

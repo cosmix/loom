@@ -6,15 +6,15 @@
 
 A foreground codex-lane run (`loom-codex-forwarder`) is ONE Bash tool call that blocks until codex returns. The
 session heartbeat (`.work/heartbeat/<stage-id>.json`) is refreshed by three writers, all shell
-hooks — `hooks/session-start.sh:61-72` (initial), `hooks/post-tool-use.sh:66-91` (after every tool
-use), and `hooks/subagent-stop.sh:158-179` (after every `SubagentStop`) — registered at
+hooks — `loom-hooks/session-start.sh:61-72` (initial), `loom-hooks/post-tool-use.sh:66-91` (after every tool
+use), and `loom-hooks/subagent-stop.sh:158-179` (after every `SubagentStop`) — registered at
 `loom/src/hooks/config.rs:49-57` (script-name mapping) and `:228-241` (the `SubagentStop` hook
 rule itself). No Rust production code writes a heartbeat (`write_heartbeat`,
 `monitor/heartbeat.rs:264`, has only test callers). PostToolUse cannot fire until the Bash call
 returns, so a codex run longer than the stage's budget makes the daemon print `appears hung` for a
 stage that is perfectly healthy.
 
-**Update (2026-08-27) — partly closed, not fully.** `hooks/subagent-stop.sh` is new: it refreshes
+**Update (2026-08-27) — partly closed, not fully.** `loom-hooks/subagent-stop.sh` is new: it refreshes
 this same heartbeat file on every `SubagentStop`, with `activity: "subagent <agentId> finished"`.
 **Closed:** the window where a parent session blocked on Task-tool subagents ran no tools of its
 own, went silent on PostToolUse, and got reported `appears hung` while behaving perfectly — each

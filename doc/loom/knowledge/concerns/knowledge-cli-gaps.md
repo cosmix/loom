@@ -135,14 +135,14 @@ dedicated knowledge-reorganization project, not part of token-governor correctne
   overage is cumulative volume. Moving roughly 80-120 sections safely into tier-2 topics
   should be done file-by-file, preserving links and checking for duplicate headings.
 - **`MissingSourceRef` remains the dominant finding.** Resolution needs the FULL path relative to a
-  package's src root (e.g. commands/status/data/collector.rs, hooks/spawn-guard.sh) — a bare
+  package's src root (e.g. commands/status/data/collector.rs, loom-hooks/spawn-guard.sh) — a bare
   filename (collector.rs) or a partial suffix (ledger/legend.rs, ui/tui/app.rs) fails even when
   that suffix is unique in the tree; only the fully-qualified relative path resolves. The residual is
-  mostly bare filenames, hook filenames written without their `hooks/` prefix, and genuinely stale
+  mostly bare filenames, hook filenames written without their `loom-hooks/` prefix, and genuinely stale
   citations that cannot be assigned to one package root safely. Canonicalize them to the full
   src-relative form; ambiguity must continue to fail closed.
 - **Tier-2 topics with generic blurbs are unfixable from inside a stage session.** A stage session's
-  `hooks/worktree-file-guard.sh` hook denies Edit/Write on any path under `doc/loom/knowledge/`, and
+  `loom-hooks/worktree-file-guard.sh` hook denies Edit/Write on any path under `doc/loom/knowledge/`, and
   there is no `loom knowledge` CLI verb for the blurb line specifically (only `update`, which appends,
   and `replace-section`, which needs an existing `#{2,6}` heading — the blurb is a bare `>` line under
   the H1). A knowledge-distill stage that creates a new tier-2 topic via

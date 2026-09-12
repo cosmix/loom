@@ -28,7 +28,7 @@ maintainability test fails. `index.rs` itself only widened two visibility keywor
 
 Keeping the primary directory small is necessary but not sufficient — the split also exists
 because of a hook interaction that would otherwise make most of the catalog unusable:
-`hooks/read-guard.sh` is a GLOBAL `PreToolUse:Read` hook that warns above 400 lines and DENIES the
+`loom-hooks/read-guard.sh` is a GLOBAL `PreToolUse:Read` hook that warns above 400 lines and DENIES the
 THIRD full read of a file past that limit. 22 catalogued skills exceed 400 lines (`loom-react`
 1619 lines, `loom-istio` 1205) and the loader instructs the model to read a catalogued `SKILL.md`
 IN FULL — without an exemption, rule 1 would argue the model into a partial (and useless) load,
@@ -43,9 +43,9 @@ trusting the build.
 ### A Second, Independent Exemption Was Needed for the Same Reason
 
 A catalogued `SKILL.md` is loaded via the **Read tool**, not the Skill tool (the loader's
-`allowed-tools: [Read]`). `hooks/worktree-file-guard.sh` is a separate `PreToolUse` guard on
+`allowed-tools: [Read]`). `loom-hooks/worktree-file-guard.sh` is a separate `PreToolUse` guard on
 Read/Glob/Grep that blocks every path outside the worktree, so inside a worktree stage session
-BOTH skill roots return exit 2 unless exempted — and `hooks/_read_discipline.sh` (the shared core
+BOTH skill roots return exit 2 unless exempted — and `loom-hooks/_read_discipline.sh` (the shared core
 behind `read-guard.sh`/`poll-guard.sh`) needed the SAME exemption independently, since it is a
 second, separate Read-class hook. Only one of the two guards was patched at first, leaving all 53
 catalogued skills unreachable from a worktree session even after the read-guard fix landed.
