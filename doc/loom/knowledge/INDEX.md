@@ -105,7 +105,7 @@
 | [knowledge-write-channel](mistakes/knowledge-write-channel.md) | Why a distillation stage cannot write knowledge directly, the… | 100 |
 | [ledger-tui-rendering](mistakes/ledger-tui-rendering.md) | Wide-glyph padding, fan-out duplication, and latent panics in the ledger TUI. | 63 |
 | [merge-cleanup-boundary](mistakes/merge-cleanup-boundary.md) | A cleanup-boundary bug: what happened, why it survived undetected, and the fix… | 171 |
-| [parallel-worktree-shared-state](mistakes/parallel-worktree-shared-state.md) | Cross-worktree state races: the one diagnostic question, concrete cases, and a… | 124 |
+| [parallel-worktree-shared-state](mistakes/parallel-worktree-shared-state.md) | Cross-worktree state races: the one diagnostic question, concrete cases, and a… | 140 |
 | [phantom-merges](mistakes/phantom-merges.md) | Eight lessons on loom's merge machinery — writing merged=true without verifying… | 141 |
 | [pinned-literals-ledgers-and-wiring](mistakes/pinned-literals-ledgers-and-wiring.md) | The maintainability ledger exact-match trap and goal-backward wiring checks… | 196 |
 | [pre-commit-hardening](mistakes/pre-commit-hardening.md) | Partial-staging guard decisions, edge cases, mutant-settled git defaults | 53 |

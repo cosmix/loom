@@ -122,3 +122,19 @@ reviewer the RELATIVE path, and delete that scratch directory before committing 
 `$TMPDIR` or other outside-worktree path, even for content the orchestrator itself generated.
 When a review subagent's report looks suspiciously generic or reads as boilerplate, check first
 whether it could actually reach its input before trusting the content of the finding.
+
+## A Pathless `git commit` Took Another Agent's Staged Files (2026-09-13)
+
+**What happened:** four commits were made from the main checkout while other agents worked in it.
+The index was checked for staged changes once, before the first commit. During that commit's
+pre-commit hook (about a minute of formatting, ledger and rustdoc checks) another agent staged
+`web/dist/favicon.svg` and `web/public/favicon.svg`, and the next `git commit` recorded them under
+`fix(skills): stop trusting an empty .git as the project scan root` (`a9b412b3`).
+
+**Why:** `git commit` with no paths records the whole index, and every agent working in a checkout
+shares that index. A clean-index check goes stale as soon as anything else runs.
+
+**Prevention:** in a checkout other agents also use, name the paths on the commit itself:
+`git add -- <paths> && git commit -- <paths>`. Given paths, git commits only those files and leaves
+anything else staged where it was. Afterwards compare `git show --stat HEAD` with the list you
+meant to commit.
