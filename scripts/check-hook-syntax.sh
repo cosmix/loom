@@ -19,7 +19,9 @@ set -euo pipefail
 
 repo_root=$(cd "$(dirname "$0")/.." && pwd)
 # hooks/ and scripts/ both carry hand-written shell; a syntax error in either
-# one is the same failure mode this script exists to catch.
+# one is the same failure mode this script exists to catch. The git hooks
+# directory (loom/.githooks) is scanned separately below for its executable
+# files, since git only runs executable hooks and they carry no extension.
 script_dirs=("$repo_root/hooks" "$repo_root/scripts")
 
 found_a_dir=0
@@ -49,7 +51,7 @@ while IFS= read -r script; do
 		bash -n "$script" 2>&1 | sed 's/^/    /' >&2
 		failed=$((failed + 1))
 	fi
-done < <(find "${script_dirs[@]}" -type f -name '*.sh' 2>/dev/null | sort)
+done < <({ find "${script_dirs[@]}" -type f -name '*.sh'; find "$repo_root/loom/.githooks" -type f -perm -u+x; } 2>/dev/null | sort)
 
 if [ "$failed" -ne 0 ]; then
 	printf '\ncheck-hook-syntax: %d of %d shell scripts failed to parse\n' "$failed" "$checked" >&2
