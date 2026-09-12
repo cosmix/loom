@@ -25,10 +25,13 @@ remaining N-1 headings with an external script. A `loom knowledge drop-section` 
 A new topic is seeded with a fixed scaffold — a title derived from the slug and the blurb
 "Topic notes for the `<category>` knowledge area" — and user content is appended _after_ it.
 `scan_topics` harvests the **first** `#` and `>` lines for the INDEX.md table, so the generic
-seeded blurb always wins and every topic reads identically in the index unless the file is edited
-afterwards. The index's Blurb column is its main routing signal, so this directly costs
-navigability. Wanted: a `--blurb` flag, or have the scaffold defer to a leading `>` line in the
-supplied content.
+seeded blurb wins unless corrected afterwards.
+
+**Fixed:** `loom knowledge annotate <target> --blurb "<text>"` now sets it directly (at most 80
+characters; longer is refused, not truncated) — confirmed working against a freshly scaffolded
+topic. Remaining rough edge: `update` still has no `--blurb` flag of its own, so seeding and
+correcting the blurb are two calls, and a leading `>` line inside the supplied content becomes a
+second, redundant blurb-shaped paragraph in the body rather than replacing the scaffold's.
 
 ## GC Flags Tier-1 Files for Section Extraction With No Oversized Sections (2026-07-31)
 

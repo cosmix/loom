@@ -41,3 +41,7 @@ Neither an `allowWrite` rule nor an `Edit(...)` allow rule in `.claude/settings.
 ## Completed Rename (2026-09-13)
 
 Completed on 2026-09-13: the repository source directory is now `loom-hooks/`. Source embeds, script/test references, doctrine and active plans use that name. Installed paths remain `~/.claude/hooks/loom/` and `~/.codex/hooks/loom/`; the Rust module remains `loom/src/hooks/`. The 2026-09-02 probes and failures above describe the former directory, not the renamed source root. The rename verification includes a sandboxed write/delete probe and the Rust/hook gates.
+
+## Test-File Modes (2026-09-12)
+
+A new file created under the former `hooks/tests/` with the Write tool landed as `100644`, and a plain shell `chmod +x` on it failed with the sandbox denial described above, even though the Write itself succeeded. This was never blocking: `loom-hooks/tests/run-all.sh` runs every test file through `bash`, and many committed test files are `100644` (check with `git ls-files -s loom-hooks/tests`). A prior claim that all sibling test files are `100755` was wrong, so check `git ls-files -s` before assuming a new test must match its siblings. The mode can still be set outside the sandbox or with `git add --chmod=+x`, but a test left at `100644` runs correctly.

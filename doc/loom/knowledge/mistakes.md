@@ -208,3 +208,13 @@ Concurrency bugs, a cross-worker field-semantics bug, a browser-vs-jsdom gotcha,
 bridge lessons, all from `loom/src/commands/status/web/` and `web/`.
 
 → [Web Dashboard Server](mistakes/web-dashboard-server.md)
+
+## Pre-Commit Partial-Staging Guard: Design Decisions and Edge Cases (2026-09-12)
+
+The guard that stops the pre-commit hook from silently replacing a partially staged file with
+its full working-tree content (see the incident above) has its own settled disputes: git's
+default rename detection, why `git commit -a`/`git commit <path>` can't false-positive it (and
+where `--only` still can't catch a _different_ partially staged file), and a test-fixture trap
+where a space in a filename doesn't prove NUL-safety.
+
+→ [Pre-Commit Hardening](mistakes/pre-commit-hardening.md)

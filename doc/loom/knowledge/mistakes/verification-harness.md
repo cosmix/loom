@@ -255,3 +255,13 @@ Prevention: before accepting a "pre-existing" claim, compare against the committ
 (`git show HEAD:<path> | wc -l`, or `git diff HEAD -- <path>`). Inside an integration-verify
 stage specifically, nothing is pre-existing — the whole plan's diff is in scope, so the claim
 should never be accepted there at all.
+
+## The Bash Tool's Shell Is zsh: `PIPESTATUS` Is Unset
+
+A Bash tool command that reads `${PIPESTATUS[0]}` to capture a piped command's exit code gets an
+empty string, silently: this harness's Bash tool shell is zsh, and zsh's equivalent is the
+lowercase `pipestatus` array, not bash's `PIPESTATUS`. A check that pipes a test command through a
+filter and inspects `${PIPESTATUS[0]}` loses its exit code every time.
+
+**Prevention:** wrap any check that needs bash-specific semantics in `bash -c '...'`, or avoid the
+pipe entirely (`cmd >out 2>&1; echo "exit=$?"`).

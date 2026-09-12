@@ -15,7 +15,7 @@ Uses Manus KV-cache optimization with four sections:
 
 Four stage-type-specific prefix generators: standard, knowledge, integration-verify, knowledge-distill. Six signal types: Regular, Knowledge, Recovery, Merge, MergeConflict, BaseConflict. Signals are self-contained via `EmbeddedContext` struct.
 
-KnowledgeDistill prefix: focuses on memory reading and knowledge curation; includes `loom memory show --all` and `loom knowledge update` guidance. The stage itself runs on **opus** (every `StageType` defaults to opus); it is the _spot-read subagents_ the prefix tells the main agent to delegate to that are sonnet.
+KnowledgeDistill prefix: focuses on memory reading and knowledge curation; includes `loom memory show --all` and `loom knowledge update` guidance. The stage's own model follows the usual chain: a plan stage's `model` field overrides `[models]` in either config tier, which overrides the per-type default; for `knowledge-distill` that default is sonnet at high effort (`models/stage/defaults.rs:99-124`). An earlier version of this section said every `StageType` defaults to opus, which is wrong for `knowledge-distill`.
 
 **Data flow:** Stage Ready -> start_stage() -> create worktree -> Session.new() -> build_signal_context() -> format_signal_content() -> write_signal_file() -> spawn Claude Code.
 
