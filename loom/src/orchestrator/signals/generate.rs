@@ -175,7 +175,7 @@ fn build_signal_context(
     ));
     embedded_context.context_tokens = Some(session.context_tokens);
 
-    embedded_context.sandbox_summary = Some(build_sandbox_summary(stage));
+    embedded_context.sandbox_summary = Some(build_sandbox_summary(stage, work_dir));
 
     // Ultracode license and implementer lanes gate the semi-stable section.
     embedded_context.ultracode = stage.ultracode;
@@ -197,20 +197,14 @@ fn build_signal_context(
 }
 
 /// Build sandbox summary from stage configuration
-fn build_sandbox_summary(stage: &Stage) -> SandboxSummary {
-    // For now, use stage.sandbox directly; later, merge plan-level defaults via sandbox::merge_config.
+fn build_sandbox_summary(stage: &Stage, work_dir: &Path) -> SandboxSummary {
     let allow_write: Vec<String> = stage
         .sandbox
         .filesystem
         .as_ref()
         .map(|f| f.allow_write.clone())
         .unwrap_or_default();
-    let expanded_allow_write: Vec<String> = allow_write
-        .iter()
-        .map(|p| crate::sandbox::expand_env_vars(p))
-        .collect();
-    let missing_allow_write =
-        crate::sandbox::missing_grant_paths(&expanded_allow_write, dirs::home_dir().as_deref());
+    let missing_allow_write = missing_allow_write_from_merged(work_dir, stage);
 
     SandboxSummary {
         enabled: stage.sandbox.enabled.unwrap_or(true),
@@ -242,6 +236,37 @@ fn build_sandbox_summary(stage: &Stage) -> SandboxSummary {
     }
 }
 
+/// Compute `missing_allow_write` from the MERGED plan+stage sandbox grants,
+/// mirroring the merge the spawn path performs
+/// (`orchestrator::core::stage_executor`: `sandbox::merge_config` then
+/// `sandbox::expand_paths`) — a plan-level `allow_write` grant (declared in
+/// `sandbox.filesystem.allow_write` at the top of the plan, not under a
+/// stage) is invisible to `stage.sandbox` alone, so checking only the stage
+/// config misses it.
+///
+/// The displayed `allow_write` list in `build_sandbox_summary` stays
+/// stage-only; only this "missing on host" check needs the wider merged set.
+/// That set also carries the knowledge write grant
+/// (`doc/loom/knowledge/**`, added by `merge_config`'s
+/// `apply_knowledge_write_grant`), which stage agents must not see
+/// advertised as a plain filesystem path — it never leaks into this list
+/// because it is a relative glob, and `missing_grant_paths` only checks
+/// absolute or `~/` entries for existence.
+fn missing_allow_write_from_merged(work_dir: &Path, stage: &Stage) -> Vec<String> {
+    let plan_sandbox = crate::fs::work_dir::read_plan_sandbox(work_dir)
+        .ok()
+        .flatten()
+        .unwrap_or_default();
+    let mut merged = crate::sandbox::merge_config(
+        &plan_sandbox,
+        &stage.sandbox,
+        stage.stage_type,
+        &stage.implementers,
+    );
+    crate::sandbox::expand_paths(&mut merged);
+    crate::sandbox::missing_grant_paths(&merged.filesystem.allow_write, dirs::home_dir().as_deref())
+}
+
 fn append_stage_feedback(content: &mut String, stage: &Stage, work_dir: &Path) {
     // Adjudicator feedback (disputed stages only), appended last so it sits
     // where the agent's recitation attention is highest.
@@ -265,5 +290,84 @@ fn append_stage_feedback(content: &mut String, stage: &Stage, work_dir: &Path) {
             content.push_str(&section);
             super::helpers::ensure_trailing_newline(content);
         }
+    }
+}
+
+#[cfg(test)]
+mod missing_allow_write_tests {
+    use super::*;
+    use crate::fs::work_dir::write_plan_sandbox;
+    use crate::models::stage::{FilesystemConfig, StageSandboxConfig, StageStatus};
+    use crate::plan::schema::SandboxConfig;
+    use tempfile::TempDir;
+
+    fn init_work(temp: &TempDir) -> PathBuf {
+        let work = temp.path().join(".loom").join("work");
+        std::fs::create_dir_all(&work).unwrap();
+        work
+    }
+
+    fn stage_with_sandbox(sandbox: StageSandboxConfig) -> Stage {
+        Stage {
+            id: "test-stage".to_string(),
+            name: "Test Stage".to_string(),
+            status: StageStatus::Queued,
+            stage_type: StageType::Standard,
+            sandbox,
+            ..Stage::default()
+        }
+    }
+
+    #[test]
+    fn missing_plan_level_grant_is_reported() {
+        let temp = TempDir::new().unwrap();
+        let work = init_work(&temp);
+        let missing_path = temp.path().join("does-not-exist").display().to_string();
+
+        let mut plan_sandbox = SandboxConfig::default();
+        plan_sandbox.filesystem.allow_write = vec![missing_path.clone()];
+        write_plan_sandbox(&work, &plan_sandbox).unwrap();
+
+        let stage = stage_with_sandbox(StageSandboxConfig::default());
+
+        assert_eq!(
+            missing_allow_write_from_merged(&work, &stage),
+            vec![missing_path]
+        );
+    }
+
+    #[test]
+    fn existing_plan_level_grant_is_not_reported() {
+        let temp = TempDir::new().unwrap();
+        let work = init_work(&temp);
+        let existing_path = temp.path().display().to_string();
+
+        let mut plan_sandbox = SandboxConfig::default();
+        plan_sandbox.filesystem.allow_write = vec![existing_path];
+        write_plan_sandbox(&work, &plan_sandbox).unwrap();
+
+        let stage = stage_with_sandbox(StageSandboxConfig::default());
+
+        assert!(missing_allow_write_from_merged(&work, &stage).is_empty());
+    }
+
+    #[test]
+    fn missing_stage_level_grant_is_reported_with_no_plan_sandbox() {
+        let temp = TempDir::new().unwrap();
+        let work = init_work(&temp);
+        let missing_path = temp.path().join("stage-missing").display().to_string();
+
+        let stage = stage_with_sandbox(StageSandboxConfig {
+            filesystem: Some(FilesystemConfig {
+                allow_write: vec![missing_path.clone()],
+                ..FilesystemConfig::default()
+            }),
+            ..StageSandboxConfig::default()
+        });
+
+        assert_eq!(
+            missing_allow_write_from_merged(&work, &stage),
+            vec![missing_path]
+        );
     }
 }

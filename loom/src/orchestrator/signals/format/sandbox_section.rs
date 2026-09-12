@@ -41,9 +41,9 @@ pub(super) fn format_sandbox_section(summary: &SandboxSummary) -> String {
             }
             content.push('\n');
         }
-
-        content.push_str(&format_missing_grants_note(&summary.missing_allow_write));
     }
+
+    content.push_str(&format_missing_grants_note(&summary.missing_allow_write));
 
     append_package_cache_note(&mut content);
     content.push_str(&format_network_section(summary));
@@ -141,5 +141,27 @@ mod tests {
         let content = format_sandbox_section(&summary);
 
         assert!(!content.contains("Missing on the host"));
+    }
+
+    #[test]
+    fn missing_grants_render_even_with_no_stage_level_deny_rules() {
+        // Regression: `summary_with` always sets `deny_write`, which hid the
+        // bug where the missing-grants note was rendered only inside the
+        // `deny_read`/`deny_write` block. A stage with no stage-level deny
+        // rules (the plan-level-only grant case) must still see the warning.
+        let summary = SandboxSummary {
+            enabled: true,
+            deny_read: vec![],
+            deny_write: vec![],
+            allow_write: vec![],
+            missing_allow_write: vec!["/tmp/loom-pre-commit-plan".to_string()],
+            allowed_domains: vec![],
+            excluded_commands: vec![],
+        };
+
+        let content = format_sandbox_section(&summary);
+
+        assert!(content.contains("Missing on the host, so NOT writable this session"));
+        assert!(content.contains("`/tmp/loom-pre-commit-plan`"));
     }
 }
