@@ -8,7 +8,7 @@
 //! evidence trailer, the blast-radius rules, "MIXED FAN-OUT", "PER SUBAGENT")
 //! rather than the surrounding prose, so wording may be tightened as long as
 //! those needles survive. Most of what this block used to spell out is now
-//! carried by `hooks/codex-forward.sh` itself, prepended to every forwarded
+//! carried by `loom-hooks/codex-forward.sh` itself, prepended to every forwarded
 //! prompt - this doctrine only needs to tell the orchestrator that kit exists.
 
 use crate::codex::{
@@ -127,7 +127,7 @@ fn push_codex_prompt_rules(content: &mut String) {
          symbols/files to start from by name, what done means and the command that proves it, and\n\
          any constraint the graph can't show - not pasted signatures or file bodies, which it looks\n\
          up faster than you can quote them. NEVER prepend the Claude subagent preamble to a codex\n\
-         prompt - codex never reads CLAUDE.md, and `hooks/codex-forward.sh` already prepends its own\n\
+         prompt - codex never reads CLAUDE.md, and `loom-hooks/codex-forward.sh` already prepends its own\n\
          rules to every forwarded prompt.\n",
     );
     content.push_str(

@@ -21,7 +21,7 @@
 # delegate keys its brief to that stage; outside one it keys it to the
 # checkout's working-tree overlay.
 #
-# Note: hooks/skill-trigger.sh is a SEPARATE UserPromptSubmit hook (Python,
+# Note: loom-hooks/skill-trigger.sh is a SEPARATE UserPromptSubmit hook (Python,
 # keyword-based skill suggestions). Two hooks on one event run as separate
 # processes, each printing at most one JSON object — this script does not
 # merge with or depend on it.

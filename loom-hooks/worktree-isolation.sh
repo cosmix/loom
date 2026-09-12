@@ -19,7 +19,7 @@
 # bypasses.
 #
 # TOKEN SCANNING: each pattern below is checked against word-shaped argv
-# tokens produced by loom_tokenize_command (hooks/_common.sh), not the raw
+# tokens produced by loom_tokenize_command (loom-hooks/_common.sh), not the raw
 # command string. A quoted PROSE payload — a codex-forward task brief, a
 # `loom memory note` body — tokenizes to ONE token carrying embedded
 # whitespace, and loom_token_is_word excludes it from every check; a real

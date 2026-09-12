@@ -17,7 +17,7 @@ Claude slash commands and Codex skills shipped by loom live in source at the rep
 
 Agent guidance lives in the channel that delivers it closest to the decision point, cheapest:
 
-- **Hooks** (`hooks/*.sh`) — rules that must never be violated (plans path, all-files staging, commit/complete, worktree isolation, subagent verification). Deterministic; the exit-2 message re-injects the rule at the exact moment of violation.
+- **Hooks** (`loom-hooks/*.sh`) — rules that must never be violated (plans path, all-files staging, commit/complete, worktree isolation, subagent verification). Deterministic; the exit-2 message re-injects the rule at the exact moment of violation.
 - **Stage signals** (`orchestrator/signals/`) — stage-execution mechanics (completion checklist, adversarial review dimensions). Delivered per-stage at execution time.
 - **Skills** (`skills/*/SKILL.md`) — task-scoped expertise loaded on demand (`loom-plan-writer` owns ALL plan-authoring mechanics: YAML, working_dir, acceptance design, model selection, parallelization).
 - **CLAUDE.md.template** — only cross-cutting rules and the 6-item hard-stop tier (stated verbatim at top AND bottom; middle of a long file is a retrieval dead zone). Do not restate what a hook, signal, or skill already delivers — duplicated guidance drifts and dilutes.
@@ -54,7 +54,7 @@ Subagents do not verify. A subagent may run **at most one narrowly-scoped check*
 the files it just changed; project-wide builds, full test suites, and repo-wide lint or
 typecheck runs belong to the main agent, which is the only party that can see the whole tree.
 
-Enforced by `hooks/subagent-verify-guard.sh` (PreToolUse:Bash), stated in the Rule 5 subagent
+Enforced by `loom-hooks/subagent-verify-guard.sh` (PreToolUse:Bash), stated in the Rule 5 subagent
 preamble in `CLAUDE.md.template`, and injected into stage signals by
 `orchestrator/signals/cache.rs`. The three copies are pinned byte-for-byte by
 `orchestrator/signals/tests_doctrine.rs`.

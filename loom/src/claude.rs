@@ -4,7 +4,7 @@ use anyhow::{bail, Result};
 use std::path::PathBuf;
 
 /// Claude model aliases `loom pressure` accepts for its foreground steps,
-/// cheapest tier first (mirrors hooks/spawn-guard.sh's tier ranking). The
+/// cheapest tier first (mirrors loom-hooks/spawn-guard.sh's tier ranking). The
 /// matching reasoning-effort value set is
 /// `crate::models::stage::ALLOWED_REASONING_EFFORTS` — defined there because a
 /// stage's own `reasoning_effort` field validates against it too, so there is

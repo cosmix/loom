@@ -31,15 +31,15 @@
 
 ## Repo hook scripts do not need the executable bit (2026-07-06)
 
-**What happened:** After creating a new hook script, attempted `chmod +x` in the repo (blocked by the sandbox on `hooks/`).
+**What happened:** After creating a new hook script, attempted `chmod +x` in the repo (blocked by the sandbox on `loom-hooks/`).
 **Why:** The repo copies are sources, not the installed artifacts — `install.sh` and `fs/permissions/hooks.rs::install_hook_script` both chmod 755 at install time.
-**Prevention:** Skip chmod for files under `hooks/`; run tests via `bash hooks/tests/run-all.sh` (invokes each script with `bash`, no exec bit needed).
+**Prevention:** Skip chmod for files under `loom-hooks/`; run tests via `bash loom-hooks/tests/run-all.sh` (invokes each script with `bash`, no exec bit needed).
 **Fix:** None needed — dropped the chmod.
 
 ## The Finalization Guard Hook Scans Bash Command Text, Including Heredoc Bodies
 
 **What happened:** `loom knowledge replace-section`/`update` calls piping prose through a heredoc
-were rejected by `hooks/loom-control-complete.sh` with `LOOM_CONTROL_ERROR: completion must be one
+were rejected by `loom-hooks/loom-control-complete.sh` with `LOOM_CONTROL_ERROR: completion must be one
 exact pinned command`, even though the actual command was a harmless knowledge write. Bisecting
 showed the trigger was purely textual: a heredoc body mentioning the orchestration unit by name
 ("stage") somewhere earlier, and a word containing "finish"/"done"-ish vocabulary for it later in
@@ -62,10 +62,10 @@ appears in the Bash tool's own command argument — only the resolved variable d
 
 ## Skill Trigger Ranking Depended on Python's Per-Process Hash Seed
 
-**What happened:** `hooks/skill-trigger.sh` capped suggestions at 3 and sorted only by score. Skills tied on score kept the insertion order of a dict filled while iterating a `set` of prompt tokens, and Python seeds set iteration per process (`PYTHONHASHSEED`). The same prompt listed `loom-react` on some runs and dropped it on others, which read as "the trigger does not work" when it was a coin toss at the cut line. A second amplifier: the generic word `type` was a declared trigger of `loom-typescript`, exempt from the stopword list because the skill name starts with it, and then boosted to the name-match weight, so "types" in a prompt outranked the framework name.
+**What happened:** `loom-hooks/skill-trigger.sh` capped suggestions at 3 and sorted only by score. Skills tied on score kept the insertion order of a dict filled while iterating a `set` of prompt tokens, and Python seeds set iteration per process (`PYTHONHASHSEED`). The same prompt listed `loom-react` on some runs and dropped it on others, which read as "the trigger does not work" when it was a coin toss at the cut line. A second amplifier: the generic word `type` was a declared trigger of `loom-typescript`, exempt from the stopword list because the skill name starts with it, and then boosted to the name-match weight, so "types" in a prompt outranked the framework name.
 **Why:** A sort key that leaves ties unresolved is deterministic only within one process. The stopword exemption for name prefixes (`test` for `loom-testing`, `debug` for `loom-debugging`) is right for the verbs and wrong for a generic noun that happens to prefix a skill name.
 **Prevention:** Any ranking that feeds a truncation needs a total order (score, then a stable secondary, then name). Test it by running the hook under several `PYTHONHASHSEED` values and asserting byte-identical output, which `loom/tests/integration/hooks_skill_trigger.rs` now does. When adding a trigger that is a stopword, ask whether it would appear in prompts about anything else.
-**Fix:** `hooks/skill-trigger.sh` sorts by `(-score, -distinct matched keywords, name)`, lists every qualifying skill up to a flood ceiling of 8, drops the `/loom-skills` line when a domain skill already names the loader, and appends one combined `Skill(skill="loom-skills", args="a b c")` line; `type` and `error` were removed as bare triggers.
+**Fix:** `loom-hooks/skill-trigger.sh` sorts by `(-score, -distinct matched keywords, name)`, lists every qualifying skill up to a flood ceiling of 8, drops the `/loom-skills` line when a domain skill already names the loader, and appends one combined `Skill(skill="loom-skills", args="a b c")` line; `type` and `error` were removed as bare triggers.
 
 ## `rg -r` Is `--replace`, Not `--recursive` (2026-08-08)
 

@@ -79,7 +79,7 @@ worker's file and work is lost. The main agent is the only one that verifies a g
 
 ## replace-section Swallows the Subsections Under the Heading It Replaces (2026-09-06)
 
-**What happened:** `loom knowledge replace-section entry-points/hooks.md "Hook Scripts — What Each Does" "<table>"` was run to add one row to that heading's table. The section ran from the `##` heading to the next `##`, so the two `###` subsections beneath it (`hooks/_common.sh Helpers`, `Registration Sites for a New Hook`) and a closing paragraph — 36 lines — were replaced along with the table. The command reported a clean "Replaced".
+**What happened:** `loom knowledge replace-section entry-points/hooks.md "Hook Scripts — What Each Does" "<table>"` was run to add one row to that heading's table. The section ran from the `##` heading to the next `##`, so the two `###` subsections beneath it (`loom-hooks/_common.sh Helpers`, `Registration Sites for a New Hook`) and a closing paragraph — 36 lines — were replaced along with the table. The command reported a clean "Replaced".
 
 **Why:** a section is everything up to the next heading of the same or a higher level (`fs/knowledge/splice.rs`), so a `##` heading owns its `###` children. The caller supplied only the table body it had read, and nothing warns when the replacement is far shorter than what it displaces.
 

@@ -137,7 +137,7 @@ AUTO-MEMORY PROHIBITION:
 - NEVER Write/Edit files under ~/.claude/projects/*/memory/ (invisible to loom)
 ```
 
-Claude subagents only; `hooks/codex-forward.sh` prepends codex's own rules to forwarded prompts (Rule 7).
+Claude subagents only; `loom-hooks/codex-forward.sh` prepends codex's own rules to forwarded prompts (Rule 7).
 
 ### 6. SUBAGENTS
 

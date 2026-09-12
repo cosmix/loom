@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # read-guard-index-exempt.sh - doc/loom/knowledge/INDEX.md is exempt from the
-# tier-1 knowledge warning (rule 3 in hooks/_read_discipline.sh), since it is
-# now the sanctioned orientation read (hooks/knowledge-orient.sh's
+# tier-1 knowledge warning (rule 3 in loom-hooks/_read_discipline.sh), since it is
+# now the sanctioned orientation read (loom-hooks/knowledge-orient.sh's
 # SessionStart nudge points at it directly); every OTHER tier-1 knowledge
 # file (e.g. architecture.md) must still warn.
 set -euo pipefail

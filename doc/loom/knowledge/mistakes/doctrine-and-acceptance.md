@@ -5,7 +5,7 @@
 ## An Acceptance Criterion That Greps One Phrase Proves Presence, Never Agreement (2026-07-28)
 
 **What happened:** the no-verify doctrine ("BLOCK-A") had to appear identically on three
-surfaces. At integration-verify time `hooks/subagent-verify-guard.sh` carried a 15-line
+surfaces. At integration-verify time `loom-hooks/subagent-verify-guard.sh` carried a 15-line
 _reconstruction_ while `orchestrator/signals/cache.rs` and `CLAUDE.md.template` carried the
 authoritative 7-line block. **Every acceptance criterion passed**, because they all
 `rg -qF` a single anchor phrase that both wordings happened to contain.
@@ -180,7 +180,7 @@ defect to fix, not to amend away.
 **What happened:** Opus repeatedly wrote plans to `~/.claude/plans/` despite CLAUDE.md.template stating the ban three times (Rule 1, a HARD STOP banner, and the end-of-file reminders).
 **Why:** Plan mode injects its save-location suggestion at the moment of the Write call; a prohibition stated mid-file thousands of tokens earlier reliably loses to an instruction present at the decision point. Every other hard rule (commit/complete, git add -A, worktree isolation) had a hook backstop — plans did not: `worktree-file-guard.sh` exits early outside loom worktrees and explicitly whitelists all `~/.claude/**` paths, so interactive sessions (where plan mode runs) had zero deterministic coverage.
 **Prevention:** A rule that must never be violated needs a deterministic channel, not more prose. Prose emphasis is also zero-sum — when ~20 rules carry ⛔/NEVER banners, the salience gradient is flat and the load-bearing rules don't stand out.
-**Fix:** Added `hooks/plans-path-guard.sh` (PreToolUse on Write|Edit, blocks `.claude/plans` and `.claude/projects/*/plans` path segments, exit-2 message redirects to `doc/plans/`), wired via `fs/permissions/constants.rs`, `fs/permissions/hooks.rs`, and `install.sh`. Restructured CLAUDE.md.template to a 5-item hard-stop tier stated verbatim at top and bottom.
+**Fix:** Added `loom-hooks/plans-path-guard.sh` (PreToolUse on Write|Edit, blocks `.claude/plans` and `.claude/projects/*/plans` path segments, exit-2 message redirects to `doc/plans/`), wired via `fs/permissions/constants.rs`, `fs/permissions/hooks.rs`, and `install.sh`. Restructured CLAUDE.md.template to a 5-item hard-stop tier stated verbatim at top and bottom.
 
 ## Delta-Proof `before_stage` Gate Re-Run on Every Re-Spawn Deadlocks the Stage (2026-07-27)
 
@@ -229,7 +229,7 @@ work already paid for.
 **Why:** The Stop hook (commit-guard.sh) fires during subagent waits and read as "commit and
 complete NOW"; CLAUDE.md Rule 6 said "on the deadline branch: take the work over"; no surface
 said completion requires a settled stage or that completion is terminal.
-**Prevention:** `hooks/stage-terminal-guard.sh` blocks Write/Edit/Task/Agent in a worktree whose
+**Prevention:** `loom-hooks/stage-terminal-guard.sh` blocks Write/Edit/Task/Agent in a worktree whose
 stage is already completed/verified. Settled-state completion doctrine lives in
 CLAUDE.md.template (hard stop 3, Rule 4, Rule 6), `append_completion_rules()` in
 `signals/cache.rs`, the budget-exceeded recitation box, and the commit-guard message; retired

@@ -5,7 +5,7 @@
 #   2. A read-only polling command line (git status, ls, ...) repeated 3+
 #      times this session - build/test/lint runners are exempt outright.
 #   3. Bash-side `cat`/`head`/`tail`/`sed -n` reads of a file - reuses
-#      read-guard.sh's rules 1-3 verbatim via hooks/_read_discipline.sh.
+#      read-guard.sh's rules 1-3 verbatim via loom-hooks/_read_discipline.sh.
 #   4. A pathless `git show`/`git diff` - the largest output producer after
 #      Read.
 #

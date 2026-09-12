@@ -94,9 +94,9 @@ Four verification layers; **`truths` is NOT one of them** — merged into accept
 
 → [Worktree Isolation & Security § Claude Code Worktree Isolation Disabled](architecture/security-and-isolation.md)
 
-## Hook System Architecture (hooks/)
+## Hook System Architecture (loom-hooks/)
 
-The `hooks/` scripts, how they are embedded and installed, the SessionStart
+The `loom-hooks/` scripts, how they are embedded and installed, the SessionStart
 `hookSpecificOutput` contract, and the enforcement layers that keep subagents inside their
 lane (`commit-filter.sh`, `subagent-verify-guard.sh`, the worktree guards).
 

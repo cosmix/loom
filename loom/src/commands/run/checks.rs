@@ -38,7 +38,7 @@ pub fn prepare_repo_for_run(repo_root: &Path) -> Result<()> {
 }
 
 /// Hard requirement — aborts startup. Every loom hook parses the Claude Code
-/// hook payload with `jq` (see `hooks/_common.sh`'s `loom_require_jq`); without
+/// hook payload with `jq` (see `loom-hooks/_common.sh`'s `loom_require_jq`); without
 /// it the blocking guards cannot read their input and fail closed one by one,
 /// and `loom stage complete` is never applied by the completion bridge. Failing
 /// here, before any worktree or session is created, surfaces the real missing

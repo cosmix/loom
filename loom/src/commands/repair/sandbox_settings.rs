@@ -189,7 +189,7 @@ pub(super) fn fix_sandbox_settings(repo_root: &Path) -> Result<()> {
 /// no `Read(...)` deny at all any more: the daemon token files are instead
 /// denied to Bash at the OS level (`sandbox.filesystem.denyRead`,
 /// `state_root::token_deny_paths`) and to the native file tools by the
-/// `hooks/credential-guard.sh` PreToolUse hook. A settings file written
+/// `loom-hooks/credential-guard.sh` PreToolUse hook. A settings file written
 /// before this change can still carry the `Read(...)` rules loom itself used
 /// to write (`state_root::is_loom_written_read_deny`) — those get an
 /// automated fix. An operator's own `Read(...)` rule is flagged too, so the

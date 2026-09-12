@@ -227,7 +227,7 @@ python3 -c 'import yaml' 2>/dev/null || {
 # `rg -n non_empty_env loom/src/commands/hook/` before trusting it after a
 # future change to those files.
 #
-# The timeout fallback matches hooks/user-prompt-context.sh's own
+# The timeout fallback matches loom-hooks/user-prompt-context.sh's own
 # gtimeout/timeout/none fallback so this harness never wedges on a hung
 # binary.
 run_bin() {
@@ -712,7 +712,7 @@ $m2_class_rows
 
 Cold-start is the first \`hook user-prompt\` invocation issued for that
 binary (page-cache-cold read of the measure root); p50/p95/max exclude it.
-The shell wrapper (\`hooks/user-prompt-context.sh\`) enforces a 5s ceiling.
+The shell wrapper (\`loom-hooks/user-prompt-context.sh\`) enforces a 5s ceiling.
 A cold number taken while anything else — another agent, a background
 reconcile, the OS page cache warming from an unrelated process — is writing
 to the same measure root or its underlying disk is contention, not cost;
@@ -739,7 +739,7 @@ REPORT
 # and diffs it after scoring: any change means some invocation resolved past
 # its measure root and mutated the real checkout despite everything above —
 # see the ISOLATION CONTRACT header. `stat -c`/`stat -f` mirrors the
-# GNU-vs-BSD fallback hooks/worktree-file-guard.sh already uses.
+# GNU-vs-BSD fallback loom-hooks/worktree-file-guard.sh already uses.
 # --------------------------------------------------------------------------
 mtime_of() {
 	local path="$1"

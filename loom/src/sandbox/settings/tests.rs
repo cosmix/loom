@@ -180,7 +180,7 @@ fn test_generate_settings_with_filesystem() {
 
     // Permissions for file tool restrictions. `deny_read` contributes NOTHING
     // here — read denial is the OS sandbox's job (`denyRead`, asserted above)
-    // plus `hooks/credential-guard.sh`, because one `Read(` deny rule makes
+    // plus `loom-hooks/credential-guard.sh`, because one `Read(` deny rule makes
     // Claude Code prompt on every relative-path search issued after a `cd`.
     let deny = json["permissions"]["deny"].as_array().unwrap();
     assert_eq!(deny.len(), 1);
@@ -1156,7 +1156,7 @@ fn test_write_settings_adds_resolved_work_symlink_permissions_legacy_layout() {
     );
 
     // S-1: the daemon tokens are denied at the OS level and by
-    // `hooks/credential-guard.sh`, never as a `Read(...)` permission rule —
+    // `loom-hooks/credential-guard.sh`, never as a `Read(...)` permission rule —
     // one of those anywhere makes `rg` inside the project prompt.
     assert!(
         !has_read_deny(&result),

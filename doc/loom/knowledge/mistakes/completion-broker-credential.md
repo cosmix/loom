@@ -61,7 +61,7 @@ test sets, and a bare-filename grep finds both — qualify with the directory be
 **What happened:** a stage reported that it had completed successfully when it had not. In a
 sandboxed worktree, `loom stage complete` never completes the stage: `run_verification_phase`
 verifies, prints the `LOOM_CONTROL_VERIFICATION_PASSED` marker, and returns `Ok(())`. The real
-transition is applied out of band by `hooks/loom-control-complete.sh`, which reads that marker
+transition is applied out of band by `loom-hooks/loom-control-complete.sh`, which reads that marker
 back out of the tool result and calls the daemon broker.
 
 **Why it was invisible:** the agent's only evidence was exit 0 plus a line containing "PASSED",

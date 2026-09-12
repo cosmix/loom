@@ -135,7 +135,7 @@ will not remove. `generated_settings_carry_no_read_deny_rules`
 The boundary those rules described is kept by two other layers. `sandbox.filesystem.denyRead` is an
 OS list, not a permission rule: it triggers neither check and keeps Bash out of the credential
 directories and both tokens (`policy::MANDATORY_DENY_READ` now carries all five credential paths, so
-a plan's `deny_read` cannot drop them). `hooks/credential-guard.sh` is a PreToolUse guard on Read,
+a plan's `deny_read` cannot drop them). `loom-hooks/credential-guard.sh` is a PreToolUse guard on Read,
 Glob, Grep, Edit, MultiEdit, Write and NotebookEdit that blocks `admin.token`/`user.token` under any
 state root unconditionally and applies the project's `denyRead` list to the file tools. A hook can be
 switched off by `disableAllHooks` and shares the check-then-open race noted under "PreToolUse File

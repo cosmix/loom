@@ -530,7 +530,7 @@ fn test_complete_standard_stage_not_routed_to_knowledge() {
 
 #[test]
 fn verification_passed_marker_line_matches_the_bridges_exact_match() {
-    // `hooks/loom-control-complete.sh` builds its own copy of this exact
+    // `loom-hooks/loom-control-complete.sh` builds its own copy of this exact
     // string (`MARKER="LOOM_CONTROL_VERIFICATION_PASSED stage=$STAGE_ID
     // session=$SESSION_ID"`) and matches it as an exact whole line of
     // stdout before it will forward completion to the daemon. This test

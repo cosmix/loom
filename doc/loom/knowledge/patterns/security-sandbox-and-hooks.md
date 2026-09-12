@@ -67,7 +67,7 @@ contract) and it avoids an asymmetry that will catch out whoever adds the next v
 
 ## Two Guards That Disagree on the One Behavior That Matters Stay Separate
 
-`hooks/worktree-file-guard.sh` and `hooks/credential-guard.sh` share almost all of their
+`loom-hooks/worktree-file-guard.sh` and `loom-hooks/credential-guard.sh` share almost all of their
 canonicalization logic but diverge on the one thing that decides correctness: `worktree-file-guard`
 must REJECT a symlink leaf, `credential-guard` must FOLLOW one (so a worktree's `.loom/work/admin.token`
 resolves through the state-root symlink to the main repo's real file). A shared helper with two

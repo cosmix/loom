@@ -20,9 +20,9 @@ behavior is unchanged".
 
 | Consumer | Failure with the prefixed form |
 | --- | --- |
-| `hooks/loom-control-complete.sh` (PreToolUse) | pins completion to a nonexistent stage id and **blocks** the correct command |
+| `loom-hooks/loom-control-complete.sh` (PreToolUse) | pins completion to a nonexistent stage id and **blocks** the correct command |
 | `sandbox_control_session` | `env_stage != stage_id` → "completion request does not match the active wrapper stage/session" |
-| `hooks/session-start.sh` → `HeartbeatWatcher` | heartbeat written as `<kind>-<stage>.json`; `detect_heartbeat_events` looks up `session.stage_id`, gets `NoHeartbeat` **forever** — hung detection silently disabled for knowledge/merge/base-conflict |
+| `loom-hooks/session-start.sh` → `HeartbeatWatcher` | heartbeat written as `<kind>-<stage>.json`; `detect_heartbeat_events` looks up `session.stage_id`, gets `NoHeartbeat` **forever** — hung detection silently disabled for knowledge/merge/base-conflict |
 | `loom memory note\|decision` | entries filed under a phantom stage |
 | `loom handoff`, `session-end.sh`'s `*-${LOOM_STAGE_ID}.md` glob, `ask-user-pre.sh` | resolve the wrong stage |
 
@@ -53,7 +53,7 @@ carried a `set_worktree_path: bool` that is **false** for those three kinds — 
 correctly omitted the worktree path. Only the env var ignored the distinction.
 
 **Prevention:** decide worktree membership **structurally**, never by presence. A loom worktree is
-`<repo>/.worktrees/<stage-id>`; the main repo root is not. `hooks/_common.sh`'s
+`<repo>/.worktrees/<stage-id>`; the main repo root is not. `loom-hooks/_common.sh`'s
 `loom_current_worktree()` has always required this and carries the reasoning ("that variable leaks
 into plain Claude Code sessions"); the Rust gate and `loom-control-complete.sh` did not, and both
 now do (`is_loom_worktree_path`, and a `=~ /\.worktrees/[^/]+` guard in the hook). When one surface

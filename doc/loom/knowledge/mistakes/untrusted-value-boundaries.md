@@ -123,7 +123,7 @@ budget against `Span::width()`, which is 0 for C0 controls (ESC included) and fo
 zero-width set — so `used + character_width > budget` is never true for a zero-width character and
 a 10,000-character ESC/ZWSP string passes a 16-cell column fully intact. The strings reaching those
 cells are not all trusted: `stage.model`/`execution_models` come from the spawn ledger's
-caller-controlled `.tool_input.model` (`hooks/spawn-guard.sh:334`), and `last_tool`/`last_activity`
+caller-controlled `.tool_input.model` (`loom-hooks/spawn-guard.sh:334`), and `last_tool`/`last_activity`
 come from heartbeat JSON (`commands/status/data/collector.rs:266-267`). A width-bounded renderer cannot do sanitization's
 job — it does not even try, it just measures cells. The fix sanitizes once, at the collector boundary
 that constructs the shared `StatusData` (`commands/status/data/sanitize.rs`, wired at
@@ -158,7 +158,7 @@ distinct keys.
 
 **What happened:** `commands/status/data/execution_models.rs::normalize_model` stripped a trailing `-YYYYMMDD` stamp by
 slicing a `&str` at a fixed byte offset (`len - 9`). The model name comes from `spawns.jsonl`, written
-verbatim from a caller-controlled tool argument (`hooks/spawn-guard.sh::record_spawn`), and
+verbatim from a caller-controlled tool argument (`loom-hooks/spawn-guard.sh::record_spawn`), and
 `execution_models_for_stage` runs inside `collect_status_data`, which backs both `loom status` and
 the daemon's broadcast — a single crafted spawn row with a multi-byte character near that offset
 would panic the whole status subsystem.
@@ -173,7 +173,7 @@ never a byte-offset slice, on any string that did not originate as a Rust litera
 
 ## A Character-Class Allowlist Is Not a Path-Component Allowlist
 
-**What happened:** `hooks/codex-forward.sh` and `hooks/spawn-guard.sh` both validate a stage id with
+**What happened:** `loom-hooks/codex-forward.sh` and `loom-hooks/spawn-guard.sh` both validate a stage id with
 a character-class case (`case $stage_id in *[!A-Za-z0-9._-]* | "") return 0`), which ACCEPTS `.` and
 `..` because both are made only of allowed characters. The resulting ledger path
 `${work_dir}/subagents/${stage_id}` then resolves to the work dir itself for a `..` id — `chmod 700`
@@ -181,7 +181,7 @@ changes the work dir's own mode and the ledger row lands one level outside its p
 The Rust reader (`commands/status/data/sanitize.rs::valid_stage_id`) gets this right by explicitly
 rejecting `..`, so the two sides of the same boundary disagree, and the same check now exists in four
 places at three different strengths (`commands/status/data/execution_models.rs:38`, `commands/memory/handlers/work_dir.rs:99`,
-`hooks/codex-forward.sh:43`, `hooks/spawn-guard.sh:309`).
+`loom-hooks/codex-forward.sh:43`, `loom-hooks/spawn-guard.sh:309`).
 
 **Prevention:** when validating a value that becomes a path COMPONENT, reject `.` and `..` by name
 explicitly — a charset check alone is not a path-component allowlist, whatever language it's written

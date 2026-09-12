@@ -484,7 +484,7 @@ pub fn complete(
     Ok(())
 }
 
-/// The exact stdout line `hooks/loom-control-complete.sh` matches to confirm
+/// The exact stdout line `loom-hooks/loom-control-complete.sh` matches to confirm
 /// verification passed for a sandboxed worktree completion.
 ///
 /// The bridge does a whole-line EXACT match against
@@ -515,7 +515,7 @@ fn print_sandboxed_completion_pending_notice(stage_id: &str) {
     println!(
         "Verification passed, but stage '{stage_id}' is NOT completed yet — \
          completion is applied out-of-band by the daemon via the completion \
-         bridge (hooks/loom-control-complete.sh), which reads the marker line \
+         bridge (loom-hooks/loom-control-complete.sh), which reads the marker line \
          above. Do not treat this output as completion: the confirmation to \
          look for is the bridge's own message, \"Stage '{stage_id}' completion \
          was accepted by the daemon.\" If that confirmation never appears, the \

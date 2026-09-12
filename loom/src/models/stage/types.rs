@@ -364,7 +364,7 @@ fn default_deny_read() -> Vec<String> {
             // Claude Code prompt on every relative-path `rg`/`grep`/`diff`/`git`/`cp`/`mv`
             // issued after a `cd` — see doc/loom/knowledge/concerns.md § "No Read(...) Deny
             // Rule May Exist in Any Settings File". The native file tools, which the OS list
-            // does not cover, are held off the tokens by `hooks/credential-guard.sh` instead
+            // does not cover, are held off the tokens by `loom-hooks/credential-guard.sh` instead
             // — that hook, not a deny rule, is what now carves them out of the broad
             // `Read(.work/**)` grant in `LOOM_PERMISSIONS` / `LOOM_PERMISSIONS_WORKTREE`
             // (`fs/permissions/constants.rs`). Both relative forms and both
@@ -401,7 +401,7 @@ fn default_deny_write() -> Vec<String> {
     // knowledge recording for every stage. Write access is instead
     // explicitly GRANTED via `sandbox::config::apply_knowledge_write_grant`,
     // and the file-tool-only "use the CLI, not Edit/Write" doctrine is
-    // enforced by `hooks/worktree-file-guard.sh`, which can block file tools
+    // enforced by `loom-hooks/worktree-file-guard.sh`, which can block file tools
     // without blocking the CLI subprocess.
     vec!["../../**".to_string()]
 }

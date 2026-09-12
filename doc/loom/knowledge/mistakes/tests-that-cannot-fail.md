@@ -159,14 +159,14 @@ applied to a fix rather than to existing coverage.
 ## Hook-Script Literals: The Test That Pins Them Skips on Every Sandboxed Machine
 
 `hooks_spawn_guard.rs`, `hooks_subagent_verify_guard.rs` and `hooks_read_guard.rs` assert the
-exact user-facing strings the `hooks/*.sh` scripts emit. The tests that exercise the ENFORCEMENT
+exact user-facing strings the `loom-hooks/*.sh` scripts emit. The tests that exercise the ENFORCEMENT
 GATE are wrapped in `skip_unless_gate_visible`, which calls
 `process::sandbox_probe::process_tree_visible()` — a `ps -o ppid=` probe. Under the Claude Code
 Bash sandbox `ps` is denied outright (`operation not permitted: ps`), so the probe is false, the
 test returns early, and the target still reports `test result: ok`. A skip is indistinguishable
 from a pass in the count.
 
-**Consequence, seen 2026-09-03:** commit `588a0446` reworded `hooks/spawn-guard.sh:209` from
+**Consequence, seen 2026-09-03:** commit `588a0446` reworded `loom-hooks/spawn-guard.sh:209` from
 "Untyped spawn inherits this session's model" to "…the model of the spawning session" — a
 required fix, since the apostrophe inside a `$(cat <<'EOF')` heredoc opened a single-quoted region
 across lines 208-253 and made the script unparseable. The matching literal in
@@ -174,13 +174,13 @@ across lines 208-253 and made the script unparseable. The matching literal in
 failed. An installed pre-push hook would NOT have caught it either — it runs the same suite on the
 same sandboxed machine.
 
-**Prevention:** editing any string a `hooks/*.sh` script prints is a two-file change. Before
+**Prevention:** editing any string a `loom-hooks/*.sh` script prints is a two-file change. Before
 committing such an edit, run this drift scan, which needs no gate:
 
 ```bash
 for f in loom/tests/integration/hooks_*.rs; do
   rg -o 'contains\("([^"]{12,})"' -r '$1' "$f" | sort -u | while IFS= read -r s; do
-    rg -qF -- "$s" hooks/ || echo "DRIFT $f: $s"
+    rg -qF -- "$s" loom-hooks/ || echo "DRIFT $f: $s"
   done
 done
 ```

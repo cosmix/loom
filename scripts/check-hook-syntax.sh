@@ -18,28 +18,23 @@
 set -euo pipefail
 
 repo_root=$(cd "$(dirname "$0")/.." && pwd)
-# hooks/ and scripts/ both carry hand-written shell; a syntax error in either
+# loom-hooks/ and scripts/ both carry hand-written shell; a syntax error in either
 # one is the same failure mode this script exists to catch. The git hooks
 # directory (loom/.githooks) is scanned separately below for its executable
 # files, since git only runs executable hooks and they carry no extension.
-script_dirs=("$repo_root/hooks" "$repo_root/scripts")
 
-found_a_dir=0
-for dir in "${script_dirs[@]}"; do
-	if [ -d "$dir" ]; then
-		found_a_dir=1
-	fi
-done
-if [ "$found_a_dir" -eq 0 ]; then
-	printf 'check-hook-syntax: none of the expected script directories exist (%s)\n' "${script_dirs[*]}" >&2
+if [ ! -d "$repo_root/loom-hooks" ]; then
+	printf 'check-hook-syntax: required hook directory is missing: %s\n' "$repo_root/loom-hooks" >&2
 	exit 1
 fi
+
+script_dirs=("$repo_root/loom-hooks" "$repo_root/scripts")
 
 failed=0
 checked=0
 
 while IFS= read -r script; do
-	# hooks/skill-trigger.sh is Python with a .sh extension; bash -n on it is a
+	# loom-hooks/skill-trigger.sh is Python with a .sh extension; bash -n on it is a
 	# false positive. Select on the shebang, never on the extension.
 	if head -n 1 "$script" | grep -q 'python'; then
 		continue

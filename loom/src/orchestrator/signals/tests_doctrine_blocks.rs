@@ -6,7 +6,7 @@
 //! `#[cfg(test)]`: the parent module is gated in `signals/mod.rs`.
 
 /// BLOCK-A - the no-verify rule, verbatim. Every surface must carry this text
-/// byte for byte; `hooks/subagent-verify-guard.sh` prefixes it with a hook-only
+/// byte for byte; `loom-hooks/subagent-verify-guard.sh` prefixes it with a hook-only
 /// "BLOCKED" framing line, which is deliberately not part of the block.
 pub(super) const BLOCK_A: &str = "VERIFICATION IS THE MAIN AGENT'S JOB - NOT YOURS:
 - Do NOT verify your work. No full build, no full test suite, no linter, no

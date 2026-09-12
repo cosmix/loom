@@ -69,7 +69,7 @@ body so a caller carrying `update` habits cannot double the heading. Pass the bo
 heading line.
 
 The channel doctrine now has a working shape end to end: file tools stay blocked on
-`doc/loom/knowledge/**` inside worktrees (`hooks/worktree-file-guard.sh`) while the CLI writes
+`doc/loom/knowledge/**` inside worktrees (`loom-hooks/worktree-file-guard.sh`) while the CLI writes
 through the sandbox grant (`sandbox::config::apply_knowledge_write_grant`); a non-knowledge stage
 records a staleness find as a `stale-knowledge:` memory; the knowledge-distill stage applies every
 one of them with `replace-section` BEFORE curating anything new (CLAUDE.md Rule 12). Still missing:

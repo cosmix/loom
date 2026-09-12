@@ -4,8 +4,8 @@
 
 ## Source vs Installed: Editing Wrong File
 
-**Mistake:** Edited `~/.claude/hooks/loom/` (installed copy) instead of `hooks/` (source). Lost on reinstall.
-**Fix:** Always edit in project's `hooks/` directory.
+**Mistake:** Edited `~/.claude/hooks/loom/` (installed copy) instead of `loom-hooks/` (source). Lost on reinstall.
+**Fix:** Always edit in project's `loom-hooks/` directory.
 
 ## Module Refactoring: Duplicate Files
 

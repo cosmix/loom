@@ -27,7 +27,7 @@ of the companion state directory exposed it.
 
 **Prevention:**
 
-- `hooks/codex-forward-guard.sh` (PreToolUse) blocks every tool call except the single
+- `loom-hooks/codex-forward-guard.sh` (PreToolUse) blocks every tool call except the single
   `codex-companion.mjs` Bash invocation, keyed primarily on payload `agent_type`
   (`loom-codex-forwarder` | `codex:codex-rescue`), with the `LOOM-CODEX-FORWARD-ONLY`
   transcript sentinel as fallback. Fail-open for every other agent.
@@ -66,7 +66,7 @@ there, so `loom repair --fix` cannot help and re-running it changes nothing.
 
 **Root cause and the fix loom ships.** The companion derives its state root from an env var:
 `stateRoot = $CLAUDE_PLUGIN_DATA/state` (plugin 1.0.6, `scripts/lib/state.mjs:9,41-42`), falling
-back to `os.tmpdir()/codex-companion` when the var is empty. `hooks/codex-forward.sh` now probes
+back to `os.tmpdir()/codex-companion` when the var is empty. `loom-hooks/codex-forward.sh` now probes
 whether `$CLAUDE_PLUGIN_DATA/state` is creatable and, only when it is not, redirects
 `CLAUDE_PLUGIN_DATA` to `~/.codex/plugin-data` — inside the `~/.codex` grant this lane already
 has. Machines where the default works are untouched, so the plugin's own `/codex:status` and
@@ -112,6 +112,6 @@ as no evidence below the model. Detection rule: a codex report that reaches the 
 `sandbox_apply` or zero file changes is this failure, and it is the wrapper's job, never a settings
 or `loom repair --fix` matter.
 
-**Fix:** `hooks/codex-forward.sh` probes for a nested Seatbelt and switches to a direct `codex exec
+**Fix:** `loom-hooks/codex-forward.sh` probes for a nested Seatbelt and switches to a direct `codex exec
 --sandbox danger-full-access`; details in [Codex Plugin](../architecture/codex-plugin.md) under the
 2026-09-02 macOS section.

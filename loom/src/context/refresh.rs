@@ -208,7 +208,7 @@ fn semantic_freshness_against_head(knowledge_root: &Path, stored: Freshness) -> 
 /// `revision` has fewer than 8 bytes and when byte index 8 does not fall on a
 /// UTF-8 character boundary. This runs inside `evaluate`, reachable from the
 /// prompt hook, which is contractually forbidden to ever disturb a session —
-/// see `hooks/user-prompt-context.sh`'s fail-open contract.
+/// see `loom-hooks/user-prompt-context.sh`'s fail-open contract.
 ///
 /// `pub(crate)`: `context::retrieve::graph` needs the identical truncation
 /// for its A.11 degraded-message (`"source graph base <rev8> missing"`) and

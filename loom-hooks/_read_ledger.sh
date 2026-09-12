@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # _read_ledger.sh - TSV ledger read/write/cap helpers for
-# hooks/_read_discipline.sh (Task C/D's read- and poll-repeat counters).
+# loom-hooks/_read_discipline.sh (Task C/D's read- and poll-repeat counters).
 #
 # Split out of _read_discipline.sh purely for size - CLAUDE.md rule 17's
 # 400-line file cap left no room for this module once the ledger-capping and

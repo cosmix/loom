@@ -82,7 +82,7 @@ Repeatable failure modes: plan-authoring notes frozen as architecture facts, `[U
 
 ## Codex Lane Rogue Wrapper (2026-08-07)
 
-A `codex:codex-rescue` spawn received a codex prompt and implemented all 26 edits itself on sonnet instead of forwarding — plugin agents' `tools:` field is ignored by design. Now pinned by `hooks/codex-forward-guard.sh` + the `loom-codex-forwarder` agent + the evidence-trailer rule.
+A `codex:codex-rescue` spawn received a codex prompt and implemented all 26 edits itself on sonnet instead of forwarding — plugin agents' `tools:` field is ignored by design. Now pinned by `loom-hooks/codex-forward-guard.sh` + the `loom-codex-forwarder` agent + the evidence-trailer rule.
 
 → [Codex Lane Rogue Wrapper](mistakes/codex-lane-rogue-wrapper.md)
 

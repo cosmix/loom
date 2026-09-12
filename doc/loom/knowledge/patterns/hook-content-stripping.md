@@ -52,7 +52,7 @@ the correct direction for a development guard.
 Each hook sources `_common.sh` via `source "$(dirname "$0")/_common.sh"`. The Rust twin of
 `strip_embedded_content` lives at `loom/src/hooks/validators/bash.rs` and has NOT been converted.
 
-Full hook inventory (24 top-level scripts in `hooks/`; 64 including `hooks/tests/`):
+Full hook inventory (24 top-level scripts in `loom-hooks/`; 64 including `loom-hooks/tests/`):
 
 - PreToolUse: worktree-isolation.sh, commit-filter.sh, subagent-verify-guard.sh,
   git-add-guard.sh, prefer-modern-tools.sh, worktree-file-guard.sh,
@@ -82,7 +82,7 @@ the invocation on tokens; inspect message content on the raw string.
 
 ## Two Ways The Stage-Finalize Prefilter Blocks A Command You Never Typed
 
-The finalize bridge hook (`hooks/loom-control-*.sh`) guards the most destructive
+The finalize bridge hook (`loom-hooks/loom-control-*.sh`) guards the most destructive
 operation in loom, so it fails closed: anything its prefilter matches must be
 byte-identical to the pinned invocation or it is rejected. The prefilter was
 hardened to tokenize the Bash command instead of globbing the raw string, and that

@@ -11,7 +11,7 @@ each firing at a different multiple of it, from softest to hardest:
 
 | Multiple | Mechanism                          | Who enforces it                                                                                             | What happens                                                                                                                          |
 | -------- | ----------------------------------- | -------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| 1.0x     | `PostToolUse` hook instruction       | `hooks/post-tool-use.sh`, reading resident tokens off the transcript tail                                       | Blocks each tool call with exit 2 and a stderr instruction to finish the unit of work, run `loom handoff --trigger ceiling`, and stop |
+| 1.0x     | `PostToolUse` hook instruction       | `loom-hooks/post-tool-use.sh`, reading resident tokens off the transcript tail                                       | Blocks each tool call with exit 2 and a stderr instruction to finish the unit of work, run `loom handoff --trigger ceiling`, and stop |
 | 1.25x    | Daemon backstop (`BudgetExceeded`)   | `orchestrator/monitor/detection.rs` (`DAEMON_CEILING_MULTIPLIER`, `models/constants.rs`)                        | Writes the outgoing handoff, discovers in-progress records even after daemon restart, KILLS the session, persists `ContextExhausted` only after confirmed death, then re-queues. Discovery/probe/persistence uncertainty leaves the stage in `NeedsHandoff`; stale events naming a predecessor are ignored. |
 | 1.5x     | `CLAUDE_CODE_AUTO_COMPACT_WINDOW`    | The installed Claude Code binary itself, via an env var loom's native wrapper sets (`auto_compact_window_tokens`, `orchestrator/terminal/native/wrapper.rs:227-238`) | Claude Code's own native auto-compaction kicks in — "effectively unreachable in practice" per the source comment, because the two lower thresholds should already have ended the session by this point |
 
@@ -44,7 +44,7 @@ model's own context window.
 
 The shell hook never parses TOML or stage YAML. Its internal
 `loom hook context-ceilings` call loads both through Rust and prints one validated
-`<main>:<subagent>` pair. `hooks/post-tool-use.sh` caches that pair at
+`<main>:<subagent>` pair. `loom-hooks/post-tool-use.sh` caches that pair at
 `.work/heartbeat/<stage>.<session>.context-ceilings`, then selects the main or subagent half after
 classifying the hook payload. The main value includes the stage override; the subagent value is
 plan-wide and never consults stage frontmatter. Missing, failed, malformed, or out-of-range helper
@@ -54,7 +54,7 @@ requested stage record, explicitly disabling main-stage enforcement rather than 
 stage's ceiling; the independent subagent half remains usable. Keeping the fallback constants is
 intentional availability defense, not a second config parser.
 
-**The true last resort is `hooks/pre-compact.sh`'s block-then-allow pattern**, independent of
+**The true last resort is `loom-hooks/pre-compact.sh`'s block-then-allow pattern**, independent of
 all three thresholds above (it fires whenever Claude Code's native compaction actually engages,
 by whatever trigger): the FIRST `PreCompact` invocation in a session drops a
 `.work/compaction-pending/<session-id>` flag file, writes a handoff, and BLOCKS (exit 2) with an
@@ -72,7 +72,7 @@ field/resolver contract.
 
 ## Handoff System (Full Chain)
 
-Fully functional handoff chain, of which `hooks/pre-compact.sh` (above) is one link:
+Fully functional handoff chain, of which `loom-hooks/pre-compact.sh` (above) is one link:
 
 1. **`loom handoff create`** — CLI command accepting `--stage`, `--session`, `--trigger`, `--message` flags
 2. **`pre-compact.sh`** — two-phase block-then-allow pattern (see above); no longer creates a recovery marker file

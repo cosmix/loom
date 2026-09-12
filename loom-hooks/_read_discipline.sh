@@ -26,7 +26,7 @@ READ_GUARD_LINE_LIMIT=400
 # _LOOM_VERIFY_RUNNER_BASENAMES - runner basenames poll-guard.sh's rule 2
 # must NEVER count toward the repeated-command deny: the acceptance loop is
 # SUPPOSED to rerun `cargo test` many times. This DUPLICATES the dispatch
-# list in hooks/subagent-verify-guard.sh's check_command (that file's line
+# list in loom-hooks/subagent-verify-guard.sh's check_command (that file's line
 # 343) rather than sourcing it - a hand-transcribed copy that must be kept
 # in sync with it by hand.
 _LOOM_VERIFY_RUNNER_BASENAMES="cargo|pytest|tsc|eslint|go|npm|bun|pnpm|yarn|make"
@@ -77,7 +77,7 @@ _loom_is_tier1_knowledge_path() {
 
 # _loom_is_knowledge_index_path <path> - Return 0 when <path> ends in
 # doc/loom/knowledge/INDEX.md (any prefix). INDEX.md is the sanctioned
-# orientation read under CLAUDE.md rule 12 - hooks/knowledge-orient.sh's
+# orientation read under CLAUDE.md rule 12 - loom-hooks/knowledge-orient.sh's
 # SessionStart nudge points every session at it directly - so warning on it
 # here would contradict the doctrine this hook exists to enforce.
 _loom_is_knowledge_index_path() {
@@ -337,7 +337,7 @@ _loom_read_discipline_verdict2() {
 #      path is never also a tier-1 knowledge path.
 #   0b. doc/loom/knowledge/INDEX.md is exempt outright too, with no warning -
 #      it is the sanctioned orientation read (CLAUDE.md rule 12;
-#      hooks/knowledge-orient.sh's SessionStart nudge points at it directly).
+#      loom-hooks/knowledge-orient.sh's SessionStart nudge points at it directly).
 #      Checked before rule 3, for the same reason as rule 0.
 #   1. An unbounded ("full") read of a file over READ_GUARD_LINE_LIMIT lines
 #      is redirected to `loom map --outline` (denied when covered, warned

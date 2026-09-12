@@ -135,7 +135,7 @@ hook work.
 
 ## `is_ancestor("1")` Cannot Distinguish "Not an Ancestor" From "Walked Off the Top of a Container"
 
-`hooks/_common.sh`'s `is_ancestor()` exits its walk-up-the-process-tree loop as soon as the
+`loom-hooks/_common.sh`'s `is_ancestor()` exits its walk-up-the-process-tree loop as soon as the
 current pid becomes `"1"` or `"0"`, WITHOUT checking whether that final value equals the target
 pid — so `is_ancestor(target="1")` is a guaranteed, deterministic `false` regardless of the real
 process tree, even inside a container where PID 1 genuinely is an ancestor of everything. This is

@@ -5,7 +5,7 @@
 //! sequence to build a stage's stable prefix.
 //!
 //! Several of these blocks are pinned byte-for-byte against other guidance
-//! surfaces (`CLAUDE.md.template`, `hooks/subagent-verify-guard.sh`) by
+//! surfaces (`CLAUDE.md.template`, `loom-hooks/subagent-verify-guard.sh`) by
 //! `tests_doctrine.rs` — moving text between functions here is safe, but
 //! changing a single character inside one is not.
 

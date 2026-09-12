@@ -4,7 +4,7 @@
 # from the LAST assistant record carrying a usage block in the transcript
 # tail. Observed here via the MAIN session's own heartbeat file, whose
 # context_tokens field is written from this exact value
-# (hooks/post-tool-use.sh: HB_CONTEXT_TOKENS_RAW="$RESIDENT_TOKENS" on the
+# (loom-hooks/post-tool-use.sh: HB_CONTEXT_TOKENS_RAW="$RESIDENT_TOKENS" on the
 # non-subagent path) - a direct, non-internal channel onto the number the
 # governor actually computed.
 #

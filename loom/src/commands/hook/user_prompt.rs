@@ -231,7 +231,7 @@ impl HookTarget {
     /// `session_id` from the `Session` model), a different id space from the
     /// Claude Code hook `session_id` that `recipient` was built from.
     /// `LOOM_SESSION_ID` is the join the worktree wrapper exports for exactly
-    /// this purpose — `hooks/pre-compact.sh` already reads it the same way.
+    /// this purpose — `loom-hooks/pre-compact.sh` already reads it the same way.
     /// Getting this wrong fails SILENTLY in the expensive direction: the hook
     /// would re-deliver everything the spawn brief already put in this same
     /// context window, so it is read fresh here rather than assumed equal to

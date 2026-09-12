@@ -10,7 +10,7 @@
 //!   stage just needs the transition, and every dependent stage is blocked
 //!   behind it until someone notices.
 //!
-//! Parking is not hypothetical and it is not rare. `hooks/commit-guard.sh` used
+//! Parking is not hypothetical and it is not rare. `loom-hooks/commit-guard.sh` used
 //! to refuse a stop that left a stage in `Executing` (`exit 2`), but was
 //! downgraded to an advisory that returns 0, because Claude Code fires `Stop`
 //! hooks during Task/subagent waits and blocking there killed sessions

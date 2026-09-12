@@ -49,7 +49,7 @@ expect_allow "the same prose, double-quoted" \
 # "-A") satisfy the git-add danger patterns even though the message is one
 # quoted argument to -m, never a git-add argument.
 expect_allow "multi-line commit -m body containing Co-Authored-By" \
-    $'git add hooks/commit-filter.sh\ngit commit -q -m "fix(hooks): tighten the guard\n\nExplain that a Co-Authored-By trailer must never be added."'
+    $'git add loom-hooks/commit-filter.sh\ngit commit -q -m "fix(hooks): tighten the guard\n\nExplain that a Co-Authored-By trailer must never be added."'
 
 expect_allow "staging specific files" "git add src/main.rs src/lib.rs"
 expect_allow ".workspace is not .work" "git add .workspace"

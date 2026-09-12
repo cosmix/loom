@@ -13,7 +13,7 @@ pub const CODEX_IMPLEMENTER_MODEL_LUNA: &str = "gpt-5.6-luna";
 pub const CODEX_IMPLEMENTER_EFFORT: &str = "xhigh";
 
 /// Codex models `loom pressure` accepts. Kept in step with the forwarding
-/// hooks' allowlist (hooks/codex-forward.sh).
+/// hooks' allowlist (loom-hooks/codex-forward.sh).
 pub const CODEX_MODELS: &[&str] = &[
     "gpt-6-astra",
     "gpt-5.6-sol",
@@ -75,7 +75,7 @@ pub const CODEX_SANDBOX_DOMAINS: [&str; 4] = [
 /// threaded through a forward.
 ///
 /// That holds for the companion path (Linux). On macOS inside a stage sandbox
-/// a nested Seatbelt is refused outright, so `hooks/codex-forward.sh` bypasses
+/// a nested Seatbelt is refused outright, so `loom-hooks/codex-forward.sh` bypasses
 /// the companion and passes `--sandbox danger-full-access` to `codex exec`
 /// itself; this file then plays no part in the run.
 pub fn codex_config_path() -> Option<PathBuf> {
@@ -153,7 +153,7 @@ pub fn ensure_codex_config_excludes_slash_tmp(config_path: &Path) -> Result<bool
 
 /// Sentinel that MUST be the first line of every codex-lane subagent prompt.
 ///
-/// `hooks/codex-forward-guard.sh` greps the calling subagent's transcript for
+/// `loom-hooks/codex-forward-guard.sh` greps the calling subagent's transcript for
 /// this exact token and, when present, blocks every tool call except the single
 /// Bash invocation of codex-companion.mjs - pinning the forwarder to forwarding.
 /// The literal in the hook script and in `agents/loom-codex-forwarder.md` must

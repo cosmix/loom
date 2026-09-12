@@ -2,7 +2,7 @@
 //!
 //! read-guard.sh enforces CLAUDE.md's read discipline (rule 14: query before you read, read
 //! ranges not files; rule 17: 400-line file ceiling) through the shared core in
-//! hooks/_read_discipline.sh - the same rules poll-guard.sh applies to Bash-side cat/head/tail/sed
+//! loom-hooks/_read_discipline.sh - the same rules poll-guard.sh applies to Bash-side cat/head/tail/sed
 //! reads, so the two hooks can never drift apart. Every deny branch there is gated by the
 //! `[hooks] deny_enabled` switch in `_common.sh`'s `loom_deny_enabled` - OFF by default, in which
 //! case a would-be deny is a `LOOM_HOOK_WARN` warning at exit 0 instead. These tests exercise the
@@ -223,7 +223,7 @@ fn run_read_hook(
 }
 
 /// Every deny-branch test below needs the SAME probe: whether this sandbox
-/// can see its own process tree, which `is_ancestor` (`hooks/_common.sh`)
+/// can see its own process tree, which `is_ancestor` (`loom-hooks/_common.sh`)
 /// depends on. `test` is the test's path under this file (a bare name, or
 /// `submodule::name`); this adds the `hooks_read_guard::` prefix so the
 /// printed SKIP line matches `cargo test`'s own naming.

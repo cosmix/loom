@@ -7,7 +7,7 @@
 # narrowly-scoped runs (a filter, one test target, a path) allowed.
 #
 # The MAIN AGENT IS NEVER AFFECTED: the hook acts only when `loom_is_subagent`
-# (hooks/_common.sh) says so. That check gates on a LIVE loom session FIRST,
+# (loom-hooks/_common.sh) says so. That check gates on a LIVE loom session FIRST,
 # ALWAYS - LOOM_MAIN_AGENT_PID must be set and a live process-tree ancestor -
 # because this hook installs globally at ~/.claude/hooks/loom/, so that
 # precondition is the only thing scoping the block to a loom stage session

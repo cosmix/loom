@@ -107,7 +107,7 @@ agent that wrote them.
 
 **What happened:** six read-only `loom-code-reviewer` subagents were spawned with their diffs
 prepared under `$TMPDIR` (e.g. `/tmp/claude-*/diffs`) instead of inside the worktree. Every one of
-them came back blind: `hooks/worktree-file-guard.sh` blocks every file tool on any path outside
+them came back blind: `loom-hooks/worktree-file-guard.sh` blocks every file tool on any path outside
 the current worktree, and `loom-code-reviewer`'s agent type carries no Bash tool to work around
 it — so each reviewer's Read calls all failed, and their reports read as generic
 pattern-matching rather than an actual review of the diff.

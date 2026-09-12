@@ -1,6 +1,6 @@
 # Sandbox Protected hooks/ Directory
 
-> Claude Code's sandbox write-protects the project-root `hooks/` directory as part of its bare-git-repo rule; shell writes there fail as "Operation not permitted".
+> Resolved on 2026-09-13 by moving repository hook sources to `loom-hooks/`; the original sandbox rule and historical probes are retained below.
 
 ## The Rule
 
@@ -30,14 +30,14 @@ Neither an `allowWrite` rule nor an `Edit(...)` allow rule in `.claude/settings.
 
 ## Consequences Seen 2026-09-02
 
-- A `chmod +x hooks/tests/run-all.sh` acceptance criterion looked like an impossible requirement from inside a sandboxed session and was adjudicated away rather than recognized as a sandbox artifact.
+- A `chmod +x` acceptance criterion targeting the test runner under the old source root looked impossible from inside a sandboxed session and was adjudicated away rather than recognized as a sandbox artifact. The runner now lives at `loom-hooks/tests/run-all.sh`.
 - A merge resolver could not resolve two `hooks/*` merge conflicts from the shell at all.
 
-## Workarounds
+## Historical Workarounds
 
 - Edit files under `hooks/*` with the Edit or Write tools, never with `sed`, `chmod`, redirection, or `cp` — those tools are not subject to this sandbox rule.
 - Resolve `hooks/*` merge conflicts from an operator shell outside the sandboxed session.
 
-## Recommended Fix
+## Completed Rename (2026-09-13)
 
-Rename the directory (for example to `loom-hooks/`) once the current plan completes. Two of its remaining stages still reference `hooks/` paths, so renaming mid-plan would break them.
+Completed on 2026-09-13: the repository source directory is now `loom-hooks/`. Source embeds, script/test references, doctrine and active plans use that name. Installed paths remain `~/.claude/hooks/loom/` and `~/.codex/hooks/loom/`; the Rust module remains `loom/src/hooks/`. The 2026-09-02 probes and failures above describe the former directory, not the renamed source root. The rename verification includes a sandboxed write/delete probe and the Rust/hook gates.

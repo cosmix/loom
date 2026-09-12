@@ -9,7 +9,7 @@
 //!   this invocation is a sandboxed worktree agent (verification only) or an
 //!   ordinary host-side completion.
 //! * [`handle_broker_request`] — the `LOOM_CONTROL_BROKER=1` re-entry made by
-//!   `hooks/loom-control-complete.sh` after it sees the verification marker,
+//!   `loom-hooks/loom-control-complete.sh` after it sees the verification marker,
 //!   which forwards the transition to the daemon over the socket.
 
 use super::control_complete;
@@ -55,7 +55,7 @@ fn require_wrapper_identity(stage_id: &str, session_id: &str) -> Result<()> {
 /// requires the working directory to sit inside it. The path must END at the
 /// stage id, which is exactly what the wrapper exports: the bare container
 /// directory is out, and so is a repo that itself lives under an outer
-/// `.worktrees/<id>/`. Same anchored rule as `hooks/loom-control-complete.sh`.
+/// `.worktrees/<id>/`. Same anchored rule as `loom-hooks/loom-control-complete.sh`.
 pub(super) fn is_loom_worktree_path(path: &Path) -> bool {
     path.parent()
         .and_then(Path::file_name)
@@ -84,7 +84,7 @@ pub(super) fn sandbox_control_session(
     // worktree and complete through the ordinary in-process path, so a bare
     // "the variable is set" test would route them into a sandboxed wrapper
     // route that cannot serve them. Mirrors `loom_current_worktree()` in
-    // `hooks/_common.sh`, which has always required this.
+    // `loom-hooks/_common.sh`, which has always required this.
     if !is_loom_worktree_path(Path::new(&worktree)) {
         return Ok(None);
     }
