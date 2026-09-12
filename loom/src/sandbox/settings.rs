@@ -207,12 +207,12 @@ pub fn write_settings(config: &MergedSandboxConfig, worktree_path: &Path) -> Res
 }
 
 /// Filters plan `allow_write` paths into `Edit(...)` permission rules and
-/// appends them to `allow`, deduping against what's already there.
-///
-/// Filters `../` and dedupes: this `Edit(...)` rule merges into the
-/// OS-enforced `allowWrite` grant emitted by `sandbox.filesystem.allowWrite`
-/// in settings/policy.rs, so an unfiltered entry would grant write outside
-/// the worktree, bypassing that sibling emitter's filter.
+/// appends them to `allow`, deduping against what's already there. A path
+/// starting with exactly one `/` is rewritten to `//` (Claude Code's
+/// permission-rule paths take single `/` as project-relative, `//` as
+/// absolute — the opposite of `sandbox.filesystem.allowWrite`); `//abs`,
+/// `~/...` and relative entries pass through unchanged (see
+/// `grant_paths::edit_rule`). Also filters `../` and dedupes against `allow`.
 fn push_allow_write_rules(allow: &mut Vec<Value>, config: &MergedSandboxConfig) {
     for path in config
         .filesystem
@@ -221,7 +221,7 @@ fn push_allow_write_rules(allow: &mut Vec<Value>, config: &MergedSandboxConfig) 
         .map(|p| p.trim())
         .filter(|p| !p.is_empty() && !p.contains("../"))
     {
-        let rule = json!(format!("Edit({path})"));
+        let rule = json!(super::grant_paths::edit_rule(path));
         if !allow.contains(&rule) {
             allow.push(rule);
         }

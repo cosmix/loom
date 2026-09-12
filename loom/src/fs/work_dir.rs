@@ -150,18 +150,18 @@ fn base_names_state_root(base: &Path) -> Option<Layout> {
     None
 }
 
-/// The nearest ancestor of `dir` (inclusive) holding a `.git` entry, or `None`
-/// when there is none.
+/// The nearest ancestor of `dir` (inclusive) holding a real `.git` entry, or
+/// `None` when there is none.
 ///
 /// This is the bound on the upward workspace search: a `.git` marks the one
-/// tree whose `config.toml` can legitimately be this base's workspace. `.git`
-/// is an ENTRY, not necessarily a directory — a linked worktree's is a file
-/// pointing at the main repo's gitdir — so existence, not `is_dir`, is the
-/// test.
+/// tree whose `config.toml` can legitimately be this base's workspace. A
+/// `.git` FILE (a worktree's pointer to the main repo's gitdir) counts on
+/// existence; a `.git` DIRECTORY counts only when it holds `HEAD` — a stray
+/// empty directory merely named `.git` cannot masquerade as a repo boundary.
 fn nearest_git_root(dir: &Path) -> Option<&Path> {
     let mut current = dir;
     loop {
-        if current.join(".git").exists() {
+        if crate::fs::git_marker::is_real_git_dir(&current.join(".git")) {
             return Some(current);
         }
         match current.parent() {

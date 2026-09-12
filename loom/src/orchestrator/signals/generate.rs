@@ -199,6 +199,19 @@ fn build_signal_context(
 /// Build sandbox summary from stage configuration
 fn build_sandbox_summary(stage: &Stage) -> SandboxSummary {
     // For now, use stage.sandbox directly; later, merge plan-level defaults via sandbox::merge_config.
+    let allow_write: Vec<String> = stage
+        .sandbox
+        .filesystem
+        .as_ref()
+        .map(|f| f.allow_write.clone())
+        .unwrap_or_default();
+    let expanded_allow_write: Vec<String> = allow_write
+        .iter()
+        .map(|p| crate::sandbox::expand_env_vars(p))
+        .collect();
+    let missing_allow_write =
+        crate::sandbox::missing_grant_paths(&expanded_allow_write, dirs::home_dir().as_deref());
+
     SandboxSummary {
         enabled: stage.sandbox.enabled.unwrap_or(true),
         deny_read: stage
@@ -213,12 +226,8 @@ fn build_sandbox_summary(stage: &Stage) -> SandboxSummary {
             .as_ref()
             .map(|f| f.deny_write.clone())
             .unwrap_or_default(),
-        allow_write: stage
-            .sandbox
-            .filesystem
-            .as_ref()
-            .map(|f| f.allow_write.clone())
-            .unwrap_or_default(),
+        allow_write,
+        missing_allow_write,
         allowed_domains: stage
             .sandbox
             .network

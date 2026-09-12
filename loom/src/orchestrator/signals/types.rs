@@ -14,6 +14,12 @@ pub struct SandboxSummary {
     pub deny_write: Vec<String>,
     /// Paths agents are allowed to write (exceptions)
     pub allow_write: Vec<String>,
+    /// Entries from `allow_write` that name a path missing on this host at
+    /// session start — the session sandbox will not bind these (Claude
+    /// Code's sandbox skips a missing `allowWrite` path rather than creating
+    /// it), so a `mkdir` from inside the session cannot fix them either. See
+    /// `sandbox::missing_grant_paths`.
+    pub missing_allow_write: Vec<String>,
     /// Allowed network domains
     pub allowed_domains: Vec<String>,
     /// Commands excluded from sandbox

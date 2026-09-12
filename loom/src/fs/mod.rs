@@ -1,3 +1,4 @@
+pub(crate) mod git_marker;
 pub mod knowledge;
 pub mod locking;
 pub mod memory;

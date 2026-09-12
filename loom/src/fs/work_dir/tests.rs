@@ -1,6 +1,8 @@
 use super::*;
 use tempfile::TempDir;
 
+mod git_marker_bound;
+
 /// Write a `~/.loom/config.toml`-shaped file under a caller-supplied temp
 /// directory and return its path, for use with
 /// [`crate::user_config::redirect_user_config`]. Does not touch `$HOME` — the
@@ -14,9 +16,12 @@ fn write_user_config(temp: &TempDir, body: &str) -> PathBuf {
 
 /// A project root the upward walk cannot escape: the `.git` marker bounds it,
 /// so a workspace anywhere above the temp directory can never be adopted.
+/// Carries a `HEAD` file so `nearest_git_root` accepts it as real, not merely
+/// named `.git` (see `is_real_git_dir`).
 fn bare_repo(temp: &TempDir) -> PathBuf {
     let root = temp.path().join("repo");
     fs::create_dir_all(root.join(".git")).unwrap();
+    fs::write(root.join(".git").join("HEAD"), "ref: refs/heads/main\n").unwrap();
     root
 }
 
@@ -762,6 +767,11 @@ mod resolver {
 
         let legacy_repo = temp.path().join("legacy");
         fs::create_dir_all(legacy_repo.join(".git")).unwrap();
+        fs::write(
+            legacy_repo.join(".git").join("HEAD"),
+            "ref: refs/heads/main\n",
+        )
+        .unwrap();
         plant_workspace(&legacy_repo, Layout::Legacy);
         let wd = WorkDir::new(&legacy_repo).unwrap();
         assert_eq!(
@@ -825,6 +835,11 @@ mod resolver {
 
         let legacy_repo = temp.path().join("legacy");
         fs::create_dir_all(legacy_repo.join(".git")).unwrap();
+        fs::write(
+            legacy_repo.join(".git").join("HEAD"),
+            "ref: refs/heads/main\n",
+        )
+        .unwrap();
         plant_workspace(&legacy_repo, Layout::Legacy);
         let legacy_worktree = legacy_repo.join(".worktrees").join("stage");
         fs::create_dir_all(&legacy_worktree).unwrap();

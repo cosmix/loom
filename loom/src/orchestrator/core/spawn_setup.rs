@@ -12,7 +12,8 @@ use crate::models::failure::FailureType;
 use crate::models::stage::Stage;
 use crate::orchestrator::scheduling_report::BlockReason;
 
-use super::stage_executor::{install_required_hooks, write_required_sandbox_settings};
+use super::sandbox_grants::write_required_sandbox_settings;
+use super::stage_executor::install_required_hooks;
 use super::Orchestrator;
 
 impl Orchestrator {

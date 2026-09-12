@@ -15,6 +15,7 @@ use crate::orchestrator::signals::{
 };
 
 use super::persistence::Persistence;
+use super::sandbox_grants::write_required_sandbox_settings;
 use super::Orchestrator;
 
 impl Orchestrator {
@@ -59,15 +60,6 @@ impl Orchestrator {
 
         scheduling_report::write(&self.config.work_dir, &SchedulingReport { blocked });
     }
-}
-
-pub(super) fn write_required_sandbox_settings(
-    config: &crate::sandbox::MergedSandboxConfig,
-    target: &std::path::Path,
-    stage_id: &str,
-) -> Result<()> {
-    crate::sandbox::write_settings(config, target)
-        .with_context(|| format!("Failed to enforce sandbox settings for stage '{stage_id}'"))
 }
 
 /// Install the stage's Claude Code hooks, or fail.

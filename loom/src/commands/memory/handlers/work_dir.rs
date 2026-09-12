@@ -5,6 +5,7 @@ use colored::Colorize;
 use std::env;
 
 use crate::commands::common::work_dir_path;
+use crate::fs::git_marker::is_real_git_dir;
 use crate::fs::memory::init_memory_dir;
 use crate::git::worktree::find_repo_root_from_cwd;
 
@@ -75,24 +76,6 @@ pub(super) fn get_or_create_work_dir() -> Result<std::path::PathBuf> {
 /// anything.
 pub(super) fn readonly_work_dir() -> Option<std::path::PathBuf> {
     work_dir_path().ok()
-}
-
-/// True when `git_path` (a candidate `<root>/.git`) looks like a real git
-/// directory or worktree pointer, not merely a path that happens to be
-/// named `.git`.
-///
-/// A worktree's `.git` is a FILE containing `gitdir: <path>` - git always
-/// writes that content, so existence alone is a reliable signal. A real
-/// `.git` DIRECTORY, whether from `git init`, `git clone`, or a bare repo,
-/// always contains a `HEAD` file immediately; an ancestor directory that
-/// merely happens to be named `.git` (for example one left behind, empty,
-/// by an unrelated process sharing the same OS temp root) does not. Bare
-/// existence would accept both; this rejects the impostor.
-fn is_real_git_dir(git_path: &std::path::Path) -> bool {
-    if git_path.is_file() {
-        return true;
-    }
-    git_path.is_dir() && git_path.join("HEAD").exists()
 }
 
 /// Validate stage ID to prevent path traversal attacks

@@ -23,6 +23,7 @@ mod persistence;
 mod recovery;
 mod run;
 mod run_result;
+mod sandbox_grants;
 mod session_adoption;
 mod session_lifecycle;
 mod spawn_setup;
@@ -170,7 +171,7 @@ mod tests {
             &Implementers::default(),
         );
 
-        let error = stage_executor::write_required_sandbox_settings(
+        let error = sandbox_grants::write_required_sandbox_settings(
             &config,
             target.path(),
             "sandbox-failure",
