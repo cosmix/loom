@@ -42,6 +42,11 @@ logs/
 *.temp
 .cache/
 
+# Python artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+
 # loom workspace state (created by `loom init`)
 # The current layout nests shared state under .loom/work - a real directory
 # in the main repo, a symlink in worktrees - alongside the two per-worktree
@@ -85,3 +90,4 @@ ISSUES.md
 data/*
 doc/plans/completed/DONE-PLAN-codex-implementer-subagents.md
 doc/plans/completed/DONE-PLAN-simplify-cli.md
+
