@@ -62,7 +62,10 @@ detect_loom_worktree() {
 	# Method 1: Check if path contains .worktrees/
 	if [[ "$cwd" == *"$WORKTREE_MARKER"* ]]; then
 		# Extract stage ID from path: /path/to/.worktrees/<stage-id>/...
-		local worktree_part="${cwd#*$WORKTREE_MARKER}"
+		# The INNERMOST segment wins (`##`): the repo may itself live inside an
+		# outer loom worktree, and the session belongs to the worktree closest
+		# to cwd - the same rule as loom_current_worktree in _common.sh.
+		local worktree_part="${cwd##*$WORKTREE_MARKER}"
 		STAGE_ID="${worktree_part%%/*}"
 		debug_log "Detected worktree via path, stage ID: $STAGE_ID"
 		return 0
@@ -115,17 +118,6 @@ find_project_root() {
 		fi
 		dir=$(dirname "$dir")
 	done
-
-	# Also check if we're in a worktree - root is 2 levels up from worktree
-	dir=$(pwd)
-	if [[ "$dir" == *"$WORKTREE_MARKER"* ]]; then
-		local root="${dir%%$WORKTREE_MARKER*}"
-		if [[ -d "$root/.loom/work" || -d "$root/.work" ]]; then
-			debug_log "Found project root via worktree path at: $root"
-			echo "$root"
-			return 0
-		fi
-	fi
 
 	debug_log "Could not find project root (state directory not found)"
 	return 1

@@ -154,7 +154,9 @@ WORKTREE_PATH=${LOOM_WORKTREE_PATH:-}
 # A loom worktree is `<repo>/.worktrees/<stage-id>`; main-repo sessions
 # (knowledge, merge, base-conflict) own no worktree and complete in-process, so
 # this bridge must stay out of their way rather than pin their command.
-[[ "$WORKTREE_PATH" =~ /\.worktrees/[^/]+ ]] || exit 0
+# Anchored at the end: the wrapper exports the worktree ROOT, and a repo that
+# itself lives under an outer `.worktrees/<id>/` must not count as a worktree.
+[[ "$WORKTREE_PATH" =~ /\.worktrees/[^/]+/?$ ]] || exit 0
 case "$STAGE_ID" in *[!A-Za-z0-9_-]* | '') fail_closed "invalid wrapper stage identity" ;; esac
 case "$SESSION_ID" in *[!A-Za-z0-9_-]* | '') fail_closed "invalid wrapper session identity" ;; esac
 

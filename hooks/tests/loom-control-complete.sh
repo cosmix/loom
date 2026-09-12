@@ -146,13 +146,25 @@ fi
 # complete in-process, so the bridge must DISENGAGE rather than pin their
 # command — pinning it used to hand a knowledge stage a stage id that does not
 # exist and block the only command that could complete the stage.
-for non_worktree in "$MAIN_REPO" "$MAIN_REPO/.worktrees" "$TMP/repo-worktrees-backup"; do
+# NESTED_REPO sits under an outer worktree-like path, so these cases hold no
+# matter where $TMP lives: only a path that ENDS at `.worktrees/<id>` counts.
+NESTED_REPO="$TMP/outer/.worktrees/outer-stage/repo"
+for non_worktree in "$MAIN_REPO" "$MAIN_REPO/.worktrees" "$TMP/repo-worktrees-backup" \
+	"$NESTED_REPO" "$NESTED_REPO/.worktrees"; do
 	pass_through=$(pre_case 'loom stage complete build-api')
 	if ! LOOM_CONTROL_TEST_WORKTREE="$non_worktree" invoke_hook "$pass_through" 2>/dev/null; then
 		echo "main-repo session was blocked by the worktree bridge: $non_worktree" >&2
 		exit 1
 	fi
 done
+# A real worktree root under that same outer path still engages the bridge: it
+# refuses the unpinned command and names the pinned one.
+nested_payload=$(pre_case 'loom stage complete build-api')
+if nested_err=$(LOOM_CONTROL_TEST_WORKTREE="$NESTED_REPO/.worktrees/build-api" invoke_hook "$nested_payload" 2>&1); then
+	echo "nested worktree root did not engage the bridge" >&2
+	exit 1
+fi
+[[ "$nested_err" == *"retry with the pinned command"* ]] || { echo "nested worktree root was refused for the wrong reason: $nested_err" >&2; exit 1; }
 [[ ! -e "$LOG" ]] || { echo "main-repo session reached broker" >&2; exit 1; }
 
 # is_error=true skips the broker without ever inspecting stdout for the

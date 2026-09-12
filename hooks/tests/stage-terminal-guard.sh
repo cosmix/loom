@@ -90,4 +90,30 @@ if [[ $CODE -ne 2 ]]; then
 	exit 1
 fi
 
+# Case 6: the project root itself sits inside an outer loom worktree (loom
+# developing loom, or TMPDIR under a worktree) -> the stage id must come from
+# the INNERMOST .worktrees/ segment, so status completed is still BLOCKED
+# (exit 2). Taking the outermost segment yielded 'outer-stage', which has no
+# stage file, so the write was silently allowed.
+NESTED_ROOT="$TMP/outer/.worktrees/outer-stage/repo"
+NESTED_WORKTREE="$NESTED_ROOT/.worktrees/$STAGE_ID"
+NESTED_STAGES_DIR="$NESTED_ROOT/.loom/work/stages"
+mkdir -p "$NESTED_WORKTREE" "$NESTED_STAGES_DIR"
+cat >"$NESTED_STAGES_DIR/01-$STAGE_ID.md" <<EOF
+---
+id: $STAGE_ID
+status: completed
+---
+
+# Stage
+EOF
+set +e
+(cd "$NESTED_WORKTREE" && printf '%s' "$INPUT" | bash "$HOOK" 2>/dev/null)
+CODE=$?
+set -e
+if [[ $CODE -ne 2 ]]; then
+	echo "FAIL: expected exit 2 for status 'completed' with the project root inside an outer worktree, got exit $CODE"
+	exit 1
+fi
+
 echo "PASS"
