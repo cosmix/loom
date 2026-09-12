@@ -23,3 +23,10 @@ to be compensated by force-feeding is evidence the prohibition is the wrong fix.
 **Fix:** `hooks/codex-forward.sh` prepends the navigation kit and the lane's prohibitions to every
 forwarded prompt; the signal doctrine and `/loom-plan-writer` now ask for anchors instead of
 transcripts. See [Codex Plugin](../architecture/codex-plugin.md).
+
+## Codex `apply_patch` Creates New Files at Mode 0664, Not Executable
+
+A codex worker's `apply_patch` creates a brand-new file as `100664` (not `100755`), even when the
+file is a script meant to be run directly (e.g. `scripts/test-pre-commit-partial-staging.sh`).
+The orchestrator must `chmod +x` the file before running it or before committing, or the mode
+that lands in the tree is `100644`.
