@@ -230,6 +230,9 @@ jobs:
       - name: Parse every shell hook
         run: ./scripts/check-hook-syntax.sh
 
+      - name: Pre-commit partial-staging regression
+        run: ./scripts/test-pre-commit-partial-staging.sh
+
   audit:
     name: Security Audit
     runs-on: ubuntu-latest
