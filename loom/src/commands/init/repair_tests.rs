@@ -158,14 +158,14 @@ fn init_repair_renders_no_line_for_a_clean_workspace() {
     fs::create_dir_all(root.join(".git")).unwrap();
     install_pre_commit_hook(root).unwrap();
 
-    // Everything repo-local is now clean. The one check this cannot control
-    // is "Loom hook scripts missing or outdated in ~/.claude/hooks/loom" -
-    // it reads the real machine's home directory, not the scratch repo - so
-    // that is the only repair a returned vector may still carry here.
+    // Everything repo-local is now clean. The installed Claude and Codex hook
+    // checks read the real machine's home directory, not the scratch repo, so
+    // they are the only repairs a returned vector may still carry here.
     let repairs = startup_repairs(root, false).unwrap();
     for repair in &repairs {
         assert!(
-            repair.description.contains("Loom hook scripts"),
+            repair.description.contains("Loom hook scripts")
+                || repair.description == "Codex hook installation incomplete or outdated",
             "unexpected non-clean repair on an otherwise clean workspace: {repairs:?}"
         );
     }
