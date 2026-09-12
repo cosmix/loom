@@ -1,13 +1,52 @@
-#!/bin/sh
+#!/usr/bin/env bash
 # Pre-commit hook: auto-format Rust and markdown files
 
 # Get the repo root (where .git is)
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 
-echo "Running pre-commit formatting..."
+# Keep the NUL-delimited list so formatter changes can be re-staged later.
+if ! STAGED_FILE_LIST=$(mktemp "${TMPDIR:-/tmp}/loom-pre-commit.XXXXXX"); then
+    echo "ERROR: failed to create the staged-file list." >&2
+    exit 1
+fi
+trap 'rm -f "$STAGED_FILE_LIST"' EXIT
 
-# Get list of staged files before formatting
-STAGED_FILES=$(git diff --cached --name-only --diff-filter=ACM)
+cd "$REPO_ROOT" || exit 1
+
+# Refuse partial staging before formatters rewrite the index; --no-renames lists a rename's new path as an addition.
+if ! git diff --cached --no-renames --name-only -z --diff-filter=ACMT > "$STAGED_FILE_LIST"; then
+    echo "ERROR: failed to enumerate staged files." >&2
+    exit 1
+fi
+
+PARTIAL_STAGING=0
+while IFS= read -r -d '' file; do
+    git diff --quiet -- ":(literal)$file"
+    diff_status=$?
+    if [ "$diff_status" -eq 0 ]; then
+        continue
+    fi
+
+    if [ "$diff_status" -eq 1 ]; then
+        if [ "$PARTIAL_STAGING" -eq 0 ]; then
+            echo "ERROR: these staged paths also have unstaged changes:" >&2
+        fi
+        printf '%s\n' "$file" >&2
+        PARTIAL_STAGING=1
+        continue
+    fi
+
+    printf 'ERROR: failed to compare staged path with the working tree: %s\n' "$file" >&2
+    exit 1
+done < "$STAGED_FILE_LIST"
+
+if [ "$PARTIAL_STAGING" -eq 1 ]; then
+    echo "Fully stage the path, unstage it, or land the other work first." >&2
+    echo 'Recovery: doc/loom/knowledge/mistakes/testing-and-lint.md, section "The Pre-Commit Hook Re-Adds Every Staged File, So Partial Staging Is Silently Undone".' >&2
+    exit 1
+fi
+
+echo "Running pre-commit formatting..."
 
 # Auto-format Rust code
 echo "Formatting Rust code..."
@@ -23,13 +62,13 @@ if [ -n "$MD_FILES" ]; then
 fi
 
 # Re-add any staged files that were modified by formatting
-if [ -n "$STAGED_FILES" ]; then
+if [ -s "$STAGED_FILE_LIST" ]; then
     echo "Re-staging formatted files..."
-    echo "$STAGED_FILES" | while read -r file; do
+    while IFS= read -r -d '' file; do
         if [ -f "$file" ]; then
-            git add "$file"
+            git add -- ":(literal)$file"
         fi
-    done
+    done < "$STAGED_FILE_LIST"
 fi
 
 # Maintainability ledger gate: catches growth of ledgered files/functions at
