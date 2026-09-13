@@ -347,3 +347,13 @@ TMPDIR placement is only one of two leaks into a live session: even with TMPDIR 
   call ("Failed to read project hooks config file ... Not a directory"): codex reads the parent
   project's config directory from a worktree cwd. Confirm `<repo>/.codex` is a directory or absent
   before spawning forwarders.
+
+## Commands Handed to the Operator Must Not Assume GNU `ls` (2026-09-14)
+
+**What happened:** a cleanup command given to the operator began `ls -la --time-style=full-iso .git/config.lock && rm .git/config.lock`. On this host `ls` is aliased to `lsd`, which rejects `--time-style`, so the chain stopped before the `rm`. The agent's own Bash tool had already hit the same rejection earlier in that session.
+
+**Why:** the command was written from GNU habit instead of from what the host had shown; the operator's shell and the Bash tool both load the same aliases.
+
+**Prevention:** in a command meant for the operator, inspect files with `stat -c '%s bytes, modified %y' <path>`, or bypass aliases with `command ls`; never rely on GNU `ls` flags.
+
+**Fix:** the command was reissued with `stat`.
