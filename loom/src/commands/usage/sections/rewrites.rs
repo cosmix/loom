@@ -110,7 +110,7 @@ fn collect_transcript(collector: &mut Collector, transcript: &Transcript) {
         .iter()
         .enumerate()
         .filter_map(|(index, entry)| match entry {
-            Entry::Assistant(request) => Some((index, request)),
+            Entry::Assistant(request) => Some((index, request.as_ref())),
             Entry::User(_) => None,
         })
         .collect::<Vec<_>>();

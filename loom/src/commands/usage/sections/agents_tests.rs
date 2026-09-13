@@ -22,6 +22,7 @@ fn request(model: &str) -> Request {
         tool_uses: Vec::new(),
         thinking_chars: 0,
         text_chars: 0,
+        normalization: Default::default(),
     }
 }
 
@@ -30,14 +31,18 @@ fn transcript(scope: Scope, session_id: &str, prompt: Option<&str>, models: &[&s
         path: std::path::PathBuf::from("test.jsonl"),
         scope,
         project_slug: "project".to_owned(),
+        project_path: None,
         session_id: session_id.to_owned(),
         agent_id: Some("agent-1".to_owned()),
         agent_type: None,
+        stage_id: None,
+        loom_session_id: None,
         first_user_entry: prompt.map(user_entry),
         entries: models
             .iter()
-            .map(|m| Entry::Assistant(request(m)))
+            .map(|m| Entry::Assistant(Box::new(request(m))))
             .collect(),
+        diagnostics: Default::default(),
     }
 }
 

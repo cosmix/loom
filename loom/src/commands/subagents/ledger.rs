@@ -48,23 +48,30 @@ pub(crate) struct StartedAgentTypeIndex {
     /// A scoped start is addressable only by Claude's parent transcript id
     /// and the agent id together. `Unknown` covers conflicting nonempty rows;
     /// empty types are ignored for agreement but still suppress legacy joins.
-    scoped: HashMap<(String, String), AgentTypeAgreement>,
+    scoped: HashMap<(String, String), MetadataAgreement>,
     /// Any scoped row (including the obsolete ambiguous `session_id` schema)
     /// makes an unscoped legacy row for this agent id unsafe to use.
     scoped_agents: HashSet<String>,
     /// Pre-session-schema starts can be used only when all rows for the id
     /// agree and there are no scoped rows for that id.
-    legacy: HashMap<String, AgentTypeAgreement>,
+    legacy: HashMap<String, MetadataAgreement>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct StartedAgentMetadata {
+    pub(crate) agent_type: String,
+    pub(crate) stage_id: Option<String>,
+    pub(crate) loom_session_id: Option<String>,
 }
 
 #[derive(Clone)]
-enum AgentTypeAgreement {
-    Known(String),
+enum MetadataAgreement {
+    Known(StartedAgentMetadata),
     Unknown,
 }
 
-impl AgentTypeAgreement {
-    fn value(&self) -> Option<String> {
+impl MetadataAgreement {
+    fn value(&self) -> Option<StartedAgentMetadata> {
         match self {
             Self::Known(value) => Some(value.clone()),
             Self::Unknown => None,
@@ -87,17 +94,28 @@ impl StartedAgentTypeIndex {
         index
     }
 
+    #[cfg(test)]
     pub(crate) fn get(&self, agent_id: &str, parent_session_id: &str) -> Option<String> {
         let key = (parent_session_id.to_owned(), agent_id.to_owned());
         if let Some(agreement) = self.scoped.get(&key) {
-            return agreement.value();
+            return agreement.value().map(|metadata| metadata.agent_type);
         }
         if self.scoped_agents.contains(agent_id) {
             return None;
         }
         self.legacy
             .get(agent_id)
-            .and_then(AgentTypeAgreement::value)
+            .and_then(MetadataAgreement::value)
+            .map(|metadata| metadata.agent_type)
+    }
+
+    pub(crate) fn get_metadata(
+        &self,
+        agent_id: &str,
+        parent_session_id: &str,
+    ) -> Option<StartedAgentMetadata> {
+        let key = (parent_session_id.to_owned(), agent_id.to_owned());
+        self.scoped.get(&key).and_then(MetadataAgreement::value)
     }
 
     fn record(&mut self, entry: &Value) {
@@ -111,14 +129,17 @@ impl StartedAgentTypeIndex {
 
         match entry.get("parent_session_id") {
             Some(parent_session_id) if parent_session_id.as_str().is_some() => {
-                let parent_session_id = parent_session_id.as_str().expect("checked above");
+                let Some(parent_session_id) = parent_session_id.as_str() else {
+                    return;
+                };
                 self.scoped_agents.insert(agent_id.to_owned());
                 if let Some(agent_type) = agent_type {
-                    record_agreement(
+                    let metadata = start_metadata(entry, agent_type);
+                    record_metadata_agreement(
                         self.scoped
                             .entry((parent_session_id.to_owned(), agent_id.to_owned()))
-                            .or_insert_with(|| AgentTypeAgreement::Known(agent_type.to_owned())),
-                        Some(agent_type),
+                            .or_insert_with(|| MetadataAgreement::Known(metadata.clone())),
+                        metadata,
                     );
                 }
             }
@@ -134,11 +155,12 @@ impl StartedAgentTypeIndex {
             }
             None => {
                 if let Some(agent_type) = agent_type {
-                    record_agreement(
+                    let metadata = start_metadata(entry, agent_type);
+                    record_metadata_agreement(
                         self.legacy
                             .entry(agent_id.to_owned())
-                            .or_insert_with(|| AgentTypeAgreement::Known(agent_type.to_owned())),
-                        Some(agent_type),
+                            .or_insert_with(|| MetadataAgreement::Known(metadata.clone())),
+                        metadata,
                     );
                 }
             }
@@ -146,16 +168,49 @@ impl StartedAgentTypeIndex {
     }
 }
 
-fn record_agreement(agreement: &mut AgentTypeAgreement, value: Option<&str>) {
-    let Some(value) = value else {
-        *agreement = AgentTypeAgreement::Unknown;
+fn start_metadata(entry: &Value, agent_type: &str) -> StartedAgentMetadata {
+    StartedAgentMetadata {
+        agent_type: agent_type.to_owned(),
+        stage_id: nonempty_string(entry, "stage_id"),
+        loom_session_id: nonempty_string(entry, "loom_session_id"),
+    }
+}
+
+fn nonempty_string(entry: &Value, field: &str) -> Option<String> {
+    entry
+        .get(field)
+        .and_then(Value::as_str)
+        .filter(|value| !value.trim().is_empty())
+        .map(str::to_owned)
+}
+
+fn record_metadata_agreement(agreement: &mut MetadataAgreement, incoming: StartedAgentMetadata) {
+    let MetadataAgreement::Known(known) = agreement else {
         return;
     };
-    match agreement {
-        AgentTypeAgreement::Known(known) if known == value => {}
-        AgentTypeAgreement::Known(_) => *agreement = AgentTypeAgreement::Unknown,
-        AgentTypeAgreement::Unknown => {}
+    if !merge_metadata(known, incoming) {
+        *agreement = MetadataAgreement::Unknown;
     }
+}
+
+fn merge_metadata(known: &mut StartedAgentMetadata, incoming: StartedAgentMetadata) -> bool {
+    if known.agent_type != incoming.agent_type
+        || conflicting(&known.stage_id, &incoming.stage_id)
+        || conflicting(&known.loom_session_id, &incoming.loom_session_id)
+    {
+        return false;
+    }
+    if known.stage_id.is_none() {
+        known.stage_id = incoming.stage_id;
+    }
+    if known.loom_session_id.is_none() {
+        known.loom_session_id = incoming.loom_session_id;
+    }
+    true
+}
+
+fn conflicting(left: &Option<String>, right: &Option<String>) -> bool {
+    matches!((left, right), (Some(left), Some(right)) if left != right)
 }
 
 fn stage_directories(work_dir: Option<&Path>) -> Option<Vec<PathBuf>> {

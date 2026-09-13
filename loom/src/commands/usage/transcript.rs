@@ -1,15 +1,16 @@
 //! Reads Claude Code transcripts without treating their JSONL framing as a
 //! transaction log. Assistant responses are flushed in several lines, and
 //! real transcripts show that counting each line overstates usage by about
-//! 2.3x. We therefore keep the first usage for each `message.id` while
-//! merging every line's content blocks into that one request.
+//! 2.3x. We therefore keep the last complete usage vector for each
+//! `message.id` while merging every line's content blocks into one request.
 //!
 //! A transcript can also be read while Claude Code is appending its final
 //! line. Parsing independently and ignoring an unparseable line makes that
 //! ordinary torn write harmless instead of making a read-only report fail.
 
 pub(super) use super::transcript_types::{
-    Entry, Request, Scope, TokenUsage, ToolUse, Transcript, UserEntry,
+    Entry, Request, RequestNormalization, Scope, TokenUsage, ToolUse, Transcript,
+    TranscriptDiagnostics, UserEntry,
 };
 
 use anyhow::Context;
@@ -18,43 +19,115 @@ use serde_json::Value;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
+use std::path::PathBuf;
+
+struct ScanResult {
+    entries: Vec<Entry>,
+    first_user_entry: Option<UserEntry>,
+    project_path: Option<PathBuf>,
+    diagnostics: TranscriptDiagnostics,
+    had_prior_request: bool,
+    chronology_uncertain: bool,
+}
 
 /// Parse one JSONL transcript, dropping entries older than `since`. Never
 /// fails on a torn or unparseable line - such a line is skipped. Errors only
 /// when the file itself cannot be read.
 pub fn parse(
     file: &super::discovery::DiscoveredFile,
-    since: chrono::DateTime<chrono::Utc>,
+    range: &super::time_range::TimeRange,
 ) -> anyhow::Result<Transcript> {
     let handle = File::open(&file.path)
         .with_context(|| format!("Failed to read transcript {}", file.path.display()))?;
+    let mut scan = scan_lines(BufReader::new(handle), range);
+    mark_fresh_start(&mut scan);
+    Ok(build_transcript(file, scan))
+}
+
+fn scan_lines(reader: BufReader<File>, range: &super::time_range::TimeRange) -> ScanResult {
     let mut entries = Vec::new();
     let mut request_indices = HashMap::new();
     let mut first_user_entry = None;
-    // An explicit loop, not `map_while`/`filter_map(Result::ok)`: `lines()`
-    // also yields `Err` for invalid UTF-8, and a combinator that stops at the
-    // first `Err` would silently truncate the rest of the file instead of
-    // just skipping the one bad line.
-    for line in BufReader::new(handle).lines() {
-        let Ok(line) = line else { continue };
-        let Ok(value) = serde_json::from_str::<Value>(&line) else {
+    let mut project_path = None;
+    let mut diagnostics = TranscriptDiagnostics::default();
+    let mut had_prior_request = false;
+    let mut chronology_uncertain = false;
+    for (ordinal, line) in reader.lines().enumerate() {
+        let Some(value) = decoded_line(line, &mut diagnostics) else {
+            chronology_uncertain = true;
             continue;
         };
         if first_user_entry.is_none() {
             first_user_entry = first_user_entry_from(&value);
         }
-        add_value(&mut entries, &mut request_indices, &value, since);
+        capture_project_path(&mut project_path, &value);
+        scan_value(
+            &mut entries,
+            &mut request_indices,
+            &value,
+            ordinal,
+            range,
+            &mut diagnostics,
+            &mut had_prior_request,
+            &mut chronology_uncertain,
+        );
     }
-    Ok(Transcript {
+    ScanResult {
+        entries,
+        first_user_entry,
+        project_path,
+        diagnostics,
+        had_prior_request,
+        chronology_uncertain,
+    }
+}
+
+fn capture_project_path(project_path: &mut Option<PathBuf>, value: &Value) {
+    if project_path.is_some() {
+        return;
+    }
+    *project_path = value
+        .get("cwd")
+        .and_then(Value::as_str)
+        .filter(|cwd| !cwd.trim().is_empty())
+        .map(PathBuf::from);
+}
+
+fn decoded_line(
+    line: std::io::Result<String>,
+    diagnostics: &mut TranscriptDiagnostics,
+) -> Option<Value> {
+    let line = match line {
+        Ok(line) => line,
+        Err(_) => {
+            diagnostics.malformed_rows += 1;
+            return None;
+        }
+    };
+    match serde_json::from_str(&line) {
+        Ok(value) => Some(value),
+        Err(_) => {
+            diagnostics.malformed_rows += 1;
+            None
+        }
+    }
+}
+
+fn build_transcript(file: &super::discovery::DiscoveredFile, scan: ScanResult) -> Transcript {
+    Transcript {
         path: file.path.clone(),
         scope: file.scope,
         project_slug: file.project_slug.clone(),
+        project_path: scan.project_path,
         session_id: file.session_id.clone(),
         agent_id: file.agent_id.clone(),
         agent_type: None,
-        first_user_entry,
-        entries,
-    })
+        stage_id: None,
+        loom_session_id: None,
+        first_user_entry: scan.first_user_entry,
+        entries: scan.entries,
+        diagnostics: scan.diagnostics,
+    }
 }
 
 /// The transcript's first `user` record, read independent of the `since`
@@ -64,25 +137,55 @@ fn first_user_entry_from(value: &Value) -> Option<UserEntry> {
         return None;
     }
     let stamp = timestamp(value)?;
-    user_entries(value, stamp).into_iter().next()
+    super::transcript_content::user_entries(value, stamp)
+        .into_iter()
+        .next()
 }
 
 fn add_value(
     entries: &mut Vec<Entry>,
     seen: &mut HashMap<String, usize>,
     value: &Value,
-    since: DateTime<Utc>,
+    timestamp: DateTime<Utc>,
+    ordinal: usize,
+) {
+    match value.get("type").and_then(Value::as_str) {
+        Some("assistant") => add_request(entries, seen, value, timestamp, ordinal),
+        Some("user") => entries.extend(
+            super::transcript_content::user_entries(value, timestamp)
+                .into_iter()
+                .map(Entry::User),
+        ),
+        _ => {}
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn scan_value(
+    entries: &mut Vec<Entry>,
+    seen: &mut HashMap<String, usize>,
+    value: &Value,
+    ordinal: usize,
+    range: &super::time_range::TimeRange,
+    diagnostics: &mut TranscriptDiagnostics,
+    had_prior_request: &mut bool,
+    chronology_uncertain: &mut bool,
 ) {
     let Some(timestamp) = timestamp(value) else {
+        diagnostics.missing_timestamp_rows += 1;
+        *chronology_uncertain = true;
         return;
     };
-    if timestamp < since {
-        return;
+    let synthetic = value.pointer("/message/model").and_then(Value::as_str)
+        == Some(super::transcript_types::SYNTHETIC_MODEL);
+    if value.get("type").and_then(Value::as_str) == Some("assistant")
+        && !synthetic
+        && timestamp < range.since
+    {
+        *had_prior_request = true;
     }
-    match value.get("type").and_then(Value::as_str) {
-        Some("assistant") => add_request(entries, seen, value, timestamp),
-        Some("user") => entries.extend(user_entries(value, timestamp).into_iter().map(Entry::User)),
-        _ => {}
+    if range.includes(timestamp) {
+        add_value(entries, seen, value, timestamp, ordinal);
     }
 }
 
@@ -91,195 +194,137 @@ fn add_request(
     seen: &mut HashMap<String, usize>,
     value: &Value,
     timestamp: DateTime<Utc>,
+    ordinal: usize,
 ) {
-    let request = request(value, timestamp);
+    let request = request(value, timestamp, ordinal);
     let Some(request) = request else { return };
     if let Some(id) = request.message_id.as_ref() {
         if let Some(index) = seen.get(id) {
             if let Some(Entry::Assistant(first)) = entries.get_mut(*index) {
-                merge_request(first, request);
+                merge_request(first.as_mut(), request);
             }
             return;
         }
         seen.insert(id.clone(), entries.len());
     }
-    entries.push(Entry::Assistant(request));
+    entries.push(Entry::Assistant(Box::new(request)));
 }
 
-fn request(value: &Value, timestamp: DateTime<Utc>) -> Option<Request> {
+fn request(value: &Value, timestamp: DateTime<Utc>, ordinal: usize) -> Option<Request> {
     let message = value.get("message")?;
     let content = message.get("content").and_then(Value::as_array)?;
-    let (tool_uses, thinking_chars, text_chars) = content_counts(content);
+    let (tool_uses, thinking_chars, text_chars) =
+        super::transcript_content::content_counts(content);
+    let (usage, normalization) =
+        super::claude_usage::parse(message.get("usage"), timestamp, ordinal);
     Some(Request {
-        message_id: message.get("id").and_then(Value::as_str).map(str::to_owned),
+        message_id: message
+            .get("id")
+            .and_then(Value::as_str)
+            .filter(|id| !id.trim().is_empty())
+            .map(str::to_owned),
         timestamp,
         model: message
             .get("model")
             .and_then(Value::as_str)
             .unwrap_or_default()
             .to_owned(),
-        usage: usage(message.get("usage")),
+        usage,
         tool_uses,
         thinking_chars,
         text_chars,
+        normalization,
     })
-}
-
-fn content_counts(blocks: &[Value]) -> (Vec<ToolUse>, usize, usize) {
-    let mut tools = Vec::new();
-    let mut thinking_chars = 0;
-    let mut text_chars = 0;
-    for block in blocks {
-        match block.get("type").and_then(Value::as_str) {
-            Some("text") => text_chars += string_len(block, "text"),
-            Some("thinking") => thinking_chars += string_len(block, "thinking"),
-            Some("tool_use") => {
-                if let Some(tool) = tool_use(block) {
-                    tools.push(tool);
-                }
-            }
-            _ => {}
-        }
-    }
-    (tools, thinking_chars, text_chars)
-}
-
-fn tool_use(block: &Value) -> Option<ToolUse> {
-    Some(ToolUse {
-        id: block.get("id")?.as_str()?.to_owned(),
-        name: block.get("name")?.as_str()?.to_owned(),
-        input: block.get("input").cloned().unwrap_or(Value::Null),
-    })
-}
-
-fn string_len(value: &Value, field: &str) -> usize {
-    value
-        .get(field)
-        .and_then(Value::as_str)
-        .map_or(0, |text| text.chars().count())
-}
-
-fn usage(value: Option<&Value>) -> TokenUsage {
-    let Some(value) = value else {
-        return TokenUsage::default();
-    };
-    let creation = number(value, "cache_creation_input_tokens");
-    let split_value = value.get("cache_creation");
-    let (ephemeral_5m, ephemeral_1h) = match split_value {
-        Some(split) => (
-            number(split, "ephemeral_5m_input_tokens"),
-            number(split, "ephemeral_1h_input_tokens"),
-        ),
-        // Claude defaults unsplit cache creation to the five-minute TTL.
-        None => (creation, 0),
-    };
-    let (cache_creation, ephemeral_5m, ephemeral_1h) =
-        reconcile_cache_creation(creation, ephemeral_5m, ephemeral_1h);
-    TokenUsage {
-        input: number(value, "input_tokens"),
-        cache_creation,
-        cache_read: number(value, "cache_read_input_tokens"),
-        output: number(value, "output_tokens"),
-        ephemeral_5m,
-        ephemeral_1h,
-    }
-}
-
-/// The flat `cache_creation_input_tokens` field and the nested
-/// `cache_creation` split are read independently from the same JSON, so
-/// they can silently disagree. S2's cache-write term is priced entirely off
-/// the ephemeral split, so keeping `ephemeral_5m + ephemeral_1h ==
-/// cache_creation` true here is what stops a missing or unrecognised field
-/// from losing that term (or the flat total) outright.
-fn reconcile_cache_creation(
-    creation: u64,
-    ephemeral_5m: u64,
-    ephemeral_1h: u64,
-) -> (u64, u64, u64) {
-    let split_total = ephemeral_5m + ephemeral_1h;
-    if creation == 0 && split_total != 0 {
-        // Nested split present, flat field missing: trust the split.
-        return (split_total, ephemeral_5m, ephemeral_1h);
-    }
-    if split_total != creation {
-        // Nested split missing or carrying unrecognised keys: fall back to
-        // the flat total on the five-minute default TTL bucket.
-        return (creation, creation, 0);
-    }
-    (creation, ephemeral_5m, ephemeral_1h)
-}
-
-fn number(value: &Value, field: &str) -> u64 {
-    value.get(field).and_then(Value::as_u64).unwrap_or(0)
 }
 
 fn merge_request(first: &mut Request, duplicate: Request) {
+    merge_usage_observation(first, &duplicate);
     first.tool_uses.extend(duplicate.tool_uses);
     first.thinking_chars += duplicate.thinking_chars;
     first.text_chars += duplicate.text_chars;
-    // Duplicate lines for the same message.id are supposed to carry
-    // identical usage. If the first line's usage object was missing or
-    // all-zero, adopt a later duplicate's real counts instead of silently
-    // recording the request as free.
-    if first.usage == TokenUsage::default() && duplicate.usage != TokenUsage::default() {
+}
+
+fn merge_usage_observation(first: &mut Request, duplicate: &Request) {
+    if !duplicate.normalization.usage_observed {
+        return;
+    }
+    first.normalization.usage_observations += duplicate.normalization.usage_observations;
+    record_first_usage(first, duplicate);
+    let current_key = (first.timestamp, first.normalization.line_ordinal);
+    let duplicate_key = (duplicate.timestamp, duplicate.normalization.line_ordinal);
+    if !first.normalization.usage_observed || duplicate_key >= current_key {
         first.usage = duplicate.usage;
+        first.timestamp = duplicate.timestamp;
+        first.model.clone_from(&duplicate.model);
+        first.normalization.thinking_output_tokens = duplicate.normalization.thinking_output_tokens;
+        first.normalization.invalid_thinking_output =
+            duplicate.normalization.invalid_thinking_output;
+        first.normalization.invalid_usage = duplicate.normalization.invalid_usage;
+        first.normalization.invalid_cache_relation = duplicate.normalization.invalid_cache_relation;
+        first.normalization.line_ordinal = duplicate.normalization.line_ordinal;
+    }
+    first.normalization.usage_observed = true;
+    first.normalization.changed_usage_fields = changed_usage_fields(first);
+}
+
+fn record_first_usage(first: &mut Request, duplicate: &Request) {
+    let current = first
+        .normalization
+        .first_usage_timestamp
+        .map(|stamp| (stamp, first.normalization.first_usage_ordinal));
+    let incoming = duplicate
+        .normalization
+        .first_usage_timestamp
+        .map(|stamp| (stamp, duplicate.normalization.first_usage_ordinal));
+    if incoming.is_some() && (current.is_none() || incoming < current) {
+        first.normalization.first_usage = duplicate.normalization.first_usage;
+        first.normalization.first_thinking_output_tokens =
+            duplicate.normalization.first_thinking_output_tokens;
+        first.normalization.first_usage_timestamp = duplicate.normalization.first_usage_timestamp;
+        first.normalization.first_usage_ordinal = duplicate.normalization.first_usage_ordinal;
     }
 }
 
-fn user_entries(value: &Value, timestamp: DateTime<Utc>) -> Vec<UserEntry> {
-    match value.pointer("/message/content") {
-        Some(Value::String(text)) => vec![user_entry(timestamp, None, text.clone())],
-        Some(Value::Array(blocks)) => tool_results(blocks, timestamp),
-        _ => Vec::new(),
-    }
+fn changed_usage_fields(request: &Request) -> usize {
+    let Some(first) = request.normalization.first_usage else {
+        return 0;
+    };
+    let current = request.usage;
+    [
+        first.input != current.input,
+        first.cache_creation != current.cache_creation,
+        first.cache_read != current.cache_read,
+        first.output != current.output,
+        first.ephemeral_5m != current.ephemeral_5m,
+        first.ephemeral_1h != current.ephemeral_1h,
+        request.normalization.first_thinking_output_tokens
+            != request.normalization.thinking_output_tokens,
+    ]
+    .into_iter()
+    .filter(|changed| *changed)
+    .count()
 }
 
-fn tool_results(blocks: &[Value], timestamp: DateTime<Utc>) -> Vec<UserEntry> {
-    let results: Vec<_> = blocks
-        .iter()
-        .filter(|block| block.get("type").and_then(Value::as_str) == Some("tool_result"))
-        .map(|block| {
-            user_entry(
-                timestamp,
-                block
-                    .get("tool_use_id")
-                    .and_then(Value::as_str)
-                    .map(str::to_owned),
-                tool_text(block),
-            )
-        })
-        .collect();
-    if results.is_empty() {
-        plain_array_entry(blocks, timestamp).into_iter().collect()
-    } else {
-        results
-    }
-}
-
-fn plain_array_entry(blocks: &[Value], timestamp: DateTime<Utc>) -> Option<UserEntry> {
-    let text: String = blocks
-        .iter()
-        .filter_map(|block| block.get("text").and_then(Value::as_str))
-        .collect();
-    (!text.is_empty()).then(|| user_entry(timestamp, None, text))
-}
-
-fn tool_text(block: &Value) -> String {
-    match block.get("content") {
-        Some(Value::String(text)) => text.clone(),
-        Some(Value::Array(blocks)) => blocks
-            .iter()
-            .filter_map(|item| item.get("text").and_then(Value::as_str))
-            .collect(),
-        _ => String::new(),
-    }
-}
-
-fn user_entry(timestamp: DateTime<Utc>, tool_use_id: Option<String>, text: String) -> UserEntry {
-    UserEntry {
-        timestamp,
-        tool_use_id,
-        text,
+fn mark_fresh_start(scan: &mut ScanResult) {
+    let mut first = true;
+    for entry in &mut scan.entries {
+        if let Entry::Assistant(request) = entry {
+            let request = request.as_mut();
+            if request.model == super::transcript_types::SYNTHETIC_MODEL {
+                request.normalization.first_observed_in_range = false;
+                request.normalization.true_fresh_start = None;
+                continue;
+            }
+            request.normalization.first_observed_in_range = first;
+            request.normalization.true_fresh_start = if first && scan.chronology_uncertain {
+                None
+            } else if first {
+                Some(!scan.had_prior_request)
+            } else {
+                Some(false)
+            };
+            first = false;
+        }
     }
 }
 

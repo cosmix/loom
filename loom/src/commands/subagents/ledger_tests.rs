@@ -124,6 +124,7 @@ fn usage_index_keeps_scoped_and_legacy_attribution_rules() {
     assert_eq!(index.get("scoped", "parent-a"), Some("review".into()));
     assert_eq!(index.get("scoped", "parent-c"), None);
     assert_eq!(index.get("legacy", "any-parent"), Some("research".into()));
+    assert!(index.get_metadata("legacy", "any-parent").is_none());
     assert_eq!(index.get("ambiguous", "parent-a"), None);
     assert_eq!(index.get("malformed", "parent-a"), None);
 }
@@ -181,4 +182,46 @@ fn conflicting_spawns_rows_remain_unknown() {
         agent_type(Some(work_dir.path()), "agent-without-start"),
         None
     );
+}
+
+#[test]
+fn usage_metadata_carries_authoritative_stage_and_loom_session() {
+    let work_dir = tempfile::tempdir().unwrap();
+    fs::write(
+        stage(&work_dir).join("starts.jsonl"),
+        concat!(
+            "{\"agent_id\":\"agent-x\",\"agent_type\":\"review\",",
+            "\"parent_session_id\":\"parent-a\",\"stage_id\":\"stage-a\",",
+            "\"loom_session_id\":\"loom-a\"}\n"
+        ),
+    )
+    .unwrap();
+
+    let metadata = StartedAgentTypeIndex::load(Some(work_dir.path()))
+        .get_metadata("agent-x", "parent-a")
+        .unwrap();
+
+    assert_eq!(metadata.agent_type, "review");
+    assert_eq!(metadata.stage_id.as_deref(), Some("stage-a"));
+    assert_eq!(metadata.loom_session_id.as_deref(), Some("loom-a"));
+}
+
+#[test]
+fn conflicting_stage_metadata_makes_scoped_join_unknown() {
+    let work_dir = tempfile::tempdir().unwrap();
+    fs::write(
+        stage(&work_dir).join("starts.jsonl"),
+        concat!(
+            "{\"agent_id\":\"agent-x\",\"agent_type\":\"review\",",
+            "\"parent_session_id\":\"parent-a\",\"stage_id\":\"stage-a\"}\n",
+            "{\"agent_id\":\"agent-x\",\"agent_type\":\"review\",",
+            "\"parent_session_id\":\"parent-a\",\"stage_id\":\"stage-b\"}\n"
+        ),
+    )
+    .unwrap();
+
+    let index = StartedAgentTypeIndex::load(Some(work_dir.path()));
+
+    assert!(index.get_metadata("agent-x", "parent-a").is_none());
+    assert!(index.get("agent-x", "parent-a").is_none());
 }

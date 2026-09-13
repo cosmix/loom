@@ -1,6 +1,6 @@
-//! Shows the token components that policy can actually influence: prompt
-//! freshness, cache writes, cache reads, and generated output. Thinking is
-//! reported as text volume because transcript usage does not measure it.
+//! Shows the legacy Claude token components. This section keeps its historical
+//! thinking-character estimate; measured thinking tokens live in the separate
+//! versioned provider ledger.
 
 use crate::commands::usage::transcript::{TokenUsage, Transcript};
 use crate::commands::usage::transcript_types::SYNTHETIC_MODEL;

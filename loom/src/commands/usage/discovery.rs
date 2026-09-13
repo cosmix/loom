@@ -7,10 +7,10 @@ use std::collections::HashSet;
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::time::SystemTime;
 
-use anyhow::{bail, Context, Result};
-use chrono::{DateTime, Duration, NaiveDate, TimeZone, Utc};
+use anyhow::{Context, Result};
+#[cfg(test)]
+use chrono::Utc;
 
 use crate::commands::subagents::resolve::project_slug;
 
@@ -25,7 +25,8 @@ pub struct DiscoveredFile {
 
 #[derive(Debug, Clone)]
 pub struct DiscoveryOptions {
-    pub since: chrono::DateTime<chrono::Utc>,
+    pub range: super::time_range::TimeRange,
+    pub claude_root: Option<std::path::PathBuf>,
     pub project: Option<std::path::PathBuf>,
     pub all: bool,
     pub stage: Option<String>,
@@ -34,23 +35,19 @@ pub struct DiscoveryOptions {
 
 /// Parse `--since`: a duration (`7d`, `24h`, `30m`) or an ISO date
 /// (`2026-08-01`, interpreted as that date's midnight UTC).
+#[cfg(test)]
 pub fn parse_since(spec: &str) -> anyhow::Result<chrono::DateTime<chrono::Utc>> {
-    if let Ok(date) = NaiveDate::parse_from_str(spec, "%Y-%m-%d") {
-        let midnight = date
-            .and_hms_opt(0, 0, 0)
-            .context("ISO date has no midnight")?;
-        return Ok(Utc.from_utc_datetime(&midnight));
-    }
-    let duration = duration_spec(spec)?;
-    Utc::now()
-        .checked_sub_signed(duration)
-        .context("--since duration is too large")
+    super::time_range::parse_since_at(spec, Utc::now())
 }
 
 /// Every transcript file to read, sorted by path for deterministic output.
 /// A missing `~/.claude/projects` yields an empty vec, not an error.
 pub fn discover(options: &DiscoveryOptions) -> anyhow::Result<Vec<DiscoveredFile>> {
-    let Some(projects_root) = claude_projects_root() else {
+    debug_assert!(options
+        .range
+        .until
+        .is_none_or(|until| until >= options.range.since));
+    let Some(projects_root) = claude_projects_root(options.claude_root.as_deref()) else {
         return Ok(Vec::new());
     };
     if !projects_root.is_dir() {
@@ -67,33 +64,16 @@ pub fn discover(options: &DiscoveryOptions) -> anyhow::Result<Vec<DiscoveredFile
     Ok(files)
 }
 
-fn duration_spec(spec: &str) -> Result<Duration> {
-    let Some(unit) = spec.chars().next_back() else {
-        bail!("Invalid --since value: {spec}")
-    };
-    let number = spec
-        .strip_suffix(unit)
-        .unwrap_or_default()
-        .parse::<i64>()
-        .with_context(|| format!("Invalid --since value: {spec}"))?;
-    if number < 0 {
-        bail!("Invalid --since value: {spec}")
-    }
-    let hours = match unit {
-        'm' => return Duration::try_minutes(number).context("--since duration is too large"),
-        'h' => number,
-        'd' => number
-            .checked_mul(24)
-            .context("--since duration is too large")?,
-        _ => bail!("Invalid --since value: {spec}"),
-    };
-    Duration::try_hours(hours).context("--since duration is too large")
+pub(crate) fn root_is_missing(options: &DiscoveryOptions) -> bool {
+    claude_projects_root(options.claude_root.as_deref()).is_none_or(|root| !root.is_dir())
 }
 
-fn claude_projects_root() -> Option<PathBuf> {
-    env::var_os("HOME")
-        .map(PathBuf::from)
-        .map(|home| home.join(".claude/projects"))
+fn claude_projects_root(explicit: Option<&Path>) -> Option<PathBuf> {
+    explicit.map(Path::to_path_buf).or_else(|| {
+        env::var_os("HOME")
+            .map(PathBuf::from)
+            .map(|home| home.join(".claude/projects"))
+    })
 }
 
 /// Reads every selected project directory, warning on stderr and skipping
@@ -109,7 +89,7 @@ fn collect_projects(root: &Path, options: &DiscoveryOptions) -> Result<Vec<Disco
     let mut files = Vec::new();
     for slug in slugs {
         let directory = root.join(&slug);
-        match project_files(&directory, slug, options.since) {
+        match project_files(&directory, slug) {
             Ok(found) => files.extend(found),
             Err(error) if strict => return Err(error),
             Err(error) => eprintln!("loom usage: skipping {}: {error:#}", directory.display()),
@@ -195,11 +175,7 @@ fn worktree_repository_root(git_file: &Path) -> Option<PathBuf> {
         .map(Path::to_path_buf)
 }
 
-fn project_files(
-    directory: &Path,
-    slug: String,
-    since: DateTime<Utc>,
-) -> Result<Vec<DiscoveredFile>> {
+fn project_files(directory: &Path, slug: String) -> Result<Vec<DiscoveredFile>> {
     if !directory.is_dir() {
         return Ok(Vec::new());
     }
@@ -215,46 +191,30 @@ fn project_files(
                 .and_then(|value| value.to_str())
                 .map(str::to_string);
             if let Some(session_id) = session_id {
-                add_main(&mut files, path, &slug, &session_id, since);
+                add_main(&mut files, path, &slug, &session_id);
             }
         } else if path.is_dir() {
-            add_subagents(&mut files, &path, &slug, since);
+            add_subagents(&mut files, &path, &slug);
         }
     }
     Ok(files)
 }
 
-fn add_main(
-    files: &mut Vec<DiscoveredFile>,
-    path: PathBuf,
-    slug: &str,
-    session_id: &str,
-    since: DateTime<Utc>,
-) {
-    if is_recent(&path, since) {
-        files.push(DiscoveredFile {
-            path,
-            project_slug: slug.to_owned(),
-            scope: super::transcript::Scope::Main,
-            session_id: session_id.to_owned(),
-            agent_id: None,
-        });
-    }
+fn add_main(files: &mut Vec<DiscoveredFile>, path: PathBuf, slug: &str, session_id: &str) {
+    files.push(DiscoveredFile {
+        path,
+        project_slug: slug.to_owned(),
+        scope: super::transcript::Scope::Main,
+        session_id: session_id.to_owned(),
+        agent_id: None,
+    });
 }
 
-fn add_subagents(
-    files: &mut Vec<DiscoveredFile>,
-    session: &Path,
-    slug: &str,
-    since: DateTime<Utc>,
-) {
+fn add_subagents(files: &mut Vec<DiscoveredFile>, session: &Path, slug: &str) {
     let Some(session_id) = session.file_name().and_then(|value| value.to_str()) else {
         return;
     };
     for path in crate::commands::subagents::resolve::list_agent_files(&session.join("subagents")) {
-        if !is_recent(&path, since) {
-            continue;
-        }
         let agent_id = Some(crate::commands::subagents::resolve::agent_id_from_path(
             &path,
         ));
@@ -266,14 +226,6 @@ fn add_subagents(
             agent_id,
         });
     }
-}
-
-fn is_recent(path: &Path, since: DateTime<Utc>) -> bool {
-    let cutoff: SystemTime = since.into();
-    fs::metadata(path)
-        .and_then(|metadata| metadata.modified())
-        .map(|modified| modified >= cutoff)
-        .unwrap_or(false)
 }
 
 fn filter_stage(files: Vec<DiscoveredFile>, stage: &str) -> Vec<DiscoveredFile> {
