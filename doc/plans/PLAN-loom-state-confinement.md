@@ -559,6 +559,74 @@ Findings from I4 phase 1 (2026-09-13):
   and the sandbox resolves symlinks. The review also flagged the legacy fold-back into
   `R/.claude/settings.local.json`, which the phase-3 I4 addition already removes.
 
+Findings from phase 3 (2026-09-13):
+
+- **Shape.** Enforcement ran as five disjoint territories, then two cleanup passes for cross-agent
+  leftovers, then the srt confinement e2e:
+  - A: capsule denies and the codex lane;
+  - B1: loom's own local-settings writers;
+  - B2: grants and init writers;
+  - C: `loom run` and spawn preflight, plus repair;
+  - D: merge gate and context-cache fallback.
+- **Capsule denies (A).**
+  - Both layers are built per location in `sandbox/control_surfaces/session_denies.rs`.
+  - Home surfaces are spelled `~/…`; repo and executable dirs are absolute in denyWrite and `//abs`
+    in `Edit` rules. `/T/.loom` is denied in the sandbox layer only, since `Edit(.loom/**)` covers
+    the file tools.
+  - `~/.codex/{hooks,hooks.json,config.toml}` are denied in every capsule, licensed or not.
+  - A path that cannot be written literally (not UTF-8, or containing a glob character) refuses the
+    spawn.
+  - `sandbox::settings::build_settings` is the one pure builder; `write_settings` is gone.
+  - Executable-dir denies skip any directory that contains a session-writable root (R, T, the
+    scratch root, every grant), comparing canonicalized paths.
+  - `LOOM_BIN` must be owned by the operator or root, not group- or world-writable, and outside every
+    writable root. Under umask 002, `install.sh` used to leave `~/.local/bin/loom` at mode 775, which
+    that rule refuses. The installer now sets 0755, and the refusal names `chmod go-w <path>`.
+- **Loom never writes the local settings files (B1, B2).**
+  - Spawns no longer write `R/.claude/settings.local.json` or `T/.claude/settings.local.json`, and
+    worktrees no longer receive a copy of R's.
+  - The fold-back writes only `W/permissions/approved.json`; it still reads R's local allow list,
+    where Claude Code records approvals.
+  - In an `Edit`/`Read` rule, `/p` means relative to the settings source, which for a capsule is
+    `W/capsules/`. The fold-back therefore rewrites single-slash `Edit`, `Read`, `Write` and
+    `NotebookEdit` rules to cwd-relative form before the control-surface filter, so a propagated
+    approval names the same path in every later session's checkout. In sandbox filesystem lists,
+    `/p` is absolute.
+  - `ensure_loom_hooks_local` no longer merges a codex sandbox block, and its helpers are deleted.
+  - Handoff `Edit` grants are gone from every list and are stripped from an existing
+    `R/.claude/settings.json`.
+  - `~/.rustup/toolchains` and `~/.local/share/uv` lost their grants; pnpm is narrowed to its store.
+- **Preflight (C).**
+  - `validate_config` refuses a disabled sandbox, unsandboxed escape and bypass permissions, and
+    returns a typed `SandboxPreflightRefusal`.
+  - `sandbox/config/preflight.rs` holds checks 1-5, the `R/loom-hooks` rule, and the one list of
+    loom-written keys that both the `loom run` warning and `repair --fix` use.
+  - Both `loom run` entry points share `run_startup_preflights`.
+  - Every spawn repeats checks 2-4 in `native/launch.rs` before writing anything.
+    `crash_classification::spawn_failure_type` maps a refusal to `SandboxSetupFailure` for stage,
+    knowledge, merge and adjudication spawns.
+  - The hard-link warning covers operator-owned executables only.
+- **Merge gate (D).**
+  - The gate lives in `orchestrator/core/merge_handler/merge_gate.rs`, and runs before an automatic
+    merge and before a merge-resolution session is spawned. A conflicted branch that touches a
+    control path gets no resolver.
+  - `loom stage merge <id>` calls `git::merge::merge_stage` directly and stays the operator's
+    ungated path.
+  - The hooks directory comes from scoped reads of `core.hooksPath` (local, then global, then
+    system). Loom's git runner prepends `-c core.hooksPath=/dev/null`, which overrides an unscoped
+    read.
+- **Context cache (D).** `graph_store/fallback.rs` serves results from memory when the cache cannot
+  be written (EACCES, EPERM, EROFS).
+- **Confinement e2e.** srt 1.0.0 (`@anthropic-ai/sandbox-runtime`, runnable through `bunx`) cannot
+  run inside the Claude Code Bash sandbox, where AF_UNIX is blocked. The test skips there, and the
+  operator runs it outside.
+- **Live checklist additions:**
+  - A denyWrite entry that does not exist when the session starts (for example
+    `~/.codex/hooks.json` inside the `~/.codex` grant) may not be enforced.
+  - Approved rules that name executable dirs such as `~/.cargo/bin` stop propagating.
+  - A launch through `LaunchHost::from_env` needs installed hooks matching the build, or
+    `LOOM_HOOKS_DIR`.
+
 ### I1: Relay Protocol and CLI Writers
 
 - New: `loom/src/relay/{mod,protocol,emit,scratch}.rs`, `loom/src/handoff/session_content.rs`,
