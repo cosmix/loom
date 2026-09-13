@@ -1,5 +1,5 @@
 use anyhow::Result;
-use chrono::{Duration, Utc};
+use chrono::{Duration, SecondsFormat, Utc};
 
 use super::*;
 
@@ -186,11 +186,16 @@ fn explicit_root_discovers_old_mtime_file_without_home_fallback() -> Result<()> 
     let project = root.path().join("fixture-project");
     std::fs::create_dir(&project)?;
     let transcript = project.join("session.jsonl");
+    // Well inside the `range()` window (last 24 hours), regardless of when the
+    // test runs - a fixed calendar timestamp here would eventually fall
+    // outside the sliding window and fail (see mistakes.md).
+    let recent_timestamp =
+        (Utc::now() - Duration::hours(1)).to_rfc3339_opts(SecondsFormat::Secs, true);
     std::fs::write(
         &transcript,
-        concat!(
-            "{\"type\":\"assistant\",\"timestamp\":\"2026-09-12T20:00:00Z\",",
-            "\"message\":{\"content\":[],\"usage\":{\"output_tokens\":1}}}\n"
+        format!(
+            "{{\"type\":\"assistant\",\"timestamp\":\"{recent_timestamp}\",\
+             \"message\":{{\"content\":[],\"usage\":{{\"output_tokens\":1}}}}}}\n"
         ),
     )?;
     let file = std::fs::OpenOptions::new().write(true).open(&transcript)?;
