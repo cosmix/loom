@@ -1,0 +1,195 @@
+//! Tests for the per-writer matrix.
+//!
+//! Relocated out of `matrix.rs` to keep that file under the maintainability
+//! line-count baseline; see `loom/maintainability-baseline.txt`.
+
+use super::*;
+
+/// Transcribed independently from the plan's section 5 table (not
+/// derived from `MATRIX` above), so a copy/paste mistake in the
+/// production table cannot pass by construction.
+const EXPECTED: &[(SessionType, RequestKind, MatrixVerdict)] = &[
+    (
+        SessionType::Stage,
+        RequestKind::Memory,
+        MatrixVerdict::Apply,
+    ),
+    (SessionType::Stage, RequestKind::Block, MatrixVerdict::Apply),
+    (
+        SessionType::Stage,
+        RequestKind::Dispute,
+        MatrixVerdict::Apply,
+    ),
+    (
+        SessionType::Stage,
+        RequestKind::Handoff,
+        MatrixVerdict::Apply,
+    ),
+    (
+        SessionType::Stage,
+        RequestKind::MergeResolved,
+        MatrixVerdict::Refuse,
+    ),
+    (
+        SessionType::Stage,
+        RequestKind::Verdict,
+        MatrixVerdict::Refuse,
+    ),
+    (
+        SessionType::Stage,
+        RequestKind::Telemetry,
+        MatrixVerdict::Apply,
+    ),
+    (
+        SessionType::Knowledge,
+        RequestKind::Memory,
+        MatrixVerdict::Apply,
+    ),
+    (
+        SessionType::Knowledge,
+        RequestKind::Block,
+        MatrixVerdict::Apply,
+    ),
+    (
+        SessionType::Knowledge,
+        RequestKind::Dispute,
+        MatrixVerdict::Apply,
+    ),
+    (
+        SessionType::Knowledge,
+        RequestKind::Handoff,
+        MatrixVerdict::Apply,
+    ),
+    (
+        SessionType::Knowledge,
+        RequestKind::MergeResolved,
+        MatrixVerdict::Refuse,
+    ),
+    (
+        SessionType::Knowledge,
+        RequestKind::Verdict,
+        MatrixVerdict::Refuse,
+    ),
+    (
+        SessionType::Knowledge,
+        RequestKind::Telemetry,
+        MatrixVerdict::Apply,
+    ),
+    (
+        SessionType::Merge,
+        RequestKind::Memory,
+        MatrixVerdict::Apply,
+    ),
+    (
+        SessionType::Merge,
+        RequestKind::Block,
+        MatrixVerdict::Refuse,
+    ),
+    (
+        SessionType::Merge,
+        RequestKind::Dispute,
+        MatrixVerdict::Refuse,
+    ),
+    (
+        SessionType::Merge,
+        RequestKind::Handoff,
+        MatrixVerdict::DocumentOnly,
+    ),
+    (
+        SessionType::Merge,
+        RequestKind::MergeResolved,
+        MatrixVerdict::Apply,
+    ),
+    (
+        SessionType::Merge,
+        RequestKind::Verdict,
+        MatrixVerdict::Refuse,
+    ),
+    (
+        SessionType::Merge,
+        RequestKind::Telemetry,
+        MatrixVerdict::Apply,
+    ),
+    (
+        SessionType::BaseConflict,
+        RequestKind::Memory,
+        MatrixVerdict::Apply,
+    ),
+    (
+        SessionType::BaseConflict,
+        RequestKind::Block,
+        MatrixVerdict::Refuse,
+    ),
+    (
+        SessionType::BaseConflict,
+        RequestKind::Dispute,
+        MatrixVerdict::Refuse,
+    ),
+    (
+        SessionType::BaseConflict,
+        RequestKind::Handoff,
+        MatrixVerdict::DocumentOnly,
+    ),
+    (
+        SessionType::BaseConflict,
+        RequestKind::MergeResolved,
+        MatrixVerdict::Refuse,
+    ),
+    (
+        SessionType::BaseConflict,
+        RequestKind::Verdict,
+        MatrixVerdict::Refuse,
+    ),
+    (
+        SessionType::BaseConflict,
+        RequestKind::Telemetry,
+        MatrixVerdict::Apply,
+    ),
+    (
+        SessionType::Adjudication,
+        RequestKind::Memory,
+        MatrixVerdict::Refuse,
+    ),
+    (
+        SessionType::Adjudication,
+        RequestKind::Block,
+        MatrixVerdict::Refuse,
+    ),
+    (
+        SessionType::Adjudication,
+        RequestKind::Dispute,
+        MatrixVerdict::Refuse,
+    ),
+    (
+        SessionType::Adjudication,
+        RequestKind::Handoff,
+        MatrixVerdict::Refuse,
+    ),
+    (
+        SessionType::Adjudication,
+        RequestKind::MergeResolved,
+        MatrixVerdict::Refuse,
+    ),
+    (
+        SessionType::Adjudication,
+        RequestKind::Verdict,
+        MatrixVerdict::Apply,
+    ),
+    (
+        SessionType::Adjudication,
+        RequestKind::Telemetry,
+        MatrixVerdict::Apply,
+    ),
+];
+
+#[test]
+fn matches_the_full_five_by_seven_writer_matrix() {
+    assert_eq!(EXPECTED.len(), 35, "5 session types x 7 kinds");
+    for (session, kind, expected_verdict) in EXPECTED {
+        assert_eq!(
+            verdict(*session, *kind),
+            *expected_verdict,
+            "{session:?} x {kind:?}"
+        );
+    }
+}
