@@ -1,3 +1,12 @@
+---
+sources:
+- loom/src/models/constants.rs
+- loom/src/fs/work_dir/context_config.rs
+- loom-hooks/post-tool-use.sh
+- loom/src/orchestrator/terminal/native/wrapper.rs
+- loom/src/orchestrator/monitor/detection.rs
+verified: 7d6a14caf1750cc1e516519e650e2ee68641e0a1
+---
 # Context Ceiling
 
 > The absolute resident-token ceiling: resolution order, and the three independent thresholds (hook, daemon, native compaction) that enforce it.
@@ -11,7 +20,7 @@ each firing at a different multiple of it, from softest to hardest:
 
 | Multiple | Mechanism                          | Who enforces it                                                                                             | What happens                                                                                                                          |
 | -------- | ----------------------------------- | -------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| 1.0x     | `PostToolUse` hook instruction       | `loom-hooks/post-tool-use.sh`, reading resident tokens off the transcript tail                                       | Blocks each tool call with exit 2 and a stderr instruction to finish the unit of work, run `loom handoff --trigger ceiling`, and stop |
+| 1.0x     | `PostToolUse` hook instruction       | `loom-hooks/post-tool-use.sh`, reading resident tokens off the transcript tail                                       | Runs after the tool has already executed, so exit 2 blocks nothing; it only writes a stderr message telling the agent to finish the unit of work, run `loom handoff --trigger ceiling`, and stop |
 | 1.25x    | Daemon backstop (`BudgetExceeded`)   | `orchestrator/monitor/detection.rs` (`DAEMON_CEILING_MULTIPLIER`, `models/constants.rs`)                        | Writes the outgoing handoff, discovers in-progress records even after daemon restart, KILLS the session, persists `ContextExhausted` only after confirmed death, then re-queues. Discovery/probe/persistence uncertainty leaves the stage in `NeedsHandoff`; stale events naming a predecessor are ignored. |
 | 1.5x     | `CLAUDE_CODE_AUTO_COMPACT_WINDOW`    | The installed Claude Code binary itself, via an env var loom's native wrapper sets (`auto_compact_window_tokens`, `orchestrator/terminal/native/wrapper.rs:227-238`) | Claude Code's own native auto-compaction kicks in — "effectively unreachable in practice" per the source comment, because the two lower thresholds should already have ended the session by this point |
 
@@ -34,11 +43,21 @@ exists, so continuation can select the newest valid handoff for the exact outgoi
 than blindly consuming the highest filename. Number allocation and crash-atomic write share one
 directory lock, preventing concurrent daemon/CLI producers from overwriting the same artifact.
 
+The 1.25x label is the raw `DAEMON_CEILING_MULTIPLIER`, but the daemon never applies it raw:
+`ContextConfig::backstop_tokens` clamps `ceiling x 1.25` to `window x DAEMON_BACKSTOP_WINDOW_FRACTION`
+(0.95), so at the built-in 1M window the backstop tops out at 950,000 tokens regardless of how high
+the multiplier would otherwise push it — that clamp is what keeps the backstop reachable instead of
+landing past the model's own window.
+
 Read the resolved value in code with `fs::work_dir::resolve_context_ceiling_tokens(work_dir,
 stage_ceiling)` — the one resolver. Resolution order: `stage.context_ceiling_tokens` ->
-`.work/config.toml [context] ceiling_tokens` -> `DEFAULT_CONTEXT_CEILING_TOKENS` (150,000,
-`models/constants.rs`); subagents default to `DEFAULT_SUBAGENT_CEILING_TOKENS` (120,000). The
-1.5x auto-compact env var is separately clamped to `AUTO_COMPACT_WINDOW_MAX_TOKENS` (1,000,000)
+`.work/config.toml [context] ceiling_tokens` -> `DEFAULT_CONTEXT_CEILING_TOKENS` (800,000,
+`models/constants.rs`) — 80% of the 1M-token `DEFAULT_MODEL_CONTEXT_WINDOW_TOKENS` via
+`CONTEXT_CEILING_FRACTION`; subagents default to the same 800,000 via
+`DEFAULT_SUBAGENT_CEILING_TOKENS`, because a subagent launches on the same 1M-window model as its
+parent. The two constants stay separate in name only, so `[context] ceiling_tokens` and
+`subagent_ceiling_tokens` remain independently overridable even though their built-in values match.
+The 1.5x auto-compact env var is separately clamped to `AUTO_COMPACT_WINDOW_MAX_TOKENS` (1,000,000)
 before export, since the installed binary re-clamps to `[1, 1_000_000]` and then again to the
 model's own context window.
 

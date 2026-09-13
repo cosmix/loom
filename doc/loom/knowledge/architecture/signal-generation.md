@@ -1,4 +1,10 @@
 ---
+sources:
+- loom/src/telemetry/mod.rs
+- loom/src/telemetry/spool.rs
+- loom/src/commands/knowledge/telemetry.rs
+- loom/src/orchestrator/core/stage_telemetry.rs
+verified: 7d6a14caf1750cc1e516519e650e2ee68641e0a1
 ---
 # Signal Generation
 
@@ -170,13 +176,21 @@ The JSONL-backed `possibly_stuck` soft-signal system this section used to descri
 
 ## Telemetry (`loom/src/telemetry/`)
 
-One append-only JSON-lines file, `.work/telemetry/events.jsonl`, recording whether a spawned
-session received a context brief (`ContextDelivered` / `ContextUnavailable`). Best-effort by
-contract: `emit` may never fail a spawn and `read_events` skips a malformed line rather than
-failing the file. Every count is an item count, never a token saving.
+One append-only JSON-lines file, `.work/telemetry/events.jsonl`, recording five best-effort event
+kinds (`TelemetryEvent`, `telemetry/mod.rs`): `ContextDelivered`/`ContextUnavailable` for a spawned
+session's context brief, `PromptBrief`/`PromptAbstained` for the `UserPromptSubmit` hook's per-turn
+brief (see [Context Retrieval](context-retrieval.md#brief-delivery-sanitization-and-telemetry)), and
+`ContextPulled` for a `loom knowledge context` retrieval. `emit` may never fail a spawn and
+`read_events` skips a malformed line rather than failing the file; every count is an item count,
+never a token saving.
 
-Written only by `orchestrator/core/stage_telemetry.rs` (called from `stage_executor.rs:570`),
-which derives its fields from the `DeliveryRecord` signal generation already wrote — no second
-retrieval. `read_events` has **no production caller** today, and `.work/` is removed when the
-plan finishes, so events currently go unread; the intended reader is a future `loom status`/
-`loom map` diagnostic.
+A sandboxed session cannot write through the worktree's state-root symlink, so a denied direct
+write falls back to a per-worktree spool (`telemetry/spool.rs`, `.loom/telemetry-spool.jsonl`) that
+the daemon later drains into the canonical event file.
+
+`ContextDelivered`/`ContextUnavailable` are written by `orchestrator/core/stage_telemetry.rs`
+(called from `stage_executor.rs:570`), deriving their fields from the `DeliveryRecord` signal
+generation already wrote — no second retrieval. `loom knowledge telemetry`
+(`commands/knowledge/telemetry.rs`) is `read_events`'s production caller: it summarizes every event
+kind per stage (briefs, prompt briefs emitted/abstained with the top abstain reason, pulls with
+average budget/items and unmet-required count, last event time).

@@ -1,4 +1,7 @@
 ---
+sources:
+- loom/src/models/constants.rs
+verified: 7d6a14caf1750cc1e516519e650e2ee68641e0a1
 ---
 # Code Style And Structure
 
@@ -60,10 +63,13 @@ Re-export rules: `pub use` explicit items (never wildcards). Only export public 
 
 ```rust
 // Context thresholds (models/constants.rs)
-DEFAULT_CONTEXT_CEILING_TOKENS: u32 = 150_000;
-DEFAULT_SUBAGENT_CEILING_TOKENS: u32 = 120_000;
+DEFAULT_MODEL_CONTEXT_WINDOW_TOKENS: u32 = 1_000_000;
+CONTEXT_CEILING_FRACTION: f32 = 0.80;
+DEFAULT_CONTEXT_CEILING_TOKENS: u32 = 800_000;   // window x fraction
+DEFAULT_SUBAGENT_CEILING_TOKENS: u32 = 800_000;  // same window, same fraction
 MIN_CONTEXT_CEILING_TOKENS: u32 = 60_000;
 DAEMON_CEILING_MULTIPLIER: f32 = 1.25;
+DAEMON_BACKSTOP_WINDOW_FRACTION: f32 = 0.95;     // clamps ceiling x multiplier to this fraction of the window
 
 // Timeouts
 DEFAULT_COMMAND_TIMEOUT = 300s;
@@ -76,6 +82,8 @@ DEFAULT_MAX_RETRIES: u32 = 3;
 BACKOFF_BASE_SECONDS: u64 = 30;
 BACKOFF_MAX_SECONDS: u64 = 300;
 ```
+
+`DEFAULT_CONTEXT_CEILING_TOKENS` and `DEFAULT_SUBAGENT_CEILING_TOKENS` are identical by default because both a main session and a subagent it spawns launch on the same 1M-token model window; the two names stay distinct because `[context] ceiling_tokens`/`subagent_ceiling_tokens` remain independently overridable.
 
 `DEFAULT_CONTEXT_LIMIT`, `CONTEXT_WARNING_THRESHOLD`, `CONTEXT_CRITICAL_THRESHOLD`, `DEFAULT_CONTEXT_BUDGET`, `CONTEXT_ABSOLUTE_MAX` and the `display::CONTEXT_*_PCT` module were all deleted with the move from a percentage context budget to an absolute token ceiling — do not reintroduce them.
 

@@ -1,3 +1,9 @@
+---
+sources:
+- loom/src/fs/knowledge/chunker/references.rs
+- .gitignore
+verified: 7d6a14caf1750cc1e516519e650e2ee68641e0a1
+---
 # Doctrine And Acceptance
 
 > Why a one-phrase grep proves presence but never agreement, and how doctrine drifts across surfaces unnoticed.
@@ -249,11 +255,11 @@ record that prerequisite in the plan prose.
 
 ## A Finished Plan Was Committed Under an Ignored `DONE-` Name (2026-09-13)
 
-**What happened:** with the run state already cleared, `IN_PROGRESS-PLAN-harden-pre-commit-partial-staging.md`
-was renamed by hand with `git mv` to its `DONE-` name and committed (`85dadb26`). `.gitignore:80`
-ignores `doc/plans/DONE-*`: finished plans are kept on disk, not in git. `git mv` tracks its
-destination whatever the ignore rules say, so this became the repository's only tracked `DONE-`
-plan.
+**What happened:** with the run state already cleared, the harden-pre-commit-partial-staging
+plan's `IN_PROGRESS-` file was renamed by hand with `git mv` to its `DONE-` name and committed
+(`85dadb26`). `.gitignore:80` ignores `doc/plans/DONE-*`: finished plans are kept on disk, not in
+git. `git mv` tracks its destination whatever the ignore rules say, so this became the repository's
+only tracked `DONE-` plan.
 
 **Prevention:** before `git mv` or `git add` puts a path under version control, run
 `git check-ignore -v <path>`. To finish a plan by hand, remove the tracked path from git and rename

@@ -281,3 +281,15 @@ by hand, where each one passed.
 
 **Detection:** when every criterion fails instantly, including ones that cannot fail, suspect the
 shared prefix and read the stage's `setup` first.
+
+## A TMPDIR Inside the Checkout Lets Tests Write Into the Live Repo and .loom/work (2026-09-13)
+
+**What happened:** a baseline run for this plan pointed TMPDIR at `loom/target/token-optimization-checks`, inside the checkout. `cargo test --all-targets` failed 290 tests (283 lib, 7 e2e): clean, init cleanup, knowledge check/sync, memory "outside git repo", reconcile_graph, hook target/user_prompt e2e; example panics `commands/memory/handlers/tests.rs:34` NotFound, `commands/knowledge/tests_check.rs:149` failed to get current dir. Between 00:12:36 and 00:12:54 UTC that same run also mutated LIVE state of the running plan session: it wrote a junk `## Test Entry` / `test/file.rs - Test description` section into the real `doc/loom/knowledge/entry-points.md` (restored with `git restore`), fixture state into the live `.loom/work/` (`disputes/build-api/1/request.md`, `context/test-plan/stage-a/`, `context/default/stage-1/`, `context/_local/map-.tmpQ8ePxd/`), a false crash report `.loom/work/crashes/20260913-001236-knowledge-bootstrap.md` ("Process no longer running") for the live session, and a rewrite of `.loom/work/config.toml` (content still correct afterwards; no prior copy to diff). The ad-hoc memory journal present at session start was gone afterward. A rerun with TMPDIR outside the repo passed 4,575/0 and wrote none of this.
+
+**Why:** a tempdir nested inside the checkout sits under the real git root and the real `.loom/work`, so tests written for "no enclosing repository" or "no work dir" discover the live ones instead of a clean fixture. The per-test mechanism was not traced.
+
+**Prevention:** never point TMPDIR, or any test scratch dir, inside a checkout that has a live `.loom/work`. A host-created `/tmp/<name>` outside the repository, granted in `allow_write`, is the only safe layout; the sandbox cannot create it itself (see doctrine-and-acceptance's stage-setup mkdir lesson).
+
+**Fix:** reran with the harness TMPDIR outside the repo; the stray files are left for operator cleanup — agents never edit `.loom/work` directly. The plan records the host prerequisite.
+
+TMPDIR placement is only one of two leaks into a live session: even with TMPDIR correctly outside the repo, hook tests (`codex-forward-guard-blocks-edit.sh` and siblings) still inherited `LOOM_STAGE_ID`/`LOOM_SESSION_ID`/`LOOM_WORK_DIR` from the running session and wrote fake forward records to that session's live `.loom/work/subagents/<stage>/codex.jsonl` — a second leak that survives a correct TMPDIR. Clear the `LOOM_*` session variables before running hook tests, the same way TMPDIR must point outside the repo.

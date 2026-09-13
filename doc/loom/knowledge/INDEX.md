@@ -14,7 +14,7 @@
 | [conventions.md](conventions.md) | Coding conventions discovered in the codebase | 231 |
 | [mistakes.md](mistakes.md) | Mistakes made and lessons learned - what to avoid | 220 |
 | [stack.md](stack.md) | Dependencies, frameworks, and tooling used in the project | 116 |
-| [concerns.md](concerns.md) | Technical debt, warnings, and issues to address | 197 |
+| [concerns.md](concerns.md) | Technical debt, warnings, and issues to address | 206 |
 
 ## Tier 2 — Topics
 
@@ -25,7 +25,7 @@
 | [adjudication-lifecycle](architecture/adjudication-lifecycle.md) | How a dispute becomes a durable verdict, how each verdict changes stage state… | 60 |
 | [codex-concurrency](architecture/codex-concurrency.md) | Codex fan-out concurrency limits, what is measured, and what degrades under… | 102 |
 | [codex-plugin](architecture/codex-plugin.md) | Codex plugin install and identity, the codex-rescue subagent, and the… | 402 |
-| [context-ceiling](architecture/context-ceiling.md) | The absolute resident-token ceiling: resolution order, and the three… | 81 |
+| [context-ceiling](architecture/context-ceiling.md) | The absolute resident-token ceiling: resolution order, and the three… | 100 |
 | [context-retrieval](architecture/context-retrieval.md) | The retrieval subsystem: two graphs, two lanes, query-side gating, two-tier… | 674 |
 | [core-abstractions](architecture/core-abstractions.md) | ExecutionGraph, Stage, Session, Orchestrator, TerminalBackend — plus data flow… | 136 |
 | [directory-structure](architecture/directory-structure.md) | Full loom/src module tree, the .work/ state layout, and the repo-root asset… | 49 |
@@ -39,7 +39,7 @@
 | [quota-poller](architecture/quota-poller.md) | How loom learns the operator's Claude and Codex subscription budget, where it… | 29 |
 | [remote-control](architecture/remote-control.md) | Capability detection, preflight, resolution, and per-kind session naming for… | 82 |
 | [security-and-isolation](architecture/security-and-isolation.md) | 4-layer worktree defense, security model, settings.local.json sites. | 64 |
-| [signal-generation](architecture/signal-generation.md) | Signal assembly: cache, append_* helpers, per-stage prefixes, hung escalation. | 182 |
+| [signal-generation](architecture/signal-generation.md) | Signal assembly: cache, append_* helpers, per-stage prefixes, hung escalation. | 196 |
 | [skill-catalog](architecture/skill-catalog.md) | The two skill roots, why 53 skills live outside `~/.claude/skills`, and the… | 111 |
 | [source-graph](architecture/source-graph.md) | What the source graph is and is not, its honesty contract, extractor trait… | 329 |
 | [status-data-model](architecture/status-data-model.md) | Where each field shown by `loom status` (static, compact, and `--live`) comes… | 196 |
@@ -77,7 +77,7 @@
 
 | Topic | Blurb | Lines |
 | --- | --- | --- |
-| [code-style-and-structure](conventions/code-style-and-structure.md) | Rust naming, error handling, size limits, splitting, and docstring conventions | 232 |
+| [code-style-and-structure](conventions/code-style-and-structure.md) | Rust naming, error handling, size limits, splitting, and docstring conventions | 240 |
 | [commits](conventions/commits.md) | Logically grouped commits, Conventional Commit messages, and no AI attribution. | 14 |
 | [dispute-and-adjudication](conventions/dispute-and-adjudication.md) | Dispute file authority split, adjudicator scope, budgets, and transport | 112 |
 | [git-and-build-workflow](conventions/git-and-build-workflow.md) | Git/worktree ops, cargo fmt/test discipline, the shared maintainability ledger | 132 |
@@ -98,7 +98,7 @@
 | [computed-values-and-hidden-couplings](mistakes/computed-values-and-hidden-couplings.md) | Values computed right but unread downstream; hidden coupling bugs | 184 |
 | [concurrency-and-locking](mistakes/concurrency-and-locking.md) | Locked-handle writes and read-mutate-save races that lose concurrent updates. | 22 |
 | [detached-spawn-in-tests](mistakes/detached-spawn-in-tests.md) | Never spawn a process from a test that can outlive the test process. | 45 |
-| [doctrine-and-acceptance](mistakes/doctrine-and-acceptance.md) | Why a one-phrase grep proves presence but never agreement, and how doctrine… | 262 |
+| [doctrine-and-acceptance](mistakes/doctrine-and-acceptance.md) | Why a one-phrase grep proves presence but never agreement, and how doctrine… | 268 |
 | [hooks-shell-portability](mistakes/hooks-shell-portability.md) | gawk/bash portability traps and heredoc-scanning gotchas in the repo's hooks. | 75 |
 | [knowledge-base-drift](mistakes/knowledge-base-drift.md) | How the knowledge base itself goes stale: plan-authoring notes frozen as… | 157 |
 | [knowledge-cli-invariants](mistakes/knowledge-cli-invariants.md) | Invariants belong in the fs constructor, not the CLI handler; lock ordering for… | 130 |
@@ -122,7 +122,7 @@
 | [tests-that-cannot-fail](mistakes/tests-that-cannot-fail.md) | Tests that pass regardless of whether the bug they exist to catch is present… | 223 |
 | [tmux-backend](mistakes/tmux-backend.md) | tmux spawn-failure exit codes, cleanup-on-every-error-path discipline, and PID… | 120 |
 | [untrusted-value-boundaries](mistakes/untrusted-value-boundaries.md) | Enumerating every producer of a rendered field, not just the field, and why… | 188 |
-| [verification-harness](mistakes/verification-harness.md) | When every check fails at once, suspect the harness; the PATH binary is not… | 283 |
+| [verification-harness](mistakes/verification-harness.md) | When every check fails at once, suspect the harness; the PATH binary is not… | 295 |
 | [visibility-and-reachability](mistakes/visibility-and-reachability.md) | pub(crate) is not nameable by itself - visibility is capped by path… | 115 |
 | [web-dashboard-server](mistakes/web-dashboard-server.md) | Concurrency, security and testing lessons from building the hand-rolled… | 273 |
 | [writer-reader-address](mistakes/writer-reader-address.md) | A layer written under a key its reader ignores looks identical to no-op. | 73 |
@@ -142,4 +142,5 @@
 | [sandbox-and-confinement-gaps](concerns/sandbox-and-confinement-gaps.md) | Sandbox gaps: no E2E canary, diverging env allowlists, uncalled validators | 144 |
 | [sandbox-protected-hooks-dir](concerns/sandbox-protected-hooks-dir.md) | Resolved on 2026-09-13 by moving repository hook sources to `loom-hooks/`; the… | 47 |
 | [sandbox-write-rules-inert](concerns/sandbox-write-rules-inert.md) | Sandbox Write() rules that are inert in loom's generated stage settings and in… | 62 |
+| [token-accounting-and-proof-defects](concerns/token-accounting-and-proof-defects.md) | Cache false pass, usage undercount, poll-guard gap, hook tests polluting ledgers | 30 |
 | [web-dashboard-latent-issues](concerns/web-dashboard-latent-issues.md) | Issues reviewed in `loom/src/commands/status/web/` during integration-verify and | 63 |

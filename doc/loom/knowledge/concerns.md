@@ -195,3 +195,12 @@ this is a pointer, not an archive — see git history for the fix commits.
   [automatic-knowledge-source-graph-followups.md](concerns/automatic-knowledge-source-graph-followups.md#resolved-channelsource-and-the-source-graph-deletion-gap-2026-08-17-both-resolved-by-2026-09-10).
 - **`Source-Graph Overlay Cannot Express a Deletion`** — `GraphStore` now carries
   `FileCoverage::Deleted` tombstones. Same pointer as above.
+
+## Token Accounting and Proof Defects (2026-09-13)
+
+Four open defects that PLAN-token-optimization-2026-09-13 fixes: a criterion-cache
+false pass on raw exit success, a usage-stream undercount from favoring the first
+nonzero streamed usage over the final one, a poll-guard allowlist that omits `loom`
+itself, and hook tests that inherit a live session's LOOM_* identity and write fake
+forward records into its own stage ledger.
+→ [Token Accounting and Proof Defects](concerns/token-accounting-and-proof-defects.md)
