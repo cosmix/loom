@@ -20,6 +20,10 @@
 #   0 = Allow compaction
 #   2 = Block compaction (non-zero, non-1 to avoid hook failure)
 
+# Resolve commands through loom's pinned hook PATH when set (LOOM_HOOK_PATH):
+# inherited PATH directories can be writable from a sandboxed session.
+PATH="${LOOM_HOOK_PATH:-$PATH}"
+
 set -euo pipefail
 
 # Capture stdin (bounded by the same cross-platform timeout that used to just
@@ -40,8 +44,8 @@ elif command -v timeout &>/dev/null; then
 else
 	STDIN_PAYLOAD=$(cat 2>/dev/null || true)
 fi
-if command -v loom &>/dev/null; then
-	printf '%s' "$STDIN_PAYLOAD" | loom hook pre-compact >/dev/null 2>&1 || true
+if command -v "${LOOM_BIN:-loom}" &>/dev/null; then
+	printf '%s' "$STDIN_PAYLOAD" | LOOM_HOOK_CONTEXT=1 "${LOOM_BIN:-loom}" hook pre-compact >/dev/null 2>&1 || true
 fi
 
 # Validate required environment variables
@@ -77,8 +81,8 @@ if [[ -f "$PENDING_FLAG" ]]; then
 
 	# Create handoff (captures updated memory)
 	HANDOFF_FILE=""
-	if command -v loom &>/dev/null; then
-		if HANDOFF_OUTPUT=$(loom handoff --stage "${LOOM_STAGE_ID}" --session "${LOOM_SESSION_ID}" --trigger precompact 2>&1); then
+	if command -v "${LOOM_BIN:-loom}" &>/dev/null; then
+		if HANDOFF_OUTPUT=$(LOOM_HOOK_CONTEXT=1 "${LOOM_BIN:-loom}" handoff --stage "${LOOM_STAGE_ID}" --session "${LOOM_SESSION_ID}" --trigger precompact 2>&1); then
 			HANDOFF_FILE=$(echo "$HANDOFF_OUTPUT" | grep -oE '[^/]+\.md$' || echo "")
 		fi
 	fi
@@ -105,8 +109,8 @@ else
 
 	# Create initial handoff
 	HANDOFF_FILE=""
-	if command -v loom &>/dev/null; then
-		if HANDOFF_OUTPUT=$(loom handoff --stage "${LOOM_STAGE_ID}" --session "${LOOM_SESSION_ID}" --trigger precompact 2>&1); then
+	if command -v "${LOOM_BIN:-loom}" &>/dev/null; then
+		if HANDOFF_OUTPUT=$(LOOM_HOOK_CONTEXT=1 "${LOOM_BIN:-loom}" handoff --stage "${LOOM_STAGE_ID}" --session "${LOOM_SESSION_ID}" --trigger precompact 2>&1); then
 			HANDOFF_FILE=$(echo "$HANDOFF_OUTPUT" | grep -oE '[^/]+\.md$' || echo "")
 		fi
 	fi

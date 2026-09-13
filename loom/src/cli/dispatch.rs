@@ -1,7 +1,7 @@
 use crate::commands::{
     attach, clean, config, context, diagnose, graph, handoff, hook, init, install_assets,
-    knowledge, map, memory, plan, pressure, repair, resume, review, run, self_update, sessions,
-    skill_index, stage, status, stop, subagents, usage, verify, worktree_cmd,
+    knowledge, map, memory, plan, pressure, repair, request, resume, review, run, self_update,
+    sessions, skill_index, stage, status, stop, subagents, usage, verify, worktree_cmd,
 };
 use crate::completions::{complete_dynamic, generate_completions, CompletionContext, Shell};
 use anyhow::Result;
@@ -11,7 +11,7 @@ use std::str::FromStr;
 use super::dispatch_stage;
 use super::types::{
     Commands, ContextCommands, HookCommands, KnowledgeCommands, MemoryCommands, PlanCommands,
-    SessionsCommands, WorktreeCommands,
+    RequestCommands, SessionsCommands, WorktreeCommands,
 };
 
 /// The admin proof a `loom stage complete` invocation needs, if any.
@@ -173,7 +173,41 @@ fn dispatch_hook(command: HookCommands) -> Result<()> {
         HookCommands::PreCompact => hook::pre_compact::pre_compact(),
         HookCommands::ContextCeilings => hook::context_ceilings::context_ceilings(),
         HookCommands::ProjectTypes => hook::project_types::execute(),
+        HookCommands::Relay { allowed_kinds } => hook::relay::relay(&allowed_kinds),
     }
+}
+
+/// `loom request <subcommand>` dispatch.
+fn dispatch_request(command: RequestCommands) -> Result<()> {
+    match command {
+        RequestCommands::Status { id, session } => request::status::execute(id, session),
+    }
+}
+
+/// `loom completions` dispatch.
+///
+/// Broken out for the same reason as `dispatch_knowledge`: the top-level
+/// match sits at its line ceiling, so every new arm has to buy its line back
+/// from an existing one.
+fn dispatch_completions(shell: Option<String>, install: bool, migrate: bool) -> Result<()> {
+    if migrate {
+        return crate::completions::install::check_migration();
+    }
+
+    if install {
+        let shell = match shell {
+            Some(s) => Shell::from_str(&s)?,
+            None => crate::completions::install::detect_shell()?,
+        };
+        return crate::completions::install::install(shell);
+    }
+
+    let shell = shell.ok_or_else(|| {
+        anyhow::anyhow!("Shell argument required. Usage: loom completions <bash|zsh|fish>")
+    })?;
+    let shell = Shell::from_str(&shell)?;
+    generate_completions(shell);
+    Ok(())
 }
 
 /// `loom check` dispatch, extracted so `--no-cache` can toggle the acceptance
@@ -317,6 +351,7 @@ pub fn dispatch(command: Commands) -> Result<()> {
         Commands::Stage { command } => dispatch_stage::dispatch_stage(command),
         Commands::Knowledge { command } => dispatch_knowledge(command),
         Commands::Memory { command } => dispatch_memory(command),
+        Commands::Request { command } => dispatch_request(command),
         Commands::Review { ai_summary } => review::execute(ai_summary),
         Commands::Update => self_update::execute(),
         Commands::InstallAssets {
@@ -349,26 +384,7 @@ pub fn dispatch(command: Commands) -> Result<()> {
             shell,
             install,
             migrate,
-        } => {
-            if migrate {
-                return crate::completions::install::check_migration();
-            }
-
-            if install {
-                let shell = match shell {
-                    Some(s) => Shell::from_str(&s)?,
-                    None => crate::completions::install::detect_shell()?,
-                };
-                return crate::completions::install::install(shell);
-            }
-
-            let shell = shell.ok_or_else(|| {
-                anyhow::anyhow!("Shell argument required. Usage: loom completions <bash|zsh|fish>")
-            })?;
-            let shell = Shell::from_str(&shell)?;
-            generate_completions(shell);
-            Ok(())
-        }
+        } => dispatch_completions(shell, install, migrate),
         Commands::Context { command } => dispatch_context(command),
         Commands::Hook { command } => dispatch_hook(command),
         Commands::Complete { shell, args } => {

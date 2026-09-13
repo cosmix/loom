@@ -186,32 +186,27 @@ enforce_forwarder() {
 	exit 0
 }
 
-case "$AGENT_TYPE" in
-loom-codex-forwarder | codex:codex-rescue) enforce_forwarder ;;
-esac
-
 # A hook payload without either authoritative agent type or transcript metadata
-# cannot establish that the caller is not a forwarder.
+# cannot establish that the caller is not a forwarder. This fail-closed check
+# stays local rather than folding into loom_codex_forwarder_verdict below:
+# that shared verdict (_common.sh) treats an empty agent_type together with an
+# empty transcript_path as "not a forwarder" (rc=1), which would silently
+# ALLOW the call here instead of blocking it.
 if [[ -z "$AGENT_TYPE" && -z "$TRANSCRIPT_PATH" ]]; then
 	block_forwarder "agent_type and transcript_path metadata are both missing"
 fi
 
-# A known non-forwarder type is authoritative and needs no transcript fallback.
-if [[ -n "$AGENT_TYPE" ]]; then
-	exit 0
-fi
-
-# Only subagent transcripts carry the sentinel fallback. Main-session paths do
-# not qualify because they also contain the sentinel in Agent tool payloads.
-case "$TRANSCRIPT_PATH" in
-*/subagents/agent-*.jsonl) ;;
-*) exit 0 ;;
+# loom_codex_forwarder_verdict (_common.sh) applies codex-forward-guard.sh's
+# own classification rule: an authoritative agent_type match wins outright
+# (rc=0, regardless of transcript_path); otherwise a non-empty non-matching
+# agent_type is a known non-forwarder (rc=1); otherwise only a SUBAGENT
+# transcript path carries the LOOM-CODEX-FORWARD-ONLY sentinel fallback
+# (rc=0 found, rc=1 not found or shape mismatch, rc=2 unreadable/symlinked).
+verdict_rc=0
+loom_codex_forwarder_verdict "$AGENT_TYPE" "$TRANSCRIPT_PATH" || verdict_rc=$?
+case "$verdict_rc" in
+0) enforce_forwarder ;;
+2) block_forwarder "subagent transcript metadata is unreadable or unsafe" ;;
 esac
-
-[[ -f "$TRANSCRIPT_PATH" && -r "$TRANSCRIPT_PATH" && ! -L "$TRANSCRIPT_PATH" ]] || block_forwarder "subagent transcript metadata is unreadable or unsafe"
-
-if LC_ALL=C dd if="$TRANSCRIPT_PATH" bs=200000 count=1 2>/dev/null | grep -qF 'LOOM-CODEX-FORWARD-ONLY'; then
-	enforce_forwarder
-fi
 
 exit 0

@@ -12,5 +12,5 @@ pub use server::{
     admin_token_path, collect_completion_summary, handle_dispute_criteria, read_auth_token,
     read_user_token, DaemonServer, DaemonStatus,
 };
-pub(crate) use server::{handle_block_stage, DaemonUnavailable};
+pub(crate) use server::{caller_is_inside_session, handle_block_stage, DaemonUnavailable};
 pub use wire::{MAX_CREDENTIAL_BYTES, MAX_REQUEST_BYTES};

@@ -9,6 +9,7 @@
 # expanded under `set -u` on bash 3.2 is a hard error (see
 # prefer-modern-tools.sh's comment on this exact bug).
 
+PATH="${LOOM_HOOK_PATH:-$PATH}"
 if [[ "${_LOOM_READ_DISCIPLINE_LOADED:-}" == "1" ]]; then
 	return 0
 fi
@@ -126,8 +127,7 @@ _loom_file_line_count() {
 _loom_read_full_lines() {
 	local path="$1"
 	if _loom_read_skip_extension "$path"; then
-		printf '0'
-		return 0
+		printf '0'; return 0
 	fi
 	_loom_file_line_count "$path"
 }
@@ -190,7 +190,7 @@ _loom_outline_covered_rows() {
 	else
 		return 1
 	fi
-	output=$("$timeout_bin" 2 loom map --outline "$path" 2>/dev/null || true)
+	output=$(LOOM_HOOK_CONTEXT=1 "$timeout_bin" 2 "${LOOM_BIN:-loom}" map --outline "$path" 2>/dev/null || true)
 	[[ -n "$output" ]] || return 1
 	rows=$(printf '%s\n' "$output" | grep -E '^[[:space:]]+L[0-9]+-L[0-9]+[[:space:]]' || true)
 	[[ -n "$rows" ]] || return 1

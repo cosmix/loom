@@ -138,6 +138,11 @@ pub const HOOK_KNOWLEDGE_ORIENT: &str = include_str!("../../../../loom-hooks/kno
 pub const HOOK_CODEX_APPLY_PATCH: &str =
     include_str!("../../../../loom-hooks/codex-apply-patch.sh");
 
+/// Relay hook - PostToolUse:Bash bridge that hands the `LOOM_RELAY_V1` tickets
+/// a sandboxed loom command wrote to `loom hook relay`, which records them in
+/// the daemon inbox. Registered per session capsule, never globally.
+pub const HOOK_LOOM_RELAY: &str = include_str!("../../../../loom-hooks/loom-relay.sh");
+
 /// All Loom hook scripts with their filenames. The complete asset set is
 /// installed below both ~/.claude/hooks/loom and ~/.codex/hooks/loom; each
 /// harness registers only the scripts compatible with its event payloads.
@@ -149,6 +154,7 @@ pub const LOOM_HOOKS: &[(&str, &str)] = &[
     // Session lifecycle hooks
     ("post-tool-use.sh", HOOK_POST_TOOL_USE),
     ("loom-control-complete.sh", HOOK_LOOM_CONTROL_COMPLETE),
+    ("loom-relay.sh", HOOK_LOOM_RELAY),
     ("session-start.sh", HOOK_SESSION_START),
     ("pre-compact.sh", HOOK_PRE_COMPACT),
     ("session-end.sh", HOOK_SESSION_END),

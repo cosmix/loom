@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 # Trusted PostToolUse bridge for one exact sandboxed completion command.
 
+# Resolve commands through loom's pinned hook PATH when set (LOOM_HOOK_PATH):
+# inherited PATH directories can be writable from a sandboxed session.
+PATH="${LOOM_HOOK_PATH:-$PATH}"
+
 set -euo pipefail
 # loom_tokenize_command: the shared argv tokenizer git-add-guard.sh scans with.
 source "$(dirname "$0")/_common.sh"
@@ -22,24 +26,34 @@ fail_closed() {
 
 command -v jq &>/dev/null || fail_closed "$(loom_jq_missing_message loom-control-complete.sh)"
 
+# trusted_loom_candidate <path> - Print <path> resolved when it is an absolute,
+# executable regular file (not a symlink) outside /tmp and outside the checkout
+# this session can write ($CHECKOUT_ROOT); return 1 otherwise.
+trusted_loom_candidate() {
+	local candidate=$1 resolved
+	[[ "$candidate" == /* && -f "$candidate" && -x "$candidate" && ! -L "$candidate" ]] || return 1
+	resolved=$(cd "$(dirname "$candidate")" 2>/dev/null && pwd -P)/$(basename "$candidate")
+	case "$resolved" in /tmp/* | /private/tmp/* | /var/tmp/* | "$CHECKOUT_ROOT"/*) return 1 ;; esac
+	printf '%s\n' "$resolved"
+}
+
 resolve_trusted_loom() {
-	local candidate resolved
+	local candidate
 	if [[ ${LOOM_CONTROL_TESTING:-} == 1 && -d "$(dirname "$0")/tests" ]]; then
 		candidate=${LOOM_CONTROL_TEST_BIN:-}
 		[[ "$candidate" == /* && -f "$candidate" && -x "$candidate" && ! -L "$candidate" ]] || return 1
 		printf '%s\n' "$candidate"
 		return 0
 	fi
+	# The binary loom exported for this session (LOOM_BIN) comes first, held to
+	# the same checks as the fixed install locations after it.
 	for candidate in \
+		"${LOOM_BIN:-}" \
 		"${HOME:-}/.local/bin/loom" \
 		"${HOME:-}/.cargo/bin/loom" \
 		/usr/local/bin/loom \
 		/opt/homebrew/bin/loom; do
-		[[ "$candidate" == /* && -f "$candidate" && -x "$candidate" && ! -L "$candidate" ]] || continue
-		resolved=$(cd "$(dirname "$candidate")" 2>/dev/null && pwd -P)/$(basename "$candidate")
-		case "$resolved" in /tmp/* | /private/tmp/* | /var/tmp/* | "$WORKTREE_PATH"/*) continue ;; esac
-		printf '%s\n' "$resolved"
-		return 0
+		trusted_loom_candidate "$candidate" && return 0
 	done
 	return 1
 }
@@ -149,14 +163,30 @@ INPUT_JSON=$(read_input)
 STAGE_ID=${LOOM_STAGE_ID:-}
 SESSION_ID=${LOOM_SESSION_ID:-}
 WORKTREE_PATH=${LOOM_WORKTREE_PATH:-}
-[[ -n "$STAGE_ID" && -n "$SESSION_ID" && -n "$WORKTREE_PATH" ]] || exit 0
+[[ -n "$STAGE_ID" && -n "$SESSION_ID" ]] || exit 0
 # Membership, not presence (same rule as loom_current_worktree in _common.sh).
-# A loom worktree is `<repo>/.worktrees/<stage-id>`; main-repo sessions
-# (knowledge, merge, base-conflict) own no worktree and complete in-process, so
-# this bridge must stay out of their way rather than pin their command.
-# Anchored at the end: the wrapper exports the worktree ROOT, and a repo that
-# itself lives under an outer `.worktrees/<id>/` must not count as a worktree.
-[[ "$WORKTREE_PATH" =~ /\.worktrees/[^/]+/?$ ]] || exit 0
+# A loom worktree is `<repo>/.worktrees/<stage-id>`. Anchored at the end: the
+# wrapper exports the worktree ROOT, and a repo that itself lives under an
+# outer `.worktrees/<id>/` must not count as a worktree.
+#
+# The one main-repo session this bridge also serves is a CONFINED Knowledge
+# session (LOOM_SCRATCH_DIR set): it cannot write the state directory, so it
+# completes through the broker too (plan section 9). A legacy Knowledge session
+# still completes in-process, and Merge, base-conflict and adjudication
+# sessions never complete a stage here, so the bridge stays out of their way
+# rather than pin their command.
+if [[ "$WORKTREE_PATH" =~ /\.worktrees/[^/]+/?$ ]]; then
+	CHECKOUT_ROOT=$WORKTREE_PATH
+elif [[ ${LOOM_SESSION_TYPE:-} == knowledge && -n ${LOOM_SCRATCH_DIR:-} ]]; then
+	# The main project root: <root>/.loom/work, or the legacy <root>/.work.
+	case "${LOOM_WORK_DIR:-}" in
+	/*/.loom/work) CHECKOUT_ROOT=${LOOM_WORK_DIR%/.loom/work} ;;
+	/*/.work) CHECKOUT_ROOT=${LOOM_WORK_DIR%/.work} ;;
+	*) CHECKOUT_ROOT="" ;;
+	esac
+else
+	exit 0
+fi
 case "$STAGE_ID" in *[!A-Za-z0-9_-]* | '') fail_closed "invalid wrapper stage identity" ;; esac
 case "$SESSION_ID" in *[!A-Za-z0-9_-]* | '') fail_closed "invalid wrapper session identity" ;; esac
 
@@ -165,7 +195,11 @@ if ! is_completion_command "$COMMAND"; then
 	exit 0
 fi
 
-LOOM_BIN=$(resolve_trusted_loom) || fail_closed "no fixed trusted loom installation was found"
+# A binary inside the checkout this session writes is never trusted, so that
+# checkout must be known before any binary is.
+[[ -n "$CHECKOUT_ROOT" ]] ||
+	fail_closed "this knowledge session's LOOM_WORK_DIR names no loom state directory, so no loom binary can be trusted"
+LOOM_BIN=$(resolve_trusted_loom) || fail_closed "no trusted loom binary was found (LOOM_BIN or a fixed install location)"
 PINNED_COMMAND="$LOOM_BIN stage complete $STAGE_ID"
 HAS_RESULT=$(printf '%s' "$INPUT_JSON" | jq -r 'has("tool_result") or has("tool_response")')
 if [[ "$HAS_RESULT" != true ]]; then

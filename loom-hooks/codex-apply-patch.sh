@@ -2,6 +2,10 @@
 # Bridge Codex's apply_patch payload to Loom's Claude-shaped file guards and
 # record edited paths for the source-graph overlay after a successful patch.
 
+# Resolve commands through loom's pinned hook PATH when set (LOOM_HOOK_PATH):
+# inherited PATH directories can be writable from a sandboxed session.
+PATH="${LOOM_HOOK_PATH:-$PATH}"
+
 set -euo pipefail
 
 MODE="${1:-}"
@@ -88,7 +92,7 @@ fi
 
 [[ "$MODE" == "post" ]] || exit 0
 [[ -n "${LOOM_STAGE_ID:-}" ]] || exit 0
-command -v loom &>/dev/null || exit 0
+command -v "${LOOM_BIN:-loom}" &>/dev/null || exit 0
 
 declare -a ARGS=()
 for path in "${TARGETS[@]}"; do
@@ -96,11 +100,11 @@ for path in "${TARGETS[@]}"; do
 done
 
 if command -v gtimeout &>/dev/null; then
-	gtimeout 3 loom context record-edit --stage "$LOOM_STAGE_ID" "${ARGS[@]}" >/dev/null 2>&1 || true
+	LOOM_HOOK_CONTEXT=1 gtimeout 3 "${LOOM_BIN:-loom}" context record-edit --stage "$LOOM_STAGE_ID" "${ARGS[@]}" >/dev/null 2>&1 || true
 elif command -v timeout &>/dev/null; then
-	timeout 3 loom context record-edit --stage "$LOOM_STAGE_ID" "${ARGS[@]}" >/dev/null 2>&1 || true
+	LOOM_HOOK_CONTEXT=1 timeout 3 "${LOOM_BIN:-loom}" context record-edit --stage "$LOOM_STAGE_ID" "${ARGS[@]}" >/dev/null 2>&1 || true
 else
-	loom context record-edit --stage "$LOOM_STAGE_ID" "${ARGS[@]}" >/dev/null 2>&1 || true
+	LOOM_HOOK_CONTEXT=1 "${LOOM_BIN:-loom}" context record-edit --stage "$LOOM_STAGE_ID" "${ARGS[@]}" >/dev/null 2>&1 || true
 fi
 
 exit 0

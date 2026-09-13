@@ -26,6 +26,10 @@
 # processes, each printing at most one JSON object — this script does not
 # merge with or depend on it.
 
+# Resolve commands through loom's pinned hook PATH when set (LOOM_HOOK_PATH):
+# inherited PATH directories can be writable from a sandboxed session.
+PATH="${LOOM_HOOK_PATH:-$PATH}"
+
 set -euo pipefail
 umask 077
 
@@ -39,7 +43,7 @@ else
 	INPUT_JSON=$(cat 2>/dev/null || true)
 fi
 
-if ! command -v loom &>/dev/null; then
+if ! command -v "${LOOM_BIN:-loom}" &>/dev/null; then
 	exit 0
 fi
 
@@ -76,11 +80,11 @@ fi
 # retrieval must never hang the prompt submit path.
 OUTPUT=""
 if command -v gtimeout &>/dev/null; then
-	OUTPUT=$(printf '%s' "$INPUT_JSON" | gtimeout 5 loom hook user-prompt 2>/dev/null || true)
+	OUTPUT=$(printf '%s' "$INPUT_JSON" | LOOM_HOOK_CONTEXT=1 gtimeout 5 "${LOOM_BIN:-loom}" hook user-prompt 2>/dev/null || true)
 elif command -v timeout &>/dev/null; then
-	OUTPUT=$(printf '%s' "$INPUT_JSON" | timeout 5 loom hook user-prompt 2>/dev/null || true)
+	OUTPUT=$(printf '%s' "$INPUT_JSON" | LOOM_HOOK_CONTEXT=1 timeout 5 "${LOOM_BIN:-loom}" hook user-prompt 2>/dev/null || true)
 else
-	OUTPUT=$(printf '%s' "$INPUT_JSON" | loom hook user-prompt 2>/dev/null || true)
+	OUTPUT=$(printf '%s' "$INPUT_JSON" | LOOM_HOOK_CONTEXT=1 "${LOOM_BIN:-loom}" hook user-prompt 2>/dev/null || true)
 fi
 
 # A failed, timed-out, or empty delegate call means nothing to inject.

@@ -109,4 +109,32 @@ pub enum HookCommands {
     /// Discover package-scoped project types for skill recommendations.
     #[command(hide = true)]
     ProjectTypes,
+
+    /// PostToolUse helper behind `loom-relay.sh`: record the requests a
+    /// sandboxed loom command left in this session's scratch directory in the
+    /// daemon inbox. Not a user-facing command.
+    #[command(hide = true)]
+    Relay {
+        /// Comma-separated request kinds the Bash command may relay, as the
+        /// hook derived them from its loom invocations.
+        #[arg(long)]
+        allowed_kinds: String,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum RequestCommands {
+    /// Show whether the daemon has applied a request relayed via the CLI
+    /// output the relay hook watches for (`loom memory note`, `loom stage
+    /// merge --resolved`, ...).
+    Status {
+        /// The request id printed after the originating command's output.
+        id: String,
+
+        /// Session to look the request up under. Defaults to
+        /// `LOOM_SESSION_ID`; without either, every session's inbox is
+        /// scanned.
+        #[arg(long)]
+        session: Option<String>,
+    },
 }

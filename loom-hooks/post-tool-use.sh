@@ -28,6 +28,10 @@
 #   4. Compares resident tokens against the context ceiling and, at 80%/100%
 #      of it, tells the agent via exit 2 (see the CONTEXT CEILING section)
 
+# Resolve commands through loom's pinned hook PATH when set (LOOM_HOOK_PATH):
+# inherited PATH directories can be writable from a sandboxed session.
+PATH="${LOOM_HOOK_PATH:-$PATH}"
+
 set -euo pipefail
 umask 077
 
@@ -140,13 +144,13 @@ _loom_ctx_resolve_ceiling() {
 		_loom_ctx_pair_is_valid "$pair" || pair=""
 	fi
 
-	if [[ -z "$pair" ]] && command -v loom &>/dev/null; then
+	if [[ -z "$pair" ]] && command -v "${LOOM_BIN:-loom}" &>/dev/null; then
 		if command -v gtimeout &>/dev/null; then
-			pair=$(gtimeout 3 loom hook context-ceilings 2>/dev/null || true)
+			pair=$(LOOM_HOOK_CONTEXT=1 gtimeout 3 "${LOOM_BIN:-loom}" hook context-ceilings 2>/dev/null || true)
 		elif command -v timeout &>/dev/null; then
-			pair=$(timeout 3 loom hook context-ceilings 2>/dev/null || true)
+			pair=$(LOOM_HOOK_CONTEXT=1 timeout 3 "${LOOM_BIN:-loom}" hook context-ceilings 2>/dev/null || true)
 		else
-			pair=$(loom hook context-ceilings 2>/dev/null || true)
+			pair=$(LOOM_HOOK_CONTEXT=1 "${LOOM_BIN:-loom}" hook context-ceilings 2>/dev/null || true)
 		fi
 		if _loom_ctx_pair_is_valid "$pair"; then
 			_loom_ctx_cache_pair "$cache_file" "$pair"
@@ -467,7 +471,7 @@ fi
 # same tool for the same reason. Falling back to `.file_path` only guards
 # against a future field rename, matching that guard's fallback.
 if [[ "$TOOL_NAME" == "Write" || "$TOOL_NAME" == "Edit" || "$TOOL_NAME" == "MultiEdit" || "$TOOL_NAME" == "NotebookEdit" ]] \
-	&& command -v loom &>/dev/null && command -v jq &>/dev/null; then
+	&& command -v "${LOOM_BIN:-loom}" &>/dev/null && command -v jq &>/dev/null; then
 	if [[ "$TOOL_NAME" == "NotebookEdit" ]]; then
 		EDIT_PATH=$(echo "$TOOL_INPUT" | jq -r '.notebook_path // .file_path // empty' 2>/dev/null || true)
 	else
@@ -475,11 +479,11 @@ if [[ "$TOOL_NAME" == "Write" || "$TOOL_NAME" == "Edit" || "$TOOL_NAME" == "Mult
 	fi
 	if [[ -n "$EDIT_PATH" ]]; then
 		if command -v gtimeout &>/dev/null; then
-			gtimeout 3 loom context record-edit --stage "$LOOM_STAGE_ID" --path "$EDIT_PATH" >/dev/null 2>&1 || true
+			LOOM_HOOK_CONTEXT=1 gtimeout 3 "${LOOM_BIN:-loom}" context record-edit --stage "$LOOM_STAGE_ID" --path "$EDIT_PATH" >/dev/null 2>&1 || true
 		elif command -v timeout &>/dev/null; then
-			timeout 3 loom context record-edit --stage "$LOOM_STAGE_ID" --path "$EDIT_PATH" >/dev/null 2>&1 || true
+			LOOM_HOOK_CONTEXT=1 timeout 3 "${LOOM_BIN:-loom}" context record-edit --stage "$LOOM_STAGE_ID" --path "$EDIT_PATH" >/dev/null 2>&1 || true
 		else
-			loom context record-edit --stage "$LOOM_STAGE_ID" --path "$EDIT_PATH" >/dev/null 2>&1 || true
+			LOOM_HOOK_CONTEXT=1 "${LOOM_BIN:-loom}" context record-edit --stage "$LOOM_STAGE_ID" --path "$EDIT_PATH" >/dev/null 2>&1 || true
 		fi
 	fi
 fi

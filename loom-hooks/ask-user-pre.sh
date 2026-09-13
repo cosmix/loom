@@ -12,6 +12,10 @@
 #                     legacy .work/ for a workspace that already resolved
 #                     to it)
 
+# Resolve commands through loom's pinned hook PATH when set (LOOM_HOOK_PATH):
+# inherited PATH directories can be writable from a sandboxed session.
+PATH="${LOOM_HOOK_PATH:-$PATH}"
+
 # Drain stdin to prevent blocking (hook doesn't need tool input details)
 # Cross-platform: gtimeout (macOS+coreutils), timeout (Linux), or cat
 if command -v gtimeout &>/dev/null; then
@@ -40,7 +44,7 @@ if [ -n "$LOOM_WORK_DIR" ]; then
 fi
 
 # Mark stage as waiting for user input
-loom stage waiting "$LOOM_STAGE_ID" 2>&1 || {
+LOOM_HOOK_CONTEXT=1 "${LOOM_BIN:-loom}" stage waiting "$LOOM_STAGE_ID" 2>&1 || {
 	echo "Note: Could not mark stage as waiting (loom not available)"
 }
 

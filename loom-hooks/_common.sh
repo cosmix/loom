@@ -842,6 +842,31 @@ loom_tokens_word_matches() {
     return 1
 }
 
+# loom_codex_forwarder_verdict <agent_type> <transcript_path> - Decide whether
+# a hook payload came from a codex forwarding shim, by the rule
+# codex-forward-guard.sh enforces: an authoritative agent_type first, then the
+# LOOM-CODEX-FORWARD-ONLY sentinel in the first 200000 bytes of a SUBAGENT
+# transcript (a main-session transcript also carries the sentinel inside Agent
+# tool payloads, so it never qualifies). Returns 0 for a forwarder, 1 for
+# anything else, and 2 when a subagent transcript that would decide it is
+# unreadable or a symlink.
+loom_codex_forwarder_verdict() {
+    local agent_type="$1" transcript_path="$2"
+    case "$agent_type" in
+    loom-codex-forwarder | codex:codex-rescue) return 0 ;;
+    esac
+    [[ -n "$agent_type" ]] && return 1
+    case "$transcript_path" in
+    */subagents/agent-*.jsonl) ;;
+    *) return 1 ;;
+    esac
+    [[ -f "$transcript_path" && -r "$transcript_path" && ! -L "$transcript_path" ]] || return 2
+    if LC_ALL=C dd if="$transcript_path" bs=200000 count=1 2>/dev/null | grep -qF 'LOOM-CODEX-FORWARD-ONLY'; then
+        return 0
+    fi
+    return 1
+}
+
 # loom_debug - Emit a debug line to stderr when LOOM_HOOK_DEBUG=1 (or the
 # legacy COMMIT_FILTER_DEBUG=1). Defined here rather than relying on the
 # caller's own `debug`, so every hook that sources this file can call it.

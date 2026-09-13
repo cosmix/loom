@@ -24,6 +24,7 @@ mod tests;
 pub(crate) use control_block::handle_block_stage;
 pub use core::{DaemonServer, DaemonStatus};
 pub use dispute::handle_dispute_criteria;
+pub(crate) use peer_identity::caller_is_inside_session;
 pub(crate) use shutdown::DaemonUnavailable;
 pub use status::collect_completion_summary;
 pub use tokens::{admin_token_path, read_auth_token, read_user_token};

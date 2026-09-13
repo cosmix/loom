@@ -8,7 +8,10 @@ ERRORS=()
 run_test() {
     local name="$1"
     local script="$2"
-    if output=$(bash "$script" 2>&1); then
+    # A loom session exports these; inherited, they would override the stub
+    # binaries and PATHs each test hands its hooks.
+    if output=$(env -u LOOM_HOOK_PATH -u LOOM_BIN -u LOOM_HOOK_CONTEXT \
+        -u LOOM_SCRATCH_DIR -u LOOM_SESSION_TYPE bash "$script" 2>&1); then
         echo "  PASS: $name"
         ((PASS++)) || true
     else

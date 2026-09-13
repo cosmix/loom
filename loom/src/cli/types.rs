@@ -6,7 +6,8 @@ pub use super::types_config::ConfigArgs;
 use super::types_help::{positive_usize, HELP_TEMPLATE, VERSION_STRING};
 pub use super::types_memory::{KnowledgeCommands, MemoryCommands};
 pub use super::types_ops::{
-    ContextCommands, HookCommands, PlanCommands, SessionsCommands, WorktreeCommands,
+    ContextCommands, HookCommands, PlanCommands, RequestCommands, SessionsCommands,
+    WorktreeCommands,
 };
 pub use super::types_stage::{OutputCommands, StageCommands};
 
@@ -164,6 +165,13 @@ pub enum Commands {
     Memory {
         #[command(subcommand)]
         command: MemoryCommands,
+    },
+
+    /// Check a request relayed through the sandbox against the daemon's
+    /// inbox ledger
+    Request {
+        #[command(subcommand)]
+        command: RequestCommands,
     },
 
     /// Generate code review documents from stage memories

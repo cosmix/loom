@@ -18,6 +18,10 @@
 #   2. If not completed, creates handoff
 #   3. Logs SessionEnd event
 
+# Resolve commands through loom's pinned hook PATH when set (LOOM_HOOK_PATH):
+# inherited PATH directories can be writable from a sandboxed session.
+PATH="${LOOM_HOOK_PATH:-$PATH}"
+
 set -euo pipefail
 
 # Read stdin JSON (for the `reason` field)
@@ -75,8 +79,8 @@ if [[ -n "$STAGE_FILE" ]] && [[ -f "$STAGE_FILE" ]]; then
 fi
 
 # If not completed and loom is available, try to create handoff
-if [[ "$COMPLETED" != "true" ]] && command -v loom &>/dev/null; then
-	loom handoff --stage "${LOOM_STAGE_ID}" --session "${LOOM_SESSION_ID}" --trigger session_end 2>/dev/null || true
+if [[ "$COMPLETED" != "true" ]] && command -v "${LOOM_BIN:-loom}" &>/dev/null; then
+	LOOM_HOOK_CONTEXT=1 "${LOOM_BIN:-loom}" handoff --stage "${LOOM_STAGE_ID}" --session "${LOOM_SESSION_ID}" --trigger session_end 2>/dev/null || true
 fi
 
 # Extract the reason Claude Code ended the session (clear/resume/logout/
