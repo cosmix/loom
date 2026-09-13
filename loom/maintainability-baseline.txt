@@ -41,7 +41,7 @@ file src/plan/amendment.rs 1091
 file src/plan/parser/extraction.rs 410
 file src/plan/schema/tests/validation_tests.rs 923
 file src/plan/schema/types.rs 466
-file src/plan/schema/validation.rs 1285
+file src/plan/schema/validation.rs 1283
 file src/plan/tests/amendment.rs 605
 file src/remote_control.rs 598
 file src/sandbox/config.rs 848

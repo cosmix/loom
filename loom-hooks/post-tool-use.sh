@@ -14,6 +14,7 @@ set -euo pipefail
 umask 077
 
 source "$(dirname "$0")/_common.sh"
+source "$(dirname "$0")/_read_ledger.sh"
 
 # Fallbacks if the canonical resolver fails; in loom/src/models/constants.rs:
 # LOOM_DEFAULT_CONTEXT_CEILING_TOKENS mirrors DEFAULT_CONTEXT_CEILING_TOKENS.
@@ -161,26 +162,16 @@ _loom_ctx_check_subagent_ceiling() {
 	fi
 }
 
-# loom_run_bounded <seconds> <command...>
-# Prefer GNU coreutils on macOS, then Linux timeout, with a plain fallback.
-loom_run_bounded() {
-	local seconds="$1"
-	shift
-	if command -v gtimeout &>/dev/null; then
-		gtimeout "$seconds" "$@"
-	elif command -v timeout &>/dev/null; then
-		timeout "$seconds" "$@"
-	else
-		"$@"
-	fi
-}
-
 # Bound stdin in case the hook runner leaves it open.
 INPUT_JSON=$(loom_run_bounded 1 cat 2>/dev/null || true)
 
 TOOL_NAME=$(echo "$INPUT_JSON" | jq -r '.tool_name // empty' 2>/dev/null || true)
 TOOL_NAME="${TOOL_NAME:-unknown}"
 TOOL_INPUT=$(echo "$INPUT_JSON" | jq -r '.tool_input // empty' 2>/dev/null || true)
+READ_FILE_PATH=""
+if [[ "$TOOL_NAME" == "Read" ]]; then
+	READ_FILE_PATH=$(echo "$TOOL_INPUT" | jq -r '.file_path // empty' 2>/dev/null || true)
+fi
 
 COMMAND=""
 if [[ "$TOOL_NAME" == "Bash" ]]; then
@@ -304,6 +295,14 @@ fi
 if [[ "$TOOL_NAME" == "Bash" && "$COMMAND" == *"codex-forward.sh task"* && -n "$TRANSCRIPT_PATH" ]] \
 	&& command -v loom &>/dev/null; then
 	loom_run_bounded 5 loom hook forward-receipt --transcript "$TRANSCRIPT_PATH" >/dev/null 2>&1 || true
+fi
+
+# Result content is intentionally not parsed or stored in shell. The Rust
+# adapter receives the original payload and correlates its Read tool-use id
+# with the bounded transcript tail before it records any receipt.
+if [[ "$TOOL_NAME" == "Read" && -n "$INPUT_JSON" && -n "$READ_FILE_PATH" ]] \
+	&& _loom_read_receipt_eligible "$READ_FILE_PATH" && command -v loom &>/dev/null; then
+	printf '%s' "$INPUT_JSON" | loom_run_bounded 2 loom hook read-receipt --complete >/dev/null 2>&1 || true
 fi
 
 # Tool results are not persisted: a shell hook cannot append race-free without

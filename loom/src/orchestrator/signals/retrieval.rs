@@ -18,7 +18,7 @@ use super::types::EmbeddedContext;
 
 /// The label the Knowledge Brief's `Selected from:` line carries.
 ///
-/// Deliberately a fixed description of [`build_stage_query_text`]'s INPUT
+/// Deliberately a fixed description of [`StageQuery::build_stage_query_text`]'s INPUT
 /// FIELDS rather than the query itself: a real stage's query is its whole
 /// description — `EXECUTION PLAN` blocks and all — so echoing it back would
 /// re-embed the assignment a second time inside the KV-cached semi-stable
@@ -61,14 +61,14 @@ pub(super) fn retrieve_stage_pack(work_dir: &Path, stage: &Stage) -> Option<Cont
         .and_then(|resolved| resolved.main_project_root())
         .unwrap_or_else(|| work_dir.to_path_buf());
     let config = RetrievalConfig::load(&main_root);
-    let mut query = StageQuery::new(work_dir, build_stage_query_text(stage));
-    query.overlay = stage_overlay_scope(stage);
+    let mut query = StageQuery::new(work_dir, StageQuery::build_stage_query_text(stage));
+    query.overlay = StageQuery::stage_overlay_scope(stage);
     query.stage_dependency_ids = crate::context::delivery::dependency_chunk_ids(
         work_dir,
         plan_key(stage),
         &stage.dependencies,
     );
-    query.dependency_paths = dependency_paths(work_dir, stage);
+    query.dependency_paths = StageQuery::dependency_paths(work_dir, stage);
     match retrieve_for_stage(&query, config.stage_brief_budget_tokens) {
         Ok(pack) if !pack.items.is_empty() => Some(pack),
         Ok(_) => None,
@@ -95,93 +95,93 @@ pub(super) fn retrieve_stage_pack(work_dir: &Path, stage: &Stage) -> Option<Cont
 /// paths, so the declared file lists have to come from the stage records
 /// themselves — the same `.loom/work/stages/` lookup `verify::transitions` uses.
 ///
-/// Every failure is skipped rather than reported: a brief with a thinner set of
-/// boosts is a slightly worse brief, while a stage that will not spawn is a
-/// stalled plan.
-fn dependency_paths(work_dir: &Path, stage: &Stage) -> Vec<String> {
-    let stages_dir = work_dir.join("stages");
-    let mut paths: Vec<String> = Vec::new();
-    for dependency in &stage.dependencies {
-        let Ok(Some(stage_file)) = find_stage_file(&stages_dir, dependency) else {
-            continue;
-        };
-        let Ok(content) = std::fs::read_to_string(&stage_file) else {
-            continue;
-        };
-        let Ok(definition) = extract_stage_definition(&content) else {
-            continue;
-        };
-        for declared in definition.files.iter().chain(definition.artifacts.iter()) {
-            // Normalized through the ranker's own helper so the producer and
-            // the exact-string comparison on the other end cannot drift apart.
-            let normalized = normalize_dependency_path(declared);
-            if !normalized.is_empty() && !paths.contains(&normalized) {
-                paths.push(normalized);
+/// Every failure is skipped rather than reported: fewer boosts only thin the brief.
+impl StageQuery {
+    pub(crate) fn dependency_paths(work_dir: &Path, stage: &Stage) -> Vec<String> {
+        let stages_dir = work_dir.join("stages");
+        let mut paths: Vec<String> = Vec::new();
+        for dependency in &stage.dependencies {
+            let Ok(Some(stage_file)) = find_stage_file(&stages_dir, dependency) else {
+                continue;
+            };
+            let Ok(content) = std::fs::read_to_string(&stage_file) else {
+                continue;
+            };
+            let Ok(definition) = extract_stage_definition(&content) else {
+                continue;
+            };
+            for declared in definition.files.iter().chain(definition.artifacts.iter()) {
+                // Normalized through the ranker's own helper so the producer and
+                // the exact-string comparison on the other end cannot drift apart.
+                let normalized = normalize_dependency_path(declared);
+                if !normalized.is_empty() && !paths.contains(&normalized) {
+                    paths.push(normalized);
+                }
             }
         }
+        paths
     }
-    paths
-}
 
-/// Which source-graph overlay a stage's brief reads: that stage's OWN overlay,
-/// never the checkout-wide [`OverlayScope::Local`] one.
-///
-/// `Local` would be wrong here: it resolves against the project root of the
-/// `.loom/work/` this query names — the MAIN repository, because signals are generated
-/// by the orchestrator daemon running there — so a stage's brief would describe
-/// the main checkout rather than the worktree the stage is about to edit.
-///
-/// The plan component MUST be [`plan_key`], and getting it wrong fails SILENTLY.
-/// The overlay this reads is written by `MergeLifecycle::reconcile_overlay`
-/// (`orchestrator/merge_lifecycle.rs`), which keys it by the `plan_id` in
-/// `.loom/work/config.toml`; [`plan_key`] keys it by `Stage::plan_id`, falling back to
-/// `"default"` when the stage names no plan. The two agree because `loom init`
-/// writes both from one parsed plan id (`commands/init/plan_setup.rs`: the config
-/// table and every stage record are stamped from `parsed_plan.id`) — an agreement
-/// pinned end-to-end by `context/tests/overlay_key.rs`, because nothing reports
-/// it breaking: on a mismatch the reader asks for an overlay nobody wrote, and
-/// `GraphStore::resolved` returns the base layer with no error at all. The brief
-/// silently degrades to the last merged revision and every gate still passes.
-///
-/// One case does still diverge, and normalizing it a second time here would only
-/// hide it: a `.loom/work/config.toml` whose `plan_id` is blank, or a stage record
-/// without one while the config has one. [`plan_key`] resolves both to
-/// `"default"`; the writer normalizes neither, so it files the overlay elsewhere.
-/// The fix is to leave ONE derivation — `MergeLifecycle` keying off
-/// `plan_key_from(config.plan_id())` — which is that module's to make.
-fn stage_overlay_scope(stage: &Stage) -> OverlayScope {
-    // Spelled out in full rather than through the `plan_key` import: this is the
-    // one derivation that has to match the delivery records', and naming its
-    // module here is what makes that agreement visible at the call site instead
-    // of only in the doc comment above.
-    OverlayScope::Stage {
-        plan: crate::context::delivery::plan_key(stage).to_string(),
-        stage: stage.id.clone(),
+    /// Which source-graph overlay a stage's brief reads: that stage's OWN overlay,
+    /// never the checkout-wide [`OverlayScope::Local`] one.
+    ///
+    /// `Local` would be wrong here: it resolves against the project root of the
+    /// `.loom/work/` this query names — the MAIN repository, because signals are generated
+    /// by the orchestrator daemon running there — so a stage's brief would describe
+    /// the main checkout rather than the worktree the stage is about to edit.
+    ///
+    /// The plan component MUST be [`plan_key`], and getting it wrong fails SILENTLY.
+    /// The overlay this reads is written by `MergeLifecycle::reconcile_overlay`
+    /// (`orchestrator/merge_lifecycle.rs`), which keys it by the `plan_id` in
+    /// `.loom/work/config.toml`; [`plan_key`] keys it by `Stage::plan_id`, falling back to
+    /// `"default"` when the stage names no plan. The two agree because `loom init`
+    /// writes both from one parsed plan id (`commands/init/plan_setup.rs`: the config
+    /// table and every stage record are stamped from `parsed_plan.id`) — an agreement
+    /// pinned end-to-end by `context/tests/overlay_key.rs`, because nothing reports
+    /// it breaking: on a mismatch the reader asks for an overlay nobody wrote, and
+    /// `GraphStore::resolved` returns the base layer with no error at all. The brief
+    /// silently degrades to the last merged revision and every gate still passes.
+    ///
+    /// One case does still diverge, and normalizing it a second time here would only
+    /// hide it: a `.loom/work/config.toml` whose `plan_id` is blank, or a stage record
+    /// without one while the config has one. [`plan_key`] resolves both to
+    /// `"default"`; the writer normalizes neither, so it files the overlay elsewhere.
+    /// The fix is to leave ONE derivation — `MergeLifecycle` keying off
+    /// `plan_key_from(config.plan_id())` — which is that module's to make.
+    pub(crate) fn stage_overlay_scope(stage: &Stage) -> OverlayScope {
+        // Spelled out in full rather than through the `plan_key` import: this is the
+        // one derivation that has to match the delivery records', and naming its
+        // module here is what makes that agreement visible at the call site instead
+        // of only in the doc comment above.
+        OverlayScope::Stage {
+            plan: crate::context::delivery::plan_key(stage).to_string(),
+            stage: stage.id.clone(),
+        }
     }
-}
 
-/// Build the free-text query for a stage's brief from its declared metadata:
-/// id, type, name, description, working directory, files, artifacts,
-/// wiring descriptions, and the ids of its dependencies.
-fn build_stage_query_text(stage: &Stage) -> String {
-    let mut parts = vec![
-        stage.id.clone(),
-        format!("{:?}", stage.stage_type),
-        stage.name.clone(),
-    ];
-    parts.extend(stage.description.clone());
-    parts.extend(stage.working_dir.clone());
-    parts.extend(stage.files.iter().cloned());
-    parts.extend(stage.artifacts.iter().cloned());
-    parts.extend(stage.wiring.iter().map(describe_wiring_check));
-    parts.extend(stage.dependencies.iter().cloned());
-    parts.retain(|part| !part.trim().is_empty());
-    parts.join("\n")
-}
+    /// Build the free-text query for a stage's brief from its declared metadata:
+    /// id, type, name, description, working directory, files, artifacts,
+    /// wiring descriptions, and the ids of its dependencies.
+    pub(crate) fn build_stage_query_text(stage: &Stage) -> String {
+        let mut parts = vec![
+            stage.id.clone(),
+            format!("{:?}", stage.stage_type),
+            stage.name.clone(),
+        ];
+        parts.extend(stage.description.clone());
+        parts.extend(stage.working_dir.clone());
+        parts.extend(stage.files.iter().cloned());
+        parts.extend(stage.artifacts.iter().cloned());
+        parts.extend(stage.wiring.iter().map(Self::describe_wiring_check));
+        parts.extend(stage.dependencies.iter().cloned());
+        parts.retain(|part| !part.trim().is_empty());
+        parts.join("\n")
+    }
 
-/// Keep only the human description of a wiring check in searchable text.
-fn describe_wiring_check(check: &WiringCheck) -> String {
-    check.description.clone()
+    /// Keep only the human description of a wiring check in searchable text.
+    fn describe_wiring_check(check: &WiringCheck) -> String {
+        check.description.clone()
+    }
 }
 
 /// Persist a [`crate::context::delivery::DeliveryRecord`] for `session_id`'s
@@ -247,7 +247,7 @@ mod tests {
         stage.dependencies = vec!["upstream".to_string(), "never-written".to_string()];
 
         assert_eq!(
-            dependency_paths(&work_dir, &stage),
+            StageQuery::dependency_paths(&work_dir, &stage),
             vec!["src/foo.ts".to_string(), "docs/foo.md".to_string()],
             "normalized, deduplicated, files before artifacts, missing \
              dependencies skipped"
@@ -300,7 +300,7 @@ mod tests {
         stage.plan_id = Some("PLAN-source-channel".to_string());
 
         assert_eq!(
-            stage_overlay_scope(&stage),
+            StageQuery::stage_overlay_scope(&stage),
             OverlayScope::Stage {
                 plan: "PLAN-source-channel".to_string(),
                 stage: "source-ranker".to_string(),
@@ -319,7 +319,7 @@ mod tests {
         // The literal matters: `unwrap_or_default()` would key the overlay by an
         // empty path component, which resolves to the stage directory's parent.
         assert_eq!(
-            stage_overlay_scope(&stage),
+            StageQuery::stage_overlay_scope(&stage),
             OverlayScope::Stage {
                 plan: "default".to_string(),
                 stage: "source-ranker".to_string(),
@@ -335,7 +335,7 @@ mod tests {
         stage.files = vec!["src/lib.rs".to_string()];
         stage.dependencies = vec!["dep-1".to_string()];
 
-        let text = build_stage_query_text(&stage);
+        let text = StageQuery::build_stage_query_text(&stage);
         assert!(text.contains("my-stage"));
         assert!(text.contains("My Stage"));
         assert!(text.contains("Does a thing"));
@@ -360,7 +360,7 @@ mod tests {
             description: "producer reaches consumer".to_string(),
         }];
 
-        let text = build_stage_query_text(&stage);
+        let text = StageQuery::build_stage_query_text(&stage);
         assert!(!text.contains("cargo test --workspace"), "{text}");
         assert!(!text.contains("src/private.rs"), "{text}");
         assert!(!text.contains("INTERNAL_PATTERN"), "{text}");

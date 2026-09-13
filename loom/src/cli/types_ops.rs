@@ -114,6 +114,33 @@ pub enum HookCommands {
         transcript: std::path::PathBuf,
     },
 
+    /// Retrieve a scoped brief for a typed worker, or bind its nonce.
+    #[command(hide = true)]
+    WorkerBrief {
+        #[arg(long)]
+        bind_agent: Option<String>,
+        #[arg(long)]
+        agent_type: Option<String>,
+        #[arg(long)]
+        transcript: Option<std::path::PathBuf>,
+    },
+
+    /// Maintain the tool-read receipt state machine.
+    #[command(
+        hide = true,
+        group(clap::ArgGroup::new("mode").required(true).multiple(false).args([
+            "prepare", "check", "complete"
+        ]))
+    )]
+    ReadReceipt {
+        #[arg(long)]
+        prepare: bool,
+        #[arg(long)]
+        check: bool,
+        #[arg(long)]
+        complete: bool,
+    },
+
     /// Discover package-scoped project types for skill recommendations.
     #[command(hide = true)]
     ProjectTypes,

@@ -77,6 +77,71 @@ fn hook_recipient_id_stays_filesystem_safe_for_a_hostile_session_id() {
     }
 }
 
+// ── worker_recipient_id ─────────────────────────────────────────────────
+
+#[test]
+fn worker_recipient_id_is_a_namespaced_thirty_two_character_digest() {
+    let key = worker_recipient_id("stage-a", "parent-a", "0123456789abcdef0123456789abcdef");
+    let digest = key.strip_prefix("worker-").expect("worker namespace");
+
+    assert_eq!(digest.len(), 32);
+    assert!(digest
+        .chars()
+        .all(|ch| ch.is_ascii_digit() || matches!(ch, 'a'..='f')));
+}
+
+#[test]
+fn worker_nonces_and_parent_sessions_remain_isolated() {
+    let first = worker_recipient_id("stage-a", "parent-a", "nonce-a");
+    assert_eq!(first, worker_recipient_id("stage-a", "parent-a", "nonce-a"));
+    assert_ne!(first, worker_recipient_id("stage-a", "parent-a", "nonce-b"));
+    assert_ne!(first, worker_recipient_id("stage-a", "parent-b", "nonce-a"));
+    assert_ne!(first, worker_recipient_id("stage-b", "parent-a", "nonce-a"));
+}
+
+#[test]
+fn worker_and_child_prompt_recipients_cannot_share_a_namespace() {
+    let pending = worker_recipient_id("scope", "parent", "child-session");
+    let child = hook_recipient_id("scope", Some("child-session"));
+
+    assert_ne!(pending, child);
+    assert!(pending.starts_with("worker-"));
+    assert!(child.starts_with("prompt-"));
+}
+
+#[test]
+fn nonce_address_and_same_named_child_record_use_isolated_directories() {
+    let temp = TempDir::new().unwrap();
+    let work_dir = temp.path().join(".loom").join("work");
+    let nonce_address = worker_recipient_id("scope", "parent", "nonce");
+    let direct = record(&nonce_address, "epoch-a", &[("direct", "h1")]);
+    record_delivery(&work_dir, PLAN, STAGE, &direct).unwrap();
+
+    let worker_dir = worker_delivery_dir(&work_dir, PLAN, STAGE);
+    std::fs::create_dir_all(&worker_dir).unwrap();
+    let bound = record("actual-child", "epoch-a", &[("bound", "h2")]);
+    std::fs::write(
+        worker_dir.join(format!("{nonce_address}.json")),
+        serde_json::to_string(&bound).unwrap(),
+    )
+    .unwrap();
+
+    let loaded = load_deliveries(&work_dir, PLAN, STAGE).unwrap();
+    assert_eq!(loaded.len(), 2);
+    assert!(loaded.contains(&direct));
+    assert!(loaded.contains(&bound));
+}
+
+#[test]
+fn worker_recipient_id_hashes_every_untrusted_component_before_filing() {
+    let temp = TempDir::new().unwrap();
+    let work_dir = temp.path().join(".loom").join("work");
+    let recipient = worker_recipient_id("../stage", "parent/session", "nonce with spaces");
+
+    record_delivery(&work_dir, PLAN, STAGE, &record(&recipient, "epoch-a", &[]))
+        .expect("the derived recipient must always be filename-safe");
+}
+
 // ── delivered_to_session (A.16) ─────────────────────────────────────────
 
 #[test]
