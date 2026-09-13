@@ -2,7 +2,8 @@
 
 use crate::daemon::protocol::Response;
 use crate::fs::locking::locked_dir_update;
-use crate::models::stage::StageStatus;
+use crate::models::session::{SessionStatus, SessionType};
+use crate::models::stage::{StageStatus, StageType};
 use crate::verify::transitions::{load_stage, update_stage};
 use anyhow::{bail, Context, Result};
 use std::fs::{self, OpenOptions};
@@ -11,6 +12,10 @@ use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
 
 const NONCE_LEN: usize = 32;
+
+/// The session kinds that complete their own stage through the broker: a
+/// worktree stage session, and a knowledge session in the main repository.
+const COMPLETING_SESSION_TYPES: &[SessionType] = &[SessionType::Stage, SessionType::Knowledge];
 
 pub(super) fn handle_complete_stage(
     work_dir: &Path,
@@ -40,12 +45,35 @@ pub(super) fn handle_complete_stage(
             if stage.session.as_deref() != Some(session_id) {
                 bail!("stage session changed before completion was applied");
             }
+            // A knowledge stage has no branch to merge; the in-process path
+            // (`complete_knowledge_stage`) records it the same way.
+            if stage.stage_type == StageType::Knowledge {
+                stage.merged = true;
+            }
             stage.try_complete(None)
         })?;
         consume_nonce(work_dir, nonce)?;
         Ok(())
     })?;
+    retire_completed_session(work_dir, session_id);
     Ok(Response::Ok)
+}
+
+/// The daemon's half of `commands::stage::session::cleanup_session_resources`:
+/// a sandboxed session cannot write its own record or signal file, so the
+/// broker does it once the transition has landed (outside the sessions-dir
+/// lock, which the record write takes itself). Best-effort, as in the CLI:
+/// the stage is already complete.
+fn retire_completed_session(work_dir: &Path, session_id: &str) {
+    let completed = SessionStatus::Completed;
+    if let Err(error) =
+        crate::commands::stage::session::update_session_status(work_dir, session_id, completed)
+    {
+        tracing::warn!(session_id = %session_id, error = %format!("{error:#}"), "failed to mark the completed session's record Completed");
+    }
+    if let Err(error) = crate::orchestrator::signals::remove_signal(session_id, work_dir) {
+        tracing::warn!(session_id = %session_id, error = %format!("{error:#}"), "failed to remove the completed session's signal file");
+    }
 }
 
 fn validate_request_fields(stage_id: &str, session_id: &str, nonce: &str) -> Result<()> {
@@ -61,15 +89,21 @@ fn validate_request_fields(stage_id: &str, session_id: &str, nonce: &str) -> Res
 /// sessions-directory lock.
 ///
 /// The ownership half is shared with block and dispute
-/// (`self_service::session_owns_stage`), so tightening the rule tightens it for
-/// all three. The `Executing` requirement stays here because it is completion's
-/// alone: a stage may legitimately be blocked or disputed from other states.
+/// (`self_service::session_owns_stage_as`), so tightening the rule tightens it
+/// for all three; completion alone also admits knowledge sessions. The
+/// `Executing` requirement stays here because it is completion's alone: a
+/// stage may legitimately be blocked or disputed from other states.
 fn validate_active_identity(work_dir: &Path, stage_id: &str, session_id: &str) -> Result<()> {
     let stage = load_stage(stage_id, work_dir)?;
     if stage.status != StageStatus::Executing {
         bail!("stage '{stage_id}' is not executing");
     }
-    super::super::self_service::session_owns_stage(work_dir, stage_id, session_id)
+    super::super::self_service::session_owns_stage_as(
+        work_dir,
+        stage_id,
+        session_id,
+        COMPLETING_SESSION_TYPES,
+    )
 }
 
 fn replay_path(work_dir: &Path, nonce: &str) -> PathBuf {
@@ -205,6 +239,74 @@ mod tests {
         assert!(error.contains("active running stage session"));
         assert_eq!(stage_snapshot(temp.path(), "build-api"), before);
         assert!(!replay_path(temp.path(), nonce).exists());
+    }
+
+    fn knowledge_pair(work_dir: &Path, stage_id: &str, kind: SessionType) -> (Stage, Session) {
+        let mut session = Session::new();
+        session.session_type = kind;
+        session.assign_to_stage(stage_id.to_string());
+        session.status = SessionStatus::Running;
+        let mut stage = Stage::new(stage_id.to_string(), None);
+        stage.id = stage_id.to_string();
+        stage.stage_type = StageType::Knowledge;
+        stage.status = StageStatus::Executing;
+        stage.session = Some(session.id.clone());
+        save_stage(&stage, work_dir).unwrap();
+        save_session(&session, work_dir).unwrap();
+        (stage, session)
+    }
+
+    #[test]
+    fn a_knowledge_stage_completes_merged_through_the_broker() {
+        let temp = TempDir::new().unwrap();
+        let (_, session) = knowledge_pair(temp.path(), "notes", SessionType::Knowledge);
+        let signals = temp.path().join("signals");
+        fs::create_dir_all(&signals).unwrap();
+        fs::write(signals.join(format!("{}.md", session.id)), "# Signal\n").unwrap();
+
+        handle_complete_stage(
+            temp.path(),
+            "notes",
+            &session.id,
+            "55555555555555555555555555555555",
+        )
+        .unwrap();
+
+        let stage = load_stage("notes", temp.path()).unwrap();
+        assert_eq!(stage.status, StageStatus::Completed);
+        assert!(
+            stage.merged,
+            "a knowledge stage has no branch and completes merged"
+        );
+        let record = fs::read_to_string(
+            temp.path()
+                .join("sessions")
+                .join(format!("{}.md", session.id)),
+        )
+        .unwrap();
+        let record: Session =
+            crate::parser::frontmatter::parse_from_markdown(&record, "Session").unwrap();
+        assert_eq!(record.status, SessionStatus::Completed);
+        assert!(!signals.join(format!("{}.md", session.id)).exists());
+    }
+
+    #[test]
+    fn only_stage_and_knowledge_sessions_complete_through_the_broker() {
+        let temp = TempDir::new().unwrap();
+        let (_, session) = knowledge_pair(temp.path(), "notes", SessionType::Merge);
+        let before = stage_snapshot(temp.path(), "notes");
+
+        let error = handle_complete_stage(
+            temp.path(),
+            "notes",
+            &session.id,
+            "66666666666666666666666666666666",
+        )
+        .unwrap_err()
+        .to_string();
+
+        assert!(error.contains("active running stage session"), "{error}");
+        assert_eq!(stage_snapshot(temp.path(), "notes"), before);
     }
 
     #[test]

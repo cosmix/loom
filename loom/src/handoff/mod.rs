@@ -1,6 +1,7 @@
 pub mod generator;
 pub mod git_handoff;
 pub mod schema;
+pub mod session_content;
 
 pub use generator::{
     ensure_handoff, find_continuation_handoff, find_continuation_handoff_name, find_latest_handoff,

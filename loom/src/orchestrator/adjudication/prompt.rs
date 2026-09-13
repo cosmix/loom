@@ -187,14 +187,31 @@ fn what_the_run_decides() -> String {
     s
 }
 
+/// Where the draft goes. A session started with a scratch directory may write
+/// it nowhere else, and one started without has only the legacy path, so the
+/// briefing names both and the session's own environment picks.
+fn draft_location(dispute_id: u32, verdict_draft: &Path) -> String {
+    let scratch = format!(
+        "$LOOM_SCRATCH_DIR/{}",
+        super::scratch_verdict_file_name(dispute_id)
+    );
+    format!(
+        "First find your draft file. Run `printf '%s\\n' \"${{LOOM_SCRATCH_DIR:-}}\"`:\n\n\
+         - it prints a directory: the draft file is `{scratch}` (that directory\n  \
+         joined with the file name), the only place this session may write it;\n\
+         - it prints nothing: the draft file is `{}`.\n\n",
+        verdict_draft.display()
+    )
+}
+
 /// The two steps that hand a verdict back to the orchestrator.
 fn verdict_protocol(stage_id: &str, dispute_id: u32, verdict_draft: &Path) -> String {
-    let draft = verdict_draft.display();
     let mut s = String::new();
     s.push_str("## Recording your verdict\n\n");
-    s.push_str(&format!(
-        "1. Write a SINGLE JSON object — no prose, no markdown fences, no comments —\n   to `{draft}`. Schema:\n\n"
-    ));
+    s.push_str(&draft_location(dispute_id, verdict_draft));
+    s.push_str(
+        "1. Write a SINGLE JSON object — no prose, no markdown fences, no comments —\n   to the draft file. Schema:\n\n",
+    );
     s.push_str("```json\n");
     s.push_str("{\n");
     s.push_str("  \"verdict\": \"accept\"|\"reject\"|\"needs-more-evidence\",\n");
@@ -219,13 +236,15 @@ fn verdict_protocol(stage_id: &str, dispute_id: u32, verdict_draft: &Path) -> St
     s.push_str("2. Run:\n\n");
     s.push_str("```bash\n");
     s.push_str(&format!(
-        "loom stage adjudicate --stage {stage_id} --dispute {dispute_id} --verdict-file {draft}\n"
+        "loom stage adjudicate --stage {stage_id} --dispute {dispute_id} --verdict-file <draft file>\n"
     ));
     s.push_str("```\n\n");
-    s.push_str("The command validates the JSON and records the verdict; the orchestrator\n");
-    s.push_str("applies it on its next poll. If it reports an error, correct the JSON and\n");
-    s.push_str("run it again. Once it succeeds, your work is done — stop there. The daemon\n");
-    s.push_str("closes this session once the verdict is applied.\n\n");
+    s.push_str("The command validates the JSON and hands the verdict to the orchestrator,\n");
+    s.push_str("which applies it on its next poll. If it prints a PENDING RELAY notice, keep\n");
+    s.push_str("its output unfiltered and in the foreground and follow that notice. If it\n");
+    s.push_str("reports an error, correct the JSON and run it again. Once it succeeds, your\n");
+    s.push_str("work is done — end your turn. The daemon closes this session once the\n");
+    s.push_str("verdict is applied.\n\n");
     s
 }
 

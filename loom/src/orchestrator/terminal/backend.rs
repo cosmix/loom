@@ -183,9 +183,11 @@ impl SessionBackend {
 
     /// Spawn the session that judges one disputed acceptance criterion.
     ///
-    /// Runs in the main repository like a knowledge session: the adjudicator
-    /// reads the disputing stage's evidence and records a verdict through the
-    /// CLI, so it needs no worktree of its own.
+    /// It never gets a worktree of its own: `repo_root` is whatever
+    /// `judge_cwd` (`orchestrator/adjudication/session.rs`) picked — the
+    /// disputed stage's own worktree while it still exists, so a criterion
+    /// like `cargo test` runs where it wrote its output, else the main
+    /// repository.
     pub fn spawn_adjudication_session(
         &self,
         stage: &Stage,

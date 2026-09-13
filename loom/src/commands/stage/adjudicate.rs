@@ -1,60 +1,82 @@
-//! `loom stage adjudicate` — record an adjudication session's verdict.
+//! `loom stage adjudicate` — hand an adjudication session's verdict to the
+//! orchestrator.
 //!
-//! The adjudication session writes its JSON verdict to a file and hands that
-//! file to this command. The command validates it and writes
-//! `<state-dir>/disputes/<stage>/<n>/verdict.md`; the daemon applies the verdict on
-//! its next poll.
+//! The adjudication session writes its JSON verdict to a draft file and hands
+//! that file to this command, which validates it. What happens next depends on
+//! how the session was started ([`crate::relay::emit::mode`]):
 //!
-//! # Trust boundary
+//! * Relay — a session with a scratch directory cannot write the state
+//!   directory. The draft must be `$LOOM_SCRATCH_DIR/verdict-<n>.json`; the
+//!   command relays it as a `verdict` ticket, and the daemon records it through
+//!   [`crate::orchestrator::adjudication::record`] once it has confirmed the
+//!   ticket came from the live adjudication session for the stage.
+//! * Legacy and operator — the command records `verdict.md` itself through
+//!   that same guarded function.
 //!
-//! `verdict.md` exists apart from `request.md` so that the agent whose stage
-//! is under dispute cannot approve its own criterion (see
-//! `doc/loom/knowledge/conventions.md` § "Dispute File Ownership Convention").
-//! An adjudication session is a different session, spawned by the daemon into
-//! the main repository, so it is not the party that rule excludes — but this
-//! command must not become a general-purpose "write any verdict" tool either.
-//! Four guards keep it narrow:
-//!
-//! 1. it refuses to run from inside a stage worktree (`LOOM_WORKTREE_PATH` is
-//!    exported for stage sessions and for no other kind), which is exactly the
-//!    party the split excludes — and the one that can be live in
-//!    `NeedsAdjudication`, since filing a dispute does not end its session;
-//! 2. the stage must be in `NeedsAdjudication`, so a verdict cannot be
-//!    injected against a stage that is executing, completed, or merged;
-//! 3. the dispute's `request.md` must exist, so a verdict cannot invent the
-//!    dispute it answers;
-//! 4. `verdict.md` must not exist yet, so a recorded verdict cannot be
-//!    overwritten with a different one before the daemon applies it.
+//! The four guards that keep a verdict narrow live with the recording logic
+//! (`orchestrator/adjudication/record.rs`), so both routes enforce them.
 
 use anyhow::{bail, Context, Result};
 use std::path::{Path, PathBuf};
 
-use crate::models::dispute::verdict_file;
-use crate::models::stage::StageStatus;
-use crate::orchestrator::adjudication::{
-    attempt_count, persist_verdict, read_request, resolve_model, verdict,
-};
-use crate::verify::transitions::{load_stage, update_stage};
+use crate::orchestrator::adjudication::{record, scratch_verdict_draft, verdict};
+use crate::relay::emit::{mode, EnvSnapshot, RelayContext, RelayMode, RelaySink, StdSink};
+use crate::relay::{RequestKind, VerdictRequest};
 
-/// What recording the verdict did.
-#[derive(Debug, PartialEq, Eq)]
-pub enum AdjudicateOutcome {
-    /// `verdict.md` was written and awaits the daemon's next tick.
-    Recorded,
-    /// The verdict was too degenerate to act on; the stage was escalated to
-    /// `NeedsHumanReview` with this reason instead.
-    Escalated(String),
-}
+pub use crate::orchestrator::adjudication::record::{record_verdict, AdjudicateOutcome};
 
 /// `loom stage adjudicate --stage <id> --dispute <n> --verdict-file <path>`.
 pub fn adjudicate(stage_id: String, dispute_id: u32, verdict_path: PathBuf) -> Result<()> {
-    refuse_worktree_session(std::env::var("LOOM_WORKTREE_PATH").ok().as_deref())?;
+    let env = EnvSnapshot::from_process_env();
+    adjudicate_in(mode(&env), &env, &stage_id, dispute_id, &verdict_path)
+}
+
+/// The command body, with the relay mode decided by the caller.
+fn adjudicate_in(
+    relay_mode: RelayMode,
+    env: &EnvSnapshot,
+    stage_id: &str,
+    dispute_id: u32,
+    verdict_path: &Path,
+) -> Result<()> {
+    match relay_mode {
+        RelayMode::Relay(context) => {
+            let cwd = std::env::current_dir().context("Failed to resolve the current directory")?;
+            // SAFETY: `getuid` has no preconditions and cannot fail.
+            let uid = unsafe { libc::getuid() };
+            let mut sink = StdSink::default();
+            relay_verdict(
+                &context,
+                stage_id,
+                dispute_id,
+                verdict_path,
+                &cwd,
+                uid,
+                &mut sink,
+            )
+        }
+        RelayMode::Legacy | RelayMode::Operator => {
+            record_here(env, stage_id, dispute_id, verdict_path)
+        }
+    }
+}
+
+/// Legacy and operator mode: record `verdict.md` directly.
+fn record_here(
+    env: &EnvSnapshot,
+    stage_id: &str,
+    dispute_id: u32,
+    verdict_path: &Path,
+) -> Result<()> {
+    let worktree = env
+        .worktree_path
+        .as_deref()
+        .map(|path| path.to_string_lossy().into_owned());
+    record::refuse_worktree_session(worktree.as_deref())?;
 
     let work_dir = crate::commands::common::work_dir_path()?;
-    let session_id = std::env::var("LOOM_SESSION_ID")
-        .ok()
-        .filter(|s| !s.is_empty());
-    match record_verdict(&work_dir, &stage_id, dispute_id, &verdict_path, session_id)? {
+    let session_id = env.session_id.clone().filter(|s| !s.is_empty());
+    match record_verdict(&work_dir, stage_id, dispute_id, verdict_path, session_id)? {
         AdjudicateOutcome::Recorded => {
             println!(
                 "Recorded the verdict for stage '{stage_id}' dispute {dispute_id}. The \
@@ -69,83 +91,57 @@ pub fn adjudicate(stage_id: String, dispute_id: u32, verdict_path: PathBuf) -> R
     Ok(())
 }
 
-/// Refuse a verdict written from inside a stage worktree.
-///
-/// Split out as a pure function so the rule is testable without mutating the
-/// process environment: the value is the only input, and an absent variable is
-/// the only acceptable state.
-fn refuse_worktree_session(worktree_path: Option<&str>) -> Result<()> {
-    let Some(path) = worktree_path.map(str::trim).filter(|p| !p.is_empty()) else {
-        return Ok(());
-    };
-    bail!(
-        "This session runs inside the stage worktree at {path}, so it cannot record an \
-         adjudication verdict: a stage may not judge its own disputed criterion. Verdicts \
-         come from the adjudication session the orchestrator spawns for the dispute."
-    )
-}
-
-/// The guarded write, against an explicit state-directory root so it is testable.
-pub fn record_verdict(
-    work_dir: &Path,
+/// Relay mode: validate the judge's scratch draft here, then hand it to the
+/// daemon as a `verdict` ticket. Nothing under the state directory is opened.
+fn relay_verdict(
+    context: &RelayContext,
     stage_id: &str,
     dispute_id: u32,
     verdict_path: &Path,
-    session_id: Option<String>,
-) -> Result<AdjudicateOutcome> {
-    ensure_recordable(work_dir, stage_id, dispute_id)?;
-
-    let raw = std::fs::read_to_string(verdict_path)
-        .with_context(|| format!("Failed to read verdict file: {}", verdict_path.display()))?;
-
-    match verdict::parse_and_validate(&raw) {
-        verdict::ValidationOutcome::Verdict(v) => {
-            let attempt = attempt_count(work_dir, stage_id, dispute_id).max(1);
-            persist_verdict(
-                work_dir,
-                stage_id,
-                dispute_id,
-                &v,
-                &resolve_model(work_dir),
-                attempt,
-                session_id,
-            )
-            .context("Failed to write the verdict record")?;
-            Ok(AdjudicateOutcome::Recorded)
-        }
-        // Degenerate output (e.g. needs-more-evidence with no questions) would
-        // loop the evidence round forever if it were recorded, so the stage
-        // goes to a human instead and no verdict file is written.
-        verdict::ValidationOutcome::Escalate { reason } => {
-            update_stage(stage_id, work_dir, |s| {
-                s.try_request_human_review(reason.clone()).ok();
-                Ok(())
-            })
-            .context("Failed to escalate the stage after a degenerate verdict")?;
-            Ok(AdjudicateOutcome::Escalated(reason))
-        }
+    cwd: &Path,
+    uid: u32,
+    sink: &mut dyn RelaySink,
+) -> Result<()> {
+    let draft = scratch_verdict_draft(&context.scratch_dir, dispute_id);
+    require_scratch_draft(verdict_path, &draft)?;
+    let raw = std::fs::read_to_string(&draft)
+        .with_context(|| format!("Failed to read verdict file: {}", draft.display()))?;
+    if let verdict::ValidationOutcome::Escalate { reason } = verdict::parse_and_validate(&raw) {
+        writeln!(
+            sink.stderr(),
+            "This verdict cannot be acted on as written ({reason}). Once relayed, the \
+             orchestrator escalates stage '{stage_id}' to NeedsHumanReview instead of \
+             recording it."
+        )
+        .context("failed to write the verdict notice")?;
     }
+
+    context.check(RequestKind::Verdict, Some(stage_id), cwd, uid)?;
+    let payload = serde_json::to_value(VerdictRequest {
+        dispute_id,
+        verdict: raw,
+    })
+    .context("failed to encode the verdict request")?;
+    context.emit(RequestKind::Verdict, payload, "verdict", true, sink)?;
+    Ok(())
 }
 
-/// Guards 2-4: the stage is under adjudication, the dispute exists, and no
-/// verdict has been recorded for it yet.
-fn ensure_recordable(work_dir: &Path, stage_id: &str, dispute_id: u32) -> Result<()> {
-    let stage = load_stage(stage_id, work_dir)
-        .with_context(|| format!("Failed to load stage '{stage_id}'"))?;
-    if stage.status != StageStatus::NeedsAdjudication {
-        bail!(
-            "Stage '{stage_id}' is {}, not NeedsAdjudication, so no verdict can be recorded \
-             against it.",
-            stage.status
+/// In relay mode the draft lives in the session's own scratch directory, the
+/// one place its sandbox lets it write. A `--verdict-file` naming anywhere
+/// else is refused rather than read, so the verdict relayed is always the one
+/// the instructions told the judge to write.
+fn require_scratch_draft(given: &Path, draft: &Path) -> Result<()> {
+    let same = given == draft
+        || matches!(
+            (given.canonicalize(), draft.canonicalize()),
+            (Ok(given), Ok(draft)) if given == draft
         );
-    }
-    read_request(work_dir, stage_id, dispute_id).with_context(|| {
-        format!("No readable dispute {dispute_id} for stage '{stage_id}' to answer")
-    })?;
-    if verdict_file(&work_dir.join("disputes"), stage_id, dispute_id).exists() {
+    if !same {
         bail!(
-            "A verdict for stage '{stage_id}' dispute {dispute_id} has already been recorded; \
-             it cannot be replaced."
+            "This session's verdict draft is {draft}, but --verdict-file names {given}. Write \
+             the JSON verdict to {draft} and run the command again with that path.",
+            draft = draft.display(),
+            given = given.display()
         );
     }
     Ok(())
@@ -154,153 +150,177 @@ fn ensure_recordable(work_dir: &Path, stage_id: &str, dispute_id: u32) -> Result
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::dispute::{request_file, DisputeRequest, DisputeVerdictRecord};
-    use crate::models::stage::Stage;
-    use crate::plan::schema::AcceptanceCriterion;
-    use chrono::Utc;
+    use crate::relay::Ticket;
+    use std::io::Write;
+    use std::os::unix::fs::PermissionsExt;
 
-    fn setup(status: StageStatus) -> (tempfile::TempDir, PathBuf) {
-        let tmp = tempfile::tempdir().unwrap();
-        let work = tmp.path().to_path_buf();
-        std::fs::create_dir_all(work.join("stages")).unwrap();
-        let stage = Stage {
-            id: "s1".to_string(),
-            name: "s1".to_string(),
-            status,
-            acceptance: vec![AcceptanceCriterion::Simple("cargo test".to_string())],
-            ..Stage::default()
-        };
-        crate::verify::transitions::save_stage(&stage, &work).unwrap();
-        (tmp, work)
+    #[derive(Default)]
+    struct BufferSink {
+        out: Vec<u8>,
+        err: Vec<u8>,
     }
 
-    fn write_request(work: &Path, dispute_id: u32) {
-        let disputes_root = work.join("disputes");
-        std::fs::create_dir_all(disputes_root.join("s1").join(dispute_id.to_string())).unwrap();
-        let req = DisputeRequest {
-            id: dispute_id,
-            stage_id: "s1".to_string(),
-            criterion_index: 0,
-            reason: "impossible".to_string(),
-            evidence_commit: None,
-            failure_output: None,
-            fix_attempts_at_dispute: 1,
-            created_at: Utc::now(),
+    impl RelaySink for BufferSink {
+        fn stdout(&mut self) -> &mut dyn Write {
+            &mut self.out
+        }
+        fn stderr(&mut self) -> &mut dyn Write {
+            &mut self.err
+        }
+    }
+
+    struct Judge {
+        _tmp: tempfile::TempDir,
+        project: PathBuf,
+        context: RelayContext,
+    }
+
+    fn judge(session_type: &str) -> Judge {
+        let tmp = tempfile::tempdir().unwrap();
+        let project = tmp.path().join("project");
+        std::fs::create_dir_all(project.join(".loom").join("work")).unwrap();
+        let scratch = tmp.path().join("scratch").join("session-judge");
+        std::fs::create_dir_all(&scratch).unwrap();
+        std::fs::set_permissions(&scratch, std::fs::Permissions::from_mode(0o700)).unwrap();
+        let context = RelayContext {
+            session_id: "session-judge".to_string(),
+            scratch_dir: scratch,
+            stage_id: Some("s1".to_string()),
+            session_type: Some(session_type.to_string()),
+            worktree_path: None,
+            work_dir: Some(project.join(".loom").join("work")),
         };
-        let yaml = serde_yaml::to_string(&req).unwrap();
-        std::fs::write(
-            request_file(&disputes_root, "s1", dispute_id),
-            format!("---\n{yaml}---\n\n# Dispute\n"),
+        Judge {
+            _tmp: tmp,
+            project,
+            context,
+        }
+    }
+
+    fn uid() -> u32 {
+        // SAFETY: `getuid` has no preconditions and cannot fail.
+        unsafe { libc::getuid() }
+    }
+
+    fn write_draft(judge: &Judge, body: &str) -> PathBuf {
+        let draft = scratch_verdict_draft(&judge.context.scratch_dir, 1);
+        std::fs::write(&draft, body).unwrap();
+        draft
+    }
+
+    fn tickets(judge: &Judge) -> Vec<Ticket> {
+        std::fs::read_dir(&judge.context.scratch_dir)
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .filter(|path| path.extension().is_some_and(|ext| ext == "req"))
+            .map(|path| Ticket::decode(&std::fs::read(path).unwrap()).unwrap())
+            .collect()
+    }
+
+    const REJECT: &str = r#"{"verdict":"reject","reasoning":"right","citations":[{"file":"a","excerpt":"b","claim":"c"}]}"#;
+
+    #[test]
+    fn relay_mode_relays_the_scratch_draft_as_a_verdict_ticket() {
+        let judge = judge("adjudication");
+        let draft = write_draft(&judge, REJECT);
+        let mut sink = BufferSink::default();
+
+        relay_verdict(
+            &judge.context,
+            "s1",
+            1,
+            &draft,
+            &judge.project,
+            uid(),
+            &mut sink,
         )
         .unwrap();
-    }
 
-    fn write_json(work: &Path, body: &serde_json::Value) -> PathBuf {
-        let path = work.join("verdict.json");
-        std::fs::write(&path, body.to_string()).unwrap();
-        path
-    }
-
-    fn reject_json() -> serde_json::Value {
-        serde_json::json!({
-            "verdict": "reject",
-            "reasoning": "the criterion is correct",
-            "citations": [{"file": "src/a.rs", "excerpt": "fn a", "claim": "exists"}]
-        })
-    }
-
-    #[test]
-    fn records_a_valid_verdict() {
-        let (_tmp, work) = setup(StageStatus::NeedsAdjudication);
-        write_request(&work, 1);
-        let json = write_json(&work, &reject_json());
-
+        let tickets = tickets(&judge);
+        assert_eq!(tickets.len(), 1);
+        assert_eq!(tickets[0].kind, RequestKind::Verdict);
+        let request: VerdictRequest = serde_json::from_value(tickets[0].payload.clone()).unwrap();
         assert_eq!(
-            record_verdict(&work, "s1", 1, &json, Some("session-test".to_string())).unwrap(),
-            AdjudicateOutcome::Recorded
+            request,
+            VerdictRequest {
+                dispute_id: 1,
+                verdict: REJECT.to_string()
+            }
         );
-
-        let path = verdict_file(&work.join("disputes"), "s1", 1);
-        let content = std::fs::read_to_string(&path).unwrap();
-        assert!(content.contains("reject"));
-        // The record must parse back as the daemon reads it.
-        let record: DisputeVerdictRecord =
-            serde_yaml::from_str(content.split("---").nth(1).unwrap()).unwrap();
-        assert_eq!(record.stage_id, "s1");
-        assert_eq!(record.adjudicator_attempt_count, 1);
-        assert_eq!(record.session_id.as_deref(), Some("session-test"));
+        let stdout = String::from_utf8(sink.out).unwrap();
+        assert!(stdout
+            .lines()
+            .last()
+            .unwrap()
+            .starts_with("LOOM_RELAY_V1 kind=verdict "));
+        assert!(!judge.project.join(".loom/work/disputes").exists());
     }
 
     #[test]
-    fn refuses_when_the_stage_is_not_under_adjudication() {
-        let (_tmp, work) = setup(StageStatus::Executing);
-        write_request(&work, 1);
-        let json = write_json(&work, &reject_json());
-        let err = record_verdict(&work, "s1", 1, &json, None).unwrap_err();
-        assert!(format!("{err:#}").contains("not NeedsAdjudication"));
-        assert!(!verdict_file(&work.join("disputes"), "s1", 1).exists());
+    fn relay_mode_refuses_a_verdict_file_outside_the_scratch_directory() {
+        let judge = judge("adjudication");
+        write_draft(&judge, REJECT);
+        let elsewhere = judge.project.join("verdict.json");
+        std::fs::write(&elsewhere, REJECT).unwrap();
+
+        let err = relay_verdict(
+            &judge.context,
+            "s1",
+            1,
+            &elsewhere,
+            &judge.project,
+            uid(),
+            &mut BufferSink::default(),
+        )
+        .unwrap_err();
+
+        assert!(format!("{err:#}").contains("verdict draft is"));
+        assert!(tickets(&judge).is_empty());
     }
 
     #[test]
-    fn refuses_a_verdict_for_a_dispute_that_was_never_filed() {
-        let (_tmp, work) = setup(StageStatus::NeedsAdjudication);
-        let json = write_json(&work, &reject_json());
-        let err = record_verdict(&work, "s1", 7, &json, None).unwrap_err();
-        assert!(format!("{err:#}").contains("No readable dispute 7"));
+    fn relay_mode_refuses_a_session_kind_that_may_not_relay_a_verdict() {
+        let judge = judge("knowledge");
+        let draft = write_draft(&judge, REJECT);
+
+        let err = relay_verdict(
+            &judge.context,
+            "s1",
+            1,
+            &draft,
+            &judge.project,
+            uid(),
+            &mut BufferSink::default(),
+        )
+        .unwrap_err();
+
+        assert!(format!("{err:#}").contains("may not relay"));
+        assert!(tickets(&judge).is_empty());
     }
 
     #[test]
-    fn refuses_to_replace_a_recorded_verdict() {
-        let (_tmp, work) = setup(StageStatus::NeedsAdjudication);
-        write_request(&work, 1);
-        let json = write_json(&work, &reject_json());
-        record_verdict(&work, "s1", 1, &json, None).unwrap();
-
-        let err = record_verdict(&work, "s1", 1, &json, None).unwrap_err();
-        assert!(format!("{err:#}").contains("already been recorded"));
-    }
-
-    #[test]
-    fn degenerate_verdict_escalates_instead_of_recording() {
-        let (_tmp, work) = setup(StageStatus::NeedsAdjudication);
-        write_request(&work, 1);
-        // needs-more-evidence with no questions is the one shape that would
-        // loop forever if recorded.
-        let json = write_json(
-            &work,
-            &serde_json::json!({"verdict": "needs-more-evidence", "questions": []}),
+    fn a_degenerate_verdict_is_relayed_with_an_escalation_notice() {
+        let judge = judge("adjudication");
+        let draft = write_draft(
+            &judge,
+            r#"{"verdict":"needs-more-evidence","questions":[]}"#,
         );
+        let mut sink = BufferSink::default();
 
-        match record_verdict(&work, "s1", 1, &json, None).unwrap() {
-            AdjudicateOutcome::Escalated(reason) => assert!(!reason.is_empty()),
-            other => panic!("expected escalation, got {other:?}"),
-        }
-        assert!(!verdict_file(&work.join("disputes"), "s1", 1).exists());
-        let after = crate::verify::transitions::load_stage("s1", &work).unwrap();
-        assert_eq!(after.status, StageStatus::NeedsHumanReview);
-    }
+        relay_verdict(
+            &judge.context,
+            "s1",
+            1,
+            &draft,
+            &judge.project,
+            uid(),
+            &mut sink,
+        )
+        .unwrap();
 
-    #[test]
-    fn unparseable_output_is_recorded_as_needs_more_evidence() {
-        let (_tmp, work) = setup(StageStatus::NeedsAdjudication);
-        write_request(&work, 1);
-        let path = work.join("verdict.json");
-        std::fs::write(&path, "I could not decide.").unwrap();
-
-        assert_eq!(
-            record_verdict(&work, "s1", 1, &path, None).unwrap(),
-            AdjudicateOutcome::Recorded
-        );
-        let content =
-            std::fs::read_to_string(verdict_file(&work.join("disputes"), "s1", 1)).unwrap();
-        assert!(content.contains("needs-more-evidence"));
-    }
-
-    #[test]
-    fn a_stage_worktree_session_may_not_record_a_verdict() {
-        assert!(refuse_worktree_session(None).is_ok());
-        assert!(refuse_worktree_session(Some("  ")).is_ok());
-        let err = refuse_worktree_session(Some("/repo/.worktrees/s1")).unwrap_err();
-        assert!(format!("{err:#}").contains("may not judge its own disputed criterion"));
+        assert_eq!(tickets(&judge).len(), 1);
+        assert!(String::from_utf8(sink.err)
+            .unwrap()
+            .contains("NeedsHumanReview"));
     }
 }

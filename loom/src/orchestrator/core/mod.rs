@@ -15,6 +15,7 @@ mod crash_classification;
 mod crash_handler;
 mod event_handler;
 mod heartbeat_apply;
+mod inbox_drain;
 mod judge_close;
 mod merge_handler;
 mod orchestrator;

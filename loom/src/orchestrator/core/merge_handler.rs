@@ -231,7 +231,7 @@ impl Orchestrator {
     /// `verify_and_finalize_merge`.
     ///
     /// Returns `true` only when the merge was ancestry-verified and finalized.
-    fn finalize_merge_resolution(
+    pub(super) fn finalize_merge_resolution(
         &mut self,
         stage: &mut crate::models::stage::Stage,
         session_id: &str,
@@ -1172,7 +1172,7 @@ impl Orchestrator {
 /// goes to stderr nobody watches; the stage is Completed and merged either
 /// way, so the only thing lost by silence is the worktree the user later
 /// finds still on disk.
-fn report_deferred_cleanup(stage_id: &str, outcome: &CleanupOutcome) {
+pub(super) fn report_deferred_cleanup(stage_id: &str, outcome: &CleanupOutcome) {
     match outcome {
         CleanupOutcome::Failed(e) => {
             clear_status_line();

@@ -103,6 +103,7 @@ fn test_conflict_resolution_instructions() {
     assert!(instructions.contains("loom/stage-1"));
     assert!(instructions.contains("src/lib.rs"));
     assert!(instructions.contains("Cargo.toml"));
-    assert!(instructions.contains("loom worktree remove stage-1"));
+    assert!(instructions.contains("loom stage merge stage-1 --resolved"));
+    assert!(!instructions.contains("loom worktree remove"));
     assert!(!instructions.contains("loom merge stage-1"));
 }

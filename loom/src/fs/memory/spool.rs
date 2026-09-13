@@ -226,8 +226,11 @@ fn sink_into_journal(
     append_entry(work_dir, stage_id, entry)
 }
 
-/// Validate a spooled entry's content, and its context if present.
-fn validate_spooled_entry(entry: &MemoryEntry) -> Result<()> {
+/// Validate a spooled entry's content, and its context if present. Also the
+/// check the inbox drain applies to a relayed memory entry
+/// (`orchestrator::core::inbox_drain::apply`), so both paths accept or reject
+/// identically.
+pub(crate) fn validate_spooled_entry(entry: &MemoryEntry) -> Result<()> {
     validate_content(&entry.content)?;
     if let Some(context) = &entry.context {
         validate_content(context)?;

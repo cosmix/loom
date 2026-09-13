@@ -81,12 +81,21 @@ pub(super) fn ownership_to_enforce(request: &Request) -> Option<(&str, &str)> {
     }
 }
 
-/// Whether `session_id` is the session currently assigned to `stage_id`.
+/// Whether `session_id` is the stage session currently assigned to
+/// `stage_id`: [`session_owns_stage_as`] admitting [`SessionType::Stage`]
+/// only, the rule block and dispute over the socket keep.
+pub(super) fn session_owns_stage(work_dir: &Path, stage_id: &str, session_id: &str) -> Result<()> {
+    session_owns_stage_as(work_dir, stage_id, session_id, &[SessionType::Stage])
+}
+
+/// Whether `session_id` is the session currently assigned to `stage_id`, and
+/// is one of the `allowed` kinds.
 ///
 /// Both directions are checked — the stage's `session` field and the session
-/// record's `stage_id` — plus [`SessionType::Stage`] and
-/// [`SessionStatus::Running`], so a live session cannot act on a stage that is
-/// not its own and a finished session cannot act at all.
+/// record's `stage_id` — plus the session kind and [`SessionStatus::Running`],
+/// so a live session cannot act on a stage that is not its own and a finished
+/// session cannot act at all. Completion admits knowledge sessions as well as
+/// stage sessions; see `control_complete`.
 ///
 /// Deliberately NOT checked here: [`crate::models::stage::StageStatus`].
 /// Completion needs the stage to still be `Executing` and keeps that
@@ -98,7 +107,12 @@ pub(super) fn ownership_to_enforce(request: &Request) -> Option<(&str, &str)> {
 /// authorization pre-check whose handlers re-read under their own locks: the
 /// window is between two facts about the same session, not a way to smuggle a
 /// different one through.
-pub(super) fn session_owns_stage(work_dir: &Path, stage_id: &str, session_id: &str) -> Result<()> {
+pub(super) fn session_owns_stage_as(
+    work_dir: &Path,
+    stage_id: &str,
+    session_id: &str,
+    allowed: &[SessionType],
+) -> Result<()> {
     // Both ids arrive unvalidated from the wire and both are turned into
     // paths below, so traversal shapes have to die before any file is touched.
     crate::validation::validate_id(stage_id).context("invalid stage id")?;
@@ -117,7 +131,7 @@ pub(super) fn session_owns_stage(work_dir: &Path, stage_id: &str, session_id: &s
         parse_from_markdown(&content, "session").context("invalid active session file")?;
     if session.id != session_id
         || session.stage_id.as_deref() != Some(stage_id)
-        || session.session_type != SessionType::Stage
+        || !allowed.contains(&session.session_type)
         || session.status != SessionStatus::Running
     {
         bail!("request does not match the active running stage session");
@@ -240,6 +254,18 @@ mod tests {
             .to_string();
 
         assert!(error.contains("active running stage session"), "{error}");
+    }
+
+    #[test]
+    fn a_knowledge_session_owns_its_stage_only_where_knowledge_is_admitted() {
+        let temp = TempDir::new().unwrap();
+        let mut session = active_pair(temp.path(), "notes");
+        session.session_type = SessionType::Knowledge;
+        save_session(&session, temp.path()).unwrap();
+
+        assert!(session_owns_stage(temp.path(), "notes", &session.id).is_err());
+        let both = [SessionType::Stage, SessionType::Knowledge];
+        assert!(session_owns_stage_as(temp.path(), "notes", &session.id, &both).is_ok());
     }
 
     #[test]

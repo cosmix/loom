@@ -48,7 +48,10 @@ fn format_adjudication_signal_content(
     content.push_str(&format!("- **Stage**: {}\n", stage.id));
     content.push_str(&format!("- **Dispute**: {}\n", dispute.id));
     content.push_str("- **Type**: Adjudication\n");
-    content.push_str("- **Location**: the main repository (this is not a worktree session)\n\n");
+    content.push_str(
+        "- **Location**: the disputed stage's worktree, if it still exists, else the main \
+         repository\n\n",
+    );
 
     content.push_str(briefing);
     if !content.ends_with('\n') {

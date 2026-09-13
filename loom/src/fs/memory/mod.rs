@@ -29,6 +29,7 @@ pub use persistence::{
     extract_key_notes, list_journals, preserve_for_crash, validate_content, validate_evidence,
 };
 
+pub(crate) use spool::validate_spooled_entry;
 pub use spool::{
     append_to_spool, drain_into_journal, drain_spool, read_pending, spool_path, DrainOutcome,
     SPOOL_MAX_BYTES, SPOOL_RELPATH,

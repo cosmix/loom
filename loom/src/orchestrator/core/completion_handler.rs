@@ -91,3 +91,7 @@ impl Orchestrator {
         Ok(())
     }
 }
+
+#[cfg(test)]
+#[path = "knowledge_completion_tests.rs"]
+mod knowledge_completion_tests;

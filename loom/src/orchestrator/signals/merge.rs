@@ -165,11 +165,7 @@ pub(super) fn format_merge_signal_content(
             content.push_str("3. Stage resolved files: `git add <resolved-files>`\n");
             content.push_str("4. Review changes and complete the merge: `git commit`\n");
             content.push_str(&format!(
-                "5. Run: `loom stage merge {} --resolved`\n",
-                stage.id
-            ));
-            content.push_str(&format!(
-                "6. Clean up worktree and branch: `loom worktree remove {}`\n\n",
+                "5. Run: `loom stage merge {} --resolved`\n\n",
                 stage.id
             ));
         }
@@ -182,11 +178,7 @@ pub(super) fn format_merge_signal_content(
             content.push_str("2. Stage resolved files: `git add <resolved-files>`\n");
             content.push_str("3. Review changes and complete the merge: `git commit`\n");
             content.push_str(&format!(
-                "4. Run: `loom stage merge {} --resolved`\n",
-                stage.id
-            ));
-            content.push_str(&format!(
-                "5. Clean up worktree and branch: `loom worktree remove {}`\n\n",
+                "4. Run: `loom stage merge {} --resolved`\n\n",
                 stage.id
             ));
         }
@@ -197,11 +189,7 @@ pub(super) fn format_merge_signal_content(
             content.push_str("1. **Review the staged changes** (`git diff --staged`)\n");
             content.push_str("2. Complete the merge: `git commit`\n");
             content.push_str(&format!(
-                "3. Run: `loom stage merge {} --resolved`\n",
-                stage.id
-            ));
-            content.push_str(&format!(
-                "4. Clean up worktree and branch: `loom worktree remove {}`\n\n",
+                "3. Run: `loom stage merge {} --resolved`\n\n",
                 stage.id
             ));
         }
@@ -212,10 +200,10 @@ pub(super) fn format_merge_signal_content(
     content.push_str("- Do NOT modify code beyond what's needed for conflict resolution\n");
     content.push_str("- Preserve intent from BOTH branches where possible\n");
     content.push_str("- If unclear how to resolve, ask the user for guidance\n");
-    content.push_str(&format!(
-        "- **After completing the merge commit**, run `loom worktree remove {}` to clean up\n",
-        stage.id
-    ));
+    content.push_str(
+        "- The orchestrator removes the stage's worktree and branch once it accepts \
+         `--resolved`; do not run `loom worktree remove` yourself\n",
+    );
 
     content.push_str("## Inherited Responsibilities\n\n");
     content.push_str(

@@ -2,6 +2,7 @@
 //! Usage: loom clean [--all] [--worktrees] [--sessions] [--state]
 
 mod base_graphs;
+mod relay_dirs;
 mod sessions;
 mod worktrees;
 
@@ -10,6 +11,7 @@ use colored::Colorize;
 use std::fs;
 use std::path::Path;
 
+use relay_dirs::{clean_relay_dirs, print_relay_cleanup, RelayScope};
 use sessions::{clean_sessions, SessionReapMode};
 use worktrees::{clean_worktrees, confirm_branch_deletion, run_bare_clean};
 
@@ -110,6 +112,14 @@ fn clean_sessions_and_state(
             SessionReapMode::OrphansOnly
         };
         stats.sessions_killed = clean_sessions(repo_root, mode)?;
+        let scope = if will_destroy_state {
+            RelayScope::EverySession
+        } else {
+            RelayScope::NotRunning
+        };
+        let scratch_root = crate::relay::scratch_root_from_env().ok();
+        let work_dir = resolve_state_dir(repo_root);
+        print_relay_cleanup(clean_relay_dirs(&work_dir, scratch_root.as_deref(), scope));
     }
 
     if will_destroy_state {

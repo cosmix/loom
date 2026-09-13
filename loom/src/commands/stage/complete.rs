@@ -18,7 +18,7 @@ use crate::verify::transitions::{list_all_stages, load_stage, update_stage};
 use super::acceptance_runner::{
     resolve_stage_execution_paths, run_acceptance_with_display, AcceptanceDisplayOptions,
 };
-use super::knowledge_complete::complete_knowledge_stage;
+use super::knowledge_complete::{complete_knowledge_stage, verify_knowledge_for_broker};
 use super::merge_resolver::{spawn_merge_resolver, MergeResolverResult};
 use super::merge_verify::verify_or_derive_completed_commit;
 use super::progressive_complete::complete_with_merge;
@@ -343,8 +343,8 @@ pub fn complete(
     // Knowledge stages have no branch and no merge state, so the conflict
     // router is irrelevant.
     if stage.stage_type == StageType::Knowledge {
-        if control_session.is_some() {
-            bail!("sandboxed completion supports worktree stages only");
+        if let Some(control) = control_session.as_deref() {
+            return verify_knowledge_for_broker(&stage, control, is_privileged, work_dir);
         }
         return complete_knowledge_stage(&stage_id, session_id.as_deref(), no_verify, force_unsafe);
     }
@@ -510,7 +510,7 @@ pub(super) fn verification_passed_marker_line(stage_id: &str, session_id: &str) 
 /// output: verification passing on the sandboxed worktree route does NOT
 /// mean the stage is completed — that transition is applied out-of-band by
 /// the daemon via the completion bridge, not by this process.
-fn print_sandboxed_completion_pending_notice(stage_id: &str) {
+pub(super) fn print_sandboxed_completion_pending_notice(stage_id: &str) {
     println!();
     println!(
         "Verification passed, but stage '{stage_id}' is NOT completed yet — \

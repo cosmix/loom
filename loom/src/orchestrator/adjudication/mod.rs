@@ -14,11 +14,12 @@
 //!   stage state accordingly (see `apply.rs`).
 //!
 //! The adjudicator is a real loom session, not a subprocess the daemon waits
-//! on: it is spawned into a terminal in the MAIN REPOSITORY, judges the
-//! dispute with the full tool surface, and records its verdict by running
-//! `loom stage adjudicate`. The daemon never blocks on it — it observes
-//! `verdict.md` appearing on a later tick, exactly as merge resolution
-//! observes `loom stage merge --resolved`.
+//! on: it is spawned into a terminal inside the disputed stage's worktree when
+//! that worktree still exists (the main repository otherwise), judges the
+//! dispute with the full tool surface, and hands its verdict over by running
+//! `loom stage adjudicate` (see [`record`]). The daemon never blocks on it — it
+//! observes `verdict.md` appearing on a later tick, exactly as merge
+//! resolution observes `loom stage merge --resolved`.
 //!
 //! The registry therefore holds no state at all: liveness comes from the
 //! session record and the spawn budget from the dispute directory, so a
@@ -29,6 +30,7 @@ mod apply;
 pub mod feedback;
 mod plan_patch;
 pub mod prompt;
+pub mod record;
 mod scan;
 pub mod session;
 pub mod verdict;
@@ -48,8 +50,9 @@ use crate::verify::transitions::{load_stage, update_stage};
 use scan::{read_dispute_request, scan_pending_requests};
 
 pub use session::{
-    attempt_count, persist_verdict, read_request, resolve_model, verdict_draft_file,
-    AdjudicationJob, DEFAULT_ADJUDICATION_MODEL, MAX_ADJUDICATION_ATTEMPTS,
+    attempt_count, persist_verdict, read_request, resolve_model, scratch_verdict_draft,
+    scratch_verdict_file_name, verdict_draft_file, AdjudicationJob, DEFAULT_ADJUDICATION_MODEL,
+    MAX_ADJUDICATION_ATTEMPTS,
 };
 
 /// Maximum evidence-loop rounds. After this, the stage escalates to

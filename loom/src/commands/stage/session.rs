@@ -47,7 +47,11 @@ pub fn cleanup_session_resources(_stage_id: &str, session_id: &str, work_dir: &P
 /// canonical `save_session` (`locked_write` + atomic rename) so this CLI path
 /// cannot race the daemon/monitor readers and writers that touch the same
 /// session files under locks.
-fn update_session_status(work_dir: &Path, session_id: &str, status: SessionStatus) -> Result<()> {
+pub(crate) fn update_session_status(
+    work_dir: &Path,
+    session_id: &str,
+    status: SessionStatus,
+) -> Result<()> {
     let sessions_dir = work_dir.join("sessions");
     let session_path = sessions_dir.join(format!("{session_id}.md"));
 

@@ -64,7 +64,7 @@ impl Orchestrator {
             .context("Failed to spawn merge resolution sessions")
     }
 
-    // Reconcile before sync on every tick; spools drain even in manual mode.
+    // Reconcile before sync on every tick; spools and inboxes drain even in manual mode.
     fn run_tick(&mut self, printed_view_instructions: &mut bool) -> Result<usize> {
         tick::record(&self.config.work_dir, tick::Phase::Sync);
         self.reconcile_and_update_graph()
@@ -81,6 +81,7 @@ impl Orchestrator {
             .spawn_merge_resolution_sessions()
             .context("Failed to spawn merge resolution sessions")?;
         self.drain_stage_spools();
+        self.drain_session_inboxes();
         tick::record(&self.config.work_dir, tick::Phase::Spawning);
         let started = self
             .start_ready_stages()

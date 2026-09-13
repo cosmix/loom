@@ -3,17 +3,69 @@
 //! Handles completion for knowledge stages which run in the main repo context
 //! (no worktree) and update documentation in `doc/loom/knowledge/`.
 
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use std::path::Path;
 
-use crate::models::stage::StageType;
+use crate::models::stage::{Stage, StageType};
 use crate::verify::transitions::{load_stage, trigger_dependents, update_stage};
 
 use super::acceptance_runner::{
     print_acceptance_failure_guidance, resolve_knowledge_acceptance_dir,
     run_acceptance_with_display, AcceptanceDisplayOptions,
 };
+use super::complete::{print_sandboxed_completion_pending_notice, verification_passed_marker_line};
 use super::session::cleanup_session_resources;
+
+/// Verification for a sandboxed knowledge session (`LOOM_SESSION_TYPE=knowledge`,
+/// routed by `control_session::sandbox_control_session`).
+///
+/// Acceptance runs in the main repository exactly as
+/// [`complete_knowledge_stage`] runs it; then the marker line hands the
+/// transition to the daemon through `loom-hooks/loom-control-complete.sh`. The
+/// daemon sets `merged = true` and retires the session itself
+/// (`daemon/server/control_complete.rs`). Nothing is written here: a sandboxed
+/// session cannot write the state directory.
+pub(super) fn verify_knowledge_for_broker(
+    stage: &Stage,
+    control_session: &str,
+    privileged: bool,
+    work_dir: &Path,
+) -> Result<()> {
+    if privileged {
+        bail!(
+            "sandboxed knowledge completion runs verification only; --no-verify, \
+             --force-unsafe and --assume-merged are refused"
+        );
+    }
+    let acceptance_dir = resolve_knowledge_acceptance_dir(stage)?;
+    let passed = run_acceptance_with_display(
+        stage,
+        &stage.id,
+        acceptance_dir.as_deref(),
+        work_dir,
+        AcceptanceDisplayOptions {
+            stage_label: Some("knowledge stage"),
+            show_empty_message: false,
+        },
+    )?;
+    if !passed {
+        eprintln!(
+            "Acceptance criteria FAILED for knowledge stage '{}'",
+            stage.id
+        );
+        print_acceptance_failure_guidance(&stage.id);
+        bail!(
+            "Acceptance criteria failed for knowledge stage '{}'",
+            stage.id
+        );
+    }
+    println!(
+        "{}",
+        verification_passed_marker_line(&stage.id, control_session)
+    );
+    print_sandboxed_completion_pending_notice(&stage.id);
+    Ok(())
+}
 
 /// Complete a knowledge stage without requiring merge.
 ///

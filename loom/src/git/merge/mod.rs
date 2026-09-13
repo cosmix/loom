@@ -320,7 +320,8 @@ pub fn conflict_resolution_instructions(
     instructions.push_str("  5. git add <resolved files>\n");
     instructions.push_str("  6. git commit\n");
     instructions.push_str(&format!(
-        "  7. loom worktree remove {stage_id} (to clean up worktree and branch)\n"
+        "  7. loom stage merge {stage_id} --resolved (the daemon removes the worktree and \
+         branch after applying this)\n"
     ));
 
     instructions

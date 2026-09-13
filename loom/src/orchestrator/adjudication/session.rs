@@ -2,10 +2,11 @@
 //! session for a dispute, and what the CLI needs to record its verdict.
 //!
 //! An adjudication session is an ordinary loom session — spawned by the daemon
-//! into a terminal, running in the MAIN REPOSITORY like a knowledge session,
-//! with the full tool surface. Nothing here runs a model itself; the daemon
-//! starts the session and observes `verdict.md` appearing on a later tick, the
-//! same way merge resolution observes `loom stage merge --resolved`.
+//! into a terminal with the full tool surface, working in the disputed stage's
+//! worktree when it still exists (criteria such as `cargo test` write there)
+//! and in the main repository otherwise. Nothing here runs a model itself; the
+//! daemon starts the session and observes `verdict.md` appearing on a later
+//! tick, the same way merge resolution observes `loom stage merge --resolved`.
 //!
 //! All of the state that bounds the loop lives on disk, so a daemon restart
 //! mid-adjudication neither loses a live session nor resets its budget:
@@ -25,6 +26,7 @@ use crate::models::dispute::{
 };
 use crate::models::session::{Session, SessionType};
 use crate::models::stage::Stage;
+use crate::models::worktree::Worktree;
 use crate::orchestrator::terminal::backend::SessionBackend;
 
 /// Model adjudication sessions run on when `.loom/work/config.toml` names none.
@@ -105,8 +107,8 @@ impl super::AdjudicatorRegistry {
     }
 }
 
-/// Start one adjudication session: main repo, no worktree, briefed by an
-/// adjudication signal.
+/// Start one adjudication session, briefed by an adjudication signal, in the
+/// directory [`judge_cwd`] picks. It never gets a worktree of its own.
 ///
 /// Mirrors the merge-resolution spawn, except that the session is NOT
 /// registered in the orchestrator's `active_sessions`: the stage's own agent
@@ -129,8 +131,9 @@ fn spawn_for(
     )
     .context("Failed to generate adjudication signal")?;
 
+    let cwd = judge_cwd(repo_root, &job.stage);
     let spawned = backend
-        .spawn_adjudication_session(&job.stage, session, &signal_path, repo_root)
+        .spawn_adjudication_session(&job.stage, session, &signal_path, &cwd)
         .context("Failed to spawn adjudication session")?;
 
     crate::fs::session_files::save_session(&spawned, work_dir)
@@ -138,9 +141,35 @@ fn spawn_for(
     Ok(spawned)
 }
 
-/// Where the adjudication session writes its JSON verdict.
+/// The judge's working directory: the disputed stage's worktree root when it
+/// is still on disk, because criteria such as `cargo test` write into the tree
+/// they run in; the repository root otherwise.
+fn judge_cwd(repo_root: &Path, stage: &Stage) -> PathBuf {
+    let worktree =
+        Worktree::worktree_path(repo_root, stage.worktree.as_deref().unwrap_or(&stage.id));
+    if worktree.is_dir() {
+        worktree
+    } else {
+        repo_root.to_path_buf()
+    }
+}
+
+/// Where an adjudication session started WITHOUT a scratch directory writes
+/// its JSON verdict (legacy sessions only; see [`scratch_verdict_draft`]).
 pub fn verdict_draft_file(work_dir: &Path, stage_id: &str, dispute_id: u32) -> PathBuf {
     dispute_dir(&work_dir.join("disputes"), stage_id, dispute_id).join(VERDICT_DRAFT_FILENAME)
+}
+
+/// File name of a judge's draft inside its scratch directory.
+pub fn scratch_verdict_file_name(dispute_id: u32) -> String {
+    format!("verdict-{dispute_id}.json")
+}
+
+/// Where an adjudication session started with a scratch directory writes its
+/// JSON verdict: `$LOOM_SCRATCH_DIR/verdict-<n>.json`, the only place its
+/// sandbox lets it write.
+pub fn scratch_verdict_draft(scratch_dir: &Path, dispute_id: u32) -> PathBuf {
+    scratch_dir.join(scratch_verdict_file_name(dispute_id))
 }
 
 fn attempts_file(work_dir: &Path, stage_id: &str, dispute_id: u32) -> PathBuf {
@@ -279,84 +308,5 @@ pub fn read_request(work_dir: &Path, stage_id: &str, dispute_id: u32) -> Result<
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn attempts_start_at_zero_and_accumulate() {
-        let tmp = tempfile::tempdir().unwrap();
-        let work = tmp.path();
-        assert_eq!(attempt_count(work, "s1", 1), 0);
-        assert_eq!(record_attempt(work, "s1", 1), 1);
-        assert_eq!(record_attempt(work, "s1", 1), 2);
-        assert_eq!(attempt_count(work, "s1", 1), 2);
-        // Counted per dispute, not per stage.
-        assert_eq!(attempt_count(work, "s1", 2), 0);
-    }
-
-    #[test]
-    fn attempt_count_survives_a_reread() {
-        let tmp = tempfile::tempdir().unwrap();
-        let work = tmp.path();
-        record_attempt(work, "s1", 1);
-        // A fresh read is what a restarted daemon does.
-        assert_eq!(attempt_count(work, "s1", 1), 1);
-    }
-
-    #[test]
-    fn draft_and_attempt_paths_live_in_the_dispute_directory() {
-        let tmp = tempfile::tempdir().unwrap();
-        let work = tmp.path();
-        let dir = dispute_dir(&work.join("disputes"), "s1", 3);
-        assert_eq!(verdict_draft_file(work, "s1", 3), dir.join("verdict.json"));
-        assert_eq!(attempts_file(work, "s1", 3), dir.join("attempts"));
-    }
-
-    #[test]
-    fn resolve_model_falls_back_to_default_when_unset() {
-        let tmp = tempfile::tempdir().unwrap();
-        assert_eq!(resolve_model(tmp.path()), DEFAULT_ADJUDICATION_MODEL);
-    }
-
-    #[test]
-    fn resolve_model_reads_config_override() {
-        let tmp = tempfile::tempdir().unwrap();
-        std::fs::write(
-            tmp.path().join("config.toml"),
-            "[adjudication]\nmodel = \"claude-haiku-test\"\n",
-        )
-        .unwrap();
-        assert_eq!(resolve_model(tmp.path()), "claude-haiku-test");
-    }
-
-    #[test]
-    fn persist_verdict_writes_a_parseable_record() {
-        let tmp = tempfile::tempdir().unwrap();
-        let work = tmp.path();
-        persist_verdict(
-            work,
-            "s1",
-            1,
-            &DisputeVerdict::NeedsMoreEvidence {
-                questions: vec!["why?".to_string()],
-            },
-            "opus",
-            2,
-            Some("session-xyz".to_string()),
-        )
-        .unwrap();
-        let path = verdict_file(&work.join("disputes"), "s1", 1);
-        let content = std::fs::read_to_string(&path).unwrap();
-        let record: DisputeVerdictRecord = super::super::scan::parse_yaml_frontmatter(&content)
-            .expect("verdict.md must parse back as a record");
-        assert_eq!(record.adjudicator_attempt_count, 2);
-        assert_eq!(record.model, "opus");
-        assert_eq!(record.session_id.as_deref(), Some("session-xyz"));
-    }
-
-    #[test]
-    fn no_live_session_when_none_recorded() {
-        let tmp = tempfile::tempdir().unwrap();
-        assert!(live_adjudication_session(tmp.path(), "s1").is_none());
-    }
-}
+#[path = "session_tests.rs"]
+mod tests;
