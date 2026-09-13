@@ -113,54 +113,82 @@ fn a_directory_without_git_is_unavailable_instead_of_erroring() {
         .contains("failed to inspect the working tree"));
 }
 
-#[test]
-#[serial]
-fn a_snapshot_that_cannot_persist_is_unavailable_not_an_error() {
+/// Locks `graph_store`'s base directory to 0o555, then probes whether this
+/// environment actually enforces that: root (and some sandboxes - the
+/// default in most CI containers) ignore directory permission bits
+/// entirely, mirroring `context::refresh::tests_source_graph::enumeration`'s
+/// unreadable-file skip and
+/// `commands::knowledge::tests_sync::sync_does_not_fail_when_the_index_write_fails`.
+fn lock_base_dir_read_only(graph_store: &GraphStore) -> (std::path::PathBuf, bool) {
     use std::os::unix::fs::PermissionsExt;
-
-    let temp = init_repo();
-    let root = temp.path();
-    let (store, graph_store) = stores(&temp);
 
     let base_dir = graph_store.base_dir();
     std::fs::create_dir_all(&base_dir).unwrap();
     std::fs::set_permissions(&base_dir, std::fs::Permissions::from_mode(0o555)).unwrap();
 
-    // Root (and some sandboxes - the default in most CI containers) ignore
-    // directory permission bits entirely, in which case this environment
-    // cannot exercise the persist-failure path at all. Probe with a real
-    // write before trusting the mode bits, mirroring
-    // `context::refresh::tests_source_graph::enumeration`'s unreadable-file
-    // skip and `commands::knowledge::tests_sync::
-    // sync_does_not_fail_when_the_index_write_fails`.
     let probe = base_dir.join(".write-probe");
     let still_writable = std::fs::write(&probe, b"x").is_ok();
     if still_writable {
         let _ = std::fs::remove_file(&probe);
     }
+    (base_dir, still_writable)
+}
 
-    let outcome = ensure_snapshot(&store, &graph_store, root, SnapshotPolicy::BaseOnly);
+/// Restores write access to `base_dir` before any later assertion can panic
+/// and leave a read-only directory behind for `TempDir`'s `Drop` to choke
+/// on, then reports whether this environment's persist-failure path was
+/// actually exercised (a `true` return means the caller must skip).
+fn restore_after_persist_probe(base_dir: &Path, still_writable: bool) -> bool {
+    use std::os::unix::fs::PermissionsExt;
 
-    // Restore write access before any assertion can panic and leave a
-    // read-only directory behind for `TempDir`'s `Drop` to choke on.
-    std::fs::set_permissions(&base_dir, std::fs::Permissions::from_mode(0o755)).unwrap();
-
+    std::fs::set_permissions(base_dir, std::fs::Permissions::from_mode(0o755)).unwrap();
     if still_writable {
         eprintln!(
-            "SKIP a_snapshot_that_cannot_persist_is_unavailable_not_an_error: this \
+            "SKIP a_snapshot_that_cannot_persist_still_serves_results_from_memory: this \
              environment does not enforce 0o555 directory permissions (running as root, or a \
              sandbox that ignores mode bits), so the persist-failure path was never exercised"
         );
+    }
+    still_writable
+}
+
+#[test]
+#[serial]
+fn a_snapshot_that_cannot_persist_still_serves_results_from_memory() {
+    let temp = init_repo();
+    let root = temp.path();
+    let (store, graph_store) = stores(&temp);
+    let (base_dir, still_writable) = lock_base_dir_read_only(&graph_store);
+
+    let outcome = ensure_snapshot(&store, &graph_store, root, SnapshotPolicy::BaseOnly);
+
+    if restore_after_persist_probe(&base_dir, still_writable) {
         return;
     }
 
+    // Owner decision / plan §14 item 1: a denied cache write must not fail
+    // `loom map` / `loom knowledge context`, and must not even degrade the
+    // snapshot outcome to `Unavailable` — `GraphStore` keeps the freshly
+    // built layer in memory (`graph_store::fallback`), so the rest of this
+    // process reads it exactly as if the write had succeeded.
     let head = working_tree(root).unwrap().head;
-    assert_eq!(outcome.action, SnapshotAction::Unavailable);
     assert_eq!(outcome.revision, head);
+    assert_eq!(
+        outcome.action,
+        SnapshotAction::Rebuilt,
+        "a denied cache write must not degrade a freshly-built layer to unavailable: {outcome:?}"
+    );
     assert!(
-        outcome.reason.contains("Failed to write source graph"),
-        "unexpected reason: {}",
-        outcome.reason
+        std::fs::read_dir(&base_dir).unwrap().next().is_none(),
+        "the read-only base directory must hold nothing: the write was refused, not silently \
+         allowed through"
+    );
+    let resolved = graph_store
+        .resolved(&outcome.revision, None)
+        .expect("resolved() must still answer from the in-memory fallback");
+    assert!(
+        resolved.files.contains_key("src.rs"),
+        "the freshly-built layer must still be visible: {resolved:?}"
     );
 }
 

@@ -25,7 +25,8 @@
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeMap, BTreeSet};
+use std::cell::RefCell;
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs;
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
@@ -171,6 +172,8 @@ pub struct GraphStore {
     graph_root: PathBuf,
     /// `<.loom/work>/context`.
     overlay_root: PathBuf,
+    /// Layers a denied disk write fell back to; see `fallback`.
+    memory_fallback: RefCell<HashMap<PathBuf, GraphLayer>>,
 }
 
 impl GraphStore {
@@ -181,6 +184,7 @@ impl GraphStore {
         GraphStore {
             graph_root: context_cache_root.join(GRAPH_RELATIVE_DIR),
             overlay_root: work_root.join(OVERLAY_RELATIVE_DIR),
+            memory_fallback: RefCell::new(HashMap::new()),
         }
     }
 
@@ -209,7 +213,7 @@ impl GraphStore {
 
     /// Read the base layer for `revision`, or `None` when it was never built.
     pub fn load_base(&self, revision: &str) -> Result<Option<GraphLayer>> {
-        read_layer(&self.base_path(revision))
+        self.read_layer_or_memory(&self.base_path(revision))
     }
 
     /// Read the most recently written base layer, if any.
@@ -270,14 +274,16 @@ impl GraphStore {
         if path.exists() {
             return Ok(false);
         }
-        write_layer(&path, layer)?;
-        self.prune_after_publish(revision);
+        match write_layer(&path, layer) {
+            Ok(()) => self.prune_after_publish(revision),
+            Err(error) => self.fall_back_to_memory(&path, layer, error)?,
+        }
         Ok(true)
     }
 
     /// Read a stage's overlay, or `None` when it has none.
     pub fn load_overlay(&self, plan: &str, stage: &str) -> Result<Option<GraphLayer>> {
-        read_layer(&self.overlay_path(plan, stage))
+        self.read_layer_or_memory(&self.overlay_path(plan, stage))
     }
 
     /// Write a stage's overlay, replacing any previous one.
@@ -293,7 +299,11 @@ impl GraphStore {
                     .as_ref()
                     .is_some_and(|base| base.files.contains_key(path))
         });
-        write_layer(&self.overlay_path(plan, stage), &persisted)
+        let path = self.overlay_path(plan, stage);
+        if let Err(error) = write_layer(&path, &persisted) {
+            return self.fall_back_to_memory(&path, &persisted, error);
+        }
+        Ok(())
     }
 
     /// Delete a stage's overlay layer file. Idempotent.
@@ -383,6 +393,7 @@ fn write_layer(path: &Path, layer: &GraphLayer) -> Result<()> {
         .with_context(|| format!("Failed to write source graph: {}", path.display()))
 }
 
+mod fallback;
 mod prune;
 
 #[cfg(test)]
