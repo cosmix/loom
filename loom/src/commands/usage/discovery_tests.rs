@@ -186,13 +186,12 @@ fn explicit_root_discovers_old_mtime_file_without_home_fallback() -> Result<()> 
     let project = root.path().join("fixture-project");
     std::fs::create_dir(&project)?;
     let transcript = project.join("session.jsonl");
-    std::fs::write(
-        &transcript,
-        concat!(
-            "{\"type\":\"assistant\",\"timestamp\":\"2026-09-12T20:00:00Z\",",
-            "\"message\":{\"content\":[],\"usage\":{\"output_tokens\":1}}}\n"
-        ),
-    )?;
+    let timestamp = (Utc::now() - Duration::hours(1)).to_rfc3339();
+    let row = format!(
+        "{{\"type\":\"assistant\",\"timestamp\":\"{timestamp}\",\"message\":\
+         {{\"content\":[],\"usage\":{{\"output_tokens\":1}}}}}}\n"
+    );
+    std::fs::write(&transcript, row)?;
     let file = std::fs::OpenOptions::new().write(true).open(&transcript)?;
     file.set_times(std::fs::FileTimes::new().set_modified(std::time::SystemTime::UNIX_EPOCH))?;
     let options = DiscoveryOptions {
