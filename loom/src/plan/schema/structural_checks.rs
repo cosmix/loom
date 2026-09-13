@@ -1,6 +1,6 @@
 //! Structural preflight checks split out of `validation.rs` to keep
 //! `validate_structural_preflight` itself from growing past its recorded
-//! size ceiling. Both checks below feed into the same `Vec<String>`
+//! size ceiling. The checks below feed into the same `Vec<String>`
 //! `validate_structural_preflight` returns - advisory warnings, same
 //! severity as its other checks, never hard errors.
 
@@ -8,6 +8,10 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::Path;
 
 use super::types::StageDefinition;
+
+mod worker_table;
+#[cfg(test)]
+mod worker_table_tests;
 
 /// Warn when a stage's `description` references a design brief under
 /// `doc/plans/briefs/` that does not exist in the repo.
@@ -118,6 +122,16 @@ pub(super) fn check_overlapping_files_without_dependency(
         }
     }
 
+    warnings
+}
+
+/// Collect file-ownership warnings that are safe to report before workers run.
+///
+/// Stage-level glob overlap remains the source of DAG concurrency warnings;
+/// the optional description table adds only intra-stage write-owner advice.
+pub(super) fn check_file_ownership(stages: &[StageDefinition]) -> Vec<String> {
+    let mut warnings = check_overlapping_files_without_dependency(stages);
+    warnings.extend(worker_table::check_worker_table_ownership(stages));
     warnings
 }
 

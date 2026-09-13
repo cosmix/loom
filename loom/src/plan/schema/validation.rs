@@ -4,9 +4,7 @@ use crate::models::constants::MIN_CONTEXT_CEILING_TOKENS;
 use crate::validation::validate_id;
 
 use super::detect::detect_stage_type;
-use super::structural_checks::{
-    check_missing_brief_paths, check_overlapping_files_without_dependency,
-};
+use super::structural_checks::{check_file_ownership, check_missing_brief_paths};
 use super::types::{
     FilesystemConfig, Implementer, LoomConfig, LoomMetadata, NetworkConfig, SandboxConfig,
     StageSandboxConfig, ValidationError,
@@ -928,7 +926,7 @@ pub fn validate_structural_preflight(
     // duplicate warnings.
     warnings.extend(check_cross_stage_wiring_coverage(stages));
     warnings.extend(check_missing_brief_paths(stages, repo_root));
-    warnings.extend(check_overlapping_files_without_dependency(stages));
+    warnings.extend(check_file_ownership(stages));
 
     // Build tool command patterns and their expected config files
     const BUILD_TOOL_CHECKS: &[(&str, &str)] = &[
