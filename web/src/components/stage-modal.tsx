@@ -29,7 +29,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Kbd } from "@/components/ui/kbd";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { stateMeta } from "@/lib/format";
 import { attentionAtom, orderedStagesAtom, selectStage, snapshotAtom } from "@/state/atoms";
 
@@ -245,9 +244,7 @@ function Body({
   );
 }
 
-/// The primary way into the terminal. Disabled with the reason on hover when
-/// the stage cannot be attached to; the span carries the tooltip because a
-/// disabled button emits no pointer events.
+/// The primary way into the terminal.
 function TerminalButton({
   reason,
   nativeBackend,
@@ -259,27 +256,20 @@ function TerminalButton({
 }) {
   return (
     <>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <span className="ml-auto inline-flex self-center">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              disabled={reason !== null}
-              onClick={onOpen}
-              aria-label="open terminal"
-            >
-              <TerminalIcon />
-              Terminal
-              <Kbd>t</Kbd>
-            </Button>
-          </span>
-        </TooltipTrigger>
-        <TooltipContent className="max-w-xs text-left">
-          {reason ?? "Watch the session, or take control of it"}
-        </TooltipContent>
-      </Tooltip>
+      <span className="ml-auto inline-flex self-center">
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          disabled={reason !== null}
+          onClick={onOpen}
+          aria-label="open terminal"
+        >
+          <TerminalIcon />
+          Terminal
+          <Kbd>t</Kbd>
+        </Button>
+      </span>
       {nativeBackend && <CopyCommand command="loom run --backend tmux" className="self-center" />}
     </>
   );

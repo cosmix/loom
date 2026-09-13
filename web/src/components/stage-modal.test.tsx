@@ -92,15 +92,14 @@ describe("stage modal", () => {
   });
 
   it.each([
-    [terminalStage({ session_backend: "native" }), true, "--backend tmux"],
-    [terminalStage(), false, "loom status --web --terminals"],
-  ])("explains why a disabled terminal button cannot open", async (stage, terminals, reason) => {
+    [terminalStage({ session_backend: "native" }), true],
+    [terminalStage(), false],
+  ])("disables unavailable terminals without a tooltip", (stage, terminals) => {
     renderModal(stage, `/?stage=${stage.id}`, terminals);
     const button = terminalButton();
 
     expect(button.disabled).toBe(true);
     fireEvent.pointerMove(button.parentElement!);
-
-    expect(await screen.findByText(new RegExp(reason))).toBeTruthy();
+    expect(document.querySelector('[data-slot="tooltip-content"]')).toBeNull();
   });
 });

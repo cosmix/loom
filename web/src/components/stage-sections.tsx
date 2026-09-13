@@ -71,7 +71,7 @@ function identityRows(stage: StageSummary, level: number | null) {
   return present([
     row("type", HINT.type, stage.stage_type, true),
     row("level", HINT.level, level === null ? null : String(level), true),
-    row("model", HINT.model, stage.model, true),
+    row("orchestrator model", HINT.model, stage.model, true),
     row("execution models", HINT.executionModels, stage.execution_models.join(", "), true),
   ]);
 }
@@ -179,7 +179,7 @@ export function stageSections(stage: StageSummary, level: number | null): Sectio
   return [
     { title: "identity", rows: identityRows(stage, level) },
     { title: "timing", rows: timingRows(stage) },
-    { title: "context", rows: contextRows(stage) },
+    { title: "stage orchestrator context", rows: contextRows(stage) },
     { title: "session", rows: sessionRows(stage) },
     { title: "retries", rows: retryRows(stage) },
     { title: "adjudication", rows: adjudicationRows(stage) },
