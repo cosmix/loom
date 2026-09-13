@@ -1,8 +1,34 @@
 import { ArrowLeftIcon, ArrowRightIcon, KeyboardIcon } from "lucide-react";
+import { useEffect, useState } from "react";
 import type { FocusEvent, ReactElement, ReactNode } from "react";
 
 import type { TerminalMode, TerminalPhase } from "@/components/terminal/use-terminal";
+import { useMediaQuery } from "@/lib/use-media-query";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+
+/// How long the knob takes to slide from one cell to the other. The state
+/// words underneath only swap once it arrives, so this and the CSS custom
+/// property `--terminal-key-slide` in terminal-controls.css must match.
+const SLIDE_MS = 250;
+
+/// How long the knob's own label keeps naming the action just taken before
+/// it flips to name the next one, once the slide has already landed.
+const HOLD_MS = 300;
+
+/// The verb the knob carries in each direction, shared between its rider
+/// and the invisible sizer that reserves room for it in the cell below.
+const TAKE_CONTROL: ReactNode = (
+  <>
+    take control
+    <ArrowRightIcon aria-hidden="true" />
+  </>
+);
+const RELEASE: ReactNode = (
+  <>
+    <ArrowLeftIcon aria-hidden="true" />
+    release
+  </>
+);
 
 /// The word the key shows on its left: the mode while live, else the phase.
 function stateWord(mode: TerminalMode, phase: TerminalPhase): string {
@@ -10,21 +36,13 @@ function stateWord(mode: TerminalMode, phase: TerminalPhase): string {
   return phase;
 }
 
-/// One of a cell's two stacked labels; the inactive one stays in the box
-/// (so the width holds) but is faded out and hidden from assistive tech.
-function Label({
-  active,
-  kind,
-  children,
-}: {
-  active: boolean;
-  kind: "verb" | "state";
-  children: ReactNode;
-}): ReactElement {
+/// A cell's state label: shown once the knob has finished uncovering it,
+/// faded out and hidden from assistive tech the rest of the time.
+function Label({ active, children }: { active: boolean; children: ReactNode }): ReactElement {
   return (
     <span
       className="terminal-key-label"
-      data-kind={kind}
+      data-kind="state"
       data-active={active}
       aria-hidden={!active}
     >
@@ -33,11 +51,27 @@ function Label({
   );
 }
 
+/// An invisible twin of the knob's rider, stacked with the state label in
+/// the same cell so the column stays wide enough for whichever verb text
+/// the knob shows while parked over it — the knob is absolutely positioned
+/// and never itself contributes to the cell's width.
+function Sizer({ children }: { children: ReactNode }): ReactElement {
+  return (
+    <span className="terminal-key-label terminal-key-sizer" aria-hidden="true">
+      {children}
+    </span>
+  );
+}
+
 /// One instrument for the header: a two-cell sliding toggle of fixed width.
-/// The knob starts under the left cell, naming the take-control action, and
-/// slides to the right cell when control is taken, where it turns quiet
-/// since that cell now only lets go. When the phase cannot be switched it
-/// turns into a plain indicator and drops both cells.
+/// The knob is the verb tile itself and carries its own label. On a click
+/// the destination cell's word vanishes at once, the knob slides across
+/// still carrying the label the user clicked, and the cell it uncovers
+/// shows its word only once the knob has landed. The knob's own label then
+/// lingers for another beat before it flips to name the next action, so the
+/// action just taken stays readable rather than changing the instant the
+/// knob stops moving. When the phase cannot be switched it turns into a
+/// plain indicator and drops both cells.
 export function ModeKey({
   mode,
   phase,
@@ -51,6 +85,30 @@ export function ModeKey({
 }): ReactElement {
   const control = mode === "control";
   const word = stateWord(mode, phase);
+  const reduced = useMediaQuery("(prefers-reduced-motion: reduce)");
+  const [settled, setSettled] = useState<TerminalMode>(mode);
+  const [rider, setRider] = useState<TerminalMode>(mode);
+
+  // `settled` lags `mode` by the slide, so the cell the knob uncovers shows
+  // its word only once the knob has landed. `rider` lags it further, by the
+  // slide plus a hold, so the knob's own label keeps naming the action just
+  // taken for a beat after it stops moving before it flips to the next one.
+  // A click mid-slide flips `mode` back before either timer fires; the
+  // cleanup below cancels both pending swaps, so neither word changes.
+  useEffect(() => {
+    if (reduced) {
+      setSettled(mode);
+      setRider(mode);
+      return;
+    }
+    const settleTimer = setTimeout(() => setSettled(mode), SLIDE_MS);
+    const riderTimer = setTimeout(() => setRider(mode), SLIDE_MS + HOLD_MS);
+    return () => {
+      clearTimeout(settleTimer);
+      clearTimeout(riderTimer);
+    };
+  }, [mode, reduced]);
+
   // The key is the dialog's first tabbable, so the dialog's auto-focus lands
   // here on open. A tooltip that opened on focus would then sit above the
   // dialog as the topmost dismissable layer and swallow the first Esc; the
@@ -69,31 +127,31 @@ export function ModeKey({
           disabled={!switchable}
           data-mode={mode}
           data-phase={phase}
+          data-settled={settled}
+          data-rider={rider}
           onClick={() => onMode(control ? "view" : "control")}
           onFocus={onFocus}
         >
           {switchable ? (
             <>
-              <span className="terminal-key-knob" aria-hidden="true" />
               <span className="terminal-key-cell">
-                <Label active={!control} kind="verb">
-                  take control
-                  <ArrowRightIcon aria-hidden="true" />
-                </Label>
-                <Label active={control} kind="state">
+                <Sizer>{TAKE_CONTROL}</Sizer>
+                <Label active={mode === "control" && settled === "control"}>
                   <KeyboardIcon aria-hidden="true" />
                   {control ? word : "controlling"}
                 </Label>
               </span>
               <span className="terminal-key-cell">
-                <Label active={!control} kind="state">
+                <Label active={mode === "view" && settled === "view"}>
                   <span className="terminal-dot" aria-hidden="true" />
                   {control ? "viewing" : word}
                 </Label>
-                <Label active={control} kind="verb">
-                  <ArrowLeftIcon aria-hidden="true" />
-                  release
-                </Label>
+                <Sizer>{RELEASE}</Sizer>
+              </span>
+              <span className="terminal-key-knob" aria-hidden="true">
+                <span key={rider} className="terminal-key-rider">
+                  {rider === "control" ? RELEASE : TAKE_CONTROL}
+                </span>
               </span>
             </>
           ) : (

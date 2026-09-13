@@ -11,6 +11,10 @@
   }
 
   .terminal-key {
+    /* How long the knob takes to slide between cells. Kept as a custom
+     * property so the transition below and the `SLIDE_MS` constant in
+     * mode-key.tsx that delays the word swap can share one number. */
+    --terminal-key-slide: 250ms;
     position: relative;
     isolation: isolate;
     display: grid;
@@ -54,22 +58,52 @@
 
   /* The knob: a tinted tile under the left cell that slides to the right
    * cell when control is taken, and turns quiet there since the cell it
-   * covers now only lets go. */
+   * covers now only lets go. It is the verb tile itself, so it lays out
+   * its own rider label centered and clipped to its own bounds. */
   .terminal-key-knob {
     position: absolute;
     top: 3px;
     bottom: 3px;
     left: 3px;
     width: calc(50% - 3px);
+    display: grid;
+    place-items: center;
+    overflow: hidden;
+    white-space: nowrap;
     border-radius: 6px;
     background: color-mix(in oklch, var(--tone-executing) 12%, transparent);
     transition:
-      transform 380ms cubic-bezier(0.2, 0.7, 0.2, 1),
+      transform var(--terminal-key-slide) cubic-bezier(0.2, 0.7, 0.2, 1),
       background-color 300ms ease;
   }
   .terminal-key[aria-checked="true"] .terminal-key-knob {
     transform: translateX(100%);
     background: color-mix(in oklch, var(--foreground) 6%, transparent);
+  }
+
+  /* The rider: the knob's own label, remounted (via a `key` on `rider`)
+   * each time the words swap so its fade-rise keyframe replays in place. */
+  .terminal-key-rider {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12.5px;
+    font-weight: 500;
+    line-height: 16px;
+    white-space: nowrap;
+    color: var(--tone-executing);
+    transition: color 300ms ease;
+    animation: terminal-key-word 200ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  }
+  .terminal-key-rider svg {
+    flex: none;
+    width: 13px;
+    height: 13px;
+    stroke-width: 2;
+    transition: transform 200ms cubic-bezier(0.2, 0.7, 0.2, 1);
+  }
+  .terminal-key[data-rider="control"] .terminal-key-rider {
+    color: var(--foreground);
   }
 
   /* The disabled indicator: a dot and a word, left as a plain status. */
@@ -97,8 +131,9 @@
     animation: terminal-key-word 200ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
   }
 
-  /* Each cell stacks its two labels in the same grid cell, so the cell is
-   * as wide as its wider label and the capsule never changes width. */
+  /* Each cell stacks its state label over an invisible sizer in the same
+   * grid area, so the cell is as wide as whichever is wider and the
+   * capsule never changes width even while the knob sits on top of it. */
   .terminal-key-cell {
     position: relative;
     display: grid;
@@ -133,14 +168,16 @@
     stroke-width: 2;
     transition: transform 200ms cubic-bezier(0.2, 0.7, 0.2, 1);
   }
-  .terminal-key-label[data-kind="verb"] {
-    color: var(--tone-executing);
-  }
-  .terminal-key[aria-checked="true"] .terminal-key-label[data-kind="verb"] {
-    color: var(--foreground);
-  }
-  .terminal-key[aria-checked="true"] .terminal-key-label[data-kind="state"] {
+  .terminal-key[data-settled="control"] .terminal-key-label[data-kind="state"] {
     color: var(--tone-control);
+  }
+
+  /* The sizer: an invisible twin of the knob's rider that reserves the
+   * cell's width for whichever verb text the knob shows while parked over
+   * it, since the knob itself is absolutely positioned and out of flow. */
+  .terminal-key-sizer {
+    visibility: hidden;
+    pointer-events: none;
   }
 
   .terminal-key:hover:not(:disabled) {
@@ -149,14 +186,10 @@
   .terminal-key:hover:not(:disabled) .terminal-key-knob {
     background: color-mix(in oklch, var(--tone-executing) 20%, transparent);
   }
-  .terminal-key[aria-checked="false"]:hover:not(:disabled)
-    .terminal-key-label[data-kind="verb"]
-    svg {
+  .terminal-key[data-rider="view"]:hover:not(:disabled) .terminal-key-rider svg {
     transform: translateX(2px);
   }
-  .terminal-key[aria-checked="true"]:hover:not(:disabled)
-    .terminal-key-label[data-kind="verb"]
-    svg {
+  .terminal-key[data-rider="control"]:hover:not(:disabled) .terminal-key-rider svg {
     transform: translateX(-2px);
   }
 
@@ -248,14 +281,18 @@
   .terminal-key-state,
   .terminal-key-label,
   .terminal-key-label svg,
+  .terminal-key-rider,
+  .terminal-key-rider svg,
   .terminal-dot {
     transition: none;
   }
   .terminal-key-word,
+  .terminal-key-rider,
   .terminal-key .terminal-dot {
     animation: none;
   }
-  .terminal-key:hover:not(:disabled) .terminal-key-label svg {
+  .terminal-key:hover:not(:disabled) .terminal-key-label svg,
+  .terminal-key:hover:not(:disabled) .terminal-key-rider svg {
     transform: none;
   }
 }

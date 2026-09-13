@@ -287,11 +287,14 @@ describe("terminal view", () => {
   it("releases control when the key is pressed again", async () => {
     const { factory } = await live();
     const key = () => screen.getByRole("switch", { name: "Take control" });
+    // The active state label plus the knob's own rider, in DOM order: the
+    // rider carries whichever verb the knob currently shows, and only the
+    // cell the knob has uncovered shows its state word.
     const shown = () =>
-      Array.from(key().querySelectorAll('[data-active="true"]'))
+      Array.from(key().querySelectorAll('[data-active="true"], .terminal-key-rider'))
         .map((label) => label.textContent)
         .join("|");
-    await waitFor(() => expect(shown()).toBe("take control|viewing"));
+    await waitFor(() => expect(shown()).toBe("viewing|take control"));
     expect(key().getAttribute("aria-checked")).toBe("false");
 
     fireEvent.click(key());
@@ -299,11 +302,34 @@ describe("terminal view", () => {
     act(() => FakeSocket.instances[1].open());
     await waitFor(() => expect(key().getAttribute("aria-checked")).toBe("true"));
     expect(well().dataset.mode).toBe("control");
-    expect(shown()).toBe("controlling|release");
+    await waitFor(() => expect(shown()).toBe("controlling|release"), { timeout: 2000 });
 
     fireEvent.click(key());
     await waitFor(() => expect(well().dataset.mode).toBe("view"));
     expect(key().getAttribute("aria-checked")).toBe("false");
+  });
+
+  it("swaps the key's words only after the slide", async () => {
+    await live();
+    const key = () => screen.getByRole("switch", { name: "Take control" });
+    const rider = () => key().querySelector(".terminal-key-rider");
+    const cells = () => key().querySelectorAll(".terminal-key-cell");
+    const controllingLabel = () => cells()[0].querySelector('[data-kind="state"]');
+    const viewingLabel = () => cells()[1].querySelector('[data-kind="state"]');
+
+    await waitFor(() => expect(rider()?.textContent).toBe("take control"));
+    fireEvent.click(key());
+
+    expect(key().getAttribute("aria-checked")).toBe("true");
+    expect(rider()?.textContent).toBe("take control");
+    expect(viewingLabel()?.getAttribute("data-active")).toBe("false");
+
+    await waitFor(() => expect(controllingLabel()?.getAttribute("data-active")).toBe("true"), {
+      timeout: 2000,
+    });
+    expect(rider()?.textContent).toBe("take control");
+
+    await waitFor(() => expect(rider()?.textContent).toBe("release"), { timeout: 2000 });
   });
 
   it("turns the key into a plain indicator once the session has ended", async () => {
