@@ -41,9 +41,11 @@ mod tests;
 mod tests_verdicts;
 
 use anyhow::Result;
+use chrono::Utc;
 use std::path::{Path, PathBuf};
 
 use crate::models::dispute::{dispute_dir, request_file, verdict_file};
+use crate::models::failure::{FailureInfo, FailureType};
 use crate::models::stage::StageStatus;
 use crate::verify::transitions::{load_stage, update_stage};
 
@@ -191,12 +193,21 @@ impl AdjudicatorRegistry {
 ///
 /// A spawn failure is an environment problem (no terminal, no `claude` on
 /// PATH, a backend that refuses), not something a retry fixes, and a dispute
-/// that hangs silently is worse than one that asks for a human.
-fn escalate_adjudicator_unavailable(work_dir: &Path, stage_id: &str, error: &str) {
+/// that hangs silently is worse than one that asks for a human. `failure_type`
+/// is classified the same way a stage or merge-resolver spawn failure is, and
+/// recorded on the stage so `loom status` shows whether it was a sandbox
+/// setup problem.
+fn escalate_adjudicator_unavailable(
+    work_dir: &Path,
+    stage_id: &str,
+    failure_type: FailureType,
+    error: &str,
+) {
     escalate(
         work_dir,
         stage_id,
         format!("No adjudication session could be started for this dispute: {error}"),
+        Some(failure_type),
     );
 }
 
@@ -205,6 +216,7 @@ fn escalate_evidence_cap(work_dir: &Path, stage_id: &str) {
         work_dir,
         stage_id,
         format!("Evidence loop exhausted at {MAX_EVIDENCE_ROUNDS} rounds"),
+        None,
     );
 }
 
@@ -215,6 +227,7 @@ fn escalate_attempt_cap(work_dir: &Path, stage_id: &str, dispute_id: u32, attemp
         format!(
             "Adjudication of dispute {dispute_id} produced no verdict after {attempts} session(s)"
         ),
+        None,
     );
 }
 
@@ -234,6 +247,7 @@ fn escalate_apply_cap(
         format!(
             "Applying the verdict for dispute {dispute_id} failed {failures} time(s): {error:#}"
         ),
+        None,
     );
 }
 
@@ -288,10 +302,19 @@ fn record_apply_failure(work_dir: &Path, stage_id: &str, dispute_id: u32) -> u32
 
 /// Single locked read-modify-write: re-apply only the human-review transition
 /// onto the fresh on-disk stage (A-5). Best effort — a refused transition is
-/// logged inside the closure and ignored.
-fn escalate(work_dir: &Path, stage_id: &str, reason: String) {
+/// logged inside the closure and ignored. `failure_type`, when given, is
+/// recorded as the stage's `failure_info`; only a spawn failure has one to
+/// give — the evidence/attempt/apply caps that exhaust a budget do not.
+fn escalate(work_dir: &Path, stage_id: &str, reason: String, failure_type: Option<FailureType>) {
     let result = update_stage(stage_id, work_dir, |s| {
         s.try_request_human_review(reason.clone()).ok();
+        if let Some(failure_type) = failure_type {
+            s.failure_info = Some(FailureInfo {
+                failure_type,
+                detected_at: Utc::now(),
+                evidence: vec![reason.clone()],
+            });
+        }
         Ok(())
     });
     if let Err(error) = result {

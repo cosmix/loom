@@ -27,6 +27,7 @@ use crate::models::dispute::{
 use crate::models::session::{Session, SessionType};
 use crate::models::stage::Stage;
 use crate::models::worktree::Worktree;
+use crate::orchestrator::core::spawn_failure_type;
 use crate::orchestrator::terminal::backend::SessionBackend;
 
 /// Model adjudication sessions run on when `.loom/work/config.toml` names none.
@@ -91,6 +92,7 @@ impl super::AdjudicatorRegistry {
                     session_id: session.id,
                 }),
                 Err(error) => {
+                    let failure_type = spawn_failure_type(&error);
                     let error = format!("{error:#}");
                     tracing::warn!(
                         target: "loom::adjudication",
@@ -99,7 +101,12 @@ impl super::AdjudicatorRegistry {
                         %error,
                         "could not spawn an adjudication session; escalating the stage",
                     );
-                    super::escalate_adjudicator_unavailable(work_dir, &job.stage.id, &error);
+                    super::escalate_adjudicator_unavailable(
+                        work_dir,
+                        &job.stage.id,
+                        failure_type,
+                        &error,
+                    );
                 }
             }
         }

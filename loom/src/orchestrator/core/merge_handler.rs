@@ -10,18 +10,20 @@ use crate::git::merge::{
     get_conflicting_files_from_status, verify_merge_succeeded, MergeProbeOutcome,
 };
 use crate::models::failure::{FailureInfo, FailureType};
-use crate::models::session::{Session, SessionType};
+use crate::models::session::Session;
 use crate::models::stage::StageStatus;
 use crate::orchestrator::auto_merge::{attempt_auto_merge, is_auto_merge_enabled, AutoMergeResult};
 use crate::orchestrator::merge_lifecycle::{self, CleanupOutcome, MergeLifecycle};
 use crate::orchestrator::signals::{
     find_live_merge_session_for_stage, generate_merge_signal, remove_signal,
 };
-use crate::process::is_process_alive;
 use crate::verify::transitions::load_stage;
 
 use super::persistence::Persistence;
 use super::{clear_status_line, Orchestrator};
+
+mod merge_gate;
+mod spawn_failure;
 
 /// Maximum number of merge-resolver sessions the daemon will spawn for a single
 /// stage before giving up and routing it to `NeedsHumanReview`. Mirrors the
@@ -547,6 +549,9 @@ impl Orchestrator {
             crate::git::branch::branch_exists(&stage_branch, &self.config.repo_root)
                 .unwrap_or(false);
         if stage_branch_exists {
+            if self.merge_gate_blocks(stage_id, &stage_branch, &target_branch) {
+                return false;
+            }
             match crate::git::branch::commits_ahead_of(
                 &stage_branch,
                 &target_branch,
@@ -564,7 +569,7 @@ impl Orchestrator {
                          agent never committed work for this stage. Re-queue it with \
                          `loom stage human-review {stage_id} --approve`, or redo it manually."
                     );
-                    self.route_to_human_review(stage_id, reason);
+                    self.route_to_human_review(stage_id, reason, None);
                     return false;
                 }
                 Ok(_) => {}
@@ -579,24 +584,7 @@ impl Orchestrator {
             }
         }
 
-        // Capture completed_commit before merge attempt so the orchestrator can
-        // later verify merge resolution via git ancestry even if conflicts occur.
-        if stage.completed_commit.is_none() {
-            let branch_name = branch_name_for_stage(stage_id);
-            if let Ok(head) = crate::git::get_branch_head(&branch_name, &self.config.repo_root) {
-                match self.update_stage(stage_id, |current| {
-                    if current.completed_commit.is_none() {
-                        current.completed_commit = Some(head);
-                    }
-                    Ok(())
-                }) {
-                    Ok(updated) => stage = updated,
-                    Err(error) => {
-                        eprintln!("Warning: Failed to save completed_commit: {error}")
-                    }
-                }
-            }
-        }
+        self.capture_completed_commit(&mut stage, stage_id);
 
         clear_status_line();
         eprintln!("Auto-merging stage '{stage_id}'...");
@@ -870,46 +858,24 @@ impl Orchestrator {
                 continue;
             }
 
-            // Skip if there's already an active merge session for this stage.
-            //
-            // When `loom stage complete` detects a merge conflict, the stage transitions
-            // to MergeConflict and `spawn_merge_resolver()` returns DaemonManaged (no
-            // session spawned). However, the original execution session (SessionType::Stage)
-            // may still be alive in active_sessions — it hasn't exited yet. That stage
-            // session will never resolve the merge conflict, so we must not let it block
-            // merge resolver spawning.
-            //
-            // Logic:
-            // - If the active session is a Stage session (not Merge), it's stale in the
-            //   context of merge resolution. Remove it and its signal, then fall through.
-            // - If it IS a Merge session, only skip if the process is still alive.
-            if self.active_sessions.contains_key(&stage_id) {
-                let session = self.active_sessions.get(&stage_id).unwrap();
-                if session.session_type != SessionType::Stage {
-                    // It's a merge (or base-conflict) session — only skip if still alive
-                    let is_alive = session.pid.map(is_process_alive).unwrap_or(false);
-                    if is_alive {
-                        continue;
-                    }
-                }
-                // Either a stale Stage session or a dead Merge session — clean up
-                let stale_session = self.active_sessions.remove(&stage_id).unwrap();
-                let stale_session_id = stale_session.id.clone();
-                // Kill the original session to prevent zombie processes.
-                // When loom stage complete detected a merge conflict, the Stage session
-                // may still be running -- actively terminate it.
-                let kill_result = self.backend.kill_session(&stale_session);
-                if let Err(e) = &kill_result {
-                    tracing::debug!(
-                        session_id = %stale_session_id,
-                        error = %e,
-                        "Failed to kill stale session (may already be dead)"
-                    );
-                }
-                // Remove the old signal file so it doesn't block respawning
-                if let Err(e) = remove_signal(&stale_session_id, &self.config.work_dir) {
-                    eprintln!("Warning: Failed to remove stale signal for session '{stale_session_id}': {e}");
-                }
+            // Merge gate: a control-path-touching branch is routed to human
+            // review instead of getting a resolver session (owner decision 9),
+            // covering a stage that reached MergeConflict/MergeBlocked some
+            // other way than `try_auto_merge` (e.g. `loom stage complete`).
+            let target_branch = crate::git::branch::resolve_target_branch(
+                &self.config.base_branch,
+                &self.config.repo_root,
+            );
+            if self.merge_gate_blocks(&stage_id, &branch_name_for_stage(&stage_id), &target_branch)
+            {
+                continue;
+            }
+
+            // Skip if there's already an active merge session for this stage,
+            // cleaning up a stale/dead tracked one otherwise (see
+            // `cleanup_stale_merge_session` for the fall-through rationale).
+            if self.cleanup_stale_merge_session(&stage_id) {
+                continue;
             }
 
             // Use the shared helper that checks signal + PID liveness and
@@ -941,12 +907,9 @@ impl Orchestrator {
                 continue;
             }
 
-            // Spawn a merge resolution session
+            // Spawn a merge resolution session.
             if let Err(e) = self.spawn_merge_resolution_session(&stage) {
-                clear_status_line();
-                eprintln!(
-                    "Warning: Failed to spawn merge resolution session for '{stage_id}': {e}"
-                );
+                self.report_merge_spawn_failure(&stage_id, e);
             } else {
                 spawned += 1;
             }
@@ -1017,12 +980,24 @@ impl Orchestrator {
         }
     }
 
-    /// Persist `NeedsHumanReview` with `reason` as the review text and mirror it
-    /// into the graph. Returns whether the persist succeeded.
-    fn route_to_human_review(&mut self, stage_id: &str, reason: String) -> bool {
+    /// Persist `NeedsHumanReview` with `reason`, mirrored into the graph;
+    /// records `failure_type` as `failure_info` when given. Returns success.
+    fn route_to_human_review(
+        &mut self,
+        stage_id: &str,
+        reason: String,
+        failure_type: Option<FailureType>,
+    ) -> bool {
         let updated = self.update_stage(stage_id, |stage| {
             stage.force_status_with_reason(StageStatus::NeedsHumanReview, &reason);
             stage.review_reason = Some(reason.clone());
+            if let Some(failure_type) = failure_type {
+                stage.failure_info = Some(FailureInfo {
+                    failure_type,
+                    detected_at: Utc::now(),
+                    evidence: vec![reason.clone()],
+                });
+            }
             Ok(())
         });
         if let Err(error) = updated {
@@ -1063,7 +1038,7 @@ impl Orchestrator {
             failed_attempts = %failed_attempts,
             "Merge-resolver attempt cap reached; routing stage to NeedsHumanReview"
         );
-        if !self.route_to_human_review(stage_id, reason) {
+        if !self.route_to_human_review(stage_id, reason, None) {
             return;
         }
 
