@@ -31,9 +31,10 @@ Read-only collaborators: `loom-hooks/subagent-start.sh` already writes
 `agent_id`, `agent_type`, `stage_id`, `parent_session_id`, `loom_session_id`,
 and `ts`; do not change that hook. The quota worker owns all `loom/src/quota/`
 files and must land its history reader before you call it. Define a usage-only
-receipt protocol only. `models/forward_receipt.rs` is a separate, future
-job/stage lifecycle protocol used by agent-fixing cases; do not create, import,
-or alter it here, and do not fabricate any runtime receipt producer.
+receipt protocol only. `models/forward_receipt.rs` does not exist at `7d6a14ca`
+and is a job-lifecycle deliverable, not this stage's; its absence here is
+expected. Do not create, import, or alter it, and do not fabricate any runtime
+receipt producer.
 
 ## Current seams that must remain understood
 

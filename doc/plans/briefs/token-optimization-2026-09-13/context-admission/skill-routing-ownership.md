@@ -22,6 +22,8 @@ This worker does not own the read ledger, polling guard, delivery records, worke
 
 `loom/src/plan/schema/structural_checks.rs::check_overlapping_files_without_dependency` checks only stage-level `files` patterns across the dependency DAG. `validation.rs::validate_structural_preflight` collects its warnings; its direct command callers are plan setup and `loom plan verify`. The existing plan worker-ownership table is free-form stage description text, so there is no structured worker schema to extend safely without widening parser and serialization blast radius.
 
+`validation.rs::check_cross_stage_wiring_coverage` (`loom/src/plan/schema/validation.rs:1101`, called from `validate_structural_preflight` at `:929`) already exists and subsumes per-stage artifact/wiring coherence; the new worker-table diagnostics must not duplicate it.
+
 ## Implementation contract
 
 1. Keep direct, high-confidence lexical matches useful: an exact skill-name or multi-word keyword may still direct Codex to read that skill's `SKILL.md` in full.

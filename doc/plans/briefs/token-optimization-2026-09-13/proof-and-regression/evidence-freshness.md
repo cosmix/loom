@@ -6,7 +6,9 @@ Terra/xhigh worker. No git commands, verification, subagents or direct knowledge
 
 ## Existing contract
 
-Frontmatter already provides `sources` and `verified`; preserve its format. `catalog.rs::collect_chunk_issues` calls `evidence::changed_since_verified`, which currently compares `verified..HEAD` only. Invalid verification refs or git errors silently produce no evidence issue. `CatalogIssue::EvidenceChanged` and `UnverifiableReference` are review-only; `knowledge/check.rs::check` excludes them from ordinary `--strict`. Do not describe source changes as proof that prose is wrong.
+Frontmatter already provides `sources` and `verified`; preserve its format. `catalog.rs::process_file` calls `evidence::changed_since_verified` once per file (`catalog.rs:125`), after its per-chunk loop over `collect_chunk_issues`, which currently compares `verified..HEAD` only. Invalid verification refs or git errors silently produce no evidence issue. `CatalogIssue::EvidenceChanged` and `UnverifiableReference` are review-only; `knowledge/check.rs::check` excludes them from ordinary `--strict`. Do not describe source changes as proof that prose is wrong.
+
+The wiring pattern `changed_since_verified\(` already matches at `catalog.rs:125` today, so that wiring entry proves nothing alone; the working-tree fixtures are the proof.
 
 ## Implementation
 

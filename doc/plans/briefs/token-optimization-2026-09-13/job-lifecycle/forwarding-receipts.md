@@ -25,15 +25,25 @@ Sol changes only:
 Terra owns `commands/subagents/**`, poll guard, and Codex doctrine. No shared
 file is jointly owned. Sol does not alter `ledger.rs`, `render.rs`, or signals.
 
+Sol owns `loom-hooks/tests/run-all.sh` in wave 1 and registers its new
+codex-forward*/forward-receipt hook tests there.
+
 ## Grounded transport contract
 
 - The guard's exact eight-word argv checker cannot inject an argument or env
-  (`loom-hooks/codex-forward-guard.sh:63-105`); it authorizes only.
+  (`is_exact_forward_command`, `loom-hooks/codex-forward-guard.sh:106-120`;
+  `parse_shell_words` is the quoting state machine before it); it authorizes
+  only.
 - The wrapper cannot write `.loom/work` through the worktree symlink
-  (`loom-hooks/codex-forward.sh:25-31`); only the hook-side Rust writer persists.
+  (`loom-hooks/codex-forward.sh:32-37`); only the hook-side Rust writer persists.
+- The companion lane is the only lane on Linux
+  (`loom-hooks/codex-forward.sh:211`) and runs Codex under its fixed
+  `workspace-write` sandbox inside the outer Bash sandbox; the direct lane
+  (`--sandbox danger-full-access`, `codex-forward.sh:150-151`) is a macOS
+  fallback that relies on the outer sandbox alone.
 - A transcript associates an assistant tool use (`id`, name, input) with the
-  user tool result's `tool_use_id` (`commands/usage/transcript.rs:112-151,
-  235-282`). Use that observed identity, not a fictitious hook field.
+  user tool result's `tool_use_id` (`commands/usage/transcript.rs:128-154,
+  237-284`). Use that observed identity, not a fictitious hook field.
 - A natural harness background acknowledgement may expose
   `toolUseResult.backgroundTaskId` and a task-output path (observed
   `/home/dkaponis/.claude/projects/-home-dkaponis-src-loom/97bc4c4e-b8b8-4e3a-a028-cc756920c0e2.jsonl:133-134`).
@@ -137,10 +147,26 @@ locator resolution uses the wrapper's observed installed state root plus exact
 job ID and validates the record's identity. If the terminal direct-process
 evidence or companion state is unavailable, remain unknown; do not trust model text.
 
+## Required: hook tests must not inherit a live session's identity
+
+`codex-forward-guard-blocks-edit.sh`, `codex-forward-guard-quoting.sh`, and
+`codex-forward-guard-bash-companion-only.sh` currently inherit
+`LOOM_STAGE_ID`/`LOOM_SESSION_ID`/`LOOM_WORK_DIR` from the running stage
+session, and the guard writes its ledger through them — a gate run inside any
+session that also runs `bash loom-hooks/tests/run-all.sh` appends fake forward
+records to that session's own live `.loom/work/subagents/<stage>/codex.jsonl`.
+`run-all.sh` (or each `codex-forward*` test individually) must clear
+`LOOM_STAGE_ID`, `LOOM_SESSION_ID`, `LOOM_WORK_DIR`, `LOOM_SESSION_TYPE`, and
+`LOOM_MAIN_AGENT_PID` before invoking the guard, and point any state root the
+guard writes through at a per-test tempdir instead. Add a regression that
+runs the guard tests with those five variables set to a scratch work dir and
+asserts no record lands outside the test's own tempdir.
+
 ## Focused tests
 
 Test canonical receipt hashing, unsafe identity rejection, start/terminal
 conflicts, prefix-channel spoofing, direct exit versus printed text, exact
 companion completed/failed/canceled records, absent inline result, natural
-background-handle observation, and usage joins with same-model siblings. The
-orchestrator alone runs verification.
+background-handle observation, usage joins with same-model siblings, and the
+live-identity-isolation regression above. The orchestrator alone runs
+verification.

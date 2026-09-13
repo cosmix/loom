@@ -9,6 +9,12 @@ tests, `loom-hooks/poll-guard.sh` and its tests, plus
 `loom/src/orchestrator/signals/format/codex.rs`. Do not change `ledger.rs` or
 any Sol-owned model/hook/usage file.
 
+Terra adds its new poll-guard* hook test registrations to
+`loom-hooks/tests/run-all.sh` in wave 2, only after Sol's unit has actually
+settled (ownership transfer per common.md). The stage YAML `files` list omits
+`run-all.sh`; the plan-level `loom-hooks/**` grant covers the write, and
+`loom stage amend` cannot change `files`.
+
 The adapter is read-only. It must never invoke Sol's writer, persist an
 observation, run Codex/companion, cancel, retry, scan provider directories, or
 read unrelated background tasks. It can reconstruct ephemeral observations
@@ -30,7 +36,7 @@ harvesting separate from success of an underlying forwarded job.
    marker means `forward-unknown`; it is not evidence that the worker stopped.
 
 3. Overlay after `SubagentStop`'s existing transcript override
-   (`classify.rs:249-291`): only a non-forwarder with no expected forwarding
+   (`classify.rs:256-291`): only a non-forwarder with no expected forwarding
    tool use leaves old state unchanged. A known forwarder or validated forwarding
    tool use with no receipt is expected-but-unknown and cannot settle. Exact
    queued/running is `forward-wait`; exact completed plus valid terminal

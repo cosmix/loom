@@ -6,7 +6,7 @@ Sol/xhigh worker. No git, verification commands, subagents, live model requests 
 
 ## Public contract
 
-Add optional `--compare <artifact.json>` to `loom usage`; it is an offline mode mutually exclusive with transcript selection/root/project/stage/plan flags. It does not discover transcripts or poll a provider. `--json` emits the comparison result; without it emit a compact human explanation. Add new private `comparison.rs` and focused tests, splitting helpers below 400 lines/50 lines. Use serde's strict schema validation and bounded input size (16 MiB, design limit, never a token-saving claim).
+Add optional `--compare <artifact.json>` to `loom usage`; it is an offline mode mutually exclusive with transcript selection/root/project/stage/plan flags. It does not discover transcripts or poll a provider. The referenced `--provider`/`--claude-root`/`--codex-root`/`--receipts-root` flags do not exist in `loom/src/commands/usage/mod.rs` at `7d6a14ca`; they arrive with measurement-and-cache, which this stage depends on. `--json` emits the comparison result; without it emit a compact human explanation. Add new private `comparison.rs` and focused tests, splitting helpers below 400 lines/50 lines. Use serde's strict schema validation and bounded input size (16 MiB, design limit, never a token-saving claim).
 
 Expose the private `comparison::compare` entry and call it from `mod.rs::execute` before discovery when the explicit comparison flag is present. Clap defaults are not explicit selection flags: ensure default `--provider claude` and default `--since` do not falsely conflict with comparison mode; use argument-source detection or an equivalent tested explicit-mode validator.
 
