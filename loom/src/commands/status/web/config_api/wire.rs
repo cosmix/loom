@@ -78,7 +78,8 @@ pub enum ConfigKind {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ScopeValue {
     /// The rendered value this tier resolves to. With `set` false this is the
-    /// built-in the tier falls back to, not a value read from a file.
+    /// value in force one tier down: the built-in for the user tier, the user
+    /// tier's resolved value for the project tier.
     pub value: String,
     /// Whether this tier's file sets the key.
     pub set: bool,

@@ -1,7 +1,7 @@
 //! Plan initialization and stage creation for loom init.
 
 use crate::fs::stage_files::stage_file_path;
-use crate::fs::work_dir::{self, ContextConfig, WorkDir};
+use crate::fs::work_dir::{self, WorkDir};
 use crate::git::branch::current_branch;
 use crate::models::session::{SessionBackendKind, TerminalConfig};
 use crate::models::stage::Stage;
@@ -229,29 +229,24 @@ pub fn initialize_with_plan(
             .context("Failed to persist terminal config")?;
     }
 
-    // Persist [context] only when the plan itself set a ceiling — an absent
-    // section is what lets `~/.loom/config.toml`'s context.ceiling_tokens,
-    // then the built-in default, decide at read time (see
+    // Persist [context] only for the ceiling keys the plan itself set — one
+    // insert_key per key, so a plan setting only one of the pair does not
+    // freeze the other's built-in into the file and shadow a user config
+    // ceiling that should still apply to it (see
     // `fs::work_dir::read_context_config`).
-    if parsed_plan.metadata.loom.context_ceiling_tokens.is_some()
-        || parsed_plan.metadata.loom.subagent_ceiling_tokens.is_some()
-    {
-        let context_defaults = ContextConfig::default();
-        let context_config = ContextConfig {
-            ceiling_tokens: parsed_plan
-                .metadata
-                .loom
-                .context_ceiling_tokens
-                .unwrap_or(context_defaults.ceiling_tokens),
-            subagent_ceiling_tokens: parsed_plan
-                .metadata
-                .loom
-                .subagent_ceiling_tokens
-                .unwrap_or(context_defaults.subagent_ceiling_tokens),
-            model_window_tokens: context_defaults.model_window_tokens,
-        };
-        work_dir::write_context_config(work_dir.root(), &context_config)
-            .context("Failed to persist context config")?;
+    let context_ceiling_tokens = parsed_plan.metadata.loom.context_ceiling_tokens;
+    let subagent_ceiling_tokens = parsed_plan.metadata.loom.subagent_ceiling_tokens;
+    if context_ceiling_tokens.is_some() || subagent_ceiling_tokens.is_some() {
+        work_dir::update_config(work_dir.root(), |doc| {
+            if let Some(ceiling) = context_ceiling_tokens {
+                write_ceiling_key(doc, "ceiling_tokens", ceiling)?;
+            }
+            if let Some(ceiling) = subagent_ceiling_tokens {
+                write_ceiling_key(doc, "subagent_ceiling_tokens", ceiling)?;
+            }
+            Ok(())
+        })
+        .context("Failed to persist context config")?;
     }
 
     println!(
@@ -304,6 +299,13 @@ pub fn initialize_with_plan(
     }
 
     Ok(stage_count)
+}
+
+/// Set `[context] <field> = <value>` in an in-flight `.work/config.toml`
+/// document, one key at a time — see [`work_dir::insert_key`], which this
+/// wraps so `initialize_with_plan` never writes a ceiling it wasn't told to.
+fn write_ceiling_key(doc: &mut toml_edit::DocumentMut, field: &str, value: u32) -> Result<()> {
+    work_dir::insert_key(doc, "context", field, toml_edit::Value::from(value as i64))
 }
 
 fn require_utf8_plan_path(path: &Path) -> Result<&str> {

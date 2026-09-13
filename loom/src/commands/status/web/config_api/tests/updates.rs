@@ -129,18 +129,19 @@ fn a_project_scope_unset_keeps_a_section_another_owner_still_uses() {
     let text = project_text(&scratch);
     assert!(text.contains("prompt_cache_split = true"), "{text}");
     assert!(!text.contains("ceiling_tokens"), "{text}");
-    // The section survives, so it still wins whole and resolves to the built-in.
-    assert_eq!(updated.entry.effective.source, Source::Project);
+    // The section survives but no longer sets a ceiling key of its own, so it
+    // falls through to the user tier (unset here), then the built-in.
+    assert_eq!(updated.entry.effective.source, Source::Default);
     assert_eq!(updated.new, DEFAULT_CONTEXT_CEILING_TOKENS.to_string());
 }
 
-/// The shape `loom init` actually writes: a plan that sets either ceiling gets
-/// BOTH written (`commands::init::plan_setup`), so clearing `ceiling_tokens`
-/// leaves `subagent_ceiling_tokens` holding the section open. This is the
-/// common workspace, not an edge case, and the response has to say so rather
-/// than presenting the unset as a return to the user tier.
+/// A plan or operator may set `subagent_ceiling_tokens` on its own
+/// (`commands::init::plan_setup` writes only the keys a plan sets), so
+/// clearing `ceiling_tokens` can leave `subagent_ceiling_tokens` holding the
+/// section open. That sibling key does not supply the ceiling itself, so the
+/// response reports the return to the user tier.
 #[test]
-fn a_project_scope_unset_reports_a_section_its_siblings_keep_alive() {
+fn a_project_scope_unset_reports_the_user_tier_when_a_sibling_key_keeps_the_section_alive() {
     let scratch = scratch();
     crate::user_config::set(
         spec("context.ceiling_tokens").unwrap(),
@@ -164,12 +165,11 @@ fn a_project_scope_unset_reports_a_section_its_siblings_keep_alive() {
 
     assert_eq!(updated.old, "300000");
     assert!(project_text(&scratch).contains("subagent_ceiling_tokens = 500000"));
-    assert_eq!(updated.entry.effective.source, Source::Project);
-    assert_eq!(updated.new, DEFAULT_CONTEXT_CEILING_TOKENS.to_string());
-    assert_ne!(updated.new, "640000", "the user tier stays shadowed");
+    assert_eq!(updated.entry.effective.source, Source::User);
+    assert_eq!(updated.new, "640000");
     assert_eq!(
         crate::fs::work_dir::resolve_context_ceiling_tokens(&scratch.work(), None),
-        DEFAULT_CONTEXT_CEILING_TOKENS
+        640_000
     );
 }
 

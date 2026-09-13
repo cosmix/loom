@@ -494,7 +494,7 @@ fn global_config_tier_terminal_backend_falls_through_to_user_config() {
         crate::models::session::SessionBackendKind::Tmux
     );
 
-    // A present workspace [terminal] wins whole, regardless of the user config.
+    // A workspace [terminal] that sets backend wins over the user config.
     write_terminal_config(
         &work,
         &TerminalConfig {
@@ -526,7 +526,7 @@ fn global_config_tier_context_ceiling_falls_through_to_user_config() {
         crate::models::constants::DEFAULT_SUBAGENT_CEILING_TOKENS
     );
 
-    // A present workspace [context] wins whole.
+    // A workspace [context] that sets ceiling_tokens wins over the user config.
     write_context_config(
         &work,
         &ContextConfig {
@@ -576,12 +576,11 @@ fn global_config_tier_context_ceiling_survives_a_malformed_workspace_section() {
     assert_eq!(resolve_context_ceiling_tokens(&work, None), 654_321);
 }
 
-/// Regression guard against a future key-level merge: a workspace `[context]`
-/// section that sets only `subagent_ceiling_tokens` must still win WHOLE over
-/// the user config's `ceiling_tokens` — the section, not the individual key,
-/// is what "present" means for this fallback tier.
+/// Regression guard for per-key fallthrough: a workspace `[context]` section
+/// that sets only `subagent_ceiling_tokens` lets `ceiling_tokens` fall
+/// through to the user config.
 #[test]
-fn global_config_tier_a_partial_workspace_context_section_still_wins_whole() {
+fn global_config_tier_a_partial_workspace_context_section_lets_ceiling_fall_through() {
     let temp = TempDir::new().unwrap();
     let path = write_user_config(&temp, "[context]\nceiling_tokens = 123456\n");
     let _redirect = crate::user_config::redirect_user_config(path);
@@ -594,18 +593,14 @@ fn global_config_tier_a_partial_workspace_context_section_still_wins_whole() {
     .unwrap();
 
     let config = read_context_config(&work).unwrap();
-    assert_eq!(
-        config.ceiling_tokens,
-        crate::models::constants::DEFAULT_CONTEXT_CEILING_TOKENS
-    );
+    assert_eq!(config.ceiling_tokens, 123_456);
     assert_eq!(config.subagent_ceiling_tokens, 111_111);
 }
 
-/// Same regression guard for `[terminal]`: an EMPTY workspace section is
-/// still a present section, and must win WHOLE over the user config's
-/// `terminal.backend`.
+/// Same regression guard for `[terminal]`: an EMPTY workspace section sets no
+/// key, so it must fall through to the user config's `terminal.backend`.
 #[test]
-fn global_config_tier_an_empty_workspace_terminal_section_still_wins_whole() {
+fn global_config_tier_an_empty_workspace_terminal_section_falls_through_to_user_config() {
     let temp = TempDir::new().unwrap();
     let path = write_user_config(&temp, "[terminal]\nbackend = \"tmux\"\n");
     let _redirect = crate::user_config::redirect_user_config(path);
@@ -616,7 +611,7 @@ fn global_config_tier_an_empty_workspace_terminal_section_still_wins_whole() {
     let config = read_terminal_config(&work).unwrap();
     assert_eq!(
         config.backend,
-        crate::models::session::SessionBackendKind::Native
+        crate::models::session::SessionBackendKind::Tmux
     );
 }
 

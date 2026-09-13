@@ -39,6 +39,27 @@ fn model_window_tokens_derives_both_ceilings_via_the_same_fraction() {
     assert_eq!(resolve_context_ceiling_tokens(&work, Some(42_000)), 42_000);
 }
 
+/// A project `[context]` that sets only `model_window_tokens` supplies the
+/// ceiling itself — a user ceiling sized for a different (larger) window
+/// must not override a plan's smaller one.
+#[test]
+fn model_window_tokens_wins_over_a_user_ceiling() {
+    let temp = TempDir::new().unwrap();
+    let user_config_path = temp.path().join("user-config.toml");
+    fs::write(&user_config_path, "[context]\nceiling_tokens = 640000\n").unwrap();
+    let _redirect = crate::user_config::redirect_user_config(user_config_path);
+
+    let work = init_work(&temp);
+    fs::write(
+        work.join("config.toml"),
+        "[context]\nmodel_window_tokens = 200000\n",
+    )
+    .unwrap();
+
+    let config = read_context_config(&work).unwrap();
+    assert_eq!(config.ceiling_tokens, 160_000);
+}
+
 #[test]
 fn explicit_ceiling_wins_over_a_model_window_derivation() {
     let temp = TempDir::new().unwrap();

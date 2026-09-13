@@ -49,8 +49,9 @@ pub(super) fn entry(
         }),
         None => None,
     };
-    // Section-level: a present-but-keyless section still wins whole.
-    // Key-level: only a present key wins, so an omitted one falls through.
+    // Per key: only a project that actually supplies the key (directly, or
+    // via `context.ceiling_tokens`'s `model_window_tokens` qualification)
+    // shadows the user tier; an omitted key falls through.
     let project_wins = workspace.is_some_and(|workspace| workspace.shadows(spec));
     Ok(ConfigEntry {
         name: spec.name.to_owned(),

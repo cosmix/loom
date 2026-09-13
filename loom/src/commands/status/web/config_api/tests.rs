@@ -19,7 +19,7 @@ use crate::user_config::keys::{spec, KEYS};
 use crate::user_config::{redirect_user_config, UserConfigRedirect};
 
 use super::wire::{ConfigKind, ConfigPayload, Source};
-use super::{entries, payload, workspace};
+use super::{entries, payload};
 
 mod resolution;
 mod updates;
@@ -275,13 +275,13 @@ fn every_entry_reports_the_registrys_own_default() {
     }
 }
 
-/// The project scope covers the two section-level keys plus every
-/// `[pressure]`/`[models]` key (sixteen total), and each carries the tier its
-/// section implies. The key-level set is derived from [`KEYS`] rather than
-/// typed out fourteen times, so this test keeps testing the right thing when
-/// a fifteenth key-level key is added.
+/// The project scope covers `terminal.backend`, `context.ceiling_tokens`,
+/// plus every `[pressure]`/`[models]` key (sixteen total) — every key
+/// `workspace::backs` resolves. The key-level set is derived from [`KEYS`]
+/// rather than typed out fourteen times, so this test keeps testing the right
+/// thing when a fifteenth key is added.
 #[test]
-fn project_scoped_covers_the_section_level_pair_and_every_key_level_key() {
+fn project_scoped_covers_the_workspace_backed_keys() {
     let key_level: Vec<&str> = KEYS
         .iter()
         .filter(|key| matches!(key.section, "pressure" | "models"))
@@ -298,19 +298,4 @@ fn project_scoped_covers_the_section_level_pair_and_every_key_level_key() {
         .map(|key| key.name)
         .collect();
     assert_eq!(named, expected);
-
-    for name in ["terminal.backend", "context.ceiling_tokens"] {
-        assert_eq!(
-            workspace::tier_of(spec(name).unwrap()),
-            Some(workspace::ProjectTier::Section),
-            "{name}"
-        );
-    }
-    for name in key_level {
-        assert_eq!(
-            workspace::tier_of(spec(name).unwrap()),
-            Some(workspace::ProjectTier::Key),
-            "{name}"
-        );
-    }
 }

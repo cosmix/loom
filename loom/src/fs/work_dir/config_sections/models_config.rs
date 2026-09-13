@@ -15,12 +15,11 @@ const MODELS_SECTION: &str = "models";
 
 /// The `[models]` section of `.loom/work/config.toml`.
 ///
-/// Every key is optional and the fallback is KEY-level, not section-level: a
-/// present section that omits a key falls through to `~/.loom/config.toml`
-/// rather than shadowing it whole. That differs deliberately from
-/// `[terminal]`/`[context]` (see `read_terminal_config`), whose fallback is
-/// section-level because their structs bake in derived defaults before a
-/// caller can tell "set" from "derived" apart.
+/// Every key is optional and the fallback is KEY-level: a present section
+/// that omits a key falls through to `~/.loom/config.toml` for that key
+/// rather than shadowing it with a built-in the operator never asked for —
+/// the same rule `[terminal]`/`[context]` resolve under (see
+/// `read_terminal_config`, `read_context_config`).
 #[derive(Debug, Clone, Default, serde::Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 struct ModelsConfig {

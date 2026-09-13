@@ -6,7 +6,6 @@ use crate::fs::work_dir::{
     read_pressure_config, read_terminal_config, resolve_context_ceiling_tokens,
     resolve_stage_model_effort,
 };
-use crate::models::constants::DEFAULT_CONTEXT_CEILING_TOKENS;
 use crate::models::stage::StageType;
 use crate::user_config::keys::spec;
 use crate::user_config::UserConfig;
@@ -105,11 +104,68 @@ fn effective_value_for_project_source_agrees_with_resolution() {
     assert_effective_agrees_with_resolution(&scratch);
 }
 
-/// A `[context]` holding only `prompt_cache_split` sets no registry key, yet
-/// still wins the whole section — the fallback loom actually implements. The
-/// projection has to report that, not the user tier it shadows.
+/// The reported bug: with neither `[terminal]` nor `[context]` present in the
+/// project file, the project tier's OWN displayed value must be the user
+/// tier's value — the web dialog showed "native" here while `loom run`
+/// correctly used tmux.
 #[test]
-fn a_present_but_keyless_section_still_wins_whole() {
+fn project_value_falls_through_to_the_user_tier_when_neither_section_is_present() {
+    let scratch = scratch();
+    crate::user_config::set(
+        spec("context.ceiling_tokens").unwrap(),
+        toml_edit::Value::from(640_000_i64),
+    )
+    .expect("set the user ceiling");
+    crate::user_config::set(
+        spec("terminal.backend").unwrap(),
+        toml_edit::Value::from("tmux"),
+    )
+    .expect("set the user backend");
+
+    let payload = parse(&scratch.base);
+    for (name, expected) in [
+        ("terminal.backend", "tmux"),
+        ("context.ceiling_tokens", "640000"),
+    ] {
+        let entry = entry(&payload, name);
+        let project = entry.project.as_ref().expect("project scope");
+        assert_eq!(project.value, expected, "{name}");
+        assert!(!project.set, "{name}");
+        assert_eq!(entry.effective.source, Source::User, "{name}");
+    }
+    assert_effective_agrees_with_resolution(&scratch);
+}
+
+/// A project `[context]` that sets only `model_window_tokens` supplies the
+/// ceiling itself, even with a user ceiling set for a different window.
+#[test]
+fn a_project_window_only_context_section_supplies_the_ceiling() {
+    let scratch = scratch();
+    crate::user_config::set(
+        spec("context.ceiling_tokens").unwrap(),
+        toml_edit::Value::from(640_000_i64),
+    )
+    .expect("set the user ceiling");
+    scratch.write_project(
+        "context",
+        "model_window_tokens",
+        toml_edit::Value::from(200_000_i64),
+    );
+
+    let payload = parse(&scratch.base);
+    let ceiling = entry(&payload, "context.ceiling_tokens");
+    assert_eq!(ceiling.effective.source, Source::Project);
+    assert_eq!(
+        ceiling.effective.value,
+        resolve_context_ceiling_tokens(&scratch.work(), None).to_string()
+    );
+    assert_effective_agrees_with_resolution(&scratch);
+}
+
+/// A `[context]` holding only `prompt_cache_split` sets no registry key, so it
+/// falls through to the user tier.
+#[test]
+fn a_present_but_keyless_section_falls_through_to_the_user_tier() {
     let scratch = scratch();
     crate::user_config::set(
         spec("context.ceiling_tokens").unwrap(),
@@ -124,18 +180,15 @@ fn a_present_but_keyless_section_still_wins_whole() {
 
     let payload = parse(&scratch.base);
     let ceiling = entry(&payload, "context.ceiling_tokens");
-    assert_eq!(ceiling.effective.source, Source::Project);
-    assert_eq!(
-        ceiling.effective.value,
-        DEFAULT_CONTEXT_CEILING_TOKENS.to_string()
-    );
+    assert_eq!(ceiling.effective.source, Source::User);
+    assert_eq!(ceiling.effective.value, "640000");
     let project = ceiling.project.as_ref().expect("project scope");
     assert!(!project.set, "the section sets no ceiling of its own");
-    assert_eq!(project.value, DEFAULT_CONTEXT_CEILING_TOKENS.to_string());
     assert_eq!(
-        ceiling.user.value, "640000",
-        "the user tier is shadowed, not gone"
+        project.value, "640000",
+        "an unsupplied key reports the user tier's own value"
     );
+    assert_eq!(ceiling.user.value, "640000");
     assert_eq!(
         ceiling.effective.value,
         resolve_context_ceiling_tokens(&scratch.work(), None).to_string()
@@ -222,4 +275,20 @@ fn models_falls_through_key_by_key_not_section_by_section() {
         resolve_stage_model_effort(&scratch.work(), StageType::Standard, None, None);
     assert_eq!(model.effective.value, expected_model);
     assert_eq!(effort.effective.value, expected_effort);
+}
+
+/// A malformed project `[terminal]` section must fail resolution the same way
+/// `read_terminal_config` does — both go through
+/// `TerminalConfig::backend_from_section`, so the settings page cannot report
+/// a value for a backend the daemon would refuse to start.
+#[test]
+fn a_malformed_project_terminal_backend_fails_to_resolve() {
+    let scratch = scratch();
+    scratch.write_project("terminal", "backend", toml_edit::Value::from("bogus"));
+
+    assert!(
+        super::super::payload(&scratch.base).is_err(),
+        "a malformed [terminal] section must fail to resolve"
+    );
+    assert!(read_terminal_config(&scratch.work()).is_err());
 }

@@ -65,12 +65,11 @@ pub fn unset(spec: &KeySpec) -> Result<(String, String)> {
 /// [`unset`] against an explicit path, the test seam [`set_in`] is.
 ///
 /// An emptied section is LEFT in place, unlike the workspace config's
-/// [`crate::fs::work_dir::remove_key`]. The two differ because their fallbacks
-/// do: this file resolves key by key, so a keyless `[pressure]` changes
-/// nothing an operator can observe, whereas a keyless workspace section still
-/// wins whole and would keep shadowing this tier. Removing it here would buy
-/// nothing and would discard the comments attached to the section header, which
-/// [`set_in`] promises to preserve.
+/// [`crate::fs::work_dir::remove_key`]. Both resolve key by key, so a keyless
+/// section changes nothing an operator can observe in either file — this one
+/// just optimizes for a different property, preserving the comments attached
+/// to the section header, which removing an emptied section would discard and
+/// [`set_in`] promises to keep.
 pub(crate) fn unset_in(path: &Path, spec: &KeySpec) -> Result<(String, String)> {
     locked_edit(path, spec, |doc| {
         if let Some(table) = doc

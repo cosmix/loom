@@ -8,6 +8,7 @@
 //! Re-exported as [`crate::fs::work_dir::ContextConfig`], so no caller's
 //! import path changes.
 
+use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 
 use crate::models::constants::{
@@ -145,6 +146,41 @@ impl ContextConfig {
             ..Default::default()
         }
         .into()
+    }
+
+    /// Resolve `[context]` from the project's raw section (or its absence)
+    /// merged with the user tier's `context.ceiling_tokens`, at the RAW
+    /// layer, before defaults are baked in — `ContextConfigRaw` is the only
+    /// place "set" and "derived" are still told apart.
+    ///
+    /// The project supplies the ceiling itself the moment its `[context]`
+    /// sets `ceiling_tokens` OR `model_window_tokens` — a window is a
+    /// project-tier statement about the ceiling too, so a user ceiling sized
+    /// for a different window must not override a plan's smaller one. Only
+    /// when the section sets NEITHER key does `user_ceiling` fill
+    /// `ceiling_tokens` in before conversion. `subagent_ceiling_tokens` has no
+    /// user-tier counterpart and is untouched by `user_ceiling` either way.
+    ///
+    /// Returns the resolved config alongside whether the project supplied the
+    /// ceiling itself, so [`crate::fs::work_dir::read_context_config`] and
+    /// `commands::status::web::config_api::workspace`'s wire-side resolution
+    /// share this exact predicate rather than deriving it twice.
+    pub(crate) fn resolve_with_user_ceiling(
+        section: Option<toml::Value>,
+        user_ceiling: Option<u32>,
+    ) -> Result<(Self, bool)> {
+        let mut raw: ContextConfigRaw = match section {
+            Some(value) => value
+                .try_into()
+                .context("failed to read [context] from the workspace config")?,
+            None => ContextConfigRaw::default(),
+        };
+        let project_supplies_ceiling =
+            raw.ceiling_tokens.is_some() || raw.model_window_tokens.is_some();
+        if !project_supplies_ceiling {
+            raw.ceiling_tokens = user_ceiling;
+        }
+        Ok((raw.into(), project_supplies_ceiling))
     }
 }
 

@@ -23,7 +23,6 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use toml_edit::DocumentMut;
 
-use crate::models::session::TerminalConfig;
 use crate::plan::schema::SandboxConfig;
 use crate::remote_control::RemoteControlConfig;
 
@@ -32,13 +31,14 @@ use super::ContextConfig;
 mod allowed;
 mod models_config;
 mod pressure_config;
+mod terminal_config;
 
 pub use models_config::resolve_stage_model_effort;
 pub use pressure_config::{read_pressure_config, PressureConfig};
+pub use terminal_config::{read_terminal_config, write_terminal_config};
 
 const PLAN_SANDBOX_SECTION: &str = "plan_sandbox";
 const REMOTE_CONTROL_SECTION: &str = "remote_control";
-const TERMINAL_SECTION: &str = "terminal";
 // pub(crate) rather than private: `work_dir::tests` reaches this section name
 // directly (see `write_context_config_preserves_prompt_cache_split`) since it
 // isn't a descendant of this module and so can't see a private const here.
@@ -250,22 +250,18 @@ pub fn insert_key(
 /// Remove `field` from `[section]`, dropping the section itself when that
 /// leaves it empty.
 ///
-/// Dropping the emptied section is the point, not tidiness. The workspace
-/// tier's fallback to `~/.loom/config.toml` is SECTION-level (see
-/// [`read_context_config`]), so a section left present but keyless still wins
-/// WHOLE and resolves to the derived built-in — an operator clearing the one
-/// key they had set would find the user tier still shadowed by a section that
-/// no longer says anything.
+/// Every workspace-backed key falls through to `~/.loom/config.toml`, then
+/// the built-in, when the project's own file does not set it (see
+/// [`read_context_config`], [`read_terminal_config`]) — so a keyless section
+/// changes nothing. Dropping it once empty is tidiness: it keeps
+/// `.work/config.toml` from accumulating bracket headers that say nothing.
 ///
 /// A section still holding another key stays, because it still means
-/// something — and for `[context]` that is the COMMON case, not an exotic one.
-/// `loom init` writes `ceiling_tokens` and `subagent_ceiling_tokens` together
-/// whenever a plan sets either (`commands::init::plan_setup`), so removing
-/// `ceiling_tokens` from such a workspace leaves the section alive and the
-/// ceiling resolving to the built-in rather than to the user tier. That is the
-/// truth about the file, and a caller reporting the result must report it as
-/// still project-sourced rather than as a reset. `prompt_cache_split`, owned
-/// by no struct at all, behaves the same way.
+/// something. An operator may set `subagent_ceiling_tokens` or
+/// `prompt_cache_split` alongside `ceiling_tokens` by hand, or `loom init` may
+/// have written one ceiling key on its own (`commands::init::plan_setup`
+/// writes only the keys a plan actually sets) — either way, removing one key
+/// must leave the section's other keys exactly as they were.
 pub fn remove_key(doc: &mut DocumentMut, section: &str, field: &str) {
     let Some(table) = doc
         .get_mut(section)
@@ -305,54 +301,25 @@ pub fn write_remote_control_config(work_dir: &Path, config: &RemoteControlConfig
     write_section(work_dir, REMOTE_CONTROL_SECTION, config)
 }
 
-/// Read the persisted terminal backend config (`[terminal]`).
-///
-/// Resolution order: a present workspace `[terminal]` section wins WHOLE; an
-/// absent one falls through to `~/.loom/config.toml`'s `terminal.backend`
-/// (see [`crate::user_config::UserConfig`]), then to
-/// `TerminalConfig::default()` (native) when neither is set. So a missing
-/// section no longer means "the default" outright — it means "the user
-/// config, then the default".
-pub fn read_terminal_config(work_dir: &Path) -> Result<TerminalConfig> {
-    if let Some(section) = read_section::<TerminalConfig>(work_dir, TERMINAL_SECTION)? {
-        return Ok(section);
-    }
-    Ok(TerminalConfig {
-        backend: crate::user_config::UserConfig::load().terminal_backend(),
-    })
-}
-
-/// Persist the terminal backend config (`[terminal]`).
-pub fn write_terminal_config(work_dir: &Path, config: &TerminalConfig) -> Result<()> {
-    write_section(work_dir, TERMINAL_SECTION, config)
-}
-
 /// Read the persisted context ceilings (`[context]`).
 ///
-/// Resolution order: a present workspace `[context]` section wins WHOLE; an
-/// absent one falls through to `~/.loom/config.toml`'s `context.ceiling_tokens`
-/// (see [`crate::user_config::UserConfig`]) when set, then to
-/// `ContextConfig::default()`. So a missing section no longer means "the
-/// default" outright — it means "the user config, then the default".
-///
-/// This fallback is SECTION-level, not key-level, and deliberately so:
-/// `[context]` deserializes through the private `ContextConfigRaw`
-/// (`context_config.rs`), whose entire purpose is to tell "the TOML set this
-/// key" apart from "the TOML left this to derive" *before* the built-in
-/// defaults are baked in by its `From` impl — by the time
-/// `read_section::<ContextConfig>` has returned, that distinction is gone, and
-/// a key-level merge would silently treat a derived default as an explicit
-/// setting. Only `ceiling_tokens` gets a user-level override here;
-/// `subagent_ceiling_tokens` and `model_window_tokens` keep deriving from the
-/// built-ins regardless of the user config, and `ContextConfig::ceiling_for`'s
+/// Resolves `ceiling_tokens` at the KEY level: the project's `[context]`
+/// supplies it directly, or derives it from a `model_window_tokens` it sets —
+/// either way a project-tier statement about the ceiling that must not be
+/// shadowed by `~/.loom/config.toml`'s `context.ceiling_tokens`. Only when the
+/// section sets NEITHER key does that user ceiling fill in, ahead of
+/// `ContextConfig::default()` — see `ContextConfig::resolve_with_user_ceiling`
+/// (private to `context_config.rs`, so a plain code span rather than a link),
+/// which merges the two at the raw layer since `ContextConfigRaw` is the only
+/// place "set" and "derived" are still told apart. `subagent_ceiling_tokens`
+/// has no user-tier counterpart and keeps deriving from the project section
+/// (or the built-in) regardless; `ContextConfig::ceiling_for`'s
 /// stage-override rule is untouched.
 pub fn read_context_config(work_dir: &Path) -> Result<ContextConfig> {
-    if let Some(section) = read_section::<ContextConfig>(work_dir, CONTEXT_SECTION)? {
-        return Ok(section);
-    }
-    Ok(ContextConfig::with_user_ceiling(
-        crate::user_config::UserConfig::load().context_ceiling_tokens_set(),
-    ))
+    let section = read_section::<toml::Value>(work_dir, CONTEXT_SECTION)?;
+    let user_ceiling = crate::user_config::UserConfig::load().context_ceiling_tokens_set();
+    let (config, _) = ContextConfig::resolve_with_user_ceiling(section, user_ceiling)?;
+    Ok(config)
 }
 
 /// Persist the context ceilings (`[context]`).

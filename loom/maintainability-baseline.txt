@@ -20,7 +20,7 @@ file src/fs/permissions/settings.rs 460
 file src/fs/permissions/sync.rs 659
 file src/fs/safe_fs.rs 1019
 file src/fs/work_dir.rs 433
-file src/fs/work_dir/tests.rs 878
+file src/fs/work_dir/tests.rs 873
 file src/git/worktree/base.rs 545
 file src/git/worktree/settings.rs 706
 file src/hooks/tests.rs 514
@@ -69,7 +69,7 @@ function src/commands/graph/tests.rs test_build_graph_display_shows_all_deps 70
 function src/commands/graph/tree.rs build_tree_display 57
 function src/commands/handoff/create.rs execute 86
 function src/commands/init/execute.rs execute 131
-function src/commands/init/plan_setup.rs initialize_with_plan 211
+function src/commands/init/plan_setup.rs initialize_with_plan 206
 function src/commands/init/tests.rs test_cleanup_orphaned_sessions_reaps_live_only_in_clean_mode 76
 function src/commands/init/tests.rs test_create_stage_from_definition_no_dependencies 88
 function src/commands/init/tests.rs test_initialize_with_plan_creates_config 51
