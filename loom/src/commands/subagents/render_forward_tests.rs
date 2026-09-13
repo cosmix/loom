@@ -18,27 +18,27 @@ const TOOL: &str = "tool-a";
 const JOB: &str = "job-a";
 
 #[test]
-fn active_receipt_after_subagent_stop_stays_unsettled() {
+fn receipt_activity_cannot_set_forwarder_state_without_lifecycle() {
     let fixture = Fixture::new("running", false);
     let summaries = fixture.gather();
 
-    assert_eq!(summaries[0].state, SubagentState::ForwardWait);
+    assert_eq!(summaries[0].state, SubagentState::ForwardUnknown);
     assert_eq!(
-        forward::watch_outcome(&summaries),
+        forward::watch_outcome(&summaries, true),
         forward::WatchOutcome::Pending
     );
 }
 
 #[test]
-fn forward_failure_has_exit_one_and_keeps_final_report_harvestable() {
+fn receipt_failure_cannot_set_forwarder_terminal_state() {
     let fixture = Fixture::new("failed", false);
     let summaries = fixture.gather();
 
-    assert_eq!(summaries[0].state, SubagentState::ForwardFailed);
-    assert_eq!(summaries[0].final_report.as_deref(), Some("wrapper report"));
+    assert_eq!(summaries[0].state, SubagentState::ForwardUnknown);
+    assert!(summaries[0].final_report.is_none());
     assert_eq!(
-        forward::exit_code(forward::watch_outcome(&summaries), false),
-        Some(1)
+        forward::exit_code(forward::watch_outcome(&summaries, true), true),
+        Some(2)
     );
 }
 
@@ -46,7 +46,7 @@ fn forward_failure_has_exit_one_and_keeps_final_report_harvestable() {
 fn unknown_receipt_waits_until_timeout_exit_two() {
     let fixture = Fixture::new("running", true);
     let summaries = fixture.gather();
-    let outcome = forward::watch_outcome(&summaries);
+    let outcome = forward::watch_outcome(&summaries, true);
 
     assert_eq!(summaries[0].state, SubagentState::ForwardUnknown);
     assert_eq!(forward::exit_code(outcome, false), None);
@@ -62,7 +62,7 @@ fn empty_transcript_directory_keeps_expected_receipt_unsettled() {
     assert_eq!(summaries.len(), 1);
     assert_eq!(summaries[0].state, SubagentState::ForwardWait);
     assert_eq!(
-        forward::watch_outcome(&summaries),
+        forward::watch_outcome(&summaries, true),
         forward::WatchOutcome::Pending
     );
 }
@@ -83,6 +83,7 @@ fn non_forwarder_keeps_human_state_while_forwarding_use_drives_other_views() {
     let fixture = Fixture::new("running", false);
     fixture.set_agent_type("ordinary-worker");
     fixture.write_forwarding_transcript();
+    fixture.write_claude_stop();
     let summaries = fixture.gather();
     let summary = &summaries[0];
     let value = serde_json::to_value(summary).unwrap();
@@ -95,7 +96,7 @@ fn non_forwarder_keeps_human_state_while_forwarding_use_drives_other_views() {
     assert_eq!(value["forward"]["backend_id"], json!(JOB));
     assert!(is_forward_state(summary.state));
     assert_eq!(
-        forward::watch_outcome(&summaries),
+        forward::watch_outcome(&summaries, true),
         forward::WatchOutcome::Pending
     );
 }
@@ -103,6 +104,58 @@ fn non_forwarder_keeps_human_state_while_forwarding_use_drives_other_views() {
 #[test]
 fn watch_poll_interval_remains_two_seconds() {
     assert_eq!(POLL_INTERVAL, Duration::from_secs(2));
+}
+
+#[test]
+fn lifecycle_success_is_the_only_owned_exit_zero() {
+    let lifecycle = watch_summary(SubagentState::Done, Some(classify::DoneEvidence::Lifecycle));
+    let legacy = watch_summary(
+        SubagentState::Done,
+        Some(classify::DoneEvidence::LegacyTranscript),
+    );
+
+    assert_eq!(
+        forward::exit_code(forward::watch_outcome(&[lifecycle], true), false),
+        Some(0)
+    );
+    assert_eq!(
+        forward::watch_outcome(std::slice::from_ref(&legacy), true),
+        forward::WatchOutcome::Pending
+    );
+    assert_eq!(
+        forward::exit_code(forward::watch_outcome(&[legacy], false), false),
+        Some(0)
+    );
+}
+
+#[test]
+fn lifecycle_failure_cancellation_and_pending_have_distinct_exit_codes() {
+    let failed = watch_summary(SubagentState::Failed, None);
+    let cancelled = watch_summary(SubagentState::Cancelled, None);
+    let active = watch_summary(SubagentState::Generating, None);
+
+    assert_eq!(
+        forward::exit_code(forward::watch_outcome(&[failed], true), false),
+        Some(1)
+    );
+    assert_eq!(
+        forward::exit_code(forward::watch_outcome(&[cancelled], true), false),
+        Some(3)
+    );
+    assert_eq!(
+        forward::exit_code(forward::watch_outcome(&[active], true), true),
+        Some(2)
+    );
+}
+
+fn watch_summary(
+    state: SubagentState,
+    done_evidence: Option<classify::DoneEvidence>,
+) -> SubagentSummary {
+    let mut summary = super::super::summary::empty("agent".into(), 0, None);
+    summary.state = state;
+    summary.done_evidence = done_evidence;
+    summary
 }
 
 struct Fixture {
@@ -121,7 +174,18 @@ impl Fixture {
         let state = root.join("state");
         let transcripts = root.join(PARENT).join("subagents");
         fs::create_dir_all(work.join("subagents").join(STAGE)).unwrap();
+        fs::create_dir_all(work.join("stages")).unwrap();
         fs::create_dir_all(&transcripts).unwrap();
+        fs::write(
+            root.join(format!("{PARENT}.jsonl")),
+            "{\"type\":\"parent\"}\n",
+        )
+        .unwrap();
+        fs::write(
+            work.join("stages/01-stage-a.md"),
+            "---\nid: stage-a\nsession: loom-a\n---\n",
+        )
+        .unwrap();
         let mut fixture = Self {
             _temp: temp,
             work,
@@ -130,7 +194,7 @@ impl Fixture {
             receipt_id: String::new(),
         };
         fixture.receipt_id = fixture.write_receipt(status, foreign_locator);
-        fixture.write_start_and_stop();
+        fixture.set_agent_type("loom-codex-forwarder");
         fixture.write_transcript();
         fixture
     }
@@ -181,34 +245,60 @@ impl Fixture {
         observation.receipt_id
     }
 
-    fn write_start_and_stop(&self) {
-        let stage_dir = self.work.join("subagents").join(STAGE);
-        self.set_agent_type("loom-codex-forwarder");
-        fs::write(stage_dir.join(format!("{AGENT}.json")), "{}").unwrap();
-    }
-
     fn set_agent_type(&self, agent_type: &str) {
         let stage_dir = self.work.join("subagents").join(STAGE);
-        fs::write(
-            stage_dir.join("starts.jsonl"),
-            json!({
-                "agent_id": AGENT,
-                "agent_type": agent_type,
-                "parent_session_id": PARENT,
-                "stage_id": STAGE,
-                "loom_session_id": LOOM_SESSION,
-            })
-            .to_string(),
-        )
-        .unwrap();
+        let row = json!({
+            "agent_id": AGENT,
+            "agent_type": agent_type,
+            "parent_session_id": PARENT,
+            "stage_id": STAGE,
+            "loom_session_id": LOOM_SESSION,
+            "ts": "2026-09-13T10:00:00Z",
+        });
+        fs::write(stage_dir.join("starts.jsonl"), format!("{row}\n")).unwrap();
     }
 
     fn write_transcript(&self) {
         let entry = json!({
-            "type": "assistant", "sessionId": PARENT, "timestamp": Utc::now().to_rfc3339(),
+            "type": "assistant", "sessionId": PARENT,
+            "timestamp": (Utc::now() - chrono::Duration::minutes(4)).to_rfc3339(),
             "message": {"content": [{"type": "text", "text": "wrapper report"}]},
         });
-        fs::write(self.transcript(), entry.to_string()).unwrap();
+        fs::write(self.transcript(), entry.to_string() + "\n").unwrap();
+    }
+
+    fn write_claude_stop(&self) {
+        let starts =
+            crate::commands::subagents::ledger::StartedAgentTypeIndex::load(Some(&self.work));
+        let agent_type = starts
+            .resolve_exact(STAGE, PARENT, LOOM_SESSION, AGENT)
+            .unwrap()
+            .agent_type;
+        let payload = json!({
+            "session_id": PARENT,
+            "agent_id": AGENT,
+            "agent_type": agent_type,
+            "transcript_path": self._temp.path().join(format!("{PARENT}.jsonl")),
+            "agent_transcript_path": self.transcript(),
+        });
+        let environment = crate::subagent_lifecycle::ClaudeEnvironment {
+            work_dir: &self.work,
+            stage_id: STAGE,
+            loom_session_id: LOOM_SESSION,
+            observed_at: Utc::now(),
+        };
+        let active = crate::subagent_lifecycle::ActiveStageSession {
+            stage_id: STAGE,
+            loom_session_id: LOOM_SESSION,
+        };
+        let record = crate::subagent_lifecycle::validate_subagent_stop(
+            &payload,
+            &environment,
+            &starts,
+            &active,
+        )
+        .unwrap();
+        crate::subagent_lifecycle::store::append_locked(&self.work, &record).unwrap();
     }
 
     fn write_forwarding_transcript(&self) {
@@ -234,7 +324,8 @@ impl Fixture {
             .into_iter()
             .map(|row| row.to_string())
             .collect::<Vec<_>>()
-            .join("\n");
+            .join("\n")
+            + "\n";
         fs::write(self.transcript(), transcript).unwrap();
     }
 
@@ -246,12 +337,15 @@ impl Fixture {
             vec![self.state.clone()],
             Vec::new(),
         );
+        let lifecycle =
+            classify::lifecycle::Context::load(Some(&self.work), STAGE.into(), LOOM_SESSION.into());
         let Gathered::Found(summaries) = gather_with_index(
             &None,
             &Some(self.transcripts.clone()),
             classify::DEFAULT_DONE_DEBOUNCE_SECS,
             Some(&self.work),
             classify::resolve_subagent_ceiling(Some(&self.work)),
+            Some(&lifecycle),
             Some(&index),
         ) else {
             panic!("explicit transcript directory must resolve");

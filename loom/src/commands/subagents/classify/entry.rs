@@ -47,8 +47,10 @@ pub(super) fn text_blocks(entry: &Value) -> Vec<&str> {
         .collect()
 }
 
-/// Classify one entry using the frozen table in the parent module. This never
-/// applies the done debounce; that depends on transcript idle time.
+/// Classify one entry using the frozen table in the parent module. This emits
+/// only transcript states: lifecycle-only `Failed` and `Cancelled` are
+/// applied after exact identity lookup, and the done debounce is applied by
+/// the parent classifier.
 pub(super) fn classify_last(entry: &Value) -> SubagentState {
     match entry_type(entry) {
         Some("assistant") => classify_assistant(message_content_blocks(entry)),

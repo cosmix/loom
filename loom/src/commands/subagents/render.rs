@@ -47,8 +47,8 @@ fn gather(
     work_dir: Option<&Path>,
     subagent_ceiling_tokens: u64,
 ) -> Gathered {
-    // Load receipt evidence before transcript resolution: an empty directory
-    // or missing session cannot settle a persisted expected forward.
+    // Each index is replayed once for this complete list/watch gather cycle.
+    let lifecycle = classify::lifecycle::load_active(work_dir);
     let forward_index = work_dir.and_then(load_forward_index);
     gather_with_index(
         session,
@@ -56,6 +56,7 @@ fn gather(
         debounce_secs,
         work_dir,
         subagent_ceiling_tokens,
+        lifecycle.as_ref(),
         forward_index.as_ref(),
     )
 }
@@ -76,6 +77,7 @@ fn gather_with_index(
     debounce_secs: u64,
     work_dir: Option<&Path>,
     subagent_ceiling_tokens: u64,
+    lifecycle: Option<&classify::lifecycle::Context>,
     forward_index: Option<&forward_jobs::ForwardIndex>,
 ) -> Gathered {
     match resolve::resolve(dir.clone(), session.clone()) {
@@ -86,6 +88,7 @@ fn gather_with_index(
                 debounce_secs,
                 work_dir,
                 subagent_ceiling_tokens,
+                lifecycle,
                 forward_index,
             );
             forward::append_missing_summaries(&mut summaries, forward_index, work_dir);
@@ -113,6 +116,7 @@ fn gather_transcripts(
     debounce_secs: u64,
     work_dir: Option<&Path>,
     subagent_ceiling_tokens: u64,
+    lifecycle: Option<&classify::lifecycle::Context>,
     forward_index: Option<&forward_jobs::ForwardIndex>,
 ) -> Vec<SubagentSummary> {
     let files = resolve::list_agent_files(subagents_dir);
@@ -125,6 +129,7 @@ fn gather_transcripts(
             debounce_secs,
             work_dir,
             subagent_ceiling_tokens,
+            lifecycle,
             forward_index,
         ) {
             Ok(summary) => summaries.push(summary),
@@ -140,25 +145,18 @@ fn gather_transcript(
     debounce_secs: u64,
     work_dir: Option<&Path>,
     subagent_ceiling_tokens: u64,
+    lifecycle: Option<&classify::lifecycle::Context>,
     forward_index: Option<&forward_jobs::ForwardIndex>,
 ) -> Result<SubagentSummary> {
-    match forward_index {
-        Some(index) => classify::analyze_with_forward_at_ceiling(
-            path,
-            agent_id,
-            debounce_secs,
-            work_dir,
-            subagent_ceiling_tokens,
-            index,
-        ),
-        None => classify::analyze_at_ceiling(
-            path,
-            agent_id,
-            debounce_secs,
-            work_dir,
-            subagent_ceiling_tokens,
-        ),
-    }
+    classify::analyze_with_evidence_at_ceiling(
+        path,
+        agent_id,
+        debounce_secs,
+        work_dir,
+        subagent_ceiling_tokens,
+        lifecycle,
+        forward_index,
+    )
 }
 
 /// `loom subagents list` -- table (or `--json`) of every subagent found.
@@ -232,6 +230,10 @@ pub fn harvest(
                 continue;
             }
         }
+        if print_terminal_failure(summary) {
+            harvested += 1;
+            continue;
+        }
         let Some(report) = &summary.final_report else {
             continue;
         };
@@ -256,6 +258,34 @@ pub fn harvest(
     Ok(())
 }
 
+fn print_terminal_failure(summary: &SubagentSummary) -> bool {
+    let Some(evidence) = terminal_failure_evidence(summary) else {
+        return false;
+    };
+    println!("===== {} =====", summary.agent_id);
+    println!("{evidence}");
+    if let Some(report) = &summary.final_report {
+        println!("{report}");
+    }
+    println!();
+    true
+}
+
+fn terminal_failure_evidence(summary: &SubagentSummary) -> Option<String> {
+    matches!(
+        summary.state,
+        SubagentState::Failed | SubagentState::Cancelled
+    )
+    .then(|| {
+        format!(
+            "terminal failure evidence: agent={} state={} reason={}",
+            summary.agent_id,
+            summary.state.label(),
+            summary.terminal_reason.as_deref().unwrap_or("not recorded")
+        )
+    })
+}
+
 fn is_forward_state(state: SubagentState) -> bool {
     matches!(
         state,
@@ -268,15 +298,13 @@ fn is_forward_state(state: SubagentState) -> bool {
 /// fired, then the current table, on both branches; never blocks past the
 /// deadline and never exits silently.
 ///
-/// A resolution failure (no session found at all) is treated as settled
-/// immediately: there is nothing to wait for. A resolved directory that is
-/// merely empty right now is NOT treated as settled -- subagents may not
-/// have started writing yet -- so watch keeps polling it until timeout.
+/// Outside a Loom stage, a resolution failure means there is nothing to wait
+/// for. Inside a stage it remains pending because absence is not lifecycle
+/// success evidence. An empty resolved directory likewise remains pending.
 ///
-/// "Every subagent is done" only counts entries that have cleared the
-/// `done` debounce (see `classify::analyze`): a text-only entry still
-/// inside the debounce window is reported as `generating`, so it correctly
-/// keeps watch from declaring settled on a subagent that is still mid-turn.
+/// Outside a stage, settlement retains the transcript debounce rule. Inside
+/// a stage, even a debounced `legacy-done` row stays pending until exact
+/// lifecycle success exists for every worker.
 pub fn watch(
     timeout_secs: u64,
     session: Option<String>,
@@ -289,43 +317,63 @@ pub fn watch(
     // poll.
     let work_dir = find_work_dir_quietly();
     let ceiling = classify::resolve_subagent_ceiling(work_dir.as_deref());
+    let lifecycle_required = classify::lifecycle::stage_owned();
 
     loop {
         match gather(&session, &dir, debounce, work_dir.as_deref(), ceiling) {
-            Gathered::NotFound(looked_for) => {
+            Gathered::NotFound(looked_for) if !lifecycle_required => {
                 println!("settled: no subagents found ({looked_for})");
                 return Ok(());
             }
+            Gathered::NotFound(_) => {}
             Gathered::Found(summaries) => {
-                match forward::watch_outcome(&summaries) {
-                    forward::WatchOutcome::Settled => {
-                        println!("settled: every subagent is done");
-                        table::print_table(&summaries);
-                        return Ok(());
-                    }
-                    forward::WatchOutcome::ForwardFailed => {
-                        println!("failed: a forwarded job failed or was canceled");
-                        table::print_table(&summaries);
-                        std::process::exit(
-                            forward::exit_code(forward::WatchOutcome::ForwardFailed, false)
-                                .expect("forward failure has an exit code"),
-                        );
-                    }
-                    forward::WatchOutcome::Pending => {}
+                let outcome = forward::watch_outcome(&summaries, lifecycle_required);
+                if handle_watch_outcome(outcome, &summaries, lifecycle_required) {
+                    return Ok(());
                 }
-
                 if Instant::now() >= deadline {
-                    println!("timeout: {timeout_secs}s elapsed with subagents still active");
-                    table::print_table(&summaries);
-                    std::process::exit(
-                        forward::exit_code(forward::WatchOutcome::Pending, true)
-                            .expect("timed-out wait has an exit code"),
-                    );
+                    exit_watch_timeout(timeout_secs, Some(&summaries));
                 }
             }
         }
+        if Instant::now() >= deadline {
+            exit_watch_timeout(timeout_secs, None);
+        }
         thread::sleep(POLL_INTERVAL);
     }
+}
+
+fn handle_watch_outcome(
+    outcome: forward::WatchOutcome,
+    summaries: &[SubagentSummary],
+    lifecycle_required: bool,
+) -> bool {
+    let message = match outcome {
+        forward::WatchOutcome::Settled if lifecycle_required => {
+            "settled: every owned worker has lifecycle success evidence"
+        }
+        forward::WatchOutcome::Settled => {
+            "settled: legacy transcript evidence marks every subagent done"
+        }
+        forward::WatchOutcome::Failed => "failed: a worker or forwarded job failed",
+        forward::WatchOutcome::Cancelled => "cancelled: a worker was cancelled",
+        forward::WatchOutcome::Pending => return false,
+    };
+    println!("{message}");
+    table::print_table(summaries);
+    if let Some(code) = forward::exit_code(outcome, false).filter(|code| *code != 0) {
+        std::process::exit(code);
+    }
+    true
+}
+
+fn exit_watch_timeout(timeout_secs: u64, summaries: Option<&[SubagentSummary]>) -> ! {
+    println!("timeout: {timeout_secs}s elapsed without exact worker evidence");
+    if let Some(summaries) = summaries {
+        table::print_table(summaries);
+    }
+    let code = forward::exit_code(forward::WatchOutcome::Pending, true).unwrap_or(2);
+    std::process::exit(code)
 }
 
 #[cfg(test)]

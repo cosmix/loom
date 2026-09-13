@@ -39,10 +39,9 @@
 //! before calling a tool produces a text-only assistant entry immediately
 //! followed by a `tool_use` entry. Sampling in that gap would classify a
 //! working agent as `done` -- see [`DEFAULT_DONE_DEBOUNCE_SECS`] for the
-//! measured basis. A `<state-dir>/subagents/<stage-id>/<agentId>.json` record
-//! (written by a SubagentStop hook, when one exists) is authoritative proof
-//! of termination and skips the debounce entirely -- see
-//! [`has_authoritative_termination`]. Do NOT corroborate completion from the
+//! measured basis. Exact lifecycle journal evidence from a validated
+//! SubagentStop hook is authoritative proof of termination and skips the
+//! debounce entirely. Do NOT corroborate completion from the
 //! *parent* transcript's `tool_result` for the spawning Task/Agent call:
 //! background agents get an immediate spawn-acknowledgement `tool_result`
 //! there, so its presence proves spawn, never completion.
@@ -63,6 +62,7 @@ use crate::models::constants::DEFAULT_SUBAGENT_CEILING_TOKENS;
 mod entry;
 #[path = "classify_forward.rs"]
 pub(super) mod forward;
+pub(super) mod lifecycle;
 
 pub(super) fn is_done_entry(entry: &Value) -> bool {
     entry::classify_last(entry) == SubagentState::Done
@@ -89,10 +89,14 @@ pub const DEFAULT_DONE_DEBOUNCE_SECS: u64 = 180;
 #[serde(rename_all = "kebab-case")]
 pub enum SubagentState {
     /// Last entry is `assistant` with a text block and no `tool_use`, AND
-    /// either it has sat idle at least the debounce or a
-    /// `<state-dir>/subagents/.../<agentId>.json` termination record exists: the
-    /// subagent's turn ended and `final_report` holds its output.
+    /// either it has sat idle at least the debounce or exact lifecycle
+    /// evidence exists: the subagent's turn ended and `final_report` holds
+    /// its output.
     Done,
+    /// Exact lifecycle evidence reports terminal failure.
+    Failed,
+    /// Exact lifecycle evidence reports terminal cancellation.
+    Cancelled,
     /// Last entry is `assistant` with a `tool_use` block: waiting on a tool.
     /// Never debounced or timed out, at any idle time -- see the module doc.
     ToolWait,
@@ -116,6 +120,8 @@ impl SubagentState {
     pub fn label(self) -> &'static str {
         match self {
             SubagentState::Done => "done",
+            SubagentState::Failed => "failed",
+            SubagentState::Cancelled => "cancelled",
             SubagentState::ToolWait => "tool-wait",
             SubagentState::Generating => "generating",
             SubagentState::Unknown => "unknown",
@@ -126,11 +132,23 @@ impl SubagentState {
     }
 }
 
+/// Evidence that allowed a summary to enter [`SubagentState::Done`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum DoneEvidence {
+    Lifecycle,
+    LegacyTranscript,
+}
+
 /// One subagent's transcript, summarized.
 #[derive(Debug, Clone, Serialize)]
 pub struct SubagentSummary {
     pub agent_id: String,
     pub state: SubagentState,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub done_evidence: Option<DoneEvidence>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub terminal_reason: Option<String>,
     pub idle_secs: i64,
     pub turns: usize,
     pub last_tool: Option<String>,
@@ -163,22 +181,13 @@ pub struct SubagentSummary {
     pub final_report: Option<String>,
 }
 
-/// Read and classify one subagent transcript file. Never fails on malformed
-/// content: unparseable lines are skipped, and a transcript with no
-/// parseable lines at all (or an empty file) degrades to `Unknown` rather
-/// than erroring. The only real failure mode is not being able to read the
-/// file at all (e.g. it vanished, or a permission error).
+/// Read and classify one transcript. Malformed content degrades to `Unknown`;
+/// only unreadable files return an error.
 ///
-/// `debounce_secs` gates the `done` state: a structurally-done last entry
-/// that hasn't sat idle for at least this long is reported as `generating`
-/// instead (see the module doc for why). Pass [`DEFAULT_DONE_DEBOUNCE_SECS`]
-/// unless the caller has an explicit `--debounce` override to thread through.
+/// `debounce_secs` keeps a recent structurally-done entry `generating`.
 ///
-/// `work_dir`, when given, is the loom state directory root to check for an
-/// authoritative `subagents/<stage-id>/<agentId>.json` termination record
-/// and optional spawn-type ledgers (see the module doc). `None` (no state directory
-/// found, or the caller doesn't want the fast path) falls straight through
-/// to the transcript rule and leaves type unknown.
+/// This test-only entry point deliberately omits lifecycle and forward-job
+/// evidence so ambient Loom stage variables cannot affect unit tests.
 #[cfg(test)]
 pub fn analyze(
     path: &Path,
@@ -186,18 +195,18 @@ pub fn analyze(
     debounce_secs: u64,
     work_dir: Option<&Path>,
 ) -> Result<SubagentSummary> {
-    analyze_at_ceiling(
+    analyze_with_evidence_at_ceiling(
         path,
         agent_id,
         debounce_secs,
         work_dir,
         resolve_subagent_ceiling(work_dir),
+        None,
+        None,
     )
 }
 
-/// Resolve the same plan-wide subagent ceiling used by the runtime hook.
-/// Missing or malformed configuration falls back to the one Rust default;
-/// callers such as `watch` resolve once and reuse it across polling cycles.
+/// Resolve the plan-wide subagent ceiling, falling back to the Rust default.
 pub(super) fn resolve_subagent_ceiling(work_dir: Option<&Path>) -> u64 {
     work_dir
         .and_then(|path| crate::fs::work_dir::read_context_config(path).ok())
@@ -206,136 +215,112 @@ pub(super) fn resolve_subagent_ceiling(work_dir: Option<&Path>) -> u64 {
         })
 }
 
-pub(super) fn analyze_at_ceiling(
+pub(super) fn analyze_with_evidence_at_ceiling(
     path: &Path,
     agent_id: String,
     debounce_secs: u64,
     work_dir: Option<&Path>,
     subagent_ceiling_tokens: u64,
+    lifecycle: Option<&lifecycle::Context>,
+    forward_index: Option<&ForwardIndex>,
 ) -> Result<SubagentSummary> {
     let entries = entry::read_entries(path)?;
-    let authoritative_done = has_authoritative_termination(work_dir, &agent_id);
-    let agent_type = ledger::agent_type(work_dir, &agent_id);
+    let lifecycle_evidence = lifecycle.map(|context| context.evidence(path, &agent_id));
+    let agent_type = lifecycle_evidence
+        .as_ref()
+        .and_then(|evidence| evidence.agent_type.clone())
+        .or_else(|| ledger::agent_type(work_dir, &agent_id));
     let metrics = metrics::extract(&entries);
-    let peak_tokens_over_ceiling = subagent_ceiling_tokens > 0
-        && metrics
-            .peak_resident_tokens
-            .is_some_and(|tokens| tokens >= subagent_ceiling_tokens);
+    let peak_tokens_over_ceiling = peak_over_ceiling(&metrics, subagent_ceiling_tokens);
 
     let Some(last) = entries.last() else {
-        return Ok(summary::empty(
-            agent_id,
-            authoritative_done,
-            idle_since_mtime(path),
-            agent_type,
-        ));
+        let mut summary = summary::empty(agent_id, idle_since_mtime(path), agent_type);
+        if let Some(evidence) = lifecycle_evidence {
+            evidence.apply(&mut summary);
+        }
+        return Ok(summary);
     };
 
     let idle_secs = entry::timestamp(last)
         .map(|ts| (Utc::now() - ts).num_seconds().max(0))
         .unwrap_or_else(|| idle_since_mtime(path));
-    let state = resolve_state(last, authoritative_done, idle_secs, debounce_secs);
-    let turns = entries
-        .iter()
-        .filter(|entry| entry::is_assistant(entry))
-        .count();
-    let last_tool = entry::last_tool_used(&entries);
-    let final_report = final_report_for(state, last);
-
-    Ok(summary::with_last(
+    let state = resolve_state(last, idle_secs, debounce_secs);
+    let summary = summary::with_last(
         agent_id,
         state,
         idle_secs,
-        summary::TranscriptActivity {
-            turns,
-            last_tool,
-            final_report,
-        },
+        transcript_activity(&entries, state, last),
         agent_type,
         metrics,
         peak_tokens_over_ceiling,
+    );
+    Ok(apply_evidence(
+        summary,
+        last,
+        path,
+        lifecycle_evidence,
+        forward_index,
     ))
 }
 
-/// Apply exact forwarding evidence after ordinary transcript classification.
-/// This keeps the historical classifier callable on its own while renderers
-/// that have a stage-scoped receipt index can prevent a wrapper stop from
-/// settling an unfinished backend job.
-pub(super) fn analyze_with_forward_at_ceiling(
+fn apply_evidence(
+    mut summary: SubagentSummary,
+    last: &Value,
     path: &Path,
-    agent_id: String,
-    debounce_secs: u64,
-    work_dir: Option<&Path>,
-    subagent_ceiling_tokens: u64,
-    forward_index: &ForwardIndex,
-) -> Result<SubagentSummary> {
-    let mut summary = analyze_at_ceiling(
-        path,
-        agent_id,
-        debounce_secs,
-        work_dir,
-        subagent_ceiling_tokens,
-    )?;
-    forward::apply(&mut summary, forward_index, path);
-    Ok(summary)
+    lifecycle_evidence: Option<lifecycle::Evidence>,
+    forward_index: Option<&ForwardIndex>,
+) -> SubagentSummary {
+    if let Some(evidence) = lifecycle_evidence {
+        evidence.apply(&mut summary);
+    }
+    if summary.state == SubagentState::Done && summary.final_report.is_none() {
+        summary.final_report = final_report_for(summary.state, last);
+    }
+    if let Some(index) = forward_index {
+        forward::apply(&mut summary, index, path);
+    }
+    summary
 }
 
-/// The subagent's final report: only ever `Some` when `state == Done`, and
-/// even then only when the last entry actually carried a text block. An
-/// authoritative termination record can force `Done` while the last flushed
-/// entry is a `tool_use` or `thinking` block with no text -- in that case
-/// `text_blocks` is empty and a bare `join` would produce `""`, which is not
-/// a report; filtering it out here sends the caller down the same "nothing
-/// harvestable" path it takes for any other reportless subagent.
+fn transcript_activity(
+    entries: &[Value],
+    state: SubagentState,
+    last: &Value,
+) -> summary::TranscriptActivity {
+    summary::TranscriptActivity {
+        turns: entries
+            .iter()
+            .filter(|entry| entry::is_assistant(entry))
+            .count(),
+        last_tool: entry::last_tool_used(entries),
+        final_report: final_report_for(state, last),
+    }
+}
+
+fn peak_over_ceiling(metrics: &metrics::TranscriptMetrics, ceiling: u64) -> bool {
+    ceiling > 0
+        && metrics
+            .peak_resident_tokens
+            .is_some_and(|tokens| tokens >= ceiling)
+}
+
+/// Return non-empty final text only for `Done` entries.
 fn final_report_for(state: SubagentState, last: &Value) -> Option<String> {
     (state == SubagentState::Done)
         .then(|| entry::text_blocks(last).join("\n\n"))
         .filter(|report| !report.trim().is_empty())
 }
 
-/// Resolve the final [`SubagentState`] for the last transcript entry: an
-/// authoritative termination record overrides everything (including a
-/// mid-debounce or structurally-different read, since the hook fired after
-/// the transcript was last flushed and the transcript itself may be
-/// lagging); otherwise a structurally-`done` entry that hasn't cleared the
-/// debounce is demoted to `Generating` (still being written to -- the model
-/// may add a `tool_use` block any moment). `tool-wait` is untouched by the
-/// debounce either way -- it is never debounced.
-fn resolve_state(
-    last: &Value,
-    authoritative_done: bool,
-    idle_secs: i64,
-    debounce_secs: u64,
-) -> SubagentState {
-    if authoritative_done {
-        return SubagentState::Done;
-    }
+/// Resolve the transcript-only state before exact lifecycle evidence is
+/// applied. A structurally-`done` entry still inside the debounce remains
+/// `Generating`; lifecycle evidence may authoritatively override it later.
+fn resolve_state(last: &Value, idle_secs: i64, debounce_secs: u64) -> SubagentState {
     let structural = entry::classify_last(last);
     if structural == SubagentState::Done && idle_secs < debounce_secs as i64 {
         SubagentState::Generating
     } else {
         structural
     }
-}
-
-/// True when a SubagentStop hook already recorded this agent's termination
-/// under `<state-dir>/subagents/<stage-id>/<agentId>.json`, in any stage-id
-/// subdirectory (the caller doesn't know which stage owns this agent).
-/// Purely optional and best-effort: a missing `work_dir`, a missing
-/// `subagents/` directory, or no record for this agent all silently return
-/// `false` rather than erroring -- this command never creates the directory
-/// and never depends on it existing; the transcript rule remains the source
-/// of truth when this can't be corroborated.
-fn has_authoritative_termination(work_dir: Option<&Path>, agent_id: &str) -> bool {
-    let Some(work_dir) = work_dir else {
-        return false;
-    };
-    let Ok(stage_dirs) = fs::read_dir(work_dir.join("subagents")) else {
-        return false;
-    };
-    stage_dirs
-        .flatten()
-        .any(|entry| entry.path().join(format!("{agent_id}.json")).is_file())
 }
 
 /// Fallback idle time for entries with no parseable timestamp (or files
@@ -365,3 +350,7 @@ mod ceiling_tests;
 #[cfg(test)]
 #[path = "classify_forward_tests.rs"]
 mod forward_tests;
+
+#[cfg(test)]
+#[path = "classify_lifecycle_tests.rs"]
+mod lifecycle_tests;

@@ -174,7 +174,19 @@ fn tool_wait_idle_30_minutes_never_harvests_or_settles() {
     assert_eq!(summaries[0].state, SubagentState::ToolWait);
     assert!(summaries[0].final_report.is_none());
     assert_eq!(
-        forward::watch_outcome(&summaries),
+        forward::watch_outcome(&summaries, false),
         forward::WatchOutcome::Pending
+    );
+}
+
+#[test]
+fn harvest_terminal_failure_evidence_keeps_agent_state_and_reason() {
+    let mut summary = super::super::summary::empty("agent-x".into(), 0, None);
+    summary.state = SubagentState::Cancelled;
+    summary.terminal_reason = Some("operator cancelled".into());
+
+    assert_eq!(
+        terminal_failure_evidence(&summary).as_deref(),
+        Some("terminal failure evidence: agent=agent-x state=cancelled reason=operator cancelled")
     );
 }
