@@ -11,7 +11,7 @@
 #
 # Input: JSON from stdin - {"tool_name": "Read", "tool_input": {"file_path":
 # ..., "offset": ..., "limit": ..., "pages": ...}, "agent_id": ...,
-# "session_id": ...}
+# "session_id": ..., "cwd": ..., "tool_use_id": ... (optional)}
 # Exit codes: 0 = allow (optionally with a LOOM_HOOK_WARN additionalContext),
 # 1 = jq not installed (non-blocking error),
 # 2 = deny with guidance on stderr (only when the deny switch is enabled AND
@@ -102,7 +102,16 @@ fi
 
 loom_debug "FILE_PATH=$FILE_PATH KIND=$KIND LINES=$LINES AGENT_ID=$AGENT_ID"
 
-loom_read_discipline_check "$FILE_PATH" "$KIND" "$LINES" "$AGENT_ID" "${PAYLOAD_SID:-unknown}"
+# The discipline core can use this original payload only for a bounded receipt
+# check after its cheap TSV-overlap prefilter. It never parses a tool result.
+loom_read_discipline_check "$FILE_PATH" "$KIND" "$LINES" "$AGENT_ID" "${PAYLOAD_SID:-unknown}" "$INPUT_JSON"
+
+# A hard deny exits from the discipline core before reaching this point. Rust
+# repeats the source, type, cap, and no-follow checks; the shell gate avoids
+# spawning it for obvious media/non-files and never turns a failure into one.
+if _loom_read_receipt_eligible "$FILE_PATH"; then
+	_loom_read_receipt_prepare "$INPUT_JSON"
+fi
 
 loom_hook_emit_warns
 exit 0

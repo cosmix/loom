@@ -38,23 +38,6 @@ _loom_is_verify_runner_command() {
 	loom_tokens_invoke "$_LOOM_VERIFY_RUNNER_BASENAMES"
 }
 
-# _loom_read_skip_extension <path> - Return 0 when <path>'s extension is a
-# binary/image format that a size/outline check makes no sense for.
-_loom_read_skip_extension() {
-	local path="$1" ext lower
-	[[ "$path" == *.* ]] || return 1
-	ext="${path##*.}"
-	lower=$(printf '%s' "$ext" | tr '[:upper:]' '[:lower:]')
-	case "$lower" in
-	png | jpg | jpeg | gif | webp | bmp | ico | svg | pdf | zip | gz | tar | bz2 | xz | zst | \
-		wasm | so | dylib | dll | exe | bin | o | a | class | jar | mp3 | mp4 | mov | avi | \
-		ttf | otf | woff | woff2)
-		return 0
-		;;
-	esac
-	return 1
-}
-
 # _loom_is_tier1_knowledge_path <path> - Return 0 when <path> is a tier-1
 # knowledge file: doc/loom/knowledge/<name>.md with NO further directory
 # component. A tier-2 topic file (doc/loom/knowledge/<category>/<slug>.md) is
@@ -295,40 +278,37 @@ Read the ranges you need with offset/limit."
 	return 0
 }
 
-# _loom_read_discipline_verdict2 <path> <kind> <lines> <ledger> - Compute
-# rule 2's verdict WITHOUT emitting it: sets LOOM_RD_V2_KIND (none|warn|deny)
-# and LOOM_RD_V2_MSG, based on ledger rows recorded BEFORE this read. Returns
-# "none" outright for a binary/image extension (_loom_read_skip_extension) -
-# repeated reads of a PDF's pages or an image are not the re-reading rule 2
-# exists to catch, and offset/limit-shaped advice makes no sense for either.
+# _loom_read_discipline_verdict2 <path> <kind> <lines> <ledger> <payload> -
+# Compute rule 2's verdict WITHOUT emitting it. The TSV is only a cheap
+# overlap prefilter; a matching current-generation text receipt from Rust is
+# required before any repeat advice. That prevents an attempted, failed, or
+# stale Read from qualifying a later Read for escalation.
 _loom_read_discipline_verdict2() {
-	local path="$1" kind="$2" lines="$3" ledger="$4"
+	local path="$1" kind="$2" lines="$3" ledger="$4" payload="${5:-}" count prior
 	LOOM_RD_V2_KIND="none"
 	LOOM_RD_V2_MSG=""
-	_loom_read_skip_extension "$path" && return 0
+	[[ -n "$payload" ]] || return 0
+	_loom_read_receipt_eligible "$path" || return 0
+	_loom_read_attempt_overlaps "$ledger" "$path" "$kind" "$lines" || return 0
+	count=$(_loom_read_receipt_proven "$payload") || return 0
 	if [[ "$kind" == "full" ]]; then
-		_loom_reads_full_count_and_ts "$ledger" "$path"
-		if ((LOOM_READS_FULL_COUNT == 1)); then
+		if [[ "$count" == "1" ]]; then
+			prior=$(_loom_read_last_full_attempt_at "$ledger" "$path") || return 0
 			LOOM_RD_V2_KIND="warn"
-			LOOM_RD_V2_MSG="${path} read in full at ${LOOM_READS_FULL_FIRST_TS}; cite it or read a range"
-		elif ((LOOM_READS_FULL_COUNT >= 2)); then
+			LOOM_RD_V2_MSG="${path} read in full at ${prior}; cite it or read a range"
+		else
 			LOOM_RD_V2_KIND="deny"
-			LOOM_RD_V2_MSG="${path} has been read in full ${LOOM_READS_FULL_COUNT} times already - cite the earlier read or read a specific range with offset/limit."
+			LOOM_RD_V2_MSG="${path} has been read in full ${count} times already - cite the earlier read or read a specific range with offset/limit."
 		fi
-	else
-		local prior n
-		prior=$(_loom_reads_range_count "$ledger" "$path" "$lines")
-		n=$((prior + 1))
-		if ((n >= 3)); then
-			LOOM_RD_V2_KIND="warn"
-			LOOM_RD_V2_MSG="range ${lines} of ${path} has been read ${n} times - cite the earlier read instead of re-reading it"
-		fi
+	elif [[ "$count" != "1" ]]; then
+		LOOM_RD_V2_KIND="warn"
+		LOOM_RD_V2_MSG="range ${lines} of ${path} has been read ${count} times - cite the earlier read instead of re-reading it"
 	fi
 	return 0
 }
 
 # loom_read_discipline_check <path> <kind:full|range> <lines> <agent_id>
-# <fallback_session_id> - the shared core for read-guard.sh's Task C Read
+# <fallback_session_id> [original_payload] - the shared core for read-guard.sh's Task C Read
 # checks and poll-guard.sh's Task D Bash-side cat/sed/head/tail checks. Same
 # rules regardless of which tool performed the read:
 #   0. A skill's SKILL.md (either skill root) is exempt outright, with no
@@ -342,23 +322,21 @@ _loom_read_discipline_verdict2() {
 #   1. An unbounded ("full") read of a file over READ_GUARD_LINE_LIMIT lines
 #      is redirected to `loom map --outline` (denied when covered, warned
 #      when not).
-#   2. A repeat full read, or 3+ identical range reads, of the same path is
-#      warned (3rd+ full read is denied).
-#   3. A tier-1 knowledge file (other than INDEX.md) read in a stage session
-#      is warned, and OVERRIDES rules 1 and 2 outright (never denied).
+#   2. A repeat whose prior attempt overlaps is advised only after the Rust
+#      receipt adapter proves a matching text result for the current source
+#      generation. The TSV never qualifies the repeat by itself.
+#   3. A tier-1 knowledge file (other than INDEX.md) is warned with an
+#      unscoped knowledge query, and OVERRIDES rules 1 and 2 outright.
 #
 # Rules 1 and 2 are both computed (verdict1/verdict2), then exactly ONE
-# decision is emitted - a deny beats a warn, rule 1 wins a deny/deny tie (its
-# outline is the more useful message). Comparing both is what lets rule 2
-# eventually escalate to a deny on the Nth full read of a large file even
-# though rule 1 has something to say every time too - otherwise rule 1 would
-# talk forever and rule 2's repeat-read deny would never get a turn.
+# decision is emitted - a deny beats a warn, and rule 1 wins a tie because
+# its outline is the more useful message.
 #
 # Decisions are queued via loom_hook_note_warn/loom_hook_deny_or_warn, not
 # emitted directly, so a caller evaluating several independent rules
 # (poll-guard.sh) can still join every warning into one JSON object.
 loom_read_discipline_check() {
-	local path="$1" kind="$2" lines="$3" agent_id="$4" fallback_sid="$5"
+	local path="$1" kind="$2" lines="$3" agent_id="$4" fallback_sid="$5" payload="${6:-}"
 	local ledger
 	ledger=$(_loom_ledger_file "reads" "$agent_id" "$fallback_sid")
 
@@ -372,8 +350,8 @@ loom_read_discipline_check() {
 		return 0
 	fi
 
-	if _loom_is_tier1_knowledge_path "$path" && [[ -n "${LOOM_STAGE_ID:-}" ]]; then
-		loom_hook_note_warn "${path} is a tier-1 knowledge summary - pull the specific question instead: loom knowledge context --stage ${LOOM_STAGE_ID} --query \"...\""
+	if _loom_is_tier1_knowledge_path "$path"; then
+		loom_hook_note_warn "${path} is a tier-1 knowledge summary - pull the specific question instead: loom knowledge context --query \"...\""
 		_loom_ledger_append "$ledger" "$path" "$kind" "$lines"
 		return 0
 	fi
@@ -383,7 +361,7 @@ loom_read_discipline_check() {
 	if [[ "$kind" == "full" ]] && _loom_read_discipline_large_unbounded "$path" "$lines"; then
 		_loom_read_discipline_verdict1 "$path" "$lines"
 	fi
-	_loom_read_discipline_verdict2 "$path" "$kind" "$lines" "$ledger"
+	_loom_read_discipline_verdict2 "$path" "$kind" "$lines" "$ledger" "$payload"
 
 	if [[ "$LOOM_RD_V1_KIND" == "deny" ]]; then
 		loom_hook_deny_or_warn "$LOOM_RD_V1_MSG"

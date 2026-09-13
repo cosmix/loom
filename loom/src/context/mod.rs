@@ -70,6 +70,7 @@ pub mod local_overlay;
 pub mod pack;
 pub mod rank;
 pub mod rank_source;
+pub mod read_receipts;
 pub mod refresh;
 pub mod render;
 pub mod resolve;
