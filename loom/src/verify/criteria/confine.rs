@@ -15,7 +15,7 @@
 
 use anyhow::{Context, Result};
 use std::fmt;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 
 #[cfg(unix)]
@@ -46,6 +46,39 @@ pub enum CommandSpec {
         /// Arguments passed verbatim — never re-split, never expanded.
         args: Vec<String>,
     },
+}
+
+/// A one-shot command whose environment and working directory are already
+/// fixed. Cache fingerprinting inspects this exact value before it is spawned.
+pub(super) struct PreparedCommand {
+    command: Command,
+    working_dir: Option<PathBuf>,
+    display: String,
+    spec: CommandSpec,
+}
+
+impl PreparedCommand {
+    pub(super) fn command(&self) -> &Command {
+        &self.command
+    }
+
+    pub(super) fn working_dir(&self) -> Option<&Path> {
+        self.working_dir.as_deref()
+    }
+
+    pub(super) fn display(&self) -> &str {
+        &self.display
+    }
+
+    pub(super) fn spec(&self) -> &CommandSpec {
+        &self.spec
+    }
+
+    pub(super) fn spawn(mut self) -> Result<Child> {
+        self.command
+            .spawn()
+            .with_context(|| format!("Failed to spawn command: {}", self.display))
+    }
 }
 
 impl CommandSpec {
@@ -98,6 +131,15 @@ pub fn spawn_confined(
     working_dir: Option<&Path>,
     confinement: CommandConfinement,
 ) -> Result<Child> {
+    prepare_confined(spec, working_dir, confinement)?.spawn()
+}
+
+/// Resolve a confined command once, without spawning it yet.
+pub(super) fn prepare_confined(
+    spec: &CommandSpec,
+    working_dir: Option<&Path>,
+    confinement: CommandConfinement,
+) -> Result<PreparedCommand> {
     let mut cmd = build_command(spec);
 
     match confinement {
@@ -107,7 +149,6 @@ pub fn spawn_confined(
         // Explicit plan opt-in: the command genuinely needs what loom was given.
         CommandConfinement::Inherit => {}
     }
-
     #[cfg(unix)]
     {
         // Place the child in its own process group so kill(-pgid, SIGKILL) on
@@ -124,12 +165,18 @@ pub fn spawn_confined(
     cmd.stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
-    if let Some(dir) = working_dir {
+    let resolved_working_dir = working_dir
+        .map(Path::to_path_buf)
+        .or_else(|| std::env::current_dir().ok());
+    if let Some(dir) = &resolved_working_dir {
         cmd.current_dir(dir);
     }
-
-    cmd.spawn()
-        .with_context(|| format!("Failed to spawn command: {spec}"))
+    Ok(PreparedCommand {
+        command: cmd,
+        working_dir: resolved_working_dir,
+        display: spec.to_string(),
+        spec: spec.clone(),
+    })
 }
 
 /// Effective confinement for one stage's plan-authored commands.

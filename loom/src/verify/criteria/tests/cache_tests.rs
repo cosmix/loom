@@ -1,15 +1,19 @@
-//! Tests for the acceptance-criterion pass cache
+//! Cache input-fingerprint tests.
 
+use std::fs::OpenOptions;
+use std::io::Write;
 use std::path::Path;
 use std::process::Command;
-use std::time::Duration;
 
 use serial_test::serial;
 use tempfile::TempDir;
 
-use crate::verify::criteria::cache::{
-    compute_cache_key, is_cacheable, lookup_pass, store_pass, CachePolicy, CachedPass,
+use crate::models::stage::CommandConfinement;
+use crate::verify::criteria::cache::is_cacheable;
+use crate::verify::criteria::cache_fingerprint::{
+    capture, capture_with_budget, ExecutionIdentity, InputFingerprint,
 };
+use crate::verify::criteria::confine::{prepare_confined, CommandSpec};
 
 const TEST_IDENTITY: &[&str] = &["-c", "user.name=Test", "-c", "user.email=test@example.com"];
 
@@ -33,219 +37,200 @@ fn init_repo() -> TempDir {
     temp
 }
 
-/// Pins `LOOM_ACCEPTANCE_CACHE` for a test's duration and restores it on drop.
-struct EnvVarGuard {
-    key: &'static str,
-    original: Option<String>,
+fn execution_identity(repo: &Path) -> ExecutionIdentity {
+    let prepared = prepare_confined(
+        &CommandSpec::shell("printf ok"),
+        Some(repo),
+        CommandConfinement::Confined,
+    )
+    .unwrap();
+    ExecutionIdentity::from_prepared(&prepared, CommandConfinement::Confined).unwrap()
 }
 
-impl EnvVarGuard {
-    fn set(key: &'static str, value: &str) -> Self {
-        let original = std::env::var(key).ok();
-        std::env::set_var(key, value);
-        Self { key, original }
-    }
-}
-
-impl Drop for EnvVarGuard {
-    fn drop(&mut self) {
-        match &self.original {
-            Some(value) => std::env::set_var(self.key, value),
-            None => std::env::remove_var(self.key),
-        }
-    }
-}
-
-#[test]
-fn key_changes_with_command_text() {
-    let repo = init_repo();
-    let a = compute_cache_key("echo a", repo.path()).unwrap();
-    let b = compute_cache_key("echo b", repo.path()).unwrap();
-    assert_ne!(a.digest, b.digest);
-}
-
-#[test]
-fn key_changes_with_head() {
-    let repo = init_repo();
-    let before = compute_cache_key("echo hi", repo.path()).unwrap();
-
-    std::fs::write(repo.path().join("file.txt"), "hello\nmore\n").unwrap();
-    git(&["add", "file.txt"], repo.path());
-    git(&["commit", "-q", "-m", "second"], repo.path());
-
-    let after = compute_cache_key("echo hi", repo.path()).unwrap();
-    assert_ne!(before.digest, after.digest);
-    assert_ne!(before.tree_head, after.tree_head);
-}
-
-#[test]
-fn key_changes_with_tracked_modification() {
-    let repo = init_repo();
-    let before = compute_cache_key("echo hi", repo.path()).unwrap();
-
-    std::fs::write(repo.path().join("file.txt"), "hello\nchanged\n").unwrap();
-
-    let after = compute_cache_key("echo hi", repo.path()).unwrap();
-    assert_ne!(before.digest, after.digest);
-}
-
-#[test]
-fn key_changes_with_new_untracked_file() {
-    let repo = init_repo();
-    let before = compute_cache_key("echo hi", repo.path()).unwrap();
-
-    std::fs::write(repo.path().join("new.txt"), "new\n").unwrap();
-
-    let after = compute_cache_key("echo hi", repo.path()).unwrap();
-    assert_ne!(before.digest, after.digest);
-}
-
-#[test]
-fn identical_trees_give_identical_keys() {
-    let repo = init_repo();
-    let a = compute_cache_key("echo hi", repo.path()).unwrap();
-    let b = compute_cache_key("echo hi", repo.path()).unwrap();
-    assert_eq!(a.digest, b.digest);
-}
-
-#[test]
-fn non_git_directory_yields_no_key() {
-    let temp = TempDir::new().unwrap();
-    assert!(compute_cache_key("echo hi", temp.path()).is_none());
-}
-
-#[test]
-fn stored_pass_is_found_by_lookup() {
-    let repo = init_repo();
-    let work_dir = TempDir::new().unwrap();
-    let key = compute_cache_key("echo hi", repo.path()).unwrap();
-
-    let record = CachedPass::from_result("echo hi", repo.path(), &key.tree_head, "out", "", 5);
-    store_pass(work_dir.path(), &key.digest, &record).unwrap();
-
-    let found = lookup_pass(work_dir.path(), &key.digest).unwrap();
-    assert_eq!(found.command, "echo hi");
-    assert_eq!(found.exit_code, 0);
-    assert_eq!(found.tree_head, key.tree_head);
-}
-
-#[test]
-fn lookup_misses_when_nothing_stored() {
-    let work_dir = TempDir::new().unwrap();
-    assert!(lookup_pass(work_dir.path(), "nonexistent-key").is_none());
-}
-
-#[test]
-fn cached_pass_truncates_output_to_tail() {
-    let repo = init_repo();
-    let huge = "x".repeat(10 * 1024);
-    let record = CachedPass::from_result("echo hi", repo.path(), "deadbeef", &huge, &huge, 1);
-    assert_eq!(record.stdout_tail.len(), 4 * 1024);
-    assert_eq!(record.stderr_tail.len(), 4 * 1024);
-    let _ = Duration::from_millis(record.duration_ms);
+fn fingerprint(repo: &Path) -> Option<InputFingerprint> {
+    capture(repo, &execution_identity(repo))
 }
 
 #[test]
 #[serial]
-fn cache_policy_bypass_from_env() {
-    let _guard = EnvVarGuard::set("LOOM_ACCEPTANCE_CACHE", "0");
-    assert_eq!(CachePolicy::from_env(), CachePolicy::Bypass);
+fn tracked_and_untracked_content_mutations_change_fingerprint() {
+    let repo = init_repo();
+    let clean = fingerprint(repo.path()).unwrap();
+    std::fs::write(repo.path().join("file.txt"), "changed\n").unwrap();
+    let tracked = fingerprint(repo.path()).unwrap();
+    std::fs::write(repo.path().join("new.txt"), "one\n").unwrap();
+    let untracked_one = fingerprint(repo.path()).unwrap();
+    std::fs::write(repo.path().join("new.txt"), "two\n").unwrap();
+    let untracked_two = fingerprint(repo.path()).unwrap();
+
+    assert_ne!(clean, tracked);
+    assert_ne!(tracked, untracked_one);
+    assert_ne!(untracked_one, untracked_two);
 }
 
 #[test]
 #[serial]
-fn cache_policy_use_when_env_other_value() {
-    let _guard = EnvVarGuard::set("LOOM_ACCEPTANCE_CACHE", "1");
-    assert_eq!(CachePolicy::from_env(), CachePolicy::Use);
+fn identical_inputs_have_identical_fingerprints() {
+    let repo = init_repo();
+    let identity = execution_identity(repo.path());
+    assert_eq!(
+        capture(repo.path(), &identity),
+        capture(repo.path(), &identity)
+    );
 }
 
 #[test]
-fn is_cacheable_rejects_home_reference() {
+#[serial]
+fn large_same_size_same_mtime_byte_change_is_detected() {
     let repo = init_repo();
-    assert!(!is_cacheable("echo $HOME/foo", repo.path()));
+    let path = repo.path().join("large.bin");
+    std::fs::write(&path, vec![b'a'; 9 * 1024 * 1024]).unwrap();
+    let modified = path.metadata().unwrap().modified().unwrap();
+    let before = fingerprint(repo.path()).unwrap();
+
+    let mut file = OpenOptions::new()
+        .write(true)
+        .truncate(true)
+        .open(&path)
+        .unwrap();
+    file.write_all(&vec![b'b'; 9 * 1024 * 1024]).unwrap();
+    file.set_times(std::fs::FileTimes::new().set_modified(modified))
+        .unwrap();
+    let metadata = path.metadata().unwrap();
+    let after = fingerprint(repo.path()).unwrap();
+
+    assert_eq!(metadata.len(), 9 * 1024 * 1024);
+    assert_eq!(metadata.modified().unwrap(), modified);
+    assert_ne!(before, after);
 }
 
 #[test]
-fn is_cacheable_rejects_tilde_path() {
+#[serial]
+fn executable_content_change_invalidates_execution_identity() {
     let repo = init_repo();
-    assert!(!is_cacheable("cat ~/secrets", repo.path()));
+    let tools = TempDir::new().unwrap();
+    let executable = tools.path().join("tool");
+    std::fs::write(&executable, "#!/bin/sh\nprintf a\n").unwrap();
+    make_executable(&executable);
+    let spec = CommandSpec::program(executable.to_string_lossy(), std::iter::empty::<&str>());
+    let prepared =
+        prepare_confined(&spec, Some(repo.path()), CommandConfinement::Confined).unwrap();
+    let identity =
+        ExecutionIdentity::from_prepared(&prepared, CommandConfinement::Confined).unwrap();
+    let before = capture(repo.path(), &identity).unwrap();
+
+    std::fs::write(&executable, "#!/bin/sh\nprintf b\n").unwrap();
+    let after = capture(repo.path(), &identity).unwrap();
+
+    assert_ne!(before, after);
+}
+
+#[cfg(unix)]
+fn make_executable(path: &Path) {
+    use std::os::unix::fs::PermissionsExt;
+    let mut permissions = path.metadata().unwrap().permissions();
+    permissions.set_mode(0o700);
+    std::fs::set_permissions(path, permissions).unwrap();
+}
+
+#[cfg(not(unix))]
+fn make_executable(_path: &Path) {}
+
+#[test]
+fn hash_budget_exhaustion_is_ineligible() {
+    let repo = init_repo();
+    let identity = execution_identity(repo.path());
+    assert!(capture_with_budget(repo.path(), &identity, 0).is_none());
 }
 
 #[test]
-fn is_cacheable_rejects_mktemp() {
+fn missing_executable_identity_and_inherited_environment_are_ineligible() {
     let repo = init_repo();
-    assert!(!is_cacheable("d=$(mktemp -d)", repo.path()));
+    let missing = prepare_confined(
+        &CommandSpec::program(
+            "loom-cache-test-no-such-executable",
+            std::iter::empty::<&str>(),
+        ),
+        Some(repo.path()),
+        CommandConfinement::Confined,
+    )
+    .unwrap();
+    let inherited = prepare_confined(
+        &CommandSpec::shell("true"),
+        Some(repo.path()),
+        CommandConfinement::Inherit,
+    )
+    .unwrap();
+    let dynamic = prepare_confined(
+        &CommandSpec::shell("eval dynamic-command"),
+        Some(repo.path()),
+        CommandConfinement::Confined,
+    )
+    .unwrap();
+
+    assert!(ExecutionIdentity::from_prepared(&missing, CommandConfinement::Confined).is_none());
+    assert!(ExecutionIdentity::from_prepared(&inherited, CommandConfinement::Inherit).is_none());
+    assert!(ExecutionIdentity::from_prepared(&dynamic, CommandConfinement::Confined).is_none());
 }
 
 #[test]
-fn is_cacheable_rejects_loom_home() {
+fn deleted_tracked_input_is_ineligible() {
     let repo = init_repo();
-    assert!(!is_cacheable("echo $LOOM_HOME", repo.path()));
+    std::fs::remove_file(repo.path().join("file.txt")).unwrap();
+    assert!(fingerprint(repo.path()).is_none());
+}
+
+#[cfg(unix)]
+#[test]
+fn source_symlink_and_unreadable_input_are_ineligible() {
+    use std::os::unix::fs::{symlink, PermissionsExt};
+
+    let symlink_repo = init_repo();
+    symlink("file.txt", symlink_repo.path().join("source-link")).unwrap();
+    git(&["add", "source-link"], symlink_repo.path());
+    git(&["commit", "-q", "-m", "symlink"], symlink_repo.path());
+    assert!(fingerprint(symlink_repo.path()).is_none());
+
+    let unreadable_repo = init_repo();
+    let path = unreadable_repo.path().join("unreadable.txt");
+    std::fs::write(&path, "private").unwrap();
+    let mut permissions = path.metadata().unwrap().permissions();
+    permissions.set_mode(0o000);
+    std::fs::set_permissions(&path, permissions).unwrap();
+    assert!(fingerprint(unreadable_repo.path()).is_none());
 }
 
 #[test]
-fn is_cacheable_accepts_ordinary_command() {
+fn known_external_and_ignored_inputs_are_ineligible() {
     let repo = init_repo();
-    assert!(is_cacheable("cargo test", repo.path()));
-}
+    std::fs::write(repo.path().join(".gitignore"), "ignored.txt\ntarget/\n").unwrap();
+    std::fs::write(repo.path().join("ignored.txt"), "ignored").unwrap();
+    let outside = TempDir::new().unwrap();
+    let external = outside.path().join("outside.txt");
+    std::fs::write(&external, "outside").unwrap();
 
-#[test]
-fn is_cacheable_rejects_braced_home_reference() {
-    let repo = init_repo();
-    assert!(!is_cacheable("echo ${HOME}/x", repo.path()));
-}
-
-#[test]
-fn is_cacheable_rejects_braced_home_with_default() {
-    let repo = init_repo();
-    assert!(!is_cacheable("echo ${HOME:-/tmp}", repo.path()));
-}
-
-#[test]
-fn is_cacheable_rejects_user_variable() {
-    let repo = init_repo();
-    assert!(!is_cacheable("echo $USER", repo.path()));
-}
-
-#[test]
-fn is_cacheable_accepts_similarly_prefixed_variable() {
-    let repo = init_repo();
-    assert!(is_cacheable("echo $HOMEBREW_PREFIX/bin", repo.path()));
-}
-
-#[test]
-fn is_cacheable_rejects_command_naming_ignored_path() {
-    let repo = init_repo();
-    std::fs::write(repo.path().join(".gitignore"), "target/\n").unwrap();
-
+    assert!(!is_cacheable("cat ignored.txt", repo.path()));
     assert!(!is_cacheable("./target/debug/loom --version", repo.path()));
+    assert!(!is_cacheable(
+        &format!("cat {}", external.display()),
+        repo.path()
+    ));
+    assert!(is_cacheable("cat new.txt", repo.path()));
+}
+
+#[test]
+fn ambient_input_refusals_remain_in_force() {
+    let repo = init_repo();
+    for command in [
+        "echo $HOME/file",
+        "cat ~/secret",
+        "d=$(mktemp -d)",
+        "echo ${LOOM_HOME:-/tmp}",
+        "echo $USER",
+        "curl https://example.com/input",
+    ] {
+        assert!(!is_cacheable(command, repo.path()), "accepted {command}");
+    }
     assert!(is_cacheable("cargo test --lib", repo.path()));
-    assert!(is_cacheable("cat src/main.rs", repo.path()));
-}
-
-#[test]
-fn is_cacheable_ignores_dollar_prefixed_token() {
-    let repo = init_repo();
-    assert!(is_cacheable("echo $H/.loom/x", repo.path()));
-}
-
-#[test]
-fn is_cacheable_rejects_path_token_outside_git_repo() {
-    let temp = TempDir::new().unwrap();
-    assert!(!is_cacheable("./target/debug/loom --version", temp.path()));
-}
-
-#[test]
-fn key_changes_when_large_file_size_changes() {
-    let repo = init_repo();
-    let nine_mib = vec![0u8; 9 * 1024 * 1024];
-    std::fs::write(repo.path().join("big.bin"), &nine_mib).unwrap();
-    let before = compute_cache_key("echo hi", repo.path()).unwrap();
-
-    let mut grown = nine_mib;
-    grown.extend_from_slice(&[1u8; 1024]);
-    std::fs::write(repo.path().join("big.bin"), &grown).unwrap();
-    let after = compute_cache_key("echo hi", repo.path()).unwrap();
-
-    assert_ne!(before.digest, after.digest);
+    assert!(!is_cacheable("echo $HOMEBREW_PREFIX/bin", repo.path()));
 }

@@ -1,158 +1,345 @@
-//! Tests for acceptance runner
+//! Full-verdict cache tests for the acceptance runner.
 
+use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::time::Duration;
 
+use serial_test::serial;
 use tempfile::TempDir;
 
-use crate::models::stage::{CommandConfinement, Stage};
-use crate::plan::schema::AcceptanceCriterion;
+use crate::models::stage::{AcceptanceCriterion, CommandConfinement, Stage, TruthCheck};
 use crate::verify::criteria::config::CriteriaConfig;
 use crate::verify::criteria::runner::{run_acceptance, run_acceptance_with_config};
-use crate::verify::criteria::CachePolicy;
+use crate::verify::criteria::{AcceptanceResult, CachePolicy};
 
-#[test]
-fn test_run_acceptance_empty() {
-    let stage = Stage::new("test".to_string(), None);
-    let result = run_acceptance(&stage, None).unwrap();
+const TEST_IDENTITY: &[&str] = &["-c", "user.name=Test", "-c", "user.email=test@example.com"];
 
-    assert!(result.all_passed());
-    assert_eq!(result.results().len(), 0);
+struct Fixture {
+    repo: TempDir,
+    cache: TempDir,
+    marker: PathBuf,
+    script: PathBuf,
 }
 
-#[test]
-fn test_run_acceptance_all_pass() {
-    let mut stage = Stage::new("test".to_string(), None);
-    let command = if cfg!(target_family = "unix") {
-        "true"
-    } else {
-        "exit /b 0"
-    };
-    stage.add_acceptance_criterion(AcceptanceCriterion::Simple(command.to_string()));
-    stage.add_acceptance_criterion(AcceptanceCriterion::Simple(command.to_string()));
-
-    let result = run_acceptance(&stage, None).unwrap();
-
-    assert!(result.all_passed());
-    assert_eq!(result.results().len(), 2);
-    assert_eq!(result.passed_count(), 2);
-    assert_eq!(result.failed_count(), 0);
-}
-
-#[test]
-fn test_run_acceptance_some_fail() {
-    let mut stage = Stage::new("test".to_string(), None);
-
-    if cfg!(target_family = "unix") {
-        stage.add_acceptance_criterion(AcceptanceCriterion::Simple("true".to_string()));
-        stage.add_acceptance_criterion(AcceptanceCriterion::Simple("false".to_string()));
-    } else {
-        stage.add_acceptance_criterion(AcceptanceCriterion::Simple("exit /b 0".to_string()));
-        stage.add_acceptance_criterion(AcceptanceCriterion::Simple("exit /b 1".to_string()));
+impl Fixture {
+    fn new(body: &str) -> Self {
+        let repo = TempDir::new().unwrap();
+        let cache = TempDir::new().unwrap();
+        let marker = cache.path().join("executions.log");
+        let script = repo.path().join("scripts/probe.sh");
+        std::fs::create_dir_all(script.parent().unwrap()).unwrap();
+        git(&["init", "-q"], repo.path());
+        write_probe(&script, &marker, body);
+        std::fs::write(repo.path().join("source.txt"), "source\n").unwrap();
+        git(&["add", "scripts/probe.sh", "source.txt"], repo.path());
+        git(&["commit", "-q", "-m", "fixture"], repo.path());
+        Self {
+            repo,
+            cache,
+            marker,
+            script,
+        }
     }
 
-    let result = run_acceptance(&stage, None).unwrap();
+    fn config(&self, timeout: Duration) -> CriteriaConfig {
+        CriteriaConfig::with_timeout(timeout)
+            .with_cache_dir(self.cache.path())
+            .with_cache_policy(CachePolicy::Use)
+    }
 
-    assert!(!result.all_passed());
-    assert_eq!(result.results().len(), 2);
-    assert_eq!(result.passed_count(), 1);
-    assert_eq!(result.failed_count(), 1);
-    assert_eq!(result.failures().len(), 1);
+    fn executions(&self) -> usize {
+        std::fs::read_to_string(&self.marker)
+            .unwrap_or_default()
+            .lines()
+            .count()
+    }
+
+    fn mutate_script(&self) {
+        let mut content = std::fs::read_to_string(&self.script).unwrap();
+        content.push_str("# fingerprint mutation\n");
+        std::fs::write(&self.script, content).unwrap();
+    }
 }
 
-fn init_git_repo() -> TempDir {
-    let temp = TempDir::new().unwrap();
-    let identity = ["-c", "user.name=Test", "-c", "user.email=test@example.com"];
-    let run = |args: &[&str]| {
-        let mut full = identity.to_vec();
-        full.extend_from_slice(args);
-        assert!(Command::new("git")
-            .args(&full)
-            .current_dir(temp.path())
-            .status()
-            .unwrap()
-            .success());
-    };
-    run(&["init", "-q"]);
-    std::fs::write(temp.path().join("file.txt"), "hello\n").unwrap();
-    run(&["add", "file.txt"]);
-    run(&["commit", "-q", "-m", "init"]);
-    temp
-}
-
-/// Env var name carrying the out-of-repo marker path into the acceptance
-/// command below. Unique to this test — nothing else in the crate reads or
-/// writes it.
-const CACHE_TEST_MARKER_ENV_VAR: &str = "LOOM_TEST_ACCEPTANCE_CACHE_MARKER";
-
-#[test]
-fn test_run_acceptance_caches_pass_and_skips_second_execution() {
-    let repo = init_git_repo();
-    let work_dir = TempDir::new().unwrap();
-    // The marker lives outside the repo so the acceptance directory's tree
-    // (and thus the cache key) stays identical across both runs.
-    let marker = work_dir.path().join("ran.marker");
-
-    // The marker's absolute path must never appear as a literal token in the
-    // command text: `cache::is_cacheable` runs `git check-ignore` on every
-    // path-like token found there, and a path outside `repo` makes that call
-    // fail ("outside repository", exit 128) — which conservatively refuses
-    // to cache the command at all. Routing the write through an env var
-    // avoids the problem: the command text then contains no `/`, so no
-    // token is path-like to begin with. `CommandConfinement::Inherit` makes
-    // sure the spawned shell actually sees that var — the default confined
-    // child clears the environment down to a fixed allowlist that this
-    // test-only variable is not on.
-    // SAFETY: this test is the only reader/writer of this variable name.
-    unsafe { std::env::set_var(CACHE_TEST_MARKER_ENV_VAR, &marker) };
-
-    let mut stage = Stage::new("test".to_string(), None);
-    stage.sandbox.command_confinement = Some(CommandConfinement::Inherit);
-    stage.add_acceptance_criterion(AcceptanceCriterion::Simple(format!(
-        "echo x >> \"${CACHE_TEST_MARKER_ENV_VAR}\""
-    )));
-
-    // Pin the policy instead of reading it from the environment:
-    // `cache_tests::cache_policy_bypass_from_env` sets
-    // `LOOM_ACCEPTANCE_CACHE=0` process-wide for its duration, and this test
-    // is not `#[serial]`, so `CriteriaConfig::default()` can observe that
-    // value when the two overlap and the second run then never hits the cache.
-    let config = CriteriaConfig::default()
-        .with_cache_dir(work_dir.path())
-        .with_cache_policy(CachePolicy::Use);
-
-    let first = run_acceptance_with_config(&stage, Some(repo.path()), &config).unwrap();
-    assert!(first.all_passed());
-    assert!(!first.results()[0].cached);
-    assert_eq!(std::fs::read_to_string(&marker).unwrap().lines().count(), 1);
-
-    let second = run_acceptance_with_config(&stage, Some(repo.path()), &config).unwrap();
-    assert!(second.all_passed());
-    assert!(second.results()[0].cached);
-    // Marker unchanged — the command did not run again.
-    assert_eq!(std::fs::read_to_string(&marker).unwrap().lines().count(), 1);
-
-    // SAFETY: restoring this test's own variable; nothing else reads it.
-    unsafe { std::env::remove_var(CACHE_TEST_MARKER_ENV_VAR) };
-}
-
-#[test]
-fn test_run_acceptance_bypass_policy_never_caches() {
-    let repo = init_git_repo();
-    let work_dir = TempDir::new().unwrap();
-    let marker = work_dir.path().join("ran.marker");
-
-    let mut stage = Stage::new("test".to_string(), None);
-    stage.add_acceptance_criterion(AcceptanceCriterion::Simple(format!(
-        "echo x >> {}",
+fn write_probe(script: &Path, marker: &Path, body: &str) {
+    let content = format!(
+        "#!/bin/sh\nprintf 'run\\n' >> '{}'\n{body}\n",
         marker.display()
-    )));
+    );
+    std::fs::write(script, content).unwrap();
+}
 
+fn git(args: &[&str], dir: &Path) {
+    let mut full = TEST_IDENTITY.to_vec();
+    full.extend_from_slice(args);
+    let status = Command::new("git")
+        .args(&full)
+        .current_dir(dir)
+        .status()
+        .unwrap();
+    assert!(status.success(), "git {args:?} failed in {}", dir.display());
+}
+
+fn simple_stage(command: &str) -> Stage {
+    let mut stage = Stage::new("cache-test".to_string(), None);
+    stage.add_acceptance_criterion(AcceptanceCriterion::Simple(command.to_string()));
+    stage
+}
+
+fn extended_stage(
+    command: &str,
+    contains: &[&str],
+    not_contains: &[&str],
+    stderr_empty: bool,
+    exit_code: i32,
+) -> Stage {
+    let mut stage = Stage::new("cache-test".to_string(), None);
+    stage.add_acceptance_criterion(AcceptanceCriterion::Extended(TruthCheck {
+        command: command.to_string(),
+        stdout_contains: contains.iter().map(|value| (*value).to_string()).collect(),
+        stdout_not_contains: not_contains
+            .iter()
+            .map(|value| (*value).to_string())
+            .collect(),
+        stderr_empty: stderr_empty.then_some(true),
+        exit_code: Some(exit_code),
+        description: None,
+    }));
+    stage
+}
+
+fn run(fixture: &Fixture, stage: &Stage, config: &CriteriaConfig) -> AcceptanceResult {
+    run_acceptance_with_config(stage, Some(fixture.repo.path()), config).unwrap()
+}
+
+#[test]
+fn empty_and_mixed_uncached_stages_keep_existing_verdicts() {
+    let empty = Stage::new("empty".to_string(), None);
+    assert!(run_acceptance(&empty, None).unwrap().all_passed());
+
+    let mut mixed = Stage::new("mixed".to_string(), None);
+    let (pass, fail) = if cfg!(target_family = "unix") {
+        ("true", "false")
+    } else {
+        ("exit /b 0", "exit /b 1")
+    };
+    mixed.add_acceptance_criterion(AcceptanceCriterion::Simple(pass.to_string()));
+    mixed.add_acceptance_criterion(AcceptanceCriterion::Simple(fail.to_string()));
+    let result = run_acceptance(&mixed, None).unwrap();
+    assert!(!result.all_passed());
+    assert_eq!((result.passed_count(), result.failed_count()), (1, 1));
+}
+
+#[test]
+#[serial]
+fn repeated_identical_successful_contract_executes_once() {
+    let fixture = Fixture::new("printf 'constant output'");
+    let mut stage = extended_stage("sh scripts/probe.sh", &["constant output"], &[], false, 0);
+    stage.sandbox.command_confinement = Some(CommandConfinement::Confined);
+    let config = fixture.config(Duration::from_secs(2));
+
+    let first = run(&fixture, &stage, &config);
+    let second = run(&fixture, &stage, &config);
+    let third = run(&fixture, &stage, &config);
+
+    assert!(first.all_passed() && second.all_passed() && third.all_passed());
+    assert_eq!(
+        (
+            first.results()[0].cached,
+            second.results()[0].cached,
+            third.results()[0].cached,
+            fixture.executions(),
+        ),
+        (false, true, true, 1)
+    );
+    assert!(second.results()[0].stdout.contains("constant output"));
+}
+
+#[test]
+#[serial]
+fn successful_contract_source_mutation_misses_and_executes() {
+    let fixture = Fixture::new("printf 'constant output'");
+    let mut stage = extended_stage("sh scripts/probe.sh", &["constant output"], &[], false, 0);
+    stage.sandbox.command_confinement = Some(CommandConfinement::Confined);
+    let config = fixture.config(Duration::from_secs(2));
+
+    let first = run(&fixture, &stage, &config);
+    let hit = run(&fixture, &stage, &config);
+    fixture.mutate_script();
+    let changed = run(&fixture, &stage, &config);
+
+    assert!(first.all_passed() && hit.all_passed() && changed.all_passed());
+    assert!(!first.results()[0].cached && hit.results()[0].cached);
+    assert!(!changed.results()[0].cached);
+    assert_eq!(fixture.executions(), 2);
+}
+
+#[test]
+#[serial]
+fn forbidden_output_failure_executes_and_fails_twice() {
+    let fixture = Fixture::new(":");
+    let mut stage = extended_stage("printf forbidden", &[], &["forbidden"], false, 0);
+    stage.setup.push("sh scripts/probe.sh".to_string());
+    let config = fixture.config(Duration::from_secs(2));
+
+    let first = run(&fixture, &stage, &config);
+    let second = run(&fixture, &stage, &config);
+
+    assert!(!first.all_passed() && !second.all_passed());
+    assert!(!first.results()[0].cached && !second.results()[0].cached);
+    assert!(first.results()[0].stdout.contains("forbidden"));
+    assert!(second.failures()[0].contains("forbidden pattern"));
+    assert_eq!(fixture.executions(), 2);
+}
+
+#[test]
+#[serial]
+fn nonempty_stderr_failure_is_never_cached() {
+    let fixture = Fixture::new("printf 'diagnostic' >&2");
+    let stage = extended_stage("sh scripts/probe.sh", &[], &[], true, 0);
+    let config = fixture.config(Duration::from_secs(2));
+
+    let first = run(&fixture, &stage, &config);
+    let second = run(&fixture, &stage, &config);
+
+    assert!(!first.all_passed() && !second.all_passed());
+    assert!(second.failures()[0].contains("stderr was not empty"));
+    assert_eq!(fixture.executions(), 2);
+}
+
+#[test]
+#[serial]
+fn expected_nonzero_pass_hits_and_preserves_exit_then_mutation_misses() {
+    let fixture = Fixture::new("exit 7");
+    let stage = extended_stage("sh scripts/probe.sh", &[], &[], false, 7);
+    let config = fixture.config(Duration::from_secs(2));
+
+    let first = run(&fixture, &stage, &config);
+    let second = run(&fixture, &stage, &config);
+    fixture.mutate_script();
+    let third = run(&fixture, &stage, &config);
+
+    assert!(first.all_passed() && second.all_passed() && third.all_passed());
+    assert_eq!(second.results()[0].exit_code, Some(7));
+    assert!(second.results()[0].cached && !third.results()[0].cached);
+    assert_eq!(fixture.executions(), 2);
+}
+
+#[test]
+#[serial]
+fn changed_pattern_and_simple_to_extended_contracts_miss() {
+    let fixture = Fixture::new("printf 'alpha beta'");
+    let alpha = extended_stage("sh scripts/probe.sh", &["alpha"], &[], false, 0);
+    let beta = extended_stage("sh scripts/probe.sh", &["beta"], &[], false, 0);
+    let simple = simple_stage("sh scripts/probe.sh");
+    let config = fixture.config(Duration::from_secs(2));
+
+    let first = run(&fixture, &simple, &config);
+    let second = run(&fixture, &alpha, &config);
+    let third = run(&fixture, &beta, &config);
+
+    assert!(first.all_passed() && second.all_passed() && third.all_passed());
+    assert!(first.results().iter().all(|result| !result.cached));
+    assert!(second.results().iter().all(|result| !result.cached));
+    assert!(third.results().iter().all(|result| !result.cached));
+    assert_eq!(fixture.executions(), 3);
+}
+
+#[test]
+#[serial]
+fn identical_simple_contract_hits_but_timeout_mutation_misses() {
+    let fixture = Fixture::new(":");
+    let stage = simple_stage("sh scripts/probe.sh");
+    let two_seconds = fixture.config(Duration::from_secs(2));
+    let three_seconds = fixture.config(Duration::from_secs(3));
+
+    let first = run(&fixture, &stage, &two_seconds);
+    let second = run(&fixture, &stage, &two_seconds);
+    let third = run(&fixture, &stage, &three_seconds);
+
+    assert!(first.all_passed() && second.all_passed() && third.all_passed());
+    assert_eq!(
+        (
+            first.results()[0].cached,
+            second.results()[0].cached,
+            third.results()[0].cached,
+            fixture.executions(),
+        ),
+        (false, true, false, 2)
+    );
+    assert_eq!(second.total_duration(), second.results()[0].duration);
+}
+
+#[test]
+#[serial]
+fn confinement_change_misses_and_inherit_always_bypasses() {
+    let fixture = Fixture::new(":");
+    let mut stage = simple_stage("sh scripts/probe.sh");
+    let config = fixture.config(Duration::from_secs(2));
+    let first = run(&fixture, &stage, &config);
+    let hit = run(&fixture, &stage, &config);
+    stage.sandbox.command_confinement = Some(CommandConfinement::Inherit);
+    let inherited_one = run(&fixture, &stage, &config);
+    let inherited_two = run(&fixture, &stage, &config);
+
+    assert!(first.all_passed() && hit.all_passed());
+    assert!(inherited_one.all_passed() && inherited_two.all_passed());
+    assert!(hit.results()[0].cached);
+    assert!(!inherited_one.results()[0].cached && !inherited_two.results()[0].cached);
+    assert_eq!(fixture.executions(), 3);
+}
+
+struct EnvGuard {
+    key: &'static str,
+    original: Option<String>,
+}
+
+impl EnvGuard {
+    fn set(key: &'static str, value: &str) -> Self {
+        let original = std::env::var(key).ok();
+        std::env::set_var(key, value);
+        Self { key, original }
+    }
+
+    fn change(&self, value: &str) {
+        std::env::set_var(self.key, value);
+    }
+}
+
+impl Drop for EnvGuard {
+    fn drop(&mut self) {
+        match &self.original {
+            Some(value) => std::env::set_var(self.key, value),
+            None => std::env::remove_var(self.key),
+        }
+    }
+}
+
+#[test]
+#[serial]
+fn changed_allowlisted_environment_misses() {
+    let guard = EnvGuard::set("LANG", "C");
+    let fixture = Fixture::new(":");
+    let stage = simple_stage("sh scripts/probe.sh");
+    let config = fixture.config(Duration::from_secs(2));
+    let first = run(&fixture, &stage, &config);
+    guard.change("POSIX");
+    let second = run(&fixture, &stage, &config);
+
+    assert!(first.all_passed() && second.all_passed());
+    assert!(!first.results()[0].cached && !second.results()[0].cached);
+    assert_eq!(fixture.executions(), 2);
+}
+
+#[test]
+fn bypass_policy_executes_every_time() {
+    let fixture = Fixture::new(":");
+    let stage = simple_stage("sh scripts/probe.sh");
     let config = CriteriaConfig::default()
-        .with_cache_dir(work_dir.path())
+        .with_cache_dir(fixture.cache.path())
         .with_cache_policy(CachePolicy::Bypass);
 
-    run_acceptance_with_config(&stage, Some(repo.path()), &config).unwrap();
-    run_acceptance_with_config(&stage, Some(repo.path()), &config).unwrap();
-
-    assert_eq!(std::fs::read_to_string(&marker).unwrap().lines().count(), 2);
+    assert!(run(&fixture, &stage, &config).all_passed());
+    assert!(run(&fixture, &stage, &config).all_passed());
+    assert_eq!(fixture.executions(), 2);
 }

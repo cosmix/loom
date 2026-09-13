@@ -4,9 +4,9 @@
 //! commonly a build artifact like `./target/debug/loom` — can pass today
 //! and fail tomorrow with no change to the tracked tree: `cargo clean`, a
 //! fresh worktree, or a cache-miss rebuild can remove the artifact without
-//! moving `compute_cache_key`'s digest, since that digest is built entirely
-//! from the tracked tree and `git status`'s view of it, which by definition
-//! excludes ignored paths. [`references_ignored_path`] is the guard
+//! moving the input/context digest, since that digest is built from the
+//! tracked tree and `git status`'s view of it, which by definition excludes
+//! ignored paths. [`references_ignored_path`] is the guard
 //! `is_cacheable` applies before ever storing a pass for such a command.
 
 use std::io::Write;
@@ -28,11 +28,10 @@ const CHECK_IGNORE_TIMEOUT: Duration = Duration::from_secs(15);
 /// cannot rule out that the command depends on one.
 ///
 /// A command with no path-like tokens (e.g. `cargo test`) never invokes
-/// `git` at all, so it is never rejected here on account of running outside
-/// a repository — that case is instead caught downstream, when
-/// `compute_cache_key` itself returns `None`.
+/// `git` at all. Repository and digest capability are checked separately by
+/// the input-fingerprint path.
 pub(super) fn references_ignored_path(command: &str, acceptance_dir: &Path) -> bool {
-    let tokens = path_like_tokens(command);
+    let tokens = path_like_tokens(command, acceptance_dir);
     if tokens.is_empty() {
         return false;
     }
@@ -40,26 +39,32 @@ pub(super) fn references_ignored_path(command: &str, acceptance_dir: &Path) -> b
 }
 
 /// Extract every whitespace-separated token of `command` that looks like a
-/// filesystem path: contains a `/` once surrounding quotes and a leading
-/// `./` are stripped. Flags (`-x`), URLs (`http://`, `https://`), and
-/// anything naming a shell variable (`$`) are never candidates — the first
-/// two are not paths, and the third cannot be resolved without a shell.
-fn path_like_tokens(command: &str) -> Vec<String> {
+/// filesystem path. Existing bare names and names containing a dot are
+/// included so `cat ignored.txt` cannot evade the ignored-input guard.
+fn path_like_tokens(command: &str, acceptance_dir: &Path) -> Vec<String> {
     command
         .split_whitespace()
         .filter_map(|token| {
-            let token = strip_quotes(token);
+            let token = token.trim_matches(is_shell_punctuation);
+            let token = strip_quotes(token).trim_matches(is_shell_punctuation);
             if token.starts_with('-')
                 || token.starts_with("http://")
                 || token.starts_with("https://")
                 || token.contains('$')
+                || token.is_empty()
             {
                 return None;
             }
             let token = token.strip_prefix("./").unwrap_or(token);
-            token.contains('/').then(|| token.to_string())
+            let looks_like_path =
+                token.contains('/') || token.contains('.') || acceptance_dir.join(token).exists();
+            looks_like_path.then(|| token.to_string())
         })
         .collect()
+}
+
+fn is_shell_punctuation(value: char) -> bool {
+    matches!(value, ';' | '|' | '&' | '(' | ')' | '<' | '>')
 }
 
 /// Strip one layer of matching leading/trailing quotes (`'...'` or
@@ -105,8 +110,7 @@ fn check_ignore(candidates: &[String], acceptance_dir: &Path) -> Option<bool> {
     let wrote = child
         .stdin
         .take()
-        .map(|mut stdin| stdin.write_all(&payload).is_ok())
-        .unwrap_or(false);
+        .is_some_and(|mut stdin| stdin.write_all(&payload).is_ok());
 
     let status = match child.wait_timeout(CHECK_IGNORE_TIMEOUT) {
         Ok(Some(status)) => Some(status),
@@ -134,23 +138,26 @@ mod tests {
 
     #[test]
     fn skips_tokens_that_are_not_path_like() {
-        assert!(path_like_tokens("cargo test --lib").is_empty());
-        assert!(path_like_tokens("echo $H/.loom/x").is_empty());
-        assert!(path_like_tokens("curl https://example.com/a").is_empty());
+        let temp = tempfile::tempdir().unwrap();
+        assert!(path_like_tokens("cargo test --lib", temp.path()).is_empty());
+        assert!(path_like_tokens("echo $H/.loom/x", temp.path()).is_empty());
+        assert!(path_like_tokens("curl https://example.com/a", temp.path()).is_empty());
     }
 
     #[test]
     fn extracts_a_relative_path_token() {
+        let temp = tempfile::tempdir().unwrap();
         assert_eq!(
-            path_like_tokens("./target/debug/loom --version"),
+            path_like_tokens("./target/debug/loom --version", temp.path()),
             vec!["target/debug/loom".to_string()]
         );
     }
 
     #[test]
     fn extracts_a_quoted_path_token() {
+        let temp = tempfile::tempdir().unwrap();
         assert_eq!(
-            path_like_tokens(r#"cat "src/main.rs""#),
+            path_like_tokens(r#"cat "src/main.rs""#, temp.path()),
             vec!["src/main.rs".to_string()]
         );
     }
