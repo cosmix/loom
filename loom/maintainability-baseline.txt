@@ -19,7 +19,7 @@ file src/fs/permissions/hooks.rs 446
 file src/fs/permissions/settings.rs 460
 file src/fs/permissions/sync.rs 659
 file src/fs/safe_fs.rs 1019
-file src/fs/work_dir.rs 507
+file src/fs/work_dir.rs 433
 file src/fs/work_dir/tests.rs 878
 file src/git/worktree/base.rs 545
 file src/git/worktree/settings.rs 706

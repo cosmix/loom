@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 use crate::fs::knowledge::KnowledgeDir;
 
 mod config_sections;
+mod discovery;
 pub use config_sections::{
     insert_key, read_config, read_context_config, read_plan_sandbox, read_pressure_config,
     read_remote_control_config, read_terminal_config, remove_key, resolve_context_ceiling_tokens,
@@ -106,79 +107,6 @@ pub enum Layout {
     Legacy,
 }
 
-/// The workspace rooted at `dir`, if either layout has a `config.toml` there.
-///
-/// Keyed on the config FILE, never on directory existence: `~/.loom/config.toml`
-/// is a user-level file and `.loom/cache/` appears in any project that has run
-/// `loom map`, so a bare `.loom/` marks nothing. Nested wins over legacy when
-/// both are present.
-fn workspace_at(dir: &Path) -> Option<(PathBuf, Layout)> {
-    let nested = dir.join(LOOM_DIR).join(WORK_DIR);
-    if nested.join("config.toml").exists() {
-        return Some((nested, Layout::Nested));
-    }
-    let legacy = dir.join(LEGACY_WORK_DIR);
-    if legacy.join("config.toml").exists() {
-        return Some((legacy, Layout::Legacy));
-    }
-    None
-}
-
-/// The layout `base` names when it already IS a state root rather than a
-/// project root, in either spelling.
-///
-/// Hook entry points (see `commands/hook/reconcile_graph.rs`) hand `WorkDir::new`
-/// `LOOM_WORK_DIR`, which names the state directory ITSELF, not its parent — so
-/// a `base` that already names one must resolve to itself rather than get a
-/// second state root appended under it. Both spellings need recognising: after
-/// the move the pinned value ends `.loom/work`, whose final component alone is
-/// the unremarkable `work`, while a workspace created before the move still
-/// pins a single `.work`. Miss either and a stale pin materializes a phantom
-/// `<...>/.loom/work/.loom/work` (or `<...>/.work/.work`), whose `repo_root()`
-/// is the state directory itself. `initialize()` creates the root this returns,
-/// so the branch keeps that creation correct for a state-root-named hint too.
-fn base_names_state_root(base: &Path) -> Option<Layout> {
-    let name = base.file_name()?;
-    if name == std::ffi::OsStr::new(WORK_DIR)
-        && base.parent().and_then(Path::file_name) == Some(std::ffi::OsStr::new(LOOM_DIR))
-    {
-        return Some(Layout::Nested);
-    }
-    if name == std::ffi::OsStr::new(LEGACY_WORK_DIR) {
-        return Some(Layout::Legacy);
-    }
-    None
-}
-
-/// The nearest ancestor of `dir` (inclusive) holding a real `.git` entry, or
-/// `None` when there is none.
-///
-/// This is the bound on the upward workspace search: a `.git` marks the one
-/// tree whose `config.toml` can legitimately be this base's workspace. A
-/// `.git` FILE (a worktree's pointer to the main repo's gitdir) counts on
-/// existence; a `.git` DIRECTORY counts only when it holds `HEAD` — a stray
-/// empty directory merely named `.git` cannot masquerade as a repo boundary.
-fn nearest_git_root(dir: &Path) -> Option<&Path> {
-    let mut current = dir;
-    loop {
-        if crate::fs::git_marker::is_real_git_dir(&current.join(".git")) {
-            return Some(current);
-        }
-        match current.parent() {
-            Some(parent) if parent != current => current = parent,
-            _ => return None,
-        }
-    }
-}
-
-/// Apply the layout's hop count to a state-root path.
-fn repo_root_of(root: &Path, layout: Layout) -> Option<&Path> {
-    match layout {
-        Layout::Nested => root.parent()?.parent(),
-        Layout::Legacy => root.parent(),
-    }
-}
-
 pub struct WorkDir {
     root: PathBuf,
     layout: Layout,
@@ -193,50 +121,47 @@ impl WorkDir {
     /// exist — the fallback is always the nested layout, so `initialize()` on a
     /// fresh repo lands at `.loom/work`.
     pub fn new<P: AsRef<Path>>(base_path: P) -> Result<Self> {
-        let base = base_path.as_ref();
+        let temp_dir = std::env::temp_dir();
+        let temp_root = temp_dir.canonicalize().unwrap_or(temp_dir);
+        Ok(Self::resolve(base_path.as_ref(), Some(&temp_root)))
+    }
+
+    /// The resolution `new` wraps. `temp_root` is a parameter (rather than
+    /// read from `std::env::temp_dir()` here) so tests can supply their own
+    /// without mutating the process-wide `TMPDIR`.
+    fn resolve(base: &Path, temp_root: Option<&Path>) -> Self {
         // `base` itself first, uncanonicalized: callers passing "." (see
         // `commands/status.rs`) get a root relative to it, as they always have.
-        if let Some((root, layout)) = workspace_at(base) {
-            return Ok(Self { root, layout });
+        if let Some((root, layout)) = discovery::workspace_at(base) {
+            return Self { root, layout };
         }
 
-        // Search upward for a workspace (like git searches for .git), bounded
-        // at the enclosing repository: the walk covers `base` up to and
-        // including the nearest ancestor holding a `.git`, and NO base outside
-        // a repository walks at all. Without that second half the walk ran to
-        // `/`, inspecting `$HOME` and the OS temp root on the way, and silently
-        // adopted the first `config.toml` it met — so one `loom init` in
-        // `$HOME` would claim every later command issued from any non-git
-        // directory beneath it, for writes as well as reads.
+        // Search upward for a workspace, bounded at the enclosing repository
+        // and (when `base` sits under it) at the OS temp root too — a TMPDIR
+        // nested in a git checkout (e.g. a test suite's `<repo>/target/tmp`)
+        // sits below that checkout's `.git`, so the repo-root bound alone
+        // would walk into the checkout's own live workspace. See
+        // `discovery::walk_up` for the walk and both bounds in full.
         if let Ok(abs) = base.canonicalize() {
-            if let Some(repo_root) = nearest_git_root(&abs) {
-                let mut current = abs.as_path();
-                loop {
-                    if let Some((root, layout)) = workspace_at(current) {
-                        return Ok(Self { root, layout });
-                    }
-                    if current == repo_root {
-                        break;
-                    }
-                    match current.parent() {
-                        Some(parent) if parent != current => current = parent,
-                        _ => break,
-                    }
+            if let Some(repo_root) = discovery::nearest_git_root(&abs) {
+                let floor = temp_root.filter(|t| abs.starts_with(t));
+                if let Some((root, layout)) = discovery::walk_up(&abs, repo_root, floor) {
+                    return Self { root, layout };
                 }
             }
         }
 
-        if let Some(layout) = base_names_state_root(base) {
-            return Ok(Self {
+        if let Some(layout) = discovery::base_names_state_root(base) {
+            return Self {
                 root: base.to_path_buf(),
                 layout,
-            });
+            };
         }
 
-        Ok(Self {
+        Self {
             root: base.join(LOOM_DIR).join(WORK_DIR),
             layout: Layout::Nested,
-        })
+        }
     }
 
     /// The spelling of the resolved state root.
@@ -460,7 +385,7 @@ Do not manually edit these files unless you know what you're doing.
     /// goes through here (or [`Self::project_root`], its alias) so the hop
     /// count exists in exactly one place.
     pub fn repo_root(&self) -> Option<&Path> {
-        repo_root_of(&self.root, self.layout)
+        discovery::repo_root_of(&self.root, self.layout)
     }
 
     /// Get the project root.
@@ -492,7 +417,8 @@ Do not manually edit these files unless you know what you're doing.
 
                 // Canonicalize to get the absolute path
                 if let Ok(canonical) = resolved.canonicalize() {
-                    return repo_root_of(&canonical, self.layout).map(|p| p.to_path_buf());
+                    return discovery::repo_root_of(&canonical, self.layout)
+                        .map(|p| p.to_path_buf());
                 }
             }
             None
