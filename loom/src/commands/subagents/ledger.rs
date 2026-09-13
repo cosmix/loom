@@ -3,10 +3,14 @@
 //! this read-only command remains useful before hooks have created a ledger.
 
 use std::collections::{HashMap, HashSet};
-use std::fs;
+use std::fs::{self, OpenOptions};
+use std::io::Read;
+use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
 
 use serde_json::Value;
+
+const MAX_LEDGER_BYTES: u64 = 4 * 1024 * 1024;
 
 /// Return the agent type recorded for `agent_id`, if the hook-side ledgers
 /// can establish one without guessing. Stage ids are unknown to this command,
@@ -45,6 +49,8 @@ pub(crate) fn started_agent_type(
 /// interactive command's fallback separately.
 #[derive(Default)]
 pub(crate) struct StartedAgentTypeIndex {
+    /// Fully scoped lifecycle joins. Rows missing either scope never enter it.
+    exact: HashMap<(String, String, String, String), MetadataAgreement>,
     /// A scoped start is addressable only by Claude's parent transcript id
     /// and the agent id together. `Unknown` covers conflicting nonempty rows;
     /// empty types are ignored for agreement but still suppress legacy joins.
@@ -62,6 +68,7 @@ pub(crate) struct StartedAgentMetadata {
     pub(crate) agent_type: String,
     pub(crate) stage_id: Option<String>,
     pub(crate) loom_session_id: Option<String>,
+    pub(crate) started_at: Option<String>,
 }
 
 #[derive(Clone)]
@@ -87,8 +94,9 @@ impl StartedAgentTypeIndex {
 
         let mut index = Self::default();
         for stage_dir in stage_dirs {
+            let directory_stage = stage_dir.file_name().and_then(|value| value.to_str());
             for entry in json_lines(&stage_dir.join("starts.jsonl")) {
-                index.record(&entry);
+                index.record(&entry, directory_stage);
             }
         }
         index
@@ -118,7 +126,25 @@ impl StartedAgentTypeIndex {
         self.scoped.get(&key).and_then(MetadataAgreement::value)
     }
 
-    fn record(&mut self, entry: &Value) {
+    /// Resolve only a fully scoped start row. Legacy and obsolete
+    /// `session_id` rows are deliberately absent from this index.
+    pub(crate) fn resolve_exact(
+        &self,
+        stage_id: &str,
+        parent_session_id: &str,
+        loom_session_id: &str,
+        agent_id: &str,
+    ) -> Option<StartedAgentMetadata> {
+        let key = (
+            stage_id.to_owned(),
+            parent_session_id.to_owned(),
+            loom_session_id.to_owned(),
+            agent_id.to_owned(),
+        );
+        self.exact.get(&key).and_then(MetadataAgreement::value)
+    }
+
+    fn record(&mut self, entry: &Value, directory_stage: Option<&str>) {
         let Some(agent_id) = entry.get("agent_id").and_then(Value::as_str) else {
             return;
         };
@@ -128,13 +154,11 @@ impl StartedAgentTypeIndex {
             .filter(|value| !value.trim().is_empty());
 
         match entry.get("parent_session_id") {
-            Some(parent_session_id) if parent_session_id.as_str().is_some() => {
-                let Some(parent_session_id) = parent_session_id.as_str() else {
-                    return;
-                };
+            Some(Value::String(parent_session_id)) => {
                 self.scoped_agents.insert(agent_id.to_owned());
                 if let Some(agent_type) = agent_type {
                     let metadata = start_metadata(entry, agent_type);
+                    self.record_exact(parent_session_id, agent_id, directory_stage, &metadata);
                     record_metadata_agreement(
                         self.scoped
                             .entry((parent_session_id.to_owned(), agent_id.to_owned()))
@@ -166,6 +190,35 @@ impl StartedAgentTypeIndex {
             }
         }
     }
+
+    fn record_exact(
+        &mut self,
+        parent_session_id: &str,
+        agent_id: &str,
+        directory_stage: Option<&str>,
+        metadata: &StartedAgentMetadata,
+    ) {
+        let (Some(stage_id), Some(loom_session_id)) =
+            (&metadata.stage_id, &metadata.loom_session_id)
+        else {
+            return;
+        };
+        let key = (
+            stage_id.clone(),
+            parent_session_id.to_owned(),
+            loom_session_id.clone(),
+            agent_id.to_owned(),
+        );
+        let agreement = self
+            .exact
+            .entry(key)
+            .or_insert_with(|| MetadataAgreement::Known(metadata.clone()));
+        if directory_stage != Some(stage_id.as_str()) {
+            *agreement = MetadataAgreement::Unknown;
+            return;
+        }
+        record_metadata_agreement(agreement, metadata.clone());
+    }
 }
 
 fn start_metadata(entry: &Value, agent_type: &str) -> StartedAgentMetadata {
@@ -173,6 +226,7 @@ fn start_metadata(entry: &Value, agent_type: &str) -> StartedAgentMetadata {
         agent_type: agent_type.to_owned(),
         stage_id: nonempty_string(entry, "stage_id"),
         loom_session_id: nonempty_string(entry, "loom_session_id"),
+        started_at: nonempty_string(entry, "ts"),
     }
 }
 
@@ -197,6 +251,7 @@ fn merge_metadata(known: &mut StartedAgentMetadata, incoming: StartedAgentMetada
     if known.agent_type != incoming.agent_type
         || conflicting(&known.stage_id, &incoming.stage_id)
         || conflicting(&known.loom_session_id, &incoming.loom_session_id)
+        || conflicting(&known.started_at, &incoming.started_at)
     {
         return false;
     }
@@ -205,6 +260,9 @@ fn merge_metadata(known: &mut StartedAgentMetadata, incoming: StartedAgentMetada
     }
     if known.loom_session_id.is_none() {
         known.loom_session_id = incoming.loom_session_id;
+    }
+    if known.started_at.is_none() {
+        known.started_at = incoming.started_at;
     }
     true
 }
@@ -215,12 +273,21 @@ fn conflicting(left: &Option<String>, right: &Option<String>) -> bool {
 
 fn stage_directories(work_dir: Option<&Path>) -> Option<Vec<PathBuf>> {
     let work_dir = work_dir?;
-    let entries = fs::read_dir(work_dir.join("subagents")).ok()?;
+    let root = work_dir.join("subagents");
+    let root_metadata = fs::symlink_metadata(&root).ok()?;
+    if !root_metadata.file_type().is_dir() || root_metadata.file_type().is_symlink() {
+        return None;
+    }
+    let entries = fs::read_dir(root).ok()?;
     Some(
         entries
             .flatten()
             .map(|entry| entry.path())
-            .filter(|path| path.is_dir())
+            .filter(|path| {
+                fs::symlink_metadata(path).is_ok_and(|metadata| {
+                    metadata.file_type().is_dir() && !metadata.file_type().is_symlink()
+                })
+            })
             .collect(),
     )
 }
@@ -283,16 +350,40 @@ fn spawns_agent_type(stage_dirs: &[PathBuf]) -> Option<String> {
 /// valid ledger records before it. Missing or unreadable ledgers simply have
 /// no usable rows.
 fn json_lines(path: &Path) -> Vec<Value> {
-    fs::read_to_string(path)
-        .ok()
-        .map(|content| {
-            content
-                .lines()
-                .filter(|line| !line.trim().is_empty())
-                .filter_map(|line| serde_json::from_str(line).ok())
-                .collect()
-        })
-        .unwrap_or_default()
+    let metadata = match fs::symlink_metadata(path) {
+        Ok(metadata) if metadata.file_type().is_file() && !metadata.file_type().is_symlink() => {
+            metadata
+        }
+        _ => return Vec::new(),
+    };
+    if metadata.len() > MAX_LEDGER_BYTES {
+        return Vec::new();
+    }
+    let mut file = match OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NOFOLLOW)
+        .open(path)
+    {
+        Ok(file) => file,
+        Err(_) => return Vec::new(),
+    };
+    let mut content = String::new();
+    if file
+        .by_ref()
+        .take(MAX_LEDGER_BYTES + 1)
+        .read_to_string(&mut content)
+        .is_err()
+    {
+        return Vec::new();
+    }
+    if !content.ends_with('\n') {
+        content.truncate(content.rfind('\n').map_or(0, |index| index + 1));
+    }
+    content
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .filter_map(|line| serde_json::from_str(line).ok())
+        .collect()
 }
 
 #[cfg(test)]

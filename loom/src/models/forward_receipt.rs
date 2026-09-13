@@ -1,5 +1,5 @@
 use anyhow::{ensure, Context, Result};
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, SecondsFormat, Utc};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
@@ -37,6 +37,18 @@ pub fn is_safe_id(value: &str) -> bool {
             .iter()
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-'))
 }
+
+pub(crate) fn parse_canonical_utc_millis(value: &str) -> Result<DateTime<Utc>> {
+    let parsed = DateTime::parse_from_rfc3339(value)
+        .context("timestamp is not valid RFC3339")?
+        .with_timezone(&Utc);
+    ensure!(
+        parsed.to_rfc3339_opts(SecondsFormat::Millis, true) == value,
+        "timestamp is not canonical UTC millisecond Z form"
+    );
+    Ok(parsed)
+}
+
 pub fn receipts_path(work_dir: &Path, stage_id: &str) -> Result<PathBuf> {
     ensure!(is_safe_id(stage_id), "unsafe forward receipt stage id");
     Ok(work_dir

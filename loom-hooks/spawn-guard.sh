@@ -334,7 +334,7 @@ emit_result
 # --- 6. RECORD THE SPAWN -----------------------------------------------------
 #
 # Contract C1: `loom subagents` reads this file - key order and names below
-# must not change. Write discipline mirrors subagent-stop.sh:125-186 exactly:
+# must not change. Write discipline mirrors loom_lifecycle_append in _lifecycle.sh:
 # plain mkdir/redirection (never a Rust/loom CLI path - the state directory
 # is a SYMLINK inside a worktree and loom's safe-write opens roots
 # O_NOFOLLOW), a symlinked target is refused, and every step is best-effort

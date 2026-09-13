@@ -5,8 +5,6 @@ use crate::plan::schema::PermissionMode;
 use std::path::PathBuf;
 use tempfile::TempDir;
 
-/// Test helper: build a HooksConfig with sensible defaults (AcceptEdits)
-/// so existing assertions hold.
 fn test_config(hooks: PathBuf, work: PathBuf) -> HooksConfig {
     HooksConfig::new(hooks, work, PermissionMode::AcceptEdits)
 }
@@ -16,37 +14,40 @@ mod config_tests {
 
     #[test]
     fn test_hook_event_display() {
-        assert_eq!(HookEvent::SessionStart.to_string(), "SessionStart");
-        assert_eq!(HookEvent::PostToolUse.to_string(), "PostToolUse");
-        assert_eq!(HookEvent::PreCompact.to_string(), "PreCompact");
-        assert_eq!(HookEvent::SessionEnd.to_string(), "SessionEnd");
-        assert_eq!(HookEvent::Stop.to_string(), "Stop");
-        assert_eq!(HookEvent::SubagentStart.to_string(), "SubagentStart");
-        assert_eq!(HookEvent::SubagentStop.to_string(), "SubagentStop");
+        let names: Vec<_> = HookEvent::all().iter().map(ToString::to_string).collect();
+        assert_eq!(
+            names.join(","),
+            "SessionStart,PostToolUse,PreCompact,SessionEnd,Stop,SubagentStart,SubagentStop,TeammateIdle"
+        );
     }
 
     #[test]
     fn test_hook_event_script_name() {
-        assert_eq!(HookEvent::SessionStart.script_name(), "session-start.sh");
-        assert_eq!(HookEvent::PostToolUse.script_name(), "post-tool-use.sh");
-        assert_eq!(HookEvent::PreCompact.script_name(), "pre-compact.sh");
-        assert_eq!(HookEvent::SessionEnd.script_name(), "session-end.sh");
-        assert_eq!(HookEvent::Stop.script_name(), "learning-validator.sh");
-        assert_eq!(HookEvent::SubagentStart.script_name(), "subagent-start.sh");
-        assert_eq!(HookEvent::SubagentStop.script_name(), "subagent-stop.sh");
+        let scripts: Vec<_> = HookEvent::all()
+            .iter()
+            .map(HookEvent::script_name)
+            .collect();
+        assert_eq!(
+            scripts.join(","),
+            "session-start.sh,post-tool-use.sh,pre-compact.sh,session-end.sh,learning-validator.sh,subagent-start.sh,subagent-stop.sh,teammate-idle.sh"
+        );
     }
 
     #[test]
     fn test_hook_event_all() {
-        let all = HookEvent::all();
-        assert_eq!(all.len(), 7);
-        assert!(all.contains(&HookEvent::SessionStart));
-        assert!(all.contains(&HookEvent::PostToolUse));
-        assert!(all.contains(&HookEvent::PreCompact));
-        assert!(all.contains(&HookEvent::SessionEnd));
-        assert!(all.contains(&HookEvent::Stop));
-        assert!(all.contains(&HookEvent::SubagentStart));
-        assert!(all.contains(&HookEvent::SubagentStop));
+        assert_eq!(
+            HookEvent::all(),
+            &[
+                HookEvent::SessionStart,
+                HookEvent::PostToolUse,
+                HookEvent::PreCompact,
+                HookEvent::SessionEnd,
+                HookEvent::Stop,
+                HookEvent::SubagentStart,
+                HookEvent::SubagentStop,
+                HookEvent::TeammateIdle,
+            ]
+        );
     }
 
     #[test]
@@ -79,8 +80,6 @@ mod config_tests {
     fn test_hooks_config_build_command() {
         let config = super::test_config(PathBuf::from("/hooks"), PathBuf::from("/work"));
 
-        // build_command returns just the script path; hooks read session
-        // identity from the process env exported by the wrapper script
         let cmd = config.build_command(HookEvent::SessionStart);
         assert_eq!(cmd, "/hooks/session-start.sh");
 
@@ -93,9 +92,6 @@ mod config_tests {
         let config = super::test_config(PathBuf::from("/hooks"), PathBuf::from("/work"));
 
         let hooks = config.to_settings_hooks();
-        // One entry per HookEvent variant (SessionStart, PostToolUse,
-        // PreCompact, SessionEnd, Stop, SubagentStart, SubagentStop) - every
-        // variant is a session hook and none are excluded.
         assert_eq!(hooks.len(), HookEvent::all().len());
 
         for &event in HookEvent::all() {
@@ -206,8 +202,6 @@ mod generator_tests {
 
     #[test]
     fn test_generate_hooks_settings_new() {
-        // LOOM_WORK_DIR must name a directory that actually exists, or
-        // scrub_stale_work_dir_env removes it as a dead pin (config/sync.rs).
         let temp_dir = TempDir::new().unwrap();
         let work_dir = temp_dir.path().join("work");
         std::fs::create_dir_all(&work_dir).unwrap();
@@ -215,14 +209,10 @@ mod generator_tests {
 
         let settings = generate_hooks_settings(&config, None).unwrap();
 
-        // Check trust dialog
         assert_eq!(settings["hasTrustDialogAccepted"], json!(true));
 
-        // The default test config uses AcceptEdits, which maps to "acceptEdits"
-        // in Claude's wire format via PermissionMode::as_settings_value.
         assert_eq!(settings["permissions"]["defaultMode"], json!("acceptEdits"));
 
-        // Check hooks is a record (object) not an array
         assert!(settings["hooks"].is_object());
         assert!(settings["hooks"]["SessionStart"].is_array());
         assert!(settings["hooks"]["PostToolUse"].is_array());
@@ -231,9 +221,8 @@ mod generator_tests {
         assert!(settings["hooks"]["Stop"].is_array());
         assert!(settings["hooks"]["SubagentStart"].is_array());
         assert!(settings["hooks"]["SubagentStop"].is_array());
+        assert!(settings["hooks"]["TeammateIdle"].is_array());
 
-        // Check environment variables: only the stable LOOM_WORK_DIR is
-        // persisted; per-session identity comes from the wrapper script env.
         assert_eq!(
             settings["env"]["LOOM_WORK_DIR"],
             json!(work_dir.display().to_string())
@@ -302,10 +291,8 @@ mod generator_tests {
 
         let settings = generate_hooks_settings(&config, Some(&existing)).unwrap();
 
-        // Check custom setting preserved
         assert_eq!(settings["someCustomSetting"], json!(true));
 
-        // Check permissions merged
         assert_eq!(settings["permissions"]["defaultMode"], json!("acceptEdits"));
         assert_eq!(
             settings["permissions"]["allowedTools"],
@@ -318,23 +305,18 @@ mod generator_tests {
         let temp_dir = TempDir::new().unwrap();
         let worktree_path = temp_dir.path();
 
-        // LOOM_WORK_DIR must name a directory that actually exists, or
-        // scrub_stale_work_dir_env removes it as a dead pin (config/sync.rs).
         let work_dir = temp_dir.path().join("work");
         std::fs::create_dir_all(&work_dir).unwrap();
         let config = super::test_config(PathBuf::from("/hooks"), work_dir.clone());
 
         setup_hooks_for_worktree(worktree_path, &config).unwrap();
 
-        // Check .claude directory created
         let claude_dir = worktree_path.join(".claude");
         assert!(claude_dir.exists());
 
-        // Check settings.local.json created (hooks go in local settings, not shared settings)
         let settings_path = claude_dir.join("settings.local.json");
         assert!(settings_path.exists());
 
-        // Parse and validate settings
         let content = std::fs::read_to_string(&settings_path).unwrap();
         let settings: serde_json::Value = serde_json::from_str(&content).unwrap();
 
@@ -368,7 +350,6 @@ mod generator_tests {
     fn test_generate_hooks_merges_with_global_hooks() {
         let config = super::test_config(PathBuf::from("/hooks"), PathBuf::from("/work"));
 
-        // Existing settings with global hooks
         let existing = json!({
             "hooks": {
                 "PreToolUse": [
@@ -394,7 +375,6 @@ mod generator_tests {
 
         let settings = generate_hooks_settings(&config, Some(&existing)).unwrap();
 
-        // Check that global hooks are preserved in PreToolUse
         let pre_tool_hooks = settings["hooks"]["PreToolUse"].as_array().unwrap();
         assert!(
             pre_tool_hooks.iter().any(|h| {
@@ -404,7 +384,6 @@ mod generator_tests {
             "Global ask-user-pre hook should be preserved"
         );
 
-        // Check that session hooks are added (SessionStart uses PostToolUse, not PreToolUse)
         let session_start_hooks = settings["hooks"]["SessionStart"].as_array().unwrap();
         assert!(
             session_start_hooks.iter().any(|h| {
@@ -416,7 +395,6 @@ mod generator_tests {
             "Session start hook should be added"
         );
 
-        // Check Stop event has both global and session hooks
         let stop_hooks = settings["hooks"]["Stop"].as_array().unwrap();
         assert!(
             stop_hooks
@@ -434,7 +412,6 @@ mod generator_tests {
             "Session stop hook should be added"
         );
 
-        // Verify we have both hooks on Stop event
         assert!(
             stop_hooks.len() >= 2,
             "Stop event should have at least 2 hooks (commit-guard + stop hook)"
@@ -488,13 +465,10 @@ mod generator_tests {
     fn test_generate_hooks_no_duplication() {
         let config = super::test_config(PathBuf::from("/hooks"), PathBuf::from("/work"));
 
-        // First generation
         let settings1 = generate_hooks_settings(&config, None).unwrap();
 
-        // Second generation with first as input (simulating re-run)
         let settings2 = generate_hooks_settings(&config, Some(&settings1)).unwrap();
 
-        // Hooks should not be duplicated
         let hooks1 = settings1["hooks"]["PostToolUse"].as_array().unwrap();
         let hooks2 = settings2["hooks"]["PostToolUse"].as_array().unwrap();
         assert_eq!(

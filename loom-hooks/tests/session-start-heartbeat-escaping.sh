@@ -10,8 +10,12 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 HOOK="$SCRIPT_DIR/../session-start.sh"
 
-TMP=$(mktemp -d "${TMPDIR:-/tmp}/loom-hooktest.XXXXXX")
-trap 'rm -rf "$TMP"' EXIT
+TMP=""
+TMP=$(mktemp -d "${TMPDIR:-/tmp}/session-start-heartbeat.XXXXXX") && [[ -n "$TMP" ]] || {
+	echo "FAIL: could not create scratch directory"
+	exit 1
+}
+trap '[[ -n "${TMP:-}" ]] && rm -rf -- "$TMP"' EXIT
 
 LOOM_WORK_DIR="$TMP/work"
 LOOM_STAGE_ID="test-stage"

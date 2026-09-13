@@ -8,10 +8,30 @@ use std::process::Command;
 use serde_json::Value;
 use tempfile::TempDir;
 
-use crate::fs::permissions::constants::{LOOM_HOOKS, LOOM_PERMISSIONS, LOOM_PERMISSIONS_WORKTREE};
+use crate::fs::permissions::constants::{
+    HOOK_CODEX_DIRECT, HOOK_CODEX_FORWARD_COMMON, HOOK_CODEX_FORWARD_RESULT, HOOK_LIFECYCLE,
+    HOOK_TEAMMATE_IDLE, LOOM_HOOKS, LOOM_PERMISSIONS, LOOM_PERMISSIONS_WORKTREE,
+};
 use crate::fs::permissions::hooks::loom_hooks_config;
 
 const INSTALL_SH: &str = include_str!("../../../../../install.sh");
+
+#[test]
+fn teammate_idle_hook_is_embedded() {
+    assert!(LOOM_HOOKS.contains(&("teammate-idle.sh", HOOK_TEAMMATE_IDLE)));
+}
+
+#[test]
+fn lifecycle_library_is_embedded() {
+    assert!(LOOM_HOOKS.contains(&("_lifecycle.sh", HOOK_LIFECYCLE)));
+    assert!(LOOM_HOOKS.contains(&("_codex_forward.sh", HOOK_CODEX_FORWARD_COMMON)));
+}
+
+#[test]
+fn codex_direct_assets_are_embedded() {
+    assert!(LOOM_HOOKS.contains(&("_codex-direct.py", HOOK_CODEX_DIRECT)));
+    assert!(LOOM_HOOKS.contains(&("codex-forward-result.sh", HOOK_CODEX_FORWARD_RESULT)));
+}
 
 #[test]
 fn test_loom_permissions_constant() {
@@ -77,8 +97,8 @@ fn loom_permission_constants_never_grant_a_write_rule() {
 ///  3. EITHER `fs/permissions/hooks/config.rs`'s `pre_tool_hooks()` (a global
 ///     PreToolUse hook) OR `loom/src/hooks/config.rs`'s `HookEvent` enum + `all()` (a
 ///     per-session hook) -- whichever kind this hook is. A sourced LIBRARY
-///     (`_common.sh`, `_read_discipline.sh`, `_read_ledger.sh`) is never invoked
-///     directly and needs no third site.
+///     (`_common.sh`, `_lifecycle.sh`, `_codex_forward.sh`, `_read_discipline.sh`,
+///     `_read_ledger.sh`) is never invoked directly and needs no third site.
 ///
 /// `loom_hooks_config_only_names_embedded_hooks` pins site 3's global half
 /// against sites 1-2; `hooks_tests.rs::test_hook_event_scripts_are_all_embedded`

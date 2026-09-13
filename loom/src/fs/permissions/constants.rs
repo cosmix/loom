@@ -3,6 +3,13 @@
 /// Common utilities shared across loom hooks (source guard, strip_embedded_content)
 pub const HOOK_COMMON: &str = include_str!("../../../../loom-hooks/_common.sh");
 
+/// Claude worker lifecycle evidence utilities shared by lifecycle hooks
+pub const HOOK_LIFECYCLE: &str = include_str!("../../../../loom-hooks/_lifecycle.sh");
+
+/// Codex forwarding command parser shared by the guard and result hooks
+pub const HOOK_CODEX_FORWARD_COMMON: &str =
+    include_str!("../../../../loom-hooks/_codex_forward.sh");
+
 /// Read-discipline utilities shared by read-guard and poll-guard hooks
 pub const HOOK_READ_DISCIPLINE: &str = include_str!("../../../../loom-hooks/_read_discipline.sh");
 
@@ -24,6 +31,10 @@ pub const HOOK_POST_TOOL_USE: &str = include_str!("../../../../loom-hooks/post-t
 pub const HOOK_LOOM_CONTROL_COMPLETE: &str =
     include_str!("../../../../loom-hooks/loom-control-complete.sh");
 
+/// Trusted PostToolUse producer for completed direct Codex forwards.
+pub const HOOK_CODEX_FORWARD_RESULT: &str =
+    include_str!("../../../../loom-hooks/codex-forward-result.sh");
+
 /// SessionStart hook - initializes heartbeat when session starts
 pub const HOOK_SESSION_START: &str = include_str!("../../../../loom-hooks/session-start.sh");
 
@@ -37,6 +48,10 @@ pub const HOOK_SESSION_END: &str = include_str!("../../../../loom-hooks/session-
 /// the parent session's heartbeat (the parent runs no tools of its own while
 /// blocked waiting on a subagent, so PostToolUse cannot refresh it there).
 pub const HOOK_SUBAGENT_STOP: &str = include_str!("../../../../loom-hooks/subagent-stop.sh");
+
+/// TeammateIdle hook - records nonterminal lifecycle evidence and refreshes
+/// the parent session's heartbeat without keeping the teammate working.
+pub const HOOK_TEAMMATE_IDLE: &str = include_str!("../../../../loom-hooks/teammate-idle.sh");
 
 /// SubagentStart hook - records a Task-tool subagent's spawn type in the ledger
 pub const HOOK_SUBAGENT_START: &str = include_str!("../../../../loom-hooks/subagent-start.sh");
@@ -106,6 +121,9 @@ pub const HOOK_CODEX_FORWARD_GUARD: &str =
 /// Trusted argv boundary used by codex forwarders.
 pub const HOOK_CODEX_FORWARD: &str = include_str!("../../../../loom-hooks/codex-forward.sh");
 
+/// Bounded process supervisor used by the direct macOS forwarding lane.
+pub const HOOK_CODEX_DIRECT: &str = include_str!("../../../../loom-hooks/_codex-direct.py");
+
 /// StageTerminalGuard hook - blocks Write/Edit/Task/Agent once a stage's own
 /// status file says it is already completed/verified. Hard enforcement that
 /// `loom stage complete` is the session's LAST act (commit-guard.sh is only
@@ -144,15 +162,19 @@ pub const HOOK_CODEX_APPLY_PATCH: &str =
 pub const LOOM_HOOKS: &[(&str, &str)] = &[
     // Common utilities (sourced by other hooks)
     ("_common.sh", HOOK_COMMON),
+    ("_lifecycle.sh", HOOK_LIFECYCLE),
+    ("_codex_forward.sh", HOOK_CODEX_FORWARD_COMMON),
     ("_read_discipline.sh", HOOK_READ_DISCIPLINE),
     ("_read_ledger.sh", HOOK_READ_LEDGER),
     // Session lifecycle hooks
     ("post-tool-use.sh", HOOK_POST_TOOL_USE),
     ("loom-control-complete.sh", HOOK_LOOM_CONTROL_COMPLETE),
+    ("codex-forward-result.sh", HOOK_CODEX_FORWARD_RESULT),
     ("session-start.sh", HOOK_SESSION_START),
     ("pre-compact.sh", HOOK_PRE_COMPACT),
     ("session-end.sh", HOOK_SESSION_END),
     ("subagent-stop.sh", HOOK_SUBAGENT_STOP),
+    ("teammate-idle.sh", HOOK_TEAMMATE_IDLE),
     ("subagent-start.sh", HOOK_SUBAGENT_START),
     ("learning-validator.sh", HOOK_LEARNING_VALIDATOR),
     // Global hooks (commit enforcement, user question handling, tool guidance)
@@ -170,6 +192,7 @@ pub const LOOM_HOOKS: &[(&str, &str)] = &[
     ("no-preexisting-failures.sh", HOOK_NO_PREEXISTING_FAILURES),
     ("codex-forward-guard.sh", HOOK_CODEX_FORWARD_GUARD),
     ("codex-forward.sh", HOOK_CODEX_FORWARD),
+    ("_codex-direct.py", HOOK_CODEX_DIRECT),
     ("stage-terminal-guard.sh", HOOK_STAGE_TERMINAL_GUARD),
     ("spawn-guard.sh", HOOK_SPAWN_GUARD),
     ("read-guard.sh", HOOK_READ_GUARD),
