@@ -1,5 +1,6 @@
 pub mod constants;
 pub mod dispute;
+pub mod execution_receipt;
 pub mod failure;
 pub mod keys;
 pub mod session;
