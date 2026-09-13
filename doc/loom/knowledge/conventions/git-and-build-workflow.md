@@ -130,3 +130,19 @@ and non-obvious. Convention in this repo's hook scripts: have the function retur
 status and let the CALL SITE do `if ! X=$(normalize_lexical ...); then block_target; exit 2; fi` — an
 `if`-tested command is explicitly exempt from `set -e`, so this is both correct and matches the rest
 of the file's style.
+
+## Shared-Checkout Git Hygiene (2026-09-13)
+
+- **Never `git stash` in a tree that carries other work.** In the shared main checkout a
+  stash, `checkout stash@{0} -- <files>`, `stash drop` sequence rewrote files other agents were
+  editing and destroyed their stash entries; the user's correction was "stop dropping stashes. stop
+  disrupting other agents' work." Another time the pop aborted on a busy `README.md` and the tree
+  had to be restored by hand. Touch only the paths you own (`git add -- <paths>` then
+  `git commit -- <paths>`), and compare against HEAD by piping `git show HEAD:<file>` to the tool.
+- **zsh applies history modifiers to `$VAR:x`.** `git show "$M:agents/file"` expanded `$M:a` as
+  the absolute-path modifier, git failed, and the redirect had already truncated the target. Brace
+  variables before a colon (`${M}:path`), write `git show` output to a temp file and `test -s` it
+  before copying it over a tracked file, and chain dependent steps with `&&`: `set -e` does not stop
+  a Bash-tool script.
+- **No AI attribution trailers in this repo**, whatever a harness reminder asks. CLAUDE.md Rule 9
+  forbids them and `commit-filter.sh` blocks the whole Bash call; see [Commits](commits.md).

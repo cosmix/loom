@@ -1,6 +1,6 @@
 # Web Dashboard
 
-> `loom status --web [PORT]` — an HTTP/WebSocket server on `127.0.0.1` that serves an embedded React SPA and streams the same `StatusData` payload the live TUI renders. Read-only APART FROM `/api/config`, the settings surface (see "Config read/write surface" below); every other route is still GET/HEAD only. Module: `loom/src/commands/status/web/`; frontend: `web/`.
+> loom status --web: server, SPA, streaming
 
 ## Server
 

@@ -33,6 +33,18 @@ Live trials consume subscriptions and require explicit scheduling and user autho
 7. Capture quota interval endpoints for every relevant provider/window with observation times, reset identity and time, precision, continuity, and an explicit unrelated-concurrent-use assessment.
 8. Repeat each stratum until the observed uncertainty is characterized well enough to distinguish a reduction from quota precision. A fixed repetition count is not evidence by itself.
 
+### Collecting run evidence
+
+- **Token vectors.** Run `loom usage --provider all --since <start> --until <end> --json` over each run's window, narrowed with `--stage`/`--plan`, or with explicit `--claude-root`, `--codex-root` and `--forward-receipts-root` when the run lives outside the default project. Only `measured-canonical` rows are measurements. Carry `duplicate-exact`, `ambiguous-conflict`, `fallback-coverage`, `synthetic`, `unknown-usage` rows and every absent dimension into the artifact as missing, never as zero.
+- **Codex worker cost.** `--forward-receipts-root <project>/.loom/work` joins forwarder transcripts to Codex threads through forward receipts. A forward without a receipt stays unattributed.
+- **Quota intervals.** The ledger's `quota_history` section, when present, lists observations whose continuity is `initial`, `same-reset`, `reset` or `unknown`. An interval that is not `same-reset` from end to end cannot support a subscription reduction.
+- **Binary.** The `loom` that evaluates the artifact must contain the comparison command. Check that `loom usage --help` lists `--compare` before the trial starts.
+
+### Assumptions a canary must sample before claiming them
+
+- Read-receipt reuse assumes Claude Code writes a `Read` tool_use and its tool_result as adjacent transcript rows, and writes the result before PostToolUse hooks run. Neither is measured. Sample real transcripts with serial and parallel `Read` calls and confirm receipts form before attributing any repeat-read saving.
+- Stage ledgers written before 2026-09-13 (`.loom/work/subagents/<stage>/codex.jsonl`) contain fake forward records that hook tests appended; never use them as provenance.
+
 Run each retained artifact through the real command:
 
 ```text

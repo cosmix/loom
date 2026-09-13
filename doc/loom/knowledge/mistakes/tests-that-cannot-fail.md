@@ -221,3 +221,44 @@ string that does not work. Four of the five passed because the test constructed 
 input, so test and production path never met.
 
 The deletion question catches all of them: **delete the production line — does it go red?**
+
+## Fixtures That Do Not Mirror Production Input Pass Their Negative Cases (2026-09-13)
+
+**What happened:** five instances in PLAN-token-optimization-2026-09-13, each invisible until a
+positive case ran against the real contract:
+
+- `safe_shell_syntax` (`loom/src/commands/hook/forward_receipt.rs`) had no `(State::Plain, _)`
+  arm, so its catch-all rejected every forwarding command at the first byte, and
+  `loom hook forward-receipt` persisted nothing for any forward, silently.
+- Subagents forward tests built transcripts at a flat temp path, without row timestamps and with a
+  4-word argv. The real reader needs `<parent>/subagents/agent-<id>.jsonl`, a timestamp and the
+  exact 8-word argv; 9 tests failed on first contact with it.
+- Read-receipt integration fixtures lacked `cwd`, so every mode no-oped and only the negative
+  tests passed. The first fix (aligning TMPDIR) tested its hypothesis against the no-stage path
+  only and changed nothing.
+- The worker-table parser required a Markdown divider row; every real plan table is divider-less
+  and YAML-indented, so the diagnostic would never have fired.
+- A doctrine test asserted the substring `status --all` as "the recovery path", while the new
+  doctrine held it only inside a prohibition. It now asserts `loom subagents wait --receipt`
+  (`loom/src/orchestrator/signals/tests_cache.rs:394`).
+
+Test edits lost coverage too: moving the IV prefix test dropped 11 assertions, and a fix told to
+"add an integration fixture" replaced the mandated one.
+
+**Why:** units settled before anyone ran the consumer's tests against the producer's real
+contract; fixtures came from the author's idea of the input, not from production samples; fix
+briefs never said existing assertions stay.
+
+**Prevention:**
+
+- Build fixtures from the production shape: the real path layout, row timestamps, the exact
+  doctrine argv, the common hook fields (`session_id`, `transcript_path`, `cwd`,
+  `hook_event_name`), the live plan's table shape.
+- Pair every negative test with a positive control in the same session and environment.
+- A hand-written tokenizer state machine needs a fallthrough arm for every state that accepts
+  arbitrary characters, and a test with the production argv.
+- Run each new module's tests the moment its unit settles, and each consumer's tests whenever a
+  producer's contract changes.
+- A doctrine test pins the instruction around a keyword, never the bare keyword.
+- Fix briefs say "keep every existing assertion; add, never replace". When a test moves, diff the
+  old and new assertion sets needle by needle.

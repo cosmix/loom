@@ -86,3 +86,20 @@ A new file under a worktree's `.loom/` must be added to `git/worktree/settings.r
 that already name the memory spool: `is_worktree_scaffold_path`, so `git status` does not read it as
 *agent work*, and `WORKTREE_EXCLUDE_PATTERNS`, so it reaches `info/exclude` and cannot be committed.
 Deliberately not a blanket `.loom/` — a project may legitimately track `.loom/config.toml`.
+
+## The Completion Bridge Needs `loom stage complete` Output Verbatim (2026-09-13)
+
+`loom-hooks/loom-control-complete.sh` holds any Bash call that could be a completion attempt to one
+exact pinned string, `<loom-bin> stage complete <stage-id>` (`PINNED_COMMAND`, line 169). Its
+pre-filter is deliberately loose (argv[0] merely containing `loom` or a `$`, the verb merely
+containing `complete`), so a command whose text only resembles a completion can be rejected; one
+distill session tripped it with an inline heredoc body, and feeding the text from a file avoided it.
+After the pinned command runs, the bridge looks for an output line exactly equal to
+`LOOM_CONTROL_VERIFICATION_PASSED stage=<id> session=<id>` (line 191; a persisted-output file is
+recovered too).
+
+A proof-and-regression orchestrator redirected the completion output to a file and printed it back
+through `rg -n`; the marker arrived as `17:LOOM_CONTROL_...`, the bridge ignored it, and the stage
+stayed `Executing` (status: orphaned). Run the pinned command bare: no redirect, no pipe, no filter,
+even under Rule 14's output-trimming habit. Then confirm with `loom status` that the stage left
+`Executing`.

@@ -82,7 +82,7 @@ Repeatable failure modes: plan-authoring notes frozen as architecture facts, `[U
 
 ## Codex Lane Rogue Wrapper (2026-08-07)
 
-A `codex:codex-rescue` spawn received a codex prompt and implemented all 26 edits itself on sonnet instead of forwarding — plugin agents' `tools:` field is ignored by design. Now pinned by `loom-hooks/codex-forward-guard.sh` + the `loom-codex-forwarder` agent + the evidence-trailer rule.
+A `codex:codex-rescue` spawn received a codex prompt and implemented all 26 edits itself on sonnet instead of forwarding — plugin agents' `tools:` field is ignored by design. Now pinned by `loom-hooks/codex-forward-guard.sh` + the `loom-codex-forwarder` agent + the evidence-trailer rule. Systemic since (2026-09-13, four stages): a forward that outruns the 600 s Bash call is still running, and its forwarder must make no further call.
 
 → [Codex Lane Rogue Wrapper](mistakes/codex-lane-rogue-wrapper.md)
 
@@ -94,7 +94,7 @@ A `codex:codex-rescue` spawn received a codex prompt and implemented all 26 edit
 
 ## Tests That Cannot Fail (2026-08-08) [DETAILED]
 
-A test whose _name_ states a property is not evidence the property is pinned. Detection rule: for each test ask "if I delete the production line this covers, does it fail?" Every negative assertion needs a positive control asserted at the same moment. The repo's most recurrent defect class.
+A test whose _name_ states a property is not evidence the property is pinned. Detection rule: for each test ask "if I delete the production line this covers, does it fail?" Every negative assertion needs a positive control asserted at the same moment. The repo's most recurrent defect class; its 2026-09-13 form is fixtures that do not mirror production input.
 
 → [Tests That Cannot Fail](mistakes/tests-that-cannot-fail.md)
 

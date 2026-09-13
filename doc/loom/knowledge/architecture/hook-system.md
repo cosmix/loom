@@ -211,7 +211,12 @@ Codex registers `user-prompt-context.sh` as well, through
   strongest first; the `loom-skills` catalog loader is dropped whenever another
   skill qualifies; two or more catalogued matches get one combined
   `Skill(skill="loom-skills", args=...)` line. `--codex` switches the output to
-  native `SKILL.md` read paths.
+  native `SKILL.md` read paths: a high-confidence match (an exact skill name or a
+  multi-word token) says "read ... in full", any other match says "read ... if the
+  task touches <kind>" (`skill-trigger.sh:207-212`). Plain mode only suggests loads
+  under a neutral "skills matching this request" header and makes no mandatory
+  claim. The 4+ character prefix rule still counts toward ranking on both surfaces;
+  only the Codex read-in-full directive is gated (2026-09-13).
 - **`user-prompt-context.sh`** — a thin wrapper around `loom hook user-prompt`. It
   exits silently unless `LOOM_WORK_DIR` names a directory or a `.loom/work`,
   `.work`, `doc/loom/knowledge` or `.loom/cache/context-v1` directory exists walking
@@ -224,7 +229,13 @@ Codex registers `user-prompt-context.sh` as well, through
 model or network call): `user-prompt`, `pre-compact` (deletes only the compacting
 session's own delivery record), `reconcile-graph` (the detached, debounced
 source-graph self-heal), `context-ceilings` (the `<main>:<subagent>` pair
-`post-tool-use.sh` caches), and `project-types`.
+`post-tool-use.sh` caches), `project-types`, and three receipt/brief delegates added on
+2026-09-13: `read-receipt --prepare|--check|--complete` (`read-guard.sh` and
+`post-tool-use.sh`), `forward-receipt --transcript` (`post-tool-use.sh`, after a forwarding Bash
+call) and `worker-brief [--bind-agent]` (`spawn-guard.sh`, then `subagent-start.sh`). The shell
+runs each through `loom_run_bounded` (defined in `_read_ledger.sh`) with a 2-5 s bound, and every
+failure is a silent no-op. Phases and state files:
+[Token Accounting and Receipts](token-accounting-and-receipts.md).
 
 **`HookTarget`** (`commands/hook/target.rs`) is the one environment-to-scope
 resolution the `user-prompt`, `pre-compact` and `reconcile-graph` delegates share,

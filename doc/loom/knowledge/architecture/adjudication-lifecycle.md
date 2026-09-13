@@ -1,6 +1,6 @@
 # Adjudication Persistence and Stage Resumption
 
-> How a dispute becomes a durable verdict, how each verdict changes stage state, and exactly what a fresh successor receives.
+> Dispute to durable verdict, and each verdict's effect
 
 ## Durable Artifact Chain
 
