@@ -49,18 +49,19 @@ interface TerminalTheme {
 // renderer paints `theme.background` opaquely on its own canvas, so the CSS
 // and JS values must match exactly or the canvas and the well's padding
 // meet with a visible seam.
-const WELL = "#101216";
+const WELL = "#0a111f";
 const WELL_CONTROL = "#240f0f";
 
 /** The dark-well palette xterm needs as concrete colours. */
 export function terminalTheme(): TerminalTheme {
   // ANSI accents mirror dashboard tones: blue=executing, green=completed,
-  // red=blocked, yellow=warning, and cyan=queued.
+  // red=blocked, yellow=warning, and cyan=queued. The cursor and selection take
+  // the dashboard's yellow accent (the dark theme's --primary).
   return {
     background: WELL,
     foreground: "#d8dce3",
-    cursor: "#8fb4f0",
-    selectionBackground: "#8fb4f04d",
+    cursor: "#f4d660",
+    selectionBackground: "#f4d66040",
     black: WELL,
     red: "#e07a6f",
     green: "#7fc79a",

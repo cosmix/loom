@@ -24,7 +24,7 @@ export function Header({ onOpenLegend }: { onOpenLegend: () => void }) {
   return (
     <header className="border-b border-hairline bg-linear-to-b from-card to-background">
       <div className="mx-auto grid max-w-[1920px] grid-cols-[auto_1fr] gap-x-5 px-4 py-4 sm:px-6">
-        <Link to="/" className="row-span-2 self-start pt-1 text-foreground" aria-label="overview">
+        <Link to="/" className="row-span-2 self-start pt-1 text-(--logo)" aria-label="overview">
           <Logo className="h-10 w-auto sm:h-12" />
         </Link>
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2">

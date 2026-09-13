@@ -5,11 +5,11 @@ import { terminalTheme } from "./emulator";
 describe("terminal emulator", () => {
   it("provides the dark-well palette and dashboard tone mapping", () => {
     expect(terminalTheme()).toEqual({
-      background: "#101216",
+      background: "#0a111f",
       foreground: "#d8dce3",
-      cursor: "#8fb4f0",
-      selectionBackground: "#8fb4f04d",
-      black: "#101216",
+      cursor: "#f4d660",
+      selectionBackground: "#f4d66040",
+      black: "#0a111f",
       red: "#e07a6f",
       green: "#7fc79a",
       yellow: "#d9b96a",

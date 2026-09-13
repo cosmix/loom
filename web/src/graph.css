@@ -231,8 +231,8 @@
     color: var(--foreground);
   }
   .view-tab.is-active {
-    background: var(--card);
-    color: var(--foreground);
+    background: var(--highlight);
+    color: var(--highlight-foreground);
     box-shadow:
       0 1px 2px rgb(0 0 0 / 0.08),
       0 0 0 1px var(--hairline);

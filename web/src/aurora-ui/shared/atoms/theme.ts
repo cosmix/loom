@@ -6,18 +6,18 @@
 import { atomWithStorage } from "jotai/utils";
 
 export type ColorScheme = "light" | "dark";
-export type LightVariant = "default" | "gray" | "cool";
+export type LightVariant = "ledger" | "gray" | "cool";
 export type DarkVariant =
-  | "purple"
+  | "aubergine"
   | "green"
   | "gray"
   | "blue"
   | "slate"
   | "sand";
 
-export const ALL_LIGHT_VARIANTS: LightVariant[] = ["default", "gray", "cool"];
+export const ALL_LIGHT_VARIANTS: LightVariant[] = ["ledger", "gray", "cool"];
 export const ALL_DARK_VARIANTS: DarkVariant[] = [
-  "purple",
+  "aubergine",
   "green",
   "gray",
   "blue",
@@ -41,14 +41,14 @@ export const themeAtom = atomWithStorage<ColorScheme>(
 
 export const lightVariantAtom = atomWithStorage<LightVariant>(
   "loom:light-variant",
-  "default",
+  "ledger",
   undefined,
   { getOnInit: true },
 );
 
 export const darkVariantAtom = atomWithStorage<DarkVariant>(
   "loom:dark-variant",
-  "purple",
+  "aubergine",
   undefined,
   { getOnInit: true },
 );
