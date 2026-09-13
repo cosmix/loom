@@ -5,4 +5,5 @@
 //! tests stay inline as `#[cfg(test)] mod tests {}` inside the module.
 
 pub mod amendment;
+pub mod amendment_catch_up;
 pub mod amendment_wiring_tests;

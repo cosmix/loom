@@ -29,8 +29,8 @@
 //!
 //! - Snapshot written but audit row missing: snapshot is treated as orphaned;
 //!   removed on startup so the next amendment can claim the same id.
-//! - Audit row appended but plan file still old: re-apply the snapshot to
-//!   the plan and stage file (catch-up commit).
+//! - Audit row appended but plan file still old: re-apply just the amended
+//!   field to the plan and stage file (catch-up commit); other edits survive.
 //! - Plan + audit in sync but stage file stale: re-apply just the stage file
 //!   update.
 
@@ -45,6 +45,7 @@ use std::path::{Path, PathBuf};
 use crate::fs::safe_fs;
 use crate::fs::work_dir::WorkDir;
 use crate::models::stage::{WiringCheck, WiringTest};
+use crate::plan::amendment_catch_up;
 use crate::plan::amendment_fields::{
     apply_patch_to_runtime_stage, apply_patch_to_stage_def, current_field_len,
     persist_amended_stage, stage_field_matches, sync_stage_from_definition,
@@ -715,8 +716,7 @@ pub fn count_amendments_for_stage(work_dir: &Path, stage_id: &str) -> Result<u32
 ///
 /// 1. **Snapshot exists, audit row missing** → snapshot is orphaned (we
 ///    crashed between step 7 and step 8). Remove the snapshot.
-/// 2. **Audit row exists, plan file != latest snapshot** → catch-up commit:
-///    re-write the live plan and re-save the target stage from the snapshot.
+/// 2. **Audit row exists, live plan's amended field != snapshot's** → field-scoped catch-up (`amendment_catch_up`): only the audited `(stage_id, field)` is corrected; every other edit survives. An unparseable live plan or missing stage writes nothing (a `tracing::warn!` names why).
 /// 3. **Plan file == latest snapshot, but stage file YAML drifted** →
 ///    re-save the stage definition from the snapshot.
 ///
@@ -802,28 +802,28 @@ pub fn verify_plan_versions_consistency(plan_path: &Path, work_dir: &Path) -> Re
         None => return Ok(actions),
     };
 
-    // Case 2: live plan does not match latest snapshot → catch up.
+    // Case 2: field-scoped catch-up. Only the amended `(stage_id, field)`
+    // the audit row names is compared and, if needed, corrected — every
+    // other difference between the live plan and the snapshot is a
+    // legitimate edit made since the amendment and is left alone.
     let plan_path_buf = if plan_path.exists() {
         plan_path.to_path_buf()
     } else {
         resolve_plan_path(work_dir).unwrap_or_else(|_| plan_path.to_path_buf())
     };
-
-    let live_content = fs::read_to_string(&plan_path_buf).ok();
-    if live_content.as_deref() != Some(snapshot_content.as_str()) {
-        // Re-write the plan file from the snapshot.
-        let project_root = resolve_project_root(work_dir, &plan_path_buf);
-        // Best-effort: only attempt the write if plan_path_buf is under the
-        // project root (the safe-fs helper enforces this anyway).
-        if safe_fs::safe_replace_outside_workdir(
-            &plan_path_buf,
-            &project_root,
-            snapshot_content.as_bytes(),
-        )
-        .is_ok()
-        {
-            actions += 1;
-        }
+    let project_root = resolve_project_root(work_dir, &plan_path_buf);
+    match amendment_catch_up::reconcile_amended_field(
+        &plan_path_buf,
+        &project_root,
+        &snapshot_content,
+        &row.stage_id,
+        row.field,
+    ) {
+        Ok(true) => actions += 1,
+        // Field already matched — nothing to reconcile.
+        Ok(false) => {}
+        // Unparseable live plan or missing stage: never write; log why.
+        Err(reason) => amendment_catch_up::warn_skip(&plan_path_buf, &row.stage_id, reason),
     }
 
     // Case 3: stage file needs to reflect the snapshot's stage definition.
@@ -876,7 +876,7 @@ pub(super) enum ParsedAmendmentValue {
     None,
 }
 
-fn serialize_loom_metadata(metadata: &LoomMetadata) -> Result<String> {
+pub(super) fn serialize_loom_metadata(metadata: &LoomMetadata) -> Result<String> {
     serde_yaml::to_string(metadata).context("Failed to serialize loom metadata to YAML")
 }
 
@@ -884,7 +884,7 @@ fn serialize_loom_metadata(metadata: &LoomMetadata) -> Result<String> {
 /// byte outside the YAML fence (including the opening fence and language
 /// hint, the closing fence, the metadata HTML comments, and all
 /// human-readable prose).
-fn splice_metadata_yaml(
+pub(super) fn splice_metadata_yaml(
     original: &str,
     extracted: &crate::plan::parser::ExtractedMetadata,
     new_yaml_body: &str,

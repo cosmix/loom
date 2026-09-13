@@ -40,7 +40,7 @@ pub(super) fn setup_env() -> TestEnv {
     setup_env_with_plan(PLAN_CONTENT)
 }
 
-fn setup_env_with_plan(plan_text: &str) -> TestEnv {
+pub(super) fn setup_env_with_plan(plan_text: &str) -> TestEnv {
     let tmp = TempDir::new().unwrap();
     let project_root = tmp.path().to_path_buf();
     let work_dir = project_root.join(".loom").join("work");
