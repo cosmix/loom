@@ -106,7 +106,6 @@ function src/commands/status/render/graph.rs format_stage_annotations 78
 function src/commands/status/render/graph.rs render_graph 66
 function src/commands/status/ui/tui/renderer.rs render_completion 128
 function src/commands/status/ui/tui/state.rs update 57
-function src/commands/usage/transcript_tests.rs ephemeral_split_always_reconciles_to_cache_creation 57
 function src/commands/verify.rs execute 89
 function src/completions/dynamic/mod.rs complete_after_subcommand 56
 function src/completions/install.rs install 52
@@ -233,7 +232,6 @@ function src/sandbox/settings/tests_read_denies.rs test_write_settings_main_repo
 function src/sandbox/settings/tests_read_denies.rs test_write_settings_main_repo_strips_worktree_escape_denies 56
 function src/skills/matcher.rs match_skills 62
 function src/verify/baseline/compare.rs compare_to_baseline 79
-function src/verify/criteria/runner.rs run_acceptance_with_config 106
 function src/verify/duplicate_detection.rs find_symbol_in_codebase 76
 function src/verify/goal_backward/artifacts.rs verify_artifacts 67
 function src/verify/goal_backward/artifacts.rs verify_regression_test 52
