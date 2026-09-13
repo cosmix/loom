@@ -1,5 +1,5 @@
 use chrono::{DateTime, Utc};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 pub(crate) use super::report_types::{
     FreshStartSummary, StageAttributionSummary, ToolCounts, TurnoverRatios,
@@ -8,7 +8,7 @@ use super::stream_types::StreamTokenTotals;
 
 pub(crate) const PROVIDER_LEDGER_SCHEMA_VERSION: u16 = 1;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub(crate) enum Provider {
     Claude,
@@ -68,7 +68,8 @@ pub(crate) struct Attribution {
     pub(crate) stage_state: StageAttributionState,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct ProviderTokenVector {
     pub(crate) input_tokens: Option<u64>,
     pub(crate) fresh_input_tokens: Option<u64>,

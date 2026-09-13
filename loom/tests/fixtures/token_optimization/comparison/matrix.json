@@ -1,0 +1,128 @@
+[
+  {
+    "name": "cross-provider-transfer",
+    "mutation": "cross-provider-transfer",
+    "exit_code": 2,
+    "verdict": "inconclusive",
+    "token_proxy_verdict": "inconclusive",
+    "subscription_verdict": "inconclusive",
+    "reason_codes": ["cross-provider-transfer", "missing-quota-telemetry"]
+  },
+  {
+    "name": "output-increase-input-decrease",
+    "mutation": "output-increase-input-decrease",
+    "exit_code": 2,
+    "verdict": "inconclusive",
+    "token_proxy_verdict": "inconclusive",
+    "subscription_verdict": "inconclusive",
+    "reason_codes": ["missing-quota-telemetry", "token-dimension-tradeoff"]
+  },
+  {
+    "name": "reset-crossing",
+    "mutation": "reset-crossing",
+    "exit_code": 2,
+    "verdict": "inconclusive",
+    "token_proxy_verdict": "supported-candidate",
+    "subscription_verdict": "inconclusive",
+    "reason_codes": ["quota-reset-crossing"]
+  },
+  {
+    "name": "coarse-quota",
+    "mutation": "coarse-quota",
+    "exit_code": 2,
+    "verdict": "inconclusive",
+    "token_proxy_verdict": "supported-candidate",
+    "subscription_verdict": "inconclusive",
+    "reason_codes": ["quota-change-within-uncertainty"]
+  },
+  {
+    "name": "missing-telemetry",
+    "mutation": "missing-telemetry",
+    "exit_code": 2,
+    "verdict": "inconclusive",
+    "token_proxy_verdict": "inconclusive",
+    "subscription_verdict": "inconclusive",
+    "reason_codes": ["missing-accounting-evidence", "missing-latency-evidence", "missing-quota-telemetry"]
+  },
+  {
+    "name": "model-effort-mismatch",
+    "mutation": "model-effort-mismatch",
+    "exit_code": 2,
+    "verdict": "inconclusive",
+    "token_proxy_verdict": "inconclusive",
+    "subscription_verdict": "inconclusive",
+    "reason_codes": ["incomparable-pair", "model-effort-mismatch"]
+  },
+  {
+    "name": "failed-review",
+    "mutation": "failed-review",
+    "exit_code": 1,
+    "verdict": "rejected",
+    "token_proxy_verdict": "supported-candidate",
+    "subscription_verdict": "supported-candidate",
+    "reason_codes": ["failed-review"]
+  },
+  {
+    "name": "omitted-requirement",
+    "mutation": "omitted-requirement",
+    "exit_code": 1,
+    "verdict": "rejected",
+    "token_proxy_verdict": "supported-candidate",
+    "subscription_verdict": "supported-candidate",
+    "reason_codes": ["omitted-requirement"]
+  },
+  {
+    "name": "slower-critical-path",
+    "mutation": "slower-critical-path",
+    "exit_code": 1,
+    "verdict": "rejected",
+    "token_proxy_verdict": "supported-candidate",
+    "subscription_verdict": "supported-candidate",
+    "reason_codes": ["critical-path-regression"]
+  },
+  {
+    "name": "slower-notification",
+    "mutation": "slower-notification",
+    "exit_code": 1,
+    "verdict": "rejected",
+    "token_proxy_verdict": "supported-candidate",
+    "subscription_verdict": "supported-candidate",
+    "reason_codes": ["notification-latency-regression"]
+  },
+  {
+    "name": "incomparable-workload",
+    "mutation": "incomparable-workload",
+    "exit_code": 2,
+    "verdict": "inconclusive",
+    "token_proxy_verdict": "inconclusive",
+    "subscription_verdict": "inconclusive",
+    "reason_codes": ["incomparable-pair", "incomparable-workload"]
+  },
+  {
+    "name": "duplicate-run-id",
+    "mutation": "duplicate-run-id",
+    "exit_code": 2,
+    "verdict": "inconclusive",
+    "token_proxy_verdict": "inconclusive",
+    "subscription_verdict": "inconclusive",
+    "reason_codes": ["duplicate-run-id", "incomparable-pair"]
+  },
+  {
+    "name": "averaged-regression",
+    "mutation": "averaged-regression",
+    "exit_code": 1,
+    "verdict": "rejected",
+    "token_proxy_verdict": "supported-candidate",
+    "subscription_verdict": "supported-candidate",
+    "reason_codes": ["notification-latency-regression"]
+  },
+  {
+    "name": "mixed-window-regression",
+    "mutation": "mixed-window-regression",
+    "exit_code": 1,
+    "verdict": "rejected",
+    "token_proxy_verdict": "supported-candidate",
+    "subscription_verdict": "rejected",
+    "reason_codes": ["subscription-consumption-regression", "unknown-quota-precision"]
+  }
+]

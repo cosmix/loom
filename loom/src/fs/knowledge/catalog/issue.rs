@@ -1,6 +1,31 @@
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
+/// A bounded reason why declared source evidence could not be assessed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum EvidenceUnavailableReason {
+    MissingRevision,
+    InvalidRevision,
+    MissingRepository,
+    GitUnavailable,
+    CommandFailed,
+    ResourceLimit,
+}
+
+impl EvidenceUnavailableReason {
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Self::MissingRevision => "missing_revision",
+            Self::InvalidRevision => "invalid_revision",
+            Self::MissingRepository => "missing_repository",
+            Self::GitUnavailable => "git_unavailable",
+            Self::CommandFailed => "command_failed",
+            Self::ResourceLimit => "resource_limit",
+        }
+    }
+}
+
 /// A problem found in the knowledge base. Reported, never repaired.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum CatalogIssue {
@@ -26,6 +51,11 @@ pub enum CatalogIssue {
         source_path: String,
         verified: String,
     },
+    EvidenceUnavailable {
+        file: PathBuf,
+        source_path: String,
+        reason: EvidenceUnavailableReason,
+    },
     UnverifiableReference {
         file: PathBuf,
         source_path: String,
@@ -50,7 +80,9 @@ impl CatalogIssue {
     pub fn is_review_only(&self) -> bool {
         matches!(
             self,
-            Self::EvidenceChanged { .. } | Self::UnverifiableReference { .. }
+            Self::EvidenceChanged { .. }
+                | Self::EvidenceUnavailable { .. }
+                | Self::UnverifiableReference { .. }
         )
     }
 }

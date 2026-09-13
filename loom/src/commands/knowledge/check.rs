@@ -33,12 +33,15 @@ use std::path::Path;
 /// Report the knowledge base's diagnostics. Resolves the knowledge root
 /// read-only (see the module doc) and never initializes or mutates it.
 ///
-/// Always exits 0, except `strict` combined with at least one non-review issue,
-/// which exits 1 after all printing.
-pub fn check(strict: bool, json: bool) -> Result<()> {
+/// `--strict` rejects structural diagnostics; `--strict-evidence` additionally
+/// rejects changed or unavailable declared source evidence.
+pub fn check(strict: bool, strict_evidence: bool, json: bool) -> Result<()> {
     let root = knowledge_root()?;
     if !root.exists() {
         report_missing_root(&root, json)?;
+        if strict_evidence {
+            strict_failure(1, &root);
+        }
         return Ok(());
     }
 
@@ -49,16 +52,19 @@ pub fn check(strict: bool, json: bool) -> Result<()> {
         print_human(&root, &catalog);
     }
 
-    let strict_count = strict_issue_count(&catalog.issues);
-    if strict && strict_count > 0 {
-        eprintln!(
-            "loom knowledge check: FAIL - {} issue(s) found under {}",
-            strict_count,
-            root.display()
-        );
-        std::process::exit(1);
+    let failure_count = strict_failure_count(strict, strict_evidence, &catalog.issues);
+    if failure_count > 0 {
+        strict_failure(failure_count, &root);
     }
     Ok(())
+}
+
+fn strict_failure(count: usize, root: &Path) -> ! {
+    eprintln!(
+        "loom knowledge check: FAIL - {count} issue(s) found under {}",
+        root.display()
+    );
+    std::process::exit(1)
 }
 
 /// `doc/loom/knowledge` under the current project root, resolved WITHOUT
@@ -118,6 +124,7 @@ fn json_payload(root: &Path, catalog: &Catalog) -> serde_json::Value {
         "issues": issues,
         "review": review,
         "count": strict_issue_count(&catalog.issues),
+        "evidence": catalog::evidence_summary(root, &catalog.issues),
     })
 }
 
@@ -125,6 +132,30 @@ fn strict_issue_count(issues: &[CatalogIssue]) -> usize {
     issues
         .iter()
         .filter(|issue| !issue.is_review_only())
+        .count()
+}
+
+fn strict_failure_count(strict: bool, strict_evidence: bool, issues: &[CatalogIssue]) -> usize {
+    if !(strict || strict_evidence) {
+        return 0;
+    }
+    let structural = strict_issue_count(issues);
+    if strict_evidence {
+        structural + evidence_issue_count(issues)
+    } else {
+        structural
+    }
+}
+
+fn evidence_issue_count(issues: &[CatalogIssue]) -> usize {
+    issues
+        .iter()
+        .filter(|issue| {
+            matches!(
+                issue,
+                CatalogIssue::EvidenceChanged { .. } | CatalogIssue::EvidenceUnavailable { .. }
+            )
+        })
         .count()
 }
 
@@ -145,11 +176,15 @@ fn print_human(root: &Path, catalog: &Catalog) {
 /// `println!` wrapper, and this is what tests assert against so a deleted
 /// or garbled report body fails a test instead of going unnoticed.
 fn human_report(root: &Path, catalog: &Catalog) -> String {
+    let evidence = catalog::evidence_summary(root, &catalog.issues);
     if catalog.issues.is_empty() {
         return format!(
-            "{} Knowledge base at {} is clean",
+            "{} Knowledge base at {} is clean ({}/{} evidence files current; {} unassessed)",
             "✓".green().bold(),
-            root.display()
+            root.display(),
+            evidence.current,
+            evidence.declared,
+            evidence.unassessed
         );
     }
     let mut lines: Vec<String> = catalog.issues.iter().map(decorated_issue_line).collect();
@@ -160,14 +195,23 @@ fn human_report(root: &Path, catalog: &Catalog) -> String {
         "!".yellow().bold(),
         root.display()
     ));
+    lines.push(format!(
+        "evidence: {} ({}/{} current, {} changed, {} unavailable, {} unassessed)",
+        evidence.status,
+        evidence.current,
+        evidence.declared,
+        evidence.changed,
+        evidence.unavailable,
+        evidence.unassessed
+    ));
     lines.join("\n")
 }
 
 fn decorated_issue_line(issue: &CatalogIssue) -> String {
     match issue {
-        CatalogIssue::EvidenceChanged { .. } | CatalogIssue::UnverifiableReference { .. } => {
-            issue_line(issue)
-        }
+        CatalogIssue::EvidenceChanged { .. }
+        | CatalogIssue::EvidenceUnavailable { .. }
+        | CatalogIssue::UnverifiableReference { .. } => issue_line(issue),
         _ => format!("{} {}", "!".yellow().bold(), issue_line(issue)),
     }
 }
@@ -212,9 +256,9 @@ fn issue_line(issue: &CatalogIssue) -> String {
             safe_path(file),
             inline_safe(source_path)
         ),
-        CatalogIssue::EvidenceChanged { .. } | CatalogIssue::UnverifiableReference { .. } => {
-            review_issue_line(issue)
-        }
+        CatalogIssue::EvidenceChanged { .. }
+        | CatalogIssue::EvidenceUnavailable { .. }
+        | CatalogIssue::UnverifiableReference { .. } => review_issue_line(issue),
         CatalogIssue::OversizedSection {
             file,
             heading,
@@ -241,6 +285,16 @@ fn review_issue_line(issue: &CatalogIssue) -> String {
             inline_safe(source_path),
             inline_safe(&verified.chars().take(8).collect::<String>()),
             safe_path(file)
+        ),
+        CatalogIssue::EvidenceUnavailable {
+            file,
+            source_path,
+            reason,
+        } => format!(
+            "review: {}: evidence for {} is unavailable ({})",
+            safe_path(file),
+            inline_safe(source_path),
+            reason.as_str()
         ),
         CatalogIssue::UnverifiableReference {
             file,
@@ -281,3 +335,7 @@ fn size_issue_line(file: &str, heading: Option<&str>, lines: usize) -> String {
 #[cfg(test)]
 #[path = "tests_check.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "tests_check_evidence.rs"]
+mod tests_evidence;

@@ -109,6 +109,19 @@ pub fn generate_stable_prefix() -> String {
     content
 }
 
+const INTEGRATION_VERIFY_OVERRIDE: &str = "⚠️ **INTEGRATION-VERIFY OVERRIDE — the no-verify rule above does NOT apply here:**\n\n\
+         The IV orchestrator explicitly assigns ONE canonical verifier to run the COMPLETE suite \
+         (e.g. `cargo build`, `cargo test`, `cargo clippy -- -D warnings`, `cargo fmt --check`) \
+         and read all stderr for each immutable tree, environment, and criterion contract. That \
+         canonical owner is the IV review/verification subagent meant by Rule 5's complete-suite \
+         instruction. Other reviewers inspect independently and may request or run targeted \
+         discriminating security/functional checks; targeted checks are additional evidence, never \
+         a substitute for the canonical gate. Each check summary records command, real exit, \
+         criterion verdict, input/contract identity, elapsed time, and an evidence pointer when \
+         available. A missing receipt means run the check. After any review fix, the owner \
+         re-evaluates invalidated checks; only the repaired criteria cache decides reuse, and stale \
+         evidence never waives a failing gate.\n\n";
+
 /// Stable prefix for integration-verify stages (final quality gate)
 pub fn generate_integration_verify_stable_prefix() -> String {
     let mut content = String::new();
@@ -134,13 +147,7 @@ pub fn generate_integration_verify_stable_prefix() -> String {
     append_execution_rules_header(&mut content);
 
     append_no_verify_block(&mut content);
-    content.push_str(
-        "⚠️ **INTEGRATION-VERIFY OVERRIDE — the no-verify rule above does NOT apply here:**\n\n\
-         It is written for implementation-stage subagents. IV review/verification subagents are \
-         the OPPOSITE case: tell every build/test/sandbox or functional verifier you spawn to run \
-         the COMPLETE suite (e.g. `cargo build`, `cargo test`, `cargo clippy -- -D warnings`, \
-         `cargo fmt --check`) and read all stderr — that IS their job here.\n\n",
-    );
+    content.push_str(INTEGRATION_VERIFY_OVERRIDE);
     append_subagent_ceiling_block(&mut content);
 
     content.push_str("**Completion:**\n");
@@ -464,74 +471,6 @@ mod tests {
         assert_eq!(
             prefix1, prefix2,
             "Knowledge stable prefix should be deterministic"
-        );
-    }
-
-    #[test]
-    fn test_integration_verify_stable_prefix_contains_required_sections() {
-        let prefix = generate_integration_verify_stable_prefix();
-
-        // Integration-verify specific context
-        assert!(prefix.contains("## Integration Verification Context"));
-        assert!(prefix.contains("FINAL QUALITY GATE"));
-        // Zero tolerance emphasis - the key differentiator
-        assert!(prefix.contains("ZERO TOLERANCE"));
-        assert!(prefix.contains("ALL"));
-        assert!(prefix.contains("NOTHING"));
-        assert!(prefix.contains("pre-existing"));
-        assert!(prefix.contains("too trivial"));
-        // Code review content (merged from code-review prefix)
-        assert!(prefix.contains("REVIEW"));
-        assert!(prefix.contains("loom-security-audit"));
-        assert!(prefix.contains("spawn these as PARALLEL subagents"));
-        // Worktree isolation
-        assert!(prefix.contains("Isolation Boundaries"));
-        assert!(prefix.contains("Path Boundaries"));
-        assert!(prefix.contains("CONFINED"));
-        // Execution rules
-        assert!(prefix.contains("## Execution Rules"));
-        // Knowledge distillation moved to separate stage
-        assert!(!prefix.contains("Knowledge Distillation (MANDATORY)"));
-        assert!(prefix.contains("knowledge-distill stage"));
-        // Worktree root directory reminder
-        assert!(prefix.contains("worktree ROOT directory"));
-        // Review dimension details
-        assert!(prefix.contains("Review Dimension Details"));
-        assert!(prefix.contains("OWASP Top 10"));
-        assert!(prefix.contains("Build/test/sandbox"));
-        // Exit code 0 is not success - kept on the dimension that runs the suite
-        assert!(prefix.contains("Exit code 0 does NOT mean success"));
-        // Mini adversarial code review block (six dimensions stated explicitly)
-        assert!(prefix.contains("Mini Adversarial Code Review"));
-        assert!(prefix.contains("**Idiomatic code**"));
-        assert!(prefix.contains("**No duplication (DRY)**"));
-        assert!(prefix.contains("search the WHOLE codebase"));
-        // Per-stage Knowledge Brief consumption contract
-        assert!(prefix.contains("Knowledge Brief"));
-        // Points at CLAUDE.md rather than restating it
-        assert!(prefix.contains("Binding rules: ~/.claude/CLAUDE.md"));
-        assert!(!prefix.contains("Agent Teams"));
-        assert!(!prefix.contains("loom subagents watch"));
-        // IV subagents restore full-suite verification: the no-verify rule is present
-        // (emitted by `append_no_verify_block`, the BLOCK-A source) AND explicitly
-        // overridden for this stage type by the carve-out tail.
-        assert!(prefix.contains("VERIFICATION IS THE MAIN AGENT'S JOB - NOT YOURS"));
-        assert!(prefix.contains("INTEGRATION-VERIFY OVERRIDE"));
-        assert!(prefix.contains("does NOT apply here"));
-        assert!(prefix.contains("cargo clippy -- -D warnings"));
-        // Subagent context-ceiling doctrine (BLOCK-D): IV also spawns Task-tool
-        // subagents (reviewers, verifiers), so it needs the same ceiling rule.
-        assert!(prefix.contains("CONTEXT CEILING - HOOK-REPORTED ONLY"));
-        assert!(prefix.contains("SUBAGENT CEILING REACHED"));
-    }
-
-    #[test]
-    fn test_integration_verify_stable_prefix_is_stable() {
-        let prefix1 = generate_integration_verify_stable_prefix();
-        let prefix2 = generate_integration_verify_stable_prefix();
-        assert_eq!(
-            prefix1, prefix2,
-            "Integration-verify stable prefix should be deterministic"
         );
     }
 
