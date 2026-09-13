@@ -5,6 +5,7 @@
 
 pub mod binary_spawn_guard;
 pub mod capsule;
+pub mod confinement_status;
 pub mod context_catalog;
 pub mod dependency_cleanup;
 pub mod dependency_conflict;
