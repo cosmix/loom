@@ -215,11 +215,49 @@ pub fn watch(
 mod tests {
     use super::*;
     use classify::DEFAULT_DONE_DEBOUNCE_SECS;
+    use serial_test::serial;
+    use std::env;
+
+    /// Restores cwd on drop, even on panic. Needed because `list`/`harvest`
+    /// resolve their work dir by walking up from the process cwd, which
+    /// would otherwise adopt this checkout's own live `.loom/work`.
+    struct CwdGuard {
+        original_dir: PathBuf,
+    }
+
+    impl CwdGuard {
+        fn new() -> Self {
+            Self {
+                original_dir: env::current_dir().unwrap(),
+            }
+        }
+    }
+
+    impl Drop for CwdGuard {
+        fn drop(&mut self) {
+            env::set_current_dir(&self.original_dir).unwrap();
+        }
+    }
+
+    /// Isolate the process cwd inside a fresh tempdir for the test's
+    /// duration, restoring the original cwd on drop. Returned as
+    /// `(CwdGuard, TempDir)`: declaration order drops the `TempDir` first,
+    /// which is safe since restoring cwd only needs the ORIGINAL directory
+    /// to still exist, not the one being left.
+    fn isolate_cwd() -> (CwdGuard, tempfile::TempDir) {
+        let guard = CwdGuard::new();
+        let isolated = tempfile::tempdir().unwrap();
+        env::set_current_dir(isolated.path()).unwrap();
+        (guard, isolated)
+    }
 
     #[test]
+    #[serial]
     fn list_on_unresolvable_dir_still_succeeds() {
         // A bogus explicit --dir resolves (Resolution::Found) but reads
         // back zero files; list() must still exit 0.
+        let (_cwd_guard, _isolated) = isolate_cwd();
+
         let result = list(
             None,
             Some(PathBuf::from("/nonexistent/subagents/dir")),
@@ -230,7 +268,10 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn harvest_on_empty_dir_reports_nothing_without_erroring() {
+        let (_cwd_guard, _isolated) = isolate_cwd();
+
         let result = harvest(
             None,
             None,
@@ -247,7 +288,13 @@ mod tests {
     /// no `final_report` is exactly "nothing harvestable" -- the same
     /// condition a stdout capture would be checking indirectly.
     #[test]
+    #[serial]
     fn harvest_emits_nothing_for_undebounced_text_only_entry() {
+        // The `gather` call below already passes `work_dir: None`
+        // explicitly; `harvest()` resolves it itself via
+        // `find_work_dir_quietly()`.
+        let (_cwd_guard, _isolated) = isolate_cwd();
+
         let temp = tempfile::tempdir().unwrap();
         let content = format!(
             "{}\n",
@@ -295,7 +342,10 @@ mod tests {
     /// codebase has been measured running 603s, so a time-based rule here
     /// would misclassify a busy agent as dead.
     #[test]
+    #[serial]
     fn tool_wait_idle_30_minutes_never_harvested_and_never_settles() {
+        let (_cwd_guard, _isolated) = isolate_cwd();
+
         let temp = tempfile::tempdir().unwrap();
         let old_timestamp = (chrono::Utc::now() - chrono::Duration::minutes(30)).to_rfc3339();
         let content = format!(
