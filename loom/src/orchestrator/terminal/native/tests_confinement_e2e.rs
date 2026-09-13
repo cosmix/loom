@@ -6,6 +6,9 @@
 //! Linux only, and skipped unless `bwrap`, `socat` and `srt` are on PATH and a
 //! trivial `srt -c true` runs: a nested sandbox can refuse the namespaces or
 //! the sockets srt needs.
+//!
+//! The tests run `#[serial]`: each srt run starts its own proxies and bwrap,
+//! and the latency test measures time, which concurrent srt runs distort.
 
 use super::host::LaunchHost;
 use super::*;
@@ -18,7 +21,8 @@ use crate::remote_control::{RemoteControlConfig, RemoteControlMode};
 use crate::sandbox::control_surfaces::{session_writable_roots, WritableRootInputs};
 use crate::sandbox::preflight::HostFacts;
 use serde_json::Value;
-use srt::{last_line, skip, Confined};
+use serial_test::serial;
+use srt::{diagnostics, skip, Confined};
 use std::os::unix::fs::PermissionsExt;
 use std::process::{Command, Output, Stdio};
 use tempfile::TempDir;
@@ -190,7 +194,7 @@ fn stage(stage_type: StageType, lanes: Vec<Implementer>) -> Stage {
 
 /// Launch `kind` for `stage` through the real launch path, from where that
 /// kind runs (the worktree for a Stage session, the repository otherwise),
-/// and translate the capsule it wrote.
+/// translate the capsule it wrote, and check srt starts a shell under it.
 fn confine(f: &Fixture, kind: SessionType, stage: &Stage) -> Confined {
     let cwd = if kind == SessionType::Stage {
         f.worktree.clone()
@@ -211,12 +215,16 @@ fn confine(f: &Fixture, kind: SessionType, stage: &Stage) -> Confined {
     let capsule: Value = serde_json::from_str(&capsule).unwrap();
     let settings = f.base.join(format!("{}.srt.json", session.id));
     srt::write_settings(&settings, &capsule, &cwd, &f.home);
-    Confined {
+    let confined = Confined {
         label: format!("{kind} capsule"),
         settings,
         cwd,
         scratch: f.host.scratch_root.join(&session.id),
-    }
+    };
+    // The control: fail fast when srt cannot start a shell under this
+    // capsule at all, before any probe runs through it.
+    confined.run_alive("true");
+    confined
 }
 
 /// The paths no capsule may let a session write, whatever its kind.
@@ -237,6 +245,7 @@ fn control_surfaces(f: &Fixture) -> Vec<PathBuf> {
 }
 
 #[test]
+#[serial]
 fn a_stage_capsule_refuses_every_control_surface_and_writes_its_worktree() {
     if skip("a_stage_capsule_refuses_every_control_surface_and_writes_its_worktree") {
         return;
@@ -256,6 +265,7 @@ fn a_stage_capsule_refuses_every_control_surface_and_writes_its_worktree() {
 }
 
 #[test]
+#[serial]
 fn a_knowledge_capsule_refuses_every_control_surface_and_writes_the_checkout() {
     if skip("a_knowledge_capsule_refuses_every_control_surface_and_writes_the_checkout") {
         return;
@@ -279,6 +289,7 @@ fn a_knowledge_capsule_refuses_every_control_surface_and_writes_the_checkout() {
 }
 
 #[test]
+#[serial]
 fn a_codex_lane_capsule_refuses_the_codex_hook_config_present_or_missing() {
     if skip("a_codex_lane_capsule_refuses_the_codex_hook_config_present_or_missing") {
         return;
@@ -295,15 +306,18 @@ fn a_codex_lane_capsule_refuses_the_codex_hook_config_present_or_missing() {
     // inside a granted directory srt binds `/dev/null` there for the
     // command's lifetime, so a write can land in `/dev/null` and exit 0: the
     // exit status says nothing, and what counts is that no file appears.
+    // `write` has already proven the shell ran, so an absent file is not an
+    // srt that never started.
     std::fs::remove_file(&hooks_json).unwrap();
-    let output = confined.write(&hooks_json);
+    let probe = confined.write(&hooks_json);
     if let Ok(content) = std::fs::read_to_string(&hooks_json) {
         missed.push(format!(
             "{}: {} did not exist at session start and a session created it \
-             (exit 0: {}, content {content:?})",
+             (write exit code {:?}, content {content:?}): {}",
             confined.label,
             hooks_json.display(),
-            output.status.success()
+            probe.rc,
+            diagnostics(&probe.output)
         ));
     }
 
@@ -311,6 +325,7 @@ fn a_codex_lane_capsule_refuses_the_codex_hook_config_present_or_missing() {
 }
 
 #[test]
+#[serial]
 fn a_spawn_under_a_stage_capsule_stays_within_twice_the_unsandboxed_latency() {
     if skip("a_spawn_under_a_stage_capsule_stays_within_twice_the_unsandboxed_latency") {
         return;
@@ -328,9 +343,10 @@ fn a_spawn_under_a_stage_capsule_stays_within_twice_the_unsandboxed_latency() {
         .output()
         .expect("run the latency loop");
     let script_arg = escape(Cow::Owned(script.display().to_string()));
-    let inside = confined.run(&format!("/bin/bash {script_arg}"));
+    let inside = confined.run_alive(&format!("/bin/bash {script_arg}"));
 
-    let (outside, inside) = (median_micros(&outside), median_micros(&inside));
+    let outside = median_micros(&outside, "outside srt");
+    let inside = median_micros(&inside, &format!("under the {}", confined.label));
     let ceiling = (2 * outside).max(LATENCY_FLOOR_MICROS);
     assert!(
         inside <= ceiling,
@@ -339,19 +355,25 @@ fn a_spawn_under_a_stage_capsule_stays_within_twice_the_unsandboxed_latency() {
     );
 }
 
-/// The median of the latency loop's twenty samples, in microseconds.
-fn median_micros(output: &Output) -> u64 {
+/// The median of the latency loop's twenty samples, in microseconds, from
+/// the loop's `run`.
+fn median_micros(output: &Output, run: &str) -> u64 {
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
         output.status.success(),
-        "the latency loop failed: {}",
-        last_line(&output.stderr)
+        "the latency loop {run} failed: {}",
+        diagnostics(output)
     );
     let mut samples: Vec<u64> = stdout
         .lines()
         .filter_map(|line| line.trim().parse().ok())
         .collect();
-    assert_eq!(samples.len(), 20, "twenty samples expected: {stdout}");
+    assert_eq!(
+        samples.len(),
+        20,
+        "the latency loop {run}: twenty samples expected: {}",
+        diagnostics(output)
+    );
     samples.sort_unstable();
     samples[samples.len() / 2]
 }

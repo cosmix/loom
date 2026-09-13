@@ -5,6 +5,12 @@
 //! The translation reads the block the way Claude Code does: `~/` is the
 //! session's home, a relative entry is relative to the working directory,
 //! the working directory itself is writable, and the network is closed.
+//!
+//! A probe counts only when its shell provably ran under srt: the shell
+//! prints `ALIVE` first and, for a write, the write's own exit code after
+//! it. srt's exit status cannot stand in for either: an srt that crashes
+//! before starting the shell exits non-zero and leaves every file as it
+//! was, which reads exactly like a refused write.
 
 use crate::process::sandbox_probe::skip_unless;
 use serde_json::{json, Value};
@@ -17,6 +23,12 @@ use tempfile::TempDir;
 
 /// What every write probe writes.
 const PROBE: &str = "confinement-e2e-probe";
+/// The line a sandboxed shell prints first: proof that srt started it.
+const ALIVE: &str = "LOOM_PROBE_ALIVE";
+/// The prefix of the line carrying a probe write's own exit code.
+const RC_PREFIX: &str = "LOOM_PROBE_RC=";
+/// How much of srt's stderr a failure message quotes.
+const STDERR_LINES: usize = 40;
 
 /// Whether `test_name` must skip because this host cannot run srt: it is not
 /// Linux, `bwrap`, `socat` or `srt` is missing from PATH, or a trivial
@@ -57,7 +69,7 @@ fn probe_srt() -> Option<String> {
         Ok(output) if output.status.success() => None,
         Ok(output) => Some(format!(
             "`srt -c true` fails here, so this host cannot nest srt's sandbox: {}",
-            last_line(&output.stderr)
+            diagnostics(&output)
         )),
         Err(error) => Some(format!("cannot run srt: {error}")),
     }
@@ -68,11 +80,42 @@ fn on_path(tool: &str) -> bool {
         .is_some_and(|path| std::env::split_paths(&path).any(|dir| dir.join(tool).is_file()))
 }
 
-/// The last non-empty line of `bytes`, for a failure message.
-pub(super) fn last_line(bytes: &[u8]) -> String {
-    let text = String::from_utf8_lossy(bytes);
-    let line = text.lines().map(str::trim).rfind(|line| !line.is_empty());
-    line.unwrap_or_default().to_string()
+/// `output`'s exit status, stdout, and stderr (whole, or its first
+/// `STDERR_LINES` lines), for a failure message. A crashed srt prints its
+/// exception above Node's closing version line, so the last line alone
+/// hides it.
+pub(super) fn diagnostics(output: &Output) -> String {
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let lines: Vec<&str> = stderr.lines().collect();
+    let cut = lines.len().saturating_sub(STDERR_LINES);
+    let more = if cut > 0 {
+        format!("\n[{cut} more lines]")
+    } else {
+        String::new()
+    };
+    format!(
+        "{}\nstdout:\n{}\nstderr:\n{}{more}",
+        output.status,
+        String::from_utf8_lossy(&output.stdout).trim_end(),
+        lines[..lines.len() - cut].join("\n")
+    )
+}
+
+/// Whether the sandboxed shell printed `ALIVE`, alone on its line.
+fn started(output: &Output) -> bool {
+    String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .any(|line| line.trim() == ALIVE)
+}
+
+/// The probe write's exit code from its `RC_PREFIX` line, `None` when the
+/// shell died before printing one.
+fn write_rc(output: &Output) -> Option<i32> {
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let rc = stdout
+        .lines()
+        .find_map(|line| line.trim().strip_prefix(RC_PREFIX));
+    rc.and_then(|rc| rc.parse().ok())
 }
 
 /// Write `capsule`'s sandbox block to `path` as srt settings, for a session
@@ -139,10 +182,19 @@ pub(super) struct Confined {
     pub(super) scratch: PathBuf,
 }
 
+/// One write probe, from a shell srt is known to have started.
+pub(super) struct Probe {
+    /// The write's own exit code; `None` when the shell died before
+    /// printing it.
+    pub(super) rc: Option<i32>,
+    /// srt's output, for a failure message.
+    pub(super) output: Output,
+}
+
 impl Confined {
     /// Run `command` under srt with this capsule, from the session's
     /// working directory.
-    pub(super) fn run(&self, command: &str) -> Output {
+    fn run(&self, command: &str) -> Output {
         Command::new("srt")
             .arg("--settings")
             .arg(&self.settings)
@@ -154,43 +206,70 @@ impl Confined {
             .expect("run srt")
     }
 
-    /// Try to write the probe to `path` under this capsule.
-    pub(super) fn write(&self, path: &Path) -> Output {
-        let target = escape(Cow::Owned(path.display().to_string()));
-        self.run(&format!("printf {PROBE} > {target}"))
+    /// Run `command` under this capsule after an `echo` of `ALIVE`, and
+    /// fail, quoting srt's output, when that line is missing: srt never
+    /// started the shell, so nothing `command` was meant to show happened.
+    pub(super) fn run_alive(&self, command: &str) -> Output {
+        let output = self.run(&format!("echo {ALIVE}; {command}"));
+        assert!(
+            started(&output),
+            "{}: srt did not start under this capsule: {}",
+            self.label,
+            diagnostics(&output)
+        );
+        output
     }
 
-    /// Each of `denied` whose write was not refused: the command exited 0,
-    /// or the path changed or appeared.
+    /// Try to write the probe to `path` under this capsule.
+    pub(super) fn write(&self, path: &Path) -> Probe {
+        let target = escape(Cow::Owned(path.display().to_string()));
+        let output = self.run_alive(&format!("printf {PROBE} > {target}; echo {RC_PREFIX}$?"));
+        Probe {
+            rc: write_rc(&output),
+            output,
+        }
+    }
+
+    /// Each of `denied` whose write was not proven refused: that takes a
+    /// non-zero exit code from the write itself and the path left as it
+    /// was, or still absent.
     pub(super) fn refusals_missed(&self, denied: &[PathBuf]) -> Vec<String> {
         let mut missed = Vec::new();
         for path in denied {
             let before = std::fs::read(path).ok();
-            let exited_zero = self.write(path).status.success();
+            let probe = self.write(path);
             let changed = std::fs::read(path).ok() != before;
-            if exited_zero || changed {
+            let refused = probe.rc.is_some_and(|rc| rc != 0) && !changed;
+            if !refused {
                 missed.push(format!(
-                    "{}: a write to {} was not refused (exit 0: {exited_zero}, changed: {changed})",
+                    "{}: a write to {} was not refused (write exit code {:?}, changed: \
+                     {changed}): {}",
                     self.label,
-                    path.display()
+                    path.display(),
+                    probe.rc,
+                    diagnostics(&probe.output)
                 ));
             }
         }
         missed
     }
 
-    /// Each of `allowed` whose write failed or did not land.
+    /// Each of `allowed` whose write was not proven to land: that takes
+    /// exit code 0 from the write itself and the probe in the file.
     pub(super) fn writes_missed(&self, allowed: &[PathBuf]) -> Vec<String> {
         let mut missed = Vec::new();
         for path in allowed {
-            let output = self.write(path);
+            let probe = self.write(path);
             let landed = std::fs::read(path).is_ok_and(|bytes| bytes == PROBE.as_bytes());
-            if !output.status.success() || !landed {
+            let wrote = probe.rc == Some(0) && landed;
+            if !wrote {
                 missed.push(format!(
-                    "{}: a write to {} must succeed: {}",
+                    "{}: a write to {} must succeed (write exit code {:?}, landed: \
+                     {landed}): {}",
                     self.label,
                     path.display(),
-                    last_line(&output.stderr)
+                    probe.rc,
+                    diagnostics(&probe.output)
                 ));
             }
         }

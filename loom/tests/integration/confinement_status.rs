@@ -47,10 +47,28 @@ fn on_path(tool: &str) -> bool {
         .is_some_and(|path| std::env::split_paths(&path).any(|dir| dir.join(tool).is_file()))
 }
 
-fn last_line(bytes: &[u8]) -> String {
-    let text = String::from_utf8_lossy(bytes);
-    let line = text.lines().map(str::trim).rfind(|line| !line.is_empty());
-    line.unwrap_or_default().to_string()
+/// How much of a run's stderr a failure message quotes.
+const STDERR_LINES: usize = 40;
+
+/// `output`'s exit status, stdout, and stderr (whole, or its first
+/// `STDERR_LINES` lines), for a failure message. A crashed srt prints its
+/// exception above Node's closing version line, so the last line alone
+/// hides it.
+fn diagnostics(output: &Output) -> String {
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let lines: Vec<&str> = stderr.lines().collect();
+    let cut = lines.len().saturating_sub(STDERR_LINES);
+    let more = if cut > 0 {
+        format!("\n[{cut} more lines]")
+    } else {
+        String::new()
+    };
+    format!(
+        "{}\nstdout:\n{}\nstderr:\n{}{more}",
+        output.status,
+        String::from_utf8_lossy(&output.stdout).trim_end(),
+        lines[..lines.len() - cut].join("\n")
+    )
 }
 
 /// Why this host cannot run srt, or `None` when it can.
@@ -76,7 +94,7 @@ fn srt_unavailable(scratch: &Path) -> Option<String> {
         Ok(output) if output.status.success() => None,
         Ok(output) => Some(format!(
             "`srt -c true` fails here, so this host cannot nest srt's sandbox: {}",
-            last_line(&output.stderr)
+            diagnostics(&output)
         )),
         Err(error) => Some(format!("cannot run srt: {error}")),
     }
@@ -173,12 +191,10 @@ fn loom_status_runs_with_the_state_dir_write_denied_and_changes_nothing() {
         // Tell a state write apart from a fixture `loom status` rejects anyway.
         let control = loom_status(&repo, &loom_home, None);
         panic!(
-            "`loom status` failed with {} write-denied: {}\nthe same run outside srt exited \
-             {}: {}",
+            "`loom status` failed with {} write-denied: {}\nthe same run outside srt: {}",
             work_dir.display(),
-            String::from_utf8_lossy(&output.stderr),
-            control.status,
-            last_line(&control.stderr)
+            diagnostics(&output),
+            diagnostics(&control)
         );
     }
     assert_eq!(
