@@ -8,11 +8,9 @@ if [[ $# -ne 7 || "$1" != "task" || "$3" != "--model" || "$5" != "--effort" || "
 		'Usage: codex-forward.sh task <prompt> --model <model> --effort <effort> --write' >&2
 	exit 2
 fi
-
 prompt=$2
 model=$4
 effort=$6
-
 case "$model" in
 gpt-6-astra | gpt-5.6-sol | gpt-5.6-terra | gpt-5.6-luna) ;;
 *)
@@ -29,17 +27,10 @@ low | medium | high | xhigh | max | ultra) ;;
 	;;
 esac
 
-# The codex model/effort this forwarded task runs with is recorded by
-# codex-forward-guard.sh, a PreToolUse hook that runs OUTSIDE the stage
-# session's Bash sandbox. This wrapper runs INSIDE that sandbox, where an
-# append to the main repo's `.loom/work/subagents/` through the worktree's
-# symlink is denied and silently swallowed - so the guard, not this wrapper,
-# owns that ledger row.
+# The PreToolUse guard runs outside the stage sandbox and owns the requested
+# model/effort ledger row; this in-sandbox wrapper cannot write it safely.
 
-# codex reads AGENTS.md, never CLAUDE.md; loom install-assets writes ~/.codex/AGENTS.md as
-# standing doctrine, but this preamble remains the per-task stage contract - the only place
-# the codex lane's doctrine cannot be forgotten by an orchestrator writing a prompt, so it is
-# prepended here on every forwarded task rather than left to each caller to remember.
+# This per-task preamble keeps the stage contract attached to every forward.
 preamble=$(cat <<'CODEX_PREAMBLE'
 === LOOM CONTEXT (prepended automatically; your task follows the TASK marker) ===
 
@@ -90,88 +81,165 @@ task="${preamble}
 
 ${prompt}"
 
-# macOS refuses to apply a second Seatbelt profile to an already-sandboxed
-# process. Inside a stage session's Bash sandbox every command codex wraps in
-# /usr/bin/sandbox-exec (its workspace-write AND read-only modes both do) dies
-# with `sandbox-exec: sandbox_apply: Operation not permitted` while codex and
-# the companion still exit 0. The companion hardcodes workspace-write and
-# exposes no override, so when nesting is refused the wrapper calls
-# `codex exec` directly with --sandbox danger-full-access: the outer sandbox
-# (worktree + granted paths, strict domain allowlist) stays the boundary, the
-# same containment any other subagent's Bash call has. PATH lookup on purpose:
-# the probe only chooses a lane, and the tests stub it. On Linux there is no
-# sandbox-exec, so the companion path (codex's own bubblewrap nested inside the
-# stage sandbox) is unchanged. The probe is a heuristic: it asks whether ANY
-# profile can be applied, which is the refusal macOS produces; a host that
-# accepted this trivial profile yet rejected codex's own would still fall
-# through to the companion path and fail silently as before.
+# macOS nested Seatbelt refusal selects the direct lane; the outer sandbox
+# remains its boundary. PATH lookup is deliberate so tests can stub the probe.
 nested_seatbelt_refused() {
 	command -v sandbox-exec >/dev/null 2>&1 || return 1
 	! sandbox-exec -p '(version 1)(allow default)' /usr/bin/true >/dev/null 2>&1
 }
 
-# newest-first, capped, via -nt insertion - no ls|head parsing
-print_newest() {
-	local cap=$1
-	shift
-	local newest=()
-	local f i inserted
-	for f in "$@"; do
-		inserted=false
-		for i in "${!newest[@]}"; do
-			if [[ "$f" -nt "${newest[$i]}" ]]; then
-				newest=("${newest[@]:0:$i}" "$f" "${newest[@]:$i}")
-				inserted=true
-				break
-			fi
-		done
-		if [[ "$inserted" == false ]]; then
-			newest+=("$f")
+# Provider output stays private until the wrapper-owned prefix is complete.
+umask 077
+provider_log=
+command_log=
+output_log=
+cleanup() {
+	[[ -z "$provider_log" ]] || rm -f -- "$provider_log"
+	[[ -z "$command_log" ]] || rm -f -- "$command_log"
+	[[ -z "$output_log" ]] || rm -f -- "$output_log"
+}
+trap cleanup EXIT
+make_private_temp() {
+	local made
+	made=$(mktemp "${TMPDIR:-/tmp}/loom-codex-forward.XXXXXX" 2>/dev/null) || return 1
+	[[ -n "$made" ]] || return 1
+	chmod 600 "$made" 2>/dev/null || return 1
+	printf '%s\n' "$made"
+}
+print_separator() {
+	printf '%s\n' '--- LOOM-FORWARD-OUTPUT ---'
+}
+print_bounded_file() {
+	local file="$1"
+	[[ -s "$file" ]] || return 0
+	tail -c 65536 "$file" 2>/dev/null || true
+	printf '\n'
+}
+print_deferred_notes() {
+	[[ -z "$deferred_notes" ]] || printf '%s\n' "$deferred_notes"
+}
+resolve_exact_record() {
+	local root="$1" id="$2" record_dir
+	local matches=()
+	shopt -s nullglob
+	matches=("$root"/*/jobs/"${id}.json")
+	shopt -u nullglob
+	[[ ${#matches[@]} -eq 1 && -f "${matches[0]}" && ! -L "${matches[0]}" ]] || return 1
+	record_dir=$(cd "$(dirname "${matches[0]}")" 2>/dev/null && pwd -P) || return 1
+	printf '%s/%s\n' "$record_dir" "$(basename "${matches[0]}")"
+}
+print_evidence() {
+	local exit_code="$1" backend_id="$2" record_path
+	printf '%s\n' '--- LOOM-CODEX-EVIDENCE ---'
+	printf 'exit: %s\n' "$exit_code"
+	if [[ "$mode" == companion ]]; then
+		printf 'mode: companion\n'
+		printf 'job: %s\n' "${backend_id:-none}"
+		record_path=
+		if [[ -n "$backend_id" ]]; then
+			record_path=$(resolve_exact_record "$state_root" "$backend_id" 2>/dev/null || true)
 		fi
-		if [[ ${#newest[@]} -gt $cap ]]; then
-			newest=("${newest[@]:0:$cap}")
-		fi
-	done
-	if [[ ${#newest[@]} -gt 0 ]]; then
-		printf '%s\n' "${newest[@]}"
+		printf 'record: %s\n' "${record_path:-not found}"
+	else
+		printf 'mode: direct (codex exec --sandbox danger-full-access; nested Seatbelt refused)\n'
+		printf 'thread: %s\n' "${backend_id:-none observed}"
 	fi
 }
-
-if nested_seatbelt_refused; then
-	printf 'note: the outer sandbox refuses a nested Seatbelt profile; running codex exec with --sandbox danger-full-access (the outer sandbox is the boundary)\n' >&2
-	status=0
-	# stdin is closed deliberately: `codex exec` treats an open stdin as extra
-	# prompt input ("Reading additional input from stdin...") and blocks until
-	# EOF. Under the Bash tool stdin is already at EOF, so the hang only shows
-	# on a caller that keeps it open - which is exactly the caller that cannot
-	# report why it stalled. The companion lane needs no such redirect: it takes
-	# the prompt positionally and only falls back to stdin when that is empty,
-	# and it gives its own child pipes rather than this process's stdin.
-	codex exec --sandbox danger-full-access --skip-git-repo-check \
-		--model "$model" -c "model_reasoning_effort=\"$effort\"" -- "$task" </dev/null || status=$?
-	printf '\n--- LOOM-CODEX-EVIDENCE ---\n'
-	printf 'exit: %s\n' "$status"
-	printf 'mode: direct (codex exec --sandbox danger-full-access; nested Seatbelt refused)\n'
-	codex_home=${CODEX_HOME:-${HOME}/.codex}
-	shopt -s nullglob
-	rollouts=("$codex_home"/sessions/*/*/*/rollout-*.jsonl)
-	shopt -u nullglob
-	if [[ ${#rollouts[@]} -eq 0 ]]; then
-		printf 'session: none found\n'
-	else
-		printf 'session: %s\n' "$(print_newest 1 "${rollouts[@]}")"
-	fi
-	exit "$status"
+finish_without_end() {
+	local exit_code="$1" backend_id="$2" diagnostic="$3"
+	print_separator
+	[[ -z "$diagnostic" ]] || printf '%s\n' "$diagnostic"
+	print_bounded_file "$provider_log"
+	print_deferred_notes
+	print_evidence "$exit_code" "$backend_id"
+	exit "$exit_code"
+}
+run_captured() {
+	local captured_status=0
+	: >"$command_log"
+	"$@" >"$command_log" 2>>"$provider_log" || captured_status=$?
+	{ printf '\n'; command cat "$command_log"; } >>"$provider_log" 2>/dev/null || true
+	return "$captured_status"
+}
+valid_backend_id() {
+	local value="$1"
+	[[ ${#value} -le 128 && "$value" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$ ]]
+}
+if ! provider_log=$(make_private_temp) || ! command_log=$(make_private_temp) ||
+	! output_log=$(make_private_temp); then
+	print_separator
+	printf '%s\n' 'codex-forward.sh could not create its private provider-output file'
+	printf '%s\n' '--- LOOM-CODEX-EVIDENCE ---' 'exit: 1' 'mode: companion' 'job: none' 'record: not found'
+	exit 1
 fi
-
-versions_dir=${HOME:?HOME is required}/.claude/plugins/cache/openai-codex/codex
+mode=companion
+deferred_notes=
+if nested_seatbelt_refused; then
+	mode=direct
+	deferred_notes='note: the outer sandbox refuses a nested Seatbelt profile; running codex exec with --sandbox danger-full-access (the outer sandbox is the boundary)'
+fi
+state_root=${TMPDIR:-/tmp}/codex-companion
+if [[ -n "${CLAUDE_PLUGIN_DATA:-}" ]]; then
+	state_root=${CLAUDE_PLUGIN_DATA}/state
+fi
+if ! command -v jq >/dev/null 2>&1; then
+	finish_without_end 1 '' 'codex-forward.sh requires jq to decode structured Codex output'
+fi
+read_direct_thread_id() {
+	jq -rs 'map(select(type == "object" and .type == "thread.started" and (.thread_id | type == "string"))) | .[0].thread_id // empty' \
+		"$provider_log" 2>/dev/null || true
+}
+run_direct() {
+	local child_pid child_status=0 thread_id= final_status outcome
+	codex exec --json --sandbox danger-full-access --skip-git-repo-check \
+		--model "$model" -c "model_reasoning_effort=$effort" -- "$task" \
+		</dev/null >"$provider_log" 2>"$command_log" &
+	child_pid=$!
+	while kill -0 "$child_pid" 2>/dev/null; do
+		thread_id=$(read_direct_thread_id)
+		if [[ -n "$thread_id" ]]; then
+			break
+		fi
+		sleep 0.05 2>/dev/null || true
+	done
+	[[ -n "$thread_id" ]] || thread_id=$(read_direct_thread_id)
+	if [[ -n "$thread_id" ]] && valid_backend_id "$thread_id"; then
+		printf 'LOOM-FORWARD-START {"v":1,"backend":"direct","thread_id":"%s"}\n' "$thread_id"
+	else
+		thread_id=
+	fi
+	wait "$child_pid" || child_status=$?
+	{ printf '\n'; command cat "$command_log"; } >>"$provider_log" 2>/dev/null || true
+	if [[ -z "$thread_id" ]]; then
+		final_status=$child_status
+		[[ $final_status -ne 0 ]] || final_status=1
+		finish_without_end "$final_status" '' 'codex exec ended without a valid thread.started event'
+	fi
+	if [[ $child_status -eq 0 ]]; then
+		outcome=succeeded
+	else
+		outcome=failed
+	fi
+	printf 'LOOM-FORWARD-END {"v":1,"backend":"direct","thread_id":"%s","outcome":"%s","exit_code":%s}\n' \
+		"$thread_id" "$outcome" "$child_status"
+	print_separator
+	print_bounded_file "$provider_log"
+	print_deferred_notes
+	print_evidence "$child_status" "$thread_id"
+	exit "$child_status"
+}
+if [[ "$mode" == direct ]]; then
+	run_direct
+fi
+if [[ -z "${HOME:-}" ]]; then
+	finish_without_end 1 '' 'HOME is required to locate codex-companion.mjs'
+fi
+versions_dir=${HOME}/.claude/plugins/cache/openai-codex/codex
 shopt -s nullglob
 candidates=("$versions_dir"/*/scripts/codex-companion.mjs)
 shopt -u nullglob
-
 if [[ ${#candidates[@]} -eq 0 ]]; then
-	printf 'codex-companion.mjs not found under %s\n' "$versions_dir" >&2
-	exit 1
+	finish_without_end 1 '' "codex-companion.mjs not found under $versions_dir"
 fi
 
 companion=${candidates[0]}
@@ -180,49 +248,83 @@ for candidate in "${candidates[@]:1}"; do
 		companion=$candidate
 	fi
 done
-
 if [[ ! -f "$companion" || -L "$companion" ]]; then
-	printf 'Refusing unsafe companion path: %s\n' "$companion" >&2
-	exit 1
+	finish_without_end 1 '' "Refusing unsafe companion path: $companion"
 fi
 
-# The companion derives its job-state root from CLAUDE_PLUGIN_DATA:
-# `stateRoot = $CLAUDE_PLUGIN_DATA/state` (the plugin's scripts/lib/state.mjs).
-# Claude Code points that at ~/.claude/plugins/data/<plugin>, and some sandbox
-# configurations deny writes anywhere under ~/.claude/plugins — the job-record
-# mkdir then fails with EPERM before any model call, which reads as a codex or
-# auth failure but is neither. A `sandbox.filesystem.allowWrite` grant does not
-# help: it is the deny on the parent that wins.
-#
-# ~/.codex is already granted to this lane (CODEX_SANDBOX_WRITE_PATHS in
-# loom/src/codex.rs), so redirect there — but ONLY when the configured root is
-# genuinely unwritable. Machines where the default works keep it, so the
-# plugin's own /codex:status and /codex:result keep finding their records where
-# they expect them.
+# Retain the existing plugin-data redirect, but defer its note.
 if [[ -n "${CLAUDE_PLUGIN_DATA:-}" ]] && ! mkdir -p "${CLAUDE_PLUGIN_DATA}/state" 2>/dev/null; then
 	CLAUDE_PLUGIN_DATA="${HOME}/.codex/plugin-data"
 	export CLAUDE_PLUGIN_DATA
-	mkdir -p "${CLAUDE_PLUGIN_DATA}/state" 2>/dev/null || true
-	printf 'note: plugin data root not writable; codex state redirected to %s\n' \
-		"$CLAUDE_PLUGIN_DATA" >&2
+	state_root=${CLAUDE_PLUGIN_DATA}/state
+	mkdir -p "$state_root" 2>/dev/null || true
+	deferred_notes="note: plugin data root not writable; codex state redirected to $CLAUDE_PLUGIN_DATA"
 fi
-
-status=0
-node "$companion" task "$task" --write --model "$model" --effort "$effort" || status=$?
-
-printf '\n--- LOOM-CODEX-EVIDENCE ---\n'
-printf 'exit: %s\n' "$status"
-printf 'mode: companion\n'
-
-state_root=${CLAUDE_PLUGIN_DATA:-${HOME}/.claude/plugins/data/codex-openai-codex}/state
-shopt -s nullglob
-job_files=("$state_root"/*/jobs/*.json)
-shopt -u nullglob
-
-if [[ ${#job_files[@]} -eq 0 ]]; then
-	printf 'jobs: none found\n'
-else
-	print_newest 3 "${job_files[@]}"
+launch_status=0
+run_captured node "$companion" task "$task" --background --json --write \
+	--model "$model" --effort "$effort" || launch_status=$?
+if [[ $launch_status -ne 0 ]]; then
+	finish_without_end "$launch_status" '' 'codex companion failed to launch a background job'
 fi
-
-exit "$status"
+job_id=$(jq -er 'if type == "object" and (.jobId | type == "string") then .jobId else empty end' \
+	"$command_log" 2>/dev/null || true)
+if [[ -z "$job_id" ]] || ! valid_backend_id "$job_id"; then
+	finish_without_end 1 '' 'codex companion returned no valid jobId'
+fi
+printf 'LOOM-FORWARD-START {"v":1,"backend":"companion","job_id":"%s"}\n' "$job_id"
+outcome=
+exit_code=1
+wait_diagnostic=
+while [[ -z "$outcome" ]]; do
+	wait_status=0
+	run_captured node "$companion" status "$job_id" --wait --json || wait_status=$?
+	if [[ $wait_status -ne 0 ]]; then
+		exit_code=$wait_status
+		wait_diagnostic='codex companion wait failed before authoritative completion'
+		break
+	fi
+	status_phase=$(jq -er --arg id "$job_id" \
+		'if type == "object" and .job.id == $id and (.job.status | type == "string") and (.job.phase | type == "string") then [.job.status, .job.phase] | @tsv else empty end' \
+		"$command_log" 2>/dev/null || true)
+	if [[ -z "$status_phase" ]]; then
+		wait_diagnostic='codex companion returned a malformed status snapshot'
+		break
+	fi
+	job_status=${status_phase%%$'\t'*}
+	job_phase=${status_phase#*$'\t'}
+	case "$job_status:$job_phase" in
+	queued:* | running:*) ;;
+	completed:done)
+		outcome=succeeded
+		exit_code=0
+		;;
+	failed:*) outcome=failed ;;
+	cancelled:*) outcome=canceled ;;
+	*)
+		wait_diagnostic="codex companion returned unsupported terminal state $job_status/$job_phase"
+		break
+		;;
+	esac
+done
+if [[ -z "$outcome" ]]; then
+	finish_without_end "$exit_code" "$job_id" "$wait_diagnostic"
+fi
+result_status=0
+run_captured node "$companion" result "$job_id" --json || result_status=$?
+if [[ $result_status -eq 0 ]]; then
+	jq -r --arg id "$job_id" \
+		'if type == "object" and .job.id == $id and .storedJob.id == $id then (.storedJob.rendered // .storedJob.errorMessage // .storedJob.result // empty) | if type == "string" then . else tojson end else empty end' \
+		"$command_log" >"$output_log" 2>/dev/null || : >"$output_log"
+fi
+printf 'LOOM-FORWARD-END {"v":1,"backend":"companion","job_id":"%s","outcome":"%s","exit_code":%s}\n' \
+	"$job_id" "$outcome" "$exit_code"
+print_separator
+if [[ -s "$output_log" ]]; then
+	print_bounded_file "$output_log"
+elif [[ $result_status -ne 0 ]]; then
+	printf '%s\n' 'codex companion result retrieval failed after authoritative completion'
+	print_bounded_file "$provider_log"
+fi
+print_deferred_notes
+print_evidence "$exit_code" "$job_id"
+exit "$exit_code"

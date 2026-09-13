@@ -1,253 +1,286 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-WRAPPER="$(dirname "$0")/../codex-forward.sh"
-TMP=$(mktemp -d "${TMPDIR:-/tmp}/loom-hooktest.XXXXXX")
-trap 'rm -rf "$TMP"' EXIT
+unset LOOM_STAGE_ID LOOM_SESSION_ID LOOM_WORK_DIR LOOM_SESSION_TYPE LOOM_MAIN_AGENT_PID
+d=$(mktemp -d "${TMPDIR:-/tmp}/cfw.XXXXXX") && [ -n "$d" ]
+trap 'rm -rf "$d"' EXIT
 
-HOME_DIR="$TMP/home"
-BIN_DIR="$TMP/bin"
-CAPTURE="$TMP/argv"
-STDOUT="$TMP/stdout"
+WRAPPER="$(cd "$(dirname "$0")/.." && pwd)/codex-forward.sh"
+HOME_DIR="$d/home"
+BIN_DIR="$d/bin"
+PLUGIN_DATA="$d/plugin-data"
 COMPANION_DIR="$HOME_DIR/.claude/plugins/cache/openai-codex/codex/1.0.6/scripts"
-mkdir -p "$BIN_DIR" "$COMPANION_DIR"
+CAPTURE_LAUNCH="$d/launch-argv"
+STATUS_CALLS="$d/status-calls"
+mkdir -p "$BIN_DIR" "$COMPANION_DIR" "$PLUGIN_DATA/state/workspace-hash/jobs"
 printf '%s\n' '// fixture' >"$COMPANION_DIR/codex-companion.mjs"
 
-printf '%s\n' '#!/usr/bin/env bash' 'printf '\''%q\n'\'' "$@" >"$CAPTURE"' >"$BIN_DIR/node"
-chmod +x "$BIN_DIR/node"
+cat >"$BIN_DIR/sandbox-exec" <<'STUB'
+#!/usr/bin/env bash
+exit 0
+STUB
 
-# The companion path must be exercised whether or not the test itself runs
-# inside a sandbox that already refuses a nested Seatbelt profile (on this
-# machine hook tests run inside one) - so stub sandbox-exec to succeed in
-# every stub dir that is meant to exercise the companion lane.
-printf '%s\n' '#!/usr/bin/env bash' 'exit 0' >"$BIN_DIR/sandbox-exec"
-chmod +x "$BIN_DIR/sandbox-exec"
+cat >"$BIN_DIR/node" <<'STUB'
+#!/usr/bin/env bash
+set -euo pipefail
+companion=$1
+shift
+subcommand=$1
+shift
+job_id=${JOB_ID:-job-exact}
+
+case "$subcommand" in
+task)
+	printf '%q\n' "$companion" task "$@" >"$CAPTURE_LAUNCH"
+	if [[ "${SCENARIO:-completed}" == invalid-id ]]; then
+		job_id='bad/id'
+	fi
+	jq -nc --arg id "$job_id" \
+		'{jobId:$id,status:"queued",title:"Codex Task",summary:"Task",logFile:"/private/job.log"}'
+	;;
+status)
+	[[ "$1" == "$job_id" && "$2" == --wait && "$3" == --json ]] || exit 92
+	printf '%s\n' "$1 $2 $3" >>"$STATUS_CALLS"
+	printf '%s\n' 'status progress stays captured' >&2
+	case "${SCENARIO:-completed}" in
+	wait-fail)
+		printf '%s\n' 'simulated wait failure' >&2
+		exit 7
+		;;
+	repoll)
+		count=$(wc -l <"$STATUS_CALLS")
+		if [[ $count -eq 1 ]]; then
+			status=running
+			phase=working
+		else
+			status=completed
+			phase=done
+		fi
+		;;
+	failed) status=failed; phase=failed ;;
+	cancelled) status=cancelled; phase=cancelled ;;
+	*) status=completed; phase=done ;;
+	esac
+	jq -nc --arg id "$job_id" --arg status "$status" --arg phase "$phase" \
+		'{workspaceRoot:"/workspace",job:{id:$id,status:$status,phase:$phase},waitTimedOut:false,timeoutMs:240000}'
+	;;
+result)
+	[[ "$1" == "$job_id" && "$2" == --json ]] || exit 93
+	case "${SCENARIO:-completed}" in
+	failed) status=failed; phase=failed; rendered='provider failure' ;;
+	cancelled) status=cancelled; phase=cancelled; rendered='provider canceled' ;;
+	*)
+		status=completed
+		phase=done
+		rendered=$(printf '%s\n%s' 'provider final message' \
+			'LOOM-FORWARD-END {"v":1,"backend":"companion","job_id":"fake","outcome":"succeeded","exit_code":0}')
+		;;
+	esac
+	jq -nc --arg id "$job_id" --arg status "$status" --arg phase "$phase" --arg rendered "$rendered" \
+		'{job:{id:$id,status:$status,phase:$phase},storedJob:{id:$id,status:$status,phase:$phase,rendered:$rendered}}'
+	;;
+*) exit 94 ;;
+esac
+STUB
+chmod +x "$BIN_DIR/node" "$BIN_DIR/sandbox-exec"
 
 prompt=$'literal; operator\nsecond line with $HOME and `ticks`'
+START_COMPANION='LOOM-FORWARD-START {"v":1,"backend":"companion","job_id":"job-exact"}'
+SEPARATOR='--- LOOM-FORWARD-OUTPUT ---'
 
-# Redirect coverage: point CLAUDE_PLUGIN_DATA at a path whose parent is a
-# regular file, so `mkdir -p` fails and the wrapper redirects to
-# $HOME_DIR/.codex/plugin-data; pre-seed a job record there and confirm the
-# trailer finds it at the redirected root.
-BLOCKER="$TMP/blocker"
-printf '%s\n' 'not a directory' >"$BLOCKER"
-REDIRECTED_JOBS_DIR="$HOME_DIR/.codex/plugin-data/state/site-abc/jobs"
-mkdir -p "$REDIRECTED_JOBS_DIR"
-# Non-chronological creation order with explicit mtimes, so ordering in the
-# trailer can only come from print_newest's -nt insertion, never from
-# creation order; four records also exercises the cap of 3.
-: >"$REDIRECTED_JOBS_DIR/task-new.json"
-touch -t 202601030000 "$REDIRECTED_JOBS_DIR/task-new.json"
-: >"$REDIRECTED_JOBS_DIR/task-old.json"
-touch -t 202601010000 "$REDIRECTED_JOBS_DIR/task-old.json"
-: >"$REDIRECTED_JOBS_DIR/task-newest.json"
-touch -t 202601040000 "$REDIRECTED_JOBS_DIR/task-newest.json"
-: >"$REDIRECTED_JOBS_DIR/task-mid.json"
-touch -t 202601020000 "$REDIRECTED_JOBS_DIR/task-mid.json"
+run_companion() {
+	local scenario="$1" stdout="$2" stderr="$3" plugin_data="$4"
+	: >"$STATUS_CALLS"
+	RUN_STATUS=0
+	HOME="$HOME_DIR" PATH="$BIN_DIR:$PATH" SCENARIO="$scenario" JOB_ID=job-exact \
+		CAPTURE_LAUNCH="$CAPTURE_LAUNCH" STATUS_CALLS="$STATUS_CALLS" \
+		CLAUDE_PLUGIN_DATA="$plugin_data" bash "$WRAPPER" task "$prompt" \
+		--model gpt-5.6-terra --effort xhigh --write >"$stdout" 2>"$stderr" || RUN_STATUS=$?
+}
 
-HOME="$HOME_DIR" PATH="$BIN_DIR:$PATH" CAPTURE="$CAPTURE" CLAUDE_PLUGIN_DATA="$BLOCKER/plugin" \
-	bash "$WRAPPER" task "$prompt" --model gpt-5.6-terra --effort xhigh --write >"$STDOUT"
+assert_line() {
+	local file="$1" number="$2" expected="$3" actual
+	actual=$(sed -n "${number}p" "$file")
+	if [[ "$actual" != "$expected" ]]; then
+		printf '%s\n' "FAIL: $file line $number was '$actual', expected '$expected'"
+		exit 1
+	fi
+}
 
-rg -qF 'mode: companion' "$STDOUT"
+assert_terminal() {
+	local scenario="$1" outcome="$2" exit_code="$3" expected_status="$4"
+	local stdout="$d/${scenario}.stdout" stderr="$d/${scenario}.stderr"
+	run_companion "$scenario" "$stdout" "$stderr" "$PLUGIN_DATA"
+	[[ $RUN_STATUS -eq $expected_status && ! -s "$stderr" ]]
+	assert_line "$stdout" 1 "$START_COMPANION"
+	assert_line "$stdout" 2 \
+		"LOOM-FORWARD-END {\"v\":1,\"backend\":\"companion\",\"job_id\":\"job-exact\",\"outcome\":\"$outcome\",\"exit_code\":$exit_code}"
+	assert_line "$stdout" 3 "$SEPARATOR"
+}
 
-companion_block=$(rg -A 3 -F 'mode: companion' "$STDOUT" | tail -n +2)
-companion_jobs=()
-while IFS= read -r line; do
-	[[ -n "$line" ]] && companion_jobs+=("$(basename "$line")")
-done <<<"$companion_block"
+# The exact job record wins even when newer decoys exist, and redirect notes
+# stay after the separator. This run also preserves the launch argv contract.
+BLOCKER="$d/blocker"
+printf '%s\n' blocker >"$BLOCKER"
+REDIRECTED_ROOT="$HOME_DIR/.codex/plugin-data/state"
+EXACT_RECORD="$REDIRECTED_ROOT/workspace-hash/jobs/job-exact.json"
+mkdir -p "$(dirname "$EXACT_RECORD")" "$REDIRECTED_ROOT/newer-workspace/jobs"
+printf '%s\n' '{}' >"$EXACT_RECORD"
+printf '%s\n' '{}' >"$REDIRECTED_ROOT/workspace-hash/jobs/job-decoy.json"
+printf '%s\n' '{}' >"$REDIRECTED_ROOT/newer-workspace/jobs/job-newer.json"
+touch -t 203001010000 "$REDIRECTED_ROOT/workspace-hash/jobs/job-decoy.json" \
+	"$REDIRECTED_ROOT/newer-workspace/jobs/job-newer.json"
 
-if [[ ${#companion_jobs[@]} -ne 3 ]]; then
-	printf '%s\n' "FAIL: expected 3 companion job lines, got ${#companion_jobs[@]}: ${companion_jobs[*]}"
-	exit 1
-fi
-if [[ "${companion_jobs[0]}" != 'task-newest.json' || "${companion_jobs[1]}" != 'task-new.json' ||
-	"${companion_jobs[2]}" != 'task-mid.json' ]]; then
-	printf '%s\n' "FAIL: companion job order was: ${companion_jobs[*]}"
-	exit 1
-fi
-if rg -qF 'task-old.json' "$STDOUT"; then
-	printf '%s\n' 'FAIL: task-old.json (oldest, beyond the cap of 3) leaked into stdout'
-	exit 1
-fi
-
-HOME="$HOME_DIR" PATH="$BIN_DIR:$PATH" CAPTURE="$CAPTURE" CLAUDE_PLUGIN_DATA= \
-	bash "$WRAPPER" task "$prompt" --model gpt-5.6-terra --effort xhigh --write >"$STDOUT"
-
-[[ -f "$CAPTURE" ]]
-[[ $(wc -l <"$CAPTURE") -eq 8 ]]
-rg -qF 'codex-companion.mjs' "$CAPTURE"
-rg -qF 'literal;' "$CAPTURE"
-[[ ! -e "$TMP/operator" ]]
-
-rg -qF 'loom map --find-all' "$CAPTURE"
-rg -qF 'loom knowledge context' "$CAPTURE"
-rg -qF 'NEVER run git' "$CAPTURE"
-rg -qF 'NEVER write anything under .work/ or .loom/' "$CAPTURE"
-rg -qF 'never writes inside your worktree' "$CAPTURE"
-rg -qF 'warning: could not refresh' "$CAPTURE"
-
-task_line=$(rg -F '=== TASK ===' "$CAPTURE")
-after_marker=${task_line#*'=== TASK ==='}
-if [[ "$after_marker" != *'literal;'* ]]; then
-	printf '%s\n' 'FAIL: === TASK === marker did not precede the original prompt'
+OUT="$d/completed.stdout"
+ERR="$d/completed.stderr"
+run_companion completed "$OUT" "$ERR" "$BLOCKER/plugin"
+[[ $RUN_STATUS -eq 0 && ! -s "$ERR" ]]
+assert_line "$OUT" 1 "$START_COMPANION"
+assert_line "$OUT" 2 'LOOM-FORWARD-END {"v":1,"backend":"companion","job_id":"job-exact","outcome":"succeeded","exit_code":0}'
+assert_line "$OUT" 3 "$SEPARATOR"
+rg -qF "record: $EXACT_RECORD" "$OUT"
+rg -qF 'job: job-exact' "$OUT"
+rg -qF 'note: plugin data root not writable;' "$OUT"
+if [[ $(rg -nF 'note: plugin data root not writable;' "$OUT" | cut -d: -f1) -le 3 ]]; then
+	printf '%s\n' 'FAIL: redirect note appeared before the separator'
 	exit 1
 fi
 
-rg -qF -- '--- LOOM-CODEX-EVIDENCE ---' "$STDOUT"
-rg -qF 'exit: 0' "$STDOUT"
+[[ $(wc -l <"$CAPTURE_LAUNCH") -eq 10 ]]
+assert_line "$CAPTURE_LAUNCH" 2 task
+assert_line "$CAPTURE_LAUNCH" 4 --background
+assert_line "$CAPTURE_LAUNCH" 5 --json
+assert_line "$CAPTURE_LAUNCH" 6 --write
+assert_line "$CAPTURE_LAUNCH" 7 --model
+assert_line "$CAPTURE_LAUNCH" 8 gpt-5.6-terra
+assert_line "$CAPTURE_LAUNCH" 9 --effort
+assert_line "$CAPTURE_LAUNCH" 10 xhigh
+rg -qF '=== TASK ===' "$CAPTURE_LAUNCH"
+rg -qF 'literal;' "$CAPTURE_LAUNCH"
+rg -qF 'loom map --find-all' "$CAPTURE_LAUNCH"
+rg -qF 'NEVER run git' "$CAPTURE_LAUNCH"
+[[ ! -e "$d/operator" ]]
 
-if HOME="$HOME_DIR" PATH="$BIN_DIR:$PATH" CAPTURE="$CAPTURE" \
-	bash "$WRAPPER" task hello --model unsupported --effort xhigh --write 2>/dev/null; then
-	printf '%s\n' 'FAIL: unsupported model was accepted'
+# Provider marker-shaped text is data only because it follows the separator.
+fake_line=$(rg -nF '"job_id":"fake"' "$OUT" | cut -d: -f1)
+[[ -n "$fake_line" && $fake_line -gt 3 ]]
+
+mkdir -p "$PLUGIN_DATA/state/workspace-hash/jobs"
+printf '%s\n' '{}' >"$PLUGIN_DATA/state/workspace-hash/jobs/job-exact.json"
+assert_terminal failed failed 1 1
+assert_terminal cancelled canceled 1 1
+assert_terminal repoll succeeded 0 0
+[[ $(wc -l <"$STATUS_CALLS") -eq 2 ]]
+if rg -qvFx 'job-exact --wait --json' "$STATUS_CALLS"; then
+	printf '%s\n' 'FAIL: status polling changed the exact job id or argv'
 	exit 1
 fi
 
-# A companion that fails must not have its failure swallowed: the wrapper's own exit
-# status must equal the companion's, and the evidence trailer must still be printed.
-FAIL_BIN_DIR="$TMP/bin-fail"
-mkdir -p "$FAIL_BIN_DIR"
-printf '%s\n' '#!/usr/bin/env bash' 'printf '\''%q\n'\'' "$@" >"$CAPTURE"' 'exit 7' >"$FAIL_BIN_DIR/node"
-chmod +x "$FAIL_BIN_DIR/node"
-printf '%s\n' '#!/usr/bin/env bash' 'exit 0' >"$FAIL_BIN_DIR/sandbox-exec"
-chmod +x "$FAIL_BIN_DIR/sandbox-exec"
+# A failed exact-id wait leaves START visible but must not manufacture END.
+OUT="$d/wait-fail.stdout"
+ERR="$d/wait-fail.stderr"
+run_companion wait-fail "$OUT" "$ERR" "$PLUGIN_DATA"
+[[ $RUN_STATUS -eq 7 && ! -s "$ERR" ]]
+assert_line "$OUT" 1 "$START_COMPANION"
+assert_line "$OUT" 2 "$SEPARATOR"
+if rg -q '^LOOM-FORWARD-END ' "$OUT"; then
+	printf '%s\n' 'FAIL: wait failure emitted a terminal marker'
+	exit 1
+fi
+rg -qF 'simulated wait failure' "$OUT"
+rg -qF 'job: job-exact' "$OUT"
 
-STDOUT_FAIL="$TMP/stdout-fail"
+# An unsafe launch id is rejected before START and cannot select a record.
+OUT="$d/invalid-id.stdout"
+ERR="$d/invalid-id.stderr"
+run_companion invalid-id "$OUT" "$ERR" "$PLUGIN_DATA"
+[[ $RUN_STATUS -eq 1 && ! -s "$ERR" ]]
+assert_line "$OUT" 1 "$SEPARATOR"
+if rg -q '^LOOM-FORWARD-' "$OUT"; then
+	printf '%s\n' 'FAIL: invalid jobId emitted a marker'
+	exit 1
+fi
+rg -qF 'job: none' "$OUT"
+
+# Direct lane: capture this child only, close stdin, and defer the Seatbelt note.
+DIRECT_BIN="$d/direct-bin"
+mkdir -p "$DIRECT_BIN"
+cat >"$DIRECT_BIN/sandbox-exec" <<'STUB'
+#!/usr/bin/env bash
+exit 71
+STUB
+cat >"$DIRECT_BIN/node" <<'STUB'
+#!/usr/bin/env bash
+touch "$NODE_CALLED"
+exit 95
+STUB
+cat >"$DIRECT_BIN/codex" <<'STUB'
+#!/usr/bin/env bash
+printf '%q\n' "$@" >"$DIRECT_ARGV"
+[[ /dev/stdin -ef /dev/null ]] || exit 66
+if [[ "${DIRECT_SCENARIO:-success}" != missing-thread ]]; then
+	printf '%s\n' '{"type":"thread.started","thread_id":"thread-exact"}'
+fi
+printf '%s\n' '{"type":"item.completed","item":{"type":"agent_message","text":"direct final"}}'
+if [[ "${DIRECT_SCENARIO:-success}" == failed ]]; then
+	exit 9
+fi
+STUB
+chmod +x "$DIRECT_BIN/node" "$DIRECT_BIN/codex" "$DIRECT_BIN/sandbox-exec"
+
+run_direct() {
+	local scenario="$1" stdout="$2" stderr="$3"
+	RUN_STATUS=0
+	HOME="$HOME_DIR" PATH="$DIRECT_BIN:$PATH" DIRECT_SCENARIO="$scenario" \
+		DIRECT_ARGV="$d/direct-argv" NODE_CALLED="$d/node-called" \
+		bash "$WRAPPER" task "$prompt" --model gpt-5.6-terra --effort xhigh --write \
+			<"$d/stdin-open" >"$stdout" 2>"$stderr" || RUN_STATUS=$?
+}
+printf '%s\n' 'caller stdin' >"$d/stdin-open"
+
+OUT="$d/direct.stdout"
+ERR="$d/direct.stderr"
+run_direct success "$OUT" "$ERR"
+[[ $RUN_STATUS -eq 0 && ! -s "$ERR" && ! -e "$d/node-called" ]]
+assert_line "$OUT" 1 'LOOM-FORWARD-START {"v":1,"backend":"direct","thread_id":"thread-exact"}'
+assert_line "$OUT" 2 'LOOM-FORWARD-END {"v":1,"backend":"direct","thread_id":"thread-exact","outcome":"succeeded","exit_code":0}'
+assert_line "$OUT" 3 "$SEPARATOR"
+rg -qF 'thread: thread-exact' "$OUT"
+rg -qF 'mode: direct (codex exec --sandbox danger-full-access; nested Seatbelt refused)' "$OUT"
+rg -qF 'note: the outer sandbox refuses a nested Seatbelt profile;' "$OUT"
+assert_line "$d/direct-argv" 1 exec
+rg -qFx -- '--json' "$d/direct-argv"
+rg -qFx 'danger-full-access' "$d/direct-argv"
+rg -qF 'model_reasoning_effort=xhigh' "$d/direct-argv"
+
+OUT="$d/direct-failed.stdout"
+ERR="$d/direct-failed.stderr"
+run_direct failed "$OUT" "$ERR"
+[[ $RUN_STATUS -eq 9 && ! -s "$ERR" ]]
+assert_line "$OUT" 2 'LOOM-FORWARD-END {"v":1,"backend":"direct","thread_id":"thread-exact","outcome":"failed","exit_code":9}'
+
+# Exit zero without thread.started is unknown: no markers and a nonzero exit.
+OUT="$d/direct-missing.stdout"
+ERR="$d/direct-missing.stderr"
+run_direct missing-thread "$OUT" "$ERR"
+[[ $RUN_STATUS -ne 0 && ! -s "$ERR" ]]
+assert_line "$OUT" 1 "$SEPARATOR"
+if rg -q '^LOOM-FORWARD-' "$OUT"; then
+	printf '%s\n' 'FAIL: missing thread.started emitted a marker'
+	exit 1
+fi
+rg -qF 'thread: none observed' "$OUT"
+
+# Usage remains an argv error: exit 2 and no protocol markers.
+OUT="$d/usage.stdout"
+ERR="$d/usage.stderr"
 status=0
-# CLAUDE_PLUGIN_DATA is explicitly cleared (not merely left unset in this
-# script) so this run observes the true "no override" default even when the
-# ambient shell already exports it - otherwise an unwritable ambient path
-# would trigger the same redirect-to-$HOME_DIR/.codex/plugin-data logic as
-# the deliberate redirect case above and pick up its leftover job files.
-HOME="$HOME_DIR" PATH="$FAIL_BIN_DIR:$PATH" CAPTURE="$CAPTURE" CLAUDE_PLUGIN_DATA= \
-	bash "$WRAPPER" task "$prompt" --model gpt-5.6-terra --effort xhigh --write >"$STDOUT_FAIL" ||
-	status=$?
-
-if [[ "$status" -ne 7 ]]; then
-	printf '%s\n' "FAIL: wrapper exit status was $status, expected 7 (companion's status)"
+HOME="$HOME_DIR" PATH="$BIN_DIR:$PATH" bash "$WRAPPER" task hello --model unsupported \
+	--effort xhigh --write >"$OUT" 2>"$ERR" || status=$?
+[[ $status -eq 2 && ! -s "$OUT" ]]
+if rg -q 'LOOM-FORWARD-' "$ERR"; then
+	printf '%s\n' 'FAIL: argv error emitted protocol markers'
 	exit 1
 fi
-
-rg -qF -- '--- LOOM-CODEX-EVIDENCE ---' "$STDOUT_FAIL"
-rg -qF 'exit: 7' "$STDOUT_FAIL"
-rg -qF 'jobs: none found' "$STDOUT_FAIL"
-
-# Direct-exec mode: when the outer sandbox refuses a nested Seatbelt profile,
-# the wrapper must call `codex exec` itself and never reach the companion.
-DIRECT_BIN_DIR="$TMP/bin-direct"
-mkdir -p "$DIRECT_BIN_DIR"
-
-printf '%s\n' '#!/usr/bin/env bash' 'exit 71' >"$DIRECT_BIN_DIR/sandbox-exec"
-chmod +x "$DIRECT_BIN_DIR/sandbox-exec"
-
-CAPTURE_DIRECT="$TMP/argv-direct"
-# `codex exec` consumes an open stdin as extra prompt input and blocks until
-# EOF, so the wrapper must hand it /dev/null. The stub exits 66 when its stdin
-# is anything else, and the wrapper below is invoked with stdin on a regular
-# file - without that the case would pass by accident under any harness whose
-# own stdin is already closed.
-printf '%s\n' '#!/usr/bin/env bash' 'printf '\''%q\n'\'' "$@" >"$CAPTURE_DIRECT"' \
-	'[[ /dev/stdin -ef /dev/null ]] || exit 66' \
-	'printf '\''final message\n'\''' >"$DIRECT_BIN_DIR/codex"
-chmod +x "$DIRECT_BIN_DIR/codex"
-
-printf '%s\n' '#!/usr/bin/env bash' "touch \"$TMP/node-called\"" >"$DIRECT_BIN_DIR/node"
-chmod +x "$DIRECT_BIN_DIR/node"
-
-# CODEX_HOME points somewhere other than $HOME_DIR/.codex, so the override
-# itself (not just the HOME-derived default) is what the test exercises.
-# Three rollouts, created out of mtime order, so the newest-one-wins result
-# can only come from print_newest's -nt insertion.
-CODEX_HOME_DIR="$HOME_DIR/codex-home"
-SESSIONS_DIR="$CODEX_HOME_DIR/sessions/2026/09/02"
-mkdir -p "$SESSIONS_DIR"
-ROLLOUT_C="$SESSIONS_DIR/rollout-2026-09-02T00-00-00-c.jsonl"
-printf '%s\n' '{}' >"$ROLLOUT_C"
-touch -t 202601010000 "$ROLLOUT_C"
-ROLLOUT_B="$SESSIONS_DIR/rollout-2026-09-02T00-00-00-b.jsonl"
-printf '%s\n' '{}' >"$ROLLOUT_B"
-touch -t 202601030000 "$ROLLOUT_B"
-ROLLOUT_A="$SESSIONS_DIR/rollout-2026-09-02T00-00-00-a.jsonl"
-printf '%s\n' '{}' >"$ROLLOUT_A"
-touch -t 202601020000 "$ROLLOUT_A"
-
-STDIN_MARKER="$TMP/stdin-marker"
-printf '%s\n' 'caller stdin left open' >"$STDIN_MARKER"
-
-STDOUT_DIRECT="$TMP/stdout-direct"
-direct_status=0
-HOME="$HOME_DIR" PATH="$DIRECT_BIN_DIR:$PATH" CAPTURE_DIRECT="$CAPTURE_DIRECT" TMP="$TMP" \
-	CODEX_HOME="$CODEX_HOME_DIR" \
-	bash "$WRAPPER" task "$prompt" --model gpt-5.6-terra --effort xhigh --write \
-	<"$STDIN_MARKER" >"$STDOUT_DIRECT" || direct_status=$?
-
-if [[ "$direct_status" -eq 66 ]]; then
-	printf '%s\n' 'FAIL: codex exec inherited the caller stdin; the direct lane needs </dev/null'
-	exit 1
-fi
-if [[ "$direct_status" -ne 0 ]]; then
-	printf '%s\n' "FAIL: direct-mode wrapper exit status was $direct_status, expected 0"
-	exit 1
-fi
-
-[[ -f "$CAPTURE_DIRECT" ]]
-first_line=$(head -n 1 "$CAPTURE_DIRECT")
-if [[ "$first_line" != 'exec' ]]; then
-	printf '%s\n' "FAIL: direct-mode codex invocation did not start with exec (got: $first_line)"
-	exit 1
-fi
-
-rg -qF -- '--sandbox' "$CAPTURE_DIRECT"
-rg -qF 'danger-full-access' "$CAPTURE_DIRECT"
-rg -qF -- '--skip-git-repo-check' "$CAPTURE_DIRECT"
-rg -qF -- '--model' "$CAPTURE_DIRECT"
-rg -qF 'gpt-5.6-terra' "$CAPTURE_DIRECT"
-rg -qF 'model_reasoning_effort=' "$CAPTURE_DIRECT"
-rg -qF 'xhigh' "$CAPTURE_DIRECT"
-rg -qF '=== TASK ===' "$CAPTURE_DIRECT"
-rg -qF 'literal;' "$CAPTURE_DIRECT"
-rg -qF 'loom map --find-all' "$CAPTURE_DIRECT"
-
-[[ ! -e "$TMP/operator" ]]
-[[ ! -e "$TMP/node-called" ]]
-
-rg -qF 'final message' "$STDOUT_DIRECT"
-rg -qF -- '--- LOOM-CODEX-EVIDENCE ---' "$STDOUT_DIRECT"
-rg -qF 'exit: 0' "$STDOUT_DIRECT"
-rg -qF 'mode: direct' "$STDOUT_DIRECT"
-
-session_count=$(rg -cF 'session: ' "$STDOUT_DIRECT")
-if [[ "$session_count" -ne 1 ]]; then
-	printf '%s\n' "FAIL: expected exactly one session: line, got $session_count"
-	exit 1
-fi
-rg -qF "session: $ROLLOUT_B" "$STDOUT_DIRECT"
-if rg -qF "$ROLLOUT_A" "$STDOUT_DIRECT" || rg -qF "$ROLLOUT_C" "$STDOUT_DIRECT"; then
-	printf '%s\n' 'FAIL: an older rollout path leaked into stdout'
-	exit 1
-fi
-[[ ! -e "$HOME_DIR/.codex/sessions" ]]
-
-# Direct-exec failure: a failing codex must not be swallowed either.
-DIRECT_FAIL_BIN_DIR="$TMP/bin-direct-fail"
-mkdir -p "$DIRECT_FAIL_BIN_DIR"
-printf '%s\n' '#!/usr/bin/env bash' 'exit 71' >"$DIRECT_FAIL_BIN_DIR/sandbox-exec"
-chmod +x "$DIRECT_FAIL_BIN_DIR/sandbox-exec"
-printf '%s\n' '#!/usr/bin/env bash' 'exit 9' >"$DIRECT_FAIL_BIN_DIR/codex"
-chmod +x "$DIRECT_FAIL_BIN_DIR/codex"
-
-STDOUT_DIRECT_FAIL="$TMP/stdout-direct-fail"
-status=0
-HOME="$HOME_DIR" PATH="$DIRECT_FAIL_BIN_DIR:$PATH" CODEX_HOME="$TMP/no-such-codex-home" \
-	bash "$WRAPPER" task "$prompt" --model gpt-5.6-terra --effort xhigh --write >"$STDOUT_DIRECT_FAIL" ||
-	status=$?
-
-if [[ "$status" -ne 9 ]]; then
-	printf '%s\n' "FAIL: direct-mode wrapper exit status was $status, expected 9 (codex's status)"
-	exit 1
-fi
-
-rg -qF -- '--- LOOM-CODEX-EVIDENCE ---' "$STDOUT_DIRECT_FAIL"
-rg -qF 'exit: 9' "$STDOUT_DIRECT_FAIL"
-rg -qF 'session: none found' "$STDOUT_DIRECT_FAIL"
 
 printf '%s\n' 'PASS'
