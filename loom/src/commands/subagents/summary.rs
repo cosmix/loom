@@ -37,6 +37,8 @@ pub(super) fn with_last(
         request_count: Some(metrics.request_count),
         peak_resident_tokens: metrics.peak_resident_tokens,
         peak_tokens_over_ceiling,
+        forward: None,
+        display_state: None,
         final_report: activity.final_report,
     }
 }
@@ -67,6 +69,8 @@ pub(super) fn empty(
         request_count: None,
         peak_resident_tokens: None,
         peak_tokens_over_ceiling: false,
+        forward: None,
+        display_state: None,
         final_report: None,
     }
 }

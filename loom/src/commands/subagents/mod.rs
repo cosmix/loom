@@ -16,6 +16,10 @@
 //! and `render` for the three subcommands themselves.
 
 mod classify;
+mod forward_jobs;
+mod forward_jobs_transcript;
+#[path = "forward_jobs_wait.rs"]
+mod forward_jobs_wait;
 pub(crate) mod ledger;
 mod metrics;
 mod render;
@@ -107,6 +111,21 @@ pub enum SubagentsCommand {
         #[arg(long, default_value_t = classify::DEFAULT_DONE_DEBOUNCE_SECS)]
         debounce: u64,
     },
+
+    /// Wait for one exact forwarded job receipt without starting or changing it
+    Wait {
+        /// Deterministic forward receipt ID (64 lowercase hexadecimal characters)
+        #[arg(long)]
+        receipt: String,
+
+        /// Seconds to poll before returning unknown (exit 2)
+        #[arg(long, default_value_t = 300)]
+        timeout: u64,
+
+        /// Emit only receipt ID, backend ID, and state as JSON
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 /// Dispatch to the requested view. Every path here is read-only.
@@ -130,5 +149,10 @@ pub fn execute(args: SubagentsArgs) -> Result<()> {
             dir,
             debounce,
         } => render::watch(timeout, session, dir, debounce),
+        SubagentsCommand::Wait {
+            receipt,
+            timeout,
+            json,
+        } => forward_jobs_wait::wait(receipt, timeout, json),
     }
 }

@@ -56,10 +56,17 @@ use chrono::Utc;
 use serde::Serialize;
 use serde_json::Value;
 
+use super::forward_jobs::ForwardIndex;
 use super::{ledger, metrics, summary};
 use crate::models::constants::DEFAULT_SUBAGENT_CEILING_TOKENS;
 
 mod entry;
+#[path = "classify_forward.rs"]
+pub(super) mod forward;
+
+pub(super) fn is_done_entry(entry: &Value) -> bool {
+    entry::classify_last(entry) == SubagentState::Done
+}
 
 /// Minimum idle time (seconds) a structurally-`done` last entry must sit
 /// unchanged before it is trusted as genuinely turn-final, rather than one
@@ -96,6 +103,13 @@ pub enum SubagentState {
     Generating,
     /// No parseable entry, or a shape the table above doesn't cover.
     Unknown,
+    /// A forwarded backend job is queued or running, even if the wrapper's
+    /// own transcript has stopped.
+    ForwardWait,
+    /// A forwarded backend job reported failure or cancellation.
+    ForwardFailed,
+    /// A forwarded job was expected but cannot be established exactly.
+    ForwardUnknown,
 }
 
 impl SubagentState {
@@ -105,6 +119,9 @@ impl SubagentState {
             SubagentState::ToolWait => "tool-wait",
             SubagentState::Generating => "generating",
             SubagentState::Unknown => "unknown",
+            SubagentState::ForwardWait => "forward-wait",
+            SubagentState::ForwardFailed => "forward-failed",
+            SubagentState::ForwardUnknown => "forward-unknown",
         }
     }
 }
@@ -133,8 +150,16 @@ pub struct SubagentSummary {
     /// Whether [`peak_resident_tokens`](Self::peak_resident_tokens) reached
     /// the context safety ceiling used to mark the table cell.
     pub peak_tokens_over_ceiling: bool,
-    /// Only set when `state == Done`: the concatenated text of the last
-    /// entry's text blocks, i.e. the subagent's final report.
+    /// Read-only evidence for a forwarded backend job. Omitted for ordinary
+    /// subagents so their JSON output shape remains unchanged.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) forward: Option<super::forward_jobs::ForwardMetadata>,
+    /// A validated forward may block settlement without changing an ordinary
+    /// worker's human-facing list row.
+    #[serde(skip)]
+    pub(crate) display_state: Option<SubagentState>,
+    /// The last entry's text blocks when ordinary transcript evidence says a
+    /// report is safe to harvest; this remains separate from forward status.
     pub final_report: Option<String>,
 }
 
@@ -232,6 +257,29 @@ pub(super) fn analyze_at_ceiling(
     ))
 }
 
+/// Apply exact forwarding evidence after ordinary transcript classification.
+/// This keeps the historical classifier callable on its own while renderers
+/// that have a stage-scoped receipt index can prevent a wrapper stop from
+/// settling an unfinished backend job.
+pub(super) fn analyze_with_forward_at_ceiling(
+    path: &Path,
+    agent_id: String,
+    debounce_secs: u64,
+    work_dir: Option<&Path>,
+    subagent_ceiling_tokens: u64,
+    forward_index: &ForwardIndex,
+) -> Result<SubagentSummary> {
+    let mut summary = analyze_at_ceiling(
+        path,
+        agent_id,
+        debounce_secs,
+        work_dir,
+        subagent_ceiling_tokens,
+    )?;
+    forward::apply(&mut summary, forward_index, path);
+    Ok(summary)
+}
+
 /// The subagent's final report: only ever `Some` when `state == Done`, and
 /// even then only when the last entry actually carried a text block. An
 /// authoritative termination record can force `Done` while the last flushed
@@ -313,3 +361,7 @@ mod recovery_tests;
 #[cfg(test)]
 #[path = "classify_ceiling_tests.rs"]
 mod ceiling_tests;
+
+#[cfg(test)]
+#[path = "classify_forward_tests.rs"]
+mod forward_tests;
