@@ -1,6 +1,6 @@
 # Model And Effort Config
 
-> `[pressure]` and `[models]` config sections, the four-tier precedence chain, defaults, and the KEY-level vs SECTION-level fallback split.
+> `[pressure]` and `[models]` config sections, the four-tier precedence chain, defaults, and per-key fallback for every project-backed section.
 
 ## Two Configurable Sections
 
@@ -35,14 +35,19 @@ is configurable through `[models]`.
 
 ## KEY-Level vs SECTION-Level Fallback
 
-`[pressure]` and `[models]` resolve **per key**: a project section present but missing a key
-still lets that one key fall through to the user config. `[terminal]` and `[context]` keep the
-older **SECTION-level** behavior: a present section wins whole, with no partial fallthrough even
-for keys it omits. The split exists because `[pressure]`/`[models]` are registries of
-independent single-value knobs an operator plausibly wants to override one at a time, while
-`[terminal]`/`[context]` are small, tightly-coupled sections — `loom init` writes
-`context.ceiling_tokens` alongside `context.subagent_ceiling_tokens` as a pair meant to move
-together — so a project override there replaces the whole tuned section atomically.
+There is no split any more. All four project-backed sections — `[pressure]`, `[models]`,
+`[terminal]` and `[context]` — resolve **per key**: a project section that omits a key lets that
+key fall through to the user config, then the built-in. `[terminal]` and `[context]` used to be
+SECTION-level (a present section won whole, and keys it omitted derived built-ins); the operator
+ruled that a defect on 2026-09-13, and it was removed from the runtime readers
+(`fs/work_dir/config_sections.rs`) and from `/api/config` (`config_api/workspace.rs`).
+
+One qualification: a project `[context]` that sets `model_window_tokens` supplies
+`ceiling_tokens` (derived from that window) even when it omits `ceiling_tokens`, so a user
+ceiling sized for a 1M window cannot override a plan's smaller window. The raw-layer merge in
+`ContextConfig::resolve_with_user_ceiling` (`fs/work_dir/context_config.rs`) is the one place that
+predicate is decided. `subagent_ceiling_tokens` and `model_window_tokens` have no user-tier key.
+`loom init` writes only the `[context]` keys a plan sets.
 
 ## Resolution Code
 
