@@ -37,11 +37,16 @@ const MAX_STDIN_BYTES: u64 = 1024 * 1024;
 /// Always returns `Ok(())`: there is no failure mode a PreCompact hook is
 /// allowed to surface, only cases where there was nothing honest to reset.
 pub fn pre_compact() -> Result<()> {
+    pre_compact_from(std::io::stdin().lock())
+}
+
+/// Entry point with injected input reader, so tests never read real stdin.
+///
+/// Reads at most `MAX_STDIN_BYTES` from `input`, parses the session ID,
+/// and resets the delivery record if the environment names a valid target.
+fn pre_compact_from(input: impl Read) -> Result<()> {
     let mut raw = String::new();
-    let _ = std::io::stdin()
-        .lock()
-        .take(MAX_STDIN_BYTES)
-        .read_to_string(&mut raw);
+    let _ = input.take(MAX_STDIN_BYTES).read_to_string(&mut raw);
     reset_for_payload(&raw);
     Ok(())
 }

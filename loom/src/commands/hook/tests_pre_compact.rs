@@ -148,7 +148,7 @@ fn malformed_or_absent_stdin_resets_nothing() {
 
 #[test]
 fn pre_compact_always_returns_ok() {
-    assert!(pre_compact().is_ok());
+    assert!(pre_compact_from(std::io::empty()).is_ok());
 }
 
 #[test]
