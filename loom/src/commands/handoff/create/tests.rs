@@ -228,3 +228,133 @@ fn only_the_ceiling_trigger_stamps_the_agent_ceiling_origin() {
         );
     }
 }
+
+#[derive(Default)]
+struct VecSink {
+    stdout: Vec<u8>,
+    stderr: Vec<u8>,
+}
+
+impl RelaySink for VecSink {
+    fn stdout(&mut self) -> &mut dyn std::io::Write {
+        &mut self.stdout
+    }
+    fn stderr(&mut self) -> &mut dyn std::io::Write {
+        &mut self.stderr
+    }
+}
+
+fn stage_context(scratch: &Path, worktree: &Path) -> RelayContext {
+    RelayContext {
+        session_id: "session-1".to_string(),
+        scratch_dir: scratch.to_path_buf(),
+        stage_id: Some("stage-a".to_string()),
+        session_type: Some("stage".to_string()),
+        worktree_path: Some(worktree.to_path_buf()),
+        work_dir: None,
+    }
+}
+
+/// In Relay mode, `execute` must not build or write a handoff document at
+/// all: it relays the request and the daemon builds the document from the
+/// session's own state (section 5, `loom handoff` row).
+#[test]
+fn relay_mode_writes_exactly_one_handoff_ticket_and_no_document() {
+    use std::fs;
+    use std::os::unix::fs::PermissionsExt;
+    use tempfile::TempDir;
+
+    let scratch_root = TempDir::new().unwrap();
+    let scratch = scratch_root.path().join("session-1");
+    fs::create_dir(&scratch).unwrap();
+    fs::set_permissions(&scratch, fs::Permissions::from_mode(0o700)).unwrap();
+    let worktree = TempDir::new().unwrap();
+    let context = stage_context(&scratch, worktree.path());
+    let mut sink = VecSink::default();
+
+    execute_with_mode(
+        Some("stage-a".to_string()),
+        Some("session-1".to_string()),
+        "precompact".to_string(),
+        Some("note".to_string()),
+        RelayMode::Relay(context),
+        worktree.path(),
+        &mut sink,
+    )
+    .unwrap();
+
+    let tickets: Vec<_> = fs::read_dir(&scratch)
+        .unwrap()
+        .map(|e| e.unwrap().path())
+        .collect();
+    assert_eq!(tickets.len(), 1);
+    let bytes = fs::read(&tickets[0]).unwrap();
+    let ticket = crate::relay::Ticket::decode(&bytes).unwrap();
+    assert_eq!(ticket.kind, RequestKind::Handoff);
+    let decoded: HandoffRequest = serde_json::from_value(ticket.payload).unwrap();
+    assert_eq!(decoded.trigger, "precompact");
+    assert_eq!(decoded.message.as_deref(), Some("note"));
+
+    assert!(
+        !worktree.path().join(".loom").exists(),
+        "relay mode must not create any handoff document on disk"
+    );
+    let stderr_text = String::from_utf8(sink.stderr).unwrap();
+    assert!(!stderr_text.contains("End your turn"));
+}
+
+#[test]
+fn relay_mode_marks_a_ceiling_trigger_end_turn() {
+    use std::fs;
+    use std::os::unix::fs::PermissionsExt;
+    use tempfile::TempDir;
+
+    let scratch_root = TempDir::new().unwrap();
+    let scratch = scratch_root.path().join("session-1");
+    fs::create_dir(&scratch).unwrap();
+    fs::set_permissions(&scratch, fs::Permissions::from_mode(0o700)).unwrap();
+    let worktree = TempDir::new().unwrap();
+    let context = stage_context(&scratch, worktree.path());
+    let mut sink = VecSink::default();
+
+    execute_with_mode(
+        Some("stage-a".to_string()),
+        Some("session-1".to_string()),
+        CEILING_TRIGGER.to_string(),
+        None,
+        RelayMode::Relay(context),
+        worktree.path(),
+        &mut sink,
+    )
+    .unwrap();
+
+    let stderr_text = String::from_utf8(sink.stderr).unwrap();
+    assert!(stderr_text.contains("End your turn after the confirmation."));
+}
+
+#[test]
+fn an_adjudication_session_is_refused_before_any_ticket_is_written() {
+    use crate::models::session::SessionType;
+    use crate::relay::emit::test_support::context_for;
+    use std::fs;
+
+    let fixture = context_for(SessionType::Adjudication);
+    let mut sink = VecSink::default();
+
+    let error = execute_with_mode(
+        Some("stage-a".to_string()),
+        Some("session-1".to_string()),
+        "manual".to_string(),
+        None,
+        RelayMode::Relay(fixture.context.clone()),
+        &fixture.cwd,
+        &mut sink,
+    )
+    .unwrap_err();
+
+    assert!(error.to_string().contains("may not relay"));
+    assert_eq!(
+        fs::read_dir(&fixture.context.scratch_dir).unwrap().count(),
+        0
+    );
+}

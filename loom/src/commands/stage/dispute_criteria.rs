@@ -16,15 +16,76 @@ use crate::daemon::{
     current_session_id, try_send_request, user_credential, DaemonReach, Request, Response,
 };
 use crate::fs::stage_request::{append_to_spool, spool_path, spool_target_from_cwd, StageRequest};
+use crate::relay::emit::{mode, EnvSnapshot, RelayContext, RelayMode, RelaySink, StdSink};
+use crate::relay::RequestKind;
 
 const FAILURE_OUTPUT_MAX_BYTES: usize = 4096;
 
-/// Dispute an acceptance criterion via the daemon RPC.
+/// Dispute an acceptance criterion.
 ///
-/// `failure_output_path` is optional — when set, the file is read,
-/// truncated to 4KB on a UTF-8 char boundary, and shipped as the
-/// `failure_output` field of the request.
-///
+/// Reads the process environment exactly once, then delegates to
+/// `dispute_criteria_with_mode` — the seam tests drive directly with an
+/// explicit [`RelayMode`] and an in-memory sink, since tests must never
+/// mutate process-wide environment.
+pub fn dispute_criteria(
+    stage_id: String,
+    criterion_index: usize,
+    reason: String,
+    evidence_commit: Option<String>,
+    failure_output_path: Option<PathBuf>,
+) -> Result<()> {
+    let failure_output = match failure_output_path {
+        Some(path) => Some(load_and_truncate_failure_output(&path)?),
+        None => None,
+    };
+    let relay_mode = mode(&EnvSnapshot::from_process_env());
+    let cwd = std::env::current_dir().context("Failed to get current directory")?;
+    dispute_criteria_with_mode(
+        stage_id,
+        criterion_index,
+        reason,
+        evidence_commit,
+        failure_output,
+        relay_mode,
+        &cwd,
+        &mut StdSink::default(),
+    )
+}
+
+/// In Relay mode the request goes to the relay hook; otherwise the daemon
+/// socket, as today (see [`dispute_via_socket`]).
+#[allow(clippy::too_many_arguments)]
+fn dispute_criteria_with_mode(
+    stage_id: String,
+    criterion_index: usize,
+    reason: String,
+    evidence_commit: Option<String>,
+    failure_output: Option<String>,
+    relay_mode: RelayMode,
+    cwd: &Path,
+    sink: &mut dyn RelaySink,
+) -> Result<()> {
+    if let RelayMode::Relay(context) = relay_mode {
+        return dispute_via_relay(
+            &stage_id,
+            criterion_index,
+            reason,
+            evidence_commit,
+            failure_output,
+            &context,
+            cwd,
+            sink,
+        );
+    }
+    dispute_via_socket(
+        stage_id,
+        criterion_index,
+        reason,
+        evidence_commit,
+        failure_output,
+    )
+}
+
 /// The three ways the daemon can be reached call for three different answers.
 /// With nothing listening the dispute simply cannot be filed: it is the daemon
 /// that writes `<state-dir>/disputes/<stage>/<n>/request.md` and moves the stage to
@@ -33,20 +94,14 @@ const FAILURE_OUTPUT_MAX_BYTES: usize = 4096;
 /// about the daemon, only that this process may not use unix sockets — so it
 /// queues the dispute rather than concluding there is no daemon (see
 /// `queue_dispute_request`).
-pub fn dispute_criteria(
+fn dispute_via_socket(
     stage_id: String,
     criterion_index: usize,
     reason: String,
     evidence_commit: Option<String>,
-    failure_output_path: Option<PathBuf>,
+    failure_output: Option<String>,
 ) -> Result<()> {
     let work_dir = crate::commands::common::work_dir_path()?;
-
-    let failure_output = match failure_output_path {
-        Some(path) => Some(load_and_truncate_failure_output(&path)?),
-        None => None,
-    };
-
     let req = build_request(
         &work_dir,
         &stage_id,
@@ -74,6 +129,39 @@ pub fn dispute_criteria(
             },
         ),
     }
+}
+
+/// Relay a dispute request instead of filing it over the daemon socket.
+#[allow(clippy::too_many_arguments)]
+fn dispute_via_relay(
+    stage_id: &str,
+    criterion_index: usize,
+    reason: String,
+    evidence_commit: Option<String>,
+    failure_output: Option<String>,
+    context: &RelayContext,
+    cwd: &Path,
+    sink: &mut dyn RelaySink,
+) -> Result<()> {
+    // SAFETY: `getuid` has no preconditions and cannot fail.
+    let uid = unsafe { libc::getuid() };
+    context.check(RequestKind::Dispute, Some(stage_id), cwd, uid)?;
+
+    let request = StageRequest::Dispute {
+        criterion_index,
+        reason,
+        evidence_commit,
+        failure_output,
+    };
+    let payload = serde_json::to_value(&request).context("failed to serialize dispute request")?;
+    context.emit(
+        RequestKind::Dispute,
+        payload,
+        "stage dispute-criteria",
+        false,
+        sink,
+    )?;
+    Ok(())
 }
 
 /// Build the RPC the daemon expects, cloning the fields so the caller keeps
@@ -191,43 +279,5 @@ fn truncate_to_byte_limit(s: &str, max_bytes: usize) -> String {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use std::io::Write;
-    use tempfile::NamedTempFile;
-
-    #[test]
-    fn truncate_failure_output_at_4kb() {
-        // 10KB of ASCII — easy byte/char correspondence.
-        let mut file = NamedTempFile::new().unwrap();
-        let big = "a".repeat(10_000);
-        file.write_all(big.as_bytes()).unwrap();
-        let truncated = load_and_truncate_failure_output(file.path()).unwrap();
-        assert!(truncated.len() <= 4096, "got {} bytes", truncated.len());
-        assert!(truncated.is_char_boundary(truncated.len()));
-    }
-
-    #[test]
-    fn truncate_failure_output_handles_multibyte_chars() {
-        // Construct content that would split a multibyte char if naively sliced.
-        // '🌀' is 4 bytes UTF-8; many copies push past 4KB exactly between bytes.
-        let mut s = String::new();
-        while s.len() < 5_000 {
-            s.push('🌀');
-        }
-        let mut file = NamedTempFile::new().unwrap();
-        file.write_all(s.as_bytes()).unwrap();
-        let truncated = load_and_truncate_failure_output(file.path()).unwrap();
-        assert!(truncated.len() <= 4096);
-        // Must still be valid UTF-8 ending on a char boundary.
-        assert!(truncated.is_char_boundary(truncated.len()));
-    }
-
-    #[test]
-    fn truncate_failure_output_passthrough_under_limit() {
-        let mut file = NamedTempFile::new().unwrap();
-        file.write_all(b"hello world").unwrap();
-        let truncated = load_and_truncate_failure_output(file.path()).unwrap();
-        assert_eq!(truncated, "hello world");
-    }
-}
+#[path = "dispute_criteria_tests.rs"]
+mod tests;

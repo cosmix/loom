@@ -18,6 +18,7 @@
 //! row-shape check live in `hooks_read_guard_repeat.rs` (see its module docs) - split out purely
 //! for size, sharing this file's harness via `use super::*`.
 
+use super::helpers::clear_relay_env;
 use loom::fs::permissions::constants::{
     HOOK_COMMON, HOOK_READ_DISCIPLINE, HOOK_READ_GUARD, HOOK_READ_LEDGER,
 };
@@ -177,6 +178,7 @@ fn run_payload(
     };
 
     let mut cmd = Command::new("bash");
+    clear_relay_env(&mut cmd);
     cmd.arg(hook)
         .env("PATH", path_value)
         .env("LOOM_WORK_DIR", session.work_dir())

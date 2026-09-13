@@ -8,16 +8,14 @@ use crate::fs::memory::format_memory_for_handoff;
 use crate::git::branch::current_branch;
 use crate::git::runner::NO_HOOKS_ARGS;
 use crate::handoff::generator::{generate_handoff, HandoffContent};
+use crate::handoff::session_content::CEILING_TRIGGER;
 use crate::handoff::HandoffOrigin;
 use crate::models::session::{Session, SessionStatus};
 use crate::models::stage::{Stage, StageStatus};
 use crate::orchestrator::monitor::stage_context_tokens;
+use crate::relay::emit::{mode, EnvSnapshot, RelayContext, RelayMode, RelaySink, StdSink};
+use crate::relay::{HandoffRequest, RequestKind};
 use crate::verify::transitions::{load_stage, update_stage};
-
-/// The `--trigger` value an agent uses when its own context ceiling forced the
-/// handoff. Only this trigger ends the session's turn on the stage; every other
-/// trigger just writes a document.
-const CEILING_TRIGGER: &str = "ceiling";
 
 /// What the daemon is told when the stage transition below cannot be written.
 ///
@@ -42,64 +40,82 @@ End your turn now. Do not re-run 'loom handoff' and do not start new work.";
 /// * `session_arg` - Optional session ID from CLI (uses LOOM_SESSION_ID env var if not provided)
 /// * `trigger` - Trigger type (e.g., "manual", "precompact", "session_end")
 /// * `message` - Optional message to include in the handoff
+///
+/// Reads the process environment exactly once, then delegates to
+/// `execute_with_mode` — the seam tests drive directly with an explicit
+/// [`RelayMode`] and an in-memory sink, since tests must never mutate
+/// process-wide environment.
 pub fn execute(
     stage_arg: Option<String>,
     session_arg: Option<String>,
     trigger: String,
     message: Option<String>,
 ) -> Result<()> {
-    // Resolve stage and session IDs from arguments or environment
+    let relay_mode = mode(&EnvSnapshot::from_process_env());
+    let cwd = std::env::current_dir().context("Failed to get current directory")?;
+    execute_with_mode(
+        stage_arg,
+        session_arg,
+        trigger,
+        message,
+        relay_mode,
+        &cwd,
+        &mut StdSink::default(),
+    )
+}
+
+/// In Relay mode neither the handoff document nor the stage transition is
+/// produced here at all: the daemon builds the document from the session's
+/// own state. Otherwise, today's direct-write path (see [`execute_direct`]).
+#[allow(clippy::too_many_arguments)]
+fn execute_with_mode(
+    stage_arg: Option<String>,
+    session_arg: Option<String>,
+    trigger: String,
+    message: Option<String>,
+    relay_mode: RelayMode,
+    cwd: &Path,
+    sink: &mut dyn RelaySink,
+) -> Result<()> {
+    if let RelayMode::Relay(context) = relay_mode {
+        return execute_via_relay(stage_arg.as_deref(), trigger, message, &context, cwd, sink);
+    }
+    execute_direct(stage_arg, session_arg, trigger, message)
+}
+
+/// Relay a handoff request instead of writing the document directly.
+fn execute_via_relay(
+    stage_arg: Option<&str>,
+    trigger: String,
+    message: Option<String>,
+    context: &RelayContext,
+    cwd: &Path,
+    sink: &mut dyn RelaySink,
+) -> Result<()> {
+    // SAFETY: `getuid` has no preconditions and cannot fail.
+    let uid = unsafe { libc::getuid() };
+    context.check(RequestKind::Handoff, stage_arg, cwd, uid)?;
+
+    let end_turn = trigger == CEILING_TRIGGER;
+    let payload = serde_json::to_value(HandoffRequest { trigger, message })
+        .context("failed to serialize handoff request")?;
+    context.emit(RequestKind::Handoff, payload, "handoff", end_turn, sink)?;
+    Ok(())
+}
+
+/// Today's direct-write path: resolve identity, build the document, write it,
+/// and — for a ceiling handoff — end the session's turn on the stage.
+fn execute_direct(
+    stage_arg: Option<String>,
+    session_arg: Option<String>,
+    trigger: String,
+    message: Option<String>,
+) -> Result<()> {
     let stage_id = resolve_stage_id(&stage_arg)?;
     let session_id = resolve_session_id(&session_arg)?;
-
-    // Determine the state directory (look in the current dir or via its symlink)
     let work_dir = work_dir_path()?;
-
-    // Load stage (gracefully handle missing stage)
-    let stage = load_stage(&stage_id, &work_dir).unwrap_or_else(|_| {
-        // Create minimal stage if loading fails
-        Stage {
-            id: stage_id.clone(),
-            name: stage_id.clone(),
-            description: None,
-            plan_id: None,
-            ..Default::default()
-        }
-    });
-
-    // Build handoff content
-    let mut content = HandoffContent::new(session_id.clone(), stage_id.clone());
-
-    // Add plan ID if available
-    if let Some(ref plan_id) = stage.plan_id {
-        content = content.with_plan_id(Some(plan_id.to_string()));
-    }
-
-    // Add goals from stage description if available
-    if let Some(ref description) = stage.description {
-        content = content.with_goals(description.to_string());
-    }
-
-    // Get current branch
-    if let Ok(branch) = current_branch(&std::env::current_dir()?) {
-        content = content.with_current_branch(Some(branch));
-    }
-
-    // Get modified files from git status
-    if let Ok(files) = get_modified_files() {
-        content = content.with_files_modified(files);
-    }
-
-    // Merge the stage's memory journal into the handoff (journals are keyed by
-    // stage, not session — `memory/<session_id>.md` never existed, so a
-    // CLI-triggered handoff used to carry no memory section at all). Same
-    // model as the daemon's own path: orchestrator/monitor/handlers.rs.
-    content = content.with_memory_content(format_memory_for_handoff(&work_dir, &stage_id));
-
-    // Add message as a next step if provided
-    if let Some(msg) = &message {
-        content = content.with_next_steps(vec![msg.clone()]);
-    }
+    let stage = load_stage_or_default(&stage_id, &work_dir);
+    let content = build_handoff_content(&stage, &stage_id, &session_id, &work_dir, &message)?;
 
     // The heartbeat file is the only place a real context reading exists: the
     // hooks measure the transcript and write it there. Before this was read,
@@ -127,6 +143,51 @@ pub fn execute(
     }
 
     Ok(())
+}
+
+/// Load `stage_id`'s stage, or a minimal stand-in when it cannot be loaded.
+fn load_stage_or_default(stage_id: &str, work_dir: &Path) -> Stage {
+    load_stage(stage_id, work_dir).unwrap_or_else(|_| Stage {
+        id: stage_id.to_string(),
+        name: stage_id.to_string(),
+        description: None,
+        plan_id: None,
+        ..Default::default()
+    })
+}
+
+/// Build the handoff content from the stage, the current git branch and
+/// status, the stage's memory journal, and an optional message.
+fn build_handoff_content(
+    stage: &Stage,
+    stage_id: &str,
+    session_id: &str,
+    work_dir: &Path,
+    message: &Option<String>,
+) -> Result<HandoffContent> {
+    let mut content = HandoffContent::new(session_id.to_string(), stage_id.to_string());
+
+    if let Some(ref plan_id) = stage.plan_id {
+        content = content.with_plan_id(Some(plan_id.to_string()));
+    }
+    if let Some(ref description) = stage.description {
+        content = content.with_goals(description.to_string());
+    }
+    if let Ok(branch) = current_branch(&std::env::current_dir()?) {
+        content = content.with_current_branch(Some(branch));
+    }
+    if let Ok(files) = get_modified_files() {
+        content = content.with_files_modified(files);
+    }
+    // Merge the stage's memory journal into the handoff (journals are keyed by
+    // stage, not session — `memory/<session_id>.md` never existed, so a
+    // CLI-triggered handoff used to carry no memory section at all). Same
+    // model as the daemon's own path: orchestrator/monitor/handlers.rs.
+    content = content.with_memory_content(format_memory_for_handoff(work_dir, stage_id));
+    if let Some(msg) = message {
+        content = content.with_next_steps(vec![msg.clone()]);
+    }
+    Ok(content)
 }
 
 /// Record how and why the handoff was written: the trigger note in the goals,

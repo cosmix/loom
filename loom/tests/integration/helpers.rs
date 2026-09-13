@@ -179,6 +179,13 @@ const LOOM: &str = env!("CARGO_BIN_EXE_loom");
 /// update notice into the stderr these tests assert on. `LOOM_HOME` is the same
 /// seam `tests/e2e/daemon_config/mod.rs` uses to stay off the real user config.
 ///
+/// The binary under test is not built with `cfg(test)`, so it reads its
+/// `LOOM_*` session variables from the real process environment — the same
+/// place [`clear_relay_env`] scrubs before every spawn here. Without this, a
+/// `cargo test` process that happens to run inside a real loom session (this
+/// suite's own integration-verify stage, for one) would leak that session's
+/// identity into every test's supposedly clean CLI invocation.
+///
 /// The `TempDir` lives in a `static OnceLock` so every test in this binary
 /// shares one scratch home; since statics are never destructed at process
 /// exit, that directory is never cleaned up and is left behind in the system
@@ -193,6 +200,41 @@ pub fn loom_cmd() -> Command {
         dir
     });
     let mut command = Command::new(LOOM);
+    clear_relay_env(&mut command);
     command.env("LOOM_HOME", home.path());
+    command
+}
+
+/// Every `LOOM_*` variable a spawned loom session may export
+/// (`orchestrator/terminal/native/wrapper.rs` and its `host_env` submodule),
+/// beyond what a bare `loom` invocation ever needs to see. A test that spawns
+/// the real binary — or a hook script under test — must never let one of
+/// these leak in from the process actually running `cargo test`: it would
+/// silently make the child believe it is a stage/knowledge/merge/adjudication
+/// session, or (via `LOOM_HOOK_PATH`/`LOOM_BIN`) resolve a hook script's PATH
+/// and binary to something other than the test's own stub.
+pub const RELAY_ENV_VARS_TO_CLEAR: &[&str] = &[
+    "LOOM_SESSION_ID",
+    "LOOM_STAGE_ID",
+    "LOOM_WORK_DIR",
+    "LOOM_WORKTREE_PATH",
+    "LOOM_MAIN_AGENT_PID",
+    "LOOM_SESSION_TYPE",
+    "LOOM_MERGE_SESSION",
+    "LOOM_SCRATCH_DIR",
+    "LOOM_BIN",
+    "LOOM_HOOK_PATH",
+    "LOOM_HOOK_CONTEXT",
+    "LOOM_CONTROL_BROKER",
+];
+
+/// Remove every variable in [`RELAY_ENV_VARS_TO_CLEAR`] from `command`. Callers
+/// that need one of them for the scenario under test set it back afterward
+/// with an explicit `.env(...)` — that always wins, since it runs after this
+/// blanket clear.
+pub fn clear_relay_env(command: &mut Command) -> &mut Command {
+    for var in RELAY_ENV_VARS_TO_CLEAR {
+        command.env_remove(var);
+    }
     command
 }

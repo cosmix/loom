@@ -14,6 +14,9 @@ use chrono::{DateTime, Utc};
 use fs2::FileExt;
 use serde::{Deserialize, Serialize};
 
+use crate::relay::emit::{mode, EnvSnapshot, RelayContext, RelayMode, RelaySink, StdSink};
+use crate::relay::RequestKind;
+
 pub mod spool;
 pub mod summary;
 pub use spool::TELEMETRY_SPOOL_RELPATH;
@@ -69,11 +72,32 @@ pub(crate) fn events_path(work_dir: &Path) -> PathBuf {
 }
 
 /// Append `event` to the canonical event file, or its worktree spool when the
-/// state root is write-denied.
+/// state root is write-denied — or, in Relay mode, relay it instead.
 ///
 /// Best-effort by contract: telemetry must never fail a caller, so failures on
-/// both paths are logged at debug level and returned as success.
+/// every path are logged at debug level (or, in Relay mode, silently
+/// swallowed) and returned as success. Reads the process environment exactly
+/// once, then delegates to `emit_with_mode` — the seam tests drive directly
+/// with an explicit [`RelayMode`] and an in-memory sink, since tests must
+/// never mutate process-wide environment.
 pub fn emit(work_dir: &Path, event: &TelemetryEvent) -> Result<()> {
+    let relay_mode = mode(&EnvSnapshot::from_process_env());
+    let cwd = std::env::current_dir().unwrap_or_default();
+    emit_with_mode(work_dir, event, relay_mode, &cwd, &mut StdSink::default())
+}
+
+fn emit_with_mode(
+    work_dir: &Path,
+    event: &TelemetryEvent,
+    relay_mode: RelayMode,
+    cwd: &Path,
+    sink: &mut dyn RelaySink,
+) -> Result<()> {
+    if let RelayMode::Relay(context) = relay_mode {
+        relay_telemetry(event, &context, cwd, sink);
+        return Ok(());
+    }
+
     let record = TelemetryRecord {
         at: Utc::now(),
         event: event.clone(),
@@ -88,6 +112,29 @@ pub fn emit(work_dir: &Path, event: &TelemetryEvent) -> Result<()> {
         }
     }
     Ok(())
+}
+
+/// Best-effort relay of a telemetry event: a `check` refusal or a
+/// serialization/emit error is swallowed, matching `emit`'s contract that a
+/// telemetry failure never undoes the work that already succeeded.
+fn relay_telemetry(
+    event: &TelemetryEvent,
+    context: &RelayContext,
+    cwd: &Path,
+    sink: &mut dyn RelaySink,
+) {
+    // SAFETY: `getuid` has no preconditions and cannot fail.
+    let uid = unsafe { libc::getuid() };
+    if context
+        .check(RequestKind::Telemetry, None, cwd, uid)
+        .is_err()
+    {
+        return;
+    }
+    let Ok(payload) = serde_json::to_value(event) else {
+        return;
+    };
+    let _ = context.emit_quiet(RequestKind::Telemetry, payload, sink);
 }
 
 /// Append one already-timestamped record under an exclusive lock.
@@ -142,170 +189,5 @@ pub fn read_events(work_dir: &Path) -> Result<Vec<TelemetryRecord>> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use chrono::TimeZone as _;
-    use tempfile::TempDir;
-
-    fn delivered(stage_id: &str) -> TelemetryEvent {
-        TelemetryEvent::ContextDelivered {
-            stage_id: stage_id.to_string(),
-            session_id: "session-1".to_string(),
-            context_epoch: "abc123".to_string(),
-            items: 3,
-        }
-    }
-
-    fn record(at: i64, event: TelemetryEvent) -> TelemetryRecord {
-        TelemetryRecord {
-            at: Utc.timestamp_opt(at, 0).single().unwrap(),
-            event,
-        }
-    }
-
-    fn prompt_brief() -> TelemetryEvent {
-        TelemetryEvent::PromptBrief {
-            stage_id: Some("stage-a".to_string()),
-            session_id: Some("session-1".to_string()),
-            items: 2,
-            estimated_tokens: 100,
-            omitted: 1,
-        }
-    }
-
-    fn prompt_abstained() -> TelemetryEvent {
-        TelemetryEvent::PromptAbstained {
-            stage_id: Some("stage-a".to_string()),
-            session_id: Some("session-1".to_string()),
-            reason: "floor".to_string(),
-        }
-    }
-
-    fn context_pulled() -> TelemetryEvent {
-        TelemetryEvent::ContextPulled {
-            stage_id: Some("stage-a".to_string()),
-            session_id: Some("session-1".to_string()),
-            query_chars: 12,
-            budget_tokens: 600,
-            items: 4,
-            estimated_tokens: 300,
-            unmet_required: 1,
-        }
-    }
-
-    #[test]
-    fn events_round_trip_with_timestamps() {
-        let temp = TempDir::new().unwrap();
-        let expected = record(1_700_000_000, delivered("stage-a"));
-
-        append_record(temp.path(), &expected).unwrap();
-
-        let events = read_events(temp.path()).unwrap();
-        assert_eq!(events, vec![expected]);
-    }
-
-    #[cfg(unix)]
-    #[test]
-    #[serial_test::serial]
-    fn emit_falls_back_to_the_spool_when_the_state_root_is_read_only() {
-        use std::os::unix::fs::PermissionsExt as _;
-
-        let temp = TempDir::new().unwrap();
-        let worktree = temp.path().join(".worktrees").join("stage-a");
-        std::fs::create_dir_all(&worktree).unwrap();
-        let work_dir = temp.path().join("state");
-        let telemetry_dir = work_dir.join("telemetry");
-        std::fs::create_dir_all(&telemetry_dir).unwrap();
-        std::fs::set_permissions(&telemetry_dir, std::fs::Permissions::from_mode(0o500)).unwrap();
-        let original_cwd = std::env::current_dir().unwrap();
-        std::env::set_current_dir(&worktree).unwrap();
-
-        let result = emit(&work_dir, &delivered("stage-a"));
-
-        std::env::set_current_dir(original_cwd).unwrap();
-        std::fs::set_permissions(&telemetry_dir, std::fs::Permissions::from_mode(0o700)).unwrap();
-        assert!(result.is_ok());
-        let pending = spool::read_pending(&worktree).unwrap();
-        assert_eq!(pending.len(), 1);
-        assert_eq!(pending[0].event, delivered("stage-a"));
-    }
-
-    #[test]
-    fn drain_moves_spooled_lines_and_truncates() {
-        let worktree = TempDir::new().unwrap();
-        let work_dir = TempDir::new().unwrap();
-        let expected = record(10, delivered("stage-a"));
-        spool::append_to_spool(worktree.path(), &expected).unwrap();
-        let path = spool::spool_path(worktree.path());
-        writeln!(
-            OpenOptions::new().append(true).open(&path).unwrap(),
-            "not-json"
-        )
-        .unwrap();
-
-        let outcome = spool::drain_into_events(work_dir.path(), worktree.path()).unwrap();
-
-        assert_eq!(outcome.drained, 1);
-        assert_eq!(outcome.skipped_malformed, 1);
-        assert_eq!(read_events(work_dir.path()).unwrap(), vec![expected]);
-        assert_eq!(std::fs::read_to_string(path).unwrap(), "");
-    }
-
-    const VICTIM: &str = "outside the worktree; a drain must never read or truncate this\n";
-
-    #[test]
-    fn drain_refuses_a_spool_symlinked_outside_the_worktree() {
-        let worktree = TempDir::new().unwrap();
-        let work_dir = TempDir::new().unwrap();
-        let outside = TempDir::new().unwrap();
-        let victim = outside.path().join("victim.txt");
-        std::fs::write(&victim, VICTIM).unwrap();
-        std::fs::create_dir_all(worktree.path().join(".loom")).unwrap();
-        std::os::unix::fs::symlink(&victim, spool::spool_path(worktree.path())).unwrap();
-
-        let error = spool::drain_into_events(work_dir.path(), worktree.path()).unwrap_err();
-
-        assert!(
-            format!("{error:#}").contains("was not drained"),
-            "{error:#}"
-        );
-        assert_eq!(std::fs::read_to_string(&victim).unwrap(), VICTIM);
-    }
-
-    #[test]
-    fn drain_refuses_a_spool_under_a_symlinked_loom_directory() {
-        let worktree = TempDir::new().unwrap();
-        let work_dir = TempDir::new().unwrap();
-        let outside = TempDir::new().unwrap();
-        let victim = outside.path().join("telemetry-spool.jsonl");
-        std::fs::write(&victim, VICTIM).unwrap();
-        std::os::unix::fs::symlink(outside.path(), worktree.path().join(".loom")).unwrap();
-
-        assert!(spool::drain_into_events(work_dir.path(), worktree.path()).is_err());
-        assert_eq!(std::fs::read_to_string(&victim).unwrap(), VICTIM);
-    }
-
-    #[test]
-    fn summary_counts_briefs_abstentions_and_pulls_per_stage() {
-        let events = vec![
-            record(1, delivered("stage-a")),
-            record(2, prompt_brief()),
-            record(3, prompt_abstained()),
-            record(4, context_pulled()),
-        ];
-
-        let summaries = summary::summarize(&events);
-
-        assert_eq!(summaries.len(), 1);
-        let summary = &summaries[0];
-        assert_eq!(summary.stage_id, "stage-a");
-        assert_eq!((summary.spawn_briefs, summary.spawn_items), (1, 3));
-        assert_eq!(summary.prompt_briefs, 1);
-        assert_eq!(summary.prompt_abstained.total, 1);
-        assert_eq!(summary.prompt_abstained.by_reason["floor"], 1);
-        assert_eq!(summary.pulls, 1);
-        assert_eq!((summary.pull_avg_budget, summary.pull_avg_items), (600, 4));
-        assert_eq!(summary.pull_unmet, 1);
-        assert_eq!(summary.last_at, Utc.timestamp_opt(4, 0).single().unwrap());
-    }
-}
+#[path = "tests.rs"]
+mod tests;

@@ -9,6 +9,8 @@ use loom::fs::permissions::constants::HOOK_SKILL_TRIGGER;
 use serde_json::{json, Value};
 use tempfile::TempDir;
 
+use super::helpers::loom_cmd;
+
 struct Fixture {
     home: TempDir,
     repo: TempDir,
@@ -276,7 +278,7 @@ fn skill_index_command_refreshes_both_clients_without_mixing_their_keywords() {
             &format!("---\nname: loom-rust\ndescription: Rust\ntriggers: [{keyword}]\n---\n"),
         );
     }
-    let output = Command::new(env!("CARGO_BIN_EXE_loom"))
+    let output = loom_cmd()
         .arg("skill-index")
         .env("HOME", fixture.home.path())
         .env("CODEX_HOME", fixture.agent_root(true))

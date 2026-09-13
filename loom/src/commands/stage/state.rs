@@ -3,9 +3,7 @@
 use anyhow::{bail, Context, Result};
 use std::path::Path;
 
-use crate::daemon::{
-    current_session_id, try_send_request, user_credential, DaemonReach, Request, Response,
-};
+use crate::daemon::Response;
 use crate::fs::stage_request::{append_to_spool, spool_path, spool_target_from_cwd, StageRequest};
 use crate::models::session::Session;
 use crate::models::stage::{Stage, StageStatus};
@@ -14,7 +12,11 @@ use crate::orchestrator::session_registry::{
 };
 use crate::orchestrator::terminal::backend::SessionBackend;
 use crate::orchestrator::terminal::native;
+use crate::relay::emit::{mode, EnvSnapshot, StdSink};
 use crate::verify::transitions::{load_stage, update_stage};
+
+#[path = "state_relay.rs"]
+mod relay;
 
 /// Block a stage with a reason.
 ///
@@ -35,31 +37,15 @@ use crate::verify::transitions::{load_stage, update_stage};
 /// before the path is consulted, so it cannot tell whether a daemon is there
 /// and must not assume it isn't. That case queues the block for the daemon
 /// instead — see `queue_block_request`.
+///
+/// In Relay mode (`LOOM_SCRATCH_DIR` set), neither the socket nor the spool is
+/// tried: the request is relayed instead. `relay::block_with_mode` carries
+/// the branch so tests can exercise it with an explicit `RelayMode` and an
+/// in-memory sink instead of mutating process-wide environment.
 pub fn block(stage_id: String, reason: String) -> Result<()> {
-    let work_dir = crate::commands::common::work_dir_path()?;
-    let request = Request::BlockStage {
-        auth_token: user_credential(&work_dir),
-        stage_id: stage_id.clone(),
-        session_id: current_session_id(),
-        reason: reason.clone(),
-    };
-
-    match try_send_request(&work_dir, &request)? {
-        DaemonReach::Answered(response) => handle_block_response(&stage_id, response)?,
-        DaemonReach::NotListening => {
-            update_stage(&stage_id, &work_dir, |stage| {
-                stage.try_mark_blocked()?;
-                stage.close_reason = Some(reason.clone());
-                stage.updated_at = chrono::Utc::now();
-                Ok(())
-            })?;
-        }
-        DaemonReach::Unreachable => return queue_block_request(&stage_id, &reason),
-    }
-
-    println!("Stage '{stage_id}' blocked");
-    println!("Reason: {reason}");
-    Ok(())
+    let relay_mode = mode(&EnvSnapshot::from_process_env());
+    let cwd = std::env::current_dir().context("Failed to get current directory")?;
+    relay::block_with_mode(stage_id, reason, relay_mode, &cwd, &mut StdSink::default())
 }
 
 /// Queue a block for the daemon to apply, for the caller that cannot reach it.

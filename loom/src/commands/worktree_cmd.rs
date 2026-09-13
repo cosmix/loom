@@ -13,6 +13,7 @@ use crate::git::cleanup::{
 use crate::git::merge::lock::MergeLock;
 use crate::git::worktree::find_worktree_by_prefix;
 use crate::models::stage::{Stage, StageStatus};
+use crate::relay::emit::{mode, EnvSnapshot, RelayMode};
 use crate::verify::transitions::{load_stage, update_stage};
 use std::time::Duration;
 
@@ -73,7 +74,41 @@ pub fn worktrees_dir() -> PathBuf {
 ///
 /// Supports prefix matching: `loom worktree remove pref` will match `prefix-matching`
 /// if it's the only worktree starting with "pref".
+///
+/// Reads the process environment exactly once, then delegates to
+/// `remove_with_mode` — the seam tests drive directly with an explicit
+/// [`RelayMode`], since tests must never mutate process-wide environment.
 pub fn remove(stage_id: String, force: bool, confirmation: Option<String>) -> Result<()> {
+    remove_with_mode(
+        stage_id,
+        force,
+        confirmation,
+        mode(&EnvSnapshot::from_process_env()),
+    )
+}
+
+/// In Relay mode nothing is removed and no lock is taken: the daemon removes
+/// the worktree after it applies the `merge-resolved` request. Otherwise
+/// today's ancestry-verified (or `--force`) removal, unchanged.
+fn remove_with_mode(
+    stage_id: String,
+    force: bool,
+    confirmation: Option<String>,
+    relay_mode: RelayMode,
+) -> Result<()> {
+    if matches!(relay_mode, RelayMode::Relay(_)) {
+        println!(
+            "nothing removed: the daemon removes the worktree after it applies the \
+             merge-resolved request"
+        );
+        return Ok(());
+    }
+    remove_direct(stage_id, force, confirmation)
+}
+
+/// Today's ancestry-verified (or `--force`) removal, unchanged from before
+/// Relay mode existed.
+fn remove_direct(stage_id: String, force: bool, confirmation: Option<String>) -> Result<()> {
     let repo_root = std::env::current_dir()?;
     let work_dir = crate::commands::common::work_dir_path()
         .context("state directory not found. Run 'loom init' first.")?;
@@ -233,5 +268,63 @@ fn print_cleanup_result(stage_id: &str, result: &CleanupResult) {
     }
     if result.base_branch_deleted {
         println!("  {} Deleted loom/_base/{stage_id}", "✓".green().bold());
+    }
+}
+
+#[cfg(test)]
+mod relay_tests {
+    use super::*;
+    use crate::relay::emit::RelayContext;
+
+    fn merge_context() -> RelayContext {
+        RelayContext {
+            session_id: "session-1".to_string(),
+            scratch_dir: std::env::temp_dir(),
+            stage_id: Some("stage-a".to_string()),
+            session_type: Some("merge".to_string()),
+            worktree_path: None,
+            work_dir: None,
+        }
+    }
+
+    #[test]
+    fn relay_mode_leaves_the_worktree_untouched_and_takes_no_lock() {
+        let temp = tempfile::tempdir().unwrap();
+        let worktree_dir = temp.path().join(".worktrees").join("stage-a");
+        std::fs::create_dir_all(&worktree_dir).unwrap();
+
+        remove_with_mode(
+            "stage-a".to_string(),
+            false,
+            None,
+            RelayMode::Relay(merge_context()),
+        )
+        .unwrap();
+
+        assert!(
+            worktree_dir.exists(),
+            "relay mode must not remove the worktree; the daemon does after merge-resolved"
+        );
+        assert!(
+            !temp.path().join(".loom").exists(),
+            "relay mode must not take the merge lock, which would create .loom/work"
+        );
+    }
+
+    #[test]
+    fn relay_mode_short_circuits_even_with_force() {
+        let temp = tempfile::tempdir().unwrap();
+        let worktree_dir = temp.path().join(".worktrees").join("stage-a");
+        std::fs::create_dir_all(&worktree_dir).unwrap();
+
+        remove_with_mode(
+            "stage-a".to_string(),
+            true,
+            Some("stage-a".to_string()),
+            RelayMode::Relay(merge_context()),
+        )
+        .unwrap();
+
+        assert!(worktree_dir.exists());
     }
 }

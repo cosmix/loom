@@ -17,6 +17,7 @@ use crate::verify::transitions::{load_stage, trigger_dependents, update_stage};
 
 mod finish;
 mod preflight;
+mod relay;
 use finish::finish_merge_and_report;
 use preflight::{retry_preflight, RetryPreflight};
 
@@ -24,10 +25,10 @@ use preflight::{retry_preflight, RetryPreflight};
 ///
 /// If `resolved` is true, validates that manual merge resolution is complete
 /// and transitions the stage to Completed. Otherwise, re-attempts the merge
-/// programmatically.
+/// programmatically. In Relay mode, `resolved` goes through `relay::resolved_entry`.
 pub fn merge(stage_id: Option<String>, resolved: bool) -> Result<()> {
     if resolved {
-        merge_resolved(stage_id)
+        relay::resolved_entry(stage_id, merge_resolved)
     } else {
         merge_retry(stage_id)
     }
@@ -108,15 +109,7 @@ fn merge_resolved(stage_id: Option<String>) -> Result<()> {
     println!("  Status: Completed (merged: true)");
 
     // Trigger dependent stages
-    let triggered = trigger_dependents(&stage_id, work_dir, &repo_root, &target_branch)
-        .context("Failed to trigger dependent stages")?;
-
-    if !triggered.is_empty() {
-        println!("Triggered {} dependent stage(s):", triggered.len());
-        for dep_id in &triggered {
-            println!("  -> {dep_id}");
-        }
-    }
+    trigger_and_report(&stage_id, work_dir, &repo_root, &target_branch)?;
 
     let cleanup_root = find_repo_root(&repo_root).unwrap_or_else(|_| repo_root.clone()); // not cwd
     let outcome = finish_merge_and_report(&stage_id, &cleanup_root, work_dir, &target_branch);
@@ -220,14 +213,7 @@ fn merge_retry(stage_id: Option<String>) -> Result<()> {
             println!("Stage '{stage_id}' merge complete! (Completed, merged: true)");
 
             // Trigger dependent stages
-            let triggered = trigger_dependents(&stage_id, work_dir, &repo_root, &target_branch)
-                .context("Failed to trigger dependent stages")?;
-            if !triggered.is_empty() {
-                println!("Triggered {} dependent stage(s):", triggered.len());
-                for dep_id in &triggered {
-                    println!("  -> {dep_id}");
-                }
-            }
+            trigger_and_report(&stage_id, work_dir, &repo_root, &target_branch)?;
 
             let outcome = finish_merge_and_report(&stage_id, &repo_root, work_dir, &target_branch);
             if !matches!(outcome, CleanupOutcome::Done(_)) {
@@ -246,14 +232,7 @@ fn merge_retry(stage_id: Option<String>) -> Result<()> {
 
             println!("Stage '{stage_id}' merge complete! (Completed, merged: true)");
 
-            let triggered = trigger_dependents(&stage_id, work_dir, &repo_root, &target_branch)
-                .context("Failed to trigger dependent stages")?;
-            if !triggered.is_empty() {
-                println!("Triggered {} dependent stage(s):", triggered.len());
-                for dep_id in &triggered {
-                    println!("  -> {dep_id}");
-                }
-            }
+            trigger_and_report(&stage_id, work_dir, &repo_root, &target_branch)?;
 
             let outcome = finish_merge_and_report(&stage_id, &repo_root, work_dir, &target_branch);
             if !matches!(outcome, CleanupOutcome::Done(_)) {
@@ -271,14 +250,7 @@ fn merge_retry(stage_id: Option<String>) -> Result<()> {
 
             println!("Stage '{stage_id}' marked as merged.");
 
-            let triggered = trigger_dependents(&stage_id, work_dir, &repo_root, &target_branch)
-                .context("Failed to trigger dependent stages")?;
-            if !triggered.is_empty() {
-                println!("Triggered {} dependent stage(s):", triggered.len());
-                for dep_id in &triggered {
-                    println!("  -> {dep_id}");
-                }
-            }
+            trigger_and_report(&stage_id, work_dir, &repo_root, &target_branch)?;
 
             finish_merge_and_report(&stage_id, &repo_root, work_dir, &target_branch);
         }
@@ -337,6 +309,25 @@ fn merge_retry(stage_id: Option<String>) -> Result<()> {
         }
     }
 
+    Ok(())
+}
+
+/// Trigger dependent stages and print which ones started, if any. Shared by
+/// every merge-completion path so the reporting stays identical across them.
+fn trigger_and_report(
+    stage_id: &str,
+    work_dir: &Path,
+    repo_root: &Path,
+    target_branch: &str,
+) -> Result<()> {
+    let triggered = trigger_dependents(stage_id, work_dir, repo_root, target_branch)
+        .context("Failed to trigger dependent stages")?;
+    if !triggered.is_empty() {
+        println!("Triggered {} dependent stage(s):", triggered.len());
+        for dep_id in &triggered {
+            println!("  -> {dep_id}");
+        }
+    }
     Ok(())
 }
 
