@@ -123,3 +123,113 @@ fn knowledge_consumption_contract_agrees_with_claude_md_template() {
     let block = rest[..end].trim();
     assert_eq!(block, KNOWLEDGE_CONSUMPTION_CONTRACT.trim(), "CLAUDE.md.template's ## KNOWLEDGE-FIRST body must match cache::KNOWLEDGE_CONSUMPTION_CONTRACT byte-for-byte (see doc/loom/knowledge/mistakes/doctrine-and-acceptance.md)");
 }
+
+#[test]
+fn integration_verify_prefix_retains_required_quality_and_isolation_guards() {
+    let prefix = generate_integration_verify_stable_prefix();
+
+    for needle in [
+        "## Integration Verification Context",
+        "FINAL QUALITY GATE",
+        "ZERO TOLERANCE",
+        "pre-existing",
+        "too trivial",
+        "Isolation Boundaries",
+        "Path Boundaries",
+        "## Execution Rules",
+        "knowledge-distill stage",
+        "worktree ROOT directory",
+        "Exit code 0 does NOT mean success",
+        "warnings even when tests pass",
+        "is a BLOCKER, not a workaround",
+        "gate is green AGAIN after those fixes",
+        "VERIFICATION IS THE MAIN AGENT'S JOB - NOT YOURS",
+        "CONTEXT CEILING - HOOK-REPORTED ONLY",
+        "SUBAGENT CEILING REACHED",
+        "Build/test/sandbox",
+        "Knowledge Brief",
+        "Binding rules: ~/.claude/CLAUDE.md",
+        "INTEGRATION-VERIFY OVERRIDE",
+        "does NOT apply here",
+        "ALL",
+        "NOTHING",
+    ] {
+        assert!(
+            prefix.contains(needle),
+            "IV prefix lost required guard: {needle}"
+        );
+    }
+}
+
+#[test]
+fn integration_verify_prefix_retains_required_review_and_doctrine_guards() {
+    let prefix = generate_integration_verify_stable_prefix();
+
+    for needle in [
+        "REVIEW",
+        "loom-security-audit",
+        "spawn these as PARALLEL subagents",
+        "OWASP Top 10",
+        "Mini Adversarial Code Review",
+        "search the WHOLE codebase",
+    ] {
+        assert!(
+            prefix.contains(needle),
+            "IV prefix lost review guard: {needle}"
+        );
+    }
+    for dimension in [
+        "**Code quality & architecture**",
+        "**Idiomatic code**",
+        "**Security**",
+        "**Wiring**",
+        "**Dead & unnecessary code**",
+        "**No duplication (DRY)**",
+    ] {
+        assert!(
+            prefix.contains(dimension),
+            "IV prefix lost review dimension: {dimension}"
+        );
+    }
+    assert!(!prefix.contains("Knowledge Distillation (MANDATORY)"));
+    assert!(!prefix.contains("Agent Teams"));
+    assert!(!prefix.contains("loom subagents watch"));
+}
+
+#[test]
+fn integration_verify_prefix_assigns_one_canonical_gate_owner() {
+    let prefix = generate_integration_verify_stable_prefix();
+
+    for needle in [
+        "ONE canonical verifier",
+        "immutable tree, environment, and criterion contract",
+        "Rule 5's complete-suite instruction",
+        "Other reviewers inspect independently",
+        "targeted checks are additional evidence, never a substitute",
+        "command, real exit, criterion verdict, input/contract identity, elapsed time",
+        "evidence pointer when available",
+        "A missing receipt means run the check",
+        "owner re-evaluates invalidated checks",
+        "only the repaired criteria cache decides reuse",
+        "stale evidence never waives a failing gate",
+    ] {
+        assert!(
+            prefix.contains(needle),
+            "IV ownership doctrine lost: {needle}"
+        );
+    }
+    assert!(prefix.contains("cargo clippy -- -D warnings"));
+    assert!(
+        !prefix.contains("tell every build/test/sandbox or functional verifier you spawn"),
+        "the retired blanket verifier assignment must not return"
+    );
+}
+
+#[test]
+fn integration_verify_prefix_is_stable() {
+    assert_eq!(
+        generate_integration_verify_stable_prefix(),
+        generate_integration_verify_stable_prefix(),
+        "Integration-verify stable prefix should be deterministic"
+    );
+}
