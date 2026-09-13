@@ -79,15 +79,26 @@ re-proposed:
 
 The broker exists because a *sandboxed worktree* agent must not mutate trusted `.work` state. An
 earlier version of this paragraph said a knowledge session "is not sandboxed" and that its spawn
-"generates no sandbox deny/allow settings". As of 2026-09-13 that is wrong: the spawn writes a sandbox
-block into the main checkout's `.claude/settings.local.json` (`orchestrator/core/spawn_setup.rs`,
-`write_required_sandbox_settings`). That sandbox does not keep the session out of `.loom/work`, which
-is why the in-process completion path works for it. `doc/plans/PLAN-loom-state-confinement.md` removes
-that write access and moves knowledge completion onto the broker, which means lifting blockers 1 and 2.
+"generates no sandbox deny/allow settings" — wrong even at the time, since the spawn wrote a sandbox
+block into the main checkout's `.claude/settings.local.json`. That write is gone now (loom writes no
+`.claude/settings.local.json` at all — see
+[Where a Session's Write Grants Come From](../architecture/security-and-isolation.md#where-a-sessions-write-grants-come-from-stale-corrected-2026-09-13)),
+and blockers 1 and 2 above are lifted: `session_owns_stage_as`
+(`daemon/server/self_service.rs:87-97`) now admits `SessionType::Knowledge`, and
+`handle_complete_stage` (`daemon/server/control_complete.rs:50-52`) sets `stage.merged = true` for a
+knowledge stage before calling `try_complete`. Knowledge completion goes through the broker like
+every other kind.
 
 ## Per-session identity persisted in settings env blocks goes stale and shadows the wrapper env (2026-07-22)
 
 **What happened:** Inside worktree sessions, `$LOOM_STAGE_ID`/`$LOOM_SESSION_ID` reported the IDs of the plan's FIRST stage (the knowledge stage) instead of the executing one — six stages later. Unqualified `loom memory` calls filed entries into the wrong stage's journal (hit across 2+ plans, 4+ stages), and hooks heartbeat the wrong session.
 **Why:** Three writers persisted per-session identity into settings files: (1) knowledge-stage spawns wrote `LOOM_STAGE_ID`/`LOOM_SESSION_ID` into the MAIN repo's `.claude/settings.local.json` env block and nothing ever cleared it; (2) worktree creation copied that file wholesale into new worktrees; (3) `refresh_worktree_settings_local` (triggered by permission propagation on every `loom stage complete`/crash sync) rebuilt each worktree's settings.local.json FROM THE MAIN REPO'S COPY as base, clobbering the worktree's fresh env/hooks/defaultMode mid-session. Claude Code applies settings `env` OVER the process environment, so the stale settings values silently shadowed the wrapper script's correct exports. (`LOOM_MAIN_AGENT_PID` had already hit this exact failure and been removed from settings env — the lesson wasn't generalized to the other identity vars.)
 **Prevention:** INVARIANT: per-session identity (`LOOM_MAIN_AGENT_PID`, `LOOM_STAGE_ID`, `LOOM_SESSION_ID`) is exported ONLY by the wrapper script (`pid_tracking.rs` template) and must NEVER be written into any settings file. Any settings-file `env` write of a value that varies per session is a staleness bug by construction — settings env overrides process env. When merging/copying settings across checkouts, the destination's session-specific config (env, hooks, defaultMode) must win; only permissions are unioned.
+
+## A Test That Needs PID Evidence Must Re-Derive the Tracking-Key Layout, Not Import It (2026-09-13)
+
+`caller_is_inside_session`'s PID evidence lives at `W/pids/<tracking_key>-<sid>.pid`: line 1 is the
+pid, line 2 is `loom::process::process_start_time`. `pid_tracking` is `pub(crate)`, so an integration
+test (a separate crate) cannot import its layout — it has to re-derive the path from
+`Session::derive_tracking_key` and write the two-line format itself to fabricate valid evidence.
 **Fix:** `fs/permissions/settings.rs::scrub_session_identity_env()` (shared `SESSION_IDENTITY_ENV_KEYS` scrubber) applied in `generate_hooks_settings`, `create_worktree_settings`, the worktree settings.local.json copy, `refresh_worktree_settings_local` (which now uses the worktree's own settings as merge base), and `ensure_loom_hooks_local` (self-heals existing installs on `loom init`/`repair`). `HooksConfig` no longer carries stage/session IDs at all.

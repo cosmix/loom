@@ -11,6 +11,12 @@ existing entry, or a stale baseline entry. CI runs that gate, so the exception s
 or shrink. Treat this as controlled decomposition debt, not as completed decomposition, and remove
 an entry whenever its unit is brought under the limit.
 
+## `conflict_resolution_instructions` Is Dead Code (2026-09-13)
+
+`git/merge/mod.rs:301` `conflict_resolution_instructions` has no production caller — only its own
+test calls it. Found during the state-confinement work; not removed there because dead-code removal
+was outside that plan's declared files.
+
 ## Debug Output in Production
 
 `eprintln!` statements with 'Debug:' prefix in production code (complete.rs, orchestrator.rs). Should use tracing crate with log levels.

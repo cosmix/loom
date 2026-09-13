@@ -393,6 +393,16 @@ see the escapes a terminal hides.
 **Prevention for plan authors:** never grep a human-readable summary line for a count. Set
 `NO_COLOR=1` in the criterion, or assert against a JSON/basic reporter instead.
 
+## A Fixed Timestamp Checked Against a Now-Relative Window Expires (2026-09-13)
+
+**What happened:** `commands/usage/discovery_tests.rs::explicit_root_discovers_old_mtime_file_without_home_fallback` wrote a transcript line stamped `2026-09-12T20:00:00Z` and parsed it within `range()`, a window measured back from `Utc::now()`. It passed until 2026-09-13T20:00Z and failed on every run after, on main and on every branch, with no code change: two gate runs ten minutes apart gave opposite results.
+
+**Why:** a literal date compared against a sliding window encodes "recently" as a constant, so the test fails on a date nobody chose.
+
+**Prevention:** a fixture timestamp read by a now-relative filter is computed from `Utc::now()` (one hour ago, say). A literal date belongs only in a test that also pins the window, for example `time_range::parse_since_at(spec, fixed_now)`. When a test fails for the first time with no code change, compare its date literals with the clock before anything else.
+
+**Fix:** the fixture stamps its entry relative to `Utc::now()`; the old `UNIX_EPOCH` mtime, which is what the test is about, stays.
+
 ## A Test That Calls a Hook's stdin Entry Point Hangs a Backgrounded Gate (2026-09-13)
 
 **What happened:** the state-confinement gate ran `cargo test --all-targets` from a background shell. `commands::hook::tests_pre_compact::pre_compact_always_returns_ok` calls `pre_compact()`, which reads the real process stdin to EOF (`commands/hook/pre_compact.rs:39-47`). The background shell's stdin was a pipe that never closed, so the test blocked, `cargo test` never exited, and the gate never reported. The orchestrator had told the user the gate was running and waited for a completion notice that could not come; the hang went unnoticed for more than four hours, until the user asked.
@@ -587,6 +597,15 @@ copying a gate list between plans, re-check each criterion against the destinati
 stage's own sandbox network policy — a criterion that passed in the source plan is not
 evidence it will pass in the copy.
 
+## `cargo audit` Also Cannot Pass Inside the Agent's Own Bash-Tool Sandbox (2026-09-13)
+
+A different failure mode from the one above: run interactively (not as a plan's acceptance
+criterion), `cargo audit` fails inside the Claude Code Bash sandbox with `~/.cargo/advisory-db`
+read-only, and `--db` fetch fails on host-key verification. The repo's pre-push hook runs `cargo
+audit` outside that sandbox; do not add it to a stage's own gate script or try to make it pass
+inside an agent session — treat a red `cargo audit` from inside the sandbox as expected, not a
+regression, and rely on the pre-push hook for the real check.
+
 ## `pre_compact_always_returns_ok` Blocks When the Test Process Has an Open Stdin (2026-09-13)
 
 **What happened:** a full `cargo test --all-targets` run launched as a background shell job stopped
@@ -612,6 +631,13 @@ the operator stopped it, because every other target had just passed on the same 
 
 **Rule:** after a full run, a change confined to test code is verified by re-running the target
 that failed. Re-run the whole suite only when production code changed after that full run.
+
+## A Relay Test Feeding `scratch_root` a `$TMPDIR`-Based Path Fails by Design (2026-09-13)
+
+`relay::scratch::scratch_root` refuses any root under `/tmp`, and the sandbox's own `$TMPDIR` is
+under `/tmp` — so a test that feeds `scratch_root` a directory derived from `$TMPDIR` fails on the
+refusal, not on the code under test. `relay_e2e.rs` uses a directory outside `/tmp` instead
+(`target/relay-e2e-tmp`); write a new relay test the same way.
 
 ## A `#[serial]` Test That Rewrote `PATH` Broke Unrelated Tests (2026-09-13)
 

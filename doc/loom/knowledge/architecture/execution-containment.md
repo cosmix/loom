@@ -134,6 +134,56 @@ Two things not to "fix" without reading the reasoning first:
 `allow_write` rules also have parent traversal filtered out at the emitter, which
 is what actually closes the path-escape hole at the point of use.
 
+## Sandbox-List vs Permission-Rule Path Syntax, and Where Each Resolves From (2026-09-13)
+
+Two settings surfaces read a leading `/` differently, confirmed against the Claude Code docs
+(`settings-reference.md#sandbox-path-prefixes`, `permissions.md#read-and-edit`):
+
+- **`sandbox.filesystem` lists** (`allowWrite`, `denyWrite`, `denyRead`, ...): `/p` and `//p` are
+  both absolute, `~/p` is under home, and a bare path is relative to the project root (to
+  `~/.claude` in user settings).
+- **`Edit`/`Read`/`Write`/`NotebookEdit` permission rules**: `//p` is absolute, `~/p` is under home,
+  a bare path is cwd-relative, and a single leading `/` is relative to the SETTINGS SOURCE — the
+  directory of the `--settings <file>` that recorded it, which for a capsule is `W/capsules/`.
+
+`sandbox/config.rs::expand_paths`'s doc comment used to claim Claude Code prepends the project root
+to an absolute sandbox path. It does not, and the comment is corrected in place — a bare (no-slash)
+sandbox path is project-relative, but a `/`-prefixed one is already absolute, matching the docs
+above. The docs suggest an OLDER Claude Code version read a single-slash sandbox path as
+project-relative, which is why some older loom code favors `./path` there.
+
+Two more facts from the same pass:
+
+- On Linux and WSL2, a `denyWrite` entry for a path that does not exist yet is still enforced: the
+  sandbox mounts a 0-byte read-only placeholder for it while the sandboxed command runs.
+- `--setting-sources` that excludes a settings source drops that source's `sandbox.filesystem`
+  entries, `Edit` rules and `Read` denies from the sandbox — not just its `permissions.*` block.
+
+Open: how a `/`-prefixed permission or sandbox path resolves in a `--settings` file OUTSIDE the
+project is unconfirmed. Live checklist item.
+
+Also unconfirmed: whether Claude Code resolves settings only from the session's start directory, so
+a nested `x/.claude/` several levels below the worktree root would never be read (cited:
+`anthropics/claude-code#74023`, `#37344`, `#12962` — not independently verified against the
+installed bundle). Loom passes `--settings <file>` explicitly on every spawn, so root-level gating
+does not depend on the answer either way.
+
+## Confinement E2E Lives Outside the Sandbox (2026-09-13)
+
+`orchestrator/terminal/native/tests_confinement_e2e.rs` and its `srt`-backed sibling
+`tests_confinement_srt.rs` (loaded via `#[path]`, registered from `native/launch.rs`), plus
+`tests/integration/confinement_status.rs`, exercise the OS-level sandbox denies end to end. Run with
+`env -u LOOM_WORK_DIR LOOM_TEST_REQUIRE_SANDBOX_FREE=1 cargo test confinement` outside the Claude
+Code Bash sandbox: `srt` (`@anthropic-ai/sandbox-runtime`, runnable via `bunx`) cannot run INSIDE
+that sandbox because it binds a Unix socket (`srt-mux-*.sock`) and AF_UNIX is blocked there.
+
+`srt` behavior worth knowing when reading a probe result: a denied path that does not exist yet
+inside an otherwise-writable directory is mounted from `/dev/null`, so a write to it exits 0 and
+lands nowhere — `bwrap` creates an empty host mount-point file for it and `srt` removes that file on
+exit. A refusal against a fake-home path or `.git/hooks`/`.git/config` does not by itself prove a
+capsule rule is doing the work; both are denied by `srt`'s own built-in defaults regardless of
+loom's rules.
+
 ## Package-Manager Caches Are Granted To Every Stage
 
 `sandbox::PACKAGE_MANAGER_CACHE_WRITE_PATHS` (`sandbox/package_caches.rs`) lists the
@@ -200,8 +250,12 @@ the sandbox skipped, so the call fails with `Read-only file system`. `sandbox::m
 (`sandbox/grant_paths.rs`) resolves each absolute or `~/` entry, skips globs and relative entries,
 and returns the ones missing on the host. Both consumers read the merged plan and stage grants:
 
-- `write_required_sandbox_settings` (`orchestrator/core/sandbox_grants.rs`) logs one warning per
-  missing path at spawn, for worktree and knowledge stages alike.
+- STALE (corrected 2026-09-13): this named `write_required_sandbox_settings`
+  (`orchestrator/core/sandbox_grants.rs`), which the state-confinement plan's B1 phase deleted along
+  with the rest of that file. The warning now comes from `sandbox::warn_missing_grants`
+  (`sandbox/grant_paths.rs:64`), called from `orchestrator/core/spawn_setup.rs:139` and
+  `orchestrator/core/stage_executor.rs:654`, one per missing path at spawn, for worktree and
+  knowledge stages alike.
 - The stage signal lists them under "Missing on the host, so NOT writable this session" with a
   stop-and-report instruction, whether or not the stage has deny rules
   (`missing_allow_write_from_merged` in `orchestrator/signals/generate.rs`).

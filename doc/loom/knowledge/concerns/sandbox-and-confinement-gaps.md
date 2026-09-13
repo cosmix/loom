@@ -66,11 +66,16 @@ confinement does and does not guarantee.
 
 ## Sandbox-Widening Fields Need No Author Acknowledgement (2026-08-17)
 
-`plan/schema/validation.rs:45-69` `unsafe_plan_reasons` gates only `enabled: false` and
-`allow_unsandboxed_escape`. So `allow_write`, `allow_all_unix_sockets`,
-`allow_local_binding` and `linux.enable_weaker_nested` each widen the sandbox with no
-acknowledgement required from the plan author. Reviewer-reported and not independently
-confirmed — read the code before acting.
+STALE (corrected 2026-09-13): this named `plan/schema/validation.rs`'s `unsafe_plan_reasons`,
+which the state-confinement plan's phase-4 flag removal deleted along with `--allow-unsafe-plan`.
+The two settings it used to gate are now refused unconditionally, no acknowledgement possible:
+`sandbox::validate_config` (`sandbox/config.rs:167`) rejects `sandbox.enabled: false` and
+`sandbox.allow_unsandboxed_escape: true` outright, and a plan carrying either cannot run at all.
+
+The residual gap stands for the fields that check never covered: `allow_write`,
+`allow_all_unix_sockets`, `allow_local_binding` and `linux.enable_weaker_nested`
+(`models/stage/types.rs:305-326`) still widen the sandbox with no acknowledgement from the plan
+author — confirmed 2026-09-13, `plan/schema/validation.rs` has no check on any of the four.
 
 ## Uncalled Path-Escape Validators Read As Protection (2026-08-17)
 
@@ -97,6 +102,23 @@ parent-traversal filter in `sandbox/settings.rs`.
 (preferred — a clear error beats a silently dropped entry), or delete all three and their
 tests. **Leaving `pub`-but-uncalled validators is the worst of the three, because it reads as
 protection.**
+
+## Accepted Gaps From the State-Confinement Work (2026-09-13)
+
+Phases 1-3 of `doc/plans/PLAN-loom-state-confinement.md` closed most of the sandbox-widening
+surface (see the corrected entry above) and every scenario the plan's "What the Deny Breaks"
+section lists. Two gaps were accepted, not closed:
+
+- **The approved-permissions filter reads rule text only** (`fs/permissions/sync.rs`'s fold-back). A
+  rule naming a symlink into a control surface (`.loom`, `.claude`, `.worktrees`, a hook directory,
+  `~/.loom`, the scratch root) still passes the filter. The phase-3 OS deny rules close this in
+  practice — a deny always wins over an allow, and the sandbox resolves symlinks before applying
+  either — but the filter itself does not detect the symlink.
+- **Shared package-manager caches stay writable**
+  (`sandbox::PACKAGE_MANAGER_CACHE_WRITE_PATHS`). Owner decision 11 removed
+  `~/.rustup/toolchains` and `~/.local/share/uv` from every session's grants, but the remaining
+  shared caches (cargo, npm, pnpm, yarn, deno, pip, go) are still one directory shared by every
+  concurrent session; per-session isolation is a follow-up plan, not part of this one.
 
 ## No `Read(...)` Deny Rule May Exist in Any Settings File (2026-09-04)
 

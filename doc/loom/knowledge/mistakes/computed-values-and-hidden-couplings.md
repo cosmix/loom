@@ -182,3 +182,17 @@ did IT gate the same behaviour on?
 
 **Fix:** the clear button now gates on `state.provenance === "set" && !pending`,
 reading the model's own provenance instead of the merged display value.
+
+## `ensure_loom_hooks_local` Leaves Emptied Event Arrays Behind — Callers Must Order Around It (2026-09-13)
+
+**What happened:** `fs/permissions/settings.rs::ensure_loom_hooks_local_inner` can leave a hook
+event's array present but empty after rewriting hooks, rather than removing the key. `loom repair`
+strips loom-written keys BEFORE rewriting hooks specifically to avoid layering a stale empty array
+under the new one.
+
+**Why:** the function's job is installing/updating loom's own hook entries; it was never written to
+clean up an empty array a previous edit left behind, so a caller that rewrites hooks without first
+stripping the old keys can end up with both an empty array and the new entries.
+
+**Prevention:** when a caller needs both "remove loom-written keys" and "rewrite hooks" against the
+same settings file, the strip must run first — this function does not do it for you.

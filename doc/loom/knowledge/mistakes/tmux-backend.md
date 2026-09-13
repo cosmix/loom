@@ -121,4 +121,16 @@ Verified on tmux 3.7b: after `kill-server` exits 0 the socket file persists with
 
 **Debugging trap that nearly falsified the truth:** a dummy pane app (`exec cat > log`) received 0 bytes during injected drags, which "proved" tmux swallows mouse events — wrong. The pane tty was in CANONICAL mode and mouse sequences contain no newline, so the line discipline buffered them forever. tmux's own `-vv` server log (`writing mouse ... to %0`) was the ground truth. When testing "did bytes reach the app", put the receiving end in raw mode or read the server-side log; `cat > file` on a tty silently lies.
 
+## Testing a tmux Spawn Against the New Preflight Needs Two Extra Guards (2026-09-13)
+
+The state-confinement work's spawn preflight (checks 2-4, `sandbox/config/preflight.rs`) fails a
+tmux spawn test for reasons unrelated to the code under test unless two RAII guards are in place:
+
+- `LoomHooksDirGuard` points `LOOM_HOOKS_DIR` at this build's hooks under `target/`, so the test
+  exercises the hooks actually built, not whatever happens to be installed on the host.
+- `LoomBinModeGuard` chmods the running test binary to drop the group- and world-write bits: under
+  umask 002 a build leaves the binary at mode 775, and the new `LOOM_BIN` check
+  (`accepted_loom_bin`) refuses a group- or world-writable binary — without the guard, a tmux spawn
+  test fails on the build environment, not the code under test.
+
 **Residual risk, recorded deliberately:** any future claude feature that runs `tmux load-buffer -w` from a keyboard path still crashes a tmux 3.6a stage server. The deeper shield — dropping `TMUX`/`TMUX_PANE` from the agent environment in the wrapper so claude never talks to loom's tmux at all — was considered and NOT taken: the wrapper allowlists them today and the blast radius of lying to the agent about its terminal is unassessed. Revisit if a non-mouse `load-buffer` death appears.

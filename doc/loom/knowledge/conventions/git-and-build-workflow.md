@@ -121,6 +121,14 @@ Never `git push` unless the user explicitly asks — commit locally and stop. "F
 
 `rg` and `fd` skip the token files through the state root's `.ignore`; sessions the daemon spawns additionally get `RIPGREP_CONFIG_PATH`, which backstops `rg` alone, so `rg -uu` sweeps skip them too. The daemon publishes both `.ignore` and `ripgreprc` before either token exists (`daemon/server/tokens.rs::publish_fresh_tokens`), and the wrapper only exports `RIPGREP_CONFIG_PATH` when `ripgreprc` is already on disk, so a `loom run --foreground` session — which has no daemon, no tokens, and no exclusion files — never exports it either.
 
+## Integration Tests Spawn the Loom Binary Only Through `tests/integration/helpers.rs` (2026-09-13)
+
+Every integration test that spawns the loom binary goes through `loom_cmd`, `clear_relay_env` and
+`loom_bin_path` in `tests/integration/helpers.rs`; `tests/integration/binary_spawn_guard.rs`
+enforces it. Route a new integration test through the same helpers rather than shelling out to the
+binary directly — a bespoke spawn skips the relay-env clearing the helpers do for every test, and
+the guard fails the build.
+
 ## A Function Called From `$(...)` Cannot `exit` to Block Its Caller
 
 A shell function invoked inside a command substitution (`X=$(normalize_lexical ...)`) runs in a

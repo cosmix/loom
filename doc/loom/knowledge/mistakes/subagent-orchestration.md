@@ -362,6 +362,26 @@ subagents found" while workers are still running — a false all-clear, not an e
 **Prevention:** always `cd` to the worktree root in the same command before
 `loom subagents watch`/`list`/`harvest`.
 
+**Recurrence (2026-09-13):** `loom subagents list --session <id>` has the same cwd-dependency —
+from a worktree it reports "no subagent transcripts found" even with an explicit `--session`. Run
+it from the session's project root, or pass `--dir`.
+
+## `loom subagents watch` Without `--session` Can Report Another Session's Subagents as Settled (2026-09-13)
+
+**What happened:** `loom subagents watch --timeout 3600`, launched from a background shell sitting
+in the worktree, reported "settled: every subagent is done" immediately, listing six agents idle
+~18h from a DIFFERENT session — while this session's five phase-3 agents were still running (a
+foreground `loom subagents list` minutes earlier had shown them alive).
+
+**Why:** without `--session`, the command takes the most recently active session under the working
+directory's project slug — not necessarily the caller's own session. The background shell sat in
+the worktree, a different project slug than this session's own transcripts, so it picked a stale,
+unrelated session and reported it settled — the opposite failure direction from the cwd-resolution
+mistake above (that one finds nothing; this one finds someone else's agents and calls them yours).
+
+**Prevention:** always pass `--session "$CLAUDE_CODE_SESSION_ID"` (set in every Bash tool shell) to
+`loom subagents watch`/`list`/`harvest`, not just the right cwd.
+
 ## Never Add Work to a Subagent by Message — a Queued Follow-Up Double-Assigns Files (2026-09-12)
 
 **What happened:** a retry-test task was sent by `SendMessage` to a `fix-tests` worker
@@ -469,3 +489,32 @@ bearing coverage rather than an artifact of the old implementation.
 report, diff the file's block names old vs new
 (`git show HEAD:<file> | rg '^\s*(describe|it)\('`) rather than trusting that the
 listed cases were the only ones that mattered.
+
+## A Brief With 5-6 Tasks Across a Dozen Files Overruns the Harness's 150-Turn Limit (2026-09-13)
+
+**What happened:** in the state-confinement plan, phase-1 worker I1 (sonnet) and phase-3 workers B1
+(sonnet, 170 tool uses) and D (sonnet, 164 tool uses) all stopped mid-edit at the harness's 150-turn
+limit WITHOUT a report, leaving the tree in an unknown, sometimes non-compiling state (B1 had
+deleted a function a test still called).
+
+**Why:** each brief carried 5-6 tasks spread across roughly a dozen files — too much for one sonnet
+run to finish and still leave a report.
+
+**Prevention:** keep a brief to at most ~3 tasks or ~6 files. Ask the worker to keep a report
+skeleton (files changed so far) current throughout the run, so a cut-off run still leaves something
+readable. Always inspect the actual tree state before trusting a silent stop — no report does not
+mean no changes.
+
+## Messaging a Stopped Subagent Resumes It Instead of Reaching a Fresh One (2026-09-13)
+
+**What happened:** a continuation message was sent to worker B1 believing it was still running; it
+had already stopped at its turn limit (the previous entry). `SendMessage` resumed it rather than
+failing, so the orchestrator's model of ownership — B1 still owns its files — was wrong with no
+error surfacing.
+
+**Why:** `SendMessage` does not distinguish "agent paused mid-turn" from "agent's turn ended"; both
+accept a new message and continue.
+
+**Prevention:** check the agent's actual state (`loom subagents list --session ...`) before sending
+it a message. A stopped agent's files are free for the orchestrator to route to a fresh spawn — do
+not message it expecting a continuation.

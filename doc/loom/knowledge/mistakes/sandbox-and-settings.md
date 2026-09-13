@@ -666,3 +666,54 @@ and relative entries pass through unchanged.
 **Prevention:** the two settings surfaces read a leading `/` in opposite ways, so any code that
 copies a path from one into the other must translate it, and a test must assert the emitted rule
 literally.
+
+## `install.sh` Left `~/.local/bin/loom` Group/World-Writable, Which the New `LOOM_BIN` Check Refuses (2026-09-13)
+
+**What happened:** under umask 002, `install.sh` did `cp` then `chmod +x`, leaving
+`~/.local/bin/loom` at mode 775. The state-confinement work's spawn preflight refuses a `LOOM_BIN`
+that is group- or world-writable, so after a reinstall every spawn on this machine would be
+refused.
+
+**Why:** the check protects against another user on the host modifying the binary every hook and
+spawn trusts. Mode bits guard against other UIDs, which is exactly what the umask left open,
+independent of whether the local group actually has other members.
+
+**Prevention:** never rely on the umask when installing a binary hooks or spawns will trust — set
+the mode explicitly.
+
+**Fix:** `install.sh` now installs with `0755`; the refusal names `chmod go-w <path>` as the
+remedy. Relaxing the rule for a private single-member group was considered and rejected — the mode
+bit is the boundary, not group membership.
+
+## `-c core.hooksPath=/dev/null` Silently Overrides a Scoped `core.hooksPath` Read (2026-09-13)
+
+**What happened:** `merge_gate.rs::hooks_dir_prefix` read `core.hooksPath` through loom's own git
+runner to find the repository's tracked hooks directory for the merge gate's control-path check. It
+always read `/dev/null`.
+
+**Why:** loom's git runner passes `-c core.hooksPath=/dev/null` on every command it runs
+(`git/runner.rs`, `NO_HOOKS_ARGS`, owner decision 10, so loom's own git calls never execute a
+worktree's hooks). An unscoped `git config --get core.hooksPath` returns the highest-precedence
+value across all `-c`, local, global and system sources, so the safety flag it was reading THROUGH
+was also the value it read back.
+
+**Prevention:** any loom read of `core.hooksPath` — or any config key loom itself sets with `-c` —
+must use a scoped read (`git config --local/--global/--system --get`), which `-c` does not override.
+
+**Fix:** read local, then global, then system scope explicitly and use the first that resolves. A
+relative global `core.hooksPath` (e.g. `.githooks`) resolves inside every repository, so a future
+cleanup pass should also check that scope, not just local.
+
+## macOS Aliases `/tmp` to `/private/tmp` — Canonicalize Both Sides Before Comparing (2026-09-13)
+
+**What happened:** a path comparison in `accepted_loom_bin` (is a binary under a session-writable
+root?) missed a match on macOS because one side of the comparison held `/tmp/...` and the other
+`/private/tmp/...` — the same path, different spelling.
+
+**Why:** macOS symlinks `/tmp` to `/private/tmp`; a path built from one and a path built from the
+other are byte-different strings for the same file.
+
+**Prevention:** canonicalize both sides of any path-equality or path-ancestor check before
+comparing, not just one.
+
+**Fix:** applied in the `accepted_loom_bin` comparison.

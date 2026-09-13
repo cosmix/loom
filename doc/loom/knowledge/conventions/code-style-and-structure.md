@@ -29,6 +29,9 @@ verified: 7d6a14caf1750cc1e516519e650e2ee68641e0a1
   `FromStr::Err`, and Clap validator strings. Convert them when application code consumes them.
 - Git errors must include the command, directory, exit code, stdout, and stderr.
 - Do not add a second general error framework without a concrete caller-facing API need.
+- A `match { ... }.with_context(...)` (or any postfix call chained directly onto a `match`/`if`/block
+  that starts a statement) fails to parse — Rust treats that construct as a complete statement at
+  its closing brace. Bind the match to a `let` first, then call `.with_context()` on the binding.
 
 ## Serialization
 
@@ -42,6 +45,11 @@ verified: 7d6a14caf1750cc1e516519e650e2ee68641e0a1
 Standard module layout: `mod.rs` (exports), `types.rs`, `methods.rs`, `transitions.rs` (if state machine), `tests.rs`
 
 Re-export rules: `pub use` explicit items (never wildcards). Only export public API. `pub use` NOT `pub mod`.
+
+A module nested two levels deep (e.g. `sandbox/config/preflight.rs`, alongside `sandbox/config.rs`'s
+own `mod preflight;`) needs its own re-export at the TOP-level `mod.rs` for other code to reach it
+as `sandbox::preflight` (`sandbox/mod.rs:12`: `pub(crate) use config::preflight;`) — the immediate
+parent's `mod` declaration does not surface it any further up on its own.
 
 ## Testing
 

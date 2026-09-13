@@ -92,3 +92,14 @@ make the host read a file outside the worktree into the graph.
 Prevention: any new host-side read or write of a worktree-writable path goes through
 `fs::safe_read`/`fs::safe_fs`, never `std::fs`/`OpenOptions` directly — the daemon trusts its
 own code, not the worktree's contents.
+
+## Re-Export a `pub(crate)` Helper Into a New Caller Instead of Re-Encoding Its Logic (2026-09-13)
+
+`fs/permissions/drift.rs::flatten_hook_triples` already turned a hooks JSON value into the
+`(event, matcher, command)` triples the drift check compares. When the spawn preflight's
+`sandbox/config/preflight/hook_commands.rs` needed the same flattening to check installed hook
+commands, it imported the helper (`fs/permissions/mod.rs:33` re-exports it as `pub(crate)`) rather
+than writing its own walk of the same JSON shape. A visibility bump plus a re-export is cheaper than
+a second copy that can drift from the first — see
+[Duplicated Extension-to-Language Table](../concerns/code-quality-and-hook-debt.md#duplicated-extension-to-language-table-2026-08-17)
+for what happens when nobody does this.

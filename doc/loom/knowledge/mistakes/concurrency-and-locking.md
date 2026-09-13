@@ -20,3 +20,17 @@
 **Prevention — use `verify::transitions::update_stage(id, work_dir, |s| …)` for every existing-stage mutation, never load + mutate + whole-record save.** It re-reads under the stages-directory lock, applies the closure, and writes in one critical section. Mutate only operation-owned fields. Run slow Git, terminal, network, and verification work outside the lock, then apply a short delta. Whole-record persistence is for actual creation only; the orchestrator loop is not exempt because daemon and CLI writers remain concurrent.
 
 **Detection rule:** any `load_stage(); …; save_stage()` pair where the `…` can run while the daemon/dispute-thread/another-CLI is live is a lost-update candidate. Especially when `…` contains a multi-minute step (acceptance, verification, git merge) or increments a counter read from the in-memory stage (`fix_attempts += 1`, `dispute_count += 1`).
+
+## Inbox Ledger Has Two Rows Per Request Id — a Lookup Must Take the Latest (2026-09-13)
+
+**What happened:** the relay inbox drain appends an `applying` row when it starts processing a
+request, then an outcome row when it finishes, both under the same request id. A lookup that
+matches by id alone finds the `applying` row.
+
+**Why:** the ledger is append-only and `applying` is written first, so an id-only lookup returning
+the first match reads the in-progress state instead of the outcome.
+
+**Prevention:** any reader of the inbox ledger must take the LATEST row for an id, never the first
+match.
+
+**Fix:** `fs/inbox/status.rs` uses `.rev().find(...)` — walk from the end.
