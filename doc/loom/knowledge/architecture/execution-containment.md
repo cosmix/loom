@@ -168,6 +168,18 @@ a nested `x/.claude/` several levels below the worktree root would never be read
 installed bundle). Loom passes `--settings <file>` explicitly on every spawn, so root-level gating
 does not depend on the answer either way.
 
+## A Denied Missing Path Shows Up in the Session's `git status` (2026-09-13)
+
+Inside a Claude Code Bash sandbox, a write-denied path that does not exist is held by a read-only bind mount of `/dev/null`. It exists only in that session's mount namespace. Observed at `<cwd>/.mcp.json`: `stat` reports a character special file (size 0, owner `nobody`, mtime of the device node), `/proc/self/mountinfo` lists it as a `devtmpfs udev` mount, and a tool outside the sandbox finds no file there.
+
+Consequences for a stage session, which runs git inside its sandbox:
+
+- `git status` lists the mount point as untracked (`?? .mcp.json`), so an agent checking that the tree is clean before `loom stage complete` sees noise.
+- `git add` of a character device fails, which is one more reason the git-add guard forbids `-A` and `.`.
+- The daemon's own git runs outside the sandbox and never sees these entries.
+
+Do not commit or delete such an entry; confirm it with `stat -c %F <path>` first. The same mechanism explains the 0-byte placeholders the Claude Code docs describe for missing `.claude` settings files (sandboxing.md, Troubleshooting).
+
 ## Confinement E2E Lives Outside the Sandbox (2026-09-13)
 
 `orchestrator/terminal/native/tests_confinement_e2e.rs` and its `srt`-backed sibling

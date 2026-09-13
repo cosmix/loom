@@ -626,6 +626,11 @@ Findings from phase 3 (2026-09-13):
   - Approved rules that name executable dirs such as `~/.cargo/bin` stop propagating.
   - A launch through `LaunchHost::from_env` needs installed hooks matching the build, or
     `LOOM_HOOKS_DIR`.
+  - Inside a sandboxed session, a write-denied path that does not exist is held by a read-only
+    bind mount of `/dev/null`: a character device, visible only in that session's mount
+    namespace. `git status` in the session lists it as untracked (seen at `<cwd>/.mcp.json`), and
+    git refuses to add a device. Check that the stage completion checklist and the git-add guard
+    treat these as noise, and that no agent tries to commit or delete one.
 
 ### I1: Relay Protocol and CLI Writers
 
