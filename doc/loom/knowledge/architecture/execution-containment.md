@@ -182,6 +182,14 @@ Do not commit or delete such an entry; confirm it with `stat -c %F <path>` first
 
 ## Confinement E2E Lives Outside the Sandbox (2026-09-13)
 
+Status (2026-09-14): passed outside the sandbox. The operator ran it with
+`LOOM_TEST_REQUIRE_SANDBOX_FREE=1` and a PATH shim for `srt` (`exec bunx @anthropic-ai/sandbox-runtime "$@"`).
+The srt tests are `#[serial]`: when four ran in parallel, two srt CLI instances died with an uncaught
+Node.js exception, and the exact error was never captured. Loom's parallel stages each run their own
+Claude Code sandbox and have not shown this. Treat it as an srt CLI concurrency issue until proven
+otherwise, and keep the probes' sentinel rule (`mistakes/verification-harness.md`, "A Must-Fail Probe
+That Counts Any Non-Zero Exit Passes When the Harness Never Started").
+
 `orchestrator/terminal/native/tests_confinement_e2e.rs` and its `srt`-backed sibling
 `tests_confinement_srt.rs` (loaded via `#[path]`, registered from `native/launch.rs`), plus
 `tests/integration/confinement_status.rs`, exercise the OS-level sandbox denies end to end. Run with

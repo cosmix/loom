@@ -620,6 +620,16 @@ Findings from phase 3 (2026-09-13):
 - **Confinement e2e.** srt 1.0.0 (`@anthropic-ai/sandbox-runtime`, runnable through `bunx`) cannot
   run inside the Claude Code Bash sandbox, where AF_UNIX is blocked. The test skips there, and the
   operator runs it outside.
+  - First operator run (2026-09-13): the stage and codex-lane capsules passed. Two tests crashed
+    srt (an uncaught Node.js exception) while the four srt tests ran in parallel. The knowledge
+    capsule's must-fail probes had been passing on a crashed harness, because a probe counted any
+    non-zero exit as a refusal.
+  - Fix: each probe prints a sentinel and the write's own exit code, each capsule runs a control
+    command first, failures carry srt's full stderr, and the srt tests are `#[serial]`.
+  - Second run (2026-09-14): all 13 confinement lib tests and `confinement_status` passed outside
+    the sandbox. Every capsule kind refuses every control surface in its probe list and accepts
+    its own paths.
+  - Open: the exact exception behind the parallel srt crashes was never captured.
 - **Live checklist additions:**
   - A denyWrite entry that does not exist when the session starts (for example
     `~/.codex/hooks.json` inside the `~/.codex` grant) may not be enforced.
