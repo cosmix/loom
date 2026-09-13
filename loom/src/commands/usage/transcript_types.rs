@@ -141,6 +141,10 @@ pub struct Transcript {
     /// Hook-provided lifecycle metadata. It is absent rather than inferred.
     pub stage_id: Option<String>,
     pub loom_session_id: Option<String>,
+    /// Exact durable forwarding receipt metadata, when tuple attribution succeeds.
+    pub forward_receipt: Option<super::forward_join::ForwardMetadata>,
+    /// Whether this transcript is a forwarding execution needing attribution.
+    pub forward_candidate: bool,
     /// The transcript's first user entry, captured BEFORE the `since` cutoff
     /// is applied. Spawn-prompt classification reads it, and a cutoff that
     /// dropped it would silently reclassify every long-running subagent from

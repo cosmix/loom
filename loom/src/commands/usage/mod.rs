@@ -17,7 +17,9 @@ mod claude_provider;
 mod claude_usage;
 mod codex_discovery;
 mod codex_provider;
+mod codex_tokens;
 mod discovery;
+mod forward_join;
 mod json;
 mod provider;
 mod provider_normalization;
@@ -25,10 +27,13 @@ mod provider_report;
 mod provider_types;
 mod quota_history;
 mod receipt_provider;
+mod report_types;
 mod sections;
+mod stream_types;
 mod time_range;
 mod transcript;
 mod transcript_content;
+mod transcript_merge;
 // `pub(crate)`, not private: `transcript_types::SYNTHETIC_MODEL` is the
 // canonical model-sentinel constant shared with `commands::subagents`, a
 // sibling module tree that a plain `mod` declaration would not reach.
@@ -36,7 +41,7 @@ pub(crate) mod transcript_types;
 
 use std::path::{Path, PathBuf};
 
-use anyhow::Result;
+use anyhow::{ensure, Result};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum, serde::Serialize)]
 #[serde(rename_all = "kebab-case")]
@@ -85,6 +90,10 @@ pub struct UsageArgs {
     #[arg(long)]
     pub receipts_root: Option<PathBuf>,
 
+    /// Single-project Loom state root containing forward receipt stage files
+    #[arg(long, value_name = "DIR", conflicts_with = "all")]
+    pub forward_receipts_root: Option<PathBuf>,
+
     /// Project directory to read transcripts for (defaults to this repository
     /// plus each of its `.worktrees/*` subdirectories)
     #[arg(long, conflicts_with = "all")]
@@ -117,6 +126,7 @@ fn parse_all(
     files: &[discovery::DiscoveredFile],
     range: &time_range::TimeRange,
     work_dir: Option<&Path>,
+    forward_join: &forward_join::ForwardJoin,
 ) -> Vec<transcript::Transcript> {
     let started_agent_types =
         crate::commands::subagents::ledger::StartedAgentTypeIndex::load(work_dir);
@@ -133,6 +143,7 @@ fn parse_all(
                     transcript.stage_id = metadata.stage_id;
                     transcript.loom_session_id = metadata.loom_session_id;
                 }
+                forward_join.join_transcript(&mut transcript);
                 transcripts.push(transcript);
             }
             Err(error) => eprintln!("loom usage: skipping {}: {error:#}", file.path.display()),
@@ -151,23 +162,30 @@ fn usage_work_dir(project: Option<&Path>, all: bool) -> Option<PathBuf> {
         return None;
     }
     match project {
-        Some(project) => {
-            let project = if project.is_absolute() {
-                project.to_path_buf()
-            } else {
-                std::env::current_dir().ok()?.join(project)
-            };
-            let candidate = crate::fs::work_dir::WorkDir::new(&project)
-                .ok()?
-                .root()
-                .to_path_buf();
-            candidate.is_dir().then_some(candidate)
-        }
+        Some(project) => project_work_dir(project).filter(|candidate| candidate.is_dir()),
         None => crate::commands::common::work_dir_path().ok(),
     }
 }
 
+fn project_work_dir(project: &Path) -> Option<PathBuf> {
+    let project = if project.is_absolute() {
+        project.to_path_buf()
+    } else {
+        std::env::current_dir().ok()?.join(project)
+    };
+    Some(
+        crate::fs::work_dir::WorkDir::new(project)
+            .ok()?
+            .root()
+            .to_path_buf(),
+    )
+}
+
 pub fn execute(args: UsageArgs) -> Result<()> {
+    ensure!(
+        !(args.all && args.forward_receipts_root.is_some()),
+        "--forward-receipts-root cannot be used with --all"
+    );
     let range =
         time_range::TimeRange::parse(&args.since, args.until.as_deref(), chrono::Utc::now())?;
     let work_dir = usage_work_dir(args.project.as_deref(), args.all);
@@ -192,6 +210,13 @@ fn normalize_usage(
     range: time_range::TimeRange,
     work_dir: Option<&Path>,
 ) -> Result<provider::NormalizedProviderEvents> {
+    let forward_root = forward_receipts_root(
+        args.all,
+        args.forward_receipts_root.as_deref(),
+        args.project.as_deref(),
+        work_dir,
+    )?;
+    let forward_join = forward_join::ForwardJoin::load(forward_root);
     let options = discovery::DiscoveryOptions {
         range,
         claude_root: args.claude_root.clone(),
@@ -209,25 +234,58 @@ fn normalize_usage(
     } else {
         Vec::new()
     };
-    let transcripts = parse_all(&files, &range, work_dir);
+    let transcripts = parse_all(&files, &range, work_dir, &forward_join);
     let codex = if args.provider.includes(provider_types::Provider::Codex) {
         codex_discovery::discover(args.codex_root.as_deref())
     } else {
         codex_discovery::CodexDiscovery::default()
     };
-    Ok(provider::normalize_provider_events(
-        provider::ProviderEventInput {
-            selection: args.provider,
-            range,
-            claude_transcripts: transcripts,
-            claude_discovered_files: files.len(),
-            claude_missing_roots,
-            codex_files: &codex.files,
-            codex_missing_roots: codex.missing_roots,
-            codex_unreadable_directories: codex.unreadable_directories,
-            receipts_root: args.receipts_root.as_deref(),
-        },
-    ))
+    let mut normalized = provider::normalize_provider_events(provider::ProviderEventInput {
+        selection: args.provider,
+        range,
+        claude_transcripts: transcripts,
+        claude_discovered_files: files.len(),
+        claude_missing_roots,
+        codex_files: &codex.files,
+        codex_missing_roots: codex.missing_roots,
+        codex_unreadable_directories: codex.unreadable_directories,
+        receipts_root: args.receipts_root.as_deref(),
+    });
+    forward_join.join_ledger(&mut normalized.ledger);
+    Ok(normalized)
+}
+
+fn forward_receipts_root<'a>(
+    all: bool,
+    explicit: Option<&'a Path>,
+    project: Option<&Path>,
+    work_dir: Option<&'a Path>,
+) -> Result<Option<&'a Path>> {
+    if all {
+        return Ok(None);
+    }
+    if let Some(explicit) = explicit {
+        let expected = project
+            .and_then(project_work_dir)
+            .or_else(|| work_dir.map(Path::to_path_buf));
+        ensure!(
+            expected
+                .as_deref()
+                .is_some_and(|root| roots_match(explicit, root)),
+            "--forward-receipts-root must be the selected project's Loom state root"
+        );
+    }
+    Ok(explicit.or(work_dir))
+}
+
+fn roots_match(left: &Path, right: &Path) -> bool {
+    match (left.canonicalize(), right.canonicalize()) {
+        (Ok(left), Ok(right)) => left == right,
+        _ => std::path::absolute(left)
+            .ok()
+            .zip(std::path::absolute(right).ok())
+            .is_some_and(|(left, right)| left == right),
+    }
 }
 
 fn attach_quota_history(
@@ -275,3 +333,7 @@ fn render_usage_report(report: &sections::Report, json_output: bool) -> Result<(
 #[cfg(test)]
 #[path = "usage_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "forward_root_tests.rs"]
+mod forward_root_tests;

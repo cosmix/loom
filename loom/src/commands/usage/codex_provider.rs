@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use chrono::{DateTime, Utc};
 use serde_json::Value;
 
+use super::codex_tokens::token_vector;
 use super::provider_normalization::{classify_by_id, project_basename};
 use super::provider_types::{
     Attribution, NormalizedEvent, ProvenanceStatus, Provider, ProviderDiagnostics,
@@ -27,6 +28,8 @@ struct FileState {
     observed_in_range: bool,
     saw_direct: bool,
     saw_fallback: bool,
+    thread_id: Option<String>,
+    thread_id_conflict: bool,
 }
 
 pub(crate) fn normalize(files: &[PathBuf], range: &TimeRange) -> CodexNormalization {
@@ -70,8 +73,20 @@ fn parse_file(
             rows.push(row);
         }
     }
+    apply_thread_identity(&mut rows, &state);
     classify_mixed_file(&mut rows, state.saw_direct, state.saw_fallback, diagnostics);
     Ok(rows)
+}
+
+fn apply_thread_identity(rows: &mut [NormalizedEvent], state: &FileState) {
+    for row in rows {
+        if state.thread_id_conflict {
+            row.codex_thread_id = None;
+            row.codex_thread_conflict = true;
+        } else {
+            row.codex_thread_id.clone_from(&state.thread_id);
+        }
+    }
 }
 
 fn json_line(line: String) -> std::io::Result<Value> {
@@ -79,6 +94,7 @@ fn json_line(line: String) -> std::io::Result<Value> {
 }
 
 fn update_context(value: &Value, state: &mut FileState) {
+    update_thread_id(value, state);
     if let Some(model) = value
         .pointer("/payload/model")
         .or_else(|| value.pointer("/payload/model_name"))
@@ -88,6 +104,24 @@ fn update_context(value: &Value, state: &mut FileState) {
     }
     if let Some(cwd) = value.pointer("/payload/cwd").and_then(Value::as_str) {
         state.project = project_basename(Some(Path::new(cwd)));
+    }
+}
+
+fn update_thread_id(value: &Value, state: &mut FileState) {
+    if value.get("type").and_then(Value::as_str) != Some("session_meta") {
+        return;
+    }
+    let Some(thread_id) = value.pointer("/payload/id").and_then(Value::as_str) else {
+        return;
+    };
+    if !crate::models::forward_receipt::is_safe_id(thread_id) {
+        state.thread_id_conflict = true;
+        return;
+    }
+    match state.thread_id.as_deref() {
+        Some(known) if known != thread_id => state.thread_id_conflict = true,
+        None => state.thread_id = Some(thread_id.to_owned()),
+        _ => {}
     }
 }
 
@@ -194,95 +228,14 @@ fn usage_timestamp(
     range.includes(timestamp).then_some(timestamp)
 }
 
-fn token_vector(value: &Value, diagnostics: &mut ProviderDiagnostics) -> ProviderTokenVector {
-    if has_invalid_tokens(value) {
-        diagnostics.invalid_token_rows += 1;
-    }
-    let input = number(value, "input_tokens");
-    let cached = number(value, "cached_input_tokens").or_else(|| {
-        value
-            .pointer("/input_tokens_details/cached_tokens")
-            .and_then(Value::as_u64)
-    });
-    let output = number(value, "output_tokens");
-    let reasoning = number(value, "reasoning_output_tokens").or_else(|| {
-        value
-            .pointer("/output_tokens_details/reasoning_tokens")
-            .and_then(Value::as_u64)
-    });
-    if value
-        .get("reasoning_output_tokens")
-        .or_else(|| value.pointer("/output_tokens_details/reasoning_tokens"))
-        .is_some_and(|token| token.as_u64().is_none())
-    {
-        diagnostics.invalid_thinking_rows += 1;
-    }
-    let thinking = valid_reasoning(reasoning, output, diagnostics);
-    let total = number(value, "total_tokens");
-    if total_mismatch(total, input, output) {
-        diagnostics.total_token_mismatches += 1;
-    }
-    let fresh = input
-        .zip(cached)
-        .and_then(|(all, hit)| all.checked_sub(hit));
-    if input.zip(cached).is_some() && fresh.is_none() {
-        diagnostics.invalid_cache_relations += 1;
-    }
-    ProviderTokenVector {
-        input_tokens: input,
-        fresh_input_tokens: fresh,
-        cache_creation_input_tokens: None,
-        cache_read_input_tokens: cached,
-        cache_write_5m_input_tokens: None,
-        cache_write_1h_input_tokens: None,
-        output_tokens: output,
-        thinking_output_tokens: thinking,
-        resident_input_tokens: input,
-        total_tokens: total,
-    }
-}
-
-fn has_invalid_tokens(value: &Value) -> bool {
-    [
-        "input_tokens",
-        "cached_input_tokens",
-        "output_tokens",
-        "total_tokens",
-    ]
-    .into_iter()
-    .any(|field| {
-        value
-            .get(field)
-            .is_some_and(|token| token.as_u64().is_none())
-    }) || value
-        .pointer("/input_tokens_details/cached_tokens")
-        .is_some_and(|token| token.as_u64().is_none())
-}
-
-fn number(value: &Value, field: &str) -> Option<u64> {
-    value.get(field).and_then(Value::as_u64)
-}
-
-fn valid_reasoning(
-    reasoning: Option<u64>,
-    output: Option<u64>,
-    diagnostics: &mut ProviderDiagnostics,
-) -> Option<u64> {
-    if reasoning
-        .zip(output)
-        .is_some_and(|(reasoning, output)| reasoning > output)
-    {
-        diagnostics.invalid_thinking_rows += 1;
-        None
+fn provenance(tokens: &ProviderTokenVector) -> ProvenanceStatus {
+    if tokens.input_tokens.is_none() || tokens.output_tokens.is_none() {
+        ProvenanceStatus::UnknownUsage
+    } else if tokens.is_zero() {
+        ProvenanceStatus::ZeroUsage
     } else {
-        reasoning
+        ProvenanceStatus::MeasuredCanonical
     }
-}
-
-fn total_mismatch(total: Option<u64>, input: Option<u64>, output: Option<u64>) -> bool {
-    total
-        .zip(input.zip(output))
-        .is_some_and(|(total, (input, output))| input.checked_add(output) != Some(total))
 }
 
 fn row(
@@ -295,13 +248,7 @@ fn row(
 ) -> NormalizedEvent {
     let first = !state.observed_in_range;
     state.observed_in_range = true;
-    let provenance = if tokens.input_tokens.is_none() || tokens.output_tokens.is_none() {
-        ProvenanceStatus::UnknownUsage
-    } else if tokens.is_zero() {
-        ProvenanceStatus::ZeroUsage
-    } else {
-        ProvenanceStatus::MeasuredCanonical
-    };
+    let provenance = provenance(&tokens);
     NormalizedEvent {
         provider: Provider::Codex,
         event_timestamp: timestamp,
@@ -330,6 +277,10 @@ fn row(
             Some(false)
         },
         tool_names: Vec::new(),
+        codex_thread_id: None,
+        codex_thread_conflict: false,
+        forward_candidate: false,
+        forward_receipt: None,
     }
 }
 

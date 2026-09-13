@@ -65,6 +65,38 @@ fn fallback(last_output: u64, cumulative_output: u64) -> Value {
     })
 }
 
+fn session_meta(id: &str) -> Value {
+    json!({"type": "session_meta", "payload": {"id": id}})
+}
+
+#[test]
+fn unsafe_session_meta_thread_id_leaves_row_unattributed() -> Result<()> {
+    let (_root, path) = write(&[session_meta("../unsafe"), direct("response-1", 100, 40, 20)])?;
+
+    let normalized = normalize(&[path], &range());
+    let row = &normalized.rows[0];
+
+    assert!(row.codex_thread_id.is_none());
+    assert!(row.codex_thread_conflict);
+    Ok(())
+}
+
+#[test]
+fn differing_session_meta_thread_ids_mark_file_rows_conflicting() -> Result<()> {
+    let (_root, path) = write(&[
+        session_meta("thread-a"),
+        direct("response-1", 100, 40, 20),
+        session_meta("thread-b"),
+    ])?;
+
+    let normalized = normalize(&[path], &range());
+    let row = &normalized.rows[0];
+
+    assert!(row.codex_thread_id.is_none());
+    assert!(row.codex_thread_conflict);
+    Ok(())
+}
+
 #[test]
 fn direct_record_uses_explicit_vector_and_codex_input_semantics() -> Result<()> {
     let (_root, path) = write(&[direct("response-1", 100, 40, 20)])?;

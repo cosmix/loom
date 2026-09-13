@@ -126,6 +126,10 @@ fn normalized_row(transcript: &Transcript, request: &Request) -> NormalizedEvent
             .map(|tool| tool.name.clone())
             .collect(),
         tokens,
+        codex_thread_id: None,
+        codex_thread_conflict: false,
+        forward_candidate: transcript.forward_candidate,
+        forward_receipt: transcript.forward_receipt.clone(),
     }
 }
 
