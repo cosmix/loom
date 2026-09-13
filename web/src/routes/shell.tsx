@@ -1,4 +1,3 @@
-import { cn } from "cn";
 import { useAtomValue } from "jotai/react";
 import { useEffect, useState } from "react";
 import { Outlet, useLocation } from "react-router";
@@ -10,11 +9,8 @@ import { useNow } from "@/components/hooks/use-now";
 import { LegendDialog } from "@/components/legend-dialog";
 import { QuotaMeters } from "@/components/quota-meters";
 import { SettingsDialog } from "@/components/settings-dialog";
-import { toneClass } from "@/components/state-badge";
 import { StageModal } from "@/components/stage-modal";
-import { Kbd } from "@/components/ui/kbd";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { formatClock, formatElapsed } from "@/lib/format";
 import { providerRows } from "@/lib/quota";
 import { snapshotAtom } from "@/state/atoms";
 
@@ -60,41 +56,20 @@ function isTyping(target: EventTarget | null): boolean {
   return target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName);
 }
 
-/// Sticky status bar: provider quota gauges on the left, the legend hint and
-/// the snapshot's source and time on the right. Without quota data it is the
-/// plain one-line footer with the hint on the left.
+/// Sticky provider quota gauges. The header owns legend access and feed status,
+/// so there is no footer when neither provider has quota data.
 function Footer() {
   const snapshot = useAtomValue(snapshotAtom);
   const now = useNow();
   const nowSecs = Math.floor(now / 1000);
   const quota = snapshot?.status.quota ?? null;
   const hasQuota = quota !== null && providerRows(quota).length > 0;
-  const ageSecs = snapshot
-    ? Math.max(0, Math.floor((now - Date.parse(snapshot.generated_at)) / 1000))
-    : 0;
-  const degraded = snapshot?.source === "files";
+  if (!hasQuota || quota === null) return null;
+
   return (
     <footer className="z-10 border-t border-border bg-background/90 backdrop-blur-sm">
-      <div className="mx-auto flex w-full max-w-[1440px] flex-wrap items-center gap-x-4 gap-y-1 px-4 py-3 text-xs text-muted-foreground sm:px-6">
-        {quota && (
-          <QuotaMeters snapshot={quota} nowSecs={nowSecs} className="max-[899px]:basis-full" />
-        )}
-        <span
-          className={cn(
-            "inline-flex items-center gap-4",
-            hasQuota ? "ml-auto" : "flex-1 justify-between",
-          )}
-        >
-          <span className="inline-flex items-center gap-1.5">
-            <Kbd>?</Kbd> legend
-          </span>
-          {snapshot && (
-            <span className="font-mono tabular-nums">
-              updated {formatClock(snapshot.generated_at)} · {formatElapsed(ageSecs)} ago · via{" "}
-              <span className={cn(degraded && toneClass("warning"))}>{snapshot.source}</span>
-            </span>
-          )}
-        </span>
+      <div className="mx-auto flex w-full max-w-[1440px] px-4 py-3 text-xs text-muted-foreground sm:px-6">
+        <QuotaMeters snapshot={quota} nowSecs={nowSecs} />
       </div>
     </footer>
   );

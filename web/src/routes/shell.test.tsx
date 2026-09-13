@@ -105,14 +105,14 @@ describe("shell chrome", () => {
     expect(screen.queryByText("daemon running")).toBeNull();
   });
 
-  it("labels the footer's clock and what it means, in 24-hour time", () => {
+  it("keeps feed status and legend access in the header, not the footer", () => {
     renderShell({ phase: "live", since: Date.now() });
 
     const footer = screen.getByRole("contentinfo");
-    expect(footer.textContent).toContain("updated ");
-    expect(footer.textContent).toContain(" ago");
-    expect(footer.textContent).toContain(`via ${snapshot.source}`);
-    expect(footer.textContent).toMatch(/\b\d{2}:\d{2}:\d{2}\b/);
-    expect(footer.textContent).not.toMatch(/AM|PM/);
+    expect(footer.textContent).not.toContain("legend");
+    expect(footer.textContent).not.toContain("updated");
+    expect(footer.textContent).not.toContain("via daemon");
+    expect(screen.getByRole("button", { name: "open legend" })).toBeTruthy();
+    expect(screen.getByText("daemon running")).toBeTruthy();
   });
 });

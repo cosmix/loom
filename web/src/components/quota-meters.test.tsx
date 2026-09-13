@@ -105,14 +105,15 @@ describe("QuotaMeters", () => {
 });
 
 describe("footer", () => {
-  it("shows the meters and the legend hint on the ledger route", () => {
+  it("shows only the meters on the ledger route", () => {
     renderAt("/");
 
     expect(screen.getByText("48%")).toBeTruthy();
     // The footer clocks against real time, so the fixture reading is stale
     // here and the label carries an age suffix; match the prefix only.
-    expect(screen.getByRole("img", { name: /^codex 5h window no reading/ })).toBeTruthy();
-    expect(screen.getAllByText(/legend/).length).toBeGreaterThan(0);
+    const meter = screen.getByRole("img", { name: /^codex 5h window no reading/ });
+    expect(meter).toBeTruthy();
+    expect(meter.closest("footer")?.textContent).not.toContain("legend");
   });
 
   it("shows the meters on a stage route", () => {
