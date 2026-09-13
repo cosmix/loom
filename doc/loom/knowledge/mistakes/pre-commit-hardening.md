@@ -2,7 +2,7 @@
 
 > Partial-staging guard decisions, edge cases, mutant-settled git defaults
 
-> Design decisions and edge cases behind the pre-commit partial-staging guard, and how the black-box regression settled disputed claims about git's defaults.
+Design decisions and edge cases behind the pre-commit partial-staging guard, and how the black-box regression settled disputed claims about git's defaults.
 
 ## The Guard: What It Checks and Why (2026-09-12)
 
