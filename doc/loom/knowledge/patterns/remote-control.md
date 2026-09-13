@@ -11,9 +11,9 @@
 | Function                                     | What it does                                                         | When to call                                              |
 | -------------------------------------------- | -------------------------------------------------------------------- | --------------------------------------------------------- |
 | `preflight(path)`                            | Runs `claude --version` + auth eligibility check                     | Startup advisory only                                     |
-| `resolve(work_dir)`                          | Mode/marker/preflight gate (unchanged `bool` contract)               | Called ONLY by the crash handler's fast-fail check        |
+| `resolve(work_dir)`                          | Mode/preflight/in-memory-disable-flag gate (unchanged `bool` contract) | Called ONLY by the crash handler's fast-fail check        |
 | `resolve_invocation(work_dir, session_name)` | Per-spawn gate: layers the `--help` named-arg probe over `resolve()` | Called at every spawn site (via `prepare_session_launch`) |
-| `write_unsupported_marker(work_dir)`         | Writes `.work/remote_control-unsupported`                            | Called by crash_handler on fast-fail                      |
+| `disable_for_this_process(reason)`           | Sets an in-memory, process-lifetime flag; logs one stderr line; nothing persisted | Called by crash_handler on fast-fail with a verified PID  |
 
 **`resolve_invocation()` check order (all cheap except the two probes, each memoized):**
 
@@ -25,8 +25,9 @@
 
 **Fast-fail fallback (crash_handler.rs):**
 
-- Session crashes within 15 seconds of creation while `resolve()` is true → write unsupported marker → retry with `--remote-control` omitted (via `resolve_invocation` short-circuiting to `Disabled` once the marker exists).
-- No new retry code path: the existing exponential-backoff retry handles it; `resolve()` returning false is the only change, same as before this pattern was extended for naming.
+- A session crash within `FAST_FAIL_WINDOW_SECS` (15s) of creation, with a verified PID, while `resolve()` is true → `disable_for_this_process(reason)` → classified as an ORDINARY crash, retried with normal exponential backoff, `--remote-control` omitted on the retry (`resolve_invocation` short-circuits to `Disabled` for the rest of this process's lifetime).
+- Every OTHER fast verified-pid crash is a startup refusal (`is_startup_refusal`, `orchestrator/core/crash_classification.rs`): blocked, not retried, remote control untouched.
+- Nothing is persisted to disk — a daemon restart tries remote control again; CLI processes are unaffected by another process's disable flag.
 
 **`build_claude_command()` helper (native/mod.rs) — CURRENT signature:**
 

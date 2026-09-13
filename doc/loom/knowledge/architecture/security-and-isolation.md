@@ -62,3 +62,13 @@ also matched and was miscounted as its own worktree root.
 and "parent directory is literally named `.worktrees`" in `is_loom_worktree_path`. A path several
 segments below a real worktree root no longer counts as one; nested worktree resolution now
 selects the innermost stage.
+
+## Where a Session's Write Grants Come From (2026-09-13)
+
+The "Sandbox layer" above reads as if one generated file decides what a session may write. Three sources feed it:
+
+- **Generated settings** — `sandbox::write_settings` writes `.claude/settings.local.json` in the worktree for stage sessions, and in the MAIN checkout for knowledge stages.
+- **Project settings constants** — `LOOM_PERMISSIONS` / `LOOM_PERMISSIONS_WORKTREE` (`fs/permissions/constants.rs`) are written into the committed `.claude/settings.json` and include `Edit(.loom/work/handoffs/**)` and `Edit(.work/handoffs/**)`, which every loom session loads.
+- **Permission sync** — `fs/permissions/sync.rs::sync_worktree_permissions` copies a worktree's allow rules into the main checkout's `.claude/settings.local.json`.
+
+The main checkout's `.claude/settings.local.json` is shared: knowledge-stage spawns, merge and adjudication sessions, and the operator's own interactive Claude Code sessions all read it. On 2026-09-13 it held the running plan's `allow_write` list and `env.LOOM_WORK_DIR` pointing at the live state directory, so an operator session inherited both, and anything it ran that honors `LOOM_WORK_DIR` targeted live state. See [Live State Pollution](../mistakes/live-state-pollution.md).

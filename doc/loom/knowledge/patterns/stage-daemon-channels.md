@@ -59,9 +59,16 @@ new sandbox grant is needed, and the daemon drains it from `orchestrator/core/sp
 poll loop.
 
 **The payload carries no stage id and no session id, on purpose.** Attribution comes from WHICH
-WORKTREE the daemon drained the entry from — an agent cannot forge the worktree it is running in,
+WORKTREE the daemon drained the entry from: a worktree agent cannot write outside its own worktree,
 but it could trivially forge a field. That is what replaces peer identity when there is no
-connection to identify, and it is the whole security argument for the route.
+connection to identify.
+
+**The guarantee holds only against worktree agents.** An earlier version of this section said
+without qualification that an agent cannot forge the worktree it runs in. Main-checkout sessions
+(Knowledge, Merge, Adjudication) run with the whole checkout writable, every
+`.worktrees/<id>/.loom/*-spool.jsonl` included, so one of them can append a request the daemon
+attributes to another stage. Closing that is part of the pending `.loom` confinement work; see
+[Live State Pollution](../mistakes/live-state-pollution.md).
 
 Two rules the drain depends on:
 

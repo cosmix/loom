@@ -65,10 +65,12 @@ also survives a daemon restart, which a process-local marker did not.
 
 ## Daemon-as-Filesystem-Writer Convention
 
-For any operation where agent data must be persisted to `.work/` with authority separation: the CLI sends RPC to daemon; the daemon writes the file. Examples:
+The intent: agent data that needs authority separation is persisted to the state directory by the daemon, not by the agent. An earlier version of this section said `loom memory note` sends an RPC and the daemon writes the journal. The tree does not do that (checked 2026-09-13):
 
-- `loom memory note` → daemon writes `.work/memory/<id>.md`
-- `loom stage dispute-criteria` (after Stage 2) → daemon writes `.work/disputes/<stage>/<n>/request.md`
+- `loom memory note` writes `.loom/work/memory/<stage>.md` directly from the calling process. Only when that write is denied (EROFS/EACCES, `is_write_denied`) does it append to the per-worktree spool `<worktree>/.loom/memory-spool.jsonl`, which the daemon drains (`commands/memory/handlers/record.rs` → `record_via_spool`; `orchestrator/core/spool_drain.rs`). Off a worktree the spool refuses, so a denied main-checkout session fails.
+- `loom stage dispute-criteria` never writes the state directory: it appends to `<worktree>/.loom/stage-request-spool.jsonl`, and the daemon writes `.loom/work/disputes/<stage>/<n>/request.md` (`fs/stage_request/`).
+
+Moving every session-originated write onto a daemon-drained channel is the pending `.loom` confinement work; see [Live State Pollution](../mistakes/live-state-pollution.md).
 
 ## Adjudicator Transport Convention
 

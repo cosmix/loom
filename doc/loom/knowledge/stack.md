@@ -67,9 +67,12 @@
   crates were needed for the backend: it shells out to the `tmux` binary and reuses `which` (PATH
   probe), `libc` (`getuid()` for the `tmux-<uid>` socket dir) and `sha2` (the per-repo overview viewer
   socket name), all already in `loom/Cargo.toml`. Availability is probed with `which::which("tmux")` at
-  `loom init`, at `loom run` startup and again per spawn; a missing binary is always **advisory** —
-  loom warns and falls back to the native lane, never aborts. Version note: the overview's nested-attach
-  and layout behaviour was verified against tmux 3.7b.
+  `loom init` (advisory warning only), at `loom run` startup (refuses to start when the effective
+  backend is tmux and tmux is not on PATH), and again per spawn (a configured-tmux spawn with no tmux
+  on PATH, or a tmux spawn failure, returns `Err` and blocks the stage — see
+  [Terminal Backends](architecture/terminal-backends.md) § Tmux Unavailable or Failing; no lane switch
+  ever happens). Version note: the overview's nested-attach and layout behaviour was verified against
+  tmux 3.7b.
 
 ## Hook Runtime Dependencies (jq, rg, fd)
 

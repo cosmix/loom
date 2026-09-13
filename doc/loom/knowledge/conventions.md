@@ -229,3 +229,7 @@ Controls, cues and status words in the dashboard use the body face in sentence c
 `[pressure]` (the three `loom pressure` steps) and `[models]` (each stage type's main-agent
 session) resolve model and effort per key: per-invocation value → project config → user config
 → built-in default. See [Model and Effort Config](conventions/model-and-effort-config.md).
+
+## Configuration Is the Only Authority for Configurable Behavior
+
+If the configuration chain (project `.loom/work/config.toml`, then `~/.loom/config.toml`, then the built-in default) can express a behavior, nothing else may change it: no marker file, cache, or state file under the work dir. When the configured behavior cannot run, fail with the cause instead of switching mode. Background: [Live State Pollution](mistakes/live-state-pollution.md).

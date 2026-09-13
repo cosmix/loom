@@ -139,3 +139,8 @@ root. The fallback is right for real non-git projects; the test was not hermetic
 **Prevention:** every upward walk that stops at a `.git` goes through
 `fs::git_marker::is_real_git_dir`. A test that can reach its `TMPDIR`'s ancestors is exposed to
 whatever other processes leave there, so bound the walk inside the test's own directory.
+
+**Further bound (2026-09-13):** `WorkDir::new` (`fs/work_dir.rs`; the walk itself is `walk_up` in `fs/work_dir/discovery.rs`) now also never inspects the
+OS temp root (`std::env::temp_dir()`, canonicalized) or anything above it when the base path is inside
+it — on top of the `is_real_git_dir` check above. See [Live State Pollution](live-state-pollution.md),
+which this bound was added to fix.

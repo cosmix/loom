@@ -31,8 +31,8 @@ per 5s monitor tick.
 - **Config:** `[terminal]` / `backend = "native" | "tmux"` in `.work/config.toml`.
   `TerminalConfig` (`models/session/types.rs:85-89`) holds one `SessionBackendKind`
   (`types.rs:62-70`, `#[serde(rename_all = "lowercase")]`, `#[default] Native`).
-  Helpers `read_terminal_config` / `write_terminal_config` (`fs/work_dir.rs:509-516`); a missing
-  section falls through to `~/.loom/config.toml`'s `terminal.backend`, THEN the built-in default —
+  Helpers `read_terminal_config` / `write_terminal_config` (`fs/work_dir/config_sections.rs`); a missing
+  `backend` key (section absent or empty) falls through to `~/.loom/config.toml`'s `terminal.backend`, THEN the built-in default —
   absence is the inheritance channel, not a synonym for native. Written at init by
   `commands/init/plan_setup.rs`, and only when someone chose explicitly.
 - **CLI:** `--backend <native|tmux>` on both `loom init` (skips the interactive prompt) and
@@ -47,8 +47,11 @@ per 5s monitor tick.
   user-scope key was dead for every interactively-initialised repo. The tmux-missing-from-PATH
   warning keys off `effective_backend` (explicit choice, else the user config) precisely because an
   inherited tmux backend now arrives as `None`.
-- **Per-spawn resolution** — `SessionBackend::resolve_lane` (`backend.rs:125-128`) picks `Native` if
-  the fallback marker exists, else the configured kind if `which tmux` succeeds, else `Native`.
+- **Per-spawn resolution** — `SessionBackend::resolve_lane` returns the configured kind verbatim; there
+  is no marker and no automatic lane switch. `dispatch_spawn` dispatches on that configured kind only:
+  configured tmux with no tmux on PATH returns `Err` (message names the missing binary and how to
+  reconfigure), and a tmux spawn failure returns `Err` with context `tmux spawn failed for session
+  '<id>'` instead of retrying on the native lane.
 
 ## Session-Recorded Backend Dispatch
 
@@ -58,8 +61,8 @@ the lane **actually used**, and is persisted to `.work/sessions/<id>.md`.
 This is the load-bearing part: sessions are reconstructed from disk after a daemon restart, so
 kill/liveness must route on the _session's_ recorded backend, never on the currently-configured one.
 `SessionBackend::is_session_alive` and `kill_session` dispatch on `session.backend`, so a run that
-flipped config (or fell back) still kills and monitors older sessions through the lane that spawned
-them.
+changed `[terminal] backend` between sessions still kills and monitors older sessions through the lane
+that spawned them.
 
 ## One tmux Server Per Session — Crash Containment
 
@@ -110,21 +113,28 @@ otherwise claude's own all-motion mouse tracking is mirrored out to the operator
 are forwarded back into the agent, and claude's clipboard copy (`tmux load-buffer -w -`) crashes
 tmux 3.6a. Full chain in `mistakes/tmux-backend.md`.
 
-## Fallback Marker: `.work/terminal-backend-fallback`
+## Tmux Unavailable or Failing
 
-A **sticky** marker that forces every subsequent spawn onto the native lane.
+There is no fallback marker and no automatic lane switch (removed 2026-09-13, see
+[Live State Pollution](../mistakes/live-state-pollution.md)). A spawn dispatches on the configured
+backend only:
 
-- **Written** (`backend.rs:192` after a tmux spawn failure; `backend.rs:218` when configured tmux is
-  unavailable) — but **only when a native lane is actually constructible**. With no native lane loom
-  writes nothing and surfaces the original tmux error, rather than degrading to a retry that cannot
-  succeed and a marker that permanently disables the one backend that works headless.
-- **Read** by `resolve_lane` (`backend.rs:125`) — present ⇒ `Native`, unconditionally.
-- **Cleared** by `clear_fallback_marker` (`backend.rs:67-69`), whose only production caller is
-  `loom run --backend tmux` (`run/mod.rs:141`). `loom clean --state` / `--all` clears it only as a side
-  effect of deleting `.work/` wholesale. Nothing else clears it — it survives daemon restarts.
+- Configured tmux with no tmux on PATH → `Err("terminal backend \"tmux\" is configured but tmux is not
+  on PATH; install tmux or set [terminal] backend = \"native\" ...")`.
+- A tmux spawn that fails after the server may exist → `Err` with context `tmux spawn failed for
+  session '<id>'`, after teardown (killing the socket server and calling
+  `native::cleanup_stage_files`).
 
-Fallback is announced with an `eprintln!` warning naming the re-enable command; in daemon mode that
-goes to the daemon's stderr, not the user's shell.
+Either `Err` propagates to `stage_executor.rs`, which calls `block_and_undo_session`
+(`orchestrator/core/session_lifecycle.rs`) to mark the stage `Blocked` with
+`FailureType::InfrastructureError`. There is no auto-retry; the operator fixes tmux (or reconfigures
+the backend) and runs `loom stage retry`.
+
+`loom run` / `loom run --foreground` fail startup outright when the effective backend is tmux and tmux
+is not on PATH (`resolve_backend_flag_with_probe`, `commands/run/mod.rs`); `loom init`'s equivalent
+check stays an advisory warning, since `loom init` only persists config and never spawns anything.
+See [Configuration Is the Only Authority for Configurable Behavior](../conventions.md) for why no
+marker may override the configured backend.
 
 ## `loom attach` — Overview and Direct
 
@@ -223,9 +233,8 @@ unattributable. Nothing currently reaps that viewer socket (see `concerns.md`).
 
 **Dispatcher and lanes**
 
-- `loom/src/orchestrator/terminal/backend.rs` — `SessionBackend`: `from_config`, `resolve_lane`
-  (`:125-128`), `dispatch_spawn`, the fallback-marker helpers (`:45-69`) and the lazy `OnceLock` native
-  lane. Tests in `terminal/backend/tests.rs`.
+- `loom/src/orchestrator/terminal/backend.rs` — `SessionBackend`: `from_config`, `resolve_lane`,
+  `dispatch_spawn` and the lazy `OnceLock` native lane. Tests in `terminal/backend/tests.rs`.
 - `loom/src/orchestrator/terminal/tmux/mod.rs` — `TmuxBackend`, `socket_name` (`:41-43`),
   `spawn_in_tmux`, `evaluate_new_session`, `kill_session`.
 - `loom/src/orchestrator/terminal/tmux/socket.rs` — `loom_socket_dir` (`:23-30`), `socket_path_for`, `list_loom_sockets`, `socket_session_is_alive`, `kill_socket_server`.
@@ -248,8 +257,8 @@ unattributable. Nothing currently reaps that viewer socket (see `concerns.md`).
   `value_parser = ["native", "tmux"]`.
 - `loom/src/commands/run/mod.rs:118-158` — `resolve_backend_flag`, shared by `run/mod.rs:46` and
   `run/foreground.rs:32`. Rejects unknown values, refuses to persist a change while the daemon is
-  running (prints a restart hint), clears the fallback marker when selecting tmux, and runs the
-  advisory `which tmux` preflight that never aborts.
+  running (prints a restart hint), and calls `resolve_backend_flag_with_probe`, which FAILS startup
+  (not just warns) when the effective backend is tmux and tmux is not on PATH.
 - `loom/src/commands/init/execute.rs:184-226` — `resolve_backend_choice`; flag wins, else prompts when
   both stdin and stdout are TTYs, else defaults to native.
 

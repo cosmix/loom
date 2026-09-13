@@ -63,8 +63,10 @@ let liveness = LivenessService::new(Arc::clone(&backend));
 
 `SessionBackend` dispatches each call to the `Native` or `Tmux` lane. Two rules follow:
 
-- **Spawn** resolves the lane per call (config + tmux availability + fallback marker), then records the
-  lane actually used on `Session.backend`.
+- **Spawn** resolves the lane per call from configuration alone (no fallback marker, no automatic lane
+  switch), then records the lane actually used on `Session.backend`. A configured-tmux spawn with no
+  tmux on PATH, or a tmux spawn failure, returns `Err` and blocks the stage instead of retrying on
+  another lane.
 - **Kill and liveness** dispatch on `session.backend` — the lane that _spawned_ it — never on the
   currently-configured backend, so sessions survive a config change or a daemon restart.
 

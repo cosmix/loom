@@ -7,9 +7,10 @@
 The rule "any stderr with exit 0 is a failure" is a plan mandate, pinned by unit tests and carried by
 an explicit stage decision — so it was **deliberately left as-is**. But tmux prints `~/.tmux.conf`
 deprecation warnings to stderr _while creating the session fine_, so one benign warning now: fails the
-spawn, kills a **working** server via the abort path, and writes the sticky
-`.work/terminal-backend-fallback` marker — disabling tmux for the whole repo until someone runs
-`loom run --backend tmux`.
+spawn, kills a **working** server via the abort path, and returns `Err` — which blocks the stage
+(`FailureType::InfrastructureError`) instead of retrying on another lane. Since the
+`.work/terminal-backend-fallback` marker was removed (2026-09-13), the consequence is a single Blocked
+stage rather than tmux being disabled repo-wide.
 
 The `has-session` probe that immediately follows is the authoritative signal and would distinguish the
 two cases. Gating the stderr rule on that probe is a design call for the plan owner, not an

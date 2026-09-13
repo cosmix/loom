@@ -27,6 +27,8 @@
 
 **Prevention:** a retry that reuses a session id **must** clear that session's PID and wrapper files first (`native::cleanup_stage_files`) before re-launching. Stale PID files are silent: they hand back a plausible, live, wrong PID rather than an error.
 
+**Superseded (2026-09-13):** the native retry itself is gone — a tmux spawn failure now returns `Err` and blocks the stage rather than retrying on the native lane. The lesson about a retry adopting a stale PID via a reused session id still applies to any future retry path that reuses a `Session`.
+
 ## Never Persist a Fall-_Back_ Marker Before Proving the Fallback Target Works
 
 **What happened:** `dispatch_spawn` wrote the sticky `.work/terminal-backend-fallback` marker and retried natively **without checking the native lane could be built**. On a headless Linux box — exactly where the tmux backend exists to be used — `NativeBackend::new` bails in `detect_terminal()`, so the retry was guaranteed to fail _and_ the marker permanently disabled tmux for every later spawn until someone ran `loom run --backend tmux`.
@@ -34,6 +36,8 @@
 **Fix:** the marker is now written only when the native lane is actually constructible. With no native lane, loom returns the **original tmux error** instead of retrying — a doomed native retry replaces the only useful diagnostic with `No terminal emulator found`.
 
 **Prevention:** a sticky degradation marker is a promise that the degraded path works. Prove the target is usable _before_ recording the fallback, and never let a fallback discard the root-cause error.
+
+**Superseded (2026-09-13):** the `.work/terminal-backend-fallback` marker and the native retry it guarded were removed entirely. A configured-tmux spawn failure is now an `Err` that blocks the stage; there is no fallback lane and nothing to persist. See [Live State Pollution](live-state-pollution.md) and [Terminal Backends](../architecture/terminal-backends.md) § Tmux Unavailable or Failing.
 
 ## AF_UNIX Socket Paths: 104 Bytes, and Never Under `std::env::temp_dir()`
 

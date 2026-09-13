@@ -20,10 +20,10 @@ Claude Code's `--remote-control` flag lets the loom orchestrator drive Claude se
 | `preflight(claude_path)`                     | Combines version probe + auth-eligibility heuristic                                                                                        |
 | `claude_supports_remote_control(path)`       | Version gate only (>= 2.1.51)                                                                                                              |
 | `remote_control_eligible()`                  | Auth heuristic: no disqualifying env var + `~/.claude/.credentials.json` present                                                           |
-| `resolve(work_dir)`                          | Mode/marker/preflight gate — unchanged `bool` contract, now called ONLY by the crash handler's fast-fail check                             |
+| `resolve(work_dir)`                          | Mode/preflight/in-memory-disable-flag gate — unchanged `bool` contract, now called ONLY by the crash handler's fast-fail check              |
 | `resolve_invocation(work_dir, session_name)` | **The real per-spawn gate.** Layers a memoized `--help` capability probe over `resolve()`; returns `Disabled`/`Bare`/`Named(session_name)` |
 | `run_startup_preflight(path, work_dir)`      | Advisory startup warning if disabled                                                                                                       |
-| `write_unsupported_marker(work_dir)`         | Writes `.work/remote_control-unsupported`                                                                                                  |
+| `disable_for_this_process(reason)`           | Sets an in-memory, process-lifetime flag so `resolve()` returns false; logs one stderr line; nothing persisted to disk                     |
 
 **`resolve_invocation` resolution model (in order):**
 
@@ -46,7 +46,7 @@ Derived in `prepare_session_launch` — the shared funnel both native and tmux b
 
 **Fallback / fast-fail path (crash_handler.rs):**
 
-If a native session crashes within 15 seconds of creation while `resolve()` is true, the crash handler writes `.work/remote_control-unsupported` and logs a warning. The existing retry/backoff then respawns the session; on the retry, `resolve()` returns false (marker present), so `resolve_invocation` returns `Disabled` and `--remote-control` is omitted. `resolve()` itself was untouched by the session-naming work — only its callers changed (the crash handler still calls it directly; the spawn path now goes through `resolve_invocation`).
+If a session crashes within `FAST_FAIL_WINDOW_SECS` (15s) of creation with a verified PID while `resolve()` is true, the crash handler calls `disable_for_this_process(reason)` and classifies the crash as an ORDINARY crash: normal exponential-backoff retry, `--remote-control` omitted on the retry (`resolve()` now returns false for the rest of this process's lifetime, so `resolve_invocation` returns `Disabled`). Nothing is persisted — a daemon restart tries remote control again. Every OTHER fast verified-pid crash is a startup refusal (`is_startup_refusal`, `orchestrator/core/crash_classification.rs`): blocked, not retried. `resolve()` itself was untouched by the session-naming work — only its callers changed (the crash handler still calls it directly; the spawn path goes through `resolve_invocation`).
 
 **Config persistence:**
 

@@ -600,3 +600,13 @@ the operator stopped it, because every other target had just passed on the same 
 
 **Rule:** after a full run, a change confined to test code is verified by re-running the target
 that failed. Re-run the whole suite only when production code changed after that full run.
+
+## A `#[serial]` Test That Rewrote `PATH` Broke Unrelated Tests (2026-09-13)
+
+**What happened:** a test for the remote-control crash path installed a fake `claude` by setting the process-wide `PATH` to a single temp bin dir and pointing `HOME` at a fake home, restoring both on drop. It was marked `#[serial]`. In the full suite three unrelated, non-serial tests (`orchestrator::core::event_handler::recover_hung_tests::*`) failed with `failed to spawn a stand-in agent process: NotFound`; they passed in isolation. The same fake was also order-dependent: `remote_control::cached_preflight_enabled` memoizes the preflight in a process-lifetime `OnceLock`, so whichever test probed first fixed the answer for the rest of the run.
+
+**Why:** `#[serial]` orders a test only against other `#[serial]` tests. Every non-serial test in the binary kept running on other threads and resolved executables through the rewritten `PATH`.
+
+**Prevention:** a test never mutates process-wide environment (`PATH`, `HOME`, auth variables) to steer the code under test. Add an injectable seam instead, as `SessionBackend::tmux_available` does. Detection: a test that passes alone and fails in the full run with `NotFound` spawning a process means some other test rewrote `PATH`.
+
+**Fix:** the crash handler reads Remote Control activity through an injectable `Orchestrator` field; the test sets it instead of the environment.

@@ -38,7 +38,7 @@
 
 ## Remote Control Module
 
-- `loom/src/remote_control.rs` - `resolve_invocation(work_dir, name)` per-spawn gate (layers a `--help` probe over `resolve()`, now called only by the crash handler), `preflight(path)`, `write_unsupported_marker(work_dir)`, `run_startup_preflight(path, work_dir)`, `RemoteControlInvocation` / `RemoteControlConfig` / `RemoteControlMode` types
+- `loom/src/remote_control.rs` - `resolve_invocation(work_dir, name)` per-spawn gate (layers a `--help` probe over `resolve()`, now called only by the crash handler), `preflight(path)`, `disable_for_this_process(reason)` (in-memory, process-lifetime; replaces the removed `write_unsupported_marker`), `run_startup_preflight(path, work_dir)`, `RemoteControlInvocation` / `RemoteControlConfig` / `RemoteControlMode` types
 
 ## Other Modules
 
@@ -59,7 +59,7 @@
 
 ## WorkDir Directory Helpers (Existing vs. Missing)
 
-`fs/work_dir.rs:270-294` — existing helpers:
+`WorkDir` in `fs/work_dir.rs` — existing helpers:
 
 - `signals_dir()` → `.work/signals/`
 - `handoffs_dir()` → `.work/handoffs/`
@@ -70,7 +70,7 @@
 - `knowledge_dir()` → `.work/knowledge/`
 - `ensure_dir(&self, name: &str) -> Result<PathBuf>` — create any subdir on demand
 
-**Both helpers are now implemented:** `disputes_dir()` → `.work/disputes/` (`fs/work_dir.rs:239`) and `plan_versions_dir()` → `.work/plan_versions/` (`fs/work_dir.rs:244`)
+**Both helpers are now implemented:** `disputes_dir()` → `.work/disputes/` and `plan_versions_dir()` → `.work/plan_versions/`, both on `WorkDir` in `fs/work_dir.rs`
 
 Two more subdirectories, resolved by their own modules rather than a `WorkDir` helper:
 
