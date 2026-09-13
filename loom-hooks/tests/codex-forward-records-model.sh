@@ -1,14 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
+unset LOOM_STAGE_ID LOOM_SESSION_ID LOOM_WORK_DIR LOOM_SESSION_TYPE LOOM_MAIN_AGENT_PID
 
 # Run from the real loom-hooks/ directory (not a copy) so codex-forward-guard.sh
 # finds _common.sh beside it.
 GUARD="$(cd "$(dirname "$0")/.." && pwd)/codex-forward-guard.sh"
-if ! TMP=$(mktemp -d "${TMPDIR:-/tmp}/loom-hooktest.XXXXXX") || [ -z "$TMP" ]; then
-	printf '%s\n' 'FAIL: mktemp failed to create a scratch directory'
-	exit 1
-fi
-trap 'rm -rf "$TMP"' EXIT
+d=$(mktemp -d "${TMPDIR:-/tmp}/cfw.XXXXXX") && [ -n "$d" ]
+trap 'rm -rf "$d"' EXIT
+TMP="$d"
 
 HOME_DIR="$TMP/home"
 mkdir -p "$HOME_DIR"

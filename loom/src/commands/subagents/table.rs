@@ -18,9 +18,10 @@ pub(super) fn print_table(summaries: &[SubagentSummary]) {
     }
 
     let agent_id_width = agent_id_width(summaries);
-    println!("{}", table_header(agent_id_width).bold());
+    let state_width = state_width(summaries);
+    println!("{}", table_header(agent_id_width, state_width).bold());
     for summary in summaries {
-        print_row(summary, agent_id_width);
+        print_row(summary, agent_id_width, state_width);
     }
 }
 
@@ -41,10 +42,20 @@ fn agent_id_width(summaries: &[SubagentSummary]) -> usize {
         .max(MIN_AGENT_ID_WIDTH)
 }
 
-fn table_header(agent_id_width: usize) -> String {
+fn state_width(summaries: &[SubagentSummary]) -> usize {
+    summaries
+        .iter()
+        .map(|summary| display_state(summary).label().len())
+        .max()
+        .unwrap_or(0)
+        .max(10)
+}
+
+fn table_header(agent_id_width: usize, state_width: usize) -> String {
     format!(
-        "{:<agent_id_width$} {:<10} {:>9} {:>5}  {:<last_tool_width$} {:<agent_type_width$} {:<model_width$} {:>reqs_width$} {:>peak_tokens_width$}",
+        "{:<agent_id_width$} {:<state_width$} {:>9} {:>5}  {:<last_tool_width$} {:<agent_type_width$} {:<model_width$} {:>reqs_width$} {:>peak_tokens_width$}",
         "AGENT ID", "STATE", "IDLE(S)", "TURNS", "LAST TOOL", "AGENT TYPE", "MODEL", "REQS", "PEAK TOK",
+        state_width = state_width,
         last_tool_width = LAST_TOOL_WIDTH,
         agent_type_width = AGENT_TYPE_WIDTH,
         model_width = MODEL_WIDTH,
@@ -54,12 +65,12 @@ fn table_header(agent_id_width: usize) -> String {
     )
 }
 
-fn print_row(summary: &SubagentSummary, agent_id_width: usize) {
+fn print_row(summary: &SubagentSummary, agent_id_width: usize, state_width: usize) {
     let model = display_model(summary.model.as_deref());
     println!(
-        "{:<agent_id_width$} {:<10} {:>9} {:>5}  {:<last_tool_width$} {:<agent_type_width$} {:<model_width$} {:>reqs_width$} {:>peak_tokens_width$}",
+        "{:<agent_id_width$} {:<state_width$} {:>9} {:>5}  {:<last_tool_width$} {:<agent_type_width$} {:<model_width$} {:>reqs_width$} {:>peak_tokens_width$}",
         summary.agent_id,
-        summary.state.label(),
+        display_state(summary).label(),
         summary.idle_secs,
         summary.turns,
         summary.last_tool.as_deref().unwrap_or("-"),
@@ -67,6 +78,7 @@ fn print_row(summary: &SubagentSummary, agent_id_width: usize) {
         text_cell(model.as_deref(), MODEL_WIDTH),
         reqs_label(summary.request_count),
         peak_tokens_label(summary.peak_resident_tokens, summary.peak_tokens_over_ceiling),
+        state_width = state_width,
         last_tool_width = LAST_TOOL_WIDTH,
         agent_type_width = AGENT_TYPE_WIDTH,
         model_width = MODEL_WIDTH,
@@ -74,6 +86,10 @@ fn print_row(summary: &SubagentSummary, agent_id_width: usize) {
         peak_tokens_width = PEAK_TOKENS_WIDTH,
         agent_id_width = agent_id_width,
     );
+}
+
+fn display_state(summary: &SubagentSummary) -> super::classify::SubagentState {
+    summary.display_state.unwrap_or(summary.state)
 }
 
 fn text_cell(value: Option<&str>, width: usize) -> String {

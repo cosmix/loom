@@ -100,17 +100,20 @@ fn push_codex_spawn_rules(content: &mut String) {
          exactly \"{CODEX_FORWARD_SENTINEL}\" - the codex-forward-guard hook blocks a forwarder that\n\
          reads or edits instead of forwarding; never put this token in a prompt for any other lane.\n"
     ));
-    content.push_str(&format!(
-        "- State the model/effort IN THE PROMPT: \"--model {CODEX_IMPLEMENTER_MODEL_TERRA} --effort\n\
-         {CODEX_IMPLEMENTER_EFFORT} <task>\" for common implementation/integration tests, or\n\
-         \"--model {CODEX_IMPLEMENTER_MODEL_LUNA} --effort {CODEX_IMPLEMENTER_EFFORT} <task>\" for\n\
-         boilerplate/scaffolding/simple unit tests, plus an explicit Bash timeout (600000 ms, the tool's maximum) -\n\
-         the forwarder makes ONE Bash call and never raises the tool's 120s default, so a longer run\n\
-         backgrounds under a CLAUDE CODE task id, not a codex job id. Recover with `codex-companion.mjs status\n"
+    content.push_str(&format!(concat!(
+        "- State the model/effort IN THE PROMPT: \"--model {CODEX_IMPLEMENTER_MODEL_TERRA} --effort\n",
+        "  {CODEX_IMPLEMENTER_EFFORT} <task>\" for common implementation/integration tests, or\n",
+        "  \"--model {CODEX_IMPLEMENTER_MODEL_LUNA} --effort {CODEX_IMPLEMENTER_EFFORT} <task>\" for\n",
+        "  boilerplate/scaffolding/simple unit tests, plus an explicit foreground Bash timeout (600000 ms,\n",
+        "  the tool's maximum) and `--write`. The forwarder makes ONE Bash call; its wrapper launches\n",
+        "  exactly one companion job and waits for that exact job. A natural harness background\n",
+        "  acknowledgement is optional visibility, never completion evidence. Do not use `codex-companion.mjs status\n",
+        "  --all`; use the exact receipt instead.\n",
+    ),
+        CODEX_IMPLEMENTER_MODEL_TERRA = CODEX_IMPLEMENTER_MODEL_TERRA,
+        CODEX_IMPLEMENTER_EFFORT = CODEX_IMPLEMENTER_EFFORT,
+        CODEX_IMPLEMENTER_MODEL_LUNA = CODEX_IMPLEMENTER_MODEL_LUNA,
     ));
-    content.push_str(
-        "  --all` for the real job id, and cancel runaways with `codex-companion.mjs cancel <id>`.\n",
-    );
 }
 
 /// Push the navigation-kit, prompt-writing, and fan-out rules.
@@ -135,13 +138,15 @@ fn push_codex_prompt_rules(content: &mut String) {
          once, each owning a DISJOINT file set, in the same file-ownership table as any sonnet\n\
          subagents in the wave.\n",
     );
-    content.push_str(
-        "- MIXED FAN-OUT: codex and Claude subagents may share a wave - file ownership keeps them\n\
-         apart, enforced across lanes just as within one. FOREGROUND ONLY, and skip `--resume-last`:\n\
-         the plugin's job-state file has no lock, so a background or resumed job can attach to a\n\
-         sibling's. A foreground run is one long Bash call - no PostToolUse fires, so the daemon's\n\
-         \"appears hung\" warning past 300s is ADVISORY ONLY; nothing is killed or retried.\n",
-    );
+    content.push_str(concat!(
+        "- MIXED FAN-OUT: codex and Claude subagents may share a wave - file ownership keeps them\n",
+        "  apart, enforced across lanes just as within one. FOREGROUND ONLY, and skip `--resume-last`:\n",
+        "  the wrapper's one internal background job is bound by its exact ID. If the forwarding Bash\n",
+        "  call is backgrounded, wait on its exact `loom subagents wait --receipt <id> --timeout 3600`,\n",
+        "  or use one background `loom subagents watch --timeout 3600` for explicit exact-ID recovery.\n",
+        "  A foreground run is one long Bash call - no PostToolUse fires, so the daemon's \"appears hung\"\n",
+        "  warning past 300s is ADVISORY ONLY.\n",
+    ));
 }
 
 /// Push the blast-radius, lane-scope, evidence, and verification-ownership rules.
@@ -162,21 +167,48 @@ fn push_codex_blast_radius_and_evidence(content: &mut String) {
          design, a bug that survived a delegated fix, hard algorithmic design), or loom-advisor's\n\
          role on a second failure - route by what the task needs, not by what the stage lists.\n",
     );
-    content.push_str(
-        "- ACCEPT A REPORT ONLY WITH EVIDENCE: the report is the forwarder's FINAL MESSAGE, and a\n\
-         genuine forward returns codex stdout followed by a \"--- LOOM-CODEX-EVIDENCE ---\" trailer\n\
-         carrying `exit:` and `mode:`. `mode: companion` lists companion state jobs/*.json paths -\n\
-         verify the newest record for THIS worktree has \"phase\": \"done\". `mode: direct` (macOS\n\
-         inside the stage sandbox) lists `session:`, the codex rollout under ~/.codex/sessions/ -\n\
-         verify it exists and is newer than the spawn; codex's own `exec ... succeeded` lines precede\n\
-         the trailer. No trailer, or edits with no matching record or rollout, is a FAILED delegation\n\
-         (the wrapper did the work itself): revert and respawn, or review the edits as strictly as\n\
-         sonnet output.\n",
-    );
+    content.push_str(concat!(
+        "- ACCEPT A REPORT ONLY WITH EVIDENCE: the report is the forwarder's FINAL MESSAGE, and a\n",
+        "  genuine forward starts with wrapper-owned `LOOM-FORWARD-START` and `LOOM-FORWARD-END` markers,\n",
+        "  then `--- LOOM-FORWARD-OUTPUT ---`, then a \"--- LOOM-CODEX-EVIDENCE ---\" trailer carrying\n",
+        "  `exit:` and `mode:`. In `mode: companion`, `job:` and `record:` name one exact job; accept\n",
+        "  it only when that named record has completed status and \"phase\": \"done\". In `mode: direct (...)`\n",
+        "  (macOS inside the stage sandbox), `thread:` names one exact thread.\n",
+        "  No matching markers, trailer, exact record, or exact thread leaves the forward state unresolved\n",
+        "  for orchestrator review.\n",
+    ));
     content.push_str(
         "- VERIFICATION STAYS WITH YOU (opus): codex subagents implement and report, never verify,\n\
          commit, or run `loom stage complete`. YOU run the full build/test/lint gate and the\n\
          six-dimension review, then commit at the end of the stage - never take a codex agent's word\n\
          its own work is correct, and never have codex review its own output.\n\n",
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::format_codex_implementers_section;
+    use crate::models::stage::{Implementer, Implementers};
+
+    #[test]
+    fn codex_doctrine_requires_receipt_based_recovery() {
+        let implementers = Implementers::new(vec![Implementer::Codex]);
+        let rendered = format_codex_implementers_section(&implementers, true);
+        let collapsed = rendered.split_whitespace().collect::<Vec<_>>().join(" ");
+
+        assert!(collapsed.contains("loom subagents wait --receipt"));
+        assert!(collapsed.contains("Do not use `codex-companion.mjs status --all`"));
+
+        for forbidden in [
+            "Recover with `codex-companion.mjs status",
+            "run `codex-companion.mjs status --all`",
+            "Recover with `--resume-last`",
+            "Use `--resume-last` to recover",
+        ] {
+            assert!(
+                !collapsed.contains(forbidden),
+                "codex doctrine must not recover via {forbidden:?}"
+            );
+        }
+    }
 }

@@ -1,7 +1,10 @@
-use std::collections::BTreeMap;
-
 use chrono::{DateTime, Utc};
 use serde::Serialize;
+
+pub(crate) use super::report_types::{
+    FreshStartSummary, StageAttributionSummary, ToolCounts, TurnoverRatios,
+};
+use super::stream_types::StreamTokenTotals;
 
 pub(crate) const PROVIDER_LEDGER_SCHEMA_VERSION: u16 = 1;
 
@@ -113,6 +116,14 @@ pub(crate) struct NormalizedEvent {
     pub(crate) first_observed_in_range: bool,
     pub(crate) true_fresh_start: Option<bool>,
     pub(crate) tool_names: Vec<String>,
+    #[serde(skip)]
+    pub(crate) codex_thread_id: Option<String>,
+    #[serde(skip)]
+    pub(crate) codex_thread_conflict: bool,
+    #[serde(skip)]
+    pub(crate) forward_candidate: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) forward_receipt: Option<super::forward_join::ForwardMetadata>,
 }
 
 #[derive(Debug, Clone, Copy, Default, Serialize)]
@@ -195,6 +206,14 @@ pub(crate) struct ProviderDiagnostics {
     pub(crate) malformed_receipts: usize,
     pub(crate) unsupported_receipt_versions: usize,
     pub(crate) unattributable_receipts: usize,
+    pub(crate) forward_receipt_files_seen: usize,
+    pub(crate) malformed_forward_receipts: usize,
+    pub(crate) truncated_forward_receipt_files: usize,
+    pub(crate) missing_forward_receipt_roots: usize,
+    pub(crate) forward_receipt_scope_unavailable: usize,
+    pub(crate) forward_identity_absent: usize,
+    pub(crate) forward_identity_ambiguous: usize,
+    pub(crate) forward_identity_conflicts: usize,
 }
 
 impl ProviderDiagnostics {
@@ -222,39 +241,14 @@ impl ProviderDiagnostics {
         self.malformed_receipts += other.malformed_receipts;
         self.unsupported_receipt_versions += other.unsupported_receipt_versions;
         self.unattributable_receipts += other.unattributable_receipts;
-    }
-}
-
-#[derive(Debug, Clone, Default, Serialize)]
-pub(crate) struct StreamTokenTotals {
-    pub(crate) observations: usize,
-    pub(crate) input: u64,
-    pub(crate) cache_creation: u64,
-    pub(crate) cache_read: u64,
-    pub(crate) output: u64,
-    pub(crate) cache_write_5m: u64,
-    pub(crate) cache_write_1h: u64,
-}
-
-impl StreamTokenTotals {
-    pub(crate) fn add(&mut self, values: [u64; 6]) {
-        self.observations += 1;
-        self.input = self.input.saturating_add(values[0]);
-        self.cache_creation = self.cache_creation.saturating_add(values[1]);
-        self.cache_read = self.cache_read.saturating_add(values[2]);
-        self.output = self.output.saturating_add(values[3]);
-        self.cache_write_5m = self.cache_write_5m.saturating_add(values[4]);
-        self.cache_write_1h = self.cache_write_1h.saturating_add(values[5]);
-    }
-
-    fn merge(&mut self, other: Self) {
-        self.observations += other.observations;
-        self.input = self.input.saturating_add(other.input);
-        self.cache_creation = self.cache_creation.saturating_add(other.cache_creation);
-        self.cache_read = self.cache_read.saturating_add(other.cache_read);
-        self.output = self.output.saturating_add(other.output);
-        self.cache_write_5m = self.cache_write_5m.saturating_add(other.cache_write_5m);
-        self.cache_write_1h = self.cache_write_1h.saturating_add(other.cache_write_1h);
+        self.forward_receipt_files_seen += other.forward_receipt_files_seen;
+        self.malformed_forward_receipts += other.malformed_forward_receipts;
+        self.truncated_forward_receipt_files += other.truncated_forward_receipt_files;
+        self.missing_forward_receipt_roots += other.missing_forward_receipt_roots;
+        self.forward_receipt_scope_unavailable += other.forward_receipt_scope_unavailable;
+        self.forward_identity_absent += other.forward_identity_absent;
+        self.forward_identity_ambiguous += other.forward_identity_ambiguous;
+        self.forward_identity_conflicts += other.forward_identity_conflicts;
     }
 }
 
@@ -265,34 +259,6 @@ pub(crate) struct Distribution {
     pub(crate) p50: Option<u64>,
     pub(crate) p95: Option<u64>,
     pub(crate) max: Option<u64>,
-}
-
-#[derive(Debug, Clone, Default, Serialize)]
-pub(crate) struct FreshStartSummary {
-    pub(crate) first_observed_rows: usize,
-    pub(crate) true_fresh_starts: usize,
-    pub(crate) known_not_fresh_starts: usize,
-    pub(crate) unknown: usize,
-}
-
-#[derive(Debug, Clone, Default, Serialize)]
-pub(crate) struct StageAttributionSummary {
-    pub(crate) known: usize,
-    pub(crate) unknown: usize,
-    pub(crate) not_applicable: usize,
-}
-
-#[derive(Debug, Clone, Default, Serialize)]
-pub(crate) struct ToolCounts {
-    pub(crate) total: usize,
-    pub(crate) by_name: BTreeMap<String, usize>,
-    pub(crate) unavailable_rows: usize,
-}
-
-#[derive(Debug, Clone, Default, Serialize)]
-pub(crate) struct TurnoverRatios {
-    pub(crate) cache_read_to_fresh_input: Option<f64>,
-    pub(crate) cache_creation_to_fresh_input: Option<f64>,
 }
 
 #[derive(Debug, Clone, Serialize)]

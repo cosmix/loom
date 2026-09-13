@@ -5,6 +5,7 @@
 //! may make a model call or a network call.
 
 pub mod context_ceilings;
+pub mod forward_receipt;
 pub mod pre_compact;
 pub mod project_types;
 pub mod reconcile_graph;

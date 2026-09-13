@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
+unset LOOM_STAGE_ID LOOM_SESSION_ID LOOM_WORK_DIR LOOM_SESSION_TYPE LOOM_MAIN_AGENT_PID
+d=$(mktemp -d "${TMPDIR:-/tmp}/cfw.XXXXXX") && [ -n "$d" ]
+trap 'rm -rf "$d"' EXIT
 HOOK="$(dirname "$0")/../codex-forward-guard.sh"
 
 # agent_type identifies the forwarder even with no transcript_path at all

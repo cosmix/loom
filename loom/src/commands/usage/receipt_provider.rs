@@ -157,6 +157,10 @@ fn receipt_row(
         first_observed_in_range: false,
         true_fresh_start: None,
         tool_names: Vec::new(),
+        codex_thread_id: None,
+        codex_thread_conflict: false,
+        forward_candidate: false,
+        forward_receipt: None,
     }
 }
 

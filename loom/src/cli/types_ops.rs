@@ -106,6 +106,14 @@ pub enum HookCommands {
     #[command(hide = true)]
     ContextCeilings,
 
+    /// Persist authoritative lifecycle observations for one Codex forward.
+    #[command(hide = true)]
+    ForwardReceipt {
+        /// Exact subagent transcript containing the forwarding Bash call.
+        #[arg(long)]
+        transcript: std::path::PathBuf,
+    },
+
     /// Discover package-scoped project types for skill recommendations.
     #[command(hide = true)]
     ProjectTypes,

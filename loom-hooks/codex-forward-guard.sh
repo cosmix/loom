@@ -27,6 +27,7 @@ fi
 TOOL_NAME=$(printf '%s' "$INPUT_JSON" | jq -r '.tool_name // empty' 2>/dev/null || true)
 AGENT_TYPE=$(printf '%s' "$INPUT_JSON" | jq -r '.agent_type // empty' 2>/dev/null || true)
 TRANSCRIPT_PATH=$(printf '%s' "$INPUT_JSON" | jq -r '.transcript_path // empty' 2>/dev/null || true)
+TOOL_USE_ID=$(printf '%s' "$INPUT_JSON" | jq -r '.tool_use_id? | strings' 2>/dev/null || true)
 
 block_forwarder() {
 	local reason="$1"
@@ -119,6 +120,32 @@ is_exact_forward_command() {
 	[[ "${PARSED_WORDS[7]}" == --write ]]
 }
 
+# has_prior_forwarding_call - Find an earlier exact Bash forwarding tool use
+# in this forwarder's transcript. A missing or unreadable transcript is not
+# evidence, so the caller retains the existing authorization behavior.
+has_prior_forwarding_call() {
+	local candidate_id candidate_command
+	[[ -n "$TRANSCRIPT_PATH" && -f "$TRANSCRIPT_PATH" && -r "$TRANSCRIPT_PATH" && ! -L "$TRANSCRIPT_PATH" ]] || return 1
+
+	while IFS= read -r -d '' candidate_id && IFS= read -r -d '' candidate_command; do
+		if [[ -n "$TOOL_USE_ID" ]] && { [[ -z "$candidate_id" ]] || [[ "$candidate_id" == "$TOOL_USE_ID" ]]; }; then
+			continue
+		fi
+		is_exact_forward_command "$candidate_command" && return 0
+	done < <(
+		LC_ALL=C head -c 4194304 "$TRANSCRIPT_PATH" 2>/dev/null |
+			jq -jR '
+				fromjson? |
+				select(.type? == "assistant" or .message.role? == "assistant") |
+				(.message.content? // [])[]? |
+				select(.type? == "tool_use" and .name? == "Bash" and (.input.command? | type == "string")) |
+				(((.id? // "") | if type == "string" then . else "" end) + "\u0000"),
+				(.input.command + "\u0000")
+			' 2>/dev/null || true
+	)
+	return 1
+}
+
 # record_codex_task <model> <effort> - Append one row to
 # $LOOM_WORK_DIR/subagents/<stage-id>/codex.jsonl recording the codex model
 # and effort an AUTHORIZED forward is about to run with. Called from
@@ -182,7 +209,9 @@ enforce_forwarder() {
 	command=$(printf '%s' "$INPUT_JSON" | jq -r '.tool_input.command // empty' 2>/dev/null || true)
 	[[ -n "$command" ]] || block_forwarder "Bash command metadata is missing"
 	is_exact_forward_command "$command" || block_forwarder "command is not an exact forwarding-wrapper invocation"
-	record_codex_task "${PARSED_WORDS[4]}" "${PARSED_WORDS[6]}"
+	local model="${PARSED_WORDS[4]}" effort="${PARSED_WORDS[6]}"
+	has_prior_forwarding_call && block_forwarder "one forward per forwarder: the first forward is already running or finished. Return its output as the final message and stop; never retry or re-forward."
+	record_codex_task "$model" "$effort"
 	exit 0
 }
 
