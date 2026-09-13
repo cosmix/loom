@@ -137,7 +137,7 @@ is what actually closes the path-escape hole at the point of use.
 ## Sandbox-List vs Permission-Rule Path Syntax, and Where Each Resolves From (2026-09-13)
 
 Two settings surfaces read a leading `/` differently, confirmed against the Claude Code docs
-(`settings-reference.md#sandbox-path-prefixes`, `permissions.md#read-and-edit`):
+(<https://code.claude.com/docs/en/settings-reference.md#sandbox-path-prefixes>, <https://code.claude.com/docs/en/permissions.md#read-and-edit>):
 
 - **`sandbox.filesystem` lists** (`allowWrite`, `denyWrite`, `denyRead`, ...): `/p` and `//p` are
   both absolute, `~/p` is under home, and a bare path is relative to the project root (to
@@ -208,12 +208,13 @@ loom's rules.
 
 `sandbox::PACKAGE_MANAGER_CACHE_WRITE_PATHS` (`sandbox/package_caches.rs`) lists the
 per-user cache directories of bun, npm, pnpm, yarn, deno, cargo, rustup, uv, pip and
-go, in tilde form. It is emitted into `sandbox.filesystem.allowWrite` on TWO
-surfaces: `sandbox/settings/policy.rs::filesystem_settings` for every worktree
-stage's settings (order: plan `allow_write` entries, then the package caches,
-then codex's own state paths when that lane is licensed), and
-`fs/permissions/codex_sandbox.rs::ALLOWANCES` for the MAIN repo's
-`.claude/settings.local.json` on `loom init`/`loom repair`.
+go, in tilde form. It is emitted into `sandbox.filesystem.allowWrite` of every
+session capsule through `sandbox/settings/policy.rs::filesystem_settings` (order:
+plan `allow_write` entries, then the package caches, then codex's own state paths
+when that lane is licensed). Until the state-confinement merge (2026-09-14) a second
+writer, the `codex_sandbox` module, also merged these grants into the MAIN repo's
+`.claude/settings.local.json` on `loom init`/`loom repair`; that writer and its
+module are deleted, and loom no longer writes that file.
 
 **Cache-only policy.** Only cache directories are listed, never a
 credential-bearing parent — `~/.cargo/registry` and `~/.cargo/git` are granted,
@@ -271,8 +272,8 @@ the sandbox skipped, so the call fails with `Read-only file system`. `sandbox::m
 and returns the ones missing on the host. Both consumers read the merged plan and stage grants:
 
 - STALE (corrected 2026-09-13): this named `write_required_sandbox_settings`
-  (`orchestrator/core/sandbox_grants.rs`), which the state-confinement plan's B1 phase deleted along
-  with the rest of that file. The warning now comes from `sandbox::warn_missing_grants`
+  in the former `sandbox_grants` module, which the state-confinement plan's B1 phase deleted along
+  with the rest of that module. The warning now comes from `sandbox::warn_missing_grants`
   (`sandbox/grant_paths.rs:64`), called from `orchestrator/core/spawn_setup.rs:139` and
   `orchestrator/core/stage_executor.rs:654`, one per missing path at spawn, for worktree and
   knowledge stages alike.

@@ -267,7 +267,7 @@ filter and inspects `${PIPESTATUS[0]}` loses its exit code every time.
 pipe entirely (`cmd >out 2>&1; echo "exit=$?"`).
 
 The same shell has no `mapfile` builtin and does not word-split an unquoted `$VAR` by default (bash
-does). A bash-specific script the Bash tool needs to run must be invoked as `bash script.sh`, not
+does). A bash-specific script the Bash tool needs to run must be invoked as `bash <script>`, not
 sourced or run bare.
 
 ## A Failing `setup` Line Fails Every Criterion, and the Runner Hid Why (2026-09-13)

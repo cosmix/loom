@@ -1,16 +1,19 @@
 # State Confinement Gaps
 
-> Security gaps found on 2026-09-13 that stay open until the `.loom` confinement plan merges: session write access to loom state and to what runs outside the sandbox.
+> Confinement gaps: all closed by the 2026-09-14 merge except shared caches
 
 ## Open Gaps (2026-09-13)
 
-Tracked by `doc/plans/PLAN-loom-state-confinement.md` (branch `state-confinement`). Until that plan merges:
+Tracked by `doc/plans/PLAN-loom-state-confinement.md` (branch `state-confinement`, merged 2026-09-14). One accepted risk remains:
 
-- **Checkout-rooted sessions can write loom state.** Knowledge, merge and adjudication sessions run in the main checkout with the whole repository writable, `.loom/work` included. They can also write any `.worktrees/<id>/.loom/*-spool.jsonl`, which the daemon attributes to that stage, and any `.worktrees/<id>/.claude/settings.json`, which that stage's session loads.
-- **Loom's own git calls run repository hooks.** `core.hooksPath` is `loom/.githooks`, a tracked directory, and loom's git runner does not disable hooks, so a hook committed by a stage runs unsandboxed in the daemon's later git operations and in the operator's own commits.
-- **Package grants reach executables on PATH.** `~/.rustup/toolchains` and `~/.local/share/uv` are session-writable (`sandbox/package_caches.rs`); `cargo` and uv-installed tools on PATH execute from them.
-- **The codex lane grants all of `~/.codex`** (`codex.rs`), its hooks and config included.
-- **The main checkout's `.claude/settings.local.json` is shared** with the operator's interactive sessions and carried a stage's `allow_write` list and `env.LOOM_WORK_DIR` (see [Security and Isolation](../architecture/security-and-isolation.md)).
-- **Shared package caches** (cargo registry, npm, bun, pnpm, uv, go, pip) stay session-writable and are executed by the operator's own builds. Private per-session caches are a follow-up plan; this one is an accepted risk.
+- **Shared package caches** (cargo registry, npm, bun, pnpm, uv, go and pip caches) stay session-writable and are executed by the operator's own builds. Private per-session caches are a follow-up plan.
 
-Remove each bullet when its fix merges.
+## Closed by the Confinement Merge (2026-09-14)
+
+Each bullet below was open on 2026-09-13. The mechanisms are described in [Security and Isolation](../architecture/security-and-isolation.md) and [Execution Containment](../architecture/execution-containment.md).
+
+- **Checkout-rooted sessions writing loom state:** every capsule denies `.loom`, `.worktrees` and `.claude` for its location in both the sandbox and `Edit` layers, and sessions send requests through the relay inbox instead of writing `.loom/work`. The srt confinement e2e exercises the knowledge capsule.
+- **Loom's git calls running repository hooks:** every git command loom runs passes `-c core.hooksPath=/dev/null`, and the merge gate holds a branch that touches the in-repo hooks directory for review.
+- **Package grants reaching executables:** `~/.rustup/toolchains` and `~/.local/share/uv` are no longer granted; pnpm is narrowed to its store.
+- **The codex lane's `~/.codex` grant:** `~/.codex/hooks`, `hooks.json` and `config.toml` are denied in every capsule; the srt e2e checks it, including a `hooks.json` that does not exist yet.
+- **The shared `.claude/settings.local.json`:** loom no longer writes it. Approvals propagate through `W/permissions/approved.json`, and `loom repair --fix` strips the keys loom used to write.

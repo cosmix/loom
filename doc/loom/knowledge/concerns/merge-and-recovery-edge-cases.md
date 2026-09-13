@@ -68,3 +68,9 @@ Found while fixing the silent `Completed + !merged` outcome (`mistakes/phantom-m
 - `verify_merged_true_or_revert` (`orchestrator/core/recovery.rs`) treats a git error from `verify_merge_succeeded` as "not verified" (`unwrap_or(false)`) and reverts `merged` to false, so a transient git failure can flip a merged stage to unmerged.
 - `merge_stage` (`git/merge/mod.rs`) checks out the target branch in the operator's main checkout and, on success, leaves it there; only the failure paths restore the original branch.
 - `try_auto_merge` is 228 lines against the 50-line function cap and is ledgered at that size.
+
+## Daemon Start Replaces the Whole Plan With the Latest Amendment Snapshot (2026-09-14)
+
+Open. On every daemon start, `verify_plan_versions_consistency` Case 2 (`plan/amendment.rs:805-826`, called from `orchestrator/core/orchestrator.rs:173`) overwrites the live plan with `.loom/work/plan_versions/<n>.md` whenever the two differ at all. Any edit made to a plan after its latest amendment is reverted at the next restart. A reinstall through `dev-install.sh` is one such restart, because it kills the daemon. The token-optimization plan lost its revalidation this way on 2026-09-13 (see [Computed Values and Hidden Couplings](../mistakes/computed-values-and-hidden-couplings.md)).
+
+Fix direction: follow Case 3 (`amendment.rs:848-860`). Parse the live plan, compare only the amended stage field with the snapshot, and splice just that field back with `serialize_loom_metadata` + `splice_metadata_yaml`, writing through `safe_replace_outside_workdir`. Add a regression test in `plan/tests/amendment.rs`: amend, edit prose, run the check, assert the prose survives and no action was taken.

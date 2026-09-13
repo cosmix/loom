@@ -717,3 +717,13 @@ other are byte-different strings for the same file.
 comparing, not just one.
 
 **Fix:** applied in the `accepted_loom_bin` comparison.
+
+## A Sandbox Bind Mount Makes `git merge` and `git stash` Fail in an Interactive Session (2026-09-13)
+
+**What happened:** in interactive Claude Code sessions, `git stash` (11:19:50) and `git merge` (13:33:43) in the main checkout failed with `error: unable to unlink old 'agents/loom-codex-forwarder.md': Device or resource busy`. On the `ort` strategy failure, git reset to HEAD and reapplied its auto-stash, rewriting dirty files with the same content and a new mtime. That made the failure look like a content change during a later investigation.
+
+**Why:** a single file in the sandbox's write allowlist, such as `README.md` or `agents/loom-codex-forwarder.md`, is bind-mounted, and git cannot unlink or rename over a mount point.
+
+**Prevention:** before a merge, fast-forward or checkout from a sandboxed shell, check that the incoming change touches no single-file bind (`rg -F <repo> /proc/self/mountinfo`). If it does, run that git step outside the sandbox.
+
+**Fix:** none in loom. The state-confinement merge (2026-09-14) checked its incoming paths against the binds before fast-forwarding main.

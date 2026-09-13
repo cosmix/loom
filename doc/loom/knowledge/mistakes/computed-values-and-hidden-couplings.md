@@ -196,3 +196,13 @@ stripping the old keys can end up with both an empty array and the new entries.
 
 **Prevention:** when a caller needs both "remove loom-written keys" and "rewrite hooks" against the
 same settings file, the strip must run first — this function does not do it for you.
+
+## Daemon Start Reverts Any Plan Edit Made After an Amendment (2026-09-13)
+
+**What happened:** the token-optimization plan lost its knowledge-bootstrap revalidation, committed in `ecb9eb06` at 03:28. Earlier, around 03:15, that stage had run `loom stage amend`, which saved snapshot `.loom/work/plan_versions/1.md`. At 12:10:18 a reinstall (`dev-install.sh` runs `pkill -x loom`) and `loom run` started a fresh daemon. `Orchestrator::new` (`orchestrator/core/orchestrator.rs:173`) calls `verify_plan_versions_consistency`, and its Case 2 (`plan/amendment.rs:805-826`) found the live plan unequal to that snapshot and overwrote the whole file with it. The DONE rename later carried the stale text. The revalidated version survives only in commit `ecb9eb06`, as the plan file committed there.
+
+**Why:** the catch-up compares whole files and restores the snapshot on any difference, so it cannot tell an amendment that never reached the file from a prose edit made after one. Case 3 of the same function, the stage-file catch-up (`amendment.rs:848-860`), already compares only the amended field.
+
+**Prevention:** a catch-up that repairs a file from a snapshot compares only what the snapshot is authoritative for (here, the amended criterion) and splices that into the live content; it never replaces the whole file. Detection: a tracked plan file that shows as modified right after a daemon start, with a diff that reverts a recent commit.
+
+**Fix:** not applied yet; tracked in [Merge and Recovery Edge Cases](../concerns/merge-and-recovery-edge-cases.md).
