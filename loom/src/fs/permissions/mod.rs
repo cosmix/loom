@@ -6,7 +6,6 @@
 
 pub(crate) mod approved;
 mod codex_hooks;
-mod codex_sandbox;
 pub mod constants;
 mod drift;
 mod hooks;
@@ -24,8 +23,8 @@ pub use codex_hooks::{
     codex_hooks_need_install, codex_hooks_need_install_in, install_codex_hooks,
     install_codex_hooks_to,
 };
-pub use codex_sandbox::settings_local_has_allowances as settings_local_has_codex_sandbox;
 pub use constants::{LOOM_PERMISSIONS, LOOM_PERMISSIONS_WORKTREE};
+pub(crate) use drift::flatten_hook_triples;
 pub use drift::{
     hook_drift, hook_drift_for_dir, hook_scripts_needing_install,
     loom_hook_scripts_needing_install, main_repo_settings_identity_drift,

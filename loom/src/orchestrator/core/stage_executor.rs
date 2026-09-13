@@ -4,7 +4,6 @@ use anyhow::{Context, Result};
 use chrono::Utc;
 
 use crate::git;
-use crate::git::worktree::setup_worktree_hooks;
 use crate::hooks::find_hooks_dir;
 use crate::models::failure::{FailureInfo, FailureType};
 use crate::models::stage::{Stage, StageStatus, StageType};
@@ -15,7 +14,6 @@ use crate::orchestrator::signals::{
 };
 
 use super::persistence::Persistence;
-use super::sandbox_grants::write_required_sandbox_settings;
 use super::Orchestrator;
 
 impl Orchestrator {
@@ -62,30 +60,27 @@ impl Orchestrator {
     }
 }
 
-/// Install the stage's Claude Code hooks, or fail.
+/// Confirm the stage's Claude Code hooks directory exists, or fail.
 ///
 /// Hooks are the stage's security boundary — the commit filter, git-add guard,
 /// worktree file guard and subagent verify guard all arrive this way — not an
 /// optional enhancement. A missing hooks directory is therefore an error, not a
 /// silent skip: spawning without them would run the agent unguarded.
 ///
-/// `worktree_path` is the target that receives `.claude/settings.local.json`:
-/// a stage worktree for standard stages, or the main repo root for knowledge
-/// stages (which run on the host directly rather than in a worktree).
+/// Every session now launches from a per-session capsule
+/// (`native/session_settings.rs`) that embeds the hooks configuration
+/// itself, so this no longer writes `.claude/settings.local.json` — it only
+/// refuses the spawn when the directory backing those hooks is missing.
 pub(super) fn install_required_hooks(
     hooks_dir: Option<std::path::PathBuf>,
-    worktree_path: &std::path::Path,
-    work_dir: &std::path::Path,
-    permission_mode: crate::plan::schema::PermissionMode,
     stage_id: &str,
 ) -> Result<()> {
-    let hooks_dir = hooks_dir.ok_or_else(|| {
+    hooks_dir.ok_or_else(|| {
         anyhow::anyhow!(
             "Claude Code hooks directory not found; refusing to spawn an unhooked session for stage '{stage_id}'"
         )
     })?;
-    setup_worktree_hooks(worktree_path, work_dir, &hooks_dir, permission_mode)
-        .with_context(|| format!("Failed to install Claude Code hooks for stage '{stage_id}'"))
+    Ok(())
 }
 
 /// Trait for stage execution operations
@@ -351,35 +346,7 @@ impl StageExecutor for Orchestrator {
             .mark_executing(stage_id)
             .context("Failed to mark stage as executing in graph")?;
 
-        // Generate and write sandbox settings to worktree
-        let mut merged_sandbox = crate::sandbox::merge_config(
-            &self.config.sandbox_config,
-            &stage.sandbox,
-            stage.stage_type,
-            &stage.implementers,
-        );
-        // Defense-in-depth: re-validate at spawn time. `loom init` already
-        // rejects incompatible configs; refuse to spawn rather than silently
-        // downgrade if the on-disk config has since become invalid.
-        if let Err(e) = crate::sandbox::validate_config(&merged_sandbox) {
-            self.block_and_undo_session(
-                stage_id,
-                &session.id,
-                FailureType::InfrastructureError,
-                format!("invalid sandbox config at spawn: {e:#}"),
-            );
-            return Ok(());
-        }
-        crate::sandbox::expand_paths(&mut merged_sandbox);
-        if let Err(error) =
-            write_required_sandbox_settings(&merged_sandbox, &worktree.path, stage_id)
-        {
-            self.block_and_undo_session(
-                stage_id,
-                &session.id,
-                FailureType::InfrastructureError,
-                format!("{error:#}"),
-            );
+        if !self.validate_stage_sandbox(&stage, stage_id, &session.id) {
             return Ok(());
         }
 
@@ -402,23 +369,7 @@ impl StageExecutor for Orchestrator {
         MergeLifecycle::new(stage_id, &self.config.repo_root, &self.config.work_dir)
             .reconcile_overlay();
 
-        // Claude Code hooks are the stage's security boundary, not an optional
-        // enhancement: a session is never spawned without them. Contain a
-        // setup failure as Blocked rather than propagating it, which would kill
-        // the daemon while the stage sits Executing with no session (O-11).
-        if let Err(e) = install_required_hooks(
-            find_hooks_dir(),
-            &worktree.path,
-            &self.config.work_dir,
-            merged_sandbox.permission_mode,
-            stage_id,
-        ) {
-            self.block_and_undo_session(
-                stage_id,
-                &session.id,
-                FailureType::SandboxSetupFailure,
-                format!("{e:#}"),
-            );
+        if !self.require_stage_hooks(stage_id, &session.id) {
             return Ok(());
         }
 
@@ -496,7 +447,7 @@ impl StageExecutor for Orchestrator {
                     self.block_and_undo_session(
                         stage_id,
                         &original_session_id,
-                        FailureType::InfrastructureError,
+                        super::crash_classification::spawn_failure_type(&spawn_err),
                         err_msg,
                     );
                     return Ok(());
@@ -627,7 +578,7 @@ impl StageExecutor for Orchestrator {
                     self.block_and_undo_session(
                         &stage_id,
                         &original_session_id,
-                        FailureType::InfrastructureError,
+                        super::crash_classification::spawn_failure_type(&spawn_err),
                         err_msg,
                     );
                     return Ok(());
@@ -675,6 +626,53 @@ impl StageExecutor for Orchestrator {
 /// `session_lifecycle.rs`; this impl keeps what is specific to the spawn
 /// sequence itself.
 impl Orchestrator {
+    /// Merge, validate and expand this stage's sandbox config at spawn time.
+    /// Mirrors `spawn_setup.rs::validate_knowledge_sandbox`. Writes nothing:
+    /// the capsule (`native/session_settings.rs`) carries the resolved
+    /// settings into the session, not `T/.claude/settings.local.json`.
+    ///
+    /// Returns `false` if the stage was blocked instead (invalid config).
+    fn validate_stage_sandbox(&mut self, stage: &Stage, stage_id: &str, session_id: &str) -> bool {
+        let mut merged_sandbox = crate::sandbox::merge_config(
+            &self.config.sandbox_config,
+            &stage.sandbox,
+            stage.stage_type,
+            &stage.implementers,
+        );
+        // Defense-in-depth: re-validate at spawn time in case the on-disk
+        // config became invalid after `loom init` last accepted it.
+        if let Err(e) = crate::sandbox::validate_config(&merged_sandbox) {
+            self.block_and_undo_session(
+                stage_id,
+                session_id,
+                FailureType::SandboxSetupFailure,
+                format!("invalid sandbox config at spawn: {e:#}"),
+            );
+            return false;
+        }
+        crate::sandbox::expand_paths(&mut merged_sandbox);
+        crate::sandbox::warn_missing_grants(&merged_sandbox, stage_id);
+        true
+    }
+
+    /// Require the Claude Code hooks directory to exist for a stage spawn.
+    /// Mirrors `spawn_setup.rs::require_knowledge_hooks`. Writes nothing: the
+    /// capsule already embeds the hooks configuration itself.
+    ///
+    /// Returns `false` if the stage was blocked instead (hook install failure).
+    fn require_stage_hooks(&mut self, stage_id: &str, session_id: &str) -> bool {
+        if let Err(e) = install_required_hooks(find_hooks_dir(), stage_id) {
+            self.block_and_undo_session(
+                stage_id,
+                session_id,
+                FailureType::SandboxSetupFailure,
+                format!("{e:#}"),
+            );
+            return false;
+        }
+        true
+    }
+
     /// Run the stage's `before_stage` pre-condition gate before spawning.
     ///
     /// The gate is a delta-proof: it asserts the feature does NOT exist yet, so

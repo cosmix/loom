@@ -12,7 +12,6 @@ use crate::models::failure::FailureType;
 use crate::models::stage::Stage;
 use crate::orchestrator::scheduling_report::BlockReason;
 
-use super::sandbox_grants::write_required_sandbox_settings;
 use super::stage_executor::install_required_hooks;
 use super::Orchestrator;
 
@@ -102,13 +101,14 @@ impl Orchestrator {
         Ok(Some((resolved, worktree)))
     }
 
-    /// Merge and validate this knowledge stage's sandbox config, then write
-    /// the settings into the main repo (knowledge stages run on the host
-    /// directly, so there is no worktree to write into instead).
+    /// Merge and re-validate this knowledge stage's sandbox config at spawn
+    /// time. Writes nothing: the capsule built for the session
+    /// (`native/session_settings.rs`) carries the resolved config directly
+    /// into the session, not the main repo's `.claude/settings.local.json`.
     ///
     /// Returns `Ok(None)` if the stage was marked Blocked instead (invalid
     /// config); the caller should return without spawning.
-    pub(super) fn write_knowledge_sandbox_settings(
+    pub(super) fn validate_knowledge_sandbox(
         &mut self,
         stage: &Stage,
         stage_id: &str,
@@ -119,7 +119,10 @@ impl Orchestrator {
             stage.stage_type,
             &stage.implementers,
         );
-        // Defense-in-depth: re-validate at spawn time even for knowledge stages.
+        // Defense-in-depth: re-validate at spawn time even for knowledge
+        // stages. An invalid config means the session's security boundary
+        // cannot be installed, which is exactly what `SandboxSetupFailure`
+        // means.
         if let Err(e) = crate::sandbox::validate_config(&merged_sandbox) {
             let err_msg = format!("{e:#}");
             eprintln!(
@@ -127,48 +130,34 @@ impl Orchestrator {
             );
             let _ = self.persist_blocked_stage(
                 stage_id,
-                FailureType::InfrastructureError,
+                FailureType::SandboxSetupFailure,
                 vec![err_msg],
             );
             return Ok(None);
         }
         crate::sandbox::expand_paths(&mut merged_sandbox);
-        // Knowledge stages share the host's main-repo `.claude/settings.local.json`
-        // (the agent runs on the host directly), so the sandbox/permissions settings
-        // must be written there.
-        write_required_sandbox_settings(&merged_sandbox, &self.config.repo_root, stage_id)?;
+        crate::sandbox::warn_missing_grants(&merged_sandbox, stage_id);
         Ok(Some(merged_sandbox))
     }
 
-    /// Install Claude Code hooks into the main repo for a knowledge-stage
-    /// spawn (it has no worktree of its own; the main repo root is the
-    /// install target), and drop `.claude/settings.local.json` from the main
-    /// repo's gitignore so it cannot be accidentally committed.
-    ///
-    /// Session identity is deliberately NOT written into the hooks config:
-    /// this file is shared by every main-repo session (later knowledge
-    /// stages, interactive user sessions), so persisted stage/session IDs
-    /// would go stale and shadow the wrapper script's fresh exports.
+    /// Require the Claude Code hooks directory to exist for a knowledge-stage
+    /// spawn (it has no worktree of its own; the main repo root is where the
+    /// session runs). Writes nothing: the capsule already embeds the hooks
+    /// configuration itself, not the main repo's `.claude/settings.local.json`
+    /// or its gitignore.
     ///
     /// Returns `Ok(false)` if the stage was marked Blocked instead (hook
     /// install failure); the caller should return without spawning.
-    pub(super) fn install_knowledge_hooks(
+    pub(super) fn require_knowledge_hooks(
         &mut self,
         stage_id: &str,
         session_id: &str,
-        permission_mode: crate::plan::schema::PermissionMode,
     ) -> Result<bool> {
         // Claude Code hooks are the knowledge stage's security boundary, not
         // an optional enhancement: a session is never spawned without them.
         // Contain a setup failure as Blocked rather than propagating it, which
         // would kill the daemon while the stage sits Executing with no session.
-        if let Err(e) = install_required_hooks(
-            find_hooks_dir(),
-            &self.config.repo_root,
-            &self.config.work_dir,
-            permission_mode,
-            stage_id,
-        ) {
+        if let Err(e) = install_required_hooks(find_hooks_dir(), stage_id) {
             self.block_and_undo_session(
                 stage_id,
                 session_id,
@@ -178,18 +167,11 @@ impl Orchestrator {
             return Ok(false);
         }
 
-        // Exclude .claude/settings.local.json from the main repo's gitignore so knowledge-stage
-        // hook configs cannot be accidentally committed.
-        if let Err(e) =
-            crate::git::worktree::add_settings_local_to_main_gitignore(&self.config.repo_root)
-        {
-            eprintln!("Warning: Failed to add settings.local.json to main repo gitignore: {e}");
-        }
-
         Ok(true)
     }
 
-    /// Write and install this knowledge stage's sandbox settings and hooks.
+    /// Validate this knowledge stage's sandbox config and confirm its hooks
+    /// directory exists.
     ///
     /// Returns `Ok(false)` if the stage was marked Blocked instead (invalid
     /// sandbox config or hook install failure); the caller should return
@@ -200,9 +182,9 @@ impl Orchestrator {
         stage_id: &str,
         session_id: &str,
     ) -> Result<bool> {
-        let Some(merged_sandbox) = self.write_knowledge_sandbox_settings(stage, stage_id)? else {
+        if self.validate_knowledge_sandbox(stage, stage_id)?.is_none() {
             return Ok(false);
-        };
-        self.install_knowledge_hooks(stage_id, session_id, merged_sandbox.permission_mode)
+        }
+        self.require_knowledge_hooks(stage_id, session_id)
     }
 }

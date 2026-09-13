@@ -76,7 +76,13 @@ pub(super) fn coerced_object<'a>(
 /// `(event, matcher, command)` triples. Malformed shapes are skipped, never
 /// treated as an error — a non-array event value or a non-object entry is
 /// simply invisible to drift detection.
-fn flatten_hook_triples(hooks: &Value) -> Vec<(String, String, String)> {
+///
+/// `pub(crate)`: also the shared hook-block walk for
+/// `sandbox::config::preflight::hook_commands`, which needs only the
+/// `(event, command)` pairs and drops the matcher. Reachable outside this
+/// module only once `fs::permissions::mod` re-exports it alongside the
+/// module's other `drift` items.
+pub(crate) fn flatten_hook_triples(hooks: &Value) -> Vec<(String, String, String)> {
     let mut triples = Vec::new();
     let Some(hooks_obj) = hooks.as_object() else {
         return triples;

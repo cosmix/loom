@@ -1,16 +1,54 @@
 //! Tests for sync_worktree_permissions
+//!
+//! The fold-back no longer writes `<main_repo>/.claude/settings.local.json`;
+//! it records portable allow rules into the loom-owned approved-permissions
+//! list at `<state_root>/permissions/approved.json` instead (`approved.rs`).
+//! Every fixture below creates the nested `.loom/work` state-root layout so
+//! `state_root::resolve_state_root` has somewhere to resolve to, then reads
+//! the recorded rules back through that same layout.
 
+use crate::fs::permissions::approved::approved_path;
 use crate::fs::permissions::sync::sync_worktree_permissions;
 use serde_json::{json, Value};
 use std::fs;
+use std::path::{Path, PathBuf};
 use tempfile::TempDir;
+
+/// Create `<main_dir>/.loom/work`, the nested state-root layout
+/// `resolve_state_root` looks for, and return its canonical path — the root
+/// the fold-back resolves to and `approved_allow` reads back from.
+fn create_state_root(main_dir: &Path) -> PathBuf {
+    let work = main_dir.join(".loom").join("work");
+    fs::create_dir_all(&work).unwrap();
+    work.canonicalize().unwrap()
+}
+
+/// Read back the `allow` array the fold-back recorded into the loom-owned
+/// approved-permissions list at `state_root`.
+fn approved_allow(state_root: &Path) -> Vec<String> {
+    let content = fs::read_to_string(approved_path(state_root)).unwrap();
+    let value: Value = serde_json::from_str(&content).unwrap();
+    value["allow"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v.as_str().unwrap().to_string())
+        .collect()
+}
+
+/// Assert the fold-back never created the main repository's own local
+/// settings file.
+fn assert_main_settings_never_created(main_dir: &Path) {
+    let path = main_dir.join(".claude/settings.local.json");
+    assert!(!path.exists(), "sync must never create {}", path.display());
+}
 
 #[test]
 fn test_sync_basic_permissions() {
     let worktree_dir = TempDir::new().unwrap();
     let main_dir = TempDir::new().unwrap();
+    let state_root = create_state_root(main_dir.path());
 
-    // Create worktree settings with some permissions
     let worktree_claude_dir = worktree_dir.path().join(".claude");
     fs::create_dir_all(&worktree_claude_dir).unwrap();
 
@@ -26,34 +64,28 @@ fn test_sync_basic_permissions() {
     )
     .unwrap();
 
-    // Run sync
     let result = sync_worktree_permissions(worktree_dir.path(), main_dir.path()).unwrap();
 
-    // Verify permissions were synced
+    // Allow rules are recorded; there is no destination left for a deny rule.
     assert_eq!(result.allow_added, 2);
-    assert_eq!(result.deny_added, 1);
+    assert_eq!(result.deny_added, 0);
 
-    // Read main settings and verify content
-    let main_settings_path = main_dir.path().join(".claude/settings.local.json");
-    let content = fs::read_to_string(&main_settings_path).unwrap();
-    let main_settings: Value = serde_json::from_str(&content).unwrap();
+    let approved = approved_allow(&state_root);
+    assert!(approved.iter().any(|v| v == "Read(src/**)"));
+    assert!(approved.iter().any(|v| v == "Edit(tests/**)"));
 
-    let allow = main_settings["permissions"]["allow"].as_array().unwrap();
-    assert!(allow.iter().any(|v| v == "Read(src/**)"));
-    assert!(allow.iter().any(|v| v == "Edit(tests/**)"));
-
-    let deny = main_settings["permissions"]["deny"].as_array().unwrap();
-    assert!(deny.iter().any(|v| v == "Bash(rm -rf:*)"));
+    assert_main_settings_never_created(main_dir.path());
 }
 
 #[test]
 fn test_sync_drops_inert_write_rules() {
     // Claude Code's file permission check consults only `Edit(path)` rules, so
-    // a promoted `Write(...)` entry grants nothing on the allow side, enforces
-    // nothing on the deny side, and leaves a startup warning in the
-    // developer's own settings forever. Sync must not carry either one over.
+    // a `Write(...)` entry recorded into the approved list would grant
+    // nothing there either. Sync must not carry either allow-side
+    // `Write(...)` rule over.
     let worktree_dir = TempDir::new().unwrap();
     let main_dir = TempDir::new().unwrap();
+    let state_root = create_state_root(main_dir.path());
 
     let worktree_claude_dir = worktree_dir.path().join(".claude");
     fs::create_dir_all(&worktree_claude_dir).unwrap();
@@ -72,36 +104,29 @@ fn test_sync_drops_inert_write_rules() {
 
     let result = sync_worktree_permissions(worktree_dir.path(), main_dir.path()).unwrap();
 
-    // Only the enforceable entries are promoted, transformable or not.
+    // Only the enforceable entry is recorded; both Write(...) allow rules
+    // are inert.
     assert_eq!(result.allow_added, 1);
-    assert_eq!(result.deny_added, 1);
+    assert_eq!(result.deny_added, 0);
 
-    let main_settings_path = main_dir.path().join(".claude/settings.local.json");
-    let content = fs::read_to_string(&main_settings_path).unwrap();
-    let main_settings: Value = serde_json::from_str(&content).unwrap();
+    let approved = approved_allow(&state_root);
+    assert_eq!(approved, vec!["Edit(src/**)".to_string()]);
+    assert!(
+        !approved.iter().any(|v| v.starts_with("Write(")),
+        "no Write(...) rule may reach the approved-permissions list, got: {approved:?}"
+    );
 
-    let allow = main_settings["permissions"]["allow"].as_array().unwrap();
-    assert!(allow.iter().any(|v| v == "Edit(src/**)"));
-    let deny = main_settings["permissions"]["deny"].as_array().unwrap();
-    assert!(deny.iter().any(|v| v == "Bash(rm -rf:*)"));
-
-    for section in ["allow", "deny"] {
-        let entries = main_settings["permissions"][section].as_array().unwrap();
-        assert!(
-            !entries
-                .iter()
-                .any(|v| v.as_str().is_some_and(|s| s.starts_with("Write("))),
-            "no Write(...) rule may reach the main repo's {section} list, got: {entries:?}"
-        );
-    }
+    assert_main_settings_never_created(main_dir.path());
 }
 
 #[test]
 fn test_sync_transforms_worktree_paths() {
     let worktree_dir = TempDir::new().unwrap();
     let main_dir = TempDir::new().unwrap();
+    let state_root = create_state_root(main_dir.path());
 
-    // Create worktree settings with regular, transformable, and non-transformable permissions
+    // Create worktree settings with regular, transformable, and
+    // non-transformable permissions.
     let worktree_claude_dir = worktree_dir.path().join(".claude");
     fs::create_dir_all(&worktree_claude_dir).unwrap();
 
@@ -109,7 +134,8 @@ fn test_sync_transforms_worktree_paths() {
         "permissions": {
             "allow": [
                 "Read(src/**)",                      // regular - keep as-is
-                "Read(../../../.loom/work/**)",      // transformable - becomes Read(.loom/work/**)
+                "Edit(../../doc/plans/**)",          // transformable - becomes Edit(doc/plans/**)
+                "Read(../../../.loom/work/**)",      // transformed, but names the state root - dropped
                 "Edit(.worktrees/stage-1/**)",       // non-transformable - filtered out
                 "Bash(cargo:*)"                      // regular - keep as-is
             ]
@@ -121,44 +147,38 @@ fn test_sync_transforms_worktree_paths() {
     )
     .unwrap();
 
-    // Run sync
     let result = sync_worktree_permissions(worktree_dir.path(), main_dir.path()).unwrap();
 
-    // Regular permissions + transformed permission should be synced
-    // (Read(src/**), Read(.loom/work/**), Bash(cargo:*))
-    // Edit(.worktrees/stage-1/**) is filtered out as non-transformable
+    // Read(src/**), Edit(doc/plans/**) and Bash(cargo:*) reach the approved
+    // list. Edit(.worktrees/stage-1/**) is filtered as non-transformable, and
+    // Read(.loom/work/**) - though the path rewrite still produces it - is
+    // dropped separately for naming the state root itself.
     assert_eq!(result.allow_added, 3);
 
-    // Verify main settings have correct permissions
-    let main_settings_path = main_dir.path().join(".claude/settings.local.json");
-    let content = fs::read_to_string(&main_settings_path).unwrap();
-    let main_settings: Value = serde_json::from_str(&content).unwrap();
-
-    let allow = main_settings["permissions"]["allow"].as_array().unwrap();
-    assert!(allow.iter().any(|v| v == "Read(src/**)"));
-    assert!(allow.iter().any(|v| v == "Bash(cargo:*)"));
-    // Verify ../../../.loom/work/** was transformed to .loom/work/**
-    assert!(allow.iter().any(|v| v == "Read(.loom/work/**)"));
-    // Verify no raw worktree-specific patterns remain
-    assert!(!allow.iter().any(|v| v.as_str().unwrap().contains("../../")));
-    assert!(!allow
-        .iter()
-        .any(|v| v.as_str().unwrap().contains(".worktrees/")));
+    let approved = approved_allow(&state_root);
+    assert!(approved.iter().any(|v| v == "Read(src/**)"));
+    assert!(approved.iter().any(|v| v == "Bash(cargo:*)"));
+    assert!(approved.iter().any(|v| v == "Edit(doc/plans/**)"));
+    assert!(!approved.iter().any(|v| v.contains("../../")));
+    assert!(!approved.iter().any(|v| v.contains(".worktrees/")));
+    assert!(
+        !approved.iter().any(|v| v.contains(".loom")),
+        "a rule naming the state root must never reach the approved list, got: {approved:?}"
+    );
 }
 
 #[test]
 fn test_sync_deduplicates() {
     let worktree_dir = TempDir::new().unwrap();
     let main_dir = TempDir::new().unwrap();
+    let state_root = create_state_root(main_dir.path());
 
-    // Create main settings with some existing permissions
+    // The main repo's own local settings already carries an approval Claude
+    // Code recorded directly against it (not through the fold-back).
     let main_claude_dir = main_dir.path().join(".claude");
     fs::create_dir_all(&main_claude_dir).unwrap();
-
     let main_settings = json!({
-        "permissions": {
-            "allow": ["Read(src/**)"]
-        }
+        "permissions": { "allow": ["Read(src/**)"] }
     });
     fs::write(
         main_claude_dir.join("settings.local.json"),
@@ -166,14 +186,11 @@ fn test_sync_deduplicates() {
     )
     .unwrap();
 
-    // Create worktree settings with overlapping and new permissions
+    // The worktree approved the same rule, plus a new one.
     let worktree_claude_dir = worktree_dir.path().join(".claude");
     fs::create_dir_all(&worktree_claude_dir).unwrap();
-
     let worktree_settings = json!({
-        "permissions": {
-            "allow": ["Read(src/**)", "Edit(tests/**)"]
-        }
+        "permissions": { "allow": ["Read(src/**)", "Edit(tests/**)"] }
     });
     fs::write(
         worktree_claude_dir.join("settings.local.json"),
@@ -181,20 +198,16 @@ fn test_sync_deduplicates() {
     )
     .unwrap();
 
-    // Run sync
     let result = sync_worktree_permissions(worktree_dir.path(), main_dir.path()).unwrap();
 
-    // Only new permission should be added
-    assert_eq!(result.allow_added, 1);
+    // The rule shared by both sources is recorded once.
+    assert_eq!(result.allow_added, 2);
 
-    // Verify main settings have both but no duplicates
-    let content = fs::read_to_string(main_claude_dir.join("settings.local.json")).unwrap();
-    let main_settings: Value = serde_json::from_str(&content).unwrap();
-
-    let allow = main_settings["permissions"]["allow"].as_array().unwrap();
-    let read_count = allow.iter().filter(|v| *v == "Read(src/**)").count();
+    let approved = approved_allow(&state_root);
+    let read_count = approved.iter().filter(|v| *v == "Read(src/**)").count();
     assert_eq!(read_count, 1, "Read(src/**) should appear exactly once");
-    assert!(allow.iter().any(|v| v == "Edit(tests/**)"));
+    assert!(approved.iter().any(|v| v == "Edit(tests/**)"));
+    assert_eq!(approved.len(), 2);
 }
 
 #[test]
@@ -211,19 +224,18 @@ fn test_sync_missing_worktree_settings() {
     assert_eq!(result.deny_added, 0);
 }
 
+/// Formerly `test_sync_creates_main_settings`: with no destination file left
+/// to create, the invariant becomes that sync never creates one.
 #[test]
-fn test_sync_creates_main_settings() {
+fn test_sync_never_creates_main_settings() {
     let worktree_dir = TempDir::new().unwrap();
     let main_dir = TempDir::new().unwrap();
+    let state_root = create_state_root(main_dir.path());
 
-    // Create worktree settings
     let worktree_claude_dir = worktree_dir.path().join(".claude");
     fs::create_dir_all(&worktree_claude_dir).unwrap();
-
     let worktree_settings = json!({
-        "permissions": {
-            "allow": ["Read(src/**)"]
-        }
+        "permissions": { "allow": ["Read(src/**)"] }
     });
     fs::write(
         worktree_claude_dir.join("settings.local.json"),
@@ -231,59 +243,44 @@ fn test_sync_creates_main_settings() {
     )
     .unwrap();
 
-    // Verify main settings don't exist yet
-    let main_settings_path = main_dir.path().join(".claude/settings.local.json");
-    assert!(!main_settings_path.exists());
+    assert_main_settings_never_created(main_dir.path());
 
-    // Run sync
     let result = sync_worktree_permissions(worktree_dir.path(), main_dir.path()).unwrap();
 
     assert_eq!(result.allow_added, 1);
 
-    // Verify main settings now exist and have the permission
-    assert!(main_settings_path.exists());
-    let content = fs::read_to_string(&main_settings_path).unwrap();
-    let main_settings: Value = serde_json::from_str(&content).unwrap();
-
-    let allow = main_settings["permissions"]["allow"].as_array().unwrap();
-    assert!(allow.iter().any(|v| v == "Read(src/**)"));
+    // The rule landed in the loom-owned approved list, not a main settings file.
+    assert_main_settings_never_created(main_dir.path());
+    let approved = approved_allow(&state_root);
+    assert!(approved.iter().any(|v| v == "Read(src/**)"));
 }
 
+/// Formerly `test_sync_preserves_other_fields`: with the main settings file
+/// never written at all, the invariant becomes byte-for-byte identity.
 #[test]
-fn test_sync_preserves_other_fields() {
+fn test_sync_leaves_main_settings_byte_identical() {
     let worktree_dir = TempDir::new().unwrap();
     let main_dir = TempDir::new().unwrap();
+    let state_root = create_state_root(main_dir.path());
 
     // Create main settings with other fields
     let main_claude_dir = main_dir.path().join(".claude");
     fs::create_dir_all(&main_claude_dir).unwrap();
-
     let main_settings = json!({
-        "permissions": {
-            "allow": ["Read(existing/**)"]
-        },
-        "hooks": {
-            "PreToolUse": []
-        },
+        "permissions": { "allow": ["Read(existing/**)"] },
+        "hooks": { "PreToolUse": [] },
         "custom_field": "preserved",
-        "nested": {
-            "key": "value"
-        }
+        "nested": { "key": "value" }
     });
-    fs::write(
-        main_claude_dir.join("settings.local.json"),
-        serde_json::to_string_pretty(&main_settings).unwrap(),
-    )
-    .unwrap();
+    let main_settings_path = main_claude_dir.join("settings.local.json");
+    let original_content = serde_json::to_string_pretty(&main_settings).unwrap();
+    fs::write(&main_settings_path, &original_content).unwrap();
 
     // Create worktree settings with new permissions
     let worktree_claude_dir = worktree_dir.path().join(".claude");
     fs::create_dir_all(&worktree_claude_dir).unwrap();
-
     let worktree_settings = json!({
-        "permissions": {
-            "allow": ["Read(src/**)"]
-        }
+        "permissions": { "allow": ["Read(src/**)"] }
     });
     fs::write(
         worktree_claude_dir.join("settings.local.json"),
@@ -291,27 +288,25 @@ fn test_sync_preserves_other_fields() {
     )
     .unwrap();
 
-    // Run sync
     sync_worktree_permissions(worktree_dir.path(), main_dir.path()).unwrap();
 
-    // Verify other fields are preserved
-    let content = fs::read_to_string(main_claude_dir.join("settings.local.json")).unwrap();
-    let main_settings: Value = serde_json::from_str(&content).unwrap();
+    // The main settings file, custom fields and all, is untouched byte for byte.
+    assert_eq!(
+        fs::read_to_string(&main_settings_path).unwrap(),
+        original_content
+    );
 
-    assert_eq!(main_settings["custom_field"], "preserved");
-    assert_eq!(main_settings["nested"]["key"], "value");
-    assert!(main_settings["hooks"]["PreToolUse"].as_array().is_some());
-
-    // Verify permissions also include both old and new
-    let allow = main_settings["permissions"]["allow"].as_array().unwrap();
-    assert!(allow.iter().any(|v| v == "Read(existing/**)"));
-    assert!(allow.iter().any(|v| v == "Read(src/**)"));
+    // Both the pre-existing and the new rule reached the approved list instead.
+    let approved = approved_allow(&state_root);
+    assert!(approved.iter().any(|v| v == "Read(existing/**)"));
+    assert!(approved.iter().any(|v| v == "Read(src/**)"));
 }
 
 #[test]
 fn test_sync_idempotent() {
     let worktree_dir = TempDir::new().unwrap();
     let main_dir = TempDir::new().unwrap();
+    let state_root = create_state_root(main_dir.path());
 
     // Create worktree settings
     let worktree_claude_dir = worktree_dir.path().join(".claude");
@@ -335,20 +330,13 @@ fn test_sync_idempotent() {
 
     // First sync should add permissions
     assert_eq!(result1.allow_added, 2);
-    assert_eq!(result1.deny_added, 1);
+    assert_eq!(result1.deny_added, 0);
 
     // Second sync should add nothing (idempotent)
     assert_eq!(result2.allow_added, 0);
     assert_eq!(result2.deny_added, 0);
 
     // Verify final state has no duplicates
-    let main_settings_path = main_dir.path().join(".claude/settings.local.json");
-    let content = fs::read_to_string(&main_settings_path).unwrap();
-    let main_settings: Value = serde_json::from_str(&content).unwrap();
-
-    let allow = main_settings["permissions"]["allow"].as_array().unwrap();
-    assert_eq!(allow.len(), 2);
-
-    let deny = main_settings["permissions"]["deny"].as_array().unwrap();
-    assert_eq!(deny.len(), 1);
+    let approved = approved_allow(&state_root);
+    assert_eq!(approved.len(), 2);
 }

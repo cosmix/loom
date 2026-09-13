@@ -92,131 +92,6 @@ fn test_extract_permissions_empty() {
 }
 
 #[test]
-fn test_merge_permission_vecs() {
-    let a = vec!["Read(foo)".to_string(), "Write(bar)".to_string()];
-    let b = vec!["Write(bar)".to_string(), "Bash(cargo:*)".to_string()];
-
-    let merged = merge_permission_vecs(a, b);
-    assert_eq!(merged.len(), 3);
-    assert!(merged.contains(&"Read(foo)".to_string()));
-    assert!(merged.contains(&"Write(bar)".to_string()));
-    assert!(merged.contains(&"Bash(cargo:*)".to_string()));
-}
-
-#[test]
-fn test_merge_permission_vecs_empty() {
-    let a: Vec<String> = vec![];
-    let b = vec!["Read(foo)".to_string()];
-
-    let merged = merge_permission_vecs(a, b);
-    assert_eq!(merged, vec!["Read(foo)"]);
-}
-
-#[test]
-fn test_refresh_worktree_settings_local_merges_permissions() {
-    let temp_dir = TempDir::new().unwrap();
-    let repo_root = temp_dir.path().join("repo");
-    let worktree = temp_dir.path().join("worktree");
-
-    // Setup main repo with permission A
-    let main_claude = repo_root.join(".claude");
-    std::fs::create_dir_all(&main_claude).unwrap();
-    let main_settings = json!({
-        "permissions": {
-            "allow": ["Read(main_perm)"]
-        }
-    });
-    std::fs::write(
-        main_claude.join("settings.local.json"),
-        serde_json::to_string_pretty(&main_settings).unwrap(),
-    )
-    .unwrap();
-
-    // Setup worktree with permission B
-    let wt_claude = worktree.join(".claude");
-    std::fs::create_dir_all(&wt_claude).unwrap();
-    let wt_settings = json!({
-        "permissions": {
-            "allow": ["Write(worktree_perm)"]
-        }
-    });
-    std::fs::write(
-        wt_claude.join("settings.local.json"),
-        serde_json::to_string_pretty(&wt_settings).unwrap(),
-    )
-    .unwrap();
-
-    // Refresh should merge, not overwrite
-    let result = refresh_worktree_settings_local(&worktree, &repo_root).unwrap();
-    assert!(result);
-
-    // Verify merged result
-    let merged_content = std::fs::read_to_string(wt_claude.join("settings.local.json")).unwrap();
-    let merged: Value = serde_json::from_str(&merged_content).unwrap();
-
-    let (allow, _deny) = extract_permissions(&merged);
-    assert!(allow.contains(&"Read(main_perm)".to_string()));
-    assert!(allow.contains(&"Write(worktree_perm)".to_string()));
-}
-
-#[test]
-fn test_refresh_worktree_settings_local_no_existing_worktree_settings() {
-    let temp_dir = TempDir::new().unwrap();
-    let repo_root = temp_dir.path().join("repo");
-    let worktree = temp_dir.path().join("worktree");
-
-    // Setup main repo with permission
-    let main_claude = repo_root.join(".claude");
-    std::fs::create_dir_all(&main_claude).unwrap();
-    let main_settings = json!({
-        "permissions": {
-            "allow": ["Read(main_perm)"],
-            "deny": ["Bash(rm:*)"]
-        }
-    });
-    std::fs::write(
-        main_claude.join("settings.local.json"),
-        serde_json::to_string_pretty(&main_settings).unwrap(),
-    )
-    .unwrap();
-
-    // Worktree has no existing settings
-    std::fs::create_dir_all(&worktree).unwrap();
-
-    // Refresh should create new settings
-    let result = refresh_worktree_settings_local(&worktree, &repo_root).unwrap();
-    assert!(result);
-
-    // Verify result contains main permissions
-    let wt_settings_path = worktree.join(".claude/settings.local.json");
-    assert!(wt_settings_path.exists());
-
-    let content = std::fs::read_to_string(&wt_settings_path).unwrap();
-    let settings: Value = serde_json::from_str(&content).unwrap();
-
-    let (allow, deny) = extract_permissions(&settings);
-    assert_eq!(allow, vec!["Read(main_perm)"]);
-    assert_eq!(deny, vec!["Bash(rm:*)"]);
-}
-
-#[test]
-fn test_refresh_worktree_settings_local_no_main_settings() {
-    let temp_dir = TempDir::new().unwrap();
-    let repo_root = temp_dir.path().join("repo");
-    let worktree = temp_dir.path().join("worktree");
-
-    // Setup repo without settings.local.json
-    let main_claude = repo_root.join(".claude");
-    std::fs::create_dir_all(&main_claude).unwrap();
-
-    std::fs::create_dir_all(&worktree).unwrap();
-
-    // Should return false when no main settings exist
-    let result = refresh_worktree_settings_local(&worktree, &repo_root).unwrap();
-    assert!(!result);
-}
-
-#[test]
 fn test_create_worktree_settings_adds_resolved_work_permissions_legacy_layout() {
     let temp_dir = TempDir::new().unwrap();
     let repo_root = temp_dir.path().join("repo");
@@ -542,28 +417,6 @@ fn test_add_settings_local_to_worktree_gitignore_idempotent() {
 }
 
 #[test]
-fn test_add_settings_local_to_main_gitignore_creates_exclude() {
-    let temp_dir = TempDir::new().unwrap();
-    let repo_root = temp_dir.path().join("repo");
-
-    let gitdir = repo_root.join(".git");
-    std::fs::create_dir_all(&gitdir).unwrap();
-
-    add_settings_local_to_main_gitignore(&repo_root).unwrap();
-
-    let exclude_path = gitdir.join("info/exclude");
-    assert!(exclude_path.exists(), "exclude file should be created");
-
-    let content = std::fs::read_to_string(&exclude_path).unwrap();
-    for pattern in WORKTREE_EXCLUDE_PATTERNS {
-        assert!(
-            content.contains(pattern),
-            "exclude should contain pattern {pattern:?}, got: {content}"
-        );
-    }
-}
-
-#[test]
 fn test_add_settings_local_appends_to_existing_exclude() {
     let temp_dir = TempDir::new().unwrap();
     let repo_root = temp_dir.path().join("repo");
@@ -573,7 +426,7 @@ fn test_add_settings_local_appends_to_existing_exclude() {
     std::fs::create_dir_all(&info_dir).unwrap();
     std::fs::write(info_dir.join("exclude"), "# existing patterns\n*.log\n").unwrap();
 
-    add_settings_local_to_main_gitignore(&repo_root).unwrap();
+    add_settings_local_to_worktree_gitignore(&repo_root).unwrap();
 
     let content = std::fs::read_to_string(info_dir.join("exclude")).unwrap();
     assert!(content.contains("*.log"), "existing patterns preserved");

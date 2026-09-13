@@ -237,6 +237,84 @@ fn block_and_undo_session_leaves_no_session_record_and_no_stage_link() {
     );
 }
 
+/// Acceptance: a stage's sandbox validation at spawn writes nothing to
+/// either the main repo's or its worktree's `.claude/settings.local.json` —
+/// the capsule built at spawn (`native/session_settings.rs`) carries the
+/// resolved settings into the session directly. Both files are made
+/// read-only before validation runs; a write attempt would fail loudly
+/// (`std::fs::write` on a 0444 file returns `EACCES`), so a `true` result and
+/// untouched bytes together prove no write was attempted.
+#[test]
+fn validate_stage_sandbox_writes_nothing_to_local_settings() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let temp = work_dir();
+    let work = temp.path().join(".loom").join("work");
+    let repo_root = temp.path();
+
+    let repo_settings = repo_root.join(".claude").join("settings.local.json");
+    std::fs::create_dir_all(repo_settings.parent().unwrap()).unwrap();
+    std::fs::write(&repo_settings, r#"{"repo":true}"#).unwrap();
+    std::fs::set_permissions(&repo_settings, std::fs::Permissions::from_mode(0o444)).unwrap();
+
+    let worktree_settings = repo_root
+        .join(".worktrees")
+        .join("stage-1")
+        .join(".claude")
+        .join("settings.local.json");
+    std::fs::create_dir_all(worktree_settings.parent().unwrap()).unwrap();
+    std::fs::write(&worktree_settings, r#"{"worktree":true}"#).unwrap();
+    std::fs::set_permissions(&worktree_settings, std::fs::Permissions::from_mode(0o444)).unwrap();
+
+    let mut orchestrator = orchestrator_for(&work, repo_root);
+    let stage = Stage::new("stage under test".to_string(), None);
+
+    let ok = orchestrator.validate_stage_sandbox(&stage, "stage-1", "session-1");
+
+    // Restore write permission before asserting, so a failing assertion does
+    // not leave a read-only fixture behind for TempDir's cleanup.
+    std::fs::set_permissions(&repo_settings, std::fs::Permissions::from_mode(0o644)).unwrap();
+    std::fs::set_permissions(&worktree_settings, std::fs::Permissions::from_mode(0o644)).unwrap();
+
+    assert!(ok, "a default sandbox config must validate");
+    assert_eq!(
+        std::fs::read_to_string(&repo_settings).unwrap(),
+        r#"{"repo":true}"#,
+        "the main repo's local settings must be untouched"
+    );
+    assert_eq!(
+        std::fs::read_to_string(&worktree_settings).unwrap(),
+        r#"{"worktree":true}"#,
+        "the worktree's local settings must be untouched"
+    );
+}
+
+/// Acceptance: a stage spawn with an invalid sandbox config still blocks
+/// with `SandboxSetupFailure`, not a propagated error that would kill the
+/// daemon while the stage sits Executing with no session.
+#[test]
+fn validate_stage_sandbox_blocks_an_invalid_config() {
+    let temp = work_dir();
+    let work = temp.path().join(".loom").join("work");
+
+    stage_at(&work, "alpha", StageStatus::Executing);
+
+    let mut orchestrator = orchestrator_for(&work, temp.path());
+    let mut stage = Stage::new("alpha".to_string(), None);
+    stage.id = "alpha".to_string();
+    stage.sandbox.enabled = Some(false);
+
+    let ok = orchestrator.validate_stage_sandbox(&stage, "alpha", "session-does-not-exist");
+    assert!(!ok, "an invalid sandbox config must refuse to spawn");
+
+    let after = load_stage("alpha", &work).unwrap();
+    assert_eq!(after.status, StageStatus::Blocked);
+    assert_eq!(
+        after.failure_info.map(|f| f.failure_type),
+        Some(FailureType::SandboxSetupFailure)
+    );
+}
+
 /// The eviction guard: once a stage has a tracked session, a second insert
 /// for the same stage must not silently replace it. Silent replacement is how
 /// the daemon stopped monitoring an original session the moment a duplicate

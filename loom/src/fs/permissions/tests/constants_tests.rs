@@ -18,9 +18,6 @@ fn test_loom_permissions_constant() {
     // Main repo permissions - tightened to minimum necessary
     assert!(LOOM_PERMISSIONS.contains(&"Bash(loom *)"));
     assert!(LOOM_PERMISSIONS.contains(&"Read(.loom/work/**)"));
-    // Handoffs are the only `.loom/work` subtree a file tool may write;
-    // everything else goes through the loom CLI.
-    assert!(LOOM_PERMISSIONS.contains(&"Edit(.loom/work/handoffs/**)"));
     // Only CLAUDE.md files, not all of .claude/
     assert!(LOOM_PERMISSIONS.contains(&"Read(.claude/CLAUDE.md)"));
     assert!(LOOM_PERMISSIONS.contains(&"Read(~/.claude/CLAUDE.md)"));
@@ -34,7 +31,6 @@ fn test_loom_permissions_constant() {
 fn test_worktree_permissions_constant() {
     // Worktree permissions - same tightened set
     assert!(LOOM_PERMISSIONS_WORKTREE.contains(&"Read(.loom/work/**)"));
-    assert!(LOOM_PERMISSIONS_WORKTREE.contains(&"Edit(.loom/work/handoffs/**)"));
     // Only CLAUDE.md files, not all of .claude/
     assert!(LOOM_PERMISSIONS_WORKTREE.contains(&"Read(.claude/CLAUDE.md)"));
     assert!(LOOM_PERMISSIONS_WORKTREE.contains(&"Read(~/.claude/CLAUDE.md)"));
@@ -65,6 +61,24 @@ fn loom_permission_constants_never_grant_a_write_rule() {
             !perms.contains(&"Edit(.loom/work/**)"),
             "{name} must not grant a broad edit over the .loom/work root"
         );
+    }
+}
+
+#[test]
+fn loom_permission_constants_never_grant_a_handoff_edit_rule() {
+    // Handoffs used to be the one `.loom/work` subtree a file tool could
+    // write directly. State changes now travel through the relay hook
+    // (CLAUDE.md rule 11), so no spelling of this grant may remain.
+    for (name, perms) in [
+        ("LOOM_PERMISSIONS", LOOM_PERMISSIONS),
+        ("LOOM_PERMISSIONS_WORKTREE", LOOM_PERMISSIONS_WORKTREE),
+    ] {
+        for handoff_edit in ["Edit(.loom/work/handoffs/**)", "Edit(.work/handoffs/**)"] {
+            assert!(
+                !perms.contains(&handoff_edit),
+                "{name} must not grant {handoff_edit}"
+            );
+        }
     }
 }
 

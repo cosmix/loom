@@ -19,8 +19,10 @@
 //!
 //! ## Configuration
 //!
-//! Hooks are configured via `.claude/settings.json` in each worktree.
-//! The hook scripts are located in the loom installation directory under `hooks/`.
+//! Hooks are configured into each session's capsule
+//! (`orchestrator/terminal/native/session_settings.rs`), not into a worktree's
+//! own settings files. The hook scripts are located in the loom installation
+//! directory under `hooks/`.
 
 mod config;
 pub mod events;
@@ -35,4 +37,4 @@ pub use events::{
     log_hook_event, read_recent_events, read_session_events, read_stage_events, HookEventLog,
     HookEventPayload,
 };
-pub use generator::{find_hooks_dir, generate_hooks_settings, setup_hooks_for_worktree};
+pub use generator::find_hooks_dir;

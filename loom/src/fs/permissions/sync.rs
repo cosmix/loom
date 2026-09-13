@@ -1,20 +1,22 @@
-//! Permission synchronization from worktree to main repo settings
+//! Permission fold-back from a worktree's settings into the loom-owned
+//! approved-permissions list.
 //!
 //! When Claude Code sessions run in worktrees, they may be granted additional
-//! permissions that are stored in the worktree's settings.local.json. This module
-//! provides functionality to sync those permissions back to the main repo's
-//! settings.local.json file, filtering out worktree-specific paths.
+//! permissions that are stored in the worktree's settings.local.json. This
+//! module reads those permissions (and the main repository's own local allow
+//! list, which Claude Code writes approvals into even for a capsule-launched
+//! session — see `approved.rs`) and records the portable ones into the
+//! loom-owned approved-permissions list, filtering out worktree-specific
+//! paths. It never writes the main repository's or a worktree's
+//! `.claude/settings.local.json` (owner decision 8,
+//! `doc/plans/PLAN-loom-state-confinement.md`).
 
 use anyhow::{Context, Result};
-use fs2::FileExt;
 use serde_json::{json, Value};
-use std::collections::HashSet;
-use std::fs::{self, OpenOptions};
-use std::io::{Read, Seek, Write};
+use std::fs;
 use std::path::{Path, PathBuf};
 
 use super::write_rules::is_inert_write_permission;
-use crate::git::worktree::refresh_worktree_settings_local;
 
 /// Patterns that indicate a worktree-specific permission that should not be synced.
 ///
@@ -25,17 +27,19 @@ use crate::git::worktree::refresh_worktree_settings_local;
 /// to a completely different — and usually dangerous — location.
 const WORKTREE_PATH_PATTERNS: &[&str] = &["../", ".worktrees/"];
 
-/// Sync permissions from a worktree's settings.local.json to the main repo's settings
+/// Fold a worktree's approved permissions back into the loom-owned
+/// approved-permissions list.
 ///
 /// This function:
 /// 1. Reads the worktree's settings.local.json (from both worktree root and working_dir)
-/// 2. Extracts permissions.allow and permissions.deny arrays
-/// 3. Drops inert `Write(...)` rules (see `is_inert_write_permission`) and
-///    filters out worktree-specific paths (containing ../../ or .worktrees/)
-/// 4. Acquires an exclusive file lock on the main settings.local.json
-/// 5. Merges new permissions (skipping duplicates)
-/// 6. Writes back atomically
-/// 7. Propagates the updated permissions to all other existing worktrees
+/// 2. Extracts the permissions.allow array
+/// 3. Normalizes a single-leading-slash path to its cwd-relative form (see
+///    `normalize_single_slash_path`), drops inert `Write(...)` rules (see
+///    `is_inert_write_permission`), and rewrites worktree-specific paths
+///    (containing ../../ or .worktrees/) to their portable form
+/// 4. Records the portable rules, plus the main repository's own local allow
+///    list, into `approved.rs`'s loom-owned list, through its control-surface
+///    filter
 ///
 /// # Arguments
 /// * `worktree_path` - The root path of the worktree (`.worktrees/<stage-id>`)
@@ -83,23 +87,31 @@ fn settings_paths_to_check(worktree_path: &Path, working_dir: Option<&Path>) -> 
 /// allow list. Claude Code records a "don't ask again" approval there
 /// (destination `localSettings`, rooted at the operator-owned checkout) even
 /// for a worktree session launched with `--setting-sources user,project`, so
-/// the worktree's own file alone would miss it.
-fn record_approvals(main_repo_path: &Path, main_settings_path: &Path, worktree_allow: &[String]) {
+/// the worktree's own file alone would miss it. Returns how many rules were
+/// newly recorded.
+fn record_approvals(
+    main_repo_path: &Path,
+    main_settings_path: &Path,
+    worktree_allow: &[String],
+) -> usize {
     let mut rules = worktree_allow.to_vec();
     match read_settings(main_settings_path) {
-        Ok(settings) => rules.extend(portable_permissions(
-            extract_permissions(&settings).0,
-            false,
-        )),
+        Ok(settings) => rules.extend(portable_permissions(extract_permissions(&settings).0)),
         Err(error) => tracing::warn!(
             %error,
             "cannot read the main repository's local settings for approved permissions"
         ),
     }
-    super::approved::record_fold_back(main_repo_path, &rules);
+    super::approved::record_fold_back(main_repo_path, &rules)
 }
 
-/// Sync permissions with an explicit working directory
+/// Sync permissions with an explicit working directory.
+///
+/// Reads the worktree's `.claude/settings.local.json` (and the working
+/// directory's, and the main repository's local allow list), and records the
+/// portable allow rules into the loom-owned approved-permissions list
+/// (`approved.rs`). Never writes `main_repo_path`'s or the worktree's
+/// `.claude/settings.local.json` — Claude Code owns those files.
 pub fn sync_worktree_permissions_with_working_dir(
     worktree_path: &Path,
     main_repo_path: &Path,
@@ -107,58 +119,42 @@ pub fn sync_worktree_permissions_with_working_dir(
 ) -> Result<SyncResult> {
     let main_settings_path = main_repo_path.join(".claude/settings.local.json");
 
-    // Collect permissions from all settings files
+    // Collect allow permissions from every settings file a session's
+    // approvals could have landed in.
     let mut all_allow_perms: Vec<String> = Vec::new();
-    let mut all_deny_perms: Vec<String> = Vec::new();
-
     for settings_path in &settings_paths_to_check(worktree_path, working_dir) {
         let worktree_settings = read_settings(settings_path)?;
-        let (allow_perms, deny_perms) = extract_permissions(&worktree_settings);
-        all_allow_perms.extend(allow_perms);
-        all_deny_perms.extend(deny_perms);
+        all_allow_perms.extend(extract_permissions(&worktree_settings).0);
     }
 
     // Deduplicate
     all_allow_perms.sort();
     all_allow_perms.dedup();
-    all_deny_perms.sort();
-    all_deny_perms.dedup();
 
-    let filtered_allow = portable_permissions(all_allow_perms, false);
-    let filtered_deny = portable_permissions(all_deny_perms, true);
-    record_approvals(main_repo_path, &main_settings_path, &filtered_allow);
+    let filtered_allow = portable_permissions(all_allow_perms);
+    let allow_added = record_approvals(main_repo_path, &main_settings_path, &filtered_allow);
 
-    // If nothing to sync, return early
-    if filtered_allow.is_empty() && filtered_deny.is_empty() {
-        return Ok(SyncResult {
-            allow_added: 0,
-            deny_added: 0,
-            worktrees_updated: 0,
-        });
-    }
-
-    // Acquire exclusive lock and merge permissions
-    let mut result =
-        merge_permissions_with_lock(&main_settings_path, &filtered_allow, &filtered_deny)?;
-
-    // Propagate updated permissions to all other worktrees
-    // This ensures all worktrees have the latest permissions after a sync
-    if result.allow_added > 0 || result.deny_added > 0 {
-        result.worktrees_updated =
-            propagate_permissions_to_worktrees(main_repo_path, Some(worktree_path))?;
-    }
-
-    Ok(result)
+    Ok(SyncResult {
+        allow_added,
+        // No destination for a propagated deny rule since loom stopped
+        // writing `.claude/settings.local.json`; kept for API compatibility.
+        deny_added: 0,
+        // No sibling-worktree propagation left to do: the loom-owned
+        // approved list is read fresh into every capsule instead.
+        worktrees_updated: 0,
+    })
 }
 
 /// Result of a permission sync operation
 #[derive(Debug, Default)]
 pub struct SyncResult {
-    /// Number of allow permissions added
+    /// Number of allow permissions newly recorded into the loom-owned
+    /// approved-permissions list.
     pub allow_added: usize,
-    /// Number of deny permissions added
+    /// Always 0: no destination remains for a propagated deny rule.
     pub deny_added: usize,
-    /// Number of worktrees updated with propagated permissions
+    /// Always 0: sibling worktrees now read approvals fresh from the
+    /// loom-owned list at spawn instead of being propagated to directly.
     pub worktrees_updated: usize,
 }
 
@@ -202,17 +198,14 @@ fn extract_permissions(settings: &Value) -> (Vec<String>, Vec<String>) {
     (allow, deny)
 }
 
-/// Drop inert `Write(...)` rules, then rewrite worktree-specific paths to their
-/// portable form, keeping every other rule as it is.
-///
-/// `drop_read_denies` is true only for the deny-list call: a `Read(...)` grant must still sync,
-/// but no `Read(...)` deny is ever promoted out of a worktree. See
-/// doc/loom/knowledge/concerns.md § "No Read(...) Deny Rule May Exist in Any Settings File".
-fn portable_permissions(perms: Vec<String>, drop_read_denies: bool) -> Vec<String> {
+/// Normalize a single-leading-slash path to its cwd-relative form, drop inert
+/// `Write(...)` rules, then rewrite worktree-specific paths to their portable
+/// form, keeping every other rule as it is.
+fn portable_permissions(perms: Vec<String>) -> Vec<String> {
     perms
         .into_iter()
+        .map(|p| normalize_single_slash_path(&p))
         .filter(|p| !is_inert_write_permission(p))
-        .filter(|p| !drop_read_denies || !p.starts_with("Read("))
         .filter_map(|p| {
             if is_worktree_specific_permission(&p) {
                 transform_worktree_path(&p)
@@ -221,6 +214,46 @@ fn portable_permissions(perms: Vec<String>, drop_read_denies: bool) -> Vec<Strin
             }
         })
         .collect()
+}
+
+/// Permission types whose argument is a filesystem path, per Claude Code's
+/// path-syntax rules (`permissions.md#read-and-edit`).
+const PATH_ARG_PERMISSION_TYPES: &[&str] = &["Edit", "Read", "Write", "NotebookEdit"];
+
+/// Rewrite a path-argument rule whose path starts with exactly one `/` into
+/// its cwd-relative form, dropping that slash: `Edit(/src/**)` becomes
+/// `Edit(src/**)`.
+///
+/// A single leading `/` resolves relative to the settings file that recorded
+/// it — the recording checkout's root, not wherever the rule is rendered
+/// later. Copied verbatim into a capsule under `W/capsules/`, it would
+/// resolve there instead and silently grant the wrong path, with the
+/// approving session prompted again on a later one. Dropping the slash makes
+/// the rule cwd-relative, so a later session applies it to its own checkout.
+///
+/// `//path` (absolute from the filesystem root), `~/path`, a bare or `./`
+/// relative path, and any rule whose type is not in
+/// `PATH_ARG_PERMISSION_TYPES` (e.g. `Bash(cargo test:*)`) are returned
+/// unchanged.
+fn normalize_single_slash_path(permission: &str) -> String {
+    let Some(open_paren) = permission.find('(') else {
+        return permission.to_string();
+    };
+    let Some(close_paren) = permission.rfind(')') else {
+        return permission.to_string();
+    };
+    if close_paren <= open_paren {
+        return permission.to_string();
+    }
+    let perm_type = &permission[..open_paren];
+    if !PATH_ARG_PERMISSION_TYPES.contains(&perm_type) {
+        return permission.to_string();
+    }
+    let path_str = &permission[open_paren + 1..close_paren];
+    match path_str.strip_prefix('/') {
+        Some(rest) if !rest.starts_with('/') => format!("{perm_type}({rest})"),
+        _ => permission.to_string(),
+    }
 }
 
 /// Check if a permission string contains worktree-specific path patterns
@@ -303,231 +336,6 @@ fn transform_worktree_path(permission: &str) -> Option<String> {
     };
 
     transformed_path.map(|p| format!("{}({})", perm_type, p))
-}
-
-/// Merge permissions into the main settings file with exclusive file locking
-fn merge_permissions_with_lock(
-    main_settings_path: &Path,
-    allow_perms: &[String],
-    deny_perms: &[String],
-) -> Result<SyncResult> {
-    // Ensure .claude directory exists
-    if let Some(parent) = main_settings_path.parent() {
-        fs::create_dir_all(parent)
-            .with_context(|| format!("Failed to create directory {}", parent.display()))?;
-    }
-
-    // Open or create the file with read/write access
-    let file = OpenOptions::new()
-        .read(true)
-        .write(true)
-        .create(true)
-        .truncate(false)
-        .open(main_settings_path)
-        .with_context(|| format!("Failed to open {}", main_settings_path.display()))?;
-
-    // Acquire exclusive lock
-    file.lock_exclusive()
-        .with_context(|| format!("Failed to lock {}", main_settings_path.display()))?;
-
-    // Read current content
-    let mut content = String::new();
-    let mut file_reader = &file;
-    file_reader
-        .read_to_string(&mut content)
-        .context("Failed to read settings file while holding lock")?;
-
-    // Parse or create settings
-    let mut settings: Value = if content.is_empty() {
-        json!({})
-    } else {
-        serde_json::from_str(&content)
-            .with_context(|| format!("Failed to parse {}", main_settings_path.display()))?
-    };
-
-    // Heal stale per-session identity env, and a stale LOOM_WORK_DIR pin,
-    // while rewriting this file. Claude Code applies the main repo's
-    // settings env to worktree sessions, so a stale value here shadows the
-    // wrapper's exports (or defeats WorkDir::new's upward search) in every
-    // session of the repo until something removes it.
-    super::settings::scrub_session_identity_env(&mut settings);
-    super::settings::scrub_stale_work_dir_env(&mut settings);
-
-    // Merge permissions
-    let result = merge_permission_arrays(&mut settings, allow_perms, deny_perms)?;
-
-    // Write back directly to the locked file handle
-    let new_content =
-        serde_json::to_string_pretty(&settings).context("Failed to serialize settings")?;
-
-    // Truncate and rewrite using the locked file handle (preserves lock)
-    let mut file = file; // rebind as mutable
-    file.set_len(0)
-        .with_context(|| format!("Failed to truncate {}", main_settings_path.display()))?;
-    file.seek(std::io::SeekFrom::Start(0))
-        .with_context(|| format!("Failed to seek in {}", main_settings_path.display()))?;
-    file.write_all(new_content.as_bytes())
-        .with_context(|| format!("Failed to write {}", main_settings_path.display()))?;
-    file.flush()
-        .with_context(|| format!("Failed to flush {}", main_settings_path.display()))?;
-
-    // Lock is released when file is dropped
-    drop(file);
-
-    Ok(result)
-}
-
-/// Merge permission arrays into settings, avoiding duplicates
-fn merge_permission_arrays(
-    settings: &mut Value,
-    allow_perms: &[String],
-    deny_perms: &[String],
-) -> Result<SyncResult> {
-    let settings_obj = settings
-        .as_object_mut()
-        .ok_or_else(|| anyhow::anyhow!("Settings must be a JSON object"))?;
-
-    let permissions = settings_obj
-        .entry("permissions")
-        .or_insert_with(|| json!({}));
-
-    let permissions_obj = permissions
-        .as_object_mut()
-        .ok_or_else(|| anyhow::anyhow!("permissions must be a JSON object"))?;
-
-    // Merge allow permissions
-    let allow_added = merge_permission_array(permissions_obj, "allow", allow_perms)?;
-
-    // Merge deny permissions
-    let deny_added = merge_permission_array(permissions_obj, "deny", deny_perms)?;
-
-    Ok(SyncResult {
-        allow_added,
-        deny_added,
-        worktrees_updated: 0, // Set by caller after propagation
-    })
-}
-
-/// Merge a single permission array (allow or deny), returning count of added permissions
-fn merge_permission_array(
-    permissions_obj: &mut serde_json::Map<String, Value>,
-    key: &str,
-    new_perms: &[String],
-) -> Result<usize> {
-    if new_perms.is_empty() {
-        return Ok(0);
-    }
-
-    let arr = permissions_obj.entry(key).or_insert_with(|| json!([]));
-
-    let arr_vec = arr
-        .as_array_mut()
-        .ok_or_else(|| anyhow::anyhow!("permissions.{key} must be a JSON array"))?;
-
-    // Collect existing permissions for deduplication
-    let existing: HashSet<String> = arr_vec
-        .iter()
-        .filter_map(|v| v.as_str().map(String::from))
-        .collect();
-
-    // Add new permissions that don't already exist
-    let mut added = 0;
-    for perm in new_perms {
-        if !existing.contains(perm) {
-            arr_vec.push(json!(perm));
-            added += 1;
-        }
-    }
-
-    Ok(added)
-}
-
-/// List all worktree directories in .worktrees/
-///
-/// Returns paths to worktree directories, excluding the optional source worktree.
-fn list_worktree_paths(main_repo_path: &Path, exclude: Option<&Path>) -> Result<Vec<PathBuf>> {
-    let worktrees_dir = main_repo_path.join(".worktrees");
-
-    if !worktrees_dir.exists() {
-        return Ok(Vec::new());
-    }
-
-    let mut worktree_paths = Vec::new();
-
-    let entries = fs::read_dir(&worktrees_dir).with_context(|| {
-        format!(
-            "Failed to read worktrees directory: {}",
-            worktrees_dir.display()
-        )
-    })?;
-
-    for entry in entries {
-        let entry = entry?;
-        let path = entry.path();
-
-        // Skip if not a directory
-        if !path.is_dir() {
-            continue;
-        }
-
-        // Skip the source worktree (the one that triggered the sync)
-        if let Some(exclude_path) = exclude {
-            // Canonicalize both paths for comparison, or fall back to comparing as-is
-            let path_canonical = path.canonicalize().unwrap_or_else(|_| path.clone());
-            let exclude_canonical = exclude_path
-                .canonicalize()
-                .unwrap_or_else(|_| exclude_path.to_path_buf());
-            if path_canonical == exclude_canonical {
-                continue;
-            }
-        }
-
-        // Check if this is a valid worktree (has .claude directory)
-        let claude_dir = path.join(".claude");
-        if claude_dir.exists() {
-            worktree_paths.push(path);
-        }
-    }
-
-    Ok(worktree_paths)
-}
-
-/// Propagate permissions to all existing worktrees
-///
-/// After permissions are synced to the main repo, this function copies the updated
-/// settings.local.json to all other worktrees. This ensures all worktrees have
-/// the latest permissions without requiring a restart.
-///
-/// # Arguments
-/// * `main_repo_path` - Path to the main repository root
-/// * `exclude` - Optional path to exclude (typically the worktree that triggered the sync)
-///
-/// # Returns
-/// Number of worktrees updated
-fn propagate_permissions_to_worktrees(
-    main_repo_path: &Path,
-    exclude: Option<&Path>,
-) -> Result<usize> {
-    let worktree_paths = list_worktree_paths(main_repo_path, exclude)?;
-
-    let mut updated = 0;
-    for worktree_path in worktree_paths {
-        // Use refresh_worktree_settings_local which handles locking
-        match refresh_worktree_settings_local(&worktree_path, main_repo_path) {
-            Ok(true) => updated += 1,
-            Ok(false) => {} // No main settings.local.json exists, nothing to propagate
-            Err(e) => {
-                // Log warning but continue with other worktrees
-                eprintln!(
-                    "Warning: Failed to propagate permissions to {}: {}",
-                    worktree_path.display(),
-                    e
-                );
-            }
-        }
-    }
-
-    Ok(updated)
 }
 
 #[cfg(test)]

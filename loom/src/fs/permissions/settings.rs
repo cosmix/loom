@@ -29,7 +29,7 @@ use std::path::Path;
 use super::constants::LOOM_PERMISSIONS;
 use super::hooks::{configure_loom_hooks, install_loom_hooks, install_loom_hooks_to};
 use super::write_rules::{
-    heal_inert_write_denies, prune_legacy_work_write_grants, prune_loom_read_denies,
+    heal_inert_write_denies, prune_legacy_permission_grants, prune_loom_read_denies,
 };
 use crate::fs::locking::locked_write;
 
@@ -257,7 +257,7 @@ fn ensure_loom_permissions_inner(
         .as_array_mut()
         .ok_or_else(|| anyhow::anyhow!("permissions.allow must be a JSON array"))?;
 
-    let removed_permissions = prune_legacy_work_write_grants(allow_arr);
+    let removed_permissions = prune_legacy_permission_grants(allow_arr);
 
     // Collect existing permissions as strings for deduplication
     let existing: std::collections::HashSet<String> = allow_arr
@@ -304,7 +304,7 @@ fn ensure_loom_permissions_inner(
                 );
             }
             if removed_permissions > 0 {
-                println!("  Removed {removed_permissions} inert .loom/work write grant(s)");
+                println!("  Removed {removed_permissions} retired permission grant(s)");
             }
             if migrated {
                 println!(
@@ -379,8 +379,6 @@ fn ensure_loom_hooks_local_inner(repo_root: &Path, verbose: bool) -> Result<()> 
         false
     };
 
-    let codex_configured = super::codex_sandbox::merge_allowances(settings_obj);
-
     // Heals inert `Write(...)` spellings and loom-written `Read(...)` denies;
     // see doc/loom/knowledge/concerns.md § "No Read(...) Deny Rule May Exist".
     let denies_migrated =
@@ -390,7 +388,6 @@ fn ensure_loom_hooks_local_inner(repo_root: &Path, verbose: bool) -> Result<()> 
         (hooks_configured, "Configured loom hooks"),
         (env_configured, "Configured agent teams env var"),
         (worktree_configured, "Disabled worktree isolation"),
-        (codex_configured, "Granted codex + cache sandbox access"),
         (stale_env_removed, "Removed stale session env vars"),
         (
             denies_migrated,

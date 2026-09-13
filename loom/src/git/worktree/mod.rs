@@ -33,7 +33,5 @@ pub use operations::{
 pub use parser::WorktreeInfo;
 pub use paths::{find_repo_root_from_cwd, find_worktree_root_from_cwd};
 pub use settings::{
-    add_settings_local_to_main_gitignore, add_settings_local_to_worktree_gitignore,
-    ensure_work_symlink, is_worktree_scaffold_path, refresh_worktree_settings_local,
-    setup_worktree_hooks,
+    add_settings_local_to_worktree_gitignore, ensure_work_symlink, is_worktree_scaffold_path,
 };

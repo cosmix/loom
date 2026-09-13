@@ -89,7 +89,53 @@ fn test_ensure_loom_permissions_prunes_legacy_work_write_grants() {
     assert!(allow.iter().any(|v| v == "Write(src/**)"));
     assert!(allow.iter().any(|v| v == "Read(src/**)"));
     // The replacement grant is in place.
-    assert!(allow.iter().any(|v| v == "Edit(.loom/work/handoffs/**)"));
+    assert!(allow.iter().any(|v| v == "Read(.loom/work/**)"));
+}
+
+#[test]
+fn test_ensure_loom_permissions_removes_a_handoff_edit_grant() {
+    // An older loom version wrote the handoff `Edit` grant into
+    // `.claude/settings.json`; state changes now travel through the relay
+    // hook, so both spellings must be pruned on the next `ensure_loom_permissions`
+    // run, and everything else in the file must survive untouched.
+    let temp_dir = TempDir::new().unwrap();
+    let repo_root = temp_dir.path();
+    let claude_dir = repo_root.join(".claude");
+    fs::create_dir_all(&claude_dir).unwrap();
+
+    let polluted = json!({
+        "permissions": {
+            "allow": [
+                "Edit(.loom/work/handoffs/**)",
+                "Edit(.work/handoffs/**)",
+                "Read(.loom/work/**)",
+                "Bash(loom *)",
+                "Edit(src/**)"
+            ]
+        }
+    });
+    fs::write(
+        claude_dir.join("settings.json"),
+        serde_json::to_string_pretty(&polluted).unwrap(),
+    )
+    .unwrap();
+
+    ensure_loom_permissions_to(repo_root, Some(&temp_dir.path().join("hooks"))).unwrap();
+
+    let content = fs::read_to_string(claude_dir.join("settings.json")).unwrap();
+    let settings: Value = serde_json::from_str(&content).unwrap();
+    let allow: Vec<&str> = settings["permissions"]["allow"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|v| v.as_str())
+        .collect();
+
+    assert!(!allow.contains(&"Edit(.loom/work/handoffs/**)"));
+    assert!(!allow.contains(&"Edit(.work/handoffs/**)"));
+    assert!(allow.contains(&"Read(.loom/work/**)"));
+    assert!(allow.contains(&"Bash(loom *)"));
+    assert!(allow.contains(&"Edit(src/**)"));
 }
 
 #[test]

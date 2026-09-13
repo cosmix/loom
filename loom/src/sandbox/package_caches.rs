@@ -31,16 +31,24 @@
 //! Both are granted through the plan's `sandbox.filesystem.allow_write`.
 
 /// Per-user package-manager cache directories, tilde form, granted to EVERY stage.
-pub const PACKAGE_MANAGER_CACHE_WRITE_PATHS: [&str; 29] = [
+///
+/// Owner decision 11: `~/.rustup/toolchains` and `~/.local/share/uv` are
+/// dropped entirely — both are executable install directories, not caches —
+/// and the operator preinstalls toolchains instead. The pnpm home is narrowed
+/// to its `store` subdirectory for the same reason: pnpm keeps its own
+/// installed global binaries directly under the home, not only under `store`.
+pub const PACKAGE_MANAGER_CACHE_WRITE_PATHS: [&str; 27] = [
     // bun
     "~/.bun/install/cache",
     // npm — the whole dir is cache/logs (`_cacache`, `_logs`, `_npx`, `_prebuilds`, update-notifier stamp)
     "~/.npm",
-    // pnpm — store, metadata cache, state; Linux then macOS
-    "~/.local/share/pnpm",
+    // pnpm — store only (the pnpm home itself also holds pnpm's own installed
+    // global binaries; see the module doc), plus metadata cache and state.
+    // Linux then macOS.
+    "~/.local/share/pnpm/store",
     "~/.cache/pnpm",
     "~/.local/state/pnpm",
-    "~/Library/pnpm",
+    "~/Library/pnpm/store",
     "~/Library/Caches/pnpm",
     // yarn — v1 cache (Linux, macOS) and berry's global cache
     "~/.cache/yarn",
@@ -56,15 +64,15 @@ pub const PACKAGE_MANAGER_CACHE_WRITE_PATHS: [&str; 29] = [
     "~/.cargo/.package-cache",
     "~/.cargo/.package-cache-mutate",
     "~/.cargo/.global-cache",
-    // rustup — a `rust-toolchain.toml` pin auto-installs into these
-    "~/.rustup/toolchains",
+    // rustup — download/tracking files only. NOT `~/.rustup/toolchains`: see
+    // the module doc.
     "~/.rustup/downloads",
     "~/.rustup/tmp",
     "~/.rustup/update-hashes",
-    // uv — cache (Linux, macOS) and managed pythons/tools
+    // uv — cache only. NOT `~/.local/share/uv` (managed pythons/tools): see
+    // the module doc.
     "~/.cache/uv",
     "~/Library/Caches/uv",
-    "~/.local/share/uv",
     // pip
     "~/.cache/pip",
     "~/Library/Caches/pip",
@@ -117,6 +125,38 @@ mod tests {
                 !PACKAGE_MANAGER_CACHE_WRITE_PATHS.contains(parent),
                 "must not grant the whole parent dir: {parent}"
             );
+        }
+    }
+
+    #[test]
+    fn never_grants_an_executable_install_directory() {
+        // Section 11 ("`LOOM_BIN`, hook helpers via `LOOM_HOOK_PATH`"): a
+        // package-manager grant that reaches an install directory lets a
+        // session overwrite `loom`, `cargo`, `uv`, or any hook helper
+        // resolved through the filtered PATH. Pins owner decision 11
+        // (rustup, uv) and extends it to the other managers' bin/global
+        // install directories, including the pnpm home itself — pnpm installs
+        // global binaries there, not only under `<home>/store`.
+        const INSTALL_DIRS: &[&str] = &[
+            "~/.rustup/toolchains",
+            "~/.local/share/uv",
+            "~/.local/bin",
+            "~/.cargo/bin",
+            "~/.bun/bin",
+            "~/.local/share/pnpm",
+            "~/Library/pnpm",
+        ];
+        for install_dir in INSTALL_DIRS {
+            for granted in PACKAGE_MANAGER_CACHE_WRITE_PATHS {
+                assert!(
+                    granted != *install_dir,
+                    "grants the install directory itself: {install_dir}"
+                );
+                assert!(
+                    !install_dir.starts_with(&format!("{granted}/")),
+                    "{granted} is an ancestor of install directory {install_dir}"
+                );
+            }
         }
     }
 

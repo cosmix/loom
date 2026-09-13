@@ -193,11 +193,10 @@ pub const LOOM_HOOKS: &[(&str, &str)] = &[
 /// Includes worktree permissions so settings.json can be read by worktrees
 /// and all sessions share the same permission file (approvals propagate)
 pub const LOOM_PERMISSIONS: &[&str] = &[
-    // Read access to loom state, plus the ONE directory agents write with a
-    // file tool. `.loom/work/` is otherwise read-only to file tools (CLAUDE.md
-    // rule 11: state changes go through the `loom` CLI), and handoffs are the
-    // sole direct write root — the same narrowing `sandbox/settings.rs` already
-    // applies to generated stage settings (`Edit(/<abs>/handoffs/**)`).
+    // Read-only access to loom state via file tools. `.loom/work/` (handoffs
+    // included) is read-only to file tools: state changes travel through the
+    // relay hook, never a direct file-tool write (CLAUDE.md rule 11), so no
+    // subdirectory gets an `Edit` grant here.
     //
     // Deliberately NOT `Edit(<state>/**)` in EITHER spelling: this file is
     // copied verbatim into every stage worktree's settings.json, and a broad
@@ -209,14 +208,11 @@ pub const LOOM_PERMISSIONS: &[&str] = &[
     //
     // Both layouts are listed because this array is layout-unaware and its
     // entries are literal path patterns. A project whose workspace predates the
-    // move still lives at `.work/`, and loom keeps reading AND writing it there;
-    // with only the nested spelling, regenerating that project's settings.json
-    // would strip the handoff-write grant its agents depend on. The unused
-    // spelling matches nothing on either layout, so listing both costs nothing.
+    // move still lives at `.work/`, and loom keeps reading it there; the unused
+    // spelling matches nothing on the other layout, so listing both costs
+    // nothing.
     "Read(.loom/work/**)",
-    "Edit(.loom/work/handoffs/**)",
     "Read(.work/**)",
-    "Edit(.work/handoffs/**)",
     // Read access to instruction files
     "Read(.claude/CLAUDE.md)",
     "Read(~/.claude/CLAUDE.md)",
@@ -237,16 +233,14 @@ pub const LOOM_PERMISSIONS: &[&str] = &[
 /// Worktrees are at .worktrees/stage-X/ with symlink .loom/work -> ../../../.loom/work
 pub const LOOM_PERMISSIONS_WORKTREE: &[&str] = &[
     // Access via the symlink path (how Claude sees the paths). Same shape as
-    // LOOM_PERMISSIONS above and for the same reasons: read-only over the state
-    // root except handoffs, no broad `Edit(<state>/**)` in either spelling that
+    // LOOM_PERMISSIONS above and for the same reasons: read-only over the
+    // entire state root, no broad `Edit(<state>/**)` in either spelling that
     // would re-expose the daemon tokens, and never a `Write(...)` rule (inert —
     // Claude Code's file permission check consults only `Edit(path)`). Both
     // layouts are listed for the same reason too: a worktree of a project whose
     // workspace predates the move symlinks `.work`, not `.loom/work`.
     "Read(.loom/work/**)",
-    "Edit(.loom/work/handoffs/**)",
     "Read(.work/**)",
-    "Edit(.work/handoffs/**)",
     // Read access to instruction files
     "Read(.claude/CLAUDE.md)",
     "Read(~/.claude/CLAUDE.md)",

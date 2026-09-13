@@ -1,22 +1,15 @@
 //! Worktree settings management
 //!
 //! Handles creation of settings files (.claude/, CLAUDE.md) for worktrees.
-//! Also supports hooks configuration when session context is available.
 
 use anyhow::{Context, Result};
-#[allow(unused_imports)] // Required for lock_shared() method on File
-use fs2::FileExt;
 use serde_json::{json, Map, Value};
-use std::collections::HashSet;
-use std::fs::File;
-use std::io::{Read, Write};
+use std::io::Write;
 use std::path::Path;
 
 use crate::fs::memory::SPOOL_RELPATH as MEMORY_SPOOL_RELPATH;
 use crate::fs::stage_request::SPOOL_RELPATH as REQUEST_SPOOL_RELPATH;
 use crate::fs::work_dir::{Layout, WorkDir};
-use crate::hooks::{setup_hooks_for_worktree, HooksConfig};
-use crate::plan::schema::PermissionMode;
 use crate::telemetry::TELEMETRY_SPOOL_RELPATH;
 const SPOOL_RELPATHS: [&str; 3] = [
     MEMORY_SPOOL_RELPATH,
@@ -102,10 +95,11 @@ pub fn ensure_work_symlink(worktree_path: &Path, repo_root: &Path) -> Result<()>
 /// Set up .claude/ directory for worktree
 ///
 /// We create a real directory and symlink CLAUDE.md from main repo.
-/// settings.json is created separately by the hooks system with merged global + session hooks.
-/// This ensures:
-/// 1. Instructions (CLAUDE.md) are shared
-/// 2. Permissions (settings.json) include both global hooks and session-specific hooks
+/// settings.json is created separately with the resolved state-root grants
+/// (see `create_worktree_settings`). Every session now launches from a
+/// per-session capsule (`native/session_settings.rs`) rather than
+/// `.claude/settings.local.json`, so this no longer copies the main repo's
+/// local settings into the worktree.
 pub fn setup_claude_directory(worktree_path: &Path, repo_root: &Path) -> Result<()> {
     let main_claude_dir = repo_root.join(".claude");
     let worktree_claude_dir = worktree_path.join(".claude");
@@ -134,19 +128,6 @@ pub fn setup_claude_directory(worktree_path: &Path, repo_root: &Path) -> Result<
         let main_settings = main_claude_dir.join("settings.json");
         let worktree_settings = worktree_claude_dir.join("settings.json");
         create_worktree_settings(&main_settings, &worktree_settings, worktree_path)?;
-
-        // Copy settings.local.json if it exists (contains user-granted runtime permissions)
-        // Use file locking to prevent reading a partially written file during concurrent syncs
-        let main_settings_local = main_claude_dir.join("settings.local.json");
-        let worktree_settings_local = worktree_claude_dir.join("settings.local.json");
-        if main_settings_local.exists() {
-            copy_file_with_shared_lock(&main_settings_local, &worktree_settings_local)
-                .with_context(|| "Failed to copy settings.local.json to worktree")?;
-            // The main repo's copy may carry per-session identity env vars from a
-            // previous main-repo session (older loom versions persisted them);
-            // they must not leak into this worktree's settings.
-            scrub_copied_settings_env(&worktree_settings_local);
-        }
     }
 
     Ok(())
@@ -176,160 +157,12 @@ pub fn setup_root_claude_md(worktree_path: &Path, repo_root: &Path) -> Result<()
     Ok(())
 }
 
-/// Best-effort removal of per-session identity env vars and a stale
-/// `LOOM_WORK_DIR` pin from a copied settings file. Leaves the file
-/// untouched if it cannot be parsed.
-fn scrub_copied_settings_env(path: &Path) {
-    let Ok(content) = std::fs::read_to_string(path) else {
-        return;
-    };
-    let Ok(mut settings) = serde_json::from_str::<Value>(&content) else {
-        return;
-    };
-    let identity_removed = crate::fs::permissions::scrub_session_identity_env(&mut settings);
-    let stale_work_dir_removed = crate::fs::permissions::scrub_stale_work_dir_env(&mut settings);
-    if identity_removed || stale_work_dir_removed {
-        if let Ok(updated) = serde_json::to_string_pretty(&settings) {
-            let _ = std::fs::write(path, updated);
-        }
-    }
-}
-
-/// Copy a file with a shared (read) lock on the source.
+/// Extract allow and deny permission arrays from settings.
 ///
-/// This prevents reading a partially written file during concurrent writes.
-/// The source file is locked with a shared lock (allowing other readers),
-/// and the content is read and written to the destination atomically.
-fn copy_file_with_shared_lock(src: &Path, dst: &Path) -> Result<()> {
-    // Open the source file and acquire a shared lock
-    let src_file = File::open(src)
-        .with_context(|| format!("Failed to open source file: {}", src.display()))?;
-
-    src_file
-        .lock_shared()
-        .with_context(|| format!("Failed to acquire shared lock on: {}", src.display()))?;
-
-    // Read content while holding the lock
-    let mut content = Vec::new();
-    let mut reader = &src_file;
-    reader
-        .read_to_end(&mut content)
-        .with_context(|| format!("Failed to read source file: {}", src.display()))?;
-
-    // Lock is released when src_file is dropped, but we can write to dst now
-    // since we have the complete content
-
-    // Write to destination
-    let mut dst_file = File::create(dst)
-        .with_context(|| format!("Failed to create destination file: {}", dst.display()))?;
-
-    dst_file
-        .write_all(&content)
-        .with_context(|| format!("Failed to write to destination file: {}", dst.display()))?;
-
-    Ok(())
-}
-
-/// Merge permissions from main repo's settings.local.json into a worktree.
-///
-/// This is the public interface for refreshing permissions in a worktree.
-/// Instead of overwriting, it merges permissions from both sources:
-/// - Permissions from the main repo's settings.local.json
-/// - Existing permissions in the worktree's settings.local.json (if any)
-///
-/// This ensures worktree-specific permissions are preserved while still
-/// receiving updates from the main repo.
-pub fn refresh_worktree_settings_local(worktree_path: &Path, repo_root: &Path) -> Result<bool> {
-    let main_settings_local = repo_root.join(".claude/settings.local.json");
-    let worktree_settings_local = worktree_path.join(".claude/settings.local.json");
-
-    if !main_settings_local.exists() {
-        return Ok(false);
-    }
-
-    // Ensure .claude directory exists in worktree
-    let worktree_claude_dir = worktree_path.join(".claude");
-    if !worktree_claude_dir.exists() {
-        std::fs::create_dir_all(&worktree_claude_dir)
-            .with_context(|| "Failed to create .claude directory in worktree")?;
-    }
-
-    // Read main repo settings with shared lock
-    let main_settings = read_settings_with_shared_lock(&main_settings_local)?;
-
-    // Read existing worktree settings (if any)
-    let worktree_settings = if worktree_settings_local.exists() {
-        read_settings(&worktree_settings_local)?
-    } else {
-        json!({})
-    };
-
-    // Extract permissions from both
-    let (main_allow, main_deny) = extract_permissions(&main_settings);
-    let (wt_allow, wt_deny) = extract_permissions(&worktree_settings);
-
-    // Merge permissions (union with deduplication)
-    let merged_allow = merge_permission_vecs(main_allow, wt_allow);
-    let mut merged_deny = merge_permission_vecs(main_deny, wt_deny);
-    merged_deny.retain(|perm| !perm.starts_with("Read("));
-
-    // Build merged settings. The base MUST be the worktree's own settings when they exist:
-    // they carry session-specific hooks and the stage-resolved permission mode. Using the main
-    // repo's settings as base (as this function once did) clobbered all of that mid-session
-    // with whatever the last main-repo session left behind. Only permissions are refreshed
-    // from the main repo. When the worktree has no settings yet, fall back to the main copy,
-    // scrubbed of per-session identity env vars.
-    let mut merged = if worktree_settings_local.exists() {
-        worktree_settings
-    } else {
-        let mut base = main_settings.clone();
-        crate::fs::permissions::scrub_session_identity_env(&mut base);
-        crate::fs::permissions::scrub_stale_work_dir_env(&mut base);
-        base
-    };
-    set_permissions(&mut merged, merged_allow, merged_deny)?;
-
-    // Write merged result
-    let content =
-        serde_json::to_string_pretty(&merged).with_context(|| "Failed to serialize settings")?;
-    std::fs::write(&worktree_settings_local, content)
-        .with_context(|| format!("Failed to write {}", worktree_settings_local.display()))?;
-
-    Ok(true)
-}
-
-/// Read and parse a settings.json file with a shared lock
-fn read_settings_with_shared_lock(path: &Path) -> Result<Value> {
-    let file = File::open(path).with_context(|| format!("Failed to open {}", path.display()))?;
-
-    file.lock_shared()
-        .with_context(|| format!("Failed to acquire shared lock on {}", path.display()))?;
-
-    let mut content = String::new();
-    let mut reader = &file;
-    reader
-        .read_to_string(&mut content)
-        .with_context(|| format!("Failed to read {}", path.display()))?;
-
-    // Lock released when file is dropped
-    serde_json::from_str(&content)
-        .with_context(|| format!("Failed to parse {} as JSON", path.display()))
-}
-
-/// Read and parse a settings.json file
-fn read_settings(path: &Path) -> Result<Value> {
-    if !path.exists() {
-        return Ok(json!({}));
-    }
-
-    let content = std::fs::read_to_string(path)
-        .with_context(|| format!("Failed to read {}", path.display()))?;
-
-    serde_json::from_str(&content)
-        .with_context(|| format!("Failed to parse {} as JSON", path.display()))
-}
-
-/// Extract allow and deny permission arrays from settings
+/// Production code no longer copies permissions out of a parsed settings
+/// value (the capsule owns that, per `native/session_settings.rs`); this
+/// survives only as a `tests_settings.rs` assertion helper.
+#[cfg(test)]
 fn extract_permissions(settings: &Value) -> (Vec<String>, Vec<String>) {
     let permissions = settings.get("permissions");
 
@@ -356,42 +189,6 @@ fn extract_permissions(settings: &Value) -> (Vec<String>, Vec<String>) {
     (allow, deny)
 }
 
-/// Merge two permission vectors, removing duplicates
-fn merge_permission_vecs(a: Vec<String>, b: Vec<String>) -> Vec<String> {
-    let mut seen: HashSet<String> = HashSet::new();
-    let mut result = Vec::new();
-
-    for perm in a.into_iter().chain(b) {
-        if seen.insert(perm.clone()) {
-            result.push(perm);
-        }
-    }
-
-    result
-}
-
-/// Set permissions in a settings Value
-fn set_permissions(settings: &mut Value, allow: Vec<String>, deny: Vec<String>) -> Result<()> {
-    let obj = settings
-        .as_object_mut()
-        .ok_or_else(|| anyhow::anyhow!("Settings must be a JSON object"))?;
-
-    let permissions = obj
-        .entry("permissions")
-        .or_insert_with(|| json!({}))
-        .as_object_mut()
-        .ok_or_else(|| anyhow::anyhow!("permissions must be a JSON object"))?;
-
-    if !allow.is_empty() {
-        permissions.insert("allow".to_string(), json!(allow));
-    }
-    if !deny.is_empty() {
-        permissions.insert("deny".to_string(), json!(deny));
-    }
-
-    Ok(())
-}
-
 /// Create settings.json for a worktree with trust setting and inherited config.
 ///
 /// This function:
@@ -404,12 +201,12 @@ fn set_permissions(settings: &mut Value, allow: Vec<String>, deny: Vec<String>) 
 ///
 /// Note: We deliberately do NOT write `permissions.defaultMode` here. The
 /// resolved permission mode (stage-type default + plan override + stage
-/// override) lives in `settings.local.json` written by `sandbox::write_settings`
-/// using `apply_default_mode`. Writing it here would race the sandbox-merge
-/// step and undercut the resolved value. See finding #5 (option 2).
+/// override) lives in the per-session capsule (`native/session_settings.rs`),
+/// not in a file this function touches. Writing it here would race that
+/// resolution and undercut the resolved value. See finding #5 (option 2).
 ///
-/// This creates the base settings.json. The hooks system later merges in
-/// session-specific hooks via setup_worktree_hooks().
+/// This creates the base settings.json. Session-specific hooks are carried
+/// by the capsule instead of being merged in here.
 fn create_worktree_settings(
     main_settings: &Path,
     worktree_settings: &Path,
@@ -483,12 +280,11 @@ fn create_worktree_settings(
         // have exposed them to write. The three narrow entries below are
         // the whole read grant.
         //
-        // This file (`.claude/settings.json`) is written by a different
-        // code path than `settings.local.json`, so it must be safe
-        // standalone rather than depending on `sandbox::write_settings`
-        // always running afterwards. (settings.json is the team-shareable
-        // file per `fs/permissions/settings.rs`'s module doc, though
-        // `.claude/` is gitignored in this repo.)
+        // This file (`.claude/settings.json`) is part of the capsule built
+        // by `sandbox::settings::build_settings`, so it must be safe
+        // standalone and correct on its own. (settings.json is the
+        // team-shareable file per `fs/permissions/settings.rs`'s module
+        // doc, though `.claude/` is gitignored in this repo.)
         //
         // It carries no `Read(...)` deny either, in any shape: Claude Code reads
         // EVERY settings file when deciding whether a Bash command touches a
@@ -548,39 +344,6 @@ fn push_unique_perms(arr: &mut Vec<Value>, perms: impl IntoIterator<Item = Strin
     }
 }
 
-/// Configure hooks for a worktree with session context
-///
-/// This adds Claude Code hooks to the worktree's .claude/settings.json.
-/// Hooks enable:
-/// - Auto-handoff on PreCompact (context exhaustion)
-/// - Learning protection via Stop hook
-/// - Session lifecycle tracking
-///
-/// Session identity (stage/session IDs) is NOT written here: hooks read it
-/// from the process environment exported by the session wrapper script.
-pub fn setup_worktree_hooks(
-    worktree_path: &Path,
-    work_dir: &Path,
-    hooks_dir: &Path,
-    permission_mode: PermissionMode,
-) -> Result<()> {
-    // Canonicalize work_dir to absolute path so hooks work regardless of
-    // Claude Code's current working directory. This fixes "spawn /bin/sh ENOENT"
-    // errors that occur when hooks run from a deleted/changed directory.
-    let absolute_work_dir = work_dir
-        .canonicalize()
-        .unwrap_or_else(|_| std::env::current_dir().unwrap_or_default().join(work_dir));
-
-    let config = HooksConfig::new(hooks_dir.to_path_buf(), absolute_work_dir, permission_mode);
-
-    setup_hooks_for_worktree(worktree_path, &config).with_context(|| {
-        format!(
-            "Failed to setup hooks for worktree: {}",
-            worktree_path.display()
-        )
-    })
-}
-
 /// Append a pattern to a git `info/exclude` file, creating it if absent.
 ///
 /// Idempotent: skips the write when the pattern is already present.
@@ -637,19 +400,12 @@ fn add_worktree_exclude_patterns(git_dir: &Path) -> Result<()> {
 /// by every worktree and the main checkout alike. A previous version of this
 /// function wrote to `.git/worktrees/<stage-id>/info/exclude`, believing it
 /// acted as an exclude file scoped to that worktree; git never reads that
-/// path, so the write was silently inert. Writing to the common dir instead
-/// means this function and [`add_settings_local_to_main_gitignore`] now
-/// target the same file — kept as two entry points because their callers
-/// (worktree creation vs. main-repo knowledge stages) are otherwise
-/// unrelated, and future patterns may diverge between them.
-pub fn add_settings_local_to_worktree_gitignore(repo_root: &Path) -> Result<()> {
-    add_worktree_exclude_patterns(&repo_root.join(".git"))
-}
-
-/// Exclude loom's own runtime paths from the main repo's git exclude.
+/// path, so the write was silently inert.
 ///
-/// Used for knowledge stages that run in the main repo without a dedicated worktree.
-pub fn add_settings_local_to_main_gitignore(repo_root: &Path) -> Result<()> {
+/// `.claude/settings.local.json` stays in `WORKTREE_EXCLUDE_PATTERNS`
+/// because Claude Code itself may still write one, even though loom no
+/// longer does.
+pub fn add_settings_local_to_worktree_gitignore(repo_root: &Path) -> Result<()> {
     add_worktree_exclude_patterns(&repo_root.join(".git"))
 }
 

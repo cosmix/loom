@@ -24,7 +24,6 @@ mod persistence;
 mod recovery;
 mod run;
 mod run_result;
-mod sandbox_grants;
 mod session_adoption;
 mod session_lifecycle;
 mod spawn_setup;
@@ -34,6 +33,7 @@ mod stage_handoff;
 mod stage_telemetry;
 mod verdict_apply;
 
+pub(crate) use crash_classification::spawn_failure_type;
 pub use orchestrator::{Orchestrator, OrchestratorConfig, OrchestratorResult};
 
 /// Clear the current line (status line) before printing a message.
@@ -161,67 +161,119 @@ mod tests {
         assert!(!result.is_success());
     }
 
+    /// Acceptance: a knowledge-stage spawn no longer writes the main repo's
+    /// `.claude/settings.local.json` — the capsule built at spawn carries the
+    /// resolved sandbox settings into the session directly.
     #[test]
-    fn sandbox_settings_write_failure_is_fatal_to_spawn_setup() {
-        let target = tempfile::tempdir().unwrap();
-        std::fs::write(target.path().join(".claude"), "not a directory").unwrap();
-        let config = crate::sandbox::merge_config(
-            &SandboxConfig::default(),
-            &StageSandboxConfig::default(),
-            crate::plan::schema::StageType::Standard,
-            &Implementers::default(),
+    fn validate_knowledge_sandbox_writes_nothing_to_local_settings() {
+        use crate::fs::work_dir::write_terminal_config;
+        use crate::models::session::{SessionBackendKind, TerminalConfig};
+        use crate::models::stage::Stage;
+
+        let temp = tempfile::TempDir::new().unwrap();
+        let repo_root = temp.path().join("repo");
+        let work = repo_root.join(".loom").join("work");
+        std::fs::create_dir_all(&work).unwrap();
+        // Pin the terminal backend to tmux so `Orchestrator::new` never runs
+        // real terminal detection, which fails on a headless test runner
+        // (same trick `stage_executor_tests.rs::work_dir` uses).
+        write_terminal_config(
+            &work,
+            &TerminalConfig {
+                backend: SessionBackendKind::Tmux,
+            },
+        )
+        .unwrap();
+
+        let config = OrchestratorConfig {
+            work_dir: work.clone(),
+            repo_root: repo_root.clone(),
+            enable_skill_routing: false,
+            ..Default::default()
+        };
+        let mut orchestrator =
+            Orchestrator::new(config, ExecutionGraph::build(Vec::new()).unwrap()).unwrap();
+
+        let stage = Stage::new("knowledge stage".to_string(), None);
+        let result = orchestrator
+            .validate_knowledge_sandbox(&stage, "knowledge-1")
+            .unwrap();
+
+        assert!(result.is_some(), "a default sandbox config must validate");
+        assert!(
+            !repo_root.join(".claude/settings.local.json").exists(),
+            "knowledge-stage spawn setup must not write the main repo's local settings"
+        );
+    }
+
+    /// Acceptance: a knowledge-stage spawn with an invalid sandbox config
+    /// still blocks with `SandboxSetupFailure`, not a propagated error that
+    /// would kill the daemon while the stage sits Executing with no session.
+    #[test]
+    fn validate_knowledge_sandbox_blocks_an_invalid_config() {
+        use crate::fs::work_dir::write_terminal_config;
+        use crate::models::failure::FailureType;
+        use crate::models::session::{SessionBackendKind, TerminalConfig};
+        use crate::models::stage::{Stage, StageStatus};
+        use crate::verify::transitions::{load_stage, save_stage};
+
+        let temp = tempfile::TempDir::new().unwrap();
+        let repo_root = temp.path().join("repo");
+        let work = repo_root.join(".loom").join("work");
+        std::fs::create_dir_all(&work).unwrap();
+        write_terminal_config(
+            &work,
+            &TerminalConfig {
+                backend: SessionBackendKind::Tmux,
+            },
+        )
+        .unwrap();
+
+        let config = OrchestratorConfig {
+            work_dir: work.clone(),
+            repo_root: repo_root.clone(),
+            enable_skill_routing: false,
+            ..Default::default()
+        };
+        let mut orchestrator =
+            Orchestrator::new(config, ExecutionGraph::build(Vec::new()).unwrap()).unwrap();
+
+        let mut stage = Stage::new("knowledge stage".to_string(), None);
+        stage.id = "knowledge-1".to_string();
+        stage.status = StageStatus::Executing;
+        stage.sandbox.enabled = Some(false);
+        save_stage(&stage, &work).unwrap();
+
+        let result = orchestrator
+            .validate_knowledge_sandbox(&stage, "knowledge-1")
+            .unwrap();
+        assert!(
+            result.is_none(),
+            "an invalid sandbox config must refuse to spawn"
         );
 
-        let error = sandbox_grants::write_required_sandbox_settings(
-            &config,
-            target.path(),
-            "sandbox-failure",
-        )
-        .expect_err("sandbox settings failure must abort spawn setup");
-
-        assert!(error
-            .to_string()
-            .contains("Failed to enforce sandbox settings"));
+        let after = load_stage("knowledge-1", &work).unwrap();
+        assert_eq!(after.status, StageStatus::Blocked);
+        assert_eq!(
+            after.failure_info.map(|f| f.failure_type),
+            Some(FailureType::SandboxSetupFailure)
+        );
     }
 
     #[test]
     fn install_required_hooks_rejects_missing_hooks_dir() {
-        let target = tempfile::tempdir().unwrap();
-        let work_dir = tempfile::tempdir().unwrap();
-
-        let error = stage_executor::install_required_hooks(
-            None,
-            target.path(),
-            work_dir.path(),
-            crate::plan::schema::PermissionMode::Default,
-            "missing-hooks",
-        )
-        .expect_err("missing hooks directory must abort spawn setup");
+        let error = stage_executor::install_required_hooks(None, "missing-hooks")
+            .expect_err("missing hooks directory must abort spawn setup");
 
         assert!(error.to_string().contains("hooks directory not found"));
     }
 
     #[test]
-    fn install_required_hooks_failure_is_fatal_to_spawn_setup() {
-        let target = tempfile::tempdir().unwrap();
-        let work_dir = tempfile::tempdir().unwrap();
-        // Block `.claude` directory creation the same way the sandbox-settings
-        // test above blocks `write_settings`: put a file where a directory
-        // needs to go.
-        std::fs::write(target.path().join(".claude"), "not a directory").unwrap();
+    fn install_required_hooks_accepts_a_present_hooks_dir_without_writing_anything() {
+        let hooks_dir = tempfile::tempdir().unwrap();
 
-        let error = stage_executor::install_required_hooks(
-            Some(PathBuf::from("/nonexistent/hooks/dir")),
-            target.path(),
-            work_dir.path(),
-            crate::plan::schema::PermissionMode::Default,
-            "hook-install-failure",
-        )
-        .expect_err("hook installation failure must abort spawn setup");
-
-        assert!(error
-            .to_string()
-            .contains("Failed to install Claude Code hooks"));
+        stage_executor::install_required_hooks(Some(hooks_dir.path().to_path_buf()), "stage-1")
+            .expect("a present hooks directory must not abort spawn setup");
     }
 
     #[test]

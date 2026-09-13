@@ -302,3 +302,47 @@ fn test_scrub_identity_and_stale_work_dir_together() {
     assert!(!env.contains_key("LOOM_WORK_DIR"));
     assert_eq!(env["FOO"], json!("keep"));
 }
+
+/// Section 12's stripped-key list, as it applies to the init path
+/// (`ensure_loom_permissions_to`, what `loom init` calls): capsules now carry
+/// the sandbox block, the state-directory reads and the session `HookEvent`
+/// registrations, so none of them may land in `R/.claude/settings.local.json`
+/// any more. The global guard hooks and the agent-teams env var are kept.
+#[test]
+fn test_init_path_writes_no_stripped_keys_into_settings_local() {
+    let temp_dir = TempDir::new().unwrap();
+    let repo_root = temp_dir.path();
+    let hooks_dir = temp_dir.path().join("hooks");
+
+    ensure_loom_permissions_to(repo_root, Some(&hooks_dir)).unwrap();
+
+    let settings_local_path = repo_root.join(".claude/settings.local.json");
+    let content = fs::read_to_string(&settings_local_path).unwrap();
+    let settings: Value = serde_json::from_str(&content).unwrap();
+
+    // Stripped: no sandbox block (codex + package-cache allowances moved
+    // into the per-session capsule).
+    assert!(
+        settings.get("sandbox").is_none(),
+        "init must not write a sandbox block into settings.local.json, got: {settings}"
+    );
+    // Stripped: no LOOM_WORK_DIR pin (never set here, only ever scrubbed).
+    assert!(
+        settings
+            .get("env")
+            .and_then(|env| env.get("LOOM_WORK_DIR"))
+            .is_none(),
+        "init must not write env.LOOM_WORK_DIR into settings.local.json"
+    );
+    // Stripped: no handoff or state-directory Read/Edit rule of any spelling
+    // (init never touches permissions.allow in settings.local.json at all).
+    assert!(
+        settings.pointer("/permissions/allow").is_none(),
+        "init must not write a permissions.allow into settings.local.json"
+    );
+
+    // Kept: the global guard hooks and the agent-teams env var.
+    assert!(settings.get("hooks").is_some());
+    assert_eq!(settings["env"]["CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS"], "1");
+    assert_eq!(settings["worktree"]["bgIsolation"], "none");
+}

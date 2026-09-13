@@ -53,7 +53,4 @@ pub use spawner::{generate_crash_report, CrashReport};
 pub use terminal::backend::SessionBackend;
 pub use terminal::native::NativeBackend;
 // Re-export hooks infrastructure from top-level hooks module
-pub use crate::hooks::{
-    generate_hooks_settings, log_hook_event, setup_hooks_for_worktree, HookEvent, HookEventLog,
-    HookEventPayload, HooksConfig,
-};
+pub use crate::hooks::{log_hook_event, HookEvent, HookEventLog, HookEventPayload, HooksConfig};

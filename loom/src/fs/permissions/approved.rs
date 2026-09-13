@@ -89,11 +89,12 @@ pub(crate) fn record_approved(
 }
 
 /// Record what a finished session approved into the list under the state
-/// root `main_repo_path` resolves to. Best effort: a failure is logged, never
+/// root `main_repo_path` resolves to, returning how many rules were newly
+/// recorded. Best effort: a failure is logged and counts as zero, never
 /// raised, because the fold-back that calls this must still run.
-pub(crate) fn record_fold_back(main_repo_path: &Path, rules: &[String]) {
+pub(crate) fn record_fold_back(main_repo_path: &Path, rules: &[String]) -> usize {
     let Some(work_dir) = super::state_root::resolve_state_root(main_repo_path) else {
-        return;
+        return 0;
     };
     let scratch_root = crate::relay::scratch_root_from_env().ok();
     let hooks_dirs: Vec<PathBuf> = crate::hooks::find_hooks_dir().into_iter().collect();
@@ -104,8 +105,12 @@ pub(crate) fn record_fold_back(main_repo_path: &Path, rules: &[String]) {
         &hooks_dirs,
         home.as_deref(),
     );
-    if let Err(error) = record_approved(&work_dir, rules, &surfaces) {
-        tracing::warn!(%error, "failed to record approved permissions");
+    match record_approved(&work_dir, rules, &surfaces) {
+        Ok(added) => added,
+        Err(error) => {
+            tracing::warn!(%error, "failed to record approved permissions");
+            0
+        }
     }
 }
 
@@ -200,6 +205,12 @@ mod tests {
             "Edit(~/.loom/config.toml)",
         ]);
         dropped.push(format!("Edit(/{}/signals/**)", work_dir.display()));
+        // The resolved absolute state root, as `resolve_state_root` hands it
+        // to `record_fold_back` (canonicalized): `work_dir` itself is never
+        // created in this test, so the existing ancestor is resolved and
+        // `work` re-joined onto it.
+        let resolved_work_dir = temp.path().canonicalize().unwrap().join("work");
+        dropped.push(format!("Edit(/{}/memory/**)", resolved_work_dir.display()));
 
         assert_eq!(
             record_approved(&work_dir, &dropped, &surfaces(&work_dir)).unwrap(),

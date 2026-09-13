@@ -45,16 +45,31 @@ pub(super) fn is_legacy_loom_work_write_allow(entry: &str) -> bool {
         && (path.ends_with("/.loom/work/**") || path.ends_with("/.work/**")))
 }
 
-/// Drop every [`is_legacy_loom_work_write_allow`] entry from an allow array,
-/// returning how many went. They enforce nothing and print a startup warning
-/// every session; `Read(.loom/work/**)` + `Edit(.loom/work/handoffs/**)`
-/// replace them.
-pub(super) fn prune_legacy_work_write_grants(allow: &mut Vec<Value>) -> usize {
+/// Is this allow entry one of the handoff `Edit(...)` grants loom used to
+/// write into `.claude/settings.json`, in either state-root spelling?
+///
+/// State changes now travel through the relay hook rather than a direct
+/// file-tool write (CLAUDE.md rule 11): approvals live in the loom-owned
+/// permissions list and are rendered into every session's capsule instead, so
+/// this grant is retired wherever an older loom version left it behind.
+fn is_removed_handoff_edit_grant(entry: &str) -> bool {
+    matches!(
+        entry,
+        "Edit(.loom/work/handoffs/**)" | "Edit(.work/handoffs/**)"
+    )
+}
+
+/// Drop every [`is_legacy_loom_work_write_allow`] and
+/// [`is_removed_handoff_edit_grant`] entry from an allow array, returning how
+/// many went. The first enforces nothing and prints a startup warning every
+/// session; `Read(.loom/work/**)` replaces it. The second is a retired grant
+/// no longer regenerated (see [`is_removed_handoff_edit_grant`]).
+pub(super) fn prune_legacy_permission_grants(allow: &mut Vec<Value>) -> usize {
     let before = allow.len();
     allow.retain(|entry| {
-        entry
-            .as_str()
-            .is_none_or(|rule| !is_legacy_loom_work_write_allow(rule))
+        entry.as_str().is_none_or(|rule| {
+            !is_legacy_loom_work_write_allow(rule) && !is_removed_handoff_edit_grant(rule)
+        })
     });
     before - allow.len()
 }
