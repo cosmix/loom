@@ -221,3 +221,12 @@ do not guarantee, which is narrower than the word "containment" suggests.
 ## Source Graph as a Retrieval Channel, and Its Lifecycle (2026-08-18)
 
 → [Context Retrieval and Source Graph](entry-points/context-and-source-graph.md)
+
+## Token Accounting and Receipt Surfaces (2026-09-13)
+
+- `loom/src/commands/usage/mod.rs` — `loom usage` args; providers in `provider_types.rs`, comparison in `comparison.rs`
+- `loom/src/verify/criteria/cache_contract.rs` — certified criterion-cache contract
+- `loom/src/models/forward_receipt.rs`, `loom/src/commands/hook/forward_receipt.rs`, `loom/src/commands/subagents/forward_jobs_wait.rs` — forward receipts and `loom subagents wait`
+- `loom/src/context/read_receipts.rs`, `loom/src/commands/hook/worker_brief.rs`, `loom/src/quota/history.rs` — read receipts, worker briefs, quota history
+
+→ [Token Accounting and Receipts](architecture/token-accounting-and-receipts.md)

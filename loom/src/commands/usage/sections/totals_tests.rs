@@ -36,6 +36,8 @@ fn totals_excludes_synthetic_requests_from_the_report_count() {
         agent_type: None,
         stage_id: None,
         loom_session_id: None,
+        forward_receipt: None,
+        forward_candidate: false,
         first_user_entry: None,
         entries: vec![
             Entry::Assistant(Box::new(real)),
@@ -68,6 +70,8 @@ fn measured_thinking_subfield_does_not_change_legacy_totals_shape() {
         agent_type: None,
         stage_id: None,
         loom_session_id: None,
+        forward_receipt: None,
+        forward_candidate: false,
         first_user_entry: None,
         entries: vec![Entry::Assistant(Box::new(measured))],
         diagnostics: Default::default(),

@@ -19,6 +19,7 @@ fn issue_file(issue: &CatalogIssue) -> &Path {
         | CatalogIssue::BrokenLink { file, .. }
         | CatalogIssue::MissingSourceRef { file, .. }
         | CatalogIssue::EvidenceChanged { file, .. }
+        | CatalogIssue::EvidenceUnavailable { file, .. }
         | CatalogIssue::UnverifiableReference { file, .. }
         | CatalogIssue::OversizedSection { file, .. }
         | CatalogIssue::OversizedFile { file, .. } => file,
@@ -33,10 +34,11 @@ fn issue_kind(issue: &CatalogIssue) -> u8 {
         CatalogIssue::BrokenLink { .. } => 2,
         CatalogIssue::MissingSourceRef { .. } => 3,
         CatalogIssue::EvidenceChanged { .. } => 4,
-        CatalogIssue::UnverifiableReference { .. } => 5,
-        CatalogIssue::OversizedSection { .. } => 6,
-        CatalogIssue::OversizedFile { .. } => 7,
-        CatalogIssue::OversizedIndex { .. } => 8,
+        CatalogIssue::EvidenceUnavailable { .. } => 5,
+        CatalogIssue::UnverifiableReference { .. } => 6,
+        CatalogIssue::OversizedSection { .. } => 7,
+        CatalogIssue::OversizedFile { .. } => 8,
+        CatalogIssue::OversizedIndex { .. } => 9,
     }
 }
 
@@ -55,6 +57,11 @@ fn issue_payload(issue: &CatalogIssue) -> String {
             verified,
             ..
         } => format!("{source_path}:{verified}"),
+        CatalogIssue::EvidenceUnavailable {
+            source_path,
+            reason,
+            ..
+        } => format!("{source_path}:{}", reason.as_str()),
         CatalogIssue::UnverifiableReference {
             source_path, kind, ..
         } => format!("{source_path}:{kind}"),

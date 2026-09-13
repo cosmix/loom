@@ -20,3 +20,11 @@ borders) on the span itself — not `inline-flex`, which centres the text but di
 `text-overflow: ellipsis` is scoped to `.settings-tc .settings-ctl` (the phone-card
 selector) rather than the shared `.settings-ctl` rule, so the table layout's cells
 never truncate.
+
+## Where the Dashboard's Theme Tokens Live
+
+`web/src/index.css` defines only the `--tone-*` tokens and `--hairline`. `--card`, `--foreground`,
+`--muted-foreground`, `--border`, `--ring` and `--muted` live in
+`web/src/aurora-ui/shared/styles/tokens.css` (light `:root` near line 94, dark `.dark` near line
+144). The terminal view has no Esc-to-release: in control mode Esc reaches the agent, and only the
+release control stops sending (`web/src/components/terminal/terminal-view.tsx`).

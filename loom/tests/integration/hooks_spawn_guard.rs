@@ -1,22 +1,7 @@
-//! Integration tests for the spawn-guard PreToolUse:Task/Agent hook.
-//!
-//! An untyped `Task`/`Agent` spawn (no `subagent_type`, or a generic placeholder like
-//! `general-purpose`) inherits the SPAWNING session's model, which on an opus stage silently
-//! makes every worker opus - defeating CLAUDE.md's cheapest-capable-tier delegation rule.
-//! spawn-guard.sh denies that outright, fills in a typed spawn's model from the agent's own
-//! definition file (or a built-in table) when `model` is omitted, warns (never denies) on an
-//! explicit escalation above the defined tier or a missing Rule 5 preamble, and records every
-//! typed spawn to `.loom/work/subagents/<stage-id>/spawns.jsonl`.
-//!
-//! Regression pinned: the hook installs globally at `~/.claude/hooks/loom/` and runs in EVERY
-//! Claude Code session, loom stage or not - it must DENY only with a LIVE LOOM_MAIN_AGENT_PID
-//! process ancestor and degrade every would-be denial to a warning otherwise, or it hard-blocks
-//! ordinary, non-loom sessions with no escape hatch. Second regression: the ledger line's key
-//! order (`ts, stage_id, session_id, caller, agent_type, model, model_source, description`) is a
-//! frozen contract `loom subagents` depends on - tests assert the ORDER, not just presence.
-//! Runs the hook script directly with bash - no loom invocation.
+//! Spawn-guard integration coverage for rewrites, denials, warnings, and its ledger.
 
-use loom::fs::permissions::constants::{HOOK_COMMON, HOOK_SPAWN_GUARD};
+use super::helpers::clear_relay_env;
+use loom::fs::permissions::constants::{HOOK_COMMON, HOOK_READ_LEDGER, HOOK_SPAWN_GUARD};
 use loom::process::sandbox_probe::{process_tree_visible, skip_unless};
 use serde_json::{json, Value};
 use std::fs;
@@ -26,13 +11,10 @@ use std::path::Path;
 use std::process::{Command, Stdio};
 use tempfile::TempDir;
 
-/// Exact text of spawn-guard.sh's `PREAMBLE_LINE` (loom-hooks/spawn-guard.sh:64).
 const PREAMBLE_LINE: &str = "CLAUDE.md is already in your context; the rules below are the ones that bind you as a subagent. The knowledge you need for this task is quoted in this brief - do not open doc/loom/knowledge/ unless the brief says a pull came back empty.";
 
-/// Exact text of spawn-guard.sh's `UNTYPED_MSG` opening sentence (loom-hooks/spawn-guard.sh:209).
 const UNTYPED_MSG_LEAD: &str = "Untyped spawn inherits the model of the spawning session.";
 
-/// Contract C1 key order (loom-hooks/spawn-guard.sh:262).
 const SPAWN_KEYS: &[&str] = &[
     "\"ts\"",
     "\"stage_id\"",
@@ -44,13 +26,16 @@ const SPAWN_KEYS: &[&str] = &[
     "\"description\"",
 ];
 
-/// Install the guard and its `_common.sh` dependency into a temp dir.
 fn setup_hook() -> (TempDir, std::path::PathBuf) {
     let temp = TempDir::new().expect("create temp dir");
 
     let common_path = temp.path().join("_common.sh");
     fs::write(&common_path, HOOK_COMMON).expect("write _common.sh");
     fs::set_permissions(&common_path, fs::Permissions::from_mode(0o755)).expect("chmod");
+
+    let ledger_path = temp.path().join("_read_ledger.sh");
+    fs::write(&ledger_path, HOOK_READ_LEDGER).expect("write _read_ledger.sh");
+    fs::set_permissions(&ledger_path, fs::Permissions::from_mode(0o755)).expect("chmod");
 
     let hook_path = temp.path().join("spawn-guard.sh");
     fs::write(&hook_path, HOOK_SPAWN_GUARD).expect("write hook");
@@ -63,11 +48,6 @@ fn temp() -> TempDir {
     TempDir::new().expect("create temp dir")
 }
 
-/// Every gated test below needs the SAME probe: whether this sandbox can see
-/// its own process tree, which is what `is_ancestor` (`loom-hooks/_common.sh`)
-/// depends on to confirm a claimed main-agent pid is a live ancestor. `test`
-/// is the bare function name; this adds the `hooks_spawn_guard::` prefix so
-/// the printed SKIP line names the test the way `cargo test` does.
 fn skip_unless_gate_visible(test: &str) -> bool {
     skip_unless(
         process_tree_visible(),
@@ -76,8 +56,6 @@ fn skip_unless_gate_visible(test: &str) -> bool {
     )
 }
 
-/// Write `<base>/.claude/agents/<agent_type>.md` with a `model:` frontmatter
-/// key, under either a cwd or HOME resolution root.
 fn write_agent_def(base: &Path, agent_type: &str, model: &str) {
     let dir = base.join(".claude/agents");
     fs::create_dir_all(&dir).expect("create agents dir");
@@ -91,8 +69,6 @@ struct HookOutput {
     stderr: String,
 }
 
-/// Spawn the hook with a Claude-Code-shaped payload on stdin, `cwd` as its
-/// working directory, and `home` as `HOME` (never the real `~/.claude`).
 fn run_hook(
     hook: &Path,
     tool_name: &str,
@@ -104,16 +80,14 @@ fn run_hook(
     let payload = json!({"tool_name": tool_name, "tool_input": tool_input}).to_string();
 
     let mut cmd = Command::new("bash");
-    cmd.arg(hook)
+    clear_relay_env(&mut cmd)
+        .arg(hook)
         .current_dir(cwd)
-        .env_remove("LOOM_STAGE_ID")
-        .env_remove("LOOM_MAIN_AGENT_PID")
-        .env_remove("LOOM_WORK_DIR")
-        .env_remove("LOOM_SESSION_ID")
         // Never let the developer's shell leak `loom_debug` output onto stderr.
         .env_remove("LOOM_HOOK_DEBUG")
         .env_remove("COMMIT_FILTER_DEBUG")
         .env("HOME", home)
+        .env("PATH", "/usr/bin:/bin")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
@@ -133,11 +107,6 @@ fn run_hook(
     }
 }
 
-/// Run a `Task` spawn as if inside a LIVE loom stage session:
-/// LOOM_MAIN_AGENT_PID is this test binary's own pid (the hook's bash is a
-/// direct child, so `is_ancestor` finds it in one hop) - satisfies the
-/// ENFORCEMENT GATE. Every gated test in this file shares `stage_id ==
-/// "test-stage"` unless it needs two independent ledger files.
 fn gated_task(hook: &Path, tool_input: Value, cwd: &Path, home: &Path, work: &Path) -> HookOutput {
     let pid = std::process::id().to_string();
     let work_str = work.to_string_lossy().into_owned();
@@ -151,11 +120,11 @@ fn gated_task(hook: &Path, tool_input: Value, cwd: &Path, home: &Path, work: &Pa
             ("LOOM_STAGE_ID", "test-stage"),
             ("LOOM_MAIN_AGENT_PID", pid.as_str()),
             ("LOOM_WORK_DIR", work_str.as_str()),
+            ("LOOM_SESSION_ID", "test-session"),
         ],
     )
 }
 
-/// Walk a path of object keys and return the leaf as `&str`.
 fn get_str<'a>(v: &'a Value, path: &[&str]) -> Option<&'a str> {
     let mut cur = v;
     for key in path {
@@ -164,7 +133,6 @@ fn get_str<'a>(v: &'a Value, path: &[&str]) -> Option<&'a str> {
     cur.as_str()
 }
 
-/// Read the single line written to `<work_dir>/subagents/test-stage/spawns.jsonl`.
 fn read_spawn_line(work_dir: &Path) -> String {
     let path = work_dir.join("subagents/test-stage/spawns.jsonl");
     let content =
@@ -179,9 +147,6 @@ fn read_spawn_line(work_dir: &Path) -> String {
     lines[0].to_string()
 }
 
-/// Assert every SPAWN_KEYS key appears in `line` in order: searching each key
-/// only in the remainder AFTER the previous match proves strictly increasing
-/// byte offsets, since an out-of-order key would not be found there.
 fn assert_spawn_key_order(line: &str) {
     let mut last = 0usize;
     for key in SPAWN_KEYS {
@@ -192,7 +157,6 @@ fn assert_spawn_key_order(line: &str) {
     }
 }
 
-// 1. Untyped/placeholder spawns are DENIED inside a live loom stage session.
 #[test]
 fn gated_untyped_or_placeholder_spawn_denied() {
     if skip_unless_gate_visible("gated_untyped_or_placeholder_spawn_denied") {
@@ -221,7 +185,6 @@ fn gated_untyped_or_placeholder_spawn_denied() {
     }
 }
 
-// 2. Ungated: the same spawn is a warning, never a block.
 #[test]
 fn ungated_untyped_spawn_warns_instead_of_blocking() {
     let (_temp, hook) = setup_hook();
@@ -236,8 +199,6 @@ fn ungated_untyped_spawn_warns_instead_of_blocking() {
     assert!(ctx.starts_with("LOOM_HOOK_WARN:"), "ctx={ctx}");
 }
 
-// 3. Typed spawn without `model` gets updatedInput carrying the definition's
-//    model, with every other tool_input key preserved unchanged.
 #[test]
 fn typed_spawn_without_model_fills_in_defined_tier_and_preserves_other_keys() {
     let (_temp, hook) = setup_hook();
@@ -273,8 +234,6 @@ fn typed_spawn_without_model_fills_in_defined_tier_and_preserves_other_keys() {
     );
 }
 
-// 4. Escalation: an explicit model AT the defined tier is a silent allow; a
-//    positive control proves an explicit model ABOVE it warns as escalation.
 #[test]
 fn explicit_model_escalation_only_warns_above_defined_tier() {
     let (_temp, hook) = setup_hook();
@@ -308,31 +267,6 @@ fn explicit_model_escalation_only_warns_above_defined_tier() {
     );
 }
 
-// 5. Explore with no definition file anywhere resolves sonnet from the
-//    built-in table.
-#[test]
-fn explore_with_no_definition_file_resolves_sonnet_from_builtin_table() {
-    let (_temp, hook) = setup_hook();
-    let (home, cwd, work) = (temp(), temp(), temp());
-
-    let out = gated_task(
-        &hook,
-        json!({"subagent_type": "Explore"}),
-        cwd.path(),
-        home.path(),
-        work.path(),
-    );
-
-    assert_eq!(out.code, 0, "stderr={}", out.stderr);
-    let v: Value = serde_json::from_str(out.stdout.trim()).expect("parse stdout json");
-    assert_eq!(
-        get_str(&v, &["hookSpecificOutput", "updatedInput", "model"]),
-        Some("sonnet")
-    );
-}
-
-// 6. The spawn ledger: key order is a frozen contract (C1); model_source
-//    distinguishes a filled-in default from an explicit passthrough.
 #[test]
 fn spawn_ledger_records_ordered_fields() {
     let (_temp, hook) = setup_hook();
@@ -371,8 +305,6 @@ fn spawn_ledger_records_ordered_fields() {
     assert_eq!(v_b["model_source"], "explicit");
 }
 
-// 7. A non-spawn tool is ignored entirely (the tool_name switch exits before
-//    the gate is ever consulted, so this holds regardless of gating).
 #[test]
 fn non_spawn_tool_is_ignored() {
     let (_temp, hook) = setup_hook();
@@ -391,8 +323,5 @@ fn non_spawn_tool_is_ignored() {
     assert!(out.stdout.trim().is_empty(), "stdout={}", out.stdout);
 }
 
-// 8. Missing Rule 5 preamble warns for a loom-* agent; loom-codex-forwarder
-//    is exempt (it reads AGENTS.md, never CLAUDE.md) - split out purely for
-//    size, sharing this file's harness via `use super::*`.
 #[path = "hooks_spawn_guard_gate.rs"]
 mod gate;

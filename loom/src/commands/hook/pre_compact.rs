@@ -2,15 +2,17 @@
 //!
 //! `loom-hooks/pre-compact.sh` already runs a block-then-allow handoff protocol on
 //! every PreCompact event (see that script's own header); this delegate rides
-//! alongside it, deleting exactly one delivery record so retrieval stops
-//! assuming the compacting session still holds what it was already given.
+//! alongside it, deleting exactly one delivery record and rotating the
+//! read-receipt epoch for that session.
 //!
 //! Suppression in [`crate::context::delivery`] is scoped to a recipient and an
 //! epoch: while a session's context window is intact, skipping units it
 //! already read is correct. A compaction breaks that assumption — the
 //! summarized context that survives compaction may drop the brief entirely —
 //! so the moment compaction happens is the moment this session's own record
-//! must stop suppressing anything. It is NOT a moment to touch any *other*
+//! must stop suppressing anything. A receipt from before compaction likewise
+//! cannot prove the compacted session still has a textual delivery. It is NOT
+//! a moment to touch any *other*
 //! record: a live sibling session's suppression, and the stage's own spawn
 //! record, both describe context windows this compaction never touched.
 //!
@@ -21,7 +23,7 @@
 //! disrupts compaction, and a delivery record is an optimisation nothing here
 //! may treat as load-bearing (`crate::context::delivery`'s own module doc).
 
-use crate::context::delivery;
+use crate::context::{delivery, read_receipts};
 use anyhow::Result;
 use std::io::Read;
 
@@ -60,6 +62,7 @@ fn reset_for_payload(raw: &str) {
     let Some(session_id) = parse_session_id(raw) else {
         return;
     };
+    read_receipts::rotate_epoch_for_session(&session_id);
     let Some(target) = HookTarget::from_environment() else {
         return;
     };

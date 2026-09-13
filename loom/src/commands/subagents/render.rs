@@ -8,8 +8,12 @@ use std::time::{Duration, Instant};
 use anyhow::Result;
 
 use super::classify::{self, SubagentState, SubagentSummary};
+use super::forward_jobs;
 use super::resolve::{self, Resolution};
 use super::table;
+
+#[path = "render_forward.rs"]
+mod forward;
 
 const POLL_INTERVAL: Duration = Duration::from_secs(2);
 
@@ -43,26 +47,117 @@ fn gather(
     work_dir: Option<&Path>,
     subagent_ceiling_tokens: u64,
 ) -> Gathered {
+    // Load receipt evidence before transcript resolution: an empty directory
+    // or missing session cannot settle a persisted expected forward.
+    let forward_index = work_dir.and_then(load_forward_index);
+    gather_with_index(
+        session,
+        dir,
+        debounce_secs,
+        work_dir,
+        subagent_ceiling_tokens,
+        forward_index.as_ref(),
+    )
+}
+
+fn load_forward_index(work_dir: &Path) -> Option<forward_jobs::ForwardIndex> {
+    let stage_id = std::env::var("LOOM_STAGE_ID").ok()?;
+    let loom_session_id = std::env::var("LOOM_SESSION_ID").ok();
+    Some(forward_jobs::load_forward_index(
+        work_dir,
+        &stage_id,
+        loom_session_id.as_deref(),
+    ))
+}
+
+fn gather_with_index(
+    session: &Option<String>,
+    dir: &Option<PathBuf>,
+    debounce_secs: u64,
+    work_dir: Option<&Path>,
+    subagent_ceiling_tokens: u64,
+    forward_index: Option<&forward_jobs::ForwardIndex>,
+) -> Gathered {
     match resolve::resolve(dir.clone(), session.clone()) {
-        Resolution::NotFound(looked_for) => Gathered::NotFound(looked_for),
+        Resolution::NotFound(looked_for) => missing_gathered(looked_for, forward_index, work_dir),
         Resolution::Found(subagents_dir) => {
-            let files = resolve::list_agent_files(&subagents_dir);
-            let mut summaries = Vec::with_capacity(files.len());
-            for path in files {
-                let agent_id = resolve::agent_id_from_path(&path);
-                match classify::analyze_at_ceiling(
-                    &path,
-                    agent_id.clone(),
-                    debounce_secs,
-                    work_dir,
-                    subagent_ceiling_tokens,
-                ) {
-                    Ok(summary) => summaries.push(summary),
-                    Err(error) => eprintln!("warning: could not read {agent_id} ({error})"),
-                }
-            }
+            let mut summaries = gather_transcripts(
+                &subagents_dir,
+                debounce_secs,
+                work_dir,
+                subagent_ceiling_tokens,
+                forward_index,
+            );
+            forward::append_missing_summaries(&mut summaries, forward_index, work_dir);
             Gathered::Found(summaries)
         }
+    }
+}
+
+fn missing_gathered(
+    looked_for: String,
+    forward_index: Option<&forward_jobs::ForwardIndex>,
+    work_dir: Option<&Path>,
+) -> Gathered {
+    let mut summaries = Vec::new();
+    forward::append_missing_summaries(&mut summaries, forward_index, work_dir);
+    if summaries.is_empty() {
+        Gathered::NotFound(looked_for)
+    } else {
+        Gathered::Found(summaries)
+    }
+}
+
+fn gather_transcripts(
+    subagents_dir: &Path,
+    debounce_secs: u64,
+    work_dir: Option<&Path>,
+    subagent_ceiling_tokens: u64,
+    forward_index: Option<&forward_jobs::ForwardIndex>,
+) -> Vec<SubagentSummary> {
+    let files = resolve::list_agent_files(subagents_dir);
+    let mut summaries = Vec::with_capacity(files.len());
+    for path in files {
+        let agent_id = resolve::agent_id_from_path(&path);
+        match gather_transcript(
+            &path,
+            agent_id.clone(),
+            debounce_secs,
+            work_dir,
+            subagent_ceiling_tokens,
+            forward_index,
+        ) {
+            Ok(summary) => summaries.push(summary),
+            Err(error) => eprintln!("warning: could not read {agent_id} ({error})"),
+        }
+    }
+    summaries
+}
+
+fn gather_transcript(
+    path: &Path,
+    agent_id: String,
+    debounce_secs: u64,
+    work_dir: Option<&Path>,
+    subagent_ceiling_tokens: u64,
+    forward_index: Option<&forward_jobs::ForwardIndex>,
+) -> Result<SubagentSummary> {
+    match forward_index {
+        Some(index) => classify::analyze_with_forward_at_ceiling(
+            path,
+            agent_id,
+            debounce_secs,
+            work_dir,
+            subagent_ceiling_tokens,
+            index,
+        ),
+        None => classify::analyze_at_ceiling(
+            path,
+            agent_id,
+            debounce_secs,
+            work_dir,
+            subagent_ceiling_tokens,
+        ),
     }
 }
 
@@ -141,6 +236,9 @@ pub fn harvest(
             continue;
         };
         println!("===== {} =====", summary.agent_id);
+        if is_forward_state(summary.state) {
+            println!("forward state: {}", summary.state.label());
+        }
         println!("{report}");
         println!();
         harvested += 1;
@@ -156,6 +254,13 @@ pub fn harvest(
     }
 
     Ok(())
+}
+
+fn is_forward_state(state: SubagentState) -> bool {
+    matches!(
+        state,
+        SubagentState::ForwardWait | SubagentState::ForwardFailed | SubagentState::ForwardUnknown
+    )
 }
 
 /// `loom subagents watch` -- polls every 2s until either every subagent is
@@ -192,18 +297,30 @@ pub fn watch(
                 return Ok(());
             }
             Gathered::Found(summaries) => {
-                let settled = !summaries.is_empty()
-                    && summaries.iter().all(|s| s.state == SubagentState::Done);
-                if settled {
-                    println!("settled: every subagent is done");
-                    table::print_table(&summaries);
-                    return Ok(());
+                match forward::watch_outcome(&summaries) {
+                    forward::WatchOutcome::Settled => {
+                        println!("settled: every subagent is done");
+                        table::print_table(&summaries);
+                        return Ok(());
+                    }
+                    forward::WatchOutcome::ForwardFailed => {
+                        println!("failed: a forwarded job failed or was canceled");
+                        table::print_table(&summaries);
+                        std::process::exit(
+                            forward::exit_code(forward::WatchOutcome::ForwardFailed, false)
+                                .expect("forward failure has an exit code"),
+                        );
+                    }
+                    forward::WatchOutcome::Pending => {}
                 }
 
                 if Instant::now() >= deadline {
                     println!("timeout: {timeout_secs}s elapsed with subagents still active");
                     table::print_table(&summaries);
-                    std::process::exit(2);
+                    std::process::exit(
+                        forward::exit_code(forward::WatchOutcome::Pending, true)
+                            .expect("timed-out wait has an exit code"),
+                    );
                 }
             }
         }
@@ -212,185 +329,9 @@ pub fn watch(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use classify::DEFAULT_DONE_DEBOUNCE_SECS;
-    use serial_test::serial;
-    use std::env;
+#[path = "render_tests.rs"]
+mod tests;
 
-    /// Restores cwd on drop, even on panic. Needed because `list`/`harvest`
-    /// resolve their work dir by walking up from the process cwd, which
-    /// would otherwise adopt this checkout's own live `.loom/work`.
-    struct CwdGuard {
-        original_dir: PathBuf,
-    }
-
-    impl CwdGuard {
-        fn new() -> Self {
-            Self {
-                original_dir: env::current_dir().unwrap(),
-            }
-        }
-    }
-
-    impl Drop for CwdGuard {
-        fn drop(&mut self) {
-            env::set_current_dir(&self.original_dir).unwrap();
-        }
-    }
-
-    /// Isolate the process cwd inside a fresh tempdir for the test's
-    /// duration, restoring the original cwd on drop. Returned as
-    /// `(CwdGuard, TempDir)`: declaration order drops the `TempDir` first,
-    /// which is safe since restoring cwd only needs the ORIGINAL directory
-    /// to still exist, not the one being left.
-    fn isolate_cwd() -> (CwdGuard, tempfile::TempDir) {
-        let guard = CwdGuard::new();
-        let isolated = tempfile::tempdir().unwrap();
-        env::set_current_dir(isolated.path()).unwrap();
-        (guard, isolated)
-    }
-
-    #[test]
-    #[serial]
-    fn list_on_unresolvable_dir_still_succeeds() {
-        // A bogus explicit --dir resolves (Resolution::Found) but reads
-        // back zero files; list() must still exit 0.
-        let (_cwd_guard, _isolated) = isolate_cwd();
-
-        let result = list(
-            None,
-            Some(PathBuf::from("/nonexistent/subagents/dir")),
-            false,
-            DEFAULT_DONE_DEBOUNCE_SECS,
-        );
-        assert!(result.is_ok());
-    }
-
-    #[test]
-    #[serial]
-    fn harvest_on_empty_dir_reports_nothing_without_erroring() {
-        let (_cwd_guard, _isolated) = isolate_cwd();
-
-        let result = harvest(
-            None,
-            None,
-            Some(PathBuf::from("/nonexistent/subagents/dir")),
-            DEFAULT_DONE_DEBOUNCE_SECS,
-        );
-        assert!(result.is_ok());
-    }
-
-    /// (c) harvest must emit nothing for a subagent whose last entry looks
-    /// turn-final but hasn't cleared the debounce yet. Asserted at the
-    /// `gather` boundary harvest itself is built on: harvest's only print
-    /// branch is gated on `final_report.is_some()`, so a summary list with
-    /// no `final_report` is exactly "nothing harvestable" -- the same
-    /// condition a stdout capture would be checking indirectly.
-    #[test]
-    #[serial]
-    fn harvest_emits_nothing_for_undebounced_text_only_entry() {
-        // The `gather` call below already passes `work_dir: None`
-        // explicitly; `harvest()` resolves it itself via
-        // `find_work_dir_quietly()`.
-        let (_cwd_guard, _isolated) = isolate_cwd();
-
-        let temp = tempfile::tempdir().unwrap();
-        let content = format!(
-            "{}\n",
-            serde_json::json!({
-                "type": "assistant",
-                "timestamp": chrono::Utc::now().to_rfc3339(),
-                "message": {
-                    "role": "assistant",
-                    "content": [{"type": "text", "text": "still narrating"}],
-                },
-            })
-        );
-        std::fs::write(temp.path().join("agent-x.jsonl"), content).unwrap();
-
-        let Gathered::Found(summaries) = gather(
-            &None,
-            &Some(temp.path().to_path_buf()),
-            DEFAULT_DONE_DEBOUNCE_SECS,
-            None,
-            classify::resolve_subagent_ceiling(None),
-        ) else {
-            panic!("an explicit --dir must always resolve");
-        };
-        assert_eq!(summaries.len(), 1);
-        assert!(
-            summaries[0].final_report.is_none(),
-            "a fresh text-only entry must not be harvestable yet"
-        );
-
-        // harvest() itself must still exit 0 and print only the "nothing
-        // harvestable" fallback, never the report -- covered above by the
-        // exhaustive if-let in harvest()'s loop, which only ever prints
-        // when final_report is Some.
-        let result = harvest(
-            None,
-            None,
-            Some(temp.path().to_path_buf()),
-            DEFAULT_DONE_DEBOUNCE_SECS,
-        );
-        assert!(result.is_ok());
-    }
-
-    /// `tool-wait` must never be harvestable and never count as settled, no
-    /// matter how long it has sat idle -- a real tool call in this
-    /// codebase has been measured running 603s, so a time-based rule here
-    /// would misclassify a busy agent as dead.
-    #[test]
-    #[serial]
-    fn tool_wait_idle_30_minutes_never_harvested_and_never_settles() {
-        let (_cwd_guard, _isolated) = isolate_cwd();
-
-        let temp = tempfile::tempdir().unwrap();
-        let old_timestamp = (chrono::Utc::now() - chrono::Duration::minutes(30)).to_rfc3339();
-        let content = format!(
-            "{}\n",
-            serde_json::json!({
-                "type": "assistant",
-                "timestamp": old_timestamp,
-                "message": {
-                    "role": "assistant",
-                    "content": [{"type": "tool_use", "name": "Bash", "input": {}}],
-                },
-            })
-        );
-        std::fs::write(temp.path().join("agent-x.jsonl"), content).unwrap();
-
-        let Gathered::Found(summaries) = gather(
-            &None,
-            &Some(temp.path().to_path_buf()),
-            DEFAULT_DONE_DEBOUNCE_SECS,
-            None,
-            classify::resolve_subagent_ceiling(None),
-        ) else {
-            panic!("an explicit --dir must always resolve");
-        };
-        assert_eq!(summaries.len(), 1);
-        assert_eq!(summaries[0].state, SubagentState::ToolWait);
-        assert!(
-            summaries[0].final_report.is_none(),
-            "tool-wait must never be harvestable"
-        );
-        // Mirrors watch()'s settled condition directly, rather than calling
-        // watch() itself (which loops/sleeps in a unit test).
-        let settled =
-            !summaries.is_empty() && summaries.iter().all(|s| s.state == SubagentState::Done);
-        assert!(
-            !settled,
-            "tool-wait must never be reported as settled, regardless of idle time"
-        );
-
-        let result = harvest(
-            None,
-            None,
-            Some(temp.path().to_path_buf()),
-            DEFAULT_DONE_DEBOUNCE_SECS,
-        );
-        assert!(result.is_ok());
-    }
-}
+#[cfg(test)]
+#[path = "render_forward_tests.rs"]
+mod forward_tests;

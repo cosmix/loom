@@ -7,6 +7,7 @@
 
 use super::*;
 use crate::context::local_overlay::local_overlay_key;
+use crate::context::read_receipts;
 use crate::models::stage::Stage;
 use chrono::Utc;
 use serial_test::serial;
@@ -49,6 +50,7 @@ fn enter_checkout(root: &Path) {
 fn leave() {
     std::env::remove_var("LOOM_STAGE_ID");
     std::env::remove_var("LOOM_WORK_DIR");
+    std::env::remove_var("LOOM_SESSION_ID");
 }
 
 /// Fixture for `resets_only_the_named_sessions_own_record_in_checkout_scope`:
@@ -231,4 +233,25 @@ fn an_environment_naming_no_work_dir_at_all_resets_nothing_and_creates_nothing()
         !temp.path().join(".loom").join("work").exists(),
         "resetting must never create a state directory tree as a side effect"
     );
+}
+
+#[test]
+#[serial]
+fn pre_compact_rotates_only_the_payload_sessions_receipt_epoch() {
+    let temp = TempDir::new().unwrap();
+    let work_dir = temp.path().join(".loom").join("work");
+    std::fs::create_dir_all(&work_dir).unwrap();
+    std::env::set_var("LOOM_WORK_DIR", &work_dir);
+    std::env::set_var("LOOM_SESSION_ID", "host-session");
+    std::env::set_var("LOOM_STAGE_ID", "receipt-stage");
+
+    let before_a = read_receipts::epoch_token_for_session("session-a").unwrap();
+    let before_b = read_receipts::epoch_token_for_session("session-b").unwrap();
+    reset_for_payload(&payload("session-a"));
+    let after_a = read_receipts::epoch_token_for_session("session-a").unwrap();
+    let after_b = read_receipts::epoch_token_for_session("session-b").unwrap();
+
+    leave();
+    assert_ne!(after_a, before_a);
+    assert_eq!(after_b, before_b);
 }

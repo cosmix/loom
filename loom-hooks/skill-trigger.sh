@@ -186,6 +186,17 @@ def _repo_kind(skill, matched):
     return None
 
 
+def _has_high_confidence_keyword_match(skill, matched, keyword_scores):
+    if keyword_scores.get(skill, 0) < MIN_SCORE:
+        return False
+    effective = skill[5:] if skill.startswith("loom-") else skill
+    return any(
+        not token.startswith("repo:")
+        and (" " in token or token == skill or token == effective)
+        for token in matched.get(skill, [])
+    )
+
+
 def _render_one(skill, matched, roots, keyword_scores):
     path, catalogued = _locate_skill_md(skill, roots)
     if not path:
@@ -194,7 +205,7 @@ def _render_one(skill, matched, roots, keyword_scores):
     desc = _parse_description(path)
     label = f"{skill} -- {desc}" if desc else skill
     if CODEX:
-        if keyword_scores.get(skill, 0) >= MIN_SCORE:
+        if _has_high_confidence_keyword_match(skill, matched, keyword_scores):
             return f"  - {label} (matched: {keywords}) -- read {json.dumps(path)} in full", False
         kind = _repo_kind(skill, matched) or "this"
         return (f"  - {label} (matched: {keywords}) -- read {json.dumps(path)} "

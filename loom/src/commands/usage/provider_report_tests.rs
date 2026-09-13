@@ -42,6 +42,10 @@ fn event(provenance: ProvenanceStatus, fresh: Option<u64>) -> NormalizedEvent {
         first_observed_in_range: true,
         true_fresh_start: Some(true),
         tool_names: vec!["Read".to_owned()],
+        codex_thread_id: None,
+        codex_thread_conflict: false,
+        forward_candidate: false,
+        forward_receipt: None,
     }
 }
 

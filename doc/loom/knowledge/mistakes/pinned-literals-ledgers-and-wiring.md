@@ -194,3 +194,42 @@ Three mechanics not covered by the existing "fails on shrinkage too" entry above
 - **`rustfmt` always splits `#[cfg(test)] mod x;` onto two lines**, even written on one — registering
   a new test submodule costs 2 lines with no way around it; that's real structural cost to budget into
   a baseline update, not padding to trim away.
+
+## Codex Line Counts Mean Nothing Until rustfmt Runs (2026-09-13, four stages)
+
+**What happened:** measurement-and-cache accepted codex's "399 lines" for
+`quota/history_tests.rs`; rustfmt made it 472. job-lifecycle briefed a 330-line ceiling, and
+rustfmt expanded `commands/hook/forward_receipt.rs` from 325 to 561 lines. proof-and-regression saw
+rustfmt put a 3-field struct pattern on 5 lines and push a 49-line function past 50.
+context-admission swapped one call for one call in the baselined `plan/schema/validation.rs`, but
+the longer name wrapped onto three lines (1285 to 1287); a codex size-fix unit then padded the
+module doc with two invented lines to hit the baseline count exactly. In IV, fixes grew two
+baselined files and the IV stage could not write `loom/maintainability-baseline.txt`.
+
+**Why:** codex writes dense, unformatted Rust; the ledger is exact in both directions and measured
+after formatting; and a brief that states the baseline number as the goal invites padding.
+
+**Prevention:**
+
+- Run `cargo fmt` right after each settled codex wave and check the 400/50 limits before the next
+  wave. Brief codex with an as-written ceiling of about 230 lines for dense Rust.
+- In a baselined file, keep a changed call on one rustfmt line (100 columns).
+- Brief size units with "if the honest count drops, lower the baseline entry; never pad", and diff
+  every baselined file after a size unit.
+- Before briefing a fix in a stage that cannot write the baseline, `rg` the file in
+  `loom/maintainability-baseline.txt` and state the exact required count, or move new coverage into
+  an unbaselined file.
+- Lowering an entry a stage shrank is the ratchet, not grandfathering; give the shared baseline one
+  writer per wave. `loom/tests/maintainability.rs` prints the exact remedy.
+- A hook near 400 lines cannot shed a helper file without owning
+  `loom/src/fs/permissions/constants.rs` (its `include_str!` registry) and
+  `fs/permissions/hooks/config.rs`; grant them or give a hard line budget.
+
+## `tests_doctrine.rs` Pins the Wrapper's Companion argv Order (2026-09-13)
+
+`loom/src/orchestrator/signals/tests_doctrine.rs:325` asserts that `loom-hooks/codex-forward.sh`
+contains the literal `task "$task"`; the wrapper launches the companion as
+`node "$companion" task "$task" --background --json --write` (`codex-forward.sh:264`). A rewrite
+that moves the flags before the positional task still delivers the preamble but fails
+`orchestrator::signals`. Keep the positional task directly after the subcommand, and put this pin
+in any brief that changes the wrapper's launch argv.

@@ -1,15 +1,4 @@
 //! Integration tests for the skill-trigger UserPromptSubmit hook.
-//!
-//! `loom-hooks/skill-trigger.sh` scores skills from an inverted keyword index and
-//! prints a `hookSpecificOutput.additionalContext` block suggesting them.
-//! These tests cover the defects fixed alongside this file: every qualifying
-//! skill is listed (not just the top 3), ranking is deterministic across
-//! `PYTHONHASHSEED` values, the `loom-skills` loader line is dropped once a
-//! domain skill already qualifies, and a combined `loom-skills` loader call
-//! is appended when two or more catalogued skills qualify.
-//!
-//! Runs the Python hook with the freshly built Loom detector. HOME points to
-//! a per-test fixture directory so installed client data is never touched.
 
 use loom::fs::permissions::constants::HOOK_SKILL_TRIGGER;
 use loom::process::sandbox_probe::skip_unless;
@@ -28,9 +17,6 @@ struct HookOutput {
     stderr: String,
 }
 
-/// A fake `HOME`, populated with a skill-keywords index plus core and
-/// catalogued SKILL.md fixtures, and a separate empty cwd so project discovery
-/// never contributes ambient signals that would skew keyword-scoring tests.
 struct FakeHome {
     home: TempDir,
     cwd: TempDir,
@@ -53,17 +39,17 @@ fn write_skill_md(path: &Path, name: &str) {
 }
 
 impl FakeHome {
-    /// Build the fixture home shared by every test below: the base index
-    /// keywords from the brief plus ten `alpha0`..`alpha9` entries for the
-    /// flood-cap test, two core skills, and the catalogued domain skills.
     fn new() -> Self {
         let home = TempDir::new().expect("create fake HOME");
         let cwd = TempDir::new().expect("create fake cwd");
-
         let mut index = json!({
             "react": ["loom-react", "loom-typescript"],
             "typescript": ["loom-typescript"],
             "docker": ["loom-docker"],
+            "context": ["loom-golang"],
+            "pointer": ["loom-golang"],
+            "refactor": ["loom-refactoring"],
+            "golang": ["loom-golang"],
             "skill": ["loom-skills"],
             "skills": ["loom-skills"],
             "plan": ["loom-plan-writer"],
@@ -76,21 +62,16 @@ impl FakeHome {
         fs::create_dir_all(index_path.parent().expect("index path has a parent"))
             .expect("create index dir");
         fs::write(&index_path, index.to_string()).expect("write index");
-
+        let core_dir = home.path().join(".claude/skills");
         for name in ["loom-skills", "loom-plan-writer"] {
-            write_skill_md(
-                &home
-                    .path()
-                    .join(".claude/skills")
-                    .join(name)
-                    .join("SKILL.md"),
-                name,
-            );
+            write_skill_md(&core_dir.join(name).join("SKILL.md"), name);
         }
         let mut catalogued: Vec<String> = vec![
             "loom-react".into(),
             "loom-typescript".into(),
             "loom-docker".into(),
+            "loom-golang".into(),
+            "loom-refactoring".into(),
         ];
         catalogued.extend((0..10).map(|i| format!("loom-alpha{i}")));
         for name in &catalogued {
@@ -103,7 +84,6 @@ impl FakeHome {
                 name,
             );
         }
-
         FakeHome { home, cwd }
     }
 
@@ -114,10 +94,13 @@ impl FakeHome {
     fn cwd_path(&self) -> &Path {
         self.cwd.path()
     }
+
+    fn add_go_project(&self) {
+        fs::write(self.cwd.path().join("go.mod"), "module example.com/test\n")
+            .expect("write Go module");
+    }
 }
 
-/// Whether `python3` can be spawned in this sandbox - unrelated to the hook
-/// logic under test, so a denial skips rather than fails.
 fn python3_available() -> bool {
     static RESULT: OnceLock<bool> = OnceLock::new();
     *RESULT.get_or_init(|| {
@@ -139,13 +122,18 @@ fn install_hook() -> (TempDir, PathBuf) {
     (dir, path)
 }
 
-fn run_hook(hook: &Path, home: &FakeHome, prompt: &str, hash_seed: Option<&str>) -> HookOutput {
+fn run_hook(
+    hook: &Path,
+    home: &FakeHome,
+    prompt: &str,
+    hash_seed: Option<&str>,
+    codex: bool,
+) -> HookOutput {
     let payload = json!({
         "session_id": "t",
         "cwd": home.cwd_path().display().to_string(),
         "prompt": prompt,
     });
-
     let mut cmd = Command::new("python3");
     cmd.arg(hook)
         .env("HOME", home.home_path())
@@ -154,6 +142,10 @@ fn run_hook(hook: &Path, home: &FakeHome, prompt: &str, hash_seed: Option<&str>)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
+    if codex {
+        cmd.arg("--codex")
+            .env("CODEX_HOME", home.home_path().join(".claude"));
+    }
     match hash_seed {
         Some(seed) => {
             cmd.env("PYTHONHASHSEED", seed);
@@ -162,7 +154,6 @@ fn run_hook(hook: &Path, home: &FakeHome, prompt: &str, hash_seed: Option<&str>)
             cmd.env_remove("PYTHONHASHSEED");
         }
     }
-
     let mut child = cmd.spawn().expect("spawn python3 skill-trigger.sh");
     if let Some(mut stdin) = child.stdin.take() {
         stdin.write_all(payload.to_string().as_bytes()).ok();
@@ -175,7 +166,6 @@ fn run_hook(hook: &Path, home: &FakeHome, prompt: &str, hash_seed: Option<&str>)
     }
 }
 
-/// Extract `hookSpecificOutput.additionalContext` from a hook's stdout JSON.
 fn additional_context(stdout: &str) -> String {
     let v: Value = serde_json::from_str(stdout.trim()).expect("parse stdout json");
     v["hookSpecificOutput"]["additionalContext"]
@@ -199,16 +189,15 @@ fn every_qualifying_skill_is_listed() {
     }
     let home = FakeHome::new();
     let (_hook_dir, hook) = install_hook();
-
     let out = run_hook(
         &hook,
         &home,
         "build a react form in typescript and ship it in docker",
         None,
+        false,
     );
     assert_eq!(out.code, 0, "stderr={}", out.stderr);
     let ctx = additional_context(&out.stdout);
-
     let ts_pos = ctx
         .find("- loom-typescript --")
         .unwrap_or_else(|| panic!("missing loom-typescript line: {ctx}"));
@@ -222,7 +211,6 @@ fn every_qualifying_skill_is_listed() {
         ts_pos < docker_pos && docker_pos < react_pos,
         "unexpected line order: {ctx}"
     );
-
     let combined = ctx
         .lines()
         .find(|l| l.contains("All catalogued matches at once"))
@@ -241,10 +229,9 @@ fn ranking_is_deterministic_across_hash_seeds() {
     let home = FakeHome::new();
     let (_hook_dir, hook) = install_hook();
     let prompt = "build a react form in typescript and ship it in docker";
-
     let mut outputs = Vec::new();
     for seed in ["0", "1", "2", "3"] {
-        let out = run_hook(&hook, &home, prompt, Some(seed));
+        let out = run_hook(&hook, &home, prompt, Some(seed), false);
         assert_eq!(out.code, 0, "seed {seed}: stderr={}", out.stderr);
         outputs.push((seed, out.stdout));
     }
@@ -264,16 +251,14 @@ fn loader_line_dropped_when_domain_skills_qualify() {
     }
     let home = FakeHome::new();
     let (_hook_dir, hook) = install_hook();
-
-    let out = run_hook(&hook, &home, "skills for react", None);
+    let out = run_hook(&hook, &home, "skills for react", None, false);
     assert_eq!(out.code, 0, "stderr={}", out.stderr);
     let ctx = additional_context(&out.stdout);
     assert!(
         !ctx.contains("/loom-skills"),
         "loom-skills loader line should be dropped once react qualifies: {ctx}"
     );
-
-    let out = run_hook(&hook, &home, "list the skills", None);
+    let out = run_hook(&hook, &home, "list the skills", None, false);
     assert_eq!(out.code, 0, "stderr={}", out.stderr);
     let ctx = additional_context(&out.stdout);
     assert!(
@@ -293,8 +278,7 @@ fn single_catalogued_match_has_no_combined_line() {
     }
     let home = FakeHome::new();
     let (_hook_dir, hook) = install_hook();
-
-    let out = run_hook(&hook, &home, "docker", None);
+    let out = run_hook(&hook, &home, "docker", None, false);
     assert_eq!(out.code, 0, "stderr={}", out.stderr);
     let ctx = additional_context(&out.stdout);
     assert!(
@@ -318,8 +302,7 @@ fn core_skill_is_never_in_combined_args() {
     }
     let home = FakeHome::new();
     let (_hook_dir, hook) = install_hook();
-
-    let out = run_hook(&hook, &home, "plan a react app in typescript", None);
+    let out = run_hook(&hook, &home, "plan a react app in typescript", None, false);
     assert_eq!(out.code, 0, "stderr={}", out.stderr);
     let ctx = additional_context(&out.stdout);
     assert!(
@@ -348,15 +331,12 @@ fn cap_limits_flood() {
     }
     let home = FakeHome::new();
     let (_hook_dir, hook) = install_hook();
-
     let prompt = "alpha0 alpha1 alpha2 alpha3 alpha4 alpha5 alpha6 alpha7 alpha8 alpha9";
-    let out = run_hook(&hook, &home, prompt, None);
+    let out = run_hook(&hook, &home, prompt, None, false);
     assert_eq!(out.code, 0, "stderr={}", out.stderr);
     let ctx = additional_context(&out.stdout);
-
     let skill_lines: Vec<&str> = ctx.lines().filter(|l| l.starts_with("  -")).collect();
     assert_eq!(skill_lines.len(), 5, "expected exactly 5 lines: {ctx}");
-
     let combined = ctx
         .lines()
         .find(|l| l.contains("All catalogued matches at once"))
@@ -372,3 +352,6 @@ fn cap_limits_flood() {
         "expected 5 names in combined args: {combined}"
     );
 }
+
+#[path = "hooks_skill_trigger_codex.rs"]
+mod codex;

@@ -20,14 +20,20 @@
 #
 # Actions:
 #   Appends one record to $LOOM_WORK_DIR/subagents/<stage-id>/starts.jsonl
+#   Binds a pending worker brief when a safe child transcript path is present
 #
 # Must never block: every path below ends in `exit 0`, and every write is
 # best-effort so a failure here can never fail the subagent's start.
+
+# Resolve commands through loom's pinned hook PATH when set (LOOM_HOOK_PATH):
+# inherited PATH directories can be writable from a sandboxed session.
+PATH="${LOOM_HOOK_PATH:-$PATH}"
 
 set -euo pipefail
 umask 077
 
 source "$(dirname "$0")/_common.sh"
+source "$(dirname "$0")/_read_ledger.sh"
 
 if [[ -z "${LOOM_WORK_DIR:-}" ]] || [[ -z "${LOOM_STAGE_ID:-}" ]] || \
 	[[ -z "${LOOM_SESSION_ID:-}" ]] || [[ ! -d "${LOOM_WORK_DIR}" ]]; then
@@ -64,12 +70,12 @@ fi
 AGENT_TYPE=$(printf '%s' "$INPUT_JSON" | jq -r '.agent_type // empty' 2>/dev/null || true)
 AGENT_ID=$(printf '%s' "$INPUT_JSON" | jq -r '.agent_id // empty' 2>/dev/null || true)
 PARENT_SESSION_ID=$(printf '%s' "$INPUT_JSON" | jq -r '.session_id // empty' 2>/dev/null || true)
+TRANSCRIPT_PATH=$(printf '%s' "$INPUT_JSON" | jq -r '.transcript_path // empty' 2>/dev/null || true)
 
 # Fall back to deriving the agent id from transcript_path's basename, the same
 # shape subagent-stop.sh already relies on
 # (.../subagents/agent-<agentId>.jsonl).
 if [[ -z "$AGENT_ID" ]]; then
-	TRANSCRIPT_PATH=$(printf '%s' "$INPUT_JSON" | jq -r '.transcript_path // empty' 2>/dev/null || true)
 	case "$TRANSCRIPT_PATH" in
 	*/subagents/agent-*.jsonl)
 		AGENT_ID="${TRANSCRIPT_PATH##*/}"
@@ -127,5 +133,14 @@ if [[ -n "$START_JSON" ]]; then
 else
 	loom_debug "subagent-start: skipping - jq -n failed for agent $AGENT_ID"
 fi
+
+case "$TRANSCRIPT_PATH" in
+*/subagents/agent-"$AGENT_ID".jsonl)
+	if [[ -f "$TRANSCRIPT_PATH" && -r "$TRANSCRIPT_PATH" && ! -L "$TRANSCRIPT_PATH" ]] && command -v "${LOOM_BIN:-loom}" &>/dev/null; then
+		LOOM_HOOK_CONTEXT=1 loom_run_bounded 3 "${LOOM_BIN:-loom}" hook worker-brief --bind-agent "$AGENT_ID" \
+			--agent-type "$AGENT_TYPE" --transcript "$TRANSCRIPT_PATH" >/dev/null 2>&1 || true
+	fi
+	;;
+esac
 
 exit 0

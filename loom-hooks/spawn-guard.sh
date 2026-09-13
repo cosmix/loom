@@ -14,7 +14,8 @@
 #   3. WARNS (never denies) when an explicit `model` escalates above the
 #      agent's defined tier, or when a loom-* subagent's prompt is missing the
 #      Rule 5 preamble.
-#   4. RECORDS every typed spawn to $LOOM_WORK_DIR/subagents/<stage-id>/spawns.jsonl
+#   4. APPENDS an optional scoped worker brief after the original prompt.
+#   5. RECORDS every typed spawn to $LOOM_WORK_DIR/subagents/<stage-id>/spawns.jsonl
 #      (the state directory - .loom/work, or the legacy .work) so
 #      `loom subagents` can report on model usage across a stage.
 #
@@ -24,7 +25,7 @@
 # installed (non-blocking error), 2 = block
 #
 # Output (allow, no issue): nothing on stdout.
-# Output (allow, model filled in and/or a warning): one JSON object -
+# Output (allow, prompt/model updated and/or a warning): one JSON object -
 #   {"hookSpecificOutput": {"hookEventName": "PreToolUse",
 #     "permissionDecision": "allow", "updatedInput": {...},
 #     "additionalContext": "LOOM_HOOK_WARN: ..."}}
@@ -32,9 +33,14 @@
 #   when applicable.)
 # Output (block): human-readable reason on stderr.
 
+# Resolve commands through loom's pinned hook PATH when set (LOOM_HOOK_PATH):
+# inherited PATH directories can be writable from a sandboxed session.
+PATH="${LOOM_HOOK_PATH:-$PATH}"
+
 set -euo pipefail
 
 source "$(dirname "$0")/_common.sh"
+source "$(dirname "$0")/_read_ledger.sh"
 loom_warn_no_jq "spawn-guard.sh"
 
 if command -v gtimeout &>/dev/null; then
@@ -276,16 +282,51 @@ if [[ -n "$WARN_PREAMBLE" ]]; then
 	if [[ -n "$WARN_TEXT" ]]; then WARN_TEXT="$WARN_TEXT | $WARN_PREAMBLE"; else WARN_TEXT="$WARN_PREAMBLE"; fi
 fi
 
+# A scoped brief is optional and must never change the existing decision on a
+# missing command, timeout, malformed envelope, or empty selection. Read the
+# prompt from TOOL_INPUT during the merge so trailing newlines remain intact.
+WORKER_BRIEF_JSON=""
+if [[ $GATE_PASSED -eq 1 ]] && command -v "${LOOM_BIN:-loom}" &>/dev/null &&
+	printf '%s' "$TOOL_INPUT" | jq -e 'type == "object" and (.prompt | type == "string")' >/dev/null 2>&1; then
+	if ! WORKER_BRIEF_ENVELOPE=$(printf '%s' "$INPUT_JSON" | LOOM_HOOK_CONTEXT=1 loom_run_bounded 3 "${LOOM_BIN:-loom}" hook worker-brief 2>/dev/null); then
+		loom_debug "spawn-guard: worker-brief timeout or nonzero exit"
+	elif [[ -z "$WORKER_BRIEF_ENVELOPE" ]]; then
+		loom_debug "spawn-guard: worker-brief empty output"
+	else
+		if [[ "$WORKER_BRIEF_ENVELOPE" != *$'\n'* ]]; then
+			WORKER_BRIEF_JSON=$(printf '%s' "$WORKER_BRIEF_ENVELOPE" | jq -ec '
+				select(type == "object" and (keys | sort) == ["brief", "nonce"])
+				| .nonce as $nonce
+				| select(($nonce | type) == "string" and ($nonce | test("^[0-9a-f]{32}$")))
+				| select((.brief | type) == "string" and (.brief | length) > 0)
+				| select(([.brief | split("\n")[] | select(. == ("<!-- loom-worker-brief nonce=" + $nonce + " -->"))] | length) == 1)
+				| .brief' 2>/dev/null || true)
+		fi
+		[[ -n "$WORKER_BRIEF_JSON" ]] || loom_debug "spawn-guard: worker-brief invalid envelope"
+	fi
+fi
+
+UPDATED_INPUT="$TOOL_INPUT"
+if [[ -n "$WORKER_BRIEF_JSON" ]]; then
+	UPDATED_INPUT=$(printf '%s' "$UPDATED_INPUT" | jq -c --argjson brief "$WORKER_BRIEF_JSON" \
+		'. + {prompt: (.prompt + "\n\n" + $brief)}')
+fi
+if [[ $NEEDS_REWRITE -eq 1 ]]; then
+	UPDATED_INPUT=$(printf '%s' "$UPDATED_INPUT" | jq -c --arg model "$MODEL" '. + {model: $model}')
+fi
+
 # emit_result - Print at most ONE hookSpecificOutput JSON object combining
-# whatever applies: the rule-3 model rewrite, the rule-4/5 warning text, both,
-# or neither (in which case nothing is printed - a silent allow).
+# the model/brief rewrite and warning text, or nothing for a silent allow.
 emit_result() {
-	if [[ $NEEDS_REWRITE -eq 1 && -n "$WARN_TEXT" ]]; then
-		jq -nc --argjson ti "$TOOL_INPUT" --arg model "$MODEL" --arg ctx "LOOM_HOOK_WARN: ${WARN_TEXT}" \
-			'{hookSpecificOutput: {hookEventName: "PreToolUse", permissionDecision: "allow", updatedInput: ($ti + {model: $model}), additionalContext: $ctx}}'
-	elif [[ $NEEDS_REWRITE -eq 1 ]]; then
-		jq -nc --argjson ti "$TOOL_INPUT" --arg model "$MODEL" \
-			'{hookSpecificOutput: {hookEventName: "PreToolUse", permissionDecision: "allow", updatedInput: ($ti + {model: $model})}}'
+	if [[ $NEEDS_REWRITE -eq 1 || -n "$WORKER_BRIEF_JSON" ]]; then
+		jq -nc --argjson ti "$UPDATED_INPUT" --argjson allow "$NEEDS_REWRITE" \
+			--arg ctx "${WARN_TEXT:+LOOM_HOOK_WARN: ${WARN_TEXT}}" '
+			{hookSpecificOutput: (
+				{hookEventName: "PreToolUse"}
+				+ (if $allow == 1 then {permissionDecision: "allow"} else {} end)
+				+ {updatedInput: $ti}
+				+ (if $ctx != "" then {additionalContext: $ctx} else {} end)
+			)}'
 	elif [[ -n "$WARN_TEXT" ]]; then
 		jq -nc --arg ctx "LOOM_HOOK_WARN: ${WARN_TEXT}" \
 			'{hookSpecificOutput: {hookEventName: "PreToolUse", additionalContext: $ctx}}'

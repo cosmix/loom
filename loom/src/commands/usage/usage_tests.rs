@@ -86,7 +86,12 @@ fn parse_all_attaches_authoritative_agent_type_from_starts_ledger() {
         "session-1",
     )];
 
-    let parsed = parse_all(&files, &range(), Some(&work_dir));
+    let parsed = parse_all(
+        &files,
+        &range(),
+        Some(&work_dir),
+        &forward_join::ForwardJoin::load(None),
+    );
 
     assert_eq!(parsed.len(), 1);
     assert_eq!(
@@ -127,7 +132,12 @@ fn parse_all_records_ledger_absence_without_disabling_prompt_fallback() {
         agent_id: Some("agent-1".to_owned()),
     }];
 
-    let parsed = parse_all(&files, &range(), Some(&temp.path().join("missing-work")));
+    let parsed = parse_all(
+        &files,
+        &range(),
+        Some(&temp.path().join("missing-work")),
+        &forward_join::ForwardJoin::load(None),
+    );
 
     assert_eq!(parsed.len(), 1);
     assert!(parsed[0].agent_type.is_none());
@@ -172,7 +182,12 @@ fn parse_all_does_not_join_a_start_from_another_parent_session() {
         agent_id: Some("agent-1".to_owned()),
     }];
 
-    let parsed = parse_all(&files, &range(), Some(&work_dir));
+    let parsed = parse_all(
+        &files,
+        &range(),
+        Some(&work_dir),
+        &forward_join::ForwardJoin::load(None),
+    );
 
     assert!(parsed[0].agent_type.is_none());
     assert_eq!(

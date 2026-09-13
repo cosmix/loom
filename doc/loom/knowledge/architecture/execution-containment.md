@@ -1,6 +1,6 @@
 # Execution Containment
 
-> What sandboxed command containment means in loom, its two confinement levels, and what routes through spawn_confined.
+> Sandboxed command containment and its limits
 
 ## Read This First: What "Containment" Means In Loom
 

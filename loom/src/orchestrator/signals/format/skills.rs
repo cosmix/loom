@@ -26,15 +26,9 @@ pub fn format_skill_recommendations(skills: &[SkillMatch]) -> String {
         content.push_str(&format_advisory_skills(&advisory));
     }
 
-    // One combined loader call for every catalogued skill recommended above,
-    // detected first then advisory, so an agent can load them all in a
-    // single Skill tool invocation instead of one per skill.
-    let ordered: Vec<&SkillMatch> = detected
-        .iter()
-        .copied()
-        .chain(advisory.iter().copied())
-        .collect();
-    if let Some(line) = combined_loader_line(&ordered) {
+    // Advisory matches remain optional, so only direct project detections
+    // may be grouped into an all-at-once loader directive.
+    if let Some(line) = combined_loader_line(&detected) {
         content.push_str(&line);
     }
 
@@ -156,7 +150,10 @@ mod skill_recommendation_tests {
 
     #[test]
     fn advisory_skills_render_as_table_not_directive() {
-        let out = format_skill_recommendations(&[advisory("loom-auth", "jwt")]);
+        let out = format_skill_recommendations(&[
+            advisory("loom-auth", "jwt"),
+            advisory("loom-search", "search"),
+        ]);
         assert!(
             !out.contains("Load these now"),
             "should not be directive: {out}"
@@ -170,6 +167,10 @@ mod skill_recommendation_tests {
             "missing invoke column: {out}"
         );
         assert!(out.contains("jwt"), "missing matched trigger: {out}");
+        assert!(
+            !out.contains("Load all catalogued ones at once"),
+            "advisory-only matches must not get a combined directive: {out}"
+        );
     }
 
     #[test]
@@ -183,18 +184,42 @@ mod skill_recommendation_tests {
             load_pos < advisory_pos,
             "directive should precede advisory: {out}"
         );
+        assert!(
+            !out.contains("Load all catalogued ones at once"),
+            "advisory skills must not become part of a combined directive: {out}"
+        );
     }
 
     #[test]
     fn two_catalogued_skills_get_a_combined_loader_line() {
-        let out =
-            format_skill_recommendations(&[detected("loom-rust"), advisory("loom-auth", "jwt")]);
+        let out = format_skill_recommendations(&[detected("loom-rust"), detected("loom-auth")]);
         assert!(
             out.contains(
                 "**Load all catalogued ones at once:** \
                  `Skill(skill=\"loom-skills\", args=\"loom-rust loom-auth\")`"
             ),
-            "missing combined loader line in detected-then-advisory order: {out}"
+            "missing combined loader line for detected skills: {out}"
+        );
+    }
+
+    #[test]
+    fn combined_loader_excludes_catalogued_advisory_skills() {
+        let out = format_skill_recommendations(&[
+            detected("loom-rust"),
+            detected("loom-auth"),
+            advisory("loom-search", "search"),
+        ]);
+        let combined = out
+            .lines()
+            .find(|line| line.contains("Load all catalogued ones at once"))
+            .expect("combined loader line");
+        assert!(
+            combined.contains("args=\"loom-rust loom-auth\""),
+            "detected skills missing: {combined}"
+        );
+        assert!(
+            !combined.contains("loom-search"),
+            "advisory skill leaked into combined loader: {combined}"
         );
     }
 

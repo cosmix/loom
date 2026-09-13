@@ -120,6 +120,9 @@ pub enum KnowledgeCommands {
         /// Exit non-zero when any non-review issue is reported
         #[arg(long)]
         strict: bool,
+        /// Also exit non-zero when declared source evidence changed or is unavailable
+        #[arg(long)]
+        strict_evidence: bool,
         /// Machine-readable JSON output (suppresses human text)
         #[arg(long)]
         json: bool,

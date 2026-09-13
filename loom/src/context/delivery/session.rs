@@ -56,6 +56,23 @@ pub fn hook_recipient_id(scope: &str, session_id: Option<&str>) -> String {
     format!("prompt-{scope}-{suffix}")
 }
 
+/// Filesystem-safe identity for one not-yet-bound worker brief.
+///
+/// All three inputs are hashed because the nonce is the only public join key
+/// and neither a hook session nor a stage-controlled value may become a path
+/// component. The `worker-` namespace also keeps these keys disjoint from
+/// prompt-hook recipients.
+pub fn worker_recipient_id(stage: &str, parent_session: &str, nonce: &str) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(b"worker-brief\0");
+    for value in [stage, parent_session, nonce] {
+        hasher.update(value.len().to_le_bytes());
+        hasher.update(value.as_bytes());
+    }
+    let result = hasher.finalize();
+    format!("worker-{}", hex::encode(&result[..16]))
+}
+
 /// First 8 bytes of `sha256(value)`, hex-encoded: 16 characters, all drawn
 /// from `[0-9a-f]`. Same two-step shape as
 /// [`crate::context::retrieve::context_epoch`]'s own digest.

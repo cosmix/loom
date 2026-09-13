@@ -1,0 +1,114 @@
+{
+  "schema_version": 1,
+  "intervention": {
+    "intervention_id": "optimized-polling",
+    "baseline_revision": "base-rev",
+    "candidate_revision": "candidate-rev",
+    "changed_dimensions": ["implementation-revision"]
+  },
+  "pairs": [
+    {
+      "work_unit_id": "success-case",
+      "baseline": {
+        "run_id": "base-success",
+        "workload_id": "workload-a",
+        "fixture_id": "fixture-a",
+        "source_input_revision": "source-v1",
+        "source_input_digest": "sha256:input-a",
+        "environment_id": "linux-x86-test",
+        "acceptance_contract_digest": "sha256:contract-a",
+        "implementation_revision": "base-rev",
+        "assignments": [{"provider": "claude", "model": "claude-opus", "effort": "high"}],
+        "accepted": true,
+        "required_checks": [{"command_id": "cargo-test", "contract_id": "tests-v1", "verdict": "passed"}],
+        "reviewed_dimensions": [{"dimension": "correctness", "independent": true, "verdict": "passed"}],
+        "unresolved_findings": [],
+        "omitted_requirements": [],
+        "retry_count": 0,
+        "fix_count": 0,
+        "semantic_completion": "passed",
+        "critical_path_ms": 1000,
+        "notification_latency_ms": 100,
+        "accounting_complete": true,
+        "accounting_provenance": "measured",
+        "provider_tokens": {
+          "claude": {
+            "input_tokens": 100,
+            "fresh_input_tokens": 100,
+            "cache_creation_input_tokens": 30,
+            "cache_read_input_tokens": 20,
+            "cache_write_5m_input_tokens": 10,
+            "cache_write_1h_input_tokens": 20,
+            "output_tokens": 40,
+            "thinking_output_tokens": 10,
+            "resident_input_tokens": 150,
+            "total_tokens": null
+          }
+        },
+        "quota_observations": [{
+          "provider": "claude",
+          "window": "five-hour",
+          "reset_id": "reset-a",
+          "resets_at": 2000,
+          "observed_start_at": 1000,
+          "observed_end_at": 1100,
+          "used_percent_start": 10.0,
+          "used_percent_end": 14.0,
+          "precision_percent": 0.25,
+          "unrelated_concurrent_use": false,
+          "continuity": "same-reset"
+        }]
+      },
+      "candidate": {
+        "run_id": "candidate-success",
+        "workload_id": "workload-a",
+        "fixture_id": "fixture-a",
+        "source_input_revision": "source-v1",
+        "source_input_digest": "sha256:input-a",
+        "environment_id": "linux-x86-test",
+        "acceptance_contract_digest": "sha256:contract-a",
+        "implementation_revision": "candidate-rev",
+        "assignments": [{"provider": "claude", "model": "claude-opus", "effort": "high"}],
+        "accepted": true,
+        "required_checks": [{"command_id": "cargo-test", "contract_id": "tests-v1", "verdict": "passed"}],
+        "reviewed_dimensions": [{"dimension": "correctness", "independent": true, "verdict": "passed"}],
+        "unresolved_findings": [],
+        "omitted_requirements": [],
+        "retry_count": 0,
+        "fix_count": 0,
+        "semantic_completion": "passed",
+        "critical_path_ms": 900,
+        "notification_latency_ms": 90,
+        "accounting_complete": true,
+        "accounting_provenance": "measured",
+        "provider_tokens": {
+          "claude": {
+            "input_tokens": 90,
+            "fresh_input_tokens": 90,
+            "cache_creation_input_tokens": 20,
+            "cache_read_input_tokens": 20,
+            "cache_write_5m_input_tokens": 5,
+            "cache_write_1h_input_tokens": 15,
+            "output_tokens": 35,
+            "thinking_output_tokens": 8,
+            "resident_input_tokens": 130,
+            "total_tokens": null
+          }
+        },
+        "quota_observations": [{
+          "provider": "claude",
+          "window": "five-hour",
+          "reset_id": "reset-a",
+          "resets_at": 2000,
+          "observed_start_at": 1200,
+          "observed_end_at": 1300,
+          "used_percent_start": 20.0,
+          "used_percent_end": 22.0,
+          "precision_percent": 0.25,
+          "unrelated_concurrent_use": false,
+          "continuity": "same-reset"
+        }]
+      }
+    }
+  ]
+}

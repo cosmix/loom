@@ -6,7 +6,7 @@ verified: 054528e508d51ede343e254590cdb73ae00f7df6
 ---
 # Context Retrieval
 
-> The retrieval subsystem: two graphs, two lanes, query-side gating, two-tier fusion, and the persistent BM25 index.
+> Retrieval: graphs, lanes, gating, tiered packs
 
 ## What This Subsystem Is
 

@@ -63,6 +63,8 @@ Loom's savings come from **delegation, not downgrade**:
 - **Signals are built for cache reuse.** Each signal is a four-section layout with a per-stage-type stable prefix that is byte-identical across sessions, so the large doctrine block is a cache hit rather than a re-read.
 - **Context budgets prevent compaction**, which is the expensive failure: an uncached re-read that costs more and produces worse work.
 - **Tiered knowledge and a skill index** keep the working set small — at most 5 matched skills are injected per stage, out of 61 installed.
+- **Waits and repeat reads are settled by receipts, not by polling.** An orchestrator waits on a backgrounded Codex forward by its exact receipt (`loom subagents wait --receipt <id>`), and repeated `loom subagents list` polling is counted by the poll guard. A repeated file read is warned or denied only when a transcript receipt proves the earlier result was delivered.
+- **Consumption is measured, not assumed.** `loom usage` reports Claude and Codex separately from provider-native telemetry, and `loom usage --compare` judges a candidate policy offline against paired runs. A token-proxy gain alone never counts as a subscription saving, and any quality or latency regression rejects the candidate; see [the evaluation protocol](doc/token-optimization-evaluation.md).
 - **Orchestrated sessions are interactive**, billing against your Claude subscription. The handful of headless `claude -p` paths are opt-in flags, off by default (see the Billing note below).
 
 Per-stage `model`, `reasoning_effort`, and `ultracode` fields let you override any of this explicitly.
@@ -351,7 +353,7 @@ loom knowledge annotate <target> [--state <s>] [--source <path>]... [--verified 
                                                                 # Set lifecycle state, evidence sources, verified revision, aliases, or a topic's blurb
 loom knowledge telemetry [--stage <id>] [--json]                # Summarise recorded context delivery, prompt briefs, abstentions and pulls
 loom knowledge sync [--structural-only] [--json]              # Rebuild derived retrieval artifacts after editing knowledge
-loom knowledge check [--strict] [--json]                      # Report knowledge-base diagnostics (read-only; never opens the context store)
+loom knowledge check [--strict] [--strict-evidence] [--json]  # Report knowledge-base diagnostics (read-only; never opens the context store); --strict-evidence also fails on changed or unassessable declared sources
 
 loom memory note <text> [--stage <id>]
 loom memory decision <text> [--context <why>] [--stage <id>]
@@ -373,7 +375,13 @@ See [Knowledge System](#knowledge-system) for how these fit together.
 
 ```bash
 loom review [--ai-summary]                                                   # Generate a code-review doc from stage memories; --ai-summary uses headless `claude -p` (see Billing note)
-loom usage [--since <duration|date>] [--project <path>] [--all] [--stage <id>] [--plan <name>] [--json]  # Report what agent sessions actually consumed, in tokens
+loom usage [--since <duration|date>] [--until <rfc3339>] [--provider claude|codex|all] [--project <path> | --all] [--stage <id>] [--plan <name>] [--windows 5h|week] [--json]
+                                                                             # Report what agent sessions actually consumed, per provider (Claude and Codex are never summed)
+loom usage [--claude-root <dir>] [--codex-root <dir>] [--receipts-root <dir>] [--forward-receipts-root <dir>]
+                                                                             # Read explicit telemetry roots; a supplied root never falls back
+loom usage --compare <artifact.json> [--json]                                # Offline paired evaluation: exit 0 supported, 1 rejected, 2 inconclusive (doc/token-optimization-evaluation.md)
+loom subagents list | harvest | watch [--timeout <secs>]                     # Read-only watchdog over subagent transcripts: liveness, final reports, wait until settled
+loom subagents wait --receipt <id> [--timeout <secs>] [--json]               # Wait on one exact forwarded Codex job; exit 0 succeeded, 1 failed/canceled, 2 still running/unknown
 loom attach [stage-id]                                                       # tmux backend only; omit the id for a tiled overview
 loom sessions list
 loom sessions kill <session-id...> | --stage <stage-id>

@@ -1,32 +1,14 @@
 #!/usr/bin/env bash
 # post-tool-use.sh - Claude Code PostToolUse hook for loom
 #
-# Called after each tool use to update the heartbeat and check the running
-# session's resident context usage against its ceiling.
-#
-# SCOPE: a SESSION hook, registered per loom stage session by
-# loom/src/hooks/config.rs::to_settings_hooks - NOT a global hook. It exits
-# below whenever LOOM_STAGE_ID is unset, so it only ever runs for loom stage
-# sessions (the main agent AND its Task-tool subagents), never an
-# interactive, non-loom Claude Code session.
+# Updates a loom stage session's heartbeat and resident-context ceiling.
+# It exits when LOOM_STAGE_ID is unset, so it is never active outside a stage.
 #
 # Input: JSON from stdin (Claude Code passes tool info via stdin)
 #   {"tool_name": "Bash", "tool_input": {...}, "transcript_path": "...", ...}
 #
-# Environment variables (set by loom worktree settings):
-#   LOOM_STAGE_ID    - The stage being executed
-#   LOOM_SESSION_ID  - The session ID
-#   LOOM_WORK_DIR    - Path to the state directory (.loom/work, or the
-#                      legacy .work for a workspace that already resolved
-#                      to it)
-#
-# Actions:
-#   1. Updates heartbeat in $LOOM_WORK_DIR/heartbeat/<stage-id>.json with the resident
-#      token count read from the tail of the live transcript
-#   2. After git commits in loom stages, reminds Claude to update knowledge/memory
-#   3. Forwards Write/Edit/MultiEdit/NotebookEdit paths to `loom context record-edit`
-#   4. Compares resident tokens against the context ceiling and, at 80%/100%
-#      of it, tells the agent via exit 2 (see the CONTEXT CEILING section)
+# Environment: LOOM_STAGE_ID, LOOM_SESSION_ID, and LOOM_WORK_DIR from loom
+# worktree settings.
 
 # Resolve commands through loom's pinned hook PATH when set (LOOM_HOOK_PATH):
 # inherited PATH directories can be writable from a sandboxed session.
@@ -36,33 +18,18 @@ set -euo pipefail
 umask 077
 
 source "$(dirname "$0")/_common.sh"
+source "$(dirname "$0")/_read_ledger.sh"
 
-# ---------------------------------------------------------------------------
-# Context-ceiling helpers. Kept in this file rather than _common.sh, which
-# this stage's contract leaves untouched.
-# ---------------------------------------------------------------------------
-
-# Ceiling defaults, used only when the canonical Rust resolver is unavailable
-# or returns malformed output. A shell script cannot read a Rust constant, so
-# these are hand-kept copies and each one carries the name of its counterpart:
-#
-#   LOOM_DEFAULT_CONTEXT_CEILING_TOKENS  mirrors DEFAULT_CONTEXT_CEILING_TOKENS
-#   LOOM_DEFAULT_SUBAGENT_CEILING_TOKENS mirrors DEFAULT_SUBAGENT_CEILING_TOKENS
-#
-# both in loom/src/models/constants.rs. Change one side and grep the constant
-# name to find the other; a drift here means the hook governs the agent against
-# a number no other layer uses.
+# Fallbacks if the canonical resolver fails; in loom/src/models/constants.rs:
+# LOOM_DEFAULT_CONTEXT_CEILING_TOKENS mirrors DEFAULT_CONTEXT_CEILING_TOKENS.
+# LOOM_DEFAULT_SUBAGENT_CEILING_TOKENS mirrors DEFAULT_SUBAGENT_CEILING_TOKENS.
 readonly LOOM_DEFAULT_CONTEXT_CEILING_TOKENS=800000
 readonly LOOM_DEFAULT_SUBAGENT_CEILING_TOKENS=800000
 
-# How much of a transcript's tail is read to find the last usage record. Cheap
-# even for a huge transcript, and large enough to hold many records.
+# Tail window used to find the last transcript usage record.
 readonly LOOM_TRANSCRIPT_WINDOW_BYTES=131072
 
-# _loom_ctx_usage_from_stream
-# Reads JSONL on stdin; echoes the resident token count (input +
-# cache_creation + cache_read) of the LAST assistant usage record in it, or
-# nothing. Never fails: the caller must get no reading rather than a wrong one.
+# Echo the last assistant resident-token count in JSONL, or nothing.
 _loom_ctx_usage_from_stream() {
 	jq -c 'select(.type == "assistant" and .message.usage != null) |
 		((.message.usage.input_tokens // 0) +
@@ -71,19 +38,9 @@ _loom_ctx_usage_from_stream() {
 		tail -n 1 || true
 }
 
-# _loom_ctx_last_usage_tokens <transcript-path>
-# Echoes the resident token count from the LAST assistant usage record of
-# <transcript-path>, or nothing if it cannot be determined. Fail-open under
-# set -euo pipefail.
-#
-# Only the last LOOM_TRANSCRIPT_WINDOW_BYTES are read, and the first line of
-# that chunk is dropped ONLY when the file is bigger than the window: a
-# byte-offset tail routinely slices a JSONL record in half, and jq aborts the
-# WHOLE stream on one malformed leading value (verified: unlike a runtime type
-# error on a later value, which jq skips and continues past, a parse error
-# discards everything). When the whole file fits in the window nothing is torn,
-# and dropping a line there would throw away a complete record - the only usage
-# record the transcript has, if it holds just one.
+# Read the final assistant usage record without loading a whole transcript.
+# A byte-tail can begin mid-record, so discard its first line only when the
+# file exceeds the window; otherwise jq would reject the entire stream.
 _loom_ctx_last_usage_tokens() {
 	local transcript_path="$1"
 	[[ -n "$transcript_path" && -r "$transcript_path" ]] || return 0
@@ -103,9 +60,7 @@ _loom_ctx_last_usage_tokens() {
 	fi
 }
 
-# _loom_ctx_pair_is_valid <main:subagent>
-# Accept exactly the hidden Rust command's two-u32 wire format. Cache files are
-# local mutable state, so validate them just as strictly as fresh command output.
+# Accept the hidden Rust command's two-u32 wire format.
 _loom_ctx_pair_is_valid() {
 	local pair="$1" main_value subagent_value
 	[[ "$pair" =~ ^(0|[1-9][0-9]*):(0|[1-9][0-9]*)$ ]] || return 1
@@ -115,9 +70,7 @@ _loom_ctx_pair_is_valid() {
 	[[ "$main_value" -le 4294967295 && "$subagent_value" -le 4294967295 ]]
 }
 
-# _loom_ctx_cache_pair <cache-file> <main:subagent>
-# Best-effort same-directory replacement: concurrent main/subagent hook calls
-# may both resolve, but neither can expose a partially-written cache document.
+# Atomically cache a valid pair so concurrent readers never see a partial one.
 _loom_ctx_cache_pair() {
 	local cache_file="$1" pair="$2" temp_file=""
 	[[ ! -L "$cache_file" ]] || return 0
@@ -132,10 +85,7 @@ _loom_ctx_cache_pair() {
 	fi
 }
 
-# _loom_ctx_resolve_ceiling <cache-file> <main|subagent> <fallback>
-# The Rust command owns TOML/YAML parsing and returns BOTH ceilings in one call.
-# Cache that pair per Loom session, then select the caller's branch locally so
-# the main agent and its subagents cannot drift onto independently-read values.
+# Rust resolves both ceilings once; cache the pair per session before selecting.
 _loom_ctx_resolve_ceiling() {
 	local cache_file="$1" branch="$2" fallback="$3" pair=""
 
@@ -145,13 +95,7 @@ _loom_ctx_resolve_ceiling() {
 	fi
 
 	if [[ -z "$pair" ]] && command -v "${LOOM_BIN:-loom}" &>/dev/null; then
-		if command -v gtimeout &>/dev/null; then
-			pair=$(LOOM_HOOK_CONTEXT=1 gtimeout 3 "${LOOM_BIN:-loom}" hook context-ceilings 2>/dev/null || true)
-		elif command -v timeout &>/dev/null; then
-			pair=$(LOOM_HOOK_CONTEXT=1 timeout 3 "${LOOM_BIN:-loom}" hook context-ceilings 2>/dev/null || true)
-		else
-			pair=$(LOOM_HOOK_CONTEXT=1 "${LOOM_BIN:-loom}" hook context-ceilings 2>/dev/null || true)
-		fi
+		pair=$(LOOM_HOOK_CONTEXT=1 loom_run_bounded 3 "${LOOM_BIN:-loom}" hook context-ceilings 2>/dev/null || true)
 		if _loom_ctx_pair_is_valid "$pair"; then
 			_loom_ctx_cache_pair "$cache_file" "$pair"
 		else
@@ -168,17 +112,8 @@ _loom_ctx_resolve_ceiling() {
 	fi
 }
 
-# _loom_ctx_check_main_ceiling <resident-tokens>
-# MAIN branch: warns once (marker-guarded) at >=80% of the ceiling, then
-# hard-blocks every subsequent tool call at >=100%. Exits the whole script
-# via `exit 2` when a threshold fires; falls through otherwise.
-#
-# Both files it writes are keyed on the SESSION, not the stage. Nothing ever
-# deletes them - `remove_heartbeat` (monitor/heartbeat.rs) removes only
-# <stage>.json - so a stage-keyed pair leaks into the stage's successor
-# sessions: the successor would inherit a "already warned" marker it never
-# triggered and go from silence straight to the hard block, and it would keep
-# resolving a ceiling cached before the operator edited config.toml.
+# Warn once at 80%, then exit 2 at 100%. These files are session-keyed so a
+# successor does not inherit a stale cache or already-warned marker.
 _loom_ctx_check_main_ceiling() {
 	local resident="$1"
 	[[ "$resident" =~ ^[0-9]+$ ]] || return 0
@@ -203,12 +138,8 @@ _loom_ctx_check_main_ceiling() {
 	fi
 }
 
-# _loom_ctx_check_subagent_ceiling <resident-tokens>
-# SUBAGENT branch: warns once at >=80%, then hard-blocks every subsequent tool
-# call at >=100%. The 80% marker is keyed on the session AND on the subagent's
-# OWN transcript file: several subagents share one stage and one session, so a
-# marker keyed any less finely would let the first one to cross 80% silence all
-# the others (and, keyed on the stage alone, silence the next session's too).
+# Warn a subagent once at 80%, then exit 2 at 100%; transcript-specific
+# markers keep one subagent from silencing another in the same session.
 _loom_ctx_check_subagent_ceiling() {
 	local resident="$1"
 	[[ "$resident" =~ ^[0-9]+$ ]] || return 0
@@ -235,30 +166,23 @@ _loom_ctx_check_subagent_ceiling() {
 	fi
 }
 
-# Read JSON input from stdin (Claude Code passes tool info via stdin)
-# Cross-platform timeout: gtimeout (macOS+coreutils), timeout (Linux), or plain cat
-if command -v gtimeout &>/dev/null; then
-	INPUT_JSON=$(gtimeout 1 cat 2>/dev/null || true)
-elif command -v timeout &>/dev/null; then
-	INPUT_JSON=$(timeout 1 cat 2>/dev/null || true)
-else
-	INPUT_JSON=$(cat 2>/dev/null || true)
-fi
+# Bound stdin in case the hook runner leaves it open.
+INPUT_JSON=$(loom_run_bounded 1 cat 2>/dev/null || true)
 
-# Parse tool_name and tool_input from JSON using jq
 TOOL_NAME=$(echo "$INPUT_JSON" | jq -r '.tool_name // empty' 2>/dev/null || true)
 TOOL_NAME="${TOOL_NAME:-unknown}"
 TOOL_INPUT=$(echo "$INPUT_JSON" | jq -r '.tool_input // empty' 2>/dev/null || true)
+READ_FILE_PATH=""
+if [[ "$TOOL_NAME" == "Read" ]]; then
+	READ_FILE_PATH=$(echo "$TOOL_INPUT" | jq -r '.file_path // empty' 2>/dev/null || true)
+fi
 
-# For Bash tool, extract the command
 COMMAND=""
 if [[ "$TOOL_NAME" == "Bash" ]]; then
 	COMMAND=$(echo "$TOOL_INPUT" | jq -r '.command // empty' 2>/dev/null || echo "$TOOL_INPUT")
 fi
 
-# Validate required environment variables
 if [[ -z "${LOOM_STAGE_ID:-}" ]] || [[ -z "${LOOM_SESSION_ID:-}" ]] || [[ -z "${LOOM_WORK_DIR:-}" ]]; then
-	# Silently exit if not in loom context
 	exit 0
 fi
 
@@ -266,37 +190,26 @@ case "$LOOM_STAGE_ID" in
 *[!A-Za-z0-9._-]* | "") exit 0 ;;
 esac
 
-# The session id goes into filenames too (the ceiling cache and the 80% warn
-# marker are keyed per session, see _loom_ctx_check_main_ceiling), so it gets
-# the same guard.
+# The session id also forms ceiling-cache and warning-marker filenames.
 case "$LOOM_SESSION_ID" in
 *[!A-Za-z0-9._-]* | "") exit 0 ;;
 esac
 
-# Validate work directory exists and is accessible
 if [[ ! -d "${LOOM_WORK_DIR}" ]]; then
-	# Silently exit - work dir may have been cleaned up
 	exit 0
 fi
 
-# Ensure heartbeat directory exists
 HEARTBEAT_DIR="${LOOM_WORK_DIR}/heartbeat"
 mkdir -p -m 700 "$HEARTBEAT_DIR" 2>/dev/null || exit 0
 chmod 700 "$HEARTBEAT_DIR" 2>/dev/null || exit 0
 
-# Resident context usage for THIS invocation's own transcript, and whether
-# this invocation is running under a subagent - both are needed twice below
-# (the heartbeat write and the ceiling check at the end), so compute once.
+# Both heartbeat and ceiling enforcement use this invocation's transcript.
 TRANSCRIPT_PATH=$(echo "$INPUT_JSON" | jq -r '.transcript_path // empty' 2>/dev/null || true)
 RESIDENT_TOKENS=$(_loom_ctx_last_usage_tokens "$TRANSCRIPT_PATH")
 
 IS_SUBAGENT=0
-# This is a per-session hook, already scoped by the three validated LOOM_*
-# values above. Unlike globally-installed enforcement hooks it may therefore
-# trust a positive harness payload before process ancestry. Agent-team
-# teammates inherit the session metadata but are not descendants of the main
-# Claude process; ancestry-first classification mistakes them for the parent,
-# overwrites the parent's heartbeat, and gives them the parent ceiling.
+# Team teammates may lack main-process ancestry, so trust a positive payload
+# before the compatibility ancestry fallback.
 PAYLOAD_AGENT_VERDICT=$(loom_payload_agent_verdict "$INPUT_JSON")
 if [[ "$PAYLOAD_AGENT_VERDICT" == "subagent" ]]; then
 	IS_SUBAGENT=1
@@ -305,43 +218,26 @@ elif [[ "$PAYLOAD_AGENT_VERDICT" == "unknown" ]] && loom_is_subagent "$INPUT_JSO
 	IS_SUBAGENT=1
 fi
 
-# Update heartbeat file in JSON format.
-# Build via `jq -n --arg` so a value containing a quote/backslash (e.g. an exotic
-# TOOL_NAME) can never produce malformed JSON. Fall back to the heredoc only when
-# jq is unavailable — the heartbeat must never be broken by a missing dependency,
-# and these values are loom-controlled.
-#
-# A symlinked heartbeat path is refused - the target must never be written
-# through - but that refusal must only skip the heartbeat write itself. It is
-# NOT a whole-script exit: the matcher blocks below (post-commit reminder,
-# edit recording) are unrelated to the heartbeat and must still run.
+# jq builds escaped JSON; the controlled-value heredoc is only its fallback.
+# A symlink skips only the heartbeat write, not unrelated post-tool actions.
 HEARTBEAT_FILE="${HEARTBEAT_DIR}/${LOOM_STAGE_ID}.json"
-# A judge (LOOM_SESSION_TYPE=adjudication) writes its own heartbeat file,
-# separate from the stage session's, since a stage's session: frontmatter
-# never names the judge.
+# Judges use an independent heartbeat because stage frontmatter never names one.
 if [[ "${LOOM_SESSION_TYPE:-}" == "adjudication" ]]; then
 	HEARTBEAT_FILE="${HEARTBEAT_DIR}/${LOOM_STAGE_ID}.adjudication.json"
 fi
 HEARTBEAT_LOCK_DIR="${HEARTBEAT_FILE}.lock"
 if loom_heartbeat_lock_acquire "$HEARTBEAT_LOCK_DIR"; then
 	trap 'loom_heartbeat_lock_release "$HEARTBEAT_LOCK_DIR"' EXIT
-	# Re-check after acquiring: another writer may have replaced the path while
-	# this hook waited.
+	# Another writer may have replaced the path while this hook waited.
 	if [[ -L "$HEARTBEAT_FILE" ]]; then
 		loom_debug "post-tool-use: skipping heartbeat refresh - $HEARTBEAT_FILE is a symlink"
 		loom_heartbeat_lock_release "$HEARTBEAT_LOCK_DIR"
 		trap - EXIT
-	# A judge's ownership is already implied by LOOM_SESSION_TYPE alone: the
-	# daemon enforces one live judge per stage, so the ownership gate below
-	# applies only to non-judge (stage) sessions.
+	# The daemon enforces one live judge per stage, so judges need no owner check.
 	elif [[ "${LOOM_SESSION_TYPE:-}" != "adjudication" ]] && ! loom_heartbeat_owner_is_current "$LOOM_WORK_DIR" "$LOOM_STAGE_ID" "$LOOM_SESSION_ID" "$HEARTBEAT_FILE"; then
 		loom_debug "post-tool-use: skipping stale heartbeat refresh for session $LOOM_SESSION_ID"
 	else
-	# The heartbeat's context_tokens/transcript_path belong to the MAIN
-	# session's own resident usage exclusively. A subagent's own numbers must
-	# never overwrite them - carry the file's existing values forward instead
-	# (empty/empty, rendered as null below, if it does not exist yet or
-	# cannot be read).
+	# Subagents preserve the main session's token and transcript fields.
 	if [[ "$IS_SUBAGENT" == "1" ]]; then
 		HB_CONTEXT_TOKENS_RAW=""
 		HB_TRANSCRIPT_PATH_RAW=""
@@ -399,14 +295,25 @@ EOF
 	trap - EXIT
 fi
 
-# Tool results are intentionally not persisted here. A shell hook cannot append
-# to a shared path with a race-free no-follow guarantee, and even redacted
-# previews risk retaining credentials or private source. The heartbeat above is
-# the complete post-tool observability record.
+# Rust revalidates this bounded, best-effort forward lifecycle notification.
+if [[ "$TOOL_NAME" == "Bash" && "$COMMAND" == *"codex-forward.sh task"* && -n "$TRANSCRIPT_PATH" ]] \
+	&& command -v "${LOOM_BIN:-loom}" &>/dev/null; then
+	LOOM_HOOK_CONTEXT=1 loom_run_bounded 5 "${LOOM_BIN:-loom}" hook forward-receipt --transcript "$TRANSCRIPT_PATH" >/dev/null 2>&1 || true
+fi
+
+# Result content is intentionally not parsed or stored in shell. The Rust
+# adapter receives the original payload and correlates its Read tool-use id
+# with the bounded transcript tail before it records any receipt.
+if [[ "$TOOL_NAME" == "Read" && -n "$INPUT_JSON" && -n "$READ_FILE_PATH" ]] \
+	&& _loom_read_receipt_eligible "$READ_FILE_PATH" && command -v "${LOOM_BIN:-loom}" &>/dev/null; then
+	printf '%s' "$INPUT_JSON" | LOOM_HOOK_CONTEXT=1 loom_run_bounded 2 "${LOOM_BIN:-loom}" hook read-receipt --complete >/dev/null 2>&1 || true
+fi
+
+# Tool results are not persisted: a shell hook cannot append race-free without
+# following paths, and even redacted previews risk retaining private source.
 
 # === POST-COMMIT KNOWLEDGE/MEMORY REMINDER ===
-# After a git commit in a loom stage, remind Claude to update knowledge/memory
-# This is non-blocking - just a prompt to help capture lessons learned
+# After a git commit, print a non-blocking knowledge/memory reminder.
 
 remind_knowledge_update() {
 	cat >&2 <<'REMINDER'
@@ -439,18 +346,9 @@ remind_knowledge_update() {
 REMINDER
 }
 
-# Check if this was a git commit command
 if [[ "$TOOL_NAME" == "Bash" ]] && [[ -n "$COMMAND" ]]; then
-	# Detect a real `git commit` invocation (including `git -C <dir> commit`)
-	# via the shared tokenizer over the STRIPPED command, exactly as
-	# commit-filter.sh:74-83 does - heredoc bodies are stripped BEFORE
-	# tokenizing, so a heredoc body whose text happens to start a line with
-	# "git commit" (docs, a test fixture, a plan file) is never mistaken for
-	# a real invocation. This also means a "commit" appearing only inside a
-	# quoted argument's text (e.g. a `loom memory note` body) never fires
-	# this, and the check carries no GNU-only \s/\S dependency. A command
-	# the tokenizer cannot parse (unterminated quote - not valid bash
-	# anyway) simply does not fire the reminder.
+	# Shared tokenization strips heredocs and quoted prose, so only a real
+	# `git commit` fires; an unparseable Bash command safely does not.
 	STRIPPED_COMMAND=$(strip_embedded_content "$COMMAND")
 	if loom_tokenize_command "$STRIPPED_COMMAND" && loom_tokens_cmd_has_arg 'git' 'commit'; then
 		remind_knowledge_update
@@ -478,22 +376,12 @@ if [[ "$TOOL_NAME" == "Write" || "$TOOL_NAME" == "Edit" || "$TOOL_NAME" == "Mult
 		EDIT_PATH=$(echo "$TOOL_INPUT" | jq -r '.file_path // empty' 2>/dev/null || true)
 	fi
 	if [[ -n "$EDIT_PATH" ]]; then
-		if command -v gtimeout &>/dev/null; then
-			LOOM_HOOK_CONTEXT=1 gtimeout 3 "${LOOM_BIN:-loom}" context record-edit --stage "$LOOM_STAGE_ID" --path "$EDIT_PATH" >/dev/null 2>&1 || true
-		elif command -v timeout &>/dev/null; then
-			LOOM_HOOK_CONTEXT=1 timeout 3 "${LOOM_BIN:-loom}" context record-edit --stage "$LOOM_STAGE_ID" --path "$EDIT_PATH" >/dev/null 2>&1 || true
-		else
-			LOOM_HOOK_CONTEXT=1 "${LOOM_BIN:-loom}" context record-edit --stage "$LOOM_STAGE_ID" --path "$EDIT_PATH" >/dev/null 2>&1 || true
-		fi
+		LOOM_HOOK_CONTEXT=1 loom_run_bounded 3 "${LOOM_BIN:-loom}" context record-edit --stage "$LOOM_STAGE_ID" --path "$EDIT_PATH" >/dev/null 2>&1 || true
 	fi
 fi
 
-# === CONTEXT CEILING DETECTION ===
-# Runs LAST, after the heartbeat write and the two blocks above (unrelated
-# to context, and must always run). The tool has already executed by the
-# time PostToolUse fires, so exit 2 here blocks nothing - it is purely a
-# message to the agent, the documented channel that reaches the model in
-# Claude Code 2.1.251 (`additionalContext` may or may not, so unused here).
+# Context ceilings run last; PostToolUse exit 2 is agent guidance after the
+# completed tool call, not a block on that call.
 if [[ "$IS_SUBAGENT" == "1" ]]; then
 	_loom_ctx_check_subagent_ceiling "$RESIDENT_TOKENS"
 else

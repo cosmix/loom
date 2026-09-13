@@ -339,6 +339,9 @@ mod reads;
 #[path = "hooks_poll_guard_skills.rs"]
 mod skills;
 
+#[path = "hooks_poll_guard_subagents.rs"]
+mod subagents;
+
 // 6. Pathless vs. path-scoped `git show`/`git diff` (rule 4) live in
 // `hooks_poll_guard_git.rs`, split out purely for size - see its module
 // docs.

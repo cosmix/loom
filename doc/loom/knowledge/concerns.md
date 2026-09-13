@@ -198,9 +198,16 @@ this is a pointer, not an archive — see git history for the fix commits.
 
 ## Token Accounting and Proof Defects (2026-09-13)
 
-Four open defects that PLAN-token-optimization-2026-09-13 fixes: a criterion-cache
-false pass on raw exit success, a usage-stream undercount from favoring the first
-nonzero streamed usage over the final one, a poll-guard allowlist that omits `loom`
-itself, and hook tests that inherit a live session's LOOM_* identity and write fake
-forward records into its own stage ledger.
+All four defects PLAN-token-optimization-2026-09-13 set out to fix are RESOLVED (an earlier
+version of this entry listed them as open): the criterion cache stores only certified full
+evaluations, streamed usage keeps the latest whole vector, poll-guard counts `loom subagents list`,
+and the forward-guard hook tests unset the live `LOOM_*` identity. The same page now holds the
+plan's open follow-ups: git and bounded-runner hygiene, read-receipt runtime uncertainties, the IV
+fence wording, and two fail-open guard choices.
 → [Token Accounting and Proof Defects](concerns/token-accounting-and-proof-defects.md)
+
+## State Confinement Gaps (2026-09-13) [DETAILED]
+
+Session write access to loom state and to what runs outside the sandbox, open until the `.loom` confinement plan merges.
+
+→ [State Confinement Gaps](concerns/state-confinement-gaps.md)

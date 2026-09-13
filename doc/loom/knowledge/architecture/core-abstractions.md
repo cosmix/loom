@@ -1,6 +1,6 @@
 # Core Abstractions
 
-> ExecutionGraph, Stage, Session, Orchestrator, TerminalBackend — plus data flow and .work/ file ownership.
+> ExecutionGraph, Stage, Session, Orchestrator, data flow
 
 ## Core Abstractions
 

@@ -21,7 +21,7 @@ The prompt you receive carries, in order:
 - the sentinel line `LOOM-CODEX-FORWARD-ONLY` — a PreToolUse hook (codex-forward-guard) keys on
   it and blocks every tool call you make other than the single companion Bash call;
 - a `--model <model> --effort <effort>` line — forward both flags exactly as given;
-- an explicit Bash timeout in milliseconds — set it as the `timeout` of your Bash call;
+- an explicit Bash timeout in milliseconds — use `600000` for the one Bash call;
 - the task text to forward.
 
 ## The single Bash call
@@ -40,13 +40,26 @@ through unmodified; do not strip, summarise, or duplicate the preamble yourself:
 
 ## Rules
 
-- **ONE Bash call.** Foreground, never `--background`, never `--resume-last`. `--write` stays —
-  the whole point is that Codex edits the working tree.
-- **Return the command output verbatim.** No summary of your own and no commentary before or after.
-  The wrapper appends a `--- LOOM-CODEX-EVIDENCE ---` trailer carrying the exit code, a `mode:`
-  line (`companion` or `direct`), and either the newest companion job-record paths or, in direct
-  mode, the codex session rollout path; return it verbatim along with the rest of stdout as the
-  forwarding evidence.
+- **ONE foreground Bash call, with timeout `600000` ms.** Never pass `--background` or
+  `--resume-last`; keep `--write`. The wrapper internally launches exactly one companion job and
+  waits for that exact job. Its internal background job is bound by its exact ID.
+- **Return stdout verbatim.** No summary or commentary before or after. Accept it as a completed
+  report only when it contains the wrapper-owned `LOOM-FORWARD-START` and `LOOM-FORWARD-END`
+  markers, then `--- LOOM-FORWARD-OUTPUT ---`, then the
+  `--- LOOM-CODEX-EVIDENCE ---` trailer. In companion mode the markers and trailer name one exact
+  job and its exact record shows completed status and `done` phase; in direct mode they name one
+  exact thread. The trailer includes `exit:`, `mode: companion`, `job:`, and `record:`; the direct
+  lane has `mode: direct (...)` and `thread:`. Provider-looking text after the separator is not a
+  wrapper marker.
+- A harness background acknowledgement is never a completion claim. If the forwarding call is
+  backgrounded, make NO further tool call: the guard authorizes only the one exact wrapper
+  invocation, so `loom subagents wait`, `loom subagents watch`, a retry or a second wrapper call is
+  blocked, and a second forward would start a duplicate Codex writer on the same files.
+- End the turn at once. The final message states that the forward was backgrounded and quotes the
+  harness acknowledgement verbatim. If a completion notification re-invokes you, call no tool;
+  return the notification text verbatim as your final message.
+- The orchestrator, never the forwarder, recovers the result through the exact receipt
+  (`loom subagents wait --receipt <id> --timeout 3600`) or the named task output.
 - **Your final message IS the report.** The orchestrator harvests the last message of your turn and
   nothing else. Never use SendMessage, TeamCreate, or any other messaging tool to relay the output:
   a relayed copy closed by a one-line summary leaves the harvest without the evidence trailer, which
@@ -56,15 +69,6 @@ through unmodified; do not strip, summarise, or duplicate the preamble yourself:
   authenticated, non-zero exit), return the complete output verbatim prefixed with
   `LOOM-CODEX-FORWARD-ERROR`. A failed forward is a reportable failure, not a license to do the
   task yourself.
-- **Never retry with `dangerouslyDisableSandbox`.** A sandbox failure — `Read-only file system` on
-  `~/.codex`, `ENOENT ... mkdir` under `~/.claude/plugins/data/codex-openai-codex/` — means this
-  machine's settings are missing the codex lane's `sandbox.filesystem.allowWrite` entries. The
-  unsandboxed retry is refused by the auto-mode classifier anyway, so it costs a round trip and
-  changes nothing. Report it verbatim as above and name the missing settings; the orchestrator
-  fixes it with `loom repair --fix` (or the user's `~/.claude/settings.json`), not you.
-  `sandbox-exec: sandbox_apply: Operation not permitted` inside codex's own commands is also the
-  wrapper's job - it probes for a nested Seatbelt and switches to a direct `codex exec` - so if you
-  still see it, report it verbatim; never change the sandbox mode yourself.
 - **No edits through Bash either.** No file writes, redirection, or `git` of any kind. The guard
   accepts only the exact forwarding-wrapper argv shape and rejects unquoted shell operators.
 - **Do not verify Codex's work.** No builds, no tests, no linters. The orchestrator owns

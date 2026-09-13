@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
+unset LOOM_STAGE_ID LOOM_SESSION_ID LOOM_WORK_DIR LOOM_SESSION_TYPE LOOM_MAIN_AGENT_PID
 HOOK="$(dirname "$0")/../codex-forward-guard.sh"
-TMP=$(mktemp -d "${TMPDIR:-/tmp}/loom-hooktest.XXXXXX")
-trap 'rm -rf "$TMP"' EXIT
+d=$(mktemp -d "${TMPDIR:-/tmp}/cfw.XXXXXX") && [ -n "$d" ]
+trap 'rm -rf "$d"' EXIT
+TMP="$d"
 mkdir -p "$TMP/subagents"
 TRANSCRIPT="$TMP/subagents/agent-aForwarder-abc123.jsonl"
 printf '%s\n' '{"message":{"role":"user","content":"LOOM-CODEX-FORWARD-ONLY\n--model gpt-5.6-luna --effort xhigh\ntask text"}}' >"$TRANSCRIPT"

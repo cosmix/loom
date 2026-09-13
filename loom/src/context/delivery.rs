@@ -31,10 +31,13 @@ use uuid::Uuid;
 /// delivery-record bookkeeping, not a new concept: `session::`'s own module
 /// doc picks up exactly where this file's doc comment leaves off.
 mod session;
-pub use session::{delivered_to_session, discard_session_delivery, hook_recipient_id};
+pub use session::{
+    delivered_to_session, discard_session_delivery, hook_recipient_id, worker_recipient_id,
+};
 
 /// Delivery records live beside the stage overlay, in this subdirectory.
 const DELIVERY_RELATIVE_DIR: &str = "session-retrieval";
+const WORKER_DELIVERY_RELATIVE_DIR: &str = "worker-brief";
 
 /// Plan component used for a stage that names no plan of its own.
 const DEFAULT_PLAN_KEY: &str = "default";
@@ -123,6 +126,12 @@ fn stage_overlay_dir(work_dir: &Path, plan: &str, stage: &str) -> PathBuf {
 /// `.loom/work/context/<plan>/<stage>/session-retrieval/`
 pub fn delivery_dir(work_dir: &Path, plan: &str, stage: &str) -> PathBuf {
     stage_overlay_dir(work_dir, plan, stage).join(DELIVERY_RELATIVE_DIR)
+}
+
+/// Pending and nonce-addressed bound worker receipts, isolated from the
+/// ordinary `<recipient>.json` namespace.
+pub(crate) fn worker_delivery_dir(work_dir: &Path, plan: &str, stage: &str) -> PathBuf {
+    delivery_dir(work_dir, plan, stage).join(WORKER_DELIVERY_RELATIVE_DIR)
 }
 
 /// Reject a `recipient_id` that cannot safely become a file name.
@@ -237,22 +246,36 @@ fn merge_with_recorded(path: &Path, record: &DeliveryRecord) -> DeliveryRecord {
 /// one, and anything else is skipped by the malformed-file path.
 pub fn load_deliveries(work_dir: &Path, plan: &str, stage: &str) -> Result<Vec<DeliveryRecord>> {
     let dir = delivery_dir(work_dir, plan, stage);
-    let entries = match fs::read_dir(&dir) {
+    let worker_dir = worker_delivery_dir(work_dir, plan, stage);
+    let mut records = Vec::new();
+    load_delivery_dir(&dir, &mut records)?;
+    load_delivery_dir(&worker_dir, &mut records)?;
+
+    // `read_dir` order is unspecified; sort so two reads of one directory agree.
+    records.sort_by(|left, right| {
+        left.recipient_id
+            .cmp(&right.recipient_id)
+            .then_with(|| left.launch_id.cmp(&right.launch_id))
+    });
+    Ok(records)
+}
+
+fn load_delivery_dir(dir: &Path, records: &mut Vec<DeliveryRecord>) -> Result<()> {
+    let entries = match fs::read_dir(dir) {
         Ok(entries) => entries,
-        Err(error) if error.kind() == ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(error) if error.kind() == ErrorKind::NotFound => return Ok(()),
         Err(error) => {
             return Err(error)
                 .with_context(|| format!("Failed to read delivery records in {}", dir.display()));
         }
     };
 
-    let mut records: Vec<DeliveryRecord> = Vec::new();
     for entry in entries.flatten() {
         let path = entry.path();
         if path.extension().and_then(|ext| ext.to_str()) != Some("json") {
             continue;
         }
-        let Ok(content) = fs::read_to_string(&path) else {
+        let Ok(content) = fs::read_to_string(path.as_path()) else {
             tracing::debug!("skipping unreadable delivery record: {}", path.display());
             continue;
         };
@@ -266,14 +289,7 @@ pub fn load_deliveries(work_dir: &Path, plan: &str, stage: &str) -> Result<Vec<D
             }
         }
     }
-
-    // `read_dir` order is unspecified; sort so two reads of one directory agree.
-    records.sort_by(|left, right| {
-        left.recipient_id
-            .cmp(&right.recipient_id)
-            .then_with(|| left.launch_id.cmp(&right.launch_id))
-    });
-    Ok(records)
+    Ok(())
 }
 
 /// `(node_id, content_hash)` pairs already delivered under `epoch`.

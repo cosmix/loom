@@ -1,84 +1,24 @@
 use crate::commands::{
     attach, clean, config, context, diagnose, graph, handoff, hook, init, install_assets,
     knowledge, map, memory, plan, pressure, repair, request, resume, review, run, self_update,
-    sessions, skill_index, stage, status, stop, subagents, usage, verify, worktree_cmd,
+    sessions, skill_index, status, stop, subagents, usage, verify, worktree_cmd,
 };
 use crate::completions::{complete_dynamic, generate_completions, CompletionContext, Shell};
 use anyhow::Result;
 use std::path::PathBuf;
 use std::str::FromStr;
 
+use super::dispatch_admin;
 use super::dispatch_stage;
 use super::types::{
     Commands, ContextCommands, HookCommands, KnowledgeCommands, MemoryCommands, PlanCommands,
     RequestCommands, SessionsCommands, WorktreeCommands,
 };
 
-/// The admin proof a `loom stage complete` invocation needs, if any.
-///
-/// An unprivileged completion needs none. A privileged one authorizes itself
-/// through `admin_proof::authorize`, which uses a broker's `LOOM_ADMIN_PROOF`
-/// when one is present and otherwise mints from the daemon token the operator
-/// can already read. No flag, and nothing for a human to carry between
-/// commands.
-pub(super) fn resolve_completion_proof(
-    stage_id: &str,
-    no_verify: bool,
-    force_unsafe: bool,
-    assume_merged: bool,
-) -> anyhow::Result<Option<String>> {
-    if !(no_verify || force_unsafe || assume_merged) {
-        return Ok(None);
-    }
-    // Resolved rather than a hardcoded `.work` literal: only `WorkDir::new`
-    // decides whether this project uses the nested or the legacy layout.
-    let Ok(work_dir) = crate::fs::work_dir::WorkDir::new(".") else {
-        return Ok(None);
-    };
-    stage::admin_proof::authorize(
-        work_dir.root(),
-        stage::admin_proof::AdminProofRequest::completion(
-            stage_id,
-            no_verify,
-            force_unsafe,
-            assume_merged,
-        ),
-    )
-}
-
-/// `loom stage admin-proof` — mint one capability and print it, nothing else.
-///
-/// The secret arrives in `LOOM_ADMIN_TOKEN` and is never read from disk here,
-/// so a caller that can invoke loom but cannot read `.loom/work/admin.token` gains
-/// nothing: a wrong secret simply mints a proof that verification rejects.
-/// That is what separates this command from `admin_proof::authorize`, which
-/// reads the token and therefore relies on the sandbox to keep an agent out.
-pub(super) fn print_minted_proof(
-    stage_id: Option<String>,
-    daemon_stop: bool,
-    no_verify: bool,
-    force_unsafe: bool,
-    assume_merged: bool,
-) -> Result<()> {
-    if daemon_stop {
-        println!("{}", stage::admin_proof::mint_daemon_stop_proof_from_env()?);
-        return Ok(());
-    }
-    if !no_verify && !force_unsafe && !assume_merged {
-        anyhow::bail!("admin-proof requires at least one privileged completion flag");
-    }
-    let stage_id = stage_id.expect("clap requires stage_id without --daemon-stop");
-    println!(
-        "{}",
-        stage::complete::mint_completion_proof_from_env(
-            &stage_id,
-            no_verify,
-            force_unsafe,
-            assume_merged,
-        )?
-    );
-    Ok(())
-}
+// `dispatch_stage` reaches these through `super::dispatch::{..}`; re-exporting
+// here keeps that path working now that the implementations live in
+// `dispatch_admin`.
+pub(super) use dispatch_admin::{print_minted_proof, resolve_completion_proof};
 
 /// `loom knowledge <subcommand>` dispatch.
 ///
@@ -96,27 +36,24 @@ fn dispatch_knowledge(command: KnowledgeCommands) -> Result<()> {
         KnowledgeCommands::Context {
             stage,
             query,
-            budget_tokens: budget,
+            budget_tokens: budget, // bound short so the call below stays compact
             scope,
             require_id,
             history,
             require_compact,
             explain,
             json,
-        } => {
-            // `budget` is bound short so the context call remains compact.
-            knowledge::context::context(
-                stage,
-                query,
-                budget,
-                scope,
-                require_id,
-                history,
-                require_compact,
-                explain,
-                json,
-            )
-        }
+        } => knowledge::context::context(
+            stage,
+            query,
+            budget,
+            scope,
+            require_id,
+            history,
+            require_compact,
+            explain,
+            json,
+        ),
         KnowledgeCommands::Eval {
             cases,
             budget_tokens,
@@ -129,7 +66,11 @@ fn dispatch_knowledge(command: KnowledgeCommands) -> Result<()> {
             structural_only,
             json,
         } => knowledge::sync::sync(structural_only, json),
-        KnowledgeCommands::Check { strict, json } => knowledge::check::check(strict, json),
+        KnowledgeCommands::Check {
+            strict,
+            strict_evidence,
+            json,
+        } => knowledge::check::check(strict, strict_evidence, json),
     }
 }
 
@@ -172,6 +113,23 @@ fn dispatch_hook(command: HookCommands) -> Result<()> {
         HookCommands::ReconcileGraph => hook::reconcile_graph::reconcile_graph(),
         HookCommands::PreCompact => hook::pre_compact::pre_compact(),
         HookCommands::ContextCeilings => hook::context_ceilings::context_ceilings(),
+        HookCommands::ForwardReceipt { transcript } => {
+            hook::forward_receipt::forward_receipt(&transcript)
+        }
+        HookCommands::WorkerBrief {
+            bind_agent,
+            agent_type,
+            transcript,
+        } => hook::worker_brief::worker_brief(bind_agent, agent_type, transcript),
+        HookCommands::ReadReceipt { prepare, check, .. } => {
+            use hook::read_receipt::ReadReceiptMode;
+            let mode = match (prepare, check) {
+                (true, _) => ReadReceiptMode::Prepare,
+                (_, true) => ReadReceiptMode::Check,
+                _ => ReadReceiptMode::Complete,
+            };
+            hook::read_receipt::read_receipt(mode)
+        }
         HookCommands::ProjectTypes => hook::project_types::execute(),
         HookCommands::Relay { allowed_kinds } => hook::relay::relay(&allowed_kinds),
     }

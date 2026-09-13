@@ -29,6 +29,8 @@ fn windows_exclude_synthetic_requests_just_like_totals() {
         agent_type: None,
         stage_id: None,
         loom_session_id: None,
+        forward_receipt: None,
+        forward_candidate: false,
         first_user_entry: None,
         entries: vec![
             Entry::Assistant(Box::new(request("claude-sonnet-5", 100))),

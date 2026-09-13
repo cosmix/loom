@@ -59,9 +59,9 @@ fn bash_side_cat_gets_read_rules_sed_range_is_allowed() {
     );
 }
 
-// 4b. The read ledger `cat` writes is the SAME ledger read-guard.sh reads -
-//     a `cat` full read followed by a Read-tool full read of the same path
-//     escalates as a repeat, proving the shared library, not a coincidence.
+// 4b. The read ledger `cat` writes is the SAME ledger read-guard.sh reads.
+//     Escalation needs a Rust-proven receipt, which a Bash-side `cat` cannot
+//     produce, even though both attempts share the ledger.
 #[test]
 fn bash_side_cat_and_read_tool_share_the_same_read_ledger() {
     let (_temp, poll_hook, read_hook) = setup_both_hooks();
@@ -87,9 +87,22 @@ fn bash_side_cat_and_read_tool_share_the_same_read_ledger() {
     let read_out = run_payload(&read_hook, &read_payload, &session, None);
     assert_eq!(read_out.code, 0, "stderr={}", read_out.stderr);
     assert!(
-        warn_context(&read_out.stdout).contains("read in full at"),
-        "Read after cat must see the same ledger: {}",
+        read_out.stdout.trim().is_empty(),
+        "Read after cat needs a proven receipt to warn: {}",
         read_out.stdout
+    );
+
+    let ledger = session.work_dir().join(format!(
+        "hooks/reads/{}/{}.tsv",
+        session.session_id, session.agent_id
+    ));
+    let content = fs::read_to_string(&ledger).expect("read ledger");
+    let rows: Vec<_> = content.lines().collect();
+    assert_eq!(rows.len(), 2, "rows={rows:?}");
+    assert!(
+        rows.iter()
+            .all(|row| row.split('\t').next() == Some(path.as_ref())),
+        "rows={rows:?}"
     );
 }
 

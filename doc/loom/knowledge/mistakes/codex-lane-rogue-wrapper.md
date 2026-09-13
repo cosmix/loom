@@ -115,3 +115,39 @@ or `loom repair --fix` matter.
 **Fix:** `loom-hooks/codex-forward.sh` probes for a nested Seatbelt and switches to a direct `codex exec
 --sandbox danger-full-access`; details in [Codex Plugin](../architecture/codex-plugin.md) under the
 2026-09-02 macOS section.
+
+## A Backgrounded Forward Is Still Running, and Its Forwarder Must Stay Silent (2026-09-13, SYSTEMIC)
+
+**What happened:** in all four implementation stages of PLAN-token-optimization-2026-09-13, xhigh
+sol/terra forwards outran the forwarder's single 600000 ms Bash call (one module pair plus tests
+was enough; runs took 24-30 minutes). The harness moved the call to a background task while the
+companion job kept editing. Forwarders then ended the turn with "waiting for completion
+notification" and no evidence trailer; issued a second wrapper call with a "noop" or placeholder
+task, creating extra companion jobs; and twice re-ran the full task as a second writer on files
+another job owned or had already settled (one re-run started 20 minutes after its unit settled; one
+was cancelled by exact id before it applied anything). When the background completion woke a
+forwarder, the guard blocked even `true`, so it could not relay its own trailer. The forwarder doc
+meanwhile told a backgrounded forwarder to run `loom subagents wait` or `watch`, which the guard
+blocks.
+
+**Why:** the guard checked argv shape only, with no one-forward limit; the doc and the guard were
+edited by different units and nothing tested the doc's commands against the guard; and prose
+prevention recorded by one stage did not reach the next stage's forwarders, whose installed guard
+lagged the worktree fix until merge.
+
+**Prevention:**
+
+- In the tree now: `codex-forward-guard.sh` allows one forward per forwarder transcript, and
+  `agents/loom-codex-forwarder.md:54-62` says a backgrounded forwarder makes no further tool call
+  and ends its turn. The orchestrator alone recovers the result, through
+  `loom subagents wait --receipt <id>` or the named task output. Lifecycle:
+  [Token Accounting and Receipts](../architecture/token-accounting-and-receipts.md).
+- Treat a backgrounded forwarder's job as alive: never respawn it or release its files until its
+  exact job record is terminal.
+- After a forwarder settles, look for companion jobs created after its task job and read each
+  extra job's log. After cancelling a job, confirm its log has no "Applying N file change" line;
+  one cancelled job was later recorded as completed.
+- Keep one forward to about three items.
+- When the Agent result is truncated, read the persisted task output through Bash with
+  `rg -A60 '^\[codex\] Turn completed'` (Read is blocked outside the worktree) and cross-check the
+  job record's phase.

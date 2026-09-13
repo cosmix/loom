@@ -1,4 +1,5 @@
 mod dispatch;
+mod dispatch_admin;
 mod dispatch_stage;
 mod types;
 pub mod types_config;

@@ -37,6 +37,8 @@ fn transcript(scope: Scope, session_id: &str, prompt: Option<&str>, models: &[&s
         agent_type: None,
         stage_id: None,
         loom_session_id: None,
+        forward_receipt: None,
+        forward_candidate: false,
         first_user_entry: prompt.map(user_entry),
         entries: models
             .iter()

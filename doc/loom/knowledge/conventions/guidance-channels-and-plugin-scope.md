@@ -59,10 +59,20 @@ preamble in `CLAUDE.md.template`, and injected into stage signals by
 `orchestrator/signals/cache.rs`. The three copies are pinned byte-for-byte by
 `orchestrator/signals/tests_doctrine.rs`.
 
-**The one exception:** an `integration-verify` stage exists to run the complete suite, so its
-subagents are carved out. The carve-out is resolved from the stage file and **fails safe** — more
-than one glob match, a non-integration-verify stage type, or a missing file all mean "no
-relaxation".
+**The one exception:** integration-verify subagents are carved out at the hook level
+(`subagent-verify-guard.sh`). An earlier version of this section said an IV stage "exists to run the
+complete suite, so its subagents are carved out", as if every IV subagent ran it. Since 2026-09-13
+the IV stable prefix (`INTEGRATION_VERIFY_OVERRIDE`, `orchestrator/signals/cache.rs:112-123`) has the
+IV orchestrator assign ONE canonical verifier to run the complete suite per immutable tree,
+environment and criterion contract; other reviewers inspect independently and run only targeted
+discriminating checks, which never substitute for the canonical gate. The carve-out is resolved from
+the stage file and **fails safe**: more than one glob match, a non-integration-verify stage type, or
+a missing file all mean "no relaxation".
+
+The Rule 5 fence's EXCEPTION line in `CLAUDE.md.template` still tells every IV review or verify
+subagent to run the full build, suite and linter. It is byte-pinned by `tests_doctrine.rs` and has
+not been aligned with the one-canonical-verifier wording; see the open follow-ups in
+[Token Accounting and Proof Defects](../concerns/token-accounting-and-proof-defects.md).
 
 ## Claude Code Plugin Scope in Loom Repos (2026-08-07)
 

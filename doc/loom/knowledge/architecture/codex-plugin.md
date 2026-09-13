@@ -1,6 +1,6 @@
 # Codex Plugin
 
-> Codex plugin install and identity, the codex-rescue subagent, and the loom-codex-forwarder lane.
+> Codex plugin install, identity, and forwarding
 
 ## Install and identity
 
