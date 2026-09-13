@@ -18,6 +18,13 @@ mod claude_usage;
 mod codex_discovery;
 mod codex_provider;
 mod codex_tokens;
+mod comparison;
+mod comparison_eval;
+mod comparison_quality;
+mod comparison_quota;
+mod comparison_schema;
+mod comparison_token;
+mod comparison_validation;
 mod discovery;
 mod forward_join;
 mod json;
@@ -66,17 +73,21 @@ impl ProviderSelection {
 /// command owns its own surface - the same reasoning `SubagentsArgs` documents.
 #[derive(Debug, clap::Args)]
 pub struct UsageArgs {
-    /// How far back to look: a duration (`7d`, `24h`, `30m`) or an ISO date (`2026-08-01`)
-    #[arg(long, default_value = "7d")]
-    pub since: String,
+    /// Compare a bounded, offline paired-evaluation artifact
+    #[arg(long, value_name = "ARTIFACT.json")]
+    pub compare: Option<PathBuf>,
+
+    /// How far back to look: a duration (`7d`, `24h`, `30m`) or an ISO date (`2026-08-01`) (default: 7d)
+    #[arg(long)]
+    pub since: Option<String>,
 
     /// Inclusive UTC RFC3339 upper bound for event timestamps
     #[arg(long)]
     pub until: Option<String>,
 
-    /// Provider telemetry to normalize
-    #[arg(long, value_enum, default_value_t = ProviderSelection::Claude)]
-    pub provider: ProviderSelection,
+    /// Provider telemetry to normalize (default: claude)
+    #[arg(long, value_enum)]
+    pub provider: Option<ProviderSelection>,
 
     /// Explicit Claude projects root; never falls back when supplied
     #[arg(long)]
@@ -111,13 +122,42 @@ pub struct UsageArgs {
     #[arg(long)]
     pub plan: Option<String>,
 
-    /// Which windowing to report the three accountings under
-    #[arg(long, value_enum, default_value_t = accounting::Windowing::FiveHour)]
-    pub windows: accounting::Windowing,
+    /// Which windowing to report the three accountings under (default: 5h)
+    #[arg(long, value_enum)]
+    pub windows: Option<accounting::Windowing>,
 
     /// Emit machine-readable JSON instead of the table report
     #[arg(long)]
     pub json: bool,
+}
+
+impl UsageArgs {
+    fn since(&self) -> &str {
+        self.since.as_deref().unwrap_or("7d")
+    }
+
+    fn provider(&self) -> ProviderSelection {
+        self.provider.unwrap_or(ProviderSelection::Claude)
+    }
+
+    fn windows(&self) -> accounting::Windowing {
+        self.windows.unwrap_or(accounting::Windowing::FiveHour)
+    }
+
+    fn has_explicit_selection(&self) -> bool {
+        self.since.is_some()
+            || self.until.is_some()
+            || self.provider.is_some()
+            || self.claude_root.is_some()
+            || self.codex_root.is_some()
+            || self.receipts_root.is_some()
+            || self.forward_receipts_root.is_some()
+            || self.project.is_some()
+            || self.all
+            || self.stage.is_some()
+            || self.plan.is_some()
+            || self.windows.is_some()
+    }
 }
 
 /// Parses every discovered transcript, warning on and skipping any file that
@@ -182,23 +222,30 @@ fn project_work_dir(project: &Path) -> Option<PathBuf> {
 }
 
 pub fn execute(args: UsageArgs) -> Result<()> {
+    if let Some(artifact) = args.compare.as_deref() {
+        let exit_code = comparison::compare(artifact, &args)?;
+        if exit_code != 0 {
+            std::process::exit(exit_code);
+        }
+        return Ok(());
+    }
     ensure!(
         !(args.all && args.forward_receipts_root.is_some()),
         "--forward-receipts-root cannot be used with --all"
     );
     let range =
-        time_range::TimeRange::parse(&args.since, args.until.as_deref(), chrono::Utc::now())?;
+        time_range::TimeRange::parse(args.since(), args.until.as_deref(), chrono::Utc::now())?;
     let work_dir = usage_work_dir(args.project.as_deref(), args.all);
     let mut normalized = normalize_usage(&args, range, work_dir.as_deref())?;
     attach_quota_history(
         &mut normalized.ledger,
-        args.provider,
+        args.provider(),
         work_dir.as_deref(),
         range,
     );
     let report = sections::build(
         &normalized.claude_transcripts,
-        args.windows,
+        args.windows(),
         normalized.ledger,
     );
 
@@ -226,22 +273,22 @@ fn normalize_usage(
         plan: args.plan.clone(),
     };
     let claude_missing_roots = usize::from(
-        args.provider.includes(provider_types::Provider::Claude)
+        args.provider().includes(provider_types::Provider::Claude)
             && discovery::root_is_missing(&options),
     );
-    let files = if args.provider.includes(provider_types::Provider::Claude) {
+    let files = if args.provider().includes(provider_types::Provider::Claude) {
         discovery::discover(&options)?
     } else {
         Vec::new()
     };
     let transcripts = parse_all(&files, &range, work_dir, &forward_join);
-    let codex = if args.provider.includes(provider_types::Provider::Codex) {
+    let codex = if args.provider().includes(provider_types::Provider::Codex) {
         codex_discovery::discover(args.codex_root.as_deref())
     } else {
         codex_discovery::CodexDiscovery::default()
     };
     let mut normalized = provider::normalize_provider_events(provider::ProviderEventInput {
-        selection: args.provider,
+        selection: args.provider(),
         range,
         claude_transcripts: transcripts,
         claude_discovered_files: files.len(),
@@ -337,3 +384,7 @@ mod tests;
 #[cfg(test)]
 #[path = "forward_root_tests.rs"]
 mod forward_root_tests;
+
+#[cfg(test)]
+#[path = "comparison_tests.rs"]
+mod comparison_tests;
