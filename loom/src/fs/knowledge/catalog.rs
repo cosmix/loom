@@ -18,7 +18,8 @@ mod source_roots;
 #[cfg(test)]
 mod tests_prose;
 
-pub use issue::CatalogIssue;
+pub use evidence::{evidence_summary, EvidenceSummary};
+pub use issue::{CatalogIssue, EvidenceUnavailableReason};
 use order::compare_issues;
 use source_roots::{cargo_package_source_roots, ProjectFileIndex, SourceRefContext};
 
@@ -89,6 +90,7 @@ fn process_file(
     root: &Path,
     relative_path: &Path,
     source_refs: &SourceRefContext,
+    evidence_collector: &mut evidence::EvidenceCollector,
     heading_counts: &mut BTreeMap<PathBuf, BTreeMap<String, usize>>,
     issues: &mut Vec<CatalogIssue>,
 ) -> anyhow::Result<Vec<KnowledgeChunk>> {
@@ -122,11 +124,7 @@ fn process_file(
         )?;
     }
     collect_unverifiable_references(relative_path, source_refs, &file_chunks, issues);
-    issues.extend(evidence::changed_since_verified(
-        source_refs.project_root,
-        relative_path,
-        &frontmatter,
-    ));
+    evidence::changed_since_verified(evidence_collector, relative_path, &frontmatter);
 
     Ok(file_chunks)
 }
@@ -187,14 +185,10 @@ fn push_duplicate_headings(
 /// `prose`).
 pub fn build(root: &Path) -> anyhow::Result<Catalog> {
     let files = markdown_files(root)?;
-    let project_root = prose::project_root_of(root);
-    let cargo_source_roots = project_root
-        .as_deref()
-        .map(cargo_package_source_roots)
-        .unwrap_or_default();
-    let project_files = ProjectFileIndex::new(project_root.clone());
+    let (project_root, cargo_source_roots, project_files) = source_ref_inputs(root);
     let source_refs =
         SourceRefContext::new(project_root.as_deref(), &cargo_source_roots, &project_files);
+    let mut evidence_collector = evidence::EvidenceCollector::new(project_root.as_deref());
     let mut chunks = Vec::new();
     let mut issues = Vec::new();
     let mut heading_counts: BTreeMap<PathBuf, BTreeMap<String, usize>> = BTreeMap::new();
@@ -204,6 +198,7 @@ pub fn build(root: &Path) -> anyhow::Result<Catalog> {
             root,
             &relative_path,
             &source_refs,
+            &mut evidence_collector,
             &mut heading_counts,
             &mut issues,
         )?;
@@ -211,6 +206,7 @@ pub fn build(root: &Path) -> anyhow::Result<Catalog> {
     }
 
     push_duplicate_headings(heading_counts, &mut issues);
+    issues.extend(evidence_collector.finish());
 
     if let Some(issue) = size::oversized_index(root) {
         issues.push(issue);
@@ -233,6 +229,16 @@ pub fn build(root: &Path) -> anyhow::Result<Catalog> {
         chunks,
         issues,
     })
+}
+
+fn source_ref_inputs(root: &Path) -> (Option<PathBuf>, Vec<PathBuf>, ProjectFileIndex) {
+    let project_root = prose::project_root_of(root);
+    let cargo_source_roots = project_root
+        .as_deref()
+        .map(cargo_package_source_roots)
+        .unwrap_or_default();
+    let project_files = ProjectFileIndex::new(project_root.clone());
+    (project_root, cargo_source_roots, project_files)
 }
 
 fn markdown_files(root: &Path) -> anyhow::Result<Vec<PathBuf>> {

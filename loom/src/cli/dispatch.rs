@@ -96,27 +96,24 @@ fn dispatch_knowledge(command: KnowledgeCommands) -> Result<()> {
         KnowledgeCommands::Context {
             stage,
             query,
-            budget_tokens: budget,
+            budget_tokens: budget, // bound short so the call below stays compact
             scope,
             require_id,
             history,
             require_compact,
             explain,
             json,
-        } => {
-            // `budget` is bound short so the context call remains compact.
-            knowledge::context::context(
-                stage,
-                query,
-                budget,
-                scope,
-                require_id,
-                history,
-                require_compact,
-                explain,
-                json,
-            )
-        }
+        } => knowledge::context::context(
+            stage,
+            query,
+            budget,
+            scope,
+            require_id,
+            history,
+            require_compact,
+            explain,
+            json,
+        ),
         KnowledgeCommands::Eval {
             cases,
             budget_tokens,
@@ -129,7 +126,11 @@ fn dispatch_knowledge(command: KnowledgeCommands) -> Result<()> {
             structural_only,
             json,
         } => knowledge::sync::sync(structural_only, json),
-        KnowledgeCommands::Check { strict, json } => knowledge::check::check(strict, json),
+        KnowledgeCommands::Check {
+            strict,
+            strict_evidence,
+            json,
+        } => knowledge::check::check(strict, strict_evidence, json),
     }
 }
 

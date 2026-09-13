@@ -10,6 +10,7 @@
 //! check the wrong tree entirely.
 
 use super::*;
+use crate::fs::knowledge::catalog::EvidenceUnavailableReason;
 use serial_test::serial;
 use std::fs;
 use std::path::PathBuf;
@@ -64,7 +65,7 @@ fn check_never_creates_a_loom_cache_directory() {
 
     let original_dir = std::env::current_dir().expect("failed to get current dir");
     std::env::set_current_dir(project_root).expect("failed to change dir");
-    let result = check(false, false);
+    let result = check(false, false, false);
     std::env::set_current_dir(original_dir).expect("failed to restore dir");
 
     result.expect("check must succeed against a clean knowledge tree");
@@ -121,7 +122,7 @@ fn check_surfaces_a_duplicate_heading_and_still_returns_ok_without_strict() {
 
     let original_dir = std::env::current_dir().expect("failed to get current dir");
     std::env::set_current_dir(project_root).expect("failed to change dir");
-    let result = check(false, false);
+    let result = check(false, false, false);
     std::env::set_current_dir(original_dir).expect("failed to restore dir");
 
     result.expect("check without --strict must still return Ok even with issues present");
@@ -148,7 +149,7 @@ fn check_on_a_missing_knowledge_root_returns_ok() {
 
     let original_dir = std::env::current_dir().expect("failed to get current dir");
     std::env::set_current_dir(project_root).expect("failed to change dir");
-    let result = check(false, false);
+    let result = check(false, false, false);
     std::env::set_current_dir(original_dir).expect("failed to restore dir");
 
     result.expect("check must return Ok when the knowledge directory does not exist");
@@ -223,6 +224,24 @@ fn issue_line_formats_evidence_changed_as_review() {
     );
     assert!(line.contains("changed since 01234567"), "line: {line}");
     assert!(line.contains("--verified HEAD"), "line: {line}");
+}
+
+#[test]
+fn issue_line_formats_unavailable_evidence_as_review() {
+    let issue = CatalogIssue::EvidenceUnavailable {
+        file: PathBuf::from("architecture/topic.md"),
+        source_path: "loom/src/context/pack.rs".to_string(),
+        reason: EvidenceUnavailableReason::InvalidRevision,
+    };
+
+    let line = issue_line(&issue);
+
+    assert!(
+        line.starts_with("review: architecture/topic.md:"),
+        "line: {line}"
+    );
+    assert!(line.contains("loom/src/context/pack.rs"), "line: {line}");
+    assert!(line.contains("invalid_revision"), "line: {line}");
 }
 
 #[test]
