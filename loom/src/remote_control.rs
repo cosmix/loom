@@ -1,21 +1,18 @@
 //! Claude Code Remote Control integration for the native backend.
 //!
 //! Remote Control lets the loom orchestrator drive Claude Code sessions
-//! programmatically. It is gated behind a preflight check because the
-//! `claude --remote-control` flag exits non-zero when its prerequisites are
-//! not met (an unsupported claude version, or an auth setup that is not
-//! claude.ai login based).
+//! programmatically, gated behind a preflight check: `claude
+//! --remote-control` exits non-zero unless the claude version and auth
+//! setup (claude.ai login) both qualify.
 //!
 //! Resolution model:
 //!   * `RemoteControlConfig` (persisted in `.loom/work/config.toml [remote_control]`)
 //!     carries the operator-facing on/off switch (`mode = auto | off`).
 //!   * `preflight()` combines a version probe with an auth-eligibility
 //!     heuristic and yields a `RemoteControlStatus`.
-//!   * `resolve()` is the mode/marker/preflight gate: it returns `false` when
-//!     the mode is `off`, when a `.loom/work/remote_control-unsupported` marker
-//!     exists, or when the preflight is not satisfied. The marker lets the
-//!     crash handler disable Remote Control mid-run after a fast-fail crash.
-//!     Its only remaining caller is the crash handler's fast-fail check.
+//!   * `resolve()` is the mode/preflight gate: `false` when the mode is
+//!     `off`, the preflight fails, or [`disable_for_this_process`] has
+//!     latched it off (in-memory only, set by the crash handler).
 //!   * `resolve_invocation()` is the actual per-spawn decision point: it
 //!     layers a memoized `--help` capability probe over `resolve()` to decide
 //!     between `RemoteControlInvocation::Disabled`, `Bare` (older claude, no
@@ -31,10 +28,6 @@ use std::sync::OnceLock;
 
 /// Minimum claude version that supports the `--remote-control` flag.
 const MIN_REMOTE_CONTROL_VERSION: (u64, u64, u64) = (2, 1, 51);
-
-/// Filename (under the `.loom/work` directory) of the marker that disables Remote
-/// Control for the remainder of a run after a fast-fail crash.
-const UNSUPPORTED_MARKER: &str = "remote_control-unsupported";
 
 /// Environment variables whose presence indicates an auth setup that is NOT
 /// claude.ai login based. Remote Control relies on claude.ai login, so any of
@@ -173,19 +166,14 @@ pub fn claude_supports_remote_control(claude_path: &Path) -> bool {
 }
 
 /// Heuristic check that the host's claude auth setup is eligible for Remote
-/// Control (which requires claude.ai login).
+/// Control (requires claude.ai login).
 ///
-/// Returns `Err` with a non-secret reason — naming only the offending
-/// environment variable, never its value — when:
-///   * a disqualifying auth env var is set, or
-///   * no disqualifying var is set but neither `~/.claude/.credentials.json`
-///     nor (on macOS) a "Claude Code-credentials" Keychain entry is found (no
-///     claude.ai login found).
-///
-/// Returns `Ok(())` when either the credentials file or the macOS Keychain
-/// entry is present and no disqualifying env var is set. On macOS, Claude
-/// Code stores credentials in the Keychain instead of the file, so both
-/// locations must be checked.
+/// `Err`'s reason names only the offending var, never its value, when a
+/// disqualifying auth env var is set, or none is set but neither
+/// `~/.claude/.credentials.json` nor (on macOS) a "Claude Code-credentials"
+/// Keychain entry is found. `Ok(())` when a credentials file or Keychain
+/// entry is present and no disqualifying var is set — macOS stores
+/// credentials in the Keychain instead of the file, so both are checked.
 pub fn remote_control_eligible() -> Result<()> {
     for var in DISQUALIFYING_ENV_VARS {
         if std::env::var_os(var).is_some() {
@@ -284,27 +272,6 @@ pub fn preflight(claude_path: &Path) -> RemoteControlStatus {
     RemoteControlStatus::Enabled
 }
 
-/// Path to the `.loom/work/remote_control-unsupported` marker file.
-fn unsupported_marker_path(work_dir: &Path) -> std::path::PathBuf {
-    work_dir.join(UNSUPPORTED_MARKER)
-}
-
-/// Whether the mid-run "Remote Control unsupported" marker exists.
-pub fn unsupported_marker_exists(work_dir: &Path) -> bool {
-    unsupported_marker_path(work_dir).exists()
-}
-
-/// Write the `.loom/work/remote_control-unsupported` marker.
-///
-/// Best-effort: write errors are returned to the caller, which typically
-/// ignores them (the marker is an optimization, not a correctness gate).
-pub fn write_unsupported_marker(work_dir: &Path) -> std::io::Result<()> {
-    std::fs::write(
-        unsupported_marker_path(work_dir),
-        "Remote Control disabled after a fast-fail session crash.\n",
-    )
-}
-
 /// Memoized version-probe result, keyed by nothing — `claude --version` is
 /// invariant for the lifetime of a process. `None` means "not yet probed".
 fn cached_preflight_enabled(claude_path: &Path) -> bool {
@@ -312,30 +279,57 @@ fn cached_preflight_enabled(claude_path: &Path) -> bool {
     *CACHE.get_or_init(|| preflight(claude_path).is_enabled())
 }
 
-/// Per-spawn gate: whether `--remote-control` should be appended for a session
-/// spawned against `work_dir`.
+/// Process-lifetime "Remote Control unavailable" latch, set by
+/// [`disable_for_this_process`]. Never persisted — a daemon restart starts
+/// clear and probes again.
+static DISABLED_FOR_PROCESS: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
+
+/// Latch Remote Control off for the rest of this process and log the reason
+/// to stderr once (the daemon's stderr is `orchestrator.log`). Idempotent —
+/// a later call keeps the first reason — and never touches disk, so a CLI
+/// invocation is unaffected and a daemon restart tries again.
+pub fn disable_for_this_process(reason: &str) {
+    let mut latch = DISABLED_FOR_PROCESS.lock().unwrap();
+    if latch.is_some() {
+        return;
+    }
+    *latch = Some(reason.to_string());
+    eprintln!(
+        "Remote Control unavailable ({reason}); continuing without it for the rest of this \
+         daemon run. Set [remote_control] mode = \"off\" to stop trying it."
+    );
+}
+
+/// Whether [`disable_for_this_process`] has latched for this process.
+pub(crate) fn disabled_for_process() -> bool {
+    DISABLED_FOR_PROCESS.lock().unwrap().is_some()
+}
+
+/// Test-only reset of the latch. Callers must be `#[serial]`.
+#[cfg(test)]
+pub(crate) fn reset_disabled_for_process() {
+    *DISABLED_FOR_PROCESS.lock().unwrap() = None;
+}
+
+/// Per-spawn gate: whether `--remote-control` should be appended for a
+/// session spawned against `work_dir`. Returns `false` when
+/// [`disable_for_this_process`] has latched (never persisted; a daemon
+/// restart clears it), the persisted `[remote_control]` mode is `off`, or
+/// the (memoized) preflight is not satisfied.
 ///
-/// Returns `false` when:
-///   * the persisted `[remote_control]` mode is `off`,
-///   * the `.loom/work/remote_control-unsupported` marker exists, or
-///   * the (memoized) preflight is not satisfied.
-///
-/// Config and marker are re-read every call (both cheap) so an operator
-/// toggling the mode or a mid-run marker write takes effect immediately. The
-/// `claude --version` subprocess behind the preflight runs at most once per
-/// process.
-///
-/// All errors are swallowed (treated as "disabled") so a spawn site can call
-/// this unconditionally.
+/// Config is re-read every call (cheap); the `claude --version` subprocess
+/// behind the preflight runs at most once per process. All errors are
+/// swallowed (treated as "disabled") so a spawn site can call this
+/// unconditionally.
 pub fn resolve(work_dir: &Path) -> bool {
+    if disabled_for_process() {
+        return false;
+    }
+
     let mode = read_remote_control_config(work_dir)
         .map(|c| c.mode)
         .unwrap_or_default();
     if mode == RemoteControlMode::Off {
-        return false;
-    }
-
-    if unsupported_marker_exists(work_dir) {
         return false;
     }
 
@@ -357,11 +351,9 @@ fn cached_named_arg_supported(claude_path: &Path) -> bool {
 /// `work_dir`, naming the session `session_name` when the installed claude
 /// supports the optional name argument.
 ///
-/// The config and unsupported-marker are re-read on every call (via
-/// [`resolve`], cheap); the `--help` capability probe runs at most once per
-/// process (memoized in `cached_named_arg_supported`). [`resolve`] itself is
-/// UNCHANGED — the crash handler keeps calling it directly and this function
-/// does not alter its `bool` contract.
+/// The config is re-read on every call (via [`resolve`]); the `--help`
+/// capability probe runs at most once per process (memoized in
+/// `cached_named_arg_supported`).
 pub fn resolve_invocation(work_dir: &Path, session_name: &str) -> RemoteControlInvocation {
     if !resolve(work_dir) {
         return RemoteControlInvocation::Disabled;
@@ -533,6 +525,24 @@ mod tests {
     }
 
     #[test]
+    #[serial]
+    fn disable_for_this_process_latches_and_keeps_the_first_reason() {
+        reset_disabled_for_process();
+        let temp = tempfile::TempDir::new().unwrap();
+
+        disable_for_this_process("first reason");
+        disable_for_this_process("second reason");
+        assert!(!resolve(temp.path()));
+        assert_eq!(
+            DISABLED_FOR_PROCESS.lock().unwrap().as_deref(),
+            Some("first reason")
+        );
+
+        reset_disabled_for_process();
+        assert!(!disabled_for_process());
+    }
+
+    #[test]
     fn keychain_probe_argv_is_exact() {
         let (program, args) = keychain_probe_argv();
         assert_eq!(program, "security");
@@ -584,16 +594,5 @@ mod tests {
             resolve_invocation(work_dir, "anything"),
             RemoteControlInvocation::Disabled
         );
-    }
-
-    #[test]
-    #[serial]
-    fn resolve_false_when_unsupported_marker_present() {
-        let temp = tempfile::TempDir::new().unwrap();
-        let work_dir = temp.path();
-        // mode auto (default, no config written)
-        write_unsupported_marker(work_dir).unwrap();
-        assert!(unsupported_marker_exists(work_dir));
-        assert!(!resolve(work_dir));
     }
 }

@@ -22,8 +22,32 @@ pub(super) const FAST_FAIL_WINDOW_SECS: i64 = 15;
 /// longer tail.
 const STARTUP_REFUSAL_TAIL_LINES: usize = 20;
 
-/// Whether a crash should be read as "`--remote-control` is unsupported here"
-/// rather than as an ordinary stage failure.
+/// Whether a crash falls inside the fast-fail window with a verified PID —
+/// the shared signal behind two readings of one crash.
+/// [`is_startup_refusal`] reads it directly for every fast, verified-pid
+/// crash that did NOT just trigger the in-process Remote Control disable:
+/// claude exited before doing any work, and a retry with identical arguments
+/// will exit the same way, so it is not auto-retried.
+/// `crash_handler::remote_control_suspected` layers `remote_control::resolve`
+/// on top of it to flag a crash that may be a rejected `--remote-control`
+/// flag; when it does, the crash handler latches Remote Control off for the
+/// rest of this process (`remote_control::disable_for_this_process`) and
+/// [`is_startup_refusal`] reads that SAME crash as ordinary and retryable
+/// instead — the retry drops `--remote-control` entirely, so unlike a plain
+/// refusal it is worth attempting.
+///
+/// # The trade-off, stated
+///
+/// Elapsed time cannot tell a refusal apart from a transient death that merely
+/// lands in the same window — an OOM kill, disk contention, a flaky call during
+/// Claude Code's own startup. Such a crash blocks its stage with zero retries
+/// instead of three. That is the deliberate side of the trade: a refusal is
+/// deterministic and common (one bad settings file refuses every session in
+/// the run), an early transient death is neither, and a stage blocked with
+/// claude's own stderr as evidence is cheaper to fix than three identical
+/// crashes with none. Widening the evidence — an exit code, a recognised
+/// refusal string — would let both cases be served; nothing in the spawn path
+/// records an exit code today.
 ///
 /// # Why a verified PID, and not the backend
 ///
@@ -51,37 +75,21 @@ pub(super) fn is_remote_control_fast_fail(session_age_secs: i64, has_verified_pi
     session_age_secs <= FAST_FAIL_WINDOW_SECS && has_verified_pid
 }
 
-/// A crash inside the fast-fail window, from a verified process, when the
-/// remote-control fallback did NOT just fire, is a startup refusal: claude
-/// exited before doing any work, and a retry with identical arguments will
-/// exit the same way. Elapsed time is the evidence; nothing else is needed.
+/// Whether a fast, verified-pid crash should be read as a startup refusal —
+/// blocked, no retry — rather than an ordinary, retryable crash.
 ///
-/// The remote-control exclusion is what separates the two readings of one
-/// crash. When that fallback fires it has just changed what the next spawn
-/// looks like — the retry omits `--remote-control` — so the retry is not
-/// identical and is worth making. Every other fast crash is identical, and
-/// spending the stage's whole attempt budget re-proving it is the failure this
-/// predicate exists to stop.
-///
-/// # The trade-off, stated
-///
-/// Elapsed time cannot tell a refusal apart from a transient death that merely
-/// lands in the same window — an OOM kill, disk contention, a flaky call during
-/// Claude Code's own startup. Such a crash now blocks its stage with zero
-/// retries instead of three. That is the deliberate side of the trade: a
-/// refusal is deterministic and common (one bad settings file refuses every
-/// session in the run), an early transient death is neither, and a stage
-/// blocked with claude's own stderr as evidence is cheaper to fix than three
-/// identical crashes with none. Widening the evidence — an exit code, a
-/// recognised refusal string — would let both cases be served; nothing in the
-/// spawn path records an exit code today.
+/// `remote_control_disabled_now` is `true` only for the crash that itself
+/// causes `remote_control::disable_for_this_process` to latch: the retry
+/// that follows drops `--remote-control` entirely, so unlike a plain refusal
+/// it is worth attempting. Every other fast, verified-pid crash — Remote
+/// Control never having been active, or already latched off by an earlier
+/// crash — is still an ordinary startup refusal.
 pub(super) fn is_startup_refusal(
     session_age_secs: i64,
     has_verified_pid: bool,
-    remote_control_fallback_applied: bool,
+    remote_control_disabled_now: bool,
 ) -> bool {
-    is_remote_control_fast_fail(session_age_secs, has_verified_pid)
-        && !remote_control_fallback_applied
+    is_remote_control_fast_fail(session_age_secs, has_verified_pid) && !remote_control_disabled_now
 }
 
 /// Name the refusal when the stderr tail says what it was; otherwise the

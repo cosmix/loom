@@ -4,7 +4,7 @@ use anyhow::Result;
 use chrono::Utc;
 use std::path::{Path, PathBuf};
 
-use crate::models::failure::FailureInfo;
+use crate::models::failure::{FailureInfo, FailureType};
 use crate::models::session::Session;
 use crate::models::stage::{Stage, StageStatus};
 use crate::orchestrator::retry::{calculate_backoff, should_auto_retry};
@@ -89,28 +89,22 @@ impl Orchestrator {
         }
     }
 
-    /// Returns whether THIS call wrote the unsupported marker — i.e. whether
-    /// the upcoming retry will spawn with different arguments than the session
-    /// that just died. `is_startup_refusal` reads that answer to decide if a
-    /// retry is worth making at all.
-    fn maybe_disable_remote_control(&self, sid: &str, crashed_session: Option<&Session>) -> bool {
+    /// Whether a crashed session's fast, verified-pid exit looks like a
+    /// rejected `--remote-control` flag rather than an ordinary failure.
+    ///
+    /// A `true` verdict drives two things at the call site: it latches
+    /// Remote Control off for the rest of this process (see
+    /// `maybe_disable_remote_control`), and it makes THIS crash classify as
+    /// an ordinary, retryable crash instead of a startup refusal — the
+    /// retry that follows drops `--remote-control` entirely.
+    fn remote_control_suspected(&self, crashed_session: Option<&Session>) -> bool {
         let Some(session) = crashed_session else {
             return false;
         };
-        if is_remote_control_fast_fail(
+        is_remote_control_fast_fail(
             (Utc::now() - session.created_at).num_seconds(),
             session.pid.is_some(),
-        ) && crate::remote_control::resolve(&self.config.work_dir)
-        {
-            let _ = crate::remote_control::write_unsupported_marker(&self.config.work_dir);
-            clear_status_line();
-            eprintln!(
-                "Stage '{sid}' crashed within {FAST_FAIL_WINDOW_SECS}s of spawn; \
-                 disabling Remote Control for the rest of this run."
-            );
-            return true;
-        }
-        false
+        ) && (self.remote_control_active)(&self.config.work_dir)
     }
 
     /// Read the crash: a startup refusal when claude died before doing any
@@ -119,17 +113,22 @@ impl Orchestrator {
     /// A `None` session — the daemon restarted since the spawn, so the handle
     /// is gone — leaves no spawn time to measure against the window. No
     /// fast-fail evaluation happens then, exactly as before.
+    ///
+    /// `remote_control_disabled_now` is the crash's own `remote_control_suspected`
+    /// verdict: `true` only for the crash that just latched Remote Control
+    /// off for the rest of this process, which reads it as an ordinary,
+    /// retryable crash instead of a startup refusal.
     fn classify_crash(
         &self,
         crashed_session: Option<&Session>,
         crash_report_path: Option<&Path>,
-        remote_control_fallback_applied: bool,
+        remote_control_disabled_now: bool,
     ) -> CrashClassification {
         let refusal = crashed_session.filter(|session| {
             is_startup_refusal(
                 (Utc::now() - session.created_at).num_seconds(),
                 session.pid.is_some(),
-                remote_control_fallback_applied,
+                remote_control_disabled_now,
             )
         });
         match refusal {
@@ -168,121 +167,188 @@ impl Orchestrator {
         stage_id: Option<String>,
         crash_report_path: Option<PathBuf>,
     ) -> Result<()> {
-        // Check if we've already reported this crash to avoid duplicate messages
         if self.reported_crashes.contains(session_id) {
             return Ok(());
         }
         self.reported_crashes.insert(session_id.to_string());
 
-        if let Some(sid) = stage_id {
-            let Some(stage) = self.stage_answerable_for_crash(&sid, session_id) else {
-                return Ok(());
-            };
-            // A delayed predecessor crash may name this stage while the map
-            // already holds its healthy successor. Remove only the handle
-            // whose identity the stage gate above just authorized.
-            let crashed_session = self.take_matching_active_session(&sid, session_id);
-
-            // Remote Control fast-fail fallback: `claude --remote-control` exits
-            // non-zero when its prerequisites are unmet. If Remote Control is
-            // currently active and a session crashed very soon after spawn,
-            // treat that as "the flag is unsupported here" — write the
-            // `.loom/work/remote_control-unsupported` marker so `resolve()` returns
-            // false on the upcoming retry (which omits `--remote-control`).
-            // Best-effort: marker write errors are intentionally ignored.
-            let fallback_applied =
-                self.maybe_disable_remote_control(&sid, crashed_session.as_ref());
-
-            clear_status_line();
-            eprintln!("Session '{session_id}' crashed for stage '{sid}'");
-
-            let CrashClassification {
-                failure_type,
-                reason,
-                evidence,
-                console_note,
-            } = self.classify_crash(
-                crashed_session.as_ref(),
-                crash_report_path.as_deref(),
-                fallback_applied,
-            );
-            if let Some(path) = crash_report_path {
-                eprintln!("Crash report generated: {}", path.display());
-            }
-
-            self.sync_crashed_session_permissions(&sid, &stage);
-
-            let detected_at = Utc::now();
-            let mut became_terminal = false;
-            let updated = self.update_stage(&sid, |current| {
-                if current.status == StageStatus::Completed {
-                    became_terminal = true;
-                    return Ok(());
-                }
-                current.accumulate_attempt_time(detected_at);
-                current.failure_info = Some(FailureInfo {
-                    failure_type: failure_type.clone(),
-                    detected_at,
-                    evidence,
-                });
-                current.last_failure_at = Some(detected_at);
-                current.retry_count += 1;
-                current.close_reason = Some(reason);
-                current.try_mark_blocked()
-            });
-            let updated = match updated {
-                Ok(updated) => updated,
-                Err(e) => {
-                    tracing::error!(
-                        stage_id = %sid,
-                        error = %e,
-                        "Failed to persist Blocked stage after crash; skipping (will retry next tick)"
-                    );
-                    return Ok(());
-                }
-            };
-            if became_terminal {
-                return Ok(());
-            }
-
-            let max = updated.max_retries.unwrap_or(3);
-            if should_auto_retry(&failure_type, updated.retry_count, max) {
-                let backoff = calculate_backoff(updated.retry_count, 30, 300);
-                clear_status_line();
-                eprintln!(
-                    "Stage '{}' crashed (attempt {}/{}). Will retry in {}s...",
-                    sid,
-                    updated.retry_count,
-                    max,
-                    backoff.as_secs()
-                );
-            } else if let Some(note) = console_note {
-                clear_status_line();
-                eprintln!("Stage '{sid}': {note}");
-            } else if updated.retry_count >= max {
-                clear_status_line();
-                eprintln!(
-                    "Stage '{}' failed after {} attempts. Run `loom diagnose {}` for help.",
-                    sid, updated.retry_count, sid
-                );
-            }
-
-            if let Err(e) = self.graph.mark_status(&sid, StageStatus::Blocked) {
-                tracing::warn!(
-                    stage_id = %sid,
-                    error = %e,
-                    "Failed to sync graph status to Blocked after crash"
-                );
-            }
-        } else {
+        let Some(sid) = stage_id else {
             clear_status_line();
             eprintln!("Session '{session_id}' crashed (no stage association)");
             if let Some(path) = crash_report_path {
                 eprintln!("Crash report generated: {}", path.display());
             }
+            return Ok(());
+        };
+
+        let Some(stage) = self.stage_answerable_for_crash(&sid, session_id) else {
+            return Ok(());
+        };
+        let crashed_session = self.take_matching_active_session(&sid, session_id);
+
+        // A fast, verified-pid crash while Remote Control is active looks
+        // like a rejected `--remote-control` flag; latch it off for this
+        // process (see `maybe_disable_remote_control`) so the retry drops it.
+        let remote_control_suspected = self.remote_control_suspected(crashed_session.as_ref());
+        maybe_disable_remote_control(remote_control_suspected);
+
+        clear_status_line();
+        eprintln!("Session '{session_id}' crashed for stage '{sid}'");
+
+        let mut classification = self.classify_crash(
+            crashed_session.as_ref(),
+            crash_report_path.as_deref(),
+            remote_control_suspected,
+        );
+        note_remote_control_disabled(remote_control_suspected, &sid, &mut classification);
+        if let Some(path) = crash_report_path {
+            eprintln!("Crash report generated: {}", path.display());
         }
 
+        self.sync_crashed_session_permissions(&sid, &stage);
+        self.finish_crash_transition(&sid, classification)
+    }
+
+    /// Persist the stage transition to `Blocked` for a classified crash, then
+    /// announce the retry (or the reason there is none) and sync the graph.
+    fn finish_crash_transition(
+        &mut self,
+        sid: &str,
+        classification: CrashClassification,
+    ) -> Result<()> {
+        let CrashClassification {
+            failure_type,
+            reason,
+            evidence,
+            console_note,
+        } = classification;
+
+        let Some(updated) = self.persist_blocked_crash(sid, &failure_type, reason, evidence)?
+        else {
+            return Ok(());
+        };
+
+        announce_crash_outcome(sid, &failure_type, &updated, console_note);
+
+        if let Err(e) = self.graph.mark_status(sid, StageStatus::Blocked) {
+            tracing::warn!(
+                stage_id = %sid,
+                error = %e,
+                "Failed to sync graph status to Blocked after crash"
+            );
+        }
         Ok(())
+    }
+
+    /// Record the crash on the stage and transition it to `Blocked`.
+    ///
+    /// `Ok(None)` means nothing further to do: the stage already reached
+    /// `Completed` (a race with the crash), or persisting the update failed
+    /// (logged here; the next tick retries).
+    fn persist_blocked_crash(
+        &mut self,
+        sid: &str,
+        failure_type: &FailureType,
+        reason: String,
+        evidence: Vec<String>,
+    ) -> Result<Option<Stage>> {
+        let detected_at = Utc::now();
+        let mut became_terminal = false;
+        let updated = self.update_stage(sid, |current| {
+            if current.status == StageStatus::Completed {
+                became_terminal = true;
+                return Ok(());
+            }
+            current.accumulate_attempt_time(detected_at);
+            current.failure_info = Some(FailureInfo {
+                failure_type: failure_type.clone(),
+                detected_at,
+                evidence,
+            });
+            current.last_failure_at = Some(detected_at);
+            current.retry_count += 1;
+            current.close_reason = Some(reason);
+            current.try_mark_blocked()
+        });
+        match updated {
+            Ok(_) if became_terminal => Ok(None),
+            Ok(updated) => Ok(Some(updated)),
+            Err(e) => {
+                tracing::error!(
+                    stage_id = %sid,
+                    error = %e,
+                    "Failed to persist Blocked stage after crash; skipping (will retry next tick)"
+                );
+                Ok(None)
+            }
+        }
+    }
+}
+
+/// If this crash is suspected to be a rejected `--remote-control` flag,
+/// latch Remote Control off for the rest of this process (see
+/// `remote_control::disable_for_this_process`) so the retry drops the flag
+/// entirely. A no-op otherwise.
+fn maybe_disable_remote_control(remote_control_suspected: bool) {
+    if remote_control_suspected {
+        crate::remote_control::disable_for_this_process(&format!(
+            "session exited within {FAST_FAIL_WINDOW_SECS}s of spawn with --remote-control"
+        ));
+    }
+}
+
+/// The stage-facing note for the crash that triggered the in-process Remote
+/// Control disable — names the cause and that the stage will retry without
+/// the flag. A no-op for every other crash.
+fn note_remote_control_disabled(
+    remote_control_suspected: bool,
+    sid: &str,
+    classification: &mut CrashClassification,
+) {
+    if !remote_control_suspected {
+        return;
+    }
+    let hint = format!(
+        "session exited within {FAST_FAIL_WINDOW_SECS}s with --remote-control; Remote \
+         Control disabled for the rest of this daemon run, retrying stage '{sid}' without it"
+    );
+    classification.reason.push_str(&format!("; {hint}"));
+    classification.evidence.push(hint.clone());
+    classification.console_note = Some(match classification.console_note.take() {
+        Some(note) => format!("{note} {hint}"),
+        None => hint,
+    });
+}
+
+/// The console message for a crash's outcome: the retry countdown, the
+/// startup-refusal note, or the "exhausted its attempts" message — whichever
+/// applies.
+fn announce_crash_outcome(
+    sid: &str,
+    failure_type: &FailureType,
+    updated: &Stage,
+    console_note: Option<String>,
+) {
+    let max = updated.max_retries.unwrap_or(3);
+    if should_auto_retry(failure_type, updated.retry_count, max) {
+        let backoff = calculate_backoff(updated.retry_count, 30, 300);
+        clear_status_line();
+        eprintln!(
+            "Stage '{}' crashed (attempt {}/{}). Will retry in {}s...",
+            sid,
+            updated.retry_count,
+            max,
+            backoff.as_secs()
+        );
+    } else if let Some(note) = console_note {
+        clear_status_line();
+        eprintln!("Stage '{sid}': {note}");
+    } else if updated.retry_count >= max {
+        clear_status_line();
+        eprintln!(
+            "Stage '{}' failed after {} attempts. Run `loom diagnose {}` for help.",
+            sid, updated.retry_count, sid
+        );
     }
 }
 

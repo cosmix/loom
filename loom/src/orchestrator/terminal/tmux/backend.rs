@@ -26,7 +26,7 @@ pub struct TmuxBackend {
 impl TmuxBackend {
     /// Create a new tmux backend. Unlike [`native::NativeBackend::new`], this
     /// never fails: it does not probe for tmux or any terminal — that check
-    /// happens at spawn time (see `SessionBackend::resolve_lane`).
+    /// happens at spawn time (see `SessionBackend::dispatch_spawn`).
     pub fn new(work_dir: PathBuf) -> Self {
         Self { work_dir }
     }

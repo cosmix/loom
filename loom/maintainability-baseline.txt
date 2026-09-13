@@ -43,7 +43,7 @@ file src/plan/schema/tests/validation_tests.rs 923
 file src/plan/schema/types.rs 466
 file src/plan/schema/validation.rs 1285
 file src/plan/tests/amendment.rs 605
-file src/remote_control.rs 599
+file src/remote_control.rs 598
 file src/sandbox/config.rs 848
 file src/sandbox/settings.rs 543
 file src/sandbox/settings/tests.rs 1667
@@ -152,7 +152,6 @@ function src/models/stage/transitions.rs can_transition_to 74
 function src/models/stage/transitions.rs valid_transitions 58
 function src/orchestrator/auto_merge.rs attempt_auto_merge 63
 function src/orchestrator/core/completion_handler.rs handle_stage_completed 78
-function src/orchestrator/core/crash_handler.rs handle_session_crashed 122
 function src/orchestrator/core/event_handler.rs handle_one_event 123
 function src/orchestrator/core/merge_handler.rs finalize_merge_resolution 97
 function src/orchestrator/core/merge_handler.rs handle_merge_session_completed 168

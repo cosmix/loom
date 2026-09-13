@@ -30,22 +30,20 @@ fn session_with(work_dir: &Path, stderr: Option<&str>) -> Session {
 #[test]
 fn fast_fail_fallback_applies_to_every_backend_not_just_native() {
     // THE regression: this was gated on `backend == Native`, so on the
-    // tmux lane a `--remote-control` claude rejects crashed at startup,
-    // the retry re-spawned with identical flags, and the stage burned its
-    // entire attempt budget without the marker ever being written.
-    // Backend is not an input here precisely because it must not be one.
+    // tmux lane a `--remote-control` claude rejects crashed at startup and
+    // the retry re-spawned with identical flags every time. Backend is not
+    // an input here precisely because it must not be one.
     assert!(
         is_remote_control_fast_fail(1, true),
-        "a fast crash with a verified pid must trigger the fallback on any backend"
+        "a fast crash with a verified pid must be read as a startup refusal on any backend"
     );
 }
 
 #[test]
 fn a_session_that_never_reached_a_pid_is_a_hosting_failure_not_a_flag_rejection() {
     // What the old backend check was reaching for. A hosting failure must
-    // not disable Remote Control for the rest of the run, and the honest
-    // signal is the absence of a verified process — not which lane
-    // spawned it.
+    // not be misread as a startup refusal, and the honest signal is the
+    // absence of a verified process — not which lane spawned it.
     assert!(
         !is_remote_control_fast_fail(1, false),
         "no verified pid means hosting failed; Remote Control must not be blamed"
@@ -55,8 +53,8 @@ fn a_session_that_never_reached_a_pid_is_a_hosting_failure_not_a_flag_rejection(
 #[test]
 fn a_crash_outside_the_window_is_an_ordinary_failure() {
     // The window separates "the flag was rejected at startup" from "the
-    // agent ran, then died". Without it every late crash would silently
-    // disable Remote Control for the rest of the run.
+    // agent ran, then died". Without it every late crash would silently be
+    // read as an unretryable refusal.
     assert!(!is_remote_control_fast_fail(
         FAST_FAIL_WINDOW_SECS + 1,
         true
@@ -68,28 +66,19 @@ fn a_crash_outside_the_window_is_an_ordinary_failure() {
 }
 
 #[test]
-fn a_fast_crash_from_a_verified_process_is_a_startup_refusal() {
-    assert!(is_startup_refusal(1, true, false));
+fn is_startup_refusal_reads_the_disabled_now_flag() {
     assert!(
-        is_startup_refusal(FAST_FAIL_WINDOW_SECS, true, false),
-        "the boundary itself is inside the window"
+        is_startup_refusal(1, true, false),
+        "fast + verified pid + remote control not just disabled must be a refusal"
     );
-}
-
-/// The one fast crash that is still worth retrying: the remote-control
-/// fallback just fired, so the next spawn omits `--remote-control` and is not
-/// the same command that died.
-#[test]
-fn a_crash_that_triggered_the_remote_control_fallback_is_not_a_refusal() {
-    assert!(!is_startup_refusal(1, true, true));
-}
-
-#[test]
-fn a_slow_crash_or_an_unverified_process_is_not_a_refusal() {
-    // The agent ran for a while, then died: an ordinary crash, retryable.
-    assert!(!is_startup_refusal(FAST_FAIL_WINDOW_SECS + 1, true, false));
-    // No verified process means hosting failed, not that claude refused.
-    assert!(!is_startup_refusal(1, false, false));
+    assert!(
+        !is_startup_refusal(1, true, true),
+        "the crash that just disabled remote control must not be a refusal"
+    );
+    assert!(
+        !is_startup_refusal(FAST_FAIL_WINDOW_SECS + 1, true, false),
+        "a slow crash is never a refusal, disabled_now or not"
+    );
 }
 
 #[test]

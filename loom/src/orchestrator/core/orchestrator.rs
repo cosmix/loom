@@ -3,7 +3,7 @@
 use anyhow::Result;
 use chrono::{DateTime, Utc};
 use std::collections::{HashMap, HashSet};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use std::time::Duration;
@@ -128,6 +128,9 @@ pub struct Orchestrator {
     /// In-memory only: a daemon restart is a fresh scheduling attempt, so
     /// resetting the clock is the honest reading.
     pub(super) queued_since: HashMap<String, DateTime<Utc>>,
+    /// Injectable Remote Control probe, so crash classification is unit
+    /// testable without depending on the host's own claude install.
+    pub(super) remote_control_active: fn(&Path) -> bool,
 }
 
 impl Orchestrator {
@@ -144,7 +147,6 @@ impl Orchestrator {
         };
 
         let mut monitor = Monitor::new(monitor_config);
-
         let backend = Arc::new(SessionBackend::from_config(config.work_dir.clone())?);
         let liveness = LivenessService::new(Arc::clone(&backend));
         monitor.set_liveness(liveness.clone());
@@ -197,6 +199,7 @@ impl Orchestrator {
             adjudicators,
             spawn_blocks: HashMap::new(),
             queued_since: HashMap::new(),
+            remote_control_active: crate::remote_control::resolve,
         })
     }
 

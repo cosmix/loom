@@ -2,7 +2,7 @@
 //! 400-line ceiling (CLAUDE.md Rule 17).
 //!
 //! `dispatch_spawn` is private, but this module is a child of `backend`, so
-//! the fallback decision can be driven directly with closures instead of being
+//! the dispatch decision can be driven directly with closures instead of being
 //! approximated through the four public `spawn_*` wrappers (which would need a
 //! real `Stage`, `Worktree`, signal file, and terminal).
 
@@ -36,10 +36,6 @@ fn test_backend(
 
 /// Pre-populate the memoized native lane with a usable backend, making "the
 /// native lane is available" a property of the test rather than of the host.
-///
-/// Seeds `lazy_native` rather than `native` deliberately: that is the field a
-/// configured-tmux backend actually consults, so the tests exercise the real
-/// fallback path instead of the eager-construction shortcut.
 fn seed_native_available(backend: &SessionBackend, work_dir: &Path) {
     let native = NativeBackend::with_terminal(TerminalEmulator::XTerm, work_dir.to_path_buf());
     assert!(
@@ -65,24 +61,19 @@ fn failing_tmux(_tmux: &TmuxBackend, _session: Session) -> Result<Session> {
 }
 
 #[test]
-fn missing_tmux_falls_back_to_native_lane() {
+fn resolve_lane_never_depends_on_tmux_availability() {
+    // The configured backend is the only input: unavailable tmux is a
+    // spawn-time hard error now, never a reason to resolve to a different
+    // lane ahead of time.
     let temp = TempDir::new().unwrap();
     let backend = test_backend(temp.path().to_path_buf(), SessionBackendKind::Tmux, || {
         false
     });
-    assert_eq!(backend.resolve_lane(), SessionBackendKind::Native);
+    assert_eq!(backend.resolve_lane(), SessionBackendKind::Tmux);
 }
 
 #[test]
-fn fallback_marker_forces_native_lane() {
-    let temp = TempDir::new().unwrap();
-    write_fallback_marker(temp.path());
-    let backend = test_backend(temp.path().to_path_buf(), SessionBackendKind::Tmux, || true);
-    assert_eq!(backend.resolve_lane(), SessionBackendKind::Native);
-}
-
-#[test]
-fn tmux_configured_available_no_marker_resolves_tmux_lane() {
+fn tmux_configured_resolves_tmux_lane() {
     let temp = TempDir::new().unwrap();
     let backend = test_backend(temp.path().to_path_buf(), SessionBackendKind::Tmux, || true);
     assert_eq!(backend.resolve_lane(), SessionBackendKind::Tmux);
@@ -100,61 +91,67 @@ fn native_configured_always_resolves_native_lane_even_if_tmux_available() {
 }
 
 #[test]
-fn clear_fallback_marker_removes_it() {
-    let temp = TempDir::new().unwrap();
-    write_fallback_marker(temp.path());
-    assert!(fallback_marker_exists(temp.path()));
-    clear_fallback_marker(temp.path());
-    assert!(!fallback_marker_exists(temp.path()));
-}
-
-#[test]
-fn tmux_spawn_failure_retries_native_and_records_the_marker() {
+fn tmux_spawn_failure_returns_err_and_never_retries_native() {
     let temp = TempDir::new().unwrap();
     let backend = test_backend(temp.path().to_path_buf(), SessionBackendKind::Tmux, || true);
-    seed_native_available(&backend, temp.path());
+    let session = Session::new();
+    let session_id = session.id.clone();
 
-    let spawned = backend
-        .dispatch_spawn(Session::new(), |_native, s| Ok(s), failing_tmux)
-        .expect("the native retry must run when the native lane exists");
+    let err = backend
+        .dispatch_spawn(
+            session,
+            |_native, _s| panic!("a tmux spawn failure must never fall back to native"),
+            failing_tmux,
+        )
+        .expect_err("a failing tmux spawn must return Err");
 
-    assert_eq!(spawned.backend, SessionBackendKind::Native);
+    let rendered = format!("{err:#}");
     assert!(
-        fallback_marker_exists(temp.path()),
-        "a tmux spawn failure with a usable native lane must record the fallback"
+        rendered.contains("tmux new-session failed"),
+        "the original tmux error is the caller's only useful diagnostic, got: {rendered}"
     );
-    // The marker is only useful if it actually steers the NEXT spawn, which is
-    // `resolve_lane`'s job — asserting the file alone would not prove that.
-    assert_eq!(backend.resolve_lane(), SessionBackendKind::Native);
+    assert!(
+        rendered.contains(&session_id),
+        "the error must name the session that failed to spawn, got: {rendered}"
+    );
+    assert!(
+        std::fs::read_dir(temp.path()).unwrap().next().is_none(),
+        "a tmux spawn failure must write nothing to the work dir"
+    );
 }
 
 #[test]
-fn tmux_spawn_failure_without_a_native_lane_returns_the_tmux_error() {
+fn tmux_configured_unavailable_returns_actionable_err_and_never_spawns() {
     let temp = TempDir::new().unwrap();
-    let backend = test_backend(temp.path().to_path_buf(), SessionBackendKind::Tmux, || true);
-    seed_native_unavailable(&backend);
+    let backend = test_backend(temp.path().to_path_buf(), SessionBackendKind::Tmux, || {
+        false
+    });
 
     let err = backend
         .dispatch_spawn(
             Session::new(),
-            |_native, _s| panic!("the native lane must not be entered when it cannot be built"),
-            failing_tmux,
+            |_native, _s| panic!("an unavailable tmux must not fall back to native"),
+            |_tmux, _s| panic!("tmux must not be spawned when unavailable"),
         )
-        .expect_err("a doomed native retry must not swallow the tmux failure");
+        .expect_err("configured tmux with no tmux on PATH must fail");
 
+    let rendered = err.to_string();
     assert!(
-        err.to_string().contains("tmux new-session failed"),
-        "the ORIGINAL tmux error is the caller's only useful diagnostic, got: {err}"
+        rendered.contains("tmux is not on PATH"),
+        "must name the problem, got: {rendered}"
     );
     assert!(
-        !fallback_marker_exists(temp.path()),
-        "a marker here would permanently disable tmux on a host where tmux is the only lane"
+        rendered.contains("[terminal] backend = \"native\""),
+        "must name the fix, got: {rendered}"
     );
-    assert_eq!(backend.resolve_lane(), SessionBackendKind::Tmux);
+    assert!(
+        std::fs::read_dir(temp.path()).unwrap().next().is_none(),
+        "an unavailable tmux must write nothing to the work dir"
+    );
 }
 
 #[test]
-fn tmux_lane_stamps_the_tmux_backend_and_writes_no_marker() {
+fn tmux_lane_stamps_the_tmux_backend() {
     let temp = TempDir::new().unwrap();
     let backend = test_backend(temp.path().to_path_buf(), SessionBackendKind::Tmux, || true);
 
@@ -174,7 +171,6 @@ fn tmux_lane_stamps_the_tmux_backend_and_writes_no_marker() {
         .unwrap();
 
     assert_eq!(spawned.backend, SessionBackendKind::Tmux);
-    assert!(!fallback_marker_exists(temp.path()));
 }
 
 #[test]
@@ -199,59 +195,6 @@ fn native_lane_stamps_the_native_backend() {
         .unwrap();
 
     assert_eq!(spawned.backend, SessionBackendKind::Native);
-    assert!(
-        !fallback_marker_exists(temp.path()),
-        "a configured-native backend has nothing to fall back FROM"
-    );
-}
-
-#[test]
-fn configured_tmux_unavailable_records_the_marker_when_native_can_run() {
-    let temp = TempDir::new().unwrap();
-    let backend = test_backend(temp.path().to_path_buf(), SessionBackendKind::Tmux, || {
-        false
-    });
-    seed_native_available(&backend, temp.path());
-
-    let spawned = backend
-        .dispatch_spawn(
-            Session::new(),
-            |_native, s| Ok(s),
-            |_tmux, _s| panic!("an unavailable tmux must not be invoked"),
-        )
-        .unwrap();
-
-    assert_eq!(spawned.backend, SessionBackendKind::Native);
-    assert!(
-        fallback_marker_exists(temp.path()),
-        "the first spawn to discover tmux is missing must persist that finding"
-    );
-}
-
-#[test]
-fn configured_tmux_unavailable_writes_no_marker_without_a_native_lane() {
-    let temp = TempDir::new().unwrap();
-    let backend = test_backend(temp.path().to_path_buf(), SessionBackendKind::Tmux, || {
-        false
-    });
-    seed_native_unavailable(&backend);
-
-    let err = backend
-        .dispatch_spawn(
-            Session::new(),
-            |_native, _s| panic!("an unavailable native lane must not be entered"),
-            |_tmux, _s| panic!("an unavailable tmux must not be invoked"),
-        )
-        .expect_err("neither lane can spawn, so this must fail");
-
-    assert!(
-        err.to_string().contains("No terminal emulator found"),
-        "the native construction failure must reach the caller, got: {err}"
-    );
-    assert!(
-        !fallback_marker_exists(temp.path()),
-        "recording a fallback to a lane that does not exist would hide a tmux installed later"
-    );
 }
 
 #[test]
@@ -263,8 +206,8 @@ fn the_lazy_native_lane_is_built_at_most_once() {
     // Pointer identity is the assertion because it is the only thing that
     // distinguishes a memoized lane from a freshly constructed one. Swapping
     // the `OnceLock` back for per-call construction makes both arms fail —
-    // which is the point: after a tmux fallback, `is_session_alive` reaches
-    // this once per native session on every 5-second monitor tick.
+    // which is the point: `is_session_alive` reaches this once per native
+    // session on every 5-second monitor tick.
     let temp = TempDir::new().unwrap();
     let backend = test_backend(temp.path().to_path_buf(), SessionBackendKind::Tmux, || true);
 
@@ -332,14 +275,9 @@ fn from_config_tmux_leaves_the_native_lane_unbuilt() {
         "configured tmux must not eagerly construct the native lane"
     );
     assert_eq!(backend.configured_kind, SessionBackendKind::Tmux);
-    // `from_config` wires the REAL availability probe; `test_backend`'s stub
-    // cannot catch a regression that hardwires it (e.g. back to `|| false`).
-    let expected = if which::which("tmux").is_ok() {
-        SessionBackendKind::Tmux
-    } else {
-        SessionBackendKind::Native
-    };
-    assert_eq!(backend.resolve_lane(), expected);
+    // The configured lane is authoritative regardless of real tmux
+    // availability on the machine running this test.
+    assert_eq!(backend.resolve_lane(), SessionBackendKind::Tmux);
 }
 
 #[test]

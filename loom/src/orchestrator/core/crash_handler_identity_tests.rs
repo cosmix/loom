@@ -128,3 +128,162 @@ fn the_stages_own_session_crashing_still_moves_the_stage() {
         "a crash of the stage's own session must move it out of Executing"
     );
 }
+
+/// Recursively list every regular file under `dir`, relative to `dir`.
+fn files_under(dir: &Path) -> std::collections::BTreeSet<std::path::PathBuf> {
+    let mut found = std::collections::BTreeSet::new();
+    fn walk(base: &Path, dir: &Path, found: &mut std::collections::BTreeSet<std::path::PathBuf>) {
+        let Ok(entries) = std::fs::read_dir(dir) else {
+            return;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                walk(base, &path, found);
+            } else {
+                found.insert(path.strip_prefix(base).unwrap().to_path_buf());
+            }
+        }
+    }
+    walk(dir, dir, &mut found);
+    found
+}
+
+/// Before this fix, a fast crash while Remote Control looked active wrote a
+/// marker file so the NEXT spawn's arguments silently changed. That marker is
+/// gone: a fast, verified-pid crash is handled like any other crash and
+/// writes nothing new under the work dir — no crash report is supplied here,
+/// so nothing at all should appear.
+#[test]
+#[serial]
+fn a_fast_fail_crash_writes_no_file_under_the_work_dir() {
+    let temp = tempfile::tempdir().unwrap();
+    let work_dir = temp.path().join(".loom").join("work");
+    let stage = executing_stage(&work_dir, "session-fast");
+    let mut session = Session::new();
+    session.id = "session-fast".to_string();
+    session.stage_id = Some(stage.id.clone());
+    session.status = SessionStatus::Running;
+    session.pid = Some(4242);
+    session.created_at = chrono::Utc::now();
+    let mut orchestrator = orchestrator_for(&work_dir, temp.path());
+    orchestrator
+        .active_sessions
+        .insert(stage.id.clone(), session);
+
+    let before = files_under(&work_dir);
+
+    orchestrator
+        .handle_session_crashed("session-fast", Some(stage.id.clone()), None)
+        .unwrap();
+
+    let after = files_under(&work_dir);
+    let new_files: Vec<_> = after.difference(&before).collect();
+    assert!(
+        new_files.is_empty(),
+        "a fast-fail crash with no crash report must write no new file under the work dir, got: {new_files:?}"
+    );
+}
+
+/// A fast crash while Remote Control is suspected active must not be a dead
+/// end for the operator: no marker persists it, the stage keeps its retry
+/// budget instead of being blocked as a startup refusal, and the very next
+/// `resolve()` call in this process reports Remote Control off.
+///
+/// Remote Control's own activity is injected via `Orchestrator
+/// ::remote_control_active` rather than faking a `claude` install on `PATH` —
+/// a test must never mutate process-wide environment (`PATH`, `HOME`, and the
+/// like); see `SessionBackend::tmux_available` for the same pattern.
+#[test]
+#[serial]
+fn a_suspected_remote_control_crash_disables_it_and_stays_retryable() {
+    crate::remote_control::reset_disabled_for_process();
+    let temp = tempfile::tempdir().unwrap();
+
+    let work_dir = temp.path().join(".loom").join("work");
+    let stage = executing_stage(&work_dir, "session-rc");
+    let mut session = Session::new();
+    session.id = "session-rc".to_string();
+    session.stage_id = Some(stage.id.clone());
+    session.status = SessionStatus::Running;
+    session.pid = Some(4242);
+    session.created_at = chrono::Utc::now();
+    let mut orchestrator = orchestrator_for(&work_dir, temp.path());
+    orchestrator.remote_control_active = |_| true;
+    orchestrator
+        .active_sessions
+        .insert(stage.id.clone(), session);
+
+    let before = files_under(&work_dir);
+    orchestrator
+        .handle_session_crashed("session-rc", Some(stage.id.clone()), None)
+        .unwrap();
+    let after = files_under(&work_dir);
+    assert_eq!(
+        after.difference(&before).count(),
+        0,
+        "a suspected remote-control crash must write no new file"
+    );
+
+    let stage_after = load_stage(&stage.id, &work_dir).unwrap();
+    assert_eq!(
+        stage_after.status,
+        StageStatus::Blocked,
+        "the crash still blocks the stage so the orchestrator's retry loop can pick it up"
+    );
+    assert_eq!(
+        stage_after.failure_info.unwrap().failure_type,
+        crate::models::failure::FailureType::SessionCrash,
+        "it must classify as an ordinary crash, not a startup refusal"
+    );
+
+    assert!(
+        !crate::remote_control::resolve(&work_dir),
+        "resolve() must report Remote Control off for the rest of this process"
+    );
+    crate::remote_control::reset_disabled_for_process();
+}
+
+/// The mirror of the case above: with Remote Control read as INACTIVE, the
+/// same fast, verified-pid crash is an ordinary startup refusal (blocked, not
+/// retried), and it must not touch the process-global disable latch at all.
+#[test]
+#[serial]
+fn a_fast_fail_crash_with_remote_control_inactive_is_a_startup_refusal() {
+    crate::remote_control::reset_disabled_for_process();
+    let temp = tempfile::tempdir().unwrap();
+
+    let work_dir = temp.path().join(".loom").join("work");
+    let stage = executing_stage(&work_dir, "session-refusal");
+    let mut session = Session::new();
+    session.id = "session-refusal".to_string();
+    session.stage_id = Some(stage.id.clone());
+    session.status = SessionStatus::Running;
+    session.pid = Some(4242);
+    session.created_at = chrono::Utc::now();
+    let mut orchestrator = orchestrator_for(&work_dir, temp.path());
+    orchestrator.remote_control_active = |_| false;
+    orchestrator
+        .active_sessions
+        .insert(stage.id.clone(), session);
+
+    orchestrator
+        .handle_session_crashed("session-refusal", Some(stage.id.clone()), None)
+        .unwrap();
+
+    let stage_after = load_stage(&stage.id, &work_dir).unwrap();
+    assert_eq!(
+        stage_after.status,
+        StageStatus::Blocked,
+        "a startup refusal still blocks the stage"
+    );
+    assert_eq!(
+        stage_after.failure_info.unwrap().failure_type,
+        crate::models::failure::FailureType::StartupRefusal,
+        "with Remote Control inactive, a fast verified-pid crash is a startup refusal"
+    );
+    assert!(
+        !crate::remote_control::disabled_for_process(),
+        "a crash unrelated to Remote Control must not latch it off for the process"
+    );
+}

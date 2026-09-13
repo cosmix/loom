@@ -756,7 +756,7 @@ mode = "auto"   # default: enable whenever preflight passes
 
 Toggling `mode` takes effect on the next session spawn — no daemon restart needed.
 
-**Mid-run fallback** — if a session crashes within 15 seconds of spawn while Remote Control is active, loom writes a `.work/remote_control-unsupported` marker, then respawns and omits the flag for the rest of the run.
+**Fast crashes** — a session that crashes within 15 seconds of spawn while Remote Control is active disables Remote Control for the rest of that daemon run, logs it once, and retries the stage without the flag. Nothing is written to disk: a daemon restart tries Remote Control again from scratch. Set `mode = "off"` above to stop it from trying at all.
 
 **Session naming** — every spawned session is named after its stage in the Remote Control UI: the stage name for stage sessions, and `Merge: <stage name>`, `Base conflict: <stage name>`, `Knowledge: <stage name>` for merge, base-conflict, and knowledge sessions respectively. Claude binaries whose `--remote-control` flag doesn't accept a name argument automatically fall back to the bare flag — detected via a one-time `claude --help` capability check, no configuration needed.
 
@@ -795,8 +795,9 @@ loom run --backend tmux           # persists the choice to [terminal]
 Changing the backend while the daemon is running is refused with a hint — `loom stop` first, then
 re-run with `--backend`. Selecting a backend takes effect on the next spawn.
 
-If tmux is selected but not installed, loom prints an advisory warning at `loom init` and at
-`loom run` startup and **never aborts** — sessions fall back to the native lane.
+If tmux is selected but not installed, `loom init` prints an advisory warning; `loom run` (and
+`loom run --foreground`) refuses to start — the configured backend is never silently swapped for
+the other lane.
 
 ### Running under WSL
 
@@ -897,27 +898,12 @@ agent, and `C-b x` closes that stage's pane. Detach the normal way with `C-b d`.
 > `89c4f350`: older daemons read a manual kill as a stage crash and spend the stage's retry budget
 > on it.
 
-### Fallback marker
+### Tmux unavailable
 
-If a tmux spawn fails — or tmux is configured but unavailable — loom retries on the native backend and
-writes a marker file:
-
-```text
-.work/terminal-backend-fallback
-```
-
-While that marker exists, **every** subsequent spawn uses the native backend, and it survives daemon
-restarts. Loom only writes it when the native backend is actually usable; on a headless box, where the
-native lane cannot be built, loom keeps tmux selected and reports the real tmux error instead of
-silently disabling the one backend that works there.
-
-Clear it by explicitly re-selecting tmux:
-
-```bash
-loom run --backend tmux
-```
-
-`loom clean --state` (or `--all`) also removes it, as a side effect of deleting `.work/` entirely.
+The configured backend is authoritative: nothing on disk can swap it for the other lane. If tmux is
+configured but not on `PATH`, `loom run` refuses to start (see [Selecting a backend](#selecting-a-backend));
+if it becomes unavailable mid-run, a spawn fails with an error naming the fix instead of silently
+falling back to native.
 
 ## Agent Teams (Experimental)
 

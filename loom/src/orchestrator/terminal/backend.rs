@@ -1,33 +1,11 @@
 //! `SessionBackend`: dispatches session spawn/kill/liveness across the
-//! native and tmux terminal backends according to the persisted `[terminal]`
-//! config (`.loom/work/config.toml`).
+//! native and tmux terminal backends according to the resolved `[terminal]`
+//! config (project `.loom/work/config.toml`, then `~/.loom/config.toml`, then
+//! the built-in default — see [`crate::fs::work_dir::read_terminal_config`]).
 //!
-//! # Fail-open
-//!
-//! Choosing `tmux` in `.loom/work/config.toml` must never abort orchestration —
-//! [`SessionBackend::from_config`] always succeeds as long as the config
-//! itself reads cleanly, even when tmux is not installed. Availability is
-//! resolved lazily, per spawn, by `SessionBackend::resolve_lane`: a
-//! missing tmux, or a fallback already recorded from an earlier failure,
-//! degrades to the native lane rather than erroring. This mirrors
-//! `remote_control`'s `remote_control-unsupported` marker (see
-//! [`crate::remote_control`]).
-//!
-//! # Fallback marker lifecycle
-//!
-//! `.loom/work/terminal-backend-fallback` is written the first time a tmux spawn
-//! fails, or the first time tmux is discovered unavailable. It lives in
-//! `.loom/work/` so it survives daemon restarts and separate `loom run`
-//! invocations — nothing clears it automatically. The only clearing paths
-//! are an explicit operator re-selection (`loom run --backend tmux`, see
-//! [`clear_fallback_marker`]) and `loom clean --state` (which removes
-//! `.loom/work/` outright).
-//!
-//! Because it is that sticky, it is written ONLY once the native lane is
-//! known to be constructible. On a headless host `NativeBackend::new` bails
-//! in terminal detection, so a marker written there would permanently
-//! disable tmux — for every later spawn and every later daemon start — in
-//! exchange for a retry that could not have succeeded.
+//! The configured backend is authoritative and nothing on disk can override
+//! it: choosing `tmux` with no `tmux` on PATH is a hard spawn-time error
+//! naming the fix, never a silent switch to the native lane.
 
 use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
@@ -40,54 +18,25 @@ use crate::models::worktree::Worktree;
 use super::native::NativeBackend;
 use super::tmux::TmuxBackend;
 
-/// Filename (under `.loom/work/`) of the marker written after a tmux spawn
-/// failure or unavailability, mirroring `remote_control-unsupported`.
-const TERMINAL_BACKEND_FALLBACK_MARKER: &str = "terminal-backend-fallback";
-
-fn fallback_marker_path(work_dir: &Path) -> PathBuf {
-    work_dir.join(TERMINAL_BACKEND_FALLBACK_MARKER)
-}
-
-fn fallback_marker_exists(work_dir: &Path) -> bool {
-    fallback_marker_path(work_dir).exists()
-}
-
-/// Best-effort write of the fallback marker. A write failure just means the
-/// next spawn re-probes tmux availability — not a correctness gate.
-fn write_fallback_marker(work_dir: &Path) {
-    let _ = std::fs::write(
-        fallback_marker_path(work_dir),
-        "Terminal backend fell back to native after a tmux spawn failure or unavailable tmux.\n",
-    );
-}
-
-/// Best-effort removal of the fallback marker, so a `tmux` lane can be
-/// re-selected. Called by the CLI when an operator explicitly re-selects the
-/// tmux backend (`loom run --backend tmux`).
-pub fn clear_fallback_marker(work_dir: &Path) {
-    let _ = std::fs::remove_file(fallback_marker_path(work_dir));
-}
-
 fn default_tmux_available() -> bool {
     which::which("tmux").is_ok()
 }
 
 pub struct SessionBackend {
     work_dir: PathBuf,
-    /// The persisted `[terminal]` preference — NOT necessarily the lane a
-    /// given spawn actually uses; see [`SessionBackend::resolve_lane`].
+    /// The resolved `[terminal]` preference — the lane every spawn uses.
     configured_kind: SessionBackendKind,
     /// Eagerly constructed only when `configured_kind` is `Native` (today's
     /// behaviour, required so `Orchestrator::new`'s construction-failure
     /// semantics are unchanged). `None` when configured `Tmux`: the native
-    /// lane is then built lazily, only if actually needed (tmux-spawn
-    /// fallback, or kill/liveness of a native-recorded session).
+    /// lane is then built lazily, only if actually needed (kill/liveness of a
+    /// session recorded `backend = native` from an earlier configuration).
     native: Option<NativeBackend>,
     /// Memoized lazy native lane, used only when `native` is `None`. See
     /// [`SessionBackend::native_lane`] for why the FAILURE is memoized too.
     lazy_native: OnceLock<std::result::Result<NativeBackend, String>>,
     tmux: TmuxBackend,
-    /// Injectable tmux-availability probe, so lane resolution is unit
+    /// Injectable tmux-availability probe, so the spawn-time check is unit
     /// testable without depending on the host actually having tmux.
     tmux_available: fn() -> bool,
 }
@@ -111,34 +60,25 @@ impl SessionBackend {
         })
     }
 
-    /// The lane a spawn would actually use right now: `Native` when
-    /// configured, or when `Tmux` is configured but unavailable (missing
-    /// binary, or a previously recorded fallback); `Tmux` otherwise.
+    /// The lane every spawn uses: the resolved `[terminal]` config, verbatim.
     ///
-    /// `spawn_*` calls this itself rather than duplicating the decision, so
-    /// tests asserting on the resolved lane are asserting on the same logic
-    /// spawn uses.
+    /// Kept as its own method (rather than reading `configured_kind`
+    /// directly) so the write-ahead session record — stamped with this lane
+    /// before a spawn is attempted, see `session_lifecycle::write_ahead_session`
+    /// — and the spawn dispatcher below can never read two different answers.
     pub(crate) fn resolve_lane(&self) -> SessionBackendKind {
-        if self.configured_kind == SessionBackendKind::Native {
-            return SessionBackendKind::Native;
-        }
-        if fallback_marker_exists(&self.work_dir) {
-            return SessionBackendKind::Native;
-        }
-        if (self.tmux_available)() {
-            SessionBackendKind::Tmux
-        } else {
-            SessionBackendKind::Native
-        }
+        self.configured_kind
     }
 
     /// The native lane, constructed AT MOST ONCE per `SessionBackend`.
     ///
     /// `NativeBackend::new` runs terminal detection, which shells out to
-    /// `which`/`gsettings`/AppleScript probes. After a tmux fallback,
-    /// [`Self::is_session_alive`] reaches this path once per native session on
-    /// every 5-second monitor tick, so rebuilding per call meant a burst of
-    /// subprocesses (and, before this, a line of stderr) every tick forever.
+    /// `which`/`gsettings`/AppleScript probes. For a session recorded
+    /// `backend = native` under a tmux-configured `SessionBackend` (spawned
+    /// before the config was switched to tmux), [`Self::is_session_alive`]
+    /// reaches this path once per session on every 5-second monitor tick, so
+    /// rebuilding per call meant a burst of subprocesses (and, before this, a
+    /// line of stderr) every tick forever.
     ///
     /// The FAILURE is memoized alongside the success: terminal availability is
     /// a property of the daemon's environment, fixed for the life of the
@@ -171,74 +111,34 @@ impl SessionBackend {
         spawn_native(native, session)
     }
 
-    /// Handle a failed tmux-lane spawn: either arm the native retry, or give
-    /// up and hand the ORIGINAL tmux error back to the caller.
-    ///
-    /// Without a constructible native lane the retry is guaranteed to fail, so
-    /// running it would replace the one useful diagnostic (why tmux failed)
-    /// with a generic "no terminal emulator found", AND leave behind a marker
-    /// that permanently disables tmux for a host on which tmux is the only
-    /// thing that could ever have worked.
-    fn record_tmux_spawn_failure(&self, err: anyhow::Error) -> Result<()> {
-        if let Err(native_err) = self.native_lane() {
-            eprintln!(
-                "Warning: tmux backend spawn failed and there is no native lane to retry on ({native_err}); keeping tmux selected and reporting the tmux failure."
-            );
-            return Err(err);
-        }
-        eprintln!(
-            "Warning: tmux backend spawn failed ({err}); retrying on the native lane. tmux stays disabled until you re-select it with `loom run --backend tmux` — the marker survives daemon restarts."
-        );
-        write_fallback_marker(&self.work_dir);
-        Ok(())
-    }
-
-    /// Record that a configured tmux lane was found unavailable, the FIRST
-    /// time a spawn discovers it, so later spawns (and later daemon restarts)
-    /// skip re-probing tmux.
-    ///
-    /// Same precondition as [`Self::record_tmux_spawn_failure`]: with no
-    /// native lane either, this spawn fails whatever we write, and the marker
-    /// would only hide a tmux installed later.
-    fn note_tmux_unavailable(&self) {
-        if self.configured_kind != SessionBackendKind::Tmux
-            || fallback_marker_exists(&self.work_dir)
-        {
-            return;
-        }
-        if self.native_lane().is_err() {
-            eprintln!(
-                "Warning: terminal backend \"tmux\" is configured but unavailable, and no native terminal was detected either; not recording a fallback. Install tmux, or a terminal emulator."
-            );
-            return;
-        }
-        eprintln!(
-            "Warning: terminal backend \"tmux\" is configured but unavailable, so this and every later spawn use the native lane: install tmux and re-select it with `loom run --backend tmux`, or set the [terminal] backend to \"native\"."
-        );
-        write_fallback_marker(&self.work_dir);
-    }
-
-    /// Shared spawn dispatcher: resolves the lane, stamps `session.backend`
-    /// with the lane ACTUALLY used before delegating, and retries once on
-    /// the native lane if a tmux-lane spawn fails.
+    /// Shared spawn dispatcher: dispatches on the CONFIGURED lane only — no
+    /// availability probe ever swaps it for the other lane. A configured tmux
+    /// backend with no `tmux` on PATH, or whose spawn fails, returns `Err`
+    /// straight to the caller; nothing is written to disk and no native retry
+    /// is attempted.
     fn dispatch_spawn(
         &self,
         session: Session,
         spawn_native: impl FnOnce(&NativeBackend, Session) -> Result<Session>,
         spawn_tmux: impl FnOnce(&TmuxBackend, Session) -> Result<Session>,
     ) -> Result<Session> {
-        if self.resolve_lane() == SessionBackendKind::Tmux {
-            let mut tmux_session = session.clone();
-            tmux_session.backend = SessionBackendKind::Tmux;
-            match spawn_tmux(&self.tmux, tmux_session) {
-                Ok(spawned) => return Ok(spawned),
-                Err(err) => self.record_tmux_spawn_failure(err)?,
+        match self.configured_kind {
+            SessionBackendKind::Native => self.spawn_native_lane(session, spawn_native),
+            SessionBackendKind::Tmux => {
+                if !(self.tmux_available)() {
+                    anyhow::bail!(
+                        "terminal backend \"tmux\" is configured but tmux is not on PATH; \
+                         install tmux or set [terminal] backend = \"native\" \
+                         (.loom/work/config.toml or ~/.loom/config.toml)"
+                    );
+                }
+                let mut tmux_session = session;
+                tmux_session.backend = SessionBackendKind::Tmux;
+                let session_id = tmux_session.id.clone();
+                spawn_tmux(&self.tmux, tmux_session)
+                    .with_context(|| format!("tmux spawn failed for session '{session_id}'"))
             }
-        } else {
-            self.note_tmux_unavailable();
         }
-
-        self.spawn_native_lane(session, spawn_native)
     }
 
     pub fn spawn_session(
