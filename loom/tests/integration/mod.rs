@@ -24,5 +24,6 @@ pub mod implementer_defaults;
 pub mod install_assets;
 pub mod merge_conflict_recovery;
 pub mod plan_verify;
+pub mod relay_e2e;
 pub mod source_graph_fixtures;
 pub mod update_notice;

@@ -86,7 +86,10 @@ impl Orchestrator {
     /// Drain every session inbox, retire the relay state of finished
     /// sessions, and report stalled tickets. Called on every poll tick right
     /// after `drain_stage_spools`.
-    pub(super) fn drain_session_inboxes(&mut self) {
+    ///
+    /// `pub` (rather than `pub(super)`) so `tests/integration/relay_e2e.rs`
+    /// can run exactly the same pass the daemon's poll tick runs.
+    pub fn drain_session_inboxes(&mut self) {
         let scratch_root = match crate::relay::scratch_root_from_env() {
             Ok(root) => Some(root),
             Err(error) => {

@@ -168,6 +168,14 @@ pub fn delete_branch(branch: &str, repo_root: &Path) {
 /// Path to the `loom` binary this test run built.
 const LOOM: &str = env!("CARGO_BIN_EXE_loom");
 
+/// The path [`LOOM`] resolves to, for a caller that must hand it to a
+/// subprocess as an env var (e.g. `LOOM_BIN` for a hook script) rather than
+/// spawn it directly — a direct spawn outside this module is what
+/// `binary_spawn_guard` forbids.
+pub fn loom_bin_path() -> &'static str {
+    LOOM
+}
+
 /// A `loom` command whose user directory is a scratch `LOOM_HOME` with the
 /// update check switched off.
 ///
