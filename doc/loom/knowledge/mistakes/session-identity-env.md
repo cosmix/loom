@@ -77,10 +77,13 @@ re-proposed:
    stages have no branch, so nothing else ever would — the plan could never reach `DONE-`.
 3. Nothing in the daemon calls `trigger_dependents`; `complete_knowledge_stage` does it itself.
 
-The broker exists because a *sandboxed worktree* agent must not mutate trusted `.work` state. A
-knowledge session is not sandboxed — `spawn_knowledge_stage` installs hooks into the main repo but
-generates no sandbox deny/allow settings — so the in-process path is correct for it, and the gate
-simply had to stop claiming it.
+The broker exists because a *sandboxed worktree* agent must not mutate trusted `.work` state. An
+earlier version of this paragraph said a knowledge session "is not sandboxed" and that its spawn
+"generates no sandbox deny/allow settings". As of 2026-09-13 that is wrong: the spawn writes a sandbox
+block into the main checkout's `.claude/settings.local.json` (`orchestrator/core/spawn_setup.rs`,
+`write_required_sandbox_settings`). That sandbox does not keep the session out of `.loom/work`, which
+is why the in-process completion path works for it. `doc/plans/PLAN-loom-state-confinement.md` removes
+that write access and moves knowledge completion onto the broker, which means lifting blockers 1 and 2.
 
 ## Per-session identity persisted in settings env blocks goes stale and shadows the wrapper env (2026-07-22)
 

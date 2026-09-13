@@ -96,13 +96,16 @@ disabled sentinel for a stage record it could not verify.
 
 ### LOOM_* Env Vars Available to All Hooks
 
-Set by wrapper script (pid_tracking.rs:463-479) before `exec claude`:
+Set by the wrapper script before `exec claude` (`orchestrator/terminal/native/wrapper.rs`: `kind_env`,
+`work_dir_env`, and `LOOM_SESSION_TYPE`; an earlier version of this line pointed at
+`pid_tracking.rs:463-479`):
 
 | Variable               | Purpose                                             |
 | ---------------------- | --------------------------------------------------- |
 | `LOOM_SESSION_ID`      | Current session ID                                  |
 | `LOOM_STAGE_ID`        | Current stage ID                                    |
-| `LOOM_WORK_DIR`        | Absolute path to `.work/`                           |
+| `LOOM_SESSION_TYPE`    | Session kind (`stage`, `knowledge`, `merge`, `base_conflict`, `adjudication`), every kind |
+| `LOOM_WORK_DIR`        | Absolute path to the state directory (`.loom/work`) |
 | `LOOM_MAIN_AGENT_PID`  | Process PID (set dynamically, NOT in settings.json) |
 | `LOOM_WORKTREE_PATH`   | Absolute worktree path (worktree sessions only)     |
 | `LOOM_MERGE_SESSION=1` | Set for merge resolution sessions only              |
