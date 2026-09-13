@@ -393,6 +393,16 @@ see the escapes a terminal hides.
 **Prevention for plan authors:** never grep a human-readable summary line for a count. Set
 `NO_COLOR=1` in the criterion, or assert against a JSON/basic reporter instead.
 
+## A Test That Calls a Hook's stdin Entry Point Hangs a Backgrounded Gate (2026-09-13)
+
+**What happened:** the state-confinement gate ran `cargo test --all-targets` from a background shell. `commands::hook::tests_pre_compact::pre_compact_always_returns_ok` calls `pre_compact()`, which reads the real process stdin to EOF (`commands/hook/pre_compact.rs:39-47`). The background shell's stdin was a pipe that never closed, so the test blocked, `cargo test` never exited, and the gate never reported. The orchestrator had told the user the gate was running and waited for a completion notice that could not come; the hang went unnoticed for more than four hours, until the user asked.
+
+**Why:** the test drives the stdin reader instead of the payload core the module already splits out for tests (`reset_for_payload`). It passes wherever stdin is `/dev/null` or a pipe that closes (CI, both git hooks), so nothing had flagged it. The gate script bounded no step, so a hang looked exactly like a slow run, and a background job notifies only when it exits.
+
+**Prevention:** a test drives a hook's payload core with a literal string, never an entry point that reads `std::io::stdin()`. The readers today are `commands/hook/{pre_compact,user_prompt,relay,project_types}.rs` and `commands/knowledge/mod.rs`. A verification script meant for the background starts with `exec </dev/null` and wraps every step in `timeout`. A gate still out past its expected duration gets its logs read, not more waiting.
+
+**Fix:** `pre_compact()` delegates to `pre_compact_from(input: impl Read)`, and the test calls `pre_compact_from(std::io::empty())`. The orchestrator's gate script now reads `/dev/null` and bounds every step.
+
 ## A Backgrounded `cat` Never Drains a Fake Subprocess's stdin (2026-09-05)
 
 **What happened:** two subprocess-test gotchas in `quota/codex.rs`'s `poll_once` tests — and the
