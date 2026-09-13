@@ -5,6 +5,7 @@ use crate::context::schema::LifecycleState;
 use crate::fs::knowledge::catalog::prose::project_root_of;
 use crate::fs::knowledge::frontmatter;
 use crate::fs::knowledge::index::MAX_BLURB_CHARS;
+use crate::git::runner::NO_HOOKS_ARGS;
 use anyhow::{bail, Context, Result};
 use std::path::Path;
 use std::process::Command;
@@ -97,6 +98,7 @@ pub(super) fn resolve_revision(project_root: &Path, revision: &str) -> Result<St
     let commit = format!("{revision}^{{commit}}");
     let output = Command::new("git")
         .current_dir(project_root)
+        .args(NO_HOOKS_ARGS)
         .args(["rev-parse", "--verify", "--end-of-options", &commit])
         .output()
         .context("Failed to run git rev-parse")?;

@@ -12,6 +12,14 @@ const GIT_READ_TIMEOUT: Duration = Duration::from_secs(15);
 const GIT_MUTATION_TIMEOUT: Duration = Duration::from_secs(120);
 const GIT_NETWORK_TIMEOUT: Duration = Duration::from_secs(300);
 
+/// Global git args that point `core.hooksPath` at `/dev/null` for every git
+/// command loom runs itself. `core.hooksPath` in this repository is a
+/// TRACKED directory (`loom/.githooks`), so a stage or branch can plant an
+/// executable hook there; without this, loom's own merges, commits, and
+/// worktree operations would run whatever hook the checked-out tree
+/// currently holds, unsandboxed. Must precede the subcommand in argv.
+pub const NO_HOOKS_ARGS: [&str; 2] = ["-c", "core.hooksPath=/dev/null"];
+
 fn git_timeout(args: &[&str]) -> Duration {
     match args.first().copied() {
         Some("clone" | "fetch" | "pull" | "push") => GIT_NETWORK_TIMEOUT,
@@ -25,22 +33,19 @@ fn git_timeout(args: &[&str]) -> Duration {
 
 fn run_git_program(
     program: &str,
-    args: &[&str],
+    exec_args: &[&str],
+    label: &str,
     repo_root: &Path,
     timeout: Duration,
 ) -> Result<Output> {
     let mut command = Command::new(program);
     command
-        .args(args)
+        .args(exec_args)
         .env("LC_ALL", "C")
         .env("LANG", "C")
         .current_dir(repo_root);
-    crate::process::run_bounded_output(
-        &mut command,
-        timeout,
-        format!("git {}", args.first().unwrap_or(&"command")),
-    )
-    .with_context(|| format!("Failed to execute: git {}", args.join(" ")))
+    crate::process::run_bounded_output(&mut command, timeout, label.to_string())
+        .with_context(|| format!("Failed to execute: git {}", exec_args.join(" ")))
 }
 
 /// Run a git command and return the raw Output.
@@ -56,7 +61,11 @@ fn run_git_program(
 /// * `args` - Git command arguments (e.g., `&["branch", "-v"]`)
 /// * `repo_root` - Working directory for the git command
 pub fn run_git(args: &[&str], repo_root: &Path) -> Result<Output> {
-    run_git_program("git", args, repo_root, git_timeout(args))
+    let mut exec_args = Vec::with_capacity(NO_HOOKS_ARGS.len() + args.len());
+    exec_args.extend_from_slice(&NO_HOOKS_ARGS);
+    exec_args.extend_from_slice(args);
+    let label = format!("git {}", args.first().unwrap_or(&"command"));
+    run_git_program("git", &exec_args, &label, repo_root, git_timeout(args))
 }
 
 /// Run a git command, check for success, and return stdout as a trimmed String.
@@ -134,6 +143,7 @@ mod tests {
         let error = run_git_program(
             "sh",
             &["-c", "sleep 60"],
+            "git -c",
             repo.path(),
             Duration::from_millis(100),
         )
@@ -143,5 +153,145 @@ mod tests {
             .downcast_ref::<crate::process::ProcessTimeoutError>()
             .expect("caller must be able to classify a timeout");
         assert_eq!(timeout.operation(), "git -c");
+    }
+
+    /// Every hook name this fixture wires up. Each script just touches a
+    /// marker file under the repo's `markers` directory when it runs.
+    const HOOK_NAMES: [&str; 5] = [
+        "pre-commit",
+        "commit-msg",
+        "pre-merge-commit",
+        "post-merge",
+        "post-checkout",
+    ];
+
+    /// Set up isolated from ambient host git config (never mutates
+    /// process-wide environment; each command carries its own overrides).
+    fn isolated_git(root: &Path, args: &[&str]) -> Output {
+        Command::new("git")
+            .args(args)
+            .current_dir(root)
+            .env("GIT_CONFIG_GLOBAL", root.join(".loom-test-no-global"))
+            .env("GIT_CONFIG_SYSTEM", root.join(".loom-test-no-system"))
+            .env("GIT_CONFIG_NOSYSTEM", "1")
+            .output()
+            .unwrap()
+    }
+
+    fn isolated_git_ok(root: &Path, args: &[&str]) {
+        let output = isolated_git(root, args);
+        assert!(
+            output.status.success(),
+            "git {args:?} failed: stdout={}, stderr={}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    /// A repository whose `core.hooksPath` (set via local config, so it is
+    /// live for any plain `git` call) points at a fixture directory where
+    /// every hook in [`HOOK_NAMES`] touches a marker file under
+    /// `<root>/markers` when it runs. Also carries a `feature` branch ready
+    /// to merge or check out, and leaves `main` checked out.
+    #[cfg(unix)]
+    fn repo_with_marker_hooks() -> (tempfile::TempDir, std::path::PathBuf) {
+        use std::os::unix::fs::PermissionsExt;
+
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().to_path_buf();
+        isolated_git_ok(&root, &["init", "-b", "main"]);
+        isolated_git_ok(&root, &["config", "user.email", "runner-test@example.com"]);
+        isolated_git_ok(&root, &["config", "user.name", "Runner Test"]);
+        std::fs::write(root.join("seed.txt"), "seed").unwrap();
+        isolated_git_ok(&root, &["add", "seed.txt"]);
+        isolated_git_ok(&root, &["commit", "-m", "seed"]);
+
+        // A branch to merge and check out, created outside the runner and
+        // BEFORE the hook fixture is installed below - otherwise these
+        // plain setup commands would themselves trigger the fixture hooks
+        // (pre-commit, commit-msg, post-checkout) and pre-populate the
+        // markers the tests assert on.
+        isolated_git_ok(&root, &["checkout", "-b", "feature"]);
+        std::fs::write(root.join("feature.txt"), "feature").unwrap();
+        isolated_git_ok(&root, &["add", "feature.txt"]);
+        isolated_git_ok(&root, &["commit", "-m", "feature commit"]);
+        isolated_git_ok(&root, &["checkout", "main"]);
+
+        let hooks_dir = root.join("hooks-fixture");
+        let markers_dir = root.join("markers");
+        std::fs::create_dir_all(&hooks_dir).unwrap();
+        std::fs::create_dir_all(&markers_dir).unwrap();
+        for hook in HOOK_NAMES {
+            let script_path = hooks_dir.join(hook);
+            let marker_path = markers_dir.join(hook);
+            std::fs::write(
+                &script_path,
+                format!("#!/bin/sh\ntouch \"{}\"\n", marker_path.display()),
+            )
+            .unwrap();
+            let mut perms = std::fs::metadata(&script_path).unwrap().permissions();
+            perms.set_mode(0o755);
+            std::fs::set_permissions(&script_path, perms).unwrap();
+        }
+        isolated_git_ok(
+            &root,
+            &["config", "core.hooksPath", hooks_dir.to_str().unwrap()],
+        );
+
+        (temp, root)
+    }
+
+    #[cfg(unix)]
+    fn assert_no_hooks_fired(markers_dir: &Path) {
+        for hook in HOOK_NAMES {
+            assert!(
+                !markers_dir.join(hook).exists(),
+                "hook '{hook}' fired through a call routed via the runner"
+            );
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn run_git_checked_disables_repository_hooks_for_commit_merge_and_checkout() {
+        let (_temp, root) = repo_with_marker_hooks();
+        let markers_dir = root.join("markers");
+
+        run_git_checked(&["commit", "--allow-empty", "-m", "runner commit"], &root)
+            .expect("runner commit must succeed with hooks disabled");
+        assert_no_hooks_fired(&markers_dir);
+
+        run_git_checked(
+            &["merge", "--no-ff", "feature", "-m", "runner merge"],
+            &root,
+        )
+        .expect("runner merge must succeed with hooks disabled");
+        assert_no_hooks_fired(&markers_dir);
+
+        run_git_checked(&["checkout", "feature"], &root)
+            .expect("runner checkout must succeed with hooks disabled");
+        assert_no_hooks_fired(&markers_dir);
+    }
+
+    /// Positive control: the same commit, run with plain `git` bypassing the
+    /// runner entirely, must fire the fixture hooks. This proves the
+    /// absence asserted above comes from the runner's
+    /// `-c core.hooksPath=/dev/null`, not from a broken fixture.
+    #[cfg(unix)]
+    #[test]
+    fn plain_git_commit_proves_the_fixture_hooks_are_live() {
+        let (_temp, root) = repo_with_marker_hooks();
+        let markers_dir = root.join("markers");
+
+        isolated_git_ok(&root, &["commit", "--allow-empty", "-m", "control commit"]);
+
+        assert!(
+            markers_dir.join("pre-commit").exists(),
+            "fixture pre-commit hook must be live"
+        );
+        assert!(
+            markers_dir.join("commit-msg").exists(),
+            "fixture commit-msg hook must be live"
+        );
     }
 }

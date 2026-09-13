@@ -5,8 +5,9 @@
 //! simple regex patterns instead of a full language server. Common/generic names are
 //! filtered out to reduce noise.
 
+use crate::git::runner::run_git;
 use crate::verify::utils::bounded_stderr_warning;
-use anyhow::{bail, Context, Result};
+use anyhow::{bail, Result};
 use regex::Regex;
 use std::fs;
 use std::path::Path;
@@ -219,11 +220,10 @@ pub fn detect_duplicate_symbols(
 /// Run `git diff --name-only <base>..HEAD` and return the paths of changed files
 /// that have a known source extension.
 fn collect_changed_source_files(worktree_path: &Path, base_branch: &str) -> Result<Vec<String>> {
-    let output = Command::new("git")
-        .args(["diff", "--name-only", &format!("{}..HEAD", base_branch)])
-        .current_dir(worktree_path)
-        .output()
-        .with_context(|| format!("Failed to run git diff in {}", worktree_path.display()))?;
+    let output = run_git(
+        &["diff", "--name-only", &format!("{}..HEAD", base_branch)],
+        worktree_path,
+    )?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);

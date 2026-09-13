@@ -9,6 +9,7 @@
 //! ignored paths. [`references_ignored_path`] is the guard
 //! `is_cacheable` applies before ever storing a pass for such a command.
 
+use crate::git::runner::NO_HOOKS_ARGS;
 use std::io::Write;
 use std::path::Path;
 use std::process::{Command, Stdio};
@@ -95,6 +96,7 @@ fn check_ignore(candidates: &[String], acceptance_dir: &Path) -> Option<bool> {
     let mut child = Command::new("git")
         .arg("-C")
         .arg(acceptance_dir)
+        .args(NO_HOOKS_ARGS)
         .args(["check-ignore", "-q", "--stdin", "-z"])
         .env("LC_ALL", "C")
         .env("LANG", "C")

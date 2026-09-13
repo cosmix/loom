@@ -10,6 +10,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use crate::fs::work_dir::WorkDir;
+use crate::git::runner::NO_HOOKS_ARGS;
 
 /// The repository root `work_dir`'s state directory sits in — the directory
 /// every one of these subprocesses runs from.
@@ -41,6 +42,7 @@ pub(super) fn run_git_show(work_dir: &Path, commit: &str) -> Result<String> {
     }
     let project_root = project_root_of(work_dir);
     let output = Command::new("git")
+        .args(NO_HOOKS_ARGS)
         .args(["show", "--no-color", "--stat", "-p", "--", commit])
         .current_dir(project_root)
         .output()

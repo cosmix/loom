@@ -9,6 +9,7 @@ use super::branch::cleanup_branch;
 use super::config::{CleanupConfig, CleanupResult};
 use super::worktree::cleanup_worktree;
 use crate::git::branch::branch_name_for_stage;
+use crate::git::runner::NO_HOOKS_ARGS;
 use crate::models::worktree::Worktree;
 
 /// Perform full cleanup after a successful merge
@@ -147,6 +148,7 @@ fn report_cleanup(stage_id: &str, branch_name: &str, result: &CleanupResult) {
 /// Runs `git worktree prune` to clean up any stale worktree metadata.
 pub fn prune_worktrees(repo_root: &Path) -> Result<()> {
     let output = Command::new("git")
+        .args(NO_HOOKS_ARGS)
         .args(["worktree", "prune"])
         .current_dir(repo_root)
         .output()
@@ -213,6 +215,7 @@ pub fn needs_cleanup(stage_id: &str, repo_root: &Path) -> bool {
 
     // Check branch exists
     let output = Command::new("git")
+        .args(NO_HOOKS_ARGS)
         .args([
             "rev-parse",
             "--verify",

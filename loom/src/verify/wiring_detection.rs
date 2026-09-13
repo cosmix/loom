@@ -4,6 +4,7 @@
 //! one other file. Files that exist but are never referenced are "unwired" and likely indicate
 //! a forgotten module declaration or import.
 
+use crate::git::runner::run_git;
 use crate::verify::utils::bounded_stderr_warning;
 use anyhow::{bail, Context, Result};
 use std::path::Path;
@@ -107,11 +108,11 @@ fn is_safe_identifier(name: &str) -> bool {
 /// whose status is `A` (added) and whose extension is a known source extension.
 /// Files identified as test files or structural entrypoints are excluded.
 fn collect_added_source_files(worktree_path: &Path, base_branch: &str) -> Result<Vec<String>> {
-    let output = Command::new("git")
-        .args(["diff", "--name-status", &format!("{}..HEAD", base_branch)])
-        .current_dir(worktree_path)
-        .output()
-        .with_context(|| format!("Failed to run git diff in {}", worktree_path.display()))?;
+    let output = run_git(
+        &["diff", "--name-status", &format!("{}..HEAD", base_branch)],
+        worktree_path,
+    )
+    .with_context(|| format!("Failed to run git diff in {}", worktree_path.display()))?;
 
     // Check that git itself succeeded (fix #1).
     if !output.status.success() {

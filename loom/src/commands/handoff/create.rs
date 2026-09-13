@@ -6,6 +6,7 @@ use std::process::Command;
 use crate::commands::common::work_dir_path;
 use crate::fs::memory::format_memory_for_handoff;
 use crate::git::branch::current_branch;
+use crate::git::runner::NO_HOOKS_ARGS;
 use crate::handoff::generator::{generate_handoff, HandoffContent};
 use crate::handoff::HandoffOrigin;
 use crate::models::session::{Session, SessionStatus};
@@ -236,6 +237,7 @@ fn resolve_session_id(session_arg: &Option<String>) -> Result<String> {
 /// Get list of modified files from git status
 fn get_modified_files() -> Result<Vec<String>> {
     let output = Command::new("git")
+        .args(NO_HOOKS_ARGS)
         .args(["status", "--short"])
         .output()
         .context("Failed to run git status")?;

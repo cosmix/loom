@@ -161,37 +161,45 @@ fn invalid_source_ref_is_not_reported_as_a_clean_merge() {
     assert_eq!(checkout_reference(root).unwrap(), "main");
 }
 
+// The two tests below used to plant a misbehaving `.git/hooks/post-checkout`
+// hook and assert the probe's own `checkout_branch` (routed through
+// `crate::git::runner::run_git`) surfaced the hook's damage as a typed
+// error. Since the runner now passes `-c core.hooksPath=/dev/null` on every
+// invocation (see `git::runner::NO_HOOKS_ARGS`), the probe's checkouts never
+// run repository-configured hooks at all, so the failure mode these tests
+// exercised can no longer occur. They now assert the opposite: a hostile
+// local hook has no effect on the probe.
+
 #[cfg(unix)]
 #[test]
-fn checkout_hook_failure_is_not_reported_as_clean() {
+fn checkout_through_probe_ignores_repository_post_checkout_hook() {
     use std::os::unix::fs::PermissionsExt;
 
     let temp = init_repo();
     let root = temp.path();
     git_ok(root, &["branch", "target"]);
+    let marker = root.join("hook-fired");
     let hook = root.join(".git/hooks/post-checkout");
     fs::write(
         &hook,
-        "#!/bin/sh\nif [ \"$(git symbolic-ref --quiet --short HEAD)\" = \"target\" ]; then\n  exit 23\nfi\nexit 0\n",
+        format!("#!/bin/sh\ntouch \"{}\"\nexit 23\n", marker.display()),
     )
     .unwrap();
     fs::set_permissions(&hook, fs::Permissions::from_mode(0o755)).unwrap();
 
     let result =
         get_conflicting_files_from_status("main", "target", root, &root.join(".loom").join("work"));
-    assert!(matches!(
-        result,
-        Err(MergeProbeError::Infrastructure {
-            operation: "target checkout",
-            ..
-        })
-    ));
+    assert_eq!(result.unwrap(), MergeProbeOutcome::Clean);
+    assert!(
+        !marker.exists(),
+        "probe checkouts must disable repository hooks via git::runner::NO_HOOKS_ARGS"
+    );
     assert_eq!(checkout_reference(root).unwrap(), "main");
 }
 
 #[cfg(unix)]
 #[test]
-fn failed_checkout_restoration_is_typed_and_propagated() {
+fn checkout_through_probe_ignores_hook_that_deletes_original_branch() {
     use std::os::unix::fs::PermissionsExt;
 
     let temp = init_repo();
@@ -206,17 +214,21 @@ fn failed_checkout_restoration_is_typed_and_propagated() {
     .unwrap();
     fs::set_permissions(&hook, fs::Permissions::from_mode(0o755)).unwrap();
 
-    let error = get_conflicting_files_from_status(
+    let result = get_conflicting_files_from_status(
         "feature",
         "target",
         root,
         &root.join(".loom").join("work"),
-    )
-    .unwrap_err();
+    );
 
-    assert!(matches!(error, MergeProbeError::Restoration { .. }));
-    assert_eq!(checkout_reference(root).unwrap(), "target");
-    assert!(!merge_head_exists_strict(root).unwrap());
+    assert_eq!(result.unwrap(), MergeProbeOutcome::Clean);
+    assert_eq!(checkout_reference(root).unwrap(), "main");
+    assert!(
+        git(root, &["rev-parse", "--verify", "refs/heads/main"])
+            .status
+            .success(),
+        "branch 'main' must survive: the probe's checkouts run with hooks disabled"
+    );
 }
 
 #[test]

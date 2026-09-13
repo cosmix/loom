@@ -8,10 +8,12 @@ use std::path::Path;
 use std::process::Command;
 
 use super::operations::list_worktrees;
+use crate::git::runner::NO_HOOKS_ARGS;
 
 /// Check if git is available
 pub fn check_git_available() -> Result<()> {
     let output = Command::new("git")
+        .args(NO_HOOKS_ARGS)
         .args(["--version"])
         .output()
         .with_context(|| "Git is not installed or not in PATH")?;
@@ -27,7 +29,10 @@ pub fn check_git_available() -> Result<()> {
 pub fn check_worktree_support() -> Result<()> {
     check_git_available()?;
 
-    let output = Command::new("git").args(["worktree", "list"]).output();
+    let output = Command::new("git")
+        .args(NO_HOOKS_ARGS)
+        .args(["worktree", "list"])
+        .output();
 
     match output {
         Ok(o) if o.status.success() => Ok(()),

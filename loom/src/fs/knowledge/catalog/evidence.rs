@@ -2,6 +2,7 @@
 
 use super::CatalogIssue;
 use crate::fs::knowledge::frontmatter::Frontmatter;
+use crate::git::runner::NO_HOOKS_ARGS;
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -54,6 +55,7 @@ fn changed_paths_since(
     let range = format!("{verified}..HEAD");
     let output = Command::new("git")
         .current_dir(project_root)
+        .args(NO_HOOKS_ARGS)
         .args(["diff", "--name-only", &range, "--"])
         .args(sources)
         .output();

@@ -1,6 +1,7 @@
 //! Plan, report, log and marker path resolution, plus small file helpers
 //! shared by the pressure pipeline.
 
+use crate::git::runner::NO_HOOKS_ARGS;
 use anyhow::{bail, Context, Result};
 use std::path::{Path, PathBuf};
 
@@ -21,6 +22,7 @@ pub(super) struct ResolvedPlan {
 /// Resolve the repository root: `git rev-parse --show-toplevel`, else cwd.
 pub(super) fn resolve_repo_root() -> Result<PathBuf> {
     if let Ok(output) = std::process::Command::new("git")
+        .args(NO_HOOKS_ARGS)
         .args(["rev-parse", "--show-toplevel"])
         .output()
     {

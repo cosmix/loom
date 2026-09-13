@@ -5,11 +5,13 @@ use std::path::Path;
 use std::process::Command;
 
 use super::operations::delete_branch;
+use crate::git::runner::NO_HOOKS_ARGS;
 
 /// Clean up loom branches that have been merged
 pub fn cleanup_merged_branches(target_branch: &str, repo_root: &Path) -> Result<Vec<String>> {
     // Get merged branches
     let output = Command::new("git")
+        .args(NO_HOOKS_ARGS)
         .args(["branch", "--merged", target_branch])
         .current_dir(repo_root)
         .output()
