@@ -11,13 +11,13 @@ file src/commands/graph/tests.rs 425
 file src/commands/init/tests.rs 570
 file src/commands/plan/verify.rs 599
 file src/commands/stage/complete.rs 771
-file src/commands/stage/merge.rs 546
+file src/commands/stage/merge.rs 537
 file src/commands/stage/tests/complete.rs 544
 file src/daemon/server/dispute.rs 510
 file src/fs/locking.rs 499
 file src/fs/permissions/hooks.rs 446
 file src/fs/permissions/settings.rs 460
-file src/fs/permissions/sync.rs 659
+file src/fs/permissions/sync.rs 534
 file src/fs/safe_fs.rs 1019
 file src/fs/work_dir.rs 433
 file src/fs/work_dir/tests.rs 873
@@ -56,7 +56,7 @@ file tests/failure_resume.rs 468
 file tests/integration/merge_conflict_recovery.rs 412
 file tests/integration/plan_verify.rs 1028
 
-function src/cli/dispatch.rs dispatch 112
+function src/cli/dispatch.rs dispatch 94
 function src/cli/dispatch_stage.rs dispatch_stage 51
 function src/commands/clean/mod.rs print_summary 52
 function src/commands/clean/sessions.rs test_clean_sessions_reaps_live_only_when_destroying_state 57
@@ -67,7 +67,6 @@ function src/commands/diagnose.rs format_diagnosis_signal 125
 function src/commands/graph/display.rs build_graph_display 52
 function src/commands/graph/tests.rs test_build_graph_display_shows_all_deps 70
 function src/commands/graph/tree.rs build_tree_display 57
-function src/commands/handoff/create.rs execute 86
 function src/commands/init/execute.rs execute 131
 function src/commands/init/plan_setup.rs initialize_with_plan 206
 function src/commands/init/tests.rs test_cleanup_orphaned_sessions_reaps_live_only_in_clean_mode 76
@@ -91,8 +90,8 @@ function src/commands/stage/complete.rs complete 173
 function src/commands/stage/complete.rs route_complete_for_conflicts 159
 function src/commands/stage/complete.rs run_verification_phase 99
 function src/commands/stage/knowledge_complete.rs complete_knowledge_stage 122
-function src/commands/stage/merge.rs merge_resolved 88
-function src/commands/stage/merge.rs merge_retry 199
+function src/commands/stage/merge.rs merge_resolved 80
+function src/commands/stage/merge.rs merge_retry 178
 function src/commands/stage/merge_resolver.rs spawn_merge_resolver 64
 function src/commands/stage/progressive_complete.rs attempt_progressive_merge 113
 function src/commands/stage/progressive_complete.rs complete_with_merge 80
@@ -127,7 +126,6 @@ function src/fs/permissions/hooks.rs migrate_old_hook_paths 84
 function src/fs/permissions/settings.rs ensure_loom_hooks_local_inner 68
 function src/fs/permissions/settings.rs ensure_loom_permissions_inner 98
 function src/fs/permissions/sync.rs merge_permissions_with_lock 70
-function src/fs/permissions/sync.rs sync_worktree_permissions_with_working_dir 75
 function src/fs/permissions/sync.rs transform_worktree_path 65
 function src/fs/permissions/tests/sync_tests.rs test_sync_preserves_other_fields 57
 function src/fs/safe_fs.rs safe_replace_outside_workdir 138
@@ -187,7 +185,7 @@ function src/orchestrator/signals/format/sections.rs format_dynamic_section 280
 function src/orchestrator/signals/format/sections.rs format_recitation_section 58
 function src/orchestrator/signals/format/sections.rs format_semi_stable_section 278
 function src/orchestrator/signals/knowledge.rs format_knowledge_signal_content 77
-function src/orchestrator/signals/merge.rs format_merge_signal_content 122
+function src/orchestrator/signals/merge.rs format_merge_signal_content 110
 function src/orchestrator/signals/merge_conflict.rs format_merge_conflict_signal_content 67
 function src/orchestrator/signals/parse.rs parse_signal_content 113
 function src/orchestrator/signals/recovery_format.rs format_recovery_signal 102
@@ -199,7 +197,6 @@ function src/orchestrator/terminal/emulator.rs build_command 161
 function src/orchestrator/terminal/native/detection.rs detect_parent_terminal 51
 function src/orchestrator/terminal/native/detection.rs detect_terminal#1 56
 function src/orchestrator/terminal/native/detection.rs detect_terminal#2 65
-function src/orchestrator/terminal/native/launch.rs prepare_session_launch 134
 function src/orchestrator/terminal/tmux/tests_discovery.rs live_tmux_sessions_orders_by_created_at_then_id 60
 function src/orchestrator/terminal/tmux/tests_spawn.rs a_failed_spawn_aborts_and_leaves_no_pid_file_for_the_native_retry_to_adopt 97
 function src/orchestrator/terminal/tmux/tests_viewer.rs pane_command_neutralises_hostile_session_ids 69
@@ -213,7 +210,7 @@ function src/plan/schema/tests/security_policy_tests.rs rejects_misspelled_neste
 function src/plan/schema/validation.rs check_cross_stage_wiring_coverage 66
 function src/plan/schema/validation.rs validate 411
 function src/plan/schema/validation.rs validate_structural_preflight 232
-function src/sandbox/settings.rs generate_settings_json 111
+function src/sandbox/settings.rs generate_settings_json 108
 function src/sandbox/settings.rs merge_existing_permissions 56
 function src/sandbox/settings.rs write_settings 119
 function src/sandbox/settings/policy.rs filesystem_settings 52
