@@ -204,3 +204,9 @@ nonzero streamed usage over the final one, a poll-guard allowlist that omits `lo
 itself, and hook tests that inherit a live session's LOOM_* identity and write fake
 forward records into its own stage ledger.
 → [Token Accounting and Proof Defects](concerns/token-accounting-and-proof-defects.md)
+
+## State Confinement Gaps (2026-09-13) [DETAILED]
+
+Session write access to loom state and to what runs outside the sandbox, open until the `.loom` confinement plan merges.
+
+→ [State Confinement Gaps](concerns/state-confinement-gaps.md)

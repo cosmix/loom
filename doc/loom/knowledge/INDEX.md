@@ -14,7 +14,7 @@
 | [conventions.md](conventions.md) | Coding conventions discovered in the codebase | 235 |
 | [mistakes.md](mistakes.md) | Mistakes made and lessons learned - what to avoid | 233 |
 | [stack.md](stack.md) | Dependencies, frameworks, and tooling used in the project | 119 |
-| [concerns.md](concerns.md) | Technical debt, warnings, and issues to address | 206 |
+| [concerns.md](concerns.md) | Technical debt, warnings, and issues to address | 212 |
 
 ## Tier 2 — Topics
 
@@ -30,7 +30,7 @@
 | [core-abstractions](architecture/core-abstractions.md) | ExecutionGraph, Stage, Session, Orchestrator, TerminalBackend — plus data flow… | 136 |
 | [directory-structure](architecture/directory-structure.md) | Full loom/src module tree, the .work/ state layout, and the repo-root asset… | 49 |
 | [execution-containment](architecture/execution-containment.md) | What sandboxed command containment means in loom, its two confinement levels… | 210 |
-| [hook-system](architecture/hook-system.md) | Hook embedding and install, the SessionStart hookSpecificOutput contract, and… | 243 |
+| [hook-system](architecture/hook-system.md) | Hook embedding and install, the SessionStart hookSpecificOutput contract, and… | 246 |
 | [knowledge-hierarchy](architecture/knowledge-hierarchy.md) | Read before touching fs/knowledge: targets, INDEX.md, checks, size limits | 235 |
 | [memory-spool](architecture/memory-spool.md) | Read before touching loom memory: spool/drain, ids, receipts, pending, archive | 159 |
 | [merge-flow](architecture/merge-flow.md) | How a completed worktree stage reaches the target branch: the daemon writes… | 79 |
@@ -82,7 +82,7 @@
 | [dispute-and-adjudication](conventions/dispute-and-adjudication.md) | Dispute file authority split, adjudicator scope, budgets, and transport | 114 |
 | [git-and-build-workflow](conventions/git-and-build-workflow.md) | Git/worktree ops, cargo fmt/test discipline, the shared maintainability ledger | 132 |
 | [guidance-channels-and-plugin-scope](conventions/guidance-channels-and-plugin-scope.md) | Guidance-channel selection, verification-is-main-agent rule, plugin scope | 94 |
-| [model-and-effort-config](conventions/model-and-effort-config.md) | `[pressure]` and `[models]` config sections, the four-tier precedence chain… | 57 |
+| [model-and-effort-config](conventions/model-and-effort-config.md) | `[pressure]` and `[models]` config sections, the four-tier precedence chain… | 62 |
 | [plan-yaml-and-hooks](conventions/plan-yaml-and-hooks.md) | Plan YAML schema, hook stdin/stdout contract, skill format, additive fields | 134 |
 | [web-dashboard-typography](conventions/web-dashboard-typography.md) | Dashboard chrome type conventions and CSS gotchas for settings/graph views | 22 |
 
@@ -113,7 +113,7 @@
 | [refactor-stragglers](mistakes/refactor-stragglers.md) | What a large removal or rename leaves behind: straggler initializers, stale… | 94 |
 | [sandbox-and-settings](mistakes/sandbox-and-settings.md) | Sandbox path rules, permission sync, excludedCommands matching, and settings… | 668 |
 | [schema-reuse-and-silent-skips](mistakes/schema-reuse-and-silent-skips.md) | deny_unknown_fields breaking a type with two deserialization sources… | 130 |
-| [session-identity-env](mistakes/session-identity-env.md) | The wrapper script's `LOOM_*` exports are a contract read by hooks, the CLI and… | 90 |
+| [session-identity-env](mistakes/session-identity-env.md) | The wrapper script's `LOOM_*` exports are a contract read by hooks, the CLI and… | 93 |
 | [sessions-and-liveness](mistakes/sessions-and-liveness.md) | Session identity, liveness routing, spawn-site coverage, and the blast radius… | 344 |
 | [shell-command-matchers](mistakes/shell-command-matchers.md) | Separators that never become tokens, forgeable glob lookups, env leakage in… | 246 |
 | [status-broadcast-hardening](mistakes/status-broadcast-hardening.md) | Frame-overflow eviction and read-timeout desync from a widened status broadcast. | 74 |
@@ -143,5 +143,6 @@
 | [sandbox-and-confinement-gaps](concerns/sandbox-and-confinement-gaps.md) | Sandbox gaps: no E2E canary, diverging env allowlists, uncalled validators | 144 |
 | [sandbox-protected-hooks-dir](concerns/sandbox-protected-hooks-dir.md) | Resolved on 2026-09-13 by moving repository hook sources to `loom-hooks/`; the… | 47 |
 | [sandbox-write-rules-inert](concerns/sandbox-write-rules-inert.md) | Sandbox Write() rules that are inert in loom's generated stage settings and in… | 62 |
+| [state-confinement-gaps](concerns/state-confinement-gaps.md) | Security gaps found on 2026-09-13 that stay open until the `.loom` confinement… | 16 |
 | [token-accounting-and-proof-defects](concerns/token-accounting-and-proof-defects.md) | Cache false pass, usage undercount, poll-guard gap, hook tests polluting ledgers | 30 |
 | [web-dashboard-latent-issues](concerns/web-dashboard-latent-issues.md) | Issues reviewed in `loom/src/commands/status/web/` during integration-verify and | 63 |
