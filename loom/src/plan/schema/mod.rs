@@ -19,6 +19,6 @@ pub use types::{
     TruthCheck, ValidationError, WiringCheck, WiringTest, ALLOWED_REASONING_EFFORTS,
 };
 pub use validation::{
-    check_knowledge_recommendations, check_sandbox_recommendations, unsafe_plan_reasons, validate,
+    check_knowledge_recommendations, check_sandbox_recommendations, validate,
     validate_structural_preflight,
 };

@@ -47,10 +47,6 @@ pub enum Commands {
         #[arg(long, value_parser = ["native", "tmux"])]
         backend: Option<String>,
 
-        /// Acknowledge and allow a plan that expands the default sandbox policy
-        #[arg(long)]
-        allow_unsafe_plan: bool,
-
         /// Skip the automatic workspace repair pass
         #[arg(long)]
         no_repair: bool,
@@ -349,20 +345,6 @@ mod tests {
         let result = Cli::try_parse_from(["loom", "run", "--watch"]);
         assert!(result.is_err());
         assert!(Cli::try_parse_from(["loom", "run", "--foreground", "--watch"]).is_ok());
-    }
-
-    #[test]
-    fn init_exposes_explicit_unsafe_plan_acknowledgement() {
-        let parsed =
-            Cli::try_parse_from(["loom", "init", "plan.md", "--allow-unsafe-plan"]).unwrap();
-
-        let Commands::Init {
-            allow_unsafe_plan, ..
-        } = parsed.command
-        else {
-            panic!("expected init command");
-        };
-        assert!(allow_unsafe_plan);
     }
 
     #[test]

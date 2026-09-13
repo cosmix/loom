@@ -33,7 +33,7 @@ pub fn execute(
 
     resolve_backend_flag(&work_dir, backend, "loom run --foreground")?;
 
-    run_preflights(&work_dir)?;
+    super::run_startup_preflights(&work_dir)?;
     super::plan_inputs::mark_plan_in_progress(&work_dir)?;
 
     // Publish against the committed active filename and the revision stages inherit.
@@ -42,18 +42,6 @@ pub fn execute(
     crate::utils::print_logo_header("Run (foreground)");
 
     execute_foreground(manual, max_parallel, watch, auto_merge, &work_dir)
-}
-
-/// Startup preflights, in order: advisory Remote Control, the hard
-/// sandbox-prerequisite check (like `require_jq`: a missing `bwrap`/`socat` or
-/// WSL1 makes every session exit at startup), then the advisory codex lane.
-fn run_preflights(work_dir: &WorkDir) -> Result<()> {
-    if let Ok(claude_path) = crate::claude::find_claude_path() {
-        crate::remote_control::run_startup_preflight(&claude_path, work_dir.root());
-    }
-    super::sandbox_preflight::require_sandbox_prerequisites(work_dir.root())?;
-    super::checks::advisory_codex_lane_preflight(work_dir.root());
-    Ok(())
 }
 
 /// Execute orchestrator in foreground mode (for debugging)

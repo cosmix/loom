@@ -1,12 +1,12 @@
 //! The host facts a launch resolves from the daemon's own environment before
 //! anything is written: where claude is and which capsule flags it takes, the
 //! project root, the verified loom hooks directory, the session scratch root,
-//! and the daemon's own verified binary and filtered PATH, which the wrapper
+//! and the daemon's own accepted binary and filtered PATH, which the wrapper
 //! exports as `LOOM_BIN` and `LOOM_HOOK_PATH`.
 //!
-//! [`LaunchHost::from_env`] is the only reader of the process environment;
-//! everything downstream takes these facts as fields, which tests set
-//! directly.
+//! [`LaunchHost::from_env`], and `run_host_facts` for `loom run`, are the only
+//! readers of the process environment; everything downstream takes these
+//! facts as fields, which tests set directly.
 
 use anyhow::{bail, Context, Result};
 use std::ffi::OsStr;
@@ -14,11 +14,14 @@ use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 
 use super::super::capsule::{probed_capsule_support, CapsuleSupport};
-use super::super::wrapper::{absolute, WrapperHostEnv};
+use super::super::wrapper::{
+    absolute, accepted_loom_bin, operator_executable_dirs, WrapperHostEnv,
+};
 use crate::relay::{ensure_dir_0700, session_dir};
 use crate::sandbox::control_surfaces::{
     session_writable_roots, ControlSurfaces, WritableRootInputs,
 };
+use crate::sandbox::preflight::{HostFacts, SandboxPreflightRefusal};
 
 /// Everything a launch needs from the host, resolved once.
 pub(super) struct LaunchHost {
@@ -26,41 +29,32 @@ pub(super) struct LaunchHost {
     pub(super) capsule_support: CapsuleSupport,
     /// The repository the work dir belongs to.
     pub(super) repo_root: PathBuf,
-    /// The loom hooks directory, canonical and operator-owned; `None` when
-    /// none is installed or it failed verification.
-    pub(super) hooks_dir: Option<PathBuf>,
+    /// The verified hooks directory and accepted loom binary, the filtered
+    /// PATH, and the session-writable roots the sandbox preflight checks
+    /// them against.
+    pub(super) facts: HostFacts,
     pub(super) scratch_root: PathBuf,
     /// The operator's uid, which every verified path must be owned by.
     pub(super) uid: u32,
-    /// The daemon's own binary, exported as `LOOM_BIN`.
-    pub(super) loom_bin: PathBuf,
-    /// The daemon's PATH minus every session-writable root, exported as
-    /// `LOOM_HOOK_PATH`.
-    pub(super) hook_path: Vec<PathBuf>,
     pub(super) home: Option<PathBuf>,
 }
 
 impl LaunchHost {
     /// Resolve every host fact from the daemon's process. A missing claude,
-    /// an unresolvable scratch root, or a loom binary that is not an
-    /// operator-owned regular file fails the spawn.
+    /// an unresolvable scratch root, or a loom binary `accepted_loom_bin`
+    /// refuses fails the spawn.
     pub(super) fn from_env(work_dir: &Path, cwd: &Path) -> Result<Self> {
         let claude_path = crate::claude::find_claude_path()?;
-        // SAFETY: `getuid` has no preconditions and cannot fail.
-        let uid = unsafe { libc::getuid() };
+        let uid = current_uid();
         let home = dirs::home_dir();
         let repo_root = project_root(work_dir).unwrap_or_else(|| absolute(cwd));
         let scratch_root = host_scratch_root(work_dir)?;
-        let exe = std::env::current_exe().context("cannot locate the running loom binary")?;
-        let roots = writable_roots(work_dir, &repo_root, &scratch_root, home.as_deref());
-        let path_var = std::env::var_os("PATH").unwrap_or_default();
+        let facts = host_facts(work_dir, &repo_root, &scratch_root, uid, home.as_deref())?;
         Ok(Self {
             capsule_support: probed_capsule_support(&claude_path),
             claude_path,
-            hooks_dir: verified_hooks_dir(uid),
-            loom_bin: verified_loom_bin(&exe, uid)?,
-            hook_path: hook_path_entries(&path_var, &roots),
             repo_root,
+            facts,
             scratch_root,
             uid,
             home,
@@ -87,9 +81,16 @@ impl LaunchHost {
     }
 
     /// What the approved-permissions list rendered into this launch's capsule
-    /// may never grant.
+    /// may never grant, and what the capsule denies writing: among the
+    /// directories, the hooks directory, `dirname(LOOM_BIN)` and the
+    /// operator-owned `LOOM_HOOK_PATH` entries.
     pub(super) fn control_surfaces(&self, work_dir: &Path) -> ControlSurfaces {
-        let hooks_dirs: Vec<PathBuf> = self.hooks_dir.iter().cloned().collect();
+        let mut hooks_dirs: Vec<PathBuf> = self.facts.hooks_dir.iter().cloned().collect();
+        hooks_dirs.extend(operator_executable_dirs(
+            &self.facts.loom_bin,
+            &self.facts.hook_path,
+            self.uid,
+        ));
         ControlSurfaces::new(
             &absolute(work_dir),
             Some(&self.scratch_root),
@@ -102,10 +103,55 @@ impl LaunchHost {
     pub(super) fn wrapper_env(&self, scratch_dir: PathBuf) -> WrapperHostEnv {
         WrapperHostEnv {
             scratch_dir: Some(scratch_dir),
-            loom_bin: Some(self.loom_bin.clone()),
-            hook_path: self.hook_path.clone(),
+            loom_bin: Some(self.facts.loom_bin.clone()),
+            hook_path: self.facts.hook_path.clone(),
         }
     }
+}
+
+/// The facts a spawn from `work_dir` checks, resolved before any session
+/// exists, so `loom run` refuses on exactly what a spawn would.
+pub(crate) fn run_host_facts(work_dir: &Path) -> Result<HostFacts> {
+    let repo_root =
+        project_root(work_dir).context("cannot resolve the project root of the state directory")?;
+    let scratch_root = host_scratch_root(work_dir)?;
+    let home = dirs::home_dir();
+    host_facts(
+        work_dir,
+        &repo_root,
+        &scratch_root,
+        current_uid(),
+        home.as_deref(),
+    )
+}
+
+/// The verified hooks directory and accepted loom binary, every
+/// session-writable root, and the daemon's PATH minus those roots. A binary
+/// `accepted_loom_bin` refuses is a sandbox preflight refusal, so a spawn
+/// records it as a sandbox setup failure.
+fn host_facts(
+    work_dir: &Path,
+    repo_root: &Path,
+    scratch_root: &Path,
+    uid: u32,
+    home: Option<&Path>,
+) -> Result<HostFacts> {
+    let exe = std::env::current_exe().context("cannot locate the running loom binary")?;
+    let roots = writable_roots(work_dir, repo_root, scratch_root, home);
+    let path_var = std::env::var_os("PATH").unwrap_or_default();
+    let loom_bin = accepted_loom_bin(&exe, uid, &roots)
+        .map_err(|error| SandboxPreflightRefusal::new(vec![format!("{error:#}")]))?;
+    Ok(HostFacts {
+        hooks_dir: verified_hooks_dir(uid),
+        loom_bin,
+        hook_path: hook_path_entries(&path_var, &roots),
+        writable_roots: roots,
+    })
+}
+
+fn current_uid() -> u32 {
+    // SAFETY: `getuid` has no preconditions and cannot fail.
+    unsafe { libc::getuid() }
 }
 
 /// The project root of `work_dir`, layout-aware (`WorkDir::project_root`).
@@ -130,7 +176,7 @@ fn host_scratch_root(work_dir: &Path) -> Result<PathBuf> {
 /// operator owns; `None`, with a warning, otherwise.
 fn verified_hooks_dir(uid: u32) -> Option<PathBuf> {
     let dir = crate::hooks::find_hooks_dir()?;
-    match owned_entry(&dir, uid, true) {
+    match owned_dir(&dir, uid) {
         Ok(verified) => Some(verified),
         Err(error) => {
             tracing::warn!(dir = %dir.display(), %error, "ignoring an unverifiable loom hooks directory");
@@ -139,25 +185,15 @@ fn verified_hooks_dir(uid: u32) -> Option<PathBuf> {
     }
 }
 
-/// The daemon's own binary, canonicalized and verified to be a regular file
-/// owned by the operator.
-pub(super) fn verified_loom_bin(exe: &Path, uid: u32) -> Result<PathBuf> {
-    owned_entry(exe, uid, false).context("the running loom binary cannot be exported as LOOM_BIN")
-}
-
-/// `path` canonicalized and required to be a directory (`dir`) or a regular
-/// file, owned by `uid`.
-fn owned_entry(path: &Path, uid: u32, dir: bool) -> Result<PathBuf> {
+/// `path` canonicalized and required to be a directory owned by `uid`.
+fn owned_dir(path: &Path, uid: u32) -> Result<PathBuf> {
     let canonical = path
         .canonicalize()
         .with_context(|| format!("cannot resolve {}", path.display()))?;
     let metadata = std::fs::metadata(&canonical)
         .with_context(|| format!("cannot stat {}", canonical.display()))?;
-    if dir && !metadata.is_dir() {
+    if !metadata.is_dir() {
         bail!("{} is not a directory", canonical.display());
-    }
-    if !dir && !metadata.is_file() {
-        bail!("{} is not a regular file", canonical.display());
     }
     if metadata.uid() != uid {
         bail!(

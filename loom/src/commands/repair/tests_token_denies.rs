@@ -21,10 +21,10 @@ fn deny_entries(path: &std::path::Path) -> Vec<String> {
 /// altogether makes Claude Code refuse every `rg`/`grep` run from the project
 /// root, bypass-immune and independent of the rule's path shape. Drive the
 /// real check-then-fix path over the daemon-token spellings loom used to
-/// write in the main repo's `settings.local.json`, which is regenerated
-/// wholesale rather than scalpelled.
+/// write in the main repo's `settings.local.json`, which gets the scalpel in
+/// place rather than a regeneration (see `fix_read_denies`).
 #[test]
-fn repair_regenerates_the_main_settings_file_with_no_read_deny_left() {
+fn repair_strips_the_main_settings_files_read_deny_in_place() {
     let root = tempfile::tempdir().unwrap();
     let claude_dir = root.path().join(".claude");
     fs::create_dir_all(&claude_dir).unwrap();

@@ -9,11 +9,10 @@ use crate::plan::graph::levels::compute_all_levels;
 use crate::plan::parser::{parse_plan, ParsedPlan};
 use crate::plan::schema::{
     check_knowledge_recommendations, check_sandbox_recommendations, detect_stage_type,
-    unsafe_plan_reasons, validate_structural_preflight, StageDefinition,
+    validate_structural_preflight, SandboxConfig, StageDefinition,
 };
-use crate::sandbox::{
-    merge_config as merge_sandbox_config, validate_config as validate_sandbox, validate_emittable,
-};
+use crate::sandbox::preflight::{sandbox_policy_refusals, SandboxPreflightRefusal};
+use crate::sandbox::{merge_config as merge_sandbox_config, validate_emittable};
 use crate::verify::serialize_stage_to_markdown;
 use anyhow::{Context, Result};
 use colored::Colorize;
@@ -39,9 +38,11 @@ pub struct PreflightedPlan {
 /// half-initialized state directory, an installed pre-commit hook, or an
 /// operator-answered backend prompt that then has to be answered again.
 ///
-/// `allow_unsafe_plan` is the operator's explicit acknowledgement of a plan
-/// that expands the sandbox policy (see `require_unsafe_plan_acknowledgement`).
-pub fn preflight_plan(plan_path: &Path, allow_unsafe_plan: bool) -> Result<PreflightedPlan> {
+/// A plan whose sandbox is disabled or allows an unsandboxed escape is
+/// refused outright, the same way `loom run` refuses one — see
+/// `refuse_unconfined_sandbox`. There is no acknowledgement that lets one
+/// through.
+pub fn preflight_plan(plan_path: &Path) -> Result<PreflightedPlan> {
     if !plan_path.exists() {
         anyhow::bail!("Plan file does not exist: {}", plan_path.display());
     }
@@ -55,14 +56,19 @@ pub fn preflight_plan(plan_path: &Path, allow_unsafe_plan: bool) -> Result<Prefl
     let parsed_plan = parse_plan(&canonical_path)
         .with_context(|| format!("Failed to parse plan file: {}", canonical_path.display()))?;
 
-    let unsafe_reasons = unsafe_plan_reasons(&parsed_plan.metadata);
-    require_unsafe_plan_acknowledgement(&unsafe_reasons, allow_unsafe_plan)?;
-
-    // Validate every stage's resolved sandbox configuration at init time.
-    // This catches incompatible combinations (e.g. bypass-permissions) before
-    // the repo is even bootstrapped, not just before the daemon ever tries to
-    // spawn a session.
     let plan_sandbox = &parsed_plan.metadata.loom.sandbox;
+    let stages: Vec<Stage> = parsed_plan
+        .stages
+        .iter()
+        .map(|stage_def| create_stage_from_definition(stage_def, &parsed_plan.id))
+        .collect();
+    refuse_unconfined_sandbox(plan_sandbox, &stages)?;
+
+    // Validate every stage's resolved sandbox configuration can still be
+    // emitted as Claude Code settings at init time. This catches
+    // combinations `sandbox_policy_refusals` does not (e.g. an unemittable
+    // policy) before the repo is even bootstrapped, not just before the
+    // daemon ever tries to spawn a session.
     for stage_def in &parsed_plan.stages {
         let stage_type = detect_stage_type(stage_def);
         let merged = merge_sandbox_config(
@@ -71,12 +77,6 @@ pub fn preflight_plan(plan_path: &Path, allow_unsafe_plan: bool) -> Result<Prefl
             stage_type,
             &stage_def.implementers,
         );
-        validate_sandbox(&merged).with_context(|| {
-            format!(
-                "Stage '{}' has an incompatible sandbox configuration",
-                stage_def.id
-            )
-        })?;
         validate_emittable(&merged).with_context(|| {
             format!(
                 "Stage '{}' has a sandbox policy that cannot be enforced",
@@ -89,6 +89,18 @@ pub fn preflight_plan(plan_path: &Path, allow_unsafe_plan: bool) -> Result<Prefl
         canonical_path,
         parsed_plan,
     })
+}
+
+/// Refuse a plan whose sandbox is disabled or allows an unsandboxed escape,
+/// at the plan level or any stage's override, the same way `loom run`
+/// refuses one: `validate_config` refuses both unconditionally, so no
+/// acknowledgement could ever let one through later. Calls `loom run`'s own
+/// `sandbox_policy_refusals` over the same `Stage` values, so the wording an
+/// operator sees matches exactly rather than living as a second, drifting
+/// copy.
+fn refuse_unconfined_sandbox(plan_sandbox: &SandboxConfig, stages: &[Stage]) -> Result<()> {
+    SandboxPreflightRefusal::check(sandbox_policy_refusals(plan_sandbox, stages))
+        .context("loom init refuses to create a plan whose sessions would not be confined")
 }
 
 /// Initialize the state directory from an already-preflighted plan (see
@@ -317,17 +329,6 @@ fn require_utf8_plan_path(path: &Path) -> Result<&str> {
     })
 }
 
-fn require_unsafe_plan_acknowledgement(reasons: &[String], acknowledged: bool) -> Result<()> {
-    if !reasons.is_empty() && !acknowledged {
-        anyhow::bail!(
-            "Plan expands the sandbox policy and requires explicit operator acknowledgement:\n  - {}\n\
-             Re-run initialization with --allow-unsafe-plan after reviewing this policy diff.",
-            reasons.join("\n  - ")
-        );
-    }
-    Ok(())
-}
-
 /// Create a Stage from a StageDefinition
 pub(crate) fn create_stage_from_definition(stage_def: &StageDefinition, plan_id: &str) -> Stage {
     Stage::from_definition(stage_def, plan_id)
@@ -335,7 +336,9 @@ pub(crate) fn create_stage_from_definition(stage_def: &StageDefinition, plan_id:
 
 #[cfg(all(test, unix))]
 mod tests {
-    use super::{require_unsafe_plan_acknowledgement, require_utf8_plan_path};
+    use super::{refuse_unconfined_sandbox, require_utf8_plan_path};
+    use crate::models::stage::Stage;
+    use crate::plan::schema::{SandboxConfig, StageSandboxConfig};
     use std::ffi::OsString;
     use std::os::unix::ffi::OsStringExt;
     use std::path::PathBuf;
@@ -347,13 +350,43 @@ mod tests {
         assert!(error.contains("not valid UTF-8"));
     }
 
+    fn stage(id: &str) -> Stage {
+        Stage {
+            id: id.to_string(),
+            ..Stage::default()
+        }
+    }
+
     #[test]
-    fn unsafe_plan_requires_explicit_acknowledgement() {
-        let reasons = vec!["plan sandbox.enabled is false".to_string()];
-        let error = require_unsafe_plan_acknowledgement(&reasons, false)
-            .unwrap_err()
-            .to_string();
-        assert!(error.contains("--allow-unsafe-plan"));
-        assert!(require_unsafe_plan_acknowledgement(&reasons, true).is_ok());
+    fn accepts_a_plan_with_no_unsafe_sandbox_settings() {
+        let plan_sandbox = SandboxConfig::default();
+        assert!(refuse_unconfined_sandbox(&plan_sandbox, &[stage("stage-1")]).is_ok());
+    }
+
+    #[test]
+    fn refuses_a_plan_level_disabled_sandbox_without_asking_for_acknowledgement() {
+        let plan_sandbox = SandboxConfig {
+            enabled: false,
+            ..SandboxConfig::default()
+        };
+        let error = refuse_unconfined_sandbox(&plan_sandbox, &[stage("stage-1")]).unwrap_err();
+        let error = format!("{error:#}");
+        assert!(error.contains("sandbox.enabled=false is not permitted"));
+        assert!(!error.contains("--allow-unsafe-plan"));
+    }
+
+    #[test]
+    fn refuses_a_stage_level_unsandboxed_escape_without_asking_for_acknowledgement() {
+        let mut stage_with_escape = stage("stage-1");
+        stage_with_escape.sandbox = StageSandboxConfig {
+            allow_unsandboxed_escape: Some(true),
+            ..StageSandboxConfig::default()
+        };
+        let plan_sandbox = SandboxConfig::default();
+        let error = refuse_unconfined_sandbox(&plan_sandbox, &[stage_with_escape]).unwrap_err();
+        let error = format!("{error:#}");
+        assert!(error.contains("allow_unsandboxed_escape=true is not permitted"));
+        assert!(error.contains("stage-1"));
+        assert!(!error.contains("--allow-unsafe-plan"));
     }
 }

@@ -70,11 +70,10 @@ pub fn execute(
     plan_path: Option<PathBuf>,
     clean: bool,
     backend: Option<String>,
-    allow_unsafe_plan: bool,
     no_repair: bool,
 ) -> Result<()> {
     let repo_root = std::env::current_dir()?;
-    let preflighted = preflight_plan_if_given(plan_path.as_deref(), allow_unsafe_plan)?;
+    let preflighted = preflight_plan_if_given(plan_path.as_deref())?;
     let repo_bootstrap = crate::git::ensure_repo_ready_for_worktrees(&repo_root)?;
 
     // Repair the workspace BEFORE the validator judges it - see `startup_repairs`.
@@ -219,13 +218,8 @@ fn install_codex_hooks_advisory() {
 /// a plan that fails any later leaves the pre-commit hook and the
 /// `.claude/settings.local.json` edits behind, and makes the operator answer
 /// the backend prompt a second time.
-fn preflight_plan_if_given(
-    plan_path: Option<&Path>,
-    allow_unsafe_plan: bool,
-) -> Result<Option<PreflightedPlan>> {
-    plan_path
-        .map(|path| preflight_plan(path, allow_unsafe_plan))
-        .transpose()
+fn preflight_plan_if_given(plan_path: Option<&Path>) -> Result<Option<PreflightedPlan>> {
+    plan_path.map(preflight_plan).transpose()
 }
 
 /// Repair the workspace before anything judges it.

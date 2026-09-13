@@ -305,15 +305,8 @@ pub fn dispatch(command: Commands) -> Result<()> {
             plan_path,
             clean,
             backend,
-            allow_unsafe_plan,
             no_repair,
-        } => init::execute(
-            Some(PathBuf::from(plan_path)),
-            clean,
-            backend,
-            allow_unsafe_plan,
-            no_repair,
-        ),
+        } => init::execute(Some(PathBuf::from(plan_path)), clean, backend, no_repair),
         Commands::Run {
             manual,
             max_parallel,

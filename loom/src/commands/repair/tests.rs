@@ -22,11 +22,12 @@ fn hook_repair_propagates_skill_index_write_failure() {
         .contains("simulated skill-index write failure"));
 }
 
-/// A repo whose `.claude/settings.local.json` predates the codex sandbox
-/// allowances is otherwise healthy, so `--fix` used to walk right past it and
-/// leave every codex run blocked. Drive the real check-then-fix path.
+/// A main-repo `.claude/settings.local.json` still holding the sandbox block
+/// loom used to write there (every session's capsule carries the sandbox
+/// now) is reported and stripped, the rest of the file kept. Drive the real
+/// check-then-fix path.
 #[test]
-fn repair_fixes_a_settings_file_missing_the_codex_allowances() {
+fn repair_strips_a_sandbox_block_from_the_main_settings_file() {
     let root = tempfile::tempdir().unwrap();
     let claude_dir = root.path().join(".claude");
     fs::create_dir_all(&claude_dir).unwrap();
@@ -43,25 +44,23 @@ fn repair_fixes_a_settings_file_missing_the_codex_allowances() {
 
     let issue = check_all_issues(root.path())
         .into_iter()
-        .find(|issue| {
-            issue
-                .description
-                .contains("Subprocess sandbox allowances missing")
-        })
-        .expect("a stale settings file must be reported as an issue");
+        .find(|issue| issue.description.starts_with("Loom-written keys in"))
+        .expect("a sandbox block in the main settings file must be reported as an issue");
 
     assert!(
         fix_issue(root.path(), &issue).unwrap(),
-        "the codex issue must be claimed by a fix branch, not silently skipped"
+        "the issue must be claimed by a fix branch, not silently skipped"
     );
-    assert!(crate::fs::permissions::settings_local_has_codex_sandbox(
-        root.path()
-    ));
+    let fixed: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(claude_dir.join("settings.local.json")).unwrap())
+            .unwrap();
+    assert!(fixed.get("sandbox").is_none(), "{fixed}");
+    assert_eq!(fixed["env"]["CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS"], "1");
 
     // And the repo is then clean on a re-check.
-    assert!(!check_all_issues(root.path()).iter().any(|issue| issue
-        .description
-        .contains("Subprocess sandbox allowances missing")));
+    assert!(!check_all_issues(root.path())
+        .iter()
+        .any(|issue| issue.description.starts_with("Loom-written keys in")));
 }
 
 /// A settings file written before the knowledge-directory sandbox grant

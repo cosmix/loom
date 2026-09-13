@@ -1,5 +1,6 @@
-//! `.claude/settings.local.json` sandbox regeneration, the stale
-//! doc/loom/knowledge deny check/fix, and the `Read(...)` deny check/fix.
+//! Stripping the keys loom used to write into `.claude/settings.local.json`,
+//! the stale doc/loom/knowledge deny check/fix, and the `Read(...)` deny
+//! check/fix.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -16,10 +17,10 @@ use crate::fs::permissions::state_root::is_loom_written_read_deny;
 /// in `permissions.deny` alongside the (shadowed, harmless) `allowWrite`
 /// grant — deny wins, so the `loom knowledge update` CLI subprocess stays
 /// blocked for that checkout until the file is regenerated.
-/// `write_settings`'s scrub (`merge_existing_permissions`) heals this
-/// automatically on regeneration, but nothing today prompts for one; this
-/// check is that prompt. Checked in both the main repo and every worktree,
-/// since each has its own settings.local.json.
+/// The capsule built by `sandbox::settings::build_settings` includes a
+/// scrub (`merge_existing_permissions`) that heals this automatically, but
+/// nothing today prompts for one; this check is that prompt. Checked in both
+/// the main repo and every worktree, since each has its own settings.local.json.
 pub(super) fn check_stale_knowledge_denies(repo_root: &Path) -> Vec<RepairIssue> {
     existing_settings_local_files(repo_root)
         .into_iter()
@@ -30,17 +31,15 @@ pub(super) fn check_stale_knowledge_denies(repo_root: &Path) -> Vec<RepairIssue>
                 "Stale knowledge-directory deny in {}",
                 settings_path.display()
             ),
-            fix_description: "Regenerate sandbox settings so the knowledge grant is not \
-                               shadowed by a stale deny"
+            fix_description: "Strip the stale deny so the knowledge grant is not shadowed"
                 .to_string(),
         })
         .collect()
 }
 
 /// Every `.claude/settings.local.json` that currently exists: the main
-/// repo's, plus one per worktree that already has its own. A worktree
-/// without a settings file yet gets one when its own stage session starts,
-/// so it is not a repair issue and is skipped here.
+/// repo's, plus one per worktree that has its own. A worktree without one is
+/// skipped.
 fn existing_settings_local_files(repo_root: &Path) -> Vec<PathBuf> {
     let mut paths = Vec::new();
 
@@ -65,7 +64,7 @@ fn existing_settings_local_files(repo_root: &Path) -> Vec<PathBuf> {
 /// either the enforced `Edit(...)` form or the inert-but-OS-leaking
 /// `Write(...)` form (see `sandbox::settings::merge_existing_permissions`'s
 /// doc comment for why both matter). Shared by the detector
-/// (`settings_local_has_stale_knowledge_deny`) and the worktree scalpel
+/// (`settings_local_has_stale_knowledge_deny`) and the scalpel
 /// (`strip_stale_knowledge_denies`) so the two can never drift apart on what
 /// counts as "stale".
 fn is_knowledge_dir_deny_entry(entry: &str) -> bool {
@@ -92,49 +91,19 @@ fn settings_local_has_stale_knowledge_deny(path: &Path) -> bool {
         .unwrap_or(false)
 }
 
-/// Apply default sandbox settings to `target`'s `.claude/settings.local.json`.
-///
-/// `target` may be the main repo root or a worktree root — `write_settings`
-/// resolves `target_is_worktree` itself from the path it is given, so a
-/// fresh `merge_config` per target (rather than reusing one merged config
-/// across targets) keeps that resolution correct for whichever `target` this
-/// call was given.
-///
-/// Always passes `&Implementers::default()` (claude-only), matching the
-/// existing main-repo behavior: this repairs the DEFAULT sandbox, not
-/// whatever lane a stage's own plan may have licensed. See the doc comment
-/// on `sandbox::settings::preserve_unowned_keys` for why the claude-only
-/// default here is deliberate — restoring an actual codex license is a
-/// separate concern from repairing a broken default.
-fn write_default_sandbox_settings(target: &Path) -> Result<()> {
-    use crate::models::stage::Implementers;
-    use crate::plan::schema::{SandboxConfig, StageSandboxConfig, StageType};
-    let mut merged = crate::sandbox::merge_config(
-        &SandboxConfig::default(),
-        &StageSandboxConfig::default(),
-        StageType::Standard,
-        &Implementers::default(),
-    );
-    crate::sandbox::expand_paths(&mut merged);
-    crate::sandbox::write_settings(&merged, target)?;
-    Ok(())
-}
-
 /// Remove stale doc/loom/knowledge `permissions.deny` entries from a
-/// worktree's `.claude/settings.local.json`, in place — every other key
-/// (the rest of `permissions`, the `sandbox` block, plugin keys, anything
-/// else) is left exactly as it was.
+/// `.claude/settings.local.json`, in place — every other key (the rest of
+/// `permissions`, a `sandbox` block, plugin keys, anything else) is left
+/// exactly as it was.
 ///
-/// Unlike the main repo (regenerated wholesale by
-/// `write_default_sandbox_settings`), a worktree's settings file is the
-/// sandbox of a possibly LIVE stage session, and it legitimately differs
-/// from the default: a codex-licensed stage carries `~/.codex` write grants
-/// and the codex domains, and any stage carries its plan's own
-/// `allow_write` entries. Regenerating it from `SandboxConfig::default()`
-/// would silently narrow a running stage's sandbox mid-session — a bigger
-/// hazard than the stale deny being healed, and one the stage would not
-/// recover from until its next respawn. So only the offending entries are
-/// stripped.
+/// A worktree's settings file is the sandbox of a possibly LIVE stage
+/// session, and it legitimately differs from the default: a codex-licensed
+/// stage carries `~/.codex` write grants and the codex domains, and any
+/// stage carries its plan's own `allow_write` entries. Regenerating it would
+/// silently narrow a running stage's sandbox mid-session — a bigger hazard
+/// than the stale deny being healed, and one the stage would not recover
+/// from until its next respawn. So only the offending entries are stripped,
+/// in every file.
 fn strip_stale_knowledge_denies(path: &Path) -> Result<()> {
     let content =
         fs::read_to_string(path).with_context(|| format!("Failed to read {}", path.display()))?;
@@ -154,28 +123,21 @@ fn strip_stale_knowledge_denies(path: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Apply default sandbox settings to the main repo, and scalpel the stale
-/// doc/loom/knowledge deny out of every worktree that carries one.
+/// Strip the loom-written keys from the main repo's settings.local.json, and
+/// the stale doc/loom/knowledge deny from it and from every worktree's.
 ///
-/// The main repo's settings file is loom's own default sandbox (used for
-/// knowledge-type stages and general repair), so full regeneration is
-/// correct there — see `write_default_sandbox_settings`. A worktree's
-/// settings file is not: see `strip_stale_knowledge_denies` for why it gets
-/// a targeted fix instead of regeneration. A worktree with no stale deny,
-/// or no settings file yet, is left untouched. `pub(super)`: also called by
+/// No sandbox block is written: every session launches from its own
+/// capsule, which carries the sandbox, the session hooks and the state reads
+/// (plan section 12; the key list is `crate::sandbox::preflight`'s). A file
+/// with neither is left untouched. `pub(super)`: called by
 /// `settings_checks::fix_settings_issue`.
 pub(super) fn fix_sandbox_settings(repo_root: &Path) -> Result<()> {
-    write_default_sandbox_settings(repo_root)?;
-
-    if let Ok(entries) = fs::read_dir(repo_root.join(".worktrees")) {
-        for entry in entries.flatten() {
-            let settings_path = entry.path().join(".claude/settings.local.json");
-            if entry.path().is_dir() && settings_local_has_stale_knowledge_deny(&settings_path) {
-                strip_stale_knowledge_denies(&settings_path)?;
-            }
+    crate::sandbox::preflight::strip_settings_local_loom_keys(repo_root)?;
+    for settings_path in existing_settings_local_files(repo_root) {
+        if settings_local_has_stale_knowledge_deny(&settings_path) {
+            strip_stale_knowledge_denies(&settings_path)?;
         }
     }
-
     Ok(())
 }
 
@@ -212,8 +174,8 @@ pub(super) fn check_read_denies(repo_root: &Path) -> Vec<RepairIssue> {
 /// Every existing settings file loom itself may have written a `Read(...)`
 /// deny into: the main repo's `settings.local.json` and `settings.json`,
 /// plus both spellings in each worktree. `git::worktree::settings` writes a
-/// worktree's `settings.json`, `sandbox::write_settings` its
-/// `settings.local.json`, so both can hold a rule.
+/// worktree's `settings.json`; `settings.local.json` is built as part of the
+/// capsule through `sandbox::settings::build_settings`, so both can hold a rule.
 fn read_deny_settings_files(repo_root: &Path) -> Vec<PathBuf> {
     let mut paths = Vec::new();
     let mut push_existing = |path: PathBuf| {
@@ -309,23 +271,16 @@ fn read_deny_issues_for(settings_path: &Path, classify_loom_written: bool) -> Ve
     issues
 }
 
-/// Fix for check 14. The main repo's `settings.local.json` is regenerated —
-/// `carry_forward_denies` now drops every `Read(...)` deny outright, so the
-/// generator emits none. Every other file that carries a loom-written
-/// `Read(...)` deny (`state_root::is_loom_written_read_deny`) gets the
-/// scalpel `strip_loom_read_denies` documents: those entries removed, every
-/// other key — including any operator-authored `Read(...)` rule — left
-/// exactly as it was, with nothing pushed back. `~/.claude/settings.json` and
-/// an operator's own rule anywhere are never touched — `check_read_denies`
-/// only warns about those.
+/// Fix for check 14. Every file that carries a loom-written `Read(...)` deny
+/// (`state_root::is_loom_written_read_deny`), the main repo's
+/// `settings.local.json` included, gets the scalpel `strip_loom_read_denies`
+/// documents: those entries removed, every other key — including any
+/// operator-authored `Read(...)` rule — left exactly as it was, with nothing
+/// pushed back and no sandbox block written. `~/.claude/settings.json` and an
+/// operator's own rule anywhere are never touched — `check_read_denies` only
+/// warns about those.
 pub(super) fn fix_read_denies(repo_root: &Path) -> Result<()> {
-    write_default_sandbox_settings(repo_root)?;
-
-    let main_local = repo_root.join(".claude/settings.local.json");
     for settings_path in read_deny_settings_files(repo_root) {
-        if settings_path == main_local {
-            continue;
-        }
         let has_loom_written = read_deny_entries(&settings_path)
             .iter()
             .any(|entry| is_loom_written_read_deny(entry));

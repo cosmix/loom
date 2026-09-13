@@ -236,9 +236,10 @@ fn fix_workspace_issue(repo_root: &Path, issue: &RepairIssue) -> Option<Result<b
 fn fix_settings_or_state_issue(repo_root: &Path, issue: &RepairIssue) -> Option<Result<bool>> {
     if let Some(result) = settings_checks::fix_settings_issue(repo_root, &issue.description) {
         // Claims "Settings not found (.claude/settings.local.json)", "Stale
-        // knowledge-directory deny in", "Read deny rule in", "Stale loom
-        // session env in", and the generic ".claude/settings.local.json" —
-        // see its doc comment for the required order between those five.
+        // knowledge-directory deny in", "Loom-written keys in", "Read deny
+        // rule in", "Stale loom session env in", and the generic
+        // ".claude/settings.local.json" — see its doc comment for the
+        // required order between those arms.
         // "Operator-authored Read deny rule" deliberately falls through with
         // `None`: loom never removes an operator's own rule, so the chain
         // below reaches `Ok(false)` and the issue prints as skipped.
@@ -289,5 +290,7 @@ pub mod workspace;
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tests_local_keys;
 #[cfg(test)]
 mod tests_token_denies;

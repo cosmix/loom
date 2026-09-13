@@ -3,18 +3,19 @@ use crate::plan::schema::{
     CommandConfinement, FilesystemConfig, LinuxConfig, NetworkConfig, PermissionMode,
     SandboxConfig, StageSandboxConfig, StageType,
 };
-use anyhow::{bail, Result};
+use anyhow::Result;
 use std::env;
 use std::path::Path;
 
+pub(crate) mod preflight;
+
 /// Glob granting write access to the curated knowledge directory.
 ///
-/// Every stage records knowledge through the `loom knowledge update` CLI, a
-/// Bash subprocess that runs inside this same sandbox (there is no
-/// "excluded command" escape hatch — `validate_emittable` in
-/// `sandbox/settings/policy.rs` rejects `excluded_commands` outright). The
-/// CLI needs OS-level write access to actually create `<file>.md.tmp`, so
-/// this path must be granted, not denied. See `apply_knowledge_write_grant`.
+/// The `loom knowledge update` CLI runs as a Bash subprocess inside this
+/// same sandbox with no "excluded command" escape hatch
+/// (`validate_emittable` in `sandbox/settings/policy.rs` rejects
+/// `excluded_commands` outright), so it needs this OS-level write grant to
+/// create `<file>.md.tmp`. See `apply_knowledge_write_grant`.
 pub const KNOWLEDGE_WRITE_GLOB: &str = "doc/loom/knowledge/**";
 
 /// Result of path traversal validation
@@ -57,12 +58,11 @@ pub struct MergedSandboxConfig {
 /// Resolve the default `PermissionMode` for a stage type when no explicit
 /// override is set at the plan or stage level.
 ///
-/// All stage types default to `Auto`: loom stages execute autonomously with no
-/// human at the terminal to answer permission prompts, so the agent should
-/// auto-accept any action its heuristics deem safe. The sandbox's filesystem
-/// deny/allow rules and the loom hooks provide the safety boundary instead of
-/// per-action prompts. A plan or stage can still override to a more restrictive
-/// mode (e.g. `accept-edits`, `plan`) when tighter control is wanted.
+/// All stage types default to `Auto`: loom stages run autonomously with no
+/// human to answer permission prompts, so the sandbox's filesystem deny/allow
+/// rules and the loom hooks are the safety boundary instead of per-action
+/// prompts. A plan or stage can still override to a more restrictive mode
+/// (e.g. `accept-edits`, `plan`) when tighter control is wanted.
 pub fn default_mode_for(stage_type: StageType) -> PermissionMode {
     match stage_type {
         StageType::Knowledge | StageType::KnowledgeDistill => PermissionMode::Auto,
@@ -122,19 +122,15 @@ pub fn merge_config(
 /// merged config.
 ///
 /// INVARIANT: `doc/loom/knowledge/**` must never appear in both
-/// `allow_write` and `deny_write` at once — deny always wins, which is
-/// exactly the bug this function exists to prevent. A prior fix resolved
-/// that contradiction by dropping the ALLOW half (see
-/// `doc/loom/knowledge/mistakes/sandbox-and-settings.md`); that was the
-/// wrong half to drop. The CLI that records knowledge runs inside the
-/// sandbox (see `KNOWLEDGE_WRITE_GLOB`'s doc comment), so it needs the same
-/// OS-enforced write grant a plan's own `allow_write` entries get — the DENY
-/// is what has to go, not the ALLOW.
+/// `allow_write` and `deny_write` at once — deny always wins. A prior fix
+/// wrongly dropped the ALLOW half instead of the DENY half (see
+/// `doc/loom/knowledge/mistakes/sandbox-and-settings.md`): the knowledge CLI
+/// runs inside this sandbox (`KNOWLEDGE_WRITE_GLOB`'s doc comment), so it
+/// needs the same OS-enforced write grant a plan's own `allow_write` gets.
 ///
-/// A plan or stage may still author `doc/loom/knowledge/**` in its own
-/// `deny_write` (older plans do, since it used to be the default); this
-/// strips those entries too, so authored config can never re-introduce the
-/// contradiction. `plan/schema/validation.rs` warns when it sees one.
+/// A plan or stage may still author this path in its own `deny_write`
+/// (older plans do); this strips those entries too, so authored config can
+/// never re-introduce the contradiction. `plan/schema/validation.rs` warns.
 fn apply_knowledge_write_grant(config: &mut MergedSandboxConfig) {
     config
         .filesystem
@@ -156,19 +152,26 @@ fn apply_knowledge_write_grant(config: &mut MergedSandboxConfig) {
 
 /// Validate that a merged sandbox config is safe for execution.
 ///
-/// `bypass-permissions` is rejected unconditionally: it disables every Claude
-/// Code permission prompt, granting the agent unrestricted access to the host
-/// filesystem. Nothing makes this safe, so it is refused.
+/// Three settings are refused unconditionally: `bypass-permissions` disables
+/// every permission prompt, `enabled = false` runs outside the OS sandbox,
+/// and `allow_unsandboxed_escape = true` lets the agent leave it. The error
+/// is a `preflight::SandboxPreflightRefusal`, recorded as a setup failure.
 pub fn validate_config(merged: &MergedSandboxConfig) -> Result<()> {
-    if merged.permission_mode == PermissionMode::BypassPermissions {
-        bail!(
-            "permission_mode=bypass-permissions is not permitted: it disables all \
-             Claude Code permission prompts and grants unrestricted access to the \
-             host filesystem. Choose a different permission_mode (auto, accept-edits, \
-             plan, or default)."
-        );
-    }
-    Ok(())
+    let refusal = if merged.permission_mode == PermissionMode::BypassPermissions {
+        "permission_mode=bypass-permissions is not permitted: it disables all Claude Code \
+         permission prompts and grants unrestricted access to the host filesystem. Choose a \
+         different permission_mode (auto, accept-edits, plan, or default)."
+    } else if !merged.enabled {
+        "sandbox.enabled=false is not permitted: every loom session runs inside the OS \
+         sandbox. Remove it from the plan's `sandbox:` block and every stage's override."
+    } else if merged.allow_unsandboxed_escape {
+        "sandbox.allow_unsandboxed_escape=true is not permitted: it lets an agent run \
+         commands outside the OS sandbox. Remove it from the plan's `sandbox:` block and \
+         every stage's override."
+    } else {
+        return Ok(());
+    };
+    Err(preflight::SandboxPreflightRefusal::new(vec![refusal.to_string()]).into())
 }
 
 /// Expand ~ to home directory in paths
@@ -208,10 +211,9 @@ pub fn expand_env_vars(s: &str) -> String {
 
 /// Expand all paths in the config
 ///
-/// Only expands environment variables (`${VAR}`), NOT tildes (`~`).
-/// Tilde paths are passed through to Claude Code's settings file as-is.
-/// Claude Code's OS-level sandbox mangles absolute paths by prepending
-/// the project root, so we must NOT expand `~` to absolute form here.
+/// Only expands environment variables (`${VAR}`), NOT tildes (`~`): Claude
+/// Code itself expands `~/` in sandbox filesystem lists, so expanding it
+/// here first would only risk disagreeing with its own resolution.
 pub fn expand_paths(config: &mut MergedSandboxConfig) {
     // Only expand env vars — NOT tildes.
     // Claude Code handles ~ in permission patterns, and expanding tildes
@@ -616,43 +618,52 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_validate_config_rejects_bypass_permissions_unconditionally() {
-        // Build a MergedSandboxConfig with a specific permission mode.
-        let make = |mode: PermissionMode| MergedSandboxConfig {
-            enabled: true,
-            auto_allow: true,
-            allow_unsandboxed_escape: false,
-            excluded_commands: vec![],
-            filesystem: FilesystemConfig::default(),
-            network: NetworkConfig::default(),
-            linux: LinuxConfig::default(),
-            permission_mode: mode,
-            implementers: Implementers::default(),
-            command_confinement: CommandConfinement::default(),
-        };
+    /// The merged config of a default plan and a default Standard stage.
+    fn default_merged() -> MergedSandboxConfig {
+        merge_config(
+            &SandboxConfig::default(),
+            &StageSandboxConfig::default(),
+            StageType::Standard,
+            &Implementers::default(),
+        )
+    }
 
-        // Every non-bypass mode is accepted.
+    #[test]
+    fn validate_config_refuses_bypass_a_disabled_sandbox_and_an_unsandboxed_escape() {
+        let safe = default_merged();
         for mode in [
             PermissionMode::Default,
             PermissionMode::AcceptEdits,
             PermissionMode::Auto,
             PermissionMode::Plan,
         ] {
-            assert!(validate_config(&make(mode)).is_ok());
+            let mut config = safe.clone();
+            config.permission_mode = mode;
+            assert!(
+                validate_config(&config).is_ok(),
+                "{mode:?} must be accepted"
+            );
         }
 
-        // BypassPermissions is rejected unconditionally.
-        let bypass = make(PermissionMode::BypassPermissions);
-        let err = validate_config(&bypass).unwrap_err();
-        assert!(
-            err.to_string().contains("bypass-permissions"),
-            "error must name the rejected mode, got: {err}"
-        );
-        assert!(
-            err.to_string().contains("not permitted"),
-            "error must explain the mode is not permitted, got: {err}"
-        );
+        let mut bypass = safe.clone();
+        bypass.permission_mode = PermissionMode::BypassPermissions;
+        let mut disabled = safe.clone();
+        disabled.enabled = false;
+        let mut escape = safe;
+        escape.allow_unsandboxed_escape = true;
+        for (config, setting) in [
+            (bypass, "bypass-permissions"),
+            (disabled, "sandbox.enabled=false"),
+            (escape, "allow_unsandboxed_escape=true"),
+        ] {
+            let err = validate_config(&config).unwrap_err();
+            let text = err.to_string();
+            assert!(
+                text.contains(setting) && text.contains("not permitted"),
+                "{text}"
+            );
+            assert!(err.is::<preflight::SandboxPreflightRefusal>(), "{text}");
+        }
     }
 
     // =========================================================================
@@ -804,23 +815,10 @@ mod tests {
 
     #[test]
     fn test_validate_paths_detects_escape_in_allow_write() {
-        let config = MergedSandboxConfig {
-            enabled: true,
-            auto_allow: true,
-            allow_unsandboxed_escape: false,
-            excluded_commands: vec![],
-            filesystem: FilesystemConfig {
-                deny_read: vec![],
-                deny_write: vec![],
-                // Malicious: trying to allow writing to parent
-                allow_write: vec!["../../malicious/**".to_string(), "src/**".to_string()],
-            },
-            network: NetworkConfig::default(),
-            linux: LinuxConfig::default(),
-            permission_mode: PermissionMode::Auto,
-            implementers: Implementers::default(),
-            command_confinement: CommandConfinement::default(),
-        };
+        let mut config = default_merged();
+        // Malicious: trying to allow writing to parent
+        config.filesystem.allow_write =
+            vec!["../../malicious/**".to_string(), "src/**".to_string()];
 
         let escapes = validate_paths(&config);
 
@@ -836,13 +834,9 @@ mod tests {
     fn test_sandbox_enabled_by_default() {
         let config = SandboxConfig::default();
         assert!(config.enabled, "Sandbox should be enabled by default");
-
-        let merged = merge_config(
-            &SandboxConfig::default(),
-            &StageSandboxConfig::default(),
-            StageType::Standard,
-            &Implementers::default(),
+        assert!(
+            default_merged().enabled,
+            "Merged config should have sandbox enabled"
         );
-        assert!(merged.enabled, "Merged config should have sandbox enabled");
     }
 }

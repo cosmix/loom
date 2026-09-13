@@ -2,7 +2,6 @@
 
 use super::create_valid_metadata;
 use crate::plan::schema::types::LoomMetadata;
-use crate::plan::schema::unsafe_plan_reasons;
 use crate::plan::schema::validation::validate;
 
 fn parse(yaml: &str) -> Result<LoomMetadata, serde_yaml::Error> {
@@ -275,21 +274,4 @@ fn rejects_command_exclusions_instead_of_expanding_them() {
     assert!(errors
         .iter()
         .any(|error| error.message.contains("excluded_commands")));
-}
-
-#[test]
-fn unsafe_plan_reasons_cover_plan_and_stage_overrides() {
-    let mut metadata = create_valid_metadata();
-    metadata.loom.sandbox.enabled = false;
-    metadata.loom.sandbox.allow_unsandboxed_escape = true;
-    metadata.loom.stages[0].sandbox.enabled = Some(false);
-
-    let reasons = unsafe_plan_reasons(&metadata);
-    assert!(reasons
-        .iter()
-        .any(|reason| reason.contains("plan sandbox.enabled")));
-    assert!(reasons
-        .iter()
-        .any(|reason| reason.contains("allow_unsandboxed_escape")));
-    assert!(reasons.iter().any(|reason| reason.contains("stage-1")));
 }

@@ -46,36 +46,6 @@ fn validate_excluded_commands(
     });
 }
 
-/// Render policy changes that require an operator acknowledgement at init.
-///
-/// Command exclusions are rejected outright; acknowledgement applies only to
-/// explicit sandbox disablement and unsandboxed escape.
-pub fn unsafe_plan_reasons(metadata: &LoomMetadata) -> Vec<String> {
-    let mut reasons = Vec::new();
-    let plan_sandbox = &metadata.loom.sandbox;
-
-    if !plan_sandbox.enabled {
-        reasons.push("plan sandbox.enabled is false".to_string());
-    }
-    if plan_sandbox.allow_unsandboxed_escape {
-        reasons.push("plan sandbox.allow_unsandboxed_escape is true".to_string());
-    }
-
-    for stage in &metadata.loom.stages {
-        if stage.sandbox.enabled == Some(false) {
-            reasons.push(format!("stage '{}' disables the sandbox", stage.id));
-        }
-        if stage.sandbox.allow_unsandboxed_escape == Some(true) {
-            reasons.push(format!(
-                "stage '{}' enables allow_unsandboxed_escape",
-                stage.id
-            ));
-        }
-    }
-
-    reasons
-}
-
 /// Validate a glob pattern is syntactically correct
 fn validate_glob_pattern(pattern: &str) -> Result<(), String> {
     // Use the glob crate's Pattern::new() to validate

@@ -225,6 +225,38 @@ pub(super) fn startup_refusal_crash(
     }
 }
 
+/// The failure a spawn error records on its stage. A sandbox preflight
+/// refusal (`crate::sandbox::preflight`: a disabled or escapable sandbox,
+/// drifted hooks, a writable loom install or hook tool) is
+/// [`FailureType::SandboxSetupFailure`]: the boundary could not be installed,
+/// so the stage blocks and is never retried. Any other spawn error stays
+/// [`FailureType::InfrastructureError`].
+pub(crate) fn spawn_failure_type(error: &anyhow::Error) -> FailureType {
+    let refused = error
+        .chain()
+        .any(|cause| cause.is::<crate::sandbox::preflight::SandboxPreflightRefusal>());
+    if refused {
+        FailureType::SandboxSetupFailure
+    } else {
+        FailureType::InfrastructureError
+    }
+}
+
+#[cfg(test)]
+mod spawn_failure_tests {
+    use super::*;
+    use crate::sandbox::preflight::SandboxPreflightRefusal;
+
+    #[test]
+    fn a_preflight_refusal_blocks_as_a_sandbox_setup_failure_and_nothing_else_does() {
+        let refusal = SandboxPreflightRefusal::new(vec!["LOOM_BIN lies under /repo".to_string()]);
+        let error = anyhow::Error::new(refusal).context("Failed to spawn session for stage s");
+        assert_eq!(spawn_failure_type(&error), FailureType::SandboxSetupFailure);
+        let other = anyhow::anyhow!("tmux could not create its socket directory");
+        assert_eq!(spawn_failure_type(&other), FailureType::InfrastructureError);
+    }
+}
+
 #[cfg(test)]
 #[path = "crash_classification_tests.rs"]
 mod tests;

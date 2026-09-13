@@ -177,6 +177,97 @@ impl Drop for ClaudeOnPathGuard {
     }
 }
 
+/// Installs this build's hook scripts into a fresh directory under this
+/// crate's own `target/`, then points `LOOM_HOOKS_DIR` at it for the duration
+/// of the guard, restoring the previous value (or clearing it) on drop —
+/// including on a panic, mirroring [`ClaudeOnPathGuard`].
+///
+/// The sandbox preflight now runs on every spawn: check 2 refuses a host with
+/// no verified hooks directory, or one whose scripts have drifted from this
+/// build, and check 3 refuses a hooks directory that lies under a
+/// session-writable root. Depending on the ambient `~/.claude/hooks/loom`
+/// (absent on CI, and drifted from this build whenever the hooks change)
+/// would make this test flaky or wrongly refused before it ever reaches the
+/// tmux step it exists to pin — this guard gives it a directory that always
+/// verifies. `target/`, not `/tmp` or `$TMPDIR`: the latter is always a
+/// session-writable root (`session_writable_roots` includes it), which check
+/// 3 would refuse.
+struct LoomHooksDirGuard {
+    _dir: tempfile::TempDir,
+    original: Option<std::ffi::OsString>,
+}
+
+impl LoomHooksDirGuard {
+    fn install() -> Self {
+        let target_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("target");
+        let dir = tempfile::Builder::new()
+            .prefix("tmux-abort-hooks-")
+            .tempdir_in(&target_dir)
+            .expect("this crate's target directory must exist and accept a temp dir");
+        crate::fs::permissions::install_loom_hooks_to(dir.path())
+            .expect("installing this build's hook scripts must succeed");
+
+        let original = std::env::var_os("LOOM_HOOKS_DIR");
+        std::env::set_var("LOOM_HOOKS_DIR", dir.path());
+        Self {
+            _dir: dir,
+            original,
+        }
+    }
+}
+
+impl Drop for LoomHooksDirGuard {
+    fn drop(&mut self) {
+        match &self.original {
+            Some(value) => std::env::set_var("LOOM_HOOKS_DIR", value),
+            None => std::env::remove_var("LOOM_HOOKS_DIR"),
+        }
+    }
+}
+
+/// Strips group/world write from the running test binary for the duration of
+/// the guard, restoring its original mode on drop — including on a panic.
+///
+/// `LaunchHost::from_env` resolves `LOOM_BIN` from `std::env::current_exe()`,
+/// and the preflight's `accepted_loom_bin` refuses a binary that is group- or
+/// world-writable. A permissive umask (e.g. `002`) leaves a compiled test
+/// binary at mode 775, which would fail every launch through this test at
+/// that check instead of at the tmux step the test exists to pin.
+struct LoomBinModeGuard {
+    path: PathBuf,
+    original: std::fs::Permissions,
+}
+
+impl LoomBinModeGuard {
+    fn strip_group_and_world_write() -> Self {
+        use std::os::unix::fs::PermissionsExt;
+        let path = std::env::current_exe().expect("the running test binary must resolve");
+        let original = std::fs::metadata(&path)
+            .expect("the running test binary must be statable")
+            .permissions();
+        let mode = original.mode() & !0o022;
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(mode))
+            .expect("stripping group/world write from the test binary must succeed");
+        Self { path, original }
+    }
+}
+
+impl Drop for LoomBinModeGuard {
+    fn drop(&mut self) {
+        let _ = std::fs::set_permissions(&self.path, self.original.clone());
+    }
+}
+
+/// Installs both host-readiness guards a real launch attempt needs before it
+/// can reach the tmux step: a writable hooks directory and a test binary
+/// with group/world write stripped.
+fn host_ready_for_real_launch() -> (LoomHooksDirGuard, LoomBinModeGuard) {
+    (
+        LoomHooksDirGuard::install(),
+        LoomBinModeGuard::strip_group_and_world_write(),
+    )
+}
+
 #[test]
 #[serial]
 fn a_failed_spawn_aborts_and_leaves_no_pid_file_for_the_native_retry_to_adopt() {
@@ -208,8 +299,8 @@ fn a_failed_spawn_aborts_and_leaves_no_pid_file_for_the_native_retry_to_adopt() 
         },
     )
     .unwrap();
+    let (_hooks, _loom_bin_mode) = host_ready_for_real_launch();
     let _claude = ClaudeOnPathGuard::install();
-
     // Declared in this order so drop runs in reverse: `TMUX_TMPDIR` is
     // restored first, then the directory's write permission, and only then
     // does `socket_dir` try to delete itself — a directory still at 0o500

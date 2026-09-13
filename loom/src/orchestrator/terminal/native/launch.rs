@@ -21,6 +21,7 @@ use crate::sandbox::MergedSandboxConfig;
 
 use super::session_settings::{write_session_capsule, CapsuleRequest};
 use super::SessionCapsule;
+pub(crate) use host::run_host_facts;
 use host::LaunchHost;
 
 /// Derive the Remote Control session name for a spawn, prefixed by kind.
@@ -255,6 +256,12 @@ pub(crate) fn prepare_session_launch(
 /// `stage.id`. The context ceiling resolves stage value, then
 /// `[context] ceiling_tokens`, then the default, so the window the session
 /// runs under is the number its signal quotes.
+///
+/// Before anything is written, the host must pass checks 2-4 of the sandbox
+/// preflight (`crate::sandbox::preflight`): hook scripts that match this
+/// build, and no `LOOM_BIN`, hooks directory or hook tool under a
+/// session-writable root. A refusal fails the spawn with that error, which
+/// the stage records as a sandbox setup failure.
 fn prepare_session_launch_with(
     host: &LaunchHost,
     work_dir: &Path,
@@ -269,6 +276,7 @@ fn prepare_session_launch_with(
     let title = session.tracking_key.clone();
     let pid_key = format!("{}-{}", title, session.id);
     let sandbox = session_sandbox(work_dir, stage);
+    crate::sandbox::preflight::require_confined_host(&host.facts)?;
     let scratch_dir = host.prepare_scratch(&session.id)?;
     let settings_file = write_session_capsule(&CapsuleRequest {
         kind,
@@ -277,9 +285,10 @@ fn prepare_session_launch_with(
         cwd,
         work_dir,
         repo_root: &host.repo_root,
-        hooks_dir: host.hooks_dir.as_deref(),
+        hooks_dir: host.facts.hooks_dir.as_deref(),
         scratch_dir: &scratch_dir,
         surfaces: &host.control_surfaces(work_dir),
+        writable_roots: &host.facts.writable_roots,
     })?;
     let prefix_file = resolve_prompt_cache_split_prefix_file(work_dir, stage);
     let capsule = super::session_capsule(host.capsule_support, Some(settings_file), prefix_file);
@@ -306,6 +315,9 @@ fn prepare_session_launch_with(
 #[cfg(test)]
 #[path = "tests_launch.rs"]
 mod tests;
+#[cfg(test)]
+#[path = "tests_confinement_e2e.rs"]
+mod tests_confinement_e2e;
 #[cfg(test)]
 #[path = "tests_launch_capsule.rs"]
 mod tests_launch_capsule;

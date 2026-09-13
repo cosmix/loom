@@ -10,9 +10,9 @@ use crate::fs::permissions::constants::LOOM_HOOKS;
 use crate::fs::permissions::{
     ensure_loom_hooks_local, loom_hook_scripts_needing_install, main_repo_settings_identity_drift,
     scrub_main_repo_settings_identity, settings_json_has_hooks, settings_local_has_agent_teams_env,
-    settings_local_has_codex_sandbox, settings_local_has_worktree_isolation_disabled,
-    settings_local_hook_drift,
+    settings_local_has_worktree_isolation_disabled, settings_local_hook_drift,
 };
+use crate::sandbox::preflight::settings_local_loom_keys;
 
 /// Every settings-file issue this repo currently has.
 pub(super) fn check(repo_root: &Path) -> Vec<RepairIssue> {
@@ -37,28 +37,13 @@ pub(super) fn check(repo_root: &Path) -> Vec<RepairIssue> {
         issues.push(RepairIssue {
             severity: Severity::Info,
             description: "Settings not found (.claude/settings.local.json)".to_string(),
-            fix_description: "Apply default sandbox settings and hooks".to_string(),
+            fix_description: "Apply loom's hooks and env".to_string(),
         });
         return issues;
     }
 
     issues.extend(settings_local_drift_issue(repo_root));
-
-    // Checked apart from hooks/env: a settings file written before these
-    // subprocess allowances existed is otherwise complete, so nothing else
-    // here flags it and `--fix` would leave codex runs, or package-manager
-    // installs, blocked.
-    if !settings_local_has_codex_sandbox(repo_root) {
-        issues.push(RepairIssue {
-            severity: Severity::Warning,
-            description: "Subprocess sandbox allowances missing from .claude/settings.local.json \
-                 (codex lane, package-manager caches)"
-                .to_string(),
-            fix_description: "Grant the codex lane and package managers write access to their \
-                               state/cache dirs"
-                .to_string(),
-        });
-    }
+    issues.extend(loom_written_keys_issue(repo_root));
 
     issues
 }
@@ -153,6 +138,25 @@ fn settings_local_drift_issue(repo_root: &Path) -> Option<RepairIssue> {
     })
 }
 
+/// Keys loom used to write into settings.local.json that every session's
+/// capsule carries now (plan section 12): the sandbox block, state-directory
+/// and plan reads, handoff and `allowWrite` edit rules, the session hook
+/// registrations and `env.LOOM_WORK_DIR`. `loom run` warns on the same list.
+fn loom_written_keys_issue(repo_root: &Path) -> Option<RepairIssue> {
+    let keys = settings_local_loom_keys(repo_root);
+    if keys.is_empty() {
+        return None;
+    }
+    Some(RepairIssue {
+        severity: Severity::Warning,
+        description: format!(
+            "Loom-written keys in .claude/settings.local.json ({})",
+            keys.summary()
+        ),
+        fix_description: "Strip them; every session's capsule carries them now".to_string(),
+    })
+}
+
 /// Codex's own workspace-write sandbox must exclude /tmp. On Linux the codex
 /// CLI wraps every exec in its own bubblewrap sandbox and masks `.git` under
 /// every writable root; with `/tmp` among the default roots, bwrap must
@@ -202,9 +206,12 @@ pub(super) fn fix_hooks_local(repo_root: &Path) -> Result<()> {
 /// remaining arms.
 ///
 /// The order between the arms decides which fix claims an issue:
-/// 1. "Settings not found (.claude/settings.local.json)" and "Stale
-///    knowledge-directory deny in" both regenerate the sandbox settings and
-///    rewrite hooks/env — matched together, ahead of the arms below.
+/// 1. "Settings not found (.claude/settings.local.json)", "Stale
+///    knowledge-directory deny in" and "Loom-written keys in" all strip the
+///    loom-written keys and the stale knowledge denies, then rewrite loom's
+///    hooks/env config, which writes none of the stripped keys — matched
+///    together, ahead of the arms below. Stripping first removes a session
+///    hook with its event array; the rewrite would leave the array behind.
 /// 2. `starts_with("Read deny rule in")` must precede the generic
 ///    ".claude/settings.local.json" arm, whose needle would otherwise swallow
 ///    a description naming that file; `fix_hooks_local` would leave the deny
@@ -220,12 +227,13 @@ pub(super) fn fix_hooks_local(repo_root: &Path) -> Result<()> {
 ///    `fix_hooks_local` never touches settings.json, so the settings.json
 ///    copy would go unhealed if the generic arm claimed it first.
 /// 5. The generic ".claude/settings.local.json" arm catches everything else
-///    that names this file — missing hooks/env, missing codex sandbox
-///    allowances — by rewriting it. The file-absent case is claimed by arm 1,
-///    which runs first.
+///    that names this file — missing or obsolete hook registrations, missing
+///    env or worktree config — by rewriting it. The file-absent case is
+///    claimed by arm 1, which runs first.
 pub(super) fn fix_settings_issue(repo_root: &Path, description: &str) -> Option<Result<()>> {
     if description.contains("Settings not found (.claude/settings.local.json)")
         || description.contains("Stale knowledge-directory deny in")
+        || description.starts_with("Loom-written keys in")
     {
         return Some(
             super::sandbox_settings::fix_sandbox_settings(repo_root)

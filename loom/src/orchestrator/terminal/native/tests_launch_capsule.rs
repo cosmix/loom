@@ -1,15 +1,18 @@
-//! End-to-end launch tests for the settings capsule, the scratch directory
-//! and the wrapper's host exports, driven through `prepare_session_launch_with`
-//! against an injected [`LaunchHost`], so no test touches `PATH`, `HOME`,
-//! `LOOM_HOOKS_DIR` or the operator's runtime directory. Split out of
-//! `tests_launch.rs` to keep that file under the 400-line ceiling.
+//! End-to-end launch tests for the settings capsule, the scratch directory,
+//! the wrapper's host exports and the spawn-time sandbox preflight, driven
+//! through `prepare_session_launch_with` against an injected [`LaunchHost`],
+//! so no test touches `PATH`, `HOME`, `LOOM_HOOKS_DIR` or the operator's
+//! runtime directory. Split out of `tests_launch.rs` to keep that file under
+//! the 400-line ceiling.
 
-use super::host::{hook_path_entries, verified_loom_bin, LaunchHost};
+use super::host::{hook_path_entries, LaunchHost};
 use super::*;
+use crate::fs::permissions::install_loom_hooks_to;
 use crate::fs::work_dir::write_remote_control_config;
 use crate::orchestrator::terminal::native::capsule::CapsuleSupport;
 use crate::orchestrator::terminal::native::session_settings_path;
 use crate::remote_control::{RemoteControlConfig, RemoteControlMode};
+use crate::sandbox::preflight::{HostFacts, SandboxPreflightRefusal};
 use serde_json::Value;
 use std::os::unix::fs::PermissionsExt;
 use tempfile::TempDir;
@@ -32,8 +35,9 @@ fn mode(path: &Path) -> u32 {
 }
 
 /// A repository with a state root and one stage worktree, and a host whose
-/// every fact is fixed: all capsule flags supported, hooks and the loom
-/// binary in the temp dir, scratch under it, and a known hook PATH.
+/// every fact is fixed and passes the preflight: all capsule flags
+/// supported, this build's hooks and the loom binary in the temp dir outside
+/// the repository and scratch roots, and a known hook PATH.
 struct Fixture {
     temp: TempDir,
     repo: PathBuf,
@@ -48,14 +52,17 @@ fn fixture() -> Fixture {
     let hooks_dir = temp.path().join("hooks");
     std::fs::create_dir_all(repo.join(".worktrees").join("stage-1")).unwrap();
     std::fs::create_dir_all(&work_dir).unwrap();
-    std::fs::create_dir_all(&hooks_dir).unwrap();
-    let loom_bin = temp.path().join("loom");
+    install_loom_hooks_to(&hooks_dir).unwrap();
+    // In a directory of its own: the capsule denies writing dirname(LOOM_BIN).
+    let loom_bin = temp.path().join("install").join("loom");
+    std::fs::create_dir_all(loom_bin.parent().unwrap()).unwrap();
     std::fs::write(&loom_bin, "").unwrap();
     // Remote Control off, so no launch runs a `claude --version` preflight.
     let remote_control = RemoteControlConfig {
         mode: RemoteControlMode::Off,
     };
     write_remote_control_config(&work_dir, &remote_control).unwrap();
+    let scratch_root = temp.path().join("scratch");
     let host = LaunchHost {
         claude_path: PathBuf::from("/usr/bin/claude"),
         capsule_support: CapsuleSupport {
@@ -65,11 +72,14 @@ fn fixture() -> Fixture {
             append_system_prompt_file: true,
         },
         repo_root: repo.clone(),
-        hooks_dir: Some(hooks_dir),
-        scratch_root: temp.path().join("scratch"),
+        facts: HostFacts {
+            writable_roots: vec![repo.clone(), scratch_root.clone()],
+            hooks_dir: Some(hooks_dir),
+            loom_bin,
+            hook_path: vec![PathBuf::from("/usr/bin"), PathBuf::from("/bin")],
+        },
+        scratch_root,
         uid: current_uid(),
-        loom_bin,
-        hook_path: vec![PathBuf::from("/usr/bin"), PathBuf::from("/bin")],
         home: None,
     };
     Fixture {
@@ -148,7 +158,7 @@ fn every_kind_exports_its_scratch_dir_the_loom_binary_and_the_hook_path() {
         let scratch = fixture.host.scratch_root.join(&session.id);
         for export in [
             format!("LOOM_SCRATCH_DIR={}", scratch.display()),
-            format!("LOOM_BIN={}", fixture.host.loom_bin.display()),
+            format!("LOOM_BIN={}", fixture.host.facts.loom_bin.display()),
             "LOOM_HOOK_PATH=/usr/bin:/bin".to_string(),
         ] {
             assert!(
@@ -203,6 +213,47 @@ fn an_unusable_scratch_root_fails_the_launch() {
 }
 
 #[test]
+fn a_launch_the_preflight_refuses_fails_as_a_sandbox_refusal_and_writes_nothing() {
+    let mut fixture = fixture();
+    // A loom binary a session could replace: inside the repository.
+    let planted = fixture.repo.join("loom");
+    std::fs::write(&planted, "").unwrap();
+    fixture.host.facts.loom_bin = planted;
+
+    for kind in ALL_KINDS {
+        let error = try_launch(&fixture, kind)
+            .expect_err("a LOOM_BIN under a writable root must refuse the spawn");
+        assert!(error.is::<SandboxPreflightRefusal>(), "{kind}: {error:#}");
+        assert!(
+            format!("{error:#}").starts_with("LOOM_BIN"),
+            "{kind}: {error:#}"
+        );
+    }
+    let capsules = session_settings_path(&fixture.work_dir, "none");
+    assert!(
+        !capsules.parent().unwrap().exists(),
+        "a refused spawn writes no capsule"
+    );
+    assert!(
+        !fixture.host.scratch_root.exists(),
+        "a refused spawn makes no scratch"
+    );
+}
+
+#[test]
+fn a_drifted_hook_script_refuses_the_launch() {
+    let fixture = fixture();
+    let hooks_dir = fixture.host.facts.hooks_dir.clone().unwrap();
+    std::fs::write(hooks_dir.join("loom-relay.sh"), "#!/bin/bash\n").unwrap();
+
+    let error = try_launch(&fixture, SessionType::Stage)
+        .expect_err("a hook script that differs from this build must refuse the spawn");
+
+    assert!(error.is::<SandboxPreflightRefusal>(), "{error:#}");
+    assert!(format!("{error:#}").contains("loom-relay.sh"), "{error:#}");
+}
+
+#[test]
 fn hook_path_drops_entries_inside_a_writable_root_and_keeps_the_rest() {
     let writable = TempDir::new().unwrap();
     let outside = TempDir::new().unwrap();
@@ -220,20 +271,4 @@ fn hook_path_drops_entries_inside_a_writable_root_and_keeps_the_rest() {
     let kept = hook_path_entries(&path_var, &[writable.path().to_path_buf()]);
 
     assert_eq!(kept, vec![outside.path().canonicalize().unwrap()]);
-}
-
-#[test]
-fn loom_bin_must_be_an_operator_owned_regular_file() {
-    let temp = TempDir::new().unwrap();
-    let binary = temp.path().join("loom");
-    std::fs::write(&binary, "").unwrap();
-    let uid = current_uid();
-
-    assert_eq!(
-        verified_loom_bin(&binary, uid).unwrap(),
-        binary.canonicalize().unwrap()
-    );
-    assert!(verified_loom_bin(temp.path(), uid).is_err());
-    assert!(verified_loom_bin(&binary, uid.wrapping_add(1)).is_err());
-    assert!(verified_loom_bin(&temp.path().join("missing"), uid).is_err());
 }

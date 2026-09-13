@@ -31,7 +31,7 @@ pub(crate) use build_cache::sccache_status_line;
 // Re-exported so `super::session_capsule(...)` keeps resolving from `launch`.
 pub(crate) use capsule::{session_capsule, SessionCapsule};
 pub use detection::detect_terminal;
-pub(crate) use launch::prepare_session_launch;
+pub(crate) use launch::{prepare_session_launch, run_host_facts};
 pub(crate) use pid_guard::{
     pid_only_is_alive, pid_only_terminate, session_process_status, SessionProcessStatus,
 };

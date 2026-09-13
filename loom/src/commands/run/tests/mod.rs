@@ -11,6 +11,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use tempfile::TempDir;
 
+mod confinement;
 mod preflight;
 mod snapshot_reuse;
 

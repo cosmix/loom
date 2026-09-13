@@ -225,7 +225,7 @@ fn test_initialize_with_plan_nonexistent_file() {
     let temp_dir = TempDir::new().unwrap();
     let nonexistent_path = temp_dir.path().join("nonexistent.md");
 
-    let result = preflight_plan(&nonexistent_path, false);
+    let result = preflight_plan(&nonexistent_path);
 
     assert!(result.is_err());
     assert!(result.unwrap_err().to_string().contains("does not exist"));
@@ -270,7 +270,7 @@ fn test_initialize_with_plan_creates_config() {
         subagent_timeout_secs: None,
     };
     let plan_path = create_test_plan(temp_dir.path(), vec![stage_def]);
-    let preflighted = preflight_plan(&plan_path, false).unwrap();
+    let preflighted = preflight_plan(&plan_path).unwrap();
     let result = initialize_with_plan(&work_dir, &preflighted, Some(SessionBackendKind::Native));
     assert!(result.is_ok());
     let config_path = work_dir.root().join("config.toml");
@@ -361,7 +361,7 @@ fn test_initialize_with_plan_creates_stage_files() {
 
     let plan_path = create_test_plan(temp_dir.path(), stages);
 
-    let preflighted = preflight_plan(&plan_path, false).unwrap();
+    let preflighted = preflight_plan(&plan_path).unwrap();
     let result = initialize_with_plan(&work_dir, &preflighted, Some(SessionBackendKind::Native));
 
     assert!(result.is_ok());
@@ -422,7 +422,7 @@ fn test_initialize_with_plan_invalid_yaml() {
     )
     .unwrap();
 
-    let result = preflight_plan(&invalid_plan, false);
+    let result = preflight_plan(&invalid_plan);
 
     assert!(result.is_err());
     assert!(result.unwrap_err().to_string().contains("parse"));

@@ -4,6 +4,7 @@
 //! (debugging) or background (daemon) mode.
 
 pub(crate) mod checks;
+mod confinement;
 mod foreground;
 mod graph_loader;
 mod plan_inputs;
@@ -94,25 +95,31 @@ fn prepare_background_run(backend: Option<String>) -> Result<WorkDir> {
 
     resolve_backend_flag(&work_dir, backend, "loom run")?;
 
-    // Hard requirement — like `require_jq`: a missing sandbox prerequisite on
-    // Linux/WSL makes every session exit at startup, so fail here instead of
-    // burning the retry budget on a deterministic startup refusal.
-    sandbox_preflight::require_sandbox_prerequisites(work_dir.root())?;
-
-    // Advisory Remote Control preflight — never aborts startup.
-    if let Ok(claude_path) = crate::claude::find_claude_path() {
-        crate::remote_control::run_startup_preflight(&claude_path, work_dir.root());
-    }
-
-    // Advisory Codex lane preflight — never aborts startup.
-    checks::advisory_codex_lane_preflight(work_dir.root());
-
+    run_startup_preflights(&work_dir)?;
     plan_inputs::mark_plan_in_progress(&work_dir)?;
 
     // Publish against the committed active filename and the revision stages inherit.
     checks::advisory_source_graph_preflight(&repo_root, &work_dir);
 
     Ok(work_dir)
+}
+
+/// The startup preflights both entry points run before the plan is marked in
+/// progress, in order: the confinement refusals (`confinement`, plan section
+/// 12); advisory Remote Control, which never aborts startup; the hard
+/// sandbox-prerequisite check, because like `require_jq` a missing
+/// `bwrap`/`socat` or WSL1 makes every session exit at startup, and failing
+/// here beats burning the retry budget on a deterministic refusal; then the
+/// advisory codex lane. One function, so a refusal added here reaches
+/// `loom run` and `loom run --foreground` alike.
+fn run_startup_preflights(work_dir: &WorkDir) -> Result<()> {
+    confinement::require_confinement(work_dir)?;
+    if let Ok(claude_path) = crate::claude::find_claude_path() {
+        crate::remote_control::run_startup_preflight(&claude_path, work_dir.root());
+    }
+    sandbox_preflight::require_sandbox_prerequisites(work_dir.root())?;
+    checks::advisory_codex_lane_preflight(work_dir.root());
+    Ok(())
 }
 
 fn print_stop_guidance() {

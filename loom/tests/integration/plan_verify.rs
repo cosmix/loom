@@ -829,10 +829,9 @@ fn test_knowledge_warning_category_populated() {
 
 #[test]
 fn test_sandbox_warning_category_populated() {
-    // Default `excluded_commands` already includes 'loom'/'git' so the
-    // missing-loom warning does not fire on a minimal plan. Setting
-    // `allow_unsandboxed_escape: true` is the deterministic trigger for the
-    // sandbox category from `check_sandbox_recommendations`.
+    // `allow_unsandboxed_escape: true` used to trigger this, but
+    // `validate_config` now refuses it as a hard error. A redundant
+    // `deny_write: [".loom/work/**"]` stays warning-only instead.
     let plan_content = r#"# Sandbox Plan
 
 <!-- loom METADATA -->
@@ -841,7 +840,8 @@ fn test_sandbox_warning_category_populated() {
 loom:
   version: 1
   sandbox:
-    allow_unsandboxed_escape: true
+    filesystem:
+      deny_write: [".loom/work/**"]
   stages:
     - id: stage-one
       name: "Stage One"
@@ -864,7 +864,7 @@ loom:
         .expect("sandbox category must be an array");
     assert!(
         !sandbox.is_empty(),
-        "allow_unsandboxed_escape=true must produce a sandbox warning"
+        "redundant .loom/work/** deny_write must warn"
     );
     let joined: String = sandbox
         .iter()
@@ -872,8 +872,8 @@ loom:
         .collect::<Vec<_>>()
         .join(" ");
     assert!(
-        joined.contains("allow_unsandboxed_escape"),
-        "sandbox warning must mention allow_unsandboxed_escape, got: {joined}"
+        joined.contains(".loom/work"),
+        ".loom/work missing: {joined}"
     );
 }
 
