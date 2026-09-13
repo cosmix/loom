@@ -9,9 +9,14 @@ pub mod cache;
 pub mod claude;
 pub mod codex;
 pub mod credentials;
+mod history;
 pub mod model;
 pub mod poller;
 
+pub use history::{
+    read_history, HistoryContinuity, HistorySourceState, QuotaHistoryDiagnostics,
+    QuotaHistoryPoint, QuotaHistoryRead,
+};
 pub use model::*;
 
 use std::path::Path;

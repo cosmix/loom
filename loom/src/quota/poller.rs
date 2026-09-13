@@ -6,10 +6,10 @@
 //! from Claude uses the server's own `Retry-After` instead of the doubling
 //! backoff. Nothing here is persisted across a daemon restart.
 
-use super::cache;
 use super::claude::{self, RateLimited};
 use super::codex;
 use super::credentials;
+use super::{cache, history};
 use crate::codex::find_codex_path;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -170,6 +170,9 @@ fn finish_poll(
     quota: crate::quota::model::ProviderQuota,
 ) {
     if cache::write_provider(work_root, provider, &quota).is_ok() {
+        if let Err(error) = history::record_successful_observation(work_root, provider, &quota) {
+            eprintln!("quota: {provider}: {error}");
+        }
         record_success(provider, state);
     } else {
         record_error(

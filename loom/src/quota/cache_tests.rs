@@ -206,3 +206,40 @@ fn at_most_one_window_per_kind_is_kept_five_hour_first() {
     assert_eq!(quota.windows[0].used_percent, 20.0);
     assert_eq!(quota.windows[1].kind, WindowKind::SevenDay);
 }
+
+#[test]
+fn snapshot_write_keeps_the_existing_serialized_shape() {
+    let dir = tempdir().unwrap();
+    let quota = sample_quota();
+
+    write_provider(dir.path(), "claude", &quota).unwrap();
+
+    let body = std::fs::read_to_string(provider_path(dir.path(), "claude")).unwrap();
+    let value: serde_json::Value = serde_json::from_str(&body).unwrap();
+    assert_eq!(
+        value,
+        serde_json::json!({
+            "observed_at": 1_788_523_200,
+            "windows": [
+                { "kind": "five-hour", "used_percent": 48.0, "resets_at": 1_788_531_180 },
+                { "kind": "seven-day", "used_percent": 31.0, "resets_at": 1_788_876_000 }
+            ],
+            "plan": null,
+            "error": null
+        })
+    );
+}
+
+#[test]
+fn recording_a_failure_does_not_create_a_history_observation() {
+    let dir = tempdir().unwrap();
+    write_provider(dir.path(), "claude", &sample_quota()).unwrap();
+
+    record_failure(dir.path(), "claude", "HTTP 500").unwrap();
+
+    let history = crate::quota::read_history(dir.path(), "claude", 0, None);
+    assert_eq!(
+        history.diagnostics.source,
+        crate::quota::HistorySourceState::Missing
+    );
+}

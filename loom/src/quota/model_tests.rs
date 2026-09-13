@@ -82,3 +82,23 @@ fn normalize_epoch_passes_seconds_through_unchanged() {
 fn normalize_epoch_divides_milliseconds_down_to_seconds() {
     assert_eq!(normalize_epoch(1_788_728_400_000), 1_788_728_400);
 }
+
+#[test]
+fn quota_windows_keep_the_shared_history_wire_shape() {
+    let window = QuotaWindow {
+        kind: WindowKind::FiveHour,
+        used_percent: 48.5,
+        resets_at: Some(1_000),
+    };
+
+    let value = serde_json::to_value(window).unwrap();
+
+    assert_eq!(
+        value,
+        serde_json::json!({
+            "kind": "five-hour",
+            "used_percent": 48.5,
+            "resets_at": 1_000
+        })
+    );
+}
