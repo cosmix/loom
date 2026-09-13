@@ -286,6 +286,21 @@ by hand, where each one passed.
 **Detection:** when every criterion fails instantly, including ones that cannot fail, suspect the
 shared prefix and read the stage's `setup` first.
 
+## A Must-Fail Probe That Counts Any Non-Zero Exit Passes When the Harness Never Started (2026-09-13)
+
+**What happened:** the srt confinement e2e (`orchestrator/terminal/native/tests_confinement_e2e.rs`) treated a write probe as refused when `srt --settings <capsule> -c 'touch <path>'` exited non-zero and the file was unchanged. On its first real run outside the Claude Code sandbox, srt crashed (an uncaught Node.js exception) under the knowledge capsule. Every must-fail probe in that test "passed"; only its first must-succeed probe failed, reporting `Node.js v22.18.0` because the helper kept only the last stderr line. The orchestrator had committed the test after seeing only its skip path, since srt cannot run inside the Claude Code sandbox.
+
+**Why:** a negative probe cannot tell a sandbox refusal from a sandbox that never ran, unless it proves the command inside actually executed. Keeping only the last stderr line then hid the crash's cause.
+
+**Prevention:**
+
+- A negative probe must show the command inside ran: print a sentinel before the action and the action's own exit code after it (`echo ALIVE; touch p; echo RC=$?`). Without the sentinel, the probe fails as "harness did not start".
+- Run one control command per configuration before its probes.
+- Failure messages carry the full stderr (or its first 40 lines), never the last line.
+- Treat a test that has only ever taken its skip path as unverified, and say so wherever it is reported.
+
+**Fix:** the probes print a sentinel and the action's exit code, each capsule gets a control run first, failures carry the full stderr, and the four srt tests are `#[serial]`.
+
 ## A TMPDIR Inside the Checkout Lets Tests Write Into the Live Repo and .loom/work (2026-09-13)
 
 **What happened:** a baseline run for this plan pointed TMPDIR at `loom/target/token-optimization-checks`, inside the checkout. `cargo test --all-targets` failed 290 tests (283 lib, 7 e2e): clean, init cleanup, knowledge check/sync, memory "outside git repo", reconcile_graph, hook target/user_prompt e2e; example panics `commands/memory/handlers/tests.rs:34` NotFound, `commands/knowledge/tests_check.rs:149` failed to get current dir. Between 00:12:36 and 00:12:54 UTC that same run also mutated LIVE state of the running plan session: it wrote a junk `## Test Entry` / `test/file.rs - Test description` section into the real `doc/loom/knowledge/entry-points.md` (restored with `git restore`), fixture state into the live `.loom/work/` (`disputes/build-api/1/request.md`, `context/test-plan/stage-a/`, `context/default/stage-1/`, `context/_local/map-.tmpQ8ePxd/`), a false crash report `.loom/work/crashes/20260913-001236-knowledge-bootstrap.md` ("Process no longer running") for the live session, and a rewrite of `.loom/work/config.toml` (content still correct afterwards; no prior copy to diff). The ad-hoc memory journal present at session start was gone afterward. A rerun with TMPDIR outside the repo passed 4,575/0 and wrote none of this.
