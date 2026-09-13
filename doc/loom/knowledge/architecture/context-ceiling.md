@@ -5,11 +5,12 @@ sources:
 - loom-hooks/post-tool-use.sh
 - loom/src/orchestrator/terminal/native/wrapper.rs
 - loom/src/orchestrator/monitor/detection.rs
-verified: 7d6a14caf1750cc1e516519e650e2ee68641e0a1
+- loom/src/fs/work_dir/config_sections.rs
+verified: 499b09b6297aeee4896a66df3da86d00f652a618
 ---
 # Context Ceiling
 
-> The absolute resident-token ceiling: resolution order, and the three independent thresholds (hook, daemon, native compaction) that enforce it.
+> Resident-token ceiling: resolution tiers and three thresholds
 
 ## The Context Ceiling: Three Independent Thresholds, One Number
 
@@ -51,18 +52,26 @@ landing past the model's own window.
 
 Read the resolved value in code with `fs::work_dir::resolve_context_ceiling_tokens(work_dir,
 stage_ceiling)` — the one resolver. Resolution order: `stage.context_ceiling_tokens` ->
-`.work/config.toml [context] ceiling_tokens` -> `DEFAULT_CONTEXT_CEILING_TOKENS` (800,000,
+`.work/config.toml [context] ceiling_tokens` -> the user tier's `[context] ceiling_tokens` in
+`~/.loom/config.toml` -> `DEFAULT_CONTEXT_CEILING_TOKENS` (800,000,
 `models/constants.rs`) — 80% of the 1M-token `DEFAULT_MODEL_CONTEXT_WINDOW_TOKENS` via
 `CONTEXT_CEILING_FRACTION`; subagents default to the same 800,000 via
 `DEFAULT_SUBAGENT_CEILING_TOKENS`, because a subagent launches on the same 1M-window model as its
 parent. The two constants stay separate in name only, so `[context] ceiling_tokens` and
 `subagent_ceiling_tokens` remain independently overridable even though their built-in values match.
+The user tier fills the ceiling only when the project's `[context]` sets NEITHER `ceiling_tokens`
+NOR `model_window_tokens`: a project window is a project-tier statement about the ceiling, so a
+user ceiling sized for another window never overrides a plan's smaller one
+(`ContextConfig::resolve_with_user_ceiling`, `fs/work_dir/context_config.rs:168`, shared by
+`read_context_config` and `resolve_context_ceiling_tokens` in `fs/work_dir/config_sections.rs`).
+`subagent_ceiling_tokens` has no user-tier counterpart. Earlier versions of this page listed only
+the stage, project and default tiers.
 The 1.5x auto-compact env var is separately clamped to `AUTO_COMPACT_WINDOW_MAX_TOKENS` (1,000,000)
 before export, since the installed binary re-clamps to `[1, 1_000_000]` and then again to the
 model's own context window.
 
 The shell hook never parses TOML or stage YAML. Its internal
-`loom hook context-ceilings` call loads both through Rust and prints one validated
+`loom hook context-ceilings` call (bounded to 3 s by `loom_run_bounded`) loads both through Rust and prints one validated
 `<main>:<subagent>` pair. `loom-hooks/post-tool-use.sh` caches that pair at
 `.work/heartbeat/<stage>.<session>.context-ceilings`, then selects the main or subagent half after
 classifying the hook payload. The main value includes the stage override; the subagent value is

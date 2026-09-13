@@ -266,3 +266,25 @@ only tracked `DONE-` plan.
 the file on disk.
 
 **Fix:** a follow-up commit stopped tracking the `DONE-` file; it stays on disk.
+
+## An Agent Doc May Only Name Commands Its Guard Allows (2026-09-13)
+
+**What happened:** job-lifecycle's `agents/loom-codex-forwarder.md` told a backgrounded forwarder
+to run `loom subagents wait --receipt` or `loom subagents watch`. `codex-forward-guard.sh`
+authorizes only the exact wrapper argv plus one forward per transcript, so every such call was
+blocked. In the same plan a fix brief told a worker to assert that no agent definition declares
+`maxTurns`; three agent files declare `maxTurns: 150`, so the test failed against the correct tree.
+
+**Why:** the doc and the guard were edited by different units, and nothing tests a doc's commands
+against its guard. The brief read "no forced maxTurns reduction" as "no maxTurns key" without
+looking at the tree.
+
+**Prevention:**
+
+- Every command an agent doc tells a guarded agent to run must pass that agent's guard; grep the
+  doc's backticked commands against the guard's allowlist.
+- Before briefing a pinning test, `rg` the value in the tree. A no-reduction invariant pins the
+  current value as a floor.
+
+**Fix:** IV rewrote the forwarder doc: a backgrounded forwarder makes no further tool call, and the
+orchestrator recovers via the exact receipt (`agents/loom-codex-forwarder.md:54-62`).

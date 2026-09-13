@@ -1,6 +1,6 @@
 # Status Data Model
 
-> Where each field shown by `loom status` (static, compact, and `--live`) comes from, and what the live TUI does not yet surface.
+> Where each loom status field comes from
 
 ## Sources of Truth
 

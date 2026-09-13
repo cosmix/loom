@@ -1,6 +1,6 @@
 # Terminal Backends
 
-> The native and tmux session backends behind one dispatcher, lane resolution, and session-recorded dispatch.
+> Native and tmux session backends, lane resolution
 
 ## Two Lanes Behind One Dispatcher
 

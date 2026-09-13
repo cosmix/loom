@@ -30,7 +30,7 @@ Full `loom/src/` module tree, `.work/` state layout, repo-root asset directories
 
 ## Context Budget Enforcement
 
-`context_ceiling_tokens` — an ABSOLUTE resident-token ceiling, resolved stage -> config -> default, enforced at three independent thresholds (1.0x hook, 1.25x daemon, 1.5x native compaction).
+`context_ceiling_tokens` — an ABSOLUTE resident-token ceiling, resolved stage -> project `[context]` -> user `~/.loom/config.toml` `[context]` -> default, enforced at three independent thresholds (1.0x hook, 1.25x daemon, 1.5x native compaction).
 
 → [Context Ceiling](architecture/context-ceiling.md)
 
@@ -244,3 +244,7 @@ A daemon thread (`loom/src/quota/poller.rs`) polls the Claude OAuth usage endpoi
 `loom status --web [PORT]` serves an embedded React SPA over HTTP/WebSocket, streaming the same `StatusData` the live TUI renders.
 
 → [Web Dashboard](architecture/web-dashboard.md)
+
+## Token Accounting and Receipts [DETAILED]
+
+`loom usage` provider ledger and `--compare`, the certified criterion cache, forward/read/worker-brief receipt lifecycles, exact waits and their hook phases: [architecture/token-accounting-and-receipts.md](architecture/token-accounting-and-receipts.md).

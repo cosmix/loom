@@ -1,6 +1,6 @@
 # Directory Structure
 
-> Full loom/src module tree, the .work/ state layout, and the repo-root asset directories.
+> loom/src module tree, state layout, root assets
 
 ## Directory Structure
 

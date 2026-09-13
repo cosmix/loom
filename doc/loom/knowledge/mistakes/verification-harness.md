@@ -293,3 +293,38 @@ shared prefix and read the stage's `setup` first.
 **Fix:** reran with the harness TMPDIR outside the repo; the stray files are left for operator cleanup — agents never edit `.loom/work` directly. The plan records the host prerequisite.
 
 TMPDIR placement is only one of two leaks into a live session: even with TMPDIR correctly outside the repo, hook tests (`codex-forward-guard-blocks-edit.sh` and siblings) still inherited `LOOM_STAGE_ID`/`LOOM_SESSION_ID`/`LOOM_WORK_DIR` from the running session and wrote fake forward records to that session's live `.loom/work/subagents/<stage>/codex.jsonl` — a second leak that survives a correct TMPDIR. Clear the `LOOM_*` session variables before running hook tests, the same way TMPDIR must point outside the repo.
+
+**Fixed (job-lifecycle, 2026-09-13):** each `codex-forward-guard-*` test now unsets `LOOM_STAGE_ID`, `LOOM_SESSION_ID`, `LOOM_WORK_DIR`, `LOOM_SESSION_TYPE` and `LOOM_MAIN_AGENT_PID` on its own line 3 (`loom-hooks/tests/codex-forward-guard-blocks-edit.sh:3`). The unset must live inside the test script: `commit-filter.sh` blocks an orchestrator's Bash call that unsets `LOOM_MAIN_AGENT_PID`. Detection when in doubt: compare the line count of `.loom/work/subagents/<stage>/codex.jsonl` before and after a hook-suite run.
+
+## Gate Environment Traps Found by the Token-Optimization Plan (2026-09-13)
+
+- **A long scratch TMPDIR breaks the tmux e2e socket budget.** Under the plan's scratch TMPDIR the
+  stage sandbox makes `/tmp` read-only, the tmux helper falls back to a directory under `$TMPDIR`,
+  and the projected socket path reaches 106 bytes, over the 104-byte `SUN_PATH_LIMIT`: all 7
+  tmux and web-terminal e2e tests panic (`loom/tests/e2e/tmux_backend.rs:145`). The bootstrap
+  baseline passed only because it ran with the short harness TMPDIR. Check
+  `dir + /tmux-<uid>/ + 40` against 104 before choosing a scratch root.
+- **Codex workers' own sandbox sees the plan scratch root read-only**, so a codex worker's one
+  self-check fails every fixture-writing test (54 environmental failures in one unit). Tell codex
+  workers to use `cargo build` or `--no-run` as that check, and never accept a codex report that
+  fixture tests pass.
+- **A no-verify codex wave never compiled.** Three compile errors surfaced only when the
+  orchestrator built after the wave. Build all targets after each codex wave, before dispatching a
+  dependent one.
+- **A hook that gains a `source` line breaks the Rust fixtures that install it.**
+  `post-tool-use.sh` began sourcing `_read_ledger.sh`, but the `HookFixture` in
+  `fs/permissions/hooks/policy_tests.rs` installed only `_common.sh`, so the hook exited nonzero;
+  standard stages ran scoped filters and the full lib suite first ran in IV. When a hook gains a
+  source line, find every Rust fixture that installs that hook and install the helper too.
+- **A single-file integration target that includes the shared helpers** through a `#[path]` module
+  fails `clippy -D warnings` with dead_code for each helper it does not call, while `cargo build`
+  only warns; scope `#[allow(dead_code)]` to that module declaration. An inline plan fixture with
+  an integration-verify stage also fails validation unless it declares acceptance, artifacts or
+  wiring.
+- **Never attribute state writes by running tests inside a live stage session.** Running the
+  forward-guard tests to learn where fake ledger records came from appended five more. Diff state
+  against a disposable copy instead.
+- **A stray 0-byte `.codex` file in the main checkout** made a companion task fail before any model
+  call ("Failed to read project hooks config file ... Not a directory"): codex reads the parent
+  project's config directory from a worktree cwd. Confirm `<repo>/.codex` is a directory or absent
+  before spawning forwarders.

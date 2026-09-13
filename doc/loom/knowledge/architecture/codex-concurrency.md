@@ -100,3 +100,24 @@ carry no `implementer` key, so the lane went to merge without ever being dogfood
 Do not write "as observed in execution" about parallel codex implementers until a stage actually runs
 with codex listed in `implementers`; check `.work/stages/*.md` for the field before claiming runtime
 evidence.
+
+## Wave Planning for Codex-Heavy Stages (2026-09-13)
+
+What the four implementation stages of PLAN-token-optimization-2026-09-13 converged on; each ran
+sol/terra xhigh units through `loom-codex-forwarder`:
+
+- Split the stage's briefs into waves of disjoint file sets; a compile dependency inside a stage is
+  a serial wave, not an extra worktree. Pin every cross-unit contract (marker channel, receipt path
+  and fields, CLI shape) verbatim in each brief, so parallel units agree without reading each
+  other's code.
+- Keep one forward to about three items: one module pair plus tests at xhigh ran 24-30 minutes,
+  past the forwarder's 600 s Bash call (see
+  [Codex Lane Rogue Wrapper](../mistakes/codex-lane-rogue-wrapper.md)).
+- Shared files get one writer per wave: `loom-hooks/tests/run-all.sh` lists every hook test
+  explicitly, and `loom/maintainability-baseline.txt` fails on stale entries.
+- A new hook helper file needs edits outside most stages' ownership (the `include_str!` registry in
+  `loom/src/fs/permissions/constants.rs`, the run-all list), so keep shell work inside hooks the
+  stage already owns, or grant those files.
+- After each settled wave: `cargo fmt`, build all targets, run the new modules' tests, re-check the
+  400/50 limits, then dispatch the next wave. Codex workers skip verification by design, and their
+  own sandbox cannot run fixture tests under the plan's scratch root.

@@ -1,6 +1,6 @@
 # Merge Flow
 
-> How a completed worktree stage reaches the target branch: the daemon writes Completed first, the sync loop runs the first merge attempt, and every failure outcome lands in a visible stage state.
+> How a completed stage reaches its target branch
 
 ## Merge Flow
 

@@ -2,7 +2,9 @@
 sources:
 - loom/src/fs/knowledge/catalog.rs
 - loom/src/commands/knowledge/check.rs
-verified: 054528e508d51ede343e254590cdb73ae00f7df6
+- loom/src/fs/knowledge/catalog/issue.rs
+- loom/src/fs/knowledge/catalog/evidence.rs
+verified: 499b09b6297aeee4896a66df3da86d00f652a618
 ---
 # Knowledge Hierarchy
 
@@ -100,11 +102,12 @@ from `loom knowledge check` rather than being repaired automatically.
 An earlier version of this doc described a `gc`-based system with two disagreeing
 link-form checks, and a later one listed four issue kinds plus an index-staleness
 text check. Neither matches the tree: there is no link-form rule and no
-index-staleness check.
+index-staleness check. The heading's "Nine" is historical: `EvidenceUnavailable`
+(2026-09-13) made it ten, and the knowledge CLI cannot rename a heading.
 
 `fs::knowledge::catalog::build` walks every curated markdown file under the
 knowledge root (recursing into category directories, skipping `INDEX.md` and
-dotfiles) and reports nine `CatalogIssue` kinds (`catalog/issue.rs`), sorted
+dotfiles) and reports ten `CatalogIssue` kinds (`catalog/issue.rs`), sorted
 deterministically by `catalog/order.rs`:
 
 - **`DuplicateHeading`** — the same normalized H2+ anchor occurs more than once in
@@ -120,17 +123,29 @@ deterministically by `catalog/order.rs`:
   resolve (see *Reference classification* below).
 - **`EvidenceChanged`** — a file's frontmatter declares `sources` and a `verified`
   revision, and `git diff --name-only <verified>..HEAD -- <sources>` lists one of
-  them (`fs/knowledge/catalog/evidence.rs`; one git call per file, and any git
-  failure skips the check for that file).
+  them (`fs/knowledge/catalog/evidence.rs`). `EvidenceCollector` defers the git
+  work until every file is parsed, so files declaring the same `verified` and
+  sources share one bounded probe (`MAX_GIT_OUTPUT_BYTES`, 1 MiB). An earlier
+  version of this bullet said any git failure skips the check; it now reports
+  the next kind.
+- **`EvidenceUnavailable`** — declared evidence could not be assessed, with a
+  reason: `missing_revision`, `invalid_revision`, `missing_repository`,
+  `git_unavailable`, `command_failed` or `resource_limit` (`catalog/issue.rs`).
 - **`UnverifiableReference`** — a backticked path classified example, runtime,
   external or historical that does not resolve; a note, since such a path is not
   expected to exist.
 - **`OversizedSection`**, **`OversizedFile`**, **`OversizedIndex`** — the size
   limits under *Thresholds* below.
 
-`EvidenceChanged` and `UnverifiableReference` are review-only
+`EvidenceChanged`, `EvidenceUnavailable` and `UnverifiableReference` are review-only
 (`CatalogIssue::is_review_only`): they print as `review:` / `note:` lines, land in
 the JSON `review` array instead of `issues`, and never count toward `--strict`.
+`--strict-evidence` (`commands/knowledge/check.rs:36-58`) additionally counts
+`EvidenceChanged` and `EvidenceUnavailable`, and fails on a missing knowledge root.
+Stage gates use `--strict` alone: most pages were never assessed against their
+sources, so a corpus-wide `--strict-evidence` gate fails on unreviewed drift, not
+on a defect. Changed evidence stays a review signal until someone re-reads the
+sources and runs `loom knowledge annotate <target> --verified HEAD`.
 
 **Reference classification** (`chunker/references.rs::classify_reference`, applied
 to each backticked span ending in a source extension — rs, tsx, ts, py, go, sh, md,

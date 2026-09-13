@@ -161,3 +161,19 @@ dedicated knowledge-reorganization project, not part of token-governor correctne
   the dedicated reorganization project named above, not a per-plan knowledge-distill stage. A stage
   hitting this should confirm (as here) that its own additions are clean, then treat the residual
   count as this pre-existing, already-tracked concern rather than attempting to clear it inline.
+
+## File Tools Are Blocked on Knowledge Files, and No Command Renames a Heading (2026-09-13)
+
+The worktree file guard refuses Edit and Write under `doc/loom/knowledge/` ("knowledge files are
+recorded through `loom knowledge update`, not file tools"), in a knowledge-distill stage too. The
+only in-place channel is `replace-section`, which rewrites a whole section body and keeps its
+heading. Nothing renames or deletes a heading, so a count or status in a heading goes stale: the
+knowledge-hierarchy page still says "Nine" issue kinds, with a correction in its body. A surgical
+fix inside a long section means regenerating the whole body (extract it, apply exact-once
+substitutions, pipe the result to `replace-section` from a file). `loom-control-complete.sh` also
+rejects a Bash command line that merely resembles a completion command, so a long body belongs in a
+file fed on stdin, not an inline heredoc.
+
+`INDEX.md` sits at its 16 384-byte `OversizedIndex` budget: it was 1 byte over before the
+token-optimization distill wrote anything. Every new tier-2 topic adds a row, so each one has to be
+paid for with shorter blurbs (`loom knowledge annotate <target> --blurb`).

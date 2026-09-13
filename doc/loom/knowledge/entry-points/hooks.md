@@ -1,6 +1,6 @@
 # Hooks
 
-> Every hook script and the event it binds to, _common.sh's command-matching and subagent-detection helpers, and the registration sites a new hook needs.
+> Hook scripts, their events, command matching
 
 ## Hooks
 
