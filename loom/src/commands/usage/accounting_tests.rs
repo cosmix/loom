@@ -12,6 +12,7 @@ fn request(stamp: &str, usage: TokenUsage) -> Result<Request> {
         tool_uses: Vec::new(),
         thinking_chars: 0,
         text_chars: 0,
+        normalization: Default::default(),
     })
 }
 

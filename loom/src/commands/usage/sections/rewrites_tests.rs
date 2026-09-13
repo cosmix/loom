@@ -19,6 +19,7 @@ fn request(model: &str, resident_input: u64) -> Request {
         tool_uses: Vec::new(),
         thinking_chars: 0,
         text_chars: 0,
+        normalization: Default::default(),
     }
 }
 
@@ -32,11 +33,18 @@ fn synthetic_row_following_a_large_residency_request_is_not_a_rewrite() {
         path: std::path::PathBuf::from("test.jsonl"),
         scope: Scope::Main,
         project_slug: "project".to_owned(),
+        project_path: None,
         session_id: "session-1".to_owned(),
         agent_id: None,
         agent_type: None,
+        stage_id: None,
+        loom_session_id: None,
         first_user_entry: None,
-        entries: vec![Entry::Assistant(previous), Entry::Assistant(current)],
+        entries: vec![
+            Entry::Assistant(Box::new(previous)),
+            Entry::Assistant(Box::new(current)),
+        ],
+        diagnostics: Default::default(),
     };
 
     let report = build(&[transcript]);

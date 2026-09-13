@@ -46,9 +46,13 @@
 //! - Subsequent criteria continue to execute (fail-fast is not the default)
 
 mod cache;
+mod cache_contract;
+mod cache_executable;
+mod cache_fingerprint;
 mod cache_ignore;
 mod config;
 mod confine;
+mod criterion_eval;
 mod executor;
 mod result;
 mod runner;

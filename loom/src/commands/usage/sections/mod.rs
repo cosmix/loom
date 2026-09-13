@@ -29,9 +29,14 @@ pub struct Report {
     pub rewrites: rewrites::CacheRewrites,
     pub lifecycle: lifecycle::Lifecycle,
     pub edits: edits::EditRequests,
+    pub(crate) provider_ledger: super::provider_types::ProviderLedger,
 }
 
-pub fn build(transcripts: &[Transcript], windowing: Windowing) -> Report {
+pub(crate) fn build(
+    transcripts: &[Transcript],
+    windowing: Windowing,
+    provider_ledger: super::provider_types::ProviderLedger,
+) -> Report {
     Report {
         totals: totals::build(transcripts),
         windows: windows::build(transcripts, windowing),
@@ -45,6 +50,7 @@ pub fn build(transcripts: &[Transcript], windowing: Windowing) -> Report {
         rewrites: rewrites::build(transcripts),
         lifecycle: lifecycle::build(transcripts),
         edits: edits::build(transcripts),
+        provider_ledger,
     }
 }
 
@@ -61,4 +67,5 @@ pub fn render(report: &Report) {
     rewrites::render(&report.rewrites);
     lifecycle::render(&report.lifecycle);
     edits::render(&report.edits);
+    super::provider_report::render(&report.provider_ledger);
 }

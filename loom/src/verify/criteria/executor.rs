@@ -12,7 +12,7 @@ use wait_timeout::ChildExt;
 use crate::models::stage::CommandConfinement;
 
 use super::config::DEFAULT_COMMAND_TIMEOUT;
-use super::confine::{self, CommandSpec};
+use super::confine::{self, CommandSpec, PreparedCommand};
 use super::result::CriterionResult;
 
 /// Timeout for collecting output from child process pipes
@@ -20,6 +20,10 @@ const OUTPUT_COLLECTION_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// Maximum output size for acceptance criteria commands (10MB)
 const MAX_OUTPUT_SIZE: usize = 10 * 1024 * 1024;
+
+pub(super) const OUTPUT_TRUNCATED_MARKER: &str = "[output truncated at 10MB]";
+pub(super) const OUTPUT_COLLECTION_TIMEOUT_MARKER: &str = "[output collection timed out]";
+pub(super) const OUTPUT_READ_ERROR_MARKER: &str = "[error reading output]";
 
 /// Run a single acceptance criterion (shell command) with default timeout
 ///
@@ -67,14 +71,23 @@ pub fn run_spec_with_timeout(
     timeout: Duration,
     confinement: CommandConfinement,
 ) -> Result<CriterionResult> {
-    let start = Instant::now();
+    let prepared = confine::prepare_confined(spec, working_dir, confinement)?;
+    run_prepared_with_timeout(prepared, timeout)
+}
 
-    let mut child = confine::spawn_confined(spec, working_dir, confinement)?;
+/// Execute a command already prepared by the confinement path.
+pub(super) fn run_prepared_with_timeout(
+    prepared: PreparedCommand,
+    timeout: Duration,
+) -> Result<CriterionResult> {
+    let start = Instant::now();
+    let display = prepared.display().to_string();
+    let mut child = prepared.spawn()?;
     let output = OutputReaders::spawn(&mut child);
 
     let wait_result = child
         .wait_timeout(timeout)
-        .with_context(|| format!("Failed to wait for command: {spec}"))?;
+        .with_context(|| format!("Failed to wait for command: {display}"))?;
 
     let duration = start.elapsed();
     let (stdout, stderr) = output.collect();
@@ -82,7 +95,7 @@ pub fn run_spec_with_timeout(
     match wait_result {
         // Command completed within timeout
         Some(status) => Ok(CriterionResult::new(
-            spec.to_string(),
+            display,
             status.success(),
             stdout,
             stderr,
@@ -95,7 +108,7 @@ pub fn run_spec_with_timeout(
             kill_child_process(&mut child);
 
             Ok(CriterionResult::new(
-                spec.to_string(),
+                display,
                 false, // failed due to timeout
                 stdout,
                 format!(
@@ -155,7 +168,7 @@ fn spawn_reader<R: Read + Send + 'static>(stream: Option<R>) -> mpsc::Receiver<S
 fn collect_stream(stream: mpsc::Receiver<String>) -> String {
     stream
         .recv_timeout(OUTPUT_COLLECTION_TIMEOUT)
-        .unwrap_or_else(|_| "[output collection timed out]".to_string())
+        .unwrap_or_else(|_| OUTPUT_COLLECTION_TIMEOUT_MARKER.to_string())
 }
 
 /// Read a stream to string, handling errors gracefully
@@ -177,7 +190,8 @@ fn read_stream_to_string<R: Read>(mut stream: R) -> String {
                     // to prevent broken pipe errors
                     let mut discard = [0u8; 8192];
                     while stream.read(&mut discard).unwrap_or(0) > 0 {}
-                    buf.extend_from_slice(b"\n[output truncated at 10MB]");
+                    buf.extend_from_slice(b"\n");
+                    buf.extend_from_slice(OUTPUT_TRUNCATED_MARKER.as_bytes());
                     break;
                 }
                 let to_copy = n.min(remaining);
@@ -186,13 +200,14 @@ fn read_stream_to_string<R: Read>(mut stream: R) -> String {
                     // Hit the limit mid-chunk
                     let mut discard = [0u8; 8192];
                     while stream.read(&mut discard).unwrap_or(0) > 0 {}
-                    buf.extend_from_slice(b"\n[output truncated at 10MB]");
+                    buf.extend_from_slice(b"\n");
+                    buf.extend_from_slice(OUTPUT_TRUNCATED_MARKER.as_bytes());
                     break;
                 }
             }
             Err(_) => {
                 if buf.is_empty() {
-                    return "[error reading output]".to_string();
+                    return OUTPUT_READ_ERROR_MARKER.to_string();
                 }
                 break;
             }
@@ -259,7 +274,7 @@ mod tests {
         let result = read_stream_to_string(Cursor::new(data));
 
         // Should contain the truncation message
-        assert!(result.contains("[output truncated at 10MB]"));
+        assert!(result.contains(OUTPUT_TRUNCATED_MARKER));
 
         // Should not exceed MAX_OUTPUT_SIZE + truncation message length
         assert!(result.len() <= MAX_OUTPUT_SIZE + 50);
@@ -270,7 +285,7 @@ mod tests {
         // Data exactly at the limit should NOT be truncated
         let data = vec![b'y'; MAX_OUTPUT_SIZE];
         let result = read_stream_to_string(Cursor::new(data));
-        assert!(!result.contains("[output truncated"));
+        assert!(!result.contains(OUTPUT_TRUNCATED_MARKER));
         assert_eq!(result.len(), MAX_OUTPUT_SIZE);
     }
 

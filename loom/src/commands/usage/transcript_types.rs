@@ -53,6 +53,31 @@ pub struct Request {
     pub tool_uses: Vec<ToolUse>,
     pub thinking_chars: usize,
     pub text_chars: usize,
+    pub normalization: RequestNormalization,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct RequestNormalization {
+    pub usage_observed: bool,
+    pub first_usage: Option<TokenUsage>,
+    pub first_thinking_output_tokens: Option<u64>,
+    pub usage_observations: usize,
+    pub changed_usage_fields: usize,
+    pub thinking_output_tokens: Option<u64>,
+    pub invalid_thinking_output: bool,
+    pub invalid_usage: bool,
+    pub invalid_cache_relation: bool,
+    pub line_ordinal: usize,
+    pub first_usage_timestamp: Option<chrono::DateTime<chrono::Utc>>,
+    pub first_usage_ordinal: usize,
+    pub first_observed_in_range: bool,
+    pub true_fresh_start: Option<bool>,
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+pub struct TranscriptDiagnostics {
+    pub malformed_rows: usize,
+    pub missing_timestamp_rows: usize,
 }
 
 /// Claude Code writes this literal into [`Request::model`] for a synthetic
@@ -85,14 +110,14 @@ pub struct UserEntry {
 
 #[derive(Debug, Clone)]
 pub enum Entry {
-    Assistant(Request),
+    Assistant(Box<Request>),
     User(UserEntry),
 }
 
 impl Entry {
     pub fn timestamp(&self) -> chrono::DateTime<chrono::Utc> {
         match self {
-            Self::Assistant(request) => request.timestamp,
+            Self::Assistant(request) => request.as_ref().timestamp,
             Self::User(entry) => entry.timestamp,
         }
     }
@@ -103,6 +128,9 @@ pub struct Transcript {
     pub path: std::path::PathBuf,
     pub scope: Scope,
     pub project_slug: String,
+    /// Raw transcript cwd retained only long enough for basename-only provider
+    /// attribution. It is never serialized in a usage report.
+    pub project_path: Option<std::path::PathBuf>,
     /// Main session UUID. For a subagent this is its PARENT session's UUID -
     /// that is what makes the parent/child tree the report needs.
     pub session_id: String,
@@ -110,6 +138,9 @@ pub struct Transcript {
     /// Spawn type from loom's hook-side `starts.jsonl` ledger. `None` for
     /// transcripts outside a loom run or when the optional ledger is absent.
     pub agent_type: Option<String>,
+    /// Hook-provided lifecycle metadata. It is absent rather than inferred.
+    pub stage_id: Option<String>,
+    pub loom_session_id: Option<String>,
     /// The transcript's first user entry, captured BEFORE the `since` cutoff
     /// is applied. Spawn-prompt classification reads it, and a cutoff that
     /// dropped it would silently reclassify every long-running subagent from
@@ -117,12 +148,13 @@ pub struct Transcript {
     pub first_user_entry: Option<UserEntry>,
     /// File order, deduplicated, entries older than the `since` cutoff dropped.
     pub entries: Vec<Entry>,
+    pub diagnostics: TranscriptDiagnostics,
 }
 
 impl Transcript {
     pub fn requests(&self) -> impl Iterator<Item = &Request> {
         self.entries.iter().filter_map(|entry| match entry {
-            Entry::Assistant(request) => Some(request),
+            Entry::Assistant(request) => Some(request.as_ref()),
             Entry::User(_) => None,
         })
     }

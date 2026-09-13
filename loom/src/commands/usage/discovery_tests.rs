@@ -3,6 +3,13 @@ use chrono::{Duration, Utc};
 
 use super::*;
 
+fn range() -> super::super::time_range::TimeRange {
+    super::super::time_range::TimeRange {
+        since: Utc::now() - Duration::days(1),
+        until: None,
+    }
+}
+
 #[test]
 fn parse_since_accepts_durations_and_dates() -> Result<()> {
     let before = Utc::now();
@@ -149,7 +156,8 @@ fn collect_projects_skips_unreadable_project_directory_under_sweep() {
     let still_readable = std::fs::read_dir(&blocked).is_ok();
 
     let options = DiscoveryOptions {
-        since: Utc::now() - Duration::days(1),
+        range: range(),
+        claude_root: None,
         project: None,
         all: true,
         stage: None,
@@ -170,4 +178,54 @@ fn collect_projects_skips_unreadable_project_directory_under_sweep() {
         result.expect("an unreadable project directory should be skipped, not fail the sweep");
     assert_eq!(files.len(), 1);
     assert_eq!(files[0].project_slug, "good-project");
+}
+
+#[test]
+fn explicit_root_discovers_old_mtime_file_without_home_fallback() -> Result<()> {
+    let root = tempfile::tempdir()?;
+    let project = root.path().join("fixture-project");
+    std::fs::create_dir(&project)?;
+    let transcript = project.join("session.jsonl");
+    std::fs::write(
+        &transcript,
+        concat!(
+            "{\"type\":\"assistant\",\"timestamp\":\"2026-09-12T20:00:00Z\",",
+            "\"message\":{\"content\":[],\"usage\":{\"output_tokens\":1}}}\n"
+        ),
+    )?;
+    let file = std::fs::OpenOptions::new().write(true).open(&transcript)?;
+    file.set_times(std::fs::FileTimes::new().set_modified(std::time::SystemTime::UNIX_EPOCH))?;
+    let options = DiscoveryOptions {
+        range: range(),
+        claude_root: Some(root.path().to_path_buf()),
+        project: None,
+        all: true,
+        stage: None,
+        plan: None,
+    };
+
+    let files = discover(&options)?;
+    let parsed = super::super::transcript::parse(&files[0], &options.range)?;
+
+    assert_eq!(files.len(), 1);
+    assert_eq!(files[0].path, transcript);
+    assert_eq!(parsed.total_usage().output, 1);
+    Ok(())
+}
+
+#[test]
+fn missing_explicit_root_is_empty_and_diagnostic() -> Result<()> {
+    let temp = tempfile::tempdir()?;
+    let options = DiscoveryOptions {
+        range: range(),
+        claude_root: Some(temp.path().join("missing")),
+        project: None,
+        all: true,
+        stage: None,
+        plan: None,
+    };
+
+    assert!(discover(&options)?.is_empty());
+    assert!(root_is_missing(&options));
+    Ok(())
 }

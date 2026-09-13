@@ -35,14 +35,7 @@ pub fn write_provider(work_root: &Path, provider: &str, quota: &ProviderQuota) -
     create_quota_dir(&dir)?;
 
     let path = provider_path(work_root, provider);
-    if let Ok(metadata) = std::fs::symlink_metadata(&path) {
-        if metadata.file_type().is_symlink() {
-            bail!(
-                "refusing to write quota cache through a symlink: {}",
-                path.display()
-            );
-        }
-    }
+    reject_symlink(&path)?;
 
     let content = serde_json::to_string_pretty(quota).context("failed to serialize quota")?;
     atomic_write(&path, &content)
@@ -85,7 +78,7 @@ pub fn record_failure(work_root: &Path, provider: &str, error: &str) -> Result<(
 /// [`WindowKind`] ordered five-hour first, and flatten `plan`/`error` through
 /// [`inline_safe`] - the same hygiene a fresh poll result gets, applied again
 /// here in case an older loom version wrote a less strict cache file.
-fn sanitize(mut quota: ProviderQuota) -> ProviderQuota {
+pub(crate) fn sanitize(mut quota: ProviderQuota) -> ProviderQuota {
     let mut five_hour: Option<QuotaWindow> = None;
     let mut seven_day: Option<QuotaWindow> = None;
 
@@ -111,7 +104,7 @@ fn sanitize(mut quota: ProviderQuota) -> ProviderQuota {
 }
 
 #[cfg(unix)]
-fn create_quota_dir(dir: &Path) -> Result<()> {
+pub(crate) fn create_quota_dir(dir: &Path) -> Result<()> {
     use std::os::unix::fs::DirBuilderExt;
     std::fs::DirBuilder::new()
         .recursive(true)
@@ -121,7 +114,7 @@ fn create_quota_dir(dir: &Path) -> Result<()> {
 }
 
 #[cfg(not(unix))]
-fn create_quota_dir(dir: &Path) -> Result<()> {
+pub(crate) fn create_quota_dir(dir: &Path) -> Result<()> {
     std::fs::create_dir_all(dir)
         .with_context(|| format!("failed to create quota directory: {}", dir.display()))
 }
@@ -130,7 +123,7 @@ fn create_quota_dir(dir: &Path) -> Result<()> {
 /// `path`; the containing directory is fsynced so the rename itself survives
 /// a crash. Single-writer (the quota poller thread), so no advisory lock is
 /// taken - readers already tolerate a torn or missing file.
-fn atomic_write(path: &Path, content: &str) -> Result<()> {
+pub(crate) fn atomic_write(path: &Path, content: &str) -> Result<()> {
     let mut tmp_os = path.as_os_str().to_os_string();
     tmp_os.push(".tmp");
     let tmp_path = PathBuf::from(tmp_os);
@@ -151,6 +144,19 @@ fn atomic_write(path: &Path, content: &str) -> Result<()> {
         }
     }
 
+    Ok(())
+}
+
+/// Refuse a target symlink before replacing a cache or history file.
+pub(crate) fn reject_symlink(path: &Path) -> Result<()> {
+    if let Ok(metadata) = std::fs::symlink_metadata(path) {
+        if metadata.file_type().is_symlink() {
+            bail!(
+                "refusing to write quota cache through a symlink: {}",
+                path.display()
+            );
+        }
+    }
     Ok(())
 }
 

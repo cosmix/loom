@@ -15,7 +15,7 @@ pub struct CriterionResult {
     pub timed_out: bool,
     /// Whether this result came from the acceptance pass cache rather than a
     /// real execution — see `super::cache`. Always `false` for results
-    /// built via [`Self::new`]; only [`Self::cached`] sets it.
+    /// built via [`Self::new`]; the internal cache-hit constructor sets it.
     pub cached: bool,
 }
 
@@ -42,18 +42,19 @@ impl CriterionResult {
         }
     }
 
-    /// Build a synthesized "passed" result for a cache hit — no process ran.
-    /// `duration` carries the ORIGINAL run's duration (from the stored
-    /// record), not the near-zero cost of the cache lookup, so
-    /// `AcceptanceResult::total_duration` still reflects what the command
-    /// actually costs when it runs for real.
-    pub fn cached(command: String, duration: Duration) -> Self {
+    pub(super) fn cached_verdict(
+        command: String,
+        exit_code: Option<i32>,
+        stdout: String,
+        stderr: String,
+        duration: Duration,
+    ) -> Self {
         Self {
             command,
             success: true,
-            stdout: String::new(),
-            stderr: String::new(),
-            exit_code: Some(0),
+            stdout,
+            stderr,
+            exit_code,
             duration,
             timed_out: false,
             cached: true,
@@ -116,7 +117,8 @@ impl AcceptanceResult {
         }
     }
 
-    /// Get total duration of all criteria
+    /// Current wall-clock work across criteria. Cache hits contribute lookup
+    /// time, while real runs contribute lookup plus execution time.
     pub fn total_duration(&self) -> Duration {
         self.results().iter().map(|r| r.duration).sum()
     }
