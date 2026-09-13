@@ -1,24 +1,6 @@
 #!/usr/bin/env bash
-# poll-guard.sh - PreToolUse hook (matcher: Bash) discouraging wasted turns:
-#
-#   1. A long `sleep N` (N >= 30s) - wait on `loom subagents watch` instead.
-#   2. A read-only polling command line (git status, ls, ...) repeated 3+
-#      times this session - build/test/lint runners are exempt outright.
-#   3. Bash-side `cat`/`head`/`tail`/`sed -n` reads of a file - reuses
-#      read-guard.sh's rules 1-3 verbatim via loom-hooks/_read_discipline.sh.
-#   4. A pathless `git show`/`git diff` - the largest output producer after
-#      Read.
-#
-# See CLAUDE.md rule 14 (token efficiency) and rule 6 ("loom subagents
-# watch", not a hand-rolled poll loop).
-#
-# Input: JSON from stdin - {"tool_name": "Bash", "tool_input": {"command":
-# ...}, "agent_id": ..., "session_id": ...}
-# Exit codes: 0 = allow (optionally with a LOOM_HOOK_WARN additionalContext
-# joining every rule that fired), 1 = jq not installed (non-blocking error),
-# 2 = deny with guidance on stderr (only when the deny switch is enabled AND
-# a live loom session is running above this process - see
-# loom_hook_deny_or_warn in _read_discipline.sh).
+# PreToolUse:Bash hook for long sleeps, repeated polls, Bash-side reads, and pathless `git show`/`git diff`.
+# Warnings collect; only a configured live stage can deny via loom_hook_deny_or_warn in _read_discipline.sh.
 
 set -euo pipefail
 
@@ -26,38 +8,29 @@ source "$(dirname "$0")/_common.sh"
 source "$(dirname "$0")/_read_discipline.sh"
 loom_warn_no_jq "poll-guard.sh"
 
-# --- Rule 1: long sleep -------------------------------------------------
-
-# _loom_sleep_argument - echo the first `sleep` invocation's argv[1] found
-# in LOOM_TOKENS (command position, wrapper-unwrapped), or return 1 if there
-# is none.
-_loom_sleep_argument() {
-	local n=${#LOOM_TOKENS[@]} i=0 at_cmd_pos=1 j base arg
+# _loom_poll_command_indices - echo each command segment's effective command
+# word index. All rule scans use this so wrapper-unwrapping stays identical.
+_loom_poll_command_indices() {
+	local n=${#LOOM_TOKENS[@]} i=0 j
 	while ((i < n)); do
-		if [[ "${LOOM_TOKENS[$i]}" == "%%SEP%%" ]]; then
-			at_cmd_pos=1
-			i=$((i + 1))
-			continue
-		fi
-		if [[ $at_cmd_pos -eq 1 ]] && j=$(loom_tokens_command_word_index "$i"); then
-			base="${LOOM_TOKENS[$j]##*/}"
-			if [[ "$base" == "sleep" ]]; then
-				arg="${LOOM_TOKENS[$((j + 1))]:-}"
-				if [[ -n "$arg" && "$arg" != "%%SEP%%" ]]; then
-					printf '%s' "$arg"
-					return 0
-				fi
-			fi
-		fi
-		at_cmd_pos=0
+		j=$(loom_tokens_command_word_index "$i") && printf '%s\n' "$j"
+		while ((i < n)) && [[ "${LOOM_TOKENS[$i]}" != "%%SEP%%" ]]; do i=$((i + 1)); done
 		i=$((i + 1))
 	done
+}
+
+_loom_sleep_argument() {
+	local j base arg
+	while IFS= read -r j; do
+		base="${LOOM_TOKENS[$j]##*/}"
+		if [[ "$base" == "sleep" ]]; then
+			arg="${LOOM_TOKENS[$((j + 1))]:-}"
+			[[ -n "$arg" && "$arg" != "%%SEP%%" ]] && printf '%s' "$arg" && return 0
+		fi
+	done < <(_loom_poll_command_indices)
 	return 1
 }
 
-# _loom_poll_rule_sleep - warn on `sleep N` >= 30s, accepting sleep's own
-# s/m/h/d unit suffixes. Anything this cannot parse as a number is treated
-# as not matching.
 _loom_poll_rule_sleep() {
 	local arg num unit="" mult=1
 	arg=$(_loom_sleep_argument) || return 0
@@ -79,9 +52,7 @@ _loom_poll_rule_sleep() {
 	return 0
 }
 
-# --- Rule 2: repeated read-only command lines ---------------------------
-
-# _loom_poll_git_is_countable - `git status` always counts; `git log` counts only with no path argument.
+# `git status` always counts; `git log` only without a path argument.
 _loom_poll_git_is_countable() {
 	local j="$1"
 	local sub="${LOOM_TOKENS[$((j + 1))]:-}"
@@ -100,8 +71,7 @@ _loom_poll_git_is_countable() {
 	return 1
 }
 
-# _loom_poll_cat_is_countable - `cat` counts only when its argument is a
-# state-directory path (legacy `.work` or current `.loom/work`).
+# `cat` counts only for legacy `.work` or current `.loom/work` paths.
 _loom_poll_cat_is_countable() {
 	local j="$1"
 	local arg="${LOOM_TOKENS[$((j + 1))]:-}"
@@ -112,12 +82,61 @@ _loom_poll_cat_is_countable() {
 	return 1
 }
 
-# _loom_poll_is_countable - rule 2's allowlist over the already-tokenized
-# command (segment 0's effective command word). Never counts a build/test/
-# lint runner. Deliberately narrow - "when in doubt, do not count".
+_loom_poll_pipeline_only() {
+	local raw="$1" i=0 n=${#1} quote="" ch next
+	[[ "$raw" == *$'\n'* ]] && return 1
+	while ((i < n)); do
+		ch="${raw:$i:1}"
+		if [[ "$quote" == single ]]; then [[ "$ch" == "'" ]] && quote=""
+		elif [[ "$quote" == double ]]; then
+			[[ "$ch" == $'\\' ]] && { i=$((i + 1)); } || { [[ "$ch" == '"' ]] && quote=""; }
+		else
+			[[ "$ch" == $'\\' ]] && { i=$((i + 1)); i=$((i + 1)); continue; }
+			[[ "$ch" == "'" ]] && { quote=single; i=$((i + 1)); continue; }
+			[[ "$ch" == '"' ]] && { quote=double; i=$((i + 1)); continue; }
+			next="${raw:$((i + 1)):1}"
+			case "$ch" in '&' | ';' | '<' | '>') return 1 ;; '|') [[ "$next" == '|' ]] && return 1 ;; esac
+		fi
+		i=$((i + 1))
+	done
+	[[ -z "$quote" ]]
+}
+
+# Only `loom subagents list` with declared flags and one display pipe counts.
+_loom_poll_list_is_countable() {
+	local raw="$1" j i n=${#LOOM_TOKENS[@]} tok base k
+	_loom_poll_pipeline_only "$raw" || return 1
+	j=$(loom_tokens_command_word_index 0) || return 1
+	[[ "${LOOM_TOKENS[$j]##*/}" == loom && "${LOOM_TOKENS[$((j + 1))]:-}" == subagents && "${LOOM_TOKENS[$((j + 2))]:-}" == list ]] || return 1
+	i=$((j + 3))
+	while ((i < n)) && [[ "${LOOM_TOKENS[$i]}" != "%%SEP%%" ]]; do
+		tok="${LOOM_TOKENS[$i]}"
+		case "$tok" in
+		--json | -h | --help | --session=* | --dir=* | --debounce=*) ;;
+		--session | --dir | --debounce) i=$((i + 1)); [[ $i -lt $n && "${LOOM_TOKENS[$i]}" != "%%SEP%%" ]] || return 1 ;;
+		*) return 1 ;;
+		esac
+		i=$((i + 1))
+	done
+	((i == n)) && return 0
+	i=$((i + 1)); j=$(loom_tokens_command_word_index "$i") || return 1
+	((j == i)) || return 1
+	base="${LOOM_TOKENS[$j]##*/}"; k=$((j + 1))
+	case "$base" in
+	head | tail)
+		[[ "${LOOM_TOKENS[$k]:-}" == -n ]] || return 1
+		k=$((k + 1))
+		[[ "${LOOM_TOKENS[$k]:-}" =~ ^[0-9]+$ && $((k + 1)) -eq $n ]] ;;
+	rg) [[ $((k + 1)) -eq $n && "${LOOM_TOKENS[$k]:-}" != "%%SEP%%" ]] ;;
+	*) return 1 ;;
+	esac
+}
+
 _loom_poll_is_countable() {
+	local raw="$1" tok j base
+	_loom_poll_pipeline_only "$raw" || return 1
+	for tok in "${LOOM_TOKENS[@]}"; do [[ "$tok" == "%%SEP%%" ]] && return 1; done
 	_loom_is_verify_runner_command && return 1
-	local j base
 	j=$(loom_tokens_command_word_index 0) || return 1
 	base="${LOOM_TOKENS[$j]##*/}"
 	case "$base" in
@@ -128,37 +147,60 @@ _loom_poll_is_countable() {
 	esac
 }
 
-# _loom_poll_rule_repeat <stripped-command> <agent-id> <fallback-sid> - warn
-# at 3rd/4th identical read-only polling line this session, deny at 5th+.
-_loom_poll_rule_repeat() {
-	local stripped="$1" agent_id="$2" fallback_sid="$3"
-	_loom_poll_is_countable || return 0
+# Echo one active valid receipt ID; missing or malformed ledger data falls open.
+_loom_poll_active_receipt() {
+	local file body rows id
+	local -a active=()
+	[[ -n "${LOOM_WORK_DIR:-}" && -n "${LOOM_STAGE_ID:-}" && -n "${LOOM_SESSION_ID:-}" ]] || return 1
+	file="${LOOM_WORK_DIR}/subagents/${LOOM_STAGE_ID}/forward-receipts.jsonl"
+	[[ -f "$file" ]] || return 1
+	body=$(tail -c 262144 "$file" 2>/dev/null) || return 1
+	[[ -n "$body" ]] || return 1
+	[[ "$body" == \{* ]] || body="${body#*$'\n'}"
+	[[ -n "$body" ]] || return 1
+	rows=$(printf '%s\n' "$body" | jq -rs --arg session "$LOOM_SESSION_ID" '
+		map(select(.loom_session_id == $session) |
+			if ((.receipt_id | type) == "string" and (.state == "queued" or .state == "running" or .state == "succeeded" or .state == "failed" or .state == "canceled"))
+			then {id: .receipt_id, state: .state} else error("malformed forward receipt") end) as $receipts |
+		[$receipts[].id] | unique | .[] as $id |
+		select([$receipts[] | select(.id == $id and (.state == "succeeded" or .state == "failed" or .state == "canceled"))] | length == 0) | $id
+	' 2>/dev/null) || return 1
+	while IFS= read -r id; do [[ -n "$id" ]] && active+=("$id"); done <<<"$rows"
+	[[ ${#active[@]} -eq 1 && "${active[0]}" =~ ^[0-9a-f]{64}$ ]] || return 1
+	printf '%s' "${active[0]}"
+}
 
+# Warn at the third/fourth identical poll and deny-or-warn from the fifth.
+_loom_poll_rule_repeat() {
+	local stripped="$1" agent_id="$2" fallback_sid="$3" is_list=0
+	if _loom_poll_list_is_countable "$stripped"; then is_list=1; else _loom_poll_is_countable "$stripped" || return 0; fi
 	local key
 	key=$(printf '%s' "$stripped" | tr -s '[:space:]' ' ')
 	key="${key# }"
 	key="${key% }"
-
 	local ledger occ
 	ledger=$(_loom_ledger_file "polls" "$agent_id" "$fallback_sid")
 	occ=$(($(_loom_polls_count "$ledger" "$key") + 1))
-
-	if ((occ >= 5)); then
-		loom_hook_deny_or_warn "\`${key}\` has run ${occ} times this session - stop polling and act on what you already know instead of checking again."
-	elif ((occ >= 3)); then
-		loom_hook_note_warn "\`${key}\` has run ${occ} times this session - act on what you already know instead of checking again."
+	if ((occ >= 3)); then
+		local guidance="" receipt
+		if [[ $is_list -eq 1 ]]; then
+			if receipt=$(_loom_poll_active_receipt); then
+				guidance="act on what you know: use \`loom subagents wait --receipt ${receipt} --timeout 3600\`."
+			else
+				guidance="forward state is unresolved; repeated list polling will not resolve it. Use one background \`loom subagents watch --timeout 3600\` or explicit exact-id recovery; never retry or cancel."
+			fi
+		fi
+		if ((occ >= 5)); then
+			loom_hook_deny_or_warn "\`${key}\` has run ${occ} times this session - stop polling and act on what you already know instead of checking again${guidance:+: ${guidance}}"
+		else
+			loom_hook_note_warn "\`${key}\` has run ${occ} times this session - act on what you already know instead of checking again${guidance:+: ${guidance}}"
+		fi
 	fi
 	_loom_ledger_append "$ledger" "$key"
 	return 0
 }
 
-# --- Rule 3: Bash-side file reads (Task C rules 1-3, reused verbatim) ---
-
-# _loom_read_bound_for_head_tail <base> <arg>... - echo "<kind> <lines>" for
-# a head/tail invocation. A byte count (-c/-c<N>/--bytes...) or a follow flag
-# (-f/--follow) is "skip" - out of scope for a LINE-count check entirely,
-# not an unbounded "full" read: `head -c 200 <huge file>` is the least
-# wasteful read possible, and `tail -f` never terminates.
+# Byte counts and follow flags skip line discipline: they are bounded or endless.
 _loom_read_bound_for_head_tail() {
 	local base="$1" tok k=""
 	shift
@@ -185,11 +227,7 @@ _loom_read_bound_for_head_tail() {
 	fi
 }
 
-# _loom_read_bound_for_sed <arg>... - echo "<kind> <lines>" for a
-# `sed -n '<a>,<b>p'` invocation. A range ending at `$` (`<a>,$p`) reads to
-# the last line - "full", not a bounded range, or `sed -n '1,$p' bigfile`
-# would escape the large-file rule entirely. Any other sed usage is "skip" -
-# sed can rewrite text in place without ever printing the whole file.
+# A sed range ending in `$` is full; other non-range forms can rewrite, so skip.
 _loom_read_bound_for_sed() {
 	local tok range=""
 	for tok in "$@"; do
@@ -207,10 +245,6 @@ _loom_read_bound_for_sed() {
 	[[ -n "$range" ]] && printf 'range %s' "$range" || printf 'skip '
 }
 
-# _loom_bash_read_check <cmd-idx> <base> <agent-id> <fallback-sid> - run
-# loom_read_discipline_check against every existing-regular-file path
-# argument of the cat/head/tail/sed segment starting at LOOM_TOKENS[cmd-idx].
-# Stops at the first hard deny - the first path that would deny decides.
 _loom_bash_read_check() {
 	local cmd_idx="$1" base="$2" agent_id="$3" fallback_sid="$4"
 	local n=${#LOOM_TOKENS[@]} i=$((cmd_idx + 1))
@@ -240,9 +274,7 @@ _loom_bash_read_check() {
 		return 0 # `sed` with no arguments reads nothing
 	fi
 
-	# A "full" kind's line count is PATH-specific (`cat a b` names two files),
-	# so it is computed once per file here via _loom_read_full_lines, not by
-	# the caller.
+	# Full-read line counts are path-specific (`cat a b` names two files).
 	local tok read_lines
 	if ((${#args[@]} > 0)); then
 		for tok in "${args[@]}"; do
@@ -256,37 +288,20 @@ _loom_bash_read_check() {
 	return 0
 }
 
-# loom_bash_reads_scan <agent-id> <fallback-sid> - walk LOOM_TOKENS and run
-# _loom_bash_read_check on every cat/head/tail/sed command segment.
+# Check every cat/head/tail/sed segment.
 loom_bash_reads_scan() {
 	local agent_id="$1" fallback_sid="$2"
-	local n=${#LOOM_TOKENS[@]} i=0 at_cmd_pos=1 j base
-	while ((i < n)); do
-		if [[ "${LOOM_TOKENS[$i]}" == "%%SEP%%" ]]; then
-			at_cmd_pos=1
-			i=$((i + 1))
-			continue
-		fi
-		if [[ $at_cmd_pos -eq 1 ]] && j=$(loom_tokens_command_word_index "$i"); then
-			base="${LOOM_TOKENS[$j]##*/}"
-			case "$base" in
-			cat | head | tail | sed) _loom_bash_read_check "$j" "$base" "$agent_id" "$fallback_sid" ;;
-			esac
-		fi
-		at_cmd_pos=0
-		i=$((i + 1))
-	done
+	local j base
+	while IFS= read -r j; do
+		base="${LOOM_TOKENS[$j]##*/}"
+		case "$base" in
+		cat | head | tail | sed) _loom_bash_read_check "$j" "$base" "$agent_id" "$fallback_sid" ;;
+		esac
+	done < <(_loom_poll_command_indices)
 	return 0
 }
 
-# --- Rule 4: pathless `git show`/`git diff` -----------------------------
-
-# _loom_git_arg_names_path <token> - Return 0 when <token> (an argv word of
-# a `git show`/`git diff` segment) names a path rather than a revision: it
-# exists on disk, or contains a `/` or a `:` selector (`HEAD:src/foo.rs`). A
-# revision RANGE (`main..HEAD`, `origin/main..HEAD`) is excluded via the
-# `..` check even with a `/` on one side - never a path. A bare flag or sha
-# falls through to "not a path", leaving the segment pathless.
+# A path exists, contains `/` or `:`, but a revision range never counts as one.
 _loom_git_arg_names_path() {
 	local tok="$1"
 	case "$tok" in
@@ -300,11 +315,6 @@ _loom_git_arg_names_path() {
 	return 1
 }
 
-# _loom_git_segment_is_pathless_show_diff <cmd-word-idx> - Return 0 when the
-# git segment beginning at LOOM_TOKENS[cmd-word-idx] is a `show`/`diff` with
-# no `--`/--stat/--name-only/--name-status AND no argument
-# _loom_git_arg_names_path recognizes as a path (`git diff src/main.rs`,
-# `git show HEAD:src/foo.rs` already scope the read - NOT pathless).
 _loom_git_segment_is_pathless_show_diff() {
 	local j="$1" n=${#LOOM_TOKENS[@]}
 	local sub="${LOOM_TOKENS[$((j + 1))]:-}"
@@ -324,8 +334,6 @@ _loom_git_segment_is_pathless_show_diff() {
 	return 0
 }
 
-# _loom_git_segment_text <cmd-word-idx> - echo the space-joined tokens of
-# the segment starting at LOOM_TOKENS[cmd-word-idx], to name it in a warning.
 _loom_git_segment_text() {
 	local j="$1" n=${#LOOM_TOKENS[@]} i="$1" out=""
 	while ((i < n)) && [[ "${LOOM_TOKENS[$i]}" != "%%SEP%%" ]]; do
@@ -335,27 +343,16 @@ _loom_git_segment_text() {
 	printf '%s' "$out"
 }
 
-# _loom_poll_rule_git_pathless - warn ONCE, naming the command, on the FIRST
-# pathless `git show`/`git diff` segment - per-segment used to duplicate the
-# sentence when a call chains more than one (`git diff && git show`).
+# Warn once for the first pathless show/diff, avoiding duplicate chain warnings.
 _loom_poll_rule_git_pathless() {
-	local n=${#LOOM_TOKENS[@]} i=0 at_cmd_pos=1 j base
-	while ((i < n)); do
-		if [[ "${LOOM_TOKENS[$i]}" == "%%SEP%%" ]]; then
-			at_cmd_pos=1
-			i=$((i + 1))
-			continue
+	local j base
+	while IFS= read -r j; do
+		base="${LOOM_TOKENS[$j]##*/}"
+		if [[ "$base" == "git" ]] && _loom_git_segment_is_pathless_show_diff "$j"; then
+			loom_hook_note_warn "\`$(_loom_git_segment_text "$j")\` ran with no path - run --stat first, then per-file -- <path>"
+			return 0
 		fi
-		if [[ $at_cmd_pos -eq 1 ]] && j=$(loom_tokens_command_word_index "$i"); then
-			base="${LOOM_TOKENS[$j]##*/}"
-			if [[ "$base" == "git" ]] && _loom_git_segment_is_pathless_show_diff "$j"; then
-				loom_hook_note_warn "\`$(_loom_git_segment_text "$j")\` ran with no path - run --stat first, then per-file -- <path>"
-				return 0
-			fi
-		fi
-		at_cmd_pos=0
-		i=$((i + 1))
-	done
+	done < <(_loom_poll_command_indices)
 	return 0
 }
 
@@ -388,9 +385,7 @@ if [[ -z "$STRIPPED" ]]; then
 	exit 0
 fi
 
-# An unterminated quote leaves LOOM_TOKENS untrustworthy - allow with no
-# rule evaluated, rather than trust a partial token list (prefer-modern-
-# tools.sh does the same).
+# Unterminated quotes leave LOOM_TOKENS untrustworthy, so evaluate no rule.
 if loom_tokenize_command "$STRIPPED"; then
 	_loom_poll_rule_sleep
 	_loom_poll_rule_repeat "$STRIPPED" "$AGENT_ID" "${PAYLOAD_SID:-unknown}"
