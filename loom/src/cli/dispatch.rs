@@ -175,6 +175,20 @@ fn dispatch_hook(command: HookCommands) -> Result<()> {
         HookCommands::ForwardReceipt { transcript } => {
             hook::forward_receipt::forward_receipt(&transcript)
         }
+        HookCommands::WorkerBrief {
+            bind_agent,
+            agent_type,
+            transcript,
+        } => hook::worker_brief::worker_brief(bind_agent, agent_type, transcript),
+        HookCommands::ReadReceipt { prepare, check, .. } => {
+            use hook::read_receipt::ReadReceiptMode;
+            let mode = match (prepare, check) {
+                (true, _) => ReadReceiptMode::Prepare,
+                (_, true) => ReadReceiptMode::Check,
+                _ => ReadReceiptMode::Complete,
+            };
+            hook::read_receipt::read_receipt(mode)
+        }
         HookCommands::ProjectTypes => hook::project_types::execute(),
     }
 }
