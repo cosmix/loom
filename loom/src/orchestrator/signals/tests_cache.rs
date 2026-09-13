@@ -391,8 +391,8 @@ fn test_signal_codex_implementers_section_gated() {
              then backgrounds the run"
         );
         assert!(
-            content.contains("status\n  --all") || content.contains("status --all"),
-            "the codex block must name the recovery path for a backgrounded run - \
+            content.contains("loom subagents wait --receipt"),
+            "the codex block must name the exact-receipt recovery path for a backgrounded run - \
              the id the wrapper returns is a Claude Code task id, not a codex job id"
         );
         assert!(

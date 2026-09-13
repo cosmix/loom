@@ -72,19 +72,10 @@ fn compare_observations(
     reasons: &mut Vec<&'static str>,
 ) -> Outcome {
     let mut verdict = Outcome::SupportedCandidate;
-    let mut improved = false;
     for (key, baseline) in baseline {
         let candidate = candidate[key];
         let interval = compare_interval(baseline, candidate, reasons);
-        improved |= interval == Outcome::SupportedCandidate;
         verdict = verdict.worse(interval);
-    }
-    if verdict == Outcome::Rejected {
-        return verdict;
-    }
-    if !improved && verdict == Outcome::SupportedCandidate {
-        reasons.push("quota-reduction-not-established");
-        return Outcome::Inconclusive;
     }
     verdict
 }
