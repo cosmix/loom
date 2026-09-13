@@ -172,6 +172,9 @@ fn dispatch_hook(command: HookCommands) -> Result<()> {
         HookCommands::ReconcileGraph => hook::reconcile_graph::reconcile_graph(),
         HookCommands::PreCompact => hook::pre_compact::pre_compact(),
         HookCommands::ContextCeilings => hook::context_ceilings::context_ceilings(),
+        HookCommands::ForwardReceipt { transcript } => {
+            hook::forward_receipt::forward_receipt(&transcript)
+        }
         HookCommands::ProjectTypes => hook::project_types::execute(),
     }
 }
