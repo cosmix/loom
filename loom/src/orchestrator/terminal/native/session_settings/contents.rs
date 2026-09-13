@@ -1,10 +1,11 @@
 //! The capsule's settings document, built from already-resolved inputs.
 //!
-//! Pure: nothing here reads the environment or the filesystem. In phase 1 of
-//! `doc/plans/PLAN-loom-state-confinement.md` the document carries the grants
-//! each session kind already had from its `.claude/settings.local.json`, plus
-//! the session's scratch grant, the approved-permissions list and the relay
-//! hook.
+//! Pure: nothing here reads the environment or the filesystem. The document
+//! is `sandbox::build_settings`'s for the session's location, plus the plans
+//! read, the session's scratch grant, the approved-permissions list, the
+//! location and control-surface write denies
+//! (`doc/plans/PLAN-loom-state-confinement.md`, sections 10 and 11) and the
+//! kind's hooks.
 
 use anyhow::{Context, Result};
 use serde_json::{json, Value};
@@ -14,17 +15,13 @@ use std::path::Path;
 
 use crate::hooks::HookEvent;
 use crate::models::session::SessionType;
-use crate::sandbox::{
-    carry_forward_denies, strip_worktree_escape_denies, MergedSandboxConfig, STATE_READ_DIRS,
-};
+use crate::sandbox::control_surfaces::SessionDenies;
+use crate::sandbox::{MergedSandboxConfig, SettingsTarget};
 
 /// The relay hook every kind registers (PostToolUse, matcher `Bash`).
 const RELAY_SCRIPT: &str = "loom-relay.sh";
 /// The completion broker's hook; only the kinds that complete through it keep it.
 const CONTROL_COMPLETE_SCRIPT: &str = "loom-control-complete.sh";
-/// Top-level keys copied from the checkout's local settings when the codex
-/// lane is licensed.
-const PLUGIN_KEYS: [&str; 2] = ["enabledPlugins", "extraKnownMarketplaces"];
 
 /// Everything [`capsule_settings`] reads.
 pub(super) struct CapsuleInputs<'a> {
@@ -36,77 +33,50 @@ pub(super) struct CapsuleInputs<'a> {
     /// The canonical state root (`.loom/work`).
     pub state_root: &'a Path,
     pub repo_root: &'a Path,
-    pub hooks_dir: Option<&'a Path>,
+    /// The verified loom hooks directory every registration runs from.
+    pub hooks_dir: &'a Path,
     /// `<scratch_root>/<session-id>`, absolute.
     pub scratch_dir: &'a Path,
     /// Approved rules, already filtered for control surfaces.
     pub approved: &'a [String],
     /// The checkout's `.claude/settings.local.json`, when it has one.
     pub checkout_settings: Option<&'a Value>,
+    /// The location and control-surface write denies, both layers.
+    pub denies: &'a SessionDenies,
 }
 
-/// The capsule document: the sandbox block and permission rules
-/// `sandbox::generate_settings_json` builds from the stage's config
-/// (`defaultMode` and `worktree.bgIsolation` included), the resolved
-/// state-root grants, the scratch grant, the approved list, the checkout's
-/// carried deny rules, the kind's hooks, and (codex lane) the plugin keys. It
-/// never carries an `env` block: `LOOM_WORK_DIR` and every identity variable
-/// come from the wrapper alone.
+/// The capsule document: what `sandbox::build_settings` builds from the
+/// stage's config for the session's location (`defaultMode` and
+/// `worktree.bgIsolation` included, the checkout's deny rules carried, and
+/// with the codex lane its plugin keys), then the plans read, the scratch
+/// grant, the approved list, the session's write denies and the kind's hooks.
+/// The config must pass `sandbox::validate_config` first. It never carries
+/// an `env` block: `LOOM_WORK_DIR` and every identity variable come from the
+/// wrapper alone.
 pub(super) fn capsule_settings(inputs: &CapsuleInputs<'_>) -> Result<Value> {
-    let config = located_config(inputs.sandbox, inputs.worktree_rooted);
-    crate::sandbox::validate_emittable(&config)?;
-    let mut settings = crate::sandbox::generate_settings_json(&config);
-    add_state_root_grants(&mut settings, inputs.state_root, inputs.repo_root)?;
+    crate::sandbox::validate_config(inputs.sandbox)?;
+    let no_checkout_settings = json!({});
+    let mut settings = crate::sandbox::build_settings(
+        inputs.sandbox,
+        &SettingsTarget {
+            is_worktree: inputs.worktree_rooted,
+            state_root: Some(utf8(inputs.state_root)?),
+            existing: inputs.checkout_settings.unwrap_or(&no_checkout_settings),
+            carry_plugin_keys: inputs.sandbox.implementers.includes_codex(),
+        },
+    )?;
+    let plans = inputs.repo_root.join("doc").join("plans");
+    let plans_read = format!("Read(/{}/**)", utf8(&plans)?);
+    extend_strings(&mut settings, &["permissions", "allow"], &[plans_read]);
     add_scratch_grant(&mut settings, inputs.scratch_dir)?;
     extend_strings(&mut settings, &["permissions", "allow"], inputs.approved);
-    let denies = carried_denies(inputs.checkout_settings, inputs.worktree_rooted);
-    extend_strings(&mut settings, &["permissions", "deny"], &denies);
-    if let Some(hooks_dir) = inputs.hooks_dir {
-        settings["hooks"] = capsule_hooks(inputs.kind, hooks_dir);
-    }
-    if inputs.sandbox.implementers.includes_codex() {
-        copy_plugin_keys(&mut settings, inputs.checkout_settings);
-    }
+    let denies = inputs.denies;
+    let deny_write = ["sandbox", "filesystem", "denyWrite"];
+    extend_strings(&mut settings, &deny_write, &denies.deny_write);
+    extend_strings(&mut settings, &["permissions", "deny"], &denies.edit);
+    settings["hooks"] = capsule_hooks(inputs.kind, inputs.hooks_dir);
     settings["hasTrustDialogAccepted"] = json!(true);
     Ok(settings)
-}
-
-/// The stage's config as the session's location sees it. From the checkout,
-/// worktree-relative escape rules (`../../**`, `.worktrees`) would resolve
-/// against the operator's home directory, so they are dropped, as
-/// `sandbox::write_settings` drops them for a main-repository target.
-fn located_config(sandbox: &MergedSandboxConfig, worktree_rooted: bool) -> MergedSandboxConfig {
-    let mut config = sandbox.clone();
-    if !worktree_rooted {
-        strip_worktree_escape_denies(&mut config);
-    }
-    config
-}
-
-/// The absolute spellings of the narrow state-root grants (Claude Code
-/// resolves the `.loom/work` symlink before matching, so a worktree session
-/// needs them; `generate_settings_json` emits the relative ones), the handoff
-/// write grant sessions keep in phase 1, the plans read, and the token-file
-/// read denies.
-fn add_state_root_grants(settings: &mut Value, state_root: &Path, repo_root: &Path) -> Result<()> {
-    let root = utf8(state_root)?;
-    let plans = repo_root.join("doc").join("plans");
-    let mut allow = vec![format!("Read(/{root}/config.toml)")];
-    allow.extend(
-        STATE_READ_DIRS
-            .iter()
-            .map(|dir| format!("Read(/{root}/{dir}/**)")),
-    );
-    allow.push(format!("Edit(/{root}/handoffs/**)"));
-    allow.push(format!("Read(/{}/**)", utf8(&plans)?));
-    extend_strings(settings, &["permissions", "allow"], &allow);
-    let token_denies = crate::fs::permissions::state_root::token_deny_paths(root);
-    extend_strings(
-        settings,
-        &["sandbox", "filesystem", "denyRead"],
-        &token_denies,
-    );
-    Ok(())
 }
 
 /// The session's own scratch directory, writable in both layers: the OS
@@ -125,39 +95,6 @@ fn add_scratch_grant(settings: &mut Value, scratch_dir: &Path) -> Result<()> {
         &[format!("Edit(/{dir}/**)")],
     );
     Ok(())
-}
-
-/// The checkout's own `permissions.deny` rules, carried the way
-/// `sandbox::write_settings` carries a target's existing denies: never a
-/// `Read(` deny, never a knowledge-directory deny, no escape rules from the
-/// checkout, and inert `Write(` rules migrated to `Edit(`.
-fn carried_denies(checkout_settings: Option<&Value>, worktree_rooted: bool) -> Vec<String> {
-    let Some(deny) = checkout_settings
-        .and_then(|settings| settings.pointer("/permissions/deny"))
-        .and_then(Value::as_array)
-    else {
-        return Vec::new();
-    };
-    let existing: Vec<String> = deny
-        .iter()
-        .filter_map(Value::as_str)
-        .map(str::to_owned)
-        .collect();
-    carry_forward_denies(existing, worktree_rooted)
-}
-
-fn copy_plugin_keys(settings: &mut Value, checkout_settings: Option<&Value>) {
-    let (Some(source), Some(target)) = (
-        checkout_settings.and_then(Value::as_object),
-        settings.as_object_mut(),
-    ) else {
-        return;
-    };
-    for key in PLUGIN_KEYS {
-        if let Some(value) = source.get(key) {
-            target.entry(key).or_insert_with(|| value.clone());
-        }
-    }
 }
 
 /// The kind's `hooks` block: loom's global guard set for every kind (the

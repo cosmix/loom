@@ -2,29 +2,44 @@
 //! lifecycle, and what `write_session_capsule` renders into it. Declared as a
 //! sibling module the way `tests_capsule.rs` and `tests_wrapper_env.rs` are
 //! (CLAUDE.md Rule 17 keeps test files split out of the module they cover).
+//! The fixture below is shared with `tests_capsule.rs`, which checks the
+//! capsule's write denies.
 
 use super::*;
-use crate::models::stage::{Implementers, StageType};
+use crate::models::stage::{Implementer, Implementers, StageType};
 use crate::orchestrator::terminal::native::session_settings::{
     write_capsule_file, write_session_capsule, CapsuleRequest,
 };
 use crate::sandbox::control_surfaces::ControlSurfaces;
 use crate::sandbox::MergedSandboxConfig;
 use serde_json::{json, Value};
+use std::collections::BTreeSet;
 use std::os::unix::fs::PermissionsExt;
 use tempfile::TempDir;
+
+pub(super) const ALL_KINDS: [SessionType; 5] = [
+    SessionType::Stage,
+    SessionType::Knowledge,
+    SessionType::Merge,
+    SessionType::BaseConflict,
+    SessionType::Adjudication,
+];
 
 fn mode(path: &Path) -> u32 {
     std::fs::metadata(path).unwrap().permissions().mode() & 0o777
 }
 
-fn default_sandbox() -> MergedSandboxConfig {
+pub(super) fn sandbox_with(lanes: Vec<Implementer>) -> MergedSandboxConfig {
     crate::sandbox::merge_config(
         &Default::default(),
         &Stage::default().sandbox,
         StageType::Standard,
-        &Implementers::default(),
+        &Implementers::new(lanes),
     )
+}
+
+fn default_sandbox() -> MergedSandboxConfig {
+    sandbox_with(vec![Implementer::Claude])
 }
 
 /// `target` spelled relative to the process's current directory, which this
@@ -148,74 +163,110 @@ fn cleanup_session_settings_removes_the_file_and_tolerates_a_missing_one() {
     cleanup_session_settings(&work_dir, "session-cleanup1");
 }
 
-/// A repository with a state root, and where its scratch directories go.
-struct Checkout {
+/// A repository with a state root and a stage worktree, a hooks directory, an
+/// operator home, and where its scratch directories go; every path canonical.
+pub(super) struct Checkout {
     _temp: TempDir,
-    repo: PathBuf,
+    pub(super) repo: PathBuf,
+    pub(super) worktree: PathBuf,
     work_dir: PathBuf,
+    pub(super) hooks_dir: PathBuf,
+    pub(super) home: PathBuf,
     scratch_root: PathBuf,
 }
 
-fn checkout() -> Checkout {
+pub(super) fn checkout() -> Checkout {
     let temp = TempDir::new().unwrap();
-    let repo = temp.path().join("repo");
+    let root = temp.path().canonicalize().unwrap();
+    let repo = root.join("repo");
+    let worktree = repo.join(".worktrees").join("s1");
     let work_dir = repo.join(".loom").join("work");
-    std::fs::create_dir_all(&work_dir).unwrap();
-    let scratch_root = temp.path().join("scratch");
+    let hooks_dir = root.join("hooks");
+    let home = root.join("home");
+    for dir in [&worktree, &work_dir, &hooks_dir, &home] {
+        std::fs::create_dir_all(dir).unwrap();
+    }
     Checkout {
         _temp: temp,
         repo,
+        worktree,
         work_dir,
-        scratch_root,
+        hooks_dir,
+        home,
+        scratch_root: root.join("scratch"),
     }
 }
 
 fn surfaces_for(checkout: &Checkout) -> ControlSurfaces {
-    let state_root = checkout.work_dir.canonicalize().unwrap();
-    ControlSurfaces::new(&state_root, Some(&checkout.scratch_root), &[], None)
+    let scratch = Some(checkout.scratch_root.as_path());
+    ControlSurfaces::new(&checkout.work_dir, scratch, &[], Some(&checkout.home))
 }
 
-fn write_merge_capsule(
+/// Write `kind`'s capsule for a session running in `cwd`.
+pub(super) fn write_capsule(
     checkout: &Checkout,
     session_id: &str,
-    surfaces: &ControlSurfaces,
+    kind: SessionType,
+    cwd: &Path,
+    sandbox: &MergedSandboxConfig,
+    hooks_dir: Option<&Path>,
 ) -> Result<String> {
-    let sandbox = default_sandbox();
     let scratch_dir = checkout.scratch_root.join(session_id);
     write_session_capsule(&CapsuleRequest {
-        kind: SessionType::Merge,
+        kind,
         session_id,
-        sandbox: &sandbox,
-        cwd: &checkout.repo,
+        sandbox,
+        cwd,
         work_dir: &checkout.work_dir,
         repo_root: &checkout.repo,
-        hooks_dir: None,
+        hooks_dir,
         scratch_dir: &scratch_dir,
-        surfaces,
+        surfaces: &surfaces_for(checkout),
+        writable_roots: &[],
     })
+}
+
+fn write_merge_capsule(checkout: &Checkout, session_id: &str) -> Result<String> {
+    write_capsule(
+        checkout,
+        session_id,
+        SessionType::Merge,
+        &checkout.repo,
+        &default_sandbox(),
+        Some(&checkout.hooks_dir),
+    )
+}
+
+pub(super) fn read_capsule(path: &str) -> Value {
+    serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap()
+}
+
+pub(super) fn strings(capsule: &Value, pointer: &str) -> BTreeSet<String> {
+    let array = capsule.pointer(pointer).and_then(Value::as_array);
+    let values = array.into_iter().flatten().filter_map(Value::as_str);
+    values.map(str::to_owned).collect()
 }
 
 #[test]
 fn write_session_capsule_renders_the_approved_list_and_the_scratch_grant() {
     let checkout = checkout();
-    let surfaces = surfaces_for(&checkout);
     let approved = vec!["Bash(cargo test:*)".to_string()];
-    crate::fs::permissions::approved::record_approved(&checkout.work_dir, &approved, &surfaces)
-        .unwrap();
+    crate::fs::permissions::approved::record_approved(
+        &checkout.work_dir,
+        &approved,
+        &surfaces_for(&checkout),
+    )
+    .unwrap();
 
-    let path = write_merge_capsule(&checkout, "session-app1", &surfaces).unwrap();
+    let capsule = read_capsule(&write_merge_capsule(&checkout, "session-app1").unwrap());
 
-    let capsule: Value = serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
-    let allow = capsule["permissions"]["allow"].as_array().unwrap();
+    let allow = strings(&capsule, "/permissions/allow");
     let scratch = checkout.scratch_root.join("session-app1");
     for rule in [
         "Bash(cargo test:*)".to_string(),
         format!("Edit(/{}/**)", scratch.display()),
     ] {
-        assert!(
-            allow.iter().any(|value| value == &json!(rule)),
-            "missing {rule}: {capsule}"
-        );
+        assert!(allow.contains(&rule), "missing {rule}: {capsule}");
     }
 }
 
@@ -226,11 +277,31 @@ fn write_session_capsule_refuses_an_unparseable_checkout_settings_file() {
     std::fs::create_dir_all(&claude_dir).unwrap();
     std::fs::write(claude_dir.join("settings.local.json"), "not json").unwrap();
 
-    let error = write_merge_capsule(&checkout, "session-bad1", &surfaces_for(&checkout))
+    let error = write_merge_capsule(&checkout, "session-bad1")
         .expect_err("an unparseable checkout settings file must refuse the capsule");
 
     assert!(
         format!("{error:#}").contains("settings.local.json"),
         "{error:#}"
+    );
+}
+
+#[test]
+fn a_spawn_without_a_verified_hooks_dir_is_refused_for_every_kind() {
+    let checkout = checkout();
+    let sandbox = default_sandbox();
+    for kind in ALL_KINDS {
+        for cwd in [&checkout.repo, &checkout.worktree] {
+            let error = write_capsule(&checkout, "session-nh1", kind, cwd, &sandbox, None)
+                .expect_err("a spawn with no verified hooks directory must be refused");
+            assert!(
+                format!("{error:#}").contains("hooks directory"),
+                "{kind}: {error:#}"
+            );
+        }
+    }
+    assert!(
+        !checkout.work_dir.join("capsules").exists(),
+        "a refused spawn writes no capsule"
     );
 }

@@ -19,7 +19,7 @@ use shell_escape::escape;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-pub(crate) use host_env::WrapperHostEnv;
+pub(crate) use host_env::{accepted_loom_bin, operator_executable_dirs, WrapperHostEnv};
 
 /// Line continuation inside the generated `exec env -i …` invocation.
 const CONTINUATION: &str = "\\\n";

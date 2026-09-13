@@ -51,8 +51,12 @@ pub const DEFAULT_PRESSURE_CODEX_EFFORT: &str = "xhigh";
 /// blocked codex run with `dangerouslyDisableSandbox` instead: that retry goes
 /// back through the permission gate, and the auto-mode classifier refuses it, so
 /// the lane ends up unusable rather than merely sandboxed.
-pub const CODEX_SANDBOX_WRITE_PATHS: [&str; 2] =
-    ["~/.codex", "~/.claude/plugins/data/codex-openai-codex"];
+pub const CODEX_SANDBOX_WRITE_PATHS: [&str; 2] = ["~/.codex", CODEX_PLUGIN_DATA_GRANT];
+
+/// The plugin companion's state directory: the one path under
+/// `~/.claude/plugins` the codex lane may write. Every capsule that licenses
+/// the lane denies each other entry on the way down to it.
+pub const CODEX_PLUGIN_DATA_GRANT: &str = "~/.claude/plugins/data/codex-openai-codex";
 
 /// Domains the codex CLI reaches to run a task (ChatGPT-login and API auth).
 ///

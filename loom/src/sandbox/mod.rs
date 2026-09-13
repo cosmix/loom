@@ -9,6 +9,7 @@ mod grant_paths;
 mod package_caches;
 mod settings;
 
+pub(crate) use config::preflight;
 pub use config::{
     default_mode_for, detect_path_escape, expand_env_vars, expand_paths, expand_tilde,
     is_legitimate_work_access, merge_config, validate_config, validate_paths, MergedSandboxConfig,
@@ -16,8 +17,5 @@ pub use config::{
 };
 pub use grant_paths::{missing_grant_paths, warn_missing_grants};
 pub use package_caches::PACKAGE_MANAGER_CACHE_WRITE_PATHS;
-pub use settings::{apply_default_mode, generate_settings_json, write_settings};
-pub(crate) use settings::{
-    carry_forward_denies, strip_worktree_escape_denies, target_is_worktree, validate_emittable,
-    STATE_READ_DIRS,
-};
+pub use settings::{apply_default_mode, generate_settings_json};
+pub(crate) use settings::{build_settings, target_is_worktree, validate_emittable, SettingsTarget};

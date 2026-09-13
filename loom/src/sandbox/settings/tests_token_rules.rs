@@ -1,4 +1,4 @@
-use super::tests::default_config;
+use super::tests::{build_settings_for, default_config};
 use super::*;
 use crate::fs::permissions::state_root::CREDENTIAL_DENY_READ_PATHS;
 
@@ -17,24 +17,14 @@ fn deny_entries(settings: &Value) -> Vec<String> {
         .unwrap_or_default()
 }
 
-fn read_settings_local(project_root: &Path) -> Value {
-    let content = fs::read_to_string(project_root.join(".claude/settings.local.json")).unwrap();
-    serde_json::from_str(&content).unwrap()
-}
-
 /// The relative token paths stay in `sandbox.filesystem.denyRead` for OS
 /// enforcement, but must never be written as `permissions.deny` rules: Claude
 /// Code refuses every relative-path `rg`/`grep`/`diff`/`git`/`cp`/`mv` issued
 /// after a `cd` while ANY `Read(` deny rule exists, whatever its path.
 #[test]
 fn token_denies_are_os_rules_only_never_project_relative_permission_rules() {
-    use tempfile::TempDir;
+    let settings = build_settings_for(&default_config(), Path::new("/repo"), &json!({}));
 
-    let temp_dir = TempDir::new().unwrap();
-    let repo_root = temp_dir.path();
-    write_settings(&default_config(), repo_root).unwrap();
-
-    let settings = read_settings_local(repo_root);
     let deny = deny_entries(&settings);
     assert!(
         !deny.iter().any(|entry| entry.starts_with("Read(")),
@@ -80,8 +70,7 @@ fn generated_settings_carry_no_read_deny_rules() {
     std::os::unix::fs::symlink(&work_dir, worktree_path.join(".work")).unwrap();
 
     for project_root in [base, worktree_path.as_path()] {
-        write_settings(&default_config(), project_root).unwrap();
-        let settings = read_settings_local(project_root);
+        let settings = build_settings_for(&default_config(), project_root, &json!({}));
 
         let deny = deny_entries(&settings);
         assert!(

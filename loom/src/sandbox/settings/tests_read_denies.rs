@@ -1,11 +1,11 @@
-use super::tests::has_read_deny;
+use super::tests::{build_settings_for, has_read_deny};
 use super::*;
 use crate::models::stage::Implementers;
 use crate::plan::schema::{CommandConfinement, FilesystemConfig, LinuxConfig, NetworkConfig};
 
 #[cfg(unix)]
 #[test]
-fn test_write_settings_adds_resolved_work_symlink_permissions_nested_layout() {
+fn test_build_settings_adds_resolved_work_symlink_permissions_nested_layout() {
     use tempfile::TempDir;
 
     let temp_dir = TempDir::new().unwrap();
@@ -37,11 +37,7 @@ fn test_write_settings_adds_resolved_work_symlink_permissions_nested_layout() {
         command_confinement: CommandConfinement::default(),
     };
 
-    write_settings(&config, &worktree_path).unwrap();
-
-    let settings_path = worktree_path.join(".claude/settings.local.json");
-    let result_content = fs::read_to_string(&settings_path).unwrap();
-    let result: Value = serde_json::from_str(&result_content).unwrap();
+    let result = super::tests::build_settings_for(&config, &worktree_path, &json!({}));
 
     let allow = result["permissions"]["allow"].as_array().unwrap();
     let allow_strs: Vec<&str> = allow.iter().filter_map(|v| v.as_str()).collect();
@@ -57,16 +53,15 @@ fn test_write_settings_adds_resolved_work_symlink_permissions_nested_layout() {
     assert!(!allow_strs.contains(&broad_edit.as_str()));
 
     let expected_read_signals = format!("Read(/{}/signals/**)", resolved_str);
-    let expected_edit_handoffs = format!("Edit(/{}/handoffs/**)", resolved_str);
+    let handoff_edit = format!("Edit(/{}/handoffs/**)", resolved_str);
     assert!(
         allow_strs.contains(&expected_read_signals.as_str()),
         "Should have resolved .loom/work/signals read permission, got: {:?}",
         allow_strs
     );
     assert!(
-        allow_strs.contains(&expected_edit_handoffs.as_str()),
-        "Should have resolved .loom/work/handoffs edit permission, got: {:?}",
-        allow_strs
+        !allow_strs.contains(&handoff_edit.as_str()),
+        "sessions write handoffs through the relay, never directly: {allow_strs:?}"
     );
 
     assert!(
@@ -88,15 +83,10 @@ fn test_write_settings_adds_resolved_work_symlink_permissions_nested_layout() {
 }
 
 #[test]
-fn test_write_settings_main_repo_strips_worktree_escape_denies() {
-    use tempfile::TempDir;
-
+fn test_build_settings_main_repo_strips_worktree_escape_denies() {
     // A plain repo root (not under .worktrees, no `.work` symlink) is the main
     // repo: worktree-relative escape rules must be stripped, because `../..`
     // resolves to `$HOME` there and would deny the entire home directory.
-    let temp_dir = TempDir::new().unwrap();
-    let repo_root = temp_dir.path();
-
     let config = MergedSandboxConfig {
         enabled: true,
         auto_allow: true,
@@ -120,12 +110,8 @@ fn test_write_settings_main_repo_strips_worktree_escape_denies() {
         command_confinement: CommandConfinement::default(),
     };
 
-    write_settings(&config, repo_root).unwrap();
+    let result = build_settings_for(&config, Path::new("/repo"), &json!({}));
 
-    let result: Value = serde_json::from_str(
-        &fs::read_to_string(repo_root.join(".claude/settings.local.json")).unwrap(),
-    )
-    .unwrap();
     let deny = result["permissions"]["deny"].as_array().unwrap();
     let deny_strs: Vec<&str> = deny.iter().filter_map(|v| v.as_str()).collect();
 
@@ -146,9 +132,7 @@ fn test_write_settings_main_repo_strips_worktree_escape_denies() {
 }
 
 #[test]
-fn test_write_settings_main_repo_drops_stale_escape_from_existing() {
-    use tempfile::TempDir;
-
+fn test_build_settings_main_repo_drops_stale_escape_from_existing() {
     // Simulate a main-repo settings.local.json written by an OLDER loom version that leaked
     // worktree-relative escape rules. Re-running the generator on the main repo must scrub them
     // (both Read and Write sides), even though the merge preserves other user-approved permissions.
@@ -156,17 +140,13 @@ fn test_write_settings_main_repo_drops_stale_escape_from_existing() {
     // `Write(~/.bashrc)` stands in for a legitimate user-authored deny entry unrelated to
     // loom's own rules — its INTENT must survive the merge, pinning that loom does not silently
     // discard rules it inherits (mirrors the sibling fixture in
-    // `test_write_settings_preserves_existing_deny_but_not_allow`). What it survives as is
+    // `test_build_settings_preserves_existing_deny_but_not_allow`). What it survives as is
     // `Edit(~/.bashrc)`: the `Write(...)` spelling is inert at the tool layer, so carrying it
     // verbatim would keep the startup warning and none of the protection. A stale
     // `Write(doc/loom/knowledge/**)` is deliberately NOT used here: that specific entry is
     // dropped rather than migrated — see `merge_existing_permissions`'s knowledge-dir
     // carve-out, exercised separately below.
-    let temp_dir = TempDir::new().unwrap();
-    let repo_root = temp_dir.path();
-    let claude_dir = repo_root.join(".claude");
-    fs::create_dir_all(&claude_dir).unwrap();
-
+    //
     // `Read(~/.gnupg/**)` stands in for a non-traversal read deny; every `Read(` entry drops now.
     let stale = json!({
         "permissions": {
@@ -179,11 +159,6 @@ fn test_write_settings_main_repo_drops_stale_escape_from_existing() {
             ]
         }
     });
-    fs::write(
-        claude_dir.join("settings.local.json"),
-        serde_json::to_string_pretty(&stale).unwrap(),
-    )
-    .unwrap();
 
     let config = MergedSandboxConfig {
         enabled: true,
@@ -198,11 +173,8 @@ fn test_write_settings_main_repo_drops_stale_escape_from_existing() {
         command_confinement: CommandConfinement::default(),
     };
 
-    write_settings(&config, repo_root).unwrap();
+    let result = build_settings_for(&config, Path::new("/repo"), &stale);
 
-    let result: Value =
-        serde_json::from_str(&fs::read_to_string(claude_dir.join("settings.local.json")).unwrap())
-            .unwrap();
     let deny = result["permissions"]["deny"].as_array().unwrap();
     let deny_strs: Vec<&str> = deny.iter().filter_map(|v| v.as_str()).collect();
 

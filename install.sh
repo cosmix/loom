@@ -217,7 +217,7 @@ install_loom_local() {
 		# Remove old binary first to avoid "Text file busy" when loom is running
 		rm -f "$loom_bin"
 		cp "$local_loom" "$loom_bin"
-		chmod +x "$loom_bin"
+		chmod 0755 "$loom_bin"
 		ok "loom"
 
 		if [[ ":$PATH:" != *":$install_dir:"* ]]; then
@@ -290,7 +290,7 @@ install_loom_remote() {
 	rm -f "$loom_bin"
 	mv "$temp_bin" "$loom_bin"
 
-	chmod +x "$loom_bin"
+	chmod 0755 "$loom_bin"
 	ok "loom"
 
 	if [[ ":$PATH:" != *":$install_dir:"* ]]; then

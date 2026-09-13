@@ -4,9 +4,11 @@
 use super::contents::{capsule_settings, CapsuleInputs};
 use crate::models::session::SessionType;
 use crate::models::stage::{Implementer, Implementers, Stage, StageType};
+use crate::plan::schema::PermissionMode;
+use crate::sandbox::control_surfaces::{session_denies, DenyInputs, SessionDenies};
 use crate::sandbox::MergedSandboxConfig;
 use serde_json::{json, Value};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 const ALL_KINDS: [SessionType; 5] = [
     SessionType::Stage,
@@ -17,6 +19,12 @@ const ALL_KINDS: [SessionType; 5] = [
 ];
 
 const HOOKS_DIR: &str = "/home/op/.claude/hooks/loom";
+
+/// The codex lane's `~/.claude/plugins` entries, as `codex_plugin_entries` lists them.
+const PLUGIN_ENTRIES: [&str; 2] = [
+    ".claude/plugins/cache/**",
+    ".claude/plugins/installed_plugins.json",
+];
 
 fn sandbox(codex: bool) -> MergedSandboxConfig {
     let lanes = if codex {
@@ -32,24 +40,40 @@ fn sandbox(codex: bool) -> MergedSandboxConfig {
     )
 }
 
-fn inputs<'a>(
+/// The write denies of a session in `/repo/.worktrees/s1` or the checkout.
+fn denies(worktree_rooted: bool, codex: bool) -> SessionDenies {
+    let entries: Vec<String> = PLUGIN_ENTRIES.iter().map(|e| e.to_string()).collect();
+    session_denies(&DenyInputs {
+        repo_root: Path::new("/repo"),
+        state_root: Path::new("/repo/.loom/work"),
+        worktree: worktree_rooted.then_some(Path::new("/repo/.worktrees/s1")),
+        executable_dirs: &[PathBuf::from(HOOKS_DIR)],
+        plugin_entries: codex.then_some(entries.as_slice()),
+        writable_roots: &[],
+    })
+    .unwrap()
+}
+
+fn try_build(
     kind: SessionType,
-    config: &'a MergedSandboxConfig,
-    approved: &'a [String],
-    checkout: Option<&'a Value>,
+    config: &MergedSandboxConfig,
+    approved: &[String],
+    checkout: Option<&Value>,
     worktree_rooted: bool,
-) -> CapsuleInputs<'a> {
-    CapsuleInputs {
+) -> anyhow::Result<Value> {
+    let denies = denies(worktree_rooted, config.implementers.includes_codex());
+    capsule_settings(&CapsuleInputs {
         kind,
         sandbox: config,
         worktree_rooted,
         state_root: Path::new("/repo/.loom/work"),
         repo_root: Path::new("/repo"),
-        hooks_dir: Some(Path::new(HOOKS_DIR)),
+        hooks_dir: Path::new(HOOKS_DIR),
         scratch_dir: Path::new("/scratch/session-1"),
         approved,
         checkout_settings: checkout,
-    }
+        denies: &denies,
+    })
 }
 
 fn build(
@@ -59,12 +83,27 @@ fn build(
     checkout: Option<&Value>,
     worktree_rooted: bool,
 ) -> Value {
-    capsule_settings(&inputs(kind, config, approved, checkout, worktree_rooted)).unwrap()
+    try_build(kind, config, approved, checkout, worktree_rooted).unwrap()
 }
 
 /// The capsule for `kind` from where it runs, with nothing approved.
 fn plain(kind: SessionType) -> Value {
     build(kind, &sandbox(false), &[], None, kind == SessionType::Stage)
+}
+
+/// Every kind's capsule from both locations, with and without the codex lane.
+fn every_capsule() -> Vec<(String, Value)> {
+    let mut capsules = Vec::new();
+    for kind in ALL_KINDS {
+        for worktree_rooted in [true, false] {
+            for codex in [false, true] {
+                let label = format!("{kind} worktree={worktree_rooted} codex={codex}");
+                let settings = build(kind, &sandbox(codex), &[], None, worktree_rooted);
+                capsules.push((label, settings));
+            }
+        }
+    }
+    capsules
 }
 
 fn strings(settings: &Value, pointer: &str) -> Vec<String> {
@@ -181,22 +220,15 @@ fn merge_base_conflict_and_adjudication_get_only_the_heartbeat_and_the_guards() 
         SessionType::Adjudication,
     ] {
         let settings = plain(kind);
-        assert!(
-            registers(&settings, "PostToolUse", "post-tool-use.sh"),
-            "{kind}"
-        );
-        assert!(
-            registers(&settings, "PreToolUse", "commit-filter.sh"),
-            "{kind}"
-        );
-        assert!(
-            !registers(&settings, "SessionStart", "session-start.sh"),
-            "{kind}"
-        );
-        assert!(
-            !registers(&settings, "PreCompact", "pre-compact.sh"),
-            "{kind}"
-        );
+        for (present, event, script) in [
+            (true, "PostToolUse", "post-tool-use.sh"),
+            (true, "PreToolUse", "commit-filter.sh"),
+            (false, "SessionStart", "session-start.sh"),
+            (false, "PreCompact", "pre-compact.sh"),
+        ] {
+            let registered = registers(&settings, event, script);
+            assert_eq!(registered, present, "{kind} {script}");
+        }
         assert!(
             !hooks(&settings)
                 .iter()
@@ -213,8 +245,8 @@ fn the_state_root_grants_are_resolved_and_the_tokens_denied() {
     for rule in [
         "Read(//repo/.loom/work/config.toml)",
         "Read(//repo/.loom/work/signals/**)",
+        "Read(//repo/.loom/work/handoffs/**)",
         "Read(//repo/.loom/work/memory/**)",
-        "Edit(//repo/.loom/work/handoffs/**)",
         "Read(//repo/doc/plans/**)",
     ] {
         assert!(
@@ -230,10 +262,68 @@ fn the_state_root_grants_are_resolved_and_the_tokens_denied() {
 }
 
 #[test]
-fn approved_rules_are_rendered_into_permissions_allow() {
-    let approved = vec!["Bash(cargo test:*)".to_string()];
-    let settings = build(SessionType::Merge, &sandbox(false), &approved, None, false);
-    assert!(strings(&settings, "/permissions/allow").contains(&approved[0]));
+fn no_capsule_grants_a_handoff_edit_in_any_spelling() {
+    for (label, settings) in every_capsule() {
+        let allow = strings(&settings, "/permissions/allow");
+        assert!(
+            !allow
+                .iter()
+                .any(|rule| rule.starts_with("Edit(") && rule.contains("handoffs")),
+            "{label}: {allow:?}"
+        );
+    }
+}
+
+/// Plan section 10's shape: a literal path, or a literal directory followed
+/// by `/**`; no other glob character and no `..` anywhere.
+fn literal_shape(path: &str) -> bool {
+    let literal = path.strip_suffix("/**").unwrap_or(path);
+    !literal.is_empty()
+        && !literal.contains(['*', '?', '[', '{'])
+        && !literal.split('/').any(|part| part == "..")
+}
+
+#[test]
+fn every_generated_path_rule_and_sandbox_path_has_the_literal_shape() {
+    for (label, settings) in every_capsule() {
+        for pointer in ["/permissions/allow", "/permissions/deny"] {
+            for rule in strings(&settings, pointer) {
+                let Some((tool, rest)) = rule.split_once('(') else {
+                    continue;
+                };
+                if !["Edit", "Read", "Write", "MultiEdit"].contains(&tool) {
+                    continue;
+                }
+                let path = rest.strip_suffix(')').expect("a closed rule");
+                let spelled = !path.starts_with('/') || path.starts_with("//");
+                assert!(spelled && literal_shape(path), "{label}: {rule}");
+                let read_deny = tool == "Read" && pointer.ends_with("deny");
+                assert!(!read_deny, "{label}: a Read deny {rule}");
+            }
+        }
+        for list in ["allowWrite", "denyWrite", "denyRead"] {
+            for path in strings(&settings, &format!("/sandbox/filesystem/{list}")) {
+                // The write denies are exact literals, never a pattern.
+                let pattern = list == "denyWrite" && path.contains('*');
+                assert!(literal_shape(&path) && !pattern, "{label}: {list} {path}");
+            }
+        }
+    }
+}
+
+#[test]
+fn a_config_validate_config_refuses_is_refused_for_every_kind() {
+    let mut config = sandbox(false);
+    config.permission_mode = PermissionMode::BypassPermissions;
+    for kind in ALL_KINDS {
+        for worktree_rooted in [true, false] {
+            let error = try_build(kind, &config, &[], None, worktree_rooted).unwrap_err();
+            assert!(
+                format!("{error:#}").contains("bypass-permissions"),
+                "{kind}: {error:#}"
+            );
+        }
+    }
 }
 
 #[test]
@@ -242,28 +332,30 @@ fn plugin_keys_follow_the_codex_license() {
         "enabledPlugins": {"codex@openai-codex": true},
         "extraKnownMarketplaces": {"openai-codex": {}}
     });
-    let licensed = build(
-        SessionType::Stage,
-        &sandbox(true),
-        &[],
-        Some(&checkout),
-        true,
-    );
-    assert_eq!(licensed["enabledPlugins"], checkout["enabledPlugins"]);
-    assert_eq!(
-        licensed["extraKnownMarketplaces"],
-        checkout["extraKnownMarketplaces"]
-    );
+    for worktree_rooted in [true, false] {
+        let licensed = build(
+            SessionType::Stage,
+            &sandbox(true),
+            &[],
+            Some(&checkout),
+            worktree_rooted,
+        );
+        assert_eq!(licensed["enabledPlugins"], checkout["enabledPlugins"]);
+        assert_eq!(
+            licensed["extraKnownMarketplaces"],
+            checkout["extraKnownMarketplaces"]
+        );
 
-    let unlicensed = build(
-        SessionType::Stage,
-        &sandbox(false),
-        &[],
-        Some(&checkout),
-        true,
-    );
-    assert!(unlicensed.get("enabledPlugins").is_none());
-    assert!(unlicensed.get("extraKnownMarketplaces").is_none());
+        let unlicensed = build(
+            SessionType::Stage,
+            &sandbox(false),
+            &[],
+            Some(&checkout),
+            worktree_rooted,
+        );
+        assert!(unlicensed.get("enabledPlugins").is_none());
+        assert!(unlicensed.get("extraKnownMarketplaces").is_none());
+    }
 }
 
 #[test]
@@ -286,12 +378,12 @@ fn the_checkouts_denies_are_carried_and_escape_rules_follow_the_location() {
     assert!(
         !deny.iter().any(|rule| rule.starts_with("Read(")
             || rule.contains("doc/loom/knowledge")
-            || rule.contains(".worktrees")),
+            || rule == "Edit(.worktrees/other/**)"),
         "{deny:?}"
     );
     let deny_write = strings(&from_checkout, "/sandbox/filesystem/denyWrite");
     assert!(
-        !deny_write.iter().any(|path| path.contains(".worktrees")),
+        !deny_write.contains(&".worktrees/other/**".to_string()),
         "{deny_write:?}"
     );
 
@@ -300,13 +392,4 @@ fn the_checkouts_denies_are_carried_and_escape_rules_follow_the_location() {
         .contains(&"Edit(.worktrees/other/**)".to_string()));
     assert!(strings(&from_worktree, "/sandbox/filesystem/denyWrite")
         .contains(&".worktrees/other/**".to_string()));
-}
-
-#[test]
-fn a_capsule_without_a_verified_hooks_dir_registers_no_hooks() {
-    let config = sandbox(false);
-    let mut request = inputs(SessionType::Stage, &config, &[], None, true);
-    request.hooks_dir = None;
-    let settings = capsule_settings(&request).unwrap();
-    assert!(settings.get("hooks").is_none(), "{settings}");
 }

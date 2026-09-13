@@ -1,11 +1,18 @@
 use super::config::MergedSandboxConfig;
+use crate::fs::permissions::state_root::token_deny_paths;
 use crate::fs::permissions::write_rules::migrate_inert_write_denies;
 use crate::plan::schema::PermissionMode;
-use anyhow::{Context, Result};
+use anyhow::Result;
 use serde_json::{json, Value};
-use std::collections::HashSet;
-use std::fs;
 use std::path::Path;
+
+// Only the tests exercise `build_settings` end to end from a real worktree
+// layout on disk (`build_settings_for` in `tests.rs`); the file-writing entry
+// point that used to need these in production, `write_settings`, is gone.
+#[cfg(test)]
+use crate::fs::permissions::state_root::resolve_state_root;
+#[cfg(test)]
+use std::fs;
 
 mod policy;
 pub(crate) use policy::validate_emittable;
@@ -28,8 +35,8 @@ pub fn apply_default_mode(settings: &mut Value, mode: PermissionMode) -> Result<
     Ok(())
 }
 
-/// State-root subdirectories every session may read; shared with `contents::add_state_root_grants`.
-pub(crate) const STATE_READ_DIRS: [&str; 4] = ["signals", "handoffs", "disputes", "memory"];
+/// State-root subdirectories every session may read.
+const STATE_READ_DIRS: [&str; 4] = ["signals", "handoffs", "disputes", "memory"];
 
 /// Detect whether a settings target is a loom worktree (vs. the main repo root).
 ///
@@ -77,7 +84,7 @@ fn is_worktree_escape_path(path: &str) -> bool {
 /// for the main checkout, so these entries must not be written there. Worktree
 /// targets keep them (generated relative to the worktree, where they are
 /// correct), and isolation is independently enforced by the worktree hooks.
-pub(crate) fn strip_worktree_escape_denies(config: &mut MergedSandboxConfig) {
+fn strip_worktree_escape_denies(config: &mut MergedSandboxConfig) {
     config
         .filesystem
         .deny_read
@@ -88,125 +95,97 @@ pub(crate) fn strip_worktree_escape_denies(config: &mut MergedSandboxConfig) {
         .retain(|p| !is_worktree_escape_path(p));
 }
 
-/// Write Claude Code settings.local.json to worktree .claude/ directory
-pub fn write_settings(config: &MergedSandboxConfig, worktree_path: &Path) -> Result<()> {
+/// Where a settings document built by `build_settings` applies, and what it
+/// inherits.
+pub(crate) struct SettingsTarget<'a> {
+    /// Whether the document applies inside a stage worktree rather than the
+    /// main checkout; for the checkout, worktree-relative escape rules are
+    /// dropped (`strip_worktree_escape_denies`).
+    pub is_worktree: bool,
+    /// The canonical state root, when the target has one: its narrow reads
+    /// and token read denies are added in the resolved spelling.
+    pub state_root: Option<&'a str>,
+    /// Settings whose deny rules carry forward (`carry_forward_denies`).
+    pub existing: &'a Value,
+    /// Whether `enabledPlugins` and `extraKnownMarketplaces` carry forward
+    /// from `existing` too.
+    pub carry_plugin_keys: bool,
+}
+
+/// The settings document for `config` at `target`: the sandbox block and
+/// permission rules [`generate_settings_json`] builds, the resolved
+/// state-root rules, and what `existing` carries forward. Pure: the session
+/// capsule and the `build_settings_for` test helper both build through it.
+pub(crate) fn build_settings(
+    config: &MergedSandboxConfig,
+    target: &SettingsTarget<'_>,
+) -> Result<Value> {
     policy::validate_emittable(config)?;
-    let claude_dir = worktree_path.join(".claude");
-
-    // Create .claude/ directory if it doesn't exist
-    fs::create_dir_all(&claude_dir)
-        .with_context(|| format!("Failed to create .claude directory at {:?}", claude_dir))?;
-
-    let settings_path = claude_dir.join("settings.local.json");
-
-    // Read existing settings if they exist
-    let existing_settings = if settings_path.exists() {
-        let content = fs::read_to_string(&settings_path)
-            .with_context(|| format!("Failed to read existing settings at {:?}", settings_path))?;
-        serde_json::from_str(&content)
-            .with_context(|| format!("Failed to parse existing settings at {:?}", settings_path))?
-    } else {
-        json!({})
-    };
-
     let mut config = config.clone();
-
-    // Worktree-relative escape rules (`../../**`, `../.worktrees/**`) are only
-    // valid inside a worktree, where `../..` is the repo root. At the main repo
-    // root `../..` is `$HOME`, so writing them there denies reads/writes across
-    // the whole home directory (breaking git's `~/.gitconfig`). Strip them when
-    // the target is the main repo; worktree targets keep them. This guards every
-    // main-repo caller at once: `loom repair --fix` and knowledge-stage spawns.
-    let is_worktree = target_is_worktree(worktree_path);
-    if !is_worktree {
+    if !target.is_worktree {
         strip_worktree_escape_denies(&mut config);
     }
+    let mut settings = generate_settings_json(&config);
+    if let Some(state_root) = target.state_root {
+        add_resolved_state_root_rules(&mut settings, state_root);
+    }
+    merge_existing_permissions(&mut settings, target.existing, target.is_worktree);
+    preserve_unowned_keys(&mut settings, target.existing, target.carry_plugin_keys);
+    Ok(settings)
+}
 
-    // Generate new sandbox settings
-    let mut settings_json = generate_settings_json(&config);
+/// The resolved-absolute spellings of the narrow state-root reads, and the
+/// token files denied to Bash at the OS level.
+///
+/// Claude Code resolves the state-root symlink (`.loom/work`, or `.work` on a
+/// legacy workspace) before matching permission patterns, so the relative
+/// reads [`generate_settings_json`] emits never match there. See
+/// `fs::permissions::state_root` for the S-1 rationale: a blanket read or
+/// write over this path exposes `admin.token` / `user.token`, a daemon RPC
+/// privilege escalation. So:
+///   1. NO `Read(...)` deny is written, here or anywhere else. The tokens are
+///      denied to Bash through `sandbox.filesystem.denyRead` and to the native
+///      file tools by `loom-hooks/credential-guard.sh`. A permission-rule deny
+///      is not an option at any path shape: Claude Code's Bash path validator
+///      prompts the operator for every relative-path `rg`, `grep`, `diff`,
+///      `git`, `cp` or `mv` issued after a `cd` in the same compound command
+///      while ANY settings file carries ANY `Read(` deny rule, and that prompt
+///      is neither bypassable nor auto-approvable;
+///   2. only read-only orchestration state is granted. Sessions write no
+///      state directly: handoffs, memory and disputes go through the relay.
+///
+/// Claude Code requires the `//` prefix for an absolute path in a permission
+/// rule; a single `/` means relative to the project root
+/// (<https://code.claude.com/docs/en/permissions.md>).
+fn add_resolved_state_root_rules(settings: &mut Value, state_root: &str) {
+    let mut reads = vec![format!("Read(/{state_root}/config.toml)")];
+    reads.extend(
+        STATE_READ_DIRS
+            .iter()
+            .map(|dir| format!("Read(/{state_root}/{dir}/**)")),
+    );
+    push_missing(settings, "/permissions/allow", reads);
+    push_missing(
+        settings,
+        "/sandbox/filesystem/denyRead",
+        token_deny_paths(state_root),
+    );
+}
 
-    // Resolve the state-root symlink to its absolute target path.
-    // Claude Code resolves symlinks before checking permission patterns, so
-    // the relative `.loom/work/`-scoped Read patterns below don't match the
-    // resolved absolute path, and reads there would prompt without these.
-    // See `fs::permissions::state_root` for the shared resolution and the S-1
-    // rationale (blanket read/write over this path exposes `admin.token` /
-    // `user.token` — a daemon RPC privilege escalation). Below:
-    //   1. NO `Read(...)` deny is written, here or anywhere else. The tokens
-    //      are denied to Bash through the OS-level
-    //      `sandbox.filesystem.denyRead` list (pushed just below) and to the
-    //      native file tools by `loom-hooks/credential-guard.sh`. A permission-rule
-    //      deny is not an option at any path shape: Claude Code's Bash path
-    //      validator prompts the operator for every relative-path `rg`,
-    //      `grep`, `diff`, `git`, `cp` or `mv` issued after a `cd` in the same
-    //      compound command while ANY settings file carries ANY `Read(` deny
-    //      rule, and that prompt is neither bypassable nor auto-approvable;
-    //   2. narrow the broad allow from `/**` down to read-only orchestration
-    //      state plus handoff writes. Memory and dispute state are daemon-owned,
-    //      so direct file-tool writes must never be authorized.
-    //
-    // IMPORTANT: Claude Code requires the // prefix for absolute filesystem paths.
-    // A single / means "relative to project root", NOT absolute. See:
-    // https://code.claude.com/docs/en/permissions.md
-    if let Some(resolved) = crate::fs::permissions::state_root::resolve_state_root(worktree_path) {
-        let resolved_str = resolved
-            .to_str()
-            .context("Resolved .work path is not valid UTF-8")?;
-        if let Some(deny_read) = settings_json
-            .pointer_mut("/sandbox/filesystem/denyRead")
-            .and_then(Value::as_array_mut)
+/// Append each of `items` not already present to the string array at
+/// `pointer`, when there is one.
+fn push_missing(settings: &mut Value, pointer: &str, items: impl IntoIterator<Item = String>) {
+    let Some(array) = settings.pointer_mut(pointer).and_then(Value::as_array_mut) else {
+        return;
+    };
+    for item in items {
+        if !array
+            .iter()
+            .any(|value| value.as_str() == Some(item.as_str()))
         {
-            for deny_path in crate::fs::permissions::state_root::token_deny_paths(resolved_str) {
-                if !deny_read.iter().any(|value| value == &deny_path) {
-                    deny_read.push(json!(deny_path));
-                }
-            }
-        }
-        if let Some(permissions) = settings_json.get_mut("permissions") {
-            if let Some(allow) = permissions.get_mut("allow") {
-                if let Some(allow_arr) = allow.as_array_mut() {
-                    // Narrowed allow: config and orchestration state are
-                    // read-only. Handoffs are the sole direct write root;
-                    // memory and disputes are written through daemon RPCs.
-                    let mut perms = vec![
-                        format!("Read(/{}/config.toml)", resolved_str),
-                        format!("Read(/{}/signals/**)", resolved_str),
-                    ];
-                    for sub in ["handoffs", "disputes", "memory"] {
-                        perms.push(format!("Read(/{}/{}/**)", resolved_str, sub));
-                    }
-                    // NOTE: Claude Code's file permission check consults only
-                    // `Edit(path)` rules — a `Write(path)` rule parses but is
-                    // silently ignored (see doc/loom/knowledge/concerns.md
-                    // "Per-Stage Sandbox `Write(path)` Rules Are Inert").
-                    perms.push(format!("Edit(/{}/handoffs/**)", resolved_str));
-                    for perm in perms {
-                        if !allow_arr.iter().any(|v| v.as_str() == Some(&perm)) {
-                            allow_arr.push(json!(perm));
-                        }
-                    }
-                }
-            }
+            array.push(json!(item));
         }
     }
-
-    // Merge existing permissions into the new settings
-    merge_existing_permissions(&mut settings_json, &existing_settings, is_worktree);
-
-    // Carry forward top-level keys loom doesn't own (e.g. plugin enablement)
-    // that would otherwise be discarded by the from-scratch regeneration above.
-    // Gated on the codex lane, but only for worktree targets (see
-    // `preserve_unowned_keys` doc comment).
-    preserve_unowned_keys(&mut settings_json, &existing_settings, &config, is_worktree);
-
-    // Write settings file with pretty formatting
-    let settings_string = serde_json::to_string_pretty(&settings_json)
-        .context("Failed to serialize settings JSON")?;
-
-    fs::write(&settings_path, settings_string)
-        .with_context(|| format!("Failed to write settings to {:?}", settings_path))?;
-
-    Ok(())
 }
 
 /// Filters plan `allow_write` paths into `Edit(...)` permission rules and
@@ -242,8 +221,8 @@ pub fn generate_settings_json(config: &MergedSandboxConfig) -> Value {
     // No `Read(...)` deny is ever emitted here — read denial is entirely the
     // OS sandbox's job (`sandbox.filesystem.denyRead`, above) plus
     // `loom-hooks/credential-guard.sh` for the native file tools. See
-    // `write_settings` for why a `Read(` deny rule of any shape is
-    // unacceptable.
+    // `add_resolved_state_root_rules` for why a `Read(` deny rule of any
+    // shape is unacceptable.
     let mut permissions = json!({});
     let mut deny: Vec<Value> = Vec::new();
     let mut allow: Vec<Value> = Vec::new();
@@ -287,14 +266,15 @@ pub fn generate_settings_json(config: &MergedSandboxConfig) -> Value {
     // Add allow_write paths as exceptions (same Write->Edit reasoning as above).
     push_allow_write_rules(&mut allow, config);
 
-    // Add narrow Read/Edit permissions for orchestration state files agents
-    // need. These are the *relative* forms; `write_settings` adds matching
+    // Add narrow Read permissions for orchestration state files agents need.
+    // These are the *relative* forms; `build_settings` adds matching
     // resolved-absolute forms because `.loom/work` (or, on a legacy
     // workspace, `.work`) is a symlink that Claude Code resolves before
     // matching. The set is deliberately scoped to the subdirs an agent
-    // legitimately touches — never the bare `.loom/work/**` that would also
+    // legitimately reads — never the bare `.loom/work/**` that would also
     // expose `.loom/work/admin.token` / `.loom/work/user.token` (see S-1,
-    // default_deny_read).
+    // default_deny_read). No state directory is writable: sessions change
+    // state through the relay.
     //
     // Both layouts are emitted: `MergedSandboxConfig` carries no field for
     // which layout this workspace uses, so this function can't branch on it.
@@ -306,9 +286,6 @@ pub fn generate_settings_json(config: &MergedSandboxConfig) -> Value {
         allow.push(json!(format!("Read({base}/config.toml)")));
         for dir in STATE_READ_DIRS {
             allow.push(json!(format!("Read({base}/{dir}/**)")));
-            if dir == "handoffs" {
-                allow.push(json!(format!("Edit({base}/handoffs/**)")));
-            }
         }
     }
 
@@ -341,6 +318,47 @@ pub fn generate_settings_json(config: &MergedSandboxConfig) -> Value {
     settings
 }
 
+/// The deny entries from an existing settings file that may be carried into the
+/// regenerated one, in the enforceable spelling.
+///
+/// Stale entries that would be harmful if leaked into the OS sandbox are
+/// dropped first:
+/// - EVERY `Read(...)` entry, whatever its path. `settings.local.json` is
+///   loom-generated and this generator emits no read deny at all, so anything
+///   found there is from an older version; carrying one forward in any shape
+///   reintroduces the Bash search prompt described in
+///   `add_resolved_state_root_rules`. This is deliberately blunter than the
+///   healers that act on files loom does not own end to end —
+///   `write_rules::prune_loom_read_denies` and
+///   `commands::repair::sandbox_settings::fix_read_denies` remove only the
+///   entries loom itself wrote and report an operator's own rule instead. Here
+///   there is no operator rule to preserve: the file is regenerated wholesale
+///   on every stage spawn, so nothing hand-added to it survives anyway;
+/// - for the MAIN repo, worktree-relative escape rules and cross-worktree refs
+///   on the write side too: at the repo root `../..` is `$HOME`, so a stale
+///   `Write(../../**)` would deny writes across the entire home directory;
+/// - a knowledge-dir deny in either spelling — the ONE inherited-rule exception
+///   to "loom is conservative about rules it inherits" (every other filter here
+///   only narrows what a stale rule denies). `merge_config` /
+///   `generate_settings_json` never re-add it, but this merge would union it
+///   back in from disk on every write, permanently blocking the `loom knowledge
+///   update` CLI subprocess for that worktree.
+///
+/// What survives is then migrated out of the inert `Write(...)` spelling — see
+/// `migrate_inert_write_denies` for that policy.
+fn carry_forward_denies(existing_deny: Vec<String>, is_worktree: bool) -> Vec<String> {
+    let kept: Vec<String> = existing_deny
+        .into_iter()
+        .filter(|perm| !perm.starts_with("Read("))
+        .filter(|perm| is_worktree || !(perm.contains("../") || perm.contains(".worktrees")))
+        .filter(|perm| {
+            !((perm.starts_with("Edit(") || perm.starts_with("Write("))
+                && perm.contains("doc/loom/knowledge"))
+        })
+        .collect();
+    migrate_inert_write_denies(&kept)
+}
+
 /// Merge existing permissions from an old settings file into new settings
 ///
 /// Only `permissions.deny` is merged forward from the existing file -
@@ -360,119 +378,40 @@ pub fn generate_settings_json(config: &MergedSandboxConfig) -> Value {
 /// no reliable way to tell a legitimately user-approved entry apart from a
 /// self-inserted lookalike from the file's contents alone, so the safe fix is
 /// to stop trusting `allow` from disk at all: it is deterministically rebuilt
-/// from `config` on every write. This does mean a permission a human manually
-/// approves mid-session is NOT preserved across the next respawn - an accepted
-/// tradeoff for closing the escalation path. `deny` carry-forward is safe to
-/// keep because widening `deny` can only narrow what the agent can do, never
-/// grant it anything.
+/// from `config` on every write. `deny` carry-forward is safe to keep because
+/// widening `deny` can only narrow what the agent can do, never grant it
+/// anything.
 ///
-/// Uses HashSet for deduplication to avoid duplicate permissions in the merged result.
-///
-/// `is_worktree` indicates whether the destination settings file lives inside a
-/// loom worktree. When false (the main repo root), stale worktree-relative
-/// escape entries carried over from a prior file (e.g. `Write(../../**)` written
-/// by an older loom version) are dropped, because at the repo root `../..` is
-/// `$HOME` and such a rule would deny writes across the entire home directory.
-///
-/// What survives those filters is not written back verbatim: `Write(...)`
-/// entries are migrated to the enforceable `Edit(...)` form (or dropped) by
-/// `fs::permissions::settings::migrate_inert_write_denies`, so this function
-/// never re-emits a rule that only produces a startup warning.
-/// The deny entries from an existing settings file that may be carried into the
-/// regenerated one, in the enforceable spelling.
-///
-/// Stale entries that would be harmful if leaked into the OS sandbox are
-/// dropped first:
-/// - EVERY `Read(...)` entry, whatever its path. `settings.local.json` is
-///   loom-generated and this generator emits no read deny at all, so anything
-///   found there is from an older version; carrying one forward in any shape
-///   reintroduces the Bash search prompt described in `write_settings`. This
-///   is deliberately blunter than the healers that act on files loom does not
-///   own end to end — `write_rules::prune_loom_read_denies` and
-///   `commands::repair::sandbox_settings::fix_read_denies` remove only the
-///   entries loom itself wrote and report an operator's own rule instead. Here
-///   there is no operator rule to preserve: the file is regenerated wholesale
-///   on every stage spawn, so nothing hand-added to it survives anyway;
-/// - for the MAIN repo, worktree-relative escape rules and cross-worktree refs
-///   on the write side too: at the repo root `../..` is `$HOME`, so a stale
-///   `Write(../../**)` would deny writes across the entire home directory;
-/// - a knowledge-dir deny in either spelling — the ONE inherited-rule exception
-///   to "loom is conservative about rules it inherits" (every other filter here
-///   only narrows what a stale rule denies). `merge_config` /
-///   `generate_settings_json` never re-add it, but this merge would union it
-///   back in from disk on every write, permanently blocking the `loom knowledge
-///   update` CLI subprocess for that worktree.
-///
-/// What survives is then migrated out of the inert `Write(...)` spelling — see
-/// `migrate_inert_write_denies` for that policy.
-pub(crate) fn carry_forward_denies(existing_deny: Vec<String>, is_worktree: bool) -> Vec<String> {
-    let kept: Vec<String> = existing_deny
-        .into_iter()
-        .filter(|perm| !perm.starts_with("Read("))
-        .filter(|perm| is_worktree || !(perm.contains("../") || perm.contains(".worktrees")))
-        .filter(|perm| {
-            !((perm.starts_with("Edit(") || perm.starts_with("Write("))
-                && perm.contains("doc/loom/knowledge"))
-        })
-        .collect();
-    migrate_inert_write_denies(&kept)
-}
-
+/// The carried entries (`carry_forward_denies`) are appended in order, each
+/// once. `is_worktree` indicates whether the destination lives inside a loom
+/// worktree; for the main repo root, stale worktree-relative escape entries
+/// are dropped.
 fn merge_existing_permissions(
     new_settings: &mut Value,
     existing_settings: &Value,
     is_worktree: bool,
 ) {
-    // Extract existing permissions if they exist
-    let existing_permissions = existing_settings.get("permissions");
-    if existing_permissions.is_none() || existing_permissions.unwrap().is_null() {
-        return; // No permissions to merge
-    }
-
-    let existing_deny = existing_permissions
-        .and_then(|p| p.get("deny"))
-        .and_then(|d| d.as_array())
+    let existing_deny: Vec<String> = existing_settings
+        .pointer("/permissions/deny")
+        .and_then(Value::as_array)
         .map(|arr| {
             arr.iter()
                 .filter_map(|v| v.as_str().map(String::from))
-                .collect::<Vec<String>>()
+                .collect()
         })
         .unwrap_or_default();
-
-    // Get or create permissions block in new settings
-    let new_permissions = new_settings
-        .as_object_mut()
-        .and_then(|obj| obj.get_mut("permissions"))
-        .and_then(|p| p.as_object_mut());
-
-    if new_permissions.is_none() {
+    if existing_deny.is_empty() {
+        return;
+    }
+    let Some(permissions) = new_settings
+        .get_mut("permissions")
+        .and_then(Value::as_object_mut)
+    else {
         return; // New settings has no permissions block, nothing to merge into
-    }
-
-    let new_permissions = new_permissions.unwrap();
-
-    // Merge deny permissions
-    if !existing_deny.is_empty() {
-        let new_deny = new_permissions
-            .entry("deny")
-            .or_insert_with(|| json!([]))
-            .as_array_mut();
-
-        if let Some(new_deny_arr) = new_deny {
-            // Collect all permissions into a HashSet for deduplication
-            let mut all_deny: HashSet<String> = new_deny_arr
-                .iter()
-                .filter_map(|v| v.as_str().map(String::from))
-                .collect();
-
-            for perm in carry_forward_denies(existing_deny, is_worktree) {
-                all_deny.insert(perm);
-            }
-
-            // Replace array with deduplicated permissions
-            *new_deny_arr = all_deny.into_iter().map(|s| json!(s)).collect();
-        }
-    }
+    };
+    permissions.entry("deny").or_insert_with(|| json!([]));
+    let carried = carry_forward_denies(existing_deny, is_worktree);
+    push_missing(new_settings, "/permissions/deny", carried);
 }
 
 /// Top-level settings keys that `generate_settings_json` does not emit and
@@ -480,57 +419,20 @@ fn merge_existing_permissions(
 /// are silently dropped on every regeneration.
 const PRESERVED_SETTINGS_KEYS: [&str; 2] = ["enabledPlugins", "extraKnownMarketplaces"];
 
-/// Carry forward top-level settings keys loom does not own.
-///
-/// `generate_settings_json` rebuilds the file from scratch, so any
-/// key it does not emit is lost. Plugin enablement lives in
-/// `enabledPlugins` / `extraKnownMarketplaces` and must survive.
-///
-/// SECURITY: the escalation this guards against is a stage AGENT writing its
-/// own `enabledPlugins` entry into its own (agent-writable, respawn-reused)
-/// worktree settings file and having loom carry that self-grant into the
-/// next session - the same self-granted-persistence hole
-/// `merge_existing_permissions` had for `permissions.allow` (see its doc
-/// comment). That hole exists ONLY for worktree targets: the settings file is
-/// not agent-writable at the MAIN repo root. Both writers that target it
-/// hardcode or discourage the codex lane rather than run whatever a worktree
-/// agent chose - `loom repair --fix` (`commands/repair.rs::fix_sandbox_settings`)
-/// passes `&Implementers::default()` (claude-only) unconditionally, and the
-/// knowledge-stage spawn path (`stage_executor.rs::start_knowledge_stage`)
-/// writes the stage's own implementers, which plan validation warns against
-/// setting to codex in the first place - so there is no self-grant to defend
-/// against there, and the codex-license gate must not apply. Applying it
-/// anyway silently DELETES a legitimate main-repo plugin install (e.g. the
-/// codex marketplace) on every `loom repair --fix`, because `write_settings`
-/// regenerates the whole file from scratch.
-///
-/// So: preserve these keys UNCONDITIONALLY for a non-worktree target, and
-/// gate on `config.implementers.includes_codex()` only when `is_worktree` is
-/// true - a claude-only WORKTREE stage has no legitimate reason to carry
-/// either key, so there is nothing for it to self-grant. `generated always
-/// wins` still holds - the loop below only fills in keys `new_settings`
-/// doesn't already contain.
-fn preserve_unowned_keys(
-    new_settings: &mut Value,
-    existing: &Value,
-    config: &MergedSandboxConfig,
-    is_worktree: bool,
-) {
-    if is_worktree && !config.implementers.includes_codex() {
-        return;
-    }
-    let Some(existing_obj) = existing.as_object() else {
-        return;
-    };
-    let Some(new_obj) = new_settings.as_object_mut() else {
+/// Carry the `PRESERVED_SETTINGS_KEYS` loom does not own from `existing`
+/// into `new_settings` when `carry` is set. `generated always wins`: only
+/// keys `new_settings` does not already contain are filled in.
+fn preserve_unowned_keys(new_settings: &mut Value, existing: &Value, carry: bool) {
+    let (true, Some(existing_obj), Some(new_obj)) =
+        (carry, existing.as_object(), new_settings.as_object_mut())
+    else {
         return;
     };
     for key in PRESERVED_SETTINGS_KEYS {
-        if new_obj.contains_key(key) {
-            continue;
-        }
         if let Some(value) = existing_obj.get(key) {
-            new_obj.insert(key.to_string(), value.clone());
+            new_obj
+                .entry(key.to_string())
+                .or_insert_with(|| value.clone());
         }
     }
 }

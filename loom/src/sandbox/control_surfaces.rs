@@ -1,22 +1,28 @@
-//! What a loom session could write, and the control surfaces no propagated
-//! permission may name (`doc/plans/PLAN-loom-state-confinement.md`, sections
-//! 11 and 12).
+//! What a loom session could write, the control surfaces no propagated
+//! permission may name, and the write denies every session capsule carries
+//! (`doc/plans/PLAN-loom-state-confinement.md`, sections 10 to 12).
 //!
 //! Pure: every input is a parameter. Nothing here reads the process
-//! environment or touches the filesystem, so the per-spawn checks and the
-//! phase-3 `loom run` refusals can share one answer.
+//! environment, and only `codex_plugin_entries` touches the filesystem (it
+//! lists `~/.claude/plugins` at spawn), so the per-spawn checks and the
+//! `loom run` refusals can share one answer.
 //!
-//! Accepted gap: this filter reads rule TEXT only, so a rule naming a path
-//! that is itself a symlink into a control surface is not caught here. The
-//! phase-3 OS-level deny rules on the control surfaces win over any allow
-//! regardless of the path spelling that reached them, and the sandbox
-//! resolves symlinks before matching, so that layer still refuses the write.
+//! Accepted gap: the propagation filter reads rule TEXT only, so a rule
+//! naming a path that is itself a symlink into a control surface is not
+//! caught by it. The capsule's deny rules on the control surfaces
+//! (`session_denies`) win over any allow regardless of the path spelling
+//! that reached them, and the sandbox resolves symlinks before matching, so
+//! that layer still refuses the write.
 
 use std::ffi::OsStr;
 use std::path::{Component, Path, PathBuf};
 
 use super::PACKAGE_MANAGER_CACHE_WRITE_PATHS;
 use crate::codex::CODEX_SANDBOX_WRITE_PATHS;
+
+mod session_denies;
+
+pub(crate) use session_denies::{codex_plugin_entries, session_denies, DenyInputs, SessionDenies};
 
 /// Characters that end the literal part of a path pattern.
 const GLOB_CHARS: [char; 4] = ['*', '?', '[', '{'];
@@ -41,9 +47,26 @@ const PATH_TOOLS: [&str; 7] = [
 /// `Bash(git -C <dir> status)` or `Bash(npm run test:*)`.
 const WORD_SEPARATORS: [char; 12] = ['\'', '"', '=', ':', ';', ',', '(', ')', '<', '>', '|', '&'];
 
-/// The codex lane's hook and configuration files, relative to the home
-/// directory.
-const CODEX_CONTROL_PATHS: [&str; 3] = [".codex/hooks", ".codex/hooks.json", ".codex/config.toml"];
+/// The control surfaces under the operator's home directory (plan section
+/// 11), relative to it, in rule form: a directory ends in `/**`, a file does
+/// not. Every capsule denies writing each one, the codex lane's hook and
+/// configuration files included even inside its `~/.codex` grant, and no
+/// propagated rule may name one. `~/.claude/plugins` is not listed: the
+/// codex lane writes inside it, so `session_denies` handles it apart.
+const HOME_SURFACES: [&str; 12] = [
+    ".claude/hooks/**",
+    ".claude/settings.json",
+    ".claude.json",
+    ".loom/**",
+    ".claude/projects/**",
+    ".claude/agents/**",
+    ".claude/skills/**",
+    ".claude/commands/**",
+    ".claude/loom-skill-catalog/**",
+    ".codex/hooks/**",
+    ".codex/hooks.json",
+    ".codex/config.toml",
+];
 
 /// Inputs to [`session_writable_roots`].
 pub(crate) struct WritableRootInputs<'a> {
@@ -141,9 +164,18 @@ fn is_glob(name: &OsStr) -> bool {
         .any(|c| GLOB_CHARS.contains(&c))
 }
 
-fn push_unique(roots: &mut Vec<PathBuf>, root: PathBuf) {
-    if !roots.contains(&root) {
-        roots.push(root);
+fn push_unique<T: PartialEq>(items: &mut Vec<T>, item: T) {
+    if !items.contains(&item) {
+        items.push(item);
+    }
+}
+
+/// A `HOME_SURFACES` entry split into its literal path and whether it names
+/// a directory.
+fn surface_path(surface: &str) -> (&str, bool) {
+    match surface.strip_suffix("/**") {
+        Some(dir) => (dir, true),
+        None => (surface, false),
     }
 }
 
@@ -152,29 +184,47 @@ fn push_unique(roots: &mut Vec<PathBuf>, root: PathBuf) {
 #[derive(Debug, Clone)]
 pub(crate) struct ControlSurfaces {
     roots: Vec<PathBuf>,
+    executable_dirs: Vec<PathBuf>,
     home: Option<PathBuf>,
 }
 
 impl ControlSurfaces {
-    /// The resolved state root, the scratch root, every hooks directory, and
-    /// under `home` the codex lane's hooks and config plus `~/.loom`.
+    /// The resolved state root, the scratch root, every directory holding an
+    /// executable loom's hooks run (the hooks directory, plus the
+    /// operator-owned `LOOM_HOOK_PATH` entries and `dirname(LOOM_BIN)` where
+    /// the caller knows them), and under `home` every `HOME_SURFACES` entry.
     pub(crate) fn new(
         state_root: &Path,
         scratch_root: Option<&Path>,
-        hooks_dirs: &[PathBuf],
+        executable_dirs: &[PathBuf],
         home: Option<&Path>,
     ) -> Self {
         let mut roots = vec![state_root.to_path_buf()];
         roots.extend(scratch_root.map(Path::to_path_buf));
-        roots.extend(hooks_dirs.iter().cloned());
+        roots.extend(executable_dirs.iter().cloned());
         if let Some(home) = home {
-            roots.extend(CODEX_CONTROL_PATHS.iter().map(|path| home.join(path)));
-            roots.push(home.join(".loom"));
+            roots.extend(
+                HOME_SURFACES
+                    .iter()
+                    .map(|surface| home.join(surface_path(surface).0)),
+            );
         }
         Self {
             roots,
+            executable_dirs: executable_dirs.to_vec(),
             home: home.map(Path::to_path_buf),
         }
+    }
+
+    /// The directories holding executables loom's hooks run; every capsule
+    /// denies writing them.
+    pub(crate) fn executable_dirs(&self) -> &[PathBuf] {
+        &self.executable_dirs
+    }
+
+    /// The operator's home directory, when known.
+    pub(crate) fn home(&self) -> Option<&Path> {
+        self.home.as_deref()
     }
 
     /// Whether `rule`, a `permissions.allow` entry, names a control surface.
@@ -239,149 +289,4 @@ fn split_rule(rule: &str) -> Option<(&str, &str)> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn inputs(allow_write: &[String], codex_licensed: bool) -> WritableRootInputs<'_> {
-        WritableRootInputs {
-            repo_root: Path::new("/repo"),
-            allow_write,
-            codex_licensed,
-            scratch_root: Path::new("/home/op/.cache/loom/scratch"),
-            home: Some(Path::new("/home/op")),
-            tmpdir: Some(Path::new("/var/tmp/op")),
-        }
-    }
-
-    #[test]
-    fn writable_roots_cover_every_input() {
-        let allow_write = vec![
-            "/srv/out/**".to_string(),
-            "~/data".to_string(),
-            "//abs/grant".to_string(),
-            "loom/target".to_string(),
-        ];
-        let roots = session_writable_roots(&inputs(&allow_write, true));
-        for expected in [
-            "/repo",
-            "/srv/out",
-            "/home/op/data",
-            "/abs/grant",
-            "/repo/loom/target",
-            "/home/op/.cargo/registry",
-            "/home/op/.bun/install/cache",
-            "/home/op/.codex",
-            "/home/op/.claude/plugins/data/codex-openai-codex",
-            "/home/op/.cache/loom/scratch",
-            "/tmp",
-            "/var/tmp/op",
-        ] {
-            assert!(
-                roots.contains(&PathBuf::from(expected)),
-                "missing {expected}: {roots:?}"
-            );
-        }
-    }
-
-    #[test]
-    fn writable_roots_omit_the_codex_paths_unless_the_lane_is_licensed() {
-        let roots = session_writable_roots(&inputs(&[], false));
-        assert!(!roots.contains(&PathBuf::from("/home/op/.codex")));
-        assert!(roots.contains(&PathBuf::from("/home/op/.cargo/registry")));
-    }
-
-    #[test]
-    fn grant_root_reads_every_spelling() {
-        let base = Path::new("/repo");
-        let home = Some(Path::new("/home/op"));
-        assert_eq!(
-            grant_root("doc/loom/knowledge/**", base, home),
-            Some(PathBuf::from("/repo/doc/loom/knowledge"))
-        );
-        assert_eq!(
-            grant_root("**/*.rs", base, home),
-            Some(PathBuf::from("/repo"))
-        );
-        assert_eq!(grant_root("~/cache/x", base, None), None);
-        assert_eq!(grant_root("../../escape", base, home), None);
-        assert_eq!(grant_root("  ", base, home), None);
-    }
-
-    fn surfaces() -> ControlSurfaces {
-        ControlSurfaces::new(
-            Path::new("/repo/.loom/work"),
-            Some(Path::new("/run/user/1000/loom/scratch")),
-            &[PathBuf::from("/opt/loom-hooks")],
-            Some(Path::new("/home/op")),
-        )
-    }
-
-    #[test]
-    fn names_every_control_surface() {
-        let surfaces = surfaces();
-        for rule in [
-            "Edit(.loom/work/handoffs/**)",
-            "Edit(.work/signals/x.md)",
-            "Read(//repo/.loom/work/config.toml)",
-            "Edit(.worktrees/s1/**)",
-            "Edit(.claude/settings.json)",
-            "Write(~/.claude/hooks/loom/x.sh)",
-            "Edit(//opt/loom-hooks/loom-relay.sh)",
-            "Edit(~/.loom/config.toml)",
-            "Edit(//run/user/1000/loom/scratch/session-1/**)",
-            "Edit(~/.codex/hooks.json)",
-            "Edit(~/.codex/**)",
-            "Edit(**)",
-            "Edit(../**)",
-            "Edit",
-            "Bash(cp x .claude/settings.json)",
-            "Bash(rm -rf /opt/loom-hooks/old)",
-        ] {
-            assert!(surfaces.names(rule), "{rule} must be dropped");
-        }
-    }
-
-    #[test]
-    fn names_every_control_component_regardless_of_case() {
-        let surfaces = surfaces();
-        for rule in [
-            "Edit(.LOOM/work/handoffs/**)",
-            "Edit(.Work/signals/x.md)",
-            "Edit(.WorkTrees/s1/**)",
-            "Edit(.Claude/settings.json)",
-        ] {
-            assert!(surfaces.names(rule), "{rule} must be dropped");
-        }
-    }
-
-    #[test]
-    fn names_a_root_prefix_regardless_of_case() {
-        // Neither "opt", "loom-hooks", "run", "user" nor "scratch" is a
-        // `CONTROL_COMPONENTS` entry, so these can only be caught by the
-        // root-prefix comparison, not the component check above.
-        let surfaces = surfaces();
-        for rule in [
-            "Edit(//OPT/loom-hooks/loom-relay.sh)",
-            "Edit(//opt/LOOM-HOOKS/loom-relay.sh)",
-            "Edit(//RUN/user/1000/loom/scratch/session-1/**)",
-        ] {
-            assert!(surfaces.names(rule), "{rule} must be dropped");
-        }
-    }
-
-    #[test]
-    fn leaves_ordinary_rules_alone() {
-        let surfaces = surfaces();
-        for rule in [
-            "Bash(cargo test:*)",
-            "Edit(loom/src/**)",
-            "WebFetch(domain:docs.rs)",
-            "Read(//usr/share/doc/**)",
-            "Edit(~/.cargo/registry/**)",
-            "mcp__github__search",
-            "Bash",
-        ] {
-            assert!(!surfaces.names(rule), "{rule} must be kept");
-        }
-    }
-}
+mod tests;

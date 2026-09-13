@@ -20,7 +20,9 @@ use std::path::{Path, PathBuf};
 
 use crate::fs::safe_fs;
 use crate::models::session::SessionType;
-use crate::sandbox::control_surfaces::ControlSurfaces;
+use crate::sandbox::control_surfaces::{
+    codex_plugin_entries, session_denies, ControlSurfaces, DenyInputs, SessionDenies,
+};
 use crate::sandbox::MergedSandboxConfig;
 use crate::validation::validate_id;
 
@@ -53,19 +55,24 @@ pub(super) struct CapsuleRequest<'a> {
     pub cwd: &'a Path,
     pub work_dir: &'a Path,
     pub repo_root: &'a Path,
-    /// The verified loom hooks directory; `None` registers no loom hooks.
+    /// The verified loom hooks directory; `None` refuses the spawn.
     pub hooks_dir: Option<&'a Path>,
     /// This session's own scratch directory, `<scratch_root>/<session-id>`.
     pub scratch_dir: &'a Path,
-    /// What the approved-permissions list may never grant.
+    /// What the approved-permissions list may never grant, and the
+    /// executable directories and home directory the capsule's denies name.
     pub surfaces: &'a ControlSurfaces,
+    /// Every root a session could write (`HostFacts::writable_roots`): an
+    /// executable directory that is an ancestor of one is not denied, since
+    /// denying it would deny the writable root it sits above too.
+    pub writable_roots: &'a [PathBuf],
 }
 
 /// Build and write the session's capsule, returning its absolute path.
 ///
-/// A session with no verified hooks directory still launches, with a
-/// warning: phase 1 adds no refusal, and the Stage and Knowledge spawn paths
-/// already refuse an unhooked session before they reach this call.
+/// A session with no verified hooks directory is refused, whatever its kind:
+/// its capsule would register none of loom's hooks, the relay and the guards
+/// included.
 pub(super) fn write_session_capsule(request: &CapsuleRequest<'_>) -> Result<String> {
     validate_id(request.session_id).with_context(|| {
         format!(
@@ -73,29 +80,28 @@ pub(super) fn write_session_capsule(request: &CapsuleRequest<'_>) -> Result<Stri
             request.session_id
         )
     })?;
+    let hooks_dir = request
+        .hooks_dir
+        .ok_or_else(|| missing_hooks_dir(request))?;
     let state_root = super::wrapper::absolute(request.work_dir);
     let repo_root = super::wrapper::absolute(request.repo_root);
-    let worktree_rooted =
-        crate::sandbox::target_is_worktree(&super::wrapper::absolute(request.cwd));
+    let cwd = super::wrapper::absolute(request.cwd);
+    let worktree_rooted = crate::sandbox::target_is_worktree(&cwd);
     let checkout_settings = read_checkout_settings(&repo_root)?;
     let approved = crate::fs::permissions::approved::approved_rules(&state_root, request.surfaces);
-    if request.hooks_dir.is_none() {
-        tracing::warn!(
-            session_id = %request.session_id,
-            kind = %request.kind,
-            "no verified loom hooks directory; the session's capsule registers no loom hooks"
-        );
-    }
+    let worktree = worktree_rooted.then_some(cwd.as_path());
+    let denies = capsule_denies(request, hooks_dir, &repo_root, &state_root, worktree)?;
     let settings = contents::capsule_settings(&contents::CapsuleInputs {
         kind: request.kind,
         sandbox: request.sandbox,
         worktree_rooted,
         state_root: &state_root,
         repo_root: &repo_root,
-        hooks_dir: request.hooks_dir,
+        hooks_dir,
         scratch_dir: request.scratch_dir,
         approved: &approved,
         checkout_settings: checkout_settings.as_ref(),
+        denies: &denies,
     })?;
     let path = write_capsule_file(request.work_dir, request.session_id, &settings)?;
     path.to_str().map(str::to_owned).with_context(|| {
@@ -103,6 +109,54 @@ pub(super) fn write_session_capsule(request: &CapsuleRequest<'_>) -> Result<Stri
             "session settings capsule path is not valid UTF-8: {}",
             path.display()
         )
+    })
+}
+
+/// The refusal of a spawn with no verified hooks directory, naming the one
+/// `find_hooks_dir` found when that one failed verification.
+fn missing_hooks_dir(request: &CapsuleRequest<'_>) -> anyhow::Error {
+    let reason = match crate::hooks::find_hooks_dir() {
+        Some(dir) => format!(
+            "the loom hooks directory {} failed verification (it must resolve to a \
+             directory the operator owns)",
+            dir.display()
+        ),
+        None => "no loom hooks directory is installed ($LOOM_HOOKS_DIR, ~/.claude/hooks/loom)"
+            .to_string(),
+    };
+    anyhow::anyhow!(
+        "refusing to spawn {} session {}: {reason}; run `loom install-assets` and retry",
+        request.kind,
+        request.session_id
+    )
+}
+
+/// The session's write denies (`sandbox::control_surfaces::session_denies`):
+/// the verified hooks directory and every executable directory the control
+/// surfaces name, and with the codex lane the `~/.claude/plugins` entries
+/// beside its grant, listed now.
+fn capsule_denies(
+    request: &CapsuleRequest<'_>,
+    hooks_dir: &Path,
+    repo_root: &Path,
+    state_root: &Path,
+    worktree: Option<&Path>,
+) -> Result<SessionDenies> {
+    let plugin_entries = match request.surfaces.home() {
+        Some(home) if request.sandbox.implementers.includes_codex() => {
+            Some(codex_plugin_entries(home)?)
+        }
+        _ => None,
+    };
+    let mut executable_dirs = vec![hooks_dir.to_path_buf()];
+    executable_dirs.extend_from_slice(request.surfaces.executable_dirs());
+    session_denies(&DenyInputs {
+        repo_root,
+        state_root,
+        worktree,
+        executable_dirs: &executable_dirs,
+        plugin_entries: plugin_entries.as_deref(),
+        writable_roots: request.writable_roots,
     })
 }
 
