@@ -498,6 +498,23 @@ Additions from owner decisions 8-11:
   `R/.claude/settings.local.json` stays unchanged; a stage that edits `loom/.githooks/pre-commit` is
   held for review.
 
+Ownership adjustments (2026-09-13, before phase 1):
+
+- **Phase 0 done:** the contract lives in `loom/src/relay/` (`kind`, `line`, `ticket`, `payload`,
+  `inbox`, `matrix`, `scratch`), and loom's git runner plus every direct git spawn pass
+  `NO_HOOKS_ARGS` (decision 10).
+- **Phase 0b, one agent, before phase 1:** `fs/inbox/**` (layout, atomic entry writer, ledger append
+  and read, dedupe and pending queries) and `loom request status` end to end (`commands/request/*`,
+  its CLI wiring). The relay helper (I3) and the drain (I2) both import `fs/inbox`; building it first
+  removes the cross-dependency.
+- **I1** changes no `cli/*` file and no longer owns `commands/request/*` or
+  `handoff/session_content.rs`.
+- **I2** owns `handoff/session_content.rs` (the daemon builds the handoff document) and uses
+  `fs/inbox` from phase 0b.
+- **I3** owns the `loom hook relay` CLI wiring: the `HookCommands::Relay` variant in
+  `cli/types_ops.rs`, its arm in `cli/dispatch.rs`, and the `commands/hook/mod.rs` declaration. No
+  other phase-1 agent edits those files.
+
 ### I1: Relay Protocol and CLI Writers
 
 - New: `loom/src/relay/{mod,protocol,emit,scratch}.rs`, `loom/src/handoff/session_content.rs`,
