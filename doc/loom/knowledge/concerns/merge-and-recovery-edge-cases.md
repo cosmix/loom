@@ -71,6 +71,10 @@ Found while fixing the silent `Completed + !merged` outcome (`mistakes/phantom-m
 
 ## Daemon Start Replaces the Whole Plan With the Latest Amendment Snapshot (2026-09-14)
 
-Open. On every daemon start, `verify_plan_versions_consistency` Case 2 (`plan/amendment.rs:805-826`, called from `orchestrator/core/orchestrator.rs:173`) overwrites the live plan with `.loom/work/plan_versions/<n>.md` whenever the two differ at all. Any edit made to a plan after its latest amendment is reverted at the next restart. A reinstall through `dev-install.sh` is one such restart, because it kills the daemon. The token-optimization plan lost its revalidation this way on 2026-09-13 (see [Computed Values and Hidden Couplings](../mistakes/computed-values-and-hidden-couplings.md)).
+Fixed (2026-09-14). `verify_plan_versions_consistency` Case 2 now calls `reconcile_amended_field` (`plan/amendment_catch_up.rs`), which compares only the audited stage's amended field with the snapshot:
 
-Fix direction: follow Case 3 (`amendment.rs:848-860`). Parse the live plan, compare only the amended stage field with the snapshot, and splice just that field back with `serialize_loom_metadata` + `splice_metadata_yaml`, writing through `safe_replace_outside_workdir`. Add a regression test in `plan/tests/amendment.rs`: amend, edit prose, run the check, assert the prose survives and no action was taken.
+- the amendment is already in the live plan: no write, so every later edit survives;
+- the amendment never reached the file (a crash between snapshot and write): only that field is spliced into the live content, written atomically;
+- the live plan does not parse, or the stage is missing: nothing is written, and a warning names the plan, the stage and the reason.
+
+The whole-file restore is gone. Tests: `plan/tests/amendment_catch_up.rs`.

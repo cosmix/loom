@@ -139,7 +139,7 @@
 | [daemon-singleton](concerns/daemon-singleton.md) | Historical incident: two daemons once attached to the same `.work/`. Startup… | 98 |
 | [iterm2-window-teardown](concerns/iterm2-window-teardown.md) | iTerm2 spawn never names its window, so teardown cannot find it to close | 48 |
 | [knowledge-cli-gaps](concerns/knowledge-cli-gaps.md) | Knowledge/memory CLI gaps: no delete-section, no blurb flag, CRLF, backlog | 179 |
-| [merge-and-recovery-edge-cases](concerns/merge-and-recovery-edge-cases.md) | Merge/retry/completion edge cases: phantom merges, stale started_at, nonces | 76 |
+| [merge-and-recovery-edge-cases](concerns/merge-and-recovery-edge-cases.md) | Merge/retry/completion edge cases: phantom merges, stale started_at, nonces | 80 |
 | [runtime-and-session-safety](concerns/runtime-and-session-safety.md) | Runtime edge cases: tmux warning, attach lifetime, orphan adoption, guards | 146 |
 | [sandbox-and-confinement-gaps](concerns/sandbox-and-confinement-gaps.md) | Sandbox gaps: no E2E canary, diverging env allowlists, uncalled validators | 166 |
 | [sandbox-protected-hooks-dir](concerns/sandbox-protected-hooks-dir.md) | Resolved on 2026-09-13 by moving repository hook sources to `loom-hooks/`; the… | 47 |
