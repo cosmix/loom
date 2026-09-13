@@ -23,8 +23,8 @@ never truncate.
 
 ## Where the Dashboard's Theme Tokens Live
 
-`web/src/index.css` defines only the `--tone-*` tokens and `--hairline`. `--card`, `--foreground`,
-`--muted-foreground`, `--border`, `--ring` and `--muted` live in
-`web/src/aurora-ui/shared/styles/tokens.css` (light `:root` near line 94, dark `.dark` near line
-144). The terminal view has no Esc-to-release: in control mode Esc reaches the agent, and only the
-release control stops sending (`web/src/components/terminal/terminal-view.tsx`).
+`web/src/index.css` defines the `--tone-*` state tones and `--hairline`, and also the accent helpers `--highlight` / `--highlight-foreground` (active view tab), `--logo` (header logo colour) and the ledger ruling `--ledger-rule` / `--ledger-head-rule`. It no longer holds only the tones and `--hairline`. The ruling rules at the end of `index.css` are unlayered on purpose: the table's `border-b` utilities sit in Tailwind's utilities layer, which outranks the components layer.
+
+Surface tokens (`--background`, `--card`, `--foreground`, `--muted`, `--muted-foreground`, `--border`, `--ring`, `--primary`) live in `web/src/aurora-ui/shared/styles/tokens.css`. The bare `:root` block (near line 94) is the Ledger light theme (stone stock, hue ~100, blue-black ink); the first `.dark` block (near line 144) is the Aubergine dark theme (hue 325). The yellow accent is `--primary`. On the light ground yellow is only legible as a fill under dark ink, so the light `--ring` is a darker ochre. `--tone-warning` and `--hazard-warning` are orange so warning states never read as the accent. The atoms in `web/src/aurora-ui/shared/atoms/theme.ts` default to the `ledger` / `aubergine` variant names, which no CSS selects; no UI sets a variant, only the light/dark toggle.
+
+The terminal well is `--well: #0a111f` in `web/src/components/terminal/terminal.css` and must equal `WELL` in `emulator.ts`, since xterm's canvas needs hex; the xterm cursor is the dark `--primary` as hex (`#f4d660`). The terminal view has no Esc-to-release: in control mode Esc reaches the agent, and only the release control stops sending (`web/src/components/terminal/terminal-view.tsx`).
