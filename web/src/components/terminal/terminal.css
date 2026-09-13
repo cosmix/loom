@@ -40,6 +40,9 @@
   }
   .terminal-well {
     --well: #101216;
+    /* Same near-black tinted red; must match WELL_CONTROL in emulator.ts so
+       the WebGL canvas and this padding meet without a seam. */
+    --well-control: #240f0f;
     --well-fg: #d8dce3;
     --well-dim: #89919e;
     --well-rule: oklch(1 0 0 / 0.08);
@@ -60,6 +63,12 @@
   .terminal-well:focus-within {
     outline: none;
   }
+  /* Control: the well's ground itself takes the tint (cue and notice mix
+     from --well, so they follow). The canvas snaps to the same hex the
+     instant the theme is set, so this is not transitioned. */
+  .terminal-well[data-mode="control"] {
+    --well: var(--well-control);
+  }
 
   /* xterm mounts here; the fit addon sizes it to this box. */
   .terminal-host {
@@ -79,12 +88,6 @@
 
   .terminal-well[data-mode="view"][data-phase="live"] .terminal-host {
     cursor: pointer;
-  }
-  .terminal-well[data-mode="view"][data-phase="live"]:hover {
-    box-shadow:
-      inset 0 0 0 1px color-mix(in oklch, var(--tone-executing) 36%, transparent),
-      0 8px 30px color-mix(in oklch, black 14%, transparent);
-    transform: translateY(-1px);
   }
 
   /* The key's echo: only rendered in view while live, only shown on hover.

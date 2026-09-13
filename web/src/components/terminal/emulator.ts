@@ -44,16 +44,24 @@ interface TerminalTheme {
   brightWhite: string;
 }
 
+// The well's near-black ground in each mode. Keep these in sync with the
+// `--well` / `--well-control` custom properties in terminal.css: the WebGL
+// renderer paints `theme.background` opaquely on its own canvas, so the CSS
+// and JS values must match exactly or the canvas and the well's padding
+// meet with a visible seam.
+const WELL = "#101216";
+const WELL_CONTROL = "#240f0f";
+
 /** The dark-well palette xterm needs as concrete colours. */
 export function terminalTheme(): TerminalTheme {
   // ANSI accents mirror dashboard tones: blue=executing, green=completed,
   // red=blocked, yellow=warning, and cyan=queued.
   return {
-    background: "#101216",
+    background: WELL,
     foreground: "#d8dce3",
     cursor: "#8fb4f0",
     selectionBackground: "#8fb4f04d",
-    black: "#101216",
+    black: WELL,
     red: "#e07a6f",
     green: "#7fc79a",
     yellow: "#d9b96a",
@@ -92,6 +100,9 @@ function readOnlyOptions(readOnly: boolean) {
     cursorBlink: !readOnly,
     cursorStyle: readOnly ? ("bar" as const) : ("block" as const),
     cursorInactiveStyle: "outline" as const,
+    // Control mode tints the canvas itself, since the WebGL renderer ignores
+    // the CSS background behind it.
+    theme: { ...terminalTheme(), background: readOnly ? WELL : WELL_CONTROL },
   };
 }
 
