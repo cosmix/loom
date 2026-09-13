@@ -16,19 +16,17 @@ file src/commands/stage/tests/complete.rs 544
 file src/daemon/server/dispute.rs 510
 file src/fs/locking.rs 499
 file src/fs/permissions/hooks.rs 446
-file src/fs/permissions/settings.rs 460
-file src/fs/permissions/sync.rs 534
+file src/fs/permissions/settings.rs 457
 file src/fs/safe_fs.rs 1019
 file src/fs/work_dir.rs 433
 file src/fs/work_dir/tests.rs 873
 file src/git/worktree/base.rs 545
-file src/git/worktree/settings.rs 706
-file src/hooks/tests.rs 514
+file src/git/worktree/settings.rs 462
 file src/models/stage/methods.rs 739
 file src/models/stage/types.rs 1129
-file src/orchestrator/core/merge_handler.rs 1328
+file src/orchestrator/core/merge_handler.rs 1303
 file src/orchestrator/core/recovery.rs 1569
-file src/orchestrator/core/stage_executor.rs 782
+file src/orchestrator/core/stage_executor.rs 780
 file src/orchestrator/merge_attribution.rs 543
 file src/orchestrator/signals/cache.rs 590
 file src/orchestrator/signals/format/sections.rs 641
@@ -41,12 +39,12 @@ file src/plan/amendment.rs 1091
 file src/plan/parser/extraction.rs 410
 file src/plan/schema/tests/validation_tests.rs 923
 file src/plan/schema/types.rs 466
-file src/plan/schema/validation.rs 1285
+file src/plan/schema/validation.rs 1255
 file src/plan/tests/amendment.rs 605
 file src/remote_control.rs 598
-file src/sandbox/config.rs 848
-file src/sandbox/settings.rs 543
-file src/sandbox/settings/tests.rs 1667
+file src/sandbox/config.rs 842
+file src/sandbox/settings.rs 445
+file src/sandbox/settings/tests.rs 1599
 file src/skills/index.rs 564
 file src/verify/duplicate_detection.rs 436
 file src/verify/transitions/state.rs 433
@@ -56,7 +54,7 @@ file tests/failure_resume.rs 468
 file tests/integration/merge_conflict_recovery.rs 412
 file tests/integration/plan_verify.rs 1028
 
-function src/cli/dispatch.rs dispatch 94
+function src/cli/dispatch.rs dispatch 87
 function src/cli/dispatch_stage.rs dispatch_stage 51
 function src/commands/clean/mod.rs print_summary 52
 function src/commands/clean/sessions.rs test_clean_sessions_reaps_live_only_when_destroying_state 57
@@ -67,7 +65,7 @@ function src/commands/diagnose.rs format_diagnosis_signal 125
 function src/commands/graph/display.rs build_graph_display 52
 function src/commands/graph/tests.rs test_build_graph_display_shows_all_deps 70
 function src/commands/graph/tree.rs build_tree_display 57
-function src/commands/init/execute.rs execute 131
+function src/commands/init/execute.rs execute 130
 function src/commands/init/plan_setup.rs initialize_with_plan 206
 function src/commands/init/tests.rs test_cleanup_orphaned_sessions_reaps_live_only_in_clean_mode 76
 function src/commands/init/tests.rs test_create_stage_from_definition_no_dependencies 88
@@ -123,11 +121,9 @@ function src/fs/memory/export.rs format_memory_for_handoff 80
 function src/fs/memory/export.rs format_memory_for_signal 92
 function src/fs/memory/query.rs generate_summary 52
 function src/fs/permissions/hooks.rs migrate_old_hook_paths 84
-function src/fs/permissions/settings.rs ensure_loom_hooks_local_inner 68
+function src/fs/permissions/settings.rs ensure_loom_hooks_local_inner 65
 function src/fs/permissions/settings.rs ensure_loom_permissions_inner 98
-function src/fs/permissions/sync.rs merge_permissions_with_lock 70
 function src/fs/permissions/sync.rs transform_worktree_path 65
-function src/fs/permissions/tests/sync_tests.rs test_sync_preserves_other_fields 57
 function src/fs/safe_fs.rs safe_replace_outside_workdir 138
 function src/fs/session_files.rs find_session_file 55
 function src/fs/work_integrity.rs validate_work_dir_state 60
@@ -136,14 +132,9 @@ function src/git/merge/mod.rs merge_stage 112
 function src/git/worktree/base.rs resolve_base_branch 92
 function src/git/worktree/discovery.rs find_worktree_by_prefix 55
 function src/git/worktree/operations.rs create_worktree 115
-function src/git/worktree/settings.rs create_worktree_settings 116
-function src/git/worktree/settings.rs refresh_worktree_settings_local 58
-function src/git/worktree/tests_settings_env.rs test_refresh_preserves_worktree_env_hooks_and_mode 59
+function src/git/worktree/settings.rs create_worktree_settings 115
 function src/git/worktree/tests_settings_env.rs test_worktree_gitignore_actually_hides_loom_runtime_paths 57
 function src/handoff/generator/formatter.rs format_handoff_markdown 112
-function src/hooks/generator.rs generate_hooks_settings 136
-function src/hooks/generator.rs test_generate_hooks_settings_includes_global_hooks 56
-function src/hooks/tests.rs test_generate_hooks_merges_with_global_hooks 75
 function src/models/stage/defaults.rs default 70
 function src/models/stage/methods.rs from_definition_copies_all_runtime_policy_fields 128
 function src/models/stage/transitions.rs can_transition_to 74
@@ -155,8 +146,8 @@ function src/orchestrator/core/merge_handler.rs finalize_merge_resolution 97
 function src/orchestrator/core/merge_handler.rs handle_merge_session_completed 168
 function src/orchestrator/core/merge_handler.rs read_plan_level_auto_merge 61
 function src/orchestrator/core/merge_handler.rs spawn_merge_resolution_session 84
-function src/orchestrator/core/merge_handler.rs spawn_merge_resolution_sessions 120
-function src/orchestrator/core/merge_handler.rs try_auto_merge 228
+function src/orchestrator/core/merge_handler.rs spawn_merge_resolution_sessions 95
+function src/orchestrator/core/merge_handler.rs try_auto_merge 214
 function src/orchestrator/core/merge_handler.rs verify_and_finalize_merge 65
 function src/orchestrator/core/orchestrator.rs new 67
 function src/orchestrator/core/recovery.rs orphan_with_commits_ahead_signals_handoff_input 64
@@ -168,7 +159,7 @@ function src/orchestrator/core/recovery.rs verify_merged_true_or_revert 56
 function src/orchestrator/core/stage_executor.rs before_stage_gate_passed 62
 function src/orchestrator/core/stage_executor.rs start_knowledge_stage 99
 function src/orchestrator/core/stage_executor.rs start_ready_stages 65
-function src/orchestrator/core/stage_executor.rs start_stage 401
+function src/orchestrator/core/stage_executor.rs start_stage 357
 function src/orchestrator/merge_attribution.rs attribute_main_repo_merge 101
 function src/orchestrator/merge_attribution.rs reconcile_main_repo_active_merge 64
 function src/orchestrator/monitor/detection.rs detect_stage_changes 56
@@ -210,22 +201,17 @@ function src/plan/schema/tests/security_policy_tests.rs rejects_misspelled_neste
 function src/plan/schema/validation.rs check_cross_stage_wiring_coverage 66
 function src/plan/schema/validation.rs validate 411
 function src/plan/schema/validation.rs validate_structural_preflight 232
-function src/sandbox/settings.rs generate_settings_json 108
-function src/sandbox/settings.rs merge_existing_permissions 56
-function src/sandbox/settings.rs write_settings 119
+function src/sandbox/settings.rs generate_settings_json 106
 function src/sandbox/settings/policy.rs filesystem_settings 52
 function src/sandbox/settings/tests.rs every_stage_type_can_write_the_knowledge_directory 56
+function src/sandbox/settings/tests.rs test_build_settings_adds_resolved_work_symlink_permissions_legacy_layout 92
+function src/sandbox/settings/tests.rs test_build_settings_does_not_carry_forward_existing_allow 63
+function src/sandbox/settings/tests.rs test_build_settings_preserves_existing_deny_but_not_allow 71
 function src/sandbox/settings/tests.rs test_deny_write_parent_traversal_not_in_os_sandbox 73
 function src/sandbox/settings/tests.rs test_generate_settings_emits_network_block 53
-function src/sandbox/settings/tests.rs test_generate_settings_with_filesystem 55
-function src/sandbox/settings/tests.rs test_write_settings_does_not_carry_forward_existing_allow 82
-function src/sandbox/settings/tests.rs test_write_settings_no_existing_file 52
-function src/sandbox/settings/tests.rs test_write_settings_preserves_existing_deny_but_not_allow 89
-function src/sandbox/settings/tests.rs test_write_settings_scrubs_stale_knowledge_dir_deny_from_existing 52
-function src/sandbox/settings/tests.rs test_write_settings_worktree_drops_escape_write_deny_from_edit_rule 56
-function src/sandbox/settings/tests_read_denies.rs test_write_settings_adds_resolved_work_symlink_permissions_nested_layout 81
-function src/sandbox/settings/tests_read_denies.rs test_write_settings_main_repo_drops_stale_escape_from_existing 81
-function src/sandbox/settings/tests_read_denies.rs test_write_settings_main_repo_strips_worktree_escape_denies 56
+function src/sandbox/settings/tests.rs test_generate_settings_with_filesystem 53
+function src/sandbox/settings/tests_read_denies.rs test_build_settings_adds_resolved_work_symlink_permissions_nested_layout 76
+function src/sandbox/settings/tests_read_denies.rs test_build_settings_main_repo_drops_stale_escape_from_existing 67
 function src/skills/matcher.rs match_skills 62
 function src/verify/baseline/compare.rs compare_to_baseline 79
 function src/verify/duplicate_detection.rs find_symbol_in_codebase 76
@@ -264,9 +250,8 @@ function tests/integration/plan_verify.rs test_json_schema_completeness_and_leve
 function tests/stage_transitions.rs test_multiple_dependencies_all_satisfied 52
 function tests/stage_transitions.rs test_stage_transition_workflow 72
 file src/commands/clean/sessions.rs 403
-file src/git/worktree/tests_settings.rs 584
+file src/git/worktree/tests_settings.rs 437
 file src/utils.rs 403
-file src/commands/repair/tests.rs 648
+file src/commands/repair/tests.rs 647
 function src/fs/permissions/tests/write_rules_tests.rs test_ensure_loom_permissions_prunes_legacy_work_write_grants 56
 function src/git/worktree/tests_settings.rs test_create_worktree_settings_adds_resolved_work_permissions_legacy_layout 86
-function src/sandbox/settings/tests.rs test_write_settings_adds_resolved_work_symlink_permissions_legacy_layout 99
