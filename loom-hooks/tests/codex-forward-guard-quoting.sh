@@ -1,140 +1,120 @@
 #!/usr/bin/env bash
 set -euo pipefail
+
 unset LOOM_STAGE_ID LOOM_SESSION_ID LOOM_WORK_DIR LOOM_SESSION_TYPE LOOM_MAIN_AGENT_PID
-d=$(mktemp -d "${TMPDIR:-/tmp}/cfw.XXXXXX") && [ -n "$d" ]
+d=$(mktemp -d "${TMPDIR:-/tmp}/cfw-quoting.XXXXXX") && [[ -n "$d" ]]
 trap 'rm -rf "$d"' EXIT
-HOOK="$(dirname "$0")/../codex-forward-guard.sh"
 
-# Extract parse_shell_words in isolation (lines containing only its
-# definition) so we can assert on the parsed word, not just the hook's exit
-# code. Keeping this in sync with codex-forward-guard.sh is unavoidable for a
-# unit-level assertion on the parser's internal state. `eval`, not
-# `source <(...)`: bash 3.2 (the only bash on this machine) reads zero bytes
-# from a process-substitution fd under `source`, defining nothing - a failure
-# that surfaces far below as "parse_shell_words: command not found", so assert
-# the definition took right here.
-eval "$(sed -n '/^parse_shell_words()/,/^}/p' "$HOOK")"
-if [[ "$(type -t parse_shell_words || true)" != "function" ]]; then
-    echo "FAIL: could not extract parse_shell_words from $HOOK"
-    exit 1
-fi
+HOOK="$(cd "$(dirname "$0")/.." && pwd)/codex-forward-guard.sh"
+FORWARD_LIB="$(dirname "$HOOK")/_codex_forward.sh"
+HOME_DIR="$d/home"
+WORK_DIR="$d/work"
+WORKSPACE="$d/workspace"
+STAGE_ID=quote-stage
+LOOM_SESSION=loom-session
+PARENT_SESSION=parent-session
+AGENT_ID=quote-forwarder
+UNIT_ID=fwd-quote-forwarder
+COMPANION_DIR="$HOME_DIR/.claude/plugins/cache/openai-codex/codex/1.0.6/scripts"
+LEDGER="$WORK_DIR/subagents/$STAGE_ID/codex.jsonl"
+STARTS="$WORK_DIR/subagents/$STAGE_ID/starts.jsonl"
+mkdir -p "$COMPANION_DIR" "$WORKSPACE/.git" "$WORK_DIR/subagents/$STAGE_ID"
+printf '%s\n' '// pinned fixture' >"$COMPANION_DIR/codex-companion.mjs"
+jq -nc --arg agent_id "$AGENT_ID" --arg stage "$STAGE_ID" --arg session "$LOOM_SESSION" \
+	--arg parent "$PARENT_SESSION" \
+	'{agent_id:$agent_id,agent_type:"loom-codex-forwarder",stage_id:$stage,
+	 loom_session_id:$session,parent_session_id:$parent,ts:"2000-01-01T00:00:00.000Z"}' >"$STARTS"
 
-# --- MUST BE ALLOWED (exit 0) ---------------------------------------------
+payload_for() {
+	jq -nc --arg command "$1" --arg tool_use_id "$2" --arg agent_id "$AGENT_ID" \
+		--arg session_id "$PARENT_SESSION" --arg cwd "$WORKSPACE" \
+		'{tool_name:"Bash",tool_input:{command:$command,timeout:600000},agent_type:"loom-codex-forwarder",agent_id:$agent_id,session_id:$session_id,tool_use_id:$tool_use_id,cwd:$cwd}'
+}
 
-# 1. Apostrophe via the '\'' idiom inside the prompt.
+run_guard() {
+	local input="$1" home="$2" active="$3"
+	CODE=0
+	if [[ "$active" == 1 ]]; then
+		printf '%s' "$input" | HOME="$home" LOOM_WORK_DIR="$WORK_DIR" \
+			LOOM_STAGE_ID="$STAGE_ID" LOOM_SESSION_ID="$LOOM_SESSION" \
+			bash "$HOOK" >"$d/stdout" 2>"$d/stderr" || CODE=$?
+	else
+		printf '%s' "$input" | HOME="$home" bash "$HOOK" \
+			>"$d/stdout" 2>"$d/stderr" || CODE=$?
+	fi
+}
+
+expect_allow() {
+	local command="$1" tool_use_id="$2" label="$3" before=0 invocation expected model effort
+	[[ ! -f "$LEDGER" ]] || before=$(wc -l <"$LEDGER")
+	run_guard "$(payload_for "$command" "$tool_use_id")" "$HOME_DIR" 1
+	[[ $CODE -eq 0 && ! -s "$d/stderr" && $(wc -l <"$d/stdout") -eq 1 ]] || {
+		printf '%s\n' "FAIL: expected allow for $label, got exit $CODE"
+		exit 1
+	}
+	[[ $(wc -l <"$LEDGER") -eq $((before + 1)) ]]
+	invocation=$(jq -er '.hookSpecificOutput.updatedInput.command | capture("--invocation-id (?<id>inv-[0-9a-f]{32})$").id' "$d/stdout")
+	expected="$command --unit-id $UNIT_ID --invocation-id $invocation"
+	parse_shell_words "$command"
+	model=${PARSED_WORDS[4]}
+	effort=${PARSED_WORDS[6]}
+	jq -e --arg command "$expected" \
+		'.hookSpecificOutput == {hookEventName:"PreToolUse",permissionDecision:"allow",updatedInput:{command:$command,timeout:600000}}' \
+		"$d/stdout" >/dev/null
+	tail -n 1 "$LEDGER" | jq -e --arg tool_use_id "$tool_use_id" --arg invocation "$invocation" \
+		--arg model "$model" --arg effort "$effort" '
+		.v == 2 and .stage_id == "quote-stage" and .session_id == "loom-session" and
+		.parent_session_id == "parent-session" and .forwarder_agent_id == "quote-forwarder" and
+		.tool_use_id == $tool_use_id and .unit_id == "fwd-quote-forwarder" and
+		.invocation_id == $invocation and .model == $model and .effort == $effort' >/dev/null
+}
+
+expect_block() {
+	local command="$1" tool_use_id="$2" label="$3"
+	run_guard "$(payload_for "$command" "$tool_use_id")" "$HOME_DIR" 1
+	[[ $CODE -eq 2 ]] || {
+		printf '%s\n' "FAIL: expected block for $label, got exit $CODE"
+		exit 1
+	}
+}
+
+# Source the shared parser so the apostrophe case asserts its decoded argv word too.
+source "$FORWARD_LIB"
+[[ "$(type -t parse_shell_words || true)" == function ]]
+
+# Apostrophes, escaped dollars, escaped double quotes/backslashes, and an
+# expanded scratch-HOME wrapper path all round-trip byte-for-byte in updatedInput.
 CMD="~/.claude/hooks/loom/codex-forward.sh task 'fix the reader'\''s zone' --model gpt-5.6-terra --effort xhigh --write"
-INPUT=$(jq -nc --arg c "$CMD" '{"tool_name":"Bash","tool_input":{"command":$c},"agent_type":"loom-codex-forwarder"}')
-set +e
-echo "$INPUT" | HOME=/home/u bash "$HOOK" 2>/dev/null
-CODE=$?
-set -e
-if [[ $CODE -ne 0 ]]; then
-    echo "FAIL: expected exit 0 for apostrophe-via-'\''-idiom prompt, got exit $CODE"
-    exit 1
-fi
-# Assert the parsed word itself, not just the exit code.
+expect_allow "$CMD" apostrophe-tool "apostrophe-via-'\'' idiom"
 parse_shell_words "$CMD"
-if [[ "${PARSED_WORDS[2]}" != "fix the reader's zone" ]]; then
-    echo "FAIL: expected parsed prompt 'fix the reader's zone', got '${PARSED_WORDS[2]}'"
-    exit 1
-fi
+[[ "${PARSED_WORDS[2]}" == "fix the reader's zone" ]]
 
-# 2a. A backslash-escaped character in the prompt (unquoted \$).
 CMD='~/.claude/hooks/loom/codex-forward.sh task cost\ is\ \$5 --model gpt-5.6-terra --effort xhigh --write'
-INPUT=$(jq -nc --arg c "$CMD" '{"tool_name":"Bash","tool_input":{"command":$c},"agent_type":"loom-codex-forwarder"}')
-set +e
-echo "$INPUT" | HOME=/home/u bash "$HOOK" 2>/dev/null
-CODE=$?
-set -e
-if [[ $CODE -ne 0 ]]; then
-    echo "FAIL: expected exit 0 for backslash-escaped \$ in prompt, got exit $CODE"
-    exit 1
-fi
+expect_allow "$CMD" dollar-tool 'backslash-escaped dollar'
 
-# 2b. A double-quoted prompt containing \" and \\.
 CMD='~/.claude/hooks/loom/codex-forward.sh task "say \"hi\" then \\ done" --model gpt-5.6-terra --effort xhigh --write'
-INPUT=$(jq -nc --arg c "$CMD" '{"tool_name":"Bash","tool_input":{"command":$c},"agent_type":"loom-codex-forwarder"}')
-set +e
-echo "$INPUT" | HOME=/home/u bash "$HOOK" 2>/dev/null
-CODE=$?
-set -e
-if [[ $CODE -ne 0 ]]; then
-    echo "FAIL: expected exit 0 for double-quoted prompt with \\\" and \\\\, got exit $CODE"
-    exit 1
-fi
+expect_allow "$CMD" double-quote-tool 'double-quoted escapes'
 
-# 3. The $HOME-expanded wrapper path.
-CMD='/home/u/.claude/hooks/loom/codex-forward.sh task hello --model gpt-5.6-luna --effort xhigh --write'
-INPUT=$(jq -nc --arg c "$CMD" '{"tool_name":"Bash","tool_input":{"command":$c},"agent_type":"loom-codex-forwarder"}')
-set +e
-echo "$INPUT" | HOME=/home/u bash "$HOOK" 2>/dev/null
-CODE=$?
-set -e
-if [[ $CODE -ne 0 ]]; then
-    echo "FAIL: expected exit 0 for \$HOME-expanded wrapper path, got exit $CODE"
-    exit 1
-fi
+CMD="$HOME_DIR/.claude/hooks/loom/codex-forward.sh task hello --model gpt-5.6-luna --effort xhigh --write"
+expect_allow "$CMD" expanded-home-tool 'HOME-expanded wrapper path'
 
-# --- MUST STILL BE BLOCKED (exit 2) ----------------------------------------
+# Unquoted operators, incomplete escaping, wrong arity, and another path stay blocked.
+expect_block '~/.claude/hooks/loom/codex-forward.sh task $(whoami) --model gpt-5.6-terra --effort xhigh --write' substitution-tool 'command substitution'
+expect_block '~/.claude/hooks/loom/codex-forward.sh task hello; rm -rf / --model gpt-5.6-terra --effort xhigh --write' separator-tool 'command chaining'
+expect_block '~/.claude/hooks/loom/codex-forward.sh task hello --model gpt-5.6-terra --effort xhigh --write\' backslash-tool 'trailing backslash'
+expect_block '~/.claude/hooks/loom/codex-forward.sh task hello --model gpt-5.6-terra --effort xhigh' arity-tool 'missing write flag'
+expect_block "$HOME_DIR/.claude/hooks/loom/evil.sh task hello --model gpt-5.6-terra --effort xhigh --write" path-tool 'non-wrapper path'
 
-# 4a. An unquoted, unescaped metacharacter still rejects (command substitution).
-CMD='~/.claude/hooks/loom/codex-forward.sh task $(whoami) --model gpt-5.6-terra --effort xhigh --write'
-INPUT=$(jq -nc --arg c "$CMD" '{"tool_name":"Bash","tool_input":{"command":$c},"agent_type":"loom-codex-forwarder"}')
-set +e
-echo "$INPUT" | HOME=/home/u bash "$HOOK" 2>/dev/null
-CODE=$?
-set -e
-if [[ $CODE -ne 2 ]]; then
-    echo "FAIL: expected exit 2 for unquoted \$(whoami), got exit $CODE"
-    exit 1
-fi
+# The same syntactically valid quoted call is blocked outside a stage and with no companion.
+CMD="~/.claude/hooks/loom/codex-forward.sh task 'still literal' --model gpt-5.6-terra --effort xhigh --write"
+OUTSIDE_INPUT=$(payload_for "$CMD" outside-tool)
+run_guard "$OUTSIDE_INPUT" "$HOME_DIR" 0
+[[ $CODE -eq 2 && ! -s "$d/stdout" ]]
+rg -qF 'codex forwarding is allowed only inside an active loom stage (safe LOOM_STAGE_ID, LOOM_SESSION_ID, and LOOM_WORK_DIR are required)' "$d/stderr"
+NO_COMPANION_HOME="$d/no-companion-home"
+mkdir -p "$NO_COMPANION_HOME"
+run_guard "$OUTSIDE_INPUT" "$NO_COMPANION_HOME" 1
+[[ $CODE -eq 2 && ! -s "$d/stdout" ]]
+rg -qF 'supported codex companion 1.0.6 is missing or unsafe' "$d/stderr"
 
-# 4b. An unquoted ; chaining a second command still rejects.
-CMD='~/.claude/hooks/loom/codex-forward.sh task hello; rm -rf / --model gpt-5.6-terra --effort xhigh --write'
-INPUT=$(jq -nc --arg c "$CMD" '{"tool_name":"Bash","tool_input":{"command":$c},"agent_type":"loom-codex-forwarder"}')
-set +e
-echo "$INPUT" | HOME=/home/u bash "$HOOK" 2>/dev/null
-CODE=$?
-set -e
-if [[ $CODE -ne 2 ]]; then
-    echo "FAIL: expected exit 2 for unquoted ; command chaining, got exit $CODE"
-    exit 1
-fi
-
-# 5. A trailing lone backslash must reject (parser ends outside plain).
-CMD='~/.claude/hooks/loom/codex-forward.sh task hello --model gpt-5.6-terra --effort xhigh --write\'
-INPUT=$(jq -nc --arg c "$CMD" '{"tool_name":"Bash","tool_input":{"command":$c},"agent_type":"loom-codex-forwarder"}')
-set +e
-echo "$INPUT" | HOME=/home/u bash "$HOOK" 2>/dev/null
-CODE=$?
-set -e
-if [[ $CODE -ne 2 ]]; then
-    echo "FAIL: expected exit 2 for trailing lone backslash, got exit $CODE"
-    exit 1
-fi
-
-# 6. Wrong arity / model / effort / missing --write still rejects.
-CMD='~/.claude/hooks/loom/codex-forward.sh task hello --model gpt-5.6-terra --effort xhigh'
-INPUT=$(jq -nc --arg c "$CMD" '{"tool_name":"Bash","tool_input":{"command":$c},"agent_type":"loom-codex-forwarder"}')
-set +e
-echo "$INPUT" | HOME=/home/u bash "$HOOK" 2>/dev/null
-CODE=$?
-set -e
-if [[ $CODE -ne 2 ]]; then
-    echo "FAIL: expected exit 2 for missing --write, got exit $CODE"
-    exit 1
-fi
-
-# 7. An absolute path that is NOT the wrapper still rejects.
-CMD='/home/u/.claude/hooks/loom/evil.sh task hello --model gpt-5.6-terra --effort xhigh --write'
-INPUT=$(jq -nc --arg c "$CMD" '{"tool_name":"Bash","tool_input":{"command":$c},"agent_type":"loom-codex-forwarder"}')
-set +e
-echo "$INPUT" | HOME=/home/u bash "$HOOK" 2>/dev/null
-CODE=$?
-set -e
-if [[ $CODE -ne 2 ]]; then
-    echo "FAIL: expected exit 2 for non-wrapper absolute path, got exit $CODE"
-    exit 1
-fi
-
-echo "PASS"
+printf '%s\n' PASS

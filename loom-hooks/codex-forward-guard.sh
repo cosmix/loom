@@ -5,7 +5,7 @@
 # argv-aware forwarding wrapper. The command is accepted only when its parsed
 # argument shape is exact and it contains no unquoted shell operators.
 # Missing classification metadata is rejected rather than silently disabling
-# the policy.
+# the policy. Authorized calls are rewritten with guard-minted job identity.
 #
 # Input: JSON from stdin - {"tool_name": ..., "tool_input": ...,
 #        "agent_type": ..., "transcript_path": ...}
@@ -13,7 +13,8 @@
 
 set -euo pipefail
 
-source "$(dirname "$0")/_common.sh"
+source "$(dirname "${BASH_SOURCE[0]}")/_codex_forward.sh"
+source "$(dirname "${BASH_SOURCE[0]}")/_lifecycle.sh"
 loom_require_jq "codex-forward-guard.sh"
 
 if command -v gtimeout &>/dev/null; then
@@ -28,6 +29,10 @@ TOOL_NAME=$(printf '%s' "$INPUT_JSON" | jq -r '.tool_name // empty' 2>/dev/null 
 AGENT_TYPE=$(printf '%s' "$INPUT_JSON" | jq -r '.agent_type // empty' 2>/dev/null || true)
 TRANSCRIPT_PATH=$(printf '%s' "$INPUT_JSON" | jq -r '.transcript_path // empty' 2>/dev/null || true)
 TOOL_USE_ID=$(printf '%s' "$INPUT_JSON" | jq -r '.tool_use_id? | strings' 2>/dev/null || true)
+AGENT_ID=$(printf '%s' "$INPUT_JSON" | jq -r '.agent_id? | strings' 2>/dev/null || true)
+PARENT_SESSION_ID=$(printf '%s' "$INPUT_JSON" | jq -r '.session_id? | strings' 2>/dev/null || true)
+PAYLOAD_CWD=$(printf '%s' "$INPUT_JSON" | jq -r '.cwd? | strings' 2>/dev/null || true)
+TOOL_INPUT=$(printf '%s' "$INPUT_JSON" | jq -c '.tool_input | select(type == "object")' 2>/dev/null || true)
 
 block_forwarder() {
 	local reason="$1"
@@ -38,7 +43,7 @@ block_forwarder() {
 Reason: $reason
 
 The forwarding shim may make one direct Bash call of this form:
-  ~/.claude/hooks/loom/codex-forward.sh task '<prompt>' --model gpt-5.6-terra --effort xhigh --write
+  ~/.claude/hooks/loom/codex-forward.sh task '<prompt>' --model gpt-5.6-terra --effort xhigh --write [--unit-id <unit>]
 The wrapper path may instead be written out in full as
   $HOME/.claude/hooks/loom/codex-forward.sh
 Write that path expanded, exactly as shown - a literal \$HOME is rejected,
@@ -52,61 +57,23 @@ EOF
 
 [[ -n "$TOOL_NAME" ]] || block_forwarder "tool_name metadata is missing"
 
-parse_shell_words() {
-	local input="$1" state=plain word="" char="" started=0 i
-	PARSED_WORDS=()
+valid_unit_id() {
+	local value="$1"
+	[[ ${#value} -ge 1 && ${#value} -le 64 && "$value" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$ ]]
+}
 
-	for ((i = 0; i < ${#input}; i++)); do
-		char=${input:i:1}
-		case "$state" in
-		plain)
-			case "$char" in
-			' ')
-				if [[ $started -eq 1 ]]; then
-					PARSED_WORDS+=("$word")
-					word=""
-					started=0
-				fi
-				;;
-			"'") state=single; started=1 ;;
-			'"') state=double; started=1 ;;
-			'\') state=escape; started=1 ;;
-			$'\n' | $'\r' | $'\t' | $'\v' | $'\f' | ';' | '|' | '&' | '<' | '>' | '`' | '$' | '(' | ')' | '#' | '*' | '?' | '[' | ']' | '{' | '}') return 1 ;;
-			*) word+="$char"; started=1 ;;
-			esac
-			;;
-		single)
-			if [[ "$char" == "'" ]]; then state=plain; else word+="$char"; fi
-			;;
-		double)
-			case "$char" in
-			'"') state=plain ;;
-			'\') state=double_escape ;;
-			$'\n' | $'\r' | $'\t' | $'\v' | $'\f' | '$' | '`') return 1 ;;
-			*) word+="$char" ;;
-			esac
-			;;
-		escape)
-			case "$char" in $'\n' | $'\r' | $'\t' | $'\v' | $'\f') return 1 ;; esac
-			word+="$char"
-			state=plain
-			;;
-		double_escape)
-			case "$char" in
-			'"' | '\') word+="$char"; state=double ;;
-			*) return 1 ;;
-			esac
-			;;
-		esac
-	done
-
-	[[ "$state" == plain ]] || return 1
-	if [[ $started -eq 1 ]]; then PARSED_WORDS+=("$word"); fi
+valid_identity_id() {
+	local value="$1"
+	[[ ${#value} -ge 1 && ${#value} -le 128 && "$value" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]]
 }
 
 is_exact_forward_command() {
+	local allow_invocation="${2:-0}" count
 	parse_shell_words "$1" || return 1
-	[[ ${#PARSED_WORDS[@]} -eq 8 ]] || return 1
+	count=${#PARSED_WORDS[@]}
+	if [[ $count -ne 8 && $count -ne 10 ]]; then
+		[[ "$allow_invocation" == 1 && $count -eq 12 ]] || return 1
+	fi
 	if [[ -n "${HOME:-}" ]]; then
 		[[ "${PARSED_WORDS[0]}" == "~/.claude/hooks/loom/codex-forward.sh" || "${PARSED_WORDS[0]}" == "${HOME}/.claude/hooks/loom/codex-forward.sh" ]] || return 1
 	else
@@ -117,7 +84,24 @@ is_exact_forward_command() {
 	case "${PARSED_WORDS[4]}" in gpt-6-astra | gpt-5.6-sol | gpt-5.6-terra | gpt-5.6-luna) ;; *) return 1 ;; esac
 	[[ "${PARSED_WORDS[5]}" == --effort ]] || return 1
 	case "${PARSED_WORDS[6]}" in low | medium | high | xhigh | max | ultra) ;; *) return 1 ;; esac
-	[[ "${PARSED_WORDS[7]}" == --write ]]
+	[[ "${PARSED_WORDS[7]}" == --write ]] || return 1
+	if [[ $count -ge 10 ]]; then
+		[[ "${PARSED_WORDS[8]}" == --unit-id ]] || return 1
+		valid_unit_id "${PARSED_WORDS[9]}" || return 1
+	fi
+	if [[ $count -eq 12 ]]; then
+		[[ "${PARSED_WORDS[10]}" == --invocation-id ]] || return 1
+		[[ "${PARSED_WORDS[11]}" =~ ^inv-[0-9a-f]{32}$ ]] || return 1
+	fi
+}
+
+caller_supplied_invocation() {
+	parse_shell_words "$1" || return 1
+	local i
+	for ((i = 8; i < ${#PARSED_WORDS[@]}; i++)); do
+		[[ "${PARSED_WORDS[i]}" == --invocation-id ]] && return 0
+	done
+	return 1
 }
 
 # has_prior_forwarding_call - Find an earlier exact Bash forwarding tool use
@@ -131,7 +115,7 @@ has_prior_forwarding_call() {
 		if [[ -n "$TOOL_USE_ID" ]] && { [[ -z "$candidate_id" ]] || [[ "$candidate_id" == "$TOOL_USE_ID" ]]; }; then
 			continue
 		fi
-		is_exact_forward_command "$candidate_command" && return 0
+		is_exact_forward_command "$candidate_command" 1 && return 0
 	done < <(
 		LC_ALL=C head -c 4194304 "$TRANSCRIPT_PATH" 2>/dev/null |
 			jq -jR '
@@ -146,72 +130,174 @@ has_prior_forwarding_call() {
 	return 1
 }
 
-# record_codex_task <model> <effort> - Append one row to
-# $LOOM_WORK_DIR/subagents/<stage-id>/codex.jsonl recording the codex model
-# and effort an AUTHORIZED forward is about to run with. Called from
-# enforce_forwarder only after is_exact_forward_command has already
-# succeeded, so a blocked command never reaches here and records nothing.
-#
-# This hook is a PreToolUse hook, so - like spawn-guard.sh's record_spawn -
-# it runs OUTSIDE the stage session's Bash sandbox and can reach the state
-# directory even though it is a symlink into the main repo from inside a
-# worktree. codex-forward.sh itself cannot do this recording: it runs INSIDE
-# that sandbox, where the append through the worktree's symlink is denied and
-# silently swallowed.
-#
-# Write discipline mirrors spawn-guard.sh:305-348 (record_spawn) exactly:
-# plain mkdir/redirection and never the loom CLI (the state directory is a
-# SYMLINK inside a worktree and loom's safe-write opens roots O_NOFOLLOW), a
-# symlinked target file is refused, every step is best-effort so a recording
-# failure can never change the decision already made, and it never writes to
-# stdout (this hook's stdout is hook protocol).
+canonical_dir_target() {
+	local target="$1" suffix="" leaf parent physical
+	while [[ ! -d "$target" ]]; do
+		[[ ! -e "$target" && ! -L "$target" ]] || return 1
+		leaf=${target##*/}
+		parent=${target%/*}
+		[[ -n "$leaf" && -n "$parent" && "$parent" != "$target" ]] || return 1
+		suffix="/$leaf$suffix"
+		target=$parent
+	done
+	physical=$(cd "$target" 2>/dev/null && pwd -P) || return 1
+	printf '%s%s\n' "$physical" "$suffix"
+}
+
+resolve_active_stage() {
+	local work_dir="${LOOM_WORK_DIR:-}"
+	valid_identity_id "${LOOM_STAGE_ID:-}" || return 1
+	valid_identity_id "${LOOM_SESSION_ID:-}" || return 1
+	[[ "$work_dir" == /* && "$work_dir" != *$'\n'* && -d "$work_dir" ]] || return 1
+	ACTIVE_WORK_DIR=$(cd "$work_dir" 2>/dev/null && pwd -P) || return 1
+	[[ -n "$ACTIVE_WORK_DIR" && "$ACTIVE_WORK_DIR" != / ]]
+}
+
+select_companion() {
+	[[ -n "${HOME:-}" && -d "$HOME" ]] || return 1
+	local selected="${HOME}/.claude/plugins/cache/openai-codex/codex/1.0.6/scripts/codex-companion.mjs"
+	[[ -f "$selected" && ! -L "$selected" ]] || return 1
+	local directory
+	directory=$(cd "$(dirname "$selected")" 2>/dev/null && pwd -P) || return 1
+	COMPANION_PATH="$directory/codex-companion.mjs"
+	COMPANION_VERSION=1.0.6
+	STATE_ROOT=$(canonical_dir_target "${HOME}/.codex/plugin-data/state") || return 1
+}
+
+resolve_workspace_root() {
+	local cwd="${PAYLOAD_CWD:-$PWD}" candidate=""
+	[[ -d "$cwd" ]] || return 1
+	if command -v git >/dev/null 2>&1; then
+		candidate=$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null || true)
+	fi
+	[[ -n "$candidate" && -d "$candidate" ]] || candidate=$cwd
+	WORKSPACE_ROOT=$(cd "$candidate" 2>/dev/null && pwd -P) || return 1
+}
+
+resolve_forwarder_agent() {
+	FORWARDER_AGENT_ID=$AGENT_ID
+	if [[ -z "$FORWARDER_AGENT_ID" ]]; then
+		case "$TRANSCRIPT_PATH" in
+		*/subagents/agent-*.jsonl)
+			FORWARDER_AGENT_ID=${TRANSCRIPT_PATH##*/agent-}
+			FORWARDER_AGENT_ID=${FORWARDER_AGENT_ID%.jsonl}
+			;;
+		esac
+	fi
+	[[ -n "$FORWARDER_AGENT_ID" ]]
+}
+
+forward_observed_at() {
+	local observed transcript_observed observed_epoch transcript_epoch
+	observed=$(date -u +"%Y-%m-%dT%H:%M:%S.000Z" 2>/dev/null) || return 1
+	observed_epoch=$(loom_lifecycle_epoch "$observed") || return 1
+	if [[ -n "$TRANSCRIPT_PATH" && -f "$TRANSCRIPT_PATH" && -r "$TRANSCRIPT_PATH" &&
+		! -L "$TRANSCRIPT_PATH" ]]; then
+		transcript_observed=$(LC_ALL=C head -c 4194304 "$TRANSCRIPT_PATH" 2>/dev/null |
+			jq -sr '[.[] | .timestamp? | select(type == "string")] | last // empty' \
+			2>/dev/null || true)
+		transcript_epoch=$(loom_lifecycle_epoch "$transcript_observed" 2>/dev/null || true)
+		if [[ "$transcript_epoch" =~ ^[0-9]+$ ]] && ((transcript_epoch > observed_epoch)); then
+			observed=$transcript_observed
+		fi
+	fi
+	printf '%s\n' "$observed"
+}
+
+resolve_forwarder_start() {
+	local expected_type=loom-codex-forwarder observed ledger row candidate status
+	local matches=0
+	[[ "$AGENT_TYPE" != codex:codex-rescue ]] || expected_type=codex:codex-rescue
+	observed=$(forward_observed_at) || return 1
+	loom_lifecycle_resolve_start "$ACTIVE_WORK_DIR" "${LOOM_STAGE_ID:-}" \
+		"$PARENT_SESSION_ID" "${LOOM_SESSION_ID:-}" "$FORWARDER_AGENT_ID" \
+		"$expected_type" "$observed" "codex-forward-guard.sh" || return
+	ledger="$ACTIVE_WORK_DIR/subagents/${LOOM_STAGE_ID:-}/starts.jsonl"
+	loom_lifecycle_plain_path "$ledger" file || return 1
+	while IFS= read -r row || [[ -n "$row" ]]; do
+		[[ -n "${row//[[:space:]]/}" ]] || continue
+		candidate=$(loom_lifecycle_start_candidate "$row" "${LOOM_STAGE_ID:-}" \
+			"$PARENT_SESSION_ID" "${LOOM_SESSION_ID:-}" "$FORWARDER_AGENT_ID" \
+			"codex-forward-guard.sh"); status=$?
+		((status == 0)) || return "$status"
+		[[ -z "$candidate" ]] || matches=$((matches + 1))
+	done <"$ledger"
+	[[ $matches -eq 1 ]]
+}
+
+mint_invocation() {
+	local nonce
+	nonce=$(LC_ALL=C od -An -N16 -tx1 /dev/urandom 2>/dev/null | tr -d ' \n') || return 1
+	[[ "$nonce" =~ ^[0-9a-f]{32}$ ]] || return 1
+	INVOCATION_ID="inv-$nonce"
+}
+
+# Append the authorization before allowing execution. Unlike the legacy model
+# ledger, failure is an authorization failure: the job must never launch.
 record_codex_task() {
-	local model="$1" effort="$2"
-	local work_dir="${LOOM_WORK_DIR:-}" stage_id="${LOOM_STAGE_ID:-}"
-	[[ -n "$work_dir" && -n "$stage_id" ]] || return 0
+	local model="$1" effort="$2" unit="$3" invocation="$4"
+	local work_dir="${ACTIVE_WORK_DIR:-}" stage_id="${LOOM_STAGE_ID:-}"
+	local loom_session_id="${LOOM_SESSION_ID:-}" dir file ts line
+	[[ -n "$work_dir" && -n "$stage_id" && -n "$loom_session_id" ]] || return 1
+	valid_identity_id "$stage_id" || return 1
+	valid_identity_id "$loom_session_id" || return 1
+	valid_identity_id "$PARENT_SESSION_ID" || return 1
+	valid_identity_id "$FORWARDER_AGENT_ID" || return 1
+	valid_identity_id "$TOOL_USE_ID" || return 1
 
-	case "$stage_id" in
-	*[!A-Za-z0-9._-]* | "" | "." | "..")
-		return 0
-		;;
-	esac
+	dir="${work_dir}/subagents/${stage_id}"
+	mkdir -p -m 700 "$dir" 2>/dev/null || return 1
+	chmod 700 "$dir" 2>/dev/null || return 1
+	file="${dir}/codex.jsonl"
+	[[ ! -L "$file" ]] || return 1
+	[[ ! -e "$file" || -f "$file" ]] || return 1
+	ts=$(date -u +"%Y-%m-%dT%H:%M:%S.000Z") || return 1
+	line=$(jq -nc --arg ts "$ts" --arg stage_id "$stage_id" \
+		--arg session_id "$loom_session_id" --arg parent_session_id "$PARENT_SESSION_ID" \
+		--arg forwarder_agent_id "$FORWARDER_AGENT_ID" --arg tool_use_id "$TOOL_USE_ID" \
+		--arg unit_id "$unit" --arg invocation_id "$invocation" --arg model "$model" \
+		--arg effort "$effort" --arg workspace_root "$WORKSPACE_ROOT" \
+		--arg companion_version "$COMPANION_VERSION" --arg companion_path "$COMPANION_PATH" \
+		--arg state_root "$STATE_ROOT" \
+		'{v:2,ts:$ts,stage_id:$stage_id,session_id:$session_id,parent_session_id:$parent_session_id,forwarder_agent_id:$forwarder_agent_id,tool_use_id:$tool_use_id,unit_id:$unit_id,invocation_id:$invocation_id,model:$model,effort:$effort,workspace_root:$workspace_root,companion_version:$companion_version,companion_path:$companion_path,state_root:$state_root}' \
+		2>/dev/null) || return 1
+	[[ -n "$line" ]] || return 1
+	{ printf '%s\n' "$line" >>"$file"; } 2>/dev/null || return 1
+	chmod 600 "$file" 2>/dev/null || true
+}
 
-	local dir="${work_dir}/subagents/${stage_id}"
-	mkdir -p -m 700 "$dir" 2>/dev/null || return 0
-	chmod 700 "$dir" 2>/dev/null || true
-
-	local file="${dir}/codex.jsonl"
-	if [[ -L "$file" ]]; then
-		return 0
-	fi
-
-	local ts line
-	ts=$(date -u +"%Y-%m-%dT%H:%M:%S.000Z") || return 0
-	line=$(jq -nc \
-		--arg ts "$ts" \
-		--arg stage_id "$stage_id" \
-		--arg session_id "${LOOM_SESSION_ID:-}" \
-		--arg model "$model" \
-		--arg effort "$effort" \
-		'{ts: $ts, stage_id: $stage_id, session_id: $session_id, model: $model, effort: $effort}' \
-		2>/dev/null) || return 0
-
-	if [[ -n "$line" ]]; then
-		{ printf '%s\n' "$line" >>"$file"; } 2>/dev/null || return 0
-		chmod 600 "$file" 2>/dev/null || true
-	fi
-	return 0
+emit_authorized_input() {
+	local command="$1" unit="$2" invocation="$3" has_unit="$4" updated
+	updated=$command
+	[[ "$has_unit" == 1 ]] || updated+=" --unit-id $unit"
+	updated+=" --invocation-id $invocation"
+	jq -nc --argjson input "$TOOL_INPUT" --arg command "$updated" \
+		'{hookSpecificOutput:{hookEventName:"PreToolUse",permissionDecision:"allow",updatedInput:($input + {command:$command})}}'
 }
 
 enforce_forwarder() {
 	[[ "$TOOL_NAME" == "Bash" ]] || block_forwarder "forwarders may use Bash only"
 	local command
 	command=$(printf '%s' "$INPUT_JSON" | jq -r '.tool_input.command // empty' 2>/dev/null || true)
-	[[ -n "$command" ]] || block_forwarder "Bash command metadata is missing"
+	[[ -n "$command" && -n "$TOOL_INPUT" ]] || block_forwarder "Bash command metadata is missing"
+	caller_supplied_invocation "$command" && block_forwarder "caller-supplied --invocation-id is forbidden"
 	is_exact_forward_command "$command" || block_forwarder "command is not an exact forwarding-wrapper invocation"
-	local model="${PARSED_WORDS[4]}" effort="${PARSED_WORDS[6]}"
+	resolve_active_stage || block_forwarder "codex forwarding is allowed only inside an active loom stage (safe LOOM_STAGE_ID, LOOM_SESSION_ID, and LOOM_WORK_DIR are required)"
+	local model="${PARSED_WORDS[4]}" effort="${PARSED_WORDS[6]}" unit="" has_unit=0
+	if [[ ${#PARSED_WORDS[@]} -eq 10 ]]; then
+		unit=${PARSED_WORDS[9]}
+		has_unit=1
+	fi
+	resolve_forwarder_agent || block_forwarder "forwarder agent identity is missing"
+	resolve_forwarder_start || block_forwarder "forwarder identity does not match exactly one SubagentStart row"
+	[[ -n "$unit" ]] || unit="fwd-$FORWARDER_AGENT_ID"
+	valid_unit_id "$unit" || block_forwarder "unit id is invalid"
 	has_prior_forwarding_call && block_forwarder "one forward per forwarder: the first forward is already running or finished. Return its output as the final message and stop; never retry or re-forward."
-	record_codex_task "$model" "$effort"
+	select_companion || block_forwarder "supported codex companion 1.0.6 is missing or unsafe"
+	resolve_workspace_root || block_forwarder "payload cwd cannot be resolved to a canonical workspace"
+	mint_invocation || block_forwarder "could not mint an invocation id"
+	record_codex_task "$model" "$effort" "$unit" "$INVOCATION_ID" || block_forwarder "authorization row could not be written"
+	emit_authorized_input "$command" "$unit" "$INVOCATION_ID" "$has_unit"
 	exit 0
 }
 

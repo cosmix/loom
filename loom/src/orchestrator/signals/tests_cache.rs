@@ -1,6 +1,6 @@
 //! Signal compression and caching tests
 
-use std::fs;
+use std::{fs, path::Path};
 use tempfile::TempDir;
 
 use crate::codex::{
@@ -47,13 +47,11 @@ fn test_stable_prefix_is_constant() {
 fn test_stable_prefix_contains_required_content() {
     let prefix = generate_stable_prefix();
 
-    // Must contain isolation rules
     assert!(prefix.contains("Worktree Context"));
     assert!(prefix.contains("Isolation Boundaries"));
     assert!(prefix.contains("CONFINED"));
     assert!(prefix.contains("FORBIDDEN"));
 
-    // Must contain execution rules
     assert!(prefix.contains("Execution Rules"));
     assert!(prefix.contains("STAY IN THIS WORKTREE"));
     // Git-staging rules, the anti-slop forcing-function, and the
@@ -99,12 +97,10 @@ fn test_format_signal_with_metrics() {
         &embedded_context,
     );
 
-    // Verify content is generated
     assert!(formatted.content.contains("# Signal: session-test-123"));
     assert!(formatted.content.contains("## Worktree Context"));
     assert!(formatted.content.contains("## Immediate Tasks"));
 
-    // Verify metrics are populated
     assert!(formatted.metrics.signal_size_bytes > 0);
     assert!(formatted.metrics.stable_prefix_bytes > 0);
     assert!(!formatted.metrics.stable_prefix_hash.is_empty());
@@ -126,16 +122,13 @@ fn test_generate_signal_with_metrics() {
     assert!(result.is_ok());
     let (signal_path, metrics) = result.unwrap();
 
-    // Verify file was created
     assert!(signal_path.exists());
 
-    // Verify metrics
     assert!(metrics.signal_size_bytes > 0);
     assert!(metrics.stable_prefix_bytes > 0);
     assert!(metrics.estimated_tokens > 0);
     assert!(!metrics.stable_prefix_hash.is_empty());
 
-    // Content should match metrics size
     let content = fs::read_to_string(&signal_path).unwrap();
     assert_eq!(content.len(), metrics.signal_size_bytes);
 }
@@ -164,27 +157,17 @@ fn test_signal_sections_ordering() {
 
     let content = &formatted.content;
 
-    // Verify section ordering (Manus pattern):
-    // 1. STABLE: Worktree Context, Execution Rules
-    // 2. SEMI-STABLE: Knowledge, Facts
-    // 3. DYNAMIC: Target, Assignment, Acceptance
-    // 4. RECITATION: Immediate Tasks, Stage Memory (at END)
-
     let worktree_pos = content.find("## Worktree Context").unwrap();
     let execution_pos = content.find("## Execution Rules").unwrap();
-    // Standard stages show "## Stage Memory" in semi-stable section
     let memory_semi_stable_pos = content.find("## Stage Memory").unwrap();
     let target_pos = content.find("## Target").unwrap();
     let tasks_pos = content.find("## Immediate Tasks").unwrap();
 
-    // Stable before semi-stable
     assert!(worktree_pos < memory_semi_stable_pos);
     assert!(execution_pos < memory_semi_stable_pos);
 
-    // Semi-stable before dynamic
     assert!(memory_semi_stable_pos < target_pos);
 
-    // Recitation at end (tasks are last)
     assert!(target_pos < tasks_pos);
 }
 
@@ -193,7 +176,6 @@ fn test_signal_contains_session_memory_section_for_standard_stages() {
     let session = create_test_session();
     let stage = create_test_stage(); // Creates a Standard stage (default)
     let worktree = create_test_worktree();
-    // Default context has no knowledge (knowledge_exists: false, knowledge_is_empty: true)
     let embedded_context = EmbeddedContext::default();
 
     let content = format_signal_content(
@@ -206,23 +188,18 @@ fn test_signal_contains_session_memory_section_for_standard_stages() {
         &embedded_context,
     );
 
-    // Standard stages should show Stage Memory section (not Knowledge Management)
     assert!(content.contains("## Stage Memory"));
     assert!(!content.contains("## Knowledge Management"));
 
-    // Should show memory-only instructions
     assert!(content.contains("SESSION MEMORY REQUIRED"));
     assert!(content.contains("RECORD AS YOU GO"));
 
-    // Should show warning against using loom knowledge
     assert!(content.contains("NEVER use 'loom knowledge' in implementation stages"));
 
-    // Commands should be memory commands
     assert!(content.contains("loom memory note"));
     assert!(content.contains("loom memory decision"));
     assert!(content.contains("loom memory question"));
 
-    // Should NOT show knowledge commands
     assert!(!content.contains("loom knowledge update entry-points"));
     assert!(!content.contains("loom knowledge update patterns"));
 }
@@ -233,7 +210,6 @@ fn test_signal_contains_knowledge_management_section_for_knowledge_stages() {
     let mut stage = create_test_stage();
     stage.stage_type = StageType::Knowledge; // Set to Knowledge stage
     let worktree = create_test_worktree();
-    // Context with a populated knowledge brief
     let embedded_context = EmbeddedContext {
         context_pack: Some(sample_context_pack()),
         context_ceiling_tokens: None,
@@ -251,15 +227,11 @@ fn test_signal_contains_knowledge_management_section_for_knowledge_stages() {
         &embedded_context,
     );
 
-    // Knowledge stages should show Knowledge Management section
     assert!(content.contains("## Knowledge Management"));
-    // For populated knowledge, should NOT show CRITICAL warning
     assert!(!content.contains("CRITICAL: KNOWLEDGE BASE IS EMPTY"));
-    // Should show standard guidance for established codebases
     assert!(content.contains("Extend the knowledge base"));
     assert!(content.contains("undocumented modules"));
     assert!(content.contains("new insights"));
-    // Commands should be knowledge commands
     assert!(content.contains("loom knowledge update entry-points"));
     assert!(content.contains("loom knowledge update patterns"));
     assert!(content.contains("loom knowledge update conventions"));
@@ -286,7 +258,6 @@ fn test_signal_ultracode_section_gated() {
     let session = create_test_session();
     let worktree = create_test_worktree();
 
-    // Default stage: no ultracode section
     let stage = create_test_stage();
     let (signal_path, _) =
         generate_signal_with_metrics(&session, &stage, &worktree, &[], None, None, &work_dir)
@@ -294,7 +265,6 @@ fn test_signal_ultracode_section_gated() {
     let content = fs::read_to_string(&signal_path).unwrap();
     assert!(!content.contains("## Ultracode Mode"));
 
-    // Ultracode-licensed stage: section present (flag propagates stage → context → signal)
     let mut ultracode_stage = create_test_stage();
     ultracode_stage.ultracode = true;
     let mut session2 = create_test_session();
@@ -314,40 +284,40 @@ fn test_signal_ultracode_section_gated() {
     assert!(content.contains("Workflow tool"));
 }
 
+fn generated_signal(
+    work_dir: &Path,
+    implementers: Option<Implementers>,
+    session_id: Option<&str>,
+) -> String {
+    let mut session = create_test_session();
+    if let Some(session_id) = session_id {
+        session.id = session_id.to_string();
+    }
+    let mut stage = create_test_stage();
+    if let Some(implementers) = implementers {
+        stage.implementers = implementers;
+    }
+    let worktree = create_test_worktree();
+    let (signal_path, _) =
+        generate_signal_with_metrics(&session, &stage, &worktree, &[], None, None, work_dir)
+            .unwrap();
+    fs::read_to_string(signal_path).unwrap()
+}
+
 #[test]
 fn test_signal_codex_implementers_section_gated() {
     let temp_dir = TempDir::new().unwrap();
     let work_dir = temp_dir.path().join(".loom").join("work");
     fs::create_dir_all(&work_dir).unwrap();
 
-    let session = create_test_session();
-    let worktree = create_test_worktree();
-
-    // Default stage (claude lane): no codex doctrine. This negative assert is the
-    // load-bearing half — it proves existing plans are unaffected by the new lane.
-    let stage = create_test_stage();
-    let (signal_path, _) =
-        generate_signal_with_metrics(&session, &stage, &worktree, &[], None, None, &work_dir)
-            .unwrap();
-    let content = fs::read_to_string(&signal_path).unwrap();
+    let content = generated_signal(&work_dir, None, None);
     assert!(!content.contains("## Codex Implementers"));
 
-    // Codex-routed stage: section present (lane propagates stage → context → signal)
-    let mut codex_stage = create_test_stage();
-    codex_stage.implementers = Implementers::new(vec![Implementer::Codex]);
-    let mut session2 = create_test_session();
-    session2.id = "session-codex".to_string();
-    let (signal_path, _) = generate_signal_with_metrics(
-        &session2,
-        &codex_stage,
-        &worktree,
-        &[],
-        None,
-        None,
+    let content = generated_signal(
         &work_dir,
-    )
-    .unwrap();
-    let content = fs::read_to_string(&signal_path).unwrap();
+        Some(Implementers::new(vec![Implementer::Codex])),
+        Some("session-codex"),
+    );
     assert!(content.contains("## Codex Implementers"));
     // From here on the section body depends on whether codex is actually
     // installed on the machine running the tests: the pipeline resolves
@@ -360,9 +330,17 @@ fn test_signal_codex_implementers_section_gated() {
         // The sentinel the codex-forward-guard hook keys on must be mandated here,
         // interpolated from the same constant the hook is pinned against.
         assert!(content.contains(crate::codex::CODEX_FORWARD_SENTINEL));
-        // A report is only accepted with the companion-job evidence trailer.
-        assert!(content.contains("LOOM-CODEX-EVIDENCE"));
-        // Models come from the shared constants, not a second literal
+        for needle in [
+            "LOOM-CODEX-EVIDENCE",
+            "--write --unit-id <unit>",
+            "`job:`, then `unit:`, then `invocation:`",
+            "`state: active`",
+        ] {
+            assert!(
+                content.contains(needle),
+                "codex doctrine must contain {needle:?}"
+            );
+        }
         assert!(content.contains(CODEX_IMPLEMENTER_MODEL_TERRA));
         assert!(content.contains(CODEX_IMPLEMENTER_MODEL_LUNA));
 
@@ -381,20 +359,15 @@ fn test_signal_codex_implementers_section_gated() {
              run; no hook covers codex's own shell commands"
         );
 
-        // Two operational failure modes measured against the real plugin. Both are
-        // silent: the run still "works", it just costs minutes or strands its
-        // result, so nothing surfaces them except this doctrine.
         assert!(
-            content.contains("600000"),
+            ["600000", "540000"]
+                .iter()
+                .all(|needle| content.contains(needle)),
             "the codex block must tell the orchestrator to state an explicit Bash \
-             timeout; the wrapper never raises the 120s default and the harness \
-             then backgrounds the run"
+             timeout and distinguish it from the wrapper's exact snapshot wait"
         );
-        assert!(
-            content.contains("loom subagents wait --receipt"),
-            "the codex block must name the exact-receipt recovery path for a backgrounded run - \
-             the id the wrapper returns is a Claude Code task id, not a codex job id"
-        );
+        assert!(content.contains("one background `loom subagents watch --timeout 3600`"));
+        assert!(content.contains("Watch exits 1 for failure, 3 for cancellation"));
         assert!(
             content.contains("doc/loom/knowledge/"),
             "the codex block must tell the orchestrator to forbid the knowledge \
@@ -416,21 +389,14 @@ fn test_signal_codex_implementers_section_gated() {
     // dropped, leaving a stage that can spawn codex agents with none of the
     // rules for them — and it must tell the orchestrator to choose per subagent
     // rather than read one listed lane as a whole-stage mode.
-    let mut mixed_stage = create_test_stage();
-    mixed_stage.implementers = Implementers::new(vec![Implementer::Claude, Implementer::Codex]);
-    let mut session3 = create_test_session();
-    session3.id = "session-mixed".to_string();
-    let (signal_path, _) = generate_signal_with_metrics(
-        &session3,
-        &mixed_stage,
-        &worktree,
-        &[],
-        None,
-        None,
+    let content = generated_signal(
         &work_dir,
-    )
-    .unwrap();
-    let content = fs::read_to_string(&signal_path).unwrap();
+        Some(Implementers::new(vec![
+            Implementer::Claude,
+            Implementer::Codex,
+        ])),
+        Some("session-mixed"),
+    );
     assert!(
         content.contains("## Codex Implementers"),
         "a mixed stage must carry the codex doctrine even when codex is secondary"

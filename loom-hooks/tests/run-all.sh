@@ -50,6 +50,8 @@ run_test "codex-forward-guard: plain subagents, main sessions, no-path all untou
 run_test "codex-forward-guard: authorized forwards record requested model" "$SCRIPT_DIR/codex-forward-records-model.sh"
 run_test "codex-forward-guard: tests isolate ambient live identity" "$SCRIPT_DIR/codex-forward-guard-live-identity.sh"
 run_test "codex-forward: exact job lifecycle markers and argv" "$SCRIPT_DIR/codex-forward-wrapper.sh"
+run_test "codex-forward: bounded direct process supervision" "$SCRIPT_DIR/codex-forward-direct.sh"
+run_test "codex-forward-result: correlated direct lifecycle evidence" "$SCRIPT_DIR/codex-forward-result.sh"
 run_test "codex apply_patch: file guards and source-graph edit recording" "$SCRIPT_DIR/codex-apply-patch.sh"
 run_test "codex-forward-guard: quoted and escaped prompts round-trip" "$SCRIPT_DIR/codex-forward-guard-quoting.sh"
 run_test "git-add-guard: quoted prose allowed, real args blocked" "$SCRIPT_DIR/git-add-guard-quoting.sh"

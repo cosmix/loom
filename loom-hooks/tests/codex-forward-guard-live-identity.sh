@@ -34,6 +34,10 @@ for test_name in \
 		printf '%s\n' "FAIL: $test_name left a codex ledger outside its own temporary directory"
 		exit 1
 	fi
+	if [[ -e "$LIVE_WORK/subagents" ]]; then
+		printf '%s\n' "FAIL: $test_name used the ambient live LOOM_WORK_DIR"
+		exit 1
+	fi
 done
 
 printf '%s\n' 'PASS'

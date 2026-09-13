@@ -104,11 +104,11 @@ fn push_codex_spawn_rules(content: &mut String) {
         "- State the model/effort IN THE PROMPT: \"--model {CODEX_IMPLEMENTER_MODEL_TERRA} --effort\n",
         "  {CODEX_IMPLEMENTER_EFFORT} <task>\" for common implementation/integration tests, or\n",
         "  \"--model {CODEX_IMPLEMENTER_MODEL_LUNA} --effort {CODEX_IMPLEMENTER_EFFORT} <task>\" for\n",
-        "  boilerplate/scaffolding/simple unit tests, plus an explicit foreground Bash timeout (600000 ms,\n",
-        "  the tool's maximum) and `--write`. The forwarder makes ONE Bash call; its wrapper launches\n",
-        "  exactly one companion job and waits for that exact job. A natural harness background\n",
-        "  acknowledgement is optional visibility, never completion evidence. Do not use `codex-companion.mjs status\n",
-        "  --all`; use the exact receipt instead.\n",
+        "  boilerplate/scaffolding/simple unit tests. Give every logical Codex unit a stable unique id\n",
+        "  matching `[A-Za-z0-9][A-Za-z0-9._-]{{0,63}}` and state `--unit-id <unit>` in the prompt. The forwarder\n",
+        "  makes ONE foreground Bash call with timeout 600000 ms and exact shape\n",
+        "  `~/.claude/hooks/loom/codex-forward.sh task '<task>' --model <m> --effort <e> --write --unit-id <unit>`.\n",
+        "  It passes the unit verbatim and never supplies `--invocation-id`; the guard injects it.\n",
     ),
         CODEX_IMPLEMENTER_MODEL_TERRA = CODEX_IMPLEMENTER_MODEL_TERRA,
         CODEX_IMPLEMENTER_EFFORT = CODEX_IMPLEMENTER_EFFORT,
@@ -141,9 +141,13 @@ fn push_codex_prompt_rules(content: &mut String) {
     content.push_str(concat!(
         "- MIXED FAN-OUT: codex and Claude subagents may share a wave - file ownership keeps them\n",
         "  apart, enforced across lanes just as within one. FOREGROUND ONLY, and skip `--resume-last`:\n",
-        "  the wrapper's one internal background job is bound by its exact ID. If the forwarding Bash\n",
-        "  call is backgrounded, wait on its exact `loom subagents wait --receipt <id> --timeout 3600`,\n",
-        "  or use one background `loom subagents watch --timeout 3600` for explicit exact-ID recovery.\n",
+        "  the wrapper waits at most 540000 ms for one exact status snapshot. A still-running job reports\n",
+        "  `state: active` with no `LOOM-FORWARD-END` and remains under daemon ownership. Start exactly\n",
+        "  one background `loom subagents watch --timeout 3600`; never use a model-driven status loop,\n",
+        "  a second forward, or `codex-companion.mjs status --all`. Retrying a logical unit means a fresh\n",
+        "  forwarder spawn with the SAME unit id; the guard mints a fresh invocation, so it cannot revive\n",
+        "  the previous job. Watch exits 1 for failure, 3 for cancellation, 2 for timeout or unknown, and\n",
+        "  0 only when every owned worker has lifecycle-evidenced success.\n",
         "  A foreground run is one long Bash call - no PostToolUse fires, so the daemon's \"appears hung\"\n",
         "  warning past 300s is ADVISORY ONLY.\n",
     ));
@@ -169,10 +173,12 @@ fn push_codex_blast_radius_and_evidence(content: &mut String) {
     );
     content.push_str(concat!(
         "- ACCEPT A REPORT ONLY WITH EVIDENCE: the report is the forwarder's FINAL MESSAGE, and a\n",
-        "  genuine forward starts with wrapper-owned `LOOM-FORWARD-START` and `LOOM-FORWARD-END` markers,\n",
-        "  then `--- LOOM-FORWARD-OUTPUT ---`, then a \"--- LOOM-CODEX-EVIDENCE ---\" trailer carrying\n",
-        "  `exit:` and `mode:`. In `mode: companion`, `job:` and `record:` name one exact job; accept\n",
-        "  it only when that named record has completed status and \"phase\": \"done\". In `mode: direct (...)`\n",
+        "  completed forward has wrapper-owned `LOOM-FORWARD-START` and `LOOM-FORWARD-END` markers, then\n",
+        "  `--- LOOM-FORWARD-OUTPUT ---`, then a \"--- LOOM-CODEX-EVIDENCE ---\" trailer carrying `exit:`\n",
+        "  and `mode:`. In `mode: companion`, the trailer orders `job:`, then `unit:`, then `invocation:`,\n",
+        "  then `record:`. Accept only when the named record has completed status with \"phase\":\"done\",\n",
+        "  the trailer unit equals the unit you assigned, and its invocation matches that job's authorization.\n",
+        "  An active report deliberately has `state: active` and no `LOOM-FORWARD-END`. In `mode: direct (...)`\n",
         "  (macOS inside the stage sandbox), `thread:` names one exact thread.\n",
         "  No matching markers, trailer, exact record, or exact thread leaves the forward state unresolved\n",
         "  for orchestrator review.\n",
@@ -191,15 +197,22 @@ mod tests {
     use crate::models::stage::{Implementer, Implementers};
 
     #[test]
-    fn codex_doctrine_requires_receipt_based_recovery() {
+    fn codex_doctrine_requires_exact_lifecycle_recovery() {
         let implementers = Implementers::new(vec![Implementer::Codex]);
         let rendered = format_codex_implementers_section(&implementers, true);
         let collapsed = rendered.split_whitespace().collect::<Vec<_>>().join(" ");
 
-        assert!(collapsed.contains("loom subagents wait --receipt"));
-        assert!(collapsed.contains("Do not use `codex-companion.mjs status --all`"));
+        assert!(collapsed.contains("[A-Za-z0-9][A-Za-z0-9._-]{0,63}"));
+        assert!(collapsed.contains("--write --unit-id <unit>"));
+        assert!(collapsed.contains("SAME unit id"));
+        assert!(collapsed.contains("loom subagents watch --timeout 3600"));
+        assert!(collapsed.contains("`state: active` with no `LOOM-FORWARD-END`"));
+        assert!(collapsed.contains("Watch exits 1 for failure, 3 for cancellation"));
+        assert!(collapsed.contains("\"phase\":\"done\""));
+        assert!(collapsed.contains("`codex-companion.mjs status --all`"));
 
         for forbidden in [
+            "loom subagents wait --receipt",
             "Recover with `codex-companion.mjs status",
             "run `codex-companion.mjs status --all`",
             "Recover with `--resume-last`",

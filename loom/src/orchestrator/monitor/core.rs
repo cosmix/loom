@@ -35,6 +35,37 @@ fn overlay_heartbeat_context(sessions: &mut [Session], events: &[MonitorEvent]) 
     }
 }
 
+fn reconcile_codex_evidence(work_dir: &std::path::Path, sessions: &[Session]) {
+    let report = match crate::codex_lifecycle::reconcile_codex_jobs(work_dir, sessions) {
+        Ok(report) => report,
+        Err(error) => {
+            tracing::warn!(error = %error, "Codex lifecycle reconcile failed");
+            return;
+        }
+    };
+    for entry in report.entries {
+        let unknown = entry.is_unknown();
+        tracing::debug!(
+            stage_id = %entry.stage_id.as_str(),
+            loom_session_id = ?entry.loom_session_id.as_deref(),
+            unit_id = ?entry.unit_id.as_deref(),
+            invocation_id = ?entry.invocation_id.as_deref(),
+            outcome = ?entry.outcome,
+            detail = %entry.detail.as_str(),
+            "Codex lifecycle reconcile entry"
+        );
+        if unknown {
+            tracing::warn!(
+                stage_id = %entry.stage_id.as_str(),
+                unit_id = ?entry.unit_id.as_deref(),
+                invocation_id = ?entry.invocation_id.as_deref(),
+                detail = %entry.detail.as_str(),
+                "Codex lifecycle evidence is unknown"
+            );
+        }
+    }
+}
+
 /// Monitor state for tracking changes
 pub struct Monitor {
     config: MonitorConfig,
@@ -76,6 +107,7 @@ impl Monitor {
 
         let stages = self.load_stages()?;
         let mut sessions = self.load_sessions()?;
+        reconcile_codex_evidence(&self.config.work_dir, &sessions);
 
         // Poll heartbeat files before judging context. A persisted high-water
         // reading can be older than a fresh post-compaction heartbeat, and

@@ -1,7 +1,6 @@
-//! Reads `spawns.jsonl`, which records spawned agents, and `codex.jsonl`, which
-//! records forwarded Codex executions, to collect a stage's execution models.
-//! Forwarder rows are skipped because they record the forwarding shim's tier,
-//! while the Codex ledger records the model that performed the work.
+//! Reads `spawns.jsonl` and correlated Codex lifecycle evidence to collect a
+//! stage's execution models. Codex names are explicitly requested-model
+//! attribution; companion v1.0.6 does not provide a provider-observed model.
 
 use std::collections::HashSet;
 use std::fs;
@@ -44,13 +43,53 @@ pub fn execution_models_for_stage(work_dir: &WorkDir, stage_id: &str) -> Vec<Str
         &mut seen,
         &mut models,
     );
-    append_models(
+    append_codex_models(
+        work_dir.root(),
+        stage_id,
         &stage_dir.join("codex.jsonl"),
-        false,
         &mut seen,
         &mut models,
     );
     models
+}
+
+fn append_codex_models(
+    work_dir: &Path,
+    stage_id: &str,
+    path: &Path,
+    seen: &mut HashSet<String>,
+    models: &mut Vec<String>,
+) {
+    for row in json_lines(path) {
+        if models.len() >= MAX_EXECUTION_MODELS {
+            return;
+        }
+        let model = if row.get("v").and_then(Value::as_u64) == Some(2) {
+            correlated_requested_model(work_dir, stage_id, &row)
+        } else {
+            row.get("model")
+                .and_then(Value::as_str)
+                .filter(|model| (1..=128).contains(&model.len()) && !model.as_bytes().contains(&0))
+                .map(str::to_owned)
+        };
+        let Some(model) = model else {
+            continue;
+        };
+        let normalized = normalize_model(&inline_safe(&model));
+        if !normalized.is_empty() {
+            append_model(&format!("{normalized} (requested)"), seen, models);
+        }
+    }
+}
+
+fn correlated_requested_model(work_dir: &Path, stage_id: &str, row: &Value) -> Option<String> {
+    let authorization = crate::codex_lifecycle::CodexAuthorization::from_v2_value(row).ok()?;
+    if authorization.stage_id != stage_id
+        || !crate::codex_lifecycle::has_correlated_lifecycle(work_dir, &authorization)
+    {
+        return None;
+    }
+    Some(authorization.model)
 }
 
 fn append_models(
@@ -83,13 +122,13 @@ fn append_models(
         // rows reading `sonnet`. Flattening first also trims, and keeps a
         // trailing zero-width character from hiding a `-YYYYMMDD` date stamp
         // from `strip_date_suffix`.
-        let display_name = normalize_model(&inline_safe(model));
-        if display_name.is_empty() {
-            continue;
-        }
-        if seen.insert(display_name.clone()) {
-            models.push(display_name);
-        }
+        append_model(&normalize_model(&inline_safe(model)), seen, models);
+    }
+}
+
+fn append_model(display_name: &str, seen: &mut HashSet<String>, models: &mut Vec<String>) {
+    if !display_name.is_empty() && seen.insert(display_name.into()) {
+        models.push(display_name.into());
     }
 }
 
@@ -177,7 +216,12 @@ mod tests {
 
         assert_eq!(
             execution_models_for_stage(&work_dir, "s1"),
-            ["sonnet", "opus", "gpt-5.6-terra", "gpt-5.6-luna"]
+            [
+                "sonnet",
+                "opus",
+                "gpt-5.6-terra (requested)",
+                "gpt-5.6-luna (requested)"
+            ]
         );
     }
 
@@ -195,13 +239,19 @@ mod tests {
                 "\n",
                 r#"{"model":"gpt-7-orbit"}"#,
                 "\n",
+                r#"{"v":2,"model":"gpt-unmatched"}"#,
+                "\n",
             ),
         )
         .unwrap();
 
         assert_eq!(
             execution_models_for_stage(&work_dir, "s1"),
-            ["gpt-5.6-sol", "gpt-6-astra", "gpt-7-orbit"]
+            [
+                "gpt-5.6-sol (requested)",
+                "gpt-6-astra (requested)",
+                "gpt-7-orbit (requested)"
+            ]
         );
     }
 
@@ -230,7 +280,7 @@ mod tests {
 
         assert_eq!(
             execution_models_for_stage(&work_dir, "s1"),
-            ["haiku-4-5", "sonnet", "gpt-5.6-terra"]
+            ["haiku-4-5", "sonnet", "gpt-5.6-terra (requested)"]
         );
     }
 

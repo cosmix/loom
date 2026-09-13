@@ -3,14 +3,37 @@
 
 set -euo pipefail
 
-if [[ $# -ne 7 || "$1" != "task" || "$3" != "--model" || "$5" != "--effort" || "$7" != "--write" ]]; then
+usage_error() {
 	printf '%s\n' \
-		'Usage: codex-forward.sh task <prompt> --model <model> --effort <effort> --write' >&2
+		'Usage: codex-forward.sh task <prompt> --model <model> --effort <effort> --write --unit-id <unit> --invocation-id <invocation>' >&2
 	exit 2
+}
+[[ $# -eq 11 ]] || usage_error
+if [[ "$1" != "task" || "$3" != "--model" || "$5" != "--effort" ||
+	"$7" != "--write" || "$8" != "--unit-id" || "${10}" != "--invocation-id" ]]; then
+	usage_error
 fi
 prompt=$2
 model=$4
 effort=$6
+unit_id=$9
+invocation_id=${11}
+if [[ ${#unit_id} -lt 1 || ${#unit_id} -gt 64 || ! "$unit_id" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$ ]]; then
+	printf 'Invalid Codex unit id: %s\n' "$unit_id" >&2
+	exit 2
+fi
+if [[ ! "$invocation_id" =~ ^inv-[0-9a-f]{32}$ ]]; then
+	printf 'Invalid Codex invocation id: %s\n' "$invocation_id" >&2
+	exit 2
+fi
+stage_id=${LOOM_STAGE_ID:-}
+loom_session_id=${LOOM_SESSION_ID:-}
+if [[ ! "$stage_id" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ||
+	! "$loom_session_id" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]]; then
+	printf '%s\n' 'LOOM_STAGE_ID and LOOM_SESSION_ID are required safe identifiers' >&2
+	exit 2
+fi
+export CODEX_COMPANION_SESSION_ID="loom.v1:${stage_id}:${loom_session_id}:${unit_id}:${invocation_id}"
 case "$model" in
 gpt-6-astra | gpt-5.6-sol | gpt-5.6-terra | gpt-5.6-luna) ;;
 *)
@@ -93,10 +116,15 @@ umask 077
 provider_log=
 command_log=
 output_log=
+plugin_probe=
+mode=companion
+deferred_notes=
+state_root=
 cleanup() {
 	[[ -z "$provider_log" ]] || rm -f -- "$provider_log"
 	[[ -z "$command_log" ]] || rm -f -- "$command_log"
 	[[ -z "$output_log" ]] || rm -f -- "$output_log"
+	[[ -z "$plugin_probe" ]] || rm -f -- "$plugin_probe"
 }
 trap cleanup EXIT
 make_private_temp() {
@@ -129,20 +157,26 @@ resolve_exact_record() {
 	printf '%s/%s\n' "$record_dir" "$(basename "${matches[0]}")"
 }
 print_evidence() {
-	local exit_code="$1" backend_id="$2" record_path
+	local exit_code="$1" backend_id="$2" evidence_state="$3" record_path
 	printf '%s\n' '--- LOOM-CODEX-EVIDENCE ---'
 	printf 'exit: %s\n' "$exit_code"
 	if [[ "$mode" == companion ]]; then
 		printf 'mode: companion\n'
 		printf 'job: %s\n' "${backend_id:-none}"
+		printf 'unit: %s\n' "$unit_id"
+		printf 'invocation: %s\n' "$invocation_id"
+		printf 'state: %s\n' "$evidence_state"
 		record_path=
-		if [[ -n "$backend_id" ]]; then
+		if [[ -n "$backend_id" && -n "$state_root" ]]; then
 			record_path=$(resolve_exact_record "$state_root" "$backend_id" 2>/dev/null || true)
 		fi
 		printf 'record: %s\n' "${record_path:-not found}"
 	else
 		printf 'mode: direct (codex exec --sandbox danger-full-access; nested Seatbelt refused)\n'
 		printf 'thread: %s\n' "${backend_id:-none observed}"
+		printf 'unit: %s\n' "$unit_id"
+		printf 'invocation: %s\n' "$invocation_id"
+		printf 'state: %s\n' "$evidence_state"
 	fi
 }
 finish_without_end() {
@@ -151,7 +185,7 @@ finish_without_end() {
 	[[ -z "$diagnostic" ]] || printf '%s\n' "$diagnostic"
 	print_bounded_file "$provider_log"
 	print_deferred_notes
-	print_evidence "$exit_code" "$backend_id"
+	print_evidence "$exit_code" "$backend_id" unknown
 	exit "$exit_code"
 }
 run_captured() {
@@ -169,97 +203,93 @@ if ! provider_log=$(make_private_temp) || ! command_log=$(make_private_temp) ||
 	! output_log=$(make_private_temp); then
 	print_separator
 	printf '%s\n' 'codex-forward.sh could not create its private provider-output file'
-	printf '%s\n' '--- LOOM-CODEX-EVIDENCE ---' 'exit: 1' 'mode: companion' 'job: none' 'record: not found'
+	print_evidence 1 '' unknown
 	exit 1
 fi
-mode=companion
-deferred_notes=
 if nested_seatbelt_refused; then
 	mode=direct
 	deferred_notes='note: the outer sandbox refuses a nested Seatbelt profile; running codex exec with --sandbox danger-full-access (the outer sandbox is the boundary)'
 fi
-state_root=${TMPDIR:-/tmp}/codex-companion
-if [[ -n "${CLAUDE_PLUGIN_DATA:-}" ]]; then
-	state_root=${CLAUDE_PLUGIN_DATA}/state
-fi
 if ! command -v jq >/dev/null 2>&1; then
 	finish_without_end 1 '' 'codex-forward.sh requires jq to decode structured Codex output'
 fi
-read_direct_thread_id() {
-	jq -rs 'map(select(type == "object" and .type == "thread.started" and (.thread_id | type == "string"))) | .[0].thread_id // empty' \
-		"$provider_log" 2>/dev/null || true
-}
 run_direct() {
-	local child_pid child_status=0 thread_id= final_status outcome
-	codex exec --json --sandbox danger-full-access --skip-git-repo-check \
-		--model "$model" -c "model_reasoning_effort=$effort" -- "$task" \
-		</dev/null >"$provider_log" 2>"$command_log" &
-	child_pid=$!
-	while kill -0 "$child_pid" 2>/dev/null; do
-		thread_id=$(read_direct_thread_id)
-		if [[ -n "$thread_id" ]]; then
-			break
-		fi
-		sleep 0.05 2>/dev/null || true
-	done
-	[[ -n "$thread_id" ]] || thread_id=$(read_direct_thread_id)
-	if [[ -n "$thread_id" ]] && valid_backend_id "$thread_id"; then
-		printf 'LOOM-FORWARD-START {"v":1,"backend":"direct","thread_id":"%s"}\n' "$thread_id"
-	else
-		thread_id=
+	local supervisor direct_status=0 result_line result_json fields
+	local state thread_id turn_id terminal_at result_status retained
+	supervisor="$(dirname "$0")/_codex-direct.py"
+	if [[ ! -f "$supervisor" || -L "$supervisor" ]] || ! command -v python3 >/dev/null 2>&1; then
+		finish_without_end 1 '' 'codex direct supervisor or Python 3 is unavailable'
 	fi
-	wait "$child_pid" || child_status=$?
+	python3 "$supervisor" --timeout-ms 540000 -- codex exec --json \
+		--sandbox danger-full-access --skip-git-repo-check --model "$model" \
+		-c "model_reasoning_effort=$effort" -- "$task" \
+		>"$provider_log" 2>"$command_log" || direct_status=$?
+	result_line=$(tail -n 1 "$provider_log" 2>/dev/null || true)
+	result_json=${result_line#LOOM-CODEX-DIRECT-RESULT }
+	if [[ "$result_json" == "$result_line" ]] ||
+		! fields=$(printf '%s' "$result_json" | jq -er '
+			select(type == "object" and
+			 (keys | sort) == (["exit_code","ownership_retained","state","terminal_at","thread_id","turn_id","v"] | sort) and
+			 .v == 1 and (.state | IN("succeeded","failed","cancelled","unknown")) and
+			 (.thread_id == null or (.thread_id | type == "string")) and
+			 (.turn_id == null or (.turn_id | type == "string")) and
+			 (.terminal_at | type == "string") and (.exit_code | type == "number" and floor == .) and
+			 (.ownership_retained | type == "boolean")) |
+			[.state, (.thread_id // ""), (.turn_id // ""), .terminal_at,
+			 (.exit_code | tostring), (.ownership_retained | tostring)] | @tsv' 2>/dev/null); then
+		{ printf '\n'; command cat "$command_log"; } >>"$provider_log" 2>/dev/null || true
+		finish_without_end 1 '' 'codex direct supervisor returned no valid result line'
+	fi
+	IFS=$'\t' read -r state thread_id turn_id terminal_at result_status retained <<<"$fields"
+	if [[ "$result_status" != "$direct_status" || -z "$thread_id" || -z "$turn_id" ]] ||
+		! valid_backend_id "$thread_id" || ! valid_backend_id "$turn_id"; then
+		{ printf '\n'; command cat "$command_log"; } >>"$provider_log" 2>/dev/null || true
+		finish_without_end 1 '' 'codex direct supervisor result was incomplete or inconsistent'
+	fi
+	case "$state:$result_status:$retained" in
+	succeeded:0:false | failed:*:false | cancelled:124:false | unknown:125:true) ;;
+	*)
+		{ printf '\n'; command cat "$command_log"; } >>"$provider_log" 2>/dev/null || true
+		finish_without_end 1 '' 'codex direct supervisor state was inconsistent'
+		;;
+	esac
 	{ printf '\n'; command cat "$command_log"; } >>"$provider_log" 2>/dev/null || true
-	if [[ -z "$thread_id" ]]; then
-		final_status=$child_status
-		[[ $final_status -ne 0 ]] || final_status=1
-		finish_without_end "$final_status" '' 'codex exec ended without a valid thread.started event'
-	fi
-	if [[ $child_status -eq 0 ]]; then
-		outcome=succeeded
-	else
-		outcome=failed
-	fi
+	printf 'LOOM-FORWARD-START {"v":1,"backend":"direct","thread_id":"%s"}\n' "$thread_id"
 	printf 'LOOM-FORWARD-END {"v":1,"backend":"direct","thread_id":"%s","outcome":"%s","exit_code":%s}\n' \
-		"$thread_id" "$outcome" "$child_status"
+		"$thread_id" "$state" "$direct_status"
 	print_separator
 	print_bounded_file "$provider_log"
 	print_deferred_notes
-	print_evidence "$child_status" "$thread_id"
-	exit "$child_status"
+	print_evidence "$direct_status" "$thread_id" "$state"
+	exit "$direct_status"
 }
 if [[ "$mode" == direct ]]; then
 	run_direct
 fi
-if [[ -z "${HOME:-}" ]]; then
+if [[ -z "${HOME:-}" || ! -d "$HOME" ]]; then
 	finish_without_end 1 '' 'HOME is required to locate codex-companion.mjs'
 fi
-versions_dir=${HOME}/.claude/plugins/cache/openai-codex/codex
-shopt -s nullglob
-candidates=("$versions_dir"/*/scripts/codex-companion.mjs)
-shopt -u nullglob
-if [[ ${#candidates[@]} -eq 0 ]]; then
-	finish_without_end 1 '' "codex-companion.mjs not found under $versions_dir"
-fi
-
-companion=${candidates[0]}
-for candidate in "${candidates[@]:1}"; do
-	if [[ "$candidate" > "$companion" ]]; then
-		companion=$candidate
-	fi
-done
+home_root=$(cd "$HOME" 2>/dev/null && pwd -P) || finish_without_end 1 '' 'HOME cannot be canonicalized'
+versions_dir=${home_root}/.claude/plugins/cache/openai-codex/codex
+companion=${versions_dir}/1.0.6/scripts/codex-companion.mjs
 if [[ ! -f "$companion" || -L "$companion" ]]; then
-	finish_without_end 1 '' "Refusing unsafe companion path: $companion"
+	finish_without_end 1 '' "Supported codex companion 1.0.6 is missing or unsafe: $companion"
 fi
+companion_dir=$(cd "$(dirname "$companion")" 2>/dev/null && pwd -P) ||
+	finish_without_end 1 '' "Supported codex companion 1.0.6 cannot be canonicalized: $companion"
+companion=$companion_dir/codex-companion.mjs
 
-# Retain the existing plugin-data redirect, but defer its note.
-if [[ -n "${CLAUDE_PLUGIN_DATA:-}" ]] && ! mkdir -p "${CLAUDE_PLUGIN_DATA}/state" 2>/dev/null; then
-	CLAUDE_PLUGIN_DATA="${HOME}/.codex/plugin-data"
-	export CLAUDE_PLUGIN_DATA
-	state_root=${CLAUDE_PLUGIN_DATA}/state
-	mkdir -p "$state_root" 2>/dev/null || true
-	deferred_notes="note: plugin data root not writable; codex state redirected to $CLAUDE_PLUGIN_DATA"
+CLAUDE_PLUGIN_DATA=${home_root}/.codex/plugin-data
+export CLAUDE_PLUGIN_DATA
+state_root=${CLAUDE_PLUGIN_DATA}/state
+if ! mkdir -p "$state_root" 2>/dev/null ||
+	! plugin_probe=$(mktemp "$state_root/.loom-write.XXXXXX" 2>/dev/null) || [[ -z "$plugin_probe" ]]; then
+	finish_without_end 1 '' "canonical plugin data state root is not writable: $state_root"
 fi
+if ! rm -f -- "$plugin_probe" 2>/dev/null; then
+	finish_without_end 1 '' "canonical plugin data state root failed its write probe: $state_root"
+fi
+plugin_probe=
 launch_status=0
 run_captured node "$companion" task "$task" --background --json --write \
 	--model "$model" --effort "$effort" || launch_status=$?
@@ -275,37 +305,33 @@ printf 'LOOM-FORWARD-START {"v":1,"backend":"companion","job_id":"%s"}\n' "$job_
 outcome=
 exit_code=1
 wait_diagnostic=
-while [[ -z "$outcome" ]]; do
-	wait_status=0
-	run_captured node "$companion" status "$job_id" --wait --json || wait_status=$?
-	if [[ $wait_status -ne 0 ]]; then
-		exit_code=$wait_status
-		wait_diagnostic='codex companion wait failed before authoritative completion'
-		break
-	fi
+wait_status=0
+run_captured node "$companion" status "$job_id" --wait --json --timeout-ms 540000 || wait_status=$?
+if [[ $wait_status -ne 0 ]]; then
+	exit_code=$wait_status
+	wait_diagnostic='codex companion wait failed before authoritative completion'
+else
 	status_phase=$(jq -er --arg id "$job_id" \
-		'if type == "object" and .job.id == $id and (.job.status | type == "string") and (.job.phase | type == "string") then [.job.status, .job.phase] | @tsv else empty end' \
+		'if type == "object" and .job.id == $id and (.job.status | type == "string") and (.job.phase | type == "string") and (.waitTimedOut | type == "boolean") then [.job.status, .job.phase, (.waitTimedOut | tostring)] | @tsv else empty end' \
 		"$command_log" 2>/dev/null || true)
 	if [[ -z "$status_phase" ]]; then
 		wait_diagnostic='codex companion returned a malformed status snapshot'
-		break
+	else
+		IFS=$'\t' read -r job_status job_phase wait_timed_out <<<"$status_phase"
+		if [[ "$wait_timed_out" == true || "$job_status" == queued || "$job_status" == running ]]; then
+			print_separator
+			printf '%s\n' 'codex companion job continues under daemon ownership'
+			print_evidence 0 "$job_id" active
+			exit 0
+		fi
+		case "$job_status:$job_phase" in
+		completed:done) outcome=succeeded; exit_code=0 ;;
+		failed:*) outcome=failed ;;
+		cancelled:*) outcome=canceled ;;
+		*) wait_diagnostic="codex companion returned unsupported terminal state $job_status/$job_phase" ;;
+		esac
 	fi
-	job_status=${status_phase%%$'\t'*}
-	job_phase=${status_phase#*$'\t'}
-	case "$job_status:$job_phase" in
-	queued:* | running:*) ;;
-	completed:done)
-		outcome=succeeded
-		exit_code=0
-		;;
-	failed:*) outcome=failed ;;
-	cancelled:*) outcome=canceled ;;
-	*)
-		wait_diagnostic="codex companion returned unsupported terminal state $job_status/$job_phase"
-		break
-		;;
-	esac
-done
+fi
 if [[ -z "$outcome" ]]; then
 	finish_without_end "$exit_code" "$job_id" "$wait_diagnostic"
 fi
@@ -326,5 +352,7 @@ elif [[ $result_status -ne 0 ]]; then
 	print_bounded_file "$provider_log"
 fi
 print_deferred_notes
-print_evidence "$exit_code" "$job_id"
+evidence_state=$outcome
+[[ "$outcome" == canceled ]] && evidence_state=cancelled
+print_evidence "$exit_code" "$job_id" "$evidence_state"
 exit "$exit_code"
