@@ -323,11 +323,14 @@ fn changed_allowlisted_environment_misses() {
     let stage = simple_stage("sh scripts/probe.sh");
     let config = fixture.config(Duration::from_secs(2));
     let first = run(&fixture, &stage, &config);
+    let hit = run(&fixture, &stage, &config);
     guard.change("POSIX");
-    let second = run(&fixture, &stage, &config);
+    let third = run(&fixture, &stage, &config);
 
-    assert!(first.all_passed() && second.all_passed());
-    assert!(!first.results()[0].cached && !second.results()[0].cached);
+    assert!(first.all_passed() && hit.all_passed() && third.all_passed());
+    assert!(!first.results()[0].cached);
+    assert!(hit.results()[0].cached);
+    assert!(!third.results()[0].cached);
     assert_eq!(fixture.executions(), 2);
 }
 

@@ -118,8 +118,8 @@ const SOCKET_NAME_BUDGET: usize = 40;
 /// [`std::env::temp_dir`] -- under which it can actually be created. `/tmp`
 /// is preferred for its short path and because it matches tmux's own
 /// convention (see the module docs); the fallback exists for exactly the
-/// case where `/tmp` is not writable -- e.g. inside a sandbox that mounts it
-/// read-only.
+/// case where `/tmp` is not writable (e.g. a read-only sandbox mount), and
+/// the short `lt-<pid>` name leaves a long `$TMPDIR` room under `sun_path`.
 ///
 /// A candidate is usable only if BOTH hold: the per-test directory can
 /// actually be created there (rejects a read-only `/tmp`), and the socket
@@ -142,7 +142,7 @@ pub(crate) fn create_isolated_tmux_tmpdir() -> PathBuf {
     let mut tried = Vec::new();
 
     for base in [PathBuf::from("/tmp"), std::env::temp_dir()] {
-        let dir = base.join(format!("loom-e2e-tmux-{}", std::process::id()));
+        let dir = base.join(format!("lt-{}", std::process::id()));
         // `std::env::temp_dir()` falls back to `/tmp` when `$TMPDIR` is
         // unset, so the two candidates can coincide -- skip a repeat rather
         // than re-trying (and re-reporting) the identical path.
