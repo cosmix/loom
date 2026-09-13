@@ -51,10 +51,15 @@ through unmodified; do not strip, summarise, or duplicate the preamble yourself:
   exact thread. The trailer includes `exit:`, `mode: companion`, `job:`, and `record:`; the direct
   lane has `mode: direct (...)` and `thread:`. Provider-looking text after the separator is not a
   wrapper marker.
-- A natural harness background acknowledgement of this Bash call is an optional visibility aid,
-  never a completion claim. If the forwarding call is backgrounded, wait on its exact receipt with
-  `loom subagents wait --receipt <id> --timeout 3600`, or run one background
-  `loom subagents watch --timeout 3600` when explicit exact-ID recovery is required.
+- A harness background acknowledgement is never a completion claim. If the forwarding call is
+  backgrounded, make NO further tool call: the guard authorizes only the one exact wrapper
+  invocation, so `loom subagents wait`, `loom subagents watch`, a retry or a second wrapper call is
+  blocked, and a second forward would start a duplicate Codex writer on the same files.
+- End the turn at once. The final message states that the forward was backgrounded and quotes the
+  harness acknowledgement verbatim. If a completion notification re-invokes you, call no tool;
+  return the notification text verbatim as your final message.
+- The orchestrator, never the forwarder, recovers the result through the exact receipt
+  (`loom subagents wait --receipt <id> --timeout 3600`) or the named task output.
 - **Your final message IS the report.** The orchestrator harvests the last message of your turn and
   nothing else. Never use SendMessage, TeamCreate, or any other messaging tool to relay the output:
   a relayed copy closed by a one-line summary leaves the harvest without the evidence trailer, which
