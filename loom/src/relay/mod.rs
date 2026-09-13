@@ -6,6 +6,7 @@
 //! directory). No wiring into any command lives here — see
 //! `doc/plans/PLAN-loom-state-confinement.md` sections 4-8.
 
+pub mod emit;
 mod inbox;
 mod kind;
 mod line;
