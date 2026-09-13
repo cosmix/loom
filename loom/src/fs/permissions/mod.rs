@@ -4,6 +4,7 @@
 //! - `.claude/settings.json` - team-shared permissions (committed to git)
 //! - `.claude/settings.local.json` - user-local hooks and env vars (gitignored)
 
+pub(crate) mod approved;
 mod codex_hooks;
 mod codex_sandbox;
 pub mod constants;
@@ -42,3 +43,11 @@ pub use settings::{
 };
 pub use sync::{sync_worktree_permissions, sync_worktree_permissions_with_working_dir, SyncResult};
 pub use trust::{migrate_legacy_trust, trust_worktree, untrust_worktree};
+
+/// Loom's global guard-hook registrations with every command under
+/// `hooks_dir`, for the session capsule, which renders hooks against its own
+/// verified hooks directory rather than the home-directory default
+/// [`loom_hooks_config`] uses.
+pub(crate) fn guard_hooks_config(hooks_dir: &str) -> serde_json::Value {
+    hooks::loom_hooks_config_for_dir(hooks_dir)
+}

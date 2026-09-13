@@ -14,8 +14,8 @@ use std::sync::OnceLock;
 /// `user,project` drops only the `local` scope: Claude Code applies the main
 /// repository's `.claude/settings.local.json` to sessions running in linked
 /// worktrees, which is the actual cross-repository leak. Pinning loom's
-/// generated local file explicitly via `--settings` and dropping `local`
-/// closes that leak while keeping the repository's committed
+/// generated per-session capsule explicitly via `--settings` and dropping
+/// `local` closes that leak while keeping the repository's committed
 /// `.claude/settings.json` policy in force.
 ///
 /// `user` is deliberately RETAINED, not dropped alongside `local`:
@@ -42,23 +42,34 @@ pub(crate) struct SessionCapsule {
     pub append_system_prompt_file: Option<String>,
 }
 
-fn probed_capsule_support(claude_path: &Path) -> (bool, bool, bool, bool) {
-    static CACHE: OnceLock<(bool, bool, bool, bool)> = OnceLock::new();
+/// Which capsule flags the installed claude's `--help` advertises.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct CapsuleSupport {
+    pub settings: bool,
+    pub setting_sources: bool,
+    pub strict_mcp_config: bool,
+    pub append_system_prompt_file: bool,
+}
+
+/// Probe `claude --help` once per process for the capsule flags it supports.
+/// A claude that fails to run supports none of them.
+pub(super) fn probed_capsule_support(claude_path: &Path) -> CapsuleSupport {
+    static CACHE: OnceLock<CapsuleSupport> = OnceLock::new();
     *CACHE.get_or_init(|| {
         let output = match std::process::Command::new(claude_path)
             .arg("--help")
             .output()
         {
             Ok(output) if output.status.success() => output,
-            Ok(_) | Err(_) => return (false, false, false, false),
+            Ok(_) | Err(_) => return CapsuleSupport::default(),
         };
         let help = String::from_utf8_lossy(&output.stdout);
-        (
-            help.contains("--settings"),
-            help.contains("--setting-sources"),
-            help.contains("--strict-mcp-config"),
-            help.contains("--append-system-prompt-file"),
-        )
+        CapsuleSupport {
+            settings: help.contains("--settings"),
+            setting_sources: help.contains("--setting-sources"),
+            strict_mcp_config: help.contains("--strict-mcp-config"),
+            append_system_prompt_file: help.contains("--append-system-prompt-file"),
+        }
     })
 }
 
@@ -91,8 +102,8 @@ pub(super) fn capsule_from(
     // `user,project` drops only the local scope, which leaks the main
     // repository's settings.local.json into linked worktrees. `user` is
     // deliberately retained (see the `SessionCapsule` doc comment). Narrowing
-    // is safe only when `--settings` explicitly pins loom's generated local
-    // file; otherwise it would strip the sandbox block, permission rules,
+    // is safe only when `--settings` explicitly pins loom's generated
+    // capsule; otherwise it would strip the sandbox block, permission rules,
     // and hooks entirely.
     let setting_sources =
         (sources_supported && settings_path.is_some()).then(|| "user,project".to_string());
@@ -108,55 +119,26 @@ pub(super) fn capsule_from(
     }
 }
 
-/// The absolute path of the session-local settings file under `cwd`, or
-/// `None` when it does not exist.
-///
-/// The path MUST be absolute: the wrapper script `cd`s into the working
-/// directory before `exec`ing claude, so a relative `--settings` value
-/// would resolve against the working directory instead of the daemon's
-/// cwd and claude would exit with "Settings file not found". Absolutizing
-/// also fixes the existence guard, which otherwise probes a different file
-/// than the one the spawned process will open.
-pub(super) fn resolved_settings_file(cwd: &Path) -> Option<String> {
-    let settings_file = super::wrapper::absolute(cwd)
-        .join(".claude")
-        .join("settings.local.json");
-    settings_file
-        .is_file()
-        .then(|| settings_file.to_str().map(str::to_owned))
-        .flatten()
-}
-
-/// Build the capsule from an already-resolved `--settings` path.
-///
-/// `settings_file` is resolved by the CALLER — [`resolved_settings_file`] for
-/// the ordinary case of a session's own `cwd`, or a generated per-session
-/// capsule for the one kind that runs outside any worktree (see
-/// `native::session_settings::resolve_settings_file`) — rather than computed
-/// here, so this stays a thin wrapper around the claude-support probe and the
-/// interlock in [`capsule_from`].
+/// Build the capsule from the session's generated settings file
+/// (`native::session_settings::write_session_capsule`) and the flags the
+/// installed claude supports ([`probed_capsule_support`], resolved once per
+/// launch so tests can supply their own), through the interlock in
+/// [`capsule_from`].
 ///
 /// `append_system_prompt_file` is the stable-prefix file path already
 /// resolved by the caller (`Some` only when the prompt-cache split is
 /// enabled and the file was written successfully); it is dropped here if the
 /// installed claude does not support `--append-system-prompt-file`.
 pub(crate) fn session_capsule(
-    claude_path: &Path,
+    support: CapsuleSupport,
     settings_file: Option<String>,
     append_system_prompt_file: Option<String>,
 ) -> SessionCapsule {
-    let (
-        settings_supported,
-        setting_sources_supported,
-        strict_mcp_supported,
-        append_system_prompt_file_supported,
-    ) = probed_capsule_support(claude_path);
-
     capsule_from(
-        settings_supported,
-        setting_sources_supported,
-        strict_mcp_supported,
-        append_system_prompt_file_supported,
+        support.settings,
+        support.setting_sources,
+        support.strict_mcp_config,
+        support.append_system_prompt_file,
         settings_file,
         append_system_prompt_file,
     )

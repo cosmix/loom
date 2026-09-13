@@ -28,6 +28,9 @@ pub fn apply_default_mode(settings: &mut Value, mode: PermissionMode) -> Result<
     Ok(())
 }
 
+/// State-root subdirectories every session may read; shared with `contents::add_state_root_grants`.
+pub(crate) const STATE_READ_DIRS: [&str; 4] = ["signals", "handoffs", "disputes", "memory"];
+
 /// Detect whether a settings target is a loom worktree (vs. the main repo root).
 ///
 /// Loom worktrees always live at `<repo>/.worktrees/<stage-id>/` and carry a
@@ -37,7 +40,7 @@ pub fn apply_default_mode(settings: &mut Value, mode: PermissionMode) -> Result<
 /// escape rules (`../../**`, `../.worktrees/**`) are meaningful: inside a
 /// worktree `../..` is the repo root (the intended isolation boundary), but
 /// at the repo root `../..` is the repo's parent — typically `$HOME`.
-fn target_is_worktree(target: &Path) -> bool {
+pub(crate) fn target_is_worktree(target: &Path) -> bool {
     if target.components().any(|c| c.as_os_str() == ".worktrees") {
         return true;
     }
@@ -74,7 +77,7 @@ fn is_worktree_escape_path(path: &str) -> bool {
 /// for the main checkout, so these entries must not be written there. Worktree
 /// targets keep them (generated relative to the worktree, where they are
 /// correct), and isolation is independently enforced by the worktree hooks.
-fn strip_worktree_escape_denies(config: &mut MergedSandboxConfig) {
+pub(crate) fn strip_worktree_escape_denies(config: &mut MergedSandboxConfig) {
     config
         .filesystem
         .deny_read
@@ -299,18 +302,15 @@ pub fn generate_settings_json(config: &MergedSandboxConfig) -> Value {
     // that layout forever, so its narrow rules must exist in the legacy
     // spelling too, alongside the nested one — on either layout the unused
     // spelling matches nothing and costs nothing.
-    allow.push(json!("Read(.loom/work/config.toml)"));
-    allow.push(json!("Read(.loom/work/signals/**)"));
-    allow.push(json!("Read(.loom/work/handoffs/**)"));
-    allow.push(json!("Edit(.loom/work/handoffs/**)"));
-    allow.push(json!("Read(.loom/work/disputes/**)"));
-    allow.push(json!("Read(.loom/work/memory/**)"));
-    allow.push(json!("Read(.work/config.toml)"));
-    allow.push(json!("Read(.work/signals/**)"));
-    allow.push(json!("Read(.work/handoffs/**)"));
-    allow.push(json!("Edit(.work/handoffs/**)"));
-    allow.push(json!("Read(.work/disputes/**)"));
-    allow.push(json!("Read(.work/memory/**)"));
+    for base in [".loom/work", ".work"] {
+        allow.push(json!(format!("Read({base}/config.toml)")));
+        for dir in STATE_READ_DIRS {
+            allow.push(json!(format!("Read({base}/{dir}/**)")));
+            if dir == "handoffs" {
+                allow.push(json!(format!("Edit({base}/handoffs/**)")));
+            }
+        }
+    }
 
     if !allow.is_empty() {
         permissions["allow"] = json!(allow);
@@ -405,7 +405,7 @@ pub fn generate_settings_json(config: &MergedSandboxConfig) -> Value {
 ///
 /// What survives is then migrated out of the inert `Write(...)` spelling — see
 /// `migrate_inert_write_denies` for that policy.
-fn carry_forward_denies(existing_deny: Vec<String>, is_worktree: bool) -> Vec<String> {
+pub(crate) fn carry_forward_denies(existing_deny: Vec<String>, is_worktree: bool) -> Vec<String> {
     let kept: Vec<String> = existing_deny
         .into_iter()
         .filter(|perm| !perm.starts_with("Read("))

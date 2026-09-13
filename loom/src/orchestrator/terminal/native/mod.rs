@@ -41,9 +41,9 @@ pub use pid_tracking::{
 pub use session_log::stderr_log_path;
 // Called from `orchestrator::core::judge_close` on judge close.
 pub(crate) use session_settings::cleanup_session_settings;
-// Test-only: lets tests elsewhere in the crate locate a session's generated settings capsule
-// without duplicating its naming convention (see `core/event_handler/stalled_judge_tests.rs`).
-#[cfg(test)]
+// Lets callers elsewhere in the crate locate a session's generated settings capsule without
+// duplicating its naming convention: retirement sweeps for it (`core/inbox_drain/sweep.rs`),
+// and tests locate it the same way (see `core/event_handler/stalled_judge_tests.rs`).
 pub(crate) use session_settings::session_settings_path;
 pub(crate) use spawner::await_session_pid;
 pub use spawner::spawn_in_terminal;

@@ -4,6 +4,7 @@
 //! and generating Claude Code settings files.
 
 mod config;
+pub(crate) mod control_surfaces;
 mod grant_paths;
 mod package_caches;
 mod settings;
@@ -15,5 +16,8 @@ pub use config::{
 };
 pub use grant_paths::{missing_grant_paths, warn_missing_grants};
 pub use package_caches::PACKAGE_MANAGER_CACHE_WRITE_PATHS;
-pub(crate) use settings::validate_emittable;
 pub use settings::{apply_default_mode, generate_settings_json, write_settings};
+pub(crate) use settings::{
+    carry_forward_denies, strip_worktree_escape_denies, target_is_worktree, validate_emittable,
+    STATE_READ_DIRS,
+};

@@ -3,10 +3,7 @@
 //! under the 400-line ceiling (CLAUDE.md Rule 17).
 
 use super::*;
-use crate::orchestrator::terminal::native::capsule::{capsule_from, resolved_settings_file};
-use serial_test::serial;
-use std::path::Path;
-use tempfile::TempDir;
+use crate::orchestrator::terminal::native::capsule::capsule_from;
 
 #[test]
 fn build_claude_command_empty_capsule_matches_legacy_argv() {
@@ -261,74 +258,4 @@ fn capsule_from_append_system_prompt_file_requires_support_and_a_resolved_path()
         Some("/w/signals/prefix/my-stage.md".to_string()),
     );
     assert_eq!(resolved_but_unsupported.append_system_prompt_file, None);
-}
-
-// `resolved_settings_file` is what `session_capsule` calls to build the
-// `--settings` path. It must absolutize `cwd` before probing for and
-// returning the settings file: the wrapper script `cd`s into the working
-// directory before `exec`ing claude (see `wrapper::absolute`'s doc comment),
-// so a relative `--settings` value would resolve against that directory
-// instead of the daemon's cwd, and claude would exit with "Settings file
-// not found" even though the file exists. `set_current_dir` is
-// process-global, so both tests run `#[serial]` and restore the original
-// cwd afterward.
-
-/// Restores the working directory on drop. `set_current_dir` is
-/// process-global (see the module doc above), so a manual restore call
-/// placed after the call under test still leaks the temp cwd into every
-/// later test in the binary if that call panics before the restore runs —
-/// `#[serial]` only serializes access to the cwd, it does not undo a leak
-/// that outlives the failing test.
-struct CwdGuard {
-    original: std::path::PathBuf,
-}
-
-impl CwdGuard {
-    fn new() -> Self {
-        Self {
-            original: std::env::current_dir().unwrap(),
-        }
-    }
-}
-
-impl Drop for CwdGuard {
-    fn drop(&mut self) {
-        std::env::set_current_dir(&self.original).unwrap();
-    }
-}
-
-#[test]
-#[serial]
-fn resolved_settings_file_absolutizes_a_relative_cwd() {
-    let temp = TempDir::new().unwrap();
-    let worktree = temp.path().join("wt");
-    std::fs::create_dir_all(worktree.join(".claude")).unwrap();
-    let settings_path = worktree.join(".claude").join("settings.local.json");
-    std::fs::write(&settings_path, "{}").unwrap();
-
-    let _cwd_guard = CwdGuard::new();
-    std::env::set_current_dir(temp.path()).unwrap();
-    let result = resolved_settings_file(Path::new("./wt"));
-
-    let resolved = result.expect("settings file exists and must be found");
-    let resolved_path = Path::new(&resolved);
-    assert!(resolved_path.is_absolute(), "must be absolute: {resolved}");
-    assert_eq!(
-        resolved_path.canonicalize().unwrap(),
-        settings_path.canonicalize().unwrap()
-    );
-}
-
-#[test]
-#[serial]
-fn resolved_settings_file_missing_file_yields_none() {
-    let temp = TempDir::new().unwrap();
-    let worktree = temp.path().join("wt");
-    std::fs::create_dir_all(&worktree).unwrap();
-
-    let _cwd_guard = CwdGuard::new();
-    std::env::set_current_dir(temp.path()).unwrap();
-    let result = resolved_settings_file(Path::new("./wt"));
-
-    assert_eq!(result, None);
 }

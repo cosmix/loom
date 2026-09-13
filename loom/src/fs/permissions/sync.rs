@@ -51,20 +51,14 @@ pub fn sync_worktree_permissions(
     sync_worktree_permissions_with_working_dir(worktree_path, main_repo_path, None)
 }
 
-/// Sync permissions with an explicit working directory
-pub fn sync_worktree_permissions_with_working_dir(
-    worktree_path: &Path,
-    main_repo_path: &Path,
-    working_dir: Option<&Path>,
-) -> Result<SyncResult> {
-    let main_settings_path = main_repo_path.join(".claude/settings.local.json");
-
-    // Collect all paths to check for permissions
+/// The settings files a worktree session's permissions may live in: the
+/// worktree root's; the session's working directory's when it differs
+/// (Claude Code writes permissions relative to the cwd, so a session run from
+/// `worktree/loom/` keeps them in `worktree/loom/.claude/settings.local.json`);
+/// and those of the common subdirectories a session usually runs from, for
+/// callers that pass no working directory.
+fn settings_paths_to_check(worktree_path: &Path, working_dir: Option<&Path>) -> Vec<PathBuf> {
     let mut paths_to_check = vec![worktree_path.join(".claude/settings.local.json")];
-
-    // If working_dir is specified and different from worktree root, also check there
-    // Claude Code writes permissions relative to cwd, so if session ran in a subdirectory
-    // (e.g., worktree/loom/), permissions are in worktree/loom/.claude/settings.local.json
     if let Some(wd) = working_dir {
         if wd != worktree_path {
             let wd_settings = wd.join(".claude/settings.local.json");
@@ -73,9 +67,6 @@ pub fn sync_worktree_permissions_with_working_dir(
             }
         }
     }
-
-    // Also check common subdirectory patterns where settings might be stored
-    // This handles cases where working_dir wasn't passed but permissions exist
     for subdir in ["loom", "src", "app", "packages", "workspace"] {
         let subdir_settings = worktree_path
             .join(subdir)
@@ -84,12 +75,43 @@ pub fn sync_worktree_permissions_with_working_dir(
             paths_to_check.push(subdir_settings);
         }
     }
+    paths_to_check
+}
+
+/// Feed the loom-owned approved list (`approved.rs`, owner decision 8): the
+/// fold-back's own portable allow rules, plus the main repository's local
+/// allow list. Claude Code records a "don't ask again" approval there
+/// (destination `localSettings`, rooted at the operator-owned checkout) even
+/// for a worktree session launched with `--setting-sources user,project`, so
+/// the worktree's own file alone would miss it.
+fn record_approvals(main_repo_path: &Path, main_settings_path: &Path, worktree_allow: &[String]) {
+    let mut rules = worktree_allow.to_vec();
+    match read_settings(main_settings_path) {
+        Ok(settings) => rules.extend(portable_permissions(
+            extract_permissions(&settings).0,
+            false,
+        )),
+        Err(error) => tracing::warn!(
+            %error,
+            "cannot read the main repository's local settings for approved permissions"
+        ),
+    }
+    super::approved::record_fold_back(main_repo_path, &rules);
+}
+
+/// Sync permissions with an explicit working directory
+pub fn sync_worktree_permissions_with_working_dir(
+    worktree_path: &Path,
+    main_repo_path: &Path,
+    working_dir: Option<&Path>,
+) -> Result<SyncResult> {
+    let main_settings_path = main_repo_path.join(".claude/settings.local.json");
 
     // Collect permissions from all settings files
     let mut all_allow_perms: Vec<String> = Vec::new();
     let mut all_deny_perms: Vec<String> = Vec::new();
 
-    for settings_path in &paths_to_check {
+    for settings_path in &settings_paths_to_check(worktree_path, working_dir) {
         let worktree_settings = read_settings(settings_path)?;
         let (allow_perms, deny_perms) = extract_permissions(&worktree_settings);
         all_allow_perms.extend(allow_perms);
@@ -104,6 +126,7 @@ pub fn sync_worktree_permissions_with_working_dir(
 
     let filtered_allow = portable_permissions(all_allow_perms, false);
     let filtered_deny = portable_permissions(all_deny_perms, true);
+    record_approvals(main_repo_path, &main_settings_path, &filtered_allow);
 
     // If nothing to sync, return early
     if filtered_allow.is_empty() && filtered_deny.is_empty() {
@@ -508,152 +531,4 @@ fn propagate_permissions_to_worktrees(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_is_worktree_specific_permission() {
-        assert!(is_worktree_specific_permission(
-            "Read(../../../.loom/work/**)"
-        ));
-        assert!(is_worktree_specific_permission(
-            "Write(.worktrees/stage-1/**)"
-        ));
-        // Single-level ../ must also be treated as worktree-specific (C-18)
-        assert!(is_worktree_specific_permission("Read(../doc/**)"));
-        assert!(is_worktree_specific_permission("Write(../src/**)"));
-        assert!(!is_worktree_specific_permission("Read(.loom/work/**)"));
-        assert!(!is_worktree_specific_permission("Bash(cargo:*)"));
-    }
-
-    #[test]
-    fn test_extract_permissions() {
-        let settings = json!({
-            "permissions": {
-                "allow": ["Read(foo)", "Write(bar)"],
-                "deny": ["Bash(rm:*)"]
-            }
-        });
-
-        let (allow, deny) = extract_permissions(&settings);
-        assert_eq!(allow, vec!["Read(foo)", "Write(bar)"]);
-        assert_eq!(deny, vec!["Bash(rm:*)"]);
-    }
-
-    #[test]
-    fn test_extract_permissions_empty() {
-        let settings = json!({});
-        let (allow, deny) = extract_permissions(&settings);
-        assert!(allow.is_empty());
-        assert!(deny.is_empty());
-    }
-
-    #[test]
-    fn test_transform_worktree_path_absolute() {
-        // Absolute path with .worktrees/stage-id/ should be transformed to relative
-        assert_eq!(
-            transform_worktree_path("Read(/home/user/.worktrees/stage-1/loom/src/**)"),
-            Some("Read(loom/src/**)".to_string())
-        );
-        assert_eq!(
-            transform_worktree_path("Write(/tmp/project/.worktrees/my-stage/doc/plans/**)"),
-            Some("Write(doc/plans/**)".to_string())
-        );
-    }
-
-    #[test]
-    fn test_transform_worktree_path_relative() {
-        // Relative path with ../../ should be resolved
-        assert_eq!(
-            transform_worktree_path("Read(../../../.loom/work/**)"),
-            Some("Read(.loom/work/**)".to_string())
-        );
-        assert_eq!(
-            transform_worktree_path("Write(../../doc/plans/**)"),
-            Some("Write(doc/plans/**)".to_string())
-        );
-        // Multiple ../ levels
-        assert_eq!(
-            transform_worktree_path("Read(../../../foo/bar)"),
-            Some("Read(foo/bar)".to_string())
-        );
-        // Single-level ../ (C-18: previously missed)
-        assert_eq!(
-            transform_worktree_path("Read(../doc/**)"),
-            Some("Read(doc/**)".to_string())
-        );
-        assert_eq!(
-            transform_worktree_path("Write(../src/main.rs)"),
-            Some("Write(src/main.rs)".to_string())
-        );
-    }
-
-    #[test]
-    fn test_transform_worktree_path_unchanged() {
-        // Normal path without worktree patterns should return None
-        assert_eq!(transform_worktree_path("Read(.loom/work/**)"), None);
-        assert_eq!(transform_worktree_path("Bash(cargo:*)"), None);
-        assert_eq!(transform_worktree_path("Write(src/**)"), None);
-    }
-
-    #[test]
-    fn test_merge_permissions_with_lock_scrubs_identity_env() {
-        let temp_dir = tempfile::TempDir::new().unwrap();
-        let settings_path = temp_dir.path().join("settings.local.json");
-
-        // A LIVE work dir must survive alongside the identity heal.
-        let live_work_dir = temp_dir.path().join(".loom").join("work");
-        std::fs::create_dir_all(&live_work_dir).unwrap();
-        let live_work_dir_str = live_work_dir.to_string_lossy().to_string();
-
-        // Pre-fix binaries left per-session identity in the main repo's
-        // settings.local.json; the fold-back must heal it on every rewrite.
-        let polluted = json!({
-            "env": {
-                "LOOM_STAGE_ID": "knowledge-bootstrap",
-                "LOOM_SESSION_ID": "session-stale",
-                "LOOM_WORK_DIR": live_work_dir_str
-            },
-            "permissions": { "allow": ["Read(.loom/work/**)"] }
-        });
-        std::fs::write(
-            &settings_path,
-            serde_json::to_string_pretty(&polluted).unwrap(),
-        )
-        .unwrap();
-
-        let result =
-            merge_permissions_with_lock(&settings_path, &["Bash(cargo:*)".to_string()], &[])
-                .unwrap();
-        assert_eq!(result.allow_added, 1);
-
-        let content = std::fs::read_to_string(&settings_path).unwrap();
-        let settings: Value = serde_json::from_str(&content).unwrap();
-        let env = settings["env"].as_object().unwrap();
-        assert!(!env.contains_key("LOOM_STAGE_ID"));
-        assert!(!env.contains_key("LOOM_SESSION_ID"));
-        assert_eq!(env["LOOM_WORK_DIR"], live_work_dir_str);
-        let allow = settings["permissions"]["allow"].as_array().unwrap();
-        assert!(allow.iter().any(|v| v == "Read(.loom/work/**)"));
-        assert!(allow.iter().any(|v| v == "Bash(cargo:*)"));
-    }
-
-    #[test]
-    fn test_transform_worktree_path_edge_cases() {
-        // Invalid permission format
-        assert_eq!(transform_worktree_path("NoParens"), None);
-        assert_eq!(transform_worktree_path("BadFormat()"), None);
-
-        // Empty path after transformation
-        assert_eq!(transform_worktree_path("Read(.worktrees/stage/)"), None);
-        assert_eq!(transform_worktree_path("Read(../../)"), None);
-
-        // Bare glob after stripping ../ — escape prevention rules like ../../**
-        // must not become Read(**) / Write(**) which would match everything
-        assert_eq!(transform_worktree_path("Read(../../**)"), None);
-        assert_eq!(transform_worktree_path("Write(../../**)"), None);
-
-        // Just the stage id with no further path
-        assert_eq!(transform_worktree_path("Read(.worktrees/stage-id)"), None);
-    }
-}
+mod tests;

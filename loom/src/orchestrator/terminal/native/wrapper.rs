@@ -14,10 +14,12 @@ use super::session_log::{create_logs_dir, stderr_log_path};
 use crate::fs::permissions::state_root::RIPGREP_CONFIG_FILE;
 use crate::models::session::SessionType;
 use anyhow::{Context, Result};
-use script_text::env_allowlist;
+use script_text::{env_allowlist, pid_capture, EXEC_COMMENT};
 use shell_escape::escape;
 use std::fs;
 use std::path::{Path, PathBuf};
+
+pub(crate) use host_env::WrapperHostEnv;
 
 /// Line continuation inside the generated `exec env -i …` invocation.
 const CONTINUATION: &str = "\\\n";
@@ -57,9 +59,9 @@ const CONTINUATION: &str = "\\\n";
 /// # Returns
 /// The path to the created wrapper script
 ///
-/// Delegates to `create_session_wrapper_script` with `rustc_wrapper_allowed = false` — no
-/// merged sandbox config to ask here — which keeps `wrapper/tests.rs`'s byte-pinned assertions
-/// independent of the host's own sccache install.
+/// Delegates to `create_session_wrapper_script` with `rustc_wrapper_allowed = false` and no
+/// host exports — no merged sandbox config or launch host to ask here — which keeps
+/// `wrapper/tests.rs`'s byte-pinned assertions independent of the host's own sccache install.
 // Mirrors `create_session_wrapper_script`'s first eight params positionally; a struct would
 // force editing every call site, including `wrapper/tests.rs`'s byte-exact assertions.
 #[allow(clippy::too_many_arguments)]
@@ -83,12 +85,15 @@ pub fn create_wrapper_script(
         kind,
         context_ceiling_tokens,
         false,
+        &WrapperHostEnv::default(),
     )
 }
 
 /// Real body behind [`create_wrapper_script`]; same contract, plus `rustc_wrapper_allowed` —
-/// whether this session's merged sandbox config permits sccache; see `sccache_env`.
-// Flat like `create_wrapper_script`, which this mirrors one-for-one plus the trailing gate;
+/// whether this session's merged sandbox config permits sccache; see `sccache_env` — and
+/// `host_env`, the `LOOM_SCRATCH_DIR` / `LOOM_BIN` / `LOOM_HOOK_PATH` exports the launch
+/// resolved for this session.
+// Flat like `create_wrapper_script`, which this mirrors one-for-one plus the trailing gates;
 // collapsing into a struct would force editing every call site, including
 // `wrapper/tests.rs`'s byte-exact assertions, which must stay untouched.
 #[allow(clippy::too_many_arguments)]
@@ -102,6 +107,7 @@ pub(crate) fn create_session_wrapper_script(
     kind: SessionType,
     context_ceiling_tokens: u32,
     rustc_wrapper_allowed: bool,
+    host_env: &WrapperHostEnv,
 ) -> Result<PathBuf> {
     create_wrappers_dir(work_dir)?;
     create_logs_dir(work_dir)?;
@@ -118,6 +124,7 @@ pub(crate) fn create_session_wrapper_script(
         kind,
         context_ceiling_tokens,
         rustc_wrapper_allowed,
+        host_env,
     );
 
     fs::write(&wrapper_path, &script)
@@ -141,10 +148,11 @@ pub(crate) fn create_session_wrapper_script(
 /// Absolute form of `path`, falling back to the input when it cannot be
 /// resolved. Paths are absolutized because the script may `cd` elsewhere.
 ///
-/// Shared with `native::capsule`: the `--settings` path it resolves and the
-/// `cd` target built here must resolve to the same root, or the wrapper's
-/// `cd` moves the process to a directory the `--settings` path was never
-/// made relative to.
+/// Shared with `native::session_settings` and `native::launch`: the
+/// `--settings` capsule path, the state root and the repository root they
+/// resolve must name the same directories the `cd` target built here does, or
+/// the wrapper's `cd` moves the process somewhere those paths were never made
+/// relative to.
 pub(super) fn absolute(path: &Path) -> PathBuf {
     path.canonicalize().unwrap_or_else(|_| path.to_path_buf())
 }
@@ -207,29 +215,6 @@ fn kind_env(kind: SessionType, working_dir: Option<&Path>) -> (String, String) {
     (merge, worktree)
 }
 
-/// Records the PID and, best-effort on Linux, the process start-time on line 2
-/// so liveness probes can detect PID reuse. `exec` preserves both, so they
-/// identify the claude process after it replaces this shell.
-fn pid_capture(pid_file: &str) -> String {
-    format!(
-        r#"# Write our PID, then (best-effort, Linux) the process start-time on
-# line 2 so liveness probes can detect PID reuse. exec preserves the PID and
-# start-time, so these identify the claude process after exec replaces us.
-echo $$ > {pid_file}
-if [ -r "/proc/$$/stat" ]; then
-    # Field 22 of /proc/<pid>/stat is starttime. The comm field (2) is wrapped
-    # in parens and may contain spaces, so strip through the last ')' first.
-    _loom_stat=$(cat "/proc/$$/stat" 2>/dev/null)
-    _loom_after=${{_loom_stat##*) }}
-    _loom_start=$(echo "$_loom_after" | awk '{{print $20}}')
-    if [ -n "$_loom_start" ]; then
-        echo "$_loom_start" >> {pid_file}
-    fi
-fi
-"#
-    )
-}
-
 /// `LOOM_WORK_DIR`, plus `RIPGREP_CONFIG_PATH` when the daemon has published
 /// `<work_dir>/ripgreprc` (`daemon::server::storage::publish_search_exclusions`),
 /// rendered as shell-escaped `exec env` assignments. The config excludes
@@ -255,20 +240,6 @@ fn work_dir_env(work_dir: &Path) -> String {
     }
     block
 }
-
-/// Rendered above the exec line; own constant, like `ENV_ALLOWLIST`, to keep `build_wrapper_script`'s body under its line cap.
-const EXEC_COMMENT: &str = r#"# Loom stages record knowledge through `loom memory` / `loom knowledge`; Claude
-# Code auto-memory writes to a location invisible to orchestration, so disable
-# it at the process boundary rather than by instruction alone.
-#
-# claude renders its TUI on stdout and prints refusals/fatal errors on
-# stderr; teeing only stderr keeps the pane's TTY intact while preserving
-# claude's last words after the pane is gone. The tee runs under its own
-# `env -i "${_loom_env[@]}"` — the process substitution forks before the
-# `exec env -i` below runs, so without it tee would keep the operator's full
-# host environment for the whole session, readable from /proc/<tee pid>/environ.
-# Replace this process with claude under only the explicit stage contract.
-"#;
 
 /// Upper clamp applied to `CLAUDE_CODE_AUTO_COMPACT_WINDOW` before export.
 /// The installed binary re-clamps to `[1, 1_000_000]` and then again to the
@@ -347,8 +318,8 @@ fn sccache_env(rustc_wrapper_allowed: bool) -> String {
 
 /// Render the wrapper script text. Pure: every path is resolved by the caller
 /// or by `absolute*`, and nothing is written.
-// Mirrors `create_wrapper_script`'s parameter list one-for-one; see that
-// function's `#[allow(clippy::too_many_arguments)]` for why it stays flat.
+// Mirrors `create_session_wrapper_script`'s parameter list one-for-one; see
+// that function's `#[allow(clippy::too_many_arguments)]` for why it stays flat.
 #[allow(clippy::too_many_arguments)]
 fn build_wrapper_script(
     work_dir: &Path,
@@ -360,6 +331,7 @@ fn build_wrapper_script(
     kind: SessionType,
     context_ceiling_tokens: u32,
     rustc_wrapper_allowed: bool,
+    host_env: &WrapperHostEnv,
 ) -> String {
     let cd_section = cd_section(working_dir);
     let (merge_session_env, worktree_path_env) = kind_env(kind, working_dir);
@@ -372,6 +344,7 @@ fn build_wrapper_script(
     let stderr_log = stderr_log_escaped(work_dir, session_id);
     let resource_limit_env = resource_limit_env(context_ceiling_tokens);
     let sccache_env = sccache_env(rustc_wrapper_allowed);
+    let host_env = host_env.render();
     let env_allowlist = env_allowlist();
     format!(
         r#"#!/bin/bash
@@ -389,11 +362,12 @@ exec env -i "${{_loom_env[@]}}" \
     "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1" \
     "CLAUDE_CODE_DISABLE_AUTO_MEMORY=1" \
     "CLAUDE_REMOTE_CONTROL_SESSION_NAME_PREFIX=loom" \
-{resource_limit_env}{sccache_env}{merge_session_env}{worktree_path_env}    {claude_cmd} 2> >(env -i "${{_loom_env[@]}}" tee -a {stderr_log})
+{resource_limit_env}{sccache_env}{host_env}{merge_session_env}{worktree_path_env}    {claude_cmd} 2> >(env -i "${{_loom_env[@]}}" tee -a {stderr_log})
 "#
     )
 }
 
+mod host_env;
 mod script_text;
 
 #[cfg(test)]

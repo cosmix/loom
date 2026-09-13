@@ -1,191 +1,92 @@
-//! Unit tests for `native/session_settings.rs`, declared as a sibling module
-//! the way `tests_capsule.rs` and `tests_wrapper_env.rs` are (CLAUDE.md
-//! Rule 17 keeps test files split out of the module they cover).
+//! Unit tests for `native/session_settings.rs`: the capsule file, its
+//! lifecycle, and what `write_session_capsule` renders into it. Declared as a
+//! sibling module the way `tests_capsule.rs` and `tests_wrapper_env.rs` are
+//! (CLAUDE.md Rule 17 keeps test files split out of the module they cover).
 
 use super::*;
+use crate::models::stage::{Implementers, StageType};
 use crate::orchestrator::terminal::native::session_settings::{
-    resolve_settings_file, with_post_tool_use_hook, write_session_settings,
+    write_capsule_file, write_session_capsule, CapsuleRequest,
 };
-use serde_json::json;
-use serial_test::serial;
-use std::path::Path;
+use crate::sandbox::control_surfaces::ControlSurfaces;
+use crate::sandbox::MergedSandboxConfig;
+use serde_json::{json, Value};
+use std::os::unix::fs::PermissionsExt;
 use tempfile::TempDir;
 
-/// Sets `LOOM_HOOKS_DIR` for the duration of the guard and restores it on
-/// drop (including on panic), the same discipline `loom/src/hooks/tests.rs`'s env-var
-/// test uses for `find_hooks_dir`'s override.
-struct HooksDirGuard {
-    original: Option<std::ffi::OsString>,
+fn mode(path: &Path) -> u32 {
+    std::fs::metadata(path).unwrap().permissions().mode() & 0o777
 }
 
-impl HooksDirGuard {
-    fn set(dir: &Path) -> Self {
-        let original = std::env::var_os("LOOM_HOOKS_DIR");
-        std::env::set_var("LOOM_HOOKS_DIR", dir);
-        Self { original }
-    }
-}
-
-impl Drop for HooksDirGuard {
-    fn drop(&mut self) {
-        match &self.original {
-            Some(value) => std::env::set_var("LOOM_HOOKS_DIR", value),
-            None => std::env::remove_var("LOOM_HOOKS_DIR"),
-        }
-    }
-}
-
-fn post_tool_use_commands(settings: &serde_json::Value) -> Vec<String> {
-    settings["hooks"]["PostToolUse"]
-        .as_array()
-        .expect("PostToolUse must be an array")
-        .iter()
-        .filter_map(|entry| entry["hooks"][0]["command"].as_str().map(String::from))
-        .collect()
-}
-
-#[test]
-fn with_post_tool_use_hook_adds_it_when_there_is_no_base() {
-    let hooks_dir = Path::new("/home/user/.claude/hooks/loom");
-    let settings = with_post_tool_use_hook(None, hooks_dir);
-
-    let commands = post_tool_use_commands(&settings);
-    assert_eq!(commands.len(), 1);
-    assert_eq!(
-        commands[0],
-        hooks_dir.join("post-tool-use.sh").to_string_lossy()
-    );
-}
-
-#[test]
-fn with_post_tool_use_hook_does_not_duplicate_an_existing_entry() {
-    let hooks_dir = Path::new("/home/user/.claude/hooks/loom");
-    let base = json!({
-        "hooks": {
-            "PostToolUse": [
-                {
-                    "matcher": "*",
-                    "hooks": [{"type": "command", "command": "/home/user/.claude/hooks/loom/post-tool-use.sh"}]
-                },
-                {
-                    "matcher": "Bash",
-                    "hooks": [{"type": "command", "command": "/home/user/.claude/hooks/loom/loom-control-complete.sh"}]
-                }
-            ]
-        }
-    });
-
-    let settings = with_post_tool_use_hook(Some(&base), hooks_dir);
-
-    let commands = post_tool_use_commands(&settings);
-    assert_eq!(
-        commands.len(),
-        2,
-        "an already-registered heartbeat hook must not be duplicated: {commands:?}"
-    );
-    assert!(
-        commands
-            .iter()
-            .any(|c| c.ends_with("loom-control-complete.sh")),
-        "the base's other PostToolUse entries must survive: {commands:?}"
-    );
-}
-
-#[test]
-fn with_post_tool_use_hook_scrubs_session_identity_env() {
-    let hooks_dir = Path::new("/home/user/.claude/hooks/loom");
-    let base = json!({
-        "env": {
-            "LOOM_SESSION_ID": "old-session",
-            "LOOM_STAGE_ID": "old-stage",
-            "SOME_OTHER_VAR": "keep-me",
-        }
-    });
-
-    let settings = with_post_tool_use_hook(Some(&base), hooks_dir);
-
-    let env = settings["env"].as_object().unwrap();
-    assert!(!env.contains_key("LOOM_SESSION_ID"));
-    assert!(!env.contains_key("LOOM_STAGE_ID"));
-    assert_eq!(env["SOME_OTHER_VAR"], json!("keep-me"));
-}
-
-#[test]
-fn write_session_settings_writes_under_capsules_dir_and_overwrites_cleanly() {
-    let temp = TempDir::new().unwrap();
-    let work_dir = temp.path().join("work");
-    let cwd = temp.path().join("repo");
-    let hooks_dir = temp.path().join("hooks");
-    std::fs::create_dir_all(&cwd).unwrap();
-    std::fs::create_dir_all(&hooks_dir).unwrap();
-
-    let path = write_session_settings(&work_dir, "session-abc123", &cwd, &hooks_dir).unwrap();
-
-    assert_eq!(
-        path,
-        work_dir
-            .join("capsules")
-            .join("session-abc123.settings.json")
-    );
-    assert!(path.exists());
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let mode = std::fs::metadata(path.parent().unwrap())
-            .unwrap()
-            .permissions()
-            .mode();
-        assert_eq!(
-            mode & 0o777,
-            0o700,
-            "capsules/ must be private, not umask-default"
-        );
-    }
-
-    let content: serde_json::Value =
-        serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
-    assert_eq!(post_tool_use_commands(&content).len(), 1);
-
-    // A second write for the same session must overwrite cleanly, not error
-    // or leave a stray `.tmp` sibling behind.
-    let path2 = write_session_settings(&work_dir, "session-abc123", &cwd, &hooks_dir).unwrap();
-    assert_eq!(path2, path);
-    assert!(path2.exists());
-}
-
-#[test]
-fn write_session_settings_layers_onto_cwds_existing_settings_local_json() {
-    let temp = TempDir::new().unwrap();
-    let work_dir = temp.path().join("work");
-    let cwd = temp.path().join("repo");
-    let hooks_dir = temp.path().join("hooks");
-    std::fs::create_dir_all(cwd.join(".claude")).unwrap();
-    std::fs::create_dir_all(&hooks_dir).unwrap();
-    std::fs::write(
-        cwd.join(".claude").join("settings.local.json"),
-        json!({"hasTrustDialogAccepted": true}).to_string(),
+fn default_sandbox() -> MergedSandboxConfig {
+    crate::sandbox::merge_config(
+        &Default::default(),
+        &Stage::default().sandbox,
+        StageType::Standard,
+        &Implementers::default(),
     )
-    .unwrap();
+}
 
-    let path = write_session_settings(&work_dir, "session-def456", &cwd, &hooks_dir).unwrap();
-
-    let content: serde_json::Value =
-        serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
-    assert_eq!(content["hasTrustDialogAccepted"], json!(true));
-    assert_eq!(post_tool_use_commands(&content).len(), 1);
+/// `target` spelled relative to the process's current directory, which this
+/// reads but never changes.
+fn relative_to_cwd(target: &Path) -> PathBuf {
+    let cwd = std::env::current_dir().unwrap().canonicalize().unwrap();
+    let mut relative: PathBuf = cwd.components().skip(1).map(|_| "..").collect();
+    relative.push(target.canonicalize().unwrap().strip_prefix("/").unwrap());
+    relative
 }
 
 #[test]
-fn write_session_settings_rejects_an_invalid_session_id() {
+fn write_capsule_file_is_private_and_overwrites_cleanly() {
     let temp = TempDir::new().unwrap();
     let work_dir = temp.path().join("work");
-    let cwd = temp.path().join("repo");
-    let hooks_dir = temp.path().join("hooks");
-    std::fs::create_dir_all(&cwd).unwrap();
-    std::fs::create_dir_all(&hooks_dir).unwrap();
 
-    let result = write_session_settings(&work_dir, "../etc/passwd", &cwd, &hooks_dir);
-    assert!(result.is_err());
+    let path = write_capsule_file(&work_dir, "session-abc123", &json!({"a": 1})).unwrap();
+
+    let expected = work_dir.canonicalize().unwrap().join("capsules");
+    assert_eq!(path, expected.join("session-abc123.settings.json"));
+    assert_eq!(mode(&path), 0o600);
+    assert_eq!(mode(path.parent().unwrap()), 0o700);
+
+    let again = write_capsule_file(&work_dir, "session-abc123", &json!({"a": 2})).unwrap();
+    assert_eq!(again, path);
+    let content: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+    assert_eq!(content, json!({"a": 2}));
+    assert_eq!(mode(&path), 0o600);
+}
+
+#[test]
+fn write_capsule_file_tightens_an_existing_capsules_directory() {
+    let temp = TempDir::new().unwrap();
+    let work_dir = temp.path().join("work");
+    let dir = work_dir.join("capsules");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+    write_capsule_file(&work_dir, "session-t1", &json!({})).unwrap();
+
+    assert_eq!(mode(&dir), 0o700);
+}
+
+#[test]
+fn write_capsule_file_returns_an_absolute_path_for_a_relative_work_dir() {
+    let temp = TempDir::new().unwrap();
+    let relative = relative_to_cwd(temp.path());
+    assert!(relative.is_relative(), "{}", relative.display());
+
+    let path = write_capsule_file(&relative, "session-rel1", &json!({})).unwrap();
+
+    assert!(path.is_absolute(), "{}", path.display());
+    let expected = temp.path().canonicalize().unwrap().join("capsules");
+    assert_eq!(path, expected.join("session-rel1.settings.json"));
+}
+
+#[test]
+fn write_capsule_file_rejects_an_invalid_session_id() {
+    let temp = TempDir::new().unwrap();
+    let work_dir = temp.path().join("work");
+
+    assert!(write_capsule_file(&work_dir, "../etc/passwd", &json!({})).is_err());
     assert!(
         !work_dir.join("capsules").exists(),
         "a rejected session id must not create the capsules directory"
@@ -193,72 +94,143 @@ fn write_session_settings_rejects_an_invalid_session_id() {
 }
 
 #[test]
+fn write_capsule_file_refuses_a_symlinked_capsules_directory() {
+    let temp = TempDir::new().unwrap();
+    let work_dir = temp.path().join("work");
+    std::fs::create_dir_all(&work_dir).unwrap();
+    let attacker_target = temp.path().join("attacker");
+    std::fs::create_dir_all(&attacker_target).unwrap();
+    std::os::unix::fs::symlink(&attacker_target, work_dir.join("capsules")).unwrap();
+
+    let error = write_capsule_file(&work_dir, "session-sym1", &json!({}))
+        .expect_err("a symlinked capsules directory must be refused");
+
+    assert!(format!("{error:#}").contains("capsules"), "{error:#}");
+    assert!(
+        std::fs::read_dir(&attacker_target)
+            .unwrap()
+            .next()
+            .is_none(),
+        "must not write through the symlinked capsules directory"
+    );
+}
+
+#[test]
+fn write_capsule_file_refuses_a_symlinked_capsule_file() {
+    let temp = TempDir::new().unwrap();
+    let work_dir = temp.path().join("work");
+    let dir = work_dir.join("capsules");
+    std::fs::create_dir_all(&dir).unwrap();
+    let attacker_target = temp.path().join("attacker.json");
+    std::fs::write(&attacker_target, "{}").unwrap();
+    std::os::unix::fs::symlink(&attacker_target, dir.join("session-sym2.settings.json")).unwrap();
+
+    let error = write_capsule_file(&work_dir, "session-sym2", &json!({"a": 1}))
+        .expect_err("a symlinked capsule file must be refused");
+
+    assert!(
+        format!("{error:#}").contains("session-sym2.settings.json"),
+        "{error:#}"
+    );
+    assert_eq!(std::fs::read_to_string(&attacker_target).unwrap(), "{}");
+}
+
+#[test]
 fn cleanup_session_settings_removes_the_file_and_tolerates_a_missing_one() {
     let temp = TempDir::new().unwrap();
     let work_dir = temp.path().join("work");
-    let cwd = temp.path().join("repo");
-    let hooks_dir = temp.path().join("hooks");
-    std::fs::create_dir_all(&cwd).unwrap();
-    std::fs::create_dir_all(&hooks_dir).unwrap();
-    let path = write_session_settings(&work_dir, "session-cleanup1", &cwd, &hooks_dir).unwrap();
-    assert!(path.exists());
+    let path = write_capsule_file(&work_dir, "session-cleanup1", &json!({})).unwrap();
 
     cleanup_session_settings(&work_dir, "session-cleanup1");
     assert!(!path.exists());
 
-    // Idempotent: a second cleanup against the now-missing file must not panic
-    // or error, since the daemon's own close path is best-effort.
+    // Idempotent: the daemon's own close path is best-effort.
     cleanup_session_settings(&work_dir, "session-cleanup1");
 }
 
-#[test]
-#[serial]
-fn resolve_settings_file_for_adjudication_writes_and_points_at_a_generated_capsule() {
+/// A repository with a state root, and where its scratch directories go.
+struct Checkout {
+    _temp: TempDir,
+    repo: PathBuf,
+    work_dir: PathBuf,
+    scratch_root: PathBuf,
+}
+
+fn checkout() -> Checkout {
     let temp = TempDir::new().unwrap();
-    let work_dir = temp.path().join("work");
-    let cwd = temp.path().join("repo");
-    let hooks_dir = temp.path().join("hooks");
-    std::fs::create_dir_all(&cwd).unwrap();
-    std::fs::create_dir_all(&hooks_dir).unwrap();
-    let _hooks_guard = HooksDirGuard::set(&hooks_dir);
+    let repo = temp.path().join("repo");
+    let work_dir = repo.join(".loom").join("work");
+    std::fs::create_dir_all(&work_dir).unwrap();
+    let scratch_root = temp.path().join("scratch");
+    Checkout {
+        _temp: temp,
+        repo,
+        work_dir,
+        scratch_root,
+    }
+}
 
-    let settings_file = resolve_settings_file(
-        SessionType::Adjudication,
-        &cwd,
-        &work_dir,
-        "session-resolve1",
-    )
-    .unwrap();
+fn surfaces_for(checkout: &Checkout) -> ControlSurfaces {
+    let state_root = checkout.work_dir.canonicalize().unwrap();
+    ControlSurfaces::new(&state_root, Some(&checkout.scratch_root), &[], None)
+}
 
-    let resolved = settings_file.expect("adjudication must resolve a generated settings file");
-    let expected = work_dir
-        .join("capsules")
-        .join("session-resolve1.settings.json");
-    assert_eq!(Path::new(&resolved), expected);
-    assert!(expected.exists());
+fn write_merge_capsule(
+    checkout: &Checkout,
+    session_id: &str,
+    surfaces: &ControlSurfaces,
+) -> Result<String> {
+    let sandbox = default_sandbox();
+    let scratch_dir = checkout.scratch_root.join(session_id);
+    write_session_capsule(&CapsuleRequest {
+        kind: SessionType::Merge,
+        session_id,
+        sandbox: &sandbox,
+        cwd: &checkout.repo,
+        work_dir: &checkout.work_dir,
+        repo_root: &checkout.repo,
+        hooks_dir: None,
+        scratch_dir: &scratch_dir,
+        surfaces,
+    })
 }
 
 #[test]
-fn resolve_settings_file_for_other_kinds_never_writes_a_capsule() {
-    let temp = TempDir::new().unwrap();
-    let work_dir = temp.path().join("work");
-    let cwd = temp.path().join("repo");
-    std::fs::create_dir_all(cwd.join(".claude")).unwrap();
-    std::fs::write(cwd.join(".claude").join("settings.local.json"), "{}").unwrap();
+fn write_session_capsule_renders_the_approved_list_and_the_scratch_grant() {
+    let checkout = checkout();
+    let surfaces = surfaces_for(&checkout);
+    let approved = vec!["Bash(cargo test:*)".to_string()];
+    crate::fs::permissions::approved::record_approved(&checkout.work_dir, &approved, &surfaces)
+        .unwrap();
 
-    let settings_file =
-        resolve_settings_file(SessionType::Stage, &cwd, &work_dir, "session-resolve2").unwrap();
+    let path = write_merge_capsule(&checkout, "session-app1", &surfaces).unwrap();
 
-    let resolved = settings_file.expect("cwd has a settings.local.json to resolve");
-    assert_eq!(
-        Path::new(&resolved).canonicalize().unwrap(),
-        cwd.join(".claude")
-            .join("settings.local.json")
-            .canonicalize()
-            .unwrap()
-    );
+    let capsule: Value = serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+    let allow = capsule["permissions"]["allow"].as_array().unwrap();
+    let scratch = checkout.scratch_root.join("session-app1");
+    for rule in [
+        "Bash(cargo test:*)".to_string(),
+        format!("Edit(/{}/**)", scratch.display()),
+    ] {
+        assert!(
+            allow.iter().any(|value| value == &json!(rule)),
+            "missing {rule}: {capsule}"
+        );
+    }
+}
+
+#[test]
+fn write_session_capsule_refuses_an_unparseable_checkout_settings_file() {
+    let checkout = checkout();
+    let claude_dir = checkout.repo.join(".claude");
+    std::fs::create_dir_all(&claude_dir).unwrap();
+    std::fs::write(claude_dir.join("settings.local.json"), "not json").unwrap();
+
+    let error = write_merge_capsule(&checkout, "session-bad1", &surfaces_for(&checkout))
+        .expect_err("an unparseable checkout settings file must refuse the capsule");
+
     assert!(
-        !work_dir.join("capsules").exists(),
-        "non-adjudication kinds must never write a generated settings capsule"
+        format!("{error:#}").contains("settings.local.json"),
+        "{error:#}"
     );
 }

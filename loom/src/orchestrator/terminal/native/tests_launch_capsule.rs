@@ -1,203 +1,239 @@
-//! End-to-end `prepare_session_launch` tests for the settings-capsule wiring
-//! added by `session_settings.rs`. Split out of `tests_launch.rs` to keep
-//! that file under the 400-line ceiling (CLAUDE.md Rule 17), the same reason
-//! `tests_capsule.rs` and `tests_wrapper_env.rs` are split out of `tests.rs`.
+//! End-to-end launch tests for the settings capsule, the scratch directory
+//! and the wrapper's host exports, driven through `prepare_session_launch_with`
+//! against an injected [`LaunchHost`], so no test touches `PATH`, `HOME`,
+//! `LOOM_HOOKS_DIR` or the operator's runtime directory. Split out of
+//! `tests_launch.rs` to keep that file under the 400-line ceiling.
 
+use super::host::{hook_path_entries, verified_loom_bin, LaunchHost};
 use super::*;
 use crate::fs::work_dir::write_remote_control_config;
+use crate::orchestrator::terminal::native::capsule::CapsuleSupport;
 use crate::orchestrator::terminal::native::session_settings_path;
 use crate::remote_control::{RemoteControlConfig, RemoteControlMode};
-use serial_test::serial;
+use serde_json::Value;
+use std::os::unix::fs::PermissionsExt;
 use tempfile::TempDir;
 
-/// A minimal named stage. Duplicated from `tests_launch.rs`'s own
-/// `stage_named` rather than shared: that one is private to the sibling
-/// `tests` module nested under `launch`, not reachable from here.
-fn stage_named(id: &str, name: &str) -> Stage {
-    Stage {
-        id: id.to_string(),
-        name: name.to_string(),
-        ..Stage::default()
-    }
+const ALL_KINDS: [SessionType; 5] = [
+    SessionType::Stage,
+    SessionType::Knowledge,
+    SessionType::Merge,
+    SessionType::BaseConflict,
+    SessionType::Adjudication,
+];
+
+fn current_uid() -> u32 {
+    // SAFETY: `getuid` has no preconditions and cannot fail.
+    unsafe { libc::getuid() }
 }
 
-/// Puts a `claude` stub that always exits non-zero at the FRONT of `$PATH`,
-/// restoring the original value on drop (including on panic). Mirrors
-/// `tmux::tests_spawn::ClaudeOnPathGuard`: `prepare_session_launch` calls
-/// `find_claude_path()`, which only needs SOME executable named `claude` to
-/// be found — it never runs it — so a stub that fails `--help` is enough to
-/// reach the capsule-resolution code under test below without ever executing
-/// an unsupervised agent from a unit test.
-struct ClaudeStubGuard {
-    _dir: TempDir,
-    original: Option<std::ffi::OsString>,
+fn mode(path: &Path) -> u32 {
+    std::fs::metadata(path).unwrap().permissions().mode() & 0o777
 }
 
-impl ClaudeStubGuard {
-    fn install() -> Self {
-        use std::os::unix::fs::PermissionsExt;
-        let dir = TempDir::new().unwrap();
-        let stub = dir.path().join("claude");
-        std::fs::write(&stub, "#!/bin/sh\nexit 1\n").unwrap();
-        std::fs::set_permissions(&stub, std::fs::Permissions::from_mode(0o755)).unwrap();
-
-        let original = std::env::var_os("PATH");
-        let mut entries = vec![dir.path().to_path_buf()];
-        if let Some(path) = original.as_ref() {
-            entries.extend(std::env::split_paths(path));
-        }
-        std::env::set_var("PATH", std::env::join_paths(entries).unwrap());
-
-        Self {
-            _dir: dir,
-            original,
-        }
-    }
+/// A repository with a state root and one stage worktree, and a host whose
+/// every fact is fixed: all capsule flags supported, hooks and the loom
+/// binary in the temp dir, scratch under it, and a known hook PATH.
+struct Fixture {
+    temp: TempDir,
+    repo: PathBuf,
+    work_dir: PathBuf,
+    host: LaunchHost,
 }
 
-impl Drop for ClaudeStubGuard {
-    fn drop(&mut self) {
-        match &self.original {
-            Some(value) => std::env::set_var("PATH", value),
-            None => std::env::remove_var("PATH"),
-        }
-    }
-}
-
-/// Sets `LOOM_HOOKS_DIR` for the duration of the guard, restoring it on drop.
-struct HooksDirGuard {
-    original: Option<std::ffi::OsString>,
-}
-
-impl HooksDirGuard {
-    fn set(dir: &std::path::Path) -> Self {
-        let original = std::env::var_os("LOOM_HOOKS_DIR");
-        std::env::set_var("LOOM_HOOKS_DIR", dir);
-        Self { original }
-    }
-}
-
-impl Drop for HooksDirGuard {
-    fn drop(&mut self) {
-        match &self.original {
-            Some(value) => std::env::set_var("LOOM_HOOKS_DIR", value),
-            None => std::env::remove_var("LOOM_HOOKS_DIR"),
-        }
-    }
-}
-
-/// A signal file for `prepare_session_launch` to point at.
-fn signal_file(work_dir: &std::path::Path) -> PathBuf {
-    let path = work_dir.join("signals").join("sig.md");
-    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-    std::fs::write(&path, "# Assignment\n").unwrap();
-    path
-}
-
-/// Remote Control off, so `prepare_session_launch`'s `resolve_invocation`
-/// call never runs a real `claude --version` preflight against the stub.
-fn disable_remote_control(work_dir: &std::path::Path) {
-    write_remote_control_config(
-        work_dir,
-        &RemoteControlConfig {
-            mode: RemoteControlMode::Off,
-        },
-    )
-    .unwrap();
-}
-
-/// THE WIRING THIS PINS: an adjudication launch must resolve its `--settings`
-/// capsule through `session_settings::capsule_for` rather than the plain
-/// `resolved_settings_file(cwd)` every other kind uses — see the module doc
-/// comment on `session_settings.rs` for why a judge needs a generated capsule
-/// at all. This checks the capsule the launch produced ON DISK, not the
-/// `--settings` flag on the resulting command line: `native::capsule`'s
-/// claude-support probe is memoized in a process-global `OnceLock`
-/// (`capsule.rs::probed_capsule_support`), so whether the flag is EMITTED
-/// depends on whichever test in the shared test binary happens to probe first
-/// — the same reason `tests_capsule.rs` tests `capsule_from` directly instead
-/// of `session_capsule`. The capsule file's presence and content do not
-/// depend on that probe at all.
-#[test]
-#[serial]
-fn adjudication_launch_writes_a_settings_capsule_with_the_heartbeat_hook() {
-    let _claude = ClaudeStubGuard::install();
+fn fixture() -> Fixture {
     let temp = TempDir::new().unwrap();
-    let work_dir = temp.path().join("work");
-    let cwd = temp.path().join("repo");
+    let repo = temp.path().join("repo");
+    let work_dir = repo.join(".loom").join("work");
     let hooks_dir = temp.path().join("hooks");
-    std::fs::create_dir_all(&cwd).unwrap();
+    std::fs::create_dir_all(repo.join(".worktrees").join("stage-1")).unwrap();
+    std::fs::create_dir_all(&work_dir).unwrap();
     std::fs::create_dir_all(&hooks_dir).unwrap();
-    let _hooks_guard = HooksDirGuard::set(&hooks_dir);
-    disable_remote_control(&work_dir);
-
-    let stage = stage_named("judge-stage", "Judge Stage");
-    let session = Session::new_adjudication(&stage.id);
-    let session_id = session.id.clone();
-    let signal_path = signal_file(&work_dir);
-
-    prepare_session_launch(
-        &work_dir,
-        SessionType::Adjudication,
-        &stage,
-        session,
-        &signal_path,
-        &cwd,
-    )
-    .expect("an adjudication launch must succeed with a stubbed claude on PATH");
-
-    let capsule_path = session_settings_path(&work_dir, &session_id);
-    assert!(
-        capsule_path.exists(),
-        "the judge must get a generated settings capsule at {}",
-        capsule_path.display()
-    );
-    let content: serde_json::Value =
-        serde_json::from_str(&std::fs::read_to_string(&capsule_path).unwrap()).unwrap();
-    let post_tool_use = content["hooks"]["PostToolUse"]
-        .as_array()
-        .expect("PostToolUse must be an array");
-    assert!(
-        post_tool_use
-            .iter()
-            .any(|entry| entry["hooks"][0]["command"]
-                .as_str()
-                .is_some_and(|c| c.ends_with("post-tool-use.sh"))),
-        "the capsule must carry the heartbeat hook: {content}"
-    );
+    let loom_bin = temp.path().join("loom");
+    std::fs::write(&loom_bin, "").unwrap();
+    // Remote Control off, so no launch runs a `claude --version` preflight.
+    let remote_control = RemoteControlConfig {
+        mode: RemoteControlMode::Off,
+    };
+    write_remote_control_config(&work_dir, &remote_control).unwrap();
+    let host = LaunchHost {
+        claude_path: PathBuf::from("/usr/bin/claude"),
+        capsule_support: CapsuleSupport {
+            settings: true,
+            setting_sources: true,
+            strict_mcp_config: true,
+            append_system_prompt_file: true,
+        },
+        repo_root: repo.clone(),
+        hooks_dir: Some(hooks_dir),
+        scratch_root: temp.path().join("scratch"),
+        uid: current_uid(),
+        loom_bin,
+        hook_path: vec![PathBuf::from("/usr/bin"), PathBuf::from("/bin")],
+        home: None,
+    };
+    Fixture {
+        temp,
+        repo,
+        work_dir,
+        host,
+    }
 }
 
-/// The counterpart to the adjudication case above: a stage launch must never
-/// write a generated capsule, even when one could be — it keeps resolving
-/// `cwd`'s own `.claude/settings.local.json`, exactly as before this module
-/// existed.
-#[test]
-#[serial]
-fn stage_launch_never_writes_a_settings_capsule() {
-    let _claude = ClaudeStubGuard::install();
-    let temp = TempDir::new().unwrap();
-    let work_dir = temp.path().join("work");
-    let cwd = temp.path().join("repo");
-    std::fs::create_dir_all(cwd.join(".claude")).unwrap();
-    std::fs::write(cwd.join(".claude").join("settings.local.json"), "{}").unwrap();
-    disable_remote_control(&work_dir);
-
-    let stage = stage_named("stage-stage", "Stage Stage");
-    let session = Session::new();
-    let signal_path = signal_file(&work_dir);
-
-    prepare_session_launch(
-        &work_dir,
-        SessionType::Stage,
+/// Launch `kind` for `stage-1` from where that kind runs: the stage worktree
+/// for a Stage session, the repository root for every other kind.
+fn try_launch(fixture: &Fixture, kind: SessionType) -> Result<(Session, String)> {
+    let stage = Stage {
+        id: "stage-1".to_string(),
+        name: "Stage One".to_string(),
+        ..Stage::default()
+    };
+    let cwd = if kind == SessionType::Stage {
+        fixture.repo.join(".worktrees").join("stage-1")
+    } else {
+        fixture.repo.clone()
+    };
+    let signal = fixture.work_dir.join("signals").join("sig.md");
+    std::fs::create_dir_all(signal.parent().unwrap()).unwrap();
+    std::fs::write(&signal, "# Assignment\n").unwrap();
+    let session = match kind {
+        SessionType::Knowledge => Session::new_knowledge(&stage.id),
+        SessionType::Adjudication => Session::new_adjudication(&stage.id),
+        _ => Session::new(),
+    };
+    let (session, _, _, wrapper) = prepare_session_launch_with(
+        &fixture.host,
+        &fixture.work_dir,
+        kind,
         &stage,
         session,
-        &signal_path,
+        &signal,
         &cwd,
-    )
-    .expect("a stage launch must succeed with a stubbed claude on PATH");
+    )?;
+    Ok((session, std::fs::read_to_string(wrapper).unwrap()))
+}
 
-    assert!(
-        !work_dir.join("capsules").exists(),
-        "a stage session must never get a generated settings capsule"
+fn launch(fixture: &Fixture, kind: SessionType) -> (Session, String) {
+    try_launch(fixture, kind)
+        .unwrap_or_else(|error| panic!("a {kind} launch must succeed: {error:#}"))
+}
+
+fn capsule_of(fixture: &Fixture, session: &Session) -> Value {
+    let path = session_settings_path(&fixture.work_dir, &session.id);
+    serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap()
+}
+
+#[test]
+fn every_kind_launches_from_an_absolute_private_capsule_with_pinned_sources() {
+    let fixture = fixture();
+    for kind in ALL_KINDS {
+        let (session, script) = launch(&fixture, kind);
+        let capsule = session_settings_path(&fixture.work_dir, &session.id)
+            .canonicalize()
+            .unwrap();
+        let settings_arg = escape(Cow::Owned(capsule.display().to_string()));
+        let flags =
+            format!("--settings {settings_arg} --setting-sources user,project --strict-mcp-config");
+        assert!(script.contains(&flags), "{kind}: {script}");
+        assert_eq!(mode(&capsule), 0o600, "{kind}");
+        assert_eq!(mode(capsule.parent().unwrap()), 0o700, "{kind}");
+    }
+}
+
+#[test]
+fn every_kind_exports_its_scratch_dir_the_loom_binary_and_the_hook_path() {
+    let fixture = fixture();
+    for kind in ALL_KINDS {
+        let (session, script) = launch(&fixture, kind);
+        let scratch = fixture.host.scratch_root.join(&session.id);
+        for export in [
+            format!("LOOM_SCRATCH_DIR={}", scratch.display()),
+            format!("LOOM_BIN={}", fixture.host.loom_bin.display()),
+            "LOOM_HOOK_PATH=/usr/bin:/bin".to_string(),
+        ] {
+            assert!(
+                script.contains(&export),
+                "{kind} must export {export}: {script}"
+            );
+        }
+    }
+}
+
+#[test]
+fn each_capsule_on_disk_carries_its_kinds_hooks_and_no_env() {
+    let fixture = fixture();
+    for (kind, session_hooks) in [
+        (SessionType::Stage, true),
+        (SessionType::Knowledge, true),
+        (SessionType::Adjudication, false),
+    ] {
+        let (session, _) = launch(&fixture, kind);
+        let capsule = capsule_of(&fixture, &session);
+        let hooks = capsule["hooks"].to_string();
+        assert!(hooks.contains("post-tool-use.sh"), "{kind}: {hooks}");
+        assert!(hooks.contains("loom-relay.sh"), "{kind}: {hooks}");
+        assert_eq!(
+            hooks.contains("session-start.sh"),
+            session_hooks,
+            "{kind}: {hooks}"
+        );
+        assert!(capsule.get("env").is_none(), "{kind}: {capsule}");
+    }
+}
+
+#[test]
+fn the_scratch_root_and_session_directory_are_created_0700() {
+    let fixture = fixture();
+    let (session, _) = launch(&fixture, SessionType::Merge);
+    assert_eq!(mode(&fixture.host.scratch_root), 0o700);
+    assert_eq!(mode(&fixture.host.scratch_root.join(&session.id)), 0o700);
+}
+
+#[test]
+fn an_unusable_scratch_root_fails_the_launch() {
+    let mut fixture = fixture();
+    let blocker = fixture.temp.path().join("not-a-directory");
+    std::fs::write(&blocker, "").unwrap();
+    fixture.host.scratch_root = blocker;
+
+    let error = try_launch(&fixture, SessionType::Stage)
+        .expect_err("a file where the scratch root belongs must fail the spawn");
+
+    assert!(format!("{error:#}").contains("scratch root"), "{error:#}");
+}
+
+#[test]
+fn hook_path_drops_entries_inside_a_writable_root_and_keeps_the_rest() {
+    let writable = TempDir::new().unwrap();
+    let outside = TempDir::new().unwrap();
+    let inside = writable.path().join("bin");
+    std::fs::create_dir_all(&inside).unwrap();
+    let path_var = std::env::join_paths([
+        inside.as_path(),
+        outside.path(),
+        Path::new("relative/bin"),
+        outside.path(),
+        Path::new("/does/not/exist"),
+    ])
+    .unwrap();
+
+    let kept = hook_path_entries(&path_var, &[writable.path().to_path_buf()]);
+
+    assert_eq!(kept, vec![outside.path().canonicalize().unwrap()]);
+}
+
+#[test]
+fn loom_bin_must_be_an_operator_owned_regular_file() {
+    let temp = TempDir::new().unwrap();
+    let binary = temp.path().join("loom");
+    std::fs::write(&binary, "").unwrap();
+    let uid = current_uid();
+
+    assert_eq!(
+        verified_loom_bin(&binary, uid).unwrap(),
+        binary.canonicalize().unwrap()
     );
+    assert!(verified_loom_bin(temp.path(), uid).is_err());
+    assert!(verified_loom_bin(&binary, uid.wrapping_add(1)).is_err());
+    assert!(verified_loom_bin(&temp.path().join("missing"), uid).is_err());
 }

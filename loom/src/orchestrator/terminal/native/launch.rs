@@ -2,21 +2,26 @@
 //!
 //! Builds everything a spawn needs UP TO the point of actually starting a
 //! process: the resolved tracking key / PID-file key, the kind-specific
-//! prompt, the model/effort/permission-mode policy, and the wrapper script
-//! that `exec`s claude. Both [`super::NativeBackend::spawn`] and
+//! prompt, the model/effort/permission-mode policy, the session's settings
+//! capsule and scratch directory, and the wrapper script that `exec`s claude.
+//! Both [`super::NativeBackend::spawn`] and
 //! [`super::super::tmux::TmuxBackend::spawn`] call this so the two lanes can
-//! never silently diverge on any of these six behaviors.
+//! never silently diverge on any of these behaviors.
+
+mod host;
 
 use anyhow::Result;
 use shell_escape::escape;
 use std::borrow::Cow;
 use std::path::{Path, PathBuf};
 
-use crate::claude::find_claude_path;
 use crate::models::session::{Session, SessionType};
 use crate::models::stage::Stage;
+use crate::sandbox::MergedSandboxConfig;
 
-use super::session_settings::capsule_for;
+use super::session_settings::{write_session_capsule, CapsuleRequest};
+use super::SessionCapsule;
+use host::LaunchHost;
 
 /// Derive the Remote Control session name for a spawn, prefixed by kind.
 ///
@@ -119,44 +124,10 @@ fn model_and_effort(kind: SessionType, stage: &Stage, work_dir: &Path) -> (Strin
     }
 }
 
-/// Prepare everything needed to launch a session, short of actually starting
-/// the terminal/tmux process.
-///
-/// Returns `(session, title, pid_key, wrapper_path_abs)`:
-/// * `session` — the input session with `session_type` and the stage
-///   assignment (and therefore `tracking_key`) applied.
-/// * `title` — the window title / tmux session name (`session.tracking_key`).
-/// * `pid_key` — the per-session PID-file key (`title + "-" + session.id`).
-/// * `wrapper_path_abs` — the absolute path to the wrapper script that
-///   `exec`s claude.
-pub(crate) fn prepare_session_launch(
-    work_dir: &Path,
-    kind: SessionType,
-    stage: &Stage,
-    session: Session,
-    signal_path: &Path,
-    cwd: &Path,
-) -> Result<(Session, String, String, PathBuf)> {
-    // Assign the stage first so `tracking_key` is set for the (stage, kind)
-    // pair; the window title IS the tracking_key and the PID-file key is
-    // derived from it. (Idempotent for knowledge sessions, which derived it
-    // at construction.)
-    let mut session = session;
-    session.session_type = kind;
-    session.assign_to_stage(stage.id.clone());
-
-    // Window title. `tracking_key` is `loom-[<kind>-]<stage-id>`; the kind
-    // prefix namespaces OS resources and stops there — it must never reach
-    // `LOOM_STAGE_ID`, which is why `stage.id` is passed below (see wrapper.rs).
-    let title = session.tracking_key.clone();
-
-    // Per-session PID-file key (tracking_key + session.id) so two
-    // consecutive sessions for the same stage never share a PID file (O-14).
-    let pid_key = format!("{}-{}", title, session.id);
-
-    // Build the kind-specific initial prompt.
+/// The kind-specific initial prompt, pointing the session at its signal file.
+fn initial_prompt(kind: SessionType, stage: &Stage, signal_path: &Path) -> String {
     let signal_path_str = signal_path.to_string_lossy();
-    let initial_prompt = match kind {
+    match kind {
         SessionType::Stage => {
             // The literal keyword "ultracode" in the prompt is what licenses
             // Claude Code's Workflow tool for the session.
@@ -191,60 +162,130 @@ pub(crate) fn prepare_session_launch(
              acceptance criterion. This file contains the dispute, the evidence available to \
              you, and the command that records your verdict. Judge the dispute; change nothing."
         ),
-    };
-    let escaped_prompt = escape(Cow::Borrowed(&initial_prompt));
+    }
+}
 
+/// The stage's sandbox config, merged and path-expanded as the spawn paths
+/// merge it before writing settings.
+///
+/// Resolved from the `[plan_sandbox]` snapshot the settings generator reads
+/// (OrchestratorConfig.sandbox_config is loaded from it too), so the
+/// `--permission-mode` flag and the capsule never disagree. Loom stages run
+/// autonomously with no human at the terminal, so they must START in the
+/// resolved mode (default: `auto`): Claude Code v2.1.142+ ignores
+/// `defaultMode: "auto"` from settings files, and only `--permission-mode` is
+/// honored (see `build_claude_command`).
+fn session_sandbox(work_dir: &Path, stage: &Stage) -> MergedSandboxConfig {
+    let plan_sandbox = crate::fs::work_dir::read_plan_sandbox(work_dir)
+        .ok()
+        .flatten()
+        .unwrap_or_default();
+    let mut sandbox = crate::sandbox::merge_config(
+        &plan_sandbox,
+        &stage.sandbox,
+        stage.stage_type,
+        &stage.implementers,
+    );
+    crate::sandbox::expand_paths(&mut sandbox);
+    sandbox
+}
+
+/// The `claude` invocation for this launch; `build_claude_command`
+/// shell-escapes the path, model, effort, mode and remote-control name (S-3).
+/// The claude path is absolute, since macOS terminals do not inherit PATH.
+fn claude_command(
+    host: &LaunchHost,
+    work_dir: &Path,
+    kind: SessionType,
+    stage: &Stage,
+    signal_path: &Path,
+    sandbox: &MergedSandboxConfig,
+    capsule: &SessionCapsule,
+) -> String {
+    let prompt = initial_prompt(kind, stage, signal_path);
+    let escaped_prompt = escape(Cow::Borrowed(&prompt));
     let (model, effort) = model_and_effort(kind, stage, work_dir);
-
-    // Resolve the Claude Code permission mode and pass it on the CLI. Loom
-    // stages run autonomously with no human at the terminal, so they must
-    // START in the resolved mode (default: `auto`). Writing
-    // `permissions.defaultMode` into the worktree's settings.local.json is
-    // NOT sufficient: Claude Code v2.1.142+ ignores `defaultMode: "auto"`
-    // from project/local settings files, so only `--permission-mode` is
-    // honored (see build_claude_command). Resolved from the same
-    // `[plan_sandbox]` snapshot the settings generator reads
-    // (OrchestratorConfig.sandbox_config is loaded from it too), so the CLI
-    // flag and the generated settings file never disagree.
-    let sandbox = {
-        let plan_sandbox = crate::fs::work_dir::read_plan_sandbox(work_dir)
-            .ok()
-            .flatten()
-            .unwrap_or_default();
-        crate::sandbox::merge_config(
-            &plan_sandbox,
-            &stage.sandbox,
-            stage.stage_type,
-            &stage.implementers,
-        )
-    };
-    // Find claude's absolute path (needed for macOS where terminals don't inherit PATH).
-    // build_claude_command shell-escapes the path, model, effort, and mode (S-3).
-    let claude_path = find_claude_path()?;
     let rc_name = remote_control_session_name(kind, stage);
     let remote_control = crate::remote_control::resolve_invocation(work_dir, &rc_name);
-    let prefix_file = resolve_prompt_cache_split_prefix_file(work_dir, stage);
-    let capsule = capsule_for(&claude_path, cwd, work_dir, &session, prefix_file)?;
-    let claude_cmd = super::build_claude_command(
-        &claude_path.display().to_string(),
+    super::build_claude_command(
+        &host.claude_path.display().to_string(),
         &model,
         &effort,
         sandbox.permission_mode.as_settings_value(),
-        &capsule,
+        capsule,
         &remote_control,
         &escaped_prompt,
-    );
+    )
+}
 
-    // The context ceiling for CLAUDE_CODE_AUTO_COMPACT_WINDOW, resolved through
-    // the shared order (stage value -> `[context] ceiling_tokens` -> default)
-    // so the window the session runs under is the number the signal quotes and
-    // the daemon backstops on. See wrapper.rs's CONTRACT-ordered resolution.
+/// Prepare everything needed to launch a session, short of actually starting
+/// the terminal/tmux process.
+///
+/// Returns `(session, title, pid_key, wrapper_path_abs)`:
+/// * `session` — the input session with `session_type` and the stage
+///   assignment (and therefore `tracking_key`) applied.
+/// * `title` — the window title / tmux session name (`session.tracking_key`).
+/// * `pid_key` — the per-session PID-file key (`title + "-" + session.id`).
+/// * `wrapper_path_abs` — the absolute path to the wrapper script that
+///   `exec`s claude.
+///
+/// The host facts (claude, the verified hooks directory and loom binary, the
+/// scratch root, the filtered PATH) are resolved here from the daemon's own
+/// environment; everything after that is [`prepare_session_launch_with`].
+pub(crate) fn prepare_session_launch(
+    work_dir: &Path,
+    kind: SessionType,
+    stage: &Stage,
+    session: Session,
+    signal_path: &Path,
+    cwd: &Path,
+) -> Result<(Session, String, String, PathBuf)> {
+    let host = LaunchHost::from_env(work_dir, cwd)?;
+    prepare_session_launch_with(&host, work_dir, kind, stage, session, signal_path, cwd)
+}
+
+/// [`prepare_session_launch`] against already-resolved host facts, which
+/// tests supply directly.
+///
+/// The stage is assigned first so `tracking_key` is set for the (stage, kind)
+/// pair: the window title IS the tracking_key, and the per-session PID-file
+/// key (tracking_key + session.id, so two consecutive sessions for one stage
+/// never share a PID file, O-14) derives from it. The kind prefix stops at OS
+/// resources and never reaches `LOOM_STAGE_ID`, which is why the wrapper gets
+/// `stage.id`. The context ceiling resolves stage value, then
+/// `[context] ceiling_tokens`, then the default, so the window the session
+/// runs under is the number its signal quotes.
+fn prepare_session_launch_with(
+    host: &LaunchHost,
+    work_dir: &Path,
+    kind: SessionType,
+    stage: &Stage,
+    mut session: Session,
+    signal_path: &Path,
+    cwd: &Path,
+) -> Result<(Session, String, String, PathBuf)> {
+    session.session_type = kind;
+    session.assign_to_stage(stage.id.clone());
+    let title = session.tracking_key.clone();
+    let pid_key = format!("{}-{}", title, session.id);
+    let sandbox = session_sandbox(work_dir, stage);
+    let scratch_dir = host.prepare_scratch(&session.id)?;
+    let settings_file = write_session_capsule(&CapsuleRequest {
+        kind,
+        session_id: &session.id,
+        sandbox: &sandbox,
+        cwd,
+        work_dir,
+        repo_root: &host.repo_root,
+        hooks_dir: host.hooks_dir.as_deref(),
+        scratch_dir: &scratch_dir,
+        surfaces: &host.control_surfaces(work_dir),
+    })?;
+    let prefix_file = resolve_prompt_cache_split_prefix_file(work_dir, stage);
+    let capsule = super::session_capsule(host.capsule_support, Some(settings_file), prefix_file);
+    let claude_cmd = claude_command(host, work_dir, kind, stage, signal_path, &sandbox, &capsule);
     let context_ceiling_tokens =
         crate::fs::work_dir::resolve_context_ceiling_tokens(work_dir, stage.context_ceiling_tokens);
-
-    // Create the wrapper script (writes PID + start-time before exec'ing
-    // claude). `stage.id` sets LOOM_STAGE_ID; `pid_key` names the per-session
-    // PID file. Pass cwd so the script can cd there (macOS).
     let wrapper_path = super::wrapper::create_session_wrapper_script(
         work_dir,
         &pid_key,
@@ -255,12 +296,10 @@ pub(crate) fn prepare_session_launch(
         kind,
         context_ceiling_tokens,
         super::build_cache::sccache_usable_in(&sandbox),
+        &host.wrapper_env(scratch_dir),
     )?;
-
-    // Build the command that runs the wrapper script.
-    // IMPORTANT: Use absolute path because macOS terminals open in home directory.
+    // Absolute: macOS terminals open in the home directory.
     let wrapper_path_abs = wrapper_path.canonicalize().unwrap_or(wrapper_path);
-
     Ok((session, title, pid_key, wrapper_path_abs))
 }
 

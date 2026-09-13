@@ -4,7 +4,7 @@
 //! Rule 17), matching how `tests_capsule.rs` and `tests_launch.rs` are split
 //! out of the same directory.
 
-use super::wrapper::create_session_wrapper_script;
+use super::wrapper::{create_session_wrapper_script, WrapperHostEnv};
 use super::*;
 use tempfile::TempDir;
 
@@ -25,6 +25,14 @@ fn wrapper_script_for(kind: SessionType) -> String {
 }
 
 fn wrapper_script_for_with_rustc_wrapper(kind: SessionType, rustc_wrapper_allowed: bool) -> String {
+    wrapper_script_with(kind, rustc_wrapper_allowed, &WrapperHostEnv::default())
+}
+
+fn wrapper_script_with(
+    kind: SessionType,
+    rustc_wrapper_allowed: bool,
+    host_env: &WrapperHostEnv,
+) -> String {
     let work_dir = TempDir::new().unwrap();
     let path = create_session_wrapper_script(
         work_dir.path(),
@@ -36,9 +44,62 @@ fn wrapper_script_for_with_rustc_wrapper(kind: SessionType, rustc_wrapper_allowe
         kind,
         100_000,
         rustc_wrapper_allowed,
+        host_env,
     )
     .unwrap();
     std::fs::read_to_string(path).unwrap()
+}
+
+fn full_host_env() -> WrapperHostEnv {
+    WrapperHostEnv {
+        scratch_dir: Some(PathBuf::from("/scratch/session1")),
+        loom_bin: Some(PathBuf::from("/opt/loom/bin/loom")),
+        hook_path: vec![PathBuf::from("/usr/bin"), PathBuf::from("/bin")],
+    }
+}
+
+#[test]
+fn every_kind_exports_the_host_env_it_is_given() {
+    for kind in [
+        SessionType::Stage,
+        SessionType::Knowledge,
+        SessionType::Merge,
+        SessionType::BaseConflict,
+        SessionType::Adjudication,
+    ] {
+        let script = wrapper_script_with(kind, false, &full_host_env());
+        for export in [
+            "LOOM_SCRATCH_DIR=/scratch/session1",
+            "LOOM_BIN=/opt/loom/bin/loom",
+            "LOOM_HOOK_PATH=/usr/bin:/bin",
+        ] {
+            assert!(
+                script.contains(export),
+                "{kind} must export {export}: {script}"
+            );
+        }
+    }
+}
+
+#[test]
+fn the_default_host_env_exports_nothing() {
+    let script = wrapper_script_for(SessionType::Stage);
+    for name in ["LOOM_SCRATCH_DIR=", "LOOM_BIN=", "LOOM_HOOK_PATH="] {
+        assert!(!script.contains(name), "{name} must be absent: {script}");
+    }
+}
+
+#[test]
+fn host_env_values_are_shell_escaped() {
+    let host_env = WrapperHostEnv {
+        scratch_dir: Some(PathBuf::from("/scratch dir/session1")),
+        ..WrapperHostEnv::default()
+    };
+    let script = wrapper_script_with(SessionType::Stage, false, &host_env);
+    assert!(
+        script.contains("'LOOM_SCRATCH_DIR=/scratch dir/session1'"),
+        "{script}"
+    );
 }
 
 #[test]
