@@ -513,7 +513,51 @@ Ownership adjustments (2026-09-13, before phase 1):
   `fs/inbox` from phase 0b.
 - **I3** owns the `loom hook relay` CLI wiring: the `HookCommands::Relay` variant in
   `cli/types_ops.rs`, its arm in `cli/dispatch.rs`, and the `commands/hook/mod.rs` declaration. No
-  other phase-1 agent edits those files.
+  other phase-1 agent edits those files. I3 also owns `fs/permissions/constants.rs` in phase 1, to add
+  `loom-relay.sh` to the embedded `LOOM_HOOKS` inventory; I4's phase-3 edits to that file come later.
+- **Phase 0c, one agent, before I1 and I2:** `relay/emit.rs`, the shared CLI side of the protocol
+  (mode detection from an injected env snapshot, the section 6 guards, atomic ticket write, the
+  stderr text and the last-line stdout relay line). Every CLI writer calls it.
+- **Verdict path, end to end, is I2's:** `commands/stage/adjudicate.rs` (relay-mode emit plus the legacy
+  and operator path), a new `orchestrator/adjudication/record.rs` holding the recording logic moved
+  out of `adjudicate.rs` unchanged, `orchestrator/adjudication/{mod,prompt,session}.rs`, and the drain's
+  verdict handler. I1 owns the other CLI writers and does not touch the adjudication files.
+
+Findings from I4 phase 1 (2026-09-13):
+
+- **Where Claude Code records approvals.** Read from the installed 2.1.269 bundle: a "don't ask again"
+  approval is written to `localSettings`, meaning `<root>/.claude/settings.local.json`. The root is the
+  canonical git root when that root is operator-owned and not `$HOME`, and the cwd otherwise. The
+  write happens even when the session was launched with `--settings <capsule> --setting-sources
+  user,project`. So worktree sessions normally write approvals into `R/.claude/settings.local.json`,
+  and loom cannot prevent that. Phase-3 acceptance changes from "R local byte-identical after a
+  stage" to "loom never writes R local". The fold-back reads the worktree sources and R's local
+  allow list into `approved.json`. Live checklist: `canonicalGitRoot` for a linked worktree is `R`;
+  an approval reaches the next capsule.
+- **Retirement must call the fold-back.** Broker completion skips it (`commands/stage/complete.rs:457`),
+  so I2's retirement step calls the fold-back and `cleanup_session_settings` for every kind.
+- **Phase-3 I4 items:**
+  - Expose a pure settings builder from `sandbox/settings.rs`; `native/session_settings/contents.rs`
+    duplicates about 40 lines of its private logic.
+  - Refuse a spawn whose hooks dir is missing or unverified, for every kind; today Merge,
+    BaseConflict and Adjudication launch hookless with a warning.
+  - Accept a `LOOM_BIN` owned by the operator or root, provided it is not group- or world-writable
+    and not under a session-writable root.
+- **Exposure until phase 3.** `W/permissions/approved.json` is writable by checkout-rooted sessions
+  until the `.loom` deny lands, so a planted non-control-surface `Edit` rule would reach later
+  capsules. The branch is not installed before phase 3.
+- **Path resolution in capsules.** How `/`-prefixed permission and sandbox paths resolve in a
+  `--settings` file outside the project is unconfirmed (`grant_paths.rs` and `sandbox/config.rs`
+  comments disagree). Added to the live checklist.
+- **Security review of I4 phase 1 (2026-09-13).** Fixed before the phase-1 commit:
+  - the daemon refuses symlinked `W/capsules` and `W/permissions` directories and target files;
+  - the capsule builder calls the `sandbox/settings.rs` helpers instead of copying them;
+  - the control-surface filter compares case-insensitively.
+
+  Accepted gap: the approved-permissions filter reads rule text only, so a rule naming a symlink into
+  a control surface passes it. The phase-3 OS deny rules close this, since a deny wins over any allow
+  and the sandbox resolves symlinks. The review also flagged the legacy fold-back into
+  `R/.claude/settings.local.json`, which the phase-3 I4 addition already removes.
 
 ### I1: Relay Protocol and CLI Writers
 
