@@ -110,6 +110,8 @@ loom_read_discipline_check "$FILE_PATH" "$KIND" "$LINES" "$AGENT_ID" "${PAYLOAD_
 # repeats the source, type, cap, and no-follow checks; the shell gate avoids
 # spawning it for obvious media/non-files and never turns a failure into one.
 if _loom_read_receipt_eligible "$FILE_PATH"; then
+	# Prepares a pending receipt intent through loom hook read-receipt --prepare;
+	# the repeat check in _read_discipline.sh consults loom hook read-receipt --check.
 	_loom_read_receipt_prepare "$INPUT_JSON"
 fi
 
