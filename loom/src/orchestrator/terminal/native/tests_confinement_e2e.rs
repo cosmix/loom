@@ -96,6 +96,8 @@ fn fixture() -> Fixture {
             hooks_dir: Some(hooks_dir),
             loom_bin,
             hook_path: vec![PathBuf::from("/usr/bin"), PathBuf::from("/bin")],
+            python3: None,
+            python_hooks: Vec::new(),
         },
         scratch_root,
         // SAFETY: `getuid` has no preconditions and cannot fail.

@@ -11,7 +11,7 @@ use anyhow::{Context, Result};
 use serde_json::{json, Value};
 use shell_escape::escape;
 use std::borrow::Cow;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use crate::hooks::HookEvent;
 use crate::models::session::SessionType;
@@ -43,6 +43,12 @@ pub(super) struct CapsuleInputs<'a> {
     pub checkout_settings: Option<&'a Value>,
     /// The location and control-surface write denies, both layers.
     pub denies: &'a SessionDenies,
+    /// The first `python3` on the pinned hook PATH, the interpreter written
+    /// for a Python hook command; `None` drops any such hook instead.
+    pub python3: Option<&'a Path>,
+    /// Every regular file directly in the hooks directory whose first line
+    /// is a python shebang.
+    pub python_hooks: &'a [PathBuf],
 }
 
 /// The capsule document: what `sandbox::build_settings` builds from the
@@ -74,7 +80,12 @@ pub(super) fn capsule_settings(inputs: &CapsuleInputs<'_>) -> Result<Value> {
     let deny_write = ["sandbox", "filesystem", "denyWrite"];
     extend_strings(&mut settings, &deny_write, &denies.deny_write);
     extend_strings(&mut settings, &["permissions", "deny"], &denies.edit);
-    settings["hooks"] = capsule_hooks(inputs.kind, inputs.hooks_dir);
+    settings["hooks"] = capsule_hooks(
+        inputs.kind,
+        inputs.hooks_dir,
+        inputs.python3,
+        inputs.python_hooks,
+    );
     settings["hasTrustDialogAccepted"] = json!(true);
     Ok(settings)
 }
@@ -101,7 +112,12 @@ fn add_scratch_grant(settings: &mut Value, scratch_dir: &Path) -> Result<()> {
 /// completion broker's hook only for Stage and Knowledge), every session hook
 /// event for Stage and Knowledge but only the PostToolUse heartbeat for the
 /// others, and the relay hook for every kind.
-fn capsule_hooks(kind: SessionType, hooks_dir: &Path) -> Value {
+fn capsule_hooks(
+    kind: SessionType,
+    hooks_dir: &Path,
+    python3: Option<&Path>,
+    python_hooks: &[PathBuf],
+) -> Value {
     let brokered = matches!(kind, SessionType::Stage | SessionType::Knowledge);
     let mut hooks = crate::fs::permissions::guard_hooks_config(&hooks_dir.display().to_string());
     if !brokered {
@@ -123,7 +139,7 @@ fn capsule_hooks(kind: SessionType, hooks_dir: &Path) -> Value {
         "Bash",
         &relay,
     );
-    in_bash_form(&mut hooks);
+    with_interpreters(&mut hooks, python3, python_hooks);
     hooks
 }
 
@@ -156,25 +172,62 @@ fn push_rule(hooks: &mut Value, event: &str, matcher: &str, script: &Path) {
     }
 }
 
-/// Rewrite every hook command `<script>` as `/bin/bash <script>`, so no hook
-/// depends on a script's execute bit or its shebang's interpreter lookup.
-fn in_bash_form(hooks: &mut Value) {
+/// Rewrite every hook command `<script>` with the interpreter that must run
+/// it, so no hook depends on a script's execute bit or its shebang's
+/// interpreter lookup: `<python3> <script>` when `script` is one of
+/// `python_hooks` and `python3` is `Some`, `/bin/bash <script>` for every
+/// other hook. A python hook with no `python3` on the pinned hook PATH is
+/// dropped instead of being run under the wrong interpreter, along with its
+/// matcher entry once that entry's `hooks` array is left empty.
+fn with_interpreters(hooks: &mut Value, python3: Option<&Path>, python_hooks: &[PathBuf]) {
     let Some(events) = hooks.as_object_mut() else {
         return;
     };
     for entries in events.values_mut().filter_map(Value::as_array_mut) {
-        let commands = entries
-            .iter_mut()
-            .filter_map(|entry| entry.get_mut("hooks"))
-            .filter_map(Value::as_array_mut)
-            .flatten();
-        for hook in commands {
-            let Some(command) = hook["command"].as_str().map(str::to_owned) else {
+        for entry in entries.iter_mut() {
+            let Some(commands) = entry.get_mut("hooks").and_then(Value::as_array_mut) else {
                 continue;
             };
-            hook["command"] = json!(format!("/bin/bash {}", escape(Cow::Owned(command))));
+            commands.retain_mut(|hook| rewrite_command(hook, python3, python_hooks));
         }
+        entries.retain(|entry| {
+            entry
+                .get("hooks")
+                .and_then(Value::as_array)
+                .is_some_and(|list| !list.is_empty())
+        });
     }
+}
+
+/// Rewrite one hook's `command` in place; `false` means drop it (an
+/// unrecognized-interpreter python hook with no `python3` available).
+fn rewrite_command(hook: &mut Value, python3: Option<&Path>, python_hooks: &[PathBuf]) -> bool {
+    let Some(command) = hook["command"].as_str().map(str::to_owned) else {
+        return true;
+    };
+    if python_hooks
+        .iter()
+        .any(|script| script == Path::new(&command))
+    {
+        return match python3 {
+            Some(interpreter) => {
+                hook["command"] = json!(format!(
+                    "{} {}",
+                    escape(Cow::Owned(interpreter.display().to_string())),
+                    escape(Cow::Owned(command)),
+                ));
+                true
+            }
+            None => {
+                tracing::warn!(
+                    "dropping Python hook {command}: no python3 on the pinned hook PATH"
+                );
+                false
+            }
+        };
+    }
+    hook["command"] = json!(format!("/bin/bash {}", escape(Cow::Owned(command))));
+    true
 }
 
 /// Append each of `items` not already present to the string array at `path`,

@@ -18,7 +18,7 @@ const ALL_KINDS: [SessionType; 5] = [
     SessionType::Adjudication,
 ];
 
-const HOOKS_DIR: &str = "/home/op/.claude/hooks/loom";
+pub(super) const HOOKS_DIR: &str = "/home/op/.claude/hooks/loom";
 
 /// The codex lane's `~/.claude/plugins` entries, as `codex_plugin_entries` lists them.
 const PLUGIN_ENTRIES: [&str; 2] = [
@@ -26,7 +26,7 @@ const PLUGIN_ENTRIES: [&str; 2] = [
     ".claude/plugins/installed_plugins.json",
 ];
 
-fn sandbox(codex: bool) -> MergedSandboxConfig {
+pub(super) fn sandbox(codex: bool) -> MergedSandboxConfig {
     let lanes = if codex {
         vec![Implementer::Claude, Implementer::Codex]
     } else {
@@ -41,7 +41,7 @@ fn sandbox(codex: bool) -> MergedSandboxConfig {
 }
 
 /// The write denies of a session in `/repo/.worktrees/s1` or the checkout.
-fn denies(worktree_rooted: bool, codex: bool) -> SessionDenies {
+pub(super) fn denies(worktree_rooted: bool, codex: bool) -> SessionDenies {
     let entries: Vec<String> = PLUGIN_ENTRIES.iter().map(|e| e.to_string()).collect();
     session_denies(&DenyInputs {
         repo_root: Path::new("/repo"),
@@ -73,6 +73,8 @@ fn try_build(
         approved,
         checkout_settings: checkout,
         denies: &denies,
+        python3: None,
+        python_hooks: &[],
     })
 }
 
@@ -121,7 +123,7 @@ fn strings(settings: &Value, pointer: &str) -> Vec<String> {
 }
 
 /// Every `(event, matcher, command)` the capsule registers.
-fn hooks(settings: &Value) -> Vec<(String, String, String)> {
+pub(super) fn hooks(settings: &Value) -> Vec<(String, String, String)> {
     let mut found = Vec::new();
     for (event, entries) in settings["hooks"].as_object().expect("a hooks block") {
         for entry in entries.as_array().expect("an event array") {

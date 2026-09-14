@@ -21,7 +21,9 @@ use crate::relay::{ensure_dir_0700, session_dir};
 use crate::sandbox::control_surfaces::{
     session_writable_roots, ControlSurfaces, WritableRootInputs,
 };
-use crate::sandbox::preflight::{HostFacts, SandboxPreflightRefusal};
+use crate::sandbox::preflight::{
+    find_executable, python_hook_scripts, HostFacts, SandboxPreflightRefusal,
+};
 
 /// Everything a launch needs from the host, resolved once.
 pub(super) struct LaunchHost {
@@ -141,10 +143,14 @@ fn host_facts(
     let path_var = std::env::var_os("PATH").unwrap_or_default();
     let loom_bin = accepted_loom_bin(&exe, uid, &roots)
         .map_err(|error| SandboxPreflightRefusal::new(vec![format!("{error:#}")]))?;
+    let hook_path = hook_path_entries(&path_var, &roots);
+    let hooks_dir = verified_hooks_dir(uid);
     Ok(HostFacts {
-        hooks_dir: verified_hooks_dir(uid),
+        python3: find_executable("python3", &hook_path),
+        python_hooks: python_hook_scripts(hooks_dir.as_deref()),
+        hooks_dir,
         loom_bin,
-        hook_path: hook_path_entries(&path_var, &roots),
+        hook_path,
         writable_roots: roots,
     })
 }

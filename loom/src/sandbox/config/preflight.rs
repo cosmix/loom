@@ -31,10 +31,11 @@ use crate::plan::schema::{PermissionMode, SandboxConfig, StageSandboxConfig};
 const HOOK_SHELL: &str = "/bin/bash";
 
 /// The tools loom's hooks call through `LOOM_HOOK_PATH` (`gtimeout` is
-/// `timeout` on macOS).
-const HOOK_TOOLS: [&str; 16] = [
+/// `timeout` on macOS). `python3` is the interpreter the settings capsule
+/// writes for a Python hook command.
+const HOOK_TOOLS: [&str; 17] = [
     "jq", "git", "timeout", "gtimeout", "rg", "mkdir", "mv", "cat", "sed", "awk", "tr", "date",
-    "stat", "dd", "head", "tail",
+    "stat", "dd", "head", "tail", "python3",
 ];
 
 /// One or more preflight refusals. A spawn that fails with this error is
@@ -87,6 +88,14 @@ pub(crate) struct HostFacts {
     pub loom_bin: PathBuf,
     /// The PATH entries exported as `LOOM_HOOK_PATH`.
     pub hook_path: Vec<PathBuf>,
+    /// The first `python3` on `hook_path`, the interpreter the settings
+    /// capsule writes for a Python hook command; `None` when `hook_path`
+    /// carries none.
+    pub python3: Option<PathBuf>,
+    /// Every regular file directly in `hooks_dir` whose first line is a
+    /// python shebang (`python_hook_scripts`); empty when `hooks_dir` is
+    /// `None`.
+    pub python_hooks: Vec<PathBuf>,
 }
 
 /// Check 1 over every stage: its merged sandbox config must pass
@@ -208,11 +217,50 @@ fn tool_refusals(hook_path: &[PathBuf], roots: &WritableRoots) -> Vec<String> {
 }
 
 /// The first executable regular file named `name` in `dirs`.
-fn find_executable(name: &str, dirs: &[PathBuf]) -> Option<PathBuf> {
+pub(crate) fn find_executable(name: &str, dirs: &[PathBuf]) -> Option<PathBuf> {
     dirs.iter().map(|dir| dir.join(name)).find(|candidate| {
         std::fs::metadata(candidate)
             .is_ok_and(|meta| meta.is_file() && meta.permissions().mode() & 0o111 != 0)
     })
+}
+
+/// Every regular file directly in `hooks_dir` whose first line starts with
+/// `#!` and names a python interpreter, sorted for determinism. Empty when
+/// `hooks_dir` is `None` or unreadable. Only the first 256 bytes of each
+/// candidate are read.
+pub(crate) fn python_hook_scripts(hooks_dir: Option<&Path>) -> Vec<PathBuf> {
+    let Some(dir) = hooks_dir else {
+        return Vec::new();
+    };
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return Vec::new();
+    };
+    let mut scripts: Vec<PathBuf> = entries
+        .filter_map(Result::ok)
+        .filter_map(|entry| {
+            let path = dir.join(entry.file_name());
+            let is_python = std::fs::metadata(&path).is_ok_and(|meta| meta.is_file())
+                && has_python_shebang(&path);
+            is_python.then_some(path)
+        })
+        .collect();
+    scripts.sort();
+    scripts
+}
+
+/// Whether `path`'s first line is a shebang naming a python interpreter.
+fn has_python_shebang(path: &Path) -> bool {
+    use std::io::Read;
+    let Ok(mut file) = std::fs::File::open(path) else {
+        return false;
+    };
+    let mut buf = [0u8; 256];
+    let Ok(len) = file.read(&mut buf) else {
+        return false;
+    };
+    let text = String::from_utf8_lossy(&buf[..len]);
+    let first_line = text.lines().next().unwrap_or_default();
+    first_line.starts_with("#!") && first_line.contains("python")
 }
 
 /// `path` with its deepest existing ancestor canonicalized, so a path that

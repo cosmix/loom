@@ -66,6 +66,12 @@ pub(super) struct CapsuleRequest<'a> {
     /// executable directory that is an ancestor of one is not denied, since
     /// denying it would deny the writable root it sits above too.
     pub writable_roots: &'a [PathBuf],
+    /// The first `python3` on the pinned hook PATH (`HostFacts::python3`),
+    /// the interpreter the capsule writes for a Python hook command.
+    pub python3: Option<&'a Path>,
+    /// Every regular file directly in the hooks directory whose first line
+    /// is a python shebang (`HostFacts::python_hooks`).
+    pub python_hooks: &'a [PathBuf],
 }
 
 /// Build and write the session's capsule, returning its absolute path.
@@ -102,6 +108,8 @@ pub(super) fn write_session_capsule(request: &CapsuleRequest<'_>) -> Result<Stri
         approved: &approved,
         checkout_settings: checkout_settings.as_ref(),
         denies: &denies,
+        python3: request.python3,
+        python_hooks: request.python_hooks,
     })?;
     let path = write_capsule_file(request.work_dir, request.session_id, &settings)?;
     path.to_str().map(str::to_owned).with_context(|| {
@@ -258,6 +266,9 @@ pub(crate) fn cleanup_session_settings(work_dir: &Path, session_id: &str) {
     }
 }
 
+#[cfg(test)]
+#[path = "tests_capsule_interpreters.rs"]
+mod tests_capsule_interpreters;
 #[cfg(test)]
 #[path = "tests_capsule_contents.rs"]
 mod tests_contents;

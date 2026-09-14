@@ -245,6 +245,32 @@ pub(crate) fn prepare_session_launch(
     prepare_session_launch_with(&host, work_dir, kind, stage, session, signal_path, cwd)
 }
 
+/// The session's settings capsule, written from the host's resolved facts.
+fn write_capsule(
+    host: &LaunchHost,
+    work_dir: &Path,
+    kind: SessionType,
+    session_id: &str,
+    sandbox: &MergedSandboxConfig,
+    cwd: &Path,
+    scratch_dir: &Path,
+) -> Result<String> {
+    write_session_capsule(&CapsuleRequest {
+        kind,
+        session_id,
+        sandbox,
+        cwd,
+        work_dir,
+        repo_root: &host.repo_root,
+        hooks_dir: host.facts.hooks_dir.as_deref(),
+        scratch_dir,
+        surfaces: &host.control_surfaces(work_dir),
+        writable_roots: &host.facts.writable_roots,
+        python3: host.facts.python3.as_deref(),
+        python_hooks: &host.facts.python_hooks,
+    })
+}
+
 /// [`prepare_session_launch`] against already-resolved host facts, which
 /// tests supply directly.
 ///
@@ -278,18 +304,15 @@ fn prepare_session_launch_with(
     let sandbox = session_sandbox(work_dir, stage);
     crate::sandbox::preflight::require_confined_host(&host.facts)?;
     let scratch_dir = host.prepare_scratch(&session.id)?;
-    let settings_file = write_session_capsule(&CapsuleRequest {
-        kind,
-        session_id: &session.id,
-        sandbox: &sandbox,
-        cwd,
+    let settings_file = write_capsule(
+        host,
         work_dir,
-        repo_root: &host.repo_root,
-        hooks_dir: host.facts.hooks_dir.as_deref(),
-        scratch_dir: &scratch_dir,
-        surfaces: &host.control_surfaces(work_dir),
-        writable_roots: &host.facts.writable_roots,
-    })?;
+        kind,
+        &session.id,
+        &sandbox,
+        cwd,
+        &scratch_dir,
+    )?;
     let prefix_file = resolve_prompt_cache_split_prefix_file(work_dir, stage);
     let capsule = super::session_capsule(host.capsule_support, Some(settings_file), prefix_file);
     let claude_cmd = claude_command(host, work_dir, kind, stage, signal_path, &sandbox, &capsule);

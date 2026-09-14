@@ -24,6 +24,8 @@ fn clean_host(temp: &TempDir) -> HostFacts {
         hooks_dir: Some(hooks_dir),
         loom_bin,
         hook_path: Vec::new(),
+        python3: None,
+        python_hooks: Vec::new(),
     }
 }
 
@@ -132,6 +134,17 @@ fn check_3_refuses_loom_bin_or_the_hooks_dir_resolving_under_a_writable_root() {
         refusals.len() == 1 && refusals[0].starts_with(hooks),
         "{refusals:?}"
     );
+}
+
+#[test]
+fn python_hook_scripts_finds_only_the_files_shebanged_for_python() {
+    let temp = TempDir::new().unwrap();
+    let dir = temp.path();
+    std::fs::write(dir.join("py.sh"), "#!/usr/bin/env python3\nprint('hi')\n").unwrap();
+    std::fs::write(dir.join("run.sh"), "#!/usr/bin/env bash\necho hi\n").unwrap();
+    std::fs::write(dir.join("no-shebang"), "echo hi\n").unwrap();
+    assert_eq!(python_hook_scripts(Some(dir)), vec![dir.join("py.sh")]);
+    assert_eq!(python_hook_scripts(None), Vec::<PathBuf>::new());
 }
 
 #[test]
@@ -358,13 +371,16 @@ fn the_loom_written_keys_are_exactly_section_12s_list() {
     assert_eq!(removed.allow_rules, LOOM_WRITTEN_KEYS);
     assert_eq!(
         removed.session_hooks.len(),
-        7,
+        crate::hooks::HookEvent::all().len(),
         "{:?}",
         removed.session_hooks
     );
     assert_eq!(
         removed.summary(),
-        "sandbox block, 12 permission rule(s), 7 session hook registration(s), env.LOOM_WORK_DIR"
+        format!(
+            "sandbox block, 12 permission rule(s), {} session hook registration(s), env.LOOM_WORK_DIR",
+            crate::hooks::HookEvent::all().len()
+        )
     );
     let expected: Value = json!({
         "permissions": { "defaultMode": "auto", "allow": KEPT_KEYS },

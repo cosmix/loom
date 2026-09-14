@@ -90,6 +90,8 @@ fn confinement_findings_refuse_check_1_and_pass_a_confined_run() {
                 hooks_dir: Some(hooks_dir.clone()),
                 loom_bin: loom_bin.clone(),
                 hook_path: Vec::new(),
+                python3: None,
+                python_hooks: Vec::new(),
             }),
         })
         .unwrap()

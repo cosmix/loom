@@ -223,6 +223,8 @@ pub(super) fn write_capsule(
         scratch_dir: &scratch_dir,
         surfaces: &surfaces_for(checkout),
         writable_roots: &[],
+        python3: None,
+        python_hooks: &[],
     })
 }
 
