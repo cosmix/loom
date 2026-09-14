@@ -15,22 +15,29 @@ pub fn assert_exit(output: &Output, expected: i32) {
     );
 }
 
-pub fn assert_wrapper_active(fixture: &Fixture, launch: &Launch) -> Result<()> {
-    assert_exit(&launch.wrapper, 0);
+pub fn assert_wrapper_timed_out(fixture: &Fixture, launch: &Launch) -> Result<()> {
+    assert_exit(&launch.wrapper, 124);
     let stdout = String::from_utf8_lossy(&launch.wrapper.stdout);
     ensure!(
         stdout.contains("LOOM-FORWARD-START"),
         "wrapper omitted START"
     );
     ensure!(
-        !stdout.contains("LOOM-FORWARD-END"),
-        "active wrapper emitted END"
+        stdout.contains(&format!(
+            "LOOM-FORWARD-END {{\"v\":1,\"backend\":\"companion\",\"job_id\":\"{}\",\"outcome\":\"timed_out\",\"exit_code\":124}}",
+            launch.job_id
+        )),
+        "wrapper omitted the timed-out END line"
     );
     ensure!(
-        stdout.contains("state: active"),
-        "wrapper omitted active evidence"
+        stdout.contains("state: timed_out"),
+        "wrapper omitted timed-out evidence"
     );
-    assert_call_contract(fixture, launch, &["task", "status"])
+    ensure!(
+        stdout.contains("exit: 124"),
+        "wrapper omitted exit 124 evidence"
+    );
+    assert_call_contract(fixture, launch, &["task", "status", "cancel"])
 }
 
 pub fn assert_wrapper_terminal(fixture: &Fixture, launch: &Launch, status: &str) -> Result<()> {
@@ -99,7 +106,11 @@ pub fn assert_call_contract(
         );
     }
     assert_task_args(&calls[0])?;
-    assert_status_args(&calls[1], &launch.job_id)
+    assert_status_args(&calls[1], &launch.job_id)?;
+    if expected_commands.get(2) == Some(&"cancel") {
+        assert_cancel_args(&calls[2], &launch.job_id)?;
+    }
+    Ok(())
 }
 
 fn assert_task_args(call: &Value) -> Result<()> {
@@ -123,6 +134,15 @@ fn assert_status_args(call: &Value, job_id: &str) -> Result<()> {
     ensure!(
         args == [job_id, "--wait", "--json", "--timeout-ms", "540000"],
         "status call was not the one bounded exact wait: {args:?}"
+    );
+    Ok(())
+}
+
+fn assert_cancel_args(call: &Value, job_id: &str) -> Result<()> {
+    let args = string_args(call)?;
+    ensure!(
+        args == [job_id, "--json"],
+        "cancel call was not the bounded cancel: {args:?}"
     );
     Ok(())
 }

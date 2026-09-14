@@ -28,10 +28,25 @@ pub struct CompanionJob {
     pub write: Option<bool>,
     pub request: Option<CompanionTaskRequest>,
     pub turn_id: Option<String>,
-    #[serde(default, deserialize_with = "deserialize_completed_at")]
+    #[serde(default, deserialize_with = "deserialize_canonical_millis")]
     pub completed_at: Option<DateTime<Utc>>,
     pub error_message: Option<String>,
     pub result: Option<Value>,
+    /// Companion worker process, present only while the job is queued or
+    /// running: the companion rewrites it as `null` once the job is terminal,
+    /// so a null must read as `None` rather than failing the record.
+    #[serde(default)]
+    pub pid: Option<u32>,
+    /// Append-only transcript the companion writes while the job runs; its
+    /// mtime is the freshest progress signal a host can observe.
+    #[serde(default)]
+    pub log_file: Option<PathBuf>,
+    #[serde(default, deserialize_with = "deserialize_canonical_millis")]
+    pub started_at: Option<DateTime<Utc>>,
+    #[serde(default, deserialize_with = "deserialize_canonical_millis")]
+    pub created_at: Option<DateTime<Utc>>,
+    #[serde(default, deserialize_with = "deserialize_canonical_millis")]
+    pub updated_at: Option<DateTime<Utc>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
@@ -166,7 +181,10 @@ fn validate_text(value: &str, max: usize, name: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn deserialize_completed_at<'de, D>(deserializer: D) -> Result<Option<DateTime<Utc>>, D::Error>
+/// Every companion timestamp is written by one code path in the same canonical
+/// UTC millisecond `Z` form, so all of them parse strictly: a drift in that
+/// form is a contract break the host should see, not silently drop.
+fn deserialize_canonical_millis<'de, D>(deserializer: D) -> Result<Option<DateTime<Utc>>, D::Error>
 where
     D: Deserializer<'de>,
 {
@@ -175,7 +193,7 @@ where
         return Ok(None);
     };
     let parsed = parse_canonical_utc_millis(&value)
-        .map_err(|_| serde::de::Error::custom("completedAt is not UTC millisecond Z form"))?;
+        .map_err(|_| serde::de::Error::custom("timestamp is not UTC millisecond Z form"))?;
     Ok(Some(parsed))
 }
 

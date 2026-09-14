@@ -143,7 +143,7 @@ fn unknown_wait(receipt_id: &str) -> WaitOutput {
 fn wait_exit_code(state: ForwardState) -> i32 {
     match state {
         ForwardState::Succeeded => 0,
-        ForwardState::Failed | ForwardState::Canceled => 1,
+        ForwardState::Failed | ForwardState::Canceled | ForwardState::TimedOut => 1,
         ForwardState::Queued | ForwardState::Running | ForwardState::Unknown => 2,
     }
 }

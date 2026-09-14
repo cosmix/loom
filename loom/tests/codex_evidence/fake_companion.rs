@@ -112,6 +112,20 @@ if (command === "task") {
   const id = argv[1];
   const job = readJob(id);
   console.log(JSON.stringify({ job, storedJob: job }));
+} else if (command === "cancel") {
+  const id = argv[1];
+  const job = readJob(id);
+  if (!terminal(job.status)) {
+    job.status = "cancelled";
+    job.phase = "cancelled";
+    job.pid = null;
+    job.threadId = process.env.FAKE_CODEX_THREAD_ID ?? "thread-fixture";
+    job.turnId = process.env.FAKE_CODEX_TURN_ID ?? "turn-fixture";
+    job.completedAt = "2026-09-14T10:01:00.000Z";
+    job.errorMessage = "Cancelled by user.";
+    writeJob(job);
+  }
+  console.log(JSON.stringify({ job: { id: job.id, status: job.status, phase: job.phase } }));
 } else {
   process.exitCode = 94;
 }

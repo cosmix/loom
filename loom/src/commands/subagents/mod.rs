@@ -103,6 +103,11 @@ pub enum SubagentsCommand {
         #[arg(long, default_value_t = 300)]
         timeout: u64,
 
+        /// Seconds without progress before a bound worker counts as hung (exit 6);
+        /// default: the stage's subagent_timeout_secs, else 600
+        #[arg(long = "stall-secs")]
+        stall_secs: Option<u64>,
+
         /// Emit one JSON object per wait event
         #[arg(long)]
         json: bool,
@@ -147,12 +152,14 @@ pub fn execute(args: SubagentsArgs) -> Result<()> {
             workers,
             session,
             timeout,
+            stall_secs,
             json,
             dir,
         } => wait::run(wait::WatchRequest {
             workers,
             session,
             timeout_secs: timeout,
+            stall_secs,
             json,
             legacy_dir: dir,
         }),

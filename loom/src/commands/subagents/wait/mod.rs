@@ -4,6 +4,7 @@ mod identity;
 mod lease;
 mod model;
 mod output;
+mod stall;
 
 #[cfg(test)]
 mod engine_tests;
@@ -12,7 +13,7 @@ mod lease_tests;
 #[cfg(test)]
 mod tests;
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use anyhow::{bail, Result};
@@ -23,10 +24,18 @@ use lease::{
 };
 use model::{exit_code, EventOutcome, WaitLease, EXIT_UNKNOWN};
 
+/// Stall budget used when neither the caller nor the stage names one.
+///
+/// Deliberately not [`crate::models::stage::Stage::effective_subagent_timeout_secs`],
+/// whose 300s fallback is the session heartbeat budget: a thinking model's turn
+/// routinely exceeds it, and a false stall would end the wait on a live worker.
+const DEFAULT_STALL_SECS: u64 = 600;
+
 pub struct WatchRequest {
     pub workers: Vec<String>,
     pub session: Option<String>,
     pub timeout_secs: u64,
+    pub stall_secs: Option<u64>,
     pub json: bool,
     pub legacy_dir: Option<PathBuf>,
 }
@@ -61,8 +70,27 @@ pub fn run(request: WatchRequest) -> Result<()> {
             existing_wait(lease, EventOutcome::AlreadyWaiting, request.json)
         }
         Acquired::Busy(lease) => existing_wait(lease, EventOutcome::Busy, request.json),
-        Acquired::Owner(lease) => own_wait(dir, lease, work_dir, request.json, &clock),
+        Acquired::Owner(lease) => own_wait(
+            dir,
+            lease,
+            work_dir,
+            request.stall_secs,
+            request.json,
+            &clock,
+        ),
     }
+}
+
+/// Resolve the stall budget: the explicit flag, else the stage's own subagent
+/// timeout, else [`DEFAULT_STALL_SECS`].
+fn stall_budget(stall_secs: Option<u64>, work_dir: &Path, stage_id: &str) -> Duration {
+    let secs = stall_secs.unwrap_or_else(|| {
+        crate::verify::load_stage(stage_id, work_dir)
+            .ok()
+            .and_then(|stage| stage.subagent_timeout_secs)
+            .unwrap_or(DEFAULT_STALL_SECS)
+    });
+    Duration::from_secs(secs)
 }
 
 fn reject_legacy_form(request: &WatchRequest) -> Result<()> {
@@ -98,6 +126,7 @@ fn own_wait(
     dir: LeaseDir,
     lease: WaitLease,
     work_dir: PathBuf,
+    stall_secs: Option<u64>,
     json: bool,
     clock: &SystemBootClock,
 ) -> Result<()> {
@@ -109,7 +138,11 @@ fn own_wait(
     output::emit(&initial, json)?;
 
     let sleeper = ThreadSleeper;
-    let evidence = LifecycleEvidence { work_dir };
+    let stall_budget = stall_budget(stall_secs, &work_dir, &lease.identity.stage_id);
+    let evidence = LifecycleEvidence {
+        work_dir,
+        stall_budget,
+    };
     let EngineResult {
         outcome, detail, ..
     } = wait_for_workers(

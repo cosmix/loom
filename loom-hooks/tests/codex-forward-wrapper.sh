@@ -80,6 +80,10 @@ result)
 	jq -nc --arg id "$job_id" --arg status "$status" --arg phase "$phase" --arg rendered "$rendered" \
 		'{job:{id:$id,status:$status,phase:$phase},storedJob:{id:$id,status:$status,phase:$phase,rendered:$rendered}}'
 	;;
+cancel)
+	[[ $# -eq 2 && "$1" == "$job_id" && "$2" == --json ]] || exit 95
+	jq -nc --arg id "$job_id" '{job:{id:$id,status:"cancelled",phase:"cancelled"}}'
+	;;
 *) exit 94 ;;
 esac
 STUB
@@ -162,20 +166,24 @@ rg -qF 'literal;' "$CAPTURE_LAUNCH"
 assert_terminal failed failed failed 1
 assert_terminal cancelled canceled cancelled 1
 
-# A timed-out or still-active snapshot emits START and active evidence, never END/result/re-poll.
+# A deadline snapshot cancels the still-running job, reports timed_out, and exits 124.
 for scenario in wait-timeout running queued; do
 	OUT="$d/${scenario}.stdout"
 	ERR="$d/${scenario}.stderr"
 	run_companion "$scenario" "$OUT" "$ERR"
-	[[ $RUN_STATUS -eq 0 && ! -s "$ERR" ]]
+	[[ $RUN_STATUS -eq 124 && ! -s "$ERR" ]]
 	assert_line "$OUT" 1 "$START"
-	assert_line "$OUT" 2 "$SEPARATOR"
-	rg -qF 'continues under daemon ownership' "$OUT"
-	rg -qFx 'state: active' "$OUT"
-	! rg -q '^LOOM-FORWARD-END ' "$OUT"
+	assert_line "$OUT" 2 \
+		'LOOM-FORWARD-END {"v":1,"backend":"companion","job_id":"job-exact","outcome":"timed_out","exit_code":124}'
+	assert_line "$OUT" 3 "$SEPARATOR"
+	rg -qF 'exceeded the 540000 ms unit deadline and was cancelled' "$OUT"
+	rg -qFx 'exit: 124' "$OUT"
+	rg -qFx 'state: timed_out' "$OUT"
 	[[ $(wc -l <"$STATUS_CALLS") -eq 1 ]]
-	[[ $(wc -l <"$CALLS") -eq 2 ]]
-	jq -se 'map(.[1]) == ["task", "status"]' "$CALLS" >/dev/null
+	[[ $(wc -l <"$CALLS") -eq 3 ]]
+	jq -se 'map(.[1]) == ["task", "status", "cancel"]' "$CALLS" >/dev/null
+	jq -se '[.[] | select(.[1] == "cancel")] | length == 1 and (.[0][2:] == ["job-exact", "--json"])' \
+		"$CALLS" >/dev/null
 done
 
 # A wait command failure retains active ownership without manufacturing terminal evidence.

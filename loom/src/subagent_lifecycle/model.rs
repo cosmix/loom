@@ -131,5 +131,12 @@ pub enum WorkerOutcome {
     Succeeded,
     Failed(String),
     Cancelled(String),
+    /// A worker the bounded wait found alive but making no progress within its
+    /// stall budget. Never produced by the lifecycle journal -- a hung worker
+    /// writes no record by definition -- only by
+    /// `commands::subagents::wait::stall`, which reads process and transcript
+    /// evidence directly. Matches that treat [`WorkerOutcome::Unknown`] as
+    /// non-terminal must treat this the same way.
+    Stalled(String),
     Unknown(String),
 }

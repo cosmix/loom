@@ -4,8 +4,8 @@ use loom::subagent_lifecycle::WorkerOutcome;
 use serial_test::serial;
 
 use crate::assertions::{
-    assert_exit, assert_lifecycle_identity, assert_state, assert_wrapper_active,
-    assert_wrapper_terminal,
+    assert_exit, assert_lifecycle_identity, assert_state, assert_wrapper_terminal,
+    assert_wrapper_timed_out,
 };
 use crate::fixture::{Fixture, EFFORT, MODEL};
 
@@ -83,33 +83,19 @@ fn completed_job_preserves_request_and_terminal_identity() -> Result<()> {
 
 #[test]
 #[serial]
-fn wrapper_timeout_stays_owned_until_daemon_observes_completion() -> Result<()> {
-    let fixture = Fixture::new("timeout-then-complete")?;
+fn wrapper_timeout_cancels_the_job_and_the_daemon_observes_cancelled() -> Result<()> {
+    let fixture = Fixture::new("timeout-then-cancel")?;
     let forwarder = fixture.add_forwarder(PARENT, AGENT)?;
     let launch = fixture.launch(&forwarder, Some("unit-running"), "job-running", "running")?;
-    assert_wrapper_active(&fixture, &launch)?;
+    assert_wrapper_timed_out(&fixture, &launch)?;
 
     fixture.poll()?;
-    ensure!(fixture.lifecycle_outcome(&forwarder)? == WorkerOutcome::Active);
-    assert_state(&fixture.list(&forwarder)?, AGENT, "forward-wait")?;
-    ensure!(
-        forwarder.transcript.is_file(),
-        "active transcript was released"
-    );
-    let harvest = fixture.harvest(&forwarder)?;
-    assert_exit(&harvest, 0);
-    ensure!(String::from_utf8_lossy(&harvest.stdout).contains("nothing harvestable"));
-    assert_exit(&fixture.watch(&launch)?, 2);
-
-    fixture.set_job_status(&launch, "completed", "thread-late", "turn-late")?;
-    fixture.poll()?;
-    ensure!(fixture.lifecycle_outcome(&forwarder)? == WorkerOutcome::Succeeded);
-    assert_state(&fixture.list(&forwarder)?, AGENT, "done")?;
-    assert_exit(&fixture.watch(&launch)?, 0);
-    ensure!(
-        fixture.calls(&launch)?.len() == 2,
-        "daemon completion caused wrapper harvest"
-    );
+    ensure!(matches!(
+        fixture.lifecycle_outcome(&forwarder)?,
+        WorkerOutcome::Cancelled(_)
+    ));
+    assert_state(&fixture.list(&forwarder)?, AGENT, "cancelled")?;
+    assert_exit(&fixture.watch(&launch)?, 3);
     Ok(())
 }
 

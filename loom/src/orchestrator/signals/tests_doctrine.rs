@@ -300,7 +300,8 @@ fn codex_navigation_kit_wrapper_carries_and_delivers_the_preamble() {
         ".loom/work/",
         "--unit-id",
         "540000",
-        "print_evidence 0 \"$job_id\" active",
+        "print_evidence 124 \"$job_id\" timed_out",
+        "\"outcome\":\"timed_out\"",
         "unit:",
         "invocation:",
     ] {

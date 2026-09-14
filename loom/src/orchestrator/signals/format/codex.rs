@@ -114,6 +114,15 @@ fn push_codex_spawn_rules(content: &mut String) {
         CODEX_IMPLEMENTER_EFFORT = CODEX_IMPLEMENTER_EFFORT,
         CODEX_IMPLEMENTER_MODEL_LUNA = CODEX_IMPLEMENTER_MODEL_LUNA,
     ));
+    content.push_str(
+        "- SIZE EVERY UNIT FOR THE 540000 ms DEADLINE: the wrapper cancels a companion job still running at\n\
+         540000 ms, prints `LOOM-FORWARD-END ... \"outcome\":\"timed_out\",\"exit_code\":124` and exits 124. A\n\
+         unit is ONE file, or one file plus its test file, at most three numbered steps, its interfaces\n\
+         pinned verbatim in the brief so parallel units compile together (one module pair at xhigh has\n\
+         measured 24-30 minutes). A timed-out unit is NEVER re-forwarded as is: re-split the remainder\n\
+         against the partial tree into smaller units - a single retry keeps the SAME unit id, a split\n\
+         gives each part its own id.\n",
+    );
 }
 
 /// Push the navigation-kit, prompt-writing, and fan-out rules.
@@ -141,8 +150,8 @@ fn push_codex_prompt_rules(content: &mut String) {
     content.push_str(concat!(
         "- MIXED FAN-OUT: codex and Claude subagents may share a wave - file ownership keeps them\n",
         "  apart, enforced across lanes just as within one. FOREGROUND ONLY, and skip `--resume-last`:\n",
-        "  the wrapper waits at most 540000 ms for one exact status snapshot. A still-running job reports\n",
-        "  `state: active` with no `LOOM-FORWARD-END` and remains under daemon ownership. Start ONE\n",
+        "  the wrapper waits at most 540000 ms for one exact status snapshot, then cancels a still-running\n",
+        "  job and exits 124 with `\"outcome\":\"timed_out\"` - the unit was too large; re-split it. Start ONE\n",
         "  background `loom subagents watch`, naming one `--worker codex:<unit-id>` for each forwarded\n",
         "  unit and passing `--timeout 3600`; never use a model-driven status loop, a\n",
         "  second forward, or `codex-companion.mjs status --all`. Retrying a logical unit means a fresh\n",
@@ -153,7 +162,11 @@ fn push_codex_prompt_rules(content: &mut String) {
         "  passed (not proof any worker died); 3 when a bound worker failed or was cancelled; 4 when a\n",
         "  wait for this parent session already exists (`AlreadyWaiting` for the same worker set or `Busy`\n",
         "  for a different set), with no second monitor started; 5 when worker identity or terminal\n",
-        "  evidence is unknown, which is never success.\n",
+        "  evidence is unknown, which is never success; 6 when a bound worker is hung: a Claude worker\n",
+        "  with no transcript growth past the stall budget (`--stall-secs`, default the stage's\n",
+        "  `subagent_timeout_secs`, else 600 s), or a codex job whose process is gone or whose log stopped\n",
+        "  growing. On 6: `TaskStop` the Claude worker (a cancelled codex job needs nothing), confirm it\n",
+        "  stopped, re-delegate the remainder in a smaller brief.\n",
         "  A foreground run is one long Bash call - no PostToolUse fires, so the daemon's \"appears hung\"\n",
         "  warning past 300s is ADVISORY ONLY.\n",
     ));
@@ -184,8 +197,9 @@ fn push_codex_blast_radius_and_evidence(content: &mut String) {
         "  and `mode:`. In `mode: companion`, the trailer orders `job:`, then `unit:`, then `invocation:`,\n",
         "  then `record:`. Accept only when the named record has completed status with \"phase\":\"done\",\n",
         "  the trailer unit equals the unit you assigned, and its invocation matches that job's authorization.\n",
-        "  An active report deliberately has `state: active` and no `LOOM-FORWARD-END`. In `mode: direct (...)`\n",
-        "  (macOS inside the stage sandbox), `thread:` names one exact thread.\n",
+        "  A report with `state: timed_out` and an END marker carrying `\"outcome\":\"timed_out\"` means the\n",
+        "  wrapper cancelled the job at the 540000 ms deadline: the unit was too large; re-split it. In\n",
+        "  `mode: direct (...)` (macOS inside the stage sandbox), `thread:` names one exact thread.\n",
         "  No matching markers, trailer, exact record, or exact thread leaves the forward state unresolved\n",
         "  for orchestrator review.\n",
     ));
@@ -214,7 +228,9 @@ mod tests {
         assert!(collapsed.contains("Start ONE background `loom subagents watch`"));
         assert!(collapsed.contains("one `--worker codex:<unit-id>` for each forwarded unit"));
         assert!(collapsed.contains("passing `--timeout 3600`"));
-        assert!(collapsed.contains("`state: active` with no `LOOM-FORWARD-END`"));
+        assert!(collapsed.contains(
+            "then cancels a still-running job and exits 124 with `\"outcome\":\"timed_out\"`"
+        ));
         assert!(collapsed.contains("holds one lease for the parent session"));
         assert!(collapsed.contains("one initial record and one terminal record"));
         assert!(collapsed
@@ -225,6 +241,7 @@ mod tests {
         assert!(collapsed.contains(
             "5 when worker identity or terminal evidence is unknown, which is never success"
         ));
+        assert!(collapsed.contains("6 when a bound worker is hung"));
         assert!(collapsed.contains("\"phase\":\"done\""));
         assert!(collapsed.contains("`codex-companion.mjs status --all`"));
 

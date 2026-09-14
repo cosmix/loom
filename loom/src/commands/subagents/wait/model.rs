@@ -14,6 +14,7 @@ pub const EXIT_TIMEOUT: i32 = 2;
 pub const EXIT_WORKER_TERMINAL: i32 = 3;
 pub const EXIT_BUSY: i32 = 4;
 pub const EXIT_UNKNOWN: i32 = 5;
+pub const EXIT_STALLED: i32 = 6;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -188,6 +189,10 @@ pub enum TerminalOutcome {
     TimedOut,
     Failed,
     Cancelled,
+    /// A bound worker was alive but made no observable progress within its
+    /// stall budget. Distinct from `TimedOut`, which only says the wait's own
+    /// deadline passed and proves nothing about any worker.
+    Stalled,
     Unknown,
     Interrupted,
 }
@@ -215,6 +220,7 @@ pub enum EventOutcome {
     Cancelled,
     AlreadyWaiting,
     Busy,
+    Stalled,
     Unknown,
     Interrupted,
 }
@@ -239,6 +245,7 @@ pub fn exit_code(outcome: &EventOutcome) -> i32 {
         EventOutcome::TimedOut => EXIT_TIMEOUT,
         EventOutcome::Failed | EventOutcome::Cancelled => EXIT_WORKER_TERMINAL,
         EventOutcome::AlreadyWaiting | EventOutcome::Busy => EXIT_BUSY,
+        EventOutcome::Stalled => EXIT_STALLED,
         EventOutcome::Unknown | EventOutcome::Interrupted => EXIT_UNKNOWN,
     }
 }

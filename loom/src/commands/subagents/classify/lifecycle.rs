@@ -142,7 +142,7 @@ impl Evidence {
                 summary.final_report = None;
                 summary.display_state = None;
             }
-            WorkerOutcome::Active | WorkerOutcome::Unknown(_) => {}
+            WorkerOutcome::Active | WorkerOutcome::Unknown(_) | WorkerOutcome::Stalled(_) => {}
         }
     }
 }

@@ -1,4 +1,5 @@
 use anyhow::{ensure, Context, Result};
+use chrono::{SecondsFormat, Utc};
 use loom::codex_lifecycle::CodexAuthorization;
 use loom::fs::permissions::constants::{
     HOOK_CODEX_FORWARD, HOOK_CODEX_FORWARD_COMMON, HOOK_CODEX_FORWARD_GUARD, HOOK_COMMON,
@@ -185,6 +186,10 @@ pub fn workspace_state_dir(state_root: &Path, workspace: &Path) -> PathBuf {
 
 pub fn apply_status(job: &mut Value, status: &str, thread_id: &str, turn_id: &str) {
     let terminal = matches!(status, "completed" | "failed" | "cancelled");
+    // Stamp a real "now" rather than the fixture's fixed creation timestamp:
+    // the codex stall detector reads `updatedAt` against wall-clock time, and
+    // a job just transitioned to a status is, by definition, freshly updated.
+    job["updatedAt"] = json!(Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true));
     job["status"] = json!(status);
     job["phase"] = json!(match status {
         "completed" => "done",

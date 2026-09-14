@@ -1,10 +1,11 @@
 use std::path::PathBuf;
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 
 use crate::subagent_lifecycle::{CodexExecution, LifecycleState, WorkerIdentity, WorkerOutcome};
 
 use super::lease::{deadline_state, BootClock, DeadlineState};
 use super::model::{BootDeadline, BoundWorker, TerminalOutcome, WaitIdentity, WorkerKind};
+use super::stall;
 
 /// Default interval between fresh lifecycle evidence reads.
 pub const POLL_INTERVAL: Duration = Duration::from_secs(2);
@@ -34,13 +35,21 @@ pub trait EvidenceSource {
 pub struct LifecycleEvidence {
     /// Loom work directory containing lifecycle journals.
     pub work_dir: PathBuf,
+    /// How long a worker may make no observable progress before it counts as
+    /// hung. Only ever consulted for a worker the journal still calls active.
+    pub stall_budget: Duration,
 }
 
 impl EvidenceSource for LifecycleEvidence {
     fn outcome(&self, worker: &BoundWorker) -> WorkerOutcome {
-        match worker.worker.kind {
+        let outcome = match worker.worker.kind {
             WorkerKind::Claude => self.claude_outcome(worker),
             WorkerKind::Codex => self.codex_outcome(worker),
+        };
+        match outcome {
+            WorkerOutcome::Active => stall::detect(worker, &self.work_dir, self.stall_budget)
+                .unwrap_or(WorkerOutcome::Active),
+            outcome => outcome,
         }
     }
 }
@@ -106,9 +115,11 @@ impl LifecycleEvidence {
                 {
                     journal
                 } else {
-                    crate::codex_lifecycle::companion_outcome(
+                    crate::codex_lifecycle::companion_outcome_with_progress(
                         &self.work_dir,
                         &authority.authorization(),
+                        self.stall_budget,
+                        SystemTime::now(),
                     )
                 }
             }
@@ -288,6 +299,9 @@ fn terminal_evidence(
         );
         return Some(result(TerminalOutcome::Cancelled, detail, polls));
     }
+    if let Some(detail) = stall::stalled_detail(identity, outcomes) {
+        return Some(result(TerminalOutcome::Stalled, detail, polls));
+    }
     outcomes
         .iter()
         .all(|outcome| matches!(outcome, WorkerOutcome::Succeeded))
@@ -352,7 +366,7 @@ fn named_workers(
         .collect()
 }
 
-fn worker_name(worker: &BoundWorker) -> String {
+pub(super) fn worker_name(worker: &BoundWorker) -> String {
     let kind = match worker.worker.kind {
         WorkerKind::Claude => "claude",
         WorkerKind::Codex => "codex",

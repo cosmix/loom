@@ -195,6 +195,32 @@ run_captured() {
 	{ printf '\n'; command cat "$command_log"; } >>"$provider_log" 2>/dev/null || true
 	return "$captured_status"
 }
+# Same output-capture contract as run_captured, bounded to timeout_secs
+# without GNU timeout (this wrapper also runs on macOS): poll kill -0 on the
+# background pid, then TERM and KILL a survivor before reaping it with wait.
+run_captured_bounded() {
+	local timeout_secs="$1" captured_status=0 pid waited=0 timed_out=0
+	shift
+	: >"$command_log"
+	"$@" >"$command_log" 2>>"$provider_log" &
+	pid=$!
+	while [[ $waited -lt $timeout_secs ]] && kill -0 "$pid" 2>/dev/null; do
+		sleep 1
+		waited=$((waited + 1))
+	done
+	if kill -0 "$pid" 2>/dev/null; then
+		timed_out=1
+		kill -TERM "$pid" 2>/dev/null || true
+		sleep 2
+		kill -0 "$pid" 2>/dev/null && kill -KILL "$pid" 2>/dev/null || true
+	fi
+	wait "$pid" 2>/dev/null || captured_status=$?
+	if [[ $timed_out -eq 1 ]]; then
+		captured_status=124
+	fi
+	{ printf '\n'; command cat "$command_log"; } >>"$provider_log" 2>/dev/null || true
+	return "$captured_status"
+}
 valid_backend_id() {
 	local value="$1"
 	[[ ${#value} -le 128 && "$value" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$ ]]
@@ -319,10 +345,17 @@ else
 	else
 		IFS=$'\t' read -r job_status job_phase wait_timed_out <<<"$status_phase"
 		if [[ "$wait_timed_out" == true || "$job_status" == queued || "$job_status" == running ]]; then
+			cancel_status=0
+			run_captured_bounded 30 node "$companion" cancel "$job_id" --json || cancel_status=$?
+			printf 'LOOM-FORWARD-END {"v":1,"backend":"companion","job_id":"%s","outcome":"timed_out","exit_code":124}\n' \
+				"$job_id"
 			print_separator
-			printf '%s\n' 'codex companion job continues under daemon ownership'
-			print_evidence 0 "$job_id" active
-			exit 0
+			printf 'codex companion job %s exceeded the 540000 ms unit deadline and was cancelled (cancel exit %s): the unit was too large - re-split the remainder against the partial tree into smaller interface-pinned units and re-forward\n' \
+				"$job_id" "$cancel_status"
+			print_bounded_file "$provider_log"
+			print_deferred_notes
+			print_evidence 124 "$job_id" timed_out
+			exit 124
 		fi
 		case "$job_status:$job_phase" in
 		completed:done) outcome=succeeded; exit_code=0 ;;

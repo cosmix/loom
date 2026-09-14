@@ -1,6 +1,7 @@
 //! Host-side reconciliation of authorized Codex companion jobs.
 
 use std::path::Path;
+use std::time::{Duration, SystemTime};
 
 use anyhow::Result;
 
@@ -10,6 +11,7 @@ use crate::subagent_lifecycle::WorkerOutcome;
 mod authorization;
 mod jobs;
 mod ledger;
+mod progress;
 mod reconcile;
 
 pub use authorization::CodexAuthorization;
@@ -54,6 +56,48 @@ pub fn companion_outcome(work_dir: &Path, identity: &CodexAuthorization) -> Work
         Err(error) => return WorkerOutcome::Unknown(error.to_string()),
     };
     reconcile::companion_outcome_with_state_root(work_dir, identity, &state_root)
+}
+
+/// Read the exact v1.0.6 companion job bound to an authorization once, and
+/// classify it: the terminal record when the ledger already has one, else
+/// direct-observation progress evidence for a job still running.
+///
+/// Locating the job is an up-to-256-file directory scan, so callers that need
+/// both the terminal outcome and progress evidence (a bounded wait polling a
+/// running job every cycle) should use this instead of pairing
+/// [`companion_outcome`] with a second lookup.
+pub fn companion_outcome_with_progress(
+    work_dir: &Path,
+    identity: &CodexAuthorization,
+    budget: Duration,
+    now: SystemTime,
+) -> WorkerOutcome {
+    let state_root = match authorization::canonical_daemon_state_root() {
+        Ok(root) => root,
+        Err(error) => return WorkerOutcome::Unknown(error.to_string()),
+    };
+    let job = match reconcile::validate_authorization_row(work_dir, identity)
+        .and_then(|()| jobs::locate_job(identity, &state_root))
+    {
+        Ok(job) => job,
+        Err(error) => return WorkerOutcome::Unknown(error.to_string()),
+    };
+    let terminal = jobs::outcome(&job);
+    if !matches!(terminal, WorkerOutcome::Active) {
+        return terminal;
+    }
+    let prefix = format!("codex worker {}: ", identity.unit_id);
+    match progress::companion_progress(&job, budget, now) {
+        progress::CompanionProgress::Running => WorkerOutcome::Active,
+        // A gone process is definitive, not merely stalled: the job cannot
+        // reach a terminal record without one.
+        progress::CompanionProgress::Dead(detail) => {
+            WorkerOutcome::Failed(format!("{prefix}{detail}"))
+        }
+        progress::CompanionProgress::Stalled(detail) => {
+            WorkerOutcome::Stalled(format!("{prefix}{detail}"))
+        }
+    }
 }
 
 pub(crate) fn has_correlated_lifecycle(work_dir: &Path, identity: &CodexAuthorization) -> bool {

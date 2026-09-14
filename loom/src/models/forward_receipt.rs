@@ -70,11 +70,20 @@ pub enum ForwardState {
     Succeeded,
     Failed,
     Canceled,
+    /// The forwarding wrapper cancelled a companion job that was still running
+    /// at its own wall-clock cap and reported `exit_code: 124`. The companion's
+    /// own record reads `cancelled`; this state is only ever the wrapper's
+    /// END-marker verdict, and it is terminal.
+    #[serde(rename = "timed_out")]
+    TimedOut,
     Unknown,
 }
 impl ForwardState {
     pub fn is_terminal(self) -> bool {
-        matches!(self, Self::Succeeded | Self::Failed | Self::Canceled)
+        matches!(
+            self,
+            Self::Succeeded | Self::Failed | Self::Canceled | Self::TimedOut
+        )
     }
     pub fn label(self) -> &'static str {
         match self {
@@ -83,6 +92,7 @@ impl ForwardState {
             Self::Succeeded => "succeeded",
             Self::Failed => "failed",
             Self::Canceled => "canceled",
+            Self::TimedOut => "timed_out",
             Self::Unknown => "unknown",
         }
     }

@@ -65,7 +65,10 @@ pub(super) fn companion_outcome_with_state_root(
     }
 }
 
-fn validate_authorization_row(work_dir: &Path, expected: &CodexAuthorization) -> Result<()> {
+pub(super) fn validate_authorization_row(
+    work_dir: &Path,
+    expected: &CodexAuthorization,
+) -> Result<()> {
     let path = work_dir
         .join("subagents")
         .join(&expected.stage_id)

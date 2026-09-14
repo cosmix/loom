@@ -4,8 +4,7 @@ use serial_test::serial;
 use std::fs;
 
 use crate::assertions::{
-    assert_exit, assert_state, assert_unknown_after_poll, assert_wrapper_active,
-    assert_wrapper_terminal,
+    assert_exit, assert_state, assert_unknown_after_poll, assert_wrapper_terminal,
 };
 use crate::fixture::Fixture;
 
@@ -62,9 +61,9 @@ fn malformed_job_json_is_unknown() -> Result<()> {
         &forwarder,
         Some("unit-malformed"),
         "job-malformed",
-        "running",
+        "completed",
     )?;
-    assert_wrapper_active(&fixture, &launch)?;
+    assert_wrapper_terminal(&fixture, &launch, "completed")?;
     fs::write(&launch.job_path, "{malformed\n")?;
 
     assert_unknown_after_poll(&fixture, &launch, &forwarder)
@@ -75,8 +74,8 @@ fn malformed_job_json_is_unknown() -> Result<()> {
 fn pruned_job_file_is_unknown() -> Result<()> {
     let fixture = Fixture::new("pruned")?;
     let forwarder = fixture.add_forwarder(PARENT, AGENT)?;
-    let launch = fixture.launch(&forwarder, Some("unit-pruned"), "job-pruned", "running")?;
-    assert_wrapper_active(&fixture, &launch)?;
+    let launch = fixture.launch(&forwarder, Some("unit-pruned"), "job-pruned", "completed")?;
+    assert_wrapper_terminal(&fixture, &launch, "completed")?;
     fs::remove_file(&launch.job_path)?;
 
     assert_unknown_after_poll(&fixture, &launch, &forwarder)

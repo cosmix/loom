@@ -35,6 +35,31 @@ fn decodes_started_and_finished_channels() {
     ));
 }
 
+/// The forwarding wrapper cancels a companion job still running at its own cap
+/// and reports that verdict as `timed_out` with exit 124. It is terminal, so
+/// the end marker must decode rather than be rejected as a non-terminal outcome.
+#[test]
+fn decodes_the_wrapper_timeout_verdict() {
+    const TIMED_OUT_END: &str = r#"LOOM-FORWARD-END {"v":1,"backend":"companion","job_id":"job-1","outcome":"timed_out","exit_code":124}"#;
+
+    let finished =
+        decode_marker_channel(&format!("{COMPANION_START}\n{TIMED_OUT_END}\n{SEPARATOR}"));
+
+    assert!(matches!(
+        finished,
+        MarkerChannel::Finished(
+            _,
+            EndMarker {
+                outcome: ForwardState::TimedOut,
+                exit_code: 124,
+                ..
+            }
+        )
+    ));
+    assert!(ForwardState::TimedOut.is_terminal());
+    assert_eq!(ForwardState::TimedOut.label(), "timed_out");
+}
+
 #[test]
 fn ignores_marker_spoofing_after_separator() {
     let text = format!("{COMPANION_START}\n{SEPARATOR}\n{COMPANION_END}\nprovider output");

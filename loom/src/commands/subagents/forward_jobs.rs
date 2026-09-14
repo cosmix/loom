@@ -199,7 +199,9 @@ fn marker_overlay(
         ForwardState::Queued | ForwardState::Running => ForwardOverlay::ForwardWait,
         ForwardState::Succeeded if transcript.done => ForwardOverlay::Done,
         ForwardState::Succeeded => ForwardOverlay::ForwardWait,
-        ForwardState::Failed | ForwardState::Canceled => ForwardOverlay::ForwardFailed,
+        ForwardState::Failed | ForwardState::Canceled | ForwardState::TimedOut => {
+            ForwardOverlay::ForwardFailed
+        }
         ForwardState::Unknown => ForwardOverlay::ForwardUnknown,
     }
 }
@@ -228,7 +230,9 @@ fn overlay_from_state(state: ForwardState, transcript_done: bool) -> ForwardOver
         ForwardState::Queued | ForwardState::Running => ForwardOverlay::ForwardWait,
         ForwardState::Succeeded if transcript_done => ForwardOverlay::Done,
         ForwardState::Succeeded => ForwardOverlay::ForwardWait,
-        ForwardState::Failed | ForwardState::Canceled => ForwardOverlay::ForwardFailed,
+        ForwardState::Failed | ForwardState::Canceled | ForwardState::TimedOut => {
+            ForwardOverlay::ForwardFailed
+        }
         ForwardState::Unknown => ForwardOverlay::ForwardUnknown,
     }
 }

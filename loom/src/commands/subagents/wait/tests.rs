@@ -10,7 +10,7 @@ use super::identity::parse_worker_set;
 use super::lease::{acquire, Acquired, BootClock, LeaseDir, OwnerProbe};
 use super::model::{
     exit_code, BoundWorker, EventOutcome, LeaseOwner, WaitIdentity, WaitLease, WorkerKind,
-    WorkerSpec,
+    WorkerSpec, EXIT_BUSY, EXIT_STALLED, EXIT_TIMEOUT, EXIT_UNKNOWN, EXIT_WORKER_TERMINAL,
 };
 use crate::process::IdentityStatus;
 use crate::subagent_lifecycle::{CodexExecution, WorkerIdentity, WorkerOutcome};
@@ -300,12 +300,28 @@ fn exit_code_maps_every_outcome_exactly() {
         EventOutcome::Cancelled,
         EventOutcome::AlreadyWaiting,
         EventOutcome::Busy,
+        EventOutcome::Stalled,
         EventOutcome::Unknown,
         EventOutcome::Interrupted,
     ];
 
     assert_eq!(
         outcomes.map(|outcome| exit_code(&outcome)),
-        [0, 0, 2, 3, 3, 4, 4, 5, 5]
+        [0, 0, 2, 3, 3, 4, 4, EXIT_STALLED, 5, 5]
     );
+}
+
+/// Exit 6 is the wait's own code for a hung worker and must not collide with
+/// the deadline (2), terminal (3), ownership (4) or unknown (5) codes.
+#[test]
+fn stalled_exit_code_is_distinct() {
+    assert_eq!(EXIT_STALLED, 6);
+    assert!(![
+        0,
+        EXIT_TIMEOUT,
+        EXIT_WORKER_TERMINAL,
+        EXIT_BUSY,
+        EXIT_UNKNOWN
+    ]
+    .contains(&EXIT_STALLED));
 }

@@ -334,7 +334,7 @@ fn test_signal_codex_implementers_section_gated() {
             "LOOM-CODEX-EVIDENCE",
             "--write --unit-id <unit>",
             "`job:`, then `unit:`, then `invocation:`",
-            "`state: active`",
+            "`state: timed_out`",
         ] {
             assert!(
                 content.contains(needle),
@@ -359,12 +359,12 @@ fn test_signal_codex_implementers_section_gated() {
              run; no hook covers codex's own shell commands"
         );
 
+        #[rustfmt::skip] let needles = ["600000", "540000", "timed_out", "6 when a bound worker is hung"];
         assert!(
-            ["600000", "540000"]
-                .iter()
-                .all(|needle| content.contains(needle)),
+            needles.iter().all(|needle| content.contains(needle)),
             "the codex block must tell the orchestrator to state an explicit Bash \
-             timeout and distinguish it from the wrapper's exact snapshot wait"
+             timeout, distinguish it from the wrapper's exact snapshot wait, and \
+             cover the timed_out/hung-worker exit path"
         );
         assert!(content.contains("naming one `--worker codex:<unit-id>` for each forwarded"));
         assert!(

@@ -4,8 +4,7 @@ use serial_test::serial;
 use std::fs;
 
 use crate::assertions::{
-    assert_exit, assert_lifecycle_identity, assert_state, assert_wrapper_active,
-    assert_wrapper_terminal,
+    assert_exit, assert_lifecycle_identity, assert_state, assert_wrapper_terminal,
 };
 use crate::fixture::{Fixture, Forwarder, Launch};
 
@@ -19,9 +18,14 @@ fn two_parallel_units_finish_in_reverse_order() -> Result<()> {
     let first = fixture.add_forwarder(PARENT_A, "parallel-a")?;
     let second = fixture.add_forwarder(PARENT_A, "parallel-b")?;
     let (launch_a, launch_b) = launch_parallel(&fixture, &first, &second)?;
-    assert_wrapper_active(&fixture, &launch_a)?;
-    assert_wrapper_active(&fixture, &launch_b)?;
+    assert_wrapper_terminal(&fixture, &launch_a, "completed")?;
+    assert_wrapper_terminal(&fixture, &launch_b, "completed")?;
     ensure!(launch_a.authorization.invocation_id != launch_b.authorization.invocation_id);
+    // Seed genuinely mid-flight records directly (bypassing the wrapper's
+    // deadline path, which now cancels the job instead of leaving it running)
+    // so the daemon has real queued/running jobs to observe out of order.
+    fixture.set_job_status(&launch_a, "running", "", "")?;
+    fixture.set_job_status(&launch_b, "running", "", "")?;
 
     fixture.poll()?;
     ensure!(fixture.lifecycle_outcome(&first)? == WorkerOutcome::Active);
@@ -53,8 +57,8 @@ fn launch_parallel(
     second: &Forwarder,
 ) -> Result<(Launch, Launch)> {
     std::thread::scope(|scope| {
-        let left = scope.spawn(|| fixture.launch(first, Some("unit-a"), "job-a", "running"));
-        let right = scope.spawn(|| fixture.launch(second, Some("unit-b"), "job-b", "running"));
+        let left = scope.spawn(|| fixture.launch(first, Some("unit-a"), "job-a", "completed"));
+        let right = scope.spawn(|| fixture.launch(second, Some("unit-b"), "job-b", "completed"));
         let left = left.join().expect("first joined fake companion")?;
         let right = right.join().expect("second joined fake companion")?;
         Ok((left, right))

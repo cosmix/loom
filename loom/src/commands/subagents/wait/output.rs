@@ -25,6 +25,7 @@ pub fn terminal_outcome(outcome: &TerminalOutcome) -> EventOutcome {
         TerminalOutcome::TimedOut => EventOutcome::TimedOut,
         TerminalOutcome::Failed => EventOutcome::Failed,
         TerminalOutcome::Cancelled => EventOutcome::Cancelled,
+        TerminalOutcome::Stalled => EventOutcome::Stalled,
         TerminalOutcome::Unknown => EventOutcome::Unknown,
         TerminalOutcome::Interrupted => EventOutcome::Interrupted,
     }
@@ -93,6 +94,9 @@ fn outcome_label(outcome: &EventOutcome) -> &'static str {
         EventOutcome::Cancelled => "cancelled",
         EventOutcome::AlreadyWaiting => "already waiting",
         EventOutcome::Busy => "busy",
+        EventOutcome::Stalled => {
+            "stalled (a bound worker made no progress within its stall budget)"
+        }
         EventOutcome::Unknown => "unknown",
         EventOutcome::Interrupted => "interrupted",
     }

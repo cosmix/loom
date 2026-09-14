@@ -14,11 +14,11 @@ use super::super::types::DependencyStatus;
 /// This carries the stage's specific number and just enough framing to keep it
 /// from being misread as the watch's `--timeout`: the budget is the IDLE
 /// threshold death is judged against, while one identity-bound watch waits for
-/// 3600 seconds in the background. The full doctrine for what to DO with it used to be
-/// restated here via BLOCK-C (`cache::append_subagent_waiting_doctrine`). That
-/// function and its home in the stable prefix are both gone: the doctrine now
-/// lives only in `~/.claude/CLAUDE.md` Rule 6, already resident in the agent's
-/// context, so repeating it here would just duplicate it in the same signal.
+/// 3600 seconds in the background. The full doctrine for what to DO with it is
+/// never generated into a signal: BLOCK-C is static-only, pinned byte-for-byte
+/// in `CLAUDE.md.template` Rule 6 by `tests_doctrine_waiting.rs`, and reaches
+/// the agent through `~/.claude/CLAUDE.md`, already resident in its context,
+/// so repeating it here would just duplicate it in the same signal.
 pub(crate) fn format_subagent_timeout_section(timeout_secs: u64) -> String {
     format!(
         "## Subagent Response Budget\n\n\

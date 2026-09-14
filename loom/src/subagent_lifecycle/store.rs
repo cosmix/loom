@@ -34,6 +34,13 @@ pub struct LifecycleIndex {
     corrupt_stages: HashMap<String, String>,
 }
 
+/// True when `error` wraps an `io::Error` of kind `NotFound`.
+fn is_not_found(error: &anyhow::Error) -> bool {
+    error
+        .downcast_ref::<std::io::Error>()
+        .is_some_and(|io| io.kind() == std::io::ErrorKind::NotFound)
+}
+
 pub(crate) fn append_locked(work_dir: &Path, record: &LifecycleRecord) -> Result<AppendOutcome> {
     validate_safe_id(record.identity.stage_id())?;
     let rel_dir = PathBuf::from("subagents").join(record.identity.stage_id());
@@ -43,13 +50,7 @@ pub(crate) fn append_locked(work_dir: &Path, record: &LifecycleRecord) -> Result
     let _lock = JournalLock::acquire(&journal)?;
     let existing = match read_journal(&journal) {
         Ok(records) => records,
-        Err(error)
-            if error
-                .downcast_ref::<std::io::Error>()
-                .is_some_and(|io| io.kind() == std::io::ErrorKind::NotFound) =>
-        {
-            Vec::new()
-        }
+        Err(error) if is_not_found(&error) => Vec::new(),
         Err(error) => return Err(error),
     };
     ensure!(
@@ -109,7 +110,9 @@ impl LifecycleIndex {
         for identity in identities {
             match self.outcome(&identity) {
                 WorkerOutcome::Active => return ChildDisposition::Active,
-                WorkerOutcome::Unknown(reason) => unknown.get_or_insert(reason),
+                WorkerOutcome::Stalled(reason) | WorkerOutcome::Unknown(reason) => {
+                    unknown.get_or_insert(reason)
+                }
                 WorkerOutcome::Succeeded
                 | WorkerOutcome::Failed(_)
                 | WorkerOutcome::Cancelled(_) => continue,
@@ -311,13 +314,7 @@ fn load_stage_records(
     let journal = stage_dir.join("lifecycle.jsonl");
     let loaded = match read_journal(&journal) {
         Ok(loaded) => loaded,
-        Err(error)
-            if error
-                .downcast_ref::<std::io::Error>()
-                .is_some_and(|io| io.kind() == std::io::ErrorKind::NotFound) =>
-        {
-            return Ok(None)
-        }
+        Err(error) if is_not_found(&error) => return Ok(None),
         Err(error) => {
             index.corrupt_stages.insert(stage.into(), error.to_string());
             return Ok(None);
