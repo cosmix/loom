@@ -33,7 +33,11 @@ fn test_session_serialization_roundtrip() {
     session.set_worktree_path(PathBuf::from("/tmp/test-worktree"));
     session.set_pid(54321);
     session.try_mark_running().expect("Spawning -> Running");
-    session.record_heartbeat(Some(125_000), Some("/t/session.jsonl".to_string()));
+    session.record_heartbeat(
+        session.last_active,
+        Some(125_000),
+        Some("/t/session.jsonl".to_string()),
+    );
 
     std::fs::create_dir_all(file_path.parent().unwrap()).expect("Should create sessions directory");
 

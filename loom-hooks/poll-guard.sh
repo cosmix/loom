@@ -5,19 +5,9 @@
 set -euo pipefail
 
 source "$(dirname "$0")/_common.sh"
+source "$(dirname "$0")/_progress-classification.sh"
 source "$(dirname "$0")/_read_discipline.sh"
 loom_warn_no_jq "poll-guard.sh"
-
-# _loom_poll_command_indices - echo each command segment's effective command
-# word index. All rule scans use this so wrapper-unwrapping stays identical.
-_loom_poll_command_indices() {
-	local n=${#LOOM_TOKENS[@]} i=0 j
-	while ((i < n)); do
-		j=$(loom_tokens_command_word_index "$i") && printf '%s\n' "$j"
-		while ((i < n)) && [[ "${LOOM_TOKENS[$i]}" != "%%SEP%%" ]]; do i=$((i + 1)); done
-		i=$((i + 1))
-	done
-}
 
 _loom_sleep_argument() {
 	local j base arg
@@ -48,103 +38,8 @@ _loom_poll_rule_sleep() {
 	d) mult=86400 ;;
 	esac
 	awk -v n="$num" -v m="$mult" 'BEGIN { exit !(n * m >= 30) }' || return 0
-	loom_hook_note_warn "\`sleep ${arg}\` burns a turn doing nothing. Wait on the real signal instead: one backgrounded \`loom subagents watch --timeout 3600\`."
+	loom_hook_note_warn "\`sleep ${arg}\` burns a turn doing nothing. Wait on the real signal instead: one background \`loom subagents watch --worker <kind>:<id> ... --timeout 3600\`, never re-armed."
 	return 0
-}
-
-# `git status` always counts; `git log` only without a path argument.
-_loom_poll_git_is_countable() {
-	local j="$1"
-	local sub="${LOOM_TOKENS[$((j + 1))]:-}"
-	case "$sub" in
-	status) return 0 ;;
-	log)
-		local i=$((j + 2)) tok
-		while ((i < ${#LOOM_TOKENS[@]})) && [[ "${LOOM_TOKENS[$i]}" != "%%SEP%%" ]]; do
-			tok="${LOOM_TOKENS[$i]}"
-			case "$tok" in -*) : ;; *) return 1 ;; esac
-			i=$((i + 1))
-		done
-		return 0
-		;;
-	esac
-	return 1
-}
-
-# `cat` counts only for legacy `.work` or current `.loom/work` paths.
-_loom_poll_cat_is_countable() {
-	local j="$1"
-	local arg="${LOOM_TOKENS[$((j + 1))]:-}"
-	[[ -z "$arg" || "$arg" == "%%SEP%%" ]] && return 1
-	case "$arg" in
-	*.work/* | */.work | *.loom/work/* | */.loom/work) return 0 ;;
-	esac
-	return 1
-}
-
-_loom_poll_pipeline_only() {
-	local raw="$1" i=0 n=${#1} quote="" ch next
-	[[ "$raw" == *$'\n'* ]] && return 1
-	while ((i < n)); do
-		ch="${raw:$i:1}"
-		if [[ "$quote" == single ]]; then [[ "$ch" == "'" ]] && quote=""
-		elif [[ "$quote" == double ]]; then
-			[[ "$ch" == $'\\' ]] && { i=$((i + 1)); } || { [[ "$ch" == '"' ]] && quote=""; }
-		else
-			[[ "$ch" == $'\\' ]] && { i=$((i + 1)); i=$((i + 1)); continue; }
-			[[ "$ch" == "'" ]] && { quote=single; i=$((i + 1)); continue; }
-			[[ "$ch" == '"' ]] && { quote=double; i=$((i + 1)); continue; }
-			next="${raw:$((i + 1)):1}"
-			case "$ch" in '&' | ';' | '<' | '>') return 1 ;; '|') [[ "$next" == '|' ]] && return 1 ;; esac
-		fi
-		i=$((i + 1))
-	done
-	[[ -z "$quote" ]]
-}
-
-# Only `loom subagents list` with declared flags and one display pipe counts.
-_loom_poll_list_is_countable() {
-	local raw="$1" j i n=${#LOOM_TOKENS[@]} tok base k
-	_loom_poll_pipeline_only "$raw" || return 1
-	j=$(loom_tokens_command_word_index 0) || return 1
-	[[ "${LOOM_TOKENS[$j]##*/}" == loom && "${LOOM_TOKENS[$((j + 1))]:-}" == subagents && "${LOOM_TOKENS[$((j + 2))]:-}" == list ]] || return 1
-	i=$((j + 3))
-	while ((i < n)) && [[ "${LOOM_TOKENS[$i]}" != "%%SEP%%" ]]; do
-		tok="${LOOM_TOKENS[$i]}"
-		case "$tok" in
-		--json | -h | --help | --session=* | --dir=* | --debounce=*) ;;
-		--session | --dir | --debounce) i=$((i + 1)); [[ $i -lt $n && "${LOOM_TOKENS[$i]}" != "%%SEP%%" ]] || return 1 ;;
-		*) return 1 ;;
-		esac
-		i=$((i + 1))
-	done
-	((i == n)) && return 0
-	i=$((i + 1)); j=$(loom_tokens_command_word_index "$i") || return 1
-	((j == i)) || return 1
-	base="${LOOM_TOKENS[$j]##*/}"; k=$((j + 1))
-	case "$base" in
-	head | tail)
-		[[ "${LOOM_TOKENS[$k]:-}" == -n ]] || return 1
-		k=$((k + 1))
-		[[ "${LOOM_TOKENS[$k]:-}" =~ ^[0-9]+$ && $((k + 1)) -eq $n ]] ;;
-	rg) [[ $((k + 1)) -eq $n && "${LOOM_TOKENS[$k]:-}" != "%%SEP%%" ]] ;;
-	*) return 1 ;;
-	esac
-}
-
-_loom_poll_is_countable() {
-	local raw="$1" tok j base
-	_loom_poll_pipeline_only "$raw" || return 1
-	for tok in "${LOOM_TOKENS[@]}"; do [[ "$tok" == "%%SEP%%" ]] && return 1; done
-	_loom_is_verify_runner_command && return 1
-	j=$(loom_tokens_command_word_index 0) || return 1
-	base="${LOOM_TOKENS[$j]##*/}"
-	case "$base" in
-	ls | wc | test | '[' | stat | sleep | date | pwd) return 0 ;;
-	git) _loom_poll_git_is_countable "$j" ;;
-	cat) _loom_poll_cat_is_countable "$j" ;;
-	*) return 1 ;;
-	esac
 }
 
 # Echo one active valid receipt ID; missing or malformed ledger data falls open.
@@ -170,24 +65,36 @@ _loom_poll_active_receipt() {
 	printf '%s' "${active[0]}"
 }
 
-# Warn at the third/fourth identical poll and deny-or-warn from the fifth.
+# Diagnostics warn on the third/fourth repeat and deny-or-warn from the fifth;
+# an owned watch deny-or-warns as soon as the same normalized wait is repeated.
 _loom_poll_rule_repeat() {
-	local stripped="$1" agent_id="$2" fallback_sid="$3" is_list=0
-	if _loom_poll_list_is_countable "$stripped"; then is_list=1; else _loom_poll_is_countable "$stripped" || return 0; fi
-	local key
-	key=$(printf '%s' "$stripped" | tr -s '[:space:]' ' ')
-	key="${key# }"
-	key="${key% }"
+	local stripped="$1" agent_id="$2" fallback_sid="$3" op="" key
+	if op=$(_loom_progress_subagents_pipeline_op "$stripped"); then
+		if [[ "$op" == watch ]] && ! _loom_progress_subagents_watch_is_owned; then return 0; fi
+		key=$(_loom_progress_subagents_key "$stripped") || return 0
+	else
+		_loom_poll_is_countable "$stripped" || return 0
+		key=$(printf '%s' "$stripped" | tr -s '[:space:]' ' ')
+		key="${key# }"
+		key="${key% }"
+	fi
 	local ledger occ
 	ledger=$(_loom_ledger_file "polls" "$agent_id" "$fallback_sid")
 	occ=$(($(_loom_polls_count "$ledger" "$key") + 1))
+	if [[ "$op" == watch ]]; then
+		if ((occ >= 2)); then
+			loom_hook_deny_or_warn "the first watch already owns this wait; a second one only returns AlreadyWaiting (exit 4) without another monitor; wait for the first watch notification, then harvest each terminal report once."
+		fi
+		_loom_ledger_append "$ledger" "$key"
+		return 0
+	fi
 	if ((occ >= 3)); then
 		local guidance="" receipt
-		if [[ $is_list -eq 1 ]]; then
+		if [[ "$op" == list ]]; then
 			if receipt=$(_loom_poll_active_receipt); then
 				guidance="act on what you know: use \`loom subagents wait --receipt ${receipt} --timeout 3600\`."
 			else
-				guidance="forward state is unresolved; repeated list polling will not resolve it. Use one background \`loom subagents watch --timeout 3600\` or explicit exact-id recovery; never retry or cancel."
+				guidance="forward state is unresolved; repeated list polling will not resolve it. Run one background call: \`loom subagents watch --worker <kind>:<id> ... --timeout 3600\`; never re-arm it. The unowned \`loom subagents watch --timeout 3600\` lacks the required worker identity; use explicit exact-id recovery if identities are unavailable, and never retry or cancel."
 			fi
 		fi
 		if ((occ >= 5)); then

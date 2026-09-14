@@ -678,7 +678,7 @@ pub fn safe_remove_in_workdir(dirfd: RawFd, relpath: &Path) -> Result<()> {
     Ok(())
 }
 
-fn flock_exclusive(fd: &OwnedFd) -> Result<()> {
+pub(crate) fn flock_exclusive(fd: &OwnedFd) -> Result<()> {
     // SAFETY: fd is valid; LOCK_EX is a constant.
     if unsafe { libc::flock(fd.as_raw_fd(), libc::LOCK_EX) } < 0 {
         return Err(io::Error::last_os_error()).context("safe_fs: flock LOCK_EX failed");

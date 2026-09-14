@@ -1162,6 +1162,23 @@ loom_heartbeat_atomic_write() {
     return 0
 }
 
+# loom_heartbeat_prior_progress_at <heartbeat-file> <fallback-timestamp>
+#
+# Preserve a validated progress timestamp that does not exceed the prior
+# heartbeat timestamp. Fall back to that timestamp, then to the caller's.
+loom_heartbeat_prior_progress_at() {
+    local heartbeat_file="$1" fallback="$2" prior=""
+    if [[ -r "$heartbeat_file" ]] && command -v jq &>/dev/null; then
+        prior=$(jq -r '
+            def valid: if type == "string" then test("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.000Z$") else false end;
+            .timestamp as $timestamp | (.progress_at // null) as $progress |
+            if (($progress | valid) and ($timestamp | valid) and $progress <= $timestamp)
+            then $progress elif ($timestamp | valid) then $timestamp else empty end
+        ' "$heartbeat_file" 2>/dev/null || true)
+    fi
+    printf '%s\n' "${prior:-$fallback}"
+}
+
 # --- Subagent detection ------------------------------------------------------
 #
 # loom_is_subagent gates on a LIVE loom session FIRST - LOOM_MAIN_AGENT_PID

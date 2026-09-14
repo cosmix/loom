@@ -141,9 +141,9 @@ impl Fixture {
     pub fn watch(&self) -> Output {
         let mut command = self.cli_command();
         command
-            .args(["subagents", "watch", "--dir"])
-            .arg(self.worker.parent().expect("worker directory"))
-            .args(["--timeout", "3", "--debounce", "100000"]);
+            .args(["subagents", "watch", "--worker"])
+            .arg(format!("claude:{AGENT_ID}"))
+            .args(["--timeout", "3", "--json"]);
         command.output().expect("run subagents watch")
     }
 
@@ -304,10 +304,13 @@ impl Fixture {
         path.push(std::env::var_os("PATH").unwrap_or_default());
         command
             .env("PATH", path)
+            .env("HOME", self.root.join("home"))
+            .env("TMPDIR", self.root.join("tmp"))
             .env("FIXTURE_NOW", now)
             .env("LOOM_STAGE_ID", stage)
             .env("LOOM_SESSION_ID", session)
-            .env("LOOM_WORK_DIR", &self.work);
+            .env("LOOM_WORK_DIR", &self.work)
+            .env("LOOM_WORKTREE_PATH", &self.root);
     }
 }
 
@@ -316,6 +319,15 @@ pub fn assert_exit(output: &Output, expected: i32) {
         output.status.code(),
         Some(expected),
         "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+pub fn assert_watch_rejected(output: &Output) {
+    assert!(
+        matches!(output.status.code(), Some(1 | 5)),
+        "owned watch unexpectedly settled or timed out\nstdout:\n{}\nstderr:\n{}",
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );

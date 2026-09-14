@@ -14,13 +14,13 @@ const MAX_AUTHORIZATION_BYTES: u64 = 1024 * 1024;
 const MAX_AUTHORIZATION_ROWS: usize = 256;
 const MAX_LIFECYCLE_BYTES: u64 = 8 * 1024 * 1024;
 
-pub(super) enum LedgerRow {
+pub(crate) enum LedgerRow {
     Authorization(Box<CodexAuthorization>),
     Invalid(String),
     Legacy,
 }
 
-pub(super) fn read_authorization_rows(path: &Path) -> Result<Vec<LedgerRow>> {
+pub(crate) fn read_authorization_rows(path: &Path) -> Result<Vec<LedgerRow>> {
     let values = read_json_lines(path, MAX_AUTHORIZATION_BYTES, MAX_AUTHORIZATION_ROWS, false)?;
     Ok(values
         .into_iter()
@@ -37,7 +37,7 @@ pub(super) fn read_authorization_rows(path: &Path) -> Result<Vec<LedgerRow>> {
         .collect())
 }
 
-pub(super) fn read_lifecycle_records(path: &Path) -> Result<Vec<LifecycleRecord>> {
+pub(crate) fn read_lifecycle_records(path: &Path) -> Result<Vec<LifecycleRecord>> {
     read_json_lines(path, MAX_LIFECYCLE_BYTES, MAX_AUTHORIZATION_ROWS * 4, true)?
         .into_iter()
         .map(|value| {

@@ -77,7 +77,7 @@ fn completed_job_preserves_request_and_terminal_identity() -> Result<()> {
     ensure!(terminal["evidence"]["thread_id"] == "thread-precise");
     ensure!(terminal["evidence"]["turn_id"] == "turn-precise");
     assert_state(&fixture.list(&forwarder)?, AGENT, "done")?;
-    assert_exit(&fixture.watch(&forwarder)?, 0);
+    assert_exit(&fixture.watch(&launch)?, 0);
     Ok(())
 }
 
@@ -99,13 +99,13 @@ fn wrapper_timeout_stays_owned_until_daemon_observes_completion() -> Result<()> 
     let harvest = fixture.harvest(&forwarder)?;
     assert_exit(&harvest, 0);
     ensure!(String::from_utf8_lossy(&harvest.stdout).contains("nothing harvestable"));
-    assert_exit(&fixture.watch(&forwarder)?, 2);
+    assert_exit(&fixture.watch(&launch)?, 2);
 
     fixture.set_job_status(&launch, "completed", "thread-late", "turn-late")?;
     fixture.poll()?;
     ensure!(fixture.lifecycle_outcome(&forwarder)? == WorkerOutcome::Succeeded);
     assert_state(&fixture.list(&forwarder)?, AGENT, "done")?;
-    assert_exit(&fixture.watch(&forwarder)?, 0);
+    assert_exit(&fixture.watch(&launch)?, 0);
     ensure!(
         fixture.calls(&launch)?.len() == 2,
         "daemon completion caused wrapper harvest"
@@ -137,6 +137,6 @@ fn exact_job_wins_over_newer_unrelated_job() -> Result<()> {
         assert_lifecycle_identity(record, &launch)?;
     }
     assert_state(&fixture.list(&forwarder)?, AGENT, "done")?;
-    assert_exit(&fixture.watch(&forwarder)?, 0);
+    assert_exit(&fixture.watch(&launch)?, 0);
     Ok(())
 }

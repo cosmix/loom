@@ -15,9 +15,18 @@ const TRANSCRIPT_AT: &str = "2099-01-01T00:00:00.000Z";
 
 pub(super) fn prepare_layout(root: &Path, work: &Path) -> (PathBuf, PathBuf) {
     fs::create_dir_all(work.join("stages")).expect("create stage directory");
+    fs::create_dir_all(work.join("sessions")).expect("create session directory");
     fs::create_dir_all(work.join("subagents")).expect("create subagents directory");
+    fs::create_dir(root.join("tmp")).expect("create fixture temp directory");
+    fs::create_dir(root.join(".git")).expect("create fixture repository marker");
     write_stage(work, LOOM_SESSION);
-    let project = root.join("claude-project");
+    write_session(work, root);
+    let slug: String = root
+        .to_string_lossy()
+        .chars()
+        .map(|c| if c == '/' || c == '.' { '-' } else { c })
+        .collect();
+    let project = root.join("home/.claude/projects").join(slug);
     let parent = project.join(format!("{PARENT_UUID}.jsonl"));
     let worker = project
         .join(PARENT_UUID)
@@ -32,9 +41,28 @@ pub(super) fn prepare_layout(root: &Path, work: &Path) -> (PathBuf, PathBuf) {
 }
 
 pub(super) fn write_stage(work: &Path, session: &str) {
-    let content = format!("---\nid: {STAGE}\nsession: {session}\n---\n");
+    let repo = work
+        .parent()
+        .and_then(Path::parent)
+        .expect("work directory beneath repository");
+    let content = format!(
+        "---\nid: {STAGE}\nname: Worker evidence\ndescription: Fixture\nstatus: executing\ndependencies: []\nparallel_group: null\nacceptance: []\nfiles: []\nplan_id: null\nworktree: {}\nsession: {session}\nparent_stage: null\nchild_stages: []\ncreated_at: \"2026-09-13T10:00:00Z\"\nupdated_at: \"2026-09-13T10:00:00Z\"\ncompleted_at: null\nclose_reason: null\n---\n",
+        repo.display()
+    );
     fs::write(work.join("stages").join(format!("01-{STAGE}.md")), content)
         .expect("write stage binding");
+}
+
+fn write_session(work: &Path, repo: &Path) {
+    let content = format!(
+        "---\nid: {LOOM_SESSION}\nstage_id: {STAGE}\nworktree_path: {}\npid: null\nstatus: running\ncontext_tokens: 0\ncreated_at: \"2026-09-13T10:00:00Z\"\nlast_active: \"2026-09-13T10:00:00Z\"\n---\n",
+        repo.display()
+    );
+    fs::write(
+        work.join("sessions").join(format!("{LOOM_SESSION}.md")),
+        content,
+    )
+    .expect("write session binding");
 }
 
 pub(super) fn transcript_row(text: &str) -> Value {

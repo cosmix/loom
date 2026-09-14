@@ -1,6 +1,7 @@
 //! Exact-identity session reads and locked terminal-status updates.
 
 use anyhow::{bail, Context, Result};
+use chrono::{DateTime, Utc};
 use std::path::{Path, PathBuf};
 
 use crate::fs::locking::{locked_read, locked_update};
@@ -101,6 +102,7 @@ pub fn record_session_heartbeat_exact(
     work_dir: &Path,
     session_id: &str,
     stage_id: &str,
+    progress_at: DateTime<Utc>,
     context_tokens: Option<u32>,
     transcript_path: Option<String>,
 ) -> Result<bool> {
@@ -129,7 +131,7 @@ pub fn record_session_heartbeat_exact(
         {
             return Ok(content);
         }
-        current.record_heartbeat(context_tokens, transcript_path);
+        current.record_heartbeat(progress_at, context_tokens, transcript_path);
         applied = true;
         Ok(session_to_markdown(&current))
     })?;
@@ -236,6 +238,7 @@ mod tests {
             temp_dir.path(),
             "session-exact",
             "stage-1",
+            session.last_active,
             Some(99),
             None,
         )
@@ -244,6 +247,7 @@ mod tests {
             temp_dir.path(),
             &session.id,
             "stage-1",
+            session.last_active,
             Some(99),
             None,
         )
@@ -253,6 +257,45 @@ mod tests {
             .unwrap();
         assert_eq!(current.status, SessionStatus::Completed);
         assert_eq!(current.context_tokens, 10);
+    }
+
+    #[test]
+    fn reordered_heartbeat_preserves_progress_but_applies_observation_facts() {
+        let temp_dir = TempDir::new().unwrap();
+        let work_dir = temp_dir.path().join("reordered-heartbeat");
+        let mut session = Session::new();
+        session.id = "session-reordered".to_string();
+        session.assign_to_stage("stage-reordered".to_string());
+        session.status = SessionStatus::Running;
+        let newest = Utc::now();
+        session.last_active = newest;
+        save_session(&session, &work_dir).unwrap();
+
+        let applied = record_session_heartbeat_exact(
+            &work_dir,
+            &session.id,
+            "stage-reordered",
+            newest - chrono::Duration::minutes(5),
+            Some(77_000),
+            Some("/tmp/reordered.jsonl".to_string()),
+        )
+        .unwrap();
+        let current = load_session_exact(&work_dir, &session.id).unwrap().unwrap();
+
+        assert_eq!(
+            (
+                applied,
+                current.last_active,
+                current.context_tokens,
+                current.transcript_path
+            ),
+            (
+                true,
+                newest,
+                77_000,
+                Some("/tmp/reordered.jsonl".to_string())
+            )
+        );
     }
 
     #[test]

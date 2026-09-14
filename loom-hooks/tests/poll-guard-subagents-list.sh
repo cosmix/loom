@@ -44,14 +44,21 @@ assert_not_counted() {
 	done
 }
 
+assert_owned_watch() {
+	local label="$1" command="$2" output
+	output=$(run_hook "$command" "watch-$label")
+	[[ -z "$output" ]] || fail "$label first watch was not silent: $output"
+	output=$(run_hook "$command" "watch-$label")
+	[[ "$output" == *AlreadyWaiting* && "$output" == *'exit 4'* ]] || fail "$label repeated watch omitted guidance: $output"
+}
+
 assert_counted plain-list 'loom subagents list --json'
 assert_counted head-pipeline 'loom subagents list | head -n 3'
 assert_counted tail-pipeline 'loom subagents list | tail -n 3'
 assert_counted rg-pipeline 'loom subagents list | rg running'
 
 assert_not_counted wait 'loom subagents wait --receipt aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa --timeout 1'
-assert_not_counted watch 'loom subagents watch --timeout 1'
-assert_not_counted harvest 'loom subagents harvest'
+assert_owned_watch owned 'loom subagents watch --worker claude:a1 --timeout 1'
 assert_not_counted redirection "loom subagents list > $d/list.txt"
 assert_not_counted quoted-prompt "codex-forward.sh task 'loom subagents list' --write"
 
@@ -61,7 +68,7 @@ id_b=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 
 output=$(third_output 'loom subagents list' unresolved-zero)
 [[ "$output" == *"forward state is unresolved"* && "$output" == *"repeated list polling will not resolve it"* ]] || fail "zero active receipts: $output"
-[[ "$output" == *'loom subagents watch --timeout 3600'* ]] || fail "zero active receipts omitted watch: $output"
+[[ "$output" == *'loom subagents watch --worker <kind>:<id> ... --timeout 3600'* ]] || fail "zero active receipts omitted owned watch: $output"
 
 mkdir -p "$(dirname "$receipts")"
 printf '{"receipt_id":"%s","loom_session_id":"%s","backend":"companion","backend_id":"job-a","state":"running"}\n' "$id_a" "$session" >"$receipts"

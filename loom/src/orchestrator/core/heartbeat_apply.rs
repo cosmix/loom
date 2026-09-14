@@ -25,11 +25,38 @@
 //! This module makes the session record true; it does not add a new policy.
 
 use anyhow::Result;
+use chrono::{DateTime, Utc};
 
 use crate::fs::session_files::record_session_heartbeat_exact;
 
 use super::persistence::Persistence;
 use super::Orchestrator;
+
+pub(super) struct HeartbeatApply {
+    stage_id: String,
+    session_id: String,
+    progress_at: DateTime<Utc>,
+    context_tokens: Option<u32>,
+    transcript_path: Option<String>,
+}
+
+impl HeartbeatApply {
+    pub(super) fn new(
+        stage_id: String,
+        session_id: String,
+        progress_at: DateTime<Utc>,
+        context_tokens: Option<u32>,
+        transcript_path: Option<String>,
+    ) -> Self {
+        Self {
+            stage_id,
+            session_id,
+            progress_at,
+            context_tokens,
+            transcript_path,
+        }
+    }
+}
 
 impl Orchestrator {
     /// Record a heartbeat against the session it names.
@@ -39,17 +66,19 @@ impl Orchestrator {
     /// failing the tick. `handle_events` isolates handler errors anyway, but a
     /// heartbeat must not be the thing that produces them — one arrives after
     /// every tool call in every live session.
-    pub(super) fn apply_heartbeat(
-        &self,
-        stage_id: &str,
-        session_id: &str,
-        context_tokens: Option<u32>,
-        transcript_path: Option<String>,
-    ) -> Result<()> {
+    pub(super) fn apply_heartbeat(&self, heartbeat: HeartbeatApply) -> Result<()> {
+        let HeartbeatApply {
+            stage_id,
+            session_id,
+            progress_at,
+            context_tokens,
+            transcript_path,
+        } = heartbeat;
         let applied = record_session_heartbeat_exact(
             self.persistence_work_dir(),
-            session_id,
-            stage_id,
+            &session_id,
+            &stage_id,
+            progress_at,
             context_tokens,
             transcript_path,
         )?;
@@ -76,34 +105,41 @@ mod tests {
         session
     }
 
-    /// The regression this whole module exists for: before it, `last_active`
-    /// was written once at spawn and never again, so a session that had been
-    /// working for hours still reported its spawn timestamp.
-    ///
-    /// The spawn time is backdated rather than read from a second `Utc::now()`
-    /// — two adjacent `now()` calls can land in the same clock tick on macOS,
-    /// which makes a strict `>` against a just-spawned session flaky without
-    /// testing anything about the fix.
+    /// Useful progress, rather than observation time, advances liveness.
     #[test]
     fn heartbeat_advances_last_active_off_the_spawn_timestamp() {
         let mut session = running_session("build");
         let spawned_at = Utc::now() - Duration::hours(3);
+        let progress_at = spawned_at + Duration::hours(1);
         session.last_active = spawned_at;
 
-        session.record_heartbeat(None, None);
+        session.record_heartbeat(progress_at, None, None);
 
-        assert!(
-            session.last_active > spawned_at,
-            "a heartbeat must move last_active off the spawn timestamp"
+        assert_eq!(session.last_active, progress_at);
+    }
+
+    #[test]
+    fn reordered_progress_never_moves_last_active_backwards() {
+        let mut session = running_session("build");
+        let newest = Utc::now() - Duration::minutes(1);
+        let reordered = newest - Duration::minutes(10);
+        session.last_active = newest;
+
+        session.record_heartbeat(reordered, Some(83_000), None);
+
+        assert_eq!(
+            (session.last_active, session.context_tokens),
+            (newest, 83_000)
         );
     }
 
     #[test]
     fn a_token_reading_replaces_the_previous_one() {
         let mut session = running_session("build");
-        session.record_heartbeat(Some(91_000), None);
+        let progress_at = session.last_active;
+        session.record_heartbeat(progress_at, Some(91_000), None);
         assert_eq!(session.context_tokens, 91_000);
-        session.record_heartbeat(Some(147_000), None);
+        session.record_heartbeat(progress_at, Some(147_000), None);
         assert_eq!(session.context_tokens, 147_000);
     }
 
@@ -113,8 +149,9 @@ mod tests {
     #[test]
     fn a_missing_reading_preserves_the_previous_one() {
         let mut session = running_session("build");
-        session.record_heartbeat(Some(147_000), None);
-        session.record_heartbeat(None, None);
+        let progress_at = session.last_active;
+        session.record_heartbeat(progress_at, Some(147_000), None);
+        session.record_heartbeat(progress_at, None, None);
         assert_eq!(session.context_tokens, 147_000);
     }
 
@@ -124,15 +161,16 @@ mod tests {
     #[test]
     fn the_transcript_path_survives_a_heartbeat_that_omits_it() {
         let mut session = running_session("build");
+        let progress_at = session.last_active;
         assert_eq!(session.transcript_path, None);
 
-        session.record_heartbeat(None, Some("/t/a.jsonl".to_string()));
+        session.record_heartbeat(progress_at, None, Some("/t/a.jsonl".to_string()));
         assert_eq!(session.transcript_path, Some("/t/a.jsonl".to_string()));
 
-        session.record_heartbeat(Some(1_000), None);
+        session.record_heartbeat(progress_at, Some(1_000), None);
         assert_eq!(session.transcript_path, Some("/t/a.jsonl".to_string()));
 
-        session.record_heartbeat(None, Some("/t/b.jsonl".to_string()));
+        session.record_heartbeat(progress_at, None, Some("/t/b.jsonl".to_string()));
         assert_eq!(session.transcript_path, Some("/t/b.jsonl".to_string()));
     }
 }

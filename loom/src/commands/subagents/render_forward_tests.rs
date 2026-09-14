@@ -1,6 +1,5 @@
 use std::fs;
 use std::path::PathBuf;
-use std::time::Duration;
 
 use chrono::Utc;
 use serde_json::json;
@@ -9,6 +8,10 @@ use super::*;
 use crate::models::forward_receipt::{
     receipts_path, ForwardBackend, ForwardIdentity, ForwardObservation, ForwardState,
 };
+use crate::subagent_lifecycle::{
+    CodexEvidence, CodexEvidenceKind, CodexEvidenceOutcome, CodexExecution, LifecycleProducer,
+    LifecycleRecord, LifecycleState, WorkerIdentity, LIFECYCLE_VERSION,
+};
 
 const STAGE: &str = "stage-a";
 const LOOM_SESSION: &str = "loom-a";
@@ -16,6 +19,7 @@ const PARENT: &str = "parent-a";
 const AGENT: &str = "agent-a";
 const TOOL: &str = "tool-a";
 const JOB: &str = "job-a";
+const INVOCATION: &str = "invocation-a";
 
 #[test]
 fn receipt_activity_cannot_set_forwarder_state_without_lifecycle() {
@@ -23,10 +27,6 @@ fn receipt_activity_cannot_set_forwarder_state_without_lifecycle() {
     let summaries = fixture.gather();
 
     assert_eq!(summaries[0].state, SubagentState::ForwardUnknown);
-    assert_eq!(
-        forward::watch_outcome(&summaries, true),
-        forward::WatchOutcome::Pending
-    );
 }
 
 #[test]
@@ -36,21 +36,15 @@ fn receipt_failure_cannot_set_forwarder_terminal_state() {
 
     assert_eq!(summaries[0].state, SubagentState::ForwardUnknown);
     assert!(summaries[0].final_report.is_none());
-    assert_eq!(
-        forward::exit_code(forward::watch_outcome(&summaries, true), true),
-        Some(2)
-    );
 }
 
 #[test]
-fn unknown_receipt_waits_until_timeout_exit_two() {
+fn unknown_receipt_stays_forward_unknown() {
     let fixture = Fixture::new("running", true);
     let summaries = fixture.gather();
-    let outcome = forward::watch_outcome(&summaries, true);
 
     assert_eq!(summaries[0].state, SubagentState::ForwardUnknown);
-    assert_eq!(forward::exit_code(outcome, false), None);
-    assert_eq!(forward::exit_code(outcome, true), Some(2));
+    assert!(summaries[0].final_report.is_none());
 }
 
 #[test]
@@ -61,10 +55,7 @@ fn empty_transcript_directory_keeps_expected_receipt_unsettled() {
 
     assert_eq!(summaries.len(), 1);
     assert_eq!(summaries[0].state, SubagentState::ForwardWait);
-    assert_eq!(
-        forward::watch_outcome(&summaries, true),
-        forward::WatchOutcome::Pending
-    );
+    assert!(summaries[0].final_report.is_none());
 }
 
 #[test]
@@ -95,67 +86,44 @@ fn non_forwarder_keeps_human_state_while_forwarding_use_drives_other_views() {
     assert_eq!(value["forward"]["receipt_id"], json!(fixture.receipt_id));
     assert_eq!(value["forward"]["backend_id"], json!(JOB));
     assert!(is_forward_state(summary.state));
-    assert_eq!(
-        forward::watch_outcome(&summaries, true),
-        forward::WatchOutcome::Pending
-    );
 }
 
 #[test]
-fn watch_poll_interval_remains_two_seconds() {
-    assert_eq!(POLL_INTERVAL, Duration::from_secs(2));
+fn lifecycle_evidenced_forwarder_is_done_while_legacy_forwarder_is_unsettled() {
+    let fixture = Fixture::new("running", false);
+    let legacy = fixture.gather().remove(0);
+    fixture.write_codex_success();
+    let lifecycle = fixture.gather().remove(0);
+
+    assert_eq!(
+        (lifecycle.state, lifecycle.done_evidence),
+        (SubagentState::Done, Some(classify::DoneEvidence::Lifecycle))
+    );
+    assert_eq!(legacy.state, SubagentState::ForwardUnknown);
 }
 
 #[test]
-fn lifecycle_success_is_the_only_owned_exit_zero() {
-    let lifecycle = watch_summary(SubagentState::Done, Some(classify::DoneEvidence::Lifecycle));
-    let legacy = watch_summary(
-        SubagentState::Done,
-        Some(classify::DoneEvidence::LegacyTranscript),
-    );
+fn lifecycle_failure_cancellation_and_active_have_distinct_harvest_evidence() {
+    let mut failed = super::super::summary::empty("failed-agent".into(), 0, None);
+    failed.state = SubagentState::Failed;
+    failed.terminal_reason = Some("backend failed".into());
+    let mut cancelled = super::super::summary::empty("cancelled-agent".into(), 0, None);
+    cancelled.state = SubagentState::Cancelled;
+    cancelled.terminal_reason = Some("operator cancelled".into());
+    let mut active = super::super::summary::empty("active-agent".into(), 0, None);
+    active.state = SubagentState::Generating;
 
     assert_eq!(
-        forward::exit_code(forward::watch_outcome(&[lifecycle], true), false),
-        Some(0)
+        terminal_failure_evidence(&failed).as_deref(),
+        Some("terminal failure evidence: agent=failed-agent state=failed reason=backend failed")
     );
     assert_eq!(
-        forward::watch_outcome(std::slice::from_ref(&legacy), true),
-        forward::WatchOutcome::Pending
+        terminal_failure_evidence(&cancelled).as_deref(),
+        Some(
+            "terminal failure evidence: agent=cancelled-agent state=cancelled reason=operator cancelled"
+        )
     );
-    assert_eq!(
-        forward::exit_code(forward::watch_outcome(&[legacy], false), false),
-        Some(0)
-    );
-}
-
-#[test]
-fn lifecycle_failure_cancellation_and_pending_have_distinct_exit_codes() {
-    let failed = watch_summary(SubagentState::Failed, None);
-    let cancelled = watch_summary(SubagentState::Cancelled, None);
-    let active = watch_summary(SubagentState::Generating, None);
-
-    assert_eq!(
-        forward::exit_code(forward::watch_outcome(&[failed], true), false),
-        Some(1)
-    );
-    assert_eq!(
-        forward::exit_code(forward::watch_outcome(&[cancelled], true), false),
-        Some(3)
-    );
-    assert_eq!(
-        forward::exit_code(forward::watch_outcome(&[active], true), true),
-        Some(2)
-    );
-}
-
-fn watch_summary(
-    state: SubagentState,
-    done_evidence: Option<classify::DoneEvidence>,
-) -> SubagentSummary {
-    let mut summary = super::super::summary::empty("agent".into(), 0, None);
-    summary.state = state;
-    summary.done_evidence = done_evidence;
-    summary
+    assert!(terminal_failure_evidence(&active).is_none());
 }
 
 struct Fixture {
@@ -301,6 +269,26 @@ impl Fixture {
         crate::subagent_lifecycle::store::append_locked(&self.work, &record).unwrap();
     }
 
+    fn write_codex_success(&self) {
+        let identity = WorkerIdentity::Codex {
+            stage_id: STAGE.into(),
+            loom_session_id: LOOM_SESSION.into(),
+            parent_session_id: PARENT.into(),
+            forwarder_agent_id: AGENT.into(),
+            unit_id: "unit-a".into(),
+            invocation_id: INVOCATION.into(),
+            workspace_root: fs::canonicalize(self._temp.path()).unwrap(),
+            execution: CodexExecution::Companion { job_id: JOB.into() },
+        };
+        for (state, kind) in [
+            (LifecycleState::Running, CodexEvidenceKind::Authorization),
+            (LifecycleState::Completed, CodexEvidenceKind::Observation),
+        ] {
+            let record = codex_record(&identity, state, kind);
+            crate::subagent_lifecycle::store::append_locked(&self.work, &record).unwrap();
+        }
+    }
+
     fn write_forwarding_transcript(&self) {
         let tool_use = json!({
             "type": "assistant", "sessionId": PARENT, "timestamp": Utc::now().to_rfc3339(),
@@ -352,4 +340,40 @@ impl Fixture {
         };
         summaries
     }
+}
+
+fn codex_record(
+    identity: &WorkerIdentity,
+    state: LifecycleState,
+    evidence_kind: CodexEvidenceKind,
+) -> LifecycleRecord {
+    let terminal = state == LifecycleState::Completed;
+    let evidence = CodexEvidence {
+        evidence_kind,
+        requested_model: "gpt-5.6-sol".into(),
+        requested_effort: "xhigh".into(),
+        invocation_id: INVOCATION.into(),
+        job_id: Some(JOB.into()),
+        thread_id: terminal.then(|| "thread-a".into()),
+        turn_id: terminal.then(|| "turn-a".into()),
+        tool_use_id: None,
+        terminal_at: terminal.then(|| "2026-09-14T10:00:01.000Z".parse().unwrap()),
+        outcome: if terminal {
+            CodexEvidenceOutcome::Succeeded
+        } else {
+            CodexEvidenceOutcome::Running
+        },
+        detail: None,
+    };
+    let mut record = LifecycleRecord {
+        version: LIFECYCLE_VERSION,
+        event_id: String::new(),
+        producer: LifecycleProducer::CodexCompanion,
+        identity: identity.clone(),
+        observed_at: "2026-09-14T10:00:02.000Z".parse().unwrap(),
+        state,
+        evidence: serde_json::to_value(&evidence).unwrap(),
+    };
+    record.event_id = crate::subagent_lifecycle::store::codex_event_id(&record, &evidence).unwrap();
+    record
 }

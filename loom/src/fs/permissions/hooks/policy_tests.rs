@@ -2,7 +2,8 @@
 
 use crate::fs::permissions::constants::{
     HOOK_CODEX_FORWARD_COMMON, HOOK_CODEX_FORWARD_GUARD, HOOK_COMMON, HOOK_LIFECYCLE,
-    HOOK_POST_TOOL_USE, HOOK_READ_LEDGER, HOOK_WORKTREE_FILE_GUARD,
+    HOOK_POST_TOOL_HEARTBEAT, HOOK_POST_TOOL_USE, HOOK_PROGRESS_CLASSIFICATION, HOOK_READ_LEDGER,
+    HOOK_WORKTREE_FILE_GUARD,
 };
 use serde_json::{json, Value};
 use std::fs;
@@ -39,6 +40,16 @@ impl HookFixture {
         fs::write(hooks.join("_common.sh"), HOOK_COMMON).unwrap();
         fs::write(hooks.join("_lifecycle.sh"), HOOK_LIFECYCLE).unwrap();
         fs::write(hooks.join("_codex_forward.sh"), HOOK_CODEX_FORWARD_COMMON).unwrap();
+        fs::write(
+            hooks.join("_progress-classification.sh"),
+            HOOK_PROGRESS_CLASSIFICATION,
+        )
+        .unwrap();
+        fs::write(
+            hooks.join("_post-tool-heartbeat.sh"),
+            HOOK_POST_TOOL_HEARTBEAT,
+        )
+        .unwrap();
         fs::write(hooks.join("_read_ledger.sh"), HOOK_READ_LEDGER).unwrap();
         fs::write(&outside, "outside").unwrap();
         fs::write(sibling.join("file.txt"), "sibling").unwrap();
@@ -348,6 +359,9 @@ fn post_tool_hook_persists_only_a_private_heartbeat() {
     let heartbeat = fixture.work_dir.join("heartbeat/stage.json");
     let content = fs::read_to_string(&heartbeat).unwrap();
     assert!(!content.contains("TOP-SECRET-VALUE"));
+    let heartbeat_json: Value = serde_json::from_str(&content).unwrap();
+    assert_eq!(heartbeat_json["activity_kind"], "progress");
+    assert_eq!(heartbeat_json["progress_at"], heartbeat_json["timestamp"]);
     assert_eq!(
         fs::metadata(&heartbeat).unwrap().permissions().mode() & 0o777,
         0o600

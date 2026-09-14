@@ -38,16 +38,7 @@ fn test_hooks_config_structure() {
     assert!(contains_hook(pre_tool, "Agent", "spawn-guard.sh"));
     assert!(contains_hook(pre_tool, "Read", "read-guard.sh"));
     assert!(contains_hook(pre_tool, "Bash", "poll-guard.sh"));
-    // `_read_discipline.sh` and `_read_ledger.sh` are sourced libraries, not
-    // PreToolUse hooks.
-    for library in ["_read_discipline.sh", "_read_ledger.sh"] {
-        assert!(!pre_tool.iter().any(|entry| {
-            hook_command(entry)
-                .rsplit('/')
-                .next()
-                .is_some_and(|script| script == library)
-        }));
-    }
+    assert_sourced_libraries_not_registered(&hooks);
     assert!(contains_hook(pre_tool, "Bash", "loom-control-complete.sh"));
     for matcher in ["Write", "Edit", "Task", "Agent"] {
         assert!(contains_hook(pre_tool, matcher, "stage-terminal-guard.sh"));
@@ -55,6 +46,32 @@ fn test_hooks_config_structure() {
     assert_notebook_edit_hooks(pre_tool);
     assert_multi_edit_hooks(pre_tool);
     assert_lifecycle_hooks(&hooks);
+}
+
+fn assert_sourced_libraries_not_registered(hooks: &Value) {
+    for library in [
+        "_read_discipline.sh",
+        "_read_ledger.sh",
+        "_progress-classification.sh",
+        "_post-tool-heartbeat.sh",
+    ] {
+        let registered_globally = hooks
+            .as_object()
+            .unwrap()
+            .values()
+            .filter_map(Value::as_array)
+            .flatten()
+            .any(|entry| hook_command(entry).ends_with(library));
+        assert!(!registered_globally, "{library} must remain sourced-only");
+
+        let registered_for_session = HookEvent::all()
+            .iter()
+            .any(|event| event.script_name() == library);
+        assert!(
+            !registered_for_session,
+            "{library} must remain sourced-only"
+        );
+    }
 }
 
 /// Matchers are exact tool names, so a guard registered only for `Edit` does

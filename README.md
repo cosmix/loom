@@ -380,7 +380,11 @@ loom usage [--since <duration|date>] [--until <rfc3339>] [--provider claude|code
 loom usage [--claude-root <dir>] [--codex-root <dir>] [--receipts-root <dir>] [--forward-receipts-root <dir>]
                                                                              # Read explicit telemetry roots; a supplied root never falls back
 loom usage --compare <artifact.json> [--json]                                # Offline paired evaluation: exit 0 supported, 1 rejected, 2 inconclusive (doc/token-optimization-evaluation.md)
-loom subagents list | harvest | watch [--timeout <secs>]                     # Read-only watchdog over subagent transcripts: liveness, final reports, wait until settled
+loom subagents list | harvest [--json]                                       # One-shot transcript diagnostics; harvest terminal reports once
+loom subagents watch --worker <kind>:<id> [--worker <kind>:<id> ...] [--session <claude-parent-uuid>] --timeout <secs> [--json]
+                                                                             # One owned wait: exit 0 all bound workers have fresh correlated success; 2 deadline passed; 3 worker failed/cancelled
+                                                                             # kind is claude (spawned agent ID) or codex (--unit-id); exit 4 AlreadyWaiting/Busy (no second monitor)
+                                                                             # Exit 5 identity/evidence unknown; --dir or no --worker is rejected with migration guidance
 loom subagents wait --receipt <id> [--timeout <secs>] [--json]               # Wait on one exact forwarded Codex job; exit 0 succeeded, 1 failed/canceled, 2 still running/unknown
 loom attach [stage-id]                                                       # tmux backend only; omit the id for a tiled overview
 loom sessions list
@@ -491,7 +495,7 @@ into `.work/config.toml`'s `[context]` section at `loom init`.
 | `reasoning_effort`                 | No                     | `low`, `medium`, `high`, `xhigh`, `max`; omit to use the stage type's configured default ([Model Allocation](#model-allocation)), overridable the same way                                                                           |
 | `implementers`                     | No                     | Licensed agent lanes as a list, first = preferred for routine work: `["codex", "claude"]`. Default `["claude"]`. Listing a lane makes it available, not mandatory — a stage mixes lanes per subagent                                 |
 | `ultracode`                        | No                     | License this stage for large multi-agent fan-out; per-stage opt-in (default `false`)                                                                                                                                                 |
-| `subagent_timeout_secs`            | No                     | Seconds of tool silence before the monitor warns `appears hung` (default 300); the advisory idle budget death is judged against — never the `--timeout` passed to `loom subagents watch` (that stays long, 3600)                     |
+| `subagent_timeout_secs`            | No                     | Seconds of tool silence before the monitor warns `appears hung` (default 300); the advisory idle budget death is judged against — never the `--timeout` on the single owned `loom subagents watch --worker ... --timeout 3600` call |
 | `context_ceiling_tokens`           | No                     | Absolute resident-token ceiling for this stage's session (minimum 60000). Resolved stage value → plan-level `context_ceiling_tokens` → 150000. The session hook warns at 80% and blocks at 100%; the daemon forces a handoff at 125% |
 | `plan_overview`                    | No                     | Set `false` to suppress the embedded plan overview in this stage's signal                                                                                                                                                            |
 | `sandbox`                          | No                     | Per-stage sandbox override                                                                                                                                                                                                           |

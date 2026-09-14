@@ -33,7 +33,7 @@ use super::config::MonitorConfig;
 use super::detection::Detection;
 use super::events::MonitorEvent;
 use super::handlers::Handlers;
-use super::heartbeat::{HeartbeatStatus, HeartbeatWatcher};
+use super::heartbeat::{Heartbeat, HeartbeatStatus, HeartbeatWatcher};
 use super::parked::stage_looks_finished;
 
 /// The multiple of a stage's response budget at which a still-silent session
@@ -127,6 +127,7 @@ impl Detection {
         let stale_duration_secs = match status {
             HeartbeatStatus::Hung {
                 stale_duration_secs,
+                ..
             } => stale_duration_secs,
             // Answering again, so the next silence starts from the first
             // warning.
@@ -178,7 +179,8 @@ impl Detection {
         if timeout_secs == 0 || self.reported_stalled_judges.contains(&session.id) {
             return None;
         }
-        let idle_for = Utc::now()
+        let idle_for = heartbeat_watcher
+            .now()
             .signed_duration_since(judge_last_activity(session, stage_id, heartbeat_watcher))
             .num_seconds();
         let Ok(stale_duration_secs) = u64::try_from(idle_for) else {
@@ -275,7 +277,7 @@ fn judge_last_activity(
     heartbeat_watcher
         .judge_heartbeat(stage_id)
         .filter(|heartbeat| heartbeat.session_id == session.id)
-        .map_or(session.created_at, |heartbeat| heartbeat.timestamp)
+        .map_or(session.created_at, Heartbeat::effective_progress_at)
 }
 
 /// Build the `SessionHung` event for a session whose heartbeat has gone stale.

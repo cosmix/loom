@@ -21,8 +21,10 @@ pub mod failure_tracking;
 pub(crate) mod handlers;
 mod handoff_watch;
 pub mod heartbeat;
+mod heartbeat_store;
 pub(crate) mod hung_latch;
 pub(crate) mod parked;
+pub(crate) mod progress;
 mod session_events;
 
 #[cfg(test)]

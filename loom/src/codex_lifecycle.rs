@@ -13,6 +13,7 @@ mod ledger;
 mod reconcile;
 
 pub use authorization::CodexAuthorization;
+pub(crate) use ledger::{read_authorization_rows, read_lifecycle_records, LedgerRow};
 
 #[derive(Debug, Default)]
 pub struct ReconcileReport {

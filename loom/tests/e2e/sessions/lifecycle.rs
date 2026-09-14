@@ -1,5 +1,6 @@
 //! Tests for session lifecycle management
 
+use chrono::Utc;
 use loom::models::session::{Session, SessionStatus};
 use std::path::PathBuf;
 use std::thread;
@@ -44,10 +45,10 @@ fn test_session_complex_lifecycle() {
     session.try_mark_running().expect("Spawning -> Running");
     assert_eq!(session.status, SessionStatus::Running);
 
-    session.record_heartbeat(Some(50_000), None);
+    session.record_heartbeat(session.last_active, Some(50_000), None);
     assert_eq!(session.context_tokens, 50_000);
 
-    session.record_heartbeat(Some(150_000), None);
+    session.record_heartbeat(session.last_active, Some(150_000), None);
     assert_eq!(session.context_tokens, 150_000);
 
     session
@@ -71,7 +72,7 @@ fn test_session_timestamps_update_correctly() {
 
     let after_assign = session.last_active;
     thread::sleep(Duration::from_millis(10));
-    session.record_heartbeat(Some(1000), None);
+    session.record_heartbeat(Utc::now(), Some(1000), None);
     assert_eq!(session.created_at, created);
     assert!(session.last_active > after_assign);
 }
@@ -100,9 +101,9 @@ fn test_multiple_sessions_independent() {
         .try_mark_completed()
         .expect("s3: Running -> Completed");
 
-    session1.record_heartbeat(Some(50_000), None);
-    session2.record_heartbeat(Some(100_000), None);
-    session3.record_heartbeat(Some(150_000), None);
+    session1.record_heartbeat(session1.last_active, Some(50_000), None);
+    session2.record_heartbeat(session2.last_active, Some(100_000), None);
+    session3.record_heartbeat(session3.last_active, Some(150_000), None);
 
     assert_ne!(session1.id, session2.id);
     assert_ne!(session2.id, session3.id);

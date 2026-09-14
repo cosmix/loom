@@ -1,5 +1,5 @@
 use anyhow::Result;
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use std::path::PathBuf;
 
 use super::types::{Session, SessionBackendKind, SessionStatus, SessionType};
@@ -130,10 +130,11 @@ impl Session {
     /// would silently retract a handoff that was already due.
     pub fn record_heartbeat(
         &mut self,
+        progress_at: DateTime<Utc>,
         context_tokens: Option<u32>,
         transcript_path: Option<String>,
     ) {
-        self.last_active = Utc::now();
+        self.last_active = self.last_active.max(progress_at);
 
         if let Some(tokens) = context_tokens {
             self.context_tokens = tokens;

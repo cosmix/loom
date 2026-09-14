@@ -158,13 +158,15 @@ Two subagents writing one file = lost work; if unavoidable, serialize in one sub
 | Subagent 1 — [role] | `path/to/files` | `shared/config` | `patterns.md#<heading>` |
 | Subagent 2 — [role] | `other/files` | `shared/config` | `patterns.md#<heading>` |
 
-**Checking on subagents: use `loom subagents`, never a hand-rolled poll loop.** Spawn everyone, then run ONE `loom subagents watch --timeout <secs>` (3600 is the normal value) through the Bash tool's `run_in_background`: the harness re-invokes you when it exits, and no request is made while it waits. Do not re-arm a foreground watch every few minutes, and do not poll with `git status`, `wc -l`, or `ls`. `loom subagents list`/`harvest` give a one-shot look; per-subagent state is `done`, `tool-wait`, `generating`, or `unknown`. Three cases, not one:
+**Checking on subagents: use one owned `loom subagents` wait, never a hand-rolled poll loop.** Spawn every worker first and capture each worker ID: the Claude agent ID from the spawn result, or the Codex unit ID you assigned with `--unit-id`. Then run ONE `loom subagents watch --worker claude:<agent-id> --worker codex:<unit-id> --timeout 3600` through the Bash tool's `run_in_background`, with one `--worker` for every worker. It binds those workers once, holds one lease for the parent session, prints one initial record and one terminal record, then exits. Treat its exit distinctly:
 
-1. **`done` but silent** — the subagent's turn ended and its report is on disk. Harvest it and proceed immediately; a missing notification is not a missing result.
-2. **`tool-wait` / `generating`** — genuinely alive. Issue another background watch; slow is not dead. The stage's `subagent_timeout_secs` is the advisory idle budget you judge death against — never a deadline on the subagent's own work, and never the `--timeout` you pass.
-3. **Idle past the budget with no transcript growth** — the only case with positive evidence of death. `TaskStop` it, confirm it stopped, then RE-DELEGATE the remainder to a fresh subagent. Never absorb the work into yourself — the orchestrator decomposes, delegates, verifies, and commits; it does not implement (hard stop 6). Re-read the tree before writing the new brief: a stale brief is worse than no brief.
+1. **Exit 0** — every bound worker has fresh, correlated success evidence.
+2. **Exit 2** — the wait deadline passed. This is not proof that any worker died.
+3. **Exit 3** — a bound worker failed or was cancelled.
+4. **Exit 4** — a wait for this parent session already exists: `AlreadyWaiting` for the same worker set or `Busy` for a different set. No second monitor was started.
+5. **Exit 5** — worker identity or terminal evidence is unknown. This is never success.
 
-Elapsed time alone is still never evidence of death. Never complete the stage while any subagent is still out (Rule 4).
+Harvest each worker's terminal report exactly once. Never re-arm the watch and never poll with `loom subagents list`, `loom subagents harvest`, `git status`, `wc`, or `ls`; `list` and `harvest` remain one-shot diagnostics. Only exact authoritative terminal evidence permits completion. A worker idle past the stage's `subagent_timeout_secs` budget with no transcript growth is still the only positive evidence of death. `TaskStop` it, confirm it stopped, then RE-DELEGATE the remainder to a fresh subagent. Never absorb the work into yourself — the orchestrator decomposes, delegates, verifies, and commits; it does not implement (hard stop 6). Re-read the tree before writing the new brief: a stale brief is worse than no brief. Never complete the stage while any subagent is still out (Rule 4).
 
 **Subagents are ONE-SHOT.** Brief completely, wait, harvest, let it end. Never message a finished subagent. A follow-up, or continuation after a ceiling, is a FRESH spawn of the same type, briefed with the prior report and remaining items. Messaging one still `tool-wait`/`generating` differs, and is rare.
 

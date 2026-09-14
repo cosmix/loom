@@ -6,7 +6,8 @@ mod support;
 use serde_json::json;
 use std::fs;
 use support::{
-    assert_exit, Fixture, AGENT_ID, LOOM_SESSION, PARENT_UUID, STAGE, SUCCESSOR_SESSION,
+    assert_exit, assert_watch_rejected, Fixture, AGENT_ID, LOOM_SESSION, PARENT_UUID, STAGE,
+    SUCCESSOR_SESSION,
 };
 
 #[test]
@@ -57,7 +58,7 @@ fn wrong_active_loom_session_writes_no_evidence_or_heartbeat() {
     assert_exit(&output, 0);
     fixture.assert_no_lifecycle_evidence();
     assert!(!fixture.heartbeat_path().exists());
-    assert_exit(&fixture.watch(), 2);
+    assert_watch_rejected(&fixture.watch());
 }
 
 #[test]
@@ -71,7 +72,7 @@ fn transcript_growth_invalidates_stop() {
     let summary = fixture.only_summary();
     assert_eq!(summary["state"], "generating");
     assert!(summary.get("done_evidence").is_none());
-    assert_exit(&fixture.watch(), 2);
+    assert_exit(&fixture.watch(), 5);
 }
 
 #[test]
@@ -122,7 +123,7 @@ fn malformed_duplicate_and_conflicting_deliveries_fail_closed() {
     fixture.append_journal_value(&conflict);
 
     assert_eq!(fixture.only_summary()["state"], "generating");
-    assert_exit(&fixture.watch(), 2);
+    assert_exit(&fixture.watch(), 5);
 }
 
 #[test]
@@ -146,7 +147,7 @@ fn delayed_predecessor_stop_preserves_successor_heartbeat() {
         seeded
     );
     assert_eq!(fixture.only_summary()["state"], "generating");
-    assert_exit(&fixture.watch(), 2);
+    assert_watch_rejected(&fixture.watch());
 }
 
 #[test]

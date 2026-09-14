@@ -1,5 +1,4 @@
-//! `loom subagents` - a read-only watchdog over Claude Code's per-subagent
-//! transcripts.
+//! `loom subagents` - inspect subagents or wait once for exact owned workers.
 //!
 //! Claude Code appends every subagent's turn-by-turn transcript to its own
 //! JSONL file under `~/.claude/projects/<slug>/<session-uuid>/subagents/`,
@@ -10,10 +9,9 @@
 //! whether a subagent is generating, waiting on a tool, or already done, and
 //! recovers its final report text even when the harness never delivered it.
 //!
-//! This command is strictly read-only: it never writes to a transcript or to
-//! the state directory. See `resolve` for how the transcript directory is located,
-//! `classify` for how a transcript's last entry maps to a liveness state,
-//! and `render` for the three subcommands themselves.
+//! `list` and `harvest` are read-only diagnostics. `watch` writes only its
+//! bounded ownership lease under the system scratch directory (`TMPDIR`),
+//! never the Loom state directory or a transcript.
 
 mod classify;
 mod forward_jobs;
@@ -23,6 +21,7 @@ mod forward_jobs_wait;
 pub(crate) mod ledger;
 mod metrics;
 mod render;
+mod wait;
 // `pub(crate)` rather than private: `commands::usage` reuses this module's
 // transcript-layout rules (`list_agent_files`, `agent_id_from_path`) so the two
 // commands cannot disagree about where Claude Code keeps its transcripts.
@@ -90,26 +89,27 @@ pub enum SubagentsCommand {
         debounce: u64,
     },
 
-    /// Poll until every subagent is done, or a timeout elapses
+    /// Wait once for an explicit set of owned workers to reach terminal state
     Watch {
-        /// Seconds to poll before giving up (exit 2 on timeout)
-        #[arg(long, default_value_t = 300)]
-        timeout: u64,
+        /// Worker to wait on, `claude:<agent-id>` or `codex:<unit-id>`; repeat for each
+        #[arg(long = "worker")]
+        workers: Vec<String>,
 
-        /// Session UUID to inspect (defaults to the most recently active
-        /// session under this working directory's project slug)
+        /// Claude parent session UUID, only to disambiguate; never the Loom session ID
         #[arg(long)]
         session: Option<String>,
 
-        /// Explicit transcript directory, bypassing session/slug resolution
-        #[arg(long)]
-        dir: Option<PathBuf>,
+        /// Seconds until the wait deadline (exit 2); a deadline is not proof a worker died
+        #[arg(long, default_value_t = 300)]
+        timeout: u64,
 
-        /// Seconds a text-only, no-tool-use last entry must sit idle before
-        /// it is trusted as `done` rather than mid-turn (see the `done`
-        /// debounce note in `classify`)
-        #[arg(long, default_value_t = classify::DEFAULT_DONE_DEBOUNCE_SECS)]
-        debounce: u64,
+        /// Emit one JSON object per wait event
+        #[arg(long)]
+        json: bool,
+
+        /// Removed legacy transcript-directory form; retained only for migration errors
+        #[arg(long, hide = true)]
+        dir: Option<PathBuf>,
     },
 
     /// Wait for one exact forwarded job receipt without starting or changing it
@@ -128,7 +128,7 @@ pub enum SubagentsCommand {
     },
 }
 
-/// Dispatch to the requested view. Every path here is read-only.
+/// Dispatch to the requested diagnostic or bounded wait.
 pub fn execute(args: SubagentsArgs) -> Result<()> {
     match args.command {
         SubagentsCommand::List {
@@ -144,11 +144,18 @@ pub fn execute(args: SubagentsArgs) -> Result<()> {
             debounce,
         } => render::harvest(id, session, dir, debounce),
         SubagentsCommand::Watch {
-            timeout,
+            workers,
             session,
+            timeout,
+            json,
             dir,
-            debounce,
-        } => render::watch(timeout, session, dir, debounce),
+        } => wait::run(wait::WatchRequest {
+            workers,
+            session,
+            timeout_secs: timeout,
+            json,
+            legacy_dir: dir,
+        }),
         SubagentsCommand::Wait {
             receipt,
             timeout,

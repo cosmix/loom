@@ -13,8 +13,8 @@ use super::super::types::DependencyStatus;
 ///
 /// This carries the stage's specific number and just enough framing to keep it
 /// from being misread as the watch's `--timeout`: the budget is the IDLE
-/// threshold death is judged against, while the watch itself waits long (3600)
-/// in the background. The full doctrine for what to DO with it used to be
+/// threshold death is judged against, while one identity-bound watch waits for
+/// 3600 seconds in the background. The full doctrine for what to DO with it used to be
 /// restated here via BLOCK-C (`cache::append_subagent_waiting_doctrine`). That
 /// function and its home in the stable prefix are both gone: the doctrine now
 /// lives only in `~/.claude/CLAUDE.md` Rule 6, already resident in the agent's
@@ -22,9 +22,10 @@ use super::super::types::DependencyStatus;
 pub(crate) fn format_subagent_timeout_section(timeout_secs: u64) -> String {
     format!(
         "## Subagent Response Budget\n\n\
-         This stage's advisory heartbeat budget is {timeout_secs}s. Run `loom subagents watch` in \
-         the background with a long `--timeout` (3600), and issue another if it returns while \
-         subagents are still alive. The budget is the idle threshold you judge death against, \
+         This stage's advisory heartbeat budget is {timeout_secs}s. Run ONE \
+         `loom subagents watch --worker ... --timeout 3600` through the Bash tool's \
+         `run_in_background`, naming every worker in that single owned wait; never issue another \
+         watch. The budget is the idle threshold you judge death against, \
          never a deadline on the subagent's own work: only idle time past {timeout_secs}s with no \
          transcript growth is positive evidence of death. ADVISORY ONLY: the orchestrator's own \
          hung warning never kills or retries anything — recovery stays with you.\n\n"

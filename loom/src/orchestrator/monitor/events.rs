@@ -2,6 +2,8 @@
 
 use std::path::PathBuf;
 
+use chrono::{DateTime, Utc};
+
 /// Events detected by the monitor
 #[derive(Debug, Clone, PartialEq)]
 pub enum MonitorEvent {
@@ -85,6 +87,8 @@ pub enum MonitorEvent {
     HeartbeatReceived {
         stage_id: String,
         session_id: String,
+        /// Monotonic useful-progress time derived from this heartbeat.
+        progress_at: DateTime<Utc>,
         /// Resident tokens, or `None` when the hook could not measure them.
         context_tokens: Option<u32>,
         transcript_path: Option<String>,

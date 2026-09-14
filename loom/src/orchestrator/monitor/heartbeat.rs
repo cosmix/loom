@@ -11,12 +11,19 @@
 //! - Crashed sessions (PID dead)
 //! - Hung sessions (PID alive but no heartbeat update for threshold duration)
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::time::Duration;
+
+use super::progress::{age_secs, is_stale_at, Clock};
+
+pub use super::heartbeat_store::{
+    cleanup_judge_heartbeat, heartbeat_path, judge_heartbeat_path, read_heartbeat,
+    remove_heartbeat, stage_context_tokens, write_heartbeat,
+};
 
 /// Default timeout for considering a session hung (5 minutes)
 pub const DEFAULT_HUNG_TIMEOUT_SECS: u64 = 300;
@@ -27,7 +34,15 @@ pub const DEFAULT_HEARTBEAT_POLL_SECS: u64 = 10;
 /// File-stem suffix marking a heartbeat as an adjudication session's rather
 /// than a stage agent's: `<stage-id>.adjudication.json`. A judge works on a
 /// stage it does not own, so it gets a file of its own on the same stage key.
-const JUDGE_STEM_SUFFIX: &str = ".adjudication";
+pub(super) const JUDGE_STEM_SUFFIX: &str = ".adjudication";
+
+/// Whether the latest tool observation represented useful work.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ActivityKind {
+    Progress,
+    Observation,
+}
 
 /// Heartbeat data written by Claude Code hooks
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -38,6 +53,12 @@ pub struct Heartbeat {
     pub session_id: String,
     /// Timestamp of this heartbeat
     pub timestamp: DateTime<Utc>,
+    /// Most recent useful progress, distinct from observation-only polling.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub progress_at: Option<DateTime<Utc>>,
+    /// Classification of the tool call represented by `timestamp`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub activity_kind: Option<ActivityKind>,
     /// Resident context in absolute tokens, as measured from the transcript.
     /// `None` means the hook could not measure it on this tick — it is not a
     /// reading of zero, and consumers must preserve the previous value.
@@ -57,10 +78,13 @@ pub struct Heartbeat {
 impl Heartbeat {
     /// Create a new heartbeat
     pub fn new(stage_id: String, session_id: String) -> Self {
+        let now = Utc::now();
         Self {
             stage_id,
             session_id,
-            timestamp: Utc::now(),
+            timestamp: now,
+            progress_at: Some(now),
+            activity_kind: Some(ActivityKind::Progress),
             context_tokens: None,
             transcript_path: None,
             last_tool: None,
@@ -92,19 +116,21 @@ impl Heartbeat {
         self
     }
 
+    /// Return useful progress, falling back for legacy or malformed records.
+    pub fn effective_progress_at(&self) -> DateTime<Utc> {
+        self.progress_at
+            .filter(|progress_at| *progress_at <= self.timestamp)
+            .unwrap_or(self.timestamp)
+    }
+
     /// Check if heartbeat is stale (older than timeout)
     pub fn is_stale(&self, timeout: Duration) -> bool {
-        let age = Utc::now().signed_duration_since(self.timestamp);
-        if let Ok(timeout_chrono) = chrono::Duration::from_std(timeout) {
-            age > timeout_chrono
-        } else {
-            false
-        }
+        is_stale_at(Utc::now(), self.effective_progress_at(), timeout)
     }
 
     /// Get the age of this heartbeat
     pub fn age(&self) -> chrono::Duration {
-        Utc::now().signed_duration_since(self.timestamp)
+        Utc::now().signed_duration_since(self.effective_progress_at())
     }
 }
 
@@ -115,8 +141,10 @@ pub enum HeartbeatStatus {
     Healthy,
     /// Session appears hung - PID alive but no recent heartbeat
     Hung {
-        /// How long since last heartbeat
+        /// How long since useful progress.
         stale_duration_secs: u64,
+        /// How long since the latest tool observation.
+        observation_age_secs: u64,
     },
     /// No heartbeat file exists (session may not have started heartbeat yet)
     NoHeartbeat,
@@ -137,6 +165,7 @@ pub struct HeartbeatWatcher {
     /// a judge's timestamp answer for the stage agent's silence, and the stage
     /// agent's for the judge's.
     judge_heartbeats: HashMap<String, Heartbeat>,
+    clock: Clock,
 }
 
 /// Hook timestamps have whole-second precision, so every heartbeat field is
@@ -146,13 +175,33 @@ fn heartbeat_changed(previous: Option<&Heartbeat>, current: &Heartbeat) -> bool 
     previous != Some(current)
 }
 
+fn progress_advanced(previous: Option<&Heartbeat>, current: &Heartbeat) -> bool {
+    previous.is_some_and(|previous| {
+        previous.session_id == current.session_id
+            && current.effective_progress_at() > previous.effective_progress_at()
+    })
+}
+
 impl HeartbeatWatcher {
     /// Create a new heartbeat watcher
     pub fn new() -> Self {
         Self {
             heartbeats: HashMap::new(),
             judge_heartbeats: HashMap::new(),
+            clock: Clock::default(),
         }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn with_now(now: DateTime<Utc>) -> Self {
+        Self {
+            clock: Clock::fixed(now),
+            ..Self::new()
+        }
+    }
+
+    pub(crate) fn now(&self) -> DateTime<Utc> {
+        self.clock.now()
     }
 
     /// Poll heartbeat files and update cache
@@ -161,13 +210,10 @@ impl HeartbeatWatcher {
         if !heartbeat_dir.exists() {
             return Ok(Vec::new());
         }
-
         let mut updates = Vec::new();
-
         for entry in std::fs::read_dir(&heartbeat_dir)? {
             let entry = entry?;
             let path = entry.path();
-
             if path.extension().and_then(|s| s.to_str()) != Some("json") {
                 continue;
             }
@@ -177,21 +223,20 @@ impl HeartbeatWatcher {
                 continue;
             }
             let stage_id = stem.to_string();
-
             match read_heartbeat(&path) {
                 Ok(heartbeat) => {
                     let previous = self.heartbeats.get(&stage_id);
                     let is_new = previous.is_none();
                     let is_updated = heartbeat_changed(previous, &heartbeat);
-
+                    let progress_advanced = progress_advanced(previous, &heartbeat);
                     if is_new || is_updated {
                         updates.push(HeartbeatUpdate {
                             stage_id: stage_id.clone(),
                             heartbeat: heartbeat.clone(),
                             is_new,
+                            progress_advanced,
                         });
                     }
-
                     self.heartbeats.insert(stage_id, heartbeat);
                 }
                 Err(e) => {
@@ -203,7 +248,6 @@ impl HeartbeatWatcher {
                 }
             }
         }
-
         Ok(updates)
     }
 
@@ -272,10 +316,11 @@ impl HeartbeatWatcher {
                 HeartbeatStatus::NoHeartbeat
             }
             Some(heartbeat) => {
-                if heartbeat.is_stale(timeout) {
-                    let age = heartbeat.age();
+                let now = self.now();
+                if is_stale_at(now, heartbeat.effective_progress_at(), timeout) {
                     HeartbeatStatus::Hung {
-                        stale_duration_secs: age.num_seconds().max(0) as u64,
+                        stale_duration_secs: age_secs(now, heartbeat.effective_progress_at()),
+                        observation_age_secs: age_secs(now, heartbeat.timestamp),
                     }
                 } else {
                     HeartbeatStatus::Healthy
@@ -310,89 +355,8 @@ pub struct HeartbeatUpdate {
     pub heartbeat: Heartbeat,
     /// Whether this is a new heartbeat (first seen)
     pub is_new: bool,
-}
-
-/// Read a heartbeat file
-pub fn read_heartbeat(path: &Path) -> Result<Heartbeat> {
-    let content = std::fs::read_to_string(path)
-        .with_context(|| format!("Failed to read heartbeat file: {}", path.display()))?;
-    serde_json::from_str(&content)
-        .with_context(|| format!("Failed to parse heartbeat file: {}", path.display()))
-}
-
-/// Write a heartbeat file
-pub fn write_heartbeat(work_dir: &Path, heartbeat: &Heartbeat) -> Result<PathBuf> {
-    let heartbeat_dir = work_dir.join("heartbeat");
-    if !heartbeat_dir.exists() {
-        std::fs::create_dir_all(&heartbeat_dir).with_context(|| {
-            format!(
-                "Failed to create heartbeat directory: {}",
-                heartbeat_dir.display()
-            )
-        })?;
-    }
-
-    let path = heartbeat_dir.join(format!("{}.json", heartbeat.stage_id));
-    let content =
-        serde_json::to_string_pretty(heartbeat).context("Failed to serialize heartbeat")?;
-    std::fs::write(&path, content)
-        .with_context(|| format!("Failed to write heartbeat file: {}", path.display()))?;
-
-    Ok(path)
-}
-
-/// Remove a heartbeat file
-pub fn remove_heartbeat(work_dir: &Path, stage_id: &str) -> Result<()> {
-    let path = work_dir.join("heartbeat").join(format!("{stage_id}.json"));
-    if path.exists() {
-        std::fs::remove_file(&path)
-            .with_context(|| format!("Failed to remove heartbeat file: {}", path.display()))?;
-    }
-    Ok(())
-}
-
-/// Get heartbeat path for a stage
-pub fn heartbeat_path(work_dir: &Path, stage_id: &str) -> PathBuf {
-    work_dir.join("heartbeat").join(format!("{stage_id}.json"))
-}
-
-/// Get the adjudication heartbeat path for a stage — the file the stage's
-/// judge writes, distinct from the stage agent's own.
-pub fn judge_heartbeat_path(work_dir: &Path, stage_id: &str) -> PathBuf {
-    work_dir
-        .join("heartbeat")
-        .join(format!("{stage_id}{JUDGE_STEM_SUFFIX}.json"))
-}
-
-/// Remove a stage's judge heartbeat file.
-///
-/// A missing file is success, not an error: a judge that was closed before it
-/// ever made a tool call never wrote one.
-pub fn cleanup_judge_heartbeat(work_dir: &Path, stage_id: &str) {
-    let path = judge_heartbeat_path(work_dir, stage_id);
-    if let Err(error) = std::fs::remove_file(&path) {
-        if error.kind() != std::io::ErrorKind::NotFound {
-            tracing::warn!(
-                target: "loom::adjudication",
-                stage = %stage_id,
-                path = %path.display(),
-                %error,
-                "failed to remove the judge heartbeat",
-            );
-        }
-    }
-}
-
-/// Read the resident-token count from a stage's latest heartbeat file.
-///
-/// `None` covers every way the reading can be unavailable — no heartbeat file,
-/// an unreadable one, or a hook that could not measure the transcript — because
-/// callers treat all three the same way: they have no reading, not a reading of
-/// zero.
-pub fn stage_context_tokens(work_dir: &Path, stage_id: &str) -> Option<u32> {
-    read_heartbeat(&heartbeat_path(work_dir, stage_id))
-        .ok()
-        .and_then(|heartbeat| heartbeat.context_tokens)
+    /// Whether useful progress moved beyond the watcher's previous high-water.
+    pub progress_advanced: bool,
 }
 
 #[cfg(test)]

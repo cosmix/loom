@@ -142,12 +142,18 @@ fn push_codex_prompt_rules(content: &mut String) {
         "- MIXED FAN-OUT: codex and Claude subagents may share a wave - file ownership keeps them\n",
         "  apart, enforced across lanes just as within one. FOREGROUND ONLY, and skip `--resume-last`:\n",
         "  the wrapper waits at most 540000 ms for one exact status snapshot. A still-running job reports\n",
-        "  `state: active` with no `LOOM-FORWARD-END` and remains under daemon ownership. Start exactly\n",
-        "  one background `loom subagents watch --timeout 3600`; never use a model-driven status loop,\n",
-        "  a second forward, or `codex-companion.mjs status --all`. Retrying a logical unit means a fresh\n",
+        "  `state: active` with no `LOOM-FORWARD-END` and remains under daemon ownership. Start ONE\n",
+        "  background `loom subagents watch`, naming one `--worker codex:<unit-id>` for each forwarded\n",
+        "  unit and passing `--timeout 3600`; never use a model-driven status loop, a\n",
+        "  second forward, or `codex-companion.mjs status --all`. Retrying a logical unit means a fresh\n",
         "  forwarder spawn with the SAME unit id; the guard mints a fresh invocation, so it cannot revive\n",
-        "  the previous job. Watch exits 1 for failure, 3 for cancellation, 2 for timeout or unknown, and\n",
-        "  0 only when every owned worker has lifecycle-evidenced success.\n",
+        "  the previous job. The watch binds those workers once, holds one lease for the parent session,\n",
+        "  prints one initial record and one terminal record, then exits. Treat exits distinctly: 0 only\n",
+        "  when every bound worker has fresh, correlated success evidence; 2 when the wait deadline\n",
+        "  passed (not proof any worker died); 3 when a bound worker failed or was cancelled; 4 when a\n",
+        "  wait for this parent session already exists (`AlreadyWaiting` for the same worker set or `Busy`\n",
+        "  for a different set), with no second monitor started; 5 when worker identity or terminal\n",
+        "  evidence is unknown, which is never success.\n",
         "  A foreground run is one long Bash call - no PostToolUse fires, so the daemon's \"appears hung\"\n",
         "  warning past 300s is ADVISORY ONLY.\n",
     ));
@@ -205,9 +211,20 @@ mod tests {
         assert!(collapsed.contains("[A-Za-z0-9][A-Za-z0-9._-]{0,63}"));
         assert!(collapsed.contains("--write --unit-id <unit>"));
         assert!(collapsed.contains("SAME unit id"));
-        assert!(collapsed.contains("loom subagents watch --timeout 3600"));
+        assert!(collapsed.contains("Start ONE background `loom subagents watch`"));
+        assert!(collapsed.contains("one `--worker codex:<unit-id>` for each forwarded unit"));
+        assert!(collapsed.contains("passing `--timeout 3600`"));
         assert!(collapsed.contains("`state: active` with no `LOOM-FORWARD-END`"));
-        assert!(collapsed.contains("Watch exits 1 for failure, 3 for cancellation"));
+        assert!(collapsed.contains("holds one lease for the parent session"));
+        assert!(collapsed.contains("one initial record and one terminal record"));
+        assert!(collapsed
+            .contains("0 only when every bound worker has fresh, correlated success evidence; 2"));
+        assert!(collapsed.contains("3 when a bound worker failed or was cancelled; 4"));
+        assert!(collapsed
+            .contains("`AlreadyWaiting` for the same worker set or `Busy` for a different set"));
+        assert!(collapsed.contains(
+            "5 when worker identity or terminal evidence is unknown, which is never success"
+        ));
         assert!(collapsed.contains("\"phase\":\"done\""));
         assert!(collapsed.contains("`codex-companion.mjs status --all`"));
 
