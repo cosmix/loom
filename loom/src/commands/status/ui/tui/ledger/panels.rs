@@ -263,6 +263,8 @@ mod tests {
             has_human_review_choices: true,
             dispute_count: None,
             judge_heartbeat_secs: None,
+            completion_blocker: None,
+            outgoing_session_exit_reason: None,
         };
         let lines = attention_lines(&[entry], 120);
         assert_eq!(lines.len(), 3);
@@ -283,6 +285,8 @@ mod tests {
             has_human_review_choices: false,
             dispute_count: None,
             judge_heartbeat_secs: None,
+            completion_blocker: None,
+            outgoing_session_exit_reason: None,
         };
         let lines = attention_lines(&[entry], 120);
         let detail_line = lines[1].to_string();

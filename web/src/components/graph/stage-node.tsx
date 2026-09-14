@@ -126,7 +126,12 @@ function Footer({ stage }: { stage: StageSummary }) {
       <div className="flex items-center gap-2">
         <ActivityRoundel stage={stage} size={13} />
         {activity && (
-          <span className={cn("min-w-0 truncate", toneClass(activity.tone))}>{activity.text}</span>
+          <span
+            className={cn("min-w-0 truncate", toneClass(activity.tone))}
+            title={stage.completion_blocker?.next_action}
+          >
+            {activity.text}
+          </span>
         )}
         {merge && <span className={cn("shrink-0", toneClass(merge.tone))}>{merge.text}</span>}
         {time && (

@@ -51,7 +51,10 @@ export function LedgerRow({ stage, level }: { stage: StageSummary; level: number
         className={cn("text-xs", activity && toneClass(activity.tone))}
       >
         {activity && (
-          <span className="inline-flex items-center gap-1.5">
+          <span
+            className="inline-flex items-center gap-1.5"
+            title={stage.completion_blocker?.next_action}
+          >
             <ActivityRoundel stage={stage} size={14} />
             {activity.text}
           </span>

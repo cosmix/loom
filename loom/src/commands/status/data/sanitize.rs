@@ -52,6 +52,11 @@ pub(super) fn sanitize_stage_summary(summary: &mut StageSummary) {
     summary.review_reason.iter_mut().for_each(flatten);
     summary.cleanup_warning.iter_mut().for_each(flatten);
     summary.incoherence.iter_mut().for_each(flatten);
+    if let Some(blocker) = summary.completion_blocker.as_mut() {
+        flatten(&mut blocker.failure_code);
+        blocker.summary.iter_mut().for_each(flatten);
+        flatten(&mut blocker.next_action);
+    }
     if let Some(failure) = summary.failure_info.as_mut() {
         cap_evidence(&mut failure.evidence);
         failure.evidence.iter_mut().for_each(flatten);
@@ -132,6 +137,8 @@ mod tests {
             dispute_count: 0,
             judge_heartbeat_secs: None,
             session_backend: None,
+            outgoing_session_exit_reason: None,
+            completion_blocker: None,
         }
     }
 

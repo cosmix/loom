@@ -1,6 +1,9 @@
 use super::*;
-use crate::commands::status::data::{ActivityStatus, StageType};
+use crate::commands::status::data::{
+    ActivityStatus, CompletionBlockerState, CompletionBlockerSummary, StageType,
+};
 use crate::models::failure::{FailureInfo, FailureType};
+use crate::models::session::SessionExitReason;
 use crate::models::stage::StageStatus;
 use chrono::Utc;
 
@@ -38,6 +41,22 @@ fn make_stage_summary(id: &str, status: StageStatus) -> StageSummary {
         dispute_count: 0,
         judge_heartbeat_secs: None,
         session_backend: None,
+        outgoing_session_exit_reason: None,
+        completion_blocker: None,
+    }
+}
+
+fn completion_blocker(fingerprint: &str, next_action: &str) -> CompletionBlockerSummary {
+    CompletionBlockerSummary {
+        state: CompletionBlockerState::Blocked,
+        fingerprint: fingerprint.to_string(),
+        failure_code: "sandbox_denied".to_string(),
+        summary: Some("sandbox denied execution".to_string()),
+        commit: "0123456789ab".to_string(),
+        repeat_count: 2,
+        first_observed_at: Some("2026-09-14T10:00:00Z".to_string()),
+        last_observed_at: Some("2026-09-14T10:01:00Z".to_string()),
+        next_action: next_action.to_string(),
     }
 }
 
@@ -199,5 +218,37 @@ fn adjudication_reason_omits_the_heartbeat_when_unknown() {
     assert!(
         output_str.contains("2 disputes filed") && !output_str.contains("judge heartbeat"),
         "output: {output_str}"
+    );
+}
+
+#[test]
+fn completion_blockers_render_recovery_details_and_distinct_exit_reasons() {
+    let mut stalled = make_stage_summary("stalled-writer", StageStatus::Executing);
+    stalled.completion_blocker = Some(completion_blocker(
+        "feedface1234",
+        "confirm the sandbox grant, then retry",
+    ));
+    stalled.outgoing_session_exit_reason = Some(SessionExitReason::Stalled);
+    let mut ceiling = make_stage_summary("ceiling-writer", StageStatus::NeedsHumanReview);
+    ceiling.completion_blocker = Some(completion_blocker(
+        "deadbeef5678",
+        "start a continuation session",
+    ));
+    ceiling.outgoing_session_exit_reason = Some(SessionExitReason::ContextCeiling);
+
+    let mut output = Vec::new();
+    render_attention(&mut output, &[stalled, ceiling], false).unwrap();
+    let output = String::from_utf8(output).unwrap();
+
+    assert!(
+        output.contains("next:")
+            && output.contains("confirm the sandbox grant, then retry")
+            && output.contains("fingerprint:")
+            && output.contains("feedface1234")
+            && output.contains("failure code:")
+            && output.contains("sandbox_denied")
+            && output.contains("last session: stalled")
+            && output.contains("last session: context ceiling"),
+        "output: {output}"
     );
 }

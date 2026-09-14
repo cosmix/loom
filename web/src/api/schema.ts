@@ -45,6 +45,29 @@ export const sessionTypeSchema = z.enum([
   "adjudication",
 ]);
 export const sessionBackendSchema = z.enum(["native", "tmux"]);
+export const outgoingSessionExitReasonSchema = z.enum([
+  "completed",
+  "crashed",
+  "context-ceiling",
+  "stalled",
+  "operator-stop",
+  "criteria-blocked",
+  "replaced",
+]);
+export const completionBlockerStateSchema = z.enum(["pending", "blocked", "ownership_unknown"]);
+export const completionBlockerSchema = z
+  .object({
+    state: completionBlockerStateSchema,
+    fingerprint: z.string(),
+    failure_code: z.string(),
+    summary: z.string().nullable(),
+    commit: z.string(),
+    repeat_count: z.number().int().nonnegative(),
+    first_observed_at: z.string().nullable(),
+    last_observed_at: z.string().nullable(),
+    next_action: z.string(),
+  })
+  .strict();
 export const failureInfoSchema = z.object({
   failure_type: failureTypeSchema,
   detected_at: z.string(),
@@ -72,6 +95,8 @@ export const stageSummarySchema = z
     merged: z.boolean(),
     merge_assumed: z.boolean(),
     cleanup_warning: z.string().nullable().optional(),
+    outgoing_session_exit_reason: outgoingSessionExitReasonSchema.optional(),
+    completion_blocker: completionBlockerSchema.optional(),
     held: z.boolean(),
     retry_count: z.number().int(),
     max_retries: z.number().int().nullable(),
@@ -163,6 +188,10 @@ export type Alert = z.infer<typeof alertSchema>;
 export type DaemonState = z.infer<typeof daemonStateSchema>;
 export type FailureType = z.infer<typeof failureTypeSchema>;
 export type ActivityStatus = z.infer<typeof activityStatusSchema>;
+export type SessionExitReason = z.infer<typeof outgoingSessionExitReasonSchema>;
+export type OutgoingSessionExitReason = SessionExitReason;
+export type CompletionBlockerState = z.infer<typeof completionBlockerStateSchema>;
+export type CompletionBlocker = z.infer<typeof completionBlockerSchema>;
 export type Snapshot = z.infer<typeof snapshotSchema>;
 export type WindowKind = z.infer<typeof windowKindSchema>;
 export type QuotaWindow = z.infer<typeof quotaWindowSchema>;

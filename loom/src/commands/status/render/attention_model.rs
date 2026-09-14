@@ -3,8 +3,11 @@
 //! This module decides which stages need a human and the recovery information
 //! to show, leaving each renderer responsible only for presentation.
 
-use crate::commands::status::data::StageSummary;
+use crate::commands::status::data::{
+    CompletionBlockerState, CompletionBlockerSummary, StageSummary,
+};
 use crate::models::failure::FailureType;
+use crate::models::session::SessionExitReason;
 use crate::models::stage::StageStatus;
 
 /// Display-ready information for one stage that needs human attention.
@@ -21,6 +24,8 @@ pub struct AttentionEntry {
     pub has_human_review_choices: bool,
     pub dispute_count: Option<u32>,
     pub judge_heartbeat_secs: Option<u64>,
+    pub completion_blocker: Option<CompletionBlockerSummary>,
+    pub outgoing_session_exit_reason: Option<SessionExitReason>,
 }
 
 /// Return the attention entries in the same order as their input stages.
@@ -29,22 +34,64 @@ pub fn attention_entries(stages: &[StageSummary]) -> Vec<AttentionEntry> {
 }
 
 fn attention_entry(stage: &StageSummary) -> Option<AttentionEntry> {
-    if let Some(cleanup_warning) = stage.cleanup_warning.clone() {
-        return Some(AttentionEntry {
-            id: stage.id.clone(),
-            name: stage.name.clone(),
-            label: "CLEANUP FAILED",
-            hint: format!("loom worktree remove {}", stage.id),
-            failure_type: None,
-            evidence: Vec::new(),
-            review_reason: None,
-            cleanup_warning: Some(cleanup_warning),
-            has_human_review_choices: false,
-            dispute_count: None,
-            judge_heartbeat_secs: None,
-        });
+    if stage.cleanup_warning.is_some() {
+        return Some(cleanup_entry(stage));
+    }
+    if let Some(blocker) = stage.completion_blocker.clone() {
+        return Some(completion_blocker_entry(stage, blocker));
     }
 
+    status_entry(stage)
+}
+
+fn cleanup_entry(stage: &StageSummary) -> AttentionEntry {
+    AttentionEntry {
+        id: stage.id.clone(),
+        name: stage.name.clone(),
+        label: "CLEANUP FAILED",
+        hint: format!("loom worktree remove {}", stage.id),
+        failure_type: None,
+        evidence: Vec::new(),
+        review_reason: None,
+        cleanup_warning: stage.cleanup_warning.clone(),
+        has_human_review_choices: false,
+        dispute_count: None,
+        judge_heartbeat_secs: None,
+        completion_blocker: None,
+        outgoing_session_exit_reason: stage.outgoing_session_exit_reason,
+    }
+}
+
+fn completion_blocker_entry(
+    stage: &StageSummary,
+    blocker: CompletionBlockerSummary,
+) -> AttentionEntry {
+    AttentionEntry {
+        id: stage.id.clone(),
+        name: stage.name.clone(),
+        label: completion_blocker_label(blocker.state),
+        hint: blocker.next_action.clone(),
+        failure_type: None,
+        evidence: Vec::new(),
+        review_reason: None,
+        cleanup_warning: None,
+        has_human_review_choices: false,
+        dispute_count: None,
+        judge_heartbeat_secs: None,
+        completion_blocker: Some(blocker),
+        outgoing_session_exit_reason: stage.outgoing_session_exit_reason,
+    }
+}
+
+fn completion_blocker_label(state: CompletionBlockerState) -> &'static str {
+    match state {
+        CompletionBlockerState::Pending => "COMPLETION PENDING",
+        CompletionBlockerState::Blocked => "COMPLETION BLOCKED",
+        CompletionBlockerState::OwnershipUnknown => "WRITER UNCONFIRMED",
+    }
+}
+
+fn status_entry(stage: &StageSummary) -> Option<AttentionEntry> {
     let (label, hint, has_human_review_choices, is_adjudicating) =
         attention_status(&stage.status, &stage.id)?;
     let (dispute_count, judge_heartbeat_secs) = if is_adjudicating {
@@ -71,6 +118,8 @@ fn attention_entry(stage: &StageSummary) -> Option<AttentionEntry> {
         has_human_review_choices,
         dispute_count,
         judge_heartbeat_secs,
+        completion_blocker: None,
+        outgoing_session_exit_reason: stage.outgoing_session_exit_reason,
     })
 }
 

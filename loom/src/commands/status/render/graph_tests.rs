@@ -1,5 +1,8 @@
 use super::*;
-use crate::commands::status::data::{ActivityStatus, MergeSummary, ProgressSummary, StageType};
+use crate::commands::status::data::{
+    ActivityStatus, CompletionBlockerState, CompletionBlockerSummary, MergeSummary,
+    ProgressSummary, StageType,
+};
 use crate::models::session::SessionType;
 
 fn make_stage_summary(id: &str, deps: Vec<&str>, status: StageStatus) -> StageSummary {
@@ -36,6 +39,8 @@ fn make_stage_summary(id: &str, deps: Vec<&str>, status: StageStatus) -> StageSu
         dispute_count: 0,
         judge_heartbeat_secs: None,
         session_backend: None,
+        outgoing_session_exit_reason: None,
+        completion_blocker: None,
     }
 }
 
@@ -56,6 +61,20 @@ fn make_status_data(stages: Vec<StageSummary>) -> StatusData {
         },
         plan_name: None,
         quota: crate::quota::QuotaSnapshot::default(),
+    }
+}
+
+fn completion_blocker() -> CompletionBlockerSummary {
+    CompletionBlockerSummary {
+        state: CompletionBlockerState::Pending,
+        fingerprint: "feedface1234".to_string(),
+        failure_code: "sandbox_denied".to_string(),
+        summary: None,
+        commit: "0123456789ab".to_string(),
+        repeat_count: 1,
+        first_observed_at: None,
+        last_observed_at: None,
+        next_action: "wait for one confirming observation".to_string(),
     }
 }
 
@@ -347,5 +366,24 @@ fn test_completed_merged_without_cleanup_warning_has_no_marker() {
     assert!(
         !output_str.contains("cleanup failed"),
         "Should not show 'cleanup failed' marker when there is no cleanup warning"
+    );
+}
+
+#[test]
+fn test_compact_renders_blocker_line_and_omits_completed_stage() {
+    let mut writer = make_stage_summary("writer", vec![], StageStatus::Executing);
+    writer.completion_blocker = Some(completion_blocker());
+    let completed = make_stage_summary("finished", vec![], StageStatus::Completed);
+    let data = make_status_data(vec![writer, completed]);
+    let mut output = Vec::new();
+
+    super::super::render_compact(&mut output, &data).unwrap();
+    let output = String::from_utf8(output).unwrap();
+
+    assert!(
+        output.contains(
+            "writer: completion pending: sandbox_denied - next: wait for one confirming observation"
+        ) && !output.contains("finished:"),
+        "output: {output}"
     );
 }

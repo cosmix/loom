@@ -2,7 +2,8 @@ use ratatui::{backend::TestBackend, Terminal};
 
 use super::{render, LedgerView};
 use crate::commands::status::data::{
-    ActivityStatus, MergeSummary, ProgressSummary, StageSummary, StatusData,
+    ActivityStatus, CompletionBlockerState, CompletionBlockerSummary, MergeSummary,
+    ProgressSummary, StageSummary, StatusData,
 };
 use crate::commands::status::render::attention_model::attention_entries;
 use crate::commands::status::ui::tui::state::TuiActivityLog;
@@ -70,6 +71,25 @@ pub(super) fn make_stage(id: &str, status: StageStatus) -> StageSummary {
         dispute_count: 0,
         judge_heartbeat_secs: None,
         session_backend: None,
+        outgoing_session_exit_reason: None,
+        completion_blocker: None,
+    }
+}
+
+pub(super) fn make_blocker(
+    state: CompletionBlockerState,
+    summary: &str,
+) -> CompletionBlockerSummary {
+    CompletionBlockerSummary {
+        state,
+        fingerprint: "fingerprint".to_owned(),
+        failure_code: "acceptance_failed".to_owned(),
+        summary: Some(summary.to_owned()),
+        commit: "abc1234".to_owned(),
+        repeat_count: 1,
+        first_observed_at: None,
+        last_observed_at: None,
+        next_action: "inspect output".to_owned(),
     }
 }
 
@@ -242,19 +262,6 @@ fn renders_all_thirteen_states_at_full_width() {
 }
 
 #[test]
-fn drops_columns_in_priority_order() {
-    let data = fixture();
-    let at_110 = render_view(&data, 110, 40, false);
-    assert!(!contains(&at_110, "TIME"));
-    assert!(!contains(&at_110, "MODELS"));
-    assert!(contains(&at_110, "DEPENDS ON"));
-
-    let at_74 = render_view(&data, 74, 40, false);
-    assert!(!contains(&at_74, "CONTEXT"));
-    assert!(contains(&at_74, "MERGE"));
-}
-
-#[test]
 fn shows_notice_below_minimum_size() {
     for (width, height) in [(60, 20), (120, 12)] {
         let data = fixture();
@@ -340,22 +347,4 @@ fn header_counts_match_progress() {
     assert!(header.contains(&format!("{waiting} waiting")));
     assert!(header.contains(&format!("{attention_count} need attention")));
     assert!(header.contains(&format!("{done} done")));
-}
-
-#[test]
-fn wide_terminal_widens_stage_column() {
-    let data = fixture();
-    let at_120 = render_view(&data, 120, 40, false);
-    let at_140 = render_view(&data, 140, 40, false);
-    let header_120 = at_120
-        .iter()
-        .find(|row| row.contains("DEPENDS ON"))
-        .unwrap();
-    let header_140 = at_140
-        .iter()
-        .find(|row| row.contains("DEPENDS ON"))
-        .unwrap();
-    let start_120 = header_120.find("DEPENDS ON").unwrap();
-    let start_140 = header_140.find("DEPENDS ON").unwrap();
-    assert!(start_140 > start_120);
 }

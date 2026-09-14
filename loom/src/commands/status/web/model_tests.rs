@@ -158,6 +158,8 @@ fn attention_conversion_keeps_failure_label() {
         has_human_review_choices: false,
         dispute_count: None,
         judge_heartbeat_secs: None,
+        completion_blocker: None,
+        outgoing_session_exit_reason: None,
     };
     let attention = WebAttention::from(&entry);
     assert_eq!(attention.label, "BLOCKED");

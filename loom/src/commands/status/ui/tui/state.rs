@@ -5,7 +5,9 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use ratatui::style::Style;
 use ratatui::text::{Line, Span};
 
-use crate::commands::status::data::{StageSummary, StatusData};
+use crate::commands::status::data::{
+    CompletionBlockerState, CompletionBlockerSummary, StageSummary, StatusData,
+};
 use crate::commands::status::ui::theme::Theme;
 use crate::models::stage::StageStatus;
 use crate::plan::graph::levels;
@@ -93,7 +95,13 @@ pub struct TuiActivityEntry {
 /// Activity log that tracks stage state transitions for the TUI.
 pub struct TuiActivityLog {
     entries: VecDeque<TuiActivityEntry>,
-    prev_statuses: HashMap<String, StageStatus>,
+    previous: HashMap<String, StageActivityState>,
+}
+
+struct StageActivityState {
+    status: StageStatus,
+    blocker_state: Option<CompletionBlockerState>,
+    blocker_fingerprint: Option<String>,
 }
 
 impl TuiActivityLog {
@@ -102,7 +110,7 @@ impl TuiActivityLog {
     pub fn new() -> Self {
         Self {
             entries: VecDeque::new(),
-            prev_statuses: HashMap::new(),
+            previous: HashMap::new(),
         }
     }
 
@@ -112,57 +120,34 @@ impl TuiActivityLog {
         let now = chrono::Utc::now();
 
         for stage in stages {
-            let prev = self.prev_statuses.get(&stage.id);
-            let changed = prev.map(|p| p != &stage.status).unwrap_or(true);
-
-            if !changed {
-                continue;
-            }
-
-            // Use canonical icon() so activity log glyphs match the tree graph.
-            let entry = match stage.status {
-                StageStatus::Executing => Some(TuiActivityEntry {
-                    timestamp: now,
-                    icon: StageStatus::Executing.icon(),
-                    message: format!("{} started", stage.id),
-                    style: Theme::status_executing(),
-                }),
-                StageStatus::Completed => Some(TuiActivityEntry {
-                    timestamp: now,
-                    icon: StageStatus::Completed.icon(),
-                    message: format!("{} completed", stage.id),
-                    style: Theme::status_completed(),
-                }),
-                StageStatus::Blocked => Some(TuiActivityEntry {
-                    timestamp: now,
-                    icon: StageStatus::Blocked.icon(),
-                    message: format!("{} blocked", stage.id),
-                    style: Theme::status_blocked(),
-                }),
-                StageStatus::Queued => Some(TuiActivityEntry {
-                    timestamp: now,
-                    icon: StageStatus::Queued.icon(),
-                    message: format!("{} ready", stage.id),
-                    style: Theme::status_queued(),
-                }),
-                StageStatus::NeedsHandoff => Some(TuiActivityEntry {
-                    timestamp: now,
-                    icon: StageStatus::NeedsHandoff.icon(),
-                    message: format!("{} needs handoff", stage.id),
-                    style: Theme::status_warning(),
-                }),
-                _ => None,
+            let (status_changed, completion_changed) = {
+                let previous = self.previous.get(&stage.id);
+                (
+                    previous
+                        .map(|state| state.status != stage.status)
+                        .unwrap_or(true),
+                    blocker_changed(previous, stage.completion_blocker.as_ref()),
+                )
             };
-
-            if let Some(e) = entry {
-                self.entries.push_back(e);
-                while self.entries.len() > Self::MAX_ENTRIES {
-                    self.entries.pop_front();
+            if status_changed {
+                if let Some(entry) = status_entry(stage, now) {
+                    self.push(entry);
                 }
             }
+            if completion_changed {
+                if let Some(entry) = blocker_entry(stage, now) {
+                    self.push(entry);
+                }
+            }
+            self.previous
+                .insert(stage.id.clone(), StageActivityState::from(*stage));
+        }
+    }
 
-            self.prev_statuses
-                .insert(stage.id.clone(), stage.status.clone());
+    fn push(&mut self, entry: TuiActivityEntry) {
+        self.entries.push_back(entry);
+        while self.entries.len() > Self::MAX_ENTRIES {
+            self.entries.pop_front();
         }
     }
 
@@ -195,6 +180,73 @@ impl TuiActivityLog {
     pub fn len(&self) -> usize {
         self.entries.len()
     }
+}
+
+impl From<&StageSummary> for StageActivityState {
+    fn from(stage: &StageSummary) -> Self {
+        Self {
+            status: stage.status.clone(),
+            blocker_state: stage
+                .completion_blocker
+                .as_ref()
+                .map(|blocker| blocker.state),
+            blocker_fingerprint: stage
+                .completion_blocker
+                .as_ref()
+                .map(|blocker| blocker.fingerprint.clone()),
+        }
+    }
+}
+
+fn blocker_changed(
+    previous: Option<&StageActivityState>,
+    blocker: Option<&CompletionBlockerSummary>,
+) -> bool {
+    blocker.is_some_and(|blocker| {
+        previous.is_none_or(|previous| {
+            previous.blocker_state != Some(blocker.state)
+                || previous.blocker_fingerprint.as_deref() != Some(blocker.fingerprint.as_str())
+        })
+    })
+}
+
+fn blocker_entry(
+    stage: &StageSummary,
+    timestamp: chrono::DateTime<chrono::Utc>,
+) -> Option<TuiActivityEntry> {
+    let blocker = stage.completion_blocker.as_ref()?;
+    let (icon, style) = match blocker.state {
+        CompletionBlockerState::Pending => (StageStatus::Executing.icon(), Theme::status_warning()),
+        CompletionBlockerState::Blocked | CompletionBlockerState::OwnershipUnknown => {
+            (StageStatus::Blocked.icon(), Theme::status_blocked())
+        }
+    };
+    Some(TuiActivityEntry {
+        timestamp,
+        icon,
+        message: format!("{} {}", stage.id, blocker.activity_text()),
+        style,
+    })
+}
+
+fn status_entry(
+    stage: &StageSummary,
+    timestamp: chrono::DateTime<chrono::Utc>,
+) -> Option<TuiActivityEntry> {
+    let message = match &stage.status {
+        StageStatus::Executing => "started",
+        StageStatus::Completed => "completed",
+        StageStatus::Blocked => "blocked",
+        StageStatus::Queued => "ready",
+        StageStatus::NeedsHandoff => "needs handoff",
+        _ => return None,
+    };
+    Some(TuiActivityEntry {
+        timestamp,
+        icon: stage.status.icon(),
+        message: format!("{} {message}", stage.id),
+        style: stage.status.tui_style(),
+    })
 }
 
 impl Default for TuiActivityLog {
@@ -241,6 +293,22 @@ mod tests {
             dispute_count: 0,
             judge_heartbeat_secs: None,
             session_backend: None,
+            outgoing_session_exit_reason: None,
+            completion_blocker: None,
+        }
+    }
+
+    fn blocker(state: CompletionBlockerState, fingerprint: &str) -> CompletionBlockerSummary {
+        CompletionBlockerSummary {
+            state,
+            fingerprint: fingerprint.to_owned(),
+            failure_code: "acceptance_failed".to_owned(),
+            summary: Some("verification failed".to_owned()),
+            commit: "abc1234".to_owned(),
+            repeat_count: 1,
+            first_observed_at: None,
+            last_observed_at: None,
+            next_action: "inspect output".to_owned(),
         }
     }
 
@@ -306,5 +374,25 @@ mod tests {
         assert_eq!(levels.get("a"), Some(&0));
         assert_eq!(levels.get("b"), Some(&1));
         assert_eq!(levels.get("c"), Some(&2));
+    }
+
+    #[test]
+    fn blocker_transitions_deduplicate_and_track_fingerprint() {
+        let mut log = TuiActivityLog::new();
+        let mut stage = summary("stage", StageStatus::Executing, &[]);
+        log.update(&[&stage]);
+        let baseline = log.len();
+        stage.completion_blocker = Some(blocker(CompletionBlockerState::Pending, "first"));
+        log.update(&[&stage]);
+        let after_pending = log.len();
+        assert_eq!(after_pending, baseline + 1);
+        log.update(&[&stage]);
+        assert_eq!(log.len(), after_pending);
+        stage.completion_blocker.as_mut().unwrap().state = CompletionBlockerState::Blocked;
+        log.update(&[&stage]);
+        assert_eq!(log.len(), baseline + 2);
+        stage.completion_blocker.as_mut().unwrap().fingerprint = "second".to_owned();
+        log.update(&[&stage]);
+        assert_eq!(log.len(), baseline + 3);
     }
 }
