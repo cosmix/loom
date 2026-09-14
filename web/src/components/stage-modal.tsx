@@ -1,6 +1,6 @@
 import { cn } from "cn";
 import { useAtomValue } from "jotai/react";
-import { ExternalLinkIcon, TerminalIcon } from "lucide-react";
+import { ExternalLinkIcon } from "lucide-react";
 import { useCallback, useState, type KeyboardEvent } from "react";
 import { Link, useSearchParams } from "react-router";
 
@@ -12,7 +12,7 @@ import { StateLine, ThreadRows } from "@/components/stage-heading";
 import { stageHref } from "@/components/stage-href";
 import { StageSectionGrid } from "@/components/stage-sections";
 import { toneClass } from "@/components/state-badge";
-import { terminalGate } from "@/components/terminal/terminal-glyph";
+import { TerminalMark, terminalGate } from "@/components/terminal/terminal-glyph";
 import {
   IDLE_FRAME,
   TerminalFrameContext,
@@ -201,11 +201,13 @@ function Body({
         />
       )}
       <DialogHeader className={cn("stage-modal-head gap-2 p-5 pr-12", toneClass(tone))}>
-        <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-          <DialogTitle className="text-xl font-semibold tracking-tight text-foreground">
-            {stage.name}
-          </DialogTitle>
-          <span className="font-mono text-sm text-muted-foreground">{stage.id}</span>
+        <div className="flex items-center gap-x-3 gap-y-1">
+          <div className="flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-1">
+            <DialogTitle className="text-xl font-semibold tracking-tight text-foreground">
+              {stage.name}
+            </DialogTitle>
+            <span className="font-mono text-sm text-muted-foreground">{stage.id}</span>
+          </div>
           <TerminalButton
             reason={gate}
             nativeBackend={nativeBackend}
@@ -255,23 +257,22 @@ function TerminalButton({
   onOpen: () => void;
 }) {
   return (
-    <>
-      <span className="ml-auto inline-flex self-center">
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          disabled={reason !== null}
-          onClick={onOpen}
-          aria-label="open terminal"
-        >
-          <TerminalIcon />
-          Terminal
-          <Kbd>t</Kbd>
-        </Button>
-      </span>
-      {nativeBackend && <CopyCommand command="loom run --backend tmux" className="self-center" />}
-    </>
+    <div className="ml-auto flex shrink-0 items-center gap-2">
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        disabled={reason !== null}
+        onClick={onOpen}
+        aria-label="open terminal"
+        title={reason ?? undefined}
+      >
+        <TerminalMark className="size-3.5" />
+        Terminal
+        <Kbd className="h-4 min-w-4 px-1 text-[10px]">t</Kbd>
+      </Button>
+      {nativeBackend && <CopyCommand command="loom run --backend tmux" />}
+    </div>
   );
 }
 
