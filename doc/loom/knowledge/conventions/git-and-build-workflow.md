@@ -165,6 +165,10 @@ of the file's style.
   variables before a colon (`${M}:path`), write `git show` output to a temp file and `test -s` it
   before copying it over a tracked file, and chain dependent steps with `&&`: `set -e` does not stop
   a Bash-tool script.
+- **zsh does not word-split an unquoted `$VAR`.** `L="a b"; for f in $L` runs the body once with
+  `f` set to the whole string, so a park-and-restore loop around a partial commit tried to `cp` one
+  path made of four names (nothing was touched only because `cp` failed first). Write the list
+  inline (`for f in a b`) or use an array (`L=(a b)`).
 - **In zsh, a bare word starting with `=` triggers `=cmd` path expansion.** A chained verification
   command using `echo ====` as a section separator failed with `=== not found`, and every check
   after it in the same chain silently never ran (its output just never printed). Quote separators

@@ -155,3 +155,18 @@ telling them it is final. An acceptance grep written into the spool goes stale w
 here the criterion forbade every mention of `replace-section`, which after the restore
 would have forced workers to write something false in order to pass. When acceptance
 and ground truth disagree, fix the criterion — never the prose.
+
+## Correcting a Quoted Error Message Can Leave a Half-True Claim (2026-09-15)
+
+**What happened:** a `.work` → `.loom/work` sweep brief said to replace a quoted CLI error with the
+string the source emits now. In `concerns/knowledge-cli-gaps.md` that put the current message under
+the old sentence about `loom memory note` without re-checking whether the command still fails that
+way. In `concerns/automatic-knowledge-source-graph-followups.md` the sweep respelled a quoted
+message into `.loom/work directory does not exist`, a string `loom/src` does not contain.
+**Why:** a quote of observed output records past behavior. Changing the string without re-checking
+the claim around it rewrites evidence and leaves the claim as wrong as before.
+**Prevention:** in a path or spelling sweep, keep quoted output verbatim. When the behavior the
+quote documents has changed, correct the claim itself after checking the code, or record a
+`stale-knowledge` note.
+**Fix:** both quotes were restored verbatim. The two concerns still need a re-check against current
+code.
