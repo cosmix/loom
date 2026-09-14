@@ -55,15 +55,21 @@ Never write plain `cargo test` into a loom plan's acceptance criteria. The gate 
 cargo test --all-targets --no-fail-fast
 ```
 
-Both flags earn their place:
+What each flag does:
 
-- **`--all-targets` is what compiles `loom/tests/**`.** Without it the external
-  integration tests are never built, so a changed signature breaks them and NOTHING
-  reports it until somebody runs the full command by hand. Signature changes are
-  exactly what a refactor stage produces, which is where this bites hardest.
 - **`--no-fail-fast` is what makes the report exhaustive.** Stopping at the first
   failing target hides how much else is red; an agent then fixes one failure, re-runs,
   and discovers the next — one round trip at a time.
+- **`--all-targets` keeps the command identical to the pre-push hook, CI and
+  `release.yml`.** Correction 2026-09-14: this bullet used to say that without
+  `--all-targets` the `loom/tests/**` integration tests are never built. That is wrong
+  for `cargo test`: every target in `loom/Cargo.toml` has `test = true` (check with
+  `cargo metadata --no-deps`), so plain `cargo test` builds and runs every `loom/tests/`
+  target. The flag does change `cargo build` and `cargo clippy`, which default to the lib
+  and bin only (see "Clippy --all-targets Required to Catch Test-Module Lints" in
+  [Testing & Lint](../mistakes/testing-and-lint.md)). It also disables doctests, as any
+  target-selection flag does, so none of the three gates runs them; `cargo test --doc`
+  does.
 
 Know the two non-hermetic tests, so a red run inside a stage session is not
 misdiagnosed as your own breakage. The stage-finalisation tests

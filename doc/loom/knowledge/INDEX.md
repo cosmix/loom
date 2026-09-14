@@ -80,10 +80,10 @@
 
 | Topic | Blurb | Lines |
 | --- | --- | --- |
-| [code-style-and-structure](conventions/code-style-and-structure.md) | Rust naming, error handling, size limits, splitting, and docstring conventions | 248 |
+| [code-style-and-structure](conventions/code-style-and-structure.md) | Rust naming, error handling, size limits, splitting, and docstring conventions | 255 |
 | [commits](conventions/commits.md) | Logically grouped commits, Conventional Commit messages, and no AI attribution. | 14 |
 | [dispute-and-adjudication](conventions/dispute-and-adjudication.md) | Dispute file authority split, adjudicator scope, budgets, and transport | 114 |
-| [git-and-build-workflow](conventions/git-and-build-workflow.md) | Git/worktree ops, cargo fmt/test discipline, the shared maintainability ledger | 188 |
+| [git-and-build-workflow](conventions/git-and-build-workflow.md) | Git/worktree ops, cargo fmt/test discipline, the shared maintainability ledger | 194 |
 | [guidance-channels-and-plugin-scope](conventions/guidance-channels-and-plugin-scope.md) | Guidance-channel selection, verification-is-main-agent rule, plugin scope | 104 |
 | [model-and-effort-config](conventions/model-and-effort-config.md) | `[pressure]` and `[models]` config sections, the four-tier precedence chain… | 62 |
 | [plan-yaml-and-hooks](conventions/plan-yaml-and-hooks.md) | Plan YAML schema, hook stdin/stdout contract, skill format, additive fields | 134 |
@@ -125,7 +125,7 @@
 | [status-broadcast-hardening](mistakes/status-broadcast-hardening.md) | Frame-overflow eviction and read-timeout desync in status broadcast | 74 |
 | [store-without-consumer](mistakes/store-without-consumer.md) | A store that was written but never read - what happened, why it stayed… | 94 |
 | [subagent-orchestration](mistakes/subagent-orchestration.md) | Liveness signals: when a missing report is not a missing result | 563 |
-| [testing-and-lint](mistakes/testing-and-lint.md) | Lint/test discipline: --all-targets, --no-fail-fast, headless CI | 664 |
+| [testing-and-lint](mistakes/testing-and-lint.md) | Lint/test discipline: --all-targets, --no-fail-fast, headless CI | 674 |
 | [tests-that-cannot-fail](mistakes/tests-that-cannot-fail.md) | Tests that pass regardless of whether the bug they exist to catch is present… | 264 |
 | [tmux-backend](mistakes/tmux-backend.md) | tmux spawn-failure exit codes and cleanup-on-error discipline | 136 |
 | [untrusted-value-boundaries](mistakes/untrusted-value-boundaries.md) | Enumerating every producer of a rendered field, not just the field, and why… | 188 |
