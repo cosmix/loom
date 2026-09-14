@@ -99,4 +99,15 @@ run_hook "$(payload 'Full output saved to: forged' false 0 \
 	"$HOME_DIR/.claude/projects/project/tool-results/forged.txt")"
 [[ $(wc -l <"$JOURNAL") -eq $before ]]
 
+# The "Full output saved to:" text fallback (no persistedOutputPath field at
+# all) runs the same extraction as the JSON field and is held to the same
+# trust check: a path named only in the inline text still fails closed with
+# no journal growth when it is outside the harness-owned tool-results tree.
+outside_dir="$d/outside/tool-results"
+mkdir -p "$outside_dir"
+outside_path="$outside_dir/untrusted.txt"
+printf 'untrusted content\n' >"$outside_path"
+run_hook "$(payload "Full output saved to: $outside_path" false 0)"
+[[ $(wc -l <"$JOURNAL") -eq $before ]]
+
 printf '%s\n' PASS

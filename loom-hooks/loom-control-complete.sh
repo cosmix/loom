@@ -203,7 +203,7 @@ find_persisted_path() {
 	path=$(printf '%s' "$INPUT_JSON" | jq -r \
 		'.tool_response.persistedOutputPath // .tool_result.persistedOutputPath // empty')
 	if [[ -z "$path" ]]; then
-		path=$(printf '%s' "$OUTPUT_TEXT" | sed -n 's/^.*Full output saved to: //p' | head -n1)
+		path=$(loom_saved_output_path "$OUTPUT_TEXT")
 	fi
 	printf '%s' "$path"
 }

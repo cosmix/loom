@@ -909,6 +909,33 @@ loom_warn_no_jq() {
     exit 1
 }
 
+# loom_saved_output_path <text>
+#
+# Print the path from the FIRST line of <text> carrying the literal
+# "Full output saved to: " notice - everything after the marker's last
+# occurrence on that line, the same extraction
+# `sed -n 's/^.*Full output saved to: //p' | head -n1` performed. Prints
+# nothing when no line carries the notice. Always returns 0.
+#
+# Deliberately no `| head` here: under `set -o pipefail`, a `sed` still
+# writing lines after `head -n1` has read its one line and exited takes
+# SIGPIPE and dies with 141, which `errexit` then turns into an unclassified
+# hook abort instead of the caller's normal fail-closed path - the same bug
+# class commit ec721be5 fixed for commit-guard.sh's git-status pipeline.
+# Walking the here-string with a plain read loop never opens that pipe.
+loom_saved_output_path() {
+    local line
+    while IFS= read -r line; do
+        case "$line" in
+        *'Full output saved to: '*)
+            printf '%s' "${line##*'Full output saved to: '}"
+            return 0
+            ;;
+        esac
+    done <<<"$1"
+    return 0
+}
+
 # loom_find_stage_file <work-dir> <stage-id>
 #
 # Echo the one canonical stage document matching Rust's `{depth}-{id}.md` or
