@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 use chrono::Utc;
 
 use crate::fs::session_files::{load_session_exact, mark_session_terminal_reason};
-use crate::handoff::{current_blocker, load_trusted_session_checkpoint};
+use crate::handoff::{current_blocker, load_trusted_session_checkpoint, short_fingerprint};
 use crate::models::session::{Session, SessionExitReason, SessionStatus};
 use crate::models::stage::{Stage, StageStatus};
 use crate::orchestrator::monitor::events::CompletionEscalation;
@@ -237,12 +237,4 @@ fn ensure_current_writer(stage: &Stage, session_id: &str) -> Result<()> {
         "stage moved before completion blocker disposition could be persisted"
     );
     Ok(())
-}
-
-fn short_fingerprint(fingerprint: &str) -> &str {
-    let end = fingerprint
-        .char_indices()
-        .nth(12)
-        .map_or(fingerprint.len(), |(index, _)| index);
-    &fingerprint[..end]
 }
