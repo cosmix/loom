@@ -127,10 +127,10 @@ pub(super) fn print_log_tail(log_path: &Path, max_bytes: usize) {
     }
 }
 
-/// Spawn Claude in the foreground (inherited TTY → interactive/subscription
-/// billing) and return once the agent signals completion by creating `marker`
-/// — at which point the now-idle session is SIGTERMed (mirroring how the loom
-/// daemon terminates a session whose stage has completed). If the process exits
+/// Spawn Claude in the foreground (inherited TTY → interactive) and return
+/// once the agent signals completion by creating `marker` — at which point
+/// the now-idle session is SIGTERMed (mirroring how the loom daemon
+/// terminates a session whose stage has completed). If the process exits
 /// on its own first (e.g. the user exited manually) that status is returned.
 pub(super) fn run_claude_foreground(
     claude_path: &Path,

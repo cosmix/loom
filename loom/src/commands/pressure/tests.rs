@@ -240,7 +240,7 @@ fn test_render_dry_run_shows_a_non_default_model_selection_per_step() {
 fn test_claude_args_shape() {
     let marker = PathBuf::from("/repo/.loom/work/pressure/claude-1.done");
     let args = claude_args("/pressure doc/plans/PLAN-foo.md", &marker, "opus", "xhigh");
-    // Interactive (no -p): keeps subscription billing. Auto permission mode.
+    // Interactive (no -p). Auto permission mode.
     assert!(!args.iter().any(|a| a == "-p" || a == "--print"));
     assert_eq!(args[0], "--permission-mode");
     assert_eq!(args[1], "auto");

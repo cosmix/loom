@@ -106,7 +106,6 @@ Loom's savings come from **delegation, not downgrade**:
 - **Tiered knowledge and a skill index** keep the working set small — at most 5 matched skills are injected per stage, out of 61 installed.
 - **Waits and repeat reads are settled by receipts, not by polling.** An orchestrator waits on a backgrounded Codex forward by its exact receipt (`loom subagents wait --receipt <id>`), and repeated `loom subagents list` polling is counted by the poll guard. A repeated file read is warned or denied only when a transcript receipt proves the earlier result was delivered.
 - **Consumption is measured, not assumed.** `loom usage` reports Claude and Codex separately from provider-native telemetry, and `loom usage --compare` judges a candidate policy offline against paired runs. A token-proxy gain alone never counts as a subscription saving, and any quality or latency regression rejects the candidate; see [the evaluation protocol](doc/token-optimization-evaluation.md).
-- **Orchestrated sessions are interactive**, billing against your Claude subscription. The handful of headless `claude -p` paths are opt-in flags, off by default (see the Billing note below).
 
 Per-stage `model`, `reasoning_effort`, and `ultracode` fields let you override any of this explicitly.
 
@@ -266,7 +265,7 @@ loom diagnose <stage-id>
 loom pressure <plan-path> [--rounds N] [--claude-model M] [--claude-effort E] [--codex-model M] [--codex-effort E] [--address-model M] [--address-effort E] [--dry-run]
 ```
 
-`loom pressure` hardens a plan before you run it by combining two external agents over `--rounds` rounds (default 2). Each round runs both pressure-tests in parallel: Claude `/pressure` edits the plan in place in the foreground (you watch it live), while Codex `$pressure` writes an independent review next to it (`codex-<plan>.md`) in the background (its output is captured to a temp log to keep the terminal clean). Once both finish, Claude `/address` folds the review back in. Claude stays interactive (subscription billing) and auto-closes when done; Codex runs from the repo root. Requires both the `claude` and `codex` CLIs on PATH. `--dry-run` prints the exact commands without spawning anything.
+`loom pressure` hardens a plan before you run it by combining two external agents over `--rounds` rounds (default 2). Each round runs both pressure-tests in parallel: Claude `/pressure` edits the plan in place in the foreground (you watch it live), while Codex `$pressure` writes an independent review next to it (`codex-<plan>.md`) in the background (its output is captured to a temp log to keep the terminal clean). Once both finish, Claude `/address` folds the review back in. Claude stays interactive and auto-closes when done; Codex runs from the repo root. Requires both the `claude` and `codex` CLIs on PATH. `--dry-run` prints the exact commands without spawning anything.
 
 Each of the three steps spawns with an independently selectable model and reasoning effort: `--claude-model`/`--claude-effort` for `/pressure` (model accepts `haiku`, `sonnet`, `opus`, or `fable`; effort accepts `low`, `medium`, `high`, `xhigh`, or `max`), `--address-model`/`--address-effort` for `/address` (same value sets), and `--codex-model`/`--codex-effort` for `$pressure` (model accepts `gpt-6-astra`, `gpt-5.6-sol`, `gpt-5.6-terra`, or `gpt-5.6-luna`; effort accepts `low`, `medium`, `high`, or `xhigh` — no `max`, that value is Claude-only). Absent a flag, each key falls back independently: the project config's `.loom/work/config.toml` `[pressure]` section first (if it sets that key), then `~/.loom/config.toml` (`loom config -k pressure.claude_model <value>`), then its built-in default. `[pressure]` resolves per key, so a project section that sets only `claude_model` still lets `codex_effort` fall through to your user config.
 
@@ -352,7 +351,7 @@ See [Knowledge System](#knowledge-system) for how these fit together.
 ### Other Commands
 
 ```bash
-loom review [--ai-summary]                                                   # Generate a code-review doc from stage memories; --ai-summary uses headless `claude -p` (see Billing note)
+loom review [--ai-summary]                                                   # Generate a code-review doc from stage memories; --ai-summary uses headless `claude -p`
 loom usage [--since <duration|date>] [--until <rfc3339>] [--provider claude|codex|all] [--project <path> | --all] [--stage <id>] [--plan <name>] [--windows 5h|week] [--json]
                                                                              # Report what agent sessions actually consumed, per provider (Claude and Codex are never summed)
 loom usage [--claude-root <dir>] [--codex-root <dir>] [--receipts-root <dir>] [--forward-receipts-root <dir>]
@@ -387,16 +386,6 @@ loom completions [<shell>] [--install] [--migrate]
 `loom handoff` writes the document a successor session resumes from, under `.loom/work/handoffs/`. Loom's `pre-compact` hook calls it automatically before a compaction, and an agent that reaches its context ceiling calls it explicitly with `--trigger ceiling`.
 
 `loom request status` and `loom skill-index` are plumbing for loom's own hooks and its sandbox relay rather than commands a plan author types; they are listed so hook output that names them is traceable.
-
-### ⚠️ Billing: headless `claude -p` flags
-
-Loom runs every orchestrated stage as a normal **interactive** Claude Code session, which bills against your Claude subscription exactly like launching `claude` yourself. One **opt-in** flag instead invokes Claude in headless print mode (`claude -p`):
-
-| Command       | Flag           | Behavior without the flag                                       |
-| ------------- | -------------- | --------------------------------------------------------------- |
-| `loom review` | `--ai-summary` | Uses the plan's first paragraph as the summary (no Claude call) |
-
-Headless `claude -p` usage may be billed **separately from (and in addition to) your Claude subscription** as API/extra charges, depending on your account and auth setup. This flag is **off by default** so loom never silently incurs those charges — only pass it when you knowingly accept the headless billing.
 
 ## Configuration
 

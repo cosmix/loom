@@ -1,24 +1,24 @@
 //! `loom pressure` — alternating Claude/Codex plan pressure-testing driver.
 //!
 //! Each round runs two independent pressure-tests **concurrently**: Claude
-//! `/pressure` in the foreground (interactive → subscription billing, the user
-//! watches it) and Codex `$pressure` in the background (its noisy event stream
-//! captured to a log file). Once both finish, Claude `/address` folds Codex's
-//! written review back into the plan. The Codex report is deleted at the start
-//! of every round so a failed Codex write can never leave `/address` reading a
+//! `/pressure` in the foreground (interactive, the user watches it) and
+//! Codex `$pressure` in the background (its noisy event stream captured to
+//! a log file). Once both finish, Claude `/address` folds Codex's written
+//! review back into the plan. The Codex report is deleted at the start of
+//! every round so a failed Codex write can never leave `/address` reading a
 //! stale review, plus once more after all rounds as cleanup.
 //!
 //! ## Why Claude runs in the foreground (and how it auto-exits)
 //!
-//! Claude Code enters its non-interactive (`-p`) path — which can bill against
-//! pay-per-token API credits instead of the subscription — whenever stdout is
-//! not a TTY. So Claude's stdout MUST stay the real terminal; it cannot be
-//! captured or backgrounded. Interactive Claude also never exits on its own
-//! after a slash command. We therefore mirror how the loom daemon terminates a
-//! session: the agent signals completion (here, by creating a marker file as
-//! its final action, injected via `--append-system-prompt`), the driver watches
-//! for that marker, and then SIGTERMs the now-idle session. If the marker never
-//! appears the user can still exit manually, exactly as before.
+//! Claude Code enters its non-interactive (`-p`) path whenever stdout is not
+//! a TTY, and the session stops being interactive. So Claude's stdout MUST
+//! stay the real terminal; it cannot be captured or backgrounded. Interactive
+//! Claude also never exits on its own after a slash command. We therefore
+//! mirror how the loom daemon terminates a session: the agent signals
+//! completion (here, by creating a marker file as its final action, injected
+//! via `--append-system-prompt`), the driver watches for that marker, and
+//! then SIGTERMs the now-idle session. If the marker never appears the user
+//! can still exit manually, exactly as before.
 //!
 //! The marker lives under `<repo>/.loom/work/pressure/`, NOT `std::env::temp_dir()`:
 //! Claude is spawned with `--permission-mode auto`, which sandboxes its Bash
@@ -200,7 +200,7 @@ fn print_run_header(rounds: u32, invocation: &str, models: &PressureModels) {
 
 /// Run the concurrent Claude/Codex pressure-test step: Codex reviews the plan
 /// independently in the background (quiet, captured to a log) while Claude
-/// pressure-tests in the foreground (interactive → subscription billing).
+/// pressure-tests in the foreground (interactive).
 /// Returns whether the pipeline should stop. Split out of [`execute`]'s
 /// `Step::Pressure` arm purely to keep that function under the
 /// maintainability line limit.
