@@ -2,7 +2,7 @@
 
 use std::fs;
 use std::path::Path;
-use std::process::Command;
+use std::process::{Command, Stdio};
 use std::sync::OnceLock;
 use tempfile::TempDir;
 
@@ -245,4 +245,41 @@ pub fn clear_relay_env(command: &mut Command) -> &mut Command {
         command.env_remove(var);
     }
     command
+}
+
+/// Whether a `name --version` child spawns successfully, i.e. `name` is on
+/// `PATH`. Used to skip a test that needs an external tool rather than fail
+/// it on a host that lacks one.
+pub fn tool_available(name: &str) -> bool {
+    Command::new(name)
+        .arg("--version")
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .is_ok()
+}
+
+/// Restores a process env var to its previous value on drop, on EVERY exit
+/// path including a panic — so a test that pins one for its own duration can
+/// never leak a stale value into whichever test the harness runs next.
+pub struct EnvVarGuard {
+    key: &'static str,
+    original: Option<std::ffi::OsString>,
+}
+
+impl EnvVarGuard {
+    pub fn set(key: &'static str, value: impl AsRef<std::ffi::OsStr>) -> Self {
+        let original = std::env::var_os(key);
+        std::env::set_var(key, value);
+        Self { key, original }
+    }
+}
+
+impl Drop for EnvVarGuard {
+    fn drop(&mut self) {
+        match &self.original {
+            Some(value) => std::env::set_var(self.key, value),
+            None => std::env::remove_var(self.key),
+        }
+    }
 }

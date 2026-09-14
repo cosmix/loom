@@ -16,108 +16,19 @@
 //!
 //! Each test documents which plan fix it guards against regression for.
 
-use std::fs;
-use std::path::{Path, PathBuf};
-use std::process::Command;
+#[path = "phantom_merge/support.rs"]
+mod support;
 
 use serial_test::serial;
-use tempfile::TempDir;
 
 use loom::commands::repair;
 use loom::models::stage::{Stage, StageStatus, StageType};
 use loom::verify::transitions::{load_stage, save_stage};
 
-/// Build a real git repo on branch `main` with an initial commit. Returns the
-/// TempDir (callers keep it alive for the duration of the test).
-fn init_repo() -> TempDir {
-    let tmp = TempDir::new().expect("tempdir");
-    let root = tmp.path();
-
-    run_git(&["init", "-b", "main"], root);
-    run_git(&["config", "user.email", "test@test.com"], root);
-    run_git(&["config", "user.name", "Test"], root);
-    fs::write(root.join("README.md"), "initial\n").expect("write README");
-    run_git(&["add", "README.md"], root);
-    run_git(&["commit", "-m", "initial"], root);
-    run_git(&["branch", "-M", "main"], root);
-
-    tmp
-}
-
-fn run_git(args: &[&str], cwd: &Path) {
-    let out = Command::new("git")
-        .args(args)
-        .current_dir(cwd)
-        .output()
-        .unwrap_or_else(|e| panic!("failed to run git {args:?}: {e}"));
-    assert!(
-        out.status.success(),
-        "git {args:?} failed: stdout={} stderr={}",
-        String::from_utf8_lossy(&out.stdout),
-        String::from_utf8_lossy(&out.stderr)
-    );
-}
-
-/// Create a branch, add one commit, return the commit SHA. Leaves caller on `main`.
-fn create_loom_branch_with_commit(
-    stage_id: &str,
-    filename: &str,
-    content: &str,
-    repo_root: &Path,
-) -> String {
-    let branch = format!("loom/{stage_id}");
-    run_git(&["checkout", "-b", &branch], repo_root);
-    fs::write(repo_root.join(filename), content).expect("write file");
-    run_git(&["add", filename], repo_root);
-    run_git(&["commit", "-m", "stage work"], repo_root);
-
-    let out = Command::new("git")
-        .args(["rev-parse", "HEAD"])
-        .current_dir(repo_root)
-        .output()
-        .unwrap();
-    let sha = String::from_utf8_lossy(&out.stdout).trim().to_string();
-
-    run_git(&["checkout", "main"], repo_root);
-    sha
-}
-
-/// Create an empty `.loom/work/` with a minimal `config.toml` pointing at `main`.
-fn init_work_dir(repo_root: &Path) -> PathBuf {
-    let work_dir = repo_root.join(".loom").join("work");
-    fs::create_dir_all(work_dir.join("stages")).expect("mkdir .loom/work/stages");
-    fs::write(work_dir.join("config.toml"), "base_branch = \"main\"\n").expect("write config.toml");
-    work_dir
-}
-
-/// Build a Stage in the given Completed/merged state and write it to disk.
-fn write_phantom_stage(
-    stage_id: &str,
-    merged: bool,
-    completed_commit: Option<String>,
-    work_dir: &Path,
-) {
-    let mut stage = Stage::new(stage_id.to_string(), Some(format!("test {stage_id}")));
-    stage.id = stage_id.to_string();
-    stage.stage_type = StageType::Standard;
-    stage.status = StageStatus::Completed;
-    stage.completed_at = Some(chrono::Utc::now());
-    stage.merged = merged;
-    stage.completed_commit = completed_commit;
-    save_stage(&stage, work_dir).expect("save stage");
-}
-
-/// Guarded cwd change: restores the prior cwd even if the closure panics.
-/// We use #[serial] on tests that enter this helper to avoid races.
-fn with_cwd<F: FnOnce()>(dir: &Path, f: F) {
-    let prior = std::env::current_dir().expect("getcwd");
-    std::env::set_current_dir(dir).expect("set cwd to test repo");
-    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(f));
-    std::env::set_current_dir(&prior).expect("restore cwd");
-    if let Err(e) = result {
-        std::panic::resume_unwind(e);
-    }
-}
+use support::{
+    assert_hooks_installed_under, create_loom_branch_with_commit, init_repo, init_work_dir,
+    isolate_home, run_git, with_cwd, write_phantom_stage,
+};
 
 /// Fix 13 (detect) + Fix 13 (revert):
 /// A phantom merge constructed by hand (merged=true, commit exists on its
@@ -128,6 +39,7 @@ fn with_cwd<F: FnOnce()>(dir: &Path, f: F) {
 #[test]
 #[serial]
 fn repair_fix_reverts_phantom_merge_flag() {
+    let _home = isolate_home();
     let repo = init_repo();
     let repo_root = repo.path();
     let work_dir = init_work_dir(repo_root);
@@ -169,6 +81,10 @@ fn repair_fix_reverts_phantom_merge_flag() {
         Some(stranded_sha),
         "repair must NOT clobber completed_commit (user may need it to cherry-pick)"
     );
+
+    // Proves the HOME redirect actually took effect: repair --fix installs
+    // hook scripts into the scratch home, never the developer's real one.
+    assert_hooks_installed_under(_home.home());
 }
 
 /// Fix 13 (dry-run): without `--fix`, repair leaves the phantom merge in place
@@ -177,6 +93,7 @@ fn repair_fix_reverts_phantom_merge_flag() {
 #[test]
 #[serial]
 fn repair_dry_run_does_not_modify_phantom_merge() {
+    let _home = isolate_home();
     let repo = init_repo();
     let repo_root = repo.path();
     let work_dir = init_work_dir(repo_root);
@@ -200,6 +117,7 @@ fn repair_dry_run_does_not_modify_phantom_merge() {
 #[test]
 #[serial]
 fn repair_does_not_flag_legitimately_merged_stage() {
+    let _home = isolate_home();
     let repo = init_repo();
     let repo_root = repo.path();
     let work_dir = init_work_dir(repo_root);
@@ -235,6 +153,7 @@ fn repair_does_not_flag_legitimately_merged_stage() {
 #[test]
 #[serial]
 fn repair_skips_knowledge_stages() {
+    let _home = isolate_home();
     let repo = init_repo();
     let repo_root = repo.path();
     let work_dir = init_work_dir(repo_root);
@@ -338,6 +257,7 @@ fn sync_path_reverts_merged_true_when_branch_and_completed_commit_both_missing()
 #[test]
 #[serial]
 fn repair_leaves_stale_completed_unmerged_stage_untouched() {
+    let _home = isolate_home();
     let repo = init_repo();
     let repo_root = repo.path();
     let work_dir = init_work_dir(repo_root);

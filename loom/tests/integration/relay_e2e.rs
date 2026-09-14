@@ -26,6 +26,7 @@ use loom::plan::schema::AcceptanceCriterion;
 use loom::process::sandbox_probe::skip_unless;
 use loom::relay::{RelayLine, RequestKind};
 use loom::verify::transitions::save_stage;
+use serial_test::serial;
 use tempfile::TempDir;
 use uuid::Uuid;
 
@@ -65,15 +66,6 @@ fn tempdir_outside_tmp() -> TempDir {
         .prefix("xdg-")
         .tempdir_in(&base)
         .expect("create xdg tempdir outside /tmp")
-}
-
-fn tool_available(name: &str) -> bool {
-    Command::new(name)
-        .arg("--version")
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-        .is_ok()
 }
 
 /// `<xdg>/loom/scratch/<session_id>`, mode 0700 — the exact path
@@ -368,14 +360,20 @@ fn assert_replay_is_a_noop(
 /// `drain_session_inboxes` (real handler), then a byte-identical replay of
 /// the captured hook payload must change nothing.
 #[test]
+#[serial]
 fn relay_memory_note_flows_end_to_end() {
     if skip_unless(
-        tool_available("jq") && tool_available("bash"),
+        helpers::tool_available("jq") && helpers::tool_available("bash"),
         TEST_NAME,
         "jq or bash was not found on PATH",
     ) {
         return;
     }
+
+    // Orchestrator::new eagerly constructs a NativeBackend even in manual mode.
+    // Pin LOOM_TERMINAL so headless CI runners without terminal emulators do not
+    // fail this relay regression for unrelated host-environment reasons.
+    let _terminal_env = helpers::EnvVarGuard::set("LOOM_TERMINAL", "xterm");
 
     let fx = build_fixture();
 
