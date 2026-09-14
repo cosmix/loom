@@ -4,6 +4,7 @@ use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
 
 use super::types::{CommitRef, CompletedTask, FileRef, KeyDecision};
+use crate::handoff::schema::CompletionCheckpoint;
 
 /// Version of the handoff schema
 pub const HANDOFF_SCHEMA_VERSION: u32 = 2;
@@ -31,6 +32,9 @@ pub enum HandoffOrigin {
     /// The daemon retired the agent after the dispute it filed was
     /// adjudicated; its successor starts against the amended criteria.
     Retired,
+    /// The trusted host broker or daemon recorded completion verification
+    /// evidence for this exact session.
+    CompletionEvidence,
 }
 
 /// Structured handoff schema V2.
@@ -50,6 +54,9 @@ pub struct HandoffV2 {
     /// Event that initiated this handoff, when known.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub origin: Option<HandoffOrigin>,
+    /// Durable completion verification state for this exact stage session.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub completion_checkpoint: Option<CompletionCheckpoint>,
     /// Tasks completed during this session
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub completed_tasks: Vec<CompletedTask>,
@@ -91,6 +98,7 @@ impl HandoffV2 {
             stage_id: stage_id.into(),
             context_tokens: 0,
             origin: None,
+            completion_checkpoint: None,
             completed_tasks: Vec::new(),
             key_decisions: Vec::new(),
             discovered_facts: Vec::new(),
@@ -119,6 +127,12 @@ impl HandoffV2 {
     /// Set the optional handoff origin.
     pub fn with_origin_opt(mut self, origin: Option<HandoffOrigin>) -> Self {
         self.origin = origin;
+        self
+    }
+
+    /// Set the optional completion verification checkpoint.
+    pub fn with_completion_checkpoint(mut self, checkpoint: Option<CompletionCheckpoint>) -> Self {
+        self.completion_checkpoint = checkpoint;
         self
     }
 
@@ -201,6 +215,13 @@ impl HandoffV2 {
             bail!("Handoff stage_id cannot be empty");
         }
 
+        if let Some(checkpoint) = &self.completion_checkpoint {
+            checkpoint.validate()?;
+            if checkpoint.stage_id != self.stage_id || checkpoint.session_id != self.session_id {
+                bail!("Completion checkpoint does not belong to this handoff stage and session");
+            }
+        }
+
         Ok(())
     }
 }
@@ -261,6 +282,7 @@ mod tests {
         .unwrap();
 
         assert_eq!(handoff.origin, None);
+        assert_eq!(handoff.completion_checkpoint, None);
     }
 
     #[test]
@@ -270,6 +292,7 @@ mod tests {
             (HandoffOrigin::RedBand, "red_band"),
             (HandoffOrigin::AgentCeiling, "agent_ceiling"),
             (HandoffOrigin::Stalled, "stalled"),
+            (HandoffOrigin::CompletionEvidence, "completion_evidence"),
         ] {
             let handoff = HandoffV2::new("session-abc", "stage-1").with_origin(origin);
             let yaml = handoff.to_yaml().unwrap();
@@ -291,5 +314,14 @@ mod tests {
         // Invalid: empty stage_id
         invalid = HandoffV2::new("session-1", "");
         assert!(invalid.validate().is_err());
+    }
+
+    #[test]
+    fn completion_checkpoint_must_match_handoff_session() {
+        let checkpoint = CompletionCheckpoint::new("stage-1", "session-other");
+        let handoff =
+            HandoffV2::new("session-1", "stage-1").with_completion_checkpoint(Some(checkpoint));
+
+        assert!(handoff.validate().is_err());
     }
 }

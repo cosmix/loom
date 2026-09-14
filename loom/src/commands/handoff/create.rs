@@ -7,7 +7,7 @@ use crate::commands::common::work_dir_path;
 use crate::fs::memory::format_memory_for_handoff;
 use crate::git::branch::current_branch;
 use crate::git::runner::NO_HOOKS_ARGS;
-use crate::handoff::generator::{generate_handoff, HandoffContent};
+use crate::handoff::generator::{merge_session_handoff, HandoffContent, MergeOutcome};
 use crate::handoff::session_content::CEILING_TRIGGER;
 use crate::handoff::HandoffOrigin;
 use crate::models::session::{Session, SessionStatus};
@@ -130,13 +130,20 @@ fn execute_direct(
     session.status = SessionStatus::Running;
     session.context_tokens = context_tokens;
 
-    // Generate the handoff file
-    let handoff_path = generate_handoff(&session, &stage, content, &work_dir)?;
+    let origin = content.origin;
+    let (handoff_path, outcome) =
+        merge_session_handoff(&session, &stage, origin, content, &work_dir)?;
 
     // Print the handoff file path (hooks parse this output) before any
     // transition failure below can end the command: the document exists either
     // way, and the path is what both the hooks and the agent need.
-    println!("{}", handoff_path.display());
+    match outcome {
+        MergeOutcome::Created => println!("{}", handoff_path.display()),
+        MergeOutcome::Unchanged => println!(
+            "Equivalent handoff already exists: {}",
+            handoff_path.display()
+        ),
+    }
 
     if trigger == CEILING_TRIGGER {
         end_turn_for_handoff(&stage_id, &work_dir, &handoff_path)?;
@@ -328,3 +335,7 @@ fn get_modified_files() -> Result<Vec<String>> {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+#[path = "create/merge_tests.rs"]
+mod merge_tests;

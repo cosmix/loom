@@ -1,7 +1,9 @@
 //! Handoff content data structures and builder methods.
 
 use crate::handoff::git_handoff::GitHistory;
-use crate::handoff::schema::{CommitRef, CompletedTask, HandoffOrigin, HandoffV2, KeyDecision};
+use crate::handoff::schema::{
+    CommitRef, CompletedTask, CompletionCheckpoint, HandoffOrigin, HandoffV2, KeyDecision,
+};
 
 /// Content for generating a handoff file
 #[derive(Debug, Clone)]
@@ -12,6 +14,7 @@ pub struct HandoffContent {
     pub context_tokens: u32,
     /// Event that initiated this handoff, when known.
     pub origin: Option<HandoffOrigin>,
+    pub completion_checkpoint: Option<CompletionCheckpoint>,
     pub goals: String,
     pub completed_work: Vec<String>,
     pub decisions: Vec<(String, String)>, // (decision, rationale)
@@ -33,6 +36,7 @@ impl HandoffContent {
             plan_id: None,
             context_tokens: 0,
             origin: None,
+            completion_checkpoint: None,
             goals: String::new(),
             completed_work: Vec::new(),
             decisions: Vec::new(),
@@ -54,6 +58,12 @@ impl HandoffContent {
     /// Record the event that initiated this handoff.
     pub fn with_origin(mut self, origin: HandoffOrigin) -> Self {
         self.origin = Some(origin);
+        self
+    }
+
+    /// Set the optional completion verification checkpoint.
+    pub fn with_completion_checkpoint(mut self, checkpoint: Option<CompletionCheckpoint>) -> Self {
+        self.completion_checkpoint = checkpoint;
         self
     }
 
@@ -149,6 +159,7 @@ impl HandoffContent {
         HandoffV2::new(&self.session_id, &self.stage_id)
             .with_context_tokens(self.context_tokens)
             .with_origin_opt(self.origin)
+            .with_completion_checkpoint(self.completion_checkpoint.clone())
             .with_completed_tasks(completed_tasks)
             .with_key_decisions(key_decisions)
             .with_next_actions(self.next_steps.clone())

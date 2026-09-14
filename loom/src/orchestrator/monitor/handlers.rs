@@ -8,10 +8,11 @@ use crate::fs::memory::{
     format_memory_for_handoff, generate_summary, preserve_for_crash, read_journal, write_summary,
 };
 use crate::fs::work_dir::ContextConfig;
-use crate::handoff::{ensure_handoff, generate_handoff, HandoffContent, HandoffOrigin};
-use crate::models::session::{Session, SessionStatus};
+use crate::handoff::{
+    ensure_handoff, merge_session_handoff, CommitInfo, GitHistory, HandoffContent, HandoffOrigin,
+};
+use crate::models::session::Session;
 use crate::models::stage::Stage;
-use crate::orchestrator::continuation::save_session;
 use crate::orchestrator::liveness::LivenessService;
 use crate::orchestrator::signals::read_merge_signal;
 use crate::orchestrator::spawner::{
@@ -129,7 +130,9 @@ impl Handlers {
         origin: HandoffOrigin,
     ) -> Result<PathBuf> {
         let content = self.context_handoff_content(session, stage, origin);
-        generate_handoff(session, stage, content, &self.config.work_dir)
+        let (path, _) =
+            merge_session_handoff(session, stage, Some(origin), content, &self.config.work_dir)?;
+        Ok(path)
     }
 
     fn context_handoff_content(
@@ -147,7 +150,7 @@ impl Handlers {
         let stage_id = session.stage_id.as_deref().unwrap_or(&session.id);
         let memory_content = format_memory_for_handoff(&self.config.work_dir, stage_id);
 
-        HandoffContent::new(session.id.clone(), stage.id.clone())
+        let content = HandoffContent::new(session.id.clone(), stage.id.clone())
             .with_context_tokens(session.context_tokens)
             .with_origin(origin)
             .with_goals(goals)
@@ -155,7 +158,17 @@ impl Handlers {
             .with_next_steps(vec![
                 "Review handoff and continue from current state".to_string()
             ])
-            .with_memory_content(memory_content)
+            .with_memory_content(memory_content);
+        match &stage.completed_commit {
+            Some(commit) => content.with_git_history(Some(GitHistory {
+                commits: vec![CommitInfo {
+                    hash: commit.clone(),
+                    message: "stage completed_commit".to_string(),
+                }],
+                ..GitHistory::default()
+            })),
+            None => content,
+        }
     }
 
     /// Handle session crash by generating a crash report
@@ -210,23 +223,6 @@ impl Handlers {
                 );
                 None
             }
-        }
-    }
-
-    /// Persist session status change to disk immediately
-    ///
-    /// Called when session status changes are detected (crash, completion, etc.)
-    /// to ensure the session file on disk reflects the current state without
-    /// waiting for event processing.
-    pub fn persist_session_status(&self, session: &Session, new_status: SessionStatus) {
-        let mut updated_session = session.clone();
-        updated_session.status = new_status;
-
-        if let Err(e) = save_session(&updated_session, &self.config.work_dir) {
-            eprintln!(
-                "Failed to persist session status for '{}': {}",
-                session.id, e
-            );
         }
     }
 }

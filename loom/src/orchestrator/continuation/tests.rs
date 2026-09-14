@@ -201,6 +201,56 @@ fn prepare_continuation_selects_the_exact_outgoing_session() {
 }
 
 #[test]
+fn prepare_continuation_selects_an_older_richer_exact_session_handoff() {
+    use crate::handoff::{CompletedTask, CompletionCheckpoint, CompletionPhase, NonceObservation};
+
+    let (temp, work_dir) = create_test_work_dir();
+    let stage_id = "stage-rich";
+    create_test_stage(stage_id, &work_dir);
+    create_test_worktree(stage_id, temp.path());
+    crate::verify::transitions::update_stage(stage_id, &work_dir, |stage| {
+        stage.session = Some("session-old".to_string());
+        Ok(())
+    })
+    .unwrap();
+
+    let mut checkpoint = CompletionCheckpoint::new(stage_id, "session-old");
+    checkpoint.observations.push(NonceObservation {
+        evidence_nonce: "evidence-nonce-0001".to_string(),
+        identity_digest: "a".repeat(64),
+        fingerprint: None,
+        phase: CompletionPhase::ToolFailed,
+        first_observed_at: "2026-09-14T10:00:00Z".to_string(),
+        last_observed_at: "2026-09-14T10:00:00Z".to_string(),
+        attestation: None,
+    });
+    let rich_path = work_dir
+        .join("handoffs")
+        .join(format!("{stage_id}-handoff-001.md"));
+    let rich = crate::handoff::HandoffV2::new("session-old", stage_id)
+        .with_completion_checkpoint(Some(checkpoint))
+        .with_completed_tasks(vec![CompletedTask::new("implemented recovery")]);
+    fs::write(&rich_path, format!("---\n{}---\n", rich.to_yaml().unwrap())).unwrap();
+    write_v2_handoff(
+        &work_dir
+            .join("handoffs")
+            .join(format!("{stage_id}-handoff-002.md")),
+        stage_id,
+        "session-old",
+    );
+    write_v2_handoff(
+        &work_dir
+            .join("handoffs")
+            .join(format!("{stage_id}-handoff-003.md")),
+        stage_id,
+        "session-other",
+    );
+
+    let context = prepare_continuation(stage_id, &work_dir).unwrap();
+    assert_eq!(context.handoff_path.as_deref(), Some(rich_path.as_path()));
+}
+
+#[test]
 fn prepare_continuation_surfaces_unreadable_handoff_uncertainty() {
     let (temp, work_dir) = create_test_work_dir();
     let project_root = temp.path();

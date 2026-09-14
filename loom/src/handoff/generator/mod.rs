@@ -3,12 +3,15 @@
 mod content;
 mod formatter;
 mod lookup;
+mod merge;
 mod numbering;
 
 #[cfg(test)]
+mod merge_tests;
+#[cfg(test)]
 mod tests;
 
-use anyhow::{ensure, Context, Result};
+use anyhow::{bail, ensure, Context, Result};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -20,8 +23,9 @@ use crate::models::stage::Stage;
 pub use content::HandoffContent;
 pub use lookup::{
     find_continuation_handoff, find_continuation_handoff_name, find_latest_session_handoff,
-    find_matching_handoff,
+    find_matching_handoff, load_session_checkpoint, load_trusted_session_checkpoint,
 };
+pub use merge::{merge_session_handoff, MergeOutcome};
 pub use numbering::find_latest_handoff;
 
 use formatter::format_handoff_markdown;
@@ -83,6 +87,9 @@ pub fn ensure_handoff(
             | HandoffOrigin::Retired => {
                 matching.is_some() && matching == find_latest_handoff(&stage.id, work_dir)?
             }
+            HandoffOrigin::CompletionEvidence => {
+                bail!("completion evidence is written through merge_session_handoff")
+            }
         };
         if reusable {
             return Ok(None);
@@ -99,7 +106,7 @@ fn handoff_has_context(path: &Path, context_tokens: u32) -> Result<bool> {
         .is_some_and(|handoff| handoff.context_tokens == context_tokens))
 }
 
-fn generate_handoff_locked(
+pub(super) fn generate_handoff_locked(
     stage: &Stage,
     content: &HandoffContent,
     work_dir: &Path,
