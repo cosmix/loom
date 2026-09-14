@@ -127,9 +127,14 @@ check_git_clean() {
 	fi
 }
 
-# Get list of uncommitted changes for error message
+# Get list of uncommitted changes for error message (first 10 entries).
+# Captured before truncation: piping `git status` straight into `head`
+# raises SIGPIPE in git once head exits, and under pipefail that 141
+# became the hook's exit status.
 get_uncommitted_changes() {
-	git status --porcelain 2>/dev/null | head -10
+	local status
+	status=$(git status --porcelain 2>/dev/null || true)
+	head -n 10 <<<"$status"
 }
 
 # Parse stage status from stage file YAML frontmatter
