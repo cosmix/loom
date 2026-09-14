@@ -13,7 +13,7 @@ const TONE_HEADER: Record<HazardTone, string> = {
 
 const TONE_ICON: Record<HazardTone, string> = {
   error: 'text-destructive',
-  warning: 'text-amber-600 dark:text-amber-400',
+  warning: 'text-amber-600 dark:text-orange-400',
 }
 
 const TONE_TITLE: Record<HazardTone, string> = {

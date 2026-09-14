@@ -56,12 +56,12 @@ const WELL_CONTROL = "#240f0f";
 export function terminalTheme(): TerminalTheme {
   // ANSI accents mirror dashboard tones: blue=executing, green=completed,
   // red=blocked, yellow=warning, and cyan=queued. The cursor and selection take
-  // the dashboard's yellow accent (the dark theme's --primary).
+  // the dashboard's amber accent (the dark theme's --primary).
   return {
     background: WELL,
     foreground: "#d8dce3",
-    cursor: "#f4d660",
-    selectionBackground: "#f4d66040",
+    cursor: "#fcbb20",
+    selectionBackground: "#fcbb2040",
     black: WELL,
     red: "#e07a6f",
     green: "#7fc79a",

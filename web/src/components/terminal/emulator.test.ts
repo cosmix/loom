@@ -7,8 +7,8 @@ describe("terminal emulator", () => {
     expect(terminalTheme()).toEqual({
       background: "#0a111f",
       foreground: "#d8dce3",
-      cursor: "#f4d660",
-      selectionBackground: "#f4d66040",
+      cursor: "#fcbb20",
+      selectionBackground: "#fcbb2040",
       black: "#0a111f",
       red: "#e07a6f",
       green: "#7fc79a",
