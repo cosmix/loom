@@ -312,6 +312,8 @@ BLOCK-B — model allocation playbook:
 
 **Fable-tier mechanics.** No loom agent type pins fable for implementation — pass the model override explicitly at spawn. Routine UI wiring to an existing design stays sonnet per rule 3; fable is for work where design judgment or extreme difficulty is the point, not for plumbing.
 
+**Lowest tier, fullest brief.** For each worker, guess the lowest tier that can do its piece without losing quality and write it in the worker table's `Tier` column (Section 5); the orchestrator escalates only on evidence (BLOCK-B rule 4). Then write the brief that tier needs to get the piece right the first time: the cheaper the tier, the more the brief settles — exact paths and `file:line` ranges to read, signatures of what it must produce, the pattern to mirror, every decision already made, every trap named, the command that proves it. Never paste code the worker can open; it reads the named ranges itself and pays for that I/O at its own rate. A piece whose brief cannot settle every decision is judgment work: settle it in the plan, or raise the tier.
+
 ### Codex Implementers (ASK THE USER)
 
 BEFORE writing any stage YAML, ask the user ONCE with AskUserQuestion: "Route routine
@@ -361,6 +363,14 @@ If the user picks Codex:
    both lanes — in ONE file-ownership table. File exclusivity is enforced across lanes: a codex
    agent and a sonnet agent writing the same file is lost work exactly as two agents in one lane
    would be.
+
+   **⚠️ SIZE EVERY CODEX UNIT FOR THE 540 s DEADLINE.** The forwarding wrapper cancels a job still
+   running at 540000 ms and exits 124 `timed_out`; the 600000 ms Bash timeout above only keeps the
+   harness from backgrounding the call. A unit is ONE file, or one file plus its test, at most three
+   numbered steps, with every interface it shares with a parallel unit pinned verbatim in its brief
+   so they compile together. One module pair at xhigh has measured 24-30 minutes, several times the
+   deadline. A timed-out unit is re-split against the partial tree, never re-forwarded as is. Work
+   that cannot be cut this small belongs to a Claude subagent.
 
    **⚠️ CODEX UNITS NAME ANCHORS, NOT EXHAUSTIVE DETAIL.** A codex subagent is `gpt-5.6-terra` or
    `gpt-5.6-luna` with a shell, and no Read tool — but it is not blind: loom's forwarding wrapper
@@ -463,7 +473,7 @@ Consequences for how you write a plan:
     verify and commit.
 ```
 
-**Keep each subagent's assignment small — decompose, don't up-model for headroom.** A subagent that takes on too much hits its own context budget and compacts — an uncached re-read that is slow, expensive, and degrades quality (the cheap model becomes the expensive, worse one). Two levers, in order: (1) scope each subagent's task to a bounded slice — if an assignment grows past ~130k of working context, split it into more subagents; (2) decompose with a subagent hierarchy (Section 5) so the orchestrator (and any coordinator subagent) stays a THIN COORDINATOR at every level — workers burn their own (discarded) context and return compact summaries. **A stage with no subagent assignments — where the orchestrator does the bulk of the implementation itself — is a red flag:** it defeats the point of ALWAYS-DELEGATED implementation and risks the same compaction failure, at a higher cost per token.
+**Keep each subagent's assignment small — decompose, don't up-model for headroom.** A subagent that takes on too much hits its own context budget and compacts — an uncached re-read that is slow, expensive, and degrades quality (the cheap model becomes the expensive, worse one). Two levers, in order: (1) scope each subagent's task to a bounded slice — if an assignment would grow past the 120k worker budget below, split it into more subagents; (2) decompose with a subagent hierarchy (Section 5) so the orchestrator (and any coordinator subagent) stays a THIN COORDINATOR at every level — workers burn their own (discarded) context and return compact summaries. **A stage with no subagent assignments — where the orchestrator does the bulk of the implementation itself — is a red flag:** it defeats the point of ALWAYS-DELEGATED implementation and risks the same compaction failure, at a higher cost per token.
 
 **Size every worker task to finish inside about 40 requests and 120k of context. A task that needs more is two tasks — or a coordinator with two workers.**
 
@@ -476,17 +486,20 @@ and every subagent it spawns run on (one number for both; they run the same wind
 omits this field gets that default; set it explicitly only when the stage's model runs a smaller
 window. The minimum accepted is **60,000**.
 
-**800,000 is a containment wall: size every stage to finish in ONE session, comfortably under it.**
-Reaching the ceiling is a PLANNING failure that a handoff merely contains. If a stage's brief, its
-expected reading, and its subagents' returned reports could plausibly approach that wall, the stage
-is too big: split it at the seam (Section 5). Never plan a stage that relies on a handoff to
-complete.
+**Plan every stage to finish in ONE session under 500,000 tokens of context.** 800,000 is a
+containment wall, and reaching it is a PLANNING failure that a handoff merely contains; long before
+it, every turn re-sends the whole context, so a stage past 500,000 is already slow and expensive. If
+a stage's brief, its expected reading, and its subagents' returned reports could plausibly pass
+500,000, the stage is too big: split it at the seam (Section 5). A stage that cannot be split says
+so in its description, with the reason. Never plan a stage that relies on a handoff to complete.
 
 Estimate against what actually accumulates in the orchestrator's own context: the brief itself,
 every file the stage must read, each subagent's RETURNED REPORT, and the verification output all
 land there and stay. A stage that fans out to six subagents pays for six reports — decomposing work
 into more subagents lowers what any ONE of them holds, and raises what the orchestrator itself
-accumulates reading their results back.
+accumulates reading their results back. Reading is the lever the plan controls: a range the
+orchestrator reads stays in its context for every remaining turn, while the same range read by a
+worker from its brief is paid once, at the worker's rate, in a context discarded when it reports.
 
 A handoff is expensive: it discards a session with full context already loaded and hands the
 successor a document to rebuild from, one that can run to tens of kilobytes. Weigh that cost at the
@@ -517,7 +530,7 @@ Each stage costs a worktree, a session, a merge, and a FULL re-run of the accept
 - **Q1 — Does another stage need this stage's code MERGED before it can start?** YES → separate stages. Only a MERGE-ORDER dependency counts: the dependent work must run against merged, gate-passed code. A COMPILE-ORDER dependency is NOT a Q1 yes — if subagent B merely needs a type or signature subagent A writes, that is a FOUNDATION STEP inside ONE stage (see Subagent file exclusivity below), never a second stage.
 - **Q2 — Does another stage write files this stage also writes?** YES → separate stages (file conflict).
 - **Q3 — Does later work need a verification checkpoint on this first?** YES → separate stage (quality gate). "It would be tidy to verify here" is not a checkpoint — name what would go undetected without it.
-- **Q4 — Would the combined work blow a single session's context budget?** YES → split. Estimate honestly: a large mechanical sweep is cheap in context; a wide cross-cutting redesign is not.
+- **Q4 — Would the combined work push the stage past 500,000 tokens of context (Section 4, Context ceiling)?** YES → split. Estimate honestly: a large mechanical sweep is cheap in context; a wide cross-cutting redesign is not.
 - All NO → **MERGE into one stage with parallel subagents.**
 
 EVERY non-bookend stage MUST name, in the plan prose, which of Q1-Q4 forced it into existence. A stage that cannot cite one is fragmentation — merge it. Write that justification AS you add the stage, not afterwards; a stage graph rationalised at the end always reads as necessary.
@@ -545,7 +558,8 @@ table: territories are DISJOINT — no two rows share a write path; workers NEVE
 orchestrator spawns every worker BY AGENT TYPE, ALL in ONE message. Each spawn gets a short fixed
 prompt plus the line `Your brief: <path>. Read it in full before anything else.` — the full task detail
 (exact paths, signatures, patterns to match, explicit steps, acceptance) lives in the brief file, not
-in the prompt or the table.
+in the prompt or the table. Pick each row's tier and write its brief by Section 4's lowest-tier,
+fullest-brief rule.
 
 ```yaml
 description: |
@@ -1143,9 +1157,10 @@ description: |
 □ Edits anchored by symbol; decisions settled to ONE value (no "maybe edit" conditionals); every prose task/file has exactly one owner; prose ordering = DAG edges
 □ knowledge-bootstrap first · integration-verify second-to-last · knowledge-distill last
 □ Every non-bookend stage cites which Stage Necessity question (Q1-Q4) forced it; compile-order dependencies resolved with a foundation step, not a stage split
+□ Every stage sized to finish in one session under 500,000 tokens of context, or its description says why it cannot (Section 4, Context ceiling)
 □ Every stage: `model`/`reasoning_effort` OMITTED unless deliberately overriding the stage type's configured default, with why stated in the description + stage_type + working_dir set
 □ Codex opt-in asked and answered; `implementers:` lists codex only where routine implementation is delegated, only if the plugin is installed, and never on bookend stages; every list is a non-empty YAML sequence with no repeated lane
-□ Every codex unit names its anchors — files owned/read, entry points by symbol name, done-condition and proof command, and any constraint the graph can't show. An unanchored codex block ("refactor the merge path") is underspecified regardless of length: codex has the source-graph navigation kit (`loom map`, `loom knowledge context`) but not your intent
+□ Every codex unit fits the 540 s wrapper deadline (one file or a file plus its test, at most three steps, shared interfaces pinned verbatim) and names its anchors — files owned/read, entry points by symbol name, done-condition and proof command, and any constraint the graph can't show. An unanchored codex block ("refactor the merge path") is underspecified regardless of length: codex has the source-graph navigation kit (`loom map`, `loom knowledge context`) but not your intent
 □ Every codex subagent prompt states an explicit Bash timeout (600000 ms, the tool's maximum) alongside the tier-appropriate model — `--model gpt-5.6-terra` (common implementation, integration tests) or `--model gpt-5.6-luna` (boilerplate, scaffolding, simple unit tests) — always `--effort xhigh`; without it the wrapper's single Bash call hits the 120s default and the harness backgrounds the run
 □ Standard/IV stages: acceptance OR ≥1 goal-backward check (artifacts/wiring/wiring_tests/dead_code_check); wiring targets the CONSUMER; no leftover `truths:` block
 □ Every stage's acceptance carries the repo's FULL canonical gate covering its OWN files (not a scoped subset, not deferred downstream)
@@ -1157,6 +1172,7 @@ description: |
 □ Every prescribed check is realizable (expressible · executes the code · right strength · selected · grounded); no gate claims to prove what its inputs don't exercise
 □ Engines/drivers have a stage owning the composition-root call site; ≤1 stage owns each pre-existing integration file; lifecycle decisions settled in the plan
 □ Every stage description is SMALL + detailed (paths/signatures/patterns/wiring) enough for the stage's orchestrator to decompose into subagent assignments, or explicitly decomposed via hierarchy (Section 5)
+□ Every worker row names the lowest tier that can do its piece without losing quality, and its brief settles what that tier would otherwise guess (paths, `file:line` ranges, signatures, decisions, traps, proof command) with no pasted code the worker can open
 □ No file overlap between subagents; shared types in a foundation step
 □ Acceptance commands: YAML single-quoted, rg not grep, paths relative to working_dir
 □ Sandbox configured; network is a struct; allow_write covers every path acceptance commands write (real lockfile name, build outputs)

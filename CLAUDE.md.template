@@ -212,7 +212,7 @@ Check skills and agents before implementing; the prompt-submit hook surfaces mat
 | `loom-code-reviewer` | — | Read-only code/security/architecture review |
 | `Explore` | — | Codebase exploration |
 | `loom-advisor` | Fable | Read-only advisory for debugging and repeated failures — receives full detail, returns a diagnosis and next step, writes nothing |
-| `loom-codex-forwarder` | gpt-5.6-terra / gpt-5.6-luna | Terra for common implementation/integration tests, luna for boilerplate/scaffolding/simple unit tests, on stages listing codex in `implementers` - forwarding shim over the codex plugin runtime; state `--model <tier> --effort xhigh` in the prompt; write-capable, foreground only, never verifies; may run alongside Claude subagents; one file (or a file plus its test) per unit; the wrapper cancels the job at 540 s and exits 124 with `timed_out` — re-split, never re-forward as is |
+| `loom-codex-forwarder` | gpt-5.6-terra / gpt-5.6-luna | Codex lane on stages listing codex in `implementers`; state `--model <tier> --effort xhigh` in the prompt; write-capable, foreground only, never verifies; a unit is one file (or a file plus its test), at most three steps, sized for the wrapper's 540 s deadline; an overrun exits 124 `timed_out` — re-split, never re-forward as is |
 
 Fable-tier work has no pinned agent type; pass the model override explicitly at spawn.
 
@@ -255,7 +255,7 @@ Model allocation:
    writes. Its diagnosis then feeds a sonnet or opus implementer per point 2.
    Do not let an implementer thrash on the same failure twice.
 
-Keep each assignment small — exact paths, signatures, patterns, explicit steps, per-step acceptance — decompose via Rule 6 rather than escalating for context headroom. Plan authors: rubric in `/loom-plan-writer`.
+Keep each assignment small; decompose via Rule 6 rather than escalating for context headroom. The cheaper the tier, the fuller the brief: paths, `file:line` ranges, signatures, patterns, steps, per-step acceptance, decisions settled, traps named. Never paste code the worker can open; it reads the ranges at its own rate. Plan authors: rubric in `/loom-plan-writer`.
 
 ### 8. NATIVE TOOLS AND CODE FORMATTING
 
