@@ -247,6 +247,25 @@ fn merge_same_second_new_fingerprint_replaces_blocker_and_keeps_history() {
 }
 
 #[test]
+fn merge_same_second_equal_fingerprint_prefers_incoming_phase() {
+    let mut merged = checkpoint();
+    merged
+        .record_attempt(&evidence(NONCE, "2026-09-14T10:00:00Z"))
+        .unwrap();
+    let mut incoming = checkpoint();
+    let mut rejected = evidence(NONCE, "2026-09-14T10:00:00Z");
+    rejected.phase = CompletionPhase::DaemonRejected;
+    incoming.record_attempt(&rejected).unwrap();
+
+    assert!(merged.merge_from(&incoming).unwrap());
+
+    assert_eq!(
+        merged.observations[0].phase,
+        CompletionPhase::DaemonRejected
+    );
+}
+
+#[test]
 fn merge_equal_copy_is_unchanged() {
     let mut checkpoint = checkpoint_with_attempt();
     let equal = checkpoint.clone();
