@@ -231,3 +231,10 @@ Tests run by a stage adopted the live `.loom/work` through `WorkDir::new`'s upwa
 **Why:** `conventions/model-and-effort-config.md#key-level-vs-section-level-fallback` and the `config_api/workspace.rs` doc comments describe section-level shadowing as deliberate; the proposal took that as a constraint instead of checking it against the precedence the operator expects.
 **Prevention:** Every config key resolves per key, project -> user -> built-in: a tier that does not set a key resolves to, and displays, the next tier down, whether or not its section exists. A rule that derives built-ins for a key a present section omits is a defect to raise with the operator, not a design to preserve.
 **Fix:** Operator decision 2026-09-13: `[terminal]` and `[context]` move to key-level fallthrough in the runtime resolvers (`fs/work_dir/config_sections.rs`) and in `/api/config` (`config_api/workspace.rs`, `entries.rs`).
+
+## Stop hook exited 141: `cmd | head` under pipefail (2026-09-14)
+
+**What happened**: `loom-hooks/commit-guard.sh` piped `git status --porcelain` into `head -10` under `set -euo pipefail`. With 116 dirty paths in the completion-recovery worktree, `head` closed the pipe while git was still writing; git died with SIGPIPE (141), pipefail propagated it through the command substitution, and the hook exited 141 with no stderr. Claude Code reported `Stop hook error: Failed with non-blocking status code: No stderr output`. Racy: 16 of 60 runs failed.
+**Why**: A producer that writes after `head` exits gets SIGPIPE; `pipefail` turns that into the pipeline's status, and `set -e` turns an assignment from `$(...)` into an exit.
+**Prevention**: In any hook under `pipefail`, never pipe an external command directly into `head`/`sed -n 1p`/`grep -q`. Capture the full output into a variable first, then truncate with `head -n N <<<"$var"`, or append `|| true` to the producer when the exit status is not needed. A non-zero hook exit with empty stderr and exit code 141 is this bug.
+**Fix**: `get_uncommitted_changes` captures the status first and truncates from a here-string; regression test `loom-hooks/tests/commit-guard-sigpipe-many-dirty-files.sh`.
