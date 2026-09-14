@@ -70,6 +70,7 @@ fn judge_heartbeat_secs_reads_adjudication_file() {
         transcript_path: None,
         last_tool: None,
         activity: None,
+        subagent: false,
     };
     std::fs::write(heartbeat_path, serde_json::to_string(&heartbeat).unwrap()).unwrap();
     let summary = build_stage_summary(&stage, &[], &work_dir);

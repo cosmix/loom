@@ -5,6 +5,7 @@ mod ceilings;
 mod context;
 mod detection;
 mod heartbeats;
+mod input_wait;
 mod judge_stall;
 mod merge_sessions;
 mod parsing;

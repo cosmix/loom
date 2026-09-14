@@ -15,25 +15,28 @@ _loom_post_tool_activity_kind() {
 }
 
 _loom_post_tool_build_json() {
-	local timestamp="$1" progress_at="$2" activity_kind="$3" json=""
+	local timestamp="$1" progress_at="$2" activity_kind="$3" json="" subagent_json="false"
+	[[ "$IS_SUBAGENT" == "1" ]] && subagent_json="true"
 	if command -v jq &>/dev/null; then
 		json=$(jq -n --arg stage_id "$LOOM_STAGE_ID" --arg session_id "$LOOM_SESSION_ID" \
 			--arg timestamp "$timestamp" --arg progress_at "$progress_at" \
 			--arg activity_kind "$activity_kind" --arg last_tool "$TOOL_NAME" \
 			--arg context_tokens_raw "$HB_CONTEXT_TOKENS_RAW" \
 			--arg transcript_path_raw "$HB_TRANSCRIPT_PATH_RAW" \
+			--argjson subagent "$subagent_json" \
 			'{stage_id: $stage_id, session_id: $session_id, timestamp: $timestamp,
 			  progress_at: $progress_at, activity_kind: $activity_kind,
 			  context_tokens: (if ($context_tokens_raw | test("^[0-9]+$")) then ($context_tokens_raw | tonumber) else null end),
 			  transcript_path: (if $transcript_path_raw == "" then null else $transcript_path_raw end),
-			  last_tool: $last_tool, activity: ("Tool executed: " + $last_tool)}' 2>/dev/null || true)
+			  last_tool: $last_tool, activity: ("Tool executed: " + $last_tool), subagent: $subagent}' 2>/dev/null || true)
 	fi
 	printf '%s' "$json"
 }
 
 _loom_post_tool_write_json() {
 	local timestamp="$1" progress_at="$2" activity_kind="$3"
-	local context_json="null" transcript_json="null" json=""
+	local context_json="null" transcript_json="null" json="" subagent_json="false"
+	[[ "$IS_SUBAGENT" == "1" ]] && subagent_json="true"
 	json=$(_loom_post_tool_build_json "$timestamp" "$progress_at" "$activity_kind")
 	if [[ -z "$json" ]]; then
 		[[ "$HB_CONTEXT_TOKENS_RAW" =~ ^[0-9]+$ ]] && context_json="$HB_CONTEXT_TOKENS_RAW"
@@ -48,7 +51,8 @@ _loom_post_tool_write_json() {
   "context_tokens": ${context_json},
   "transcript_path": ${transcript_json},
   "last_tool": "${TOOL_NAME}",
-  "activity": "Tool executed: ${TOOL_NAME}"
+  "activity": "Tool executed: ${TOOL_NAME}",
+  "subagent": ${subagent_json}
 }
 EOF
 		)

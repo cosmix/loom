@@ -73,6 +73,9 @@ pub struct Heartbeat {
     /// Optional message about current activity
     #[serde(default)]
     pub activity: Option<String>,
+    /// Written by a subagent's tool call rather than the stage's main agent.
+    #[serde(default)]
+    pub subagent: bool,
 }
 
 impl Heartbeat {
@@ -89,6 +92,7 @@ impl Heartbeat {
             transcript_path: None,
             last_tool: None,
             activity: None,
+            subagent: false,
         }
     }
 

@@ -13,6 +13,7 @@ use super::detection::Detection;
 use super::events::MonitorEvent;
 use super::handlers::Handlers;
 use super::heartbeat::HeartbeatWatcher;
+use super::input_wait::reconcile_stale_input_waits;
 
 fn overlay_heartbeat_context(sessions: &mut [Session], events: &[MonitorEvent]) {
     for event in events {
@@ -148,6 +149,15 @@ impl Monitor {
             self.detection
                 .detect_session_changes(&sessions, &stages, &self.handlers);
         let stage_events = self.detection.detect_stage_changes(&stages);
+
+        // A stage whose session kept making tool progress after flipping to
+        // WaitingForInput was never actually waiting on a person (Claude Code
+        // can drive the AskUserQuestion pipeline without a logged tool_use).
+        // Resolve it back to Executing on disk now; the NEXT poll observes the
+        // WaitingForInput -> Executing transition through the normal detector
+        // path and emits StageResumedExecution from it.
+        reconcile_stale_input_waits(&self.config.work_dir, &stages, &self.heartbeat_watcher);
+
         events.extend(stage_events);
         events.extend(blocker_scan.events);
         events.extend(session_events);

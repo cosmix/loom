@@ -24,6 +24,7 @@ mod handoff_watch;
 pub mod heartbeat;
 mod heartbeat_store;
 pub(crate) mod hung_latch;
+mod input_wait;
 pub(crate) mod parked;
 pub(crate) mod progress;
 mod session_events;
