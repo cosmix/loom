@@ -9,10 +9,13 @@ use tempfile::TempDir;
 
 use crate::fs::work_dir::write_terminal_config;
 use crate::models::session::{SessionBackendKind, TerminalConfig};
+use crate::orchestrator::core::event_handler::EventHandler;
+use crate::orchestrator::core::stage_executor::StageExecutor;
 use crate::orchestrator::core::OrchestratorConfig;
+use crate::orchestrator::monitor::MonitorEvent;
 use crate::plan::schema::{Implementers, StageDefinition, StageSandboxConfig};
 use crate::plan::ExecutionGraph;
-use crate::verify::transitions::save_stage;
+use crate::verify::transitions::{save_stage, update_stage};
 
 fn minimal_stage_definition(id: &str) -> StageDefinition {
     StageDefinition {
@@ -89,6 +92,209 @@ fn sync_leaves_an_already_executing_node_executing_without_erroring() {
         orchestrator.graph.get_node("alpha").unwrap().status,
         StageStatus::Executing
     );
+}
+
+fn resume_orchestrator(temp: &TempDir, graph: ExecutionGraph) -> Orchestrator {
+    let work_dir = temp.path().to_path_buf();
+    write_terminal_config(
+        &work_dir,
+        &TerminalConfig {
+            backend: SessionBackendKind::Tmux,
+        },
+    )
+    .unwrap();
+    Orchestrator::new(
+        OrchestratorConfig {
+            work_dir,
+            repo_root: temp.path().to_path_buf(),
+            enable_skill_routing: false,
+            ..Default::default()
+        },
+        graph,
+    )
+    .unwrap()
+}
+
+fn stage_with_status(id: &str, status: StageStatus) -> Stage {
+    Stage {
+        id: id.to_string(),
+        status,
+        ..Stage::default()
+    }
+}
+
+fn waiting_graph_for(id: &str) -> ExecutionGraph {
+    let mut graph = ExecutionGraph::build(vec![minimal_stage_definition(id)]).unwrap();
+    graph.mark_executing(id).unwrap();
+    graph.mark_status(id, StageStatus::WaitingForInput).unwrap();
+    graph
+}
+
+#[test]
+fn restart_sync_resumes_waiting_graph_node() {
+    let temp = TempDir::new().unwrap();
+    save_stage(
+        &stage_with_status("alpha", StageStatus::Executing),
+        temp.path(),
+    )
+    .unwrap();
+    let mut orchestrator = resume_orchestrator(&temp, waiting_graph_for("alpha"));
+
+    orchestrator.sync_graph_with_stage_files().unwrap();
+
+    assert_eq!(
+        orchestrator.graph.get_node("alpha").unwrap().status,
+        StageStatus::Executing
+    );
+}
+
+#[test]
+fn restart_sync_does_not_resume_unrelated_graph_mismatch() {
+    let temp = TempDir::new().unwrap();
+    save_stage(
+        &stage_with_status("alpha", StageStatus::Executing),
+        temp.path(),
+    )
+    .unwrap();
+    let mut graph = ExecutionGraph::build(vec![minimal_stage_definition("alpha")]).unwrap();
+    graph.force_status("alpha", StageStatus::Blocked).unwrap();
+    let mut orchestrator = resume_orchestrator(&temp, graph);
+
+    orchestrator.sync_graph_with_stage_files().unwrap();
+
+    assert_eq!(
+        orchestrator.graph.get_node("alpha").unwrap().status,
+        StageStatus::Blocked
+    );
+}
+
+#[test]
+fn restart_sync_preserves_executing_dependent_before_dependency_sync() {
+    let temp = TempDir::new().unwrap();
+    save_stage(
+        &stage_with_status("beta", StageStatus::Executing),
+        temp.path(),
+    )
+    .unwrap();
+    let mut alpha = stage_with_status("alpha", StageStatus::Completed);
+    alpha.merged = true;
+    alpha.stage_type = crate::models::stage::StageType::Knowledge;
+    save_stage(&alpha, temp.path()).unwrap();
+
+    let graph = ExecutionGraph::build(dependent_definitions()).unwrap();
+    let mut orchestrator = resume_orchestrator(&temp, graph);
+
+    orchestrator.sync_resumed_node("beta");
+    assert_eq!(
+        orchestrator.graph.get_node("beta").unwrap().status,
+        StageStatus::Executing
+    );
+    orchestrator.sync_graph_with_stage_files().unwrap();
+
+    assert_eq!(
+        orchestrator.graph.get_node("alpha").unwrap().status,
+        StageStatus::Completed
+    );
+    assert_eq!(
+        orchestrator.graph.get_node("beta").unwrap().status,
+        StageStatus::Executing
+    );
+    assert!(!orchestrator
+        .graph
+        .ready_stages()
+        .iter()
+        .any(|node| node.id == "beta"));
+    assert_eq!(orchestrator.start_ready_stages().unwrap(), 0);
+}
+
+#[test]
+fn live_resume_and_restart_keep_dependencies_coherent() {
+    let temp = TempDir::new().unwrap();
+    let definitions = dependent_definitions();
+    let mut orchestrator = waiting_orchestrator(&temp, &definitions);
+
+    send_resume_events(&mut orchestrator, 2);
+    assert_eq!(
+        orchestrator.graph.get_node("alpha").unwrap().status,
+        StageStatus::Executing
+    );
+
+    let mut restarted = resume_orchestrator(&temp, ExecutionGraph::build(definitions).unwrap());
+    restarted.sync_graph_with_stage_files().unwrap();
+    assert_eq!(
+        restarted.graph.get_node("alpha").unwrap().status,
+        StageStatus::Executing
+    );
+    restarted.graph.mark_completed("alpha").unwrap();
+    restarted.graph.mark_merged("alpha").unwrap();
+    assert_eq!(
+        restarted.graph.get_node("beta").unwrap().status,
+        StageStatus::Queued
+    );
+}
+
+fn dependent_definitions() -> Vec<StageDefinition> {
+    let mut beta = minimal_stage_definition("beta");
+    beta.dependencies = vec!["alpha".to_string()];
+    vec![minimal_stage_definition("alpha"), beta]
+}
+
+fn waiting_orchestrator(temp: &TempDir, definitions: &[StageDefinition]) -> Orchestrator {
+    let mut graph = ExecutionGraph::build(definitions.to_vec()).unwrap();
+    graph.mark_executing("alpha").unwrap();
+    graph
+        .mark_status("alpha", StageStatus::WaitingForInput)
+        .unwrap();
+    save_stage(
+        &stage_with_status("alpha", StageStatus::WaitingForInput),
+        temp.path(),
+    )
+    .unwrap();
+    let mut orchestrator = resume_orchestrator(temp, graph);
+    EventHandler::handle_events(
+        &mut orchestrator,
+        vec![MonitorEvent::StageWaitingForInput {
+            stage_id: "alpha".to_string(),
+            session_id: None,
+        }],
+    )
+    .unwrap();
+    update_stage("alpha", temp.path(), |stage| {
+        stage.try_transition(StageStatus::Executing)
+    })
+    .unwrap();
+    orchestrator
+}
+
+fn send_resume_events(orchestrator: &mut Orchestrator, count: usize) {
+    let events = (0..count)
+        .map(|_| MonitorEvent::StageResumedExecution {
+            stage_id: "alpha".to_string(),
+        })
+        .collect();
+    EventHandler::handle_events(orchestrator, events).unwrap();
+}
+
+#[test]
+fn stale_or_newer_resume_event_does_not_change_waiting_graph() {
+    for disk_status in [StageStatus::WaitingForInput, StageStatus::Completed] {
+        let temp = TempDir::new().unwrap();
+        save_stage(&stage_with_status("alpha", disk_status), temp.path()).unwrap();
+        let mut orchestrator = resume_orchestrator(&temp, waiting_graph_for("alpha"));
+
+        EventHandler::handle_events(
+            &mut orchestrator,
+            vec![MonitorEvent::StageResumedExecution {
+                stage_id: "alpha".to_string(),
+            }],
+        )
+        .unwrap();
+
+        assert_eq!(
+            orchestrator.graph.get_node("alpha").unwrap().status,
+            StageStatus::WaitingForInput
+        );
+    }
 }
 
 fn restart_stage(id: &str, session_id: &str) -> Stage {

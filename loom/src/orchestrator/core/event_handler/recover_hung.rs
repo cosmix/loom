@@ -26,7 +26,11 @@ use anyhow::Result;
 use colored::Colorize;
 
 use crate::fs::session_files::load_session_exact;
-use crate::handoff::HandoffOrigin;
+use crate::handoff::{
+    current_blocker, expected_stage_commit, load_trusted_session_checkpoint, CompletionCheckpoint,
+    HandoffOrigin,
+};
+use crate::models::session::SessionExitReason;
 use crate::models::stage::{Stage, StageStatus};
 use crate::orchestrator::monitor::hung_latch::is_stall_escalation;
 use crate::orchestrator::monitor::parked::hung_warning;
@@ -40,6 +44,32 @@ use super::super::{clear_status_line, Orchestrator};
 /// successor's, but a third says the stage itself is what stalls, and an
 /// operator has to look at it.
 const MAX_STALL_RECOVERIES: u32 = 2;
+
+pub(super) fn checkpoint_has_current_blocker(
+    checkpoint: &CompletionCheckpoint,
+    stage: &Stage,
+    current_commit: Option<&str>,
+) -> bool {
+    current_blocker(checkpoint, stage, current_commit).is_some()
+}
+
+fn stall_recovery_exhausted(stage: &Stage, session_id: &str, stale_duration_secs: u64) -> bool {
+    if stage.stall_recoveries < MAX_STALL_RECOVERIES {
+        return false;
+    }
+    eprintln!(
+        "{} Stage '{}' has already been recovered from a stall {} times and session '{}' has now \
+         been silent for {}s. Leaving it exactly where it is: another automatic re-queue would \
+         loop. Take it over with: loom stage reset {} --kill-session",
+        "STALL RECOVERY EXHAUSTED:".red().bold(),
+        stage.id,
+        stage.stall_recoveries,
+        session_id,
+        stale_duration_secs,
+        stage.id,
+    );
+    true
+}
 
 /// One `SessionHung` report, as the event carries it.
 pub(super) struct HungReport<'a> {
@@ -93,15 +123,11 @@ impl Orchestrator {
             return Ok(());
         }
 
-        if stage.stall_recoveries >= MAX_STALL_RECOVERIES {
-            eprintln!(
-                "{} Stage '{stage_id}' has already been recovered from a stall {} times and \
-                 session '{session_id}' has now been silent for {stale_duration_secs}s. \
-                 Leaving it exactly where it is: another automatic re-queue would loop. \
-                 Take it over with: loom stage reset {stage_id} --kill-session",
-                "STALL RECOVERY EXHAUSTED:".red().bold(),
-                stage.stall_recoveries
-            );
+        if self.completion_blocker_owns_stage(&stage, session_id) {
+            return Ok(());
+        }
+
+        if stall_recovery_exhausted(&stage, session_id, stale_duration_secs) {
             return Ok(());
         }
 
@@ -120,7 +146,41 @@ impl Orchestrator {
         };
         self.write_stall_handoff(&stage, session_id)?;
         self.charge_stall_recovery(stage_id)?;
-        self.finish_handoff_and_requeue(stage_id, session_id, "an unrecoverable stall")
+        self.finish_handoff_and_requeue(
+            stage_id,
+            session_id,
+            "an unrecoverable stall",
+            SessionExitReason::Stalled,
+        )
+    }
+
+    fn completion_blocker_owns_stage(&self, stage: &Stage, session_id: &str) -> bool {
+        let checkpoint =
+            match load_trusted_session_checkpoint(&stage.id, session_id, &self.config.work_dir) {
+                Ok(Some(checkpoint)) => checkpoint,
+                Ok(None) => return false,
+                Err(error) => {
+                    tracing::warn!(
+                        target: "loom::recovery",
+                        stage = %stage.id,
+                        session = %session_id,
+                        %error,
+                        "could not read completion checkpoint; continuing generic stall recovery",
+                    );
+                    return false;
+                }
+            };
+        let commit = expected_stage_commit(stage, &self.config.repo_root).ok();
+        let owns_stage = checkpoint_has_current_blocker(&checkpoint, stage, commit.as_deref());
+        if owns_stage {
+            tracing::info!(
+                target: "loom::recovery",
+                stage = %stage.id,
+                session = %session_id,
+                "current trusted completion blocker owns stage; skipping generic stall recovery",
+            );
+        }
+        owns_stage
     }
 
     /// Write the stalled agent's handoff before the takedown takes it away, so

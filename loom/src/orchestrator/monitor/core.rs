@@ -7,6 +7,7 @@ use crate::models::stage::Stage;
 use crate::orchestrator::liveness::LivenessService;
 use crate::parser::frontmatter::parse_from_markdown;
 
+use super::completion_blockers::{filter_owned_hung_events, BlockerScan, CompletionBlockerWatch};
 use super::config::MonitorConfig;
 use super::detection::Detection;
 use super::events::MonitorEvent;
@@ -72,6 +73,7 @@ pub struct Monitor {
     pub(super) detection: Detection,
     pub(super) handlers: Handlers,
     pub(super) heartbeat_watcher: HeartbeatWatcher,
+    completion_blocker_watch: CompletionBlockerWatch,
 }
 
 impl Monitor {
@@ -90,6 +92,7 @@ impl Monitor {
             handlers: Handlers::new(config.clone(), None),
             detection: Detection::new(),
             heartbeat_watcher,
+            completion_blocker_watch: CompletionBlockerWatch::default(),
             config,
         }
     }
@@ -101,6 +104,19 @@ impl Monitor {
         self.handlers.set_liveness(liveness);
     }
 
+    fn scan_completion_blockers(&mut self, stages: &[Stage]) -> BlockerScan {
+        let repo_root = crate::fs::work_dir::WorkDir::new(&self.config.work_dir)
+            .ok()
+            .and_then(|work_dir| work_dir.project_root().map(std::path::Path::to_path_buf))
+            .unwrap_or_else(|| self.config.work_dir.clone());
+        self.completion_blocker_watch.scan(
+            stages,
+            &self.config.work_dir,
+            &repo_root,
+            chrono::Utc::now(),
+        )
+    }
+
     /// Poll once and return any events detected
     pub fn poll(&mut self) -> Result<Vec<MonitorEvent>> {
         let mut events = Vec::new();
@@ -108,48 +124,48 @@ impl Monitor {
         let stages = self.load_stages()?;
         let mut sessions = self.load_sessions()?;
         reconcile_codex_evidence(&self.config.work_dir, &sessions);
+        let blocker_scan = self.scan_completion_blockers(&stages);
 
         // Poll heartbeat files before judging context. A persisted high-water
         // reading can be older than a fresh post-compaction heartbeat, and
         // killing from that stale snapshot before applying the heartbeat would
         // take down a session that is now safely below its backstop.
-        let heartbeat_events = self.detection.detect_heartbeat_events(
+        let mut heartbeat_events = self.detection.detect_heartbeat_events(
             &sessions,
             &stages,
             &mut self.heartbeat_watcher,
             &self.config,
             &self.handlers,
         );
+        filter_owned_hung_events(&mut heartbeat_events, &blocker_scan.owned_stage_ids);
         overlay_heartbeat_context(&mut sessions, &heartbeat_events);
 
         // Detect sessions before stages so a BudgetExceeded latch established
         // on this fresh snapshot can suppress the generic NeedsHandoff retry.
-        // Keep the public event order stable: stage, session, then heartbeat.
+        // Keep the public event order stable: stage, completion diagnostics,
+        // session, then heartbeat.
         let session_events =
             self.detection
                 .detect_session_changes(&sessions, &stages, &self.handlers);
         let stage_events = self.detection.detect_stage_changes(&stages);
         events.extend(stage_events);
+        events.extend(blocker_scan.events);
         events.extend(session_events);
         events.extend(heartbeat_events);
 
-        // Keep an attached `loom attach` overview in sync with the session
-        // reality this poll just observed: ended stages lose their pane, new
-        // ones gain one, without the operator detaching and re-attaching.
-        // Costs a single `stat` when nobody is attached (the common case).
-        // Best-effort — a viewer that cannot be reconciled must never fail
-        // the poll (O-4). Logged at `warn`, not `debug`: the executor stops
-        // at the first failed step, so one failing step silently blocks
-        // every later add/kill in the same pass — a `debug`-level failure
-        // would leave that invisible to an operator who never raised the
-        // log level.
+        self.refresh_attached_viewer();
+
+        Ok(events)
+    }
+
+    /// Keep an attached overview in sync with the session reality just polled.
+    /// Best-effort: viewer failure must never fail the monitor poll.
+    fn refresh_attached_viewer(&self) {
         if let Err(error) =
             crate::orchestrator::terminal::tmux::refresh_attached_viewer(&self.config.work_dir)
         {
             tracing::warn!(error = %error, "Overview viewer reconcile failed");
         }
-
-        Ok(events)
     }
 
     /// Get handlers for generating handoffs and crash reports

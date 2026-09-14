@@ -4,6 +4,7 @@ mod cycle;
 pub mod levels;
 mod loader;
 mod nodes;
+mod resume;
 mod scheduling;
 
 #[cfg(test)]

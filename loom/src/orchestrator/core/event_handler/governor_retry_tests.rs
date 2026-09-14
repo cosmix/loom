@@ -310,7 +310,12 @@ fn handoff_does_not_kill_or_requeue_a_stage_blocked_after_begin() {
     .unwrap();
 
     let error = orchestrator
-        .finish_handoff_and_requeue("test-stage", &session.id, "state race")
+        .finish_handoff_and_requeue(
+            "test-stage",
+            &session.id,
+            "state race",
+            crate::models::session::SessionExitReason::ContextCeiling,
+        )
         .unwrap_err();
 
     assert!(format!("{error:#}").contains("moved out of NeedsHandoff"));
@@ -355,7 +360,12 @@ fn handoff_does_not_kill_an_assignment_that_changed_after_begin() {
         .insert("test-stage".to_string(), successor.clone());
 
     let error = orchestrator
-        .finish_handoff_and_requeue("test-stage", &predecessor.id, "race regression")
+        .finish_handoff_and_requeue(
+            "test-stage",
+            &predecessor.id,
+            "race regression",
+            crate::models::session::SessionExitReason::ContextCeiling,
+        )
         .unwrap_err();
 
     assert!(

@@ -3,7 +3,7 @@
 use anyhow::Result;
 use std::path::Path;
 
-use crate::models::session::{Session, SessionStatus, SessionType};
+use crate::models::session::{Session, SessionExitReason, SessionStatus, SessionType};
 
 use super::{clear_status_line, Orchestrator};
 
@@ -80,7 +80,11 @@ impl Orchestrator {
             // Shared with the stalled-judge watchdog: both paths have to leave
             // identical state behind, or a stage stays blocked on a judge that
             // only looks live. See `super::judge_close`.
-            self.close_adjudication_session(&session, SessionStatus::Completed);
+            self.close_adjudication_session(
+                &session,
+                SessionStatus::Completed,
+                SessionExitReason::Completed,
+            );
             clear_status_line();
             eprintln!(
                 "Closed adjudication session '{}' for stage '{stage_id}' dispute {dispute_id}",

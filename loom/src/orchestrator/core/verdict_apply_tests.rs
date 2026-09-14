@@ -13,7 +13,7 @@ use crate::models::dispute::{
     applied_marker, request_file, verdict_file, DisputeRequest, DisputeVerdict,
     DisputeVerdictRecord,
 };
-use crate::models::session::{SessionBackendKind, TerminalConfig};
+use crate::models::session::{SessionBackendKind, SessionExitReason, TerminalConfig};
 use crate::models::stage::{Stage, StageStatus};
 use crate::orchestrator::core::OrchestratorConfig;
 use crate::orchestrator::terminal::native::write_test_pid_identity;
@@ -155,6 +155,7 @@ fn applying_a_verdict_closes_the_judge_that_wrote_it() {
         .unwrap()
         .expect("the judge's session record must survive its own retirement");
     assert_eq!(recorded.status, SessionStatus::Completed);
+    assert_eq!(recorded.exit_reason, Some(SessionExitReason::Completed));
     assert!(applied_marker(&work.join("disputes"), "test-stage", 1).exists());
     assert_eq!(
         load_stage("test-stage", &work).unwrap().status,
@@ -222,4 +223,5 @@ fn a_verdict_without_a_session_id_closes_idle_judges_only_when_no_dispute_remain
         .unwrap()
         .unwrap();
     assert_eq!(recorded.status, SessionStatus::Completed);
+    assert_eq!(recorded.exit_reason, Some(SessionExitReason::Completed));
 }

@@ -8,7 +8,7 @@
 use crate::fs::session_files::{load_session_exact, save_session};
 use crate::fs::work_dir::write_terminal_config;
 use crate::models::session::{
-    Session, SessionBackendKind, SessionStatus, SessionType, TerminalConfig,
+    Session, SessionBackendKind, SessionExitReason, SessionStatus, SessionType, TerminalConfig,
 };
 use crate::models::stage::{Stage, StageStatus};
 use crate::orchestrator::core::{Orchestrator, OrchestratorConfig};
@@ -56,6 +56,20 @@ fn spawn_orphan_process() -> u32 {
         .trim()
         .parse()
         .expect("the stand-in judge process printed no pid")
+}
+
+/// Start an orphan that ignores SIGTERM long enough for the bounded kill
+/// confirmation to observe it as a survivor.
+fn spawn_term_resistant_process() -> u32 {
+    let output = std::process::Command::new("sh")
+        .arg("-c")
+        .arg("trap '' TERM; sleep 30 >/dev/null 2>&1 & echo $!")
+        .output()
+        .expect("failed to spawn a term-resistant judge process");
+    String::from_utf8_lossy(&output.stdout)
+        .trim()
+        .parse()
+        .expect("the term-resistant judge process printed no pid")
 }
 
 /// A stage under adjudication, as `try_request_adjudication` leaves it.
@@ -128,6 +142,7 @@ fn a_stalled_judge_is_closed_and_the_stage_stays_under_adjudication() {
         .unwrap()
         .expect("the judge's session record must survive being closed");
     assert_eq!(recorded.status, SessionStatus::Crashed);
+    assert_eq!(recorded.exit_reason, Some(SessionExitReason::Stalled));
     assert!(!signal.exists(), "the judge's signal file must be removed");
     assert!(
         !heartbeat.exists(),
@@ -141,6 +156,38 @@ fn a_stalled_judge_is_closed_and_the_stage_stays_under_adjudication() {
         load_stage("test-stage", &work).unwrap().status,
         StageStatus::NeedsAdjudication,
         "the stage must be left for the next poll to re-judge"
+    );
+}
+
+/// A successful signal only requests termination. If liveness still confirms
+/// the judge, its record and cleanup evidence must remain live.
+#[test]
+fn a_judge_that_survives_the_kill_is_not_marked_terminal() {
+    let temp = work_root();
+    let work = temp.path().join(".work");
+    stage_needing_adjudication(&work);
+    let mut judge = Session::new_adjudication("test-stage");
+    judge.status = SessionStatus::Running;
+    judge.backend = SessionBackendKind::Tmux;
+    save_session(&judge, &work).unwrap();
+    let judge_pid = spawn_term_resistant_process();
+    write_test_pid_identity(&work, &judge, judge_pid).unwrap();
+    let signal = write_signal(&work, &judge.id);
+
+    let mut orchestrator = orchestrator_for(&work, temp.path());
+    orchestrator
+        .on_adjudicator_stalled(&judge.id, "test-stage", 1_000, 900)
+        .unwrap();
+
+    let recorded = load_session_exact(&work, &judge.id).unwrap().unwrap();
+    assert_eq!(
+        (recorded.status, recorded.exit_reason),
+        (SessionStatus::Running, None)
+    );
+    assert!(signal.exists(), "a surviving judge still needs its signal");
+    let _ = nix::sys::signal::kill(
+        nix::unistd::Pid::from_raw(judge_pid as i32),
+        nix::sys::signal::Signal::SIGKILL,
     );
 }
 

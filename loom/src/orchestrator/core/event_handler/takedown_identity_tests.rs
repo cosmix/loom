@@ -1,14 +1,16 @@
 //! Fail-closed process-identity tests for handoff takedown.
 
 use super::governor_tests::assign_stage_session;
-use super::tests::{executing_stage, handoff_work_dir, orchestrator_for, recorded_session};
+use super::tests::{
+    executing_stage, handoff_work_dir, orchestrator_for, recorded_session, write_pid_file,
+};
 use super::*;
 use crate::fs::session_files::{load_session_exact, save_session};
-use crate::models::session::SessionStatus;
+use crate::models::session::{SessionExitReason, SessionStatus};
 use crate::orchestrator::terminal::native::{
     session_process_status, write_test_pid_identity, SessionProcessStatus,
 };
-use crate::verify::transitions::load_stage;
+use crate::verify::transitions::{load_stage, update_stage};
 use std::path::Path;
 use std::time::Duration;
 
@@ -56,21 +58,84 @@ fn handoff_never_treats_missing_pid_identity_as_confirmed_death() {
     let mut orchestrator = orchestrator_for(&work, temp.path());
     orchestrator.graph.mark_executing("test-stage").unwrap();
     orchestrator
-        .on_needs_handoff(&session.id, "test-stage")
+        .active_sessions
+        .insert("test-stage".to_string(), session.clone());
+    assert!(orchestrator
+        .begin_handoff("test-stage", &session.id)
+        .unwrap()
+        .is_some());
+    let survivors = orchestrator
+        .take_down_stage_agents("test-stage", &session.id, SessionExitReason::ContextCeiling)
         .unwrap();
 
+    assert_eq!(survivors, vec![session.id.clone()]);
+    assert!(orchestrator.active_sessions.contains_key("test-stage"));
     assert_eq!(
         load_stage("test-stage", &work).unwrap().status,
         StageStatus::NeedsHandoff
     );
     assert!(!graph_has_ready_stage(&orchestrator.graph, "test-stage"));
+    let persisted = load_session_exact(&work, &session.id).unwrap().unwrap();
+    assert_eq!(persisted.status, SessionStatus::Completed);
+    assert_eq!(persisted.exit_reason, None);
+}
+
+#[test]
+fn a_delayed_second_takedown_does_not_relabel_the_first() {
+    let temp = handoff_work_dir();
+    let work = temp.path().join(".loom").join("work");
+    let session = recorded_session(&work);
+    write_pid_file(&work, &session, Some(u64::MAX));
+    let mut orchestrator = orchestrator_for(&work, temp.path());
+
+    let first = orchestrator
+        .take_down_agents(
+            "test-stage",
+            vec![session.clone()],
+            SessionExitReason::ContextCeiling,
+        )
+        .unwrap();
+    let second = orchestrator
+        .take_down_agents(
+            "test-stage",
+            vec![session.clone()],
+            SessionExitReason::Stalled,
+        )
+        .unwrap();
+
+    assert!(first.is_empty());
+    assert!(second.is_empty());
+    let persisted = load_session_exact(&work, &session.id).unwrap().unwrap();
+    assert_eq!(persisted.status, SessionStatus::ContextExhausted);
     assert_eq!(
-        load_session_exact(&work, &session.id)
-            .unwrap()
-            .unwrap()
-            .status,
-        SessionStatus::Completed
+        persisted.exit_reason,
+        Some(SessionExitReason::ContextCeiling)
     );
+}
+
+#[test]
+fn dispute_retirement_records_replaced() {
+    let temp = handoff_work_dir();
+    let work = temp.path().join(".loom").join("work");
+    executing_stage(&work);
+    update_stage("test-stage", &work, |stage| {
+        stage.try_request_adjudication(None)
+    })
+    .unwrap();
+    let session = recorded_session(&work);
+    write_pid_file(&work, &session, Some(u64::MAX));
+    assign_stage_session(&work, &session.id);
+    let mut orchestrator = orchestrator_for(&work, temp.path());
+    orchestrator
+        .active_sessions
+        .insert("test-stage".to_string(), session.clone());
+
+    let survivors = orchestrator.retire_disputing_agents("test-stage").unwrap();
+
+    assert!(survivors.is_empty());
+    let persisted = load_session_exact(&work, &session.id).unwrap().unwrap();
+    assert_eq!(persisted.status, SessionStatus::ContextExhausted);
+    assert_eq!(persisted.exit_reason, Some(SessionExitReason::Replaced));
 }
 
 #[test]
