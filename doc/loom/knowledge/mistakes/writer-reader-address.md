@@ -59,7 +59,7 @@ to the last merged revision and nothing anywhere reports it.
 "simplify" it: the daemon runs from the main repo, so `Local` would resolve against
 the main checkout's directory name rather than the stage's worktree.
 
-Residue, not yet fixed: a blank `plan_id` in `.work/config.toml` and a stage record
+Residue, not yet fixed: a blank `plan_id` in `.loom/work/config.toml` and a stage record
 carrying no plan both resolve to `"default"` through `plan_key`, but the writer side
 does not normalize the same way.
 

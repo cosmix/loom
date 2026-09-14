@@ -154,7 +154,7 @@ SHA-256 of stable prefix text → first 16 hex chars → `SignalMetrics::stable_
 
 ## Soft Signals
 
-The JSONL-backed `possibly_stuck` soft-signal system this section used to describe is gone. `orchestrator/monitor/soft_signals.rs` no longer exists, and `orchestrator/monitor/tool_analysis.rs` no longer exists either, along with `.work/monitor/soft-signals.jsonl` and `Stage.is_possibly_stuck` — none of those symbols or files exist anymore (verified with a full-tree `rg`, corrected
+The JSONL-backed `possibly_stuck` soft-signal system this section used to describe is gone. `orchestrator/monitor/soft_signals.rs` no longer exists, and `orchestrator/monitor/tool_analysis.rs` no longer exists either, along with `.loom/work/monitor/soft-signals.jsonl` and `Stage.is_possibly_stuck` — none of those symbols or files exist anymore (verified with a full-tree `rg`, corrected
 2026-09-10). Hung-session detection is now entirely heartbeat-driven:
 
 **Detection pipeline (`orchestrator/monitor/heartbeat.rs`, `orchestrator/monitor/hung_latch.rs`):**
@@ -176,7 +176,7 @@ The JSONL-backed `possibly_stuck` soft-signal system this section used to descri
 
 ## Telemetry (`loom/src/telemetry/`)
 
-One append-only JSON-lines file, `.work/telemetry/events.jsonl`, recording five best-effort event
+One append-only JSON-lines file, `.loom/work/telemetry/events.jsonl`, recording five best-effort event
 kinds (`TelemetryEvent`, `telemetry/mod.rs`): `ContextDelivered`/`ContextUnavailable` for a spawned
 session's context brief, `PromptBrief`/`PromptAbstained` for the `UserPromptSubmit` hook's per-turn
 brief (see [Context Retrieval](context-retrieval.md#brief-delivery-sanitization-and-telemetry)), and

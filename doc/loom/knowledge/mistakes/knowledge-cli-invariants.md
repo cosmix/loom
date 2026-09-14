@@ -99,9 +99,9 @@ full content.)
 
 ## Knowledge Commands: CWD Resolution (2026-04-16)
 
-**What happened:** Knowledge commands used `main_project_root()` which followed `.work` symlinks to resolve to the main repo root. In worktree contexts (e.g., integration-verify stages), `loom knowledge update` wrote to the main repo instead of the worktree, causing cross-worktree state pollution.
-**Why:** `main_project_root()` was designed to always find the true main repo root, which was correct for `.work/` state but wrong for knowledge files that should be worktree-local.
-**Prevention:** Use `project_root()` (cwd-relative) for file writes that should respect worktree isolation. Use `main_project_root()` only for accessing shared state (`.work/`). Always run `loom knowledge update` from the worktree root, not a subdirectory.
+**What happened:** Knowledge commands used `main_project_root()` which followed `.loom/work` symlinks to resolve to the main repo root. In worktree contexts (e.g., integration-verify stages), `loom knowledge update` wrote to the main repo instead of the worktree, causing cross-worktree state pollution.
+**Why:** `main_project_root()` was designed to always find the true main repo root, which was correct for `.loom/work/` state but wrong for knowledge files that should be worktree-local.
+**Prevention:** Use `project_root()` (cwd-relative) for file writes that should respect worktree isolation. Use `main_project_root()` only for accessing shared state (`.loom/work/`). Always run `loom knowledge update` from the worktree root, not a subdirectory.
 **Fix:** Replaced all `main_project_root()` calls in knowledge commands and map.rs with `project_root()`. Updated signal content to require commits for knowledge stages. Removed commit-guard.sh bypass for knowledge stages.
 
 ## A Historical/Example Marker Must Share Its Physical Markdown Line With the Backtick It Classifies (2026-09-10)

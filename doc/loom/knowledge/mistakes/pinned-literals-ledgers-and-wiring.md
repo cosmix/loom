@@ -62,7 +62,7 @@ path to the extractor instead. **Any intentionally-invalid fixture must not carr
 
 ## Goal-Backward Wiring Checks Pin a PATTERN to a PATH
 
-A stage's `artifacts` and `wiring` lists in `.work/stages/<id>.md` name exact file
+A stage's `artifacts` and `wiring` lists in `.loom/work/stages/<id>.md` name exact file
 paths and exact literal patterns (e.g. pattern `extract::SourceGraphExtractor` in
 source `loom/src/context/refresh.rs`). Any later change that moves the pattern out of
 that path reports a wiring gap **for a feature that works perfectly**.

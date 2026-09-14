@@ -165,7 +165,7 @@ Stated explicitly because these are natural things to expect and go looking for:
 - **Historical handoff counts.** Status only checks that the handoffs directory exists (`diagnostics.rs:11,37`); compact mode counts stages currently in `NeedsHandoff`, not historical handoff events (`render/compact.rs:30-37`).
 - **A persisted orchestrator event log.** There is none.
 - **`plan_id`, the plan's source path, the IN_PROGRESS/DONE filename prefix, or a run start time** on `StatusData`.
-- **A `RemoteControl` struct on the status path.** Only `[remote_control]` and `[terminal]` config sections exist in `.work/config.toml`.
+- **A `RemoteControl` struct on the status path.** Only `[remote_control]` and `[terminal]` config sections exist in `.loom/work/config.toml`.
 
 ## Execution-Model Ledgers
 

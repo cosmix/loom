@@ -68,7 +68,7 @@ fully green.
 
 **Rule:** for every `if let Some(x)` gate in a formatter, grep the PRODUCERS of `x`
 and confirm each one sets it. If a struct is built by more than one path, at least one
-test must drive the real generator end to end over a temp `.work/`. A renderer test
+test must drive the real generator end to end over a temp `.loom/work/`. A renderer test
 proves the renderer works and says nothing about whether anything populates it.
 
 ### 3. A root-only fixture that cannot distinguish a resolver from string equality

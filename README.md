@@ -54,7 +54,7 @@ Autonomous agent work fails in a small number of predictable ways. Loom answers 
 | **Amnesia**                             | Every session rediscovers the same architecture and repeats the same mistakes        | A per-stage memory journal feeds a distillation stage that curates permanent, tiered knowledge; later sessions read it before touching code.                                                           |
 | **Cost scaling with tokens, not value** | Expensive models doing cheap work; re-reading everything, every time                 | Judgment stays on an orchestrator; bulk implementation is delegated to cheap subagents. Signals are laid out for KV-cache reuse and knowledge is tiered, so agents load only what they need.           |
 | **Context exhaustion**                  | The session degrades into an expensive compaction loop                               | Context budgets are monitored per stage; a handoff is written *before* compaction and the resumed session is re-anchored to its assignment.                                                            |
-| **Lost runs**                           | A crashed or hung session takes the work with it                                     | All state is files under `.work/`. The daemon detects dead and hung sessions, classifies the failure, and retries or escalates.                                                                        |
+| **Lost runs**                           | A crashed or hung session takes the work with it                                     | All state is files under `.loom/work/`. The daemon detects dead and hung sessions, classifies the failure, and retries or escalates.                                                                        |
 | **Serialization**                       | Multi-stage work runs one-at-a-time, or collides on the same files                   | A dependency DAG schedules independent stages concurrently in separate worktrees, with progressive auto-merge and dedicated conflict-resolution sessions.                                              |
 
 ## Key Capabilities
@@ -64,7 +64,7 @@ Autonomous agent work fails in a small number of predictable ways. Loom answers 
 The rules that matter are not left to the model. Loom installs Claude Code hooks, a Codex-native hook subset, and a git `pre-commit` hook that fire regardless of what an agent intends:
 
 - `commit-guard.sh` blocks a session from ending with uncommitted work or a stage still `Executing`
-- `git-add-guard.sh` blocks `git add -A` / `git add .`; `git-pre-commit-hook.sh` blocks commits containing `.work` or `.worktrees`
+- `git-add-guard.sh` blocks `git add -A` / `git add .`; `git-pre-commit-hook.sh` blocks commits containing `.loom/work` or `.worktrees`
 - `worktree-isolation.sh` / `worktree-file-guard.sh` block cross-worktree writes, reads, and path traversal
 - `commit-filter.sh` blocks subagent git operations (a subagent commit loses the main agent's work) and blocks AI attribution in commit messages
 - `subagent-verify-guard.sh` blocks subagents from running project-wide build/test/lint suites, so verification stays with the one agent that can see the whole tree — with `integration-verify` stages carved out, and no opt-out environment variable
@@ -116,7 +116,7 @@ Stages form a dependency DAG; everything independent runs at once, each in its o
 
 ### Crash recovery and liveness
 
-All orchestration state is plain files in `.work/`, so nothing is lost when a process dies. The daemon polls every 5s, tracks PID liveness and per-session heartbeats, flags hung sessions after 300s, and classifies failures across ten types into retryable (exponential backoff) and needs-diagnosis. Tool-call telemetry drives a stuck-session signal when a session's recent calls are overwhelmingly failures. Orphaned sessions are recovered on daemon restart.
+All orchestration state is plain files in `.loom/work/`, so nothing is lost when a process dies. The daemon polls every 5s, tracks PID liveness and per-session heartbeats, flags hung sessions after 300s, and classifies failures across ten types into retryable (exponential backoff) and needs-diagnosis. Tool-call telemetry drives a stuck-session signal when a session's recent calls are overwhelmingly failures. Orphaned sessions are recovered on daemon restart.
 
 ### Sandboxing and plan hardening
 
@@ -289,7 +289,7 @@ Each of the three steps spawns with an independently selectable model and reason
 loom plan verify <plan-path> [--strict] [--json] [--no-color]
 ```
 
-`loom plan verify` validates a plan file without touching `.work/` or requiring a git repo. It runs the same fatal validation as `loom init` (schema errors, unknown or retired fields at every nested policy layer, duplicate IDs, unknown dependencies, path safety) plus advisory warnings (structural issues, missing knowledge-bootstrap stage, sandbox gaps). A retired top-level `truths` block is rejected; move behavioral commands to `acceptance`. Exits 0 on success, non-zero on fatal errors; `--strict` promotes warnings to errors.
+`loom plan verify` validates a plan file without touching `.loom/work/` or requiring a git repo. It runs the same fatal validation as `loom init` (schema errors, unknown or retired fields at every nested policy layer, duplicate IDs, unknown dependencies, path safety) plus advisory warnings (structural issues, missing knowledge-bootstrap stage, sandbox gaps). A retired top-level `truths` block is rejected; move behavioral commands to `acceptance`. Exits 0 on success, non-zero on fatal errors; `--strict` promotes warnings to errors.
 
 ### Stage Commands
 
@@ -384,7 +384,7 @@ loom install-assets [--claude-dir <path>] [--codex-dir <path>] [--skills core|al
 loom completions [<shell>] [--install] [--migrate]
 ```
 
-`loom handoff` writes the document a successor session resumes from, under `.work/handoffs/`. Loom's `pre-compact` hook calls it automatically before a compaction, and an agent that reaches its context ceiling calls it explicitly with `--trigger ceiling`.
+`loom handoff` writes the document a successor session resumes from, under `.loom/work/handoffs/`. Loom's `pre-compact` hook calls it automatically before a compaction, and an agent that reaches its context ceiling calls it explicitly with `--trigger ceiling`.
 
 `loom request status` and `loom skill-index` are plumbing for loom's own hooks and its sandbox relay rather than commands a plan author types; they are listed so hook output that names them is traceable.
 
@@ -456,7 +456,7 @@ The dashboard binds to `127.0.0.1` and serves the live ledger over a WebSocket i
   <em>The <code>/ledger</code> view: state, dependencies, models, activity and context for every stage.</em>
 </p>
 
-Without `PORT`, it starts at port 7373 and automatically tries the next available port when a candidate is occupied. Supplying a nonzero `PORT` requests that exact port; `PORT` 0 asks the OS for any free port. It works without the daemon by polling `.work/` files directly when the daemon socket is unreachable. Besides the ledger, it exposes a settings dialog for editing loom's configuration and, with `--terminals`, a way to open a stage's terminal from the browser.
+Without `PORT`, it starts at port 7373 and automatically tries the next available port when a candidate is occupied. Supplying a nonzero `PORT` requests that exact port; `PORT` 0 asks the OS for any free port. It works without the daemon by polling `.loom/work/` files directly when the daemon socket is unreachable. Besides the ledger, it exposes a settings dialog for editing loom's configuration and, with `--terminals`, a way to open a stage's terminal from the browser.
 
 ### Web Dashboard Settings
 
@@ -541,7 +541,7 @@ loom:
 Set in the `loom:` block alongside `version` and `stages`, these supply the
 default ceiling for every stage that does not declare its own. Both are
 absolute resident-token counts with a minimum of 60000, and both are persisted
-into `.work/config.toml`'s `[context]` section at `loom init`.
+into `.loom/work/config.toml`'s `[context]` section at `loom init`.
 
 | Field                     | Required | Notes                                                                                      |
 | ------------------------- | -------- | ------------------------------------------------------------------------------------------ |
@@ -609,7 +609,7 @@ the daemon. The request cannot carry commands, paths, or bypass flags.
 
 The three bypass flags — `--no-verify`, `--force-unsafe`, `--assume-merged` — are the operator's, and
 cost the operator nothing: `loom stage complete <stage> --no-verify` just works from your shell. It
-authorizes itself against `.work/admin.token`, which you can already read and a sandboxed agent
+authorizes itself against `.loom/work/admin.token`, which you can already read and a sandboxed agent
 cannot (the sandbox binds the whole process tree, so a `loom` an agent spawns is denied the same
 read). The proof is still bound to the project, stage, action, and exact flag set, and consumed on
 first use — you simply never handle it.
@@ -640,7 +640,7 @@ Loom's answer to "every session starts from zero" is a three-stage pipeline: cap
 
 ### 1. Capture — session memory
 
-While a stage runs, its agent journals to `.work/memory/<session>.md`:
+While a stage runs, its agent journals to `.loom/work/memory/<session>.md`:
 
 ```bash
 loom memory note "gotcha: worktree exclude lives at <worktree>/.git/info/exclude, not <dir>/.git/..."
@@ -832,10 +832,10 @@ Claude Code's `--remote-control` flag lets the loom orchestrator drive spawned C
 
 The flag exits non-zero when its prerequisites are not met, so loom never passes it blindly. When preflight fails, loom falls back silently to standard mode and prints a one-line advisory at orchestrator startup (e.g. `⚠ Remote Control disabled: <reason>`).
 
-**Configuration** — the `[remote_control]` section of `.work/config.toml` carries a single switch:
+**Configuration** — the `[remote_control]` section of `.loom/work/config.toml` carries a single switch:
 
 ```toml
-# .work/config.toml
+# .loom/work/config.toml
 [remote_control]
 mode = "auto"   # default: enable whenever preflight passes
 # mode = "off"  # never enable, regardless of preflight
@@ -866,7 +866,7 @@ and on `PATH`.**
 ### Selecting a backend
 
 ```toml
-# .work/config.toml
+# .loom/work/config.toml
 [terminal]
 backend = "tmux"   # or "native" (default)
 ```
@@ -889,7 +889,7 @@ the other lane.
 ### Running under WSL
 
 WSL2 runs the published `loom-linux-x86_64` binary unmodified — it is an ordinary glibc ELF, and git
-worktrees, the `.work/` Unix socket and PID liveness checks all behave as they do on native Linux.
+worktrees, the `.loom/work/` Unix socket and PID liveness checks all behave as they do on native Linux.
 
 What does not carry over is the `native` backend. It opens a real terminal-emulator window per
 session, and a stock WSL install ships no Linux GUI stack — without WSLg or an X server there is no
@@ -1002,13 +1002,25 @@ Use teams when work needs coordination/discussion across agents (multi-dimension
 
 ```text
 project/
-├── .work/
-│   ├── config.toml
-│   ├── stages/
-│   ├── sessions/
-│   ├── signals/
-│   └── handoffs/
+├── .loom/
+│   ├── work/                  # orchestration state (mode 0700)
+│   │   ├── config.toml
+│   │   ├── stages/
+│   │   ├── sessions/
+│   │   ├── signals/
+│   │   ├── handoffs/
+│   │   ├── memory/            # per-session journals
+│   │   ├── archive/
+│   │   ├── crashes/
+│   │   ├── logs/              # per-session captured stderr
+│   │   ├── pids/
+│   │   ├── wrappers/
+│   │   ├── orchestrator.sock  # daemon IPC socket
+│   │   └── orchestrator.pid
+│   ├── memory/archive/        # state of completed plans
+│   └── cache/                 # derived caches
 ├── .worktrees/
+│   └── <stage-id>/            # one per stage; its .loom/work links to the main one
 ├── doc/plans/
 └── doc/loom/knowledge/
     ├── INDEX.md            # generated tier-0 map

@@ -10,13 +10,13 @@ Loom is a Rust CLI (~15K lines) for orchestrating parallel Claude Code sessions 
 
 ## Directory Structure
 
-Full `loom/src/` module tree, `.work/` state layout, repo-root asset directories.
+Full `loom/src/` module tree, `.loom/work/` state layout, repo-root asset directories.
 
 → [Directory Structure](architecture/directory-structure.md)
 
 ## Core Abstractions
 
-`ExecutionGraph`, `Stage`, `Session`, `Orchestrator`, `TerminalBackend`, `KnowledgeDir`, data flow, `.work/` file ownership.
+`ExecutionGraph`, `Stage`, `Session`, `Orchestrator`, `TerminalBackend`, `KnowledgeDir`, data flow, `.loom/work/` file ownership.
 
 → [Core Abstractions, Data Flow & File Ownership](architecture/core-abstractions.md)
 
@@ -211,7 +211,7 @@ Plan-authored commands run through `spawn_confined` — environment scrubbing, n
 
 ## Memory Spool and Drain (`fs/memory/spool.rs`, `orchestrator/core/spool_drain.rs`) [DETAILED]
 
-A sandboxed stage cannot write `.work/memory/<stage>.md` — `.work` is a symlink out of the
+A sandboxed stage cannot write `.loom/work/memory/<stage>.md` — `.loom/work` is a symlink out of the
 worktree and the sandbox grants no `Edit` there — so `loom memory` appends to
 `<worktree>/.loom/memory-spool.jsonl` instead and the daemon drains it each tick, plus once
 more in `cleanup_after_merge` before the worktree is destroyed. The payload carries **no

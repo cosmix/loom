@@ -138,7 +138,7 @@ half is still well over the 400-line guidance and remains a recorded violation i
 `maintainability-baseline.txt`. It has since grown further, to 706 lines
 (`maintainability-baseline.txt:26`).
 
-It is genuinely multi-purpose: worktree `.work`/`.claude`/`CLAUDE.md` scaffold planting, settings
+It is genuinely multi-purpose: worktree `.loom/work`/`.claude`/`CLAUDE.md` scaffold planting, settings
 generation and permission merging, env scrubbing, and the git-exclude writer. Those are separable
 — the exclude writer in particular (`add_to_gitignore_exclude`,
 `add_worktree_exclude_patterns`, and the two `add_settings_local_to_*_gitignore` entry points)

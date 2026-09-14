@@ -88,9 +88,9 @@ settings backup risk, and the `Read(...)` deny-rule ban.
 
 Claude Code's file permission check consults **only** `Edit(path)`; a `Write(path)` rule parses,
 warns at startup, and is then ignored. Both halves are now fixed: `sandbox/settings.rs` emits
-`Edit(...)` throughout, and the `Write(.work/**)` rules in a project's `.claude/settings.json`
+`Edit(...)` throughout, and the `Write(.loom/work/**)` rules in a project's `.claude/settings.json`
 turned out to be loom's own output from `fs/permissions/constants.rs` (that file is generated and
-untracked, not committed config), replaced by `Edit(.work/handoffs/**)`. Loom now also prunes the
+untracked, not committed config), replaced by `Edit(.loom/work/handoffs/**)`. Loom now also prunes the
 legacy grants and migrates inherited `Write(...)` denies on every `loom init`.
 
 → [Sandbox Write Rules Inert](concerns/sandbox-write-rules-inert.md) for what each half emitted,

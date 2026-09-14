@@ -43,10 +43,10 @@ project on `loom init`, `git/worktree/settings.rs` added the resolved-absolute
 `Write(/<abs>/.work/**)`, and `fs/permissions/sync.rs` promoted the worktree-relative
 `Write(../../.work/**)` back into the main file.
 
-All three are gone. `LOOM_PERMISSIONS` now grants `Edit(.work/handoffs/**)` — the one directory
+All three are gone. `LOOM_PERMISSIONS` now grants `Edit(.loom/work/handoffs/**)` — the one directory
 file tools legitimately write, matching the narrow allow generated stage settings already use.
-A broad `Edit(.work/**)` is NOT the fix: the main file is copied into every worktree, so it would
-re-expose `.work/admin.token` and `.work/user.token` (S-1). `ensure_loom_permissions_to` prunes
+A broad `Edit(.loom/work/**)` is NOT the fix: the main file is copied into every worktree, so it would
+re-expose `.loom/work/admin.token` and `.loom/work/user.token` (S-1). `ensure_loom_permissions_to` prunes
 the three legacy spellings from files older versions wrote, and `ensure_loom_hooks_local` runs
 `settings.local.json`'s deny list through the migration above, so `loom init` heals a polluted
 repo instead of waiting for the next stage spawn.

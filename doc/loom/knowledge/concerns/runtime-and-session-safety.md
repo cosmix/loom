@@ -9,7 +9,7 @@ an explicit stage decision — so it was **deliberately left as-is**. But tmux p
 deprecation warnings to stderr _while creating the session fine_, so one benign warning now: fails the
 spawn, kills a **working** server via the abort path, and returns `Err` — which blocks the stage
 (`FailureType::InfrastructureError`) instead of retrying on another lane. Since the
-`.work/terminal-backend-fallback` marker was removed (2026-09-13), the consequence is a single Blocked
+`.loom/work/terminal-backend-fallback` marker was removed (2026-09-13), the consequence is a single Blocked
 stage rather than tmux being disabled repo-wide.
 
 The `has-session` probe that immediately follows is the authoritative signal and would distinguish the
@@ -66,7 +66,7 @@ completion; no follow/loop exists. Candidate design if this matters: make direct
 `select-pane` + `resize-pane -Z` focus on the long-lived overview viewer, so the operator is attached
 to the viewer's lifetime, not the stage's (note `split-window` unzooms, and the build should reuse a
 healthy viewer instead of `kill-session`-ing it). Daemon log for any attach/reconcile question:
-`.work/orchestrator.log`, level fixed by `RUST_LOG` in the shell BEFORE `loom run`.
+`.loom/work/orchestrator.log`, level fixed by `RUST_LOG` in the shell BEFORE `loom run`.
 
 ## Orphan Adoption Only Runs at Daemon Startup (2026-08-29)
 
@@ -77,23 +77,23 @@ therefore stays invisible until the next `loom run`. That is enough for the inci
 for (a killed daemon is restarted by definition), and the spawn-time guard in `start_stage` closes
 the duplicate-spawn hole independently, so this is a narrower reach rather than a hole. Making it
 per-tick is a one-line addition to the scheduler loop; the pass is already idempotent and pinned as
-such by a test, so the only question is cost — it scans `.work/pids/` per Executing stage.
+such by a test, so the only question is cost — it scans `.loom/work/pids/` per Executing stage.
 
 ## `get_work_dir()` Trusts Any Path Containing `.worktrees/` (2026-08-29)
 
 `find_worktree_root_from_cwd` (`git/worktree/paths.rs`) is a pure substring match on `.worktrees/`
 in the cwd string — it never checks that the directory is a loom-managed worktree. `get_work_dir`'s
-first branch then adopts `<that root>/.work` if one merely exists. A user working in any directory
-they happen to name `.worktrees/<anything>` that contains a leftover `.work` would silently read
+first branch then adopts `<that root>/.loom/work` if one merely exists. A user working in any directory
+they happen to name `.worktrees/<anything>` that contains a leftover `.loom/work` would silently read
 another project's memory and stage state.
 
 Lower severity than the creation-path bug fixed alongside it (`mistakes/ambient-filesystem-trust.md`):
-both of `get_work_dir`'s branches only ever RETURN a `.work` that already exists, so this
+both of `get_work_dir`'s branches only ever RETURN a `.loom/work` that already exists, so this
 misattributes reads rather than manufacturing stray directories. Left alone deliberately, because
 changing it would alter the reuse and read-only degrade paths that `loom memory list` depends on
 during post-compaction recovery (Rule 3b). Fix shape if it is ever worth doing: confirm the
 candidate root is a real worktree — a `.git` FILE containing a `gitdir:` pointer — before trusting
-its `.work`.
+its `.loom/work`.
 
 ## `commands::memory` Tests Mutate the Process-Global Working Directory (2026-08-29)
 
@@ -126,7 +126,7 @@ one-line fix:
 3. **`loom_deny_enabled` is a line-oriented `grep`-style check**, so a TOML multi-line string
    VALUE that happens to contain the literal lines `[hooks]` and `deny_enabled = true` would
    enable the switch even though no real config intended it.
-4. **`poll-guard`'s rule-2 `cat` branch is unreachable for any pre-existing `.work` file**,
+4. **`poll-guard`'s rule-2 `cat` branch is unreachable for any pre-existing `.loom/work` file**,
    because rule 3 (repeat-read escalation) fires first for files the ledger already has an entry
    for — effectively dead code on the common path.
 

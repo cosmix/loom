@@ -539,7 +539,7 @@ Getting this wrong destroys work, so it is worth stating flatly:
   catalog, fingerprints, base graph layers, the persistent lexical index).
   Safe to delete; `loom knowledge sync` rebuilds it. It is git-ignored.
 - **Durable within a run:** the per-stage overlay and the **delivery records**
-  under `.work/context/<plan>/<stage>/`. These are NOT regenerable from the
+  under `.loom/work/context/<plan>/<stage>/`. These are NOT regenerable from the
   repo alone — a delivery record states what a specific recipient was already
   given.
 - **Durable forever:** only `doc/loom/knowledge/*.md`, the curated prose itself

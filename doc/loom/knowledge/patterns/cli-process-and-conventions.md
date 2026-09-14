@@ -14,7 +14,7 @@ Three systems, in ascending order of permanence:
 
 | System            | Location                                                                  | Lifetime                          | Written by                                                                   |
 | ----------------- | ------------------------------------------------------------------------- | ---------------------------------- | ----------------------------------------------------------------------------- |
-| **Memory**        | `.work/memory/{session}.md`                                               | The run                           | `loom memory note\|decision\|change\|question`                               |
+| **Memory**        | `.loom/work/memory/{session}.md`                                               | The run                           | `loom memory note\|decision\|change\|question`                               |
 | **Stage outputs** | `outputs: Vec<StageOutput>` on the stage file (key / value / description) | The run; read by dependent stages | `loom stage output set`                                                      |
 | **Knowledge**     | `doc/loom/knowledge/` (tiered)                                            | Permanent                         | `loom knowledge update` (stage execution) or direct Write/Edit (interactive) |
 
@@ -22,7 +22,7 @@ Memory is placed in the signal's recitation section for maximum LLM attention. T
 
 `loom knowledge update` appends; `loom knowledge replace-section <file> <heading> [content]` overwrites a `## <heading>` section's body in place — the correction path for stale knowledge — and falls back to appending, with a distinct message, when the heading is not found. There is still no verb that deletes a section outright, or renames its heading (see concerns.md). Knowledge commands resolve through `WorkDir::project_root()` (cwd-relative), so a worktree agent writes to its own worktree rather than the main repo.
 
-**Corrected 2026-07-30:** an earlier version of this section claimed a `.work/facts.toml` cross-stage KV store, a `loom memory promote` command, and `<!-- .loom-protected -->` file markers. None of the three exist in the codebase. Cross-stage KV is `loom stage output`; "Discovered Facts" survives only as a HandoffV2 field and a signal sub-section.
+**Corrected 2026-07-30:** an earlier version of this section claimed a `.loom/work/facts.toml` cross-stage KV store, a `loom memory promote` command, and `<!-- .loom-protected -->` file markers. None of the three exist in the codebase. Cross-stage KV is `loom stage output`; "Discovered Facts" survives only as a HandoffV2 field and a signal sub-section.
 
 ## Error Handling Pattern
 
@@ -36,7 +36,7 @@ semantics, such as optional skill discovery or best-effort notification.
 
 ## Process Management Pattern
 
-**Wrapper script** (`pid_tracking.rs`): creates `.work/wrappers/<stage_id>-wrapper.sh`, starts from `env -i`, reconstructs a minimal locale/terminal allowlist plus explicit Loom variables, records PID and process start time, then `exec`s the agent. **Liveness/signaling** uses `process::ProcessIdentity`; start-time mismatch is dead and missing identity is unverifiable. Raw PID fallback is forbidden. **Zombie prevention:** `spawn_reaper_thread()` calls `wait()`.
+**Wrapper script** (`pid_tracking.rs`): creates `.loom/work/wrappers/<stage_id>-wrapper.sh`, starts from `env -i`, reconstructs a minimal locale/terminal allowlist plus explicit Loom variables, records PID and process start time, then `exec`s the agent. **Liveness/signaling** uses `process::ProcessIdentity`; start-time mismatch is dead and missing identity is unverifiable. Raw PID fallback is forbidden. **Zombie prevention:** `spawn_reaper_thread()` calls `wait()`.
 
 ## Directory Hierarchy Pattern
 
@@ -128,7 +128,7 @@ The three files above make a command **compile, dispatch, and show in `--help`**
 
 ## Centralized Config File Ownership (toml_edit)
 
-All writes to `.work/config.toml` go through `fs/work_dir.rs` using `toml_edit` for round-trip-safe writes. `toml` is for typed reads. Never mix: `toml_edit Item -> serde` silently drops nested sub-tables.
+All writes to `.loom/work/config.toml` go through `fs/work_dir.rs` using `toml_edit` for round-trip-safe writes. `toml` is for typed reads. Never mix: `toml_edit Item -> serde` silently drops nested sub-tables.
 
 `read_section::<T>` re-parses the whole file with `toml::Value` then `try_into` on the section — preserves nested config sub-tables.
 
@@ -186,7 +186,7 @@ fn validate_response_status(response: &reqwest::blocking::Response, context: &st
 
 A second execution model distinct from the daemon/worktree orchestrator: `loom pressure` (commands/pressure/mod.rs) spawns external agents synchronously in the foreground. The reusable sub-patterns:
 
-- **Foreground spawn, inherited stdio:** children run via `Command::status()` (blocking) with `Stdio::inherit()` for stdin/stdout/stderr, in `current_dir(repo_root)`. No terminal backend, no session tracking, no `.work/`. Use this shape when a command orchestrates interactive tools the user must watch live, rather than background stages.
+- **Foreground spawn, inherited stdio:** children run via `Command::status()` (blocking) with `Stdio::inherit()` for stdin/stdout/stderr, in `current_dir(repo_root)`. No terminal backend, no session tracking, no `.loom/work/`. Use this shape when a command orchestrates interactive tools the user must watch live, rather than background stages.
 - **Single-source argv builders:** `claude_args()`/`codex_args()` are the ONLY place argv is assembled, consumed by BOTH the real spawn (`spawn_*`) and `render_dry_run`. `--dry-run` can therefore never drift from what actually runs. Apply whenever a command has a preview/plan mode.
 - **Sibling-report naming + pre-delete guard:** the Codex review is written to `codex-<basename>` next to the plan. The report is deleted at the START of every round so that if Codex fails to write a fresh review, the following `/address` cannot silently read the previous round's stale report; a final delete cleans up after the last round.
 - **Repo-relative invocation, not cwd-relative:** `resolve_plan_path` derives the agent argument via `fs_path.strip_prefix(repo_root)` (repo-relative when under the repo, else absolute) because children run with `current_dir(repo_root)`, not the user's shell cwd. It gates on `is_file()` (not `exists()`, which is true for dirs) and falls back to `doc/plans/<arg>` only when the raw path is absent AND does not already start with `doc/plans/` (double-prefix guard).

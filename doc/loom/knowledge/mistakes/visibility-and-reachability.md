@@ -55,7 +55,7 @@ output still looked plausible, and no test failed — which is exactly why it su
 **Rule:** when a field name names one domain object but its doc comment and its matcher name
 another, **believe the doc comment and the matcher**. Then prove the boost fires by asserting the
 `SelectionReason` appears, never just that the call succeeded. (Correct source here: the dependency
-stage's own delivery records under `.work/context/<plan>/<dep>/session-retrieval/`, whose
+stage's own delivery records under `.loom/work/context/<plan>/<dep>/session-retrieval/`, whose
 `delivered[].node_id` values ARE chunk ids.)
 
 ## An `Option` That Is `None` For Two Reasons Cannot Gate a Claim About Either

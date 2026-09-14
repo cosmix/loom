@@ -63,7 +63,7 @@
 - `claude` CLI — likewise required by `loom pressure` (resolved by `find_claude_path`).
 
 - `tmux` — **optional** runtime dependency, required only when the terminal backend is set to `tmux`
-  (`[terminal] backend = "tmux"` in `.work/config.toml`, or `loom run --backend tmux`). No new Rust
+  (`[terminal] backend = "tmux"` in `.loom/work/config.toml`, or `loom run --backend tmux`). No new Rust
   crates were needed for the backend: it shells out to the `tmux` binary and reuses `which` (PATH
   probe), `libc` (`getuid()` for the `tmux-<uid>` socket dir) and `sha2` (the per-repo overview viewer
   socket name), all already in `loom/Cargo.toml`. Availability is probed with `which::which("tmux")` at

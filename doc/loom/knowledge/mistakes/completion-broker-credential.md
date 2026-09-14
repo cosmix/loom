@@ -19,7 +19,7 @@ the sanctioned path itself, not an environment quirk.
 2. `daemon/wire.rs::write_request_preface` refuses to frame a credential of length 0, CLIENT-side.
    The request never left the process, so the fallback the comment promised was dead code.
 3. The token read fails on this path BY CONSTRUCTION, via two different mechanisms with one
-   outcome: in a worktree, `work_dir` is the `.work` SYMLINK and `safe_open_dirfd` opens the root
+   outcome: in a worktree, `work_dir` is the `.loom/work` SYMLINK and `safe_open_dirfd` opens the root
    `O_NOFOLLOW` (ELOOP); under a sandboxed hook, the deny-listed token files read as zero-byte
    character devices and `read_bounded`'s `is_file()` check bails. Either way: `None` → `""` →
    wire refusal.
@@ -46,7 +46,7 @@ refusing it outright — see the section below.
   a value, every caller that can legitimately lack that value needs an explicit non-empty
   encoding for absence — `unwrap_or_default()` on a credential is exactly the bug shape to grep for.
 - `fs/safe_read` refuses BOTH a symlinked root (`O_NOFOLLOW` on `safe_open_dirfd`) and non-regular
-  files. Any caller handing it a worktree's `.work` path, or a sandbox-masked path, gets `Err` even
+  files. Any caller handing it a worktree's `.loom/work` path, or a sandbox-masked path, gets `Err` even
   though the underlying file is fine. That is deliberate hardening — design callers so the failure
   is survivable, as the broker now does.
 

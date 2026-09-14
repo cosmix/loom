@@ -13,7 +13,7 @@ table of contents goes stale the moment a topic is added.
 
 ## State Machine Pattern
 
-Stage has 13 states (WaitingForDeps → ... → Completed, terminal); dependents become Queued only once deps are `status == Completed AND merged == true`. All state persists to `.work/` as markdown+YAML, and concurrent writers (orchestrator loop, daemon IPC, CLI) must use the locked `update_stage` transaction rather than raw save. Stage completion, field propagation, and the four-layer goal-backward verification (acceptance criteria, artifacts, wiring, dead-code, plus testing conventions like matched positive/negative controls) live in the same topic.
+Stage has 13 states (WaitingForDeps → ... → Completed, terminal); dependents become Queued only once deps are `status == Completed AND merged == true`. All state persists to `.loom/work/` as markdown+YAML, and concurrent writers (orchestrator loop, daemon IPC, CLI) must use the locked `update_stage` transaction rather than raw save. Stage completion, field propagation, and the four-layer goal-backward verification (acceptance criteria, artifacts, wiring, dead-code, plus testing conventions like matched positive/negative controls) live in the same topic.
 
 → [Stage Lifecycle & Verification](patterns/stage-lifecycle-and-verification.md)
 
@@ -25,7 +25,7 @@ Dependencies merge to main before dependents start; `MergeLock` serializes concu
 
 ## Daemon IPC Pattern
 
-Unix socket IPC (`.work/orchestrator.sock`, mode 0600) admits bounded requests under a stable-file `flock`; the 5-second polling loop syncs the stage graph, spawns ready stages, and drains monitor events. Signal generation (Manus KV-cache prefix layout), heartbeat/context-health monitoring, session backend dispatch (native/tmux), and the memory-spool drain for sandboxed writes are all part of the same daemon loop.
+Unix socket IPC (`.loom/work/orchestrator.sock`, mode 0600) admits bounded requests under a stable-file `flock`; the 5-second polling loop syncs the stage graph, spawns ready stages, and drains monitor events. Signal generation (Manus KV-cache prefix layout), heartbeat/context-health monitoring, session backend dispatch (native/tmux), and the memory-spool drain for sandboxed writes are all part of the same daemon loop.
 
 → [Orchestrator Daemon Loop](patterns/orchestrator-daemon-loop.md)
 

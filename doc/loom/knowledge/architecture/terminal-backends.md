@@ -28,7 +28,7 @@ per 5s monitor tick.
 
 ## Configuration and Lane Resolution
 
-- **Config:** `[terminal]` / `backend = "native" | "tmux"` in `.work/config.toml`.
+- **Config:** `[terminal]` / `backend = "native" | "tmux"` in `.loom/work/config.toml`.
   `TerminalConfig` (`models/session/types.rs:85-89`) holds one `SessionBackendKind`
   (`types.rs:62-70`, `#[serde(rename_all = "lowercase")]`, `#[default] Native`).
   Helpers `read_terminal_config` / `write_terminal_config` (`fs/work_dir/config_sections.rs`); a missing
@@ -56,7 +56,7 @@ per 5s monitor tick.
 ## Session-Recorded Backend Dispatch
 
 `Session.backend: SessionBackendKind` (`#[serde(default)]`, `models/session/types.rs:119-123`) records
-the lane **actually used**, and is persisted to `.work/sessions/<id>.md`.
+the lane **actually used**, and is persisted to `.loom/work/sessions/<id>.md`.
 
 This is the load-bearing part: sessions are reconstructed from disk after a daemon restart, so
 kill/liveness must route on the _session's_ recorded backend, never on the currently-configured one.
@@ -184,7 +184,7 @@ mid-`loom attach` rebuild) → `list-panes -F` → pure diff (`reconcile_steps`,
 `reconcile/steps.rs` — the executor stays in `reconcile.rs`) → apply.
 
 Both processes must resolve the same tmux socket directory: the orchestrator records its
-`TMUX_TMPDIR` in `.work/tmux-tmpdir` at start (`fs/tmux_tmpdir.rs`, removed at exit) and
+`TMUX_TMPDIR` in `.loom/work/tmux-tmpdir` at start (`fs/tmux_tmpdir.rs`, removed at exit) and
 `loom attach` adopts it while a daemon is alive, so a shell with a different `TMUX_TMPDIR` cannot
 make the reconciler stat the wrong directory. The daemon's `work_dir` is absolute (`loom run`
 passes its cwd, never `.`) because `viewer_socket_name` hashes the canonical repo root and a
@@ -221,7 +221,7 @@ and are testable.
 match another checkout's live servers.
 
 `SessionReapMode` distinguishes the two callers: `OrphansOnly` (normal path, skips live sessions) vs
-`IncludeLiveBeforeClean`. `loom init --clean` deletes `.work/` immediately afterwards, and `.work/` is
+`IncludeLiveBeforeClean`. `loom init --clean` deletes `.loom/work/` immediately afterwards, and `.loom/work/` is
 the _only_ thing that makes attribution possible — so a live session left running through `--clean`
 would become permanently unattributable and leak forever. `--clean` therefore reaps attributed sockets
 even when alive; the normal path stays conservative.

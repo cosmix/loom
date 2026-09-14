@@ -6,15 +6,15 @@
 
 ## Dispute File Ownership Convention
 
-`.work/disputes/<stage>/<n>/` — always split by authority:
+`.loom/work/disputes/<stage>/<n>/` — always split by authority:
 
 | File | Authority | Notes |
 | --- | --- | --- |
-| `.work/disputes/<stage>/<n>/request.md` | agent-attestable | written by the daemon on behalf of the agent's RPC, or drained from the worktree spool |
-| `.work/disputes/<stage>/<n>/verdict.json` | adjudication session | the session's DRAFT, not the record — it has no authority until recorded |
-| `.work/disputes/<stage>/<n>/verdict.md` | daemon-only | the record `apply_pending_verdicts` reads |
-| `.work/disputes/<stage>/<n>/applied.marker` | daemon-only | zero-byte idempotency sentinel |
-| `.work/disputes/<stage>/<n>/attempts` | daemon-only | respawn budget, spent when an adjudication job is handed out |
+| `.loom/work/disputes/<stage>/<n>/request.md` | agent-attestable | written by the daemon on behalf of the agent's RPC, or drained from the worktree spool |
+| `.loom/work/disputes/<stage>/<n>/verdict.json` | adjudication session | the session's DRAFT, not the record — it has no authority until recorded |
+| `.loom/work/disputes/<stage>/<n>/verdict.md` | daemon-only | the record `apply_pending_verdicts` reads |
+| `.loom/work/disputes/<stage>/<n>/applied.marker` | daemon-only | zero-byte idempotency sentinel |
+| `.loom/work/disputes/<stage>/<n>/attempts` | daemon-only | respawn budget, spent when an adjudication job is handed out |
 
 Never collapse these into one file. The rule behind the split is unchanged: **if the party under
 dispute can write the verdict, it can self-approve.**
@@ -27,7 +27,7 @@ through `loom stage adjudicate`, which refuses:
   precisely the self-approval case;
 - when the stage is not in `NeedsAdjudication`;
 - when the named dispute was never filed;
-- when a `.work/disputes/<stage>/<n>/verdict.md` already exists — a recorded verdict is not replaceable.
+- when a `.loom/work/disputes/<stage>/<n>/verdict.md` already exists — a recorded verdict is not replaceable.
 
 A degenerate verdict escalates rather than being recorded. An earlier version of this section said `verdict.md` was written by "a worker thread after an API call"; there is no worker thread and no API call.
 
@@ -88,7 +88,7 @@ run things.
 - **Spawn:** `adjudication::session::start_pending_adjudications` builds a `SessionType::Adjudication`
   session and spawns it through the same `TerminalBackend` every other session goes through. It runs
   in the MAIN REPO, not a worktree — `SessionType::Knowledge` is the closest precedent.
-- **Model:** `resolve_model` reads `.work/config.toml::[adjudication].model`, defaulting to `opus`.
+- **Model:** `resolve_model` reads `.loom/work/config.toml::[adjudication].model`, defaulting to `opus`.
 - **Briefing:** `orchestrator/signals/adjudication.rs` writes a signal whose body comes from
   `adjudication::prompt`, carrying the dispute, the stage's criteria, the evidence commit diff and
   the failure output.
@@ -101,7 +101,7 @@ run things.
 - **It judges, it does not fix:** no edits, no commits, never `loom stage complete`. The single
   authorized execution is the disputed criterion itself — the same command the stage already runs,
   under the same sandbox, so it is not new exposure.
-- **Return path:** the session writes its verdict JSON to `.work/disputes/<stage>/<n>/verdict.json` and
+- **Return path:** the session writes its verdict JSON to `.loom/work/disputes/<stage>/<n>/verdict.json` and
   runs `loom stage adjudicate --stage <id> --dispute <n> --verdict-file <path>`. The daemon's
   existing `apply_pending_verdicts` applies it on the next tick. Nothing waits on the session; the
   daemon observes the state change, exactly as it does for a merge resolution session.

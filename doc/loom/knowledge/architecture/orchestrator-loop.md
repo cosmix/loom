@@ -12,7 +12,7 @@ Main loop at `orchestrator/core/orchestrator.rs:258-376` — 5s poll cycle (100m
 1. reconcile_and_update_graph()              [recovery.rs]       — catch phantom merges pre-sync
 2. sync_graph_with_stage_files()             [recovery.rs]       — disk → in-memory graph
 3. sync_queued_status_to_files()             [recovery.rs]       — graph Queued → disk
-4. check_pending_disputes()                  [adjudicator]       — scan .work/disputes for new requests
+4. check_pending_disputes()                  [adjudicator]       — scan .loom/work/disputes for new requests
 5. apply_pending_verdicts()                  [adjudicator]       — apply ready verdicts, re-queue stages
 6. drain_completed_adjudicator_workers()     [adjudicator]       — reap finished worker threads
 7. spawn_merge_resolution_sessions()         [merge_handler.rs]  — detect/spawn merge resolvers
@@ -43,8 +43,8 @@ Full file list:
 
 **`Monitor::poll()` flow:**
 
-1. Load all stages from `.work/stages/*.md`
-2. Load all sessions from `.work/sessions/*.md`
+1. Load all stages from `.loom/work/stages/*.md`
+2. Load all sessions from `.loom/work/sessions/*.md`
 3. `detection.detect_stage_changes()` — file-level changes
 4. `detection.detect_session_changes()` — PID liveness, status transitions
 5. `detection.detect_heartbeat_events()` — hung detection via `HeartbeatWatcher`

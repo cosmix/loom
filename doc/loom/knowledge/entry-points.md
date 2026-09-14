@@ -7,7 +7,7 @@
 ## CLI Entry Point
 
 `main.rs`/`lib.rs` entry, command dispatch, plan parsing/validation/graph, the
-verification pipeline, and `.work/` config file paths.
+verification pipeline, and `.loom/work/` config file paths.
 
 → [CLI, Commands and Plan Pipeline](entry-points/cli-and-plan-pipeline.md)
 
@@ -34,7 +34,7 @@ subagent verification guard, and the status command.
 
 ## Git Operations
 
-Git worktree/merge/branch operations, `.work/` filesystem state, the handoff
+Git worktree/merge/branch operations, `.loom/work/` filesystem state, the handoff
 system, sandbox config generation, the remote-control gate, WorkDir directory
 helpers, ANTHROPIC_API_KEY env hygiene, the self-update HTTP client, and the
 tiered knowledge-base module layout.

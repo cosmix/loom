@@ -43,7 +43,7 @@ loom/src/
   completions/              # Shell completion (custom scripts + dynamic engine + install)
   process/                  # Bounded subprocesses, minimal environments, PID identity
 
-.work/                      # Runtime state (gitignored)
+.loom/work/                      # Runtime state (gitignored)
   config.toml, stages/*.md, sessions/*.md, signals/*.md,
   handoffs/*.md, orchestrator.sock, orchestrator.pid
 ```

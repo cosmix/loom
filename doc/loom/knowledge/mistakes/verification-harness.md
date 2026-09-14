@@ -20,7 +20,7 @@ install had not been re-run since the stage that added it merged. Functional ver
 new subcommand through the PATH binary verifies the _old_ code and calls it green.
 
 **Why the confusion:** CLAUDE.md Rule 11 ("always use `loom` from PATH, never `target/debug`")
-is about not corrupting real `.work/` state with a dev binary. It does **not** mean the PATH
+is about not corrupting real `.loom/work/` state with a dev binary. It does **not** mean the PATH
 binary contains your changes.
 
 **Prevention:** run `<binary> <new-subcommand> --help` before trusting any check that uses it.
@@ -90,7 +90,7 @@ nearly filed as a loom discovery bug.
 agent's own processes — and `pgrep tmux` found nothing while a real tmux server was running. Loom's
 liveness rule is verified process identity (`TmuxBackend::is_session_alive` →
 `process::ProcessIdentity`), so when the recorded PID is invisible, `live_tmux_sessions` filters out
-every live tmux session and every `.work/sessions/*.md` looks stale.
+every live tmux session and every `.loom/work/sessions/*.md` looks stale.
 
 **The error is one-directional, which is what makes it convincing:** a filtered process table can
 only turn live into dead, never dead into live. The false reading therefore arrives as a plausible,
@@ -109,14 +109,14 @@ the world it could see, and that world was not the machine.
 ## Write Acceptance Criteria From Inside a Sandboxed Worktree, Not From Your Checkout
 
 Every criterion below looked green and was wrong, and all four failed the same way:
-they were authored from the main checkout, where `.work` is a real directory and the
-derived cache is writable. In a stage worktree `.work` is a SYMLINK to the main repo
+they were authored from the main checkout, where `.loom/work` is a real directory and the
+derived cache is writable. In a stage worktree `.loom/work` is a SYMLINK to the main repo
 and the plan sandbox denies writes to it, so any criterion whose command writes a
 derived cache behaves differently there than where it was written.
 
 | Criterion as written | What actually happens in a stage worktree |
 | --- | --- |
-| `loom map --outline src/main.rs \| rg -q function` | unsatisfiable — `loom map` called `reconcile_source_graph`, which WRITES an overlay under `.work/context`, so every invocation hard-failed with `Read-only file system (os error 30)` even though a readable base layer existed |
+| `loom map --outline src/main.rs \| rg -q function` | unsatisfiable — `loom map` called `reconcile_source_graph`, which WRITES an overlay under `.loom/work/context`, so every invocation hard-failed with `Read-only file system (os error 30)` even though a readable base layer existed |
 | `loom knowledge sync --json \| rg -q '"semantic":{'` | cannot fail — the denied write returns exit 0 with `{"semantic":{"layer":"skipped",...}}`, so the key is present on a sync that did nothing |
 | `$L init >/dev/null 2>&1 \|\| true` then check layers | cannot pass — `loom init` REQUIRES a `<PLAN_PATH>` and exits 2; `\|\| true` turns the usage error into a silent zero-result |
 | `rg --files doc/plans/PLAN-x.md > /dev/null && ...` | fails on an absent file — a worktree materialises only TRACKED files, and those sibling plans were untracked |
@@ -139,8 +139,8 @@ derived cache behaves differently there than where it was written.
 
 **And know that the escape hatch is shut.** A stage's dispute-criteria command — the only
 channel an agent has for "this criterion is impossible" — authenticates over daemon RPC
-by reading `.work/user.token`, which the generated stage settings put in `denyRead`. It
-dies with `Failed to read .work/user.token for daemon authentication` before any RPC. So
+by reading `.loom/work/user.token`, which the generated stage settings put in `denyRead`. It
+dies with `Failed to read .loom/work/user.token for daemon authentication` before any RPC. So
 an agent facing an unsatisfiable criterion has no structured escape and falls back to
 finishing the stage as CompletedWithFailures, which auto-retries a stage whose criteria no
 retry can ever satisfy. When you hit one: say so explicitly in the finishing report and

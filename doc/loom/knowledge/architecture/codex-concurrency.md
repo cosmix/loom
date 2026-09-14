@@ -92,7 +92,7 @@ the same consequence before reporting the conjunction as a verdict — report pe
 ## Evidence status — what execution did and did NOT add
 
 Be precise about this when extending the page. The plan that SHIPPED the `implementer` lane
-(`PLAN-codex-implementer-subagents`) ran none of its own stages on it: all four `.work/stages/*.md`
+(`PLAN-codex-implementer-subagents`) ran none of its own stages on it: all four `.loom/work/stages/*.md`
 carry no `implementer` key, so the lane went to merge without ever being dogfooded end to end.
 
 - Still the only multi-run evidence: the 2026-08-06 spike table above.
@@ -103,7 +103,7 @@ carry no `implementer` key, so the lane went to merge without ever being dogfood
   real loom stage. The spike drove `codex-companion` directly, one level below the subagent wrapper.
 
 Do not write "as observed in execution" about parallel codex implementers until a stage actually runs
-with codex listed in `implementers`; check `.work/stages/*.md` for the field before claiming runtime
+with codex listed in `implementers`; check `.loom/work/stages/*.md` for the field before claiming runtime
 evidence.
 
 ## Wave Planning for Codex-Heavy Stages (2026-09-13)

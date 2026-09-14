@@ -16,7 +16,7 @@
 8. If the field reaches the agent: copy it onto `EmbeddedContext` (orchestrator/signals/types.rs) and
    emit it from BOTH format/sections.rs AND recovery_format.rs — the recovery signal embeds only the
    stable prefix, so a gated section missing there vanishes on any retry
-9. Add the two backwards-compat tests (plan YAML without the key; legacy `.work/stages/*.md` without
+9. Add the two backwards-compat tests (plan YAML without the key; legacy `.loom/work/stages/*.md` without
    the key) — see [Additive Schema Fields](../conventions.md); `#[serde(default)]` is the only migration
 10. If it is user-facing, add a row to the README Stage Fields table
 
@@ -34,7 +34,7 @@ Acceptance criteria (verify/criteria/runner.rs) now handle both:
 - **Simple** -- Plain shell command, 5min timeout, exit 0 = pass
 - **Extended** -- TruthCheck struct with stdout_contains, stderr_empty, exit_code, 30s timeout
 
-Returns: GoalBackwardResult::Passed | GapsFound | HumanNeeded. Storage: `.work/verifications/<stage-id>.json`.
+Returns: GoalBackwardResult::Passed | GapsFound | HumanNeeded. Storage: `.loom/work/verifications/<stage-id>.json`.
 
 Note: truths.rs module and verify_truth_checks() are retained for before_stage/after_stage verification (pre/post conditions), NOT for goal-backward.
 
@@ -52,7 +52,7 @@ Note: truths.rs module and verify_truth_checks() are retained for before_stage/a
 
 - Runs after worktree creation, BEFORE session spawn
 - **Gated on a pristine workspace.** `verify::before_after::find_prior_stage_work(stage_branch, base_branch, repo_root, worktree_path)` runs first; if it finds commits on `loom/<stage-id>` beyond the resolved base, or non-scaffold changes in the worktree, the checks are SKIPPED (logged at `info`) and the spawn proceeds. `before_stage` is a delta-proof ("the feature does not exist yet"), which is only meaningful on the first attempt — re-running it on a re-spawn (orphan recovery, `loom stage retry`, crash retry) fails on the previous attempt's own work and blocks the stage before any session exists to finish it (unrecoverable loop; see mistakes.md 2026-07-27)
-- Loom's own worktree scaffolding (`.work`, `.claude/`, root `CLAUDE.md`) is discounted via `git::worktree::is_worktree_scaffold_path` — it is present from the first spawn, and in repos that don't gitignore it, counting it would disable the gate entirely
+- Loom's own worktree scaffolding (`.loom/work`, `.claude/`, root `CLAUDE.md`) is discounted via `git::worktree::is_worktree_scaffold_path` — it is present from the first spawn, and in repos that don't gitignore it, counting it would disable the gate entirely
 - Calls `crate::verify::before_after::run_before_stage_checks(&stage.before_stage, &check_dir)`
 - On failure gaps: stage → `Blocked` (FailureType::TestFailure), session NOT spawned. `TestFailure` is not auto-retryable (`should_auto_retry`), so the stage rests Blocked until an operator runs `loom stage retry`
 - On errors (infrastructure): prints warning, continues anyway (advisory)
@@ -76,7 +76,7 @@ Centralized in `plan/parser/mod.rs` (re-exported via `plan/mod.rs`). Previously 
 
 **Signature:** `load_stage_definition_from_plan(stage_id, work_dir) -> Result<Option<StageDefinition>>`
 
-Reads `.work/config.toml` for plan path, calls `resolve_source_path()`, calls `parse_plan()`, finds stage by ID. Used by:
+Reads `.loom/work/config.toml` for plan path, calls `resolve_source_path()`, calls `parse_plan()`, finds stage by ID. Used by:
 
 - `commands/stage/complete.rs` — after-stage execution
 
@@ -84,13 +84,13 @@ Reads `.work/config.toml` for plan path, calls `resolve_source_path()`, calls `p
 
 ## Plan Versioning / Runtime Amendment (Shipped — `plan/amendment.rs`)
 
-Runtime plan amendment exists and is reachable from an `Accept` adjudication verdict. `.work/plan_versions/` is its audit trail:
+Runtime plan amendment exists and is reachable from an `Accept` adjudication verdict. `.loom/work/plan_versions/` is its audit trail:
 
-- `.work/plan_versions/.lock` — `flock` (serializes amendments)
-- `.work/plan_versions/<n>.md` — snapshot of full plan content after amendment n
-- `.work/plan_versions/audit.md` — O_APPEND atomic rows (amendment log)
+- `.loom/work/plan_versions/.lock` — `flock` (serializes amendments)
+- `.loom/work/plan_versions/<n>.md` — snapshot of full plan content after amendment n
+- `.loom/work/plan_versions/audit.md` — O_APPEND atomic rows (amendment log)
 
-**The write set is TWO files, not one — this is the trap.** Under the lock, an amendment writes the snapshot, appends the audit row, replaces the live plan file via `safe_replace_outside_workdir`, **and rewrites the target stage's `.work/stages/<n>-<id>.md`**. The last step is not optional: `plan/graph/loader.rs` prefers `.work/stages/` over the plan file, so amending only the plan would leave `sync_graph_with_stage_files` serving the old criteria forever. (An earlier version of this section described a 6-step flow ending at "atomic rename plan file", omitting the stage-file write.)
+**The write set is TWO files, not one — this is the trap.** Under the lock, an amendment writes the snapshot, appends the audit row, replaces the live plan file via `safe_replace_outside_workdir`, **and rewrites the target stage's `.loom/work/stages/<n>-<id>.md`**. The last step is not optional: `plan/graph/loader.rs` prefers `.loom/work/stages/` over the plan file, so amending only the plan would leave `sync_graph_with_stage_files` serving the old criteria forever. (An earlier version of this section described a 6-step flow ending at "atomic rename plan file", omitting the stage-file write.)
 
 The proposed value is deserialized into the **real** `AcceptanceCriterion` / `WiringCheck` types before anything is written, so a malformed patch fails fast rather than corrupting the plan. A per-stage cap (default 3, `loom.adjudication.max_amendments_per_stage`) bounds runaway adjudication.
 

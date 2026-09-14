@@ -30,7 +30,7 @@
 - `daemon/wire.rs` - Fixed authentication preface plus bounded JSON framing (64 KiB requests, 2 MiB responses)
 - `daemon/server/admission.rs` - Absolute-deadline reads and the global in-flight byte budget
 - `daemon/server/pool.rs` - Fixed worker pool and bounded admission queue
-- `daemon/server/storage.rs` - No-follow, mode-0600 control-file publication under the mode-0700 `.work/` directory
+- `daemon/server/storage.rs` - No-follow, mode-0600 control-file publication under the mode-0700 `.loom/work/` directory
 - `daemon/server/broadcast.rs` - Status/log streaming to clients
 
 ## Monitor Subsystem
@@ -105,7 +105,7 @@
 ## Daemon Credentials and Operator Proofs
 
 Daemon startup generates independent user and admin secrets. Both are published with no-follow,
-mode-0600 creation beneath the mode-0700 `.work/` directory. The user secret authenticates Ping,
+mode-0600 creation beneath the mode-0700 `.loom/work/` directory. The user secret authenticates Ping,
 status/log subscriptions, Unsubscribe, and DisputeCriteria. Authentication is checked from a fixed,
 allocation-free request preface before the bounded JSON body is accepted.
 
@@ -121,7 +121,7 @@ written for the tokens at all; the OS-level `sandbox.filesystem.denyRead` list a
 `loom-hooks/credential-guard.sh` cover them, for the reason in concerns.md § "No `Read(...)` Deny Rule
 May Exist in Any Settings File".
 
-Privileged actions do not treat the mere presence of `.work/admin.token` as authorization. The
+Privileged actions do not treat the mere presence of `.loom/work/admin.token` as authorization. The
 operator supplies that secret only to the proof-minting process through `LOOM_ADMIN_TOKEN`; the
 target command receives an action-bound proof through `LOOM_ADMIN_PROOF` and never reads the token.
 Proofs are HMAC-SHA256-bound to the project, action, stage (when applicable), and privileged flag
@@ -148,10 +148,10 @@ pub fn dispute_criteria(
 ```
 
 - CLI: `loom stage dispute-criteria <stage-id> --criterion-index N --reason <text> [--evidence-commit <sha>] [--failure-output <path>]`
-- Sends `Request::DisputeCriteria` over the daemon socket. The **daemon** writes `.work/disputes/<stage>/<n>/request.md` and transitions the stage to `NeedsAdjudication`, then returns the allocated id.
-- **Credentials: a missing `.work/user.token` is the NORMAL case here, not an error.** An earlier version of this section said the client "reads `.work/user.token`" and treated absence as fatal — that made the command unusable from the one place it was ever needed, because the sandbox denies a stage agent that read by design (S-1: the token authorizes every User RPC, not just the ones a stage agent is entitled to). The client now presents `daemon::rpc::user_credential()`, which falls back to a non-empty placeholder, and names the session it is running inside via `LOOM_SESSION_ID`. The daemon authorizes it by the connection instead — see `daemon/server/self_service.rs`.
+- Sends `Request::DisputeCriteria` over the daemon socket. The **daemon** writes `.loom/work/disputes/<stage>/<n>/request.md` and transitions the stage to `NeedsAdjudication`, then returns the allocated id.
+- **Credentials: a missing `.loom/work/user.token` is the NORMAL case here, not an error.** An earlier version of this section said the client "reads `.loom/work/user.token`" and treated absence as fatal — that made the command unusable from the one place it was ever needed, because the sandbox denies a stage agent that read by design (S-1: the token authorizes every User RPC, not just the ones a stage agent is entitled to). The client now presents `daemon::rpc::user_credential()`, which falls back to a non-empty placeholder, and names the session it is running inside via `LOOM_SESSION_ID`. The daemon authorizes it by the connection instead — see `daemon/server/self_service.rs`.
 - `--failure-output` is a path; the client loads it and truncates to 4KB on a UTF-8 char boundary.
-- The agent never writes `.work/disputes/<stage>/<n>/verdict.md` or `applied.marker` — both are daemon-only.
+- The agent never writes `.loom/work/disputes/<stage>/<n>/verdict.md` or `applied.marker` — both are daemon-only.
 - With no daemon listening the dispute cannot be filed at all (the daemon is what persists it), and the command says so rather than reporting a bare connect error.
 - Server-side handler: `daemon/server/dispute.rs`. On-disk schema: `models/dispute.rs`.
 
@@ -177,7 +177,7 @@ Alongside it on the `Stage` struct (all shipped): `dispute_count` (600), `eviden
 | `orchestrator/core/stage_executor.rs::before_stage_gate_passed` | Executes before_stage checks BEFORE session spawn; failure → stage Blocked. Skips the checks when `find_prior_stage_work` shows the workspace already holds work |
 | `verify/before_after.rs::find_prior_stage_work`                 | Pristine-workspace probe: commits on `loom/<id>` beyond base, or non-scaffold worktree changes → `Some(evidence)` (skip the gate)                                |
 | `git/branch/status.rs::list_working_tree_changes`               | `git status --porcelain` paths INCLUDING untracked (`has_uncommitted_changes` excludes them)                                                                     |
-| `git/worktree/settings.rs::is_worktree_scaffold_path`           | Discounts loom-planted `.work` / `.claude/` / `CLAUDE.md` when judging whether a worktree holds agent work                                                       |
+| `git/worktree/settings.rs::is_worktree_scaffold_path`           | Discounts loom-planted `.loom/work` / `.claude/` / `CLAUDE.md` when judging whether a worktree holds agent work                                                       |
 | `commands/stage/complete.rs:847-866`                            | Executes after_stage checks AFTER acceptance criteria; failure → stage stays Executing                                                                           |
 | `verify/before_after.rs`                                        | `run_before_stage_checks()` + `run_after_stage_checks()` — both delegate to `verify_truth_checks()`                                                              |
 | `verify/goal_backward/truths.rs:16-134`                         | `verify_truth_checks(checks, working_dir)` → `Vec<VerificationGap>`, 30s timeout per check                                                                       |
@@ -198,9 +198,9 @@ so the children reach the parent's private helpers via `use super::*` without wi
 
 ## Post-Tool Heartbeat
 
-`loom-hooks/post-tool-use.sh` writes only private heartbeat metadata under `.work/heartbeat/`. It does not persist tool names, commands, output, byte counts, or previews. This prevents credentials and private source printed by tools from becoming durable shared state.
+`loom-hooks/post-tool-use.sh` writes only private heartbeat metadata under `.loom/work/heartbeat/`. It does not persist tool names, commands, output, byte counts, or previews. This prevents credentials and private source printed by tools from becoming durable shared state.
 
-The legacy `ToolEvent` reader remains able to consume an older `.work/tool-events.jsonl`, but no production hook creates or appends that file. New stuck detection therefore relies on heartbeat/session liveness rather than tool-output heuristics. If event observability is restored, it must use a bounded no-follow Rust writer and metadata-only records.
+The legacy `ToolEvent` reader remains able to consume an older `.loom/work/tool-events.jsonl`, but no production hook creates or appends that file. New stuck detection therefore relies on heartbeat/session liveness rather than tool-output heuristics. If event observability is restored, it must use a bounded no-follow Rust writer and metadata-only records.
 
 ## Status Command (commands/status/)
 

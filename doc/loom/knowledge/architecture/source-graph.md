@@ -228,7 +228,7 @@ drives the same builder.
   `enumerate_ms` / `hash_ms` / `parse_ms` / `persist_ms`.
   `SnapshotOutcome::describe` prints the parsed, reused and deleted counts on its
   advisory line.
-- `EXCLUDED_ROOTS` = `.loom`, `.work`, `.worktrees`, `target`, `node_modules`, `.git`
+- `EXCLUDED_ROOTS` = `.loom`, `.loom/work`, `.worktrees`, `target`, `node_modules`, `.git`
   (`refresh/source_graph.rs`), applied to enumerated, untracked and dirty paths
   alike.
 - `context` reaches `git` only through `git::runner::run_git_checked`, from

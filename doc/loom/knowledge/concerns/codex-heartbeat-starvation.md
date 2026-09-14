@@ -5,7 +5,7 @@
 ## Long Codex Runs Starve the Loom Heartbeat (2026-08-07)
 
 A foreground codex-lane run (`loom-codex-forwarder`) is ONE Bash tool call that blocks until codex returns. The
-session heartbeat (`.work/heartbeat/<stage-id>.json`) is refreshed by three writers, all shell
+session heartbeat (`.loom/work/heartbeat/<stage-id>.json`) is refreshed by three writers, all shell
 hooks — `loom-hooks/session-start.sh:61-72` (initial), `loom-hooks/post-tool-use.sh:66-91` (after every tool
 use), and `loom-hooks/subagent-stop.sh:158-179` (after every `SubagentStop`) — registered at
 `loom/src/hooks/config.rs:49-57` (script-name mapping) and `:228-241` (the `SubagentStop` hook

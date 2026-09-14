@@ -10,14 +10,14 @@ verified: e0baec38ddf35df499ac7eca828baed878ac671e
 
 ## The Problem It Solves
 
-`loom memory note` writes `.work/memory/<stage>.md` directly
+`loom memory note` writes `.loom/work/memory/<stage>.md` directly
 (`commands/memory/handlers/record.rs`). Inside a worktree stage that write is
 **impossible**, and the reasons compound:
 
-- `.work` in a worktree is a **symlink** to the main repo's `.work`, so the
+- `.loom/work` in a worktree is a **symlink** to the main repo's `.loom/work`, so the
   target is outside the worktree's write boundary.
-- The generated stage sandbox grants `Read(.work/memory/**)` but **no matching
-  `Edit`** (`sandbox/settings.rs`). Only `.work/handoffs/**` gets a write grant
+- The generated stage sandbox grants `Read(.loom/work/memory/**)` but **no matching
+  `Edit`** (`sandbox/settings.rs`). Only `.loom/work/handoffs/**` gets a write grant
   — the "EROFS exemption".
 - The loom binary is **not exempt from the sandbox**. `excluded_commands` is
   rejected outright by `sandbox/settings/policy.rs::validate_emittable`.
@@ -31,7 +31,7 @@ The sandbox filter is **path-based, not binary-based** — there is no knob that
 says "let the loom executable write here". The two available levers both
 overshoot:
 
-- Adding `.work/memory` to `allowWrite` grants it to **every** process in the
+- Adding `.loom/work/memory` to `allowWrite` grants it to **every** process in the
   session, including the agent's own `Write`/`Edit` tools.
 - `excludedCommands` does not grant a path; it runs the command **entirely
   outside** the sandbox. And `loom` is not a leaf command — `loom stage complete`
@@ -39,7 +39,7 @@ overshoot:
   exempting the binary exempts arbitrary shell reachable through it.
 
 This matters because memory is not a private scratchpad: `orchestrator/signals/
-generate.rs` reads `.work/memory/<dep-id>.md` for each dependency and embeds it
+generate.rs` reads `.loom/work/memory/<dep-id>.md` for each dependency and embeds it
 into **downstream stages' prompts**. A memory directory writable by any process
 in a stage session is a prompt-injection channel between stages.
 
@@ -47,12 +47,12 @@ in a stage session is a prompt-injection channel between stages.
 
 ```text
 sandboxed agent      loom memory note "..."
-                     ├─ try direct write to .work/memory/<stage>.md
+                     ├─ try direct write to .loom/work/memory/<stage>.md
                      └─ on PermissionDenied/EROFS only:
                         append to <worktree>/.loom/memory-spool.jsonl
 
 daemon (outside the sandbox)
-  every tick         drain every stage's spool -> .work/memory/<stage>.md
+  every tick         drain every stage's spool -> .loom/work/memory/<stage>.md
   at teardown        final drain in cleanup_after_merge, before removal
 ```
 
@@ -71,7 +71,7 @@ Key modules: `fs/memory/spool.rs` (primitives plus the shared
 act, so entries recorded just before it are still pending when the stage leaves
 `Executing`. Filtering by status strands exactly the most valuable notes — the
 end-of-stage lessons. The trigger is spool-file existence; enumerating
-`.work/stages/*.md` still validates that the id maps to a real stage.
+`.loom/work/stages/*.md` still validates that the id maps to a real stage.
 
 **The drain returns `()`, not `Result`.** Every other step in the tick loop
 propagates with `?`, and an `Err` out of the loop body exits `run()`, which in

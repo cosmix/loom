@@ -49,7 +49,7 @@ only stage finalisation and dispute verdicts).
    MUST NOT have it in `deny_write`.
 
 **And the escape hatch was shut at the same time:** `loom stage dispute-criteria` reads
-`.work/user.token`, which the same generated settings put in `denyRead`. An agent that
+`.loom/work/user.token`, which the same generated settings put in `denyRead`. An agent that
 correctly diagnoses an impossible criterion has no structured way to say so.
 
 ## Append-Only Is Not Enough for a Reduce Step

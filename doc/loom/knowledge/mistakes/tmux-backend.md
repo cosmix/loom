@@ -23,7 +23,7 @@
 
 ## A Retry That Reuses a Session Id Adopts the Previous Attempt's PID
 
-**What happened:** the native retry in `dispatch_spawn` reuses the **same** `Session`, so `prepare_session_launch` derives the **same** `pid_key` (`{tracking_key}-{session_id}`). `create_wrapper_script` does not truncate a pre-existing `.work/pids/<pid_key>.pid`, and `await_session_pid` returns the _first live_ PID it reads there. The native retry therefore adopted the orphaned tmux `claude`'s PID while stamping `session.backend = Native` — so `loom attach` hid it (backend filter), `kill_session` killed the wrong process, and the monitor tracked a stranger.
+**What happened:** the native retry in `dispatch_spawn` reuses the **same** `Session`, so `prepare_session_launch` derives the **same** `pid_key` (`{tracking_key}-{session_id}`). `create_wrapper_script` does not truncate a pre-existing `.loom/work/pids/<pid_key>.pid`, and `await_session_pid` returns the _first live_ PID it reads there. The native retry therefore adopted the orphaned tmux `claude`'s PID while stamping `session.backend = Native` — so `loom attach` hid it (backend filter), `kill_session` killed the wrong process, and the monitor tracked a stranger.
 
 **Prevention:** a retry that reuses a session id **must** clear that session's PID and wrapper files first (`native::cleanup_stage_files`) before re-launching. Stale PID files are silent: they hand back a plausible, live, wrong PID rather than an error.
 
@@ -31,13 +31,13 @@
 
 ## Never Persist a Fall-_Back_ Marker Before Proving the Fallback Target Works
 
-**What happened:** `dispatch_spawn` wrote the sticky `.work/terminal-backend-fallback` marker and retried natively **without checking the native lane could be built**. On a headless Linux box — exactly where the tmux backend exists to be used — `NativeBackend::new` bails in `detect_terminal()`, so the retry was guaranteed to fail _and_ the marker permanently disabled tmux for every later spawn until someone ran `loom run --backend tmux`.
+**What happened:** `dispatch_spawn` wrote the sticky `.loom/work/terminal-backend-fallback` marker and retried natively **without checking the native lane could be built**. On a headless Linux box — exactly where the tmux backend exists to be used — `NativeBackend::new` bails in `detect_terminal()`, so the retry was guaranteed to fail _and_ the marker permanently disabled tmux for every later spawn until someone ran `loom run --backend tmux`.
 
 **Fix:** the marker is now written only when the native lane is actually constructible. With no native lane, loom returns the **original tmux error** instead of retrying — a doomed native retry replaces the only useful diagnostic with `No terminal emulator found`.
 
 **Prevention:** a sticky degradation marker is a promise that the degraded path works. Prove the target is usable _before_ recording the fallback, and never let a fallback discard the root-cause error.
 
-**Superseded (2026-09-13):** the `.work/terminal-backend-fallback` marker and the native retry it guarded were removed entirely. A configured-tmux spawn failure is now an `Err` that blocks the stage; there is no fallback lane and nothing to persist. See [Live State Pollution](live-state-pollution.md) and [Terminal Backends](../architecture/terminal-backends.md) § Tmux Unavailable or Failing.
+**Superseded (2026-09-13):** the `.loom/work/terminal-backend-fallback` marker and the native retry it guarded were removed entirely. A configured-tmux spawn failure is now an `Err` that blocks the stage; there is no fallback lane and nothing to persist. See [Live State Pollution](live-state-pollution.md) and [Terminal Backends](../architecture/terminal-backends.md) § Tmux Unavailable or Failing.
 
 ## AF_UNIX Socket Paths: 104 Bytes, and Never Under `std::env::temp_dir()`
 
@@ -56,7 +56,7 @@ Verified on tmux 3.7b: after `kill-server` exits 0 the socket file persists with
 
 **Fix (`tmux/socket.rs` `socket_session_is_alive`):** absent file ⇒ `false`; existing-but-unreadable/unparseable ⇒ **`true`**.
 
-**Related rule, same sweep:** reap only sockets **positively attributed to this work dir**. The tmux socket dir is per-_user_, `loom init` calls `cleanup_orphaned_sessions()` unconditionally and _before_ the "`.work/` already initialized" bail, and at init time `.work/` may not exist at all — so "no matching session file" matches **every** socket, including another checkout's live ones. Unattributable sockets are reported, never killed.
+**Related rule, same sweep:** reap only sockets **positively attributed to this work dir**. The tmux socket dir is per-_user_, `loom init` calls `cleanup_orphaned_sessions()` unconditionally and _before_ the "`.loom/work/` already initialized" bail, and at init time `.loom/work/` may not exist at all — so "no matching session file" matches **every** socket, including another checkout's live ones. Unattributable sockets are reported, never killed.
 
 ## tmux Layout and Option Traps (all verified on tmux 3.7b)
 

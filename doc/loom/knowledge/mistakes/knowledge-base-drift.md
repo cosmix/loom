@@ -88,7 +88,7 @@ name.
 
 ## Features Documented That Were Never Built
 
-**What happened:** `patterns.md` § Knowledge Systems described a `.work/facts.toml` cross-stage
+**What happened:** `patterns.md` § Knowledge Systems described a `.loom/work/facts.toml` cross-stage
 KV store, a `loom memory promote` command, and `<!-- .loom-protected -->` file markers. All three
 are absent from the codebase. The real cross-stage KV is `loom stage output`; the real
 memory→knowledge promotion path is the `knowledge-distill` stage.

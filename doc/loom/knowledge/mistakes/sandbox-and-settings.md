@@ -40,7 +40,7 @@ These stale entries would have misled future agents into using `permission_mode:
 
 ## Sandbox excludedCommands: Bare Names Are Matched Exactly, Not as Prefixes (2026-05-26)
 
-**What happened:** Every worktree stage failed at `loom stage complete` with `Read-only file system (os error 30)` writing to `.work/sessions/`, `.work/signals/`, and `.work/stages/`. `.work` is a symlink resolving to the main repo (outside the worktree), so the OS sandbox treats it as read-only. The loom CLI was supposed to be exempt because `default_excluded_commands()` returns `["loom", "git"]`, but the exemption never applied.
+**What happened:** Every worktree stage failed at `loom stage complete` with `Read-only file system (os error 30)` writing to `.loom/work/sessions/`, `.loom/work/signals/`, and `.loom/work/stages/`. `.loom/work` is a symlink resolving to the main repo (outside the worktree), so the OS sandbox treats it as read-only. The loom CLI was supposed to be exempt because `default_excluded_commands()` returns `["loom", "git"]`, but the exemption never applied.
 
 **Why:** Claude Code's sandbox matcher (`pK8`/`XR_` in the binary) classifies each `excludedCommands` entry:
 
@@ -76,7 +76,7 @@ These stale entries would have misled future agents into using `permission_mode:
 
 **Prevention:** Before writing path-traversal deny/allow rules, ask "relative to _which_ directory will Claude Code resolve these?" Never emit `../`-based rules into a settings file that can live at the repo root. A worktree never _depends_ on inheriting these from main — it regenerates them relative to itself at spawn (`write_settings(worktree.path)`), the create-time copy + refresh union only _adds_, and the worktree hooks enforce isolation independently. So stripping them from the main repo is safe.
 
-**Fix:** `sandbox/settings.rs::write_settings` now computes `target_is_worktree(path)` (a `.worktrees` path component, or a symlinked `.work`) and calls `strip_worktree_escape_denies(&mut config)` for non-worktree targets, so the rules are emitted _only_ where `../..` means the repo root. This guards every main-repo caller at once. `merge_existing_permissions(.., is_worktree)` also scrubs stale `Write(../…)`/`.worktrees` entries from an already-polluted main file (the Read-side filter was already unconditional). The fold-back path (`fs/permissions/sync.rs`) already drops `../`/`.worktrees` via `transform_worktree_path`, so it needed no change.
+**Fix:** `sandbox/settings.rs::write_settings` now computes `target_is_worktree(path)` (a `.worktrees` path component, or a symlinked `.loom/work`) and calls `strip_worktree_escape_denies(&mut config)` for non-worktree targets, so the rules are emitted _only_ where `../..` means the repo root. This guards every main-repo caller at once. `merge_existing_permissions(.., is_worktree)` also scrubs stale `Write(../…)`/`.worktrees` entries from an already-polluted main file (the Read-side filter was already unconditional). The fold-back path (`fs/permissions/sync.rs`) already drops `../`/`.worktrees` via `transform_worktree_path`, so it needed no change.
 
 ## settings.local.json `defaultMode: "auto"` is silently ignored — must pass `--permission-mode` on the CLI (2026-07-01)
 
@@ -208,9 +208,9 @@ sandbox, not a tmux bug.
 
 ## A Credential That Must Be Read Cannot Express a Narrow Capability (2026-08-11)
 
-**What happened:** no worktree stage could complete through its only sanctioned path. `loom-hooks/loom-control-complete.sh` runs the completion broker, which called `read_user_token()`, which `sandbox/settings.rs` denies to every worktree agent (S-1). The failure surfaced as `trusted completion broker could not read .work/user.token`, and the stage simply could not finish.
+**What happened:** no worktree stage could complete through its only sanctioned path. `loom-hooks/loom-control-complete.sh` runs the completion broker, which called `read_user_token()`, which `sandbox/settings.rs` denies to every worktree agent (S-1). The failure surfaced as `trusted completion broker could not read .loom/work/user.token`, and the stage simply could not finish.
 
-**Why:** both halves were individually correct and nobody reconciled them. `.work/user.token` authorizes EVERY User-capability RPC, so handing it to a stage agent is privilege escalation and denying it is right. But completing its own stage is the one RPC that agent is supposed to make. One global secret cannot say "this caller may complete its own stage, and nothing else" — the capability it grants is fixed by the token, not by who presents it.
+**Why:** both halves were individually correct and nobody reconciled them. `.loom/work/user.token` authorizes EVERY User-capability RPC, so handing it to a stage agent is privilege escalation and denying it is right. But completing its own stage is the one RPC that agent is supposed to make. One global secret cannot say "this caller may complete its own stage, and nothing else" — the capability it grants is fixed by the token, not by who presents it.
 
 **Prevention:** when a deny rule and a required read are generated by the same tool, they are one decision, not two — check both directions before shipping either. More generally: if a capability needs to be scoped to a caller, a shared secret is the wrong instrument. Ask whether identity can carry it instead.
 
@@ -222,11 +222,11 @@ sandbox, not a tmux bug.
 
 **What happened:** `loom stage complete <stage> --no-verify` failed with "the daemon credential could not be read" on a project whose daemon was stopped — exactly when an operator most needs to force-complete a stuck stage.
 
-**Why:** the proof is HMAC'd with `.work/admin.token`, which is published at daemon start and removed when the daemon is not running. No daemon ⇒ no verifier ⇒ no obtainable proof, for anyone, operator included. The gate was written as though the credential were always available.
+**Why:** the proof is HMAC'd with `.loom/work/admin.token`, which is published at daemon start and removed when the daemon is not running. No daemon ⇒ no verifier ⇒ no obtainable proof, for anyone, operator included. The gate was written as though the credential were always available.
 
 **Prevention:** when a check depends on ephemeral state, ask what it does in that state's absence. A gate that cannot be satisfied is not a stricter gate; it is an outage.
 
-**Fix:** privileged completion skips the proof requirement when no credential exists at all. Safe because the daemon's absence removes a stage agent's ability to ACT, not merely its credential: an agent completes through the daemon broker (which requires the daemon) or by writing `.work/stages/*.md` directly (which `denyWrite: .work/**` forbids). With no daemon it can do neither, whatever the authorization returns — while an unsandboxed operator can still write, which is precisely the asymmetry the proof was standing in for. `refuse_operator_inside_a_session` still turns an agent away by name first.
+**Fix:** privileged completion skips the proof requirement when no credential exists at all. Safe because the daemon's absence removes a stage agent's ability to ACT, not merely its credential: an agent completes through the daemon broker (which requires the daemon) or by writing `.loom/work/stages/*.md` directly (which `denyWrite: .loom/work/**` forbids). With no daemon it can do neither, whatever the authorization returns — while an unsandboxed operator can still write, which is precisely the asymmetry the proof was standing in for. `refuse_operator_inside_a_session` still turns an agent away by name first.
 
 ## A `--settings` Path Must Survive the Wrapper's `cd`, and the Existence Guard Must Resolve Where the CONSUMER Will (2026-08-17)
 
@@ -267,12 +267,12 @@ the worktree; the flag error surfaces immediately, where the crash report only s
 
 **What happened:** `loom memory note` failed with `Read-only file system (os error 30)` in
 every worktree stage, for as long as the sandbox has been enforced. Stages fell back to
-writing prose into `.work/handoffs/`, so the loss looked like agents choosing not to record
+writing prose into `.loom/work/handoffs/`, so the loss looked like agents choosing not to record
 rather than being unable to.
 
-**Why:** three things compounded. `.work` in a worktree is a symlink to the main repo, so
+**Why:** three things compounded. `.loom/work` in a worktree is a symlink to the main repo, so
 the write target is outside the worktree boundary. `sandbox/settings.rs` grants
-`Read(.work/memory/**)` but no matching `Edit` — only `.work/handoffs/**` gets a write
+`Read(.loom/work/memory/**)` but no matching `Edit` — only `.loom/work/handoffs/**` gets a write
 grant. And the loom binary is **not** exempt from the sandbox: `validate_emittable` rejects
 `excluded_commands` outright. So `record.rs`'s direct `append_entry` hit the kernel and lost.
 
@@ -281,9 +281,9 @@ state are daemon-owned, so direct file-tool writes must never be authorized" —
 RPC that **does not exist**. `daemon/protocol.rs` has `CompleteStage` and `DisputeCriteria`
 and nothing for memory. The comment read as deliberate design, so the missing write grant
 looked intentional rather than like a gap. A second fossil pointed the same wrong way:
-`fs/permissions/constants.rs` declared `LOOM_PERMISSIONS_WORKTREE` with `Write(.work/**)` and
+`fs/permissions/constants.rs` declared `LOOM_PERMISSIONS_WORKTREE` with `Write(.loom/work/**)` and
 `Bash(loom *)`, which read like a blanket grant but has no consumers outside its own unit test
-— and `Write(path)` rules are inert anyway. (That entry is now `Edit(.work/handoffs/**)`; see
+— and `Write(path)` rules are inert anyway. (That entry is now `Edit(.loom/work/handoffs/**)`; see
 [../concerns/sandbox-write-rules-inert.md](../concerns/sandbox-write-rules-inert.md).)
 
 **Prevention:** when a comment says state is written "through the daemon", verify the RPC
@@ -327,10 +327,10 @@ write. `codex_log_path()` in the same module correctly stays in the temp dir bec
 DRIVER opens it. Before shipping such a handshake, run its literal command from inside a
 sandboxed session; the whole bug is visible in one `touch`.
 
-**Fix:** the marker moved to `<repo>/.work/pressure/claude-<pid>.done` (gitignored, and
-loom's own hook guard covers only `.work/stages/` and `.work/sessions/`), the driver
+**Fix:** the marker moved to `<repo>/.loom/work/pressure/claude-<pid>.done` (gitignored, and
+loom's own hook guard covers only `.loom/work/stages/` and `.loom/work/sessions/`), the driver
 `create_dir_all`s the parent before each spawn, and the injected instruction now names this
-as the sanctioned exception to the "never write under `.work/` directly" rule so a
+as the sanctioned exception to the "never write under `.loom/work/` directly" rule so a
 rule-abiding agent does not balk at it. Regression test: `claude_marker_path` must NOT
 start with `std::env::temp_dir()` (`commands/pressure/tests.rs`) — mutation-verified by
 reverting the path and watching only that test go red.
@@ -348,8 +348,8 @@ the same change — `pressure/mod.rs` was split into `mod.rs` / `paths.rs` / `sp
 disk and the daemon healthy. Reproduced directly:
 
 ```text
-$ ls -la .work/orchestrator.sock
-srw------- dkaponis dkaponis 0 B  .work/orchestrator.sock        # present
+$ ls -la .loom/work/orchestrator.sock
+srw------- dkaponis dkaponis 0 B  .loom/work/orchestrator.sock        # present
 
 $ python3 -c "import socket; socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)"
 PermissionError: [Errno 1] Operation not permitted                # denied at socket() creation
@@ -371,7 +371,7 @@ advice for socket trouble is to kill and restart the daemon.
   may or may not permit `stat`, so a failed `exists()` proves nothing and must never downgrade the
   classification.
 - **`is_running()` must stay true for the unreachable state.** The flock already proved a daemon
-  owns the `.work/`; reporting otherwise would let a second daemon start. See
+  owns the `.loom/work/`; reporting otherwise would let a second daemon start. See
   `concerns/daemon-singleton.md` for the incident that makes this load-bearing.
 
 **Also worth knowing — ~20 project-root paths are read-denied in a stage sandbox.** Extracted from
@@ -399,22 +399,22 @@ Warning: could not mark stage 'climate-timezone-data' NeedsHandoff: Failed to op
 /home/dkaponis/src/cartolyth/.worktrees/climate-timezone-data/.work/handoffs/climate-timezone-data-handoff-002.md
 ```
 
-**Why:** a worktree agent's Bash sandbox write allow-list grants `.work/handoffs` but not
-`.work/stages` — deliberately, since `daemon/server/control_complete.rs` exists so a sandboxed
-agent cannot mutate trusted `.work` state directly. `loom handoff` wrote the document and could
+**Why:** a worktree agent's Bash sandbox write allow-list grants `.loom/work/handoffs` but not
+`.loom/work/stages` — deliberately, since `daemon/server/control_complete.rs` exists so a sandboxed
+agent cannot mutate trusted `.loom/work` state directly. `loom handoff` wrote the document and could
 not apply the `Executing -> NeedsHandoff` transition. `commands/handoff/create.rs` treated that
 failure as a warning on a command that exited 0. The daemon's recovery is level-triggered on
 `NeedsHandoff`, so it never armed. Two independent recovery paths existed and neither fired: the
 second, `MonitorEvent::SessionHung`, was advisory and only printed.
 
-**Prevention:** any command a sandboxed worktree agent runs to mutate trusted `.work` state
-outside `.work/handoffs` must either route through the daemon broker or fail loudly — a warning
+**Prevention:** any command a sandboxed worktree agent runs to mutate trusted `.loom/work` state
+outside `.loom/work/handoffs` must either route through the daemon broker or fail loudly — a warning
 on exit 0 reads to the agent as success and it stops. When a recovery path is level-triggered on
 a state field, ask what writes that field and whether the writer can fail under the sandbox. A
 recovery path that only prints is not a recovery path.
 
 **Fix:** `loom handoff` now returns an error naming the cause and the document path. The monitor
-watches `.work/handoffs` for a document naming the current stage and session with
+watches `.loom/work/handoffs` for a document naming the current stage and session with
 `origin: agent_ceiling` and drives the existing takedown-and-requeue from it, which is the one
 signal a sandboxed session can always leave. `SessionHung` now recovers the stage, bounded at two
 stall recoveries.
@@ -541,11 +541,11 @@ fast-forward main from outside the sandbox. In the pre-commit hook and cargo, ex
 **Fix:** confirm each stray is byte-identical to the merge commit
 (`git hash-object <f>` equals `git rev-parse <commit>:<f>`), remove it, then fast-forward.
 
-## `loom review` wrote through the `.work` symlink into the main repo's doc/plans (2026-07-22)
+## `loom review` wrote through the `.loom/work` symlink into the main repo's doc/plans (2026-07-22)
 
 **What happened:** From inside a worktree, `loom review` printed `✓ Review document written to doc/plans/REVIEW-....md` (exit 0) but the file never appeared in the worktree's `doc/plans/` — it had been written to the MAIN repo's copy, invisible from the worktree.
-**Why:** The command resolved its output root via `WorkDir::main_project_root()`, which follows the worktree's `.work` symlink back to the main repo. The success message then printed the path relative to that root, making it look local.
-**Prevention:** Commands that WRITE user-visible files must anchor on the current checkout (worktree root when `cwd` is inside `.worktrees/`), not on `main_project_root()` — that helper is for reaching shared `.work` state, not for output placement. Exit 0 + "written to <relative path>" is not proof the file is where the reader thinks; check which root the path was relativized against.
+**Why:** The command resolved its output root via `WorkDir::main_project_root()`, which follows the worktree's `.loom/work` symlink back to the main repo. The success message then printed the path relative to that root, making it look local.
+**Prevention:** Commands that WRITE user-visible files must anchor on the current checkout (worktree root when `cwd` is inside `.worktrees/`), not on `main_project_root()` — that helper is for reaching shared `.loom/work` state, not for output placement. Exit 0 + "written to <relative path>" is not proof the file is where the reader thinks; check which root the path was relativized against.
 **Fix:** `commands/review/generate.rs::resolve_output_root()` — writes to `find_worktree_root_from_cwd(cwd)` when inside a worktree, else the main project root.
 
 ## Worktree Test Runs Resolve node_modules From the MAIN Repo When the Worktree Has None (2026-08-11)
@@ -599,8 +599,8 @@ was rejected: a ledger of what the agent did must not be writable by the agent.
 
 ## A Comment Described an RPC That Was Never Built
 
-`loom memory note` failed with EROFS in every sandboxed stage: `.work` is a symlink out of
-the worktree and the sandbox grants `Read(.work/memory/**)` with no matching `Edit`. It read
+`loom memory note` failed with EROFS in every sandboxed stage: `.loom/work` is a symlink out of
+the worktree and the sandbox grants `Read(.loom/work/memory/**)` with no matching `Edit`. It read
 as intentional because the comment beside the grant said memory is "written through daemon
 RPCs" — and `daemon/protocol.rs` has no such RPC. `loom stage complete` got a broker when
 the `excluded_commands` escape was removed; `loom memory` did not, and nothing failed loudly.

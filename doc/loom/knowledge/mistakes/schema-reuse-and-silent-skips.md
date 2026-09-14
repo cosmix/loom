@@ -4,7 +4,7 @@
 
 ## `deny_unknown_fields` on a Type With TWO Deserialization Sources Broke the Second One (2026-08-17)
 
-**What happened:** every `.work/stages/*.md` file failed to parse. `loom run` printed one
+**What happened:** every `.loom/work/stages/*.md` file failed to parse. `loom run` printed one
 `Warning: Could not parse ... Failed to parse StageDefinition from frontmatter` per stage
 and carried on. `StageDefinition` is `#[serde(deny_unknown_fields)]` — added in
 `2d5a4679` to reject typo'd keys in PLAN YAML, which is a good guarantee for that caller.
@@ -39,7 +39,7 @@ hand-maintained key allowlist here — both fail silently, which is the whole bu
 `load_stages_from_work_dir` handled a parse error by `eprintln!`-ing a warning and
 `continue`-ing to the next file. With every file failing, it returned `Ok(vec![])` — a
 successful empty load. Its production caller is the documented recovery path in
-`plan/graph/loader.rs` ("Stage files in .work/stages/ can be used instead of the plan
+`plan/graph/loader.rs` ("Stage files in .loom/work/stages/ can be used instead of the plan
 file"), so that fallback could never have worked; it would have produced an empty graph
 rather than an error.
 
@@ -113,7 +113,7 @@ The doctrine text then hardened the wrong model, telling stages "Codex REPLACES 
 rather than for the state it represents ("which lanes may this stage draw from?"). A scalar can only
 answer the first. Worse, the safety doctrine was gated on `implementer == Codex`, so the mixed case
 was not merely inexpressible — it was UNSAFE: a `claude` stage that spawned one codex subagent got
-none of codex's blast-radius rules (`.work/` symlink escape, hooks not seeing codex's own shell), and
+none of codex's blast-radius rules (`.loom/work/` symlink escape, hooks not seeing codex's own shell), and
 nothing in the system would say so.
 
 **Prevention (detection rule):** before shipping an enum-valued stage field, ask whether a single

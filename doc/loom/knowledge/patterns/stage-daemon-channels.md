@@ -6,9 +6,9 @@
 ## Three Routes, Chosen by What the Caller Can Actually Do
 
 A stage agent that needs to record something about its OWN stage — block it, dispute a criterion —
-is boxed in by two deliberate denials. It cannot write `.work/stages/<id>.md`, because stage state
-belongs to the daemon and `.work/` is read-only from a worktree. And it cannot read
-`.work/user.token`, because that one credential authorizes every User RPC, not just the ones a
+is boxed in by two deliberate denials. It cannot write `.loom/work/stages/<id>.md`, because stage state
+belongs to the daemon and `.loom/work/` is read-only from a worktree. And it cannot read
+`.loom/work/user.token`, because that one credential authorizes every User RPC, not just the ones a
 stage agent is entitled to (S-1).
 
 Both denials are correct. Together they once left the agent with no way to say anything at all: a

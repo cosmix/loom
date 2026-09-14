@@ -108,7 +108,7 @@ symlink; `remove_known_claude_scaffold` skips unknown `.claude/` entries (Claude
 `.cc-writes/` runtime dir included) and keeps a non-empty dir; `cleanup_worktree`
 appends the blocking paths when git refuses; `try_auto_merge` prints failed/refused
 deferred cleanups with the `loom worktree remove <id>` hint. And because the daemon's
-console is `.work/orchestrator.log` (fds 1 and 2 are `dup2`'d there in
+console is `.loom/work/orchestrator.log` (fds 1 and 2 are `dup2`'d there in
 `daemon/server/lifecycle.rs`, and the `LogLine` broadcaster has no client), printing is
 not enough: `MergeLifecycle::cleanup` — the one door — now records a failed or refused
 outcome as `Stage.cleanup_warning`, cleared by the next cleanup that succeeds, and
@@ -123,7 +123,7 @@ outcome as `Stage.cleanup_warning`, cleared by the next cleanup that succeeds, a
 `git worktree remove` refused with "contains modified or untracked files", and the
 `Blocking paths` line named `?? .loom/memory-spool.jsonl` — loom's own file.
 `fs/memory/spool.rs` writes `<worktree>/.loom/memory-spool.jsonl` as the sandbox fallback
-for `loom memory note` (`.work` is a symlink outside the write boundary). Teardown drained
+for `loom memory note` (`.loom/work` is a symlink outside the write boundary). Teardown drained
 the spool but left the file, and nothing ignored or removed it.
 
 **Why it was invisible here:** this repository's own `.gitignore` lists `.loom/cache/` and

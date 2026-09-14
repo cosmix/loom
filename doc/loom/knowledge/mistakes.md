@@ -113,7 +113,7 @@ No worktree stage could complete through the trusted PostToolUse broker: the cli
 ## Parallel Worktrees Share Derived State
 
 One question catches the class: **was this path resolved through `main_project_root` or the
-`.work` symlink?** If so it is shared with every sibling stage and the main repo.
+`.loom/work` symlink?** If so it is shared with every sibling stage and the main repo.
 
 → [Parallel Worktree Shared State](mistakes/parallel-worktree-shared-state.md)
 
@@ -172,9 +172,9 @@ Three lessons: a value computed and carried correctly was still wrong because so
 
 → [Computed Values and Hidden Couplings](mistakes/computed-values-and-hidden-couplings.md)
 
-## Two Daemons Once Attached to the Same `.work/` (2026-08-08)
+## Two Daemons Once Attached to the Same `.loom/work/` (2026-08-08)
 
-Nothing enforced daemon singleton, so a second daemon could attach to a live `.work/` and both would drive the same stages. Startup now takes an authoritative `flock` for the daemon's whole lifetime before touching the socket or control files.
+Nothing enforced daemon singleton, so a second daemon could attach to a live `.loom/work/` and both would drive the same stages. Startup now takes an authoritative `flock` for the daemon's whole lifetime before touching the socket or control files.
 
 → [Daemon Singleton Incident](concerns/daemon-singleton.md)
 

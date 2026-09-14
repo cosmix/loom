@@ -5,7 +5,7 @@
 ## The One Question That Catches This Whole Class
 
 **"Was the path I am about to write resolved through `main_project_root` (or through
-the `.work` symlink)?"** If yes, it is NOT inside your worktree — it is shared with
+the `.loom/work` symlink)?"** If yes, it is NOT inside your worktree — it is shared with
 every sibling stage and with the main repo, and writing it escapes worktree isolation.
 
 Derived context state is the main offender because its whole point is to be shared.
@@ -13,7 +13,7 @@ Four separate defects in one plan trace to this single fact.
 
 ## The Concrete Cases
 
-- **`ContextStore::open` follows the `.work` symlink** (`context/store.rs:49`), so ANY
+- **`ContextStore::open` follows the `.loom/work` symlink** (`context/store.rs:49`), so ANY
   command that opens the store writes under the MAIN project root, not the worktree.
   From a sandboxed worktree session that surfaces as
   `Failed to create context cache directory: <main repo>/.loom/cache/context-v1:
@@ -30,7 +30,7 @@ Four separate defects in one plan trace to this single fact.
   resolved via `main_project_root`.**
 - **A discard routine deleted a shared directory rather than its own layer.**
   `discard_overlay` removed delivery records that live alongside the graph layer under
-  `.work/context/<plan>/<stage>/`, so the dependency-ranking boost failed 100% of the
+  `.loom/work/context/<plan>/<stage>/`, so the dependency-ranking boost failed 100% of the
   time on the daemon path. **A "discard the derived layer" operation must name the
   layer, never the directory** — enumerate what else writes there first.
 

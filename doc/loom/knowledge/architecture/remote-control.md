@@ -8,7 +8,7 @@ Claude Code's `--remote-control` flag lets the loom orchestrator drive Claude se
 
 **Key types:**
 
-- `RemoteControlMode` (`auto` | `off`) — operator-facing switch persisted in `.work/config.toml [remote_control]`.
+- `RemoteControlMode` (`auto` | `off`) — operator-facing switch persisted in `.loom/work/config.toml [remote_control]`.
 - `RemoteControlConfig` — the persisted config struct (single `mode` field).
 - `RemoteControlStatus` (`Enabled` | `Disabled { reason }`) — preflight result.
 - `RemoteControlInvocation` (`Disabled` | `Bare` | `Named(String)`) — the concrete per-spawn decision, returned by `resolve_invocation`.
@@ -50,7 +50,7 @@ If a session crashes within `FAST_FAIL_WINDOW_SECS` (15s) of creation with a ver
 
 **Config persistence:**
 
-`fs/work_dir.rs` exposes `read_remote_control_config()` / `write_remote_control_config()` using the `[remote_control]` section of `.work/config.toml`. Pattern mirrors `read_plan_sandbox` / `write_plan_sandbox`.
+`fs/work_dir.rs` exposes `read_remote_control_config()` / `write_remote_control_config()` using the `[remote_control]` section of `.loom/work/config.toml`. Pattern mirrors `read_plan_sandbox` / `write_plan_sandbox`.
 
 **Auth disqualifying env vars (Remote Control requires claude.ai login):**
 

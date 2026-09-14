@@ -106,7 +106,7 @@ Environment-dependent tests get a self-skip guard rather than a place in any sta
 Detection: a stage whose acceptance fails on files its diff never touched.
 
 **Fix:** the agent cannot force completion and should not try — `--no-verify` needs a one-time
-operator proof from `.work/admin.token`, which the sandbox denies by design. But stopping is not
+operator proof from `.loom/work/admin.token`, which the sandbox denies by design. But stopping is not
 the whole move: **a stage agent that judges a criterion impossible rather than merely failing
 should file `loom stage dispute-criteria <stage-id> --criterion-index <n> --reason "..."`**, which
 routes through the daemon to adjudication and can amend the criterion via the audited
@@ -198,7 +198,7 @@ defect to fix, not to amend away.
 
 **Prevention — detection rule:** any check whose _expected_ outcome changes once the stage does its work (delta-proofs, "feature absent" assertions, baseline captures) must be gated on evidence that no work exists yet — not merely placed before the spawn. Before adding a blocking check to a spawn path, ask what it does on attempt #2. And a blocking transition that happens _before_ a session is spawned deserves extra scrutiny: nothing downstream can clear it, so a wrong block is permanent, not merely slow.
 
-**Fix:** `stage_executor.rs::before_stage_gate_passed` calls `verify::before_after::find_prior_stage_work` first and skips the checks (logging the evidence) when the stage branch has commits beyond its resolved base or the worktree has non-scaffold changes. Loom's own worktree scaffolding (`.work`, `.claude/`, root `CLAUDE.md`) is discounted via `git::worktree::is_worktree_scaffold_path` — otherwise, in a repo that doesn't gitignore those, the very first spawn would look "dirty" and silently disable the gate. Note `git::has_uncommitted_changes` excludes untracked files and was useless here (a brand-new module is untracked); `list_working_tree_changes` was added for the "has anyone worked here?" question.
+**Fix:** `stage_executor.rs::before_stage_gate_passed` calls `verify::before_after::find_prior_stage_work` first and skips the checks (logging the evidence) when the stage branch has commits beyond its resolved base or the worktree has non-scaffold changes. Loom's own worktree scaffolding (`.loom/work`, `.claude/`, root `CLAUDE.md`) is discounted via `git::worktree::is_worktree_scaffold_path` — otherwise, in a repo that doesn't gitignore those, the very first spawn would look "dirty" and silently disable the gate. Note `git::has_uncommitted_changes` excludes untracked files and was useless here (a brand-new module is untracked); `list_working_tree_changes` was added for the "has anyone worked here?" question.
 
 ## Stage Fragmentation: Compile-Order Is Not a Stage Boundary (2026-08-07)
 

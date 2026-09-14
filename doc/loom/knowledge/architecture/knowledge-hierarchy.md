@@ -150,7 +150,7 @@ sources and runs `loom knowledge annotate <target> --verified HEAD`.
 **Reference classification** (`chunker/references.rs::classify_reference`, applied
 to each backticked span ending in a source extension — rs, tsx, ts, py, go, sh, md,
 toml, yaml, yml — outside fenced blocks, using the text around it): *runtime* when
-the path starts with `.loom/`, `.work/`, `target/`, `node_modules/`, `~`, `/tmp` or
+the path starts with `.loom/`, `.loom/work/`, `target/`, `node_modules/`, `~`, `/tmp` or
 `$`, or contains an angle bracket; else *example* when the path or its sentence
 carries a placeholder marker (foo, bar, baz, an angle bracket, an ellipsis,
 path/to, slug, the words example or placeholder, and a few more); else

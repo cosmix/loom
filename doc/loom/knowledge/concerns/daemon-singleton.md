@@ -1,6 +1,6 @@
 # Daemon Singleton (Resolved 2026-08-08)
 
-> Historical incident: two daemons once attached to the same `.work/`. Startup now holds an
+> Historical incident: two daemons once attached to the same `.loom/work/`. Startup now holds an
 > authoritative stable-file `flock` for the full daemon lifetime and refuses a second owner.
 
 ## Resolution
@@ -16,14 +16,14 @@ legacy records never authorize termination, and there is no raw-PID or SIGKILL f
 
 ## Daemon Singleton Not Enforced: Two `loom run` Processes Alive Concurrently (2026-05-13)
 
-**Observed:** During the `autonomous-criteria-adjudication` plan's `integration-verify` stage, `loom status` (static) reported `○ daemon stopped` even though the orchestrator log (`.work/orchestrator.log`) was still being appended every ~5 seconds. `loom status --live` was still connected in another terminal. `ps -eo pid,etime,cmd | rg 'loom run'` revealed **two** daemon processes:
+**Observed:** During the `autonomous-criteria-adjudication` plan's `integration-verify` stage, `loom status` (static) reported `○ daemon stopped` even though the orchestrator log (`.loom/work/orchestrator.log`) was still being appended every ~5 seconds. `loom status --live` was still connected in another terminal. `ps -eo pid,etime,cmd | rg 'loom run'` revealed **two** daemon processes:
 
 ```text
   64657    11:19:57  loom run    # started ~06:30 UTC
 1038911    01:39:24  loom run    # started ~16:11 UTC (lock mtime 16:13:18 UTC)
 ```
 
-State files in `.work/`:
+State files in `.loom/work/`:
 
 | File                | State                                                                                                                                 |
 | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
@@ -38,11 +38,11 @@ State files in `.work/`:
 
 **Probable cause (best hypothesis):** A second `loom run` was invoked while the first was still alive — likely as an operator recovery action after the stage looked stalled. The startup path:
 
-1. Rewrote `.work/orchestrator.lock` to the new PID (1038911) without verifying the old PID was actually dead, OR the lock-acquire path uses a non-blocking `flock` that succeeded because the old process had released its lock (e.g., on a SIGSTOP/SIGTSTP, or a dropped guard in a code path that doesn't re-acquire).
-2. Bound a new socket at `.work/orchestrator.sock` — succeeded because either (a) the old socket file had been removed by a `loom stop` that failed to kill the process, or (b) `unlink + bind` is unconditional in the daemon startup path.
+1. Rewrote `.loom/work/orchestrator.lock` to the new PID (1038911) without verifying the old PID was actually dead, OR the lock-acquire path uses a non-blocking `flock` that succeeded because the old process had released its lock (e.g., on a SIGSTOP/SIGTSTP, or a dropped guard in a code path that doesn't re-acquire).
+2. Bound a new socket at `.loom/work/orchestrator.sock` — succeeded because either (a) the old socket file had been removed by a `loom stop` that failed to kill the process, or (b) `unlink + bind` is unconditional in the daemon startup path.
 3. Did NOT find an existing PID file (or failed-soft on its presence) and did NOT signal/kill the old daemon.
 
-Result: two competing daemons sharing the same `.work/` state, the older one inert or only partially functional, the newer one doing most of the work. The socket file went missing later (a third event we have no log evidence for — possibly `loom stop` was issued against the new daemon, removing the socket but leaving both processes alive because `loom stop` over a since-disconnected socket is a no-op or because both daemons trapped the signal and ignored it).
+Result: two competing daemons sharing the same `.loom/work/` state, the older one inert or only partially functional, the newer one doing most of the work. The socket file went missing later (a third event we have no log evidence for — possibly `loom stop` was issued against the new daemon, removing the socket but leaving both processes alive because `loom stop` over a since-disconnected socket is a no-op or because both daemons trapped the signal and ignored it).
 
 **Original remediation requirements (retained as incident history):**
 
@@ -56,7 +56,7 @@ Result: two competing daemons sharing the same `.work/` state, the older one ine
 **Detection rules for future incidents:**
 
 - `pgrep -af 'loom run'` returning more than one row is always wrong. Add a `loom repair` check.
-- `loom status` reporting "daemon stopped" while `.work/orchestrator.log` is being actively appended to is always wrong — either the daemon is alive (bug: stale socket cleanup) or the log is being written by a stale child process (bug: orphaned background work).
+- `loom status` reporting "daemon stopped" while `.loom/work/orchestrator.log` is being actively appended to is always wrong — either the daemon is alive (bug: stale socket cleanup) or the log is being written by a stale child process (bug: orphaned background work).
 - `orchestrator.pid` missing while any `loom run` process exists is always wrong.
 
 **Where to look in code:**
@@ -74,17 +74,17 @@ $ ps -eo pid,etime,cmd | rg 'loom run'
   64657    11:19:57  loom run
 1038911    01:39:24  loom run
 
-$ cat .work/orchestrator.lock
+$ cat .loom/work/orchestrator.lock
 1038911
 
-$ ls .work/orchestrator.sock .work/orchestrator.pid
-ls: .work/orchestrator.sock: No such file or directory
-ls: .work/orchestrator.pid: No such file or directory
+$ ls .loom/work/orchestrator.sock .loom/work/orchestrator.pid
+ls: .loom/work/orchestrator.sock: No such file or directory
+ls: .loom/work/orchestrator.pid: No such file or directory
 
-$ stat .work/orchestrator.log | rg Modify
+$ stat .loom/work/orchestrator.log | rg Modify
 Modify: 2026-05-13 20:50:35 +0300   # still growing every poll cycle
 
-$ head -10 .work/orchestrator.log
+$ head -10 .loom/work/orchestrator.log
 Loaded base_branch from config: main
 Warning: Failed to parse skill file ...
 Warning: Failed to parse skill file ...

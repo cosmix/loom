@@ -34,7 +34,7 @@ now called at `commands/knowledge/mod.rs:130`). A dead-accessor list like this o
 only true against one revision; re-check it before trusting it.
 
 **Plan-key normalisation on the writer side.** `delivery::plan_key` resolves both a blank
-`plan_id` in `.work/config.toml` and a stage record with no plan to `"default"`;
+`plan_id` in `.loom/work/config.toml` and a stage record with no plan to `"default"`;
 `MergeLifecycle`'s writer side does not normalise identically. Silent by construction —
 see `mistakes/writer-reader-address.md`.
 
@@ -43,7 +43,7 @@ agent AND to the `loom` binary the doctrine tells agents to use. See Part C of t
 pending-knowledge document, and `concerns/sandbox-write-rules-inert.md` for the history.
 
 **`fs/permissions/constants.rs`** still declares `LOOM_PERMISSIONS_WORKTREE` with
-`Write(.work/**)` / `Bash(loom *)` rules that read like a blanket grant but have no real
+`Write(.loom/work/**)` / `Bash(loom *)` rules that read like a blanket grant but have no real
 consumers, and `Write(path)` rules are inert anyway. A documented fossil.
 
 ## Resolved: `Channel::Source` and the Source-Graph Deletion Gap (2026-08-17, both resolved by 2026-09-10)
@@ -66,7 +66,7 @@ Two related concerns, once open, are now closed:
 
 `degraded_reason` (`context/retrieve/graph.rs:116-124`) returns `None` when
 `semantic_revision` is empty — the never-built case — which is the same value it returns for a
-healthy graph. In a checkout with no `.work/` (so no context store, so no graph), the Knowledge
+healthy graph. In a checkout with no `.loom/work/` (so no context store, so no graph), the Knowledge
 Brief therefore prints `Structural: current` with no `DEGRADED` marker while serving
 knowledge-only results.
 

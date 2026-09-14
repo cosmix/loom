@@ -28,7 +28,7 @@ creation path is affected; the reuse and read-only degrade paths were already in
 creating anything.
 
 **How it was found, which is the more general lesson:** as 77 test failures across seven unrelated
-modules. `WorkDir::new` also searches upward, so the one stray `.work` this bug created at the temp
+modules. `WorkDir::new` also searches upward, so the one stray `.loom/work` this bug created at the temp
 root was adopted by every test that built a `TempDir` beneath it. The failures looked environmental
 and were not — they were a real production defect reported through an unrelated symptom. A test
 failure whose cause looks like "the machine" deserves a root cause before it earns that label.
@@ -36,7 +36,7 @@ failure whose cause looks like "the machine" deserves a root cause before it ear
 ## `find_repo_root_from_cwd` Returns `Some(cwd)` Outside Any Repo (2026-08-11)
 
 **What happened:** `get_or_create_work_dir` in `commands/memory/handlers/work_dir.rs` needed "am I inside a
-git repo?" before it would create a `.work` directory. `find_repo_root_from_cwd` returns
+git repo?" before it would create a `.loom/work` directory. `find_repo_root_from_cwd` returns
 `Option<PathBuf>`, so `None` reads as "not in a repo" — but it is not. After walking to the
 filesystem root without finding a `.git`, it ends at
 `git/worktree/paths.rs:84-85` with an explicit _"Fallback: return the original cwd if nothing else
@@ -44,7 +44,7 @@ works"_ → `cwd.canonicalize().ok()`. Outside any repo it therefore returns `So
 
 **Why it matters:** the name says _find repo root_ and the `Option` implies a search that can
 fail, so `if let Some(root)` looks like a repo check and compiles clean. Here it would have
-scattered a `.work` directory into any directory the command was ever run from.
+scattered a `.loom/work` directory into any directory the command was ever run from.
 
 **Prevention:** treat `find_repo_root_from_cwd` as _"the best base path to use"_, never as a repo
 predicate. When you need the predicate, confirm it yourself:

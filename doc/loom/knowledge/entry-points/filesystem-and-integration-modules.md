@@ -8,7 +8,7 @@
 
 - `git/worktree/operations.rs` - Create/remove worktrees at `.worktrees/{stage-id}/`
 - `git/worktree/base.rs` - Base branch resolution for dependencies
-- `git/worktree/settings.rs` - Worktree symlinks (.work, .claude/CLAUDE.md, CLAUDE.md)
+- `git/worktree/settings.rs` - Worktree symlinks (.loom/work, .claude/CLAUDE.md, CLAUDE.md)
 - `git/merge/mod.rs` - Merge automation, conflict handling; `require_no_active_merge` guard
 - `git/merge/in_progress.rs` - Single source of truth for `MERGE_HEAD` detection (handles `.git`-as-file, relative gitdirs, octopus merges)
 - `git/merge/lock.rs` - Stable-inode OS lock that serializes concurrent merges without stale-file reclamation races
@@ -17,7 +17,7 @@
 
 ## File System State
 
-- `fs/work_dir.rs` - `.work/` directory management (initialize, load, main_project_root)
+- `fs/work_dir.rs` - `.loom/work/` directory management (initialize, load, main_project_root)
 - `fs/stage_files.rs` - Stage file naming (`{depth}-{stage-id}.md`)
 - `fs/session_files.rs` - Session file operations
 - `fs/knowledge/dir.rs` - Knowledge directory operations (`KnowledgeDir`; module root `fs/knowledge/mod.rs`)
@@ -27,7 +27,7 @@
 ## Handoff System
 
 - `commands/handoff/create.rs` - CLI `loom handoff create` implementation
-- `orchestrator/monitor/handoff_watch.rs` - `HandoffWatch::needs_handoff_from_document` recovers a handoff from the handoff DOCUMENT (not the stage file) for a session running sandboxed without write access to `.work/stages`; caches per filename so no document is parsed twice. An earlier version of this entry pointed at a `handoff/detector.rs` that does not exist.
+- `orchestrator/monitor/handoff_watch.rs` - `HandoffWatch::needs_handoff_from_document` recovers a handoff from the handoff DOCUMENT (not the stage file) for a session running sandboxed without write access to `.loom/work/stages`; caches per filename so no document is parsed twice. An earlier version of this entry pointed at a `handoff/detector.rs` that does not exist.
 - `handoff/generator/mod.rs` - Handoff file generation
 - `handoff/schema/mod.rs` - HandoffV2 structured format (module root; struct defined in `handoff/schema/v2.rs`)
 
@@ -59,18 +59,20 @@
 
 ## WorkDir Directory Helpers (Existing vs. Missing)
 
+The state root is `<repo>/.loom/work`. A workspace created before the move keeps `<repo>/.work`: `WorkDir` resolves whichever exists and never creates a new `.work` (`fs/work_dir.rs`, `Layout::{Nested, Legacy}`). That is why the git hooks still match both spellings.
+
 `WorkDir` in `fs/work_dir.rs` — existing helpers:
 
-- `signals_dir()` → `.work/signals/`
-- `handoffs_dir()` → `.work/handoffs/`
-- `archive_dir()` → `.work/archive/`
-- `stages_dir()` → `.work/stages/`
-- `sessions_dir()` → `.work/sessions/`
-- `crashes_dir()` → `.work/crashes/`
-- `knowledge_dir()` → `.work/knowledge/`
+- `signals_dir()` → `.loom/work/signals/`
+- `handoffs_dir()` → `.loom/work/handoffs/`
+- `archive_dir()` → `.loom/work/archive/`
+- `stages_dir()` → `.loom/work/stages/`
+- `sessions_dir()` → `.loom/work/sessions/`
+- `crashes_dir()` → `.loom/work/crashes/`
+- `knowledge_dir()` → `.loom/work/knowledge/`
 - `ensure_dir(&self, name: &str) -> Result<PathBuf>` — create any subdir on demand
 
-**Both helpers are now implemented:** `disputes_dir()` → `.work/disputes/` and `plan_versions_dir()` → `.work/plan_versions/`, both on `WorkDir` in `fs/work_dir.rs`
+**Both helpers are now implemented:** `disputes_dir()` → `.loom/work/disputes/` and `plan_versions_dir()` → `.loom/work/plan_versions/`, both on `WorkDir` in `fs/work_dir.rs`
 
 Two more subdirectories, resolved by their own modules rather than a `WorkDir` helper:
 

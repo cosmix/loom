@@ -11,10 +11,10 @@ verified: 7d6a14caf1750cc1e516519e650e2ee68641e0a1
 
 | Type           | Pattern                                                    | Location          |
 | -------------- | ----------------------------------------------------------- | ----------------- |
-| Stage files    | `{depth:02}-{stage-id}.md` (depth 0 = `01-` prefix)        | `.work/stages/`   |
-| Session files  | `{session-id}.md` (ID: `session-{uuid_short}-{timestamp}`) | `.work/sessions/` |
-| Signal files   | `{session-id}.md`                                          | `.work/signals/`  |
-| Handoff files  | `{stage-id}-handoff-{NNN:03d}.md`                          | `.work/handoffs/` |
+| Stage files    | `{depth:02}-{stage-id}.md` (depth 0 = `01-` prefix)        | `.loom/work/stages/`   |
+| Session files  | `{session-id}.md` (ID: `session-{uuid_short}-{timestamp}`) | `.loom/work/sessions/` |
+| Signal files   | `{session-id}.md`                                          | `.loom/work/signals/`  |
+| Handoff files  | `{stage-id}-handoff-{NNN:03d}.md`                          | `.loom/work/handoffs/` |
 | Plan files     | `PLAN-*` -> `IN_PROGRESS-PLAN-*` -> `DONE-PLAN-*`          | `doc/plans/`      |
 | Stage branches | `loom/{stage-id}`                                          |                   |
 | Base branches  | `loom/_base/{stage-id}` (multi-dep merges)                 |                   |

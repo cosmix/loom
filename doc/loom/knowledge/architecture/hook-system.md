@@ -37,9 +37,9 @@ session. Codex requires explicit trust for changed non-managed hooks, surfaced t
 
 - Captures stdin into a variable (not drained) using cross-platform gtimeout/timeout/cat, 1s timeout
 - Validates LOOM_STAGE_ID, LOOM_SESSION_ID, LOOM_WORK_DIR — silently exits if missing
-- Writes initial heartbeat: `.work/heartbeat/<LOOM_STAGE_ID>.json`, through the shared
+- Writes initial heartbeat: `.loom/work/heartbeat/<LOOM_STAGE_ID>.json`, through the shared
   ownership-checked lock and atomic-replacement protocol
-- Logs SessionStart event to `.work/hooks/events.jsonl`
+- Logs SessionStart event to `.loom/work/hooks/events.jsonl`
 - **Parses `.source` field from stdin JSON**: when `.source == "compact"` or `"resume"`, emits `hookSpecificOutput.additionalContext` JSON with a re-anchor pointer (signal file path), redirecting the agent back to its signal after context compaction or resume
 - Stdin must be captured (not drained with `>/dev/null`) so the source field can be parsed — same pattern as `post-tool-use.sh`
 
@@ -219,7 +219,7 @@ Codex registers `user-prompt-context.sh` as well, through
   only the Codex read-in-full directive is gated (2026-09-13).
 - **`user-prompt-context.sh`** — a thin wrapper around `loom hook user-prompt`. It
   exits silently unless `LOOM_WORK_DIR` names a directory or a `.loom/work`,
-  `.work`, `doc/loom/knowledge` or `.loom/cache/context-v1` directory exists walking
+  `.loom/work`, `doc/loom/knowledge` or `.loom/cache/context-v1` directory exists walking
   up from the working directory, runs the delegate under a 5 s timeout, and re-checks
   the 16 KiB payload ceiling on its own side because the `loom` on PATH may be older
   than the script. All retrieval, gating and delivery logic is Rust — see

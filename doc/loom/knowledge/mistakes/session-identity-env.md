@@ -77,7 +77,7 @@ re-proposed:
    stages have no branch, so nothing else ever would — the plan could never reach `DONE-`.
 3. Nothing in the daemon calls `trigger_dependents`; `complete_knowledge_stage` does it itself.
 
-The broker exists because a *sandboxed worktree* agent must not mutate trusted `.work` state. An
+The broker exists because a *sandboxed worktree* agent must not mutate trusted `.loom/work` state. An
 earlier version of this paragraph said a knowledge session "is not sandboxed" and that its spawn
 "generates no sandbox deny/allow settings" — wrong even at the time, since the spawn wrote a sandbox
 block into the main checkout's `.claude/settings.local.json`. That write is gone now (loom writes no

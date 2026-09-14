@@ -121,7 +121,7 @@ See [Plan YAML and Hook Contracts](conventions/plan-yaml-and-hooks.md).
 Dispute/adjudication conventions: per-dispute file ownership and authority split, the
 adjudicator's scope (which fields it may amend), the dispute/evidence/amendment budget
 caps, the on-disk `attempts` respawn counter (and the removed `.inflight` marker/bug),
-the daemon-as-filesystem-writer rule for `.work/` persistence, and the adjudicator's
+the daemon-as-filesystem-writer rule for `.loom/work/` persistence, and the adjudicator's
 spawned-session transport (no API key, no subprocess)
 → [Dispute and Adjudication](conventions/dispute-and-adjudication.md).
 

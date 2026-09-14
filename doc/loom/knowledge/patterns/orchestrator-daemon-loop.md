@@ -21,7 +21,7 @@ KnowledgeDistill prefix: focuses on memory reading and knowledge curation; inclu
 
 ## Daemon IPC Pattern
 
-Unix socket at `.work/orchestrator.sock`, created mode 0o600 under a mode-0700 `.work/` directory.
+Unix socket at `.loom/work/orchestrator.sock`, created mode 0o600 under a mode-0700 `.loom/work/` directory.
 Each request starts with a fixed authentication preface, so invalid credentials are rejected before
 allocating the JSON body. Requests are capped at 64 KiB, responses at 2 MiB, and reads use an
 absolute five-second deadline. Admission is bounded by 8 workers, a 16-request queue, a 512 KiB
@@ -39,7 +39,7 @@ Main loop polls every 5 seconds: sync graph from stage files, sync queued status
 
 ## Monitoring Patterns
 
-**Heartbeat**: Sessions write to `.work/heartbeat/{stage-id}.json`; the JSON's `session_id` identifies the current owner. The three shell writers share an ownership-checked `mkdir` lock and atomic rename, so an old session cannot replace its successor and readers never see a torn document. Timeout: 300s, but staleness is judged against PROGRESS, not raw liveness: since owned-waits the heartbeat carries optional `progress_at` (RFC 3339 UTC) and `activity_kind` (`"progress"`|`"observation"`); observation-only tool calls (status polling, `subagents list`/`watch`/`harvest`) carry the prior `progress_at` forward via `loom_heartbeat_prior_progress_at` (`loom-hooks/_common.sh`) instead of refreshing it, and hung detection reads `Heartbeat::effective_progress_at` (`progress_at`, else `timestamp` for legacy writers) — `loom/src/orchestrator/monitor/heartbeat.rs:120,178`. PID alive + no useful progress (effective_progress_at older than the timeout) = Hung; PID dead = Crashed; PID dead + stage finished normally = normal exit. Observation refreshes liveness only, never progress. The heartbeat carries real resident tokens (`context_tokens`, `transcript_path`) written by `loom-hooks/post-tool-use.sh` from the transcript tail — `context_percent` no longer exists. Judge sessions write a separate `heartbeat/<stage-id>.adjudication.json` instead of the stage file, keyed by the same stage id, read by `HeartbeatWatcher::judge_heartbeat`, and removed by `heartbeat::cleanup_judge_heartbeat` once the judge is closed. **Context health**: `orchestrator/monitor/context.rs::context_health(tokens, ceiling)` bands the ratio Green `<60%`, Yellow `60-90%`, Red `>=90%` of the resolved `context_ceiling_tokens` (absolute tokens, default 150,000; per-stage override in tokens, not a percentage) — there is no auto-summarize step. **Retry**: Exponential backoff `min(30 * 2^retry_count, 300s)`. Retryable: SessionCrash, Timeout. Non-retryable: ContextExhausted, TestFailure, BuildFailure, CodeError. Max 3 retries.
+**Heartbeat**: Sessions write to `.loom/work/heartbeat/{stage-id}.json`; the JSON's `session_id` identifies the current owner. The three shell writers share an ownership-checked `mkdir` lock and atomic rename, so an old session cannot replace its successor and readers never see a torn document. Timeout: 300s, but staleness is judged against PROGRESS, not raw liveness: since owned-waits the heartbeat carries optional `progress_at` (RFC 3339 UTC) and `activity_kind` (`"progress"`|`"observation"`); observation-only tool calls (status polling, `subagents list`/`watch`/`harvest`) carry the prior `progress_at` forward via `loom_heartbeat_prior_progress_at` (`loom-hooks/_common.sh`) instead of refreshing it, and hung detection reads `Heartbeat::effective_progress_at` (`progress_at`, else `timestamp` for legacy writers) — `loom/src/orchestrator/monitor/heartbeat.rs:120,178`. PID alive + no useful progress (effective_progress_at older than the timeout) = Hung; PID dead = Crashed; PID dead + stage finished normally = normal exit. Observation refreshes liveness only, never progress. The heartbeat carries real resident tokens (`context_tokens`, `transcript_path`) written by `loom-hooks/post-tool-use.sh` from the transcript tail — `context_percent` no longer exists. Judge sessions write a separate `heartbeat/<stage-id>.adjudication.json` instead of the stage file, keyed by the same stage id, read by `HeartbeatWatcher::judge_heartbeat`, and removed by `heartbeat::cleanup_judge_heartbeat` once the judge is closed. **Context health**: `orchestrator/monitor/context.rs::context_health(tokens, ceiling)` bands the ratio Green `<60%`, Yellow `60-90%`, Red `>=90%` of the resolved `context_ceiling_tokens` (absolute tokens, default 150,000; per-stage override in tokens, not a percentage) — there is no auto-summarize step. **Retry**: Exponential backoff `min(30 * 2^retry_count, 300s)`. Retryable: SessionCrash, Timeout. Non-retryable: ContextExhausted, TestFailure, BuildFailure, CodeError. Max 3 retries.
 
 ## Session Spawning and Liveness Pattern
 
@@ -80,7 +80,7 @@ Every spawn site uses the shared handle; the other `SessionBackend::from_config`
 
 ## Spool-and-Drain: Writing Through a Sandbox You Cannot Widen
 
-A stage agent's `.work` is a symlink into the main repo and the sandbox denies writes to
+A stage agent's `.loom/work` is a symlink into the main repo and the sandbox denies writes to
 it, so `loom memory note` could not reach its own journal. Rather than widening the
 sandbox, the write was made asynchronous:
 
@@ -98,7 +98,7 @@ Two design points to keep if you copy it. **The spool payload carries no stage i
 daemon attributes entries to the stage that owns the worktree it drained, so an agent
 cannot forge another stage's journal (a real prompt-injection channel: a stage's journal
 is quoted into that stage's later prompts). And **`drain_stage_spools` enumerates stages
-by scanning `.work/stages/` on disk**, not from `active_worktrees`/`active_sessions`:
+by scanning `.loom/work/stages/` on disk**, not from `active_worktrees`/`active_sessions`:
 neither in-memory map survives a daemon restart, so disk is the only source of truth for
 a stage recovered as still-Executing.
 

@@ -75,7 +75,7 @@ surface-local guidance.
 
 ## Ambiguity = Fail Safe (Privilege Lookups From State Files)
 
-Any hook or gate that grants a **relaxation** by reading a `.work/` state file must treat more
+Any hook or gate that grants a **relaxation** by reading a `.loom/work/` state file must treat more
 than one candidate match as ambiguous and refuse. Concretely: resolve by glob, count the
 matches, and consult the file **only when exactly one exists**.
 

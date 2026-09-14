@@ -52,7 +52,7 @@ landing past the model's own window.
 
 Read the resolved value in code with `fs::work_dir::resolve_context_ceiling_tokens(work_dir,
 stage_ceiling)` — the one resolver. Resolution order: `stage.context_ceiling_tokens` ->
-`.work/config.toml [context] ceiling_tokens` -> the user tier's `[context] ceiling_tokens` in
+`.loom/work/config.toml [context] ceiling_tokens` -> the user tier's `[context] ceiling_tokens` in
 `~/.loom/config.toml` -> `DEFAULT_CONTEXT_CEILING_TOKENS` (800,000,
 `models/constants.rs`) — 80% of the 1M-token `DEFAULT_MODEL_CONTEXT_WINDOW_TOKENS` via
 `CONTEXT_CEILING_FRACTION`; subagents default to the same 800,000 via
@@ -73,7 +73,7 @@ model's own context window.
 The shell hook never parses TOML or stage YAML. Its internal
 `loom hook context-ceilings` call (bounded to 3 s by `loom_run_bounded`) loads both through Rust and prints one validated
 `<main>:<subagent>` pair. `loom-hooks/post-tool-use.sh` caches that pair at
-`.work/heartbeat/<stage>.<session>.context-ceilings`, then selects the main or subagent half after
+`.loom/work/heartbeat/<stage>.<session>.context-ceilings`, then selects the main or subagent half after
 classifying the hook payload. The main value includes the stage override; the subagent value is
 plan-wide and never consults stage frontmatter. Missing, failed, malformed, or out-of-range helper
 output falls back to the two hand-kept shell defaults, so a broken helper cannot disable the
@@ -85,7 +85,7 @@ intentional availability defense, not a second config parser.
 **The true last resort is `loom-hooks/pre-compact.sh`'s block-then-allow pattern**, independent of
 all three thresholds above (it fires whenever Claude Code's native compaction actually engages,
 by whatever trigger): the FIRST `PreCompact` invocation in a session drops a
-`.work/compaction-pending/<session-id>` flag file, writes a handoff, and BLOCKS (exit 2) with an
+`.loom/work/compaction-pending/<session-id>` flag file, writes a handoff, and BLOCKS (exit 2) with an
 instruction to record a memory note of the working state before continuing; the SECOND
 invocation (flag file present) removes the flag, writes an updated handoff, and ALLOWS (exit 0).
 This guarantees at least one forced context-preserving checkpoint before Claude Code discards

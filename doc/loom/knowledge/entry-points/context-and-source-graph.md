@@ -15,7 +15,7 @@ and states plainly which channel is wired. Then the file for what you touch:
 | `context/retrieve.rs`                                   | `retrieve_for_stage`, `StageQuery`, `context_epoch` — the ONLY way into the pipeline                                     |
 | `context/schema.rs`                                     | `ContextPack`, `ContextItem`, `Channel`, `Freshness`, token constants; re-exports source-graph names                     |
 | `context/ingest.rs`, `rank.rs`, `fuse.rs`, `pack.rs`    | chunk ingest, per-channel scoring, two-tier fusion (exact rungs, then reciprocal-rank fusion), budget-bounded packing    |
-| `context/store.rs`                                      | derived-artifact store under `.loom/cache/context-v1/`; **`open` follows the `.work` symlink to the MAIN project root**  |
+| `context/store.rs`                                      | derived-artifact store under `.loom/cache/context-v1/`; **`open` follows the `.loom/work` symlink to the MAIN project root**  |
 | `context/delivery.rs`, `delivery/session.rs`             | delivery records, `plan_key`/`plan_key_from`, epoch-scoped suppression; `session.rs` adds the prompt hook's per-session dedupe (`hook_recipient_id`, `delivered_to_session`, `discard_session_delivery`, A.16/A.21) |
 | `context/untrusted.rs`                                  | `inline_safe` — the ONE flattener for untrusted values, now on three surfaces (two agent-facing, one operator-facing) — see patterns.md |
 | `context/freshness.rs`, `fingerprint.rs`, `coverage.rs` | staleness tracking, content fingerprints, `CoverageReport`                                                               |
@@ -24,7 +24,7 @@ and states plainly which channel is wired. Then the file for what you touch:
 | `context/source_graph/`                                 | `SourceNode`, `SourceEdge`, `EdgeProvenance`, confidence ceilings, `node_id`                                             |
 | `context/extract/`                                      | `SourceGraphExtractor` trait, `registry()`, `ExtractorIdentity`, `context/extract/treesitter/` shared harness (directory: `mod.rs`, `build.rs`, `collect.rs`), one module per language |
 | `context/resolve/`                                      | cross-file symbol resolution, `impact`, `SymbolIndex`                                                                    |
-| `telemetry/mod.rs`                                      | `TelemetryEvent`, `emit`, `read_events` over `.work/telemetry/events.jsonl`                                              |
+| `telemetry/mod.rs`                                      | `TelemetryEvent`, `emit`, `read_events` over `.loom/work/telemetry/events.jsonl`                                              |
 | `orchestrator/signals/format/brief.rs`                  | renders the Knowledge Brief into a stage signal                                                                          |
 | `orchestrator/core/stage_telemetry.rs`                  | the only telemetry writer, called from `stage_executor.rs:570`                                                           |
 | `orchestrator/merge_lifecycle.rs`                       | merge/verify/cleanup ordering; the single door to post-merge cleanup                                                     |

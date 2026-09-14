@@ -72,9 +72,9 @@ Three-file trust boundary to prevent self-approval attacks:
 
 | File             | Writer                             | Content                  | Rationale                                            |
 | ---------------- | ----------------------------------- | ------------------------ | ---------------------------------------------------- |
-| `.work/disputes/<stage-id>/<n>/request.md`     | Daemon (on agent's behalf via RPC) | Agent's evidence payload | Agent can read but never write directly              |
-| `.work/disputes/<stage-id>/<n>/verdict.md`     | Daemon worker thread only          | Verdict + citations      | Stage agents never write here — daemon-authored only |
-| `.work/disputes/<stage-id>/<n>/applied.marker` | Daemon only (zero-byte)            | Idempotency guard        | Prevents re-application on restart                   |
+| `.loom/work/disputes/<stage-id>/<n>/request.md`     | Daemon (on agent's behalf via RPC) | Agent's evidence payload | Agent can read but never write directly              |
+| `.loom/work/disputes/<stage-id>/<n>/verdict.md`     | Daemon worker thread only          | Verdict + citations      | Stage agents never write here — daemon-authored only |
+| `.loom/work/disputes/<stage-id>/<n>/applied.marker` | Daemon only (zero-byte)            | Idempotency guard        | Prevents re-application on restart                   |
 
 If the agent could write both request and verdict, it could pre-fill `verdict: Accept` and self-approve. The split enforces the trust boundary at the filesystem level.
 
@@ -83,14 +83,14 @@ If the agent could write both request and verdict, it could pre-fill `verdict: A
 For amending the IN_PROGRESS plan file safely (Stage 3):
 
 ```text
-1. Acquire .work/plan_versions/.lock  (file lock — serializes concurrent amendments)
+1. Acquire .loom/work/plan_versions/.lock  (file lock — serializes concurrent amendments)
 2. Compute new plan content in memory
-3. Atomic-write .work/plan_versions/<n>.md  (full snapshot)
-4. Append to .work/plan_versions/audit.md  (O_APPEND — atomic for small rows)
+3. Atomic-write .loom/work/plan_versions/<n>.md  (full snapshot)
+4. Append to .loom/work/plan_versions/audit.md  (O_APPEND — atomic for small rows)
 5. Atomic temp+rename of IN_PROGRESS plan file to new content
 6. Release lock
 ```
 
 Recovery on crash: scan audit.md for latest amendment; verify plan file matches snapshot. If mismatch → restore from `<n>.md`. If `<n>.md` missing → discard audit row, use `<n-1>.md`.
 
-Note: `plan/graph/loader.rs:60-86` PREFERS `.work/stages/` files over the plan file. Plan-file amendment MUST also update the corresponding `.work/stages/<stage_id>.md` for the change to be reflected in the running orchestrator graph.
+Note: `plan/graph/loader.rs:60-86` PREFERS `.loom/work/stages/` files over the plan file. Plan-file amendment MUST also update the corresponding `.loom/work/stages/<stage_id>.md` for the change to be reflected in the running orchestrator graph.

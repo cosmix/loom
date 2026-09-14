@@ -41,11 +41,11 @@ All three spawn operations use the shared `prepare_session_launch()` path, which
 - Wrapper `format\!()` template — lines 321–350
 - Key template lines:
   - `:332` — `export LOOM_MAIN_AGENT_PID=$$` (set to shell's own PID before exec)
-  - `:337` — `echo $$ > {pid_file}` (writes PID to `.work/pids/{stage_id}.pid`)
+  - `:337` — `echo $$ > {pid_file}` (writes PID to `.loom/work/pids/{stage_id}.pid`)
   - `:340` — `exec {claude_cmd}` (replaces shell with claude process)
 - Template also exports: `LOOM_SESSION_ID`, `LOOM_STAGE_ID`, `LOOM_WORK_DIR`, `LOOM_WORKTREE_PATH`, `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`
 
-### 5. Centralized .work/config.toml API
+### 5. Centralized .loom/work/config.toml API
 
 `loom/src/fs/work_dir.rs` (block starting at line 328):
 

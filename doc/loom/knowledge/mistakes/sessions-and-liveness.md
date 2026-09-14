@@ -6,7 +6,7 @@
 
 **Mistake:** Relying on transient session state to route kill/liveness calls after a daemon restart.
 
-**Why:** Sessions are reconstructed from `.work/sessions/<id>.md` on daemon restart. Any field not in the session file is lost.
+**Why:** Sessions are reconstructed from `.loom/work/sessions/<id>.md` on daemon restart. Any field not in the session file is lost.
 
 **Prevention:** Add `#[serde(default)]` to backend-related session fields and ensure they are set before the session is written to disk.
 
@@ -144,7 +144,7 @@ agent into the same worktree. The second agent noticed the first, refused to wor
 non-completing exit was read as a crash and retried.
 
 **Why:** `stage_executor.rs` marked the stage `Executing`, spawned the agent, and only afterwards
-wrote `.work/sessions/<id>.md` and linked `stage.session`. Every discovery path in the system reads
+wrote `.loom/work/sessions/<id>.md` and linked `stage.session`. Every discovery path in the system reads
 that one artifact — `viewer::live_tmux_sessions` (the sole input to `loom attach`),
 `recover_orphaned_sessions`, and `status`'s `load_all_sessions`. Two compounding errors: a record
 written AFTER the thing it records cannot describe a crash in between, and keying every consumer on
@@ -306,14 +306,14 @@ persisting the session status; the judge test modules run under the flake-check 
 
 ## Orchestrator Loop: Unbounded Subprocess Freezes All Scheduling
 
-**Mistake:** Session teardown (`handle_stage_completed` → `kill_session` → window close) shelled out with `Command::output()` and no timeout, on the orchestrator's single poll thread. On macOS that call is `osascript`, which blocks indefinitely on a TCC Automation prompt, a terminal modal, or an unresponsive terminal app. One user's daemon froze there for 10 hours: the dependent stage sat `Queued`, no `.work/` file was written, and nothing appeared in the log.
+**Mistake:** Session teardown (`handle_stage_completed` → `kill_session` → window close) shelled out with `Command::output()` and no timeout, on the orchestrator's single poll thread. On macOS that call is `osascript`, which blocks indefinitely on a TCC Automation prompt, a terminal modal, or an unresponsive terminal app. One user's daemon froze there for 10 hours: the dependent stage sat `Queued`, no `.loom/work/` file was written, and nothing appeared in the log.
 **Why it hid:** the daemon's socket thread is separate, so `loom status` kept reporting "● daemon running". Restarting fixed it, which reads as a transient glitch rather than a hang.
-**Prevention:** every external command issued from the poll loop goes through `process::run_bounded`. Teardown steps are best-effort — never `?` between removing the session and `try_auto_merge`, because `StageCompleted` is edge-triggered and never fires twice for the same stage. Check `.work/orchestrator.tick`: a stale tick with a live daemon means the loop is stuck, and the second line names the phase.
+**Prevention:** every external command issued from the poll loop goes through `process::run_bounded`. Teardown steps are best-effort — never `?` between removing the session and `try_auto_merge`, because `StageCompleted` is edge-triggered and never fires twice for the same stage. Check `.loom/work/orchestrator.tick`: a stale tick with a live daemon means the loop is stuck, and the second line names the phase.
 **Note:** Linux is less exposed only by accident — its `wmctrl`/`xdotool` paths are `which`-guarded and no-op when the tools are absent. The structure was the bug, not the platform.
 
 ## Diagnostics: Restart Destroys the Evidence
 
-**Mistake:** `.work/orchestrator.log` was opened with `File::create`, truncating it on every `loom run`. Restarting the daemon is the standard response to a stuck orchestrator, so the log of the run that got stuck was destroyed at exactly the moment it was needed.
+**Mistake:** `.loom/work/orchestrator.log` was opened with `File::create`, truncating it on every `loom run`. Restarting the daemon is the standard response to a stuck orchestrator, so the log of the run that got stuck was destroyed at exactly the moment it was needed.
 **Fix:** rotate to `orchestrator.log.prev` on start. When diagnosing a stall after a restart, read the `.prev` file — the live log only covers the recovery run.
 
 ## detection.rs: Session Exit for Merge States

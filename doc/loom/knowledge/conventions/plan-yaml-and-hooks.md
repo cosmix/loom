@@ -33,7 +33,7 @@ Seven files: architecture, entry-points, patterns, conventions, mistakes, stack 
 
 ## Signal File Format
 
-Signal files at .work/signals/{session-id}.md use markdown with structured sections. Knowledge/merge/recovery signals have distinct formats. All share .work/signals/ directory.
+Signal files at .loom/work/signals/{session-id}.md use markdown with structured sections. Knowledge/merge/recovery signals have distinct formats. All share .loom/work/signals/ directory.
 
 ## Permission Mode YAML Values
 
@@ -54,7 +54,7 @@ Old `truths`/`truth_checks` fields were removed from `StageDefinition` and are n
 
 Plan deserialization is strict at every policy-bearing layer: the metadata root, `LoomConfig`, `StageDefinition`, and nested sandbox, filesystem, network, Linux, adjudication, code-review, truth-check, wiring-test, and dead-code structures use `deny_unknown_fields`. A typo or retired field must fail parsing with an actionable unknown-field error; it must never disappear before validation. In particular, top-level `truths` is rejected.
 
-**`loom knowledge sync` (and anything that reaches `context::retrieve::resolve_roots` → `ContextStore::open` → a `refresh` write) can never sit in a worktree stage's acceptance list.** `ContextStore::open` (`context/store.rs:49`) resolves the context cache under `WorkDir::main_project_root().join(".loom/cache/context-v1")` — deliberately OUT of the worktree, through the `.work` symlink, to the MAIN repository, so parallel stages share one cache instead of each growing an immediately-stale private copy. `sync`'s `refresh` step (`context/refresh.rs:218`) then WRITES there via `ContextStore::save_catalog`, and both settings emitters strip `.loom` from `allow_write`, so that write always trips the sandbox from inside a worktree. `loom knowledge context` (retrieval) also opens the same store but is safe: its refresh failure downgrades to a warning and it builds the catalog in memory instead (`context/retrieve.rs:147-149`), which is why the signal footer tells agents to run it directly. `loom knowledge check` was written specifically to be safe as an acceptance criterion by NEVER opening the context store at all — it resolves only the knowledge root and calls the pure, read-only `catalog::build` (`commands/knowledge/check.rs:1-21`); do not "simplify" it back into `context::resolve()`.
+**`loom knowledge sync` (and anything that reaches `context::retrieve::resolve_roots` → `ContextStore::open` → a `refresh` write) can never sit in a worktree stage's acceptance list.** `ContextStore::open` (`context/store.rs:49`) resolves the context cache under `WorkDir::main_project_root().join(".loom/cache/context-v1")` — deliberately OUT of the worktree, through the `.loom/work` symlink, to the MAIN repository, so parallel stages share one cache instead of each growing an immediately-stale private copy. `sync`'s `refresh` step (`context/refresh.rs:218`) then WRITES there via `ContextStore::save_catalog`, and both settings emitters strip `.loom` from `allow_write`, so that write always trips the sandbox from inside a worktree. `loom knowledge context` (retrieval) also opens the same store but is safe: its refresh failure downgrades to a warning and it builds the catalog in memory instead (`context/retrieve.rs:147-149`), which is why the signal footer tells agents to run it directly. `loom knowledge check` was written specifically to be safe as an acceptance criterion by NEVER opening the context store at all — it resolves only the knowledge root and calls the pure, read-only `catalog::build` (`commands/knowledge/check.rs:1-21`); do not "simplify" it back into `context::resolve()`.
 
 ## Hook Output Contract
 
@@ -96,7 +96,7 @@ Some fields may use `tool_response` instead of `tool_result` depending on Claude
 ## Additive Schema Fields: Prefer `#[serde(default)]` Over Bespoke Migration (2026-08-07)
 
 For a new additive stage field, `#[serde(default)]` carries existing plan files and in-flight
-`.work/stages/*.md` without a bespoke upgrade pass. This compatibility rule does not make removed or
+`.loom/work/stages/*.md` without a bespoke upgrade pass. This compatibility rule does not make removed or
 misspelled plan fields permissive: strict plan structs still reject unknown fields. The shape used
 for `implementers` and `subagent_timeout_secs`:
 
@@ -127,7 +127,7 @@ for any new field (`loom/tests/integration/implementer_defaults.rs`):
 
 1. `*_plan_yaml_without_field_*` — parse plan markdown whose YAML has NO such key; assert every
    stage gets the default.
-2. `*_stage_file_without_field_*` — write `.work/stages/*.md` frontmatter with no such key, call
+2. `*_stage_file_without_field_*` — write `.loom/work/stages/*.md` frontmatter with no such key, call
    `load_stage()`, assert it loads and defaults.
 
 Schema-only tests are not enough: they never touch the state files already on disk, which is exactly

@@ -94,7 +94,7 @@ than alarming.
 before the next appended section, while the same content piped via stdin would not. Minor, but the
 two paths should agree.
 
-## `loom memory` Is Unusable Without an Initialised `.work` (2026-08-11)
+## `loom memory` Is Unusable Without an Initialised `.loom/work` (2026-08-11)
 
 `loom memory note` exits non-zero with `.work directory not found. Run 'loom init' first.`
 (`commands/memory/handlers/work_dir.rs`), and even past that gate the recording handlers require a
@@ -108,9 +108,9 @@ given no working way to do it, and the failure is silent from the orchestrator's
 Three agents lost insights to this in a single session before it was noticed.
 
 **Fixed in-tree 2026-08-11** (`commands/memory/handlers/work_dir.rs`): the four recording commands
-(`note`, `decision`, `change`, `question`) now create `<repo_root>/.work/memory/` when cwd is
+(`note`, `decision`, `change`, `question`) now create `<repo_root>/.loom/work/memory/` when cwd is
 inside a git repo, and default the stage to the sentinel `ad-hoc`; `query`/`list`/`show` degrade
-to exit 0 without creating anything. Outside a git repo the original error stands, so `.work` is
+to exit 0 without creating anything. Outside a git repo the original error stands, so `.loom/work` is
 never scattered into arbitrary directories — see
 [`find_repo_root_from_cwd` Returns `Some(cwd)` Outside Any Repo](../mistakes.md) for the trap that
 guard exists to dodge.

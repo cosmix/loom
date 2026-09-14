@@ -56,7 +56,7 @@
 | --- | --- | --- |
 | [cli-and-plan-pipeline](entry-points/cli-and-plan-pipeline.md) | CLI dispatch, plan parsing/validation/graph, verification, configs | 173 |
 | [context-and-source-graph](entry-points/context-and-source-graph.md) | Context retrieval pipeline and the source-graph channel/lifecycle | 50 |
-| [filesystem-and-integration-modules](entry-points/filesystem-and-integration-modules.md) | Git, fs/work_dir, handoff, sandbox, remote control, knowledge base | 111 |
+| [filesystem-and-integration-modules](entry-points/filesystem-and-integration-modules.md) | Git, fs/work_dir, handoff, sandbox, remote control, knowledge base | 113 |
 | [hooks](entry-points/hooks.md) | Hook scripts, their events, command matching | 117 |
 | [orchestrator-daemon-and-sessions](entry-points/orchestrator-daemon-and-sessions.md) | Orchestrator loop, daemon, monitor, signals, merges, dispute/verify | 224 |
 | [remote-control](entry-points/remote-control.md) | Files and call sites for remote-control capability detection and… | 97 |
@@ -141,7 +141,7 @@
 | [automatic-knowledge-source-graph-followups](concerns/automatic-knowledge-source-graph-followups.md) | Knowledge-plan followups, retrieval-degradation gap, stopwording, resolved items | 100 |
 | [code-quality-and-hook-debt](concerns/code-quality-and-hook-debt.md) | Code-quality/hook debt: oversized units, debug logging, duplicated tables | 181 |
 | [codex-heartbeat-starvation](concerns/codex-heartbeat-starvation.md) | Heartbeat starvation from long codex runs; stale-badge constant mismatch | 77 |
-| [daemon-singleton](concerns/daemon-singleton.md) | Historical incident: two daemons once attached to the same `.work/`. Startup… | 98 |
+| [daemon-singleton](concerns/daemon-singleton.md) | Historical incident: two daemons once attached to the same `.loom/work… | 98 |
 | [iterm2-window-teardown](concerns/iterm2-window-teardown.md) | iTerm2 spawn never names its window, so teardown cannot find it to close | 48 |
 | [knowledge-cli-gaps](concerns/knowledge-cli-gaps.md) | Knowledge/memory CLI gaps: no delete-section, no blurb flag, CRLF, backlog | 179 |
 | [merge-and-recovery-edge-cases](concerns/merge-and-recovery-edge-cases.md) | Merge/retry/completion edge cases: phantom merges, stale started_at, nonces | 80 |

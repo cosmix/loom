@@ -13,7 +13,7 @@
 
 | Command       | Entry File                    | Purpose                                        |
 | ------------- | ------------------------------ | ----------------------------------------------- |
-| `init`        | `commands/init/execute.rs`    | Initialize `.work/` from plan                  |
+| `init`        | `commands/init/execute.rs`    | Initialize `.loom/work/` from plan                  |
 | `run`         | `commands/run/mod.rs`         | Start orchestrator daemon                      |
 | `status`      | `commands/status.rs`          | Dashboard with stage/session info              |
 | `stop`        | `commands/stop.rs`            | Shutdown daemon                                |
@@ -108,15 +108,15 @@ Internal modules: `extraction.rs` (YAML block extraction, plan name), `validatio
 - `ExecutionGraph::build(stages: Vec<StageDefinition>) -> Result<Self>` — two-pass: first creates nodes, second builds reverse-dependency edges, then calls `cycle::detect_cycles()` via DFS
 - `ExecutionGraph::update_ready_status()` → returns stage IDs that became `Queued`
 - Cycle detection: `cycle/mod.rs` uses recursive DFS with `visiting` / `visited` sets; returns `Err` with cycle path on detection
-- `plan/graph/loader.rs` has `build_execution_graph()` that loads stage files from `.work/stages/` and calls `ExecutionGraph::build()`
+- `plan/graph/loader.rs` has `build_execution_graph()` that loads stage files from `.loom/work/stages/` and calls `ExecutionGraph::build()`
 
 ## Plan Graph Loader — Stage File Preference (Critical)
 
 `plan/graph/loader.rs:56` — `build_graph_impl()`:
 
-- **Lines 60-86**: Prefers `.work/stages/` over plan file. If stages_dir exists with .md files → load from `fs::load_stages_from_work_dir()` + recover sandbox from `.work/config.toml [plan_sandbox]`. Falls back to parsing plan file only if stages_dir is empty/missing.
+- **Lines 60-86**: Prefers `.loom/work/stages/` over plan file. If stages_dir exists with .md files → load from `fs::load_stages_from_work_dir()` + recover sandbox from `.loom/work/config.toml [plan_sandbox]`. Falls back to parsing plan file only if stages_dir is empty/missing.
 - This means plan-file edits are NOT automatically reflected until stages_dir is absent (i.e., fresh init).
-- **`plan/amendment.rs` honors this** — a runtime amendment rewrites the plan file **and** the target stage's `.work/stages/<n>-<id>.md` under the same lock. This is a shipped guarantee, not an outstanding requirement (an earlier version of this bullet read as a TODO for a future "plan-amendment stage"). Any _other_ code path that edits a plan file at runtime must do the same, or the daemon keeps serving the old criteria.
+- **`plan/amendment.rs` honors this** — a runtime amendment rewrites the plan file **and** the target stage's `.loom/work/stages/<n>-<id>.md` under the same lock. This is a shipped guarantee, not an outstanding requirement (an earlier version of this bullet read as a TODO for a future "plan-amendment stage"). Any _other_ code path that edits a plan file at runtime must do the same, or the daemon keeps serving the old criteria.
 
 ## Plan Schema — StageDefinition Amendable Fields
 
@@ -166,8 +166,8 @@ Plan YAML gained `command_confinement: confined | inherit` at plan level
 
 ## Key Config Files
 
-- `.work/config.toml` - Active plan reference and settings
-- `.work/stages/{depth}-{stage-id}.md` - Stage state (YAML frontmatter)
-- `.work/sessions/{session-id}.md` - Session tracking
-- `.work/signals/{session-id}.md` - Agent instruction signals
+- `.loom/work/config.toml` - Active plan reference and settings
+- `.loom/work/stages/{depth}-{stage-id}.md` - Stage state (YAML frontmatter)
+- `.loom/work/sessions/{session-id}.md` - Session tracking
+- `.loom/work/signals/{session-id}.md` - Agent instruction signals
 - `doc/plans/PLAN-*.md` - Plan definition files

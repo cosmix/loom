@@ -44,7 +44,7 @@ where it must be 2.
 
 **Prevention:** the obvious fix — prefer the file whose `id:` field agrees — does **not** work,
 because whoever plants the decoy also writes its `id:`. The durable rule for any hook that
-grants a privilege by reading a `.work` file: **more than one glob match means ambiguous; fail
+grants a privilege by reading a `.loom/work` file: **more than one glob match means ambiguous; fail
 safe and do not grant the relaxation.** Consult the file only when exactly one match exists.
 
 **Fix:** ambiguity check in `loom-hooks/subagent-verify-guard.sh`; refusal directions pinned in

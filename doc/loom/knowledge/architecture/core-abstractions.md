@@ -65,7 +65,7 @@ start-time identity; a missing or mismatched identity fails closed instead of fa
 
 ```text
 1. loom init doc/plans/PLAN-foo.md
-   --> Parse plan, create .work/, write stage files
+   --> Parse plan, create .loom/work/, write stage files
 
 2. loom run
    --> Spawn daemon (or foreground) --> orchestrator loop
@@ -81,7 +81,7 @@ start-time identity; a missing or mismatched identity fails closed instead of fa
 
 ### IPC Protocol (`daemon/protocol.rs`, `daemon/wire.rs`)
 
-Unix socket at `.work/orchestrator.sock`. A fixed capability-and-credential preface is authenticated
+Unix socket at `.loom/work/orchestrator.sock`. A fixed capability-and-credential preface is authenticated
 before the length-prefixed JSON body is allocated. Requests are capped at 64 KiB, responses at
 2 MiB, and absolute read deadlines plus bounded workers, queue slots, subscriber counts, and
 in-flight bytes prevent slow or oversized clients from exhausting the daemon. User requests cover
@@ -92,11 +92,11 @@ proof.
 
 | Directory             | Owner Module                     | Purpose              |
 | --------------------- | -------------------------------- | -------------------- |
-| `.work/stages/`       | orchestrator/core/persistence.rs | Stage state          |
-| `.work/sessions/`     | orchestrator/core/persistence.rs | Session state        |
-| `.work/signals/`      | orchestrator/signals/            | Agent assignments    |
-| `.work/handoffs/`     | orchestrator/continuation/       | Context dumps        |
-| `.work/config.toml`   | commands/init/, commands/run/    | Plan reference       |
+| `.loom/work/stages/`       | orchestrator/core/persistence.rs | Stage state          |
+| `.loom/work/sessions/`     | orchestrator/core/persistence.rs | Session state        |
+| `.loom/work/signals/`      | orchestrator/signals/            | Agent assignments    |
+| `.loom/work/handoffs/`     | orchestrator/continuation/       | Context dumps        |
+| `.loom/work/config.toml`   | commands/init/, commands/run/    | Plan reference       |
 | `.worktrees/`         | git/worktree/                    | Isolated workspaces  |
 | `doc/loom/knowledge/` | fs/knowledge.rs                  | Persistent learnings |
 

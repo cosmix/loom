@@ -225,7 +225,7 @@ capability/preflight/resolve shape as [Remote Control](remote-control.md)'s `pre
   to make.
 - **Scope.** The check does not mutate `implementers` or stage state; it only changes what the
   signal tells the orchestrator to do at spawn time, the same way Remote Control's `resolve()`
-  gates the `--remote-control` flag without touching `.work/config.toml`.
+  gates the `--remote-control` flag without touching `.loom/work/config.toml`.
 
 ## Plugin-owned hooks and Loom-native hooks
 
@@ -355,7 +355,7 @@ no file reads at all.
 **Not read-only: they try to refresh a cache outside the worktree's sandbox.** Both commands never
 write anything inside the worktree itself, but they DO try to refresh a derived-artifact cache under
 the canonical MAIN repo's `.loom/cache/context-v1/` (`context/store.rs:44-57` resolves it via
-`main_project_root`, following `.work`'s symlink out of the worktree on purpose so every parallel
+`main_project_root`, following `.loom/work`'s symlink out of the worktree on purpose so every parallel
 stage shares one cache rather than growing an immediately-stale copy of its own). That path is not
 in a stage worktree's `allowWrite` set (`sandbox/settings/policy.rs:137-158`), so inside a worktree
 the refresh is denied, the command prints `warning: could not refresh the working-tree source graph
