@@ -12,7 +12,10 @@
 Loom is an agent orchestration system for Claude Code. Stages run in parallel across isolated git worktrees, completion is gated by checks loom runs itself rather than by the agent's own account of its work, and what each session learns is captured and distilled into a knowledge base the next session reads first.
 
 <p align="center">
-  <img src="doc/images/webui-overview.png" alt="The loom web dashboard showing a plan as a dependency graph of stages" width="880">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="doc/images/webui-overview-dark.png">
+    <img src="doc/images/webui-overview.png" alt="The loom web dashboard showing a plan as a dependency graph of stages" width="880">
+  </picture>
 </p>
 
 <p align="center">
@@ -475,6 +478,14 @@ The dashboard stays a `127.0.0.1`-only, unauthenticated tool for the person runn
 ### Web Dashboard Terminals
 
 `loom status --web --terminals` (tmux backend only) adds a "Take control" view to each stage's detail dialog: an xterm.js terminal opens right in the browser, attached to that stage's live tmux session. It starts in a read-only View mode; switching to Control sends every keystroke to the running agent. Enabling `--terminals` mints a one-time token and prints it in the startup URL — open that exact link once to set an auth cookie for the dashboard; a plain `--web` link never gets the "Take control" option.
+
+<p align="center">
+  <img src="doc/images/webui-terminal-dark.png" alt="The loom web dashboard's terminal view attached to a live stage session" width="880">
+</p>
+
+<p align="center">
+  <em>A stage's terminal, opened from its detail dialog: live output, viewable read-only or with control handed over.</em>
+</p>
 
 ## Plan Format
 
