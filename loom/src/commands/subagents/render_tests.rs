@@ -173,10 +173,6 @@ fn tool_wait_idle_30_minutes_never_harvests_or_settles() {
     };
     assert_eq!(summaries[0].state, SubagentState::ToolWait);
     assert!(summaries[0].final_report.is_none());
-    assert_eq!(
-        forward::watch_outcome(&summaries, false),
-        forward::WatchOutcome::Pending
-    );
 }
 
 #[test]

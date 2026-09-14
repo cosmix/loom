@@ -27,10 +27,6 @@ struct TranscriptIdentity {
     path: PathBuf,
 }
 
-pub(in crate::commands::subagents) fn stage_owned() -> bool {
-    std::env::var_os("LOOM_STAGE_ID").is_some() && std::env::var_os("LOOM_SESSION_ID").is_some()
-}
-
 pub(in crate::commands::subagents) fn load_active(work_dir: Option<&Path>) -> Option<Context> {
     let stage_id = std::env::var("LOOM_STAGE_ID").ok()?;
     let loom_session_id = std::env::var("LOOM_SESSION_ID").ok()?;
