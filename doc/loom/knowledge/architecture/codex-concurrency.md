@@ -79,10 +79,15 @@ the same consequence before reporting the conjunction as a verdict — report pe
   attach to the wrong thread. Use fresh runs.
 - **Same-file work belongs in separate stages** (worktree isolation), never concurrent subagents in one
   worktree. Disjoint file sets are the precondition for everything above.
+- **One unit = one file (or one file plus its test), at most three steps, interfaces pinned (2026-09-14).**
+  The wrapper cancels a companion job still running at 540000 ms and exits 124 with
+  `"outcome":"timed_out"`; a timed-out unit is re-split, never re-forwarded as is — see
+  [Owned Waits](owned-waits.md). Watch for it with `loom subagents watch --worker codex:<unit>`, which
+  now exits 6 when a bound job's process is gone or its log stops growing past the stall budget.
 - **Expect an "appears hung" warning on long foreground runs.** A foreground codex call is one Bash
   tool call, and the heartbeat only advances on PostToolUse — see
-  [Long Codex Runs Starve the Loom Heartbeat](../concerns.md). The warning is advisory; nothing is
-  killed or retried.
+  [Long Codex Runs Starve the Loom Heartbeat](../concerns/codex-heartbeat-starvation.md). The warning is
+  advisory; nothing is killed or retried.
 
 ## Evidence status — what execution did and did NOT add
 

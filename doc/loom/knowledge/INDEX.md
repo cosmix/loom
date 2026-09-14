@@ -23,7 +23,7 @@
 | Topic | Blurb | Lines |
 | --- | --- | --- |
 | [adjudication-lifecycle](architecture/adjudication-lifecycle.md) | Dispute to durable verdict, and each verdict's effect | 60 |
-| [codex-concurrency](architecture/codex-concurrency.md) | Codex fan-out concurrency limits, what is measured, and what degrades under… | 123 |
+| [codex-concurrency](architecture/codex-concurrency.md) | Codex fan-out concurrency limits, what is measured, and what degrades under… | 128 |
 | [codex-plugin](architecture/codex-plugin.md) | Codex plugin install, identity, and forwarding | 402 |
 | [completion-recovery](architecture/completion-recovery.md) | Completion HMAC attestation, exit_reason, handoff folds | 34 |
 | [context-ceiling](architecture/context-ceiling.md) | Resident-token ceiling: resolution tiers and three thresholds | 109 |
@@ -36,7 +36,7 @@
 | [memory-spool](architecture/memory-spool.md) | Read before touching loom memory: spool/drain, ids, receipts, pending, archive | 159 |
 | [merge-flow](architecture/merge-flow.md) | How a completed stage reaches its target branch | 79 |
 | [orchestrator-loop](architecture/orchestrator-loop.md) | Daemon main-loop tick order, Monitor subsystem, heartbeat liveness. | 56 |
-| [owned-waits](architecture/owned-waits.md) | Worker-set waits: lease/engine, exit codes, unit-survival limit | 23 |
+| [owned-waits](architecture/owned-waits.md) | Worker-set waits: lease/engine, exit codes, unit-survival limit | 31 |
 | [plan-lifecycle-and-fields](architecture/plan-lifecycle-and-fields.md) | Plan field checklist, goal-backward layers, schema fields, amendment. | 107 |
 | [quota-poller](architecture/quota-poller.md) | How loom learns the operator's Claude and Codex subscription budget, where it… | 29 |
 | [remote-control](architecture/remote-control.md) | Capability detection, preflight, resolution, and per-kind session naming for… | 82 |
@@ -124,7 +124,7 @@
 | [spurious-waiting-for-input](mistakes/spurious-waiting-for-input.md) | Stages flipped to waiting-for-input with no AskUserQuestion | 25 |
 | [status-broadcast-hardening](mistakes/status-broadcast-hardening.md) | Frame-overflow eviction and read-timeout desync in status broadcast | 74 |
 | [store-without-consumer](mistakes/store-without-consumer.md) | A store that was written but never read - what happened, why it stayed… | 94 |
-| [subagent-orchestration](mistakes/subagent-orchestration.md) | Liveness signals: when a missing report is not a missing result | 534 |
+| [subagent-orchestration](mistakes/subagent-orchestration.md) | Liveness signals: when a missing report is not a missing result | 563 |
 | [testing-and-lint](mistakes/testing-and-lint.md) | Lint/test discipline: --all-targets, --no-fail-fast, headless CI | 664 |
 | [tests-that-cannot-fail](mistakes/tests-that-cannot-fail.md) | Tests that pass regardless of whether the bug they exist to catch is present… | 264 |
 | [tmux-backend](mistakes/tmux-backend.md) | tmux spawn-failure exit codes and cleanup-on-error discipline | 136 |

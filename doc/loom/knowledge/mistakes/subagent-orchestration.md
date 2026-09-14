@@ -532,3 +532,32 @@ accept a new message and continue.
 **Prevention:** check the agent's actual state (`loom subagents list --session ...`) before sending
 it a message. A stopped agent's files are free for the orchestrator to route to a fresh spawn — do
 not message it expecting a continuation.
+
+## A Watch Sat 43 Minutes on a Dead Codex Job Because Nothing Classified "Hung" (2026-09-14)
+
+**What happened:** a codex companion job died silently after the wrapper's 540000 ms status wait
+returned `state: active` ("continues under daemon ownership", exit 0). Its record stayed at
+`status: running`. The orchestrator's `loom subagents watch --worker codex:<unit> --timeout 3600`
+kept polling for 43 minutes and reported nothing, because the engine only ends a wait on
+`Failed`/`Cancelled`/all-`Succeeded` or the deadline, and `WorkerOutcome` had no hung state
+(`loom/src/commands/subagents/wait/engine.rs`, `loom/src/subagent_lifecycle/model.rs`). Claude
+workers had the same hole: a subagent whose process died mid-turn stayed `Active` until the
+deadline.
+
+**Why:** the wait was designed to refuse "elapsed time is death" and had no other evidence
+channel. The evidence exists: a companion job record carries `pid` and `logFile`, a Claude
+transcript has a last-entry timestamp and a last tool name, and the Bash tool has a hard 600 s cap.
+The wrapper also treated the 540 s deadline as a hand-off instead of a limit, so an oversized unit
+became an orphan instead of a failure.
+
+**Prevention:** the wrapper now cancels a companion job still running at 540000 ms and exits 124
+with `"outcome":"timed_out"`; `watch` exits 6 (`Stalled`) on a dead job pid, a job log idle past
+the stall budget, or a Claude transcript idle past the budget (a Bash tool-wait only past
+`max(budget, 1800 s)`: 19,007 measured Bash tool-waits included 71 past 600 s and one of 1,298 s,
+because a call held at a permission prompt has not started and the tool's 600 s cap does not bind
+it; an Agent tool-wait never, as nested spawns reached 669 s and have no cap). Size every codex unit as one file (or file plus test) with at most three
+steps; a timed-out unit is re-split, never re-forwarded as is. `--stall-secs` overrides the budget.
+
+**Fix:** stall detection in `loom/src/commands/subagents/wait/stall.rs` and
+`loom/src/codex_lifecycle/progress.rs`; the deadline path in `loom-hooks/codex-forward.sh`; the
+sizing doctrine in `loom/src/orchestrator/signals/format/codex.rs` and `CLAUDE.md.template`.
