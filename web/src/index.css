@@ -55,9 +55,7 @@
   --ledger-rule: oklch(0.8 0.045 240);
   --ledger-head-rule: 3px double oklch(0.72 0.06 240);
   /* Dialogs float clear of the page: a deep drop under a tighter contact shadow. */
-  --dialog-shadow:
-    0 32px 80px -20px oklch(0 0 0 / 0.45),
-    0 12px 28px -12px oklch(0 0 0 / 0.3);
+  --dialog-shadow: 0 32px 80px -20px oklch(0 0 0 / 0.45), 0 12px 28px -12px oklch(0 0 0 / 0.3);
 }
 
 .dark {
@@ -76,9 +74,7 @@
   --ledger-rule: var(--hairline);
   --ledger-head-rule: 1px solid var(--hairline);
   /* A near-black ground needs a larger, fully opaque drop to show at all. */
-  --dialog-shadow:
-    0 40px 100px -8px oklch(0 0 0 / 1),
-    0 16px 40px -4px oklch(0 0 0 / 0.85);
+  --dialog-shadow: 0 40px 100px -8px oklch(0 0 0 / 1), 0 16px 40px -4px oklch(0 0 0 / 0.85);
 }
 
 @theme inline {
