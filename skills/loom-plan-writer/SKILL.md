@@ -415,10 +415,10 @@ Checking on subagents is CLAUDE.md.template Rule 6 ("Checking on subagents: use 
 never a hand-rolled poll loop"), and that block is canonical: it carries the three cases keyed on
 per-subagent state (`done`, `tool-wait`, `generating`, `unknown`) and what to do in each. Read it
 there instead of restating it in a stage description. What bears on the plan: **subagents are
-ONE-SHOT** — brief completely, run ONE `loom subagents watch` in the background with a long
-`--timeout` (3600), harvest with `loom subagents harvest`, and let the subagent end. That one
-blocking watch settles or times out, exits 0 vs. 2, and states which branch fired, which alone
-satisfies the bounded-check rule; no stage needs a poll loop written into it.
+ONE-SHOT** — brief completely, run ONE background `loom subagents watch --worker <kind>:<id>
+[--worker ...] --timeout 3600`, distinguish exit 0 success, 2 deadline (not death), 3 failure or
+cancellation, 4 existing wait (no second monitor), and 5 unknown identity or evidence (never
+success), harvest each terminal report once, and let the subagents end; no stage needs a poll loop.
 
 **Never message a finished subagent.** Each such message re-writes its entire conversation at the
 cache-write rate. A follow-up is a FRESH spawn whose brief quotes the previous report.

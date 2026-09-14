@@ -366,8 +366,7 @@ fn test_signal_codex_implementers_section_gated() {
             "the codex block must tell the orchestrator to state an explicit Bash \
              timeout and distinguish it from the wrapper's exact snapshot wait"
         );
-        assert!(content.contains("one background `loom subagents watch --timeout 3600`"));
-        assert!(content.contains("Watch exits 1 for failure, 3 for cancellation"));
+        assert!(content.contains("naming one `--worker codex:<unit-id>` for each forwarded"));
         assert!(
             content.contains("doc/loom/knowledge/"),
             "the codex block must tell the orchestrator to forbid the knowledge \

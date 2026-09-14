@@ -6,9 +6,9 @@
 //!
 //! BLOCK-C is the "how do I check on a subagent" rule: it answers what to do
 //! when a subagent goes quiet, keyed on the frozen `loom subagents`
-//! list/harvest/watch CLI surface and the one-background-watch pattern
-//! (`loom subagents watch --timeout <secs>` through the Bash tool's
-//! `run_in_background`, never a re-armed foreground poll).
+//! list/harvest/watch CLI surface and the one-owned-wait pattern
+//! (`loom subagents watch --worker ... --timeout 3600` through the Bash tool's
+//! `run_in_background`, never re-armed or polled).
 //!
 //! It now lives on exactly ONE surface — `CLAUDE.md.template` Rule 6 — and is
 //! deliberately ABSENT from every generated signal (`generate_stable_prefix`,
@@ -32,13 +32,15 @@ const CLAUDE_MD_TEMPLATE: &str = include_str!("../../../../CLAUDE.md.template");
 type PrefixGenerator = fn() -> String;
 
 /// BLOCK-C, verbatim. `CLAUDE.md.template` must carry this text byte for byte.
-const BLOCK_C: &str = "**Checking on subagents: use `loom subagents`, never a hand-rolled poll loop.** Spawn everyone, then run ONE `loom subagents watch --timeout <secs>` (3600 is the normal value) through the Bash tool's `run_in_background`: the harness re-invokes you when it exits, and no request is made while it waits. Do not re-arm a foreground watch every few minutes, and do not poll with `git status`, `wc -l`, or `ls`. `loom subagents list`/`harvest` give a one-shot look; per-subagent state is `done`, `tool-wait`, `generating`, or `unknown`. Three cases, not one:
+const BLOCK_C: &str = "**Checking on subagents: use one owned `loom subagents` wait, never a hand-rolled poll loop.** Spawn every worker first and capture each worker ID: the Claude agent ID from the spawn result, or the Codex unit ID you assigned with `--unit-id`. Then run ONE `loom subagents watch --worker claude:<agent-id> --worker codex:<unit-id> --timeout 3600` through the Bash tool's `run_in_background`, with one `--worker` for every worker. It binds those workers once, holds one lease for the parent session, prints one initial record and one terminal record, then exits. Treat its exit distinctly:
 
-1. **`done` but silent** — the subagent's turn ended and its report is on disk. Harvest it and proceed immediately; a missing notification is not a missing result.
-2. **`tool-wait` / `generating`** — genuinely alive. Issue another background watch; slow is not dead. The stage's `subagent_timeout_secs` is the advisory idle budget you judge death against — never a deadline on the subagent's own work, and never the `--timeout` you pass.
-3. **Idle past the budget with no transcript growth** — the only case with positive evidence of death. `TaskStop` it, confirm it stopped, then RE-DELEGATE the remainder to a fresh subagent. Never absorb the work into yourself — the orchestrator decomposes, delegates, verifies, and commits; it does not implement (hard stop 6). Re-read the tree before writing the new brief: a stale brief is worse than no brief.
+1. **Exit 0** — every bound worker has fresh, correlated success evidence.
+2. **Exit 2** — the wait deadline passed. This is not proof that any worker died.
+3. **Exit 3** — a bound worker failed or was cancelled.
+4. **Exit 4** — a wait for this parent session already exists: `AlreadyWaiting` for the same worker set or `Busy` for a different set. No second monitor was started.
+5. **Exit 5** — worker identity or terminal evidence is unknown. This is never success.
 
-Elapsed time alone is still never evidence of death. Never complete the stage while any subagent is still out (Rule 4).";
+Harvest each worker's terminal report exactly once. Never re-arm the watch and never poll with `loom subagents list`, `loom subagents harvest`, `git status`, `wc`, or `ls`; `list` and `harvest` remain one-shot diagnostics. Only exact authoritative terminal evidence permits completion. A worker idle past the stage's `subagent_timeout_secs` budget with no transcript growth is still the only positive evidence of death. `TaskStop` it, confirm it stopped, then RE-DELEGATE the remainder to a fresh subagent. Never absorb the work into yourself — the orchestrator decomposes, delegates, verifies, and commits; it does not implement (hard stop 6). Re-read the tree before writing the new brief: a stale brief is worse than no brief. Never complete the stage while any subagent is still out (Rule 4).";
 
 #[test]
 fn block_c_lives_in_claude_md_template() {
@@ -81,11 +83,23 @@ fn block_c_absent_from_every_stable_prefix() {
     }
 }
 
-/// Guards against inventing flags on the frozen `loom subagents` surface: the
-/// doctrine may name only `list`, `harvest`, and `watch`.
+/// Pins the identity-bound, single-wait CLI contract and its terminal states.
 #[test]
-fn block_c_names_only_the_frozen_subagents_cli_surface() {
-    assert!(BLOCK_C.contains("loom subagents watch --timeout <secs>"));
-    assert!(BLOCK_C.contains("loom subagents list`/`harvest"));
-    assert!(BLOCK_C.contains("`done`, `tool-wait`, `generating`, or `unknown`"));
+fn block_c_pins_the_owned_wait_contract() {
+    assert!(BLOCK_C.contains(
+        "loom subagents watch --worker claude:<agent-id> --worker codex:<unit-id> --timeout 3600"
+    ));
+    assert!(BLOCK_C.contains("capture each worker ID"));
+    assert!(
+        BLOCK_C.contains("Exit 0** — every bound worker has fresh, correlated success evidence")
+    );
+    assert!(BLOCK_C.contains("Exit 2** — the wait deadline passed"));
+    assert!(BLOCK_C.contains("Exit 3** — a bound worker failed or was cancelled"));
+    assert!(
+        BLOCK_C.contains("`AlreadyWaiting` for the same worker set or `Busy` for a different set")
+    );
+    assert!(BLOCK_C.contains("Exit 5** — worker identity or terminal evidence is unknown"));
+    assert!(BLOCK_C.contains("Harvest each worker's terminal report exactly once"));
+    assert!(BLOCK_C.contains("Never re-arm the watch"));
+    assert!(BLOCK_C.contains("Only exact authoritative terminal evidence permits completion"));
 }

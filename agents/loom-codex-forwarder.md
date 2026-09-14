@@ -65,9 +65,14 @@ through unmodified; do not strip, summarise, or duplicate the preamble yourself:
   harness acknowledgement verbatim. If a completion notification re-invokes you, call no tool;
   return the notification text verbatim as your final message.
 - The orchestrator, never the forwarder, owns waiting. Start one background
-  `loom subagents watch --timeout 3600`. Watch exits 0 only when every owned worker has
-  lifecycle-evidenced success, 1 for failure, 3 for cancellation, and 2 for timeout or unknown.
-  Failure and cancellation are distinct results.
+  `loom subagents watch --worker codex:<unit-id> ... --timeout 3600`, with one `--worker
+  codex:<unit-id>` for each forwarded unit. It binds those workers once, holds one lease for the
+  parent session, prints one initial record and one terminal record, then exits. Treat exits
+  distinctly: 0 only when every bound worker has fresh, correlated success evidence; 2 when the wait
+  deadline passed (not proof any worker died); 3 when a bound worker failed or was cancelled; 4 when
+  a wait for this parent session already exists (`AlreadyWaiting` for the same worker set or `Busy`
+  for a different set), with no second monitor started; 5 when worker identity or terminal evidence
+  is unknown, which is never success.
 - **Your final message IS the report.** The orchestrator harvests the last message of your turn and
   nothing else. Never use SendMessage, TeamCreate, or any other messaging tool to relay the output:
   a relayed copy closed by a one-line summary leaves the harvest without the evidence trailer, which
