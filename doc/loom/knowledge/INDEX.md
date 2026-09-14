@@ -12,7 +12,7 @@
 | [entry-points.md](entry-points.md) | Key files agents should read first | 232 |
 | [patterns.md](patterns.md) | Architectural patterns discovered in the codebase | 153 |
 | [conventions.md](conventions.md) | Coding conventions discovered in the codebase | 235 |
-| [mistakes.md](mistakes.md) | Mistakes made and lessons learned - what to avoid | 233 |
+| [mistakes.md](mistakes.md) | Mistakes made and lessons learned - what to avoid | 246 |
 | [stack.md](stack.md) | Dependencies, frameworks, and tooling used in the project | 119 |
 | [concerns.md](concerns.md) | Technical debt, warnings, and issues to address | 213 |
 
@@ -117,6 +117,7 @@
 | [session-identity-env](mistakes/session-identity-env.md) | The wrapper script's `LOOM_*` exports are a contract read by hooks, the CLI and… | 104 |
 | [sessions-and-liveness](mistakes/sessions-and-liveness.md) | Session identity, liveness routing, spawn-site coverage, and the blast radius… | 344 |
 | [shell-command-matchers](mistakes/shell-command-matchers.md) | Separators that never become tokens, forgeable glob lookups, env leakage in… | 246 |
+| [spurious-waiting-for-input](mistakes/spurious-waiting-for-input.md) | Stages flipped to `waiting-for-input` with no AskUserQuestion anywhere in the… | 25 |
 | [status-broadcast-hardening](mistakes/status-broadcast-hardening.md) | Frame-overflow eviction and read-timeout desync from a widened status broadcast. | 74 |
 | [store-without-consumer](mistakes/store-without-consumer.md) | A store that was written but never read - what happened, why it stayed… | 94 |
 | [subagent-orchestration](mistakes/subagent-orchestration.md) | Liveness signals for subagents, when a missing report is not a missing result… | 520 |
@@ -124,7 +125,7 @@
 | [tests-that-cannot-fail](mistakes/tests-that-cannot-fail.md) | Tests that pass regardless of whether the bug they exist to catch is present… | 264 |
 | [tmux-backend](mistakes/tmux-backend.md) | tmux spawn-failure exit codes, cleanup-on-every-error-path discipline, and PID… | 136 |
 | [untrusted-value-boundaries](mistakes/untrusted-value-boundaries.md) | Enumerating every producer of a rendered field, not just the field, and why… | 188 |
-| [verification-harness](mistakes/verification-harness.md) | When every check fails at once, suspect the harness; the PATH binary is not… | 359 |
+| [verification-harness](mistakes/verification-harness.md) | When every check fails at once, suspect the harness; the PATH binary is not… | 369 |
 | [visibility-and-reachability](mistakes/visibility-and-reachability.md) | pub(crate) is not nameable by itself - visibility is capped by path… | 115 |
 | [web-dashboard-server](mistakes/web-dashboard-server.md) | Concurrency, security and testing lessons from building the hand-rolled… | 273 |
 | [writer-reader-address](mistakes/writer-reader-address.md) | A layer written under a key its reader ignores looks identical to no-op. | 73 |

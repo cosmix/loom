@@ -238,3 +238,9 @@ Tests run by a stage adopted the live `.loom/work` through `WorkDir::new`'s upwa
 **Why**: A producer that writes after `head` exits gets SIGPIPE; `pipefail` turns that into the pipeline's status, and `set -e` turns an assignment from `$(...)` into an exit.
 **Prevention**: In any hook under `pipefail`, never pipe an external command directly into `head`/`sed -n 1p`/`grep -q`. Capture the full output into a variable first, then truncate with `head -n N <<<"$var"`, or append `|| true` to the producer when the exit status is not needed. A non-zero hook exit with empty stderr and exit code 141 is this bug.
 **Fix**: `get_uncommitted_changes` captures the status first and truncates from a here-string; regression test `loom-hooks/tests/commit-guard-sigpipe-many-dirty-files.sh`.
+
+## Spurious waiting-for-input stages (2026-09-14) [DETAILED]
+
+Stages flipped to `WaitingForInput` with no AskUserQuestion in any transcript, because the ask-user hooks acted on any invocation of the AskUserQuestion permission pipeline without reading stdin, and nothing reconciled the state; `loom stage complete` was then refused. The monitor now resumes a waiting stage whose own session keeps executing tools, and the hooks check `tool_name` and log every trigger.
+
+→ [Spurious waiting-for-input stages](mistakes/spurious-waiting-for-input.md)
