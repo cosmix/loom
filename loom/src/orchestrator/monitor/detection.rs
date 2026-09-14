@@ -18,6 +18,7 @@ use super::events::MonitorEvent;
 use super::handlers::Handlers;
 use super::handoff_watch::HandoffWatch;
 use super::heartbeat::HeartbeatWatcher;
+use super::progress::heartbeat_event;
 
 /// Detection state for tracking changes
 pub struct Detection {
@@ -286,18 +287,10 @@ impl Detection {
         // Poll heartbeat files for updates
         if let Ok(updates) = heartbeat_watcher.poll(&config.work_dir) {
             for update in updates {
-                // Emit heartbeat received event
-                events.push(MonitorEvent::HeartbeatReceived {
-                    stage_id: update.heartbeat.stage_id.clone(),
-                    session_id: update.heartbeat.session_id.clone(),
-                    context_tokens: update.heartbeat.context_tokens,
-                    transcript_path: update.heartbeat.transcript_path.clone(),
-                    last_tool: update.heartbeat.last_tool.clone(),
-                });
-
-                // If we previously reported this session as hung, clear that flag
-                // since we got a fresh heartbeat
-                self.clear_hung_report(&update.heartbeat.session_id);
+                events.push(heartbeat_event(&update));
+                if update.progress_advanced {
+                    self.clear_hung_report(&update.heartbeat.session_id);
+                }
             }
         }
 

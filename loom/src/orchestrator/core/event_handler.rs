@@ -9,6 +9,7 @@ use crate::models::stage::{Stage, StageStatus};
 use crate::orchestrator::monitor::MonitorEvent;
 
 use super::clear_status_line;
+use super::heartbeat_apply::HeartbeatApply;
 use super::persistence::Persistence;
 use super::Orchestrator;
 
@@ -221,9 +222,8 @@ impl Orchestrator {
                 last_activity,
                 finished_without_completing,
             } => {
-                // Advisory on the first report; a silence deep enough to be
-                // evidence of a dead agent is recovered. Both live in
-                // `recover_hung`, the wording in `monitor::parked`.
+                // Advisory first; a silence deep enough to prove death is
+                // recovered by `recover_hung`.
                 self.on_session_hung(HungReport {
                     session_id: &session_id,
                     stage_id: stage_id.as_deref(),
@@ -234,14 +234,13 @@ impl Orchestrator {
                 })?;
             }
             MonitorEvent::HeartbeatReceived {
-                stage_id,
-                session_id,
-                context_tokens,
-                transcript_path,
+                stage_id: stage,
+                session_id: session,
+                progress_at: at,
+                context_tokens: tokens,
+                transcript_path: path,
                 last_tool: _,
-            } => {
-                self.apply_heartbeat(&stage_id, &session_id, context_tokens, transcript_path)?;
-            }
+            } => self.apply_heartbeat(HeartbeatApply::new(stage, session, at, tokens, path))?,
             MonitorEvent::BudgetExceeded {
                 session_id,
                 stage_id,

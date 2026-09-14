@@ -11,11 +11,11 @@ fn test_session_marks_context_exhausted() {
     let mut session = Session::new();
     session.status = SessionStatus::Running;
 
-    session.record_heartbeat(Some(100_000), None);
+    session.record_heartbeat(session.last_active, Some(100_000), None);
     assert_eq!(session.context_tokens, 100_000);
     assert_eq!(session.status, SessionStatus::Running);
 
-    session.record_heartbeat(Some(150_000), None);
+    session.record_heartbeat(session.last_active, Some(150_000), None);
     assert_eq!(session.context_tokens, 150_000);
 
     session
@@ -34,7 +34,7 @@ fn test_context_exhausted_triggers_stage_needs_handoff() {
     stage.status = StageStatus::Executing;
 
     // Simulate the session running past its ceiling
-    session.record_heartbeat(Some(160_000), None);
+    session.record_heartbeat(session.last_active, Some(160_000), None);
 
     // Update statuses using validated transitions
     session

@@ -4,6 +4,7 @@
 //! the hooks write. The session record holds the measurement; the ceiling that
 //! judges it belongs to the stage, not to the session.
 
+use chrono::Utc;
 use loom::models::session::Session;
 use std::thread;
 use std::time::Duration;
@@ -17,7 +18,11 @@ fn test_session_context_tracking() {
     let before = session.last_active;
     thread::sleep(Duration::from_millis(10));
 
-    session.record_heartbeat(Some(100_000), Some("/t/session.jsonl".to_string()));
+    session.record_heartbeat(
+        Utc::now(),
+        Some(100_000),
+        Some("/t/session.jsonl".to_string()),
+    );
 
     assert_eq!(session.context_tokens, 100_000);
     assert_eq!(
@@ -36,7 +41,7 @@ fn test_every_heartbeat_advances_last_active() {
     let before = session.last_active;
     thread::sleep(Duration::from_millis(10));
 
-    session.record_heartbeat(None, None);
+    session.record_heartbeat(Utc::now(), None, None);
 
     assert!(session.last_active > before);
 }
@@ -47,9 +52,9 @@ fn test_every_heartbeat_advances_last_active() {
 fn test_unmeasured_heartbeat_preserves_the_last_reading() {
     let mut session = Session::new();
 
-    session.record_heartbeat(Some(147_000), None);
-    session.record_heartbeat(None, None);
-    session.record_heartbeat(None, None);
+    session.record_heartbeat(session.last_active, Some(147_000), None);
+    session.record_heartbeat(session.last_active, None, None);
+    session.record_heartbeat(session.last_active, None, None);
 
     assert_eq!(session.context_tokens, 147_000);
 }
@@ -59,8 +64,8 @@ fn test_unmeasured_heartbeat_preserves_the_last_reading() {
 fn test_transcript_path_is_never_cleared() {
     let mut session = Session::new();
 
-    session.record_heartbeat(None, Some("/t/a.jsonl".to_string()));
-    session.record_heartbeat(Some(50_000), None);
+    session.record_heartbeat(session.last_active, None, Some("/t/a.jsonl".to_string()));
+    session.record_heartbeat(session.last_active, Some(50_000), None);
 
     assert_eq!(session.transcript_path, Some("/t/a.jsonl".to_string()));
 }

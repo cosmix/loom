@@ -7,6 +7,7 @@ use crate::models::constants::STALENESS_THRESHOLD_SECS;
 use crate::models::session::{Session, SessionStatus};
 use crate::models::stage::{Stage, StageStatus, StatusBucket};
 use crate::orchestrator::monitor::heartbeat::{judge_heartbeat_path, read_heartbeat, Heartbeat};
+use crate::orchestrator::monitor::progress::age_secs;
 
 use super::sanitize::valid_stage_id;
 use super::{execution_models_for_stage, ActivityStatus};
@@ -87,12 +88,8 @@ pub(super) struct StageExtras {
 }
 
 pub(super) fn stage_extras(stage: &Stage, work_dir: &WorkDir) -> StageExtras {
-    let judge_heartbeat_secs = read_judge_heartbeat_for_stage(&stage.id, work_dir).map(|hb| {
-        Utc::now()
-            .signed_duration_since(hb.timestamp)
-            .num_seconds()
-            .max(0) as u64
-    });
+    let judge_heartbeat_secs = read_judge_heartbeat_for_stage(&stage.id, work_dir)
+        .map(|hb| age_secs(Utc::now(), hb.effective_progress_at()));
     StageExtras {
         execution_models: execution_models_for_stage(work_dir, &stage.id),
         judge_heartbeat_secs,
@@ -106,11 +103,10 @@ pub(super) fn heartbeat_facts(
 ) -> HeartbeatFacts {
     let heartbeat = read_heartbeat_for_stage(&stage.id, work_dir);
 
-    // Calculate staleness (seconds since last heartbeat)
-    let staleness_secs = heartbeat.as_ref().map(|hb| {
-        let age = Utc::now().signed_duration_since(hb.timestamp);
-        age.num_seconds().max(0) as u64
-    });
+    // Liveness follows useful progress; activity strings remain observational.
+    let staleness_secs = heartbeat
+        .as_ref()
+        .map(|hb| age_secs(Utc::now(), hb.effective_progress_at()));
 
     // Determine activity status based on session, heartbeat, and stage status
     let activity_status = determine_activity_status(session, staleness_secs, &stage.status);

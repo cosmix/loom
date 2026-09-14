@@ -1,8 +1,9 @@
 use super::tests::{make_test_stage, temp_work_dir};
 use super::*;
 use crate::commands::status::data::ActivityStatus;
-use crate::models::constants::DEFAULT_CONTEXT_CEILING_TOKENS;
+use crate::models::constants::{DEFAULT_CONTEXT_CEILING_TOKENS, STALENESS_THRESHOLD_SECS};
 use crate::models::session::SessionStatus;
+use crate::orchestrator::monitor::heartbeat::{write_heartbeat, ActivityKind, Heartbeat};
 
 #[test]
 fn test_build_stage_summary_with_session() {
@@ -63,6 +64,8 @@ fn judge_heartbeat_secs_reads_adjudication_file() {
         stage_id: stage.id.clone(),
         session_id: "judge-session".to_string(),
         timestamp: Utc::now(),
+        progress_at: None,
+        activity_kind: None,
         context_tokens: None,
         transcript_path: None,
         last_tool: None,
@@ -77,6 +80,35 @@ fn judge_heartbeat_secs_reads_adjudication_file() {
         &work_dir,
     );
     assert_eq!(missing.judge_heartbeat_secs, None);
+}
+
+#[test]
+fn fresh_observation_keeps_latest_tool_visible_but_reports_stale_progress() {
+    let (_temp, work_dir) = temp_work_dir();
+    let now = Utc::now();
+    let mut stage = make_test_stage("observed-stage", StageStatus::Executing);
+    stage.session = Some("session-1".to_string());
+    let mut session = Session::new();
+    session.id = "session-1".to_string();
+    session.stage_id = Some(stage.id.clone());
+    session.status = SessionStatus::Running;
+
+    let mut heartbeat = Heartbeat::new(stage.id.clone(), session.id.clone());
+    heartbeat.timestamp = now;
+    heartbeat.progress_at = Some(
+        now - chrono::Duration::seconds(i64::try_from(STALENESS_THRESHOLD_SECS + 60).unwrap()),
+    );
+    heartbeat.activity_kind = Some(ActivityKind::Observation);
+    heartbeat.last_tool = Some("Read".to_string());
+    heartbeat.activity = Some("Inspecting output".to_string());
+    write_heartbeat(work_dir.root(), &heartbeat).unwrap();
+
+    let summary = build_stage_summary(&stage, &[session], &work_dir);
+
+    assert_eq!(
+        (summary.activity_status, summary.last_tool),
+        (ActivityStatus::Stale, Some("Read".to_string()),)
+    );
 }
 #[test]
 fn stage_summary_reads_the_stages_own_session_not_a_corpse() {
