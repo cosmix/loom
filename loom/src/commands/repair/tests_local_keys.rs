@@ -72,9 +72,16 @@ fn repair_strips_exactly_the_loom_written_keys_and_keeps_the_rest() {
     fs::write(&path, settings.to_string()).unwrap();
 
     let issue = find_issue(root.path(), "Loom-written keys in");
-    let listed = "(sandbox block, 7 permission rule(s), 7 session hook registration(s), \
-                  env.LOOM_WORK_DIR)";
-    assert!(issue.description.ends_with(listed), "{}", issue.description);
+    let listed = format!(
+        "(sandbox block, 7 permission rule(s), {} session hook registration(s), \
+         env.LOOM_WORK_DIR)",
+        crate::hooks::HookEvent::all().len()
+    );
+    assert!(
+        issue.description.ends_with(&listed),
+        "{}",
+        issue.description
+    );
     assert!(fix_issue(root.path(), &issue).unwrap());
 
     let mut expected = kept;
