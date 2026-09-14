@@ -233,3 +233,7 @@ session) resolve model and effort per key: per-invocation value → project conf
 ## Configuration Is the Only Authority for Configurable Behavior
 
 If the configuration chain (project `.loom/work/config.toml`, then `~/.loom/config.toml`, then the built-in default) can express a behavior, nothing else may change it: no marker file, cache, or state file under the work dir. When the configured behavior cannot run, fail with the cause instead of switching mode. Background: [Live State Pollution](mistakes/live-state-pollution.md).
+
+## README Covers Current Behavior Only (2026-09-15)
+
+The README documents what loom does now. A fixed bug gets no warning box, mechanism write-up, or workaround recipe there; that history belongs in `mistakes/` and the commit log. A cost or limit that was expected but never materialized is deleted, not hedged: the `claude -p` billing warning went on 2026-09-15 after the owner confirmed `-p` usage is not charged separately.
