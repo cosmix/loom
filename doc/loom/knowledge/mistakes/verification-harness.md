@@ -357,3 +357,13 @@ TMPDIR placement is only one of two leaks into a live session: even with TMPDIR 
 **Prevention:** in a command meant for the operator, inspect files with `stat -c '%s bytes, modified %y' <path>`, or bypass aliases with `command ls`; never rely on GNU `ls` flags.
 
 **Fix:** the command was reissued with `stat`.
+
+## `pkill -f` From the Bash Tool Kills the Tool's Own Shell (2026-09-14)
+
+**What happened:** stopping a background Vite dev server with `pkill -f 'vite --port 5199' && echo stopped; rm ...; git status ...` exited 144 with no output, and every command after the `pkill` was lost. The background task that ran Vite reported the same exit 144, which reads like a server crash.
+
+**Why:** the Bash tool runs each command through a shell wrapper whose own argv carries the full command text, so `pkill -f` matched the wrapper as well as Vite and killed the shell mid-chain.
+
+**Prevention:** never `pkill -f` or `pgrep -f` a pattern typed literally on the same command line. Stop a background task by its task id (TaskStop) or its PID, or use the bracket form `pkill -f '[v]ite --port 5199'`, whose literal text no longer matches its own regex.
+
+**Fix:** re-run the lost commands on their own; `pgrep -af '[v]ite --port 5199'` confirms the target is gone.
