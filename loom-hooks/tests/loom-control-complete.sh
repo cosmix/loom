@@ -5,412 +5,272 @@ ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 HOOK="$ROOT/loom-hooks/loom-control-complete.sh"
 TMP=$(mktemp -d "${TMPDIR:-/tmp}/loom-hooktest.XXXXXX")
 trap 'rm -rf "$TMP"' EXIT
-# A real loom worktree path: the hook engages on `<repo>/.worktrees/<stage-id>`
-# and must stay out of the way of main-repo sessions.
 WORKTREE="$TMP/repo/.worktrees/build-api"
 MAIN_REPO="$TMP/repo"
-mkdir -p "$TMP/bin" "$WORKTREE"
 LOG="$TMP/broker.log"
+mkdir -p "$TMP/bin" "$WORKTREE" "$TMP/home"
 
 cat >"$TMP/bin/loom" <<'SH'
 #!/usr/bin/env bash
-printf '%s\n' "$*" >>"$BROKER_LOG"
+{
+	printf 'CALL\nARGV=%s\nSTATUS=%s\nSTDIN_BEGIN\n' "$*" "${LOOM_CONTROL_TOOL_STATUS:-missing}"
+	cat
+	printf '\nSTDIN_END\n'
+} >>"$BROKER_LOG"
+printf '%s\n' "${FAKE_BROKER_OUTPUT:-LOOM_CONTROL_OUTCOME accepted}"
+exit "${FAKE_BROKER_RC:-0}"
 SH
 chmod +x "$TMP/bin/loom"
 
-invoke_hook() {
-	local payload=$1
-	local test_bin=${LOOM_CONTROL_TEST_BIN_OVERRIDE:-$TMP/bin/loom}
-	local worktree=${LOOM_CONTROL_TEST_WORKTREE:-$WORKTREE}
-	printf '%s' "$payload" |
-		env PATH="$TMP/bin:/usr/bin:/bin" \
-		BROKER_LOG="$LOG" LOOM_CONTROL_TESTING=1 LOOM_CONTROL_TEST_BIN="$test_bin" \
-		LOOM_STAGE_ID="build-api" LOOM_SESSION_ID="session-123" \
-		LOOM_WORKTREE_PATH="$worktree" bash "$HOOK" >/dev/null
-}
-
-post_case() {
-	local command=$1 output=$2 is_error=$3 payload
-	payload=$(jq -n \
-		--arg command "$command" --arg output "$output" --argjson is_error "$is_error" \
-		'{tool_name:"Bash",tool_input:{command:$command},tool_result:{output:$output,is_error:$is_error}}')
-	invoke_hook "$payload"
-}
-
-# invoke_hook_capture / post_case_capture - same as invoke_hook / post_case but
-# return the hook's stdout instead of discarding it, so a caller can inspect
-# the additionalContext JSON the two former silent skips now emit.
-invoke_hook_capture() {
-	local payload=$1
-	local test_bin=${LOOM_CONTROL_TEST_BIN_OVERRIDE:-$TMP/bin/loom}
-	local worktree=${LOOM_CONTROL_TEST_WORKTREE:-$WORKTREE}
-	printf '%s' "$payload" |
-		env PATH="$TMP/bin:/usr/bin:/bin" \
-		BROKER_LOG="$LOG" LOOM_CONTROL_TESTING=1 LOOM_CONTROL_TEST_BIN="$test_bin" \
-		LOOM_STAGE_ID="build-api" LOOM_SESSION_ID="session-123" \
-		LOOM_WORKTREE_PATH="$worktree" bash "$HOOK"
-}
-
-post_case_capture() {
-	local command=$1 output=$2 is_error=$3 payload
-	payload=$(jq -n \
-		--arg command "$command" --arg output "$output" --argjson is_error "$is_error" \
-		'{tool_name:"Bash",tool_input:{command:$command},tool_result:{output:$output,is_error:$is_error}}')
-	invoke_hook_capture "$payload"
-}
-
-pre_case() {
-	local command=$1 payload
-	jq -n \
-		--arg command "$command" \
-		'{tool_name:"Bash",tool_input:{command:$command}}'
-}
-
-MARKER='LOOM_CONTROL_VERIFICATION_PASSED stage=build-api session=session-123'
-invalid_commands=(
-	'loom stage complete build-api --no-verify'
-	'loom stage complete build-api extra'
-	'loom stage complete build-api > result.txt'
-	'loom stage complete build-api < input.txt'
-	'loom stage complete build-api 2>&1'
-	'loom stage complete $(id)'
-	'loom stage complete `id`'
-	'loom stage complete build-api; id'
-	'loom stage complete build-api && id'
-	'loom stage complete build-api || id'
-	'loom stage complete build-api | id'
-	'loom stage complete build-api &'
-	$'loom stage complete build-api\nid'
-	$'loom\tstage\tcomplete\tbuild-api'
-	'loom  stage  complete  build-api'
-	$'loom stage \\\n+complete build-api'
-	'$LOOM_BIN stage complete build-api'
-	'/tmp/loom stage complete build-api'
-)
-for command in "${invalid_commands[@]}"; do
-	payload=$(pre_case "$command")
-	if invoke_hook "$payload" 2>/dev/null; then
-		echo "invalid command was not blocked: $command" >&2
-		exit 1
-	fi
-done
-[[ ! -e "$LOG" ]] || { echo "invalid command reached broker" >&2; exit 1; }
-
-relative_payload=$(pre_case 'loom stage complete build-api')
-if invoke_hook "$relative_payload" 2>/dev/null; then
-	echo "relative PATH-resolved command was not blocked" >&2
-	exit 1
-fi
-[[ ! -e "$LOG" ]] || { echo "PATH-controlled loom was invoked" >&2; exit 1; }
-
 PINNED="$TMP/bin/loom stage complete build-api"
-valid_payload=$(pre_case "$PINNED")
-invoke_hook "$valid_payload"
-[[ ! -e "$LOG" ]] || { echo "PreToolUse invoked the broker" >&2; exit 1; }
+HOOK_RC=0
+HOOK_OUTPUT=""
 
-for command in \
-	"function $TMP/bin/loom { printf forge; }; $PINNED" \
-	"alias loom='$TMP/bin/loom'; $PINNED"; do
-	payload=$(pre_case "$command")
-	if invoke_hook "$payload" 2>/dev/null; then
-		echo "function or alias command was not blocked: $command" >&2
-		exit 1
+run_payload() {
+	local payload=$1
+	set +e
+	HOOK_OUTPUT=$(printf '%s' "$payload" |
+		env PATH="$TMP/bin:/usr/bin:/bin" HOME="${TEST_HOME_OVERRIDE:-$TMP/home}" \
+			BROKER_LOG="$LOG" FAKE_BROKER_OUTPUT="${FAKE_BROKER_OUTPUT:-LOOM_CONTROL_OUTCOME accepted}" \
+			FAKE_BROKER_RC="${FAKE_BROKER_RC:-0}" LOOM_CONTROL_TESTING=1 \
+			LOOM_CONTROL_TEST_BIN="${LOOM_CONTROL_TEST_BIN_OVERRIDE:-$TMP/bin/loom}" \
+			LOOM_STAGE_ID="${TEST_STAGE_ID:-build-api}" LOOM_SESSION_ID="${TEST_SESSION_ID:-session-123}" \
+			LOOM_SESSION_TYPE="${TEST_SESSION_TYPE:-}" LOOM_SCRATCH_DIR="${TEST_SCRATCH_DIR:-}" \
+			LOOM_WORKTREE_PATH="${TEST_WORKTREE_OVERRIDE:-$WORKTREE}" bash "$HOOK" 2>&1)
+	HOOK_RC=$?
+	set -e
+}
+
+run_pre() {
+	local payload
+	payload=$(jq -n --arg command "$1" '{tool_name:"Bash",tool_input:{command:$command}}')
+	run_payload "$payload"
+}
+
+run_post() {
+	local command=$1 output=$2 is_error=$3 path=${4:-} payload
+	if [[ -n "$path" ]]; then
+		payload=$(jq -n --arg command "$command" --arg output "$output" --arg path "$path" \
+			--argjson is_error "$is_error" \
+			'{tool_name:"Bash",tool_input:{command:$command},tool_response:{stdout:$output,is_error:$is_error,persistedOutputPath:$path}}')
+	else
+		payload=$(jq -n --arg command "$command" --arg output "$output" --argjson is_error "$is_error" \
+			'{tool_name:"Bash",tool_input:{command:$command},tool_result:{output:$output,is_error:$is_error}}')
 	fi
-done
-[[ ! -e "$LOG" ]] || { echo "function or alias reached broker" >&2; exit 1; }
+	run_payload "$payload"
+}
 
+assert_rc() {
+	[[ "$HOOK_RC" == "$1" ]] || { echo "expected rc $1, got $HOOK_RC: $HOOK_OUTPUT" >&2; exit 1; }
+}
+
+assert_output() {
+	[[ "$HOOK_OUTPUT" == *"$1"* ]] || { echo "missing output '$1': $HOOK_OUTPUT" >&2; exit 1; }
+}
+
+assert_log() {
+	[[ -f "$LOG" ]] && rg -Fq -- "$1" "$LOG" || { echo "missing broker log '$1'" >&2; exit 1; }
+}
+
+reset_log() { rm -f "$LOG"; }
+call_count() { [[ -f "$LOG" ]] && rg -c '^CALL$' "$LOG" || printf '0\n'; }
+
+assert_no_broker() {
+	[[ ! -e "$LOG" ]] || { echo "unexpected broker call: $(<"$LOG")" >&2; exit 1; }
+}
+
+expect_pre_blocked() {
+	local command=$1
+	reset_log
+	run_pre "$command"
+	assert_rc 2
+	assert_output 'LOOM_CONTROL_ERROR:'
+	assert_no_broker
+}
+
+expect_post_blocked() {
+	local command=$1
+	reset_log
+	run_post "$command" "$EVIDENCE" false
+	assert_rc 2
+	assert_output 'LOOM_CONTROL_ERROR:'
+	assert_no_broker
+}
+
+run_pre "$PINNED"
+assert_rc 0
+[[ ! -e "$LOG" ]] || { echo "PreToolUse called broker" >&2; exit 1; }
+
+run_post 'loom stage complete build-api' 'ignored' false
+assert_rc 2
+assert_output 'completion result was not produced by the exact pinned command'
+[[ ! -e "$LOG" ]] || { echo "mismatched PostToolUse called broker" >&2; exit 1; }
+
+EVIDENCE=$'before\nLOOM_CONTROL_EVIDENCE_V1 stage=build-api session=session-123 nonce=n\ncheck output\nLOOM_CONTROL_EVIDENCE_EOF\nafter'
+
+# Old fail-closed regressions plus the detector matrix: every invalid attempt
+# is rejected in both hook phases and never reaches the stdin broker.
 symlink_bin="$TMP/bin/loom-link"
 ln -s "$TMP/bin/loom" "$symlink_bin"
-symlink_payload=$(pre_case "$symlink_bin stage complete build-api")
-if LOOM_CONTROL_TEST_BIN_OVERRIDE="$symlink_bin" invoke_hook "$symlink_payload" 2>/dev/null; then
-	echo "symlink trusted-binary override was not blocked" >&2
-	exit 1
-fi
+INVALID_COMMANDS=(
+	'loom stage complete build-api'
+	"loom() { \"$TMP/bin/loom\" \"\$@\"; }; loom stage complete build-api"
+	"alias loom='$TMP/bin/loom'; loom stage complete build-api"
+	"$symlink_bin stage complete build-api"
+	"env -u RUSTC_WRAPPER $PINNED"
+	"NAME=value $PINNED"
+	"$PINNED | cat"
+	"$PINNED ; true"
+	"$PINNED && true"
+	"$PINNED > out"
+	"$PINNED &"
+	"$PINNED"$'\n'"true"
+	"bash -c '$PINNED'"
+	"sh -lc '$PINNED'"
+	'$LOOM_BIN stage complete build-api'
+	"$TMP/bin/loom stage \"complete\" build-api"
+	"$TMP/bin/loom stage com\\plete build-api"
+	"$TMP/bin/loom stage compl\"\"ete build-api"
+	"$TMP/bin/loom stage com\\"$'\n'"plete build-api"
+	"$PINNED --force"
+	"$PINNED unexpected"
+	'loom stage complete build-api "'
+)
+for invalid_command in "${INVALID_COMMANDS[@]}"; do
+	expect_pre_blocked "$invalid_command"
+	expect_post_blocked "$invalid_command"
+done
+
+reset_log
+LOOM_CONTROL_TEST_BIN_OVERRIDE="$symlink_bin" run_pre "$symlink_bin stage complete build-api"
+assert_rc 2
+assert_output 'LOOM_CONTROL_ERROR:'
+assert_no_broker
+
+for session_type in knowledge merge base-conflict; do
+	reset_log
+	TEST_SESSION_TYPE="$session_type" TEST_WORKTREE_OVERRIDE="$MAIN_REPO" \
+		run_pre 'loom stage complete build-api'
+	assert_rc 0
+	[[ -z "$HOOK_OUTPUT" ]] || { echo "$session_type main-repo session emitted a pin" >&2; exit 1; }
+	assert_no_broker
+done
+
+nested_main="$TMP/outer/.worktrees/container/repo"
+real_nested_worktree="$nested_main/.worktrees/build-api"
+mkdir -p "$real_nested_worktree"
+reset_log
+TEST_WORKTREE_OVERRIDE="$nested_main" run_pre 'loom stage complete build-api'
+assert_rc 0
+[[ -z "$HOOK_OUTPUT" ]] || { echo "nested main-repo path emitted a pin" >&2; exit 1; }
+assert_no_broker
+reset_log
+TEST_WORKTREE_OVERRIDE="$real_nested_worktree" run_pre 'loom stage complete build-api'
+assert_rc 2
+assert_output 'retry with the pinned command'
+assert_no_broker
+
+run_post "$PINNED" "$EVIDENCE" false
+assert_rc 0
+assert_output 'completion was accepted by the daemon'
+[[ "$(call_count)" == 1 ]] || { echo "broker was not called once" >&2; exit 1; }
+assert_log 'ARGV=stage complete build-api --session session-123'
+assert_log 'STATUS=ok'
+assert_log 'LOOM_CONTROL_EVIDENCE_V1 stage=build-api session=session-123 nonce=n'
+assert_log 'LOOM_CONTROL_EVIDENCE_EOF'
+
+reset_log
+FAKE_BROKER_OUTPUT='LOOM_CONTROL_OUTCOME accepted' run_post "$PINNED" "$EVIDENCE" true
+assert_rc 2
+assert_output 'invalid acceptance outcome'
+assert_log 'STATUS=failed'
+
+reset_log
+FAKE_BROKER_OUTPUT='LOOM_CONTROL_OUTCOME tool_failed_recorded' run_post "$PINNED" 'failed check details' true
+assert_rc 2
+assert_output 'diagnostic evidence was recorded; fix the failing check'
+assert_log 'STATUS=failed'
+assert_log 'failed check details'
+
+while IFS='|' read -r outcome rc phrase; do
+	reset_log
+	FAKE_BROKER_OUTPUT="LOOM_CONTROL_OUTCOME $outcome" run_post "$PINNED" "$EVIDENCE" false
+	assert_rc "$rc"
+	assert_output "$phrase"
+done <<'CASES'
+accepted|0|completion was accepted by the daemon
+accepted_reconciled|0|reconciled from durable daemon state after a lost acknowledgement
+tool_failed_recorded|2|completion command failed; diagnostic evidence was recorded
+evidence_missing_recorded|2|no valid verification evidence record; a diagnostic was recorded
+evidence_record_failed disk-full|2|verification evidence could not be recorded durably: disk-full
+daemon_rejected stale-session|2|daemon rejected the verified completion: stale-session
+verified_pending_ack|2|completion is pending; do not rerun blindly, check loom status
+uncertain timeout|2|completion state is uncertain: timeout
+CASES
+
+reset_log
+FAKE_BROKER_OUTPUT=$'LOOM_CONTROL_OUTCOME accepted\nnoise\nLOOM_CONTROL_OUTCOME daemon_rejected final-decision' \
+	run_post "$PINNED" "$EVIDENCE" false
+assert_rc 2
+assert_output 'daemon rejected the verified completion: final-decision'
+
+reset_log
+FAKE_BROKER_OUTPUT='broker crashed without a record' FAKE_BROKER_RC=9 run_post "$PINNED" "$EVIDENCE" false
+assert_rc 2
+assert_output 'daemon completion broker failed: broker crashed without a record'
+
+reset_log
+PERSISTED_HOME="$TMP/persisted-home"
+PERSISTED_DIR="$PERSISTED_HOME/.claude/projects/proj/session/tool-results"
+PERSISTED_FILE="$PERSISTED_DIR/out..1.txt"
+mkdir -p "$PERSISTED_DIR"
+printf '%s\n' "$EVIDENCE" >"$PERSISTED_FILE"
+TEST_HOME_OVERRIDE="$PERSISTED_HOME" run_post "$PINNED" 'truncated preview' false "$PERSISTED_FILE"
+assert_rc 0
+assert_log 'LOOM_CONTROL_EVIDENCE_V1'
+if rg -Fq 'truncated preview' "$LOG"; then echo "preview was used instead of persisted output" >&2; exit 1; fi
+
+dotdot_escape_path() {
+	local base=$1 target=$2 rest=${1#/} ups=""
+	while [[ -n "$rest" ]]; do
+		ups+="../"
+		if [[ "$rest" == */* ]]; then rest=${rest#*/}; else rest=""; fi
+	done
+	printf '%s/%s%s\n' "$base" "$ups" "${target#/}"
+}
+
+for kind in outside symlink dotdot; do
+	reset_log
+	home="$TMP/home-$kind"
+	trusted_dir="$home/.claude/projects/proj/session/tool-results"
+	mkdir -p "$trusted_dir" "$TMP/outside/tool-results"
+	secret="$TMP/outside/tool-results/$kind.txt"
+	printf 'SECRET_%s\n' "$kind" >"$secret"
+	case "$kind" in
+	outside) path=$secret ;;
+	symlink) path="$trusted_dir/link.txt"; ln -s "$secret" "$path" ;;
+	dotdot) path=$(dotdot_escape_path "$home/.claude/projects" "$secret") ;;
+	esac
+	TEST_HOME_OVERRIDE="$home" \
+		run_post "$PINNED" 'VISIBLE_PREVIEW' false "$path"
+	assert_rc 2
+	assert_output 'persisted tool output path is not trusted'
+	assert_no_broker
+done
 
 production_hook="$TMP/installed/loom-control-complete.sh"
 mkdir -p "$(dirname "$production_hook")"
 cp "$HOOK" "$production_hook"
-# install.sh ships _common.sh into the same hooks dir; without it the copy dies
-# on its `source` and this case would pass for the wrong reason.
 cp "$ROOT/loom-hooks/_common.sh" "$(dirname "$production_hook")/_common.sh"
-production_payload=$(pre_case "$PINNED")
-if printf '%s' "$production_payload" | env PATH="/usr/bin:/bin" HOME="$TMP/empty-home" \
-	LOOM_CONTROL_TESTING=1 LOOM_CONTROL_TEST_BIN="$TMP/bin/loom" \
-	LOOM_STAGE_ID=build-api LOOM_SESSION_ID=session-123 \
-	LOOM_WORKTREE_PATH="$WORKTREE" bash "$production_hook" >/dev/null 2>&1; then
-	echo "test override was accepted outside the repository test harness" >&2
-	exit 1
-fi
+set +e
+production_output=$(jq -n --arg command "$PINNED" '{tool_name:"Bash",tool_input:{command:$command}}' |
+	env PATH="/usr/bin:/bin" HOME="$TMP/empty-home" LOOM_CONTROL_TESTING=1 \
+		LOOM_CONTROL_TEST_BIN="$TMP/bin/loom" LOOM_STAGE_ID=build-api LOOM_SESSION_ID=session-123 \
+		LOOM_WORKTREE_PATH="$WORKTREE" bash "$production_hook" 2>&1)
+rc=$?
+set -e
+[[ "$rc" == 2 ]] || { echo "test binary override escaped repository harness" >&2; exit 1; }
+[[ "$production_output" == *LOOM_CONTROL_ERROR:* ]] || { echo "production rejection lacked a reason" >&2; exit 1; }
+assert_no_broker
 
-# Main-repo sessions (knowledge, merge, base-conflict) own no worktree. They
-# complete in-process, so the bridge must DISENGAGE rather than pin their
-# command — pinning it used to hand a knowledge stage a stage id that does not
-# exist and block the only command that could complete the stage.
-# NESTED_REPO sits under an outer worktree-like path, so these cases hold no
-# matter where $TMP lives: only a path that ENDS at `.worktrees/<id>` counts.
-NESTED_REPO="$TMP/outer/.worktrees/outer-stage/repo"
-for non_worktree in "$MAIN_REPO" "$MAIN_REPO/.worktrees" "$TMP/repo-worktrees-backup" \
-	"$NESTED_REPO" "$NESTED_REPO/.worktrees"; do
-	pass_through=$(pre_case 'loom stage complete build-api')
-	if ! LOOM_CONTROL_TEST_WORKTREE="$non_worktree" invoke_hook "$pass_through" 2>/dev/null; then
-		echo "main-repo session was blocked by the worktree bridge: $non_worktree" >&2
-		exit 1
-	fi
-done
-# A real worktree root under that same outer path still engages the bridge: it
-# refuses the unpinned command and names the pinned one.
-nested_payload=$(pre_case 'loom stage complete build-api')
-if nested_err=$(LOOM_CONTROL_TEST_WORKTREE="$NESTED_REPO/.worktrees/build-api" invoke_hook "$nested_payload" 2>&1); then
-	echo "nested worktree root did not engage the bridge" >&2
-	exit 1
-fi
-[[ "$nested_err" == *"retry with the pinned command"* ]] || { echo "nested worktree root was refused for the wrong reason: $nested_err" >&2; exit 1; }
-[[ ! -e "$LOG" ]] || { echo "main-repo session reached broker" >&2; exit 1; }
-
-# is_error=true skips the broker without ever inspecting stdout for the
-# marker. That used to be a bare `exit 0` - now it must explain, via
-# additionalContext, that the completion command itself errored and the
-# stage is still Executing.
-is_error_output=$(post_case_capture "$PINNED" "$MARKER" true)
-is_error_context=$(printf '%s' "$is_error_output" | jq -r '.hookSpecificOutput.additionalContext // empty')
-[[ -n "$is_error_context" ]] || { echo "is_error skip produced no additionalContext" >&2; exit 1; }
-[[ "$is_error_context" == *"error"* ]] || { echo "is_error skip message does not explain the error: $is_error_context" >&2; exit 1; }
-[[ "$is_error_context" == *"Executing"* ]] || { echo "is_error skip message does not say the stage is still Executing: $is_error_context" >&2; exit 1; }
-
-# is_error=false but the marker is absent from stdout ("verification
-# failed" instead of the pinned marker line). That was also a bare `exit 0`
-# - now it must explain that the marker was not found.
-missing_marker_output=$(post_case_capture "$PINNED" 'verification failed' false)
-missing_marker_context=$(printf '%s' "$missing_marker_output" | jq -r '.hookSpecificOutput.additionalContext // empty')
-[[ -n "$missing_marker_context" ]] || { echo "missing-marker skip produced no additionalContext" >&2; exit 1; }
-[[ "$missing_marker_context" == *"marker"* ]] || { echo "missing-marker skip message does not mention the marker: $missing_marker_context" >&2; exit 1; }
-
-[[ ! -e "$LOG" ]] || { echo "failed verification reached broker" >&2; exit 1; }
-
-for command in 'loom stage complete build-api' '/tmp/loom stage complete build-api'; do
-	if post_case "$command" "$MARKER" false 2>/dev/null; then
-		echo "invalid PostToolUse command was not rejected: $command" >&2
-		exit 1
-	fi
-done
-[[ ! -e "$LOG" ]] || { echo "invalid PostToolUse command reached broker" >&2; exit 1; }
-
-post_case "$PINNED" "$MARKER" false
-[[ "$(wc -l <"$LOG" | tr -d ' ')" == 1 ]] || { echo "valid route did not run once" >&2; exit 1; }
-rg -q '^stage complete build-api --session session-123$' "$LOG"
-
-# --- Persisted-output recovery -----------------------------------------
-#
-# Claude Code truncates large tool output into a "<persisted-output>" wrapper
-# naming the file it saved the FULL output to, previewing only the first 2KB.
-# A marker line past that preview must still be recoverable from the named
-# file - but ONLY when that file resolves to a path the sandboxed stage agent
-# itself could never have written (under $HOME/.claude/projects/**/tool-results,
-# a regular file, not a symlink). Each case below gets its own throwaway
-# $HOME so the sandbox's real ~/.claude/projects is never touched.
-
-persisted_home() {
-	local dir="$TMP/homes/$1"
-	mkdir -p "$dir"
-	printf '%s' "$dir"
-}
-
-persisted_case_capture() {
-	local command=$1 output=$2 home=$3 payload
-	payload=$(jq -n \
-		--arg command "$command" --arg output "$output" \
-		'{tool_name:"Bash",tool_input:{command:$command},tool_result:{output:$output,is_error:false}}')
-	printf '%s' "$payload" |
-		env PATH="$TMP/bin:/usr/bin:/bin" HOME="$home" \
-		BROKER_LOG="$LOG" LOOM_CONTROL_TESTING=1 LOOM_CONTROL_TEST_BIN="$TMP/bin/loom" \
-		LOOM_STAGE_ID="build-api" LOOM_SESSION_ID="session-123" \
-		LOOM_WORKTREE_PATH="$WORKTREE" bash "$HOOK"
-}
-
-# Mimics Claude Code's own wrapper: names the persisted file, and its 2KB
-# preview deliberately does NOT contain the marker (it sits further down in
-# the real file, past what the preview shows).
-wrapper_output() {
-	local path=$1
-	printf '<persisted-output>\nOutput too large (43.5KB). Full output saved to: %s\n\nPreview (first 2KB):\nsome earlier verify output\n...\n</persisted-output>\n' "$path"
-}
-
-log_lines() { [[ -e "$LOG" ]] && wc -l <"$LOG" | tr -d ' ' || echo 0; }
-
-# 1. Marker present ONLY in the persisted file -> broker IS invoked.
-home1=$(persisted_home case1)
-persisted_dir1="$home1/.claude/projects/proj/sess/tool-results"
-mkdir -p "$persisted_dir1"
-persisted_file1="$persisted_dir1/out.txt"
-printf 'earlier verify output\n%s\nlater verify output\n' "$MARKER" >"$persisted_file1"
-before=$(log_lines)
-persisted_case_capture "$PINNED" "$(wrapper_output "$persisted_file1")" "$home1" >/dev/null
-after=$(log_lines)
-[[ "$after" == "$((before + 1))" ]] || { echo "marker-in-persisted-file case did not invoke the broker" >&2; exit 1; }
-rg -q '^stage complete build-api --session session-123$' "$LOG"
-
-# 2. Persisted path present but the file does NOT contain the marker ->
-# broker NOT invoked, message says so.
-home2=$(persisted_home case2)
-persisted_dir2="$home2/.claude/projects/proj/sess/tool-results"
-mkdir -p "$persisted_dir2"
-persisted_file2="$persisted_dir2/out.txt"
-printf 'earlier verify output\nverification failed\nlater verify output\n' >"$persisted_file2"
-before=$(log_lines)
-out2=$(persisted_case_capture "$PINNED" "$(wrapper_output "$persisted_file2")" "$home2")
-after=$(log_lines)
-[[ "$after" == "$before" ]] || { echo "no-marker-in-persisted-file case reached the broker" >&2; exit 1; }
-ctx2=$(printf '%s' "$out2" | jq -r '.hookSpecificOutput.additionalContext // empty')
-[[ "$ctx2" == *"persisted-output"* ]] || { echo "no-marker-in-persisted-file message does not mention the persisted file: $ctx2" >&2; exit 1; }
-[[ "$ctx2" == *"did not contain the marker"* ]] || { echo "no-marker-in-persisted-file message does not say the marker was absent: $ctx2" >&2; exit 1; }
-
-# 3. Persisted path OUTSIDE $HOME/.claude/projects/ -> rejected, broker NOT
-# invoked.
-home3=$(persisted_home case3)
-outside_dir3="$TMP/outside/tool-results"
-mkdir -p "$outside_dir3"
-outside_file3="$outside_dir3/out.txt"
-printf '%s\n' "$MARKER" >"$outside_file3"
-before=$(log_lines)
-out3=$(persisted_case_capture "$PINNED" "$(wrapper_output "$outside_file3")" "$home3")
-after=$(log_lines)
-[[ "$after" == "$before" ]] || { echo "outside-projects persisted path reached the broker" >&2; exit 1; }
-ctx3=$(printf '%s' "$out3" | jq -r '.hookSpecificOutput.additionalContext // empty')
-[[ "$ctx3" == *"did not validate"* ]] || { echo "outside-projects message does not say validation failed: $ctx3" >&2; exit 1; }
-
-# 4. Persisted path IS a symlink -> rejected, broker NOT invoked (even though
-# its target is a real file that does contain the marker).
-home4=$(persisted_home case4)
-persisted_dir4="$home4/.claude/projects/proj/sess/tool-results"
-real_dir4="$TMP/outside/real4"
-mkdir -p "$persisted_dir4" "$real_dir4"
-real_file4="$real_dir4/out.txt"
-printf '%s\n' "$MARKER" >"$real_file4"
-symlink_file4="$persisted_dir4/out.txt"
-ln -s "$real_file4" "$symlink_file4"
-before=$(log_lines)
-out4=$(persisted_case_capture "$PINNED" "$(wrapper_output "$symlink_file4")" "$home4")
-after=$(log_lines)
-[[ "$after" == "$before" ]] || { echo "symlinked persisted path reached the broker" >&2; exit 1; }
-ctx4=$(printf '%s' "$out4" | jq -r '.hookSpecificOutput.additionalContext // empty')
-[[ "$ctx4" == *"did not validate"* ]] || { echo "symlinked persisted path message does not say validation failed: $ctx4" >&2; exit 1; }
-
-# 5. Persisted path string-matches the projects root but TRAVERSES OUT via
-# ".." to a file outside it that genuinely contains the marker -> rejected,
-# broker NOT invoked. `[[ "$path" == "$PROJECTS_ROOT"/* ]]` is a glob against
-# the raw string, not a resolved path, so `.../projects/../../../../tmp/x`
-# satisfies it while resolving somewhere else entirely - the same directory
-# class the sandboxed stage agent can genuinely write to itself.
-home5=$(persisted_home case5)
-persisted_dir5="$home5/.claude/projects"
-mkdir -p "$persisted_dir5"
-# The traversal target's directory MUST itself contain a "tool-results"
-# segment - otherwise the pre-existing "*/tool-results/*" guard rejects the
-# path for an unrelated reason and the traversal case never actually
-# exercises the bug this test targets.
-real_dir5="$TMP/outside/real5/tool-results"
-mkdir -p "$real_dir5"
-real_file5="$real_dir5/out.txt"
-printf '%s\n' "$MARKER" >"$real_file5"
-# Compute the ".." depth from $persisted_dir5 back to $TMP in pure bash, so
-# this does not silently drift if persisted_home()'s nesting ever changes.
-relative5="${persisted_dir5#"$TMP"/}"
-depth5=1
-rest5="$relative5"
-while [[ "$rest5" == */* ]]; do
-	depth5=$((depth5 + 1))
-	rest5="${rest5#*/}"
-done
-dotdots5=""
-for ((i = 0; i < depth5; i++)); do dotdots5+="../"; done
-traversal_path5="${persisted_dir5}/${dotdots5}outside/real5/tool-results/out.txt"
-before=$(log_lines)
-out5=$(persisted_case_capture "$PINNED" "$(wrapper_output "$traversal_path5")" "$home5")
-after=$(log_lines)
-[[ "$after" == "$before" ]] || { echo "path-traversal persisted path reached the broker" >&2; exit 1; }
-ctx5=$(printf '%s' "$out5" | jq -r '.hookSpecificOutput.additionalContext // empty')
-[[ "$ctx5" == *"did not validate"* ]] || { echo "path-traversal message does not say validation failed: $ctx5" >&2; exit 1; }
-
-# 6. Persisted path contains a legitimate filename with two dots (not a `..`
-# path SEGMENT) -> still ACCEPTED, broker invoked. Proves the traversal guard
-# above is segment-aware rather than a blanket "contains .." substring ban,
-# which would wrongly reject real filenames like this one.
-home6=$(persisted_home case6)
-persisted_dir6="$home6/.claude/projects/proj/sess/tool-results"
-mkdir -p "$persisted_dir6"
-persisted_file6="$persisted_dir6/out..1.txt"
-printf '%s\n' "$MARKER" >"$persisted_file6"
-before=$(log_lines)
-persisted_case_capture "$PINNED" "$(wrapper_output "$persisted_file6")" "$home6" >/dev/null
-after=$(log_lines)
-[[ "$after" == "$((before + 1))" ]] || { echo "two-dot legitimate filename case did not invoke the broker" >&2; exit 1; }
-rg -q '^stage complete build-api --session session-123$' "$LOG"
-
-# 7. Existing behaviour unchanged: marker inline in the tool result -> broker
-# invoked. Already covered above (the original "valid route" assertion); no
-# duplicate case added here.
-
-# --- Structured persistedOutputPath field (real harness shape) ---------
-#
-# The wrapper-text cases above mimic an older shape. The shape actually seen
-# from the harness on 2026-09-02 carries `tool_response.persistedOutputPath`
-# as its own field alongside `stdout`, `stderr`, `interrupted`, `isImage`,
-# `noOutputExpected` and `persistedOutputSize` - `stdout` itself is only a
-# truncated prefix and contains no "Full output saved to:" text at all.
-
-structured_case_capture() {
-	local command=$1 stdout=$2 persisted_path=$3 home=$4 payload
-	payload=$(jq -n \
-		--arg command "$command" --arg stdout "$stdout" --arg path "$persisted_path" \
-		'{tool_name:"Bash",tool_input:{command:$command},tool_response:{stdout:$stdout,stderr:"",interrupted:false,isImage:false,noOutputExpected:false,persistedOutputPath:$path,persistedOutputSize:17100}}')
-	printf '%s' "$payload" |
-		env PATH="$TMP/bin:/usr/bin:/bin" HOME="$home" \
-		BROKER_LOG="$LOG" LOOM_CONTROL_TESTING=1 LOOM_CONTROL_TEST_BIN="$TMP/bin/loom" \
-		LOOM_STAGE_ID="build-api" LOOM_SESSION_ID="session-123" \
-		LOOM_WORKTREE_PATH="$WORKTREE" bash "$HOOK"
-}
-
-TRUNCATED_STDOUT='earlier verify output (truncated prefix, no wrapper text, no marker)'
-
-# 8. Marker present ONLY in the file named by tool_response.persistedOutputPath,
-# stdout carries no wrapper text -> broker IS invoked.
-home8=$(persisted_home case8)
-persisted_dir8="$home8/.claude/projects/proj/sess/tool-results"
-mkdir -p "$persisted_dir8"
-persisted_file8="$persisted_dir8/out.txt"
-printf 'earlier verify output\n%s\nlater verify output\n' "$MARKER" >"$persisted_file8"
-before=$(log_lines)
-structured_case_capture "$PINNED" "$TRUNCATED_STDOUT" "$persisted_file8" "$home8" >/dev/null
-after=$(log_lines)
-[[ "$after" == "$((before + 1))" ]] || { echo "structured persistedOutputPath case did not invoke the broker" >&2; exit 1; }
-rg -q '^stage complete build-api --session session-123$' "$LOG"
-
-# 9. persistedOutputPath points outside the trusted root (under $TMPDIR) even
-# though the file it names contains the marker -> rejected, broker NOT
-# invoked, message says the file did not validate.
-home9=$(persisted_home case9)
-outside_dir9="$TMP/outside9/tool-results"
-mkdir -p "$outside_dir9"
-outside_file9="$outside_dir9/out.txt"
-printf '%s\n' "$MARKER" >"$outside_file9"
-before=$(log_lines)
-out9=$(structured_case_capture "$PINNED" "$TRUNCATED_STDOUT" "$outside_file9" "$home9")
-after=$(log_lines)
-[[ "$after" == "$before" ]] || { echo "structured persistedOutputPath outside the trusted root reached the broker" >&2; exit 1; }
-ctx9=$(printf '%s' "$out9" | jq -r '.hookSpecificOutput.additionalContext // empty')
-[[ "$ctx9" == *"did not validate"* ]] || { echo "structured persistedOutputPath outside-root message does not say validation failed: $ctx9" >&2; exit 1; }
-
-# 10. persistedOutputPath is valid (under $HOME/.claude/projects/**/tool-results/,
-# a regular file, not a symlink) but the file it names lacks the marker ->
-# rejected, broker NOT invoked, message says the marker was absent.
-home10=$(persisted_home case10)
-persisted_dir10="$home10/.claude/projects/proj/sess/tool-results"
-mkdir -p "$persisted_dir10"
-persisted_file10="$persisted_dir10/out.txt"
-printf 'earlier verify output\nverification failed\nlater verify output\n' >"$persisted_file10"
-before=$(log_lines)
-out10=$(structured_case_capture "$PINNED" "$TRUNCATED_STDOUT" "$persisted_file10" "$home10")
-after=$(log_lines)
-[[ "$after" == "$before" ]] || { echo "structured persistedOutputPath with no marker reached the broker" >&2; exit 1; }
-ctx10=$(printf '%s' "$out10" | jq -r '.hookSpecificOutput.additionalContext // empty')
-[[ "$ctx10" == *"did not contain the marker"* ]] || { echo "structured persistedOutputPath no-marker message does not say so: $ctx10" >&2; exit 1; }
+echo PASS

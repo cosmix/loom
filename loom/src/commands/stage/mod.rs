@@ -7,6 +7,9 @@ pub(crate) mod admin_hmac;
 pub(crate) mod admin_proof;
 mod amend;
 pub mod complete;
+pub mod completion_evidence;
+#[path = "completion_evidence/producer.rs"]
+mod completion_producer;
 mod criterion_output;
 mod dispute_criteria;
 mod human_review;

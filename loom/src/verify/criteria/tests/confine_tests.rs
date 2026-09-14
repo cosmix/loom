@@ -11,6 +11,8 @@ use tempfile::TempDir;
 #[cfg(unix)]
 use std::io::Read;
 #[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
+#[cfg(unix)]
 use std::process::Child;
 
 use crate::models::stage::CommandConfinement;
@@ -125,6 +127,49 @@ fn program_spec_reports_the_program_and_arguments_on_failure() {
         error.to_string().contains("loom-no-such-program --flag"),
         "unhelpful spawn error: {error}"
     );
+}
+
+#[cfg(unix)]
+#[test]
+#[serial]
+fn confined_spawn_excludes_an_ambient_rustc_wrapper() {
+    let scratch = tempfile::Builder::new()
+        .prefix("loom-confined-wrapper-")
+        .tempdir_in(std::env::temp_dir())
+        .unwrap();
+    let wrapper = scratch.path().join("fake-rustc-wrapper");
+    std::fs::write(
+        &wrapper,
+        "#!/bin/sh\ntouch wrapper-sentinel\necho 'sccache: error: Operation not permitted (os error 1)' >&2\nexit 1\n",
+    )
+    .unwrap();
+    let mut permissions = std::fs::metadata(&wrapper).unwrap().permissions();
+    permissions.set_mode(0o755);
+    std::fs::set_permissions(&wrapper, permissions).unwrap();
+
+    let original_wrapper = std::env::var_os("RUSTC_WRAPPER");
+    std::env::set_var("RUSTC_WRAPPER", &wrapper);
+    let child = crate::verify::criteria::spawn_confined(
+        &CommandSpec::shell(
+            r#"if [ -n "${RUSTC_WRAPPER:-}" ]; then "$RUSTC_WRAPPER"; exit 1; else touch criterion-sentinel; fi"#,
+        ),
+        Some(scratch.path()),
+        CommandConfinement::Confined,
+    )
+    .expect("the confined criterion should spawn");
+    let output = child.wait_with_output().expect("the criterion should exit");
+    match original_wrapper {
+        Some(value) => std::env::set_var("RUSTC_WRAPPER", value),
+        None => std::env::remove_var("RUSTC_WRAPPER"),
+    }
+
+    assert!(
+        output.status.success(),
+        "criterion failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(scratch.path().join("criterion-sentinel").exists());
+    assert!(!scratch.path().join("wrapper-sentinel").exists());
 }
 
 #[test]

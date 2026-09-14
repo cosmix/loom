@@ -39,13 +39,15 @@ fn strip_whitespace(s: &str) -> String {
 /// every spawn: `helpers::loom_cmd()`, `worker_evidence::support`'s
 /// `cli_command`/`configure`, and `codex_evidence::fixture_runtime`'s
 /// `cli_command`/`configure_child`, and `subagent_owned_wait::support`'s
-/// `cli_command`. A new test target that spawns the binary directly must scrub
-/// the same way and be added to this list.
+/// `cli_command`, and `completion_replay::support`'s `configure_child`. A new
+/// test target that spawns the binary directly must scrub the same way and be
+/// added to this list.
 const SANCTIONED_SPAWNERS: &[&str] = &[
     "integration/helpers.rs",
     "worker_evidence/support.rs",
     "codex_evidence/fixture_runtime.rs",
     "subagent_owned_wait/support.rs",
+    "completion_replay/support.rs",
 ];
 
 fn rust_files_under(dir: &Path, out: &mut Vec<PathBuf>) {

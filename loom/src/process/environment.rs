@@ -20,10 +20,10 @@ const STAGE_HOST_ENV_ALLOWLIST: &[&str] = &[
     // and toolchains without them. Locations, not credentials.
     "CARGO_HOME",
     "RUSTUP_HOME",
-    // sccache locations and its wrapper binary — not credentials — so a
-    // confined acceptance run (`loom stage complete`, daemon-side
-    // verification) keeps sharing compiled dependencies across worktrees.
-    "RUSTC_WRAPPER",
+    // Cache settings are inert without a selected wrapper. An ambient wrapper
+    // that fails in the stage sandbox (for example, sccache with EPERM) must
+    // never sit between a confined criterion and rustc; launch-owned wrapper
+    // policy lives in orchestrator/terminal/native/build_cache.rs.
     "SCCACHE_DIR",
     "SCCACHE_CACHE_SIZE",
     "LANG",
@@ -135,7 +135,7 @@ mod tests {
     }
 
     #[test]
-    fn sccache_locations_and_wrapper_survive_a_confined_run() {
+    fn sccache_locations_survive_but_wrapper_is_excluded_from_a_confined_run() {
         let source = [
             ("HOME", "/safe/home"),
             ("PATH", "/usr/bin:/bin"),
@@ -148,7 +148,7 @@ mod tests {
 
         let output = command.output().expect("the system env tool should run");
         let environment = String::from_utf8(output.stdout).unwrap();
-        assert!(environment.contains("RUSTC_WRAPPER=/opt/homebrew/bin/sccache"));
+        assert!(!environment.contains("RUSTC_WRAPPER"));
         assert!(environment.contains("SCCACHE_DIR=/safe/home/.cache/sccache"));
         assert!(environment.contains("SCCACHE_CACHE_SIZE=10G"));
     }

@@ -484,30 +484,7 @@ pub fn complete(
     Ok(())
 }
 
-/// The exact stdout line `loom-hooks/loom-control-complete.sh` matches to confirm
-/// verification passed for a sandboxed worktree completion.
-///
-/// The bridge does a whole-line EXACT match against
-/// `MARKER="LOOM_CONTROL_VERIFICATION_PASSED stage=$STAGE_ID
-/// session=$SESSION_ID"`. Changing this format string's wording, field
-/// order, or spacing silently breaks completion for every sandboxed
-/// session — the bridge fails closed with a generic "verification marker
-/// was not found" skip and nothing else reports the break.
-///
-/// Extracted to its own function (rather than inlined only at the
-/// `println!` call site) so a test can pin the exact text without needing
-/// to capture process stdout.
-pub(super) fn verification_passed_marker_line(stage_id: &str, session_id: &str) -> String {
-    format!(
-        "{} stage={} session={}",
-        control_complete::VERIFIED_MARKER,
-        stage_id,
-        session_id
-    )
-}
-
-/// Prints the explanation that follows `verification_passed_marker_line`'s
-/// output: verification passing on the sandboxed worktree route does NOT
+/// Explains that verification passing on the sandboxed worktree route does NOT
 /// mean the stage is completed — that transition is applied out-of-band by
 /// the daemon via the completion bridge, not by this process.
 pub(super) fn print_sandboxed_completion_pending_notice(stage_id: &str) {
@@ -515,8 +492,8 @@ pub(super) fn print_sandboxed_completion_pending_notice(stage_id: &str) {
     println!(
         "Verification passed, but stage '{stage_id}' is NOT completed yet — \
          completion is applied out-of-band by the daemon via the completion \
-         bridge (loom-hooks/loom-control-complete.sh), which reads the marker line \
-         above. Do not treat this output as completion: the confirmation to \
+         bridge, which reads the EOF-delimited evidence record below. Do not \
+         treat this output as completion: the confirmation to \
          look for is the bridge's own message, \"Stage '{stage_id}' completion \
          was accepted by the daemon.\" If that confirmation never appears, the \
          stage is still Executing and this work is NOT landed."
@@ -692,12 +669,12 @@ fn run_verification_phase(phase: VerificationPhase<'_>) -> Result<()> {
         })?;
 
         if let Some(control_session) = control_session {
-            // FROZEN marker (`verification_passed_marker_line`) + pending-completion notice.
-            println!(
-                "{}",
-                verification_passed_marker_line(stage_id, control_session)
-            );
-            print_sandboxed_completion_pending_notice(stage_id);
+            emit_control_completion_evidence(
+                stage,
+                stage_id,
+                control_session,
+                worktree_root.as_deref(),
+            )?;
             return Ok(());
         }
 
@@ -768,4 +745,15 @@ fn run_verification_phase(phase: VerificationPhase<'_>) -> Result<()> {
     }
 
     Ok(())
+}
+
+fn emit_control_completion_evidence(
+    stage: &Stage,
+    stage_id: &str,
+    control_session: &str,
+    checkout: Option<&Path>,
+) -> Result<()> {
+    print_sandboxed_completion_pending_notice(stage_id);
+    let checkout = checkout.context("sandboxed completion requires a stage worktree checkout")?;
+    super::completion_producer::emit_verified_evidence(stage, control_session, checkout)
 }

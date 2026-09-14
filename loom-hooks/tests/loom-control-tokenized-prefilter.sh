@@ -29,29 +29,42 @@ chmod +x "$TMP/bin/loom"
 
 PINNED="$TMP/bin/loom stage complete build-api"
 
-# Exits 0 when the hook allowed the command, non-zero when it blocked it.
 invoke_hook() {
-	jq -n --arg command "$1" '{tool_name:"Bash",tool_input:{command:$command}}' |
-		env PATH="$TMP/bin:/usr/bin:/bin" \
-			BROKER_LOG="$LOG" LOOM_CONTROL_TESTING=1 LOOM_CONTROL_TEST_BIN="$TMP/bin/loom" \
-			LOOM_STAGE_ID="build-api" LOOM_SESSION_ID="session-123" \
-			LOOM_WORKTREE_PATH="$WORKTREE" bash "$HOOK" >/dev/null 2>&1
+	local payload
+	payload=$(jq -n --arg command "$1" '{tool_name:"Bash",tool_input:{command:$command}}')
+	rm -f "$LOG"
+	set +e
+	HOOK_OUTPUT=$(printf '%s' "$payload" |
+		env PATH="$TMP/bin:/usr/bin:/bin" BROKER_LOG="$LOG" LOOM_CONTROL_TESTING=1 \
+			LOOM_CONTROL_TEST_BIN="$TMP/bin/loom" LOOM_STAGE_ID="build-api" \
+			LOOM_SESSION_ID="session-123" LOOM_WORKTREE_PATH="$WORKTREE" \
+			bash "$HOOK" 2>&1)
+	HOOK_RC=$?
+	set -e
 }
 
 expect_reaches_pin() {
 	local command=$1 label=$2
-	if invoke_hook "$command"; then
-		echo "FAIL: $label was waved through instead of being pinned: $command" >&2
+	invoke_hook "$command"
+	[[ "$HOOK_RC" == 2 ]] || {
+		echo "FAIL: $label returned $HOOK_RC instead of 2: $HOOK_OUTPUT" >&2
 		exit 1
-	fi
+	}
+	[[ "$HOOK_OUTPUT" == *LOOM_CONTROL_ERROR:* ]] || {
+		echo "FAIL: $label had no reason-bearing error: $HOOK_OUTPUT" >&2
+		exit 1
+	}
+	[[ ! -e "$LOG" ]] || { echo "FAIL: $label reached the broker" >&2; exit 1; }
 }
 
 expect_allowed() {
 	local command=$1 label=$2
-	if ! invoke_hook "$command"; then
-		echo "FAIL: $label was blocked: $command" >&2
+	invoke_hook "$command"
+	[[ "$HOOK_RC" == 0 ]] || {
+		echo "FAIL: $label was blocked: $command: $HOOK_OUTPUT" >&2
 		exit 1
-	fi
+	}
+	[[ ! -e "$LOG" ]] || { echo "FAIL: $label reached the broker" >&2; exit 1; }
 }
 
 # 1. REGRESSION: the pinned command itself must still reach the pin AND be
@@ -69,6 +82,28 @@ expect_reaches_pin 'loom "stage" complete build-api' "a quoted subcommand"
 expect_reaches_pin 'LOOM_FORGE=1 loom stage complete build-api' "a leading env assignment"
 expect_reaches_pin "$TMP/bin/loom stage comple\"te\" build-api" "a forged verb on the pinned path"
 
+# Every syntactic way of attempting completion other than the exact pinned
+# bytes is held and rejected. These cases exercise command positions,
+# wrappers, shell operators, byte obfuscation, and conservative parse failure.
+expect_reaches_pin "env -u RUSTC_WRAPPER $PINNED" "an env -u wrapper"
+expect_reaches_pin "NAME=value $PINNED" "a NAME=value prefix"
+expect_reaches_pin "$PINNED | cat" "a pipeline"
+expect_reaches_pin "$PINNED ; true" "a command separator"
+expect_reaches_pin "$PINNED && true" "an and-list"
+expect_reaches_pin "$PINNED > out" "a redirection"
+expect_reaches_pin "$PINNED &" "background execution"
+expect_reaches_pin "$PINNED"$'\n'"true" "an embedded newline"
+expect_reaches_pin "bash -c '$PINNED'" "a bash -c wrapper"
+expect_reaches_pin "sh -lc '$PINNED'" "an sh -lc wrapper"
+expect_reaches_pin '$LOOM_BIN stage complete build-api' "a variable binary"
+expect_reaches_pin "$TMP/bin/loom stage \"complete\" build-api" "a quoted verb"
+expect_reaches_pin "$TMP/bin/loom stage com\\plete build-api" "an escaped verb"
+expect_reaches_pin "$TMP/bin/loom stage compl\"\"ete build-api" "a concatenated verb"
+expect_reaches_pin "$TMP/bin/loom stage com\\"$'\n'"plete build-api" "a backslash-newline splice"
+expect_reaches_pin "$PINNED --force" "an extra flag"
+expect_reaches_pin "$PINNED unexpected" "an extra argument"
+expect_reaches_pin 'loom stage complete build-api "' "an unterminated quote"
+
 # 3. THE FALSE POSITIVES: the words inside ONE quoted argument, and this hook's
 # own filename as a path argument, are not completion attempts. The raw glob
 # blocked both; tokenizing must not.
@@ -83,6 +118,9 @@ expect_allowed 'git commit -m "fix: complete the loom stage guard"' \
 	"a commit message quoting the words"
 expect_allowed 'loom stage list' "an unrelated loom stage subcommand"
 expect_allowed 'echo done' "an unrelated command"
+expect_allowed 'echo "run loom stage complete later"' "quoted completion prose"
+expect_allowed 'cat docs/loom-stage-complete.md' "a completion-shaped path"
+expect_allowed 'rg "stage complete" loom/' "a quoted search pattern"
 
 # Nothing above may reach the completion broker.
 [[ ! -e "$LOG" ]] || {
