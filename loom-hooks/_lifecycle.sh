@@ -294,10 +294,21 @@ loom_lifecycle_read_heartbeat_fields() {
 	fi
 }
 
+loom_lifecycle_load_heartbeat() {
+	local heartbeat="$1" hook="$2"
+	if ! loom_lifecycle_plain_path "$heartbeat" file; then
+		loom_debug "$hook: skipping heartbeat refresh - heartbeat file is unsafe"
+		return 1
+	fi
+	LIFECYCLE_HEARTBEAT_TOKENS=""; LIFECYCLE_HEARTBEAT_TRANSCRIPT=""
+	loom_lifecycle_read_heartbeat_fields "$heartbeat" "$hook"
+}
+
 loom_lifecycle_refresh_heartbeat() {
-	local work="$1" stage="$2" session="$3" activity="$4" hook="$5"
+	local work="$1" stage="$2" session="$3" activity_kind="$4" activity="$5" hook="$6"
 	local directory="$work/heartbeat" heartbeat="$work/heartbeat/$stage.json" lock=""
-	local tokens="" transcript="" timestamp="" json="" status=0 result=1
+	local tokens="" transcript="" timestamp="" progress_at="" json="" status=0 result=1
+	[[ "$activity_kind" == "progress" || "$activity_kind" == "observation" ]] || return 1
 	if [[ ! -e "$directory" && ! -L "$directory" ]]; then
 		mkdir -m 700 "$directory" 2>/dev/null || true
 	fi
@@ -312,20 +323,21 @@ loom_lifecycle_refresh_heartbeat() {
 		loom_heartbeat_lock_release "$lock"; return 1
 	fi
 	if [[ -e "$heartbeat" || -L "$heartbeat" ]]; then
-		if ! loom_lifecycle_plain_path "$heartbeat" file; then
-			loom_debug "$hook: skipping heartbeat refresh - heartbeat file is unsafe"
-			loom_heartbeat_lock_release "$lock"; return 1
-		fi
-		LIFECYCLE_HEARTBEAT_TOKENS=""; LIFECYCLE_HEARTBEAT_TRANSCRIPT=""
-		if ! loom_lifecycle_read_heartbeat_fields "$heartbeat" "$hook"; then
+		if ! loom_lifecycle_load_heartbeat "$heartbeat" "$hook"; then
 			loom_heartbeat_lock_release "$lock"; return 1
 		fi
 		tokens="$LIFECYCLE_HEARTBEAT_TOKENS"; transcript="$LIFECYCLE_HEARTBEAT_TRANSCRIPT"
 	fi
 	timestamp=$(date -u +"%Y-%m-%dT%H:%M:%S.000Z" 2>/dev/null || true)
+	progress_at="$timestamp"
+	if [[ "$activity_kind" == "observation" ]]; then
+		progress_at=$(loom_heartbeat_prior_progress_at "$heartbeat" "$timestamp")
+	fi
 	json=$(jq -nc --arg stage_id "$stage" --arg session_id "$session" --arg timestamp "$timestamp" \
+		--arg progress_at "$progress_at" --arg activity_kind "$activity_kind" \
 		--arg activity "$activity" --arg tokens "$tokens" --arg transcript "$transcript" '
 		{stage_id:$stage_id,session_id:$session_id,timestamp:$timestamp,
+		 progress_at:$progress_at,activity_kind:$activity_kind,
 		 context_tokens:(if ($tokens|test("^[0-9]+$")) then ($tokens|tonumber) else null end),
 		 transcript_path:(if $transcript == "" then null else $transcript end),
 		 last_tool:null,activity:$activity}' 2>/dev/null)

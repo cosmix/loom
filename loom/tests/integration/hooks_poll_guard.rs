@@ -8,10 +8,9 @@
 //! the shared read-discipline rules are both gated by the same `[hooks]
 //! deny_enabled` switch as read-guard.sh; these tests exercise the
 //! escalating rules with the switch both ways. Build/test/lint runners
-//! (`cargo`, `npm`, `make`, ...) are exempt from the repeat-command rule
-//! outright - the acceptance loop is SUPPOSED to rerun them - and that
-//! exemption is pinned here explicitly, since a regression there would
-//! start denying every retried `cargo test`.
+//! (`cargo`, `npm`, `make`, ...) are exempt from the repeat-command rule because
+//! acceptance reruns are expected. That exemption is pinned here so retries of
+//! `cargo test` cannot start being denied.
 //!
 //! Runs the hook script directly with bash - no loom invocation.
 //!
@@ -23,7 +22,8 @@
 
 use super::helpers::clear_relay_env;
 use loom::fs::permissions::constants::{
-    HOOK_COMMON, HOOK_POLL_GUARD, HOOK_READ_DISCIPLINE, HOOK_READ_GUARD, HOOK_READ_LEDGER,
+    HOOK_COMMON, HOOK_POLL_GUARD, HOOK_PROGRESS_CLASSIFICATION, HOOK_READ_DISCIPLINE,
+    HOOK_READ_GUARD, HOOK_READ_LEDGER,
 };
 use loom::process::sandbox_probe::{process_tree_visible, skip_unless};
 use serde_json::{json, Value};
@@ -45,7 +45,7 @@ fn write_exec(path: &Path, content: &str) {
     fs::set_permissions(path, fs::Permissions::from_mode(0o755)).expect("chmod");
 }
 
-/// Install poll-guard.sh plus its three sourced dependencies into a temp dir.
+/// Install poll-guard.sh plus its four sourced dependencies into a temp dir.
 fn setup_hook() -> (TempDir, PathBuf) {
     let temp = TempDir::new().expect("create temp dir");
     write_exec(&temp.path().join("_common.sh"), HOOK_COMMON);
@@ -54,6 +54,10 @@ fn setup_hook() -> (TempDir, PathBuf) {
         HOOK_READ_DISCIPLINE,
     );
     write_exec(&temp.path().join("_read_ledger.sh"), HOOK_READ_LEDGER);
+    write_exec(
+        &temp.path().join("_progress-classification.sh"),
+        HOOK_PROGRESS_CLASSIFICATION,
+    );
     let hook_path = temp.path().join("poll-guard.sh");
     write_exec(&hook_path, HOOK_POLL_GUARD);
     (temp, hook_path)
@@ -348,8 +352,7 @@ mod subagents;
 #[path = "hooks_poll_guard_git.rs"]
 mod git;
 
-// 7. A non-Bash tool exits 0 silently; a command the hook has no rule for
-//    also exits 0 with no output.
+// 7. A non-Bash tool and a command with no matching rule both exit 0 silently.
 #[test]
 fn non_bash_tool_and_unmatched_command_are_silently_ignored() {
     let (_hook_dir, hook) = setup_hook();
@@ -374,8 +377,7 @@ fn non_bash_tool_and_unmatched_command_are_silently_ignored() {
     assert!(out.stdout.trim().is_empty(), "stdout={}", out.stdout);
 }
 
-// Direct check of the polls ledger's TSV row shape: key, timestamp - the
-// format the repeat-command counter actually depends on.
+// Direct check of the polls ledger's TSV row shape used by the repeat counter.
 #[test]
 fn polls_ledger_row_is_tab_separated_key_timestamp() {
     let (_hook_dir, hook) = setup_hook();

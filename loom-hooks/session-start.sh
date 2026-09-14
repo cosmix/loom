@@ -90,7 +90,8 @@ fi
 # ownership is checked only after acquisition, then a complete same-directory
 # temp file is renamed into place. In particular, an old SessionStart delayed
 # behind a successor cannot replace the successor's heartbeat.
-# Format: {stage_id, session_id, timestamp, context_tokens, transcript_path, last_tool, activity}
+# Format: {stage_id, session_id, timestamp, progress_at, activity_kind,
+# context_tokens, transcript_path, last_tool, activity}
 # Built via `jq -n --arg` so a transcript_path containing a quote/backslash can
 # never produce malformed JSON - matches post-tool-use.sh's heartbeat write.
 # A symlinked heartbeat path is refused, matching spawn-guard.sh's spawn
@@ -112,6 +113,7 @@ if loom_heartbeat_lock_acquire "$HEARTBEAT_LOCK_DIR"; then
 				--arg timestamp "$TIMESTAMP" \
 				--arg transcript_path_raw "$TRANSCRIPT_PATH" \
 				'{stage_id: $stage_id, session_id: $session_id, timestamp: $timestamp,
+				  progress_at: $timestamp, activity_kind: "progress",
 				  context_tokens: null,
 				  transcript_path: (if $transcript_path_raw == "" then null else $transcript_path_raw end),
 				  last_tool: null, activity: "Session started"}' \
@@ -131,6 +133,8 @@ if loom_heartbeat_lock_acquire "$HEARTBEAT_LOCK_DIR"; then
   "stage_id": "${LOOM_STAGE_ID}",
   "session_id": "${LOOM_SESSION_ID}",
   "timestamp": "${TIMESTAMP}",
+  "progress_at": "${TIMESTAMP}",
+  "activity_kind": "progress",
   "context_tokens": null,
   "transcript_path": null,
   "last_tool": null,

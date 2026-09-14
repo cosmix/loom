@@ -150,5 +150,5 @@ fi
 
 loom_lifecycle_append "$WORK_DIR" "$LOOM_STAGE_ID" "$LOOM_SESSION_ID" "$RECORD" "$HOOK_NAME" || true
 loom_lifecycle_refresh_heartbeat "$WORK_DIR" "$LOOM_STAGE_ID" "$LOOM_SESSION_ID" \
-	"subagent ${AGENT_ID} finished" "$HOOK_NAME" || true
+	"progress" "subagent ${AGENT_ID} finished" "$HOOK_NAME" || true
 exit 0

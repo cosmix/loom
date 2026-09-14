@@ -17,6 +17,16 @@ pub const HOOK_READ_DISCIPLINE: &str = include_str!("../../../../loom-hooks/_rea
 /// (never registered as a hook directly)
 pub const HOOK_READ_LEDGER: &str = include_str!("../../../../loom-hooks/_read_ledger.sh");
 
+/// Progress and observation classifier shared by poll-guard and post-tool-use hooks
+/// (never registered as a hook directly)
+pub const HOOK_PROGRESS_CLASSIFICATION: &str =
+    include_str!("../../../../loom-hooks/_progress-classification.sh");
+
+/// Post-tool heartbeat writer sourced by `post-tool-use.sh`
+/// (never registered as a hook directly)
+pub const HOOK_POST_TOOL_HEARTBEAT: &str =
+    include_str!("../../../../loom-hooks/_post-tool-heartbeat.sh");
+
 /// Commit guard hook - enforces commit and stage completion in loom worktrees
 /// Runs as a global Stop hook, blocks exit if uncommitted changes or stage incomplete
 pub const HOOK_COMMIT_GUARD: &str = include_str!("../../../../loom-hooks/commit-guard.sh");
@@ -171,6 +181,8 @@ pub const LOOM_HOOKS: &[(&str, &str)] = &[
     ("_codex_forward.sh", HOOK_CODEX_FORWARD_COMMON),
     ("_read_discipline.sh", HOOK_READ_DISCIPLINE),
     ("_read_ledger.sh", HOOK_READ_LEDGER),
+    ("_progress-classification.sh", HOOK_PROGRESS_CLASSIFICATION),
+    ("_post-tool-heartbeat.sh", HOOK_POST_TOOL_HEARTBEAT),
     // Session lifecycle hooks
     ("post-tool-use.sh", HOOK_POST_TOOL_USE),
     ("loom-control-complete.sh", HOOK_LOOM_CONTROL_COMPLETE),

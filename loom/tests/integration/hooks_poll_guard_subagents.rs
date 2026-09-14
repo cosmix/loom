@@ -1,7 +1,7 @@
 //! `loom subagents` polling cases for `hooks_poll_guard.rs`.
 //!
 //! The parent owns the hook harness; this sibling pins the list-specific
-//! escalation and proves that waiting and watching are not Bash polling.
+//! escalation, the wait exemption, and the bound on one owned watch.
 
 use super::*;
 
@@ -30,24 +30,46 @@ fn subagents_list_warns_twice_then_denies() {
 }
 
 #[test]
-fn subagents_wait_and_watch_do_not_count() {
+fn subagents_wait_does_not_count_and_owned_watch_repeat_denies() {
+    if skip_unless_gate_visible(
+        "subagents::subagents_wait_does_not_count_and_owned_watch_repeat_denies",
+    ) {
+        return;
+    }
     let (_hook_dir, hook) = setup_hook();
     let session = Session::new().with_live_main_agent();
     session.enable_deny();
     let receipt = "a".repeat(64);
 
-    for command in [
-        format!("loom subagents wait --receipt {receipt} --timeout 1"),
-        "loom subagents watch --timeout 1".to_string(),
-    ] {
-        for n in 1..=5 {
-            let out = run_bash_hook(&hook, &command, &session, None);
-            assert_eq!(out.code, 0, "{command} run {n}: stderr={}", out.stderr);
-            assert!(
-                out.stdout.trim().is_empty(),
-                "{command} run {n}: {}",
-                out.stdout
-            );
-        }
+    let wait = format!("loom subagents wait --receipt {receipt} --timeout 1");
+    for n in 1..=5 {
+        let out = run_bash_hook(&hook, &wait, &session, None);
+        assert_eq!(out.code, 0, "{wait} run {n}: stderr={}", out.stderr);
+        assert!(
+            out.stdout.trim().is_empty(),
+            "{wait} run {n}: {}",
+            out.stdout
+        );
     }
+
+    let watch = "loom subagents watch --worker claude:a1 --worker codex:u1 --timeout 1";
+    let first = run_bash_hook(&hook, watch, &session, None);
+    assert_eq!(first.code, 0, "first watch: stderr={}", first.stderr);
+    assert!(
+        first.stdout.trim().is_empty(),
+        "first watch: {}",
+        first.stdout
+    );
+
+    let repeated = run_bash_hook(&hook, watch, &session, None);
+    assert_eq!(
+        repeated.code, 2,
+        "repeated watch: stderr={}",
+        repeated.stderr
+    );
+    assert!(
+        repeated.stderr.contains("AlreadyWaiting") && repeated.stderr.contains("exit 4"),
+        "repeated watch omitted guidance: {}",
+        repeated.stderr
+    );
 }

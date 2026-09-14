@@ -10,7 +10,8 @@ use tempfile::TempDir;
 
 use crate::fs::permissions::constants::{
     HOOK_CODEX_DIRECT, HOOK_CODEX_FORWARD_COMMON, HOOK_CODEX_FORWARD_RESULT, HOOK_LIFECYCLE,
-    HOOK_TEAMMATE_IDLE, LOOM_HOOKS, LOOM_PERMISSIONS, LOOM_PERMISSIONS_WORKTREE,
+    HOOK_POST_TOOL_HEARTBEAT, HOOK_PROGRESS_CLASSIFICATION, HOOK_TEAMMATE_IDLE, LOOM_HOOKS,
+    LOOM_PERMISSIONS, LOOM_PERMISSIONS_WORKTREE,
 };
 use crate::fs::permissions::hooks::loom_hooks_config;
 
@@ -25,6 +26,8 @@ fn teammate_idle_hook_is_embedded() {
 fn lifecycle_library_is_embedded() {
     assert!(LOOM_HOOKS.contains(&("_lifecycle.sh", HOOK_LIFECYCLE)));
     assert!(LOOM_HOOKS.contains(&("_codex_forward.sh", HOOK_CODEX_FORWARD_COMMON)));
+    assert!(LOOM_HOOKS.contains(&("_progress-classification.sh", HOOK_PROGRESS_CLASSIFICATION)));
+    assert!(LOOM_HOOKS.contains(&("_post-tool-heartbeat.sh", HOOK_POST_TOOL_HEARTBEAT)));
 }
 
 #[test]
@@ -112,7 +115,8 @@ fn loom_permission_constants_never_grant_a_handoff_edit_rule() {
 ///     PreToolUse hook) OR `loom/src/hooks/config.rs`'s `HookEvent` enum + `all()` (a
 ///     per-session hook) -- whichever kind this hook is. A sourced LIBRARY
 ///     (`_common.sh`, `_lifecycle.sh`, `_codex_forward.sh`, `_read_discipline.sh`,
-///     `_read_ledger.sh`) is never invoked directly and needs no third site.
+///     `_read_ledger.sh`, `_progress-classification.sh`,
+///     `_post-tool-heartbeat.sh`) is never invoked directly and needs no third site.
 ///
 /// `loom_hooks_config_only_names_embedded_hooks` pins site 3's global half
 /// against sites 1-2; `hooks_tests.rs::test_hook_event_scripts_are_all_embedded`
