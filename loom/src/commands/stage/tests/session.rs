@@ -2,8 +2,10 @@
 
 use super::super::session::cleanup_session_resources;
 use super::setup_work_dir;
-use crate::fs::session_files::find_session_for_stage;
-use crate::models::session::{Session, SessionStatus};
+use crate::fs::session_files::{
+    find_session_for_stage, load_session_exact, mark_session_terminal_reason, save_session,
+};
+use crate::models::session::{Session, SessionExitReason, SessionStatus};
 use crate::orchestrator::continuation::session_to_markdown;
 use crate::parser::frontmatter::parse_from_markdown;
 use std::fs;
@@ -149,4 +151,86 @@ fn test_cleanup_session_resources() {
     cleanup_session_resources("test-stage", "session-1", &work_dir);
 
     assert!(!signals_dir.join("session-1.md").exists());
+    let persisted = crate::fs::session_files::load_session_exact(&work_dir, "session-1")
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        (persisted.status, persisted.exit_reason),
+        (SessionStatus::Completed, Some(SessionExitReason::Completed))
+    );
+}
+
+#[test]
+fn terminal_reason_preserves_an_existing_crashed_status() {
+    let temp = setup_work_dir();
+    let work_dir = temp.path().join(".loom").join("work");
+    let mut session = Session::new();
+    session.status = SessionStatus::Crashed;
+    session.exit_reason = None;
+    save_session(&session, &work_dir).unwrap();
+
+    mark_session_terminal_reason(
+        &work_dir,
+        &session.id,
+        SessionStatus::Completed,
+        SessionExitReason::Stalled,
+    )
+    .unwrap();
+
+    let persisted = load_session_exact(&work_dir, &session.id).unwrap().unwrap();
+    assert_eq!(
+        (persisted.status, persisted.exit_reason),
+        (SessionStatus::Crashed, Some(SessionExitReason::Stalled))
+    );
+}
+
+#[test]
+fn terminal_reason_never_replaces_an_existing_reason() {
+    let temp = setup_work_dir();
+    let work_dir = temp.path().join(".loom").join("work");
+    let mut session = Session::new();
+    session.status = SessionStatus::Crashed;
+    session.exit_reason = Some(SessionExitReason::Crashed);
+    save_session(&session, &work_dir).unwrap();
+
+    mark_session_terminal_reason(
+        &work_dir,
+        &session.id,
+        SessionStatus::Completed,
+        SessionExitReason::Completed,
+    )
+    .unwrap();
+
+    let persisted = load_session_exact(&work_dir, &session.id).unwrap().unwrap();
+    assert_eq!(persisted.exit_reason, Some(SessionExitReason::Crashed));
+}
+
+#[test]
+fn terminal_reason_rejects_a_nonterminal_status() {
+    let temp = setup_work_dir();
+    let work_dir = temp.path().join(".loom").join("work");
+    let session = Session::new();
+    save_session(&session, &work_dir).unwrap();
+
+    let error = mark_session_terminal_reason(
+        &work_dir,
+        &session.id,
+        SessionStatus::Running,
+        SessionExitReason::Completed,
+    )
+    .unwrap_err();
+
+    assert!(error.to_string().contains("requires a terminal status"));
+}
+
+#[test]
+fn a_new_running_session_round_trips_without_an_exit_reason() {
+    let temp = setup_work_dir();
+    let work_dir = temp.path().join(".loom").join("work");
+    let mut session = Session::new();
+    session.status = SessionStatus::Running;
+    save_session(&session, &work_dir).unwrap();
+
+    let persisted = load_session_exact(&work_dir, &session.id).unwrap().unwrap();
+    assert_eq!(persisted.exit_reason, None);
 }

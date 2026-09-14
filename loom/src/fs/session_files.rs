@@ -16,7 +16,7 @@ use crate::parser::markdown::MarkdownDocument;
 mod exact;
 pub(crate) use exact::validate_session_file_id;
 pub use exact::{
-    load_session_exact, mark_session_context_exhausted, record_session_context_exact,
+    load_session_exact, mark_session_terminal_reason, record_session_context_exact,
     record_session_heartbeat_exact,
 };
 

@@ -82,3 +82,13 @@ fn test_session_try_mark_context_exhausted_valid() {
     assert!(result.is_ok());
     assert_eq!(session.status, SessionStatus::ContextExhausted);
 }
+
+#[test]
+fn first_terminal_reason_wins() {
+    let mut session = create_test_session(SessionStatus::Running);
+    session.exit_reason = Some(SessionExitReason::OperatorStop);
+
+    session.try_mark_crashed().unwrap();
+
+    assert_eq!(session.exit_reason, Some(SessionExitReason::OperatorStop));
+}

@@ -15,8 +15,6 @@ fn test_spawning_cannot_transition_to_other_states() {
     let status = SessionStatus::Spawning;
     assert!(!status.can_transition_to(&SessionStatus::Paused));
     assert!(!status.can_transition_to(&SessionStatus::Completed));
-    // Note: Spawning -> Crashed IS now valid (session can crash during spawn)
-    assert!(!status.can_transition_to(&SessionStatus::ContextExhausted));
 }
 
 #[test]
@@ -24,6 +22,12 @@ fn test_spawning_can_transition_to_crashed() {
     let status = SessionStatus::Spawning;
     // Session can crash during spawning (e.g., terminal fails to launch)
     assert!(status.can_transition_to(&SessionStatus::Crashed));
+}
+
+#[test]
+fn test_spawning_can_transition_to_context_exhausted() {
+    let status = SessionStatus::Spawning;
+    assert!(status.can_transition_to(&SessionStatus::ContextExhausted));
 }
 
 #[test]
@@ -135,10 +139,14 @@ fn test_try_transition_invalid_completed_to_running() {
 #[test]
 fn test_valid_transitions_spawning() {
     let transitions = SessionStatus::Spawning.valid_transitions();
-    // Spawning can transition to Running (normal) or Crashed (spawn failure)
+    // A spawning process may also be retired before it reaches Running.
     assert_eq!(
         transitions,
-        vec![SessionStatus::Running, SessionStatus::Crashed]
+        vec![
+            SessionStatus::Running,
+            SessionStatus::Crashed,
+            SessionStatus::ContextExhausted,
+        ]
     );
 }
 

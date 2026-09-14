@@ -5,7 +5,7 @@ use chrono::{DateTime, Utc};
 use std::path::{Path, PathBuf};
 
 use crate::fs::locking::{locked_read, locked_update};
-use crate::models::session::{Session, SessionStatus};
+use crate::models::session::{Session, SessionExitReason, SessionStatus};
 use crate::parser::frontmatter::parse_from_markdown;
 
 use super::session_to_markdown;
@@ -138,9 +138,19 @@ pub fn record_session_heartbeat_exact(
     Ok(applied)
 }
 
-/// Declare the current exact record `ContextExhausted` without overwriting
-/// heartbeat fields written after the caller took its in-memory snapshot.
-pub fn mark_session_context_exhausted(work_dir: &Path, session_id: &str) -> Result<()> {
+/// Mark one exact persisted session terminal under its file lock.
+///
+/// A terminal record keeps its status. In every state, the first recorded
+/// reason wins; this makes delayed generic events safe to replay.
+pub fn mark_session_terminal_reason(
+    work_dir: &Path,
+    session_id: &str,
+    status: SessionStatus,
+    reason: SessionExitReason,
+) -> Result<()> {
+    if !status.is_terminal() {
+        bail!("Terminal session update requires a terminal status");
+    }
     validate_session_file_id(session_id).context("Invalid session file id")?;
     let session_file = exact_session_path(work_dir, session_id);
     if !session_file
@@ -161,15 +171,16 @@ pub fn mark_session_context_exhausted(work_dir: &Path, session_id: &str) -> Resu
                 session_id
             );
         }
-        if current.status.is_terminal() {
-            return Ok(content);
+        if !current.status.is_terminal() {
+            current.try_mark_terminal(status.clone(), reason)?;
+        } else if current.exit_reason.is_none() {
+            current.exit_reason = Some(reason);
         }
-        current.status = SessionStatus::ContextExhausted;
         Ok(session_to_markdown(&current))
     })
     .with_context(|| {
         format!(
-            "marking session '{}' ContextExhausted in {}",
+            "marking session '{}' terminal in {}",
             session_id,
             session_file.display()
         )
@@ -192,15 +203,48 @@ mod tests {
         session.pid = Some(42);
         save_session(&session, temp_dir.path()).unwrap();
 
-        mark_session_context_exhausted(temp_dir.path(), &session.id).unwrap();
+        mark_session_terminal_reason(
+            temp_dir.path(),
+            &session.id,
+            SessionStatus::ContextExhausted,
+            SessionExitReason::ContextCeiling,
+        )
+        .unwrap();
         let current = load_session_exact(temp_dir.path(), &session.id)
             .unwrap()
             .unwrap();
 
         assert_eq!(current.status, SessionStatus::ContextExhausted);
+        assert_eq!(current.exit_reason, Some(SessionExitReason::ContextCeiling));
         assert_eq!(current.context_tokens, 123_456);
         assert_eq!(current.transcript_path.as_deref(), Some("/tmp/fresh.jsonl"));
         assert_eq!(current.pid, Some(42));
+    }
+
+    #[test]
+    fn context_exhausted_update_terminalizes_a_spawning_session() {
+        let temp_dir = TempDir::new().unwrap();
+        let session = Session::new();
+        save_session(&session, temp_dir.path()).unwrap();
+
+        mark_session_terminal_reason(
+            temp_dir.path(),
+            &session.id,
+            SessionStatus::ContextExhausted,
+            SessionExitReason::ContextCeiling,
+        )
+        .unwrap();
+        let current = load_session_exact(temp_dir.path(), &session.id)
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(
+            (current.status, current.exit_reason),
+            (
+                SessionStatus::ContextExhausted,
+                Some(SessionExitReason::ContextCeiling)
+            )
+        );
     }
 
     #[test]
@@ -209,19 +253,19 @@ mod tests {
         let mut session = Session::new();
         session.status = SessionStatus::Completed;
         save_session(&session, temp_dir.path()).unwrap();
-        let path = exact_session_path(temp_dir.path(), &session.id);
-        let before = std::fs::read_to_string(&path).unwrap();
+        mark_session_terminal_reason(
+            temp_dir.path(),
+            &session.id,
+            SessionStatus::ContextExhausted,
+            SessionExitReason::ContextCeiling,
+        )
+        .unwrap();
 
-        mark_session_context_exhausted(temp_dir.path(), &session.id).unwrap();
-
-        assert_eq!(std::fs::read_to_string(&path).unwrap(), before);
-        assert_eq!(
-            load_session_exact(temp_dir.path(), &session.id)
-                .unwrap()
-                .unwrap()
-                .status,
-            SessionStatus::Completed
-        );
+        let current = load_session_exact(temp_dir.path(), &session.id)
+            .unwrap()
+            .unwrap();
+        assert_eq!(current.status, SessionStatus::Completed);
+        assert_eq!(current.exit_reason, Some(SessionExitReason::ContextCeiling));
     }
 
     #[test]
@@ -306,7 +350,13 @@ mod tests {
         std::fs::create_dir_all(work_dir.join("sessions")).unwrap();
         std::fs::write(&outside, "sentinel").unwrap();
 
-        let error = mark_session_context_exhausted(&work_dir, "../outside").unwrap_err();
+        let error = mark_session_terminal_reason(
+            &work_dir,
+            "../outside",
+            SessionStatus::ContextExhausted,
+            SessionExitReason::ContextCeiling,
+        )
+        .unwrap_err();
 
         assert!(format!("{error:#}").contains("Invalid session file id"));
         assert_eq!(std::fs::read_to_string(outside).unwrap(), "sentinel");

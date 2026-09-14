@@ -2,7 +2,7 @@ use anyhow::Result;
 use chrono::{DateTime, Utc};
 use std::path::PathBuf;
 
-use super::types::{Session, SessionBackendKind, SessionStatus, SessionType};
+use super::types::{Session, SessionBackendKind, SessionExitReason, SessionStatus, SessionType};
 
 impl Session {
     pub fn new() -> Self {
@@ -15,6 +15,7 @@ impl Session {
             worktree_path: None,
             pid: None,
             status: SessionStatus::Spawning,
+            exit_reason: None,
             context_tokens: 0,
             transcript_path: None,
             created_at: now,
@@ -182,7 +183,7 @@ impl Session {
     /// # Returns
     /// `Ok(())` if the transition succeeded, `Err` if invalid
     pub fn try_mark_completed(&mut self) -> Result<()> {
-        self.try_transition(SessionStatus::Completed)
+        self.try_mark_terminal(SessionStatus::Completed, SessionExitReason::Completed)
     }
 
     /// Mark the session as crashed with validation.
@@ -190,7 +191,7 @@ impl Session {
     /// # Returns
     /// `Ok(())` if the transition succeeded, `Err` if invalid
     pub fn try_mark_crashed(&mut self) -> Result<()> {
-        self.try_transition(SessionStatus::Crashed)
+        self.try_mark_terminal(SessionStatus::Crashed, SessionExitReason::Crashed)
     }
 
     /// Mark the session as context exhausted with validation.
@@ -198,7 +199,27 @@ impl Session {
     /// # Returns
     /// `Ok(())` if the transition succeeded, `Err` if invalid
     pub fn try_mark_context_exhausted(&mut self) -> Result<()> {
-        self.try_transition(SessionStatus::ContextExhausted)
+        self.try_mark_terminal(
+            SessionStatus::ContextExhausted,
+            SessionExitReason::ContextCeiling,
+        )
+    }
+
+    /// Apply an explicit terminal status and cause while preserving the first
+    /// durable reason recorded for the session.
+    pub fn try_mark_terminal(
+        &mut self,
+        status: SessionStatus,
+        reason: SessionExitReason,
+    ) -> Result<()> {
+        if !status.is_terminal() {
+            anyhow::bail!("Terminal session transition requires a terminal status");
+        }
+        self.try_transition(status)?;
+        if self.exit_reason.is_none() {
+            self.exit_reason = Some(reason);
+        }
+        Ok(())
     }
 }
 
