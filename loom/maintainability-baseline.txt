@@ -31,7 +31,7 @@ file src/orchestrator/merge_attribution.rs 543
 file src/orchestrator/signals/cache.rs 529
 file src/orchestrator/signals/format/sections.rs 641
 file src/orchestrator/signals/tests.rs 551
-file src/orchestrator/signals/tests_cache.rs 631
+file src/orchestrator/signals/tests_cache.rs 630
 file src/orchestrator/terminal/emulator.rs 611
 file src/orchestrator/terminal/native/pid_tracking.rs 452
 file src/orchestrator/terminal/native/window_ops.rs 575
@@ -141,7 +141,7 @@ function src/models/stage/transitions.rs can_transition_to 74
 function src/models/stage/transitions.rs valid_transitions 58
 function src/orchestrator/auto_merge.rs attempt_auto_merge 63
 function src/orchestrator/core/completion_handler.rs handle_stage_completed 78
-function src/orchestrator/core/event_handler.rs handle_one_event 123
+function src/orchestrator/core/event_handler.rs handle_one_event 121
 function src/orchestrator/core/merge_handler.rs finalize_merge_resolution 97
 function src/orchestrator/core/merge_handler.rs handle_merge_session_completed 168
 function src/orchestrator/core/merge_handler.rs read_plan_level_auto_merge 61
@@ -181,7 +181,7 @@ function src/orchestrator/signals/parse.rs parse_signal_content 113
 function src/orchestrator/signals/recovery_format.rs format_recovery_signal 102
 function src/orchestrator/signals/recovery_parsing.rs read_recovery_signal 67
 function src/orchestrator/signals/tests_cache.rs test_recovery_signal_carries_codex_implementers_section 56
-function src/orchestrator/signals/tests_cache.rs test_signal_codex_implementers_section_gated 117
+function src/orchestrator/signals/tests_cache.rs test_signal_codex_implementers_section_gated 116
 function src/orchestrator/spawner.rs generate_crash_report 98
 function src/orchestrator/terminal/emulator.rs build_command 161
 function src/orchestrator/terminal/native/detection.rs detect_parent_terminal 51
