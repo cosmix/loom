@@ -31,14 +31,14 @@ fn two_parallel_units_finish_in_reverse_order() -> Result<()> {
     let midway = fixture.list(&first)?;
     assert_state(&midway, "parallel-a", "forward-wait")?;
     assert_state(&midway, "parallel-b", "done")?;
-    assert_exit(&fixture.watch(&first)?, 2);
+    assert_exit(&fixture.watch(&launch_a)?, 2);
 
     fixture.set_job_status(&launch_a, "completed", "thread-a", "turn-a")?;
     fixture.poll()?;
     let settled = fixture.list(&first)?;
     assert_state(&settled, "parallel-a", "done")?;
     assert_state(&settled, "parallel-b", "done")?;
-    assert_exit(&fixture.watch(&first)?, 0);
+    assert_exit(&fixture.watch(&launch_a)?, 0);
     let terminal_jobs = terminal_job_ids(&fixture)?;
     ensure!(
         terminal_jobs == vec!["job-b".to_string(), "job-a".to_string()],
@@ -87,8 +87,8 @@ fn same_agent_id_under_two_parents_in_one_cwd_stays_distinct() -> Result<()> {
     ensure!(fixture.lifecycle_outcome(&second)? == WorkerOutcome::Succeeded);
     assert_state(&fixture.list(&first)?, "shared-forwarder", "done")?;
     assert_state(&fixture.list(&second)?, "shared-forwarder", "done")?;
-    assert_exit(&fixture.watch(&first)?, 0);
-    assert_exit(&fixture.watch(&second)?, 0);
+    assert_exit(&fixture.watch(&launch_a)?, 0);
+    assert_exit(&fixture.watch(&launch_b)?, 0);
     for record in fixture
         .journal_values()?
         .iter()
@@ -115,7 +115,7 @@ fn guard_derives_unit_and_mints_fresh_invocation() -> Result<()> {
         .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase()));
     fixture.poll()?;
     ensure!(fixture.lifecycle_outcome(&forwarder)? == WorkerOutcome::Succeeded);
-    assert_exit(&fixture.watch(&forwarder)?, 0);
+    assert_exit(&fixture.watch(&launch)?, 0);
     Ok(())
 }
 

@@ -7,7 +7,7 @@ use std::path::Path;
 use std::process::{Command, Output, Stdio};
 use tempfile::NamedTempFile;
 
-use crate::fixture::{Fixture, Forwarder, EFFORT, LOOM_SESSION, MODEL, STAGE};
+use crate::fixture::{Fixture, Forwarder, Launch, EFFORT, LOOM_SESSION, MODEL, STAGE};
 use crate::fixture_support::{assert_authorization, guard_payload};
 
 impl Fixture {
@@ -102,7 +102,8 @@ impl Fixture {
             .env("PATH", std::env::var_os("PATH").unwrap_or_default())
             .env("LOOM_WORK_DIR", &self.work)
             .env("LOOM_STAGE_ID", if active { STAGE } else { "" })
-            .env("LOOM_SESSION_ID", if active { LOOM_SESSION } else { "" });
+            .env("LOOM_SESSION_ID", if active { LOOM_SESSION } else { "" })
+            .env("LOOM_WORKTREE_PATH", &self.project);
     }
 
     pub(crate) fn cli_command(&self) -> Command {
@@ -126,12 +127,12 @@ impl Fixture {
         serde_json::from_slice(&output.stdout).context("parsing subagents list JSON")
     }
 
-    pub fn watch(&self, forwarder: &Forwarder) -> Result<Output> {
+    pub fn watch(&self, launch: &Launch) -> Result<Output> {
         let mut command = self.cli_command();
         command
-            .args(["subagents", "watch", "--dir"])
-            .arg(transcript_directory(forwarder)?)
-            .args(["--timeout", "3", "--debounce", "100000"]);
+            .args(["subagents", "watch", "--worker"])
+            .arg(format!("codex:{}", launch.authorization.unit_id))
+            .args(["--timeout", "3", "--json"]);
         command.output().context("running subagents watch")
     }
 

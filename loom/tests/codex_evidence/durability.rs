@@ -33,7 +33,7 @@ fn duplicate_monitor_poll_is_journal_idempotent() -> Result<()> {
         "duplicate poll changed journal count"
     );
     ensure!(fixture.lifecycle_outcome(&forwarder)? == WorkerOutcome::Succeeded);
-    assert_exit(&fixture.watch(&forwarder)?, 0);
+    assert_exit(&fixture.watch(&launch)?, 0);
     Ok(())
 }
 
@@ -59,7 +59,7 @@ fn contradictory_terminal_replay_is_unknown() -> Result<()> {
         WorkerOutcome::Unknown(_)
     ));
     assert_state(&fixture.list(&forwarder)?, AGENT, "forward-unknown")?;
-    assert_exit(&fixture.watch(&forwarder)?, 2);
+    assert_exit(&fixture.watch(&launch)?, 5);
     let records = fixture.journal_values()?;
     ensure!(records.iter().any(|row| row["state"] == "completed"));
     ensure!(records.iter().any(|row| row["state"] == "failed"));
@@ -89,6 +89,6 @@ fn fresh_monitor_reconstructs_terminal_outcome_from_durable_journal() -> Result<
     );
     ensure!(fixture.lifecycle_outcome(&forwarder)? == WorkerOutcome::Succeeded);
     assert_state(&fixture.list(&forwarder)?, AGENT, "done")?;
-    assert_exit(&fixture.watch(&forwarder)?, 0);
+    assert_exit(&fixture.watch(&launch)?, 0);
     Ok(())
 }

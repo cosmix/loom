@@ -14,7 +14,7 @@ const AGENT: &str = "forwarder-failure";
 
 #[test]
 #[serial]
-fn failed_job_is_immediately_terminal_with_exit_one() -> Result<()> {
+fn failed_job_is_immediately_terminal_with_exit_three() -> Result<()> {
     let fixture = Fixture::new("failed")?;
     let forwarder = fixture.add_forwarder(PARENT, AGENT)?;
     let launch = fixture.launch(&forwarder, Some("unit-failed"), "job-failed", "failed")?;
@@ -26,7 +26,7 @@ fn failed_job_is_immediately_terminal_with_exit_one() -> Result<()> {
         WorkerOutcome::Failed(_)
     ));
     assert_state(&fixture.list(&forwarder)?, AGENT, "failed")?;
-    assert_exit(&fixture.watch(&forwarder)?, 1);
+    assert_exit(&fixture.watch(&launch)?, 3);
     Ok(())
 }
 
@@ -49,7 +49,7 @@ fn cancelled_job_is_immediately_terminal_with_exit_three() -> Result<()> {
         WorkerOutcome::Cancelled(_)
     ));
     assert_state(&fixture.list(&forwarder)?, AGENT, "cancelled")?;
-    assert_exit(&fixture.watch(&forwarder)?, 3);
+    assert_exit(&fixture.watch(&launch)?, 3);
     Ok(())
 }
 

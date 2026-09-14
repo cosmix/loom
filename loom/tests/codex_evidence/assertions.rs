@@ -174,7 +174,7 @@ pub fn assert_unknown_after_poll(
         String::from_utf8_lossy(&harvest.stdout).contains("nothing harvestable"),
         "unknown evidence was harvestable"
     );
-    assert_exit(&fixture.watch(forwarder)?, 2);
+    assert_exit(&fixture.watch(launch)?, 5);
     Ok(())
 }
 
