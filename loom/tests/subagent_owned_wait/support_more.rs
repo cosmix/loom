@@ -4,11 +4,13 @@ use loom::subagent_lifecycle::{
     validate_subagent_stop, validate_teammate_idle, ActiveStageSession, ClaudeEnvironment,
     ClaudeStartEvidence, ClaudeStarts, LifecycleRecord,
 };
-use serde_json::json;
+use serde_json::{json, Value};
 use std::fs::{self, OpenOptions};
-use std::io::Write;
+use std::io::{BufRead, BufReader, Write};
 use std::path::PathBuf;
-use std::process::Output;
+use std::process::{Child, ExitStatus, Output};
+use std::sync::mpsc::{self, Receiver};
+use std::thread::{self, JoinHandle};
 use std::time::{Duration, SystemTime};
 
 pub const PARENT_B: &str = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
@@ -203,4 +205,86 @@ fn stop_time() -> DateTime<Utc> {
     "2026-09-14T10:01:00Z"
         .parse()
         .expect("valid lifecycle timestamp")
+}
+
+/// Guard around a background `loom subagents watch` child: kills and reaps
+/// it on drop so a failed assertion in the owning test can never leave it
+/// running for the rest of its `--timeout`, and drains its stdout on a
+/// background thread so a caller never blocks on a read that might not
+/// arrive.
+pub(crate) struct WatchChild {
+    child: Option<Child>,
+    lines: Receiver<String>,
+    reader: Option<JoinHandle<()>>,
+    stderr_path: PathBuf,
+}
+
+impl WatchChild {
+    /// Wrap a spawned child whose stdout is piped and stderr redirected to
+    /// `stderr_path`, starting the background reader thread.
+    pub(crate) fn new(mut child: Child, stderr_path: PathBuf) -> Self {
+        let stdout = child.stdout.take().expect("owner stdout pipe");
+        let (tx, rx) = mpsc::channel();
+        let reader = thread::spawn(move || {
+            let mut reader = BufReader::new(stdout);
+            let mut line = String::new();
+            loop {
+                line.clear();
+                match reader.read_line(&mut line) {
+                    Ok(0) | Err(_) => break,
+                    Ok(_) => {
+                        if tx.send(line.trim_end().to_string()).is_err() {
+                            break;
+                        }
+                    }
+                }
+            }
+        });
+        Self {
+            child: Some(child),
+            lines: rx,
+            reader: Some(reader),
+            stderr_path,
+        }
+    }
+
+    /// Receive and parse the watcher's next stdout line, failing loudly
+    /// (with the child's stderr attached) rather than blocking past
+    /// `timeout` if the watcher never writes one.
+    pub(crate) fn next_line(&self, timeout: Duration) -> Value {
+        let line = self.lines.recv_timeout(timeout).unwrap_or_else(|_| {
+            panic!(
+                "timed out after {timeout:?} waiting for the watcher's stdout; stderr:\n{}",
+                fs::read_to_string(&self.stderr_path).unwrap_or_default()
+            )
+        });
+        serde_json::from_str(&line).expect("parse watcher JSON line")
+    }
+
+    /// Wait for the owner to exit on its own and join the reader thread,
+    /// making `Drop`'s kill/reap a no-op on this, the success, path.
+    pub(crate) fn finish(mut self) -> ExitStatus {
+        let status = self
+            .child
+            .take()
+            .expect("child present")
+            .wait()
+            .expect("join owner watcher before fixture drops");
+        if let Some(reader) = self.reader.take() {
+            let _ = reader.join();
+        }
+        status
+    }
+}
+
+impl Drop for WatchChild {
+    fn drop(&mut self) {
+        if let Some(mut child) = self.child.take() {
+            let _ = child.kill();
+            let _ = child.wait();
+        }
+        if let Some(reader) = self.reader.take() {
+            let _ = reader.join();
+        }
+    }
 }

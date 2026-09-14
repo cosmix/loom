@@ -1,3 +1,4 @@
+use super::support_more::WatchChild;
 use chrono::{DateTime, Utc};
 use loom::subagent_lifecycle::{
     validate_subagent_stop, ActiveStageSession, ClaudeEnvironment, ClaudeStartEvidence,
@@ -9,7 +10,7 @@ use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::os::unix::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output};
+use std::process::{Command, Output, Stdio};
 use tempfile::{Builder, TempDir};
 
 pub const STAGE: &str = "owned-wait-stage";
@@ -158,6 +159,24 @@ impl Fixture {
         let mut command = self.cli_command();
         command.args(args);
         command.output().expect("run built loom CLI")
+    }
+
+    /// Spawn `loom subagents watch`; see `WatchChild` for cleanup guarantees.
+    pub fn watch_spawn(&self, workers: &[&str], timeout: u64) -> WatchChild {
+        let mut args = vec!["subagents", "watch"];
+        for worker in workers {
+            args.extend(["--worker", worker]);
+        }
+        let timeout = timeout.to_string();
+        args.extend(["--timeout", &timeout, "--json"]);
+        let stderr_path = self.tmp.join("watch-owner-stderr.log");
+        let stderr = fs::File::create(&stderr_path).expect("create owner stderr file");
+        let mut command = self.cli_command();
+        command
+            .args(&args)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::from(stderr));
+        WatchChild::new(command.spawn().expect("spawn loom CLI"), stderr_path)
     }
 
     fn cli_command(&self) -> Command {

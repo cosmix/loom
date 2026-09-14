@@ -258,6 +258,33 @@ for kind in outside symlink dotdot; do
 	assert_no_broker
 done
 
+# Regression for the SIGPIPE class of bug commit ec721be5 fixed in
+# commit-guard.sh's git-status pipeline: the "Full output saved to:" text
+# fallback must reach the same classified rejection as a JSON
+# persistedOutputPath field even when the notice repeats often enough (here,
+# well past 64 KiB) that the old `sed ... | head -n1` pipeline would still be
+# writing after `head` had already read its line and exited.
+reset_log
+# A fixed, short path (not derived from $TMP) keeps the per-line size
+# predictable: enough lines to clear 64 KiB, comfortably short of Linux's
+# 128 KiB MAX_ARG_STRLEN cap on a single jq -n --arg value.
+notice_line='Full output saved to: /untrusted/full-output.txt'
+big_output=$(for ((n = 0; n < 2000; n++)); do printf '%s\n' "$notice_line"; done)
+run_post "$PINNED" "$big_output" false
+[[ "$HOOK_RC" != 141 ]] || { echo "hook died to SIGPIPE (141) on large text fallback" >&2; exit 1; }
+assert_rc 2
+assert_output 'persisted tool output path is not trusted'
+assert_no_broker
+
+# Same fallback, a single notice line among ordinary output.
+reset_log
+small_notice_path="$TMP/untrusted-small/output.txt"
+small_output=$'before line\n'"Full output saved to: $small_notice_path"$'\nafter line'
+run_post "$PINNED" "$small_output" false
+assert_rc 2
+assert_output 'persisted tool output path is not trusted'
+assert_no_broker
+
 production_hook="$TMP/installed/loom-control-complete.sh"
 mkdir -p "$(dirname "$production_hook")"
 cp "$HOOK" "$production_hook"

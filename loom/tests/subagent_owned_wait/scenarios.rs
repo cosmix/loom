@@ -3,6 +3,7 @@ use super::support_more::{PARENT_B, WORKER_B};
 use serde_json::Value;
 use std::fs;
 use std::os::unix::fs::symlink;
+use std::time::Duration;
 
 #[test]
 fn two_claude_parents_require_session_and_never_cross_bind_evidence() {
@@ -177,6 +178,47 @@ fn symlinked_scratch_lease_directory_component_is_refused() {
     );
     assert!(!lease_path.exists());
     assert!(!String::from_utf8_lossy(&output.stdout).contains("succeeded"));
+}
+
+#[test]
+fn duplicate_watcher_with_identical_selector_coalesces_onto_one_wait() {
+    let fixture = Fixture::new("duplicate-watcher-coalesce");
+    let selector = format!("claude:{AGENT_ID}");
+
+    // No stop record yet, so the owner's first evidence read sees the
+    // worker still active and settles into the poll loop rather than
+    // exiting immediately. A short `--timeout` bounds how long a wedged
+    // deadline path could keep the child alive even under the guard.
+    let owner = fixture.watch_spawn(&[&selector], 60);
+    let initial = owner.next_line(Duration::from_secs(30));
+    assert_eq!(initial["outcome"], "waiting");
+    let wait_id = initial["wait_id"]
+        .as_str()
+        .expect("initial record carries a wait id")
+        .to_string();
+
+    // The owner's lease is on disk before it prints the record above, so a
+    // second watcher with the identical selector deterministically finds it.
+    let duplicate = fixture.watch(&[&selector], 300);
+
+    assert_exit(&duplicate, 4);
+    let duplicate_events = fixture.events(&duplicate);
+    assert_eq!(
+        duplicate_events.len(),
+        1,
+        "a duplicate selector must not start a second monitor"
+    );
+    assert_eq!(duplicate_events[0]["outcome"], "already_waiting");
+    assert_eq!(duplicate_events[0]["wait_id"], wait_id);
+
+    fixture.write_claude_stop();
+
+    let terminal = owner.next_line(Duration::from_secs(30));
+    assert_eq!(terminal["outcome"], "succeeded");
+    assert_eq!(terminal["wait_id"], wait_id);
+
+    let status = owner.finish();
+    assert_eq!(status.code(), Some(0));
 }
 
 fn mixed_selectors() -> [&'static str; 2] {

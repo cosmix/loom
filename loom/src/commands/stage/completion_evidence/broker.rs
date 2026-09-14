@@ -120,54 +120,73 @@ impl CompletionTransport for ProductionTransport<'_> {
     }
 }
 
-#[allow(clippy::too_many_arguments)]
-pub fn run_broker(
-    stage: &Stage,
-    session: &Session,
-    work_dir: &Path,
-    repo_root: &Path,
-    tool_status_failed: bool,
-    output: &str,
-    transport: &dyn CompletionTransport,
-) -> BrokerOutcome {
-    let (commit, exact_command) = match broker_identity(stage, repo_root) {
+/// Borrowed context shared by every broker step: the stage/session being
+/// completed, where its state lives, and the transport used to record
+/// evidence and request completion. All-reference fields make this cheap to
+/// copy, so it can be passed by value to each step instead of threading five
+/// separate parameters through.
+#[derive(Clone, Copy)]
+pub struct BrokerContext<'a> {
+    pub stage: &'a Stage,
+    pub session: &'a Session,
+    pub work_dir: &'a Path,
+    pub repo_root: &'a Path,
+    pub transport: &'a dyn CompletionTransport,
+}
+
+impl<'a> BrokerContext<'a> {
+    pub fn new(
+        stage: &'a Stage,
+        session: &'a Session,
+        work_dir: &'a Path,
+        repo_root: &'a Path,
+        transport: &'a dyn CompletionTransport,
+    ) -> Self {
+        Self {
+            stage,
+            session,
+            work_dir,
+            repo_root,
+            transport,
+        }
+    }
+}
+
+pub fn run_broker(ctx: BrokerContext, tool_status_failed: bool, output: &str) -> BrokerOutcome {
+    let (commit, exact_command) = match broker_identity(ctx.stage, ctx.repo_root) {
         Ok(identity) => identity,
         Err(error) => return BrokerOutcome::Uncertain(error.to_string()),
     };
     if tool_status_failed {
         let diagnostic = output.lines().find(|line| !line.trim().is_empty());
         return record_diagnostic(
-            stage,
-            session,
+            ctx,
             commit,
             exact_command,
             CompletionPhase::ToolFailed,
             diagnostic,
             BrokerOutcome::ToolFailedRecorded,
-            transport,
         );
     }
 
-    let evidence = match parse_verified(output, stage, session, &commit, &exact_command) {
+    let evidence = match parse_verified(output, ctx.stage, ctx.session, &commit, &exact_command) {
         Ok(evidence) => evidence,
         Err(error) => {
             return record_diagnostic(
-                stage,
-                session,
+                ctx,
                 commit,
                 exact_command,
                 CompletionPhase::EvidenceMissing,
                 Some(&error.to_string()),
                 BrokerOutcome::EvidenceMissingRecorded,
-                transport,
             );
         }
     };
 
-    if let Err(error) = transport.record(session, stage, &evidence) {
+    if let Err(error) = ctx.transport.record(ctx.session, ctx.stage, &evidence) {
         return BrokerOutcome::EvidenceRecordFailed(error.to_string());
     }
-    complete_verified(stage, session, work_dir, evidence, transport)
+    complete_verified(ctx, evidence)
 }
 
 fn parse_verified(
@@ -188,48 +207,40 @@ fn broker_identity(stage: &Stage, repo_root: &Path) -> Result<(String, String)> 
     Ok((commit, pinned_command(&executable, &stage.id)))
 }
 
-#[allow(clippy::too_many_arguments)]
 fn record_diagnostic(
-    stage: &Stage,
-    session: &Session,
+    ctx: BrokerContext,
     commit: String,
     exact_command: String,
     phase: CompletionPhase,
     diagnostic: Option<&str>,
     success: BrokerOutcome,
-    transport: &dyn CompletionTransport,
 ) -> BrokerOutcome {
-    let evidence =
-        diagnostic_evidence(stage, &session.id, commit, exact_command, phase, diagnostic);
-    match transport.record(session, stage, &evidence) {
+    let evidence = diagnostic_evidence(
+        ctx.stage,
+        &ctx.session.id,
+        commit,
+        exact_command,
+        phase,
+        diagnostic,
+    );
+    match ctx.transport.record(ctx.session, ctx.stage, &evidence) {
         Ok(_) => success,
         Err(error) => BrokerOutcome::EvidenceRecordFailed(error.to_string()),
     }
 }
 
-fn complete_verified(
-    stage: &Stage,
-    session: &Session,
-    work_dir: &Path,
-    evidence: CompletionAttemptEvidence,
-    transport: &dyn CompletionTransport,
-) -> BrokerOutcome {
+fn complete_verified(ctx: BrokerContext, evidence: CompletionAttemptEvidence) -> BrokerOutcome {
     let completion_nonce = distinct_nonce(&evidence.evidence_nonce);
-    match transport.complete(&completion_nonce, &evidence.evidence_nonce) {
+    match ctx
+        .transport
+        .complete(&completion_nonce, &evidence.evidence_nonce)
+    {
         Ok(Response::Ok) => BrokerOutcome::Accepted,
-        Ok(Response::Error { message }) => {
-            record_rejection(stage, session, work_dir, &evidence, &message, transport)
-        }
+        Ok(Response::Error { message }) => record_rejection(ctx, &evidence, &message),
         Ok(other) => BrokerOutcome::Uncertain(format!("unexpected daemon response: {other:?}")),
-        Err(error) => reconcile_transport_error(
-            stage,
-            session,
-            work_dir,
-            &evidence,
-            &completion_nonce,
-            &error.to_string(),
-            transport,
-        ),
+        Err(error) => {
+            reconcile_transport_error(ctx, &evidence, &completion_nonce, &error.to_string())
+        }
     }
 }
 
@@ -243,14 +254,11 @@ fn distinct_nonce(evidence_nonce: &str) -> String {
 }
 
 fn record_rejection(
-    stage: &Stage,
-    session: &Session,
-    work_dir: &Path,
+    ctx: BrokerContext,
     evidence: &CompletionAttemptEvidence,
     message: &str,
-    transport: &dyn CompletionTransport,
 ) -> BrokerOutcome {
-    match load_stage(&stage.id, work_dir) {
+    match load_stage(&ctx.stage.id, ctx.work_dir) {
         Ok(durable) if durable.status == StageStatus::Completed => {}
         Ok(_) => {
             let rejected = with_boundary_failure(
@@ -259,7 +267,7 @@ fn record_rejection(
                 "daemon_rejected",
                 Some(message),
             );
-            if let Err(error) = transport.record(session, stage, &rejected) {
+            if let Err(error) = ctx.transport.record(ctx.session, ctx.stage, &rejected) {
                 return BrokerOutcome::EvidenceRecordFailed(error.to_string());
             }
         }
@@ -268,22 +276,18 @@ fn record_rejection(
     BrokerOutcome::DaemonRejected(message.to_string())
 }
 
-#[allow(clippy::too_many_arguments)]
 fn reconcile_transport_error(
-    stage: &Stage,
-    session: &Session,
-    work_dir: &Path,
+    ctx: BrokerContext,
     evidence: &CompletionAttemptEvidence,
     completion_nonce: &str,
     error: &str,
-    transport: &dyn CompletionTransport,
 ) -> BrokerOutcome {
-    let durable = match load_stage(&stage.id, work_dir) {
+    let durable = match load_stage(&ctx.stage.id, ctx.work_dir) {
         Ok(durable) => durable,
         Err(load_error) => return BrokerOutcome::Uncertain(load_error.to_string()),
     };
     if durable.status == StageStatus::Completed {
-        return reconcile_completed(stage, session, work_dir, evidence, completion_nonce);
+        return reconcile_completed(ctx, evidence, completion_nonce);
     }
     if durable.status != StageStatus::Executing {
         return BrokerOutcome::Uncertain(format!(
@@ -297,24 +301,23 @@ fn reconcile_transport_error(
         "daemon_transport",
         Some(error),
     );
-    match transport.record(session, stage, &pending) {
+    match ctx.transport.record(ctx.session, ctx.stage, &pending) {
         Ok(_) => BrokerOutcome::VerifiedPendingAck,
         Err(record_error) => BrokerOutcome::EvidenceRecordFailed(record_error.to_string()),
     }
 }
 
 fn reconcile_completed(
-    stage: &Stage,
-    session: &Session,
-    work_dir: &Path,
+    ctx: BrokerContext,
     evidence: &CompletionAttemptEvidence,
     completion_nonce: &str,
 ) -> BrokerOutcome {
-    let checkpoint = match load_trusted_session_checkpoint(&stage.id, &session.id, work_dir) {
-        Ok(Some(checkpoint)) => checkpoint,
-        Ok(None) => return BrokerOutcome::Uncertain("accepted receipt is missing".to_string()),
-        Err(error) => return BrokerOutcome::Uncertain(error.to_string()),
-    };
+    let checkpoint =
+        match load_trusted_session_checkpoint(&ctx.stage.id, &ctx.session.id, ctx.work_dir) {
+            Ok(Some(checkpoint)) => checkpoint,
+            Ok(None) => return BrokerOutcome::Uncertain("accepted receipt is missing".to_string()),
+            Err(error) => return BrokerOutcome::Uncertain(error.to_string()),
+        };
     let matches = checkpoint.accepted.as_ref().is_some_and(|receipt| {
         receipt.evidence_nonce == evidence.evidence_nonce
             && receipt.completion_nonce == completion_nonce

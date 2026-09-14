@@ -107,7 +107,7 @@ load_output() {
 	persisted=$(printf '%s' "$PAYLOAD" | jq -r \
 		'.tool_response.persistedOutputPath // .tool_result.persistedOutputPath // empty') || return 1
 	if [[ -z "$persisted" ]]; then
-		persisted=$(printf '%s' "$inline" | sed -n 's/^.*Full output saved to: //p' | head -n 1)
+		persisted=$(loom_saved_output_path "$inline")
 	fi
 	if [[ -n "$persisted" ]]; then
 		valid_persisted_output "$persisted" || return 1

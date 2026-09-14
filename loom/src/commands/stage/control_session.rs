@@ -1,7 +1,7 @@
 //! Routing for sandbox verification and trusted broker completion requests.
 
 use super::super::completion_evidence::{
-    broker::{run_broker, BrokerOutcome, ProductionTransport},
+    broker::{run_broker, BrokerContext, BrokerOutcome, ProductionTransport},
     MAX_BROKER_INPUT_BYTES, TOOL_STATUS_ENV,
 };
 use super::control_complete;
@@ -64,9 +64,8 @@ fn load_and_run_broker(stage_id: &str, session_id: &str, work_dir: &Path) -> Res
         work_dir,
         control_complete::request_completion,
     );
-    Ok(run_broker(
-        &stage, &session, work_dir, &repo_root, failed, &output, &transport,
-    ))
+    let ctx = BrokerContext::new(&stage, &session, work_dir, &repo_root, &transport);
+    Ok(run_broker(ctx, failed, &output))
 }
 
 fn read_broker_input() -> Result<(String, bool)> {

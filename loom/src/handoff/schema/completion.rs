@@ -197,13 +197,17 @@ impl CompletionBlocker {
     }
 
     pub fn short_fingerprint(&self) -> &str {
-        let end = self
-            .fingerprint
-            .char_indices()
-            .nth(12)
-            .map_or(self.fingerprint.len(), |(index, _)| index);
-        &self.fingerprint[..end]
+        short_fingerprint(&self.fingerprint)
     }
+}
+
+/// Truncates a fingerprint to its first 12 characters, for compact display.
+pub fn short_fingerprint(fingerprint: &str) -> &str {
+    let end = fingerprint
+        .char_indices()
+        .nth(12)
+        .map_or(fingerprint.len(), |(index, _)| index);
+    &fingerprint[..end]
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

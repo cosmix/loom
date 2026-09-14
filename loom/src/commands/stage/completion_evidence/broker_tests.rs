@@ -6,7 +6,7 @@ use std::process::Command;
 use anyhow::{bail, Result};
 use tempfile::TempDir;
 
-use super::broker::{run_broker, BrokerOutcome, CompletionTransport};
+use super::broker::{run_broker, BrokerContext, BrokerOutcome, CompletionTransport};
 use super::*;
 use crate::daemon::Response;
 use crate::fs::session_files::save_session;
@@ -73,15 +73,14 @@ impl Fixture {
         output: &str,
         transport: &FakeTransport,
     ) -> BrokerOutcome {
-        run_broker(
+        let ctx = BrokerContext::new(
             &self.stage,
             &self.session,
             &self.work_dir,
             &self.repo_root,
-            failed,
-            output,
             transport,
-        )
+        );
+        run_broker(ctx, failed, output)
     }
 }
 

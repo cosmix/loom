@@ -218,7 +218,7 @@ impl CompletionCheckpoint {
             return Ok(());
         }
         let incoming_is_later =
-            timestamp(&incoming.last_observed_at)? > timestamp(&stored.last_observed_at)?;
+            timestamp(&incoming.last_observed_at)? >= timestamp(&stored.last_observed_at)?;
         let incoming_is_richer = stored.fingerprint.is_none() && incoming.fingerprint.is_some();
         let state_changed =
             incoming_is_richer || (incoming_is_later && stored.phase != incoming.phase);
