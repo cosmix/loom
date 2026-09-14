@@ -726,4 +726,12 @@ comparing, not just one.
 
 **Prevention:** before a merge, fast-forward or checkout from a sandboxed shell, check that the incoming change touches no single-file bind (`rg -F <repo> /proc/self/mountinfo`). If it does, run that git step outside the sandbox.
 
+**Workaround when the git step cannot run outside the sandbox (a manual merge-resolver session):** build the merge without `git merge` unlinking anything — `git merge-tree --write-tree main <branch>` computes the merged tree without touching the working tree, `git read-tree <tree>` loads it into the index, `git checkout-index -f` materializes every OTHER changed path, and the bind-mounted path itself is written in place with `git cat-file blob <tree>:<path> > <path>` (a plain redirect over the bind-mounted file, not an unlink/rename). Then `git update-ref MERGE_HEAD <branch-sha>` so the commit records a real merge, resolve any conflicts with `git merge-file --ours/--union` on temp copies when one side should deterministically win, `git add`, `git commit`.
+
 **Fix:** none in loom. The state-confinement merge (2026-09-14) checked its incoming paths against the binds before fast-forwarding main.
+
+## The Worktree-Isolation File Guard Blocks the Session Scratchpad Too (2026-09-14)
+
+**What happened:** inside a stage worktree, `worktree-file-guard.sh` (`PreToolUse:Read/Write/Edit/Glob/Grep`) blocks Edit/Write/Read to the session's own scratchpad directory (`/tmp/claude-1000/.../scratchpad`, and any other path outside the worktree, including a knowledge-distill session's `$TMPDIR` or the harness's per-session tool-result cache) — it is outside the worktree boundary the guard enforces, the same as any other host path. A throwaway debug copy, a formatted dump written for easier reading, or a large tool-result payload saved outside the worktree is all equally unreachable by Read/Edit/Write once inside a worktree session.
+
+**Prevention:** for any intermediate file a worktree/stage session needs to write-then-read back (a reformatted dump of `loom memory show --all --json`, a debug reproduction, a large payload), write it INSIDE the worktree (e.g. the worktree root, removed before the final commit) rather than the scratchpad or `$TMPDIR` — Write/Bash there succeed, but the Read tool's own guard will refuse to read it back from outside the worktree even though the write succeeded. Debug hooks specifically should reproduce inline under `/tmp/loom-loop-checks` with `LOOM_HOOK_DEBUG=1` rather than editing a scratch copy at all.

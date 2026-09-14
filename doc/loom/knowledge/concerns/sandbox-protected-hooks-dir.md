@@ -1,6 +1,6 @@
 # Sandbox Protected hooks/ Directory
 
-> Resolved on 2026-09-13 by moving repository hook sources to `loom-hooks/`; the original sandbox rule and historical probes are retained below.
+> Resolved 2026-09-13: repo hook sources moved to loom-hooks/
 
 ## The Rule
 

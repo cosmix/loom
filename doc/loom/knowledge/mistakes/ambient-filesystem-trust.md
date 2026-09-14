@@ -1,6 +1,6 @@
 # Ambient Filesystem Trust
 
-> Why a directory named .git is not evidence of a real repository, the validation this requires, and the debris `git init` must clear before reusing one.
+> Why a .git directory is not evidence of a real repository
 
 ## An Ancestor Named `.git` Is Not a Repository (2026-08-29)
 

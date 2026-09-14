@@ -151,3 +151,7 @@ sibling assets). Keep the harness itself out of the reviewed bundle (e.g.
 `web/node_modules/.harness/`) and write any screenshots inside the worktree proper, not
 under `node_modules/` — the Read tool's worktree guard opens images by path, and a
 `node_modules`-nested directory is easy to exclude by accident from later tooling.
+
+## Draining a Stuck `loom-relay` Ticket Backlog
+
+`loom-hooks/loom-relay.sh` only recognizes specific `loom memory`/`stage`/`handoff` subcommands in its command-text pattern match (`memory:resolve` is currently missing), so some relay-eligible commands can leave tickets permanently unconsumed and eventually lock out all further memory writes at the 32-ticket cap. Recovery and root cause: [Memory Relay Drain Gap](mistakes/memory-relay-drain-gap.md).

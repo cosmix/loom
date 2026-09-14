@@ -1,6 +1,6 @@
 # Session Identity Env
 
-> The wrapper script's `LOOM_*` exports are a contract read by hooks, the CLI and the daemon. Two long-standing defects in that contract made knowledge stages impossible to complete.
+> LOOM_* wrapper exports are a contract read by hooks, CLI and daemon
 
 ## An OS-Resource Name Is Not an Identifier (2026-08-10)
 

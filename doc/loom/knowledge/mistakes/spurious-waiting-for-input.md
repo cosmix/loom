@@ -1,6 +1,6 @@
 # Spurious waiting-for-input stages
 
-> Stages flipped to `waiting-for-input` with no AskUserQuestion anywhere in the transcript, then stayed there until an operator ran `loom stage resume`, and `loom stage complete` was refused meanwhile.
+> Stages flipped to waiting-for-input with no AskUserQuestion
 
 ## What happened
 
@@ -22,4 +22,4 @@ Two stages of PLAN-loop-recovery (`worker-evidence`, 2026-09-13T22:10:52Z; `comp
 
 - `orchestrator/monitor/input_wait.rs` + wiring in `orchestrator/monitor/core.rs` (`Monitor::poll`), tests in `orchestrator/monitor/tests/input_wait.rs`.
 - `loom-hooks/ask-user-pre.sh`, `loom-hooks/ask-user-post.sh`, regression test `loom-hooks/tests/ask-user-hooks.sh`.
-- Operator workaround for a stuck stage: `loom stage resume <stage-id>`; the running session then completes normally.
+- Operator workaround for a stuck stage: `loom stage resume <stage-id>`; the running session then finishes normally. This CANNOT be run from inside the stuck stage's own session — `.loom/work/stages` is read-only there (EROFS on the `.tmp` write) and the daemon control socket is unreachable — it must run from outside the sandbox.

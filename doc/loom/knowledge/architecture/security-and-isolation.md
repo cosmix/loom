@@ -78,13 +78,13 @@ built by the pure `sandbox::settings::build_settings`. Approved permissions live
 list, `W/permissions/approved.json` (`fs/permissions/approved.rs`), rendered into every later
 session's capsule. Home-directory control surfaces are spelled `~/...` in both the sandbox and
 permission layers of every capsule; repo and executable-dir surfaces are absolute in `denyWrite` and
-`//abs` in `Edit` rules. `~/.codex/{hooks,hooks.json,config.toml}` are denied in every capsule,
-whether or not the codex lane is licensed for that session. `T/.loom` is denied in the sandbox layer
-only — `Edit(.loom/**)` already covers the Claude Code file tools there, so the sandbox-only deny is
-defense in depth against a tool that bypasses `Edit`, not a gap. Two knowledge-related functions were
-renamed to match the new shape: `write_knowledge_sandbox_settings` became `validate_knowledge_sandbox`
-and `install_knowledge_hooks` became `require_knowledge_hooks`, since neither writes a settings file
-any more.
+`//abs` in `Edit` rules. `~/.codex/hooks`, `~/.codex/hooks.json` and `~/.codex/config.toml` are all
+denied in every capsule, whether or not the codex lane is licensed for that session. `T/.loom` is
+denied in the sandbox layer only — `Edit(.loom/**)` already covers the Claude Code file tools there,
+so the sandbox-only deny is defense in depth against a tool that bypasses `Edit`, not a gap. Two
+knowledge-related functions were renamed to match the new shape: `write_knowledge_sandbox_settings`
+became `validate_knowledge_sandbox` and `install_knowledge_hooks` became `require_knowledge_hooks`,
+since neither writes a settings file any more.
 
 Claude Code still writes a "don't ask again" approval to `<canonical git root>/.claude/settings.local.json`
 even for a capsule-launched session (destination `localSettings`; confirmed against the 2.1.269

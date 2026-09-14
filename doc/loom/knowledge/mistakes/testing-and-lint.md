@@ -1,6 +1,6 @@
 # Testing And Lint
 
-> Lint and test discipline: --all-targets, --no-fail-fast, headless CI, ambient git config and inherited descriptors in tests, the stub checker, the maintainability ledger, and reviewer claims.
+> Lint/test discipline: --all-targets, --no-fail-fast, headless CI
 
 ## Test Code: Struct Init Without Default
 
@@ -648,3 +648,7 @@ refusal, not on the code under test. `relay_e2e.rs` uses a directory outside `/t
 **Prevention:** a test never mutates process-wide environment (`PATH`, `HOME`, auth variables) to steer the code under test. Add an injectable seam instead, as `SessionBackend::tmux_available` does. Detection: a test that passes alone and fails in the full run with `NotFound` spawning a process means some other test rewrote `PATH`.
 
 **Fix:** the crash handler reads Remote Control activity through an injectable `Orchestrator` field; the test sets it instead of the environment.
+
+## `cfg(test)` Env-Snapshot Fakes Never Apply Inside a `loom/tests/*.rs` Integration Target (2026-09-14)
+
+`EnvSnapshot::from_process_env` (`loom/src/relay/emit.rs:79`) returns an empty, deterministic snapshot only under `cfg(test)` — a cfg that applies to unit tests compiled INTO the library crate, never to `loom/tests/*.rs` integration targets, which link the non-test lib and therefore always read the REAL process environment. An integration test that calls a public command reading `EnvSnapshot` (e.g. `worktree_cmd::remove`) takes the live `RelayMode::Relay` path inside any actual session and fails unpredictably (e.g. `worktree_remove_safety` 8/8). **Prevention:** integration tests must drive the explicit-mode seam directly (e.g. `remove_with_mode(.., RelayMode::Operator)`) rather than the env-reading wrapper — `cfg(test)` fakes are a unit-test-only convenience, never available to an integration target.

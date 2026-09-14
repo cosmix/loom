@@ -187,19 +187,9 @@ Foreground fan-out verified safe to 6 concurrent codex-companion tasks; backgrou
 
 ## Context Retrieval (`loom/src/context/`)
 
-Deterministic, model-free, network-free retrieval over the curated knowledge
-hierarchy: chunk the prose (curated plus indexed project prose under `doc/`),
-rank per channel, fuse by **two-tier fusion** (exact-rung candidates first by
-raw score, the lexical remainder by reciprocal-rank fusion — NOT plain RRF),
-pack to a token budget. One entry point — `context::retrieve_for_stage` —
-serves the `loom knowledge context`/`loom knowledge eval` commands, signal
-generation and the prompt hook alike. Two graphs exist — the knowledge-chunk
-catalog and the tree-sitter source graph — and both are ranked and fused into
-one pack, each through a persistent per-revision BM25 index behind the full
-scan (the scan stays the correctness oracle).
+Deterministic, model-free, network-free retrieval over the curated knowledge hierarchy: chunk the prose (curated plus indexed project prose under `doc/`), rank per channel, fuse by **two-tier fusion** (exact-rung candidates first by raw score, the lexical remainder by reciprocal-rank fusion — NOT plain RRF), pack to a token budget. One entry point — `context::retrieve_for_stage` — serves the `loom knowledge context`/`loom knowledge eval` commands, signal generation and the prompt hook alike. Two graphs exist — the knowledge-chunk catalog and the tree-sitter source graph — and both are ranked and fused into one pack, each through a persistent per-revision BM25 index behind the full scan (the scan stays the correctness oracle).
 
-Full detail, including the base/overlay layering rule and what is derived versus
-durable: [architecture/context-retrieval.md](architecture/context-retrieval.md).
+Full detail, including the base/overlay layering rule and what is derived versus durable: [architecture/context-retrieval.md](architecture/context-retrieval.md).
 
 ## Source Graph (`loom/src/context/source_graph/`, `context/extract/`)
 
@@ -248,3 +238,11 @@ A daemon thread (`loom/src/quota/poller.rs`) polls the Claude OAuth usage endpoi
 ## Token Accounting and Receipts [DETAILED]
 
 `loom usage` provider ledger and `--compare`, the certified criterion cache, forward/read/worker-brief receipt lifecycles, exact waits and their hook phases: [architecture/token-accounting-and-receipts.md](architecture/token-accounting-and-receipts.md).
+
+## Owned Subagent Waits
+
+`loom subagents watch/wait` bind an explicit `--worker claude:<id>`/`--worker codex:<unit-id>` set once per session, replacing an unbound `--timeout`-only poll. Trusted completion writers separately HMAC-sign completion evidence with a host-only key, closing a forgery path through sandbox-writable `handoffs/`; `Session.exit_reason` is independent from `SessionStatus`. See [Owned Waits](architecture/owned-waits.md) and [Completion Recovery](architecture/completion-recovery.md).
+
+## Completion Evidence Attestation and Session Exit Reasons
+
+Folded into [Owned Subagent Waits](#owned-subagent-waits) above.

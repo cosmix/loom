@@ -1,6 +1,6 @@
 # Doctrine Cross Surface
 
-> Pinning multi-surface guidance with equality tests, ambiguity-equals-fail-safe privilege lookups, and token-based shell classification.
+> Pinning multi-surface guidance with equality tests
 
 ## Doctrine Block Cross-Surface Pinning
 
