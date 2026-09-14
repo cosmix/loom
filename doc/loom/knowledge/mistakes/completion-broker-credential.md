@@ -34,7 +34,8 @@ placeholder `peer-identity` instead of `""`. Any non-matching credential routes 
 `PendingPeerIdentity`, which authorizes exactly one thing — a caller completing the session it is
 actually running inside, proven by kernel `SO_PEERCRED` plus PID-ancestry — so the placeholder
 grants nothing by itself. Tests pin the symlinked-root reproduction and the wire-level refusal of
-`""`.
+`""`. Since 2026-09-14 the placeholder no longer authorizes completion at all — the daemon started
+refusing it outright — see the section below.
 
 **Prevention:**
 
@@ -139,3 +140,40 @@ Containment Check".
 
 **Prevention:** fixing the marker's *carrier* does not fix the marker's *volume*. Keep the
 completion command's output small — a verbose verification stage will find this threshold again.
+
+## The Daemon Grew a Token Gate the Broker Could Not Satisfy (2026-09-14)
+
+**What happened:** the first stage to complete under the a31c2122 binary (`knowledge-distill`, run
+from its worktree) passed verification four times and was refused four times with `daemon rejected
+completion evidence credential`. The stage ran to its context ceiling still blocked, and recorded a
+wrong hypothesis — stale tokens, the daemon needing a restart — in its own concerns file.
+
+**Why:** a31c2122 added `daemon/server/completion_dispatch.rs`, whose `dispatch` refuses
+`CompleteStage` and `RecordCompletionEvidence` with `AuthenticationFailed` unless the connection
+authenticated with the `user.token` credential. The broker client still read the token through the
+worktree's symlinked `.loom/work` — `safe_open_dirfd` opens the root `O_NOFOLLOW`, which fails with
+ELOOP on a symlink — and sent the `peer-identity` placeholder instead, with a comment and a pinned
+test both calling that "the normal case". The two halves were tested apart: the dispatcher test
+`peer_identity_only_refuses_completion_requests_without_mutation` enshrined the refusal, the client
+test enshrined the placeholder, and the only end-to-end proof
+(`tests/completion_replay/hook_broker.rs`) ran with the daemon offline, so the online path was
+never exercised. The dispatcher refuses silently — no `eprintln!` — so the daemon log carried
+nothing either.
+
+**Prevention:** when a server gate starts requiring a credential, grep every client that builds
+that request and prove it can PRESENT the credential from its real cwd (a worktree with a
+symlinked state directory). An "absence is normal" comment on a client credential is a red flag the
+moment any server path starts requiring presence. A daemon-online replay of the real hook broker
+against a real socket is the test that would have caught this — see also
+`mistakes/tests-that-cannot-fail.md`.
+
+**Fix:** `completion_credential` (`commands/stage/control_complete.rs`) canonicalizes the work dir
+before `read_user_token`, mirroring `attestation_key` (`handoff/completion/attest.rs`). The
+symlinked-work-dir test now asserts the token is read rather than dropped, and the refusal message
+names the missing token and the path searched. A second trap sat in the same fix:
+`commands/stage/completion_evidence.rs` imported `daemon/rpc.rs::user_credential` under the alias
+`completion_credential`, so `RecordCompletionEvidence` — the request sent first, and the one failing
+live — never went through the fixed function. Both requests now use
+`control_complete::completion_credential`; `user_credential` stays the peer-identity credential for
+`BlockStage`/`DisputeCriteria`. An `as` alias that reuses a sibling's function name hides exactly
+this kind of miss — grep the import, not just the call site.
