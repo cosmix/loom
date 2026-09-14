@@ -33,7 +33,7 @@ mod complete_force;
 #[path = "complete_verification.rs"]
 mod complete_verification;
 #[path = "control_complete.rs"]
-mod control_complete;
+pub(super) mod control_complete;
 #[path = "control_session.rs"]
 mod control_session;
 

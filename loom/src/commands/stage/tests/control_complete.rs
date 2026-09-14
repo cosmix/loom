@@ -40,27 +40,28 @@ fn falls_back_to_the_peer_identity_placeholder_when_the_token_file_is_empty() {
 }
 
 #[test]
-fn falls_back_to_the_peer_identity_placeholder_when_the_work_dir_is_a_symlink() {
+fn reads_the_user_token_through_a_symlinked_work_dir() {
     use std::os::unix::fs::symlink;
 
-    // Reproduces the production failure: a worktree's state directory is a
-    // symlink to the real state directory, and `safe_open_dirfd` opens the
-    // work-dir root with `O_NOFOLLOW`, so `read_user_token` cannot see the
-    // token even though it is present on disk.
+    // Proves the production layout works: a worktree's state directory is a
+    // symlink to the real state directory, and `safe_open_dirfd` opens
+    // whatever root it is handed with `O_NOFOLLOW`, so the broker must
+    // canonicalize the work dir before `read_user_token` can see the token
+    // that is actually present on disk. The daemon's completion dispatcher
+    // requires this exact token; a placeholder here would send every
+    // worktree-run `loom stage complete` back to `AuthenticationFailed`.
     let real_root = tempfile::tempdir().unwrap();
     let real_work = real_root.path().join("real").join(".loom").join("work");
     std::fs::create_dir_all(&real_work).unwrap();
-    std::fs::write(real_work.join("user.token"), "a".repeat(64)).unwrap();
+    let token = "a".repeat(64);
+    std::fs::write(real_work.join("user.token"), &token).unwrap();
 
     let link_root = tempfile::tempdir().unwrap();
     let work_dir_symlink = link_root.path().join(".loom").join("work");
     std::fs::create_dir_all(link_root.path().join(".loom")).unwrap();
     symlink(&real_work, &work_dir_symlink).unwrap();
 
-    assert_eq!(
-        completion_credential(&work_dir_symlink),
-        PEER_IDENTITY_CREDENTIAL
-    );
+    assert_eq!(completion_credential(&work_dir_symlink), token);
 }
 
 #[test]

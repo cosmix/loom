@@ -4,7 +4,9 @@ use anyhow::{bail, ensure, Context, Result};
 use chrono::{SecondsFormat, Utc};
 use serde_json::Value;
 
-use crate::daemon::{send_request, user_credential as completion_credential, Request, Response};
+use crate::daemon::{send_request, Request, Response};
+
+use super::complete::control_complete::completion_credential;
 use crate::handoff::{
     check_definition_hash, record_attempt_handoff, CompletionAttemptEvidence, CompletionPhase,
     CriterionResult, EnvironmentFact, MergeOutcome, VerificationCheckpoint,
@@ -229,9 +231,11 @@ pub fn record_evidence(
             Ok(RecordRoute::HostFallback)
         }
         Ok(Response::Error { message }) => bail!("daemon rejected completion evidence: {message}"),
-        Ok(Response::AuthenticationFailed) => {
-            bail!("daemon rejected completion evidence credential")
-        }
+        Ok(Response::AuthenticationFailed) => bail!(
+            "daemon rejected completion evidence credential: no readable user.token beneath {} \
+             (the broker must run outside the session sandbox and present the daemon's user token)",
+            work_dir.display()
+        ),
         Ok(other) => bail!("unexpected completion evidence response: {other:?}"),
     }
 }

@@ -14,27 +14,39 @@ pub(super) fn broker_requested() -> bool {
 
 /// Fixed non-empty stand-in used when no readable `user.token` exists.
 ///
-/// It authorizes nothing by itself — see [`completion_credential`].
+/// It authorizes nothing for `CompleteStage` or `RecordCompletionEvidence` —
+/// see [`completion_credential`].
 const PEER_IDENTITY_CREDENTIAL: &str = "peer-identity";
 
-/// Credential for the `CompleteStage` request.
+/// Credential for the broker's `RecordCompletionEvidence` and `CompleteStage`
+/// requests.
 ///
-/// A sandboxed worktree agent is denied the `user.token` read on purpose
-/// (S-1) — the token authorizes every User RPC, not just this one. The
-/// broker itself can't read it either when run from inside a worktree: the
-/// state directory there is a symlink, and `safe_open_dirfd` opens the work-dir root
-/// with `O_NOFOLLOW`, so the read fails by construction. Either way, absence
-/// is the normal case on this path, not an error.
+/// The broker runs in the PostToolUse hook, outside the session sandbox, so
+/// it can read `.loom/work/user.token`; the session sandbox denies that read
+/// to the stage agent's own commands, which is what makes the token the
+/// credential that separates the trusted broker from the agent. The
+/// dispatcher (`daemon/server/completion_dispatch.rs`) refuses both
+/// `CompleteStage` and `RecordCompletionEvidence` with `AuthenticationFailed`
+/// unless the connection authenticated with this token — peer identity alone
+/// authorizes `BlockStage`/`DisputeCriteria` (see `daemon/rpc.rs`) but not
+/// completion.
 ///
-/// The wire preface (`wire.rs`) refuses to frame an empty credential, so "no
-/// token" still has to be a non-empty string. Any credential that doesn't
-/// match `user.token` routes the daemon into its `Authorization::PendingPeerIdentity`
-/// fallback, which authorizes exactly one thing: a caller completing the
-/// session it is actually running inside, verified via socket peer
-/// credentials (`peer_identity::caller_is_inside_session`). The placeholder
-/// is just what makes that fallback reachable — it grants nothing on its own.
-fn completion_credential(work_dir: &Path) -> String {
-    read_user_token(work_dir)
+/// Inside a worktree the state directory is a symlink, and
+/// `safe_open_dirfd` opens the work-dir root with `O_NOFOLLOW`, so the path
+/// is canonicalized first — the same way `attestation_key`
+/// (`handoff/completion/attest.rs`) reads the attestation key through the
+/// same symlink.
+///
+/// The wire preface (`wire.rs`) refuses to frame an empty credential, so a
+/// token that is still missing after that resolution falls back to this
+/// non-empty placeholder. A completion request carrying the placeholder is
+/// refused by the daemon's token gate; the resulting error names the missing
+/// token.
+pub(in crate::commands::stage) fn completion_credential(work_dir: &Path) -> String {
+    let resolved = work_dir
+        .canonicalize()
+        .unwrap_or_else(|_| work_dir.to_path_buf());
+    read_user_token(&resolved)
         .filter(|token| !token.is_empty())
         .unwrap_or_else(|| PEER_IDENTITY_CREDENTIAL.to_string())
 }
