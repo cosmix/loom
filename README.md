@@ -1,6 +1,44 @@
-# Loom
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="doc/images/loom-wordmark-white.svg">
+    <img src="doc/images/loom-wordmark-black.svg" alt="loom" width="220">
+  </picture>
+</p>
 
-Loom is an agent orchestration system for Claude Code. You write a plan; loom executes it — stages run in parallel across isolated git worktrees, completion is gated by checks loom runs itself rather than by the agent's own account of its work, and what each session learns is captured and distilled into a knowledge base the next session reads first.
+<p align="center">
+  <strong>You write the plan. Loom runs it, verifies it, and keeps what it learned.</strong>
+</p>
+
+Loom is an agent orchestration system for Claude Code. Stages run in parallel across isolated git worktrees, completion is gated by checks loom runs itself rather than by the agent's own account of its work, and what each session learns is captured and distilled into a knowledge base the next session reads first.
+
+<p align="center">
+  <img src="doc/images/webui-overview.png" alt="The loom web dashboard showing a plan as a dependency graph of stages" width="880">
+</p>
+
+<p align="center">
+  <em><code>loom status --web</code>: the plan rendered as a dependency graph, colored by stage state.</em>
+</p>
+
+## Contents
+
+- [What Loom Solves](#what-loom-solves)
+- [Key Capabilities](#key-capabilities)
+- [Platform Support](#platform-support)
+- [Quick Start](#quick-start)
+- [Core Workflow](#core-workflow)
+- [CLI Reference](#cli-reference)
+- [Configuration](#configuration)
+- [Web Dashboard](#web-dashboard)
+- [Plan Format](#plan-format)
+- [Verification Model](#verification-model)
+- [Knowledge System](#knowledge-system)
+- [Model Allocation](#model-allocation)
+- [Sandbox Configuration](#sandbox-configuration)
+- [Terminal Backends](#terminal-backends)
+- [Agent Teams (Experimental)](#agent-teams-experimental)
+- [State Layout](#state-layout)
+- [Shell Completions](#shell-completions)
+- [License](#license)
 
 ## What Loom Solves
 
@@ -9,7 +47,7 @@ Autonomous agent work fails in a small number of predictable ways. Loom answers 
 | Failure mode                            | What actually happens                                                                | Loom's answer                                                                                                                                                                                          |
 | --------------------------------------- | ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | **False completion**                    | Tests were never run, the module was written but never imported, the fix is a `TODO` | Loom runs the acceptance criteria itself, then checks artifacts for stubs, wiring for real integration, and dead-code patterns for orphaned work. The bypass flags need a token the agent cannot read. |
-| **Instruction drift**                   | Rules decay the moment they scroll out of attention                                  | Shell hooks enforce the load-bearing rules deterministically — commit discipline, staging scope, worktree boundaries, subagent limits — outside the model's control.                                   |
+| **Instruction drift**                   | Rules decay the moment they scroll out of attention                                  | Shell hooks enforce the rules that matter deterministically — commit discipline, staging scope, worktree boundaries, subagent limits — outside the model's control.                                    |
 | **Amnesia**                             | Every session rediscovers the same architecture and repeats the same mistakes        | A per-stage memory journal feeds a distillation stage that curates permanent, tiered knowledge; later sessions read it before touching code.                                                           |
 | **Cost scaling with tokens, not value** | Expensive models doing cheap work; re-reading everything, every time                 | Judgment stays on an orchestrator; bulk implementation is delegated to cheap subagents. Signals are laid out for KV-cache reuse and knowledge is tiered, so agents load only what they need.           |
 | **Context exhaustion**                  | The session degrades into an expensive compaction loop                               | Context budgets are monitored per stage; a handoff is written *before* compaction and the resumed session is re-anchored to its assignment.                                                            |
@@ -46,7 +84,7 @@ The escape hatches (`--no-verify`, `--force-unsafe`, `--assume-merged`) require 
 
 ### Knowledge capture and distillation
 
-Loom treats what agents learn as a first-class artifact with a pipeline, not a scratch file.
+Loom treats what agents learn as a durable artifact with a pipeline behind it, rather than a scratch file.
 
 1. **Capture** — during execution, agents record to a per-stage journal: `loom memory note` (gotchas, mistakes-with-prevention), `decision` (with rationale), `change`, `question`. The journal is injected into the *recitation* section at the end of the next signal, where model attention is highest.
 2. **Distill** — a `knowledge-distill` stage runs at the end of a plan, reads every stage memory, and curates it into permanent knowledge — mistakes rewritten as actionable prevention rules, decisions with their rationale, reusable patterns and conventions.
@@ -83,7 +121,7 @@ Plan-level defaults and per-stage overrides control filesystem reads/writes, net
 
 ### Human-in-the-loop where it matters
 
-Thirteen stage states make "needs a person" a first-class outcome rather than a hang: `WaitingForInput` (raised automatically when an agent asks a question), `NeedsHumanReview`, `Blocked`, `MergeConflict`. Operators get `loom stage hold/release/skip/retry/human-review`, and an agent that believes a criterion is wrong can escalate with `loom stage dispute-criteria` instead of quietly weakening it.
+Thirteen stage states make "needs a person" an explicit outcome rather than a hang: `WaitingForInput` (raised automatically when an agent asks a question), `NeedsHumanReview`, `Blocked`, `MergeConflict`. Operators get `loom stage hold/release/skip/retry/human-review`, and an agent that believes a criterion is wrong can escalate with `loom stage dispute-criteria` instead of quietly weakening it.
 
 ## Platform Support
 
@@ -240,70 +278,7 @@ Each of the three steps spawns with an independently selectable model and reason
 
 `loom status --live` renders a live ledger dashboard: one row per stage across eight columns (STATE, STAGE, DEPENDS ON, MODELS, ACTIVITY, CONTEXT, TIME, MERGE). MODELS lists the orchestrator's own model first, then the models any subagents it spawned ran on. Columns drop in priority order as the terminal narrows; below a 64x16 (columns x rows) terminal a notice replaces the dashboard entirely. Press `?` to toggle a legend overlay explaining every state icon.
 
-`loom status --web [PORT] [--terminals]` starts a web dashboard bound to `127.0.0.1` and serves the live ledger over a WebSocket in the browser. Without `PORT`, it starts at port 7373 and automatically tries the next available port when a candidate is occupied. Supplying a nonzero `PORT` requests that exact port; `PORT` 0 asks the OS for any free port. It works without the daemon by polling `.work/` files directly when the daemon socket is unreachable. Besides the ledger, it exposes a settings dialog for editing loom's configuration (see below) and, with `--terminals`, a way to open a stage's terminal from the browser (see [Web Dashboard Terminals](#web-dashboard-terminals)).
-
-### Configuration
-
-Loom keeps its settings in two TOML files. A project file overrides the user file, and an explicit per-invocation value (a stage's own `model` field in the plan, a `loom pressure` flag) overrides both:
-
-| Tier      | File                            | Applies to                      |
-| --------- | ------------------------------- | ------------------------------- |
-| `user`    | `~/.loom/config.toml`           | Every workspace on this machine |
-| `project` | `<repo>/.loom/work/config.toml` | This workspace only             |
-
-Neither file needs to exist: every key has a built-in default. `LOOM_HOME` relocates the user file (`$LOOM_HOME/config.toml`).
-
-There are three ways to change a setting:
-
-1. **`loom config`.** Run bare in a terminal it opens a settings screen; with flags it is scriptable. `loom config -k <key>` prints one key, `loom config -k <key> <value>` writes it (validated against the key's type and value set), `loom config --list` prints every key with its value and where it came from, and `loom config --print` prints the resolved user config as TOML. It reads and writes the user file only.
-2. **Edit the files.** Both files use the same `[section]` / `key = value` layout as the table below; project sections may be partial. `loom init` writes a `[context]` section into the project file, everything else is opt-in.
-3. **The dashboard.** `loom status --web` has a settings dialog that edits both files, one key at a time, with the resolution shown per key ([Web Dashboard Settings](#web-dashboard-settings)).
-
-The keys, with their built-in defaults:
-
-| Key                               | Default       | Values                                                    | Project tier |
-| --------------------------------- | ------------- | --------------------------------------------------------- | ------------ |
-| `update.check`                    | `true`        | `true`, `false`                                           | no           |
-| `update.check_interval_hours`     | `24`          | integer                                                   | no           |
-| `terminal.backend`                | `native`      | `native`, `tmux`                                          | whole section |
-| `context.ceiling_tokens`          | `800000`      | integer                                                   | whole section |
-| `pressure.claude_model`           | `opus`        | `haiku`, `sonnet`, `opus`, `fable`                        | per key      |
-| `pressure.claude_effort`          | `xhigh`       | `low`, `medium`, `high`, `xhigh`, `max`                   | per key      |
-| `pressure.codex_model`            | `gpt-5.6-sol` | `gpt-6-astra`, `gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.6-luna` | per key  |
-| `pressure.codex_effort`           | `xhigh`       | `low`, `medium`, `high`, `xhigh`                          | per key      |
-| `pressure.address_model`          | `opus`        | `haiku`, `sonnet`, `opus`, `fable`                        | per key      |
-| `pressure.address_effort`         | `high`        | `low`, `medium`, `high`, `xhigh`, `max`                   | per key      |
-| `models.standard_model`           | `opus`        | `haiku`, `sonnet`, `opus`, `fable`                        | per key      |
-| `models.standard_effort`          | `high`        | `low`, `medium`, `high`, `xhigh`, `max`                   | per key      |
-| `models.knowledge_model`          | `opus`        | `haiku`, `sonnet`, `opus`, `fable`                        | per key      |
-| `models.knowledge_effort`         | `medium`      | `low`, `medium`, `high`, `xhigh`, `max`                   | per key      |
-| `models.knowledge_distill_model`  | `sonnet`      | `haiku`, `sonnet`, `opus`, `fable`                        | per key      |
-| `models.knowledge_distill_effort` | `high`        | `low`, `medium`, `high`, `xhigh`, `max`                   | per key      |
-| `models.integration_verify_model` | `opus`        | `haiku`, `sonnet`, `opus`, `fable`                        | per key      |
-| `models.integration_verify_effort` | `xhigh`      | `low`, `medium`, `high`, `xhigh`, `max`                   | per key      |
-
-"Whole section" means a project `[terminal]` or `[context]` section replaces the user tier's section outright, so a key it omits takes the built-in. "Per key" means a project `[pressure]` or `[models]` section overrides only the keys it names and the rest fall through to the user file. The `pressure.*` keys are explained under [Primary Commands](#primary-commands), the `models.*` keys under [Model Allocation](#model-allocation).
-
-### Web Dashboard Settings
-
-The dashboard header has a settings button; opening it (or navigating to `?settings=1`) edits loom's configuration in place, so the browser's back button closes the dialog. Each row shows all three tiers — built-in, user, project — side by side as table columns, or as one card per row below 700px wide. It edits every key in the registry `loom config` does — eighteen keys across `update`, `terminal`, `context`, `pressure`, and `models`: `update.check` / `update.check_interval_hours` (loom's self-update check), `terminal.backend` (see [Terminal Backends](#terminal-backends)), `context.ceiling_tokens` (see [Plan-Level Context Fields](#plan-level-context-fields)), the six `pressure.*` model and effort picks described under [Primary Commands](#primary-commands), and the eight `models.*` model and effort picks described under [Model Allocation](#model-allocation). `loom config --list` prints every key with its current value and origin. Every control here writes immediately on change, one key at a time; there is no separate Save step, and validation errors from the server surface next to the control that triggered them.
-
-Two scopes:
-
-| Scope     | File                            | Applies to                      |
-| --------- | ------------------------------- | ------------------------------- |
-| `user`    | `~/.loom/config.toml`           | Every workspace on this machine |
-| `project` | `<repo>/.loom/work/config.toml` | This workspace only             |
-
-Sixteen of the eighteen keys have a project tier: `terminal.backend`, `context.ceiling_tokens`, and every `pressure.*` and `models.*` key; the dialog marks the remaining `update.*` keys as machine-wide rather than offering a project control that would do nothing. A key's effective value resolves **project → user → built-in default**, and each row shows which tier is currently in force plus what clearing an override would fall back to.
-
-The fallback is not uniform across sections. For `[pressure]` and `[models]`, the project tier resolves **per key** — a project section that sets only one key still lets every other key in that section fall through to your user config. For `[terminal]` and `[context]`, a project override still replaces the whole `.loom/work/config.toml` section, not just one key: clearing the override removes the key and, if that empties the section, the section too — but if a sibling key is still in there (as with `[context]`, since `loom init` writes `ceiling_tokens` alongside `subagent_ceiling_tokens`), the section still wins as a whole and the value resolves to the built-in default rather than falling through to your user setting. The dialog reports each case accurately; for `[terminal]`/`[context]` that section-level fallback just may not be what you expected.
-
-The dashboard stays a `127.0.0.1`-only, unauthenticated tool for the person running it — the settings endpoint adds no login. Writes are gated by the same `Host` check as the rest of the dashboard, plus a strict `Origin` check (must be present and loopback) and a per-process CSRF token issued on load.
-
-### Web Dashboard Terminals
-
-`loom status --web --terminals` (tmux backend only) adds a "Take control" view to each stage's detail dialog: an xterm.js terminal opens right in the browser, attached to that stage's live tmux session. It starts in a read-only View mode; switching to Control sends every keystroke to the running agent. Enabling `--terminals` mints a one-time token and prints it in the startup URL — open that exact link once to set an auth cookie for the dashboard; a plain `--web` link never gets the "Take control" option.
+`loom status --web [PORT] [--terminals]` serves the same ledger in the browser, alongside a dependency-graph view of the plan — see [Web Dashboard](#web-dashboard).
 
 ### Plan Commands
 
@@ -389,11 +364,15 @@ loom subagents wait --receipt <id> [--timeout <secs>] [--json]               # W
 loom attach [stage-id]                                                       # tmux backend only; omit the id for a tiled overview
 loom sessions list
 loom sessions kill <session-id...> | --stage <stage-id>
+loom handoff [--stage <id>] [--session <id>] [--trigger <type>] [--message <text>]
+                                                                             # Capture session state to a handoff file; stage and session default to $LOOM_STAGE_ID/$LOOM_SESSION_ID, --trigger defaults to manual
 loom worktree list
 loom worktree remove <stage-id>
 loom graph
 loom context record-edit --stage <id> --path <path> [--path <path>...]       # Keep a stage's context overlay current
 loom hook user-prompt                                                        # UserPromptSubmit entry point; invoked by loom's hooks
+loom request status <id> [--session <id>]                                    # Plumbing: has the daemon applied a request relayed through the sandbox? <id> is printed after the originating command
+loom skill-index                                                             # Plumbing: rebuild the skill keyword index the skill-trigger hook reads
 loom repair [--fix]
 loom clean [--all|--worktrees|--sessions|--state]
 loom update
@@ -401,6 +380,10 @@ loom config [-k <key> [<value>] | --list | --print]                          # R
 loom install-assets [--claude-dir <path>] [--codex-dir <path>] [--skills core|all]  # Install loom's agents, skills, commands, hooks and doctrine files
 loom completions [<shell>] [--install] [--migrate]
 ```
+
+`loom handoff` writes the document a successor session resumes from, under `.work/handoffs/`. Loom's `pre-compact` hook calls it automatically before a compaction, and an agent that reaches its context ceiling calls it explicitly with `--trigger ceiling`.
+
+`loom request status` and `loom skill-index` are plumbing for loom's own hooks and its sandbox relay rather than commands a plan author types; they are listed so hook output that names them is traceable.
 
 ### ⚠️ Billing: headless `claude -p` flags
 
@@ -411,6 +394,87 @@ Loom runs every orchestrated stage as a normal **interactive** Claude Code sessi
 | `loom review` | `--ai-summary` | Uses the plan's first paragraph as the summary (no Claude call) |
 
 Headless `claude -p` usage may be billed **separately from (and in addition to) your Claude subscription** as API/extra charges, depending on your account and auth setup. This flag is **off by default** so loom never silently incurs those charges — only pass it when you knowingly accept the headless billing.
+
+## Configuration
+
+Loom keeps its settings in two TOML files. A project file overrides the user file, and an explicit per-invocation value (a stage's own `model` field in the plan, a `loom pressure` flag) overrides both:
+
+| Tier      | File                            | Applies to                      |
+| --------- | ------------------------------- | ------------------------------- |
+| `user`    | `~/.loom/config.toml`           | Every workspace on this machine |
+| `project` | `<repo>/.loom/work/config.toml` | This workspace only             |
+
+Neither file needs to exist: every key has a built-in default. `LOOM_HOME` relocates the user file (`$LOOM_HOME/config.toml`).
+
+There are three ways to change a setting:
+
+1. **`loom config`.** Run bare in a terminal it opens a settings screen; with flags it is scriptable. `loom config -k <key>` prints one key, `loom config -k <key> <value>` writes it (validated against the key's type and value set), `loom config --list` prints every key with its value and where it came from, and `loom config --print` prints the resolved user config as TOML. It reads and writes the user file only.
+2. **Edit the files.** Both files use the same `[section]` / `key = value` layout as the table below; project sections may be partial. `loom init` writes a `[context]` section into the project file, everything else is opt-in.
+3. **The dashboard.** `loom status --web` has a settings dialog that edits both files, one key at a time, with the resolution shown per key ([Web Dashboard Settings](#web-dashboard-settings)).
+
+The keys, with their built-in defaults:
+
+| Key                               | Default       | Values                                                    | Project tier |
+| --------------------------------- | ------------- | --------------------------------------------------------- | ------------ |
+| `update.check`                    | `true`        | `true`, `false`                                           | no           |
+| `update.check_interval_hours`     | `24`          | integer                                                   | no           |
+| `terminal.backend`                | `native`      | `native`, `tmux`                                          | whole section |
+| `context.ceiling_tokens`          | `800000`      | integer                                                   | whole section |
+| `pressure.claude_model`           | `opus`        | `haiku`, `sonnet`, `opus`, `fable`                        | per key      |
+| `pressure.claude_effort`          | `xhigh`       | `low`, `medium`, `high`, `xhigh`, `max`                   | per key      |
+| `pressure.codex_model`            | `gpt-5.6-sol` | `gpt-6-astra`, `gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.6-luna` | per key  |
+| `pressure.codex_effort`           | `xhigh`       | `low`, `medium`, `high`, `xhigh`                          | per key      |
+| `pressure.address_model`          | `opus`        | `haiku`, `sonnet`, `opus`, `fable`                        | per key      |
+| `pressure.address_effort`         | `high`        | `low`, `medium`, `high`, `xhigh`, `max`                   | per key      |
+| `models.standard_model`           | `opus`        | `haiku`, `sonnet`, `opus`, `fable`                        | per key      |
+| `models.standard_effort`          | `high`        | `low`, `medium`, `high`, `xhigh`, `max`                   | per key      |
+| `models.knowledge_model`          | `opus`        | `haiku`, `sonnet`, `opus`, `fable`                        | per key      |
+| `models.knowledge_effort`         | `medium`      | `low`, `medium`, `high`, `xhigh`, `max`                   | per key      |
+| `models.knowledge_distill_model`  | `sonnet`      | `haiku`, `sonnet`, `opus`, `fable`                        | per key      |
+| `models.knowledge_distill_effort` | `high`        | `low`, `medium`, `high`, `xhigh`, `max`                   | per key      |
+| `models.integration_verify_model` | `opus`        | `haiku`, `sonnet`, `opus`, `fable`                        | per key      |
+| `models.integration_verify_effort` | `xhigh`      | `low`, `medium`, `high`, `xhigh`, `max`                   | per key      |
+
+"Whole section" means a project `[terminal]` or `[context]` section replaces the user tier's section outright, so a key it omits takes the built-in. "Per key" means a project `[pressure]` or `[models]` section overrides only the keys it names and the rest fall through to the user file. The `pressure.*` keys are explained under [Primary Commands](#primary-commands), the `models.*` keys under [Model Allocation](#model-allocation).
+
+## Web Dashboard
+
+```bash
+loom status --web [PORT] [--terminals]
+```
+
+The dashboard binds to `127.0.0.1` and serves the live ledger over a WebSocket in the browser. Two views share the same data: the graph (shown at the top of this file) draws the plan as a dependency graph colored by stage state, and `/ledger` puts one row per stage in a table with the same columns as `loom status --live`. Both carry a "needs attention" panel naming the stages that need a person, with a suggested command for each.
+
+<p align="center">
+  <img src="doc/images/webui-ledger.png" alt="The loom web dashboard ledger view, one row per stage" width="880">
+</p>
+
+<p align="center">
+  <em>The <code>/ledger</code> view: state, dependencies, models, activity and context for every stage.</em>
+</p>
+
+Without `PORT`, it starts at port 7373 and automatically tries the next available port when a candidate is occupied. Supplying a nonzero `PORT` requests that exact port; `PORT` 0 asks the OS for any free port. It works without the daemon by polling `.work/` files directly when the daemon socket is unreachable. Besides the ledger, it exposes a settings dialog for editing loom's configuration and, with `--terminals`, a way to open a stage's terminal from the browser.
+
+### Web Dashboard Settings
+
+The dashboard header has a settings button; opening it (or navigating to `?settings=1`) edits loom's configuration in place, so the browser's back button closes the dialog. Each row shows all three tiers — built-in, user, project — side by side as table columns, or as one card per row below 700px wide. It edits every key in the registry `loom config` does — eighteen keys across `update`, `terminal`, `context`, `pressure`, and `models`: `update.check` / `update.check_interval_hours` (loom's self-update check), `terminal.backend` (see [Terminal Backends](#terminal-backends)), `context.ceiling_tokens` (see [Plan-Level Context Fields](#plan-level-context-fields)), the six `pressure.*` model and effort picks described under [Primary Commands](#primary-commands), and the eight `models.*` model and effort picks described under [Model Allocation](#model-allocation). `loom config --list` prints every key with its current value and origin. Every control here writes immediately on change, one key at a time; there is no separate Save step, and validation errors from the server surface next to the control that triggered them.
+
+Two scopes:
+
+| Scope     | File                            | Applies to                      |
+| --------- | ------------------------------- | ------------------------------- |
+| `user`    | `~/.loom/config.toml`           | Every workspace on this machine |
+| `project` | `<repo>/.loom/work/config.toml` | This workspace only             |
+
+Sixteen of the eighteen keys have a project tier: `terminal.backend`, `context.ceiling_tokens`, and every `pressure.*` and `models.*` key; the dialog marks the remaining `update.*` keys as machine-wide rather than offering a project control that would do nothing. A key's effective value resolves **project → user → built-in default**, and each row shows which tier is currently in force plus what clearing an override would fall back to.
+
+The fallback is not uniform across sections. For `[pressure]` and `[models]`, the project tier resolves **per key** — a project section that sets only one key still lets every other key in that section fall through to your user config. For `[terminal]` and `[context]`, a project override still replaces the whole `.loom/work/config.toml` section, not just one key: clearing the override removes the key and, if that empties the section, the section too — but if a sibling key is still in there (as with `[context]`, since `loom init` writes `ceiling_tokens` alongside `subagent_ceiling_tokens`), the section still wins as a whole and the value resolves to the built-in default rather than falling through to your user setting. The dialog reports each case accurately; for `[terminal]`/`[context]` that section-level fallback just may not be what you expected.
+
+The dashboard stays a `127.0.0.1`-only, unauthenticated tool for the person running it — the settings endpoint adds no login. Writes are gated by the same `Host` check as the rest of the dashboard, plus a strict `Origin` check (must be present and loopback) and a per-process CSRF token issued on load.
+
+### Web Dashboard Terminals
+
+`loom status --web --terminals` (tmux backend only) adds a "Take control" view to each stage's detail dialog: an xterm.js terminal opens right in the browser, attached to that stage's live tmux session. It starts in a read-only View mode; switching to Control sends every keystroke to the running agent. Enabling `--terminals` mints a one-time token and prints it in the startup URL — open that exact link once to set an auth cookie for the dashboard; a plain `--web` link never gets the "Take control" option.
 
 ## Plan Format
 
@@ -572,7 +636,7 @@ loom memory note "gotcha: worktree exclude lives at <worktree>/.git/info/exclude
 loom memory decision "centralized plan lookup in plan/parser" --context "avoids an orchestrator→commands layering violation"
 ```
 
-Entries are typed (`note`, `decision`, `change`, `question`). The most recent are embedded in the *recitation* section at the end of the next signal — the position with the highest model attention — so a later stage inherits an earlier stage's hard-won detail instead of rediscovering it.
+Entries are typed (`note`, `decision`, `change`, `question`). The most recent are embedded in the *recitation* section at the end of the next signal — the position with the highest model attention — so a later stage inherits the detail an earlier stage paid for instead of rediscovering it.
 
 Memory is deliberately cheap and disposable. It is a working journal, not the deliverable.
 
