@@ -9,8 +9,12 @@ POST_HOOK="$SCRIPT_DIR/../post-tool-use.sh"
 STOP_HOOK="$SCRIPT_DIR/../subagent-stop.sh"
 START_HOOK="$SCRIPT_DIR/../session-start.sh"
 COMMON="$SCRIPT_DIR/../_common.sh"
-TMP=$(mktemp -d "${TMPDIR:-/tmp}/loom-hooktest.XXXXXX")
-trap 'rm -rf "$TMP"' EXIT
+TMP=""
+TMP=$(mktemp -d "${TMPDIR:-/tmp}/heartbeat-protocol.XXXXXX") && [[ -n "$TMP" ]] || {
+	echo "FAIL: could not create scratch directory"
+	exit 1
+}
+trap '[[ -n "${TMP:-}" ]] && rm -rf -- "$TMP"' EXIT
 
 heartbeat() {
 	local workdir="$1" session="$2" tokens="$3"
@@ -22,7 +26,7 @@ heartbeat() {
 stage_owner() {
 	local workdir="$1" session="$2"
 	mkdir -p "$workdir/stages" "$workdir/heartbeat"
-	printf '%s\n' '---' "session: $session" 'description: test' '---' \
+	printf '%s\n' '---' 'id: test-stage' "session: $session" 'description: test' '---' \
 		'# Stage' 'session: wrong-body-value' \
 		>"$workdir/stages/01-test-stage.md"
 }
@@ -44,14 +48,31 @@ fi
 STOP_WORK="$TMP/stop"
 stage_owner "$STOP_WORK" successor
 heartbeat "$STOP_WORK" successor 888
-STOP_INPUT=$(jq -nc --arg transcript_path "$TMP/subagents/agent-agent-1.jsonl" \
-	'{agent_type:"worker",transcript_path:$transcript_path}')
+STOP_PARENT_ID="stop-parent"
+STOP_PARENT="$TMP/claude-project/$STOP_PARENT_ID.jsonl"
+STOP_WORKER="$TMP/claude-project/$STOP_PARENT_ID/subagents/agent-agent-1.jsonl"
+mkdir -p "${STOP_WORKER%/*}" "$STOP_WORK/subagents/test-stage"
+printf '%s\n' '{"type":"parent","message":"waiting"}' >"$STOP_PARENT"
+printf '%s\n' '{"type":"assistant","message":"done"}' >"$STOP_WORKER"
+jq -nc --arg parent "$STOP_PARENT_ID" \
+	'{agent_id:"agent-1",agent_type:"worker",stage_id:"test-stage",
+	  parent_session_id:$parent,loom_session_id:"old-session",
+	  ts:"2000-01-01T00:00:00.000Z"}' >"$STOP_WORK/subagents/test-stage/starts.jsonl"
+STOP_INPUT=$(jq -nc --arg session_id "$STOP_PARENT_ID" --arg transcript_path "$STOP_PARENT" \
+	--arg agent_transcript_path "$STOP_WORKER" \
+	'{session_id:$session_id,hook_event_name:"SubagentStop",agent_id:"agent-1",
+	  agent_type:"worker",transcript_path:$transcript_path,
+	  agent_transcript_path:$agent_transcript_path}')
 printf '%s' "$STOP_INPUT" |
 	env LOOM_WORK_DIR="$STOP_WORK" LOOM_STAGE_ID=test-stage LOOM_SESSION_ID=old-session \
 	bash "$STOP_HOOK"
 if [[ "$(jq -r '.session_id' "$STOP_WORK/heartbeat/test-stage.json")" != successor ]] ||
 	[[ "$(jq -r '.context_tokens' "$STOP_WORK/heartbeat/test-stage.json")" != 888 ]]; then
 	echo "FAIL: stale SubagentStop overwrote successor heartbeat"
+	exit 1
+fi
+if [[ -e "$STOP_WORK/subagents/test-stage/lifecycle.jsonl" ]]; then
+	echo "FAIL: stale SubagentStop wrote lifecycle evidence for its successor"
 	exit 1
 fi
 

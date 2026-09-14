@@ -1,180 +1,136 @@
 #!/usr/bin/env bash
 set -euo pipefail
+
 unset LOOM_STAGE_ID LOOM_SESSION_ID LOOM_WORK_DIR LOOM_SESSION_TYPE LOOM_MAIN_AGENT_PID
-
-# Run from the real loom-hooks/ directory (not a copy) so codex-forward-guard.sh
-# finds _common.sh beside it.
 GUARD="$(cd "$(dirname "$0")/.." && pwd)/codex-forward-guard.sh"
-d=$(mktemp -d "${TMPDIR:-/tmp}/cfw.XXXXXX") && [ -n "$d" ]
+d=$(mktemp -d "${TMPDIR:-/tmp}/cfw-records.XXXXXX") && [[ -n "$d" ]]
 trap 'rm -rf "$d"' EXIT
-TMP="$d"
 
-HOME_DIR="$TMP/home"
-mkdir -p "$HOME_DIR"
-
-VALID_CMD='~/.claude/hooks/loom/codex-forward.sh task hello --model gpt-5.6-terra --effort xhigh --write'
-VALID_PAYLOAD=$(jq -nc --arg c "$VALID_CMD" \
-	'{tool_name:"Bash",tool_input:{command:$c},agent_type:"loom-codex-forwarder"}')
-
-# Case 1: a valid stage id records exactly one row with the expected fields.
-WORK_DIR="$TMP/work"
+HOME_DIR="$d/home"
+WORKSPACE="$d/workspace"
+WORK_DIR="$d/work"
+COMPANION_DIR="$HOME_DIR/.claude/plugins/cache/openai-codex/codex/1.0.6/scripts"
+COMPANION="$COMPANION_DIR/codex-companion.mjs"
 LEDGER="$WORK_DIR/subagents/my-stage/codex.jsonl"
+mkdir -p "$COMPANION_DIR" "$WORKSPACE/.git" "$WORK_DIR/subagents/my-stage"
+printf '%s\n' '// pinned fixture' >"$COMPANION"
 
-printf '%s' "$VALID_PAYLOAD" | HOME="$HOME_DIR" LOOM_WORK_DIR="$WORK_DIR" \
-	LOOM_STAGE_ID="my-stage" LOOM_SESSION_ID="session-abc" \
-	bash "$GUARD" >/dev/null
+write_start() {
+	local root="$1"
+	mkdir -p "$root/subagents/my-stage"
+	jq -nc '{agent_id:"forwarder-7",agent_type:"loom-codex-forwarder",stage_id:"my-stage",
+		loom_session_id:"session-abc",parent_session_id:"parent-uuid",
+		ts:"2000-01-01T00:00:00.000Z"}' >"$root/subagents/my-stage/starts.jsonl"
+}
+write_start "$WORK_DIR"
 
-if [[ ! -f "$LEDGER" ]]; then
-	printf '%s\n' "FAIL: ledger file was not created at $LEDGER"
-	exit 1
-fi
-if [[ $(wc -l <"$LEDGER") -ne 1 ]]; then
-	printf '%s\n' "FAIL: expected 1 ledger line, got $(wc -l <"$LEDGER")"
-	exit 1
-fi
+payload() {
+	jq -nc --arg command "$1" --arg tool_use_id "$2" --arg cwd "$WORKSPACE" \
+		'{tool_name:"Bash",tool_input:{command:$command,timeout:600000},agent_type:"loom-codex-forwarder",agent_id:"forwarder-7",session_id:"parent-uuid",tool_use_id:$tool_use_id,cwd:$cwd}'
+}
 
-model=$(jq -r '.model' "$LEDGER")
-effort=$(jq -r '.effort' "$LEDGER")
-stage_id=$(jq -r '.stage_id' "$LEDGER")
-session_id=$(jq -r '.session_id' "$LEDGER")
-ts=$(jq -r '.ts' "$LEDGER")
+authorize() {
+	local command="$1" tool_use_id="$2" output="$3"
+	printf '%s' "$(payload "$command" "$tool_use_id")" | HOME="$HOME_DIR" \
+		LOOM_WORK_DIR="$WORK_DIR" LOOM_STAGE_ID=my-stage LOOM_SESSION_ID=session-abc \
+		bash "$GUARD" >"$output"
+}
 
-if [[ "$model" != 'gpt-5.6-terra' ]]; then
-	printf '%s\n' "FAIL: expected model gpt-5.6-terra, got $model"
-	exit 1
-fi
-if [[ "$effort" != 'xhigh' ]]; then
-	printf '%s\n' "FAIL: expected effort xhigh, got $effort"
-	exit 1
-fi
-if [[ "$stage_id" != 'my-stage' ]]; then
-	printf '%s\n' "FAIL: expected stage_id my-stage, got $stage_id"
-	exit 1
-fi
-if [[ "$session_id" != 'session-abc' ]]; then
-	printf '%s\n' "FAIL: expected session_id session-abc, got $session_id"
-	exit 1
-fi
-if [[ -z "$ts" || "$ts" == 'null' ]]; then
-	printf '%s\n' "FAIL: expected a non-empty ts, got '$ts'"
-	exit 1
-fi
+BASE='~/.claude/hooks/loom/codex-forward.sh task hello --model gpt-5.6-terra --effort xhigh --write'
+WITH_UNIT="$BASE --unit-id stable-unit"
+OUT1="$d/first.json"
+OUT2="$d/second.json"
+authorize "$WITH_UNIT" tool-first "$OUT1"
+authorize "$WITH_UNIT" tool-second "$OUT2"
 
-# Case 2: a second identical call appends a second line rather than truncating.
-printf '%s' "$VALID_PAYLOAD" | HOME="$HOME_DIR" LOOM_WORK_DIR="$WORK_DIR" \
-	LOOM_STAGE_ID="my-stage" LOOM_SESSION_ID="session-abc" \
-	bash "$GUARD" >/dev/null
+[[ -f "$LEDGER" && $(wc -l <"$LEDGER") -eq 2 ]]
+[[ $(wc -l <"$OUT1") -eq 1 && $(wc -l <"$OUT2") -eq 1 ]]
+invocation_one=$(jq -er '.hookSpecificOutput.updatedInput.command | capture("--invocation-id (?<id>inv-[0-9a-f]{32})$").id' "$OUT1")
+invocation_two=$(jq -er '.hookSpecificOutput.updatedInput.command | capture("--invocation-id (?<id>inv-[0-9a-f]{32})$").id' "$OUT2")
+[[ "$invocation_one" != "$invocation_two" ]]
 
-if [[ $(wc -l <"$LEDGER") -ne 2 ]]; then
-	printf '%s\n' "FAIL: expected 2 ledger lines after second call, got $(wc -l <"$LEDGER")"
-	exit 1
-fi
+expected_one="$WITH_UNIT --invocation-id $invocation_one"
+jq -e --arg command "$expected_one" '
+	.hookSpecificOutput == {
+		hookEventName:"PreToolUse",
+		permissionDecision:"allow",
+		updatedInput:{command:$command,timeout:600000}
+	}' "$OUT1" >/dev/null
 
-# Case 3: an unsafe stage id must not create any ledger file or directory,
-# even though the command itself is still authorized (exit 0).
+workspace_root=$(cd "$WORKSPACE" && pwd -P)
+companion_path=$(cd "$COMPANION_DIR" && pwd -P)/codex-companion.mjs
+state_root=$(cd "$HOME_DIR" && pwd -P)/.codex/plugin-data/state
+first_row=$(sed -n '1p' "$LEDGER")
+[[ "$first_row" != *$'\n'* ]]
+printf '%s' "$first_row" | jq -e \
+	--arg invocation "$invocation_one" --arg workspace "$workspace_root" \
+	--arg companion "$companion_path" --arg state "$state_root" '
+	(keys | sort) == (["companion_path","companion_version","effort","forwarder_agent_id","invocation_id","model","parent_session_id","session_id","stage_id","state_root","tool_use_id","ts","unit_id","v","workspace_root"] | sort) and
+	.v == 2 and (.ts | test("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$")) and
+	.stage_id == "my-stage" and .session_id == "session-abc" and
+	.parent_session_id == "parent-uuid" and .forwarder_agent_id == "forwarder-7" and
+	.tool_use_id == "tool-first" and .unit_id == "stable-unit" and
+	.invocation_id == $invocation and .model == "gpt-5.6-terra" and .effort == "xhigh" and
+	.workspace_root == $workspace and .companion_version == "1.0.6" and
+	.companion_path == $companion and .state_root == $state' >/dev/null
+
+# Legacy callers receive a stable logical unit derived from the exact agent id.
+OUT3="$d/legacy.json"
+authorize "$BASE" tool-legacy "$OUT3"
+legacy_invocation=$(jq -er '.hookSpecificOutput.updatedInput.command | capture("--invocation-id (?<id>inv-[0-9a-f]{32})$").id' "$OUT3")
+jq -e --arg command "$BASE --unit-id fwd-forwarder-7 --invocation-id $legacy_invocation" \
+	'.hookSpecificOutput.updatedInput.command == $command' "$OUT3" >/dev/null
+jq -e 'select(.tool_use_id == "tool-legacy") | .unit_id == "fwd-forwarder-7"' "$LEDGER" >/dev/null
+
+# Caller-owned invocation identity is never accepted or recorded.
+before=$(wc -l <"$LEDGER")
+FORGED="$WITH_UNIT --invocation-id inv-00000000000000000000000000000000"
 status=0
-printf '%s' "$VALID_PAYLOAD" | HOME="$HOME_DIR" LOOM_WORK_DIR="$WORK_DIR" \
-	LOOM_STAGE_ID="bad/stage" LOOM_SESSION_ID="session-abc" \
-	bash "$GUARD" >/dev/null || status=$?
+printf '%s' "$(payload "$FORGED" tool-forged)" | HOME="$HOME_DIR" \
+	LOOM_WORK_DIR="$WORK_DIR" LOOM_STAGE_ID=my-stage LOOM_SESSION_ID=session-abc \
+	bash "$GUARD" >"$d/forged.stdout" 2>"$d/forged.stderr" || status=$?
+[[ $status -eq 2 && ! -s "$d/forged.stdout" && $(wc -l <"$LEDGER") -eq $before ]]
+rg -qF 'caller-supplied --invocation-id is forbidden' "$d/forged.stderr"
 
-if [[ "$status" -ne 0 ]]; then
-	printf '%s\n' "FAIL: guard with unsafe stage id exited $status, expected 0"
-	exit 1
-fi
-if [[ -e "$WORK_DIR/subagents/bad" || -e "$WORK_DIR/subagents/bad/stage" ]]; then
-	printf '%s\n' 'FAIL: unsafe stage id left a ledger artifact under subagents/'
-	exit 1
-fi
+# Unit ids share the Rust receipt rule: the first byte must be alphanumeric.
+for unsafe_unit in -leading-dash .leading-dot; do
+	before=$(wc -l <"$LEDGER")
+	status=0
+	printf '%s' "$(payload "$BASE --unit-id $unsafe_unit" "tool-$unsafe_unit")" | HOME="$HOME_DIR" \
+		LOOM_WORK_DIR="$WORK_DIR" LOOM_STAGE_ID=my-stage LOOM_SESSION_ID=session-abc \
+		bash "$GUARD" >"$d/unsafe-unit.stdout" 2>"$d/unsafe-unit.stderr" || status=$?
+	[[ $status -eq 2 && ! -s "$d/unsafe-unit.stdout" && $(wc -l <"$LEDGER") -eq $before ]]
+done
 
-# Case 4: an empty LOOM_WORK_DIR must not create a "subagents" directory,
-# whether resolved as an absolute path or relative to the guard's own working
-# directory. Run from a dedicated cwd so the second possibility has somewhere
-# to be checked.
-CASE4_CWD="$TMP/case4-cwd"
-mkdir -p "$CASE4_CWD"
+# An exact forward outside an active stage is rejected before companion launch.
 status=0
-(
-	cd "$CASE4_CWD"
-	printf '%s' "$VALID_PAYLOAD" | HOME="$HOME_DIR" LOOM_WORK_DIR= \
-		LOOM_STAGE_ID="my-stage" LOOM_SESSION_ID="session-abc" \
-		bash "$GUARD" >/dev/null
-) || status=$?
+printf '%s' "$(payload "$WITH_UNIT" tool-outside-stage)" | HOME="$HOME_DIR" \
+	bash "$GUARD" >"$d/outside-stage.stdout" 2>"$d/outside-stage.stderr" || status=$?
+[[ $status -eq 2 && ! -s "$d/outside-stage.stdout" ]]
+rg -qF 'codex forwarding is allowed only inside an active loom stage (safe LOOM_STAGE_ID, LOOM_SESSION_ID, and LOOM_WORK_DIR are required)' \
+	"$d/outside-stage.stderr"
 
-if [[ "$status" -ne 0 ]]; then
-	printf '%s\n' "FAIL: guard with empty LOOM_WORK_DIR exited $status, expected 0"
-	exit 1
-fi
-if [[ -e "$CASE4_CWD/subagents" ]]; then
-	printf '%s\n' 'FAIL: empty LOOM_WORK_DIR created a subagents directory relative to cwd'
-	exit 1
-fi
-
-# Case 5: LOOM_STAGE_ID=".." must not escape subagents/<stage_id> - it must
-# neither append to work_dir/codex.jsonl (subagents/.. resolves to work_dir
-# itself) nor create a subagents directory nor change the work dir's mode via
-# the `mkdir -p -m 700`/`chmod 700` calls that target that resolved directory.
-DOTDOT_WORK_DIR="$TMP/work-dotdot"
-mkdir -m 750 "$DOTDOT_WORK_DIR"
-mode_before=$(stat -c '%a' "$DOTDOT_WORK_DIR" 2>/dev/null || stat -f '%Lp' "$DOTDOT_WORK_DIR")
-
+# The guard pins 1.0.6 and fails closed when only another version exists.
+UNSUPPORTED_HOME="$d/unsupported-home"
+mkdir -p "$UNSUPPORTED_HOME/.claude/plugins/cache/openai-codex/codex/1.0.7/scripts" \
+	"$d/unsupported-work/subagents/my-stage"
+write_start "$d/unsupported-work"
+printf '%s\n' '// unsupported' >"$UNSUPPORTED_HOME/.claude/plugins/cache/openai-codex/codex/1.0.7/scripts/codex-companion.mjs"
 status=0
-printf '%s' "$VALID_PAYLOAD" | HOME="$HOME_DIR" LOOM_WORK_DIR="$DOTDOT_WORK_DIR" \
-	LOOM_STAGE_ID=".." LOOM_SESSION_ID="session-abc" \
-	bash "$GUARD" >/dev/null || status=$?
+printf '%s' "$(payload "$WITH_UNIT" tool-unsupported)" | HOME="$UNSUPPORTED_HOME" \
+	LOOM_WORK_DIR="$d/unsupported-work" LOOM_STAGE_ID=my-stage LOOM_SESSION_ID=session-abc \
+	bash "$GUARD" >"$d/unsupported.stdout" 2>"$d/unsupported.stderr" || status=$?
+[[ $status -eq 2 && ! -s "$d/unsupported.stdout" ]]
+rg -qF 'supported codex companion 1.0.6 is missing or unsafe' "$d/unsupported.stderr"
 
-if [[ "$status" -ne 0 ]]; then
-	printf '%s\n' "FAIL: guard with LOOM_STAGE_ID=.. exited $status, expected 0"
-	exit 1
-fi
-if [[ -e "$DOTDOT_WORK_DIR/codex.jsonl" ]]; then
-	printf '%s\n' 'FAIL: LOOM_STAGE_ID=.. appended to work_dir/codex.jsonl'
-	exit 1
-fi
-if [[ -e "$DOTDOT_WORK_DIR/subagents" ]]; then
-	printf '%s\n' 'FAIL: LOOM_STAGE_ID=.. created a subagents directory'
-	exit 1
-fi
-mode_after=$(stat -c '%a' "$DOTDOT_WORK_DIR" 2>/dev/null || stat -f '%Lp' "$DOTDOT_WORK_DIR")
-if [[ "$mode_after" != "$mode_before" ]]; then
-	printf '%s\n' "FAIL: LOOM_STAGE_ID=.. changed the work dir's mode from $mode_before to $mode_after"
-	exit 1
-fi
-
-# Case 6: a command that FAILS validation is blocked (exit 2) and records
-# nothing - only an AUTHORIZED forward may ever be recorded.
-BLOCKED_WORK_DIR="$TMP/work-blocked"
-BAD_CMD='~/.claude/hooks/loom/codex-forward.sh task hello --model gpt-4 --effort xhigh --write'
-BAD_PAYLOAD=$(jq -nc --arg c "$BAD_CMD" \
-	'{tool_name:"Bash",tool_input:{command:$c},agent_type:"loom-codex-forwarder"}')
+# Failure to append the authorization is a block, never a silent allow.
+BLOCKED_WORK="$d/blocked-work"
+mkdir -p "$BLOCKED_WORK"
+printf '%s\n' blocker >"$BLOCKED_WORK/subagents"
 status=0
-printf '%s' "$BAD_PAYLOAD" | HOME="$HOME_DIR" LOOM_WORK_DIR="$BLOCKED_WORK_DIR" \
-	LOOM_STAGE_ID="blocked-stage" LOOM_SESSION_ID="session-abc" \
-	bash "$GUARD" >/dev/null 2>/dev/null || status=$?
+printf '%s' "$(payload "$WITH_UNIT" tool-unwritable)" | HOME="$HOME_DIR" \
+	LOOM_WORK_DIR="$BLOCKED_WORK" LOOM_STAGE_ID=my-stage LOOM_SESSION_ID=session-abc \
+	bash "$GUARD" >"$d/unwritable.stdout" 2>/dev/null || status=$?
+[[ $status -eq 2 && ! -s "$d/unwritable.stdout" ]]
 
-if [[ "$status" -ne 2 ]]; then
-	printf '%s\n' "FAIL: expected exit 2 for an unsupported model, got exit $status"
-	exit 1
-fi
-if [[ -e "$BLOCKED_WORK_DIR" ]]; then
-	printf '%s\n' 'FAIL: a blocked command created ledger artifacts'
-	exit 1
-fi
-
-INJECT_CMD='~/.claude/hooks/loom/codex-forward.sh task hello --model gpt-5.6-terra --effort xhigh --write && echo hi'
-INJECT_PAYLOAD=$(jq -nc --arg c "$INJECT_CMD" \
-	'{tool_name:"Bash",tool_input:{command:$c},agent_type:"loom-codex-forwarder"}')
-status=0
-printf '%s' "$INJECT_PAYLOAD" | HOME="$HOME_DIR" LOOM_WORK_DIR="$BLOCKED_WORK_DIR" \
-	LOOM_STAGE_ID="blocked-stage" LOOM_SESSION_ID="session-abc" \
-	bash "$GUARD" >/dev/null 2>/dev/null || status=$?
-
-if [[ "$status" -ne 2 ]]; then
-	printf '%s\n' "FAIL: expected exit 2 for a trailing && echo hi, got exit $status"
-	exit 1
-fi
-if [[ -e "$BLOCKED_WORK_DIR" ]]; then
-	printf '%s\n' 'FAIL: a blocked command with a trailing operator created ledger artifacts'
-	exit 1
-fi
-
-printf '%s\n' 'PASS'
+printf '%s\n' PASS

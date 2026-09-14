@@ -150,10 +150,10 @@ fn assert_notebook_edit_hooks(pre_tool: &[Value]) {
 /// regression - this must be bumped deliberately, in the same change that
 /// adds/removes an event, alongside `Display`, `script_name()` and `all()`.
 #[test]
-fn test_hook_event_surface_has_seven_events() {
+fn test_hook_event_surface_has_eight_events() {
     assert_eq!(
         HookEvent::all().len(),
-        7,
+        8,
         "HookEvent::all() surface changed - verify Display, script_name(), \
          and to_settings_hooks() were all updated to match"
     );
@@ -179,9 +179,10 @@ fn test_hook_event_scripts_are_all_embedded() {
 
 fn assert_lifecycle_hooks(hooks: &Value) {
     let post_tool = hooks["PostToolUse"].as_array().unwrap();
-    assert_eq!(post_tool.len(), 2);
+    assert_eq!(post_tool.len(), 3);
     assert_hook(&post_tool[0], "AskUserQuestion", "ask-user-post.sh");
     assert_hook(&post_tool[1], "Bash", "loom-control-complete.sh");
+    assert_hook(&post_tool[2], "Bash", "codex-forward-result.sh");
 
     let stop = hooks["Stop"].as_array().unwrap();
     assert_eq!(stop.len(), 1);

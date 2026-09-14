@@ -225,3 +225,67 @@ fn conflicting_stage_metadata_makes_scoped_join_unknown() {
     assert!(index.get_metadata("agent-x", "parent-a").is_none());
     assert!(index.get("agent-x", "parent-a").is_none());
 }
+
+#[test]
+fn exact_lookup_requires_all_four_identity_fields() {
+    let work_dir = tempfile::tempdir().unwrap();
+    fs::write(
+        stage(&work_dir).join("starts.jsonl"),
+        concat!(
+            "{\"agent_id\":\"agent-x\",\"agent_type\":\"review\",",
+            "\"parent_session_id\":\"parent-a\",\"stage_id\":\"stage-a\",",
+            "\"loom_session_id\":\"loom-a\",\"ts\":\"2026-09-13T10:00:00Z\"}\n",
+            "{\"agent_id\":\"legacy\",\"agent_type\":\"review\",",
+            "\"parent_session_id\":\"parent-a\"}\n",
+            "{\"agent_id\":\"ambiguous\",\"agent_type\":\"review\",",
+            "\"session_id\":\"parent-a\",\"stage_id\":\"stage-a\",",
+            "\"loom_session_id\":\"loom-a\"}\n"
+        ),
+    )
+    .unwrap();
+
+    let index = StartedAgentTypeIndex::load(Some(work_dir.path()));
+    let exact = index.resolve_exact("stage-a", "parent-a", "loom-a", "agent-x");
+
+    assert_eq!(exact.map(|row| row.agent_type), Some("review".into()));
+    assert!(index
+        .resolve_exact("stage-b", "parent-a", "loom-a", "agent-x")
+        .is_none());
+    assert!(index
+        .resolve_exact("stage-a", "parent-b", "loom-a", "agent-x")
+        .is_none());
+    assert!(index
+        .resolve_exact("stage-a", "parent-a", "loom-b", "agent-x")
+        .is_none());
+    assert!(index
+        .resolve_exact("stage-a", "parent-a", "loom-a", "agent-y")
+        .is_none());
+    assert!(index
+        .resolve_exact("stage-a", "parent-a", "loom-a", "legacy")
+        .is_none());
+    assert!(index
+        .resolve_exact("stage-a", "parent-a", "loom-a", "ambiguous")
+        .is_none());
+}
+
+#[test]
+fn exact_lookup_rejects_a_row_from_the_wrong_stage_directory() {
+    let work_dir = tempfile::tempdir().unwrap();
+    let wrong_stage = work_dir.path().join("subagents").join("stage-b");
+    fs::create_dir_all(&wrong_stage).unwrap();
+    fs::write(
+        wrong_stage.join("starts.jsonl"),
+        concat!(
+            "{\"agent_id\":\"agent-x\",\"agent_type\":\"review\",",
+            "\"parent_session_id\":\"parent-a\",\"stage_id\":\"stage-a\",",
+            "\"loom_session_id\":\"loom-a\",\"ts\":\"2026-09-13T10:00:00Z\"}\n"
+        ),
+    )
+    .unwrap();
+
+    let index = StartedAgentTypeIndex::load(Some(work_dir.path()));
+
+    assert!(index
+        .resolve_exact("stage-a", "parent-a", "loom-a", "agent-x")
+        .is_none());
+}

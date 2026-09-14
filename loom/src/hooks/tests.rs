@@ -5,8 +5,6 @@ use crate::plan::schema::PermissionMode;
 use std::path::PathBuf;
 use tempfile::TempDir;
 
-/// Test helper: build a HooksConfig with sensible defaults (AcceptEdits)
-/// so existing assertions hold.
 fn test_config(hooks: PathBuf, work: PathBuf) -> HooksConfig {
     HooksConfig::new(hooks, work, PermissionMode::AcceptEdits)
 }
@@ -16,37 +14,40 @@ mod config_tests {
 
     #[test]
     fn test_hook_event_display() {
-        assert_eq!(HookEvent::SessionStart.to_string(), "SessionStart");
-        assert_eq!(HookEvent::PostToolUse.to_string(), "PostToolUse");
-        assert_eq!(HookEvent::PreCompact.to_string(), "PreCompact");
-        assert_eq!(HookEvent::SessionEnd.to_string(), "SessionEnd");
-        assert_eq!(HookEvent::Stop.to_string(), "Stop");
-        assert_eq!(HookEvent::SubagentStart.to_string(), "SubagentStart");
-        assert_eq!(HookEvent::SubagentStop.to_string(), "SubagentStop");
+        let names: Vec<_> = HookEvent::all().iter().map(ToString::to_string).collect();
+        assert_eq!(
+            names.join(","),
+            "SessionStart,PostToolUse,PreCompact,SessionEnd,Stop,SubagentStart,SubagentStop,TeammateIdle"
+        );
     }
 
     #[test]
     fn test_hook_event_script_name() {
-        assert_eq!(HookEvent::SessionStart.script_name(), "session-start.sh");
-        assert_eq!(HookEvent::PostToolUse.script_name(), "post-tool-use.sh");
-        assert_eq!(HookEvent::PreCompact.script_name(), "pre-compact.sh");
-        assert_eq!(HookEvent::SessionEnd.script_name(), "session-end.sh");
-        assert_eq!(HookEvent::Stop.script_name(), "learning-validator.sh");
-        assert_eq!(HookEvent::SubagentStart.script_name(), "subagent-start.sh");
-        assert_eq!(HookEvent::SubagentStop.script_name(), "subagent-stop.sh");
+        let scripts: Vec<_> = HookEvent::all()
+            .iter()
+            .map(HookEvent::script_name)
+            .collect();
+        assert_eq!(
+            scripts.join(","),
+            "session-start.sh,post-tool-use.sh,pre-compact.sh,session-end.sh,learning-validator.sh,subagent-start.sh,subagent-stop.sh,teammate-idle.sh"
+        );
     }
 
     #[test]
     fn test_hook_event_all() {
-        let all = HookEvent::all();
-        assert_eq!(all.len(), 7);
-        assert!(all.contains(&HookEvent::SessionStart));
-        assert!(all.contains(&HookEvent::PostToolUse));
-        assert!(all.contains(&HookEvent::PreCompact));
-        assert!(all.contains(&HookEvent::SessionEnd));
-        assert!(all.contains(&HookEvent::Stop));
-        assert!(all.contains(&HookEvent::SubagentStart));
-        assert!(all.contains(&HookEvent::SubagentStop));
+        assert_eq!(
+            HookEvent::all(),
+            &[
+                HookEvent::SessionStart,
+                HookEvent::PostToolUse,
+                HookEvent::PreCompact,
+                HookEvent::SessionEnd,
+                HookEvent::Stop,
+                HookEvent::SubagentStart,
+                HookEvent::SubagentStop,
+                HookEvent::TeammateIdle,
+            ]
+        );
     }
 
     #[test]
@@ -79,8 +80,6 @@ mod config_tests {
     fn test_hooks_config_build_command() {
         let config = super::test_config(PathBuf::from("/hooks"), PathBuf::from("/work"));
 
-        // build_command returns just the script path; hooks read session
-        // identity from the process env exported by the wrapper script
         let cmd = config.build_command(HookEvent::SessionStart);
         assert_eq!(cmd, "/hooks/session-start.sh");
 
@@ -93,9 +92,6 @@ mod config_tests {
         let config = super::test_config(PathBuf::from("/hooks"), PathBuf::from("/work"));
 
         let hooks = config.to_settings_hooks();
-        // One entry per HookEvent variant (SessionStart, PostToolUse,
-        // PreCompact, SessionEnd, Stop, SubagentStart, SubagentStop) - every
-        // variant is a session hook and none are excluded.
         assert_eq!(hooks.len(), HookEvent::all().len());
 
         for &event in HookEvent::all() {

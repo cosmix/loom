@@ -1,9 +1,8 @@
 //! Tests for `classify.rs`'s liveness table, including the `done` debounce,
 //! the two classifier shapes the empirical census surfaced (`thinking`-only
 //! and a `user`-role text entry), `tool-wait`'s immunity to idle time, and
-//! the `<state-dir>/subagents/.../<agentId>.json` authoritative fast path. Split
-//! out to keep `classify.rs` itself under the 400-line ceiling (CLAUDE.md
-//! Rule 17).
+//! lifecycle fast paths. Split out to keep `classify.rs` itself under the
+//! 400-line ceiling.
 
 use super::*;
 
@@ -43,6 +42,7 @@ fn done_state_has_text_block_no_tool_use() {
 
     let summary = analyze(&path, "x".to_string(), DEFAULT_DONE_DEBOUNCE_SECS, None).unwrap();
     assert_eq!(summary.state, SubagentState::Done);
+    assert_eq!(summary.done_evidence, Some(DoneEvidence::LegacyTranscript));
     assert_eq!(
         summary.final_report.as_deref(),
         Some("all done, here's the report")
@@ -238,48 +238,9 @@ fn tool_wait_never_debounces_even_after_30_minutes_idle() {
     assert!(summary.final_report.is_none());
 }
 
-/// An authoritative `<state-dir>/subagents/<stage>/<agentId>.json` record forces
-/// `done` immediately, bypassing the debounce entirely -- even for a
-/// transcript whose last entry has a fresh timestamp.
+/// Missing lifecycle evidence falls back to the ordinary debounce rule.
 #[test]
-fn authoritative_termination_record_forces_done_with_no_debounce() {
-    let temp = tempfile::tempdir().unwrap();
-    let content = format!(
-        "{}\n",
-        serde_json::json!({
-            "type": "assistant",
-            "timestamp": Utc::now().to_rfc3339(),
-            "message": {
-                "role": "assistant",
-                "content": [{"type": "text", "text": "the hook already fired for this one"}],
-            },
-        })
-    );
-    let path = write_transcript(temp.path(), "agent-x.jsonl", &content);
-
-    let work_dir = tempfile::tempdir().unwrap();
-    let stage_dir = work_dir.path().join("subagents").join("some-stage");
-    fs::create_dir_all(&stage_dir).unwrap();
-    fs::write(stage_dir.join("x.json"), "{}").unwrap();
-
-    let summary = analyze(
-        &path,
-        "x".to_string(),
-        DEFAULT_DONE_DEBOUNCE_SECS,
-        Some(work_dir.path()),
-    )
-    .unwrap();
-    assert_eq!(summary.state, SubagentState::Done);
-    assert_eq!(
-        summary.final_report.as_deref(),
-        Some("the hook already fired for this one")
-    );
-}
-
-/// No record for this agent (the `subagents/` tree exists, but nothing
-/// names this `agentId`) falls back to the ordinary debounce rule.
-#[test]
-fn missing_termination_record_falls_back_to_transcript_rule() {
+fn missing_lifecycle_record_falls_back_to_transcript_rule() {
     let temp = tempfile::tempdir().unwrap();
     let content = format!(
         "{}\n",
@@ -296,13 +257,21 @@ fn missing_termination_record_falls_back_to_transcript_rule() {
 
     let work_dir = tempfile::tempdir().unwrap();
     fs::create_dir_all(work_dir.path().join("subagents").join("some-stage")).unwrap();
-    // No `x.json` written in that stage dir.
+    // No lifecycle journal exists in that stage directory.
+    let lifecycle = lifecycle::Context::load(
+        Some(work_dir.path()),
+        "some-stage".into(),
+        "some-session".into(),
+    );
 
-    let summary = analyze(
+    let summary = analyze_with_evidence_at_ceiling(
         &path,
         "x".to_string(),
         DEFAULT_DONE_DEBOUNCE_SECS,
         Some(work_dir.path()),
+        resolve_subagent_ceiling(Some(work_dir.path())),
+        Some(&lifecycle),
+        None,
     )
     .unwrap();
     assert_eq!(summary.state, SubagentState::Generating);
@@ -318,12 +287,18 @@ fn missing_work_dir_degrades_silently() {
         serde_json::json!([{"type": "text", "text": "no state directory here"}]),
     );
     let path = write_transcript(temp.path(), "agent-x.jsonl", &format!("{content}\n"));
+    let work_dir = Path::new("/nonexistent/work/dir");
+    let lifecycle =
+        lifecycle::Context::load(Some(work_dir), "some-stage".into(), "some-session".into());
 
-    let summary = analyze(
+    let summary = analyze_with_evidence_at_ceiling(
         &path,
         "x".to_string(),
         DEFAULT_DONE_DEBOUNCE_SECS,
-        Some(Path::new("/nonexistent/work/dir")),
+        Some(work_dir),
+        resolve_subagent_ceiling(Some(work_dir)),
+        Some(&lifecycle),
+        None,
     )
     .unwrap();
     assert_eq!(summary.state, SubagentState::Done);

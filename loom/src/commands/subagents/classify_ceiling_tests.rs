@@ -52,8 +52,16 @@ fn zero_subagent_ceiling_disables_the_peak_marker_like_the_hook() {
     let transcript_dir = tempfile::tempdir().unwrap();
     let path = transcript_with_input_tokens(transcript_dir.path());
 
-    let summary =
-        analyze_at_ceiling(&path, "x".to_owned(), DEFAULT_DONE_DEBOUNCE_SECS, None, 0).unwrap();
+    let summary = analyze_with_evidence_at_ceiling(
+        &path,
+        "x".to_owned(),
+        DEFAULT_DONE_DEBOUNCE_SECS,
+        None,
+        0,
+        None,
+        None,
+    )
+    .unwrap();
 
     assert!(!summary.peak_tokens_over_ceiling);
 }

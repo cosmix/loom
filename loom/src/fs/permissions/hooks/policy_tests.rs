@@ -1,8 +1,8 @@
 //! Adversarial regression tests for security-sensitive hook policy.
 
 use crate::fs::permissions::constants::{
-    HOOK_CODEX_FORWARD_GUARD, HOOK_COMMON, HOOK_POST_TOOL_USE, HOOK_READ_LEDGER,
-    HOOK_WORKTREE_FILE_GUARD,
+    HOOK_CODEX_FORWARD_COMMON, HOOK_CODEX_FORWARD_GUARD, HOOK_COMMON, HOOK_LIFECYCLE,
+    HOOK_POST_TOOL_USE, HOOK_READ_LEDGER, HOOK_WORKTREE_FILE_GUARD,
 };
 use serde_json::{json, Value};
 use std::fs;
@@ -37,12 +37,14 @@ impl HookFixture {
             fs::create_dir_all(path).unwrap();
         }
         fs::write(hooks.join("_common.sh"), HOOK_COMMON).unwrap();
+        fs::write(hooks.join("_lifecycle.sh"), HOOK_LIFECYCLE).unwrap();
+        fs::write(hooks.join("_codex_forward.sh"), HOOK_CODEX_FORWARD_COMMON).unwrap();
         fs::write(hooks.join("_read_ledger.sh"), HOOK_READ_LEDGER).unwrap();
         fs::write(&outside, "outside").unwrap();
         fs::write(sibling.join("file.txt"), "sibling").unwrap();
         fs::create_dir_all(worktree.join(".loom")).unwrap();
+        fs::create_dir(worktree.join(".git")).unwrap();
         symlink("../../../.loom/work", worktree.join(".loom").join("work")).unwrap();
-
         Self {
             _temp: temp,
             hooks,
@@ -173,7 +175,27 @@ fn forward_call(fixture: &HookFixture, payload: Value) -> Output {
     run_hook(
         &script,
         &fixture.worktree,
-        &[("HOME", &fixture.home)],
+        &[
+            ("HOME", fixture.home.as_path()),
+            ("LOOM_STAGE_ID", Path::new("")),
+            ("LOOM_SESSION_ID", Path::new("")),
+            ("LOOM_WORK_DIR", Path::new("")),
+        ],
+        &payload,
+    )
+}
+
+fn forward_call_in_stage(fixture: &HookFixture, payload: Value) -> Output {
+    let script = fixture.install("codex-forward-guard.sh", HOOK_CODEX_FORWARD_GUARD);
+    run_hook(
+        &script,
+        &fixture.worktree,
+        &[
+            ("HOME", fixture.home.as_path()),
+            ("LOOM_STAGE_ID", Path::new("policy-stage")),
+            ("LOOM_SESSION_ID", Path::new("loom-session")),
+            ("LOOM_WORK_DIR", fixture.work_dir.as_path()),
+        ],
         &payload,
     )
 }
@@ -181,13 +203,105 @@ fn forward_call(fixture: &HookFixture, payload: Value) -> Output {
 #[test]
 fn forward_guard_allows_only_exact_forward_wrapper_command() {
     let fixture = HookFixture::new();
-    let command = "~/.claude/hooks/loom/codex-forward.sh task 'hello; literal' --model gpt-5.6-terra --effort xhigh --write";
-    let payload = json!({
+    let command = "~/.claude/hooks/loom/codex-forward.sh task 'hello; literal' --model gpt-5.6-terra --effort xhigh --write --unit-id policy-unit";
+    install_forward_companion(&fixture);
+
+    let invocation = assert_forward_allowed(&fixture, command);
+    assert_authorization_row(&fixture, &invocation);
+    assert_outside_stage_rejected(&fixture, command);
+    assert_missing_companion_rejected(command);
+}
+
+fn install_forward_companion(fixture: &HookFixture) {
+    let companion = fixture
+        .home
+        .join(".claude/plugins/cache/openai-codex/codex/1.0.6/scripts/codex-companion.mjs");
+    fs::create_dir_all(companion.parent().unwrap()).unwrap();
+    fs::write(companion, "// pinned fixture\n").unwrap();
+    install_forward_start(fixture);
+}
+
+fn install_forward_start(fixture: &HookFixture) {
+    let directory = fixture.work_dir.join("subagents/policy-stage");
+    fs::create_dir_all(&directory).unwrap();
+    let row = json!({"agent_id":"policy-forwarder","agent_type":"loom-codex-forwarder",
+        "stage_id":"policy-stage","loom_session_id":"loom-session",
+        "parent_session_id":"parent-session","ts":"2000-01-01T00:00:00.000Z"});
+    fs::write(directory.join("starts.jsonl"), format!("{row}\n")).unwrap();
+}
+
+fn forward_payload(fixture: &HookFixture, command: &str, tool_use_id: &str) -> Value {
+    json!({
         "tool_name": "Bash",
         "agent_type": "loom-codex-forwarder",
-        "tool_input": {"command": command}
-    });
-    assert!(forward_call(&fixture, payload).status.success());
+        "agent_id": "policy-forwarder",
+        "session_id": "parent-session",
+        "tool_use_id": tool_use_id,
+        "cwd": fixture.worktree,
+        "tool_input": {"command": command, "timeout": 600000}
+    })
+}
+
+fn assert_forward_allowed(fixture: &HookFixture, command: &str) -> String {
+    let allowed = forward_call_in_stage(fixture, forward_payload(fixture, command, "policy-tool"));
+    assert!(allowed.status.success(), "{:?}", allowed.stderr);
+    let response: Value = serde_json::from_slice(&allowed.stdout).unwrap();
+    let updated = response["hookSpecificOutput"]["updatedInput"]["command"]
+        .as_str()
+        .unwrap();
+    let prefix = format!("{command} --invocation-id ");
+    let invocation = updated.strip_prefix(&prefix).unwrap();
+    let nonce = invocation.strip_prefix("inv-").unwrap();
+    assert_eq!(nonce.len(), 32);
+    assert!(nonce
+        .bytes()
+        .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte)));
+    assert_eq!(
+        response["hookSpecificOutput"],
+        json!({
+            "hookEventName": "PreToolUse",
+            "permissionDecision": "allow",
+            "updatedInput": {"command": updated, "timeout": 600000}
+        })
+    );
+    invocation.to_owned()
+}
+
+fn assert_authorization_row(fixture: &HookFixture, invocation: &str) {
+    let ledger =
+        fs::read_to_string(fixture.work_dir.join("subagents/policy-stage/codex.jsonl")).unwrap();
+    assert_eq!(ledger.lines().count(), 1);
+    let row: Value = serde_json::from_str(ledger.trim()).unwrap();
+    assert_eq!(row["v"], 2);
+    assert_eq!(row["stage_id"], "policy-stage");
+    assert_eq!(row["session_id"], "loom-session");
+    assert_eq!(row["parent_session_id"], "parent-session");
+    assert_eq!(row["forwarder_agent_id"], "policy-forwarder");
+    assert_eq!(row["tool_use_id"], "policy-tool");
+    assert_eq!(row["unit_id"], "policy-unit");
+    assert_eq!(row["invocation_id"], invocation);
+    assert_eq!(row["model"], "gpt-5.6-terra");
+    assert_eq!(row["effort"], "xhigh");
+}
+
+fn assert_outside_stage_rejected(fixture: &HookFixture, command: &str) {
+    let outside = forward_call(fixture, forward_payload(fixture, command, "outside-tool"));
+    assert_eq!(outside.status.code(), Some(2));
+    assert!(outside.stdout.is_empty());
+    assert!(String::from_utf8_lossy(&outside.stderr).contains(
+        "codex forwarding is allowed only inside an active loom stage (safe LOOM_STAGE_ID, LOOM_SESSION_ID, and LOOM_WORK_DIR are required)"
+    ));
+}
+
+fn assert_missing_companion_rejected(command: &str) {
+    let missing = HookFixture::new();
+    install_forward_start(&missing);
+    let no_companion =
+        forward_call_in_stage(&missing, forward_payload(&missing, command, "missing-tool"));
+    assert_eq!(no_companion.status.code(), Some(2));
+    assert!(no_companion.stdout.is_empty());
+    assert!(String::from_utf8_lossy(&no_companion.stderr)
+        .contains("supported codex companion 1.0.6 is missing or unsafe"));
 }
 
 #[test]

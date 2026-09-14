@@ -3,7 +3,7 @@
 
 use colored::Colorize;
 
-use super::classify::SubagentSummary;
+use super::classify::{DoneEvidence, SubagentState, SubagentSummary};
 
 const LAST_TOOL_WIDTH: usize = 18;
 const AGENT_TYPE_WIDTH: usize = 15;
@@ -45,7 +45,7 @@ fn agent_id_width(summaries: &[SubagentSummary]) -> usize {
 fn state_width(summaries: &[SubagentSummary]) -> usize {
     summaries
         .iter()
-        .map(|summary| display_state(summary).label().len())
+        .map(|summary| state_label(summary).len())
         .max()
         .unwrap_or(0)
         .max(10)
@@ -70,7 +70,7 @@ fn print_row(summary: &SubagentSummary, agent_id_width: usize, state_width: usiz
     println!(
         "{:<agent_id_width$} {:<state_width$} {:>9} {:>5}  {:<last_tool_width$} {:<agent_type_width$} {:<model_width$} {:>reqs_width$} {:>peak_tokens_width$}",
         summary.agent_id,
-        display_state(summary).label(),
+        state_label(summary),
         summary.idle_secs,
         summary.turns,
         summary.last_tool.as_deref().unwrap_or("-"),
@@ -90,6 +90,13 @@ fn print_row(summary: &SubagentSummary, agent_id_width: usize, state_width: usiz
 
 fn display_state(summary: &SubagentSummary) -> super::classify::SubagentState {
     summary.display_state.unwrap_or(summary.state)
+}
+
+fn state_label(summary: &SubagentSummary) -> &'static str {
+    match (display_state(summary), summary.done_evidence) {
+        (SubagentState::Done, Some(DoneEvidence::LegacyTranscript)) => "legacy-done",
+        (state, _) => state.label(),
+    }
 }
 
 fn text_cell(value: Option<&str>, width: usize) -> String {
@@ -167,6 +174,18 @@ mod tests {
     #[test]
     fn genuine_zero_reqs_renders_as_zero() {
         assert_eq!(reqs_label(Some(0)), "0");
+    }
+
+    #[test]
+    fn completion_and_terminal_labels_preserve_evidence() {
+        let mut summary = super::super::summary::empty("agent".into(), 0, None);
+        summary.state = SubagentState::Done;
+        summary.done_evidence = Some(DoneEvidence::LegacyTranscript);
+        assert_eq!(state_label(&summary), "legacy-done");
+        summary.state = SubagentState::Failed;
+        assert_eq!(state_label(&summary), "failed");
+        summary.state = SubagentState::Cancelled;
+        assert_eq!(state_label(&summary), "cancelled");
     }
 
     #[test]

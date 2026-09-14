@@ -27,6 +27,8 @@ pub enum HookEvent {
     SubagentStart,
     /// Called when a Task-tool subagent finishes (completion signal + heartbeat refresh)
     SubagentStop,
+    /// Called when an agent-team teammate becomes idle (nonterminal lifecycle evidence)
+    TeammateIdle,
 }
 
 impl fmt::Display for HookEvent {
@@ -39,6 +41,7 @@ impl fmt::Display for HookEvent {
             HookEvent::Stop => write!(f, "Stop"),
             HookEvent::SubagentStart => write!(f, "SubagentStart"),
             HookEvent::SubagentStop => write!(f, "SubagentStop"),
+            HookEvent::TeammateIdle => write!(f, "TeammateIdle"),
         }
     }
 }
@@ -54,6 +57,7 @@ impl HookEvent {
             HookEvent::Stop => "learning-validator.sh",
             HookEvent::SubagentStart => "subagent-start.sh",
             HookEvent::SubagentStop => "subagent-stop.sh",
+            HookEvent::TeammateIdle => "teammate-idle.sh",
         }
     }
 
@@ -67,6 +71,7 @@ impl HookEvent {
             HookEvent::Stop,
             HookEvent::SubagentStart,
             HookEvent::SubagentStop,
+            HookEvent::TeammateIdle,
         ]
     }
 }
@@ -175,9 +180,12 @@ impl HooksConfig {
     ///   not be duplicated here.
     /// - SubagentStart: records a Task-tool subagent's spawn type in the ledger.
     /// - SubagentStop: runs in the PARENT session's own hook context when a
-    ///   Task-tool subagent finishes. Writes a completion record and
+    ///   Task-tool subagent finishes. Writes authoritative lifecycle evidence and
     ///   refreshes the parent's heartbeat, since the parent runs no tools of
     ///   its own while blocked on the subagent, so PostToolUse cannot do that.
+    /// - TeammateIdle: records nonterminal idle evidence for an agent-team
+    ///   teammate and refreshes the parent heartbeat. It always allows the
+    ///   teammate to remain idle; Loom never uses it as completion evidence.
     ///
     /// Returns a map of event type to hook rules.
     pub fn to_settings_hooks(&self) -> std::collections::HashMap<String, Vec<HookRule>> {

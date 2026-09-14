@@ -2,7 +2,7 @@
 //! transcript metadata. Keeping construction here preserves short, legible
 //! classifier branches without making either output shape implicit.
 
-use super::classify::{SubagentState, SubagentSummary};
+use super::classify::{DoneEvidence, SubagentState, SubagentSummary};
 use super::metrics::TranscriptMetrics;
 
 /// Transcript-derived activity that [`TranscriptMetrics`] doesn't cover: how
@@ -29,6 +29,8 @@ pub(super) fn with_last(
     SubagentSummary {
         agent_id,
         state,
+        done_evidence: (state == SubagentState::Done).then_some(DoneEvidence::LegacyTranscript),
+        terminal_reason: None,
         idle_secs,
         turns: activity.turns,
         last_tool: activity.last_tool,
@@ -50,17 +52,14 @@ pub(super) fn with_last(
 /// unconditionally absent; `agent_type` is the sole field a caller can supply.
 pub(super) fn empty(
     agent_id: String,
-    authoritative_done: bool,
     idle_secs: i64,
     agent_type: Option<String>,
 ) -> SubagentSummary {
     SubagentSummary {
         agent_id,
-        state: if authoritative_done {
-            SubagentState::Done
-        } else {
-            SubagentState::Unknown
-        },
+        state: SubagentState::Unknown,
+        done_evidence: None,
+        terminal_reason: None,
         idle_secs,
         turns: 0,
         last_tool: None,

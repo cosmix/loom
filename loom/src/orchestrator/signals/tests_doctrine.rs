@@ -246,9 +246,7 @@ fn codex_forward_sentinel_agrees_across_surfaces() {
     use crate::codex::CODEX_FORWARD_SENTINEL;
     use crate::fs::permissions::constants::HOOK_CODEX_FORWARD_GUARD;
 
-    // The hook enforces exactly the token the signal doctrine mandates. The
-    // signal side is pinned in tests_cache.rs (the generated section contains
-    // the constant); this side pins the shell literal to the same constant.
+    // The guard and both model-facing surfaces must describe one protocol.
     assert!(
         HOOK_CODEX_FORWARD_GUARD.contains(CODEX_FORWARD_SENTINEL),
         "loom-hooks/codex-forward-guard.sh must grep for CODEX_FORWARD_SENTINEL \
@@ -257,19 +255,25 @@ fn codex_forward_sentinel_agrees_across_surfaces() {
     );
 
     let forwarder = forwarder_definition();
-    for needle in [CODEX_FORWARD_SENTINEL, "codex-forward.sh"] {
-        assert!(
-            forwarder.contains(needle),
-            "agents/loom-codex-forwarder.md must mention {needle:?} - the \
-             forwarder contract, the hook, and the signal doctrine describe \
-             one protocol"
-        );
+    let doctrine =
+        format_codex_implementers_section(&Implementers::new(vec![Implementer::Codex]), true);
+    for needle in [
+        CODEX_FORWARD_SENTINEL,
+        "codex-forward.sh",
+        "--write --unit-id <unit>",
+        "`job:`, then `unit:`, then `invocation:`",
+        "never supplies `--invocation-id`",
+    ] {
+        for (label, text) in [
+            ("forwarder agent", forwarder.as_str()),
+            ("signal", doctrine.as_str()),
+        ] {
+            assert!(text.contains(needle), "{label} must mention {needle:?}");
+        }
     }
 
-    // The playbook surfaces route codex work through the forwarder, never a
-    // direct spawn of the plugin wrapper (whose tools restriction is not
-    // enforced on this spawn path - observed implementing instead of
-    // forwarding, 2026-08-07).
+    // The playbook surfaces route codex work through the forwarder, never the
+    // plugin wrapper directly (observed implementing instead, 2026-08-07).
     for (label, text) in [
         ("CLAUDE.md.template", CLAUDE_MD_TEMPLATE),
         ("skills/loom-plan-writer/SKILL.md", PLAN_WRITER_SKILL),
@@ -283,13 +287,8 @@ fn codex_forward_sentinel_agrees_across_surfaces() {
 
 /// Pins the forwarding wrapper's navigation-kit preamble: the WRAPPER half of
 /// the pair completed by [`codex_navigation_kit_signal_doctrine_names_the_kit`].
-/// Three things are pinned: the preamble TEXT (needles below), the
-/// COMPOSITION that splices it onto the caller's prompt, and the HAND-OFF
-/// that passes the composed `$task` - not the bare `$prompt` - to the
-/// companion runtime. A wrapper can keep every word of the preamble while
-/// never delivering it (e.g. reverting to `task "$prompt"`), so text needles
-/// alone are not enough; if any of the three broke, codex would silently fall
-/// back to sweeping the whole knowledge base again with nothing in CI to say so.
+/// Pins the preamble text, its composition and hand-off, and the exact-identity
+/// fields the updated wrapper must preserve.
 #[test]
 fn codex_navigation_kit_wrapper_carries_and_delivers_the_preamble() {
     for needle in [
@@ -299,13 +298,16 @@ fn codex_navigation_kit_wrapper_carries_and_delivers_the_preamble() {
         "loom knowledge context",
         "NEVER run git",
         ".loom/work/",
+        "--unit-id",
+        "540000",
+        "print_evidence 0 \"$job_id\" active",
+        "unit:",
+        "invocation:",
     ] {
         assert!(
             HOOK_CODEX_FORWARD.contains(needle),
             "loom-hooks/codex-forward.sh must still carry {needle:?} - the signal \
-             doctrine tells the orchestrator this navigation kit and these \
-             prohibitions already reach every codex prompt, so the wrapper \
-             dropping any of them would leave that promise false"
+             doctrine promises this wrapper contract"
         );
     }
 

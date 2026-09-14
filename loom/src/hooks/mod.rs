@@ -16,6 +16,7 @@
 //! - `Stop`: Called when session is stopping (learning-validator)
 //! - `SubagentStart`: Called when a Task-tool subagent starts (spawn-type ledger)
 //! - `SubagentStop`: Called when a Task-tool subagent finishes (completion signal + heartbeat refresh)
+//! - `TeammateIdle`: Called when a teammate becomes idle (lifecycle signal + heartbeat refresh)
 //!
 //! ## Configuration
 //!
