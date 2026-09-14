@@ -19,6 +19,8 @@ use tempfile::TempDir;
 
 #[path = "tests/config_api.rs"]
 mod config_api;
+#[path = "tests/embedded.rs"]
+mod embedded;
 #[path = "tests/errors.rs"]
 mod errors;
 #[path = "tests/ports.rs"]
