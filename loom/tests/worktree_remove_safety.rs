@@ -1,5 +1,11 @@
+// This target links the non-test lib, so `worktree_cmd::remove` would read
+// the running session's `LOOM_*` variables via `EnvSnapshot::from_process_env`
+// and relay instead of removing. The tests drive `remove_with_mode` directly
+// with an explicit `RelayMode::Operator` instead of depending on the
+// environment (tests must never mutate process-wide environment).
 use loom::commands::worktree_cmd;
 use loom::models::stage::{Stage, StageStatus, StageType};
+use loom::relay::emit::RelayMode;
 use loom::verify::transitions::{load_stage, save_stage, update_stage};
 use serial_test::serial;
 use std::fs;
@@ -123,7 +129,10 @@ fn normal_remove_preserves_dirty_uncommitted_work() {
     merge_stage(root, "dirty");
     fs::write(worktree.join("feature.txt"), "keep this edit\n").unwrap();
 
-    let error = in_repo(root, || worktree_cmd::remove("dirty".into(), false, None)).unwrap_err();
+    let error = in_repo(root, || {
+        worktree_cmd::remove_with_mode("dirty".into(), false, None, RelayMode::Operator)
+    })
+    .unwrap_err();
     assert!(error.to_string().contains("uncommitted changes"));
     assert!(worktree.join("feature.txt").exists());
     assert!(
@@ -141,7 +150,7 @@ fn normal_remove_preserves_clean_but_unmerged_commit() {
     let (worktree, _) = create_stage(root, "unmerged");
 
     let error = in_repo(root, || {
-        worktree_cmd::remove("unmerged".into(), false, None)
+        worktree_cmd::remove_with_mode("unmerged".into(), false, None, RelayMode::Operator)
     })
     .unwrap_err();
     assert!(error.to_string().contains("not retained"));
@@ -165,7 +174,7 @@ fn normal_remove_preserves_commit_added_after_recorded_completion() {
     git_ok(&worktree, &["commit", "-m", "later work"]);
 
     let error = in_repo(root, || {
-        worktree_cmd::remove("advanced".into(), false, None)
+        worktree_cmd::remove_with_mode("advanced".into(), false, None, RelayMode::Operator)
     })
     .unwrap_err();
 
@@ -192,7 +201,7 @@ fn normal_remove_requires_a_retained_completed_commit() {
     .unwrap();
 
     let error = in_repo(root, || {
-        worktree_cmd::remove("missing-commit".into(), false, None)
+        worktree_cmd::remove_with_mode("missing-commit".into(), false, None, RelayMode::Operator)
     })
     .unwrap_err();
     assert!(error.to_string().contains("no retained completed commit"));
@@ -208,7 +217,10 @@ fn absent_resources_never_create_a_phantom_merge() {
     let commit = git_stdout(root, &["rev-parse", "main"]);
     write_completed_stage(root, "absent", commit);
 
-    let error = in_repo(root, || worktree_cmd::remove("absent".into(), false, None)).unwrap_err();
+    let error = in_repo(root, || {
+        worktree_cmd::remove_with_mode("absent".into(), false, None, RelayMode::Operator)
+    })
+    .unwrap_err();
     assert!(error.to_string().contains("refusing to infer"));
     assert!(
         !load_stage("absent", &root.join(".loom").join("work"))
@@ -225,7 +237,10 @@ fn legitimately_merged_cleanup_marks_stage_only_after_removal() {
     let (worktree, _) = create_stage(root, "merged");
     merge_stage(root, "merged");
 
-    in_repo(root, || worktree_cmd::remove("merged".into(), false, None)).unwrap();
+    in_repo(root, || {
+        worktree_cmd::remove_with_mode("merged".into(), false, None, RelayMode::Operator)
+    })
+    .unwrap();
     assert!(!worktree.exists());
     assert!(
         load_stage("merged", &root.join(".loom").join("work"))
@@ -248,7 +263,12 @@ fn confirmed_destructive_remove_never_fabricates_merge_state() {
     let confirmation = "delete-unmerged-work:forced".to_string();
 
     in_repo(root, || {
-        worktree_cmd::remove("forced".into(), true, Some(confirmation))
+        worktree_cmd::remove_with_mode(
+            "forced".into(),
+            true,
+            Some(confirmation),
+            RelayMode::Operator,
+        )
     })
     .unwrap();
 
@@ -288,7 +308,7 @@ fn cleanup_error_is_fatal_and_does_not_mark_stage_merged() {
     );
 
     let result = in_repo(root, || {
-        worktree_cmd::remove("cleanup-error".into(), false, None)
+        worktree_cmd::remove_with_mode("cleanup-error".into(), false, None, RelayMode::Operator)
     });
 
     assert!(result.is_err(), "cleanup failure must surface");

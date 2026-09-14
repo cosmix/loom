@@ -90,7 +90,7 @@ pub fn remove(stage_id: String, force: bool, confirmation: Option<String>) -> Re
 /// In Relay mode nothing is removed and no lock is taken: the daemon removes
 /// the worktree after it applies the `merge-resolved` request. Otherwise
 /// today's ancestry-verified (or `--force`) removal, unchanged.
-fn remove_with_mode(
+pub fn remove_with_mode(
     stage_id: String,
     force: bool,
     confirmation: Option<String>,
