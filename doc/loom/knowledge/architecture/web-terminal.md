@@ -1,6 +1,6 @@
 # Web Terminal
 
-> `loom status --web --terminals` — a browser terminal (xterm.js) attached to a stage's live tmux session over WebSocket. Admission gates, the close-code contract, the poll-based PTY bridge, and the frontend emulator. See [architecture/web-dashboard.md](web-dashboard.md) for the server it lives in.
+> loom status --web --terminals: a browser terminal attached to a session
 
 ## Enablement and the port-scoped cookie token
 

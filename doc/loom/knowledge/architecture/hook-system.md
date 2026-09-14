@@ -1,6 +1,6 @@
 # Hook System
 
-> Hook embedding and install, the SessionStart hookSpecificOutput contract, and the two subagent enforcement hooks.
+> Hook embedding/install, SessionStart contract, enforcement layers
 
 ## Hook System Architecture (loom/src/hooks/)
 
@@ -11,9 +11,9 @@ The `loom/src/hooks/` module provides Claude Code hooks integration for session 
 **Global vs session hooks distinction:**
 
 - **Global hooks** include commit filtering, Git-add protection, Bash isolation, the canonical five-tool file guard, plan-path protection, `prefer-modern-tools.sh`, and the forwarding guard. They are installed under `~/.claude/hooks/loom/` and registered by `fs/permissions/hooks.rs`, so they persist across sessions. `prefer-modern-tools.sh` lives here as a global `PreToolUse:Bash` hook (`fs/permissions/hooks/config.rs:25`) — there is no `PreferModernTools` `HookEvent` variant (deleted); it never was one of the session hooks below.
-- **Session hooks** (session-start.sh, post-tool-use.sh, pre-compact.sh, session-end.sh, learning-validator.sh, subagent-start.sh, subagent-stop.sh): generated fresh per-session by `loom/src/hooks/generator.rs:generate_hooks_settings()` from the **7** `HookEvent`s that `HooksConfig::to_settings_hooks()` (`loom/src/hooks/config.rs:183`) emits, derived by iterating `HookEvent::all()` rather than seven hand-written blocks. Merged into worktree's `settings.local.json` with duplicate detection.
+- **Session hooks** (session-start.sh, post-tool-use.sh, pre-compact.sh, session-end.sh, learning-validator.sh, subagent-start.sh, subagent-stop.sh, teammate-idle.sh): generated fresh per-session by `loom/src/hooks/generator.rs:generate_hooks_settings()` from the **8** `HookEvent`s that `HooksConfig::to_settings_hooks()` (`loom/src/hooks/config.rs:183`) emits, derived by iterating `HookEvent::all()` rather than eight hand-written blocks. Merged into worktree's `settings.local.json` with duplicate detection. `TeammateIdle` (`teammate-idle.sh`) was added for agent-team teammates, which never fire `SubagentStop`; it writes nonterminal idle evidence through the same shared lifecycle-journal/heartbeat helpers (`loom-hooks/_lifecycle.sh`) that `subagent-stop.sh` uses.
 
-`LOOM_HOOKS` (the full inventory: session hooks, global `PreToolUse` guards, compatibility bridges, and sourced-library hooks like `_common.sh`/`_read_discipline.sh`/`_read_ledger.sh`) is 33 rows; Claude's global `PreToolUse` registration alone is 47 entries, including `spawn-guard.sh` (Task+Agent), `read-guard.sh` (Read), and `poll-guard.sh` (Bash). Installers iterate `LOOM_HOOKS`; trigger configuration and tests remain separate registration surfaces — see [Registration Sites for a New Hook](../entry-points/hooks.md).
+`LOOM_HOOKS` (the full inventory: session hooks, global `PreToolUse` guards, compatibility bridges, and sourced-library hooks like `_common.sh`/`_read_discipline.sh`/`_read_ledger.sh`/`_lifecycle.sh`) is 33 rows; Claude's global `PreToolUse` registration alone is 47 entries, including `spawn-guard.sh` (Task+Agent), `read-guard.sh` (Read), and `poll-guard.sh` (Bash). Installers iterate `LOOM_HOOKS`; trigger configuration and tests remain separate registration surfaces — see [Registration Sites for a New Hook](../entry-points/hooks.md).
 
 ### Codex-native subset
 

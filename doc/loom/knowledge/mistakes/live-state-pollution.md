@@ -1,6 +1,6 @@
 # Live State Pollution
 
-> How a stage's test run rewrote live `.loom/work` state: a TMPDIR nested in the checkout, `WorkDir::new`'s upward walk, a stage sandbox that could write `.loom/`, and a sticky marker that outranked config.
+> A stage test run rewrote live .loom/work state
 
 ## A Stage's Test Run Rewrote the Live State Directory (2026-09-13)
 

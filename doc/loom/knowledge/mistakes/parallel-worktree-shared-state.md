@@ -1,6 +1,6 @@
 # Parallel Worktree Shared State
 
-> Cross-worktree state races: the one diagnostic question, concrete cases, and a blind-review-subagent instance.
+> Cross-worktree state races: diagnostic question, cases, fix
 
 ## The One Question That Catches This Whole Class
 

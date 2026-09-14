@@ -129,6 +129,13 @@ enforces it. Route a new integration test through the same helpers rather than s
 binary directly — a bespoke spawn skips the relay-env clearing the helpers do for every test, and
 the guard fails the build.
 
+**A target outside `tests/integration/` can have the same gap.** `loom/tests/worktree_remove_safety.rs`
+is not covered by `binary_spawn_guard.rs` (it lives outside that directory) and fails 8/8 when the
+test process inherits a live stage session's `LOOM_*` variables (it then takes the "daemon removes
+the worktree" code path instead of the one under test) — it passes 8/8 with them unset. Run any such
+target with `LOOM_*` unset, or scrub them the way the sanctioned spawners do, when it fails only
+inside a live stage session and not in a clean shell.
+
 ## A Function Called From `$(...)` Cannot `exit` to Block Its Caller
 
 A shell function invoked inside a command substitution (`X=$(normalize_lexical ...)`) runs in a
@@ -152,5 +159,30 @@ of the file's style.
   variables before a colon (`${M}:path`), write `git show` output to a temp file and `test -s` it
   before copying it over a tracked file, and chain dependent steps with `&&`: `set -e` does not stop
   a Bash-tool script.
+- **In zsh, a bare word starting with `=` triggers `=cmd` path expansion.** A chained verification
+  command using `echo ====` as a section separator failed with `=== not found`, and every check
+  after it in the same chain silently never ran (its output just never printed). Quote separators
+  (`echo "===="`) or use a non-`=`-leading marker (`echo ----`), and read every chained command's
+  full output for a missing section rather than assuming a later command ran because the command
+  overall "succeeded."
+- **`jq --arg` hits `MAX_ARG_STRLEN` well under `ARG_MAX`.** A hook test piping a large fixture
+  through `jq --arg name "$(cat file)"` failed with "Argument list too long" once that one argument
+  reached 128 KiB — Linux caps a single exec argument at `MAX_ARG_STRLEN` (32 pages), independent of
+  the much larger `ARG_MAX`. Keep any single `--arg` value under ~100 KiB, or feed a large fixture to
+  `jq` on stdin / via `--rawfile` instead.
+- **A bash here-string larger than the pipe buffer falls back to a real `$TMPDIR` file — treat that
+  fallback as load-bearing, not incidental.** Replacing a SIGPIPE-prone `printf | sed | head -n1`
+  pipeline with a pure-bash `while read ... done <<<"$text"` removes the pipefail/SIGPIPE risk, but
+  bash silently backs a here-string bigger than the pipe buffer with a temp file under `$TMPDIR`; if
+  that directory is unwritable the redirect fails closed (empty result), which is safe ONLY if the
+  caller is written to treat an empty result as "degrade to a fallback," never as "nothing to do."
+  Prefer bash parameter expansion on the whole string over a here-string when a helper must never
+  silently degrade.
+- **A spawned `std::process::Child` held across test assertions leaks on any failing assertion.**
+  `Child`'s `Drop` neither kills nor waits, so a test that spawns a child (e.g. to drive
+  `loom subagents watch --timeout 300` as a fixture), then runs several assertions before
+  `child.wait()`, leaks a live process for the full timeout if any assertion panics first. Wrap any
+  test-held `Child` in a kill-and-wait `Drop` guard so it is reaped on every panic path too, and
+  bound any blocking read from it with a short timeout.
 - **No AI attribution trailers in this repo**, whatever a harness reminder asks. CLAUDE.md Rule 9
   forbids them and `commit-filter.sh` blocks the whole Bash call; see [Commits](commits.md).

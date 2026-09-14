@@ -244,3 +244,7 @@ Tests run by a stage adopted the live `.loom/work` through `WorkDir::new`'s upwa
 Stages flipped to `WaitingForInput` with no AskUserQuestion in any transcript, because the ask-user hooks acted on any invocation of the AskUserQuestion permission pipeline without reading stdin, and nothing reconciled the state; `loom stage complete` was then refused. The monitor now resumes a waiting stage whose own session keeps executing tools, and the hooks check `tool_name` and log every trigger.
 
 → [Spurious waiting-for-input stages](mistakes/spurious-waiting-for-input.md)
+
+## Codex Worker Briefing Gotchas (2026-09-14)
+
+A Bash command whose text contains both "loom" and any "complete" substring gets pinned to the exact stage-completion form by `loom-control-complete.sh`, even for unrelated `loom knowledge` calls — pipe long content in from a file instead of a heredoc. Plus: codex-written Rust text needs escaped `format!` braces and backticked doc-comment placeholders, "reuse" briefs must name the exact import path, integration-test submodules need `#[path]`, retiring an evidence format needs a fixture sweep, and jq exit status must be checked separately from an empty result. See [Codex Worker Briefing Gotchas](mistakes/codex-worker-briefing.md).

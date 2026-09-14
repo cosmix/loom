@@ -1,6 +1,6 @@
 # Sandbox Write Rules Inert
 
-> Sandbox Write() rules that are inert in loom's generated stage settings and in the
+> Sandbox Write() rules inert in generated stage settings
 > `.claude/settings.json` loom writes for a project.
 
 **Status split on 2026-08-17, both halves RESOLVED 2026-08-31.** Kept because the underlying

@@ -1,6 +1,6 @@
 # Knowledge Cli Invariants
 
-> Invariants belong in the fs constructor, not the CLI handler; lock ordering for sibling refreshes; update appends.
+> Invariants belong in the fs constructor, not the CLI handler
 
 ## A CLI Handler Is Rarely the Only Caller of the Constructor It Guards (2026-07-28)
 

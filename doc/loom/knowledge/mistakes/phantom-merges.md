@@ -1,6 +1,6 @@
 # Phantom Merges
 
-> Eight lessons on loom's merge machinery — writing merged=true without verifying git ancestry (the costliest recurring failure class in loom), the preflight guards and session lifecycle around it, and the silent resting state a failed auto-merge once left behind.
+> Eight lessons on merge machinery: merged=true without verifying
 
 ## Phantom Merges: merged=true Without Verification
 

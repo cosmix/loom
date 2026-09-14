@@ -156,18 +156,28 @@ a miss or key stability must be `#[serial]` against tests that rewrite `PATH`.
   never starts, cancels or retries anything. The stage comes from `LOOM_STAGE_ID`, else from a scan
   of `subagents/*/forward-receipts.jsonl` for the id. Exit 0 succeeded, 1 failed or canceled, 2
   queued, running, unknown or timed out.
-- **Who waits.** The orchestrator, only. The forwarder makes ONE foreground wrapper call; if the
-  harness backgrounds it, the forwarder makes no further tool call and ends its turn
+- **Who waits (owned-waits contract, 2026-09-13, supersedes the untimed-blob-scan and bare-timeout
+  forms below).** The orchestrator, only, and only through one bound `loom subagents watch --worker
+  claude:<agent-id> --worker codex:<unit-id> --timeout 3600` — one `--worker` per worker, `--session`
+  naming only the Claude parent UUID. The forwarder makes ONE foreground wrapper call; if the harness
+  backgrounds it, the forwarder makes no further tool call and ends its turn
   (`agents/loom-codex-forwarder.md:54-62`). `codex-forward-guard.sh` authorizes only the exact
   wrapper argv and one forward per forwarder transcript; `has_prior_forwarding_call` allows the call
   when that transcript is missing or unreadable, so the harness writing the transcript after
   PreToolUse cannot block every first forward. The orchestrator's doctrine
-  (`orchestrator/signals/format/codex.rs:103-149`) is the exact receipt or one background
-  `loom subagents watch --timeout 3600`, never `codex-companion.mjs status --all`.
-- **Status overlay.** `loom subagents list/watch` apply forward evidence after structural transcript
-  classification (`classify_forward.rs`): `ForwardWait`, `Done`, `ForwardFailed`, `ForwardUnknown`.
-  A damaged receipt index is an unresolved observation, never a partial success. Poll-guard counts
-  repeated `loom subagents list` and names the exact wait when receipts exist (`poll-guard.sh`).
+  (`orchestrator/signals/format/codex.rs:146`) names one `--worker codex:<unit-id>` per forwarded
+  unit; the bare `--timeout <secs>`-only form with no `--worker` is REJECTED
+  (`loom/src/commands/subagents/mod.rs`), and `codex-companion.mjs status --all` is never used. Exit
+  2 (deadline passed) is not proof any worker died — see
+  [Subagent Hierarchy](../patterns/subagent-hierarchy.md).
+- **Status overlay.** For a `loom-codex-forwarder`, the daemon-reconciled Codex lifecycle outcome
+  alone decides `SubagentState`: `Active`->`ForwardWait`, `Unknown`->`ForwardUnknown`,
+  `Succeeded`->`Done`, `Failed`->`Failed`, `Cancelled`->`Cancelled`
+  (`loom/src/commands/subagents/classify_forward.rs:30`); the legacy receipt/marker overlay applied
+  after structural transcript classification survives only as the diagnostic `forward` field, and
+  does not decide state. A damaged receipt index is an unresolved observation, never a partial
+  success. Poll-guard counts repeated `loom subagents list` and names the exact wait when receipts
+  exist (`poll-guard.sh`).
 
 ## Read Receipt Lifecycle
 

@@ -283,3 +283,9 @@ and returns the ones missing on the host. Both consumers read the merged plan an
 
 The remedy is always on the host: create the path, then restart the stage's session.
 Package-manager cache paths are not checked here; their own signal note covers them.
+
+## `loom status` Marks the Caller's Own Executing Stage "Orphaned" Inside Its Own Sandbox (2026-09-14)
+
+Running `loom status` FROM INSIDE a stage's own sandboxed session reports that stage's session as orphaned/dead (`session_alive` false, `render/graph.rs:133-137`), even though it is the live session asking the question. **Why:** bubblewrap's PID namespace hides the host PID from the sandboxed process, so the liveness check (which compares against a host PID) cannot see its own process as alive. This is a sandbox artifact of the caller inspecting itself from inside its own namespace, not evidence the session actually died — treat a self-reported "orphaned" from inside a stage sandbox as uninformative, never as a signal to intervene.
+
+**Sanctioned proxies for what a live-host smoke test cannot verify inside a stage sandbox:** a real daemon Unix-socket round trip is blocked (`socket(AF_UNIX)` is `EPERM`) — verify via an in-memory transport test instead (e.g. `completion_dispatch` tests) or a daemon-offline path (`completion_replay/hook_broker.rs`); a live Codex companion is unreachable — `codex_evidence` installs a fake companion; local TCP listeners for `loom status --web` are blocked (`allow_local_binding=false`) — drive the pure route directly instead (`web/tests/embedded.rs`); the tmux backend needs its own per-test `TmuxTmpDirGuard` workaround (see [Sandbox and Settings](../mistakes/sandbox-and-settings.md)).

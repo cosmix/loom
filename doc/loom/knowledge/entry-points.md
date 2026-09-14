@@ -230,3 +230,12 @@ do not guarantee, which is narrower than the word "containment" suggests.
 - `loom/src/context/read_receipts.rs`, `loom/src/commands/hook/worker_brief.rs`, `loom/src/quota/history.rs` — read receipts, worker briefs, quota history
 
 → [Token Accounting and Receipts](architecture/token-accounting-and-receipts.md)
+
+## Owned Waits and Completion Recovery Surfaces (2026-09-14)
+
+- `commands/subagents/wait/` — `lease.rs`, `lease_fs.rs`, `engine.rs`, `identity.rs`, `codex_binding.rs`, `model.rs`, `output.rs`, `mod.rs`: the owned `loom subagents watch/wait --worker ...` implementation. See [Owned Waits](architecture/owned-waits.md).
+- `subagent_lifecycle/` (top-level crate module, not under `orchestrator/monitor/`) — `store.rs` (`LifecycleIndex::outcome`, `append_locked`, `codex_event_id`), `lock.rs` (`JournalLock`/`claim_lock`). Per-worker lifecycle journal (`subagents/<stage>/lifecycle.jsonl`), consumed by `commands/subagents/classify/lifecycle.rs`.
+- `codex_lifecycle/` — `authorization.rs`, `jobs.rs`, `ledger.rs`, `reconcile.rs` (`reconcile_codex_jobs`, `companion_outcome`). Codex companion job identity/authorization and daemon reconciliation into `subagent_lifecycle`.
+- `handoff/completion/` — `attest.rs` (HMAC attestation), `checkpoint.rs`, `identity.rs` (`expected_stage_commit`, `stage_head_commit`), `mod.rs`. See [Completion Recovery](architecture/completion-recovery.md).
+- `models/session/methods.rs` — `Session.exit_reason: Option<SessionExitReason>`; `record_heartbeat` now takes `progress_at` first (monotonic `last_active`).
+- `loom-hooks/_lifecycle.sh` — shared lifecycle-journal/heartbeat helpers (`loom_lifecycle_refresh_heartbeat`) used by `subagent-stop.sh` and `teammate-idle.sh`; `loom_heartbeat_prior_progress_at` (in `_common.sh`) carries forward the last validated `progress_at` on an observation-only tool call.

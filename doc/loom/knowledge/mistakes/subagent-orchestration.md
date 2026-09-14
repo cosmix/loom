@@ -1,6 +1,6 @@
 # Subagent Orchestration
 
-> Liveness signals for subagents, when a missing report is not a missing result, and the one-background-watch doctrine.
+> Liveness signals: when a missing report is not a missing result
 
 ## A Missing Report Is Not a Missing Result
 
@@ -366,6 +366,13 @@ subagents found" while workers are still running — a false all-clear, not an e
 from a worktree it reports "no subagent transcripts found" even with an explicit `--session`. Run
 it from the session's project root, or pass `--dir`.
 
+**Status (2026-09-14, owned-waits):** the `watch` half of this entry is superseded — `watch` now
+binds an explicit `--worker claude:<agent-id>`/`--worker codex:<unit-id>` set once instead of
+scanning a transcript directory guessed from cwd, so it can no longer find "no subagents" by
+looking in the wrong project slug (see [Subagent Hierarchy](../patterns/subagent-hierarchy.md)).
+The cwd/`--dir` prevention still applies to `list` and `harvest`, which remain one-shot
+diagnostics only.
+
 ## `loom subagents watch` Without `--session` Can Report Another Session's Subagents as Settled (2026-09-13)
 
 **What happened:** `loom subagents watch --timeout 3600`, launched from a background shell sitting
@@ -381,6 +388,13 @@ mistake above (that one finds nothing; this one finds someone else's agents and 
 
 **Prevention:** always pass `--session "$CLAUDE_CODE_SESSION_ID"` (set in every Bash tool shell) to
 `loom subagents watch`/`list`/`harvest`, not just the right cwd.
+
+**Status (2026-09-14, owned-waits):** the `watch` half of this entry is superseded — `watch` now
+requires an explicit `--worker claude:<agent-id>`/`--worker codex:<unit-id>` set bound once, so it
+can no longer silently adopt a different session's stale, idle agents as "yours"; a wait targets
+named workers, not "whatever this project slug's most recent session had." `--session` still
+disambiguates the parent UUID when passed, and the same-cwd/`--session` prevention still applies in
+full to `list` and `harvest`, which remain one-shot diagnostics only.
 
 ## Never Add Work to a Subagent by Message — a Queued Follow-Up Double-Assigns Files (2026-09-12)
 
