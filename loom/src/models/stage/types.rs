@@ -354,37 +354,18 @@ fn default_deny_read() -> Vec<String> {
         .iter()
         .map(|path| (*path).to_string())
         .collect();
+    // State-root secrets reach only the OS denyRead list; the native file tools are
+    // covered by credential-guard.sh. Include both layouts from either working directory.
     paths.extend(
-        [
-            // Daemon IPC tokens — must never be readable by a sandboxed worktree agent, or
-            // the RPC privilege split collapses: `admin.token` carries the Admin capability
-            // and `user.token` the User one. These reach the OS-level
-            // `sandbox.filesystem.denyRead` list and NOTHING else: loom emits no `Read(...)`
-            // permission rule in any settings file, because one of those anywhere makes
-            // Claude Code prompt on every relative-path `rg`/`grep`/`diff`/`git`/`cp`/`mv`
-            // issued after a `cd` — see doc/loom/knowledge/concerns.md § "No Read(...) Deny
-            // Rule May Exist in Any Settings File". The native file tools, which the OS list
-            // does not cover, are held off the tokens by `loom-hooks/credential-guard.sh` instead
-            // — that hook, not a deny rule, is what now carves them out of the broad
-            // `Read(.work/**)` grant in `LOOM_PERMISSIONS` / `LOOM_PERMISSIONS_WORKTREE`
-            // (`fs/permissions/constants.rs`). Both relative forms and both
-            // `.loom/work`/legacy `.work` layouts are listed; see
-            // `fs::permissions::state_root`'s module docs.
-            ".loom/work/admin.token",
-            ".loom/work/user.token",
-            "../.loom/work/admin.token",
-            "../.loom/work/user.token",
-            ".work/admin.token",
-            ".work/user.token",
-            "../.work/admin.token",
-            "../.work/user.token",
-            // Worktree escape prevention - block access to parent directories
-            "../../**",
-            // Block access to other worktrees
-            "../.worktrees/**",
-        ]
-        .map(String::from),
+        [".loom/work/", "../.loom/work/", ".work/", "../.work/"]
+            .into_iter()
+            .flat_map(|prefix| {
+                crate::fs::permissions::state_root::STATE_ROOT_SECRET_FILES
+                    .iter()
+                    .map(move |name| format!("{prefix}{name}"))
+            }),
     );
+    paths.extend(["../../**", "../.worktrees/**"].map(String::from));
     paths
 }
 

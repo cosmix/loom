@@ -19,10 +19,10 @@
 # together cover what the `Read(...)` denies used to cover alone.
 #
 # Two rules, in order:
-#   (a) hardcoded: `admin.token` / `user.token` directly under a state root
+#   (a) hardcoded: capability tokens and `completion-attestation.key` directly
+#       under a state root
 #       (`.loom/work`, or legacy `.work`). Hardcoded so a missing, renamed or
-#       hand-edited settings file can never let an orchestrator capability
-#       token through.
+#       hand-edited settings file can never let an orchestrator secret through.
 #   (b) the project's own `sandbox.filesystem.denyRead` list, applied to the
 #       file tools. A missing or unparsable settings file contributes nothing
 #       here and leaves rule (a) standing.
@@ -257,16 +257,16 @@ fi
 TARGET=$(canonical_target "$LEXICAL_TARGET" 2>/dev/null || true)
 [[ -n "$TARGET" ]] || exit 0
 
-# --- Rule (a): the orchestrator capability tokens -----------------------------
+# --- Rule (a): orchestrator secrets -------------------------------------------
 
 TARGET_BASE="${TARGET##*/}"
 TARGET_PARENT="${TARGET%/*}"
 case "$TARGET_BASE" in
-admin.token | user.token)
+admin.token | user.token | completion-attestation.key)
 	case "$TARGET_PARENT" in
 	*/.work | */.loom/work)
 		block_target "$RAW_TARGET" "$TARGET" \
-			"orchestrator capability tokens are never readable by a session"
+			"orchestrator secrets are never readable by a session"
 		exit 2
 		;;
 	esac

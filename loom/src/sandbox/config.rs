@@ -690,34 +690,14 @@ mod tests {
     }
 
     #[test]
-    fn default_deny_read_carves_out_daemon_tokens_on_both_layouts() {
+    fn default_deny_read_carves_out_daemon_secrets_on_both_layouts() {
         let config = FilesystemConfig::default();
-
-        // Nested layout (.loom/work) — bare and parent-relative forms.
-        assert!(config
-            .deny_read
-            .contains(&".loom/work/admin.token".to_string()));
-        assert!(config
-            .deny_read
-            .contains(&".loom/work/user.token".to_string()));
-        assert!(config
-            .deny_read
-            .contains(&"../.loom/work/admin.token".to_string()));
-        assert!(config
-            .deny_read
-            .contains(&"../.loom/work/user.token".to_string()));
-
-        // Legacy layout (.work) — a workspace found here keeps this layout
-        // forever, so its `Read(.work/**)` back-compat allow needs the same
-        // carve-out (S-1).
-        assert!(config.deny_read.contains(&".work/admin.token".to_string()));
-        assert!(config.deny_read.contains(&".work/user.token".to_string()));
-        assert!(config
-            .deny_read
-            .contains(&"../.work/admin.token".to_string()));
-        assert!(config
-            .deny_read
-            .contains(&"../.work/user.token".to_string()));
+        for name in crate::fs::permissions::state_root::STATE_ROOT_SECRET_FILES {
+            for prefix in [".loom/work/", "../.loom/work/", ".work/", "../.work/"] {
+                let path = format!("{prefix}{name}");
+                assert!(config.deny_read.contains(&path), "missing denyRead {path}");
+            }
+        }
     }
 
     #[test]

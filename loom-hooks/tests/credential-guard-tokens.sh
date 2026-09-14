@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# credential-guard.sh rule (a): the orchestrator capability tokens are closed to
+# credential-guard.sh rule (a): orchestrator secrets are closed to
 # the file tools through the state-root symlink, with or without a settings
 # file, and only for the file tools.
 set -euo pipefail
@@ -15,6 +15,7 @@ MAIN="$TMPROOT/main"
 WORKTREE="$TMPROOT/worktree"
 mkdir -p "$MAIN/.work" "$WORKTREE"
 printf 'admin-token-value\n' >"$MAIN/.work/admin.token"
+printf 'attestation-key-value\n' >"$MAIN/.work/completion-attestation.key"
 ln -s "$MAIN/.work" "$WORKTREE/.work"
 
 # One project with a settings file, one with no .claude directory at all.
@@ -25,6 +26,7 @@ printf '{"sandbox":{"filesystem":{"denyRead":["~/.ssh/**"]}}}\n' \
 	>"$PROJECT_WITH_SETTINGS/.claude/settings.local.json"
 
 TOKEN_PATH="$WORKTREE/.work/admin.token"
+KEY_PATH="$WORKTREE/.work/completion-attestation.key"
 
 check() {
 	local name="$1" expected="$2" project_dir="$3" payload="$4"
@@ -39,12 +41,15 @@ check() {
 }
 
 READ_PAYLOAD=$(printf '{"tool_name":"Read","tool_input":{"file_path":"%s"}}' "$TOKEN_PATH")
+KEY_PAYLOAD=$(printf '{"tool_name":"Read","tool_input":{"file_path":"%s"}}' "$KEY_PATH")
 BASH_PAYLOAD=$(printf '{"tool_name":"Bash","tool_input":{"file_path":"%s"}}' "$TOKEN_PATH")
 
 check "Read of a token through the state-root symlink is blocked" \
 	2 "$PROJECT_WITH_SETTINGS" "$READ_PAYLOAD"
 check "the same Read is blocked with no settings.local.json anywhere" \
 	2 "$PROJECT_NO_SETTINGS" "$READ_PAYLOAD"
+check "Read of the completion attestation key is blocked" \
+	2 "$PROJECT_WITH_SETTINGS" "$KEY_PAYLOAD"
 check "a non-file tool with the same payload is untouched" \
 	0 "$PROJECT_WITH_SETTINGS" "$BASH_PAYLOAD"
 
