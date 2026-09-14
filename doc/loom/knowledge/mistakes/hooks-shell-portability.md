@@ -73,3 +73,13 @@ appears in the Bash tool's own command argument — only the resolved variable d
 consumes the `n` as a `--replace` value and every match prints as the literal `n` — output looks like
 a mangled source file (e.g. `pub n(work_dir: &Path)`) rather than an error, so it reads as a corrupt
 file. `rg` is recursive by default; never pass `-r` unless you mean `--replace`.
+
+## Capsule Ran a Python Hook Under `/bin/bash` (2026-09-14)
+
+**What happened**: Every UserPromptSubmit in a stage session hit Claude Code's 30 s hook timeout ("UserPromptSubmit hook timed out after 30s"). The session capsule (`orchestrator/terminal/native/session_settings/contents.rs`, `in_bash_form`) rewrote every hook command as `/bin/bash <script>`; `loom-hooks/skill-trigger.sh` is a Python script (`#!/usr/bin/env python3`). Bash ran its lines as shell: `import json` executed ImageMagick's `import`, which grabs the X display the wrapper passes through (`DISPLAY`) and waits for a mouse click.
+
+**Why**: The rewrite pinned the shell to keep hooks off the session's PATH and execute bit, but assumed every hook is bash. A `.sh` name on a Python file hid the mismatch, and outside the sandbox nothing exercised the capsule's command form. The transcript record that names the culprit is the `hook_cancelled` attachment (`command`, `durationMs`, `timedOut`).
+
+**Prevention**: A hook command's interpreter is decided per script from its shebang, never per capsule; a preflight resolves each interpreter on the pinned hook PATH. When a hook times out, read the session transcript's `hook_cancelled` attachment first; it names the exact command. Never diagnose a hook by running it under a different environment than the wrapper's (`env -i` with the wrapper's allowlist, `DISPLAY` included).
+
+**Fix**: `HostFacts` carries `python3` (found on `hook_path`) and the shebang-detected Python hook scripts; the capsule writes `<python3> <script>` for those and `/bin/bash <script>` for the rest, dropping a Python hook with a warning when no python3 is pinned. `python3` joined preflight check 4's `HOOK_TOOLS`.
