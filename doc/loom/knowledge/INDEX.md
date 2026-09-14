@@ -14,7 +14,7 @@
 | [conventions.md](conventions.md) | Coding conventions discovered in the codebase | 235 |
 | [mistakes.md](mistakes.md) | Mistakes made and lessons learned - what to avoid | 250 |
 | [stack.md](stack.md) | Dependencies, frameworks, and tooling used in the project | 119 |
-| [concerns.md](concerns.md) | Technical debt, warnings, and issues to address | 227 |
+| [concerns.md](concerns.md) | Technical debt, warnings, and issues to address | 237 |
 
 ## Tier 2 — Topics
 
@@ -97,7 +97,7 @@
 | [ambient-filesystem-trust](mistakes/ambient-filesystem-trust.md) | Why a .git directory is not evidence of a real repository | 146 |
 | [codex-lane-rogue-wrapper](mistakes/codex-lane-rogue-wrapper.md) | A forwarding wrapper that did the task itself instead of forwarding, and why… | 153 |
 | [codex-navigation](mistakes/codex-navigation.md) | Forbidding reads instead of fixing a slow reader - a misdiagnosis and its… | 32 |
-| [codex-worker-briefing](mistakes/codex-worker-briefing.md) | Codex brief pitfalls: braces, doc placeholders, path reuse, jq status | 45 |
+| [codex-worker-briefing](mistakes/codex-worker-briefing.md) | Codex brief pitfalls: braces, doc placeholders, path reuse, jq status | 46 |
 | [completion-broker-credential](mistakes/completion-broker-credential.md) | The completion broker unreachable server-side fallback, duplicate file naming… | 141 |
 | [computed-values-and-hidden-couplings](mistakes/computed-values-and-hidden-couplings.md) | Values computed right but unread downstream; hidden coupling bugs | 208 |
 | [concurrency-and-locking](mistakes/concurrency-and-locking.md) | Locked-handle writes and read-mutate-save races that lose concurrent updates. | 36 |
