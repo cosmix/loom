@@ -70,6 +70,12 @@ const HINT = {
 } as const;
 
 const FAILURE_STATES = new Set<StageSummary["status"]>(["blocked", "completed-with-failures"]);
+const CURRENT_FAILURE_STATES = new Set<StageSummary["status"]>([
+  ...FAILURE_STATES,
+  "merge-conflict",
+  "merge-blocked",
+  "needs-human-review",
+]);
 const MERGE_STATES = new Set<StageSummary["status"]>([
   "completed",
   "merge-conflict",
@@ -242,14 +248,16 @@ export function StageSectionGrid({
   level: number | null;
   wide?: boolean;
 }) {
+  const currentFailure = CURRENT_FAILURE_STATES.has(stage.status) ? stage.failure_info : null;
+
   return (
     <div className={cn("grid gap-4 md:grid-cols-2", wide && "xl:grid-cols-3")}>
       {stageSections(stage, level).map((section) => (
         <Section key={section.title} {...section} />
       ))}
-      {stage.failure_info && (
+      {currentFailure && (
         <div className={cn("md:col-span-2", wide && "xl:col-span-3")}>
-          <FailureSection failure={stage.failure_info} />
+          <FailureSection failure={currentFailure} />
         </div>
       )}
     </div>

@@ -1,8 +1,10 @@
+import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
 import fixtureJson from "@/api/fixtures/snapshot.json";
 import { snapshotSchema, type StageSummary } from "@/api/schema";
-import { stageSections } from "@/components/stage-sections";
+import { StageSectionGrid, stageSections } from "@/components/stage-sections";
+import { TooltipProvider } from "@/components/ui/tooltip";
 
 const fixture = snapshotSchema.parse(fixtureJson);
 
@@ -20,6 +22,14 @@ function sessionLabels(stage: StageSummary): string[] {
 function rowValue(stage: StageSummary, sectionTitle: string, label: string) {
   const section = stageSections(stage, null).find((candidate) => candidate.title === sectionTitle);
   return section?.rows.find((entry) => entry.label === label)?.value;
+}
+
+function renderSections(stage: StageSummary) {
+  render(
+    <TooltipProvider>
+      <StageSectionGrid stage={stage} level={null} />
+    </TooltipProvider>,
+  );
 }
 
 describe("stage session details", () => {
@@ -76,5 +86,26 @@ describe("stage session details", () => {
     expect(rowValue(contextCeiling, "session", "exit reason")).toBe("context ceiling");
     expect(rowValue(stalled, "session", "exit reason")).toBe("stalled");
     expect(contextLabels).not.toContain("exit reason");
+  });
+});
+
+describe("stage failure details", () => {
+  const failure = fixture.status.stages.find((stage) => stage.id === "client")?.failure_info;
+
+  if (!failure) throw new Error("fixture client failure is missing");
+
+  it.each(["queued", "executing"] as const)(
+    "hides a previous attempt's failure while a retry is %s",
+    (status) => {
+      renderSections(fixtureStage({ status, retry_count: 1, failure_info: failure }));
+
+      expect(screen.queryByText("failure · test")).toBeNull();
+    },
+  );
+
+  it("shows failure details while the stage is currently failed", () => {
+    renderSections(fixtureStage({ status: "blocked", retry_count: 1, failure_info: failure }));
+
+    expect(screen.getByText("failure · test")).toBeTruthy();
   });
 });
