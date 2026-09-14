@@ -1,5 +1,5 @@
-//! An update notice must never leak into `--json` stdout, and a dev build
-//! must never print one at all.
+//! An update notice must never leak into `--json` stdout: a dev build never
+//! prints one at all, and a release build prints it on stderr only.
 
 use std::fs;
 use tempfile::TempDir;
@@ -30,21 +30,13 @@ loom:
     )
 }
 
-#[test]
-fn test_dev_build_prints_no_update_notice_and_json_stdout_stays_pure() {
-    // Two invariants at once. An update notice only ever goes to stderr
-    // (`update_check::notify_and_maybe_refresh`'s `eprintln!`), so `--json`
-    // stdout stays pure JSON whatever the update state says. And the binary
-    // under test is a dev build (`build.rs` derives a prerelease version for
-    // anything but a tagged release), which `update_check::decide` exempts
-    // from the notice altogether: a dev build can never act on it, so even a
-    // far-future release on record must print nothing on either stream.
-    // `loom_cmd()`'s shared scratch `LOOM_HOME` opts out of the check
-    // entirely (`check = false`); this test deliberately opts back in with
-    // its own scratch home. Its `last_checked` stamp is "now" so `decide()`
-    // would never schedule a detached refresh fetch either, were the dev-build
-    // exemption ever lost — that would be a real network spawn this test must
-    // not trigger.
+/// Runs `loom plan verify --json` with a far-future release on record and
+/// returns `(stdout, stderr)`. `loom_cmd()`'s shared scratch `LOOM_HOME` opts
+/// out of the update check (`check = false`), so this gives the process its
+/// own scratch home to opt back in. Its `last_checked` stamp is "now" so
+/// `decide()` never schedules a detached refresh fetch — a real network spawn
+/// this test must not trigger.
+fn verify_json_with_newer_release_on_record() -> (String, String) {
     let loom_home = TempDir::new().unwrap();
     let state = format!(
         r#"{{"last_checked":"{}","latest_version":"99.0.0"}}"#,
@@ -63,14 +55,39 @@ fn test_dev_build_prints_no_update_notice_and_json_stdout_stays_pure() {
         .output()
         .expect("failed to run loom plan verify");
 
-    let stdout = String::from_utf8_lossy(&out.stdout);
-    let stderr = String::from_utf8_lossy(&out.stderr);
+    (
+        String::from_utf8_lossy(&out.stdout).into_owned(),
+        String::from_utf8_lossy(&out.stderr).into_owned(),
+    )
+}
+
+#[test]
+fn test_update_notice_stays_off_json_stdout_and_dev_builds_print_none() {
+    let (stdout, stderr) = verify_json_with_newer_release_on_record();
 
     serde_json::from_str::<serde_json::Value>(&stdout)
         .expect("stdout must be pure JSON even with a newer release on record");
     assert!(!stdout.contains("loom update"), "stdout: {stdout}");
-    assert!(
-        !stderr.contains("loom update"),
-        "a dev build must not print the update notice, got: {stderr}"
-    );
+
+    let version =
+        semver::Version::parse(loom::version::VERSION).expect("LOOM_VERSION must be semver");
+
+    // `build.rs` stamps a tagged HEAD with its bare release version and every
+    // other commit with a `-dev` prerelease, so this suite meets a release
+    // build exactly when a release tag is pushed (the tag push's own
+    // pre-push hook, and `release.yml`'s test job); `update_check::decide`
+    // exempts only dev builds from the notice. The dev exemption itself is
+    // pinned build-independently by the unit test
+    // `update_check::tests::dev_build_is_never_notified_and_never_refreshes`.
+    if version.pre.is_empty() {
+        assert!(
+            stderr.contains("(latest 99.0.0)") && stderr.contains("loom update"),
+            "a release build must print the update notice on stderr, got: {stderr}"
+        );
+    } else {
+        assert!(
+            !stderr.contains("loom update"),
+            "a dev build must not print the update notice, got: {stderr}"
+        );
+    }
 }
