@@ -54,3 +54,13 @@ fn test_context_exhausted_workflow() {
     // ContextExhausted is terminal - cannot recover
     assert!(session.try_mark_running().is_err());
 }
+
+#[test]
+fn legacy_session_without_exit_reason_deserializes() {
+    let session: Session = serde_yaml::from_str(
+        "id: session-old\nstage_id: null\nworktree_path: null\npid: null\nstatus: running\ncontext_tokens: 0\ncreated_at: 2024-01-01T00:00:00Z\nlast_active: 2024-01-01T00:00:00Z\n",
+    )
+    .unwrap();
+
+    assert_eq!(session.exit_reason, None);
+}

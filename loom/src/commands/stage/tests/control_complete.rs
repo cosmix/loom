@@ -70,6 +70,7 @@ fn wire_preface_frames_the_placeholder_but_refuses_an_empty_credential() {
         stage_id: "stage-a".to_string(),
         session_id: "session-a".to_string(),
         nonce: "nonce-a".to_string(),
+        evidence_nonce: "evidence-a".to_string(),
     };
     placeholder_request
         .write_wire(&mut Vec::new())
@@ -80,6 +81,7 @@ fn wire_preface_frames_the_placeholder_but_refuses_an_empty_credential() {
         stage_id: "stage-a".to_string(),
         session_id: "session-a".to_string(),
         nonce: "nonce-a".to_string(),
+        evidence_nonce: "evidence-a".to_string(),
     };
     let error = empty_request
         .write_wire(&mut Vec::new())

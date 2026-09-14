@@ -19,6 +19,13 @@ pub enum AppendOutcome {
     Conflict,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ChildDisposition {
+    NoChildren,
+    Active,
+    Unknown(String),
+}
+
 #[derive(Debug, Default)]
 pub struct LifecycleIndex {
     work_dir: PathBuf,
@@ -84,6 +91,33 @@ pub fn replay(work_dir: &Path) -> Result<LifecycleIndex> {
 }
 
 impl LifecycleIndex {
+    pub fn session_child_disposition(
+        &self,
+        stage_id: &str,
+        loom_session_id: &str,
+    ) -> ChildDisposition {
+        if let Some(reason) = self.corrupt_stages.get(stage_id) {
+            return ChildDisposition::Unknown(reason.clone());
+        }
+        let identities: HashSet<_> = self
+            .records
+            .iter()
+            .filter(|record| identity_targets(&record.identity, stage_id, loom_session_id))
+            .map(|record| record.identity.clone())
+            .collect();
+        let mut unknown = None;
+        for identity in identities {
+            match self.outcome(&identity) {
+                WorkerOutcome::Active => return ChildDisposition::Active,
+                WorkerOutcome::Unknown(reason) => unknown.get_or_insert(reason),
+                WorkerOutcome::Succeeded
+                | WorkerOutcome::Failed(_)
+                | WorkerOutcome::Cancelled(_) => continue,
+            };
+        }
+        unknown.map_or(ChildDisposition::NoChildren, ChildDisposition::Unknown)
+    }
+
     pub fn claude_outcome(
         &self,
         stage_id: &str,
@@ -203,6 +237,26 @@ impl LifecycleIndex {
             return codex_records_outcome(&valid);
         }
         fold_states(&valid)
+    }
+}
+
+fn identity_targets(identity: &WorkerIdentity, stage_id: &str, session_id: &str) -> bool {
+    match identity {
+        WorkerIdentity::ClaudeSubagent {
+            stage_id: stage,
+            loom_session_id: session,
+            ..
+        }
+        | WorkerIdentity::ClaudeTeammate {
+            stage_id: stage,
+            loom_session_id: session,
+            ..
+        }
+        | WorkerIdentity::Codex {
+            stage_id: stage,
+            loom_session_id: session,
+            ..
+        } => stage == stage_id && session == session_id,
     }
 }
 

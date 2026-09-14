@@ -71,6 +71,8 @@ mod tests {
             dispute_count: 0,
             judge_heartbeat_secs: None,
             session_backend: None,
+            outgoing_session_exit_reason: None,
+            completion_blocker: None,
         }
     }
 

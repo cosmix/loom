@@ -15,6 +15,8 @@ use super::Orchestrator;
 
 mod handoff_state;
 mod human_review;
+#[path = "loop_recovery/mod.rs"]
+mod loop_recovery;
 mod recover_hung;
 mod stage_takedown;
 mod stalled_judge;
@@ -124,7 +126,12 @@ impl EventHandler for Orchestrator {
         if self.begin_handoff(stage_id, session_id)?.is_none() {
             return Ok(());
         }
-        self.finish_handoff_and_requeue(stage_id, session_id, "handoff")
+        self.finish_handoff_and_requeue(
+            stage_id,
+            session_id,
+            "handoff",
+            crate::models::session::SessionExitReason::ContextCeiling,
+        )
     }
 
     fn on_merge_session_completed(&mut self, session_id: &str, stage_id: &str) -> Result<()> {
@@ -193,20 +200,11 @@ impl Orchestrator {
             } => {
                 self.on_needs_handoff(&session_id, &stage_id)?;
             }
-            MonitorEvent::StageWaitingForInput {
-                stage_id,
-                session_id,
-            } => {
-                clear_status_line();
-                if let Some(sid) = session_id {
-                    eprintln!("Stage '{stage_id}' (session '{sid}') is waiting for user input");
-                } else {
-                    eprintln!("Stage '{stage_id}' is waiting for user input");
-                }
+            event @ MonitorEvent::StageWaitingForInput { .. } => {
+                self.handle_loop_recovery_event(event)?;
             }
             MonitorEvent::StageResumedExecution { stage_id } => {
-                clear_status_line();
-                eprintln!("Stage '{stage_id}' resumed execution after user input");
+                self.on_stage_resumed_event(&stage_id)?;
             }
             MonitorEvent::MergeSessionCompleted {
                 session_id,
@@ -266,6 +264,20 @@ impl Orchestrator {
                 stage_id,
                 review_reason,
             } => announce_needs_human_review(&stage_id, review_reason.as_deref()),
+            event @ MonitorEvent::CompletionPending { .. }
+            | event @ MonitorEvent::CompletionBlocked { .. } => {
+                self.handle_loop_recovery_event(event)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn on_stage_resumed_event(&mut self, stage_id: &str) -> Result<()> {
+        self.handle_loop_recovery_event(MonitorEvent::StageResumedExecution {
+            stage_id: stage_id.to_string(),
+        })?;
+        if self.resumed_stage_is_executing(stage_id)? {
+            self.graph.mark_resumed(stage_id)?;
         }
         Ok(())
     }
@@ -300,52 +312,6 @@ impl Orchestrator {
         Ok(is_current.then_some(stage))
     }
 
-    /// Complete a handoff whose identity was already locked and marked by
-    /// [`Self::begin_handoff`]. The takedown is load-bearing: re-queue only
-    /// after every prior writer is confirmed gone and its terminal record is
-    /// durable. A survivor or any uncertainty leaves the stage visibly in
-    /// `NeedsHandoff` instead of risking two agents in one worktree.
-    fn finish_handoff_and_requeue(
-        &mut self,
-        stage_id: &str,
-        session_id: &str,
-        cause: &str,
-    ) -> Result<()> {
-        // This ends processes: `stage_takedown.rs` signals each of the stage's
-        // agents through `kill_session` and returns only those still alive after.
-        let survivors = self.take_down_stage_agents(stage_id, session_id)?;
-        if !survivors.is_empty() {
-            eprintln!(
-                "Stage '{stage_id}' stays in NeedsHandoff after {cause}: session(s) {} are still \
-                 alive after the kill attempt, so re-queueing would put a second agent in the \
-                 same worktree. Take them down with \
-                 'loom stage reset {stage_id} --kill-session'.",
-                survivors.join(", ")
-            );
-            return Ok(());
-        }
-
-        // Re-queue the stage so the next poll cycle picks it up
-        let mut still_current = false;
-        self.update_stage(stage_id, |stage| {
-            if !event_targets_current_session(stage, session_id)
-                || stage.status != StageStatus::NeedsHandoff
-            {
-                return Ok(());
-            }
-            still_current = true;
-            requeue_after_handoff(stage)
-        })?;
-        if !still_current {
-            return Ok(());
-        }
-        self.graph.mark_queued(stage_id)?;
-
-        eprintln!("Stage '{stage_id}' re-queued for continuation after {cause}");
-
-        Ok(())
-    }
-
     /// Handle the daemon's ceiling backstop firing for a session.
     ///
     /// The agent's own hook governs at 100% of the stage ceiling; this path
@@ -373,7 +339,12 @@ impl Orchestrator {
         };
 
         self.retire_exceeded_session(session_id, &stage, context_tokens)?;
-        self.finish_handoff_and_requeue(stage_id, session_id, "the context ceiling backstop")
+        self.finish_handoff_and_requeue(
+            stage_id,
+            session_id,
+            "the context ceiling backstop",
+            crate::models::session::SessionExitReason::ContextCeiling,
+        )
     }
 }
 

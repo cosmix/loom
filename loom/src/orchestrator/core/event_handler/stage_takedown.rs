@@ -9,9 +9,9 @@ use std::time::{Duration, Instant};
 
 use anyhow::{bail, Context, Result};
 
-use crate::fs::session_files::{load_session_exact, mark_session_context_exhausted};
+use crate::fs::session_files::{load_session_exact, mark_session_terminal_reason};
 use crate::handoff::HandoffOrigin;
-use crate::models::session::{Session, SessionType};
+use crate::models::session::{Session, SessionExitReason, SessionStatus, SessionType};
 use crate::models::stage::{Stage, StageStatus};
 use crate::orchestrator::session_registry::in_progress_sessions_for_stage;
 use crate::orchestrator::signals::remove_signal;
@@ -147,7 +147,7 @@ impl Orchestrator {
     /// that never reached `Running`, and `Spawning -> ContextExhausted` is not a
     /// legal transition (`models/session/transitions.rs`), so routing this
     /// through `try_mark_context_exhausted` would refuse exactly the record this
-    /// exists to remove and leave it non-terminal. `Handlers::persist_session_status`
+    /// exists to remove and leave it non-terminal. `Handlers::mark_session_terminal_reason`
     /// states a status the same way, for the same reason.
     ///
     /// `Crashed` — the only other terminal status a `Spawning` record may
@@ -166,8 +166,14 @@ impl Orchestrator {
     /// state. A write failure is fatal to this handoff: re-queueing with
     /// `Running` still on disk would turn the deliberate exit into a crash on
     /// the next poll.
-    fn record_context_exhausted(&self, session: &Session) -> Result<()> {
-        mark_session_context_exhausted(&self.config.work_dir, &session.id).with_context(|| {
+    fn record_context_exhausted(&self, session: &Session, reason: SessionExitReason) -> Result<()> {
+        mark_session_terminal_reason(
+            &self.config.work_dir,
+            &session.id,
+            SessionStatus::ContextExhausted,
+            reason,
+        )
+        .with_context(|| {
             format!(
                 "persisting session '{}' as ContextExhausted before re-queue",
                 session.id
@@ -184,9 +190,10 @@ impl Orchestrator {
         &mut self,
         stage_id: &str,
         expected_session_id: &str,
+        reason: SessionExitReason,
     ) -> Result<Vec<String>> {
         let agents = self.stage_agents(stage_id, expected_session_id)?;
-        self.take_down_agents(stage_id, agents)
+        self.take_down_agents(stage_id, agents, reason)
     }
 
     /// Kill every session in `agents`, all understood to belong to
@@ -201,6 +208,7 @@ impl Orchestrator {
         &mut self,
         stage_id: &str,
         agents: Vec<Session>,
+        reason: SessionExitReason,
     ) -> Result<Vec<String>> {
         let mut survivors = Vec::new();
         for session in &agents {
@@ -222,7 +230,7 @@ impl Orchestrator {
             // returns `Ok` unconditionally, and the native lane returns `Ok`
             // when it refuses to signal an unverifiable identity).
             if self.confirm_session_gone(session)? {
-                self.record_context_exhausted(session)?;
+                self.record_context_exhausted(session, reason)?;
                 if let Err(e) = remove_signal(&session.id, &self.config.work_dir) {
                     eprintln!(
                         "Warning: Failed to remove signal for session '{}': {e}",
@@ -311,7 +319,7 @@ impl Orchestrator {
             }
         }
 
-        let survivors = self.take_down_agents(stage_id, agents)?;
+        let survivors = self.take_down_agents(stage_id, agents, SessionExitReason::Replaced)?;
         if survivors.is_empty() {
             self.update_stage(stage_id, |s| {
                 if s.status == StageStatus::NeedsAdjudication {

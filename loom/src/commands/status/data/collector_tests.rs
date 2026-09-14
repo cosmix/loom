@@ -1,4 +1,10 @@
 use super::*;
+use crate::commands::status::data::{completion_blocker_summary, CompletionBlockerState};
+use crate::handoff::{
+    CompletionAttemptEvidence, CompletionBlocker, CompletionCheckpoint, CompletionPhase,
+    CriterionResult, HandoffOrigin, HandoffV2, VerificationCheckpoint, COMPLETION_EVIDENCE_VERSION,
+};
+use crate::models::session::{SessionExitReason, SessionStatus};
 
 pub(super) fn make_test_stage(id: &str, status: StageStatus) -> Stage {
     Stage {
@@ -120,4 +126,112 @@ status: executing"#;
         .unwrap_err()
         .to_string()
         .contains("No frontmatter delimiter"));
+}
+
+fn checkpoint_evidence(summary: String) -> CompletionAttemptEvidence {
+    CompletionAttemptEvidence {
+        version: COMPLETION_EVIDENCE_VERSION,
+        stage_id: "stage-1".to_string(),
+        session_id: "session-1".to_string(),
+        commit: "a".repeat(40),
+        check_definition_hash: "check-v1".to_string(),
+        exact_command: "cargo test --lib".to_string(),
+        evidence_nonce: "nonce-000000000000000001".to_string(),
+        verification: VerificationCheckpoint {
+            criteria: vec![CriterionResult {
+                id: "criterion-1".to_string(),
+                passed: true,
+            }],
+            environment_policy: "trusted-host-v1".to_string(),
+            environment: Vec::new(),
+        },
+        phase: CompletionPhase::VerifiedPendingAck,
+        external_failure_code: Some("sandbox_denied".to_string()),
+        diagnostic_first_line: Some(summary),
+        observed_at: "2026-09-14T10:00:00Z".to_string(),
+        attestation: None,
+    }
+}
+
+#[test]
+fn stage_summary_ignores_checkpoint_for_another_session() {
+    let (_tmp, work_dir) = temp_work_dir();
+    let checkpoint = CompletionCheckpoint {
+        blocker: Some(CompletionBlocker {
+            fingerprint: "a".repeat(64),
+            commit: "b".repeat(40),
+            check_definition_hash: "check-v1".to_string(),
+            external_failure_code: "sandbox_denied".to_string(),
+            summary: None,
+        }),
+        ..CompletionCheckpoint::new("stage-1", "session-2")
+    };
+    let handoff =
+        HandoffV2::new("session-2", "stage-1").with_completion_checkpoint(Some(checkpoint));
+    let path = work_dir.handoffs_dir().join("stage-1-handoff-001.md");
+    std::fs::write(path, format!("---\n{}---\n", handoff.to_yaml().unwrap())).unwrap();
+    let mut stage = make_test_stage("stage-1", StageStatus::Executing);
+    stage.session = Some("session-1".to_string());
+    let mut outgoing = Session::new();
+    outgoing.id = "session-1".to_string();
+    outgoing.status = SessionStatus::Completed;
+    outgoing.exit_reason = Some(SessionExitReason::Completed);
+
+    let summary = build_stage_summary(&stage, &[outgoing], &work_dir);
+
+    assert_eq!(
+        summary.outgoing_session_exit_reason,
+        Some(SessionExitReason::Completed)
+    );
+    assert!(summary.completion_blocker.is_none());
+}
+
+#[test]
+fn checkpoint_diagnostic_is_flattened_and_bounded() {
+    let mut checkpoint = CompletionCheckpoint::new("stage-1", "session-1");
+    checkpoint
+        .record_attempt(&checkpoint_evidence("x".repeat(500)))
+        .unwrap();
+    checkpoint.blocker.as_mut().unwrap().summary =
+        Some(format!("bad\u{1b}[31m\n{}", "x".repeat(500)));
+    let mut stage = make_test_stage("stage-1", StageStatus::Executing);
+    stage.session = Some("session-1".to_string());
+    let blocker =
+        completion_blocker_summary(&stage, None, &checkpoint, Some(&"a".repeat(40))).unwrap();
+    let (_tmp, work_dir) = temp_work_dir();
+    let mut summary = build_stage_summary(&stage, &[], &work_dir);
+    summary.completion_blocker = Some(blocker);
+
+    super::super::sanitize::sanitize_stage_summary(&mut summary);
+
+    let blocker = summary.completion_blocker.unwrap();
+    assert_eq!(blocker.state, CompletionBlockerState::Pending);
+    assert!(!blocker.summary.as_ref().unwrap().contains(['\u{1b}', '\n']));
+    assert_eq!(
+        blocker.summary.unwrap().chars().count(),
+        crate::context::untrusted::MAX_INLINE_CHARS
+    );
+}
+
+#[test]
+fn stage_summary_ignores_unattested_current_checkpoint() {
+    let (_tmp, work_dir) = temp_work_dir();
+    let mut checkpoint = CompletionCheckpoint::new("stage-1", "session-1");
+    checkpoint
+        .record_attempt(&checkpoint_evidence("forged".into()))
+        .unwrap();
+    let handoff = HandoffV2::new("session-1", "stage-1")
+        .with_origin(HandoffOrigin::CompletionEvidence)
+        .with_completion_checkpoint(Some(checkpoint));
+    std::fs::write(
+        work_dir.handoffs_dir().join("stage-1-handoff-001.md"),
+        format!("---\n{}---\n", handoff.to_yaml().unwrap()),
+    )
+    .unwrap();
+    let mut stage = make_test_stage("stage-1", StageStatus::Executing);
+    stage.session = Some("session-1".into());
+
+    let summary = build_stage_summary(&stage, &[], &work_dir);
+
+    assert!(summary.completion_blocker.is_none());
 }

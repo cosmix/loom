@@ -1,16 +1,22 @@
 mod collector;
+pub(crate) mod completion_view;
 mod execution_models;
 mod heartbeat_facts;
 mod sanitize;
 mod timing;
 
 pub use collector::{collect_status_data, load_all_sessions};
+pub use completion_view::{
+    completion_blocker_summary, outgoing_exit_reason, CompletionBlockerState,
+    CompletionBlockerSummary,
+};
 pub use execution_models::execution_models_for_stage;
 
 use serde::{Deserialize, Serialize};
 
 // Re-export types that consumers will need
 pub use crate::models::failure::FailureInfo;
+pub use crate::models::session::SessionExitReason;
 pub use crate::models::session::{SessionBackendKind, SessionType};
 pub use crate::models::stage::{StageStatus, StageType};
 
@@ -151,6 +157,12 @@ pub struct StageSummary {
     /// Which terminal backend hosts this stage's session, when one is known.
     #[serde(default)]
     pub session_backend: Option<crate::models::session::SessionBackendKind>,
+    /// Why the session named by `stage.session` exited, once terminal.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub outgoing_session_exit_reason: Option<SessionExitReason>,
+    /// Actionable completion failure associated with the exact current session.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub completion_blocker: Option<CompletionBlockerSummary>,
 }
 
 impl StageSummary {

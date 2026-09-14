@@ -11,8 +11,7 @@ fn test_build_settings_adds_resolved_work_symlink_permissions_nested_layout() {
     let temp_dir = TempDir::new().unwrap();
     let base = temp_dir.path();
 
-    // Simulate the nested layout: repo_root/.loom/work and
-    // repo_root/.worktrees/stage/.loom/work (a real .loom/ holding the link).
+    // Simulate repo_root/.loom/work and a worktree's real .loom/ holding the link.
     let work_dir = base.join(".loom").join("work");
     fs::create_dir_all(&work_dir).unwrap();
     fs::create_dir_all(work_dir.join("signals")).unwrap();
@@ -72,12 +71,11 @@ fn test_build_settings_adds_resolved_work_symlink_permissions_nested_layout() {
     let os_deny = result["sandbox"]["filesystem"]["denyRead"]
         .as_array()
         .unwrap();
-    assert!(os_deny
-        .iter()
-        .any(|value| value == &format!("/{resolved_str}/admin.token")));
-    assert!(os_deny
-        .iter()
-        .any(|value| value == &format!("/{resolved_str}/user.token")));
+    for secret in ["admin.token", "user.token", "completion-attestation.key"] {
+        assert!(os_deny
+            .iter()
+            .any(|value| value == &format!("/{resolved_str}/{secret}")));
+    }
 
     assert!(allow_strs.contains(&"Read(.loom/work/signals/**)"));
 }

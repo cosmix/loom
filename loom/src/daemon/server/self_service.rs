@@ -34,7 +34,7 @@ use crate::verify::transitions::load_stage;
 /// files (`peer_identity`, `control_complete`).
 const MAX_SESSION_FILE_BYTES: usize = 1024 * 1024;
 
-/// The session a request claims to be running inside, for the three RPCs a
+/// The session a request claims to be running inside, for the RPCs a
 /// stage agent is entitled to make about its OWN stage.
 ///
 /// Every other request returns `None` and is refused without a valid token.
@@ -47,6 +47,7 @@ const MAX_SESSION_FILE_BYTES: usize = 1024 * 1024;
 pub(super) fn self_service_session(request: &Request) -> Option<&str> {
     match request {
         Request::CompleteStage { session_id, .. }
+        | Request::RecordCompletionEvidence { session_id, .. }
         | Request::DisputeCriteria { session_id, .. }
         | Request::BlockStage { session_id, .. } => Some(session_id),
         _ => None,
@@ -56,7 +57,7 @@ pub(super) fn self_service_session(request: &Request) -> Option<&str> {
 /// The stage/session pair whose ownership must be proven before the handler
 /// runs, or `None` when there is nothing to prove.
 ///
-/// `CompleteStage` is deliberately absent: `control_complete` re-validates the
+/// Completion and evidence requests are deliberately absent: their handlers re-validate the
 /// identical binding under the sessions-directory lock, together with the
 /// `Executing` requirement that only completion imposes. Checking it here too
 /// would report that failure as an authentication error and lose the handler's
@@ -169,9 +170,34 @@ mod tests {
         }
     }
 
+    fn evidence_request(session_id: &str) -> Request {
+        use crate::handoff::{CompletionAttemptEvidence, CompletionPhase, VerificationCheckpoint};
+        Request::RecordCompletionEvidence {
+            auth_token: "t".to_string(),
+            stage_id: "build-api".to_string(),
+            session_id: session_id.to_string(),
+            evidence: Box::new(CompletionAttemptEvidence {
+                version: 1,
+                stage_id: "build-api".to_string(),
+                session_id: session_id.to_string(),
+                commit: "a".repeat(40),
+                check_definition_hash: "definition".to_string(),
+                exact_command: "check".to_string(),
+                evidence_nonce: "fedcba9876543210".to_string(),
+                verification: VerificationCheckpoint::default(),
+                phase: CompletionPhase::EvidenceMissing,
+                external_failure_code: None,
+                diagnostic_first_line: None,
+                observed_at: "2026-09-14T00:00:00Z".to_string(),
+                attestation: None,
+            }),
+        }
+    }
+
     #[test]
-    fn only_the_three_own_stage_requests_can_be_authorized_by_the_connection() {
+    fn only_the_own_stage_requests_can_be_authorized_by_the_connection() {
         assert_eq!(Some("s1"), self_service_session(&block("s1")));
+        assert_eq!(Some("s0"), self_service_session(&evidence_request("s0")));
         assert_eq!(
             Some("s2"),
             self_service_session(&Request::CompleteStage {
@@ -179,6 +205,7 @@ mod tests {
                 stage_id: "build-api".to_string(),
                 session_id: "s2".to_string(),
                 nonce: "0123456789abcdef0123456789abcdef".to_string(),
+                evidence_nonce: "fedcba9876543210fedcba9876543210".to_string(),
             })
         );
         assert_eq!(
@@ -219,8 +246,10 @@ mod tests {
                 stage_id: "build-api".to_string(),
                 session_id: "s1".to_string(),
                 nonce: "0123456789abcdef0123456789abcdef".to_string(),
+                evidence_nonce: "fedcba9876543210fedcba9876543210".to_string(),
             })
         );
+        assert_eq!(None, ownership_to_enforce(&evidence_request("s1")));
         assert_eq!(
             Some(("build-api", "s1")),
             ownership_to_enforce(&block("s1"))

@@ -2,7 +2,7 @@ use ratatui::{style::Style, text::Span};
 
 use crate::{
     commands::status::{
-        data::{ActivityStatus, StageSummary},
+        data::{ActivityStatus, CompletionBlockerState, StageSummary},
         render::attention_model::failure_label,
         ui::theme::Theme,
     },
@@ -50,7 +50,41 @@ pub(super) fn model_spans(stage: &StageSummary, width: u16) -> Vec<Span<'static>
 }
 
 pub(super) fn activity_cell(stage: &StageSummary, width: u16) -> Cell {
-    let cell = if matches!(&stage.status, StageStatus::Executing) && stage.incoherence.is_some() {
+    let mut cell =
+        completion_blocker_cell(stage).unwrap_or_else(|| standard_activity_cell(stage, width));
+    if stage.completion_blocker.is_none() && !matches!(&stage.status, StageStatus::Executing) {
+        if let Some(reason) = stage.outgoing_session_exit_reason {
+            let separator = if cell.text.is_empty() { "" } else { " · " };
+            cell.text = format!("{}{separator}last: {}", cell.text, reason.status_label());
+        }
+    }
+    let mut cell = held_cell(stage, cell);
+    cell.text = truncate(&cell.text, usize::from(width));
+    cell
+}
+
+fn completion_blocker_cell(stage: &StageSummary) -> Option<Cell> {
+    if !matches!(
+        &stage.status,
+        StageStatus::Executing | StageStatus::NeedsHumanReview
+    ) {
+        return None;
+    }
+    let blocker = stage.completion_blocker.as_ref()?;
+    let style = match blocker.state {
+        CompletionBlockerState::Pending => Theme::status_warning(),
+        CompletionBlockerState::Blocked | CompletionBlockerState::OwnershipUnknown => {
+            Theme::status_blocked()
+        }
+    };
+    Some(Cell {
+        text: blocker.activity_text(),
+        style,
+    })
+}
+
+fn standard_activity_cell(stage: &StageSummary, width: u16) -> Cell {
+    if matches!(&stage.status, StageStatus::Executing) && stage.incoherence.is_some() {
         Cell {
             text: "incoherent".to_owned(),
             style: Theme::status_blocked(),
@@ -87,8 +121,7 @@ pub(super) fn activity_cell(stage: &StageSummary, width: u16) -> Cell {
             StageStatus::NeedsAdjudication => adjudication_activity(stage),
             _ => empty_cell(),
         }
-    };
-    held_cell(stage, cell)
+    }
 }
 
 pub(super) fn context_cell(stage: &StageSummary) -> Cell {

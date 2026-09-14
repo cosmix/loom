@@ -7,12 +7,12 @@ use serial_test::serial;
 /// Restores cwd on drop. `execute()` resolves its work dir from the process
 /// cwd, so the test below must mutate process-global state and clean up
 /// after itself even on panic (mirrors `commands/memory/handlers/tests.rs`).
-struct CwdGuard {
+pub(super) struct CwdGuard {
     original_dir: std::path::PathBuf,
 }
 
 impl CwdGuard {
-    fn new() -> Self {
+    pub(super) fn new() -> Self {
         Self {
             original_dir: env::current_dir().unwrap(),
         }
@@ -88,10 +88,6 @@ fn test_build_handoff_content() {
     assert_eq!(content.files_modified.len(), 2);
 }
 
-/// `--trigger ceiling` is the agent saying "I am out of room": it must end
-/// the turn, not just leave a document behind. Without the transition the
-/// daemon never kills the session, and the stage sits Executing behind an
-/// agent that has already stopped working.
 #[test]
 fn ceiling_trigger_marks_an_executing_stage_needing_handoff() {
     use crate::verify::transitions::create_stage;
@@ -109,8 +105,6 @@ fn ceiling_trigger_marks_an_executing_stage_needing_handoff() {
     assert_eq!(reloaded.status, StageStatus::NeedsHandoff);
 }
 
-/// A stage that already moved on has an authority of its own; a late
-/// CLI-side write must not drag it back out of a terminal state.
 #[test]
 fn ceiling_trigger_leaves_a_stage_that_already_moved_on() {
     use crate::verify::transitions::create_stage;
@@ -129,11 +123,6 @@ fn ceiling_trigger_leaves_a_stage_that_already_moved_on() {
     assert_eq!(reloaded.status, StageStatus::Completed);
 }
 
-/// The defect this whole path exists for: a worktree session's sandbox
-/// grants the state directory's `handoffs/` but not its `stages/`, so the transition write
-/// fails while the document lands. Reporting that as a warning and exiting
-/// 0 told the agent its handoff was complete; the stage stayed `Executing`
-/// and the daemon's status-triggered recovery never armed.
 #[test]
 fn a_failed_transition_is_an_error_that_says_the_document_stands() {
     let temp = tempfile::tempdir().unwrap();
@@ -162,10 +151,6 @@ fn a_failed_transition_is_an_error_that_says_the_document_stands() {
     );
 }
 
-/// The defect: journals are `memory/<stage_id>.md`, but `execute()` used to
-/// read `memory/<session_id>.md`, so a CLI-triggered handoff (the pre-compact
-/// hook, CLAUDE.md Rule 3) always carried an empty memory section even when
-/// the stage journal held real entries.
 #[test]
 #[serial]
 fn a_cli_handoff_for_a_stage_with_a_journal_carries_its_memory() {
@@ -210,10 +195,6 @@ fn a_cli_handoff_for_a_stage_with_a_journal_carries_its_memory() {
     );
 }
 
-/// `--trigger ceiling` is the only trigger that asks for a takedown, so it
-/// is the only one whose document may carry the origin the daemon's handoff
-/// watch acts on. A precompact or session_end document must not look like a
-/// request to end the turn.
 #[test]
 fn only_the_ceiling_trigger_stamps_the_agent_ceiling_origin() {
     assert_eq!(

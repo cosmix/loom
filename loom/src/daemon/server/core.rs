@@ -200,3 +200,21 @@ fn cleanup_stale_control_files(work_dir: &Path) {
         let _ = remove_control_file(work_dir, Path::new(relative));
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::cleanup_stale_control_files;
+
+    #[test]
+    fn cleanup_preserves_completion_attestation_key() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let key = temp.path().join(crate::handoff::ATTESTATION_KEY_FILE);
+        std::fs::write(&key, "persistent-key").unwrap();
+        std::fs::write(temp.path().join("admin.token"), "rotating-token").unwrap();
+
+        cleanup_stale_control_files(temp.path());
+
+        assert!(key.exists());
+        assert!(!temp.path().join("admin.token").exists());
+    }
+}

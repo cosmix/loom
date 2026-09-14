@@ -48,6 +48,22 @@ pub enum SessionStatus {
     ContextExhausted,
 }
 
+/// Durable reason a session entered a terminal state.
+///
+/// Status remains the lifecycle state machine; this value records the cause
+/// without making old session records incompatible.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum SessionExitReason {
+    Completed,
+    Crashed,
+    ContextCeiling,
+    Stalled,
+    OperatorStop,
+    CriteriaBlocked,
+    Replaced,
+}
+
 impl std::fmt::Display for SessionStatus {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -101,6 +117,10 @@ pub struct Session {
     pub worktree_path: Option<PathBuf>,
     pub pid: Option<u32>,
     pub status: SessionStatus,
+    /// Why the session first became terminal. Delayed terminal observations
+    /// may fill a missing value, but never replace an existing reason.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub exit_reason: Option<SessionExitReason>,
     /// Resident context, in absolute tokens, as of the last heartbeat that
     /// carried a reading. Absolute rather than a percentage because that is the
     /// only figure the transcript can supply without guessing the model's

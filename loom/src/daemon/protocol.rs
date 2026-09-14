@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
+use crate::handoff::CompletionAttemptEvidence;
 use crate::models::stage::StageStatus;
 
 /// Information about a single stage's completion status.
@@ -80,11 +81,11 @@ impl Default for DaemonConfig {
 /// Authorization capability required by a request.
 ///
 /// `User` requests are unprivileged RPCs (Ping, SubscribeStatus,
-/// SubscribeLogs, Unsubscribe, DisputeCriteria, BlockStage, CompleteStage).
-/// They use the user token. The three stage-state RPCs — CompleteStage,
-/// DisputeCriteria, BlockStage — are additionally accepted only for the exact
-/// stage/session pair the caller names, and carry no command, path, or
-/// privileged flags.
+/// SubscribeLogs, Unsubscribe, DisputeCriteria, BlockStage, CompleteStage,
+/// RecordCompletionEvidence). They use the user token. The stage self-service
+/// RPCs are additionally accepted only for the exact stage/session pair the
+/// caller names. State-transition requests carry no command, path, or
+/// privileged flags; evidence is separately bounded and validated.
 ///
 /// `Admin` requests are privileged host-only operations (Stop). They require
 /// an action-bound, one-time operator proof minted from the mode-0600 admin
@@ -152,6 +153,14 @@ pub enum Request {
         stage_id: String,
         session_id: String,
         nonce: String,
+        evidence_nonce: String,
+    },
+    /// Persist completion evidence without authorizing a stage transition.
+    RecordCompletionEvidence {
+        auth_token: String,
+        stage_id: String,
+        session_id: String,
+        evidence: Box<CompletionAttemptEvidence>,
     },
 }
 
@@ -169,7 +178,8 @@ impl Request {
             | Request::Unsubscribe { .. }
             | Request::DisputeCriteria { .. }
             | Request::BlockStage { .. }
-            | Request::CompleteStage { .. } => Capability::User,
+            | Request::CompleteStage { .. }
+            | Request::RecordCompletionEvidence { .. } => Capability::User,
         }
     }
 
@@ -185,7 +195,8 @@ impl Request {
             | Request::Ping { auth_token }
             | Request::DisputeCriteria { auth_token, .. }
             | Request::BlockStage { auth_token, .. }
-            | Request::CompleteStage { auth_token, .. } => auth_token,
+            | Request::CompleteStage { auth_token, .. }
+            | Request::RecordCompletionEvidence { auth_token, .. } => auth_token,
         }
     }
 }
@@ -193,6 +204,62 @@ impl Request {
 /// Render a request whose only field is its credential: name it, redact that.
 fn credential_only(formatter: &mut fmt::Formatter<'_>, name: &str) -> fmt::Result {
     write!(formatter, "{name} {{ auth_token: [REDACTED] }}")
+}
+
+fn debug_dispute(request: &Request, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+    let Request::DisputeCriteria {
+        stage_id,
+        session_id,
+        criterion_index,
+        evidence_commit,
+        ..
+    } = request
+    else {
+        unreachable!("debug_dispute called for another request variant")
+    };
+    formatter
+        .debug_struct("DisputeCriteria")
+        .field("auth_token", &"[REDACTED]")
+        .field("stage_id", stage_id)
+        .field("session_id", session_id)
+        .field("criterion_index", criterion_index)
+        .field("reason", &"[REDACTED]")
+        .field("evidence_commit", evidence_commit)
+        .field("failure_output", &"[REDACTED]")
+        .finish()
+}
+
+fn debug_completion(request: &Request, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+    match request {
+        Request::CompleteStage {
+            stage_id,
+            session_id,
+            nonce,
+            evidence_nonce,
+            ..
+        } => formatter
+            .debug_struct("CompleteStage")
+            .field("auth_token", &"[REDACTED]")
+            .field("stage_id", stage_id)
+            .field("session_id", session_id)
+            .field("nonce", nonce)
+            .field("evidence_nonce", evidence_nonce)
+            .finish(),
+        Request::RecordCompletionEvidence {
+            stage_id,
+            session_id,
+            evidence,
+            ..
+        } => formatter
+            .debug_struct("RecordCompletionEvidence")
+            .field("auth_token", &"[REDACTED]")
+            .field("stage_id", stage_id)
+            .field("session_id", session_id)
+            .field("phase", &evidence.phase)
+            .field("evidence_nonce", &evidence.evidence_nonce)
+            .finish(),
+        _ => unreachable!("debug_completion called for another request variant"),
+    }
 }
 
 impl fmt::Debug for Request {
@@ -203,22 +270,7 @@ impl fmt::Debug for Request {
             Request::Stop { .. } => credential_only(formatter, "Stop"),
             Request::Unsubscribe { .. } => credential_only(formatter, "Unsubscribe"),
             Request::Ping { .. } => credential_only(formatter, "Ping"),
-            Request::DisputeCriteria {
-                stage_id,
-                session_id,
-                criterion_index,
-                evidence_commit,
-                ..
-            } => formatter
-                .debug_struct("DisputeCriteria")
-                .field("auth_token", &"[REDACTED]")
-                .field("stage_id", stage_id)
-                .field("session_id", session_id)
-                .field("criterion_index", criterion_index)
-                .field("reason", &"[REDACTED]")
-                .field("evidence_commit", evidence_commit)
-                .field("failure_output", &"[REDACTED]")
-                .finish(),
+            Request::DisputeCriteria { .. } => debug_dispute(self, formatter),
             Request::BlockStage {
                 stage_id,
                 session_id,
@@ -230,18 +282,9 @@ impl fmt::Debug for Request {
                 .field("session_id", session_id)
                 .field("reason", &"[REDACTED]")
                 .finish(),
-            Request::CompleteStage {
-                stage_id,
-                session_id,
-                nonce,
-                ..
-            } => formatter
-                .debug_struct("CompleteStage")
-                .field("auth_token", &"[REDACTED]")
-                .field("stage_id", stage_id)
-                .field("session_id", session_id)
-                .field("nonce", nonce)
-                .finish(),
+            Request::CompleteStage { .. } | Request::RecordCompletionEvidence { .. } => {
+                debug_completion(self, formatter)
+            }
         }
     }
 }

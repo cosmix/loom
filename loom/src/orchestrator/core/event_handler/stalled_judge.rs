@@ -19,7 +19,7 @@
 use anyhow::Result;
 use colored::Colorize;
 
-use crate::models::session::{SessionStatus, SessionType};
+use crate::models::session::{SessionExitReason, SessionStatus, SessionType};
 use crate::orchestrator::adjudication::MAX_ADJUDICATION_ATTEMPTS;
 
 use super::super::{clear_status_line, Orchestrator};
@@ -70,7 +70,11 @@ impl Orchestrator {
              ({MAX_ADJUDICATION_ATTEMPTS}) is spent.",
             "JUDGE STALLED:".red().bold()
         );
-        self.close_adjudication_session(&session, SessionStatus::Crashed);
+        self.close_adjudication_session(
+            &session,
+            SessionStatus::Crashed,
+            SessionExitReason::Stalled,
+        );
         Ok(())
     }
 }

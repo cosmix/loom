@@ -8,7 +8,8 @@
 
 use std::path::Path;
 
-use crate::models::session::{Session, SessionStatus, SessionType};
+use crate::fs::session_files::mark_session_terminal_reason;
+use crate::models::session::{Session, SessionExitReason, SessionStatus, SessionType};
 use crate::models::stage::{Stage, StageStatus};
 use crate::orchestrator::adjudication::AdjudicatorRegistry;
 
@@ -287,7 +288,17 @@ impl Detection {
 
     /// Persist a normal completion and drop the session's heartbeat.
     fn mark_finished(&mut self, session: &Session, stages: &[Stage], handlers: &Handlers) {
-        handlers.persist_session_status(session, SessionStatus::Completed);
+        if let Err(e) = mark_session_terminal_reason(
+            handlers.work_dir(),
+            &session.id,
+            SessionStatus::Completed,
+            SessionExitReason::Completed,
+        ) {
+            eprintln!(
+                "Failed to persist session status for '{}': {}",
+                session.id, e
+            );
+        }
         cleanup_heartbeat_for_session(handlers.work_dir(), session, stages);
         self.last_session_states
             .insert(session.id.clone(), SessionStatus::Completed);
@@ -306,7 +317,17 @@ impl Detection {
             "Session no longer running"
         };
         let crash_report_path = handlers.handle_session_crash(session, reason);
-        handlers.persist_session_status(session, SessionStatus::Crashed);
+        if let Err(e) = mark_session_terminal_reason(
+            handlers.work_dir(),
+            &session.id,
+            SessionStatus::Crashed,
+            SessionExitReason::Crashed,
+        ) {
+            eprintln!(
+                "Failed to persist session status for '{}': {}",
+                session.id, e
+            );
+        }
         // Remove the now-dead session's heartbeat so it can't later flag a
         // fresh session reusing this stage as hung.
         cleanup_heartbeat_for_session(handlers.work_dir(), session, stages);

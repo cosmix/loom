@@ -46,6 +46,8 @@ macro_rules! stage {
             dispute_count: $dispute_count,
             judge_heartbeat_secs: $judge_heartbeat_secs,
             session_backend: $session_backend,
+            outgoing_session_exit_reason: None,
+            completion_blocker: None,
         }
     };
 }

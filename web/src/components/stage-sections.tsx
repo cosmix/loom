@@ -13,7 +13,7 @@ import {
   yesNo,
   type SectionSpec,
 } from "@/components/stage-detail";
-import { contextUsage, failureLabel, formatStamp } from "@/lib/format";
+import { contextUsage, exitReasonLabel, failureLabel, formatStamp } from "@/lib/format";
 
 /// What each field means, in the words a person reading the ledger needs.
 const HINT = {
@@ -35,6 +35,7 @@ const HINT = {
   backend: "Where the session runs: a native terminal window or a tmux pane.",
   sessionType:
     "What the session was spawned to do: stage work, a merge, a base-conflict fix, knowledge, or adjudication.",
+  exitReason: "Why the outgoing session ended, independently of the stage's workflow status.",
   activity:
     "Working: a tool ran recently. Idle: no live session, or the stage is finished. Stale: no heartbeat for 5 min. Orphaned: executing with no session record. Error: the process died.",
   lastTool: "The tool the session used most recently, from its heartbeat.",
@@ -58,6 +59,14 @@ const HINT = {
   failureType: "How the daemon classified the failure.",
   detectedAt: "When the daemon detected it.",
   evidence: "Lines the daemon kept as evidence. Untrusted text, shown verbatim.",
+  completionState: "Whether completion verification is pending, blocked, or has unknown ownership.",
+  completionFingerprint: "Stable identity for this completion boundary failure.",
+  completionFailureCode: "Machine-readable code for the failed completion boundary.",
+  completionRepeats: "How many times the same completion failure has been observed.",
+  completionCommit: "Commit whose completion boundary was checked.",
+  completionFirstSeen: "When this completion failure was first observed.",
+  completionLastSeen: "When this completion failure was most recently observed.",
+  completionNextAction: "The action needed to resume or finish completion.",
 } as const;
 
 const FAILURE_STATES = new Set<StageSummary["status"]>(["blocked", "completed-with-failures"]);
@@ -103,17 +112,51 @@ function sessionRows(stage: StageSummary) {
     stage.pid !== null ||
     stage.session_type !== null ||
     stage.last_tool !== null ||
-    stage.last_activity !== null;
+    stage.last_activity !== null ||
+    stage.outgoing_session_exit_reason !== undefined;
   if (!hasSession) return [];
   return present([
     row("pid", HINT.pid, stage.pid === null ? null : String(stage.pid), true),
     row("alive", HINT.alive, yesNo(stage.session_alive), true),
     row("backend", HINT.backend, stage.session_backend, true),
     row("session type", HINT.sessionType, stage.session_type, true),
+    row(
+      "exit reason",
+      HINT.exitReason,
+      stage.outgoing_session_exit_reason === undefined
+        ? null
+        : exitReasonLabel(stage.outgoing_session_exit_reason),
+      true,
+    ),
     row("activity", HINT.activity, stage.activity_status, true),
     row("last tool", HINT.lastTool, stage.last_tool, true),
     row("last activity", HINT.lastActivity, lastActivityDetail(stage), true),
     row("staleness", HINT.staleness, secs(stage.staleness_secs), true),
+  ]);
+}
+
+function completionRows(stage: StageSummary) {
+  const blocker = stage.completion_blocker;
+  if (!blocker) return [];
+  return present([
+    row("state", HINT.completionState, blocker.state, true),
+    row("fingerprint", HINT.completionFingerprint, blocker.fingerprint, true),
+    row("failure code", HINT.completionFailureCode, blocker.failure_code, true),
+    row("repeats", HINT.completionRepeats, String(blocker.repeat_count), true),
+    row("commit", HINT.completionCommit, blocker.commit, true),
+    row(
+      "first seen",
+      HINT.completionFirstSeen,
+      blocker.first_observed_at === null ? null : formatStamp(blocker.first_observed_at),
+      true,
+    ),
+    row(
+      "last seen",
+      HINT.completionLastSeen,
+      blocker.last_observed_at === null ? null : formatStamp(blocker.last_observed_at),
+      true,
+    ),
+    row("next action", HINT.completionNextAction, blocker.next_action),
   ]);
 }
 
@@ -181,6 +224,7 @@ export function stageSections(stage: StageSummary, level: number | null): Sectio
     { title: "timing", rows: timingRows(stage) },
     { title: "stage orchestrator context", rows: contextRows(stage) },
     { title: "session", rows: sessionRows(stage) },
+    { title: "completion", rows: completionRows(stage) },
     { title: "retries", rows: retryRows(stage) },
     { title: "adjudication", rows: adjudicationRows(stage) },
     { title: "merge", rows: mergeRows(stage) },

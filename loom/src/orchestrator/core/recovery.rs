@@ -290,20 +290,8 @@ impl Orchestrator {
         }
     }
 
-    /// Mark `stage_id` as executing in the graph, skipping the no-op warn
-    /// when the node is already `Executing` (the common case on every tick
-    /// after the first). `mark_executing` only accepts a Queued -> Executing
-    /// transition, so this must not be called unconditionally.
     fn sync_executing_node(&mut self, stage_id: &str) {
-        let already_executing = self
-            .graph
-            .get_node(stage_id)
-            .is_some_and(|n| n.status == StageStatus::Executing);
-        if !already_executing {
-            if let Err(e) = self.graph.mark_executing(stage_id) {
-                tracing::warn!("Failed to sync graph status for stage {}: {}", stage_id, e);
-            }
-        }
+        self.sync_resumed_node(stage_id);
     }
 }
 

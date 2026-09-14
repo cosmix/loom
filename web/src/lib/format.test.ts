@@ -12,6 +12,7 @@ import {
   activityText,
   contextUsage,
   daemonLine,
+  exitReasonLabel,
   failureLabel,
   formatClock,
   formatElapsed,
@@ -140,6 +141,33 @@ describe("TUI formatter ports", () => {
     });
   });
 
+  it.each([
+    ["stalled", "ready · last: stalled"],
+    ["context-ceiling", "ready · last: context ceiling"],
+  ] as const)("shows a queued stage's last %s session exit", (reason, text) => {
+    expect(
+      activityText(
+        stage({
+          status: "queued",
+          outgoing_session_exit_reason: reason,
+        }),
+      ),
+    ).toEqual({ text, tone: "queued" });
+  });
+
+  it("does not show the last session exit while executing", () => {
+    expect(
+      activityText(
+        stage({
+          status: "executing",
+          activity_status: "Working",
+          last_tool: null,
+          outgoing_session_exit_reason: "stalled",
+        }),
+      ),
+    ).toEqual({ text: "working", tone: "completed" });
+  });
+
   it("shows an incoherent executing stage and lets held override its tone", () => {
     expect(
       activityText(stage({ status: "executing", incoherence: "bad frame", held: true })),
@@ -147,6 +175,93 @@ describe("TUI formatter ports", () => {
       text: "held · incoherent",
       tone: "warning",
     });
+  });
+
+  it("prioritizes completion recovery over stale activity and incoherence", () => {
+    const completion_blocker = {
+      state: "pending" as const,
+      fingerprint: "fp",
+      failure_code: "boundary-check-failed",
+      summary: "Verification did not observe the completion commit",
+      commit: "abc123",
+      repeat_count: 1,
+      first_observed_at: null,
+      last_observed_at: null,
+      next_action: "wait for another verification pass",
+    };
+
+    expect(
+      activityText(
+        stage({
+          status: "executing",
+          activity_status: "Stale",
+          incoherence: "stale session metadata",
+          completion_blocker,
+        }),
+      ),
+    ).toEqual({
+      text: "completion pending: Verification did not observe the completion commit",
+      tone: "warning",
+    });
+  });
+
+  it("keeps the held prefix on a blocked completion and hides the last session exit", () => {
+    expect(
+      activityText(
+        stage({
+          status: "needs-human-review",
+          held: true,
+          outgoing_session_exit_reason: "context-ceiling",
+          completion_blocker: {
+            state: "ownership_unknown",
+            fingerprint: "fp",
+            failure_code: "writer-unconfirmed",
+            summary: null,
+            commit: "abc123",
+            repeat_count: 2,
+            first_observed_at: null,
+            last_observed_at: null,
+            next_action: "confirm commit ownership",
+          },
+        }),
+      ),
+    ).toEqual({
+      text: "held · completion blocked, writer unconfirmed: writer-unconfirmed",
+      tone: "warning",
+    });
+  });
+
+  it("ignores completion recovery data once the stage is completed", () => {
+    expect(
+      activityText(
+        stage({
+          status: "completed",
+          completion_blocker: {
+            state: "blocked",
+            fingerprint: "fp",
+            failure_code: "old-failure",
+            summary: null,
+            commit: "abc123",
+            repeat_count: 2,
+            first_observed_at: null,
+            last_observed_at: null,
+            next_action: "ignore stale recovery data",
+          },
+        }),
+      ),
+    ).toBeNull();
+  });
+
+  it.each([
+    ["completed", "completed"],
+    ["crashed", "crashed"],
+    ["context-ceiling", "context ceiling"],
+    ["stalled", "stalled"],
+    ["operator-stop", "operator stop"],
+    ["criteria-blocked", "criteria blocked"],
+    ["replaced", "replaced"],
+  ] as const)("labels the %s session exit reason", (reason, label) => {
+    expect(exitReasonLabel(reason)).toBe(label);
   });
 
   it.each<readonly [StageStatus, Partial<StageSummary>, string, Tone]>([

@@ -93,6 +93,10 @@ fn plain(kind: SessionType) -> Value {
     build(kind, &sandbox(false), &[], None, kind == SessionType::Stage)
 }
 
+fn stage_with_checkout(config: &MergedSandboxConfig, checkout: &Value, rooted: bool) -> Value {
+    build(SessionType::Stage, config, &[], Some(checkout), rooted)
+}
+
 /// Every kind's capsule from both locations, with and without the codex lane.
 fn every_capsule() -> Vec<(String, Value)> {
     let mut capsules = Vec::new();
@@ -122,6 +126,14 @@ fn strings(settings: &Value, pointer: &str) -> Vec<String> {
         .unwrap_or_default()
 }
 
+fn assert_has(settings: &Value, pointer: &str, expected: &str, context: impl std::fmt::Display) {
+    let entries = strings(settings, pointer);
+    assert!(
+        entries.iter().any(|entry| entry == expected),
+        "{context}: missing {expected}: {entries:?}"
+    );
+}
+
 /// Every `(event, matcher, command)` the capsule registers.
 pub(super) fn hooks(settings: &Value) -> Vec<(String, String, String)> {
     let mut found = Vec::new();
@@ -149,15 +161,17 @@ fn every_kind_gets_the_sandbox_and_the_scratch_grant_in_both_layers() {
     for kind in ALL_KINDS {
         let settings = plain(kind);
         assert_eq!(settings["sandbox"]["enabled"], json!(true), "{kind}");
-        let allow_write = strings(&settings, "/sandbox/filesystem/allowWrite");
-        assert!(
-            allow_write.contains(&"/scratch/session-1".to_string()),
-            "{kind}: {allow_write:?}"
+        assert_has(
+            &settings,
+            "/sandbox/filesystem/allowWrite",
+            "/scratch/session-1",
+            kind,
         );
-        let allow = strings(&settings, "/permissions/allow");
-        assert!(
-            allow.contains(&"Edit(//scratch/session-1/**)".to_string()),
-            "{kind}: {allow:?}"
+        assert_has(
+            &settings,
+            "/permissions/allow",
+            "Edit(//scratch/session-1/**)",
+            kind,
         );
         assert_eq!(settings["worktree"]["bgIsolation"], json!("none"), "{kind}");
         assert_eq!(
@@ -243,24 +257,23 @@ fn merge_base_conflict_and_adjudication_get_only_the_heartbeat_and_the_guards() 
 #[test]
 fn the_state_root_grants_are_resolved_and_the_tokens_denied() {
     let settings = plain(SessionType::Stage);
-    let allow = strings(&settings, "/permissions/allow");
-    for rule in [
-        "Read(//repo/.loom/work/config.toml)",
-        "Read(//repo/.loom/work/signals/**)",
-        "Read(//repo/.loom/work/handoffs/**)",
-        "Read(//repo/.loom/work/memory/**)",
-        "Read(//repo/doc/plans/**)",
+    for (pointer, rule) in [
+        ("/permissions/allow", "Read(//repo/.loom/work/config.toml)"),
+        ("/permissions/allow", "Read(//repo/.loom/work/signals/**)"),
+        ("/permissions/allow", "Read(//repo/.loom/work/handoffs/**)"),
+        ("/permissions/allow", "Read(//repo/.loom/work/memory/**)"),
+        ("/permissions/allow", "Read(//repo/doc/plans/**)"),
+        (
+            "/sandbox/filesystem/denyRead",
+            "//repo/.loom/work/admin.token",
+        ),
+        (
+            "/sandbox/filesystem/denyRead",
+            "//repo/.loom/work/completion-attestation.key",
+        ),
     ] {
-        assert!(
-            allow.contains(&rule.to_string()),
-            "missing {rule}: {allow:?}"
-        );
+        assert_has(&settings, pointer, rule, "state root");
     }
-    let deny_read = strings(&settings, "/sandbox/filesystem/denyRead");
-    assert!(
-        deny_read.contains(&"//repo/.loom/work/admin.token".to_string()),
-        "{deny_read:?}"
-    );
 }
 
 #[test]
@@ -335,26 +348,14 @@ fn plugin_keys_follow_the_codex_license() {
         "extraKnownMarketplaces": {"openai-codex": {}}
     });
     for worktree_rooted in [true, false] {
-        let licensed = build(
-            SessionType::Stage,
-            &sandbox(true),
-            &[],
-            Some(&checkout),
-            worktree_rooted,
-        );
+        let licensed = stage_with_checkout(&sandbox(true), &checkout, worktree_rooted);
         assert_eq!(licensed["enabledPlugins"], checkout["enabledPlugins"]);
         assert_eq!(
             licensed["extraKnownMarketplaces"],
             checkout["extraKnownMarketplaces"]
         );
 
-        let unlicensed = build(
-            SessionType::Stage,
-            &sandbox(false),
-            &[],
-            Some(&checkout),
-            worktree_rooted,
-        );
+        let unlicensed = stage_with_checkout(&sandbox(false), &checkout, worktree_rooted);
         assert!(unlicensed.get("enabledPlugins").is_none());
         assert!(unlicensed.get("extraKnownMarketplaces").is_none());
     }

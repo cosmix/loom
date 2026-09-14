@@ -12,6 +12,7 @@
 
 mod budget_latch;
 mod ceiling;
+pub(crate) mod completion_blockers;
 mod config;
 mod context;
 pub mod core;

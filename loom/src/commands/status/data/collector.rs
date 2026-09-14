@@ -12,6 +12,7 @@ use crate::parser::frontmatter::parse_from_markdown;
 use crate::plan::parser::extract_plan_name;
 use crate::verify::transitions::list_all_stages;
 
+use super::completion_view::collect_completion_view;
 use super::heartbeat_facts::{heartbeat_facts, stage_extras};
 use super::sanitize::sanitize_stage_summary;
 use super::timing::{elapsed_secs_live, execution_secs_live};
@@ -179,6 +180,9 @@ fn build_stage_summary(stage: &Stage, sessions: &[Session], work_dir: &WorkDir) 
     let now = Utc::now();
     let heartbeat = heartbeat_facts(stage, facts.session, work_dir);
     let extras = stage_extras(stage, work_dir);
+    let outgoing = assigned_session(stage, sessions);
+    let (outgoing_session_exit_reason, completion_blocker) =
+        collect_completion_view(stage, outgoing, work_dir);
 
     StageSummary {
         id: stage.id.clone(),
@@ -213,6 +217,8 @@ fn build_stage_summary(stage: &Stage, sessions: &[Session], work_dir: &WorkDir) 
         dispute_count: stage.dispute_count,
         judge_heartbeat_secs: extras.judge_heartbeat_secs,
         session_backend: facts.session.map(|s| s.backend),
+        outgoing_session_exit_reason,
+        completion_blocker,
     }
 }
 

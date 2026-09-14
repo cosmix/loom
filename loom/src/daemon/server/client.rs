@@ -14,11 +14,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-#[path = "control_complete.rs"]
-mod control_complete;
-
 /// Write timeout applied to each subscriber stream clone at subscription time.
-///
 /// The status/log broadcaster holds the subscriber mutex while writing to every
 /// subscriber. Without a write timeout, a subscriber that stops reading (e.g. a
 /// TUI suspended with Ctrl+Z) fills its socket buffer and blocks the broadcaster
@@ -28,7 +24,6 @@ mod control_complete;
 const SUBSCRIBER_WRITE_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// Read timeout applied to each accepted client connection (O-21).
-///
 /// A client that connects but never sends a complete request — or dribbles bytes
 /// to keep the connection nominally alive — otherwise pins its handler thread and
 /// a slot in the `CLIENT_WORKERS`/`CLIENT_QUEUE_CAPACITY` admission limits forever,
@@ -59,9 +54,9 @@ enum Authorization {
 ///
 /// The `PendingPeerIdentity` outcome exists because a sandboxed stage agent
 /// cannot read `.loom/work/user.token` — deliberately, since that one credential
-/// authorizes every User RPC — yet completing its own stage is precisely what
-/// it is supposed to do. Deferring the decision lets the caller be identified
-/// by the connection instead of by a secret, without widening anything else:
+/// authorizes every User RPC — yet it must be able to block or dispute its own
+/// stage. Deferring the decision lets the caller be identified by the connection
+/// instead of by a secret, without widening anything else:
 /// every other User request still needs the token.
 fn authorize_preface(work_dir: &Path, preface: &RequestPreface) -> Authorization {
     match preface.capability() {
@@ -111,7 +106,7 @@ fn refuse_unauthenticated(preface: &RequestPreface) -> Response {
 }
 
 /// Finish the authorization the preface had to defer, now that the body is
-/// known. Returns the refusal to send, or `None` to let the request proceed.
+/// known. Returns the kernel peer fact on success or the refusal to send.
 ///
 /// Two independent gates, and a self-service request has to pass both:
 ///
@@ -132,17 +127,18 @@ fn authorize_body(
     authorization: Authorization,
     preface: &RequestPreface,
     request: &Request,
-) -> Option<Response> {
+) -> std::result::Result<Option<u32>, Response> {
+    let peer_pid = super::peer_identity::peer_pid(stream);
     if authorization == Authorization::PendingPeerIdentity {
         let Some(session_id) = self_service::self_service_session(request) else {
-            return Some(refuse_unauthenticated(preface));
+            return Err(refuse_unauthenticated(preface));
         };
-        let inside = super::peer_identity::peer_pid(stream).is_some_and(|caller| {
+        let inside = peer_pid.is_some_and(|caller| {
             super::peer_identity::caller_is_inside_session(work_dir, session_id, caller)
         });
         if !inside {
             eprintln!("Request refused: caller is not inside session '{session_id}'");
-            return Some(refuse_unauthenticated(preface));
+            return Err(refuse_unauthenticated(preface));
         }
     }
     if let Some((stage_id, session_id)) = self_service::ownership_to_enforce(request) {
@@ -150,10 +146,10 @@ fn authorize_body(
             eprintln!(
                 "Request refused: session '{session_id}' does not own stage '{stage_id}': {error:#}"
             );
-            return Some(Response::AuthenticationFailed);
+            return Err(Response::AuthenticationFailed);
         }
     }
-    None
+    Ok(peer_pid)
 }
 
 /// Serve one `DisputeCriteria`.
@@ -193,25 +189,6 @@ fn serve_block_stage(work_dir: &Path, stage_id: &str, reason: &str) -> Response 
     })
 }
 
-/// Serve one `CompleteStage`.
-///
-/// The handler re-verifies the stage/session binding under the
-/// sessions-directory lock, together with the `Executing` requirement only
-/// completion imposes — which is why `self_service::ownership_to_enforce`
-/// leaves this request to it.
-fn serve_complete_stage(
-    work_dir: &Path,
-    stage_id: &str,
-    session_id: &str,
-    nonce: &str,
-) -> Response {
-    control_complete::handle_complete_stage(work_dir, stage_id, session_id, nonce).unwrap_or_else(
-        |error| Response::Error {
-            message: format!("Completion transition refused: {error:#}"),
-        },
-    )
-}
-
 /// Clone a client stream for use as a broadcast subscriber, applying a write
 /// timeout so a stalled subscriber cannot freeze the broadcaster (O-15).
 ///
@@ -225,6 +202,21 @@ fn prepare_subscriber_clone(stream: &UnixStream) -> std::result::Result<UnixStre
         .set_write_timeout(Some(SUBSCRIBER_WRITE_TIMEOUT))
         .map_err(|e| format!("Failed to set subscriber write timeout: {e}"))?;
     Ok(clone)
+}
+
+fn complete(
+    preface: &RequestPreface,
+    authorization: Authorization,
+    peer_pid: Option<u32>,
+    request: Request,
+    work_dir: &Path,
+) -> Response {
+    let auth = super::completion_dispatch::AuthorizedCompletion::from_authenticated_connection(
+        preface.capability(),
+        authorization == Authorization::Granted,
+        peer_pid,
+    );
+    super::completion_dispatch::dispatch(&auth, request, work_dir)
 }
 
 /// Handle a client connection.
@@ -271,11 +263,13 @@ pub fn handle_client_connection(
             Err(_) => break,
         };
 
-        if let Some(refusal) = authorize_body(&stream, work_dir, authorization, &preface, &request)
-        {
-            write_message(&mut stream, &refusal)?;
-            break;
-        }
+        let peer_pid = match authorize_body(&stream, work_dir, authorization, &preface, &request) {
+            Ok(peer_pid) => peer_pid,
+            Err(refusal) => {
+                write_message(&mut stream, &refusal)?;
+                break;
+            }
+        };
 
         match request {
             Request::Ping { .. } => {
@@ -325,13 +319,9 @@ pub fn handle_client_connection(
                 )?;
                 break;
             }
-            Request::CompleteStage {
-                stage_id,
-                session_id,
-                nonce,
-                ..
-            } => {
-                let response = serve_complete_stage(work_dir, &stage_id, &session_id, &nonce);
+            request
+            @ (Request::CompleteStage { .. } | Request::RecordCompletionEvidence { .. }) => {
+                let response = complete(&preface, authorization, peer_pid, request, work_dir);
                 write_message(&mut stream, &response)?;
                 break;
             }

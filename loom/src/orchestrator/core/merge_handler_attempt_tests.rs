@@ -1,5 +1,7 @@
 use super::Orchestrator;
+use crate::fs::session_files::{load_session_exact, save_session};
 use crate::models::failure::FailureType;
+use crate::models::session::{Session, SessionExitReason, SessionStatus, SessionType};
 use crate::models::stage::{Stage, StageStatus};
 use crate::orchestrator::core::OrchestratorConfig;
 use crate::plan::ExecutionGraph;
@@ -84,13 +86,127 @@ fn merge_probe_failure_does_not_consume_resolver_attempt_budget() {
         .exists());
 }
 
-/// `try_auto_merge`'s already-merged short circuit (`stage.merged == true`)
-/// routes cleanup through `MergeLifecycle::cleanup`, whose containment
-/// predicate is the ONLY guard on that path — nothing upstream re-checks
-/// ancestry. A stage marked `merged: true` with no `completed_commit` and a
-/// branch that still holds commits beyond the target must NOT have its
-/// worktree or branch removed: `containment_refusal` cannot prove those
-/// commits landed, so cleanup must refuse rather than destroy real work.
+struct FakeRetirementBackend {
+    probe: Result<bool, &'static str>,
+    kill: Result<(), &'static str>,
+    confirm: Result<bool, &'static str>,
+}
+
+impl FakeRetirementBackend {
+    fn probe(&self, _: &Session) -> anyhow::Result<bool> {
+        self.probe.map_err(anyhow::Error::msg)
+    }
+
+    fn kill(&self, _: &Session) -> anyhow::Result<()> {
+        self.kill.map_err(anyhow::Error::msg)
+    }
+
+    fn confirm(&self, _: &Session) -> anyhow::Result<bool> {
+        self.confirm.map_err(anyhow::Error::msg)
+    }
+}
+
+fn retirement_session(session_type: SessionType) -> Session {
+    let mut session = Session::new();
+    session.session_type = session_type;
+    session.assign_to_stage("stale-writer".to_string());
+    session.status = SessionStatus::Running;
+    session
+}
+
+fn tracked_stage_session(orchestrator: &mut Orchestrator) -> (Session, std::path::PathBuf) {
+    let session = retirement_session(SessionType::Stage);
+    save_session(&session, &orchestrator.config.work_dir).unwrap();
+    let signal = orchestrator
+        .config
+        .work_dir
+        .join("signals")
+        .join(format!("{}.md", session.id));
+    std::fs::create_dir_all(signal.parent().unwrap()).unwrap();
+    std::fs::write(&signal, "stale merge signal").unwrap();
+    orchestrator
+        .active_sessions
+        .insert("stale-writer".to_string(), session.clone());
+    (session, signal)
+}
+
+#[test]
+fn stale_writer_probe_error_blocks_replacement() {
+    let session = retirement_session(SessionType::Merge);
+    let backend = FakeRetirementBackend {
+        probe: Err("probe failed"),
+        kill: Ok(()),
+        confirm: Ok(true),
+    };
+
+    assert!(super::merge_gate::stale_merge_retirement_blocks_spawn(
+        &session,
+        true,
+        |session| backend.probe(session),
+        |session| backend.kill(session),
+        |session| backend.confirm(session),
+    ));
+}
+
+#[test]
+fn kill_failure_with_surviving_stale_writer_blocks_replacement() {
+    let session = retirement_session(SessionType::Stage);
+    let backend = FakeRetirementBackend {
+        probe: Ok(false),
+        kill: Err("kill failed"),
+        confirm: Ok(false),
+    };
+
+    assert!(super::merge_gate::stale_merge_retirement_blocks_spawn(
+        &session,
+        true,
+        |session| backend.probe(session),
+        |session| backend.kill(session),
+        |session| backend.confirm(session),
+    ));
+}
+
+#[test]
+#[serial]
+fn stale_writer_without_pid_identity_keeps_entry_and_signal() {
+    let temp = tempfile::tempdir().unwrap();
+    let work_dir = temp.path().join(".loom").join("work");
+    let mut orchestrator = orchestrator_for(temp.path(), &work_dir);
+    let (session, signal) = tracked_stage_session(&mut orchestrator);
+
+    assert!(orchestrator.cleanup_stale_merge_session("stale-writer"));
+    assert_eq!(orchestrator.active_sessions["stale-writer"].id, session.id);
+    assert!(signal.exists());
+    let persisted = load_session_exact(&work_dir, &session.id).unwrap().unwrap();
+    assert_eq!(persisted.status, SessionStatus::Running);
+    assert_eq!(persisted.exit_reason, None);
+}
+
+#[test]
+#[serial]
+fn confirmed_gone_stale_writer_is_replaced_and_allows_successor() {
+    let temp = tempfile::tempdir().unwrap();
+    let work_dir = temp.path().join(".loom").join("work");
+    let mut orchestrator = orchestrator_for(temp.path(), &work_dir);
+    let (session, signal) = tracked_stage_session(&mut orchestrator);
+    let pid_dir = work_dir.join("pids");
+    std::fs::create_dir_all(&pid_dir).unwrap();
+    std::fs::write(
+        pid_dir.join(format!("{}-{}.pid", session.tracking_key, session.id)),
+        format!("{}\n{}\n", std::process::id(), u64::MAX),
+    )
+    .unwrap();
+
+    assert!(!orchestrator.cleanup_stale_merge_session("stale-writer"));
+    assert!(!orchestrator.active_sessions.contains_key("stale-writer"));
+    assert!(!signal.exists());
+    let persisted = load_session_exact(&work_dir, &session.id).unwrap().unwrap();
+    assert_eq!(persisted.status, SessionStatus::ContextExhausted);
+    assert_eq!(persisted.exit_reason, Some(SessionExitReason::Replaced));
+}
+
+/// Build a stage branch with work not in main, exercising the containment
+/// guard used by the already-merged cleanup short circuit.
 /// Build a repo whose `loom/<stage_id>` branch carries a commit that never
 /// reached `main`, with its worktree still in place. When `with_extra_commit`
 /// is `false`, the branch is created but left at the same commit as `main` —

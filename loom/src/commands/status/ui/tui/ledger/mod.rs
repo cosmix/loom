@@ -29,6 +29,8 @@ mod tests;
 #[cfg(test)]
 mod tests_alignment;
 #[cfg(test)]
+mod tests_completion;
+#[cfg(test)]
 mod tests_viewport;
 /// Cell width and truncation helpers.
 pub mod text;

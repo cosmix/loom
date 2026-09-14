@@ -7,7 +7,11 @@ use super::content::HandoffContent;
 use super::formatter::format_handoff_markdown;
 use super::numbering::{find_latest_handoff, get_next_handoff_number};
 use super::{ensure_handoff, generate_handoff};
-use crate::handoff::HandoffOrigin;
+use crate::handoff::{
+    CompletionAttemptEvidence, CompletionBlocker, CompletionCheckpoint, CompletionPhase,
+    CriterionResult, HandoffOrigin, NonceObservation, ParsedHandoff, VerificationCheckpoint,
+    COMPLETION_EVIDENCE_VERSION,
+};
 use crate::models::session::Session;
 use crate::models::stage::Stage;
 
@@ -35,6 +39,76 @@ fn handoff_content_threads_origin_to_v2_schema() {
         .to_v2();
 
     assert_eq!(handoff.origin, Some(HandoffOrigin::BudgetExceeded));
+}
+
+#[test]
+fn completion_checkpoint_round_trips_without_leaking_command_into_summary() {
+    let exact_command = "cargo test --locked".to_string();
+    let (checkpoint, blocker) = completion_checkpoint_fixture(&exact_command);
+
+    let content = HandoffContent::new("session-123".to_string(), "stage-456".to_string())
+        .with_origin(HandoffOrigin::CompletionEvidence)
+        .with_completion_checkpoint(Some(checkpoint.clone()));
+    let markdown = format_handoff_markdown(&content).unwrap();
+    let parsed = ParsedHandoff::parse(&markdown);
+    let handoff = parsed.as_v2().unwrap();
+    let section = markdown
+        .split("## Completion Checkpoint")
+        .nth(1)
+        .unwrap()
+        .split("## Current State")
+        .next()
+        .unwrap();
+
+    assert_eq!(handoff.completion_checkpoint.as_ref(), Some(&checkpoint));
+    assert_eq!(handoff.origin, Some(HandoffOrigin::CompletionEvidence));
+    assert!(section.contains(blocker.short_fingerprint()));
+    assert!(!section.contains(&exact_command));
+}
+
+fn completion_checkpoint_fixture(exact_command: &str) -> (CompletionCheckpoint, CompletionBlocker) {
+    let evidence = completion_evidence_fixture(exact_command);
+    let blocker = CompletionBlocker::from_attempt(&evidence).unwrap();
+    let mut checkpoint = CompletionCheckpoint::new("stage-456", "session-123");
+    checkpoint.latest = Some(evidence.clone());
+    checkpoint.blocker = Some(blocker.clone());
+    checkpoint.observations = vec![NonceObservation {
+        evidence_nonce: evidence.evidence_nonce.clone(),
+        identity_digest: evidence.identity_digest(),
+        fingerprint: Some(blocker.fingerprint.clone()),
+        phase: evidence.phase,
+        first_observed_at: evidence.observed_at.clone(),
+        last_observed_at: evidence.observed_at.clone(),
+        attestation: None,
+    }];
+    checkpoint.first_observed_at = Some(evidence.observed_at.clone());
+    checkpoint.last_observed_at = Some(evidence.observed_at);
+    (checkpoint, blocker)
+}
+
+fn completion_evidence_fixture(exact_command: &str) -> CompletionAttemptEvidence {
+    CompletionAttemptEvidence {
+        version: COMPLETION_EVIDENCE_VERSION,
+        stage_id: "stage-456".to_string(),
+        session_id: "session-123".to_string(),
+        commit: "0123456789abcdef0123456789abcdef01234567".to_string(),
+        check_definition_hash: "a".repeat(64),
+        exact_command: exact_command.to_string(),
+        evidence_nonce: "evidence_nonce_123456789".to_string(),
+        verification: VerificationCheckpoint {
+            criteria: vec![CriterionResult {
+                id: "acceptance".to_string(),
+                passed: true,
+            }],
+            environment_policy: "confined_v1".to_string(),
+            environment: Vec::new(),
+        },
+        phase: CompletionPhase::VerifiedPendingAck,
+        external_failure_code: Some("DAEMON_OFFLINE".to_string()),
+        diagnostic_first_line: Some("transport unavailable".to_string()),
+        observed_at: "2026-09-14T12:00:00Z".to_string(),
+        attestation: None,
+    }
 }
 
 #[test]

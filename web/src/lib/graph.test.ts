@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import fixture from "@/api/fixtures/snapshot.json";
 import { snapshotSchema, type StageSummary } from "@/api/schema";
-import { dependentsOf, layoutStages, lineage, nodeHeight, threadOf } from "@/lib/graph";
+import { dependentsOf, hasFooter, layoutStages, lineage, nodeHeight, threadOf } from "@/lib/graph";
 
 const stages = snapshotSchema.parse(fixture).status.stages;
 const byId = (id: string): StageSummary => stages.find((stage) => stage.id === id)!;
@@ -59,6 +59,27 @@ describe("nodeHeight", () => {
 
   it("adds a meter line to a card with a context reading", () => {
     expect(nodeHeight(byId("server"))).toBeGreaterThan(nodeHeight(byId("client")));
+  });
+
+  it("shows a footer for a completion blocker on an otherwise footer-less stage", () => {
+    const blocked: StageSummary = {
+      ...byId("design"),
+      status: "needs-human-review",
+      completion_blocker: {
+        state: "blocked",
+        fingerprint: "fp",
+        failure_code: "criteria-blocked",
+        summary: null,
+        commit: "abc123",
+        repeat_count: 2,
+        first_observed_at: null,
+        last_observed_at: null,
+        next_action: "review the completion evidence",
+      },
+    };
+
+    expect(hasFooter(blocked)).toBe(true);
+    expect(nodeHeight(blocked)).toBeGreaterThan(nodeHeight(byId("design")));
   });
 });
 

@@ -7,10 +7,8 @@ use anyhow::{bail, Result};
 use std::fs;
 use std::path::Path;
 
-use crate::fs::locking::locked_read;
-use crate::fs::session_files::save_session;
-use crate::models::session::{Session, SessionStatus};
-use crate::parser::frontmatter::parse_from_markdown;
+use crate::fs::session_files::mark_session_terminal_reason;
+use crate::models::session::{SessionExitReason, SessionStatus};
 
 /// Clean up resources associated with a completed stage
 ///
@@ -19,7 +17,12 @@ use crate::parser::frontmatter::parse_from_markdown;
 /// 2. Removes the signal file
 pub fn cleanup_session_resources(_stage_id: &str, session_id: &str, work_dir: &Path) {
     // 1. Update session status to Completed
-    if let Err(e) = update_session_status(work_dir, session_id, SessionStatus::Completed) {
+    if let Err(e) = mark_session_terminal_reason(
+        work_dir,
+        session_id,
+        SessionStatus::Completed,
+        SessionExitReason::Completed,
+    ) {
         eprintln!("Warning: failed to update session status: {e}");
     }
 
@@ -52,24 +55,11 @@ pub(crate) fn update_session_status(
     session_id: &str,
     status: SessionStatus,
 ) -> Result<()> {
-    let sessions_dir = work_dir.join("sessions");
-    let session_path = sessions_dir.join(format!("{session_id}.md"));
-
-    if !session_path.exists() {
-        bail!("Session file not found: {}", session_path.display());
-    }
-
-    let content = locked_read(&session_path)?;
-
-    // Parse session from markdown
-    let mut session: Session = parse_from_markdown(&content, "Session")?;
-
-    // Update status
-    session.status = status;
-    session.last_active = chrono::Utc::now();
-
-    // Write back through the canonical locked + atomic path.
-    save_session(&session, work_dir)?;
-
-    Ok(())
+    let reason = match status {
+        SessionStatus::Completed => SessionExitReason::Completed,
+        SessionStatus::Crashed => SessionExitReason::Crashed,
+        SessionStatus::ContextExhausted => SessionExitReason::ContextCeiling,
+        _ => bail!("Session status update requires a terminal status"),
+    };
+    mark_session_terminal_reason(work_dir, session_id, status, reason)
 }

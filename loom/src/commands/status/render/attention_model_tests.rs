@@ -1,5 +1,7 @@
 use super::*;
-use crate::commands::status::data::{ActivityStatus, StageType};
+use crate::commands::status::data::{
+    ActivityStatus, CompletionBlockerState, CompletionBlockerSummary, StageType,
+};
 use crate::models::failure::FailureType;
 use crate::models::stage::StageStatus;
 
@@ -37,6 +39,22 @@ fn make_stage_summary(id: &str, status: StageStatus) -> StageSummary {
         dispute_count: 0,
         judge_heartbeat_secs: None,
         session_backend: None,
+        outgoing_session_exit_reason: None,
+        completion_blocker: None,
+    }
+}
+
+fn completion_blocker(state: CompletionBlockerState) -> CompletionBlockerSummary {
+    CompletionBlockerSummary {
+        state,
+        fingerprint: "feedface1234".to_string(),
+        failure_code: "sandbox_denied".to_string(),
+        summary: Some("sandbox denied execution".to_string()),
+        commit: "0123456789ab".to_string(),
+        repeat_count: 2,
+        first_observed_at: Some("2026-09-14T10:00:00Z".to_string()),
+        last_observed_at: Some("2026-09-14T10:01:00Z".to_string()),
+        next_action: "fix sandbox access, then retry".to_string(),
     }
 }
 
@@ -119,11 +137,51 @@ fn healthy_statuses_need_no_attention() {
 fn cleanup_warning_wins_over_completed_status() {
     let mut stage = make_stage_summary("cleanup-stage", StageStatus::Completed);
     stage.cleanup_warning = Some("could not remove worktree".to_string());
+    stage.completion_blocker = Some(completion_blocker(CompletionBlockerState::Blocked));
 
     let entries = attention_entries(&[stage]);
 
     assert_eq!(entries[0].label, "CLEANUP FAILED");
     assert_eq!(entries[0].hint, "loom worktree remove cleanup-stage");
+}
+
+#[test]
+fn executing_pending_blocker_requires_attention() {
+    let mut stage = make_stage_summary("writer", StageStatus::Executing);
+    stage.completion_blocker = Some(completion_blocker(CompletionBlockerState::Pending));
+
+    let entries = attention_entries(&[stage]);
+
+    assert_eq!(entries[0].label, "COMPLETION PENDING");
+}
+
+#[test]
+fn blocked_completion_outranks_needs_review() {
+    let mut stage = make_stage_summary("writer", StageStatus::NeedsHumanReview);
+    stage.completion_blocker = Some(completion_blocker(CompletionBlockerState::Blocked));
+
+    let entries = attention_entries(&[stage]);
+
+    assert_eq!(entries[0].label, "COMPLETION BLOCKED");
+}
+
+#[test]
+fn unknown_writer_ownership_has_distinct_label() {
+    let mut stage = make_stage_summary("writer", StageStatus::NeedsHumanReview);
+    stage.completion_blocker = Some(completion_blocker(CompletionBlockerState::OwnershipUnknown));
+
+    let entries = attention_entries(&[stage]);
+
+    assert_eq!(entries[0].label, "WRITER UNCONFIRMED");
+}
+
+#[test]
+fn stage_without_blocker_keeps_existing_attention_label() {
+    let stage = make_stage_summary("writer", StageStatus::NeedsHumanReview);
+
+    let entries = attention_entries(&[stage]);
+
+    assert_eq!(entries[0].label, "NEEDS REVIEW");
 }
 
 #[test]

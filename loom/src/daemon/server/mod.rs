@@ -3,7 +3,10 @@
 mod admission;
 mod broadcast;
 mod client;
+mod completion_dispatch;
+mod completion_evidence;
 mod control_block;
+mod control_complete;
 mod core;
 mod dispute;
 mod environment;

@@ -102,4 +102,32 @@ describe("stage modal", () => {
     fireEvent.pointerMove(button.parentElement!);
     expect(document.querySelector('[data-slot="tooltip-content"]')).toBeNull();
   });
+
+  it("renders a long completion summary and its next action", () => {
+    const summary =
+      "Completion verification could not prove that the outgoing writer owns the expected commit after repeated boundary checks across the current session state.";
+    const nextAction = "Confirm the commit owner, then retry completion verification.";
+    const stage = terminalStage({
+      status: "needs-human-review",
+      completion_blocker: {
+        state: "ownership_unknown",
+        fingerprint: "fp-owner",
+        failure_code: "writer-unconfirmed",
+        summary,
+        commit: "abc123",
+        repeat_count: 2,
+        first_observed_at: "2026-09-14T08:00:00Z",
+        last_observed_at: "2026-09-14T08:05:00Z",
+        next_action: nextAction,
+      },
+    });
+
+    renderModal(stage, `/?stage=${stage.id}`);
+
+    expect(screen.getAllByText(`completion blocked, writer unconfirmed: ${summary}`).length).toBe(
+      1,
+    );
+    expect(screen.getByTitle(nextAction)).toBeTruthy();
+    expect(screen.getByText(nextAction)).toBeTruthy();
+  });
 });

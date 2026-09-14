@@ -13,15 +13,15 @@ use super::acceptance_runner::{
     print_acceptance_failure_guidance, resolve_knowledge_acceptance_dir,
     run_acceptance_with_display, AcceptanceDisplayOptions,
 };
-use super::complete::{print_sandboxed_completion_pending_notice, verification_passed_marker_line};
+use super::complete::print_sandboxed_completion_pending_notice;
 use super::session::cleanup_session_resources;
 
 /// Verification for a sandboxed knowledge session (`LOOM_SESSION_TYPE=knowledge`,
 /// routed by `control_session::sandbox_control_session`).
 ///
 /// Acceptance runs in the main repository exactly as
-/// [`complete_knowledge_stage`] runs it; then the marker line hands the
-/// transition to the daemon through `loom-hooks/loom-control-complete.sh`. The
+/// [`complete_knowledge_stage`] runs it; then the EOF-delimited evidence record
+/// hands the transition to the daemon through the completion broker. The
 /// daemon sets `merged = true` and retires the session itself
 /// (`daemon/server/control_complete.rs`). Nothing is written here: a sandboxed
 /// session cannot write the state directory.
@@ -59,11 +59,11 @@ pub(super) fn verify_knowledge_for_broker(
             stage.id
         );
     }
-    println!(
-        "{}",
-        verification_passed_marker_line(&stage.id, control_session)
-    );
     print_sandboxed_completion_pending_notice(&stage.id);
+    let checkout = crate::fs::work_dir::WorkDir::new(work_dir)?
+        .main_project_root()
+        .context("failed to resolve the main project root")?;
+    super::completion_producer::emit_verified_evidence(stage, control_session, &checkout)?;
     Ok(())
 }
 

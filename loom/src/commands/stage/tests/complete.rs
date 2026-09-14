@@ -1,8 +1,10 @@
 //! Tests for complete command
 
 use super::super::admin_proof::{mint_admin_proof, AdminProofRequest};
-use super::super::complete::{
-    complete, complete_authorization::require_admin_capability, verification_passed_marker_line,
+use super::super::complete::{complete, complete_authorization::require_admin_capability};
+use super::super::completion_evidence::{
+    format_evidence_record, parse_evidence_record, verified_evidence, EVIDENCE_EOF_MARKER,
+    EVIDENCE_RECORD_PREFIX,
 };
 use super::{create_test_stage, save_test_stage, setup_work_dir};
 use crate::models::stage::{StageStatus, StageType};
@@ -35,6 +37,42 @@ fn write_admin_token(work_dir: &Path, content: &str) {
     std::fs::write(work_dir.join("admin.token"), content).unwrap();
 }
 
+fn initialize_zero_commit_repo(repo: &Path) {
+    let run_git = |args: &[&str]| {
+        std::process::Command::new("git")
+            .args(args)
+            .current_dir(repo)
+            .output()
+            .unwrap()
+    };
+    run_git(&["init", "--initial-branch=main"]);
+    run_git(&["config", "user.email", "test@test.com"]);
+    run_git(&["config", "user.name", "Test"]);
+    std::fs::write(repo.join("README.md"), "x").unwrap();
+    run_git(&["add", "README.md"]);
+    run_git(&["commit", "-m", "initial"]);
+    run_git(&["branch", "loom/test-stage"]);
+}
+
+fn assert_zero_commit_refusal(result: Result<()>, work_dir: &Path) {
+    assert!(
+        result.is_err(),
+        "complete --no-verify must refuse a stage branch with zero commits ahead"
+    );
+    let err = format!("{:#}", result.unwrap_err());
+    assert!(
+        err.contains("zero commits"),
+        "expected error to explain zero-commits cause, got: {err}"
+    );
+    let stage = load_stage("test-stage", work_dir).unwrap();
+    assert_eq!(
+        stage.status,
+        StageStatus::Executing,
+        "refusal must preserve prior stage state"
+    );
+    assert!(!stage.merged, "refused stage must not be marked merged");
+}
+
 fn completion_proof(
     stage_id: &str,
     no_verify: bool,
@@ -49,18 +87,8 @@ fn completion_proof(
     )
 }
 
-/// Clears `LOOM_STAGE_ID`/`LOOM_SESSION_ID`/`LOOM_WORKTREE_PATH` and restores
-/// them, plus the working directory, on drop. Mirrors the shape of the
-/// `EnvGuard` in `commands/memory/handlers/tests.rs`.
-///
-/// `complete()` routes through `sandbox_control_session`
-/// (`control_session.rs`), which reads these three vars from the ambient
-/// process environment. This suite commonly runs INSIDE a loom worktree
-/// session, which leaves them set for the orchestrator session that spawned
-/// this test binary — so without clearing them, `complete()` in these tests
-/// would silently take the SANDBOXED worktree-completion route instead of the
-/// ordinary host-side one they mean to exercise, and fail for reasons
-/// unrelated to what they assert.
+/// Clears completion-routing environment variables and restores them, plus
+/// the working directory, on drop so ambient loom sessions cannot reroute tests.
 ///
 /// Restoring the cwd on `Drop` (rather than a manual call placed after the
 /// call under test) means a panicking `complete()` call — the one case
@@ -147,7 +175,6 @@ fn test_complete_with_passing_acceptance() {
 #[test]
 #[serial]
 fn test_complete_no_verify_refuses_zero_commits_ahead() {
-    use std::process::Command;
     // When the stage branch EXISTS but has no commits beyond the merge
     // target, --no-verify must refuse — otherwise the daemon's auto-merge
     // trivially "succeeds" against an unchanged base, producing the
@@ -160,24 +187,8 @@ fn test_complete_no_verify_refuses_zero_commits_ahead() {
     // test so it reaches the zero-commits-ahead guard.
     write_admin_token(&work_dir_path, "admin-secret-token");
 
-    // Bootstrap a real git repo with an initial commit so the branch
-    // existence + commits_ahead probes have something to work with.
     let repo = temp_dir.path();
-    let run_git = |args: &[&str]| {
-        Command::new("git")
-            .args(args)
-            .current_dir(repo)
-            .output()
-            .unwrap()
-    };
-    run_git(&["init", "--initial-branch=main"]);
-    run_git(&["config", "user.email", "test@test.com"]);
-    run_git(&["config", "user.name", "Test"]);
-    std::fs::write(repo.join("README.md"), "x").unwrap();
-    run_git(&["add", "README.md"]);
-    run_git(&["commit", "-m", "initial"]);
-    // Create the stage branch at the same HEAD as main — zero commits ahead.
-    run_git(&["branch", "loom/test-stage"]);
+    initialize_zero_commit_repo(repo);
 
     let mut stage = create_test_stage("test-stage", StageStatus::Executing);
     stage.acceptance = vec![AcceptanceCriterion::Simple("exit 1".to_string())];
@@ -188,29 +199,7 @@ fn test_complete_no_verify_refuses_zero_commits_ahead() {
 
     let proof = completion_proof("test-stage", true, false, false, "zero-commits-0001");
     let result = complete_stage("test-stage", true, Some(proof));
-
-    assert!(
-        result.is_err(),
-        "complete --no-verify must refuse when stage branch has zero commits \
-         ahead of target (phantom-merge guard)"
-    );
-    let err = format!("{:#}", result.unwrap_err());
-    assert!(
-        err.contains("zero commits"),
-        "expected error to explain zero-commits cause, got: {err}"
-    );
-
-    // Stage status must NOT have been mutated by the refused completion.
-    let loaded_stage = load_stage("test-stage", &work_dir_path).unwrap();
-    assert_eq!(
-        loaded_stage.status,
-        StageStatus::Executing,
-        "refusal must preserve prior stage state"
-    );
-    assert!(
-        !loaded_stage.merged,
-        "refused stage must not be marked merged"
-    );
+    assert_zero_commit_refusal(result, &work_dir_path);
 }
 
 #[test]
@@ -529,16 +518,17 @@ fn test_complete_standard_stage_not_routed_to_knowledge() {
 }
 
 #[test]
-fn verification_passed_marker_line_matches_the_bridges_exact_match() {
-    // `loom-hooks/loom-control-complete.sh` builds its own copy of this exact
-    // string (`MARKER="LOOM_CONTROL_VERIFICATION_PASSED stage=$STAGE_ID
-    // session=$SESSION_ID"`) and matches it as an exact whole line of
-    // stdout before it will forward completion to the daemon. This test
-    // pins the Rust side's format so a later "improve the wording" edit to
-    // `run_verification_phase` fails here instead of silently breaking
-    // completion for every sandboxed worktree session.
-    assert_eq!(
-        verification_passed_marker_line("build-api", "session-123"),
-        "LOOM_CONTROL_VERIFICATION_PASSED stage=build-api session=session-123"
+fn verified_evidence_record_has_broker_boundaries() {
+    let stage = create_test_stage("build-api", StageStatus::Executing);
+    let evidence = verified_evidence(
+        &stage,
+        "session-123",
+        "a".repeat(40),
+        "/usr/bin/loom stage complete build-api".into(),
     );
+    let output = format_evidence_record(&evidence).unwrap();
+
+    assert!(output.starts_with(EVIDENCE_RECORD_PREFIX));
+    assert_eq!(output.trim_end().lines().last(), Some(EVIDENCE_EOF_MARKER));
+    assert_eq!(parse_evidence_record(&output).unwrap(), evidence);
 }

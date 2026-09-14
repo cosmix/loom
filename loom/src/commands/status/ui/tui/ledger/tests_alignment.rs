@@ -1,7 +1,12 @@
 //! Column-alignment checks for the ledger table, split out to keep
 //! `tests.rs` under the file line limit.
 
-use super::tests::{fixture, render_view};
+use super::{
+    cells::activity_cell,
+    tests::{contains, fixture, make_blocker, make_stage, render_view},
+    text::{padded, text_width},
+};
+use crate::{commands::status::data::CompletionBlockerState, models::stage::StageStatus};
 
 /// Byte offset of the last terminal-buffer row's cell that renders `needle`,
 /// as a character index - `str::find`/`rfind` return byte offsets, which
@@ -43,4 +48,46 @@ fn wide_icon_row_keeps_column_alignment() {
     // is its MERGE cell, not the earlier one in ACTIVITY.
     assert_eq!(last_column_of(wide_row, "conflict"), Some(merge_at));
     assert_eq!(column_of(narrow_row, "unmerged"), Some(merge_at));
+}
+
+#[test]
+fn wide_terminal_widens_stage_column() {
+    let data = fixture();
+    let at_120 = render_view(&data, 120, 40, false);
+    let at_140 = render_view(&data, 140, 40, false);
+    let header_120 = at_120
+        .iter()
+        .find(|row| row.contains("DEPENDS ON"))
+        .unwrap();
+    let header_140 = at_140
+        .iter()
+        .find(|row| row.contains("DEPENDS ON"))
+        .unwrap();
+    assert!(header_140.find("DEPENDS ON").unwrap() > header_120.find("DEPENDS ON").unwrap());
+}
+
+#[test]
+fn drops_columns_in_priority_order() {
+    let data = fixture();
+    let at_110 = render_view(&data, 110, 40, false);
+    assert!(!contains(&at_110, "TIME"));
+    assert!(!contains(&at_110, "MODELS"));
+    assert!(contains(&at_110, "DEPENDS ON"));
+
+    let at_74 = render_view(&data, 74, 40, false);
+    assert!(!contains(&at_74, "CONTEXT"));
+    assert!(contains(&at_74, "MERGE"));
+}
+
+#[test]
+fn wide_blocker_summary_truncates_to_activity_width() {
+    let mut stage = make_stage("wide", StageStatus::Executing);
+    stage.completion_blocker = Some(make_blocker(
+        CompletionBlockerState::Pending,
+        "界界界🚧界界界🚧 this remains long",
+    ));
+    let cell = activity_cell(&stage, 24);
+    assert!(cell.text.ends_with('…'));
+    assert!(cell.text.contains('界'));
+    assert_eq!(text_width(&padded(&cell.text, 24)), 24);
 }

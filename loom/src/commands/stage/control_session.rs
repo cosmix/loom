@@ -1,25 +1,18 @@
-//! Routing for the two non-ordinary `loom stage complete` paths.
-//!
-//! A sandboxed session may run acceptance and verification, but the state
-//! transition itself belongs to the daemon. Two kinds of session take that
-//! route: a stage session inside its loom worktree, and a knowledge session
-//! (`LOOM_SESSION_TYPE=knowledge`) in the main repository. Two pieces implement
-//! the split, and both live here because both decide *identity* from the
-//! wrapper environment:
-//!
-//! * [`sandbox_control_session`] — called on every completion, decides whether
-//!   this invocation is a sandboxed agent (verification only) or an ordinary
-//!   host-side completion.
-//! * [`handle_broker_request`] — the `LOOM_CONTROL_BROKER=1` re-entry made by
-//!   `loom-hooks/loom-control-complete.sh` after it sees the verification marker,
-//!   which forwards the transition to the daemon over the socket.
+//! Routing for sandbox verification and trusted broker completion requests.
 
+use super::super::completion_evidence::{
+    broker::{run_broker, BrokerOutcome, ProductionTransport},
+    MAX_BROKER_INPUT_BYTES, TOOL_STATUS_ENV,
+};
 use super::control_complete;
 use crate::daemon::DaemonServer;
+use crate::fs::session_files::load_session_exact;
 use crate::fs::work_dir::WorkDir;
 use crate::models::session::SessionType;
 use crate::models::stage::{Stage, StageType};
+use crate::verify::transitions::load_stage;
 use anyhow::{bail, Context, Result};
+use std::io::Read;
 use std::path::{Path, PathBuf};
 
 /// Serve a `LOOM_CONTROL_BROKER=1` invocation, returning whether it was
@@ -39,8 +32,60 @@ pub(super) fn handle_broker_request(
     }
     let session_id = session_id.context("trusted completion broker requires --session")?;
     require_wrapper_identity(stage_id, session_id)?;
-    control_complete::send_completion(stage_id, session_id, work_dir)?;
-    Ok(true)
+    let outcome = load_and_run_broker(stage_id, session_id, work_dir)
+        .unwrap_or_else(|error| BrokerOutcome::Uncertain(error.to_string()));
+    println!("{}", outcome.outcome_line());
+    if matches!(
+        outcome,
+        BrokerOutcome::Accepted | BrokerOutcome::AcceptedReconciled
+    ) {
+        Ok(true)
+    } else {
+        bail!("trusted completion broker outcome: {}", outcome.token())
+    }
+}
+
+fn load_and_run_broker(stage_id: &str, session_id: &str, work_dir: &Path) -> Result<BrokerOutcome> {
+    let (output, oversized) = read_broker_input()?;
+    let stage = load_stage(stage_id, work_dir)?;
+    let session = load_session_exact(work_dir, session_id)?
+        .context("trusted completion broker session record is missing")?;
+    if stage.session.as_deref() != Some(session_id) || session.stage_id.as_deref() != Some(stage_id)
+    {
+        bail!("trusted completion broker stage/session assignment mismatch");
+    }
+    let repo_root = WorkDir::new(work_dir)?
+        .main_project_root()
+        .context("failed to resolve the main project root")?;
+    let failed = !oversized && !matches!(std::env::var(TOOL_STATUS_ENV).as_deref(), Ok("ok"));
+    let transport = ProductionTransport::new(
+        stage_id,
+        session_id,
+        work_dir,
+        control_complete::request_completion,
+    );
+    Ok(run_broker(
+        &stage, &session, work_dir, &repo_root, failed, &output, &transport,
+    ))
+}
+
+fn read_broker_input() -> Result<(String, bool)> {
+    read_broker_input_from(std::io::stdin())
+}
+
+fn read_broker_input_from(input: impl Read) -> Result<(String, bool)> {
+    let limit = u64::try_from(MAX_BROKER_INPUT_BYTES + 1)
+        .context("broker input limit does not fit in u64")?;
+    let mut bytes = Vec::new();
+    input
+        .take(limit)
+        .read_to_end(&mut bytes)
+        .context("failed to read trusted completion broker input")?;
+    let oversized = bytes.len() > MAX_BROKER_INPUT_BYTES;
+    if oversized {
+        bytes.clear();
+    }
+    Ok((String::from_utf8_lossy(&bytes).into_owned(), oversized))
 }
 
 fn require_wrapper_identity(stage_id: &str, session_id: &str) -> Result<()> {
@@ -211,52 +256,34 @@ fn require_knowledge_checkout(stage: &Stage, work_dir: &Path, cwd: &Path) -> Res
 
 #[cfg(test)]
 mod tests {
-    use super::{is_loom_worktree_path, route_control_session, WrapperEnv};
+    use super::{is_loom_worktree_path, read_broker_input_from, route_control_session, WrapperEnv};
+    use crate::commands::stage::completion_evidence::MAX_BROKER_INPUT_BYTES;
     use crate::models::stage::{Stage, StageType};
     use std::path::{Path, PathBuf};
 
-    /// The sandboxed-completion route must be selected by WORKTREE MEMBERSHIP,
-    /// not by `LOOM_WORKTREE_PATH` merely being set.
-    ///
-    /// The wrapper script used to export that variable for every session kind,
-    /// including knowledge / merge / base-conflict sessions that run in the
-    /// main repo. `sandbox_control_session` read bare presence as "this is a
-    /// sandboxed worktree agent", so a knowledge stage was routed into a
-    /// wrapper path that explicitly refuses knowledge stages — leaving it
-    /// permanently unable to complete itself even with every acceptance
-    /// criterion green.
     #[test]
     fn worktree_membership_is_structural_not_presence() {
-        // Real loom worktree roots — what the wrapper exports.
         assert!(is_loom_worktree_path(Path::new(
             "/home/dev/repo/.worktrees/build-api"
         )));
-        // A worktree root whose repo itself lives inside an outer worktree.
         assert!(is_loom_worktree_path(Path::new(
             "/home/dev/outer/.worktrees/outer-stage/repo/.worktrees/build-api"
         )));
 
-        // Main-repo session working directories — knowledge, merge and
-        // base-conflict sessions all `cd` here.
         assert!(!is_loom_worktree_path(Path::new("/home/dev/repo")));
         assert!(!is_loom_worktree_path(Path::new("/")));
-        // Including a main repo under an outer worktree: only a path that
-        // ENDS at `.worktrees/<id>` counts.
         assert!(!is_loom_worktree_path(Path::new(
             "/home/dev/outer/.worktrees/outer-stage/repo"
         )));
 
-        // A directory below a worktree root is not itself a root.
         assert!(!is_loom_worktree_path(Path::new(
             "/home/dev/repo/.worktrees/build-api/src/nested"
         )));
 
-        // The bare container directory is not itself a worktree.
         assert!(!is_loom_worktree_path(Path::new(
             "/home/dev/repo/.worktrees"
         )));
 
-        // A directory that merely mentions the name is not one either.
         assert!(!is_loom_worktree_path(Path::new(
             "/home/dev/repo/my.worktrees-backup"
         )));
@@ -285,6 +312,15 @@ mod tests {
         let work_dir = tmp.path().join(".loom").join("work");
         std::fs::create_dir_all(&work_dir).unwrap();
         (tmp, work_dir)
+    }
+
+    #[test]
+    fn oversized_broker_input_is_marked_missing() {
+        let input = vec![b'x'; MAX_BROKER_INPUT_BYTES + 1];
+
+        let (output, oversized) = read_broker_input_from(input.as_slice()).unwrap();
+
+        assert_eq!((output, oversized), (String::new(), true));
     }
 
     #[test]

@@ -20,7 +20,11 @@ export function StateLine({ stage, className }: { stage: StageSummary; className
     <div className={cn("flex flex-wrap items-center gap-x-3 gap-y-1 text-sm", className)}>
       <StateBadge status={stage.status} />
       <ActivityRoundel stage={stage} size={15} />
-      {activity && <span className={toneClass(activity.tone)}>{activity.text}</span>}
+      {activity && (
+        <span className={toneClass(activity.tone)} title={stage.completion_blocker?.next_action}>
+          {activity.text}
+        </span>
+      )}
       {time && <span className="font-mono text-xs text-muted-foreground">{time}</span>}
       {merge && <span className={toneClass(merge.tone)}>{merge.text}</span>}
     </div>

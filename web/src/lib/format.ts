@@ -1,4 +1,10 @@
-import type { DaemonState, FailureType, StageStatus, StageSummary } from "@/api/schema";
+import type {
+  DaemonState,
+  FailureType,
+  OutgoingSessionExitReason,
+  StageStatus,
+  StageSummary,
+} from "@/api/schema";
 
 export type Tone =
   | "executing"
@@ -159,12 +165,54 @@ function adjudicationText(stage: StageSummary): { text: string; tone: Tone } {
   return { text: `dispute ${stage.dispute_count} · judge ${judge}`, tone: "warning" };
 }
 
+function completionActivity(stage: StageSummary): { text: string; tone: Tone } | null {
+  const blocker = stage.completion_blocker;
+  if (!blocker || (stage.status !== "executing" && stage.status !== "needs-human-review")) {
+    return null;
+  }
+  const detail = blocker.summary || blocker.failure_code;
+  switch (blocker.state) {
+    case "pending":
+      return { text: `completion pending: ${detail}`, tone: "warning" };
+    case "blocked":
+      return { text: `completion blocked: ${detail}`, tone: "blocked" };
+    case "ownership_unknown":
+      return {
+        text: `completion blocked, writer unconfirmed: ${detail}`,
+        tone: "blocked",
+      };
+  }
+}
+
 export function activityText(stage: StageSummary): { text: string; tone: Tone } | null {
-  const activity = baseActivity(stage);
+  let activity = completionActivity(stage) ?? baseActivity(stage);
+  if (
+    !stage.completion_blocker &&
+    stage.status !== "executing" &&
+    stage.outgoing_session_exit_reason
+  ) {
+    const lastExit = `last: ${exitReasonLabel(stage.outgoing_session_exit_reason)}`;
+    activity = activity
+      ? { ...activity, text: `${activity.text} · ${lastExit}` }
+      : { text: lastExit, tone: "neutral" };
+  }
   if (!activity || !stage.held) {
     return activity;
   }
   return { text: `held · ${activity.text}`, tone: "warning" };
+}
+
+export function exitReasonLabel(reason: OutgoingSessionExitReason): string {
+  const labels: Record<OutgoingSessionExitReason, string> = {
+    completed: "completed",
+    crashed: "crashed",
+    "context-ceiling": "context ceiling",
+    stalled: "stalled",
+    "operator-stop": "operator stop",
+    "criteria-blocked": "criteria blocked",
+    replaced: "replaced",
+  };
+  return labels[reason];
 }
 
 export function contextUsage(stage: StageSummary): {

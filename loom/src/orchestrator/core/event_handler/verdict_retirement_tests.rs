@@ -9,8 +9,8 @@ use super::tests::{
     executing_stage, handoff_work_dir, orchestrator_for, recorded_session, spawn_orphan_process,
 };
 use super::*;
-use crate::fs::session_files::save_session;
-use crate::models::session::{Session, SessionStatus};
+use crate::fs::session_files::{load_session_exact, save_session};
+use crate::models::session::{Session, SessionExitReason, SessionStatus};
 use crate::orchestrator::terminal::native::write_test_pid_identity;
 use crate::verify::transitions::{load_stage, update_stage};
 
@@ -54,6 +54,14 @@ fn retiring_kills_the_disputing_agent_and_clears_the_stage_session() {
     assert_eq!(stage.session, None);
     assert_eq!(stage.status, StageStatus::NeedsAdjudication);
     assert!(orchestrator.active_sessions.is_empty());
+    let retired = load_session_exact(&work, &session.id).unwrap().unwrap();
+    assert_eq!(
+        (retired.status, retired.exit_reason),
+        (
+            SessionStatus::ContextExhausted,
+            Some(SessionExitReason::Replaced)
+        )
+    );
     assert!(
         work.join("handoffs")
             .join("test-stage-handoff-001.md")

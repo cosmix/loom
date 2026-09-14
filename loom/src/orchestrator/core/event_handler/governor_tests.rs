@@ -10,7 +10,7 @@ use super::tests::{
 };
 use super::*;
 use crate::fs::session_files::save_session;
-use crate::models::session::{Session, SessionStatus};
+use crate::models::session::{Session, SessionExitReason, SessionStatus};
 use crate::orchestrator::terminal::native::write_test_pid_identity;
 use crate::verify::transitions::{load_stage, update_stage};
 use std::path::Path;
@@ -160,10 +160,12 @@ fn a_handoff_marks_the_session_it_took_down_context_exhausted() {
         .on_needs_handoff(&session.id, "test-stage")
         .unwrap();
 
+    let persisted = session_on_disk(&work, &session.id);
+    assert_eq!(persisted.status, SessionStatus::ContextExhausted);
     assert_eq!(
-        session_on_disk(&work, &session.id).status,
-        SessionStatus::ContextExhausted,
-        "a record left Running with a dead PID is read as a crash by the next poll"
+        persisted.exit_reason,
+        Some(SessionExitReason::ContextCeiling),
+        "a routine ceiling handoff must retain its durable cause"
     );
     assert_eq!(
         load_stage("test-stage", &work).unwrap().status,

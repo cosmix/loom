@@ -11,7 +11,8 @@
 //! only signals; because `SIGTERM` returns before the target has actually
 //! exited, the close waits for confirmed death before writing that state down.
 
-use crate::models::session::{Session, SessionStatus};
+use crate::fs::session_files::mark_session_terminal_reason;
+use crate::models::session::{Session, SessionExitReason, SessionStatus};
 use crate::orchestrator::monitor::heartbeat::cleanup_judge_heartbeat;
 use crate::orchestrator::terminal::native::cleanup_session_settings;
 
@@ -25,19 +26,22 @@ impl Orchestrator {
     /// judge that did its job, `Crashed` for one that was closed without
     /// producing a verdict.
     ///
-    /// Every step is best-effort and none can abort the others. A kill that
-    /// fails still has to be followed by the record and signal cleanup, or a
-    /// judge that is already gone keeps its stage blocked on the strength of
-    /// its own leftovers.
+    /// Every cleanup step is best-effort once liveness confirms the judge is
+    /// gone. A kill error still proceeds to confirmation because the process
+    /// may already have exited; an unconfirmed process keeps all live state.
     ///
     /// The kill is confirmed through the same bounded poll `take_down_agents`
     /// uses (`confirm_session_gone`, `event_handler/stage_takedown.rs`) before
     /// the record is written: `SIGTERM` is asynchronous, so a probe taken right
     /// after `kill_session` can still see a judge that is in the process of
     /// dying, and a record written before confirmed death describes a judge
-    /// that may still be running. Once this returns, callers — and the tests
-    /// that assert on the judge's process — may treat it as gone.
-    pub(crate) fn close_adjudication_session(&mut self, session: &Session, status: SessionStatus) {
+    /// that may still be running.
+    pub(crate) fn close_adjudication_session(
+        &mut self,
+        session: &Session,
+        status: SessionStatus,
+        reason: SessionExitReason,
+    ) {
         if let Err(error) = self.backend.kill_session(session) {
             tracing::warn!(
                 target: "loom::adjudication",
@@ -47,27 +51,49 @@ impl Orchestrator {
                 "failed to kill the adjudication session",
             );
         }
-        match self.confirm_session_gone(session) {
-            Ok(true) => {}
-            Ok(false) => tracing::warn!(
-                target: "loom::adjudication",
-                session = %session.id,
-                stage = ?session.stage_id,
-                "adjudication session survived its kill; retiring its record anyway",
-            ),
-            Err(error) => tracing::warn!(
+        if !self.adjudication_session_is_gone(session) {
+            return;
+        }
+        let work_dir = self.config.work_dir.clone();
+        if let Err(error) = mark_session_terminal_reason(&work_dir, &session.id, status, reason) {
+            tracing::warn!(
                 target: "loom::adjudication",
                 session = %session.id,
                 stage = ?session.stage_id,
                 %error,
-                "could not confirm the adjudication session is gone; retiring its record anyway",
-            ),
+                "failed to record the adjudication session's terminal reason",
+            );
         }
-        let work_dir = self.config.work_dir.clone();
-        self.monitor
-            .handlers()
-            .persist_session_status(session, status);
-        if let Err(error) = crate::orchestrator::signals::remove_signal(&session.id, &work_dir) {
+        self.cleanup_adjudication_session(session, &work_dir);
+    }
+
+    fn adjudication_session_is_gone(&self, session: &Session) -> bool {
+        match self.confirm_session_gone(session) {
+            Ok(true) => true,
+            Ok(false) => {
+                tracing::warn!(
+                    target: "loom::adjudication",
+                    session = %session.id,
+                    stage = ?session.stage_id,
+                    "adjudication session survived its kill; leaving its record live",
+                );
+                false
+            }
+            Err(error) => {
+                tracing::warn!(
+                    target: "loom::adjudication",
+                    session = %session.id,
+                    stage = ?session.stage_id,
+                    %error,
+                    "could not confirm the adjudication session is gone; leaving its record live",
+                );
+                false
+            }
+        }
+    }
+
+    fn cleanup_adjudication_session(&self, session: &Session, work_dir: &std::path::Path) {
+        if let Err(error) = crate::orchestrator::signals::remove_signal(&session.id, work_dir) {
             tracing::warn!(
                 target: "loom::adjudication",
                 session = %session.id,
@@ -77,8 +103,8 @@ impl Orchestrator {
             );
         }
         if let Some(stage_id) = session.stage_id.as_deref() {
-            cleanup_judge_heartbeat(&work_dir, stage_id);
+            cleanup_judge_heartbeat(work_dir, stage_id);
         }
-        cleanup_session_settings(&work_dir, &session.id);
+        cleanup_session_settings(work_dir, &session.id);
     }
 }

@@ -10,24 +10,27 @@ use crate::orchestrator::{context_health, ContextHealth};
 /// Format: [4/12] ●2 ○6 ✗1 ⟳1 | ctx:100000/150000 | conflicts:0
 pub fn render_compact<W: Write>(w: &mut W, data: &StatusData) -> std::io::Result<()> {
     let progress = &data.progress;
-
-    // Plan name prefix
     if let Some(ref name) = data.plan_name {
         write!(w, "{} ", name.bold())?;
     }
-
-    // Progress fraction
     write!(w, "[{}/{}]", progress.completed, progress.total)?;
-
-    // Status counts
     write!(w, " ●{}", progress.executing)?;
     write!(w, " ○{}", progress.pending)?;
-
     if progress.blocked > 0 {
         write!(w, " {}", format!("✗{}", progress.blocked).red())?;
     }
 
-    // Handoff count
+    render_attention_counts(w, data)?;
+    render_context(w, data)?;
+    let conflicts = data.merge.conflicts.len();
+    if conflicts > 0 {
+        write!(w, " | {}", format!("conflicts:{conflicts}").red())?;
+    }
+    writeln!(w)?;
+    render_completion_blockers(w, data)
+}
+
+fn render_attention_counts<W: Write>(w: &mut W, data: &StatusData) -> std::io::Result<()> {
     let handoff_count = data
         .stages
         .iter()
@@ -36,8 +39,6 @@ pub fn render_compact<W: Write>(w: &mut W, data: &StatusData) -> std::io::Result
     if handoff_count > 0 {
         write!(w, " ⟳{handoff_count}")?;
     }
-
-    // Review count
     let review_count = data
         .stages
         .iter()
@@ -55,8 +56,10 @@ pub fn render_compact<W: Write>(w: &mut W, data: &StatusData) -> std::io::Result
             format!("⏸{review_count}").color(colored::Color::Magenta)
         )?;
     }
+    Ok(())
+}
 
-    // Largest resident context reading.
+fn render_context<W: Write>(w: &mut W, data: &StatusData) -> std::io::Result<()> {
     let max_context = data
         .stages
         .iter()
@@ -72,13 +75,31 @@ pub fn render_compact<W: Write>(w: &mut W, data: &StatusData) -> std::io::Result
         let colored = ctx_str.color(color);
         write!(w, " | ctx:{colored}")?;
     }
-
-    // Conflict count
-    let conflicts = data.merge.conflicts.len();
-    if conflicts > 0 {
-        write!(w, " | {}", format!("conflicts:{conflicts}").red())?;
-    }
-
-    writeln!(w)?;
     Ok(())
+}
+
+fn render_completion_blockers<W: Write>(w: &mut W, data: &StatusData) -> std::io::Result<()> {
+    for stage in &data.stages {
+        let Some(blocker) = stage.completion_blocker.as_ref() else {
+            continue;
+        };
+        let line = format!(
+            "{}: {} - next: {}",
+            stage.id,
+            blocker.activity_text(),
+            blocker.next_action
+        );
+        writeln!(w, "{}", bounded_line(&line))?;
+    }
+    Ok(())
+}
+
+fn bounded_line(line: &str) -> String {
+    const MAX_CHARS: usize = 160;
+    if line.chars().count() <= MAX_CHARS {
+        return line.to_owned();
+    }
+    let mut bounded = line.chars().take(MAX_CHARS - 1).collect::<String>();
+    bounded.push('…');
+    bounded
 }

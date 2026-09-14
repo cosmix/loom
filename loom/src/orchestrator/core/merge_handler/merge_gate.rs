@@ -11,12 +11,13 @@ use std::path::Path;
 
 use anyhow::Result;
 
+use crate::fs::session_files::mark_session_terminal_reason;
 use crate::git::branch::branch_name_for_stage;
-use crate::models::session::SessionType;
+use crate::models::session::{Session, SessionExitReason, SessionStatus, SessionType};
 use crate::orchestrator::core::persistence::Persistence;
 use crate::orchestrator::core::Orchestrator;
 use crate::orchestrator::signals::remove_signal;
-use crate::process::is_process_alive;
+use crate::orchestrator::terminal::native::{session_process_status, SessionProcessStatus};
 
 impl Orchestrator {
     /// Returns true — after routing `stage_id` to `NeedsHumanReview` — when
@@ -86,36 +87,99 @@ impl Orchestrator {
     /// session (`SessionType::Stage`) may still be alive in
     /// `active_sessions` — it hasn't exited yet — and will never resolve the
     /// merge conflict, so it must not block merge resolver spawning: a
-    /// tracked Stage session is always stale here and is torn down; a
-    /// tracked Merge (or base-conflict) session is left alone while its
-    /// process is still alive.
+    /// tracked Stage session is always stale here and retirement is attempted;
+    /// a tracked Merge (or base-conflict) session is left alone while its
+    /// process is still alive. Neither is replaced until death is proved.
     pub(super) fn cleanup_stale_merge_session(&mut self, stage_id: &str) -> bool {
-        let Some(session) = self.active_sessions.get(stage_id) else {
+        let Some(session) = self.active_sessions.get(stage_id).cloned() else {
             return false;
         };
-        if session.session_type != SessionType::Stage
-            && session.pid.map(is_process_alive).unwrap_or(false)
-        {
+        let has_identity = matches!(
+            session_process_status(&self.config.work_dir, &session),
+            SessionProcessStatus::VerifiedAlive | SessionProcessStatus::Dead
+        );
+        if stale_merge_retirement_blocks_spawn(
+            &session,
+            has_identity,
+            |tracked| self.backend.is_session_alive(tracked),
+            |stale| self.backend.kill_session(stale),
+            |stale| self.confirm_session_gone(stale),
+        ) {
             return true;
         }
-        let stale_session = self.active_sessions.remove(stage_id).unwrap();
-        let stale_session_id = stale_session.id.clone();
-        // Kill the original session to prevent zombie processes.
-        if let Err(e) = self.backend.kill_session(&stale_session) {
-            tracing::debug!(
-                session_id = %stale_session_id,
-                error = %e,
-                "Failed to kill stale session (may already be dead)"
-            );
-        }
-        // Remove the old signal file so it doesn't block respawning.
-        if let Err(e) = remove_signal(&stale_session_id, &self.config.work_dir) {
-            eprintln!(
-                "Warning: Failed to remove stale signal for session '{stale_session_id}': {e}"
-            );
-        }
+        self.finish_stale_merge_retirement(stage_id, &session);
         false
     }
+
+    fn finish_stale_merge_retirement(&mut self, stage_id: &str, session: &Session) {
+        self.active_sessions.remove(stage_id);
+        if let Err(error) = remove_signal(&session.id, &self.config.work_dir) {
+            tracing::warn!(session_id = %session.id, %error, "Failed to remove stale signal");
+        }
+        if let Err(error) = mark_session_terminal_reason(
+            &self.config.work_dir,
+            &session.id,
+            SessionStatus::ContextExhausted,
+            SessionExitReason::Replaced,
+        ) {
+            tracing::warn!(
+                session_id = %session.id,
+                %error,
+                "Failed to persist stale merge writer retirement"
+            );
+        }
+    }
+}
+
+pub(super) fn stale_merge_retirement_blocks_spawn(
+    session: &Session,
+    has_pid_identity: bool,
+    probe: impl FnOnce(&Session) -> Result<bool>,
+    kill: impl FnOnce(&Session) -> Result<()>,
+    confirm_gone: impl FnOnce(&Session) -> Result<bool>,
+) -> bool {
+    if session.session_type != SessionType::Stage {
+        match probe(session) {
+            Ok(true) => return true,
+            Err(error) => {
+                tracing::warn!(
+                    session_id = %session.id,
+                    %error,
+                    "Failed to probe tracked merge writer; retaining ownership"
+                );
+                return true;
+            }
+            Ok(false) => {}
+        }
+    }
+    let kill_error = kill(session).err();
+    if !has_pid_identity {
+        tracing::warn!(
+            session_id = %session.id,
+            kill_error = ?kill_error,
+            "Stale merge writer has no verified PID identity; retaining ownership"
+        );
+        return true;
+    }
+    match confirm_gone(session) {
+        Ok(true) => false,
+        Ok(false) => warn_retirement_uncertainty(session, kill_error.as_ref(), None),
+        Err(error) => warn_retirement_uncertainty(session, kill_error.as_ref(), Some(&error)),
+    }
+}
+
+fn warn_retirement_uncertainty(
+    session: &Session,
+    kill_error: Option<&anyhow::Error>,
+    confirmation_error: Option<&anyhow::Error>,
+) -> bool {
+    tracing::warn!(
+        session_id = %session.id,
+        ?kill_error,
+        ?confirmation_error,
+        "Failed to prove stale merge writer retirement; retaining ownership"
+    );
+    true
 }
 
 /// A human-review reason when `stage_branch`'s diff since it split from

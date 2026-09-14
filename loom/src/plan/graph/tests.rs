@@ -311,3 +311,61 @@ fn test_leaf_stages_all_independent() {
     assert!(leaves.contains(&"b"));
     assert!(leaves.contains(&"c"));
 }
+
+fn waiting_graph() -> ExecutionGraph {
+    let mut graph = ExecutionGraph::build(vec![make_stage("a", vec![], None)]).unwrap();
+    graph.mark_executing("a").unwrap();
+    graph
+        .mark_status("a", StageStatus::WaitingForInput)
+        .unwrap();
+    graph
+}
+
+#[test]
+fn mark_resumed_accepts_waiting_for_input() {
+    let mut graph = waiting_graph();
+
+    graph.mark_resumed("a").unwrap();
+
+    assert_eq!(graph.get_node("a").unwrap().status, StageStatus::Executing);
+}
+
+#[test]
+fn mark_resumed_is_idempotent_for_executing() {
+    let mut graph = waiting_graph();
+    graph.mark_resumed("a").unwrap();
+
+    graph.mark_resumed("a").unwrap();
+
+    assert_eq!(graph.get_node("a").unwrap().status, StageStatus::Executing);
+}
+
+#[test]
+fn mark_resumed_rejects_unrelated_predecessors_and_unknown_id() {
+    for status in [
+        StageStatus::Queued,
+        StageStatus::Completed,
+        StageStatus::Blocked,
+    ] {
+        let mut graph = ExecutionGraph::build(vec![make_stage("a", vec![], None)]).unwrap();
+        graph.force_status("a", status.clone()).unwrap();
+
+        let error = graph.mark_resumed("a").unwrap_err();
+
+        assert!(
+            error.to_string().contains("cannot resume"),
+            "{status:?}: {error}"
+        );
+    }
+    let mut graph = ExecutionGraph::build(vec![make_stage("a", vec![], None)]).unwrap();
+    assert!(graph.mark_resumed("missing").is_err());
+}
+
+#[test]
+fn mark_executing_still_rejects_waiting_for_input() {
+    let mut graph = waiting_graph();
+
+    let error = graph.mark_executing("a").unwrap_err();
+
+    assert!(error.to_string().contains("not ready"));
+}

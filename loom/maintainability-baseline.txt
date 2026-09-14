@@ -10,9 +10,9 @@
 file src/commands/graph/tests.rs 425
 file src/commands/init/tests.rs 570
 file src/commands/plan/verify.rs 599
-file src/commands/stage/complete.rs 771
+file src/commands/stage/complete.rs 759
 file src/commands/stage/merge.rs 537
-file src/commands/stage/tests/complete.rs 544
+file src/commands/stage/tests/complete.rs 534
 file src/daemon/server/dispute.rs 510
 file src/fs/locking.rs 499
 file src/fs/permissions/hooks.rs 446
@@ -23,9 +23,9 @@ file src/fs/work_dir/tests.rs 873
 file src/git/worktree/base.rs 545
 file src/git/worktree/settings.rs 462
 file src/models/stage/methods.rs 739
-file src/models/stage/types.rs 1129
+file src/models/stage/types.rs 1110
 file src/orchestrator/core/merge_handler.rs 1303
-file src/orchestrator/core/recovery.rs 1569
+file src/orchestrator/core/recovery.rs 1557
 file src/orchestrator/core/stage_executor.rs 780
 file src/orchestrator/merge_attribution.rs 543
 file src/orchestrator/signals/cache.rs 529
@@ -42,7 +42,7 @@ file src/plan/schema/types.rs 466
 file src/plan/schema/validation.rs 1253
 file src/plan/tests/amendment.rs 605
 file src/remote_control.rs 598
-file src/sandbox/config.rs 842
+file src/sandbox/config.rs 822
 file src/sandbox/settings.rs 445
 file src/sandbox/settings/tests.rs 1599
 file src/skills/index.rs 564
@@ -94,21 +94,18 @@ function src/commands/stage/merge_resolver.rs spawn_merge_resolver 64
 function src/commands/stage/progressive_complete.rs attempt_progressive_merge 113
 function src/commands/stage/progressive_complete.rs complete_with_merge 80
 function src/commands/stage/skip_retry.rs retry 214
-function src/commands/stage/tests/complete.rs test_complete_no_verify_refuses_zero_commits_ahead 66
 function src/commands/status.rs execute_static 81
-function src/commands/status/render/compact.rs render_compact 74
 function src/commands/status/render/completion.rs render_completion_lines 55
 function src/commands/status/render/completion.rs render_completion_screen 84
 function src/commands/status/render/graph.rs format_stage_annotations 78
 function src/commands/status/render/graph.rs render_graph 66
 function src/commands/status/ui/tui/renderer.rs render_completion 128
-function src/commands/status/ui/tui/state.rs update 57
 function src/commands/verify.rs execute 89
 function src/completions/dynamic/mod.rs complete_after_subcommand 56
 function src/completions/install.rs install 52
 function src/context/refresh/tests_source_graph/enumeration.rs an_unreadable_file_survives_as_a_reported_lexical_only_entry 62
 function src/daemon/server/broadcast.rs run_status_broadcaster 80
-function src/daemon/server/client.rs handle_client_connection 112
+function src/daemon/server/client.rs handle_client_connection 110
 function src/daemon/server/dispute.rs handle_dispute_criteria 176
 function src/daemon/server/lifecycle.rs run_server 133
 function src/daemon/server/lifecycle.rs start 117
@@ -140,8 +137,7 @@ function src/models/stage/methods.rs from_definition_copies_all_runtime_policy_f
 function src/models/stage/transitions.rs can_transition_to 74
 function src/models/stage/transitions.rs valid_transitions 58
 function src/orchestrator/auto_merge.rs attempt_auto_merge 63
-function src/orchestrator/core/completion_handler.rs handle_stage_completed 78
-function src/orchestrator/core/event_handler.rs handle_one_event 121
+function src/orchestrator/core/event_handler.rs handle_one_event 116
 function src/orchestrator/core/merge_handler.rs finalize_merge_resolution 97
 function src/orchestrator/core/merge_handler.rs handle_merge_session_completed 168
 function src/orchestrator/core/merge_handler.rs read_plan_level_auto_merge 61
@@ -209,7 +205,7 @@ function src/sandbox/settings/tests.rs test_build_settings_preserves_existing_de
 function src/sandbox/settings/tests.rs test_deny_write_parent_traversal_not_in_os_sandbox 73
 function src/sandbox/settings/tests.rs test_generate_settings_emits_network_block 53
 function src/sandbox/settings/tests.rs test_generate_settings_with_filesystem 53
-function src/sandbox/settings/tests_read_denies.rs test_build_settings_adds_resolved_work_symlink_permissions_nested_layout 76
+function src/sandbox/settings/tests_read_denies.rs test_build_settings_adds_resolved_work_symlink_permissions_nested_layout 74
 function src/sandbox/settings/tests_read_denies.rs test_build_settings_main_repo_drops_stale_escape_from_existing 67
 function src/skills/matcher.rs match_skills 62
 function src/verify/baseline/compare.rs compare_to_baseline 79

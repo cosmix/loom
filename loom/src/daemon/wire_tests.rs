@@ -1,9 +1,10 @@
 use super::*;
 use crate::commands::status::data::{
-    ActivityStatus, MergeSummary, ProgressSummary, StageSummary, StageType, StatusData,
+    ActivityStatus, CompletionBlockerState, CompletionBlockerSummary, MergeSummary,
+    ProgressSummary, StageSummary, StageType, StatusData,
 };
 use crate::daemon::protocol::{CompletionSummary, DaemonConfig, StageCompletionInfo};
-use crate::models::session::SessionBackendKind;
+use crate::models::session::{SessionBackendKind, SessionExitReason};
 use crate::models::stage::StageStatus;
 use std::io::{Cursor, Read};
 
@@ -108,6 +109,8 @@ fn stage_summary(id: &str, status: StageStatus) -> StageSummary {
         dispute_count: 0,
         judge_heartbeat_secs: None,
         session_backend: None,
+        outgoing_session_exit_reason: None,
+        completion_blocker: None,
     }
 }
 
@@ -133,6 +136,44 @@ fn status_data() -> StatusData {
         plan_name: Some("Test plan".to_string()),
         quota: crate::quota::QuotaSnapshot::default(),
     }
+}
+
+fn completion_blocker(state: CompletionBlockerState) -> CompletionBlockerSummary {
+    CompletionBlockerSummary {
+        state,
+        fingerprint: "0123456789ab".to_string(),
+        failure_code: "sandbox_denied".to_string(),
+        summary: Some("sandbox denied execution".to_string()),
+        commit: "abcdef012345".to_string(),
+        repeat_count: 2,
+        first_observed_at: Some("2026-09-14T10:00:00Z".to_string()),
+        last_observed_at: Some("2026-09-14T10:01:00Z".to_string()),
+        next_action: "fix sandbox_denied, then retry or reset the stage".to_string(),
+    }
+}
+
+#[test]
+fn completion_status_fields_use_stable_wire_names_and_values() {
+    let mut pending = stage_summary("pending", StageStatus::Executing);
+    pending.completion_blocker = Some(completion_blocker(CompletionBlockerState::Pending));
+    let mut parked = stage_summary("parked", StageStatus::NeedsHumanReview);
+    parked.outgoing_session_exit_reason = Some(SessionExitReason::CriteriaBlocked);
+    parked.completion_blocker = Some(completion_blocker(CompletionBlockerState::Blocked));
+    let value = serde_json::to_value(vec![pending, parked]).unwrap();
+
+    assert_eq!(value[0]["completion_blocker"]["state"], "pending");
+    assert_eq!(value[1]["completion_blocker"]["state"], "blocked");
+    assert_eq!(value[1]["outgoing_session_exit_reason"], "criteria-blocked");
+
+    let decoded: Vec<StageSummary> = serde_json::from_value(value).unwrap();
+    assert_eq!(
+        decoded[0].completion_blocker.as_ref().unwrap().state,
+        CompletionBlockerState::Pending
+    );
+    assert_eq!(
+        decoded[1].outgoing_session_exit_reason,
+        Some(SessionExitReason::CriteriaBlocked)
+    );
 }
 
 #[test]

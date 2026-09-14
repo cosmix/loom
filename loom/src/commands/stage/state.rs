@@ -13,8 +13,10 @@ use crate::orchestrator::session_registry::{
 use crate::orchestrator::terminal::backend::SessionBackend;
 use crate::orchestrator::terminal::native;
 use crate::relay::emit::{mode, EnvSnapshot, StdSink};
-use crate::verify::transitions::{load_stage, update_stage};
+use crate::verify::transitions::update_stage;
 
+#[path = "state/loop_recovery/mod.rs"]
+mod loop_recovery;
 #[path = "state_relay.rs"]
 mod relay;
 
@@ -224,41 +226,8 @@ fn kill_orphan_session(work_dir: &Path, evidence: &OrphanEvidence) -> Result<()>
 /// we allow direct assignment to reset stages to their initial state.
 pub fn reset(stage_id: String, hard: bool, kill_session: bool) -> Result<()> {
     let work_dir = crate::commands::common::work_dir_path()?;
-
-    let stage = load_stage(&stage_id, &work_dir)?;
-
-    // Refuse to reset while an agent is still running for this stage, unless
-    // told to kill it first. This prevents a duplicate-session hazard where
-    // the old session keeps running while the respawned stage starts a new
-    // one. Checks both tracked sessions and orphan PID evidence: a stage
-    // whose `session` link went missing (e.g. a daemon crash) is exactly the
-    // case a `stage.session`-only check misses.
-    let live_agents = live_agents_for(&work_dir, &stage_id)?;
-    if !live_agents.is_empty() {
-        if kill_session {
-            kill_live_agents(&work_dir, &live_agents);
-        } else {
-            return Err(live_agent_refusal(&stage_id, &live_agents));
-        }
-    } else if kill_session {
-        eprintln!("Note: Stage '{stage_id}' has no live agent to kill");
-    }
-
-    // INTENTIONAL STATE MACHINE BYPASS: WaitingForDeps is the initial state and
-    // has no valid incoming transitions. Apply only reset-owned fields to the
-    // fresh record under lock so unrelated concurrent changes survive.
-    eprintln!(
-        "Warning: Bypassing state machine to reset stage to initial state (was: {:?})",
-        stage.status
-    );
-    update_stage(&stage_id, &work_dir, |current| {
-        apply_reset(current);
-        Ok(())
-    })?;
-
-    let mode = if hard { "hard" } else { "soft" };
-    println!("Stage '{stage_id}' reset to pending ({mode} reset)");
-    Ok(())
+    let runtime = loop_recovery::OsRuntime::new(&work_dir);
+    loop_recovery::reset_with(&work_dir, &stage_id, hard, kill_session, &runtime)
 }
 
 /// Mark a stage as waiting for user input (called by hooks)

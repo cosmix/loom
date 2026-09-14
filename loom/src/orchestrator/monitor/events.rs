@@ -4,6 +4,13 @@ use std::path::PathBuf;
 
 use chrono::{DateTime, Utc};
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CompletionEscalation {
+    Repeated,
+    IdleBudgetExpired,
+    CapacityExhausted,
+}
+
 /// Events detected by the monitor
 #[derive(Debug, Clone, PartialEq)]
 pub enum MonitorEvent {
@@ -28,6 +35,19 @@ pub enum MonitorEvent {
         session_id: String,
         stage_id: Option<String>,
         crash_report_path: Option<PathBuf>,
+    },
+    CompletionPending {
+        stage_id: String,
+        session_id: String,
+        fingerprint: String,
+        repeat_count: u32,
+    },
+    CompletionBlocked {
+        stage_id: String,
+        session_id: String,
+        fingerprint: String,
+        repeat_count: u32,
+        escalation: CompletionEscalation,
     },
     /// Session is hung (PID alive but no heartbeat for its response budget)
     SessionHung {

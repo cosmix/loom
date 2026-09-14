@@ -5,6 +5,7 @@ use chrono::Utc;
 
 use super::content::HandoffContent;
 use crate::handoff::git_handoff::format_git_history_markdown;
+use crate::handoff::schema::{CompletionCheckpoint, CompletionPhase};
 use crate::utils::format_thousands;
 
 /// Format HandoffContent into V2 format with YAML frontmatter and markdown body.
@@ -13,14 +14,12 @@ use crate::utils::format_thousands;
 /// - YAML frontmatter (between --- markers) with structured data for machine parsing
 /// - Human-readable markdown body for context
 pub fn format_handoff_markdown(content: &HandoffContent) -> Result<String> {
-    let now = Utc::now();
-    let date = now.format("%Y-%m-%d").to_string();
+    let date = Utc::now().format("%Y-%m-%d").to_string();
 
     let mut md = String::new();
 
     // V2 YAML frontmatter
-    let v2 = content.to_v2();
-    let yaml = v2.to_yaml()?;
+    let yaml = content.to_v2().to_yaml()?;
     md.push_str("---\n");
     md.push_str(&yaml);
     md.push_str("---\n\n");
@@ -78,6 +77,8 @@ pub fn format_handoff_markdown(content: &HandoffContent) -> Result<String> {
         md.push('\n');
     }
 
+    format_completion_checkpoint(&mut md, content.completion_checkpoint.as_ref());
+
     // Current State
     md.push_str("## Current State\n\n");
     if let Some(branch) = &content.current_branch {
@@ -123,4 +124,46 @@ pub fn format_handoff_markdown(content: &HandoffContent) -> Result<String> {
     }
 
     Ok(md)
+}
+
+fn format_completion_checkpoint(md: &mut String, checkpoint: Option<&CompletionCheckpoint>) {
+    let Some(checkpoint) = checkpoint else {
+        return;
+    };
+    md.push_str("## Completion Checkpoint\n\n");
+    let phase = checkpoint
+        .current_phase()
+        .map_or("(none)", |phase| match phase {
+            CompletionPhase::ToolFailed => "tool_failed",
+            CompletionPhase::EvidenceMissing => "evidence_missing",
+            CompletionPhase::VerifiedPendingAck => "verified_pending_ack",
+            CompletionPhase::DaemonRejected => "daemon_rejected",
+        });
+    md.push_str(&format!("- **Current Phase**: {phase}\n"));
+    if let Some(blocker) = &checkpoint.blocker {
+        md.push_str(&format!(
+            "- **Blocker**: {} ({})\n",
+            blocker.short_fingerprint(),
+            blocker.external_failure_code
+        ));
+    }
+    md.push_str(&format!(
+        "- **Repeat Count**: {}\n",
+        checkpoint.repeat_count()
+    ));
+    md.push_str(&format!(
+        "- **Accepted Receipt**: {}\n",
+        if checkpoint.accepted.is_some() {
+            "yes"
+        } else {
+            "no"
+        }
+    ));
+    if checkpoint.conflict {
+        md.push_str("- **Conflict**: yes\n");
+    }
+    if checkpoint.capacity_exhausted {
+        md.push_str("- **Capacity Exhausted**: yes\n");
+    }
+    md.push('\n');
 }

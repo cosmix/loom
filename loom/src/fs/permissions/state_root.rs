@@ -1,4 +1,4 @@
-//! Shared resolution of a worktree's state-root symlink and the S-1 token
+//! Shared resolution of a worktree's state-root symlink and the S-1 secret
 //! paths every settings writer must protect on it.
 //!
 //! In a worktree, the state root is a symlink — `.loom/work` on the nested
@@ -9,13 +9,13 @@
 //! resolved absolute path; callers add the resolved path explicitly.
 //!
 //! SECURITY (S-1): a blanket `Read(/{resolved}/**)` (or `Edit(/{resolved}/**)`)
-//! over that resolved path exposes `admin.token` (Admin RPC capability) and
-//! `user.token` (User capability) to a sandboxed worktree agent — a daemon
-//! RPC privilege escalation. Both settings writers (`.claude/settings.json`
+//! over that resolved path exposes the RPC capability tokens or the completion
+//! attestation key to a sandboxed worktree agent, allowing privilege escalation
+//! or forged completion evidence. Both settings writers (`.claude/settings.json`
 //! in `git::worktree::settings` and `.claude/settings.local.json` in
 //! `sandbox::settings`) therefore grant only narrow allows over the state
-//! root, never a blanket one. This module is the one place the token paths
-//! are named, so a third token is added in exactly one place and both writers
+//! root, never a blanket one. This module is the one place the secret paths
+//! are named, so a new secret is added in exactly one place and both writers
 //! pick it up.
 //!
 //! Loom writes NO `Read(...)` entry under `permissions.deny`, in any shape.
@@ -23,19 +23,23 @@
 //! `diff`, `git`, `cp` and `mv` on a relative path issued after a `cd` in the
 //! same compound command whenever ANY settings file carries ANY `Read(` deny
 //! rule — bypass-immune, not classifier-approvable, and independent of the
-//! rule's path shape, so no spelling avoids it. The tokens are instead denied
+//! rule's path shape, so no spelling avoids it. The secrets are instead denied
 //! to Bash by the OS-level `sandbox.filesystem.denyRead` list
 //! ([`token_deny_paths`]), which is not a permission rule and does not feed
 //! that check, and to the native file tools by the `loom-hooks/credential-guard.sh`
-//! PreToolUse hook. The recognisers here ([`is_token_read_deny`],
+//! PreToolUse hook. The recognisers here ([`is_state_root_secret_read_deny`],
 //! [`is_loom_written_read_deny`]) exist only to strip the deny rules older
 //! loom versions wrote.
 
 use std::path::{Path, PathBuf};
 
-/// Token files a sandboxed worktree agent must never be granted a blanket
-/// `Read` over (S-1). Add a new one here — nowhere else.
-pub(crate) const STATE_ROOT_TOKEN_FILES: [&str; 2] = ["admin.token", "user.token"];
+/// State-root secrets a sandboxed worktree agent must never be granted a blanket
+/// `Read` over (S-1). Add every Rust-managed state-root secret here.
+pub(crate) const STATE_ROOT_SECRET_FILES: [&str; 3] = [
+    "admin.token",
+    "user.token",
+    crate::handoff::ATTESTATION_KEY_FILE,
+];
 
 /// Credential paths loom's own sandbox denies at the OS level
 /// (`sandbox.filesystem.denyRead`). Loom never mirrors any of them into
@@ -91,15 +95,15 @@ fn read_rule_path(entry: &str) -> Option<&str> {
     entry.strip_prefix("Read(")?.strip_suffix(')')
 }
 
-/// Whether a `permissions.deny` entry is a `Read(...)` rule naming a token
+/// Whether a `permissions.deny` entry is a `Read(...)` rule naming a secret
 /// file under a known state-root layout — every spelling loom has ever
 /// emitted: resolved absolute, parent-glob, and the worktree-relative forms
 /// with or without `../` prefixes.
-pub(crate) fn is_token_read_deny(entry: &str) -> bool {
+pub(crate) fn is_state_root_secret_read_deny(entry: &str) -> bool {
     let Some(path) = read_rule_path(entry) else {
         return false;
     };
-    let Some(dir) = STATE_ROOT_TOKEN_FILES
+    let Some(dir) = STATE_ROOT_SECRET_FILES
         .into_iter()
         .find_map(|token| path.strip_suffix(token)?.strip_suffix('/'))
     else {
@@ -111,36 +115,38 @@ pub(crate) fn is_token_read_deny(entry: &str) -> bool {
 }
 
 /// A `permissions.deny` entry loom itself wrote in some earlier version:
-/// a daemon token deny in any spelling, or a `Read(...)` mirror of one of
+/// a daemon secret deny in any spelling, or a `Read(...)` mirror of one of
 /// the credential paths the OS sandbox denies. Everything else in a deny
 /// list is the operator's and is never removed by loom.
 pub(crate) fn is_loom_written_read_deny(entry: &str) -> bool {
-    if is_token_read_deny(entry) {
+    if is_state_root_secret_read_deny(entry) {
         return true;
     }
     read_rule_path(entry).is_some_and(|path| CREDENTIAL_DENY_READ_PATHS.contains(&path.trim()))
 }
 
-/// Build the two plain absolute token paths (`/{resolved}/{token}`), for
+/// Build the plain absolute state-root secret paths (`/{resolved}/{name}`), for
 /// call sites that need the bare path rather than a `Read(...)` permission
 /// string, e.g. `sandbox.filesystem.denyRead`.
-pub(crate) fn token_deny_paths(resolved: &str) -> [String; 2] {
-    let [a, b] = STATE_ROOT_TOKEN_FILES;
-    [format!("/{resolved}/{a}"), format!("/{resolved}/{b}")]
+pub(crate) fn token_deny_paths(resolved: &str) -> Vec<String> {
+    STATE_ROOT_SECRET_FILES
+        .iter()
+        .map(|name| format!("/{resolved}/{name}"))
+        .collect()
 }
 
 /// Body of the [`SEARCH_IGNORE_FILE`] published at the state root. A
-/// sandboxed agent's `rg`/`fd`/`ag` opening `admin.token` or `user.token`
+/// sandboxed agent's `rg`/`fd`/`ag` opening a state-root secret
 /// hits the sandbox's own deny rule and stalls auto mode on an operator
-/// prompt, so the daemon excludes both from ordinary directory sweeps.
-/// Generated from [`STATE_ROOT_TOKEN_FILES`] so the excluded names can never
+/// prompt, so the daemon excludes them from ordinary directory sweeps.
+/// Generated from [`STATE_ROOT_SECRET_FILES`] so the excluded names can never
 /// drift from the sandbox deny rules.
 pub(crate) fn search_ignore_body() -> String {
     let mut body = String::from(
         "# Written by the loom daemon. Keeps rg, fd and ag away from the daemon\n\
          # credential files: a sandboxed agent that opens one triggers an operator prompt.\n",
     );
-    for name in STATE_ROOT_TOKEN_FILES {
+    for name in STATE_ROOT_SECRET_FILES {
         body.push_str(name);
         body.push('\n');
     }
@@ -150,14 +156,14 @@ pub(crate) fn search_ignore_body() -> String {
 /// Body of the [`RIPGREP_CONFIG_FILE`] published at the state root, exported
 /// to sessions as `RIPGREP_CONFIG_PATH` so the exclusion survives a
 /// `-uu`/`--no-ignore` sweep that would otherwise bypass
-/// [`search_ignore_body`]. Generated from [`STATE_ROOT_TOKEN_FILES`] for the
+/// [`search_ignore_body`]. Generated from [`STATE_ROOT_SECRET_FILES`] for the
 /// same reason.
 pub(crate) fn ripgrep_config_body() -> String {
     let mut body = String::from(
         "# Written by the loom daemon; exported to agent sessions as RIPGREP_CONFIG_PATH.\n\
          # Excludes the daemon credential files even from --no-ignore / -uu sweeps.\n",
     );
-    for name in STATE_ROOT_TOKEN_FILES {
+    for name in STATE_ROOT_SECRET_FILES {
         body.push_str("--glob=!");
         body.push_str(name);
         body.push('\n');
@@ -170,11 +176,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn search_ignore_body_lists_token_files() {
+    fn search_ignore_body_lists_secret_files() {
         let body = search_ignore_body();
         assert!(body.starts_with('#'));
         assert!(body.lines().any(|line| line == "admin.token"));
         assert!(body.lines().any(|line| line == "user.token"));
+        assert!(body
+            .lines()
+            .any(|line| line == "completion-attestation.key"));
     }
 
     #[test]
@@ -192,7 +201,10 @@ mod tests {
             "Read(//home/you/src/*/.loom/work/admin.token)",
             "Read(//home/you/src/*/.work/user.token)",
         ] {
-            assert!(is_token_read_deny(entry), "{entry} must be recognized");
+            assert!(
+                is_state_root_secret_read_deny(entry),
+                "{entry} must be recognized"
+            );
             assert!(is_loom_written_read_deny(entry), "{entry} is loom's own");
         }
     }
@@ -232,15 +244,21 @@ mod tests {
             "Edit(//home/you/src/app/.work/admin.token)",
             "Read(//home/you/src/app/.work/signals/**)",
         ] {
-            assert!(!is_token_read_deny(entry), "{entry} must not be claimed");
+            assert!(
+                !is_state_root_secret_read_deny(entry),
+                "{entry} must not be claimed"
+            );
         }
     }
 
     #[test]
-    fn ripgrep_config_body_excludes_token_files() {
+    fn ripgrep_config_body_excludes_secret_files() {
         let body = ripgrep_config_body();
         assert!(body.starts_with('#'));
         assert!(body.lines().any(|line| line == "--glob=!admin.token"));
         assert!(body.lines().any(|line| line == "--glob=!user.token"));
+        assert!(body
+            .lines()
+            .any(|line| line == "--glob=!completion-attestation.key"));
     }
 }

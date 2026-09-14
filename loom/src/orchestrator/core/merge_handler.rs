@@ -871,8 +871,7 @@ impl Orchestrator {
                 continue;
             }
 
-            // Skip if there's already an active merge session for this stage,
-            // cleaning up a stale/dead tracked one otherwise (see
+            // Skip an active merge session, cleaning up a stale/dead one (see
             // `cleanup_stale_merge_session` for the fall-through rationale).
             if self.cleanup_stale_merge_session(&stage_id) {
                 continue;
@@ -887,8 +886,9 @@ impl Orchestrator {
                     tracing::warn!(
                         stage_id = %stage_id,
                         error = %e,
-                        "Failed to check for existing merge signal; falling through to spawn"
+                        "Failed to check for existing merge signal; skipping spawn"
                     );
+                    continue;
                 }
             }
 

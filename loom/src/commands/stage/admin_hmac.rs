@@ -11,7 +11,7 @@ use sha2::{Digest, Sha256};
 pub(super) const SHA256_LEN: usize = 32;
 const SHA256_BLOCK_LEN: usize = 64;
 
-pub(super) fn hmac_sha256(key: &[u8], message: &[u8]) -> [u8; SHA256_LEN] {
+pub(crate) fn hmac_sha256(key: &[u8], message: &[u8]) -> [u8; SHA256_LEN] {
     let mut key_block = [0u8; SHA256_BLOCK_LEN];
     if key.len() > SHA256_BLOCK_LEN {
         let digest = Sha256::digest(key);
@@ -38,7 +38,7 @@ pub(super) fn hmac_sha256(key: &[u8], message: &[u8]) -> [u8; SHA256_LEN] {
     outer.finalize().into()
 }
 
-pub(super) fn constant_time_eq(expected: &[u8; SHA256_LEN], supplied: &[u8]) -> bool {
+pub(crate) fn constant_time_eq(expected: &[u8; SHA256_LEN], supplied: &[u8]) -> bool {
     let mut difference = supplied.len() ^ SHA256_LEN;
     for (index, expected_byte) in expected.iter().enumerate() {
         let supplied_byte = supplied.get(index).copied().unwrap_or(0);

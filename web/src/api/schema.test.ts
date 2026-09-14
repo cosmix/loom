@@ -3,6 +3,18 @@ import { describe, expect, it } from "vitest";
 import fixtureJson from "@/api/fixtures/snapshot.json";
 import { snapshotSchema, stageStatusSchema } from "@/api/schema";
 
+const validBlocker = {
+  state: "pending",
+  fingerprint: "fp",
+  failure_code: "boundary-check-failed",
+  summary: null,
+  commit: "abc123",
+  repeat_count: 1,
+  first_observed_at: null,
+  last_observed_at: null,
+  next_action: "retry verification",
+};
+
 describe("snapshot schema", () => {
   it("the fixture parses and terminals is false", () => {
     const snapshot = snapshotSchema.parse(fixtureJson);
@@ -46,6 +58,87 @@ describe("snapshot schema", () => {
       delete stage.cleanup_warning;
     }
     expect(snapshotSchema.safeParse(withoutKey).success).toBe(true);
+  });
+
+  it("parses pending and parked completion blockers with an outgoing exit reason", () => {
+    const recovery = structuredClone(fixtureJson) as {
+      status: { stages: Array<Record<string, unknown>> };
+    };
+    recovery.status.stages[0] = {
+      ...recovery.status.stages[0],
+      status: "executing",
+      completion_blocker: {
+        state: "pending",
+        fingerprint: "fp-pending",
+        failure_code: "boundary-check-failed",
+        summary: null,
+        commit: "abc123",
+        repeat_count: 1,
+        first_observed_at: "2026-09-14T08:00:00Z",
+        last_observed_at: null,
+        next_action: "wait for the next verification pass",
+      },
+    };
+    recovery.status.stages[1] = {
+      ...recovery.status.stages[1],
+      status: "needs-human-review",
+      outgoing_session_exit_reason: "criteria-blocked",
+      completion_blocker: {
+        state: "blocked",
+        fingerprint: "fp-blocked",
+        failure_code: "criteria-blocked",
+        summary: "Acceptance criteria remain unmet",
+        commit: "def456",
+        repeat_count: 2,
+        first_observed_at: "2026-09-14T08:00:00Z",
+        last_observed_at: "2026-09-14T08:05:00Z",
+        next_action: "review the completion evidence",
+      },
+    };
+
+    const parsed = snapshotSchema.parse(recovery);
+
+    expect(parsed.status.stages[0].completion_blocker?.state).toBe("pending");
+    expect(parsed.status.stages[1]).toMatchObject({
+      status: "needs-human-review",
+      outgoing_session_exit_reason: "criteria-blocked",
+      completion_blocker: { state: "blocked" },
+    });
+  });
+
+  it.each<readonly [string, (stage: Record<string, unknown>) => void]>([
+    [
+      "completion state",
+      (stage) => {
+        stage.completion_blocker = { ...validBlocker, state: "waiting" };
+      },
+    ],
+    [
+      "exit reason",
+      (stage) => {
+        stage.outgoing_session_exit_reason = "unknown";
+      },
+    ],
+    [
+      "extra blocker key",
+      (stage) => {
+        stage.completion_blocker = { ...validBlocker, extra: true };
+      },
+    ],
+  ])("rejects a malformed %s", (_label, corrupt) => {
+    const invalid = structuredClone(fixtureJson) as {
+      status: { stages: Array<Record<string, unknown>> };
+    };
+    corrupt(invalid.status.stages[0]);
+
+    expect(snapshotSchema.safeParse(invalid).success).toBe(false);
+  });
+
+  it("still parses a stage without completion recovery fields", () => {
+    const parsed = snapshotSchema.parse(fixtureJson);
+
+    expect(parsed.status.stages[0].completion_blocker).toBeUndefined();
+    expect(parsed.status.stages[0].outgoing_session_exit_reason).toBeUndefined();
   });
 
   it("accepts an omitted healthy-case notice", () => {

@@ -77,6 +77,11 @@ fn render_problem_stage<W: Write>(
     )?;
     writeln!(w, "    ID: {}", entry.id.dimmed())?;
 
+    if entry.completion_blocker.is_some() {
+        render_completion_blocker(w, entry)?;
+        return Ok(());
+    }
+
     // Show failure type unconditionally; the evidence listing is gated
     // behind --verbose (see render_failure_evidence).
     if let Some(ref failure_type) = entry.failure_type {
@@ -89,9 +94,36 @@ fn render_problem_stage<W: Write>(
         writeln!(w, "    Reason: {}", reason.yellow())?;
     }
     render_adjudication_reason(w, entry)?;
+    render_last_session(w, entry)?;
     writeln!(w, "    {}: {}", "Hint".cyan(), entry.hint.dimmed())?;
 
     Ok(())
+}
+
+fn render_completion_blocker<W: Write>(w: &mut W, entry: &AttentionEntry) -> std::io::Result<()> {
+    let Some(blocker) = entry.completion_blocker.as_ref() else {
+        return Ok(());
+    };
+    writeln!(w, "    {}", blocker.activity_text().yellow())?;
+    writeln!(w, "    fingerprint: {}", blocker.fingerprint.dimmed())?;
+    writeln!(w, "    failure code: {}", blocker.failure_code.dimmed())?;
+    writeln!(w, "    repeat count: {}", blocker.repeat_count)?;
+    writeln!(w, "    commit: {}", blocker.commit.dimmed())?;
+    if let Some(first) = blocker.first_observed_at.as_deref() {
+        writeln!(w, "    first observed: {}", first.dimmed())?;
+    }
+    if let Some(last) = blocker.last_observed_at.as_deref() {
+        writeln!(w, "    last observed: {}", last.dimmed())?;
+    }
+    render_last_session(w, entry)?;
+    writeln!(w, "    next: {}", blocker.next_action.cyan())
+}
+
+fn render_last_session<W: Write>(w: &mut W, entry: &AttentionEntry) -> std::io::Result<()> {
+    let Some(reason) = entry.outgoing_session_exit_reason else {
+        return Ok(());
+    };
+    writeln!(w, "    last session: {}", reason.status_label())
 }
 
 /// Prints the `Evidence:` listing from `stage.failure_info` (up to five
@@ -151,6 +183,7 @@ fn render_cleanup_warning<W: Write>(w: &mut W, entry: &AttentionEntry) -> std::i
     if let Some(ref warning) = entry.cleanup_warning {
         writeln!(w, "    Cleanup warning: {}", warning.yellow())?;
     }
+    render_last_session(w, entry)?;
     writeln!(
         w,
         "    {}: {} (full text in the stage file)",
