@@ -57,7 +57,7 @@ relay_kind_at() {
 	((j + 2 < n)) && verb=${LOOM_TOKENS[$((j + 2))]}
 	[[ "$verb" == "%%SEP%%" ]] && verb=""
 	case "$sub:$verb" in
-	memory:note | memory:decision | memory:change | memory:question) echo memory ;;
+	memory:note | memory:decision | memory:change | memory:question | memory:resolve) echo memory ;;
 	stage:block) echo block ;;
 	stage:dispute-criteria) echo dispute ;;
 	stage:merge) segment_has_arg "$j" --resolved && echo merge-resolved ;;
