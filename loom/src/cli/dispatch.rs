@@ -286,7 +286,7 @@ pub fn dispatch(command: Commands) -> Result<()> {
             verbose,
             web_args,
         } => match web_args.web {
-            Some(port) => status::web::execute(port, web_args.terminals),
+            Some(port) => status::web::execute(port, web_args.terminals, web_args.resolved_host()),
             None => status::execute(live, compact, verbose),
         },
         Commands::Resume { stage_id } => resume::execute(stage_id),

@@ -1,6 +1,8 @@
 mod dispatch;
 mod dispatch_admin;
 mod dispatch_stage;
+#[cfg(test)]
+mod tests_web_host;
 mod types;
 pub mod types_config;
 mod types_help;
