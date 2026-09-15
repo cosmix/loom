@@ -10,7 +10,11 @@ B='\033[1m'    # bold
 D='\033[2m'    # dim
 N='\033[0m'    # reset
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Empty when the script arrives on stdin (curl | bash): there is no source file.
+SCRIPT_DIR=""
+if [[ -n "${BASH_SOURCE[0]:-}" ]]; then
+	SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+fi
 CLAUDE_DIR="$HOME/.claude"
 CODEX_DIR="$HOME/.codex"
 
@@ -76,7 +80,9 @@ info() {
 }
 
 is_curl_pipe() {
-	# Check if running from curl pipe (SCRIPT_DIR won't have our files)
+	# Running from curl pipe: no source file means no SCRIPT_DIR, and even with
+	# one, SCRIPT_DIR won't have our files unless it's a checkout.
+	[[ -z "$SCRIPT_DIR" ]] && return 0
 	[[ ! -d "$SCRIPT_DIR/agents" ]] && [[ ! -d "$SCRIPT_DIR/skills" ]]
 }
 
