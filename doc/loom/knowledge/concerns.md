@@ -229,3 +229,9 @@ no-follow enforcement for everything beneath it; add a worktree-shaped regressio
 ## `RecordCompletionEvidence` Rejected With `AuthenticationFailed` on a Real `loom stage complete` (2026-09-14, OPEN)
 
 RESOLVED the same day. The stage recorded this as an open daemon problem (stale tokens, a daemon needing a restart); neither was the cause. Commit a31c2122 made the daemon completion dispatcher (`daemon/server/completion_dispatch.rs`) require the `user.token` credential for `RecordCompletionEvidence` and `CompleteStage`, while the broker client still read the token through the worktree symlinked `.loom/work` (refused by `safe_open_dirfd` `O_NOFOLLOW`) and sent the `peer-identity` placeholder, which the new gate refuses. A second miss: `commands/stage/completion_evidence.rs` imported `daemon/rpc.rs::user_credential` under the alias `completion_credential`, so the evidence request never used the broker credential function at all. Fix: `control_complete::completion_credential` canonicalizes the work dir before reading the token and both broker requests use it. Full write-up: [The Daemon Grew a Token Gate the Broker Could Not Satisfy](mistakes/completion-broker-credential.md).
+
+## Agent Rule-Bending Hardening (2026-09-16)
+
+An env-var gate an agent can unset is class 1 of three enforcement classes; only the OS sandbox, the capsule deny layers and the daemon ancestry checks carry authority. Seven gaps follow, led by commits policed by text matching, an undenied worktree `.git` surface, and no CI proof that any denial holds.
+
+→ [Agent Rule-Bending Hardening](concerns/agent-rule-bending-hardening.md)

@@ -14,7 +14,7 @@
 | [conventions.md](conventions.md) | Coding conventions discovered in the codebase | 239 |
 | [mistakes.md](mistakes.md) | Mistakes made and lessons learned - what to avoid | 250 |
 | [stack.md](stack.md) | Dependencies, frameworks, and tooling used in the project | 119 |
-| [concerns.md](concerns.md) | Technical debt, warnings, and issues to address | 231 |
+| [concerns.md](concerns.md) | Technical debt, warnings, and issues to address | 237 |
 
 ## Tier 2 — Topics
 
@@ -86,7 +86,7 @@
 | [git-and-build-workflow](conventions/git-and-build-workflow.md) | Git/worktree ops, cargo fmt/test discipline, the shared maintainability ledger | 198 |
 | [guidance-channels-and-plugin-scope](conventions/guidance-channels-and-plugin-scope.md) | Guidance-channel selection, verification-is-main-agent rule, plugin scope | 104 |
 | [model-and-effort-config](conventions/model-and-effort-config.md) | `[pressure]` and `[models]` config sections, the four-tier precedence chain… | 62 |
-| [plan-yaml-and-hooks](conventions/plan-yaml-and-hooks.md) | Plan YAML schema, hook stdin/stdout contract, skill format, additive fields | 134 |
+| [plan-yaml-and-hooks](conventions/plan-yaml-and-hooks.md) | Plan YAML schema, hook stdin/stdout contract, skill format, additive fields | 135 |
 | [web-dashboard-typography](conventions/web-dashboard-typography.md) | Dashboard chrome type conventions and CSS gotchas for settings/graph views | 30 |
 
 ### mistakes
@@ -138,6 +138,7 @@
 
 | Topic | Blurb | Lines |
 | --- | --- | --- |
+| [agent-rule-bending-hardening](concerns/agent-rule-bending-hardening.md) | Which loom checks an agent can bend, which it cannot, and the hardening backlog… | 211 |
 | [automatic-knowledge-source-graph-followups](concerns/automatic-knowledge-source-graph-followups.md) | Knowledge-plan followups, retrieval-degradation gap, stopwording, resolved items | 100 |
 | [code-quality-and-hook-debt](concerns/code-quality-and-hook-debt.md) | Code-quality/hook debt: oversized units, debug logging, duplicated tables | 181 |
 | [codex-heartbeat-starvation](concerns/codex-heartbeat-starvation.md) | Heartbeat starvation from long codex runs; stale-badge constant mismatch | 77 |
