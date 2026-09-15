@@ -257,7 +257,7 @@ Everything else is an explicit, inspectable outcome rather than a hang:
 ```bash
 loom init <plan-path> [--clean] [--backend native|tmux]
 loom run [--manual] [--max-parallel N] [--foreground] [--watch] [--no-merge] [--backend native|tmux]
-loom status [--live] [--compact] [--verbose] [--web [PORT]]
+loom status [--live] [--compact] [--verbose] [--web [PORT] [--host HOST]]
 loom stop
 loom resume <stage-id>
 loom check <stage-id> [--suggest]
@@ -279,7 +279,7 @@ Each of the three steps spawns with an independently selectable model and reason
 
 `loom status --live` renders a live ledger dashboard: one row per stage across eight columns (STATE, STAGE, DEPENDS ON, MODELS, ACTIVITY, CONTEXT, TIME, MERGE). MODELS lists the orchestrator's own model first, then the models any subagents it spawned ran on. Columns drop in priority order as the terminal narrows; below a 64x16 (columns x rows) terminal a notice replaces the dashboard entirely. Press `?` to toggle a legend overlay explaining every state icon.
 
-`loom status --web [PORT] [--terminals]` serves the same ledger in the browser, alongside a dependency-graph view of the plan — see [Web Dashboard](#web-dashboard).
+`loom status --web [PORT] [--host HOST] [--terminals]` serves the same ledger in the browser, alongside a dependency-graph view of the plan — see [Web Dashboard](#web-dashboard).
 
 ### Plan Commands
 
@@ -431,10 +431,10 @@ The keys, with their built-in defaults:
 ## Web Dashboard
 
 ```bash
-loom status --web [PORT] [--terminals]
+loom status --web [PORT] [--host HOST] [--terminals]
 ```
 
-The dashboard binds to `127.0.0.1` and serves the live ledger over a WebSocket in the browser. Two views share the same data: the graph (shown at the top of this file) draws the plan as a dependency graph colored by stage state, and `/ledger` puts one row per stage in a table with the same columns as `loom status --live`. Both carry a "needs attention" panel naming the stages that need a person, with a suggested command for each.
+The dashboard binds to `127.0.0.1` by default and serves the live ledger over a WebSocket in the browser; see [Web Dashboard Remote Access](#web-dashboard-remote-access) for `--host`. Two views share the same data: the graph (shown at the top of this file) draws the plan as a dependency graph colored by stage state, and `/ledger` puts one row per stage in a table with the same columns as `loom status --live`. Both carry a "needs attention" panel naming the stages that need a person, with a suggested command for each.
 
 <p align="center">
   <img src="doc/images/webui-ledger.png" alt="The loom web dashboard ledger view, one row per stage" width="880">
@@ -445,6 +445,25 @@ The dashboard binds to `127.0.0.1` and serves the live ledger over a WebSocket i
 </p>
 
 Without `PORT`, it starts at port 7373 and automatically tries the next available port when a candidate is occupied. Supplying a nonzero `PORT` requests that exact port; `PORT` 0 asks the OS for any free port. It works without the daemon by polling `.loom/work/` files directly when the daemon socket is unreachable. Besides the ledger, it exposes a settings dialog for editing loom's configuration and, with `--terminals`, a way to open a stage's terminal from the browser.
+
+### Web Dashboard Remote Access
+
+```bash
+loom status --web --host 0.0.0.0        # every interface
+loom status --web --host 192.168.1.5    # one concrete address
+loom status --web --host ::             # every interface, IPv6
+```
+
+`--host` accepts an IPv4/IPv6 literal or the exact alias `localhost`; it rejects DNS names, URLs, and anything carrying its own port (`--web` already owns the port). Left unset it binds `127.0.0.1`, which keeps the dashboard's original behavior exactly.
+
+Any bind that is not loopback — a concrete address or a wildcard (`0.0.0.0`/`::`) — turns on remote mode: loom mints one process token and prints a URL containing it at startup. Every route then requires a cookie exchanged for that token by opening the printed URL once; a wrong or missing token gets refused. Each request's `Host` must name the connection's own accepted socket address exactly, and a supplied `Origin` must match it too, so a DNS name, wrong port, or a proxy that rewrites `Host` all get refused.
+
+Limits:
+
+- Plain HTTP, no TLS — anyone who observes the token or cookie on the network gets dashboard and settings access, and terminal control if `--terminals` is also set. Use it only on trusted networks, or tunnel a loopback bind instead: `ssh -L 7373:127.0.0.1:7373 host`.
+- No reverse-proxy support: a proxy that rewrites `Host` to a DNS name is refused.
+- No DNS hostnames for `--host`, and no config key for the bind host — it is a CLI flag only.
+- The token is per process; restarting the dashboard invalidates every existing cookie.
 
 ### Web Dashboard Settings
 
@@ -461,11 +480,11 @@ Sixteen of the eighteen keys have a project tier: `terminal.backend`, `context.c
 
 The fallback is not uniform across sections. For `[pressure]` and `[models]`, the project tier resolves **per key** — a project section that sets only one key still lets every other key in that section fall through to your user config. For `[terminal]` and `[context]`, a project override still replaces the whole `.loom/work/config.toml` section, not just one key: clearing the override removes the key and, if that empties the section, the section too — but if a sibling key is still in there (as with `[context]`, since `loom init` writes `ceiling_tokens` alongside `subagent_ceiling_tokens`), the section still wins as a whole and the value resolves to the built-in default rather than falling through to your user setting. The dialog reports each case accurately; for `[terminal]`/`[context]` that section-level fallback just may not be what you expected.
 
-The dashboard stays a `127.0.0.1`-only, unauthenticated tool for the person running it — the settings endpoint adds no login. Writes are gated by the same `Host` check as the rest of the dashboard, plus a strict `Origin` check (must be present and loopback) and a per-process CSRF token issued on load.
+On the default loopback bind, the dashboard stays an unauthenticated tool for the person running it — the settings endpoint adds no login. On a remote (`--host`) bind, every route including settings requires the startup-token cookie in addition to the checks below. Writes are gated by the same `Host` check as the rest of the dashboard, plus a strict `Origin` check (loopback: must be present and loopback; remote: must equal the connection's own address exactly) and a per-process CSRF token issued on load.
 
 ### Web Dashboard Terminals
 
-`loom status --web --terminals` (tmux backend only) adds a "Take control" view to each stage's detail dialog: an xterm.js terminal opens right in the browser, attached to that stage's live tmux session. It starts in a read-only View mode; switching to Control sends every keystroke to the running agent. Enabling `--terminals` mints a one-time token and prints it in the startup URL — open that exact link once to set an auth cookie for the dashboard; a plain `--web` link never gets the "Take control" option.
+`loom status --web --terminals` (tmux backend only) adds a "Take control" view to each stage's detail dialog: an xterm.js terminal opens right in the browser, attached to that stage's live tmux session. It starts in a read-only View mode; switching to Control sends every keystroke to the running agent. Enabling `--terminals` mints a one-time token and prints it in the startup URL — open that exact link once to set an auth cookie for the dashboard; a plain `--web` link never gets the "Take control" option. With a non-loopback `--host`, the same startup token already covers the dashboard cookie; the cookie alone still never grants "Take control" — that capability comes only from passing `--terminals`.
 
 <p align="center">
   <img src="doc/images/webui-terminal-dark.png" alt="The loom web dashboard's terminal view attached to a live stage session" width="880">

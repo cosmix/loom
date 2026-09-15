@@ -231,7 +231,7 @@ A daemon thread (`loom/src/quota/poller.rs`) polls the Claude OAuth usage endpoi
 
 ## Web Dashboard
 
-`loom status --web [PORT]` serves an embedded React SPA over HTTP/WebSocket, streaming the same `StatusData` the live TUI renders.
+`loom status --web [PORT] [--host HOST]` serves an embedded React SPA over HTTP/WebSocket, streaming the same `StatusData` the live TUI renders; a non-loopback `--host` bind requires the printed startup token on every route.
 
 → [Web Dashboard](architecture/web-dashboard.md)
 

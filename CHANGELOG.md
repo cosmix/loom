@@ -5,6 +5,12 @@ All notable changes to loom are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Remote dashboard access** — `loom status --web --host <address>` binds the dashboard to an interface other than `127.0.0.1` (a concrete address or a wildcard); a non-loopback bind mints a startup token and requires its cookie on every route, with `Host`/`Origin` checked against the connection's own address. The bind stays plain HTTP, so the token and cookie are visible to anyone who observes the connection.
+
 ## [0.5.1] - 2026-09-04
 
 First published release.

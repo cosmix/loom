@@ -6,44 +6,50 @@
 
 `loom status --web --terminals` turns on a write lane; bare `--web` never mints a
 `TerminalLane` and every `/ws/terminal/*` request 404s before any other check runs
-(`upgrade.rs::admit`, `lane` argument `None`). `TerminalLane::mint` (`upgrade.rs:27-29`)
-generates a 64-hex token at startup and a cookie name via `TerminalLane::cookie_name(port)`
-(`upgrade.rs:38-40`) — named `loom_dashboard_<bound port>` because cookies carry no port
-scope and loom deliberately runs several dashboards at once
-(`bind_first_available_loopback_port`); one fixed name would let opening a second
-instance's tokenized URL silently steal the first instance's cookie.
+(`terminal/upgrade.rs::admit`, `lane` argument `None`). The token itself comes from
+`terminal::token::mint()` (`terminal/token.rs:12-16`), called from `mod.rs::auth_token`
+whenever the bind is remote or `--terminals` is set; `TerminalLane::from_token`
+(`terminal/upgrade.rs:28-33`) wraps it with a cookie name from
+`TerminalLane::cookie_name(port)` — named `loom_dashboard_<bound port>` because cookies
+carry no port scope and loom deliberately runs several dashboards at once
+(`listener::bind_first_available_port(host, start)`); one fixed name would let opening a
+second instance's tokenized URL silently steal the first instance's cookie. In remote mode
+this same token also backs the dashboard-wide cookie (`auth::Auth`, `ServeOptions` requires
+`dashboard_token`/`terminal_token` to agree when both are set).
 
-Bootstrap: `GET /?token=<presented>` (`connection.rs::bootstrap_terminal_token`, :145-165) —
-right token sets the cookie via a 302 redirect to `/` with `Set-Cookie:
+Bootstrap: `GET`/`HEAD /?token=<presented>` (`bootstrap.rs::bootstrap_terminal_token`,
+:55-82) — right token sets the cookie via a 302 redirect to `/` with `Set-Cookie:
 loom_dashboard_<port>=<token>; Path=/; HttpOnly; SameSite=Strict`
-(`TerminalLane::bootstrap_cookie`, `upgrade.rs:42-53`); wrong token is a 403; no `token`
-query param falls through to the ordinary page. The printed startup line is
-`http://127.0.0.1:<port>/?token=<token>  (terminals enabled; Ctrl-C to stop)`
-(`mod.rs:121`).
+(`TerminalLane::bootstrap_cookie`, `terminal/upgrade.rs:39-50`); wrong token is a 403; no
+`token` query param falls through to the ordinary page. In remote mode this route also
+checks `Origin` (optional but, if present, must match the connection's own address) ahead of
+the token exchange. The printed startup line (loopback, terminals enabled) is
+`http://127.0.0.1:<port>/?token=<token>  (terminals enabled; Ctrl-C to stop)` (`mod.rs:176-179`).
 
-## Admission order (`upgrade.rs::admit`, :82-128)
+## Admission order (`terminal/upgrade.rs::admit`, :85-134)
 
 Checked in this order, each a hard refusal before the next runs — re-asserted at the lane
 rather than trusted to the HTTP router above it, because this is a keystroke-injection
 surface:
 
-1. `host_allowed(head.host)` — DNS-rebinding gate, shared with the rest of the dashboard.
+1. `policy.host_allowed(local, head)` — DNS-rebinding gate in loopback posture, exact
+   socket-identity gate in remote posture; shared with the rest of the dashboard.
 2. Lane present (`--terminals` was passed) — else 404, indistinguishable from an unknown
    route.
-3. `origin_matches_host` (`:162-174`) — `Origin` must be `http`/`https` with an authority
-   byte-equal to `Host`; WebSockets ignore same-origin policy so this is the browser-side
-   half of the gate.
+3. `origin_matches_host` (`terminal/upgrade.rs:168-180`) — `Origin` must be `http`/`https`
+   with an authority byte-equal to `Host`; WebSockets ignore same-origin policy so this is
+   the browser-side half of the gate.
 4. `lane.cookie_matches(head.cookie)` — the cookie half; constant-time token compare
    (`token::matches`).
-5. `terminal_path` (`:176-185`) parses `/ws/terminal/<stage-id>/<view|control>` and rejects
-   a `stage_id` that is not `is_plain_identifier`.
+5. `terminal_path` (`terminal/upgrade.rs:182-191`) parses `/ws/terminal/<stage-id>/<view|control>`
+   and rejects a `stage_id` that is not `is_plain_identifier`.
 6. `acquire_terminal_slot` against `MAX_TERMINALS = 8` (`limits.rs:25`).
 7. `running` (server not mid-shutdown).
 
-Only after all seven does `handle_upgrade` (`:61-80`) call `tungstenite::accept_with_config`
-(capped at `MAX_INBOUND_BYTES = 64 KiB`, `limits.rs:36`, one shared definition also used by
-`ws.rs` and `bridge::configure`) and `start_bridge` (`:130-159`) resolves the target and
-spawns the PTY.
+Only after all seven does `handle_upgrade` (`terminal/upgrade.rs:59-82`) call
+`tungstenite::accept_with_config` (capped at `MAX_INBOUND_BYTES = 64 KiB`, `limits.rs:36`,
+one shared definition also used by `ws.rs` and `bridge::configure`) and `start_bridge`
+(`terminal/upgrade.rs:136-165`) resolves the target and spawns the PTY.
 
 ## Close-code contract (`protocol.rs:61-73`, pinned byte-for-byte against
 
