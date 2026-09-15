@@ -16,6 +16,7 @@ Only `version: 1` supported.
 
 - Location: `~/.claude/hooks/loom/`
 - Naming: `<event>-<action>.sh` (e.g., `session-start.sh`, `post-tool-use.sh`)
+- Source of truth is the repo: `loom-hooks/*.sh`, embedded into the binary by `include_str!` in `fs/permissions/constants.rs` and written out by `install.sh` / `loom repair`. Loom runs on other people's machines, so a hook defect is fixed in `loom-hooks/` (with its `loom-hooks/tests/` case) and shipped in a patch release. Never patch the installed copy under `~/.claude/hooks/loom/`: it is an artifact, it drifts from the embedded copy, and no one else receives the fix (2026-09-16).
 
 ## Skill File Format
 
