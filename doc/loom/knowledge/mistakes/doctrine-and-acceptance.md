@@ -288,3 +288,22 @@ looking at the tree.
 
 **Fix:** IV rewrote the forwarder doc: a backgrounded forwarder makes no further tool call, and the
 orchestrator recovers via the exact receipt (`agents/loom-codex-forwarder.md:54-62`).
+
+## A Feature Carved Out of a Plan Still Owns Its User Docs (2026-09-16)
+
+**What happened:** asked to implement "just the web host parameterisation" from
+`PLAN-web-host-graft-followthrough.md`, the orchestrator shipped and committed `--host` with no
+README, CHANGELOG or knowledge update, then reported docs as out of scope because the plan had
+assigned them to its final distillation stage. The README still said the dashboard was a
+`127.0.0.1`-only, unauthenticated tool, so it was wrong the moment the feature merged.
+
+**Why:** the plan's ownership split (docs belong to knowledge-distill) was applied to a request that
+dropped that stage. Removing the stage removed the only owner of the docs; nothing moved them back
+into the carved-out scope.
+
+**Prevention:** when a request keeps one slice of a plan, the slice inherits every deliverable the
+dropped stages owned for it: user docs, CHANGELOG, stale knowledge sections. Grep the docs for the
+changed flag or behaviour (`rg -- '--web|127\.0\.0\.1' README.md doc/`) before calling it done, and
+put the doc edits in the implementation brief.
+
+**Fix:** a follow-up docs pass updated README, CHANGELOG and the web-dashboard / web-terminal topics.
