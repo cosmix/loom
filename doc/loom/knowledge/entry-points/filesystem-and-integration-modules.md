@@ -54,7 +54,6 @@
 - `process/identity.rs` - PID plus start-time identity verification and fail-closed signaling
 - `process/environment.rs` - minimal allowlisted environment reconstruction for stage processes
 - `skills/` - SkillIndex, SkillMatch, SkillMetadata (index.rs, matcher.rs, types.rs)
-- `diagnosis/signal.rs` - generate_diagnosis_signal(), DiagnosisContext
 - `map/analyzer.rs` no longer exists — `analyze_codebase(root, deep, focus)` was removed along with `map/{analyzer,detectors,knowledge_sync}.rs`; `loom map` is now three read-only view flags (`--outline`, `--find-all`, `--impact`) defined in `map/mod.rs` — see entry-points/cli-and-plan-pipeline.md § New CLI Surface.
 
 ## WorkDir Directory Helpers (Existing vs. Missing)

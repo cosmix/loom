@@ -346,7 +346,7 @@ fn announce_crash_outcome(
     } else if updated.retry_count >= max {
         clear_status_line();
         eprintln!(
-            "Stage '{}' failed after {} attempts. Run `loom diagnose {}` for help.",
+            "Stage '{}' failed after {} attempts. Fix the cause, then run `loom stage retry {}`.",
             sid, updated.retry_count, sid
         );
     }

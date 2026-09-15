@@ -74,7 +74,6 @@ WRITE PLAN          VALIDATE & INIT         EXECUTE            MONITOR & DEBUG
 ─────────────────── ─────────────────────── ────────────────── ──────────────────
 /loom-plan-writer → loom init plan.md     → loom run         → loom status
                     loom repair --fix                           loom check
-                                                               loom diagnose
                                                                loom stage retry
                                           ────────────────── ──────────────────
                                           COMPLETE            CLEAN UP
@@ -255,9 +254,6 @@ loom check <stage-id>
 
 # Get fix suggestions
 loom check <stage-id> --suggest
-
-# Spawn diagnostic Claude session
-loom diagnose <stage-id>
 ```
 
 ### Common Failure Scenarios
@@ -719,7 +715,6 @@ loom stage skip <id> --reason "..."  # Skip intentionally
 ```bash
 loom status --verbose                # Detailed failure info
 loom check <id> --suggest            # Acceptance + goal-backward + suggestions
-loom diagnose <id>                   # Spawn diagnostic session
 loom graph                           # Visualize execution DAG
 ```
 

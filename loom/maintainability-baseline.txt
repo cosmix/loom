@@ -54,14 +54,12 @@ file tests/failure_resume.rs 468
 file tests/integration/merge_conflict_recovery.rs 412
 file tests/integration/plan_verify.rs 1028
 
-function src/cli/dispatch.rs dispatch 87
+function src/cli/dispatch.rs dispatch 86
 function src/cli/dispatch_stage.rs dispatch_stage 51
 function src/commands/clean/mod.rs print_summary 52
 function src/commands/clean/sessions.rs test_clean_sessions_reaps_live_only_when_destroying_state 57
 function src/commands/clean/worktrees.rs clean_worktrees 110
 function src/commands/clean/worktrees.rs confirm_branch_deletion 73
-function src/commands/diagnose.rs execute 64
-function src/commands/diagnose.rs format_diagnosis_signal 125
 function src/commands/graph/display.rs build_graph_display 52
 function src/commands/graph/tests.rs test_build_graph_display_shows_all_deps 70
 function src/commands/graph/tree.rs build_tree_display 57
@@ -112,7 +110,6 @@ function src/daemon/server/lifecycle.rs start 117
 function src/daemon/server/orchestrator.rs run_orchestrator 94
 function src/daemon/server/status.rs collect_completion_summary 97
 function src/daemon/server/tests.rs test_collect_status_with_stages 77
-function src/diagnosis/signal.rs generate_diagnosis_signal 124
 function src/fs/knowledge/templates.rs default_content 62
 function src/fs/memory/export.rs format_memory_for_handoff 80
 function src/fs/memory/export.rs format_memory_for_signal 92

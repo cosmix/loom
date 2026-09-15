@@ -42,7 +42,7 @@
 | [remote-control](architecture/remote-control.md) | Capability detection, preflight, resolution, and per-kind session naming for… | 82 |
 | [security-and-isolation](architecture/security-and-isolation.md) | 4-layer worktree defense, security model, settings.local.json sites. | 178 |
 | [signal-generation](architecture/signal-generation.md) | Signal assembly: cache, append_* helpers, per-stage prefixes, hung escalation. | 196 |
-| [skill-catalog](architecture/skill-catalog.md) | The two skill roots, why 53 skills live outside `~/.claude/skills`, and the… | 111 |
+| [skill-catalog](architecture/skill-catalog.md) | The two skill roots, why 53 skills live outside `~/.claude/skills`, and the… | 109 |
 | [source-graph](architecture/source-graph.md) | What the source graph is and is not, its honesty contract, extractor trait… | 329 |
 | [status-data-model](architecture/status-data-model.md) | Where each loom status field comes from | 196 |
 | [terminal-backends](architecture/terminal-backends.md) | Native and tmux session backends, lane resolution | 285 |
@@ -54,9 +54,9 @@
 
 | Topic | Blurb | Lines |
 | --- | --- | --- |
-| [cli-and-plan-pipeline](entry-points/cli-and-plan-pipeline.md) | CLI dispatch, plan parsing/validation/graph, verification, configs | 173 |
+| [cli-and-plan-pipeline](entry-points/cli-and-plan-pipeline.md) | CLI dispatch, plan parsing/validation/graph, verification, configs | 174 |
 | [context-and-source-graph](entry-points/context-and-source-graph.md) | Context retrieval pipeline and the source-graph channel/lifecycle | 50 |
-| [filesystem-and-integration-modules](entry-points/filesystem-and-integration-modules.md) | Git, fs/work_dir, handoff, sandbox, remote control, knowledge base | 113 |
+| [filesystem-and-integration-modules](entry-points/filesystem-and-integration-modules.md) | Git, fs/work_dir, handoff, sandbox, remote control, knowledge base | 112 |
 | [hooks](entry-points/hooks.md) | Hook scripts, their events, command matching | 117 |
 | [orchestrator-daemon-and-sessions](entry-points/orchestrator-daemon-and-sessions.md) | Orchestrator loop, daemon, monitor, signals, merges, dispute/verify | 224 |
 | [remote-control](entry-points/remote-control.md) | Files and call sites for remote-control capability detection and… | 97 |

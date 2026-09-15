@@ -254,13 +254,6 @@ pub enum Commands {
     /// Stop the running daemon
     Stop,
 
-    /// Diagnose a failed stage with Claude Code
-    Diagnose {
-        /// Stage ID to diagnose (alphanumeric, dash, underscore only; max 128 characters)
-        #[arg(value_parser = clap_id_validator)]
-        stage_id: String,
-    },
-
     /// Manage plan files (validate, inspect)
     Plan {
         #[command(subcommand)]

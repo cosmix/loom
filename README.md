@@ -261,7 +261,6 @@ loom status [--live] [--compact] [--verbose] [--web [PORT]]
 loom stop
 loom resume <stage-id>
 loom check <stage-id> [--suggest]
-loom diagnose <stage-id>
 loom pressure <plan-path> [--rounds N] [--claude-model M] [--claude-effort E] [--codex-model M] [--codex-effort E] [--address-model M] [--address-effort E] [--dry-run]
 ```
 

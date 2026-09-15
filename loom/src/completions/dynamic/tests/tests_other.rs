@@ -1,23 +1,7 @@
-//! Tests for other command completions (diagnose, worktree, knowledge)
+//! Tests for other command completions (worktree, knowledge)
 
 use super::super::*;
 use super::setup_test_workspace;
-
-#[test]
-fn test_complete_dynamic_diagnose() {
-    let temp_dir = setup_test_workspace();
-    let root = temp_dir.path();
-
-    let ctx = CompletionContext {
-        cwd: root.to_string_lossy().to_string(),
-        shell: "bash".to_string(),
-        cmdline: "loom diagnose".to_string(),
-        current_word: "core".to_string(),
-        prev_word: "diagnose".to_string(),
-    };
-
-    assert!(complete_dynamic(&ctx).is_ok());
-}
 
 #[test]
 fn test_complete_dynamic_worktree_remove() {

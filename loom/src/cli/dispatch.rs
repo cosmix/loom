@@ -1,7 +1,7 @@
 use crate::commands::{
-    attach, clean, config, context, diagnose, graph, handoff, hook, init, install_assets,
-    knowledge, map, memory, plan, pressure, repair, request, resume, review, run, self_update,
-    sessions, skill_index, status, stop, subagents, usage, verify, worktree_cmd,
+    attach, clean, config, context, graph, handoff, hook, init, install_assets, knowledge, map,
+    memory, plan, pressure, repair, request, resume, review, run, self_update, sessions,
+    skill_index, status, stop, subagents, usage, verify, worktree_cmd,
 };
 use crate::completions::{complete_dynamic, generate_completions, CompletionContext, Shell};
 use anyhow::Result;
@@ -323,7 +323,6 @@ pub fn dispatch(command: Commands) -> Result<()> {
         Commands::Usage { args } => usage::execute(args),
         Commands::Pressure(args) => pressure::execute(args),
         Commands::Stop => stop::execute(),
-        Commands::Diagnose { stage_id } => diagnose::execute(&stage_id),
         Commands::Plan { command } => dispatch_plan(command),
         Commands::Check {
             stage_id,

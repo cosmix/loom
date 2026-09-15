@@ -31,14 +31,15 @@
 | `repair`      | `commands/repair.rs`          | Fix workspace issues                           |
 | `map`         | `commands/map.rs`             | Codebase structure analysis                    |
 | `pressure`    | `commands/pressure/mod.rs`    | Plan pressure-testing driver (Claude + Codex)  |
-| `diagnose`    | `commands/diagnose.rs`        | Stage failure diagnosis                        |
 | `plan verify` | `commands/plan/verify.rs`     | Validate plan file without side effects        |
 | `check`       | `commands/verify.rs`          | Goal-backward verification (`verify::execute`) |
 | `skill-index` | `commands/skill_index.rs`     | Build skill keyword index for skill-trigger    |
 | `completions` | `completions/mod.rs`          | Shell completions (custom scripts + dynamic)   |
 | `complete`    | Hidden (dynamic completions)  | Backend for shell tab completions              |
 
-Total: 23 visible commands + 1 hidden (`complete`, for dynamic completions). Dispatch: `cli/dispatch.rs` match-based, two-level for nested commands. `completions` dispatches from `cli/dispatch.rs` into the top-level `completions/` module, not a `commands/completions/` directory.
+Total: 30 visible commands + 1 hidden (`complete`, for dynamic completions). Dispatch: `cli/dispatch.rs` match-based, two-level for nested commands. `completions` dispatches from `cli/dispatch.rs` into the top-level `completions/` module, not a `commands/completions/` directory.
+
+`loom diagnose` was removed on 2026-09-15. It wrote a prompt file into the signals directory but never started a session or passed the prompt to Claude; `loom/src/diagnosis/`, an unused copy of the same logic, went with it. A stage that exhausts its retries is `Blocked`, and `loom stage retry <id>` restarts it once the cause is fixed.
 
 **Three commands that do NOT exist** (an earlier version of this table listed all three — verify against `cli/dispatch.rs` before citing one):
 
