@@ -171,6 +171,7 @@ check_requirements() {
 	[[ -d "$SCRIPT_DIR/loom" ]] || { err "loom/ not found"; exit 1; }
 }
 
+# shellcheck disable=SC2088  # display labels, not paths - tilde is intentional
 confirm_overwrites() {
 	local found=()
 
