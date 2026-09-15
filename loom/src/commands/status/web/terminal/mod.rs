@@ -11,7 +11,7 @@ mod tests_pty;
 mod tests_route;
 #[cfg(test)]
 pub(in crate::commands::status::web) mod tests_upgrade;
-mod token;
+pub(in crate::commands::status::web) mod token;
 mod upgrade;
 use protocol::{Mode, WindowSize, CLOSE_NOT_YET, CLOSE_REFUSED, CLOSE_UNKNOWN_STAGE};
 pub(crate) use upgrade::handle_upgrade;

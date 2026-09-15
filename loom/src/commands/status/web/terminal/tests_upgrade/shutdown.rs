@@ -11,9 +11,10 @@ use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant};
 
+use crate::commands::status::web::access::AccessPolicy;
 use crate::commands::status::web::limits::{acquire_terminal_slot, Limits};
 use crate::commands::status::web::tests::{body, skip_without_loopback, workspace};
-use crate::commands::status::web::{self, TerminalLane};
+use crate::commands::status::web::{self, ServeOptions, TerminalLane};
 use tungstenite::client::IntoClientRequest;
 
 use super::super::bridge;
@@ -54,12 +55,30 @@ fn terminal_upgrade_after_stop_is_503() {
         .unwrap();
     client.write_all(request.as_bytes()).unwrap();
     let lane = TerminalLane {
-        token,
+        token: token.clone(),
         cookie_name: web::cookie_name_for_port(port),
     };
     let limits = Limits::new();
     let running = AtomicBool::new(false);
-    web::terminal::handle_upgrade(server, &head, &base, Some(&lane), &running, &limits);
+    let local = server.local_addr().unwrap();
+    let policy = AccessPolicy::resolve(
+        local,
+        &ServeOptions {
+            terminal_token: Some(token),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    web::terminal::handle_upgrade(
+        server,
+        &head,
+        &base,
+        Some(&lane),
+        &running,
+        &limits,
+        &policy,
+        local,
+    );
     let mut response = String::new();
     client.read_to_string(&mut response).unwrap();
     assert!(response.starts_with("HTTP/1.1 503"), "{response}");

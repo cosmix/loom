@@ -13,6 +13,7 @@ mod shutdown;
 pub(in crate::commands::status::web) fn terminal_options() -> ServeOptions {
     ServeOptions {
         terminal_token: Some("a".repeat(64)),
+        ..Default::default()
     }
 }
 

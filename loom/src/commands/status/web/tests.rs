@@ -27,6 +27,8 @@ mod errors;
 mod ports;
 #[path = "tests/pure.rs"]
 mod pure;
+#[path = "tests/remote.rs"]
+mod remote;
 #[path = "tests/socket.rs"]
 mod socket;
 

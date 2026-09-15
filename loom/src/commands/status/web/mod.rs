@@ -3,28 +3,39 @@
 //! # Access control
 //!
 //! The daemon authenticates its own clients with the `user.token` that
-//! `status::ui::tui::daemon_client` presents. The dashboard
-//! holds that token on the operator's behalf and then serves the same status
-//! data over `/api/status` and `/ws` to any process on the host that can reach
-//! 127.0.0.1 - including other local users - with only `Host` and `Origin`
-//! checks to keep a browser on another site from reading it. That is the intended
-//! trade-off for an operator-run localhost dashboard, but it is a deliberate
-//! downgrade of the daemon's authentication model, not an oversight: do not
-//! bind this server to a non-loopback address without adding authentication.
+//! `status::ui::tui::daemon_client` presents. The dashboard holds that token
+//! on the operator's behalf.
+//!
+//! By default this server binds `127.0.0.1` and serves `/api/status` and
+//! `/ws` to any process on the host that can reach it - including other
+//! local users - with only `Host` and `Origin` checks to keep a browser on
+//! another site from reading it. That is the intended trade-off for an
+//! operator-run localhost dashboard, but it is a deliberate downgrade of the
+//! daemon's authentication model, not an oversight.
+//!
+//! `--host` widens that bind. Any bind that is not loopback - a concrete
+//! remote address, or a wildcard (`0.0.0.0`/`::`) reachable from anywhere,
+//! even when a particular client happens to arrive over loopback - runs
+//! under `access::AccessPolicy`'s remote posture instead: every route
+//! requires a cookie minted from a process token printed once at startup,
+//! `Host` and `Origin` must name the connection's own accepted socket
+//! address exactly, and HTTP carries the token and every snapshot
+//! unencrypted. See `access` for the resolved policy and `auth` for the
+//! cookie/token mechanics it shares with the terminal lane below.
 //!
 //! ## The write surface
 //!
 //! `/api/config` (`config_api`) is the one route that changes anything: it
 //! reads and writes `~/.loom/config.toml` and `.loom/work/config.toml`. It
-//! accepts the same reads as everything else here, and gates its writes three
-//! deep:
+//! accepts the same reads as everything else here, and gates its writes
+//! three deep:
 //!
-//! 1. **`Host`** - the DNS-rebinding gate `connection::handle` already applies
-//!    to every request ahead of routing.
-//! 2. **`Origin`, strictly** - `http::origin_allowed_strict` rather than
-//!    `http::origin_allowed`. Absence is fine for a same-origin `GET`, which
-//!    carries no `Origin` at all, and is refused for a write, which always
-//!    would.
+//! 1. **`Host`** - the DNS-rebinding (or, remotely, socket-identity) gate
+//!    `connection::handle` already applies to every request ahead of
+//!    routing.
+//! 2. **`Origin`, strictly** - required rather than merely permitted, in
+//!    both postures. Absence is fine for a same-origin `GET`, which carries
+//!    no `Origin` at all, and is refused for a write, which always would.
 //! 3. **A double-submit CSRF token** - minted once per server process, handed
 //!    out only in the `GET /api/config` body, required in the `X-Loom-Csrf`
 //!    header of every `POST`, and compared in constant time.
@@ -34,7 +45,7 @@
 //! `GET` or setting the header on a `POST`. Adding one would defeat it.
 //! Request bodies are capped at `http::MAX_BODY_BYTES`, and no response
 //! anywhere names an absolute path - a failure that would is logged and served
-//! generically, because every local process can read this server.
+//! generically, because every local process can read this server by default.
 //!
 //! What the write surface does NOT do is raise the read posture above: a local
 //! process that could already read the ledger can now also change loom's
@@ -51,36 +62,43 @@
 //! the ambient `TMUX_TMPDIR`.
 //!
 //! The token cookie is named per port so two dashboards cannot clobber each
-//! other's, but cookies are not port-scoped: any other `http://127.0.0.1:<port>`
-//! page can still overwrite it for the shared `127.0.0.1` host. That cannot
-//! forge a valid token, but it does surface as terminals returning 401
-//! ("Dashboard cookie missing") until the operator re-opens the tokenized URL.
+//! other's, but cookies are not port-scoped: any other page served from the
+//! same host can still overwrite it for that shared host. That cannot forge a
+//! valid token, but it does surface as terminals returning 401 ("dashboard
+//! cookie required") until the operator re-opens the tokenized URL. A remote
+//! dashboard's cookie alone never grants terminal capability: that still
+//! derives only from `--terminals`.
 
+mod access;
 mod assets;
+mod auth;
+mod bootstrap;
 mod broadcast;
 mod config_api;
 mod connection;
 mod head;
 mod http;
 mod limits;
+mod listener;
 pub mod model;
 mod terminal;
 #[cfg(test)]
 mod tests;
 mod ws;
 
-use std::io::ErrorKind;
-use std::net::TcpListener;
+use std::net::{IpAddr, SocketAddr, TcpListener};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result};
 
 use crate::fs::tmux_tmpdir::{adopt_recorded_tmux_tmpdir, TmuxTmpdirAdoption};
 use crate::fs::work_dir::WorkDir;
+
+use access::AccessPolicy;
 
 /// First port considered by `loom status --web` without a value.
 pub const DEFAULT_PORT: u16 = 7373;
@@ -90,6 +108,9 @@ pub const DEFAULT_PORT: u16 = 7373;
 pub struct ServeOptions {
     /// `Some(token)` when terminals are enabled.
     pub terminal_token: Option<String>,
+    /// `Some(token)` when the bound listener is not loopback. Must equal
+    /// `terminal_token` when both are set.
+    pub dashboard_token: Option<String>,
 }
 
 /// The terminal lane configuration resolved from the listener's actual port.
@@ -104,25 +125,25 @@ pub(super) fn cookie_name_for_port(port: u16) -> String {
     TerminalLane::cookie_name(port)
 }
 
-/// Start the dashboard server on loopback until Ctrl-C.
-pub fn execute(port: Option<u16>, terminals: bool) -> Result<()> {
+/// Start the dashboard server until Ctrl-C.
+pub fn execute(port: Option<u16>, terminals: bool, host: IpAddr) -> Result<()> {
     let work_dir = WorkDir::new(".")?;
     work_dir.load()?;
-    let listener = bind_listener(port)?;
-    let actual_port = listener.local_addr()?.port();
+    let listener = listener::bind_listener(host, port)?;
+    let local = listener.local_addr()?;
+    let remote = !local.ip().is_loopback();
+    let process_token = (remote || terminals).then(auth_token).transpose()?;
     let terminal_lane = terminals
-        .then(|| TerminalLane::mint(actual_port))
-        .transpose()?;
+        .then(|| {
+            process_token
+                .clone()
+                .map(|token| TerminalLane::from_token(token, local.port()))
+        })
+        .flatten();
     if terminals {
         log_adoption(adopt_for(&work_dir));
     }
-    match terminal_lane.as_ref() {
-        Some(lane) => println!(
-            "loom dashboard: http://127.0.0.1:{actual_port}/?token={}  (terminals enabled; Ctrl-C to stop)",
-            lane.token
-        ),
-        None => println!("loom dashboard: http://127.0.0.1:{actual_port}/  (Ctrl-C to stop)"),
-    }
+    print_startup(local, remote, terminals, process_token.as_deref());
     if assets::WEB_ASSETS.is_empty() {
         eprintln!(
             "warning: dashboard assets are not embedded in this binary; run `cd web && bun install && bun run build`, then rebuild loom"
@@ -138,9 +159,66 @@ pub fn execute(port: Option<u16>, terminals: bool) -> Result<()> {
         PathBuf::from("."),
         running,
         ServeOptions {
+            dashboard_token: remote.then(|| process_token.clone()).flatten(),
             terminal_token: terminal_lane.map(|lane| lane.token),
         },
     )
+}
+
+fn auth_token() -> Result<String> {
+    terminal::token::mint().context("failed to mint a dashboard process token")
+}
+
+/// Print the URL an operator should open, and the remote-mode caveats.
+fn print_startup(local: SocketAddr, remote: bool, terminals: bool, token: Option<&str>) {
+    if !remote {
+        match token {
+            Some(token) if terminals => println!(
+                "loom dashboard: http://127.0.0.1:{}/?token={token}  (terminals enabled; Ctrl-C to stop)",
+                local.port()
+            ),
+            _ => println!(
+                "loom dashboard: http://127.0.0.1:{}/  (Ctrl-C to stop)",
+                local.port()
+            ),
+        }
+        return;
+    }
+    if local.ip().is_unspecified() {
+        print_startup_wildcard(local, terminals, token);
+    } else {
+        print_startup_concrete(local, terminals, token);
+    }
+}
+
+/// A wildcard bind's own address names no reachable interface, so the
+/// operator is told to substitute one themselves.
+fn print_startup_wildcard(local: SocketAddr, terminals: bool, token: Option<&str>) {
+    let token = token.unwrap_or_default();
+    let note = if terminals { "; terminals enabled" } else { "" };
+    println!("loom dashboard listening on {local} (remote access enabled{note})");
+    println!(
+        "  bootstrap from another machine at: http://<this host's reachable address>:{}/?token={token}",
+        local.port()
+    );
+    println!(
+        "  or from this machine: http://127.0.0.1:{}/?token={token}",
+        local.port()
+    );
+    println!("  warning: this connection is plain HTTP; the token above grants dashboard and settings access to anyone who has it");
+    println!("  (Ctrl-C to stop)");
+}
+
+/// A concrete non-loopback bind's own address is directly reachable, and the
+/// listener is not reachable on 127.0.0.1 - so the printed URL is the real one
+/// rather than a placeholder plus a loopback fallback.
+fn print_startup_concrete(local: SocketAddr, terminals: bool, token: Option<&str>) {
+    let token = token.unwrap_or_default();
+    let note = if terminals { "; terminals enabled" } else { "" };
+    println!("loom dashboard listening on {local} (remote access enabled{note})");
+    println!("  open: http://{local}/?token={token}");
+    println!("  warning: this connection is plain HTTP; the token above grants dashboard and settings access to anyone who has it");
+    println!("  (Ctrl-C to stop)");
 }
 
 /// Adopt the live daemon's tmux directory for terminal attachments only.
@@ -163,33 +241,13 @@ fn log_adoption(adoption: TmuxTmpdirAdoption) {
     }
 }
 
-/// Bind an explicit port exactly, or select the first available default-range port.
-pub(super) fn bind_listener(port: Option<u16>) -> Result<TcpListener> {
-    match port {
-        Some(port) => bind_loopback(port),
-        None => bind_first_available_loopback_port(DEFAULT_PORT),
-    }
-}
-
-fn bind_loopback(port: u16) -> Result<TcpListener> {
-    TcpListener::bind(("127.0.0.1", port))
-        .with_context(|| format!("failed to bind 127.0.0.1:{port}"))
-}
-
-pub(super) fn bind_first_available_loopback_port(start_port: u16) -> Result<TcpListener> {
-    for port in start_port..=u16::MAX {
-        match TcpListener::bind(("127.0.0.1", port)) {
-            Ok(listener) => return Ok(listener),
-            Err(error) if error.kind() == ErrorKind::AddrInUse => continue,
-            Err(error) => {
-                return Err(error).with_context(|| format!("failed to bind 127.0.0.1:{port}"))
-            }
-        }
-    }
-    bail!("failed to bind a loopback port from {start_port} through 65535")
-}
-
 /// Serve an already-bound listener until `running` becomes false.
+///
+/// Fails closed rather than serving anything for a non-loopback (including
+/// wildcard) `listener` that carries no valid process token in `options`:
+/// this is the only gate a caller reaching this public function directly -
+/// rather than through [`execute`] - gets, so it runs before the broadcaster
+/// or any accept work starts.
 ///
 /// `base` scopes the work directory the snapshots are read from, but *not* the
 /// daemon connection: `daemon_client` resolves the socket and the `user.token`
@@ -213,16 +271,26 @@ fn serve_with(
     options: ServeOptions,
     limits: Arc<limits::Limits>,
 ) -> Result<()> {
+    let policy = Arc::new(AccessPolicy::resolve(listener.local_addr()?, &options)?);
     listener.set_nonblocking(true)?;
     let lane = terminal_lane(&listener, &options)?;
     let broadcaster = broadcast::Broadcaster::spawn(base.clone(), running.clone(), lane.is_some());
     while running.load(Ordering::SeqCst) {
-        accept_connection(&listener, &broadcaster, &base, &running, &limits, &lane);
+        accept_connection(
+            &listener,
+            &broadcaster,
+            &base,
+            &running,
+            &limits,
+            &lane,
+            &policy,
+        );
     }
     drain_connections(&limits);
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn accept_connection(
     listener: &TcpListener,
     broadcaster: &broadcast::Broadcaster,
@@ -230,9 +298,12 @@ fn accept_connection(
     running: &Arc<AtomicBool>,
     limits: &Arc<limits::Limits>,
     lane: &Option<TerminalLane>,
+    policy: &Arc<AccessPolicy>,
 ) {
     match listener.accept() {
-        Ok((stream, _)) => spawn_connection(stream, broadcaster, base, running, limits, lane),
+        Ok((stream, _)) => {
+            spawn_connection(stream, broadcaster, base, running, limits, lane, policy)
+        }
         Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
             thread::sleep(Duration::from_millis(50));
         }
@@ -240,6 +311,7 @@ fn accept_connection(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn spawn_connection(
     mut stream: std::net::TcpStream,
     broadcaster: &broadcast::Broadcaster,
@@ -247,11 +319,15 @@ fn spawn_connection(
     running: &Arc<AtomicBool>,
     limits: &Arc<limits::Limits>,
     lane: &Option<TerminalLane>,
+    policy: &Arc<AccessPolicy>,
 ) {
     if let Err(error) = stream.set_nonblocking(false) {
         tracing::warn!("dashboard could not configure a client socket: {error}");
         return;
     }
+    let Ok(local) = stream.local_addr() else {
+        return;
+    };
     let Some(slot) = limits::Slot::acquire(limits, limits::Lane::Connection) else {
         connection::reject_overloaded(&mut stream);
         return;
@@ -261,6 +337,7 @@ fn spawn_connection(
     let running = running.clone();
     let limits = limits.clone();
     let lane = lane.clone();
+    let policy = policy.clone();
     if let Err(error) = thread::Builder::new()
         .name("loom-dashboard-conn".to_owned())
         .spawn(move || {
@@ -271,6 +348,8 @@ fn spawn_connection(
                 &running,
                 &limits,
                 lane.as_ref(),
+                &policy,
+                local,
                 slot,
             )
         })

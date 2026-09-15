@@ -32,7 +32,9 @@ use crate::tmux_backend::{skip_unless_tmux_can_bind, TmuxServerGuard, TmuxTmpDir
 mod tests;
 
 const STAGE_ID: &str = "web-term-stage";
-const TOKEN: &str = "e2e-token";
+/// 64 lowercase hex characters: the format `ServeOptions` requires of every
+/// process token, minted or fixture alike.
+const TOKEN: &str = "e2e0e2e0e2e0e2e0e2e0e2e0e2e0e2e0e2e0e2e0e2e0e2e0e2e0e2e0e2e0e2e0";
 const TMUX_TIMEOUT: Duration = Duration::from_secs(3);
 
 struct TmuxOutput {
@@ -229,6 +231,7 @@ fn fixture(test_name: &str) -> Option<Fixture> {
             serve_running,
             ServeOptions {
                 terminal_token: Some(TOKEN.to_owned()),
+                ..Default::default()
             },
         ));
     });

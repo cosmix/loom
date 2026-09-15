@@ -7,9 +7,10 @@
 //! a request that has no business writing is refused before the server reads a
 //! byte of its body.
 
-use std::net::TcpStream;
+use std::net::{SocketAddr, TcpStream};
 use std::path::Path;
 
+use super::super::access::{AccessPolicy, OriginRequirement};
 use super::super::connection::{drain_pending, respond};
 use super::super::http::{self, RequestHead};
 use super::{csrf, error_body};
@@ -22,7 +23,7 @@ struct Rejection(u16, &'static str, String);
 
 /// Serve `GET`/`HEAD /api/config`.
 ///
-/// Keeps [`http::origin_allowed`]'s lenient rule, matching `/api/status`: a
+/// Keeps the dashboard's lenient `Origin` rule, matching `/api/status`: a
 /// browser sends no `Origin` on a same-origin `GET`, and requiring one would
 /// break the dashboard's own fetch. The CSRF token in this body is safe under
 /// that rule because a cross-site page can cause this request but cannot read
@@ -31,8 +32,10 @@ pub(in crate::commands::status::web) fn serve_get(
     stream: &mut TcpStream,
     head: &RequestHead,
     base: &Path,
+    policy: &AccessPolicy,
+    local: SocketAddr,
 ) {
-    if !http::origin_allowed(head.origin.as_deref()) {
+    if !policy.origin_allowed(local, head, OriginRequirement::Optional) {
         let body = error_body("origin not allowed");
         respond(stream, head, 403, "Forbidden", JSON, body.as_bytes());
         return;
@@ -68,8 +71,10 @@ pub(in crate::commands::status::web) fn handle_post(
     head: &RequestHead,
     prefix: Vec<u8>,
     base: &Path,
+    policy: &AccessPolicy,
+    local: SocketAddr,
 ) {
-    let (status, reason, body) = match gate(head) {
+    let (status, reason, body) = match gate(head, policy, local) {
         Err(Rejection(status, reason, body)) => (status, reason, body),
         Ok(length) => match http::read_body(stream, prefix, length) {
             Ok(body) => {
@@ -92,8 +97,8 @@ pub(in crate::commands::status::web) fn handle_post(
 }
 
 /// Check every gate a write must clear, yielding the body length to read.
-fn gate(head: &RequestHead) -> Result<usize, Rejection> {
-    if !http::origin_allowed_strict(head.origin.as_deref()) {
+fn gate(head: &RequestHead, policy: &AccessPolicy, local: SocketAddr) -> Result<usize, Rejection> {
+    if !policy.origin_allowed(local, head, OriginRequirement::Required) {
         return Err(Rejection(
             403,
             "Forbidden",

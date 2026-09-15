@@ -1,6 +1,6 @@
 //! Admission, resolution, and tmux hand-off for one terminal WebSocket.
 
-use std::net::TcpStream;
+use std::net::{SocketAddr, TcpStream};
 use std::path::Path;
 use std::process::Command;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -16,18 +16,15 @@ use super::pty::PtyChild;
 use super::resolve::{self, attach_args, Refusal, Target};
 use super::token;
 use super::{Mode, WindowSize};
+use crate::commands::status::web::access::AccessPolicy;
 use crate::commands::status::web::connection::fail;
-use crate::commands::status::web::http::{host_allowed, RequestHead};
+use crate::commands::status::web::http::RequestHead;
 use crate::commands::status::web::limits::{
     acquire_terminal_slot, Limits, Slot, MAX_INBOUND_BYTES,
 };
 use crate::commands::status::web::TerminalLane;
 
 impl TerminalLane {
-    pub(in crate::commands::status::web) fn mint(port: u16) -> std::io::Result<Self> {
-        Ok(Self::from_token(token::mint()?, port))
-    }
-
     pub(in crate::commands::status::web) fn from_token(token: String, port: u16) -> Self {
         Self {
             token,
@@ -58,6 +55,7 @@ impl TerminalLane {
 }
 
 /// Upgrade one validated terminal request, or answer its pre-upgrade refusal.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn handle_upgrade(
     mut stream: TcpStream,
     head: &RequestHead,
@@ -65,8 +63,12 @@ pub(crate) fn handle_upgrade(
     lane: Option<&TerminalLane>,
     running: &AtomicBool,
     limits: &Arc<Limits>,
+    policy: &AccessPolicy,
+    local: SocketAddr,
 ) {
-    let Some((stage_id, control, _slot)) = admit(&mut stream, head, lane, running, limits) else {
+    let Some((stage_id, control, _slot)) =
+        admit(&mut stream, head, lane, running, limits, policy, local)
+    else {
         return;
     };
     let config = WebSocketConfig::default()
@@ -79,19 +81,23 @@ pub(crate) fn handle_upgrade(
     start_bridge(socket, stage_id, base, control, running);
 }
 
+#[allow(clippy::too_many_arguments)]
 fn admit<'a>(
     stream: &mut TcpStream,
     head: &'a RequestHead,
     lane: Option<&TerminalLane>,
     running: &AtomicBool,
     limits: &Arc<Limits>,
+    policy: &AccessPolicy,
+    local: SocketAddr,
 ) -> Option<(&'a str, bool, Slot)> {
     // Re-asserted here rather than trusted to the caller: `connection::handle`
     // checks this ahead of routing today, but `handle_upgrade` is
     // `pub(crate)` and this lane is a keystroke-injection surface, so the
     // gate belongs to the lane it guards rather than to whichever caller
-    // happens to sit above it.
-    if !host_allowed(head.host.as_deref()) {
+    // happens to sit above it. Policy-aware so a remote bind's stricter
+    // socket-identity check applies here too.
+    if !policy.host_allowed(local, head) {
         fail(stream, 403, "Forbidden", b"host not allowed");
         return None;
     }

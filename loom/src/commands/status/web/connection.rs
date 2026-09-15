@@ -1,20 +1,20 @@
 //! Routing for one dashboard HTTP or WebSocket connection.
 
 use std::io::Read;
-use std::net::TcpStream;
+use std::net::{SocketAddr, TcpStream};
 use std::path::Path;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use super::access::{AccessPolicy, OriginRequirement};
 use super::assets;
+use super::bootstrap::{bootstrap_terminal_token, route_upgrade};
 use super::broadcast::{self, Broadcaster};
 use super::config_api;
 use super::head::complete as complete_head;
 use super::http::{self, RequestHead};
-use super::limits::{Lane, Limits, Slot};
-use super::terminal;
-use super::ws;
+use super::limits::{Limits, Slot};
 use super::TerminalLane;
 
 /// How long a single peek may block, bounding how long a connection thread
@@ -70,7 +70,11 @@ pub(super) enum Route {
 /// Handle one accepted connection to completion, or until `running` clears.
 ///
 /// `_slot` is the connection's reservation: holding it here releases it when
-/// this thread ends, panic included.
+/// this thread ends, panic included. `local` is this connection's own
+/// accepted socket address - not necessarily the listener's bind address,
+/// when that bind is a wildcard - and is what `policy` validates `Host` and
+/// `Origin` against in remote mode.
+#[allow(clippy::too_many_arguments)]
 pub(super) fn handle(
     mut stream: TcpStream,
     broadcaster: &Broadcaster,
@@ -78,27 +82,24 @@ pub(super) fn handle(
     running: &AtomicBool,
     limits: &Arc<Limits>,
     lane: Option<&TerminalLane>,
+    policy: &AccessPolicy,
+    local: SocketAddr,
     _slot: Slot,
 ) {
-    if stream.set_read_timeout(Some(PEEK_TIMEOUT)).is_err()
-        || stream.set_write_timeout(Some(WRITE_TIMEOUT)).is_err()
-    {
-        return;
-    }
-    let Some(peeked) = complete_head(&mut stream, running) else {
+    let Some(peeked) = gate(&mut stream, running, policy, local, lane) else {
         return;
     };
-    // Ahead of routing, so the gate covers `/ws`, `/api/status` and the
-    // embedded assets alike.
-    if !http::host_allowed(peeked.host.as_deref()) {
-        fail(&mut stream, 403, "Forbidden", b"host not allowed");
-        return;
-    }
-    if bootstrap_terminal_token(&mut stream, &peeked, lane) {
-        return;
-    }
-    let Some(mut stream) = route_upgrade(stream, &peeked, broadcaster, base, running, limits, lane)
-    else {
+    let Some(mut stream) = route_upgrade(
+        stream,
+        &peeked,
+        broadcaster,
+        base,
+        running,
+        limits,
+        lane,
+        policy,
+        local,
+    ) else {
         return;
     };
 
@@ -111,88 +112,47 @@ pub(super) fn handle(
     // always has.
     let route = route(&head.path);
     match head.method.as_str() {
-        "GET" | "HEAD" => handle_route(&mut stream, &head, route, broadcaster, base),
+        "GET" | "HEAD" => handle_route(&mut stream, &head, route, broadcaster, base, policy, local),
         "POST" if route == Route::Config => {
-            config_api::handle_post(&mut stream, &head, body_prefix, base)
+            config_api::handle_post(&mut stream, &head, body_prefix, base, policy, local)
         }
         _ => fail(&mut stream, 405, "Method Not Allowed", b"GET required"),
     }
 }
 
-/// Route an already-peeked upgrade request to the terminal or dashboard
-/// WebSocket lane. Returns the stream back when `peeked` was not an upgrade
-/// after all, so the caller can fall through to ordinary HTTP routing.
-fn route_upgrade(
-    stream: TcpStream,
-    peeked: &RequestHead,
-    broadcaster: &Broadcaster,
-    base: &Path,
-    running: &AtomicBool,
-    limits: &Arc<Limits>,
-    lane: Option<&TerminalLane>,
-) -> Option<TcpStream> {
-    if peeked.upgrade_websocket && peeked.path.starts_with("/ws/terminal/") {
-        terminal::handle_upgrade(stream, peeked, base, lane, running, limits);
-        return None;
-    }
-    if peeked.path == "/ws" && peeked.upgrade_websocket {
-        handle_websocket_upgrade(stream, peeked, broadcaster, running, limits);
-        return None;
-    }
-    Some(stream)
-}
-
-fn bootstrap_terminal_token(
+/// Peek the request head and clear every pre-routing gate: read/write
+/// timeouts, `Host`, the bootstrap redirect, and (in remote mode) the
+/// dashboard cookie. `None` means the connection is already finished -
+/// refused or redirected - and `handle` must return without reading further.
+fn gate(
     stream: &mut TcpStream,
-    head: &RequestHead,
-    lane: Option<&TerminalLane>,
-) -> bool {
-    if head.path != "/" || !matches!(head.method.as_str(), "GET" | "HEAD") {
-        return false;
-    }
-    let Some(lane) = lane else {
-        return false;
-    };
-    let Some(cookie) = lane.bootstrap_cookie(head.query.as_deref()) else {
-        return false;
-    };
-    let Some(cookie) = cookie else {
-        fail(stream, 403, "Forbidden", b"token not accepted");
-        return true;
-    };
-    let _ = http::write_redirect(stream, "/", Some(&cookie));
-    true
-}
-
-/// Upgrade an accepted `/ws` connection, or reject it if the origin check or
-/// the WebSocket sub-cap turns it away. `stream`'s head was only peeked, not
-/// consumed, above; on success that leaves the handshake bytes unread for
-/// `tungstenite::accept` to parse itself.
-fn handle_websocket_upgrade(
-    mut stream: TcpStream,
-    peeked: &RequestHead,
-    broadcaster: &Broadcaster,
     running: &AtomicBool,
-    limits: &Arc<Limits>,
-) {
-    if !http::origin_allowed(peeked.origin.as_deref()) {
-        fail(&mut stream, 403, "Forbidden", b"origin not allowed");
-        return;
+    policy: &AccessPolicy,
+    local: SocketAddr,
+    lane: Option<&TerminalLane>,
+) -> Option<RequestHead> {
+    if stream.set_read_timeout(Some(PEEK_TIMEOUT)).is_err()
+        || stream.set_write_timeout(Some(WRITE_TIMEOUT)).is_err()
+    {
+        return None;
     }
-    // Held until this subscription ends, so open tabs cannot consume the
-    // connection slots ordinary requests need.
-    let Some(_slot) = Slot::acquire(limits, Lane::WebSocket) else {
-        fail(
-            &mut stream,
-            503,
-            "Service Unavailable",
-            b"dashboard subscription limit reached",
-        );
-        return;
-    };
-    if stream.set_read_timeout(None).is_ok() {
-        ws::handle(stream, broadcaster.subscribe(), running);
+    let peeked = complete_head(stream, running)?;
+    // Ahead of routing, so the gate covers `/ws`, `/api/status` and the
+    // embedded assets alike.
+    if !policy.host_allowed(local, &peeked) {
+        fail(stream, 403, "Forbidden", b"host not allowed");
+        return None;
     }
+    if bootstrap_terminal_token(stream, &peeked, policy, lane, local) {
+        return None;
+    }
+    // Every route past the bootstrap above requires the dashboard cookie in
+    // remote mode; a no-op check in the default loopback posture.
+    if !policy.authenticated(peeked.cookie.as_deref()) {
+        fail(stream, 401, "Unauthorized", b"dashboard cookie required");
+        return None;
+    }
+    Some(peeked)
 }
 
 /// Read and discard whatever the client has already sent, up to
@@ -249,16 +209,19 @@ pub(super) fn fail(stream: &mut TcpStream, status: u16, reason: &str, body: &[u8
     );
 }
 
+#[allow(clippy::too_many_arguments)]
 fn handle_route(
     stream: &mut TcpStream,
     head: &RequestHead,
     route: Route,
     broadcaster: &Broadcaster,
     base: &Path,
+    policy: &AccessPolicy,
+    local: SocketAddr,
 ) {
     match route {
-        Route::Api => serve_api(stream, head, broadcaster, base),
-        Route::Config => config_api::serve_get(stream, head, base),
+        Route::Api => serve_api(stream, head, broadcaster, base, policy, local),
+        Route::Config => config_api::serve_get(stream, head, base, policy, local),
         Route::Asset { body, mime } => respond(stream, head, 200, "OK", mime, body),
         Route::Missing => respond(
             stream,
@@ -272,8 +235,15 @@ fn handle_route(
     }
 }
 
-fn serve_api(stream: &mut TcpStream, head: &RequestHead, broadcaster: &Broadcaster, base: &Path) {
-    if !http::origin_allowed(head.origin.as_deref()) {
+fn serve_api(
+    stream: &mut TcpStream,
+    head: &RequestHead,
+    broadcaster: &Broadcaster,
+    base: &Path,
+    policy: &AccessPolicy,
+    local: SocketAddr,
+) {
+    if !policy.origin_allowed(local, head, OriginRequirement::Optional) {
         respond(
             stream,
             head,

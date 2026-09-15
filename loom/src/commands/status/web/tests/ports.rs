@@ -1,12 +1,13 @@
 //! Port-selection tests use real loopback listeners to exercise bind failures.
 
 use std::io::ErrorKind;
-use std::net::TcpListener;
+use std::net::{IpAddr, Ipv4Addr, TcpListener};
 
 use super::skip_without_loopback;
-use crate::commands::status::web::{
-    bind_first_available_loopback_port, bind_listener, DEFAULT_PORT,
-};
+use crate::commands::status::web::listener::{bind_first_available_port, bind_listener};
+use crate::commands::status::web::DEFAULT_PORT;
+
+const LOOPBACK: IpAddr = IpAddr::V4(Ipv4Addr::LOCALHOST);
 
 fn occupy_port_with_successor() -> TcpListener {
     for _ in 0..8 {
@@ -26,7 +27,7 @@ fn automatic_port_selection_advances_past_an_occupied_port() {
     let occupied = occupy_port_with_successor();
     let start_port = occupied.local_addr().expect("occupied address").port();
 
-    let selected = bind_first_available_loopback_port(start_port)
+    let selected = bind_first_available_port(LOOPBACK, start_port)
         .expect("select a port after the occupied start");
     assert!(
         selected.local_addr().expect("selected address").port() > start_port,
@@ -51,7 +52,7 @@ fn automatic_port_selection_starts_at_the_default_port() {
     };
     drop(probe);
 
-    let selected = bind_listener(None).expect("bind an available default dashboard port");
+    let selected = bind_listener(LOOPBACK, None).expect("bind an available default dashboard port");
     assert_eq!(
         selected.local_addr().expect("selected address").port(),
         DEFAULT_PORT,
@@ -64,7 +65,7 @@ fn explicit_zero_binds_an_ephemeral_port() {
     if skip_without_loopback("explicit_zero_binds_an_ephemeral_port") {
         return;
     }
-    let listener = bind_listener(Some(0)).expect("bind explicit ephemeral port");
+    let listener = bind_listener(LOOPBACK, Some(0)).expect("bind explicit ephemeral port");
     assert_ne!(listener.local_addr().expect("listener address").port(), 0);
 }
 
@@ -76,7 +77,7 @@ fn explicit_port_does_not_fall_back_when_occupied() {
     let occupied = TcpListener::bind("127.0.0.1:0").expect("occupy an ephemeral port");
     let port = occupied.local_addr().expect("occupied address").port();
 
-    let error = bind_listener(Some(port)).expect_err("explicit occupied port must fail");
+    let error = bind_listener(LOOPBACK, Some(port)).expect_err("explicit occupied port must fail");
     assert!(
         error.chain().any(|cause| {
             cause
@@ -84,5 +85,18 @@ fn explicit_port_does_not_fall_back_when_occupied() {
                 .is_some_and(|io| io.kind() == ErrorKind::AddrInUse)
         }),
         "expected AddrInUse for explicit port {port}: {error:#}"
+    );
+}
+
+#[test]
+fn wildcard_host_binds_across_interfaces() {
+    if skip_without_loopback("wildcard_host_binds_across_interfaces") {
+        return;
+    }
+    let listener = bind_listener(IpAddr::V4(Ipv4Addr::UNSPECIFIED), Some(0))
+        .expect("bind an ephemeral wildcard port");
+    assert_eq!(
+        listener.local_addr().expect("listener address").ip(),
+        IpAddr::V4(Ipv4Addr::UNSPECIFIED)
     );
 }
