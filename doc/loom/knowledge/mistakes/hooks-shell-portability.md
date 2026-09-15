@@ -83,3 +83,13 @@ file. `rg` is recursive by default; never pass `-r` unless you mean `--replace`.
 **Prevention**: A hook command's interpreter is decided per script from its shebang, never per capsule; a preflight resolves each interpreter on the pinned hook PATH. When a hook times out, read the session transcript's `hook_cancelled` attachment first; it names the exact command. Never diagnose a hook by running it under a different environment than the wrapper's (`env -i` with the wrapper's allowlist, `DISPLAY` included).
 
 **Fix**: `HostFacts` carries `python3` (found on `hook_path`) and the shebang-detected Python hook scripts; the capsule writes `<python3> <script>` for those and `/bin/bash <script>` for the rest, dropping a Python hook with a warning when no python3 is pinned. `python3` joined preflight check 4's `HOOK_TOOLS`.
+
+## `BASH_SOURCE[0]` Is Unset When the Script Arrives on Stdin (2026-09-15)
+
+**What happened**: The documented install, `curl -fsSL .../install.sh | bash`, died at `install.sh:13` with `BASH_SOURCE[0]: unbound variable` and `cd: null directory`, followed by curl's `(23) Failure writing output` once bash closed the pipe. Reported from an Ubuntu 26.04 live CD (bash 5.3.9); bash 5.2 fails the same way. The line dated from the script's creation (2025-12-21), so the remote install path had never run.
+
+**Why**: When bash reads a script from stdin, `BASH_SOURCE` is an empty array, and under `set -u` the expansion `"${BASH_SOURCE[0]}"` aborts. Every local run used `bash ./install.sh`, which sets it, and no test fed the script on stdin.
+
+**Prevention**: In a script meant for `curl | bash`, read `${BASH_SOURCE[0]:-}` and treat empty as "no source file". Do not fall back to `$0` or the working directory: a pipe run from inside a checkout would then take the local path. Test the pipe form itself with `bash -s -- --help < install.sh`.
+
+**Fix**: `SCRIPT_DIR` stays empty without a source file and `is_curl_pipe` returns true when it is empty (`install.sh:13-17`, `install.sh:82-87`). `install_sh_runs_when_piped_on_stdin` in `loom/tests/integration/install_assets.rs` pipes the script to `bash -s -- --help`.
