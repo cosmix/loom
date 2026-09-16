@@ -2,7 +2,7 @@ import { cn } from "cn";
 import type { ReactElement } from "react";
 import { useId } from "react";
 
-import type { ConfigEntry, ConfigScope, ConfigSnapshot } from "@/api/config";
+import type { ConfigEntry, ConfigScope, ConfigSnapshot, ConfigValue } from "@/api/config";
 import { BuiltinValue, LaneSlot, PairSummary } from "@/components/settings-control";
 import {
   LANES,
@@ -24,7 +24,7 @@ export interface SettingsTableProps {
   sections: SectionRows[];
   query: string;
   statuses: Record<string, WriteStatus>;
-  onWrite: (scope: ConfigScope, name: string, value: string | null) => void;
+  onWrite: (scope: ConfigScope, name: string, value: ConfigValue | null) => void;
 }
 
 const TIER_LABEL: Readonly<Record<Lane, string>> = {

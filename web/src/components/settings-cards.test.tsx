@@ -89,6 +89,6 @@ describe("settings cards", () => {
 
     fireEvent.click(toggle);
 
-    expect(writes).toEqual([{ scope: "user", name: "update.check", value: "false" }]);
+    expect(writes).toEqual([{ scope: "user", name: "update.check", value: false }]);
   });
 });

@@ -1,4 +1,4 @@
-import type { ConfigEntry, ConfigKind, ConfigScope } from "@/api/config";
+import type { ConfigEntry, ConfigKind, ConfigScope, ConfigValue } from "@/api/config";
 
 export const USER_CONFIG_PATH = "~/.loom/config.toml";
 
@@ -43,7 +43,7 @@ export function provenanceAt(entry: ConfigEntry, scope: ConfigScope): Provenance
 }
 
 /// The value a control at `scope` shows, or null when it has none to show.
-export function valueAt(entry: ConfigEntry, scope: ConfigScope): string | null {
+export function valueAt(entry: ConfigEntry, scope: ConfigScope): ConfigValue | null {
   if (scope === "user") return entry.user.value;
   return entry.project?.value ?? null;
 }
@@ -52,15 +52,15 @@ export function valueAt(entry: ConfigEntry, scope: ConfigScope): string | null {
 export function fallbackFor(
   entry: ConfigEntry,
   scope: ConfigScope,
-): { tier: string; value: string } {
+): { tier: string; value: ConfigValue } {
   if (scope === "project") return { tier: "user", value: entry.user.value };
   return { tier: "built-in", value: entry.default };
 }
 
-/// Values are strings on the wire; booleans read better as words.
-export function displayValue(kind: ConfigKind, value: string): string {
-  if (kind.type === "bool") return value === "true" ? "on" : "off";
-  return value;
+/// Booleans read better as words than as `true`/`false`.
+export function displayValue(kind: ConfigKind, value: ConfigValue): string {
+  if (kind.type === "bool") return value === true ? "on" : "off";
+  return String(value);
 }
 
 /// The three files a key can resolve from, left (weakest) to right
@@ -97,7 +97,7 @@ export interface LaneState {
   /// What a control in this lane shows: the value the file sets, or the
   /// value falling through from the tier below; null only when provenance
   /// is "unavailable".
-  value: string | null;
+  value: ConfigValue | null;
   provenance: LaneProvenance;
   effective: boolean;
 }
@@ -214,15 +214,15 @@ function rowHaystack(section: SectionRows, row: SettingsRow): string {
       entry.name,
       fieldOf(entry.name),
       entry.help,
-      entry.default,
+      String(entry.default),
       displayValue(entry.kind, entry.default),
-      entry.user.value,
+      String(entry.user.value),
       displayValue(entry.kind, entry.user.value),
-      entry.effective.value,
+      String(entry.effective.value),
       displayValue(entry.kind, entry.effective.value),
     );
     if (entry.project !== null) {
-      parts.push(entry.project.value, displayValue(entry.kind, entry.project.value));
+      parts.push(String(entry.project.value), displayValue(entry.kind, entry.project.value));
     }
   }
   return parts.join(" ").toLowerCase();
@@ -239,21 +239,23 @@ export function filterSections(sections: SectionRows[], query: string): SectionR
     .filter((section) => section.rows.length > 0);
 }
 
-export function formatValue(kind: ConfigKind, value: string): string {
+export function formatValue(kind: ConfigKind, value: ConfigValue): string {
   if (kind.type === "bool") return displayValue(kind, value);
-  if (kind.type === "u32" && /^\d+$/.test(value)) return Number(value).toLocaleString("en-US");
-  return value;
+  if (kind.type === "number" && typeof value === "number") {
+    return value.toLocaleString("en-US");
+  }
+  return String(value);
 }
 
 /// Writes one key's value at one scope, or clears it (`null`) to fall back
 /// to the tier below.
-export type OnWrite = (scope: ConfigScope, name: string, value: string | null) => void;
+export type OnWrite = (scope: ConfigScope, name: string, value: ConfigValue | null) => void;
 
 /// One key's write in flight or just settled; the control shows the pending
 /// value until the server answers, then the entry it returned.
 export type WriteStatus =
   | { phase: "idle" }
-  | { phase: "pending"; value: string | null }
+  | { phase: "pending"; value: ConfigValue | null }
   | { phase: "saved" }
   | { phase: "error"; message: string };
 

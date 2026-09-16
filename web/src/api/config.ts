@@ -3,24 +3,31 @@ import { z } from "zod";
 /// The `/api/config` wire model: every registry key with its resolved value
 /// at each scope, and where the value loom will actually use came from.
 export const configScopeSchema = z.enum(["user", "project"]);
+
+/// A config value as the server sends it: native JSON, shaped by the entry's
+/// `kind`. A bool key sends a boolean, a number key a number, an enum or a
+/// free-text string key sends a string.
+export const configValueSchema = z.union([z.boolean(), z.number(), z.string()]);
+
 export const configKindSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("bool") }),
-  z.object({ type: z.literal("u32") }),
+  z.object({ type: z.literal("number") }),
   z.object({ type: z.literal("enum"), variants: z.array(z.string()) }),
+  z.object({ type: z.literal("string") }),
 ]);
 /// `value` is the value resolved at that scope (the inherited one when the
 /// file does not set it); `set` is whether the file itself sets it.
-export const scopeValueSchema = z.object({ value: z.string(), set: z.boolean() });
+export const scopeValueSchema = z.object({ value: configValueSchema, set: z.boolean() });
 export const configEntrySchema = z.object({
   name: z.string(),
   help: z.string(),
   kind: configKindSchema,
   scopes: z.array(configScopeSchema),
-  default: z.string(),
+  default: configValueSchema,
   user: scopeValueSchema,
   project: scopeValueSchema.nullable(),
   effective: z.object({
-    value: z.string(),
+    value: configValueSchema,
     source: z.enum(["project", "user", "default"]),
   }),
 });
@@ -33,6 +40,7 @@ const writeResponseSchema = z.object({ entry: configEntrySchema });
 const errorResponseSchema = z.object({ error: z.string() });
 
 export type ConfigScope = z.infer<typeof configScopeSchema>;
+export type ConfigValue = z.infer<typeof configValueSchema>;
 export type ConfigKind = z.infer<typeof configKindSchema>;
 export type ConfigEntry = z.infer<typeof configEntrySchema>;
 export type ConfigSnapshot = z.infer<typeof configResponseSchema>;
@@ -41,7 +49,7 @@ export interface ConfigWrite {
   scope: ConfigScope;
   name: string;
   /// `null` unsets the key at that scope so it falls back to the tier below.
-  value: string | null;
+  value: ConfigValue | null;
 }
 
 export type WriteResult =

@@ -2,7 +2,7 @@ import { ChevronDownIcon } from "lucide-react";
 import type { ReactElement } from "react";
 import { useState } from "react";
 
-import type { ConfigEntry, ConfigKind } from "@/api/config";
+import type { ConfigEntry, ConfigKind, ConfigValue } from "@/api/config";
 import { BusyRoundel } from "@/aurora-ui/feedback/BusyRoundel";
 import {
   effectiveLane,
@@ -20,14 +20,14 @@ export interface ControlProps {
   kind: ConfigKind;
   /// The value the control shows: the in-flight one while a write is
   /// pending, otherwise the server's last known value at this lane.
-  value: string;
+  value: ConfigValue;
   pending: boolean;
   invalid: boolean;
   /// Accessible name; the same key appears once per lane, so callers pass
   /// `${fieldOf(name)} at ${lane} scope`.
   label: string;
   describedBy?: string;
-  onCommit: (value: string) => void;
+  onCommit: (value: ConfigValue) => void;
 }
 
 /// One control per wire `kind`; the key name never decides the widget.
@@ -35,10 +35,12 @@ export function ValueControl(props: ControlProps): ReactElement {
   switch (props.kind.type) {
     case "bool":
       return <BoolSwitch {...props} />;
-    case "u32":
+    case "number":
       return <NumberField {...props} />;
     case "enum":
       return <EnumSelect {...props} variants={props.kind.variants} />;
+    case "string":
+      return <StringField {...props} />;
   }
 }
 
@@ -49,14 +51,14 @@ function BoolSwitch({ id, value, pending, invalid, label, describedBy, onCommit 
       type="checkbox"
       role="switch"
       className="settings-switch"
-      checked={value === "true"}
-      aria-checked={value === "true"}
+      checked={value === true}
+      aria-checked={value === true}
       aria-label={label}
       aria-busy={pending || undefined}
       aria-invalid={invalid || undefined}
       aria-describedby={describedBy}
       disabled={pending}
-      onChange={(event) => onCommit(event.target.checked ? "true" : "false")}
+      onChange={(event) => onCommit(event.target.checked)}
     />
   );
 }
@@ -64,34 +66,66 @@ function BoolSwitch({ id, value, pending, invalid, label, describedBy, onCommit 
 /// Text rather than `type="number"`: the server's validator owns the rules,
 /// and a text field lets its message about "abc" reach the operator instead
 /// of the browser silently refusing the keystrokes.
-function NumberField({ id, value, pending, invalid, label, describedBy, onCommit }: ControlProps) {
+const U32_MAX = 4294967295;
+
+/** The number Rust's `u32::from_str` reads from `text`, or null when it
+ *  rejects it: an optional `+`, then ASCII digits only, at most u32::MAX. */
+function asU32(text: string): number | null {
+  if (!/^\+?[0-9]+$/.test(text)) return null;
+  const parsed = Number(text);
+  return parsed <= U32_MAX ? parsed : null;
+}
+
+function NumberField(props: ControlProps): ReactElement {
+  return (
+    <DraftField
+      {...props}
+      className="settings-ctl settings-ctl-num"
+      inputMode="numeric"
+      commitValue={(text) => asU32(text) ?? text}
+    />
+  );
+}
+
+function StringField(props: ControlProps): ReactElement {
+  return <DraftField {...props} className="settings-ctl" commitValue={(text) => text} />;
+}
+
+type DraftFieldProps = ControlProps & {
+  inputMode?: "numeric";
+  className: string;
+  commitValue: (text: string) => ConfigValue;
+};
+
+function DraftField(props: DraftFieldProps): ReactElement {
   // Local draft only while editing; null means "show the server's value",
   // which is also how a failed write reverts without an effect.
   const [draft, setDraft] = useState<string | null>(null);
-  const shown = draft ?? value;
+  const shown = draft ?? String(props.value);
 
   const commit = () => {
     if (draft === null) return;
     const next = draft.trim();
     setDraft(null);
-    if (next !== value) onCommit(next);
+    if (next === String(props.value)) return;
+    props.onCommit(props.commitValue(next));
   };
 
   return (
     <input
-      id={id}
+      id={props.id}
       type="text"
-      inputMode="numeric"
+      inputMode={props.inputMode}
       autoComplete="off"
       spellCheck={false}
-      className="settings-ctl settings-ctl-num"
+      className={props.className}
       value={shown}
       data-draft={draft !== null || undefined}
-      aria-label={label}
-      aria-busy={pending || undefined}
-      aria-invalid={invalid || undefined}
-      aria-describedby={describedBy}
-      disabled={pending}
+      aria-label={props.label}
+      aria-busy={props.pending || undefined}
+      aria-invalid={props.invalid || undefined}
+      aria-describedby={props.describedBy}
+      disabled={props.pending}
       onChange={(event) => setDraft(event.target.value)}
       onBlur={commit}
       onKeyDown={(event) => {
@@ -119,13 +153,14 @@ function EnumSelect({
 }: ControlProps & { variants: string[] }) {
   // A value the registry no longer lists still needs an option, or the
   // select would silently show the first variant instead of the truth.
-  const options = variants.includes(value) ? variants : [value, ...variants];
+  const current = String(value);
+  const options = variants.includes(current) ? variants : [current, ...variants];
   return (
     <span className="settings-select-wrap">
       <select
         id={id}
         className="settings-ctl settings-select"
-        value={value}
+        value={current}
         aria-label={label}
         aria-busy={pending || undefined}
         aria-invalid={invalid || undefined}
@@ -160,7 +195,7 @@ export interface LaneSlotProps {
   lane: "user" | "project";
   status: WriteStatus;
   controlId: string;
-  onWrite: (value: string | null) => void;
+  onWrite: (value: ConfigValue | null) => void;
 }
 
 /// The ✕ that clears a set value back to its fallback; a title spells out
