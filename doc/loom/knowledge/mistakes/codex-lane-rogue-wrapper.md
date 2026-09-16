@@ -1,6 +1,6 @@
 # Codex Lane Rogue Wrapper
 
-> A forwarding wrapper that did the task itself instead of forwarding, and why the codex sandbox state-dir escape hatch is not one.
+> A wrapper implemented the task instead of forwarding it
 
 ## A forwarding wrapper implemented the task itself (2026-08-07)
 

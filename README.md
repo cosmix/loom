@@ -399,7 +399,7 @@ Neither file needs to exist: every key has a built-in default. `LOOM_HOME` reloc
 
 There are three ways to change a setting:
 
-1. **`loom config`.** Run bare in a terminal it opens a settings screen; with flags it is scriptable. `loom config -k <key>` prints one key, `loom config -k <key> <value>` writes it (validated against the key's type and value set), `loom config --list` prints every key with its value and where it came from, and `loom config --print` prints the resolved user config as TOML. It reads and writes the user file only.
+1. **`loom config`.** Run bare in a terminal it opens a settings screen; with flags it is scriptable. `loom config -k <key>` prints one key, `loom config -k <key> <value>` writes it (validated against the key's type and value set), `loom config --list` prints every key with its value and where it came from, and `loom config --print` prints the resolved user config as TOML. It reads and writes the user file only. The settings screen edits each row by its type: `↑↓`/`k`/`j` move, `←→`/`h`/`l`/space cycle an enum's variants or toggle a bool, `Enter` opens a text editor for a number or free-text key (and steps a bool/enum forward otherwise, so no keystroke opens a text field on a closed vocabulary), `s` saves, `Esc`/`q` quits, `*` marks a pending change.
 2. **Edit the files.** Both files use the same `[section]` / `key = value` layout as the table below; project sections may be partial. `loom init` writes a `[context]` section into the project file, everything else is opt-in.
 3. **The dashboard.** `loom status --web` has a settings dialog that edits both files, one key at a time, with the resolution shown per key ([Web Dashboard Settings](#web-dashboard-settings)).
 

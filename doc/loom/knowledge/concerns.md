@@ -235,3 +235,7 @@ RESOLVED the same day. The stage recorded this as an open daemon problem (stale 
 An env-var gate an agent can unset is class 1 of three enforcement classes; only the OS sandbox, the capsule deny layers and the daemon ancestry checks carry authority. Seven gaps follow, led by commits policed by text matching, an undenied worktree `.git` surface, and no CI proof that any denial holds.
 
 → [Agent Rule-Bending Hardening](concerns/agent-rule-bending-hardening.md)
+
+## Typed Config Values: Known Gaps (2026-09-16)
+
+Accepted limitations and test-coverage gaps in the typed config read-path (TUI control-char stripping, no non-interactive unset, an untagged-enum wire limitation, a TUI test gap). See [Typed Config Values: Known Gaps](concerns/typed-config-values.md).

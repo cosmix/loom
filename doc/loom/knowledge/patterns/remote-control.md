@@ -1,6 +1,6 @@
 # Remote Control
 
-> The detect-capability, preflight, resolve-invocation shape for external agent binaries.
+> Detect-capability/preflight/resolve shape for external agents
 
 ## Remote Control Capability/Preflight/Resolve Pattern (2026-05-14, extended 2026-08-08)
 

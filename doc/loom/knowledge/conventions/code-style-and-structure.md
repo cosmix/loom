@@ -253,3 +253,12 @@ pre-push hook of the tag push itself, then `.github/workflows/release.yml`'s tes
 depends on the identity branches on `loom::version::VERSION` (a `semver` `pre.is_empty()` means a
 release) instead of assuming `-dev`. See "A Test That Assumed a Dev Build Blocked the Release-Tag
 Push" in [Testing & Lint](../mistakes/testing-and-lint.md).
+
+## `bun run --cwd web test -- <filter>` Is a Vitest Path Filter
+
+`bun` strips the `--` and forwards the rest as a positional argument, which vitest treats as a path
+filter (must match a real test file, not a describe/test name — vitest exits 1 "No test files
+found" on a filter that matches nothing). A narrowly-scoped check over web changes needs a real
+filename, e.g. `settings-model.test.ts`, `settings-cards.test.tsx`, `settings-dialog.test.tsx` —
+there is no one-test-file-per-component guarantee; a component file may have no matching test file
+at all.

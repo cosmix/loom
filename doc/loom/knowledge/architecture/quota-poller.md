@@ -1,6 +1,6 @@
 # Quota Poller
 
-> How loom learns the operator's Claude and Codex subscription budget, where it caches it, and what the two dashboards do with it. Module: `loom/src/quota/`.
+> Claude/Codex usage-quota polling, caching, and rendering
 
 ## Sources
 

@@ -291,11 +291,11 @@ orchestrator recovers via the exact receipt (`agents/loom-codex-forwarder.md:54-
 
 ## A Feature Carved Out of a Plan Still Owns Its User Docs (2026-09-16)
 
-**What happened:** asked to implement "just the web host parameterisation" from
-`PLAN-web-host-graft-followthrough.md`, the orchestrator shipped and committed `--host` with no
-README, CHANGELOG or knowledge update, then reported docs as out of scope because the plan had
-assigned them to its final distillation stage. The README still said the dashboard was a
-`127.0.0.1`-only, unauthenticated tool, so it was wrong the moment the feature merged.
+**What happened:** asked to implement "just the web host parameterisation" slice of a larger plan
+(whose final knowledge-distill stage had been dropped from the request), the orchestrator shipped
+and committed `--host` with no README, CHANGELOG or knowledge update, then reported docs as out of
+scope because the plan had assigned them to its final distillation stage. The README still said the
+dashboard was a `127.0.0.1`-only, unauthenticated tool, so it was wrong the moment the feature merged.
 
 **Why:** the plan's ownership split (docs belong to knowledge-distill) was applied to a request that
 dropped that stage. Removing the stage removed the only owner of the docs; nothing moved them back

@@ -1,6 +1,6 @@
 # Refactor Stragglers
 
-> What a large removal or rename leaves behind: straggler initializers, stale comments, stale docs, duplicate modules.
+> What a large removal or rename leaves behind, uncleaned
 
 ## Source vs Installed: Editing Wrong File
 
@@ -92,3 +92,15 @@ and the new hook compiles, installs, and runs correctly — the only symptom is
 **Prevention:** when adding or removing a global hook, grep for every hardcoded count of
 `pre_tool_hooks`/`post_tool_use`/similar lists, not just the documented checklist — a passing count
 assertion elsewhere is a silent fourth site.
+
+## A Codex-Split Extraction Left a Dead Wrapper Only Clippy Caught
+
+**What happened:** codex unit w2b extracted `dispatch_key`/`dispatch_edit_key` as free functions out
+of `ConfigTui::handle_edit_key`, but left `handle_edit_key` itself in place as a now-unused wrapper
+(`loom/src/commands/config/tui/mod.rs:116`). The scoped `cargo test` the unit ran passed cleanly;
+only `cargo clippy --all-targets -D warnings` (`dead_code`) caught the stale method.
+
+**Prevention:** when a brief says "extract X into free functions", grep for the old method
+afterward — a passing scoped test suite proves the new code works, not that the old entry point is
+gone. `cargo clippy --all-targets -D warnings` over the full tree remains the orchestrator's job,
+never a subagent's, and it is the check that actually finds this class of straggler.

@@ -1,6 +1,6 @@
 # Sandbox And Settings
 
-> Sandbox path rules, permission sync, excludedCommands matching, and settings env leaking between main repo and worktrees.
+> Sandbox path rules, permission sync, settings merge traps
 
 ## Sandbox: Contradictory Path Rules
 

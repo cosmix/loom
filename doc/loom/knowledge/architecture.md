@@ -96,9 +96,7 @@ Four verification layers; **`truths` is NOT one of them** — merged into accept
 
 ## Hook System Architecture (loom-hooks/)
 
-The `loom-hooks/` scripts, how they are embedded and installed, the SessionStart
-`hookSpecificOutput` contract, and the enforcement layers that keep subagents inside their
-lane (`commit-filter.sh`, `subagent-verify-guard.sh`, the worktree guards).
+The `loom-hooks/` scripts, how they are embedded and installed, the SessionStart `hookSpecificOutput` contract, and the enforcement layers that keep subagents inside their lane (`commit-filter.sh`, `subagent-verify-guard.sh`, the worktree guards).
 
 → [Hook System](architecture/hook-system.md)
 
@@ -246,3 +244,7 @@ A daemon thread (`loom/src/quota/poller.rs`) polls the Claude OAuth usage endpoi
 ## Completion Evidence Attestation and Session Exit Reasons
 
 Folded into [Owned Subagent Waits](#owned-subagent-waits) above.
+
+## Typed Config Values (`ConfigValue` Read-Path Seam)
+
+Typed value read-path replacing the old stringly `UserConfig::value_of`. See [Typed Config Values](architecture/config-value-types.md).
