@@ -51,6 +51,7 @@ mod tests_table {
         assert!(has_key(CODEX_SKILLS, "loom-skills/SKILL.md"));
         assert!(has_key(CLAUDE_AGENTS, "loom-software-engineer.md"));
         assert!(has_key(CLAUDE_COMMANDS, "pressure.md"));
+        assert!(has_key(CLAUDE_COMMANDS, "changelog.md"));
     }
 
     #[test]

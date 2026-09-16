@@ -194,6 +194,7 @@ fn hooks_and_managed_documents_have_expected_form() {
         .join("agents/loom-software-engineer.md")
         .is_file());
     assert!(paths.claude_dir.join("commands/pressure.md").is_file());
+    assert!(paths.claude_dir.join("commands/changelog.md").is_file());
     assert!(paths
         .claude_dir
         .join("hooks/loom/skill-keywords.json")

@@ -241,6 +241,16 @@ jobs:
           echo "tag=${TAG}" >> $GITHUB_OUTPUT
           echo "Version: $VERSION, Tag: $TAG"
 
+      - name: Extract changelog section
+        id: changelog
+        run: |
+          if bash scripts/changelog-section.sh CHANGELOG.md "${{ steps.version.outputs.version }}" > changelog_section.md; then
+            echo "found=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "found=false" >> "$GITHUB_OUTPUT"
+            : > changelog_section.md
+          fi
+
       # The trailing "What's Changed" heading is deliberately absent: the release
       # is created with `generate_release_notes: true`, and GitHub appends its own
       # "## What's Changed" section after this body. Adding one here duplicates it.
@@ -250,58 +260,23 @@ jobs:
           cat > release_notes.md << 'RELEASE_NOTES_EOF'
           ## loom ${{ steps.version.outputs.version }}
 
-          ### Installation
+          RELEASE_NOTES_EOF
 
-          The binary alone is not a working loom install. Loom's agents, skills, commands, hooks and orchestration rules are embedded in it and get written to `~/.claude/` and `~/.codex/` by `loom install-assets`, which the installer below runs for you.
+          if [ "${{ steps.changelog.outputs.found }}" = "true" ]; then
+            cat changelog_section.md >> release_notes.md
+            echo "" >> release_notes.md
+          fi
 
-          **Recommended (Linux x86_64 and macOS Apple Silicon):**
+          cat >> release_notes.md << 'RELEASE_NOTES_EOF'
+          ### Install
+
           ```bash
           curl -fsSL https://raw.githubusercontent.com/${{ github.repository }}/main/install.sh | bash
           ```
-          This downloads the signed binary for your platform to `~/.local/bin/loom` (make sure that directory is on your `PATH`) and runs `loom install-assets`. Requires `jq`; `ripgrep` and `fd` are recommended.
 
-          **Windows (WSL2):** supported — the installer above picks the Linux x86_64 binary. Run stages on the
-          tmux backend (`loom run --backend tmux`); a stock WSL install ships no Linux GUI stack,
-          so the native backend has no terminal emulator to detect. Details:
-          [Running under WSL](https://github.com/${{ github.repository }}/blob/${{ steps.version.outputs.tag }}/README.md#running-under-wsl).
+          Installs the signed binary for your platform to `~/.local/bin/loom` and runs `loom install-assets`, which writes loom's agents, skills, commands and hooks into `~/.claude/` and `~/.codex/` — the binary alone is not a working install. Requires `jq`.
 
-          **Manual, pinned to this release (Linux x86_64):**
-          ```bash
-          mkdir -p ~/.local/bin
-          curl -fsSL https://github.com/${{ github.repository }}/releases/download/${{ steps.version.outputs.tag }}/loom-linux-x86_64 -o ~/.local/bin/loom
-          chmod +x ~/.local/bin/loom
-          ~/.local/bin/loom install-assets
-          ```
-
-          **Manual, pinned to this release (macOS Apple Silicon):**
-          ```bash
-          mkdir -p ~/.local/bin
-          curl -fsSL https://github.com/${{ github.repository }}/releases/download/${{ steps.version.outputs.tag }}/loom-darwin-arm64 -o ~/.local/bin/loom
-          chmod +x ~/.local/bin/loom
-          ~/.local/bin/loom install-assets
-          ```
-
-          ### Verify Signature
-
-          Each binary ships with a minisign signature, already checked in CI against
-          the public key `loom update` has embedded. Later upgrades via `loom update` verify the signature automatically.
-          ```bash
-          minisign -Vm loom-linux-x86_64 -P ${{ steps.pubkey.outputs.public_key }}
-          ```
-
-          ### Checksums
-
-          ```bash
-          # Linux
-          sha256sum -c SHA256SUMS.txt --ignore-missing
-
-          # macOS - check the one binary you downloaded
-          grep loom-darwin-arm64 SHA256SUMS.txt | shasum -a 256 -c
-          ```
-
-          ### Changelog
-
-          [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/${{ steps.version.outputs.tag }}/CHANGELOG.md)
+          Pinned downloads, WSL2 notes, signature verification with minisign and `SHA256SUMS.txt` checksums: [Installation](https://github.com/${{ github.repository }}/blob/${{ steps.version.outputs.tag }}/README.md#1-install-loom). Signed binaries and `.minisig` files are attached below.
           RELEASE_NOTES_EOF
 
       - name: Create GitHub Release
