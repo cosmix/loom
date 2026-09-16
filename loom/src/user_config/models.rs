@@ -9,7 +9,7 @@ use toml_edit::DocumentMut;
 
 use crate::models::stage::StageType;
 
-use super::{parse, KeySpec, Origin, UserConfig};
+use super::{parse, ConfigValue, KeySpec, Origin, UserConfig};
 
 /// The `[models]` section as the file set it. Eight keys, one model/effort
 /// pair per [`StageType`].
@@ -101,9 +101,9 @@ impl UserConfig {
             .unwrap_or_else(|| stage_type.default_reasoning_effort())
     }
 
-    /// The rendered value and origin for a `models.*` key, or `None` when
+    /// The typed value and origin for a `models.*` key, or `None` when
     /// `spec` is not one — the arm `UserConfig::value_of` delegates to.
-    pub(super) fn models_value_of(&self, spec: &KeySpec) -> Option<(String, Origin)> {
+    pub(super) fn models_value_of(&self, spec: &KeySpec) -> Option<(ConfigValue, Origin)> {
         let (stage_type, is_effort) = match spec.name {
             "models.standard_model" => (StageType::Standard, false),
             "models.standard_effort" => (StageType::Standard, true),
@@ -117,12 +117,12 @@ impl UserConfig {
         };
         let (value, set) = if is_effort {
             (
-                self.stage_reasoning_effort(stage_type).to_string(),
+                ConfigValue::Text(self.stage_reasoning_effort(stage_type).to_string()),
                 self.models.effort_for(stage_type),
             )
         } else {
             (
-                self.stage_model(stage_type).to_string(),
+                ConfigValue::Text(self.stage_model(stage_type).to_string()),
                 self.models.model_for(stage_type),
             )
         };
@@ -134,15 +134,27 @@ impl UserConfig {
     /// the blank line separating sections.
     pub(super) fn models_toml(&self) -> String {
         format!(
-            "[models]\nstandard_model = \"{}\"\nstandard_effort = \"{}\"\nknowledge_model = \"{}\"\nknowledge_effort = \"{}\"\nknowledge_distill_model = \"{}\"\nknowledge_distill_effort = \"{}\"\nintegration_verify_model = \"{}\"\nintegration_verify_effort = \"{}\"\n",
-            self.stage_model(StageType::Standard),
-            self.stage_reasoning_effort(StageType::Standard),
-            self.stage_model(StageType::Knowledge),
-            self.stage_reasoning_effort(StageType::Knowledge),
-            self.stage_model(StageType::KnowledgeDistill),
-            self.stage_reasoning_effort(StageType::KnowledgeDistill),
-            self.stage_model(StageType::IntegrationVerify),
-            self.stage_reasoning_effort(StageType::IntegrationVerify),
+            "[models]\nstandard_model = {}\nstandard_effort = {}\nknowledge_model = {}\nknowledge_effort = {}\nknowledge_distill_model = {}\nknowledge_distill_effort = {}\nintegration_verify_model = {}\nintegration_verify_effort = {}\n",
+            ConfigValue::Text(self.stage_model(StageType::Standard).to_string()).to_toml_literal(),
+            ConfigValue::Text(self.stage_reasoning_effort(StageType::Standard).to_string())
+                .to_toml_literal(),
+            ConfigValue::Text(self.stage_model(StageType::Knowledge).to_string()).to_toml_literal(),
+            ConfigValue::Text(self.stage_reasoning_effort(StageType::Knowledge).to_string())
+                .to_toml_literal(),
+            ConfigValue::Text(self.stage_model(StageType::KnowledgeDistill).to_string())
+                .to_toml_literal(),
+            ConfigValue::Text(
+                self.stage_reasoning_effort(StageType::KnowledgeDistill)
+                    .to_string()
+            )
+            .to_toml_literal(),
+            ConfigValue::Text(self.stage_model(StageType::IntegrationVerify).to_string())
+                .to_toml_literal(),
+            ConfigValue::Text(
+                self.stage_reasoning_effort(StageType::IntegrationVerify)
+                    .to_string()
+            )
+            .to_toml_literal(),
         )
     }
 }

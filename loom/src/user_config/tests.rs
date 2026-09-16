@@ -8,40 +8,31 @@ use keys::{spec, ValueKind};
 // lives in `tests/persistence.rs`.
 
 mod persistence;
+mod value;
 
 #[test]
 fn each_key_parses_a_valid_value() {
     assert_eq!(
-        spec("update.check")
-            .unwrap()
-            .parse("true")
-            .unwrap()
-            .as_bool(),
-        Some(true)
+        spec("update.check").unwrap().parse("true").unwrap(),
+        ConfigValue::Bool(true)
     );
     assert_eq!(
         spec("update.check_interval_hours")
             .unwrap()
             .parse("6")
-            .unwrap()
-            .as_integer(),
-        Some(6)
+            .unwrap(),
+        ConfigValue::Number(6)
     );
     assert_eq!(
-        spec("terminal.backend")
-            .unwrap()
-            .parse("tmux")
-            .unwrap()
-            .as_str(),
-        Some("tmux")
+        spec("terminal.backend").unwrap().parse("tmux").unwrap(),
+        ConfigValue::Text("tmux".to_string())
     );
     assert_eq!(
         spec("context.ceiling_tokens")
             .unwrap()
             .parse("123456")
-            .unwrap()
-            .as_integer(),
-        Some(123456)
+            .unwrap(),
+        ConfigValue::Number(123456)
     );
 }
 
@@ -83,13 +74,16 @@ fn keys_are_typed_as_documented() {
     assert_eq!(spec("update.check").unwrap().kind, ValueKind::Bool);
     assert_eq!(
         spec("update.check_interval_hours").unwrap().kind,
-        ValueKind::U32
+        ValueKind::Number
     );
     assert_eq!(
         spec("terminal.backend").unwrap().kind,
         ValueKind::Enum(&["native", "tmux"])
     );
-    assert_eq!(spec("context.ceiling_tokens").unwrap().kind, ValueKind::U32);
+    assert_eq!(
+        spec("context.ceiling_tokens").unwrap().kind,
+        ValueKind::Number
+    );
 }
 
 #[test]
@@ -228,12 +222,12 @@ fn origin_is_set_only_for_keys_the_document_wrote() {
     let config = parse_document("[update]\ncheck_interval_hours = 6\n").unwrap();
 
     let (value, origin) = config.value_of(spec("update.check_interval_hours").unwrap());
-    assert_eq!(value, "6");
+    assert_eq!(value.to_string(), "6");
     assert_eq!(origin, Origin::Set);
     assert_eq!(origin.to_string(), "set");
 
     let (value, origin) = config.value_of(spec("terminal.backend").unwrap());
-    assert_eq!(value, "native");
+    assert_eq!(value.to_string(), "native");
     assert_eq!(origin, Origin::Default);
     assert_eq!(origin.to_string(), "default");
 }
@@ -244,19 +238,19 @@ fn origin_of_pressure_keys_reflects_set_versus_unset() {
         parse_document("[pressure]\nclaude_model = \"fable\"\nclaude_effort = \"low\"\n").unwrap();
 
     let (value, origin) = config.value_of(spec("pressure.claude_model").unwrap());
-    assert_eq!(value, "fable");
+    assert_eq!(value.to_string(), "fable");
     assert_eq!(origin, Origin::Set);
 
     let (value, origin) = config.value_of(spec("pressure.claude_effort").unwrap());
-    assert_eq!(value, "low");
+    assert_eq!(value.to_string(), "low");
     assert_eq!(origin, Origin::Set);
 
     let (value, origin) = config.value_of(spec("pressure.codex_model").unwrap());
-    assert_eq!(value, "gpt-5.6-sol");
+    assert_eq!(value.to_string(), "gpt-5.6-sol");
     assert_eq!(origin, Origin::Default);
 
     let (value, origin) = config.value_of(spec("pressure.codex_effort").unwrap());
-    assert_eq!(value, "xhigh");
+    assert_eq!(value.to_string(), "xhigh");
     assert_eq!(origin, Origin::Default);
 }
 
@@ -267,19 +261,19 @@ fn origin_of_models_keys_reflects_set_versus_unset() {
             .unwrap();
 
     let (value, origin) = config.value_of(spec("models.standard_model").unwrap());
-    assert_eq!(value, "sonnet");
+    assert_eq!(value.to_string(), "sonnet");
     assert_eq!(origin, Origin::Set);
 
     let (value, origin) = config.value_of(spec("models.standard_effort").unwrap());
-    assert_eq!(value, "low");
+    assert_eq!(value.to_string(), "low");
     assert_eq!(origin, Origin::Set);
 
     let (value, origin) = config.value_of(spec("models.knowledge_model").unwrap());
-    assert_eq!(value, "opus");
+    assert_eq!(value.to_string(), "opus");
     assert_eq!(origin, Origin::Default);
 
     let (value, origin) = config.value_of(spec("models.knowledge_effort").unwrap());
-    assert_eq!(value, "medium");
+    assert_eq!(value.to_string(), "medium");
     assert_eq!(origin, Origin::Default);
 }
 
@@ -308,8 +302,9 @@ fn to_toml_string_renders_every_key_resolved() {
     for key in keys::KEYS {
         let (value, _) = config.value_of(key);
         let expected = match key.kind {
-            ValueKind::Bool | ValueKind::U32 => format!("{} = {value}", key.field),
+            ValueKind::Bool | ValueKind::Number => format!("{} = {value}", key.field),
             ValueKind::Enum(_) => format!("{} = \"{value}\"", key.field),
+            ValueKind::String => unreachable!("no registered key uses ValueKind::String"),
         };
         assert!(
             rendered.contains(&expected),
@@ -329,6 +324,7 @@ fn value_of_has_an_arm_for_every_registered_key() {
     let config = UserConfig::default();
     for key in keys::KEYS {
         let (value, origin) = config.value_of(key);
+        let value = value.to_string();
         assert_eq!(origin, Origin::Default, "{}", key.name);
         match key.name {
             "update.check" => assert_eq!(value, "true"),

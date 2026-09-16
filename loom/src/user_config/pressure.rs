@@ -7,7 +7,7 @@
 use anyhow::Result;
 use toml_edit::DocumentMut;
 
-use super::{parse, KeySpec, Origin, UserConfig};
+use super::{parse, ConfigValue, KeySpec, Origin, UserConfig};
 
 /// The `[pressure]` section as the file set it: every field `Option` so
 /// "explicitly set" stays distinguishable from "fell through to the built-in",
@@ -120,32 +120,32 @@ impl UserConfig {
             .unwrap_or(crate::claude::DEFAULT_PRESSURE_ADDRESS_EFFORT)
     }
 
-    /// The rendered value and origin for a `pressure.*` key, or `None` when
+    /// The typed value and origin for a `pressure.*` key, or `None` when
     /// `spec` is not one — the arm `UserConfig::value_of` delegates to.
-    pub(super) fn pressure_value_of(&self, spec: &KeySpec) -> Option<(String, Origin)> {
+    pub(super) fn pressure_value_of(&self, spec: &KeySpec) -> Option<(ConfigValue, Origin)> {
         Some(match spec.name {
             "pressure.claude_model" => (
-                self.pressure_claude_model().to_string(),
+                ConfigValue::Text(self.pressure_claude_model().to_string()),
                 self.origin_of(self.pressure.claude_model.as_ref()),
             ),
             "pressure.claude_effort" => (
-                self.pressure_claude_effort().to_string(),
+                ConfigValue::Text(self.pressure_claude_effort().to_string()),
                 self.origin_of(self.pressure.claude_effort.as_ref()),
             ),
             "pressure.codex_model" => (
-                self.pressure_codex_model().to_string(),
+                ConfigValue::Text(self.pressure_codex_model().to_string()),
                 self.origin_of(self.pressure.codex_model.as_ref()),
             ),
             "pressure.codex_effort" => (
-                self.pressure_codex_effort().to_string(),
+                ConfigValue::Text(self.pressure_codex_effort().to_string()),
                 self.origin_of(self.pressure.codex_effort.as_ref()),
             ),
             "pressure.address_model" => (
-                self.pressure_address_model().to_string(),
+                ConfigValue::Text(self.pressure_address_model().to_string()),
                 self.origin_of(self.pressure.address_model.as_ref()),
             ),
             "pressure.address_effort" => (
-                self.pressure_address_effort().to_string(),
+                ConfigValue::Text(self.pressure_address_effort().to_string()),
                 self.origin_of(self.pressure.address_effort.as_ref()),
             ),
             _ => return None,
@@ -157,13 +157,13 @@ impl UserConfig {
     /// the blank line separating sections.
     pub(super) fn pressure_toml(&self) -> String {
         format!(
-            "[pressure]\nclaude_model = \"{}\"\nclaude_effort = \"{}\"\ncodex_model = \"{}\"\ncodex_effort = \"{}\"\naddress_model = \"{}\"\naddress_effort = \"{}\"\n",
-            self.pressure_claude_model(),
-            self.pressure_claude_effort(),
-            self.pressure_codex_model(),
-            self.pressure_codex_effort(),
-            self.pressure_address_model(),
-            self.pressure_address_effort(),
+            "[pressure]\nclaude_model = {}\nclaude_effort = {}\ncodex_model = {}\ncodex_effort = {}\naddress_model = {}\naddress_effort = {}\n",
+            ConfigValue::Text(self.pressure_claude_model().to_string()).to_toml_literal(),
+            ConfigValue::Text(self.pressure_claude_effort().to_string()).to_toml_literal(),
+            ConfigValue::Text(self.pressure_codex_model().to_string()).to_toml_literal(),
+            ConfigValue::Text(self.pressure_codex_effort().to_string()).to_toml_literal(),
+            ConfigValue::Text(self.pressure_address_model().to_string()).to_toml_literal(),
+            ConfigValue::Text(self.pressure_address_effort().to_string()).to_toml_literal(),
         )
     }
 }

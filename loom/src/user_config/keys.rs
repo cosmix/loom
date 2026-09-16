@@ -6,7 +6,9 @@
 //! [`crate::user_config::UserConfig`] — the registry names and validates a
 //! key, [`crate::user_config::UserConfig`] owns what it resolves to.
 
-use anyhow::{bail, Result};
+use anyhow::Result;
+
+use super::value::ConfigValue;
 
 /// The TOML value shape a [`KeySpec`] accepts.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -14,9 +16,11 @@ pub enum ValueKind {
     /// `true` / `false`.
     Bool,
     /// A non-negative integer.
-    U32,
+    Number,
     /// One of a fixed set of string variants.
     Enum(&'static [&'static str]),
+    /// Free text: any string the operator types.
+    String,
 }
 
 /// One entry in the user config's typed key registry: a dotted CLI key, the
@@ -52,7 +56,7 @@ pub const KEYS: &[KeySpec] = &[
         name: "update.check_interval_hours",
         section: "update",
         field: "check_interval_hours",
-        kind: ValueKind::U32,
+        kind: ValueKind::Number,
         help: "Hours between update checks",
     },
     KeySpec {
@@ -66,7 +70,7 @@ pub const KEYS: &[KeySpec] = &[
         name: "context.ceiling_tokens",
         section: "context",
         field: "ceiling_tokens",
-        kind: ValueKind::U32,
+        kind: ValueKind::Number,
         help: "Default context ceiling, in resident tokens, for a stage's agent session",
     },
     KeySpec {
@@ -181,39 +185,11 @@ pub fn spec(name: &str) -> Result<&'static KeySpec> {
 }
 
 impl KeySpec {
-    /// Parse an operator-supplied string into the TOML value this key holds,
-    /// erroring with the key name, the offending text and the expected type.
-    pub fn parse(&self, raw: &str) -> Result<toml_edit::Value> {
-        match self.kind {
-            ValueKind::Bool => raw
-                .parse::<bool>()
-                .map(toml_edit::Value::from)
-                .map_err(|_| {
-                    anyhow::anyhow!(
-                        "{}: {raw:?} is not a bool (expected true or false)",
-                        self.name
-                    )
-                }),
-            ValueKind::U32 => raw
-                .parse::<u32>()
-                .map(|v| toml_edit::Value::from(v as i64))
-                .map_err(|_| {
-                    anyhow::anyhow!(
-                        "{}: {raw:?} is not a u32 (expected a non-negative integer)",
-                        self.name
-                    )
-                }),
-            ValueKind::Enum(variants) => {
-                if variants.contains(&raw) {
-                    Ok(toml_edit::Value::from(raw))
-                } else {
-                    bail!(
-                        "{}: {raw:?} is not one of the expected values: {}",
-                        self.name,
-                        variants.join(", ")
-                    )
-                }
-            }
-        }
+    /// Parse an operator-supplied string into the typed value this key
+    /// holds, erroring with the key name, the offending text and the
+    /// expected type. Delegates to [`ConfigValue::parse`], which owns every
+    /// kind's parsing rule.
+    pub fn parse(&self, raw: &str) -> Result<ConfigValue> {
+        ConfigValue::parse(&self.kind, self.name, raw)
     }
 }

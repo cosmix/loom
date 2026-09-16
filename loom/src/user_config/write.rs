@@ -15,7 +15,7 @@ use std::path::Path;
 use anyhow::{Context, Result};
 use toml_edit::DocumentMut;
 
-use super::{parse_document, write_config_path, KeySpec};
+use super::{parse_document, write_config_path, ConfigValue, KeySpec};
 
 /// Read-modify-write `spec`'s key in `~/.loom/config.toml`, creating the
 /// section if absent. Comments and unrelated keys are preserved verbatim
@@ -27,7 +27,7 @@ use super::{parse_document, write_config_path, KeySpec};
 /// (`commands::config::set_key` used to) could report a value written by a
 /// concurrent `set` that raced it — `loom` is invoked concurrently from shell
 /// hooks, so that race is real.
-pub fn set(spec: &KeySpec, value: toml_edit::Value) -> Result<(String, String)> {
+pub fn set(spec: &KeySpec, value: ConfigValue) -> Result<(ConfigValue, ConfigValue)> {
     set_in(&write_config_path()?, spec, value)
 }
 
@@ -37,8 +37,8 @@ pub fn set(spec: &KeySpec, value: toml_edit::Value) -> Result<(String, String)> 
 pub(crate) fn set_in(
     path: &Path,
     spec: &KeySpec,
-    value: toml_edit::Value,
-) -> Result<(String, String)> {
+    value: ConfigValue,
+) -> Result<(ConfigValue, ConfigValue)> {
     locked_edit(path, spec, |doc| {
         let table = doc
             .entry(spec.section)
@@ -47,7 +47,7 @@ pub(crate) fn set_in(
             .ok_or_else(|| {
                 anyhow::anyhow!("[{}] in {} is not a table", spec.section, path.display())
             })?;
-        table.insert(spec.field, toml_edit::Item::Value(value));
+        table.insert(spec.field, toml_edit::Item::Value(value.to_toml_edit()));
         Ok(())
     })
 }
@@ -58,7 +58,7 @@ pub(crate) fn set_in(
 ///
 /// Returns the same before/after pair as [`set`], captured under the same lock
 /// and for the same reason.
-pub fn unset(spec: &KeySpec) -> Result<(String, String)> {
+pub fn unset(spec: &KeySpec) -> Result<(ConfigValue, ConfigValue)> {
     unset_in(&write_config_path()?, spec)
 }
 
@@ -70,7 +70,7 @@ pub fn unset(spec: &KeySpec) -> Result<(String, String)> {
 /// just optimizes for a different property, preserving the comments attached
 /// to the section header, which removing an emptied section would discard and
 /// [`set_in`] promises to keep.
-pub(crate) fn unset_in(path: &Path, spec: &KeySpec) -> Result<(String, String)> {
+pub(crate) fn unset_in(path: &Path, spec: &KeySpec) -> Result<(ConfigValue, ConfigValue)> {
     locked_edit(path, spec, |doc| {
         if let Some(table) = doc
             .get_mut(spec.section)
@@ -90,11 +90,11 @@ pub(crate) fn unset_in(path: &Path, spec: &KeySpec) -> Result<(String, String)> 
 /// crash-atomic write — happens inside one [`crate::fs::locking::locked_update`]
 /// call, so the pair returned always describes a state this process actually
 /// wrote, never one a concurrent writer interleaved.
-fn locked_edit<F>(path: &Path, spec: &KeySpec, edit: F) -> Result<(String, String)>
+fn locked_edit<F>(path: &Path, spec: &KeySpec, edit: F) -> Result<(ConfigValue, ConfigValue)>
 where
     F: FnOnce(&mut DocumentMut) -> Result<()>,
 {
-    let mut old_new: Option<(String, String)> = None;
+    let mut old_new: Option<(ConfigValue, ConfigValue)> = None;
     crate::fs::locking::locked_update(path, |existing| {
         let old = resolved(&existing, spec);
         let mut doc: DocumentMut = existing.parse().with_context(|| {
@@ -115,6 +115,6 @@ where
 /// unparseable file renders as all-defaults here rather than failing: the
 /// caller is about to refuse the write for that same reason, with a message
 /// naming the file.
-fn resolved(text: &str, spec: &KeySpec) -> String {
+fn resolved(text: &str, spec: &KeySpec) -> ConfigValue {
     parse_document(text).unwrap_or_default().value_of(spec).0
 }
