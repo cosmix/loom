@@ -15,20 +15,26 @@ const MAX_REDIRECTS: usize = 10; // Bounded redirect chain (GitHub release asset
 // Download buffer size for streaming responses
 const DOWNLOAD_BUFFER_SIZE: usize = 8192;
 
-/// Create an HTTP client with security-focused timeout configuration.
-/// Prevents indefinite hangs on slow or unresponsive servers.
+/// Settings shared by every self-update HTTP client: timeouts, user agent,
+/// and an HTTPS-only requirement.
 /// - connect_timeout: Maximum time to establish a TCP connection
 /// - timeout: Maximum time for the entire request (connection + data transfer)
-pub(crate) fn create_http_client() -> Result<Client> {
+fn client_builder() -> reqwest::blocking::ClientBuilder {
     Client::builder()
         .connect_timeout(Duration::from_secs(HTTP_CONNECT_TIMEOUT_SECS))
         .timeout(Duration::from_secs(HTTP_REQUEST_TIMEOUT_SECS))
         .user_agent("loom-self-update")
         // Enforce HTTPS for every request — refuse plaintext URLs outright.
         .https_only(true)
-        // Bounded redirect policy that rejects an https->http downgrade. A scheme
-        // downgrade on redirect is the MITM precondition that would let a tampered
-        // binary or signature be served, so we refuse it rather than follow it.
+}
+
+/// Create an HTTP client that follows redirects under a bounded, https-only
+/// policy. GitHub release assets redirect to a CDN, so this client must
+/// follow them, but a scheme downgrade on redirect is the MITM precondition
+/// that would let a tampered binary or signature be served, so it refuses
+/// that instead of following it.
+pub(crate) fn create_http_client() -> Result<Client> {
+    client_builder()
         .redirect(reqwest::redirect::Policy::custom(|attempt| {
             if attempt.previous().len() >= MAX_REDIRECTS {
                 return attempt.error("too many redirects");
@@ -38,6 +44,17 @@ pub(crate) fn create_http_client() -> Result<Client> {
             }
             attempt.follow()
         }))
+        .build()
+        .context("Failed to create HTTP client")
+}
+
+/// Create an HTTP client that never follows redirects. Used to read a
+/// redirect's `Location` header directly rather than have the client follow
+/// it — `get_latest_release` resolves the release tag from where
+/// `releases/latest` redirects to, not from a response body.
+pub(crate) fn create_no_redirect_client() -> Result<Client> {
+    client_builder()
+        .redirect(reqwest::redirect::Policy::none())
         .build()
         .context("Failed to create HTTP client")
 }

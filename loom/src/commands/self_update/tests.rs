@@ -13,7 +13,8 @@ use crate::commands::self_update::signature::{
     compute_sha256_checksum, verify_binary_signature, MINISIGN_PUBLIC_KEY,
 };
 use crate::commands::self_update::{
-    release_asset_for_target, releases_api_url, run_asset_install, signature_asset_name, Asset,
+    asset_download_url, latest_release_url, release_asset_for_target, run_asset_install,
+    signature_asset_name,
 };
 
 #[path = "tests/install_binary.rs"]
@@ -88,30 +89,19 @@ fn http_client_refuses_a_plaintext_url() {
     );
 }
 
-/// Fixture inventory for the binary and signature assets the updater consumes.
-fn published_binary_assets() -> Vec<Asset> {
-    [
-        "loom-linux-x86_64",
-        "loom-linux-x86_64.minisig",
-        "loom-darwin-arm64",
-        "loom-darwin-arm64.minisig",
-    ]
-    .into_iter()
-    .map(|name| Asset {
-        name: name.to_string(),
-        browser_download_url: format!("https://example.com/{name}"),
-    })
-    .collect()
-}
-
 #[test]
 fn test_release_asset_selection_finds_binary_and_signature_for_supported_targets() {
-    let assets = published_binary_assets();
     for target in ["x86_64-unknown-linux-gnu", "aarch64-apple-darwin"] {
         let binary_name = release_asset_for_target(target).unwrap();
-        assert!(assets.iter().any(|asset| asset.name == binary_name));
+        assert_eq!(
+            asset_download_url("v1.2.3", binary_name),
+            format!("https://github.com/cosmix/loom/releases/download/v1.2.3/{binary_name}")
+        );
         let signature_name = signature_asset_name(binary_name);
-        assert!(assets.iter().any(|asset| asset.name == signature_name));
+        assert_eq!(
+            asset_download_url("v1.2.3", &signature_name),
+            format!("https://github.com/cosmix/loom/releases/download/v1.2.3/{signature_name}")
+        );
     }
 }
 
@@ -131,10 +121,10 @@ fn test_release_asset_selection_rejects_unknown_target() {
 }
 
 #[test]
-fn test_release_asset_selection_releases_api_url_names_repo() {
+fn test_release_asset_selection_latest_release_url_names_repo() {
     assert_eq!(
-        releases_api_url(),
-        "https://api.github.com/repos/cosmix/loom/releases/latest"
+        latest_release_url(),
+        "https://github.com/cosmix/loom/releases/latest"
     );
 }
 

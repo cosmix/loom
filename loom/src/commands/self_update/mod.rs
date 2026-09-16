@@ -18,7 +18,8 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use client::{
-    create_http_client, download_text_with_limit, download_with_limit, validate_response_status,
+    create_http_client, create_no_redirect_client, download_text_with_limit, download_with_limit,
+    validate_response_status,
 };
 use install::install_binary;
 use signature::{compute_sha256_checksum, verify_binary_signature};
@@ -49,27 +50,27 @@ fn signature_asset_name(binary_name: &str) -> String {
     format!("{binary_name}.minisig")
 }
 
-/// GitHub releases API URL for this repository's latest release.
-fn releases_api_url() -> String {
-    format!("https://api.github.com/repos/{GITHUB_REPO}/releases/latest")
+/// GitHub web URL that redirects to this repository's latest release tag.
+/// Unlike GitHub's JSON API endpoint, this URL is not subject to
+/// GitHub's anonymous per-IP rate limit.
+fn latest_release_url() -> String {
+    format!("https://github.com/{GITHUB_REPO}/releases/latest")
+}
+
+/// GitHub web URL for a release asset download, which redirects to the CDN
+/// serving the file.
+fn asset_download_url(tag: &str, asset: &str) -> String {
+    format!("https://github.com/{GITHUB_REPO}/releases/download/{tag}/{asset}")
 }
 
 // Download size limits (exported for tests)
 pub(crate) const MAX_BINARY_SIZE: u64 = 50 * 1024 * 1024; // 50MB for binaries
 pub(crate) const MAX_SIGNATURE_SIZE: u64 = 4 * 1024; // 4KB for signature files
 
-/// GitHub release information.
-#[derive(serde::Deserialize)]
+/// GitHub release information: just the tag, resolved from the
+/// `releases/latest` redirect target rather than parsed from a JSON body.
 pub(crate) struct Release {
     pub(crate) tag_name: String,
-    assets: Vec<Asset>,
-}
-
-/// GitHub release asset information.
-#[derive(serde::Deserialize)]
-struct Asset {
-    name: String,
-    browser_download_url: String,
 }
 
 /// Execute the update command.
@@ -168,18 +169,54 @@ fn verify_installed_version(exe: &Path, release_version: &str) -> Result<()> {
     Ok(())
 }
 
-/// Fetch the latest release information from GitHub.
+/// Extract the release tag from a redirect `Location` header pointing at
+/// `.../releases/tag/<tag>` (relative or absolute). Does not semver-parse the
+/// tag; callers do their own parsing and report their own errors.
+fn tag_from_release_location(location: &str) -> Result<String> {
+    const MARKER: &str = "/releases/tag/";
+    let Some(index) = location.find(MARKER) else {
+        bail!("Redirect target does not name a release tag: {location}");
+    };
+    let tag = &location[index + MARKER.len()..];
+    if tag.is_empty() || tag.contains('/') || tag.contains('?') {
+        bail!("Redirect target does not name a release tag: {location}");
+    }
+    Ok(tag.to_string())
+}
+
+/// Resolve the latest release tag from GitHub's `releases/latest` redirect.
+///
+/// Uses the web-facing `github.com/<repo>/releases/latest` URL rather than
+/// the JSON API endpoint: anonymous calls to that endpoint share a
+/// 60 requests/hour budget per public IP, easily exhausted on a shared
+/// network, while this redirect carries no such limit and needs no
+/// authentication.
 pub(crate) fn get_latest_release() -> Result<Release> {
-    let url = releases_api_url();
-    let client = create_http_client()?;
+    let url = latest_release_url();
+    let client = create_no_redirect_client()?;
     let response = client
         .get(&url)
         .send()
         .context("Failed to check for updates")?;
 
-    validate_response_status(&response, "Failed to fetch release info")?;
+    let status = response.status();
+    if status.is_redirection() {
+        let location = response
+            .headers()
+            .get(reqwest::header::LOCATION)
+            .ok_or_else(|| anyhow::anyhow!("Redirect response from {url} had no Location header"))?
+            .to_str()
+            .context("Location header is not valid UTF-8")?;
+        return Ok(Release {
+            tag_name: tag_from_release_location(location)?,
+        });
+    }
 
-    response.json().context("Failed to parse release info")
+    bail!(
+        "Failed to fetch release info: HTTP {} - {}",
+        status.as_u16(),
+        status.canonical_reason().unwrap_or("Unknown error")
+    );
 }
 
 /// Get the target triple for the current platform.
@@ -216,25 +253,11 @@ fn update_binary(release: &Release) -> Result<PathBuf> {
     let target = get_target();
     let binary_name = release_asset_for_target(target)?;
     let signature_name = signature_asset_name(binary_name);
-    let binary_asset = release
-        .assets
-        .iter()
-        .find(|asset| asset.name == binary_name)
-        .ok_or_else(|| anyhow::anyhow!("No binary found for {target}"))?;
-    let signature_asset = release
-        .assets
-        .iter()
-        .find(|asset| asset.name == signature_name)
-        .ok_or_else(|| {
-            anyhow::anyhow!(
-                "No signature file found for {target}. Release must include {signature_name}"
-            )
-        })?;
 
     let client = create_http_client()?;
     println!("  {} Downloading binary...", "→".blue());
     let response = client
-        .get(&binary_asset.browser_download_url)
+        .get(asset_download_url(&release.tag_name, binary_name))
         .send()
         .context("Failed to download binary")?;
     validate_response_status(&response, "Binary download failed")?;
@@ -242,7 +265,7 @@ fn update_binary(release: &Release) -> Result<PathBuf> {
 
     println!("  {} Downloading signature...", "→".blue());
     let response = client
-        .get(&signature_asset.browser_download_url)
+        .get(asset_download_url(&release.tag_name, &signature_name))
         .send()
         .context("Failed to download signature")?;
     validate_response_status(&response, "Signature download failed")?;

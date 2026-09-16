@@ -1,50 +1,36 @@
-//! Tests for the GitHub release payload shape and the missing-signature-asset
-//! failure path in `update_binary`.
+//! Tests for `tag_from_release_location`, which extracts the release tag
+//! from the `Location` header GitHub returns when redirecting
+//! `releases/latest` to `releases/tag/<tag>`.
 
-use crate::commands::self_update::{update_binary, Release};
-
-use super::published_binary_assets;
+use crate::commands::self_update::tag_from_release_location;
 
 #[test]
-fn release_payload_deserializes_the_tag_and_assets() {
-    let json = r#"{
-        "tag_name": "v1.2.3",
-        "assets": [
-            {
-                "name": "loom-linux-x86_64",
-                "browser_download_url": "https://example.com/loom-linux-x86_64"
-            }
-        ]
-    }"#;
-
-    let release: Release = serde_json::from_str(json).unwrap();
-
-    assert_eq!(release.tag_name, "v1.2.3");
-    assert_eq!(release.assets.len(), 1);
-    assert_eq!(release.assets[0].name, "loom-linux-x86_64");
+fn resolves_an_absolute_location() {
     assert_eq!(
-        release.assets[0].browser_download_url,
-        "https://example.com/loom-linux-x86_64"
+        tag_from_release_location("https://github.com/cosmix/loom/releases/tag/v1.2.3").unwrap(),
+        "v1.2.3"
     );
 }
 
-/// `update_binary` resolves the signature asset before any network access,
-/// so a release missing the platform's `.minisig` file must be reported
-/// without downloading anything. This assumes the test host is one of the
-/// supported release targets (`RELEASE_ASSETS` in `mod.rs`), matching every
-/// other test in this module that resolves the host's own target triple.
 #[test]
-fn update_binary_reports_a_missing_signature_asset() {
-    let assets: Vec<_> = published_binary_assets()
-        .into_iter()
-        .filter(|asset| !asset.name.ends_with(".minisig"))
-        .collect();
-    let release = Release {
-        tag_name: "v1.2.3".to_string(),
-        assets,
-    };
+fn resolves_a_relative_location() {
+    assert_eq!(
+        tag_from_release_location("/cosmix/loom/releases/tag/v0.8.2").unwrap(),
+        "v0.8.2"
+    );
+}
 
-    let error = update_binary(&release).unwrap_err().to_string();
+#[test]
+fn rejects_a_location_without_the_tag_marker() {
+    assert!(tag_from_release_location("https://github.com/cosmix/loom/releases").is_err());
+}
 
-    assert!(error.contains("No signature file found"), "{error}");
+#[test]
+fn rejects_an_empty_tag() {
+    assert!(tag_from_release_location("https://github.com/cosmix/loom/releases/tag/").is_err());
+}
+
+#[test]
+fn rejects_a_tag_containing_a_slash() {
+    assert!(tag_from_release_location("https://github.com/cosmix/loom/releases/tag/v1/2").is_err());
 }
