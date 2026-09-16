@@ -1,6 +1,6 @@
 # Agent Rule-Bending Hardening
 
-> Which loom checks an agent can bend, which it cannot, and the hardening backlog that follows
+> Checks an agent can bend, and the hardening backlog
 
 ## Why This Entry Exists (2026-09-16)
 

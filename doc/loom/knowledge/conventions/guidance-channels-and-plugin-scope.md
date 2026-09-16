@@ -2,7 +2,7 @@
 ---
 # Guidance Channels And Plugin Scope
 
-> Guidance-channel selection, verification-is-main-agent rule, plugin scope
+> Guidance-channel choice, verification rule, plugin scope
 
 ## Vendored Agent Assets Live at Repo Root
 

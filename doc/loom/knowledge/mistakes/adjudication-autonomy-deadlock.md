@@ -1,6 +1,6 @@
 # Adjudication Autonomy Deadlock
 
-> An accepted verdict deadlocked the run: adoption by stage_id alone, requeue with unanswered disputes, a live disputing agent, and no watchdog.
+> Accepted-verdict deadlock: adoption, requeue, live dispute
 
 ## Adoption Matched Sessions by stage_id Alone
 

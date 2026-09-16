@@ -2,7 +2,7 @@
 ---
 # Stage Lifecycle And Verification
 
-> Stage/session states, locked writes, acceptance & verification layers.
+> Stage/session states, locked writes, verification
 
 ## State Machine Pattern
 

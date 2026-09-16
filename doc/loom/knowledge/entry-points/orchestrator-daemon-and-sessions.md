@@ -2,7 +2,7 @@
 ---
 # Orchestrator Daemon And Sessions
 
-> Orchestrator loop, daemon, monitor, signals, merges, dispute/verify
+> Orchestrator loop, daemon, monitor, signals, merges
 
 ## Orchestrator Core
 

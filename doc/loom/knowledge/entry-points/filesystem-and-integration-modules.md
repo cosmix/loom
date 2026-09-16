@@ -2,7 +2,7 @@
 ---
 # Filesystem And Integration Modules
 
-> Git, fs/work_dir, handoff, sandbox, remote control, knowledge base
+> Git, fs/work_dir, handoff, sandbox, remote control
 
 ## Git Operations
 

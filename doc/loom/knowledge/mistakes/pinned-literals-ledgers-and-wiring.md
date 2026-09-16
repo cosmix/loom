@@ -1,6 +1,6 @@
 # Pinned Literals Ledgers And Wiring
 
-> The maintainability ledger exact-match trap and goal-backward wiring checks pinning a pattern to a path.
+> Ledger exact-match trap and wiring-check pinning
 
 ## Why These Two Belong Together
 

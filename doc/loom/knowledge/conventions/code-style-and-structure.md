@@ -249,7 +249,7 @@ to `0.0.0-dev+<sha>` rather than lying.
 
 **The test suite sees both identities.** Every untagged commit builds a `-dev` prerelease; the
 commit a tag points at builds the bare release version, and the first test run against it is the
-pre-push hook of the tag push itself, then `release.yml`'s test job. A test whose expectation
+pre-push hook of the tag push itself, then `.github/workflows/release.yml`'s test job. A test whose expectation
 depends on the identity branches on `loom::version::VERSION` (a `semver` `pre.is_empty()` means a
 release) instead of assuming `-dev`. See "A Test That Assumed a Dev Build Blocked the Release-Tag
 Push" in [Testing & Lint](../mistakes/testing-and-lint.md).

@@ -47,8 +47,8 @@
 | [status-data-model](architecture/status-data-model.md) | Where each loom status field comes from | 196 |
 | [terminal-backends](architecture/terminal-backends.md) | Native and tmux session backends, lane resolution | 285 |
 | [token-accounting-and-receipts](architecture/token-accounting-and-receipts.md) | Usage ledger, --compare, criterion cache, receipts, exact waits | 254 |
-| [web-dashboard](architecture/web-dashboard.md) | loom status --web: server, SPA, streaming | 51 |
-| [web-terminal](architecture/web-terminal.md) | loom status --web --terminals: a browser terminal attached to a session | 163 |
+| [web-dashboard](architecture/web-dashboard.md) | loom status --web: server, SPA, streaming | 63 |
+| [web-terminal](architecture/web-terminal.md) | loom status --web --terminals: a browser terminal attached to a session | 169 |
 
 ### entry-points
 
@@ -56,9 +56,9 @@
 | --- | --- | --- |
 | [cli-and-plan-pipeline](entry-points/cli-and-plan-pipeline.md) | CLI dispatch, plan parsing/validation/graph, verification, configs | 174 |
 | [context-and-source-graph](entry-points/context-and-source-graph.md) | Context retrieval pipeline and the source-graph channel/lifecycle | 50 |
-| [filesystem-and-integration-modules](entry-points/filesystem-and-integration-modules.md) | Git, fs/work_dir, handoff, sandbox, remote control, knowledge base | 112 |
+| [filesystem-and-integration-modules](entry-points/filesystem-and-integration-modules.md) | Git, fs/work_dir, handoff, sandbox, remote control | 112 |
 | [hooks](entry-points/hooks.md) | Hook scripts, their events, command matching | 117 |
-| [orchestrator-daemon-and-sessions](entry-points/orchestrator-daemon-and-sessions.md) | Orchestrator loop, daemon, monitor, signals, merges, dispute/verify | 224 |
+| [orchestrator-daemon-and-sessions](entry-points/orchestrator-daemon-and-sessions.md) | Orchestrator loop, daemon, monitor, signals, merges | 224 |
 | [remote-control](entry-points/remote-control.md) | Files and call sites for remote-control capability detection and… | 97 |
 
 ### patterns
@@ -73,7 +73,7 @@
 | [remote-control](patterns/remote-control.md) | The detect-capability, preflight, resolve-invocation shape for external agent… | 51 |
 | [security-sandbox-and-hooks](patterns/security-sandbox-and-hooks.md) | Hooks, input validation, permission sync, sandbox config, untrusted values. | 105 |
 | [stage-daemon-channels](patterns/stage-daemon-channels.md) | How a stage agent reaches the daemon to change its own state | 105 |
-| [stage-lifecycle-and-verification](patterns/stage-lifecycle-and-verification.md) | Stage/session states, locked writes, acceptance & verification layers. | 170 |
+| [stage-lifecycle-and-verification](patterns/stage-lifecycle-and-verification.md) | Stage/session states, locked writes, verification | 170 |
 | [subagent-hierarchy](patterns/subagent-hierarchy.md) | Flat fan-out vs 2-level coordinators vs agent teams; model mix | 86 |
 
 ### conventions
@@ -84,7 +84,7 @@
 | [commits](conventions/commits.md) | Logically grouped commits, Conventional Commit messages, and no AI attribution. | 14 |
 | [dispute-and-adjudication](conventions/dispute-and-adjudication.md) | Dispute file authority split, adjudicator scope, budgets, and transport | 114 |
 | [git-and-build-workflow](conventions/git-and-build-workflow.md) | Git/worktree ops, cargo fmt/test discipline, the shared maintainability ledger | 198 |
-| [guidance-channels-and-plugin-scope](conventions/guidance-channels-and-plugin-scope.md) | Guidance-channel selection, verification-is-main-agent rule, plugin scope | 104 |
+| [guidance-channels-and-plugin-scope](conventions/guidance-channels-and-plugin-scope.md) | Guidance-channel choice, verification rule, plugin scope | 104 |
 | [model-and-effort-config](conventions/model-and-effort-config.md) | `[pressure]` and `[models]` config sections, the four-tier precedence chain… | 62 |
 | [plan-yaml-and-hooks](conventions/plan-yaml-and-hooks.md) | Plan YAML schema, hook stdin/stdout contract, skill format, additive fields | 135 |
 | [web-dashboard-typography](conventions/web-dashboard-typography.md) | Dashboard chrome type conventions and CSS gotchas for settings/graph views | 30 |
@@ -93,16 +93,16 @@
 
 | Topic | Blurb | Lines |
 | --- | --- | --- |
-| [adjudication-autonomy-deadlock](mistakes/adjudication-autonomy-deadlock.md) | An accepted verdict deadlocked the run: adoption by stage_id alone, requeue… | 188 |
+| [adjudication-autonomy-deadlock](mistakes/adjudication-autonomy-deadlock.md) | Accepted-verdict deadlock: adoption, requeue, live dispute | 188 |
 | [ambient-filesystem-trust](mistakes/ambient-filesystem-trust.md) | Why a .git directory is not evidence of a real repository | 146 |
 | [codex-lane-rogue-wrapper](mistakes/codex-lane-rogue-wrapper.md) | A forwarding wrapper that did the task itself instead of forwarding, and why… | 153 |
 | [codex-navigation](mistakes/codex-navigation.md) | Forbidding reads instead of fixing a slow reader - a misdiagnosis and its… | 32 |
 | [codex-worker-briefing](mistakes/codex-worker-briefing.md) | Codex brief pitfalls: braces, doc placeholders, path reuse, jq status | 46 |
-| [completion-broker-credential](mistakes/completion-broker-credential.md) | The completion broker unreachable server-side fallback, duplicate file naming… | 179 |
-| [computed-values-and-hidden-couplings](mistakes/computed-values-and-hidden-couplings.md) | Values computed right but unread downstream; hidden coupling bugs | 208 |
+| [completion-broker-credential](mistakes/completion-broker-credential.md) | Completion broker fallback, dup naming, exit-0 bug | 179 |
+| [computed-values-and-hidden-couplings](mistakes/computed-values-and-hidden-couplings.md) | Values computed right but unread downstream | 208 |
 | [concurrency-and-locking](mistakes/concurrency-and-locking.md) | Locked-handle writes and read-mutate-save races that lose concurrent updates. | 36 |
 | [detached-spawn-in-tests](mistakes/detached-spawn-in-tests.md) | Never spawn a process from a test that can outlive the test process. | 45 |
-| [doctrine-and-acceptance](mistakes/doctrine-and-acceptance.md) | Why a one-phrase grep proves presence but never agreement, and how doctrine… | 290 |
+| [doctrine-and-acceptance](mistakes/doctrine-and-acceptance.md) | Why a one-phrase grep proves presence but never agreement, and how doctrine… | 309 |
 | [hooks-shell-portability](mistakes/hooks-shell-portability.md) | gawk/bash portability traps and heredoc-scanning gotchas in the repo's hooks. | 95 |
 | [knowledge-base-drift](mistakes/knowledge-base-drift.md) | How the knowledge base itself goes stale: plan-authoring notes frozen as… | 172 |
 | [knowledge-cli-invariants](mistakes/knowledge-cli-invariants.md) | Invariants belong in the fs constructor, not the CLI handler | 130 |
@@ -113,7 +113,7 @@
 | [merge-cleanup-boundary](mistakes/merge-cleanup-boundary.md) | A cleanup-boundary bug and its fix | 171 |
 | [parallel-worktree-shared-state](mistakes/parallel-worktree-shared-state.md) | Cross-worktree state races: diagnostic question, cases, fix | 140 |
 | [phantom-merges](mistakes/phantom-merges.md) | Eight lessons on merge machinery: merged=true without verifying | 141 |
-| [pinned-literals-ledgers-and-wiring](mistakes/pinned-literals-ledgers-and-wiring.md) | The maintainability ledger exact-match trap and goal-backward wiring checks… | 235 |
+| [pinned-literals-ledgers-and-wiring](mistakes/pinned-literals-ledgers-and-wiring.md) | Ledger exact-match trap and wiring-check pinning | 235 |
 | [pre-commit-hardening](mistakes/pre-commit-hardening.md) | Partial-staging guard decisions, edge cases, mutant-settled git defaults | 53 |
 | [refactor-stragglers](mistakes/refactor-stragglers.md) | What a large removal or rename leaves behind: straggler initializers, stale… | 94 |
 | [sandbox-and-settings](mistakes/sandbox-and-settings.md) | Sandbox path rules, permission sync, excludedCommands matching, and settings… | 737 |
@@ -138,8 +138,8 @@
 
 | Topic | Blurb | Lines |
 | --- | --- | --- |
-| [agent-rule-bending-hardening](concerns/agent-rule-bending-hardening.md) | Which loom checks an agent can bend, which it cannot, and the hardening backlog… | 211 |
-| [automatic-knowledge-source-graph-followups](concerns/automatic-knowledge-source-graph-followups.md) | Knowledge-plan followups, retrieval-degradation gap, stopwording, resolved items | 100 |
+| [agent-rule-bending-hardening](concerns/agent-rule-bending-hardening.md) | Checks an agent can bend, and the hardening backlog | 211 |
+| [automatic-knowledge-source-graph-followups](concerns/automatic-knowledge-source-graph-followups.md) | Knowledge-plan followups: retrieval gap, stopwording | 100 |
 | [code-quality-and-hook-debt](concerns/code-quality-and-hook-debt.md) | Code-quality/hook debt: oversized units, debug logging, duplicated tables | 181 |
 | [codex-heartbeat-starvation](concerns/codex-heartbeat-starvation.md) | Heartbeat starvation from long codex runs; stale-badge constant mismatch | 77 |
 | [daemon-singleton](concerns/daemon-singleton.md) | Historical incident: two daemons once attached to the same `.loom/work… | 98 |

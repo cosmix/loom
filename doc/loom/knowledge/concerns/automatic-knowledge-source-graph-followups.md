@@ -1,6 +1,6 @@
 # Automatic Knowledge Source Graph Followups
 
-> Knowledge-plan followups, retrieval-degradation gap, stopwording, resolved items
+> Knowledge-plan followups: retrieval gap, stopwording
 
 ## Open After PLAN-automatic-knowledge-and-source-graph (2026-08-18)
 

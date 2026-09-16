@@ -2,7 +2,7 @@
 ---
 # Computed Values and Hidden Couplings
 
-> Values computed right but unread downstream; hidden coupling bugs
+> Values computed right but unread downstream
 > retrieval-precision work, all real, all the same underlying shape: a piece
 > of logic was locally correct and globally wrong because of something
 > outside the function currently being read — a downstream consumer that
