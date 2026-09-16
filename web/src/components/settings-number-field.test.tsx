@@ -7,12 +7,12 @@ afterEach(() => {
   cleanup();
 });
 
-function renderNumberField(onCommit = vi.fn()) {
+function renderNumberField(onCommit = vi.fn(), value = 24) {
   render(
     <ValueControl
       id="check-interval-hours"
       kind={{ type: "number" }}
-      value={24}
+      value={value}
       pending={false}
       invalid={false}
       label="check interval hours at user scope"
@@ -26,6 +26,15 @@ function renderNumberField(onCommit = vi.fn()) {
 }
 
 describe("NumberField", () => {
+  it("NumberField does not commit when the draft normalizes to the current value", () => {
+    const { input: field, onCommit } = renderNumberField(vi.fn(), 42);
+
+    fireEvent.change(field, { target: { value: "00042" } });
+    fireEvent.keyDown(field, { key: "Enter" });
+
+    expect(onCommit).not.toHaveBeenCalled();
+  });
+
   it.each([
     ["900000", 900000],
     ["0", 0],

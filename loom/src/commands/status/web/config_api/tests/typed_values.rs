@@ -102,12 +102,26 @@ fn a_number_for_an_enum_key_reports_the_registry_message() {
 #[test]
 fn a_negative_number_is_rejected_before_checked() {
     let scratch = scratch();
-    let (status, _) = update(
+    let (status, body) = update(
         &scratch.base,
         br#"{"scope":"project","name":"context.ceiling_tokens","value":-1}"#,
     );
 
     assert_eq!(status, 400);
+    assert!(body.contains("malformed request body"), "{body}");
+}
+
+#[test]
+fn fractional_and_oversized_numbers_are_rejected_before_checked() {
+    let scratch = scratch();
+    for value in ["1.5", "4294967296"] {
+        let body =
+            format!(r#"{{"scope":"project","name":"context.ceiling_tokens","value":{value}}}"#);
+        let (status, body) = update(&scratch.base, body.as_bytes());
+
+        assert_eq!(status, 400, "{value}: {body}");
+        assert!(body.contains("malformed request body"), "{value}: {body}");
+    }
 }
 
 #[test]

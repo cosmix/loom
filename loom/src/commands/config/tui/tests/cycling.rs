@@ -99,6 +99,18 @@ fn saves_a_cycled_enum_to_disk() {
 }
 
 #[test]
+fn saves_a_toggled_bool_to_disk() {
+    let (temp, _guard, mut state) = state();
+    press(&mut state, KeyCode::Char(' '));
+
+    state.save();
+
+    let saved = std::fs::read_to_string(temp.path().join("config.toml")).unwrap();
+    assert!(saved.contains("check = false"), "{saved}");
+    assert!(!saved.contains("\"false\""), "{saved}");
+}
+
+#[test]
 fn enter_edits_only_the_free_form_kinds() {
     {
         let (_temp, _guard, mut state) = state();
@@ -170,7 +182,13 @@ fn bool_cell_renders_checkbox_and_enum_cell_renders_guillemets() {
             .any(|row| row.contains("update.check_interval_hours") && row.contains("24")),
         "{rows:?}"
     );
-    assert!(contains(&rows, "←/→/space cycle"), "{rows:?}");
+    assert!(
+        contains(
+            &rows,
+            "↑↓/k/j move  ←/→/space cycle  Enter edit or cycle  s save  Esc/q quit  * pending"
+        ),
+        "{rows:?}"
+    );
 
     state.cycle(1);
     let rows = screen(&state);
