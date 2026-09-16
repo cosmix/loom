@@ -17,6 +17,7 @@ import {
   type ConfigEntry,
   type ConfigScope,
   type ConfigSnapshot,
+  type ConfigValue,
 } from "@/api/config";
 import { SettingsCards } from "@/components/settings-cards";
 import { SettingsLanes } from "@/components/settings-lanes";
@@ -179,7 +180,7 @@ function useSettingsWrites(client: ConfigClient) {
   const setStatus = (key: string, status: WriteStatus) =>
     setStatuses((current) => ({ ...current, [key]: status }));
 
-  const write = async (scope: ConfigScope, name: string, value: string | null) => {
+  const write = async (scope: ConfigScope, name: string, value: ConfigValue | null) => {
     if (load.phase !== "ready") return;
     const key = statusKey(scope, name);
     setStatus(key, { phase: "pending", value });
@@ -203,7 +204,7 @@ function useSettingsWrites(client: ConfigClient) {
 
 /// The toast after an accepted write; a clear names the value it now falls
 /// back to.
-function savedToast(entry: ConfigEntry, scope: ConfigScope, value: string | null): string {
+function savedToast(entry: ConfigEntry, scope: ConfigScope, value: ConfigValue | null): string {
   if (value !== null) return "saved";
   const fallback = fallbackFor(entry, scope);
   return `cleared, falls back to ${fallback.tier} ${formatValue(entry.kind, fallback.value)}`;

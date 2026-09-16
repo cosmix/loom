@@ -1,15 +1,15 @@
 //! Terminal-independent state and persistence rules for the config editor.
 //!
 //! Pending values retain both their display text and their registry-parsed
-//! TOML value. The former makes inline editing predictable while the latter
+//! config value. The former makes inline editing predictable while the latter
 //! prevents the screen and `loom config -k` from drifting into separate
 //! validators.
 
 use anyhow::Result;
 
 use crate::user_config::{
-    keys::{KeySpec, KEYS},
-    Origin, UserConfig,
+    keys::{KeySpec, ValueKind, KEYS},
+    ConfigValue, Origin, UserConfig,
 };
 
 /// One visible registry row, including an optional value not yet written to disk.
@@ -17,7 +17,7 @@ pub(super) struct ConfigRow {
     /// The registry specification that determines this row's name and type.
     spec: &'static KeySpec,
     /// The latest disk-resolved value, before any staged edit.
-    value: String,
+    value: ConfigValue,
     /// Whether `value` came from the file or a built-in default.
     origin: Origin,
     /// A validated edit that remains reversible until the operator saves.
@@ -28,8 +28,8 @@ pub(super) struct ConfigRow {
 struct PendingValue {
     /// The text the operator entered and should continue to see in the row.
     raw: String,
-    /// The typed TOML value already accepted by the registry validator.
-    value: toml_edit::Value,
+    /// The typed value already accepted by the registry validator.
+    value: ConfigValue,
 }
 
 impl ConfigRow {
@@ -49,11 +49,18 @@ impl ConfigRow {
         self.spec
     }
 
-    /// Return pending text when present, otherwise the latest disk value.
-    pub(super) fn displayed_value(&self) -> &str {
+    /// Return the pending typed value when present, otherwise the disk value.
+    pub(super) fn displayed(&self) -> &ConfigValue {
         self.pending
             .as_ref()
-            .map_or(&self.value, |pending| &pending.raw)
+            .map_or(&self.value, |pending| &pending.value)
+    }
+
+    /// Return pending text when present, otherwise the latest disk value.
+    pub(super) fn displayed_value(&self) -> String {
+        self.pending
+            .as_ref()
+            .map_or_else(|| self.value.to_string(), |pending| pending.raw.clone())
     }
 
     /// Return whether the displayed disk value is explicit or a default.
@@ -65,6 +72,11 @@ impl ConfigRow {
     pub(super) fn is_modified(&self) -> bool {
         self.pending.is_some()
     }
+}
+
+/// Whether `kind` is edited as text; Bool and Enum values are stepped instead.
+pub(super) fn opens_editor(kind: &ValueKind) -> bool {
+    matches!(kind, ValueKind::Number | ValueKind::String)
 }
 
 /// All selection, inline-edit, validation, and staged-save behavior for the screen.
@@ -145,8 +157,52 @@ impl ConfigState {
 
     /// Start a reversible edit seeded with the row's currently displayed value.
     pub(super) fn begin_edit(&mut self) {
-        self.edit_buffer = Some(self.selected_row().displayed_value().to_owned());
+        self.edit_buffer = Some(self.selected_row().displayed_value());
         self.set_status(false, "Editing: Enter commits; Esc cancels.".to_owned());
+    }
+
+    /// Step the selected row's value without opening the text editor.
+    pub(super) fn cycle(&mut self, delta: i32) {
+        let (spec, current) = {
+            let row = self.selected_row();
+            (row.spec(), row.displayed().clone())
+        };
+        let value = match (&spec.kind, current) {
+            (ValueKind::Bool, ConfigValue::Bool(value)) => ConfigValue::Bool(!value),
+            (ValueKind::Enum(variants), ConfigValue::Text(value)) => {
+                let index = variants
+                    .iter()
+                    .position(|variant| *variant == value.as_str())
+                    .unwrap_or(0) as i32;
+                let next = (index + delta).rem_euclid(variants.len() as i32) as usize;
+                ConfigValue::Text(variants[next].to_owned())
+            }
+            (ValueKind::Number | ValueKind::String, _) => {
+                self.set_status(
+                    true,
+                    format!(
+                        "{} has no variants to cycle; press Enter to edit.",
+                        spec.name
+                    ),
+                );
+                return;
+            }
+            _ => unreachable!("strict config values match their registry kind"),
+        };
+        self.rows[self.selected].pending = Some(PendingValue {
+            raw: value.to_string(),
+            value,
+        });
+        self.set_status(false, format!("{} staged; press s to save.", spec.name));
+    }
+
+    /// Open the text editor for a free-form kind, otherwise step it forward.
+    pub(super) fn activate(&mut self) {
+        if opens_editor(&self.selected_row().spec().kind) {
+            self.begin_edit();
+        } else {
+            self.cycle(1);
+        }
     }
 
     /// Append a printable character while an inline edit owns the keyboard.
@@ -188,7 +244,7 @@ impl ConfigState {
 
     /// Write each pending row, then refresh successful values from a strict disk snapshot.
     pub(super) fn save(&mut self) {
-        let pending: Vec<(usize, &'static KeySpec, toml_edit::Value)> = self
+        let pending: Vec<(usize, &'static KeySpec, ConfigValue)> = self
             .rows
             .iter()
             .enumerate()

@@ -4,6 +4,7 @@ import { configResponseSchema, type ConfigEntry } from "@/api/config";
 import fixtureJson from "@/api/fixtures/config.json";
 import {
   effectiveLane,
+  displayValue,
   fieldOf,
   filterSections,
   formatValue,
@@ -121,7 +122,7 @@ describe("laneState / effectiveLane", () => {
     expect(state.provenance).toBe("set");
     expect(state.effective).toBe(true);
     expect(state.value).toBe(entry.project?.value ?? null);
-    expect(entry.project?.value).toBe("900000");
+    expect(entry.project?.value).toBe(900000);
   });
 
   it("effectiveLane agrees with the project lane's effective flag", () => {
@@ -174,6 +175,14 @@ describe("filterSections", () => {
     const labels = filtered.flatMap((section) => section.rows.map((row) => rowLabel(row)));
     expect(labels).toContain(fieldOf("update.check"));
   });
+
+  it("matches numeric config values", () => {
+    const filtered = filterSections(sections, "800000");
+    const names = filtered.flatMap((section) =>
+      section.rows.flatMap((row) => rowEntries(row).map((entry) => entry.name)),
+    );
+    expect(names).toContain("context.ceiling_tokens");
+  });
 });
 
 describe("statusFor", () => {
@@ -198,16 +207,41 @@ describe("statusFor", () => {
 });
 
 describe("formatValue", () => {
-  it("groups an all-digit u32 string with commas", () => {
-    expect(formatValue({ type: "u32" }, "800000")).toBe("800,000");
+  it("groups a number with commas", () => {
+    expect(formatValue({ type: "number" }, 800000)).toBe("800,000");
   });
 
-  it("leaves a non-numeric u32 string unchanged", () => {
-    expect(formatValue({ type: "u32" }, "abc")).toBe("abc");
+  it("leaves a mismatched non-number unchanged", () => {
+    expect(formatValue({ type: "number" }, "abc")).toBe("abc");
   });
 
   it("maps bool to on/off", () => {
-    expect(formatValue({ type: "bool" }, "true")).toBe("on");
-    expect(formatValue({ type: "bool" }, "false")).toBe("off");
+    expect(formatValue({ type: "bool" }, true)).toBe("on");
+    expect(formatValue({ type: "bool" }, false)).toBe("off");
+  });
+
+  it("leaves an enum variant unchanged", () => {
+    expect(formatValue({ type: "enum", variants: ["sonnet"] }, "sonnet")).toBe("sonnet");
+  });
+
+  it("leaves a free-text string entry unchanged", () => {
+    const entry: ConfigEntry = {
+      name: "made_up.note",
+      help: "",
+      kind: { type: "string" },
+      scopes: ["user"],
+      default: "plain text",
+      user: { value: "plain text", set: false },
+      project: null,
+      effective: { value: "plain text", source: "default" },
+    };
+    expect(formatValue(entry.kind, entry.effective.value)).toBe("plain text");
+  });
+});
+
+describe("displayValue", () => {
+  it("maps a real bool to on/off", () => {
+    expect(displayValue({ type: "bool" }, true)).toBe("on");
+    expect(displayValue({ type: "bool" }, false)).toBe("off");
   });
 });

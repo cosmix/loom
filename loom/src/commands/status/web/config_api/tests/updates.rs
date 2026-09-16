@@ -4,7 +4,7 @@
 use crate::fs::work_dir::read_config;
 use crate::models::constants::DEFAULT_CONTEXT_CEILING_TOKENS;
 use crate::user_config::keys::spec;
-use crate::user_config::UserConfig;
+use crate::user_config::{ConfigValue, UserConfig};
 
 use super::super::update;
 use super::super::wire::{ConfigError, ConfigUpdated, Source};
@@ -37,10 +37,13 @@ fn a_user_scope_write_reports_the_pair_and_refreshes_the_entry() {
     let scratch = scratch();
     let updated = post_ok(
         &scratch,
-        r#"{"scope":"user","name":"context.ceiling_tokens","value":"640000"}"#,
+        r#"{"scope":"user","name":"context.ceiling_tokens","value":640000}"#,
     );
-    assert_eq!(updated.old, DEFAULT_CONTEXT_CEILING_TOKENS.to_string());
-    assert_eq!(updated.new, "640000");
+    assert_eq!(
+        updated.old,
+        ConfigValue::Number(DEFAULT_CONTEXT_CEILING_TOKENS)
+    );
+    assert_eq!(updated.new, ConfigValue::Number(640_000));
     assert!(updated.entry.user.set);
     assert_eq!(updated.entry.effective.source, Source::User);
     assert_eq!(UserConfig::load().context_ceiling_tokens(), 640_000);
@@ -51,14 +54,14 @@ fn a_user_scope_unset_reverts_to_the_built_in() {
     let scratch = scratch();
     post_ok(
         &scratch,
-        r#"{"scope":"user","name":"update.check","value":"false"}"#,
+        r#"{"scope":"user","name":"update.check","value":false}"#,
     );
     let updated = post_ok(
         &scratch,
         r#"{"scope":"user","name":"update.check","value":null}"#,
     );
-    assert_eq!(updated.old, "false");
-    assert_eq!(updated.new, "true");
+    assert_eq!(updated.old, ConfigValue::Bool(false));
+    assert_eq!(updated.new, ConfigValue::Bool(true));
     assert!(!updated.entry.user.set);
     assert_eq!(updated.entry.effective.source, Source::Default);
     assert!(UserConfig::load().update_check());
@@ -69,9 +72,9 @@ fn a_project_scope_write_sets_only_the_key_it_was_given() {
     let scratch = scratch();
     let updated = post_ok(
         &scratch,
-        r#"{"scope":"project","name":"context.ceiling_tokens","value":"900000"}"#,
+        r#"{"scope":"project","name":"context.ceiling_tokens","value":900000}"#,
     );
-    assert_eq!(updated.new, "900000");
+    assert_eq!(updated.new, ConfigValue::Number(900_000));
     assert_eq!(updated.entry.effective.source, Source::Project);
     let text = project_text(&scratch);
     assert!(text.contains("ceiling_tokens = 900000"), "{text}");
@@ -85,24 +88,24 @@ fn a_project_scope_unset_removes_the_section_it_empties() {
     let scratch = scratch();
     crate::user_config::set(
         spec("context.ceiling_tokens").unwrap(),
-        toml_edit::Value::from(640_000_i64),
+        ConfigValue::Number(640_000),
     )
     .expect("set the user ceiling");
     post_ok(
         &scratch,
-        r#"{"scope":"project","name":"context.ceiling_tokens","value":"900000"}"#,
+        r#"{"scope":"project","name":"context.ceiling_tokens","value":900000}"#,
     );
 
     let updated = post_ok(
         &scratch,
         r#"{"scope":"project","name":"context.ceiling_tokens","value":null}"#,
     );
-    assert_eq!(updated.old, "900000");
+    assert_eq!(updated.old, ConfigValue::Number(900_000));
     // Emptied, so the section goes and the user tier is genuinely restored -
     // a keyless [context] would still win whole and resolve to the built-in.
     assert!(!project_text(&scratch).contains("[context]"));
     assert_eq!(updated.entry.effective.source, Source::User);
-    assert_eq!(updated.entry.effective.value, "640000");
+    assert_eq!(updated.entry.effective.value, ConfigValue::Number(640_000));
     assert_eq!(
         crate::fs::work_dir::resolve_context_ceiling_tokens(&scratch.work(), None),
         640_000
@@ -119,7 +122,7 @@ fn a_project_scope_unset_keeps_a_section_another_owner_still_uses() {
     );
     post_ok(
         &scratch,
-        r#"{"scope":"project","name":"context.ceiling_tokens","value":"900000"}"#,
+        r#"{"scope":"project","name":"context.ceiling_tokens","value":900000}"#,
     );
 
     let updated = post_ok(
@@ -132,7 +135,10 @@ fn a_project_scope_unset_keeps_a_section_another_owner_still_uses() {
     // The section survives but no longer sets a ceiling key of its own, so it
     // falls through to the user tier (unset here), then the built-in.
     assert_eq!(updated.entry.effective.source, Source::Default);
-    assert_eq!(updated.new, DEFAULT_CONTEXT_CEILING_TOKENS.to_string());
+    assert_eq!(
+        updated.new,
+        ConfigValue::Number(DEFAULT_CONTEXT_CEILING_TOKENS)
+    );
 }
 
 /// A plan or operator may set `subagent_ceiling_tokens` on its own
@@ -145,7 +151,7 @@ fn a_project_scope_unset_reports_the_user_tier_when_a_sibling_key_keeps_the_sect
     let scratch = scratch();
     crate::user_config::set(
         spec("context.ceiling_tokens").unwrap(),
-        toml_edit::Value::from(640_000_i64),
+        ConfigValue::Number(640_000),
     )
     .expect("set the user ceiling");
     scratch.write_project(
@@ -155,7 +161,7 @@ fn a_project_scope_unset_reports_the_user_tier_when_a_sibling_key_keeps_the_sect
     );
     post_ok(
         &scratch,
-        r#"{"scope":"project","name":"context.ceiling_tokens","value":"300000"}"#,
+        r#"{"scope":"project","name":"context.ceiling_tokens","value":300000}"#,
     );
 
     let updated = post_ok(
@@ -163,10 +169,10 @@ fn a_project_scope_unset_reports_the_user_tier_when_a_sibling_key_keeps_the_sect
         r#"{"scope":"project","name":"context.ceiling_tokens","value":null}"#,
     );
 
-    assert_eq!(updated.old, "300000");
+    assert_eq!(updated.old, ConfigValue::Number(300_000));
     assert!(project_text(&scratch).contains("subagent_ceiling_tokens = 500000"));
     assert_eq!(updated.entry.effective.source, Source::User);
-    assert_eq!(updated.new, "640000");
+    assert_eq!(updated.new, ConfigValue::Number(640_000));
     assert_eq!(
         crate::fs::work_dir::resolve_context_ceiling_tokens(&scratch.work(), None),
         640_000
@@ -180,7 +186,7 @@ fn a_project_scope_write_reaches_the_terminal_section_too() {
         &scratch,
         r#"{"scope":"project","name":"terminal.backend","value":"tmux"}"#,
     );
-    assert_eq!(updated.new, "tmux");
+    assert_eq!(updated.new, ConfigValue::Text("tmux".to_owned()));
     assert_eq!(
         crate::fs::work_dir::read_terminal_config(&scratch.work())
             .expect("resolve the terminal config")
@@ -225,7 +231,7 @@ fn an_unknown_key_names_the_valid_ones() {
     let scratch = scratch();
     let (status, message) = post_err(
         &scratch,
-        r#"{"scope":"user","name":"context.nonsense","value":"1"}"#,
+        r#"{"scope":"user","name":"context.nonsense","value":1}"#,
     );
     assert_eq!(status, 400);
     assert!(
@@ -240,7 +246,7 @@ fn an_unknown_scope_is_rejected() {
     let scratch = scratch();
     let (status, message) = post_err(
         &scratch,
-        r#"{"scope":"global","name":"update.check","value":"false"}"#,
+        r#"{"scope":"global","name":"update.check","value":false}"#,
     );
     assert_eq!(status, 400);
     assert_eq!(
@@ -254,7 +260,7 @@ fn a_user_only_key_is_refused_at_project_scope() {
     let scratch = scratch();
     let (status, message) = post_err(
         &scratch,
-        r#"{"scope":"project","name":"update.check","value":"false"}"#,
+        r#"{"scope":"project","name":"update.check","value":false}"#,
     );
     assert_eq!(status, 400);
     assert!(
@@ -282,7 +288,7 @@ fn a_project_write_without_a_workspace_is_a_conflict() {
             r#"{"scope":"user","name":"terminal.backend","value":"tmux"}"#,
         )
         .new,
-        "tmux"
+        ConfigValue::Text("tmux".to_owned())
     );
 }
 
@@ -293,12 +299,17 @@ fn a_malformed_body_is_rejected_without_naming_a_path() {
         "",
         "not json",
         r#"{"scope":"user"}"#,
-        r#"{"scope":"user","name":"update.check","value":true}"#,
+        r#"{"scope":"user","name":"update.check","value":{}}"#,
     ] {
         let (status, message) = post_err(&scratch, body);
         assert_eq!(status, 400, "{body}");
         assert!(!message.contains('/'), "{message}");
     }
+
+    post_ok(
+        &scratch,
+        r#"{"scope":"user","name":"update.check","value":true}"#,
+    );
 }
 
 /// A project-scope write on a key-level key (`[models]`) creates the section
@@ -312,8 +323,8 @@ fn a_project_scope_write_creates_a_key_level_section() {
         &scratch,
         r#"{"scope":"project","name":"models.standard_effort","value":"low"}"#,
     );
-    assert_eq!(updated.old, "high");
-    assert_eq!(updated.new, "low");
+    assert_eq!(updated.old, ConfigValue::Text("high".to_owned()));
+    assert_eq!(updated.new, ConfigValue::Text("low".to_owned()));
     assert_eq!(updated.entry.effective.source, Source::Project);
     let text = project_text(&scratch);
     assert!(text.contains("standard_effort = \"low\""), "{text}");
@@ -328,7 +339,7 @@ fn a_project_scope_unset_on_a_key_level_key_restores_the_user_tier() {
     let scratch = scratch();
     crate::user_config::set(
         spec("models.standard_effort").unwrap(),
-        toml_edit::Value::from("low"),
+        ConfigValue::Text("low".to_owned()),
     )
     .expect("set the user standard effort");
     post_ok(
@@ -340,8 +351,8 @@ fn a_project_scope_unset_on_a_key_level_key_restores_the_user_tier() {
         &scratch,
         r#"{"scope":"project","name":"models.standard_effort","value":null}"#,
     );
-    assert_eq!(updated.old, "xhigh");
-    assert_eq!(updated.new, "low");
+    assert_eq!(updated.old, ConfigValue::Text("xhigh".to_owned()));
+    assert_eq!(updated.new, ConfigValue::Text("low".to_owned()));
     assert_eq!(updated.entry.effective.source, Source::User);
     assert!(!project_text(&scratch).contains("[models]"));
 }
@@ -351,16 +362,19 @@ fn a_write_leaves_the_other_scope_alone() {
     let scratch = scratch();
     post_ok(
         &scratch,
-        r#"{"scope":"user","name":"context.ceiling_tokens","value":"640000"}"#,
+        r#"{"scope":"user","name":"context.ceiling_tokens","value":640000}"#,
     );
     post_ok(
         &scratch,
-        r#"{"scope":"project","name":"context.ceiling_tokens","value":"900000"}"#,
+        r#"{"scope":"project","name":"context.ceiling_tokens","value":900000}"#,
     );
     let payload = parse(&scratch.base);
     let ceiling = entry(&payload, "context.ceiling_tokens");
-    assert_eq!(ceiling.user.value, "640000");
+    assert_eq!(ceiling.user.value, ConfigValue::Number(640_000));
     assert!(ceiling.user.set);
-    assert_eq!(ceiling.project.as_ref().unwrap().value, "900000");
+    assert_eq!(
+        ceiling.project.as_ref().unwrap().value,
+        ConfigValue::Number(900_000)
+    );
     assert_eq!(ceiling.effective.source, Source::Project);
 }

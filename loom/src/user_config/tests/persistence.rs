@@ -20,7 +20,7 @@ fn set_in_preserves_comments_and_unknown_keys() {
     set_in(
         &path,
         spec("terminal.backend").unwrap(),
-        toml_edit::Value::from("tmux"),
+        ConfigValue::Text("tmux".to_string()),
     )
     .unwrap();
 
@@ -87,7 +87,7 @@ fn set_in_creates_an_absent_section() {
     set_in(
         &path,
         spec("context.ceiling_tokens").unwrap(),
-        toml_edit::Value::from(70000_i64),
+        ConfigValue::Number(70000),
     )
     .unwrap();
 
@@ -102,14 +102,14 @@ fn unset_in_removes_the_key_and_reverts_to_the_built_in() {
     set_in(
         &path,
         spec("context.ceiling_tokens").unwrap(),
-        toml_edit::Value::from(70000_i64),
+        ConfigValue::Number(70000),
     )
     .unwrap();
 
     let (old, new) = unset_in(&path, spec("context.ceiling_tokens").unwrap()).unwrap();
 
-    assert_eq!(old, "70000");
-    assert_eq!(new, DEFAULT_CONTEXT_CEILING_TOKENS.to_string());
+    assert_eq!(old, ConfigValue::Number(70000));
+    assert_eq!(new, ConfigValue::Number(DEFAULT_CONTEXT_CEILING_TOKENS));
     let after = std::fs::read_to_string(&path).unwrap();
     assert!(!after.contains("ceiling_tokens"), "{after}");
     let config = parse_document(&after).unwrap();
@@ -150,8 +150,8 @@ fn unset_in_keeps_an_emptied_section() {
 
     let (old, new) = unset_in(&path, spec("update.check").unwrap()).unwrap();
 
-    assert_eq!(old, "false");
-    assert_eq!(new, "true");
+    assert_eq!(old, ConfigValue::Bool(false));
+    assert_eq!(new, ConfigValue::Bool(true));
     let after = std::fs::read_to_string(&path).unwrap();
     assert!(after.contains("[update]"), "{after}");
     assert!(after.contains("# why this section exists"), "{after}");
@@ -166,8 +166,14 @@ fn unset_in_is_a_no_op_for_a_key_that_was_never_set() {
 
     let (old, new) = unset_in(&path, spec("pressure.claude_model").unwrap()).unwrap();
 
-    assert_eq!(old, crate::claude::DEFAULT_PRESSURE_CLAUDE_MODEL);
-    assert_eq!(new, crate::claude::DEFAULT_PRESSURE_CLAUDE_MODEL);
+    assert_eq!(
+        old,
+        ConfigValue::Text(crate::claude::DEFAULT_PRESSURE_CLAUDE_MODEL.to_string())
+    );
+    assert_eq!(
+        new,
+        ConfigValue::Text(crate::claude::DEFAULT_PRESSURE_CLAUDE_MODEL.to_string())
+    );
     assert!(!std::fs::read_to_string(&path).unwrap().contains("pressure"));
 }
 

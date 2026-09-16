@@ -206,12 +206,12 @@ describe("settings dialog", () => {
     data.entries.push(
       entry({
         name: "models.stray_budget",
-        kind: { type: "u32" },
+        kind: { type: "number" },
         scopes: ["user", "project"],
-        default: "1000",
-        user: { value: "1000", set: false },
-        project: { value: "1000", set: false },
-        effective: { value: "1000", source: "default" },
+        default: 1000,
+        user: { value: 1000, set: false },
+        project: { value: 1000, set: false },
+        effective: { value: 1000, source: "default" },
       }),
     );
     renderAt("?settings=1", fakeClient(data).client);

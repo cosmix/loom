@@ -66,8 +66,10 @@ use crate::models::constants::DEFAULT_CONTEXT_CEILING_TOKENS;
 use crate::models::session::SessionBackendKind;
 
 pub mod keys;
+pub mod value;
 
 use keys::KeySpec;
+pub use value::ConfigValue;
 
 mod models;
 mod parse;

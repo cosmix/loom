@@ -107,7 +107,7 @@ fn a_write_needs_an_origin_even_though_a_read_does_not() {
             "Content-Type: application/json\r\nX-Loom-Csrf: {}\r\n",
             token()
         ),
-        r#"{"scope":"user","name":"update.check","value":"false"}"#,
+        r#"{"scope":"user","name":"update.check","value":false}"#,
     );
     stop(running);
     assert!(response.starts_with("HTTP/1.1 403"), "{response}");
@@ -127,7 +127,7 @@ fn a_cross_origin_write_is_refused() {
             "Origin: http://evil.example\r\nContent-Type: application/json\r\nX-Loom-Csrf: {}\r\n",
             token()
         ),
-        r#"{"scope":"user","name":"update.check","value":"false"}"#,
+        r#"{"scope":"user","name":"update.check","value":false}"#,
     );
     stop(running);
     assert!(response.starts_with("HTTP/1.1 403"), "{response}");
@@ -258,7 +258,7 @@ fn a_valid_write_round_trips_through_a_get() {
     let written = post(
         port,
         &valid_headers(),
-        r#"{"scope":"project","name":"context.ceiling_tokens","value":"900000"}"#,
+        r#"{"scope":"project","name":"context.ceiling_tokens","value":900000}"#,
     );
     let reread = request(port, "GET /api/config HTTP/1.1\r\nHost: localhost\r\n\r\n");
     stop(running);
@@ -271,7 +271,7 @@ fn a_valid_write_round_trips_through_a_get() {
         .find(|entry| entry["name"] == "context.ceiling_tokens")
         .expect("the ceiling entry")
         .clone();
-    assert_eq!(ceiling["project"]["value"], "900000");
+    assert_eq!(ceiling["project"]["value"], 900000);
     assert_eq!(ceiling["effective"]["source"], "project");
 }
 

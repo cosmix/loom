@@ -1,8 +1,10 @@
 //! Headless regression coverage for the config editor's state machine.
 
+mod cycling;
+
 use super::state::ConfigState;
 use crate::user_config::{
-    keys::KEYS, redirect_user_config, Origin, UserConfig, UserConfigRedirect,
+    keys::KEYS, redirect_user_config, ConfigValue, Origin, UserConfig, UserConfigRedirect,
 };
 
 /// Install one temp-path redirect for the full lifetime of each editor state test.
@@ -100,7 +102,7 @@ fn valid_edit_save_round_trips_through_a_fresh_strict_load() {
     state.save();
     let fresh = UserConfig::load_strict().unwrap();
     let spec = crate::user_config::keys::spec("update.check_interval_hours").unwrap();
-    assert_eq!(fresh.value_of(spec).0, "6");
+    assert_eq!(fresh.value_of(spec).0, ConfigValue::Number(6));
     assert_eq!(state.selected_row().origin(), Origin::Set);
     assert!(!state.selected_row().is_modified());
 }

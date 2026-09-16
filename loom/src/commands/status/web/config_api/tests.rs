@@ -16,12 +16,13 @@ use tempfile::TempDir;
 use crate::fs::work_dir::{insert_key, update_config, WorkDir};
 use crate::models::constants::DEFAULT_CONTEXT_CEILING_TOKENS;
 use crate::user_config::keys::{spec, KEYS};
-use crate::user_config::{redirect_user_config, UserConfigRedirect};
+use crate::user_config::{redirect_user_config, ConfigValue, UserConfigRedirect};
 
 use super::wire::{ConfigKind, ConfigPayload, Source};
 use super::{entries, payload};
 
 mod resolution;
+mod typed_values;
 mod updates;
 
 const FIXTURE: &str = include_str!("../../../../../../web/src/api/fixtures/config.json");
@@ -174,7 +175,7 @@ fn a_default_tree_resolves_every_key_to_its_built_in() {
     }
     assert_eq!(
         entry(&payload, "context.ceiling_tokens").effective.value,
-        DEFAULT_CONTEXT_CEILING_TOKENS.to_string()
+        ConfigValue::Number(DEFAULT_CONTEXT_CEILING_TOKENS)
     );
 }
 
@@ -192,7 +193,7 @@ fn a_default_tree_resolves_every_key_to_its_built_in() {
 #[test]
 fn the_config_fixture_matches_a_real_payload() {
     let scratch = scratch();
-    crate::user_config::set(spec("update.check").unwrap(), toml_edit::Value::from(false))
+    crate::user_config::set(spec("update.check").unwrap(), ConfigValue::Bool(false))
         .expect("set the user update check");
     scratch.write_project(
         "context",
@@ -229,7 +230,7 @@ fn the_csrf_token_is_a_stable_64_character_hex_string() {
 #[test]
 fn the_built_in_default_stays_reported_after_both_scopes_set_a_key() {
     let scratch = scratch();
-    let built_in = DEFAULT_CONTEXT_CEILING_TOKENS.to_string();
+    let built_in = ConfigValue::Number(DEFAULT_CONTEXT_CEILING_TOKENS);
     assert_eq!(
         entry(&parse(&scratch.base), "context.ceiling_tokens").default,
         built_in
@@ -237,7 +238,7 @@ fn the_built_in_default_stays_reported_after_both_scopes_set_a_key() {
 
     crate::user_config::set(
         spec("context.ceiling_tokens").unwrap(),
-        toml_edit::Value::from(640_000_i64),
+        ConfigValue::Number(640_000),
     )
     .expect("set the user ceiling");
     scratch.write_project(
@@ -249,17 +250,20 @@ fn the_built_in_default_stays_reported_after_both_scopes_set_a_key() {
     let payload = parse(&scratch.base);
     let ceiling = entry(&payload, "context.ceiling_tokens");
     assert_eq!(ceiling.default, built_in);
-    assert_eq!(ceiling.user.value, "640000");
-    assert_eq!(ceiling.project.as_ref().unwrap().value, "900000");
-    assert_eq!(ceiling.effective.value, "900000");
+    assert_eq!(ceiling.user.value, ConfigValue::Number(640_000));
+    assert_eq!(
+        ceiling.project.as_ref().unwrap().value,
+        ConfigValue::Number(900_000)
+    );
+    assert_eq!(ceiling.effective.value, ConfigValue::Number(900_000));
 
     // And for a key with no project tier at all.
-    crate::user_config::set(spec("update.check").unwrap(), toml_edit::Value::from(false))
+    crate::user_config::set(spec("update.check").unwrap(), ConfigValue::Bool(false))
         .expect("set the user update check");
     let payload = parse(&scratch.base);
     let check = entry(&payload, "update.check");
-    assert_eq!(check.default, "true");
-    assert_eq!(check.user.value, "false");
+    assert_eq!(check.default, ConfigValue::Bool(true));
+    assert_eq!(check.user.value, ConfigValue::Bool(false));
 }
 
 /// Every key's `default` must be what an all-`None` config resolves to - the

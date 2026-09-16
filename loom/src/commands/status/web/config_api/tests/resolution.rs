@@ -8,7 +8,7 @@ use crate::fs::work_dir::{
 };
 use crate::models::stage::StageType;
 use crate::user_config::keys::spec;
-use crate::user_config::UserConfig;
+use crate::user_config::{ConfigValue, UserConfig};
 
 use super::super::wire::Source;
 use super::{entry, parse, scratch, Scratch};
@@ -22,14 +22,16 @@ fn assert_effective_agrees_with_resolution(scratch: &Scratch) {
     let work = scratch.work();
     assert_eq!(
         entry(&payload, "terminal.backend").effective.value,
-        read_terminal_config(&work)
-            .expect("resolve the terminal config")
-            .backend
-            .to_string()
+        ConfigValue::Text(
+            read_terminal_config(&work)
+                .expect("resolve the terminal config")
+                .backend
+                .to_string(),
+        )
     );
     assert_eq!(
         entry(&payload, "context.ceiling_tokens").effective.value,
-        resolve_context_ceiling_tokens(&work, None).to_string()
+        ConfigValue::Number(resolve_context_ceiling_tokens(&work, None))
     );
 }
 
@@ -46,12 +48,12 @@ fn effective_value_for_user_source_agrees_with_resolution() {
     let scratch = scratch();
     crate::user_config::set(
         spec("context.ceiling_tokens").unwrap(),
-        toml_edit::Value::from(640_000_i64),
+        ConfigValue::Number(640_000),
     )
     .expect("set the user ceiling");
     crate::user_config::set(
         spec("terminal.backend").unwrap(),
-        toml_edit::Value::from("tmux"),
+        ConfigValue::Text("tmux".to_owned()),
     )
     .expect("set the user backend");
 
@@ -62,7 +64,7 @@ fn effective_value_for_user_source_agrees_with_resolution() {
     );
     assert_eq!(
         entry(&payload, "context.ceiling_tokens").user.value,
-        "640000"
+        ConfigValue::Number(640_000)
     );
     assert_effective_agrees_with_resolution(&scratch);
 }
@@ -73,12 +75,12 @@ fn effective_value_for_project_source_agrees_with_resolution() {
     let scratch = scratch();
     crate::user_config::set(
         spec("context.ceiling_tokens").unwrap(),
-        toml_edit::Value::from(640_000_i64),
+        ConfigValue::Number(640_000),
     )
     .expect("set the user ceiling");
     crate::user_config::set(
         spec("terminal.backend").unwrap(),
-        toml_edit::Value::from("tmux"),
+        ConfigValue::Text("tmux".to_owned()),
     )
     .expect("set the user backend");
 
@@ -113,19 +115,19 @@ fn project_value_falls_through_to_the_user_tier_when_neither_section_is_present(
     let scratch = scratch();
     crate::user_config::set(
         spec("context.ceiling_tokens").unwrap(),
-        toml_edit::Value::from(640_000_i64),
+        ConfigValue::Number(640_000),
     )
     .expect("set the user ceiling");
     crate::user_config::set(
         spec("terminal.backend").unwrap(),
-        toml_edit::Value::from("tmux"),
+        ConfigValue::Text("tmux".to_owned()),
     )
     .expect("set the user backend");
 
     let payload = parse(&scratch.base);
     for (name, expected) in [
-        ("terminal.backend", "tmux"),
-        ("context.ceiling_tokens", "640000"),
+        ("terminal.backend", ConfigValue::Text("tmux".to_owned())),
+        ("context.ceiling_tokens", ConfigValue::Number(640_000)),
     ] {
         let entry = entry(&payload, name);
         let project = entry.project.as_ref().expect("project scope");
@@ -143,7 +145,7 @@ fn a_project_window_only_context_section_supplies_the_ceiling() {
     let scratch = scratch();
     crate::user_config::set(
         spec("context.ceiling_tokens").unwrap(),
-        toml_edit::Value::from(640_000_i64),
+        ConfigValue::Number(640_000),
     )
     .expect("set the user ceiling");
     scratch.write_project(
@@ -157,7 +159,7 @@ fn a_project_window_only_context_section_supplies_the_ceiling() {
     assert_eq!(ceiling.effective.source, Source::Project);
     assert_eq!(
         ceiling.effective.value,
-        resolve_context_ceiling_tokens(&scratch.work(), None).to_string()
+        ConfigValue::Number(resolve_context_ceiling_tokens(&scratch.work(), None))
     );
     assert_effective_agrees_with_resolution(&scratch);
 }
@@ -169,7 +171,7 @@ fn a_present_but_keyless_section_falls_through_to_the_user_tier() {
     let scratch = scratch();
     crate::user_config::set(
         spec("context.ceiling_tokens").unwrap(),
-        toml_edit::Value::from(640_000_i64),
+        ConfigValue::Number(640_000),
     )
     .expect("set the user ceiling");
     scratch.write_project(
@@ -181,17 +183,18 @@ fn a_present_but_keyless_section_falls_through_to_the_user_tier() {
     let payload = parse(&scratch.base);
     let ceiling = entry(&payload, "context.ceiling_tokens");
     assert_eq!(ceiling.effective.source, Source::User);
-    assert_eq!(ceiling.effective.value, "640000");
+    assert_eq!(ceiling.effective.value, ConfigValue::Number(640_000));
     let project = ceiling.project.as_ref().expect("project scope");
     assert!(!project.set, "the section sets no ceiling of its own");
     assert_eq!(
-        project.value, "640000",
+        project.value,
+        ConfigValue::Number(640_000),
         "an unsupplied key reports the user tier's own value"
     );
-    assert_eq!(ceiling.user.value, "640000");
+    assert_eq!(ceiling.user.value, ConfigValue::Number(640_000));
     assert_eq!(
         ceiling.effective.value,
-        resolve_context_ceiling_tokens(&scratch.work(), None).to_string()
+        ConfigValue::Number(resolve_context_ceiling_tokens(&scratch.work(), None))
     );
 }
 
@@ -208,12 +211,12 @@ fn pressure_falls_through_key_by_key_not_section_by_section() {
     let scratch = scratch();
     crate::user_config::set(
         spec("pressure.claude_model").unwrap(),
-        toml_edit::Value::from("haiku"),
+        ConfigValue::Text("haiku".to_owned()),
     )
     .expect("set the user claude model");
     crate::user_config::set(
         spec("pressure.codex_model").unwrap(),
-        toml_edit::Value::from("gpt-5.6-terra"),
+        ConfigValue::Text("gpt-5.6-terra".to_owned()),
     )
     .expect("set the user codex model");
     scratch.write_project("pressure", "claude_model", toml_edit::Value::from("sonnet"));
@@ -221,25 +224,37 @@ fn pressure_falls_through_key_by_key_not_section_by_section() {
     let payload = parse(&scratch.base);
     let claude = entry(&payload, "pressure.claude_model");
     assert_eq!(claude.effective.source, Source::Project);
-    assert_eq!(claude.effective.value, "sonnet");
+    assert_eq!(
+        claude.effective.value,
+        ConfigValue::Text("sonnet".to_owned())
+    );
 
     let codex = entry(&payload, "pressure.codex_model");
     assert_eq!(codex.effective.source, Source::User);
-    assert_eq!(codex.effective.value, "gpt-5.6-terra");
+    assert_eq!(
+        codex.effective.value,
+        ConfigValue::Text("gpt-5.6-terra".to_owned())
+    );
 
     let project = read_pressure_config(&scratch.work());
     let user = UserConfig::load();
     assert_eq!(
         claude.effective.value,
-        project
-            .claude_model()
-            .unwrap_or_else(|| user.pressure_claude_model())
+        ConfigValue::Text(
+            project
+                .claude_model()
+                .unwrap_or_else(|| user.pressure_claude_model())
+                .to_owned(),
+        )
     );
     assert_eq!(
         codex.effective.value,
-        project
-            .codex_model()
-            .unwrap_or_else(|| user.pressure_codex_model())
+        ConfigValue::Text(
+            project
+                .codex_model()
+                .unwrap_or_else(|| user.pressure_codex_model())
+                .to_owned(),
+        )
     );
 }
 
@@ -252,12 +267,12 @@ fn models_falls_through_key_by_key_not_section_by_section() {
     let scratch = scratch();
     crate::user_config::set(
         spec("models.standard_model").unwrap(),
-        toml_edit::Value::from("haiku"),
+        ConfigValue::Text("haiku".to_owned()),
     )
     .expect("set the user standard model");
     crate::user_config::set(
         spec("models.standard_effort").unwrap(),
-        toml_edit::Value::from("low"),
+        ConfigValue::Text("low".to_owned()),
     )
     .expect("set the user standard effort");
     scratch.write_project("models", "standard_model", toml_edit::Value::from("sonnet"));
@@ -265,16 +280,19 @@ fn models_falls_through_key_by_key_not_section_by_section() {
     let payload = parse(&scratch.base);
     let model = entry(&payload, "models.standard_model");
     assert_eq!(model.effective.source, Source::Project);
-    assert_eq!(model.effective.value, "sonnet");
+    assert_eq!(
+        model.effective.value,
+        ConfigValue::Text("sonnet".to_owned())
+    );
 
     let effort = entry(&payload, "models.standard_effort");
     assert_eq!(effort.effective.source, Source::User);
-    assert_eq!(effort.effective.value, "low");
+    assert_eq!(effort.effective.value, ConfigValue::Text("low".to_owned()));
 
     let (expected_model, expected_effort) =
         resolve_stage_model_effort(&scratch.work(), StageType::Standard, None, None);
-    assert_eq!(model.effective.value, expected_model);
-    assert_eq!(effort.effective.value, expected_effort);
+    assert_eq!(model.effective.value, ConfigValue::Text(expected_model));
+    assert_eq!(effort.effective.value, ConfigValue::Text(expected_effort));
 }
 
 /// A malformed project `[terminal]` section must fail resolution the same way

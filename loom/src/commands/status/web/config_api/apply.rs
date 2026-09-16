@@ -11,6 +11,7 @@ use anyhow::{anyhow, Result};
 use crate::fs::work_dir::{insert_key, remove_key, update_config};
 use crate::user_config;
 use crate::user_config::keys::KeySpec;
+use crate::user_config::ConfigValue;
 
 use super::workspace::Workspace;
 use super::Scope;
@@ -23,9 +24,9 @@ use super::Scope;
 pub(super) fn apply(
     scope: Scope,
     spec: &KeySpec,
-    value: Option<toml_edit::Value>,
+    value: Option<ConfigValue>,
     workspace: Option<&Workspace>,
-) -> Result<(String, String)> {
+) -> Result<(ConfigValue, ConfigValue)> {
     match scope {
         Scope::User => match value {
             Some(value) => user_config::set(spec, value),
@@ -47,14 +48,14 @@ pub(super) fn apply(
 fn project(
     workspace: &Workspace,
     spec: &KeySpec,
-    value: Option<toml_edit::Value>,
-) -> Result<(String, String)> {
+    value: Option<ConfigValue>,
+) -> Result<(ConfigValue, ConfigValue)> {
     let root = workspace.root().to_path_buf();
-    let mut old_new: Option<(String, String)> = None;
+    let mut old_new: Option<(ConfigValue, ConfigValue)> = None;
     update_config(&root, |doc| {
         let old = Workspace::from_document(&root, doc)?.value_of(spec)?;
         match value {
-            Some(value) => insert_key(doc, spec.section, spec.field, value)?,
+            Some(value) => insert_key(doc, spec.section, spec.field, value.to_toml_edit())?,
             None => remove_key(doc, spec.section, spec.field),
         }
         let new = Workspace::from_document(&root, doc)?.value_of(spec)?;

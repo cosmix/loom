@@ -9,12 +9,12 @@
 //! operator-facing text, plus [`UserConfig::origin_of`], which `pressure.rs`
 //! and `models.rs` reuse for their own sections' keys.
 
-use super::{KeySpec, Origin, UserConfig};
+use super::{ConfigValue, KeySpec, Origin, UserConfig};
 
 impl UserConfig {
-    /// The rendered value and origin for `spec`, for `loom config --list` and
+    /// The typed value and origin for `spec`, for `loom config --list` and
     /// `loom config -k <key>`.
-    pub fn value_of(&self, spec: &KeySpec) -> (String, Origin) {
+    pub fn value_of(&self, spec: &KeySpec) -> (ConfigValue, Origin) {
         if let Some(resolved) = self.pressure_value_of(spec) {
             return resolved;
         }
@@ -23,19 +23,19 @@ impl UserConfig {
         }
         match spec.name {
             "update.check" => (
-                self.update_check().to_string(),
+                ConfigValue::Bool(self.update_check()),
                 self.origin_of(self.update_check),
             ),
             "update.check_interval_hours" => (
-                self.update_check_interval_hours().to_string(),
+                ConfigValue::Number(self.update_check_interval_hours()),
                 self.origin_of(self.update_check_interval_hours),
             ),
             "terminal.backend" => (
-                self.terminal_backend().to_string(),
+                ConfigValue::Text(self.terminal_backend().to_string()),
                 self.origin_of(self.terminal_backend),
             ),
             "context.ceiling_tokens" => (
-                self.context_ceiling_tokens().to_string(),
+                ConfigValue::Number(self.context_ceiling_tokens()),
                 self.origin_of(self.context_ceiling_tokens),
             ),
             other => unreachable!("value_of: {other} is not in keys::KEYS"),
@@ -57,13 +57,13 @@ impl UserConfig {
     /// than growing this `format!` further.
     pub fn to_toml_string(&self) -> String {
         format!(
-            "[context]\nceiling_tokens = {}\n\n{}\n{}\n[terminal]\nbackend = \"{}\"\n\n[update]\ncheck = {}\ncheck_interval_hours = {}\n",
-            self.context_ceiling_tokens(),
+            "[context]\nceiling_tokens = {}\n\n{}\n{}\n[terminal]\nbackend = {}\n\n[update]\ncheck = {}\ncheck_interval_hours = {}\n",
+            ConfigValue::Number(self.context_ceiling_tokens()).to_toml_literal(),
             self.models_toml(),
             self.pressure_toml(),
-            self.terminal_backend(),
-            self.update_check(),
-            self.update_check_interval_hours(),
+            ConfigValue::Text(self.terminal_backend().to_string()).to_toml_literal(),
+            ConfigValue::Bool(self.update_check()).to_toml_literal(),
+            ConfigValue::Number(self.update_check_interval_hours()).to_toml_literal(),
         )
     }
 }

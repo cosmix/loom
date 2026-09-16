@@ -8,7 +8,7 @@
 use anyhow::Result;
 
 use crate::user_config::keys::{KeySpec, KEYS};
-use crate::user_config::{Origin, UserConfig};
+use crate::user_config::{ConfigValue, Origin, UserConfig};
 
 use super::wire::{ConfigEntry, ConfigKind, EffectiveValue, ScopeValue, Source};
 use super::workspace::{self, Workspace};
@@ -73,7 +73,7 @@ pub(super) fn entry(
 /// because `workspace`'s key-level resolution needs this exact value for a
 /// key a present section omits, rather than writing the expression a second
 /// time.
-pub(super) fn built_in(spec: &KeySpec) -> String {
+pub(super) fn built_in(spec: &KeySpec) -> ConfigValue {
     UserConfig::default().value_of(spec).0
 }
 

@@ -31,7 +31,7 @@ use std::path::Path;
 use anyhow::{bail, Result};
 
 use crate::user_config::keys::{self, KeySpec};
-use crate::user_config::UserConfig;
+use crate::user_config::{ConfigValue, UserConfig};
 
 pub(super) use request::{handle_post, serve_get};
 
@@ -111,7 +111,7 @@ fn apply_update(base: &Path, body: &[u8]) -> Result<String, UpdateError> {
         .map_err(|error| UpdateError::Invalid(format!("malformed request body: {error}")))?;
     let scope = Scope::parse(&request.scope).map_err(invalid)?;
     let spec = keys::spec(&request.name).map_err(invalid)?;
-    let value = parse_value(spec, scope, request.value.as_deref())?;
+    let value = parse_value(spec, scope, request.value)?;
 
     let workspace = Workspace::open(base).map_err(UpdateError::Failed)?;
     if scope == Scope::Project && workspace.is_none() {
@@ -134,8 +134,8 @@ fn apply_update(base: &Path, body: &[u8]) -> Result<String, UpdateError> {
 fn parse_value(
     spec: &KeySpec,
     scope: Scope,
-    value: Option<&str>,
-) -> Result<Option<toml_edit::Value>, UpdateError> {
+    value: Option<ConfigValue>,
+) -> Result<Option<ConfigValue>, UpdateError> {
     if scope == Scope::Project && !entries::project_scoped(spec) {
         return Err(UpdateError::Invalid(format!(
             "{}: has no project scope; set it at user scope instead",
@@ -143,7 +143,10 @@ fn parse_value(
         )));
     }
     match value {
-        Some(raw) => spec.parse(raw).map(Some).map_err(invalid),
+        Some(value) => value
+            .checked(&spec.kind, spec.name)
+            .map(Some)
+            .map_err(invalid),
         None => Ok(None),
     }
 }

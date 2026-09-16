@@ -88,7 +88,7 @@ fn list() -> Result<String> {
         .iter()
         .map(|spec| {
             let (value, origin) = config.value_of(spec);
-            (spec.name, value, origin.to_string())
+            (spec.name, value.to_string(), origin.to_string())
         })
         .collect();
     let key_width = rows.iter().map(|(k, ..)| k.len()).max().unwrap_or(0);

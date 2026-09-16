@@ -7,7 +7,7 @@ import type { ConfigClient, ConfigEntry, ConfigSnapshot, ConfigWrite } from "@/a
 import { SettingsDialog } from "@/components/settings-dialog";
 
 /// Shared harness for the settings dialog test suites (settings-dialog,
-/// settings-cards, settings-entry, settings-writes): a canonical registry
+/// settings-cards, settings-entry): a canonical registry
 /// fixture plus the render/write/lookup helpers every suite needs. Each
 /// suite only ever asserts on the specific keys it cares about, so the
 /// extra entries other suites rely on are inert noise for the rest.
@@ -37,16 +37,16 @@ const SNAPSHOT: ConfigSnapshot = {
     entry({
       name: "update.check",
       kind: { type: "bool" },
-      default: "true",
-      user: { value: "true", set: false },
-      effective: { value: "true", source: "default" },
+      default: true,
+      user: { value: true, set: false },
+      effective: { value: true, source: "default" },
     }),
     entry({
       name: "update.check_interval_hours",
-      kind: { type: "u32" },
-      default: "24",
-      user: { value: "24", set: true },
-      effective: { value: "24", source: "user" },
+      kind: { type: "number" },
+      default: 24,
+      user: { value: 24, set: true },
+      effective: { value: 24, source: "user" },
     }),
     entry({
       name: "terminal.backend",
@@ -59,12 +59,12 @@ const SNAPSHOT: ConfigSnapshot = {
     }),
     entry({
       name: "context.ceiling_tokens",
-      kind: { type: "u32" },
+      kind: { type: "number" },
       scopes: ["user", "project"],
-      default: "800000",
-      user: { value: "800000", set: false },
-      project: { value: "900000", set: true },
-      effective: { value: "900000", source: "project" },
+      default: 800000,
+      user: { value: 800000, set: false },
+      project: { value: 900000, set: true },
+      effective: { value: 900000, source: "project" },
     }),
     entry({
       name: "pressure.claude_model",
@@ -108,6 +108,13 @@ const SNAPSHOT: ConfigSnapshot = {
       user: { value: "low", set: false },
       project: { value: "low", set: false },
       effective: { value: "low", source: "default" },
+    }),
+    entry({
+      name: "notes.title",
+      kind: { type: "string" },
+      default: "My Loom notes",
+      user: { value: "My Loom notes", set: false },
+      effective: { value: "My Loom notes", source: "default" },
     }),
   ],
 };
