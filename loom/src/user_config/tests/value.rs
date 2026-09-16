@@ -87,6 +87,18 @@ fn to_toml_literal_escapes_an_embedded_quote_via_toml_edit() {
 }
 
 #[test]
+fn to_toml_literal_escapes_a_backslash_and_newline_via_toml_edit() {
+    let value = ConfigValue::Text("a\\b\nc".to_string());
+    let literal = value.to_toml_literal();
+
+    // Same proof as the embedded-quote test: the literal must round-trip
+    // through a real TOML document back to the original unescaped string,
+    // showing the escaping came from toml_edit itself.
+    let doc: toml_edit::DocumentMut = format!("v = {literal}\n").parse().unwrap();
+    assert_eq!(doc["v"].as_str(), Some("a\\b\nc"));
+}
+
+#[test]
 fn checked_accepts_the_matching_variant() {
     assert_eq!(
         ConfigValue::Bool(true)
