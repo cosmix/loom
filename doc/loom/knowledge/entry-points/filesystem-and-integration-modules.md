@@ -86,12 +86,15 @@ Two more subdirectories, resolved by their own modules rather than a `WorkDir` h
 
 ## HTTP Client Pattern — self_update/client.rs
 
-`commands/self_update/client.rs` — `create_http_client() -> Result<Client>`:
+`commands/self_update/client.rs` — a private `client_builder()` holds the shared settings (`connect_timeout(10s)`, `timeout(120s)`, `user_agent("loom-self-update")`, `https_only(true)`) behind two constructors:
 
-- `Client::builder().connect_timeout(10s).timeout(120s).user_agent("loom-self-update").build()`
+- `create_http_client() -> Result<Client>` — follows redirects under a bounded (10 hops), https-only policy; used for asset downloads, which GitHub redirects to a CDN.
+- `create_no_redirect_client() -> Result<Client>` — `Policy::none()`; used by `get_latest_release` to read a redirect's `Location` header.
 - `validate_response_status(&response, context)` — checks `is_success()`, returns descriptive HTTP errors
 - Streaming download with size limit enforcement (buffer size 8192)
 - Error propagation: `.context("Failed to ...")` pattern throughout
+
+**Never call `api.github.com` from the updater (2026-09-16).** Anonymous REST calls share a 60 requests/hour budget per public IP with every other anonymous client behind the same router, and `loom update` failed on a real install with `HTTP 403 - Forbidden` for exactly that reason. `get_latest_release` (`commands/self_update/mod.rs`) resolves the tag from the `github.com/<repo>/releases/latest` redirect (`tag_from_release_location` parses the `/releases/tag/<tag>` segment) and `update_binary` builds `releases/download/<tag>/<asset>` URLs from the tag; neither carries that limit. `update_check::fetch_latest_version` reuses the same lookup.
 
 This is the pattern for loom's HTTP consumers (self-update). The adjudicator is NOT one of them: an earlier version of this line said an adjudicator HTTP client should mirror it, but the adjudicator spawns a `claude -p` session and makes no HTTP call at all — see conventions.md § Adjudicator Transport Convention.
 
