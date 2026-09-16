@@ -114,45 +114,7 @@ impl ConfigTui {
 
     /// Translate terminal keys while preserving the state machine's headless boundary.
     fn handle_key(&mut self, key: KeyEvent) -> bool {
-        if key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL) {
-            return true;
-        }
-        if self.state.is_editing() {
-            return self.handle_edit_key(key.code);
-        }
-
-        match key.code {
-            KeyCode::Char('q') | KeyCode::Esc => true,
-            KeyCode::Up | KeyCode::Char('k') => {
-                self.state.move_up();
-                false
-            }
-            KeyCode::Down | KeyCode::Char('j') => {
-                self.state.move_down();
-                false
-            }
-            KeyCode::Enter => {
-                self.state.begin_edit();
-                false
-            }
-            KeyCode::Char('s') => {
-                self.state.save();
-                false
-            }
-            _ => false,
-        }
-    }
-
-    /// Handle the small inline editor without allowing its keys to quit the TUI.
-    fn handle_edit_key(&mut self, code: KeyCode) -> bool {
-        match code {
-            KeyCode::Char(character) => self.state.append_char(character),
-            KeyCode::Backspace => self.state.backspace(),
-            KeyCode::Enter => self.state.commit_edit(),
-            KeyCode::Esc => self.state.cancel_edit(),
-            _ => {}
-        }
-        false
+        dispatch_key(&mut self.state, key)
     }
 
     /// Restore the caller's terminal exactly once, including after an early error.
@@ -180,4 +142,55 @@ impl Drop for ConfigTui {
     fn drop(&mut self) {
         self.cleanup_terminal();
     }
+}
+
+/// Translate a key event into a state-machine operation without a live terminal.
+fn dispatch_key(state: &mut ConfigState, key: KeyEvent) -> bool {
+    if key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL) {
+        return true;
+    }
+    if state.is_editing() {
+        return dispatch_edit_key(state, key.code);
+    }
+
+    match key.code {
+        KeyCode::Char('q') | KeyCode::Esc => true,
+        KeyCode::Up | KeyCode::Char('k') => {
+            state.move_up();
+            false
+        }
+        KeyCode::Down | KeyCode::Char('j') => {
+            state.move_down();
+            false
+        }
+        KeyCode::Left | KeyCode::Char('h') => {
+            state.cycle(-1);
+            false
+        }
+        KeyCode::Right | KeyCode::Char('l') | KeyCode::Char(' ') => {
+            state.cycle(1);
+            false
+        }
+        KeyCode::Enter => {
+            state.activate();
+            false
+        }
+        KeyCode::Char('s') => {
+            state.save();
+            false
+        }
+        _ => false,
+    }
+}
+
+/// Handle a key while a text editor owns the keyboard.
+fn dispatch_edit_key(state: &mut ConfigState, code: KeyCode) -> bool {
+    match code {
+        KeyCode::Char(character) => state.append_char(character),
+        KeyCode::Backspace => state.backspace(),
+        KeyCode::Enter => state.commit_edit(),
+        KeyCode::Esc => state.cancel_edit(),
+        _ => {}
+    }
+    false
 }

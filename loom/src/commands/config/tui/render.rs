@@ -13,6 +13,7 @@ use ratatui::{
 
 use super::state::ConfigState;
 use crate::commands::status::ui::theme::{StatusColors, Theme};
+use crate::user_config::{keys::ValueKind, ConfigValue};
 
 /// Draw the header, registry rows, status line, and keyboard reminder.
 pub(super) fn draw(frame: &mut Frame, state: &ConfigState) {
@@ -84,13 +85,9 @@ fn render_row(index: usize, row: &super::state::ConfigRow, state: &ConfigState) 
         if selected { '>' } else { ' ' },
         if row.is_modified() { '*' } else { ' ' },
     );
-    let value = if selected {
-        state
-            .edit_buffer()
-            .map(|buffer| format!("{buffer}▏"))
-            .unwrap_or_else(|| row.displayed_value().to_owned())
-    } else {
-        row.displayed_value().to_owned()
+    let value = match (selected, state.edit_buffer()) {
+        (true, Some(buffer)) => format!("{buffer}▏"),
+        _ => value_cell(row, selected, state.is_editing()),
     };
     let row_style = if selected {
         Style::default()
@@ -113,6 +110,23 @@ fn render_row(index: usize, row: &super::state::ConfigRow, state: &ConfigState) 
     ])
 }
 
+/// Render a value by its registry kind when no inline text buffer is visible.
+fn value_cell(row: &super::state::ConfigRow, selected: bool, editing: bool) -> String {
+    match &row.spec().kind {
+        ValueKind::Bool => match row.displayed() {
+            ConfigValue::Bool(true) => "[x] on".to_owned(),
+            ConfigValue::Bool(false) => "[ ] off".to_owned(),
+            value => value.to_string(),
+        },
+        ValueKind::Enum(_) => match row.displayed() {
+            ConfigValue::Text(value) if selected && !editing => format!("‹ {value} ›"),
+            ConfigValue::Text(value) => value.clone(),
+            value => value.to_string(),
+        },
+        ValueKind::Number | ValueKind::String => row.displayed_value(),
+    }
+}
+
 /// Render the latest persistence or validation result in its semantic color.
 fn render_status(frame: &mut Frame, area: Rect, state: &ConfigState) {
     let style = if state.status_is_error() {
@@ -131,8 +145,10 @@ fn render_footer(frame: &mut Frame, area: Rect) {
     let footer = Line::from(vec![
         Span::styled("↑↓/k/j", Theme::header()),
         Span::raw(" move  "),
+        Span::styled("←/→/space", Theme::header()),
+        Span::raw(" cycle  "),
         Span::styled("Enter", Theme::header()),
-        Span::raw(" edit  "),
+        Span::raw(" edit or cycle  "),
         Span::styled("s", Theme::header()),
         Span::raw(" save  "),
         Span::styled("Esc/q", Theme::header()),
