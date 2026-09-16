@@ -9,6 +9,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::user_config::keys::ValueKind;
+use crate::user_config::ConfigValue;
 
 /// The whole `GET /api/config` response.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -45,13 +46,13 @@ pub struct ConfigEntry {
     pub kind: ConfigKind,
     /// Which scopes accept a write for this key.
     pub scopes: Vec<String>,
-    /// The built-in this key resolves to when NEITHER scope sets it.
+    /// The built-in value this key resolves to when NEITHER scope sets it.
     ///
     /// Not recoverable from the rest of the entry: `user.value` is the
     /// RESOLVED user-scope value, so it stops being the built-in the moment
     /// `user.set` turns true. A dialog offering "reset to the built-in" needs
     /// this even then.
-    pub default: String,
+    pub default: ConfigValue,
     /// What the user tier resolves to, and whether the file set it.
     pub user: ScopeValue,
     /// The same for the project tier; null for a user-only key, and for every
@@ -68,19 +69,21 @@ pub enum ConfigKind {
     /// `true` / `false`.
     Bool,
     /// A non-negative integer.
-    U32,
+    Number,
     /// One of a fixed set of string variants, listed verbatim.
     Enum { variants: Vec<String> },
+    /// Free text.
+    String,
 }
 
 /// One tier's view of a key: what it resolves to, and whether that tier's file
 /// actually says so.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ScopeValue {
-    /// The rendered value this tier resolves to. With `set` false this is the
-    /// value in force one tier down: the built-in for the user tier, the user
-    /// tier's resolved value for the project tier.
-    pub value: String,
+    /// The value this tier resolves to. With `set` false this is the value in
+    /// force one tier down: the built-in for the user tier, the user tier's
+    /// resolved value for the project tier.
+    pub value: ConfigValue,
     /// Whether this tier's file sets the key.
     pub set: bool,
 }
@@ -88,8 +91,8 @@ pub struct ScopeValue {
 /// The value loom resolves for a key, and the tier it came from.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct EffectiveValue {
-    /// The rendered value.
-    pub value: String,
+    /// The value.
+    pub value: ConfigValue,
     /// The tier that supplied it.
     pub source: Source,
 }
@@ -113,10 +116,10 @@ pub struct ConfigUpdate {
     pub scope: String,
     /// The dotted key name.
     pub name: String,
-    /// The new value as a string, parsed against the key's [`ConfigKind`], or
-    /// null to unset the key at `scope`.
+    /// The value, parsed against the key's [`ConfigKind`] and revalidated
+    /// server-side, or null to unset the key at `scope`.
     #[serde(default)]
-    pub value: Option<String>,
+    pub value: Option<ConfigValue>,
 }
 
 /// The `200` body of a successful `POST /api/config`.
@@ -126,9 +129,9 @@ pub struct ConfigUpdated {
     /// without re-fetching the whole payload.
     pub entry: ConfigEntry,
     /// What the written scope resolved to before the write.
-    pub old: String,
+    pub old: ConfigValue,
     /// What it resolves to now.
-    pub new: String,
+    pub new: ConfigValue,
 }
 
 /// Any non-2xx `/api/config` response body.
@@ -144,10 +147,11 @@ impl From<&ValueKind> for ConfigKind {
     fn from(kind: &ValueKind) -> Self {
         match kind {
             ValueKind::Bool => Self::Bool,
-            ValueKind::U32 => Self::U32,
+            ValueKind::Number => Self::Number,
             ValueKind::Enum(variants) => Self::Enum {
                 variants: variants.iter().map(|value| (*value).to_owned()).collect(),
             },
+            ValueKind::String => Self::String,
         }
     }
 }

@@ -42,8 +42,8 @@ use toml_edit::DocumentMut;
 
 use crate::fs::work_dir::{read_config, ContextConfig, WorkDir};
 use crate::models::session::TerminalConfig;
-use crate::user_config::keys::KeySpec;
-use crate::user_config::UserConfig;
+use crate::user_config::keys::{KeySpec, KEYS};
+use crate::user_config::{ConfigValue, UserConfig};
 
 /// A served tree's `.loom/work` and its parsed `config.toml`.
 pub(super) struct Workspace {
@@ -100,8 +100,8 @@ impl Workspace {
     ///
     /// For a key the file does not supply, this is the user tier's value:
     /// that is what clearing the key (or never setting it) leaves in force.
-    pub(super) fn value_of(&self, spec: &KeySpec) -> Result<String> {
-        match resolve(spec, self.doc.get(spec.section).cloned()) {
+    pub(super) fn value_of(&self, spec: &KeySpec) -> Result<ConfigValue> {
+        match resolve(spec, self.doc.get(spec.section)) {
             Some(value) => Ok(value?.unwrap_or_else(|| UserConfig::load().value_of(spec).0)),
             None => bail!("{} has no project scope", spec.name),
         }
@@ -111,10 +111,7 @@ impl Workspace {
     /// supplies the key itself (directly, or via `resolve`'s
     /// `context.ceiling_tokens` qualification).
     pub(super) fn shadows(&self, spec: &KeySpec) -> bool {
-        matches!(
-            resolve(spec, self.doc.get(spec.section).cloned()),
-            Some(Ok(Some(_)))
-        )
+        matches!(resolve(spec, self.doc.get(spec.section)), Some(Ok(Some(_))))
     }
 }
 
@@ -133,18 +130,19 @@ impl Workspace {
 /// with no edit here — the two exact-name arms above stay name-matched so a
 /// later key added to `[context]` cannot silently inherit `ContextConfig`'s
 /// reading of a DIFFERENT field.
-fn resolve(spec: &KeySpec, section: Option<toml::Value>) -> Option<Result<Option<String>>> {
+fn resolve(spec: &KeySpec, section: Option<&toml::Value>) -> Option<Result<Option<ConfigValue>>> {
     match spec.name {
         "terminal.backend" => Some(
-            TerminalConfig::backend_from_section(section)
-                .map(|backend| backend.map(|kind| kind.to_string())),
+            TerminalConfig::backend_from_section(section.cloned())
+                .map(|backend| backend.map(|kind| ConfigValue::Text(kind.to_string()))),
         ),
         "context.ceiling_tokens" => Some(
-            ContextConfig::resolve_with_user_ceiling(section, None)
-                .map(|(config, supplied)| supplied.then_some(config.ceiling_tokens.to_string())),
+            ContextConfig::resolve_with_user_ceiling(section.cloned(), None).map(
+                |(config, supplied)| supplied.then_some(ConfigValue::Number(config.ceiling_tokens)),
+            ),
         ),
         _ => match spec.section {
-            "pressure" | "models" => Some(Ok(section_key(section.as_ref(), spec))),
+            "pressure" | "models" => Some(Ok(section_key(section, spec))),
             _ => None,
         },
     }
@@ -156,13 +154,40 @@ pub(super) fn backs(spec: &KeySpec) -> bool {
     resolve(spec, None).is_some()
 }
 
-/// The section's own string for `spec.field`, or `None` when the section
-/// omits it or is itself absent.
-fn section_key(section: Option<&toml::Value>, spec: &KeySpec) -> Option<String> {
-    section
-        .and_then(|section| section.get(spec.field))
-        .and_then(toml::Value::as_str)
-        .map(str::to_owned)
+/// The section's own value for `spec.field`, parsed against the key's kind.
+///
+/// `None` means the section omits the key, is absent, or holds something the
+/// daemon ignores. This mirrors the daemon so the page never shows a value as
+/// in force that its readers drop: `section_readable` rejects an entire
+/// unreadable section, while `ConfigValue::from_toml_value` rejects one key
+/// with a warning that names it.
+fn section_key(section: Option<&toml::Value>, spec: &KeySpec) -> Option<ConfigValue> {
+    let section = section.filter(|section| section_readable(section, spec.section))?;
+    let value = section.get(spec.field)?;
+    match ConfigValue::from_toml_value(&spec.kind, spec.name, value) {
+        Ok(value) => Some(value),
+        Err(error) => {
+            tracing::warn!(
+                key = spec.name,
+                error = %error,
+                "workspace config value is invalid; falling through to the user tier as the daemon does"
+            );
+            None
+        }
+    }
+}
+
+/// Whether the daemon can deserialize the `[models]` or `[pressure]` section:
+/// a table whose entries are registered fields in `name`, all holding strings.
+fn section_readable(section: &toml::Value, name: &str) -> bool {
+    let Some(table) = section.as_table() else {
+        return false;
+    };
+    table.iter().all(|(field, value)| {
+        KEYS.iter()
+            .any(|spec| spec.section == name && spec.field == field)
+            && value.is_str()
+    })
 }
 
 fn parse(text: &str) -> Result<toml::Value> {
