@@ -2,7 +2,7 @@
 ---
 # Git And Build Workflow
 
-> Git/worktree ops, cargo fmt/test discipline, the shared maintainability ledger
+> Git/worktree ops, cargo discipline, the maintainability ledger
 
 ## Git Operations
 

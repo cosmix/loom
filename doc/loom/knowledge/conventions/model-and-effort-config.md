@@ -1,6 +1,6 @@
 # Model And Effort Config
 
-> `[pressure]` and `[models]` config sections, the four-tier precedence chain, defaults, and per-key fallback for every project-backed section.
+> [pressure]/[models] sections, precedence chain, value types
 
 ## Two Configurable Sections
 
@@ -60,3 +60,10 @@ for both goes through `crate::user_config`.
 A plan stage omits `model` and `reasoning_effort` by default, so the stage type's configured
 default applies. Set either field only as a deliberate override, and state why in the stage
 description.
+
+## Value Types Are a Separate Concern
+
+This file's `[pressure]`/`[models]` keys are string-valued (model names, effort levels) and
+resolved through the precedence chain above. The registry's typed read path — `ConfigValue`,
+`ValueKind`, per-surface threading through CLI/TUI/web/TS/React — is a cross-cutting seam documented
+separately: see [Typed Config Values](../architecture/config-value-types.md).

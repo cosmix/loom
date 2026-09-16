@@ -1,6 +1,6 @@
 # Remote Control
 
-> Capability detection, preflight, resolution, and per-kind session naming for driving external agent binaries.
+> Capability detection, preflight, and per-kind session naming
 
 ## Remote Control Module (loom/src/remote_control.rs)
 

@@ -1,6 +1,6 @@
 # Skill Catalog
 
-> The two skill roots, why 53 skills live outside `~/.claude/skills`, and the install/hook-exemption hazards that came with the split.
+> The two skill roots and why 53 skills live outside ~/.claude/skills
 
 ## Skill Catalog: Two Roots, and Why the Split
 

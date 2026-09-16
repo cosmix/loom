@@ -6,7 +6,7 @@ verified: e0baec38ddf35df499ac7eca828baed878ac671e
 ---
 # Memory Spool and Drain
 
-> Read before touching loom memory: spool/drain, ids, receipts, pending, archive
+> Read before touching loom memory: spool/drain, ids, receipts
 
 ## The Problem It Solves
 

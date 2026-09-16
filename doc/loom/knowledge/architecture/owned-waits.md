@@ -29,3 +29,19 @@ A background `loom subagents watch --worker ... | tail -20` "completes" immediat
 `codex-forward.sh` reports `timed_out` whenever the 540000 ms `status --wait` returns with the job still `queued`/`running`; it does not re-check whether the job completed in the instant between that return and its bounded `cancel` call. A job finishing inside that window is reported timed out and cancelled, though its edits stay in the tree. Deliberate: closing it needs a second non-wait `status` call, which every test stub (`loom-hooks/tests/codex-forward-wrapper.sh`, `loom/tests/codex_evidence/fake_companion.rs`) pins against. The re-split guidance remains correct at that boundary.
 
 `loom knowledge update`/`replace-section` resolve `doc/loom/knowledge/` from the shell's working directory: run from `loom/` they scaffold a second tree under `loom/doc/` and write there. Run them from the repository root.
+
+**Named-agent spawns break `watch`'s id parsing (2026-09-16):** when an `Agent` spawn passes a
+`name`, the Agent tool returns an id of the form `name@session-<8hex>`. `loom subagents watch`
+rejects it: `WorkerSpec::from_str` calls `forward_receipt::is_safe_id`, which disallows `@`, so the
+watch exits 5 ("worker id is empty or unsafe") before binding anything — even though the same spawn
+reports success via the harness's own task notification. Spawn Claude workers you intend to watch
+without a `name`, or bind the watch on the session id form the tool actually returns.
+
+**A companion liveness check can false-positive across the forwarder's sandbox PID namespace
+(2026-09-16):** `loom subagents watch` exited 3 claiming a codex companion job's process was "gone
+while its record says running" only 118 s after the forward started. The low PID reported points at
+the forwarder's own sandbox PID namespace being invisible to the watcher process — `kill(pid, 0)`
+resolves against the wrong namespace. Treat that exit as unverified and wait for the forwarder's own
+`LOOM-FORWARD-END` report before concluding the job failed. Separately, a watch naming only `codex:`
+workers exits 5 ("worker set does not resolve to one Claude parent UUID") — always include the
+forwarder's own `claude:<agent-id>` in the `--worker` set alongside the codex unit id.

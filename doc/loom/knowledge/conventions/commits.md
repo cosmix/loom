@@ -1,6 +1,6 @@
 # Commit Convention
 
-> Logically grouped commits, Conventional Commit messages, and no AI attribution.
+> Grouped commits, Conventional Commit messages, no AI attribution
 
 ## Required Commit Practice
 

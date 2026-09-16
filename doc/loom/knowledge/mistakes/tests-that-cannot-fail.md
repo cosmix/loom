@@ -1,6 +1,6 @@
 # Tests That Cannot Fail
 
-> Tests that pass regardless of whether the bug they exist to catch is present, and how to spot the shape.
+> Tests that pass whether or not the bug they cover is present
 
 ## A Test Named for a Property Is Not Evidence the Property Is Pinned
 
