@@ -105,10 +105,10 @@ function DraftField(props: DraftFieldProps): ReactElement {
 
   const commit = () => {
     if (draft === null) return;
-    const next = draft.trim();
+    const value = props.commitValue(draft.trim());
     setDraft(null);
-    if (next === String(props.value)) return;
-    props.onCommit(props.commitValue(next));
+    if (value === props.value) return;
+    props.onCommit(value);
   };
 
   return (
