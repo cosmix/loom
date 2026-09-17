@@ -95,3 +95,35 @@ Orchestrator started, spawning ready stages...
 ```
 
 First dated log line is `2026-05-13T16:13:18.544430Z` — within 1s of the lock file's mtime. The 06:30 daemon's earlier log entries (10 hours of operation) are not present in this file; either the log was truncated at the second startup, or the first daemon was writing to a different sink (e.g., it had `eprintln!` redirected on stdout but the new daemon repointed the log fd).
+
+## The Singleton Lock Lived Inside the Directory It Protected (2026-09-17)
+
+**What happened:** a daemon running plan P5 survived `loom clean --all`. The command
+removed `.loom/work/` without stopping the daemon, `loom init` recreated the directory for
+plan P6, and `loom run` started a second daemon. The old daemon's flock was still held on
+the unlinked `orchestrator.lock` inode; the new lock file was a new inode, so
+`acquire_lock` never saw contention. The old daemon then synced its in-memory P5 graph
+against P6's stage files: the shared id `integration-verify` was parked at WaitingForDeps
+by the sync, re-promoted along P5's merged dependency edges, and written back as `queued`
+while its P6 dependency was unmet. It also spawned P6's `knowledge-bootstrap`; the new
+daemon probed that session 350 ms later, before its pid identity file existed, judged it
+dead, requeued the stage and spawned a duplicate.
+
+**Why:** three independent gaps. `loom clean` had no daemon check at all. The flock was
+opened by path and nothing re-checked the inode after startup, so deleting the directory
+defeated the singleton without any error. The recovery sync trusted a stage file that
+shared an id with a graph node and never compared plan ids or the file's own dependencies
+before writing `queued`.
+
+**Prevention:** a lock that guards a directory must not live only inside it, or the holder
+must re-verify the inode it holds against the path every tick. Any writeback from the
+graph to a stage file re-checks the file's own dependencies first. A failed liveness probe
+on a session younger than the spawn's asynchronous setup is not evidence of death.
+
+**Fix:** `commands/stop.rs::ensure_daemon_stopped` runs before `loom clean --all`,
+`--state` and `loom init --clean` delete anything and refuses while the lock is held;
+`orchestrator/core/state_identity.rs` records the held lock's dev/inode and both the
+orchestrator tick and the daemon accept loop abort the process without by-path cleanup
+when it goes missing or is replaced; `recovery_guards.rs` aborts on a stage file from
+another plan, re-checks file dependencies before the queued writeback, and skips orphan
+recovery for sessions under 30 s old. Commits b3b75f20 and 2b90956d.
