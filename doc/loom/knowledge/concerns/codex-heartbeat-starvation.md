@@ -14,15 +14,11 @@ rule itself). No Rust production code writes a heartbeat (`write_heartbeat`,
 returns, so a codex run longer than the stage's budget makes the daemon print `appears hung` for a
 stage that is perfectly healthy.
 
-**Update (2026-08-27) — partly closed, not fully.** `loom-hooks/subagent-stop.sh` is new: it refreshes
-this same heartbeat file on every `SubagentStop`, with `activity: "subagent <agentId> finished"`.
-**Closed:** the window where a parent session blocked on Task-tool subagents ran no tools of its
-own, went silent on PostToolUse, and got reported `appears hung` while behaving perfectly — each
-subagent completion now refreshes the heartbeat. **NOT closed:** the codex case this section is
-named for. A foreground codex forward is still ONE blocking Bash call with no subagent underneath
-it — neither PostToolUse nor SubagentStop can fire until it returns, so a single codex run longer
-than the stage budget still produces a spurious `appears hung`. The section's headline finding
-stands for that case; only the Task-subagent-wait case above it was fixed.
+A foreground codex forward is still ONE blocking Bash call with no subagent underneath it —
+neither PostToolUse nor SubagentStop can fire until it returns, so a single codex run longer than
+the stage budget still produces a spurious `appears hung`. `loom-hooks/subagent-stop.sh` refreshes
+the heartbeat file on every `SubagentStop`, with `activity: "subagent <agentId> finished"`, which
+covers a parent session blocked on Task-tool subagents but not this pure-codex case.
 
 Budget: `DEFAULT_HUNG_TIMEOUT_SECS = 300` (`monitor/heartbeat.rs:21`), overridable per stage with
 `subagent_timeout_secs` -> `Stage::effective_subagent_timeout_secs()` (`models/stage/methods.rs:107-110`),

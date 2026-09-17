@@ -18,7 +18,7 @@ construction. Probed from inside the worktree: `README.md` writable, `doc/` writ
    implementation stages: agents must not hand-edit knowledge.
 2. That rule used to be inert. `sandbox/settings.rs` emitted denies as `Write(path)`, and
    Claude Code's file permission check consults only `Edit(path)` rules — see
-   `concerns/sandbox-write-rules-inert.md`. Every earlier distillation stage wrote
+   `sandbox-write-rules-inert.md`. Every earlier distillation stage wrote
    knowledge fine *because the guard did nothing*. Correcting the emitter to `Edit(...)`
    (`settings.rs:287`) made the guard real.
 3. The harness now projects permission denies down into the OS sandbox, so the block

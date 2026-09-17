@@ -1,6 +1,6 @@
 # Knowledge Cli Gaps
 
-> Knowledge/memory CLI gaps: no delete-section, no blurb flag, CRLF, backlog
+> Knowledge CLI gaps: no delete-section, CRLF, backlog
 
 ## Knowledge Signals Never Teach Tier-2 (2026-07-28)
 
@@ -20,18 +20,16 @@ the migration in this plan replaced the lead section with a summary and had to s
 remaining N-1 headings with an external script. A `loom knowledge drop-section` (or a
 `replace-section --delete`) would close the gap.
 
-## Tier-2 Topic Blurbs Cannot Be Set From the CLI (2026-07-28)
+## `loom knowledge update` Cannot Set a Topic Blurb (2026-07-28)
 
 A new topic is seeded with a fixed scaffold — a title derived from the slug and the blurb
 "Topic notes for the `<category>` knowledge area" — and user content is appended _after_ it.
 `scan_topics` harvests the **first** `#` and `>` lines for the INDEX.md table, so the generic
-seeded blurb wins unless corrected afterwards.
-
-**Fixed:** `loom knowledge annotate <target> --blurb "<text>"` now sets it directly (at most 80
-characters; longer is refused, not truncated) — confirmed working against a freshly scaffolded
-topic. Remaining rough edge: `update` still has no `--blurb` flag of its own, so seeding and
-correcting the blurb are two calls, and a leading `>` line inside the supplied content becomes a
-second, redundant blurb-shaped paragraph in the body rather than replacing the scaffold's.
+seeded blurb wins unless corrected with `loom knowledge annotate <target> --blurb "<text>"` (at
+most 80 characters; longer is refused, not truncated). `update` still has no `--blurb` flag of its
+own, so seeding and correcting the blurb are two calls, and a leading `>` line inside the supplied
+content becomes a second, redundant blurb-shaped paragraph in the body rather than replacing the
+scaffold's.
 
 ## GC Flags Tier-1 Files for Section Extraction With No Oversized Sections (2026-07-31)
 
@@ -47,15 +45,10 @@ condition under which a restructuring run drops content.
 **Fix:** when a file is over budget but has no oversized section, say so in the prompt and ask for
 a split proposal by topic cohesion instead of naming a section-extraction target that isn't there.
 
-## `loom knowledge` Cannot Rename a Section Heading (2026-08-17, duplicate-heading half fixed 2026-08-19)
+## `loom knowledge` Cannot Rename a Section Heading (2026-08-17)
 
 `loom knowledge replace-section <file> <heading> [content]` replaces a section's **body** and
-keeps the existing heading line. The half of this concern about a DUPLICATE heading is now
-fixed: `commands/knowledge/mod.rs::strip_repeated_heading` drops a `## <heading>` line repeated
-at the top of the caller's content before splicing, so passing content with its own copy of the
-heading no longer double-writes it.
-
-**Still true:** `splice_section` (`fs/knowledge/dir.rs:278`) matches the EXISTING heading and
+keeps the existing heading line. `splice_section` (`fs/knowledge/dir.rs:278`) matches the EXISTING heading and
 always re-emits that same heading text — there is no way to change the heading itself through
 the CLI, so marking an entry resolved in the repo's `~~strikethrough~~ (RESOLVED date)`
 convention still requires a direct file edit for the heading line, even though the body can now
@@ -93,37 +86,6 @@ than alarming.
 `loom knowledge update <file> "<content with trailing blank lines>"` call therefore widens the gap
 before the next appended section, while the same content piped via stdin would not. Minor, but the
 two paths should agree.
-
-## `loom memory` Is Unusable Without an Initialised `.loom/work` (2026-08-11)
-
-`loom memory note` exits non-zero with `.work directory not found. Run 'loom init' first.`
-(`commands/memory/handlers/work_dir.rs`), and even past that gate the recording handlers require a
-stage id from `--stage` or `LOOM_STAGE_ID` (e.g. `note()` in `commands/memory/handlers/record.rs`). Neither holds in
-an interactive or ad-hoc session.
-
-This collides head-on with doctrine: the mandatory subagent preamble orders every subagent to
-record mistakes and decisions via `loom memory`, while auto-memory is prohibited whenever
-`doc/loom/knowledge/` exists — which it does here. Agents are therefore ordered to record and
-given no working way to do it, and the failure is silent from the orchestrator's point of view.
-Three agents lost insights to this in a single session before it was noticed.
-
-**Fixed in-tree 2026-08-11** (`commands/memory/handlers/work_dir.rs`): the four recording commands
-(`note`, `decision`, `change`, `question`) now create `<repo_root>/.loom/work/memory/` when cwd is
-inside a git repo, and default the stage to the sentinel `ad-hoc`; `query`/`list`/`show` degrade
-to exit 0 without creating anything. Outside a git repo the original error stands, so `.loom/work` is
-never scattered into arbitrary directories — see
-[`find_repo_root_from_cwd` Returns `Some(cwd)` Outside Any Repo](../mistakes.md) for the trap that
-guard exists to dodge.
-
-**Still true until the built binary is installed:** a `loom` on PATH from before this change keeps
-the old behaviour. When delegating outside a loom run against an older binary, tell subagents
-explicitly that `loom memory` will fail, that auto-memory is still forbidden, and that they must
-return insights in their final report for the orchestrator to record by hand.
-
-**2026-09-10 note:** the single file `commands/memory/handlers.rs` no longer exists — it was split
-into `commands/memory/handlers/{mod,work_dir,record,read,resolve,pending}.rs`; the error message
-now reads "No loom workspace found. Run 'loom init' first." (`work_dir.rs::get_or_create_work_dir`),
-same behaviour, updated wording.
 
 ## Tier-1 Knowledge Housekeeping Backlog
 

@@ -52,13 +52,6 @@ describe the current hook boundary as TOCTOU-free.
 
 ## `loom attach <stage-id>` Dies With Its Stage (2026-08-26)
 
-Investigated after a report that the overview never removed dead panes or added new stages. The
-report was a ghost — re-tested the same day, the reconciler both adds and kills correctly on tmux
-3.6a. The defects the investigation surfaced (debug-only/absent reconciler logging, relative daemon
-`work_dir`, `TMUX_TMPDIR` divergence, no retile after kills, no real-tmux test, the never-compiled
-`reconcile/steps.rs` copy) were fixed the same day — see `architecture/terminal-backends.md`
-§ "Live Overview Reconciliation". What remains is a design property, not a bug:
-
 **Direct attach dies with its stage by design.** `loom attach <stage-id>` `exec`s into the stage's
 OWN server (`commands/attach/mod.rs`), whose lifetime is the stage's (default `exit-empty`;
 `completion_handler.rs` `kill_session` is only a backstop). The client gets `[exited]` on

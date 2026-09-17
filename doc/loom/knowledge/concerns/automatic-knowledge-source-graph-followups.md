@@ -40,27 +40,11 @@ see `mistakes/writer-reader-address.md`.
 
 **A permission deny now reaches child processes.** The knowledge tree is denied to the
 agent AND to the `loom` binary the doctrine tells agents to use. See Part C of the
-pending-knowledge document, and `concerns/sandbox-write-rules-inert.md` for the history.
+pending-knowledge document, and `../mistakes/sandbox-write-rules-inert.md` for the history.
 
 **`fs/permissions/constants.rs`** still declares `LOOM_PERMISSIONS_WORKTREE` with
 `Write(.loom/work/**)` / `Bash(loom *)` rules that read like a blanket grant but have no real
 consumers, and `Write(path)` rules are inert anyway. A documented fossil.
-
-## Resolved: `Channel::Source` and the Source-Graph Deletion Gap (2026-08-17, both resolved by 2026-09-10)
-
-Two related concerns, once open, are now closed:
-
-- **`Channel::Source` is now consulted.** It used to be accepted everywhere (`--scope source` parsed,
-  advertised in `--help`, threaded into `PackRequest.scope`) but `rank_channels` ranked it over an
-  empty slice, so every pack named a scope it never searched. `context/rank_source.rs` now scores
-  source-graph nodes for real, fused with the knowledge ranker by `context/fuse.rs`. The historical
-  trail of dead shapes left by shipping the store without the consumer — `ItemKind::SourceNode`,
-  `ResolvedGraph::node()`, `ContextItem.excerpt`'s unreachable `None` arm — is still catalogued in
-  `mistakes/store-without-consumer.md` as a lesson, even though the specific defect it names is fixed.
-- **Overlay deletions are now tombstoned.** `GraphStore::resolved` used to compute `overlay ∪ base`
-  with no way to express a file a stage deleted, so `loom map --outline <deleted-file>` kept printing
-  the stale base outline. `context/graph_store/mod.rs` now carries `FileCoverage::Deleted` entries
-  (see `:85`, `:291`, `:341`) that suppress the base outline once a stage removes the file.
 
 ## Retrieval Cannot Distinguish 'No Source Graph' From 'Healthy' (2026-09-01)
 

@@ -23,21 +23,6 @@
    `index.js` as one file); raising the warning limit would be suppression. Left for whoever
    owns the bundle's size budget.
 
-## Resolved
-
-`DEFAULT_PORT` is now the production starting point for bare `loom status --web`. Binding
-advances from 7373 only when a candidate is already in use; explicit ports remain exact and
-explicit `0` delegates selection to the OS.
-
-The header no longer overflows a phone viewport (fixed 2026-09-17). At 390px the controls row in
-`web/src/components/header.tsx` needed 292px beside the logo but had 251px, and it could not
-wrap, so the page was 10px wider than the viewport. The row is now `flex-wrap justify-end`; at
-390px the settings and legend buttons move to a second right-aligned line. jsdom does no layout,
-so no unit test covers it: measure `scrollWidth` in a browser at 390px and 320px.
-
-The Content-Security-Policy violation logged on every load is gone (fixed 2026-09-17); see
-"zod and the CSP" in [architecture/web-dashboard.md](../architecture/web-dashboard.md).
-
 ## Terminal lane
 
 - **A stalled control-mode terminal holds its resources for up to `GATE_STALL_TIMEOUT` + 2s.**

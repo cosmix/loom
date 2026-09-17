@@ -58,20 +58,17 @@ The two end-to-end smokes — Claude `/pressure` actually editing the plan, and 
 
 ### `git rev-parse --show-toplevel` Duplication (2026-08-18, updated 2026-09-10)
 
-Repo-root resolution was inlined in three places: `commands/knowledge/spawn.rs` (no longer exists —
-removed entirely when commit `36268adc` collapsed the knowledge CLI to `update`/`context`/`sync`;
-it held `resolve_project_root`), `commands/stage/merge.rs` (inline), and `commands/pressure/mod.rs`
-(`resolve_repo_root`). The merge-side resolution now lives at `commands/stage/merge/preflight.rs`
-(inline) and the pressure-side one at `commands/pressure/paths.rs::resolve_repo_root`. Two
-duplicates now remain, below the "extract at 3+" threshold in conventions.md Import
-Deduplication — no longer an active consolidation candidate, but the two copies could still drift.
+Repo-root resolution is inlined in two places: the merge-side resolution at
+`commands/stage/merge/preflight.rs` and the pressure-side one at
+`commands/pressure/paths.rs::resolve_repo_root`. Both are below the "extract at 3+" threshold in
+conventions.md Import Deduplication — not an active consolidation candidate, but the two copies
+could still drift.
 
 ## Deferred Worktree Cleanup Has Two Residual Edge Cases (2026-07-22)
 
-The main deleted-working-directory hook failure is fixed. Two residuals remain: daemon cleanup can
-still race SessionEnd hooks during the short SIGTERM teardown window, and manual `loom stage
-complete` with no daemon running defers cleanup until the next recovery pass or an explicit
-`loom worktree remove`.
+Two residuals in worktree cleanup: daemon cleanup can still race SessionEnd hooks during the short
+SIGTERM teardown window, and manual `loom stage complete` with no daemon running defers cleanup
+until the next recovery pass or an explicit `loom worktree remove`.
 
 ## Sandbox Denial Has No End-to-End CI Canary
 
@@ -84,25 +81,12 @@ settings backup risk, and the `Read(...)` deny-rule ban.
 
 → [Sandbox and Confinement Gaps](concerns/sandbox-and-confinement-gaps.md)
 
-## Sandbox `Write(path)` Rules Are Inert (2026-07-31, split 2026-08-17, RESOLVED 2026-08-31)
-
-Claude Code's file permission check consults **only** `Edit(path)`; a `Write(path)` rule parses,
-warns at startup, and is then ignored. Both halves are now fixed: `sandbox/settings.rs` emits
-`Edit(...)` throughout, and the `Write(.loom/work/**)` rules in a project's `.claude/settings.json`
-turned out to be loom's own output from `fs/permissions/constants.rs` (that file is generated and
-untracked, not committed config), replaced by `Edit(.loom/work/handoffs/**)`. Loom now also prunes the
-legacy grants and migrates inherited `Write(...)` denies on every `loom init`.
-
-→ [Sandbox Write Rules Inert](concerns/sandbox-write-rules-inert.md) for what each half emitted,
-where the pruning lives, and the deny-beats-allow caution that shaped the migration rule.
-
 ## Long Codex Runs Starve the Loom Heartbeat (2026-08-07)
 
 A foreground codex-lane run is ONE blocking Bash call, so neither `PostToolUse` nor
 `SubagentStop` can refresh the heartbeat until it returns — a codex run longer than
 the stage's hung-timeout still produces a spurious, advisory-only `appears hung`
-warning. Partly closed 2026-08-27 for the Task-subagent-wait case; the pure codex
-case stands. Mitigation is doctrine (bound the task, set `subagent_timeout_secs`),
+warning. Mitigation is doctrine (bound the task, set `subagent_timeout_secs`),
 not a monitor change — raising the global timeout was considered and rejected. The
 same topic now also covers the independent `loom status` "Stale" badge mismatch
 (two 300s constants, one stage-aware, one not).
@@ -121,9 +105,7 @@ extraction size cap, four production-dead `KnowledgeDir` methods kept alive only
 each other's tests, a writer/reader plan-key normalisation mismatch, a permission
 deny that now reaches the `loom` binary's own child processes, and a fossilized
 `LOOM_PERMISSIONS_WORKTREE` grant with no real consumers. The same topic now also
-covers the retrieval-degradation ambiguity, natural-language stopwording, and two
-items resolved since (`Channel::Source` wiring via `rank_source.rs`, overlay-deletion
-tombstones via `FileCoverage::Deleted`).
+covers the retrieval-degradation ambiguity and natural-language stopwording.
 
 Full detail: [automatic-knowledge-source-graph-followups.md](concerns/automatic-knowledge-source-graph-followups.md).
 
@@ -156,18 +138,14 @@ and process-global cwd mutation in memory tests.
 cap on `INDEX.md`; the remaining backlog is `MissingSourceRef` resolution (needs the full
 src-relative path) and generic tier-2 blurbs. This entry now also covers the CLI's own rough
 edges: knowledge signals never teaching the tier-2 form, no delete-section verb, `replace-section`'s
-CRLF/trailing-blank-line quirks, `update`'s stdin-vs-inline trim mismatch, no heading-rename
-support, and `loom memory`'s pre-2026-08-11 usability gap.
+CRLF/trailing-blank-line quirks, `update`'s stdin-vs-inline trim mismatch, no blurb flag on
+`update`, and no heading-rename support.
 
 → [Knowledge CLI Gaps](concerns/knowledge-cli-gaps.md)
 
-## Hook Source Directory Sandbox Collision Resolved (2026-09-13)
-
-The source directory was renamed to `loom-hooks/` on 2026-09-13 to avoid Claude Code's protected bare-git directory name. Installed hook paths and Rust's `loom/src/hooks/` module remain unchanged. [Rename and historical sandbox probes](concerns/sandbox-protected-hooks-dir.md)
-
 ## Web Dashboard Latent Issues
 
-Four issues reviewed and deliberately left unchanged in `loom/src/commands/status/web/`: a mutex-poisoning cascade risk, a cosmetic `GET /ws` status-code mismatch, an inherited partial-frame truncation risk shared with the TUI, and a left-in-place bundle-size warning. The former unused-`DEFAULT_PORT` concern was resolved when bare `--web` gained automatic port fallback. Detail: [concerns/web-dashboard-latent-issues.md](concerns/web-dashboard-latent-issues.md).
+Four issues reviewed and deliberately left unchanged in `loom/src/commands/status/web/`: a mutex-poisoning cascade risk, a cosmetic `GET /ws` status-code mismatch, an inherited partial-frame truncation risk shared with the TUI, and a left-in-place bundle-size warning. Detail: [concerns/web-dashboard-latent-issues.md](concerns/web-dashboard-latent-issues.md).
 
 ## Merge Path Follow-Ups After the Silent-Unmerged Fix (2026-09-06)
 
@@ -181,34 +159,17 @@ post-transition nonce-burn ordering.
 
 → [Merge and Recovery Edge Cases](concerns/merge-and-recovery-edge-cases.md)
 
-## Resolved
+## Token Accounting Follow-Ups (2026-09-13)
 
-Concerns that were open and are now closed. Detail and lessons stay where they were recorded;
-this is a pointer, not an archive — see git history for the fix commits.
+Open follow-ups from PLAN-token-optimization-2026-09-13: git and bounded-runner hygiene,
+read-receipt runtime uncertainties, the IV fence wording, and two fail-open guard choices.
 
-- **`Dead Code: is_knowledge_stage()`** — the function was removed entirely; `rg` finds zero
-  references in `loom/src`.
-- **`Dead Configurability: analyze_gc_metrics_with_promoted`** — the function was removed
-  entirely along with its unused `max_promoted_blocks` parameter.
-- **`Channel::Source` Is Accepted Everywhere and Consulted Nowhere** — `context/rank_source.rs`
-  now scores source-graph nodes for real. See
-  [automatic-knowledge-source-graph-followups.md](concerns/automatic-knowledge-source-graph-followups.md#resolved-channelsource-and-the-source-graph-deletion-gap-2026-08-17-both-resolved-by-2026-09-10).
-- **`Source-Graph Overlay Cannot Express a Deletion`** — `GraphStore` now carries
-  `FileCoverage::Deleted` tombstones. Same pointer as above.
-
-## Token Accounting and Proof Defects (2026-09-13)
-
-All four defects PLAN-token-optimization-2026-09-13 set out to fix are RESOLVED (an earlier
-version of this entry listed them as open): the criterion cache stores only certified full
-evaluations, streamed usage keeps the latest whole vector, poll-guard counts `loom subagents list`,
-and the forward-guard hook tests unset the live `LOOM_*` identity. The same page now holds the
-plan's open follow-ups: git and bounded-runner hygiene, read-receipt runtime uncertainties, the IV
-fence wording, and two fail-open guard choices.
-→ [Token Accounting and Proof Defects](concerns/token-accounting-and-proof-defects.md)
+→ [Token Accounting Follow-Ups](concerns/token-accounting-and-proof-defects.md)
 
 ## State Confinement Gaps (2026-09-13) [DETAILED]
 
-Session write access to loom state and to what runs outside the sandbox, open until the `.loom` confinement plan merges.
+One accepted residual from the merged `.loom` state-confinement plan: shared package-manager
+caches stay session-writable.
 
 → [State Confinement Gaps](concerns/state-confinement-gaps.md)
 
@@ -225,10 +186,6 @@ than folded into an unrelated plan's stage, since the fix touches a security-sen
 policy that deserves its own reviewed change. **Fix direction:** canonicalize the trusted work-dir
 root once before anchoring (as the commands that already work correctly inside worktrees do), keeping
 no-follow enforcement for everything beneath it; add a worktree-shaped regression test.
-
-## `RecordCompletionEvidence` Rejected With `AuthenticationFailed` on a Real `loom stage complete` (2026-09-14, OPEN)
-
-RESOLVED the same day. The stage recorded this as an open daemon problem (stale tokens, a daemon needing a restart); neither was the cause. Commit a31c2122 made the daemon completion dispatcher (`daemon/server/completion_dispatch.rs`) require the `user.token` credential for `RecordCompletionEvidence` and `CompleteStage`, while the broker client still read the token through the worktree symlinked `.loom/work` (refused by `safe_open_dirfd` `O_NOFOLLOW`) and sent the `peer-identity` placeholder, which the new gate refuses. A second miss: `commands/stage/completion_evidence.rs` imported `daemon/rpc.rs::user_credential` under the alias `completion_credential`, so the evidence request never used the broker credential function at all. Fix: `control_complete::completion_credential` canonicalizes the work dir before reading the token and both broker requests use it. Full write-up: [The Daemon Grew a Token Gate the Broker Could Not Satisfy](mistakes/completion-broker-credential.md).
 
 ## Agent Rule-Bending Hardening (2026-09-16)
 

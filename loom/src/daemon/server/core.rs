@@ -44,7 +44,7 @@ pub enum DaemonStatus {
 /// the failed `connect()` is a property of the CALLER, not evidence the
 /// daemon died. Treating it as "not running" would let a second daemon start
 /// against the same `.loom/work/`, which is exactly the singleton failure
-/// recorded in `doc/loom/knowledge/concerns/daemon-singleton.md`.
+/// recorded in `doc/loom/knowledge/mistakes/daemon-singleton.md`.
 pub(super) fn daemon_running_from_status(status: DaemonStatus) -> bool {
     matches!(
         status,

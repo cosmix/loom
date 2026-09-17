@@ -16,58 +16,9 @@ sources:
 - CLAUDE.md.template
 verified: 499b09b6297aeee4896a66df3da86d00f652a618
 ---
-# Token Accounting and Proof Defects (open at 7d6a14ca)
+# Token Accounting Follow-Ups
 
-> Resolved plan defects and open token-accounting follow-ups
-
-## Criterion Cache False Pass (owner: measurement-and-cache)
-
-**Resolved by measurement-and-cache (2026-09-13).** Was: `run_with_cache` stored a pass on raw
-exit success before the extended criterion ran, and a cached result was rebuilt with empty
-stdout/stderr and exit 0, so `stdout_not_contains` and empty-stderr criteria passed falsely on the
-second run; the key omitted environment, confinement, timeout and the extended criterion.
-
-Now the cache stores only a certified, fully evaluated pass keyed by a complete
-`CriterionContract` (`loom/src/verify/criteria/cache_contract.rs`: command, simple or extended
-kind, expected exit, both output predicate lists, the empty-stderr flag, timeout, confinement and
-the input fingerprint; `CACHE_RECORD_VERSION` 2, bounded 4 KiB diagnostic tails). Unknown
-eligibility is a miss. Regression: `forbidden_output_failure_executes_and_fails_twice`
-(`loom/src/verify/criteria/tests/runner_tests.rs:179`). The audit's standalone reproducer program
-was never committed; that test is the reproduction.
-
-## Usage Stream Undercount (owner: measurement-and-cache)
-
-**Resolved by measurement-and-cache (2026-09-13).** Was: `merge_request` kept the first nonzero
-usage of a streamed message (audit: 24.53% of output missed), `UsageArgs` had `--since` only, and
-discovery prefiltered files by mtime before event time.
-
-Now `merge_usage_observation` (`loom/src/commands/usage/transcript_merge.rs:10-31`) replaces the
-whole usage vector with the latest observation by `(timestamp, line_ordinal)` and counts the
-observations; `--until` gives an inclusive event-time upper bound, and the mtime prefilter is gone.
-See [Token Accounting and Receipts](../architecture/token-accounting-and-receipts.md).
-
-## `loom subagents list` Polling Evades Poll-Guard (owner: job-lifecycle)
-
-**Resolved by job-lifecycle (2026-09-13).** Was: the repeat rule counted only programs in its
-read-only allowlist, which lacked `loom`.
-
-Now `loom-hooks/poll-guard.sh:105-110` counts `loom subagents list` (declared flags plus at most one
-display pipe) toward the repeat rule. When the stage has a `forward-receipts.jsonl`, its guidance
-names the exact wait (`loom subagents wait --receipt <id> --timeout 3600`, `poll-guard.sh:155-190`)
-instead of more polling. Test: `loom/tests/integration/hooks_poll_guard_subagents.rs`.
-
-## Hook Tests Write Into the Live Stage Ledger (owner: job-lifecycle)
-
-**Resolved by job-lifecycle (2026-09-13).** Was: the `codex-forward-guard-*` hook tests
-inherited `LOOM_STAGE_ID`/`LOOM_SESSION_ID`/`LOOM_WORK_DIR` from the running session, so every
-hook-suite run inside a live stage appended fake forward records to that stage's own
-`.loom/work/subagents/<stage>/codex.jsonl` (11 in one knowledge-bootstrap run).
-
-Now each test unsets the `LOOM_*` identity on its own line 3
-(`loom-hooks/tests/codex-forward-guard-blocks-edit.sh:3`), and
-`codex-forward-guard-live-identity.sh` covers the live-identity path. IV's gate run left no
-`codex.jsonl` for its stage. The unset has to live in the test script: `commit-filter.sh` blocks an
-orchestrator's own Bash call that unsets `LOOM_MAIN_AGENT_PID`.
+> Open follow-ups from the 2026-09-13 token-optimization plan
 
 ## Open Follow-Ups After the Token-Optimization Plan (2026-09-13)
 

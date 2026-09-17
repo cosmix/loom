@@ -1,26 +1,21 @@
 # Sandbox Write Rules Inert
 
-> Sandbox Write() rules inert in generated stage settings
-> `.claude/settings.json` loom writes for a project.
+> Only Edit(path) permission rules are enforced; Write(path) rules are ignored
 
-**Status split on 2026-08-17, both halves RESOLVED 2026-08-31.** Kept because the underlying
-fact still governs every settings file loom writes.
-
-The underlying fact is unchanged and is the thing to remember: Claude Code's file permission
-check consults **only** `Edit(path)` rules. A `Write(path)` rule parses, prints a startup
-warning, and is then ignored — so a `Write(**)` deny permits every write it was written to
-block. The warning scrolls past during session startup:
+Claude Code's file permission check consults **only** `Edit(path)` rules. A `Write(path)` rule
+parses, prints a startup warning, and is then ignored — so a `Write(**)` deny permits every write
+it was written to block. The warning scrolls past during session startup:
 
 ```text
 Permission deny rule (.claude/settings.local.json): Write(**) is not matched by file
 permission checks — only Edit(path) rules are. Use Edit(**) instead.
 ```
 
-## FIXED — loom's generated stage settings
+## Generated Stage Settings Emit `Edit(...)`
 
-`sandbox/settings.rs` now emits `Edit(...)` throughout: `:227` for the per-path allow rule,
+`sandbox/settings.rs` emits `Edit(...)` throughout: `:227` for the per-path allow rule,
 `:287` for deny, `:302` and `:181` for the handoffs directory. An explicit `IMPORTANT` comment
-at `:240-244` records why, naming this concern. Verified by
+at `:240-244` records why, naming this rule. Verified by
 `rg '"Write\(|format!\("Write' loom/src/sandbox/settings.rs` — the only remaining `Write(`
 occurrences are at `:1234` and `:1286`, both in the carry-forward test asserting a
 USER-authored `Write(~/.bashrc)` **survives**.
@@ -34,11 +29,11 @@ spelling — and drops it only where an enforced rule would be harmful (blanket 
 `../`-relative, or the knowledge dir). The tests that used to pin verbatim survival now pin the
 migration.
 
-## FIXED — a project's `.claude/settings.json` (2026-08-31)
+## A Project's `.claude/settings.json`
 
-**Correction to the earlier text here:** those rules were `allow` entries, not deny entries, and
-the file is not committed config — it is loom's own output. `git ls-files .claude` returns
-nothing; `fs/permissions/constants.rs` writes `Read(.work/**)` + `Write(.work/**)` into every
+Three legacy `Write(...)` rules were `allow` entries, not deny entries, reaching every generated
+project file; the file is not committed config, it is loom's own output (`git ls-files .claude`
+returns nothing). `fs/permissions/constants.rs` wrote `Read(.work/**)` + `Write(.work/**)` into every
 project on `loom init`, `git/worktree/settings.rs` added the resolved-absolute
 `Write(/<abs>/.work/**)`, and `fs/permissions/sync.rs` promoted the worktree-relative
 `Write(../../.work/**)` back into the main file.

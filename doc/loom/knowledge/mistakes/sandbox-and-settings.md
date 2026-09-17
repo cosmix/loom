@@ -284,7 +284,7 @@ looked intentional rather than like a gap. A second fossil pointed the same wron
 `fs/permissions/constants.rs` declared `LOOM_PERMISSIONS_WORKTREE` with `Write(.loom/work/**)` and
 `Bash(loom *)`, which read like a blanket grant but has no consumers outside its own unit test
 — and `Write(path)` rules are inert anyway. (That entry is now `Edit(.loom/work/handoffs/**)`; see
-[../concerns/sandbox-write-rules-inert.md](../concerns/sandbox-write-rules-inert.md).)
+[sandbox-write-rules-inert.md](sandbox-write-rules-inert.md).)
 
 **Prevention:** when a comment says state is written "through the daemon", verify the RPC
 exists in `daemon/protocol.rs` before treating a missing write grant as intentional. An
@@ -372,7 +372,7 @@ advice for socket trouble is to kill and restart the daemon.
   classification.
 - **`is_running()` must stay true for the unreachable state.** The flock already proved a daemon
   owns the `.loom/work/`; reporting otherwise would let a second daemon start. See
-  `concerns/daemon-singleton.md` for the incident that makes this load-bearing.
+  `daemon-singleton.md` for the incident that makes this load-bearing.
 
 **Also worth knowing — ~20 project-root paths are read-denied in a stage sandbox.** Extracted from
 real transcripts, these produce `Permission denied` for any recursive read from the worktree root:

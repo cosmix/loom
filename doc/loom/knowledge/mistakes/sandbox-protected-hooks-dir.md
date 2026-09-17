@@ -1,6 +1,6 @@
-# Sandbox Protected hooks/ Directory
+# Directory Named `hooks/` Is Sandbox-Protected
 
-> Resolved 2026-09-13: repo hook sources moved to loom-hooks/
+> A directory named hooks/ is sandbox write-protected.
 
 ## The Rule
 
@@ -26,21 +26,11 @@ Only a directory literally named `hooks` at the point the rule matches is affect
 
 ## No Scoped Override Exists
 
-Neither an `allowWrite` rule nor an `Edit(...)` allow rule in `.claude/settings.json` lifts this protection — it is enforced ahead of the ordinary permission system, not as part of it. The only ways to lift it are `sandbox.filesystem.disabled` or listing the specific command under `excludedCommands`; this repository sets `allowUnsandboxedCommands: false`, so neither is in effect here.
+Neither an `allowWrite` rule nor an `Edit(...)` allow rule in `.claude/settings.json` lifts this protection — it is enforced ahead of the ordinary permission system, not as part of it. The only ways to lift it are `sandbox.filesystem.disabled` or listing the specific command under `excludedCommands`; this repository sets `allowUnsandboxedCommands: false`, so neither is in effect here. The workaround is to route around the shell rather than lift the rule: edit files under a protected `hooks/*` path with the Edit or Write tools, never `sed`, `chmod`, redirection, or `cp`, and resolve `hooks/*` merge conflicts from an operator shell outside the sandboxed session.
 
 ## Consequences Seen 2026-09-02
 
-- A `chmod +x` acceptance criterion targeting the test runner under the old source root looked impossible from inside a sandboxed session and was adjudicated away rather than recognized as a sandbox artifact. The runner now lives at `loom-hooks/tests/run-all.sh`.
-- A merge resolver could not resolve two `hooks/*` merge conflicts from the shell at all.
-
-## Historical Workarounds
-
-- Edit files under `hooks/*` with the Edit or Write tools, never with `sed`, `chmod`, redirection, or `cp` — those tools are not subject to this sandbox rule.
-- Resolve `hooks/*` merge conflicts from an operator shell outside the sandboxed session.
-
-## Completed Rename (2026-09-13)
-
-Completed on 2026-09-13: the repository source directory is now `loom-hooks/`. Source embeds, script/test references, doctrine and active plans use that name. Installed paths remain `~/.claude/hooks/loom/` and `~/.codex/hooks/loom/`; the Rust module remains `loom/src/hooks/`. The 2026-09-02 probes and failures above describe the former directory, not the renamed source root. The rename verification includes a sandboxed write/delete probe and the Rust/hook gates.
+A `chmod +x` acceptance criterion targeting a test runner under a `hooks/`-named directory looked impossible from inside a sandboxed session and was adjudicated away rather than recognized as a sandbox artifact, and a merge resolver could not resolve two `hooks/*` merge conflicts from the shell at all. Both are this rule, not a broken tool — check for a directory literally named `hooks` before treating either symptom as a real defect.
 
 ## Test-File Modes (2026-09-12)
 

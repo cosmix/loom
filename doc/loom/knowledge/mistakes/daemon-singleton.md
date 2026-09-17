@@ -1,7 +1,6 @@
-# Daemon Singleton (Resolved 2026-08-08)
+# Daemon Singleton Incident
 
-> Historical incident: two daemons once attached to the same `.loom/work/`. Startup now holds an
-> authoritative stable-file `flock` for the full daemon lifetime and refuses a second owner.
+> Two loom daemons once attached one .loom/work/; startup now holds one flock.
 
 ## Resolution
 

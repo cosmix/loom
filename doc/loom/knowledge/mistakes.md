@@ -22,7 +22,7 @@ Seven lessons on what a large removal or rename leaves behind — straggler init
 
 ## Sandbox: Contradictory Path Rules
 
-Sandbox path rules, permission sync, `excludedCommands` matching, settings env leaking between the main repo and its worktrees, a worktree-only escape rule applied at the repo root, a sandboxed `git merge` leaving stray untracked files, node_modules resolving from the MAIN repo in a fresh worktree. Root cause: settings are _merged_ from several sources. → [Sandbox & Settings](mistakes/sandbox-and-settings.md)
+Sandbox path rules, permission sync, `excludedCommands` matching, settings env leaking between the main repo and its worktrees, a worktree-only escape rule applied at the repo root, a sandboxed `git merge` leaving stray untracked files, node_modules resolving from the MAIN repo in a fresh worktree, a directory literally named `hooks/` being sandbox-protected regardless of permission config, and `Write(path)` permission rules never enforcing (only `Edit(path)` does). Root cause: settings are _merged_ from several sources. → [Sandbox & Settings](mistakes/sandbox-and-settings.md), [Directory Named `hooks/`](mistakes/sandbox-protected-hooks-dir.md), [Sandbox Write Rules Inert](mistakes/sandbox-write-rules-inert.md)
 
 ## Test Code: Struct Init Without Default
 
@@ -160,7 +160,7 @@ Three lessons: a value computed and carried correctly was still wrong because so
 
 Nothing enforced daemon singleton, so a second daemon could attach to a live `.loom/work/` and both would drive the same stages. Startup now takes an authoritative `flock` for the daemon's whole lifetime before touching the socket or control files.
 
-→ [Daemon Singleton Incident](concerns/daemon-singleton.md)
+→ [Daemon Singleton Incident](mistakes/daemon-singleton.md)
 
 ## An Unbounded Walk Up the Filesystem Adopts Whatever It Finds (2026-08-29)
 

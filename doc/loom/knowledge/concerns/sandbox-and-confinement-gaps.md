@@ -9,9 +9,6 @@ holds against a live Claude runtime: CI has no callable credentialed Claude sand
 Bash, interpreter, build-script, symlink, and file-tool denial cannot be exercised end to end.
 That verification is manual release validation.
 
-(Residual of a resolved concern: the fail-open defect itself — generated settings not carrying
-sensitive reads into `denyRead`, and `failIfUnavailable` unset — was fixed 2026-08-08.)
-
 ## ReDoS Potential in Plan Pattern Regex
 
 User-provided regex patterns in plan files (failure_patterns, wiring patterns) are compiled and executed without complexity checks. While mitigated by trust model (plan authors = trusted), consider adding regex timeout or complexity limits for defense in depth.
@@ -95,8 +92,8 @@ guarantee.
 
 Deliberately not wired in when found: turning `validate_paths` on at plan-validation time
 would start REJECTING plans that load fine today, a behaviour change a verification stage
-should not make. The hole it describes is now closed **at the point of use** by the
-parent-traversal filter in `sandbox/settings.rs`.
+should not make. The parent-traversal filter in `sandbox/settings.rs` already blocks this class
+of escape at the point of use, independently of these validators.
 
 **Owner should pick one:** wire it into `loom init` and `plan verify` as a fail-fast check
 (preferred — a clear error beats a silently dropped entry), or delete all three and their
@@ -105,9 +102,8 @@ protection.**
 
 ## Accepted Gaps From the State-Confinement Work (2026-09-13)
 
-Phases 1-3 of `doc/plans/PLAN-loom-state-confinement.md` closed most of the sandbox-widening
-surface (see the corrected entry above) and every scenario the plan's "What the Deny Breaks"
-section lists. Two gaps were accepted, not closed:
+Two gaps from `doc/plans/PLAN-loom-state-confinement.md` (see the corrected entry above) were
+accepted, not closed:
 
 - **The approved-permissions filter reads rule text only** (`fs/permissions/sync.rs`'s fold-back). A
   rule naming a symlink into a control surface (`.loom`, `.claude`, `.worktrees`, a hook directory,

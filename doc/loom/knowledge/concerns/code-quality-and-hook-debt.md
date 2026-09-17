@@ -112,10 +112,6 @@ two agree over a shared fixture list — not more tests on either side.
   `config.plan_id()`. They agree today, but a legacy stage file without `plan_id` would file
   delivery records under a different namespace than the graph overlay and dirty paths. Route
   all three through one derivation.
-- **Resolved 2026-09-10:** `print_freshness_line` used to be duplicated across two files.
-  There is no `commands/knowledge/status.rs` any more, removed by commit `36268adc`.
-  The function now lives once in `commands/knowledge/context.rs:236`, called twice
-  (`:163-164`) from that same file. No further action needed.
 
 ## Telemetry Under-Reports the Failures It Exists to Measure (2026-08-17)
 
@@ -125,10 +121,6 @@ two agree over a shared fixture list — not more tests on either side.
 miss. The file exists to measure how often stages spawn without a context brief, so
 folding read failures into "no record" under-reports precisely the failures it is
 for. **Fix:** give the error branch its own reason string.
-
-**Resolved 2026-09-10:** the related claim that `telemetry::read_events` had no production caller is
-no longer true — `commands/knowledge/telemetry.rs:27` now calls it from the `loom knowledge
-telemetry` command. The `.ok()` under-reporting above is still open.
 
 ## `git/worktree/settings.rs` Is Still Over Cap After Its Tests Moved Out (2026-08-27, size reconfirmed 2026-09-10)
 

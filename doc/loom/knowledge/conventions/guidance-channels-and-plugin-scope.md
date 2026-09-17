@@ -72,7 +72,7 @@ a missing file all mean "no relaxation".
 The Rule 5 fence's EXCEPTION line in `CLAUDE.md.template` still tells every IV review or verify
 subagent to run the full build, suite and linter. It is byte-pinned by `tests_doctrine.rs` and has
 not been aligned with the one-canonical-verifier wording; see the open follow-ups in
-[Token Accounting and Proof Defects](../concerns/token-accounting-and-proof-defects.md).
+[Token Accounting Follow-Ups](../concerns/token-accounting-and-proof-defects.md).
 
 ## Claude Code Plugin Scope in Loom Repos (2026-08-07)
 

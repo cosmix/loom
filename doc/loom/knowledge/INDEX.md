@@ -14,7 +14,7 @@
 | [conventions.md](conventions.md) | Coding conventions discovered in the codebase | 239 |
 | [mistakes.md](mistakes.md) | Mistakes made and lessons learned - what to avoid | 250 |
 | [stack.md](stack.md) | Dependencies, frameworks, and tooling used in the project | 119 |
-| [concerns.md](concerns.md) | Technical debt, warnings, and issues to address | 241 |
+| [concerns.md](concerns.md) | Technical debt, warnings, and issues to address | 198 |
 
 ## Tier 2 — Topics
 
@@ -102,6 +102,7 @@
 | [completion-broker-credential](mistakes/completion-broker-credential.md) | Completion broker fallback, dup naming, exit-0 bug | 179 |
 | [computed-values-and-hidden-couplings](mistakes/computed-values-and-hidden-couplings.md) | Values computed right but unread downstream | 208 |
 | [concurrency-and-locking](mistakes/concurrency-and-locking.md) | Locked-handle writes and read-mutate-save races that lose concurrent updates. | 36 |
+| [daemon-singleton](mistakes/daemon-singleton.md) | Two loom daemons once attached one .loom/work/; startup now holds one flock. | 97 |
 | [detached-spawn-in-tests](mistakes/detached-spawn-in-tests.md) | Never spawn a process from a test that can outlive the test process. | 45 |
 | [doctrine-and-acceptance](mistakes/doctrine-and-acceptance.md) | Why a one-phrase grep proves presence but never agreement, and how doctrine… | 309 |
 | [hooks-shell-portability](mistakes/hooks-shell-portability.md) | gawk/bash portability traps and heredoc-scanning gotchas in the repo's hooks. | 95 |
@@ -118,6 +119,8 @@
 | [pre-commit-hardening](mistakes/pre-commit-hardening.md) | Partial-staging guard decisions, edge cases, mutant-settled git defaults | 53 |
 | [refactor-stragglers](mistakes/refactor-stragglers.md) | What a large removal or rename leaves behind, uncleaned | 106 |
 | [sandbox-and-settings](mistakes/sandbox-and-settings.md) | Sandbox path rules, permission sync, settings merge traps | 737 |
+| [sandbox-protected-hooks-dir](mistakes/sandbox-protected-hooks-dir.md) | A directory named hooks/ is sandbox write-protected. | 37 |
+| [sandbox-write-rules-inert](mistakes/sandbox-write-rules-inert.md) | Only Edit(path) permission rules are enforced; Write(path) rules are ignored | 57 |
 | [schema-reuse-and-silent-skips](mistakes/schema-reuse-and-silent-skips.md) | deny_unknown_fields breaking a type with two deserialization sources… | 130 |
 | [session-identity-env](mistakes/session-identity-env.md) | LOOM_* wrapper exports are a contract read by hooks, CLI and daemon | 104 |
 | [sessions-and-liveness](mistakes/sessions-and-liveness.md) | Session identity, liveness routing, spawn-site coverage | 344 |
@@ -141,18 +144,15 @@
 | Topic | Blurb | Lines |
 | --- | --- | --- |
 | [agent-rule-bending-hardening](concerns/agent-rule-bending-hardening.md) | Checks an agent can bend, and the hardening backlog | 211 |
-| [automatic-knowledge-source-graph-followups](concerns/automatic-knowledge-source-graph-followups.md) | Knowledge-plan followups: retrieval gap, stopwording | 100 |
-| [code-quality-and-hook-debt](concerns/code-quality-and-hook-debt.md) | Code-quality/hook debt: oversized units, debug logging, duplicated tables | 181 |
-| [codex-heartbeat-starvation](concerns/codex-heartbeat-starvation.md) | Heartbeat starvation from long codex runs; stale-badge constant mismatch | 77 |
-| [daemon-singleton](concerns/daemon-singleton.md) | Historical incident: two daemons once attached to the same `.loom/work… | 98 |
+| [automatic-knowledge-source-graph-followups](concerns/automatic-knowledge-source-graph-followups.md) | Knowledge-plan followups: retrieval gap, stopwording | 84 |
+| [code-quality-and-hook-debt](concerns/code-quality-and-hook-debt.md) | Code-quality/hook debt: oversized units, debug logging, duplicated tables | 173 |
+| [codex-heartbeat-starvation](concerns/codex-heartbeat-starvation.md) | Heartbeat starvation from long codex runs; stale-badge constant mismatch | 73 |
 | [iterm2-window-teardown](concerns/iterm2-window-teardown.md) | iTerm2 spawn never names its window, so teardown cannot find it to close | 48 |
-| [knowledge-cli-gaps](concerns/knowledge-cli-gaps.md) | Knowledge/memory CLI gaps: no delete-section, no blurb flag, CRLF, backlog | 179 |
-| [merge-and-recovery-edge-cases](concerns/merge-and-recovery-edge-cases.md) | Merge/retry/completion edge cases: phantom merges, stale started_at, nonces | 80 |
-| [runtime-and-session-safety](concerns/runtime-and-session-safety.md) | Runtime edge cases: tmux warning, attach lifetime, orphan adoption, guards | 146 |
-| [sandbox-and-confinement-gaps](concerns/sandbox-and-confinement-gaps.md) | Sandbox gaps: no E2E canary, diverging env allowlists, uncalled validators | 166 |
-| [sandbox-protected-hooks-dir](concerns/sandbox-protected-hooks-dir.md) | Resolved 2026-09-13: repo hook sources moved to loom-hooks/ | 47 |
-| [sandbox-write-rules-inert](concerns/sandbox-write-rules-inert.md) | Sandbox Write() rules inert in generated stage settings | 62 |
-| [state-confinement-gaps](concerns/state-confinement-gaps.md) | Confinement gaps: all closed by the 2026-09-14 merge except shared caches | 19 |
-| [token-accounting-and-proof-defects](concerns/token-accounting-and-proof-defects.md) | Resolved plan defects and open token-accounting follow-ups | 119 |
+| [knowledge-cli-gaps](concerns/knowledge-cli-gaps.md) | Knowledge CLI gaps: no delete-section, CRLF, backlog | 141 |
+| [merge-and-recovery-edge-cases](concerns/merge-and-recovery-edge-cases.md) | Merge/retry/completion edge cases: phantom merges, stale started_at, nonces | 70 |
+| [runtime-and-session-safety](concerns/runtime-and-session-safety.md) | Runtime edge cases: tmux warning, attach lifetime, orphan adoption, guards | 139 |
+| [sandbox-and-confinement-gaps](concerns/sandbox-and-confinement-gaps.md) | Sandbox gaps: no E2E canary, diverging env allowlists, uncalled validators | 162 |
+| [state-confinement-gaps](concerns/state-confinement-gaps.md) | Shared package-manager caches stay session-writable. | 9 |
+| [token-accounting-and-proof-defects](concerns/token-accounting-and-proof-defects.md) | Open follow-ups from the 2026-09-13 token-optimization plan | 70 |
 | [typed-config-values](concerns/typed-config-values.md) | Accepted gaps in the config read-path | 27 |
-| [web-dashboard-latent-issues](concerns/web-dashboard-latent-issues.md) | Issues reviewed in commands/status/web/ during integration-verify | 72 |
+| [web-dashboard-latent-issues](concerns/web-dashboard-latent-issues.md) | Issues reviewed in commands/status/web/ during integration-verify | 57 |
