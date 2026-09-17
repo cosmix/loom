@@ -1,3 +1,24 @@
 {
-  "ignorePatterns": ["dist/**", "src/components/ui/**", "src/aurora-ui/**"]
+  "ignorePatterns": ["dist/**", "src/components/ui/**", "src/aurora-ui/**"],
+  "rules": {
+    "no-restricted-imports": [
+      "error",
+      {
+        "paths": [
+          {
+            "name": "zod",
+            "message": "Import z from \"@/api/zod\" instead: it sets jitless before any schema is built, which keeps zod's `new Function` probe from tripping the dashboard's CSP."
+          }
+        ]
+      }
+    ]
+  },
+  "overrides": [
+    {
+      "files": ["src/api/zod.ts"],
+      "rules": {
+        "no-restricted-imports": "off"
+      }
+    }
+  ]
 }

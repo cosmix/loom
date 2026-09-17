@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { z } from "@/api/zod";
 
 /// The `/api/config` wire model: every registry key with its resolved value
 /// at each scope, and where the value loom will actually use came from.

@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { z } from "@/api/zod";
 
 export const STAGE_STATUSES = [
   "waiting-for-deps",
