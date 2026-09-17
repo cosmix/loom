@@ -48,7 +48,7 @@
 | [status-data-model](architecture/status-data-model.md) | Where each loom status field comes from | 196 |
 | [terminal-backends](architecture/terminal-backends.md) | Native and tmux session backends, lane resolution | 285 |
 | [token-accounting-and-receipts](architecture/token-accounting-and-receipts.md) | Usage ledger, --compare, criterion cache, receipts, exact waits | 254 |
-| [web-dashboard](architecture/web-dashboard.md) | loom status --web: server, SPA, streaming | 63 |
+| [web-dashboard](architecture/web-dashboard.md) | loom status --web: server, SPA, streaming | 67 |
 | [web-terminal](architecture/web-terminal.md) | loom status --web --terminals: a browser terminal attached to a session | 169 |
 
 ### entry-points
@@ -155,4 +155,4 @@
 | [state-confinement-gaps](concerns/state-confinement-gaps.md) | Confinement gaps: all closed by the 2026-09-14 merge except shared caches | 19 |
 | [token-accounting-and-proof-defects](concerns/token-accounting-and-proof-defects.md) | Resolved plan defects and open token-accounting follow-ups | 119 |
 | [typed-config-values](concerns/typed-config-values.md) | Accepted gaps in the config read-path | 27 |
-| [web-dashboard-latent-issues](concerns/web-dashboard-latent-issues.md) | Issues reviewed in commands/status/web/ during integration-verify | 77 |
+| [web-dashboard-latent-issues](concerns/web-dashboard-latent-issues.md) | Issues reviewed in commands/status/web/ during integration-verify | 72 |

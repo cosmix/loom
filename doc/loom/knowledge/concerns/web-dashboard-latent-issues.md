@@ -29,6 +29,15 @@
 advances from 7373 only when a candidate is already in use; explicit ports remain exact and
 explicit `0` delegates selection to the OS.
 
+The header no longer overflows a phone viewport (fixed 2026-09-17). At 390px the controls row in
+`web/src/components/header.tsx` needed 292px beside the logo but had 251px, and it could not
+wrap, so the page was 10px wider than the viewport. The row is now `flex-wrap justify-end`; at
+390px the settings and legend buttons move to a second right-aligned line. jsdom does no layout,
+so no unit test covers it: measure `scrollWidth` in a browser at 390px and 320px.
+
+The Content-Security-Policy violation logged on every load is gone (fixed 2026-09-17); see
+"zod and the CSP" in [architecture/web-dashboard.md](../architecture/web-dashboard.md).
+
 ## Terminal lane
 
 - **A stalled control-mode terminal holds its resources for up to `GATE_STALL_TIMEOUT` + 2s.**
@@ -61,17 +70,3 @@ Reviewed during the settings-lanes integration-verify and deliberately left unch
    consistent with item 4 above (one committed bundle, code-splitting out of scope);
    candidate work if bundle size becomes a real budget: dynamic `import()` for the
    terminal and graph routes.
-
-## Seen while moving the version label to the footer (2026-09-17)
-
-Both predate that change; the bundle embedded in the installed binary at `ac92e483` shows them too.
-
-1. **The header overflows a 390px viewport by 10px.** `document.documentElement.scrollWidth`
-   is 400: the controls row in `web/src/components/header.tsx` (`ml-auto flex items-center gap-2`:
-   work roundel, daemon line, view switch, theme toggle, settings, legend) does not wrap, and the
-   progress/summary/merge lines beside the logo are pushed to the same right edge.
-2. **The dashboard logs a Content-Security-Policy violation on load** when served by
-   `loom status --web` (the console line ends "Note that 'script-src' was not explicitly set, so
-   'default-src' is used as a fallback", attributed to `assets/index.js`). The Vite dev server sends
-   no CSP, so it never shows there. Neither bundle contains `eval(` or `new Function`; the cause is
-   not yet identified. The CSP is set in `loom/src/commands/status/web/connection.rs`.
