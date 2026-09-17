@@ -29,7 +29,7 @@ export function Header({ onOpenLegend }: { onOpenLegend: () => void }) {
         </Link>
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
           <PlanName name={snapshot?.status.plan_name} loading={snapshot === null} />
-          <div className="ml-auto flex items-center gap-2">
+          <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
             {snapshot && <WorkRoundel />}
             <DaemonLine snapshot={snapshot} />
             <ViewSwitch />
