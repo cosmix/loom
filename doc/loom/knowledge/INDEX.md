@@ -155,4 +155,4 @@
 | [state-confinement-gaps](concerns/state-confinement-gaps.md) | Confinement gaps: all closed by the 2026-09-14 merge except shared caches | 19 |
 | [token-accounting-and-proof-defects](concerns/token-accounting-and-proof-defects.md) | Resolved plan defects and open token-accounting follow-ups | 119 |
 | [typed-config-values](concerns/typed-config-values.md) | Accepted gaps in the config read-path | 27 |
-| [web-dashboard-latent-issues](concerns/web-dashboard-latent-issues.md) | Issues reviewed in commands/status/web/ during integration-verify | 63 |
+| [web-dashboard-latent-issues](concerns/web-dashboard-latent-issues.md) | Issues reviewed in commands/status/web/ during integration-verify | 77 |
