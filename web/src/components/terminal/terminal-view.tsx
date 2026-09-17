@@ -114,7 +114,7 @@ export function TerminalView({ stage, frame, factory, deps }: TerminalViewProps)
           className="terminal-well"
           data-mode={mode}
           data-phase={phase}
-          onClick={takeControl}
+          onDoubleClick={takeControl}
           onKeyDown={onKeyDown}
         >
           <div className="terminal-tape" aria-hidden="true" />
@@ -122,7 +122,7 @@ export function TerminalView({ stage, frame, factory, deps }: TerminalViewProps)
           {mode === "view" && phase === "live" && (
             <span className="terminal-takeover-cue" aria-hidden="true">
               <MousePointer2Icon />
-              click to take control
+              double-click to take control
             </span>
           )}
           <Notice state={state} alive={stage.session_alive} terminals={terminals} retry={retry} />

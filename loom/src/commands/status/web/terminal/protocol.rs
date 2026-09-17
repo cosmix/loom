@@ -19,6 +19,7 @@ pub(super) struct WindowSize {
 pub(super) enum ClientFrame {
     Input(Vec<u8>),
     Resize(WindowSize),
+    Scroll(i8),
 }
 
 #[derive(Deserialize)]
@@ -34,11 +35,28 @@ struct ResizeBody {
     rows: u16,
 }
 
-/// Binary frames are raw keystrokes; text frames are resize JSON.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ScrollMessage {
+    scroll: ScrollBody,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ScrollBody {
+    pages: i8,
+}
+
+/// Binary frames are raw keystrokes; text frames are resize or bounded scroll JSON.
 pub(super) fn parse_client_frame(message: &Message) -> Option<ClientFrame> {
     match message {
         Message::Binary(bytes) => Some(ClientFrame::Input(bytes.to_vec())),
         Message::Text(text) => {
+            if let Ok(wire) = serde_json::from_str::<ScrollMessage>(text.as_str()) {
+                let pages = wire.scroll.pages;
+                return (pages != 0 && (-5..=5).contains(&pages))
+                    .then_some(ClientFrame::Scroll(pages));
+            }
             let wire: ResizeMessage = serde_json::from_str(text.as_str()).ok()?;
             let size = WindowSize {
                 cols: wire.resize.cols,
@@ -48,6 +66,12 @@ pub(super) fn parse_client_frame(message: &Message) -> Option<ClientFrame> {
         }
         _ => None,
     }
+}
+
+/// Viewers may page through output, but never supply arbitrary terminal bytes.
+pub(super) fn scroll_input(pages: i8) -> Vec<u8> {
+    let key: &[u8] = if pages < 0 { b"\x1b[5~" } else { b"\x1b[6~" };
+    key.repeat(usize::from(pages.unsigned_abs().min(5)))
 }
 
 /// Clamp to what a PTY can hold: 1..=500 columns, 1..=200 rows.

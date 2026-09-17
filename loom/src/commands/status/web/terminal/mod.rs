@@ -10,6 +10,8 @@ mod tests_pty;
 #[cfg(test)]
 mod tests_route;
 #[cfg(test)]
+mod tests_scroll;
+#[cfg(test)]
 pub(in crate::commands::status::web) mod tests_upgrade;
 pub(in crate::commands::status::web) mod token;
 mod upgrade;

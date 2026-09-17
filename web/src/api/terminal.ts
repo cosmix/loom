@@ -83,6 +83,11 @@ export class TerminalConnection {
     this.socket?.send(JSON.stringify({ resize: { cols: size.cols, rows: size.rows } }));
   }
 
+  scroll(scroll: { pages: number }): void {
+    if (!this.socketIsOpen()) return;
+    this.socket?.send(JSON.stringify({ scroll }));
+  }
+
   retry(): void {
     if (this.stopped) return;
     this.attempts = 0;

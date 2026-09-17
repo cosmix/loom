@@ -12,7 +12,7 @@ use tungstenite::protocol::CloseFrame;
 use tungstenite::{Error, Message, WebSocket};
 
 use super::protocol::{
-    clamp, parse_client_frame, ClientFrame, Mode, CLOSE_ENDED, CLOSE_REFUSED,
+    clamp, parse_client_frame, scroll_input, ClientFrame, Mode, CLOSE_ENDED, CLOSE_REFUSED,
     CLOSE_SERVER_STOPPING, CLOSE_TOO_LARGE,
 };
 use super::pty::PtyChild;
@@ -259,6 +259,7 @@ fn pump_socket(
                 Some(ClientFrame::Resize(size)) => {
                     let _ = child.resize(clamp(size));
                 }
+                Some(ClientFrame::Scroll(pages)) => pending.extend(scroll_input(pages)),
                 Some(ClientFrame::Input(_)) | None => {}
             },
             // A paste past `MAX_INBOUND_BYTES`. Named on the wire rather than

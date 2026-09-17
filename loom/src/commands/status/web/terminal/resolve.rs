@@ -118,17 +118,16 @@ pub(super) fn resolve_target(
 }
 
 /// Arguments for the tmux attach client, excluding the `tmux` executable.
-pub(super) fn attach_args(target: &Target, mode: Mode) -> Vec<String> {
-    let mut args = vec![
+pub(super) fn attach_args(target: &Target, _mode: Mode) -> Vec<String> {
+    // The bridge blocks viewer keystrokes and admits only bounded page scrolling.
+    // tmux's read-only flag also drops PageUp/PageDown, so cannot be used here.
+    vec![
         "-L".to_owned(),
         target.socket.clone(),
         "-T".to_owned(),
         "256,RGB".to_owned(),
         "attach-session".to_owned(),
-    ];
-    if matches!(mode, Mode::View) {
-        args.extend(["-f".to_owned(), "read-only".to_owned()]);
-    }
-    args.extend(["-t".to_owned(), target.tmux_session.clone()]);
-    args
+        "-t".to_owned(),
+        target.tmux_session.clone(),
+    ]
 }

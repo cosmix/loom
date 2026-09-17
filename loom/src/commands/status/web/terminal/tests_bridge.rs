@@ -303,24 +303,8 @@ fn bridge_relays_non_ascii_bytes_exactly() {
     join_within(fixture.server, Duration::from_secs(3));
 }
 
-#[test]
-fn bridge_drops_input_in_view_mode() {
-    if skip_bridge_test("bridge_drops_input_in_view_mode") {
-        return;
-    }
-    let mut fixture = start_bridge("read l; printf 'echo:%s\\n' \"$l\"", Mode::View);
-    fixture
-        .socket
-        .send(Message::binary(b"ping\n".to_vec()))
-        .expect("send ignored terminal input");
-    assert!(!wait_for_binary(
-        &mut fixture.socket,
-        b"echo:",
-        Duration::from_secs(1)
-    ));
-    fixture.socket.close(None).expect("close bridge client");
-    join_within(fixture.server, Duration::from_secs(3));
-}
+#[path = "tests_bridge_scroll.rs"]
+mod scroll;
 
 #[test]
 fn bridge_closes_1001_when_the_server_stops() {

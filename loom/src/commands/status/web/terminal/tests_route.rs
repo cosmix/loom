@@ -156,19 +156,14 @@ fn close_codes_match_the_literal_wire_values_the_browser_depends_on() {
 }
 
 #[test]
-fn attach_args_view_mode_is_read_only() {
+fn attach_args_allow_viewer_paging_with_input_gated_by_the_bridge() {
     let target = Target {
         socket: "loom-session".to_owned(),
         tmux_session: "loom-stage".to_owned(),
     };
     let view = attach_args(&target, Mode::View);
     let control = attach_args(&target, Mode::Control);
-    assert!(view
-        .windows(2)
-        .any(|pair| pair[0] == "-f" && pair[1] == "read-only"));
-    assert!(view
-        .windows(2)
-        .any(|pair| pair[0] == "read-only" && pair[1] == "-t"));
+    assert_eq!(view, control);
     assert!(!control.iter().any(|arg| arg == "read-only"));
 }
 

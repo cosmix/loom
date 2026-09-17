@@ -24,6 +24,7 @@ class TerminalSession {
   private cancelled = false;
   private connection: TerminalConnection | undefined;
   private disposeInput: (() => void) | undefined;
+  private disposeScroll: (() => void) | undefined;
   private emulator: Emulator | undefined;
   private fitTimer: ReturnType<typeof setTimeout> | undefined;
   private lastState: TerminalState | undefined;
@@ -83,6 +84,7 @@ class TerminalSession {
     if (this.fitTimer !== undefined) this.cancelTimer(this.fitTimer);
     this.observer?.disconnect();
     this.disposeInput?.();
+    this.disposeScroll?.();
     this.connection?.close();
     this.emulator?.dispose();
   }
@@ -104,6 +106,7 @@ class TerminalSession {
       this.deps,
     );
     this.disposeInput = created.onData((data) => this.connection?.send(data));
+    this.disposeScroll = created.onScroll((event) => this.connection?.scroll(event));
     this.observer = new ResizeObserver(() => this.scheduleFit());
     this.observer.observe(host);
     this.fitAndResize(false);

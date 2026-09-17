@@ -1,5 +1,8 @@
 import { loadTerminalFonts, TERMINAL_FONT_FAMILY } from "./fonts";
+import type { Terminal } from "@xterm/xterm";
+import type { FitAddon } from "@xterm/addon-fit";
 import { handleTerminalKey } from "./keyboard";
+import { installViewerWheel, type TerminalScroll } from "./viewer-wheel";
 
 export interface EmulatorSize {
   cols: number;
@@ -11,6 +14,7 @@ export interface Emulator {
   write(data: Uint8Array): void;
   /** Keystrokes from the user (already encoded by xterm). */
   onData(handler: (data: string) => void): () => void;
+  onScroll(handler: (event: TerminalScroll) => void): () => void;
   /** Recompute cols/rows from the host box; null before open. */
   fit(): EmulatorSize | null;
   focus(): void;
@@ -139,16 +143,25 @@ export const createXtermEmulator: EmulatorFactory = async () => {
   terminal.loadAddon(unicodeAddon);
   terminal.unicode.activeVersion = "11";
   terminal.loadAddon(fitAddon);
+  return wrapTerminal(terminal, fitAddon, () =>
+    installWebgl(
+      () => new WebglAddon(),
+      (addon) => terminal.loadAddon(addon),
+    ),
+  );
+};
+
+function wrapTerminal(terminal: Terminal, fitAddon: FitAddon, render: () => void): Emulator {
   let opened = false;
+  let disposeWheel: (() => void) | undefined;
+  let onScroll: ((event: TerminalScroll) => void) | undefined;
 
   return {
     open(host) {
       terminal.open(host);
+      disposeWheel = installViewerWheel(terminal, host, (event) => onScroll?.(event));
       opened = true;
-      installWebgl(
-        () => new WebglAddon(),
-        (addon) => terminal.loadAddon(addon),
-      );
+      render();
     },
     write(data) {
       terminal.write(data);
@@ -156,6 +169,12 @@ export const createXtermEmulator: EmulatorFactory = async () => {
     onData(handler) {
       const subscription = terminal.onData(handler);
       return () => subscription.dispose();
+    },
+    onScroll(handler) {
+      onScroll = handler;
+      return () => {
+        onScroll = undefined;
+      };
     },
     fit() {
       if (!opened) return null;
@@ -169,7 +188,8 @@ export const createXtermEmulator: EmulatorFactory = async () => {
       terminal.options = readOnlyOptions(readOnly);
     },
     dispose() {
+      disposeWheel?.();
       terminal.dispose();
     },
   };
-};
+}
