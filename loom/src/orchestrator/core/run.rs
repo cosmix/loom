@@ -1,4 +1,5 @@
 //! Execution loop; final results are a snapshot, never a history of transient failures.
+use super::state_identity::{abort_foreign_state, check_lock_identity, LockCheck};
 use super::{event_handler::EventHandler, recovery::Recovery, stage_executor::StageExecutor};
 use super::{Orchestrator, OrchestratorResult};
 use crate::fs::work_integrity::validate_work_dir_state;
@@ -20,6 +21,7 @@ impl Orchestrator {
         let mut printed = false;
         let mut status_update = Instant::now();
         loop {
+            self.assert_state_identity();
             if self.shutdown_requested() {
                 break;
             }
@@ -41,6 +43,7 @@ impl Orchestrator {
 
     // Reconcile before syncing and before orphan recovery: recovery removes merge attribution.
     fn initialize_run(&mut self) -> Result<usize> {
+        self.assert_state_identity();
         validate_work_dir_state(&self.config.repo_root)
             .context("Work directory integrity check failed")?;
         self.reconcile_and_update_graph()
@@ -134,6 +137,38 @@ impl Orchestrator {
         let started = Instant::now();
         while started.elapsed() < self.config.poll_interval && !self.shutdown_requested() {
             std::thread::sleep(Duration::from_millis(100));
+        }
+    }
+
+    /// A daemon's singleton lock stays flocked on its original inode even if
+    /// the state directory is deleted and recreated under it (e.g. `loom
+    /// clean --all` followed by `loom init` for a different plan). Detect
+    /// that swap and abort rather than keep writing this process's stale
+    /// in-memory graph into the new plan's stage files. No-op when
+    /// `lock_identity` is unset (foreground run, tests).
+    ///
+    /// This check runs once per tick here, and a second time in the
+    /// daemon's accept loop (`daemon::server::lifecycle::watch_lock_identity`);
+    /// a swap landing in the middle of a tick's writes is a known sub-tick
+    /// window neither check closes.
+    fn assert_state_identity(&self) {
+        let Some(held) = self.config.lock_identity else {
+            return;
+        };
+        match check_lock_identity(&self.config.work_dir, held) {
+            LockCheck::Intact => {}
+            LockCheck::Missing => abort_foreign_state(&format!(
+                "state directory {} no longer holds this daemon's orchestrator.lock; \
+                 it was removed under the running daemon",
+                self.config.work_dir.display()
+            )),
+            LockCheck::Replaced { found } => abort_foreign_state(&format!(
+                "orchestrator.lock at {} is now inode {} on device {}, not the one this \
+                 daemon holds; the state directory was recreated under the running daemon",
+                self.config.work_dir.display(),
+                found.ino,
+                found.dev
+            )),
         }
     }
 }

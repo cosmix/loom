@@ -13,6 +13,7 @@ use std::time::Duration;
 use crate::fs::mark_plan_done_if_all_merged;
 use crate::fs::parse_base_branch_from_config;
 use crate::fs::work_dir::WorkDir;
+use crate::orchestrator::core::state_identity::LockIdentity;
 use crate::orchestrator::{Orchestrator, OrchestratorConfig};
 use crate::plan::graph::ExecutionGraph;
 use crate::plan::schema::SandboxConfig;
@@ -20,13 +21,16 @@ use crate::plan::schema::SandboxConfig;
 /// Spawn the orchestrator thread to execute stages.
 ///
 /// Returns a join handle for the orchestrator thread.
-pub fn spawn_orchestrator(server: &DaemonServer) -> Option<JoinHandle<()>> {
+pub fn spawn_orchestrator(
+    server: &DaemonServer,
+    lock_identity: Option<LockIdentity>,
+) -> Option<JoinHandle<()>> {
     let work_dir = server.work_dir.clone();
     let daemon_config = server.config.clone();
     let shutdown_flag = Arc::clone(&server.shutdown_flag);
 
     Some(thread::spawn(move || {
-        if let Err(e) = run_orchestrator(&work_dir, &daemon_config, shutdown_flag) {
+        if let Err(e) = run_orchestrator(&work_dir, &daemon_config, shutdown_flag, lock_identity) {
             eprintln!("Orchestrator error: {e}");
         }
     }))
@@ -37,6 +41,7 @@ fn run_orchestrator(
     work_dir: &Path,
     daemon_config: &DaemonConfig,
     shutdown_flag: Arc<AtomicBool>,
+    lock_identity: Option<LockIdentity>,
 ) -> Result<()> {
     let (graph, plan_sandbox) = build_execution_graph(work_dir)?;
 
@@ -44,11 +49,16 @@ fn run_orchestrator(
     // `.loom/work` vs. legacy `.work`), so this goes through
     // `WorkDir::project_root()` rather than a bare `.parent()`. The fallback
     // is unreachable once work_dir is absolute.
-    let repo_root = WorkDir::new(work_dir)
-        .ok()
+    let work_dir_obj = WorkDir::new(work_dir).ok();
+    let repo_root = work_dir_obj
+        .as_ref()
         .and_then(|wd| wd.project_root().map(|p| p.to_path_buf()))
         .unwrap_or_else(|| PathBuf::from("."));
     let repo_root_for_plan = repo_root.clone();
+    let plan_id = work_dir_obj
+        .as_ref()
+        .and_then(|wd| wd.load_config().ok().flatten())
+        .and_then(|config| config.plan_id().map(str::to_owned));
 
     let base_branch = parse_base_branch_from_config(work_dir)?;
     if let Some(ref branch) = base_branch {
@@ -58,22 +68,16 @@ fn run_orchestrator(
     }
 
     // Configure orchestrator using daemon config
-    let config = OrchestratorConfig {
-        max_parallel_sessions: daemon_config.max_parallel.unwrap_or(4),
-        poll_interval: Duration::from_secs(5),
-        manual_mode: daemon_config.manual_mode,
-        watch_mode: daemon_config.watch_mode,
-        work_dir: work_dir.to_path_buf(),
+    let config = orchestrator_config(
+        daemon_config,
+        work_dir,
         repo_root,
-        status_update_interval: Duration::from_secs(30),
-        auto_merge: daemon_config.auto_merge,
         base_branch,
-        skills_dir: None, // Use default ~/.claude/skills/
-        enable_skill_routing: true,
-        max_skill_recommendations: 8,
-        sandbox_config: plan_sandbox,
-        shutdown_flag: Some(shutdown_flag.clone()),
-    };
+        plan_sandbox,
+        shutdown_flag.clone(),
+        lock_identity,
+        plan_id,
+    );
     crate::fs::tmux_tmpdir::record_tmux_tmpdir_best_effort(work_dir);
 
     let mut orchestrator =
@@ -126,6 +130,38 @@ fn run_orchestrator(
     crate::fs::tmux_tmpdir::remove_tmux_tmpdir_record(work_dir);
 
     Ok(())
+}
+
+/// Build the `OrchestratorConfig` for a daemon-spawned orchestrator run.
+#[allow(clippy::too_many_arguments)]
+fn orchestrator_config(
+    daemon_config: &DaemonConfig,
+    work_dir: &Path,
+    repo_root: PathBuf,
+    base_branch: Option<String>,
+    plan_sandbox: SandboxConfig,
+    shutdown_flag: Arc<AtomicBool>,
+    lock_identity: Option<LockIdentity>,
+    plan_id: Option<String>,
+) -> OrchestratorConfig {
+    OrchestratorConfig {
+        max_parallel_sessions: daemon_config.max_parallel.unwrap_or(4),
+        poll_interval: Duration::from_secs(5),
+        manual_mode: daemon_config.manual_mode,
+        watch_mode: daemon_config.watch_mode,
+        work_dir: work_dir.to_path_buf(),
+        repo_root,
+        status_update_interval: Duration::from_secs(30),
+        auto_merge: daemon_config.auto_merge,
+        base_branch,
+        skills_dir: None, // Use default ~/.claude/skills/
+        enable_skill_routing: true,
+        max_skill_recommendations: 8,
+        sandbox_config: plan_sandbox,
+        shutdown_flag: Some(shutdown_flag),
+        lock_identity,
+        plan_id,
+    }
 }
 
 /// Write a completion marker file to signal that orchestration has finished.

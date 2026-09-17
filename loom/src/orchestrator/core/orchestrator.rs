@@ -47,6 +47,14 @@ pub struct OrchestratorConfig {
     pub sandbox_config: SandboxConfig,
     /// Shutdown flag for graceful termination (used by daemon)
     pub shutdown_flag: Option<Arc<AtomicBool>>,
+    /// Identity of the singleton lock file this daemon holds open, captured
+    /// once at startup. `None` outside the daemon (foreground run, tests)
+    /// disables the per-tick check for a recreated state directory.
+    pub lock_identity: Option<super::state_identity::LockIdentity>,
+    /// The plan this orchestrator's execution graph was built from, read once
+    /// at startup from `config.toml`. Used by the recovery sync to reject
+    /// stage files that belong to a different plan than the one running.
+    pub plan_id: Option<String>,
 }
 
 impl Default for OrchestratorConfig {
@@ -66,6 +74,8 @@ impl Default for OrchestratorConfig {
             max_skill_recommendations: 8,
             sandbox_config: SandboxConfig::default(),
             shutdown_flag: None,
+            lock_identity: None,
+            plan_id: None,
         }
     }
 }

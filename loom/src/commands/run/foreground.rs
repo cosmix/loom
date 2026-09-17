@@ -12,6 +12,7 @@ use crate::daemon::collect_completion_summary;
 use crate::fs::plan_lifecycle;
 use crate::fs::work_dir::WorkDir;
 use crate::orchestrator::{Orchestrator, OrchestratorConfig, OrchestratorResult};
+use crate::plan::schema::SandboxConfig;
 
 /// Execute plan stages in foreground (for --foreground flag)
 /// Usage: `loom run --foreground [--manual] [--max-parallel <n>] [--watch] [--no-merge] [--backend <native|tmux>]`
@@ -55,23 +56,22 @@ fn execute_foreground(
     let (graph, plan_sandbox) = build_execution_graph(work_dir)?;
 
     let base_branch = crate::fs::parse_base_branch_from_config(work_dir.root())?;
+    let plan_id = work_dir
+        .load_config()
+        .ok()
+        .flatten()
+        .and_then(|config| config.plan_id().map(str::to_owned));
 
-    let config = OrchestratorConfig {
-        max_parallel_sessions: max_parallel.unwrap_or(4),
-        poll_interval: Duration::from_secs(5),
-        manual_mode: manual,
-        watch_mode: watch,
-        work_dir: work_dir.root().to_path_buf(),
-        repo_root: std::env::current_dir()?,
-        status_update_interval: Duration::from_secs(30),
+    let config = foreground_orchestrator_config(
+        manual,
+        max_parallel,
+        watch,
         auto_merge,
+        work_dir,
         base_branch,
-        skills_dir: None, // Use default ~/.claude/skills/
-        enable_skill_routing: true,
-        max_skill_recommendations: 8,
-        sandbox_config: plan_sandbox,
-        shutdown_flag: None,
-    };
+        plan_sandbox,
+        plan_id,
+    )?;
 
     // Harmless even with no `orchestrator.pid` lock: the adopt-side liveness gate covers it.
     crate::fs::tmux_tmpdir::record_tmux_tmpdir_best_effort(work_dir.root());
@@ -93,6 +93,42 @@ fn execute_foreground(
     } else {
         bail!("Orchestration completed with failures")
     }
+}
+
+/// Build the `OrchestratorConfig` for a foreground orchestrator run.
+#[allow(clippy::too_many_arguments)]
+fn foreground_orchestrator_config(
+    manual: bool,
+    max_parallel: Option<usize>,
+    watch: bool,
+    auto_merge: bool,
+    work_dir: &WorkDir,
+    base_branch: Option<String>,
+    plan_sandbox: SandboxConfig,
+    plan_id: Option<String>,
+) -> Result<OrchestratorConfig> {
+    Ok(OrchestratorConfig {
+        max_parallel_sessions: max_parallel.unwrap_or(4),
+        poll_interval: Duration::from_secs(5),
+        manual_mode: manual,
+        watch_mode: watch,
+        work_dir: work_dir.root().to_path_buf(),
+        repo_root: std::env::current_dir()?,
+        status_update_interval: Duration::from_secs(30),
+        auto_merge,
+        base_branch,
+        skills_dir: None, // Use default ~/.claude/skills/
+        enable_skill_routing: true,
+        max_skill_recommendations: 8,
+        sandbox_config: plan_sandbox,
+        shutdown_flag: None,
+        // A foreground run holds no singleton lock, so neither
+        // `ensure_daemon_stopped` nor the daemon's state-identity check
+        // protects it against a concurrent `loom clean --all`; the operator
+        // attending the terminal is the guard.
+        lock_identity: None,
+        plan_id,
+    })
 }
 
 fn report_completion(work_dir: &WorkDir, result: &OrchestratorResult) {

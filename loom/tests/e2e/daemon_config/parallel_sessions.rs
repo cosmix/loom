@@ -3,7 +3,6 @@
 use loom::models::stage::{Stage, StageStatus};
 use loom::orchestrator::{Orchestrator, OrchestratorConfig};
 use loom::plan::graph::ExecutionGraph;
-use loom::plan::schema::SandboxConfig;
 use loom::verify::transitions::save_stage;
 use serial_test::serial;
 use std::time::Duration;
@@ -127,17 +126,12 @@ fn test_orchestrator_respects_max_parallel_sessions() {
         max_parallel_sessions: 2, // Limit to 2 parallel
         poll_interval: Duration::from_millis(50),
         manual_mode: true, // Exit after first batch - does not actually spawn Claude
-        watch_mode: false,
         work_dir: work_dir.clone(),
         repo_root: repo_root.to_path_buf(),
-        status_update_interval: Duration::from_secs(30),
         auto_merge: false,
-        base_branch: None,
-        skills_dir: None,
         enable_skill_routing: false,
         max_skill_recommendations: 5,
-        sandbox_config: SandboxConfig::default(),
-        shutdown_flag: None,
+        ..Default::default()
     };
 
     let mut orchestrator = Orchestrator::new(config, graph).expect("Should create orchestrator");

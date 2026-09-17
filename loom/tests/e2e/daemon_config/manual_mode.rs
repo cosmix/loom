@@ -4,7 +4,6 @@ use crate::helpers::create_temp_git_repo;
 use loom::models::stage::{Stage, StageStatus};
 use loom::orchestrator::OrchestratorConfig;
 use loom::plan::graph::ExecutionGraph;
-use loom::plan::schema::SandboxConfig;
 use loom::verify::transitions::save_stage;
 use serial_test::serial;
 use std::time::Duration;
@@ -52,20 +51,14 @@ fn test_orchestrator_with_manual_mode() {
     assert_eq!(ready[0].id, "stage-1");
 
     let config = OrchestratorConfig {
-        max_parallel_sessions: 4,
         poll_interval: Duration::from_millis(50),
         manual_mode: true, // Key: manual mode - sets up but doesn't spawn
-        watch_mode: false,
         work_dir: work_dir.clone(),
         repo_root: repo_root.to_path_buf(),
-        status_update_interval: Duration::from_secs(30),
         auto_merge: false,
-        base_branch: None,
-        skills_dir: None,
         enable_skill_routing: false,
         max_skill_recommendations: 5,
-        sandbox_config: SandboxConfig::default(),
-        shutdown_flag: None,
+        ..Default::default()
     };
 
     let mut orchestrator =

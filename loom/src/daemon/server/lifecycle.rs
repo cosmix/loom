@@ -16,6 +16,9 @@ use super::storage::{
     ensure_private_control_dir, open_private_output, publish_private_file, remove_control_file,
 };
 use super::tokens::{publish_fresh_tokens, ADMIN_TOKEN_FILE, USER_TOKEN_FILE};
+use crate::orchestrator::core::{
+    abort_foreign_state, check_lock_identity, LockCheck, LockIdentity,
+};
 use socket_limit::{socket_path_fits, SUN_PATH_MAX};
 
 use anyhow::{Context, Result};
@@ -28,7 +31,7 @@ use std::path::Path;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 impl DaemonServer {
     /// Start the daemon (daemonize process).
@@ -167,9 +170,7 @@ impl DaemonServer {
         lock_guard: File,
         success_pipe: Option<std::os::fd::OwnedFd>,
     ) -> Result<()> {
-        // The guard is owned for the full server lifetime.
-        let _lock_guard = lock_guard;
-
+        let lock_identity = LockIdentity::of_file_or_warn(&lock_guard);
         // Before the umask twiddling below, so a bail here leaves it untouched.
         if !socket_path_fits(&self.socket_path) {
             anyhow::bail!(
@@ -220,7 +221,7 @@ impl DaemonServer {
             .context("Failed to set socket to non-blocking")?;
 
         // Spawn the orchestrator thread to actually run stages
-        let orchestrator_handle = spawn_orchestrator(self);
+        let orchestrator_handle = spawn_orchestrator(self, lock_identity);
 
         let log_tail_handle = spawn_log_tailer(self);
         let status_broadcast_handle = spawn_status_broadcaster(self);
@@ -228,7 +229,9 @@ impl DaemonServer {
         let client_pool = WorkerPool::new(CLIENT_WORKERS, CLIENT_QUEUE_CAPACITY);
         let byte_budget = ByteBudget::new(MAX_IN_FLIGHT_REQUEST_BYTES);
 
+        let mut last_identity_check = Instant::now();
         while !self.shutdown_flag.load(Ordering::SeqCst) {
+            watch_lock_identity(&self.work_dir, lock_identity, &mut last_identity_check);
             match listener.accept() {
                 Ok((stream, _addr)) => {
                     let shutdown_flag = Arc::clone(&self.shutdown_flag);
@@ -344,6 +347,32 @@ fn rotate_log(work_dir: &Path) {
         Path::new("orchestrator.log"),
         Path::new("orchestrator.log.prev"),
     );
+}
+
+/// Second, coarser-grained layer of the state-identity check alongside the
+/// orchestrator thread's per-tick `assert_state_identity` (see its doc
+/// comment for the sub-tick window neither one closes): the accept loop's
+/// other threads (`tick::record`, the quota poller) keep writing by path for
+/// up to one poll interval after a state-directory swap, so this catches it
+/// from here too. Throttled to once a second since it costs a `stat`.
+fn watch_lock_identity(
+    work_dir: &Path,
+    lock_identity: Option<LockIdentity>,
+    last_check: &mut Instant,
+) {
+    let Some(held) = lock_identity else {
+        return;
+    };
+    if last_check.elapsed() < Duration::from_secs(1) {
+        return;
+    }
+    *last_check = Instant::now();
+    if check_lock_identity(work_dir, held) != LockCheck::Intact {
+        abort_foreign_state(
+            "state directory replaced under the running daemon (its .loom/work was reused for \
+             a different plan); accept-loop identity check aborting",
+        );
+    }
 }
 
 impl Drop for DaemonServer {

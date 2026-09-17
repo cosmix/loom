@@ -22,6 +22,8 @@ mod orchestrator;
 mod orphan_adoption;
 mod persistence;
 mod recovery;
+mod recovery_guards;
+mod recovery_queued_sync;
 mod run;
 mod run_result;
 mod session_adoption;
@@ -31,10 +33,12 @@ mod spool_drain;
 mod stage_executor;
 mod stage_handoff;
 mod stage_telemetry;
+pub mod state_identity;
 mod verdict_apply;
 
 pub(crate) use crash_classification::spawn_failure_type;
 pub use orchestrator::{Orchestrator, OrchestratorConfig, OrchestratorResult};
+pub use state_identity::{abort_foreign_state, check_lock_identity, LockCheck, LockIdentity};
 
 /// Clear the current line (status line) before printing a message.
 /// This prevents output from being mangled when the status line is being updated.
@@ -69,6 +73,8 @@ mod tests {
             max_skill_recommendations: 8,
             sandbox_config: SandboxConfig::default(),
             shutdown_flag: None,
+            lock_identity: None,
+            plan_id: None,
         }
     }
 

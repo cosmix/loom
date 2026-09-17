@@ -38,6 +38,8 @@ fn test_orchestrator_config_custom_values() {
         max_skill_recommendations: 5,
         sandbox_config: SandboxConfig::default(),
         shutdown_flag: None,
+        lock_identity: None,
+        plan_id: None,
     };
 
     assert_eq!(config.max_parallel_sessions, 8);
