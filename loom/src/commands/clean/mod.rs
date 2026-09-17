@@ -16,6 +16,7 @@ use sessions::{clean_sessions, SessionReapMode};
 use worktrees::{clean_worktrees, confirm_branch_deletion, run_bare_clean};
 
 use crate::commands::common::resolve_state_dir;
+use crate::daemon::{DaemonServer, DaemonStatus};
 use crate::fs::memory::archive_run_state;
 use crate::fs::work_dir::WorkDir;
 
@@ -45,7 +46,6 @@ struct CleanStats {
 pub fn execute(all: bool, worktrees: bool, sessions: bool, state: bool) -> Result<()> {
     let repo_root = std::env::current_dir()?;
 
-    // Print header
     print_header();
 
     // Base graph GC (A.14): runs every invocation — see print_base_graph_section.
@@ -66,6 +66,8 @@ pub fn execute(all: bool, worktrees: bool, sessions: bool, state: bool) -> Resul
         println!("{} Aborted — nothing was deleted.", "✗".red().bold());
         return Ok(());
     }
+
+    stop_daemon_before_destroying_state(&repo_root, clean_all, state)?;
 
     let mut stats = CleanStats::default();
 
@@ -89,6 +91,30 @@ pub fn execute(all: bool, worktrees: bool, sessions: bool, state: bool) -> Resul
 
     print_summary(&stats);
 
+    Ok(())
+}
+
+/// Stop a running daemon before `clean_worktrees`/`clean_sessions` runs.
+///
+/// A live daemon holds its singleton flock on the state directory by path;
+/// deleting and recreating that directory below without stopping it first
+/// leaves the old daemon ticking over whatever the next `loom init`/`loom
+/// run` writes there. Must run before `clean_worktrees`/`clean_sessions`,
+/// since a live daemon respawns sessions and recreates worktrees while
+/// they are being removed.
+fn stop_daemon_before_destroying_state(
+    repo_root: &Path,
+    clean_all: bool,
+    state: bool,
+) -> Result<()> {
+    if clean_all || state {
+        let work_dir = resolve_state_dir(repo_root);
+        if DaemonServer::check_status(&work_dir) != DaemonStatus::NotRunning {
+            println!("\n{}", "Daemon".bold());
+            println!("{}", "─".repeat(40).dimmed());
+        }
+        crate::commands::stop::ensure_daemon_stopped(&work_dir)?;
+    }
     Ok(())
 }
 
@@ -164,6 +190,9 @@ fn print_base_graph_section(repo_root: &Path) {
 /// A single recursive remove of the state root only — never `.loom/` itself,
 /// which would also take out the (expensive to rebuild) `.loom/cache/` and the
 /// memory/stage-request spools.
+///
+/// Callers must have already run [`crate::commands::stop::ensure_daemon_stopped`]
+/// on this directory; this function does not check for a live daemon itself.
 ///
 /// Returns true if the directory was removed
 fn clean_state_directory(repo_root: &Path) -> Result<bool> {

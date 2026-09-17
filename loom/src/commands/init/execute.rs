@@ -1,5 +1,6 @@
 //! Main execution entry point for loom init command.
 
+use crate::commands::common::resolve_state_dir;
 use crate::commands::repair::workspace::{repair_workspace, AppliedRepair};
 use crate::fs::permissions::{ensure_loom_permissions, migrate_legacy_trust};
 use crate::fs::work_dir::WorkDir;
@@ -90,7 +91,7 @@ pub fn execute(
     println!("\n{}", "Cleanup".bold());
     println!("{}", "─".repeat(40).dimmed());
 
-    prune_stale_worktrees(&repo_root)?;
+    stop_daemon_and_prune(&repo_root, clean)?;
     // `--clean` is about to delete the state directory below, which destroys the ONLY
     // record (`<state-dir>/sessions/<id>.md`) that lets a tmux socket ever be
     // attributed to this work dir again. Reap attributed sockets EVEN IF
@@ -195,6 +196,17 @@ pub fn execute(
     guard.disarm();
 
     Ok(())
+}
+
+/// Stop a running daemon before `--clean` deletes the state directory
+/// further down; its singleton flock would otherwise survive the
+/// directory's deletion and recreation and keep ticking over the next
+/// plan's files. Then prune worktrees left behind by a previous run.
+fn stop_daemon_and_prune(repo_root: &Path, clean: bool) -> Result<()> {
+    if clean {
+        crate::commands::stop::ensure_daemon_stopped(&resolve_state_dir(repo_root))?;
+    }
+    prune_stale_worktrees(repo_root)
 }
 
 fn install_codex_hooks_advisory() {

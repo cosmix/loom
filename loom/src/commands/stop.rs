@@ -44,9 +44,14 @@ pub fn execute() -> Result<()> {
 /// exactly like a genuinely unresponsive `ProcessOnly` daemon. No separate
 /// branch is needed here.
 pub fn execute_with_force(force: bool) -> Result<()> {
-    let work_dir = WorkDir::new(".")?;
+    stop_daemon(WorkDir::new(".")?.root(), force)
+}
 
-    if DaemonServer::check_status(work_dir.root()) == DaemonStatus::NotRunning {
+/// Body of [`execute_with_force`], taking the state directory directly so a
+/// caller that already resolved one (e.g. [`ensure_daemon_stopped`]) does not
+/// need to re-derive it via `WorkDir::new(".")`.
+pub fn stop_daemon(work_root: &std::path::Path, force: bool) -> Result<()> {
+    if DaemonServer::check_status(work_root) == DaemonStatus::NotRunning {
         println!("{} Daemon is not running", "─".dimmed());
         return Ok(());
     }
@@ -57,14 +62,14 @@ pub fn execute_with_force(force: bool) -> Result<()> {
     // Unwrapped safely: this runs only after the daemon was found alive, and a
     // live daemon always has published its credential.
     let operator_proof = crate::commands::stage::admin_proof::authorize(
-        work_dir.root(),
+        work_root,
         crate::commands::stage::admin_proof::AdminProofRequest::daemon_stop(),
     )?
     .context("daemon is running but its credential is missing; restart it")?;
 
     println!("{} Stopping daemon...", "→".cyan().bold());
 
-    match DaemonServer::stop(work_dir.root(), &operator_proof) {
+    match DaemonServer::stop(work_root, &operator_proof) {
         Ok(()) => {
             println!("{} Daemon stopped", "✓".green().bold());
             Ok(())
@@ -85,12 +90,55 @@ pub fn execute_with_force(force: bool) -> Result<()> {
                 );
             }
             verify_and_consume_admin_proof(
-                work_dir.root(),
+                work_root,
                 AdminProofRequest::daemon_stop(),
                 Some(&operator_proof),
             )?;
-            terminate_daemon_identity(work_dir.root())
+            terminate_daemon_identity(work_root)
         }
+    }
+}
+
+/// Stop a running daemon before its state directory is destroyed, or refuse.
+///
+/// Called by `loom clean --all`/`--state` and `loom init --clean` right before
+/// they delete `.loom/work/`. The daemon holds its singleton flock on
+/// `orchestrator.lock` (`daemon/server/lock.rs`) by path: once the directory
+/// is deleted and recreated by a later `loom init`/`loom run`, a new daemon
+/// acquires a NEW inode's lock and the old daemon keeps ticking over the new
+/// plan's files, corrupting state. Stopping first closes that window.
+pub fn ensure_daemon_stopped(work_root: &std::path::Path) -> Result<()> {
+    if DaemonServer::check_status(work_root) == DaemonStatus::NotRunning {
+        return Ok(());
+    }
+
+    println!(
+        "  {} Stopping the running daemon before removing state",
+        "→".cyan().bold()
+    );
+    stop_daemon(work_root, false).context("failed to stop the daemon before removing state")?;
+
+    // 30s, not a "brief window": `DaemonServer::stop` returns as soon as the
+    // daemon acks the stop request, after which `run_server` still has to
+    // join four threads sequentially with a 5s timeout each
+    // (`daemon/server/lifecycle.rs`) before it releases the flock, and even
+    // then release is not always observable on the very next probe (see the
+    // `poll_until_free` comment in `daemon/server/lock.rs`). A shorter
+    // deadline spuriously refuses a daemon that is shutting down cleanly.
+    let deadline = std::time::Instant::now() + Duration::from_secs(30);
+    loop {
+        if DaemonServer::check_status(work_root) == DaemonStatus::NotRunning {
+            return Ok(());
+        }
+        if std::time::Instant::now() >= deadline {
+            bail!(
+                "{} Daemon is still running after a stop attempt; deleting the state \
+                 directory now would leave it ticking over the next plan's files. \
+                 Run `loom stop --force` first.",
+                "✗".red().bold()
+            );
+        }
+        thread::sleep(Duration::from_millis(100));
     }
 }
 
@@ -217,5 +265,50 @@ mod tests {
             std::env::set_var("LOOM_ADMIN_PROOF", proof);
         }
         assert!(error.to_string().contains("one-time operator proof"));
+    }
+
+    #[test]
+    #[serial]
+    fn ensure_daemon_stopped_is_a_no_op_without_a_daemon() {
+        let temp_dir = TempDir::new().unwrap();
+        let work_dir = temp_dir.path().join(".loom").join("work");
+        fs::create_dir_all(&work_dir).unwrap();
+
+        assert!(ensure_daemon_stopped(&work_dir).is_ok());
+        assert!(work_dir.exists());
+    }
+
+    #[test]
+    #[serial]
+    fn ensure_daemon_stopped_refuses_while_the_lock_is_held() {
+        let temp_dir = TempDir::new().unwrap();
+        let work_dir = temp_dir.path().join(".loom").join("work");
+        fs::create_dir_all(&work_dir).unwrap();
+        fs::write(
+            work_dir.join("orchestrator.lock"),
+            format!("{} -\n", std::process::id()),
+        )
+        .unwrap();
+        let lock = fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(work_dir.join("orchestrator.lock"))
+            .unwrap();
+        assert_eq!(
+            // SAFETY: `lock` owns a live descriptor and the flags form a valid
+            // non-blocking exclusive flock used only by this serial test.
+            unsafe { libc::flock(lock.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) },
+            0
+        );
+
+        // No `admin.token` and no socket: `stop_daemon` fails before it can
+        // reach the daemon, which is itself a refusal to proceed — the point
+        // under test is that the state directory is never deleted while the
+        // lock is held, not which error path inside `stop_daemon` fires.
+        let result = ensure_daemon_stopped(&work_dir);
+
+        drop(lock);
+        assert!(result.is_err());
+        assert!(work_dir.exists());
     }
 }

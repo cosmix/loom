@@ -172,6 +172,9 @@ pub fn cleanup_orphaned_sessions(repo_root: &Path, mode: SessionReapMode) -> Res
 }
 
 /// Remove the existing state directory
+///
+/// The caller must have already run [`crate::commands::stop::ensure_daemon_stopped`]
+/// on this directory; this function does not check for a live daemon itself.
 pub fn cleanup_work_directory(repo_root: &Path) -> Result<()> {
     let work_dir = resolve_state_dir(repo_root);
 
