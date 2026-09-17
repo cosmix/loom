@@ -50,7 +50,7 @@ interface TerminalTheme {
 // and JS values must match exactly or the canvas and the well's padding
 // meet with a visible seam.
 const WELL = "#0a111f";
-const WELL_CONTROL = "#240f0f";
+const WELL_CONTROL = "#18090b";
 
 /** The dark-well palette xterm needs as concrete colours. */
 export function terminalTheme(): TerminalTheme {

@@ -1,6 +1,6 @@
 import { cn } from "cn";
 import { useAtomValue } from "jotai/react";
-import { ExternalLinkIcon, KeyboardIcon } from "lucide-react";
+import { ExternalLinkIcon, MousePointer2Icon } from "lucide-react";
 import {
   createContext,
   useContext,
@@ -121,8 +121,8 @@ export function TerminalView({ stage, frame, factory, deps }: TerminalViewProps)
           <div ref={hostRef} className="terminal-host" aria-label="Agent terminal" />
           {mode === "view" && phase === "live" && (
             <span className="terminal-takeover-cue" aria-hidden="true">
-              <KeyboardIcon />
-              take control
+              <MousePointer2Icon />
+              click to take control
             </span>
           )}
           <Notice state={state} alive={stage.session_alive} terminals={terminals} retry={retry} />

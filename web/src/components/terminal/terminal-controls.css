@@ -23,16 +23,24 @@
     padding: 3px;
     border: 1px solid var(--hairline);
     border-radius: 9px;
-    background: var(--card);
+    background: linear-gradient(
+      180deg,
+      color-mix(in oklch, white 4%, var(--card)) 0%,
+      var(--card) 58%,
+      color-mix(in oklch, black 4%, var(--card)) 100%
+    );
     box-shadow:
-      0 1px 2px color-mix(in oklch, black 5%, transparent),
-      0 8px 20px -14px color-mix(in oklch, black 30%, transparent);
+      inset 0 1px 0 color-mix(in oklch, white 12%, transparent),
+      inset 0 -1px 0 color-mix(in oklch, black 10%, transparent),
+      0 2px 0 color-mix(in oklch, black 10%, transparent),
+      0 9px 20px -14px color-mix(in oklch, black 34%, transparent);
     text-align: left;
     cursor: pointer;
     transition:
       background-color 300ms ease,
       border-color 300ms ease,
-      box-shadow 300ms ease;
+      box-shadow 300ms ease,
+      transform 120ms ease;
   }
   .terminal-key:focus {
     outline: none;
@@ -71,14 +79,27 @@
     overflow: hidden;
     white-space: nowrap;
     border-radius: 6px;
-    background: color-mix(in oklch, var(--tone-executing) 12%, transparent);
+    border: 1px solid color-mix(in oklch, white 9%, transparent);
+    background: linear-gradient(
+      180deg,
+      color-mix(in oklch, var(--tone-executing) 16%, var(--card)) 0%,
+      color-mix(in oklch, var(--tone-executing) 9%, var(--card)) 100%
+    );
+    box-shadow:
+      inset 0 1px 0 color-mix(in oklch, white 13%, transparent),
+      0 2px 4px color-mix(in oklch, black 14%, transparent);
     transition:
       transform var(--terminal-key-slide) cubic-bezier(0.2, 0.7, 0.2, 1),
-      background-color 300ms ease;
+      background 300ms ease,
+      box-shadow 150ms ease;
   }
   .terminal-key[aria-checked="true"] .terminal-key-knob {
     transform: translateX(100%);
-    background: color-mix(in oklch, var(--foreground) 6%, transparent);
+    background: linear-gradient(
+      180deg,
+      color-mix(in oklch, var(--foreground) 10%, var(--card)) 0%,
+      color-mix(in oklch, var(--foreground) 5%, var(--card)) 100%
+    );
   }
 
   /* The rider: the knob's own label, remounted (via a `key` on `rider`)
@@ -184,7 +205,16 @@
     border-color: color-mix(in oklch, var(--tone-executing) 32%, var(--hairline));
   }
   .terminal-key:hover:not(:disabled) .terminal-key-knob {
-    background: color-mix(in oklch, var(--tone-executing) 20%, transparent);
+    box-shadow:
+      inset 0 1px 0 color-mix(in oklch, white 16%, transparent),
+      0 3px 6px color-mix(in oklch, black 18%, transparent);
+  }
+  .terminal-key:active:not(:disabled) {
+    transform: translateY(1px);
+    box-shadow:
+      inset 0 1px 0 color-mix(in oklch, white 8%, transparent),
+      inset 0 -1px 0 color-mix(in oklch, black 8%, transparent),
+      0 1px 0 color-mix(in oklch, black 8%, transparent);
   }
   .terminal-key[data-rider="view"]:hover:not(:disabled) .terminal-key-rider svg {
     transform: translateX(2px);
@@ -198,6 +228,8 @@
   .terminal-key[aria-checked="true"]:not(:disabled) {
     border-color: color-mix(in oklch, var(--tone-control) 55%, transparent);
     box-shadow:
+      inset 0 1px 0 color-mix(in oklch, white 10%, transparent),
+      inset 0 -1px 0 color-mix(in oklch, black 10%, transparent),
       0 0 0 3px color-mix(in oklch, var(--tone-control) 12%, transparent),
       0 8px 20px -14px color-mix(in oklch, var(--tone-control) 45%, transparent);
   }
@@ -208,7 +240,9 @@
     border-color: color-mix(in oklch, var(--tone-control) 72%, transparent);
   }
   .terminal-key[aria-checked="true"]:hover:not(:disabled) .terminal-key-knob {
-    background: color-mix(in oklch, var(--foreground) 11%, transparent);
+    box-shadow:
+      inset 0 1px 0 color-mix(in oklch, white 15%, transparent),
+      0 3px 6px color-mix(in oklch, black 20%, transparent);
   }
 
   /* A status must stay legible: the toggle goes, the word stays. */
