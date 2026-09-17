@@ -125,7 +125,7 @@
 | [session-identity-env](mistakes/session-identity-env.md) | LOOM_* wrapper exports are a contract read by hooks, CLI and daemon | 104 |
 | [sessions-and-liveness](mistakes/sessions-and-liveness.md) | Session identity, liveness routing, spawn-site coverage | 344 |
 | [shell-command-matchers](mistakes/shell-command-matchers.md) | Separators that never become tokens; forgeable glob lookups | 246 |
-| [spurious-waiting-for-input](mistakes/spurious-waiting-for-input.md) | Stages flipped to waiting-for-input with no AskUserQuestion | 25 |
+| [spurious-waiting-for-input](mistakes/spurious-waiting-for-input.md) | Stages flipped to waiting-for-input with no AskUserQuestion | 35 |
 | [status-broadcast-hardening](mistakes/status-broadcast-hardening.md) | Frame-overflow eviction and read-timeout desync in status broadcast | 74 |
 | [store-without-consumer](mistakes/store-without-consumer.md) | A store that was written but never read - what happened, why it stayed… | 94 |
 | [subagent-orchestration](mistakes/subagent-orchestration.md) | Liveness signals: when a missing report is not a missing result | 563 |

@@ -23,3 +23,13 @@ Two stages of PLAN-loop-recovery (`worker-evidence`, 2026-09-13T22:10:52Z; `comp
 - `orchestrator/monitor/input_wait.rs` + wiring in `orchestrator/monitor/core.rs` (`Monitor::poll`), tests in `orchestrator/monitor/tests/input_wait.rs`.
 - `loom-hooks/ask-user-pre.sh`, `loom-hooks/ask-user-post.sh`, regression test `loom-hooks/tests/ask-user-hooks.sh`.
 - Operator workaround for a stuck stage: `loom stage resume <stage-id>`; the running session then finishes normally. This CANNOT be run from inside the stuck stage's own session — `.loom/work/stages` is read-only there (EROFS on the `.tmp` write) and the daemon control socket is unreachable — it must run from outside the sandbox.
+
+## A subagent's stop heartbeat resumed a real wait (2026-09-16)
+
+**What happened:** In an integration-verify stage, the main agent spawned a background subagent at 13:23:24, asked the user a question at 13:23:47 (`loom stage waiting` fired correctly), and the subagent's `SubagentStop` heartbeat at 13:25:19 made the reconciler resume the stage to `Executing`; the dashboard read "working" for 45 minutes while the agent was actually blocked on the question.
+
+**Why:** `loom-hooks/_lifecycle.sh` `loom_lifecycle_refresh_heartbeat` writes heartbeats for `SubagentStop` (`loom-hooks/subagent-stop.sh`) and `TeammateIdle` events with no `subagent` field and `last_tool:null`; `Heartbeat`'s `#[serde(default)] pub subagent: bool` deserializes the missing field as `false`, so `orchestrator/monitor/input_wait.rs`'s `stale_wait_progress` read it as main-agent progress newer than the wait's `updated_at`.
+
+**Prevention:** every writer of a heartbeat file must set `subagent` explicitly, and the reconciler treats only a main-agent heartbeat that names its tool as proof of progress; `rg -n 'heartbeat' loom-hooks/*.sh -l` enumerates the writers.
+
+**Fix:** `loom_lifecycle_refresh_heartbeat` now writes `subagent:true`, and `stale_wait_progress` returns `None` for any heartbeat with `last_tool == None` before its `AskUserQuestion` check; regression coverage in `orchestrator/monitor/tests/input_wait.rs` and `loom-hooks/tests/subagent-stop-heartbeat-subagent-flag.sh`.

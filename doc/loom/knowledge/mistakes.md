@@ -225,7 +225,7 @@ Tests run by a stage adopted the live `.loom/work` through `WorkDir::new`'s upwa
 
 ## Spurious waiting-for-input stages (2026-09-14) [DETAILED]
 
-Stages flipped to `WaitingForInput` with no AskUserQuestion in any transcript, because the ask-user hooks acted on any invocation of the AskUserQuestion permission pipeline without reading stdin, and nothing reconciled the state; `loom stage complete` was then refused. The monitor now resumes a waiting stage whose own session keeps executing tools, and the hooks check `tool_name` and log every trigger.
+Stages flipped to `WaitingForInput` with no AskUserQuestion in any transcript, because the ask-user hooks acted on any invocation of the AskUserQuestion permission pipeline without reading stdin, and nothing reconciled the state; `loom stage complete` was then refused. The monitor now resumes a waiting stage whose own session keeps executing tools, and the hooks check `tool_name` and log every trigger. A second cause (2026-09-16): the SubagentStop lifecycle heartbeat carried no `subagent` flag, so the reconciler resumed a real wait; lifecycle heartbeats now set the flag and the reconciler requires a named tool.
 
 → [Spurious waiting-for-input stages](mistakes/spurious-waiting-for-input.md)
 
