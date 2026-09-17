@@ -1,5 +1,3 @@
-import "./fonts.css";
-
 export const TERMINAL_FONT_FAMILY = '"Commit Mono Cosmix", monospace';
 
 /** Resolve every ANSI face before xterm measures cells or builds its glyph atlas. */
