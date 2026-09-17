@@ -28,6 +28,8 @@ pub(super) fn matching_addresses(bind_ip: IpAddr) -> Vec<IpAddr> {
         // `_guard`; `ifa_next` either points to another node or is null.
         let interface = unsafe { &*current };
         let address = interface.ifa_addr;
+        // SAFETY: short-circuiting excludes null addresses; `getifaddrs`
+        // supplies a valid sockaddr that remains live while `_guard` owns the list.
         if !address.is_null() && i32::from(unsafe { (*address).sa_family }) == family {
             // SAFETY: the family check proves `address` points to the matching
             // socket-address structure supplied by `getifaddrs`.
