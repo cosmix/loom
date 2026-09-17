@@ -16,7 +16,10 @@
 //! goes quiet (a real question) is left alone. Only progress from the MAIN
 //! agent counts: a background subagent keeps calling tools no matter what the
 //! main agent is doing, so its heartbeat says nothing about whether the main
-//! agent is still blocked on a person.
+//! agent is still blocked on a person. Only a main-agent heartbeat that names
+//! the tool it ran counts as that progress; a lifecycle heartbeat (subagent
+//! stop, teammate idle, session start) carries no tool and proves nothing
+//! about the main agent either.
 
 use std::path::Path;
 
@@ -33,8 +36,9 @@ use super::heartbeat::{Heartbeat, HeartbeatWatcher};
 /// the transition into `WaitingForInput`, which means nothing was actually
 /// waiting on a person. Returns `None` for every other case: no wait, no
 /// session, no heartbeat (or one from a different session), a heartbeat
-/// written by a subagent rather than the main agent, an in-flight question
-/// the post hook still owns, or a heartbeat no newer than the wait itself.
+/// written by a subagent rather than the main agent, a lifecycle heartbeat
+/// that names no tool, an in-flight question the post hook still owns, or a
+/// heartbeat no newer than the wait itself.
 fn stale_wait_progress<'a>(
     stage: &Stage,
     heartbeats: &'a HeartbeatWatcher,
@@ -55,9 +59,13 @@ fn stale_wait_progress<'a>(
     if heartbeat.subagent {
         return None;
     }
-    // This heartbeat IS the answered question; the post hook owns it.
-    if heartbeat.last_tool.as_deref() == Some("AskUserQuestion") {
-        return None;
+    // A heartbeat with no named tool is a lifecycle record (subagent stop,
+    // teammate idle, session start), not the main agent executing a tool, so
+    // it proves nothing about whether the main agent is still blocked. An
+    // AskUserQuestion heartbeat IS the answered question; the post hook owns it.
+    match heartbeat.last_tool.as_deref() {
+        None | Some("AskUserQuestion") => return None,
+        Some(_) => {}
     }
     let progress_at = heartbeat.effective_progress_at();
     if progress_at <= stage.updated_at {

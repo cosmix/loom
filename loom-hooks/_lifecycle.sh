@@ -333,6 +333,11 @@ loom_lifecycle_refresh_heartbeat() {
 	if [[ "$activity_kind" == "observation" ]]; then
 		progress_at=$(loom_heartbeat_prior_progress_at "$heartbeat" "$timestamp")
 	fi
+	# This helper only records events ABOUT a subagent or teammate (SubagentStop,
+	# TeammateIdle), never the main agent's own tool call, so it must tag
+	# subagent:true - otherwise the daemon's stale-wait reconciler
+	# (orchestrator/monitor/input_wait.rs) would read it as main-agent progress
+	# and resume a stage that is genuinely waiting on a person.
 	json=$(jq -nc --arg stage_id "$stage" --arg session_id "$session" --arg timestamp "$timestamp" \
 		--arg progress_at "$progress_at" --arg activity_kind "$activity_kind" \
 		--arg activity "$activity" --arg tokens "$tokens" --arg transcript "$transcript" '
@@ -340,7 +345,7 @@ loom_lifecycle_refresh_heartbeat() {
 		 progress_at:$progress_at,activity_kind:$activity_kind,
 		 context_tokens:(if ($tokens|test("^[0-9]+$")) then ($tokens|tonumber) else null end),
 		 transcript_path:(if $transcript == "" then null else $transcript end),
-		 last_tool:null,activity:$activity}' 2>/dev/null)
+		 last_tool:null,activity:$activity,subagent:true}' 2>/dev/null)
 	status=$?
 	if ((status != 0)); then
 		loom_lifecycle_log_jq_failure "$hook" "constructing heartbeat JSON" "$status"

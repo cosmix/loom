@@ -194,6 +194,34 @@ fn leaves_a_stage_alone_when_the_progress_came_from_a_subagent() {
 }
 
 #[test]
+fn leaves_a_stage_alone_when_the_heartbeat_names_no_tool() {
+    let temp = tempfile::tempdir().unwrap();
+    let work_dir = temp.path();
+    let now = Utc::now();
+    let updated_at = now - Duration::seconds(60);
+    let stage = waiting_stage("stage-1", "session-1", updated_at);
+    save_stage(&stage, work_dir).unwrap();
+    let mut heartbeat = heartbeat_with_progress(
+        "stage-1",
+        "session-1",
+        updated_at + Duration::seconds(30),
+        None,
+    );
+    heartbeat.subagent = false;
+    heartbeat.activity = Some("subagent a1b2 finished".to_string());
+    write_heartbeat(work_dir, &heartbeat).unwrap();
+    let watcher = watcher_after_poll(work_dir);
+
+    let resumed = reconcile_stale_input_waits(work_dir, &[stage], &watcher);
+
+    assert!(resumed.is_empty());
+    assert_eq!(
+        load_stage("stage-1", work_dir).unwrap().status,
+        StageStatus::WaitingForInput
+    );
+}
+
+#[test]
 fn leaves_an_executing_stage_untouched() {
     let temp = tempfile::tempdir().unwrap();
     let work_dir = temp.path();
