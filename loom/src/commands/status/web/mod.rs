@@ -78,6 +78,7 @@ mod config_api;
 mod connection;
 mod head;
 mod http;
+mod interfaces;
 mod limits;
 mod listener;
 pub mod model;
@@ -174,13 +175,9 @@ fn print_startup(local: SocketAddr, remote: bool, terminals: bool, token: Option
     if !remote {
         match token {
             Some(token) if terminals => println!(
-                "loom dashboard: http://127.0.0.1:{}/?token={token}  (terminals enabled; Ctrl-C to stop)",
-                local.port()
+                "loom dashboard: http://{local}/?token={token}  (terminals enabled; Ctrl-C to stop)"
             ),
-            _ => println!(
-                "loom dashboard: http://127.0.0.1:{}/  (Ctrl-C to stop)",
-                local.port()
-            ),
+            _ => println!("loom dashboard: http://{local}/  (Ctrl-C to stop)"),
         }
         return;
     }
@@ -191,22 +188,40 @@ fn print_startup(local: SocketAddr, remote: bool, terminals: bool, token: Option
     }
 }
 
-/// A wildcard bind's own address names no reachable interface, so the
-/// operator is told to substitute one themselves.
+/// A wildcard bind's own address names no reachable interface, so advertise
+/// every configured address in the same IP family.
 fn print_startup_wildcard(local: SocketAddr, terminals: bool, token: Option<&str>) {
     let token = token.unwrap_or_default();
     let note = if terminals { "; terminals enabled" } else { "" };
     println!("loom dashboard listening on {local} (remote access enabled{note})");
-    println!(
-        "  bootstrap from another machine at: http://<this host's reachable address>:{}/?token={token}",
-        local.port()
-    );
-    println!(
-        "  or from this machine: http://127.0.0.1:{}/?token={token}",
-        local.port()
-    );
+    for line in wildcard_bootstrap_lines(
+        local.port(),
+        token,
+        interfaces::matching_addresses(local.ip()),
+    ) {
+        println!("{line}");
+    }
     println!("  warning: this connection is plain HTTP; the token above grants dashboard and settings access to anyone who has it");
     println!("  (Ctrl-C to stop)");
+}
+
+fn wildcard_bootstrap_lines(
+    port: u16,
+    token: &str,
+    addresses: impl IntoIterator<Item = IpAddr>,
+) -> Vec<String> {
+    addresses
+        .into_iter()
+        .map(|ip| {
+            let location = if ip.is_loopback() {
+                "this machine"
+            } else {
+                "another machine"
+            };
+            let endpoint = SocketAddr::new(ip, port);
+            format!("  bootstrap from {location} at: http://{endpoint}/?token={token}")
+        })
+        .collect()
 }
 
 /// A concrete non-loopback bind's own address is directly reachable, and the
@@ -216,7 +231,7 @@ fn print_startup_concrete(local: SocketAddr, terminals: bool, token: Option<&str
     let token = token.unwrap_or_default();
     let note = if terminals { "; terminals enabled" } else { "" };
     println!("loom dashboard listening on {local} (remote access enabled{note})");
-    println!("  open: http://{local}/?token={token}");
+    println!("  bootstrap from another machine at: http://{local}/?token={token}");
     println!("  warning: this connection is plain HTTP; the token above grants dashboard and settings access to anyone who has it");
     println!("  (Ctrl-C to stop)");
 }

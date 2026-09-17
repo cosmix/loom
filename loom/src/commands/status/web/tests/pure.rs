@@ -15,7 +15,9 @@ use crate::commands::status::data::StatusData;
 use crate::commands::status::web::broadcast::{self, DaemonStep, SUBSCRIBER_QUEUE_DEPTH};
 use crate::commands::status::web::connection::{self, Route};
 use crate::commands::status::web::model::{SnapshotSource, WebSnapshot};
-use crate::commands::status::web::{adopt_for, assets, http, DEFAULT_PORT};
+use crate::commands::status::web::{
+    adopt_for, assets, http, wildcard_bootstrap_lines, DEFAULT_PORT,
+};
 use crate::daemon::Response;
 use crate::fs::tmux_tmpdir::{adopt_recorded_tmux_tmpdir, TmuxTmpdirAdoption};
 use crate::fs::work_dir::WorkDir;
@@ -157,6 +159,27 @@ fn embedded_bundle_is_not_empty() {
     assert!(
         !assets::WEB_ASSETS.is_empty(),
         "the dashboard bundle is not embedded; run `cd web && bun install && bun run build`, then rebuild loom"
+    );
+}
+
+#[test]
+fn wildcard_bootstrap_lines_include_every_interface_address() {
+    let lines = wildcard_bootstrap_lines(
+        8123,
+        "secret",
+        [
+            "127.0.0.1".parse::<std::net::IpAddr>().unwrap(),
+            "10.20.30.40".parse().unwrap(),
+            "192.168.1.25".parse().unwrap(),
+        ],
+    );
+    assert_eq!(
+        lines,
+        [
+            "  bootstrap from this machine at: http://127.0.0.1:8123/?token=secret",
+            "  bootstrap from another machine at: http://10.20.30.40:8123/?token=secret",
+            "  bootstrap from another machine at: http://192.168.1.25:8123/?token=secret",
+        ]
     );
 }
 

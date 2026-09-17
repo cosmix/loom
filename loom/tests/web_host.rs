@@ -111,8 +111,8 @@ fn wait_for_line(receiver: &Receiver<String>, needle: &str, deadline: Instant) -
     }
 }
 
-/// Pull `(port, token)` out of the loopback bootstrap line remote mode
-/// prints: `... http://127.0.0.1:<port>/?token=<token>`.
+/// Pull `(port, token)` out of a loopback bootstrap URL printed for the
+/// wildcard listener: `... http://127.0.0.1:<port>/?token=<token>`.
 fn parse_bootstrap_url(line: &str) -> (u16, String) {
     let marker = "http://127.0.0.1:";
     let start = line.find(marker).expect("loopback bootstrap URL present") + marker.len();
@@ -152,7 +152,11 @@ fn spawn_remote_dashboard(base: &Path, home: &Path) -> Option<(ChildGuard, u16, 
     let guard = ChildGuard(child);
     let lines = spawn_line_reader(stdout);
     let deadline = Instant::now() + STARTUP_DEADLINE;
-    let line = wait_for_line(&lines, "or from this machine", deadline)?;
+    let line = wait_for_line(
+        &lines,
+        "bootstrap from this machine at: http://127.0.0.1:",
+        deadline,
+    )?;
     let (port, token) = parse_bootstrap_url(&line);
     Some((guard, port, token))
 }
