@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { createStore } from "jotai";
 import { Provider } from "jotai/react";
 import { createMemoryRouter, RouterProvider } from "react-router";
@@ -60,8 +60,16 @@ describe("overview route", () => {
     expect(screen.getByText("No such stage")).toBeTruthy();
   });
 
-  it("shows the loom version beside the plan name", () => {
+  it("shows the loom version in the footer, not the header", () => {
     renderAt("/");
-    expect(screen.getByText(`v${snapshot.version}`)).toBeTruthy();
+    // Each stage card also renders a `<header>`/`<footer>`, so the shell's
+    // own chrome is whichever one isn't nested inside a card.
+    const notCard = (el: Element) => !el.closest(".react-flow__node-stage");
+    const footer = screen.getAllByRole("contentinfo").find(notCard);
+    const header = screen.getAllByRole("banner").find(notCard);
+    expect(footer).toBeTruthy();
+    expect(header).toBeTruthy();
+    expect(within(footer as HTMLElement).getByText(`v${snapshot.version}`)).toBeTruthy();
+    expect((header as HTMLElement).textContent).not.toContain(`v${snapshot.version}`);
   });
 });

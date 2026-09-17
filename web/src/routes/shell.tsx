@@ -56,20 +56,27 @@ function isTyping(target: EventTarget | null): boolean {
   return target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName);
 }
 
-/// Sticky provider quota gauges. The header owns legend access and feed status,
-/// so there is no footer when neither provider has quota data.
+/// Provider quota gauges on the left when either provider has data, and the
+/// loom version at the right end. The header still owns legend access and
+/// feed status.
 function Footer() {
   const snapshot = useAtomValue(snapshotAtom);
   const now = useNow();
   const nowSecs = Math.floor(now / 1000);
-  const quota = snapshot?.status.quota ?? null;
-  const hasQuota = quota !== null && providerRows(quota).length > 0;
-  if (!hasQuota || quota === null) return null;
+  if (snapshot === null) return null;
+  const quota = snapshot.status.quota;
+  const hasQuota = providerRows(quota).length > 0;
 
   return (
     <footer className="z-10 border-t border-border bg-background/90 backdrop-blur-sm">
-      <div className="mx-auto flex w-full max-w-[1440px] px-4 py-3 text-xs text-muted-foreground sm:px-6">
-        <QuotaMeters snapshot={quota} nowSecs={nowSecs} />
+      <div className="mx-auto flex w-full max-w-[1920px] items-center gap-x-6 px-4 py-3 text-xs text-muted-foreground sm:px-6">
+        {hasQuota && <QuotaMeters snapshot={quota} nowSecs={nowSecs} />}
+        <span
+          className="ml-auto shrink-0 self-end font-mono text-xs text-muted-foreground"
+          title="loom version"
+        >
+          v{snapshot.version}
+        </span>
       </div>
     </footer>
   );

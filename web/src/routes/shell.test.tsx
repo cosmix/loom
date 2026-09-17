@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import { createStore } from "jotai";
 import { Provider } from "jotai/react";
 import { createMemoryRouter, RouterProvider } from "react-router";
@@ -114,5 +114,23 @@ describe("shell chrome", () => {
     expect(footer.textContent).not.toContain("via daemon");
     expect(screen.getByRole("button", { name: "open legend" })).toBeTruthy();
     expect(screen.getByText("daemon running")).toBeTruthy();
+  });
+
+  it("keeps the version footer when no provider has quota data", () => {
+    const noQuota = snapshotSchema.parse({
+      ...fixture,
+      status: { ...fixture.status, quota: { claude: null, codex: null } },
+    });
+    const store = createStore();
+    applySnapshot(store, noQuota);
+    store.set(connectionAtom, { phase: "live", since: Date.now() });
+    const router = createMemoryRouter(routes, { initialEntries: ["/ledger"] });
+    render(
+      <Provider store={store}>
+        <RouterProvider router={router} />
+      </Provider>,
+    );
+
+    expect(within(screen.getByRole("contentinfo")).getByText(`v${noQuota.version}`)).toBeTruthy();
   });
 });
