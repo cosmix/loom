@@ -89,7 +89,13 @@ describe("notifiableEvents", () => {
     next.status.stages[0] = { ...stage, status: "needs-handoff" };
     const following = structuredClone(next);
 
-    expect(notifiableEvents(previous, next)).toMatchObject([{ key: `handoff:${stage.id}` }]);
+    expect(notifiableEvents(previous, next)).toEqual([
+      {
+        key: `handoff:${stage.id}`,
+        title: "loom — needs handoff",
+        body: `${stage.name} (${stage.id}) needs a handoff`,
+      },
+    ]);
     expect(notifiableEvents(next, following)).toEqual([]);
   });
 
@@ -189,5 +195,19 @@ describe("notifiableEvents", () => {
     };
 
     expect(notifiableEvents(previous, next)).toMatchObject([{ key: RUN_FINISHED_KEY }]);
+  });
+
+  it("settles a run when the remaining stage is skipped rather than completed", () => {
+    const previous = structuredClone(fixture);
+    const next = settledSnapshot();
+    next.status.stages[0] = { ...next.status.stages[0]!, status: "skipped", merged: false };
+
+    expect(notifiableEvents(previous, next)).toEqual([
+      {
+        key: RUN_FINISHED_KEY,
+        title: "loom — run finished",
+        body: `${next.status.plan_name ?? "the run"} finished; 6 stages merged`,
+      },
+    ]);
   });
 });

@@ -140,6 +140,31 @@ describe("dashboard settings", () => {
     expect(screen.getByText("the browser has blocked notifications for this page")).toBeTruthy();
   });
 
+  it("disables the switch when Notification is unsupported by the browser", async () => {
+    renderAt("?settings=1", fakeClient().client);
+    const toggle = (await screen.findByRole("switch", {
+      name: "desktop notifications",
+    })) as HTMLButtonElement;
+
+    expect(toggle.disabled).toBe(true);
+    expect(screen.getByText("this browser has no notification support")).toBeTruthy();
+  });
+
+  it("reconciles a stale enabled preference when permission is still default", async () => {
+    localStorage.setItem("loom:notifications", "true");
+    stubNotifications("default");
+    renderAt("?settings=1", fakeClient().client);
+    const toggle = (await screen.findByRole("switch", {
+      name: "desktop notifications",
+    })) as HTMLButtonElement;
+
+    await waitFor(() => {
+      expect(toggle.getAttribute("aria-checked")).toBe("false");
+      expect(localStorage.getItem("loom:notifications")).toBe("false");
+    });
+    expect(toggle.disabled).toBe(false);
+  });
+
   it("turns an enabled granted notification preference off", async () => {
     localStorage.setItem("loom:notifications", "true");
     stubNotifications("granted");
