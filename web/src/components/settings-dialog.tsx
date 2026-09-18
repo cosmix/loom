@@ -21,6 +21,7 @@ import {
 } from "@/api/config";
 import { SettingsCards } from "@/components/settings-cards";
 import { SettingsLanes } from "@/components/settings-lanes";
+import { SettingsWebui, webuiMatches } from "@/components/settings-webui";
 import {
   fallbackFor,
   filterSections,
@@ -320,13 +321,16 @@ function Body({
     () => (load.phase === "ready" ? filterSections(sectionRows(load.data.entries), query) : []),
     [load, query],
   );
+  const onlyDashboardMatches = query.trim() !== "" && sections.length === 0 && webuiMatches(query);
 
   return (
     <>
       <SettingsHeader query={query} onQueryChange={onQueryChange} filterRef={filterRef} />
       <div className="settings-scroll">
+        <SettingsWebui query={query} />
         <LoadNotice load={load} onRetry={retry} />
         {load.phase === "ready" &&
+          !onlyDashboardMatches &&
           (narrow ? (
             <SettingsCards
               data={load.data}
