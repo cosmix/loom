@@ -12,9 +12,9 @@
 | [entry-points.md](entry-points.md) | Key files agents should read first | 241 |
 | [patterns.md](patterns.md) | Architectural patterns discovered in the codebase | 157 |
 | [conventions.md](conventions.md) | Coding conventions discovered in the codebase | 239 |
-| [mistakes.md](mistakes.md) | Mistakes made and lessons learned - what to avoid | 250 |
+| [mistakes.md](mistakes.md) | Mistakes made and lessons learned - what to avoid | 263 |
 | [stack.md](stack.md) | Dependencies, frameworks, and tooling used in the project | 119 |
-| [concerns.md](concerns.md) | Technical debt, warnings, and issues to address | 210 |
+| [concerns.md](concerns.md) | Technical debt, warnings, and issues to address | 225 |
 
 ## Tier 2 — Topics
 
@@ -24,7 +24,7 @@
 | --- | --- | --- |
 | [adjudication-lifecycle](architecture/adjudication-lifecycle.md) | Dispute to durable verdict, and each verdict's effect | 60 |
 | [codex-concurrency](architecture/codex-concurrency.md) | Codex fan-out concurrency limits, what is measured, and what degrades under… | 128 |
-| [codex-plugin](architecture/codex-plugin.md) | Codex plugin install, identity, and forwarding | 402 |
+| [codex-plugin](architecture/codex-plugin.md) | Codex plugin install, identity, and forwarding | 410 |
 | [completion-recovery](architecture/completion-recovery.md) | Completion HMAC attestation, exit_reason, handoff folds | 34 |
 | [config-value-types](architecture/config-value-types.md) | ConfigValue typed read-path across CLI/TUI/web/TS/React | 85 |
 | [context-ceiling](architecture/context-ceiling.md) | Resident-token ceiling: resolution tiers and three thresholds | 109 |
@@ -41,7 +41,7 @@
 | [plan-lifecycle-and-fields](architecture/plan-lifecycle-and-fields.md) | Plan field checklist, goal-backward layers, schema fields, amendment. | 107 |
 | [quota-poller](architecture/quota-poller.md) | Claude/Codex usage-quota polling, caching, and rendering | 29 |
 | [remote-control](architecture/remote-control.md) | Capability detection, preflight, and per-kind session naming | 82 |
-| [security-and-isolation](architecture/security-and-isolation.md) | 4-layer worktree defense, security model, settings.local.json sites. | 178 |
+| [security-and-isolation](architecture/security-and-isolation.md) | 4-layer worktree defense, security model, settings.local.json sites. | 193 |
 | [signal-generation](architecture/signal-generation.md) | Signal assembly: cache, append_* helpers, per-stage prefixes, hung escalation. | 196 |
 | [skill-catalog](architecture/skill-catalog.md) | The two skill roots and why 53 skills live outside ~/.claude/skills | 109 |
 | [source-graph](architecture/source-graph.md) | What the source graph is and is not, its honesty contract, extractor trait… | 329 |
@@ -84,7 +84,7 @@
 | [code-style-and-structure](conventions/code-style-and-structure.md) | Rust naming, error handling, size limits, splitting, and docstring conventions | 264 |
 | [commits](conventions/commits.md) | Grouped commits, Conventional Commit messages, no AI attribution | 14 |
 | [dispute-and-adjudication](conventions/dispute-and-adjudication.md) | Dispute file authority split, adjudicator scope, budgets, and transport | 114 |
-| [git-and-build-workflow](conventions/git-and-build-workflow.md) | Git/worktree ops, cargo discipline, the maintainability ledger | 198 |
+| [git-and-build-workflow](conventions/git-and-build-workflow.md) | Git/worktree ops, cargo discipline, the maintainability ledger | 202 |
 | [guidance-channels-and-plugin-scope](conventions/guidance-channels-and-plugin-scope.md) | Guidance-channel choice, verification rule, plugin scope | 104 |
 | [model-and-effort-config](conventions/model-and-effort-config.md) | [pressure]/[models] sections, precedence chain, value types | 69 |
 | [plan-yaml-and-hooks](conventions/plan-yaml-and-hooks.md) | Plan YAML schema, hook stdin/stdout contract, skill format, additive fields | 135 |
@@ -96,7 +96,7 @@
 | --- | --- | --- |
 | [adjudication-autonomy-deadlock](mistakes/adjudication-autonomy-deadlock.md) | Accepted-verdict deadlock: adoption, requeue, live dispute | 188 |
 | [ambient-filesystem-trust](mistakes/ambient-filesystem-trust.md) | Why a .git directory is not evidence of a real repository | 146 |
-| [codex-lane-rogue-wrapper](mistakes/codex-lane-rogue-wrapper.md) | A wrapper implemented the task instead of forwarding it | 153 |
+| [codex-lane-rogue-wrapper](mistakes/codex-lane-rogue-wrapper.md) | A wrapper implemented the task instead of forwarding it | 156 |
 | [codex-navigation](mistakes/codex-navigation.md) | Forbidding reads instead of fixing a slow reader - a misdiagnosis and its… | 32 |
 | [codex-worker-briefing](mistakes/codex-worker-briefing.md) | Codex brief pitfalls: braces, doc placeholders, path reuse, jq status | 70 |
 | [completion-broker-credential](mistakes/completion-broker-credential.md) | Completion broker fallback, dup naming, exit-0 bug | 179 |
@@ -111,7 +111,7 @@
 | [knowledge-write-channel](mistakes/knowledge-write-channel.md) | Why a distillation stage cannot write knowledge directly, the… | 100 |
 | [ledger-tui-rendering](mistakes/ledger-tui-rendering.md) | Wide-glyph padding, fan-out duplication, and latent panics in the ledger TUI. | 63 |
 | [live-state-pollution](mistakes/live-state-pollution.md) | A stage test run rewrote live .loom/work state | 33 |
-| [memory-relay-drain-gap](mistakes/memory-relay-drain-gap.md) | loom-relay.sh misses memory:resolve; ticket-cap deadlock and recovery | 17 |
+| [memory-relay-drain-gap](mistakes/memory-relay-drain-gap.md) | Relay tickets leaked for good when their line never reached the hook… | 27 |
 | [merge-cleanup-boundary](mistakes/merge-cleanup-boundary.md) | A cleanup-boundary bug and its fix | 171 |
 | [parallel-worktree-shared-state](mistakes/parallel-worktree-shared-state.md) | Cross-worktree state races: diagnostic question, cases, fix | 140 |
 | [phantom-merges](mistakes/phantom-merges.md) | Eight lessons on merge machinery: merged=true without verifying | 141 |

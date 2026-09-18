@@ -30,7 +30,10 @@ of the companion state directory exposed it.
 - `loom-hooks/codex-forward-guard.sh` (PreToolUse) blocks every tool call except the single
   `codex-companion.mjs` Bash invocation, keyed primarily on payload `agent_type`
   (`loom-codex-forwarder` | `codex:codex-rescue`), with the `LOOM-CODEX-FORWARD-ONLY`
-  transcript sentinel as fallback. Fail-open for every other agent.
+  transcript sentinel as fallback. Fail-open for every other agent. Since 2026-09-18 the guard
+  engages only with stage evidence; before that it also blocked the stock `codex:codex-rescue`
+  agent in every non-loom session. See
+  [The forward guard engages only inside a loom stage](../architecture/codex-plugin.md).
 - Signal doctrine spawns `loom-codex-forwarder` (loom-owned shim), mandates the sentinel as the
   codex prompt's first line, and accepts a report ONLY with the `--- LOOM-CODEX-EVIDENCE ---`
   trailer naming a companion `jobs/*.json` record whose `phase` is `done`.

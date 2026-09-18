@@ -130,6 +130,21 @@ claims by process ancestry, verifies the ticket against the printed hash, and wr
 `W/inbox/<session-id>/`. The daemon's `drain_session_inboxes` applies each entry at most once against
 a per-session ledger.
 
+**Leftover tickets are swept (2026-09-18).** A ticket's line can fail to reach the hook: stdout
+redirected or piped through `tail`, a script file, a background call, or more than
+`MAX_LINES_PER_CALL` (16) lines in one output. `loom hook relay` therefore relays its own lines and
+then every other `<id>.req` still in the scratch directory whose kind is in `--allowed-kinds` and is
+NOT a control kind (`commands/hook/relay/sweep.rs`), so only `memory` and `telemetry` are swept. A
+control ticket stays bound to its own line: one a subagent wrote is refused, and sweeping it during a
+later main-agent call would relay the subagent's block, handoff or verdict under the main agent's
+authority. A swept ticket has no announced hash; `ticket_check::read_unlisted` requires the same file
+shape (single-link regular file, no symlink, owner uid, size cap) and a decoded id equal to the file
+stem. The hash never bound a ticket to anything the session could not produce itself; the session
+proof and the command-derived kinds authorise a relay, and both apply to the sweep. The hook's fast
+path lets any payload containing ` memory ` through so the helper runs even when the line was hidden,
+and stays silent unless a relay line was present. History:
+[Memory Relay Drain Gap](../mistakes/memory-relay-drain-gap.md).
+
 Modules: `loom/src/relay/*` (protocol: kind, line, ticket, payload, inbox, matrix, scratch),
 `fs/inbox/*` (layout, ledger, dedupe), `commands/hook/relay*` (the `loom hook relay` CLI),
 `orchestrator/core/inbox_drain/*` (the daemon side), `commands/request/*` (`loom request status`,
