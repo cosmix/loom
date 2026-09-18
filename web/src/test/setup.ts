@@ -59,3 +59,9 @@ Object.defineProperty(window.SVGElement.prototype, "getBBox", {
   configurable: true,
   value: () => ({ x: 0, y: 0, width: 0, height: 0 }),
 });
+// jsdom has no canvas backend; stub getContext to return null directly instead
+// of letting it print a "not implemented" warning (xterm probes for a 2D context).
+Object.defineProperty(window.HTMLCanvasElement.prototype, "getContext", {
+  configurable: true,
+  value: () => null,
+});
