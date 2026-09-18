@@ -55,3 +55,34 @@ Reviewed during the settings-lanes integration-verify and deliberately left unch
    consistent with item 4 above (one committed bundle, code-splitting out of scope);
    candidate work if bundle size becomes a real budget: dynamic `import()` for the
    terminal and graph routes.
+
+## Dashboard settings: themes and notifications (2026-09-18)
+
+Two gaps accepted rather than closed while adding the theme picker and notification switch:
+
+1. **Two tone tokens keep Aubergine's hue under Pacific and Graphite.** `--tone-pending` and
+   `--tone-dimmed` are `oklch(... 0.025 325)` for every `.dark` variant (`web/src/index.css:63`
+   and `:67`). At chroma 0.025 they read as near-gray in practice, but the literal hue is still
+   Aubergine's 325, not tuned per theme; "no new theme tokens" stayed a non-goal for this plan,
+   so it was left rather than adding per-theme overrides. Every other loom token either derives
+   from `var(--primary)`/`var(--border)` or is hue-neutral.
+2. **No gate in the web pipeline executes the built bundle in a browser.** `bun run --cwd web
+   test` runs vitest+jsdom over sources; the `dist` marker greps only prove strings reached
+   `web/dist/assets/index.js`; `scripts/smoke-web-dashboard.sh` only curls Rust-served routes. A
+   runtime-only defect in the shipped SPA (chunk init order, a missing global, a module-script
+   failure) would pass every gate this repo has today. This gap predates this plan but the plan
+   made no attempt to close it -- a fix needs a headless-browser smoke that loads
+   `dist/index.html` and waits for the dashboard root to render, and its own plan.
+
+A related bundle-size probe, done for this plan and not acted on: `web/dist/assets/index.js`
+was 869,529 bytes at `ebe48f3f` (before this plan) and 878,915 bytes after (+9 kB) -- still one
+committed bundle (`bun run build`'s `(!) Some chunks are larger than 500 kB` warning left in
+place, as in prior plans; see the bundle-size items above). A probe build with per-package
+`codeSplitting` groups showed no single package over 500 kB on its own (react-dom 178 kB,
+`@xyflow/react` 178 kB, react-router 92 kB, zod 83 kB, app code 134 kB; xterm's 331 kB is
+already a lazy chunk), so three groups (react+router, xyflow+dagre, rest) would in principle
+clear the warning -- but a catch-all `node_modules` group pulled the lazy xterm chunks into the
+eager vendor chunk (850 kB) in the probe, and manual vendor splits can produce chunk-init-order
+(TDZ) failures that only show at runtime. Since nothing in this repo executes the built bundle
+in a browser (gap 2 above), the split could not be verified and was not attempted. Whoever
+closes gap 2 should revisit this probe.

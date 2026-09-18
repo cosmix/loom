@@ -271,3 +271,24 @@ behaviour, grep the plan's decisions table for the same words. When two reviewer
 about whether something is a defect, or a finding contradicts an earlier settled decision, halt
 before briefing an implementer — do not let a "fix" get written (or, worse, a test that PINS
 the wrong behaviour as correct) before the contradiction is resolved.
+
+## Terminal Viewer Scroll Uses Bounded JSON Frames, Not Raw Keystrokes or Read-Only (2026-09-17)
+
+Web terminal viewing scroll uses dedicated bounded JSON `{scroll:{pages}}` frames
+(`loom/src/commands/status/web/terminal/protocol.rs`) to synthesize PageUp/PageDown in the
+bridge; raw binary stdin stays blocked for the View mode. `tmux attach` no longer runs
+read-only, because read-only also blocks paging -- do not restore read-only without another
+paging path. Mouse wheel on the alternate screen otherwise synthesizes Up/Down keystrokes,
+which recalls prior agent prompts instead of scrolling; do not forward raw mouse or arrow
+events for output history (`web/src/components/terminal/viewer-wheel.ts`). Double-click on the
+terminal well takes control.
+
+## jsdom Has No Canvas Backend; xterm Probes It on Open (2026-09-17)
+
+`web/src/components/terminal/viewer-wheel.test.ts` prints `Not implemented:
+HTMLCanvasElement's getContext() method: without installing the canvas npm package` to
+stderr under vitest, because `new Terminal(...)` from `@xterm/xterm` probes canvas when it
+opens. Fixed by stubbing `HTMLCanvasElement.prototype.getContext` to return `null` in
+`web/src/test/setup.ts` beside the other jsdom layout stubs. Any future test that mounts an
+xterm `Terminal` needs this stub already in place; it predates any specific plan and belongs
+in the shared setup file, not per-test.
