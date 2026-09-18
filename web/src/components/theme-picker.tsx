@@ -1,5 +1,5 @@
 import { useAtom } from "jotai";
-import type { ReactElement } from "react";
+import { Fragment, type ReactElement } from "react";
 import {
   darkVariantAtom,
   lightVariantAtom,
@@ -102,15 +102,39 @@ export const THEME_OPTIONS: readonly ThemeOption[] = [
   },
 ];
 
-function ThemeSwatch({ palette }: { palette: ThemePalette }): ReactElement {
+const EDGE_PATHS = [
+  "M36 27 H43 Q46 27 46 30 V39 Q46 42 49 42",
+  "M36 57 H43 Q46 57 46 54 V45 Q46 42 49 42",
+  "M76 42 H81 Q84 42 84 39 V30 Q84 27 87 27",
+  "M76 42 H81 Q84 42 84 45 V54 Q84 57 87 57",
+] as const;
+
+const ARROW_PATHS = [
+  "M50 42 L46 40.2 L46 43.8 Z",
+  "M88 27 L84 25.2 L84 28.8 Z",
+  "M88 57 L84 55.2 L84 58.8 Z",
+] as const;
+
+interface StageCardSpec {
+  x: number;
+  y: number;
+  width: number;
+  labelWidth: number;
+  labelOpacity: number;
+  accent?: boolean;
+}
+
+const STAGE_CARDS: readonly StageCardSpec[] = [
+  { x: 10, y: 21, width: 26, labelWidth: 14, labelOpacity: 0.55 },
+  { x: 10, y: 51, width: 26, labelWidth: 14, labelOpacity: 0.55 },
+  { x: 50, y: 36, width: 26, labelWidth: 14, labelOpacity: 0.8, accent: true },
+  { x: 88, y: 21, width: 22, labelWidth: 12, labelOpacity: 0.4 },
+  { x: 88, y: 51, width: 22, labelWidth: 12, labelOpacity: 0.4 },
+];
+
+function SwatchHeader({ palette }: { palette: ThemePalette }): ReactElement {
   return (
-    <svg
-      viewBox="0 0 120 76"
-      width="120"
-      height="76"
-      aria-hidden="true"
-      style={{ display: "block", borderRadius: "5px" }}
-    >
+    <>
       <rect x="0" y="0" width="120" height="76" style={{ fill: palette.background }} />
       <rect x="0" y="0" width="120" height="13" style={{ fill: palette.card }} />
       <rect
@@ -137,6 +161,13 @@ function ThemeSwatch({ palette }: { palette: ThemePalette }): ReactElement {
         rx="1.5"
         style={{ fill: palette.mutedForeground, opacity: 0.55 }}
       />
+    </>
+  );
+}
+
+function SwatchEdges({ palette }: { palette: ThemePalette }): ReactElement {
+  return (
+    <>
       <g
         style={{
           fill: "none",
@@ -145,89 +176,65 @@ function ThemeSwatch({ palette }: { palette: ThemePalette }): ReactElement {
           opacity: 0.7,
         }}
       >
-        <path d="M36 27 H43 Q46 27 46 30 V39 Q46 42 49 42" />
-        <path d="M36 57 H43 Q46 57 46 54 V45 Q46 42 49 42" />
-        <path d="M76 42 H81 Q84 42 84 39 V30 Q84 27 87 27" />
-        <path d="M76 42 H81 Q84 42 84 45 V54 Q84 57 87 57" />
+        {EDGE_PATHS.map((d) => (
+          <path key={d} d={d} />
+        ))}
       </g>
       <g style={{ fill: palette.mutedForeground, opacity: 0.7 }}>
-        <path d="M50 42 L46 40.2 L46 43.8 Z" />
-        <path d="M88 27 L84 25.2 L84 28.8 Z" />
-        <path d="M88 57 L84 55.2 L84 58.8 Z" />
+        {ARROW_PATHS.map((d) => (
+          <path key={d} d={d} />
+        ))}
       </g>
+    </>
+  );
+}
+
+function SwatchStageCard({
+  card,
+  palette,
+}: {
+  card: StageCardSpec;
+  palette: ThemePalette;
+}): ReactElement {
+  const cardStyle = card.accent
+    ? { fill: palette.primary }
+    : { fill: palette.card, stroke: palette.border };
+  const labelStyle = {
+    fill: card.accent ? palette.primaryForeground : palette.foreground,
+    opacity: card.labelOpacity,
+  };
+
+  return (
+    <>
+      <rect x={card.x} y={card.y} width={card.width} height="12" rx="3" style={cardStyle} />
       <rect
-        x="10"
-        y="21"
-        width="26"
-        height="12"
-        rx="3"
-        style={{ fill: palette.card, stroke: palette.border }}
-      />
-      <rect
-        x="14"
-        y="25.5"
-        width="14"
+        x={card.x + 4}
+        y={card.y + 4.5}
+        width={card.labelWidth}
         height="3"
         rx="1.5"
-        style={{ fill: palette.foreground, opacity: 0.55 }}
+        style={labelStyle}
       />
-      <rect
-        x="10"
-        y="51"
-        width="26"
-        height="12"
-        rx="3"
-        style={{ fill: palette.card, stroke: palette.border }}
-      />
-      <rect
-        x="14"
-        y="55.5"
-        width="14"
-        height="3"
-        rx="1.5"
-        style={{ fill: palette.foreground, opacity: 0.55 }}
-      />
-      <rect x="50" y="36" width="26" height="12" rx="3" style={{ fill: palette.primary }} />
-      <rect
-        x="54"
-        y="40.5"
-        width="14"
-        height="3"
-        rx="1.5"
-        style={{ fill: palette.primaryForeground, opacity: 0.8 }}
-      />
-      <rect
-        x="88"
-        y="21"
-        width="22"
-        height="12"
-        rx="3"
-        style={{ fill: palette.card, stroke: palette.border }}
-      />
-      <rect
-        x="92"
-        y="25.5"
-        width="12"
-        height="3"
-        rx="1.5"
-        style={{ fill: palette.foreground, opacity: 0.4 }}
-      />
-      <rect
-        x="88"
-        y="51"
-        width="22"
-        height="12"
-        rx="3"
-        style={{ fill: palette.card, stroke: palette.border }}
-      />
-      <rect
-        x="92"
-        y="55.5"
-        width="12"
-        height="3"
-        rx="1.5"
-        style={{ fill: palette.foreground, opacity: 0.4 }}
-      />
+    </>
+  );
+}
+
+function ThemeSwatch({ palette }: { palette: ThemePalette }): ReactElement {
+  return (
+    <svg
+      viewBox="0 0 120 76"
+      width="120"
+      height="76"
+      aria-hidden="true"
+      style={{ display: "block", borderRadius: "5px" }}
+    >
+      <SwatchHeader palette={palette} />
+      <SwatchEdges palette={palette} />
+      {STAGE_CARDS.map((card) => (
+        <Fragment key={`${card.x}-${card.y}`}>
+          <SwatchStageCard card={card} palette={palette} />
+        </Fragment>
+      ))}
     </svg>
   );
 }
