@@ -7,11 +7,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-### Added
-
-- **Remote dashboard access** — `loom status --web --host <address>` binds the dashboard to an interface other than `127.0.0.1` (a concrete address or a wildcard); a non-loopback bind mints a startup token and requires its cookie on every route, with `Host`/`Origin` checked against the connection's own address. The bind stays plain HTTP, so the token and cookie are visible to anyone who observes the connection.
-
-## [0.8.x] - 2026-09-15
+## [0.8.x] - 2026-09-18
 
 ### Added
 
@@ -23,6 +19,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Verified completion and loop recovery** — a stage completes only on an attested, token-authenticated evidence record that survives handoff merges, so a session that finished its work but died before the daemon saw it no longer loops; resumed stages converge back to `Executing`, a repeated attested completion failure parks the stage at `NeedsHumanReview` once its writer is confirmed gone, every session records why it ended separately from its status, and `loom status`, `loom status --live` and the web dashboard render completion-pending, blocked and exit reasons ahead of generic activity.
 - **Configurable stage models and efforts** — a `[models]` section in `~/.loom/config.toml` and `.loom/work/config.toml` sets the model and reasoning effort per stage type (`standard`, `knowledge`, `knowledge-distill`, `integration-verify`), and `[pressure]` gains an effort for each of its three slots with matching `--claude-effort`, `--codex-effort` and `--address-effort` flags on `loom pressure`. Both sections resolve key by key — stage field, then project, then user, then built-in — so a project section that sets one key lets the rest fall through.
 - **Settings dialog as tier lanes** — the web dashboard's settings dialog shows built-in, user and project side by side as three lane columns with model and effort paired on one row, collapsing to one card per row below 700px, and covers all eighteen config keys with a project tier for the sixteen that have one.
+- **Dashboard themes and desktop notifications** — the settings dialog gains a dashboard section kept only in the browser's `localStorage`, with a picker for four themes (Ledger, Aubergine, Pacific, Graphite) and a switch that raises an OS notification when a stage needs a human, needs a handoff, or the run finishes. Notifications need a secure context (`https`, `localhost` or a loopback address), so the switch disables itself and says why when the dashboard is served over plain HTTP to a non-loopback host.
+- **Remote dashboard access** — `loom status --web --host <address>` binds the dashboard to an interface other than `127.0.0.1` (a concrete address or a wildcard); a non-loopback bind mints a startup token and requires its cookie on every route, with `Host`/`Origin` checked against the connection's own address. The bind stays plain HTTP, so the token and cookie are visible to anyone who observes the connection.
 - **Knowledge source-evidence checking** — `loom knowledge check --strict-evidence` exits non-zero when a knowledge file's declared sources changed or cannot be assessed, across committed, staged, unstaged, untracked, deleted and renamed paths; unavailable evidence is reported as a review issue instead of passing silently.
 - **Context-admission hooks** — an authorized typed subagent spawn gets a scoped brief appended after its prompt byte-for-byte; a repeated file read is warned or denied only when a receipt proves the earlier read was delivered, with edits and compactions resetting eligibility; the poll guard counts `loom subagents list` and names the exact wait to use instead; and the skill trigger mandates reading a `SKILL.md` in full only on an exact name or multi-word keyword match.
 - **Worker-ownership preflight** — plan structural validation parses a stage description's worker/files-owned table and warns when two workers claim the same path or a claim falls outside the stage's declared `files`.
