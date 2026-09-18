@@ -21,7 +21,7 @@ function transitionMessage(id: string, status: StageStatus): string | null {
   }
 }
 
-function statusesById(snapshot: Snapshot | null): Map<string, StageStatus> {
+export function statusesById(snapshot: Snapshot | null): Map<string, StageStatus> {
   const statuses = new Map<string, StageStatus>();
   for (const stage of snapshot?.status.stages ?? []) {
     if (!statuses.has(stage.id)) {
