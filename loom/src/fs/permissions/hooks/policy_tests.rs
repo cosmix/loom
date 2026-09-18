@@ -13,6 +13,9 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 use tempfile::TempDir;
 
+#[path = "policy_tests_stage_gate.rs"]
+mod stage_gate;
+
 struct HookFixture {
     _temp: TempDir,
     hooks: PathBuf,
@@ -181,6 +184,12 @@ fn file_guard_allows_normal_worktree_file_but_denies_capability_tokens() {
     }
 }
 
+// forward_call - minimal stage evidence, no resolvable stage. LOOM_SESSION_ID
+// alone is non-empty, which is enough for loom_stage_evidence to make the
+// guard enforce; LOOM_STAGE_ID and LOOM_WORK_DIR stay cleared so
+// resolve_active_stage can never succeed. Exercises the "evidence present,
+// stage unresolvable" path, distinct from forward_call_in_stage's fully
+// resolvable one.
 fn forward_call(fixture: &HookFixture, payload: Value) -> Output {
     let script = fixture.install("codex-forward-guard.sh", HOOK_CODEX_FORWARD_GUARD);
     run_hook(
@@ -189,7 +198,7 @@ fn forward_call(fixture: &HookFixture, payload: Value) -> Output {
         &[
             ("HOME", fixture.home.as_path()),
             ("LOOM_STAGE_ID", Path::new("")),
-            ("LOOM_SESSION_ID", Path::new("")),
+            ("LOOM_SESSION_ID", Path::new("outside-session")),
             ("LOOM_WORK_DIR", Path::new("")),
         ],
         &payload,
@@ -219,7 +228,7 @@ fn forward_guard_allows_only_exact_forward_wrapper_command() {
 
     let invocation = assert_forward_allowed(&fixture, command);
     assert_authorization_row(&fixture, &invocation);
-    assert_outside_stage_rejected(&fixture, command);
+    assert_unresolvable_stage_rejected(&fixture, command);
     assert_missing_companion_rejected(command);
 }
 
@@ -295,7 +304,11 @@ fn assert_authorization_row(fixture: &HookFixture, invocation: &str) {
     assert_eq!(row["effort"], "xhigh");
 }
 
-fn assert_outside_stage_rejected(fixture: &HookFixture, command: &str) {
+// assert_unresolvable_stage_rejected - forward_call's stage evidence
+// (LOOM_SESSION_ID) is present but LOOM_STAGE_ID and LOOM_WORK_DIR are not, so
+// the guard still enforces the wrapper-only policy and blocks on the
+// unresolvable stage, rather than allowing outright for lack of evidence.
+fn assert_unresolvable_stage_rejected(fixture: &HookFixture, command: &str) {
     let outside = forward_call(fixture, forward_payload(fixture, command, "outside-tool"));
     assert_eq!(outside.status.code(), Some(2));
     assert!(outside.stdout.is_empty());

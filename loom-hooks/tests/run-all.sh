@@ -60,6 +60,7 @@ run_test "codex-forward: bounded direct process supervision" "$SCRIPT_DIR/codex-
 run_test "codex-forward-result: correlated direct lifecycle evidence" "$SCRIPT_DIR/codex-forward-result.sh"
 run_test "codex apply_patch: file guards and source-graph edit recording" "$SCRIPT_DIR/codex-apply-patch.sh"
 run_test "codex-forward-guard: quoted and escaped prompts round-trip" "$SCRIPT_DIR/codex-forward-guard-quoting.sh"
+run_test "codex-forward-guard: enforcement needs unforgeable stage evidence" "$SCRIPT_DIR/codex-forward-guard-stage-evidence.sh"
 run_test "git-add-guard: quoted prose allowed, real args blocked" "$SCRIPT_DIR/git-add-guard-quoting.sh"
 run_test "_common: token helpers scan argv values, not quoted prose" "$SCRIPT_DIR/common-token-helpers.sh"
 run_test "commit-filter: quoted prose about git is allowed, real commits blocked" "$SCRIPT_DIR/commit-filter-quoted-payload.sh"

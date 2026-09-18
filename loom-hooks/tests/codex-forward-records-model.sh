@@ -102,9 +102,12 @@ for unsafe_unit in -leading-dash .leading-dot; do
 	[[ $status -eq 2 && ! -s "$d/unsafe-unit.stdout" && $(wc -l <"$LEDGER") -eq $before ]]
 done
 
-# An exact forward outside an active stage is rejected before companion launch.
+# An exact forward with stage evidence but no resolvable stage is rejected
+# before companion launch. LOOM_SESSION_ID alone is that evidence; with none at
+# all the guard has no forwarding policy to apply and allows the call.
 status=0
 printf '%s' "$(payload "$WITH_UNIT" tool-outside-stage)" | HOME="$HOME_DIR" \
+	LOOM_SESSION_ID=session-abc \
 	bash "$GUARD" >"$d/outside-stage.stdout" 2>"$d/outside-stage.stderr" || status=$?
 [[ $status -eq 2 && ! -s "$d/outside-stage.stdout" ]]
 rg -qF 'codex forwarding is allowed only inside an active loom stage (safe LOOM_STAGE_ID, LOOM_SESSION_ID, and LOOM_WORK_DIR are required)' \

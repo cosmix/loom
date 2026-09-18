@@ -24,6 +24,7 @@ for test_name in \
 	codex-forward-guard-blocks-edit.sh \
 	codex-forward-guard-ignores-others.sh \
 	codex-forward-guard-quoting.sh \
+	codex-forward-guard-stage-evidence.sh \
 	codex-forward-records-model.sh; do
 	output=
 	if ! output=$(TMPDIR="$CHILD_TMP" bash "$SCRIPT_DIR/$test_name" 2>&1); then

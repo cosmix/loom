@@ -42,8 +42,11 @@ run_guard() {
 			LOOM_STAGE_ID="$STAGE_ID" LOOM_SESSION_ID="$LOOM_SESSION" \
 			bash "$HOOK" >"$d/stdout" 2>"$d/stderr" || CODE=$?
 	else
-		printf '%s' "$input" | HOME="$home" bash "$HOOK" \
-			>"$d/stdout" 2>"$d/stderr" || CODE=$?
+		# Stage evidence without a resolvable stage: the guard enforces and
+		# blocks on the incomplete identity. With no evidence at all it would
+		# have no policy to apply and would allow the call.
+		printf '%s' "$input" | HOME="$home" LOOM_SESSION_ID="$LOOM_SESSION" \
+			bash "$HOOK" >"$d/stdout" 2>"$d/stderr" || CODE=$?
 	fi
 }
 

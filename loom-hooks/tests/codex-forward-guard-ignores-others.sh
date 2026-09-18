@@ -34,10 +34,11 @@ if [[ $CODE -ne 0 ]]; then
     exit 1
 fi
 
-# No classification metadata in the payload: fail closed
+# No classification metadata in the payload: fail closed inside a stage, which
+# LOOM_SESSION_ID supplies evidence of. Outside one the guard enforces nothing.
 INPUT='{"tool_name":"Edit","tool_input":{"file_path":"/tmp/x.rs"}}'
 set +e
-echo "$INPUT" | bash "$HOOK" 2>/dev/null
+echo "$INPUT" | LOOM_SESSION_ID=ignores-others-session bash "$HOOK" 2>/dev/null
 CODE=$?
 set -e
 if [[ $CODE -eq 2 ]]; then

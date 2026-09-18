@@ -6,15 +6,41 @@
 # argument shape is exact and it contains no unquoted shell operators.
 # Missing classification metadata is rejected rather than silently disabling
 # the policy. Authorized calls are rewritten with guard-minted job identity.
+# The whole policy applies only inside a loom stage: with no stage evidence
+# (loom_stage_evidence in _codex_forward.sh) every payload is allowed.
 #
 # Input: JSON from stdin - {"tool_name": ..., "tool_input": ...,
 #        "agent_type": ..., "transcript_path": ...}
-# Exit codes: 0 = allow, 2 = block (also jq not installed - fail closed)
+# Exit codes: 0 = allow, 2 = block (inside a stage, jq not installed also
+#        blocks - fail closed)
 
 set -euo pipefail
 
 source "$(dirname "${BASH_SOURCE[0]}")/_codex_forward.sh"
 source "$(dirname "${BASH_SOURCE[0]}")/_lifecycle.sh"
+
+# Without the stage probe from _codex_forward.sh this guard cannot decide
+# anything, so an unloaded library must refuse rather than allow.
+if ! declare -F loom_stage_evidence >/dev/null; then
+	printf '%s\n' 'LOOM_HOOK_ERROR: codex-forward-guard.sh could not load its stage-evidence probe, so it cannot authorize this tool call.' >&2
+	exit 2
+fi
+
+# Outside a loom stage this guard has no policy to enforce: forwarding shims
+# exist only inside a stage, and the stock Codex plugin has to stay usable in
+# ordinary sessions. Every path that blocks or rewrites a call passes through
+# here first, so an ordinary tool call in an ordinary session never pays for
+# the probe's process spawns. Out of scope: a nested `claude` started with a
+# different config directory loads no hooks at all, so no hook can police it -
+# that is the sandbox policy's job.
+require_stage_evidence() {
+	loom_stage_evidence || exit 0
+}
+
+# jq is what classifies the payload, so a missing jq still fails closed - but
+# only where there is a policy to fail closed about. The probe runs solely in
+# that already-blocking case; with jq present this costs one builtin lookup.
+command -v jq &>/dev/null || require_stage_evidence
 loom_require_jq "codex-forward-guard.sh"
 
 if command -v gtimeout &>/dev/null; then
@@ -35,12 +61,20 @@ PAYLOAD_CWD=$(printf '%s' "$INPUT_JSON" | jq -r '.cwd? | strings' 2>/dev/null ||
 TOOL_INPUT=$(printf '%s' "$INPUT_JSON" | jq -c '.tool_input | select(type == "object")' 2>/dev/null || true)
 
 block_forwarder() {
-	local reason="$1"
-	loom_debug "DEBUG: BLOCKED codex forwarder tool=$TOOL_NAME reason=$reason"
+	local reason="$1" evidence_note=""
+	require_stage_evidence
+	# Name the signal when it is not the hook's own environment, so the
+	# operator of a false positive can see what classified the session.
+	case "$LOOM_STAGE_EVIDENCE" in
+	"env "*) ;;
+	*) evidence_note="
+This session was classified as a loom stage by: $LOOM_STAGE_EVIDENCE" ;;
+	esac
+	loom_debug "DEBUG: BLOCKED codex forwarder tool=$TOOL_NAME reason=$reason evidence=$LOOM_STAGE_EVIDENCE"
 	cat >&2 <<EOF
 ⛔ BLOCKED: codex forwarding policy could not authorize this tool call.
 
-Reason: $reason
+Reason: $reason$evidence_note
 
 The forwarding shim may make one direct Bash call of this form:
   ~/.claude/hooks/loom/codex-forward.sh task '<prompt>' --model gpt-5.6-terra --effort xhigh --write [--unit-id <unit>]
@@ -276,6 +310,7 @@ emit_authorized_input() {
 }
 
 enforce_forwarder() {
+	require_stage_evidence
 	[[ "$TOOL_NAME" == "Bash" ]] || block_forwarder "forwarders may use Bash only"
 	local command
 	command=$(printf '%s' "$INPUT_JSON" | jq -r '.tool_input.command // empty' 2>/dev/null || true)
