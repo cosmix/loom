@@ -196,3 +196,15 @@ An env-var gate an agent can unset is class 1 of three enforcement classes; only
 ## Typed Config Values: Known Gaps (2026-09-16)
 
 Accepted limitations and test-coverage gaps in the typed config read-path (TUI control-char stripping, no non-interactive unset, an untagged-enum wire limitation, a TUI test gap). See [Typed Config Values: Known Gaps](concerns/typed-config-values.md).
+
+## Execution Graph: `mark_queued` Skips Node's Own Status (2026-09-18)
+
+`ExecutionGraph::mark_queued` (`loom/src/plan/graph/mod.rs:247-285`) checks only the
+file-declared stage's dependency list (each dep must be `Completed` and `merged`) before
+unconditionally setting `node.status = StageStatus::Queued`; it never checks the node's own
+current status first. A stale in-memory graph -- e.g. a daemon still running plan P5 after
+`.loom/work/` was replaced by `loom init` for plan P6 -- can force a `Completed` node straight
+back to `Queued` for any P6 stage that shares an id with a no-deps P5 stage. Not yet fixed;
+candidate remedies: validate `node.status` is a legitimate pre-queued state before overwriting
+it, or have callers refuse to sync when the file's declared deps disagree with the graph node's
+own dependency list.

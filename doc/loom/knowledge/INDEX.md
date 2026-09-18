@@ -14,7 +14,7 @@
 | [conventions.md](conventions.md) | Coding conventions discovered in the codebase | 239 |
 | [mistakes.md](mistakes.md) | Mistakes made and lessons learned - what to avoid | 250 |
 | [stack.md](stack.md) | Dependencies, frameworks, and tooling used in the project | 119 |
-| [concerns.md](concerns.md) | Technical debt, warnings, and issues to address | 198 |
+| [concerns.md](concerns.md) | Technical debt, warnings, and issues to address | 210 |
 
 ## Tier 2 — Topics
 
@@ -48,7 +48,7 @@
 | [status-data-model](architecture/status-data-model.md) | Where each loom status field comes from | 196 |
 | [terminal-backends](architecture/terminal-backends.md) | Native and tmux session backends, lane resolution | 285 |
 | [token-accounting-and-receipts](architecture/token-accounting-and-receipts.md) | Usage ledger, --compare, criterion cache, receipts, exact waits | 254 |
-| [web-dashboard](architecture/web-dashboard.md) | loom status --web: server, SPA, streaming | 67 |
+| [web-dashboard](architecture/web-dashboard.md) | loom status --web: server, SPA, streaming | 79 |
 | [web-terminal](architecture/web-terminal.md) | loom status --web --terminals: a browser terminal attached to a session | 169 |
 
 ### entry-points
@@ -98,7 +98,7 @@
 | [ambient-filesystem-trust](mistakes/ambient-filesystem-trust.md) | Why a .git directory is not evidence of a real repository | 146 |
 | [codex-lane-rogue-wrapper](mistakes/codex-lane-rogue-wrapper.md) | A wrapper implemented the task instead of forwarding it | 153 |
 | [codex-navigation](mistakes/codex-navigation.md) | Forbidding reads instead of fixing a slow reader - a misdiagnosis and its… | 32 |
-| [codex-worker-briefing](mistakes/codex-worker-briefing.md) | Codex brief pitfalls: braces, doc placeholders, path reuse, jq status | 46 |
+| [codex-worker-briefing](mistakes/codex-worker-briefing.md) | Codex brief pitfalls: braces, doc placeholders, path reuse, jq status | 70 |
 | [completion-broker-credential](mistakes/completion-broker-credential.md) | Completion broker fallback, dup naming, exit-0 bug | 179 |
 | [computed-values-and-hidden-couplings](mistakes/computed-values-and-hidden-couplings.md) | Values computed right but unread downstream | 208 |
 | [concurrency-and-locking](mistakes/concurrency-and-locking.md) | Locked-handle writes and read-mutate-save races that lose concurrent updates. | 36 |
@@ -107,7 +107,7 @@
 | [doctrine-and-acceptance](mistakes/doctrine-and-acceptance.md) | Why a one-phrase grep proves presence but never agreement, and how doctrine… | 309 |
 | [hooks-shell-portability](mistakes/hooks-shell-portability.md) | gawk/bash portability traps and heredoc-scanning gotchas in the repo's hooks. | 95 |
 | [knowledge-base-drift](mistakes/knowledge-base-drift.md) | How the knowledge base itself goes stale: plan-authoring notes frozen as… | 172 |
-| [knowledge-cli-invariants](mistakes/knowledge-cli-invariants.md) | Invariants belong in the fs constructor, not the CLI handler | 130 |
+| [knowledge-cli-invariants](mistakes/knowledge-cli-invariants.md) | Invariants belong in the fs constructor, not the CLI handler | 139 |
 | [knowledge-write-channel](mistakes/knowledge-write-channel.md) | Why a distillation stage cannot write knowledge directly, the… | 100 |
 | [ledger-tui-rendering](mistakes/ledger-tui-rendering.md) | Wide-glyph padding, fan-out duplication, and latent panics in the ledger TUI. | 63 |
 | [live-state-pollution](mistakes/live-state-pollution.md) | A stage test run rewrote live .loom/work state | 33 |
@@ -136,7 +136,7 @@
 | [untrusted-value-boundaries](mistakes/untrusted-value-boundaries.md) | Enumerate every producer of a rendered field, not just it | 188 |
 | [verification-harness](mistakes/verification-harness.md) | When every check fails at once, suspect the harness | 369 |
 | [visibility-and-reachability](mistakes/visibility-and-reachability.md) | pub(crate) is not nameable by itself - visibility is capped by path… | 115 |
-| [web-dashboard-server](mistakes/web-dashboard-server.md) | Concurrency, security and testing lessons from building the hand-rolled… | 273 |
+| [web-dashboard-server](mistakes/web-dashboard-server.md) | Concurrency, security and testing lessons from building the hand-rolled… | 294 |
 | [writer-reader-address](mistakes/writer-reader-address.md) | A layer written under a key its reader ignores looks identical to no-op. | 73 |
 
 ### concerns
@@ -155,4 +155,4 @@
 | [state-confinement-gaps](concerns/state-confinement-gaps.md) | Shared package-manager caches stay session-writable. | 9 |
 | [token-accounting-and-proof-defects](concerns/token-accounting-and-proof-defects.md) | Open follow-ups from the 2026-09-13 token-optimization plan | 70 |
 | [typed-config-values](concerns/typed-config-values.md) | Accepted gaps in the config read-path | 27 |
-| [web-dashboard-latent-issues](concerns/web-dashboard-latent-issues.md) | Issues reviewed in commands/status/web/ during integration-verify | 57 |
+| [web-dashboard-latent-issues](concerns/web-dashboard-latent-issues.md) | Issues reviewed in commands/status/web/ during integration-verify | 88 |

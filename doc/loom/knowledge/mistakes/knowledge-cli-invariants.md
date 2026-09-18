@@ -128,3 +128,12 @@ correctly now.
 
 Prevention: keep a historical or example marker phrase and its backticked path on the same
 source line, and phrase "there is no" immediately before the backtick.
+
+## Stage Sandbox Denies Writes to `.loom/cache` (2026-09-17)
+
+Inside a stage worktree session, `loom knowledge context` prints `warning: failed to refresh
+the context cache (Failed to write context catalog: <repo>/.loom/cache/context-v1/catalog.json);
+using an in-memory catalog` because `.loom/cache` sits outside the stage's `allow_write` set.
+The query still answers correctly from the in-memory catalog rebuilt for that call -- this is a
+sandbox limit, not a knowledge-command defect. Do not treat the warning as a reason to widen the
+sandbox or to distrust the returned context.

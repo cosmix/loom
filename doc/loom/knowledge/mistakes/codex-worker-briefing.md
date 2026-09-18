@@ -44,3 +44,27 @@ A codex unit that checks its own file/function line counts BEFORE the orchestrat
 ## `Stage::new` Derives a Timestamped Id — a Fixture Must Set `stage.id` Explicitly
 
 `Stage::new(name, ..)` (`loom/src/models/stage/methods.rs:95-102`) derives `id` as `stage-<name>-<timestamp>`, never the bare `name` passed in. A fixture that calls `Stage::new("notes", None)` and then looks up behavior by `"notes"` (e.g. `handle_stage_completed("notes")`) silently misses: the stage saves as `01-stage-notes-<ts>.md`, session lookups keyed by the derived id return `None`, and the code path under test never runs even though the test may still pass on an unrelated assertion. Set `stage.id` explicitly after `Stage::new` in any fixture that needs a known, stable id.
+
+## `loom subagents watch --worker codex:<unit>` Can Report "unknown" With Exit 0
+
+Running `loom subagents watch --worker codex:<unit>` right after spawning
+`loom-codex-forwarder` agents printed `unknown: worker set does not resolve to one Claude
+parent UUID`, yet the Bash exit code was 0. Read the watch output itself, never trust the exit
+code alone; fall back to Agent completion notifications plus the `LOOM-CODEX-EVIDENCE` trailer
+when the watch cannot resolve the worker set.
+
+## `erasableSyntaxOnly` Rejects Codex-Written TypeScript Parameter Properties
+
+A codex (`gpt-5.6-terra`) unit wrote TypeScript constructor parameter properties (`readonly
+title: string` in the constructor signature) in two `web/` test files. `web/tsconfig` enables
+`erasableSyntaxOnly`, so `tsc -b` fails `TS1294` while `vitest` still passes -- esbuild strips
+the construct at test time, so the break is invisible until the gate runs the typechecker.
+Web briefs for codex units must state "no parameter properties, enums or namespaces --
+erasableSyntaxOnly", and the inter-wave gate must run typecheck, not tests alone.
+
+## Codex Units in `web/` Do Not Run `oxfmt`
+
+7 of 12 files failed `format:check` after all codex units in a `web/` wave returned; codex
+units do not run `oxfmt` on their own output. Either the orchestrator runs `bun run --cwd web
+format` before the final gate, or each unit's brief must explicitly tell it to run `oxfmt` on
+its own files before reporting back.
