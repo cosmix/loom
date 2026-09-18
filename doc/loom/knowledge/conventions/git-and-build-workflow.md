@@ -121,6 +121,10 @@ regression almost never breaks all of them in the same instant.
 
 Never `git push` unless the user explicitly asks — commit locally and stop. "Fix the CI failure" does NOT imply pushing to make CI green; the user decides when commits leave the machine. (Learned 2026-07-22: pushed after fixing a red CI run on the theory that CI-green was the deliverable — user rejected: "i didn't ask you to push.")
 
+## "Clean Repo" Means Tracked Files Only
+
+A request to commit and leave the repo clean means no uncommitted changes to tracked files. The untracked files in the main checkout (root-level scratch, `doc/` reports, uncommitted plans and briefs) belong to the operator: never delete, stage, or ask about them. (Learned 2026-09-18: after committing, the agent offered to delete them — user: "i didn't ask you to delete something. ignore untracked files.")
+
 ## Never Read the Daemon Credential Files
 
 `.loom/work/admin.token` and `.loom/work/user.token` (and their legacy `.work/` equivalents) are operator secrets. Never read them, never run a command whose output could include them, and never widen a shell command into a directory sweep. On 2026-09-03 the operator rejected two batched commands as attempts to read the admin token: one combined `rg`/`fd` sweeps over `loom-hooks/tests` and `loom/tests` with a whole-file `rg -n "" loom-hooks/<script>`; the other combined `loom plan verify` with `rg` sweeps over `doc/plans/briefs/<plan>/`. Run `loom plan verify` on its own, or ask the operator to run it with the `!` prefix; search with `rg -n <pattern> <explicit file>` on named files, never on directories that may hold fixtures or state; read hook scripts through narrow `rg -n <pattern> -A <n> loom-hooks/<file>` queries, never a whole-file dump.
