@@ -13,6 +13,10 @@
 //! matches the line's size and hash. Attribution comes from the environment,
 //! never from the ticket. Every refusal is reported; a line with no ticket
 //! behind it (a test fixture, an echoed transcript) is dropped silently.
+//!
+//! Output that never reaches the hook would otherwise strand a ticket on disk
+//! for good, so each call also sweeps the leftovers its session accumulated
+//! (`sweep`), on the same session proof and the same command-derived kinds.
 
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -28,11 +32,14 @@ use crate::fs::session_files::load_session_exact;
 use crate::models::session::SessionStatus;
 use crate::relay::{
     scratch_root_from_env, session_dir, validate_session_dir, AgentRole, InboxEntry, RelayLine,
-    RequestKind, MAX_PENDING_ENTRIES,
+    RequestKind, Ticket, MAX_PENDING_ENTRIES,
 };
 
 mod output;
+mod sweep;
 mod ticket_check;
+
+use ticket_check::{consume, ticket_path};
 
 /// Longest hook payload read from stdin. Claude Code persists a large tool
 /// output to a file and inlines only a preview, so a real payload is far
@@ -92,8 +99,9 @@ fn work_dir_from_env() -> Result<PathBuf, String> {
 }
 
 /// Relay every ticketed `LOOM_RELAY_V1` line in the PostToolUse payload on
-/// stdin. Always `Ok(())`: a PostToolUse hook has nothing to fail, only
-/// something to say, and every refusal is said in the reply.
+/// stdin, plus every sweepable ticket an earlier call left behind. Always
+/// `Ok(())`: a PostToolUse hook has nothing to fail, only something to say,
+/// and every refusal is said in the reply.
 pub fn relay(allowed_kinds: &str) -> Result<()> {
     let mut raw = Vec::new();
     let _ = std::io::stdin()
@@ -134,8 +142,9 @@ fn unavailable(raw: &[u8], reason: &str) -> Option<String> {
     })
 }
 
-/// The testable core: relay the ticketed lines in `payload` for the session
-/// `env` names, into the inbox under `work_dir`. `None` means print nothing.
+/// The testable core: relay the ticketed lines in `payload`, and the tickets
+/// earlier calls left behind, for the session `env` names, into the inbox
+/// under `work_dir`. `None` means print nothing.
 fn relay_payload(
     payload: &[u8],
     env: &RelayEnv,
@@ -160,6 +169,7 @@ fn relay_payload(
                 .is_ok()
         })
         .collect();
+    let leftover = sweep::candidates(&env.scratch_dir, &ticketed, allowed);
 
     let mut report = Vec::new();
     if let Some(refusal) = collected.persisted_refusal {
@@ -167,22 +177,30 @@ fn relay_payload(
             report.push(refusal);
         }
     }
-    if !ticketed.is_empty() {
-        report.extend(relay_ticketed(&ticketed, &value, env, work_dir, allowed));
+    if !ticketed.is_empty() || !leftover.is_empty() {
+        report.extend(relay_requests(
+            &ticketed, &leftover, &value, env, work_dir, allowed,
+        ));
     }
     (!report.is_empty()).then(|| report.join("\n"))
 }
 
-/// Prove the session once, then relay each ticketed line on its own.
-fn relay_ticketed(
+/// Prove the session once, then relay each ticketed line on its own and
+/// sweep up whatever tickets an earlier call left behind.
+fn relay_requests(
     lines: &[RelayLine],
+    leftover: &[sweep::Candidate],
     payload: &Value,
     env: &RelayEnv,
     work_dir: &Path,
     allowed: &[RequestKind],
 ) -> Vec<String> {
     if let Err(reason) = prove_session(env, work_dir).and_then(|()| check_scratch_dir(env)) {
-        let labels: Vec<String> = lines.iter().map(label).collect();
+        let labels: Vec<String> = lines
+            .iter()
+            .map(label)
+            .chain(leftover.iter().map(sweep::Candidate::label))
+            .collect();
         return vec![format!(
             "LOOM relay: refused {}: {reason}",
             labels.join(", ")
@@ -198,7 +216,9 @@ fn relay_ticketed(
             .and_then(Value::as_str)
             .map(str::to_string),
     };
-    lines.iter().map(|line| request.relay_one(line)).collect()
+    let mut report: Vec<String> = lines.iter().map(|line| request.relay_one(line)).collect();
+    report.extend(sweep::recover(&request, leftover));
+    report
 }
 
 /// This process must lie inside the session's own process tree, and the
@@ -261,14 +281,24 @@ impl Request<'_> {
         if let Err(reason) = self.admit(line.kind) {
             return format!("LOOM relay: refused {label}: {reason}");
         }
-        let ticket = match ticket_check::read_verified(&self.env.scratch_dir, line, self.env.uid) {
-            Ok(ticket) => ticket,
-            Err(error) => return format!("LOOM relay: refused {label}: {error:#}"),
-        };
+        match ticket_check::read_verified(&self.env.scratch_dir, line, self.env.uid) {
+            Err(error) => format!("LOOM relay: refused {label}: {error:#}"),
+            Ok(ticket) => match self.record(ticket, sweep::Source::Line) {
+                sweep::Recorded::Reply(reply) | sweep::Recorded::Full(reply) => reply,
+            },
+        }
+    }
+
+    /// Write one verified ticket into this session's inbox and consume its
+    /// file. Shared by the line path and the sweep, which differ only in how
+    /// the ticket was found and so in how the reply words it.
+    fn record(&self, ticket: Ticket, source: sweep::Source) -> sweep::Recorded {
+        let label = ticket_label(ticket.kind, &ticket.id);
+        let ticket_file = ticket_check::ticket_file(&self.env.scratch_dir, &ticket.id);
         let entry = InboxEntry {
             v: INBOX_ENTRY_VERSION,
-            id: line.id.clone(),
-            kind: line.kind,
+            id: ticket.id,
+            kind: ticket.kind,
             relayed_at: Utc::now(),
             session_id: self.env.session_id.clone(),
             stage_id: self.env.stage_id.clone(),
@@ -276,24 +306,24 @@ impl Request<'_> {
             tool_use_id: self.tool_use_id.clone(),
             payload: ticket.payload,
         };
-        let ticket_file = ticket_path(&self.env.scratch_dir, line);
         match write_entry(self.work_dir, &entry) {
-            Ok(WriteOutcome::Written) => format!(
-                "LOOM relay: received {label} (the daemon applies it within ~5s){}",
+            Ok(WriteOutcome::Written) => sweep::Recorded::Reply(format!(
+                "LOOM relay: received {label} {}{}",
+                source.note(),
                 consume(&ticket_file)
-            ),
-            Ok(WriteOutcome::AlreadyRelayed) => format!(
+            )),
+            Ok(WriteOutcome::AlreadyRelayed) => sweep::Recorded::Reply(format!(
                 "LOOM relay: {label} was already relayed; nothing new was recorded{}",
                 consume(&ticket_file)
-            ),
-            Ok(WriteOutcome::Capacity) => format!(
+            )),
+            Ok(WriteOutcome::Capacity) => sweep::Recorded::Full(format!(
                 "LOOM relay: refused {label}: the session inbox already holds \
                  {MAX_PENDING_ENTRIES} pending requests, so the daemon is not draining it. \
                  Stop and report it; do not retry."
-            ),
-            Err(error) => format!(
+            )),
+            Err(error) => sweep::Recorded::Reply(format!(
                 "LOOM relay: failed to record {label}: {error:#}. Stop and report it; do not retry."
-            ),
+            )),
         }
     }
 
@@ -318,22 +348,6 @@ impl Request<'_> {
     }
 }
 
-/// Remove a relayed ticket. A failure is reported, not fatal: relaying the
-/// same id again is already a no-op.
-fn consume(ticket: &Path) -> String {
-    match std::fs::remove_file(ticket) {
-        Ok(()) => String::new(),
-        Err(error) => format!(
-            " (its ticket {} could not be removed: {error})",
-            ticket.display()
-        ),
-    }
-}
-
-fn ticket_path(scratch_dir: &Path, line: &RelayLine) -> PathBuf {
-    scratch_dir.join(ticket_check::ticket_file_name(&line.id))
-}
-
 /// A payload carrying a non-empty `agent_type` came from a subagent.
 fn agent_role(payload: &Value) -> AgentRole {
     match payload.get("agent_type").and_then(Value::as_str) {
@@ -343,8 +357,12 @@ fn agent_role(payload: &Value) -> AgentRole {
 }
 
 /// `<kind> <first 8 id characters>`, the id prefix the CLI prints.
+fn ticket_label(kind: RequestKind, id: &str) -> String {
+    format!("{kind} {}", &id[..8])
+}
+
 fn label(line: &RelayLine) -> String {
-    format!("{} {}", line.kind, &line.id[..8])
+    ticket_label(line.kind, &line.id)
 }
 
 fn hook_reply(message: &str) -> String {

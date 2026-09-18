@@ -13,7 +13,9 @@ pub(super) fn require_headroom(scratch_dir: &Path) -> Result<()> {
     if count >= MAX_UNCONSUMED_TICKETS {
         bail!(
             "this session already has {count} unconsumed relay tickets (limit \
-             {MAX_UNCONSUMED_TICKETS}); wait for the relay hook to drain them before retrying"
+             {MAX_UNCONSUMED_TICKETS}); run `loom memory note --help` in the foreground, with its \
+             output unfiltered, to relay the backlog — a ticket written under a redirect, a \
+             line-dropping pipe, a script file or a background call stays queued until then"
         );
     }
     Ok(())
@@ -53,7 +55,9 @@ mod tests {
         for n in 0..MAX_UNCONSUMED_TICKETS {
             fs::write(dir.path().join(format!("{n}.req")), b"").unwrap();
         }
-        assert!(require_headroom(dir.path()).is_err());
+        let err = require_headroom(dir.path()).unwrap_err().to_string();
+        assert!(err.contains("loom memory note --help"));
+        assert!(!err.contains("wait for the relay hook"));
     }
 
     #[test]

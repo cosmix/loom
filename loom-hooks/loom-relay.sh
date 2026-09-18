@@ -30,9 +30,11 @@ emit() {
 	exit 0
 }
 
-# say <message> - emit <message> when the inline output carries a relay line,
-# otherwise exit 0 silently: a large output that was merely persisted to a file
-# is too common to comment on.
+# say <message> - emit <message> when HAS_LINE is set, otherwise exit 0
+# silently: a large output that was merely persisted to a file is too common
+# to comment on, and neither is a payload that reached this point only
+# because its output mentions " memory " - it has no relay line to comment on
+# either.
 say() {
 	[[ $HAS_LINE -eq 1 ]] && emit "$1"
 	exit 0
@@ -115,9 +117,15 @@ else
 	INPUT_JSON=$(cat 2>/dev/null)
 fi
 
-# Fast path, pure bash: almost every Bash call ends here.
+# Fast path, pure bash: almost every Bash call ends here. A `loom memory`
+# write command must reach the helper even when its relay line never lands in
+# this payload (redirected stdout, piped through `tail`, run from a script
+# file, run in the background, or past the helper's per-call line cap): once
+# --allowed-kinds names memory or telemetry, the helper also relays leftover
+# on-disk tickets of those kinds - but only if it gets invoked at all. So a
+# payload merely mentioning " memory " in its command or output proceeds too.
 case "$INPUT_JSON" in
-*"LOOM_RELAY_V1 "* | *persistedOutputPath* | *"Full output saved to: "*) ;;
+*"LOOM_RELAY_V1 "* | *persistedOutputPath* | *"Full output saved to: "* | *" memory "*) ;;
 *) exit 0 ;;
 esac
 HAS_LINE=0

@@ -220,8 +220,8 @@ pub fn generate_knowledge_distill_stable_prefix() -> String {
     content.push_str("7. **RECEIPT PROTOCOL — every memory event gets exactly one outcome:**\n");
     content.push_str("   a. `loom memory show --all --json` to get every entry's id.\n");
     content.push_str("   b. For EVERY Note/Decision/Question entry, record its outcome: `loom memory resolve <id> --outcome promoted --target <file#heading>` right after the `loom knowledge update`/`replace-section` call that used it; `merged` when it folded into an existing section instead of a new one; `discarded --reason \"...\"` when it is a duplicate, regenerable, or wrong; `deferred --reason \"...\"` when it needs evidence not available now.\n");
-    content.push_str("   c. Finish with `loom memory pending --strict` and resolve whatever it lists — nothing may leave this stage unresolved.\n");
-    content.push_str("   d. This protocol runs AFTER step 6: the corrections pass stays first.\n");
+    content.push_str("   c. Run every `loom memory resolve` in the foreground with its stdout unfiltered: no `> file`, no `| tail`, no script file, no `run_in_background`. The relay hook records a resolve when it sees that command's `LOOM_RELAY_V1` line; one it missed is only picked up after the next foreground `loom memory` write command. A loop of resolves inside one Bash call is fine.\n   d. Finish with `loom memory pending --strict` and resolve whatever it lists — nothing may leave this stage unresolved.\n");
+    content.push_str("   e. This protocol runs AFTER step 6: the corrections pass stays first.\n");
     content.push_str("8. Generate review document: `loom review`\n\n");
 
     // Distillation is single-agent work: the curator holds the whole picture.
