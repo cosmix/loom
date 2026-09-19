@@ -26,13 +26,11 @@ use serde_json::{json, Map, Value};
 use std::fs;
 use std::path::Path;
 
-use super::constants::LOOM_PERMISSIONS;
 use super::hooks::{configure_loom_hooks, install_loom_hooks, install_loom_hooks_to};
-use super::write_rules::{
-    heal_inert_write_denies, prune_legacy_permission_grants, prune_loom_read_denies,
-};
+use super::write_rules::{heal_inert_write_denies, prune_loom_read_denies};
 use crate::fs::locking::locked_write;
 
+mod merge;
 mod report;
 
 /// Read a settings file into a JSON value, creating its `.claude` directory and
@@ -243,54 +241,21 @@ fn ensure_loom_permissions_inner(
     // Ensure settings is an object
     let settings_obj = require_object(&mut settings, "settings.json")?;
 
-    // Get or create permissions object
-    let permissions = settings_obj
-        .entry("permissions")
-        .or_insert_with(|| json!({}));
-
-    let permissions_obj = require_object(permissions, "permissions")?;
-
-    // Get or create allow array
-    let allow = permissions_obj.entry("allow").or_insert_with(|| json!([]));
-
-    let allow_arr = allow
-        .as_array_mut()
-        .ok_or_else(|| anyhow::anyhow!("permissions.allow must be a JSON array"))?;
-
-    let removed_permissions = prune_legacy_permission_grants(allow_arr);
-
-    // Collect existing permissions as strings for deduplication
-    let existing: std::collections::HashSet<String> = allow_arr
-        .iter()
-        .filter_map(|v| v.as_str().map(String::from))
-        .collect();
-
-    // Add missing loom permissions
-    let mut added_permissions = 0;
-    for permission in LOOM_PERMISSIONS {
-        if !existing.contains(*permission) {
-            allow_arr.push(json!(permission));
-            added_permissions += 1;
-        }
-    }
-
-    // Additive: also allow the home-expanded spelling of the codex forwarding wrapper (see
-    // `codex_forward_home_allow_entry` for why this can't live in the static LOOM_PERMISSIONS
-    // array above). Skipped silently if the home directory can't be resolved — never fail the
-    // whole permission write over it.
-    if let Some(home_entry) = codex_forward_home_allow_entry() {
-        if !existing.contains(home_entry.as_str()) {
-            allow_arr.push(json!(home_entry));
-            added_permissions += 1;
-        }
-    }
+    // Merge loom's permission grants into permissions.allow (see merge::merge_permissions).
+    let (added_permissions, removed_permissions) = merge::merge_permissions(settings_obj)?;
 
     // Migrate: remove hooks and env from settings.json (they belong in settings.local.json)
     let migrated = migrate_hooks_to_local(settings_obj);
     let denies_removed = super::write_rules::prune_read_denies_verbose(settings_obj, verbose);
+    let attribution_added = merge::ensure_no_attribution(settings_obj);
 
     // Write back if we made any changes
-    if added_permissions > 0 || removed_permissions > 0 || migrated || denies_removed {
+    if added_permissions > 0
+        || removed_permissions > 0
+        || migrated
+        || denies_removed
+        || attribution_added
+    {
         let content = serde_json::to_string_pretty(&settings)
             .context("Failed to serialize settings to JSON")?;
 

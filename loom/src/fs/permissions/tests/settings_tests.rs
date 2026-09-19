@@ -24,6 +24,10 @@ fn test_ensure_loom_permissions_creates_new_file() {
 
     let allow = settings["permissions"]["allow"].as_array().unwrap();
     assert!(allow.iter().any(|v| v == "Bash(loom *)"));
+    assert_eq!(
+        settings["attribution"],
+        json!({ "commit": "", "pr": "", "sessionUrl": false })
+    );
 }
 
 #[test]
@@ -40,7 +44,8 @@ fn test_ensure_loom_permissions_merges_existing() {
             "allow": ["Read(src/**)"],
             "deny": ["Bash(rm -rf:*)"]
         },
-        "other_setting": true
+        "other_setting": true,
+        "attribution": { "commit": "custom" }
     });
     fs::write(
         claude_dir.join("settings.json"),
@@ -66,6 +71,7 @@ fn test_ensure_loom_permissions_merges_existing() {
 
     // Check other settings preserved
     assert_eq!(settings["other_setting"], true);
+    assert_eq!(settings["attribution"], json!({ "commit": "custom" }));
 }
 
 #[test]
