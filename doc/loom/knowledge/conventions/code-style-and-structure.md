@@ -5,7 +5,7 @@ verified: 7d6a14caf1750cc1e516519e650e2ee68641e0a1
 ---
 # Code Style And Structure
 
-> Rust naming, error handling, size limits, splitting, and docstring conventions
+> Rust naming, errors, size limits, docstrings
 
 ## File & Branch Naming
 

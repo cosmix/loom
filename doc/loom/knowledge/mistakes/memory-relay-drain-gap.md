@@ -1,3 +1,10 @@
+---
+sources:
+- loom-hooks/loom-relay.sh
+- loom/src/commands/hook/relay/sweep.rs
+- loom/src/commands/hook/relay/tests_sweep.rs
+verified: e88e8294c12301e520f82aaf968b1456d5f4ce92
+---
 # Memory Relay Drain Gap
 
 > Relay tickets leaked for good when their line never reached the hook; ticket-cap deadlock, the sweep that fixes it, and recovery
@@ -6,7 +13,7 @@
 
 **What happened:** knowledge-distill stages in several projects deadlocked with `this session already has 32 unconsumed relay tickets (limit 32); wait for the relay hook to drain them`, AFTER the `memory:resolve` fix below was installed. Some resolves had landed; the rest never did, and waiting changed nothing.
 
-**Why:** a ticket was relayed only when its own `LOOM_RELAY_V1` line appeared in the output of the Bash call that wrote it, and nothing ever retried one that was missed. Four ordinary shapes hide the line: `RelayLine::extract` stops at `MAX_LINES_PER_CALL` = 16, so a loop of 40 resolves in one call relayed 16 and leaked 24 without a word; stdout redirected or piped through `tail` (which Rule 14 encourages); the command run from a script file (`bash resolve-all.sh` derives no allowed kinds); a background call. The daemon only logs a `tracing::warn!` for tickets older than 60 s, which the agent never sees, and the quota error's "wait for the relay hook to drain them" described something that could not happen. The `memory:resolve` gap below was one instance of this class, fixed as if it were the whole defect.
+**Why:** a ticket was relayed only when its own `LOOM_RELAY_V1` line appeared in the output of the Bash call that wrote it, and nothing ever retried one that was missed. Four ordinary shapes hide the line: `RelayLine::extract` stops at `MAX_LINES_PER_CALL` = 16, so a loop of 40 resolves in one call relayed 16 and leaked 24 without a word; stdout redirected or piped through `tail` (which Rule 14 encourages); the command run from a script file (e.g. `bash resolve-all.sh`, an example name, derives no allowed kinds); a background call. The daemon only logs a `tracing::warn!` for tickets older than 60 s, which the agent never sees, and the quota error's "wait for the relay hook to drain them" described something that could not happen. The `memory:resolve` gap below was one instance of this class, fixed as if it were the whole defect.
 
 **Prevention:** a queue whose only drain is tied to one event needs a second drain, or a miss is permanent. When fixing a leak, ask what else can produce the same leftover state and test that state directly: the regression test writes 17 tickets in one call and asserts on the inbox entries and the `.req` files left on disk (`commands/hook/relay/tests_sweep.rs`), never on reply strings. An error message that tells an agent to wait must name something that actually happens.
 

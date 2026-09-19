@@ -12,7 +12,7 @@
 | [entry-points.md](entry-points.md) | Key files agents should read first | 241 |
 | [patterns.md](patterns.md) | Architectural patterns discovered in the codebase | 157 |
 | [conventions.md](conventions.md) | Coding conventions discovered in the codebase | 239 |
-| [mistakes.md](mistakes.md) | Mistakes made and lessons learned - what to avoid | 263 |
+| [mistakes.md](mistakes.md) | Mistakes made and lessons learned - what to avoid | 246 |
 | [stack.md](stack.md) | Dependencies, frameworks, and tooling used in the project | 119 |
 | [concerns.md](concerns.md) | Technical debt, warnings, and issues to address | 225 |
 
@@ -72,7 +72,7 @@
 | [merge-and-recovery](patterns/merge-and-recovery.md) | Progressive merge, conflict recovery, attribution, dispute files. | 96 |
 | [orchestrator-daemon-loop](patterns/orchestrator-daemon-loop.md) | Signal gen, daemon IPC, poll loop, heartbeat, session backend, spool drain. | 107 |
 | [remote-control](patterns/remote-control.md) | Detect-capability/preflight/resolve shape for external agents | 51 |
-| [security-sandbox-and-hooks](patterns/security-sandbox-and-hooks.md) | Hooks, input validation, permission sync, sandbox config, untrusted values. | 105 |
+| [security-sandbox-and-hooks](patterns/security-sandbox-and-hooks.md) | Hooks, input validation, sandbox config | 105 |
 | [stage-daemon-channels](patterns/stage-daemon-channels.md) | How a stage agent reaches the daemon to change its own state | 105 |
 | [stage-lifecycle-and-verification](patterns/stage-lifecycle-and-verification.md) | Stage/session states, locked writes, verification | 170 |
 | [subagent-hierarchy](patterns/subagent-hierarchy.md) | Flat fan-out vs 2-level coordinators vs agent teams; model mix | 86 |
@@ -81,7 +81,7 @@
 
 | Topic | Blurb | Lines |
 | --- | --- | --- |
-| [code-style-and-structure](conventions/code-style-and-structure.md) | Rust naming, error handling, size limits, splitting, and docstring conventions | 264 |
+| [code-style-and-structure](conventions/code-style-and-structure.md) | Rust naming, errors, size limits, docstrings | 264 |
 | [commits](conventions/commits.md) | Grouped commits, Conventional Commit messages, no AI attribution | 14 |
 | [dispute-and-adjudication](conventions/dispute-and-adjudication.md) | Dispute file authority split, adjudicator scope, budgets, and transport | 114 |
 | [git-and-build-workflow](conventions/git-and-build-workflow.md) | Git/worktree ops, cargo discipline, the maintainability ledger | 202 |
@@ -96,6 +96,7 @@
 | --- | --- | --- |
 | [adjudication-autonomy-deadlock](mistakes/adjudication-autonomy-deadlock.md) | Accepted-verdict deadlock: adoption, requeue, live dispute | 188 |
 | [ambient-filesystem-trust](mistakes/ambient-filesystem-trust.md) | Why a .git directory is not evidence of a real repository | 146 |
+| [briefs-and-bug-reports](mistakes/briefs-and-bug-reports.md) | Stage bug reports; guard flags in briefs | 16 |
 | [codex-lane-rogue-wrapper](mistakes/codex-lane-rogue-wrapper.md) | A wrapper implemented the task instead of forwarding it | 156 |
 | [codex-navigation](mistakes/codex-navigation.md) | Forbidding reads instead of fixing a slow reader - a misdiagnosis and its… | 32 |
 | [codex-worker-briefing](mistakes/codex-worker-briefing.md) | Codex brief pitfalls: braces, doc placeholders, path reuse, jq status | 70 |
@@ -105,13 +106,13 @@
 | [daemon-singleton](mistakes/daemon-singleton.md) | Two loom daemons once attached one .loom/work/; startup now holds one flock. | 129 |
 | [detached-spawn-in-tests](mistakes/detached-spawn-in-tests.md) | Never spawn a process from a test that can outlive the test process. | 45 |
 | [doctrine-and-acceptance](mistakes/doctrine-and-acceptance.md) | Why a one-phrase grep proves presence but never agreement, and how doctrine… | 309 |
-| [hooks-shell-portability](mistakes/hooks-shell-portability.md) | gawk/bash portability traps and heredoc-scanning gotchas in the repo's hooks. | 95 |
+| [hooks-shell-portability](mistakes/hooks-shell-portability.md) | gawk/bash portability traps and heredoc-scanning gotchas in the repo's hooks. | 102 |
 | [knowledge-base-drift](mistakes/knowledge-base-drift.md) | How the knowledge base itself goes stale: plan-authoring notes frozen as… | 172 |
 | [knowledge-cli-invariants](mistakes/knowledge-cli-invariants.md) | Invariants belong in the fs constructor, not the CLI handler | 139 |
 | [knowledge-write-channel](mistakes/knowledge-write-channel.md) | Why a distillation stage cannot write knowledge directly, the… | 100 |
 | [ledger-tui-rendering](mistakes/ledger-tui-rendering.md) | Wide-glyph padding, fan-out duplication, and latent panics in the ledger TUI. | 63 |
 | [live-state-pollution](mistakes/live-state-pollution.md) | A stage test run rewrote live .loom/work state | 33 |
-| [memory-relay-drain-gap](mistakes/memory-relay-drain-gap.md) | Relay tickets leaked for good when their line never reached the hook… | 27 |
+| [memory-relay-drain-gap](mistakes/memory-relay-drain-gap.md) | Relay tickets leaked for good when their line never reached the hook… | 34 |
 | [merge-cleanup-boundary](mistakes/merge-cleanup-boundary.md) | A cleanup-boundary bug and its fix | 171 |
 | [parallel-worktree-shared-state](mistakes/parallel-worktree-shared-state.md) | Cross-worktree state races: diagnostic question, cases, fix | 140 |
 | [phantom-merges](mistakes/phantom-merges.md) | Eight lessons on merge machinery: merged=true without verifying | 141 |
@@ -132,7 +133,7 @@
 | [testing-and-lint](mistakes/testing-and-lint.md) | Lint/test discipline: --all-targets, --no-fail-fast, headless CI | 674 |
 | [tests-that-cannot-fail](mistakes/tests-that-cannot-fail.md) | Tests that pass whether or not the bug they cover is present | 264 |
 | [tmux-backend](mistakes/tmux-backend.md) | tmux spawn-failure exit codes and cleanup-on-error discipline | 136 |
-| [typed-config-values-process](mistakes/typed-config-values-process.md) | Verification-brief, dev-server, plan-prose gotchas | 36 |
+| [typed-config-values-process](mistakes/typed-config-values-process.md) | Verification-brief, dev-server, plan-prose gotchas | 43 |
 | [untrusted-value-boundaries](mistakes/untrusted-value-boundaries.md) | Enumerate every producer of a rendered field, not just it | 188 |
 | [verification-harness](mistakes/verification-harness.md) | When every check fails at once, suspect the harness | 369 |
 | [visibility-and-reachability](mistakes/visibility-and-reachability.md) | pub(crate) is not nameable by itself - visibility is capped by path… | 115 |
@@ -149,7 +150,7 @@
 | [codex-heartbeat-starvation](concerns/codex-heartbeat-starvation.md) | Heartbeat starvation from long codex runs; stale-badge constant mismatch | 73 |
 | [iterm2-window-teardown](concerns/iterm2-window-teardown.md) | iTerm2 spawn never names its window, so teardown cannot find it to close | 48 |
 | [knowledge-cli-gaps](concerns/knowledge-cli-gaps.md) | Knowledge CLI gaps: no delete-section, CRLF, backlog | 141 |
-| [merge-and-recovery-edge-cases](concerns/merge-and-recovery-edge-cases.md) | Merge/retry/completion edge cases: phantom merges, stale started_at, nonces | 70 |
+| [merge-and-recovery-edge-cases](concerns/merge-and-recovery-edge-cases.md) | Merge/retry/completion edge cases | 70 |
 | [runtime-and-session-safety](concerns/runtime-and-session-safety.md) | Runtime edge cases: tmux warning, attach lifetime, orphan adoption, guards | 139 |
 | [sandbox-and-confinement-gaps](concerns/sandbox-and-confinement-gaps.md) | Sandbox gaps: no E2E canary, diverging env allowlists, uncalled validators | 162 |
 | [state-confinement-gaps](concerns/state-confinement-gaps.md) | Shared package-manager caches stay session-writable. | 9 |

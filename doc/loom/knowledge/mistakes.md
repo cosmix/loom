@@ -195,13 +195,7 @@ bridge lessons, all from `loom/src/commands/status/web/` and `web/`.
 
 ## Pre-Commit Partial-Staging Guard: Design Decisions and Edge Cases (2026-09-12)
 
-The guard that stops the pre-commit hook from silently replacing a partially staged file with
-its full working-tree content (see the incident above) has its own settled disputes: git's
-default rename detection, why `git commit -a`/`git commit <path>` can't false-positive it (and
-where `--only` still can't catch a _different_ partially staged file), and a test-fixture trap
-where a space in a filename doesn't prove NUL-safety.
-
-→ [Pre-Commit Hardening](mistakes/pre-commit-hardening.md)
+Settled disputes of the partial-staging guard: rename detection, why `commit -a`/`commit <path>` cannot false-positive it, and a NUL-safety fixture trap. → [Pre-Commit Hardening](mistakes/pre-commit-hardening.md)
 
 ## A Stage's Test Run Rewrote Live State (2026-09-13) [DETAILED]
 
@@ -211,17 +205,11 @@ Tests run by a stage adopted the live `.loom/work` through `WorkDir::new`'s upwa
 
 ## Config tiers inherit per key; a section that wins whole is a defect
 
-**What happened:** The settings dialog showed `native` on the project lane of `terminal.backend` while the user tier set `tmux` and the project config had no `[terminal]` section. The proposed fix made the section-absent case fall through to the user tier but kept a present-but-keyless `[terminal]`/`[context]` section deriving the built-in, preserving the documented section-level shadowing.
-**Why:** `conventions/model-and-effort-config.md#key-level-vs-section-level-fallback` and the `config_api/workspace.rs` doc comments describe section-level shadowing as deliberate; the proposal took that as a constraint instead of checking it against the precedence the operator expects.
-**Prevention:** Every config key resolves per key, project -> user -> built-in: a tier that does not set a key resolves to, and displays, the next tier down, whether or not its section exists. A rule that derives built-ins for a key a present section omits is a defect to raise with the operator, not a design to preserve.
-**Fix:** Operator decision 2026-09-13: `[terminal]` and `[context]` move to key-level fallthrough in the runtime resolvers (`fs/work_dir/config_sections.rs`) and in `/api/config` (`config_api/workspace.rs`, `entries.rs`).
+Every config key resolves per key, project -> user -> built-in, whether or not the tier's section exists; section-level shadowing is a defect to raise, not a design to keep. → [Typed Config Values](mistakes/typed-config-values-process.md)
 
 ## Stop hook exited 141: `cmd | head` under pipefail (2026-09-14)
 
-**What happened**: `loom-hooks/commit-guard.sh` piped `git status --porcelain` into `head -10` under `set -euo pipefail`. With 116 dirty paths in the completion-recovery worktree, `head` closed the pipe while git was still writing; git died with SIGPIPE (141), pipefail propagated it through the command substitution, and the hook exited 141 with no stderr. Claude Code reported `Stop hook error: Failed with non-blocking status code: No stderr output`. Racy: 16 of 60 runs failed.
-**Why**: A producer that writes after `head` exits gets SIGPIPE; `pipefail` turns that into the pipeline's status, and `set -e` turns an assignment from `$(...)` into an exit.
-**Prevention**: In any hook under `pipefail`, never pipe an external command directly into `head`/`sed -n 1p`/`grep -q`. Capture the full output into a variable first, then truncate with `head -n N <<<"$var"`, or append `|| true` to the producer when the exit status is not needed. A non-zero hook exit with empty stderr and exit code 141 is this bug.
-**Fix**: `get_uncommitted_changes` captures the status first and truncates from a here-string; regression test `loom-hooks/tests/commit-guard-sigpipe-many-dirty-files.sh`.
+Under `pipefail`, piping a command into `head` kills the producer with SIGPIPE and the hook exits 141 with empty stderr; capture output first, then truncate. → [Hooks Shell Portability](mistakes/hooks-shell-portability.md)
 
 ## Spurious waiting-for-input stages (2026-09-14) [DETAILED]
 
@@ -251,13 +239,8 @@ Never wrap plan prose so a line begins with `+`. See [Typed Config Values: Proce
 
 ## A Bug Report From a Loom Stage Is About Loom the Product, Not About a Project on This Machine (2026-09-18)
 
-**What happened:** the user relayed a `knowledge-distill` stage's report of a relay-ticket deadlock. The investigation searched `~/.claude/projects` for the error string and started reading transcripts belonging to another project's worktree. The user stopped it: the reporting instances ran in other projects that use loom as a product, and those projects are out of reach.
-**Why:** the report was treated as a local incident to reconstruct from logs, when it was a defect report against loom's source.
-**Prevention:** a report quoted from a stage session is a symptom description. Diagnose it from loom's own source, tests, and knowledge in this repo; never go looking for the reporter's transcripts, worktrees, or state, and never read another project's directory under `~/.claude/projects`. Ask the user for more detail from the report if the source leaves it ambiguous.
-**Fix:** drop anything learned from the other project's files and reason from the code path the quoted error names.
+A report quoted from a stage session is a defect report against loom's source: diagnose from this repo, never from another project's transcripts or state. → [Briefs and Bug Reports](mistakes/briefs-and-bug-reports.md)
 
 ## A Brief That Invents a New Guard Flag Can Widen an Existing One (2026-09-18)
 
-**What happened:** the brief for the relay hook's new ` memory ` fast-path arm told the worker to add a `NOTIFY` flag (relay line OR persisted-output marker) and gate every diagnostic on it. The worker did, moving `say()` off `HAS_LINE`. `say()` had been on `HAS_LINE` alone on purpose ("a large output that was merely persisted to a file is too common to comment on"), so any large Bash output could now emit relay diagnostics. Caught in the orchestrator's diff review; reverted in a fix pass.
-**Why:** the brief specified a mechanism without first checking whether the existing guard already gave the required silence. It did: a payload admitted only by the new arm has `HAS_LINE=0`.
-**Prevention:** before a brief introduces a new condition variable next to an existing one, state in the brief what the existing one already covers and why it is insufficient. If that sentence cannot be written, the new variable is not needed. A worker's "I changed behaviour X, flagging in case" note is a review item, never a footnote.
+Before a brief adds a condition variable beside an existing guard, state what the existing one already covers and why it falls short. → [Briefs and Bug Reports](mistakes/briefs-and-bug-reports.md)

@@ -93,3 +93,10 @@ file. `rg` is recursive by default; never pass `-r` unless you mean `--replace`.
 **Prevention**: In a script meant for `curl | bash`, read `${BASH_SOURCE[0]:-}` and treat empty as "no source file". Do not fall back to `$0` or the working directory: a pipe run from inside a checkout would then take the local path. Test the pipe form itself with `bash -s -- --help < install.sh`.
 
 **Fix**: `SCRIPT_DIR` stays empty without a source file and `is_curl_pipe` returns true when it is empty (`install.sh:13-17`, `install.sh:82-87`). `install_sh_runs_when_piped_on_stdin` in `loom/tests/integration/install_assets.rs` pipes the script to `bash -s -- --help`.
+
+## Stop hook exited 141: `cmd | head` under pipefail (2026-09-14)
+
+**What happened**: `loom-hooks/commit-guard.sh` piped `git status --porcelain` into `head -10` under `set -euo pipefail`. With 116 dirty paths in the completion-recovery worktree, `head` closed the pipe while git was still writing; git died with SIGPIPE (141), pipefail propagated it through the command substitution, and the hook exited 141 with no stderr. Claude Code reported `Stop hook error: Failed with non-blocking status code: No stderr output`. Racy: 16 of 60 runs failed.
+**Why**: A producer that writes after `head` exits gets SIGPIPE; `pipefail` turns that into the pipeline's status, and `set -e` turns an assignment from `$(...)` into an exit.
+**Prevention**: In any hook under `pipefail`, never pipe an external command directly into `head`/`sed -n 1p`/`grep -q`. Capture the full output into a variable first, then truncate with `head -n N <<<"$var"`, or append `|| true` to the producer when the exit status is not needed. A non-zero hook exit with empty stderr and exit code 141 is this bug.
+**Fix**: `get_uncommitted_changes` captures the status first and truncates from a here-string; regression test `loom-hooks/tests/commit-guard-sigpipe-many-dirty-files.sh`.

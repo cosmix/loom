@@ -34,3 +34,10 @@ markdownlint fixer, leaving an unstaged edit to the plan file after every commit
 
 **Prevention:** never wrap prose so a line begins with `+`. After committing a plan file, check
 `git status` for an unstaged fixer edit and revert it if the rewrite was not intended.
+
+## Config tiers inherit per key; a section that wins whole is a defect
+
+**What happened:** The settings dialog showed `native` on the project lane of `terminal.backend` while the user tier set `tmux` and the project config had no `[terminal]` section. The proposed fix made the section-absent case fall through to the user tier but kept a present-but-keyless `[terminal]`/`[context]` section deriving the built-in, preserving the documented section-level shadowing.
+**Why:** `conventions/model-and-effort-config.md#key-level-vs-section-level-fallback` and the `config_api/workspace.rs` doc comments describe section-level shadowing as deliberate; the proposal took that as a constraint instead of checking it against the precedence the operator expects.
+**Prevention:** Every config key resolves per key, project -> user -> built-in: a tier that does not set a key resolves to, and displays, the next tier down, whether or not its section exists. A rule that derives built-ins for a key a present section omits is a defect to raise with the operator, not a design to preserve.
+**Fix:** Operator decision 2026-09-13: `[terminal]` and `[context]` move to key-level fallthrough in the runtime resolvers (`fs/work_dir/config_sections.rs`) and in `/api/config` (`config_api/workspace.rs`, `entries.rs`).

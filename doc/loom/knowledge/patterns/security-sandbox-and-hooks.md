@@ -2,7 +2,7 @@
 ---
 # Security Sandbox And Hooks
 
-> Hooks, input validation, permission sync, sandbox config, untrusted values.
+> Hooks, input validation, sandbox config
 
 ## Hook Patterns
 
